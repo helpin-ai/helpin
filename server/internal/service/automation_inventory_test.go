@@ -33,6 +33,7 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 			team_type TEXT NOT NULL DEFAULT 'engineering',
 			default_task_type TEXT NOT NULL DEFAULT 'feature',
 			docs_publisher_enabled BOOLEAN NOT NULL DEFAULT 0,
+			sprints_enabled BOOLEAN NOT NULL DEFAULT 1,
 			created_at DATETIME,
 			updated_at DATETIME,
 			default_invocation_mode TEXT NOT NULL DEFAULT 'autonomous'

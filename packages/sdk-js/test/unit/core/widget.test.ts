@@ -346,6 +346,94 @@ describe('WidgetManager', () => {
     });
   });
 
+  describe('websocket reconnect policy', () => {
+    it('keeps retrying in the background after initial connection failures', async () => {
+      vi.useFakeTimers();
+      const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0);
+
+      class NoOpenWebSocket {
+        static OPEN = 1;
+        static CLOSED = 3;
+        static instances: NoOpenWebSocket[] = [];
+
+        readyState = NoOpenWebSocket.OPEN;
+        sent: string[] = [];
+        onopen: ((event: Event) => void) | null = null;
+        onmessage: ((event: MessageEvent) => void) | null = null;
+        onclose: ((event: CloseEvent) => void) | null = null;
+        onerror: ((event: Event) => void) | null = null;
+
+        constructor(public url: string) {
+          NoOpenWebSocket.instances.push(this);
+        }
+
+        send(payload: string): void {
+          this.sent.push(payload);
+        }
+
+        close(): void {
+          this.readyState = NoOpenWebSocket.CLOSED;
+          this.onclose?.(new CloseEvent('close'));
+        }
+      }
+
+      vi.stubGlobal('WebSocket', NoOpenWebSocket as unknown as typeof WebSocket);
+      (widget as any).widgetKey = 'test-key';
+      (widget as any).widgetConfig = {
+        workspaceId: 'ws_test',
+        branding: { primaryColor: '#6366f1' },
+        features: {},
+      };
+      (widget as any).mountContainer = document.createElement('div');
+
+      (widget as any).connectWebSocket();
+      expect(NoOpenWebSocket.instances).toHaveLength(1);
+
+      (widget as any).wsRetryCount = 3;
+      NoOpenWebSocket.instances[0].close();
+
+      expect((widget as any).connectionStatus).toBe('failed');
+      expect((widget as any).wsRetryTimer).toBeTruthy();
+
+      await vi.advanceTimersByTimeAsync(8000);
+      expect(NoOpenWebSocket.instances).toHaveLength(2);
+
+      randomSpy.mockRestore();
+      vi.useRealTimers();
+    });
+
+    it('keeps retrying in the background after a long outage post-connect', async () => {
+      vi.useFakeTimers();
+      const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0);
+      vi.stubGlobal('WebSocket', MockWebSocket as unknown as typeof WebSocket);
+
+      (widget as any).widgetKey = 'test-key';
+      (widget as any).widgetConfig = {
+        workspaceId: 'ws_test',
+        branding: { primaryColor: '#6366f1' },
+        features: {},
+      };
+      (widget as any).mountContainer = document.createElement('div');
+
+      (widget as any).connectWebSocket();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(MockWebSocket.instances).toHaveLength(1);
+
+      (widget as any).wsRetryCount = 10;
+      (widget as any).connectionIssueStartedAt = Date.now() - 30_000;
+      MockWebSocket.instances[0].close();
+
+      expect((widget as any).connectionStatus).toBe('failed');
+      expect((widget as any).wsRetryTimer).toBeTruthy();
+
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(MockWebSocket.instances).toHaveLength(2);
+
+      randomSpy.mockRestore();
+      vi.useRealTimers();
+    });
+  });
+
   describe('conversation routing', () => {
     it('should start a fresh conversation when home sends a new message', async () => {
       const sockets: MockWebSocket[] = [];

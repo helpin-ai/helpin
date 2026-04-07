@@ -19,6 +19,13 @@ declare global {
       getSentMessages: () => Array<{ type: string; data?: Record<string, unknown> }>
       getSocketCount: () => number
       isReady: boolean
+      setSocketBehavior: (mode: 'open' | 'fail') => void
+    }
+    helpin?: ((...args: unknown[]) => unknown) & {
+      _widgetManager?: {
+        wsRetryCount?: number
+        connectionIssueStartedAt?: number | null
+      }
     }
   }
 }
@@ -220,6 +227,62 @@ test('falls back to session:create when a stored session is rejected', async ({ 
     },
   ]))
 
+  await expect(page.locator('.helpin-message-list')).toContainText('Initial message')
+})
+
+test('shows the prolonged offline banner and manual reconnect recovers the widget', async ({ page }) => {
+  await bootWidget(page)
+  await openWidget(page)
+
+  await page.evaluate(() => {
+    window.__widgetE2E?.setSocketBehavior('fail')
+    if (window.helpin?._widgetManager) {
+      window.helpin._widgetManager.wsRetryCount = 10
+      window.helpin._widgetManager.connectionIssueStartedAt = Date.now() - 30_000
+    }
+    window.__widgetE2E?.disconnect()
+  })
+
+  await expect(page.getByText("We've been offline for a while. We'll keep trying in the background, or reconnect now.")).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Reconnect' })).toBeVisible()
+  await expect(page.locator('.helpin-compose-input')).toHaveAttribute('placeholder', 'Offline. Reconnecting in the background...')
+  await expect(page.locator('.helpin-compose-input')).toBeDisabled()
+
+  await page.evaluate(() => {
+    window.__widgetE2E?.setSocketBehavior('open')
+  })
+  await page.getByRole('button', { name: 'Reconnect' }).click()
+
+  await expect(page.getByText("We've been offline for a while. We'll keep trying in the background, or reconnect now.")).toHaveCount(0)
+  await expect(page.locator('.helpin-compose-input')).not.toBeDisabled()
+  await expect(page.locator('.helpin-message-list')).toContainText('Initial message')
+})
+
+test('recovers automatically in the background when the server comes back', async ({ page }) => {
+  await bootWidget(page)
+  await openWidget(page)
+
+  const initialSocketCount = await page.evaluate(() => window.__widgetE2E?.getSocketCount() || 0)
+
+  await page.evaluate(() => {
+    window.__widgetE2E?.setSocketBehavior('fail')
+    window.__widgetE2E?.disconnect()
+  })
+
+  await expect(page.getByText('Connection lost. Reconnecting...')).toBeVisible()
+  await expect(page.locator('.helpin-compose-input')).toHaveAttribute('placeholder', 'Connection lost. Reconnecting...')
+
+  await page.waitForTimeout(300)
+  await page.evaluate(() => {
+    window.__widgetE2E?.setSocketBehavior('open')
+  })
+
+  await expect.poll(async () => {
+    return page.evaluate(() => window.__widgetE2E?.getSocketCount() || 0)
+  }, { timeout: 5_000 }).toBeGreaterThan(initialSocketCount)
+
+  await expect(page.getByText('Connection lost. Reconnecting...')).toHaveCount(0)
+  await expect(page.locator('.helpin-compose-input')).not.toBeDisabled()
   await expect(page.locator('.helpin-message-list')).toContainText('Initial message')
 })
 

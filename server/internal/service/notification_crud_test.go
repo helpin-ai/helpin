@@ -41,6 +41,7 @@ func newNotificationCRUDTestDB(t *testing.T) *gorm.DB {
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			name TEXT NOT NULL,
 			slug TEXT NOT NULL,
+			workspace_key TEXT,
 			owner_id TEXT NOT NULL,
 			organization_id TEXT,
 			description TEXT,

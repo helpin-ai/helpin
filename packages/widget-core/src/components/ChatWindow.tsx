@@ -259,12 +259,17 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
           Connecting...
         </div>
       )}
+      {connectionStatus === 'disconnected' && (
+        <div className="helpin-connection-banner helpin-connection-banner--disconnected">
+          Connection lost. Reconnecting...
+        </div>
+      )}
       {connectionStatus === 'failed' && (
         <div className="helpin-connection-banner helpin-connection-banner--failed">
-          <span>Unable to connect. Support may be unavailable.</span>
+          <span>We've been offline for a while. We'll keep trying in the background, or reconnect now.</span>
           {onRetryConnection && (
             <button className="helpin-connection-retry" onClick={onRetryConnection}>
-              Retry
+              Reconnect
             </button>
           )}
         </div>
@@ -319,6 +324,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
             showPreChatForm={showPreChatForm}
             onPreChatSubmit={onPreChatSubmit}
             onImageClick={onImageClick}
+            connectionStatus={connectionStatus}
           />
         )}
         {activeView === 'messages' && (
@@ -344,6 +350,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
               isTyping={isTyping}
               quickReplies={quickReplies}
               hasConversation={messages.length > 0}
+              connectionStatus={connectionStatus}
             />
           )
         )}

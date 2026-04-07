@@ -19,7 +19,7 @@ func TestDefaultProductPlannerSystemPromptIncludesInlineInteractiveLoop(t *testi
 		"Approval checkpoints happen inline in the same chat:",
 		"## Current Facts And Next-Step Rules",
 		"If an approved spec exists and tasks already exist:",
-		"If an approved spec exists and no stories exist yet:",
+		"If an approved spec exists and no tasks exist yet:",
 		"If no approved spec exists but a draft PRD already exists:",
 		"If approved PRD persistence is already complete:",
 		"`request_user_input`",
@@ -33,7 +33,7 @@ func TestDefaultProductPlannerSystemPromptIncludesInlineInteractiveLoop(t *testi
 		"\"story_type\": \"feature\"",
 		"\"test_strategy\": [\"...\"]",
 		"The value of `content` must be a JSON object.",
-		"Do not use `title` or `type` in story-plan JSON.",
+		"Inside `proposed_tasks`, use the canonical field names `name` and `task_type`.",
 		"Use `dependency_refs` only for refs that appear elsewhere in the same `proposed_tasks` array.",
 		"`list_workspace_teams`",
 		"platform will persist the approved PRD artifact",
@@ -41,7 +41,7 @@ func TestDefaultProductPlannerSystemPromptIncludesInlineInteractiveLoop(t *testi
 		"Only treat the phase as approved when the human gives a clear, explicit approval.",
 		"### Vertical Slicing (Critical)",
 		"### Blocker & Enabler Consolidation",
-		"### Story Separation & Scoping",
+		"### Task Separation & Scoping",
 		"### Implementation Briefs (Required)",
 		"### Acceptance Criteria (Required)",
 		"GIVEN/WHEN/THEN",
@@ -109,7 +109,7 @@ func TestStoryPlannerSystemPromptIncludesDocApprovalLoop(t *testing.T) {
 }
 
 func TestStoryPlannerPromptNeedsRefreshForLegacyPrompt(t *testing.T) {
-	legacyPrompt := "You are Story Planner for Helpin.\n- Ask clarifying questions inline.\n- Produce implementation-ready stories."
+	legacyPrompt := "You are Story Planner for Helpin.\nUse `publish_preview` and `request_human_approval` once the runtime tells you the current planner phase."
 	if !storyPlannerPromptNeedsRefresh(&legacyPrompt) {
 		t.Fatal("expected legacy story planner prompt to require refresh")
 	}

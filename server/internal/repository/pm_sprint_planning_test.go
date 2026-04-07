@@ -29,7 +29,7 @@ func TestPMSprintPlanningRepository(t *testing.T) {
 	)
 	teamA := teamAID
 
-	now := time.Date(2026, 3, 30, 12, 0, 0, 0, time.UTC)
+	now := time.Now().UTC().Truncate(time.Minute)
 	seedPMSprintPlanningState(t, db, todoStateID, workflowID, "Todo", model.PMStateTypeUnstarted, 0)
 	seedPMSprintPlanningState(t, db, doingStateID, workflowID, "Doing", model.PMStateTypeStarted, 1)
 	seedPMSprintPlanningState(t, db, doneStateID, workflowID, "Done", model.PMStateTypeDone, 2)

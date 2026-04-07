@@ -213,6 +213,26 @@ func setupDocsHelpcenterTranslationServiceTestDB(t *testing.T) *gorm.DB {
 			UNIQUE(document_id, locale),
 			UNIQUE(space_id, locale, slug)
 		)`,
+		`CREATE TABLE docs_helpcenter_article_publications (
+			id TEXT PRIMARY KEY,
+			document_id TEXT NOT NULL,
+			workspace_id TEXT NOT NULL,
+			space_id TEXT NOT NULL,
+			collection_id TEXT,
+			locale TEXT NOT NULL,
+			title TEXT NOT NULL,
+			slug TEXT NOT NULL,
+			excerpt TEXT,
+			content JSON,
+			content_text TEXT,
+			seo_title TEXT,
+			seo_description TEXT,
+			published_at DATETIME NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME,
+			UNIQUE(document_id, locale),
+			UNIQUE(space_id, locale, slug)
+		)`,
 		`CREATE TABLE docs_redirects (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
@@ -950,7 +970,7 @@ func TestDocsHelpcenterTranslationService(t *testing.T) {
 		}
 	})
 
-	t.Run("UpdateArticleTranslationSlug creates a redirect for the old localized path", func(t *testing.T) {
+	t.Run("UpdateArticleTranslationSlug updates the translation slug without changing redirects until republish", func(t *testing.T) {
 		db, _, ctx := setupBase(t)
 		svc := newDocsHelpcenterTranslationServiceForTestWithLLM(db, nil)
 
@@ -1007,19 +1027,22 @@ func TestDocsHelpcenterTranslationService(t *testing.T) {
 			t.Fatalf("UpdateArticleTranslationSlug: %v", err)
 		}
 
+		translationRepo := repository.NewDocsHelpcenterTranslationRepository(db)
+		translation, err := translationRepo.GetArticleTranslation(ctx, documentID, "fr")
+		if err != nil {
+			t.Fatalf("GetArticleTranslation: %v", err)
+		}
+		if translation == nil || translation.Slug == nil || *translation.Slug != "commencer" {
+			t.Fatalf("translation slug = %+v, want %q", translation, "commencer")
+		}
+
 		redirectRepo := repository.NewDocsRedirectRepository(db)
 		redirect, err := redirectRepo.GetBySourcePath(ctx, workspaceID, "/bases/premiers-pas")
 		if err != nil {
 			t.Fatalf("GetBySourcePath: %v", err)
 		}
-		if redirect == nil {
-			t.Fatal("expected redirect for old localized article path")
-		}
-		if redirect.TargetCollectionSlug != "bases" {
-			t.Fatalf("redirect.TargetCollectionSlug = %q, want %q", redirect.TargetCollectionSlug, "bases")
-		}
-		if redirect.TargetArticleSlug == nil || *redirect.TargetArticleSlug != "commencer" {
-			t.Fatalf("redirect.TargetArticleSlug = %+v, want %q", redirect.TargetArticleSlug, "commencer")
+		if redirect != nil {
+			t.Fatalf("redirect = %+v, want nil until live publication is republished", redirect)
 		}
 	})
 }
@@ -1356,6 +1379,24 @@ func TestDocsHelpcenterPublicLocale_GetArticleFallsBackToDefaultLocale(t *testin
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	})
+	if _, err := repository.NewDocsHelpcenterPublicationRepository(db).UpsertArticlePublication(ctx, &model.DocsHelpcenterArticlePublication{
+		ID:           "en-publication-public-article",
+		DocumentID:   documentID,
+		WorkspaceID:  workspaceID,
+		SpaceID:      spaceID,
+		CollectionID: ptr(collectionID),
+		Locale:       "en",
+		Title:        "Start Here",
+		Slug:         "start-here",
+		Excerpt:      ptr("How to begin"),
+		Content:      json.RawMessage(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Welcome"}]}]}`),
+		ContentText:  "Welcome",
+		PublishedAt:  now,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}); err != nil {
+		t.Fatalf("seed default publication: %v", err)
+	}
 	seedDocsHelpcenterTranslationServiceSpaceTranslation(t, db, model.DocsHelpcenterSpaceTranslation{
 		ID:              "fr-space-public-article",
 		SpaceID:         spaceID,

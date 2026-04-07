@@ -27,7 +27,8 @@ export interface WidgetUser {
 }
 
 export interface WidgetSettings {
-  widgetKey: string;
+  widgetKey?: string;
+  key?: string;
   host?: string;
   user?: WidgetUser;
 }
@@ -57,6 +58,8 @@ const MAX_WS_RETRIES = 10;
 const MAX_WS_INITIAL_RETRIES = 3; // retries before first successful connection (invalid key, server down)
 const WS_BASE_DELAY_MS = 1000;
 const WS_MAX_DELAY_MS = 30000;
+const MAX_AUTO_RECONNECT_WINDOW_MS = 25_000;
+const MAX_BACKGROUND_RETRY_DELAY_MS = 120_000;
 const NOTIFICATION_SOUND_URL = 'https://cdn.helpin.ai/sounds/ping.mp3';
 
 function normalizeWidgetConfig(raw: any): WidgetConfig {
@@ -87,6 +90,7 @@ export class WidgetManager {
   private wsRetryCount = 0;
   private wsHasConnected = false;
   private wsRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  private connectionIssueStartedAt: number | null = null;
   private isShutdown = false;
   private hasBeenOpened = false;
   private host = 'client.prod.helpin.ai';
@@ -134,8 +138,12 @@ export class WidgetManager {
     }
 
     this.isShutdown = false;
-    this.config = settings;
-    this.widgetKey = settings.widgetKey;
+    const widgetKey = settings.widgetKey || settings.key || '';
+    this.config = {
+      ...settings,
+      widgetKey,
+    };
+    this.widgetKey = widgetKey;
 
     // Restore pre-chat done state from localStorage.
     if (this.widgetKey) {
@@ -147,7 +155,7 @@ export class WidgetManager {
     }
 
     // Get or create anonymous ID from cookie
-    this.anonymousId = getOrCreateAnonymousId(settings.widgetKey);
+    this.anonymousId = this.widgetKey ? getOrCreateAnonymousId(this.widgetKey) : null;
 
     // Unlock notification audio on first user interaction with the page
     if (!this.audioUnlockListener) {
@@ -217,6 +225,7 @@ export class WidgetManager {
     this.unreadCount = 0;
     this.hasBeenOpened = false;
     this.wsRetryCount = 0;
+    this.connectionIssueStartedAt = null;
     this.messages = [];
     this.conversations = [];
     this.activeConversationId = null;
@@ -481,6 +490,7 @@ export class WidgetManager {
       onLauncherClick: () => this.toggle(),
       unreadCount: this.unreadCount,
       connectionStatus: this.connectionStatus,
+      onRetryConnection: () => this.reconnectWebSocket(),
       conversations: this.conversations,
       activeConversation: this.activeConversationId
         ? this.conversations.find((conversation) => conversation.id === this.activeConversationId)
@@ -1041,7 +1051,9 @@ export class WidgetManager {
       this.wsConnection.onopen = () => {
         this.wsRetryCount = 0;
         this.wsHasConnected = true;
+        this.connectionIssueStartedAt = null;
         this.connectionStatus = 'connected';
+        this.render();
 
         // Send session:create or session:restore
         const storedSession = this.widgetKey ? getStoredSession(this.widgetKey) : null;
@@ -1071,33 +1083,47 @@ export class WidgetManager {
       this.wsConnection.onclose = (event) => {
         if (this.isShutdown) return;
 
+        const now = Date.now();
+        if (this.connectionIssueStartedAt === null) {
+          this.connectionIssueStartedAt = now;
+        }
+
         this.connectionStatus = 'disconnected';
         this.render();
 
         // Server rejected before WS upgrade (e.g. invalid widget key → HTTP 400).
         // Code 1006 = abnormal closure (no close frame received — typical for HTTP rejection).
         const maxRetries = this.wsHasConnected ? MAX_WS_RETRIES : MAX_WS_INITIAL_RETRIES;
+        const reconnectWindowElapsed = this.wsHasConnected
+          && this.connectionIssueStartedAt !== null
+          && now - this.connectionIssueStartedAt >= MAX_AUTO_RECONNECT_WINDOW_MS;
+        const shouldSurfaceFailure = this.wsRetryCount >= maxRetries || reconnectWindowElapsed;
 
-        if (this.wsRetryCount >= maxRetries) {
+        if (shouldSurfaceFailure) {
           if (!this.wsHasConnected) {
             console.error(
               `Helpin widget: failed to connect after ${MAX_WS_INITIAL_RETRIES} attempts. ` +
-              'Please verify your widget key is correct and the server is reachable.'
+              'Continuing to retry in the background.'
             );
+          } else if (reconnectWindowElapsed) {
+            console.error('Helpin widget: reconnect window exceeded, continuing background retries');
           } else {
-            console.error(`Helpin widget: lost connection, gave up after ${MAX_WS_RETRIES} retries`);
+            console.error(`Helpin widget: lost connection after ${MAX_WS_RETRIES} retries, continuing background retries`);
           }
           this.connectionStatus = 'failed';
           this.render();
-          return;
         }
 
+        const delayCap = shouldSurfaceFailure ? MAX_BACKGROUND_RETRY_DELAY_MS : WS_MAX_DELAY_MS;
         const delay = Math.min(
           WS_BASE_DELAY_MS * Math.pow(2, this.wsRetryCount) + Math.random() * 1000,
-          WS_MAX_DELAY_MS
+          delayCap
         );
         this.wsRetryCount++;
 
+        if (this.wsRetryTimer) {
+          clearTimeout(this.wsRetryTimer);
+        }
         this.wsRetryTimer = setTimeout(() => {
           this.wsRetryTimer = null;
           this.connectWebSocket();
@@ -1529,7 +1555,12 @@ export class WidgetManager {
   }
 
   reconnectWebSocket(): void {
+    if (this.wsRetryTimer) {
+      clearTimeout(this.wsRetryTimer);
+      this.wsRetryTimer = null;
+    }
     this.wsRetryCount = 0;
+    this.connectionIssueStartedAt = null;
     this.connectionStatus = 'idle';
     this.disconnectWebSocket();
     this.connectWebSocket();

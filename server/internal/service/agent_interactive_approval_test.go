@@ -494,8 +494,8 @@ func TestResolveCodingSessionInteractionSignalsNativeCodexApprovalPayloadForStal
 	if got := string(temporalClient.resumeSignal.ResponsePayload); got != string(responsePayload) {
 		t.Fatalf("expected exact native response payload on resume signal, got %s", got)
 	}
-	if temporalClient.resumeSignal.Content != "" {
-		t.Fatalf("expected no follow-up content on straight approval, got %#v", temporalClient.resumeSignal)
+	if temporalClient.resumeSignal.Content != "approve" {
+		t.Fatalf("expected default approval content, got %#v", temporalClient.resumeSignal)
 	}
 }
 
@@ -582,14 +582,8 @@ func TestResolveCodingSessionInteractionReviewCheckpointResumesEvenWhenLiveCodex
 	if interaction == nil || interaction.Status != model.AgentRunInteractionStatusResolved {
 		t.Fatalf("expected resolved interaction, got %#v", interaction)
 	}
-	if temporalClient.signalName != temporalapp.WorkflowSignalResume {
-		t.Fatalf("expected resume workflow signal, got %q", temporalClient.signalName)
-	}
-	if temporalClient.resumeSignal.Intent != model.AgentRunResumeIntentApprove {
-		t.Fatalf("expected approve intent, got %#v", temporalClient.resumeSignal)
-	}
-	if got := string(temporalClient.resumeSignal.ResponsePayload); got != string(responsePayload) {
-		t.Fatalf("expected exact review checkpoint response payload on resume signal, got %s", got)
+	if temporalClient.signalName != "" {
+		t.Fatalf("expected live codex path to avoid a workflow resume signal, got %q", temporalClient.signalName)
 	}
 }
 
@@ -1642,7 +1636,7 @@ func TestSendRunMessageApprovalNormalizesApprovedStoryPlanPreviewContent(t *test
 	}
 
 	runPreviewContent := "{\n" +
-		"  \"panel_key\": \"story_plan\",\n" +
+		"  \"panel_key\": \"task_plan\",\n" +
 		"  \"title\": \"Story Plan\",\n" +
 		"  \"format\": \"json\",\n" +
 		"  \"content\": \"Here is the plan in the required format:\\n```json\\n{\\\"summary\\\":\\\"Breakdown\\\",\\\"proposed_stories\\\":[{\\\"ref\\\":\\\"story_1\\\",\\\"name\\\":\\\"Story A\\\",\\\"description\\\":\\\"Do A\\\",\\\"story_type\\\":\\\"feature\\\",\\\"acceptance_criteria\\\":[\\\"works\\\"]}]}\\n```\",\n" +

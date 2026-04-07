@@ -9,6 +9,7 @@ const EMOJI_CDN_BASE = 'https://cdn.jsdelivr.net/npm/emoji-datasource-apple@15.0
 
 interface EmojiPickerProps {
   onEmojiSelect: (emoji: string) => void;
+  disabled?: boolean;
 }
 
 const CATEGORY_ICONS: Record<string, string> = {
@@ -70,7 +71,7 @@ const EmojiOption: FunctionComponent<{
   );
 };
 
-export const EmojiPicker: FunctionComponent<EmojiPickerProps> = ({ onEmojiSelect }) => {
+export const EmojiPicker: FunctionComponent<EmojiPickerProps> = ({ onEmojiSelect, disabled = false }) => {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState('smileys');
@@ -124,11 +125,14 @@ export const EmojiPicker: FunctionComponent<EmojiPickerProps> = ({ onEmojiSelect
 
   const handleSelect = useCallback(
     (emoji: string) => {
+      if (disabled) {
+        return;
+      }
       onEmojiSelect(emoji);
       setOpen(false);
       setSearch('');
     },
-    [onEmojiSelect],
+    [disabled, onEmojiSelect],
   );
 
   const handleRetry = useCallback(() => {
@@ -142,7 +146,13 @@ export const EmojiPicker: FunctionComponent<EmojiPickerProps> = ({ onEmojiSelect
         type="button"
         className="helpin-compose-tool-btn helpin-emoji-trigger"
         aria-label="Open emoji picker"
-        onClick={() => setOpen(!open)}
+        onClick={() => {
+          if (disabled) {
+            return;
+          }
+          setOpen(!open);
+        }}
+        disabled={disabled}
       >
         <SmileIcon size={18} strokeWidth={1.75} />
       </button>
