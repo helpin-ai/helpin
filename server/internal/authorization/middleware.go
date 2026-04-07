@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/helpin-ai/helpin/server/internal/middleware"
+	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 // forbiddenResponse is the standard 403 response body.
@@ -147,6 +148,30 @@ func RequirePermission(authz *AuthzService, perm Permission) func(http.Handler) 
 			}
 			if !authz.Can(actor, perm) {
 				writeForbidden(w, "insufficient_permission", string(perm))
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// RequireModuleAccess checks whether the actor can enter the requested module.
+// Must be applied after RequireWorkspaceAccess.
+func RequireModuleAccess(authz *AuthzService, module model.ModuleID) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			actor := GetActor(r.Context())
+			if actor == nil {
+				http.Error(w, "authorization context missing", http.StatusInternalServerError)
+				return
+			}
+			allowed, err := authz.CanAccessModule(r.Context(), actor, module)
+			if err != nil {
+				http.Error(w, "failed to verify module access", http.StatusInternalServerError)
+				return
+			}
+			if !allowed {
+				writeForbidden(w, "module_access_denied", string(module))
 				return
 			}
 			next.ServeHTTP(w, r)

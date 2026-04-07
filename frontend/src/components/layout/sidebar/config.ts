@@ -72,7 +72,7 @@ export function buildRailItems(wsSlug: string, totalSupportUnread: number, agent
   ];
 }
 
-export function buildPanelNavGroups(wsSlug: string, canManageSettings: boolean): Record<RailId, NavGroup[]> {
+export function buildPanelNavGroups(wsSlug: string, canManageSettings: boolean, permissionSet?: Set<string>): Record<RailId, NavGroup[]> {
   return {
     projects: [
       {
@@ -125,7 +125,7 @@ export function buildPanelNavGroups(wsSlug: string, canManageSettings: boolean):
         ],
       },
     ],
-    settings: getSettingsSidebarGroups(canManageSettings).map((group) => ({
+    settings: getSettingsSidebarGroups(canManageSettings, permissionSet).map((group) => ({
       label: group.label,
       items: group.sections.map((section) => ({
         link: buildSettingsRoutePath(wsSlug, section.id),

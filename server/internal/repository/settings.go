@@ -396,6 +396,11 @@ func (r *SettingsRepository) GetTeamByID(ctx context.Context, id string) (*model
 	return team, nil
 }
 
+// GetWorkspaceMemberByID loads a workspace member by ID.
+func (r *SettingsRepository) GetWorkspaceMemberByID(ctx context.Context, id string) (*model.WorkspaceMember, error) {
+	return r.getWorkspaceMemberByIDTx(r.db.WithContext(ctx), id)
+}
+
 // GetTeamByHandle loads a team by workspace/handle.
 func (r *SettingsRepository) GetTeamByHandle(ctx context.Context, workspaceID, handle string) (*model.WorkspaceTeam, error) {
 	team := &model.WorkspaceTeam{}

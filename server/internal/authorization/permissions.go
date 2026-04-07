@@ -5,10 +5,10 @@ type Permission string
 
 // Workspace permissions.
 const (
-	PermWorkspaceRead         Permission = "workspace.read"
-	PermWorkspaceUpdate       Permission = "workspace.update"
-	PermWorkspaceDelete       Permission = "workspace.delete"
-	PermWorkspaceMembersRead  Permission = "workspace.members.read"
+	PermWorkspaceRead          Permission = "workspace.read"
+	PermWorkspaceUpdate        Permission = "workspace.update"
+	PermWorkspaceDelete        Permission = "workspace.delete"
+	PermWorkspaceMembersRead   Permission = "workspace.members.read"
 	PermWorkspaceMembersManage Permission = "workspace.members.manage"
 	PermWorkspaceInvitesManage Permission = "workspace.invites.manage"
 	PermWorkspaceRolesManage   Permission = "workspace.roles.manage"
@@ -18,6 +18,7 @@ const (
 const (
 	PermSettingsRead       Permission = "settings.read"
 	PermSettingsManage     Permission = "settings.manage"
+	PermModuleAccessManage Permission = "module_access.manage"
 	PermTeamRead           Permission = "team.read"
 	PermTeamManage         Permission = "team.manage"
 	PermTeamMembersRead    Permission = "team.members.read"
@@ -26,12 +27,12 @@ const (
 
 // PM permissions.
 const (
-	PermPMRead            Permission = "pm.read"
-	PermPMEdit            Permission = "pm.edit"
-	PermPMAdminWorkflows  Permission = "pm.admin.workflows"
-	PermPMAdminLabels     Permission = "pm.admin.labels"
+	PermPMRead             Permission = "pm.read"
+	PermPMEdit             Permission = "pm.edit"
+	PermPMAdminWorkflows   Permission = "pm.admin.workflows"
+	PermPMAdminLabels      Permission = "pm.admin.labels"
 	PermPMAdminAutomations Permission = "pm.admin.automations"
-	PermPMImport          Permission = "pm.import"
+	PermPMImport           Permission = "pm.import"
 )
 
 // Docs permissions.
@@ -75,7 +76,7 @@ func AllPermissions() []Permission {
 		PermWorkspaceRead, PermWorkspaceUpdate, PermWorkspaceDelete,
 		PermWorkspaceMembersRead, PermWorkspaceMembersManage,
 		PermWorkspaceInvitesManage, PermWorkspaceRolesManage,
-		PermSettingsRead, PermSettingsManage,
+		PermSettingsRead, PermSettingsManage, PermModuleAccessManage,
 		PermTeamRead, PermTeamManage, PermTeamMembersRead, PermTeamMembersManage,
 		PermPMRead, PermPMEdit,
 		PermPMAdminWorkflows, PermPMAdminLabels, PermPMAdminAutomations, PermPMImport,

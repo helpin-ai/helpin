@@ -4,18 +4,6 @@
  * Modules NOT listed are visible to everyone.
  */
 const GATED_MODULES: Record<string, string[]> = {
-  crm: [
-    'waqar@contentstudio.io',
-    'azhar@contentstudio.io',
-    'amad@usermaven.com',
-    'waqar.azeem1986@gmail.com',
-  ],
-  support: [
-    'waqar@contentstudio.io',
-    'azhar@contentstudio.io',
-    'amad@usermaven.com',
-    'waqar.azeem1986@gmail.com',
-  ],
   agents: [
     'waqar@contentstudio.io',
     'azhar@contentstudio.io',

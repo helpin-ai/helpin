@@ -16,6 +16,7 @@ import (
 // SettingsService handles workspace configuration business logic.
 type SettingsService struct {
 	settingsRepo      *repository.SettingsRepository
+	moduleGrantRepo   *repository.WorkspaceModuleGrantRepository
 	pmWorkflowService *PMWorkflowService
 	wsPublisher       *websocket.Publisher
 	logger            *slog.Logger
@@ -49,9 +50,10 @@ func isValidDefaultStoryType(value string) bool {
 }
 
 // NewSettingsService creates a new SettingsService.
-func NewSettingsService(settingsRepo *repository.SettingsRepository, pmWorkflowService *PMWorkflowService, wsPublisher *websocket.Publisher) *SettingsService {
+func NewSettingsService(settingsRepo *repository.SettingsRepository, moduleGrantRepo *repository.WorkspaceModuleGrantRepository, pmWorkflowService *PMWorkflowService, wsPublisher *websocket.Publisher) *SettingsService {
 	return &SettingsService{
 		settingsRepo:      settingsRepo,
+		moduleGrantRepo:   moduleGrantRepo,
 		pmWorkflowService: pmWorkflowService,
 		wsPublisher:       wsPublisher,
 		logger:            slog.Default().With("service", "settings"),
@@ -186,6 +188,20 @@ func (s *SettingsService) UpdateTeam(ctx context.Context, id string, req model.U
 
 // DeleteTeam removes a team.
 func (s *SettingsService) DeleteTeam(ctx context.Context, id string) error {
+	team, err := s.settingsRepo.GetTeamByID(ctx, id)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "failed to load team before delete", "error", err, "team_id", id)
+		return err
+	}
+	if team == nil {
+		return fmt.Errorf("team not found")
+	}
+	if s.moduleGrantRepo != nil {
+		if err := s.moduleGrantRepo.DeleteBySubject(ctx, team.WorkspaceID, model.ModuleGrantSubjectTeam, id); err != nil {
+			s.logger.ErrorContext(ctx, "failed to delete team module grants", "error", err, "team_id", id, "workspace_id", team.WorkspaceID)
+			return err
+		}
+	}
 	if err := s.settingsRepo.DeleteTeam(ctx, id); err != nil {
 		s.logger.ErrorContext(ctx, "failed to delete team", "error", err, "team_id", id)
 		return err
@@ -292,7 +308,101 @@ func (s *SettingsService) UpdatePerson(ctx context.Context, id string, req model
 
 // DeletePerson removes a person.
 func (s *SettingsService) DeletePerson(ctx context.Context, id string) error {
-	return s.settingsRepo.DeletePerson(ctx, id)
+	person, err := s.settingsRepo.GetWorkspaceMemberByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if person == nil {
+		return fmt.Errorf("person not found")
+	}
+	if s.moduleGrantRepo != nil {
+		if err := s.moduleGrantRepo.DeleteBySubject(ctx, person.WorkspaceID, model.ModuleGrantSubjectWorkspaceMember, id); err != nil {
+			return err
+		}
+	}
+	if err := s.settingsRepo.DeletePerson(ctx, id); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *SettingsService) ListModuleGrants(ctx context.Context, workspaceID string) ([]model.WorkspaceModuleGrant, error) {
+	if s.moduleGrantRepo == nil {
+		return []model.WorkspaceModuleGrant{}, nil
+	}
+	return s.moduleGrantRepo.ListByWorkspace(ctx, workspaceID)
+}
+
+func (s *SettingsService) UpsertModuleGrant(ctx context.Context, req model.CreateWorkspaceModuleGrantRequest, actorUserID string) (*model.WorkspaceModuleGrant, error) {
+	if s.moduleGrantRepo == nil {
+		return nil, fmt.Errorf("module grant repository unavailable")
+	}
+	if strings.TrimSpace(req.WorkspaceID) == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	if !model.IsManagedWorkspaceModule(req.Module) {
+		return nil, fmt.Errorf("invalid module")
+	}
+	if !model.IsValidModuleGrantSubjectType(req.SubjectType) {
+		return nil, fmt.Errorf("invalid subject_type")
+	}
+	if strings.TrimSpace(req.SubjectID) == "" {
+		return nil, fmt.Errorf("subject_id is required")
+	}
+
+	switch req.SubjectType {
+	case model.ModuleGrantSubjectTeam:
+		ok, err := s.moduleGrantRepo.TeamBelongsToWorkspace(ctx, req.WorkspaceID, req.SubjectID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, fmt.Errorf("team not found in workspace")
+		}
+	case model.ModuleGrantSubjectWorkspaceMember:
+		ok, err := s.moduleGrantRepo.WorkspaceMemberBelongsToWorkspace(ctx, req.WorkspaceID, req.SubjectID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, fmt.Errorf("workspace member not found in workspace")
+		}
+	default:
+		return nil, fmt.Errorf("invalid subject_type")
+	}
+
+	var createdByID *string
+	if strings.TrimSpace(actorUserID) != "" {
+		createdByID = &actorUserID
+	}
+
+	grant, err := s.moduleGrantRepo.Upsert(ctx, model.WorkspaceModuleGrant{
+		WorkspaceID: req.WorkspaceID,
+		Module:      req.Module,
+		SubjectType: req.SubjectType,
+		SubjectID:   req.SubjectID,
+		AccessLevel: model.ModuleGrantAccessLevelMember,
+		CreatedByID: createdByID,
+	})
+	if err != nil {
+		s.logger.ErrorContext(ctx, "failed to upsert module grant", "error", err, "workspace_id", req.WorkspaceID, "module", req.Module, "subject_type", req.SubjectType, "subject_id", req.SubjectID)
+		return nil, err
+	}
+	return grant, nil
+}
+
+func (s *SettingsService) DeleteModuleGrant(ctx context.Context, workspaceID, grantID string) error {
+	if s.moduleGrantRepo == nil {
+		return fmt.Errorf("module grant repository unavailable")
+	}
+	if strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(grantID) == "" {
+		return fmt.Errorf("workspace_id and grant id are required")
+	}
+	if err := s.moduleGrantRepo.Delete(ctx, workspaceID, grantID); err != nil {
+		s.logger.ErrorContext(ctx, "failed to delete module grant", "error", err, "workspace_id", workspaceID, "grant_id", grantID)
+		return err
+	}
+	return nil
 }
 
 // UpdateJobRoleCriteria replaces criteria for a job role.

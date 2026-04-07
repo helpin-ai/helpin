@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { settingsService } from '@/lib/services/settingsService'
 import { queryKeys } from '@/lib/queryKeys'
 import { unwrap } from '@/lib/queryUtils'
-import type { AutomationInventoryResponse, TeamEstimateSettings, TeamFieldVisibility } from '@/lib/types'
+import type { AutomationInventoryResponse, TeamEstimateSettings, TeamFieldVisibility, WorkspaceModuleAccessSettings } from '@/lib/types'
 
 export function useWorkspaceSettings(wsId: string) {
   return useQuery({
@@ -19,6 +19,15 @@ export function useAIAutomations(wsId: string) {
     queryFn: async () => unwrap(await settingsService.getAIAutomations(wsId)),
     enabled: !!wsId,
     staleTime: 60_000,
+  })
+}
+
+export function useWorkspaceModuleAccess(wsId: string) {
+  return useQuery<WorkspaceModuleAccessSettings>({
+    queryKey: queryKeys.workspaces.moduleAccess(wsId),
+    queryFn: async () => unwrap(await settingsService.getModuleAccess(wsId)),
+    enabled: !!wsId,
+    staleTime: 30_000,
   })
 }
 
@@ -90,4 +99,27 @@ export function useUpdateTeamFieldVisibility(wsId: string) {
 export function useInvalidateSettings(wsId: string) {
   const qc = useQueryClient()
   return () => qc.invalidateQueries({ queryKey: queryKeys.workspaces.settings(wsId) })
+}
+
+export function useCreateModuleGrant(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: { module: 'crm' | 'support'; subject_type: 'team' | 'workspace_member'; subject_id: string }) =>
+      unwrap(await settingsService.createModuleGrant(wsId, input)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.workspaces.moduleAccess(wsId) })
+      qc.invalidateQueries({ queryKey: queryKeys.workspaces.access(wsId) })
+    },
+  })
+}
+
+export function useDeleteModuleGrant(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (grantId: string) => unwrap(await settingsService.deleteModuleGrant(wsId, grantId)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.workspaces.moduleAccess(wsId) })
+      qc.invalidateQueries({ queryKey: queryKeys.workspaces.access(wsId) })
+    },
+  })
 }
