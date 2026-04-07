@@ -12,9 +12,6 @@ import {
   type TeamMemberAvatarBackgroundMode,
   type TeamMemberAvatarStyle,
   createTeamMemberAvatarSeed,
-  normalizeTeamMemberAvatarBackgroundMode,
-  normalizeTeamMemberAvatarBackgroundColor,
-  normalizeTeamMemberAvatarStyle,
   resolveTeamMemberAvatarSrc,
 } from '@/lib/teamMemberAvatar';
 import { cn, getInitials } from '@/lib/utils';
