@@ -990,7 +990,7 @@ function Dashboard() {
                     </Select>
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-sm">Max Follow-ups</Label>
+                    <Label className="text-sm">Handoff After AI Gets Stuck</Label>
                     <Select value={String(aiMaxFollowups)} onValueChange={(v) => setAiMaxFollowups(Number(v))}>
                       <SelectTrigger>
                         <SelectValue />
@@ -1001,6 +1001,9 @@ function Dashboard() {
                         ))}
                       </SelectContent>
                     </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Counts repeated, low-progress AI attempts on the same issue. Productive troubleshooting steps do not count toward the limit.
+                    </p>
                   </div>
                 </div>
 

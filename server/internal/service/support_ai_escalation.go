@@ -19,6 +19,7 @@ const (
 	escalationReasonFrustration        = "frustration_detected"
 	escalationReasonConsecutiveLowConf = "consecutive_low_confidence"
 	escalationReasonDecliningSatisfy   = "declining_satisfaction"
+	escalationReasonSameIssueStalled   = "same_issue_stalled_limit_reached"
 
 	// Repetition detection: Jaccard bigram similarity threshold.
 	repetitionJaccardThreshold = 0.55
@@ -73,6 +74,17 @@ func evaluatePreLLMEscalation(
 		return signal
 	}
 	return nil
+}
+
+type supportIssueHistoryStats struct {
+	IssueKey            string
+	AIReplyCount        int
+	StalledAttemptCount int
+	ClarifyCount        int
+	LowConfidenceCount  int
+	LastReplyKind       string
+	LastConfidence      float64
+	LastProgressState   string
 }
 
 // ---------------------------------------------------------------------------
@@ -163,6 +175,39 @@ func countMaxFollowupAITurns(history []model.SupportMessage, agentID string) int
 	return count
 }
 
+func collectSupportIssueHistoryStats(history []model.SupportMessage, agentID, issueKey string, confidenceThreshold float64) supportIssueHistoryStats {
+	stats := supportIssueHistoryStats{IssueKey: strings.TrimSpace(issueKey)}
+	if stats.IssueKey == "" {
+		return stats
+	}
+
+	for _, msg := range history {
+		if !isAIReplyFromAgent(msg, agentID) {
+			continue
+		}
+		meta, ok := parseAIMessageMetadata(msg)
+		if !ok || strings.TrimSpace(meta.AIIssueKey) != stats.IssueKey {
+			continue
+		}
+		stats.AIReplyCount++
+		stats.LastReplyKind = inferAIReplyKind(msg)
+		stats.LastConfidence = meta.AIConfidence
+		stats.LastProgressState = strings.TrimSpace(meta.AIProgressState)
+		if stats.LastReplyKind == supportReplyKindClarify {
+			stats.ClarifyCount++
+		}
+		if meta.AIConfidence > 0 && meta.AIConfidence < confidenceThreshold {
+			stats.LowConfidenceCount++
+		}
+		switch strings.TrimSpace(meta.AIProgressState) {
+		case supportStateStalled:
+			stats.StalledAttemptCount++
+		}
+	}
+
+	return stats
+}
+
 func isAIReplyFromAgent(msg model.SupportMessage, agentID string) bool {
 	if msg.SenderType != "ai" {
 		return false
@@ -174,6 +219,93 @@ func isAIReplyFromAgent(msg model.SupportMessage, agentID string) bool {
 		return false
 	}
 	return strings.TrimSpace(*msg.SenderAgentID) == agentID
+}
+
+func parseAIMessageMetadata(msg model.SupportMessage) (AIMessageMetadata, bool) {
+	if strings.TrimSpace(msg.Metadata) == "" {
+		return AIMessageMetadata{}, false
+	}
+	var meta AIMessageMetadata
+	if err := json.Unmarshal([]byte(msg.Metadata), &meta); err != nil {
+		return AIMessageMetadata{}, false
+	}
+	if !meta.AIAutoReply {
+		return AIMessageMetadata{}, false
+	}
+	return meta, true
+}
+
+func detectStuckOnSameIssue(
+	currentPlan SupportQueryPlanContract,
+	currentMessage model.SupportMessage,
+	stats supportIssueHistoryStats,
+	confidenceThreshold float64,
+	maxStalledAttempts int,
+) *EscalationSignal {
+	if maxStalledAttempts <= 0 || stats.IssueKey == "" || stats.AIReplyCount == 0 {
+		return nil
+	}
+	if currentPlan.ProgressSignal == supportProgressNewIssue || currentPlan.ProgressSignal == supportProgressSameNewInfo {
+		return nil
+	}
+
+	stalled := false
+	switch {
+	case currentPlan.Decision == supportDecisionClarify && stats.ClarifyCount > 0:
+		stalled = true
+	case currentPlan.ProgressSignal == supportProgressSameRepeat:
+		stalled = true
+	case currentPlan.ProgressSignal == supportProgressSameUnclear && stats.LastReplyKind == supportReplyKindClarify:
+		stalled = true
+	case stats.LastReplyKind == supportReplyKindAnswer && stats.LastConfidence > 0 && stats.LastConfidence < confidenceThreshold:
+		stalled = true
+	case stats.LowConfidenceCount > 0 && currentPlan.ProgressSignal != supportProgressSameNewInfo:
+		stalled = true
+	case isSameIssueDissatisfaction(currentMessage.Content):
+		stalled = true
+	}
+	if !stalled {
+		return nil
+	}
+
+	if stats.StalledAttemptCount+1 < maxStalledAttempts {
+		return nil
+	}
+	return &EscalationSignal{
+		Reason: escalationReasonSameIssueStalled,
+		Score:  float64(stats.StalledAttemptCount + 1),
+	}
+}
+
+func determineAIProgressState(
+	currentPlan SupportQueryPlanContract,
+	replyKind string,
+	confidence float64,
+	confidenceThreshold float64,
+	stats supportIssueHistoryStats,
+) string {
+	switch currentPlan.ProgressSignal {
+	case supportProgressNewIssue, supportProgressSameNewInfo:
+		return supportStateProgressing
+	}
+
+	switch replyKind {
+	case supportReplyKindClarify:
+		if stats.ClarifyCount > 0 || currentPlan.ProgressSignal == supportProgressSameRepeat {
+			return supportStateStalled
+		}
+		return supportStateProgressing
+	case supportReplyKindAnswer:
+		if confidence > 0 && confidence < confidenceThreshold {
+			return supportStateStalled
+		}
+		if currentPlan.ProgressSignal == supportProgressSameRepeat {
+			return supportStateStalled
+		}
+		return supportStateProgressing
+	default:
+		return supportStateProgressing
+	}
 }
 
 func inferAIReplyKind(msg model.SupportMessage) string {
@@ -450,12 +582,8 @@ func parseAIConfidence(metadata string) (float64, bool) {
 	if strings.TrimSpace(metadata) == "" {
 		return 0, false
 	}
-	var meta AIMessageMetadata
-	if err := json.Unmarshal([]byte(metadata), &meta); err != nil {
-		return 0, false
-	}
-	// Only trust metadata from actual AI auto-replies.
-	if !meta.AIAutoReply {
+	meta, ok := parseAIMessageMetadata(model.SupportMessage{Metadata: metadata})
+	if !ok {
 		return 0, false
 	}
 	return meta.AIConfidence, true
@@ -542,6 +670,28 @@ func isConfirmationMessage(content string) bool {
 		"that's what i needed", "all good", "helpful",
 	}
 	for _, pattern := range confirmPatterns {
+		if strings.Contains(lower, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+func isSameIssueDissatisfaction(content string) bool {
+	lower := strings.ToLower(strings.TrimSpace(content))
+	if lower == "" {
+		return false
+	}
+	patterns := []string{
+		"still not working",
+		"that did not help",
+		"that didn't help",
+		"same issue",
+		"you already said that",
+		"you already asked that",
+		"this is the same problem",
+	}
+	for _, pattern := range patterns {
 		if strings.Contains(lower, pattern) {
 			return true
 		}
