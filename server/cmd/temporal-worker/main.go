@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/hex"
+	"fmt"
 	"log"
 	"log/slog"
 	"os"
@@ -103,6 +104,7 @@ func main() {
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
 	interactionRepo := repository.NewAgentRunInteractionRepository(db)
 	sessionSnapshotRepo := repository.NewCodingSessionStateSnapshotRepository(db)
+	codexWorkspaceAuthRepo := repository.NewCodexWorkspaceAuthRepository(db)
 	storyRepo := repository.NewPMTaskRepository(db)
 	taskLinkRepo := repository.NewPMTaskLinkRepository(db)
 	epicRepo := repository.NewPMEpicRepository(db)
@@ -169,6 +171,10 @@ func main() {
 		}
 	}
 	gmailSyncClient := syncpkg.NewGmailSyncClient(gmailOAuth, crmEmailRepo, encryptionKey)
+	codexWorkspaceAuthStore := workerpkg.NewCodexWorkspaceAuthStore(codexWorkspaceAuthRepo, resolveCodexAuthEncryptionKey(cfg))
+	if strings.TrimSpace(cfg.CodexOpenAIAuthMode) == "chatgpt_device_code" && codexWorkspaceAuthStore == nil {
+		slog.Warn("Codex workspace auth persistence disabled; set CODEX_AUTH_ENCRYPTION_KEY or a valid CRM_ENCRYPTION_KEY for durable device-code auth")
+	}
 
 	runtimes := workerpkg.NewDefaultRuntimeRegistry(
 		cfg.OpenCodePath,
@@ -194,6 +200,7 @@ func main() {
 		cfg.BraveSearchAPIKey,
 		runRepo,
 		artifactRepo,
+		codexWorkspaceAuthStore,
 	)
 	githubAppClient, err := githubapp.NewClient(cfg.GitHubAppID, cfg.GitHubAppPrivateKey)
 	if err != nil {
@@ -678,4 +685,36 @@ func fatalMessageWithSentry(message string) {
 	log.Print(message)
 	observability.Flush(2 * time.Second)
 	os.Exit(1)
+}
+
+func resolveCodexAuthEncryptionKey(cfg *config.Config) []byte {
+	if cfg == nil {
+		return nil
+	}
+	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.CodexAuthEncryptionKey)); err != nil {
+		slog.Warn("invalid CODEX_AUTH_ENCRYPTION_KEY (must be a 32-byte hex-encoded AES key)", "error", err)
+	} else if len(key) == 32 {
+		return key
+	}
+	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.CRMEncryptionKey)); err != nil {
+		slog.Warn("invalid CRM_ENCRYPTION_KEY for Codex workspace auth fallback (must be a 32-byte hex-encoded AES key)", "error", err)
+	} else if len(key) == 32 {
+		return key
+	}
+	return nil
+}
+
+func decodeOptionalAES256HexKey(value string) ([]byte, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil, nil
+	}
+	key, err := hex.DecodeString(trimmed)
+	if err != nil {
+		return nil, err
+	}
+	if len(key) != 32 {
+		return nil, fmt.Errorf("expected 32 bytes after hex decode, got %d", len(key))
+	}
+	return key, nil
 }

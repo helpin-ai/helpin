@@ -201,7 +201,7 @@ func (h *codexSessionHost) prepareSession(existing *codexSessionState) (*codexPr
 	if err := os.WriteFile(filepath.Join(codexHome, "config.toml"), []byte(configContent), 0o600); err != nil {
 		return nil, fmt.Errorf("write codex config.toml: %w", err)
 	}
-	if err := codexRestoreWorkspaceAuth(h.run.WorkspaceID, profile.Provider, profile.AuthMode, codexHome); err != nil {
+	if err := h.executor.restoreWorkspaceAuth(h.execCtx.Context, h.run.WorkspaceID, profile.Provider, profile.AuthMode, codexHome); err != nil {
 		return nil, err
 	}
 
@@ -791,10 +791,10 @@ func (h *codexSessionHost) clearSessionState(ctx context.Context, state *codexSe
 }
 
 func (h *codexSessionHost) persistWorkspaceAuth(ctx context.Context, state *codexSessionState) {
-	if h == nil || h.run == nil || state == nil {
+	if h == nil || h.run == nil || state == nil || h.executor == nil {
 		return
 	}
-	if err := codexPromoteWorkspaceAuth(h.run.WorkspaceID, state.Provider, state.AuthMode, state.CodexHome); err != nil {
+	if err := h.executor.persistWorkspaceAuth(ctx, h.run.WorkspaceID, state.Provider, state.AuthMode, state.CodexHome); err != nil {
 		slog.WarnContext(ctx, "failed to persist workspace codex auth",
 			"error", err,
 			"workspace_id", h.run.WorkspaceID,

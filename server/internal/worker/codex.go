@@ -95,6 +95,7 @@ type CodexExecutor struct {
 	openRouterURL    string
 	runRepo          *repository.AgentRunRepository
 	artifactRepo     *repository.AgentRunArtifactRepository
+	workspaceAuth    *CodexWorkspaceAuthStore
 }
 
 func NewCodexExecutor(
@@ -102,6 +103,7 @@ func NewCodexExecutor(
 	config CodexRuntimeConfig,
 	runRepo *repository.AgentRunRepository,
 	artifactRepo *repository.AgentRunArtifactRepository,
+	workspaceAuth *CodexWorkspaceAuthStore,
 ) *CodexExecutor {
 	commandPath := strings.TrimSpace(config.Path)
 	if strings.TrimSpace(commandPath) == "" {
@@ -122,11 +124,26 @@ func NewCodexExecutor(
 		openRouterURL:    strings.TrimSpace(config.OpenRouterBaseURL),
 		runRepo:          runRepo,
 		artifactRepo:     artifactRepo,
+		workspaceAuth:    workspaceAuth,
 	}
 }
 
 func (e *CodexExecutor) Kind() string {
 	return e.kind
+}
+
+func (e *CodexExecutor) restoreWorkspaceAuth(ctx context.Context, workspaceID, provider, authMode, codexHome string) error {
+	if e == nil || e.workspaceAuth == nil {
+		return nil
+	}
+	return e.workspaceAuth.Restore(ctx, workspaceID, provider, authMode, codexHome)
+}
+
+func (e *CodexExecutor) persistWorkspaceAuth(ctx context.Context, workspaceID, provider, authMode, codexHome string) error {
+	if e == nil || e.workspaceAuth == nil {
+		return nil
+	}
+	return e.workspaceAuth.Promote(ctx, workspaceID, provider, authMode, codexHome)
 }
 
 func (e *CodexExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) error {

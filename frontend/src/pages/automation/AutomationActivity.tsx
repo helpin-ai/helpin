@@ -1,21 +1,41 @@
-import { useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Clock01Icon } from '@/lib/icons';
+import {
+  BotIcon,
+  Clock01Icon,
+  Loading01Icon,
+  PauseIcon,
+} from '@/lib/icons';
+import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { AutomationShell } from '@/components/automation/AutomationShell';
-import { AutomationOverviewPanel } from '@/components/automation/AutomationOverviewPanel';
+import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
+import { ACTIVE_RUN_STATUSES } from '@/components/pm/agentRunConstants';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { LINEAR_CARD_CLASS } from '@/components/settings/settingsConstants';
+import { useAgents, useAutomationActivity, useAutomationOverview } from '@/hooks/queries';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useTitle } from '@/hooks/useTitle';
 import { automationService } from '@/lib/services/automationService';
 import { queryKeys } from '@/lib/queryKeys';
 import { unwrap } from '@/lib/queryUtils';
 import type { Agent, AgentRun } from '@/lib/pmTypes';
-import { buildAutomationActivityPath, buildAutomationFlowsPath, buildAutomationRunsPath } from '@/lib/automationUi';
+import type {
+  AutomationTriggerExecutionFilters,
+  AutomationTriggerExecutionListItem,
+  AutomationInventoryItem,
+} from '@/lib/types';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 
-type AutomationActivitySearch = {
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export type AutomationActivitySearch = {
   page: number;
   agent_id?: string;
   binding_id?: string;
@@ -27,45 +47,395 @@ type AutomationActivitySearch = {
   fired_before?: string;
 };
 
-function relativeTime(value?: string) {
-  if (!value) return 'Unknown';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Unknown';
-  const diff = Date.now() - date.getTime();
-  if (diff < 60_000) return 'just now';
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
-  return `${Math.floor(diff / 86_400_000)}d ago`;
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const EXECUTIONS_PER_PAGE = 25;
+
+function relativeTime(isoString?: string): string {
+  if (!isoString) return '';
+  const diff = Date.now() - new Date(isoString).getTime();
+  if (Number.isNaN(diff) || diff < 0) return '';
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return 'Yesterday';
+  return `${days}d ago`;
 }
 
-function RunPreviewRow({ run, agent }: { run: AgentRun; agent?: Agent }) {
-  const statusTone = run.status === 'failed'
-    ? 'destructive'
-    : run.status === 'completed'
-      ? 'outline'
-      : 'secondary';
+function formatShortDate(isoString?: string): string {
+  if (!isoString) return '\u2014';
+  const d = new Date(isoString);
+  if (Number.isNaN(d.getTime())) return '\u2014';
+  return d.toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+}
+
+function formatDuration(startIso?: string, endIso?: string): string {
+  if (!startIso || !endIso) return '\u2014';
+  const ms = new Date(endIso).getTime() - new Date(startIso).getTime();
+  if (Number.isNaN(ms) || ms < 0) return '\u2014';
+  const totalSecs = Math.floor(ms / 1000);
+  if (totalSecs < 60) return `${totalSecs}s`;
+  const mins = Math.floor(totalSecs / 60);
+  const secs = totalSecs % 60;
+  if (mins < 60) return `${mins}m ${secs.toString().padStart(2, '0')}s`;
+  const hours = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  return `${hours}h ${remMins.toString().padStart(2, '0')}m`;
+}
+
+function truncateMiddle(value?: string, start = 8, end = 6): string {
+  if (!value) return '';
+  if (value.length <= start + end + 3) return value;
+  return `${value.slice(0, start)}\u2026${value.slice(-end)}`;
+}
+
+function trimFilterValue(value?: string) {
+  const trimmed = value?.trim();
+  return trimmed || undefined;
+}
+
+function formatBindingKind(kind: string): string {
+  switch (kind) {
+    case 'manual': return 'Manual';
+    case 'automation_rule': return 'Automation rule';
+    case 'schedule': return 'Scheduled';
+    case 'support_widget': return 'Support';
+    case 'task_assignment': return 'Assignment';
+    default: return kind.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+}
+
+function buildTriggerLabel(item: AutomationTriggerExecutionListItem): string {
+  const kind = formatBindingKind(item.binding_kind);
+  const name = item.trigger_title || item.binding_title || item.trigger_type || '';
+  if (!name) return kind;
+  if (kind === 'Manual') return `Manual ${name}`;
+  return `${kind} \u00b7 ${name}`;
+}
+
+// ---------------------------------------------------------------------------
+// Status bar
+// ---------------------------------------------------------------------------
+
+function StatusBar({ items }: { items: AutomationInventoryItem[] }) {
+  const errorCount = items.filter((i) => i.health.status === 'error').length;
+  const warningCount = items.filter((i) => i.health.status === 'warning').length;
+
+  if (errorCount === 0 && warningCount === 0) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <span className="h-2 w-2 rounded-full bg-emerald-500" />
+        All {items.length} automations operational
+      </div>
+    );
+  }
 
   return (
-    <div className="flex flex-wrap items-start justify-between gap-3 rounded-md border border-border/60 bg-card/70 px-4 py-3">
-      <div className="space-y-1">
-        <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center gap-3 text-sm">
+      {errorCount > 0 && (
+        <span className="flex items-center gap-1.5 text-rose-700 dark:text-rose-400">
+          <span className="h-2 w-2 rounded-full bg-rose-500" />
+          {errorCount} error{errorCount !== 1 ? 's' : ''}
+        </span>
+      )}
+      {warningCount > 0 && (
+        <span className="flex items-center gap-1.5 text-amber-700 dark:text-amber-400">
+          <span className="h-2 w-2 rounded-full bg-amber-500" />
+          {warningCount} warning{warningCount !== 1 ? 's' : ''}
+        </span>
+      )}
+      <span className="text-muted-foreground">
+        &middot; {items.length - errorCount - warningCount} healthy
+      </span>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Active run card
+// ---------------------------------------------------------------------------
+
+const PAUSE_LABELS: Record<string, string> = {
+  human_approval: 'Paused \u00b7 awaiting approval',
+  human_input: 'Paused \u00b7 awaiting input',
+  authentication: 'Paused \u00b7 awaiting sign-in',
+};
+
+function ActiveRunCard({
+  run,
+  agent,
+  onOpenRun,
+}: {
+  run: AgentRun;
+  agent?: Agent;
+  onOpenRun: (runId: string) => void;
+}) {
+  const pauseLabel =
+    run.status === 'paused'
+      ? PAUSE_LABELS[run.pause_reason] ?? 'Paused'
+      : run.status === 'running'
+        ? 'Running'
+        : run.status === 'queued'
+          ? 'Queued'
+          : run.status;
+
+  const isRunning = run.status === 'running';
+  const isPaused = run.status === 'paused';
+
+  const elapsed = run.created_at
+    ? formatDuration(run.created_at, new Date().toISOString())
+    : '\u2014';
+
+  return (
+    <button
+      type="button"
+      className="w-full rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-left transition-colors hover:bg-amber-500/10 dark:bg-amber-900/10 dark:hover:bg-amber-900/20"
+      onClick={() => onOpenRun(run.id)}
+    >
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+        <Badge
+          variant="outline"
+          className="gap-1.5 border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+        >
+          {isPaused ? (
+            <PauseIcon className="h-3 w-3" />
+          ) : isRunning ? (
+            <Loading01Icon className="h-3 w-3 animate-spin" />
+          ) : (
+            <Clock01Icon className="h-3 w-3" />
+          )}
+          {pauseLabel}
+        </Badge>
+
+        <div className="space-y-0.5">
+          <p className="text-[11px] text-muted-foreground">Agent</p>
           <p className="text-sm font-medium">{agent?.name ?? 'Agent'}</p>
-          <Badge variant={statusTone} className="text-[10px] capitalize">{run.status}</Badge>
-          <Badge variant="outline" className="text-[10px]">{run.invocation_mode}</Badge>
         </div>
-        <p className="text-xs text-muted-foreground">
-          {run.target_type}{run.execution_stage ? ` · ${run.execution_stage}` : ''}
+
+        <div className="space-y-0.5">
+          <p className="text-[11px] text-muted-foreground">Trigger</p>
+          <p className="text-sm">{(run.input?.trigger as string) || 'Manual'}</p>
+        </div>
+
+        <div className="space-y-0.5">
+          <p className="text-[11px] text-muted-foreground">Target</p>
+          <p className="text-sm font-mono">{run.target_id ? truncateMiddle(run.target_id, 8, 4) : '\u2014'}</p>
+        </div>
+
+        <div className="space-y-0.5">
+          <p className="text-[11px] text-muted-foreground">Duration</p>
+          <p className="text-sm font-medium">{elapsed}</p>
+        </div>
+
+        <p className="ml-auto text-xs text-muted-foreground">
+          {formatShortDate(run.created_at)}
         </p>
       </div>
-      <div className="space-y-1 text-right">
-        <p className="text-sm">{relativeTime(run.created_at)}</p>
-        <p className="text-xs text-muted-foreground">
-          {run.tokens_used > 0 ? `${(run.tokens_used / 1000).toFixed(1)}k tokens` : 'No tokens yet'}
-        </p>
+    </button>
+  );
+}
+
+function ActiveRunLabels() {
+  return (
+    <div className="flex items-center gap-x-6 gap-y-2 px-4 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+      <span className="shrink-0">Status</span>
+      <span className="min-w-[120px]">Agent</span>
+      <span className="min-w-[120px]">Trigger</span>
+      <span className="min-w-[120px]">Target</span>
+      <span className="min-w-[90px]">Duration</span>
+      <span className="ml-auto shrink-0">Started</span>
+    </div>
+  );
+}
+
+function HeaderFilterSelect({
+  value,
+  onValueChange,
+  placeholder,
+  children,
+  className,
+}: {
+  value: string;
+  onValueChange: (value: string) => void;
+  placeholder: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <Select value={value} onValueChange={onValueChange}>
+      <SelectTrigger className={`h-7 text-[11px] font-normal normal-case tracking-normal ${className ?? ''}`}>
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent>
+        {children}
+      </SelectContent>
+    </Select>
+  );
+}
+
+const STATUS_VARIANT: Record<string, string> = {
+  completed: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
+  failed: 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400',
+  running: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400',
+  paused: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400',
+  queued: '',
+  cancelled: '',
+  skipped: '',
+};
+
+function ExecutionRow({
+  item,
+  agent,
+  onOpenRun,
+}: {
+  item: AutomationTriggerExecutionListItem;
+  agent?: Agent;
+  onOpenRun: (runId: string) => void;
+}) {
+  const duration = formatDuration(item.started_at, item.completed_at);
+  const triggerLabel = buildTriggerLabel(item);
+  const rel = relativeTime(item.fired_at);
+  const canOpenRun = Boolean(item.run_id);
+
+  return (
+    <div className={`rounded-lg border bg-card transition-colors ${item.status === 'failed' ? 'border-rose-500/20' : 'border-border'}`}>
+      <div className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-muted">
+        <div className={EXECUTION_COLUMNS.fired}>
+          <p className="text-sm">{formatShortDate(item.fired_at)}</p>
+          {rel && <p className="text-[11px] text-muted-foreground">{rel}</p>}
+        </div>
+
+        <div className={EXECUTION_COLUMNS.status}>
+          {item.error_message ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge variant="outline" className={`cursor-help capitalize ${STATUS_VARIANT[item.status] ?? ''}`}>
+                  {item.status}
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent side="top" align="start" className="max-w-[360px] whitespace-pre-wrap break-words px-3 py-2 text-xs leading-relaxed">
+                {item.error_message}
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <Badge variant="outline" className={`capitalize ${STATUS_VARIANT[item.status] ?? ''}`}>
+              {item.status}
+            </Badge>
+          )}
+        </div>
+
+        <div className={EXECUTION_COLUMNS.trigger}>
+          <p className="truncate text-sm font-medium">{triggerLabel}</p>
+          <p className="truncate text-[11px] text-muted-foreground">
+            {formatBindingKind(item.binding_kind)}
+          </p>
+        </div>
+
+        <div className={EXECUTION_COLUMNS.agent}>
+          {canOpenRun ? (
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-accent"
+              onClick={(event) => {
+                event.stopPropagation();
+                onOpenRun(item.run_id!);
+              }}
+            >
+              {agent?.is_system ? (
+                <AgentAvatar agent={agent} className="h-6 w-6 rounded-xl border-border/60" />
+              ) : (
+                <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-muted/40 text-muted-foreground">
+                  <BotIcon className="h-3.5 w-3.5" />
+                </span>
+              )}
+              <span className="min-w-0">
+                <span className="block truncate text-sm">{item.agent_name}</span>
+                <span className="block truncate font-mono text-[11px] text-muted-foreground" title={item.agent_id}>
+                  {truncateMiddle(item.agent_id, 8, 6)}
+                </span>
+              </span>
+            </button>
+          ) : (
+            <div className="flex items-center gap-2 px-1.5 py-1">
+              {agent?.is_system ? (
+                <AgentAvatar agent={agent} className="h-6 w-6 rounded-xl border-border/60" />
+              ) : (
+                <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-muted/40 text-muted-foreground">
+                  <BotIcon className="h-3.5 w-3.5" />
+                </span>
+              )}
+              <span className="min-w-0">
+                <span className="block truncate text-sm">{item.agent_name}</span>
+                <span className="block truncate font-mono text-[11px] text-muted-foreground" title={item.agent_id}>
+                  {truncateMiddle(item.agent_id, 8, 6)}
+                </span>
+              </span>
+            </div>
+          )}
+        </div>
+
+        <p className={`${EXECUTION_COLUMNS.duration} text-sm text-muted-foreground`}>{duration}</p>
       </div>
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Filters
+// ---------------------------------------------------------------------------
+
+const SOURCE_OPTIONS = [
+  { value: '__all__', label: 'All triggers' },
+  { value: 'manual', label: 'Manual' },
+  { value: 'automation_rule', label: 'Automation rule' },
+  { value: 'schedule', label: 'Schedule' },
+  { value: 'support_widget', label: 'Support widget' },
+  { value: 'task_assignment', label: 'Task assignment' },
+];
+
+const STATUS_OPTIONS = [
+  { value: '__all__', label: 'All statuses' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'failed', label: 'Failed' },
+  { value: 'running', label: 'Running' },
+  { value: 'paused', label: 'Paused' },
+  { value: 'queued', label: 'Queued' },
+  { value: 'cancelled', label: 'Cancelled' },
+  { value: 'skipped', label: 'Skipped' },
+];
+
+const TIME_OPTIONS = [
+  { value: '__all__', label: 'All time' },
+  { value: '1d', label: 'Last 24 hours' },
+  { value: '7d', label: 'Last 7 days' },
+  { value: '30d', label: 'Last 30 days' },
+];
+
+const EXECUTION_COLUMNS = {
+  fired: 'min-w-[140px] shrink-0',
+  status: 'w-[120px] shrink-0',
+  trigger: 'min-w-[220px] flex-1',
+  agent: 'w-[190px] shrink-0',
+  duration: 'w-[88px] shrink-0',
+} as const;
+
+function getTimeFilterDate(value: string): string | undefined {
+  if (value === '__all__') return undefined;
+  const days = Number.parseInt(value, 10);
+  if (Number.isNaN(days)) return undefined;
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d.toISOString().split('T')[0];
+}
+
+// ---------------------------------------------------------------------------
+// Main page
+// ---------------------------------------------------------------------------
 
 export function AutomationActivityPage({
   search,
@@ -77,29 +447,112 @@ export function AutomationActivityPage({
   useTitle('Automation Activity');
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const workspaceId = workspace?.id ?? '';
-  const workspaceSlug = workspace?.slug;
   const { data: access } = useWorkspaceAccess(workspaceId);
   const permissions = usePermissions(access);
+
+  // Drawer state
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  const openRun = useCallback((runId: string) => {
+    setSelectedRunId(runId);
+    setDrawerOpen(true);
+  }, []);
+
+  // Time filter state (maps to fired_after)
+  const [timeFilter, setTimeFilter] = useState('__all__');
+
+  const handleTimeFilter = useCallback(
+    (value: string) => {
+      setTimeFilter(value);
+      onSearchChange({ fired_after: getTimeFilterDate(value), fired_before: undefined, page: 1 });
+    },
+    [onSearchChange],
+  );
+
+  // Data queries
+  const { data: agents = [] } = useAgents(workspaceId);
+  const overviewQuery = useAutomationOverview(workspaceId, true);
+
+  const executionFilters = useMemo<AutomationTriggerExecutionFilters>(
+    () => ({
+      page: search.page,
+      per_page: EXECUTIONS_PER_PAGE,
+      agent_id: trimFilterValue(search.agent_id),
+      binding_id: trimFilterValue(search.binding_id),
+      trigger_type: trimFilterValue(search.trigger_type),
+      status: trimFilterValue(search.status),
+      source: trimFilterValue(search.source),
+      reference_id: trimFilterValue(search.reference_id),
+      fired_after: trimFilterValue(search.fired_after),
+      fired_before: trimFilterValue(search.fired_before),
+    }),
+    [search],
+  );
+
+  const executionsQuery = useAutomationActivity(workspaceId, executionFilters, permissions.canManageSettings);
+
+  // Active runs
   const runsQuery = useQuery({
-    queryKey: queryKeys.automation.runs(workspaceId, 1, 8),
-    queryFn: async () => unwrap(await automationService.listWorkspaceRuns(workspaceId, 1, 8)),
+    queryKey: queryKeys.automation.runs(workspaceId, 1, 50),
+    queryFn: async () => unwrap(await automationService.listWorkspaceRuns(workspaceId, 1, 50)),
     enabled: !!workspaceId && permissions.canManageSettings,
-    staleTime: 30_000,
-  });
-  const agentsQuery = useQuery({
-    queryKey: queryKeys.automation.agents(workspaceId),
-    queryFn: async () => unwrap(await automationService.listAgents(workspaceId)),
-    enabled: !!workspaceId && permissions.canManageSettings,
-    staleTime: 30_000,
+    staleTime: 15_000,
+    refetchInterval: 30_000,
   });
 
-  const agentsById = useMemo(
-    () => new Map((agentsQuery.data ?? []).map((agent) => [agent.id, agent])),
-    [agentsQuery.data],
+  useEffect(() => {
+    const handler = () => {
+      void runsQuery.refetch();
+    };
+    window.addEventListener('agent_run-created', handler);
+    window.addEventListener('agent_run-updated', handler);
+    return () => {
+      window.removeEventListener('agent_run-created', handler);
+      window.removeEventListener('agent_run-updated', handler);
+    };
+  }, [runsQuery.refetch]);
+
+  const agentById = useMemo(
+    () => new Map(agents.map((a) => [a.id, a])),
+    [agents],
+  );
+
+  const activeRuns = useMemo(
+    () => (runsQuery.data?.data ?? []).filter((r) => ACTIVE_RUN_STATUSES.has(r.status)),
+    [runsQuery.data],
+  );
+
+  const items = overviewQuery.data?.items ?? [];
+  const executions = executionsQuery.data?.data ?? [];
+  const executionTotal = executionsQuery.data?.total ?? 0;
+  const executionPage = executionsQuery.data?.page ?? search.page;
+  const executionTotalPages = executionsQuery.data?.total_pages ?? 0;
+
+  const updateFilters = useCallback(
+    (updates: Partial<AutomationActivitySearch>) => {
+      onSearchChange({ ...updates, page: updates.page ?? 1 });
+    },
+    [onSearchChange],
   );
 
   if (!workspaceId) {
     return <p className="text-sm text-muted-foreground">Workspace not found.</p>;
+  }
+
+  if (!permissions.canManageSettings) {
+    return (
+      <AutomationShell
+        title="Automation Activity"
+        description="See what triggered, what matched, what launched, and what each agent run did."
+      >
+        <Card className={LINEAR_CARD_CLASS}>
+          <CardContent className="px-5 py-6 text-sm text-muted-foreground">
+            You do not have permission to view workspace-wide automation activity.
+          </CardContent>
+        </Card>
+      </AutomationShell>
+    );
   }
 
   return (
@@ -107,62 +560,170 @@ export function AutomationActivityPage({
       title="Automation Activity"
       description="See what triggered, what matched, what launched, and what each agent run did."
     >
-      {!permissions.canManageSettings ? (
-        <Card className="border-border/60 bg-card/80">
-          <CardContent className="px-5 py-6 text-sm text-muted-foreground">
-            You do not have permission to view workspace-wide automation activity.
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-4">
-          <AutomationOverviewPanel
-            workspaceId={workspaceId}
-            search={search}
-            onSearchChange={onSearchChange}
-            sectionVisibility={{
-              triggerCatalog: false,
-            }}
-            pathOverrides={{
-              activityBasePath: buildAutomationActivityPath(workspaceSlug),
-              flowsBasePath: buildAutomationFlowsPath(workspaceSlug),
-              agentRunsBasePath: buildAutomationRunsPath(workspaceSlug),
-            }}
-          />
+      <div className="space-y-5">
+        {/* Status bar */}
+        {items.length > 0 && (
+          <div className="px-1">
+            <StatusBar items={items} />
+          </div>
+        )}
 
-          <Card className="border-border/60 bg-card/80">
-            <CardHeader className="pb-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Clock01Icon className="h-4 w-4 text-muted-foreground" />
-                    <CardTitle className="text-base">Recent agent runs</CardTitle>
-                    <Badge variant="outline" className="text-[10px]">{runsQuery.data?.data.length ?? 0}</Badge>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Agent runs started by automations in this workspace.
-                  </p>
-                </div>
-                <a href={buildAutomationRunsPath(workspaceSlug)} className="text-sm text-muted-foreground hover:text-foreground">
-                  Open full run history
-                </a>
+        {/* Active runs */}
+        {activeRuns.length > 0 && (
+          <section>
+            <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Active Runs
+            </p>
+            <div className="space-y-2">
+              <ActiveRunLabels />
+              {activeRuns.map((run) => (
+                <ActiveRunCard
+                  key={run.id}
+                  run={run}
+                  agent={agentById.get(run.agent_id)}
+                  onOpenRun={openRun}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* History */}
+        <section id="trigger-executions" className="space-y-3">
+          <div className="space-y-3">
+            <div className="flex items-start gap-3 px-4 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              <div className={`${EXECUTION_COLUMNS.fired} space-y-1`}>
+                <span className="block">Fired</span>
+                <HeaderFilterSelect
+                  value={timeFilter}
+                  onValueChange={handleTimeFilter}
+                  placeholder="All time"
+                  className="w-[132px]"
+                >
+                  {TIME_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                  ))}
+                </HeaderFilterSelect>
               </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {runsQuery.isLoading || agentsQuery.isLoading ? (
-                <Skeleton className="h-36 w-full rounded-xl" />
-              ) : runsQuery.data?.data?.length ? (
-                runsQuery.data.data.map((run) => (
-                  <RunPreviewRow key={run.id} run={run} agent={agentsById.get(run.agent_id)} />
-                ))
-              ) : (
-                <div className="rounded-md border border-dashed border-border/70 px-6 py-8 text-center text-sm text-muted-foreground">
-                  No agent runs yet.
+
+              <div className={`${EXECUTION_COLUMNS.status} space-y-1`}>
+                <span className="block">Status</span>
+                <HeaderFilterSelect
+                  value={search.status || '__all__'}
+                  onValueChange={(v) => updateFilters({ status: v === '__all__' ? undefined : v })}
+                  placeholder="All statuses"
+                  className="w-full"
+                >
+                  {STATUS_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                  ))}
+                </HeaderFilterSelect>
+              </div>
+
+              <div className={`${EXECUTION_COLUMNS.trigger} space-y-1`}>
+                <span className="block">Trigger</span>
+                <div className="flex flex-wrap gap-2">
+                  <HeaderFilterSelect
+                    value={search.source || '__all__'}
+                    onValueChange={(v) => updateFilters({ source: v === '__all__' ? undefined : v })}
+                    placeholder="All triggers"
+                    className="w-[150px]"
+                  >
+                    {SOURCE_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                    ))}
+                  </HeaderFilterSelect>
                 </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      )}
+              </div>
+
+              <div className={`${EXECUTION_COLUMNS.agent} space-y-1`}>
+                <span className="block">Agent</span>
+                <HeaderFilterSelect
+                  value={search.agent_id || '__all__'}
+                  onValueChange={(v) => updateFilters({ agent_id: v === '__all__' ? undefined : v })}
+                  placeholder="All agents"
+                  className="w-full"
+                >
+                  <SelectItem value="__all__">All agents</SelectItem>
+                  {agents.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                  ))}
+                </HeaderFilterSelect>
+              </div>
+
+              <div className={EXECUTION_COLUMNS.duration}>
+                <span className="block">Duration</span>
+              </div>
+            </div>
+
+            {executionsQuery.isLoading ? (
+              <div className="space-y-2">
+                <Skeleton className="h-14 w-full rounded-lg" />
+                <Skeleton className="h-14 w-full rounded-lg" />
+                <Skeleton className="h-14 w-full rounded-lg" />
+              </div>
+            ) : executionsQuery.isError ? (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                Could not load trigger executions
+                {executionsQuery.error instanceof Error ? `: ${executionsQuery.error.message}` : ''}
+              </div>
+            ) : executions.length > 0 ? (
+              <div className="space-y-2">
+                {executions.map((item) => (
+                  <ExecutionRow
+                    key={item.execution_id}
+                    item={item}
+                    agent={agentById.get(item.agent_id)}
+                    onOpenRun={openRun}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-dashed border-border/70 px-6 py-10 text-center text-sm text-muted-foreground">
+                No trigger executions match the current filters.
+              </div>
+            )}
+
+            {/* Pagination */}
+            {executionTotalPages > 1 && (
+              <div className="flex items-center justify-between pt-1">
+                <p className="text-xs text-muted-foreground">
+                  Page {executionPage} of {executionTotalPages}
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    disabled={executionPage <= 1}
+                    onClick={() => onSearchChange({ page: Math.max(1, executionPage - 1) })}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    disabled={executionPage >= executionTotalPages}
+                    onClick={() => onSearchChange({ page: executionPage + 1 })}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
+
+      {/* Agent run drawer */}
+      <CodingSessionDrawer
+        sessionId={selectedRunId}
+        open={drawerOpen && !!selectedRunId}
+        onOpenChange={setDrawerOpen}
+        title="Agent Run"
+        description="Interactive transcript, approvals, artifacts, and session details."
+      />
     </AutomationShell>
   );
 }

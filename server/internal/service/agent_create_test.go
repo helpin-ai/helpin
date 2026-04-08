@@ -282,8 +282,8 @@ func TestSeedWorkspaceDefaults_CreatesMissingSystemAgentsWithoutPromotingCustomA
 	if forge.Provider == nil || *forge.Provider != model.AgentModelProviderOpenAI {
 		t.Fatalf("expected forge provider openai, got %+v", forge.Provider)
 	}
-	if forge.Model == nil || *forge.Model != "gpt-5-mini" {
-		t.Fatalf("expected forge model gpt-5-mini, got %+v", forge.Model)
+	if forge.Model == nil || *forge.Model != "gpt-5.4" {
+		t.Fatalf("expected forge model gpt-5.4, got %+v", forge.Model)
 	}
 	lens, err := agentRepo.GetSystemByPreset(context.Background(), "ws-test", model.AgentPresetReviewAgent)
 	if err != nil {
@@ -298,8 +298,8 @@ func TestSeedWorkspaceDefaults_CreatesMissingSystemAgentsWithoutPromotingCustomA
 	if lens.Provider == nil || *lens.Provider != model.AgentModelProviderOpenAI {
 		t.Fatalf("expected lens provider openai, got %+v", lens.Provider)
 	}
-	if lens.Model == nil || *lens.Model != "gpt-5-mini" {
-		t.Fatalf("expected lens model gpt-5-mini, got %+v", lens.Model)
+	if lens.Model == nil || *lens.Model != "gpt-5.4" {
+		t.Fatalf("expected lens model gpt-5.4, got %+v", lens.Model)
 	}
 
 	custom, err := agentRepo.GetByID(context.Background(), "ws-test", "agent-custom-code-builder")

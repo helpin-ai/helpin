@@ -1158,14 +1158,14 @@ func (s *AgentService) ListModelProviders() []model.AgentModelProviderOption {
 		options = append(options, model.AgentModelProviderOption{
 			Value:            model.AgentModelProviderOpenAI,
 			Label:            "OpenAI",
-			ModelPlaceholder: "gpt-5-mini",
+			ModelPlaceholder: "gpt-5.4",
 		})
 	}
 	if s.isModelProviderConfigured(model.AgentModelProviderOpenRouter) {
 		options = append(options, model.AgentModelProviderOption{
 			Value:            model.AgentModelProviderOpenRouter,
 			Label:            "OpenRouter",
-			ModelPlaceholder: "openai/gpt-5-mini",
+			ModelPlaceholder: "openai/gpt-5.4",
 		})
 	}
 	return options

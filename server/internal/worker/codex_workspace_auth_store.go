@@ -1,103 +1,92 @@
 package worker
 
 import (
+	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
+	appcrypto "github.com/helpin-ai/helpin/server/internal/crypto"
 	appmodel "github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
-const (
-	codexWorkspaceAuthRootDir = "helpin-codex-auth"
-	codexAuthFileName         = "auth.json"
-)
+const codexAuthFileName = "auth.json"
+
+type CodexWorkspaceAuthStore struct {
+	repo          *repository.CodexWorkspaceAuthRepository
+	encryptionKey []byte
+}
+
+func NewCodexWorkspaceAuthStore(repo *repository.CodexWorkspaceAuthRepository, encryptionKey []byte) *CodexWorkspaceAuthStore {
+	if repo == nil || len(encryptionKey) != 32 {
+		return nil
+	}
+	return &CodexWorkspaceAuthStore{
+		repo:          repo,
+		encryptionKey: append([]byte(nil), encryptionKey...),
+	}
+}
 
 func codexShouldPersistWorkspaceAuth(provider, authMode string) bool {
 	return strings.TrimSpace(provider) == appmodel.AgentModelProviderOpenAI &&
 		strings.TrimSpace(authMode) == codexOpenAIAuthModeDevice
 }
 
-func codexWorkspaceAuthHome(workspaceID, provider, authMode string) string {
-	return codexWorkspaceAuthHomeUnder(os.TempDir(), workspaceID, provider, authMode)
-}
-
-func codexWorkspaceAuthHomeUnder(baseDir, workspaceID, provider, authMode string) string {
-	return filepath.Join(
-		baseDir,
-		codexWorkspaceAuthRootDir,
-		sanitizeCodexPathComponent(workspaceID),
-		sanitizeCodexPathComponent(provider),
-		sanitizeCodexPathComponent(authMode),
-		".codex",
-	)
-}
-
-func codexRestoreWorkspaceAuth(workspaceID, provider, authMode, codexHome string) error {
-	return codexRestoreWorkspaceAuthUnder(os.TempDir(), workspaceID, provider, authMode, codexHome)
-}
-
-func codexRestoreWorkspaceAuthUnder(baseDir, workspaceID, provider, authMode, codexHome string) error {
-	if strings.TrimSpace(workspaceID) == "" || !codexShouldPersistWorkspaceAuth(provider, authMode) || strings.TrimSpace(codexHome) == "" {
+func (s *CodexWorkspaceAuthStore) Restore(ctx context.Context, workspaceID, provider, authMode, codexHome string) error {
+	if s == nil || strings.TrimSpace(workspaceID) == "" || !codexShouldPersistWorkspaceAuth(provider, authMode) || strings.TrimSpace(codexHome) == "" {
 		return nil
 	}
-	src := filepath.Join(codexWorkspaceAuthHomeUnder(baseDir, workspaceID, provider, authMode), codexAuthFileName)
-	if _, err := os.Stat(src); err != nil {
+
+	record, err := s.repo.GetByScope(ctx, workspaceID, provider, authMode)
+	if err != nil || record == nil {
+		return err
+	}
+
+	authJSON, err := appcrypto.DecryptString(record.AuthJSONEncrypted, s.encryptionKey)
+	if err != nil {
+		return fmt.Errorf("decrypt workspace codex auth: %w", err)
+	}
+	return writeCodexAuthFile(filepath.Join(strings.TrimSpace(codexHome), codexAuthFileName), authJSON)
+}
+
+func (s *CodexWorkspaceAuthStore) Promote(ctx context.Context, workspaceID, provider, authMode, codexHome string) error {
+	if s == nil || strings.TrimSpace(workspaceID) == "" || !codexShouldPersistWorkspaceAuth(provider, authMode) || strings.TrimSpace(codexHome) == "" {
+		return nil
+	}
+
+	authJSON, err := readCodexAuthFile(filepath.Join(strings.TrimSpace(codexHome), codexAuthFileName))
+	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
 		}
-		return fmt.Errorf("stat workspace codex auth: %w", err)
+		return fmt.Errorf("read session codex auth: %w", err)
 	}
-	return copyCodexAuthFile(src, filepath.Join(strings.TrimSpace(codexHome), codexAuthFileName))
+
+	encrypted, err := appcrypto.EncryptString(authJSON, s.encryptionKey)
+	if err != nil {
+		return fmt.Errorf("encrypt workspace codex auth: %w", err)
+	}
+	return s.repo.Upsert(ctx, &appmodel.CodexWorkspaceAuth{
+		WorkspaceID:       strings.TrimSpace(workspaceID),
+		Provider:          strings.TrimSpace(provider),
+		AuthMode:          strings.TrimSpace(authMode),
+		AuthJSONEncrypted: encrypted,
+	})
 }
 
-func codexPromoteWorkspaceAuth(workspaceID, provider, authMode, codexHome string) error {
-	return codexPromoteWorkspaceAuthUnder(os.TempDir(), workspaceID, provider, authMode, codexHome)
+func readCodexAuthFile(path string) (string, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return string(content), nil
 }
 
-func codexPromoteWorkspaceAuthUnder(baseDir, workspaceID, provider, authMode, codexHome string) error {
-	if strings.TrimSpace(workspaceID) == "" || !codexShouldPersistWorkspaceAuth(provider, authMode) || strings.TrimSpace(codexHome) == "" {
-		return nil
-	}
-	src := filepath.Join(strings.TrimSpace(codexHome), codexAuthFileName)
-	if _, err := os.Stat(src); err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return fmt.Errorf("stat session codex auth: %w", err)
-	}
-	dstHome := codexWorkspaceAuthHomeUnder(baseDir, workspaceID, provider, authMode)
-	if err := os.MkdirAll(dstHome, 0o755); err != nil {
-		return fmt.Errorf("create workspace codex auth home: %w", err)
-	}
-	return copyCodexAuthFile(src, filepath.Join(dstHome, codexAuthFileName))
-}
-
-func copyCodexAuthFile(src, dst string) error {
-	input, err := os.Open(src)
-	if err != nil {
+func writeCodexAuthFile(path, content string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	defer input.Close()
-
-	info, err := input.Stat()
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return err
-	}
-
-	output, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, info.Mode().Perm())
-	if err != nil {
-		return err
-	}
-
-	if _, err := io.Copy(output, input); err != nil {
-		_ = output.Close()
-		return err
-	}
-	return output.Close()
+	return os.WriteFile(path, []byte(content), 0o600)
 }

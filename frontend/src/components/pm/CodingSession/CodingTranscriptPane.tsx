@@ -222,6 +222,17 @@ function InterruptionOverlay({
   onAuthCancel: () => void;
   onResolveInteraction: (interactionId: string, responsePayload: Record<string, unknown>, followupMessage?: string) => void;
 }) {
+  const authState = session?.auth_state;
+  const hasDeviceCode = Boolean(authState?.verification_url || authState?.user_code);
+  const hasBrowserAuth = Boolean(authState?.auth_url);
+  const authDescription = hasDeviceCode
+    ? 'Complete device sign-in to continue this session.'
+    : hasBrowserAuth
+      ? 'Continue sign-in in your browser. This Codex runtime returned browser-based auth instead of a device code.'
+      : authState?.state === 'pending'
+        ? 'Preparing sign-in. This can take a few seconds.'
+        : 'Start sign-in to continue this session.';
+
   return (
     <div className="relative">
       {/* Stacked gradient-blur scrim — each layer covers a slice with increasing blur toward the bottom */}
@@ -241,27 +252,32 @@ function InterruptionOverlay({
           </div>
           <div className="text-sm font-semibold">ChatGPT sign-in required</div>
           <p className="mt-1 text-sm text-muted-foreground">
-            {session.auth_state?.verification_url
-              ? 'Complete device sign-in to continue this session.'
-              : 'Start sign-in to continue this session.'}
+            {authDescription}
           </p>
-          {session.auth_state?.user_code ? (
+          {authState?.user_code ? (
             <div className="mt-3 rounded-lg border border-border bg-card px-3 py-2 font-mono text-sm tracking-widest">
-              {session.auth_state.user_code}
+              {authState.user_code}
             </div>
           ) : null}
           <div className="mt-3 flex flex-wrap gap-2">
             <Button size="sm" onClick={onAuthStart} disabled={acting !== null}>
               Start sign-in
             </Button>
-            {session.auth_state?.verification_url ? (
+            {authState?.verification_url ? (
               <Button asChild variant="outline" size="sm">
-                <a href={session.auth_state.verification_url} target="_blank" rel="noreferrer">
+                <a href={authState.verification_url} target="_blank" rel="noreferrer">
                   Open verification page
                 </a>
               </Button>
             ) : null}
-            {session.auth_state?.state === 'pending' ? (
+            {!authState?.verification_url && authState?.auth_url ? (
+              <Button asChild variant="outline" size="sm">
+                <a href={authState.auth_url} target="_blank" rel="noreferrer">
+                  Continue in browser
+                </a>
+              </Button>
+            ) : null}
+            {authState?.state === 'pending' ? (
               <Button variant="outline" size="sm" onClick={onAuthCancel} disabled={acting !== null}>
                 Cancel sign-in
               </Button>

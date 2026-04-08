@@ -43,9 +43,9 @@ type codexManagedAuthSession struct {
 	state appmodel.CodexAuthState
 }
 
-func NewCodexAuthManager(config CodexRuntimeConfig, artifactRepo *repository.AgentRunArtifactRepository) *CodexAuthManager {
+func NewCodexAuthManager(config CodexRuntimeConfig, artifactRepo *repository.AgentRunArtifactRepository, workspaceAuth *CodexWorkspaceAuthStore) *CodexAuthManager {
 	return &CodexAuthManager{
-		executor:    NewCodexExecutor("codex", config, nil, artifactRepo),
+		executor:    NewCodexExecutor("codex", config, nil, artifactRepo, workspaceAuth),
 		threadStore: newCodexThreadStore(artifactRepo),
 		sessions:    map[string]*codexManagedAuthSession{},
 	}
@@ -350,7 +350,7 @@ func (m *CodexAuthManager) watchSession(ctx context.Context, session *codexManag
 					connected.UserCode = &value
 				}
 				final := session.apply(connected)
-				if err := codexPromoteWorkspaceAuth(session.workspaceID, profile.Provider, profile.AuthMode, session.codexHome); err != nil {
+				if err := m.executor.persistWorkspaceAuth(ctx, session.workspaceID, profile.Provider, profile.AuthMode, session.codexHome); err != nil {
 					errText := fmt.Sprintf("persist workspace codex auth: %v", err)
 					final = session.apply(appmodel.CodexAuthState{
 						Provider:  strings.TrimSpace(profile.Provider),
@@ -407,7 +407,7 @@ func (m *CodexAuthManager) prepareSession(ctx context.Context, run *appmodel.Age
 	if err := os.WriteFile(filepath.Join(codexHome, "config.toml"), []byte(configContent), 0o600); err != nil {
 		return nil, codexResolvedRuntimeProfile{}, nil, fmt.Errorf("write codex auth config.toml: %w", err)
 	}
-	if err := codexRestoreWorkspaceAuth(run.WorkspaceID, profile.Provider, profile.AuthMode, codexHome); err != nil {
+	if err := m.executor.restoreWorkspaceAuth(ctx, run.WorkspaceID, profile.Provider, profile.AuthMode, codexHome); err != nil {
 		return nil, codexResolvedRuntimeProfile{}, nil, err
 	}
 	if err := m.threadStore.Save(ctx, run, state); err != nil {
