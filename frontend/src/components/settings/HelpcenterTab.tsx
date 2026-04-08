@@ -35,7 +35,7 @@ import {
   LanguageCircleIcon,
 } from '@/lib/icons';
 import { cn } from '@/lib/utils';
-import { IconPicker } from '@/components/ui/icon-picker';
+import { IconPicker, StoredIcon } from '@/components/ui/icon-picker';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type {
   HelpcenterHeaderLink,
@@ -820,7 +820,10 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
               <SelectContent>
                 {spaces.map(s => (
                   <SelectItem key={s.id} value={s.slug}>
-                    {s.icon ? `${s.icon} ${s.name}` : s.name}
+                    <span className="inline-flex items-center gap-1">
+                      <StoredIcon name={s.icon} className="h-4 w-4 shrink-0" textClassName="" />
+                      <span>{s.name}</span>
+                    </span>
                   </SelectItem>
                 ))}
               </SelectContent>

@@ -19,6 +19,7 @@ import {
   buildCanonicalHomePath,
   resolveLocaleSwitchPath,
 } from '@/lib/locale'
+import { PhIcon } from '@/components/PhIcon'
 import { LocaleSwitcher } from './LocaleSwitcher'
 import type { NavItem, Space } from '@/lib/types'
 
@@ -403,7 +404,14 @@ export function TopBar({ onSearchClick }: TopBarProps) {
                       : 'text-muted-foreground font-medium hover:text-foreground',
                   )}
                 >
-                  {space.icon && <span className="mr-1.5">{space.icon}</span>}
+                  {space.icon && (
+                    <PhIcon
+                      name={space.icon}
+                      size={15}
+                      weight="regular"
+                      className="mr-1.5 inline-block align-text-bottom"
+                    />
+                  )}
                   {space.name}
                 </Link>
               )

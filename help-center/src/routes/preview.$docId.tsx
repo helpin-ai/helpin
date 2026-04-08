@@ -13,6 +13,7 @@ import { Sidebar } from '@/components/layout/Sidebar'
 import { TableOfContents } from '@/components/layout/TableOfContents'
 import { LoadingState } from '@/components/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
+import { PhIcon } from '@/components/PhIcon'
 
 export const Route = createFileRoute('/preview/$docId')({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -121,7 +122,14 @@ function PreviewPage() {
 
             <header className="mb-8">
               <h1 className="text-[1.875rem] font-bold leading-tight tracking-tight mb-2">
-                {article.icon && <span className="mr-2">{article.icon}</span>}
+                {article.icon && (
+                  <PhIcon
+                    name={article.icon}
+                    size={28}
+                    weight="regular"
+                    className="mr-2 inline-block align-text-bottom"
+                  />
+                )}
                 {article.title}
               </h1>
               {article.excerpt && (

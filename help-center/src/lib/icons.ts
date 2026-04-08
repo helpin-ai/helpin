@@ -161,7 +161,78 @@ const ICON_MAP: Record<string, IconComponent> = {
   'sliders-horizontal': Settings,
 }
 
+const TOKEN_ICON_MAP: Record<string, IconComponent> = {
+  account: User,
+  add: Plus,
+  ai: Sparkles,
+  analysis: ChartBar,
+  api: Code,
+  chart: ChartBar,
+  code: Code,
+  developer: Code,
+  doc: FileText,
+  docs: FileText,
+  email: Mail,
+  envelope: Mail,
+  help: Info,
+  inbox: Inbox,
+  list: List,
+  mail: Mail,
+  optimize: Sparkles,
+  pen: Pen,
+  publish: Send,
+  quill: Pen,
+  rocket: Rocket,
+  seo: TrendingUp,
+  setup: Cog,
+  shopify: ShoppingCart,
+  start: Rocket,
+  startup: Rocket,
+  voice: MessageCircle,
+  webhook: Link,
+  webhooks: Link,
+  wordpress: Globe,
+  write: Pen,
+}
+
+const NORMALIZED_ALIAS_MAP: Record<string, IconComponent> = {
+  'add-to-list': List,
+  'ai-voice': MessageCircle,
+  'chart-no-axes-column-increasing': ChartBar,
+  'mail-account': Mail,
+  'quill-write': Pen,
+  'start-up': Rocket,
+}
+
+function normalizeIconName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/icon$/, '')
+    .replace(/\d+/g, '')
+    .replace(/[^a-z-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+}
+
 export function getIconComponent(name: string): IconComponent | null {
   if (!name) return null
-  return ICON_MAP[name.toLowerCase()] ?? null
+  const direct = ICON_MAP[name.toLowerCase()]
+  if (direct) return direct
+
+  const normalized = normalizeIconName(name)
+  if (!normalized) return null
+
+  const normalizedDirect = ICON_MAP[normalized]
+  if (normalizedDirect) return normalizedDirect
+
+  const aliased = NORMALIZED_ALIAS_MAP[normalized]
+  if (aliased) return aliased
+
+  const tokens = normalized.split('-')
+  for (const token of tokens) {
+    const tokenMatch = TOKEN_ICON_MAP[token]
+    if (tokenMatch) return tokenMatch
+  }
+
+  return null
 }
