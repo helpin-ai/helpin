@@ -90,11 +90,23 @@ func TestPMSprintPlanningRepository(t *testing.T) {
 	if workspace.Buckets[1].Sprints[0].Sprint.ID != upcomingSprintFarID || workspace.Buckets[1].Sprints[1].Sprint.ID != upcomingSprintNearID {
 		t.Fatalf("upcoming bucket order = %+v, want far future then near future", workspace.Buckets[1].Sprints)
 	}
+	if workspace.Buckets[1].Sprints[0].Stats.TaskCount != 1 || len(workspace.Buckets[1].Sprints[0].PreviewTasks) != 1 || workspace.Buckets[1].Sprints[0].PreviewTasks[0].ID != "story-upcoming-1" {
+		t.Fatalf("upcoming far sprint preview = %+v, want only story-upcoming-1", workspace.Buckets[1].Sprints[0])
+	}
+	if workspace.Buckets[1].Sprints[1].Stats.TaskCount != 0 || len(workspace.Buckets[1].Sprints[1].PreviewTasks) != 0 {
+		t.Fatalf("upcoming near sprint preview = %+v, want empty", workspace.Buckets[1].Sprints[1])
+	}
 	if len(workspace.Buckets[2].Sprints) != 2 {
 		t.Fatalf("completed bucket len = %d, want 2", len(workspace.Buckets[2].Sprints))
 	}
 	if workspace.Buckets[2].Sprints[0].Sprint.ID != completedSprintRecentID || workspace.Buckets[2].Sprints[1].Sprint.ID != completedSprintOlderID {
 		t.Fatalf("completed bucket order = %+v, want recent completion then older completion", workspace.Buckets[2].Sprints)
+	}
+	if workspace.Buckets[2].Sprints[0].Stats.TaskCount != 1 || len(workspace.Buckets[2].Sprints[0].PreviewTasks) != 1 || workspace.Buckets[2].Sprints[0].PreviewTasks[0].ID != "story-completed-1" {
+		t.Fatalf("completed recent sprint preview = %+v, want only story-completed-1", workspace.Buckets[2].Sprints[0])
+	}
+	if workspace.Buckets[2].Sprints[1].Stats.TaskCount != 0 || len(workspace.Buckets[2].Sprints[1].PreviewTasks) != 0 {
+		t.Fatalf("completed older sprint preview = %+v, want empty", workspace.Buckets[2].Sprints[1])
 	}
 
 	activeCard := workspace.Buckets[0].Sprints[0]

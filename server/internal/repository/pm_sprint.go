@@ -105,9 +105,8 @@ func (r *PMSprintRepository) ListPlanningWorkspace(ctx context.Context, workspac
 		"upcoming":  {Key: "upcoming", Label: "Upcoming"},
 		"completed": {Key: "completed", Label: "Completed"},
 	}
+	orderedBucketKeys := []string{"active", "upcoming", "completed"}
 
-	sprintIDs := make([]string, 0, len(sprints))
-	cardBySprintID := make(map[string]*model.SprintPlanningCard, len(sprints))
 	for i := range sprints {
 		sprints[i].Status = computeSprintStatus(sprints[i].StartDate, sprints[i].EndDate, now)
 		bucketKey := planningBucketKey(sprints[i].Status)
@@ -119,11 +118,18 @@ func (r *PMSprintRepository) ListPlanningWorkspace(ctx context.Context, workspac
 			PreviewTasks: []model.SprintPlanningTaskPreview{},
 		}
 		buckets[bucketKey].Sprints = append(buckets[bucketKey].Sprints, card)
-		cardBySprintID[sprints[i].ID] = &buckets[bucketKey].Sprints[len(buckets[bucketKey].Sprints)-1]
-		sprintIDs = append(sprintIDs, sprints[i].ID)
 	}
-	for _, bucket := range buckets {
+
+	sprintIDs := make([]string, 0, len(sprints))
+	cardBySprintID := make(map[string]*model.SprintPlanningCard, len(sprints))
+	for _, bucketKey := range orderedBucketKeys {
+		bucket := buckets[bucketKey]
 		sortPlanningCards(bucket.Sprints)
+		for i := range bucket.Sprints {
+			sprintID := bucket.Sprints[i].Sprint.ID
+			cardBySprintID[sprintID] = &bucket.Sprints[i]
+			sprintIDs = append(sprintIDs, sprintID)
+		}
 	}
 
 	if len(sprintIDs) > 0 {
@@ -153,10 +159,9 @@ func (r *PMSprintRepository) ListPlanningWorkspace(ctx context.Context, workspac
 		return nil, err
 	}
 
-	orderedBuckets := []model.SprintPlanningBucket{
-		*buckets["active"],
-		*buckets["upcoming"],
-		*buckets["completed"],
+	orderedBuckets := make([]model.SprintPlanningBucket, 0, len(orderedBucketKeys))
+	for _, bucketKey := range orderedBucketKeys {
+		orderedBuckets = append(orderedBuckets, *buckets[bucketKey])
 	}
 	if !filters.IncludeCompleted {
 		orderedBuckets = orderedBuckets[:2]
