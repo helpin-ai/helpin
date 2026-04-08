@@ -71,7 +71,6 @@ export function ImportTab({ workspaceId, editable = true }: { workspaceId: strin
       {/* Project Management */}
       <div className="space-y-4">
         <h3 className="text-sm font-semibold">Project Management</h3>
-        <p className="text-sm text-muted-foreground">Select a source to import from</p>
         <div className="overflow-hidden rounded-lg border border-border bg-background">
           {IMPORT_SOURCES.map((source, idx) => (
             <button

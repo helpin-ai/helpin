@@ -43,6 +43,12 @@ export function Navbar() {
 
         <div className="hidden md:flex items-center gap-4">
           <Link
+            href="/pricing"
+            className="text-[15px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Pricing
+          </Link>
+          <Link
             href="https://app.helpin.ai"
             className="text-[15px] font-medium text-muted-foreground hover:text-foreground transition-colors"
           >

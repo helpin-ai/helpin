@@ -63,10 +63,10 @@ export function SettingsPageFrame({ section, children }: SettingsPageFrameProps)
   return (
     <div className="space-y-4">
       {sectionMeta && (
-        <div>
+        <div className="mb-2">
           <h2 className="text-xl font-semibold">{sectionMeta.label}</h2>
           {sectionMeta.description && (
-            <p className="text-sm text-muted-foreground">{sectionMeta.description}</p>
+            <p className="text-sm text-muted-foreground mt-1">{sectionMeta.description}</p>
           )}
         </div>
       )}

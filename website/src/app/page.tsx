@@ -514,18 +514,21 @@ function ToolStackTransition({ scrollZoneRef }: { scrollZoneRef: React.RefObject
   // How far pills have converged (0 = original pos, 1 = at category target)
   const ec = easeInOutCubic(convergeT);
 
-  // Pill text fades out faster than favicon
-  const textOpacity = Math.max(0, 1 - convergeT * 2.5);
-  const faviconExtraOpacity = Math.max(0, 1 - convergeT * 1.6);
+  // Pill text fades out early
+  const textOpacity = Math.max(0, 1 - convergeT * 3);
+  const faviconExtraOpacity = Math.max(0, 1 - convergeT * 1.8);
 
-  // Pill scale shrinks slightly during convergence
-  const pillScale = 1 - convergeT * 0.35;
+  // Pills shrink, become circular, and spiral inward
+  const pillScale = 1 - convergeT * 0.6;
+  const pillBorderRadius = 10 + convergeT * 20;
+  // Spiral rotation: each pill rotates as it converges (up to 180°)
+  const spiralAngle = convergeT * 180;
 
-  // Once merge is complete, pills are gone
+  // Pills visible until merge is nearly done
   const pillsVisible = mergeT < 1;
 
-  // Category nodes fade in as pills converge
-  const categoryNodeOpacity = Math.min(1, convergeT * 1.5);
+  // Nodes emerge from center after pills spiral in
+  const categoryNodeOpacity = remap(mergeT, 0.2, 0.7);
 
   return (
     <div
@@ -557,16 +560,27 @@ function ToolStackTransition({ scrollZoneRef }: { scrollZoneRef: React.RefObject
                   const stagger = pillIndex / (cat.tools.length) * 0.08;
                   const staggeredEc = easeInOutCubic(Math.max(0, Math.min(1, (convergeT - stagger) / (1 - stagger))));
 
-                  // Compute transform if we have measured positions
+                  // Compute transform with spiral motion
                   let tx = 0, ty = 0;
                   if (measured && measuredPos && convergeT > 0) {
-                    // Move from measured position toward target
-                    tx = (target.x - measuredPos.x) * staggeredEc;
-                    ty = (target.y - measuredPos.y) * staggeredEc;
+                    // Linear path toward center (not category target — spiral into center)
+                    const centerX = 0; // container center
+                    const centerY = 0;
+                    const linearX = (centerX - measuredPos.x) * staggeredEc;
+                    const linearY = (centerY - measuredPos.y) * staggeredEc;
+
+                    // Add perpendicular spiral offset — creates curved trajectory
+                    const angle = (spiralAngle + catIndex * 72 + pillIndex * 30) * Math.PI / 180;
+                    const spiralRadius = (1 - staggeredEc) * 60; // spiral tightens as it converges
+                    const spiralX = Math.cos(angle) * spiralRadius * staggeredEc;
+                    const spiralY = Math.sin(angle) * spiralRadius * staggeredEc;
+
+                    tx = linearX + spiralX;
+                    ty = linearY + spiralY;
                   }
 
-                  // Overall pill opacity: fade out during merge phase
-                  const pillOpacity = Math.max(0, 1 - mergeT * 1.5);
+                  // Pill opacity: fades as it reaches center
+                  const pillOpacity = Math.max(0, 1 - staggeredEc * 1.2);
 
                   return (
                     <div
@@ -576,12 +590,13 @@ function ToolStackTransition({ scrollZoneRef }: { scrollZoneRef: React.RefObject
                         else pillRefs.current.delete(key);
                       }}
                       style={{
-                        display: 'inline-flex', alignItems: 'center', gap: 8,
-                        padding: '8px 14px', borderRadius: 10,
-                        border: '1px solid oklch(0.91 0.008 75)',
+                        display: 'inline-flex', alignItems: 'center', gap: textOpacity > 0.1 ? 8 : 0,
+                        padding: textOpacity > 0.1 ? '8px 14px' : '8px',
+                        borderRadius: pillBorderRadius,
+                        border: `1px solid oklch(0.91 0.008 75 / ${Math.max(0.3, 1 - convergeT)})`,
                         background: 'var(--color-background)',
                         fontSize: 13, fontWeight: 500, color: 'var(--color-foreground)',
-                        transform: `translate(${tx}px, ${ty}px) scale(${pillScale})`,
+                        transform: `translate(${tx}px, ${ty}px) scale(${pillScale}) rotate(${staggeredEc * (20 + pillIndex * 10)}deg)`,
                         opacity: pillOpacity,
                         transition: 'none',
                         willChange: 'transform, opacity',
@@ -615,6 +630,19 @@ function ToolStackTransition({ scrollZoneRef }: { scrollZoneRef: React.RefObject
         pointerEvents: categoryNodeOpacity < 0.3 ? 'none' : 'auto',
       }}>
         <div style={{ position: 'relative', width: SIZE, height: SIZE, maxWidth: '100%' }}>
+
+          {/* Center vortex glow — visible during pill convergence */}
+          {convergeT > 0.1 && mergeT < 1 && (
+            <div style={{
+              position: 'absolute',
+              left: CX - 50, top: CY - 50,
+              width: 100, height: 100,
+              borderRadius: '50%',
+              background: `radial-gradient(circle, oklch(0.48 0.15 155 / ${convergeT * 0.15}), transparent 70%)`,
+              transform: `scale(${1 + convergeT * 2})`,
+              pointerEvents: 'none',
+            }} />
+          )}
 
           {/* Layer 1: Soft radial background halo */}
           <div style={{
@@ -778,6 +806,7 @@ function ToolStackTransition({ scrollZoneRef }: { scrollZoneRef: React.RefObject
 
 // ─── Problem → Solution combined scroll section ───
 
+
 function ProblemSolutionSection() {
   const scrollZoneRef = useRef<HTMLDivElement>(null);
 
@@ -786,23 +815,22 @@ function ProblemSolutionSection() {
       <div ref={scrollZoneRef} className="lg:min-h-[230vh]" style={{ position: 'relative' }}>
         <div className="grid lg:grid-cols-2 gap-8 lg:gap-20 lg:min-h-[230vh]" style={{ maxWidth: '80rem', margin: '0 auto', padding: '0 2rem', alignItems: 'start' }}>
 
-          {/* LEFT: 3 text sections — fixed gap between them, no flex spacer */}
-          <div className="flex flex-col pt-16 pb-3 lg:pt-48 lg:pb-3 lg:self-stretch">
+          <div className="flex flex-col pt-16 pb-3 lg:pt-48 lg:pb-3 lg:self-stretch relative">
 
             {/* 1. Problem */}
-            <div>
-              <h2 className="text-[clamp(1.5rem,2.6vw,2.25rem)] font-bold leading-[1.12] tracking-tight text-foreground mb-7">
+            <div className="lg:pl-8">
+              <h2 className="text-[clamp(1.5rem,2.6vw,2.25rem)] font-bold leading-[1.12] tracking-tight text-foreground mb-6">
                 Your current stack isn't built to work together.
               </h2>
               <p className="text-[17px] text-muted-foreground leading-relaxed">
-                Engineering, sales, support, and operations all use different tools. Important context gets lost between them, and teams waste time chasing updates across systems.
+                <strong className="text-foreground font-semibold">Engineering, sales, support, and operations</strong> all use different tools. Important context gets <strong className="text-foreground font-semibold">lost between them</strong>, and teams waste time chasing updates across systems.
               </p>
             </div>
 
             {/* 2. Bridge */}
-            <div className="mt-12 lg:mt-[40vh]">
+            <div className="mt-12 lg:mt-[40vh] lg:pl-8">
               <RevealLeft>
-                <p className="text-[clamp(1.5rem,2.6vw,2.25rem)] font-bold leading-[1.12] tracking-tight text-foreground mb-3">
+                <p className="text-[clamp(1.5rem,2.6vw,2.25rem)] font-bold leading-[1.12] tracking-tight text-foreground mb-6">
                   AI can't fix disconnected systems.
                 </p>
                 <p className="text-[17px] text-muted-foreground leading-relaxed">
@@ -812,13 +840,13 @@ function ProblemSolutionSection() {
             </div>
 
             {/* 3. Solution — matches right column sticky exactly so they unstick together */}
-            <div className="lg:sticky mt-12 lg:mt-[25vh] flex items-center lg:pt-[10vh] lg:h-[70vh]" style={{ top: '15vh' }}>
+            <div className="lg:sticky mt-12 lg:mt-[25vh] flex items-center lg:pt-[10vh] lg:h-[70vh] lg:pl-8" style={{ top: '15vh' }}>
               <div>
-                <h2 className="text-[clamp(1.5rem,2.6vw,2.25rem)] font-bold leading-[1.12] tracking-tight text-foreground mb-7">
+                <h2 className="text-[clamp(1.5rem,2.6vw,2.25rem)] font-bold leading-[1.12] tracking-tight text-foreground mb-6">
                   <span style={{ position: 'relative', display: 'inline-block' }}>Helpin<svg style={{ position: 'absolute', bottom: -4, left: -2, width: 'calc(100% + 4px)', height: 10, overflow: 'visible' }} viewBox="0 0 100 10" preserveAspectRatio="none"><path d="M2 8C12 3 20 9 30 4C40 9 50 2 60 8C70 3 80 9 90 4C95 2 98 5 98 5" stroke="var(--color-pop)" strokeWidth="2.5" strokeLinecap="round" fill="none" /></svg></span> is built differently.
                 </h2>
                 <p className="text-[17px] text-muted-foreground leading-relaxed">
-                  It brings project management, support, sales, and docs into one connected system. That gives humans and AI agents the full context they need to move work forward seamlessly.
+                  It brings project management, support, sales, and docs into <strong className="text-foreground font-semibold">one connected system</strong>. That gives humans and AI agents the <strong className="text-foreground font-semibold">full context</strong> they need to move work forward seamlessly.
                 </p>
               </div>
             </div>
@@ -865,13 +893,13 @@ export default function HomePage() {
           <div className="text-center mb-14">
             <Reveal>
               <h1 className="text-[clamp(2.25rem,5vw,4.75rem)] font-bold tracking-[-0.04em] leading-[1.0] text-foreground mb-6">
-                <span className="block">The AI operating system</span>
-                <span className="block">for modern work</span>
+                <span className="block">One system. Every team.</span>
+                <span className="block font-display" style={{ marginTop: '0.15em' }}>AI agents that do the work.</span>
               </h1>
             </Reveal>
             <Reveal>
-              <p className="text-[1.125rem] text-muted-foreground leading-relaxed max-w-2xl mx-auto mb-8">
-                Helpin brings project management, support, sales, and docs into one connected system — so teams and AI agents can move work forward without silos.
+              <p className="text-[1.125rem] text-muted-foreground leading-[1.8] max-w-2xl mx-auto mb-10 mt-2">
+                Helpin is the AI work operating system — one connected platform where agents <strong className="text-foreground font-semibold">plan and build features</strong>, <strong className="text-foreground font-semibold">triage support</strong>, <strong className="text-foreground font-semibold">follow up on deals</strong>, and <strong className="text-foreground font-semibold">keep docs updated</strong>, across every team, automatically.
               </p>
             </Reveal>
             <Reveal>

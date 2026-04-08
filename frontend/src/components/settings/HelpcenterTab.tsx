@@ -469,11 +469,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
   return (
     <form onSubmit={handleSave} className="space-y-5">
       {/* ── Top Actions ── */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-sm font-medium">Help Center Configuration</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">Manage your public help center settings.</p>
-        </div>
+      <div className="flex items-center justify-end">
         <Button type="submit" disabled={saving} size="sm">
           {saving ? 'Saving...' : 'Save Changes'}
         </Button>
