@@ -226,9 +226,9 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	reviewerProfile := worker.GetRuntimeProfile(model.AgentPresetReviewAgent)
 	supportProfile := worker.GetRuntimeProfile(model.AgentPresetSupportAgent)
 	codeBuilderProvider := model.AgentModelProviderOpenAI
-	codeBuilderModel := "gpt-5-mini"
+	codeBuilderModel := "gpt-5.4"
 	reviewAgentProvider := model.AgentModelProviderOpenAI
-	reviewAgentModel := "gpt-5-mini"
+	reviewAgentModel := "gpt-5.4"
 
 	epicPlannerPrompt := defaultSystemPromptForPreset(model.AgentPresetEpicPlanner)
 	taskPlannerPrompt := defaultSystemPromptForPreset(model.AgentPresetTaskPlanner)

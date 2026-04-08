@@ -79,7 +79,7 @@ func TestBuildCodexConfigArtifactAddsOpenRouterProviderConfig(t *testing.T) {
 		DefaultModel:      "gpt-5-mini",
 		OpenRouterAPIKey:  "openrouter-secret",
 		OpenRouterBaseURL: "https://openrouter.ai/api/v1",
-	}, nil, nil)
+	}, nil, nil, nil)
 
 	profile, err := executor.resolveRuntimeProfile(&model.Agent{
 		Provider: &provider,
@@ -250,7 +250,7 @@ func TestAppendInteractivePlainTextQuestionInputRequestIgnoresNormalCompletionTe
 }
 
 func TestRequestedModelIDReturnsEmptyWhenAgentModelIsUnset(t *testing.T) {
-	executor := NewCodexExecutor("codex", CodexRuntimeConfig{DefaultModel: "gpt-5-mini"}, nil, nil)
+	executor := NewCodexExecutor("codex", CodexRuntimeConfig{DefaultModel: "gpt-5-mini"}, nil, nil, nil)
 	if got := executor.requestedModelID(&model.Agent{}); got != "" {
 		t.Fatalf("expected empty requested model, got %q", got)
 	}
@@ -267,7 +267,7 @@ func TestUpsertProviderEnvForOpenRouterDoesNotInjectOpenAIKeys(t *testing.T) {
 		OpenAIAPIKey:      "openai-secret",
 		OpenRouterAPIKey:  "openrouter-secret",
 		OpenRouterBaseURL: "https://openrouter.ai/api/v1",
-	}, nil, nil)
+	}, nil, nil, nil)
 	env := executor.buildBaseEnv()
 	env = executor.upsertProviderEnv(env, model.AgentModelProviderOpenRouter)
 
@@ -296,7 +296,7 @@ func TestResolveProviderDefaultsToOpenAIWhenManagedOAuthConfigured(t *testing.T)
 		ChatGPTAccessToken:        "token",
 		ChatGPTAccountID:          "account-123",
 		OpenRouterAPIKey:          "openrouter-secret",
-	}, nil, nil)
+	}, nil, nil, nil)
 
 	if got := executor.resolveProvider(&model.Agent{}); got != model.AgentModelProviderOpenAI {
 		t.Fatalf("expected OpenAI to remain the default provider when managed OAuth is configured, got %q", got)
@@ -314,7 +314,7 @@ func TestBuildCodexConfigArtifactForOAuthForcesChatGPTLogin(t *testing.T) {
 		ChatGPTAccessToken:        "token",
 		ChatGPTAccountID:          "account-123",
 		ChatGPTPlanType:           "pro",
-	}, nil, nil)
+	}, nil, nil, nil)
 
 	profile, err := executor.resolveRuntimeProfile(&model.Agent{
 		Provider: &provider,

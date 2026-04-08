@@ -193,6 +193,7 @@ func main() {
 			&model.AgentRunArtifact{},
 			&model.AgentRunInteraction{},
 			&model.CodingSessionStateSnapshot{},
+			&model.CodexWorkspaceAuth{},
 			&model.PMTaskLink{},
 			&model.SupportConversation{},
 			&model.SupportConversationTriage{},
@@ -492,6 +493,7 @@ func main() {
 	agentRunArtifactRepo := repository.NewAgentRunArtifactRepository(db)
 	agentRunInteractionRepo := repository.NewAgentRunInteractionRepository(db)
 	codingSessionStateSnapshotRepo := repository.NewCodingSessionStateSnapshotRepository(db)
+	codexWorkspaceAuthRepo := repository.NewCodexWorkspaceAuthRepository(db)
 	pmTaskLinkRepo := repository.NewPMTaskLinkRepository(db)
 	supportConversationRepo := repository.NewSupportConversationRepository(db)
 	supportConversationTriageRepo := repository.NewSupportConversationTriageRepository(db)
@@ -658,6 +660,10 @@ func main() {
 		slog.Info("Temporal configured", "address", cfg.TemporalAddress, "namespace", cfg.TemporalNamespace)
 	}
 	runEngine := temporalapp.NewRunEngine(temporalClient, cfg.TemporalNamespace)
+	codexWorkspaceAuthStore := workerpkg.NewCodexWorkspaceAuthStore(codexWorkspaceAuthRepo, resolveCodexAuthEncryptionKey(cfg))
+	if strings.TrimSpace(cfg.CodexOpenAIAuthMode) == "chatgpt_device_code" && codexWorkspaceAuthStore == nil {
+		slog.Warn("Codex workspace auth persistence disabled; set CODEX_AUTH_ENCRYPTION_KEY or a valid CRM_ENCRYPTION_KEY for durable device-code auth")
+	}
 	codexAuthManager := workerpkg.NewCodexAuthManager(workerpkg.CodexRuntimeConfig{
 		Path:                      cfg.CodexPath,
 		DefaultModel:              cfg.CodexModel,
@@ -670,7 +676,7 @@ func main() {
 		ChatGPTPlanType:           cfg.CodexChatGPTPlanType,
 		OpenRouterAPIKey:          cfg.OpenRouterAPIKey,
 		OpenRouterBaseURL:         cfg.OpenRouterBaseURL,
-	}, agentRunArtifactRepo)
+	}, agentRunArtifactRepo, codexWorkspaceAuthStore)
 
 	gitService := service.NewGitService(
 		gitIntegrationRepo,
@@ -1253,4 +1259,36 @@ func fatalWithSentry(message string, err error, attrs ...any) {
 	slog.Error(message, logAttrs...)
 	observability.Flush(2 * time.Second)
 	os.Exit(1)
+}
+
+func resolveCodexAuthEncryptionKey(cfg *config.Config) []byte {
+	if cfg == nil {
+		return nil
+	}
+	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.CodexAuthEncryptionKey)); err != nil {
+		slog.Warn("invalid CODEX_AUTH_ENCRYPTION_KEY (must be a 32-byte hex-encoded AES key)", "error", err)
+	} else if len(key) == 32 {
+		return key
+	}
+	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.CRMEncryptionKey)); err != nil {
+		slog.Warn("invalid CRM_ENCRYPTION_KEY for Codex workspace auth fallback (must be a 32-byte hex-encoded AES key)", "error", err)
+	} else if len(key) == 32 {
+		return key
+	}
+	return nil
+}
+
+func decodeOptionalAES256HexKey(value string) ([]byte, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil, nil
+	}
+	key, err := hex.DecodeString(trimmed)
+	if err != nil {
+		return nil, err
+	}
+	if len(key) != 32 {
+		return nil, fmt.Errorf("expected 32 bytes after hex decode, got %d", len(key))
+	}
+	return key, nil
 }

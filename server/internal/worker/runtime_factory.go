@@ -15,6 +15,7 @@ func NewDefaultRuntimeRegistry(
 	braveSearchAPIKey string,
 	runRepo *repository.AgentRunRepository,
 	artifactRepo *repository.AgentRunArtifactRepository,
+	workspaceAuth *CodexWorkspaceAuthStore,
 ) *RuntimeRegistry {
 	braveSearchClient := NewBraveSearchClient(braveSearchAPIKey)
 	modelFactory := &EinoModelFactory{
@@ -25,7 +26,7 @@ func NewDefaultRuntimeRegistry(
 		OpenRouterURL:   openRouterBaseURL,
 	}
 	opencodeAdapter := NewOpenCodeExecutor("opencode", opencodePath, anthropicAPIKey, anthropicBaseURL, openAIAPIKey, openAIBaseURL, openRouterAPIKey, openRouterBaseURL, runRepo, artifactRepo)
-	codexAdapter := NewCodexExecutor("codex", codexConfig, runRepo, artifactRepo)
+	codexAdapter := NewCodexExecutor("codex", codexConfig, runRepo, artifactRepo, workspaceAuth)
 	// native_sdk is the only in-process SDK-backed runtime exposed today.
 	// A real terminal-backed claude_code runtime can be added later as a distinct adapter.
 	nativeAdapter := NewEinoExecutor("native_sdk", modelFactory, braveSearchClient, runRepo, artifactRepo)
