@@ -13,7 +13,9 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
   arrayMove,
+  useSortable,
 } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,7 +34,7 @@ import { SortableFooterLinkRow, SortableHeaderLinkRow } from '@/components/setti
 import {
   PlusSignIcon, InformationCircleIcon, ArrowDown01Icon, Cancel01Icon,
   GlobeIcon, PaintBoardIcon, LayoutGridIcon, Link01Icon, Image01Icon,
-  LanguageCircleIcon,
+  LanguageCircleIcon, DragDropVerticalIcon,
 } from '@/lib/icons';
 import { cn } from '@/lib/utils';
 import { IconPicker, StoredIcon } from '@/components/ui/icon-picker';
@@ -64,40 +66,145 @@ function findCollectionByCardLinkValue(
   );
 }
 
-function orderFeaturedCardsForCollections(
+function findFeaturedCardForCollection(
+  cards: HomepageFeaturedCard[],
+  collection: DocsCollection,
+  spaceSlug: string,
+): HomepageFeaturedCard | undefined {
+  return cards.find((card) =>
+    card.link_type === 'collection' &&
+    card.space_slug === spaceSlug &&
+    (card.link_value === collection.id || card.link_value === collection.slug),
+  );
+}
+
+function syncFeaturedCardsForCollections(
   cards: HomepageFeaturedCard[],
   collections: DocsCollection[],
   spaceSlug: string,
 ): HomepageFeaturedCard[] {
-  const orderedCards: HomepageFeaturedCard[] = [];
-
-  for (const collection of collections) {
-    const existing = cards.find((card) =>
-      card.link_type === 'collection' &&
-      card.space_slug === spaceSlug &&
-      (card.link_value === collection.id || card.link_value === collection.slug),
-    );
-    if (!existing) continue;
-
-    orderedCards.push({
-      ...existing,
+  return cards.map((card) => {
+    if (card.link_type !== 'collection' || card.space_slug !== spaceSlug) {
+      return card;
+    }
+    const collection = findCollectionByCardLinkValue(collections, card.link_value);
+    if (!collection) {
+      return card;
+    }
+    return {
+      ...card,
       title: collection.name,
       icon: collection.icon ?? '',
       link_value: collection.slug,
       space_slug: spaceSlug,
-    });
+    };
+  });
+}
+
+function orderCollectionsForFeaturedCards(
+  collections: DocsCollection[],
+  cards: HomepageFeaturedCard[],
+  spaceSlug: string,
+): DocsCollection[] {
+  const orderedSelectedCollections = cards
+    .filter((card) => card.link_type === 'collection' && card.space_slug === spaceSlug)
+    .map((card) => findCollectionByCardLinkValue(collections, card.link_value))
+    .filter((collection): collection is DocsCollection => !!collection);
+  const selectedIds = new Set(orderedSelectedCollections.map((collection) => collection.id));
+  const remainingCollections = collections.filter((collection) => !selectedIds.has(collection.id));
+  return [...orderedSelectedCollections, ...remainingCollections];
+}
+
+function reorderFeaturedCardsForSpace(
+  cards: HomepageFeaturedCard[],
+  collections: DocsCollection[],
+  spaceSlug: string,
+  reorderedCollectionIds: string[],
+): HomepageFeaturedCard[] {
+  const selectedCards = cards.filter(
+    (card) => card.link_type === 'collection' && card.space_slug === spaceSlug,
+  );
+  const selectedByCollectionId = new Map(
+    selectedCards.map((card) => {
+      const collection = findCollectionByCardLinkValue(collections, card.link_value);
+      return [collection?.id ?? card.link_value, card] as const;
+    }),
+  );
+  const reorderedSelectedCards = reorderedCollectionIds
+    .map((id) => selectedByCollectionId.get(id))
+    .filter((card): card is HomepageFeaturedCard => !!card);
+
+  if (reorderedSelectedCards.length !== selectedCards.length) {
+    return cards;
   }
 
-  const remainingCards = cards.filter((card) => {
-    if (card.link_type !== 'collection') return true;
-    if (card.space_slug !== spaceSlug) return true;
-    return !collections.some(
-      (collection) =>
-        card.link_value === collection.id || card.link_value === collection.slug,
-    );
+  let selectedIndex = 0;
+  return cards.map((card) => {
+    if (card.link_type !== 'collection' || card.space_slug !== spaceSlug) {
+      return card;
+    }
+    const nextCard = reorderedSelectedCards[selectedIndex];
+    selectedIndex += 1;
+    return nextCard;
   });
+}
 
-  return [...remainingCards, ...orderedCards];
+function SortableFeaturedCollectionRow({
+  id,
+  collection,
+  card,
+  onToggle,
+  onDescriptionChange,
+  onIconChange,
+}: {
+  id: string;
+  collection: DocsCollection;
+  card: HomepageFeaturedCard;
+  onToggle: () => void;
+  onDescriptionChange: (value: string) => void;
+  onIconChange: (value: string) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center gap-3 rounded-lg border border-primary/20 bg-primary/[0.03] p-3"
+    >
+      <Checkbox
+        checked
+        onCheckedChange={onToggle}
+      />
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        className="shrink-0 cursor-grab touch-none text-muted-foreground/50 hover:text-muted-foreground active:cursor-grabbing"
+        aria-label={`Reorder ${collection.name}`}
+      >
+        <DragDropVerticalIcon className="h-4 w-4" />
+      </button>
+      <div className="flex-1 grid gap-2 grid-cols-[40px_140px_1fr] items-center">
+        <IconPicker
+          value={card.icon}
+          onChange={onIconChange}
+        />
+        <span className="text-sm font-medium truncate">{collection.name}</span>
+        <Input
+          value={card.description}
+          onChange={(event) => onDescriptionChange(event.target.value)}
+          placeholder="Short description"
+          className="h-8 text-sm"
+        />
+      </div>
+    </div>
+  );
 }
 
 interface ConfigState {
@@ -265,7 +372,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
           if (colRes.data) {
             setSpaceCollections(colRes.data);
             const existingCards = res.data?.homepage_config?.featured_cards ?? [];
-            const synced = orderFeaturedCardsForCollections(
+            const synced = syncFeaturedCardsForCollections(
               existingCards,
               colRes.data,
               space.slug,
@@ -284,14 +391,6 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
     e.preventDefault();
     setSaving(true);
     const { docsService } = await import('@/lib/services/docsService');
-    const orderedFeaturedCards =
-      homepageSpaceSlug && spaceCollections.length > 0
-        ? orderFeaturedCardsForCollections(
-            config.homepage_featured_cards,
-            spaceCollections,
-            homepageSpaceSlug,
-          )
-        : config.homepage_featured_cards;
     const res = await docsService.updateHelpcenterConfig(workspaceId, {
       subdomain: config.subdomain || undefined,
       custom_domain: config.custom_domain || undefined,
@@ -309,7 +408,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
       homepage_config: {
         hero_title: config.homepage_hero_title,
         hero_subtitle: config.homepage_hero_subtitle,
-        featured_cards: orderedFeaturedCards,
+        featured_cards: config.homepage_featured_cards,
       },
       search_placeholder: config.search_placeholder || undefined,
       protected_terms: config.protected_terms.filter(Boolean),
@@ -319,7 +418,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
       support_email: config.support_email || undefined,
     });
     // Sync icon changes back to collections
-    for (const card of orderedFeaturedCards) {
+    for (const card of config.homepage_featured_cards) {
       if (card.link_type !== 'collection' || !card.link_value) continue;
       const col = findCollectionByCardLinkValue(spaceCollections, card.link_value);
       if (col && (col.icon ?? '') !== card.icon) {
@@ -331,7 +430,6 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
     if (res.error) {
       toast.error(res.error);
     } else {
-      setConfig(prev => ({ ...prev, homepage_featured_cards: orderedFeaturedCards }));
       toast.success('Help center settings saved');
     }
   };
@@ -410,16 +508,31 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
     const res = await docsService.listCollections(workspaceId, space.id);
     const cols = res.data ?? [];
     setSpaceCollections(cols);
-    // Create a card for every collection
-    const cards: HomepageFeaturedCard[] = cols.map(col => ({
-      title: col.name,
-      description: col.description ?? '',
-      icon: col.icon ?? '',
-      link_type: 'collection',
-      link_value: col.slug,
-      space_slug: slug,
-    }));
-    setConfig(prev => ({ ...prev, homepage_featured_cards: cards }));
+    setConfig((prev) => {
+      const existingCardsForSpace = prev.homepage_featured_cards.filter(
+        (card) => card.link_type === 'collection' && card.space_slug === slug,
+      );
+      if (existingCardsForSpace.length > 0) {
+        return {
+          ...prev,
+          homepage_featured_cards: syncFeaturedCardsForCollections(
+            prev.homepage_featured_cards,
+            cols,
+            slug,
+          ),
+        };
+      }
+
+      const cards: HomepageFeaturedCard[] = cols.map(col => ({
+        title: col.name,
+        description: col.description ?? '',
+        icon: col.icon ?? '',
+        link_type: 'collection',
+        link_value: col.slug,
+        space_slug: slug,
+      }));
+      return { ...prev, homepage_featured_cards: cards };
+    });
   };
 
   const toggleCollection = (colId: string) => {
@@ -429,27 +542,19 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
     if (exists) {
       setConfig(prev => ({
         ...prev,
-        homepage_featured_cards: orderFeaturedCardsForCollections(
-          prev.homepage_featured_cards.filter(c => c.link_value !== col.slug),
-          spaceCollections,
-          homepageSpaceSlug,
-        ),
+        homepage_featured_cards: prev.homepage_featured_cards.filter(c => c.link_value !== col.slug),
       }));
     } else {
       setConfig(prev => ({
         ...prev,
-        homepage_featured_cards: orderFeaturedCardsForCollections(
-          [...prev.homepage_featured_cards, {
-            title: col.name,
-            description: col.description ?? '',
-            icon: col.icon ?? '',
-            link_type: 'collection',
-            link_value: col.slug,
-            space_slug: homepageSpaceSlug,
-          }],
-          spaceCollections,
-          homepageSpaceSlug,
-        ),
+        homepage_featured_cards: [...prev.homepage_featured_cards, {
+          title: col.name,
+          description: col.description ?? '',
+          icon: col.icon ?? '',
+          link_type: 'collection',
+          link_value: col.slug,
+          space_slug: homepageSpaceSlug,
+        }],
       }));
     }
   };
@@ -464,6 +569,40 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
       ),
     }));
   };
+
+  const handleFeaturedCardsDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id || !homepageSpaceSlug) return;
+
+    const orderedCollections = orderCollectionsForFeaturedCards(
+      spaceCollections,
+      config.homepage_featured_cards,
+      homepageSpaceSlug,
+    );
+    const selectedIds = orderedCollections
+      .filter((collection) =>
+        !!findFeaturedCardForCollection(
+          config.homepage_featured_cards,
+          collection,
+          homepageSpaceSlug,
+        ),
+      )
+      .map((collection) => collection.id);
+    const oldIndex = selectedIds.indexOf(active.id as string);
+    const newIndex = selectedIds.indexOf(over.id as string);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reorderedIds = arrayMove(selectedIds, oldIndex, newIndex);
+    setConfig((prev) => ({
+      ...prev,
+      homepage_featured_cards: reorderFeaturedCardsForSpace(
+        prev.homepage_featured_cards,
+        spaceCollections,
+        homepageSpaceSlug,
+        reorderedIds,
+      ),
+    }));
+  }, [config.homepage_featured_cards, homepageSpaceSlug, spaceCollections]);
 
   // ── Asset upload helpers ──
   const logoInputRef = useRef<HTMLInputElement>(null);
@@ -511,6 +650,21 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
       </div>
     );
   }
+
+  const orderedSpaceCollections = orderCollectionsForFeaturedCards(
+    spaceCollections,
+    config.homepage_featured_cards,
+    homepageSpaceSlug,
+  );
+  const selectedFeaturedCollectionIds = orderedSpaceCollections
+    .filter((collection) =>
+      !!findFeaturedCardForCollection(
+        config.homepage_featured_cards,
+        collection,
+        homepageSpaceSlug,
+      ),
+    )
+    .map((collection) => collection.id);
 
   return (
     <form onSubmit={handleSave} className="space-y-5">
@@ -876,10 +1030,29 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
             </Select>
 
             {spaceCollections.length > 0 && (
-              <div className="space-y-1.5">
-                {spaceCollections.map(col => {
-                  const card = config.homepage_featured_cards.find(c => c.link_value === col.slug);
+              <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleFeaturedCardsDragEnd}>
+                <SortableContext items={selectedFeaturedCollectionIds} strategy={verticalListSortingStrategy}>
+                  <div className="space-y-1.5">
+                {orderedSpaceCollections.map(col => {
+                  const card = findFeaturedCardForCollection(
+                    config.homepage_featured_cards,
+                    col,
+                    homepageSpaceSlug,
+                  );
                   const checked = !!card;
+                  if (checked && card) {
+                    return (
+                      <SortableFeaturedCollectionRow
+                        key={col.id}
+                        id={col.id}
+                        collection={col}
+                        card={card}
+                        onToggle={() => toggleCollection(col.id)}
+                        onDescriptionChange={(value) => updateCardByCollectionId(col.id, { description: value })}
+                        onIconChange={(value) => updateCardByCollectionId(col.id, { icon: value })}
+                      />
+                    );
+                  }
                   return (
                     <div
                       key={col.id}
@@ -889,27 +1062,13 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
                         checked={checked}
                         onCheckedChange={() => toggleCollection(col.id)}
                       />
-                      {checked ? (
-                        <div className="flex-1 grid gap-2 grid-cols-[40px_140px_1fr] items-center">
-                          <IconPicker
-                            value={card.icon}
-                            onChange={(v) => updateCardByCollectionId(col.id, { icon: v })}
-                          />
-                          <span className="text-sm font-medium truncate">{col.name}</span>
-                          <Input
-                            value={card.description}
-                            onChange={(e) => updateCardByCollectionId(col.id, { description: e.target.value })}
-                            placeholder="Short description"
-                            className="h-8 text-sm"
-                          />
-                        </div>
-                      ) : (
-                        <span className="text-sm text-muted-foreground">{col.name}</span>
-                      )}
+                      <span className="text-sm text-muted-foreground">{col.name}</span>
                     </div>
                   );
                 })}
-              </div>
+                  </div>
+                </SortableContext>
+              </DndContext>
             )}
           </div>
           </div>
