@@ -11,8 +11,10 @@ import { HelpArticleView } from './HelpArticleView';
 import { ConversationView } from './ConversationView';
 import { ConversationListView } from './ConversationListView';
 import { XIcon } from './icons';
+import helpinMarkUrl from '../assets/helpin-mark.svg';
 
 type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed';
+const HELPIN_BRANDING_URL = 'https://helpin.ai/?utm_source=helpin_widget&utm_medium=widget&utm_campaign=powered_by';
 
 interface ChatWindowProps {
   config: WidgetConfig;
@@ -414,13 +416,16 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
 
       {/* Powered by footer */}
       {showBranding && activeView !== 'conversation' && activeView !== 'messages' && (
-        <div className="helpin-powered-by">
+        <a
+          href={HELPIN_BRANDING_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="helpin-powered-by"
+        >
           <span>Powered by</span>
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" className="helpin-powered-by-icon">
-            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-          </svg>
+          <img src={helpinMarkUrl} alt="" aria-hidden="true" className="helpin-powered-by-icon" />
           <span className="helpin-powered-by-name">Helpin</span>
-        </div>
+        </a>
       )}
 
       {/* Bottom navigation */}
