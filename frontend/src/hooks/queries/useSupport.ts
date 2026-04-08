@@ -424,8 +424,27 @@ export function useMarkConversationUnread(workspaceId: string) {
   return useMutation({
     mutationFn: (conversationId: string) =>
       supportService.markConversationUnread(workspaceId, conversationId),
-    onSuccess: () => {
+    onSuccess: (_data, conversationId) => {
+      queryClient.setQueriesData<ConversationListResponse>(
+        { queryKey: queryKeys.support.conversations(workspaceId) },
+        (current) => {
+          if (!current) return current;
+          return {
+            ...current,
+            data: current.data.map((conversation) =>
+              conversation.id === conversationId
+                ? { ...conversation, unread_count: Math.max(conversation.unread_count ?? 0, 1) }
+                : conversation
+            ),
+          };
+        }
+      );
+      queryClient.setQueryData<SupportConversation>(
+        queryKeys.support.conversation(workspaceId, conversationId),
+        (current) => current ? { ...current, unread_count: Math.max(current.unread_count ?? 0, 1) } : current
+      );
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });
     },
@@ -441,6 +460,24 @@ export function useMarkConversationRead(workspaceId: string) {
     mutationFn: (conversationId: string) =>
       supportService.markConversationRead(workspaceId, conversationId),
     onSuccess: (_data, conversationId) => {
+      queryClient.setQueriesData<ConversationListResponse>(
+        { queryKey: queryKeys.support.conversations(workspaceId) },
+        (current) => {
+          if (!current) return current;
+          return {
+            ...current,
+            data: current.data.map((conversation) =>
+              conversation.id === conversationId
+                ? { ...conversation, unread_count: 0 }
+                : conversation
+            ),
+          };
+        }
+      );
+      queryClient.setQueryData<SupportConversation>(
+        queryKeys.support.conversation(workspaceId, conversationId),
+        (current) => current ? { ...current, unread_count: 0 } : current
+      );
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
