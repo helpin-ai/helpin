@@ -9,9 +9,11 @@ export type HelpinClient = {
   lead: (payload: EventPayload, directSend?: boolean) => void;
   show: () => void;
   hide: () => void;
+  open: () => void;
+  close: () => void;
   toggle: () => void;
-  showMessages: () => void;
-  showNewMessage: (content?: string) => void;
+  openMessages: () => void;
+  openNewMessage: (content?: string) => void;
   shutdown: () => void;
   rawTrack: (payload: any) => void;
   set: (
@@ -36,9 +38,11 @@ const noopClient: HelpinClient = {
   lead: () => {},
   show: () => {},
   hide: () => {},
+  open: () => {},
+  close: () => {},
   toggle: () => {},
-  showMessages: () => {},
-  showNewMessage: () => {},
+  openMessages: () => {},
+  openNewMessage: () => {},
   shutdown: () => {},
   rawTrack: () => {},
   set: () => {},
@@ -105,13 +109,23 @@ function useHelpin(): HelpinClient {
     [client],
   );
 
-  const showMessages = useCallback(
-    (): void => client.showMessages(),
+  const open = useCallback(
+    (): void => client.open(),
     [client],
   );
 
-  const showNewMessage = useCallback(
-    (content?: string): void => client.showNewMessage(content),
+  const close = useCallback(
+    (): void => client.close(),
+    [client],
+  );
+
+  const openMessages = useCallback(
+    (): void => client.openMessages(),
+    [client],
+  );
+
+  const openNewMessage = useCallback(
+    (content?: string): void => client.openNewMessage(content),
     [client],
   );
 
@@ -150,9 +164,11 @@ function useHelpin(): HelpinClient {
     trackPageView,
     show,
     hide,
+    open,
+    close,
     toggle,
-    showMessages,
-    showNewMessage,
+    openMessages,
+    openNewMessage,
     shutdown,
     rawTrack,
     set,

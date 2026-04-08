@@ -32,7 +32,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 );
 ```
 
-The chat widget boots automatically in the browser when `widgetKey` and `host` are set. Pass `autoBoot: false` to keep it dormant until you call `show()` or `showNewMessage()` — useful for custom launchers.
+The chat widget boots automatically in the browser when `widgetKey` and `host` are set. Pass `autoBoot: false` to keep it dormant until you call `show()`, `open()`, or `openNewMessage()` — useful for custom launchers.
 
 ## `useHelpin()`
 
@@ -43,7 +43,7 @@ import { useEffect } from 'react';
 import { useHelpin } from '@helpin-ai/react';
 
 function App() {
-  const { id, track, lead, trackPageView, set, show } = useHelpin();
+  const { id, track, lead, trackPageView, set, open } = useHelpin();
 
   useEffect(() => {
     void id({
@@ -60,7 +60,7 @@ function App() {
       <button onClick={() => track('cta_clicked', { cta: 'pricing' })}>
         Open Pricing
       </button>
-      <button onClick={show}>Chat with us</button>
+      <button onClick={open}>Chat with us</button>
     </>
   );
 }
@@ -84,11 +84,13 @@ function App() {
 
 | Method | Signature | Description |
 | --- | --- | --- |
-| `show` | `() => void` | Boot the widget if needed and open it |
-| `hide` | `() => void` | Close the widget |
+| `show` | `() => void` | Make the widget visible without opening chat |
+| `hide` | `() => void` | Hide the widget entirely |
+| `open` | `() => void` | Open the chat panel |
+| `close` | `() => void` | Close the chat panel while keeping the launcher visible |
 | `toggle` | `() => void` | Toggle the widget open or closed |
-| `showMessages` | `() => void` | Open the messages view |
-| `showNewMessage` | `(content?) => void` | Start a new conversation |
+| `openMessages` | `() => void` | Open the messages view |
+| `openNewMessage` | `(content?) => void` | Start a new conversation |
 | `shutdown` | `() => void` | End the session and unmount the widget |
 
 For the complete client API (`boot`, `group`, `reset`, `setUserId`, `getConfig`, `getLogger`), use the object returned by `createClient(...)` directly.

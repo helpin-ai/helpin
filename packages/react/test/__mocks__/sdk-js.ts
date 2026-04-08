@@ -14,9 +14,11 @@ export class HelpinClient {
   pageview = (): void => {};
   show = (): void => {};
   hide = (): void => {};
+  open = (): void => {};
+  close = (): void => {};
   toggle = (): void => {};
-  showMessages = (): void => {};
-  showNewMessage = (_content?: string): void => {};
+  openMessages = (): void => {};
+  openNewMessage = (_content?: string): void => {};
   shutdown = (): void => {};
   set = (_properties: Record<string, any>, _opts?: any): void => {};
   unset = (_propertyName: string, _opts?: any): void => {};

@@ -148,19 +148,21 @@ export interface HelpinGlobal {
   (command: 'onLoad', callback: () => void): void;
   (command: 'show', ...args: never[]): void;
   (command: 'hide', ...args: never[]): void;
+  (command: 'open', ...args: never[]): void;
+  (command: 'close', ...args: never[]): void;
   (command: 'toggle', ...args: never[]): void;
-  (command: 'showMessages', ...args: never[]): void;
-  (command: 'showNewMessage', content?: string): void;
-  (command: 'showConversation', conversationId: string): void;
+  (command: 'openMessages', ...args: never[]): void;
+  (command: 'openNewMessage', content?: string): void;
+  (command: 'openConversation', conversationId: string): void;
   (
-    command: 'showArticle',
+    command: 'openArticle',
     articleId: string,
     options?: { collectionId?: string; spaceId?: string },
   ): void;
   (command: 'boot', settings: { widgetKey?: string; key?: string; host?: string; user?: Record<string, unknown> }): void;
   (command: 'shutdown', ...args: never[]): void;
-  (command: 'onShow', callback: (...args: any[]) => void): void;
-  (command: 'onHide', callback: (...args: any[]) => void): void;
+  (command: 'onOpen', callback: (...args: any[]) => void): void;
+  (command: 'onClose', callback: (...args: any[]) => void): void;
   (command: 'onUnreadCountChange', callback: (...args: any[]) => void): void;
   (command: 'onUserEmailSupplied', callback: (...args: any[]) => void): void;
   (command: 'onConversationStarted', callback: (...args: any[]) => void): void;
@@ -189,16 +191,18 @@ export interface HelpinGlobal {
   shutdown(): void;
   show(): void;
   hide(): void;
+  open(): void;
+  close(): void;
   toggle(): void;
-  showMessages(): void;
-  showNewMessage(content?: string): void;
-  showConversation(conversationId: string): void;
-  showArticle(
+  openMessages(): void;
+  openNewMessage(content?: string): void;
+  openConversation(conversationId: string): void;
+  openArticle(
     articleId: string,
     options?: { collectionId?: string; spaceId?: string },
   ): void;
-  onShow(callback: (...args: any[]) => void): void;
-  onHide(callback: (...args: any[]) => void): void;
+  onOpen(callback: (...args: any[]) => void): void;
+  onClose(callback: (...args: any[]) => void): void;
   onUnreadCountChange(callback: (...args: any[]) => void): void;
   onUserEmailSupplied(callback: (...args: any[]) => void): void;
   onConversationStarted(callback: (...args: any[]) => void): void;
