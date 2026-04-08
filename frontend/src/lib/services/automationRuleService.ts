@@ -1,24 +1,22 @@
-import { api } from '../api';
-import type { AutomationRule, CreateAutomationRuleRequest, UpdateAutomationRuleRequest } from '../pmTypes';
-
-const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
+import { automationService } from './automationService';
+import type { CreateAutomationRuleRequest, UpdateAutomationRuleRequest } from '../pmTypes';
 
 export const automationRuleService = {
   list: (workspaceId: string) =>
-    api.get<AutomationRule[]>(`/pm/automation-rules${qs(workspaceId)}`),
+    automationService.listFlows(workspaceId) as ReturnType<typeof automationService.listFlows>,
 
   listByWorkflow: (workspaceId: string, workflowId: string) =>
-    api.get<AutomationRule[]>(`/pm/automation-rules${qs(workspaceId)}&workflow_id=${encodeURIComponent(workflowId)}`),
+    automationService.listFlowsByWorkflow(workspaceId, workflowId) as ReturnType<typeof automationService.listFlowsByWorkflow>,
 
   create: (workspaceId: string, data: CreateAutomationRuleRequest) =>
-    api.post<AutomationRule>(`/pm/automation-rules${qs(workspaceId)}`, data),
+    automationService.createFlow(workspaceId, data) as ReturnType<typeof automationService.createFlow>,
 
   get: (workspaceId: string, ruleId: string) =>
-    api.get<AutomationRule>(`/pm/automation-rules/${ruleId}${qs(workspaceId)}`),
+    automationService.getFlow(workspaceId, ruleId) as ReturnType<typeof automationService.getFlow>,
 
   update: (workspaceId: string, ruleId: string, data: UpdateAutomationRuleRequest) =>
-    api.put<AutomationRule>(`/pm/automation-rules/${ruleId}${qs(workspaceId)}`, data),
+    automationService.updateFlow(workspaceId, ruleId, data) as ReturnType<typeof automationService.updateFlow>,
 
   remove: (workspaceId: string, ruleId: string) =>
-    api.del(`/pm/automation-rules/${ruleId}${qs(workspaceId)}`),
+    automationService.deleteFlow(workspaceId, ruleId) as ReturnType<typeof automationService.deleteFlow>,
 };

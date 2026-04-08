@@ -293,6 +293,10 @@ func (h *GitHandler) Webhook(w http.ResponseWriter, r *http.Request) {
 			h.handleGitHubPush(r, w, workspaceID, payload)
 		case "pull_request":
 			h.handleGitHubPR(r, w, workspaceID, payload)
+		case "release":
+			h.handleGitHubRelease(r, w, workspaceID, payload)
+		case "check_suite":
+			h.handleGitHubCheckSuite(r, w, workspaceID, payload)
 		default:
 			writeJSON(w, http.StatusOK, map[string]string{"status": "ignored"})
 		}
@@ -333,6 +337,7 @@ func (h *GitHandler) handleGitHubPR(r *http.Request, w http.ResponseWriter, work
 		return
 	}
 
+	action, _ := payload["action"].(string)
 	repo, _ := nestedString(payload, "repository", "full_name")
 	prNumber := int(pr["number"].(float64))
 	prURL, _ := pr["html_url"].(string)
@@ -348,6 +353,10 @@ func (h *GitHandler) handleGitHubPR(r *http.Request, w http.ResponseWriter, work
 	if head, ok := pr["head"].(map[string]interface{}); ok {
 		branch, _ = head["ref"].(string)
 	}
+	baseBranch := ""
+	if base, ok := pr["base"].(map[string]interface{}); ok {
+		baseBranch, _ = base["ref"].(string)
+	}
 
 	if repo == "" {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ignored"})
@@ -356,7 +365,45 @@ func (h *GitHandler) handleGitHubPR(r *http.Request, w http.ResponseWriter, work
 
 	prTitle, _ := pr["title"].(string)
 
-	if err := h.gitService.ProcessWebhookPR(r.Context(), workspaceID, repo, prNumber, prTitle, prURL, prStatus, branch); err != nil {
+	if err := h.gitService.ProcessWebhookPR(r.Context(), workspaceID, repo, action, prNumber, prTitle, prURL, prStatus, branch, baseBranch); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "processed"})
+}
+
+func (h *GitHandler) handleGitHubRelease(r *http.Request, w http.ResponseWriter, workspaceID string, payload map[string]interface{}) {
+	action, _ := payload["action"].(string)
+	repo, _ := nestedString(payload, "repository", "full_name")
+	release, ok := payload["release"].(map[string]interface{})
+	if !ok || repo == "" {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ignored"})
+		return
+	}
+
+	tagName, _ := release["tag_name"].(string)
+	targetCommitish, _ := release["target_commitish"].(string)
+
+	if err := h.gitService.ProcessWebhookRelease(r.Context(), workspaceID, repo, action, tagName, targetCommitish); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "processed"})
+}
+
+func (h *GitHandler) handleGitHubCheckSuite(r *http.Request, w http.ResponseWriter, workspaceID string, payload map[string]interface{}) {
+	action, _ := payload["action"].(string)
+	repo, _ := nestedString(payload, "repository", "full_name")
+	checkSuite, ok := payload["check_suite"].(map[string]interface{})
+	if !ok || repo == "" {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ignored"})
+		return
+	}
+
+	branch, _ := checkSuite["head_branch"].(string)
+	conclusion, _ := checkSuite["conclusion"].(string)
+
+	if err := h.gitService.ProcessWebhookCheckSuite(r.Context(), workspaceID, repo, action, branch, conclusion); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

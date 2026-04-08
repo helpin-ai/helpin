@@ -1762,6 +1762,30 @@ func (r *PMTaskRepository) CountByWorkflowState(ctx context.Context, stateID str
 	return count, nil
 }
 
+// CountAssignedToAgent returns the number of tasks explicitly assigned to an agent.
+func (r *PMTaskRepository) CountAssignedToAgent(ctx context.Context, workspaceID, agentID string) (int64, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).
+		Model(&model.PMTask{}).
+		Where("workspace_id = ? AND assigned_agent_id = ?", workspaceID, agentID).
+		Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count tasks assigned to agent: %w", err)
+	}
+	return count, nil
+}
+
+// CountAssignedTasks returns the number of tasks with any assigned agent.
+func (r *PMTaskRepository) CountAssignedTasks(ctx context.Context, workspaceID string) (int64, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).
+		Model(&model.PMTask{}).
+		Where("workspace_id = ? AND assigned_agent_id IS NOT NULL", workspaceID).
+		Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count tasks assigned to any agent: %w", err)
+	}
+	return count, nil
+}
+
 // UpdateStartedCompleted computes and updates started/completed fields from state type.
 func (r *PMTaskRepository) UpdateStartedCompleted(ctx context.Context, taskID string) error {
 	var row struct {

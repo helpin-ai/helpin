@@ -21,6 +21,7 @@ type Handlers struct {
 	Organization        *handler.OrganizationHandler
 	Workspace           *handler.WorkspaceHandler
 	Settings            *handler.SettingsHandler
+	Automation          *handler.AutomationHandler
 	Invite              *handler.InviteHandler
 	PMWorkflow          *handler.PMWorkflowHandler
 	PMImport            *handler.PMImportHandler
@@ -386,6 +387,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				// Read
 				r.With(requirePerm(authorization.PermSettingsRead)).Get("/", h.Settings.GetAll)
 				r.With(requirePerm(authorization.PermSettingsManage)).Get("/ai-automations", h.Settings.GetAIAutomations)
+				r.With(requirePerm(authorization.PermSettingsManage)).Get("/ai-automations/executions", h.Settings.GetAIAutomationExecutions)
 				r.With(requirePerm(authorization.PermModuleAccessManage)).Get("/module-access", h.Settings.GetModuleAccess)
 
 				// Settings management (admin+)
@@ -422,6 +424,57 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(authorization.RequireTeamPermission(authz)).Put("/teams/{id}/estimates", h.Settings.UpdateTeamEstimateSettings)
 				r.With(authorization.RequireTeamPermission(authz)).Put("/teams/{id}/field-visibility", h.Settings.UpdateTeamFieldVisibility)
 				r.With(authorization.RequireTeamPermission(authz)).Put("/teams/{id}/repo-default", h.Settings.UpdateTeamRepoDefault)
+			})
+
+			// Automation — platform-wide automation API facade
+			r.Route("/automation", func(r chi.Router) {
+				r.Use(middleware.RequireWorkspaceID)
+				r.Use(wsAccess)
+
+				r.With(requirePerm(authorization.PermSettingsManage)).Get("/overview", h.Automation.GetOverview)
+				r.Route("/flows", func(r chi.Router) {
+					r.With(requirePerm(authorization.PermPMRead)).Get("/", h.Automation.ListFlows)
+					r.With(requirePerm(authorization.PermPMAdminAutomations)).Post("/", h.Automation.CreateFlow)
+					r.Route("/{id}", func(r chi.Router) {
+						r.With(requirePerm(authorization.PermPMRead)).Get("/", h.Automation.GetFlow)
+						r.With(requirePerm(authorization.PermPMAdminAutomations)).Put("/", h.Automation.UpdateFlow)
+						r.With(requirePerm(authorization.PermPMAdminAutomations)).Delete("/", h.Automation.DeleteFlow)
+					})
+				})
+
+				r.With(requirePerm(authorization.PermSettingsManage)).Get("/activity", h.Automation.ListActivity)
+
+				r.Route("/library", func(r chi.Router) {
+					r.With(requirePerm(authorization.PermSettingsManage)).Get("/triggers", h.Automation.ListTriggerCatalog)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/tools", h.Automation.ListToolCatalog)
+				})
+
+				r.Route("/agents", func(r chi.Router) {
+					r.With(requirePerm(authorization.PermPMRead)).Get("/", h.Automation.ListAgents)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/", h.Automation.CreateAgent)
+					r.Route("/{id}", func(r chi.Router) {
+						r.With(requirePerm(authorization.PermPMRead)).Get("/", h.Automation.GetAgent)
+						r.With(requirePerm(authorization.PermPMEdit)).Put("/", h.Automation.UpdateAgent)
+						r.With(requirePerm(authorization.PermPMEdit)).Delete("/", h.Automation.DeleteAgent)
+						r.With(requirePerm(authorization.PermPMRead)).Get("/usage", h.Automation.GetAgentUsage)
+					})
+				})
+
+				r.Route("/runs", func(r chi.Router) {
+					r.With(requirePerm(authorization.PermPMRead)).Get("/", h.Automation.ListRuns)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/", h.Automation.StartRun)
+					r.Route("/{id}", func(r chi.Router) {
+						r.With(requirePerm(authorization.PermPMRead)).Get("/", h.Automation.GetRun)
+						r.With(requirePerm(authorization.PermPMRead)).Get("/messages", h.Automation.ListRunMessages)
+						r.With(requirePerm(authorization.PermPMEdit)).Post("/messages", h.Automation.SendRunMessage)
+						r.With(requirePerm(authorization.PermPMRead)).Get("/artifacts", h.Automation.ListRunArtifacts)
+						r.With(requirePerm(authorization.PermPMEdit)).Post("/resume", h.Automation.ResumeRun)
+						r.With(requirePerm(authorization.PermPMEdit)).Post("/approve", h.Automation.ApproveRun)
+						r.With(requirePerm(authorization.PermPMEdit)).Post("/request-changes", h.Automation.RequestRunChanges)
+						r.With(requirePerm(authorization.PermPMEdit)).Post("/cancel", h.Automation.CancelRun)
+						r.With(requirePerm(authorization.PermPMEdit)).Post("/handoff", h.Automation.HandoffRun)
+					})
+				})
 			})
 
 			// Invitations
@@ -711,6 +764,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMRead)).Get("/runner-health", h.Agent.GetRunnerHealth)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tool-catalog", h.Agent.ListToolCatalog)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}", h.Agent.GetAgent)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/usage", h.Agent.GetAgentUsage)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/agents/{id}", h.Agent.UpdateAgent)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/agents/{id}", h.Agent.DeleteAgent)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/runs", h.Agent.ListAgentRuns)
