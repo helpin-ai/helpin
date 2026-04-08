@@ -31,7 +31,7 @@ import {
   SquareUnlock01Icon,
   UserCheck01Icon,
 } from '@/lib/icons'
-import { ICON_MAP } from '@/components/ui/icon-picker'
+import { ICON_MAP, StoredIcon } from '@/components/ui/icon-picker'
 import { toast } from 'sonner'
 import { useTitle } from '@/hooks/useTitle'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
@@ -810,7 +810,10 @@ export function DocsDocumentDetail() {
                 }
                 className="truncate hover:text-foreground transition-colors"
               >
-                {space.icon ? `${space.icon} ` : ''}{space.name}
+                <span className="inline-flex items-center gap-1">
+                  <StoredIcon name={space.icon} className="h-3.5 w-3.5 shrink-0" textClassName="" />
+                  <span>{space.name}</span>
+                </span>
               </button>
             </>
           )}

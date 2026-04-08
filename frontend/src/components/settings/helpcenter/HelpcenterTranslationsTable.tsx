@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { docsService } from '@/lib/services/docsService'
 import { getHelpcenterLocaleLabel } from '@/lib/docsTypes'
+import { StoredIcon } from '@/components/ui/icon-picker'
 import type {
   DocsSpace,
   DocsCollection,
@@ -230,8 +231,10 @@ export function HelpcenterTranslationsTable({
                   {/* Space row */}
                   <tr key={space.id} className="border-b border-border/40">
                     <td className="sticky left-0 z-10 bg-background px-3 py-2 font-medium">
-                      {space.icon && <span className="mr-1.5">{space.icon}</span>}
-                      {space.name}
+                      <span className="inline-flex items-center gap-1.5">
+                        <StoredIcon name={space.icon} className="h-4 w-4 shrink-0" textClassName="" />
+                        <span>{space.name}</span>
+                      </span>
                     </td>
                     {nonDefaultLocales.map((locale) => {
                       const cell = getSpaceTranslation(space.id, locale)

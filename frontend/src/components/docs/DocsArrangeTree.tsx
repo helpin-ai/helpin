@@ -17,7 +17,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { ArrowRight01Icon, File01Icon, Folder01Icon, DragDropVerticalIcon } from '@/lib/icons'
 import { timeAgo } from '@/lib/utils'
 import { DOC_STATUS_LABELS } from '@/lib/docsTypes'
-import { ICON_MAP } from '@/components/ui/icon-picker'
+import { ICON_MAP, StoredIcon } from '@/components/ui/icon-picker'
 import { Collapsible } from 'radix-ui'
 import {
   useDocsCollections,
@@ -215,11 +215,12 @@ function ArrangeSpace({
           className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-muted/60"
         >
           <ArrowRight01Icon className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${expanded ? 'rotate-90' : ''}`} />
-          {space.icon ? (
-            <span className="text-base">{space.icon}</span>
-          ) : (
-            <Folder01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-          )}
+          <StoredIcon
+            name={space.icon}
+            className="h-4 w-4 shrink-0 text-muted-foreground"
+            textClassName="text-base"
+            fallback={<Folder01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />}
+          />
           <div className="min-w-0 flex-1 flex items-center gap-2">
             <span className="truncate text-sm font-semibold">{space.name}</span>
           </div>

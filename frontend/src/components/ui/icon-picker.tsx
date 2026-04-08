@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
+import { useState, useMemo, useCallback, useEffect, useRef, type ReactNode } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
 import type { IconComponent } from '@/lib/icons'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -47,6 +47,10 @@ async function loadAllIcons(): Promise<IconEntry[]> {
   return entries
 }
 
+function looksLikeIconKey(value: string): boolean {
+  return /^[a-z0-9-]+$/.test(value)
+}
+
 /** Kebab-case -> icon component map. Populates async after chunk loads. */
 export const ICON_MAP: Record<string, IconComponent> = {}
 
@@ -54,6 +58,51 @@ export const ICON_MAP: Record<string, IconComponent> = {}
 loadAllIcons().then(() => {
   if (_cachedMap) Object.assign(ICON_MAP, _cachedMap)
 })
+
+interface StoredIconProps {
+  name?: string | null
+  className?: string
+  textClassName?: string
+  fallback?: ReactNode
+}
+
+export function StoredIcon({
+  name,
+  className,
+  textClassName,
+  fallback = null,
+}: StoredIconProps) {
+  const [, forceRender] = useState(0)
+
+  useEffect(() => {
+    if (!name || ICON_MAP[name] || !looksLikeIconKey(name)) {
+      return
+    }
+
+    let cancelled = false
+    loadAllIcons().then(() => {
+      if (!cancelled) {
+        forceRender((count) => count + 1)
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [name])
+
+  if (name) {
+    const Icon = ICON_MAP[name]
+    if (Icon) {
+      return <Icon className={className} />
+    }
+    if (!looksLikeIconKey(name)) {
+      return <span className={textClassName}>{name}</span>
+    }
+  }
+
+  return <>{fallback}</>
+}
 
 interface IconPickerProps {
   value: string

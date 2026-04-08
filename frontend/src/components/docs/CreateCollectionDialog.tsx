@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { IconPicker } from '@/components/ui/icon-picker'
+import { StoredIcon } from '@/components/ui/icon-picker'
 import { useCreateDocsCollection, useDocsSpaces, useUpdateDocsCollection } from '@/hooks/queries'
 import type { DocsCollection } from '@/lib/docsTypes'
 import { toast } from 'sonner'
@@ -166,8 +167,10 @@ export function CreateCollectionDialog({
               <div className="grid gap-2">
                 <Label>Space</Label>
                 <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-                  {currentSpace?.icon ? `${currentSpace.icon} ` : ''}
-                  {currentSpace?.name ?? 'Current space'}
+                  <span className="inline-flex items-center gap-1">
+                    <StoredIcon name={currentSpace?.icon} className="h-4 w-4 shrink-0" textClassName="" />
+                    <span>{currentSpace?.name ?? 'Current space'}</span>
+                  </span>
                 </div>
               </div>
             ) : (
@@ -180,7 +183,10 @@ export function CreateCollectionDialog({
                   <SelectContent>
                     {(spaces ?? []).map((s) => (
                       <SelectItem key={s.id} value={s.id}>
-                        {s.icon ? `${s.icon} ` : ''}{s.name}
+                        <span className="inline-flex items-center gap-1">
+                          <StoredIcon name={s.icon} className="h-4 w-4 shrink-0" textClassName="" />
+                          <span>{s.name}</span>
+                        </span>
                       </SelectItem>
                     ))}
                   </SelectContent>
