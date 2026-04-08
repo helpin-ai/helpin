@@ -99,7 +99,11 @@ func cloneWorkspace(ctx context.Context, workRoot, cloneDir string, gitIntegrati
 	cmd := exec.CommandContext(cloneCtx, "git", args...)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		_ = os.RemoveAll(workRoot)
-		return fmt.Errorf("git clone failed: %s", string(output))
+		outputText := strings.TrimSpace(string(output))
+		if outputText == "" {
+			return fmt.Errorf("git clone failed: %w", err)
+		}
+		return fmt.Errorf("git clone failed: %w: %s", err, outputText)
 	}
 
 	// Remove the persisted http.extraheader from the cloned repo config.
