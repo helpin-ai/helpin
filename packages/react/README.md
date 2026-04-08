@@ -1,6 +1,6 @@
 # @helpin-ai/react
 
-React bindings for the Helpin SDK. Provides context, hooks, and automatic pageview tracking for any React SPA.
+Helpin for React. Analytics, user identification, pageview tracking, and chat widget control — all through a single hook.
 
 ## Installation
 
@@ -10,7 +10,7 @@ npm install @helpin-ai/react @helpin-ai/sdk-js
 
 ## Quick Start
 
-Wrap your app with `HelpinProvider` to make the client available throughout your component tree:
+Wrap your app with `HelpinProvider` to make the client available throughout the component tree:
 
 ```tsx
 import React from 'react';
@@ -32,11 +32,11 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 );
 ```
 
-When running in the browser with `widgetKey` and `host` provided, the chat widget boots automatically through `@helpin-ai/sdk-js`. Set `autoBoot: false` to delay widget boot until you call a widget method like `show()` or `showNewMessage()`.
+The chat widget boots automatically in the browser when `widgetKey` and `host` are set. Pass `autoBoot: false` to keep it dormant until you call `show()` or `showNewMessage()` — useful for custom launchers.
 
-## Tracking with `useHelpin()`
+## `useHelpin()`
 
-Use the `useHelpin()` hook to identify users, track events, and control the widget:
+The hook provides analytics, user identification, and widget control from any component:
 
 ```tsx
 import { useEffect } from 'react';
@@ -68,25 +68,34 @@ function App() {
 
 ### Available methods
 
+**Analytics**
+
 | Method | Signature | Description |
 | --- | --- | --- |
-| `trackPageView` | `() => void` | Send a `pageview` event |
+| `trackPageView` | `() => void` | Send a pageview event |
 | `id` | `(userData, doNotSendEvent?) => Promise<void>` | Identify the current user |
 | `track` | `(eventName, payload?) => void` | Track a custom event |
 | `lead` | `(payload, directSend?) => void` | Track a lead event |
-| `show` | `() => void` | Boot the widget if needed and open it |
-| `hide` | `() => void` | Close the widget |
-| `toggle` | `() => void` | Toggle the widget open or closed |
-| `showMessages` | `() => void` | Open the widget to the messages view |
-| `showNewMessage` | `(content?) => void` | Start a new conversation |
-| `shutdown` | `() => void` | Revoke the widget session and unmount it |
 | `rawTrack` | `(payload) => void` | Send a raw event payload |
 | `set` | `(properties, opts?) => void` | Set global or event-scoped properties |
 | `unset` | `(propertyName, opts?) => void` | Remove a property added with `set(...)` |
 
-## Pageview Tracking
+**Widget**
 
-`usePageView()` automatically tracks route changes by observing `pushState`, `replaceState`, and `popstate`. You can run setup logic before each pageview or attach extra payload data:
+| Method | Signature | Description |
+| --- | --- | --- |
+| `show` | `() => void` | Boot the widget if needed and open it |
+| `hide` | `() => void` | Close the widget |
+| `toggle` | `() => void` | Toggle the widget open or closed |
+| `showMessages` | `() => void` | Open the messages view |
+| `showNewMessage` | `(content?) => void` | Start a new conversation |
+| `shutdown` | `() => void` | End the session and unmount the widget |
+
+For the complete client API (`boot`, `group`, `reset`, `setUserId`, `getConfig`, `getLogger`), use the object returned by `createClient(...)` directly.
+
+## `usePageView()`
+
+Tracks route changes automatically by observing `pushState`, `replaceState`, and `popstate`. Optionally run setup logic or attach extra data before each pageview fires:
 
 ```tsx
 import { usePageView } from '@helpin-ai/react';
@@ -108,8 +117,8 @@ function AppShell() {
 | Option | Type | Description |
 | --- | --- | --- |
 | `before` | `(helpin) => void` | Runs before each pageview event |
-| `typeName` | `string` | Override the event name (default: `pageview`) |
-| `payload` | `EventPayload` | Extra fields merged into the pageview payload |
+| `typeName` | `string` | Custom event name (default: `pageview`) |
+| `payload` | `EventPayload` | Extra fields merged into the payload |
 
 ## `HelpinProvider`
 
@@ -123,23 +132,15 @@ function AppShell() {
 | --- | --- | --- |
 | `client` | `HelpinClient \| null` | The client returned by `createClient(...)` |
 
-## Full SDK API
-
-`useHelpin()` exposes the most common tracking and widget methods. For the complete client API, hold onto the reference returned by `createClient(...)` — it also supports `boot(...)`, `group(...)`, `reset(...)`, `setUserId(...)`, `getConfig()`, and `getLogger()`.
-
-## Widget Controls
-
-Widget control is available directly from `useHelpin()` and the client returned by `createClient(...)`. If you want a custom launcher without rendering the widget immediately, initialize with `autoBoot: false` and call `show()` when the user clicks your CTA.
-
 ## Exports
 
 | Export | Description |
 | --- | --- |
-| `createClient` | Create the underlying Helpin client |
+| `createClient` | Client factory |
 | `HelpinProvider` | React context provider |
-| `HelpinContext` | Raw React context |
-| `useHelpin` | Tracking hook |
-| `usePageView` | SPA pageview hook |
+| `HelpinContext` | Raw React context (for advanced use) |
+| `useHelpin` | Analytics and widget hook |
+| `usePageView` | Automatic pageview tracking hook |
 
 ## Development
 

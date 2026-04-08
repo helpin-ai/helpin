@@ -1,6 +1,6 @@
 # @helpin-ai/sdk-js
 
-The core Helpin SDK for analytics and the embeddable chat widget. Works in any browser environment — use it as an npm module or drop in a script tag.
+Analytics and live chat for your website. Install as an npm module or add a script tag — both give you event tracking, user identification, and full control over the Helpin chat widget.
 
 ## Installation
 
@@ -36,7 +36,7 @@ client.pageview();
 client.show();
 ```
 
-When running in the browser with `widgetKey` and `host` provided, the module build automatically boots the chat widget alongside the analytics client. Set `autoBoot: false` to keep it dormant until you call `boot()`, `show()`, `showMessages()`, or `showNewMessage()`.
+By default, the widget boots automatically in browser environments when `widgetKey` and `host` are set. Pass `autoBoot: false` to keep the widget dormant until you explicitly call `boot()`, `show()`, `showMessages()`, or `showNewMessage()`.
 
 ## Quick Start (Script Tag)
 
@@ -62,53 +62,64 @@ When running in the browser with `widgetKey` and `host` provided, the module bui
 ></script>
 ```
 
-The script tag exposes a command-style API on `window.helpin(...)` that covers both analytics and widget control.
+The snippet queues commands until the SDK loads, so you can call `helpin(...)` immediately. Once ready, the global API handles both analytics and widget control.
 
 ## Exports
 
 | Export | Description |
 | --- | --- |
-| `helpinClient` | Factory that returns `HelpinClient \| null` |
-| `HelpinClient` | Core analytics client class |
-| `HelpinOptions` | SDK configuration type |
+| `helpinClient` | Factory — returns a `HelpinClient` or `null` |
+| `HelpinClient` | The client class (analytics + widget) |
+| `HelpinOptions` | Configuration type |
 | `UserProps` | User identity payload |
-| `EventPayload` | Generic event payload |
-| `ClientProperties` | Request/browser environment shape |
-| `LogLevel` | Logger level enum |
+| `EventPayload` | Event data payload |
+| `ClientProperties` | Browser/request environment shape |
+| `LogLevel` | Logger verbosity enum |
 
 ## Configuration
 
-Pass an `HelpinOptions` object to `helpinClient(...)` or use matching `data-*` attributes on the script tag.
+Configure via the `HelpinOptions` object passed to `helpinClient(...)`, or with `data-*` attributes on the script tag.
 
 | Option | Description |
 | --- | --- |
 | `widgetKey` | **Required.** Your public widget key |
-| `host` | Helpin host URL (with or without protocol) |
-| `autoBoot` | Boot the widget immediately in browser environments (default: `true`) |
-| `namespace` | Global namespace for the script-tag build (default: `helpin`) |
-| `autoPageview` | Automatically track pageviews on load |
-| `useBeaconApi` | Use the Beacon API for transport when available |
+| `host` | Helpin host URL, with or without protocol |
+| `autoBoot` | Boot the widget on initialization (default: `true`) |
+| `namespace` | Global name for the script-tag build (default: `helpin`) |
+| `autoPageview` | Track a pageview automatically on load |
+| `useBeaconApi` | Prefer the Beacon API for event transport |
 | `forceUseFetch` | Prefer `fetch` over `XMLHttpRequest` |
-| `cookieDomain` / `cookieName` | Configure the anonymous visitor ID cookie |
-| `crossDomainLinking` / `domains` | Carry the visitor ID across specified domains |
-| `propertyBlacklist` | Strip specific fields from outgoing event payloads |
-| `logLevel` | Control internal logging verbosity |
+| `cookieDomain` / `cookieName` | Customize the anonymous visitor ID cookie |
+| `crossDomainLinking` / `domains` | Share the visitor ID across specified domains |
+| `propertyBlacklist` | Omit specific fields from outgoing payloads |
+| `logLevel` | Internal logging verbosity |
 
 **Script tag equivalents:** `data-widget-key`, `data-host`, `data-auto-boot`, `data-namespace`, `data-auto-pageview`, `data-log-level`.
 
 ## Client API
 
-All methods are available on the object returned by `helpinClient(...)`.
+Every method below is available on the object returned by `helpinClient(...)`.
+
+### Analytics
 
 | Method | Signature | Description |
 | --- | --- | --- |
-| `init` | `(config: HelpinOptions) => void` | Re-initialize the client with new options |
-| `id` | `(userData: UserProps, doNotSendEvent?: boolean) => Promise<void>` | Identify a user (optionally suppressing the `user_identify` event) |
+| `init` | `(config: HelpinOptions) => void` | Re-initialize with new options |
+| `id` | `(userData: UserProps, doNotSendEvent?: boolean) => Promise<void>` | Identify a user (optionally suppress the `user_identify` event) |
 | `track` | `(eventName: string, payload?: EventPayload, directSend?: boolean) => void` | Track a custom event |
 | `lead` | `(payload: EventPayload, directSend?: boolean) => void` | Track a validated lead event |
-| `rawTrack` | `(payload: unknown) => void` | Send a raw event payload (event type `raw`) |
+| `rawTrack` | `(payload: unknown) => void` | Send a raw payload as event type `raw` |
 | `group` | `(company: { id: string; name: string; created_at: string; ... }, doNotSendEvent?: boolean) => Promise<void>` | Associate the user with a company or group |
 | `pageview` | `() => void` | Send a pageview event |
+| `set` | `(properties: Record<string, unknown>, opts?: { eventType?: string; persist?: boolean }) => void` | Attach global or event-scoped properties |
+| `unset` | `(propertyName: string, opts?: { eventType?: string; persist?: boolean }) => void` | Remove a property added with `set(...)` |
+| `setUserId` | `(userId: string) => void` | Update the stored user ID without a full identify call |
+| `reset` | `(resetAnonId?: boolean) => Promise<void>` | Clear all persisted user, company, and global state |
+
+### Widget
+
+| Method | Signature | Description |
+| --- | --- | --- |
 | `boot` | `(settings?: { widgetKey?, key?, host?, user? }) => void` | Boot or re-boot the widget |
 | `show` | `() => void` | Boot the widget if needed and open it |
 | `hide` | `() => void` | Close the widget |
@@ -116,74 +127,41 @@ All methods are available on the object returned by `helpinClient(...)`.
 | `showMessages` | `() => void` | Open the widget to the messages list |
 | `showNewMessage` | `(content?: string) => void` | Start a new conversation |
 | `showConversation` | `(conversationId: string) => void` | Open a specific conversation |
-| `showArticle` | `(articleId: string, options?: { collectionId?: string; spaceId?: string }) => void` | Display a help article |
+| `showArticle` | `(articleId: string, options?: { collectionId?: string; spaceId?: string }) => void` | Display a help-center article |
 | `shutdown` | `() => void` | End the widget session and remove it from the page |
-| `set` | `(properties: Record<string, unknown>, opts?: { eventType?: string; persist?: boolean }) => void` | Attach global or event-scoped properties |
-| `unset` | `(propertyName: string, opts?: { eventType?: string; persist?: boolean }) => void` | Remove a property previously added with `set(...)` |
-| `setUserId` | `(userId: string) => void` | Update the stored user ID without a full identify call |
-| `reset` | `(resetAnonId?: boolean) => Promise<void>` | Clear all persisted user, company, and global state |
-| `onShow` | `(callback) => void` | Listen for widget open events |
-| `onHide` | `(callback) => void` | Listen for widget close events |
-| `onUnreadCountChange` | `(callback) => void` | Listen for unread count changes |
-| `onUserEmailSupplied` | `(callback) => void` | Listen for visitor email submissions |
-| `onConversationStarted` | `(callback) => void` | Listen for new conversations |
-| `onMessageReceived` | `(callback) => void` | Listen for incoming messages |
-| `getVisitorId` | `() => string` | Return the current anonymous visitor ID |
-| `isWidgetReady` | `() => boolean` | Check whether the widget has finished loading |
-| `getConfig` | `() => HelpinOptions` | Return the merged runtime configuration |
-| `getLogger` | `() => logger` | Return the internal logger instance |
+
+### Event listeners
+
+| Method | Signature | Description |
+| --- | --- | --- |
+| `onShow` | `(callback) => void` | Widget opened |
+| `onHide` | `(callback) => void` | Widget closed |
+| `onUnreadCountChange` | `(callback) => void` | Unread count changed |
+| `onUserEmailSupplied` | `(callback) => void` | Visitor submitted their email |
+| `onConversationStarted` | `(callback) => void` | New conversation created |
+| `onMessageReceived` | `(callback) => void` | Incoming message received |
+
+### Getters
+
+| Method | Signature | Description |
+| --- | --- | --- |
+| `getVisitorId` | `() => string` | Current anonymous visitor ID |
+| `isWidgetReady` | `() => boolean` | Whether the widget has finished loading |
+| `getConfig` | `() => HelpinOptions` | Merged runtime configuration |
+| `getLogger` | `() => logger` | Internal logger instance |
 | `getCookie` | `(name: string) => string \| null` | Read a browser cookie by name |
 
-## Global Analytics Commands
+## Script Tag Command Reference
 
-When using the script tag, call these via `helpin('command', ...)`.
-
-| Command | Arguments | Description |
-| --- | --- | --- |
-| `init` | `(config)` | Initialize analytics manually (skips script-tag auto-init) |
-| `track` | `(eventName, payload?)` | Track a custom event |
-| `id` | `(userData, doNotSendEvent?)` | Identify a user |
-| `lead` | `(payload, directSend?)` | Track a lead |
-| `group` | `(companyProps, doNotSendEvent?)` | Associate a company or group |
-| `pageview` | `()` | Track a pageview |
-| `set` | `(properties, opts?)` | Set global or event-scoped properties |
-| `unset` | `(propertyName, opts?)` | Remove a previously set property |
-| `rawTrack` | `(payload)` | Send a raw event payload |
-| `setUserId` | `(userId)` | Update the stored user ID |
-| `reset` | `(resetAnonId?)` | Clear all tracked identity and persisted state |
-| `getConfig` | `()` | Return the runtime configuration |
-| `onLoad` | `(callback)` | Run a callback once the SDK is ready |
-
-## Global Widget Commands
-
-Widget control is available through the script-tag API.
+When using the script tag, every method above is available as `helpin('methodName', ...args)`. A few additional commands are specific to the global API:
 
 | Command | Arguments | Description |
 | --- | --- | --- |
-| `boot` | `({ widgetKey, key?, host?, user? })` | Manually boot the widget |
-| `shutdown` | `()` | End the widget session and remove it from the page |
-| `show` | `()` | Open the widget |
-| `hide` | `()` | Close the widget (keeps it mounted) |
-| `toggle` | `()` | Toggle the widget open or closed |
-| `showMessages` | `()` | Open the widget to the messages list |
-| `showNewMessage` | `(content?)` | Start a new conversation, optionally with an initial message |
-| `showConversation` | `(conversationId)` | Open a specific conversation |
-| `showArticle` | `(articleId, options?)` | Display a help-center article |
-| `onShow` | `(callback)` | Listen for widget open events |
-| `onHide` | `(callback)` | Listen for widget close events |
-| `onUnreadCountChange` | `(callback)` | Listen for unread count changes |
-| `onUserEmailSupplied` | `(callback)` | Listen for visitor email submissions |
-| `onConversationStarted` | `(callback)` | Listen for new conversations |
-| `onMessageReceived` | `(callback)` | Listen for incoming messages |
-| `getVisitorId` | `()` | Return the current anonymous visitor ID |
-| `isWidgetReady` | `()` | Check whether the widget has finished loading |
+| `onLoad` | `(callback)` | Run a callback once the SDK has finished loading |
 
 ## Module vs. Script Tag
 
-Both builds expose analytics and widget controls now.
-
-- **Module build** (`helpinClient(...)`) returns a `HelpinClient` with analytics plus widget methods like `show()`, `hide()`, `toggle()`, and `shutdown()`.
-- **Script-tag build** (`window.helpin(...)`) exposes the same capabilities through the global command API.
+Both builds provide the same analytics and widget capabilities. The module build returns a typed `HelpinClient` object; the script-tag build exposes the same methods through the `window.helpin(...)` command API. Choose whichever fits your stack.
 
 ## Development
 
