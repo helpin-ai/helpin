@@ -1104,7 +1104,21 @@ func (s *PMTaskService) MoveToState(ctx context.Context, id string, req model.Mo
 
 	// Auto-start pre-assigned LLM agent on state change.
 	if s.agentService != nil && current.AssignedAgentID != nil && *current.AssignedAgentID != "" {
-		if _, err := s.agentService.RunAgent(ctx, current.WorkspaceID, current.ID, "system"); err != nil {
+		stateID := req.StateID
+		if _, err := s.agentService.startTargetRun(
+			ctx,
+			current.WorkspaceID,
+			"task",
+			current.ID,
+			model.StartAgentRunRequest{AgentID: *current.AssignedAgentID},
+			nil,
+			systemRunTriggerContext("task.assigned_agent_state_change"),
+			&model.AgentRunEventContext{
+				StateID: &stateID,
+				TeamID:  current.TeamID,
+				Reason:  strPtr("task_state_changed"),
+			},
+		); err != nil {
 			if !errors.Is(err, ErrTaskDeliveryTargetRequired) {
 				s.logger.WarnContext(ctx, "auto-start agent on state change failed",
 					"error", err, "task_id", current.ID, "agent_id", *current.AssignedAgentID)

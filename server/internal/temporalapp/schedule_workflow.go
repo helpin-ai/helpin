@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	enumspb "go.temporal.io/api/enums/v1"
@@ -64,8 +65,9 @@ func WorkflowIDForSchedule(agentID string) string {
 
 // ScheduledAgentActivities creates agent runs for cron-triggered agents.
 type ScheduledAgentActivities struct {
-	agentRepo *repository.AgentRepository
-	runRepo   *repository.AgentRunRepository
+	agentRepo       *repository.AgentRepository
+	runRepo         *repository.AgentRunRepository
+	triggerExecRepo *repository.AgentTriggerExecutionRepository
 }
 
 // NewScheduledAgentActivities creates a new ScheduledAgentActivities.
@@ -79,6 +81,11 @@ func NewScheduledAgentActivities(
 	}
 }
 
+func (a *ScheduledAgentActivities) SetTriggerExecutionRepository(repo *repository.AgentTriggerExecutionRepository) *ScheduledAgentActivities {
+	a.triggerExecRepo = repo
+	return a
+}
+
 // CreateScheduledRun validates the agent is still scheduled, prevents
 // overlapping runs, creates a new AgentRun record, and returns its ID + queue.
 func (a *ScheduledAgentActivities) CreateScheduledRun(ctx context.Context, input ScheduledAgentInput) (ScheduledRunResult, error) {
@@ -87,7 +94,9 @@ func (a *ScheduledAgentActivities) CreateScheduledRun(ctx context.Context, input
 		return ScheduledRunResult{}, fmt.Errorf("agent not found")
 	}
 	if agent.Status == "disabled" || agent.Schedule == nil || *agent.Schedule == "" {
-		return ScheduledRunResult{}, fmt.Errorf("agent schedule removed, skipping")
+		err := fmt.Errorf("agent schedule removed, skipping")
+		a.recordTriggerExecution(ctx, input.WorkspaceID, input.AgentID, "scheduled", agent.ID, nil, err)
+		return ScheduledRunResult{}, err
 	}
 
 	// Prevent overlapping runs for the same scheduled agent.
@@ -98,7 +107,9 @@ func (a *ScheduledAgentActivities) CreateScheduledRun(ctx context.Context, input
 	if activeRun != nil && (activeRun.Status == "queued" || activeRun.Status == "running") {
 		slog.InfoContext(ctx, "scheduled agent skipped: active run exists",
 			"agent_id", agent.ID, "active_run_id", activeRun.ID)
-		return ScheduledRunResult{}, fmt.Errorf("agent already has an active run, skipping")
+		err := fmt.Errorf("agent already has an active run, skipping")
+		a.recordTriggerExecution(ctx, input.WorkspaceID, agent.ID, "scheduled", agent.ID, activeRun, err)
+		return ScheduledRunResult{}, err
 	}
 
 	resolved := workerpkg.ResolveAgentProfile(agent, model.InvocationModeAutonomous)
@@ -132,8 +143,10 @@ func (a *ScheduledAgentActivities) CreateScheduledRun(ctx context.Context, input
 		OutputSummary: json.RawMessage("{}"),
 	}
 	if err := a.runRepo.Create(ctx, run); err != nil {
+		a.recordTriggerExecution(ctx, input.WorkspaceID, agent.ID, "scheduled", agent.ID, nil, err)
 		return ScheduledRunResult{}, fmt.Errorf("create run: %w", err)
 	}
+	a.recordTriggerExecution(ctx, input.WorkspaceID, agent.ID, "scheduled", agent.ID, run, nil)
 
 	agent.Status = "working"
 	_ = a.agentRepo.Update(ctx, agent)
@@ -142,4 +155,62 @@ func (a *ScheduledAgentActivities) CreateScheduledRun(ctx context.Context, input
 		"agent_id", agent.ID, "run_id", run.ID, "queue", taskQueue)
 
 	return ScheduledRunResult{RunID: run.ID, TaskQueue: taskQueue}, nil
+}
+
+func (a *ScheduledAgentActivities) recordTriggerExecution(
+	ctx context.Context,
+	workspaceID, agentID, targetType, targetID string,
+	run *model.AgentRun,
+	err error,
+) {
+	if a == nil || a.triggerExecRepo == nil {
+		return
+	}
+
+	firedAt := time.Now().UTC()
+	status := model.AgentTriggerExecutionStatusQueued
+	if run != nil && run.Status != "" {
+		status = run.Status
+	}
+	if err != nil {
+		if run == nil {
+			status = model.AgentTriggerExecutionStatusFailed
+		}
+		if strings.Contains(strings.ToLower(err.Error()), "skipping") || strings.Contains(strings.ToLower(err.Error()), "already has an active run") {
+			status = model.AgentTriggerExecutionStatusSkipped
+		}
+	}
+
+	execution := &model.AgentTriggerExecution{
+		WorkspaceID: workspaceID,
+		AgentID:     agentID,
+		BindingID:   "agent.schedule",
+		BindingKind: "schedule",
+		TriggerType: scheduleStringPtr(model.TriggerCron),
+		TargetType:  scheduleStringPtr(targetType),
+		TargetID:    scheduleStringPtr(targetID),
+		Status:      status,
+		FiredAt:     firedAt,
+	}
+	if run != nil {
+		execution.RunID = &run.ID
+		execution.StartedAt = run.StartedAt
+		execution.CompletedAt = run.CompletedAt
+	}
+	if err != nil {
+		msg := err.Error()
+		execution.ErrorMessage = &msg
+		if execution.CompletedAt == nil {
+			execution.CompletedAt = &firedAt
+		}
+	}
+	_ = a.triggerExecRepo.Create(ctx, execution)
+}
+
+func scheduleStringPtr(value string) *string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	trimmed := strings.TrimSpace(value)
+	return &trimmed
 }

@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -89,8 +90,9 @@ type AgentRunNotifier interface {
 
 // AgentRunRepository handles DB operations for agent runs.
 type AgentRunRepository struct {
-	db       *gorm.DB
-	notifier AgentRunNotifier // optional, set via SetNotifier
+	db                   *gorm.DB
+	notifier             AgentRunNotifier // optional, set via SetNotifier
+	triggerExecutionRepo *AgentTriggerExecutionRepository
 }
 
 // NewAgentRunRepository creates a new AgentRunRepository.
@@ -105,6 +107,15 @@ func (r *AgentRunRepository) SetNotifier(n AgentRunNotifier) {
 		return
 	}
 	r.notifier = n
+}
+
+// SetTriggerExecutionRepository sets the execution history repository used to
+// keep trigger execution rows in sync with run state changes.
+func (r *AgentRunRepository) SetTriggerExecutionRepository(repo *AgentTriggerExecutionRepository) {
+	if r == nil {
+		return
+	}
+	r.triggerExecutionRepo = repo
 }
 
 // ListByAgent returns runs for an agent with pagination.
@@ -301,6 +312,9 @@ func (r *AgentRunRepository) Update(ctx context.Context, run *model.AgentRun) er
 	if err := r.db.WithContext(ctx).Save(run).Error; err != nil {
 		return fmt.Errorf("update agent run: %w", err)
 	}
+	if r.triggerExecutionRepo != nil {
+		_ = r.triggerExecutionRepo.SyncRunStatus(ctx, run)
+	}
 	return nil
 }
 
@@ -353,6 +367,132 @@ func (r *AgentRunRepository) Notify(ctx context.Context, run *model.AgentRun) {
 		return
 	}
 	r.notifier.PublishRunEvent(ctx, run)
+}
+
+// AgentTriggerExecutionRepository handles DB operations for durable trigger execution history.
+type AgentTriggerExecutionRepository struct {
+	db *gorm.DB
+}
+
+// NewAgentTriggerExecutionRepository creates a new AgentTriggerExecutionRepository.
+func NewAgentTriggerExecutionRepository(db *gorm.DB) *AgentTriggerExecutionRepository {
+	return &AgentTriggerExecutionRepository{db: db}
+}
+
+// Create persists a trigger execution row.
+func (r *AgentTriggerExecutionRepository) Create(ctx context.Context, execution *model.AgentTriggerExecution) error {
+	if err := r.db.WithContext(ctx).Create(execution).Error; err != nil {
+		return fmt.Errorf("create trigger execution: %w", err)
+	}
+	return nil
+}
+
+// ListByAgent returns recent trigger execution rows for an agent.
+func (r *AgentTriggerExecutionRepository) ListByAgent(ctx context.Context, workspaceID, agentID string, limit int) ([]model.AgentTriggerExecution, error) {
+	query := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND agent_id = ?", workspaceID, agentID).
+		Order("fired_at DESC, created_at DESC")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+
+	var executions []model.AgentTriggerExecution
+	if err := query.Find(&executions).Error; err != nil {
+		return nil, fmt.Errorf("list trigger executions: %w", err)
+	}
+	return executions, nil
+}
+
+// ListByWorkspace returns recent trigger executions in a workspace with
+// optional filters and pagination.
+func (r *AgentTriggerExecutionRepository) ListByWorkspace(
+	ctx context.Context,
+	workspaceID string,
+	filters model.TriggerExecutionListFilters,
+	pagination model.PMPagination,
+) ([]model.AgentTriggerExecution, int64, error) {
+	query := r.db.WithContext(ctx).Model(&model.AgentTriggerExecution{}).Where("workspace_id = ?", workspaceID)
+
+	if filters.AgentID != nil && strings.TrimSpace(*filters.AgentID) != "" {
+		query = query.Where("agent_id = ?", strings.TrimSpace(*filters.AgentID))
+	}
+	if filters.BindingID != nil && strings.TrimSpace(*filters.BindingID) != "" {
+		query = query.Where("binding_id = ?", strings.TrimSpace(*filters.BindingID))
+	}
+	if filters.TriggerType != nil && strings.TrimSpace(*filters.TriggerType) != "" {
+		query = query.Where("trigger_type = ?", strings.TrimSpace(*filters.TriggerType))
+	}
+	if filters.BindingKind != nil && strings.TrimSpace(*filters.BindingKind) != "" {
+		query = query.Where("binding_kind = ?", strings.TrimSpace(*filters.BindingKind))
+	}
+	if filters.Status != nil && strings.TrimSpace(*filters.Status) != "" {
+		query = query.Where("status = ?", strings.TrimSpace(*filters.Status))
+	}
+	if filters.ReferenceID != nil && strings.TrimSpace(*filters.ReferenceID) != "" {
+		query = query.Where("reference_id = ?", strings.TrimSpace(*filters.ReferenceID))
+	}
+	if filters.FiredAfter != nil {
+		query = query.Where("fired_at >= ?", *filters.FiredAfter)
+	}
+	if filters.FiredBefore != nil {
+		query = query.Where("fired_at <= ?", *filters.FiredBefore)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("count trigger executions: %w", err)
+	}
+
+	page := pagination.Page
+	perPage := pagination.PerPage
+	if page <= 0 {
+		page = 1
+	}
+	if perPage <= 0 {
+		perPage = 25
+	}
+	offset := (page - 1) * perPage
+
+	var executions []model.AgentTriggerExecution
+	if err := query.
+		Order("fired_at DESC, created_at DESC").
+		Offset(offset).
+		Limit(perPage).
+		Find(&executions).Error; err != nil {
+		return nil, 0, fmt.Errorf("list workspace trigger executions: %w", err)
+	}
+	return executions, total, nil
+}
+
+// SyncRunStatus updates any linked trigger execution rows to match the latest run status.
+func (r *AgentTriggerExecutionRepository) SyncRunStatus(ctx context.Context, run *model.AgentRun) error {
+	if r == nil || run == nil || strings.TrimSpace(run.ID) == "" {
+		return nil
+	}
+
+	updates := map[string]any{
+		"status":        strings.TrimSpace(run.Status),
+		"error_message": run.ErrorMessage,
+		"started_at":    run.StartedAt,
+		"completed_at":  run.CompletedAt,
+		"target_type":   nilIfBlank(run.TargetType),
+		"target_id":     nilIfBlank(run.TargetID),
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.AgentTriggerExecution{}).
+		Where("workspace_id = ? AND run_id = ?", run.WorkspaceID, run.ID).
+		Updates(updates).Error; err != nil {
+		return fmt.Errorf("sync trigger execution run status: %w", err)
+	}
+	return nil
+}
+
+func nilIfBlank(value string) *string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
 }
 
 // AgentRunArtifactRepository handles DB operations for run artifacts.

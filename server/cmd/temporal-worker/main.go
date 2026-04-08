@@ -96,6 +96,7 @@ func main() {
 	runEngine := temporalapp.NewRunEngine(temporalClient, cfg.TemporalNamespace)
 
 	runRepo := repository.NewAgentRunRepository(db)
+	triggerExecutionRepo := repository.NewAgentTriggerExecutionRepository(db)
 	runMessageRepo := repository.NewAgentRunMessageRepository(db)
 	agentRepo := repository.NewAgentRepository(db)
 	workspacePresetVersionRepo := repository.NewWorkspaceAgentPresetVersionRepository(db)
@@ -290,6 +291,7 @@ func main() {
 	emailSyncActivities := temporalapp.NewEmailSyncActivities(gmailSyncClient, crmEmailRepo, crmContactRepo, crmCalendarRepo, crmEmailSyncSettingsRepo, temporalClient, crmSummaryService)
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
 	runRepo.SetNotifier(ws.NewRunNotifier(wsPublisher))
+	runRepo.SetTriggerExecutionRepository(triggerExecutionRepo)
 	pmActivityService := service.NewPMActivityService(pmActivityRepo)
 	pmRecurringTemplateService := service.NewPMRecurringTemplateService(
 		recurringRepo,
@@ -359,6 +361,8 @@ func main() {
 		conversationRepo,
 		supportMessageRepo,
 		handoffRepo,
+		nil,
+		nil,
 		settingsRepo,
 		docsSpaceRepo,
 		docsDocumentRepo,
@@ -378,7 +382,7 @@ func main() {
 		cfg.CodexEnableChatGPTOAuth,
 		cfg.CodexChatGPTAccessToken,
 		cfg.CodexChatGPTAccountID,
-	)
+	).SetTriggerExecutionRepository(triggerExecutionRepo)
 	agentService.SetWorkflowService(pmWorkflowService)
 	docsContentService := service.NewDocsContentService(docsContentRepo, docsDocumentRepo, nil)
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, storyRepo, docsDocumentRepo, nil)
@@ -470,7 +474,7 @@ func main() {
 
 	_ = crmCompanyRepo // available for future enrichment activities
 
-	scheduleActivities := temporalapp.NewScheduledAgentActivities(agentRepo, runRepo)
+	scheduleActivities := temporalapp.NewScheduledAgentActivities(agentRepo, runRepo).SetTriggerExecutionRepository(triggerExecutionRepo)
 	recurringActivities := service.NewPMRecurringTemplateActivities(pmRecurringTemplateService)
 
 	// Sprint automation activities.

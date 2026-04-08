@@ -68,6 +68,19 @@ func (h *AgentHandler) GetAgent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, agent)
 }
 
+// GetAgentUsage handles GET /api/pm/agents/{id}/usage.
+func (h *AgentHandler) GetAgentUsage(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	id := chi.URLParam(r, "id")
+
+	summary, err := h.agentService.GetAgentUsageSummary(r.Context(), workspaceID, id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, summary)
+}
+
 // ListAgentPresets handles GET /api/pm/agent-presets.
 func (h *AgentHandler) ListAgentPresets(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)

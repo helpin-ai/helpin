@@ -158,6 +158,30 @@ type AgentRunArtifact struct {
 
 func (AgentRunArtifact) TableName() string { return "agent_run_artifacts" }
 
+// AgentTriggerExecution captures one durable trigger firing attempt for an agent binding.
+type AgentTriggerExecution struct {
+	ID            string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID   string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	AgentID       string     `json:"agent_id" gorm:"type:uuid;not null;index"`
+	BindingID     string     `json:"binding_id" gorm:"not null;index"`
+	BindingKind   string     `json:"binding_kind" gorm:"not null;index"`
+	TriggerType   *string    `json:"trigger_type"`
+	ReferenceID   *string    `json:"reference_id" gorm:"index"`
+	ReferenceType *string    `json:"reference_type"`
+	TargetType    *string    `json:"target_type" gorm:"index"`
+	TargetID      *string    `json:"target_id" gorm:"index"`
+	RunID         *string    `json:"run_id" gorm:"type:uuid;index"`
+	Status        string     `json:"status" gorm:"not null;index"`
+	ErrorMessage  *string    `json:"error_message"`
+	FiredAt       time.Time  `json:"fired_at" gorm:"not null;index"`
+	StartedAt     *time.Time `json:"started_at"`
+	CompletedAt   *time.Time `json:"completed_at"`
+	CreatedAt     time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt     time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+}
+
+func (AgentTriggerExecution) TableName() string { return "agent_trigger_executions" }
+
 // CreateAgentRequest is the payload for creating an agent.
 type CreateAgentRequest struct {
 	WorkspaceID           string          `json:"workspace_id"`
@@ -225,6 +249,48 @@ type CreateWorkspaceAgentPresetVersionRequest struct {
 	DefaultInvocationMode *string         `json:"default_invocation_mode"`
 }
 
+// AgentTriggerUsageSummary is the aggregated read model for "what triggers this agent".
+type AgentTriggerUsageSummary struct {
+	AgentID   string              `json:"agent_id"`
+	AgentName string              `json:"agent_name"`
+	Items     []AgentTriggerUsage `json:"items"`
+}
+
+// AgentTriggerUsage describes one inbound trigger or binding for an agent.
+type AgentTriggerUsage struct {
+	ID               string                         `json:"id"`
+	Kind             string                         `json:"kind"`
+	Title            string                         `json:"title"`
+	Description      string                         `json:"description"`
+	TriggerType      *string                        `json:"trigger_type,omitempty"`
+	Enabled          bool                           `json:"enabled"`
+	ReferenceID      *string                        `json:"reference_id,omitempty"`
+	ReferenceType    *string                        `json:"reference_type,omitempty"`
+	ManagePath       *string                        `json:"manage_path,omitempty"`
+	ExecutionSearch  *TriggerExecutionSearchPreset  `json:"execution_search,omitempty"`
+	LastTriggeredAt  *time.Time                     `json:"last_triggered_at,omitempty"`
+	LastSuccessAt    *time.Time                     `json:"last_success_at,omitempty"`
+	LastErrorAt      *time.Time                     `json:"last_error_at,omitempty"`
+	LastError        *string                        `json:"last_error,omitempty"`
+	RecentExecutions []AgentTriggerExecutionSummary `json:"recent_executions,omitempty"`
+}
+
+// AgentTriggerExecutionSummary is a compact execution record for one trigger binding.
+type AgentTriggerExecutionSummary struct {
+	ExecutionID   string     `json:"execution_id"`
+	RunID         *string    `json:"run_id,omitempty"`
+	Status        string     `json:"status"`
+	TargetType    string     `json:"target_type"`
+	TargetID      string     `json:"target_id"`
+	FiredAt       time.Time  `json:"fired_at"`
+	StartedAt     *time.Time `json:"started_at,omitempty"`
+	CompletedAt   *time.Time `json:"completed_at,omitempty"`
+	ErrorMessage  *string    `json:"error_message,omitempty"`
+	TriggerType   *string    `json:"trigger_type,omitempty"`
+	ReferenceID   *string    `json:"reference_id,omitempty"`
+	ReferenceType *string    `json:"reference_type,omitempty"`
+}
+
 // AssignAgentRequest assigns an agent to a task.
 type AssignAgentRequest struct {
 	AgentID string `json:"agent_id"`
@@ -257,6 +323,16 @@ const (
 	AgentRunPauseReasonHumanInput     = "human_input"
 	AgentRunPauseReasonHumanApproval  = "human_approval"
 	AgentRunPauseReasonAuthentication = "authentication"
+)
+
+const (
+	AgentTriggerExecutionStatusQueued    = "queued"
+	AgentTriggerExecutionStatusRunning   = "running"
+	AgentTriggerExecutionStatusPaused    = "paused"
+	AgentTriggerExecutionStatusCompleted = "completed"
+	AgentTriggerExecutionStatusFailed    = "failed"
+	AgentTriggerExecutionStatusCancelled = "cancelled"
+	AgentTriggerExecutionStatusSkipped   = "skipped"
 )
 
 func NormalizeAgentRunPauseState(run *AgentRun) {

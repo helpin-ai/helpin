@@ -92,9 +92,106 @@ type AutomationInventoryGroup struct {
 
 // AutomationInventoryResponse is the combined settings payload.
 type AutomationInventoryResponse struct {
-	Groups      []AutomationInventoryGroup `json:"groups"`
-	Items       []AutomationInventoryItem  `json:"items"`
-	GeneratedAt time.Time                  `json:"generated_at"`
+	Groups         []AutomationInventoryGroup      `json:"groups"`
+	Items          []AutomationInventoryItem       `json:"items"`
+	TriggerCatalog []AutomationTriggerCatalogEntry `json:"trigger_catalog"`
+	GeneratedAt    time.Time                       `json:"generated_at"`
+}
+
+// TriggerExecutionSearchPreset is a normalized filter contract for linking to
+// workspace trigger execution history without frontend-side trigger mapping.
+type TriggerExecutionSearchPreset struct {
+	AgentID     *string `json:"agent_id,omitempty"`
+	BindingID   *string `json:"binding_id,omitempty"`
+	TriggerType *string `json:"trigger_type,omitempty"`
+	Source      *string `json:"source,omitempty"`
+	ReferenceID *string `json:"reference_id,omitempty"`
+	Status      *string `json:"status,omitempty"`
+}
+
+// WorkflowRuleSearchPreset is a normalized contract for linking into workflow
+// rule authoring or filtered workflow rule views.
+type WorkflowRuleSearchPreset struct {
+	ShowTrigger         *string `json:"show_trigger,omitempty"`
+	ShowTriggerTitle    *string `json:"show_trigger_title,omitempty"`
+	Template            *string `json:"template,omitempty"`
+	TemplateTitle       *string `json:"template_title,omitempty"`
+	TemplateDescription *string `json:"template_description,omitempty"`
+	CreateEventRule     bool    `json:"create_event_rule,omitempty"`
+	TriggerType         *string `json:"trigger_type,omitempty"`
+	AgentID             *string `json:"agent_id,omitempty"`
+	RepoFullName        *string `json:"repo_full_name,omitempty"`
+	Branch              *string `json:"branch,omitempty"`
+	BaseBranch          *string `json:"base_branch,omitempty"`
+	TagName             *string `json:"tag_name,omitempty"`
+	Conclusion          *string `json:"conclusion,omitempty"`
+	TargetMode          *string `json:"target_mode,omitempty"`
+	TargetID            *string `json:"target_id,omitempty"`
+}
+
+// TriggerExecutionListFilters defines server-side filtering for workspace
+// trigger execution history.
+type TriggerExecutionListFilters struct {
+	AgentID     *string    `json:"agent_id,omitempty"`
+	BindingID   *string    `json:"binding_id,omitempty"`
+	TriggerType *string    `json:"trigger_type,omitempty"`
+	BindingKind *string    `json:"binding_kind,omitempty"`
+	Status      *string    `json:"status,omitempty"`
+	ReferenceID *string    `json:"reference_id,omitempty"`
+	FiredAfter  *time.Time `json:"fired_after,omitempty"`
+	FiredBefore *time.Time `json:"fired_before,omitempty"`
+}
+
+// AutomationTriggerExecutionListItem is the workspace-level execution row used
+// by the AI & Automations diagnostics surface.
+type AutomationTriggerExecutionListItem struct {
+	ExecutionID    string     `json:"execution_id"`
+	AgentID        string     `json:"agent_id"`
+	AgentName      string     `json:"agent_name"`
+	BindingID      string     `json:"binding_id"`
+	BindingKind    string     `json:"binding_kind"`
+	BindingTitle   string     `json:"binding_title"`
+	TriggerType    *string    `json:"trigger_type,omitempty"`
+	TriggerTitle   *string    `json:"trigger_title,omitempty"`
+	ReferenceID    *string    `json:"reference_id,omitempty"`
+	ReferenceType  *string    `json:"reference_type,omitempty"`
+	ReferenceTitle *string    `json:"reference_title,omitempty"`
+	ManagePath     *string    `json:"manage_path,omitempty"`
+	TargetType     *string    `json:"target_type,omitempty"`
+	TargetID       *string    `json:"target_id,omitempty"`
+	RunID          *string    `json:"run_id,omitempty"`
+	Status         string     `json:"status"`
+	ErrorMessage   *string    `json:"error_message,omitempty"`
+	FiredAt        time.Time  `json:"fired_at"`
+	StartedAt      *time.Time `json:"started_at,omitempty"`
+	CompletedAt    *time.Time `json:"completed_at,omitempty"`
+}
+
+// AutomationTriggerExecutionListResponse is the paginated settings payload for
+// workspace trigger execution history.
+type AutomationTriggerExecutionListResponse struct {
+	Data       []AutomationTriggerExecutionListItem `json:"data"`
+	Total      int                                  `json:"total"`
+	Page       int                                  `json:"page"`
+	PerPage    int                                  `json:"per_page"`
+	TotalPages int                                  `json:"total_pages"`
+}
+
+// AutomationTriggerCatalogEntry describes one canonical trigger surface in the product.
+type AutomationTriggerCatalogEntry struct {
+	ID                string                        `json:"id"`
+	BindingKind       string                        `json:"binding_kind"`
+	Category          string                        `json:"category"`
+	TriggerType       string                        `json:"trigger_type"`
+	Title             string                        `json:"title"`
+	Description       string                        `json:"description"`
+	SourceSurface     string                        `json:"source_surface"`
+	ConfigSurface     *string                       `json:"config_surface,omitempty"`
+	SupportsAgentRuns bool                          `json:"supports_agent_runs"`
+	BindingCount      int                           `json:"binding_count"`
+	ExecutionSearch   *TriggerExecutionSearchPreset `json:"execution_search,omitempty"`
+	ShowRulesSearch   *WorkflowRuleSearchPreset     `json:"show_rules_search,omitempty"`
+	CreateRuleSearch  *WorkflowRuleSearchPreset     `json:"create_rule_search,omitempty"`
 }
 
 // AutomationHealthSnapshot stores runtime health observations for built-in

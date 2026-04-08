@@ -2,21 +2,16 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { settingsService } from '@/lib/services/settingsService'
 import { queryKeys } from '@/lib/queryKeys'
 import { unwrap } from '@/lib/queryUtils'
-import type { AutomationInventoryResponse, TeamEstimateSettings, TeamFieldVisibility, WorkspaceModuleAccessSettings } from '@/lib/types'
+import type {
+  TeamEstimateSettings,
+  TeamFieldVisibility,
+  WorkspaceModuleAccessSettings,
+} from '@/lib/types'
 
 export function useWorkspaceSettings(wsId: string) {
   return useQuery({
     queryKey: queryKeys.workspaces.settings(wsId),
     queryFn: async () => unwrap(await settingsService.getAll(wsId)),
-    enabled: !!wsId,
-    staleTime: 60_000,
-  })
-}
-
-export function useAIAutomations(wsId: string) {
-  return useQuery<AutomationInventoryResponse>({
-    queryKey: queryKeys.workspaces.aiAutomations(wsId),
-    queryFn: async () => unwrap(await settingsService.getAIAutomations(wsId)),
     enabled: !!wsId,
     staleTime: 60_000,
   })
@@ -30,7 +25,6 @@ export function useWorkspaceModuleAccess(wsId: string) {
     staleTime: 30_000,
   })
 }
-
 export function useTeamEstimateSettings(wsId: string) {
   const { data } = useWorkspaceSettings(wsId)
   return data?.team_estimate_settings ?? []

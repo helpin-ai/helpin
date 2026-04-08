@@ -38,6 +38,11 @@ func TestValidateAgentTargetEnforcesPresetTargetMapping(t *testing.T) {
 			target: "task",
 		},
 		{
+			name:   "code builder can run on repositories",
+			agent:  model.Agent{IsSystem: true, PresetKey: model.AgentPresetCodeBuilder},
+			target: "repository",
+		},
+		{
 			name:      "code builder cannot run on epics",
 			agent:     model.Agent{IsSystem: true, PresetKey: model.AgentPresetCodeBuilder},
 			target:    "epic",
@@ -47,6 +52,11 @@ func TestValidateAgentTargetEnforcesPresetTargetMapping(t *testing.T) {
 			name:   "review agent can run on tasks",
 			agent:  model.Agent{IsSystem: true, PresetKey: model.AgentPresetReviewAgent},
 			target: "task",
+		},
+		{
+			name:   "review agent can run on repositories",
+			agent:  model.Agent{IsSystem: true, PresetKey: model.AgentPresetReviewAgent},
+			target: "repository",
 		},
 		{
 			name:   "support agent can run on support conversations",

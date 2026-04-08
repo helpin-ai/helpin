@@ -31,9 +31,10 @@ type GitService struct {
 	deliveryRepo    *repository.TaskDeliveryTargetRepository
 	settingsRepo    *repository.SettingsRepository
 	workspaceRepo   *repository.WorkspaceRepository
-	taskRepo       *repository.PMTaskRepository
+	taskRepo        *repository.PMTaskRepository
 	activitySvc     *PMActivityService
 	wsPublisher     *websocket.Publisher
+	ruleEngine      *AutomationRuleEngine
 	githubApp       *githubapp.Client
 	appBaseURL      string
 	githubAppSlug   string
@@ -63,7 +64,7 @@ func NewGitService(
 		deliveryRepo:    deliveryRepo,
 		settingsRepo:    settingsRepo,
 		workspaceRepo:   workspaceRepo,
-		taskRepo:       taskRepo,
+		taskRepo:        taskRepo,
 		activitySvc:     activitySvc,
 		wsPublisher:     wsPublisher,
 		githubApp:       githubApp,
@@ -71,6 +72,12 @@ func NewGitService(
 		githubAppSlug:   strings.TrimSpace(githubAppSlug),
 		stateSecret:     strings.TrimSpace(stateSecret),
 	}
+}
+
+// SetRuleEngine sets the automation rule engine used for webhook-derived triggers.
+func (s *GitService) SetRuleEngine(engine *AutomationRuleEngine) *GitService {
+	s.ruleEngine = engine
+	return s
 }
 
 // ListIntegrations returns all git integrations for a workspace.
@@ -231,6 +238,17 @@ func (s *GitService) ListRepositoryCatalog(ctx context.Context, workspaceID stri
 		return nil, fmt.Errorf("workspace_id is required")
 	}
 	return s.repoRepo.ListAll(ctx, workspaceID)
+}
+
+// GetRepositoryByID returns a synced repository record for a workspace.
+func (s *GitService) GetRepositoryByID(ctx context.Context, workspaceID, repoID string) (*model.GitRepository, error) {
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	if strings.TrimSpace(repoID) == "" {
+		return nil, fmt.Errorf("repository_id is required")
+	}
+	return s.repoRepo.GetByID(ctx, workspaceID, repoID)
 }
 
 // UpdateRepositorySelection updates whether a synced repository is available for story delivery.
@@ -575,6 +593,14 @@ func (s *GitService) ProcessWebhookPush(ctx context.Context, workspaceID, repo, 
 		return err
 	}
 	if link == nil {
+		if s.ruleEngine != nil {
+			s.ruleEngine.EvaluateEvent(ctx, model.AutomationEvent{
+				WorkspaceID:  workspaceID,
+				TriggerType:  model.TriggerGitHubPush,
+				RepoFullName: repo,
+				Branch:       branch,
+			}, nil)
+		}
 		return nil
 	}
 
@@ -603,11 +629,31 @@ func (s *GitService) ProcessWebhookPush(ctx context.Context, workspaceID, repo, 
 		ParentID:    link.TaskID,
 	})
 
+	if s.ruleEngine != nil {
+		event := model.AutomationEvent{
+			WorkspaceID:  workspaceID,
+			TriggerType:  model.TriggerGitHubPush,
+			RepoFullName: repo,
+			Branch:       branch,
+			TargetType:   "task",
+			TargetID:     link.TaskID,
+			TaskID:       link.TaskID,
+			StoryID:      link.TaskID,
+		}
+		if task, taskErr := s.taskRepo.GetRawByID(ctx, link.TaskID); taskErr == nil && task != nil {
+			event.StateID = task.WorkflowStateID
+			if task.TeamID != nil {
+				event.TeamID = *task.TeamID
+			}
+		}
+		s.ruleEngine.EvaluateEvent(ctx, event, nil)
+	}
+
 	return nil
 }
 
 // ProcessWebhookPR handles a PR event from a git provider.
-func (s *GitService) ProcessWebhookPR(ctx context.Context, workspaceID, repo string, prNumber int, prTitle, prURL, prStatus, branch string) error {
+func (s *GitService) ProcessWebhookPR(ctx context.Context, workspaceID, repo, action string, prNumber int, prTitle, prURL, prStatus, branch, baseBranch string) error {
 	link, err := s.linkRepo.GetByPR(ctx, workspaceID, repo, prNumber)
 	if err != nil {
 		return err
@@ -618,38 +664,40 @@ func (s *GitService) ProcessWebhookPR(ctx context.Context, workspaceID, repo str
 			return err
 		}
 	}
-	if link == nil {
-		return nil
-	}
-
-	link.PRNumber = &prNumber
-	link.PRTitle = &prTitle
-	link.PRURL = &prURL
-	link.PRStatus = &prStatus
-	if err := s.linkRepo.Update(ctx, link); err != nil {
-		return err
-	}
-
-	target, err := s.deliveryRepo.GetByTask(ctx, workspaceID, link.TaskID)
-	if err == nil && target != nil {
-		target.ActivePRNumber = &prNumber
-		target.ActivePRTitle = &prTitle
-		target.ActivePRURL = &prURL
-		target.ActivePRStatus = &prStatus
-		now := time.Now()
-		target.LastSyncedAt = &now
-		switch prStatus {
-		case "open":
-			target.DeliveryState = "pr_open"
-		case "merged":
-			target.DeliveryState = "merged"
-		case "closed":
-			target.DeliveryState = "closed"
+	var story *model.PMTask
+	if link != nil {
+		link.PRNumber = &prNumber
+		link.PRTitle = &prTitle
+		link.PRURL = &prURL
+		link.PRStatus = &prStatus
+		if err := s.linkRepo.Update(ctx, link); err != nil {
+			return err
 		}
-		_ = s.deliveryRepo.Save(ctx, target)
 
-		story, storyErr := s.taskRepo.GetRawByID(ctx, link.TaskID)
-		if storyErr == nil && story != nil && story.TeamID != nil && *story.TeamID != "" {
+		target, err := s.deliveryRepo.GetByTask(ctx, workspaceID, link.TaskID)
+		if err == nil && target != nil {
+			target.ActivePRNumber = &prNumber
+			target.ActivePRTitle = &prTitle
+			target.ActivePRURL = &prURL
+			target.ActivePRStatus = &prStatus
+			now := time.Now()
+			target.LastSyncedAt = &now
+			switch prStatus {
+			case "open":
+				target.DeliveryState = "pr_open"
+			case "merged":
+				target.DeliveryState = "merged"
+			case "closed":
+				target.DeliveryState = "closed"
+			}
+			_ = s.deliveryRepo.Save(ctx, target)
+		}
+
+		story, err = s.taskRepo.GetRawByID(ctx, link.TaskID)
+		if err != nil {
+			story = nil
+		}
+		if story != nil && story.TeamID != nil && *story.TeamID != "" {
 			if teamDefault, cfgErr := s.settingsRepo.GetTeamRepoDefault(ctx, *story.TeamID); cfgErr == nil && teamDefault != nil && teamDefault.AutoSyncStates {
 				switch prStatus {
 				case "open":
@@ -667,14 +715,119 @@ func (s *GitService) ProcessWebhookPR(ctx context.Context, workspaceID, repo str
 		}
 	}
 
-	s.wsPublisher.Publish(websocket.Event{
-		Action:      "updated",
-		Entity:      "task_git_link",
-		EntityID:    link.ID,
-		WorkspaceID: workspaceID,
-		ParentType:  "task",
-		ParentID:    link.TaskID,
-	})
+	if s.ruleEngine != nil {
+		event := model.AutomationEvent{
+			WorkspaceID:       workspaceID,
+			RepoFullName:      repo,
+			Branch:            branch,
+			BaseBranch:        baseBranch,
+			PullRequestNumber: prNumber,
+		}
+		if link != nil {
+			event.TargetType = "task"
+			event.TargetID = link.TaskID
+			event.TaskID = link.TaskID
+			event.StoryID = link.TaskID
+		}
+		if story != nil {
+			event.StateID = story.WorkflowStateID
+			if story.TeamID != nil {
+				event.TeamID = *story.TeamID
+			}
+		}
+		switch {
+		case prStatus == "merged":
+			event.TriggerType = model.TriggerGitHubPRMerged
+			s.ruleEngine.EvaluateEvent(ctx, event, nil)
+		case strings.TrimSpace(action) == "opened":
+			event.TriggerType = model.TriggerGitHubPROpened
+			s.ruleEngine.EvaluateEvent(ctx, event, nil)
+		case strings.TrimSpace(action) == "review_requested":
+			event.TriggerType = model.TriggerGitHubPRReviewReq
+			s.ruleEngine.EvaluateEvent(ctx, event, nil)
+		}
+	}
+
+	if link != nil {
+		s.wsPublisher.Publish(websocket.Event{
+			Action:      "updated",
+			Entity:      "task_git_link",
+			EntityID:    link.ID,
+			WorkspaceID: workspaceID,
+			ParentType:  "task",
+			ParentID:    link.TaskID,
+		})
+	}
+	return nil
+}
+
+// ProcessWebhookRelease handles a release event from GitHub.
+func (s *GitService) ProcessWebhookRelease(ctx context.Context, workspaceID, repo, action, tagName, targetCommitish string) error {
+	if strings.TrimSpace(action) != "published" || s.ruleEngine == nil {
+		return nil
+	}
+
+	event := model.AutomationEvent{
+		WorkspaceID:  workspaceID,
+		TriggerType:  model.TriggerGitHubReleasePub,
+		RepoFullName: repo,
+		Branch:       targetCommitish,
+		TagName:      tagName,
+	}
+	if strings.TrimSpace(targetCommitish) != "" {
+		link, err := s.linkRepo.GetByBranch(ctx, workspaceID, repo, targetCommitish)
+		if err != nil {
+			return err
+		}
+		if link != nil {
+			event.TargetType = "task"
+			event.TargetID = link.TaskID
+			event.TaskID = link.TaskID
+			event.StoryID = link.TaskID
+			if task, taskErr := s.taskRepo.GetRawByID(ctx, link.TaskID); taskErr == nil && task != nil {
+				event.StateID = task.WorkflowStateID
+				if task.TeamID != nil {
+					event.TeamID = *task.TeamID
+				}
+			}
+		}
+	}
+	s.ruleEngine.EvaluateEvent(ctx, event, nil)
+	return nil
+}
+
+// ProcessWebhookCheckSuite handles a check_suite event from GitHub.
+func (s *GitService) ProcessWebhookCheckSuite(ctx context.Context, workspaceID, repo, action, branch, conclusion string) error {
+	if strings.TrimSpace(action) != "completed" || s.ruleEngine == nil {
+		return nil
+	}
+
+	event := model.AutomationEvent{
+		WorkspaceID:  workspaceID,
+		TriggerType:  model.TriggerGitHubCheckSuite,
+		RepoFullName: repo,
+		Branch:       branch,
+		Conclusion:   conclusion,
+	}
+	if strings.TrimSpace(branch) != "" {
+		link, err := s.linkRepo.GetByBranch(ctx, workspaceID, repo, branch)
+		if err != nil {
+			return err
+		}
+		if link != nil {
+			event.TargetType = "task"
+			event.TargetID = link.TaskID
+			event.TaskID = link.TaskID
+			event.StoryID = link.TaskID
+			if task, taskErr := s.taskRepo.GetRawByID(ctx, link.TaskID); taskErr == nil && task != nil {
+				event.StateID = task.WorkflowStateID
+				if task.TeamID != nil {
+					event.TeamID = *task.TeamID
+				}
+			}
+		}
+	}
+	s.ruleEngine.EvaluateEvent(ctx, event, nil)
 	return nil
 }
 
