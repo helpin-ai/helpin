@@ -189,6 +189,7 @@ function initializeNamespacedClient(
       shutdown: () => widgetManager.shutdown(),
       show: () => widgetManager.show(),
       hide: () => widgetManager.hide(),
+      toggle: () => widgetManager.toggle(),
       showMessages: () => widgetManager.showMessages(),
       showNewMessage: (content?: string) => widgetManager.showNewMessage(content),
       showConversation: (id: string) => widgetManager.showConversation(id),
@@ -197,7 +198,10 @@ function initializeNamespacedClient(
       onHide: (cb: (...args: any[]) => void) => widgetManager.onHide(cb),
       onUnreadCountChange: (cb: (...args: any[]) => void) => widgetManager.onUnreadCountChange(cb),
       onUserEmailSupplied: (cb: (...args: any[]) => void) => widgetManager.onUserEmailSupplied(cb),
+      onConversationStarted: (cb: (...args: any[]) => void) => widgetManager.onConversationStarted(cb),
+      onMessageReceived: (cb: (...args: any[]) => void) => widgetManager.onMessageReceived(cb),
       getVisitorId: () => widgetManager.getVisitorId(),
+      isWidgetReady: () => widgetManager.isWidgetReady(),
     };
 
     if (widgetMethods[method]) {

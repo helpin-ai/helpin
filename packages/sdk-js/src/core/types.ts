@@ -150,9 +150,21 @@ export interface HelpinGlobal {
   (command: 'showMessages', ...args: never[]): void;
   (command: 'showNewMessage', content?: string): void;
   (command: 'showConversation', conversationId: string): void;
-  (command: 'showArticle', articleId: string): void;
+  (
+    command: 'showArticle',
+    articleId: string,
+    options?: { collectionId?: string; spaceId?: string },
+  ): void;
   (command: 'boot', settings: { widgetKey?: string; key?: string; host?: string; user?: Record<string, unknown> }): void;
   (command: 'shutdown', ...args: never[]): void;
+  (command: 'onShow', callback: (...args: any[]) => void): void;
+  (command: 'onHide', callback: (...args: any[]) => void): void;
+  (command: 'onUnreadCountChange', callback: (...args: any[]) => void): void;
+  (command: 'onUserEmailSupplied', callback: (...args: any[]) => void): void;
+  (command: 'onConversationStarted', callback: (...args: any[]) => void): void;
+  (command: 'onMessageReceived', callback: (...args: any[]) => void): void;
+  (command: 'getVisitorId'): string;
+  (command: 'isWidgetReady'): boolean;
 
   // Object-oriented API
   track(eventName: string, payload?: any): void;
@@ -179,6 +191,17 @@ export interface HelpinGlobal {
   showMessages(): void;
   showNewMessage(content?: string): void;
   showConversation(conversationId: string): void;
-  showArticle(articleId: string): void;
+  showArticle(
+    articleId: string,
+    options?: { collectionId?: string; spaceId?: string },
+  ): void;
+  onShow(callback: (...args: any[]) => void): void;
+  onHide(callback: (...args: any[]) => void): void;
+  onUnreadCountChange(callback: (...args: any[]) => void): void;
+  onUserEmailSupplied(callback: (...args: any[]) => void): void;
+  onConversationStarted(callback: (...args: any[]) => void): void;
+  onMessageReceived(callback: (...args: any[]) => void): void;
+  getVisitorId(): string;
+  isWidgetReady(): boolean;
   getConfig(): Config | null;
 }

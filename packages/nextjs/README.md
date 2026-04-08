@@ -1,178 +1,197 @@
-# Official Helpin SDK for NextJS
+# @helpin-ai/nextjs
 
+Next.js helpers for `@helpin-ai/sdk-js`.
 
-## General
+This package provides:
 
-This package is a wrapper around `@helpin-ai/sdk-js`, with added functionality related to NextJS.
+- `createClient(...)` for client-side Helpin initialization
+- `HelpinProvider` and `useHelpin()` for React context access
+- `usePageView(...)` for client-side route tracking
+- `middlewareEnv(...)` for Next.js middleware request metadata
 
-## Installation
+## Install
 
-With NextJS there're several ways on how to add Helpin tracking
-
-## Client Side Tracking
-
-First, create or update your `_app.js` following this code
-```jsx
-import { createClient, HelpinProvider } from "@helpin-ai/nextjs";
-
-// initialize Helpin core
-const helpinClient = createClient({
-  host: "__HELPIN_HOST__",
-  widgetKey: "__API_KEY__",
-  // See Helpin SDK parameters section for more options
-});
-
-// wrap our app with Helpin provider
-function MyApp({Component, pageProps}) {
-  return <HelpinProvider client={helpinClient}>
-    <Component {...pageProps} />
-  </HelpinProvider>
-}
-
-export default MyApp
+```bash
+npm install @helpin-ai/nextjs @helpin-ai/sdk-js
 ```
-See [parameters list](https://helpin.com/docs/sending-data/js-sdk/parameters-reference) for `createClient()` call.
 
-After helpin client and provider are configured you will be able to use `useHelpin` hook in your components
-```jsx
-import { useHelpin } from "@helpin-ai/nextjs";
+## Client-Side Setup
 
-const Main = () => {
-  const {id, trackPageView, track} = useHelpin(); // import methods from useHelpin hook
+`createClient(...)` in `@helpin-ai/nextjs` is browser-only. It returns `null` during SSR, so initialize it from a client component or client-only module.
+
+### App Router Example
+
+```tsx
+'use client';
+
+import { useMemo } from 'react';
+import { createClient, HelpinProvider, usePageView } from '@helpin-ai/nextjs';
+
+export function Providers({ children }: { children: React.ReactNode }) {
+  const helpinClient = useMemo(
+    () =>
+      createClient({
+        widgetKey: process.env.NEXT_PUBLIC_HELPIN_WIDGET_KEY!,
+        host: process.env.NEXT_PUBLIC_HELPIN_HOST!,
+      }),
+    [],
+  );
+
+  usePageView(helpinClient);
+
+  return <HelpinProvider client={helpinClient}>{children}</HelpinProvider>;
+}
+```
+
+### Using `useHelpin()`
+
+```tsx
+'use client';
+
+import { useEffect } from 'react';
+import { useHelpin } from '@helpin-ai/nextjs';
+
+export function BillingCTA() {
+  const { id, track, lead, set } = useHelpin();
 
   useEffect(() => {
-    id({id: '__USER_ID__', email: '__USER_EMAIL__'}); // identify current user for all events
-    trackPageView() // send pageview event
-  }, [])
-
-  const onClick = (btnName) => {
-    track('btn_click', {btn: btnName}); // send btn_click event with button name payload on click
-  }
+    void id({
+      id: 'user_123',
+      email: 'jane@example.com',
+      name: 'Jane Doe',
+    });
+    set({ app: 'web' });
+  }, [id, set]);
 
   return (
-    <button onClick="() => onClick('test_btn')">Test button</button>
-  )
+    <button onClick={() => track('billing_cta_clicked', { source: 'hero' })}>
+      Talk to Sales
+    </button>
+  );
 }
 ```
-Please note, that `useHelpin` uses `useEffect()` with related side effects.
 
-\
-To enable automatic pageview tracking, add `usePageView()` hook to your `_app.js`. This hook will send pageview each time
-user loads a new page. This hook relies on [NextJS Router](https://nextjs.org/docs/api-reference/next/router)
-```jsx
-import { createClient, HelpinProvider, usePageView } from "@helpin-ai/nextjs";
+Typed hook methods:
 
-// initialize Helpin core
+| Method | Signature | Description |
+| --- | --- | --- |
+| `trackPageView` | `() => void` | Sends a `pageview` event |
+| `id` | `(userData, doNotSendEvent?) => Promise<void>` | Identify the current user |
+| `track` | `(eventName, payload?) => void` | Track a custom event |
+| `lead` | `(payload, directSend?) => void` | Track a lead event |
+| `rawTrack` | `(payload) => void` | Send a raw event payload |
+| `set` | `(properties, opts?) => void` | Set global or event-scoped properties |
+| `unset` | `(propertyName, opts?) => void` | Remove a property set via `set(...)` |
+
+## `usePageView(helpin, opts?)`
+
+```tsx
+'use client';
+
+import { createClient, usePageView } from '@helpin-ai/nextjs';
+
 const helpinClient = createClient({
-  host: "__HELPIN_HOST__",
-  widgetKey: "__API_KEY__",
-  // See Helpin SDK parameters section for more options
+  widgetKey: process.env.NEXT_PUBLIC_HELPIN_WIDGET_KEY!,
+  host: process.env.NEXT_PUBLIC_HELPIN_HOST!,
 });
 
-function MyApp({Component, pageProps}) {
-  usePageView(helpinClient); // this hook will send pageview track event on URL change
+export function PageViewTracker() {
+  usePageView(helpinClient, {
+    before: (client) => {
+      void client.id({ id: 'user_123', email: 'jane@example.com' });
+    },
+    payload: {
+      framework: 'nextjs',
+    },
+  });
 
-  // wrap our app with Helpin provider
-  return <HelpinProvider client={helpinClient}>
-    <Component {...pageProps} />
-  </HelpinProvider>
-}
-
-export default MyApp
-```
-If you need to pre-configure helpin event - for example, identify a user, it's possible to do via `before` callback:
-```javascript
-usePageView(helpinClient, {before: (helpin) => helpin.id({id: '__USER_ID__', email: '__USER_EMAIL__'})})
-```
-
-## Server Side Tracking
-
-Helpin can track events on server-side:
-* **Pros:** this method is 100% reliable and ad-block resistant
-* **Cons:** static rendering will not be possible; `next export` will not work; fewer data points will be collected - attributes such as screen-size, device
-
-### Manual tracking
-
-For manual tracking you need to initialize Helpin client
-```javascript
-import { createClient } from "@helpin-ai/nextjs";
-
-// initialize Helpin core
-const helpinClient = createClient({
-  host: "__HELPIN_HOST__",
-  widgetKey: "__API_KEY__",
-  // See Helpin SDK parameters section for more options
-});
-```
-after that, you will be able to user [Helpin client](https://helpin.com/docs/sending-data/js-sdk/methods-reference), for example, in `getServerSideProps`
-```
-export async function getServerSideProps() {
-  helpin.track("page_view", {page: req.page})
-
-  return { props: {} }
+  return null;
 }
 ```
 
-### Automated page view tracking with middleware
+Options:
 
-Helpin provides a `middlewareEnv` helper for Next.js middleware (introduced in Next.js 12). It handles anonymous ID management, source IP extraction, and client property collection:
+| Option | Type | Description |
+| --- | --- | --- |
+| `before` | `(helpin) => void` | Runs before the pageview event is sent |
+| `typeName` | `string` | Override the event name, default `pageview` |
+| `payload` | `EventPayload` | Extra fields merged into the pageview payload |
 
-```javascript
+## `middlewareEnv(req, res, opts?)`
+
+`middlewareEnv(...)` is the server-safe helper in this package. It does not create a client. It collects request metadata and manages the anonymous-id cookie in middleware.
+
+```ts
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, middlewareEnv } from "@helpin-ai/nextjs";
+import { helpinClient } from '@helpin-ai/sdk-js';
+import { middlewareEnv } from '@helpin-ai/nextjs';
 
-const helpinClient = createClient({
-  host: "__HELPIN_HOST__",
-  widgetKey: "__API_KEY__",
+const client = helpinClient({
+  widgetKey: process.env.NEXT_PUBLIC_HELPIN_WIDGET_KEY!,
+  host: process.env.NEXT_PUBLIC_HELPIN_HOST!,
 });
 
-export function middleware(req) {
+export function middleware(req: NextRequest) {
   const res = NextResponse.next();
-  const env = middlewareEnv(req, res, { disableCookies: false });
+  const env = middlewareEnv(req, res);
 
-  helpinClient.track("page_view", {
+  client?.track('pageview', {
     ...env.describeClient(),
     source_ip: env.getSourceIp(),
-    anonymous_id: env.getAnonymousId({ name: "__helpin_id", domain: ".yourdomain.com" }),
+    anonymous_id: env.getAnonymousId({
+      name: 'helpin_aid',
+      domain: '.example.com',
+    }),
   });
 
   return res;
 }
 ```
 
-The `middlewareEnv(req, res, opts?)` function returns:
-- `getAnonymousId({ name, domain? })` - Gets or creates an anonymous visitor ID via cookies
-- `getSourceIp()` - Extracts the client IP from request headers
-- `describeClient()` - Returns `ClientProperties` (URL, user agent, language, referrer, etc.)
+Helper methods:
+
+| Method | Description |
+| --- | --- |
+| `getAnonymousId({ name, domain? })` | Returns or creates the visitor id cookie |
+| `getSourceIp()` | Extracts the client IP from request headers |
+| `describeClient()` | Returns a `ClientProperties`-shaped object for the current request |
+
+## Important Distinction
+
+- `createClient(...)` from `@helpin-ai/nextjs` is client-only.
+- For server-side tracking in middleware, route handlers, or server actions, use `helpinClient(...)` from `@helpin-ai/sdk-js`.
+- The browser client auto-boots the widget through `@helpin-ai/sdk-js` when `widgetKey` and `host` are present.
+
+## Accessing The Full SDK API
+
+Like the React wrapper, `useHelpin()` focuses on the common tracking helpers. If you need the full client API, keep a reference to the object returned by `createClient(...)`.
+
+That underlying client also supports:
+
+- `group(...)`
+- `reset(...)`
+- `setUserId(...)`
+- `getConfig()`
+- `getLogger()`
+
+## Widget Controls
+
+`@helpin-ai/nextjs` does not currently provide a typed wrapper for widget control commands such as `show()`, `hide()`, or `toggle()`. Document those commands against the global/script Helpin API from `@helpin-ai/sdk-js`.
 
 ## Exports
 
-The `@helpin-ai/nextjs` package exports the following:
-
 | Export | Description |
-|--------|-------------|
-| `HelpinProvider` | React context provider for the Helpin client |
-| `HelpinContext` | React context object |
-| `createClient` | Factory function to create a configured client |
-| `useHelpin` | Hook returning tracking methods (`id`, `track`, `trackPageView`, `lead`, `rawTrack`, `set`, `unset`) |
-| `usePageView` | Hook for automatic pageview tracking on URL changes |
-| `middlewareEnv` | Helper for Next.js middleware (anonymous IDs, IP, client properties) |
+| --- | --- |
+| `createClient` | Client-side Helpin factory |
+| `HelpinProvider` | React context provider |
+| `HelpinContext` | Raw React context |
+| `useHelpin` | Tracking hook |
+| `usePageView` | Client-side pageview hook |
+| `middlewareEnv` | Next middleware helper |
 
-### `usePageView` signature
+## Development
 
-```typescript
-usePageView(
-  helpin: HelpinClient | null,
-  opts?: {
-    before?: (helpin: HelpinClient) => void;
-    typeName?: string;
-    payload?: EventPayload;
-  }
-): HelpinClient | null
+```bash
+pnpm --filter @helpin-ai/nextjs build
+pnpm --filter @helpin-ai/nextjs test
 ```
-
-This hook monitors URL changes (including `pushState`/`replaceState` and `popstate`) and automatically sends pageview events. It does not depend on Next.js Router -- it uses the History API directly.
-
-## Example app
-
-You can find example app [here](https://github.com/helpin/helpin-next-example).
