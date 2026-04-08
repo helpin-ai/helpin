@@ -197,9 +197,9 @@ func executionSearchPresetForDefinition(def triggerBindingDefinition, referenceI
 }
 
 func triggerBindingDefinitions() []triggerBindingDefinition {
-	workflowsPath := strPtr("/w/$slug/settings/workflows")
+	workflowsPath := strPtr("/w/$slug/automation/flows")
 	chatPath := strPtr("/w/$slug/settings/chat-general")
-	agentsPath := strPtr("/w/$slug/pm/agents")
+	agentsPath := strPtr("/w/$slug/automation/agents")
 
 	return []triggerBindingDefinition{
 		{
@@ -252,7 +252,7 @@ func triggerBindingDefinitions() []triggerBindingDefinition {
 			createRuleSearch: &model.WorkflowRuleSearchPreset{
 				Template:            strPtr(model.TriggerTaskStateEntered),
 				TemplateTitle:       strPtr("Task State Entered template"),
-				TemplateDescription: strPtr("Choose a workflow state below, then assign an agent or merge rule in the pipeline. That creates a task.state_entered automation for the selected state."),
+				TemplateDescription: strPtr("Choose a workflow state and agent in Flows to create a task.state_entered automation for the selected state."),
 			},
 		},
 		{
@@ -272,7 +272,7 @@ func triggerBindingDefinitions() []triggerBindingDefinition {
 			createRuleSearch: &model.WorkflowRuleSearchPreset{
 				Template:            strPtr(model.TriggerAgentRunApproved),
 				TemplateTitle:       strPtr("Agent Run Approved template"),
-				TemplateDescription: strPtr("Choose a workflow state below, then enable Auto-advance in the pipeline. That creates an agent_run.approved rule for the selected state."),
+				TemplateDescription: strPtr("Choose a workflow state and follow-up action in Flows to create an agent_run.approved automation for the selected state."),
 			},
 		},
 		{
@@ -433,7 +433,7 @@ func triggerBindingDefinitions() []triggerBindingDefinition {
 			category:         "automation_rule",
 			triggerType:      model.TriggerCron,
 			title:            "Automation Rule Cron",
-			description:      "Runs a start-agent-run automation rule on a backend cron category. The engine supports it, but the UI is not yet surfaced for authoring.",
+			description:      "Runs a start-agent-run automation rule on a backend cron category. The engine supports it, but Flows does not yet surface cron authoring.",
 			sourceSurface:    "Rule engine backend",
 			configSurface:    workflowsPath,
 			supportsAgentRun: true,

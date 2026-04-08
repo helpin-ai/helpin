@@ -20,7 +20,7 @@ var entries = []model.AutomationCatalogEntry{
 		"Background only",
 		nil,
 		"CRM contacts, deals, signals, and insights",
-		"Settings > AI & Automations",
+		"Automation > Activity",
 	),
 	builtIn(
 		"crm.contact_summary_refresh",
@@ -39,7 +39,7 @@ var entries = []model.AutomationCatalogEntry{
 		"Background only",
 		nil,
 		"CRM contact detail pages",
-		"Settings > AI & Automations",
+		"Automation > Activity",
 	),
 	builtIn(
 		"crm.deal_summary_refresh",
@@ -58,7 +58,7 @@ var entries = []model.AutomationCatalogEntry{
 		"Background only",
 		nil,
 		"CRM deal detail pages",
-		"Settings > AI & Automations",
+		"Automation > Activity",
 	),
 	builtIn(
 		"pm.epic_auto_start",
@@ -77,7 +77,7 @@ var entries = []model.AutomationCatalogEntry{
 		"Task state change",
 		nil,
 		"PM epics and activity feed",
-		"Settings > AI & Automations",
+		"Automation > Activity",
 	),
 	builtIn(
 		"pm.epic_auto_complete",
@@ -96,7 +96,7 @@ var entries = []model.AutomationCatalogEntry{
 		"Task state change",
 		nil,
 		"PM epics and activity feed",
-		"Settings > AI & Automations",
+		"Automation > Activity",
 	),
 	builtIn(
 		"pm.sprint_auto_create",
@@ -115,7 +115,7 @@ var entries = []model.AutomationCatalogEntry{
 		"Hourly PM automation sweep",
 		nil,
 		"PM sprint lists and planning views",
-		"Settings > AI & Automations",
+		"Automation > Activity",
 	),
 	builtIn(
 		"pm.sprint_move_unfinished",
@@ -134,7 +134,7 @@ var entries = []model.AutomationCatalogEntry{
 		"Hourly PM automation sweep",
 		nil,
 		"PM sprints and tasks",
-		"Settings > AI & Automations",
+		"Automation > Activity",
 	),
 	{
 		ID:                  "automation_rule",
@@ -150,11 +150,16 @@ var entries = []model.AutomationCatalogEntry{
 		UserGoverned:        true,
 		UserCreatable:       true,
 		Queue:               "inline",
-		CurrentWriteSurface: "Project Settings > Workflows",
+		CurrentWriteSurface: "Automation > Flows",
+		CurrentWritePath:    catalogPathPtr("/w/$slug/automation/flows"),
 		CurrentRunSurface:   "Task state changes, agent run approvals, and GitHub webhooks",
 		OutputSurface:       "PM tasks, agent runs, and activity feed",
-		DiagnosticsSurface:  "Settings > AI & Automations",
+		DiagnosticsSurface:  "Automation > Activity",
 	},
+}
+
+func catalogPathPtr(value string) *string {
+	return &value
 }
 
 func builtIn(
