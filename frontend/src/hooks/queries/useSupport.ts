@@ -5,6 +5,11 @@ import { supportService } from '@/lib/services/supportService';
 import { supportAttachmentService } from '@/lib/services/supportAttachmentService';
 import { agentService } from '@/lib/services/agentService';
 import { unwrap } from '@/lib/queryUtils';
+import {
+  isSupportConversationListQueryKey,
+  updateConversationListUnreadCount,
+  updateConversationUnreadCount,
+} from '@/lib/supportQueryCache';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import type {
   AgentKnowledgeSource,
@@ -345,7 +350,9 @@ export function useUpdateConversationStatus(workspaceId: string) {
           const cached = queryClient.getQueriesData<ConversationListResponse>({
             queryKey: queryKeys.support.conversations(workspaceId),
           });
-          const conversations: SupportConversation[] = cached.flatMap(([, data]) => data?.data ?? []);
+          const conversations: SupportConversation[] = cached.flatMap(([queryKey, data]) =>
+            isSupportConversationListQueryKey(queryKey, workspaceId) ? (data?.data ?? []) : []
+          );
           const currentIdx = conversations.findIndex((c) => c.id === conversationId);
           // Pick the next one below, or the one above, or clear selection
           const next = conversations[currentIdx + 1] ?? conversations[currentIdx - 1];
@@ -426,22 +433,24 @@ export function useMarkConversationUnread(workspaceId: string) {
       supportService.markConversationUnread(workspaceId, conversationId),
     onSuccess: (_data, conversationId) => {
       queryClient.setQueriesData<ConversationListResponse>(
-        { queryKey: queryKeys.support.conversations(workspaceId) },
+        {
+          queryKey: queryKeys.support.conversations(workspaceId),
+          predicate: (query) => isSupportConversationListQueryKey(query.queryKey, workspaceId),
+        },
         (current) => {
-          if (!current) return current;
-          return {
-            ...current,
-            data: current.data.map((conversation) =>
-              conversation.id === conversationId
-                ? { ...conversation, unread_count: Math.max(conversation.unread_count ?? 0, 1) }
-                : conversation
-            ),
-          };
+          const currentUnreadCount = Array.isArray(current?.data)
+            ? current.data.find((conversation) => conversation.id === conversationId)?.unread_count ?? 0
+            : 0;
+          return updateConversationListUnreadCount(
+            current,
+            conversationId,
+            Math.max(currentUnreadCount, 1),
+          );
         }
       );
       queryClient.setQueryData<SupportConversation>(
         queryKeys.support.conversation(workspaceId, conversationId),
-        (current) => current ? { ...current, unread_count: Math.max(current.unread_count ?? 0, 1) } : current
+        (current) => updateConversationUnreadCount(current, Math.max(current?.unread_count ?? 0, 1))
       );
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId) });
@@ -461,22 +470,15 @@ export function useMarkConversationRead(workspaceId: string) {
       supportService.markConversationRead(workspaceId, conversationId),
     onSuccess: (_data, conversationId) => {
       queryClient.setQueriesData<ConversationListResponse>(
-        { queryKey: queryKeys.support.conversations(workspaceId) },
-        (current) => {
-          if (!current) return current;
-          return {
-            ...current,
-            data: current.data.map((conversation) =>
-              conversation.id === conversationId
-                ? { ...conversation, unread_count: 0 }
-                : conversation
-            ),
-          };
-        }
+        {
+          queryKey: queryKeys.support.conversations(workspaceId),
+          predicate: (query) => isSupportConversationListQueryKey(query.queryKey, workspaceId),
+        },
+        (current) => updateConversationListUnreadCount(current, conversationId, 0)
       );
       queryClient.setQueryData<SupportConversation>(
         queryKeys.support.conversation(workspaceId, conversationId),
-        (current) => current ? { ...current, unread_count: 0 } : current
+        (current) => updateConversationUnreadCount(current, 0)
       );
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId) });
