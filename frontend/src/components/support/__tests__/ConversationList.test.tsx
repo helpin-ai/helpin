@@ -7,9 +7,13 @@ import { useSupportInboxStore } from '@/stores/supportInboxStore'
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore'
 
 const mockUseConversations = vi.fn()
+const mockUseMarkConversationRead = vi.fn()
+const mockUseInboxScopes = vi.fn()
 
 vi.mock('@/hooks/queries/useSupport', () => ({
   useConversations: (...args: unknown[]) => mockUseConversations(...args),
+  useMarkConversationRead: (...args: unknown[]) => mockUseMarkConversationRead(...args),
+  useInboxScopes: (...args: unknown[]) => mockUseInboxScopes(...args),
 }))
 
 vi.mock('../ConversationRow', () => ({
@@ -46,6 +50,15 @@ describe('ConversationList presence resync', () => {
       },
       isLoading: false,
       error: null,
+    })
+    mockUseMarkConversationRead.mockReturnValue({
+      mutate: vi.fn(),
+    })
+    mockUseInboxScopes.mockReturnValue({
+      data: {
+        shared_inbox: { id: 'shared', name: 'Shared Inbox' },
+        mailboxes: [],
+      },
     })
   })
 
