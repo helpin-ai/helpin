@@ -64,6 +64,42 @@ function findCollectionByCardLinkValue(
   );
 }
 
+function orderFeaturedCardsForCollections(
+  cards: HomepageFeaturedCard[],
+  collections: DocsCollection[],
+  spaceSlug: string,
+): HomepageFeaturedCard[] {
+  const orderedCards: HomepageFeaturedCard[] = [];
+
+  for (const collection of collections) {
+    const existing = cards.find((card) =>
+      card.link_type === 'collection' &&
+      card.space_slug === spaceSlug &&
+      (card.link_value === collection.id || card.link_value === collection.slug),
+    );
+    if (!existing) continue;
+
+    orderedCards.push({
+      ...existing,
+      title: collection.name,
+      icon: collection.icon ?? '',
+      link_value: collection.slug,
+      space_slug: spaceSlug,
+    });
+  }
+
+  const remainingCards = cards.filter((card) => {
+    if (card.link_type !== 'collection') return true;
+    if (card.space_slug !== spaceSlug) return true;
+    return !collections.some(
+      (collection) =>
+        card.link_value === collection.id || card.link_value === collection.slug,
+    );
+  });
+
+  return [...remainingCards, ...orderedCards];
+}
+
 interface ConfigState {
   subdomain: string;
   custom_domain: string;
@@ -218,7 +254,9 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
       setSpaces(extSpaces);
 
       // If existing cards reference a space, auto-select it and sync icons from collections
-      const existingSlug = res.data?.homepage_config?.featured_cards?.[0]?.space_slug;
+      const existingSlug = (res.data?.homepage_config?.featured_cards ?? []).find(
+        (card) => card.link_type === 'collection' && card.space_slug,
+      )?.space_slug;
       if (existingSlug) {
         const space = extSpaces.find(s => s.slug === existingSlug);
         if (space) {
@@ -226,21 +264,12 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
           const colRes = await docsService.listCollections(workspaceId, space.id);
           if (colRes.data) {
             setSpaceCollections(colRes.data);
-            // Sync card titles and icons from current collection data
             const existingCards = res.data?.homepage_config?.featured_cards ?? [];
-            const synced = existingCards.map(card => {
-              const col = findCollectionByCardLinkValue(colRes.data!, card.link_value);
-              return col
-                ? {
-                    ...card,
-                    title: col.name,
-                    description: col.description ?? card.description,
-                    icon: col.icon ?? '',
-                    link_value: col.slug,
-                    space_slug: space.slug,
-                  }
-                : card;
-            });
+            const synced = orderFeaturedCardsForCollections(
+              existingCards,
+              colRes.data,
+              space.slug,
+            );
             setConfig(prev => ({ ...prev, homepage_featured_cards: synced }));
           }
         }
@@ -255,6 +284,14 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
     e.preventDefault();
     setSaving(true);
     const { docsService } = await import('@/lib/services/docsService');
+    const orderedFeaturedCards =
+      homepageSpaceSlug && spaceCollections.length > 0
+        ? orderFeaturedCardsForCollections(
+            config.homepage_featured_cards,
+            spaceCollections,
+            homepageSpaceSlug,
+          )
+        : config.homepage_featured_cards;
     const res = await docsService.updateHelpcenterConfig(workspaceId, {
       subdomain: config.subdomain || undefined,
       custom_domain: config.custom_domain || undefined,
@@ -272,7 +309,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
       homepage_config: {
         hero_title: config.homepage_hero_title,
         hero_subtitle: config.homepage_hero_subtitle,
-        featured_cards: config.homepage_featured_cards,
+        featured_cards: orderedFeaturedCards,
       },
       search_placeholder: config.search_placeholder || undefined,
       protected_terms: config.protected_terms.filter(Boolean),
@@ -282,7 +319,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
       support_email: config.support_email || undefined,
     });
     // Sync icon changes back to collections
-    for (const card of config.homepage_featured_cards) {
+    for (const card of orderedFeaturedCards) {
       if (card.link_type !== 'collection' || !card.link_value) continue;
       const col = findCollectionByCardLinkValue(spaceCollections, card.link_value);
       if (col && (col.icon ?? '') !== card.icon) {
@@ -294,6 +331,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
     if (res.error) {
       toast.error(res.error);
     } else {
+      setConfig(prev => ({ ...prev, homepage_featured_cards: orderedFeaturedCards }));
       toast.success('Help center settings saved');
     }
   };
@@ -391,19 +429,27 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
     if (exists) {
       setConfig(prev => ({
         ...prev,
-        homepage_featured_cards: prev.homepage_featured_cards.filter(c => c.link_value !== col.slug),
+        homepage_featured_cards: orderFeaturedCardsForCollections(
+          prev.homepage_featured_cards.filter(c => c.link_value !== col.slug),
+          spaceCollections,
+          homepageSpaceSlug,
+        ),
       }));
     } else {
       setConfig(prev => ({
         ...prev,
-        homepage_featured_cards: [...prev.homepage_featured_cards, {
-          title: col.name,
-          description: col.description ?? '',
-          icon: col.icon ?? '',
-          link_type: 'collection',
-          link_value: col.slug,
-          space_slug: homepageSpaceSlug,
-        }],
+        homepage_featured_cards: orderFeaturedCardsForCollections(
+          [...prev.homepage_featured_cards, {
+            title: col.name,
+            description: col.description ?? '',
+            icon: col.icon ?? '',
+            link_type: 'collection',
+            link_value: col.slug,
+            space_slug: homepageSpaceSlug,
+          }],
+          spaceCollections,
+          homepageSpaceSlug,
+        ),
       }));
     }
   };
