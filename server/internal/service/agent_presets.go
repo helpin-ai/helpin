@@ -225,6 +225,10 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	engineerProfile := worker.GetRuntimeProfile(model.AgentPresetCodeBuilder)
 	reviewerProfile := worker.GetRuntimeProfile(model.AgentPresetReviewAgent)
 	supportProfile := worker.GetRuntimeProfile(model.AgentPresetSupportAgent)
+	codeBuilderProvider := model.AgentModelProviderOpenAI
+	codeBuilderModel := "gpt-5-mini"
+	reviewAgentProvider := model.AgentModelProviderOpenAI
+	reviewAgentModel := "gpt-5-mini"
 
 	epicPlannerPrompt := defaultSystemPromptForPreset(model.AgentPresetEpicPlanner)
 	taskPlannerPrompt := defaultSystemPromptForPreset(model.AgentPresetTaskPlanner)
@@ -333,10 +337,12 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			VersionKey:            defaultPresetVersionKeyForPresetKey(model.AgentPresetCodeBuilder),
 			VersionLabel:          "Default",
 			IsDefaultVersion:      true,
+			Provider:              &codeBuilderProvider,
+			Model:                 &codeBuilderModel,
 			Label:                 "Code Builder",
 			Description:           "Repository-writing implementation agent for story execution.",
 			DefaultRole:           "Code Builder",
-			RuntimeKind:           engineerProfile.RuntimeKind,
+			RuntimeKind:           "codex",
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual", "auto_on_assignment", "auto_on_event"},
 			AllowedTools:          slices.Clone(engineerProfile.AllowedTools),
@@ -344,7 +350,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			AllowedTargetTypes:    slices.Clone(engineerProfile.AllowedTargetTypes),
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeAutonomous,
-			SupportedModes:        supportedModesForRuntime(engineerProfile.RuntimeKind),
+			SupportedModes:        supportedModesForRuntime("codex"),
 			SystemPrompt:          codeBuilderPrompt,
 		},
 		{
@@ -353,10 +359,12 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			VersionKey:            defaultPresetVersionKeyForPresetKey(model.AgentPresetReviewAgent),
 			VersionLabel:          "Default",
 			IsDefaultVersion:      true,
+			Provider:              &reviewAgentProvider,
+			Model:                 &reviewAgentModel,
 			Label:                 "Review Agent",
 			Description:           "Validation and review agent for story quality checks without repo mutation.",
 			DefaultRole:           "Review Agent",
-			RuntimeKind:           reviewerProfile.RuntimeKind,
+			RuntimeKind:           "codex",
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual", "auto_on_assignment", "auto_on_event"},
 			AllowedTools:          slices.Clone(reviewerProfile.AllowedTools),
@@ -364,7 +372,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			AllowedTargetTypes:    slices.Clone(reviewerProfile.AllowedTargetTypes),
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeAutonomous,
-			SupportedModes:        supportedModesForRuntime(reviewerProfile.RuntimeKind),
+			SupportedModes:        supportedModesForRuntime("codex"),
 			SystemPrompt:          reviewPrompt,
 		},
 	}

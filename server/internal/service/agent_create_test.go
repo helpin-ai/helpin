@@ -247,7 +247,7 @@ func TestSeedWorkspaceDefaults_CreatesMissingSystemAgentsWithoutPromotingCustomA
 	}
 
 	agentRepo := repository.NewAgentRepository(db)
-	svc := &AgentService{agentRepo: agentRepo}
+	svc := (&AgentService{agentRepo: agentRepo}).SetModelProviderConfig("", "test-openai-key", "", "", false, "", "")
 
 	if err := svc.SeedWorkspaceDefaults(context.Background(), "ws-test", "user-1"); err != nil {
 		t.Fatalf("SeedWorkspaceDefaults returned error: %v", err)
@@ -268,6 +268,38 @@ func TestSeedWorkspaceDefaults_CreatesMissingSystemAgentsWithoutPromotingCustomA
 		if !slices.Contains(systemPresets, presetKey) {
 			t.Fatalf("expected seeded system agent for preset %q", presetKey)
 		}
+	}
+	forge, err := agentRepo.GetSystemByPreset(context.Background(), "ws-test", model.AgentPresetCodeBuilder)
+	if err != nil {
+		t.Fatalf("GetSystemByPreset returned error: %v", err)
+	}
+	if forge == nil {
+		t.Fatal("expected system forge agent")
+	}
+	if forge.RuntimeKind != "codex" {
+		t.Fatalf("expected forge runtime codex, got %q", forge.RuntimeKind)
+	}
+	if forge.Provider == nil || *forge.Provider != model.AgentModelProviderOpenAI {
+		t.Fatalf("expected forge provider openai, got %+v", forge.Provider)
+	}
+	if forge.Model == nil || *forge.Model != "gpt-5-mini" {
+		t.Fatalf("expected forge model gpt-5-mini, got %+v", forge.Model)
+	}
+	lens, err := agentRepo.GetSystemByPreset(context.Background(), "ws-test", model.AgentPresetReviewAgent)
+	if err != nil {
+		t.Fatalf("GetSystemByPreset returned error: %v", err)
+	}
+	if lens == nil {
+		t.Fatal("expected system lens agent")
+	}
+	if lens.RuntimeKind != "codex" {
+		t.Fatalf("expected lens runtime codex, got %q", lens.RuntimeKind)
+	}
+	if lens.Provider == nil || *lens.Provider != model.AgentModelProviderOpenAI {
+		t.Fatalf("expected lens provider openai, got %+v", lens.Provider)
+	}
+	if lens.Model == nil || *lens.Model != "gpt-5-mini" {
+		t.Fatalf("expected lens model gpt-5-mini, got %+v", lens.Model)
 	}
 
 	custom, err := agentRepo.GetByID(context.Background(), "ws-test", "agent-custom-code-builder")
@@ -304,7 +336,7 @@ func TestSeedWorkspaceDefaults_ReconcilesAndDedupesExistingSystemPresetAgents(t 
 	}
 
 	agentRepo := repository.NewAgentRepository(db)
-	svc := &AgentService{agentRepo: agentRepo}
+	svc := (&AgentService{agentRepo: agentRepo}).SetModelProviderConfig("", "test-openai-key", "", "", false, "", "")
 
 	if err := svc.SeedWorkspaceDefaults(context.Background(), "ws-test", "user-1"); err != nil {
 		t.Fatalf("SeedWorkspaceDefaults returned error: %v", err)
@@ -345,7 +377,7 @@ func TestUpdateAgent_PreservesSystemAgentPresetFamily(t *testing.T) {
 		activitySvc: activitySvc,
 		wsPublisher: nil,
 	}
-	svc.SetModelProviderConfig("test-anthropic-key", "", "", "", false, "", "")
+	svc.SetModelProviderConfig("", "test-openai-key", "", "", false, "", "")
 
 	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCodeBuilder)
 	if err != nil {
