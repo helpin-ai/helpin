@@ -1231,7 +1231,7 @@ export default function HomePage() {
 // Hybrid HTML cards + SVG constellation with triple-layer comet signals
 
 const WF_DATA = [
-  { id: 'support',   module: 'Support',    action: 'Ticket triaged',       dot: '#e11d48', svg: { x: 120, y: 75 },  css: { left: '13.3%', top: '15.6%' },  activateAt: 1, signalAt: 2, signalDir: 'in'  as const, packet: 'Login bug' },
+  { id: 'support',   module: 'Support',    action: 'Ticket triaged',       dot: '#e11d48', svg: { x: 120, y: 75 },  css: { left: '13.3%', top: '15.6%' },  activateAt: 1, signalAt: 1, signalDir: 'in'  as const, packet: 'Login bug' },
   { id: 'pm',        module: 'PM',         action: 'Task created',         dot: '#2563eb', svg: { x: 450, y: 32 },  css: { left: '50%',   top: '6.7%' },   activateAt: 4, signalAt: 4, signalDir: 'out' as const, packet: 'Create task' },
   { id: 'crm',       module: 'Sales',      action: 'Account flagged',      dot: '#ea580c', svg: { x: 450, y: 448 }, css: { left: '50%',   top: '93.3%' },  activateAt: 5, signalAt: 5, signalDir: 'out' as const, packet: 'Flag risk' },
   { id: 'docs',      module: 'Docs',       action: 'Guide updated',        dot: '#16a34a', svg: { x: 780, y: 75 },  css: { left: '86.7%', top: '15.6%' },  activateAt: 6, signalAt: 6, signalDir: 'out' as const, packet: 'Update doc' },
@@ -1496,7 +1496,8 @@ function WfMicroUI({ id, on, step }: { id: string; on: boolean; step: number }) 
 }
 
 function AIWorkflowVisual() {
-  const [step, setStep] = useState(-1);
+  // Start at end state (12) so hero looks alive on load, then loop
+  const [step, setStep] = useState(12);
   const [isVisible, setIsVisible] = useState(true);
   const wfRef = useRef<HTMLDivElement>(null);
 
@@ -1514,13 +1515,15 @@ function AIWorkflowVisual() {
 
   useEffect(() => {
     if (!isVisible) return;
+    // Don't override the initial end-state — only reset when re-entering viewport
+    if (step === 12) return;
     const t = setTimeout(() => setStep(0), 600);
     return () => clearTimeout(t);
   }, [isVisible]);
 
   useEffect(() => {
     if (step < 0 || !isVisible) return;
-    const d = [800, 1800, 2000, 1200, 2000, 2000, 2000, 2000, 2000, 2000, 1200, 2000, 1600];
+    const d = [1800, 2200, 200, 1200, 2000, 2000, 2000, 2000, 2000, 2000, 1200, 2000, 3000];
     const t = setTimeout(() => setStep((s) => (s + 1) % 13), d[step]);
     return () => clearTimeout(t);
   }, [step, isVisible]);
