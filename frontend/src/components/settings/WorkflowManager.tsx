@@ -2,9 +2,12 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { automationRuleService } from '@/lib/services/automationRuleService';
 import { agentService } from '@/lib/services/agentService';
+import { gitService } from '@/lib/services/gitService';
+import { pmEpicService } from '@/lib/services/pmEpicService';
+import { pmTaskService } from '@/lib/services/pmTaskService';
 import { StateTypeIcon } from '@/lib/pmConstants';
 import type { WorkspaceTeam } from '@/lib/types';
-import type { Agent, AutomationRule, StateType, WorkflowState, WorkflowWithStates } from '@/lib/pmTypes';
+import type { Agent, AutomationRule, EpicWithStats, GitRepository, StateType, Task, WorkflowState, WorkflowWithStates } from '@/lib/pmTypes';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -41,7 +44,63 @@ const ACTION_LABELS: Record<string, string> = {
 const TRIGGER_LABELS: Record<string, string> = {
   'task.state_entered': 'On state entry',
   'agent_run.approved': 'On run approved',
+  'github.push': 'On GitHub push',
+  'github.pull_request_opened': 'On GitHub pull request opened',
+  'github.pull_request_merged': 'On GitHub pull request merged',
+  'github.pull_request_review_requested': 'On GitHub review requested',
+  'github.release_published': 'On GitHub release published',
+  'github.check_suite_completed': 'On GitHub check suite completed',
 };
+
+const WORKSPACE_EVENT_TRIGGER_OPTIONS = [
+  { value: 'github.push', label: 'GitHub push' },
+  { value: 'github.pull_request_opened', label: 'GitHub PR opened' },
+  { value: 'github.pull_request_merged', label: 'GitHub PR merged' },
+  { value: 'github.pull_request_review_requested', label: 'GitHub review requested' },
+  { value: 'github.release_published', label: 'GitHub release published' },
+  { value: 'github.check_suite_completed', label: 'GitHub check suite completed' },
+] as const;
+
+const WORKSPACE_EVENT_TRIGGER_IDS = new Set<string>(WORKSPACE_EVENT_TRIGGER_OPTIONS.map((option) => option.value));
+
+export type WorkspaceEventRuleTemplate = {
+  triggerType: string;
+  agentId?: string;
+  repoFullName?: string;
+  branch?: string;
+  baseBranch?: string;
+  tagName?: string;
+  conclusion?: string;
+  targetMode?: 'event' | 'task' | 'epic' | 'repository';
+  targetId?: string;
+};
+
+function describeAutomationRule(
+  rule: AutomationRule,
+  agents: Agent[],
+  statesByID: Map<string, WorkflowState>,
+  repositories: GitRepository[],
+) {
+  if (WORKSPACE_EVENT_TRIGGER_IDS.has(rule.trigger_type)) {
+    return describeWorkspaceEventRule(rule, agents, repositories);
+  }
+
+  const triggerLabel = TRIGGER_LABELS[rule.trigger_type] ?? rule.trigger_type;
+  if (rule.action_type === 'start_agent_run') {
+    const agentName = agents.find((agent) => agent.id === rule.action_config?.agent_id)?.name ?? 'Unknown agent';
+    return `${triggerLabel} → Run ${agentName}`;
+  }
+  if (rule.action_type === 'move_to_state') {
+    const targetStateID = typeof rule.action_config?.target_state_id === 'string' ? rule.action_config.target_state_id : '';
+    const targetStateName = statesByID.get(targetStateID)?.name ?? 'Unknown state';
+    return `${triggerLabel} → Move to ${targetStateName}`;
+  }
+  if (rule.action_type === 'merge_branch') {
+    const branch = typeof rule.action_config?.target_branch === 'string' ? rule.action_config.target_branch : '';
+    return `${triggerLabel} → Merge to ${branch || 'target branch'}`;
+  }
+  return `${triggerLabel} → ${rule.action_type}`;
+}
 
 function PipelineRulesSection({
   workspaceId,
@@ -234,6 +293,377 @@ function PipelineRulesSection({
   );
 }
 
+function describeWorkspaceEventRule(rule: AutomationRule, agents: Agent[], repositories: GitRepository[]) {
+  const agentName = agents.find((agent) => agent.id === rule.action_config?.agent_id)?.name ?? 'Unknown agent';
+  const triggerLabel = TRIGGER_LABELS[rule.trigger_type] ?? rule.trigger_type;
+  const config = rule.trigger_config ?? {};
+  const filters = [
+    typeof config.repo_full_name === 'string' && config.repo_full_name ? `repo ${config.repo_full_name}` : null,
+    typeof config.branch === 'string' && config.branch ? `branch ${config.branch}` : null,
+    typeof config.base_branch === 'string' && config.base_branch ? `base ${config.base_branch}` : null,
+    typeof config.tag_name === 'string' && config.tag_name ? `tag ${config.tag_name}` : null,
+    typeof config.conclusion === 'string' && config.conclusion ? `conclusion ${config.conclusion}` : null,
+  ].filter(Boolean);
+  const targetType = typeof rule.action_config?.target_type === 'string' ? rule.action_config.target_type : '';
+  const targetID = typeof rule.action_config?.target_id === 'string' ? rule.action_config.target_id : '';
+  let targetLabel = '';
+  if (targetType && targetID) {
+    if (targetType === 'repository') {
+      const repoLabel = repositories.find((repo) => repo.id === targetID)?.full_name ?? 'repository';
+      targetLabel = ` on fixed repo ${repoLabel}`;
+    } else {
+      targetLabel = ` on fixed ${targetType}`;
+    }
+  }
+  return `${triggerLabel} → Run ${agentName}${targetLabel}${filters.length ? ` (${filters.join(' · ')})` : ''}`;
+}
+
+function WorkspaceEventRulesSection({
+  workspaceId,
+  rules,
+  agents,
+  epics,
+  tasks,
+  repositories,
+  editable,
+  initialTemplate,
+  onChanged,
+}: {
+  workspaceId: string;
+  rules: AutomationRule[];
+  agents: Agent[];
+  epics: EpicWithStats[];
+  tasks: Task[];
+  repositories: GitRepository[];
+  editable: boolean;
+  initialTemplate?: WorkspaceEventRuleTemplate;
+  onChanged: () => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [triggerType, setTriggerType] = useState<string>('github.pull_request_merged');
+  const [agentId, setAgentId] = useState('');
+  const [repoFullName, setRepoFullName] = useState('');
+  const [branch, setBranch] = useState('');
+  const [baseBranch, setBaseBranch] = useState('main');
+  const [tagName, setTagName] = useState('');
+  const [conclusion, setConclusion] = useState('');
+  const [targetMode, setTargetMode] = useState<'event' | 'task' | 'epic' | 'repository'>('event');
+  const [targetId, setTargetId] = useState('');
+  const [saving, setSaving] = useState(false);
+  const templateSignature = useMemo(() => JSON.stringify(initialTemplate ?? null), [initialTemplate]);
+  const [appliedTemplateSignature, setAppliedTemplateSignature] = useState('');
+
+  const resetForm = () => {
+    setAgentId('');
+    setRepoFullName('');
+    setBranch('');
+    setBaseBranch('main');
+    setTagName('');
+    setConclusion('');
+    setTargetMode('event');
+    setTargetId('');
+  };
+
+  const buildTriggerConfig = (): Record<string, string> => {
+    switch (triggerType) {
+      case 'github.push':
+        return { repo_full_name: repoFullName.trim(), branch: branch.trim() };
+      case 'github.pull_request_opened':
+      case 'github.pull_request_merged':
+      case 'github.pull_request_review_requested':
+        return { repo_full_name: repoFullName.trim(), base_branch: baseBranch.trim() };
+      case 'github.release_published':
+        return { repo_full_name: repoFullName.trim(), tag_name: tagName.trim() };
+      case 'github.check_suite_completed':
+        return { repo_full_name: repoFullName.trim(), branch: branch.trim(), conclusion: conclusion.trim() };
+      default:
+        return {};
+    }
+  };
+
+  const buildActionConfig = (): Record<string, unknown> => {
+    const config: Record<string, unknown> = { agent_id: agentId };
+    if (targetMode !== 'event' && targetId) {
+      config.target_type = targetMode;
+      config.target_id = targetId;
+    }
+    return config;
+  };
+
+  const validateTriggerConfig = () => {
+    switch (triggerType) {
+      case 'github.push':
+        return Boolean(repoFullName.trim() || branch.trim());
+      case 'github.pull_request_opened':
+      case 'github.pull_request_merged':
+      case 'github.pull_request_review_requested':
+        return Boolean(repoFullName.trim() || baseBranch.trim());
+      case 'github.release_published':
+        return Boolean(repoFullName.trim() || tagName.trim());
+      case 'github.check_suite_completed':
+        return Boolean(repoFullName.trim() || branch.trim() || conclusion.trim());
+      default:
+        return false;
+    }
+  };
+
+  const handleAdd = async () => {
+    if (!agentId) {
+      toast.error('Select an agent');
+      return;
+    }
+    if (targetMode !== 'event' && !targetId) {
+      toast.error(`Select a ${targetMode} target`);
+      return;
+    }
+    if (!validateTriggerConfig()) {
+      toast.error('Add at least one filter for this GitHub trigger');
+      return;
+    }
+    setSaving(true);
+    const selectedTrigger = WORKSPACE_EVENT_TRIGGER_OPTIONS.find((option) => option.value === triggerType);
+    const res = await automationRuleService.create(workspaceId, {
+      workspace_id: workspaceId,
+      name: `Run ${agents.find((agent) => agent.id === agentId)?.name ?? 'agent'} on ${selectedTrigger?.label ?? triggerType}`,
+      trigger_type: triggerType,
+      trigger_config: buildTriggerConfig(),
+      action_type: 'start_agent_run',
+      action_config: buildActionConfig(),
+      position: rules.length,
+    });
+    setSaving(false);
+    if (res.error) {
+      toast.error(res.error);
+      return;
+    }
+    toast.success('Event rule added');
+    setAdding(false);
+    resetForm();
+    onChanged();
+  };
+
+  const handleDelete = async (ruleId: string) => {
+    const res = await automationRuleService.remove(workspaceId, ruleId);
+    if (res.error) {
+      toast.error(res.error);
+      return;
+    }
+    toast.success('Rule removed');
+    onChanged();
+  };
+
+  const handleToggle = async (rule: AutomationRule) => {
+    const res = await automationRuleService.update(workspaceId, rule.id, { enabled: !rule.enabled });
+    if (res.error) {
+      toast.error(res.error);
+      return;
+    }
+    onChanged();
+  };
+
+  const taskOptions = useMemo(
+    () => tasks.map((task) => ({ value: task.id, label: `${task.task_key} · ${task.name}` })),
+    [tasks],
+  );
+  const epicOptions = useMemo(
+    () => epics.map((epic) => ({ value: epic.epic.id, label: epic.epic.name })),
+    [epics],
+  );
+  const repositoryOptions = useMemo(
+    () => repositories.map((repo) => ({ value: repo.id, label: repo.full_name })),
+    [repositories],
+  );
+  const selectedTargetLabel = useMemo(() => {
+    if (targetMode === 'task') return taskOptions.find((option) => option.value === targetId)?.label ?? 'Select task...';
+    if (targetMode === 'epic') return epicOptions.find((option) => option.value === targetId)?.label ?? 'Select epic...';
+    if (targetMode === 'repository') return repositoryOptions.find((option) => option.value === targetId)?.label ?? 'Select repository...';
+    return 'Use linked event target';
+  }, [epicOptions, repositoryOptions, targetId, targetMode, taskOptions]);
+
+  useEffect(() => {
+    if (!editable || !initialTemplate || appliedTemplateSignature === templateSignature) {
+      return;
+    }
+
+    setAdding(true);
+    setTriggerType(initialTemplate.triggerType);
+    setAgentId(initialTemplate.agentId ?? '');
+    setRepoFullName(initialTemplate.repoFullName ?? '');
+    setBranch(initialTemplate.branch ?? '');
+    setBaseBranch(initialTemplate.baseBranch ?? 'main');
+    setTagName(initialTemplate.tagName ?? '');
+    setConclusion(initialTemplate.conclusion ?? '');
+    setTargetMode(initialTemplate.targetMode ?? 'event');
+    setTargetId(initialTemplate.targetId ?? '');
+    setAppliedTemplateSignature(templateSignature);
+  }, [appliedTemplateSignature, editable, initialTemplate, templateSignature]);
+
+  return (
+    <div className="space-y-3 rounded-md border border-border/60 bg-card/70 p-4">
+      <div className="space-y-1">
+        <div className="flex items-center gap-2">
+          <BotIcon className="h-4 w-4 text-violet-500" />
+          <p className="text-sm font-medium">Workspace Event Rules</p>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Author GitHub-triggered automation rules here. These rules work best when webhook branches or pull requests are already linked to tasks.
+        </p>
+      </div>
+
+      {rules.length > 0 ? (
+        <div className="space-y-1">
+          {rules.map((rule) => (
+            <div key={rule.id} className="flex items-center gap-2 rounded-md border border-border px-2.5 py-1.5 text-xs">
+              <PlayIcon className="h-3 w-3 shrink-0 text-violet-500" />
+              <span className={cn('flex-1 truncate', !rule.enabled && 'opacity-50 line-through')}>
+                {describeWorkspaceEventRule(rule, agents, repositories)}
+              </span>
+              <button type="button" className="shrink-0 text-muted-foreground hover:text-foreground" onClick={() => handleToggle(rule)}>
+                {rule.enabled ? 'On' : 'Off'}
+              </button>
+              <button type="button" className="shrink-0 text-muted-foreground hover:text-destructive" onClick={() => handleDelete(rule.id)}>
+                <Cancel01Icon className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">No workspace-level event rules yet.</p>
+      )}
+
+      {editable && (adding ? (
+        <div className="space-y-3 rounded-md border border-border p-3">
+          <div className="grid gap-2 md:grid-cols-2">
+            <Select value={triggerType} onValueChange={setTriggerType}>
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {WORKSPACE_EVENT_TRIGGER_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={agentId} onValueChange={setAgentId}>
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="Select agent..." />
+              </SelectTrigger>
+              <SelectContent>
+                {agents.map((agent) => (
+                  <SelectItem key={agent.id} value={agent.id}>{agent.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label className="text-xs">Repository</Label>
+              <Input value={repoFullName} onChange={(e) => setRepoFullName(e.target.value)} placeholder="owner/repo" className="h-8 text-xs" />
+            </div>
+
+            {(triggerType === 'github.push' || triggerType === 'github.check_suite_completed') && (
+              <div className="space-y-2">
+                <Label className="text-xs">Branch</Label>
+                <Input value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="main" className="h-8 text-xs" />
+              </div>
+            )}
+
+            {(triggerType === 'github.pull_request_opened' || triggerType === 'github.pull_request_merged' || triggerType === 'github.pull_request_review_requested') && (
+              <div className="space-y-2">
+                <Label className="text-xs">Base branch</Label>
+                <Input value={baseBranch} onChange={(e) => setBaseBranch(e.target.value)} placeholder="main" className="h-8 text-xs" />
+              </div>
+            )}
+
+            {triggerType === 'github.release_published' && (
+              <div className="space-y-2">
+                <Label className="text-xs">Tag</Label>
+                <Input value={tagName} onChange={(e) => setTagName(e.target.value)} placeholder="v1.0.0" className="h-8 text-xs" />
+              </div>
+            )}
+
+            {triggerType === 'github.check_suite_completed' && (
+              <div className="space-y-2">
+                <Label className="text-xs">Conclusion</Label>
+                <Input value={conclusion} onChange={(e) => setConclusion(e.target.value)} placeholder="success" className="h-8 text-xs" />
+              </div>
+            )}
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-[180px_minmax(0,1fr)]">
+            <div className="space-y-2">
+              <Label className="text-xs">Run against</Label>
+              <Select value={targetMode} onValueChange={(value: 'event' | 'task' | 'epic' | 'repository') => { setTargetMode(value); setTargetId(''); }}>
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="event">Linked task from event</SelectItem>
+                  <SelectItem value="task">Fixed task target</SelectItem>
+                  <SelectItem value="epic">Fixed epic target</SelectItem>
+                  <SelectItem value="repository">Fixed repository target</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {targetMode !== 'event' && (
+              <div className="space-y-2">
+                <Label className="text-xs">Target</Label>
+                <Select value={targetId} onValueChange={setTargetId}>
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder={
+                      targetMode === 'task'
+                        ? 'Select task...'
+                        : targetMode === 'epic'
+                          ? 'Select epic...'
+                          : 'Select repository...'
+                    } />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(targetMode === 'task' ? taskOptions : targetMode === 'epic' ? epicOptions : repositoryOptions).map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-muted-foreground">
+                  Explicit target overrides event-linked task resolution. Use repository targets for repo-scoped runs that should not depend on task linkage.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {targetMode === 'event' ? (
+            <p className="text-[11px] text-muted-foreground">
+              Default mode: the rule will use the task resolved from the webhook branch or pull request link when available.
+            </p>
+          ) : (
+            <p className="text-[11px] text-muted-foreground">
+              Selected target: {selectedTargetLabel}
+            </p>
+          )}
+
+          <div className="flex gap-2">
+            <Button type="button" size="sm" className="h-8 text-xs" onClick={handleAdd} disabled={saving}>
+              {saving ? 'Adding...' : 'Add event rule'}
+            </Button>
+            <Button type="button" size="sm" variant="ghost" className="h-8 text-xs" onClick={() => { setAdding(false); resetForm(); }}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Button type="button" variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={() => setAdding(true)}>
+          <PlusSignIcon className="h-3 w-3" /> Add event rule
+        </Button>
+      ))}
+    </div>
+  );
+}
+
 // PipelineBuilder is in its own file
 import { PipelineBuilder } from './PipelineBuilder';
 
@@ -245,9 +675,21 @@ interface WorkflowManagerProps {
   editable: boolean;
   initialWorkflowId?: string;
   initialTeamId?: string;
+  highlightTriggerType?: string;
+  highlightTriggerLabel?: string;
+  initialEventRuleTemplate?: WorkspaceEventRuleTemplate;
 }
 
-export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowId, initialTeamId }: WorkflowManagerProps) {
+export function WorkflowManager({
+  workspaceId,
+  teams,
+  editable,
+  initialWorkflowId,
+  initialTeamId,
+  highlightTriggerType,
+  highlightTriggerLabel,
+  initialEventRuleTemplate,
+}: WorkflowManagerProps) {
   const [workflows, setWorkflows] = useState<WorkflowWithStates[]>([]);
   const [selectedId, setSelectedId] = useState<string>('');
   const [loading, setLoading] = useState(true);
@@ -276,6 +718,9 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
   // Automation rules state
   const [automationRules, setAutomationRules] = useState<AutomationRule[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [eventRuleEpics, setEventRuleEpics] = useState<EpicWithStats[]>([]);
+  const [eventRuleTasks, setEventRuleTasks] = useState<Task[]>([]);
+  const [eventRuleRepositories, setEventRuleRepositories] = useState<GitRepository[]>([]);
 
   // --- Data loading ---
 
@@ -304,24 +749,46 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
 
   useEffect(() => { loadWorkflows(); }, [workspaceId, initialWorkflowId, initialTeamId]);
 
-  // Load automation rules + agents for the selected workflow
+  // Load automation rules + agents for the workspace
   const loadAutomationRules = useCallback(async () => {
-    if (!selectedId) { setAutomationRules([]); return; }
-    const res = await automationRuleService.listByWorkflow(workspaceId, selectedId);
+    const res = await automationRuleService.list(workspaceId);
     if (res.data) setAutomationRules(res.data);
-  }, [workspaceId, selectedId]);
+  }, [workspaceId]);
 
   useEffect(() => { loadAutomationRules(); }, [loadAutomationRules]);
   useEffect(() => {
     agentService.list(workspaceId).then((res) => { if (res.data) setAgents(res.data); });
   }, [workspaceId]);
+  useEffect(() => {
+    pmEpicService.list(workspaceId, { archived: false }).then((res) => {
+      if (res.data) setEventRuleEpics(res.data);
+    });
+    pmTaskService.list(workspaceId, { archived: false, per_page: 100 }).then((res) => {
+      if (res.data?.data) setEventRuleTasks(res.data.data);
+    });
+    gitService.listRepositories(workspaceId).then((res) => {
+      if (res.data) setEventRuleRepositories(res.data);
+    });
+  }, [workspaceId]);
 
   const llmAgents = useMemo(() => agents, [agents]);
+  const selectedWorkflowRules = useMemo(
+    () => automationRules.filter((rule) => rule.workflow_id === selectedId),
+    [automationRules, selectedId],
+  );
+  const highlightedRules = useMemo(
+    () => highlightTriggerType ? automationRules.filter((rule) => rule.trigger_type === highlightTriggerType) : [],
+    [automationRules, highlightTriggerType],
+  );
+  const workspaceEventRules = useMemo(
+    () => automationRules.filter((rule) => WORKSPACE_EVENT_TRIGGER_IDS.has(rule.trigger_type)),
+    [automationRules],
+  );
 
   // Rules grouped by state_id for quick lookup
   const rulesByStateId = useMemo(() => {
     const map = new Map<string, AutomationRule[]>();
-    for (const rule of automationRules) {
+    for (const rule of selectedWorkflowRules) {
       const stateId = rule.trigger_config?.state_id;
       if (!stateId) continue;
       const list = map.get(stateId) ?? [];
@@ -329,7 +796,7 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
       map.set(stateId, list);
     }
     return map;
-  }, [automationRules]);
+  }, [selectedWorkflowRules]);
 
   // --- Derived data ---
 
@@ -350,6 +817,19 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
     if (!id) return 'All teams';
     return teams.find((t) => t.id === id)?.name ?? 'Unknown Team';
   };
+  const workflowsByID = useMemo(
+    () => new Map(workflows.map((entry) => [entry.workflow.id, entry])),
+    [workflows],
+  );
+  const statesByID = useMemo(() => {
+    const map = new Map<string, WorkflowState>();
+    for (const entry of workflows) {
+      for (const state of entry.states) {
+        map.set(state.id, state);
+      }
+    }
+    return map;
+  }, [workflows]);
 
   // --- Workflow CRUD ---
 
@@ -565,7 +1045,67 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
   }
 
   return (
-    <div className="flex gap-6 min-h-[500px]">
+    <div className="space-y-4">
+      {highlightTriggerType && (
+        <div className="rounded-md border border-border/60 bg-card/70 p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-medium">
+              Rules using {highlightTriggerLabel ?? highlightTriggerType}
+            </p>
+            <Badge variant="secondary" className="text-xs">
+              {highlightedRules.length}
+            </Badge>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            This list spans workspace event rules and state-based pipeline rules across every workflow.
+          </p>
+
+          {highlightedRules.length > 0 ? (
+            <div className="mt-3 space-y-2">
+              {highlightedRules.map((rule) => {
+                const workflow = rule.workflow_id ? workflowsByID.get(rule.workflow_id) : undefined;
+                const stateID = typeof rule.trigger_config?.state_id === 'string' ? rule.trigger_config.state_id : '';
+                const state = stateID ? statesByID.get(stateID) : undefined;
+
+                return (
+                  <div key={rule.id} className="rounded-md border border-border px-3 py-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium">{rule.name}</span>
+                      <Badge variant={rule.enabled ? 'secondary' : 'outline'} className="text-[10px]">
+                        {rule.enabled ? 'Enabled' : 'Disabled'}
+                      </Badge>
+                      {workflow && (
+                        <Badge variant="outline" className="text-[10px]">
+                          {workflow.workflow.name}
+                        </Badge>
+                      )}
+                      {workflow?.workflow.team_id && (
+                        <Badge variant="outline" className="text-[10px]">
+                          {findTeamName(workflow.workflow.team_id)}
+                        </Badge>
+                      )}
+                      {state && (
+                        <Badge variant="outline" className="text-[10px]">
+                          {state.name}
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {describeAutomationRule(rule, llmAgents, statesByID, eventRuleRepositories)}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="mt-3 text-sm text-muted-foreground">
+              No rules are currently using this trigger.
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className="flex gap-6 min-h-[500px]">
       {/* Left panel — Workflow list */}
       <div className="w-[260px] shrink-0 space-y-3">
         <div className="flex items-center justify-between">
@@ -672,13 +1212,25 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
           </div>
         ) : (
           <div className="space-y-6">
+            <WorkspaceEventRulesSection
+              workspaceId={workspaceId}
+              rules={workspaceEventRules}
+              agents={llmAgents}
+              epics={eventRuleEpics}
+              tasks={eventRuleTasks}
+              repositories={eventRuleRepositories}
+              editable={editable}
+              initialTemplate={initialEventRuleTemplate}
+              onChanged={loadAutomationRules}
+            />
+
             {/* Pipeline builder */}
             <PipelineBuilder
               workspaceId={workspaceId}
               workflowId={selected.workflow.id}
               states={sortedStates}
               agents={llmAgents}
-              rules={automationRules}
+              rules={selectedWorkflowRules}
               editable={editable}
               onChanged={loadAutomationRules}
             />
@@ -789,6 +1341,7 @@ export function WorkflowManager({ workspaceId, teams, editable, initialWorkflowI
             </div>
           </div>
         )}
+      </div>
       </div>
 
       {/* Workflow create/edit dialog */}

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/automationcatalog"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
@@ -42,9 +43,10 @@ func nilIfEmpty(value string) *string {
 // AutomationRuleEngine evaluates automation rules against events and executes actions.
 type AutomationRuleEngine struct {
 	ruleRepo        *repository.AutomationRuleRepository
-	taskRepo       *repository.PMTaskRepository
+	taskRepo        *repository.PMTaskRepository
 	workflowRepo    *repository.PMWorkflowRepository
 	deliveryRepo    *repository.TaskDeliveryTargetRepository
+	triggerExecRepo *repository.AgentTriggerExecutionRepository
 	agentService    *AgentService
 	storyService    *PMTaskService
 	gitService      *GitService
@@ -69,7 +71,7 @@ func NewAutomationRuleEngine(
 ) *AutomationRuleEngine {
 	return &AutomationRuleEngine{
 		ruleRepo:        ruleRepo,
-		taskRepo:       taskRepo,
+		taskRepo:        taskRepo,
 		workflowRepo:    workflowRepo,
 		deliveryRepo:    deliveryRepo,
 		gitService:      gitService,
@@ -101,6 +103,11 @@ func (e *AutomationRuleEngine) SetHealthObserver(obs AutomationHealthObserver) *
 // SetCommandService sets the internal command service for run_command actions.
 func (e *AutomationRuleEngine) SetCommandService(svc *InternalCommandService) *AutomationRuleEngine {
 	e.commandService = svc
+	return e
+}
+
+func (e *AutomationRuleEngine) SetTriggerExecutionRepository(repo *repository.AgentTriggerExecutionRepository) *AutomationRuleEngine {
+	e.triggerExecRepo = repo
 	return e
 }
 
@@ -236,6 +243,48 @@ func (e *AutomationRuleEngine) matchesTriggerConfig(ctx context.Context, rule mo
 		}
 		return cfg.StateID != "" && cfg.StateID == event.StateID
 
+	case model.TriggerGitHubPush:
+		var cfg model.TriggerConfigGitHubPush
+		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err != nil {
+			return false
+		}
+		return matchGitHubPushConfig(cfg, event)
+
+	case model.TriggerGitHubPROpened:
+		var cfg model.TriggerConfigGitHubPullRequest
+		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err != nil {
+			return false
+		}
+		return matchGitHubPullRequestConfig(cfg, event)
+
+	case model.TriggerGitHubPRMerged:
+		var cfg model.TriggerConfigGitHubPullRequest
+		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err != nil {
+			return false
+		}
+		return matchGitHubPullRequestConfig(cfg, event)
+
+	case model.TriggerGitHubPRReviewReq:
+		var cfg model.TriggerConfigGitHubPullRequest
+		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err != nil {
+			return false
+		}
+		return matchGitHubPullRequestConfig(cfg, event)
+
+	case model.TriggerGitHubReleasePub:
+		var cfg model.TriggerConfigGitHubReleasePublished
+		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err != nil {
+			return false
+		}
+		return matchGitHubReleaseConfig(cfg, event)
+
+	case model.TriggerGitHubCheckSuite:
+		var cfg model.TriggerConfigGitHubCheckSuiteCompleted
+		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err != nil {
+			return false
+		}
+		return matchGitHubCheckSuiteConfig(cfg, event)
+
 	case model.TriggerCron:
 		var cfg model.TriggerConfigCron
 		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err != nil {
@@ -336,7 +385,9 @@ func (e *AutomationRuleEngine) executeStartAgentRun(ctx context.Context, rule *m
 		targetType = "task"
 	}
 	if targetType == "" || targetID == "" {
-		return fmt.Errorf("start_agent_run requires target_type and target_id or an event target")
+		err := fmt.Errorf("start_agent_run requires target_type and target_id or an event target")
+		e.recordStartAgentRunFailure(ctx, rule, event, cfg, targetType, targetID, err)
+		return err
 	}
 
 	now := time.Now().UTC()
@@ -375,6 +426,51 @@ func (e *AutomationRuleEngine) executeStartAgentRun(ctx context.Context, rule *m
 	}
 
 	return nil
+}
+
+func (e *AutomationRuleEngine) recordStartAgentRunFailure(
+	ctx context.Context,
+	rule *model.AutomationRule,
+	event model.AutomationEvent,
+	cfg model.ActionConfigRunAgent,
+	targetType, targetID string,
+	err error,
+) {
+	if e == nil || e.triggerExecRepo == nil || rule == nil || strings.TrimSpace(cfg.AgentID) == "" {
+		return
+	}
+
+	firedAt := time.Now().UTC()
+	execution := &model.AgentTriggerExecution{
+		WorkspaceID:   event.WorkspaceID,
+		AgentID:       strings.TrimSpace(cfg.AgentID),
+		BindingID:     resolveAutomationRuleBindingID(event.TriggerType),
+		BindingKind:   "automation_rule",
+		TriggerType:   nilIfEmpty(event.TriggerType),
+		ReferenceID:   &rule.ID,
+		ReferenceType: strPtr("automation_rule"),
+		TargetType:    nilIfEmpty(targetType),
+		TargetID:      nilIfEmpty(targetID),
+		Status:        model.AgentTriggerExecutionStatusFailed,
+		ErrorMessage:  nilIfEmpty(err.Error()),
+		FiredAt:       firedAt,
+		CompletedAt:   &firedAt,
+	}
+	if createErr := e.triggerExecRepo.Create(ctx, execution); createErr != nil {
+		e.logger.WarnContext(ctx, "failed to record trigger execution failure",
+			"workspace_id", event.WorkspaceID,
+			"rule_id", rule.ID,
+			"agent_id", cfg.AgentID,
+			"error", createErr,
+		)
+	}
+}
+
+func resolveAutomationRuleBindingID(triggerType string) string {
+	if bindingID, _, ok := automationcatalog.ResolveBindingForTrigger(model.AgentRunTriggerSourceAutomationRule, triggerType, ""); ok {
+		return bindingID
+	}
+	return strings.TrimSpace(triggerType)
 }
 
 func (e *AutomationRuleEngine) executeMoveToState(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, story *model.PMTask, cfg model.ActionConfigMoveToState, execCtx *model.RuleExecutionContext) error {
@@ -742,6 +838,54 @@ func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerCo
 		if cfg.StateID == "" {
 			return fmt.Errorf("state_id is required in trigger_config for %s", triggerType)
 		}
+	case model.TriggerGitHubPush:
+		var cfg model.TriggerConfigGitHubPush
+		if err := json.Unmarshal(triggerConfig, &cfg); err != nil {
+			return fmt.Errorf("invalid trigger_config for %s: %w", triggerType, err)
+		}
+		if strings.TrimSpace(cfg.Branch) == "" && strings.TrimSpace(cfg.RepoFullName) == "" {
+			return fmt.Errorf("branch or repo_full_name is required in trigger_config for %s", triggerType)
+		}
+	case model.TriggerGitHubPROpened:
+		var cfg model.TriggerConfigGitHubPullRequest
+		if err := json.Unmarshal(triggerConfig, &cfg); err != nil {
+			return fmt.Errorf("invalid trigger_config for %s: %w", triggerType, err)
+		}
+		if strings.TrimSpace(cfg.BaseBranch) == "" && strings.TrimSpace(cfg.RepoFullName) == "" {
+			return fmt.Errorf("base_branch or repo_full_name is required in trigger_config for %s", triggerType)
+		}
+	case model.TriggerGitHubPRMerged:
+		var cfg model.TriggerConfigGitHubPullRequest
+		if err := json.Unmarshal(triggerConfig, &cfg); err != nil {
+			return fmt.Errorf("invalid trigger_config for %s: %w", triggerType, err)
+		}
+		if strings.TrimSpace(cfg.BaseBranch) == "" && strings.TrimSpace(cfg.RepoFullName) == "" {
+			return fmt.Errorf("base_branch or repo_full_name is required in trigger_config for %s", triggerType)
+		}
+	case model.TriggerGitHubPRReviewReq:
+		var cfg model.TriggerConfigGitHubPullRequest
+		if err := json.Unmarshal(triggerConfig, &cfg); err != nil {
+			return fmt.Errorf("invalid trigger_config for %s: %w", triggerType, err)
+		}
+		if strings.TrimSpace(cfg.BaseBranch) == "" && strings.TrimSpace(cfg.RepoFullName) == "" {
+			return fmt.Errorf("base_branch or repo_full_name is required in trigger_config for %s", triggerType)
+		}
+	case model.TriggerGitHubReleasePub:
+		var cfg model.TriggerConfigGitHubReleasePublished
+		if err := json.Unmarshal(triggerConfig, &cfg); err != nil {
+			return fmt.Errorf("invalid trigger_config for %s: %w", triggerType, err)
+		}
+		if strings.TrimSpace(cfg.TagName) == "" && strings.TrimSpace(cfg.RepoFullName) == "" {
+			return fmt.Errorf("tag_name or repo_full_name is required in trigger_config for %s", triggerType)
+		}
+	case model.TriggerGitHubCheckSuite:
+		var cfg model.TriggerConfigGitHubCheckSuiteCompleted
+		if err := json.Unmarshal(triggerConfig, &cfg); err != nil {
+			return fmt.Errorf("invalid trigger_config for %s: %w", triggerType, err)
+		}
+		if strings.TrimSpace(cfg.Branch) == "" && strings.TrimSpace(cfg.Conclusion) == "" && strings.TrimSpace(cfg.RepoFullName) == "" {
+			return fmt.Errorf("branch, conclusion, or repo_full_name is required in trigger_config for %s", triggerType)
+		}
 	case model.TriggerCron:
 		var cfg model.TriggerConfigCron
 		if err := json.Unmarshal(triggerConfig, &cfg); err != nil {
@@ -804,6 +948,49 @@ func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerCo
 	}
 
 	return nil
+}
+
+func matchGitHubPushConfig(cfg model.TriggerConfigGitHubPush, event model.AutomationEvent) bool {
+	if strings.TrimSpace(cfg.Branch) != "" && strings.TrimSpace(cfg.Branch) != strings.TrimSpace(event.Branch) {
+		return false
+	}
+	if strings.TrimSpace(cfg.RepoFullName) != "" && !strings.EqualFold(strings.TrimSpace(cfg.RepoFullName), strings.TrimSpace(event.RepoFullName)) {
+		return false
+	}
+	return strings.TrimSpace(event.Branch) != "" || strings.TrimSpace(event.RepoFullName) != ""
+}
+
+func matchGitHubPullRequestConfig(cfg model.TriggerConfigGitHubPullRequest, event model.AutomationEvent) bool {
+	if strings.TrimSpace(cfg.BaseBranch) != "" && strings.TrimSpace(cfg.BaseBranch) != strings.TrimSpace(event.BaseBranch) {
+		return false
+	}
+	if strings.TrimSpace(cfg.RepoFullName) != "" && !strings.EqualFold(strings.TrimSpace(cfg.RepoFullName), strings.TrimSpace(event.RepoFullName)) {
+		return false
+	}
+	return strings.TrimSpace(event.BaseBranch) != "" || strings.TrimSpace(event.RepoFullName) != ""
+}
+
+func matchGitHubReleaseConfig(cfg model.TriggerConfigGitHubReleasePublished, event model.AutomationEvent) bool {
+	if strings.TrimSpace(cfg.TagName) != "" && strings.TrimSpace(cfg.TagName) != strings.TrimSpace(event.TagName) {
+		return false
+	}
+	if strings.TrimSpace(cfg.RepoFullName) != "" && !strings.EqualFold(strings.TrimSpace(cfg.RepoFullName), strings.TrimSpace(event.RepoFullName)) {
+		return false
+	}
+	return strings.TrimSpace(event.TagName) != "" || strings.TrimSpace(event.RepoFullName) != ""
+}
+
+func matchGitHubCheckSuiteConfig(cfg model.TriggerConfigGitHubCheckSuiteCompleted, event model.AutomationEvent) bool {
+	if strings.TrimSpace(cfg.Branch) != "" && strings.TrimSpace(cfg.Branch) != strings.TrimSpace(event.Branch) {
+		return false
+	}
+	if strings.TrimSpace(cfg.Conclusion) != "" && strings.TrimSpace(cfg.Conclusion) != strings.TrimSpace(event.Conclusion) {
+		return false
+	}
+	if strings.TrimSpace(cfg.RepoFullName) != "" && !strings.EqualFold(strings.TrimSpace(cfg.RepoFullName), strings.TrimSpace(event.RepoFullName)) {
+		return false
+	}
+	return strings.TrimSpace(event.Branch) != "" || strings.TrimSpace(event.Conclusion) != "" || strings.TrimSpace(event.RepoFullName) != ""
 }
 
 // --- Health observation ---

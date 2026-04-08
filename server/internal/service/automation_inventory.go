@@ -26,6 +26,10 @@ type AutomationInventoryService struct {
 	crmEmailRepo         *repository.CRMEmailRepository
 	automationHealthRepo *repository.AutomationHealthRepository
 	automationRuleRepo   *repository.AutomationRuleRepository
+	triggerExecRepo      *repository.AgentTriggerExecutionRepository
+	agentRepo            *repository.AgentRepository
+	taskRepo             *repository.PMTaskRepository
+	installationRepo     *repository.SupportInboxInstallationRepository
 }
 
 func NewAutomationInventoryService(
@@ -34,6 +38,10 @@ func NewAutomationInventoryService(
 	crmEmailRepo *repository.CRMEmailRepository,
 	automationHealthRepo *repository.AutomationHealthRepository,
 	automationRuleRepo *repository.AutomationRuleRepository,
+	triggerExecRepo *repository.AgentTriggerExecutionRepository,
+	agentRepo *repository.AgentRepository,
+	taskRepo *repository.PMTaskRepository,
+	installationRepo *repository.SupportInboxInstallationRepository,
 ) *AutomationInventoryService {
 	return &AutomationInventoryService{
 		settingsRepo:         settingsRepo,
@@ -41,6 +49,10 @@ func NewAutomationInventoryService(
 		crmEmailRepo:         crmEmailRepo,
 		automationHealthRepo: automationHealthRepo,
 		automationRuleRepo:   automationRuleRepo,
+		triggerExecRepo:      triggerExecRepo,
+		agentRepo:            agentRepo,
+		taskRepo:             taskRepo,
+		installationRepo:     installationRepo,
 	}
 }
 
@@ -80,6 +92,11 @@ func (s *AutomationInventoryService) GetWorkspaceInventory(ctx context.Context, 
 	}
 	items = append(items, ruleItems...)
 
+	triggerCatalog, err := s.triggerCatalogItems(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+
 	sort.SliceStable(items, func(i, j int) bool {
 		if items[i].Kind != items[j].Kind {
 			return kindSortRank(items[i].Kind) < kindSortRank(items[j].Kind)
@@ -98,8 +115,9 @@ func (s *AutomationInventoryService) GetWorkspaceInventory(ctx context.Context, 
 			{ID: automationGroupBuiltIn, Title: "Built-in Automations", Description: "System intelligence and deterministic built-ins that already operate inside the product."},
 			{ID: automationGroupRules, Title: "Automation Rules", Description: "User-configured rules triggered by workflow events. Powers stage-based agent pipelines."},
 		},
-		Items:       items,
-		GeneratedAt: time.Now().UTC(),
+		Items:          items,
+		TriggerCatalog: triggerCatalog,
+		GeneratedAt:    time.Now().UTC(),
 	}, nil
 }
 
@@ -258,6 +276,191 @@ func (s *AutomationInventoryService) automationRuleItems(ctx context.Context, wo
 	return items, nil
 }
 
+func (s *AutomationInventoryService) triggerCatalogItems(ctx context.Context, workspaceID string) ([]model.AutomationTriggerCatalogEntry, error) {
+	rules := make([]model.AutomationRule, 0)
+	if s.automationRuleRepo != nil {
+		list, err := s.automationRuleRepo.ListByWorkspace(ctx, workspaceID)
+		if err != nil {
+			return nil, fmt.Errorf("list automation rules for trigger catalog: %w", err)
+		}
+		rules = list
+	}
+
+	agents := make([]model.Agent, 0)
+	if s.agentRepo != nil {
+		list, err := s.agentRepo.List(ctx, workspaceID)
+		if err != nil {
+			return nil, fmt.Errorf("list agents for trigger catalog: %w", err)
+		}
+		agents = list
+	}
+
+	bindingCounts := make(map[string]int)
+
+	for _, rule := range rules {
+		if !rule.Enabled {
+			continue
+		}
+		if bindingID, _, ok := automationcatalog.ResolveBindingForTrigger(model.AgentRunTriggerSourceAutomationRule, rule.TriggerType, ""); ok {
+			bindingCounts[bindingID]++
+		}
+	}
+
+	for _, agent := range agents {
+		if strings.TrimSpace(derefString(agent.Schedule)) != "" {
+			bindingCounts["agent.schedule"]++
+		}
+	}
+
+	if s.installationRepo != nil {
+		inst, err := s.installationRepo.GetByWorkspace(ctx, workspaceID)
+		if err != nil {
+			return nil, fmt.Errorf("get support installation for trigger catalog: %w", err)
+		}
+		if inst != nil {
+			settings := parseSettings(inst.Settings)
+			if settings.AIEnabled && strings.TrimSpace(derefString(settings.AIAgentID)) != "" {
+				bindingCounts["support.widget_message"]++
+			}
+		}
+	}
+
+	if s.taskRepo != nil {
+		count, err := s.taskRepo.CountAssignedTasks(ctx, workspaceID)
+		if err != nil {
+			return nil, fmt.Errorf("count assigned tasks for trigger catalog: %w", err)
+		}
+		bindingCounts["task.assigned_agent_state_change"] = int(count)
+	}
+
+	entries := automationcatalog.TriggerCatalog()
+	for idx := range entries {
+		entries[idx].BindingCount = bindingCounts[entries[idx].ID]
+		switch entries[idx].ID {
+		case "manual.task_run":
+			entries[idx].BindingCount = countRunnableAgentsForTarget(agents, "task")
+		case "manual.epic_run":
+			entries[idx].BindingCount = countRunnableAgentsForTarget(agents, "epic")
+		case "manual.support_run":
+			entries[idx].BindingCount = countRunnableAgentsForTarget(agents, "support_conversation")
+		}
+	}
+	return entries, nil
+}
+
+func (s *AutomationInventoryService) ListTriggerExecutions(
+	ctx context.Context,
+	workspaceID string,
+	filters model.TriggerExecutionListFilters,
+	pagination model.PMPagination,
+) (*model.AutomationTriggerExecutionListResponse, error) {
+	if strings.TrimSpace(workspaceID) == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	if s == nil || s.triggerExecRepo == nil {
+		return &model.AutomationTriggerExecutionListResponse{
+			Data:       []model.AutomationTriggerExecutionListItem{},
+			Total:      0,
+			Page:       pagination.Page,
+			PerPage:    pagination.PerPage,
+			TotalPages: 0,
+		}, nil
+	}
+
+	if pagination.Page <= 0 {
+		pagination.Page = 1
+	}
+	if pagination.PerPage <= 0 {
+		pagination.PerPage = 25
+	}
+	if pagination.PerPage > 100 {
+		pagination.PerPage = 100
+	}
+
+	executions, total, err := s.triggerExecRepo.ListByWorkspace(ctx, workspaceID, filters, pagination)
+	if err != nil {
+		return nil, err
+	}
+
+	agentNames := map[string]string{}
+	if s.agentRepo != nil {
+		agents, err := s.agentRepo.List(ctx, workspaceID)
+		if err != nil {
+			return nil, fmt.Errorf("list agents for trigger executions: %w", err)
+		}
+		for _, agent := range agents {
+			agentNames[agent.ID] = agent.Name
+		}
+	}
+
+	ruleNames := map[string]string{}
+	if s.automationRuleRepo != nil {
+		rules, err := s.automationRuleRepo.ListByWorkspace(ctx, workspaceID)
+		if err != nil {
+			return nil, fmt.Errorf("list automation rules for trigger executions: %w", err)
+		}
+		for _, rule := range rules {
+			ruleNames[rule.ID] = rule.Name
+		}
+	}
+
+	items := make([]model.AutomationTriggerExecutionListItem, 0, len(executions))
+	for _, execution := range executions {
+		bindingTitle, managePath := describeTriggerBinding(execution, ruleNames)
+		triggerTitle := triggerTitleForExecution(execution)
+		referenceTitle := referenceTitleForExecution(execution, ruleNames)
+		items = append(items, model.AutomationTriggerExecutionListItem{
+			ExecutionID:    execution.ID,
+			AgentID:        execution.AgentID,
+			AgentName:      agentDisplayName(execution.AgentID, agentNames),
+			BindingID:      execution.BindingID,
+			BindingKind:    execution.BindingKind,
+			BindingTitle:   bindingTitle,
+			TriggerType:    execution.TriggerType,
+			TriggerTitle:   triggerTitle,
+			ReferenceID:    execution.ReferenceID,
+			ReferenceType:  execution.ReferenceType,
+			ReferenceTitle: referenceTitle,
+			ManagePath:     managePath,
+			TargetType:     execution.TargetType,
+			TargetID:       execution.TargetID,
+			RunID:          execution.RunID,
+			Status:         execution.Status,
+			ErrorMessage:   execution.ErrorMessage,
+			FiredAt:        execution.FiredAt,
+			StartedAt:      execution.StartedAt,
+			CompletedAt:    execution.CompletedAt,
+		})
+	}
+
+	totalPages := 0
+	if pagination.PerPage > 0 {
+		totalPages = int((total + int64(pagination.PerPage) - 1) / int64(pagination.PerPage))
+	}
+
+	return &model.AutomationTriggerExecutionListResponse{
+		Data:       items,
+		Total:      int(total),
+		Page:       pagination.Page,
+		PerPage:    pagination.PerPage,
+		TotalPages: totalPages,
+	}, nil
+}
+
+func countRunnableAgentsForTarget(agents []model.Agent, targetType string) int {
+	count := 0
+	for idx := range agents {
+		agent := agents[idx]
+		if strings.TrimSpace(agent.Status) == "disabled" {
+			continue
+		}
+		if validateAgentTarget(&agent, targetType) == nil {
+			count++
+		}
+	}
+	return count
+}
+
 func inventoryItemFromCatalog(entry model.AutomationCatalogEntry, inventoryID, scopeType, scopeID, scopeLabel string, enabled bool, health model.AutomationHealthSummary) model.AutomationInventoryItem {
 	return model.AutomationInventoryItem{
 		InventoryID:         inventoryID,
@@ -286,7 +489,6 @@ func inventoryItemFromCatalog(entry model.AutomationCatalogEntry, inventoryID, s
 	}
 }
 
-
 func kindSortRank(kind string) int {
 	switch kind {
 	case model.AutomationKindBuiltIn:
@@ -312,6 +514,44 @@ func summarizeSnapshot(snapshot model.AutomationHealthSnapshot) model.Automation
 		Freshness:        summarizeFreshness(snapshot.Status, snapshot.LastSeenAt),
 		Metrics:          ensureMetrics(snapshot.Metrics),
 	}
+}
+
+func describeTriggerBinding(execution model.AgentTriggerExecution, ruleNames map[string]string) (string, *string) {
+	if def, ok := automationcatalog.ResolveDefinitionForExecution(execution.BindingID, execution.BindingKind, derefString(execution.TriggerType)); ok {
+		if execution.ReferenceID != nil && strings.TrimSpace(execution.BindingKind) == "automation_rule" {
+			if name := strings.TrimSpace(ruleNames[strings.TrimSpace(*execution.ReferenceID)]); name != "" {
+				return name, def.ConfigSurface
+			}
+		}
+		return def.Title, def.ConfigSurface
+	}
+	return defaultString(strings.TrimSpace(execution.BindingKind), "Trigger"), nil
+}
+
+func triggerTitleForExecution(execution model.AgentTriggerExecution) *string {
+	if def, ok := automationcatalog.ResolveDefinitionForExecution(execution.BindingID, execution.BindingKind, derefString(execution.TriggerType)); ok {
+		return strPtr(def.Title)
+	}
+	return nil
+}
+
+func referenceTitleForExecution(execution model.AgentTriggerExecution, ruleNames map[string]string) *string {
+	if execution.ReferenceType == nil || strings.TrimSpace(*execution.ReferenceType) == "" {
+		return nil
+	}
+	if strings.TrimSpace(*execution.ReferenceType) == "automation_rule" && execution.ReferenceID != nil {
+		if name := strings.TrimSpace(ruleNames[strings.TrimSpace(*execution.ReferenceID)]); name != "" {
+			return &name
+		}
+	}
+	return nil
+}
+
+func agentDisplayName(agentID string, agentNames map[string]string) string {
+	if name := strings.TrimSpace(agentNames[strings.TrimSpace(agentID)]); name != "" {
+		return name
+	}
+	return "Unknown agent"
 }
 
 func summarizeFreshness(status string, ts *time.Time) string {

@@ -14,10 +14,24 @@ export const queryKeys = {
     members: (wsId: string) => ['workspaces', wsId, 'members'] as const,
     assignableMembers: (wsId: string) => ['workspaces', wsId, 'assignableMembers'] as const,
     settings: (wsId: string) => ['workspaces', wsId, 'settings'] as const,
-    aiAutomations: (wsId: string) => ['workspaces', wsId, 'ai-automations'] as const,
     teams: (wsId: string) => ['workspaces', wsId, 'teams'] as const,
     session: (wsId: string) => ['workspaces', wsId, 'session'] as const,
     access: (wsId: string) => ['workspaces', wsId, 'access'] as const,
+  },
+
+  automation: {
+    overview: (wsId: string) => ['automation', wsId, 'overview'] as const,
+    activity: (wsId: string, filters?: Record<string, unknown>) =>
+      filters ? (['automation', wsId, 'activity', filters] as const) : (['automation', wsId, 'activity'] as const),
+    flows: (wsId: string) => ['automation', wsId, 'flows'] as const,
+    flowsByWorkflow: (wsId: string, workflowId: string) => ['automation', wsId, 'flows', 'workflow', workflowId] as const,
+    triggerCatalog: (wsId: string) => ['automation', wsId, 'library', 'triggers'] as const,
+    toolCatalog: (wsId: string) => ['automation', wsId, 'library', 'tools'] as const,
+    agents: (wsId: string) => ['automation', wsId, 'agents'] as const,
+    agent: (wsId: string, id: string) => ['automation', wsId, 'agents', id] as const,
+    agentUsage: (wsId: string, id: string) => ['automation', wsId, 'agents', id, 'usage'] as const,
+    runs: (wsId: string, page?: number, perPage?: number) => ['automation', wsId, 'runs', page, perPage] as const,
+    targetRuns: (wsId: string, targetType: string, targetId: string) => ['automation', wsId, 'runs', 'target', targetType, targetId] as const,
   },
 
   pm: {

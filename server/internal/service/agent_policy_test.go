@@ -23,9 +23,9 @@ func TestValidateAgentTargetEnforcesPresetTargetMapping(t *testing.T) {
 			target: "epic",
 		},
 		{
-			name:   "epic planner can run on stories",
+			name:   "epic planner can run on tasks",
 			agent:  model.Agent{IsSystem: true, PresetKey: model.AgentPresetEpicPlanner},
-			target: "story",
+			target: "task",
 		},
 		{
 			name:   "epic planner can run on crm deals",
@@ -33,9 +33,14 @@ func TestValidateAgentTargetEnforcesPresetTargetMapping(t *testing.T) {
 			target: "crm_deal",
 		},
 		{
-			name:   "code builder can run on stories",
+			name:   "code builder can run on tasks",
 			agent:  model.Agent{IsSystem: true, PresetKey: model.AgentPresetCodeBuilder},
-			target: "story",
+			target: "task",
+		},
+		{
+			name:   "code builder can run on repositories",
+			agent:  model.Agent{IsSystem: true, PresetKey: model.AgentPresetCodeBuilder},
+			target: "repository",
 		},
 		{
 			name:      "code builder cannot run on epics",
@@ -44,9 +49,14 @@ func TestValidateAgentTargetEnforcesPresetTargetMapping(t *testing.T) {
 			shouldErr: true,
 		},
 		{
-			name:   "review agent can run on stories",
+			name:   "review agent can run on tasks",
 			agent:  model.Agent{IsSystem: true, PresetKey: model.AgentPresetReviewAgent},
-			target: "story",
+			target: "task",
+		},
+		{
+			name:   "review agent can run on repositories",
+			agent:  model.Agent{IsSystem: true, PresetKey: model.AgentPresetReviewAgent},
+			target: "repository",
 		},
 		{
 			name:   "support agent can run on support conversations",

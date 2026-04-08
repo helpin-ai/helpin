@@ -20,7 +20,6 @@ import {
   FolderKanbanIcon,
   Mail01Icon,
   SlidersHorizontalIcon,
-  SparklesIcon,
   BubbleChatIcon,
   Route01Icon,
 } from '@hugeicons/core-free-icons';
@@ -55,7 +54,6 @@ const Redirects = hi(LinkForwardIcon);
 const Pipelines = hi(FolderKanbanIcon);
 const EmailAccounts = hi(Mail01Icon);
 const Autonomy = hi(SlidersHorizontalIcon);
-const AIAutomations = hi(SparklesIcon);
 const ChatWidget = hi(BubbleChatIcon);
 const InboxesRouting = hi(Route01Icon);
 
@@ -76,7 +74,6 @@ export type SettingsSection =
   | 'crm-pipelines'
   | 'crm-email'
   | 'crm-autonomy'
-  | 'ai-automations'
   | 'chat-general'
   | 'inboxes-routing';
 
@@ -145,7 +142,7 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
   {
     id: 'workflows',
     label: 'Workflows',
-    description: 'Legacy workflow settings route kept for compatibility. Workflow management now lives under teams.',
+    description: 'Manage workflows, pipeline rules, and workspace-level GitHub event rules.',
     icon: Workflows,
     group: 'Project Settings',
     sidebar: false,
@@ -226,14 +223,6 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
     description: 'Configure self-driving deal automation thresholds.',
     icon: Autonomy,
     group: 'CRM Settings',
-  },
-  {
-    id: 'ai-automations',
-    label: 'AI & Automations',
-    description: 'Read-only inventory and health for shared built-ins and contextual agents.',
-    icon: AIAutomations,
-    group: 'AI & Automations',
-    requiresManageSettings: true,
   },
   {
     id: 'chat-general',

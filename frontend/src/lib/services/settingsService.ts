@@ -9,7 +9,6 @@ import type {
   TeamFieldVisibility,
   EstimateScale,
   TeamRepoDefault,
-  AutomationInventoryResponse,
 } from '../types';
 
 interface RawWorkspaceSettings extends Omit<WorkspaceSettings, 'job_role_criteria'> {
@@ -104,6 +103,4 @@ export const settingsService = {
       done_state_id?: string;
     },
   ) => api.put<TeamRepoDefault>(`/settings/teams/${teamId}/repo-default${qs(workspaceId)}`, data),
-  getAIAutomations: (workspaceId: string) =>
-    api.get<AutomationInventoryResponse>(`/settings/ai-automations${qs(workspaceId)}`),
 };

@@ -14,7 +14,7 @@ export type AgentStatus = 'idle' | 'working' | 'error' | 'paused';
 export type AgentRunStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 export type AgentRuntimeKind = 'opencode' | 'codex' | 'native_sdk';
 export type AgentTriggerMode = 'manual' | 'auto_on_assignment' | 'auto_on_event';
-export type AgentTargetType = 'task' | 'support_conversation' | 'epic' | 'document' | 'crm_deal';
+export type AgentTargetType = 'task' | 'support_conversation' | 'epic' | 'document' | 'crm_deal' | 'repository';
 export type AgentApprovalState = 'not_required' | 'pending' | 'approved' | 'rejected';
 export type AgentApprovalMode = 'preset_default' | 'never' | 'always';
 export type AgentModelProvider = 'anthropic' | 'openai' | 'openrouter';
@@ -48,13 +48,52 @@ export interface Agent {
   allowed_targets: string[];
   schedule?: string;
   target_selector?: Record<string, unknown>;
-  trigger_events: string[];
+  trigger_events?: string[];
   approval_mode: AgentApprovalMode;
   max_concurrent_runs: number;
   default_invocation_mode: AgentInvocationMode;
   supported_modes?: Array<'interactive' | 'autonomous'>;
   created_at: string;
   updated_at: string;
+}
+
+export interface AgentTriggerUsage {
+  id: string;
+  kind: string;
+  title: string;
+  description: string;
+  trigger_type?: string;
+  enabled: boolean;
+  reference_id?: string;
+  reference_type?: string;
+  manage_path?: string;
+  execution_search?: import('../types').AutomationTriggerExecutionSearchPreset;
+  last_triggered_at?: string;
+  last_success_at?: string;
+  last_error_at?: string;
+  last_error?: string;
+  recent_executions?: AgentTriggerExecutionSummary[];
+}
+
+export interface AgentTriggerExecutionSummary {
+  execution_id: string;
+  run_id?: string;
+  status: string;
+  target_type: string;
+  target_id: string;
+  fired_at: string;
+  started_at?: string;
+  completed_at?: string;
+  error_message?: string;
+  trigger_type?: string;
+  reference_id?: string;
+  reference_type?: string;
+}
+
+export interface AgentTriggerUsageSummary {
+  agent_id: string;
+  agent_name: string;
+  items: AgentTriggerUsage[];
 }
 
 export interface AgentRun {

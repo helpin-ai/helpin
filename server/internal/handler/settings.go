@@ -1,7 +1,10 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -58,6 +61,75 @@ func (h *SettingsHandler) GetAIAutomations(w http.ResponseWriter, r *http.Reques
 	}
 
 	writeJSON(w, http.StatusOK, inventory)
+}
+
+// GetAIAutomationExecutions handles
+// GET /api/settings/ai-automations/executions?workspace_id=xxx.
+func (h *SettingsHandler) GetAIAutomationExecutions(w http.ResponseWriter, r *http.Request) {
+	workspaceID := r.URL.Query().Get("workspace_id")
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	if h.automationService == nil {
+		writeError(w, http.StatusServiceUnavailable, "automation inventory is unavailable")
+		return
+	}
+
+	firedAfter, err := parseExecutionTimeFilter(r.URL.Query().Get("fired_after"), false)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid fired_after")
+		return
+	}
+	firedBefore, err := parseExecutionTimeFilter(r.URL.Query().Get("fired_before"), true)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid fired_before")
+		return
+	}
+
+	filters := model.TriggerExecutionListFilters{
+		AgentID:     queryStringPtr(r, "agent_id"),
+		BindingID:   queryStringPtr(r, "binding_id"),
+		TriggerType: queryStringPtrWithFallback(r, "trigger_type"),
+		BindingKind: queryStringPtrWithFallback(r, "binding_kind", "source"),
+		Status:      queryStringPtr(r, "status"),
+		ReferenceID: queryStringPtr(r, "reference_id"),
+		FiredAfter:  firedAfter,
+		FiredBefore: firedBefore,
+	}
+	pagination := queryPagination(r)
+	if pagination.PerPage <= 0 {
+		pagination.PerPage = 25
+	}
+	if pagination.PerPage > 100 {
+		pagination.PerPage = 100
+	}
+
+	result, err := h.automationService.ListTriggerExecutions(r.Context(), workspaceID, filters, pagination)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+func parseExecutionTimeFilter(raw string, endOfDay bool) (*time.Time, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	if ts, err := time.Parse(time.RFC3339, raw); err == nil {
+		return &ts, nil
+	}
+	if date, err := time.Parse("2006-01-02", raw); err == nil {
+		if endOfDay {
+			date = date.Add(24*time.Hour - time.Nanosecond)
+		}
+		date = date.UTC()
+		return &date, nil
+	}
+	return nil, errors.New("invalid time format")
 }
 
 // Initialize handles POST /api/settings/initialize.

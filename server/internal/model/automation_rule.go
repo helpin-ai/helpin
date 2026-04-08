@@ -10,6 +10,12 @@ const (
 	TriggerTaskStateEntered  = "task.state_entered"
 	TriggerStoryStateEntered = TriggerTaskStateEntered // legacy alias
 	TriggerAgentRunApproved  = "agent_run.approved"
+	TriggerGitHubPush        = "github.push"
+	TriggerGitHubPROpened    = "github.pull_request_opened"
+	TriggerGitHubPRMerged    = "github.pull_request_merged"
+	TriggerGitHubPRReviewReq = "github.pull_request_review_requested"
+	TriggerGitHubReleasePub  = "github.release_published"
+	TriggerGitHubCheckSuite  = "github.check_suite_completed"
 	TriggerCron              = "cron"
 )
 
@@ -76,6 +82,37 @@ type TriggerConfigRunApproved struct {
 	StateID string `json:"state_id"`
 }
 
+// TriggerConfigGitHubPRMerged holds config for github.pull_request_merged triggers.
+type TriggerConfigGitHubPRMerged struct {
+	BaseBranch   string `json:"base_branch,omitempty"`
+	RepoFullName string `json:"repo_full_name,omitempty"`
+}
+
+// TriggerConfigGitHubPush holds config for github.push triggers.
+type TriggerConfigGitHubPush struct {
+	Branch       string `json:"branch,omitempty"`
+	RepoFullName string `json:"repo_full_name,omitempty"`
+}
+
+// TriggerConfigGitHubPullRequest holds config for PR lifecycle triggers.
+type TriggerConfigGitHubPullRequest struct {
+	BaseBranch   string `json:"base_branch,omitempty"`
+	RepoFullName string `json:"repo_full_name,omitempty"`
+}
+
+// TriggerConfigGitHubReleasePublished holds config for github.release_published triggers.
+type TriggerConfigGitHubReleasePublished struct {
+	RepoFullName string `json:"repo_full_name,omitempty"`
+	TagName      string `json:"tag_name,omitempty"`
+}
+
+// TriggerConfigGitHubCheckSuiteCompleted holds config for github.check_suite_completed triggers.
+type TriggerConfigGitHubCheckSuiteCompleted struct {
+	Branch       string `json:"branch,omitempty"`
+	Conclusion   string `json:"conclusion,omitempty"`
+	RepoFullName string `json:"repo_full_name,omitempty"`
+}
+
 // Action config shapes (deserialized from JSONB).
 
 // ActionConfigRunAgent holds config for start_agent_run actions.
@@ -135,9 +172,15 @@ type AutomationEvent struct {
 	AgentID string
 	RunID   string
 	// Generic fields for non-task triggers
-	TargetType string // "task", "epic", "sprint", ""
-	TargetID   string // entity UUID
-	TeamID     string // for scope matching without a task
+	TargetType        string // "task", "epic", "sprint", ""
+	TargetID          string // entity UUID
+	TeamID            string // for scope matching without a task
+	RepoFullName      string
+	Branch            string
+	BaseBranch        string
+	PullRequestNumber int
+	TagName           string
+	Conclusion        string
 }
 
 // RuleExecutionContext tracks chain depth and prevents loops.

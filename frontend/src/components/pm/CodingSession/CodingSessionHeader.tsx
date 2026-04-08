@@ -3,6 +3,7 @@ import { GitBranchIcon, Loading01Icon } from '@/lib/icons';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { buildAutomationRunsPath } from '@/lib/automationUi';
 import type { CodingSession } from '@/lib/pmTypes';
 import { formatCodingSessionRelative } from './codingSessionUtils';
 
@@ -45,7 +46,7 @@ export function CodingSessionHeader({
         <div className="flex flex-wrap items-center gap-2">
           {workspaceSlug ? (
             <Button asChild variant="outline" size="sm">
-              <a href={`/w/${workspaceSlug}/pm/agent-runs`}>
+              <a href={buildAutomationRunsPath(workspaceSlug)}>
                 Back to runs
               </a>
             </Button>

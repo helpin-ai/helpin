@@ -8,7 +8,8 @@ import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useQuery } from '@tanstack/react-query';
 import { useArchiveMailbox, useInboxScopes, useUnreadStats } from '@/hooks/queries/useSupport';
-import { agentService } from '@/lib/services/agentService';
+import { automationService } from '@/lib/services/automationService';
+import { queryKeys } from '@/lib/queryKeys';
 import { getInitials } from '@/lib/utils';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import {
@@ -65,9 +66,9 @@ export function Sidebar() {
   );
 
   const { data: agentRunsData } = useQuery({
-    queryKey: ['agent_runs', workspaceId],
+    queryKey: queryKeys.automation.runs(workspaceId ?? '', 1, 100),
     queryFn: async () => {
-      const res = await agentService.listWorkspaceRuns(workspaceId!, 1, 100);
+      const res = await automationService.listWorkspaceRuns(workspaceId!, 1, 100);
       return res.data?.data ?? [];
     },
     enabled: !!workspaceId,

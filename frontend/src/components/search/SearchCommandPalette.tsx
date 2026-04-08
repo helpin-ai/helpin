@@ -101,7 +101,7 @@ export function SearchCommandPalette({
     { label: 'CRM', icon: Briefcase01Icon, path: `/w/${slug}/crm/contacts` },
     { label: 'Support', icon: Message01Icon, path: `/w/${slug}/support` },
     { label: 'Docs', icon: File01Icon, path: `/w/${slug}/docs` },
-    { label: 'Agents', icon: BotIcon, path: `/w/${slug}/pm/agents` },
+    { label: 'Automation', icon: BotIcon, path: `/w/${slug}/automation/flows` },
   ];
 
   const settingsNavItems = SETTINGS_ROUTE_SECTIONS.filter(
