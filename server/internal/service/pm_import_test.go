@@ -167,6 +167,79 @@ func TestPMImportServiceExecuteShortcutAndIdempotency(t *testing.T) {
 	}
 }
 
+func TestPMImportServiceExecuteShortcutRepairsLegacyChecklistStoryIDColumn(t *testing.T) {
+	db := newImportTestDB(t)
+	if err := db.Exec(`DROP TABLE pm_checklist_items`).Error; err != nil {
+		t.Fatalf("drop checklist table: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE pm_checklist_items (
+		id TEXT PRIMARY KEY,
+		task_id TEXT,
+		story_id TEXT NOT NULL,
+		text TEXT NOT NULL,
+		completed BOOLEAN NOT NULL DEFAULT 0,
+		position INTEGER NOT NULL DEFAULT 0,
+		assignee_id TEXT,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create legacy checklist table: %v", err)
+	}
+
+	svc, workspaceID, _ := newImportTestService(t, db)
+	req := model.ShortcutImportExecuteRequest{
+		UserMappings: map[string]string{
+			"owner.one@example.com": "user-owner-one",
+			"owner.two@example.com": "user-owner-two",
+		},
+		WorkflowStateMappings: []model.ShortcutWorkflowStateMappingPayload{
+			{
+				ShortcutWorkflowName: "Product Development",
+				Mode:                 "create_new",
+				NewWorkflowName:      "Imported Product Development",
+				States: []struct {
+					ShortcutState   string `json:"shortcut_state"`
+					NewStateName    string `json:"new_state_name,omitempty"`
+					StateType       string `json:"state_type,omitempty"`
+					Position        int    `json:"position,omitempty"`
+					ExistingStateID string `json:"existing_state_id,omitempty"`
+				}{
+					{ShortcutState: "Backlog", NewStateName: "Backlog", StateType: model.PMStateTypeBacklog, Position: 0},
+					{ShortcutState: "Completed", NewStateName: "Completed", StateType: model.PMStateTypeDone, Position: 1},
+				},
+			},
+		},
+		Options: model.ShortcutImportOptions{
+			ImportArchived:  true,
+			ImportCompleted: true,
+		},
+	}
+
+	result, _, err := svc.executeShortcutImport(context.Background(), workspaceID, "user-admin", []byte(shortcutImportTestCSV()), req, "", "")
+	if err != nil {
+		t.Fatalf("execute shortcut import with legacy checklist schema: %v", err)
+	}
+	if result.ChecklistItemsCreated != 4 {
+		t.Fatalf("expected 4 checklist items created, got %d", result.ChecklistItemsCreated)
+	}
+	if db.Migrator().HasColumn("pm_checklist_items", "story_id") {
+		t.Fatal("expected legacy story_id column to be removed from pm_checklist_items")
+	}
+
+	var checklistItems []model.PMChecklistItem
+	if err := db.Order("position ASC, created_at ASC").Find(&checklistItems).Error; err != nil {
+		t.Fatalf("load checklist items: %v", err)
+	}
+	if len(checklistItems) != 4 {
+		t.Fatalf("expected 4 stored checklist items, got %d", len(checklistItems))
+	}
+	for _, item := range checklistItems {
+		if strings.TrimSpace(item.TaskID) == "" {
+			t.Fatalf("expected checklist item %+v to have task_id set", item)
+		}
+	}
+}
+
 func TestPMImportServiceExecuteShortcutUsesWorkflowIDsForStateMapping(t *testing.T) {
 	db := newImportTestDB(t)
 	svc, workspaceID, adminID := newImportTestService(t, db)
