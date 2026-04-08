@@ -499,7 +499,7 @@ export function TaskOwnerAvatarFilterRow() {
   if (members.length === 0) return null;
 
   return (
-    <div className="ml-3 flex min-w-0 items-center -space-x-1.5">
+    <div className="ml-3 flex min-w-0 items-center -space-x-1">
       {members.map((member) => {
         const isSelected = ownerFilters.includes(member.id);
         const label = member.display_name?.trim() || member.email;
@@ -509,10 +509,10 @@ export function TaskOwnerAvatarFilterRow() {
             <button
               type="button"
               onClick={() => handleToggle('owner_member_id', member.id)}
-              className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full ring-1 ring-offset-1 ring-offset-background transition-all hover:z-10 ${
+              className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full ring-offset-1 ring-offset-background transition-all hover:z-10 ${
                 isSelected
-                  ? 'z-10 ring-foreground'
-                  : 'ring-transparent opacity-70 hover:opacity-100'
+                  ? 'z-10 ring-[1.5px] ring-ring'
+                  : 'ring-0 opacity-70 hover:opacity-100'
               }`}
               aria-pressed={isSelected}
               aria-label={`Filter by owner ${label}`}

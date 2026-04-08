@@ -1,36 +1,54 @@
 # @helpin-ai/widget-core
 
-Low-level React/Preact widget components and mount helpers used by the Helpin widget runtime.
+The low-level React/Preact component library that powers the Helpin chat widget. Used internally by `@helpin-ai/sdk-js`, but can also be used directly when you need full control over how the widget is mounted and rendered.
 
-This package is primarily an internal building block for `@helpin-ai/sdk-js`, but it can also be used directly when you want to mount the chat UI yourself.
-
-## Install
+## Installation
 
 ```bash
 npm install @helpin-ai/widget-core
 ```
 
-## Main Exports
+## Components
+
+### High-level
 
 | Export | Description |
 | --- | --- |
-| `mountWidget` | Mount the full widget into a DOM container |
+| `mountWidget` | Mount the complete widget into a DOM container |
 | `unmountWidget` | Unmount a previously mounted widget |
 | `ChatWindow` | Main widget window |
 | `WidgetLauncher` | Floating launcher button |
+
+### Views
+
+| Export | Description |
+| --- | --- |
 | `ConversationView` | Active conversation panel |
-| `ConversationListView` | Conversation list/messages view |
-| `HelpView` | Help-center home view |
-| `HelpSpaceView` | Help-center space view |
-| `HelpCollectionView` | Help collection view |
-| `HelpArticleView` | Help article view |
+| `ConversationListView` | Conversation list / messages view |
+| `HelpView` | Help-center home |
+| `HelpSpaceView` | Help-center space |
+| `HelpCollectionView` | Help-center collection |
+| `HelpArticleView` | Help-center article |
+| `HomeView` | Widget home screen |
+| `MessagesView` | Messages screen |
+
+### Building blocks
+
+| Export | Description |
+| --- | --- |
+| `MessageList` | Scrollable message list |
+| `MessageBubble` | Individual message bubble |
+| `ComposeBar` | Message input area |
+| `WidgetHeader` | Widget top bar |
+| `PreChatForm` | Pre-chat data collection form |
+| `QuickReplies` | Quick-reply button row |
+| `TypingIndicator` | Typing animation |
+| `CsatRating` | Customer satisfaction rating |
+| `StreamingText` | Streaming text display |
+| `BottomNav` | Bottom navigation (home / messages / help) |
 | `ImageLightbox` | Full-screen image preview |
-| `BottomNav` | Bottom navigation for home/messages/help |
-| `MessageList`, `MessageBubble`, `ComposeBar`, `WidgetHeader`, `PreChatForm`, `QuickReplies`, `TypingIndicator`, `CsatRating`, `StreamingText`, `HomeView`, `MessagesView` | UI building blocks |
 
 ## Types
-
-The package exports these core types:
 
 ```ts
 import type {
@@ -50,6 +68,8 @@ import type {
 
 ## Mount API
 
+Use `mountWidget` and `unmountWidget` to manage the widget lifecycle imperatively:
+
 ```ts
 import { mountWidget, unmountWidget } from '@helpin-ai/widget-core';
 
@@ -67,44 +87,66 @@ mountWidget(container, {
   },
 });
 
-// later
+// Later, when you're done:
 unmountWidget(container);
 ```
 
-Common `mountWidget(...)` options:
+### `mountWidget` options
+
+**Required**
 
 | Option | Description |
 | --- | --- |
-| `config` | Required widget configuration |
-| `messages` | Current message list |
-| `isOpen` | Whether the window is open |
-| `onClose` | Called when the widget closes |
-| `onSendMessage` | Send message handler |
-| `onSendMessageFromHome` | Send handler from the home view |
-| `onUploadAttachment` | Attachment upload handler |
-| `onQuickReply` | Quick-reply click handler |
-| `onTyping` | Typing indicator handler |
-| `showPreChatForm` / `onPreChatSubmit` | Pre-chat form controls |
-| `isTyping` / `isAIThinking` | Typing/loading indicators |
-| `activeTeammate` | Active assigned teammate |
-| `initialView` | Initial `WidgetView` |
-| `showLauncher` / `onLauncherClick` | Launcher controls |
-| `unreadCount` | Launcher unread badge |
-| `connectionStatus` / `onRetryConnection` | Reconnect state |
-| `conversations` / `activeConversation` | Conversation list state |
-| `onSelectConversation` / `onStartNewConversation` | Conversation actions |
-| `onViewChange` | Bottom-nav view changes |
-| `isConversationExpanded` / `onToggleConversationExpanded` | Expanded conversation mode |
-| `transcriptEmail` / `onRequestTranscript` | Transcript request flow |
-| `widgetKey` / `host` | Help-center fetching context |
-| `openArticleRequest` | Open a help-center article programmatically |
-| `onImageClick` | Custom image click handling |
+| `config` | Widget configuration object |
 
-## Emoji Helpers
+**State**
+
+| Option | Description |
+| --- | --- |
+| `messages` | Current message list |
+| `isOpen` | Whether the widget window is open |
+| `isTyping` / `isAIThinking` | Show typing or AI-thinking indicators |
+| `activeTeammate` | Currently assigned teammate |
+| `unreadCount` | Badge count on the launcher |
+| `connectionStatus` | Connection state for reconnect UI |
+| `conversations` / `activeConversation` | Conversation list and active selection |
+| `isConversationExpanded` | Whether the conversation view is expanded |
+| `transcriptEmail` | Email address for transcript requests |
+| `initialView` | Starting `WidgetView` |
+| `openArticleRequest` | Programmatically open a help-center article |
+| `widgetKey` / `host` | Context for help-center content fetching |
+
+**Callbacks**
+
+| Option | Description |
+| --- | --- |
+| `onClose` | Widget close |
+| `onSendMessage` | Message sent from conversation |
+| `onSendMessageFromHome` | Message sent from the home view |
+| `onUploadAttachment` | Attachment upload |
+| `onQuickReply` | Quick-reply button clicked |
+| `onTyping` | User typing state changed |
+| `onPreChatSubmit` | Pre-chat form submitted |
+| `onLauncherClick` | Launcher button clicked |
+| `onRetryConnection` | Reconnect attempt |
+| `onSelectConversation` / `onStartNewConversation` | Conversation navigation |
+| `onViewChange` | Bottom-nav view changed |
+| `onToggleConversationExpanded` | Conversation expand/collapse toggled |
+| `onRequestTranscript` | Transcript requested |
+| `onImageClick` | Image clicked (for custom handling) |
+
+**UI toggles**
+
+| Option | Description |
+| --- | --- |
+| `showPreChatForm` | Display the pre-chat form |
+| `showLauncher` | Display the floating launcher |
+
+## Utilities
 
 | Export | Description |
 | --- | --- |
-| `loadEmojiCatalog` | Lazy-load the emoji catalog used by the picker |
+| `loadEmojiCatalog` | Lazy-load the emoji catalog for the picker |
 
 ## Development
 

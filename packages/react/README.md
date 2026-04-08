@@ -1,21 +1,16 @@
 # @helpin-ai/react
 
-React bindings for `@helpin-ai/sdk-js`.
+Helpin for React. Analytics, user identification, pageview tracking, and chat widget control — all through a single hook.
 
-This package gives you:
-
-- `createClient(...)` to create the underlying Helpin client
-- `HelpinProvider` to place that client in React context
-- `useHelpin()` for the typed tracking helpers used inside components
-- `usePageView()` for automatic SPA pageview tracking
-
-## Install
+## Installation
 
 ```bash
 npm install @helpin-ai/react @helpin-ai/sdk-js
 ```
 
 ## Quick Start
+
+Wrap your app with `HelpinProvider` to make the client available throughout the component tree:
 
 ```tsx
 import React from 'react';
@@ -25,6 +20,7 @@ import { createClient, HelpinProvider } from '@helpin-ai/react';
 const helpinClient = createClient({
   widgetKey: 'your-widget-key',
   host: 'https://client.helpin.ai',
+  autoBoot: false,
 });
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -36,16 +32,18 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 );
 ```
 
-In browser builds, the underlying `@helpin-ai/sdk-js` client also auto-boots the widget when `widgetKey` and `host` are present.
+The chat widget boots automatically in the browser when `widgetKey` and `host` are set. Pass `autoBoot: false` to keep it dormant until you call `show()` or `showNewMessage()` — useful for custom launchers.
 
 ## `useHelpin()`
+
+The hook provides analytics, user identification, and widget control from any component:
 
 ```tsx
 import { useEffect } from 'react';
 import { useHelpin } from '@helpin-ai/react';
 
 function App() {
-  const { id, track, lead, trackPageView, set, unset } = useHelpin();
+  const { id, track, lead, trackPageView, set, show } = useHelpin();
 
   useEffect(() => {
     void id({
@@ -58,28 +56,46 @@ function App() {
   }, [id, set, trackPageView]);
 
   return (
-    <button onClick={() => track('cta_clicked', { cta: 'pricing' })}>
-      Open Pricing
-    </button>
+    <>
+      <button onClick={() => track('cta_clicked', { cta: 'pricing' })}>
+        Open Pricing
+      </button>
+      <button onClick={show}>Chat with us</button>
+    </>
   );
 }
 ```
 
-Typed hook methods:
+### Available methods
+
+**Analytics**
 
 | Method | Signature | Description |
 | --- | --- | --- |
-| `trackPageView` | `() => void` | Sends a `pageview` event |
+| `trackPageView` | `() => void` | Send a pageview event |
 | `id` | `(userData, doNotSendEvent?) => Promise<void>` | Identify the current user |
 | `track` | `(eventName, payload?) => void` | Track a custom event |
 | `lead` | `(payload, directSend?) => void` | Track a lead event |
 | `rawTrack` | `(payload) => void` | Send a raw event payload |
 | `set` | `(properties, opts?) => void` | Set global or event-scoped properties |
-| `unset` | `(propertyName, opts?) => void` | Remove a property set via `set(...)` |
+| `unset` | `(propertyName, opts?) => void` | Remove a property added with `set(...)` |
+
+**Widget**
+
+| Method | Signature | Description |
+| --- | --- | --- |
+| `show` | `() => void` | Boot the widget if needed and open it |
+| `hide` | `() => void` | Close the widget |
+| `toggle` | `() => void` | Toggle the widget open or closed |
+| `showMessages` | `() => void` | Open the messages view |
+| `showNewMessage` | `(content?) => void` | Start a new conversation |
+| `shutdown` | `() => void` | End the session and unmount the widget |
+
+For the complete client API (`boot`, `group`, `reset`, `setUserId`, `getConfig`, `getLogger`), use the object returned by `createClient(...)` directly.
 
 ## `usePageView()`
 
-`usePageView()` tracks URL changes by observing `pushState`, `replaceState`, and `popstate`.
+Tracks route changes automatically by observing `pushState`, `replaceState`, and `popstate`. Optionally run setup logic or attach extra data before each pageview fires:
 
 ```tsx
 import { usePageView } from '@helpin-ai/react';
@@ -98,13 +114,11 @@ function AppShell() {
 }
 ```
 
-Options:
-
 | Option | Type | Description |
 | --- | --- | --- |
-| `before` | `(helpin) => void` | Runs before the pageview event is sent |
-| `typeName` | `string` | Override the event name, default `pageview` |
-| `payload` | `EventPayload` | Extra fields merged into the pageview payload |
+| `before` | `(helpin) => void` | Runs before each pageview event |
+| `typeName` | `string` | Custom event name (default: `pageview`) |
+| `payload` | `EventPayload` | Extra fields merged into the payload |
 
 ## `HelpinProvider`
 
@@ -114,44 +128,19 @@ Options:
 </HelpinProvider>
 ```
 
-Props:
-
 | Prop | Type | Description |
 | --- | --- | --- |
-| `client` | `HelpinClient | null` | Client returned by `createClient(...)` |
-
-## Accessing The Full SDK API
-
-`useHelpin()` intentionally documents the common tracking helpers above. If you need the broader `@helpin-ai/sdk-js` client API, keep a reference to the object returned by `createClient(...)`.
-
-That underlying client also supports methods such as:
-
-- `group(...)`
-- `reset(...)`
-- `setUserId(...)`
-- `getConfig()`
-- `getLogger()`
-
-## Widget Controls
-
-`@helpin-ai/react` does not currently add a typed React hook for widget control commands such as `show()`, `hide()`, or `toggle()`.
-
-What it does do:
-
-- creating the client in the browser auto-boots the widget through `@helpin-ai/sdk-js`
-- gives you React-friendly tracking hooks and pageview handling
-
-If you need explicit widget control methods today, document them against the global/script Helpin API from `@helpin-ai/sdk-js`, not this React wrapper.
+| `client` | `HelpinClient \| null` | The client returned by `createClient(...)` |
 
 ## Exports
 
 | Export | Description |
 | --- | --- |
-| `createClient` | Creates the underlying Helpin client |
+| `createClient` | Client factory |
 | `HelpinProvider` | React context provider |
-| `HelpinContext` | Raw React context |
-| `useHelpin` | Tracking hook |
-| `usePageView` | SPA pageview hook |
+| `HelpinContext` | Raw React context (for advanced use) |
+| `useHelpin` | Analytics and widget hook |
+| `usePageView` | Automatic pageview tracking hook |
 
 ## Development
 

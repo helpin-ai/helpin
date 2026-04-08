@@ -16,19 +16,9 @@ import { isWindowAvailable } from './utils/common';
 const widgetManager = new WidgetManager();
 
 export function helpinClient(config: Partial<Config>): HelpinClient | null {
-  const client = createHelpinClient(config);
-  if (!client) {
-    return null;
-  }
-  const mergedConfig = client.getConfig();
-
-  // Auto-boot the chat widget in browser environments
-  if (isWindowAvailable() && mergedConfig?.widgetKey && mergedConfig.host) {
-    widgetManager.boot({
-      widgetKey: mergedConfig.widgetKey,
-      host: mergedConfig.host,
-    });
+  if (!isWindowAvailable()) {
+    return createHelpinClient(config);
   }
 
-  return client;
+  return createHelpinClient(config, widgetManager);
 }

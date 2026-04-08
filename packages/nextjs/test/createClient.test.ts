@@ -20,9 +20,24 @@ describe('createClient (Next.js)', () => {
     expect(typeof client!.id).toBe('function');
     expect(typeof client!.track).toBe('function');
     expect(typeof client!.lead).toBe('function');
+    expect(typeof client!.show).toBe('function');
+    expect(typeof client!.hide).toBe('function');
+    expect(typeof client!.toggle).toBe('function');
+    expect(typeof client!.showNewMessage).toBe('function');
+    expect(typeof client!.shutdown).toBe('function');
     expect(typeof client!.rawTrack).toBe('function');
     expect(typeof client!.set).toBe('function');
     expect(typeof client!.unset).toBe('function');
+  });
+
+  it('should preserve autoBoot config for lazy widget control', () => {
+    const client = createClient({
+      widgetKey: 'test-key',
+      host: 'https://test.helpin.ai',
+      autoBoot: false,
+    });
+
+    expect(client?.getConfig().autoBoot).toBe(false);
   });
 
   it('should create distinct clients for different configs', () => {

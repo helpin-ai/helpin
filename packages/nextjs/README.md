@@ -1,25 +1,16 @@
 # @helpin-ai/nextjs
 
-Next.js helpers for `@helpin-ai/sdk-js`.
+Helpin for Next.js. Drop-in analytics, chat widget control, and pageview tracking — with middleware support for server-side events.
 
-This package provides:
-
-- `createClient(...)` for client-side Helpin initialization
-- `HelpinProvider` and `useHelpin()` for React context access
-- `usePageView(...)` for client-side route tracking
-- `middlewareEnv(...)` for Next.js middleware request metadata
-
-## Install
+## Installation
 
 ```bash
 npm install @helpin-ai/nextjs @helpin-ai/sdk-js
 ```
 
-## Client-Side Setup
+## Quick Start
 
-`createClient(...)` in `@helpin-ai/nextjs` is browser-only. It returns `null` during SSR, so initialize it from a client component or client-only module.
-
-### App Router Example
+Create a client component that initializes Helpin and wraps your app:
 
 ```tsx
 'use client';
@@ -33,6 +24,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       createClient({
         widgetKey: process.env.NEXT_PUBLIC_HELPIN_WIDGET_KEY!,
         host: process.env.NEXT_PUBLIC_HELPIN_HOST!,
+        autoBoot: false,
       }),
     [],
   );
@@ -43,7 +35,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
 }
 ```
 
-### Using `useHelpin()`
+> `createClient(...)` is browser-only and returns `null` during SSR. Always call it from a client component.
+
+## `useHelpin()`
+
+The hook provides analytics, user identification, and widget control from any component in the tree:
 
 ```tsx
 'use client';
@@ -52,7 +48,7 @@ import { useEffect } from 'react';
 import { useHelpin } from '@helpin-ai/nextjs';
 
 export function BillingCTA() {
-  const { id, track, lead, set } = useHelpin();
+  const { id, track, lead, set, show } = useHelpin();
 
   useEffect(() => {
     void id({
@@ -64,26 +60,46 @@ export function BillingCTA() {
   }, [id, set]);
 
   return (
-    <button onClick={() => track('billing_cta_clicked', { source: 'hero' })}>
-      Talk to Sales
-    </button>
+    <>
+      <button onClick={() => track('billing_cta_clicked', { source: 'hero' })}>
+        Talk to Sales
+      </button>
+      <button onClick={show}>Chat with us</button>
+    </>
   );
 }
 ```
 
-Typed hook methods:
+### Available methods
+
+**Analytics**
 
 | Method | Signature | Description |
 | --- | --- | --- |
-| `trackPageView` | `() => void` | Sends a `pageview` event |
+| `trackPageView` | `() => void` | Send a pageview event |
 | `id` | `(userData, doNotSendEvent?) => Promise<void>` | Identify the current user |
 | `track` | `(eventName, payload?) => void` | Track a custom event |
 | `lead` | `(payload, directSend?) => void` | Track a lead event |
 | `rawTrack` | `(payload) => void` | Send a raw event payload |
 | `set` | `(properties, opts?) => void` | Set global or event-scoped properties |
-| `unset` | `(propertyName, opts?) => void` | Remove a property set via `set(...)` |
+| `unset` | `(propertyName, opts?) => void` | Remove a property added with `set(...)` |
 
-## `usePageView(helpin, opts?)`
+**Widget**
+
+| Method | Signature | Description |
+| --- | --- | --- |
+| `show` | `() => void` | Boot the widget if needed and open it |
+| `hide` | `() => void` | Close the widget |
+| `toggle` | `() => void` | Toggle the widget open or closed |
+| `showMessages` | `() => void` | Open the messages view |
+| `showNewMessage` | `(content?) => void` | Start a new conversation |
+| `shutdown` | `() => void` | End the session and unmount the widget |
+
+For the complete client API (`boot`, `group`, `reset`, `setUserId`, `getConfig`, `getLogger`), use the object returned by `createClient(...)` directly.
+
+## `usePageView()`
+
+Tracks client-side route changes automatically. Optionally run setup logic or attach extra data before each pageview fires:
 
 ```tsx
 'use client';
@@ -109,17 +125,15 @@ export function PageViewTracker() {
 }
 ```
 
-Options:
-
 | Option | Type | Description |
 | --- | --- | --- |
-| `before` | `(helpin) => void` | Runs before the pageview event is sent |
-| `typeName` | `string` | Override the event name, default `pageview` |
-| `payload` | `EventPayload` | Extra fields merged into the pageview payload |
+| `before` | `(helpin) => void` | Runs before each pageview event |
+| `typeName` | `string` | Custom event name (default: `pageview`) |
+| `payload` | `EventPayload` | Extra fields merged into the payload |
 
-## `middlewareEnv(req, res, opts?)`
+## Server-Side Tracking
 
-`middlewareEnv(...)` is the server-safe helper in this package. It does not create a client. It collects request metadata and manages the anonymous-id cookie in middleware.
+For server-side analytics in middleware, route handlers, or server actions, pair the core SDK with `middlewareEnv(...)`. It extracts request metadata and manages the anonymous visitor ID cookie:
 
 ```ts
 import { NextRequest, NextResponse } from 'next/server';
@@ -148,46 +162,31 @@ export function middleware(req: NextRequest) {
 }
 ```
 
-Helper methods:
-
 | Method | Description |
 | --- | --- |
-| `getAnonymousId({ name, domain? })` | Returns or creates the visitor id cookie |
-| `getSourceIp()` | Extracts the client IP from request headers |
-| `describeClient()` | Returns a `ClientProperties`-shaped object for the current request |
+| `getAnonymousId({ name, domain? })` | Return or create the anonymous visitor ID cookie |
+| `getSourceIp()` | Extract the client IP from request headers |
+| `describeClient()` | Build a `ClientProperties` object from the request |
 
-## Important Distinction
+## Client vs. Server
 
-- `createClient(...)` from `@helpin-ai/nextjs` is client-only.
-- For server-side tracking in middleware, route handlers, or server actions, use `helpinClient(...)` from `@helpin-ai/sdk-js`.
-- The browser client auto-boots the widget through `@helpin-ai/sdk-js` when `widgetKey` and `host` are present.
+| Context | What to use |
+| --- | --- |
+| Browser (analytics + widget) | `createClient(...)` from `@helpin-ai/nextjs` |
+| Server (middleware, route handlers, server actions) | `helpinClient(...)` from `@helpin-ai/sdk-js` + `middlewareEnv(...)` |
 
-## Accessing The Full SDK API
-
-Like the React wrapper, `useHelpin()` focuses on the common tracking helpers. If you need the full client API, keep a reference to the object returned by `createClient(...)`.
-
-That underlying client also supports:
-
-- `group(...)`
-- `reset(...)`
-- `setUserId(...)`
-- `getConfig()`
-- `getLogger()`
-
-## Widget Controls
-
-`@helpin-ai/nextjs` does not currently provide a typed wrapper for widget control commands such as `show()`, `hide()`, or `toggle()`. Document those commands against the global/script Helpin API from `@helpin-ai/sdk-js`.
+The chat widget boots automatically in the browser when `widgetKey` and `host` are set. Pass `autoBoot: false` to keep it dormant until you call `show()` or `showNewMessage()` — useful for custom launchers.
 
 ## Exports
 
 | Export | Description |
 | --- | --- |
-| `createClient` | Client-side Helpin factory |
+| `createClient` | Browser-only client factory |
 | `HelpinProvider` | React context provider |
-| `HelpinContext` | Raw React context |
-| `useHelpin` | Tracking hook |
-| `usePageView` | Client-side pageview hook |
-| `middlewareEnv` | Next middleware helper |
+| `HelpinContext` | Raw React context (for advanced use) |
+| `useHelpin` | Analytics and widget hook |
+| `usePageView` | Automatic pageview tracking hook |
+| `middlewareEnv` | Next.js middleware helper |
 
 ## Development
 
