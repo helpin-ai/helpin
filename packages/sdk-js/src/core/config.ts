@@ -10,6 +10,7 @@ export const defaultConfig: Partial<Config> = {
   useBeaconApi: false,
   forceUseFetch: false,
   host: 'https://client.prod.helpin.ai',
+  autoBoot: true,
   autoPageview: true,
   disableEventPersistence: false,
   gaHook: false,

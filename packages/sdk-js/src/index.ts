@@ -11,7 +11,7 @@ import { isAMDEnvironment, getAMDDefine } from './utils/amd-detector';
 const widgetManager = new WidgetManager();
 
 function helpinClient(config: Partial<Config>): HelpinClient | null {
-  return createHelpinClient(config);
+  return createHelpinClient(config, widgetManager);
 }
 
 function initFromScript(script: HTMLScriptElement): HelpinClient | null {
@@ -26,6 +26,12 @@ function initFromScript(script: HTMLScriptElement): HelpinClient | null {
         : script.getAttribute('data-auto-pageview') === 'true'
           ? true
           : undefined, // Let default config handle it
+    autoBoot:
+      script.getAttribute('data-auto-boot') === 'false'
+        ? false
+        : script.getAttribute('data-auto-boot') === 'true'
+          ? true
+          : undefined,
     useBeaconApi: script.getAttribute('data-use-beacon-api') === 'true',
     forceUseFetch: script.getAttribute('data-force-use-fetch') === 'true',
     gaHook: script.getAttribute('data-ga-hook') === 'true',
@@ -93,14 +99,6 @@ function initFromScript(script: HTMLScriptElement): HelpinClient | null {
   }
 
   initializeNamespacedClient(namespace, client);
-
-  // Auto-boot widget using the same key and host from script attributes
-  if (config.widgetKey) {
-    widgetManager.boot({
-      widgetKey: config.widgetKey,
-      host: config.host,
-    });
-  }
 
   return client;
 }
@@ -189,15 +187,21 @@ function initializeNamespacedClient(
       shutdown: () => widgetManager.shutdown(),
       show: () => widgetManager.show(),
       hide: () => widgetManager.hide(),
-      showMessages: () => widgetManager.showMessages(),
-      showNewMessage: (content?: string) => widgetManager.showNewMessage(content),
-      showConversation: (id: string) => widgetManager.showConversation(id),
-      showArticle: (id: string, options?: ShowArticleOptions) => widgetManager.showArticle(id, options),
-      onShow: (cb: (...args: any[]) => void) => widgetManager.onShow(cb),
-      onHide: (cb: (...args: any[]) => void) => widgetManager.onHide(cb),
+      open: () => widgetManager.open(),
+      close: () => widgetManager.close(),
+      toggle: () => widgetManager.toggle(),
+      openMessages: () => widgetManager.openMessages(),
+      openNewMessage: (content?: string) => widgetManager.openNewMessage(content),
+      openConversation: (id: string) => widgetManager.openConversation(id),
+      openArticle: (id: string, options?: ShowArticleOptions) => widgetManager.openArticle(id, options),
+      onOpen: (cb: (...args: any[]) => void) => widgetManager.onOpen(cb),
+      onClose: (cb: (...args: any[]) => void) => widgetManager.onClose(cb),
       onUnreadCountChange: (cb: (...args: any[]) => void) => widgetManager.onUnreadCountChange(cb),
       onUserEmailSupplied: (cb: (...args: any[]) => void) => widgetManager.onUserEmailSupplied(cb),
+      onConversationStarted: (cb: (...args: any[]) => void) => widgetManager.onConversationStarted(cb),
+      onMessageReceived: (cb: (...args: any[]) => void) => widgetManager.onMessageReceived(cb),
       getVisitorId: () => widgetManager.getVisitorId(),
+      isWidgetReady: () => widgetManager.isWidgetReady(),
     };
 
     if (widgetMethods[method]) {
@@ -365,13 +369,15 @@ if (isWindowAvailable()) {
           shutdown: () => widgetManager.shutdown(),
           show: () => widgetManager.show(),
           hide: () => widgetManager.hide(),
+          open: () => widgetManager.open(),
+          close: () => widgetManager.close(),
           toggle: () => widgetManager.toggle(),
-          showMessages: () => widgetManager.showMessages(),
-          showNewMessage: (content?: string) => widgetManager.showNewMessage(content),
-          showConversation: (id: string) => widgetManager.showConversation(id),
-          showArticle: (id: string, options?: ShowArticleOptions) => widgetManager.showArticle(id, options),
-          onShow: (cb: (...a: any[]) => void) => widgetManager.onShow(cb),
-          onHide: (cb: (...a: any[]) => void) => widgetManager.onHide(cb),
+          openMessages: () => widgetManager.openMessages(),
+          openNewMessage: (content?: string) => widgetManager.openNewMessage(content),
+          openConversation: (id: string) => widgetManager.openConversation(id),
+          openArticle: (id: string, options?: ShowArticleOptions) => widgetManager.openArticle(id, options),
+          onOpen: (cb: (...a: any[]) => void) => widgetManager.onOpen(cb),
+          onClose: (cb: (...a: any[]) => void) => widgetManager.onClose(cb),
           onUnreadCountChange: (cb: (...a: any[]) => void) => widgetManager.onUnreadCountChange(cb),
           onUserEmailSupplied: (cb: (...a: any[]) => void) => widgetManager.onUserEmailSupplied(cb),
           onMessageReceived: (cb: (...a: any[]) => void) => widgetManager.onMessageReceived(cb),

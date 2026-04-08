@@ -19,13 +19,13 @@ func TestPMSprintPlanningRepository(t *testing.T) {
 	ctx := context.Background()
 
 	const (
-		workspaceID = "ws-sprint-planning"
-		teamAID     = "team-a"
-		teamBID     = "team-b"
-		workflowID  = "wf-planning"
-		todoStateID = "state-todo"
+		workspaceID  = "ws-sprint-planning"
+		teamAID      = "team-a"
+		teamBID      = "team-b"
+		workflowID   = "wf-planning"
+		todoStateID  = "state-todo"
 		doingStateID = "state-doing"
-		doneStateID = "state-done"
+		doneStateID  = "state-done"
 	)
 	teamA := teamAID
 
@@ -35,30 +35,34 @@ func TestPMSprintPlanningRepository(t *testing.T) {
 	seedPMSprintPlanningState(t, db, doneStateID, workflowID, "Done", model.PMStateTypeDone, 2)
 
 	activeSprintID := "sprint-active"
-	upcomingSprintID := "sprint-upcoming"
-	completedSprintID := "sprint-completed"
+	upcomingSprintNearID := "sprint-upcoming-near"
+	upcomingSprintFarID := "sprint-upcoming-far"
+	completedSprintRecentID := "sprint-completed-recent"
+	completedSprintOlderID := "sprint-completed-older"
 
 	seedPMSprintPlanningSprint(t, db, activeSprintID, workspaceID, teamAID, "Active sprint", now.AddDate(0, 0, -2), now.AddDate(0, 0, 5), false)
-	seedPMSprintPlanningSprint(t, db, upcomingSprintID, workspaceID, teamAID, "Upcoming sprint", now.AddDate(0, 0, 8), now.AddDate(0, 0, 15), false)
-	seedPMSprintPlanningSprint(t, db, completedSprintID, workspaceID, teamAID, "Completed sprint", now.AddDate(0, 0, -12), now.AddDate(0, 0, -5), false)
+	seedPMSprintPlanningSprint(t, db, upcomingSprintNearID, workspaceID, teamAID, "Upcoming near sprint", now.AddDate(0, 0, 8), now.AddDate(0, 0, 15), false)
+	seedPMSprintPlanningSprint(t, db, upcomingSprintFarID, workspaceID, teamAID, "Upcoming far sprint", now.AddDate(0, 0, 22), now.AddDate(0, 0, 29), false)
+	seedPMSprintPlanningSprint(t, db, completedSprintRecentID, workspaceID, teamAID, "Completed recent sprint", now.AddDate(0, 0, -12), now.AddDate(0, 0, -5), false)
+	seedPMSprintPlanningSprint(t, db, completedSprintOlderID, workspaceID, teamAID, "Completed older sprint", now.AddDate(0, 0, -24), now.AddDate(0, 0, -17), false)
 	seedPMSprintPlanningSprint(t, db, "sprint-other-team", workspaceID, teamBID, "Other team sprint", now.AddDate(0, 0, -1), now.AddDate(0, 0, 3), false)
 	seedPMSprintPlanningSprint(t, db, "sprint-archived", workspaceID, teamAID, "Archived sprint", now.AddDate(0, 0, -20), now.AddDate(0, 0, -10), true)
 
 	seedPMSprintPlanningTask(t, db, "story-active-1", workspaceID, workflowID, todoStateID, activeSprintID, teamAID, "Active todo", 1001, 1, 3, now.Add(-5*time.Minute))
 	seedPMSprintPlanningTask(t, db, "story-active-2", workspaceID, workflowID, doingStateID, activeSprintID, teamAID, "Active doing", 1002, 2, 5, now.Add(-4*time.Minute))
 	seedPMSprintPlanningTask(t, db, "story-active-3", workspaceID, workflowID, doneStateID, activeSprintID, teamAID, "Active done", 1003, 3, 1, now.Add(-3*time.Minute))
-	seedPMSprintPlanningTask(t, db, "story-upcoming-1", workspaceID, workflowID, todoStateID, upcomingSprintID, teamAID, "Upcoming todo", 1004, 1, 2, now.Add(-2*time.Minute))
-	seedPMSprintPlanningTask(t, db, "story-completed-1", workspaceID, workflowID, doneStateID, completedSprintID, teamAID, "Completed done", 1005, 1, 8, now.Add(-1*time.Minute))
+	seedPMSprintPlanningTask(t, db, "story-upcoming-1", workspaceID, workflowID, todoStateID, upcomingSprintFarID, teamAID, "Upcoming todo", 1004, 1, 2, now.Add(-2*time.Minute))
+	seedPMSprintPlanningTask(t, db, "story-completed-1", workspaceID, workflowID, doneStateID, completedSprintRecentID, teamAID, "Completed done", 1005, 1, 8, now.Add(-1*time.Minute))
 	seedPMSprintPlanningTask(t, db, "story-backlog-1", workspaceID, workflowID, todoStateID, "", teamAID, "Backlog one", 1006, 10, 2, now.Add(-6*time.Minute))
 	seedPMSprintPlanningTask(t, db, "story-backlog-2", workspaceID, workflowID, doingStateID, "", teamAID, "Backlog two", 1007, 11, 5, now.Add(-7*time.Minute))
 	seedPMSprintPlanningTask(t, db, "story-backlog-done", workspaceID, workflowID, doneStateID, "", teamAID, "Backlog done", 1008, 12, 1, now.Add(-8*time.Minute))
 	seedPMSprintPlanningTask(t, db, "story-other-team", workspaceID, workflowID, todoStateID, "", teamBID, "Other team backlog", 1009, 13, 3, now.Add(-9*time.Minute))
 
 	workspace, err := repo.ListPlanningWorkspace(ctx, workspaceID, model.PMSprintPlanningFilters{
-		TeamID:          &teamA,
+		TeamID:           &teamA,
 		IncludeCompleted: true,
 		PreviewTaskLimit: 2,
-		BacklogLimit:      10,
+		BacklogLimit:     10,
 	})
 	if err != nil {
 		t.Fatalf("ListPlanningWorkspace: %v", err)
@@ -80,11 +84,29 @@ func TestPMSprintPlanningRepository(t *testing.T) {
 	if len(workspace.Buckets[0].Sprints) != 1 || workspace.Buckets[0].Sprints[0].Sprint.ID != activeSprintID {
 		t.Fatalf("active bucket = %+v, want active sprint", workspace.Buckets[0].Sprints)
 	}
-	if len(workspace.Buckets[1].Sprints) != 1 || workspace.Buckets[1].Sprints[0].Sprint.ID != upcomingSprintID {
-		t.Fatalf("upcoming bucket = %+v, want upcoming sprint", workspace.Buckets[1].Sprints)
+	if len(workspace.Buckets[1].Sprints) != 2 {
+		t.Fatalf("upcoming bucket len = %d, want 2", len(workspace.Buckets[1].Sprints))
 	}
-	if len(workspace.Buckets[2].Sprints) != 1 || workspace.Buckets[2].Sprints[0].Sprint.ID != completedSprintID {
-		t.Fatalf("completed bucket = %+v, want completed sprint", workspace.Buckets[2].Sprints)
+	if workspace.Buckets[1].Sprints[0].Sprint.ID != upcomingSprintFarID || workspace.Buckets[1].Sprints[1].Sprint.ID != upcomingSprintNearID {
+		t.Fatalf("upcoming bucket order = %+v, want far future then near future", workspace.Buckets[1].Sprints)
+	}
+	if workspace.Buckets[1].Sprints[0].Stats.TaskCount != 1 || len(workspace.Buckets[1].Sprints[0].PreviewTasks) != 1 || workspace.Buckets[1].Sprints[0].PreviewTasks[0].ID != "story-upcoming-1" {
+		t.Fatalf("upcoming far sprint preview = %+v, want only story-upcoming-1", workspace.Buckets[1].Sprints[0])
+	}
+	if workspace.Buckets[1].Sprints[1].Stats.TaskCount != 0 || len(workspace.Buckets[1].Sprints[1].PreviewTasks) != 0 {
+		t.Fatalf("upcoming near sprint preview = %+v, want empty", workspace.Buckets[1].Sprints[1])
+	}
+	if len(workspace.Buckets[2].Sprints) != 2 {
+		t.Fatalf("completed bucket len = %d, want 2", len(workspace.Buckets[2].Sprints))
+	}
+	if workspace.Buckets[2].Sprints[0].Sprint.ID != completedSprintRecentID || workspace.Buckets[2].Sprints[1].Sprint.ID != completedSprintOlderID {
+		t.Fatalf("completed bucket order = %+v, want recent completion then older completion", workspace.Buckets[2].Sprints)
+	}
+	if workspace.Buckets[2].Sprints[0].Stats.TaskCount != 1 || len(workspace.Buckets[2].Sprints[0].PreviewTasks) != 1 || workspace.Buckets[2].Sprints[0].PreviewTasks[0].ID != "story-completed-1" {
+		t.Fatalf("completed recent sprint preview = %+v, want only story-completed-1", workspace.Buckets[2].Sprints[0])
+	}
+	if workspace.Buckets[2].Sprints[1].Stats.TaskCount != 0 || len(workspace.Buckets[2].Sprints[1].PreviewTasks) != 0 {
+		t.Fatalf("completed older sprint preview = %+v, want empty", workspace.Buckets[2].Sprints[1])
 	}
 
 	activeCard := workspace.Buckets[0].Sprints[0]

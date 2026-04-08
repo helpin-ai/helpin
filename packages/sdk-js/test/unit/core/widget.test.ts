@@ -188,7 +188,7 @@ describe('WidgetManager', () => {
     });
   });
 
-  describe('show/hide', () => {
+  describe('visibility and open state', () => {
     it('should create widget element when shown', async () => {
       widget.boot({ key: 'test-key' });
       await new Promise((r) => setTimeout(r, 100));
@@ -198,28 +198,72 @@ describe('WidgetManager', () => {
       expect(document.getElementById('helpin-widget-container')).not.toBeNull();
     });
 
-    it('should call onShow callback', async () => {
+    it('should not call onOpen callback for programmatic open', async () => {
       widget.boot({ key: 'test-key' });
       await new Promise((r) => setTimeout(r, 100));
       
       const callback = vi.fn();
-      widget.onShow(callback);
-      widget.show();
-      expect(callback).toHaveBeenCalled();
+      widget.onOpen(callback);
+      widget.open();
+      expect(callback).not.toHaveBeenCalled();
     });
 
-    it('should call onHide callback', async () => {
+    it('should not call onClose callback for programmatic close', async () => {
       widget.boot({ key: 'test-key' });
       await new Promise((r) => setTimeout(r, 100));
       
       const callback = vi.fn();
-      widget.onHide(callback);
-      widget.show();
-      widget.hide();
-      expect(callback).toHaveBeenCalled();
+      widget.onClose(callback);
+      widget.open();
+      widget.close();
+      expect(callback).not.toHaveBeenCalled();
     });
 
-    it('should toggle visibility via mountWidget', async () => {
+    it('should call onOpen callback for user-initiated launcher open', async () => {
+      widget.boot({ key: 'test-key' });
+      await new Promise((r) => setTimeout(r, 100));
+
+      const callback = vi.fn();
+      widget.onOpen(callback);
+
+      const mockMount = mountWidget as ReturnType<typeof vi.fn>;
+      const latestOptions = mockMount.mock.calls.at(-1)?.[1];
+      latestOptions?.onLauncherClick();
+
+      expect(callback).toHaveBeenCalledTimes(1);
+    });
+
+    it('should call onClose callback for user-initiated close', async () => {
+      widget.boot({ key: 'test-key' });
+      await new Promise((r) => setTimeout(r, 100));
+
+      const callback = vi.fn();
+      widget.onClose(callback);
+      widget.open();
+
+      const mockMount = mountWidget as ReturnType<typeof vi.fn>;
+      const latestOptions = mockMount.mock.calls.at(-1)?.[1];
+      latestOptions?.onClose();
+
+      expect(callback).toHaveBeenCalledTimes(1);
+    });
+
+    it('allows close() inside onClose without recursion', async () => {
+      widget.boot({ key: 'test-key' });
+      await new Promise((r) => setTimeout(r, 100));
+
+      const callback = vi.fn(() => widget.close());
+      widget.onClose(callback);
+      widget.open();
+
+      const mockMount = mountWidget as ReturnType<typeof vi.fn>;
+      const latestOptions = mockMount.mock.calls.at(-1)?.[1];
+      latestOptions?.onClose();
+
+      expect(callback).toHaveBeenCalledTimes(1);
+    });
+
+    it('should separate visibility from open state via mountWidget', async () => {
       widget.boot({ key: 'test-key' });
       await new Promise((r) => setTimeout(r, 100));
 
@@ -229,12 +273,28 @@ describe('WidgetManager', () => {
       widget.show();
       expect(mockMount).toHaveBeenCalled();
       const showCall = mockMount.mock.calls[mockMount.mock.calls.length - 1];
-      expect(showCall[1].isOpen).toBe(true);
+      expect(showCall[1].showLauncher).toBe(true);
+      expect(showCall[1].isOpen).toBe(false);
+
+      mockMount.mockClear();
+      widget.open();
+      expect(mockMount).toHaveBeenCalled();
+      const openCall = mockMount.mock.calls[mockMount.mock.calls.length - 1];
+      expect(openCall[1].showLauncher).toBe(true);
+      expect(openCall[1].isOpen).toBe(true);
+
+      mockMount.mockClear();
+      widget.close();
+      expect(mockMount).toHaveBeenCalled();
+      const closeCall = mockMount.mock.calls[mockMount.mock.calls.length - 1];
+      expect(closeCall[1].showLauncher).toBe(true);
+      expect(closeCall[1].isOpen).toBe(false);
 
       mockMount.mockClear();
       widget.hide();
       expect(mockMount).toHaveBeenCalled();
       const hideCall = mockMount.mock.calls[mockMount.mock.calls.length - 1];
+      expect(hideCall[1].showLauncher).toBe(false);
       expect(hideCall[1].isOpen).toBe(false);
     });
   });
@@ -325,28 +385,28 @@ describe('WidgetManager', () => {
   });
 
   describe('API methods', () => {
-    it('should have showMessages method', async () => {
+    it('should have openMessages method', async () => {
       widget.boot({ key: 'test-key' });
       await new Promise((r) => setTimeout(r, 100));
       
-      expect(() => widget.showMessages()).not.toThrow();
+      expect(() => widget.openMessages()).not.toThrow();
     });
 
-    it('should have showConversation method', async () => {
+    it('should have openConversation method', async () => {
       widget.boot({ key: 'test-key' });
       await new Promise((r) => setTimeout(r, 100));
       
-      expect(() => widget.showConversation('conv-123')).not.toThrow();
+      expect(() => widget.openConversation('conv-123')).not.toThrow();
     });
 
-    it('should have showArticle method', async () => {
+    it('should have openArticle method', async () => {
       widget.boot({ key: 'test-key' });
       await new Promise((r) => setTimeout(r, 100));
 
       const mockMount = mountWidget as ReturnType<typeof vi.fn>;
       mockMount.mockClear();
 
-      widget.showArticle('article-123');
+      widget.openArticle('article-123');
 
       expect(mockMount).toHaveBeenCalled();
       const latestOptions = mockMount.mock.calls[mockMount.mock.calls.length - 1][1];

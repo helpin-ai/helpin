@@ -7,6 +7,14 @@ export type HelpinClient = {
   id: (userData: UserProps, doNotSendEvent?: boolean) => Promise<void>;
   track: (typeName: string, payload?: EventPayload) => void;
   lead: (payload: EventPayload, directSend?: boolean) => void;
+  show: () => void;
+  hide: () => void;
+  open: () => void;
+  close: () => void;
+  toggle: () => void;
+  openMessages: () => void;
+  openNewMessage: (content?: string) => void;
+  shutdown: () => void;
   rawTrack: (payload: any) => void;
   set: (
     properties: Record<string, any>,
@@ -28,6 +36,14 @@ const noopClient: HelpinClient = {
   id: async () => {},
   track: () => {},
   lead: () => {},
+  show: () => {},
+  hide: () => {},
+  open: () => {},
+  close: () => {},
+  toggle: () => {},
+  openMessages: () => {},
+  openNewMessage: () => {},
+  shutdown: () => {},
   rawTrack: () => {},
   set: () => {},
   unset: () => {},
@@ -57,7 +73,7 @@ function useHelpin(): HelpinClient {
   );
 
   const trackPageView = useCallback(
-    (): void => client.track('pageview'),
+    (): void => client.pageview(),
     [client],
   );
 
@@ -75,6 +91,46 @@ function useHelpin(): HelpinClient {
 
   const rawTrack = useCallback(
     (payload: any): void => client.rawTrack(payload),
+    [client],
+  );
+
+  const show = useCallback(
+    (): void => client.show(),
+    [client],
+  );
+
+  const hide = useCallback(
+    (): void => client.hide(),
+    [client],
+  );
+
+  const toggle = useCallback(
+    (): void => client.toggle(),
+    [client],
+  );
+
+  const open = useCallback(
+    (): void => client.open(),
+    [client],
+  );
+
+  const close = useCallback(
+    (): void => client.close(),
+    [client],
+  );
+
+  const openMessages = useCallback(
+    (): void => client.openMessages(),
+    [client],
+  );
+
+  const openNewMessage = useCallback(
+    (content?: string): void => client.openNewMessage(content),
+    [client],
+  );
+
+  const shutdown = useCallback(
+    (): void => client.shutdown(),
     [client],
   );
 
@@ -106,6 +162,14 @@ function useHelpin(): HelpinClient {
     track,
     lead,
     trackPageView,
+    show,
+    hide,
+    open,
+    close,
+    toggle,
+    openMessages,
+    openNewMessage,
+    shutdown,
     rawTrack,
     set,
     unset,

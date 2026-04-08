@@ -83,6 +83,7 @@ function normalizeWidgetConfig(raw: any): WidgetConfig {
 export class WidgetManager {
   private config: WidgetSettings | null = null;
   private widgetConfig: WidgetConfig | null = null;
+  private isVisible = false;
   private isOpen = false;
   private unreadCount = 0;
   private sessionToken: string | null = null;
@@ -120,8 +121,8 @@ export class WidgetManager {
   private audioUnlockListener: (() => void) | null = null;
 
   private callbacks: Record<string, WidgetCallback[]> = {
-    onShow: [],
-    onHide: [],
+    onOpen: [],
+    onClose: [],
     onUnreadCountChange: [],
     onUserEmailSupplied: [],
     onConversationStarted: [],
@@ -149,6 +150,7 @@ export class WidgetManager {
     }
 
     this.isShutdown = false;
+    this.isVisible = true;
     this.config = {
       ...settings,
       widgetKey,
@@ -230,6 +232,7 @@ export class WidgetManager {
     this.stopTyping();
     this.config = null;
     this.widgetConfig = null;
+    this.isVisible = false;
     this.sessionToken = null;
     this.isOpen = false;
     this.unreadCount = 0;
@@ -263,6 +266,19 @@ export class WidgetManager {
   }
 
   show(): void {
+    this.isVisible = true;
+    this.ensureWidget();
+    this.render();
+  }
+
+  hide(): void {
+    this.isVisible = false;
+    this.isOpen = false;
+    this.render();
+  }
+
+  open(): void {
+    this.isVisible = true;
     this.isOpen = true;
     this.unlockNotificationSound();
     if (!this.hasBeenOpened && this.currentView === 'home') {
@@ -275,29 +291,48 @@ export class WidgetManager {
     }
     this.ensureWidget();
     this.render();
-    this.triggerCallback('onShow');
   }
 
-  hide(): void {
+  close(): void {
     this.isOpen = false;
     this.render();
-    this.triggerCallback('onHide');
+  }
+
+  private openFromUser(): void {
+    this.open();
+    this.triggerCallback('onOpen');
+  }
+
+  private closeFromUser(): void {
+    this.isOpen = false;
+    this.render();
+    this.triggerCallback('onClose');
   }
 
   toggle(): void {
+    this.isVisible = true;
     if (this.isOpen) {
-      this.hide();
+      this.close();
     } else {
-      this.show();
+      this.open();
     }
   }
 
-  showMessages(): void {
-    this.currentView = 'messages';
-    this.show();
+  private toggleFromUser(): void {
+    this.isVisible = true;
+    if (this.isOpen) {
+      this.closeFromUser();
+    } else {
+      this.openFromUser();
+    }
   }
 
-  showNewMessage(content?: string): void {
+  openMessages(): void {
+    this.currentView = 'messages';
+    this.open();
+  }
+
+  openNewMessage(content?: string): void {
     this.resetActiveConversation();
     this.currentView = 'conversation';
 
@@ -306,7 +341,7 @@ export class WidgetManager {
       this.wsSend('conversation:new', {});
     }
 
-    this.show();
+    this.open();
 
     // If content provided, send it as the first message
     if (content?.trim()) {
@@ -314,9 +349,9 @@ export class WidgetManager {
     }
   }
 
-  showConversation(conversationId: string): void {
+  openConversation(conversationId: string): void {
     this.currentView = 'home';
-    this.show();
+    this.open();
   }
 
   toggleConversationExpanded(): void {
@@ -369,22 +404,22 @@ export class WidgetManager {
     return conversationId || null;
   }
 
-  showArticle(articleId: string, _options?: ShowArticleOptions): void {
+  openArticle(articleId: string, _options?: ShowArticleOptions): void {
     this.articleRequestKey += 1;
     this.openArticleRequest = {
       key: this.articleRequestKey,
       articleSlug: articleId,
     };
     this.currentView = 'help-article';
-    this.show();
+    this.open();
   }
 
-  onShow(callback: WidgetCallback): void {
-    this.callbacks.onShow.push(callback);
+  onOpen(callback: WidgetCallback): void {
+    this.callbacks.onOpen.push(callback);
   }
 
-  onHide(callback: WidgetCallback): void {
-    this.callbacks.onHide.push(callback);
+  onClose(callback: WidgetCallback): void {
+    this.callbacks.onClose.push(callback);
   }
 
   onUnreadCountChange(callback: WidgetCallback): void {
@@ -481,7 +516,7 @@ export class WidgetManager {
       config: this.widgetConfig,
       messages: this.messages,
       isOpen: this.isOpen,
-      onClose: () => this.hide(),
+      onClose: () => this.closeFromUser(),
       onSendMessage: (content: string, attachmentIds?: string[]) => this.handleSendMessage(content, { attachmentIds }),
       onSendMessageFromHome: (content: string) => this.handleSendMessage(content, { startNewConversation: true }),
       onQuickReply: (content: string) => this.handleSendMessage(content),
@@ -496,8 +531,8 @@ export class WidgetManager {
       typingAgentAvatar: this.typingAgentAvatar,
       activeTeammate: this.activeTeammate,
       initialView: this.currentView,
-      showLauncher: true,
-      onLauncherClick: () => this.toggle(),
+      showLauncher: this.isVisible,
+      onLauncherClick: () => this.toggleFromUser(),
       unreadCount: this.unreadCount,
       connectionStatus: this.connectionStatus,
       onRetryConnection: () => this.reconnectWebSocket(),
@@ -1235,6 +1270,7 @@ export class WidgetManager {
         if (hashConversationId && this.conversations.some((c) => c.id === hashConversationId)) {
           this.activeConversationId = hashConversationId;
           this.currentView = 'conversation';
+          this.isVisible = true;
           this.isOpen = true;
           if (this.wsConnection?.readyState === WebSocket.OPEN) {
             this.wsSend('conversation:select', { conversation_id: hashConversationId });

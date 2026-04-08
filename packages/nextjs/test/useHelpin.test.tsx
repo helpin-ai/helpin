@@ -72,6 +72,22 @@ describe('useHelpin (Next.js)', () => {
     expect(typeof result.current.unset).toBe('function');
   });
 
+  it('should return widget control methods', () => {
+    const client = createMockClient();
+    const { result } = renderHook(() => useHelpin(), {
+      wrapper: createWrapper(client),
+    });
+
+    expect(typeof result.current.show).toBe('function');
+    expect(typeof result.current.hide).toBe('function');
+    expect(typeof result.current.open).toBe('function');
+    expect(typeof result.current.close).toBe('function');
+    expect(typeof result.current.toggle).toBe('function');
+    expect(typeof result.current.openMessages).toBe('function');
+    expect(typeof result.current.openNewMessage).toBe('function');
+    expect(typeof result.current.shutdown).toBe('function');
+  });
+
   it('should return no-op client when client is null (SSR)', () => {
     // Next.js createClient returns null on the server
     const { result } = renderHook(() => useHelpin(), {
@@ -83,6 +99,14 @@ describe('useHelpin (Next.js)', () => {
     expect(typeof result.current.track).toBe('function');
     expect(typeof result.current.lead).toBe('function');
     expect(typeof result.current.trackPageView).toBe('function');
+    expect(typeof result.current.show).toBe('function');
+    expect(typeof result.current.hide).toBe('function');
+    expect(typeof result.current.open).toBe('function');
+    expect(typeof result.current.close).toBe('function');
+    expect(typeof result.current.toggle).toBe('function');
+    expect(typeof result.current.openMessages).toBe('function');
+    expect(typeof result.current.openNewMessage).toBe('function');
+    expect(typeof result.current.shutdown).toBe('function');
     expect(typeof result.current.rawTrack).toBe('function');
     expect(typeof result.current.set).toBe('function');
     expect(typeof result.current.unset).toBe('function');

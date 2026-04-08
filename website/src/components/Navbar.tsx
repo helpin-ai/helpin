@@ -42,6 +42,8 @@ export function Navbar() {
         </div>
 
         <div className="hidden md:flex items-center gap-4">
+          {/* TODO: Unhide when trial is enabled */}
+          {/* <Link href="/pricing" className="text-[15px] font-medium text-muted-foreground hover:text-foreground transition-colors">Pricing</Link> */}
           <Link
             href="https://app.helpin.ai"
             className="text-[15px] font-medium text-muted-foreground hover:text-foreground transition-colors"

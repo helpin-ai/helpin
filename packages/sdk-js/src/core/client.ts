@@ -20,7 +20,32 @@ import {
 import { RetryQueue } from '../utils/queue';
 import { isWindowAvailable } from '../utils/common';
 import { HttpsTransport } from '../transport/https';
-import { persistIdentity, clearIdentity } from './identity';
+import { persistIdentity, clearIdentity, getStoredIdentity } from './identity';
+import type { ShowArticleOptions, WidgetSettings } from './widget';
+
+type WidgetCallback = (...args: any[]) => void;
+
+export type HelpinWidgetController = {
+  boot(settings: WidgetSettings): void;
+  shutdown(): void;
+  show(): void;
+  hide(): void;
+  open(): void;
+  close(): void;
+  toggle(): void;
+  openMessages(): void;
+  openNewMessage(content?: string): void;
+  openConversation(conversationId: string): void;
+  openArticle(articleId: string, options?: ShowArticleOptions): void;
+  onOpen(callback: WidgetCallback): void;
+  onClose(callback: WidgetCallback): void;
+  onUnreadCountChange(callback: WidgetCallback): void;
+  onUserEmailSupplied(callback: WidgetCallback): void;
+  onConversationStarted(callback: WidgetCallback): void;
+  onMessageReceived(callback: WidgetCallback): void;
+  getVisitorId(): string;
+  isWidgetReady(): boolean;
+};
 
 export class HelpinClient {
   private config: Config;
@@ -32,8 +57,14 @@ export class HelpinClient {
   private retryQueue: RetryQueue;
   private anonymousId: string;
   private namespace: string;
+  private widgetController: HelpinWidgetController | null;
+  private widgetSettings: WidgetSettings | null;
+  private hasBootedWidget: boolean;
 
-  constructor(config: Config) {
+  constructor(
+    config: Config,
+    widgetController: HelpinWidgetController | null = null,
+  ) {
     // Ensure host has protocol so URLs aren't treated as relative paths
     if (config.host && !/^https?:\/\//.test(config.host)) {
       config.host = `https://${config.host}`;
@@ -52,12 +83,16 @@ export class HelpinClient {
       this.logger,
       this.namespace,
     );
+    this.widgetController = widgetController;
+    this.widgetSettings = null;
+    this.hasBootedWidget = false;
 
     if (isWindowAvailable()) {
       this.initializeBrowserFeatures();
     }
 
     this.anonymousId = this.getOrCreateAnonymousId();
+    this.syncWidgetSettings();
 
     this.logger.info(
       `Helpin client initialized for namespace: ${this.namespace}`,
@@ -120,10 +155,82 @@ export class HelpinClient {
     }
 
     this.anonymousId = this.getOrCreateAnonymousId();
+    this.syncWidgetSettings();
 
     this.logger.info(
       `Helpin client reinitialized for namespace: ${this.namespace}`,
     );
+  }
+
+  private getWidgetUser(): WidgetSettings['user'] | undefined {
+    const userProps = this.persistence.get('userProps') || {};
+    const persistedUserId = this.persistence.get('userId');
+    const storedIdentity = this.config.widgetKey
+      ? getStoredIdentity(this.config.widgetKey)
+      : null;
+    const user = {
+      email:
+        typeof userProps.email === 'string'
+          ? userProps.email
+          : storedIdentity?.email,
+      name:
+        typeof userProps.name === 'string'
+          ? userProps.name
+          : storedIdentity?.name,
+      userId:
+        typeof persistedUserId === 'string'
+          ? persistedUserId
+          : typeof userProps.id === 'string'
+            ? userProps.id
+            : undefined,
+    };
+
+    if (!user.email && !user.name && !user.userId) {
+      return undefined;
+    }
+
+    return user;
+  }
+
+  private syncWidgetSettings(overrides?: WidgetSettings): void {
+    const widgetKey =
+      overrides?.widgetKey ||
+      overrides?.key ||
+      this.config.widgetKey ||
+      this.config.widget_key;
+
+    if (!widgetKey) {
+      this.widgetSettings = null;
+      return;
+    }
+
+    this.widgetSettings = {
+      widgetKey,
+      host: overrides?.host ?? this.config.host,
+      user: overrides?.user ?? this.getWidgetUser(),
+    };
+  }
+
+  private bootWidget(settings?: WidgetSettings): void {
+    if (!this.widgetController) {
+      return;
+    }
+
+    this.syncWidgetSettings(settings);
+    if (!this.widgetSettings?.widgetKey) {
+      return;
+    }
+
+    this.widgetController.boot(this.widgetSettings);
+    this.hasBootedWidget = true;
+  }
+
+  private ensureWidgetBooted(): void {
+    if (this.hasBootedWidget) {
+      return;
+    }
+
+    this.bootWidget();
   }
 
   private manageCrossDomainLinking(): void {
@@ -284,6 +391,7 @@ export class HelpinClient {
     const userId = userData.id;
     this.persistence.set('userId', userId);
     this.persistence.set('userProps', userData);
+    this.syncWidgetSettings();
 
     // Persist identity for widget auto-restore on page refresh
     if (userData.email && this.config.widgetKey) {
@@ -618,8 +726,98 @@ export class HelpinClient {
     return this.logger;
   }
 
+  public boot(settings?: WidgetSettings): void {
+    this.bootWidget(settings);
+  }
+
+  public shutdown(): void {
+    if (this.hasBootedWidget) {
+      this.widgetController?.shutdown();
+    }
+    this.hasBootedWidget = false;
+  }
+
+  public show(): void {
+    this.ensureWidgetBooted();
+    this.widgetController?.show();
+  }
+
+  public hide(): void {
+    this.widgetController?.hide();
+  }
+
+  public open(): void {
+    this.ensureWidgetBooted();
+    this.widgetController?.open();
+  }
+
+  public close(): void {
+    this.widgetController?.close();
+  }
+
+  public toggle(): void {
+    this.ensureWidgetBooted();
+    this.widgetController?.toggle();
+  }
+
+  public openMessages(): void {
+    this.ensureWidgetBooted();
+    this.widgetController?.openMessages();
+  }
+
+  public openNewMessage(content?: string): void {
+    this.ensureWidgetBooted();
+    this.widgetController?.openNewMessage(content);
+  }
+
+  public openConversation(conversationId: string): void {
+    this.ensureWidgetBooted();
+    this.widgetController?.openConversation(conversationId);
+  }
+
+  public openArticle(
+    articleId: string,
+    options?: ShowArticleOptions,
+  ): void {
+    this.ensureWidgetBooted();
+    this.widgetController?.openArticle(articleId, options);
+  }
+
+  public onOpen(callback: WidgetCallback): void {
+    this.widgetController?.onOpen(callback);
+  }
+
+  public onClose(callback: WidgetCallback): void {
+    this.widgetController?.onClose(callback);
+  }
+
+  public onUnreadCountChange(callback: WidgetCallback): void {
+    this.widgetController?.onUnreadCountChange(callback);
+  }
+
+  public onUserEmailSupplied(callback: WidgetCallback): void {
+    this.widgetController?.onUserEmailSupplied(callback);
+  }
+
+  public onConversationStarted(callback: WidgetCallback): void {
+    this.widgetController?.onConversationStarted(callback);
+  }
+
+  public onMessageReceived(callback: WidgetCallback): void {
+    this.widgetController?.onMessageReceived(callback);
+  }
+
+  public getVisitorId(): string {
+    return this.widgetController?.getVisitorId() || this.anonymousId;
+  }
+
+  public isWidgetReady(): boolean {
+    return this.widgetController?.isWidgetReady() || false;
+  }
+
   public async reset(resetAnonId: boolean = false): Promise<void> {
     this.persistence.clear();
+    this.syncWidgetSettings();
 
     // Clear persisted identity so widget won't auto-restore on next page load
     if (this.config.widgetKey) {
@@ -681,6 +879,7 @@ export class HelpinClient {
     this.persistence.set('userProps', userProps);
 
     this.persistence.save();
+    this.syncWidgetSettings();
   }
 
   public unset(

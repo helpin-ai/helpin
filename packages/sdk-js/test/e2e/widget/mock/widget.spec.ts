@@ -48,7 +48,7 @@ async function bootWidget(page: Page, options: { unreadCount?: number; persisted
 
 async function openWidget(page: Page) {
   await page.evaluate(() => {
-    window.helpin?.('show')
+    window.helpin?.('open')
   })
   await expect(page.locator('.helpin-chat-window')).toBeVisible()
 }
@@ -67,7 +67,7 @@ test('shows unread state on the launcher and in the messages list', async ({ pag
   await expect(page.locator('.helpin-unread-badge')).toHaveText('2')
 
   await page.evaluate(() => {
-    window.helpin?.('showMessages')
+    window.helpin?.('openMessages')
   })
 
   await expect(page.locator('.helpin-conversation-item')).toContainText('Initial message')
