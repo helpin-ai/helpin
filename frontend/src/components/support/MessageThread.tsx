@@ -1,17 +1,9 @@
 import { useEffect, useRef, useState, useMemo, memo } from 'react';
 import { toast } from 'sonner';
-import { useConfirm } from '@/components/ui/confirm-dialog';
-import { Message01Icon, BotIcon, Loading01Icon, MoreHorizontalIcon, CheckmarkCircle02Icon, CancelCircleIcon, Link01Icon, MailOpenIcon, Shield02Icon, Delete01Icon, PencilEdit01Icon } from '@/lib/icons';
+import { Message01Icon, BotIcon, Loading01Icon, CheckmarkCircle02Icon, CancelCircleIcon, MoreHorizontalIcon } from '@/lib/icons';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import {
   useConversation,
   useConversationMessages,
@@ -20,9 +12,6 @@ import {
   useSupportTeammatePresence,
   useUpdateConversationStatus,
   useRunConversationAgent,
-  useMarkConversationUnread,
-  useUpdateConversationSubject,
-  useDeleteConversation,
   useMoveConversation,
   useDismissConversationTriage,
 } from '@/hooks/queries/useSupport';
@@ -38,6 +27,7 @@ import { getDayLabel, getEffectiveSenderType, isSameDay, getInitial } from './he
 import { MessageBubble } from './MessageBubble';
 import { ReplyComposer } from './ReplyComposer';
 import { AgentRunsCard } from './AgentRunsCard';
+import { ConversationActionsMenu } from './ConversationActionsMenu';
 
 interface MessageThreadProps {
   workspaceId: string;
@@ -216,10 +206,6 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
   const { data: members = [] } = useWorkspaceMembers(workspaceId);
   const updateStatus = useUpdateConversationStatus(workspaceId);
   const runAgent = useRunConversationAgent(workspaceId);
-  const markUnread = useMarkConversationUnread(workspaceId);
-  const updateSubject = useUpdateConversationSubject(workspaceId);
-  const deleteConversation = useDeleteConversation(workspaceId);
-  const confirm = useConfirm();
   const moveConversation = useMoveConversation(workspaceId);
   const dismissTriage = useDismissConversationTriage(workspaceId);
   const currentUser = useAuthStore((s) => s.user);
@@ -511,7 +497,11 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
 
           <div className="flex items-center gap-2 min-w-0">
             <div className="min-w-0">
-              <h2 className="text-sm font-semibold text-muted-foreground">#{conversation.display_id}</h2>
+              <h2 className="truncate text-sm font-medium text-foreground">
+                <span className="font-semibold text-muted-foreground">#{conversation.display_id}</span>
+                <span className="mx-1 text-muted-foreground">-</span>
+                <span>{conversation.subject}</span>
+              </h2>
             </div>
           </div>
 
@@ -554,95 +544,20 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
             )}
 
             {/* More actions */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+            <ConversationActionsMenu
+              workspaceId={workspaceId}
+              conversation={conversation}
+              moveOptions={moveOptions.map((option) => ({ id: option!.id, name: option!.name }))}
+              align="end"
+              onConversationMoved={(option) => {
+                setSelectedMailboxId(option.id);
+              }}
+              trigger={(
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" aria-label="Open conversation actions">
                   <MoreHorizontalIcon className="h-4 w-4" />
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => {
-                  markUnread.mutate(conversation.id);
-                  toast.success('Marked as unread');
-                }}>
-                  <MailOpenIcon className="h-4 w-4" />
-                  Mark as unread
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => {
-                  navigator.clipboard.writeText(window.location.href);
-                  toast.success('Link copied to clipboard');
-                }}>
-                  <Link01Icon className="h-4 w-4" />
-                  Copy link
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => {
-                  const newSubject = window.prompt('Conversation subject:', conversation.subject);
-                  if (newSubject !== null && newSubject.trim()) {
-                    updateSubject.mutate({ conversationId: conversation.id, subject: newSubject.trim() });
-                  }
-                }}>
-                  <PencilEdit01Icon className="h-4 w-4" />
-                  Set conversation subject
-                </DropdownMenuItem>
-                {moveOptions.length > 0 && (
-                  <>
-                    <DropdownMenuSeparator />
-                    {moveOptions.map((option) => (
-                      <DropdownMenuItem
-                        key={option!.id}
-                        onClick={() => {
-                          const nextMailboxId = option!.id === 'shared' ? null : option!.id;
-                          moveConversation.mutate({
-                            conversationId: conversation.id,
-                            mailboxId: nextMailboxId,
-                          }, {
-                            onSuccess: () => {
-                              setSelectedMailboxId(option!.id);
-                              toast.success(`Moved to ${option!.name}`);
-                            },
-                          });
-                        }}
-                      >
-                        <Message01Icon className="h-4 w-4" />
-                        Move to {option!.name}
-                      </DropdownMenuItem>
-                    ))}
-                  </>
-                )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
-                  onClick={() => {
-                    updateStatus.mutate({ conversationId: conversation.id, status: 'spam' as ConversationStatus });
-                    toast.success('Conversation marked as spam');
-                  }}
-                >
-                  <Shield02Icon className="h-4 w-4" />
-                  Mark as spam
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
-                  onClick={async () => {
-                    const ok = await confirm({
-                      title: 'Delete conversation?',
-                      description: 'This will permanently delete this conversation. This action cannot be undone.',
-                      confirmText: 'Delete',
-                      variant: 'destructive',
-                    });
-                    if (!ok) return;
-                    deleteConversation.mutate(conversation.id, {
-                      onSuccess: () => {
-                        useSupportInboxStore.getState().selectConversation(null);
-                        toast.success('Conversation deleted');
-                      },
-                    });
-                  }}
-                >
-                  <Delete01Icon className="h-4 w-4" />
-                  Delete conversation
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+              )}
+            />
           </div>
         </div>
       )}
