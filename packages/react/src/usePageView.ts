@@ -2,12 +2,20 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import useHelpin, { HelpinClient } from './useHelpin';
 import { EventPayload } from '@helpin-ai/sdk-js';
 
+function getCurrentUrl(): string {
+  return typeof window === 'undefined' ? '' : window.location.href;
+}
+
 // Custom hook to track URL changes
 function useUrlChange() {
-  const [url, setUrl] = useState(window.location.href);
-  const lastUrlRef = useRef(window.location.href);
+  const [url, setUrl] = useState(getCurrentUrl);
+  const lastUrlRef = useRef(getCurrentUrl());
 
   useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
     const handleUrlChange = () => {
       const currentUrl = window.location.href;
       if (currentUrl !== lastUrlRef.current) {
@@ -55,6 +63,10 @@ function usePageView(
   const lastTrackedUrl = useRef('');
 
   const trackPageView = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
     if (url !== lastTrackedUrl.current) {
       if (opts.before) {
         opts.before(helpin);

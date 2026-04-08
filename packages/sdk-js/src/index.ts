@@ -1,35 +1,20 @@
 import { HelpinClient } from './core/client';
 import { WidgetManager, type ShowArticleOptions, type WidgetSettings } from './core/widget';
-import { defaultConfig } from './core/config';
 import type { Config } from './core/types';
+import { createHelpinClient } from './core/create-client';
 import { LogLevel } from './utils/logger';
 import type { UserProps, EventPayload, ClientProperties } from './core/types';
 import { parseLogLevel } from './utils/helpers';
-import { convertKeysToCamelCase, isWindowAvailable } from './utils/common';
+import { isWindowAvailable } from './utils/common';
 import { isAMDEnvironment, getAMDDefine } from './utils/amd-detector';
 
 const widgetManager = new WidgetManager();
 
-function helpinClient(config: Partial<Config>): HelpinClient {
-  const cleanConfig = JSON.parse(JSON.stringify(config));
-  const camelCaseConfig = convertKeysToCamelCase(cleanConfig);
-  const mergedConfig: Config = {
-    ...defaultConfig,
-    ...camelCaseConfig,
-  } as Config;
-
-  if (!mergedConfig.widgetKey) {
-    throw new Error('Widget key is required!');
-  }
-
-  if (!mergedConfig.host) {
-    throw new Error('Host is required!');
-  }
-
-  return new HelpinClient(mergedConfig);
+function helpinClient(config: Partial<Config>): HelpinClient | null {
+  return createHelpinClient(config);
 }
 
-function initFromScript(script: HTMLScriptElement): HelpinClient {
+function initFromScript(script: HTMLScriptElement): HelpinClient | null {
   const config: Partial<Config> = {
     widgetKey: script.getAttribute('data-widget-key') || script.getAttribute('data-key') || undefined,
     host:
@@ -98,6 +83,9 @@ function initFromScript(script: HTMLScriptElement): HelpinClient {
 
   const client = helpinClient(config);
   const namespace = config.namespace || 'helpin';
+  if (!client) {
+    return null;
+  }
 
   // Only send pageview if auto-pageview is enabled (default behavior for script tag)
   if (isWindowAvailable()) {
@@ -363,6 +351,9 @@ if (isWindowAvailable()) {
             return;
           }
           analyticsClient = helpinClient(config);
+          if (!analyticsClient) {
+            return;
+          }
           scriptTagClient = analyticsClient;
           isInitialized = true;
           return;
@@ -438,7 +429,11 @@ if (isWindowAvailable()) {
       if (shouldAutoInitialize()) {
         console.log('[Helpin] Auto-initializing from script tag');
         scriptTagClient = initFromScript(currentScript!);
-        isInitialized = true;
+        if (scriptTagClient) {
+          isInitialized = true;
+        } else {
+          initializeWidgetBridge();
+        }
       } else if (currentScript && !isInitialized) {
         // No analytics client, but still set up widget bridge
         // so helpin('boot', {...}) works with data-no-auto-init

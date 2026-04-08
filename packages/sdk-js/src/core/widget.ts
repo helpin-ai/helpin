@@ -132,13 +132,23 @@ export class WidgetManager {
     // Bot/crawler filtering
     if (isBot()) return;
 
+    if (typeof window === 'undefined' || typeof document === 'undefined') {
+      console.error('[Helpin] Widget boot skipped: browser APIs are unavailable.');
+      return;
+    }
+
+    const widgetKey = settings.widgetKey || settings.key || '';
+    if (!widgetKey) {
+      console.error('[Helpin] Widget boot skipped: widgetKey is required.');
+      return;
+    }
+
     // Clean up previous boot if any
     if (this.config) {
       this.cleanup();
     }
 
     this.isShutdown = false;
-    const widgetKey = settings.widgetKey || settings.key || '';
     this.config = {
       ...settings,
       widgetKey,

@@ -37,4 +37,12 @@ describe('createClient (Next.js)', () => {
 
     expect(client1).not.toBe(client2);
   });
+
+  it('should return null when widgetKey is missing', () => {
+    const client = createClient({
+      host: 'https://test.helpin.ai',
+    } as any);
+
+    expect(client).toBeNull();
+  });
 });
