@@ -311,6 +311,14 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 			existing.AllowedTargets = expectedAllowedTargets
 			changed = true
 		}
+		if trimPtr(existing.Provider) == nil && trimPtr(preset.Provider) != nil {
+			existing.Provider = trimPtr(preset.Provider)
+			changed = true
+		}
+		if trimPtr(existing.Model) == nil && trimPtr(preset.Model) != nil {
+			existing.Model = trimPtr(preset.Model)
+			changed = true
+		}
 		if strings.TrimSpace(existing.RuntimeKind) == "" {
 			existing.RuntimeKind = preset.RuntimeKind
 			changed = true
@@ -352,6 +360,8 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 		RuntimeKind:           preset.RuntimeKind,
 		Skills:                json.RawMessage("[]"),
 		TriggerMode:           preset.DefaultTriggerMode,
+		Provider:              trimPtr(preset.Provider),
+		Model:                 trimPtr(preset.Model),
 		SystemPrompt:          systemPrompt,
 		PlanningNotes:         nil,
 		AllowedTools:          normalizeAllowedToolsJSON(mustJSONStringSlice(preset.AllowedTools)),
