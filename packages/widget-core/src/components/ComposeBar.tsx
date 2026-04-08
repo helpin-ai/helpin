@@ -4,6 +4,8 @@ import { PaperclipIcon, SendIcon, XIcon } from './icons';
 import { EmojiPicker } from './EmojiPicker';
 import type { PendingAttachment } from '../types';
 
+const HELPIN_BRANDING_URL = 'https://helpin.ai/?utm_source=helpin_widget&utm_medium=widget&utm_campaign=powered_by';
+
 interface ComposeBarProps {
   onSend: (content: string, attachmentIds?: string[]) => void;
   onTyping?: (content: string) => void;
@@ -226,7 +228,7 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
       {showBranding && (
         <div className="helpin-compose-footer">
           We run on{' '}
-          <a href="https://helpin.ai" target="_blank" rel="noopener noreferrer" className="helpin-compose-footer-link">Helpin</a>
+          <a href={HELPIN_BRANDING_URL} target="_blank" rel="noopener noreferrer" className="helpin-compose-footer-link">Helpin</a>
         </div>
       )}
     </div>

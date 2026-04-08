@@ -1161,7 +1161,11 @@
 }
 
 .helpin-powered-by-icon {
-  opacity: 0.6;
+  display: block;
+  height: 15px;
+  width: auto;
+  opacity: 0.88;
+  color: var(--helpin-fg-secondary);
 }
 
 .helpin-powered-by-name {
