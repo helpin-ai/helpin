@@ -109,6 +109,22 @@
   background: oklch(1 0 0 / 0.06);
 }
 
+/* Animated gradient text */
+@keyframes gradient-shift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.animated-gradient-text {
+  background-image: linear-gradient(90deg, oklch(0.48 0.15 155), oklch(0.45 0.14 200), oklch(0.50 0.16 130), oklch(0.48 0.15 155));
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: gradient-shift 6s ease infinite;
+}
+
 /* Hide scrollbar */
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }

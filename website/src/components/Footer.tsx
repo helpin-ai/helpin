@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
 
@@ -39,6 +40,9 @@ export function Footer() {
     }
   };
 
+  const pathname = usePathname();
+  const isPricing = pathname === '/pricing';
+
   return (
     <footer className="relative" style={{ backgroundImage: 'image-set(url(/images/footer-bg.webp) type("image/webp"), url(/images/footer-bg.jpg) type("image/jpeg"))', backgroundSize: 'cover', backgroundPosition: 'center bottom' }}>
       {/* Dark overlay */}
@@ -49,16 +53,28 @@ export function Footer() {
         <div className="mx-auto max-w-7xl px-6 lg:px-8 pt-20 md:pt-32 pb-16 md:pb-24">
           <div className="max-w-3xl mx-auto text-center">
             <h2 className="text-[clamp(2rem,4vw,3rem)] font-bold leading-[1.08] tracking-tight text-white mb-8">
-              The way companies operate is changing, don't get left behind.
+              {isPricing
+                ? 'Your whole team. One platform. Start free today.'
+                : 'The way companies operate is changing, don\'t get left behind.'}
             </h2>
             <p className="text-[17px] text-white/50 leading-relaxed mb-10 max-w-lg mx-auto">
-              Bring your project management, support, sales, and docs into one system — and let agents start moving work forward from day one.
+              {isPricing
+                ? 'Free plan available with all modules included. No credit card required. Upgrade anytime as your team grows.'
+                : 'Bring your project management, support, sales, and docs into one system — and let agents start moving work forward from day one.'}
             </p>
 
-            {/* Email form */}
-            {status === 'success' ? (
+            {isPricing ? (
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+                <Link href="https://app.helpin.ai" className="rounded-xl bg-white text-foreground px-8 py-3.5 text-[15px] font-semibold transition-all hover:shadow-lg hover:shadow-white/10 hover:-translate-y-0.5">
+                  Start free trial <ArrowRight className="inline h-4 w-4 ml-1" />
+                </Link>
+                <Link href="mailto:sales@helpin.ai" className="text-[15px] font-medium text-white/50 hover:text-white transition-colors">
+                  Talk to sales →
+                </Link>
+              </div>
+            ) : status === 'success' ? (
               <p className="text-[15px] font-medium text-white/70">
-                You're on the list. We'll be in touch soon.
+                You&apos;re on the list. We&apos;ll be in touch soon.
               </p>
             ) : (
               <div className="w-full max-w-lg mx-auto">
