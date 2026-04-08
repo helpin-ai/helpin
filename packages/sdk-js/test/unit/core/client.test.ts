@@ -37,6 +37,53 @@ describe('HelpinClient', () => {
         'Invalid email provided',
       );
     });
+
+    it('should carry identified email into lazy widget boot', async () => {
+      const widgetController = {
+        boot: vi.fn(),
+        shutdown: vi.fn(),
+        show: vi.fn(),
+        hide: vi.fn(),
+        open: vi.fn(),
+        close: vi.fn(),
+        toggle: vi.fn(),
+        openMessages: vi.fn(),
+        openNewMessage: vi.fn(),
+        openConversation: vi.fn(),
+        openArticle: vi.fn(),
+        onOpen: vi.fn(),
+        onClose: vi.fn(),
+        onUnreadCountChange: vi.fn(),
+        onUserEmailSupplied: vi.fn(),
+        onConversationStarted: vi.fn(),
+        onMessageReceived: vi.fn(),
+        getVisitorId: vi.fn(() => ''),
+        isWidgetReady: vi.fn(() => false),
+      };
+      const lazyClient = new HelpinClient(mockConfig, widgetController);
+
+      await lazyClient.id(
+        {
+          id: 'user123',
+          email: 'test@example.com',
+          name: 'Test User',
+        },
+        true,
+      );
+
+      lazyClient.open();
+
+      expect(widgetController.boot).toHaveBeenCalledWith({
+        widgetKey: 'test-api-key',
+        host: 'https://test.helpin.ai',
+        user: {
+          email: 'test@example.com',
+          name: 'Test User',
+          userId: 'user123',
+        },
+      });
+      expect(widgetController.open).toHaveBeenCalled();
+    });
   });
 
   describe('track method', () => {
