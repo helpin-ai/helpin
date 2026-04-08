@@ -20,7 +20,7 @@ import {
 import { RetryQueue } from '../utils/queue';
 import { isWindowAvailable } from '../utils/common';
 import { HttpsTransport } from '../transport/https';
-import { persistIdentity, clearIdentity } from './identity';
+import { persistIdentity, clearIdentity, getStoredIdentity } from './identity';
 import type { ShowArticleOptions, WidgetSettings } from './widget';
 
 type WidgetCallback = (...args: any[]) => void;
@@ -165,12 +165,24 @@ export class HelpinClient {
   private getWidgetUser(): WidgetSettings['user'] | undefined {
     const userProps = this.persistence.get('userProps') || {};
     const persistedUserId = this.persistence.get('userId');
+    const storedIdentity = this.config.widgetKey
+      ? getStoredIdentity(this.config.widgetKey)
+      : null;
     const user = {
       email:
-        typeof userProps.email === 'string' ? userProps.email : undefined,
-      name: typeof userProps.name === 'string' ? userProps.name : undefined,
+        typeof userProps.email === 'string'
+          ? userProps.email
+          : storedIdentity?.email,
+      name:
+        typeof userProps.name === 'string'
+          ? userProps.name
+          : storedIdentity?.name,
       userId:
-        typeof persistedUserId === 'string' ? persistedUserId : undefined,
+        typeof persistedUserId === 'string'
+          ? persistedUserId
+          : typeof userProps.id === 'string'
+            ? userProps.id
+            : undefined,
     };
 
     if (!user.email && !user.name && !user.userId) {
