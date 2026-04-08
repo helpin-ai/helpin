@@ -408,6 +408,8 @@ if (isWindowAvailable()) {
         console.error(`Helpin: Method "${method}" not found`);
       }
 
+      (widgetFunction as typeof widgetFunction & { _widgetManager?: typeof widgetManager })._widgetManager = widgetManager;
+
       // Replace the queue stub with the real function
       (window as any)[namespace] = widgetFunction;
 

@@ -132,6 +132,28 @@ func parseExecutionTimeFilter(raw string, endOfDay bool) (*time.Time, error) {
 	return nil, errors.New("invalid time format")
 }
 
+// GetModuleAccess handles GET /api/settings/module-access?workspace_id=xxx.
+func (h *SettingsHandler) GetModuleAccess(w http.ResponseWriter, r *http.Request) {
+	workspaceID := r.URL.Query().Get("workspace_id")
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+
+	grants, err := h.settingsService.ListModuleGrants(r.Context(), workspaceID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if grants == nil {
+		grants = []model.WorkspaceModuleGrant{}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"modules": model.ManagedWorkspaceModules(),
+		"grants":  grants,
+	})
+}
+
 // Initialize handles POST /api/settings/initialize.
 func (h *SettingsHandler) Initialize(w http.ResponseWriter, r *http.Request) {
 	var req model.InitializeSettingsRequest
@@ -147,6 +169,41 @@ func (h *SettingsHandler) Initialize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, settings)
+}
+
+// UpsertModuleAccessGrant handles POST /api/settings/module-access.
+func (h *SettingsHandler) UpsertModuleAccessGrant(w http.ResponseWriter, r *http.Request) {
+	var req model.CreateWorkspaceModuleGrantRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	actorUserID := middleware.GetUserID(r.Context())
+	grant, err := h.settingsService.UpsertModuleGrant(r.Context(), req, actorUserID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, grant)
+}
+
+// DeleteModuleAccessGrant handles DELETE /api/settings/module-access/{id}.
+func (h *SettingsHandler) DeleteModuleAccessGrant(w http.ResponseWriter, r *http.Request) {
+	workspaceID := r.URL.Query().Get("workspace_id")
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+
+	id := chi.URLParam(r, "id")
+	if err := h.settingsService.DeleteModuleGrant(r.Context(), workspaceID, id); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "module grant deleted"})
 }
 
 // CreateTeam handles POST /api/settings/teams.

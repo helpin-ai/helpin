@@ -1,5 +1,12 @@
 import { api, API_BASE } from '../api';
-import type { AssignableMember, Workspace, WorkspaceAccess, WorkspaceMember, MemberWithUser } from '../types';
+import type {
+  AssignableMember,
+  MemberWithUser,
+  Workspace,
+  WorkspaceAccess,
+  WorkspaceMember,
+  WorkspaceMemberPresenceStatus,
+} from '../types';
 
 export const workspacesService = {
   list: (organizationId?: string) =>
@@ -14,6 +21,7 @@ export const workspacesService = {
   getMyMembership: (id: string) => api.get<WorkspaceMember>(`/workspaces/${id}/my-membership`),
   getMe: (id: string) => api.get<WorkspaceAccess>(`/workspaces/${id}/me`),
   listMembers: (id: string) => api.get<MemberWithUser[]>(`/workspaces/${id}/members`),
+  listMemberPresence: (id: string) => api.get<WorkspaceMemberPresenceStatus[]>(`/workspaces/${id}/members/presence`),
   updateMemberRole: (id: string, memberId: string, data: { role: WorkspaceMember['role'] }) =>
     api.put(`/workspaces/${id}/members/${memberId}`, data),
   listAssignableMembers: (id: string) => api.get<AssignableMember[]>(`/workspaces/${id}/assignable-members`),

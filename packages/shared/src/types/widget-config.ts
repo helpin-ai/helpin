@@ -8,6 +8,7 @@ export interface HelpSpace {
 export interface WidgetConfig {
   workspaceId: string;
   workspaceName?: string;
+  visitorName?: string;
   availableTeammates?: Array<{
     userId: string;
     name: string;

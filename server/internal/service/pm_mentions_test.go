@@ -311,7 +311,7 @@ func TestPMTaskService_CreateAndUpdate_TeamMentions(t *testing.T) {
 	t.Run("create emits story mention notifications", func(t *testing.T) {
 		env := newPMMentionTestEnv(t)
 		story := env.createStory(t, stringPtr(pmMentionBodyHTML))
-		assertMentionNotifications(t, env.notificationsFor(t, "story", story.Task.ID), "story.mention", env.expectedRecipientIDs())
+		assertMentionNotifications(t, env.notificationsFor(t, "task", story.Task.ID), "task.mention", env.expectedRecipientIDs())
 	})
 
 	t.Run("update emits story mention notifications", func(t *testing.T) {
@@ -323,7 +323,7 @@ func TestPMTaskService_CreateAndUpdate_TeamMentions(t *testing.T) {
 		if err != nil {
 			t.Fatalf("update story: %v", err)
 		}
-		assertMentionNotifications(t, env.notificationsFor(t, "story", updated.Task.ID), "story.mention", env.expectedRecipientIDs())
+		assertMentionNotifications(t, env.notificationsFor(t, "task", updated.Task.ID), "task.mention", env.expectedRecipientIDs())
 	})
 
 	t.Run("create ignores out-of-scope team mentions", func(t *testing.T) {
@@ -331,7 +331,7 @@ func TestPMTaskService_CreateAndUpdate_TeamMentions(t *testing.T) {
 		env.addCarolToDesignTeam(t)
 
 		story := env.createStory(t, stringPtr("@design"))
-		notifications := env.notificationsFor(t, "story", story.Task.ID)
+		notifications := env.notificationsFor(t, "task", story.Task.ID)
 		if len(notifications) != 0 {
 			t.Fatalf("notification count = %d, want 0", len(notifications))
 		}
@@ -456,7 +456,7 @@ func TestPMChecklistItemService_CreateAndUpdate_TeamMentions(t *testing.T) {
 		if err != nil {
 			t.Fatalf("create checklist item: %v", err)
 		}
-		assertMentionNotifications(t, env.notificationsFor(t, "story", item.TaskID), "checklist.mention", env.expectedRecipientIDs())
+		assertMentionNotifications(t, env.notificationsFor(t, "task", item.TaskID), "checklist.mention", env.expectedRecipientIDs())
 	})
 
 	t.Run("update emits checklist mention notifications", func(t *testing.T) {
@@ -473,7 +473,7 @@ func TestPMChecklistItemService_CreateAndUpdate_TeamMentions(t *testing.T) {
 		}, env.workspaceID, env.actorUserID); err != nil {
 			t.Fatalf("update checklist item: %v", err)
 		}
-		assertMentionNotifications(t, env.notificationsFor(t, "story", story.Task.ID), "checklist.mention", env.expectedRecipientIDs())
+		assertMentionNotifications(t, env.notificationsFor(t, "task", story.Task.ID), "checklist.mention", env.expectedRecipientIDs())
 	})
 }
 

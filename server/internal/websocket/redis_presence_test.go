@@ -3,6 +3,7 @@ package websocket
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
@@ -572,5 +573,71 @@ func TestRedisPresence_RefreshVisitorOnline(t *testing.T) {
 	online, _ := p.IsVisitorOnline(ctx, "ws-1", "anon-1")
 	if !online {
 		t.Error("visitor should still be online after refresh")
+	}
+}
+
+func TestRedisPresence_GetOnlineVisitors_PrunesExpiredVisitorEntries(t *testing.T) {
+	p, mr := setupRedisPresence(t)
+	defer mr.Close()
+	ctx := context.Background()
+
+	if err := p.SetVisitorOnline(ctx, "ws-1", "anon-1", "conn-1"); err != nil {
+		t.Fatalf("SetVisitorOnline: %v", err)
+	}
+
+	mr.FastForward(visitorConnTTL + time.Second)
+
+	visitors, err := p.GetOnlineVisitors(ctx, "ws-1")
+	if err != nil {
+		t.Fatalf("GetOnlineVisitors: %v", err)
+	}
+	if len(visitors) != 0 {
+		t.Fatalf("expected visitor set to self-heal after TTL expiry, got %v", visitors)
+	}
+
+	members, err := p.rdb.SMembers(ctx, visitorSetKey("ws-1")).Result()
+	if err != nil {
+		t.Fatalf("SMembers after prune: %v", err)
+	}
+	if len(members) != 0 {
+		t.Fatalf("expected stale aggregate member to be removed, got %v", members)
+	}
+}
+
+func TestRedisPresence_IsVisitorOnline_CleansUpExpiredMarkerWhenConnGone(t *testing.T) {
+	p, mr := setupRedisPresence(t)
+	defer mr.Close()
+	ctx := context.Background()
+
+	if err := p.SetVisitorOnline(ctx, "ws-1", "anon-1", "conn-1"); err != nil {
+		t.Fatalf("SetVisitorOnline: %v", err)
+	}
+
+	mr.Del(visitorOnlineKey("ws-1", "anon-1"))
+
+	online, err := p.IsVisitorOnline(ctx, "ws-1", "anon-1")
+	if err != nil {
+		t.Fatalf("IsVisitorOnline restore path: %v", err)
+	}
+	if !online {
+		t.Fatal("expected active conn to restore visitor online state")
+	}
+
+	mr.FastForward(visitorConnTTL + time.Second)
+
+	online, err = p.IsVisitorOnline(ctx, "ws-1", "anon-1")
+	if err != nil {
+		t.Fatalf("IsVisitorOnline cleanup path: %v", err)
+	}
+	if online {
+		t.Fatal("expected visitor to be offline after conn TTL expiry")
+	}
+
+	members, err := p.rdb.SMembers(ctx, visitorSetKey("ws-1")).Result()
+	if err != nil {
+		t.Fatalf("SMembers after cleanup: %v", err)
+	}
+	if len(members) != 0 {
+		t.Fatalf("expected stale aggregate member removed after cleanup, got %v", members)
 	}
 }

@@ -362,7 +362,7 @@ const TOOL_CATEGORIES = [
     ],
   },
   {
-    label: 'Knowledge',
+    label: 'Docs',
     tools: [
       { name: 'Notion', domain: 'notion.so' },
       { name: 'Confluence', domain: 'atlassian.com' },
@@ -379,7 +379,7 @@ const TOOL_CATEGORIES = [
     ],
   },
   {
-    label: 'CRM',
+    label: 'Sales',
     tools: [
       { name: 'HubSpot', domain: 'hubspot.com' },
       { name: 'Salesforce', domain: 'salesforce.com' },
@@ -395,11 +395,11 @@ const TOOL_CATEGORIES = [
 ];
 
 const HELPIN_MODULES = [
-  { label: 'Work',             Icon: Layers,         color: 'oklch(0.52 0.16 250)', bg: 'oklch(0.52 0.16 250 / 0.08)' },
+  { label: 'PM Work',           Icon: Layers,         color: 'oklch(0.52 0.16 250)', bg: 'oklch(0.52 0.16 250 / 0.08)' },
   { label: 'Knowledge',        Icon: BookOpen,        color: 'oklch(0.55 0.16 160)', bg: 'oklch(0.55 0.16 160 / 0.08)' },
   { label: 'Support',          Icon: MessageCircle,   color: 'oklch(0.58 0.15 55)',  bg: 'oklch(0.58 0.15 55 / 0.08)' },
   { label: 'Customer Context', Icon: Users,           color: 'oklch(0.55 0.18 310)', bg: 'oklch(0.55 0.18 310 / 0.08)' },
-  { label: 'AI',               Icon: Zap,             color: 'oklch(0.58 0.16 30)',  bg: 'oklch(0.58 0.16 30 / 0.08)' },
+  { label: 'Sales CRM',        Icon: Users,           color: 'oklch(0.58 0.16 30)',  bg: 'oklch(0.58 0.16 30 / 0.08)' },
 ];
 
 const remap = (v: number, lo: number, hi: number) => Math.max(0, Math.min(1, (v - lo) / (hi - lo)));
@@ -470,6 +470,7 @@ function ToolStackTransition({ scrollZoneRef }: { scrollZoneRef: React.RefObject
   const centerT      = remap(progress, 0.30, 0.38);  // solid center
   const linesT       = remap(progress, 0.36, 0.46);  // orbital lines + ring
   const aliveT       = remap(progress, 0.46, 0.56);  // living system
+  const dotT         = remap(progress, 0.30, 0.36);  // traveling dot — starts with center
 
   // Orbital geometry
   const SIZE = 460;
@@ -477,7 +478,7 @@ function ToolStackTransition({ scrollZoneRef }: { scrollZoneRef: React.RefObject
   const CY = SIZE / 2;
   const R = 135;
   const CENTER_SIZE = 92;
-  const NODE_SIZE = 44;
+  const NODE_SIZE = 52;
   const ANGLES_DEG = [-90, -18, 54, 126, 198];
 
   const easeInOutCubic = (t: number) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -587,12 +588,12 @@ function ToolStackTransition({ scrollZoneRef }: { scrollZoneRef: React.RefObject
                       }}
                     >
                       <img
-                        src={`https://www.google.com/s2/favicons?domain=${tool.domain}&sz=32`}
+                        src={`/favicons/${tool.domain}.png`}
                         style={{
                           width: 16, height: 16, flexShrink: 0,
                           opacity: 0.72 * faviconExtraOpacity,
                         }}
-                        alt=""
+                        alt={tool.name}
                       />
                       <span style={{ whiteSpace: 'nowrap', opacity: textOpacity }}>
                         {tool.name}
@@ -657,7 +658,7 @@ function ToolStackTransition({ scrollZoneRef }: { scrollZoneRef: React.RefObject
               left: CX - 20, top: CY - 20,
               width: 40, height: 40,
               borderRadius: '50%',
-              border: '1.5px solid oklch(0.48 0.15 155 / 0.10)',
+              border: '1.5px solid oklch(0.48 0.15 155 / 0.18)',
               transformOrigin: 'center',
               animation: aliveT >= 1 ? `orbital-pulse-ring 4s ease-out ${i * 2}s infinite` : 'none',
               opacity: aliveT >= 1 ? 1 : 0,
@@ -665,21 +666,22 @@ function ToolStackTransition({ scrollZoneRef }: { scrollZoneRef: React.RefObject
             }} />
           ))}
 
-          {/* Traveling dot */}
-          {aliveT > 0 && (
+          {/* Traveling dot — z-index 0 so it passes behind nodes */}
+          {dotT > 0 && (
             <div style={{
               position: 'absolute',
-              left: CX - 3, top: CY - 3,
-              width: 6, height: 6,
-              transformOrigin: '3px 3px',
-              animation: aliveT >= 1 ? 'orbital-travel 10s linear infinite' : 'none',
-              opacity: aliveT >= 1 ? 0.5 : 0,
+              left: CX - 4, top: CY - 4,
+              width: 8, height: 8,
+              transformOrigin: '4px 4px',
+              animation: dotT >= 1 ? 'orbital-travel 8s linear infinite' : 'none',
+              opacity: dotT >= 1 ? 0.8 : 0,
               pointerEvents: 'none',
+              zIndex: 0,
             }}>
               <div style={{
-                width: 6, height: 6, borderRadius: '50%',
+                width: 8, height: 8, borderRadius: '50%',
                 background: 'var(--color-pop)',
-                boxShadow: '0 0 6px oklch(0.48 0.15 155 / 0.4)',
+                boxShadow: '0 0 12px oklch(0.48 0.15 155 / 0.8), 0 0 24px oklch(0.48 0.15 155 / 0.4)',
               }} />
             </div>
           )}
@@ -730,35 +732,35 @@ function ToolStackTransition({ scrollZoneRef }: { scrollZoneRef: React.RefObject
                 position: 'absolute',
                 left: CX + pos.x, top: CY + pos.y,
                 transform: 'translate(-50%, -50%)',
-                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
+                zIndex: 2,
                 opacity: nodeAppear,
               }}>
                 {/* Outer halo */}
                 <div style={{
                   position: 'relative',
-                  width: NODE_SIZE + 14, height: NODE_SIZE + 14,
+                  width: NODE_SIZE + 18, height: NODE_SIZE + 18,
                   borderRadius: '50%',
-                  background: bg,
+                  background: `linear-gradient(145deg, ${color.replace(')', ' / 0.2)')}, ${color.replace(')', ' / 0.06)')})`,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  boxShadow: `0 4px 20px ${color}12, 0 1px 4px oklch(0.12 0.02 55 / 0.05)`,
+                  boxShadow: `0 6px 24px ${color.replace(')', ' / 0.2)')}, 0 0 0 1px ${color.replace(')', ' / 0.08)')}`,
                   transform: `scale(${iconScale})`,
                 }}>
                   {/* Inner circle */}
                   <div style={{
                     width: NODE_SIZE, height: NODE_SIZE, borderRadius: '50%',
-                    background: 'var(--color-background)',
-                    border: `1px solid ${color}18`,
+                    background: `linear-gradient(180deg, white, ${color.replace(')', ' / 0.06)')})`,
+                    border: `1.5px solid ${color.replace(')', ' / 0.25)')}`,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    boxShadow: 'inset 0 1px 2px oklch(0.12 0.02 55 / 0.03)',
+                    boxShadow: `inset 0 2px 4px ${color.replace(')', ' / 0.08)')}, 0 1px 0 oklch(1 0 0 / 0.5)`,
                   }}>
-                    <Icon style={{ width: 19, height: 19, color }} />
+                    <Icon style={{ width: 22, height: 22, color }} />
                   </div>
                 </div>
-                {/* Label — tighter, refined */}
+                {/* Label */}
                 <span style={{
-                  fontSize: 10, fontWeight: 600, letterSpacing: '0.05em',
-                  color: 'var(--color-muted-foreground)', whiteSpace: 'nowrap',
-                  textTransform: 'uppercase',
+                  fontSize: 11, fontWeight: 600, letterSpacing: '0.04em',
+                  color: 'var(--color-foreground)', whiteSpace: 'nowrap',
                   opacity: mergeT,
                 }}>
                   {label}
@@ -793,7 +795,7 @@ function ProblemSolutionSection() {
                 Your current stack isn't built to work together.
               </h2>
               <p className="text-[17px] text-muted-foreground leading-relaxed">
-                Product, sales, support, and marketing all use different tools. Important context gets lost between them, and teams waste time chasing updates across systems.
+                Engineering, sales, support, and operations all use different tools. Important context gets lost between them, and teams waste time chasing updates across systems.
               </p>
             </div>
 
@@ -810,13 +812,13 @@ function ProblemSolutionSection() {
             </div>
 
             {/* 3. Solution — matches right column sticky exactly so they unstick together */}
-            <div className="lg:sticky mt-12 lg:mt-[25vh] flex items-center lg:pt-[10vh]" style={{ top: '15vh' }}>
+            <div className="lg:sticky mt-12 lg:mt-[25vh] flex items-center lg:pt-[10vh] lg:h-[70vh]" style={{ top: '15vh' }}>
               <div>
                 <h2 className="text-[clamp(1.5rem,2.6vw,2.25rem)] font-bold leading-[1.12] tracking-tight text-foreground mb-7">
                   <span style={{ position: 'relative', display: 'inline-block' }}>Helpin<svg style={{ position: 'absolute', bottom: -4, left: -2, width: 'calc(100% + 4px)', height: 10, overflow: 'visible' }} viewBox="0 0 100 10" preserveAspectRatio="none"><path d="M2 8C12 3 20 9 30 4C40 9 50 2 60 8C70 3 80 9 90 4C95 2 98 5 98 5" stroke="var(--color-pop)" strokeWidth="2.5" strokeLinecap="round" fill="none" /></svg></span> is built differently.
                 </h2>
                 <p className="text-[17px] text-muted-foreground leading-relaxed">
-                  It brings development, support, sales and knowledge into one connected system. That gives humans and AI agents the full context they need to move work forward seamlessly.
+                  It brings project management, support, sales, and docs into one connected system. That gives humans and AI agents the full context they need to move work forward seamlessly.
                 </p>
               </div>
             </div>
@@ -859,7 +861,7 @@ export default function HomePage() {
             </Reveal>
             <Reveal>
               <p className="text-[1.125rem] text-muted-foreground leading-relaxed max-w-2xl mx-auto mb-8">
-                Helpin brings projects, docs, support, CRM, and company knowledge into one connected system — so teams and AI agents can move work forward without silos.
+                Helpin brings project management, support, sales, and docs into one connected system — so teams and AI agents can move work forward without silos.
               </p>
             </Reveal>
             <Reveal>
@@ -905,8 +907,8 @@ export default function HomePage() {
             <div key={c.domain} className="flex items-center gap-8">
               <div className="flex items-center gap-2 opacity-75 hover:opacity-100 transition-opacity duration-200 shrink-0">
                 <img
-                  src={`https://www.google.com/s2/favicons?domain=${c.domain}&sz=64`}
-                  alt=""
+                  src={`/favicons/${c.domain}.png`}
+                  alt={c.name}
                   className="h-5 w-5 object-contain"
                 />
                 <span className="text-[15px] font-semibold text-foreground/90 whitespace-nowrap">{c.name}</span>
@@ -984,7 +986,7 @@ export default function HomePage() {
                       <div key={t.domain} className="absolute" style={{ top: p.top, left: p.left, transform: `rotate(${p.rotate}deg)` }}>
                         <div className="w-[40px] h-[40px] sm:w-[52px] sm:h-[52px] rounded-2xl bg-background border border-border flex items-center justify-center"
                           style={{ boxShadow: '0 2px 8px oklch(0.12 0.02 55 / 0.06), 0 0 0 1px oklch(0.12 0.02 55 / 0.03)' }}>
-                          <img src={`https://www.google.com/s2/favicons?domain=${t.domain}&sz=64`} className="w-5 h-5 sm:w-7 sm:h-7" alt="" />
+                          <img src={`/favicons/${t.domain}.png`} className="w-5 h-5 sm:w-7 sm:h-7" alt={t.domain} />
                         </div>
                       </div>
                     );
@@ -1199,10 +1201,10 @@ export default function HomePage() {
               <Reveal key={i}>
                 <details className="group border-b border-border/50 py-6">
                   <summary className="flex items-center justify-between cursor-pointer list-none">
-                    <h3 className="text-[16px] font-semibold text-foreground pr-8">{faq.q}</h3>
+                    <h3 className="text-[18px] font-semibold text-foreground pr-8">{faq.q}</h3>
                     <span className="text-muted-foreground/40 text-xl flex-shrink-0 transition-transform duration-200 group-open:rotate-45">+</span>
                   </summary>
-                  <p className="text-[15px] text-muted-foreground leading-relaxed mt-4 pr-12">{faq.a}</p>
+                  <p className="text-[17px] text-muted-foreground leading-relaxed mt-4 pr-12">{faq.a}</p>
                 </details>
               </Reveal>
             ))}
@@ -1210,46 +1212,6 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ══════════════════════════════════
-          CLOSING CTA  (dark)
-          ══════════════════════════════════ */}
-      <section className="relative overflow-hidden" style={{ background: '#fcf8f4' }}>
-        <div className="mx-auto max-w-7xl px-6 lg:px-8 py-16 md:py-28 lg:py-36">
-          <div className="grid lg:grid-cols-2 gap-8 lg:gap-8 items-center">
-
-            {/* Left: Illustration — large, breathing, environmental */}
-            <RevealLeft>
-              <div className="flex justify-center lg:justify-start">
-                <img
-                  src="/images/cta-illustration.png"
-                  alt="Helpin connects Project Management, Docs, Support, and Sales"
-                  className="w-full max-w-[520px]"
-                  style={{ animation: 'cta-breathe 6s ease-in-out infinite', mixBlendMode: 'multiply' }}
-                />
-              </div>
-            </RevealLeft>
-
-            {/* Right: Copy + CTA */}
-            <RevealRight>
-              <div className="lg:pl-8 text-center lg:text-left">
-                <h2 className="text-[clamp(2rem,4vw,3rem)] font-bold leading-[1.08] tracking-tight text-foreground mb-2">
-                  The way companies operate is changing.
-                </h2>
-                <h2 className="text-[clamp(2rem,4vw,3rem)] font-bold leading-[1.08] tracking-tight text-muted-foreground/50 mb-8">
-                  You can keep up — or fall behind.
-                </h2>
-                <p className="text-[17px] text-muted-foreground leading-relaxed mb-10 max-w-lg mx-auto lg:mx-0">
-                  Bring your work, knowledge, support, and customer context into one system — and let agents start moving work forward from day one.
-                </p>
-                <div className="flex justify-center lg:justify-start">
-                  <EarlyAccessForm id="closing-cta" bg="#fcf8f4" />
-                </div>
-              </div>
-            </RevealRight>
-
-          </div>
-        </div>
-      </section>
 
     </main>
   );
@@ -1261,7 +1223,7 @@ export default function HomePage() {
 const WF_DATA = [
   { id: 'support',   module: 'Support',    action: 'Ticket triaged',       dot: '#e11d48', svg: { x: 120, y: 75 },  css: { left: '13.3%', top: '15.6%' },  activateAt: 1, signalAt: 2, signalDir: 'in'  as const, packet: 'Login bug' },
   { id: 'pm',        module: 'PM',         action: 'Task created',         dot: '#2563eb', svg: { x: 450, y: 32 },  css: { left: '50%',   top: '6.7%' },   activateAt: 4, signalAt: 4, signalDir: 'out' as const, packet: 'Create task' },
-  { id: 'crm',       module: 'CRM',        action: 'Account flagged',      dot: '#ea580c', svg: { x: 450, y: 448 }, css: { left: '50%',   top: '93.3%' },  activateAt: 5, signalAt: 5, signalDir: 'out' as const, packet: 'Flag risk' },
+  { id: 'crm',       module: 'Sales',      action: 'Account flagged',      dot: '#ea580c', svg: { x: 450, y: 448 }, css: { left: '50%',   top: '93.3%' },  activateAt: 5, signalAt: 5, signalDir: 'out' as const, packet: 'Flag risk' },
   { id: 'docs',      module: 'Docs',       action: 'Guide updated',        dot: '#16a34a', svg: { x: 780, y: 75 },  css: { left: '86.7%', top: '15.6%' },  activateAt: 6, signalAt: 6, signalDir: 'out' as const, packet: 'Update doc' },
   { id: 'knowledge', module: 'Knowledge',  action: '3 matches found',      dot: '#9333ea', svg: { x: 120, y: 405 }, css: { left: '13.3%', top: '84.4%' },  activateAt: 7, signalAt: 7, signalDir: 'out' as const, packet: 'Find related' },
   { id: 'customer',  module: 'Customer',   action: 'Update sent',           dot: '#0891b2', svg: { x: 780, y: 405 }, css: { left: '86.7%', top: '84.4%' },  activateAt: 8, signalAt: 8, signalDir: 'out' as const, packet: 'Investigating' },
@@ -1287,7 +1249,7 @@ function wfCurveReversed(x1: number, y1: number, x2: number, y2: number) {
   return `M ${x2} ${y2} Q ${qx} ${qy} ${x1} ${y1}`;
 }
 
-function TravelingPacket({ pathD, label, duration = 2200 }: { pathD: string; label: string; duration?: number }) {
+function TravelingPacket({ pathD, label, color, duration = 2200 }: { pathD: string; label: string; color?: string; duration?: number }) {
   const pathRef = useRef<SVGPathElement>(null);
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
 
@@ -1326,15 +1288,18 @@ function TravelingPacket({ pathD, label, duration = 2200 }: { pathD: string; lab
         const hw = w / 2;
         return (
           <g transform={`translate(${pos.x}, ${pos.y})`}>
-            <rect x={-hw + 1} y="-9" width={w - 2} height="18" rx="9"
-              fill="oklch(0.12 0.02 55 / 0.15)" />
+            {/* Shadow */}
+            <rect x={-hw + 1} y="-8" width={w - 2} height="18" rx="9"
+              fill={color ? `${color}20` : 'oklch(0.12 0.02 55 / 0.1)'} />
+            {/* Pastel background */}
             <rect x={-hw} y="-10" width={w} height="20" rx="10"
-              fill="var(--color-pop)" />
-            <rect x={-hw} y="-10" width={w} height="20" rx="10"
-              fill="var(--color-pop)" opacity="0.3" filter="url(#wf-glow)" />
+              fill={color ? `${color}30` : 'var(--color-pop-light)'}
+              stroke={color ? `${color}50` : 'var(--color-pop)'}
+              strokeWidth="1.5" />
+            {/* Text */}
             <text x="0" y="3.5" textAnchor="middle"
-              fill="white" fontSize="8" fontWeight="700" fontFamily="var(--font-sans)"
-              style={{ letterSpacing: '0.03em' }}>
+              fill={color || 'var(--color-pop)'} fontSize="8.5" fontWeight="800" fontFamily="var(--font-sans)"
+              style={{ letterSpacing: '0.02em' }}>
               {label}
             </text>
           </g>
@@ -1522,25 +1487,40 @@ function WfMicroUI({ id, on, step }: { id: string; on: boolean; step: number }) 
 
 function AIWorkflowVisual() {
   const [step, setStep] = useState(-1);
+  const [isVisible, setIsVisible] = useState(true);
+  const wfRef = useRef<HTMLDivElement>(null);
 
+  // Pause animation when off-screen
   useEffect(() => {
-    const t = setTimeout(() => setStep(0), 600);
-    return () => clearTimeout(t);
+    const el = wfRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      ([e]) => setIsVisible(e.isIntersecting),
+      { threshold: 0.1 },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
   }, []);
 
   useEffect(() => {
-    if (step < 0) return;
+    if (!isVisible) return;
+    const t = setTimeout(() => setStep(0), 600);
+    return () => clearTimeout(t);
+  }, [isVisible]);
+
+  useEffect(() => {
+    if (step < 0 || !isVisible) return;
     const d = [800, 1800, 2000, 1200, 2000, 2000, 2000, 2000, 2000, 2000, 1200, 2000, 1600];
     const t = setTimeout(() => setStep((s) => (s + 1) % 13), d[step]);
     return () => clearTimeout(t);
-  }, [step]);
+  }, [step, isVisible]);
 
   const { x: cx, y: cy } = WF_CTR;
   const centerOn = step >= 2 && step <= 12;
   const processing = step === 3 || step === 10;
 
   return (
-    <div className="relative w-full" style={{ aspectRatio: '900 / 480' }}>
+    <div ref={wfRef} className="relative w-full" style={{ aspectRatio: '900 / 480' }}>
 
       {/* ══ SVG Layer ══ */}
       <svg viewBox="0 0 900 480" fill="none" className="absolute inset-0 w-full h-full select-none">
@@ -1602,7 +1582,7 @@ function AIWorkflowVisual() {
             ? wfCurve(n.svg.x, n.svg.y, cx, cy)
             : wfCurveReversed(n.svg.x, n.svg.y, cx, cy);
           return (
-            <TravelingPacket key={`pkt-${n.id}-${step}`} pathD={travelPath} label={n.packet} />
+            <TravelingPacket key={`pkt-${n.id}-${step}`} pathD={travelPath} label={n.packet} color={n.dot} />
           );
         })}
 
@@ -1610,12 +1590,12 @@ function AIWorkflowVisual() {
         {step === 9 && (
           <TravelingPacket key={`pkt-return-done-${step}`}
             pathD={wfCurve(WF_DATA[1].svg.x, WF_DATA[1].svg.y, cx, cy)}
-            label="Done ✓" />
+            label="Done ✓" color="#16a34a" />
         )}
         {step === 11 && (
           <TravelingPacket key={`pkt-return-resolved-${step}`}
             pathD={wfCurveReversed(WF_DATA[0].svg.x, WF_DATA[0].svg.y, cx, cy)}
-            label="Resolved" />
+            label="Resolved" color="#16a34a" />
         )}
 
         {/* ── Center AI hub ── */}

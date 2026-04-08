@@ -70,6 +70,7 @@ export interface MountWidgetOptions {
   onLauncherClick?: () => void;
   unreadCount?: number;
   connectionStatus?: 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed';
+  onRetryConnection?: () => void;
   conversations?: Conversation[];
   activeConversation?: Conversation;
   onSelectConversation?: (conversationId: string) => void;
@@ -112,6 +113,8 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
     showLauncher = true,
     onLauncherClick,
     unreadCount = 0,
+    connectionStatus = 'idle',
+    onRetryConnection,
     conversations = [],
     activeConversation,
     onSelectConversation = () => {},
@@ -150,6 +153,8 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
       activeTeammate,
       quickReplies,
       initialView,
+      connectionStatus,
+      onRetryConnection,
       conversations,
       activeConversation,
       onSelectConversation,

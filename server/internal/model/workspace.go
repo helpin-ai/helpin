@@ -65,6 +65,15 @@ type MemberWithUser struct {
 	AvatarBackgroundColor *string `json:"avatar_background_color,omitempty"`
 }
 
+// WorkspaceMemberPresenceStatus represents live presence for a workspace member.
+type WorkspaceMemberPresenceStatus struct {
+	UserID       string     `json:"user_id"`
+	Status       string     `json:"status"`
+	Source       string     `json:"source"` // auto | manual
+	ManualStatus *string    `json:"manual_status,omitempty"`
+	LastSeenAt   *time.Time `json:"last_seen_at,omitempty"`
+}
+
 // AssignableMember is the workspace-level person identity used by PM pickers.
 type AssignableMember struct {
 	ID                    string     `json:"id"`

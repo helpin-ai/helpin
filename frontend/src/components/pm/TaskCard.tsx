@@ -18,7 +18,7 @@ import { pmTaskService } from '@/lib/services/pmTaskService';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { RecurringTemplateBadge } from '@/components/pm/RecurringTemplateBadge';
 import { UserAvatar } from './UserAvatar';
-import { getSortableTaskCardStyle } from './TaskCard.sortable';
+import { getSortableTaskCardStyle, animateCardLayoutChanges } from './TaskCard.sortable';
 import type { Agent, Priority, Severity, Task } from '@/lib/pmTypes';
 import type { AssignableMember } from '@/lib/types';
 import { EstimatePicker, formatEstimateDisplay } from '@/components/pm/EstimatePicker';
@@ -143,7 +143,7 @@ function TaskCardComponent({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: task.id });
+  } = useSortable({ id: task.id, animateLayoutChanges: animateCardLayoutChanges });
 
   const style = getSortableTaskCardStyle({
     transform,

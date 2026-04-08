@@ -41,6 +41,9 @@ type AIResponseContract struct {
 
 type SupportQueryPlanContract struct {
 	Decision           string   `json:"decision"`
+	IssueKey           string   `json:"issue_key"`
+	IssueSummary       string   `json:"issue_summary"`
+	ProgressSignal     string   `json:"progress_signal"`
 	StandaloneQuery    string   `json:"standalone_query"`
 	SearchQueries      []string `json:"search_queries"`
 	ClarifyingQuestion string   `json:"clarifying_question"`
@@ -178,13 +181,16 @@ func findTrailingJSONObject(raw string) (int, string) {
 
 // AIMessageMetadata is stored in the SupportMessage.Metadata JSONB field.
 type AIMessageMetadata struct {
-	AIAutoReply  bool       `json:"ai_auto_reply"`
-	AISources    []AISource `json:"ai_sources"`
-	AIConfidence float64    `json:"ai_confidence"`
-	AIModel      string     `json:"ai_model"`
-	AITokensUsed int        `json:"ai_tokens_used"`
-	AIAgentID    string     `json:"ai_agent_id"`
-	AIReplyKind  string     `json:"ai_reply_kind,omitempty"`
+	AIAutoReply     bool       `json:"ai_auto_reply"`
+	AISources       []AISource `json:"ai_sources"`
+	AIConfidence    float64    `json:"ai_confidence"`
+	AIModel         string     `json:"ai_model"`
+	AITokensUsed    int        `json:"ai_tokens_used"`
+	AIAgentID       string     `json:"ai_agent_id"`
+	AIReplyKind     string     `json:"ai_reply_kind,omitempty"`
+	AIIssueKey      string     `json:"ai_issue_key,omitempty"`
+	AIIssueSummary  string     `json:"ai_issue_summary,omitempty"`
+	AIProgressState string     `json:"ai_progress_state,omitempty"`
 }
 
 // AISource is a single source citation in AI message metadata.
@@ -222,6 +228,12 @@ const (
 	supportReplyKindAnswer     = "answer"
 	supportReplyKindClarify    = "clarify"
 	supportReplyKindGreeting   = "greeting"
+	supportProgressNewIssue    = "new_issue"
+	supportProgressSameNewInfo = "same_issue_new_info"
+	supportProgressSameRepeat  = "same_issue_repeat"
+	supportProgressSameUnclear = "same_issue_unclear"
+	supportStateProgressing    = "progressing"
+	supportStateStalled        = "stalled"
 	supportRewriteProvider     = "anthropic"
 	supportRewriteModel        = "claude-haiku-4-5"
 	supportRewriteExpand       = "expand"
@@ -507,24 +519,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 		}
 	}
 
-	// 8. Check max follow-ups
-	if maxFollowupTurnCount >= settings.AIMaxFollowups {
-		slog.InfoContext(ctx, "support AI escalating due to max followups",
-			"workspace_id", workspaceID,
-			"conversation_id", conversationID,
-			"message_id", msg.ID,
-			"ai_turn_count", aiTurnCount,
-			"max_followup_turn_count", maxFollowupTurnCount,
-			"max_followups", settings.AIMaxFollowups,
-		)
-		if err := s.EscalateToHumanForMessage(ctx, workspaceID, conversationID, msg.ID, "max_followups_reached"); err != nil {
-			return err
-		}
-		_ = s.processingRepo.MarkCompleted(ctx, processing.ID, nil, 0)
-		return nil
-	}
-
-	// 9. Hard escalation rules check
+	// 8. Hard escalation rules check
 	customerPromptText := supportMessagePromptText(*msg)
 	if reason := checkHardEscalation(customerPromptText); reason != "" {
 		slog.InfoContext(ctx, "support AI hard escalation rule matched",
@@ -541,7 +536,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 		return nil
 	}
 
-	// 10. Smart escalation signals (pre-LLM — no cost).
+	// 9. Smart escalation signals (pre-LLM — no cost).
 	if signal := evaluatePreLLMEscalation(customerPromptText, historyForPrompt, settings.AIConfidenceThreshold); signal != nil {
 		slog.InfoContext(ctx, "support AI smart escalation triggered",
 			"workspace_id", workspaceID,
@@ -557,7 +552,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 		return nil
 	}
 
-	// 11. Load agent config
+	// 10. Load agent config
 	agent, err := s.agentRepo.GetByID(ctx, workspaceID, agentID)
 	if err != nil || agent == nil {
 		return fmt.Errorf("get agent %s: %w", agentID, err)
@@ -570,11 +565,11 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 		return nil
 	}
 
-	// 12. Send typing indicator
+	// 11. Send typing indicator
 	s.publishTypingIndicator(ctx, workspaceID, conversationID, true)
 	defer s.publishTypingIndicator(ctx, workspaceID, conversationID, false)
 
-	// 13. Check token budget before planner + answer model usage.
+	// 12. Check token budget before planner + answer model usage.
 	if !s.checkTokenBudget(agent) {
 		if err := s.EscalateToHumanForMessage(ctx, workspaceID, conversationID, msg.ID, "token_budget_exhausted"); err != nil {
 			return err
@@ -585,7 +580,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 
 	providerName, modelName := resolveSupportLLMConfig(agent)
 
-	// 14. Plan how to handle the message: answer, clarify, or hand off.
+	// 13. Plan how to handle the message: answer, clarify, or hand off.
 	queryPlan, plannerTokens, err := s.planSupportQuery(ctx, historyForPrompt, *msg)
 	if err != nil {
 		slog.WarnContext(ctx, "support query planning failed; using direct retrieval fallback",
@@ -603,12 +598,35 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 		"message_id", msg.ID,
 		"decision", queryPlan.Decision,
 		"reason", queryPlan.Reason,
+		"issue_key", queryPlan.IssueKey,
+		"issue_summary_preview", safeLogPreview(queryPlan.IssueSummary, 120),
+		"progress_signal", queryPlan.ProgressSignal,
 		"standalone_query_preview", safeLogPreview(queryPlan.StandaloneQuery, 140),
 		"search_query_count", len(queryPlan.SearchQueries),
 		"search_query_previews", safeLogPreviewList(queryPlan.SearchQueries, 4, 100),
 		"clarifying_question_preview", safeLogPreview(queryPlan.ClarifyingQuestion, 140),
 		"planner_tokens", plannerTokens,
 	)
+
+	issueStats := collectSupportIssueHistoryStats(historyForPrompt, agentID, queryPlan.IssueKey, settings.AIConfidenceThreshold)
+	if signal := detectStuckOnSameIssue(queryPlan, *msg, issueStats, settings.AIConfidenceThreshold, settings.AIMaxFollowups); signal != nil {
+		slog.InfoContext(ctx, "support AI escalating due to same-issue stalled attempts",
+			"workspace_id", workspaceID,
+			"conversation_id", conversationID,
+			"message_id", msg.ID,
+			"issue_key", queryPlan.IssueKey,
+			"progress_signal", queryPlan.ProgressSignal,
+			"stalled_attempt_count", issueStats.StalledAttemptCount,
+			"max_stalled_attempts", settings.AIMaxFollowups,
+			"reason", signal.Reason,
+		)
+		s.recordTokenUsage(ctx, agent.ID, plannerTokens)
+		if err := s.EscalateToHumanForMessage(ctx, workspaceID, conversationID, msg.ID, signal.Reason); err != nil {
+			return err
+		}
+		_ = s.processingRepo.MarkCompleted(ctx, processing.ID, nil, plannerTokens)
+		return nil
+	}
 
 	switch queryPlan.Decision {
 	case supportDecisionClarify:
@@ -620,7 +638,8 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 			"planner_reason", queryPlan.Reason,
 		)
 		s.recordTokenUsage(ctx, agent.ID, plannerTokens)
-		aiMsg, err := s.publishAIReply(ctx, workspaceID, conversationID, agentID, queryPlan.ClarifyingQuestion, s.queryPlannerModelName(), plannerTokens, 0.92, nil, supportReplyKindClarify)
+		clarifyProgressState := determineAIProgressState(queryPlan, supportReplyKindClarify, 0.92, settings.AIConfidenceThreshold, issueStats)
+		aiMsg, err := s.publishAIReply(ctx, workspaceID, conversationID, agentID, queryPlan.ClarifyingQuestion, s.queryPlannerModelName(), plannerTokens, 0.92, nil, supportReplyKindClarify, queryPlan.IssueKey, queryPlan.IssueSummary, clarifyProgressState)
 		if err != nil {
 			return err
 		}
@@ -641,7 +660,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 		return nil
 	}
 
-	// 15. Search knowledge base (hybrid chunk retrieval over selected help-center spaces)
+	// 14. Search knowledge base (hybrid chunk retrieval over selected help-center spaces)
 	searchResults, err := s.loadKnowledgeChunks(ctx, workspaceID, agentID, queryPlan.SearchQueries)
 	if err != nil {
 		slog.ErrorContext(ctx, "search knowledge base failed",
@@ -662,7 +681,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 	)
 	knowledgeContext := buildKnowledgeContext(searchResults)
 
-	// 16. Generate AI response
+	// 15. Generate AI response
 	response, tokensUsed, err := s.generateResponse(ctx, agent, conv, historyForPrompt, knowledgeContext, *msg, providerName, modelName)
 	if err != nil {
 		slog.ErrorContext(ctx, "AI response generation failed",
@@ -675,10 +694,10 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 
 	totalTokens := plannerTokens + tokensUsed
 
-	// 17. Record token usage atomically
+	// 16. Record token usage atomically
 	s.recordTokenUsage(ctx, agent.ID, totalTokens)
 
-	// 18. Multi-signal confidence evaluation
+	// 17. Multi-signal confidence evaluation
 	confidence := evaluateConfidence(searchResults, response)
 	slog.InfoContext(ctx, "support AI response evaluated",
 		"workspace_id", workspaceID,
@@ -693,7 +712,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 		"total_tokens_used", totalTokens,
 	)
 
-	// 19. Decide: grounded reply or escalate
+	// 18. Decide: grounded reply or escalate
 	if response.CanAnswer && confidence >= settings.AIConfidenceThreshold {
 		// 18a. Check for declining satisfaction trend before sending reply.
 		if signal := evaluatePostAnswerEscalation(historyForPrompt, confidence); signal != nil {
@@ -714,15 +733,20 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 
 		cleanContent := stripPII(response.Content)
 		publicSources := buildAISources(response.SourceDocIDs, searchResults)
+		answerReplyKind := classifyAnswerReplyKind(msg.Content)
+		answerProgressState := determineAIProgressState(queryPlan, answerReplyKind, confidence, settings.AIConfidenceThreshold, issueStats)
 
 		metadata := AIMessageMetadata{
-			AIAutoReply:  true,
-			AISources:    publicSources,
-			AIConfidence: confidence,
-			AIModel:      modelName,
-			AITokensUsed: totalTokens,
-			AIAgentID:    agentID,
-			AIReplyKind:  classifyAnswerReplyKind(msg.Content),
+			AIAutoReply:     true,
+			AISources:       publicSources,
+			AIConfidence:    confidence,
+			AIModel:         modelName,
+			AITokensUsed:    totalTokens,
+			AIAgentID:       agentID,
+			AIReplyKind:     answerReplyKind,
+			AIIssueKey:      queryPlan.IssueKey,
+			AIIssueSummary:  queryPlan.IssueSummary,
+			AIProgressState: answerProgressState,
 		}
 		metadataJSON, _ := json.Marshal(metadata)
 		metadataStr := string(metadataJSON)
@@ -1164,6 +1188,9 @@ func (s *SupportAIService) previewSupportReply(
 		TotalTokensUsed:     plannerTokens,
 		QueryPlan: model.SupportAIPreviewQueryPlan{
 			Decision:           queryPlan.Decision,
+			IssueKey:           queryPlan.IssueKey,
+			IssueSummary:       queryPlan.IssueSummary,
+			ProgressSignal:     queryPlan.ProgressSignal,
 			StandaloneQuery:    queryPlan.StandaloneQuery,
 			SearchQueries:      cloneStringSlice(queryPlan.SearchQueries),
 			ClarifyingQuestion: queryPlan.ClarifyingQuestion,
@@ -1608,15 +1635,21 @@ func (s *SupportAIService) publishAIReply(
 	confidence float64,
 	sources []AISource,
 	replyKind string,
+	issueKey string,
+	issueSummary string,
+	progressState string,
 ) (*model.SupportMessage, error) {
 	metadata := AIMessageMetadata{
-		AIAutoReply:  true,
-		AISources:    sources,
-		AIConfidence: confidence,
-		AIModel:      modelName,
-		AITokensUsed: tokensUsed,
-		AIAgentID:    agentID,
-		AIReplyKind:  replyKind,
+		AIAutoReply:     true,
+		AISources:       sources,
+		AIConfidence:    confidence,
+		AIModel:         modelName,
+		AITokensUsed:    tokensUsed,
+		AIAgentID:       agentID,
+		AIReplyKind:     replyKind,
+		AIIssueKey:      strings.TrimSpace(issueKey),
+		AIIssueSummary:  strings.TrimSpace(issueSummary),
+		AIProgressState: strings.TrimSpace(progressState),
 	}
 	metadataJSON, _ := json.Marshal(metadata)
 
@@ -1737,6 +1770,14 @@ Choose exactly one decision:
 Rules:
 - Do not choose "handoff" just because the message is short, vague, or a fragment. Use "clarify" for that.
 - If recent conversation resolves the fragment, choose "answer".
+- Also produce an "issue_key" that identifies the underlying customer issue. Keep it stable across paraphrases and follow-up turns on the same issue.
+- "issue_key" must be a short snake_case label like "password_reset" or "sso_okta_setup". It is not a search query.
+- Also produce an "issue_summary" with one short human-readable sentence describing the issue.
+- Also produce a "progress_signal" describing how the latest customer turn relates to the issue. Use exactly one of:
+  - "new_issue"
+  - "same_issue_new_info"
+  - "same_issue_repeat"
+  - "same_issue_unclear"
 - Preserve concrete product names, competitors, feature names, and entities from the conversation.
 - For "answer", produce one standalone_query and 2 to 4 diverse search_queries for RAG retrieval.
 - For "clarify", ask exactly one short clarifying question.
@@ -1746,6 +1787,9 @@ Rules:
 Return valid JSON only in this shape:
 {
   "decision": "answer",
+  "issue_key": "password_reset",
+  "issue_summary": "Customer needs help resetting their password",
+  "progress_signal": "new_issue",
   "standalone_query": "standalone retrieval query",
   "search_queries": ["query 1", "query 2"],
   "clarifying_question": "",
@@ -2087,12 +2131,16 @@ func defaultSupportQueryPlan(customerMessage string) SupportQueryPlanContract {
 	current := strings.TrimSpace(customerMessage)
 	if current == "" {
 		return SupportQueryPlanContract{
-			Decision:      supportDecisionAnswer,
-			SearchQueries: []string{},
+			Decision:       supportDecisionAnswer,
+			ProgressSignal: supportProgressNewIssue,
+			SearchQueries:  []string{},
 		}
 	}
 	return SupportQueryPlanContract{
 		Decision:        supportDecisionAnswer,
+		IssueKey:        normalizeSupportIssueKey("", current),
+		IssueSummary:    normalizeSupportIssueSummary("", current),
+		ProgressSignal:  supportProgressNewIssue,
 		StandaloneQuery: current,
 		SearchQueries:   []string{current},
 		Reason:          "planner_unavailable",
@@ -2102,24 +2150,36 @@ func defaultSupportQueryPlan(customerMessage string) SupportQueryPlanContract {
 func normalizeSupportQueryPlan(plan SupportQueryPlanContract, customerMessage string) SupportQueryPlanContract {
 	current := strings.TrimSpace(customerMessage)
 	normalized := defaultSupportQueryPlan(current)
+	issueKey := normalizeSupportIssueKey(plan.IssueKey, current)
+	issueSummary := normalizeSupportIssueSummary(plan.IssueSummary, current)
+	progressSignal := normalizeSupportProgressSignal(plan.ProgressSignal)
 
 	switch strings.ToLower(strings.TrimSpace(plan.Decision)) {
 	case supportDecisionClarify:
 		question := strings.TrimSpace(plan.ClarifyingQuestion)
 		if question == "" {
+			normalized.IssueKey = issueKey
+			normalized.IssueSummary = issueSummary
+			normalized.ProgressSignal = defaultPlannerProgressSignal(progressSignal, supportProgressSameUnclear)
 			return normalized
 		}
 		return SupportQueryPlanContract{
 			Decision:           supportDecisionClarify,
+			IssueKey:           issueKey,
+			IssueSummary:       issueSummary,
+			ProgressSignal:     defaultPlannerProgressSignal(progressSignal, supportProgressSameUnclear),
 			SearchQueries:      []string{},
 			ClarifyingQuestion: question,
 			Reason:             normalizedPlannerReason(plan.Reason, "needs_clarification"),
 		}
 	case supportDecisionHandoff:
 		return SupportQueryPlanContract{
-			Decision:      supportDecisionHandoff,
-			SearchQueries: []string{},
-			Reason:        normalizedPlannerReason(plan.Reason, "planner_handoff"),
+			Decision:       supportDecisionHandoff,
+			IssueKey:       issueKey,
+			IssueSummary:   issueSummary,
+			ProgressSignal: defaultPlannerProgressSignal(progressSignal, supportProgressSameRepeat),
+			SearchQueries:  []string{},
+			Reason:         normalizedPlannerReason(plan.Reason, "planner_handoff"),
 		}
 	default:
 		standalone := strings.TrimSpace(plan.StandaloneQuery)
@@ -2135,6 +2195,9 @@ func normalizeSupportQueryPlan(plan SupportQueryPlanContract, customerMessage st
 		}
 		return SupportQueryPlanContract{
 			Decision:        supportDecisionAnswer,
+			IssueKey:        issueKey,
+			IssueSummary:    issueSummary,
+			ProgressSignal:  defaultPlannerProgressSignal(progressSignal, supportProgressNewIssue),
 			StandaloneQuery: standalone,
 			SearchQueries:   searchQueries,
 			Reason:          normalizedPlannerReason(plan.Reason, "resolved_from_context"),
@@ -2226,6 +2289,75 @@ func normalizedPlannerReason(raw, fallback string) string {
 		return fallback
 	}
 	return reason
+}
+
+func normalizeSupportIssueKey(raw, fallback string) string {
+	candidate := strings.TrimSpace(raw)
+	if candidate == "" {
+		candidate = strings.TrimSpace(fallback)
+	}
+	if candidate == "" {
+		return ""
+	}
+	tokens := tokenizeWords(candidate)
+	if len(tokens) == 0 {
+		return normalizedPlannerReason(candidate, "")
+	}
+	filtered := make([]string, 0, len(tokens))
+	for _, token := range tokens {
+		switch token {
+		case "a", "an", "and", "are", "do", "for", "help", "i", "is", "it", "me", "my", "of", "on", "please", "the", "to", "we", "with", "you":
+			continue
+		default:
+			filtered = append(filtered, token)
+		}
+		if len(filtered) >= 6 {
+			break
+		}
+	}
+	if len(filtered) == 0 {
+		filtered = tokens
+		if len(filtered) > 6 {
+			filtered = filtered[:6]
+		}
+	}
+	return strings.Join(filtered, "_")
+}
+
+func normalizeSupportIssueSummary(raw, fallback string) string {
+	candidate := strings.TrimSpace(raw)
+	if candidate == "" {
+		candidate = strings.TrimSpace(fallback)
+	}
+	if candidate == "" {
+		return ""
+	}
+	if len(candidate) <= 140 {
+		return candidate
+	}
+	return strings.TrimSpace(candidate[:140])
+}
+
+func normalizeSupportProgressSignal(raw string) string {
+	switch strings.TrimSpace(strings.ToLower(raw)) {
+	case supportProgressNewIssue:
+		return supportProgressNewIssue
+	case supportProgressSameNewInfo:
+		return supportProgressSameNewInfo
+	case supportProgressSameRepeat:
+		return supportProgressSameRepeat
+	case supportProgressSameUnclear:
+		return supportProgressSameUnclear
+	default:
+		return ""
+	}
+}
+
+func defaultPlannerProgressSignal(candidate, fallback string) string {
+	if candidate != "" {
+		return candidate
+	}
+	return fallback
 }
 
 func (s *SupportAIService) queryPlannerModelName() string {

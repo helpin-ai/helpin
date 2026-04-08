@@ -10,12 +10,13 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/helpin-ai/helpin/server/internal/middleware"
+	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 // setupAuthzService creates an AuthzService with a mock repo for middleware tests.
 func setupAuthzService() (*AuthzService, *mockMemberRepo) {
 	repo := newMockMemberRepo()
-	return &AuthzService{rbac: NewRBACEngine(), memberRepo: repo}, repo
+	return &AuthzService{rbac: NewRBACEngine(), memberRepo: repo, moduleRepo: newMockModuleRepo()}, repo
 }
 
 // requestWithUser creates a request with user ID and optional workspace ID in context.
@@ -271,6 +272,61 @@ func TestRequirePermission_Denied(t *testing.T) {
 	json.NewDecoder(rr.Body).Decode(&resp)
 	if resp.Required != string(PermPMEdit) {
 		t.Errorf("expected required pm.edit, got %s", resp.Required)
+	}
+}
+
+func TestRequireModuleAccess_Allowed(t *testing.T) {
+	moduleRepo := newMockModuleRepo()
+	moduleRepo.setAccessibleModules("ws-1", "wm-1", model.ModuleSupport)
+	authz := &AuthzService{rbac: NewRBACEngine(), moduleRepo: moduleRepo}
+
+	handler := RequireModuleAccess(authz, model.ModuleSupport)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	req = req.WithContext(WithActor(req.Context(), &Actor{
+		WorkspaceID:       "ws-1",
+		WorkspaceMemberID: "wm-1",
+		Role:              model.RoleMember,
+	}))
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+}
+
+func TestRequireModuleAccess_Denied(t *testing.T) {
+	authz := &AuthzService{rbac: NewRBACEngine(), moduleRepo: newMockModuleRepo()}
+
+	handler := RequireModuleAccess(authz, model.ModuleCRM)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("handler should not be called")
+	}))
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	req = req.WithContext(WithActor(req.Context(), &Actor{
+		WorkspaceID:       "ws-1",
+		WorkspaceMemberID: "wm-1",
+		Role:              model.RoleMember,
+	}))
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", rr.Code)
+	}
+
+	var resp forbiddenResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Reason != "module_access_denied" {
+		t.Fatalf("expected module_access_denied, got %q", resp.Reason)
+	}
+	if resp.Required != string(model.ModuleCRM) {
+		t.Fatalf("expected required crm, got %q", resp.Required)
 	}
 }
 

@@ -325,10 +325,65 @@
 }
 
 .helpin-home-header {
-  padding: 40px 24px 32px;
+  padding: 40px 24px 24px;
   border-radius: 0 0 0 0;
   position: relative;
   animation: helpin-fade-rise 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.helpin-home-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.helpin-home-header .helpin-home-welcome--header {
+  color: #ffffff;
+  margin: 24px 0 0;
+  padding: 0 4px;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.3;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.helpin-home-greeting-name {
+  display: block;
+  font-size: 16px;
+  font-weight: 500;
+  opacity: 0.9;
+  margin-bottom: 2px;
+}
+
+/* Recent message section on home */
+.helpin-home-recent {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+  animation: helpin-fade-rise 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: 0.14s;
+}
+
+.helpin-home-recent-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--helpin-fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+/* Shared conversation item avatar image (used in list + home recent) */
+.helpin-conversation-item-avatar-wrap {
+  flex-shrink: 0;
+}
+
+.helpin-conversation-item-avatar-img {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
 }
 
 .helpin-home-logo {
@@ -336,7 +391,6 @@
   height: 44px;
   border-radius: 12px;
   object-fit: cover;
-  border: 2px solid rgba(255, 255, 255, 0.3);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
@@ -355,7 +409,6 @@
 }
 
 .helpin-theme-dark .helpin-home-logo {
-  border-color: rgba(255, 255, 255, 0.18);
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
 }
 
@@ -1315,6 +1368,11 @@
   color: var(--helpin-fg-muted);
 }
 
+.helpin-connection-banner--disconnected {
+  background: #fff7ed;
+  color: #9a3412;
+}
+
 .helpin-connection-banner--failed {
   background: #fef2f2;
   color: #991b1b;
@@ -1745,9 +1803,16 @@
   opacity: 1;
 }
 
-.helpin-home-header-presence.helpin-avatar-tooltip::after {
+.helpin-home-header-presence.helpin-avatar-tooltip::after,
+.helpin-agent-avatar-wrap.helpin-avatar-tooltip::after {
   top: calc(100% + 8px);
   bottom: auto;
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+}
+
+.helpin-home-header-presence.helpin-avatar-tooltip::after {
   left: auto;
   right: 0;
   transform: none;
@@ -1824,6 +1889,11 @@
 .helpin-compose-tool-btn:hover {
   background: var(--helpin-bg-muted);
   color: var(--helpin-fg-secondary);
+}
+
+.helpin-compose-tool-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* Send button — circle with arrow */

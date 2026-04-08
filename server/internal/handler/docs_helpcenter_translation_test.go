@@ -212,6 +212,26 @@ func setupDocsHelpcenterTranslationHandlerTestDB(t *testing.T) *gorm.DB {
 			UNIQUE(document_id, locale),
 			UNIQUE(space_id, locale, slug)
 		)`,
+		`CREATE TABLE docs_helpcenter_article_publications (
+			id TEXT PRIMARY KEY,
+			document_id TEXT NOT NULL,
+			workspace_id TEXT NOT NULL,
+			space_id TEXT NOT NULL,
+			collection_id TEXT,
+			locale TEXT NOT NULL,
+			title TEXT NOT NULL,
+			slug TEXT NOT NULL,
+			excerpt TEXT,
+			content JSON,
+			content_text TEXT,
+			seo_title TEXT,
+			seo_description TEXT,
+			published_at DATETIME NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME,
+			UNIQUE(document_id, locale),
+			UNIQUE(space_id, locale, slug)
+		)`,
 	}
 
 	for _, stmt := range stmts {
@@ -312,6 +332,22 @@ func seedDocsHelpcenterTranslationHandlerFixture(t *testing.T, db *gorm.DB, now 
 			PublicPublishedAt: &now,
 			CreatedAt:         now,
 			UpdatedAt:         now,
+		},
+		&model.DocsHelpcenterArticlePublication{
+			ID:           "pub-handler-i18n-en",
+			DocumentID:   documentID,
+			WorkspaceID:  workspaceID,
+			SpaceID:      spaceID,
+			CollectionID: func() *string { v := collectionID; return &v }(),
+			Locale:       "en",
+			Title:        "Start Here",
+			Slug:         "start-here",
+			Excerpt:      &excerpt,
+			Content:      json.RawMessage(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Welcome to Helpin."}]}]}`),
+			ContentText:  "Welcome to Helpin.",
+			PublishedAt:  now,
+			CreatedAt:    now,
+			UpdatedAt:    now,
 		},
 	}
 

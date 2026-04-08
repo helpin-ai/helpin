@@ -20,9 +20,37 @@ const instrumentSerif = Instrument_Serif({
 });
 
 export const metadata: Metadata = {
-  title: 'Helpin — PM, CRM, Support & Docs with AI Agents',
+  title: 'Helpin — The AI Operating System for Modern Work',
   description:
-    'One platform for project management, CRM, support, and docs — with AI agents that plan features, handle tickets, and drive deals autonomously.',
+    'Helpin brings project management, support, sales, and docs into one connected system. AI agents plan, build, triage, and follow up — so your team moves faster without the chaos.',
+  metadataBase: new URL('https://helpin.ai'),
+  openGraph: {
+    title: 'Helpin — The AI Operating System for Modern Work',
+    description:
+      'One connected system for PM, support, sales, and docs. AI agents that actually do the work.',
+    url: 'https://helpin.ai',
+    siteName: 'Helpin',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Helpin — The AI Operating System for Modern Work',
+    description:
+      'One connected system for PM, support, sales, and docs. AI agents that actually do the work.',
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
+  icons: {
+    icon: [
+      { url: '/favicon.ico', sizes: 'any' },
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+      { url: '/favicon-96x96.png', type: 'image/png', sizes: '96x96' },
+    ],
+    apple: '/apple-touch-icon.png',
+  },
+  manifest: '/site.webmanifest',
 };
 
 export default function RootLayout({

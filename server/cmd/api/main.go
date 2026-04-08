@@ -147,6 +147,7 @@ func main() {
 			&model.OrganizationMember{},
 			&model.Workspace{},
 			&model.WorkspaceMember{},
+			&model.WorkspaceModuleGrant{},
 			&model.WorkspaceSettings{},
 			&model.WorkspaceTeam{},
 			&model.TeamWorkspaceMembership{},
@@ -459,6 +460,7 @@ func main() {
 	orgRepo := repository.NewOrganizationRepository(db)
 	workspaceRepo := repository.NewWorkspaceRepository(db)
 	settingsRepo := repository.NewSettingsRepository(db)
+	moduleGrantRepo := repository.NewWorkspaceModuleGrantRepository(db)
 	crmAutonomyRepo := repository.NewCRMAutonomyRepository(db)
 	pmWorkflowRepo := repository.NewPMWorkflowRepository(db)
 	pmLabelRepo := repository.NewPMLabelRepository(db)
@@ -915,7 +917,9 @@ func main() {
 	orgService := service.NewOrganizationService(orgRepo)
 	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, crmDealService, supportInboxService, agentService)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
-	settingsService := service.NewSettingsService(settingsRepo, pmWorkflowService, wsPublisher)
+	workspaceService.SetPresenceProvider(wsHub.Presence)
+	workspaceService.SetStatusOverrideRepo(supportTeammateStatusOverrideRepo)
+	settingsService := service.NewSettingsService(settingsRepo, moduleGrantRepo, pmWorkflowService, wsPublisher)
 	automationInventoryService := service.NewAutomationInventoryService(settingsRepo, pmAutomationRepo, crmEmailRepo, automationHealthRepo, automationRuleRepo, agentTriggerExecutionRepo, agentRepo, pmTaskRepo, supportInstallRepo)
 	if err := pmRecurringTemplateService.EnsureScheduler(context.Background()); err != nil {
 		slog.Error("failed to ensure PM recurring scheduler", "error", err)
@@ -923,7 +927,7 @@ func main() {
 	inviteService := service.NewInviteService(invitationRepo, workspaceRepo, orgRepo, userRepo, settingsRepo, emailClient, cfg.AppBaseURL, jwtManager)
 	// Initialize authorization service.
 	authzMemberRepo := authorization.NewGORMMemberRepository(db)
-	authzService := authorization.NewAuthzService(db, authzMemberRepo)
+	authzService := authorization.NewAuthzService(db, authzMemberRepo, moduleGrantRepo)
 
 	// Inject authorization into WebSocket handler for workspace access checks.
 	wsHandler.SetAuthzService(authzService)
@@ -950,10 +954,10 @@ func main() {
 		Health:              handler.NewHealthHandler(s3Client),
 		Auth:                handler.NewAuthHandler(authService),
 		Organization:        handler.NewOrganizationHandler(orgService),
-			Workspace:           handler.NewWorkspaceHandler(workspaceService),
-			Settings:            handler.NewSettingsHandler(settingsService, automationInventoryService),
-			Automation:          handler.NewAutomationHandler(automationInventoryService, ruleEngine, agentService),
-			Invite:              handler.NewInviteHandler(inviteService),
+		Workspace:           handler.NewWorkspaceHandler(workspaceService, authzService),
+		Settings:            handler.NewSettingsHandler(settingsService, automationInventoryService),
+		Automation:          handler.NewAutomationHandler(automationInventoryService, ruleEngine, agentService),
+		Invite:              handler.NewInviteHandler(inviteService),
 		PMWorkflow:          handler.NewPMWorkflowHandler(pmWorkflowService),
 		PMImport:            handler.NewPMImportHandler(pmImportService),
 		PMLabel:             handler.NewPMLabelHandler(pmLabelService),

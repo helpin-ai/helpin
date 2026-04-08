@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useTitle } from '@/hooks/useTitle';
 import { useAuthStore } from '@/stores/authStore';
 import { authService } from '@/lib/services/authService';
@@ -8,7 +8,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   TEAM_MEMBER_AVATAR_STYLES,
   TEAM_MEMBER_AVATAR_BACKGROUND_COLORS,
@@ -21,12 +20,13 @@ import {
   normalizeTeamMemberAvatarStyle,
   resolveTeamMemberAvatarSrc,
 } from '@/lib/teamMemberAvatar';
-import { cn, getInitials } from '@/lib/utils';
-import { Camera01Icon, Loading01Icon, Mail01Icon, Delete01Icon } from '@/lib/icons';
+import { getInitials } from '@/lib/utils';
+import { Camera01Icon, Loading01Icon, Mail01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { EmailAccountConnect } from '@/components/crm/EmailAccountConnect';
 import { AvatarCropDialog } from '@/components/profile/AvatarCropDialog';
+import { AvatarPickerDialog } from '@/components/profile/AvatarPickerDialog';
 import { queryClient } from '@/lib/queryClient';
 import { queryKeys } from '@/lib/queryKeys';
 
@@ -39,7 +39,6 @@ export default function Profile() {
   useTitle('Profile');
   const { user, updateUser } = useAuthStore();
   const currentWorkspace = useWorkspaceStore((s) => s.currentWorkspace);
-  const avatarInputRef = useRef<HTMLInputElement>(null);
   const defaultAvatarStyle: TeamMemberAvatarStyle = TEAM_MEMBER_AVATAR_STYLES[0].value;
   const persistedGeneratedAvatarEnabled = hasGeneratedTeamMemberAvatar(user?.avatar_style, user?.avatar_seed);
   const persistedAvatarStyle = normalizeTeamMemberAvatarStyle(user?.avatar_style) ?? defaultAvatarStyle;
@@ -61,6 +60,7 @@ export default function Profile() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [pendingAvatar, setPendingAvatar] = useState<PendingAvatarFile | null>(null);
   const [avatarDialogOpen, setAvatarDialogOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const initials = getInitials(user?.full_name || user?.email);
   const profileAvatarSrc = resolveTeamMemberAvatarSrc({
@@ -139,34 +139,6 @@ export default function Profile() {
     }
     setPendingAvatar(null);
     setAvatarDialogOpen(false);
-    if (avatarInputRef.current) {
-      avatarInputRef.current.value = '';
-    }
-  };
-
-  const handleAvatarFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      toast.error('Please select an image file');
-      e.target.value = '';
-      return;
-    }
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error('Image must be under 2MB');
-      e.target.value = '';
-      return;
-    }
-
-    if (pendingAvatar?.previewUrl) {
-      URL.revokeObjectURL(pendingAvatar.previewUrl);
-    }
-
-    setPendingAvatar({
-      file,
-      previewUrl: URL.createObjectURL(file),
-    });
-    setAvatarDialogOpen(true);
   };
 
   const handleAvatarSave = async (file: File) => {
@@ -198,26 +170,6 @@ export default function Profile() {
     }
   };
 
-  const handleEnableGeneratedAvatar = () => {
-    setGeneratedAvatarEnabled(true);
-    setAvatarStyle((current) => normalizeTeamMemberAvatarStyle(current) ?? defaultAvatarStyle);
-    setAvatarSeed((current) => current || createTeamMemberAvatarSeed());
-    setAvatarBackgroundMode((current) => normalizeTeamMemberAvatarBackgroundMode(current));
-    setAvatarBackgroundColor((current) => normalizeTeamMemberAvatarBackgroundColor(current) ?? TEAM_MEMBER_AVATAR_BACKGROUND_COLORS[0]);
-  };
-
-  const handleShuffleGeneratedAvatar = () => {
-    setGeneratedAvatarEnabled(true);
-    setAvatarSeed(createTeamMemberAvatarSeed());
-  };
-
-  const handleAvatarBackgroundModeChange = (value: TeamMemberAvatarBackgroundMode) => {
-    setAvatarBackgroundMode(value);
-    if (value === 'auto') {
-      setAvatarBackgroundColor(TEAM_MEMBER_AVATAR_BACKGROUND_COLORS[0]);
-    }
-  };
-
   const handleChangePassword = async (e: FormEvent) => {
     e.preventDefault();
     if (newPassword.length < 8) {
@@ -243,6 +195,39 @@ export default function Profile() {
 
   return (
     <div className="space-y-4">
+      <AvatarPickerDialog
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        fullName={user?.full_name ?? undefined}
+        email={user?.email ?? undefined}
+        avatarUrl={user?.avatar_url}
+        generatedAvatarEnabled={generatedAvatarEnabled}
+        avatarStyle={avatarStyle}
+        avatarSeed={avatarSeed}
+        avatarBackgroundMode={avatarBackgroundMode}
+        avatarBackgroundColor={avatarBackgroundColor}
+        onGeneratedAvatarChange={(state) => {
+          setGeneratedAvatarEnabled(state.enabled);
+          setAvatarStyle(state.style);
+          setAvatarSeed(state.seed);
+          setAvatarBackgroundMode(state.backgroundMode);
+          setAvatarBackgroundColor(state.backgroundColor);
+          setPickerOpen(false);
+        }}
+        onPhotoSelect={(file) => {
+          if (pendingAvatar?.previewUrl) {
+            URL.revokeObjectURL(pendingAvatar.previewUrl);
+          }
+          setPendingAvatar({ file, previewUrl: URL.createObjectURL(file) });
+          setPickerOpen(false);
+          setAvatarDialogOpen(true);
+        }}
+        onRemovePhoto={() => {
+          handleRemoveAvatar();
+          setPickerOpen(false);
+        }}
+        uploadingAvatar={uploadingAvatar}
+      />
       <AvatarCropDialog
         open={avatarDialogOpen}
         imageUrl={pendingAvatar?.previewUrl ?? null}
@@ -264,27 +249,23 @@ export default function Profile() {
       <Card>
         <CardHeader>
           <div className="flex items-center gap-4">
-            <div className="relative group">
+            <button
+              type="button"
+              className="relative group shrink-0 rounded-full"
+              onClick={() => setPickerOpen(true)}
+            >
               <Avatar className="h-16 w-16">
                 {profileAvatarSrc && <AvatarImage src={profileAvatarSrc} alt={user?.full_name || 'Avatar'} />}
                 <AvatarFallback className="text-lg">{initials}</AvatarFallback>
               </Avatar>
-              <label className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+              <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity">
                 {uploadingAvatar ? (
                   <Loading01Icon className="h-5 w-5 text-white animate-spin" />
                 ) : (
                   <Camera01Icon className="h-5 w-5 text-white" />
                 )}
-                <input
-                  ref={avatarInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleAvatarFileSelect}
-                  disabled={uploadingAvatar}
-                />
-              </label>
-            </div>
+              </span>
+            </button>
             <div>
               <CardTitle>{user?.full_name || 'User'}</CardTitle>
               <CardDescription className="flex items-center gap-1">
@@ -292,20 +273,8 @@ export default function Profile() {
                 {user?.email}
               </CardDescription>
               <p className="mt-1 text-xs text-muted-foreground">
-                Upload a square-friendly image, then drag and zoom before saving.
+                Click your avatar to upload a photo or choose a generated style.
               </p>
-              {user?.avatar_url && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 mt-1 text-xs text-destructive hover:text-destructive p-0"
-                  onClick={handleRemoveAvatar}
-                  disabled={uploadingAvatar}
-                >
-                  <Delete01Icon className="h-3 w-3 mr-1" />
-                  Remove photo
-                </Button>
-              )}
             </div>
           </div>
         </CardHeader>
@@ -326,93 +295,6 @@ export default function Profile() {
               <Label>Email</Label>
               <Input value={user?.email ?? ''} disabled />
               <p className="text-xs text-muted-foreground">Email cannot be changed.</p>
-            </div>
-            <div className="space-y-3 rounded-xl border bg-muted/20 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <Label>Generated avatar</Label>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Fallback order is uploaded photo, then generated avatar, then initials.
-                  </p>
-                </div>
-                {generatedAvatarEnabled ? (
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setGeneratedAvatarEnabled(false)}>
-                    Use initials instead
-                  </Button>
-                ) : (
-                  <Button type="button" variant="outline" size="sm" onClick={handleEnableGeneratedAvatar}>
-                    Use generated avatar
-                  </Button>
-                )}
-              </div>
-
-              {generatedAvatarEnabled && (
-                <div className="flex flex-col gap-4 md:flex-row md:items-center">
-                  <div className="flex items-center gap-3">
-                    <Avatar className="h-14 w-14">
-                      {profileAvatarSrc && <AvatarImage src={profileAvatarSrc} alt="Generated avatar preview" />}
-                      <AvatarFallback>{initials}</AvatarFallback>
-                    </Avatar>
-                    <Button type="button" variant="outline" size="sm" onClick={handleShuffleGeneratedAvatar}>
-                      Shuffle
-                    </Button>
-                  </div>
-                  <div className="min-w-0 flex-1 space-y-2">
-                    <Label htmlFor="avatar-style">Style</Label>
-                    <Select value={avatarStyle} onValueChange={(value) => setAvatarStyle(value as typeof defaultAvatarStyle)}>
-                      <SelectTrigger id="avatar-style">
-                        <SelectValue placeholder="Choose a style" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {TEAM_MEMBER_AVATAR_STYLES.map((style) => (
-                          <SelectItem key={style.value} value={style.value}>
-                            {style.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              )}
-              {generatedAvatarEnabled && avatarStyle === 'personas' && (
-                <div className="flex flex-col gap-3 md:flex-row md:items-end">
-                  <div className="space-y-2 md:w-52">
-                    <Label htmlFor="avatar-background-mode">Background</Label>
-                    <Select value={avatarBackgroundMode} onValueChange={(value) => handleAvatarBackgroundModeChange(value as TeamMemberAvatarBackgroundMode)}>
-                      <SelectTrigger id="avatar-background-mode">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="auto">Auto</SelectItem>
-                        <SelectItem value="color">Color</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {avatarBackgroundMode === 'color' && (
-                    <div className="space-y-2 md:flex-1">
-                      <Label>Color</Label>
-                      <div className="flex flex-wrap items-center pl-3">
-                        {TEAM_MEMBER_AVATAR_BACKGROUND_COLORS.map((color, index) => (
-                          <button
-                            key={color}
-                            type="button"
-                            aria-label={`Select avatar background ${color}`}
-                            className={cn(
-                              'relative h-8 w-8 rounded-full border-2 border-background ring-2 ring-offset-2 ring-offset-background transition-transform',
-                              index === 0 ? 'ml-0' : '-ml-3',
-                              avatarBackgroundColor === color
-                                ? 'z-20 scale-110 ring-foreground'
-                                : 'z-0 ring-transparent hover:z-10 hover:scale-105'
-                            )}
-                            style={{ backgroundColor: color }}
-                            onClick={() => setAvatarBackgroundColor(color)}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
             <div className="flex justify-end">
               <Button type="submit" disabled={saving || !hasProfileChanges}>

@@ -39,6 +39,8 @@ type SupportRailNavProps = {
     my_inbox?: number;
     unassigned?: number;
     total?: number;
+    ai_all?: number;
+    ai_pending?: number;
   } | null;
   inboxScopes?: InboxScopes | null;
   selectedMailboxId: string;
@@ -46,7 +48,6 @@ type SupportRailNavProps = {
   wsSlug: string;
   onNavFilterChange: (value: SupportNavFilter) => void;
   onMailboxSelect: (mailboxId: string) => void;
-  aiHasUnread?: boolean;
   onCreateMailbox: () => void;
   onEditMailbox: (mailboxId: string) => void;
   onArchiveMailbox: (mailboxId: string) => void;
@@ -63,7 +64,6 @@ export function SupportRailNav({
   wsSlug,
   onNavFilterChange,
   onMailboxSelect,
-  aiHasUnread,
   onCreateMailbox,
   onEditMailbox,
   onArchiveMailbox,
@@ -114,21 +114,32 @@ export function SupportRailNav({
           Helpin AI Agent
         </SidebarGroupLabel>
         <SidebarMenu>
-          {supportAiItems.map((item) => (
-            <SidebarMenuItem key={item.key}>
-              <SidebarMenuButton
-                isActive={navFilter === item.key && activeContext === 'nav'}
-                className="h-8 rounded-md px-2 text-sm"
-                onClick={() => onNavFilterChange(item.key)}
-              >
-                <item.icon />
-                <span className="flex-1">{item.label}</span>
-                {aiHasUnread && item.key === 'ai_pending' && (
-                  <span className="ml-auto h-2 w-2 rounded-full bg-red-500" />
-                )}
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          ))}
+          {supportAiItems.map((item) => {
+            const badge =
+              item.key === 'ai_all'
+                ? unreadStats?.ai_all
+                : item.key === 'ai_pending'
+                  ? unreadStats?.ai_pending
+                  : undefined;
+
+            return (
+              <SidebarMenuItem key={item.key}>
+                <SidebarMenuButton
+                  isActive={navFilter === item.key && activeContext === 'nav'}
+                  className="h-8 rounded-md px-2 text-sm"
+                  onClick={() => onNavFilterChange(item.key)}
+                >
+                  <item.icon />
+                  <span className="flex-1">{item.label}</span>
+                  {badge != null && badge > 0 && (
+                    <span className="ml-auto inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
+                      {badge > 99 ? '99+' : badge}
+                    </span>
+                  )}
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            );
+          })}
         </SidebarMenu>
       </SidebarGroup>
 

@@ -73,6 +73,7 @@ export type Permission =
   | 'workspace.roles.manage'
   | 'settings.read'
   | 'settings.manage'
+  | 'module_access.manage'
   | 'team.read'
   | 'team.manage'
   | 'team.members.read'
@@ -99,6 +100,26 @@ export type Permission =
   | 'search.read'
   | 'ws.connect';
 
+export type WorkspaceModule = 'pm' | 'docs' | 'crm' | 'support';
+export type ModuleGrantSubjectType = 'team' | 'workspace_member';
+
+export interface WorkspaceModuleGrant {
+  id: string;
+  workspace_id: string;
+  module: WorkspaceModule;
+  subject_type: ModuleGrantSubjectType;
+  subject_id: string;
+  access_level: 'member';
+  created_by_id?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkspaceModuleAccessSettings {
+  modules: WorkspaceModule[];
+  grants: WorkspaceModuleGrant[];
+}
+
 // Response from GET /api/workspaces/{id}/me
 export interface WorkspaceAccess {
   workspace_id: string;
@@ -113,6 +134,7 @@ export interface WorkspaceAccess {
     team_id: string;
     role: string;
   }[];
+  modules: WorkspaceModule[];
 }
 
 export interface MemberWithUser {
@@ -143,6 +165,14 @@ export interface AssignableMember {
   invited_by?: string;
   invited_at?: string;
   accepted_at?: string;
+}
+
+export interface WorkspaceMemberPresenceStatus {
+  user_id: string;
+  status: 'online' | 'away' | 'offline';
+  source: 'auto' | 'manual';
+  manual_status?: 'online' | 'away' | 'offline';
+  last_seen_at?: string;
 }
 
 export interface WorkspaceSettings {

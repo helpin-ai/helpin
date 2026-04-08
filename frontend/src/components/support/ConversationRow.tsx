@@ -162,7 +162,7 @@ export const ConversationRow = memo(function ConversationRow({ conversation, isS
         isSelected
           ? 'bg-muted'
           : isUnread
-            ? 'bg-red-50/50 dark:bg-red-950/20'
+            ? 'bg-blue-50/70 dark:bg-blue-950/20'
             : ''
       }`}
     >
@@ -172,7 +172,7 @@ export const ConversationRow = memo(function ConversationRow({ conversation, isS
           isSelected
             ? 'h-8 bg-primary'
             : isUnread
-              ? 'h-5 bg-red-500'
+              ? 'h-5 bg-blue-500'
               : 'h-0 bg-transparent'
         }`}
       />
@@ -187,7 +187,7 @@ export const ConversationRow = memo(function ConversationRow({ conversation, isS
             {getInitial(displayName)}
           </div>
           {isVisitorOnline && (
-            <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-green-400 ring-2 ring-background" />
+            <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-green-400 ring-2 ring-background" />
           )}
         </div>
 

@@ -185,7 +185,7 @@ describe('ChatWindow', () => {
   });
 
   it('uses AI-first copy on the home view without leading with human availability', () => {
-    const { getByText, queryByText } = render(
+    const { getByText } = render(
       <ChatWindow
         config={{
           ...baseConfig,
@@ -205,16 +205,20 @@ describe('ChatWindow', () => {
       />,
     );
 
-    expect(getByText('Ask anything. Our AI assistant is here to help right away.')).toBeTruthy();
     expect(getByText('Ask a question')).toBeTruthy();
     expect(getByText('Get an instant answer from our AI assistant')).toBeTruthy();
-    expect(queryByText('Online now')).toBeNull();
   });
 
-  it('shows the active teammate on the home view when one is assigned', () => {
+  it('keeps showing the support roster on the home view when one teammate is assigned', () => {
     const { container } = render(
       <ChatWindow
-        config={baseConfig}
+        config={{
+          ...baseConfig,
+          availableTeammates: [
+            { userId: 'user-1', name: 'CS Azhar', avatarUrl: 'https://example.com/avatar.png', status: 'online' as const },
+            { userId: 'user-2', name: 'Nora Support', avatarUrl: 'https://example.com/nora.png', status: 'away' as const },
+          ],
+        }}
         messages={[]}
         activeTeammate={{ userId: 'user-1', name: 'CS Azhar', avatarUrl: 'https://example.com/avatar.png', status: 'online' }}
         isOpen={true}
@@ -226,9 +230,9 @@ describe('ChatWindow', () => {
       />,
     );
 
-    expect(container.querySelector('.helpin-home-teammate-presence')).toBeTruthy();
-    expect(container.querySelector('.helpin-home-teammate-avatar')).toBeTruthy();
+    expect(container.querySelectorAll('.helpin-home-header-presence')).toHaveLength(2);
     expect(container.querySelector('.helpin-presence-dot--online')).toBeTruthy();
+    expect(container.querySelector('.helpin-presence-dot--away')).toBeTruthy();
   });
 
   it('starts a fresh conversation from the home CTA', () => {
@@ -421,6 +425,90 @@ describe('ChatWindow', () => {
         onPreChatSubmit={() => {}}
         onEscalateToHuman={() => {}}
         isTyping={true}
+        initialView="conversation"
+      />,
+    );
+
+    expect(queryByText('Talk to a human')).toBeNull();
+  });
+
+  it('shows a reconnecting banner while the widget is temporarily disconnected', () => {
+    const { getByText, queryByText } = render(
+      <ChatWindow
+        config={baseConfig}
+        messages={[sampleMessage]}
+        isOpen={true}
+        onClose={() => {}}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={false}
+        onPreChatSubmit={() => {}}
+        initialView="conversation"
+        connectionStatus="disconnected"
+      />,
+    );
+
+    expect(getByText('Connection lost. Reconnecting...')).toBeTruthy();
+    expect(queryByText('Reconnect')).toBeNull();
+  });
+
+  it('shows a reconnect prompt and disables the composer after prolonged disconnection', () => {
+    const handleRetry = vi.fn();
+    const { getByText, container } = render(
+      <ChatWindow
+        config={baseConfig}
+        messages={[sampleMessage]}
+        isOpen={true}
+        onClose={() => {}}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={false}
+        onPreChatSubmit={() => {}}
+        initialView="conversation"
+        connectionStatus="failed"
+        onRetryConnection={handleRetry}
+      />,
+    );
+
+    expect(getByText("We've been offline for a while. We'll keep trying in the background, or reconnect now.")).toBeTruthy();
+
+    fireEvent.click(getByText('Reconnect'));
+    expect(handleRetry).toHaveBeenCalledTimes(1);
+
+    const textarea = container.querySelector('.helpin-compose-input') as HTMLTextAreaElement;
+    expect(textarea.disabled).toBe(true);
+    expect(textarea.placeholder).toBe('Offline. Reconnecting in the background...');
+  });
+
+  it('hides talk to human after a human teammate has already replied', () => {
+    const { queryByText } = render(
+      <ChatWindow
+        config={{
+          ...baseConfig,
+          features: {
+            ...baseConfig.features,
+            showTalkToHuman: true,
+          },
+        }}
+        messages={[
+          sampleMessage,
+          {
+            id: 'msg-2',
+            conversationId: 'conv-1',
+            role: 'agent' as const,
+            content: 'I can help with that.',
+            senderName: 'CS Azhar',
+            isInternal: false,
+            createdAt: new Date().toISOString(),
+          },
+        ]}
+        isOpen={true}
+        onClose={() => {}}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={false}
+        onPreChatSubmit={() => {}}
+        onEscalateToHuman={() => {}}
         initialView="conversation"
       />,
     );

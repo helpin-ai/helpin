@@ -195,7 +195,7 @@ func TestCreateStoryBatchToolReturnsRepairOrientedStoryValidationError(t *testin
 	if err == nil {
 		t.Fatal("expected validation error")
 	}
-	if !strings.Contains(err.Error(), `create_task_batch stories are invalid: story 1 is missing name; use field "name"`) {
+	if !strings.Contains(err.Error(), `create_task_batch stories are invalid: task 1 is missing name; use field "name"`) {
 		t.Fatalf("expected repair-oriented validation error, got %v", err)
 	}
 }

@@ -79,27 +79,27 @@ export function useConversations(workspaceId: string, filters?: { status?: strin
       }
       // Legacy fallback
       const arr = Array.isArray(data) ? data : [];
-      return { data: arr, total: arr.length, page: 1, per_page: 50, total_pages: 1, meta: { unread: { total: 0, my_inbox: 0, unassigned: 0, ai_pending: 0 } } } as ConversationListResponse;
+      return { data: arr, total: arr.length, page: 1, per_page: 50, total_pages: 1, meta: { unread: { total: 0, my_inbox: 0, unassigned: 0, ai_all: 0, ai_pending: 0 } } } as ConversationListResponse;
     },
     enabled: !!workspaceId,
     staleTime: 15_000,
   });
 }
 
-export function useUnreadStats(workspaceId: string, mailboxId?: string | null) {
+export function useUnreadStats(workspaceId: string, mailboxId?: string | null, enabled = true) {
   return useQuery({
     queryKey: [...queryKeys.support.unreadStats(workspaceId), mailboxId ?? 'shared'] as const,
     queryFn: async () => unwrap(await supportService.getUnreadStats(workspaceId, mailboxId)),
-    enabled: !!workspaceId,
+    enabled: !!workspaceId && enabled,
     staleTime: 15_000,
   });
 }
 
-export function useInboxScopes(workspaceId: string) {
+export function useInboxScopes(workspaceId: string, enabled = true) {
   return useQuery({
     queryKey: queryKeys.support.inboxScopes(workspaceId),
     queryFn: async () => unwrap(await supportService.listInboxScopes(workspaceId)),
-    enabled: !!workspaceId,
+    enabled: !!workspaceId && enabled,
     staleTime: 15_000,
   });
 }
@@ -143,11 +143,11 @@ export function useSupportTriageRules(workspaceId: string) {
   });
 }
 
-export function useSupportTeammatePresence(workspaceId: string) {
+export function useSupportTeammatePresence(workspaceId: string, enabled = true) {
   return useQuery({
     queryKey: queryKeys.support.teammatePresence(workspaceId),
     queryFn: async () => unwrap(await supportService.listTeammatePresence(workspaceId)),
-    enabled: !!workspaceId,
+    enabled: !!workspaceId && enabled,
     staleTime: 15_000,
     refetchInterval: 30_000,
     refetchIntervalInBackground: true,
