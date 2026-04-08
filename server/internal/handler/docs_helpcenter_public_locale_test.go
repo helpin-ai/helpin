@@ -148,6 +148,9 @@ func TestDocsHelpcenterPublicLocale_ConfigDoesNotMutateCollectionMirrors(t *test
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q, want %q", got, "no-store")
+	}
 
 	var storedCollection model.DocsCollection
 	if err := db.Where("id = ?", "collection-handler-i18n").First(&storedCollection).Error; err != nil {
