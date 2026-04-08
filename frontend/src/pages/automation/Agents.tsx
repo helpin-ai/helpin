@@ -107,7 +107,15 @@ const STATUS_LABEL: Record<string, string> = {
 
 const RUNTIME_KIND_OPTIONS: AgentRuntimeKind[] = ['opencode', 'codex', 'native_sdk'];
 const DEFAULT_SYSTEM_PRESET_KEY: AgentPresetKey = 'code_builder';
-const PRESET_FALLBACKS: Record<AgentPresetKey, { label: string; description: string; runtime_kind: AgentRuntimeKind; default_invocation_mode: AgentInvocationMode; supported_modes: AgentInvocationMode[] }> = {
+const PRESET_FALLBACKS: Record<AgentPresetKey, {
+  label: string;
+  description: string;
+  runtime_kind: AgentRuntimeKind;
+  default_invocation_mode: AgentInvocationMode;
+  supported_modes: AgentInvocationMode[];
+  provider?: AgentModelProvider;
+  model?: string;
+}> = {
   epic_planner: {
     label: 'Epic Planner',
     description: 'Interactive product planning for epics, PRDs, docs, and tasks.',
@@ -146,16 +154,20 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, { label: string; description: str
   code_builder: {
     label: 'Code Builder',
     description: 'Writes code, implements features, and fixes bugs in the repo.',
-    runtime_kind: 'opencode',
+    runtime_kind: 'codex',
     default_invocation_mode: 'autonomous',
-    supported_modes: ['autonomous'],
+    supported_modes: ['autonomous', 'interactive'],
+    provider: 'openai',
+    model: 'gpt-5-mini',
   },
   review_agent: {
     label: 'Review Agent',
     description: 'Reviews work, runs tests, and checks quality without repo mutation.',
-    runtime_kind: 'opencode',
+    runtime_kind: 'codex',
     default_invocation_mode: 'autonomous',
-    supported_modes: ['autonomous'],
+    supported_modes: ['autonomous', 'interactive'],
+    provider: 'openai',
+    model: 'gpt-5-mini',
   },
 };
 
@@ -490,8 +502,11 @@ function buildSystemAgentForm(agent: Agent, presets: AgentPresetDefinition[]): A
     preset_version_key: agent.preset_version_key?.trim() || preset?.version_key || fallbackPresetVersionKey(presetKey),
     runtime_kind: agent.runtime_kind || runtimeKind,
     supported_modes: supportedModes,
-    provider: normalizeProviderForRuntime(agent.runtime_kind || runtimeKind, agent.provider ?? preset?.provider ?? 'anthropic'),
-    model: agent.model ?? preset?.model ?? '',
+    provider: normalizeProviderForRuntime(
+      agent.runtime_kind || runtimeKind,
+      agent.provider ?? preset?.provider ?? PRESET_FALLBACKS[presetKey].provider ?? 'anthropic',
+    ),
+    model: agent.model ?? preset?.model ?? PRESET_FALLBACKS[presetKey].model ?? '',
     system_prompt: agent.system_prompt ?? preset?.system_prompt ?? '',
     monthly_token_budget: agent.monthly_token_budget?.toString() ?? '',
     team_id: '',
@@ -1312,8 +1327,11 @@ export function AgentsPage() {
       preset_version_key: nextPreset.version_key,
       runtime_kind: nextPreset.runtime_kind,
       supported_modes: nextPreset.supported_modes,
-      provider: normalizeProviderForRuntime(nextPreset.runtime_kind, nextPreset.provider ?? current.provider),
-      model: nextPreset.model ?? '',
+      provider: normalizeProviderForRuntime(
+        nextPreset.runtime_kind,
+        nextPreset.provider ?? PRESET_FALLBACKS[form.preset_key].provider ?? current.provider,
+      ),
+      model: nextPreset.model ?? PRESET_FALLBACKS[form.preset_key].model ?? '',
       system_prompt: nextPreset.system_prompt ?? '',
       allowed_tools: normalizeToolList(nextPreset.allowed_tools ?? []),
       approval_mode: 'never',
