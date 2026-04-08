@@ -197,6 +197,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		// ---- Public routes ----
 		r.Post("/auth/signup", h.Auth.Signup)
 		r.Post("/auth/signin", h.Auth.Signin)
+		r.Post("/auth/forgot-password", h.Auth.ForgotPassword)
+		r.Post("/auth/reset-password", h.Auth.ResetPassword)
 		r.Post("/auth/refresh", h.Auth.RefreshToken)
 		r.Get("/health", h.Health.Check)
 		r.Get("/system/ensure-cors", h.Health.EnsureStorageCORS)

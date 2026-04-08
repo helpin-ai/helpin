@@ -882,6 +882,19 @@ export class WidgetManager {
       this.wsSend('session:upgrade', { email: data.email || '', phone: data.phone || '', source: 'widget_prechat' });
     }
 
+    // Inject a confirmation message so the user knows email was recorded + AI is ready
+    if (data.email) {
+      const confirmationMsg: Message = {
+        id: `prechat-confirm-${Date.now()}`,
+        conversationId: this.activeConversationId || '',
+        role: 'ai',
+        content: `Thanks! Our AI assistant is here to help you. If needed, a team member can also follow up with you at **${data.email}**.`,
+        isInternal: false,
+        createdAt: new Date().toISOString(),
+      };
+      this.messages = [...this.messages, confirmationMsg];
+    }
+
     // Fire lead tracking event to events pipeline (ClickHouse)
     if (data.email && (globalThis as any).helpin?.track) {
       (globalThis as any).helpin.track('lead', { email: data.email });

@@ -2,11 +2,16 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log/slog"
+	"net/url"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/google/uuid"
@@ -14,25 +19,46 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/storage"
+	"gorm.io/gorm"
 )
+
+const passwordResetTTL = time.Hour
+
+type authEmailSender interface {
+	SendPasswordResetEmail(to, fullName, resetURL string) error
+}
 
 // AuthService handles authentication business logic.
 type AuthService struct {
-	userRepo         *repository.UserRepository
-	organizationRepo *repository.OrganizationRepository
-	jwtManager       *auth.JWTManager
-	s3Client         *storage.S3Client
-	logger           *slog.Logger
+	userRepo          *repository.UserRepository
+	passwordResetRepo *repository.PasswordResetTokenRepository
+	organizationRepo  *repository.OrganizationRepository
+	jwtManager        *auth.JWTManager
+	s3Client          *storage.S3Client
+	emailClient       authEmailSender
+	appBaseURL        string
+	logger            *slog.Logger
 }
 
 // NewAuthService creates a new AuthService.
-func NewAuthService(userRepo *repository.UserRepository, organizationRepo *repository.OrganizationRepository, jwtManager *auth.JWTManager, s3Client *storage.S3Client) *AuthService {
+func NewAuthService(
+	userRepo *repository.UserRepository,
+	passwordResetRepo *repository.PasswordResetTokenRepository,
+	organizationRepo *repository.OrganizationRepository,
+	jwtManager *auth.JWTManager,
+	s3Client *storage.S3Client,
+	emailClient authEmailSender,
+	appBaseURL string,
+) *AuthService {
 	return &AuthService{
-		userRepo:         userRepo,
-		organizationRepo: organizationRepo,
-		jwtManager:       jwtManager,
-		s3Client:         s3Client,
-		logger:           slog.Default().With("service", "auth"),
+		userRepo:          userRepo,
+		passwordResetRepo: passwordResetRepo,
+		organizationRepo:  organizationRepo,
+		jwtManager:        jwtManager,
+		s3Client:          s3Client,
+		emailClient:       emailClient,
+		appBaseURL:        strings.TrimRight(strings.TrimSpace(appBaseURL), "/"),
+		logger:            slog.Default().With("service", "auth"),
 	}
 }
 
@@ -315,9 +341,133 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID string, req mod
 		s.logger.ErrorContext(ctx, "failed to update password", "user_id", userID, "error", err)
 		return err
 	}
+	if s.passwordResetRepo != nil {
+		if err := s.passwordResetRepo.InvalidateAllForUser(ctx, userID, time.Now().UTC()); err != nil {
+			s.logger.ErrorContext(ctx, "failed to invalidate reset tokens after password change", "user_id", userID, "error", err)
+		}
+	}
 
 	s.logger.InfoContext(ctx, "password changed", "user_id", userID)
 	return nil
+}
+
+// ForgotPassword creates a single-use reset token and emails a reset link when the user exists.
+func (s *AuthService) ForgotPassword(ctx context.Context, req model.ForgotPasswordRequest) error {
+	emailAddr := strings.ToLower(strings.TrimSpace(req.Email))
+	if emailAddr == "" {
+		return fmt.Errorf("email is required")
+	}
+
+	user, err := s.userRepo.GetByEmail(ctx, emailAddr)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "failed to look up user for forgot password", "email", emailAddr, "error", err)
+		return fmt.Errorf("lookup user: %w", err)
+	}
+	if user == nil {
+		s.logger.InfoContext(ctx, "forgot password requested for unknown email", "email", emailAddr)
+		return nil
+	}
+	if s.passwordResetRepo == nil {
+		s.logger.ErrorContext(ctx, "password reset repository not configured", "user_id", user.ID)
+		return fmt.Errorf("password reset is not configured")
+	}
+
+	rawToken, tokenHash, err := generatePasswordResetToken()
+	if err != nil {
+		s.logger.ErrorContext(ctx, "failed to generate password reset token", "user_id", user.ID, "error", err)
+		return err
+	}
+
+	now := time.Now().UTC()
+	resetToken := &model.PasswordResetToken{
+		UserID:    user.ID,
+		TokenHash: tokenHash,
+		ExpiresAt: now.Add(passwordResetTTL),
+	}
+
+	if err := s.passwordResetRepo.WithTx(ctx, func(txRepo *repository.PasswordResetTokenRepository, tx *gorm.DB) error {
+		if err := txRepo.InvalidateAllForUser(ctx, user.ID, now); err != nil {
+			return err
+		}
+		if err := txRepo.Create(ctx, resetToken); err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		s.logger.ErrorContext(ctx, "failed to persist password reset token", "user_id", user.ID, "error", err)
+		return err
+	}
+
+	resetURL := buildPasswordResetURL(s.appBaseURL, rawToken)
+	if s.emailClient == nil {
+		s.logger.WarnContext(ctx, "password reset requested but email client not configured", "user_id", user.ID, "email", emailAddr)
+		return nil
+	}
+	if err := s.emailClient.SendPasswordResetEmail(user.Email, user.FullName, resetURL); err != nil {
+		s.logger.ErrorContext(ctx, "failed to send password reset email", "user_id", user.ID, "email", emailAddr, "error", err)
+	}
+
+	s.logger.InfoContext(ctx, "password reset requested", "user_id", user.ID, "email", emailAddr)
+	return nil
+}
+
+// ResetPassword validates a password reset token and sets a new password.
+func (s *AuthService) ResetPassword(ctx context.Context, req model.ResetPasswordRequest) error {
+	token := strings.TrimSpace(req.Token)
+	if token == "" || req.Password == "" {
+		return fmt.Errorf("token and password are required")
+	}
+	if len(req.Password) < 8 {
+		return fmt.Errorf("password must be at least 8 characters")
+	}
+	if s.passwordResetRepo == nil {
+		return fmt.Errorf("password reset is not configured")
+	}
+
+	tokenHash := hashPasswordResetToken(token)
+	now := time.Now().UTC()
+
+	return s.passwordResetRepo.WithTx(ctx, func(txRepo *repository.PasswordResetTokenRepository, txDB *gorm.DB) error {
+		tokenRow, err := txRepo.GetActiveByTokenHash(ctx, tokenHash, now)
+		if err != nil {
+			return err
+		}
+		if tokenRow == nil {
+			return fmt.Errorf("password reset link is invalid or has expired")
+		}
+
+		userRepo := repository.NewUserRepository(txDB)
+		user, err := userRepo.GetByID(ctx, tokenRow.UserID)
+		if err != nil {
+			return fmt.Errorf("get user: %w", err)
+		}
+		if user == nil {
+			return fmt.Errorf("user not found")
+		}
+
+		hash, err := auth.HashPassword(req.Password)
+		if err != nil {
+			return fmt.Errorf("hash password: %w", err)
+		}
+
+		used, err := txRepo.MarkUsed(ctx, tokenRow.ID, now)
+		if err != nil {
+			return err
+		}
+		if !used {
+			return fmt.Errorf("password reset link is invalid or has expired")
+		}
+
+		if err := userRepo.UpdatePassword(ctx, user.ID, hash); err != nil {
+			return fmt.Errorf("update password: %w", err)
+		}
+		if err := txRepo.InvalidateOtherTokensForUser(ctx, user.ID, tokenRow.ID, now); err != nil {
+			return err
+		}
+
+		s.logger.InfoContext(ctx, "password reset completed", "user_id", user.ID)
+		return nil
+	})
 }
 
 func toUserProfile(u *model.User) model.UserProfile {
@@ -333,4 +483,26 @@ func toUserProfile(u *model.User) model.UserProfile {
 		DefaultWorkspaceID:    u.DefaultWorkspaceID,
 		CreatedAt:             u.CreatedAt,
 	}
+}
+
+func generatePasswordResetToken() (string, string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", "", fmt.Errorf("generate password reset token: %w", err)
+	}
+	rawToken := hex.EncodeToString(b)
+	return rawToken, hashPasswordResetToken(rawToken), nil
+}
+
+func hashPasswordResetToken(token string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(token)))
+	return hex.EncodeToString(sum[:])
+}
+
+func buildPasswordResetURL(appBaseURL, token string) string {
+	base := strings.TrimRight(strings.TrimSpace(appBaseURL), "/")
+	if base == "" {
+		base = "http://localhost:5173"
+	}
+	return fmt.Sprintf("%s/reset-password?token=%s", base, url.QueryEscape(token))
 }

@@ -79,7 +79,12 @@ func (s *DocsHelpcenterService) UploadAsset(ctx context.Context, workspaceID, as
 
 // GetConfig returns the help center config for a workspace.
 func (s *DocsHelpcenterService) GetConfig(ctx context.Context, workspaceID string) (*model.DocsHelpcenterConfig, error) {
-	return s.hcRepo.GetConfig(ctx, workspaceID)
+	cfg, err := s.hcRepo.GetConfig(ctx, workspaceID)
+	if err != nil || cfg == nil {
+		return cfg, err
+	}
+	s.enrichFeaturedCardTitles(ctx, cfg)
+	return cfg, nil
 }
 
 // UpsertConfig creates or updates the help center config.
@@ -448,40 +453,80 @@ func (s *DocsHelpcenterService) enrichFeaturedCardTitles(ctx context.Context, cf
 	}
 
 	changed := false
-	for i, card := range hpCfg.FeaturedCards {
-		if card.LinkType != "collection" {
-			continue
+	enrichedCards := make([]model.HomepageFeaturedCard, 0, len(hpCfg.FeaturedCards))
+	for _, rawCard := range hpCfg.FeaturedCards {
+		card := model.HomepageFeaturedCard{
+			Title:       strings.TrimSpace(rawCard.Title),
+			Description: strings.TrimSpace(rawCard.Description),
+			Icon:        strings.TrimSpace(rawCard.Icon),
+			LinkType:    strings.TrimSpace(rawCard.LinkType),
+			LinkValue:   strings.TrimSpace(rawCard.LinkValue),
+			SpaceSlug:   strings.TrimSpace(rawCard.SpaceSlug),
 		}
-		col, err := s.resolveFeaturedCardCollection(ctx, cfg.WorkspaceID, card)
-		if err != nil || col == nil {
-			continue
-		}
-		if col.Name != card.Title {
-			hpCfg.FeaturedCards[i].Title = col.Name
+		if card != rawCard {
 			changed = true
 		}
-		if col.Description != nil && *col.Description != card.Description {
-			hpCfg.FeaturedCards[i].Description = *col.Description
-			changed = true
-		}
-		if (col.Icon != nil && *col.Icon != card.Icon) || (col.Icon == nil && card.Icon != "") {
-			if col.Icon != nil {
-				hpCfg.FeaturedCards[i].Icon = *col.Icon
-			} else {
-				hpCfg.FeaturedCards[i].Icon = ""
+
+		switch card.LinkType {
+		case "collection":
+			col, err := s.resolveFeaturedCardCollection(ctx, cfg.WorkspaceID, card)
+			if err != nil {
+				enrichedCards = append(enrichedCards, card)
+				continue
 			}
+			if col == nil {
+				changed = true
+				continue
+			}
+			if col.Name != card.Title {
+				card.Title = col.Name
+				changed = true
+			}
+			nextDescription := ""
+			if col.Description != nil {
+				nextDescription = *col.Description
+			}
+			if nextDescription != card.Description {
+				card.Description = nextDescription
+				changed = true
+			}
+			nextIcon := ""
+			if col.Icon != nil {
+				nextIcon = *col.Icon
+			}
+			if nextIcon != card.Icon {
+				card.Icon = nextIcon
+				changed = true
+			}
+			if col.Slug != "" && col.Slug != card.LinkValue {
+				card.LinkValue = col.Slug
+				changed = true
+			}
+			space, err := s.spaceRepo.GetByID(ctx, col.SpaceID)
+			if err == nil && space != nil && space.Slug != "" && space.Slug != card.SpaceSlug {
+				card.SpaceSlug = space.Slug
+				changed = true
+			}
+			if card.LinkValue == "" {
+				changed = true
+				continue
+			}
+		case "space", "article", "url":
+			if card.LinkValue == "" {
+				changed = true
+				continue
+			}
+		default:
 			changed = true
+			continue
 		}
-		if col.Slug != "" && col.Slug != card.LinkValue {
-			hpCfg.FeaturedCards[i].LinkValue = col.Slug
-			changed = true
-		}
-		space, err := s.spaceRepo.GetByID(ctx, col.SpaceID)
-		if err == nil && space != nil && space.Slug != "" && space.Slug != card.SpaceSlug {
-			hpCfg.FeaturedCards[i].SpaceSlug = space.Slug
-			changed = true
-		}
+
+		enrichedCards = append(enrichedCards, card)
 	}
+	if len(enrichedCards) != len(hpCfg.FeaturedCards) {
+		changed = true
+	}
+	hpCfg.FeaturedCards = enrichedCards
 
 	if changed {
 		if enriched, err := json.Marshal(hpCfg); err == nil {

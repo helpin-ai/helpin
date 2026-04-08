@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 // Client is a lightweight Postmark email client.
@@ -261,6 +262,146 @@ Click the link below to join:
 %s
 
 This invitation expires in 7 days.`, inviterName, workspaceName, joinURL)
+
+	return c.SendEmail(to, subject, htmlBody, textBody)
+}
+
+// SendPasswordResetEmail sends a password reset email with a single-use link.
+func (c *Client) SendPasswordResetEmail(to, fullName, resetURL string) error {
+	firstName := fullName
+	if parts := strings.Fields(strings.TrimSpace(fullName)); len(parts) > 0 {
+		firstName = parts[0]
+	}
+	if firstName == "" {
+		firstName = "there"
+	}
+	initial := strings.ToUpper(string([]rune(firstName)[0]))
+
+	subject := "Reset your Helpin password"
+
+	htmlBody := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <title>Password Reset</title>
+  %s
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; margin: 0; padding: 0; background-color: #f0f0f3; -webkit-font-smoothing: antialiased;">
+  <!-- Preheader text (hidden) -->
+  <div style="display: none; max-height: 0; overflow: hidden;">
+    Reset your Helpin password with this secure link. This reset link expires in 1 hour.
+  </div>
+
+	  <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f0f0f3;">
+	    <tr>
+	      <td align="center" style="padding: 48px 16px;">
+	        <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0" style="max-width: 520px;">
+
+	          %s
+
+	          <!-- Main Card -->
+	          <tr>
+	            <td style="background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);">
+              <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0">
+
+                <!-- Top accent bar -->
+                <tr>
+                  <td style="height: 4px; background: linear-gradient(90deg, #18181b 0%%, #3b3b3f 100%%); border-radius: 12px 12px 0 0; font-size: 0; line-height: 0;">&nbsp;</td>
+                </tr>
+
+                <!-- Content -->
+                <tr>
+                  <td style="padding: 40px 36px 36px;">
+                    <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0">
+
+                      <!-- Avatar -->
+                      <tr>
+                        <td align="center" style="padding-bottom: 24px;">
+                          <div style="display: inline-block; width: 56px; height: 56px; line-height: 56px; border-radius: 14px; background-color: #18181b; color: #ffffff; font-size: 22px; font-weight: 700; text-align: center;">%s</div>
+                        </td>
+                      </tr>
+
+                      <!-- Heading -->
+                      <tr>
+                        <td align="center" style="padding-bottom: 8px;">
+                          <h1 style="margin: 0; font-size: 22px; font-weight: 700; color: #18181b; line-height: 1.3;">Reset your password</h1>
+                        </td>
+                      </tr>
+
+                      <!-- Subheading -->
+                      <tr>
+                        <td align="center" style="padding-bottom: 16px;">
+                          <h2 style="margin: 0; font-size: 26px; font-weight: 800; color: #18181b; line-height: 1.2;">Helpin account access</h2>
+                        </td>
+                      </tr>
+
+                      <!-- Description -->
+                      <tr>
+                        <td align="center" style="padding-bottom: 32px;">
+                          <p style="margin: 0; font-size: 15px; line-height: 1.6; color: #52525b;">
+                            <strong style="color: #18181b;">%s</strong>, we received a request to reset your password. Use the link below to choose a new one.
+                          </p>
+                        </td>
+                      </tr>
+
+                      <!-- CTA Button -->
+                      <tr>
+                        <td align="center" style="padding-bottom: 24px;">
+                          <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                            <tr>
+                              <td style="border-radius: 8px; background-color: #18181b;">
+                                <a href="%s" target="_blank" style="display: inline-block; padding: 14px 40px; font-size: 15px; font-weight: 600; color: #ffffff; text-decoration: none; letter-spacing: 0.2px;">Reset Password</a>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+
+                      <!-- Expiry notice -->
+                      <tr>
+                        <td align="center">
+                          <p style="margin: 0; font-size: 13px; color: #a1a1aa;">This reset link expires in 1 hour and can only be used once.</p>
+                        </td>
+                      </tr>
+
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td align="center" style="padding: 28px 16px 0;">
+              <p style="margin: 0 0 6px; font-size: 12px; color: #a1a1aa; line-height: 1.5;">
+                You received this email because a password reset was requested for your Helpin account.
+              </p>
+              <p style="margin: 0; font-size: 12px; color: #a1a1aa;">
+                If you didn't expect this, you can safely ignore it.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+	  </table>
+</body>
+</html>`, BrandHeaderCSS(), BrandHeaderHTML(), initial, firstName, resetURL)
+
+	textBody := fmt.Sprintf(`Hi %s,
+
+We received a request to reset your Helpin password.
+
+Reset your password:
+%s
+
+This link expires in 1 hour and can only be used once.
+
+If you didn't request this, you can ignore this email.`, firstName, resetURL)
 
 	return c.SendEmail(to, subject, htmlBody, textBody)
 }

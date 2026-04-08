@@ -1151,7 +1151,7 @@ func (h *DocsHandler) PublicGetConfig(w http.ResponseWriter, r *http.Request) {
 	if cfg == nil {
 		return
 	}
-	setHelpcenterCacheHeader(w, "public, max-age=300, stale-while-revalidate=60")
+	setHelpcenterCacheHeader(w, "no-store")
 	writeJSON(w, http.StatusOK, cfg)
 }
 

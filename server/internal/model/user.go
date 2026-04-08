@@ -72,6 +72,17 @@ type ChangePasswordRequest struct {
 	NewPassword     string `json:"new_password"`
 }
 
+// ForgotPasswordRequest is the payload for POST /api/auth/forgot-password.
+type ForgotPasswordRequest struct {
+	Email string `json:"email"`
+}
+
+// ResetPasswordRequest is the payload for POST /api/auth/reset-password.
+type ResetPasswordRequest struct {
+	Token    string `json:"token"`
+	Password string `json:"password"`
+}
+
 // RefreshTokenRequest is the payload for POST /api/auth/refresh.
 type RefreshTokenRequest struct {
 	RefreshToken string `json:"refresh_token"`
