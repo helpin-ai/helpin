@@ -143,6 +143,7 @@ func main() {
 		slog.Info("startup: running AutoMigrate")
 		if err := db.AutoMigrate(
 			&model.User{},
+			&model.PasswordResetToken{},
 			&model.Organization{},
 			&model.OrganizationMember{},
 			&model.Workspace{},
@@ -561,7 +562,8 @@ func main() {
 	}()
 
 	// Initialize services.
-	authService := service.NewAuthService(userRepo, orgRepo, jwtManager, s3Client)
+	passwordResetRepo := repository.NewPasswordResetTokenRepository(db)
+	authService := service.NewAuthService(userRepo, passwordResetRepo, orgRepo, jwtManager, s3Client, emailClient, cfg.AppBaseURL)
 	pmActivityService := service.NewPMActivityService(pmActivityRepo)
 	pmLabelService := service.NewPMLabelService(pmLabelRepo, wsPublisher)
 	pmTaskTemplateService := service.NewPMTaskTemplateService(pmTaskTemplateRepo, wsPublisher)
