@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"gorm.io/gorm"
@@ -114,12 +115,15 @@ func (r *PMSprintRepository) ListPlanningWorkspace(ctx context.Context, workspac
 			continue
 		}
 		card := model.SprintPlanningCard{
-			Sprint:         sprints[i],
-			PreviewTasks:    []model.SprintPlanningTaskPreview{},
+			Sprint:       sprints[i],
+			PreviewTasks: []model.SprintPlanningTaskPreview{},
 		}
 		buckets[bucketKey].Sprints = append(buckets[bucketKey].Sprints, card)
 		cardBySprintID[sprints[i].ID] = &buckets[bucketKey].Sprints[len(buckets[bucketKey].Sprints)-1]
 		sprintIDs = append(sprintIDs, sprints[i].ID)
+	}
+	for _, bucket := range buckets {
+		sortPlanningCards(bucket.Sprints)
 	}
 
 	if len(sprintIDs) > 0 {
@@ -159,9 +163,9 @@ func (r *PMSprintRepository) ListPlanningWorkspace(ctx context.Context, workspac
 	}
 
 	return &model.SprintPlanningWorkspace{
-		Buckets:        orderedBuckets,
-		BacklogTasks:   backlogStories,
-		BacklogTotal:   backlogTotal,
+		Buckets:      orderedBuckets,
+		BacklogTasks: backlogStories,
+		BacklogTotal: backlogTotal,
 	}, nil
 }
 
@@ -357,6 +361,37 @@ func planningBucketKey(status string) string {
 	default:
 		return "upcoming"
 	}
+}
+
+func sortPlanningCards(cards []model.SprintPlanningCard) {
+	sort.SliceStable(cards, func(i, j int) bool {
+		left := planningCardSortTime(cards[i].Sprint)
+		right := planningCardSortTime(cards[j].Sprint)
+		if !left.Equal(right) {
+			return left.After(right)
+		}
+		return cards[i].Sprint.CreatedAt.After(cards[j].Sprint.CreatedAt)
+	})
+}
+
+func planningCardSortTime(sprint model.PMSprint) time.Time {
+	switch sprint.Status {
+	case model.PMSprintStatusDone:
+		if sprint.EndDate != nil {
+			return sprint.EndDate.UTC()
+		}
+		if sprint.StartDate != nil {
+			return sprint.StartDate.UTC()
+		}
+	default:
+		if sprint.StartDate != nil {
+			return sprint.StartDate.UTC()
+		}
+		if sprint.EndDate != nil {
+			return sprint.EndDate.UTC()
+		}
+	}
+	return sprint.CreatedAt.UTC()
 }
 
 func (r *PMSprintRepository) computePlanningStats(ctx context.Context, sprintIDs []string) (map[string]model.PMSprintStats, error) {
