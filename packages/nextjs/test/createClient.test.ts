@@ -22,8 +22,10 @@ describe('createClient (Next.js)', () => {
     expect(typeof client!.lead).toBe('function');
     expect(typeof client!.show).toBe('function');
     expect(typeof client!.hide).toBe('function');
+    expect(typeof client!.open).toBe('function');
+    expect(typeof client!.close).toBe('function');
     expect(typeof client!.toggle).toBe('function');
-    expect(typeof client!.showNewMessage).toBe('function');
+    expect(typeof client!.openNewMessage).toBe('function');
     expect(typeof client!.shutdown).toBe('function');
     expect(typeof client!.rawTrack).toBe('function');
     expect(typeof client!.set).toBe('function');

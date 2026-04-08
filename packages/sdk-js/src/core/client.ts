@@ -30,13 +30,15 @@ export type HelpinWidgetController = {
   shutdown(): void;
   show(): void;
   hide(): void;
+  open(): void;
+  close(): void;
   toggle(): void;
-  showMessages(): void;
-  showNewMessage(content?: string): void;
-  showConversation(conversationId: string): void;
-  showArticle(articleId: string, options?: ShowArticleOptions): void;
-  onShow(callback: WidgetCallback): void;
-  onHide(callback: WidgetCallback): void;
+  openMessages(): void;
+  openNewMessage(content?: string): void;
+  openConversation(conversationId: string): void;
+  openArticle(articleId: string, options?: ShowArticleOptions): void;
+  onOpen(callback: WidgetCallback): void;
+  onClose(callback: WidgetCallback): void;
   onUnreadCountChange(callback: WidgetCallback): void;
   onUserEmailSupplied(callback: WidgetCallback): void;
   onConversationStarted(callback: WidgetCallback): void;
@@ -732,40 +734,49 @@ export class HelpinClient {
     this.widgetController?.hide();
   }
 
+  public open(): void {
+    this.ensureWidgetBooted();
+    this.widgetController?.open();
+  }
+
+  public close(): void {
+    this.widgetController?.close();
+  }
+
   public toggle(): void {
     this.ensureWidgetBooted();
     this.widgetController?.toggle();
   }
 
-  public showMessages(): void {
+  public openMessages(): void {
     this.ensureWidgetBooted();
-    this.widgetController?.showMessages();
+    this.widgetController?.openMessages();
   }
 
-  public showNewMessage(content?: string): void {
+  public openNewMessage(content?: string): void {
     this.ensureWidgetBooted();
-    this.widgetController?.showNewMessage(content);
+    this.widgetController?.openNewMessage(content);
   }
 
-  public showConversation(conversationId: string): void {
+  public openConversation(conversationId: string): void {
     this.ensureWidgetBooted();
-    this.widgetController?.showConversation(conversationId);
+    this.widgetController?.openConversation(conversationId);
   }
 
-  public showArticle(
+  public openArticle(
     articleId: string,
     options?: ShowArticleOptions,
   ): void {
     this.ensureWidgetBooted();
-    this.widgetController?.showArticle(articleId, options);
+    this.widgetController?.openArticle(articleId, options);
   }
 
-  public onShow(callback: WidgetCallback): void {
-    this.widgetController?.onShow(callback);
+  public onOpen(callback: WidgetCallback): void {
+    this.widgetController?.onOpen(callback);
   }
 
-  public onHide(callback: WidgetCallback): void {
-    this.widgetController?.onHide(callback);
+  public onClose(callback: WidgetCallback): void {
+    this.widgetController?.onClose(callback);
   }
 
   public onUnreadCountChange(callback: WidgetCallback): void {

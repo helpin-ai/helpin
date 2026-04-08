@@ -33,10 +33,10 @@ await client.id({
 client.track('button_click', { cta: 'pricing' });
 client.lead({ email: 'lead@example.com', name: 'New Lead' });
 client.pageview();
-client.show();
+client.open();
 ```
 
-By default, the widget boots automatically in browser environments when `widgetKey` and `host` are set. Pass `autoBoot: false` to keep the widget dormant until you explicitly call `boot()`, `show()`, `showMessages()`, or `showNewMessage()`.
+By default, the widget boots automatically in browser environments when `widgetKey` and `host` are set. Pass `autoBoot: false` to keep the widget dormant until you explicitly call `boot()`, `show()`, `open()`, `openMessages()`, or `openNewMessage()`.
 
 ## Quick Start (Script Tag)
 
@@ -49,7 +49,7 @@ By default, the widget boots automatically in browser environments when `widgetK
 
   helpin('onLoad', function () {
     helpin('track', 'pageview');
-    helpin('show');
+    helpin('open');
   });
 </script>
 
@@ -121,21 +121,23 @@ Every method below is available on the object returned by `helpinClient(...)`.
 | Method | Signature | Description |
 | --- | --- | --- |
 | `boot` | `(settings?: { widgetKey?, key?, host?, user? }) => void` | Boot or re-boot the widget |
-| `show` | `() => void` | Boot the widget if needed and open it |
-| `hide` | `() => void` | Close the widget |
+| `show` | `() => void` | Make the launcher/widget visible without opening the panel |
+| `hide` | `() => void` | Hide the launcher and close the panel |
+| `open` | `() => void` | Open the chat panel and ensure the widget is visible |
+| `close` | `() => void` | Close the chat panel while keeping the launcher visible |
 | `toggle` | `() => void` | Toggle the widget open or closed |
-| `showMessages` | `() => void` | Open the widget to the messages list |
-| `showNewMessage` | `(content?: string) => void` | Start a new conversation |
-| `showConversation` | `(conversationId: string) => void` | Open a specific conversation |
-| `showArticle` | `(articleId: string, options?: { collectionId?: string; spaceId?: string }) => void` | Display a help-center article |
+| `openMessages` | `() => void` | Open the widget to the messages list |
+| `openNewMessage` | `(content?: string) => void` | Start a new conversation |
+| `openConversation` | `(conversationId: string) => void` | Open a specific conversation |
+| `openArticle` | `(articleId: string, options?: { collectionId?: string; spaceId?: string }) => void` | Display a help-center article |
 | `shutdown` | `() => void` | End the widget session and remove it from the page |
 
 ### Event listeners
 
 | Method | Signature | Description |
 | --- | --- | --- |
-| `onShow` | `(callback) => void` | Widget opened |
-| `onHide` | `(callback) => void` | Widget closed |
+| `onOpen` | `(callback) => void` | Fired when the visitor opens the chat from the widget UI |
+| `onClose` | `(callback) => void` | Fired when the visitor closes the chat from the widget UI |
 | `onUnreadCountChange` | `(callback) => void` | Unread count changed |
 | `onUserEmailSupplied` | `(callback) => void` | Visitor submitted their email |
 | `onConversationStarted` | `(callback) => void` | New conversation created |
