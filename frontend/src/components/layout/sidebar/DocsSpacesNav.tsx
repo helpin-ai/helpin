@@ -158,6 +158,8 @@ export function DocsSpacesNav({
   const { data: spaces } = useDocsSpaces(wsId);
   const deleteSpace = useDeleteDocsSpace(wsId);
   const [editingSpace, setEditingSpace] = useState<DocsSpace | null>(null);
+  const [showCreateSpace, setShowCreateSpace] = useState(false);
+  const [createSpaceType, setCreateSpaceType] = useState<'internal' | 'external_capable'>('internal');
   const [deletingSpace, setDeletingSpace] = useState<DocsSpace | null>(null);
   const { checkRef: checkSpaceTruncation, isTruncated: isSpaceTruncated } = useTruncationDetection();
 
@@ -267,8 +269,20 @@ export function DocsSpacesNav({
     <>
       {internalSpaces.length > 0 && (
         <SidebarGroup className="p-0 pb-3">
-          <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
-            Team Spaces
+          <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90 flex items-center justify-between">
+            <span>Team Spaces</span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="group/plus flex h-4 w-4 items-center justify-center rounded hover:bg-muted transition-all"
+                  onClick={() => { setShowCreateSpace(false); setTimeout(() => { setCreateSpaceType('internal'); setShowCreateSpace(true); }, 0); }}
+                >
+                  <PlusSignIcon className="h-3 w-3 text-muted-foreground/70 group-hover/plus:text-foreground" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right">Create space</TooltipContent>
+            </Tooltip>
           </SidebarGroupLabel>
           <SidebarMenu>
             {internalSpaces.map(renderSpaceItem)}
@@ -277,11 +291,25 @@ export function DocsSpacesNav({
       )}
       {externalSpaces.length > 0 && (
         <SidebarGroup className="p-0 pb-3">
-          <SidebarGroupLabel className="flex h-7 items-center gap-1 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
-            External Spaces
-            <QuickTooltip label="Published to your public help center">
-              <HelpCircleIcon className="h-[10px] w-[10px] text-muted-foreground/50" />
-            </QuickTooltip>
+          <SidebarGroupLabel className="flex h-7 items-center px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90 justify-between">
+            <span className="flex items-center gap-1">
+              External Spaces
+              <QuickTooltip label="Published to your public help center">
+                <HelpCircleIcon className="h-[10px] w-[10px] text-muted-foreground/50" />
+              </QuickTooltip>
+            </span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="group/plus flex h-4 w-4 items-center justify-center rounded hover:bg-muted transition-all"
+                  onClick={() => { setShowCreateSpace(false); setTimeout(() => { setCreateSpaceType('external_capable'); setShowCreateSpace(true); }, 0); }}
+                >
+                  <PlusSignIcon className="h-3 w-3 text-muted-foreground/70 group-hover/plus:text-foreground" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right">Create space</TooltipContent>
+            </Tooltip>
           </SidebarGroupLabel>
           <SidebarMenu>
             {externalSpaces.map(renderSpaceItem)}
@@ -298,6 +326,13 @@ export function DocsSpacesNav({
           }
         }}
         space={editingSpace}
+      />
+
+      <SpaceDialog
+        wsId={wsId}
+        open={showCreateSpace}
+        onOpenChange={setShowCreateSpace}
+        defaultType={createSpaceType}
       />
 
       <ConfirmDialog

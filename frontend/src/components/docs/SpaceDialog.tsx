@@ -23,9 +23,11 @@ interface SpaceDialogProps {
   onOpenChange: (open: boolean) => void
   /** When provided, dialog operates in edit mode */
   space?: DocsSpace | null
+  /** Default type for create mode */
+  defaultType?: 'internal' | 'external_capable'
 }
 
-export function SpaceDialog({ wsId, open, onOpenChange, space }: SpaceDialogProps) {
+export function SpaceDialog({ wsId, open, onOpenChange, space, defaultType }: SpaceDialogProps) {
   const isEdit = !!space
 
   const [name, setName] = useState('')
@@ -48,10 +50,10 @@ export function SpaceDialog({ wsId, open, onOpenChange, space }: SpaceDialogProp
     } else if (open && !space) {
       setName('')
       setTeamAccessMode('all_teams')
-      setType('internal')
+      setType(defaultType ?? 'internal')
       setSelectedTeamIds([])
     }
-  }, [open, space])
+  }, [open, space, defaultType])
 
   const toggleTeam = (teamId: string) => {
     setSelectedTeamIds((prev) =>

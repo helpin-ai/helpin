@@ -67,20 +67,79 @@ func (s *WorkspaceService) Create(ctx context.Context, req model.CreateWorkspace
 		return nil, fmt.Errorf("name and slug are required")
 	}
 
-	// Validate and normalize workspace key.
+	// Validate and normalize workspace key. Auto-generate from name if empty.
 	req.WorkspaceKey = strings.ToUpper(strings.TrimSpace(req.WorkspaceKey))
 	if req.WorkspaceKey == "" {
-		return nil, fmt.Errorf("workspace_key is required")
+		alpha := strings.Map(func(r rune) rune {
+			if r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' {
+				return r
+			}
+			return -1
+		}, req.Name)
+		if len(alpha) >= 2 {
+			req.WorkspaceKey = strings.ToUpper(alpha[:min(3, len(alpha))])
+		} else {
+			req.WorkspaceKey = "WS"
+		}
 	}
 	if !workspaceKeyPattern.MatchString(req.WorkspaceKey) {
 		return nil, fmt.Errorf("workspace_key must be 2-5 uppercase letters")
 	}
-	available, err := s.workspaceRepo.IsWorkspaceKeyAvailable(ctx, req.WorkspaceKey, "")
+	// If key is taken, try appending letters A-Z to find an available one.
+	baseKey := req.WorkspaceKey
+	var orgIDPtr *string
+	if req.OrganizationID != "" {
+		orgIDPtr = &req.OrganizationID
+	}
+	available, err := s.workspaceRepo.IsWorkspaceKeyAvailable(ctx, req.WorkspaceKey, "", orgIDPtr)
 	if err != nil {
 		return nil, fmt.Errorf("check workspace key: %w", err)
 	}
 	if !available {
-		return nil, fmt.Errorf("workspace_key %q is already in use", req.WorkspaceKey)
+		found := false
+		for c := 'A'; c <= 'Z'; c++ {
+			candidate := baseKey + string(c)
+			if len(candidate) > 5 {
+				candidate = baseKey[:4] + string(c)
+			}
+			avail, err := s.workspaceRepo.IsWorkspaceKeyAvailable(ctx, candidate, "", orgIDPtr)
+			if err != nil {
+				return nil, fmt.Errorf("check workspace key: %w", err)
+			}
+			if avail {
+				req.WorkspaceKey = candidate
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("workspace_key %q is already in use and no alternatives available", baseKey)
+		}
+	}
+
+	// Auto-deduplicate slug if taken.
+	baseSlug := req.Slug
+	existingWs, err := s.workspaceRepo.GetBySlug(ctx, req.Slug)
+	if err != nil {
+		return nil, fmt.Errorf("check slug availability: %w", err)
+	}
+	if existingWs != nil {
+		slugFound := false
+		for i := 2; i <= 99; i++ {
+			candidate := fmt.Sprintf("%s-%d", baseSlug, i)
+			ex, err := s.workspaceRepo.GetBySlug(ctx, candidate)
+			if err != nil {
+				return nil, fmt.Errorf("check slug availability: %w", err)
+			}
+			if ex == nil {
+				req.Slug = candidate
+				slugFound = true
+				break
+			}
+		}
+		if !slugFound {
+			return nil, fmt.Errorf("slug %q is already in use and no alternatives available", baseSlug)
+		}
 	}
 
 	websiteURL, err := normalizeWorkspaceWebsiteURL(req.WebsiteURL)
@@ -175,7 +234,7 @@ func (s *WorkspaceService) Update(ctx context.Context, id string, req model.Upda
 		}
 
 		if newKey != current.WorkspaceKey {
-			available, err := s.workspaceRepo.IsWorkspaceKeyAvailable(ctx, newKey, id)
+			available, err := s.workspaceRepo.IsWorkspaceKeyAvailable(ctx, newKey, id, current.OrganizationID)
 			if err != nil {
 				return nil, fmt.Errorf("check workspace key: %w", err)
 			}

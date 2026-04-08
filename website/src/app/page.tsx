@@ -849,6 +849,16 @@ export default function HomePage() {
           HERO
           ══════════════════════════════════ */}
       <section className="relative">
+        {/* Temple geometric pattern — extends behind navbar */}
+        <div className="absolute -top-20 left-0 right-0 -bottom-16 pointer-events-none" aria-hidden="true">
+          <div className="absolute inset-0" style={{
+            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='152' height='152' viewBox='0 0 152 152'%3E%3Cg fill-rule='evenodd'%3E%3Cg id='temple' fill='%234a8c6f' fill-opacity='0.06'%3E%3Cpath d='M152 150v2H0v-2h28v-8H8v-20H0v-2h8V80h42v20h20v42H30v8h90v-8H80v-42h20V80h42v40h8V30h-8v40h-42V50H80V8h40V0h2v8h20v20h8V0h2v150zm-2 0v-28h-8v20h-20v8h28zM82 30v18h18V30H82zm20 18h20v20h18V30h-20V10H82v18h20v20zm0 2v18h18V50h-18zm20-22h18V10h-18v18zm-54 92v-18H50v18h18zm-20-18H28V82H10v38h20v20h38v-18H48v-20zm0-2V82H30v18h18zm-20 22H10v18h18v-18zm54 0v18h38v-20h20V82h-18v20h-20v20H82zm18-20H82v18h18v-18zm2-2h18V82h-18v18zm20 40v-18h18v18h-18zM30 0h-2v8H8v20H0v2h8v40h42V50h20V8H30V0zm20 48h18V30H50v18zm18-20H48v20H28v20H10V30h20V10h38v18zM30 50h18v18H30V50zm-2-40H10v18h18V10z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
+          }} />
+          {/* Radial fade — visible at edges, hidden in center */}
+          <div className="absolute inset-0" style={{
+            background: 'radial-gradient(ellipse at center, var(--color-background) 35%, transparent 75%)',
+          }} />
+        </div>
         <div className="mx-auto w-full max-w-7xl px-6 lg:px-8 pt-16 md:pt-24 pb-0">
 
           {/* Centered text block */}
@@ -1221,7 +1231,7 @@ export default function HomePage() {
 // Hybrid HTML cards + SVG constellation with triple-layer comet signals
 
 const WF_DATA = [
-  { id: 'support',   module: 'Support',    action: 'Ticket triaged',       dot: '#e11d48', svg: { x: 120, y: 75 },  css: { left: '13.3%', top: '15.6%' },  activateAt: 1, signalAt: 2, signalDir: 'in'  as const, packet: 'Login bug' },
+  { id: 'support',   module: 'Support',    action: 'Ticket triaged',       dot: '#e11d48', svg: { x: 120, y: 75 },  css: { left: '13.3%', top: '15.6%' },  activateAt: 1, signalAt: 1, signalDir: 'in'  as const, packet: 'Login bug' },
   { id: 'pm',        module: 'PM',         action: 'Task created',         dot: '#2563eb', svg: { x: 450, y: 32 },  css: { left: '50%',   top: '6.7%' },   activateAt: 4, signalAt: 4, signalDir: 'out' as const, packet: 'Create task' },
   { id: 'crm',       module: 'Sales',      action: 'Account flagged',      dot: '#ea580c', svg: { x: 450, y: 448 }, css: { left: '50%',   top: '93.3%' },  activateAt: 5, signalAt: 5, signalDir: 'out' as const, packet: 'Flag risk' },
   { id: 'docs',      module: 'Docs',       action: 'Guide updated',        dot: '#16a34a', svg: { x: 780, y: 75 },  css: { left: '86.7%', top: '15.6%' },  activateAt: 6, signalAt: 6, signalDir: 'out' as const, packet: 'Update doc' },
@@ -1486,7 +1496,8 @@ function WfMicroUI({ id, on, step }: { id: string; on: boolean; step: number }) 
 }
 
 function AIWorkflowVisual() {
-  const [step, setStep] = useState(-1);
+  // Start at end state (12) so hero looks alive on load, then loop
+  const [step, setStep] = useState(12);
   const [isVisible, setIsVisible] = useState(true);
   const wfRef = useRef<HTMLDivElement>(null);
 
@@ -1504,13 +1515,15 @@ function AIWorkflowVisual() {
 
   useEffect(() => {
     if (!isVisible) return;
+    // Don't override the initial end-state — only reset when re-entering viewport
+    if (step === 12) return;
     const t = setTimeout(() => setStep(0), 600);
     return () => clearTimeout(t);
   }, [isVisible]);
 
   useEffect(() => {
     if (step < 0 || !isVisible) return;
-    const d = [800, 1800, 2000, 1200, 2000, 2000, 2000, 2000, 2000, 2000, 1200, 2000, 1600];
+    const d = [1800, 2200, 200, 1200, 2000, 2000, 2000, 2000, 2000, 2000, 1200, 2000, 3000];
     const t = setTimeout(() => setStep((s) => (s + 1) % 13), d[step]);
     return () => clearTimeout(t);
   }, [step, isVisible]);
