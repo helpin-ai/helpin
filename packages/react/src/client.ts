@@ -4,7 +4,7 @@ import {
   HelpinOptions,
 } from '@helpin-ai/sdk-js';
 
-function createClient(params: HelpinOptions): HelpinClient {
+function createClient(params: HelpinOptions): HelpinClient | null {
   return helpinClient(params);
 }
 

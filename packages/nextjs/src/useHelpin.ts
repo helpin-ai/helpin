@@ -18,8 +18,12 @@ export type HelpinClient = {
   ) => void;
 };
 
-// Create a no-op client for server-side rendering
-const createNoopClient = (): HelpinClient => ({
+const missingClientMessage =
+  '[Helpin] useHelpin() is running without an initialized client. Ensure createClient(...) returned a client and pass it to <HelpinProvider />.';
+
+let hasLoggedMissingClient = false;
+
+const noopClient: HelpinClient = {
   trackPageView: () => {},
   id: async () => {},
   track: () => {},
@@ -27,14 +31,23 @@ const createNoopClient = (): HelpinClient => ({
   rawTrack: () => {},
   set: () => {},
   unset: () => {},
-});
+};
+
+function reportMissingClient(): void {
+  if (typeof window === 'undefined' || hasLoggedMissingClient) {
+    return;
+  }
+  hasLoggedMissingClient = true;
+  console.error(missingClientMessage);
+}
 
 function useHelpin(): HelpinClient {
   const client = useContext(HelpinContext);
 
   // Return no-op client if we're in a server environment or client is not initialized
   if (!client) {
-    return createNoopClient();
+    reportMissingClient();
+    return noopClient;
   }
 
   const id = useCallback(

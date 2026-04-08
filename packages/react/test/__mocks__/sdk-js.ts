@@ -36,6 +36,10 @@ export type EventPayload = Record<string, any>;
 
 export type ClientProperties = Record<string, any>;
 
-export function helpinClient(config: Partial<HelpinOptions>): HelpinClient {
+export function helpinClient(config: Partial<HelpinOptions>): HelpinClient | null {
+  if (!config.widgetKey) {
+    console.error('[Helpin] Widget initialization skipped: widgetKey is required.');
+    return null;
+  }
   return new HelpinClient(config);
 }

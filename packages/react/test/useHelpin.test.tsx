@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { vi } from 'vitest';
 import * as React from 'react';
 import { render, screen } from '@testing-library/react';
 import { renderHook } from '@testing-library/react';
@@ -10,7 +11,7 @@ function createMockClient(): HelpinClient {
   return new HelpinClient({ widgetKey: 'test', host: 'https://test.helpin.ai' });
 }
 
-function createWrapper(client: HelpinClient) {
+function createWrapper(client: HelpinClient | null) {
   return function Wrapper({ children }: { children: React.ReactNode }) {
     return <HelpinProvider client={client}>{children}</HelpinProvider>;
   };
@@ -72,10 +73,15 @@ describe('useHelpin', () => {
     expect(typeof result.current.unset).toBe('function');
   });
 
-  it('should throw when used outside HelpinProvider', () => {
-    expect(() => {
-      renderHook(() => useHelpin());
-    }).toThrow();
+  it('should return a no-op client when used outside HelpinProvider', () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const { result } = renderHook(() => useHelpin());
+
+    expect(typeof result.current.id).toBe('function');
+    expect(typeof result.current.track).toBe('function');
+    expect(errorSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
   });
 
   it('should work inside a component tree with HelpinProvider', () => {

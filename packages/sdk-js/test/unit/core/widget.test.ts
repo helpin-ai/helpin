@@ -99,6 +99,18 @@ describe('WidgetManager', () => {
       expect(() => widget.boot({ } as any)).not.toThrow();
     });
 
+    it('logs and skips boot when widget key is missing', () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      widget.boot({ host: 'https://test.helpin.ai' });
+
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalledWith(
+        '[Helpin] Widget boot skipped: widgetKey is required.',
+      );
+      errorSpy.mockRestore();
+    });
+
     it('uses cached config and skips the network fetch', async () => {
       (localStorage.getItem as any).mockImplementation((key: string) => {
         if (key === 'helpin_wc_test-key') {

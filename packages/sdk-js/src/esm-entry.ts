@@ -9,31 +9,21 @@ export type { Config as HelpinOptions, UserProps, EventPayload, ClientProperties
 
 import { HelpinClient } from './core/client';
 import { WidgetManager } from './core/widget';
-import { defaultConfig } from './core/config';
 import type { Config } from './core/types';
-import { convertKeysToCamelCase, isWindowAvailable } from './utils/common';
+import { createHelpinClient } from './core/create-client';
+import { isWindowAvailable } from './utils/common';
 
 const widgetManager = new WidgetManager();
 
-export function helpinClient(config: Partial<Config>): HelpinClient {
-  const cleanConfig = JSON.parse(JSON.stringify(config));
-  const camelCaseConfig = convertKeysToCamelCase(cleanConfig);
-  const mergedConfig: Config = {
-    ...defaultConfig,
-    ...camelCaseConfig,
-  } as Config;
-
-  if (!mergedConfig.host) {
-    throw new Error('Host is required!');
+export function helpinClient(config: Partial<Config>): HelpinClient | null {
+  const client = createHelpinClient(config);
+  if (!client) {
+    return null;
   }
-  if (!mergedConfig.widgetKey) {
-    throw new Error('Widget key is required!');
-  }
-
-  const client = new HelpinClient(mergedConfig);
+  const mergedConfig = client.getConfig();
 
   // Auto-boot the chat widget in browser environments
-  if (isWindowAvailable() && mergedConfig.widgetKey) {
+  if (isWindowAvailable() && mergedConfig?.widgetKey && mergedConfig.host) {
     widgetManager.boot({
       widgetKey: mergedConfig.widgetKey,
       host: mergedConfig.host,

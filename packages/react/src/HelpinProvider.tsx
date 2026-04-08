@@ -5,7 +5,7 @@ import { PropsWithChildren } from 'react';
 
 // Define the props to accept the client
 export interface HelpinProviderProps {
-  client: HelpinClient;
+  client: HelpinClient | null;
 }
 
 // The functional component that provides the Helpin client context

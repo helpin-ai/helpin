@@ -18,15 +18,34 @@ export type HelpinClient = {
   ) => void;
 };
 
-/**
- * See for details http://jitsu.com/docs/sending-data/js-sdk/react
- */
+const missingClientMessage =
+  '[Helpin] useHelpin() is running without an initialized client. Wrap your app in <HelpinProvider client={createClient(...)} /> and ensure widgetKey and host are defined.';
+
+let hasLoggedMissingClient = false;
+
+const noopClient: HelpinClient = {
+  trackPageView: () => {},
+  id: async () => {},
+  track: () => {},
+  lead: () => {},
+  rawTrack: () => {},
+  set: () => {},
+  unset: () => {},
+};
+
+function reportMissingClient(): void {
+  if (hasLoggedMissingClient) {
+    return;
+  }
+  hasLoggedMissingClient = true;
+  console.error(missingClientMessage);
+}
+
 function useHelpin(): HelpinClient {
   const client = useContext(HelpinContext);
   if (!client) {
-    throw new Error(
-      'Before calling useHelpin() hook, please wrap your component into <JitsuProvider />. Read more in http://jitsu.com/docs/sending-data/js-sdk/react',
-    );
+    reportMissingClient();
+    return noopClient;
   }
 
   const id = useCallback(
