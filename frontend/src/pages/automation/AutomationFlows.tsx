@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowReloadHorizontalIcon, ArrowRight01Icon, DashboardSpeed01Icon, PlayIcon, SecurityCheckIcon } from '@/lib/icons';
+import { ArrowRight01Icon, MoreHorizontalIcon, PlayIcon } from '@/lib/icons';
 import { toast } from 'sonner';
-import { AutomationShell } from '@/components/automation/AutomationShell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -15,6 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useAutomationFlows, useAutomationOverview, useAgents, useWorkflows } from '@/hooks/queries';
 import { useWorkspaceSettings } from '@/hooks/queries/useSettings';
+import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useTitle } from '@/hooks/useTitle';
 import { automationService } from '@/lib/services/automationService';
 import { gitService } from '@/lib/services/gitService';
@@ -351,12 +351,6 @@ function describeThen(rule: AutomationRule, statesById: Map<string, WorkflowStat
   return rule.action_type.replaceAll('_', ' ');
 }
 
-function describeUsing(rule: AutomationRule, agentNames: Map<string, string>) {
-  if (rule.action_type !== 'start_agent_run') return 'No agent';
-  const agentId = stringValue(rule.action_config?.agent_id);
-  return agentNames.get(agentId) ?? 'Unknown agent';
-}
-
 function relativeTime(value?: string) {
   if (!value) return 'No recent activity';
   const date = new Date(value);
@@ -366,15 +360,6 @@ function relativeTime(value?: string) {
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
   return `${Math.floor(diff / 86_400_000)}d ago`;
-}
-
-function flowStatus(item?: AutomationInventoryItem) {
-  if (!item) return 'No execution data yet';
-  if (!item.enabled) return 'Flow disabled';
-  if (item.health.last_error_at) return `Last error ${relativeTime(item.health.last_error_at)}`;
-  if (item.health.last_success_at) return `Last success ${relativeTime(item.health.last_success_at)}`;
-  if (item.health.last_seen_at) return `Last matched ${relativeTime(item.health.last_seen_at)}`;
-  return 'No recent activity';
 }
 
 function draftSentence(draft: FlowDraft, workflows: WorkflowWithStates[], statesById: Map<string, WorkflowState>, agents: Map<string, string>) {
@@ -408,125 +393,192 @@ function draftSentence(draft: FlowDraft, workflows: WorkflowWithStates[], states
   return { when, conditions, then, using, on };
 }
 
-function SystemAutomationRow({ item }: { item: AutomationInventoryItem }) {
-  const hasError = Boolean(item.health?.last_error_at);
-  const hasSuccess = Boolean(item.health?.last_success_at);
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-md border border-border/60 bg-muted/30 px-4 py-3">
-      <div className="min-w-0 space-y-0.5">
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="text-sm font-medium">{item.title}</p>
-          <Badge variant="outline" className="text-[10px]">{item.scope_label}</Badge>
-        </div>
-        <p className="text-xs text-muted-foreground">{item.description}</p>
-      </div>
-      <div className="flex shrink-0 items-center gap-1.5">
-        <span className={cn(
-          'h-1.5 w-1.5 rounded-full',
-          hasError ? 'bg-rose-500' : hasSuccess ? 'bg-emerald-500' : 'bg-muted-foreground/30',
-        )} />
-        <span className="whitespace-nowrap text-[11px] text-muted-foreground">{flowStatus(item)}</span>
-      </div>
-    </div>
-  );
+function describeFlowTitle(rule: AutomationRule, statesById: Map<string, WorkflowState>, agentNames: Map<string, string>) {
+  const triggerStateId = stringValue(rule.trigger_config?.state_id);
+  const stateName = statesById.get(triggerStateId)?.name;
+
+  let triggerPart = '';
+  if (rule.trigger_type === 'task.state_entered' && stateName) {
+    triggerPart = `Story enters ${stateName}`;
+  } else if (rule.trigger_type === 'agent_run.approved' && stateName) {
+    triggerPart = `Approved in ${stateName}`;
+  } else if (rule.trigger_type.startsWith('github.pull_request')) {
+    const action = rule.trigger_type === 'github.pull_request_merged' ? 'merged'
+      : rule.trigger_type === 'github.pull_request_opened' ? 'opened'
+      : 'review requested';
+    const baseBranch = stringValue(rule.trigger_config?.base_branch);
+    triggerPart = `PR ${action}${baseBranch ? ` to ${baseBranch}` : ''}`;
+  } else if (rule.trigger_type === 'github.push') {
+    triggerPart = 'Push arrives';
+  } else if (rule.trigger_type === 'github.release_published') {
+    triggerPart = 'Release published';
+  } else if (rule.trigger_type === 'github.check_suite_completed') {
+    triggerPart = 'Check suite completes';
+  } else if (rule.trigger_type === 'cron') {
+    triggerPart = 'Schedule ticks';
+  } else {
+    triggerPart = triggerLabel(rule.trigger_type);
+  }
+
+  let actionPart = '';
+  if (rule.action_type === 'start_agent_run') {
+    const agentId = stringValue(rule.action_config?.agent_id);
+    const agentName = agentNames.get(agentId);
+    actionPart = agentName ? `Run ${agentName}` : 'Start agent';
+  } else if (rule.action_type === 'move_to_state') {
+    const targetStateId = stringValue(rule.action_config?.target_state_id);
+    const targetStateName = statesById.get(targetStateId)?.name;
+    actionPart = targetStateName ? `Move to ${targetStateName}` : 'Move task state';
+  } else if (rule.action_type === 'merge_branch') {
+    const branch = stringValue(rule.action_config?.target_branch);
+    actionPart = branch ? `Merge into ${branch}` : 'Merge branch';
+  } else {
+    actionPart = rule.action_type.replaceAll('_', ' ');
+  }
+
+  return `${triggerPart} \u2192 ${actionPart}`;
 }
 
-function FlowCard({
+function flowHasError(rule: AutomationRule, agentNames: Map<string, string>) {
+  if (rule.action_type !== 'start_agent_run') return false;
+  const agentId = stringValue(rule.action_config?.agent_id);
+  return !agentId || !agentNames.has(agentId);
+}
+
+function FlowRow({
   rule,
   statesById,
-  workflowName,
   agentNames,
+  teamName,
   healthItem,
   workspaceSlug,
+  canEdit,
   onEdit,
   onToggle,
   onDelete,
 }: {
   rule: AutomationRule;
   statesById: Map<string, WorkflowState>;
-  workflowName?: string;
   agentNames: Map<string, string>;
+  teamName?: string;
   healthItem?: AutomationInventoryItem;
   workspaceSlug?: string;
+  canEdit: boolean;
   onEdit: (rule: AutomationRule) => void;
   onToggle: (rule: AutomationRule) => void;
   onDelete: (rule: AutomationRule) => void;
 }) {
-  const activityHref = buildAutomationActivityPath(workspaceSlug, { page: 1, source: 'automation_rule', reference_id: rule.id }, 'trigger-executions');
-  const hasError = Boolean(healthItem?.health.last_error_at);
+  const hasError = flowHasError(rule, agentNames);
+  const hasHealthError = Boolean(healthItem?.health.last_error_at);
   const hasSuccess = Boolean(healthItem?.health.last_success_at);
+  const title = describeFlowTitle(rule, statesById, agentNames);
   const filters = describeFilters(rule, statesById);
   const hasFilters = filters !== 'No additional filters';
+  const agentId = stringValue(rule.action_config?.agent_id);
+  const agentName = agentNames.get(agentId);
+  const agentMissing = rule.action_type === 'start_agent_run' && (!agentId || !agentNames.has(agentId));
+
+  const lastRunLabel = (() => {
+    if (healthItem?.health.last_success_at) return `Last run ${relativeTime(healthItem.health.last_success_at)}`;
+    if (healthItem?.health.last_seen_at) return `Last run ${relativeTime(healthItem.health.last_seen_at)}`;
+    return 'Never run';
+  })();
 
   return (
-    <div className="rounded-lg border border-border/60 bg-card transition-colors hover:border-border">
-      {/* Header: name + badges + status */}
-      <div className="flex items-start justify-between gap-3 px-4 py-3">
-        <div className="min-w-0 space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-sm font-medium">{rule.name}</p>
-            <Badge variant={rule.enabled ? 'secondary' : 'outline'} className="shrink-0 text-[10px]">
-              {rule.enabled ? 'Active' : 'Off'}
-            </Badge>
-            {workflowName && (
-              <Badge variant="outline" className="shrink-0 text-[10px]">{workflowName}</Badge>
+    <div
+      className={cn(
+        'rounded-lg border bg-card px-4 py-3 transition-colors',
+        hasError
+          ? 'border-destructive/50 bg-destructive/5'
+          : 'border-border/60 hover:border-border',
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 space-y-2">
+          {/* Title row */}
+          <div className="flex items-center gap-2">
+            <span
+              className={cn(
+                'mt-0.5 h-2 w-2 shrink-0 rounded-full',
+                hasError || hasHealthError
+                  ? 'bg-destructive'
+                  : hasSuccess
+                    ? 'bg-emerald-500'
+                    : 'bg-muted-foreground/30',
+              )}
+            />
+            <p className="text-sm font-medium text-foreground/90">{title}</p>
+            {agentMissing && (
+              <>
+                <Badge variant="destructive" className="text-xs">Missing agent</Badge>
+                <Badge variant="destructive" className="text-xs">Unknown agent</Badge>
+              </>
             )}
           </div>
-          {rule.description?.trim() && (
-            <p className="text-xs text-muted-foreground">{rule.description}</p>
+
+          {/* Badges row */}
+          <div className="flex flex-wrap items-center gap-1.5 pl-4">
+            <Badge variant="secondary" className="text-xs font-normal">
+              {rule.trigger_type.replace('github.', '').replaceAll('_', '.')}
+              {hasFilters && (
+                <span className="ml-1 text-muted-foreground">| {filters}</span>
+              )}
+            </Badge>
+            <ArrowRight01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
+            {rule.action_type === 'start_agent_run' && agentName ? (
+              <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-xs font-normal text-emerald-600 dark:text-emerald-400">
+                {agentName}
+              </Badge>
+            ) : rule.action_type === 'move_to_state' ? (
+              <Badge variant="outline" className="border-blue-500/30 bg-blue-500/10 text-xs font-normal text-blue-600 dark:text-blue-400">
+                {describeThen(rule, statesById)}
+              </Badge>
+            ) : rule.action_type === 'merge_branch' ? (
+              <Badge variant="outline" className="border-purple-500/30 bg-purple-500/10 text-xs font-normal text-purple-600 dark:text-purple-400">
+                {describeThen(rule, statesById)}
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="text-xs font-normal">
+                {describeThen(rule, statesById)}
+              </Badge>
+            )}
+            {teamName && (
+              <Badge variant="outline" className="text-xs font-normal">{teamName}</Badge>
+            )}
+          </div>
+        </div>
+
+        {/* Right side: last run + menu */}
+        <div className="flex shrink-0 items-center gap-2 pt-0.5">
+          <span className="whitespace-nowrap text-xs text-muted-foreground">{lastRunLabel}</span>
+          {canEdit && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                  <MoreHorizontalIcon className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => onEdit(rule)}>Edit</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onToggle(rule)}>
+                  {rule.enabled ? 'Disable' : 'Enable'}
+                </DropdownMenuItem>
+                {workspaceSlug && (
+                  <DropdownMenuItem asChild>
+                    <a href={buildAutomationActivityPath(workspaceSlug, { page: 1, source: 'automation_rule', reference_id: rule.id }, 'trigger-executions')}>
+                      Activity
+                    </a>
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onClick={() => onDelete(rule)}
+                >
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
-          <span className={cn(
-            'h-1.5 w-1.5 rounded-full',
-            hasError ? 'bg-rose-500' : hasSuccess ? 'bg-emerald-500' : 'bg-muted-foreground/30',
-          )} />
-          <span className="whitespace-nowrap text-[11px] text-muted-foreground">{flowStatus(healthItem)}</span>
-        </div>
-      </div>
-
-      {/* Flow summary: trigger → conditions → action · agent */}
-      <div className="flex flex-wrap items-center gap-1.5 border-t border-border/40 bg-muted/20 px-4 py-2">
-        <span className="inline-flex items-center rounded border border-border/60 bg-background px-2 py-0.5 text-xs font-medium">
-          {triggerLabel(rule.trigger_type)}
-        </span>
-        {hasFilters && (
-          <>
-            <ArrowRight01Icon className="h-3 w-3 shrink-0 text-muted-foreground/40" />
-            <span className="text-xs text-muted-foreground">{filters}</span>
-          </>
-        )}
-        <ArrowRight01Icon className="h-3 w-3 shrink-0 text-muted-foreground/40" />
-        <span className="text-xs">{describeThen(rule, statesById)}</span>
-        {rule.action_type === 'start_agent_run' && (
-          <>
-            <span className="text-muted-foreground/40">·</span>
-            <span className="text-xs text-muted-foreground">{describeUsing(rule, agentNames)}</span>
-          </>
-        )}
-      </div>
-
-      {/* Footer: activity link (left) | actions (right) */}
-      <div className="flex items-center justify-between gap-3 border-t border-border/40 px-4 py-2">
-        <a href={activityHref} className="text-xs text-muted-foreground hover:text-foreground">
-          Activity
-        </a>
-        <div className="flex items-center gap-0.5">
-          <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => onEdit(rule)}>
-            Edit
-          </Button>
-          <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => onToggle(rule)}>
-            {rule.enabled ? 'Disable' : 'Enable'}
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
-            onClick={() => onDelete(rule)}
-          >
-            Delete
-          </Button>
         </div>
       </div>
     </div>
@@ -856,6 +908,7 @@ export function AutomationFlowsPage({
   const { data: agents = [] } = useAgents(workspaceId);
   const { data: workflows = [] } = useWorkflows(workspaceId);
   const rulesQuery = useAutomationFlows(workspaceId);
+  const { teams } = useWorkspaceTeams(workspaceId);
   const tasksQuery = useQuery({
     queryKey: ['pm', workspaceId, 'flow-composer', 'tasks'],
     queryFn: async () => unwrap(await pmTaskService.list(workspaceId, { archived: false, per_page: 100 })),
@@ -887,7 +940,6 @@ export function AutomationFlowsPage({
   const epics = epicsQuery.data ?? [];
   const repositories = repositoriesQuery.data ?? [];
   const statesById = useMemo(() => buildStateIndex(workflows), [workflows]);
-  const workflowNames = useMemo(() => new Map(workflows.map((workflow) => [workflow.workflow.id, workflow.workflow.name])), [workflows]);
   const agentNames = useMemo(() => new Map(agents.map((agent) => [agent.id, agent.name])), [agents]);
   const flowHealth = useMemo(() => {
     const map = new Map<string, AutomationInventoryItem>();
@@ -898,14 +950,37 @@ export function AutomationFlowsPage({
     }
     return map;
   }, [inventoryQuery.data?.items]);
-  const systemAutomations = useMemo(
-    () => (inventoryQuery.data?.items ?? []).filter((item) => item.kind === 'built_in_automation'),
-    [inventoryQuery.data?.items],
-  );
   const highlightedFlows = useMemo(
     () => search.show_trigger ? authoredFlows.filter((rule) => rule.trigger_type === search.show_trigger) : authoredFlows,
     [authoredFlows, search.show_trigger],
   );
+  const teamNamesById = useMemo(() => new Map(teams.map((t) => [t.id, t.name])), [teams]);
+  const [activeTab, setActiveTab] = useState<string>('all');
+  const teamTabs = useMemo(() => {
+    const counts = new Map<string, number>();
+    let uncategorized = 0;
+    for (const rule of highlightedFlows) {
+      if (rule.team_id && teamNamesById.has(rule.team_id)) {
+        counts.set(rule.team_id, (counts.get(rule.team_id) ?? 0) + 1);
+      } else {
+        uncategorized++;
+      }
+    }
+    const tabs: { id: string; label: string; count: number }[] = [];
+    for (const [teamId, count] of counts) {
+      tabs.push({ id: teamId, label: teamNamesById.get(teamId) ?? teamId, count });
+    }
+    tabs.sort((a, b) => a.label.localeCompare(b.label));
+    if (uncategorized > 0) {
+      tabs.push({ id: '__uncategorized__', label: 'Uncategorized', count: uncategorized });
+    }
+    return tabs;
+  }, [highlightedFlows, teamNamesById]);
+  const filteredFlows = useMemo(() => {
+    if (activeTab === 'all') return highlightedFlows;
+    if (activeTab === '__uncategorized__') return highlightedFlows.filter((r) => !r.team_id || !teamNamesById.has(r.team_id));
+    return highlightedFlows.filter((r) => r.team_id === activeTab);
+  }, [activeTab, highlightedFlows, teamNamesById]);
 
   const loading = settingsQuery.isLoading || inventoryQuery.isLoading || rulesQuery.isLoading || tasksQuery.isLoading || epicsQuery.isLoading || repositoriesQuery.isLoading;
 
@@ -1008,17 +1083,7 @@ export function AutomationFlowsPage({
   }
 
   return (
-    <AutomationShell
-      title="Automation Flows"
-      description="Connect events to actions. Each flow watches for a trigger, checks conditions, then runs an agent or workflow operation."
-      actions={
-        permissions.canManageSettings ? (
-          <Button size="sm" onClick={openCreateComposer}>
-            Create flow
-          </Button>
-        ) : undefined
-      }
-    >
+    <div className="mx-auto max-w-6xl space-y-6">
       <FlowComposer
         open={composerOpen}
         mode={editingRuleId ? 'edit' : 'create'}
@@ -1041,95 +1106,87 @@ export function AutomationFlowsPage({
         onSave={handleSave}
       />
 
+      {/* Page header */}
+      <div className="flex items-start justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight">Automation flows</h1>
+          <p className="text-sm text-muted-foreground">Event-driven automations that trigger agents and workflow actions.</p>
+        </div>
+        {permissions.canManageSettings && (
+          <Button size="sm" variant="outline" onClick={openCreateComposer}>
+            + New flow
+          </Button>
+        )}
+      </div>
+
       {loading ? (
-        <div className="space-y-4">
-          <Skeleton className="h-40 w-full rounded-xl" />
-          <Skeleton className="h-96 w-full rounded-xl" />
+        <div className="space-y-3">
+          <Skeleton className="h-10 w-80 rounded-lg" />
+          <Skeleton className="h-20 w-full rounded-lg" />
+          <Skeleton className="h-20 w-full rounded-lg" />
+          <Skeleton className="h-20 w-full rounded-lg" />
         </div>
       ) : (
         <>
-          {search.show_trigger && (
-            <Card className="border-border/60 bg-card/80">
-              <CardContent className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
-                <div className="space-y-1">
-                  <p className="text-sm font-medium">Showing flows using {search.show_trigger_title || triggerLabel(search.show_trigger)}</p>
-                  <p className="text-sm text-muted-foreground">
-                    This filter narrows the list to one trigger family, but the composer still lets you create any supported flow.
-                  </p>
-                </div>
-                <Button type="button" variant="ghost" size="sm" onClick={() => onSearchChange({ show_trigger: undefined, show_trigger_title: undefined })}>
-                  Clear filter
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-
-          <Card className="border-border/60 bg-card/80">
-            <CardHeader className="pb-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <ArrowReloadHorizontalIcon className="h-4 w-4 text-muted-foreground" />
-                  <CardTitle className="text-base">User flows</CardTitle>
-                  <Badge variant="outline" className="text-[10px]">{highlightedFlows.length}</Badge>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {highlightedFlows.length > 0 ? highlightedFlows.map((rule) => (
-                <FlowCard
-                  key={rule.id}
-                  rule={rule}
-                  statesById={statesById}
-                  workflowName={rule.workflow_id ? workflowNames.get(rule.workflow_id) : undefined}
-                  agentNames={agentNames}
-                  healthItem={flowHealth.get(rule.id)}
-                  workspaceSlug={workspaceSlug}
-                  onEdit={openEditComposer}
-                  onToggle={handleToggle}
-                  onDelete={handleDelete}
-                />
-              )) : (
-                <div className="rounded-md border border-dashed border-border/70 px-6 py-10 text-center">
-                  <PlayIcon className="mx-auto mb-3 h-6 w-6 text-muted-foreground" />
-                  <p className="text-sm font-medium">No user-authored flows yet</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Start with a trigger, then connect it to an action, an agent, and a target in the composer.
-                  </p>
-                </div>
+          {/* Category tabs */}
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setActiveTab('all')}
+              className={cn(
+                'rounded-full px-3 py-1 text-sm font-medium transition-colors',
+                activeTab === 'all'
+                  ? 'bg-foreground text-background'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground',
               )}
-            </CardContent>
-          </Card>
+            >
+              All ({highlightedFlows.length})
+            </button>
+            {teamTabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={cn(
+                  'rounded-full px-3 py-1 text-sm font-medium transition-colors',
+                  activeTab === tab.id
+                    ? 'bg-foreground text-background'
+                    : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                )}
+              >
+                {tab.label} ({tab.count})
+              </button>
+            ))}
+          </div>
 
-          <Card className="border-border/60 bg-card/80">
-            <CardHeader className="pb-3">
-              <div className="flex items-center gap-2">
-                <SecurityCheckIcon className="h-4 w-4 text-muted-foreground" />
-                <CardTitle className="text-base">System automations</CardTitle>
-                <Badge variant="outline" className="text-[10px]">{systemAutomations.length}</Badge>
+          {/* Flow list */}
+          <div className="space-y-2">
+            {filteredFlows.length > 0 ? filteredFlows.map((rule) => (
+              <FlowRow
+                key={rule.id}
+                rule={rule}
+                statesById={statesById}
+                agentNames={agentNames}
+                teamName={rule.team_id ? teamNamesById.get(rule.team_id) : undefined}
+                healthItem={flowHealth.get(rule.id)}
+                workspaceSlug={workspaceSlug}
+                canEdit={permissions.canManageSettings}
+                onEdit={openEditComposer}
+                onToggle={handleToggle}
+                onDelete={handleDelete}
+              />
+            )) : (
+              <div className="rounded-lg border border-dashed border-border/70 px-6 py-12 text-center">
+                <PlayIcon className="mx-auto mb-3 h-6 w-6 text-muted-foreground" />
+                <p className="text-sm font-medium">No automation flows yet</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Create a flow to connect events to agents and workflow actions.
+                </p>
               </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {systemAutomations.length > 0 ? systemAutomations.map((item) => (
-                <SystemAutomationRow key={item.inventory_id} item={item} />
-              )) : (
-                <div className="rounded-md border border-dashed border-border/70 px-6 py-8 text-center text-sm text-muted-foreground">
-                  No system automations are configured for this workspace yet.
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {!permissions.canManageSettings && (
-            <Card className="border-border/60 bg-card/80">
-              <CardContent className="flex items-center gap-3 px-5 py-4 text-sm text-muted-foreground">
-                <DashboardSpeed01Icon className="h-4 w-4" />
-                You can review flows here, but only workspace managers can change automation behavior.
-              </CardContent>
-            </Card>
-          )}
-
+            )}
+          </div>
         </>
       )}
-    </AutomationShell>
+    </div>
   );
 }

@@ -917,6 +917,9 @@ func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerCo
 		if triggerType == model.TriggerCron && (targetType == "" || targetID == "") {
 			return fmt.Errorf("target_type and target_id are required in action_config for %s when trigger_type is %s", actionType, triggerType)
 		}
+		if isGitHubAutomationTrigger(triggerType) && (targetType == "" || targetID == "") {
+			return fmt.Errorf("target_type and target_id are required in action_config for %s when trigger_type is %s", actionType, triggerType)
+		}
 	case model.ActionMoveToState:
 		var cfg model.ActionConfigMoveToState
 		if err := json.Unmarshal(actionConfig, &cfg); err != nil {
@@ -948,6 +951,20 @@ func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerCo
 	}
 
 	return nil
+}
+
+func isGitHubAutomationTrigger(triggerType string) bool {
+	switch triggerType {
+	case model.TriggerGitHubPush,
+		model.TriggerGitHubPROpened,
+		model.TriggerGitHubPRMerged,
+		model.TriggerGitHubPRReviewReq,
+		model.TriggerGitHubReleasePub,
+		model.TriggerGitHubCheckSuite:
+		return true
+	default:
+		return false
+	}
 }
 
 func matchGitHubPushConfig(cfg model.TriggerConfigGitHubPush, event model.AutomationEvent) bool {
