@@ -53,6 +53,7 @@ export type ClientProperties = {
 type CamelCaseConfig = {
   widgetKey: string;
   host: string;
+  autoBoot?: boolean;
   cookieDomain?: string;
   cookieName?: string;
   logLevel?: LogLevel;
@@ -83,6 +84,7 @@ type CamelCaseConfig = {
 type SnakeCaseConfig = {
   widget_key: string;
   host: string;
+  auto_boot?: boolean;
   cookie_domain?: string;
   cookie_name?: string;
   log_level?: LogLevel;

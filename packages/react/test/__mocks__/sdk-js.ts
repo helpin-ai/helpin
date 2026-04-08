@@ -12,6 +12,12 @@ export class HelpinClient {
   track = (_typeName: string, _payload?: any): void => {};
   lead = (_payload: any, _directSend?: boolean): void => {};
   pageview = (): void => {};
+  show = (): void => {};
+  hide = (): void => {};
+  toggle = (): void => {};
+  showMessages = (): void => {};
+  showNewMessage = (_content?: string): void => {};
+  shutdown = (): void => {};
   set = (_properties: Record<string, any>, _opts?: any): void => {};
   unset = (_propertyName: string, _opts?: any): void => {};
   rawTrack = (_payload: any): void => {};

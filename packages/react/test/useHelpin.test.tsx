@@ -73,6 +73,20 @@ describe('useHelpin', () => {
     expect(typeof result.current.unset).toBe('function');
   });
 
+  it('should return widget control methods', () => {
+    const client = createMockClient();
+    const { result } = renderHook(() => useHelpin(), {
+      wrapper: createWrapper(client),
+    });
+
+    expect(typeof result.current.show).toBe('function');
+    expect(typeof result.current.hide).toBe('function');
+    expect(typeof result.current.toggle).toBe('function');
+    expect(typeof result.current.showMessages).toBe('function');
+    expect(typeof result.current.showNewMessage).toBe('function');
+    expect(typeof result.current.shutdown).toBe('function');
+  });
+
   it('should return a no-op client when used outside HelpinProvider', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -80,6 +94,12 @@ describe('useHelpin', () => {
 
     expect(typeof result.current.id).toBe('function');
     expect(typeof result.current.track).toBe('function');
+    expect(typeof result.current.show).toBe('function');
+    expect(typeof result.current.hide).toBe('function');
+    expect(typeof result.current.toggle).toBe('function');
+    expect(typeof result.current.showMessages).toBe('function');
+    expect(typeof result.current.showNewMessage).toBe('function');
+    expect(typeof result.current.shutdown).toBe('function');
     expect(errorSpy).toHaveBeenCalled();
     errorSpy.mockRestore();
   });

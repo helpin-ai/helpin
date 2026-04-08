@@ -1,4 +1,4 @@
-import { HelpinClient } from './client';
+import { HelpinClient, type HelpinWidgetController } from './client';
 import { defaultConfig } from './config';
 import type { Config } from './types';
 import { convertKeysToCamelCase } from '../utils/common';
@@ -41,6 +41,7 @@ export function normalizeClientConfig(config: Partial<Config>): Config {
 
 export function createHelpinClient(
   config: Partial<Config>,
+  widgetController: HelpinWidgetController | null = null,
 ): HelpinClient | null {
   const mergedConfig = normalizeClientConfig(config);
 
@@ -53,7 +54,11 @@ export function createHelpinClient(
   }
 
   try {
-    return new HelpinClient(mergedConfig);
+    const client = new HelpinClient(mergedConfig, widgetController);
+    if (widgetController && mergedConfig.autoBoot !== false) {
+      client.boot();
+    }
+    return client;
   } catch (error) {
     logClientInitializationError(
       'Widget initialization failed.',

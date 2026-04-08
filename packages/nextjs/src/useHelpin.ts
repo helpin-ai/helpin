@@ -7,6 +7,12 @@ export type HelpinClient = {
   id: (userData: UserProps, doNotSendEvent?: boolean) => Promise<void>;
   track: (typeName: string, payload?: EventPayload) => void;
   lead: (payload: EventPayload, directSend?: boolean) => void;
+  show: () => void;
+  hide: () => void;
+  toggle: () => void;
+  showMessages: () => void;
+  showNewMessage: (content?: string) => void;
+  shutdown: () => void;
   rawTrack: (payload: any) => void;
   set: (
     properties: Record<string, any>,
@@ -28,6 +34,12 @@ const noopClient: HelpinClient = {
   id: async () => {},
   track: () => {},
   lead: () => {},
+  show: () => {},
+  hide: () => {},
+  toggle: () => {},
+  showMessages: () => {},
+  showNewMessage: () => {},
+  shutdown: () => {},
   rawTrack: () => {},
   set: () => {},
   unset: () => {},
@@ -57,7 +69,7 @@ function useHelpin(): HelpinClient {
   );
 
   const trackPageView = useCallback(
-    (): void => client.track('pageview'),
+    (): void => client.pageview(),
     [client],
   );
 
@@ -75,6 +87,36 @@ function useHelpin(): HelpinClient {
 
   const rawTrack = useCallback(
     (payload: any): void => client.rawTrack(payload),
+    [client],
+  );
+
+  const show = useCallback(
+    (): void => client.show(),
+    [client],
+  );
+
+  const hide = useCallback(
+    (): void => client.hide(),
+    [client],
+  );
+
+  const toggle = useCallback(
+    (): void => client.toggle(),
+    [client],
+  );
+
+  const showMessages = useCallback(
+    (): void => client.showMessages(),
+    [client],
+  );
+
+  const showNewMessage = useCallback(
+    (content?: string): void => client.showNewMessage(content),
+    [client],
+  );
+
+  const shutdown = useCallback(
+    (): void => client.shutdown(),
     [client],
   );
 
@@ -106,6 +148,12 @@ function useHelpin(): HelpinClient {
     track,
     lead,
     trackPageView,
+    show,
+    hide,
+    toggle,
+    showMessages,
+    showNewMessage,
+    shutdown,
     rawTrack,
     set,
     unset,

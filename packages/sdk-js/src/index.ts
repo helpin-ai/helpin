@@ -11,7 +11,7 @@ import { isAMDEnvironment, getAMDDefine } from './utils/amd-detector';
 const widgetManager = new WidgetManager();
 
 function helpinClient(config: Partial<Config>): HelpinClient | null {
-  return createHelpinClient(config);
+  return createHelpinClient(config, widgetManager);
 }
 
 function initFromScript(script: HTMLScriptElement): HelpinClient | null {
@@ -26,6 +26,12 @@ function initFromScript(script: HTMLScriptElement): HelpinClient | null {
         : script.getAttribute('data-auto-pageview') === 'true'
           ? true
           : undefined, // Let default config handle it
+    autoBoot:
+      script.getAttribute('data-auto-boot') === 'false'
+        ? false
+        : script.getAttribute('data-auto-boot') === 'true'
+          ? true
+          : undefined,
     useBeaconApi: script.getAttribute('data-use-beacon-api') === 'true',
     forceUseFetch: script.getAttribute('data-force-use-fetch') === 'true',
     gaHook: script.getAttribute('data-ga-hook') === 'true',
@@ -93,14 +99,6 @@ function initFromScript(script: HTMLScriptElement): HelpinClient | null {
   }
 
   initializeNamespacedClient(namespace, client);
-
-  // Auto-boot widget using the same key and host from script attributes
-  if (config.widgetKey) {
-    widgetManager.boot({
-      widgetKey: config.widgetKey,
-      host: config.host,
-    });
-  }
 
   return client;
 }
