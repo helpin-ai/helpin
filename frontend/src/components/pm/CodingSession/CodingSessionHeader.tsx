@@ -1,12 +1,18 @@
 import type { ReactNode } from 'react';
-import { BotIcon, GitBranchIcon, Loading01Icon } from '@/lib/icons';
+import { Folder01Icon, GitBranchIcon, Loading01Icon, Cancel01Icon, ArrowReloadHorizontalIcon } from '@/lib/icons';
 
+import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { buildAutomationRunsPath } from '@/lib/automationUi';
 import type { CodingSession } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { formatCodingSessionRelative } from './codingSessionUtils';
+
+function capitalize(text: string) {
+  return text.replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 export function CodingSessionHeader({
   session,
@@ -35,61 +41,55 @@ export function CodingSessionHeader({
       {/* Top row: Forge identity + actions */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          {/* Forge icon */}
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            <BotIcon className="h-5 w-5" />
-          </div>
+          {/* Forge avatar */}
+          <AgentAvatar name="forge" className="h-9 w-9 shrink-0" />
 
-          {/* Forge label + repo info */}
+          {/* Forge label + status + pause reason */}
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h1 className="text-base font-semibold leading-tight">Forge</h1>
-              <Badge variant="outline" className={cn(
-                'gap-1 px-2 py-0.5 text-[11px] font-medium',
-                session?.status === 'running' && 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-400',
-                session?.status === 'completed' && 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-400',
-                session?.status === 'failed' && 'border-destructive/30 bg-destructive/5 text-destructive',
-                session?.status === 'cancelled' && 'border-muted-foreground/30 text-muted-foreground',
-                session?.status === 'paused' && 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400',
-              )}>
+              <Badge variant="outline" className="gap-1 px-2 py-0.5 text-[11px] font-medium capitalize">
                 {statusIcon}
-                {session?.status === 'running' ? 'Running' : session?.status ?? 'Loading'}
+                {session?.status === 'running' ? 'Running' : capitalize(session?.status ?? 'Loading')}
               </Badge>
               {session?.pause_reason && session.pause_reason !== 'none' ? (
-                <Badge variant="secondary" className="px-2 py-0.5 text-[11px]">
-                  {session.pause_reason.replaceAll('_', ' ')}
+                <Badge variant="outline" className="px-2 py-0.5 text-[11px] capitalize">
+                  {capitalize(session.pause_reason.replaceAll('_', ' '))}
                 </Badge>
               ) : null}
             </div>
+
             {/* Repo + branch pills */}
             <div className="mt-1 flex flex-wrap items-center gap-1.5">
               {session?.repo.repo_name ? (
                 <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-foreground">
+                  <Folder01Icon className="h-3 w-3 text-muted-foreground" />
                   {session.repo.repo_name}
                 </span>
               ) : null}
               {session?.repo.branch ? (
-                <span className="inline-flex items-center gap-1 rounded-md bg-violet-100 px-2 py-0.5 text-[11px] font-medium text-violet-700 dark:bg-violet-950/30 dark:text-violet-400">
-                  <GitBranchIcon className="h-3 w-3" />
+                <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-foreground">
+                  <GitBranchIcon className="h-3 w-3 text-muted-foreground" />
                   {session.repo.branch}
                 </span>
               ) : null}
-              {session ? (
-                <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
-                  {session.runtime_kind}
-                </span>
-              ) : null}
+            </div>
+
+            {/* Runtime + updated */}
+            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+              {session ? <span>{session.runtime_kind}</span> : null}
               {session?.updated_at ? (
-                <span className="text-[11px] text-muted-foreground">
-                  Updated {formatCodingSessionRelative(session.updated_at)}
-                </span>
+                <>
+                  <span>·</span>
+                  <span>Updated {formatCodingSessionRelative(session.updated_at)}</span>
+                </>
               ) : null}
             </div>
           </div>
         </div>
 
         {/* Actions */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1.5">
           {workspaceSlug ? (
             <Button asChild variant="outline" size="sm">
               <a href={buildAutomationRunsPath(workspaceSlug)}>
@@ -98,14 +98,23 @@ export function CodingSessionHeader({
             </Button>
           ) : null}
           {onCancelRun ? (
-            <Button variant="outline" size="sm" onClick={onCancelRun} disabled={acting !== null || !canCancel}>
-              {acting === 'cancel' ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
-              Cancel run
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" size="icon" className="h-8 w-8" onClick={onCancelRun} disabled={acting !== null || !canCancel}>
+                  {acting === 'cancel' ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" /> : <Cancel01Icon className="h-3.5 w-3.5" />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Cancel run</TooltipContent>
+            </Tooltip>
           ) : null}
-          <Button variant="outline" size="sm" onClick={onRefresh} disabled={refreshing}>
-            Refresh
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="outline" size="icon" className="h-8 w-8" onClick={onRefresh} disabled={refreshing}>
+                <ArrowReloadHorizontalIcon className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Refresh</TooltipContent>
+          </Tooltip>
         </div>
       </div>
 
