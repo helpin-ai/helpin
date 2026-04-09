@@ -14,6 +14,14 @@ function capitalize(text: string) {
   return text.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+function resolveSessionAgentName(session: CodingSession | null) {
+  const title = session?.title?.trim();
+  if (!title || title.toLowerCase() === 'coding session') {
+    return 'Agent';
+  }
+  return title;
+}
+
 export function CodingSessionHeader({
   session,
   statusIcon,
@@ -35,19 +43,20 @@ export function CodingSessionHeader({
     && session.status !== 'completed'
     && session.status !== 'cancelled'
     && session.status !== 'failed';
+  const agentName = resolveSessionAgentName(session);
+  const sessionTitle = session?.title?.trim() ?? '';
+  const sessionSummary = session?.summary?.trim() ?? '';
+  const showDetailBlock = (sessionTitle && sessionTitle !== agentName) || !!sessionSummary;
 
   return (
     <div className="space-y-3">
-      {/* Top row: Forge identity + actions */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          {/* Forge avatar */}
-          <AgentAvatar name="forge" className="h-9 w-9 shrink-0" />
+          <AgentAvatar name={agentName} className="h-9 w-9 shrink-0" />
 
-          {/* Forge label + status + pause reason */}
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h1 className="text-base font-semibold leading-tight">Forge</h1>
+              <h1 className="text-base font-semibold leading-tight">{agentName}</h1>
               <Badge variant="outline" className="gap-1 px-2 py-0.5 text-[11px] font-medium capitalize">
                 {statusIcon}
                 {session?.status === 'running' ? 'Running' : capitalize(session?.status ?? 'Loading')}
@@ -59,7 +68,6 @@ export function CodingSessionHeader({
               ) : null}
             </div>
 
-            {/* Repo + branch pills */}
             <div className="mt-1 flex flex-wrap items-center gap-1.5">
               {session?.repo.repo_name ? (
                 <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-foreground">
@@ -75,7 +83,6 @@ export function CodingSessionHeader({
               ) : null}
             </div>
 
-            {/* Runtime + updated */}
             <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
               {session ? <span>{session.runtime_kind}</span> : null}
               {session?.updated_at ? (
@@ -118,12 +125,15 @@ export function CodingSessionHeader({
         </div>
       </div>
 
-      {/* Session title + summary */}
-      {session?.title ? (
+      {showDetailBlock ? (
         <div className="min-w-0">
-          <p className="text-sm font-medium text-foreground">{session.title}</p>
-          {session.summary ? (
-            <p className="mt-0.5 text-xs text-muted-foreground">{session.summary}</p>
+          {sessionTitle && sessionTitle !== agentName ? (
+            <p className="text-sm font-medium text-foreground">{sessionTitle}</p>
+          ) : null}
+          {sessionSummary ? (
+            <p className={sessionTitle && sessionTitle !== agentName ? 'mt-0.5 text-xs text-muted-foreground' : 'text-xs text-muted-foreground'}>
+              {sessionSummary}
+            </p>
           ) : null}
         </div>
       ) : null}
