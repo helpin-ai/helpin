@@ -26,7 +26,7 @@ function RootComponent() {
       <TooltipProvider>
         <ConfirmProvider>
           <Outlet />
-          <Toaster />
+          <Toaster closeButton />
         </ConfirmProvider>
       </TooltipProvider>
     </ThemeProvider>

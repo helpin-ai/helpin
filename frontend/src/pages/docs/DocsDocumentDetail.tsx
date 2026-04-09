@@ -701,11 +701,13 @@ export function DocsDocumentDetail() {
   const translationHasUnpublishedChanges = !!activeTranslation?.has_unpublished_changes
   const isPublished = isSourceLocaleActive ? sourceLivePublished : translationLivePublished
   const hasUnpublishedChanges = isSourceLocaleActive ? sourceHasUnpublishedChanges : translationHasUnpublishedChanges
+  const showLocaleInPublish = enabledLocales.length > 1
+  const localeSuffix = showLocaleInPublish ? ` (${activeLocaleShortLabel})` : ''
   const activePublishLabel = !isPublished
-    ? `Publish (${activeLocaleShortLabel})`
+    ? `Publish${localeSuffix}`
     : hasUnpublishedChanges
-      ? `Update (${activeLocaleShortLabel})`
-      : `Published (${activeLocaleShortLabel})`
+      ? `Update${localeSuffix}`
+      : `Published${localeSuffix}`
   const showContextualPublish = canPublishDocs && doc?.status !== 'archived'
   const parentTranslationsMissing = !isSourceLocaleActive && Boolean(activeLocaleRow?.publishBlockedReason)
   const publishDisabled = isSourceLocaleActive

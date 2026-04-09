@@ -148,15 +148,6 @@ export function ModuleAccessTab({
 
   return (
     <div className="space-y-5">
-      {/* Info banner */}
-      <div className="flex items-start gap-2.5 rounded-lg border border-border/50 bg-muted/25 px-3.5 py-2.5">
-        <InformationCircleIcon className="mt-px h-4 w-4 shrink-0 text-muted-foreground/70" />
-        <p className="text-[13px] text-muted-foreground leading-relaxed">
-          Owners and admins always retain full access to all modules. For
-          everyone else, grant access by team first, then add individual
-          exceptions as needed.
-        </p>
-      </div>
 
       {MODULES.map((module) => (
         <ModuleCard
@@ -242,16 +233,27 @@ const ModuleCard = memo(function ModuleCard({
       .map((t) => ({
         id: t.id,
         label: t.name,
-        detail: t.team_type
-          ? (TEAM_TYPE_LABELS[t.team_type] ?? t.team_type)
-          : undefined,
       }))
   }, [teams, teamGrants])
+
+  // Identify owners/admins — they always have full access
+  const adminOwnerPeople = useMemo(() => {
+    return activePeople.filter((p) => {
+      if (!p.user_id) return false
+      const member = memberByUserId.get(p.user_id)
+      return member?.role === 'owner' || member?.role === 'admin'
+    })
+  }, [activePeople, memberByUserId])
+
+  const adminOwnerIds = useMemo(
+    () => new Set(adminOwnerPeople.map((p) => p.id)),
+    [adminOwnerPeople],
+  )
 
   const availableMemberItems = useMemo(() => {
     const grantedIds = new Set(memberGrants.map((g) => g.subject_id))
     return activePeople
-      .filter((p) => !grantedIds.has(p.id))
+      .filter((p) => !grantedIds.has(p.id) && !adminOwnerIds.has(p.id))
       .map((p) => {
         const member = p.user_id
           ? memberByUserId.get(p.user_id)
@@ -273,7 +275,7 @@ const ModuleCard = memo(function ModuleCard({
           ),
         }
       })
-  }, [activePeople, memberGrants, memberByUserId])
+  }, [activePeople, memberGrants, memberByUserId, adminOwnerIds])
 
   // Stable callbacks
   const handleDeleteGrant = useCallback(
@@ -379,50 +381,18 @@ const ModuleCard = memo(function ModuleCard({
         </div>
       </CardHeader>
 
-      <CardContent className="pt-0">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {/* Team access column */}
-          <div className="space-y-2.5 rounded-lg border border-border/50 bg-muted/15 p-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <UserGroupIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                <h3 className="text-[13px] font-medium">Teams</h3>
-              </div>
+      <CardContent className="pt-0 space-y-4">
+        {/* Teams */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <UserGroupIcon className="h-3.5 w-3.5 text-muted-foreground" />
+              <h3 className="text-[13px] font-medium">Teams</h3>
               {teamGrants.length > 0 && (
-                <span className="text-[11px] text-muted-foreground tabular-nums">
-                  {teamGrants.length}
-                </span>
+                <span className="text-[11px] text-muted-foreground/50 tabular-nums">({teamGrants.length})</span>
               )}
             </div>
-
-            {teamGrants.length > 0 ? (
-              <div className="flex flex-wrap gap-1.5">
-                {teamGrants.map((grant) => {
-                  const team = teamMap.get(grant.subject_id)
-                  return (
-                    <CompactChip
-                      key={grant.id}
-                      title={team?.name ?? 'Unknown team'}
-                      displayId={
-                        team?.team_type
-                          ? (TEAM_TYPE_LABELS[team.team_type] ??
-                              team.team_type)
-                          : undefined
-                      }
-                      onRemove={() => handleDeleteGrant(grant.id)}
-                    />
-                  )
-                })}
-              </div>
-            ) : (
-              <EmptyGrants
-                icon={UserGroupIcon}
-                title="No team access"
-                description="Grant a team access to give all its members entry to this module."
-              />
-            )}
-
-            {availableTeamItems.length > 0 ? (
+            {availableTeamItems.length > 0 && (
               <MultiSelectAdd
                 items={availableTeamItems}
                 selectedIds={selectedTeamIds}
@@ -430,65 +400,42 @@ const ModuleCard = memo(function ModuleCard({
                 onAdd={handleAddTeams}
                 isPending={createGrant.isPending}
                 placeholder="Search teams..."
-                triggerLabel="Select teams"
+                triggerLabel="Add teams"
                 emptyLabel="No teams available"
               />
-            ) : teamGrants.length > 0 ? (
-              <AllGrantedNote label="All teams have been added" />
-            ) : null}
+            )}
           </div>
+          {teamGrants.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5">
+              {teamGrants.map((grant) => {
+                const team = teamMap.get(grant.subject_id)
+                return (
+                  <CompactChip
+                    key={grant.id}
+                    title={team?.name ?? 'Unknown team'}
+                    onRemove={() => handleDeleteGrant(grant.id)}
+                  />
+                )
+              })}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground/60 py-1">No teams have access yet</p>
+          )}
+        </div>
 
-          {/* Direct member access column */}
-          <div className="space-y-2.5 rounded-lg border border-border/50 bg-muted/15 p-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <Shield01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                <h3 className="text-[13px] font-medium">Members</h3>
-              </div>
+        <div className="border-t border-border/40" />
+
+        {/* Members */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <Shield01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+              <h3 className="text-[13px] font-medium">Members</h3>
               {memberGrants.length > 0 && (
-                <span className="text-[11px] text-muted-foreground tabular-nums">
-                  {memberGrants.length}
-                </span>
+                <span className="text-[11px] text-muted-foreground/50 tabular-nums">({memberGrants.length})</span>
               )}
             </div>
-
-            {memberGrants.length > 0 ? (
-              <div className="flex flex-wrap gap-1.5">
-                {memberGrants.map((grant) => {
-                  const person = personMap.get(grant.subject_id)
-                  const member = person?.user_id
-                    ? memberByUserId.get(person.user_id)
-                    : undefined
-                  return (
-                    <CompactChip
-                      key={grant.id}
-                      title={person?.name ?? 'Unknown member'}
-                      displayId={person?.email}
-                      avatar={
-                        <UserAvatar
-                          name={person?.name}
-                          avatarUrl={member?.avatar_url}
-                          avatarStyle={member?.avatar_style}
-                          avatarSeed={member?.avatar_seed}
-                          avatarBackgroundMode={member?.avatar_background_mode}
-                          avatarBackgroundColor={member?.avatar_background_color}
-                          className="h-5 w-5"
-                        />
-                      }
-                      onRemove={() => handleDeleteGrant(grant.id)}
-                    />
-                  )
-                })}
-              </div>
-            ) : (
-              <EmptyGrants
-                icon={Shield01Icon}
-                title="No direct access"
-                description="Add individual members for one-off exceptions like founders or cross-functional roles."
-              />
-            )}
-
-            {availableMemberItems.length > 0 ? (
+            {availableMemberItems.length > 0 && (
               <MultiSelectAdd
                 items={availableMemberItems}
                 selectedIds={selectedMemberIds}
@@ -496,13 +443,62 @@ const ModuleCard = memo(function ModuleCard({
                 onAdd={handleAddMembers}
                 isPending={createGrant.isPending}
                 placeholder="Search members..."
-                triggerLabel="Select members"
+                triggerLabel="Add members"
                 emptyLabel="No members available"
               />
-            ) : memberGrants.length > 0 ? (
-              <AllGrantedNote label="All members have been added" />
-            ) : null}
+            )}
           </div>
+          <div className="flex flex-wrap gap-1.5">
+            {/* Owners & admins — always shown, not removable */}
+            {adminOwnerPeople.map((person) => {
+              const member = person.user_id ? memberByUserId.get(person.user_id) : undefined
+              return (
+                <CompactChip
+                  key={`admin-${person.id}`}
+                  title={person.name}
+                  displayId={member?.role === 'owner' ? 'Owner' : 'Admin'}
+                  avatar={
+                    <UserAvatar
+                      name={person.name}
+                      avatarUrl={member?.avatar_url}
+                      avatarStyle={member?.avatar_style}
+                      avatarSeed={member?.avatar_seed}
+                      avatarBackgroundMode={member?.avatar_background_mode}
+                      avatarBackgroundColor={member?.avatar_background_color}
+                      className="h-5 w-5"
+                    />
+                  }
+                />
+              )
+            })}
+            {/* Manually granted members */}
+            {memberGrants.map((grant) => {
+              const person = personMap.get(grant.subject_id)
+              const member = person?.user_id
+                ? memberByUserId.get(person.user_id)
+                : undefined
+              return (
+                <CompactChip
+                  key={grant.id}
+                  title={person?.name ?? 'Unknown member'}
+                  displayId={person?.email}
+                  avatar={
+                    <UserAvatar
+                      name={person?.name}
+                      avatarUrl={member?.avatar_url}
+                      avatarStyle={member?.avatar_style}
+                      avatarSeed={member?.avatar_seed}
+                      avatarBackgroundMode={member?.avatar_background_mode}
+                      avatarBackgroundColor={member?.avatar_background_color}
+                      className="h-5 w-5"
+                    />
+                  }
+                  onRemove={() => handleDeleteGrant(grant.id)}
+                />
+              )
+            })}
+          </div>
+          <p className="text-[11px] text-muted-foreground/50">Owners and admins always have access</p>
         </div>
       </CardContent>
     </Card>
@@ -618,20 +614,23 @@ const MultiSelectAdd = memo(function MultiSelectAdd({
                 })}
               </CommandGroup>
             </CommandList>
+            {selectedIds.length > 0 && (
+              <div className="border-t border-border p-1.5">
+                <Button
+                  type="button"
+                  size="sm"
+                  className="w-full h-7 gap-1 text-xs"
+                  disabled={isPending}
+                  onClick={handleAdd}
+                >
+                  <PlusSignIcon className="h-3 w-3" />
+                  Grant access{selectedIds.length > 1 ? ` (${selectedIds.length})` : ''}
+                </Button>
+              </div>
+            )}
           </Command>
         </PopoverContent>
       </Popover>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="h-7 gap-1 px-2.5 text-xs"
-        disabled={selectedIds.length === 0 || isPending}
-        onClick={handleAdd}
-      >
-        <PlusSignIcon className="h-3 w-3" />
-        Add{selectedIds.length > 1 ? ` (${selectedIds.length})` : ''}
-      </Button>
     </div>
   )
 })

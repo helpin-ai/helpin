@@ -128,18 +128,19 @@ function NotificationRow({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-44">
               {isUnread ? (
-                <DropdownMenuItem onClick={() => onRead(notification.id)}>
+                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onRead(notification.id); }}>
                   <ViewIcon className="h-3.5 w-3.5 mr-2" /> Mark as read
                 </DropdownMenuItem>
               ) : (
-                <DropdownMenuItem onClick={() => onUnread(notification.id)}>
+                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onUnread(notification.id); }}>
                   <ViewOffIcon className="h-3.5 w-3.5 mr-2" /> Mark as unread
                 </DropdownMenuItem>
               )}
-              <DropdownMenuItem onClick={() => onArchive(notification.id)}>
+              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onArchive(notification.id); }}>
                 <ArchiveIcon className="h-3.5 w-3.5 mr-2" /> Archive
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => {
+              <DropdownMenuItem onClick={(e) => {
+                e.stopPropagation();
                 const tomorrow = new Date()
                 tomorrow.setDate(tomorrow.getDate() + 1)
                 tomorrow.setHours(9, 0, 0, 0)
@@ -147,7 +148,7 @@ function NotificationRow({
               }}>
                 <Clock01Icon className="h-3.5 w-3.5 mr-2" /> Snooze until tomorrow
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onDelete(notification.id)} className="text-destructive">
+              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onDelete(notification.id); }} className="text-destructive">
                 <Delete01Icon className="h-3.5 w-3.5 mr-2" /> Delete
               </DropdownMenuItem>
             </DropdownMenuContent>
