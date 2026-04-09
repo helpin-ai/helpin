@@ -366,6 +366,41 @@ describe('buildCodingSessionStreamState', () => {
     });
   });
 
+  it('hydrates the current plan from the session snapshot and keeps later live updates', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'live-plan-update',
+        type: 'plan.updated',
+        sequence_no: 1_700_000_102,
+        payload: {
+          content: JSON.stringify({
+            plan: [
+              { step: 'Inspect repo context', status: 'completed' },
+              { step: 'Patch the handler', status: 'completed' },
+              { step: 'Run targeted tests', status: 'in_progress' },
+            ],
+          }),
+        },
+      }),
+    ], {
+      current_plan: {
+        plan: [
+          { step: 'Inspect repo context', status: 'completed' },
+          { step: 'Patch the handler', status: 'in_progress' },
+          { step: 'Run targeted tests', status: 'pending' },
+        ],
+      },
+    });
+
+    expect(state.current_plan).toEqual({
+      plan: [
+        { step: 'Inspect repo context', status: 'completed' },
+        { step: 'Patch the handler', status: 'completed' },
+        { step: 'Run targeted tests', status: 'in_progress' },
+      ],
+    });
+  });
+
   it('keeps the latest plan visible across assistant rounds by reading update_plan tool segments', () => {
     const state = buildCodingSessionStreamState([
       buildEvent({

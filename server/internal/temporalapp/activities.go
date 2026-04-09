@@ -915,13 +915,13 @@ func (a *AgentRunActivities) loadRunArtifactContext(ctx context.Context, state *
 		if err != nil {
 			return nil, err
 		}
-		if content != nil && strings.TrimSpace(content.ContentText) != "" {
+		if markdown := docsContentMarkdown(content); markdown != "" {
 			artifactContext.Entries = append(artifactContext.Entries, workerpkg.ArtifactContextEntry{
 				Label:        "Linked epic spec document",
 				Source:       "spec_document",
 				Status:       "approved",
-				Format:       "text",
-				Content:      strings.TrimSpace(content.ContentText),
+				Format:       "markdown",
+				Content:      markdown,
 				PreserveFull: true,
 			})
 		}
@@ -3569,8 +3569,11 @@ func (a *AgentRunActivities) buildInitialInstructions(ctx context.Context, state
 	if strings.TrimSpace(input.FlowOutputKind) != "" {
 		return a.buildFlowOutputInstructions(ctx, state, input)
 	}
-	if state.run.TargetType == "task" && state.task != nil && tools[workerpkg.ToolPublishTaskPlanDoc] {
-		return a.buildTaskPlannerInstructions(ctx, state, input)
+	if state.task != nil {
+		if tools[workerpkg.ToolPublishTaskPlanDoc] {
+			return a.buildTaskPlannerInstructions(ctx, state, input)
+		}
+		return a.buildTaskExecutionInstructions(ctx, state, input)
 	}
 	if state.run.TargetType != "epic" || state.epic == nil {
 		return runInputAdditionalContext(state.run.Input), nil
@@ -3769,6 +3772,56 @@ func (a *AgentRunActivities) buildTaskPlannerInstructions(ctx context.Context, s
 	}
 	if repoContext != "" {
 		sections = append(sections, "Current implementation context from the live repository:\n"+repoContext)
+	}
+
+	return strings.Join(sections, "\n\n"), nil
+}
+
+func (a *AgentRunActivities) buildTaskExecutionInstructions(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
+	if state.task == nil {
+		return runInputAdditionalContext(state.run.Input), nil
+	}
+
+	var sections []string
+	additionalContext := strings.TrimSpace(input.AdditionalContext)
+	if additionalContext == "" && state != nil && state.run != nil {
+		additionalContext = runInputAdditionalContext(state.run.Input)
+	}
+	if additionalContext != "" {
+		sections = append(sections, "Operator notes:\n"+additionalContext)
+	}
+
+	planDocumentID := strings.TrimSpace(derefString(state.task.PlanDocumentID))
+	if planDocumentID != "" && a.docsContentRepo != nil {
+		title := ""
+		if a.docsDocRepo != nil {
+			doc, err := a.docsDocRepo.GetByID(ctx, planDocumentID)
+			if err != nil {
+				return "", err
+			}
+			if doc != nil {
+				title = strings.TrimSpace(doc.Title)
+			}
+		}
+		content, err := a.docsContentRepo.GetByDocumentID(ctx, planDocumentID)
+		if err != nil {
+			return "", err
+		}
+		if markdown := docsContentMarkdown(content); markdown != "" {
+			header := fmt.Sprintf("Canonical task planning document ID: %s", planDocumentID)
+			if title != "" {
+				header = fmt.Sprintf("Canonical task planning document: %s [%s]", title, planDocumentID)
+			}
+			sections = append(sections, header+"\n"+truncatePlanningText(markdown, 12000))
+		}
+	}
+
+	taskLinkedDocs, err := a.renderObjectLinkedDocsContext(ctx, state.run.WorkspaceID, model.LinkedObjectTask, state.task.ID, planDocumentID)
+	if err != nil {
+		return "", err
+	}
+	if taskLinkedDocs != "" {
+		sections = append(sections, "Other docs linked directly to this task:\n"+taskLinkedDocs)
 	}
 
 	return strings.Join(sections, "\n\n"), nil
@@ -4163,6 +4216,9 @@ func (a *AgentRunActivities) renderLinkedDocsContext(ctx context.Context, worksp
 }
 
 func (a *AgentRunActivities) renderObjectLinkedDocsContext(ctx context.Context, workspaceID, objectType, objectID, excludeDocumentID string) (string, error) {
+	if a.docsLinkRepo == nil || a.docsDocRepo == nil || a.docsContentRepo == nil {
+		return "", nil
+	}
 	links, err := a.docsLinkRepo.ListByObject(ctx, workspaceID, objectType, objectID)
 	if err != nil {
 		return "", err
@@ -4192,8 +4248,8 @@ func (a *AgentRunActivities) renderObjectLinkedDocsContext(ctx context.Context, 
 			return "", err
 		}
 		body := "(no content yet)"
-		if content != nil && strings.TrimSpace(content.ContentText) != "" {
-			body = truncatePlanningText(content.ContentText, 3000)
+		if markdown := docsContentMarkdown(content); markdown != "" {
+			body = truncatePlanningText(markdown, 3000)
 		}
 
 		entries = append(entries, fmt.Sprintf("- %s [%s]\n%s", doc.Title, doc.ID, body))
@@ -4203,6 +4259,16 @@ func (a *AgentRunActivities) renderObjectLinkedDocsContext(ctx context.Context, 
 	}
 
 	return strings.Join(entries, "\n\n"), nil
+}
+
+func docsContentMarkdown(content *model.DocsContent) string {
+	if content == nil {
+		return ""
+	}
+	if markdown := tiptap.RichTextToMarkdown(string(content.Content)); markdown != "" {
+		return markdown
+	}
+	return strings.TrimSpace(content.ContentText)
 }
 
 func (a *AgentRunActivities) renderTaskCommentsContext(ctx context.Context, taskID string) (string, error) {

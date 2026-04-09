@@ -134,7 +134,7 @@ func BuildUserPrompt(
 		if strings.TrimSpace(planningStage) == model.PlanningStageStoryPlanDoc {
 			contextParts = append(contextParts, fmt.Sprintf("Please draft or refine the canonical task planning document for task: **%s**", story.Name))
 		} else {
-			contextParts = append(contextParts, fmt.Sprintf("Please work on the story: **%s**", story.Name))
+			contextParts = append(contextParts, fmt.Sprintf("Please work on the task: **%s**", story.Name))
 		}
 		if story.Description != nil {
 			if description := tiptap.RichTextToMarkdown(*story.Description); description != "" {
