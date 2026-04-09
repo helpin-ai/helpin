@@ -385,6 +385,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
               key={decision}
               size="sm"
               variant={decision.startsWith('accept') ? 'default' : 'outline'}
+              className={cn(decision.startsWith('accept') && 'bg-emerald-600 hover:bg-emerald-700 text-white')}
               disabled={isBusy}
               onClick={() => onResolve(interaction.interaction_id, { decision }, followupMessage.trim() || undefined)}
             >

@@ -11,5 +11,8 @@
   },
   "devDependencies": {
     "turbo": "^2.0.0"
+  },
+  "dependencies": {
+    "unicode-animations": "^1.0.3"
   }
 }
