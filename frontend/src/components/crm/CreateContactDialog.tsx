@@ -63,14 +63,14 @@ export function CreateContactDialog({ open, onOpenChange }: CreateContactDialogP
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!firstName.trim()) return;
+    if (!firstName.trim() || !email.trim()) return;
 
     try {
       const contact = await createContact.mutateAsync({
         workspace_id: wsId,
         first_name: firstName.trim(),
         last_name: lastName.trim() || undefined,
-        email: email.trim() || undefined,
+        email: email.trim(),
         phone: phone.trim() || undefined,
         job_title: jobTitle.trim() || undefined,
         lifecycle_stage: lifecycleStage,
@@ -114,8 +114,8 @@ export function CreateContactDialog({ open, onOpenChange }: CreateContactDialogP
             </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <Label htmlFor="email">Email *</Label>
+            <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -164,7 +164,7 @@ export function CreateContactDialog({ open, onOpenChange }: CreateContactDialogP
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" disabled={createContact.isPending || !firstName.trim()}>
+            <Button type="submit" disabled={createContact.isPending || !firstName.trim() || !email.trim()}>
               {createContact.isPending ? 'Creating...' : 'Create'}
             </Button>
           </DialogFooter>
