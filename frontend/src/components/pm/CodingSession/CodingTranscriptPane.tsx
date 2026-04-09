@@ -37,7 +37,7 @@ import { describeToolCall } from './toolCallPresentation';
 
 // ─── Tool call grouping ──────────────────────────────────────────────────────
 
-const TOOL_GROUP_COLLAPSE_THRESHOLD = 4;
+const TOOL_GROUP_COLLAPSE_THRESHOLD = 2;
 
 type ToolCategory = 'read' | 'search' | 'command' | 'write' | 'other';
 
@@ -577,14 +577,13 @@ function TranscriptEntry({
 
 function AssistantTimelineRow({
   content,
-  timestamp,
   isLast,
   live = false,
   streaming = false,
   placeholder = false,
 }: {
   content: string;
-  timestamp: string;
+  timestamp?: string;
   isLast: boolean;
   live?: boolean;
   streaming?: boolean;
@@ -600,25 +599,17 @@ function AssistantTimelineRow({
       </div>
 
       <div className={cn('min-w-0 flex-1', isLast ? 'pb-0' : 'pb-4')}>
-        <div className="mb-1.5 flex items-start justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-foreground">Assistant</span>
-            {live ? (
-              <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
-                {streaming ? 'Live' : 'Finishing'}
-              </Badge>
-            ) : null}
-          </div>
-          <span className="shrink-0 text-[11px] text-muted-foreground">
-            {formatCodingSessionRelative(timestamp)}
-          </span>
+        <div className="mb-1 flex items-center gap-2">
+          <span className="text-xs font-medium text-foreground">Assistant</span>
+          {live ? (
+            <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+              {streaming ? 'Live' : 'Finishing'}
+            </Badge>
+          ) : null}
         </div>
 
         <div className={cn(
-          'rounded-2xl rounded-tl-md border px-4 py-3 shadow-sm',
-          placeholder
-            ? 'border-dashed border-border/60 bg-muted/25 text-muted-foreground'
-            : 'border-border/60 bg-card/90 text-foreground',
+          placeholder && 'text-muted-foreground',
         )}>
           {!placeholder
             ? <MarkdownContent content={content} className="text-[13px] leading-6 text-foreground" />
@@ -831,13 +822,6 @@ function ActivityToolCallRow({ toolCall, isLast }: { toolCall: CodingSessionLive
                 </span>
               ))}
             </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {toolCall.completed_at ?? toolCall.started_at ? (
-              <span className="text-[11px] text-muted-foreground">
-                {formatCodingSessionRelative(toolCall.completed_at ?? toolCall.started_at ?? '')}
-              </span>
-            ) : null}
           </div>
         </div>
         <div className="space-y-1.5 text-xs text-muted-foreground">
