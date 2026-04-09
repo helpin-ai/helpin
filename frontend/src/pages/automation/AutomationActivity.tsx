@@ -525,7 +525,6 @@ export function AutomationActivityPage({
 
   const items = overviewQuery.data?.items ?? [];
   const executions = executionsQuery.data?.data ?? [];
-  const executionTotal = executionsQuery.data?.total ?? 0;
   const executionPage = executionsQuery.data?.page ?? search.page;
   const executionTotalPages = executionsQuery.data?.total_pages ?? 0;
 
