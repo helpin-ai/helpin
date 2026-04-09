@@ -733,6 +733,7 @@ function ActivityToolCallRow({ toolCall, isLast }: { toolCall: CodingSessionLive
     <PublishedToolPreviewCard toolName={toolCall.tool_name} argsText={argsText} resultText={resultText} />
   ) : null;
   const presentation = describeToolCall(toolCall);
+  const showSecondaryBadge = presentation.secondaryLabel.trim().toLowerCase() !== presentation.primaryLabel.trim().toLowerCase();
   const filePaths = !isApplyPatch && !publishedPreviewCard && argsText ? extractFilePathsFromText(argsText) : [];
   const chips = [...presentation.chips];
   for (const filePath of filePaths) {
@@ -755,9 +756,11 @@ function ActivityToolCallRow({ toolCall, isLast }: { toolCall: CodingSessionLive
           <div className="min-w-0 space-y-1">
             <p className="truncate text-xs font-medium text-foreground">{presentation.primaryLabel}</p>
             <div className="flex flex-wrap items-center gap-1.5">
-              <Badge variant="outline" className="h-5 rounded-full px-1.5 text-[10px] font-medium text-muted-foreground">
-                {presentation.secondaryLabel}
-              </Badge>
+              {showSecondaryBadge ? (
+                <Badge variant="outline" className="h-5 rounded-full px-1.5 text-[10px] font-medium text-muted-foreground">
+                  {presentation.secondaryLabel}
+                </Badge>
+              ) : null}
               {chips.map((chip) => (
                 <span key={chip} className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
                   {chip}
