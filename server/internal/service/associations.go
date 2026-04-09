@@ -13,7 +13,7 @@ import (
 type AssociationsService struct {
 	assocRepo        *repository.CRMAssociationRepository
 	taskLinkRepo     *repository.PMTaskLinkRepository
-	taskRepo        *repository.PMTaskRepository
+	taskRepo         *repository.PMTaskRepository
 	supportRepo      *repository.SupportConversationRepository
 	docsLinkRepo     *repository.DocsLinkRepository
 	docsDocumentRepo *repository.DocsDocumentRepository
@@ -31,7 +31,7 @@ func NewAssociationsService(
 	return &AssociationsService{
 		assocRepo:        assocRepo,
 		taskLinkRepo:     taskLinkRepo,
-		taskRepo:        taskRepo,
+		taskRepo:         taskRepo,
 		supportRepo:      supportRepo,
 		docsLinkRepo:     docsLinkRepo,
 		docsDocumentRepo: docsDocumentRepo,
@@ -292,6 +292,16 @@ func (s *AssociationsService) populateDocsAssociations(ctx context.Context, work
 	for _, link := range links {
 		doc, ok := docsByID[link.DocumentID]
 		if !ok {
+			continue
+		}
+		alreadyIncluded := false
+		for _, existing := range response.Docs {
+			if existing.ObjectID == doc.ID {
+				alreadyIncluded = true
+				break
+			}
+		}
+		if alreadyIncluded {
 			continue
 		}
 		status := doc.Status

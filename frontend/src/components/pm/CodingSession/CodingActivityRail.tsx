@@ -10,12 +10,14 @@ import {
   TerminalIcon,
   CancelCircleIcon,
   Wrench01Icon,
+  File01Icon,
 } from '@/lib/icons';
 
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type { CodingSessionEvent, CodingSessionLiveToolCall, RunPlanArtifact } from '@/lib/pmTypes';
 import { codingSessionEventContent, formatCodingSessionRelative, prettyCodingSessionEventType } from './codingSessionUtils';
+import { PublishedToolPreviewCard } from './PublishedToolPreviewCard';
 
 type TimelineItem =
   | { kind: 'event'; event: CodingSessionEvent }
@@ -170,7 +172,10 @@ function ToolCallTimelineItem({ toolCall, isLast }: { toolCall: CodingSessionLiv
   const { icon, iconClass } = toolChrome(toolCall.tool_name, isFailed);
   const argsText = toolCall.args_text.trim();
   const resultText = toolCall.result?.output_summary?.trim() || toolCall.result?.content?.trim() || '';
-  const filePaths = argsText ? extractFilePathsFromText(argsText) : [];
+  const publishedPreviewCard = !isFailed && argsText ? (
+    <PublishedToolPreviewCard toolName={toolCall.tool_name} argsText={argsText} resultText={resultText} compact />
+  ) : null;
+  const filePaths = !publishedPreviewCard && argsText ? extractFilePathsFromText(argsText) : [];
 
   return (
     <TimelineRow
@@ -190,12 +195,16 @@ function ToolCallTimelineItem({ toolCall, isLast }: { toolCall: CodingSessionLiv
             ))}
           </div>
         )}
-        {argsText ? <CollapsibleCodeBlock text={argsText} /> : null}
-        {resultText ? (
-          isFailed
-            ? <CollapsibleCodeBlock text={resultText} failed />
-            : <p className="text-[11px]">{resultText.length > 150 ? `${resultText.slice(0, 150)}…` : resultText}</p>
-        ) : null}
+        {publishedPreviewCard ?? (
+          <>
+            {argsText ? <CollapsibleCodeBlock text={argsText} /> : null}
+            {resultText ? (
+              isFailed
+                ? <CollapsibleCodeBlock text={resultText} failed />
+                : <p className="text-[11px]">{resultText.length > 150 ? `${resultText.slice(0, 150)}…` : resultText}</p>
+            ) : null}
+          </>
+        )}
         {typeof toolCall.duration_ms === 'number' ? (
           <Badge variant="outline" className={cn(
             'text-[10px]',
@@ -254,6 +263,17 @@ function toolChrome(toolName: string, isFailed: boolean): { icon: ReactNode; ico
     return {
       icon: <TerminalIcon className="h-3.5 w-3.5" />,
       iconClass: 'bg-slate-100 border-slate-300 dark:bg-slate-900 dark:border-slate-700 text-slate-600 dark:text-slate-400',
+    };
+  }
+  if (
+    name.startsWith('publish_')
+    || name.startsWith('preview_')
+    || name.includes('plan_doc')
+    || name.includes('draft')
+  ) {
+    return {
+      icon: <File01Icon className="h-3.5 w-3.5" />,
+      iconClass: 'bg-blue-50 border-blue-200 dark:bg-blue-950/20 dark:border-blue-900/50 text-blue-600 dark:text-blue-400',
     };
   }
   if (
