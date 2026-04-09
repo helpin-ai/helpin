@@ -882,12 +882,15 @@ function ActivityToolCallRow({ toolCall, isLast }: { toolCall: CodingSessionLive
           {publishedPreviewCard ?? (
             <>
               {isApplyPatch
-                ? <ApplyPatchDiff argsText={toolCall.args_text} />
+                ? <ApplyPatchDiff argsText={argsText || resultText} />
                 : argsText ? <CollapsibleCodeBlock text={argsText} /> : null}
-              {resultText ? (
+              {resultText && !isApplyPatch ? (
                 isFailed
                   ? <CollapsibleCodeBlock text={resultText} failed />
                   : <p className="text-[11px] text-muted-foreground">{resultText.length > 200 ? `${resultText.slice(0, 200)}…` : resultText}</p>
+              ) : null}
+              {isApplyPatch && isFailed && resultText ? (
+                <CollapsibleCodeBlock text={resultText} failed />
               ) : null}
             </>
           )}
