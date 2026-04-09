@@ -4,11 +4,9 @@ import {
   ArrowDown01Icon,
   Briefcase01Icon,
   HeadphonesIcon,
-  InformationCircleIcon,
   LockIcon,
   PlusSignIcon,
   Shield01Icon,
-  Tick01Icon,
   UserGroupIcon,
 } from '@/lib/icons'
 import { Badge } from '@/components/ui/badge'
@@ -79,18 +77,6 @@ const MODULE_META: Record<
     color: 'text-emerald-600 dark:text-emerald-400',
     bgColor: 'bg-emerald-50 dark:bg-emerald-950/40',
   },
-}
-
-const TEAM_TYPE_LABELS: Record<string, string> = {
-  engineering: 'Engineering',
-  product: 'Product',
-  design: 'Design',
-  support: 'Support',
-  marketing: 'Marketing',
-  sales: 'Sales',
-  hr: 'HR',
-  operations: 'Operations',
-  custom: 'Custom',
 }
 
 const MODULES: ModuleKey[] = ['crm', 'support']
@@ -634,34 +620,3 @@ const MultiSelectAdd = memo(function MultiSelectAdd({
     </div>
   )
 })
-
-function EmptyGrants({
-  icon: Icon,
-  title,
-  description,
-}: {
-  icon: React.FC<{ className?: string }>
-  title: string
-  description: string
-}) {
-  return (
-    <div className="flex flex-col items-center gap-1.5 rounded-md border border-dashed py-5 px-3 text-center">
-      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-muted">
-        <Icon className="h-3.5 w-3.5 text-muted-foreground/60" />
-      </div>
-      <p className="text-[13px] font-medium text-muted-foreground">{title}</p>
-      <p className="text-xs text-muted-foreground/70 leading-snug max-w-[220px]">
-        {description}
-      </p>
-    </div>
-  )
-}
-
-function AllGrantedNote({ label }: { label: string }) {
-  return (
-    <div className="flex items-center gap-1.5 pt-0.5">
-      <Tick01Icon className="h-3 w-3 text-emerald-500" />
-      <p className="text-[11px] text-muted-foreground">{label}</p>
-    </div>
-  )
-}
