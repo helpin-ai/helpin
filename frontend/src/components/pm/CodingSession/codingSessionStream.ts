@@ -182,7 +182,7 @@ function parseLiveToolCall(value: unknown): CodingSessionLiveToolCall | null {
     tool_call_id: toolCallID,
     parent_message_id: asString(payload.parent_message_id),
     tool_name: asString(payload.tool_name) ?? 'tool',
-    args_text: typeof payload.args_text === 'string' ? payload.args_text : '',
+    args_text: firstNonEmptyString(asString(payload.args_text), asString(payload.tool_input)) ?? '',
     status: (asString(payload.status) as CodingSessionLiveToolCall['status']) ?? 'completed',
     duration_ms: asNumber(payload.duration_ms),
     started_at: asString(payload.started_at),

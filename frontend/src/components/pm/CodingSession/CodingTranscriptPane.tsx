@@ -33,6 +33,7 @@ import { ApplyPatchDiff } from './ApplyPatchDiff';
 import { CodingInteractionCard } from './CodingInteractionCard';
 import { MarkdownContent } from './MarkdownContent';
 import { PublishedToolPreviewCard } from './PublishedToolPreviewCard';
+import { describeToolCall } from './toolCallPresentation';
 
 export function CodingTranscriptPane({
   transcriptMessages,
@@ -731,7 +732,12 @@ function ActivityToolCallRow({ toolCall, isLast }: { toolCall: CodingSessionLive
   const publishedPreviewCard = !isFailed && argsText ? (
     <PublishedToolPreviewCard toolName={toolCall.tool_name} argsText={argsText} resultText={resultText} />
   ) : null;
+  const presentation = describeToolCall(toolCall);
   const filePaths = !isApplyPatch && !publishedPreviewCard && argsText ? extractFilePathsFromText(argsText) : [];
+  const chips = [...presentation.chips];
+  for (const filePath of filePaths) {
+    if (!chips.includes(filePath)) chips.push(filePath);
+  }
 
   return (
     <div className="flex gap-3">
@@ -746,9 +752,19 @@ function ActivityToolCallRow({ toolCall, isLast }: { toolCall: CodingSessionLive
       {/* Content */}
       <div className={cn('min-w-0 flex-1', isLast ? 'pb-0' : 'pb-4')}>
         <div className="mb-1 flex items-start justify-between gap-2">
-          <span className="text-xs font-medium capitalize text-foreground">
-            {toolCall.tool_name.replaceAll('_', ' ')}
-          </span>
+          <div className="min-w-0 space-y-1">
+            <p className="truncate text-xs font-medium text-foreground">{presentation.primaryLabel}</p>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Badge variant="outline" className="h-5 rounded-full px-1.5 text-[10px] font-medium text-muted-foreground">
+                {presentation.secondaryLabel}
+              </Badge>
+              {chips.map((chip) => (
+                <span key={chip} className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                  {chip}
+                </span>
+              ))}
+            </div>
+          </div>
           <div className="flex shrink-0 items-center gap-2">
             {toolCall.completed_at ?? toolCall.started_at ? (
               <span className="text-[11px] text-muted-foreground">
@@ -757,15 +773,6 @@ function ActivityToolCallRow({ toolCall, isLast }: { toolCall: CodingSessionLive
             ) : null}
           </div>
         </div>
-        {filePaths.length > 0 && (
-          <div className="mb-1.5 flex flex-wrap gap-1">
-            {filePaths.map((fp) => (
-              <span key={fp} className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-                {fp}
-              </span>
-            ))}
-          </div>
-        )}
         <div className="space-y-1.5 text-xs text-muted-foreground">
           {publishedPreviewCard ?? (
             <>
