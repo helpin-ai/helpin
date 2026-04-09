@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -1049,39 +1050,53 @@ func (s *SupportInboxService) matchOrCreateCRMContact(ctx context.Context, works
 // It uses the provided contactRepo (which may be wrapped in a transaction).
 // The source param controls lifecycle promotion: "identify" promotes lead→customer.
 func (s *SupportInboxService) matchOrCreateCRMContactTx(ctx context.Context, contactRepo *repository.CRMContactRepository, workspaceID string, email, name *string, source string) *string {
-	if email == nil || *email == "" {
+	return s.matchOrCreateCRMContactIdentityTx(ctx, contactRepo, workspaceID, model.WidgetIdentityPayload{
+		Email:  derefString(email),
+		Name:   derefString(name),
+		Source: source,
+	})
+}
+
+func (s *SupportInboxService) matchOrCreateCRMContactIdentityTx(ctx context.Context, contactRepo *repository.CRMContactRepository, workspaceID string, identity model.WidgetIdentityPayload) *string {
+	resolved := resolveWidgetIdentityPayload(identity)
+	if resolved.email == "" {
 		return nil
 	}
 
-	trimmedEmail := strings.TrimSpace(*email)
-
 	// Look up existing contact by exact email match
-	existing, err := contactRepo.GetByEmail(ctx, workspaceID, trimmedEmail)
+	existing, err := contactRepo.GetByEmail(ctx, workspaceID, resolved.email)
 	if err != nil {
 		slog.ErrorContext(ctx, "CRM contact lookup failed", "error", err, "workspace_id", workspaceID)
 		return nil
 	}
 
 	if existing != nil {
+		if s.syncCRMContactIdentity(existing, resolved) {
+			if err := contactRepo.Update(ctx, existing); err != nil {
+				slog.ErrorContext(ctx, "CRM contact identity sync failed", "error", err, "contact_id", existing.ID)
+			}
+		}
+
 		// Promote lifecycle stage if appropriate (never downgrade)
-		promoted := s.promoteContactLifecycle(ctx, contactRepo, existing, source)
+		promoted := s.promoteContactLifecycle(ctx, contactRepo, existing, resolved.source)
 		if promoted {
 			slog.InfoContext(ctx, "promoted CRM contact lifecycle",
-				"contact_id", existing.ID, "stage", existing.LifecycleStage, "source", source)
+				"contact_id", existing.ID, "stage", existing.LifecycleStage, "source", resolved.source)
 		}
 		return &existing.ID
 	}
 
 	// Auto-create new contact as lead with source=live_chat
-	firstName := "Unknown"
-	if name != nil && *name != "" {
-		firstName = *name
+	firstName, lastName := resolved.contactNames()
+	if firstName == "" {
+		firstName = "Unknown"
 	}
 	contactSource := "live_chat"
 	contact := &model.CRMContact{
 		WorkspaceID:    workspaceID,
 		FirstName:      firstName,
-		Email:          &trimmedEmail,
+		LastName:       lastName,
+		Email:          &resolved.email,
 		LifecycleStage: model.CRMLifecycleLead,
 		LeadStatus:     model.CRMLeadStatusNew,
 		Source:         &contactSource,
@@ -1098,13 +1113,201 @@ func (s *SupportInboxService) matchOrCreateCRMContactTx(ctx context.Context, con
 	}
 
 	// If source is "identify", promote new lead → customer
-	if source == "sdk_identify" {
-		s.promoteContactLifecycle(ctx, contactRepo, contact, source)
+	if resolved.source == "sdk_identify" {
+		s.promoteContactLifecycle(ctx, contactRepo, contact, resolved.source)
 	}
 
 	slog.InfoContext(ctx, "auto-created CRM lead from widget",
 		"contact_id", contact.ID, "workspace_id", workspaceID, "source", contactSource)
 	return &contact.ID
+}
+
+func (s *SupportInboxService) syncCRMContactIdentity(contact *model.CRMContact, identity resolvedWidgetIdentity) bool {
+	updated := false
+
+	if identity.email != "" {
+		if contact.Email == nil || strings.TrimSpace(*contact.Email) != identity.email {
+			contact.Email = &identity.email
+			updated = true
+		}
+	}
+
+	firstName, lastName := identity.contactNames()
+	if identity.hasExplicitName {
+		if firstName != "" && strings.TrimSpace(contact.FirstName) != firstName {
+			contact.FirstName = firstName
+			updated = true
+		}
+		if currentLast := strings.TrimSpace(derefString(contact.LastName)); currentLast != strings.TrimSpace(derefString(lastName)) {
+			contact.LastName = lastName
+			updated = true
+		}
+		return updated
+	}
+
+	if firstName != "" && contactNameIsPlaceholder(contact) && strings.TrimSpace(contact.FirstName) != firstName {
+		contact.FirstName = firstName
+		contact.LastName = lastName
+		updated = true
+	}
+
+	return updated
+}
+
+type resolvedWidgetIdentity struct {
+	email           string
+	source          string
+	displayName     string
+	firstName       string
+	lastName        *string
+	hasExplicitName bool
+}
+
+func (i resolvedWidgetIdentity) contactNames() (string, *string) {
+	return i.firstName, i.lastName
+}
+
+func resolveWidgetIdentityPayload(identity model.WidgetIdentityPayload) resolvedWidgetIdentity {
+	resolved := resolvedWidgetIdentity{
+		email:  strings.TrimSpace(identity.Email),
+		source: strings.TrimSpace(identity.Source),
+	}
+
+	firstName := normalizeWidgetName(identity.FirstName)
+	lastName := normalizeOptionalWidgetName(identity.LastName)
+	if firstName != "" || lastName != nil {
+		if firstName == "" && lastName != nil {
+			firstName = *lastName
+			lastName = nil
+		}
+		resolved.firstName = firstName
+		resolved.lastName = lastName
+		resolved.displayName = joinWidgetNameParts(firstName, derefString(lastName))
+		resolved.hasExplicitName = true
+		return resolved
+	}
+
+	if fullName := normalizeWidgetName(identity.Name); fullName != "" {
+		resolved.displayName = fullName
+		resolved.firstName, resolved.lastName = splitCRMContactName(fullName)
+		resolved.hasExplicitName = true
+		return resolved
+	}
+
+	if derivedName := deriveWidgetNameFromEmail(resolved.email); derivedName != "" {
+		resolved.displayName = derivedName
+		resolved.firstName, resolved.lastName = splitCRMContactName(derivedName)
+	}
+
+	return resolved
+}
+
+func splitCRMContactName(name string) (string, *string) {
+	parts := strings.Fields(strings.TrimSpace(name))
+	if len(parts) == 0 {
+		return "", nil
+	}
+	if len(parts) == 1 {
+		return parts[0], nil
+	}
+
+	lastName := strings.Join(parts[1:], " ")
+	return parts[0], &lastName
+}
+
+func normalizeWidgetName(name string) string {
+	return strings.Join(strings.Fields(strings.TrimSpace(name)), " ")
+}
+
+func normalizeOptionalWidgetName(name string) *string {
+	normalized := normalizeWidgetName(name)
+	if normalized == "" {
+		return nil
+	}
+	return &normalized
+}
+
+func joinWidgetNameParts(firstName, lastName string) string {
+	return strings.TrimSpace(strings.Join([]string{strings.TrimSpace(firstName), strings.TrimSpace(lastName)}, " "))
+}
+
+func contactNameIsPlaceholder(contact *model.CRMContact) bool {
+	firstName := strings.TrimSpace(contact.FirstName)
+	return firstName == "" || strings.EqualFold(firstName, "unknown")
+}
+
+func deriveWidgetNameFromEmail(email string) string {
+	localPart := strings.TrimSpace(email)
+	if at := strings.Index(localPart, "@"); at >= 0 {
+		localPart = localPart[:at]
+	}
+	if plus := strings.Index(localPart, "+"); plus >= 0 {
+		localPart = localPart[:plus]
+	}
+	localPart = strings.TrimSpace(localPart)
+	if localPart == "" {
+		return ""
+	}
+
+	var normalized strings.Builder
+	for _, r := range localPart {
+		switch {
+		case unicode.IsLetter(r):
+			normalized.WriteRune(unicode.ToLower(r))
+		case unicode.IsDigit(r):
+			normalized.WriteRune(r)
+		default:
+			normalized.WriteRune(' ')
+		}
+	}
+
+	blocked := map[string]struct{}{
+		"admin":   {},
+		"billing": {},
+		"contact": {},
+		"hello":   {},
+		"help":    {},
+		"info":    {},
+		"mail":    {},
+		"noreply": {},
+		"no":      {},
+		"office":  {},
+		"reply":   {},
+		"sales":   {},
+		"service": {},
+		"support": {},
+		"team":    {},
+	}
+
+	parts := make([]string, 0, 4)
+	for _, token := range strings.Fields(normalized.String()) {
+		token = strings.TrimFunc(token, func(r rune) bool { return unicode.IsDigit(r) })
+		if token == "" {
+			continue
+		}
+		if _, skip := blocked[token]; skip {
+			continue
+		}
+		parts = append(parts, titleCaseWidgetNameToken(token))
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+
+	return strings.Join(parts, " ")
+}
+
+func titleCaseWidgetNameToken(token string) string {
+	runes := []rune(token)
+	if len(runes) == 0 {
+		return ""
+	}
+	runes[0] = unicode.ToUpper(runes[0])
+	for i := 1; i < len(runes); i++ {
+		runes[i] = unicode.ToLower(runes[i])
+	}
+	return string(runes)
 }
 
 // promoteContactLifecycle promotes a CRM contact's lifecycle stage based on the event source.

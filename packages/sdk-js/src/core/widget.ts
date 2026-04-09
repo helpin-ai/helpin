@@ -21,6 +21,10 @@ export { type WidgetConfig };
 export interface WidgetUser {
   email?: string;
   name?: string;
+  firstName?: string;
+  lastName?: string;
+  first_name?: string;
+  last_name?: string;
   userId?: string;
   createdAt?: string;
   metadata?: Record<string, unknown>;
@@ -78,6 +82,11 @@ function normalizeWidgetConfig(raw: any): WidgetConfig {
     ...raw,
     availableTeammates: teammates,
   } as WidgetConfig;
+}
+
+function buildWidgetUserDisplayName(firstName?: string, lastName?: string, fallbackName?: string): string {
+  const joined = [firstName?.trim(), lastName?.trim()].filter(Boolean).join(' ');
+  return joined || fallbackName?.trim() || '';
 }
 
 export class WidgetManager {
@@ -1300,12 +1309,21 @@ export class WidgetManager {
           const bootEmail = this.config?.user?.email;
           const storedIdentity = this.widgetKey ? getStoredIdentity(this.widgetKey) : null;
           const email = bootEmail || storedIdentity?.email;
-          const name = (bootEmail ? this.config?.user?.name : storedIdentity?.name) || '';
+          const bootUser = this.config?.user;
+          const firstName = (bootEmail ? (bootUser?.firstName || bootUser?.first_name) : storedIdentity?.firstName) || '';
+          const lastName = (bootEmail ? (bootUser?.lastName || bootUser?.last_name) : storedIdentity?.lastName) || '';
+          const name = buildWidgetUserDisplayName(
+            firstName,
+            lastName,
+            bootEmail ? bootUser?.name : storedIdentity?.name,
+          );
 
           if (email) {
             this.wsSend('session:upgrade', {
               email,
               name,
+              first_name: firstName,
+              last_name: lastName,
               source: bootEmail ? 'sdk_identify' : 'stored_identity',
             });
             this.currentEmail = email;
@@ -1631,12 +1649,18 @@ export class WidgetManager {
    * identify() / lead() SDK methods without going through the HTTP fallback.
    * Returns true if the message was sent, false if WS is not open.
    */
-  public sendSessionUpgrade(email: string, name: string, source: string): boolean {
+  public sendSessionUpgrade(email: string, name: string, source: string, firstName: string = '', lastName: string = ''): boolean {
     if (this.wsConnection?.readyState === WebSocket.OPEN) {
-      this.wsSend('session:upgrade', { email, name, source });
+      this.wsSend('session:upgrade', {
+        email,
+        name,
+        first_name: firstName,
+        last_name: lastName,
+        source,
+      });
       // Persist identity so it survives page refresh
       if (this.widgetKey && email) {
-        persistIdentity(this.widgetKey, email, name);
+        persistIdentity(this.widgetKey, email, name, firstName, lastName);
       }
       return true;
     }

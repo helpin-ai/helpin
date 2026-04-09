@@ -22,7 +22,7 @@ type WidgetService interface {
 	GetVisitorConversations(ctx context.Context, workspaceID, anonymousID string) ([]model.SupportConversation, error)
 	ListConversationMessages(ctx context.Context, workspaceID, conversationID string, includeInternal bool) ([]model.SupportMessage, error)
 	WidgetCreateMessage(ctx context.Context, sessionToken, content string, attachmentIDs []string) (*model.SupportMessage, error)
-	UpgradeWidgetSession(ctx context.Context, sessionToken, email, name, source string) error
+	UpgradeWidgetSession(ctx context.Context, sessionToken string, identity model.WidgetIdentityPayload) error
 	RevokeWidgetSession(ctx context.Context, sessionToken string) error
 	ClearSessionConversation(ctx context.Context, sessionToken string) error
 	SetSessionConversation(ctx context.Context, sessionToken, conversationID string) error
@@ -476,14 +476,15 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 				continue
 			}
 			email := typed.Email
-			name := typed.Name
+			name := typed.DisplayName()
 			source := typed.Source
 			if source == "" {
 				source = "widget_prechat"
 			}
+			typed.Source = source
 			// Allow skipping email (empty) — visitor stays anonymous but pre-chat is considered done.
 			if email != "" {
-				err = h.service.UpgradeWidgetSession(ctx, session.SessionToken, email, name, source)
+				err = h.service.UpgradeWidgetSession(ctx, session.SessionToken, typed)
 				if err != nil {
 					SendToClient(conn, "connection:error", map[string]string{"code": "upgrade_failed", "message": err.Error()})
 					continue

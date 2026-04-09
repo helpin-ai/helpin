@@ -4,6 +4,7 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -234,6 +235,7 @@ type SupportWidgetSession struct {
 	RevokedAt      *time.Time `json:"-" gorm:"index"`
 	ExpiresAt      time.Time  `json:"expires_at" gorm:"not null"`
 	CreatedAt      time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt      time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (SupportWidgetSession) TableName() string { return "support_widget_sessions" }
@@ -554,19 +556,31 @@ type WidgetSessionRestoreData struct {
 }
 
 // WidgetSessionUpgradeData is the payload for session:upgrade.
-type WidgetSessionUpgradeData struct {
-	Email  string `json:"email"`
-	Name   string `json:"name"`
-	Source string `json:"source"` // "widget_prechat", "sdk_identify", or "sdk_lead"
+type WidgetIdentityPayload struct {
+	Email     string `json:"email"`
+	Name      string `json:"name"` // backward-compatible full-name input only
+	FirstName string `json:"first_name,omitempty"`
+	LastName  string `json:"last_name,omitempty"`
+	Source    string `json:"source"` // "widget_prechat", "sdk_identify", or "sdk_lead"
 }
+
+func (p WidgetIdentityPayload) DisplayName() string {
+	first := strings.TrimSpace(p.FirstName)
+	last := strings.TrimSpace(p.LastName)
+	if first != "" || last != "" {
+		return strings.TrimSpace(strings.Join([]string{first, last}, " "))
+	}
+	return strings.TrimSpace(p.Name)
+}
+
+// WidgetSessionUpgradeData is the payload for session:upgrade.
+type WidgetSessionUpgradeData = WidgetIdentityPayload
 
 // WidgetIdentifyRequest is the HTTP payload for POST /api/widget/identify (headless SDK path).
 type WidgetIdentifyRequest struct {
 	APIKey      string `json:"api_key"`
 	AnonymousID string `json:"anonymous_id"`
-	Email       string `json:"email"`
-	Name        string `json:"name"`
-	Source      string `json:"source"` // "widget_prechat", "sdk_identify", or "sdk_lead"
+	WidgetIdentityPayload
 }
 
 // WidgetMessageSendData is the payload for message:send.
