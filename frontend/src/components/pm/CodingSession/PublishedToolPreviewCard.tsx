@@ -59,7 +59,7 @@ function jsonSummaryLines(content: unknown): string[] {
   if (risks > 0) lines.push(`${risks} risks called out`);
 
   const openQuestions = Array.isArray(record.open_questions) ? record.open_questions.length : 0;
-  if (openQuestions > 0) lines.push(`${openQuestions.length} open questions`);
+  if (openQuestions > 0) lines.push(`${openQuestions} open questions`);
 
   if (lines.length > 0) return lines.slice(0, 3);
 
