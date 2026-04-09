@@ -385,6 +385,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
               key={decision}
               size="sm"
               variant={decision.startsWith('accept') ? 'default' : 'outline'}
+              className={cn(decision.startsWith('accept') && 'bg-emerald-600 hover:bg-emerald-700 text-white')}
               disabled={isBusy}
               onClick={() => onResolve(interaction.interaction_id, { decision }, followupMessage.trim() || undefined)}
             >
@@ -617,14 +618,14 @@ function CommandApprovalDetails({ command, reason, grantRoot, cwd, compact }: { 
       {command ? (
         <div className="relative">
           <pre className={cn(
-            'overflow-auto whitespace-pre-wrap break-all rounded-lg border border-border bg-slate-950 px-3 py-2 text-[11px] leading-5 text-slate-100',
+            'overflow-auto whitespace-pre-wrap break-all rounded-lg border border-border/60 bg-muted/50 px-3 py-2 font-mono text-[11px] leading-5 text-foreground/80',
             !expanded && isLong && 'max-h-[156px]',
             expanded && 'max-h-80',
           )}>
             {expanded || !isLong ? command : lines.slice(0, COMMAND_COLLAPSED_LINES).join('\n')}
           </pre>
           {isLong && !expanded && (
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 rounded-b-lg bg-gradient-to-t from-slate-950 to-transparent" />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 rounded-b-lg bg-gradient-to-t from-muted/80 to-transparent" />
           )}
           {isLong && (
             <button

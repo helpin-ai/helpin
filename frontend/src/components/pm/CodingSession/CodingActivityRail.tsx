@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   SourceCodeIcon,
   GitBranchIcon,
@@ -168,8 +168,9 @@ function ToolCallTimelineItem({ toolCall, isLast }: { toolCall: CodingSessionLiv
   }
 
   const { icon, iconClass } = toolChrome(toolCall.tool_name, isFailed);
-  const argsPreview = firstLine(toolCall.args_text);
-  const resultPreview = firstLine(toolCall.result?.output_summary?.trim() || toolCall.result?.content?.trim() || '');
+  const argsText = toolCall.args_text.trim();
+  const resultText = toolCall.result?.output_summary?.trim() || toolCall.result?.content?.trim() || '';
+  const filePaths = argsText ? extractFilePathsFromText(argsText) : [];
 
   return (
     <TimelineRow
@@ -179,10 +180,21 @@ function ToolCallTimelineItem({ toolCall, isLast }: { toolCall: CodingSessionLiv
       timestamp={toolCall.completed_at ?? toolCall.started_at ?? ''}
       isLast={isLast}
     >
-      <div className="space-y-1 text-xs text-muted-foreground">
-        {argsPreview ? <p className="font-mono">{argsPreview}</p> : null}
-        {resultPreview ? (
-          <p className={cn(isFailed && 'text-destructive')}>{resultPreview}</p>
+      <div className="space-y-1.5 text-xs text-muted-foreground">
+        {filePaths.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {filePaths.map((fp) => (
+              <span key={fp} className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                {fp}
+              </span>
+            ))}
+          </div>
+        )}
+        {argsText ? <CollapsibleCodeBlock text={argsText} /> : null}
+        {resultText ? (
+          isFailed
+            ? <CollapsibleCodeBlock text={resultText} failed />
+            : <p className="text-[11px]">{resultText.length > 150 ? `${resultText.slice(0, 150)}…` : resultText}</p>
         ) : null}
         {typeof toolCall.duration_ms === 'number' ? (
           <Badge variant="outline" className={cn(
@@ -264,11 +276,46 @@ function toolChrome(toolName: string, isFailed: boolean): { icon: ReactNode; ico
   };
 }
 
-function firstLine(text: string): string {
-  const trimmed = text.trim();
-  const nl = trimmed.indexOf('\n');
-  const line = nl === -1 ? trimmed : trimmed.slice(0, nl);
-  return line.length > 100 ? `${line.slice(0, 100)}…` : line;
+const RAIL_COLLAPSED_LINES = 2;
+
+function extractFilePathsFromText(text: string): string[] {
+  const matches = text.match(/(?:^|\s)((?:\/|\.\.?\/)?[\w./-]+\.(?:ts|tsx|js|jsx|go|py|css|html|json|sql|md|yaml|yml|toml|sh))\b/g);
+  if (!matches) return [];
+  const unique = [...new Set(matches.map((m) => m.trim()))];
+  return unique.slice(0, 6);
+}
+
+function CollapsibleCodeBlock({ text, failed }: { text: string; failed?: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  const lines = text.split('\n');
+  const isLong = lines.length > RAIL_COLLAPSED_LINES;
+
+  return (
+    <div className="relative">
+      <pre className={cn(
+        'overflow-auto whitespace-pre-wrap break-all rounded-md border px-2 py-1.5 font-mono text-[11px] leading-5',
+        failed
+          ? 'border-destructive/20 bg-destructive/5 text-destructive dark:bg-destructive/10'
+          : 'border-border/60 bg-muted/50 text-foreground/80',
+        !expanded && isLong && 'max-h-[52px]',
+        expanded && 'max-h-48',
+      )}>
+        {expanded || !isLong ? text : lines.slice(0, RAIL_COLLAPSED_LINES).join('\n')}
+      </pre>
+      {isLong && !expanded && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-6 rounded-b-md bg-gradient-to-t from-muted/80 to-transparent" />
+      )}
+      {isLong && (
+        <button
+          type="button"
+          className="mt-1 text-[10px] font-medium text-primary hover:underline"
+          onClick={() => setExpanded((prev) => !prev)}
+        >
+          {expanded ? 'Show less' : `Show more (${lines.length} lines)`}
+        </button>
+      )}
+    </div>
+  );
 }
 
 function parsePlanForTimeline(argsText: string): RunPlanArtifact | null {
