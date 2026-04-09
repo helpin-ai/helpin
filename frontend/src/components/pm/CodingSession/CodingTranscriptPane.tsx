@@ -656,6 +656,9 @@ function AssistantMessageBubble({
   isAssistant?: boolean;
   placeholder?: boolean;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = content.length > CONTENT_COLLAPSE_CHAR_THRESHOLD;
+
   return (
     <div className={cn(
       'max-w-[90%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed shadow-sm',
@@ -664,9 +667,33 @@ function AssistantMessageBubble({
         : 'rounded-br-sm bg-blue-600 text-white dark:bg-blue-500',
       placeholder && 'border-dashed text-muted-foreground',
     )}>
-      {!placeholder
-        ? <MarkdownContent content={content} className={isAssistant ? undefined : 'text-inherit'} />
-        : <div className="whitespace-pre-wrap">{content}</div>}
+      {placeholder ? (
+        <div className="whitespace-pre-wrap">{content}</div>
+      ) : isLong ? (
+        <div>
+          <div className={cn('relative', !expanded && 'max-h-[10rem] overflow-hidden')}>
+            <MarkdownContent content={content} className={isAssistant ? undefined : 'text-inherit'} />
+            {!expanded && (
+              <div className={cn(
+                'pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t to-transparent',
+                isAssistant ? 'from-background' : 'from-blue-600 dark:from-blue-500',
+              )} />
+            )}
+          </div>
+          <button
+            type="button"
+            className={cn(
+              'mt-1 text-[11px] font-medium hover:underline',
+              isAssistant ? 'text-primary' : 'text-white/80',
+            )}
+            onClick={() => setExpanded((prev) => !prev)}
+          >
+            {expanded ? 'Show less' : 'Show more'}
+          </button>
+        </div>
+      ) : (
+        <MarkdownContent content={content} className={isAssistant ? undefined : 'text-inherit'} />
+      )}
     </div>
   );
 }
