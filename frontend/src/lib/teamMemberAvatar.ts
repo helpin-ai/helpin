@@ -1,19 +1,23 @@
 import { createAvatar, type Style } from '@dicebear/core';
-import { adventurerNeutral, botttsNeutral, personas } from '@dicebear/collection';
+import { personas, adventurer, micah, miniavs, toonHead } from '@dicebear/collection';
 
-export type TeamMemberAvatarStyle = 'personas' | 'adventurerNeutral' | 'botttsNeutral';
+export type TeamMemberAvatarStyle = 'personas' | 'adventurer' | 'micah' | 'miniavs' | 'toonHead';
 export type TeamMemberAvatarBackgroundMode = 'auto' | 'color';
 
 const TEAM_MEMBER_AVATAR_STYLE_REGISTRY: Record<TeamMemberAvatarStyle, Style<Record<string, unknown>>> = {
   personas: personas as unknown as Style<Record<string, unknown>>,
-  adventurerNeutral: adventurerNeutral as unknown as Style<Record<string, unknown>>,
-  botttsNeutral: botttsNeutral as unknown as Style<Record<string, unknown>>,
+  adventurer: adventurer as unknown as Style<Record<string, unknown>>,
+  micah: micah as unknown as Style<Record<string, unknown>>,
+  miniavs: miniavs as unknown as Style<Record<string, unknown>>,
+  toonHead: toonHead as unknown as Style<Record<string, unknown>>,
 };
 
 export const TEAM_MEMBER_AVATAR_STYLES: Array<{ value: TeamMemberAvatarStyle; label: string }> = [
   { value: 'personas', label: 'Personas' },
-  { value: 'adventurerNeutral', label: 'Adventurer' },
-  { value: 'botttsNeutral', label: 'Bottts' },
+  { value: 'adventurer', label: 'Adventurer' },
+  { value: 'micah', label: 'Micah' },
+  { value: 'miniavs', label: 'Miniavs' },
+  { value: 'toonHead', label: 'Toon Head' },
 ];
 
 export const TEAM_MEMBER_AVATAR_BACKGROUND_COLORS = [
@@ -72,7 +76,7 @@ export function hasGeneratedTeamMemberAvatar(style?: string | null, seed?: strin
 }
 
 export function normalizeTeamMemberAvatarBackgroundMode(mode?: string | null): TeamMemberAvatarBackgroundMode {
-  return cleanValue(mode) === 'color' ? 'color' : 'auto';
+  return cleanValue(mode) === 'auto' ? 'auto' : 'color';
 }
 
 export function normalizeTeamMemberAvatarBackgroundColor(color?: string | null): string | undefined {
@@ -126,9 +130,7 @@ export function resolveTeamMemberAvatarSrc({
     return undefined;
   }
 
-  const backgroundColor = style === 'personas'
-    ? resolveGeneratedAvatarBackgroundColor(avatarBackgroundMode, avatarBackgroundColor)
-    : undefined;
+  const backgroundColor = resolveGeneratedAvatarBackgroundColor(avatarBackgroundMode, avatarBackgroundColor);
   const cacheKey = `${style}:${seed}:${backgroundColor ?? 'none'}`;
   const cached = avatarCache.get(cacheKey);
   if (cached) {
@@ -137,7 +139,7 @@ export function resolveTeamMemberAvatarSrc({
 
   const src = createAvatar(TEAM_MEMBER_AVATAR_STYLE_REGISTRY[style], {
     seed,
-    ...(style === 'personas' ? { scale: 120 } : {}),
+    ...(backgroundColor ? { scale: 120 } : {}),
     ...(backgroundColor ? { backgroundType: ['solid'], backgroundColor: [toDicebearColor(backgroundColor)] } : {}),
   }).toDataUri();
   avatarCache.set(cacheKey, src);

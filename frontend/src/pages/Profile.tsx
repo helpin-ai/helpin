@@ -206,13 +206,32 @@ export default function Profile() {
         avatarSeed={avatarSeed}
         avatarBackgroundMode={avatarBackgroundMode}
         avatarBackgroundColor={avatarBackgroundColor}
-        onGeneratedAvatarChange={(state) => {
+        onGeneratedAvatarChange={async (state) => {
           setGeneratedAvatarEnabled(state.enabled);
           setAvatarStyle(state.style);
           setAvatarSeed(state.seed);
           setAvatarBackgroundMode(state.backgroundMode);
           setAvatarBackgroundColor(state.backgroundColor);
           setPickerOpen(false);
+          // Auto-save avatar change immediately
+          try {
+            await updateUser({
+              full_name: fullName,
+              avatar_style: state.enabled ? state.style : '',
+              avatar_seed: state.enabled ? state.seed : '',
+              avatar_background_mode: state.enabled ? state.backgroundMode : '',
+              avatar_background_color: state.enabled && state.backgroundMode === 'color' ? state.backgroundColor : '',
+            });
+            void queryClient.invalidateQueries({ queryKey: queryKeys.user.me });
+            if (currentWorkspace?.id) {
+              void queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.members(currentWorkspace.id) });
+              void queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.assignableMembers(currentWorkspace.id) });
+              void queryClient.invalidateQueries({ queryKey: queryKeys.support.teammatePresence(currentWorkspace.id) });
+            }
+            toast.success(state.enabled ? 'Avatar updated' : 'Switched to initials');
+          } catch {
+            toast.error('Failed to update avatar');
+          }
         }}
         onPhotoSelect={(file) => {
           if (pendingAvatar?.previewUrl) {

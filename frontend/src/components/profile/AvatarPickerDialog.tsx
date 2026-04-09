@@ -81,7 +81,7 @@ export function AvatarPickerDialog({
   const generatedAvatarSrc = resolveTeamMemberAvatarSrc({
     avatarStyle: localStyle,
     avatarSeed: localSeed,
-    avatarBackgroundMode: localBgMode,
+    avatarBackgroundMode: 'color',
     avatarBackgroundColor: localBgColor,
     fallbackSeed: fullName ?? email,
   });
@@ -116,19 +116,13 @@ export function AvatarPickerDialog({
     setLocalSeed(createTeamMemberAvatarSeed());
   };
 
-  const handleBgModeChange = (value: TeamMemberAvatarBackgroundMode) => {
-    setLocalBgMode(value);
-    if (value === 'auto') {
-      setLocalBgColor(TEAM_MEMBER_AVATAR_BACKGROUND_COLORS[0]);
-    }
-  };
 
   const handleUseGenerated = () => {
     onGeneratedAvatarChange({
       enabled: true,
       style: localStyle,
       seed: localSeed,
-      backgroundMode: localBgMode,
+      backgroundMode: 'color',
       backgroundColor: localBgColor,
     });
   };
@@ -143,7 +137,7 @@ export function AvatarPickerDialog({
     });
   };
 
-  const defaultTab = avatarUrl ? 'upload' : generatedAvatarEnabled ? 'generated' : 'upload';
+  const defaultTab = avatarUrl ? 'upload' : 'generated';
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -177,7 +171,7 @@ export function AvatarPickerDialog({
             </TabsTrigger>
             <TabsTrigger value="generated" className="flex-1 gap-1.5">
               <Image01Icon className="h-3.5 w-3.5" />
-              Generated
+              Avatar
             </TabsTrigger>
           </TabsList>
 
@@ -242,9 +236,9 @@ export function AvatarPickerDialog({
               </Avatar>
               <div className="flex flex-col gap-1.5">
                 <Button type="button" variant="outline" size="sm" onClick={handleShuffle}>
-                  Shuffle
+                  New face
                 </Button>
-                <p className="text-[11px] text-muted-foreground">Randomize your avatar</p>
+                <p className="text-[11px] text-muted-foreground">Generate a different look</p>
               </div>
             </div>
 
@@ -265,44 +259,28 @@ export function AvatarPickerDialog({
                 </Select>
               </div>
 
-              {localStyle === 'personas' && (
-                <div className="flex-1 space-y-2">
-                  <Label htmlFor="picker-bg-mode">Background</Label>
-                  <Select value={localBgMode} onValueChange={(v) => handleBgModeChange(v as TeamMemberAvatarBackgroundMode)}>
-                    <SelectTrigger id="picker-bg-mode">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="auto">Auto</SelectItem>
-                      <SelectItem value="color">Color</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
             </div>
 
-            {localStyle === 'personas' && localBgMode === 'color' && (
-              <div className="space-y-2">
-                <Label>Color</Label>
-                <div className="flex flex-wrap gap-1.5">
-                  {TEAM_MEMBER_AVATAR_BACKGROUND_COLORS.map((color) => (
-                    <button
-                      key={color}
-                      type="button"
-                      aria-label={`Select background ${color}`}
-                      className={cn(
-                        'h-7 w-7 rounded-full border-2 border-background ring-2 ring-offset-1 ring-offset-background transition-transform',
-                        localBgColor === color
-                          ? 'scale-110 ring-foreground'
-                          : 'ring-transparent hover:scale-105',
-                      )}
-                      style={{ backgroundColor: color }}
-                      onClick={() => setLocalBgColor(color)}
-                    />
-                  ))}
-                </div>
+            <div className="space-y-2">
+              <Label>Background color</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {TEAM_MEMBER_AVATAR_BACKGROUND_COLORS.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    aria-label={`Select background ${color}`}
+                    className={cn(
+                      'h-7 w-7 rounded-full border-2 border-background ring-2 ring-offset-1 ring-offset-background transition-transform',
+                      localBgColor === color
+                        ? 'scale-110 ring-foreground'
+                        : 'ring-transparent hover:scale-105',
+                    )}
+                    style={{ backgroundColor: color }}
+                    onClick={() => setLocalBgColor(color)}
+                  />
+                ))}
               </div>
-            )}
+            </div>
 
             <div className="flex items-center gap-2 pt-1">
               <Button type="button" size="sm" onClick={handleUseGenerated}>
