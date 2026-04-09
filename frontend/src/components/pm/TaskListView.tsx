@@ -855,7 +855,7 @@ export function TaskListView({
     count: rows.length,
     getScrollElement: () => parentRef.current,
     estimateSize,
-    overscan: 20,
+    overscan: 10,
   });
 
   const groupSummaries = useMemo(() => {
@@ -1122,10 +1122,7 @@ export function TaskListView({
   );
 }
 
-const MemoGroupHeaderRow = memo(function GroupHeaderRow({
-  row,
-  summary,
-}: {
+interface PMGroupRowProps {
   row: Row<Task>;
   summary?: {
     storyCount: number;
@@ -1133,7 +1130,24 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
     completedPoints: number;
     stateType?: StateType;
   };
-}) {
+}
+
+function arePMGroupRowPropsEqual(prev: PMGroupRowProps, next: PMGroupRowProps): boolean {
+  return (
+    prev.row.id === next.row.id &&
+    prev.row.getIsExpanded() === next.row.getIsExpanded() &&
+    prev.row.subRows.length === next.row.subRows.length &&
+    prev.summary?.storyCount === next.summary?.storyCount &&
+    prev.summary?.totalPoints === next.summary?.totalPoints &&
+    prev.summary?.completedPoints === next.summary?.completedPoints &&
+    prev.summary?.stateType === next.summary?.stateType
+  );
+}
+
+const MemoGroupHeaderRow = memo(function GroupHeaderRow({
+  row,
+  summary,
+}: PMGroupRowProps) {
   const storyCount = summary?.storyCount ?? row.subRows.length;
   const totalPoints = summary?.totalPoints ?? 0;
   const completedPoints = summary?.completedPoints ?? 0;
@@ -1164,22 +1178,34 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
       </span>
     </button>
   );
-});
+}, arePMGroupRowPropsEqual);
+
+interface PMDataRowProps {
+  row: Row<Task>;
+  onOpenTask: (task: Task) => void;
+  columnSizingVersion: string;
+  pinnedOffsets: TaskListPinnedOffsets;
+}
+
+function arePMDataRowPropsEqual(prev: PMDataRowProps, next: PMDataRowProps): boolean {
+  return (
+    prev.row.id === next.row.id &&
+    prev.row.original === next.row.original &&
+    prev.columnSizingVersion === next.columnSizingVersion &&
+    prev.pinnedOffsets === next.pinnedOffsets &&
+    prev.onOpenTask === next.onOpenTask
+  );
+}
 
 const MemoDataRow = memo(function DataRow({
   row,
   onOpenTask,
   columnSizingVersion,
   pinnedOffsets,
-}: {
-  row: Row<Task>;
-  onOpenTask: (task: Task) => void;
-  columnSizingVersion: string;
-  pinnedOffsets: TaskListPinnedOffsets;
-}) {
+}: PMDataRowProps) {
+  void columnSizingVersion; // used by arePMDataRowPropsEqual for memo comparison
   return (
     <div
-      data-column-sizing={columnSizingVersion}
       className={`group/row ${TABLE_ROW} cursor-pointer`}
       onClick={() => onOpenTask(row.original)}
     >
@@ -1210,7 +1236,7 @@ const MemoDataRow = memo(function DataRow({
       })}
     </div>
   );
-});
+}, arePMDataRowPropsEqual);
 
 // Auto-loading sentinel: triggers loadMore when the virtualizer renders it (i.e. near viewport)
 function GroupLoadSentinel({
