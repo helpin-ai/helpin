@@ -116,7 +116,7 @@ function AgentRunRow({
             <p className="text-xs text-muted-foreground">
               {formatTarget(run)} • {run.id.slice(0, 8)}
               {run.execution_stage ? ` • ${run.execution_stage}` : ''}
-              {run.working_branch ? ` • ${run.working_branch}` : run.base_branch ? ` • ${run.base_branch}` : ''}
+              {run.working_branch ? ` • task ${run.working_branch}` : run.base_branch ? ` • base ${run.base_branch}` : ''}
             </p>
           </div>
 

@@ -321,7 +321,7 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 			},
 			"base_branch": map[string]interface{}{
 				"type":        "string",
-				"description": "Base branch to merge into (defaults to 'main')",
+				"description": "Base branch the pull request should target (defaults to the repository default branch when omitted)",
 			},
 		},
 		"required": []string{"title", "body"},

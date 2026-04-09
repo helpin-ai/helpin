@@ -414,6 +414,8 @@ type HandoffAgentRunRequest struct {
 type StartAgentRunRequest struct {
 	AgentID           string  `json:"agent_id,omitempty"`
 	AdditionalContext *string `json:"additional_context,omitempty"`
+	BaseBranch        *string `json:"base_branch,omitempty"`
+	WorkingBranch     *string `json:"working_branch,omitempty"`
 }
 
 type StartTargetAgentRunRequest struct {
@@ -421,6 +423,8 @@ type StartTargetAgentRunRequest struct {
 	TargetID          string  `json:"target_id"`
 	AgentID           string  `json:"agent_id"`
 	AdditionalContext *string `json:"additional_context,omitempty"`
+	BaseBranch        *string `json:"base_branch,omitempty"`
+	WorkingBranch     *string `json:"working_branch,omitempty"`
 }
 
 type AgentRunTriggerContext struct {

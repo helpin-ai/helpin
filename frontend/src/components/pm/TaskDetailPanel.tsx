@@ -45,10 +45,11 @@ import {
   TaskTypeIcon,
 } from '@/lib/pmConstants';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
+import { RepositoryBranchPicker } from '@/components/git/RepositoryBranchPicker';
+import { repositoryDefaultBranchLabel, taskBranchOptionLabel } from '@/lib/branchLabels';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -105,7 +106,6 @@ import { AssociationsPanel } from '@/components/pm/AssociationsPanel';
 import { TaskRelationshipsSection } from '@/components/pm/TaskRelationshipsSection';
 import { filterMentionTeams } from '@/components/pm/mentionSuggestions';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
-import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useTruncationDetection } from '@/hooks/useTruncationDetection';
 import { shouldSuppressTaskOverlayOutsideDismiss } from '@/components/pm/task-detail/taskOverlayDismiss';
@@ -557,14 +557,16 @@ function TaskDetailPanelBody({
     () => filterMentionTeams(teams, form.team_id ? [form.team_id] : []),
     [teams, form.team_id],
   );
-  // ── URL sync (imperative, no effect loop) ──────────────────────
   const lastSyncedTaskRef = useRef<string | null>(null);
-  if (taskDetail.task.id !== lastSyncedTaskRef.current) {
+  useEffect(() => {
+    if (taskDetail.task.id === lastSyncedTaskRef.current) {
+      return;
+    }
     lastSyncedTaskRef.current = taskDetail.task.id;
     const url = new URL(window.location.href);
     url.searchParams.set('task', taskDetail.task.task_key ?? `${taskDetail.task.display_id}`);
     window.history.replaceState({}, '', url.toString());
-  }
+  }, [taskDetail.task.display_id, taskDetail.task.id, taskDetail.task.task_key]);
 
   // ── Load comments + activity ───────────────────────────────────
   const reloadComments = useCallback(async () => {
@@ -1670,48 +1672,41 @@ function TaskDetailPanelBody({
                   />
                 </MetadataRow>
 
-                <MetadataRow icon={GitBranchIcon} label="Base">
-                  <Popover>
-                    <Tooltip open={isDeliveryTruncated('delivery-base') ? undefined : false}>
-                      <TooltipTrigger asChild>
-                        <PopoverTrigger asChild>
-                          <button
-                            type="button"
-                            className="flex w-full min-w-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-left text-xs transition-colors hover:bg-accent cursor-pointer"
-                          >
-                            <span
-                              ref={(el) => checkDeliveryTruncation('delivery-base', el)}
-                              className="block min-w-0 truncate font-mono"
-                            >
-                              {delivery.resolvedBaseBranch}
-                            </span>
-                          </button>
-                        </PopoverTrigger>
-                      </TooltipTrigger>
-                      <TooltipContent align="start">{delivery.resolvedBaseBranch}</TooltipContent>
-                    </Tooltip>
-                    <PopoverContent className="w-56 p-2" align="start">
-                      <Input
-                        value={delivery.baseBranch}
-                        onChange={(e) => delivery.setBaseBranch(e.target.value)}
-                        placeholder={delivery.selectedRepository?.default_branch || 'main'}
-                        className="h-7 text-xs"
-                      />
-                      <Button
-                        size="xs"
-                        variant="outline"
-                        className="mt-1.5 w-full"
-                        onClick={delivery.handleSaveDelivery}
-                        disabled={delivery.savingTarget || !delivery.repositoryId}
+            <MetadataRow icon={GitBranchIcon} label="Base branch">
+              <RepositoryBranchPicker
+                workspaceId={workspaceId}
+                repositoryId={delivery.repositoryId || undefined}
+                value={delivery.baseBranch}
+                onChange={(value) => {
+                  void delivery.handleBaseBranchChange(value);
+                }}
+                placeholder={delivery.selectedRepository?.default_branch || 'main'}
+                emptyLabel={repositoryDefaultBranchLabel(delivery.selectedRepository?.default_branch)}
+                extraOptions={
+                  delivery.branchPreview
+                    ? [{ value: delivery.branchPreview, label: taskBranchOptionLabel(delivery.branchPreview) }]
+                    : []
+                }
+                disabled={delivery.savingTarget}
+                variant="sidebar"
+                width="w-72"
+                triggerLabel={(
+                  <Tooltip open={isDeliveryTruncated('delivery-base') ? undefined : false}>
+                    <TooltipTrigger asChild>
+                      <span
+                        ref={(el) => checkDeliveryTruncation('delivery-base', el)}
+                        className="block min-w-0 truncate font-mono"
                       >
-                        {delivery.savingTarget ? <Loading01Icon className="h-3 w-3 animate-spin" /> : null}
-                        Save
-                      </Button>
-                    </PopoverContent>
-                  </Popover>
+                        {delivery.resolvedBaseBranch}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent align="start">{delivery.resolvedBaseBranch}</TooltipContent>
+                  </Tooltip>
+                )}
+              />
                 </MetadataRow>
 
-                <MetadataRow icon={GitBranchIcon} label="Branch">
+                <MetadataRow icon={GitBranchIcon} label="Task branch">
                   <Tooltip open={isDeliveryTruncated('delivery-branch') ? undefined : false}>
                     <TooltipTrigger asChild>
                       <span

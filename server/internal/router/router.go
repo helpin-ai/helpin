@@ -499,7 +499,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSettingsManage)).Post("/integrations", h.Git.CreateIntegration)
 				r.With(requirePerm(authorization.PermSettingsManage)).Delete("/integrations/{id}", h.Git.DeleteIntegration)
 				r.With(requirePerm(authorization.PermSettingsManage)).Post("/integrations/{id}/sync", h.Git.SyncRepositories)
-				r.With(requirePerm(authorization.PermSettingsRead)).Get("/repositories", h.Git.ListRepositories)
+				r.With(authorization.RequireAnyPermission(authz, authorization.PermSettingsRead, authorization.PermPMRead)).Get("/repositories", h.Git.ListRepositories)
+				r.With(authorization.RequireAnyPermission(authz, authorization.PermSettingsRead, authorization.PermPMRead)).Get("/repositories/{id}/branches", h.Git.ListRepositoryBranches)
 				r.With(requirePerm(authorization.PermSettingsManage)).Put("/repositories/{id}", h.Git.UpdateRepository)
 			})
 

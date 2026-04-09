@@ -403,9 +403,15 @@ func (e *AutomationRuleEngine) executeStartAgentRun(ctx context.Context, rule *m
 		RunID:   nilIfEmpty(event.RunID),
 		Reason:  strPtr(fmt.Sprintf("automation rule %q", rule.Name)),
 	}
+	baseBranch, workingBranch, err := e.resolveRunBranchOverrides(ctx, event, story, cfg)
+	if err != nil {
+		return fmt.Errorf("resolve branch overrides: %w", err)
+	}
 	if _, err := e.agentService.startTargetRun(ctx, event.WorkspaceID, targetType, targetID, model.StartAgentRunRequest{
 		AgentID:           cfg.AgentID,
 		AdditionalContext: cfg.AdditionalContext,
+		BaseBranch:        nilIfEmpty(baseBranch),
+		WorkingBranch:     nilIfEmpty(workingBranch),
 	}, nil, trigger, eventContext); err != nil {
 		return fmt.Errorf("start agent run: %w", err)
 	}
@@ -426,6 +432,83 @@ func (e *AutomationRuleEngine) executeStartAgentRun(ctx context.Context, rule *m
 	}
 
 	return nil
+}
+
+func (e *AutomationRuleEngine) resolveRunBranchOverrides(ctx context.Context, event model.AutomationEvent, story *model.PMTask, cfg model.ActionConfigRunAgent) (string, string, error) {
+	baseBranch := strings.TrimSpace(cfg.BaseBranch)
+	workingBranch := strings.TrimSpace(cfg.WorkingBranch)
+	if baseBranch == "" && workingBranch == "" {
+		return "", "", nil
+	}
+
+	needsDeliveryTarget := strings.Contains(baseBranch, "{") || strings.Contains(workingBranch, "{")
+	if !needsDeliveryTarget {
+		return baseBranch, workingBranch, nil
+	}
+	if e.gitService == nil {
+		return "", "", fmt.Errorf("git service not configured")
+	}
+
+	taskID := firstNonEmptyString(
+		func() string {
+			if story == nil {
+				return ""
+			}
+			return story.ID
+		}(),
+		event.StoryID,
+		func() string {
+			if strings.EqualFold(event.TargetType, "task") || strings.EqualFold(event.TargetType, "story") {
+				return event.TargetID
+			}
+			return ""
+		}(),
+		event.TaskID,
+	)
+	if taskID == "" {
+		return "", "", fmt.Errorf("branch templates require task context")
+	}
+
+	resolvedBaseBranch, resolvedWorkingBranch, err := e.gitService.ResolveTaskRunBranchValues(ctx, event.WorkspaceID, taskID)
+	if err != nil {
+		return "", "", fmt.Errorf("resolve task branch values: %w", err)
+	}
+
+	resolve := func(value, label string) (string, error) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return "", nil
+		}
+		type replacement struct {
+			token string
+			value string
+		}
+		replacements := []replacement{
+			{token: "{task_branch}", value: resolvedWorkingBranch},
+			{token: "{working_branch}", value: resolvedWorkingBranch},
+			{token: "{base_branch}", value: resolvedBaseBranch},
+		}
+		for _, replacement := range replacements {
+			if !strings.Contains(value, replacement.token) {
+				continue
+			}
+			if replacement.value == "" {
+				return "", fmt.Errorf("%s uses %s but the task has no value for it", label, replacement.token)
+			}
+			value = strings.ReplaceAll(value, replacement.token, replacement.value)
+		}
+		return strings.TrimSpace(value), nil
+	}
+
+	resolvedBase, err := resolve(baseBranch, "base_branch")
+	if err != nil {
+		return "", "", err
+	}
+	resolvedWorking, err := resolve(workingBranch, "working_branch")
+	if err != nil {
+		return "", "", err
+	}
+	return resolvedBase, resolvedWorking, nil
 }
 
 func (e *AutomationRuleEngine) recordStartAgentRunFailure(

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Tick01Icon } from '@/lib/icons';
+import { ArrowDown01Icon, Tick01Icon } from '@/lib/icons';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
@@ -23,6 +23,12 @@ export interface SidebarPopoverSelectProps<T extends string = string> {
   width?: string;
   /** Placeholder text for search input */
   searchPlaceholder?: string;
+  /** Disable interaction */
+  disabled?: boolean;
+  /** Optional trigger button class override */
+  triggerClassName?: string;
+  /** Show a chevron icon on the trigger */
+  showChevron?: boolean;
 }
 
 export function SidebarPopoverSelect<T extends string>({
@@ -34,6 +40,9 @@ export function SidebarPopoverSelect<T extends string>({
   searchThreshold = 8,
   width = 'w-52',
   searchPlaceholder = 'Search...',
+  disabled = false,
+  triggerClassName,
+  showChevron = false,
 }: SidebarPopoverSelectProps<T>) {
   const [open, setOpen] = useState(false);
   const showSearch = options.length > searchThreshold;
@@ -44,9 +53,14 @@ export function SidebarPopoverSelect<T extends string>({
         <PopoverTrigger asChild>
           <button
             type="button"
-            className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs text-foreground transition-colors hover:bg-accent cursor-pointer"
+            disabled={disabled}
+            className={cn(
+              'inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs text-foreground transition-colors hover:bg-accent cursor-pointer disabled:pointer-events-none disabled:opacity-50',
+              triggerClassName,
+            )}
           >
             {renderTrigger()}
+            {showChevron && <ArrowDown01Icon className="ml-auto h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
           </button>
         </PopoverTrigger>
         <PopoverContent className={cn(width, 'p-0')} align="start">
@@ -79,9 +93,14 @@ export function SidebarPopoverSelect<T extends string>({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs text-foreground transition-colors hover:bg-accent cursor-pointer"
+          disabled={disabled}
+          className={cn(
+            'inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs text-foreground transition-colors hover:bg-accent cursor-pointer disabled:pointer-events-none disabled:opacity-50',
+            triggerClassName,
+          )}
         >
           {renderTrigger()}
+          {showChevron && <ArrowDown01Icon className="ml-auto h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
         </button>
       </PopoverTrigger>
       <PopoverContent className={cn(width, 'p-0.5')} align="start">

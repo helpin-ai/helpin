@@ -2,8 +2,13 @@ package model
 
 import (
 	"encoding/json"
+	"fmt"
+	"regexp"
+	"strings"
 	"time"
 )
+
+var branchTokenSanitizer = regexp.MustCompile(`[^a-z0-9]+`)
 
 // GitIntegration represents a workspace-scoped git provider configuration.
 type GitIntegration struct {
@@ -45,6 +50,46 @@ type GitRepository struct {
 }
 
 func (GitRepository) TableName() string { return "git_repositories" }
+
+type GitBranch struct {
+	Name      string `json:"name"`
+	IsDefault bool   `json:"is_default"`
+}
+
+func BuildTaskWorkingBranch(task *PMTask, teamDefault *PMTeamRepoDefault, workspaceKey string) string {
+	template := "{task_key}-{slug}"
+	if teamDefault != nil && strings.TrimSpace(teamDefault.BranchTemplate) != "" {
+		template = teamDefault.BranchTemplate
+	}
+
+	taskKey := FormatTaskKey(workspaceKey, task.DisplayID)
+	replacements := map[string]string{
+		"{task_key}":      taskKey,
+		"{workspace_key}": workspaceKey,
+		"{task_type}":     task.TaskType,
+		"{display_id}":    fmt.Sprintf("%d", task.DisplayID),
+		"{slug}":          slugifyBranchToken(task.Name),
+	}
+	for placeholder, value := range replacements {
+		template = strings.ReplaceAll(template, placeholder, value)
+	}
+	template = strings.ToLower(strings.TrimSpace(template))
+	template = strings.Trim(template, "/-")
+	if template == "" {
+		return fmt.Sprintf("%s-%s", strings.ToLower(taskKey), slugifyBranchToken(task.Name))
+	}
+	return template
+}
+
+func slugifyBranchToken(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	value = branchTokenSanitizer.ReplaceAllString(value, "-")
+	value = strings.Trim(value, "-")
+	if value == "" {
+		return "task"
+	}
+	return value
+}
 
 // PMTeamRepoDefault stores the default delivery repository for a team.
 type PMTeamRepoDefault struct {

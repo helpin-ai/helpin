@@ -366,7 +366,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
       .filter(({ workflow }) => !workflow.team_id || workflow.team_id === selectedTeam.id)
       .flatMap(({ states }) => states);
     const deliveryMeta = teamRepoDefault
-      ? `${repoRecord?.full_name ?? 'Repo selected'} · ${teamRepoDefault.base_branch}`
+      ? `${repoRecord?.full_name ?? 'Repo selected'} · default base ${teamRepoDefault.base_branch}`
       : 'Not configured';
     const teamOwnWorkflow = workflows.find((w) => w.workflow.team_id === selectedTeam.id);
     const activeTeamWorkflow = teamOwnWorkflow ?? workflows.find((w) => !w.workflow.team_id);
@@ -519,7 +519,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
             icon: GitPullRequestIcon,
             title: 'Delivery defaults',
             description: repositories.length > 0 || teamRepoDefault
-              ? 'Choose the team repository, base branch, and branch template'
+              ? 'Choose the team repository, default base branch, and task branch template'
               : 'Connect GitHub in Delivery settings to configure repository defaults',
             meta: repositories.length > 0 || teamRepoDefault ? deliveryMeta : 'Not connected',
             action: () => {
@@ -1041,6 +1041,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
               <DialogTitle>Delivery Defaults</DialogTitle>
             </DialogHeader>
             <TeamRepoDefaultForm
+              workspaceId={workspaceId}
               initial={teamRepoDefault ?? null}
               repositories={repositories}
               workflowStates={teamWorkflowStates}
