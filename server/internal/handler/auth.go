@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -60,6 +62,13 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	slog.InfoContext(r.Context(), "forgot password submit received",
+		"host", r.Host,
+		"origin", r.Header.Get("Origin"),
+		"referer", r.Referer(),
+		"email_present", strings.TrimSpace(req.Email) != "",
+	)
+
 	if err := h.authService.ForgotPassword(r.Context(), req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -75,6 +84,13 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+
+	slog.InfoContext(r.Context(), "password reset submit received",
+		"host", r.Host,
+		"origin", r.Header.Get("Origin"),
+		"referer", r.Referer(),
+		"token_len", len(strings.TrimSpace(req.Token)),
+	)
 
 	if err := h.authService.ResetPassword(r.Context(), req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
