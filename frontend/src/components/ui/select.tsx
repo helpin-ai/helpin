@@ -5,22 +5,32 @@ import { Select as SelectPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { UnfoldMoreIcon, Tick02Icon, ArrowUp01Icon, ArrowDown01Icon } from "@hugeicons/core-free-icons"
+import { Tick02Icon, ArrowUp01Icon, ArrowDown01Icon } from "@hugeicons/core-free-icons"
+import { ArrowUpDownIcon } from "@/lib/icons"
+
+type SelectSize = "sm" | "default"
+const SelectSizeContext = React.createContext<SelectSize>("default")
 
 function Select({
+  size = "default",
   ...props
-}: React.ComponentProps<typeof SelectPrimitive.Root>) {
-  return <SelectPrimitive.Root data-slot="select" {...props} />
+}: React.ComponentProps<typeof SelectPrimitive.Root> & { size?: SelectSize }) {
+  return (
+    <SelectSizeContext.Provider value={size}>
+      <SelectPrimitive.Root data-slot="select" {...props} />
+    </SelectSizeContext.Provider>
+  )
 }
 
 function SelectGroup({
   className,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Group>) {
+  const size = React.useContext(SelectSizeContext)
   return (
     <SelectPrimitive.Group
       data-slot="select-group"
-      className={cn("scroll-my-1 p-1", className)}
+      className={cn(size === "sm" ? "scroll-my-0.5 p-0.5" : "scroll-my-1 p-1", className)}
       {...props}
     />
   )
@@ -34,25 +44,30 @@ function SelectValue({
 
 function SelectTrigger({
   className,
-  size = "default",
+  size,
   children,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Trigger> & {
   size?: "sm" | "default"
 }) {
+  const ctxSize = React.useContext(SelectSizeContext)
+  const resolvedSize = size ?? ctxSize
   return (
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
-      data-size={size}
+      data-size={resolvedSize}
       className={cn(
-        "flex w-fit items-center justify-between gap-1.5 rounded-3xl border border-transparent bg-input/50 px-3 py-2 text-sm whitespace-nowrap transition-[color,box-shadow,background-color] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-placeholder:text-muted-foreground data-[size=default]:h-9 data-[size=sm]:h-8 *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-1.5 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "flex w-fit items-center justify-between rounded-3xl border border-transparent bg-input/50 whitespace-nowrap transition-[color,box-shadow,background-color] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-placeholder:text-muted-foreground *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+        resolvedSize === "sm"
+          ? "gap-1 px-2 py-1 text-xs data-[size=sm]:h-7 *:data-[slot=select-value]:gap-1 [&_svg:not([class*='size-'])]:size-3.5"
+          : "gap-1.5 px-3 py-2 text-sm data-[size=default]:h-9 *:data-[slot=select-value]:gap-1.5 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       {...props}
     >
       {children}
       <SelectPrimitive.Icon asChild>
-        <HugeiconsIcon icon={UnfoldMoreIcon} strokeWidth={2} className="pointer-events-none size-4 text-muted-foreground" />
+        <ArrowUpDownIcon className="pointer-events-none size-3.5 text-muted-foreground" />
       </SelectPrimitive.Icon>
     </SelectPrimitive.Trigger>
   )
@@ -114,16 +129,21 @@ function SelectItem({
   children,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Item>) {
+  const size = React.useContext(SelectSizeContext)
+  const isCompact = size === "sm"
   return (
     <SelectPrimitive.Item
       data-slot="select-item"
       className={cn(
-        "relative flex w-full cursor-default items-center gap-2 rounded-md py-1.5 pr-8 pl-2 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
+        "relative flex w-full cursor-default items-center rounded-md outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
+        isCompact
+          ? "gap-1.5 py-1 pr-6 pl-1.5 text-xs [&_svg:not([class*='size-'])]:size-3.5"
+          : "gap-2 py-1.5 pr-8 pl-2 text-sm [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       {...props}
     >
-      <span className="pointer-events-none absolute right-2 flex size-4 items-center justify-center">
+      <span className={cn("pointer-events-none absolute flex items-center justify-center", isCompact ? "right-1.5 size-3.5" : "right-2 size-4")}>
         <SelectPrimitive.ItemIndicator>
           <HugeiconsIcon icon={Tick02Icon} strokeWidth={2} className="pointer-events-none" />
         </SelectPrimitive.ItemIndicator>

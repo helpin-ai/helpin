@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTableSettings } from '@/hooks/useTableSettings';
 import {
   useReactTable,
   getCoreRowModel,
@@ -12,10 +13,11 @@ import {
   type Row,
   type RowSelectionState,
   type SortingState,
-  type ColumnSizingState,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ArrowDown02Icon, ArrowUp02Icon, ArrowUpDownIcon, ArrowDown01Icon, ArrowRight01Icon, MoreVerticalIcon, LinkSquare01Icon, Loading01Icon, PlusSignIcon, Delete01Icon, UserAdd01Icon, UserGroupIcon } from '@/lib/icons';
+import { DndContext, closestCenter, type DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { SortableContext, horizontalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
+import { ArrowDown02Icon, ArrowUp02Icon, ArrowUpDownIcon, ArrowDown01Icon, ArrowRight01Icon, MoreVerticalIcon, LinkSquare01Icon, Loading01Icon, PlusSignIcon, Delete01Icon, UserAdd01Icon, UserGroupIcon, Search01Icon } from '@/lib/icons';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -36,8 +38,10 @@ import {
   TABLE_GROUP_ROW,
   TABLE_RESIZE_HANDLE,
   TABLE_PINNED_LEFT,
+  TABLE_PINNED_LEFT_NAME,
   TABLE_PINNED_RIGHT,
   TABLE_PINNED_HEADER_LEFT,
+  TABLE_PINNED_HEADER_LEFT_NAME,
   TABLE_PINNED_HEADER_RIGHT,
   TABLE_CHECKBOX_HOVER,
   ROW_HEIGHT,
@@ -46,6 +50,10 @@ import {
   dynamicCellStyle,
   pinnedStyle,
 } from '@/lib/tableStyles';
+import { ColumnVisibilityPopover } from '@/components/crm/ColumnVisibilityPopover';
+import { ContactsTableSkeleton } from '@/components/crm/ContactsTableSkeleton';
+import { SortableTableHeader } from '@/components/crm/SortableTableHeader';
+import { BulkActionsBar } from '@/components/crm/BulkActionsBar';
 import type { CRMContact, LifecycleStage, LeadStatus } from '@/lib/crmTypes';
 import type { AssignableMember } from '@/lib/types';
 
@@ -96,24 +104,36 @@ const columnHelper = createColumnHelper<CRMContact>();
 
 interface ContactsTableProps {
   contacts: CRMContact[];
+  totalCount?: number;
   workspaceId: string;
   assignableMembers: AssignableMember[];
   ownerNameMap: Map<string, string>;
   isLoading: boolean;
+  hasActiveFilters?: boolean;
+  hasNextPage?: boolean;
+  isFetchingNextPage?: boolean;
+  onFetchNextPage?: () => void;
   onRowClick: (id: string) => void;
   onCreateClick?: () => void;
+  onClearFilters?: () => void;
   onContactUpdated?: () => void;
   onContactDeleted?: () => void;
 }
 
 export function ContactsTable({
   contacts,
+  totalCount,
   workspaceId,
   assignableMembers,
   ownerNameMap,
   isLoading,
+  hasActiveFilters,
+  hasNextPage,
+  isFetchingNextPage,
+  onFetchNextPage,
   onRowClick,
   onCreateClick,
+  onClearFilters,
   onContactUpdated,
   onContactDeleted,
 }: ContactsTableProps) {
@@ -122,8 +142,36 @@ export function ContactsTable({
   const [expanded, setExpanded] = useState<ExpandedState>(true);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [sorting, setSorting] = useState<SortingState>([]);
-  const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
+
+  const allColumnIds = useMemo(
+    () => ['select', 'email', 'displayId', 'name', 'phone', 'jobTitle', 'source', 'lifecycleStageName', 'leadStatusName', 'ownerName', 'createdAt', 'actions'],
+    [],
+  );
+
+  const {
+    columnVisibility,
+    setColumnVisibility,
+    columnSizing,
+    setColumnSizing,
+    columnOrder,
+    setColumnOrder,
+    resetColumnSize,
+  } = useTableSettings(`${workspaceId}:crm-contacts`, {
+    columnVisibility: {
+      displayId: false,
+      phone: false,
+      jobTitle: false,
+      source: false,
+    },
+  }, allColumnIds);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+  );
+
   const columnSizingVersion = useMemo(() => JSON.stringify(columnSizing), [columnSizing]);
+  const columnOrderVersion = useMemo(() => JSON.stringify(columnOrder), [columnOrder]);
+  const columnVisibilityVersion = useMemo(() => JSON.stringify(columnVisibility), [columnVisibility]);
   const parentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setLocalContacts(contacts); }, [contacts]);
@@ -169,7 +217,7 @@ export function ContactsTable({
         ),
         cell: ({ row }) => (
           <Checkbox
-            className={TABLE_CHECKBOX_HOVER}
+            className={row.getIsSelected() ? '' : TABLE_CHECKBOX_HOVER}
             checked={row.getIsSelected()}
             onCheckedChange={(value) => row.toggleSelected(!!value)}
             onClick={(e) => e.stopPropagation()}
@@ -190,7 +238,7 @@ export function ContactsTable({
         {
           id: 'name',
           header: 'Name',
-          size: 999,
+          size: 200,
           enableGrouping: false,
           cell: (info) => {
             const fullName = info.getValue();
@@ -212,10 +260,18 @@ export function ContactsTable({
       columnHelper.accessor('email', {
         id: 'email',
         header: 'Email',
-        size: 200,
+        size: 240,
         enableGrouping: false,
         cell: (info) => (
-          <span className="truncate text-xs text-muted-foreground">{info.getValue() ?? '-'}</span>
+          <button
+            className="flex max-w-full cursor-pointer items-center truncate text-left text-sm hover:text-primary"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRowClick(info.row.original.id);
+            }}
+          >
+            <span className="truncate">{info.getValue() ?? '-'}</span>
+          </button>
         ),
       }),
       columnHelper.accessor('phone', {
@@ -226,6 +282,30 @@ export function ContactsTable({
         cell: (info) => (
           <span className="truncate text-xs text-muted-foreground">{info.getValue() ?? '-'}</span>
         ),
+      }),
+      columnHelper.accessor('job_title', {
+        id: 'jobTitle',
+        header: 'Job Title',
+        size: 160,
+        enableGrouping: false,
+        cell: (info) => (
+          <span className="truncate text-xs text-muted-foreground">{info.getValue() ?? '-'}</span>
+        ),
+      }),
+      columnHelper.accessor('source', {
+        id: 'source',
+        header: 'Source',
+        size: 120,
+        enableGrouping: false,
+        cell: (info) => {
+          const val = info.getValue();
+          if (!val) return <span className="text-xs text-muted-foreground">-</span>;
+          return (
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 capitalize">
+              {val.replace(/_/g, ' ')}
+            </Badge>
+          );
+        },
       }),
       columnHelper.accessor(
         (row) => row.lifecycle_stage.replace(/_/g, ' '),
@@ -322,11 +402,15 @@ export function ContactsTable({
       rowSelection,
       sorting,
       columnSizing,
+      columnVisibility,
+      columnOrder: columnOrder.length > 0 ? columnOrder : undefined,
     },
     onExpandedChange: setExpanded,
     onRowSelectionChange: setRowSelection,
     onSortingChange: setSorting,
     onColumnSizingChange: setColumnSizing,
+    onColumnVisibilityChange: setColumnVisibility,
+    onColumnOrderChange: setColumnOrder,
     enableRowSelection: true,
     enableColumnResizing: true,
     columnResizeMode: 'onChange',
@@ -337,6 +421,20 @@ export function ContactsTable({
     getSortedRowModel: getSortedRowModel(),
     getCoreRowModel: getCoreRowModel(),
   });
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      const headers = table.getLeafHeaders().map((h) => h.id);
+      const oldIndex = headers.indexOf(active.id as string);
+      const newIndex = headers.indexOf(over.id as string);
+      if (oldIndex === -1 || newIndex === -1) return;
+      const newOrder = arrayMove(headers, oldIndex, newIndex);
+      setColumnOrder(newOrder);
+    },
+    [table, setColumnOrder],
+  );
 
   const { rows } = table.getRowModel();
 
@@ -349,14 +447,48 @@ export function ContactsTable({
     count: rows.length,
     getScrollElement: () => parentRef.current,
     estimateSize,
-    overscan: 20,
+    overscan: 10,
   });
 
+  // Infinite scroll: fetch next page when near bottom
+  useEffect(() => {
+    if (!hasNextPage || isFetchingNextPage || !onFetchNextPage) return;
+    const el = parentRef.current;
+    if (!el) return;
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = el;
+      if (scrollHeight - scrollTop - clientHeight < 300) {
+        onFetchNextPage();
+      }
+    };
+    el.addEventListener('scroll', handleScroll, { passive: true });
+    return () => el.removeEventListener('scroll', handleScroll);
+  }, [hasNextPage, isFetchingNextPage, onFetchNextPage]);
+
+  const selectedIds = useMemo(
+    () => Object.keys(rowSelection).filter((id) => rowSelection[id]),
+    [rowSelection],
+  );
+
   if (isLoading) {
+    return <ContactsTableSkeleton />;
+  }
+
+  if (contacts.length === 0 && hasActiveFilters) {
     return (
-      <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-        <Loading01Icon className="mr-2 h-4 w-4 animate-spin" />
-        Loading contacts...
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
+          <Search01Icon className="h-8 w-8 text-muted-foreground/50" />
+        </div>
+        <h3 className="mt-4 text-base font-medium">No results found</h3>
+        <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+          Try adjusting your search or filters
+        </p>
+        {onClearFilters && (
+          <Button variant="outline" size="sm" className="mt-4" onClick={onClearFilters}>
+            Clear filters
+          </Button>
+        )}
       </div>
     );
   }
@@ -383,33 +515,45 @@ export function ContactsTable({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
-      {/* Group By control */}
+      {/* Toolbar */}
       <div className="flex items-center gap-2 px-1">
-        <span className="text-xs text-muted-foreground">Group by:</span>
-        <Select value={groupBy} onValueChange={(v) => setGroupBy(v as GroupByOption)}>
-          <SelectTrigger className="h-7 w-[160px] text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {GROUP_BY_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
         <span className="text-xs text-muted-foreground">
-          {localContacts.length} {localContacts.length === 1 ? 'contact' : 'contacts'}
+          {totalCount != null && totalCount !== localContacts.length
+            ? `${localContacts.length} of ${totalCount}`
+            : localContacts.length}{' '}
+          {(totalCount ?? localContacts.length) === 1 ? 'contact' : 'contacts'}
         </span>
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">Group by:</span>
+          <Select size="sm" value={groupBy} onValueChange={(v) => setGroupBy(v as GroupByOption)}>
+            <SelectTrigger className="h-7 w-[160px] text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {GROUP_BY_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <ColumnVisibilityPopover table={table} />
+        </div>
       </div>
 
       {/* Table */}
       <div ref={parentRef} className={TABLE_CONTAINER}>
         <div className="min-w-fit">
           {/* Header */}
+          <DndContext id="contacts-table-dnd" sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <div className={TABLE_HEADER}>
             {table.getHeaderGroups().map((headerGroup) => (
-              <div key={headerGroup.id} className="flex items-center">
+              <SortableContext
+                key={headerGroup.id}
+                items={headerGroup.headers.map((h) => h.id)}
+                strategy={horizontalListSortingStrategy}
+              >
+              <div className="flex items-center">
                 {headerGroup.headers.map((header) => {
                   if (header.column.getIsGrouped()) return null;
                   const defSize = header.column.columnDef.size ?? 150;
@@ -419,37 +563,46 @@ export function ContactsTable({
                   const sorted = header.column.getIsSorted();
                   const colId = header.column.id;
                   const pinnedClass = colId === 'select' ? TABLE_PINNED_HEADER_LEFT
+                    : colId === 'email' ? TABLE_PINNED_HEADER_LEFT_NAME
                     : colId === 'actions' ? TABLE_PINNED_HEADER_RIGHT : '';
                   const pinnedSt = colId === 'select' ? pinnedStyle('left', 0)
+                    : colId === 'email' ? pinnedStyle('left', CHECKBOX_COL_SIZE)
                     : colId === 'actions' ? pinnedStyle('right', 0) : {};
                   return (
                     <div
                       key={header.id}
-                      className={`${TABLE_HEADER_CELL} ${canSort ? TABLE_HEADER_CELL_SORTABLE : ''} ${pinnedClass}`}
+                      className={`group/header ${TABLE_HEADER_CELL} ${canSort ? TABLE_HEADER_CELL_SORTABLE : ''} ${pinnedClass}`}
                       style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 300), ...pinnedSt }}
                       onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
                     >
-                      <div className="flex items-center gap-1">
-                        {header.isPlaceholder
-                          ? null
-                          : flexRender(header.column.columnDef.header, header.getContext())}
-                        {canSort && (
-                          <span className="ml-auto shrink-0">
-                            {sorted === 'asc' ? (
-                              <ArrowUp02Icon className="h-3 w-3 text-foreground/80 stroke-[2.5]" />
-                            ) : sorted === 'desc' ? (
-                              <ArrowDown02Icon className="h-3 w-3 text-foreground/80 stroke-[2.5]" />
-                            ) : (
-                              <ArrowUpDownIcon className="h-3 w-3 text-muted-foreground stroke-[2]" />
-                            )}
-                          </span>
-                        )}
-                      </div>
+                      <SortableTableHeader headerId={header.id} columnId={colId}>
+                        <div className="flex items-center gap-1">
+                          {header.isPlaceholder
+                            ? null
+                            : flexRender(header.column.columnDef.header, header.getContext())}
+                          {canSort && (
+                            <span className="ml-auto shrink-0">
+                              {sorted === 'asc' ? (
+                                <ArrowUp02Icon className="h-3 w-3 text-foreground/80 stroke-[2.5]" />
+                              ) : sorted === 'desc' ? (
+                                <ArrowDown02Icon className="h-3 w-3 text-foreground/80 stroke-[2.5]" />
+                              ) : (
+                                <ArrowUpDownIcon className="h-3 w-3 text-muted-foreground stroke-[2]" />
+                              )}
+                            </span>
+                          )}
+                        </div>
+                      </SortableTableHeader>
                       {header.column.getCanResize() && (
                         <div
                           onMouseDown={header.getResizeHandler()}
                           onTouchStart={header.getResizeHandler()}
                           onClick={(e) => e.stopPropagation()}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            header.column.resetSize();
+                            resetColumnSize(header.column.id);
+                          }}
                           className={`${TABLE_RESIZE_HANDLE} ${header.column.getIsResizing() ? 'bg-primary/50' : ''}`}
                         />
                       )}
@@ -457,8 +610,10 @@ export function ContactsTable({
                   );
                 })}
               </div>
+              </SortableContext>
             ))}
           </div>
+          </DndContext>
 
           {/* Virtualized body */}
           <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}>
@@ -482,14 +637,31 @@ export function ContactsTable({
                   {isGrouped ? (
                     <MemoGroupHeaderRow row={row} />
                   ) : (
-                    <MemoDataRow row={row} columnSizingVersion={columnSizingVersion} />
+                    <MemoDataRow row={row} isSelected={row.getIsSelected()} columnSizingVersion={columnSizingVersion} columnOrderVersion={columnOrderVersion} columnVisibilityVersion={columnVisibilityVersion} />
                   )}
                 </div>
               );
             })}
           </div>
         </div>
+
+        {/* Infinite scroll loading indicator */}
+        {isFetchingNextPage && (
+          <div className="flex items-center justify-center py-3">
+            <Loading01Icon className="h-4 w-4 animate-spin text-muted-foreground" />
+            <span className="ml-2 text-xs text-muted-foreground">Loading more...</span>
+          </div>
+        )}
       </div>
+
+      {/* Bulk actions */}
+      <BulkActionsBar
+        selectedIds={selectedIds}
+        workspaceId={workspaceId}
+        assignableMembers={assignableMembers}
+        onComplete={() => onContactUpdated?.()}
+        onClearSelection={() => setRowSelection({})}
+      />
     </div>
   );
 }
@@ -521,15 +693,36 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({ row }: { row: Row<CRMC
 
 // ── Data Row ──────────────────────────────────────────────────────
 
+interface DataRowProps {
+  row: Row<CRMContact>;
+  isSelected: boolean;
+  columnSizingVersion: string;
+  columnOrderVersion: string;
+  columnVisibilityVersion: string;
+}
+
+function areDataRowPropsEqual(prev: DataRowProps, next: DataRowProps): boolean {
+  return (
+    prev.row.id === next.row.id &&
+    prev.row.original === next.row.original &&
+    prev.isSelected === next.isSelected &&
+    prev.columnSizingVersion === next.columnSizingVersion &&
+    prev.columnOrderVersion === next.columnOrderVersion &&
+    prev.columnVisibilityVersion === next.columnVisibilityVersion
+  );
+}
+
 const MemoDataRow = memo(function DataRow({
   row,
+  isSelected,
   columnSizingVersion,
-}: {
-  row: Row<CRMContact>;
-  columnSizingVersion: string;
-}) {
+  columnOrderVersion,
+  columnVisibilityVersion,
+}: DataRowProps) {
+  // These are used by areDataRowPropsEqual for memo comparison
+  void isSelected; void columnSizingVersion; void columnOrderVersion; void columnVisibilityVersion;
   return (
-    <div className={TABLE_ROW} data-column-sizing={columnSizingVersion}>
+    <div className={TABLE_ROW}>
       {row.getVisibleCells().map((cell) => {
         if (cell.column.getIsGrouped()) return null;
         const defSize = cell.column.columnDef.size ?? 150;
@@ -537,8 +730,10 @@ const MemoDataRow = memo(function DataRow({
         const isResized = runtimeSize !== defSize;
         const colId = cell.column.id;
         const pinnedClass = colId === 'select' ? TABLE_PINNED_LEFT
+          : colId === 'email' ? TABLE_PINNED_LEFT_NAME
           : colId === 'actions' ? TABLE_PINNED_RIGHT : '';
         const pinnedSt = colId === 'select' ? pinnedStyle('left', 0)
+          : colId === 'email' ? pinnedStyle('left', CHECKBOX_COL_SIZE)
           : colId === 'actions' ? pinnedStyle('right', 0) : {};
         return (
           <div
@@ -552,11 +747,11 @@ const MemoDataRow = memo(function DataRow({
       })}
     </div>
   );
-});
+}, areDataRowPropsEqual);
 
 // ── Inline Editing Cells ──────────────────────────────────────────
 
-function InlineLifecycleCell({
+const InlineLifecycleCell = memo(function InlineLifecycleCell({
   contact,
   onUpdate,
 }: {
@@ -565,11 +760,12 @@ function InlineLifecycleCell({
 }) {
   return (
     <Select
+      size="sm"
       value={contact.lifecycle_stage}
       onValueChange={(value) => onUpdate(contact.id, { lifecycle_stage: value as LifecycleStage })}
     >
       <SelectTrigger
-        className="h-6 w-full gap-1 border-none bg-transparent px-1 text-xs shadow-none hover:bg-muted"
+        className="h-6 w-full gap-1 border-none bg-transparent px-1 text-xs shadow-none hover:bg-muted [&>span[data-slot=select-icon]]:hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${lifecycleColors[contact.lifecycle_stage] ?? ''}`}>
@@ -587,9 +783,9 @@ function InlineLifecycleCell({
       </SelectContent>
     </Select>
   );
-}
+});
 
-function InlineLeadStatusCell({
+const InlineLeadStatusCell = memo(function InlineLeadStatusCell({
   contact,
   onUpdate,
 }: {
@@ -598,11 +794,12 @@ function InlineLeadStatusCell({
 }) {
   return (
     <Select
+      size="sm"
       value={contact.lead_status}
       onValueChange={(value) => onUpdate(contact.id, { lead_status: value as LeadStatus })}
     >
       <SelectTrigger
-        className="h-6 w-full gap-1 border-none bg-transparent px-1 text-xs shadow-none hover:bg-muted"
+        className="h-6 w-full gap-1 border-none bg-transparent px-1 text-xs shadow-none hover:bg-muted [&>span[data-slot=select-icon]]:hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <span className="truncate capitalize">{contact.lead_status.replace(/_/g, ' ')}</span>
@@ -616,9 +813,9 @@ function InlineLeadStatusCell({
       </SelectContent>
     </Select>
   );
-}
+});
 
-function InlineOwnerCell({
+const InlineOwnerCell = memo(function InlineOwnerCell({
   contact,
   assignableMembers,
   ownerNameMap,
@@ -664,9 +861,9 @@ function InlineOwnerCell({
       }}
     />
   );
-}
+});
 
-function InlineActionsCell({
+const InlineActionsCell = memo(function InlineActionsCell({
   contact,
   onOpen,
   onDelete,
@@ -700,4 +897,4 @@ function InlineActionsCell({
       </DropdownMenuContent>
     </DropdownMenu>
   );
-}
+});
