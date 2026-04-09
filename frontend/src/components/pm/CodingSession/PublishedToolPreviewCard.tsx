@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ArrowExpandIcon, File01Icon } from '@/lib/icons';
 
-import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { parseToolInvocationPublishedPreview, type PublishedPreview } from '@/components/pm/runPreviews';
 import { cn } from '@/lib/utils';
@@ -81,14 +80,9 @@ function previewSummaryLines(preview: PublishedPreview): string[] {
   return jsonSummaryLines(preview.content);
 }
 
-function actionLabel(toolName: string) {
-  return toolName.startsWith('publish_') ? 'Published preview to right pane' : 'Updated preview panel';
-}
-
 export function PublishedToolPreviewCard({
   toolName,
   argsText,
-  resultText,
   compact = false,
 }: {
   toolName: string;
@@ -102,50 +96,42 @@ export function PublishedToolPreviewCard({
   if (!preview) return null;
 
   const summaryLines = previewSummaryLines(preview);
-  const subtitle = actionLabel(toolName);
-  const secondaryResult = resultText && resultText !== subtitle ? compactLine(resultText, 180) : '';
+
+  const hasMarkdown = preview.format === 'markdown' && typeof preview.content === 'string';
 
   return (
     <>
-      <div className={cn('rounded-xl border border-border/60 bg-card/90 p-3 shadow-sm', compact && 'p-2.5')}>
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 space-y-1.5">
-            <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              <File01Icon className="h-3.5 w-3.5" />
-              {subtitle}
-            </div>
-            <div className="flex flex-wrap items-center gap-1.5">
-              <p className="text-sm font-semibold leading-5 text-foreground">{preview.title}</p>
-              <Badge variant="outline" className="h-5 rounded-full px-1.5 text-[10px]">
-                {preview.panelKey}
-              </Badge>
-            </div>
-          </div>
+      <button
+        type="button"
+        className={cn(
+          'w-full rounded-xl border border-border/60 bg-card/90 p-3 text-left shadow-sm transition-colors hover:border-border hover:bg-card',
+          compact && 'p-2.5',
+        )}
+        onClick={() => setDialogOpen(true)}
+      >
+        <div className="flex items-center gap-2">
+          <File01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <p className="min-w-0 truncate text-sm font-semibold leading-5 text-foreground">{preview.title}</p>
         </div>
 
-        {summaryLines.length > 0 ? (
-          <div className="mt-3 rounded-lg border border-border/50 bg-muted/20 px-3 py-2.5 text-xs leading-5 text-muted-foreground">
+        {hasMarkdown ? (
+          <div className="relative mt-2.5 max-h-[8rem] overflow-hidden">
+            <MarkdownContent content={preview.content as string} className="text-xs leading-5 text-muted-foreground" />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-card to-transparent" />
+          </div>
+        ) : summaryLines.length > 0 ? (
+          <div className="mt-2.5 text-xs leading-5 text-muted-foreground">
             {summaryLines.map((line, index) => (
               <p key={`${line}-${index}`}>{line}</p>
             ))}
           </div>
         ) : null}
 
-        {secondaryResult ? (
-          <p className="mt-2 text-[11px] leading-5 text-muted-foreground">{secondaryResult}</p>
-        ) : null}
-
-        <div className="mt-3 flex items-center gap-3">
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
-            onClick={() => setDialogOpen(true)}
-          >
-            <ArrowExpandIcon className="h-3.5 w-3.5" />
-            Expand preview
-          </button>
+        <div className="mt-2 flex items-center gap-1 text-[11px] font-medium text-primary">
+          <ArrowExpandIcon className="h-3 w-3" />
+          View full document
         </div>
-      </div>
+      </button>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="z-[140] gap-0 overflow-hidden border-border/70 bg-background p-0 shadow-2xl sm:max-w-5xl">
