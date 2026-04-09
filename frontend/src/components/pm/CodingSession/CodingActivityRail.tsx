@@ -276,7 +276,7 @@ function toolChrome(toolName: string, isFailed: boolean): { icon: ReactNode; ico
   };
 }
 
-const RAIL_COLLAPSED_LINES = 3;
+const RAIL_COLLAPSED_LINES = 2;
 
 function extractFilePathsFromText(text: string): string[] {
   const matches = text.match(/(?:^|\s)((?:\/|\.\.?\/)?[\w./-]+\.(?:ts|tsx|js|jsx|go|py|css|html|json|sql|md|yaml|yml|toml|sh))\b/g);
@@ -293,25 +293,22 @@ function CollapsibleCodeBlock({ text, failed }: { text: string; failed?: boolean
   return (
     <div className="relative">
       <pre className={cn(
-        'overflow-auto whitespace-pre-wrap break-all rounded-md border px-2 py-1.5 text-[11px] leading-5',
+        'overflow-auto whitespace-pre-wrap break-all rounded-md border px-2 py-1.5 font-mono text-[11px] leading-5',
         failed
-          ? 'border-destructive/30 bg-destructive/5 text-destructive dark:bg-destructive/10'
-          : 'border-border bg-slate-950 text-slate-100',
-        !expanded && isLong && 'max-h-[76px]',
+          ? 'border-destructive/20 bg-destructive/5 text-destructive dark:bg-destructive/10'
+          : 'border-border/60 bg-muted/50 text-foreground/80',
+        !expanded && isLong && 'max-h-[52px]',
         expanded && 'max-h-48',
       )}>
         {expanded || !isLong ? text : lines.slice(0, RAIL_COLLAPSED_LINES).join('\n')}
       </pre>
       {isLong && !expanded && (
-        <div className={cn(
-          'pointer-events-none absolute inset-x-0 bottom-0 h-6 rounded-b-md bg-gradient-to-t',
-          failed ? 'from-destructive/5 to-transparent dark:from-destructive/10' : 'from-slate-950 to-transparent',
-        )} />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-6 rounded-b-md bg-gradient-to-t from-muted/80 to-transparent" />
       )}
       {isLong && (
         <button
           type="button"
-          className="mt-0.5 text-[10px] font-medium text-primary hover:underline"
+          className="mt-1 text-[10px] font-medium text-primary hover:underline"
           onClick={() => setExpanded((prev) => !prev)}
         >
           {expanded ? 'Show less' : `Show more (${lines.length} lines)`}
