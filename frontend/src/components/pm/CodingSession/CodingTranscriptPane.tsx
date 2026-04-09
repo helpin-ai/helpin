@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { UnicodeSpinner } from '@/components/pm/CodingSession/UnicodeSpinner';
 import {
   BotIcon,
   SourceCodeIcon,
@@ -459,7 +460,7 @@ function toolChrome(toolName: string, isFailed: boolean, isRunning: boolean): { 
   }
   if (isRunning) {
     return {
-      icon: <Loading01Icon className="h-3.5 w-3.5 animate-spin" />,
+      icon: <UnicodeSpinner name="braille" className="text-xs" />,
       iconClass: 'bg-primary/10 border-primary/30 text-primary',
     };
   }

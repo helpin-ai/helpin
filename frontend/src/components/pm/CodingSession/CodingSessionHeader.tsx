@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { buildAutomationRunsPath } from '@/lib/automationUi';
 import type { CodingSession } from '@/lib/pmTypes';
+import { cn } from '@/lib/utils';
 import { formatCodingSessionRelative } from './codingSessionUtils';
 
 export function CodingSessionHeader({
@@ -64,9 +65,9 @@ export function CodingSessionHeader({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Badge variant="outline" className="gap-1.5 text-xs">
+        <Badge variant="outline" className={cn('gap-1.5 text-xs', session?.status === 'running' && 'border-primary/30 text-primary')}>
           {statusIcon}
-          {session?.status ?? 'Loading'}
+          {session?.status === 'running' ? 'Running' : session?.status ?? 'Loading'}
         </Badge>
         {session?.pause_reason && session.pause_reason !== 'none' ? (
           <Badge variant="secondary" className="text-xs">
