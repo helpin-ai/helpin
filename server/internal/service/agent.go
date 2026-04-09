@@ -821,7 +821,7 @@ func describeGitHubPullRequestTrigger(rule model.AutomationRule, action string) 
 	if err := json.Unmarshal(rule.TriggerConfig, &cfg); err == nil {
 		parts := make([]string, 0, 2)
 		if strings.TrimSpace(cfg.BaseBranch) != "" {
-			parts = append(parts, fmt.Sprintf("base branch `%s`", strings.TrimSpace(cfg.BaseBranch)))
+			parts = append(parts, fmt.Sprintf("PR base branch `%s`", strings.TrimSpace(cfg.BaseBranch)))
 		}
 		if strings.TrimSpace(cfg.RepoFullName) != "" {
 			parts = append(parts, fmt.Sprintf("repo `%s`", strings.TrimSpace(cfg.RepoFullName)))
@@ -1821,6 +1821,8 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 			input:          payload,
 			trigger:        trigger,
 			delivery:       delivery,
+			baseBranch:     req.BaseBranch,
+			workingBranch:  req.WorkingBranch,
 			invocationMode: resolveInvocationMode(agent),
 		})
 		if err != nil {
@@ -1862,6 +1864,8 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 			actorID:        actorID,
 			input:          payload,
 			trigger:        trigger,
+			baseBranch:     req.BaseBranch,
+			workingBranch:  req.WorkingBranch,
 			invocationMode: resolveInvocationMode(agent),
 		})
 		if err != nil {
@@ -1903,10 +1907,14 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 
 		repoID := repo.ID
 		repoFullName := strings.TrimSpace(repo.FullName)
-		baseBranch := strings.TrimSpace(repo.DefaultBranch)
+		baseBranch := strings.TrimSpace(derefString(req.BaseBranch))
+		if baseBranch == "" {
+			baseBranch = strings.TrimSpace(repo.DefaultBranch)
+		}
 		if baseBranch == "" {
 			baseBranch = "main"
 		}
+		workingBranch := strings.TrimSpace(derefString(req.WorkingBranch))
 
 		run, err := s.createRun(ctx, createRunParams{
 			workspaceID:    workspaceID,
@@ -1919,6 +1927,7 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 			repositoryID:   &repoID,
 			repoFullName:   strPtr(repoFullName),
 			baseBranch:     strPtr(baseBranch),
+			workingBranch:  nilIfEmpty(workingBranch),
 			invocationMode: resolveInvocationMode(agent),
 		})
 		if err != nil {

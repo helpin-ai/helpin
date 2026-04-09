@@ -121,6 +121,8 @@ type ActionConfigRunAgent struct {
 	TargetID          string  `json:"target_id,omitempty"`
 	AgentID           string  `json:"agent_id"`
 	AdditionalContext *string `json:"additional_context,omitempty"`
+	BaseBranch        string  `json:"base_branch,omitempty"`
+	WorkingBranch     string  `json:"working_branch,omitempty"`
 }
 
 // ActionConfigMoveToState holds config for move_to_state actions.

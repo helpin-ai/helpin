@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { BASE_BRANCH_TOKEN, describeMergeInto } from '@/lib/branchLabels';
 import { automationRuleService } from '@/lib/services/automationRuleService';
 import { StateTypeIcon } from '@/lib/pmConstants';
 import type { Agent, AutomationRule, WorkflowState } from '@/lib/pmTypes';
@@ -112,7 +113,7 @@ export function PipelineBuilder({
     } else if (branch) {
       await automationRuleService.create(workspaceId, {
         workspace_id: workspaceId,
-        name: `Merge branch on ${stateName}`,
+        name: `Merge task branch on ${stateName}`,
         workflow_id: workflowId,
         trigger_type: 'task.state_entered',
         trigger_config: { state_id: stateId },
@@ -215,7 +216,7 @@ export function PipelineBuilder({
                     </div>
                   )}
 
-                  {/* Merge branch (compact input) */}
+                  {/* Merge destination (compact input) */}
                   {editable && (
                     <MergeBranchInput
                       value={mergeBranch}
@@ -246,11 +247,11 @@ export function PipelineBuilder({
   );
 }
 
-/** Small inline input for merge branch that appears on click */
+/** Small inline input for merge destination that appears on click */
 function MergeBranchInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [editing, setEditing] = useState(false);
-  const isBaseBranch = value === '{base_branch}';
-  const mode = isBaseBranch ? '{base_branch}' : value ? '__custom__' : '';
+  const isBaseBranch = value === BASE_BRANCH_TOKEN;
+  const mode = isBaseBranch ? BASE_BRANCH_TOKEN : value ? '__custom__' : '';
   const [customDraft, setCustomDraft] = useState(isBaseBranch ? '' : value);
 
   if (!editing && !value) {
@@ -258,10 +259,10 @@ function MergeBranchInput({ value, onChange }: { value: string; onChange: (v: st
       <button
         type="button"
         className="mt-2 flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
-        onClick={() => { onChange('{base_branch}'); }}
+        onClick={() => { onChange(BASE_BRANCH_TOKEN); }}
       >
         <GitBranchIcon className="h-2.5 w-2.5" />
-        Merge branch...
+        Merge into...
       </button>
     );
   }
@@ -270,11 +271,10 @@ function MergeBranchInput({ value, onChange }: { value: string; onChange: (v: st
     return (
       <div className="mt-2 flex items-center gap-1 text-[10px]">
         <GitBranchIcon className="h-2.5 w-2.5 text-muted-foreground" />
-        {isBaseBranch ? (
-          <span className="truncate text-muted-foreground">→ base branch <span className="opacity-60">(from team defaults)</span></span>
-        ) : (
-          <span className="truncate text-muted-foreground">→ {value}</span>
-        )}
+        <span className="truncate text-muted-foreground">
+          → {describeMergeInto(value).replace(/^Merge into /, '')}
+          {isBaseBranch ? <span className="opacity-60"> (default PR destination)</span> : null}
+        </span>
         <button type="button" className="text-muted-foreground hover:text-foreground ml-0.5" onClick={() => setEditing(true)}>
           <ArrowRight01Icon className="h-2.5 w-2.5 rotate-90" />
         </button>
@@ -290,10 +290,10 @@ function MergeBranchInput({ value, onChange }: { value: string; onChange: (v: st
       <div className="flex items-center gap-1">
         <GitBranchIcon className="h-2.5 w-2.5 text-muted-foreground shrink-0" />
         <Select
-          value={mode || '{base_branch}'}
+          value={mode || BASE_BRANCH_TOKEN}
           onValueChange={(v) => {
-            if (v === '{base_branch}') {
-              onChange('{base_branch}');
+            if (v === BASE_BRANCH_TOKEN) {
+              onChange(BASE_BRANCH_TOKEN);
               setEditing(false);
             } else {
               setCustomDraft('');
@@ -304,8 +304,8 @@ function MergeBranchInput({ value, onChange }: { value: string; onChange: (v: st
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="{base_branch}">Task&apos;s base branch</SelectItem>
-            <SelectItem value="__custom__">Custom branch...</SelectItem>
+            <SelectItem value={BASE_BRANCH_TOKEN}>Merge into task base branch</SelectItem>
+            <SelectItem value="__custom__">Custom merge branch...</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -314,7 +314,7 @@ function MergeBranchInput({ value, onChange }: { value: string; onChange: (v: st
           className="h-5 text-[10px] px-1"
           value={customDraft}
           onChange={(e) => setCustomDraft(e.target.value)}
-          placeholder="branch name"
+          placeholder="branch to merge into"
           autoFocus
           onKeyDown={(e) => {
             if (e.key === 'Enter' && customDraft.trim()) { onChange(customDraft.trim()); setEditing(false); }

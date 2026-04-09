@@ -33,6 +33,11 @@ export interface GitRepository {
   updated_at: string;
 }
 
+export interface GitBranch {
+  name: string;
+  is_default: boolean;
+}
+
 export interface TaskDeliveryTarget {
   id: string;
   workspace_id: string;

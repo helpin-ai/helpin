@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { RepositoryBranchPicker } from '@/components/git/RepositoryBranchPicker';
+import { BASE_BRANCH_TOKEN, TASK_BRANCH_TOKEN, describeMergeInto, describeRunBranchOverrides } from '@/lib/branchLabels';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { automationRuleService } from '@/lib/services/automationRuleService';
 import { agentService } from '@/lib/services/agentService';
@@ -38,7 +40,7 @@ const STATE_TYPE_LABEL: Record<StateType, string> = {
 const ACTION_LABELS: Record<string, string> = {
   start_agent_run: 'Run agent',
   move_to_state: 'Move to state',
-  merge_branch: 'Merge branch',
+  merge_branch: 'Merge into',
 };
 
 const TRIGGER_LABELS: Record<string, string> = {
@@ -88,7 +90,10 @@ function describeAutomationRule(
   const triggerLabel = TRIGGER_LABELS[rule.trigger_type] ?? rule.trigger_type;
   if (rule.action_type === 'start_agent_run') {
     const agentName = agents.find((agent) => agent.id === rule.action_config?.agent_id)?.name ?? 'Unknown agent';
-    return `${triggerLabel} → Run ${agentName}`;
+    return `${triggerLabel} → Run ${agentName}${describeRunBranchOverrides(
+      typeof rule.action_config?.base_branch === 'string' ? rule.action_config.base_branch : '',
+      typeof rule.action_config?.working_branch === 'string' ? rule.action_config.working_branch : '',
+    )}`;
   }
   if (rule.action_type === 'move_to_state') {
     const targetStateID = typeof rule.action_config?.target_state_id === 'string' ? rule.action_config.target_state_id : '';
@@ -97,7 +102,7 @@ function describeAutomationRule(
   }
   if (rule.action_type === 'merge_branch') {
     const branch = typeof rule.action_config?.target_branch === 'string' ? rule.action_config.target_branch : '';
-    return `${triggerLabel} → Merge to ${branch || 'target branch'}`;
+    return `${triggerLabel} → ${describeMergeInto(branch || BASE_BRANCH_TOKEN)}`;
   }
   return `${triggerLabel} → ${rule.action_type}`;
 }
@@ -127,6 +132,8 @@ function PipelineRulesSection({
   const [newAgentId, setNewAgentId] = useState<string>('');
   const [newTargetStateId, setNewTargetStateId] = useState<string>('');
   const [newTargetBranch, setNewTargetBranch] = useState<string>('');
+  const [newRunBaseBranch, setNewRunBaseBranch] = useState<string>('');
+  const [newRunWorkingBranch, setNewRunWorkingBranch] = useState<string>('');
   const [saving, setSaving] = useState(false);
 
   const handleAdd = async () => {
@@ -137,11 +144,13 @@ function PipelineRulesSection({
     if (newAction === 'start_agent_run') {
       if (!newAgentId) { toast.error('Select an agent'); setSaving(false); return; }
       actionConfig = { agent_id: newAgentId };
+      if (newRunBaseBranch.trim()) actionConfig.base_branch = newRunBaseBranch.trim();
+      if (newRunWorkingBranch.trim()) actionConfig.working_branch = newRunWorkingBranch.trim();
     } else if (newAction === 'move_to_state') {
       if (!newTargetStateId) { toast.error('Select a target state'); setSaving(false); return; }
       actionConfig = { target_state_id: newTargetStateId };
     } else if (newAction === 'merge_branch') {
-      if (!newTargetBranch.trim()) { toast.error('Enter a target branch'); setSaving(false); return; }
+      if (!newTargetBranch.trim()) { toast.error('Enter the branch to merge into'); setSaving(false); return; }
       actionConfig = { target_branch: newTargetBranch.trim() };
     }
 
@@ -162,6 +171,8 @@ function PipelineRulesSection({
     setNewAgentId('');
     setNewTargetStateId('');
     setNewTargetBranch('');
+    setNewRunBaseBranch('');
+    setNewRunWorkingBranch('');
     onChanged();
   };
 
@@ -183,9 +194,14 @@ function PipelineRulesSection({
 
   const ruleDescription = (rule: AutomationRule) => {
     const trigger = TRIGGER_LABELS[rule.trigger_type] ?? rule.trigger_type;
-    if (rule.action_type === 'start_agent_run') return `${trigger} → Run ${agentName(rule.action_config?.agent_id as string)}`;
+    if (rule.action_type === 'start_agent_run') {
+      return `${trigger} → Run ${agentName(rule.action_config?.agent_id as string)}${describeRunBranchOverrides(
+        typeof rule.action_config?.base_branch === 'string' ? rule.action_config.base_branch : '',
+        typeof rule.action_config?.working_branch === 'string' ? rule.action_config.working_branch : '',
+      )}`;
+    }
     if (rule.action_type === 'move_to_state') return `${trigger} → Move to ${stateFn(rule.action_config?.target_state_id as string)}`;
-    if (rule.action_type === 'merge_branch') return `${trigger} → Merge to ${rule.action_config?.target_branch as string}`;
+    if (rule.action_type === 'merge_branch') return `${trigger} → ${describeMergeInto(rule.action_config?.target_branch as string)}`;
     return `${trigger} → ${rule.action_type}`;
   };
 
@@ -235,22 +251,47 @@ function PipelineRulesSection({
                 <SelectContent>
                 <SelectItem value="start_agent_run">Run agent</SelectItem>
                 <SelectItem value="move_to_state">Move to state</SelectItem>
-                <SelectItem value="merge_branch">Merge branch</SelectItem>
+                <SelectItem value="merge_branch">Merge into</SelectItem>
                 </SelectContent>
               </Select>
           </div>
 
           {newAction === 'start_agent_run' && (
-            <Select value={newAgentId} onValueChange={setNewAgentId}>
-              <SelectTrigger className="h-7 text-xs">
-                <SelectValue placeholder="Select agent..." />
-              </SelectTrigger>
-              <SelectContent>
-                {agents.map((agent) => (
-                  <SelectItem key={agent.id} value={agent.id}>{agent.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="space-y-2">
+              <Select value={newAgentId} onValueChange={setNewAgentId}>
+                <SelectTrigger className="h-7 text-xs">
+                  <SelectValue placeholder="Select agent..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {agents.map((agent) => (
+                    <SelectItem key={agent.id} value={agent.id}>{agent.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="grid gap-2 md:grid-cols-2">
+                <div className="space-y-1">
+                  <Label className="text-[11px] text-muted-foreground">Base branch override</Label>
+                  <Input
+                    className="h-7 text-xs"
+                    value={newRunBaseBranch}
+                    onChange={(e) => setNewRunBaseBranch(e.target.value)}
+                    placeholder="{base_branch} or release/2026.04"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[11px] text-muted-foreground">Task branch override</Label>
+                  <Input
+                    className="h-7 text-xs"
+                    value={newRunWorkingBranch}
+                    onChange={(e) => setNewRunWorkingBranch(e.target.value)}
+                    placeholder={TASK_BRANCH_TOKEN}
+                  />
+                </div>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Use <code>{TASK_BRANCH_TOKEN}</code> for the branch the agent checks out and pushes to, and <code>{BASE_BRANCH_TOKEN}</code> for the branch the task starts from and pull requests target by default.
+              </p>
+            </div>
           )}
 
           {newAction === 'move_to_state' && (
@@ -300,7 +341,7 @@ function describeWorkspaceEventRule(rule: AutomationRule, agents: Agent[], repos
   const filters = [
     typeof config.repo_full_name === 'string' && config.repo_full_name ? `repo ${config.repo_full_name}` : null,
     typeof config.branch === 'string' && config.branch ? `branch ${config.branch}` : null,
-    typeof config.base_branch === 'string' && config.base_branch ? `base ${config.base_branch}` : null,
+    typeof config.base_branch === 'string' && config.base_branch ? `base branch ${config.base_branch}` : null,
     typeof config.tag_name === 'string' && config.tag_name ? `tag ${config.tag_name}` : null,
     typeof config.conclusion === 'string' && config.conclusion ? `conclusion ${config.conclusion}` : null,
   ].filter(Boolean);
@@ -315,7 +356,10 @@ function describeWorkspaceEventRule(rule: AutomationRule, agents: Agent[], repos
       targetLabel = ` on fixed ${targetType}`;
     }
   }
-  return `${triggerLabel} → Run ${agentName}${targetLabel}${filters.length ? ` (${filters.join(' · ')})` : ''}`;
+  return `${triggerLabel} → Run ${agentName}${targetLabel}${describeRunBranchOverrides(
+    typeof rule.action_config?.base_branch === 'string' ? rule.action_config.base_branch : '',
+    typeof rule.action_config?.working_branch === 'string' ? rule.action_config.working_branch : '',
+  )}${filters.length ? ` (${filters.join(' · ')})` : ''}`;
 }
 
 function WorkspaceEventRulesSection({
@@ -558,22 +602,38 @@ function WorkspaceEventRulesSection({
           </div>
 
           <div className="grid gap-3 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label className="text-xs">Repository</Label>
-              <Input value={repoFullName} onChange={(e) => setRepoFullName(e.target.value)} placeholder="owner/repo" className="h-8 text-xs" />
-            </div>
+              <div className="space-y-2">
+                <Label className="text-xs">Repository</Label>
+                <Input value={repoFullName} onChange={(e) => setRepoFullName(e.target.value)} placeholder="owner/repo" className="h-8 text-xs" />
+              </div>
 
             {(triggerType === 'github.push' || triggerType === 'github.check_suite_completed') && (
               <div className="space-y-2">
                 <Label className="text-xs">Branch</Label>
-                <Input value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="main" className="h-8 text-xs" />
+                <RepositoryBranchPicker
+                  workspaceId={workspaceId}
+                  repositoryId={repositories.find((repo) => repo.full_name === repoFullName)?.id}
+                  value={branch}
+                  onChange={setBranch}
+                  placeholder="main"
+                  emptyLabel="Any branch"
+                  disabled={saving}
+                />
               </div>
             )}
 
             {(triggerType === 'github.pull_request_opened' || triggerType === 'github.pull_request_merged' || triggerType === 'github.pull_request_review_requested') && (
               <div className="space-y-2">
                 <Label className="text-xs">Base branch</Label>
-                <Input value={baseBranch} onChange={(e) => setBaseBranch(e.target.value)} placeholder="main" className="h-8 text-xs" />
+                <RepositoryBranchPicker
+                  workspaceId={workspaceId}
+                  repositoryId={repositories.find((repo) => repo.full_name === repoFullName)?.id}
+                  value={baseBranch}
+                  onChange={setBaseBranch}
+                  placeholder="main"
+                  emptyLabel="Any base branch"
+                  disabled={saving}
+                />
               </div>
             )}
 

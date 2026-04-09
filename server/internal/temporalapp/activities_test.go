@@ -82,6 +82,90 @@ func TestExecutionRuntimeKindPrefersRunOverride(t *testing.T) {
 	}
 }
 
+func TestPrepareTaskDeliveryKeepsRunBranchOverridesOffSavedTarget(t *testing.T) {
+	dbName := fmt.Sprintf("file:prepare-task-delivery-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE task_delivery_targets (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		task_id TEXT NOT NULL UNIQUE,
+		repository_id TEXT,
+		repo_full_name TEXT,
+		integration_id TEXT,
+		base_branch TEXT,
+		working_branch TEXT,
+		delivery_state TEXT NOT NULL DEFAULT 'unconfigured',
+		active_pr_number INTEGER,
+		active_pr_title TEXT,
+		active_pr_url TEXT,
+		active_pr_status TEXT,
+		last_commit_sha TEXT,
+		last_run_id TEXT,
+		last_synced_at DATETIME,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create task_delivery_targets: %v", err)
+	}
+
+	deliveryRepo := repository.NewTaskDeliveryTargetRepository(db)
+	target := &model.TaskDeliveryTarget{
+		ID:            "target-1",
+		WorkspaceID:   "ws-1",
+		TaskID:        "task-1",
+		RepositoryID:  strPtr("repo-1"),
+		BaseBranch:    strPtr("develop"),
+		WorkingBranch: strPtr("hlp-42-existing"),
+		DeliveryState: "ready",
+	}
+	if err := deliveryRepo.Save(context.Background(), target); err != nil {
+		t.Fatalf("save target: %v", err)
+	}
+
+	activities := &AgentRunActivities{deliveryRepo: deliveryRepo}
+	state := &resolvedRunState{
+		run: &model.AgentRun{
+			ID:            "run-1",
+			WorkspaceID:   "ws-1",
+			BaseBranch:    strPtr("release/2026.04"),
+			WorkingBranch: strPtr("lens/review-hotfix"),
+		},
+		resolved:       workerpkg.ResolvedProfile{RequiresRepo: false},
+		deliveryTarget: target,
+		repository: &model.GitRepository{
+			ID:            "repo-1",
+			IntegrationID: "integration-1",
+			FullName:      "acme/api",
+			DefaultBranch: "main",
+		},
+		integration: &model.GitIntegration{ID: "integration-1"},
+	}
+
+	if err := activities.prepareTaskDelivery(context.Background(), state); err != nil {
+		t.Fatalf("prepareTaskDelivery returned error: %v", err)
+	}
+
+	reloaded, err := deliveryRepo.GetByTask(context.Background(), "ws-1", "task-1")
+	if err != nil {
+		t.Fatalf("reload target: %v", err)
+	}
+	if got := derefString(reloaded.BaseBranch); got != "develop" {
+		t.Fatalf("saved base branch = %q, want develop", got)
+	}
+	if got := derefString(reloaded.WorkingBranch); got != "hlp-42-existing" {
+		t.Fatalf("saved working branch = %q, want hlp-42-existing", got)
+	}
+	if got := derefString(state.run.BaseBranch); got != "release/2026.04" {
+		t.Fatalf("run base branch = %q, want release/2026.04", got)
+	}
+	if got := derefString(state.run.WorkingBranch); got != "lens/review-hotfix" {
+		t.Fatalf("run working branch = %q, want lens/review-hotfix", got)
+	}
+}
+
 func newPlannerApprovalTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
@@ -2743,7 +2827,7 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 					ID:              "db-" + planned.Ref,
 					WorkspaceID:     run.WorkspaceID,
 					Name:            planned.Name,
-					TaskType:       planned.TaskType,
+					TaskType:        planned.TaskType,
 					WorkflowID:      "wf-1",
 					WorkflowStateID: "state-1",
 					EpicID:          &epic.ID,
@@ -2767,7 +2851,7 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 		runRepo:         runRepo,
 		artifactRepo:    artifactRepo,
 		epicRepo:        epicRepo,
-		taskRepo:       taskRepo,
+		taskRepo:        taskRepo,
 		agentRepo:       agentRepo,
 		commandExecutor: commandExecutor,
 	}
@@ -3053,7 +3137,7 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 		WorkspaceID:     "ws-1",
 		Name:            "Track 4xx errors",
 		DisplayID:       1,
-		TaskType:       model.PMTaskTypeFeature,
+		TaskType:        model.PMTaskTypeFeature,
 		WorkflowID:      "wf-1",
 		WorkflowStateID: "state-1",
 		Priority:        model.PMTaskPriorityNone,
@@ -3120,7 +3204,7 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 	activity := &AgentRunActivities{
 		runRepo:         runRepo,
 		artifactRepo:    artifactRepo,
-		taskRepo:       taskRepo,
+		taskRepo:        taskRepo,
 		agentRepo:       agentRepo,
 		docsSpaceRepo:   docsSpaceRepo,
 		docsDocRepo:     docsDocRepo,
@@ -3276,16 +3360,16 @@ func TestBuildInitialInstructionsIncludesTaskPlanningDocForTaskExecutionRun(t *t
 	if err != nil {
 		t.Fatalf("buildInitialInstructions returned error: %v", err)
 	}
-		for _, snippet := range []string{
-			"Operator notes:\nFocus on the capture pipeline.",
-			"Canonical task planning document: Track 4xx errors [doc-task-prd]",
-			"# Task PRD",
-			"Implement the linked task PRD first.",
-			"Other docs linked directly to this task:",
-			"Error Payload Notes [doc-task-extra]",
-			"## Payload Fields",
-			"Capture the upstream error payload fields.",
-		} {
+	for _, snippet := range []string{
+		"Operator notes:\nFocus on the capture pipeline.",
+		"Canonical task planning document: Track 4xx errors [doc-task-prd]",
+		"# Task PRD",
+		"Implement the linked task PRD first.",
+		"Other docs linked directly to this task:",
+		"Error Payload Notes [doc-task-extra]",
+		"## Payload Fields",
+		"Capture the upstream error payload fields.",
+	} {
 		if !strings.Contains(instructions, snippet) {
 			t.Fatalf("expected instructions to contain %q\n%s", snippet, instructions)
 		}

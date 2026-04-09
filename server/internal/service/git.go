@@ -251,6 +251,54 @@ func (s *GitService) GetRepositoryByID(ctx context.Context, workspaceID, repoID 
 	return s.repoRepo.GetByID(ctx, workspaceID, repoID)
 }
 
+// ListRepositoryBranches returns available branches for a synced repository.
+func (s *GitService) ListRepositoryBranches(ctx context.Context, workspaceID, repoID string) ([]model.GitBranch, error) {
+	repo, err := s.GetRepositoryByID(ctx, workspaceID, repoID)
+	if err != nil {
+		return nil, err
+	}
+	if repo == nil {
+		return nil, fmt.Errorf("repository not found")
+	}
+
+	integration, err := s.integrationRepo.GetByID(ctx, workspaceID, repo.IntegrationID)
+	if err != nil {
+		return nil, err
+	}
+	if integration == nil {
+		return nil, fmt.Errorf("git integration not found")
+	}
+
+	switch integration.Provider {
+	case "github":
+		if s.githubApp == nil {
+			return nil, fmt.Errorf("github app credentials are not configured")
+		}
+		parts := strings.SplitN(strings.TrimSpace(repo.FullName), "/", 2)
+		if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+			return nil, fmt.Errorf("repository full name is invalid")
+		}
+		if integration.InstallationID == nil || strings.TrimSpace(*integration.InstallationID) == "" {
+			return nil, fmt.Errorf("integration has no installation_id")
+		}
+		branches, err := s.githubApp.ListRepositoryBranches(ctx, *integration.InstallationID, parts[0], parts[1])
+		if err != nil {
+			return nil, err
+		}
+		items := make([]model.GitBranch, 0, len(branches))
+		defaultBranch := strings.TrimSpace(repo.DefaultBranch)
+		for _, branch := range branches {
+			items = append(items, model.GitBranch{
+				Name:      branch.Name,
+				IsDefault: strings.EqualFold(strings.TrimSpace(branch.Name), defaultBranch),
+			})
+		}
+		return items, nil
+	default:
+		return nil, fmt.Errorf("branch listing is not implemented for %s", integration.Provider)
+	}
+}
+
 // UpdateRepositorySelection updates whether a synced repository is available for story delivery.
 func (s *GitService) UpdateRepositorySelection(ctx context.Context, workspaceID, repoID string, selected bool, actorID string) (*model.GitRepository, error) {
 	repo, err := s.repoRepo.GetByID(ctx, workspaceID, repoID)
@@ -505,6 +553,49 @@ func (s *GitService) ResolveTaskDeliveryTargetForRun(ctx context.Context, worksp
 		return nil, ErrTaskDeliveryTargetRequired
 	}
 	return target, nil
+}
+
+// ResolveTaskRunBranchValues returns the effective base and working branch values for a task run.
+func (s *GitService) ResolveTaskRunBranchValues(ctx context.Context, workspaceID, taskID string) (string, string, error) {
+	target, err := s.GetTaskDeliveryTarget(ctx, workspaceID, taskID)
+	if err != nil {
+		return "", "", err
+	}
+	if target == nil {
+		return "", "", fmt.Errorf("task delivery target not found")
+	}
+
+	baseBranch := strings.TrimSpace(derefString(target.BaseBranch))
+	workingBranch := strings.TrimSpace(derefString(target.WorkingBranch))
+	if workingBranch != "" {
+		return baseBranch, workingBranch, nil
+	}
+
+	task, err := s.taskRepo.GetRawByID(ctx, taskID)
+	if err != nil {
+		return "", "", err
+	}
+	if task == nil {
+		return "", "", fmt.Errorf("task not found")
+	}
+
+	var teamDefault *model.PMTeamRepoDefault
+	if task.TeamID != nil && strings.TrimSpace(*task.TeamID) != "" {
+		teamDefault, err = s.settingsRepo.GetTeamRepoDefault(ctx, *task.TeamID)
+		if err != nil {
+			return "", "", err
+		}
+	}
+
+	workspace, err := s.workspaceRepo.GetByID(ctx, workspaceID)
+	if err != nil {
+		return "", "", err
+	}
+	if workspace == nil {
+		return "", "", fmt.Errorf("workspace not found")
+	}
+
+	return baseBranch, model.BuildTaskWorkingBranch(task, teamDefault, workspace.WorkspaceKey), nil
 }
 
 // CreateBranch retains backward compatibility by updating the delivery target and a git link.

@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -28,8 +27,6 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 	workerpkg "github.com/helpin-ai/helpin/server/internal/worker"
 )
-
-var branchTokenSanitizer = regexp.MustCompile(`[^a-z0-9]+`)
 
 const (
 	productSpecsSpaceSlug = "product-specs"
@@ -3283,22 +3280,28 @@ func (a *AgentRunActivities) prepareTaskDelivery(ctx context.Context, state *res
 	if target.IntegrationID == nil {
 		target.IntegrationID = &state.repository.IntegrationID
 	}
-	if target.BaseBranch == nil || strings.TrimSpace(*target.BaseBranch) == "" {
-		baseBranch := defaultString(state.repository.DefaultBranch, "main")
-		target.BaseBranch = &baseBranch
+	effectiveBaseBranch := strings.TrimSpace(derefString(target.BaseBranch))
+	if requestedBaseBranch := strings.TrimSpace(derefString(state.run.BaseBranch)); requestedBaseBranch != "" {
+		effectiveBaseBranch = requestedBaseBranch
+	} else if effectiveBaseBranch == "" {
+		effectiveBaseBranch = defaultString(state.repository.DefaultBranch, "main")
+		target.BaseBranch = &effectiveBaseBranch
 	}
 
-	if state.resolved.RequiresRepo && (target.WorkingBranch == nil || strings.TrimSpace(*target.WorkingBranch) == "") {
-		branchName := buildWorkingBranch(state.task, state.teamDefault, state.workspaceKey)
-		target.WorkingBranch = &branchName
+	effectiveWorkingBranch := strings.TrimSpace(derefString(target.WorkingBranch))
+	if requestedWorkingBranch := strings.TrimSpace(derefString(state.run.WorkingBranch)); requestedWorkingBranch != "" {
+		effectiveWorkingBranch = requestedWorkingBranch
+	} else if state.resolved.RequiresRepo && effectiveWorkingBranch == "" {
+		effectiveWorkingBranch = buildWorkingBranch(state.task, state.teamDefault, state.workspaceKey)
+		target.WorkingBranch = &effectiveWorkingBranch
 	}
 
 	if state.resolved.RequiresRepo && state.accessToken == "" {
 		return fmt.Errorf("repository access token is not available")
 	}
 
-	if state.resolved.RequiresRepo && target.WorkingBranch != nil && *target.WorkingBranch != "" {
-		if err := a.ensureRemoteBranch(ctx, state.integration, state.accessToken, state.repository.FullName, *target.BaseBranch, *target.WorkingBranch); err != nil {
+	if state.resolved.RequiresRepo && effectiveWorkingBranch != "" {
+		if err := a.ensureRemoteBranch(ctx, state.integration, state.accessToken, state.repository.FullName, effectiveBaseBranch, effectiveWorkingBranch); err != nil {
 			return err
 		}
 	}
@@ -3308,8 +3311,16 @@ func (a *AgentRunActivities) prepareTaskDelivery(ctx context.Context, state *res
 		state.run.RepositoryID = target.RepositoryID
 	}
 	state.run.RepoFullName = target.RepoFullName
-	state.run.BaseBranch = target.BaseBranch
-	state.run.WorkingBranch = target.WorkingBranch
+	if strings.TrimSpace(effectiveBaseBranch) != "" {
+		state.run.BaseBranch = &effectiveBaseBranch
+	} else {
+		state.run.BaseBranch = nil
+	}
+	if strings.TrimSpace(effectiveWorkingBranch) != "" {
+		state.run.WorkingBranch = &effectiveWorkingBranch
+	} else {
+		state.run.WorkingBranch = nil
+	}
 	state.run.DeliveryTargetID = &target.ID
 	if state.run.TaskQueue == nil || *state.run.TaskQueue == "" {
 		queue := state.resolved.Queue
@@ -5454,38 +5465,7 @@ func gitAuthArgs(integration *model.GitIntegration, accessToken string) []string
 }
 
 func buildWorkingBranch(task *model.PMTask, teamDefault *model.PMTeamRepoDefault, workspaceKey string) string {
-	template := "{task_key}-{slug}"
-	if teamDefault != nil && strings.TrimSpace(teamDefault.BranchTemplate) != "" {
-		template = teamDefault.BranchTemplate
-	}
-
-	taskKey := model.FormatTaskKey(workspaceKey, task.DisplayID)
-	replacements := map[string]string{
-		"{task_key}":      taskKey,
-		"{workspace_key}": workspaceKey,
-		"{task_type}":     task.TaskType,
-		"{display_id}":    fmt.Sprintf("%d", task.DisplayID),
-		"{slug}":          slugifyBranchToken(task.Name),
-	}
-	for placeholder, value := range replacements {
-		template = strings.ReplaceAll(template, placeholder, value)
-	}
-	template = strings.ToLower(strings.TrimSpace(template))
-	template = strings.Trim(template, "/-")
-	if template == "" {
-		return fmt.Sprintf("%s-%s", strings.ToLower(taskKey), slugifyBranchToken(task.Name))
-	}
-	return template
-}
-
-func slugifyBranchToken(value string) string {
-	value = strings.ToLower(strings.TrimSpace(value))
-	value = branchTokenSanitizer.ReplaceAllString(value, "-")
-	value = strings.Trim(value, "-")
-	if value == "" {
-		return "task"
-	}
-	return value
+	return model.BuildTaskWorkingBranch(task, teamDefault, workspaceKey)
 }
 
 func isEmptySummary(summary json.RawMessage) bool {
