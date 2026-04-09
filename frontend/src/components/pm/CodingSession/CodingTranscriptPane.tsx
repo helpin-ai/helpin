@@ -941,7 +941,7 @@ function CollapsedToolCallGroup({
           'flex h-7 w-7 shrink-0 items-center justify-center rounded-full border',
           failedCount > 0
             ? 'border-destructive/30 bg-destructive/10 text-destructive'
-            : 'border-primary/30 bg-primary/10 text-primary',
+            : 'border-blue-200 bg-blue-50 text-blue-600 dark:border-blue-900/50 dark:bg-blue-950/20 dark:text-blue-400',
         )}>
           <Wrench01Icon className="h-3.5 w-3.5" />
         </div>
