@@ -54,6 +54,22 @@ function firstNonEmptyString(...values: Array<string | undefined>) {
   return values.find((value) => typeof value === 'string' && value.trim().length > 0);
 }
 
+function isRunPlanStep(value: unknown): value is RunPlanArtifact['plan'][number] {
+  const record = asRecord(value);
+  if (!record) return false;
+  return (
+    typeof record.step === 'string'
+    && (record.status === 'pending' || record.status === 'in_progress' || record.status === 'completed')
+  );
+}
+
+function isRunPlanArtifact(value: unknown): value is RunPlanArtifact {
+  const record = asRecord(value);
+  if (!record) return false;
+  if ('note' in record && record.note != null && typeof record.note !== 'string') return false;
+  return Array.isArray(record.plan) && record.plan.every(isRunPlanStep);
+}
+
 function ensureAssistantMessage(
   current: CodingSessionLiveAssistantMessage | null,
   messageID: string,
@@ -429,13 +445,7 @@ function liveAssistantMatchesTranscript(
 function parsePlanArtifact(argsText: string): RunPlanArtifact | null {
   try {
     const parsed = JSON.parse(argsText) as unknown;
-    if (
-      !parsed
-      || typeof parsed !== 'object'
-      || Array.isArray(parsed)
-      || !Array.isArray((parsed as Record<string, unknown>).plan)
-    ) return null;
-    return parsed as RunPlanArtifact;
+    return isRunPlanArtifact(parsed) ? parsed : null;
   } catch {
     return null;
   }
@@ -443,10 +453,7 @@ function parsePlanArtifact(argsText: string): RunPlanArtifact | null {
 
 function parsePlanArtifactValue(value: unknown): RunPlanArtifact | null {
   if (typeof value === 'string') return parsePlanArtifact(value);
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const record = value as Record<string, unknown>;
-  if (!Array.isArray(record.plan)) return null;
-  return record as RunPlanArtifact;
+  return isRunPlanArtifact(value) ? value : null;
 }
 
 function extractPlanFromLiveTurnSegments(
