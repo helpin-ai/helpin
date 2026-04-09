@@ -38,12 +38,12 @@
 - [x] Create `tsconfig.base.json` for shared TypeScript config
 
 ### 1b. SDK Migration (from `/root/helpin-convex-main`)
-- [x] `@helpin/shared` — Shared types (Conversation, Message, WidgetConfig)
-- [x] `@helpin/sdk-js` — JavaScript SDK with analytics + widget support
-- [x] `@helpin/react` — React hooks and provider
-- [x] `@helpin/nextjs` — Next.js SSR-safe hooks
-- [x] `@helpin/widget-core` — Chat widget components (Preact)
-- [x] `@helpin/widget-embed` — IIFE bundle for embeddable widget
+- [x] `@helpin-ai/shared` — Shared types (Conversation, Message, WidgetConfig)
+- [x] `@helpin-ai/sdk-js` — JavaScript SDK with analytics + widget support
+- [x] `@helpin-ai/react` — React hooks and provider
+- [x] `@helpin-ai/nextjs` — Next.js SSR-safe hooks
+- [x] `@helpin-ai/widget-core` — Chat widget components (Preact)
+- [x] `@helpin-ai/widget-embed` — IIFE bundle for embeddable widget
 
 ### 1c. Widget-Core Components (11)
 - [x] `ChatWindow` — Main container with open/close animation
@@ -82,9 +82,9 @@
 ### Bundle Sizes (gzipped)
 | Package | Size |
 |---------|------|
-| `@helpin/widget-core` | 4.6 KB |
-| `@helpin/sdk-js` | 10.4 KB |
-| `@helpin/widget-embed` | 0.25 KB |
+| `@helpin-ai/widget-core` | 4.6 KB |
+| `@helpin-ai/sdk-js` | 10.4 KB |
+| `@helpin-ai/widget-embed` | 0.25 KB |
 
 ---
 
@@ -347,12 +347,12 @@ The package work should create a dual-purpose SDK layer for the Helpin suite: **
 
 **Package responsibilities:**
 
-- `@helpin/shared` — Shared TypeScript types for conversations, messages, widget config, AI sources, branding. Used by all other packages.
-- `@helpin/widget-core` — Framework-agnostic chat widget component library with a pluggable `WidgetAdapter` interface. Contains headless components (ChatWindow, PreChatForm, MessageList, etc.) and CSS with `helpin-` namespace.
-- `@helpin/sdk-js` — Browser SDK that combines analytics tracking (pageviews, events, user identification, UTM capture, scroll depth) with chat widget initialization. When initialized with a `widget_key`, the SDK auto-mounts the support widget. Analytics data feeds CRM signal detection.
-- `@helpin/react` — React Context + hooks for both analytics (`useHelpin`, `usePageView`) and chat (`useSupportWidget`, `useConversation`).
-- `@helpin/nextjs` — Next.js SSR-safe wrapper with Edge Middleware helpers. Provides the same analytics + chat hooks with null-safe fallbacks for server rendering.
-- `@helpin/widget-embed` — Standalone IIFE bundle (`pixel.js`) built with Vite + Preact. This is the script tag customers embed on their website. It bootstraps the widget, creates a shadow DOM container, and connects via the `WidgetAdapter`.
+- `@helpin-ai/shared` — Shared TypeScript types for conversations, messages, widget config, AI sources, branding. Used by all other packages.
+- `@helpin-ai/widget-core` — Framework-agnostic chat widget component library with a pluggable `WidgetAdapter` interface. Contains headless components (ChatWindow, PreChatForm, MessageList, etc.) and CSS with `helpin-` namespace.
+- `@helpin-ai/sdk-js` — Browser SDK that combines analytics tracking (pageviews, events, user identification, UTM capture, scroll depth) with chat widget initialization. When initialized with a `widget_key`, the SDK auto-mounts the support widget. Analytics data feeds CRM signal detection.
+- `@helpin-ai/react` — React Context + hooks for both analytics (`useHelpin`, `usePageView`) and chat (`useSupportWidget`, `useConversation`).
+- `@helpin-ai/nextjs` — Next.js SSR-safe wrapper with Edge Middleware helpers. Provides the same analytics + chat hooks with null-safe fallbacks for server rendering.
+- `@helpin-ai/widget-embed` — Standalone IIFE bundle (`pixel.js`) built with Vite + Preact. This is the script tag customers embed on their website. It bootstraps the widget, creates a shadow DOM container, and connects via the `WidgetAdapter`.
 
 ### 2.3 Required Adaptations
 
@@ -400,7 +400,7 @@ All 11 components currently return `null`. Each must be fully implemented:
 
 **Implementation priorities for MVP:** `WidgetLauncher`, `ChatWindow`, `WidgetHeader`, `PreChatForm`, `MessageList`, `MessageBubble`, `ComposeBar`, `QuickReplies` (with "Talk to a person" action). `StreamingText`, `TypingIndicator`, and `CsatRating` can follow in Phase 4.
 
-#### SDKs (`@helpin/sdk-js`, `@helpin/react`, `@helpin/nextjs`)
+#### SDKs (`@helpin-ai/sdk-js`, `@helpin-ai/react`, `@helpin-ai/nextjs`)
 
 The current `helpin-js` SDK is a production-grade analytics pixel (forked from usermaven-js) with pageview tracking, user identification, UTM capture, scroll depth, retry queues, and multiple transports. It works but has no chat/widget functionality.
 
@@ -421,12 +421,12 @@ The current `helpin-js` SDK is a production-grade analytics pixel (forked from u
 - Widget WebSocket connection management (separate from analytics transport)
 - Identity bridging: analytics `id()` user data passed to widget session for CRM matching
 
-**React wrapper additions (`@helpin/react`):**
+**React wrapper additions (`@helpin-ai/react`):**
 - `useSupportWidget()` hook returning `{ open, close, toggle, isOpen, unreadCount }`
 - `useConversation()` hook for programmatic message access
 - `HelpinProvider` extended to accept `widgetKey` prop
 
-**Next.js wrapper (`@helpin/nextjs`):**
+**Next.js wrapper (`@helpin-ai/nextjs`):**
 - Same as React wrapper but SSR-safe (no-op on server, hydrates on client)
 - Preserve existing Edge Middleware helpers (`getAnonymousId`, `getSourceIp`, `describeClient`)
 - These helpers are valuable for Next.js customers who want server-side analytics tracking
@@ -435,20 +435,20 @@ The current `helpin-js` SDK is a production-grade analytics pixel (forked from u
 
 The SDK packages should live in a **standalone `packages/` directory** at the repo root, not inside `frontend/`. The Helpin dashboard (`frontend/`) is a standalone Vite SPA with no monorepo setup. The SDK packages need their own build pipeline because:
 
-- `@helpin/widget-embed` produces an IIFE bundle (`pixel.js`) for external websites — it cannot share the dashboard's Vite config
-- `@helpin/sdk-js` is a universal JavaScript library (browser + Node) with its own transport layer
-- `@helpin/react` and `@helpin/nextjs` are npm-publishable packages with their own peer dependencies
+- `@helpin-ai/widget-embed` produces an IIFE bundle (`pixel.js`) for external websites — it cannot share the dashboard's Vite config
+- `@helpin-ai/sdk-js` is a universal JavaScript library (browser + Node) with its own transport layer
+- `@helpin-ai/react` and `@helpin-ai/nextjs` are npm-publishable packages with their own peer dependencies
 
 **Target structure:**
 
 ```
 packages/                        # SDK monorepo (pnpm workspaces + Turborepo)
-  shared/                        # @helpin/shared — types only
-  widget-core/                   # @helpin/widget-core — headless components + adapter interface
-  sdk-js/                        # @helpin/sdk-js — analytics + widget init
-  react/                         # @helpin/react — React hooks + provider
-  nextjs/                        # @helpin/nextjs — Next.js SSR-safe wrapper
-  widget-embed/                  # @helpin/widget-embed — IIFE bundle (pixel.js)
+  shared/                        # @helpin-ai/shared — types only
+  widget-core/                   # @helpin-ai/widget-core — headless components + adapter interface
+  sdk-js/                        # @helpin-ai/sdk-js — analytics + widget init
+  react/                         # @helpin-ai/react — React hooks + provider
+  nextjs/                        # @helpin-ai/nextjs — Next.js SSR-safe wrapper
+  widget-embed/                  # @helpin-ai/widget-embed — IIFE bundle (pixel.js)
 pnpm-workspace.yaml              # workspace: packages/*
 turbo.json                       # build orchestration
 ```
@@ -586,8 +586,8 @@ Helpin('shutdown');
 #### NPM Installation
 
 ```javascript
-// @helpin/react
-import { HelpinProvider, useSupportWidget } from '@helpin/react';
+// @helpin-ai/react
+import { HelpinProvider, useSupportWidget } from '@helpin-ai/react';
 
 function App() {
   return (
@@ -604,9 +604,9 @@ function SupportButton() {
 ```
 
 ```javascript
-// @helpin/nextjs (SSR-safe)
-import { HelpinProvider, useSupportWidget } from '@helpin/nextjs';
-// Same API as @helpin/react but with no-op fallbacks on server
+// @helpin-ai/nextjs (SSR-safe)
+import { HelpinProvider, useSupportWidget } from '@helpin-ai/nextjs';
+// Same API as @helpin-ai/react but with no-op fallbacks on server
 ```
 
 #### Pre-load Command Queue
@@ -2564,13 +2564,13 @@ Deliverables:
 
 - create `packages/` directory with pnpm workspace + Turborepo at repo root
 - copy and adapt package structure from `/root/helpin-convex-main`
-- adapt `@helpin/shared` types to Helpin conversation-first naming
-- extend `@helpin/sdk-js` with `initWidget()` and widget lifecycle methods
-- extend `@helpin/react` with `useSupportWidget()` and `useConversation()` hooks
-- adapt `@helpin/nextjs` with SSR-safe chat widget hooks
+- adapt `@helpin-ai/shared` types to Helpin conversation-first naming
+- extend `@helpin-ai/sdk-js` with `initWidget()` and widget lifecycle methods
+- extend `@helpin-ai/react` with `useSupportWidget()` and `useConversation()` hooks
+- adapt `@helpin-ai/nextjs` with SSR-safe chat widget hooks
 - implement widget-core MVP components: `WidgetLauncher`, `ChatWindow`, `WidgetHeader`, `PreChatForm`, `MessageList`, `MessageBubble`, `ComposeBar`, `QuickReplies`
 - implement `WebSocketWidgetAdapter` against Helpin REST + WebSocket APIs
-- build `@helpin/widget-embed` IIFE bundle (`pixel.js`) with Preact and shadow DOM isolation
+- build `@helpin-ai/widget-embed` IIFE bundle (`pixel.js`) with Preact and shadow DOM isolation
 
 Exit criteria:
 
@@ -2812,7 +2812,7 @@ Not implemented:
 ### 14.5 Package Migration ✅ COMPLETE (Phase 1)
 
 PRD specifies packages to copy from `/root/helpin-convex-main`:
-- `@helpin/shared`, `@helpin/widget-core`, `@helpin/sdk-js`, `@helpin/react`, `@helpin/nextjs`, `@helpin/widget-embed`
+- `@helpin-ai/shared`, `@helpin-ai/widget-core`, `@helpin-ai/sdk-js`, `@helpin-ai/react`, `@helpin-ai/nextjs`, `@helpin-ai/widget-embed`
 
 **All packages created and adapted in Phase 1.**
 
@@ -2927,7 +2927,7 @@ SupportPage.tsx still uses "New Ticket" and ticket terminology throughout. Requi
 
 ### 14.10 Widget Embed Build Pipeline ✅ COMPLETE (Phase 1)
 
-The `@helpin/widget-embed` package produces a single `pixel.js` IIFE bundle for embedding via `<script>` tag.
+The `@helpin-ai/widget-embed` package produces a single `pixel.js` IIFE bundle for embedding via `<script>` tag.
 
 **Action Items:**
 - [x] Create `packages/widget-embed/` with Vite IIFE build config (Phase 1)

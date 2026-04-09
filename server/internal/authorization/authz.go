@@ -5,12 +5,18 @@ import (
 	"fmt"
 
 	"gorm.io/gorm"
+
+	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 // MemberRepository is the minimal interface the AuthzService needs to resolve actors.
 type MemberRepository interface {
 	GetMembership(ctx context.Context, workspaceID, userID string) (*MemberInfo, error)
 	GetTeamMemberships(ctx context.Context, workspaceMemberID string) ([]TeamRole, error)
+}
+
+type ModuleAccessRepository interface {
+	ListAccessibleModules(ctx context.Context, workspaceID, workspaceMemberID string, teamIDs []string) ([]model.ModuleID, error)
 }
 
 // MemberInfo holds the membership data needed for actor resolution.
@@ -22,17 +28,19 @@ type MemberInfo struct {
 
 // AuthzService is the single authorization boundary for the application.
 type AuthzService struct {
-	rbac      *RBACEngine
-	relations *RelationEngine
+	rbac       *RBACEngine
+	relations  *RelationEngine
 	memberRepo MemberRepository
+	moduleRepo ModuleAccessRepository
 }
 
 // NewAuthzService creates a new AuthzService.
-func NewAuthzService(db *gorm.DB, memberRepo MemberRepository) *AuthzService {
+func NewAuthzService(db *gorm.DB, memberRepo MemberRepository, moduleRepo ModuleAccessRepository) *AuthzService {
 	return &AuthzService{
 		rbac:       NewRBACEngine(),
 		relations:  NewRelationEngine(db),
 		memberRepo: memberRepo,
+		moduleRepo: moduleRepo,
 	}
 }
 
@@ -106,6 +114,53 @@ func (s *AuthzService) PermissionsForActor(actor *Actor) []Permission {
 	return s.rbac.PermissionsForRole(actor.Role)
 }
 
+func (s *AuthzService) AccessibleModules(ctx context.Context, actor *Actor) ([]model.ModuleID, error) {
+	allowed := map[model.ModuleID]struct{}{
+		model.ModulePM:   {},
+		model.ModuleDocs: {},
+	}
+	if actor == nil {
+		return nil, fmt.Errorf("actor is required")
+	}
+
+	if actor.Role == model.RoleOwner || actor.Role == model.RoleAdmin {
+		allowed[model.ModuleCRM] = struct{}{}
+		allowed[model.ModuleSupport] = struct{}{}
+		return orderedModules(allowed), nil
+	}
+
+	if s.moduleRepo == nil {
+		return orderedModules(allowed), nil
+	}
+
+	modules, err := s.moduleRepo.ListAccessibleModules(ctx, actor.WorkspaceID, actor.WorkspaceMemberID, actor.TeamIDs())
+	if err != nil {
+		return nil, fmt.Errorf("list accessible modules: %w", err)
+	}
+	for _, module := range modules {
+		if model.IsManagedWorkspaceModule(module) {
+			allowed[module] = struct{}{}
+		}
+	}
+	return orderedModules(allowed), nil
+}
+
+func (s *AuthzService) CanAccessModule(ctx context.Context, actor *Actor, module model.ModuleID) (bool, error) {
+	if !model.IsValidWorkspaceModule(module) {
+		return false, fmt.Errorf("unknown module %q", module)
+	}
+	modules, err := s.AccessibleModules(ctx, actor)
+	if err != nil {
+		return false, err
+	}
+	for _, candidate := range modules {
+		if candidate == module {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // --- Relation methods ---
 
 // CanAccessResource checks whether the actor can perform a relation-level action on a resource.
@@ -132,8 +187,18 @@ func (s *AuthzService) ListAccessible(actor *Actor, resourceType, relation strin
 
 // Sentinel errors for membership resolution.
 var (
-	ErrNotAMember        = fmt.Errorf("not a member of this workspace")
-	ErrMembershipPending = fmt.Errorf("membership is pending")
-	ErrMembershipRevoked = fmt.Errorf("membership has been revoked")
+	ErrNotAMember         = fmt.Errorf("not a member of this workspace")
+	ErrMembershipPending  = fmt.Errorf("membership is pending")
+	ErrMembershipRevoked  = fmt.Errorf("membership has been revoked")
 	ErrMembershipInactive = fmt.Errorf("membership is inactive")
 )
+
+func orderedModules(allowed map[model.ModuleID]struct{}) []model.ModuleID {
+	modules := make([]model.ModuleID, 0, len(allowed))
+	for _, module := range model.AllWorkspaceModules() {
+		if _, ok := allowed[module]; ok {
+			modules = append(modules, module)
+		}
+	}
+	return modules
+}

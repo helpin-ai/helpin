@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-Crisp.chat is a mature, feature-rich chat widget with ~27 major feature categories. Helpin's SDK (`@helpin/sdk-js`) is well-architected with WebSocket real-time messaging, AI indicators, and session management, but lacks many consumer expectations for modern support widgets. The most critical gaps are **online/offline status**, **identity verification (OTP)**, **push notifications**, and **emoji/GIF pickers**.
+Crisp.chat is a mature, feature-rich chat widget with ~27 major feature categories. Helpin's SDK (`@helpin-ai/sdk-js`) is well-architected with WebSocket real-time messaging, AI indicators, and session management, but lacks many consumer expectations for modern support widgets. The most critical gaps are **online/offline status**, **identity verification (OTP)**, **push notifications**, and **emoji/GIF pickers**.
 
 ---
 

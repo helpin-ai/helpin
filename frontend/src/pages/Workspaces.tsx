@@ -191,7 +191,7 @@ export default function Workspaces() {
     }
   };
 
-  const [checkingSlug, setCheckingSlug] = useState(false);
+  const [checkingSlug] = useState(false);
 
   const handleContinueToTeams = async (e: FormEvent) => {
     e.preventDefault();

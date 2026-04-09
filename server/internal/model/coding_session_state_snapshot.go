@@ -50,7 +50,7 @@ func EncodeCodingSessionStreamSnapshot(snapshot *CodingSessionStreamSnapshot) (j
 }
 
 func (s *CodingSessionStreamSnapshot) IsEmpty() bool {
-	return s == nil || (s.LiveAssistantMessage == nil && s.LiveReasoningMessage == nil && len(s.LiveTurnSegments) == 0)
+	return s == nil || (s.LiveAssistantMessage == nil && s.LiveReasoningMessage == nil && len(s.LiveTurnSegments) == 0 && s.CurrentPlan == nil)
 }
 
 func ApplyCodingSessionStreamEvent(snapshot *CodingSessionStreamSnapshot, eventType string, payload map[string]any, timestamp time.Time) *CodingSessionStreamSnapshot {
@@ -281,9 +281,68 @@ func ApplyCodingSessionStreamEvent(snapshot *CodingSessionStreamSnapshot, eventT
 			segmentResult.Error = snapshotStringPtr(errText)
 		}
 		segmentToolCall.Result = segmentResult
+
+	case "plan.updated":
+		plan := parseCodingSessionRunPlan(payload["content"])
+		if plan != nil {
+			snapshot.CurrentPlan = plan
+		}
 	}
 
 	return normalizeCodingSessionStreamSnapshot(snapshot)
+}
+
+func parseCodingSessionRunPlan(value any) *CodingSessionRunPlan {
+	switch typed := value.(type) {
+	case string:
+		trimmed := strings.TrimSpace(typed)
+		if trimmed == "" {
+			return nil
+		}
+		var plan CodingSessionRunPlan
+		if err := json.Unmarshal([]byte(trimmed), &plan); err != nil {
+			return nil
+		}
+		if !isValidCodingSessionRunPlan(&plan) {
+			return nil
+		}
+		return &plan
+	case map[string]any:
+		payload, err := json.Marshal(typed)
+		if err != nil {
+			return nil
+		}
+		var plan CodingSessionRunPlan
+		if err := json.Unmarshal(payload, &plan); err != nil {
+			return nil
+		}
+		if !isValidCodingSessionRunPlan(&plan) {
+			return nil
+		}
+		return &plan
+	default:
+		return nil
+	}
+}
+
+func isValidCodingSessionRunPlan(plan *CodingSessionRunPlan) bool {
+	if plan == nil || len(plan.Plan) == 0 {
+		return false
+	}
+	plan.Note = strings.TrimSpace(plan.Note)
+	for i := range plan.Plan {
+		plan.Plan[i].Step = strings.TrimSpace(plan.Plan[i].Step)
+		plan.Plan[i].Status = strings.TrimSpace(plan.Plan[i].Status)
+		if plan.Plan[i].Step == "" {
+			return false
+		}
+		switch plan.Plan[i].Status {
+		case "pending", "in_progress", "completed":
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func ensureCodingSessionAssistantMessage(current *CodingSessionLiveAssistantMessage, messageID string, timestamp time.Time) *CodingSessionLiveAssistantMessage {

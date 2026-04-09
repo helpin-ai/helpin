@@ -383,7 +383,7 @@ function TaskRow({ task, onClick, teamName }: {
       onClick={onClick}
       className="flex items-center gap-2.5 px-2 py-2.5 w-full text-left rounded-md hover:bg-muted/40 transition-colors group"
     >
-      <span className="text-xs text-muted-foreground/50 font-mono shrink-0 w-8 text-right tabular-nums">
+      <span className="text-xs text-muted-foreground/50 font-mono shrink-0 w-14 text-right tabular-nums">
         {task.task_key}
       </span>
 

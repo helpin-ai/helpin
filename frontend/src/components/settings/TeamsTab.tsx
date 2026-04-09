@@ -43,6 +43,7 @@ import type { PMAutomation } from '@/lib/pmTypes';
 import { FIELD_VISIBILITY_FIELDS, FieldVisibilityForm } from './teams/FieldVisibilityForm';
 import { TeamRepoDefaultForm } from './teams/TeamRepoDefaultForm';
 import { TeamWorkflowStateEditor } from './teams/TeamWorkflowStateEditor';
+import { StoredIcon } from '@/components/ui/icon-picker';
 
 /* ── Teams Tab ── */
 
@@ -606,7 +607,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
               {group.label && (
                 <h3 className="text-sm font-medium text-muted-foreground">{group.label}</h3>
               )}
-              <div className="overflow-hidden rounded-lg border border-border bg-background">
+              <div className="overflow-hidden rounded-lg border border-border bg-card">
                 {group.rows.map((row, idx) => (
                   <button
                     key={row.key}
@@ -723,6 +724,10 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                             <UserAvatar
                               name={user?.full_name || user?.email || membership.user_id}
                               avatarUrl={user?.avatar_url ?? undefined}
+                              avatarStyle={user?.avatar_style ?? undefined}
+                              avatarSeed={user?.avatar_seed ?? undefined}
+                              avatarBackgroundMode={user?.avatar_background_mode ?? undefined}
+                              avatarBackgroundColor={user?.avatar_background_color ?? undefined}
                               className="h-7 w-7"
                               fallbackClassName="text-[10px]"
                             />
@@ -854,6 +859,10 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                                 <UserAvatar
                                   name={member.full_name || member.email}
                                   avatarUrl={member.avatar_url}
+                                  avatarStyle={member.avatar_style}
+                                  avatarSeed={member.avatar_seed}
+                                  avatarBackgroundMode={member.avatar_background_mode}
+                                  avatarBackgroundColor={member.avatar_background_color}
                                   className="h-6 w-6"
                                   fallbackClassName="text-[9px]"
                                 />
@@ -1144,7 +1153,10 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                         isSaving && 'opacity-50 cursor-wait',
                       )}
                     >
-                      {space.icon ? `${space.icon} ` : ''}{space.name}{isWorkspaceWide ? ' (all teams)' : ''}
+                      <span className="inline-flex items-center gap-1">
+                        <StoredIcon name={space.icon} className="h-4 w-4 shrink-0" textClassName="" />
+                        <span>{space.name}{isWorkspaceWide ? ' (all teams)' : ''}</span>
+                      </span>
                     </button>
                   );
                   return <span key={space.id}>{pill}</span>;
@@ -1271,6 +1283,10 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                                       key={membership.id}
                                       name={user?.full_name ?? user?.email ?? '?'}
                                       avatarUrl={user?.avatar_url ?? undefined}
+                                      avatarStyle={user?.avatar_style ?? undefined}
+                                      avatarSeed={user?.avatar_seed ?? undefined}
+                                      avatarBackgroundMode={user?.avatar_background_mode ?? undefined}
+                                      avatarBackgroundColor={user?.avatar_background_color ?? undefined}
                                       className="h-5 w-5 ring-1 ring-background"
                                     />
                                   ))}
@@ -1287,6 +1303,10 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                                     <UserAvatar
                                       name={user?.full_name ?? user?.email ?? '?'}
                                       avatarUrl={user?.avatar_url ?? undefined}
+                                      avatarStyle={user?.avatar_style ?? undefined}
+                                      avatarSeed={user?.avatar_seed ?? undefined}
+                                      avatarBackgroundMode={user?.avatar_background_mode ?? undefined}
+                                      avatarBackgroundColor={user?.avatar_background_color ?? undefined}
                                       className="h-5 w-5"
                                     />
                                     <span className="text-xs">{user?.full_name ?? user?.email ?? '?'}</span>
@@ -1311,6 +1331,10 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                                     key={membership.id}
                                     name={user?.full_name ?? user?.email ?? '?'}
                                     avatarUrl={user?.avatar_url ?? undefined}
+                                    avatarStyle={user?.avatar_style ?? undefined}
+                                    avatarSeed={user?.avatar_seed ?? undefined}
+                                    avatarBackgroundMode={user?.avatar_background_mode ?? undefined}
+                                    avatarBackgroundColor={user?.avatar_background_color ?? undefined}
                                     className="h-5 w-5 ring-1 ring-background"
                                   />
                                 ))}

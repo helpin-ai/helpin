@@ -1,9 +1,7 @@
 import { api } from '../api';
+import { automationService } from './automationService';
 import type {
-  Agent,
   AgentRun,
-  AgentRunArtifact,
-  AgentRunMessage,
   CreateAgentRequest,
   AgentPresetDefinition,
   UpdateAgentRequest,
@@ -18,22 +16,23 @@ import type {
   SendAgentRunRequestChangesRequest,
   PaginatedResponse,
   RunnerHealth,
-  ToolCatalogResponse,
 } from '../pmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
 
 export const agentService = {
   list: (workspaceId: string) =>
-    api.get<Agent[]>(`/pm/agents${qs(workspaceId)}`),
+    automationService.listAgents(workspaceId) as ReturnType<typeof automationService.listAgents>,
   get: (workspaceId: string, id: string) =>
-    api.get<Agent>(`/pm/agents/${id}${qs(workspaceId)}`),
+    automationService.getAgent(workspaceId, id) as ReturnType<typeof automationService.getAgent>,
+  getUsage: (workspaceId: string, id: string) =>
+    automationService.getAgentUsage(workspaceId, id) as ReturnType<typeof automationService.getAgentUsage>,
   create: (workspaceId: string, payload: CreateAgentRequest) =>
-    api.post<Agent>(`/pm/agents${qs(workspaceId)}`, payload),
+    automationService.createAgent(workspaceId, payload) as ReturnType<typeof automationService.createAgent>,
   update: (workspaceId: string, id: string, payload: UpdateAgentRequest) =>
-    api.put<Agent>(`/pm/agents/${id}${qs(workspaceId)}`, payload),
+    automationService.updateAgent(workspaceId, id, payload) as ReturnType<typeof automationService.updateAgent>,
   delete: (workspaceId: string, id: string) =>
-    api.del(`/pm/agents/${id}${qs(workspaceId)}`),
+    automationService.deleteAgent(workspaceId, id) as ReturnType<typeof automationService.deleteAgent>,
   listPresets: (workspaceId: string) =>
     api.get<AgentPresetDefinition[]>(`/pm/agent-presets${qs(workspaceId)}`),
   createPresetVersion: (workspaceId: string, payload: CreateWorkspaceAgentPresetVersionRequest) =>
@@ -49,39 +48,35 @@ export const agentService = {
   runEpic: (workspaceId: string, epicId: string, payload: StartAgentRunRequest) =>
     api.post<AgentRun>(`/pm/epics/${epicId}/run-agent${qs(workspaceId)}`, payload),
   listWorkspaceRuns: (workspaceId: string, page = 1, perPage = 100) =>
-    api.get<PaginatedResponse<AgentRun[]>>(
-      `/pm/agent-runs/workspace${qs(workspaceId)}&page=${page}&per_page=${perPage}`,
-    ),
+    automationService.listWorkspaceRuns(workspaceId, page, perPage) as ReturnType<typeof automationService.listWorkspaceRuns>,
   listTargetRuns: (workspaceId: string, targetType: string, targetId: string) =>
-    api.get<AgentRun[]>(
-      `/pm/agent-runs${qs(workspaceId)}&target_type=${encodeURIComponent(targetType)}&target_id=${encodeURIComponent(targetId)}`,
-    ),
+    automationService.listTargetRuns(workspaceId, targetType, targetId) as ReturnType<typeof automationService.listTargetRuns>,
   listRuns: (workspaceId: string, agentId: string) =>
     api.get<PaginatedResponse<AgentRun[]>>(`/pm/agents/${agentId}/runs${qs(workspaceId)}`),
   getRun: (workspaceId: string, runId: string) =>
-    api.get<AgentRun>(`/pm/agent-runs/${runId}${qs(workspaceId)}`),
+    automationService.getRun(workspaceId, runId) as ReturnType<typeof automationService.getRun>,
   listRunMessages: (workspaceId: string, runId: string) =>
-    api.get<AgentRunMessage[]>(`/pm/agent-runs/${runId}/messages${qs(workspaceId)}`),
+    automationService.listRunMessages(workspaceId, runId) as ReturnType<typeof automationService.listRunMessages>,
   resumeRun: (workspaceId: string, runId: string, payload: ResumeAgentRunRequest) =>
-    api.post<AgentRun>(`/pm/agent-runs/${runId}/resume${qs(workspaceId)}`, payload),
+    automationService.resumeRun(workspaceId, runId, payload) as ReturnType<typeof automationService.resumeRun>,
   sendRunMessage: (workspaceId: string, runId: string, payload: SendAgentRunMessageRequest) =>
-    api.post<AgentRunMessage>(`/pm/agent-runs/${runId}/messages${qs(workspaceId)}`, payload),
+    automationService.sendRunMessage(workspaceId, runId, payload) as ReturnType<typeof automationService.sendRunMessage>,
   listRunArtifacts: (workspaceId: string, runId: string) =>
-    api.get<AgentRunArtifact[]>(`/pm/agent-runs/${runId}/artifacts${qs(workspaceId)}`),
+    automationService.listRunArtifacts(workspaceId, runId) as ReturnType<typeof automationService.listRunArtifacts>,
   cancelRun: (workspaceId: string, runId: string) =>
-    api.post<AgentRun>(`/pm/agent-runs/${runId}/cancel${qs(workspaceId)}`, {}),
+    automationService.cancelRun(workspaceId, runId) as ReturnType<typeof automationService.cancelRun>,
   startCodexDeviceCodeAuth: (workspaceId: string, runId: string) =>
     api.post<CodexAuthState>(`/pm/agent-runs/${runId}/codex-auth/device-code/start${qs(workspaceId)}`, {}),
   cancelCodexDeviceCodeAuth: (workspaceId: string, runId: string) =>
     api.post<CodexAuthState>(`/pm/agent-runs/${runId}/codex-auth/device-code/cancel${qs(workspaceId)}`, {}),
   approveRun: (workspaceId: string, runId: string, payload?: ApproveAgentRunRequest) =>
-    api.post<AgentRun>(`/pm/agent-runs/${runId}/approve${qs(workspaceId)}`, payload ?? {}),
+    automationService.approveRun(workspaceId, runId, payload) as ReturnType<typeof automationService.approveRun>,
   requestRunChanges: (workspaceId: string, runId: string, payload: SendAgentRunRequestChangesRequest) =>
-    api.post<AgentRun>(`/pm/agent-runs/${runId}/request-changes${qs(workspaceId)}`, payload),
+    automationService.requestRunChanges(workspaceId, runId, payload) as ReturnType<typeof automationService.requestRunChanges>,
   handoffRun: (workspaceId: string, runId: string, payload: HandoffAgentRunRequest) =>
-    api.post<AgentRun>(`/pm/agent-runs/${runId}/handoff${qs(workspaceId)}`, payload),
+    automationService.handoffRun(workspaceId, runId, payload) as ReturnType<typeof automationService.handoffRun>,
   listToolCatalog: (workspaceId: string) =>
-    api.get<ToolCatalogResponse>(`/pm/tool-catalog${qs(workspaceId)}`),
+    automationService.listToolCatalog(workspaceId) as ReturnType<typeof automationService.listToolCatalog>,
   // Knowledge Sources
   listKnowledgeSources: (workspaceId: string, agentId: string) =>
     api.get<import('../pmTypes').AgentKnowledgeSource[]>(`/pm/agents/${agentId}/knowledge-sources${qs(workspaceId)}`),

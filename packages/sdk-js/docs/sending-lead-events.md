@@ -16,11 +16,11 @@ Learn how to send first-party lead data to Helpin using the JavaScript SDK’s `
 ## Basic Usage
 
 ```ts
-import { helpinClient } from '@helpin/sdk-js';
+import { helpinClient } from '@helpin-ai/sdk-js';
 
 const client = helpinClient({
-  key: 'UM_PUBLIC_KEY',
-  trackingHost: 'https://events.helpin.ai',
+  widgetKey: 'UM_PUBLIC_KEY',
+  host: 'https://events.helpin.ai',
 });
 
 client.lead({
@@ -82,4 +82,4 @@ These helpers forward calls to the core `lead` API and inherit the same validati
 
 - Check the browser console for the validation error if events are not recorded.
 - Confirm the project key and tracking host are correct and that ad blockers aren’t preventing requests.
-- If leads are collected server-side, ensure the environment can reach `trackingHost` and forward the same payload structure.
+- If leads are collected server-side, ensure the environment can reach `host` and forward the same payload structure.

@@ -25,7 +25,7 @@ import {
   LanguageCircleIcon,
 } from '@/lib/icons'
 import { toast } from 'sonner'
-import { ICON_MAP } from '@/components/ui/icon-picker'
+import { ICON_MAP, StoredIcon } from '@/components/ui/icon-picker'
 import { useTitle } from '@/hooks/useTitle'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useGlobalCreateStore } from '@/stores/globalCreateStore'
@@ -412,11 +412,12 @@ export function DocsSpaceDetail() {
           </Button>
           <div>
             <div className="flex items-center gap-2">
-              {space.icon ? (
-                <span className="text-xl">{space.icon}</span>
-              ) : (
-                <Folder01Icon className="h-5 w-5 shrink-0 text-muted-foreground" />
-              )}
+              <StoredIcon
+                name={space.icon}
+                className="h-5 w-5 shrink-0 text-muted-foreground"
+                textClassName="text-xl"
+                fallback={<Folder01Icon className="h-5 w-5 shrink-0 text-muted-foreground" />}
+              />
               {renamingSpace ? (
                 <input
                   key="space-rename-input"

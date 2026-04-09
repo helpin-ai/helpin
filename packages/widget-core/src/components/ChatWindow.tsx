@@ -11,8 +11,10 @@ import { HelpArticleView } from './HelpArticleView';
 import { ConversationView } from './ConversationView';
 import { ConversationListView } from './ConversationListView';
 import { XIcon } from './icons';
+import helpinMarkUrl from '../assets/helpin-mark.svg';
 
 type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed';
+const HELPIN_BRANDING_URL = 'https://helpin.ai/?utm_source=helpin_widget&utm_medium=widget&utm_campaign=powered_by';
 
 interface ChatWindowProps {
   config: WidgetConfig;
@@ -156,9 +158,20 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   const colorScheme = config.branding?.colorScheme || 'light';
   const helpSpaces = config.helpSpaces ?? [];
   const activeHelpSpace = helpSpaces.find((space) => space.slug === activeHelpSpaceSlug) || null;
-  const homeTeammates = activeTeammate?.name
-    ? [activeTeammate]
-    : (config.availableTeammates ?? []).slice(0, 4);
+  const homeTeammates = (config.availableTeammates ?? []).slice(0, 4);
+
+  // Enrich conversations with activeTeammate fallback.
+  // The SDK may strip activeTeammate when refreshing the list, so we fall back to:
+  // 1. The current activeTeammate prop (if this is the active conversation)
+  // 2. The first available teammate from config
+  const fallbackTeammate = homeTeammates.length > 0 ? homeTeammates[0] : undefined;
+  const enrichedConversations = conversations.map((conv) => ({
+    ...conv,
+    activeTeammate: conv.activeTeammate
+      || (activeConversation?.id === conv.id ? activeTeammate : undefined)
+      || fallbackTeammate,
+  }));
+  const enrichedRecentConversation = enrichedConversations.length > 0 ? enrichedConversations[0] : undefined;
   const positionClass = position.includes('left')
     ? 'helpin-chat-window--left'
     : 'helpin-chat-window--right';
@@ -221,33 +234,6 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
     >
       {activeView === 'home' && (
         <div className="helpin-window-actions helpin-window-actions--home">
-          {homeTeammates.length > 0 && (
-            <div className="helpin-home-header-team">
-              {homeTeammates.map((teammate, index) => (
-                <div
-                  key={teammate.userId || `${teammate.name}-${index}`}
-                  className="helpin-home-header-presence helpin-avatar-tooltip"
-                  aria-label={`${teammate.name} is ${teammate.status || 'online'}`}
-                  data-tooltip={teammate.name}
-                >
-                  <div className="helpin-home-teammate-avatar-wrap">
-                    {teammate.avatarUrl ? (
-                      <img src={teammate.avatarUrl} alt={teammate.name} className="helpin-home-teammate-avatar" />
-                    ) : (
-                      <div className="helpin-home-teammate-avatar helpin-home-teammate-avatar--placeholder">
-                        <span>{teammate.name.charAt(0).toUpperCase()}</span>
-                      </div>
-                    )}
-                    <span
-                      className={`helpin-presence-dot helpin-presence-dot--${teammate.status || 'online'}`}
-                      aria-label={`${teammate.name} is ${teammate.status || 'online'}`}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
           <button
             className="helpin-window-close helpin-window-close--home"
             onClick={onClose}
@@ -275,12 +261,17 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
           Connecting...
         </div>
       )}
+      {connectionStatus === 'disconnected' && (
+        <div className="helpin-connection-banner helpin-connection-banner--disconnected">
+          Connection lost. Reconnecting...
+        </div>
+      )}
       {connectionStatus === 'failed' && (
         <div className="helpin-connection-banner helpin-connection-banner--failed">
-          <span>Unable to connect. Support may be unavailable.</span>
+          <span>We've been offline for a while. We'll keep trying in the background, or reconnect now.</span>
           {onRetryConnection && (
             <button className="helpin-connection-retry" onClick={onRetryConnection}>
-              Retry
+              Reconnect
             </button>
           )}
         </div>
@@ -291,6 +282,8 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
         {activeView === 'home' && (
           <HomeView
             config={config}
+            teammates={homeTeammates}
+            recentConversation={enrichedRecentConversation}
             onSendMessage={handleSendFromHome}
             onNavigate={(view) => {
               if (view === 'conversation') {
@@ -298,6 +291,11 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
                 return;
               }
               handleNavigate(view);
+            }}
+            onSelectConversation={(id) => {
+              onSelectConversation(id);
+              setActiveView('conversation');
+              onViewChange?.('conversation');
             }}
           />
         )}
@@ -328,13 +326,14 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
             showPreChatForm={showPreChatForm}
             onPreChatSubmit={onPreChatSubmit}
             onImageClick={onImageClick}
+            connectionStatus={connectionStatus}
           />
         )}
         {activeView === 'messages' && (
           conversations.length > 0 ? (
             <ConversationListView
               config={config}
-              conversations={conversations}
+              conversations={enrichedConversations}
               onSelectConversation={(id) => {
                 onSelectConversation(id);
                 setPreviousView('messages');
@@ -353,6 +352,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
               isTyping={isTyping}
               quickReplies={quickReplies}
               hasConversation={messages.length > 0}
+              connectionStatus={connectionStatus}
             />
           )
         )}
@@ -416,13 +416,16 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
 
       {/* Powered by footer */}
       {showBranding && activeView !== 'conversation' && activeView !== 'messages' && (
-        <div className="helpin-powered-by">
+        <a
+          href={HELPIN_BRANDING_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="helpin-powered-by"
+        >
           <span>Powered by</span>
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" className="helpin-powered-by-icon">
-            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-          </svg>
+          <img src={helpinMarkUrl} alt="" aria-hidden="true" className="helpin-powered-by-icon" />
           <span className="helpin-powered-by-name">Helpin</span>
-        </div>
+        </a>
       )}
 
       {/* Bottom navigation */}

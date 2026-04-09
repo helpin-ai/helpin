@@ -116,6 +116,7 @@ type UnreadStats struct {
 	Total      int `json:"total"`
 	MyInbox    int `json:"my_inbox"`
 	Unassigned int `json:"unassigned"`
+	AIAll      int `json:"ai_all"`
 	AIPending  int `json:"ai_pending"`
 }
 
@@ -368,12 +369,16 @@ type SupportMailboxMembership struct {
 func (SupportMailboxMembership) TableName() string { return "support_mailbox_memberships" }
 
 type SupportMailboxMember struct {
-	WorkspaceMemberID string  `json:"workspace_member_id"`
-	UserID            *string `json:"user_id,omitempty"`
-	Email             string  `json:"email"`
-	DisplayName       string  `json:"display_name"`
-	AvatarURL         *string `json:"avatar_url,omitempty"`
-	Role              string  `json:"role"`
+	WorkspaceMemberID     string  `json:"workspace_member_id"`
+	UserID                *string `json:"user_id,omitempty"`
+	Email                 string  `json:"email"`
+	DisplayName           string  `json:"display_name"`
+	AvatarURL             *string `json:"avatar_url,omitempty"`
+	AvatarStyle           *string `json:"avatar_style,omitempty"`
+	AvatarSeed            *string `json:"avatar_seed,omitempty"`
+	AvatarBackgroundMode  *string `json:"avatar_background_mode,omitempty"`
+	AvatarBackgroundColor *string `json:"avatar_background_color,omitempty"`
+	Role                  string  `json:"role"`
 }
 
 type SupportEmailRoute struct {
@@ -660,7 +665,7 @@ type SupportInboxSettings struct {
 	AIAgentID             *string `json:"ai_agent_id"`
 	AIConfidenceThreshold float64 `json:"ai_confidence_threshold"` // 0.0–1.0
 	AIResponseMode        string  `json:"ai_response_mode"`        // v1: "ai_first" | "off"
-	AIMaxFollowups        int     `json:"ai_max_followups"`        // max AI turns before forced handoff (default: 3)
+	AIMaxFollowups        int     `json:"ai_max_followups"`        // max stalled same-issue AI attempts before forced handoff (default: 3)
 	AIAutoResolveTimeout  int     `json:"ai_auto_resolve_timeout"` // hours before assumed resolution (default: 24, 0 = disabled)
 	ShowTalkToHuman       bool    `json:"show_talk_to_human"`
 
@@ -886,6 +891,9 @@ type SupportAIPreviewResponse struct {
 
 type SupportAIPreviewQueryPlan struct {
 	Decision           string   `json:"decision"`
+	IssueKey           string   `json:"issue_key"`
+	IssueSummary       string   `json:"issue_summary"`
+	ProgressSignal     string   `json:"progress_signal"`
 	StandaloneQuery    string   `json:"standalone_query"`
 	SearchQueries      []string `json:"search_queries"`
 	ClarifyingQuestion string   `json:"clarifying_question"`

@@ -1,5 +1,5 @@
 import type { BusinessHoursDay, SupportInboxSettings } from '@/lib/pmTypes';
-import type { WidgetConfig } from '@helpin/widget-core';
+import type { WidgetConfig } from '@helpin-ai/widget-core';
 import { DAYS, DEFAULT_BUSINESS_HOURS_DAY, DEFAULT_ONLINE_REPLY_TEXT } from './constants';
 
 export type ChatSettingsDraft = Omit<

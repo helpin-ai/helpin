@@ -41,7 +41,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   const { data: supportAgents = [] } = useSupportAgents(workspaceId);
   const { data: supportMailboxes = [] } = useSupportMailboxes(workspaceId);
 
-  const [snippetTab, setSnippetTab] = useState<'basic' | 'advanced'>('basic');
+  const [snippetTab, setSnippetTab] = useState<'html' | 'react' | 'nextjs'>('html');
 
   // Identity state
   const [requireEmail, setRequireEmail] = useState(true);
@@ -292,46 +292,114 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   }
 
   const widgetKey = data?.widget_key ?? '';
-  const embedSnippet = `<script type="text/javascript">
-  (function () {
-    window.helpin = window.helpin || function () {
-      (window.helpinQ = window.helpinQ || []).push(arguments);
-    };
-    var t = document.createElement('script'),
-        s = document.getElementsByTagName('script')[0];
-    t.defer = true;
-    t.id = 'helpin-widget';
-    t.setAttribute('data-widget-key', '${widgetKey}');
-    t.setAttribute('data-host', 'https://client.helpin.ai');
-    t.src = 'https://cdn.helpin.ai/lib.js';
-    s.parentNode.insertBefore(t, s);
-  })();
-</script>`;
-  const jsApiSnippet = `<script type="text/javascript">
-  (function () {
-    window.helpin = window.helpin || function () {
-      (window.helpinQ = window.helpinQ || []).push(arguments);
-    };
-    var t = document.createElement('script'),
-        s = document.getElementsByTagName('script')[0];
-    t.defer = true;
-    t.id = 'helpin-widget';
-    t.setAttribute('data-widget-key', '${widgetKey}');
-    t.setAttribute('data-host', 'https://client.helpin.ai');
-    t.src = 'https://cdn.helpin.ai/lib.js';
-    s.parentNode.insertBefore(t, s);
+  const htmlSnippet = `<!-- Step 1: Install the pixel — add before closing </body> tag -->
 
-    // Identify logged-in users (optional)
-    helpin('boot', {
-      key: '${widgetKey}',
-      user: {
-        email: 'user@example.com',
-        name: 'Jane Doe',
-        userId: 'your-internal-id'
-      }
-    });
+<script type="text/javascript">
+  (function () {
+    window.helpin = window.helpin || function () {
+      (window.helpinQ = window.helpinQ || []).push(arguments);
+    };
+    var t = document.createElement('script'),
+        s = document.getElementsByTagName('script')[0];
+    t.defer = true;
+    t.id = 'helpin-widget';
+    t.setAttribute('data-widget-key', '${widgetKey}');
+    t.setAttribute('data-host', 'https://client.helpin.ai');
+    t.src = 'https://cdn.helpin.ai/lib.js';
+    s.parentNode.insertBefore(t, s);
   })();
+</script>
+
+<!-- Step 2: Identify logged-in users & capture leads (optional) -->
+
+<script type="text/javascript">
+  // Identify a logged-in user
+  helpin('id', {
+    id: 'your-internal-user-id',
+    email: 'user@example.com',
+    name: 'Jane Doe'
+  });
+
+  // Capture a lead (e.g. from a signup form)
+  helpin('lead', {
+    email: 'visitor@example.com',
+    name: 'New Lead',
+    company: 'Acme Inc'
+  });
 </script>`;
+
+  const reactSnippet = `// 1. Install the package
+npm install @helpin-ai/react
+
+// 2. Wrap your app with HelpinProvider
+import { createClient, HelpinProvider } from '@helpin-ai/react';
+
+const client = createClient({
+  widgetKey: '${widgetKey}',
+  host: 'https://client.helpin.ai',
+});
+
+function App() {
+  return (
+    <HelpinProvider client={client}>
+      {/* Your app */}
+    </HelpinProvider>
+  );
+}
+
+// 3. Identify users (optional)
+import { useHelpin } from '@helpin-ai/react';
+
+function Dashboard() {
+  const { id, lead } = useHelpin();
+
+  useEffect(() => {
+    // Identify a logged-in user
+    id({ email: 'user@example.com', name: 'Jane Doe', id: 'user-123' });
+
+    // Or capture a lead
+    lead({ email: 'visitor@example.com', name: 'New Lead' });
+  }, []);
+}`;
+
+  const nextjsSnippet = `// 1. Install the package
+npm install @helpin-ai/nextjs
+
+// 2. Add to your root layout (app/layout.tsx)
+import { HelpinProvider, createClient } from '@helpin-ai/nextjs';
+
+const client = createClient({
+  widgetKey: '${widgetKey}',
+  host: 'https://client.helpin.ai',
+});
+
+export default function RootLayout({ children }) {
+  return (
+    <html>
+      <body>
+        <HelpinProvider client={client}>
+          {children}
+        </HelpinProvider>
+      </body>
+    </html>
+  );
+}
+
+// 3. Identify users (optional)
+'use client';
+import { useHelpin } from '@helpin-ai/nextjs';
+
+function Dashboard() {
+  const { id, lead } = useHelpin();
+
+  useEffect(() => {
+    // Identify a logged-in user
+    id({ email: 'user@example.com', name: 'Jane Doe', id: 'user-123' });
+
+    // Or capture a lead
+    lead({ email: 'visitor@example.com', name: 'New Lead' });
+  }, []);
+}`;
 
   // Derive help spaces for the widget preview
   const previewHelpSpaces = docsSpaces
@@ -389,7 +457,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
           </div>
         )}
         {/* Widget Installation */}
-        <div className={cn("overflow-hidden rounded-lg border bg-background transition-colors", isExpanded('widget-installation') ? "border-primary/20" : "border-border/60")}>
+        <div className={cn("overflow-hidden rounded-lg border bg-card transition-colors", isExpanded('widget-installation') ? "border-primary/20" : "border-border/60")}>
           <button
             type="button"
             onClick={() => toggleSection('widget-installation')}
@@ -441,41 +509,50 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label className="text-sm">Embed Snippet</Label>
-                    <div className="flex items-center gap-1 p-0.5 rounded-md border bg-muted/30 w-fit mb-2">
-                      <button
-                        onClick={() => setSnippetTab('basic')}
-                        className={cn(
-                          'px-2.5 py-1 rounded text-xs transition-colors',
-                          snippetTab === 'basic'
-                            ? 'bg-background shadow-sm font-medium text-foreground'
-                            : 'text-muted-foreground hover:text-foreground'
-                        )}
-                      >
-                        Basic
-                      </button>
-                      <button
-                        onClick={() => setSnippetTab('advanced')}
-                        className={cn(
-                          'px-2.5 py-1 rounded text-xs transition-colors',
-                          snippetTab === 'advanced'
-                            ? 'bg-background shadow-sm font-medium text-foreground'
-                            : 'text-muted-foreground hover:text-foreground'
-                        )}
-                      >
-                        With User Identity
-                      </button>
+                  <div className="space-y-3">
+                    <Label className="text-sm">Installation Method</Label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {([
+                        { id: 'html' as const, label: 'HTML / JS', icon: (
+                          <img src="/icons/html-js.svg" alt="HTML/JS" className="h-4 w-4" />
+                        )},
+                        { id: 'react' as const, label: 'React', icon: (
+                          <img src="/icons/react.png" alt="React" className="h-4 w-4" />
+                        )},
+                        { id: 'nextjs' as const, label: 'Next.js', icon: (
+                          <img src="/icons/nextjs.svg" alt="Next.js" className="h-4 w-4 dark:invert" />
+                        )},
+                      ] as const).map(tab => (
+                        <button
+                          key={tab.id}
+                          onClick={() => setSnippetTab(tab.id)}
+                          className={cn(
+                            'flex items-center justify-center gap-1.5 rounded-md border px-3 py-2 text-xs transition-colors',
+                            snippetTab === tab.id
+                              ? 'border-primary/30 bg-primary/5 font-medium text-foreground shadow-sm'
+                              : 'border-border/60 bg-background text-muted-foreground hover:border-border hover:text-foreground'
+                          )}
+                        >
+                          {tab.icon}
+                          {tab.label}
+                        </button>
+                      ))}
                     </div>
                     <CodeBlock
-                      code={snippetTab === 'basic' ? embedSnippet : jsApiSnippet}
-                      language="markup"
+                      code={
+                        snippetTab === 'html' ? htmlSnippet
+                        : snippetTab === 'react' ? reactSnippet
+                        : nextjsSnippet
+                      }
+                      language={snippetTab === 'html' ? 'markup' : 'typescript'}
                       showLineNumbers
                     />
                     <p className="text-xs text-muted-foreground">
-                      {snippetTab === 'basic'
-                        ? 'Add this script tag before the closing </body> tag on every page where you want the widget.'
-                        : 'Use this to identify logged-in users. Replace the placeholder values with real user data from your app.'}
+                      {snippetTab === 'html'
+                        ? 'Step 1: Add the pixel script. Step 2: Identify logged-in users (optional).'
+                        : snippetTab === 'react'
+                        ? 'Install @helpin-ai/react from npm. Use useHelpin() hook to identify users and capture leads.'
+                        : 'Install @helpin-ai/nextjs from npm. Works with both App Router and Pages Router.'}
                     </p>
                   </div>
                 </>
@@ -486,7 +563,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
         </div>
 
         {/* Identity Capture */}
-        <div className={cn("overflow-hidden rounded-lg border bg-background transition-colors", isExpanded('identity-capture') ? "border-primary/20" : "border-border/60")}>
+        <div className={cn("overflow-hidden rounded-lg border bg-card transition-colors", isExpanded('identity-capture') ? "border-primary/20" : "border-border/60")}>
           <button
             type="button"
             onClick={() => toggleSection('identity-capture')}
@@ -543,7 +620,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
         </div>
 
         {/* Appearance */}
-        <div className={cn("overflow-hidden rounded-lg border bg-background transition-colors", isExpanded('appearance') ? "border-primary/20" : "border-border/60")}>
+        <div className={cn("overflow-hidden rounded-lg border bg-card transition-colors", isExpanded('appearance') ? "border-primary/20" : "border-border/60")}>
           <button
             type="button"
             onClick={() => toggleSection('appearance')}
@@ -788,7 +865,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
         </div>
 
         {/* Help Center */}
-        <div className={cn("overflow-hidden rounded-lg border bg-background transition-colors", isExpanded('help-center') ? "border-primary/20" : "border-border/60")}>
+        <div className={cn("overflow-hidden rounded-lg border bg-card transition-colors", isExpanded('help-center') ? "border-primary/20" : "border-border/60")}>
           <button
             type="button"
             onClick={() => toggleSection('help-center')}
@@ -842,7 +919,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
           </div>
         </div>
           {/* AI Auto-Reply */}
-          <div className={cn("overflow-hidden rounded-lg border bg-background transition-colors", isExpanded('ai-auto-reply') ? "border-primary/20" : "border-border/60")}>
+          <div className={cn("overflow-hidden rounded-lg border bg-card transition-colors", isExpanded('ai-auto-reply') ? "border-primary/20" : "border-border/60")}>
             <button
               type="button"
               onClick={() => toggleSection('ai-auto-reply')}
@@ -913,7 +990,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
                     </Select>
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-sm">Max Follow-ups</Label>
+                    <Label className="text-sm">Handoff After AI Gets Stuck</Label>
                     <Select value={String(aiMaxFollowups)} onValueChange={(v) => setAiMaxFollowups(Number(v))}>
                       <SelectTrigger>
                         <SelectValue />
@@ -924,6 +1001,9 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
                         ))}
                       </SelectContent>
                     </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Counts repeated, low-progress AI attempts on the same issue. Productive troubleshooting steps do not count toward the limit.
+                    </p>
                   </div>
                 </div>
 
@@ -1020,7 +1100,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
           </div>
 
           {/* Availability */}
-          <div className={cn("overflow-hidden rounded-lg border bg-background transition-colors", isExpanded('business-hours') ? "border-primary/20" : "border-border/60")}>
+          <div className={cn("overflow-hidden rounded-lg border bg-card transition-colors", isExpanded('business-hours') ? "border-primary/20" : "border-border/60")}>
             <button
               type="button"
               onClick={() => toggleSection('business-hours')}
@@ -1115,7 +1195,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
           </div>
 
           {/* Chat Features — merged CSAT, File Uploads, Email */}
-          <div className={cn("overflow-hidden rounded-lg border bg-background transition-colors", isExpanded('chat-features') ? "border-primary/20" : "border-border/60")}>
+          <div className={cn("overflow-hidden rounded-lg border bg-card transition-colors", isExpanded('chat-features') ? "border-primary/20" : "border-border/60")}>
             <button
               type="button"
               onClick={() => toggleSection('chat-features')}

@@ -1,12 +1,20 @@
 import { useCallback, useContext } from 'react';
 import HelpinContext from './HelpinContext';
-import { EventPayload, UserProps } from '@helpin/sdk-js';
+import { EventPayload, UserProps } from '@helpin-ai/sdk-js';
 
 export type HelpinClient = {
   trackPageView: () => void;
   id: (userData: UserProps, doNotSendEvent?: boolean) => Promise<void>;
   track: (typeName: string, payload?: EventPayload) => void;
   lead: (payload: EventPayload, directSend?: boolean) => void;
+  show: () => void;
+  hide: () => void;
+  open: () => void;
+  close: () => void;
+  toggle: () => void;
+  openMessages: () => void;
+  openNewMessage: (content?: string) => void;
+  shutdown: () => void;
   rawTrack: (payload: any) => void;
   set: (
     properties: Record<string, any>,
@@ -18,23 +26,44 @@ export type HelpinClient = {
   ) => void;
 };
 
-// Create a no-op client for server-side rendering
-const createNoopClient = (): HelpinClient => ({
+const missingClientMessage =
+  '[Helpin] useHelpin() is running without an initialized client. Ensure createClient(...) returned a client and pass it to <HelpinProvider />.';
+
+let hasLoggedMissingClient = false;
+
+const noopClient: HelpinClient = {
   trackPageView: () => {},
   id: async () => {},
   track: () => {},
   lead: () => {},
+  show: () => {},
+  hide: () => {},
+  open: () => {},
+  close: () => {},
+  toggle: () => {},
+  openMessages: () => {},
+  openNewMessage: () => {},
+  shutdown: () => {},
   rawTrack: () => {},
   set: () => {},
   unset: () => {},
-});
+};
+
+function reportMissingClient(): void {
+  if (typeof window === 'undefined' || hasLoggedMissingClient) {
+    return;
+  }
+  hasLoggedMissingClient = true;
+  console.error(missingClientMessage);
+}
 
 function useHelpin(): HelpinClient {
   const client = useContext(HelpinContext);
 
   // Return no-op client if we're in a server environment or client is not initialized
   if (!client) {
-    return createNoopClient();
+    reportMissingClient();
+    return noopClient;
   }
 
   const id = useCallback(
@@ -44,7 +73,7 @@ function useHelpin(): HelpinClient {
   );
 
   const trackPageView = useCallback(
-    (): void => client.track('pageview'),
+    (): void => client.pageview(),
     [client],
   );
 
@@ -62,6 +91,46 @@ function useHelpin(): HelpinClient {
 
   const rawTrack = useCallback(
     (payload: any): void => client.rawTrack(payload),
+    [client],
+  );
+
+  const show = useCallback(
+    (): void => client.show(),
+    [client],
+  );
+
+  const hide = useCallback(
+    (): void => client.hide(),
+    [client],
+  );
+
+  const toggle = useCallback(
+    (): void => client.toggle(),
+    [client],
+  );
+
+  const open = useCallback(
+    (): void => client.open(),
+    [client],
+  );
+
+  const close = useCallback(
+    (): void => client.close(),
+    [client],
+  );
+
+  const openMessages = useCallback(
+    (): void => client.openMessages(),
+    [client],
+  );
+
+  const openNewMessage = useCallback(
+    (content?: string): void => client.openNewMessage(content),
+    [client],
+  );
+
+  const shutdown = useCallback(
+    (): void => client.shutdown(),
     [client],
   );
 
@@ -93,6 +162,14 @@ function useHelpin(): HelpinClient {
     track,
     lead,
     trackPageView,
+    show,
+    hide,
+    open,
+    close,
+    toggle,
+    openMessages,
+    openNewMessage,
+    shutdown,
     rawTrack,
     set,
     unset,

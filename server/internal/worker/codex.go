@@ -40,6 +40,7 @@ var codexPlainTextQuestionLinePattern = regexp.MustCompile(`^(?:\d+[\.\)]|[-*])\
 type CodexRuntimeConfig struct {
 	Path                      string
 	DefaultModel              string
+	SandboxMode               string
 	OpenAIAPIKey              string
 	OpenAIBaseURL             string
 	OpenAIAuthMode            string
@@ -84,6 +85,7 @@ type CodexExecutor struct {
 	kind             string
 	commandPath      string
 	defaultModel     string
+	sandboxMode      string
 	openAIAPIKey     string
 	openAIBaseURL    string
 	openAIAuthMode   string
@@ -95,6 +97,7 @@ type CodexExecutor struct {
 	openRouterURL    string
 	runRepo          *repository.AgentRunRepository
 	artifactRepo     *repository.AgentRunArtifactRepository
+	workspaceAuth    *CodexWorkspaceAuthStore
 }
 
 func NewCodexExecutor(
@@ -102,6 +105,7 @@ func NewCodexExecutor(
 	config CodexRuntimeConfig,
 	runRepo *repository.AgentRunRepository,
 	artifactRepo *repository.AgentRunArtifactRepository,
+	workspaceAuth *CodexWorkspaceAuthStore,
 ) *CodexExecutor {
 	commandPath := strings.TrimSpace(config.Path)
 	if strings.TrimSpace(commandPath) == "" {
@@ -111,6 +115,7 @@ func NewCodexExecutor(
 		kind:             kind,
 		commandPath:      commandPath,
 		defaultModel:     strings.TrimSpace(config.DefaultModel),
+		sandboxMode:      strings.TrimSpace(config.SandboxMode),
 		openAIAPIKey:     strings.TrimSpace(config.OpenAIAPIKey),
 		openAIBaseURL:    strings.TrimSpace(config.OpenAIBaseURL),
 		openAIAuthMode:   normalizeCodexOpenAIAuthMode(config.OpenAIAuthMode),
@@ -122,11 +127,26 @@ func NewCodexExecutor(
 		openRouterURL:    strings.TrimSpace(config.OpenRouterBaseURL),
 		runRepo:          runRepo,
 		artifactRepo:     artifactRepo,
+		workspaceAuth:    workspaceAuth,
 	}
 }
 
 func (e *CodexExecutor) Kind() string {
 	return e.kind
+}
+
+func (e *CodexExecutor) restoreWorkspaceAuth(ctx context.Context, workspaceID, provider, authMode, codexHome string) error {
+	if e == nil || e.workspaceAuth == nil {
+		return nil
+	}
+	return e.workspaceAuth.Restore(ctx, workspaceID, provider, authMode, codexHome)
+}
+
+func (e *CodexExecutor) persistWorkspaceAuth(ctx context.Context, workspaceID, provider, authMode, codexHome string) error {
+	if e == nil || e.workspaceAuth == nil {
+		return nil
+	}
+	return e.workspaceAuth.Promote(ctx, workspaceID, provider, authMode, codexHome)
 }
 
 func (e *CodexExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) error {
@@ -339,12 +359,34 @@ func buildCodexRuntimeInstructions(execCtx *ExecutionContext) string {
 	return strings.TrimSpace(strings.Join(parts, "\n"))
 }
 
+func (e *CodexExecutor) sandboxModeFor(execCtx *ExecutionContext) string {
+	if explicit := normalizeCodexSandboxMode(e.sandboxMode); explicit != "" {
+		return explicit
+	}
+	return codexSandboxMode(execCtx)
+}
+
 func codexSandboxMode(execCtx *ExecutionContext) string {
 	resolved := resolvedProfileFor(execCtx)
 	if resolved.RequiresRepo || len(resolved.Commands) > 0 || hasRepoMutationTools(resolved.Tools) {
 		return "workspace-write"
 	}
 	return "read-only"
+}
+
+func normalizeCodexSandboxMode(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "":
+		return ""
+	case "read-only", "readonly":
+		return "read-only"
+	case "workspace-write", "workspace_write":
+		return "workspace-write"
+	case "danger-full-access", "danger_full_access", "danger":
+		return "danger-full-access"
+	default:
+		return ""
+	}
 }
 
 func (e *CodexExecutor) resolveProvider(agent *model.Agent) string {
@@ -420,7 +462,7 @@ func (e *CodexExecutor) buildConfigArtifact(execCtx *ExecutionContext, profile c
 		Model:             strings.TrimSpace(profile.Model),
 		ApprovalPolicy:    strings.TrimSpace(approvalPolicy),
 		ApprovalsReviewer: "user",
-		SandboxMode:       codexSandboxMode(execCtx),
+		SandboxMode:       e.sandboxModeFor(execCtx),
 		ModelProvider:     strings.TrimSpace(profile.Provider),
 		ForcedLoginMethod: strings.TrimSpace(profile.ForcedLoginMethod),
 	}

@@ -67,6 +67,7 @@ export interface UnreadStats {
   total: number;
   my_inbox: number;
   unassigned: number;
+  ai_all: number;
   ai_pending: number;
 }
 
@@ -115,6 +116,10 @@ export interface SupportMailboxMember {
   email: string;
   display_name: string;
   avatar_url?: string | null;
+  avatar_style?: string | null;
+  avatar_seed?: string | null;
+  avatar_background_mode?: string | null;
+  avatar_background_color?: string | null;
   role: string;
 }
 
@@ -301,6 +306,9 @@ export interface SupportAIRewriteDraftResponse {
 
 export interface SupportAIPreviewQueryPlan {
   decision: string;
+  issue_key: string;
+  issue_summary: string;
+  progress_signal: string;
   standalone_query: string;
   search_queries: string[];
   clarifying_question: string;
@@ -363,6 +371,10 @@ export interface AIMessageMetadata {
   ai_model: string;
   ai_tokens_used: number;
   ai_agent_id: string;
+  ai_reply_kind?: string;
+  ai_issue_key?: string;
+  ai_issue_summary?: string;
+  ai_progress_state?: string;
   link_previews?: SupportLinkPreview[];
 }
 

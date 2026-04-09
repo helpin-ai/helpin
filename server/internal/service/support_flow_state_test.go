@@ -227,7 +227,7 @@ func TestSupportAIServicePublishAIReplySetsAIHandlingFlowState(t *testing.T) {
 		messageRepo:      messageRepo,
 	}
 
-	if _, err := svc.publishAIReply(ctx, workspaceID, conv.ID, "agent-ai", "Here is the answer", "gpt-5", 42, 0.94, nil, "answer"); err != nil {
+	if _, err := svc.publishAIReply(ctx, workspaceID, conv.ID, "agent-ai", "Here is the answer", "gpt-5", 42, 0.94, nil, "answer", "", "", supportStateProgressing); err != nil {
 		t.Fatalf("publishAIReply: %v", err)
 	}
 

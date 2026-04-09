@@ -1,0 +1,91 @@
+# Publish npm packages (RC) on merge to develop
+# Packages: @helpin-ai/sdk-js, @helpin-ai/react, @helpin-ai/nextjs
+# Required GitHub secrets: NODE_AUTH_TOKEN (npm access token)
+
+name: Publish npm Packages (Staging)
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - develop
+    paths:
+      - "packages/**"
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  publish:
+    name: Build & Publish (RC)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          always-auth: true
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - uses: pnpm/action-setup@v4
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build project
+        run: pnpm build
+
+      - name: Generate RC version
+        id: rc_version
+        run: |
+          LATEST_TAG=$(git tag | grep -E "^[0-9]+\.[0-9]+\.[0-9]+$" | sort -V | tail -n1)
+          if [ -z "$LATEST_TAG" ]; then
+            LATEST_TAG="0.1.0"
+          fi
+          IFS='.' read -r -a version_parts <<< "$LATEST_TAG"
+          MAJOR="${version_parts[0]}"
+          MINOR="${version_parts[1]}"
+          PATCH="${version_parts[2]}"
+          RC_VERSION="$MAJOR.$MINOR.$PATCH-rc.${{ github.run_number }}"
+          echo "RC_VERSION=${RC_VERSION}" >> $GITHUB_OUTPUT
+          echo "RC version: ${RC_VERSION}"
+
+      - name: Update package versions
+        run: |
+          VERSION=${{ steps.rc_version.outputs.RC_VERSION }}
+          for pkg in packages/shared packages/widget-core packages/sdk-js packages/react packages/nextjs; do
+            if [ -f "$pkg/package.json" ]; then
+              node -e "const p=require('./$pkg/package.json'); p.version='$VERSION'; require('fs').writeFileSync('./$pkg/package.json', JSON.stringify(p, null, 2) + '\n')"
+            fi
+          done
+
+      - name: Publish SDK package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
+          NPM_CONFIG_PROVENANCE: false
+        run: |
+          cd packages/sdk-js
+          pnpm publish --no-git-checks --tag rc --access public
+
+      - name: Publish React package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
+          NPM_CONFIG_PROVENANCE: false
+        run: |
+          cd packages/react
+          pnpm publish --no-git-checks --tag rc --access public
+
+      - name: Publish Next.js package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
+          NPM_CONFIG_PROVENANCE: false
+        run: |
+          cd packages/nextjs
+          pnpm publish --no-git-checks --tag rc --access public

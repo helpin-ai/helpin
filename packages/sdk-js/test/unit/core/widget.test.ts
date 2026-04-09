@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { WidgetManager } from '../../../src/core/widget';
-import { mountWidget } from '@helpin/widget-core';
+import { mountWidget } from '@helpin-ai/widget-core';
 
 class MockWebSocket {
   static OPEN = 1;
@@ -99,6 +99,18 @@ describe('WidgetManager', () => {
       expect(() => widget.boot({ } as any)).not.toThrow();
     });
 
+    it('logs and skips boot when widget key is missing', () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      widget.boot({ host: 'https://test.helpin.ai' });
+
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalledWith(
+        '[Helpin] Widget boot skipped: widgetKey is required.',
+      );
+      errorSpy.mockRestore();
+    });
+
     it('uses cached config and skips the network fetch', async () => {
       (localStorage.getItem as any).mockImplementation((key: string) => {
         if (key === 'helpin_wc_test-key') {
@@ -176,7 +188,7 @@ describe('WidgetManager', () => {
     });
   });
 
-  describe('show/hide', () => {
+  describe('visibility and open state', () => {
     it('should create widget element when shown', async () => {
       widget.boot({ key: 'test-key' });
       await new Promise((r) => setTimeout(r, 100));
@@ -186,28 +198,72 @@ describe('WidgetManager', () => {
       expect(document.getElementById('helpin-widget-container')).not.toBeNull();
     });
 
-    it('should call onShow callback', async () => {
+    it('should not call onOpen callback for programmatic open', async () => {
       widget.boot({ key: 'test-key' });
       await new Promise((r) => setTimeout(r, 100));
       
       const callback = vi.fn();
-      widget.onShow(callback);
-      widget.show();
-      expect(callback).toHaveBeenCalled();
+      widget.onOpen(callback);
+      widget.open();
+      expect(callback).not.toHaveBeenCalled();
     });
 
-    it('should call onHide callback', async () => {
+    it('should not call onClose callback for programmatic close', async () => {
       widget.boot({ key: 'test-key' });
       await new Promise((r) => setTimeout(r, 100));
       
       const callback = vi.fn();
-      widget.onHide(callback);
-      widget.show();
-      widget.hide();
-      expect(callback).toHaveBeenCalled();
+      widget.onClose(callback);
+      widget.open();
+      widget.close();
+      expect(callback).not.toHaveBeenCalled();
     });
 
-    it('should toggle visibility via mountWidget', async () => {
+    it('should call onOpen callback for user-initiated launcher open', async () => {
+      widget.boot({ key: 'test-key' });
+      await new Promise((r) => setTimeout(r, 100));
+
+      const callback = vi.fn();
+      widget.onOpen(callback);
+
+      const mockMount = mountWidget as ReturnType<typeof vi.fn>;
+      const latestOptions = mockMount.mock.calls.at(-1)?.[1];
+      latestOptions?.onLauncherClick();
+
+      expect(callback).toHaveBeenCalledTimes(1);
+    });
+
+    it('should call onClose callback for user-initiated close', async () => {
+      widget.boot({ key: 'test-key' });
+      await new Promise((r) => setTimeout(r, 100));
+
+      const callback = vi.fn();
+      widget.onClose(callback);
+      widget.open();
+
+      const mockMount = mountWidget as ReturnType<typeof vi.fn>;
+      const latestOptions = mockMount.mock.calls.at(-1)?.[1];
+      latestOptions?.onClose();
+
+      expect(callback).toHaveBeenCalledTimes(1);
+    });
+
+    it('allows close() inside onClose without recursion', async () => {
+      widget.boot({ key: 'test-key' });
+      await new Promise((r) => setTimeout(r, 100));
+
+      const callback = vi.fn(() => widget.close());
+      widget.onClose(callback);
+      widget.open();
+
+      const mockMount = mountWidget as ReturnType<typeof vi.fn>;
+      const latestOptions = mockMount.mock.calls.at(-1)?.[1];
+      latestOptions?.onClose();
+
+      expect(callback).toHaveBeenCalledTimes(1);
+    });
+
+    it('should separate visibility from open state via mountWidget', async () => {
       widget.boot({ key: 'test-key' });
       await new Promise((r) => setTimeout(r, 100));
 
@@ -217,12 +273,28 @@ describe('WidgetManager', () => {
       widget.show();
       expect(mockMount).toHaveBeenCalled();
       const showCall = mockMount.mock.calls[mockMount.mock.calls.length - 1];
-      expect(showCall[1].isOpen).toBe(true);
+      expect(showCall[1].showLauncher).toBe(true);
+      expect(showCall[1].isOpen).toBe(false);
+
+      mockMount.mockClear();
+      widget.open();
+      expect(mockMount).toHaveBeenCalled();
+      const openCall = mockMount.mock.calls[mockMount.mock.calls.length - 1];
+      expect(openCall[1].showLauncher).toBe(true);
+      expect(openCall[1].isOpen).toBe(true);
+
+      mockMount.mockClear();
+      widget.close();
+      expect(mockMount).toHaveBeenCalled();
+      const closeCall = mockMount.mock.calls[mockMount.mock.calls.length - 1];
+      expect(closeCall[1].showLauncher).toBe(true);
+      expect(closeCall[1].isOpen).toBe(false);
 
       mockMount.mockClear();
       widget.hide();
       expect(mockMount).toHaveBeenCalled();
       const hideCall = mockMount.mock.calls[mockMount.mock.calls.length - 1];
+      expect(hideCall[1].showLauncher).toBe(false);
       expect(hideCall[1].isOpen).toBe(false);
     });
   });
@@ -313,28 +385,28 @@ describe('WidgetManager', () => {
   });
 
   describe('API methods', () => {
-    it('should have showMessages method', async () => {
+    it('should have openMessages method', async () => {
       widget.boot({ key: 'test-key' });
       await new Promise((r) => setTimeout(r, 100));
       
-      expect(() => widget.showMessages()).not.toThrow();
+      expect(() => widget.openMessages()).not.toThrow();
     });
 
-    it('should have showConversation method', async () => {
+    it('should have openConversation method', async () => {
       widget.boot({ key: 'test-key' });
       await new Promise((r) => setTimeout(r, 100));
       
-      expect(() => widget.showConversation('conv-123')).not.toThrow();
+      expect(() => widget.openConversation('conv-123')).not.toThrow();
     });
 
-    it('should have showArticle method', async () => {
+    it('should have openArticle method', async () => {
       widget.boot({ key: 'test-key' });
       await new Promise((r) => setTimeout(r, 100));
 
       const mockMount = mountWidget as ReturnType<typeof vi.fn>;
       mockMount.mockClear();
 
-      widget.showArticle('article-123');
+      widget.openArticle('article-123');
 
       expect(mockMount).toHaveBeenCalled();
       const latestOptions = mockMount.mock.calls[mockMount.mock.calls.length - 1][1];
@@ -343,6 +415,94 @@ describe('WidgetManager', () => {
         key: 1,
         articleSlug: 'article-123',
       });
+    });
+  });
+
+  describe('websocket reconnect policy', () => {
+    it('keeps retrying in the background after initial connection failures', async () => {
+      vi.useFakeTimers();
+      const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0);
+
+      class NoOpenWebSocket {
+        static OPEN = 1;
+        static CLOSED = 3;
+        static instances: NoOpenWebSocket[] = [];
+
+        readyState = NoOpenWebSocket.OPEN;
+        sent: string[] = [];
+        onopen: ((event: Event) => void) | null = null;
+        onmessage: ((event: MessageEvent) => void) | null = null;
+        onclose: ((event: CloseEvent) => void) | null = null;
+        onerror: ((event: Event) => void) | null = null;
+
+        constructor(public url: string) {
+          NoOpenWebSocket.instances.push(this);
+        }
+
+        send(payload: string): void {
+          this.sent.push(payload);
+        }
+
+        close(): void {
+          this.readyState = NoOpenWebSocket.CLOSED;
+          this.onclose?.(new CloseEvent('close'));
+        }
+      }
+
+      vi.stubGlobal('WebSocket', NoOpenWebSocket as unknown as typeof WebSocket);
+      (widget as any).widgetKey = 'test-key';
+      (widget as any).widgetConfig = {
+        workspaceId: 'ws_test',
+        branding: { primaryColor: '#6366f1' },
+        features: {},
+      };
+      (widget as any).mountContainer = document.createElement('div');
+
+      (widget as any).connectWebSocket();
+      expect(NoOpenWebSocket.instances).toHaveLength(1);
+
+      (widget as any).wsRetryCount = 3;
+      NoOpenWebSocket.instances[0].close();
+
+      expect((widget as any).connectionStatus).toBe('failed');
+      expect((widget as any).wsRetryTimer).toBeTruthy();
+
+      await vi.advanceTimersByTimeAsync(8000);
+      expect(NoOpenWebSocket.instances).toHaveLength(2);
+
+      randomSpy.mockRestore();
+      vi.useRealTimers();
+    });
+
+    it('keeps retrying in the background after a long outage post-connect', async () => {
+      vi.useFakeTimers();
+      const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0);
+      vi.stubGlobal('WebSocket', MockWebSocket as unknown as typeof WebSocket);
+
+      (widget as any).widgetKey = 'test-key';
+      (widget as any).widgetConfig = {
+        workspaceId: 'ws_test',
+        branding: { primaryColor: '#6366f1' },
+        features: {},
+      };
+      (widget as any).mountContainer = document.createElement('div');
+
+      (widget as any).connectWebSocket();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(MockWebSocket.instances).toHaveLength(1);
+
+      (widget as any).wsRetryCount = 10;
+      (widget as any).connectionIssueStartedAt = Date.now() - 30_000;
+      MockWebSocket.instances[0].close();
+
+      expect((widget as any).connectionStatus).toBe('failed');
+      expect((widget as any).wsRetryTimer).toBeTruthy();
+
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(MockWebSocket.instances).toHaveLength(2);
+
+      randomSpy.mockRestore();
+      vi.useRealTimers();
     });
   });
 
@@ -827,6 +987,33 @@ describe('WidgetManager', () => {
         'helpin_wc_test-key',
         expect.stringContaining('"primaryColor":"#123456"'),
       );
+    });
+
+    it('updates home teammate presence from teammate:presence events', () => {
+      (widget as any).widgetConfig = {
+        workspaceId: 'ws_test',
+        branding: { primaryColor: '#6366f1' },
+        features: {},
+        availableTeammates: [
+          { userId: 'user-1', name: 'Agent One', status: 'offline' },
+          { userId: 'user-2', name: 'Agent Two', status: 'away' },
+        ],
+      };
+      (widget as any).mountContainer = document.createElement('div');
+
+      (widget as any).handleWSMessage({
+        type: 'teammate:presence',
+        data: {
+          user_id: 'user-1',
+          status: 'online',
+        },
+      });
+
+      const latestOptions = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+      expect(latestOptions?.config?.availableTeammates).toEqual([
+        { userId: 'user-1', name: 'Agent One', status: 'online' },
+        { userId: 'user-2', name: 'Agent Two', status: 'away' },
+      ]);
     });
 
     it('marks selected conversations read locally and requests their message history', () => {

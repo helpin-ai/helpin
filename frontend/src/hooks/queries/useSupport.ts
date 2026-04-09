@@ -5,6 +5,11 @@ import { supportService } from '@/lib/services/supportService';
 import { supportAttachmentService } from '@/lib/services/supportAttachmentService';
 import { agentService } from '@/lib/services/agentService';
 import { unwrap } from '@/lib/queryUtils';
+import {
+  isSupportConversationListQueryKey,
+  updateConversationListUnreadCount,
+  updateConversationUnreadCount,
+} from '@/lib/supportQueryCache';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import type {
   AgentKnowledgeSource,
@@ -79,27 +84,27 @@ export function useConversations(workspaceId: string, filters?: { status?: strin
       }
       // Legacy fallback
       const arr = Array.isArray(data) ? data : [];
-      return { data: arr, total: arr.length, page: 1, per_page: 50, total_pages: 1, meta: { unread: { total: 0, my_inbox: 0, unassigned: 0, ai_pending: 0 } } } as ConversationListResponse;
+      return { data: arr, total: arr.length, page: 1, per_page: 50, total_pages: 1, meta: { unread: { total: 0, my_inbox: 0, unassigned: 0, ai_all: 0, ai_pending: 0 } } } as ConversationListResponse;
     },
     enabled: !!workspaceId,
     staleTime: 15_000,
   });
 }
 
-export function useUnreadStats(workspaceId: string, mailboxId?: string | null) {
+export function useUnreadStats(workspaceId: string, mailboxId?: string | null, enabled = true) {
   return useQuery({
     queryKey: [...queryKeys.support.unreadStats(workspaceId), mailboxId ?? 'shared'] as const,
     queryFn: async () => unwrap(await supportService.getUnreadStats(workspaceId, mailboxId)),
-    enabled: !!workspaceId,
+    enabled: !!workspaceId && enabled,
     staleTime: 15_000,
   });
 }
 
-export function useInboxScopes(workspaceId: string) {
+export function useInboxScopes(workspaceId: string, enabled = true) {
   return useQuery({
     queryKey: queryKeys.support.inboxScopes(workspaceId),
     queryFn: async () => unwrap(await supportService.listInboxScopes(workspaceId)),
-    enabled: !!workspaceId,
+    enabled: !!workspaceId && enabled,
     staleTime: 15_000,
   });
 }
@@ -143,11 +148,11 @@ export function useSupportTriageRules(workspaceId: string) {
   });
 }
 
-export function useSupportTeammatePresence(workspaceId: string) {
+export function useSupportTeammatePresence(workspaceId: string, enabled = true) {
   return useQuery({
     queryKey: queryKeys.support.teammatePresence(workspaceId),
     queryFn: async () => unwrap(await supportService.listTeammatePresence(workspaceId)),
-    enabled: !!workspaceId,
+    enabled: !!workspaceId && enabled,
     staleTime: 15_000,
     refetchInterval: 30_000,
     refetchIntervalInBackground: true,
@@ -345,7 +350,9 @@ export function useUpdateConversationStatus(workspaceId: string) {
           const cached = queryClient.getQueriesData<ConversationListResponse>({
             queryKey: queryKeys.support.conversations(workspaceId),
           });
-          const conversations: SupportConversation[] = cached.flatMap(([, data]) => data?.data ?? []);
+          const conversations: SupportConversation[] = cached.flatMap(([queryKey, data]) =>
+            isSupportConversationListQueryKey(queryKey, workspaceId) ? (data?.data ?? []) : []
+          );
           const currentIdx = conversations.findIndex((c) => c.id === conversationId);
           // Pick the next one below, or the one above, or clear selection
           const next = conversations[currentIdx + 1] ?? conversations[currentIdx - 1];
@@ -424,8 +431,29 @@ export function useMarkConversationUnread(workspaceId: string) {
   return useMutation({
     mutationFn: (conversationId: string) =>
       supportService.markConversationUnread(workspaceId, conversationId),
-    onSuccess: () => {
+    onSuccess: (_data, conversationId) => {
+      queryClient.setQueriesData<ConversationListResponse>(
+        {
+          queryKey: queryKeys.support.conversations(workspaceId),
+          predicate: (query) => isSupportConversationListQueryKey(query.queryKey, workspaceId),
+        },
+        (current) => {
+          const currentUnreadCount = Array.isArray(current?.data)
+            ? current.data.find((conversation) => conversation.id === conversationId)?.unread_count ?? 0
+            : 0;
+          return updateConversationListUnreadCount(
+            current,
+            conversationId,
+            Math.max(currentUnreadCount, 1),
+          );
+        }
+      );
+      queryClient.setQueryData<SupportConversation>(
+        queryKeys.support.conversation(workspaceId, conversationId),
+        (current) => updateConversationUnreadCount(current, Math.max(current?.unread_count ?? 0, 1))
+      );
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });
     },
@@ -441,6 +469,17 @@ export function useMarkConversationRead(workspaceId: string) {
     mutationFn: (conversationId: string) =>
       supportService.markConversationRead(workspaceId, conversationId),
     onSuccess: (_data, conversationId) => {
+      queryClient.setQueriesData<ConversationListResponse>(
+        {
+          queryKey: queryKeys.support.conversations(workspaceId),
+          predicate: (query) => isSupportConversationListQueryKey(query.queryKey, workspaceId),
+        },
+        (current) => updateConversationListUnreadCount(current, conversationId, 0)
+      );
+      queryClient.setQueryData<SupportConversation>(
+        queryKeys.support.conversation(workspaceId, conversationId),
+        (current) => updateConversationUnreadCount(current, 0)
+      );
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });

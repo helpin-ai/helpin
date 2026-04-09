@@ -174,6 +174,7 @@ export interface CodingSessionStreamSnapshot {
   live_assistant_message?: CodingSessionLiveAssistantMessage;
   live_reasoning_message?: CodingSessionLiveReasoningMessage;
   live_turn_segments?: CodingSessionLiveTurnSegment[];
+  current_plan?: RunPlanArtifact;
 }
 
 export interface RunPlanStep {

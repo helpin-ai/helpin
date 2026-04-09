@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -8,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useCreateContact } from '@/hooks/queries';
 import type { LifecycleStage, LeadStatus } from '@/lib/crmTypes';
+import { entityCreatedToastIcons, showEntityCreatedToast } from '@/components/ui/entity-created-toast';
 
 interface CreateContactDialogProps {
   open: boolean;
@@ -34,6 +36,7 @@ const leadStatusOptions: { value: LeadStatus; label: string }[] = [
 const sourceOptions = ['web', 'referral', 'social', 'event', 'cold_outreach', 'other'];
 
 export function CreateContactDialog({ open, onOpenChange }: CreateContactDialogProps) {
+  const navigate = useNavigate();
   const { currentWorkspace } = useWorkspaceStore();
   const wsId = currentWorkspace?.id ?? '';
   const createContact = useCreateContact(wsId);
@@ -63,7 +66,7 @@ export function CreateContactDialog({ open, onOpenChange }: CreateContactDialogP
     if (!firstName.trim()) return;
 
     try {
-      await createContact.mutateAsync({
+      const contact = await createContact.mutateAsync({
         workspace_id: wsId,
         first_name: firstName.trim(),
         last_name: lastName.trim() || undefined,
@@ -74,7 +77,18 @@ export function CreateContactDialog({ open, onOpenChange }: CreateContactDialogP
         lead_status: leadStatus,
         source: source || undefined,
       });
-      toast.success('Contact created');
+      showEntityCreatedToast({
+        entityLabel: 'Contact',
+        title: [contact.first_name, contact.last_name].filter(Boolean).join(' '),
+        tone: 'crm',
+        icon: entityCreatedToastIcons.contact,
+        onOpen: currentWorkspace?.slug
+          ? () => navigate({
+              to: '/w/$slug/crm/contacts/$contactId',
+              params: { slug: currentWorkspace.slug, contactId: contact.id },
+            })
+          : undefined,
+      });
       onOpenChange(false);
       resetForm();
     } catch {

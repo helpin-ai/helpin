@@ -166,6 +166,7 @@ export function TaskListView({
   const parentRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const pinnedGroupRef = useRef<number | null>(null);
+  const pinnedGroupRafRef = useRef<number | null>(null);
   const [pinnedGroupIdx, setPinnedGroupIdx] = useState<number | null>(null);
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
@@ -857,15 +858,60 @@ export function TaskListView({
     overscan: 20,
   });
 
+  const groupSummaries = useMemo(() => {
+    const summaries = new Map<string, {
+      storyCount: number;
+      totalPoints: number;
+      completedPoints: number;
+      stateType?: StateType;
+    }>();
+
+    for (const row of rows) {
+      if (!row.getIsGrouped()) continue;
+
+      const subRows = row.subRows;
+      let totalPoints = 0;
+      let completedPoints = 0;
+
+      for (const subRow of subRows) {
+        const estimate = subRow.original.estimate ?? 0;
+        totalPoints += estimate;
+        const stateInfo = stateMap.get(subRow.original.workflow_state_id);
+        if (stateInfo?.stateType === 'done') completedPoints += estimate;
+      }
+
+      const storyCount = isPerGroupMode && subRows[0]
+        ? (groupHasMore.get(subRows[0].original.workflow_state_id)?.total ?? subRows.length)
+        : subRows.length;
+
+      const stateType =
+        groupBy === 'workflow_state' && subRows[0]
+          ? (stateMap.get(subRows[0].original.workflow_state_id)?.stateType as StateType | undefined)
+          : undefined;
+
+      summaries.set(row.id, {
+        storyCount,
+        totalPoints,
+        completedPoints,
+        stateType,
+      });
+    }
+
+    return summaries;
+  }, [groupBy, groupHasMore, isPerGroupMode, rows, stateMap]);
+
+  useEffect(() => {
+    return () => {
+      if (pinnedGroupRafRef.current !== null) {
+        cancelAnimationFrame(pinnedGroupRafRef.current);
+      }
+    };
+  }, []);
+
   // Compute total task count (including unloaded) for per-group mode
   const displayTaskCount = isPerGroupMode && groupHasMore.size > 0
     ? Array.from(groupHasMore.values()).reduce((sum, info) => sum + info.total, 0)
     : tasks.length;
-
-  const getGroupTotalCount = (groupRow: Row<Task>) => {
-    if (!isPerGroupMode || !groupRow.subRows[0]) return undefined;
-    return groupHasMore.get(groupRow.subRows[0].original.workflow_state_id)?.total;
-  };
 
   if (loading) {
     return (
@@ -917,24 +963,27 @@ export function TaskListView({
             }
           }
 
-          // Track pinned group header
-          const vItems = virtualizer.getVirtualItems();
-          let newPinnedIdx: number | null = null;
-          if (scrollTop > 10) {
-            for (const vItem of vItems) {
-              if (vItem.start > scrollTop) break;
-              if (rows[vItem.index]?.getIsGrouped()) newPinnedIdx = vItem.index;
-            }
-            if (newPinnedIdx === null && vItems.length > 0) {
-              for (let i = vItems[0].index - 1; i >= 0; i--) {
-                if (rows[i]?.getIsGrouped()) { newPinnedIdx = i; break; }
+          if (pinnedGroupRafRef.current !== null) return;
+          pinnedGroupRafRef.current = requestAnimationFrame(() => {
+            pinnedGroupRafRef.current = null;
+            const vItems = virtualizer.getVirtualItems();
+            let newPinnedIdx: number | null = null;
+            if (scrollTop > 10) {
+              for (const vItem of vItems) {
+                if (vItem.start > scrollTop) break;
+                if (rows[vItem.index]?.getIsGrouped()) newPinnedIdx = vItem.index;
+              }
+              if (newPinnedIdx === null && vItems.length > 0) {
+                for (let i = vItems[0].index - 1; i >= 0; i--) {
+                  if (rows[i]?.getIsGrouped()) { newPinnedIdx = i; break; }
+                }
               }
             }
-          }
-          if (newPinnedIdx !== pinnedGroupRef.current) {
-            pinnedGroupRef.current = newPinnedIdx;
-            setPinnedGroupIdx(newPinnedIdx);
-          }
+            if (newPinnedIdx !== pinnedGroupRef.current) {
+              pinnedGroupRef.current = newPinnedIdx;
+              setPinnedGroupIdx(newPinnedIdx);
+            }
+          });
         }}
       >
         <div className="min-w-fit">
@@ -1002,7 +1051,7 @@ export function TaskListView({
             {pinnedGroupRow && (
               <div className="sticky z-[5]" style={{ top: headerRef.current?.offsetHeight ?? 0, height: 0, overflow: 'visible' }}>
                 <div className="ui-divider-bottom-fade bg-background">
-                  <MemoGroupHeaderRow row={pinnedGroupRow} groupBy={groupBy} stateMap={stateMap} totalTaskCount={getGroupTotalCount(pinnedGroupRow)} />
+                  <MemoGroupHeaderRow row={pinnedGroupRow} summary={groupSummaries.get(pinnedGroupRow.id)} />
                 </div>
               </div>
             )}
@@ -1029,7 +1078,7 @@ export function TaskListView({
                 <div
                   key={row.id}
                   data-index={virtualRow.index}
-                  ref={virtualizer.measureElement}
+                  ref={isPerGroupMode ? virtualizer.measureElement : undefined}
                   style={{
                     position: 'absolute',
                     top: 0,
@@ -1039,7 +1088,7 @@ export function TaskListView({
                   }}
                 >
                   {isGrouped ? (
-                    <MemoGroupHeaderRow row={row} groupBy={groupBy} stateMap={stateMap} totalTaskCount={getGroupTotalCount(row)} />
+                    <MemoGroupHeaderRow row={row} summary={groupSummaries.get(row.id)} />
                   ) : (
                     <>
                       <MemoDataRow
@@ -1075,28 +1124,20 @@ export function TaskListView({
 
 const MemoGroupHeaderRow = memo(function GroupHeaderRow({
   row,
-  groupBy,
-  stateMap,
-  totalTaskCount,
+  summary,
 }: {
   row: Row<Task>;
-  groupBy: TaskListGroupByOption;
-  stateMap: Map<string, { name: string; stateType: string }>;
-  totalTaskCount?: number;
+  summary?: {
+    storyCount: number;
+    totalPoints: number;
+    completedPoints: number;
+    stateType?: StateType;
+  };
 }) {
-  const subRows = row.subRows;
-  const storyCount = totalTaskCount ?? subRows.length;
-  const totalPoints = subRows.reduce((sum, r) => sum + (r.original.estimate ?? 0), 0);
-  const completedPoints = subRows.reduce((sum, r) => {
-    const stateInfo = stateMap.get(r.original.workflow_state_id);
-    if (stateInfo?.stateType === 'done') return sum + (r.original.estimate ?? 0);
-    return sum;
-  }, 0);
-
-  const stateType =
-    groupBy === 'workflow_state' && subRows[0]
-      ? (stateMap.get(subRows[0].original.workflow_state_id)?.stateType as StateType | undefined)
-      : undefined;
+  const storyCount = summary?.storyCount ?? row.subRows.length;
+  const totalPoints = summary?.totalPoints ?? 0;
+  const completedPoints = summary?.completedPoints ?? 0;
+  const stateType = summary?.stateType;
 
   return (
     <button
@@ -1361,6 +1402,10 @@ function InlineOwnerCell({
             <UserAvatar
               name={selectedMember.display_name || selectedMember.email}
               avatarUrl={selectedMember.avatar_url}
+              avatarStyle={selectedMember.avatar_style}
+              avatarSeed={selectedMember.avatar_seed}
+              avatarBackgroundMode={selectedMember.avatar_background_mode}
+              avatarBackgroundColor={selectedMember.avatar_background_color}
               className="h-4 w-4"
               fallbackClassName="text-[7px]"
             />

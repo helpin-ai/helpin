@@ -9,9 +9,11 @@ import (
 	"log/slog"
 	"os"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/automationcatalog"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/temporalapp"
@@ -94,16 +96,19 @@ type AgentService struct {
 	agentRepo                  *repository.AgentRepository
 	workspacePresetVersionRepo *repository.WorkspaceAgentPresetVersionRepository
 	runRepo                    *repository.AgentRunRepository
+	triggerExecutionRepo       *repository.AgentTriggerExecutionRepository
 	runMessageRepo             *repository.AgentRunMessageRepository
 	artifactRepo               *repository.AgentRunArtifactRepository
 	interactionRepo            *repository.AgentRunInteractionRepository
 	sessionSnapshotRepo        *repository.CodingSessionStateSnapshotRepository
-	taskRepo                  *repository.PMTaskRepository
-	taskLinkRepo              *repository.PMTaskLinkRepository
+	taskRepo                   *repository.PMTaskRepository
+	taskLinkRepo               *repository.PMTaskLinkRepository
 	epicRepo                   *repository.PMEpicRepository
 	conversationRepo           *repository.SupportConversationRepository
 	messageRepo                *repository.SupportMessageRepository
 	handoffRepo                *repository.AgentHandoffRepository
+	automationRuleRepo         *repository.AutomationRuleRepository
+	installationRepo           *repository.SupportInboxInstallationRepository
 	settingsRepo               *repository.SettingsRepository
 	docsSpaceRepo              *repository.DocsSpaceRepository
 	docsDocumentRepo           *repository.DocsDocumentRepository
@@ -112,7 +117,7 @@ type AgentService struct {
 	docsLinkRepo               *repository.DocsLinkRepository
 	runEngine                  *temporalapp.RunEngine
 	gitService                 *GitService
-	taskService               *PMTaskService
+	taskService                *PMTaskService
 	workflowService            *PMWorkflowService
 	activitySvc                *PMActivityService
 	wsPublisher                *websocket.Publisher
@@ -142,6 +147,8 @@ func NewAgentService(
 	conversationRepo *repository.SupportConversationRepository,
 	messageRepo *repository.SupportMessageRepository,
 	handoffRepo *repository.AgentHandoffRepository,
+	automationRuleRepo *repository.AutomationRuleRepository,
+	installationRepo *repository.SupportInboxInstallationRepository,
 	settingsRepo *repository.SettingsRepository,
 	docsSpaceRepo *repository.DocsSpaceRepository,
 	docsDocumentRepo *repository.DocsDocumentRepository,
@@ -162,12 +169,14 @@ func NewAgentService(
 		artifactRepo:               artifactRepo,
 		interactionRepo:            interactionRepo,
 		sessionSnapshotRepo:        sessionSnapshotRepo,
-		taskRepo:                  taskRepo,
-		taskLinkRepo:              taskLinkRepo,
+		taskRepo:                   taskRepo,
+		taskLinkRepo:               taskLinkRepo,
 		epicRepo:                   epicRepo,
 		conversationRepo:           conversationRepo,
 		messageRepo:                messageRepo,
 		handoffRepo:                handoffRepo,
+		automationRuleRepo:         automationRuleRepo,
+		installationRepo:           installationRepo,
 		settingsRepo:               settingsRepo,
 		docsSpaceRepo:              docsSpaceRepo,
 		docsDocumentRepo:           docsDocumentRepo,
@@ -176,7 +185,7 @@ func NewAgentService(
 		docsLinkRepo:               docsLinkRepo,
 		runEngine:                  runEngine,
 		gitService:                 gitService,
-		taskService:               taskService,
+		taskService:                taskService,
 		activitySvc:                activitySvc,
 		wsPublisher:                wsPublisher,
 	}
@@ -201,6 +210,11 @@ func (s *AgentService) SetModelProviderConfig(
 
 func (s *AgentService) SetCodexAuthManager(manager *worker.CodexAuthManager) *AgentService {
 	s.codexAuthManager = manager
+	return s
+}
+
+func (s *AgentService) SetTriggerExecutionRepository(repo *repository.AgentTriggerExecutionRepository) *AgentService {
+	s.triggerExecutionRepo = repo
 	return s
 }
 
@@ -263,9 +277,19 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 		beforeAllowedTools := string(existing.AllowedTools)
 		beforeAllowedCommands := string(existing.AllowedCommands)
 		beforeAllowedTargets := string(existing.AllowedTargets)
+		beforeSystemPrompt := trimPtr(existing.SystemPrompt)
 		hadPlanningNotes := existing.PlanningNotes != nil
-		if existing.PlanningNotes != nil || (presetKey == model.AgentPresetEpicPlanner && productPlannerPromptNeedsRefresh(existing.SystemPrompt)) {
-			existing.SystemPrompt = storedSystemPromptForPreset(presetKey, nil, existing.PlanningNotes)
+		refreshedSystemPrompt := storedSystemPromptForPreset(presetKey, existing.SystemPrompt, existing.PlanningNotes)
+		if trimPtr(refreshedSystemPrompt) != nil {
+			if beforeSystemPrompt == nil || *beforeSystemPrompt != *trimPtr(refreshedSystemPrompt) {
+				existing.SystemPrompt = refreshedSystemPrompt
+				changed = true
+			}
+		} else if beforeSystemPrompt != nil {
+			existing.SystemPrompt = nil
+			changed = true
+		}
+		if existing.PlanningNotes != nil {
 			existing.PlanningNotes = nil
 			changed = true
 		}
@@ -297,6 +321,14 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 			existing.AllowedTargets = expectedAllowedTargets
 			changed = true
 		}
+		if trimPtr(existing.Provider) == nil && trimPtr(preset.Provider) != nil {
+			existing.Provider = trimPtr(preset.Provider)
+			changed = true
+		}
+		if trimPtr(existing.Model) == nil && trimPtr(preset.Model) != nil {
+			existing.Model = trimPtr(preset.Model)
+			changed = true
+		}
 		if strings.TrimSpace(existing.RuntimeKind) == "" {
 			existing.RuntimeKind = preset.RuntimeKind
 			changed = true
@@ -315,6 +347,8 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 			string(existing.AllowedTools) != beforeAllowedTools ||
 			string(existing.AllowedCommands) != beforeAllowedCommands ||
 			string(existing.AllowedTargets) != beforeAllowedTargets ||
+			((beforeSystemPrompt == nil) != (trimPtr(existing.SystemPrompt) == nil)) ||
+			(beforeSystemPrompt != nil && trimPtr(existing.SystemPrompt) != nil && *beforeSystemPrompt != *trimPtr(existing.SystemPrompt)) ||
 			(hadPlanningNotes && existing.PlanningNotes == nil) {
 			changed = true
 		}
@@ -338,6 +372,8 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 		RuntimeKind:           preset.RuntimeKind,
 		Skills:                json.RawMessage("[]"),
 		TriggerMode:           preset.DefaultTriggerMode,
+		Provider:              trimPtr(preset.Provider),
+		Model:                 trimPtr(preset.Model),
 		SystemPrompt:          systemPrompt,
 		PlanningNotes:         nil,
 		AllowedTools:          normalizeAllowedToolsJSON(mustJSONStringSlice(preset.AllowedTools)),
@@ -434,6 +470,538 @@ func (s *AgentService) GetAgent(ctx context.Context, workspaceID, id string) (*m
 	}
 	normalizeAgentRecord(agent)
 	return agent, nil
+}
+
+// GetAgentUsageSummary returns the inbound trigger bindings for an agent.
+func (s *AgentService) GetAgentUsageSummary(ctx context.Context, workspaceID, id string) (*model.AgentTriggerUsageSummary, error) {
+	agent, err := s.GetAgent(ctx, workspaceID, id)
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]model.AgentTriggerUsage, 0, 8)
+
+	if agent.Schedule != nil && strings.TrimSpace(*agent.Schedule) != "" {
+		triggerType := model.TriggerCron
+		managePath := "/w/$slug/pm/agents"
+		items = append(items, model.AgentTriggerUsage{
+			ID:              "agent.schedule",
+			Kind:            "schedule",
+			Title:           "Recurring schedule",
+			Description:     fmt.Sprintf("Runs this agent on cron schedule `%s`.", strings.TrimSpace(*agent.Schedule)),
+			TriggerType:     &triggerType,
+			Enabled:         true,
+			ManagePath:      &managePath,
+			ExecutionSearch: automationcatalog.ExecutionSearchPresetForDefinitionID("agent.schedule", nil),
+		})
+	}
+
+	if s.automationRuleRepo != nil {
+		rules, err := s.automationRuleRepo.ListByWorkspace(ctx, workspaceID)
+		if err != nil {
+			return nil, fmt.Errorf("list automation rules for agent usage: %w", err)
+		}
+		managePath := "/w/$slug/settings/workflows"
+		for _, rule := range rules {
+			if rule.ActionType != model.ActionStartAgentRun {
+				continue
+			}
+			var cfg model.ActionConfigRunAgent
+			if err := json.Unmarshal(rule.ActionConfig, &cfg); err != nil {
+				continue
+			}
+			if strings.TrimSpace(cfg.AgentID) != agent.ID {
+				continue
+			}
+			ruleID := rule.ID
+			triggerType := rule.TriggerType
+			path := managePath
+			executionSearch := automationcatalog.ExecutionSearchPresetForTrigger(
+				model.AgentRunTriggerSourceAutomationRule,
+				rule.TriggerType,
+				"",
+				&ruleID,
+			)
+			items = append(items, model.AgentTriggerUsage{
+				ID:              "automation_rule:" + rule.ID,
+				Kind:            "automation_rule",
+				Title:           rule.Name,
+				Description:     describeAutomationRuleBinding(rule),
+				TriggerType:     &triggerType,
+				Enabled:         rule.Enabled,
+				ReferenceID:     &ruleID,
+				ReferenceType:   strPtr("automation_rule"),
+				ManagePath:      &path,
+				ExecutionSearch: executionSearch,
+			})
+		}
+	}
+
+	if s.installationRepo != nil {
+		inst, err := s.installationRepo.GetByWorkspace(ctx, workspaceID)
+		if err != nil {
+			return nil, fmt.Errorf("get support installation for agent usage: %w", err)
+		}
+		if inst != nil {
+			settings := parseSettings(inst.Settings)
+			if settings.AIEnabled && strings.TrimSpace(derefString(settings.AIAgentID)) == agent.ID {
+				triggerType := supportAutoTriggerType
+				managePath := "/w/$slug/settings/chat-general"
+				items = append(items, model.AgentTriggerUsage{
+					ID:              "support.widget_message",
+					Kind:            "support_widget",
+					Title:           "Support widget AI auto-replies",
+					Description:     "Runs this agent automatically on new visitor messages in the chat widget.",
+					TriggerType:     &triggerType,
+					Enabled:         true,
+					ManagePath:      &managePath,
+					ExecutionSearch: automationcatalog.ExecutionSearchPresetForDefinitionID("support.widget_message", nil),
+				})
+			}
+		}
+	}
+
+	if s.taskRepo != nil {
+		assignedCount, err := s.taskRepo.CountAssignedToAgent(ctx, workspaceID, agent.ID)
+		if err != nil {
+			return nil, fmt.Errorf("count tasks assigned to agent: %w", err)
+		}
+		if assignedCount > 0 {
+			triggerType := "task.assigned_agent_state_change"
+			managePath := "/w/$slug/pm/agents"
+			items = append(items, model.AgentTriggerUsage{
+				ID:              "task.assigned_agent_state_change",
+				Kind:            "task_assignment",
+				Title:           "Assigned task state changes",
+				Description:     fmt.Sprintf("This agent is assigned to %d task(s). When those tasks change state, the assigned agent auto-start path can run it.", assignedCount),
+				TriggerType:     &triggerType,
+				Enabled:         true,
+				ManagePath:      &managePath,
+				ExecutionSearch: automationcatalog.ExecutionSearchPresetForDefinitionID("task.assigned_agent_state_change", nil),
+			})
+		}
+	}
+
+	usageByID := make(map[string]*model.AgentTriggerUsage, len(items))
+	usageByReference := make(map[string]*model.AgentTriggerUsage)
+	for idx := range items {
+		usageByID[items[idx].ID] = &items[idx]
+		if items[idx].ReferenceType != nil && *items[idx].ReferenceType == "automation_rule" && items[idx].ReferenceID != nil {
+			usageByReference[*items[idx].ReferenceID] = &items[idx]
+		}
+	}
+	if s.triggerExecutionRepo != nil {
+		executions, err := s.triggerExecutionRepo.ListByAgent(ctx, workspaceID, agent.ID, 200)
+		if err != nil {
+			return nil, fmt.Errorf("list trigger executions for agent usage: %w", err)
+		}
+		for _, execution := range executions {
+			var item *model.AgentTriggerUsage
+			if derefString(execution.ReferenceType) == "automation_rule" && execution.ReferenceID != nil {
+				item = usageByReference[derefString(execution.ReferenceID)]
+			}
+			if item == nil {
+				item = usageByID[execution.BindingID]
+			}
+			if item == nil {
+				if def, ok := automationcatalog.ResolveDefinitionForExecution(execution.BindingID, execution.BindingKind, derefString(execution.TriggerType)); ok {
+					item = usageByID[def.ID]
+				}
+			}
+			if item == nil {
+				continue
+			}
+			if item.LastTriggeredAt == nil || execution.FiredAt.After(*item.LastTriggeredAt) {
+				ts := execution.FiredAt
+				item.LastTriggeredAt = &ts
+			}
+			switch strings.TrimSpace(execution.Status) {
+			case model.AgentTriggerExecutionStatusCompleted:
+				if item.LastSuccessAt == nil {
+					successAt := execution.FiredAt
+					if execution.CompletedAt != nil {
+						successAt = *execution.CompletedAt
+					}
+					ts := successAt
+					item.LastSuccessAt = &ts
+				}
+			case model.AgentTriggerExecutionStatusFailed:
+				if item.LastErrorAt == nil {
+					errorAt := execution.FiredAt
+					if execution.CompletedAt != nil {
+						errorAt = *execution.CompletedAt
+					}
+					ts := errorAt
+					item.LastErrorAt = &ts
+					item.LastError = execution.ErrorMessage
+				}
+			}
+			if len(item.RecentExecutions) < 5 {
+				item.RecentExecutions = append(item.RecentExecutions, model.AgentTriggerExecutionSummary{
+					ExecutionID:   execution.ID,
+					RunID:         execution.RunID,
+					Status:        execution.Status,
+					TargetType:    derefString(execution.TargetType),
+					TargetID:      derefString(execution.TargetID),
+					FiredAt:       execution.FiredAt,
+					StartedAt:     execution.StartedAt,
+					CompletedAt:   execution.CompletedAt,
+					ErrorMessage:  execution.ErrorMessage,
+					TriggerType:   execution.TriggerType,
+					ReferenceID:   execution.ReferenceID,
+					ReferenceType: execution.ReferenceType,
+				})
+			}
+		}
+	} else if s.runRepo != nil {
+		runs, _, err := s.runRepo.ListByAgent(ctx, workspaceID, agent.ID, model.PMPagination{Page: 1, PerPage: 100})
+		if err != nil {
+			return nil, fmt.Errorf("list agent runs for trigger usage: %w", err)
+		}
+		for _, run := range runs {
+			usageID, triggeredAt := usageBindingIDForRun(run)
+			if usageID == "" {
+				continue
+			}
+			item := usageByID[usageID]
+			if item == nil {
+				if def, ok := automationcatalog.ResolveDefinitionForExecution(usageID, "", ""); ok {
+					item = usageByID[def.ID]
+				}
+			}
+			if item == nil {
+				continue
+			}
+			if item.LastTriggeredAt == nil || triggeredAt.After(*item.LastTriggeredAt) {
+				ts := triggeredAt
+				item.LastTriggeredAt = &ts
+			}
+			if run.Status == model.AgentRunStatusCompleted && item.LastSuccessAt == nil {
+				completedAt := run.CreatedAt
+				if run.CompletedAt != nil {
+					completedAt = *run.CompletedAt
+				}
+				ts := completedAt
+				item.LastSuccessAt = &ts
+			}
+			if run.Status == model.AgentRunStatusFailed && item.LastErrorAt == nil {
+				errorAt := run.CreatedAt
+				if run.CompletedAt != nil {
+					errorAt = *run.CompletedAt
+				}
+				ts := errorAt
+				item.LastErrorAt = &ts
+				item.LastError = run.ErrorMessage
+			}
+			if len(item.RecentExecutions) < 5 {
+				item.RecentExecutions = append(item.RecentExecutions, model.AgentTriggerExecutionSummary{
+					ExecutionID:  run.ID,
+					RunID:        &run.ID,
+					Status:       run.Status,
+					TargetType:   run.TargetType,
+					TargetID:     run.TargetID,
+					FiredAt:      triggeredAt,
+					StartedAt:    run.StartedAt,
+					CompletedAt:  run.CompletedAt,
+					ErrorMessage: run.ErrorMessage,
+				})
+			}
+		}
+	}
+
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].Kind != items[j].Kind {
+			return items[i].Kind < items[j].Kind
+		}
+		return items[i].Title < items[j].Title
+	})
+
+	return &model.AgentTriggerUsageSummary{
+		AgentID:   agent.ID,
+		AgentName: agent.Name,
+		Items:     items,
+	}, nil
+}
+
+func describeAutomationRuleBinding(rule model.AutomationRule) string {
+	description := describeAutomationRuleTrigger(rule)
+	var actionCfg model.ActionConfigRunAgent
+	if err := json.Unmarshal(rule.ActionConfig, &actionCfg); err == nil {
+		targetType := strings.TrimSpace(actionCfg.TargetType)
+		targetID := strings.TrimSpace(actionCfg.TargetID)
+		if targetType != "" && targetID != "" {
+			description += fmt.Sprintf(" Uses fixed %s target `%s`.", targetType, targetID)
+		}
+	}
+	return description
+}
+
+func describeAutomationRuleTrigger(rule model.AutomationRule) string {
+	switch rule.TriggerType {
+	case model.TriggerTaskStateEntered:
+		var cfg model.TriggerConfigStateEntered
+		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err == nil {
+			if strings.TrimSpace(cfg.StateID) != "" {
+				return "Runs when a task enters the configured workflow state."
+			}
+			if strings.TrimSpace(cfg.StateType) != "" {
+				return fmt.Sprintf("Runs when a task enters any `%s` workflow state.", strings.TrimSpace(cfg.StateType))
+			}
+		}
+		return "Runs when a task enters a matching workflow state."
+	case model.TriggerAgentRunApproved:
+		return "Runs after an interactive task run is explicitly approved."
+	case model.TriggerGitHubPush:
+		var cfg model.TriggerConfigGitHubPush
+		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err == nil {
+			parts := make([]string, 0, 2)
+			if strings.TrimSpace(cfg.Branch) != "" {
+				parts = append(parts, fmt.Sprintf("branch `%s`", strings.TrimSpace(cfg.Branch)))
+			}
+			if strings.TrimSpace(cfg.RepoFullName) != "" {
+				parts = append(parts, fmt.Sprintf("repo `%s`", strings.TrimSpace(cfg.RepoFullName)))
+			}
+			if len(parts) > 0 {
+				return "Runs when GitHub receives a push for " + strings.Join(parts, " in ") + "."
+			}
+		}
+		return "Runs when GitHub receives a push webhook."
+	case model.TriggerGitHubPROpened:
+		return describeGitHubPullRequestTrigger(rule, "opened")
+	case model.TriggerGitHubPRMerged:
+		return describeGitHubPullRequestTrigger(rule, "merged")
+	case model.TriggerGitHubPRReviewReq:
+		return describeGitHubPullRequestTrigger(rule, "review requested")
+	case model.TriggerGitHubReleasePub:
+		var cfg model.TriggerConfigGitHubReleasePublished
+		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err == nil {
+			parts := make([]string, 0, 2)
+			if strings.TrimSpace(cfg.TagName) != "" {
+				parts = append(parts, fmt.Sprintf("tag `%s`", strings.TrimSpace(cfg.TagName)))
+			}
+			if strings.TrimSpace(cfg.RepoFullName) != "" {
+				parts = append(parts, fmt.Sprintf("repo `%s`", strings.TrimSpace(cfg.RepoFullName)))
+			}
+			if len(parts) > 0 {
+				return "Runs when a GitHub release is published for " + strings.Join(parts, " in ") + "."
+			}
+		}
+		return "Runs when a GitHub release is published."
+	case model.TriggerGitHubCheckSuite:
+		var cfg model.TriggerConfigGitHubCheckSuiteCompleted
+		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err == nil {
+			parts := make([]string, 0, 3)
+			if strings.TrimSpace(cfg.Conclusion) != "" {
+				parts = append(parts, fmt.Sprintf("conclusion `%s`", strings.TrimSpace(cfg.Conclusion)))
+			}
+			if strings.TrimSpace(cfg.Branch) != "" {
+				parts = append(parts, fmt.Sprintf("branch `%s`", strings.TrimSpace(cfg.Branch)))
+			}
+			if strings.TrimSpace(cfg.RepoFullName) != "" {
+				parts = append(parts, fmt.Sprintf("repo `%s`", strings.TrimSpace(cfg.RepoFullName)))
+			}
+			if len(parts) > 0 {
+				return "Runs when a GitHub check suite completes for " + strings.Join(parts, " in ") + "."
+			}
+		}
+		return "Runs when a GitHub check suite completes."
+	case model.TriggerCron:
+		var cfg model.TriggerConfigCron
+		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err == nil && strings.TrimSpace(cfg.Category) != "" {
+			return fmt.Sprintf("Runs on automation-rule cron category `%s`.", strings.TrimSpace(cfg.Category))
+		}
+		return "Runs on the automation-rule cron schedule."
+	default:
+		return "Runs from an automation rule."
+	}
+}
+
+func describeGitHubPullRequestTrigger(rule model.AutomationRule, action string) string {
+	var cfg model.TriggerConfigGitHubPullRequest
+	if err := json.Unmarshal(rule.TriggerConfig, &cfg); err == nil {
+		parts := make([]string, 0, 2)
+		if strings.TrimSpace(cfg.BaseBranch) != "" {
+			parts = append(parts, fmt.Sprintf("base branch `%s`", strings.TrimSpace(cfg.BaseBranch)))
+		}
+		if strings.TrimSpace(cfg.RepoFullName) != "" {
+			parts = append(parts, fmt.Sprintf("repo `%s`", strings.TrimSpace(cfg.RepoFullName)))
+		}
+		if len(parts) > 0 {
+			return "Runs when a GitHub pull request is " + action + " for " + strings.Join(parts, " in ") + "."
+		}
+	}
+	return "Runs when a GitHub pull request is " + action + "."
+}
+
+func usageBindingIDForRun(run model.AgentRun) (string, time.Time) {
+	triggeredAt := run.CreatedAt
+	if len(run.Input) == 0 {
+		return "", triggeredAt
+	}
+
+	var input model.AgentRunInputPayload
+	if err := json.Unmarshal(run.Input, &input); err != nil || input.Trigger == nil {
+		return "", triggeredAt
+	}
+	if input.Trigger.FiredAt != nil {
+		triggeredAt = *input.Trigger.FiredAt
+	}
+
+	switch strings.TrimSpace(input.Trigger.Source) {
+	case model.AgentRunTriggerSourceSchedule:
+		return "agent.schedule", triggeredAt
+	case model.AgentRunTriggerSourceAutomationRule:
+		if bindingID, _, ok := automationcatalog.ResolveBindingForTrigger(input.Trigger.Source, input.Trigger.TriggerType, targetTypeFromRun(run)); ok {
+			return bindingID, triggeredAt
+		}
+	case model.AgentRunTriggerSourceSystem:
+		switch strings.TrimSpace(input.Trigger.TriggerType) {
+		case supportAutoTriggerType:
+			return "support.widget_message", triggeredAt
+		case "task.assigned_agent_state_change":
+			return "task.assigned_agent_state_change", triggeredAt
+		}
+	}
+
+	return "", triggeredAt
+}
+
+func targetTypeFromRun(run model.AgentRun) string {
+	return strings.TrimSpace(run.TargetType)
+}
+
+func triggerExecutionBinding(trigger *model.AgentRunTriggerContext, targetType string) (bindingID, bindingKind string, referenceID, referenceType *string, ok bool) {
+	if trigger == nil {
+		return "", "", nil, nil, false
+	}
+
+	bindingID, bindingKind, ok = automationcatalog.ResolveBindingForTrigger(
+		strings.TrimSpace(trigger.Source),
+		strings.TrimSpace(trigger.TriggerType),
+		strings.TrimSpace(targetType),
+	)
+	if !ok {
+		return "", "", nil, nil, false
+	}
+	if strings.TrimSpace(trigger.Source) == model.AgentRunTriggerSourceAutomationRule && trigger.RuleID != nil && strings.TrimSpace(*trigger.RuleID) != "" {
+		ruleID := strings.TrimSpace(*trigger.RuleID)
+		refType := "automation_rule"
+		return bindingID, bindingKind, &ruleID, &refType, true
+	}
+	return bindingID, bindingKind, nil, nil, true
+}
+
+func triggerExecutionStatus(run *model.AgentRun, err error) string {
+	if run != nil && strings.TrimSpace(run.Status) != "" {
+		return strings.TrimSpace(run.Status)
+	}
+	if err == nil {
+		return model.AgentTriggerExecutionStatusQueued
+	}
+	if isSkippedTriggerExecutionError(err) {
+		return model.AgentTriggerExecutionStatusSkipped
+	}
+	return model.AgentTriggerExecutionStatusFailed
+}
+
+func isSkippedTriggerExecutionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, ErrTaskDeliveryTargetRequired) {
+		return true
+	}
+	msg := strings.ToLower(strings.TrimSpace(err.Error()))
+	return strings.Contains(msg, "already active") || strings.Contains(msg, "skipping")
+}
+
+func (s *AgentService) recordTriggerExecution(
+	ctx context.Context,
+	workspaceID, agentID string,
+	trigger *model.AgentRunTriggerContext,
+	targetType, targetID string,
+	run *model.AgentRun,
+	err error,
+) {
+	if s == nil || s.triggerExecutionRepo == nil || strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(agentID) == "" {
+		return
+	}
+
+	bindingID, bindingKind, referenceID, referenceType, ok := triggerExecutionBinding(trigger, targetType)
+	if !ok {
+		return
+	}
+
+	firedAt := time.Now().UTC()
+	triggerType := (*string)(nil)
+	if trigger != nil {
+		if trigger.FiredAt != nil {
+			firedAt = *trigger.FiredAt
+		}
+		if strings.TrimSpace(trigger.TriggerType) != "" {
+			triggerValue := strings.TrimSpace(trigger.TriggerType)
+			triggerType = &triggerValue
+		}
+	}
+
+	targetType = strings.TrimSpace(targetType)
+	targetID = strings.TrimSpace(targetID)
+	status := triggerExecutionStatus(run, err)
+	var (
+		runID        *string
+		startedAt    *time.Time
+		completedAt  *time.Time
+		errorMessage *string
+	)
+	if run != nil {
+		runID = &run.ID
+		startedAt = run.StartedAt
+		completedAt = run.CompletedAt
+		if run.ErrorMessage != nil && strings.TrimSpace(*run.ErrorMessage) != "" {
+			errorMessage = run.ErrorMessage
+		}
+		if targetType == "" {
+			targetType = strings.TrimSpace(run.TargetType)
+		}
+		if targetID == "" {
+			targetID = strings.TrimSpace(run.TargetID)
+		}
+	}
+	if err != nil && (errorMessage == nil || strings.TrimSpace(*errorMessage) == "") {
+		msg := strings.TrimSpace(err.Error())
+		if msg != "" {
+			errorMessage = &msg
+		}
+	}
+	if completedAt == nil && (status == model.AgentTriggerExecutionStatusFailed || status == model.AgentTriggerExecutionStatusSkipped) {
+		completedAt = &firedAt
+	}
+
+	execution := &model.AgentTriggerExecution{
+		WorkspaceID:   workspaceID,
+		AgentID:       agentID,
+		BindingID:     bindingID,
+		BindingKind:   bindingKind,
+		TriggerType:   triggerType,
+		ReferenceID:   referenceID,
+		ReferenceType: referenceType,
+		TargetType:    nilIfEmpty(targetType),
+		TargetID:      nilIfEmpty(targetID),
+		RunID:         runID,
+		Status:        status,
+		ErrorMessage:  errorMessage,
+		FiredAt:       firedAt,
+		StartedAt:     startedAt,
+		CompletedAt:   completedAt,
+	}
+	if createErr := s.triggerExecutionRepo.Create(ctx, execution); createErr != nil {
+		slog.WarnContext(ctx, "failed to record trigger execution",
+			"workspace_id", workspaceID,
+			"agent_id", agentID,
+			"binding_id", bindingID,
+			"error", createErr,
+		)
+	}
 }
 
 func (s *AgentService) ListAgentPresets(ctx context.Context, workspaceID string) []model.AgentPresetDefinition {
@@ -602,14 +1170,14 @@ func (s *AgentService) ListModelProviders() []model.AgentModelProviderOption {
 		options = append(options, model.AgentModelProviderOption{
 			Value:            model.AgentModelProviderOpenAI,
 			Label:            "OpenAI",
-			ModelPlaceholder: "gpt-5-mini",
+			ModelPlaceholder: "gpt-5.4",
 		})
 	}
 	if s.isModelProviderConfigured(model.AgentModelProviderOpenRouter) {
 		options = append(options, model.AgentModelProviderOption{
 			Value:            model.AgentModelProviderOpenRouter,
 			Label:            "OpenRouter",
-			ModelPlaceholder: "openai/gpt-5-mini",
+			ModelPlaceholder: "openai/gpt-5.4",
 		})
 	}
 	return options
@@ -1251,6 +1819,7 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 			taskID:         &task.ID,
 			actorID:        actorID,
 			input:          payload,
+			trigger:        trigger,
 			delivery:       delivery,
 			invocationMode: resolveInvocationMode(agent),
 		})
@@ -1292,6 +1861,7 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 			targetID:       epic.ID,
 			actorID:        actorID,
 			input:          payload,
+			trigger:        trigger,
 			invocationMode: resolveInvocationMode(agent),
 		})
 		if err != nil {
@@ -1300,6 +1870,63 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 
 		if s.activitySvc != nil {
 			_ = s.activitySvc.Log(ctx, workspaceID, "epic", epic.ID, actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), nil)
+		}
+		s.publishRunEvent(run, derefString(actorID))
+		return run, nil
+
+	case "repository":
+		if s.gitService == nil {
+			return nil, fmt.Errorf("git service not configured")
+		}
+		repo, err := s.gitService.GetRepositoryByID(ctx, workspaceID, targetID)
+		if err != nil {
+			return nil, fmt.Errorf("get repository: %w", err)
+		}
+		if repo == nil {
+			return nil, fmt.Errorf("repository not found")
+		}
+		if repo.Archived || !repo.Selected {
+			return nil, fmt.Errorf("repository is not available for agent runs")
+		}
+
+		agent, err := s.requireRunnableAgent(ctx, workspaceID, agentID, "repository")
+		if err != nil {
+			return nil, err
+		}
+		if err := validateAgentTeamScope(agent, "repository", nil); err != nil {
+			return nil, err
+		}
+		payload, err := buildAgentRunInputPayload("repository", repo.ID, trigger, event, req.AdditionalContext)
+		if err != nil {
+			return nil, fmt.Errorf("build repository run input: %w", err)
+		}
+
+		repoID := repo.ID
+		repoFullName := strings.TrimSpace(repo.FullName)
+		baseBranch := strings.TrimSpace(repo.DefaultBranch)
+		if baseBranch == "" {
+			baseBranch = "main"
+		}
+
+		run, err := s.createRun(ctx, createRunParams{
+			workspaceID:    workspaceID,
+			agent:          agent,
+			targetType:     "repository",
+			targetID:       repo.ID,
+			actorID:        actorID,
+			input:          payload,
+			trigger:        trigger,
+			repositoryID:   &repoID,
+			repoFullName:   strPtr(repoFullName),
+			baseBranch:     strPtr(baseBranch),
+			invocationMode: resolveInvocationMode(agent),
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		if s.activitySvc != nil {
+			_ = s.activitySvc.Log(ctx, workspaceID, "git_repository", repo.ID, actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), nil)
 		}
 		s.publishRunEvent(run, derefString(actorID))
 		return run, nil
@@ -1352,6 +1979,7 @@ func (s *AgentService) runConversationAgent(ctx context.Context, workspaceID, co
 		conversationID: &conversationID,
 		actorID:        actorID,
 		input:          input,
+		trigger:        trigger,
 		invocationMode: resolveInvocationMode(agent),
 	})
 	if err != nil {
@@ -2303,7 +2931,12 @@ type createRunParams struct {
 	conversationID *string
 	actorID        *string
 	input          []byte
+	trigger        *model.AgentRunTriggerContext
 	delivery       *model.TaskDeliveryTarget
+	repositoryID   *string
+	repoFullName   *string
+	baseBranch     *string
+	workingBranch  *string
 	invocationMode string
 }
 
@@ -2320,9 +2953,12 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	if activeRun != nil && model.IsAgentRunActiveStatus(activeRun.Status) {
 		if activeRun.AgentID == params.agent.ID {
 			model.NormalizeAgentRunPauseState(activeRun)
+			s.recordTriggerExecution(ctx, params.workspaceID, params.agent.ID, params.trigger, params.targetType, params.targetID, activeRun, nil)
 			return activeRun, nil
 		}
-		return nil, fmt.Errorf("an agent run is already active for this %s", params.targetType)
+		err := fmt.Errorf("an agent run is already active for this %s", params.targetType)
+		s.recordTriggerExecution(ctx, params.workspaceID, params.agent.ID, params.trigger, params.targetType, params.targetID, nil, err)
+		return nil, err
 	}
 
 	resolved := worker.ResolveAgentProfile(params.agent, params.invocationMode)
@@ -2354,9 +2990,23 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		run.BaseBranch = params.delivery.BaseBranch
 		run.WorkingBranch = params.delivery.WorkingBranch
 	}
+	if params.repositoryID != nil && strings.TrimSpace(*params.repositoryID) != "" {
+		run.RepositoryID = params.repositoryID
+	}
+	if params.repoFullName != nil && strings.TrimSpace(*params.repoFullName) != "" {
+		run.RepoFullName = params.repoFullName
+	}
+	if params.baseBranch != nil && strings.TrimSpace(*params.baseBranch) != "" {
+		run.BaseBranch = params.baseBranch
+	}
+	if params.workingBranch != nil && strings.TrimSpace(*params.workingBranch) != "" {
+		run.WorkingBranch = params.workingBranch
+	}
 	if err := s.runRepo.Create(ctx, run); err != nil {
+		s.recordTriggerExecution(ctx, params.workspaceID, params.agent.ID, params.trigger, params.targetType, params.targetID, nil, err)
 		return nil, err
 	}
+	s.recordTriggerExecution(ctx, params.workspaceID, params.agent.ID, params.trigger, params.targetType, params.targetID, run, nil)
 
 	params.agent.Status = "working"
 	if params.taskID != nil {

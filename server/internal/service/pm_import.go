@@ -197,10 +197,10 @@ func (s *PMImportService) PreviewShortcut(ctx context.Context, workspaceID, acto
 			return stateTypeOrder[states[i].SuggestedType] < stateTypeOrder[states[j].SuggestedType]
 		})
 		workflows = append(workflows, model.ShortcutWorkflowPreview{
-			ID:         workflow.ID,
-			Name:       workflow.Name,
-			TaskCount:  workflow.TaskCount,
-			States:     states,
+			ID:        workflow.ID,
+			Name:      workflow.Name,
+			TaskCount: workflow.TaskCount,
+			States:    states,
 		})
 	}
 
@@ -335,6 +335,9 @@ func (s *PMImportService) executeShortcutImport(ctx context.Context, workspaceID
 	if err != nil {
 		return nil, 0, err
 	}
+	if err := repository.EnsurePMChecklistItemsTaskColumn(s.db.WithContext(ctx)); err != nil {
+		return nil, 0, err
+	}
 	totalSteps := s.shortcutImportTotalSteps(apiToken)
 	rows := filterShortcutRows(data.Rows, req.Options)
 	_ = s.updateJob(ctx, jobID, map[string]interface{}{
@@ -346,18 +349,11 @@ func (s *PMImportService) executeShortcutImport(ctx context.Context, workspaceID
 	// Phase 1: Fetch enrichment data from Shortcut API (if token provided)
 	var apiClient *ShortcutAPIClient
 	var enrichment *shortcutAPIEnrichment
+	var enrichWarnings []string
 	if apiToken != "" {
 		apiClient = NewShortcutAPIClient(apiToken)
 		_ = s.markStep(ctx, jobID, "api_enrichment", 0, 0, totalSteps)
-		var enrichWarnings []string
 		enrichment, enrichWarnings = apiClient.FetchEnrichment(ctx)
-		if len(enrichWarnings) > 0 {
-			_ = s.updateJob(ctx, jobID, map[string]interface{}{
-				"updated_at": time.Now().UTC(),
-			})
-			// warnings will be added to result below
-			_ = enrichWarnings // stored below
-		}
 		_ = s.markStep(ctx, jobID, "api_enrichment", 1, 0, totalSteps)
 	}
 
@@ -408,6 +404,7 @@ func (s *PMImportService) executeShortcutImport(ctx context.Context, workspaceID
 	result := &model.ShortcutImportResult{
 		Warnings: append([]string(nil), data.Warnings...),
 	}
+	result.Warnings = appendUniqueWarnings(result.Warnings, enrichWarnings)
 
 	stepOffset := 0
 	if apiToken != "" {
@@ -464,6 +461,7 @@ func (s *PMImportService) executeShortcutImport(ctx context.Context, workspaceID
 		result.Warnings = append(result.Warnings, sprintWarnings...)
 		_ = s.markStep(ctx, jobID, "sprints", 6+stepOffset, 0, totalSteps)
 
+		_ = s.setCurrentStep(ctx, jobID, "stories")
 		createdStoryIDs, err = s.createStories(ctx, tx, workspaceID, rows, workflowMap, stateMap, workflowDefaultStateMap, teamMap, userByEmail, memberByEmail, epicMap, sprintMap, labelMap, result, jobID, stepOffset, totalSteps)
 		if err != nil {
 			return err
@@ -1097,7 +1095,7 @@ func (s *PMImportService) createStories(ctx context.Context, tx *gorm.DB, worksp
 			DisplayID:         maxDisplayID,
 			Name:              fallbackName(row.Name, fmt.Sprintf("Untitled Story (SC-%s)", row.ID)),
 			Description:       descriptionPtr,
-			TaskType:         mapShortcutStoryType(row.Type),
+			TaskType:          mapShortcutStoryType(row.Type),
 			WorkflowID:        workflowID,
 			WorkflowStateID:   stateID,
 			EpicID:            epicID,
@@ -1508,6 +1506,13 @@ func (s *PMImportService) markStep(ctx context.Context, jobID, step string, comp
 		"progress":           progress,
 		"entities_processed": entitiesProcessed,
 		"updated_at":         time.Now().UTC(),
+	})
+}
+
+func (s *PMImportService) setCurrentStep(ctx context.Context, jobID, step string) error {
+	return s.updateJob(ctx, jobID, map[string]interface{}{
+		"current_step": step,
+		"updated_at":   time.Now().UTC(),
 	})
 }
 

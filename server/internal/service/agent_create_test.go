@@ -124,6 +124,42 @@ func TestEnsureSystemProductPlannerAgentRefreshesLegacyPrompt(t *testing.T) {
 	}
 }
 
+func TestEnsureBuiltInTaskPlannerRefreshesLegacyPrompt(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	svc := &AgentService{agentRepo: agentRepo}
+
+	now := time.Now().UTC()
+	legacyPrompt := "Use `publish_preview` and `request_human_approval` once the runtime tells you the current planner phase."
+	if err := db.Exec(`INSERT INTO agents (
+		id, workspace_id, is_system, name, preset_key, role, status, runtime_kind,
+		skills, trigger_mode, system_prompt, allowed_tools, allowed_commands, allowed_targets,
+		approval_mode, max_concurrent_runs, default_invocation_mode, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"agent-task-planner", "ws-test", true, "Task Planner", model.AgentPresetTaskPlanner, "Task Planner", "idle", "native_sdk",
+		[]byte("[]"), "manual", legacyPrompt, []byte("[]"), []byte("[]"), []byte("[]"), "never", 1, model.InvocationModeInteractive, now, now,
+	).Error; err != nil {
+		t.Fatalf("insert task planner system agent: %v", err)
+	}
+
+	updated, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetTaskPlanner)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+	if updated.SystemPrompt == nil || *updated.SystemPrompt == "" {
+		t.Fatal("expected refreshed task planner prompt")
+	}
+	if strings.Contains(*updated.SystemPrompt, "`publish_preview`") || strings.Contains(*updated.SystemPrompt, "`request_human_approval`") {
+		t.Fatalf("expected refreshed task planner prompt to remove legacy preview/approval tools, got %q", *updated.SystemPrompt)
+	}
+	if !strings.Contains(*updated.SystemPrompt, "`publish_task_plan_doc`") {
+		t.Fatalf("expected refreshed task planner prompt to include publish_task_plan_doc, got %q", *updated.SystemPrompt)
+	}
+	if updated.Name != "Scribe" {
+		t.Fatalf("expected renamed task planner %q, got %q", "Scribe", updated.Name)
+	}
+}
+
 func TestCreateAgentRejectsUnknownPreset(t *testing.T) {
 	db := newAgentServiceTestDB(t)
 	agentRepo := repository.NewAgentRepository(db)
@@ -247,7 +283,7 @@ func TestSeedWorkspaceDefaults_CreatesMissingSystemAgentsWithoutPromotingCustomA
 	}
 
 	agentRepo := repository.NewAgentRepository(db)
-	svc := &AgentService{agentRepo: agentRepo}
+	svc := (&AgentService{agentRepo: agentRepo}).SetModelProviderConfig("", "test-openai-key", "", "", false, "", "")
 
 	if err := svc.SeedWorkspaceDefaults(context.Background(), "ws-test", "user-1"); err != nil {
 		t.Fatalf("SeedWorkspaceDefaults returned error: %v", err)
@@ -268,6 +304,38 @@ func TestSeedWorkspaceDefaults_CreatesMissingSystemAgentsWithoutPromotingCustomA
 		if !slices.Contains(systemPresets, presetKey) {
 			t.Fatalf("expected seeded system agent for preset %q", presetKey)
 		}
+	}
+	forge, err := agentRepo.GetSystemByPreset(context.Background(), "ws-test", model.AgentPresetCodeBuilder)
+	if err != nil {
+		t.Fatalf("GetSystemByPreset returned error: %v", err)
+	}
+	if forge == nil {
+		t.Fatal("expected system forge agent")
+	}
+	if forge.RuntimeKind != "codex" {
+		t.Fatalf("expected forge runtime codex, got %q", forge.RuntimeKind)
+	}
+	if forge.Provider == nil || *forge.Provider != model.AgentModelProviderOpenAI {
+		t.Fatalf("expected forge provider openai, got %+v", forge.Provider)
+	}
+	if forge.Model == nil || *forge.Model != "gpt-5.4" {
+		t.Fatalf("expected forge model gpt-5.4, got %+v", forge.Model)
+	}
+	lens, err := agentRepo.GetSystemByPreset(context.Background(), "ws-test", model.AgentPresetReviewAgent)
+	if err != nil {
+		t.Fatalf("GetSystemByPreset returned error: %v", err)
+	}
+	if lens == nil {
+		t.Fatal("expected system lens agent")
+	}
+	if lens.RuntimeKind != "codex" {
+		t.Fatalf("expected lens runtime codex, got %q", lens.RuntimeKind)
+	}
+	if lens.Provider == nil || *lens.Provider != model.AgentModelProviderOpenAI {
+		t.Fatalf("expected lens provider openai, got %+v", lens.Provider)
+	}
+	if lens.Model == nil || *lens.Model != "gpt-5.4" {
+		t.Fatalf("expected lens model gpt-5.4, got %+v", lens.Model)
 	}
 
 	custom, err := agentRepo.GetByID(context.Background(), "ws-test", "agent-custom-code-builder")
@@ -304,7 +372,7 @@ func TestSeedWorkspaceDefaults_ReconcilesAndDedupesExistingSystemPresetAgents(t 
 	}
 
 	agentRepo := repository.NewAgentRepository(db)
-	svc := &AgentService{agentRepo: agentRepo}
+	svc := (&AgentService{agentRepo: agentRepo}).SetModelProviderConfig("", "test-openai-key", "", "", false, "", "")
 
 	if err := svc.SeedWorkspaceDefaults(context.Background(), "ws-test", "user-1"); err != nil {
 		t.Fatalf("SeedWorkspaceDefaults returned error: %v", err)
@@ -345,7 +413,7 @@ func TestUpdateAgent_PreservesSystemAgentPresetFamily(t *testing.T) {
 		activitySvc: activitySvc,
 		wsPublisher: nil,
 	}
-	svc.SetModelProviderConfig("test-anthropic-key", "", "", "", false, "", "")
+	svc.SetModelProviderConfig("", "test-openai-key", "", "", false, "", "")
 
 	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCodeBuilder)
 	if err != nil {

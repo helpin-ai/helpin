@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CheckmarkCircle02Icon, Clock01Icon, Loading01Icon, SecurityCheckIcon, CancelCircleIcon } from '@/lib/icons';
+import { CheckmarkCircle02Icon, Clock01Icon, SecurityCheckIcon, CancelCircleIcon } from '@/lib/icons';
+import { UnicodeSpinner } from '@/components/pm/CodingSession/UnicodeSpinner';
 
 import { CodingPlanPanel } from '@/components/pm/CodingSession/CodingPlanPanel';
 import { CodingPreviewPanels } from '@/components/pm/CodingSession/CodingPreviewPanels';
@@ -21,7 +22,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 
 const STATUS_ICON = {
   queued: <Clock01Icon className="h-3.5 w-3.5" />,
-  running: <Loading01Icon className="h-3.5 w-3.5 animate-spin" />,
+  running: <UnicodeSpinner name="braille" className="text-sm text-primary" />,
   paused: <SecurityCheckIcon className="h-3.5 w-3.5" />,
   completed: <CheckmarkCircle02Icon className="h-3.5 w-3.5" />,
   failed: <CancelCircleIcon className="h-3.5 w-3.5" />,

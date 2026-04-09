@@ -20,7 +20,7 @@ var entries = []model.AutomationCatalogEntry{
 		"Background only",
 		nil,
 		"CRM contacts, deals, signals, and insights",
-		"Settings > AI & Automations",
+		"Automation > Activity",
 	),
 	builtIn(
 		"crm.contact_summary_refresh",
@@ -39,7 +39,7 @@ var entries = []model.AutomationCatalogEntry{
 		"Background only",
 		nil,
 		"CRM contact detail pages",
-		"Settings > AI & Automations",
+		"Automation > Activity",
 	),
 	builtIn(
 		"crm.deal_summary_refresh",
@@ -58,7 +58,7 @@ var entries = []model.AutomationCatalogEntry{
 		"Background only",
 		nil,
 		"CRM deal detail pages",
-		"Settings > AI & Automations",
+		"Automation > Activity",
 	),
 	builtIn(
 		"pm.epic_auto_start",
@@ -77,7 +77,7 @@ var entries = []model.AutomationCatalogEntry{
 		"Task state change",
 		nil,
 		"PM epics and activity feed",
-		"Settings > AI & Automations",
+		"Automation > Activity",
 	),
 	builtIn(
 		"pm.epic_auto_complete",
@@ -96,7 +96,7 @@ var entries = []model.AutomationCatalogEntry{
 		"Task state change",
 		nil,
 		"PM epics and activity feed",
-		"Settings > AI & Automations",
+		"Automation > Activity",
 	),
 	builtIn(
 		"pm.sprint_auto_create",
@@ -115,7 +115,7 @@ var entries = []model.AutomationCatalogEntry{
 		"Hourly PM automation sweep",
 		nil,
 		"PM sprint lists and planning views",
-		"Settings > AI & Automations",
+		"Automation > Activity",
 	),
 	builtIn(
 		"pm.sprint_move_unfinished",
@@ -134,7 +134,7 @@ var entries = []model.AutomationCatalogEntry{
 		"Hourly PM automation sweep",
 		nil,
 		"PM sprints and tasks",
-		"Settings > AI & Automations",
+		"Automation > Activity",
 	),
 	{
 		ID:                  "automation_rule",
@@ -142,19 +142,24 @@ var entries = []model.AutomationCatalogEntry{
 		Module:              "pm",
 		Group:               "Automation rules",
 		Title:               "Automation Rules",
-		Description:         "User-configured rules triggered by workflow events. Powers stage-based agent pipelines.",
+		Description:         "User-configured rules triggered by workflow events and GitHub webhooks. Powers stage-based agent pipelines.",
 		TargetTypes:         []string{"pm_story"},
-		TriggerModes:        []string{"task.state_entered", "agent_run.approved"},
+		TriggerModes:        []string{"task.state_entered", "agent_run.approved", "github.push", "github.pull_request_opened", "github.pull_request_merged", "github.pull_request_review_requested", "github.release_published", "github.check_suite_completed", "cron"},
 		ConfigScope:         "workspace",
 		ExecutionStyle:      "event_driven_rule",
 		UserGoverned:        true,
 		UserCreatable:       true,
 		Queue:               "inline",
-		CurrentWriteSurface: "Project Settings > Workflows",
-		CurrentRunSurface:   "Task state changes and agent run approvals",
+		CurrentWriteSurface: "Automation > Flows",
+		CurrentWritePath:    catalogPathPtr("/w/$slug/automation/flows"),
+		CurrentRunSurface:   "Task state changes, agent run approvals, and GitHub webhooks",
 		OutputSurface:       "PM tasks, agent runs, and activity feed",
-		DiagnosticsSurface:  "Settings > AI & Automations",
+		DiagnosticsSurface:  "Automation > Activity",
 	},
+}
+
+func catalogPathPtr(value string) *string {
+	return &value
 }
 
 func builtIn(

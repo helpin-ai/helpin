@@ -11,7 +11,7 @@ export type NavGroup = {
   items: NavItem[];
 };
 
-export type RailId = 'projects' | 'support' | 'crm' | 'agents' | 'docs' | 'settings';
+export type RailId = 'projects' | 'support' | 'crm' | 'automation' | 'docs' | 'settings';
 
 export type RailItem = {
   id: RailId;

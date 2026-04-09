@@ -1,15 +1,17 @@
 export { GeneralTab } from './GeneralTab';
 export { MembersTab } from './MembersTab';
 export { TeamsTab } from './TeamsTab';
+export { ModuleAccessTab } from './ModuleAccessTab';
 export { KnowledgeTab } from './KnowledgeTab';
 export { ProjectDeliveryTab } from './ProjectDeliveryTab';
 export { WorkflowManager } from './WorkflowManager';
+export type { WorkspaceEventRuleTemplate } from './WorkflowManager';
 export { AutomationsTab } from './AutomationsTab';
 export { ImportTab } from './ImportTab';
 export { HelpcenterTab } from './HelpcenterTab';
 export { CRMEmailSettingsTab } from './CRMEmailSettingsTab';
 export { CRMAutonomySettingsTab } from './CRMAutonomySettingsTab';
-export { AIAutomationsTab } from './AIAutomationsTab';
+export { AutomationOverviewPanel, AIAutomationsTab } from '@/components/automation/AutomationOverviewPanel';
 export { ChatGeneralTab } from './ChatGeneralTab';
 export { ConversationRoutingTab } from './ConversationRoutingTab';
 export { RedirectsTab } from './RedirectsTab';

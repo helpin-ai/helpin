@@ -1,4 +1,4 @@
-import { EMOJI_CATEGORIES, searchEmojis, type EmojiCategory } from '@helpin/shared';
+import { EMOJI_CATEGORIES, searchEmojis, type EmojiCategory } from '@helpin-ai/shared';
 
 export interface EmojiCatalog {
   categories: EmojiCategory[];

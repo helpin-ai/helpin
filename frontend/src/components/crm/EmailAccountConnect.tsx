@@ -128,7 +128,7 @@ export function EmailAccountConnect({ workspaceId, memberId, showAll = false }: 
           return (
             <div
               key={account.id}
-              className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-background/80 p-4 shadow-[0_1px_0_0_rgba(255,255,255,0.4)_inset]"
+              className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-card/80 p-4 shadow-[0_1px_0_0_rgba(255,255,255,0.4)_inset]"
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0 space-y-2">
@@ -225,7 +225,7 @@ export function EmailAccountConnect({ workspaceId, memberId, showAll = false }: 
                       type="button"
                       onClick={handleDisconnect}
                       disabled={isWorking}
-                      className="flex w-full items-start gap-3 rounded-2xl border border-border/70 bg-background px-4 py-4 text-left transition-colors hover:border-primary/40 hover:bg-primary/[0.03] disabled:cursor-not-allowed disabled:opacity-60"
+                      className="flex w-full items-start gap-3 rounded-2xl border border-border/70 bg-card px-4 py-4 text-left transition-colors hover:border-primary/40 hover:bg-primary/[0.03] disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                         {disconnectAccount.isPending ? <Loading01Icon className="h-4 w-4 animate-spin" /> : <PlusSignIcon className="h-4 w-4" />}

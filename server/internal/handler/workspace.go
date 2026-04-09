@@ -14,11 +14,12 @@ import (
 // WorkspaceHandler handles workspace HTTP requests.
 type WorkspaceHandler struct {
 	workspaceService *service.WorkspaceService
+	authz            *authorization.AuthzService
 }
 
 // NewWorkspaceHandler creates a new WorkspaceHandler.
-func NewWorkspaceHandler(workspaceService *service.WorkspaceService) *WorkspaceHandler {
-	return &WorkspaceHandler{workspaceService: workspaceService}
+func NewWorkspaceHandler(workspaceService *service.WorkspaceService, authz *authorization.AuthzService) *WorkspaceHandler {
+	return &WorkspaceHandler{workspaceService: workspaceService, authz: authz}
 }
 
 // List handles GET /api/workspaces.
@@ -218,6 +219,20 @@ func (h *WorkspaceHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, members)
 }
 
+// ListMemberPresence handles GET /api/workspaces/{id}/members/presence.
+func (h *WorkspaceHandler) ListMemberPresence(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	statuses, err := h.workspaceService.ListMemberPresence(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if statuses == nil {
+		statuses = []model.WorkspaceMemberPresenceStatus{}
+	}
+	writeJSON(w, http.StatusOK, statuses)
+}
+
 // ListAssignableMembers handles GET /api/workspaces/{id}/assignable-members.
 func (h *WorkspaceHandler) ListAssignableMembers(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
@@ -256,14 +271,26 @@ func (h *WorkspaceHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	modules, err := h.authz.AccessibleModules(r.Context(), actor)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to resolve module access")
+		return
+	}
+	moduleStrings := make([]string, len(modules))
+	for i, module := range modules {
+		moduleStrings[i] = string(module)
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"workspace_id": actor.WorkspaceID,
 		"membership": map[string]string{
-			"id":     actor.WorkspaceMemberID,
-			"role":   actor.Role,
-			"status": actor.Status,
+			"id":      actor.WorkspaceMemberID,
+			"user_id": actor.UserID,
+			"role":    actor.Role,
+			"status":  actor.Status,
 		},
 		"permissions":      permStrings,
 		"team_memberships": teamMemberships,
+		"modules":          moduleStrings,
 	})
 }

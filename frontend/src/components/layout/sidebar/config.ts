@@ -42,7 +42,10 @@ export function deriveActiveRail(pathname: string): RailId {
   if (pathname.includes('/settings')) return 'settings';
   if (pathname.includes('/support')) return 'support';
   if (pathname.includes('/crm')) return 'crm';
-  if (pathname.includes('/pm/agent-runs') || pathname.includes('/pm/agents') || pathname.includes('/pm/tool-catalog')) return 'agents';
+  if (
+    pathname.endsWith('/automation')
+    || pathname.includes('/automation/')
+  ) return 'automation';
   if (pathname.includes('/pm/') || pathname.endsWith('/pm')) return 'projects';
   if (pathname.includes('/docs')) return 'docs';
   return 'projects';
@@ -66,13 +69,13 @@ export function buildRailItems(wsSlug: string, totalSupportUnread: number, agent
     { id: 'projects', label: 'Projects', icon: FolderKanbanIcon, defaultLink: `/w/${wsSlug}/pm/my-work` },
     { id: 'crm', label: 'CRM', icon: Briefcase01Icon, defaultLink: `/w/${wsSlug}/crm/contacts` },
     { id: 'support', label: 'Support', icon: Message01Icon, defaultLink: `/w/${wsSlug}/support`, indicator: Boolean(totalSupportUnread) },
-    { id: 'agents', label: 'Automation', icon: BotIcon, defaultLink: `/w/${wsSlug}/pm/agent-runs`, indicator: Boolean(agentAttentionCount) },
+    { id: 'automation', label: 'Automation', icon: BotIcon, defaultLink: `/w/${wsSlug}/automation/flows`, indicator: Boolean(agentAttentionCount) },
     { id: 'docs', label: 'Docs', icon: File01Icon, defaultLink: `/w/${wsSlug}/docs` },
     { id: 'settings', label: 'Settings', icon: Setting07Icon, defaultLink: buildSettingsRoutePath(wsSlug, 'profile') },
   ];
 }
 
-export function buildPanelNavGroups(wsSlug: string, canManageSettings: boolean): Record<RailId, NavGroup[]> {
+export function buildPanelNavGroups(wsSlug: string, canManageSettings: boolean, permissionSet?: Set<string>): Record<RailId, NavGroup[]> {
   return {
     projects: [
       {
@@ -105,13 +108,20 @@ export function buildPanelNavGroups(wsSlug: string, canManageSettings: boolean):
         items: [],
       },
     ],
-    agents: [
+    automation: [
       {
         label: '',
         items: [
-          { link: `/w/${wsSlug}/pm/agent-runs`, label: 'Runs', icon: Clock01Icon },
-          { link: `/w/${wsSlug}/pm/agents`, label: 'Agents', icon: BotIcon },
-          { link: `/w/${wsSlug}/pm/tool-catalog`, label: 'Tool Catalog', icon: Wrench01Icon },
+          { link: `/w/${wsSlug}/automation/flows`, label: 'Flows', icon: ArrowReloadHorizontalIcon },
+          { link: `/w/${wsSlug}/automation/activity`, label: 'Activity', icon: Clock01Icon },
+          { link: `/w/${wsSlug}/automation/agents`, label: 'Agents', icon: BotIcon },
+        ],
+      },
+      {
+        label: 'Library',
+        items: [
+          { link: `/w/${wsSlug}/automation/library`, label: 'Trigger Catalog', icon: BotIcon },
+          { link: `/w/${wsSlug}/automation/tools`, label: 'Tool Catalog', icon: Wrench01Icon },
         ],
       },
     ],
@@ -125,7 +135,7 @@ export function buildPanelNavGroups(wsSlug: string, canManageSettings: boolean):
         ],
       },
     ],
-    settings: getSettingsSidebarGroups(canManageSettings).map((group) => ({
+    settings: getSettingsSidebarGroups(canManageSettings, permissionSet).map((group) => ({
       label: group.label,
       items: group.sections.map((section) => ({
         link: buildSettingsRoutePath(wsSlug, section.id),

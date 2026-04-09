@@ -12,6 +12,9 @@ func TestDefaultProductPlannerSystemPromptIncludesInlineInteractiveLoop(t *testi
 	if prompt == nil {
 		t.Fatal("expected planner prompt")
 	}
+	if strings.Contains(*prompt, "for Helpin") {
+		t.Fatalf("expected planner prompt to be workspace-generic\n%s", *prompt)
+	}
 
 	requiredSnippets := []string{
 		"You run the full PRD-to-tasks loop inside a single interactive agent run.",
@@ -19,7 +22,7 @@ func TestDefaultProductPlannerSystemPromptIncludesInlineInteractiveLoop(t *testi
 		"Approval checkpoints happen inline in the same chat:",
 		"## Current Facts And Next-Step Rules",
 		"If an approved spec exists and tasks already exist:",
-		"If an approved spec exists and no stories exist yet:",
+		"If an approved spec exists and no tasks exist yet:",
 		"If no approved spec exists but a draft PRD already exists:",
 		"If approved PRD persistence is already complete:",
 		"`request_user_input`",
@@ -33,15 +36,17 @@ func TestDefaultProductPlannerSystemPromptIncludesInlineInteractiveLoop(t *testi
 		"\"story_type\": \"feature\"",
 		"\"test_strategy\": [\"...\"]",
 		"The value of `content` must be a JSON object.",
-		"Do not use `title` or `type` in story-plan JSON.",
+		"Inside `proposed_tasks`, use the canonical field names `name` and `task_type`.",
 		"Use `dependency_refs` only for refs that appear elsewhere in the same `proposed_tasks` array.",
 		"`list_workspace_teams`",
 		"platform will persist the approved PRD artifact",
 		"platform will apply the approved task plan artifact and create the tasks",
 		"Only treat the phase as approved when the human gives a clear, explicit approval.",
+		"This run is read-only with respect to the repository.",
+		"do not modify code, create files, apply patches, or change git state",
 		"### Vertical Slicing (Critical)",
 		"### Blocker & Enabler Consolidation",
-		"### Story Separation & Scoping",
+		"### Task Separation & Scoping",
 		"### Implementation Briefs (Required)",
 		"### Acceptance Criteria (Required)",
 		"GIVEN/WHEN/THEN",
@@ -83,6 +88,9 @@ func TestStoryPlannerSystemPromptIncludesDocApprovalLoop(t *testing.T) {
 	if prompt == nil {
 		t.Fatal("expected story planner prompt")
 	}
+	if strings.Contains(*prompt, "for Helpin") {
+		t.Fatalf("expected task planner prompt to be workspace-generic\n%s", *prompt)
+	}
 
 	for _, snippet := range []string{
 		"Run a single interactive planning conversation for one task.",
@@ -90,8 +98,12 @@ func TestStoryPlannerSystemPromptIncludesDocApprovalLoop(t *testing.T) {
 		"`request_user_input`",
 		"`request_review_checkpoint`",
 		"`phase=\"task_doc\"`",
+		"`content` is required and must contain the full current markdown draft being reviewed.",
+		"Never call the tool with only `title` or with empty `content`.",
 		"platform will persist and link the approved preview",
 		"Produce a planning document, not code.",
+		"keep repository interactions read-only",
+		"Do not modify code, create files, apply patches, or change git state in this run.",
 	} {
 		if !strings.Contains(*prompt, snippet) {
 			t.Fatalf("expected story planner prompt to contain %q\n%s", snippet, *prompt)
@@ -109,7 +121,7 @@ func TestStoryPlannerSystemPromptIncludesDocApprovalLoop(t *testing.T) {
 }
 
 func TestStoryPlannerPromptNeedsRefreshForLegacyPrompt(t *testing.T) {
-	legacyPrompt := "You are Story Planner for Helpin.\n- Ask clarifying questions inline.\n- Produce implementation-ready stories."
+	legacyPrompt := "You are Story Planner for Helpin.\nUse `publish_preview` and `request_human_approval` once the runtime tells you the current planner phase."
 	if !storyPlannerPromptNeedsRefresh(&legacyPrompt) {
 		t.Fatal("expected legacy story planner prompt to require refresh")
 	}
@@ -129,11 +141,53 @@ func TestCodeBuilderPromptNeedsRefreshForLegacyPrompt(t *testing.T) {
 		t.Fatal("expected legacy code builder prompt to require refresh")
 	}
 
+	legacyBrandedPrompt := "You are Code Builder for Helpin.\n- Implement the requested story or task directly in the repository."
+	if !codeBuilderPromptNeedsRefresh(&legacyBrandedPrompt) {
+		t.Fatal("expected branded code builder prompt to require refresh")
+	}
+
 	currentPrompt := defaultSystemPromptForPreset(model.AgentPresetCodeBuilder)
 	if currentPrompt == nil {
 		t.Fatal("expected code builder prompt")
 	}
 	if codeBuilderPromptNeedsRefresh(currentPrompt) {
 		t.Fatal("expected current code builder prompt to remain valid")
+	}
+}
+
+func TestBuiltInNonPlannerPromptsAreWorkspaceGeneric(t *testing.T) {
+	for _, presetKey := range []string{
+		model.AgentPresetCRMOperator,
+		model.AgentPresetSupportAgent,
+		model.AgentPresetCodeBuilder,
+		model.AgentPresetReviewAgent,
+	} {
+		prompt := defaultSystemPromptForPreset(presetKey)
+		if prompt == nil {
+			t.Fatalf("expected prompt for %q", presetKey)
+		}
+		if strings.Contains(*prompt, "for Helpin") {
+			t.Fatalf("expected prompt for %q to be workspace-generic\n%s", presetKey, *prompt)
+		}
+	}
+}
+
+func TestBuiltInPromptNeedsGenericWorkspaceRefresh(t *testing.T) {
+	cases := map[string]string{
+		model.AgentPresetCRMOperator: "You are CRM Operator for Helpin.\n- Work inside the current run using the allowed CRM, docs, and support tools.",
+		model.AgentPresetSupportAgent: "You are Support Agent for Helpin.\n- Read the full conversation before drafting a reply.",
+		model.AgentPresetReviewAgent: "You are Review Agent for Helpin.\n- Inspect the relevant code and run targeted validation when possible.",
+	}
+	for presetKey, legacyPrompt := range cases {
+		if !builtInPromptNeedsGenericWorkspaceRefresh(presetKey, &legacyPrompt) {
+			t.Fatalf("expected %q branded prompt to require refresh", presetKey)
+		}
+	}
+	currentPrompt := defaultSystemPromptForPreset(model.AgentPresetSupportAgent)
+	if currentPrompt == nil {
+		t.Fatal("expected support prompt")
+	}
+	if builtInPromptNeedsGenericWorkspaceRefresh(model.AgentPresetSupportAgent, currentPrompt) {
+		t.Fatal("expected current support prompt to remain valid")
 	}
 }

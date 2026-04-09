@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Search01Icon, SmileIcon, Cancel01Icon } from '@/lib/icons';
 import { cn } from '@/lib/utils';
-import { loadEmojiCatalog, type EmojiCatalog } from '@helpin/widget-core';
+import { loadEmojiCatalog, type EmojiCatalog } from '@helpin-ai/widget-core';
 
 interface EmojiPickerProps {
   onEmojiSelect: (emoji: string) => void;

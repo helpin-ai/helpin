@@ -4,6 +4,8 @@ import { PaperclipIcon, SendIcon, XIcon } from './icons';
 import { EmojiPicker } from './EmojiPicker';
 import type { PendingAttachment } from '../types';
 
+const HELPIN_BRANDING_URL = 'https://helpin.ai/?utm_source=helpin_widget&utm_medium=widget&utm_campaign=powered_by';
+
 interface ComposeBarProps {
   onSend: (content: string, attachmentIds?: string[]) => void;
   onTyping?: (content: string) => void;
@@ -86,6 +88,7 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
   };
 
   const handleFileSelect = () => {
+    if (disabled) return;
     fileInputRef.current?.click();
   };
 
@@ -99,7 +102,7 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
 
   const handlePaste = (e: ClipboardEvent) => {
     const items = e.clipboardData?.items;
-    if (!items || !onFilesSelected || !fileUploadsEnabled) return;
+    if (disabled || !items || !onFilesSelected || !fileUploadsEnabled) return;
     const files: File[] = [];
     for (let i = 0; i < items.length; i++) {
       if (items[i].kind === 'file') {
@@ -114,7 +117,7 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
   };
 
   const handleDragOver = (e: DragEvent) => {
-    if (!fileUploadsEnabled) return;
+    if (disabled || !fileUploadsEnabled) return;
     e.preventDefault();
     setIsDragOver(true);
   };
@@ -127,7 +130,7 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
   const handleDrop = (e: DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
-    if (!onFilesSelected || !fileUploadsEnabled) return;
+    if (disabled || !onFilesSelected || !fileUploadsEnabled) return;
     const files = e.dataTransfer?.files;
     if (files && files.length > 0) {
       onFilesSelected(Array.from(files));
@@ -195,11 +198,12 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
                 aria-label="Attach file"
                 tabIndex={0}
                 onClick={handleFileSelect}
+                disabled={disabled}
               >
                 <PaperclipIcon size={20} />
               </button>
             )}
-            <EmojiPicker onEmojiSelect={handleEmojiSelect} />
+            <EmojiPicker onEmojiSelect={handleEmojiSelect} disabled={disabled} />
           </div>
           <button
             type="submit"
@@ -224,7 +228,7 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
       {showBranding && (
         <div className="helpin-compose-footer">
           We run on{' '}
-          <a href="https://helpin.ai" target="_blank" rel="noopener noreferrer" className="helpin-compose-footer-link">Helpin</a>
+          <a href={HELPIN_BRANDING_URL} target="_blank" rel="noopener noreferrer" className="helpin-compose-footer-link">Helpin</a>
         </div>
       )}
     </div>

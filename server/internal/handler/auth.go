@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -52,6 +54,52 @@ func (h *AuthHandler) Signin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// ForgotPassword handles POST /api/auth/forgot-password.
+func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
+	var req model.ForgotPasswordRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	slog.InfoContext(r.Context(), "forgot password submit received",
+		"host", r.Host,
+		"origin", r.Header.Get("Origin"),
+		"referer", r.Referer(),
+		"email_present", strings.TrimSpace(req.Email) != "",
+	)
+
+	if err := h.authService.ForgotPassword(r.Context(), req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "If an account with that email exists, a password reset link has been sent"})
+}
+
+// ResetPassword handles POST /api/auth/reset-password.
+func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	var req model.ResetPasswordRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	slog.InfoContext(r.Context(), "password reset submit received",
+		"host", r.Host,
+		"origin", r.Header.Get("Origin"),
+		"referer", r.Referer(),
+		"token_len", len(strings.TrimSpace(req.Token)),
+	)
+
+	if err := h.authService.ResetPassword(r.Context(), req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "password reset"})
+}
+
 // Me handles GET /api/auth/me.
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
@@ -98,7 +146,7 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"message": "password updated"})
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "password updated"})
 }
 
 // UploadAvatar handles POST /api/auth/me/avatar.

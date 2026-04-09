@@ -241,6 +241,7 @@ func sanitizePlannerAgentTools(raw json.RawMessage, presetKey string) json.RawMe
 	case model.AgentPresetEpicPlanner:
 		policy.requiredTools = []string{
 			worker.ToolUpdatePlan,
+			worker.ToolRequestReviewCheckpoint,
 			worker.ToolPublishPRDDraft,
 			worker.ToolPublishTaskPlan,
 		}
@@ -257,10 +258,14 @@ func sanitizePlannerAgentTools(raw json.RawMessage, presetKey string) json.RawMe
 			"create_task_batch",
 			"assign_task_agent",
 			"set_task_dependencies",
+			"write_file",
+			"edit_file",
+			"apply_patch",
 		}
 	case model.AgentPresetTaskPlanner:
 		policy.requiredTools = []string{
 			worker.ToolUpdatePlan,
+			worker.ToolRequestReviewCheckpoint,
 			worker.ToolPublishTaskPlanDoc,
 		}
 		policy.disallowedExtraTools = []string{
@@ -277,6 +282,10 @@ func sanitizePlannerAgentTools(raw json.RawMessage, presetKey string) json.RawMe
 			"create_task_batch",
 			"assign_task_agent",
 			"set_task_dependencies",
+			"list_epic_tasks",
+			"write_file",
+			"edit_file",
+			"apply_patch",
 		}
 	default:
 		return raw

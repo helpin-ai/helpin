@@ -12,7 +12,7 @@ interface AuthState {
   signIn: (email: string, password: string, rememberMe?: boolean) => Promise<{ error: string | null }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: string | null }>;
   signOut: () => void;
-  updateUser: (data: { full_name?: string }) => Promise<void>;
+  updateUser: (data: { full_name?: string; avatar_style?: string; avatar_seed?: string; avatar_background_mode?: string; avatar_background_color?: string }) => Promise<void>;
 }
 
 let _initializing = false;
@@ -90,8 +90,11 @@ export const useAuthStore = create<AuthState>((set) => ({
     window.location.replace('/login');
   },
 
-  updateUser: async (data: { full_name?: string }) => {
-    const { data: updated } = await authService.updateProfile(data);
-    if (updated) set({ user: updated });
+  updateUser: async (data: { full_name?: string; avatar_style?: string; avatar_seed?: string; avatar_background_mode?: string; avatar_background_color?: string }) => {
+    const { data: updated, error } = await authService.updateProfile(data);
+    if (error || !updated) {
+      throw new Error(error || 'Failed to update profile');
+    }
+    set({ user: updated });
   },
 }));

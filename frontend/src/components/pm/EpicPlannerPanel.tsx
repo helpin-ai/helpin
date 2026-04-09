@@ -324,7 +324,7 @@ export function EpicPlannerPanel({
                 <button
                   key={run.id}
                   type="button"
-                  className="w-full rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-left transition-colors hover:bg-accent/40"
+                  className="w-full rounded-lg border border-border/60 bg-input/50 px-3 py-2 text-left transition-colors hover:bg-accent"
                   onClick={() => {
                     setSelectedRunId(run.id);
                     setDrawerOpen(true);

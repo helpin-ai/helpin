@@ -89,6 +89,56 @@ export function clearSession(widgetKey: string): void {
   }
 }
 
+// ─── Identified User Persistence (cookie-based, cross-subdomain) ────
+
+export interface StoredIdentity {
+  email: string;
+  name: string;
+}
+
+const IDENTITY_COOKIE_TTL_DAYS = 365;
+
+/**
+ * Persists the identified user's email and name as a cookie on the root domain.
+ * Cookie-based (not localStorage) so it works across subdomains
+ * (e.g. app.example.com and example.com share the same identity).
+ */
+export function persistIdentity(widgetKey: string, email: string, name: string): void {
+  try {
+    cookieManager.set(`helpin_uid_${widgetKey}`, JSON.stringify({ email, name }), IDENTITY_COOKIE_TTL_DAYS);
+  } catch {
+    // cookie may be unavailable
+  }
+}
+
+/**
+ * Reads a stored identified user from the identity cookie.
+ * Returns null if not found or missing email.
+ */
+export function getStoredIdentity(widgetKey: string): StoredIdentity | null {
+  try {
+    // cookieManager.get() already decodes the value
+    const raw = cookieManager.get(`helpin_uid_${widgetKey}`);
+    if (!raw) return null;
+    const identity: StoredIdentity = JSON.parse(raw);
+    if (!identity.email) return null;
+    return identity;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Clears the stored identified user cookie.
+ */
+export function clearIdentity(widgetKey: string): void {
+  try {
+    cookieManager.delete(`helpin_uid_${widgetKey}`);
+  } catch {
+    // ignore
+  }
+}
+
 // ─── Widget Config Cache ─────────────────────────────────────────────
 
 /**

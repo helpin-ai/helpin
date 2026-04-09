@@ -1,13 +1,16 @@
-import { mountWidget, unmountWidget } from '@helpin/widget-core';
-import type { WidgetConfig, Message, Conversation, WidgetView } from '@helpin/widget-core';
+import { mountWidget, unmountWidget } from '@helpin-ai/widget-core';
+import type { WidgetConfig, Message, Conversation, WidgetView } from '@helpin-ai/widget-core';
 // @ts-ignore — Vite ?inline import returns CSS as a string
-import widgetStyles from '@helpin/widget-core/styles?inline';
+import widgetStyles from '@helpin-ai/widget-core/styles?inline';
 import { isBot } from '../utils/bot-detect';
 import {
   getOrCreateAnonymousId,
   getStoredSession,
   persistSession,
   clearSession,
+  getStoredIdentity,
+  persistIdentity,
+  clearIdentity,
   clearConfigCache,
   getCachedConfig,
   cacheConfig,
@@ -24,7 +27,8 @@ export interface WidgetUser {
 }
 
 export interface WidgetSettings {
-  key: string;
+  widgetKey?: string;
+  key?: string;
   host?: string;
   user?: WidgetUser;
 }
@@ -54,6 +58,8 @@ const MAX_WS_RETRIES = 10;
 const MAX_WS_INITIAL_RETRIES = 3; // retries before first successful connection (invalid key, server down)
 const WS_BASE_DELAY_MS = 1000;
 const WS_MAX_DELAY_MS = 30000;
+const MAX_AUTO_RECONNECT_WINDOW_MS = 25_000;
+const MAX_BACKGROUND_RETRY_DELAY_MS = 120_000;
 const NOTIFICATION_SOUND_URL = 'https://cdn.helpin.ai/sounds/ping.mp3';
 
 function normalizeWidgetConfig(raw: any): WidgetConfig {
@@ -77,6 +83,7 @@ function normalizeWidgetConfig(raw: any): WidgetConfig {
 export class WidgetManager {
   private config: WidgetSettings | null = null;
   private widgetConfig: WidgetConfig | null = null;
+  private isVisible = false;
   private isOpen = false;
   private unreadCount = 0;
   private sessionToken: string | null = null;
@@ -84,6 +91,7 @@ export class WidgetManager {
   private wsRetryCount = 0;
   private wsHasConnected = false;
   private wsRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  private connectionIssueStartedAt: number | null = null;
   private isShutdown = false;
   private hasBeenOpened = false;
   private host = 'client.prod.helpin.ai';
@@ -113,8 +121,8 @@ export class WidgetManager {
   private audioUnlockListener: (() => void) | null = null;
 
   private callbacks: Record<string, WidgetCallback[]> = {
-    onShow: [],
-    onHide: [],
+    onOpen: [],
+    onClose: [],
     onUnreadCountChange: [],
     onUserEmailSupplied: [],
     onConversationStarted: [],
@@ -125,14 +133,29 @@ export class WidgetManager {
     // Bot/crawler filtering
     if (isBot()) return;
 
+    if (typeof window === 'undefined' || typeof document === 'undefined') {
+      console.error('[Helpin] Widget boot skipped: browser APIs are unavailable.');
+      return;
+    }
+
+    const widgetKey = settings.widgetKey || settings.key || '';
+    if (!widgetKey) {
+      console.error('[Helpin] Widget boot skipped: widgetKey is required.');
+      return;
+    }
+
     // Clean up previous boot if any
     if (this.config) {
       this.cleanup();
     }
 
     this.isShutdown = false;
-    this.config = settings;
-    this.widgetKey = settings.key;
+    this.isVisible = true;
+    this.config = {
+      ...settings,
+      widgetKey,
+    };
+    this.widgetKey = widgetKey;
 
     // Restore pre-chat done state from localStorage.
     if (this.widgetKey) {
@@ -144,7 +167,7 @@ export class WidgetManager {
     }
 
     // Get or create anonymous ID from cookie
-    this.anonymousId = getOrCreateAnonymousId(settings.key);
+    this.anonymousId = this.widgetKey ? getOrCreateAnonymousId(this.widgetKey) : null;
 
     // Unlock notification audio on first user interaction with the page
     if (!this.audioUnlockListener) {
@@ -184,9 +207,10 @@ export class WidgetManager {
       }
     }
 
-    // 2. Clear persisted session (but NOT anonymous_id cookie)
+    // 2. Clear persisted session + identity (but NOT anonymous_id cookie)
     if (this.widgetKey) {
       clearSession(this.widgetKey);
+      clearIdentity(this.widgetKey);
       clearConfigCache(this.widgetKey);
       try { localStorage.removeItem(`helpin_prechat_${this.widgetKey}`); } catch { /* ignore */ }
     }
@@ -208,11 +232,13 @@ export class WidgetManager {
     this.stopTyping();
     this.config = null;
     this.widgetConfig = null;
+    this.isVisible = false;
     this.sessionToken = null;
     this.isOpen = false;
     this.unreadCount = 0;
     this.hasBeenOpened = false;
     this.wsRetryCount = 0;
+    this.connectionIssueStartedAt = null;
     this.messages = [];
     this.conversations = [];
     this.activeConversationId = null;
@@ -240,6 +266,19 @@ export class WidgetManager {
   }
 
   show(): void {
+    this.isVisible = true;
+    this.ensureWidget();
+    this.render();
+  }
+
+  hide(): void {
+    this.isVisible = false;
+    this.isOpen = false;
+    this.render();
+  }
+
+  open(): void {
+    this.isVisible = true;
     this.isOpen = true;
     this.unlockNotificationSound();
     if (!this.hasBeenOpened && this.currentView === 'home') {
@@ -252,29 +291,48 @@ export class WidgetManager {
     }
     this.ensureWidget();
     this.render();
-    this.triggerCallback('onShow');
   }
 
-  hide(): void {
+  close(): void {
     this.isOpen = false;
     this.render();
-    this.triggerCallback('onHide');
+  }
+
+  private openFromUser(): void {
+    this.open();
+    this.triggerCallback('onOpen');
+  }
+
+  private closeFromUser(): void {
+    this.isOpen = false;
+    this.render();
+    this.triggerCallback('onClose');
   }
 
   toggle(): void {
+    this.isVisible = true;
     if (this.isOpen) {
-      this.hide();
+      this.close();
     } else {
-      this.show();
+      this.open();
     }
   }
 
-  showMessages(): void {
-    this.currentView = 'messages';
-    this.show();
+  private toggleFromUser(): void {
+    this.isVisible = true;
+    if (this.isOpen) {
+      this.closeFromUser();
+    } else {
+      this.openFromUser();
+    }
   }
 
-  showNewMessage(content?: string): void {
+  openMessages(): void {
+    this.currentView = 'messages';
+    this.open();
+  }
+
+  openNewMessage(content?: string): void {
     this.resetActiveConversation();
     this.currentView = 'conversation';
 
@@ -283,7 +341,7 @@ export class WidgetManager {
       this.wsSend('conversation:new', {});
     }
 
-    this.show();
+    this.open();
 
     // If content provided, send it as the first message
     if (content?.trim()) {
@@ -291,9 +349,9 @@ export class WidgetManager {
     }
   }
 
-  showConversation(conversationId: string): void {
+  openConversation(conversationId: string): void {
     this.currentView = 'home';
-    this.show();
+    this.open();
   }
 
   toggleConversationExpanded(): void {
@@ -346,22 +404,22 @@ export class WidgetManager {
     return conversationId || null;
   }
 
-  showArticle(articleId: string, _options?: ShowArticleOptions): void {
+  openArticle(articleId: string, _options?: ShowArticleOptions): void {
     this.articleRequestKey += 1;
     this.openArticleRequest = {
       key: this.articleRequestKey,
       articleSlug: articleId,
     };
     this.currentView = 'help-article';
-    this.show();
+    this.open();
   }
 
-  onShow(callback: WidgetCallback): void {
-    this.callbacks.onShow.push(callback);
+  onOpen(callback: WidgetCallback): void {
+    this.callbacks.onOpen.push(callback);
   }
 
-  onHide(callback: WidgetCallback): void {
-    this.callbacks.onHide.push(callback);
+  onClose(callback: WidgetCallback): void {
+    this.callbacks.onClose.push(callback);
   }
 
   onUnreadCountChange(callback: WidgetCallback): void {
@@ -458,7 +516,7 @@ export class WidgetManager {
       config: this.widgetConfig,
       messages: this.messages,
       isOpen: this.isOpen,
-      onClose: () => this.hide(),
+      onClose: () => this.closeFromUser(),
       onSendMessage: (content: string, attachmentIds?: string[]) => this.handleSendMessage(content, { attachmentIds }),
       onSendMessageFromHome: (content: string) => this.handleSendMessage(content, { startNewConversation: true }),
       onQuickReply: (content: string) => this.handleSendMessage(content),
@@ -473,10 +531,11 @@ export class WidgetManager {
       typingAgentAvatar: this.typingAgentAvatar,
       activeTeammate: this.activeTeammate,
       initialView: this.currentView,
-      showLauncher: true,
-      onLauncherClick: () => this.toggle(),
+      showLauncher: this.isVisible,
+      onLauncherClick: () => this.toggleFromUser(),
       unreadCount: this.unreadCount,
       connectionStatus: this.connectionStatus,
+      onRetryConnection: () => this.reconnectWebSocket(),
       conversations: this.conversations,
       activeConversation: this.activeConversationId
         ? this.conversations.find((conversation) => conversation.id === this.activeConversationId)
@@ -589,6 +648,44 @@ export class WidgetManager {
       avatarUrl: typeof raw.avatar_url === 'string' && raw.avatar_url.trim() ? raw.avatar_url : undefined,
       status: raw.status === 'online' || raw.status === 'away' || raw.status === 'offline' ? raw.status : undefined,
     };
+  }
+
+  private updateAvailableTeammateStatus(userId: string, status: 'online' | 'away' | 'offline'): boolean {
+    if (!this.widgetConfig?.availableTeammates?.length) {
+      return false;
+    }
+
+    let changed = false;
+    const current = this.widgetConfig.availableTeammates;
+    const next = status === 'offline'
+      ? current.filter((teammate) => {
+          const keep = teammate.userId !== userId;
+          if (!keep) {
+            changed = true;
+          }
+          return keep;
+        })
+      : current.map((teammate) => {
+          if (teammate.userId !== userId || teammate.status === status) {
+            return teammate;
+          }
+          changed = true;
+          return {
+            ...teammate,
+            status,
+          };
+        });
+
+    if (!changed) {
+      return false;
+    }
+
+    this.widgetConfig = {
+      ...this.widgetConfig,
+      availableTeammates: next,
+    };
+
+    return true;
   }
 
   private mapConversation(raw: any): WidgetConversation {
@@ -803,6 +900,10 @@ export class WidgetManager {
     if (data.email) {
       this.triggerCallback('onUserEmailSupplied', data.email);
       this.currentEmail = data.email;
+      // Persist identity so it survives page refresh
+      if (this.widgetKey) {
+        persistIdentity(this.widgetKey, data.email, '');
+      }
     }
 
     // Mark pre-chat as done so it doesn't reappear on reload.
@@ -814,6 +915,19 @@ export class WidgetManager {
     // Upgrade session via WS with source=prechat (even if email is empty — server handles skip)
     if (this.wsConnection?.readyState === WebSocket.OPEN) {
       this.wsSend('session:upgrade', { email: data.email || '', phone: data.phone || '', source: 'widget_prechat' });
+    }
+
+    // Inject a confirmation message so the user knows email was recorded + AI is ready
+    if (data.email) {
+      const confirmationMsg: Message = {
+        id: `prechat-confirm-${Date.now()}`,
+        conversationId: this.activeConversationId || '',
+        role: 'ai',
+        content: `Thanks! Our AI assistant is here to help you. If needed, a team member can also follow up with you at **${data.email}**.`,
+        isInternal: false,
+        createdAt: new Date().toISOString(),
+      };
+      this.messages = [...this.messages, confirmationMsg];
     }
 
     // Fire lead tracking event to events pipeline (ClickHouse)
@@ -944,10 +1058,10 @@ export class WidgetManager {
   // ─── API / Session ─────────────────────────────────────────
 
   private async fetchWidgetConfig(): Promise<void> {
-    if (!this.config?.key) return;
+    if (!this.config?.widgetKey) return;
 
     // Try localStorage cache first
-    const cached = getCachedConfig(this.config.key);
+    const cached = getCachedConfig(this.config.widgetKey);
     if (cached) {
       this.widgetConfig = normalizeWidgetConfig(cached);
       this.ensureWidget();
@@ -957,7 +1071,7 @@ export class WidgetManager {
 
     try {
       const response = await fetch(
-        `https://${this.host}/widget/config?widget_key=${encodeURIComponent(this.config.key)}`
+        `https://${this.host}/widget/config?widget_key=${encodeURIComponent(this.config.widgetKey)}`
       );
 
       if (!response.ok) {
@@ -967,8 +1081,8 @@ export class WidgetManager {
       this.widgetConfig = normalizeWidgetConfig(await response.json());
 
       // Cache in localStorage
-      if (this.widgetConfig && this.config.key) {
-        cacheConfig(this.config.key, this.widgetConfig);
+      if (this.widgetConfig && this.config.widgetKey) {
+        cacheConfig(this.config.widgetKey, this.widgetConfig);
       }
 
       this.ensureWidget();
@@ -995,7 +1109,9 @@ export class WidgetManager {
       this.wsConnection.onopen = () => {
         this.wsRetryCount = 0;
         this.wsHasConnected = true;
+        this.connectionIssueStartedAt = null;
         this.connectionStatus = 'connected';
+        this.render();
 
         // Send session:create or session:restore
         const storedSession = this.widgetKey ? getStoredSession(this.widgetKey) : null;
@@ -1025,33 +1141,47 @@ export class WidgetManager {
       this.wsConnection.onclose = (event) => {
         if (this.isShutdown) return;
 
+        const now = Date.now();
+        if (this.connectionIssueStartedAt === null) {
+          this.connectionIssueStartedAt = now;
+        }
+
         this.connectionStatus = 'disconnected';
         this.render();
 
         // Server rejected before WS upgrade (e.g. invalid widget key → HTTP 400).
         // Code 1006 = abnormal closure (no close frame received — typical for HTTP rejection).
         const maxRetries = this.wsHasConnected ? MAX_WS_RETRIES : MAX_WS_INITIAL_RETRIES;
+        const reconnectWindowElapsed = this.wsHasConnected
+          && this.connectionIssueStartedAt !== null
+          && now - this.connectionIssueStartedAt >= MAX_AUTO_RECONNECT_WINDOW_MS;
+        const shouldSurfaceFailure = this.wsRetryCount >= maxRetries || reconnectWindowElapsed;
 
-        if (this.wsRetryCount >= maxRetries) {
+        if (shouldSurfaceFailure) {
           if (!this.wsHasConnected) {
             console.error(
               `Helpin widget: failed to connect after ${MAX_WS_INITIAL_RETRIES} attempts. ` +
-              'Please verify your widget key is correct and the server is reachable.'
+              'Continuing to retry in the background.'
             );
+          } else if (reconnectWindowElapsed) {
+            console.error('Helpin widget: reconnect window exceeded, continuing background retries');
           } else {
-            console.error(`Helpin widget: lost connection, gave up after ${MAX_WS_RETRIES} retries`);
+            console.error(`Helpin widget: lost connection after ${MAX_WS_RETRIES} retries, continuing background retries`);
           }
           this.connectionStatus = 'failed';
           this.render();
-          return;
         }
 
+        const delayCap = shouldSurfaceFailure ? MAX_BACKGROUND_RETRY_DELAY_MS : WS_MAX_DELAY_MS;
         const delay = Math.min(
           WS_BASE_DELAY_MS * Math.pow(2, this.wsRetryCount) + Math.random() * 1000,
-          WS_MAX_DELAY_MS
+          delayCap
         );
         this.wsRetryCount++;
 
+        if (this.wsRetryTimer) {
+          clearTimeout(this.wsRetryTimer);
+        }
         this.wsRetryTimer = setTimeout(() => {
           this.wsRetryTimer = null;
           this.connectWebSocket();
@@ -1140,6 +1270,7 @@ export class WidgetManager {
         if (hashConversationId && this.conversations.some((c) => c.id === hashConversationId)) {
           this.activeConversationId = hashConversationId;
           this.currentView = 'conversation';
+          this.isVisible = true;
           this.isOpen = true;
           if (this.wsConnection?.readyState === WebSocket.OPEN) {
             this.wsSend('conversation:select', { conversation_id: hashConversationId });
@@ -1164,14 +1295,21 @@ export class WidgetManager {
           this.currentEmail = payload.customer_email;
         }
 
-        // If user data was provided at boot, upgrade the session (source=identify for SDK)
-        if (this.config?.user?.email && payload.is_anonymous) {
-          this.wsSend('session:upgrade', {
-            email: this.config.user.email,
-            name: this.config.user.name || '',
-            source: 'sdk_identify',
-          });
-          this.currentEmail = this.config.user.email;
+        // If session is anonymous, try to auto-upgrade from boot config or stored identity
+        if (payload.is_anonymous) {
+          const bootEmail = this.config?.user?.email;
+          const storedIdentity = this.widgetKey ? getStoredIdentity(this.widgetKey) : null;
+          const email = bootEmail || storedIdentity?.email;
+          const name = (bootEmail ? this.config?.user?.name : storedIdentity?.name) || '';
+
+          if (email) {
+            this.wsSend('session:upgrade', {
+              email,
+              name,
+              source: bootEmail ? 'sdk_identify' : 'stored_identity',
+            });
+            this.currentEmail = email;
+          }
         }
 
         this.render();
@@ -1415,6 +1553,8 @@ export class WidgetManager {
           break;
         }
 
+        const configChanged = this.updateAvailableTeammateStatus(userId, status);
+
         this.conversations = this.conversations.map((conversation) => {
           const teammate = conversation.activeTeammate;
           if (!teammate || teammate.userId !== userId) {
@@ -1431,6 +1571,7 @@ export class WidgetManager {
           };
         });
 
+        let shouldRender = configChanged;
         const activeTeammate = this.activeTeammate;
         if (activeTeammate && activeTeammate.userId === userId) {
           this.activeTeammate = {
@@ -1439,6 +1580,10 @@ export class WidgetManager {
             avatarUrl: activeTeammate.avatarUrl,
             status,
           };
+          shouldRender = true;
+        }
+
+        if (shouldRender) {
           this.render();
         }
         break;
@@ -1469,7 +1614,12 @@ export class WidgetManager {
   }
 
   reconnectWebSocket(): void {
+    if (this.wsRetryTimer) {
+      clearTimeout(this.wsRetryTimer);
+      this.wsRetryTimer = null;
+    }
     this.wsRetryCount = 0;
+    this.connectionIssueStartedAt = null;
     this.connectionStatus = 'idle';
     this.disconnectWebSocket();
     this.connectWebSocket();
@@ -1484,6 +1634,10 @@ export class WidgetManager {
   public sendSessionUpgrade(email: string, name: string, source: string): boolean {
     if (this.wsConnection?.readyState === WebSocket.OPEN) {
       this.wsSend('session:upgrade', { email, name, source });
+      // Persist identity so it survives page refresh
+      if (this.widgetKey && email) {
+        persistIdentity(this.widgetKey, email, name);
+      }
       return true;
     }
     return false;

@@ -2,6 +2,10 @@
 
 Unified platform for product development, marketing task management, sales (CRM), customer support, and internal/external knowledge — powered by AI agents that work autonomously or with human approval. Helpin eliminates silos between teams and helps them operate at 10X speed by offloading work to AI agents.
 
+## Working with Media
+
+When the user shares a URL to an image or screenshot, always download it using `curl -sL <url> -o /tmp/<filename>` and then view it using the Read tool. Do not use MCP fetch tools for binary image files — use curl directly to download and Read to view.
+
 ## Architecture
 
 - **Backend**: Go 1.24 + Chi router + GORM (PostgreSQL/Neon) + Temporal workflows
@@ -64,7 +68,7 @@ pnpm test                 # vitest run (jsdom environment)
 pnpm test:watch           # vitest (watch mode)
 pnpm typecheck            # tsc --noEmit
 ```
-Depends on `@helpin/shared`. Built with Vite + `vite-plugin-dts` (rollup types). Peer deps: React 18/19 or Preact 10.
+Depends on `@helpin-ai/shared`. Built with Vite + `vite-plugin-dts` (rollup types). Peer deps: React 18/19 or Preact 10.
 
 #### `packages/sdk-js` — Embeddable JS SDK
 ```bash

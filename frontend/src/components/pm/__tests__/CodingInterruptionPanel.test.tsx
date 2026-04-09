@@ -115,6 +115,45 @@ describe('CodingInterruptionPanel', () => {
     });
   });
 
+  it('renders browser-continue controls when auth falls back to browser flow', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <CodingTranscriptPane
+          transcriptMessages={[]}
+          liveAssistantMessage={null}
+          liveReasoningMessage={null}
+          liveTurnSegments={[]}
+          session={buildSession({
+            auth_state: {
+              state: 'pending',
+              auth_mode: 'chatgpt_device_code',
+              auth_url: 'https://chatgpt.com/login',
+              updated_at: '2026-03-31T10:00:00Z',
+            },
+          })}
+          activeInteraction={null}
+          acting={null}
+          onAuthStart={vi.fn()}
+          onAuthCancel={vi.fn()}
+          onResolveInteraction={vi.fn()}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('browser-based auth instead of a device code');
+    expect(container.textContent).toContain('Continue in browser');
+    expect(container.textContent).toContain('Cancel sign-in');
+    expect(container.textContent).not.toContain('Open verification page');
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
   it('renders resume controls when human input is required', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);

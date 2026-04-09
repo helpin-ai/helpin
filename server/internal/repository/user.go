@@ -60,13 +60,25 @@ func (r *UserRepository) GetByID(ctx context.Context, id string) (*model.User, e
 }
 
 // Update modifies a user's profile fields.
-func (r *UserRepository) Update(ctx context.Context, id string, fullName *string, avatarURL *string, defaultWorkspaceID *string) (*model.User, error) {
+func (r *UserRepository) Update(ctx context.Context, id string, fullName, avatarURL, avatarStyle, avatarSeed, avatarBackgroundMode, avatarBackgroundColor, defaultWorkspaceID *string) (*model.User, error) {
 	updates := map[string]interface{}{}
 	if fullName != nil {
 		updates["full_name"] = *fullName
 	}
 	if avatarURL != nil {
 		updates["avatar_url"] = *avatarURL
+	}
+	if avatarStyle != nil {
+		updates["avatar_style"] = *avatarStyle
+	}
+	if avatarSeed != nil {
+		updates["avatar_seed"] = *avatarSeed
+	}
+	if avatarBackgroundMode != nil {
+		updates["avatar_background_mode"] = *avatarBackgroundMode
+	}
+	if avatarBackgroundColor != nil {
+		updates["avatar_background_color"] = *avatarBackgroundColor
 	}
 	if defaultWorkspaceID != nil {
 		updates["default_workspace_id"] = *defaultWorkspaceID

@@ -1,4 +1,5 @@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
 import { cn, getInitials } from '@/lib/utils';
 
 const AVATAR_COLORS = [
@@ -54,6 +55,11 @@ function bumpAvatarDimensions(className?: string) {
 interface UserAvatarProps {
   name?: string | null;
   avatarUrl?: string | null;
+  avatarStyle?: string | null;
+  avatarSeed?: string | null;
+  avatarBackgroundMode?: string | null;
+  avatarBackgroundColor?: string | null;
+  presenceStatus?: 'online' | 'away' | 'offline' | null;
   className?: string;
   fallbackClassName?: string;
 }
@@ -61,18 +67,36 @@ interface UserAvatarProps {
 export function UserAvatar({
   name,
   avatarUrl,
+  avatarStyle,
+  avatarSeed,
+  avatarBackgroundMode,
+  avatarBackgroundColor,
+  presenceStatus,
   className,
   fallbackClassName,
 }: UserAvatarProps) {
   const color = getAvatarColor(name);
   const avatarClassName = bumpAvatarDimensions(className);
+  const resolvedAvatarUrl = resolveTeamMemberAvatarSrc({
+    avatarUrl,
+    avatarStyle,
+    avatarSeed,
+    avatarBackgroundMode,
+    avatarBackgroundColor,
+    fallbackSeed: name,
+  });
 
   return (
-    <Avatar className={cn('h-7 w-7 border border-border/80', avatarClassName)}>
-      <AvatarImage src={avatarUrl ?? undefined} alt={name ?? ''} />
-      <AvatarFallback className={cn('text-[9px] font-semibold', color.bg, color.text, fallbackClassName)}>
-        {getInitials(name)}
-      </AvatarFallback>
-    </Avatar>
+    <span className="relative inline-flex shrink-0">
+      <Avatar className={cn('h-7 w-7 border border-border/80', avatarClassName)}>
+        <AvatarImage src={resolvedAvatarUrl} alt={name ?? ''} />
+        <AvatarFallback className={cn('text-[9px] font-semibold', color.bg, color.text, fallbackClassName)}>
+          {getInitials(name)}
+        </AvatarFallback>
+      </Avatar>
+      {presenceStatus === 'online' ? (
+        <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border border-background bg-emerald-500" />
+      ) : null}
+    </span>
   );
 }

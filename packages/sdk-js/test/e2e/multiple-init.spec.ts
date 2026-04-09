@@ -81,7 +81,7 @@ test.describe('Helpin Multiple Initialization Tests', () => {
         <script>
           // Mock our SDK functionality
           function helpinClient(config) {
-            const key = config.key || '';
+            const key = config.widgetKey || '';
             const flag = '__HELPIN_AUTOCAPTURE_INITIALIZED__' + key;
             
             // Check for existing autocapture initialization
@@ -110,16 +110,16 @@ test.describe('Helpin Multiple Initialization Tests', () => {
           
           // Initialize first instance
           const client1 = helpinClient({
-            key: 'test_key',
+            widgetKey: 'test_key',
             autocapture: true
           });
           client1.init();
-          
+
           // Button to initialize second instance
           document.getElementById('test-button').addEventListener('click', function() {
             // Initialize second instance
             const client2 = helpinClient({
-              key: 'test_key',
+              widgetKey: 'test_key',
               autocapture: true
             });
             client2.init();
@@ -310,7 +310,7 @@ test.describe('Helpin Multiple Initialization Tests', () => {
           };
         }
 
-        const client = helpinClient({ key: 'abc123', autocapture: false });
+        const client = helpinClient({ widgetKey: 'abc123', autocapture: false });
         client.init();
       </script>
     `);
@@ -332,9 +332,9 @@ test.describe('Helpin Multiple Initialization Tests', () => {
         };
 
         function helpinClient(config) {
-          const flag = '__HELPIN_AUTOCAPTURE_INITIALIZED__' + config.key;
+          const flag = '__HELPIN_AUTOCAPTURE_INITIALIZED__' + config.widgetKey;
           if (config.autocapture && window[flag]) {
-            console.warn('Autocapture already initialized for key:', config.key);
+            console.warn('Autocapture already initialized for key:', config.widgetKey);
             config.disableAutocaptureListenerRegistration = true;
           }
           if (config.autocapture && !config.disableAutocaptureListenerRegistration) {
@@ -343,9 +343,9 @@ test.describe('Helpin Multiple Initialization Tests', () => {
         }
 
         // First key
-        helpinClient({ key: 'key_1', autocapture: true });
+        helpinClient({ widgetKey: 'key_1', autocapture: true });
         // Second key (should not trigger warning)
-        helpinClient({ key: 'key_2', autocapture: true });
+        helpinClient({ widgetKey: 'key_2', autocapture: true });
       </script>
     `);
 
@@ -376,7 +376,7 @@ test.describe('Helpin Multiple Initialization Tests', () => {
         }
 
         helpinClient({
-          key: 'test_key_2',
+          widgetKey: 'test_key_2',
           autocapture: true,
           disableAutocaptureListenerRegistration: true
         }).init();
@@ -410,10 +410,10 @@ test.describe('Helpin Multiple Initialization Tests', () => {
 
         // Mock SDK with namespace support
         function helpinClient(config) {
-          const key = config.key || '';
+          const key = config.widgetKey || '';
           const namespace = config.namespace || 'default';
           const flag = '__HELPIN_AUTOCAPTURE_INITIALIZED__' + key + '_' + namespace;
-          
+
           // Check for existing autocapture initialization with this key and namespace
           if (config.autocapture && window[flag]) {
             console.warn('Autocapture already initialized for key ' + key + ' in namespace ' + namespace);
@@ -451,24 +451,24 @@ test.describe('Helpin Multiple Initialization Tests', () => {
         
         // Initialize default namespace
         const defaultClient = helpinClient({
-          key: 'shared_key',
+          widgetKey: 'shared_key',
           autocapture: true
         });
         defaultClient.init();
         defaultClient.track('default_event');
-        
+
         // Initialize custom namespace
         const customClient = helpinClient({
-          key: 'shared_key',
+          widgetKey: 'shared_key',
           namespace: 'custom',
           autocapture: true
         });
         customClient.init();
         customClient.track('custom_event');
-        
+
         // Try to initialize default namespace again (should be skipped)
         const duplicateClient = helpinClient({
-          key: 'shared_key',
+          widgetKey: 'shared_key',
           autocapture: true
         });
         duplicateClient.init();
@@ -515,10 +515,10 @@ test.describe('Helpin Multiple Initialization Tests', () => {
           window.helpin_ns2Q = [];
           
           // Add early commands to queues before SDK is loaded
-          window.helpin_ns1Q.push(['init', { key: 'early_key_1' }]);
+          window.helpin_ns1Q.push(['init', { widgetKey: 'early_key_1' }]);
           window.helpin_ns1Q.push(['track', 'early_event_1']);
-          
-          window.helpin_ns2Q.push(['init', { key: 'early_key_2' }]);
+
+          window.helpin_ns2Q.push(['init', { widgetKey: 'early_key_2' }]);
           window.helpin_ns2Q.push(['track', 'early_event_2']);
           window.helpin_ns2Q.push(['track', 'another_early_event_2']);
         </script>

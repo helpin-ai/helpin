@@ -94,8 +94,39 @@ const STATE_TYPE_OPTIONS: { value: StateType; label: string; color: string }[] =
   { value: 'done', label: 'Done', color: 'bg-green-400' },
 ];
 
-const IMPORT_STEPS_BASE = ['Teams', 'Workflows', 'Labels', 'Objectives', 'Epics', 'Sprints', 'Tasks', 'Links'];
-const IMPORT_STEPS_API = ['API Enrichment', 'Teams', 'Workflows', 'Labels', 'Objectives', 'Epics', 'Sprints', 'Tasks', 'Links', 'Comments'];
+const IMPORT_STEPS_BASE = ['Teams', 'Workflows', 'Labels', 'Objectives', 'Epics', 'Sprints', 'Tasks'];
+const IMPORT_STEPS_API = ['API Enrichment', 'Teams', 'Workflows', 'Labels', 'Objectives', 'Epics', 'Sprints', 'Tasks', 'Media', 'Comments'];
+
+function formatImportStepLabel(step?: string | null) {
+  switch (step) {
+    case 'api_enrichment':
+      return 'API Enrichment';
+    case 'teams':
+      return 'Teams';
+    case 'workflows':
+      return 'Workflows';
+    case 'labels':
+      return 'Labels';
+    case 'objectives':
+      return 'Objectives';
+    case 'epics':
+      return 'Epics';
+    case 'sprints':
+      return 'Sprints';
+    case 'stories':
+      return 'Tasks';
+    case 'story_media':
+      return 'Media';
+    case 'comments':
+      return 'Comments';
+    case 'parse':
+      return 'Preparing import';
+    case 'completed':
+      return 'Completed';
+    default:
+      return step || 'unknown';
+  }
+}
 
 // ─── Main Component ──────────────────────────────────────────────────
 
@@ -1244,8 +1275,8 @@ function ImportStep({
             {isDone
               ? 'All steps completed successfully.'
               : isFailed
-                ? `Failed at step — ${progress?.current_step || 'unknown'}`
-                : `Step ${progress?.steps_completed || 0} of ${progress?.steps_total || 0} — ${progress?.current_step || '...'}`}
+                ? `Failed at step — ${formatImportStepLabel(progress?.current_step)}`
+                : `Step ${progress?.steps_completed || 0} of ${progress?.steps_total || 0} — ${formatImportStepLabel(progress?.current_step)}`}
           </p>
         </div>
 

@@ -27,7 +27,20 @@ func newTestDB(t *testing.T) *gorm.DB {
 			password_hash TEXT NOT NULL,
 			full_name TEXT NOT NULL,
 			avatar_url TEXT,
+			avatar_style TEXT,
+			avatar_seed TEXT,
+			avatar_background_mode TEXT,
+			avatar_background_color TEXT,
 			default_workspace_id TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE password_reset_tokens (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			user_id TEXT NOT NULL,
+			token_hash TEXT NOT NULL UNIQUE,
+			expires_at DATETIME NOT NULL,
+			used_at DATETIME,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -53,6 +66,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			name TEXT NOT NULL,
 			slug TEXT NOT NULL UNIQUE,
+			workspace_key TEXT,
 			owner_id TEXT NOT NULL,
 			organization_id TEXT,
 			description TEXT,
@@ -61,6 +75,13 @@ func newTestDB(t *testing.T) *gorm.DB {
 			timezone TEXT NOT NULL DEFAULT 'UTC',
 			created_at DATETIME,
 			updated_at DATETIME
+		)`,
+		`CREATE TABLE workspace_key_history (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT NOT NULL,
+			old_key TEXT NOT NULL,
+			new_key TEXT,
+			created_at DATETIME
 		)`,
 		`CREATE TABLE workspace_members (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
@@ -86,6 +107,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			team_type TEXT NOT NULL DEFAULT 'engineering',
 			default_task_type TEXT NOT NULL DEFAULT 'feature',
 			docs_publisher_enabled BOOLEAN NOT NULL DEFAULT 0,
+			sprints_enabled BOOLEAN NOT NULL DEFAULT 1,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

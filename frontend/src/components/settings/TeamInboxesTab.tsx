@@ -55,7 +55,7 @@ function SortableMailboxItem({
     <div
       ref={setNodeRef}
       style={style}
-      className={`flex items-center justify-between rounded-xl border bg-background px-4 py-3 ${isDragging ? 'opacity-50 shadow-lg' : ''}`}
+      className={`flex items-center justify-between rounded-xl border bg-card px-4 py-3 ${isDragging ? 'opacity-50 shadow-lg' : ''}`}
     >
       <div className="flex min-w-0 items-center gap-3">
         <button

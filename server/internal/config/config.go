@@ -40,11 +40,13 @@ type Config struct {
 	OpenCodePath            string
 	CodexPath               string
 	CodexModel              string
+	CodexSandboxMode        string
 	CodexOpenAIAuthMode     string
 	CodexEnableChatGPTOAuth bool
 	CodexChatGPTAccessToken string
 	CodexChatGPTAccountID   string
 	CodexChatGPTPlanType    string
+	CodexAuthEncryptionKey  string
 	BraveSearchAPIKey       string
 	CloudflareAccountID     string
 	CloudflareAPIToken      string
@@ -161,11 +163,13 @@ func Load() (*Config, error) {
 		OpenCodePath:                 strings.TrimSpace(firstNonEmpty(os.Getenv("OPENCODE_PATH"), "opencode")),
 		CodexPath:                    strings.TrimSpace(firstNonEmpty(os.Getenv("CODEX_PATH"), "codex")),
 		CodexModel:                   strings.TrimSpace(os.Getenv("CODEX_MODEL")),
+		CodexSandboxMode:             strings.TrimSpace(os.Getenv("CODEX_SANDBOX_MODE")),
 		CodexOpenAIAuthMode:          strings.TrimSpace(firstNonEmpty(os.Getenv("CODEX_OPENAI_AUTH_MODE"), "api_key")),
 		CodexEnableChatGPTOAuth:      parseBoolEnv(os.Getenv("CODEX_ENABLE_CHATGPT_OAUTH")),
 		CodexChatGPTAccessToken:      strings.TrimSpace(os.Getenv("CODEX_CHATGPT_ACCESS_TOKEN")),
 		CodexChatGPTAccountID:        strings.TrimSpace(os.Getenv("CODEX_CHATGPT_ACCOUNT_ID")),
 		CodexChatGPTPlanType:         strings.TrimSpace(os.Getenv("CODEX_CHATGPT_PLAN_TYPE")),
+		CodexAuthEncryptionKey:       strings.TrimSpace(os.Getenv("CODEX_AUTH_ENCRYPTION_KEY")),
 		BraveSearchAPIKey:            strings.TrimSpace(os.Getenv("BRAVE_SEARCH_API_KEY")),
 		CloudflareAccountID:          strings.TrimSpace(os.Getenv("CLOUDFLARE_ACCOUNT_ID")),
 		CloudflareAPIToken:           strings.TrimSpace(os.Getenv("CLOUDFLARE_API_TOKEN")),

@@ -317,7 +317,7 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
         >
           <ArrowExpandIcon className="mt-3 mb-2 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           {column.member ? (
-            <UserAvatar name={displayName} avatarUrl={column.member.avatar_url} className="h-5 w-5 text-[10px]" />
+            <UserAvatar name={displayName} avatarUrl={column.member.avatar_url} avatarStyle={column.member.avatar_style} avatarSeed={column.member.avatar_seed} avatarBackgroundMode={column.member.avatar_background_mode} avatarBackgroundColor={column.member.avatar_background_color} className="h-5 w-5 text-[10px]" />
           ) : (
             <UserIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
           )}
@@ -341,7 +341,7 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
         <div className="min-w-0">
           <p className="flex items-center gap-1.5 truncate text-sm font-semibold">
             {column.member ? (
-              <UserAvatar name={displayName} avatarUrl={column.member.avatar_url} className="h-5 w-5 text-[10px]" />
+              <UserAvatar name={displayName} avatarUrl={column.member.avatar_url} avatarStyle={column.member.avatar_style} avatarSeed={column.member.avatar_seed} avatarBackgroundMode={column.member.avatar_background_mode} avatarBackgroundColor={column.member.avatar_background_color} className="h-5 w-5 text-[10px]" />
             ) : (
               <UserIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
             )}
@@ -1036,7 +1036,17 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   const handleCreate = useCallback(
     async (payload: CreateTaskRequest) => {
       const task = await createTask(payload);
-      return task ? { id: task.id } : undefined;
+      return task
+        ? {
+            id: task.id,
+            task: {
+              id: task.id,
+              name: task.name,
+              display_id: task.display_id,
+              task_key: task.task_key,
+            },
+          }
+        : undefined;
     },
     [createTask]
   );

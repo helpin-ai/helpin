@@ -48,7 +48,7 @@ export function CalendarEvents({ workspaceId, contactId, dealId }: CalendarEvent
   return (
     <div className="space-y-3">
       {events.map((event) => (
-        <div key={event.id} className="rounded-lg border border-border/60 bg-background px-4 py-4">
+        <div key={event.id} className="rounded-lg border border-border/60 bg-card px-4 py-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div className="min-w-0">
               <p className="text-sm font-medium text-foreground">{event.title}</p>

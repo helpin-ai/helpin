@@ -8,7 +8,8 @@ import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useQuery } from '@tanstack/react-query';
 import { useArchiveMailbox, useInboxScopes, useUnreadStats } from '@/hooks/queries/useSupport';
-import { agentService } from '@/lib/services/agentService';
+import { automationService } from '@/lib/services/automationService';
+import { queryKeys } from '@/lib/queryKeys';
 import { getInitials } from '@/lib/utils';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import {
@@ -45,7 +46,8 @@ export function Sidebar() {
   const initials = getInitials(user?.full_name || user?.email);
 
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
-  const { isAdmin, canManageSettings, canManageTeams } = usePermissions(access);
+  const { isAdmin, canManageSettings, canManageTeams, permissionSet, canAccessModule, modules } = usePermissions(access);
+  const hasSupportModule = canAccessModule('support');
   const {
     navFilter,
     setNavFilter,
@@ -56,8 +58,8 @@ export function Sidebar() {
     activeContext,
   } = useSupportInboxStore();
 
-  const { data: inboxScopes } = useInboxScopes(workspaceId ?? '');
-  const { data: unreadStats } = useUnreadStats(workspaceId ?? '', selectedMailboxId);
+  const { data: inboxScopes } = useInboxScopes(workspaceId ?? '', hasSupportModule);
+  const { data: unreadStats } = useUnreadStats(workspaceId ?? '', selectedMailboxId, hasSupportModule);
   const archiveMailbox = useArchiveMailbox(workspaceId ?? '');
   const totalSupportUnread = useMemo(
     () => (inboxScopes?.shared_inbox.unread_count ?? 0) + (inboxScopes?.mailboxes ?? []).reduce((sum, mailbox) => sum + mailbox.unread_count, 0),
@@ -65,9 +67,9 @@ export function Sidebar() {
   );
 
   const { data: agentRunsData } = useQuery({
-    queryKey: ['agent_runs', workspaceId],
+    queryKey: queryKeys.automation.runs(workspaceId ?? '', 1, 100),
     queryFn: async () => {
-      const res = await agentService.listWorkspaceRuns(workspaceId!, 1, 100);
+      const res = await automationService.listWorkspaceRuns(workspaceId!, 1, 100);
       return res.data?.data ?? [];
     },
     enabled: !!workspaceId,
@@ -78,7 +80,7 @@ export function Sidebar() {
     [agentRunsData],
   );
 
-  const { data: teammatePresence = [] } = useSupportTeammatePresence(workspaceId ?? '');
+  const { data: teammatePresence = [] } = useSupportTeammatePresence(workspaceId ?? '', hasSupportModule);
   const updateMyPresence = useUpdateMySupportTeammatePresence(workspaceId ?? '');
   const mySupportPresence = useMemo(
     () => (user?.id ? teammatePresence.find((entry) => entry.user_id === user.id) ?? null : null),
@@ -142,7 +144,10 @@ export function Sidebar() {
     });
   };
 
-  const panelNavGroups = useMemo(() => buildPanelNavGroups(wsSlug, canManageSettings), [wsSlug, canManageSettings]);
+  const panelNavGroups = useMemo(
+    () => buildPanelNavGroups(wsSlug, canManageSettings, permissionSet),
+    [wsSlug, canManageSettings, permissionSet],
+  );
   const currentNavGroups = panelNavGroups[activeRail];
   const railItems = useMemo(() => buildRailItems(wsSlug, totalSupportUnread, agentAttentionCount), [wsSlug, totalSupportUnread, agentAttentionCount]);
 
@@ -240,6 +245,7 @@ export function Sidebar() {
             railItems={railItems}
             activeRail={activeRail}
             userEmail={user?.email ?? undefined}
+            accessibleModules={modules}
             theme={theme}
             onRailSelect={(link) => handleNavigate(link)}
             onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
@@ -311,7 +317,6 @@ export function Sidebar() {
                 selectedMailboxId={selectedMailboxId}
                 canManageSettings={canManageSettings}
                 wsSlug={wsSlug}
-                aiHasUnread={(unreadStats?.ai_pending ?? 0) > 0}
                 onNavFilterChange={setNavFilter}
                 onMailboxSelect={setSelectedMailboxId}
                 onCreateMailbox={() => setTeamInboxDialogOpen(true)}

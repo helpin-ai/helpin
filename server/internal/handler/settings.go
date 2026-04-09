@@ -1,7 +1,10 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -60,6 +63,97 @@ func (h *SettingsHandler) GetAIAutomations(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, inventory)
 }
 
+// GetAIAutomationExecutions handles
+// GET /api/settings/ai-automations/executions?workspace_id=xxx.
+func (h *SettingsHandler) GetAIAutomationExecutions(w http.ResponseWriter, r *http.Request) {
+	workspaceID := r.URL.Query().Get("workspace_id")
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	if h.automationService == nil {
+		writeError(w, http.StatusServiceUnavailable, "automation inventory is unavailable")
+		return
+	}
+
+	firedAfter, err := parseExecutionTimeFilter(r.URL.Query().Get("fired_after"), false)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid fired_after")
+		return
+	}
+	firedBefore, err := parseExecutionTimeFilter(r.URL.Query().Get("fired_before"), true)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid fired_before")
+		return
+	}
+
+	filters := model.TriggerExecutionListFilters{
+		AgentID:     queryStringPtr(r, "agent_id"),
+		BindingID:   queryStringPtr(r, "binding_id"),
+		TriggerType: queryStringPtrWithFallback(r, "trigger_type"),
+		BindingKind: queryStringPtrWithFallback(r, "binding_kind", "source"),
+		Status:      queryStringPtr(r, "status"),
+		ReferenceID: queryStringPtr(r, "reference_id"),
+		FiredAfter:  firedAfter,
+		FiredBefore: firedBefore,
+	}
+	pagination := queryPagination(r)
+	if pagination.PerPage <= 0 {
+		pagination.PerPage = 25
+	}
+	if pagination.PerPage > 100 {
+		pagination.PerPage = 100
+	}
+
+	result, err := h.automationService.ListTriggerExecutions(r.Context(), workspaceID, filters, pagination)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+func parseExecutionTimeFilter(raw string, endOfDay bool) (*time.Time, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	if ts, err := time.Parse(time.RFC3339, raw); err == nil {
+		return &ts, nil
+	}
+	if date, err := time.Parse("2006-01-02", raw); err == nil {
+		if endOfDay {
+			date = date.Add(24*time.Hour - time.Nanosecond)
+		}
+		date = date.UTC()
+		return &date, nil
+	}
+	return nil, errors.New("invalid time format")
+}
+
+// GetModuleAccess handles GET /api/settings/module-access?workspace_id=xxx.
+func (h *SettingsHandler) GetModuleAccess(w http.ResponseWriter, r *http.Request) {
+	workspaceID := r.URL.Query().Get("workspace_id")
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+
+	grants, err := h.settingsService.ListModuleGrants(r.Context(), workspaceID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if grants == nil {
+		grants = []model.WorkspaceModuleGrant{}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"modules": model.ManagedWorkspaceModules(),
+		"grants":  grants,
+	})
+}
+
 // Initialize handles POST /api/settings/initialize.
 func (h *SettingsHandler) Initialize(w http.ResponseWriter, r *http.Request) {
 	var req model.InitializeSettingsRequest
@@ -75,6 +169,41 @@ func (h *SettingsHandler) Initialize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, settings)
+}
+
+// UpsertModuleAccessGrant handles POST /api/settings/module-access.
+func (h *SettingsHandler) UpsertModuleAccessGrant(w http.ResponseWriter, r *http.Request) {
+	var req model.CreateWorkspaceModuleGrantRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	actorUserID := middleware.GetUserID(r.Context())
+	grant, err := h.settingsService.UpsertModuleGrant(r.Context(), req, actorUserID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, grant)
+}
+
+// DeleteModuleAccessGrant handles DELETE /api/settings/module-access/{id}.
+func (h *SettingsHandler) DeleteModuleAccessGrant(w http.ResponseWriter, r *http.Request) {
+	workspaceID := r.URL.Query().Get("workspace_id")
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+
+	id := chi.URLParam(r, "id")
+	if err := h.settingsService.DeleteModuleGrant(r.Context(), workspaceID, id); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "module grant deleted"})
 }
 
 // CreateTeam handles POST /api/settings/teams.

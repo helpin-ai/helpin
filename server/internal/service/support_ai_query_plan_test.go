@@ -65,7 +65,7 @@ func TestPlanSupportQueryResolvesFollowUpFromContext(t *testing.T) {
 	provider := &scriptedSupportPlannerLLM{
 		responses: []llm.ChatResponse{
 			{
-				Content: `{"decision":"answer","standalone_query":"Publer vs ContentStudio features","search_queries":["ContentStudio features vs Publer","Publer ContentStudio feature comparison"],"clarifying_question":"","reason":"resolved_from_context"}`,
+				Content: `{"decision":"answer","issue_key":"publer_vs_contentstudio","issue_summary":"Customer wants a features comparison between Publer and ContentStudio","progress_signal":"same_issue_new_info","standalone_query":"Publer vs ContentStudio features","search_queries":["ContentStudio features vs Publer","Publer ContentStudio feature comparison"],"clarifying_question":"","reason":"resolved_from_context"}`,
 				TokensUsed: llm.TokenUsage{
 					InputTokens:  15,
 					OutputTokens: 9,
@@ -97,6 +97,12 @@ func TestPlanSupportQueryResolvesFollowUpFromContext(t *testing.T) {
 	if plan.StandaloneQuery != "Publer vs ContentStudio features" {
 		t.Fatalf("standalone_query = %q", plan.StandaloneQuery)
 	}
+	if plan.IssueKey != "publer_vs_contentstudio" {
+		t.Fatalf("issue_key = %q", plan.IssueKey)
+	}
+	if plan.ProgressSignal != supportProgressSameNewInfo {
+		t.Fatalf("progress_signal = %q", plan.ProgressSignal)
+	}
 	wantQueries := []string{
 		"Publer vs ContentStudio features",
 		"ContentStudio features vs Publer",
@@ -119,7 +125,7 @@ func TestPlanSupportQueryUsesClarifyInsteadOfHandoffForAmbiguousFollowUp(t *test
 	provider := &scriptedSupportPlannerLLM{
 		responses: []llm.ChatResponse{
 			{
-				Content: `{"decision":"clarify","standalone_query":"","search_queries":[],"clarifying_question":"Do you mean Publer features or ContentStudio features?","reason":"needs_clarification"}`,
+				Content: `{"decision":"clarify","issue_key":"publer_vs_contentstudio","issue_summary":"Customer wants to compare Publer and ContentStudio","progress_signal":"same_issue_unclear","standalone_query":"","search_queries":[],"clarifying_question":"Do you mean Publer features or ContentStudio features?","reason":"needs_clarification"}`,
 				TokensUsed: llm.TokenUsage{
 					InputTokens:  12,
 					OutputTokens: 10,
@@ -147,6 +153,9 @@ func TestPlanSupportQueryUsesClarifyInsteadOfHandoffForAmbiguousFollowUp(t *test
 	if plan.ClarifyingQuestion == "" {
 		t.Fatal("expected clarifying question to be populated")
 	}
+	if plan.IssueKey != "publer_vs_contentstudio" {
+		t.Fatalf("issue_key = %q", plan.IssueKey)
+	}
 	if plan.Reason != "needs_clarification" {
 		t.Fatalf("reason = %q, want needs_clarification", plan.Reason)
 	}
@@ -156,7 +165,7 @@ func TestPlanSupportQueryIncludesImageContentParts(t *testing.T) {
 	provider := &scriptedSupportPlannerLLM{
 		responses: []llm.ChatResponse{
 			{
-				Content: `{"decision":"answer","standalone_query":"screenshot issue","search_queries":["screenshot issue"],"clarifying_question":"","reason":"resolved_from_context"}`,
+				Content: `{"decision":"answer","issue_key":"screenshot_issue","issue_summary":"Customer reported an issue with a screenshot attachment","progress_signal":"new_issue","standalone_query":"screenshot issue","search_queries":["screenshot issue"],"clarifying_question":"","reason":"resolved_from_context"}`,
 			},
 		},
 	}
@@ -198,8 +207,11 @@ func TestPlanSupportQueryIncludesImageContentParts(t *testing.T) {
 
 func TestNormalizeSupportQueryPlanFallsBackToAnswerWhenClarifyQuestionMissing(t *testing.T) {
 	plan := normalizeSupportQueryPlan(SupportQueryPlanContract{
-		Decision: supportDecisionClarify,
-		Reason:   "needs_clarification",
+		Decision:       supportDecisionClarify,
+		IssueKey:       "feature_comparison",
+		IssueSummary:   "Customer wants a feature comparison",
+		ProgressSignal: supportProgressSameUnclear,
+		Reason:         "needs_clarification",
 	}, "features")
 
 	if plan.Decision != supportDecisionAnswer {
@@ -207,6 +219,24 @@ func TestNormalizeSupportQueryPlanFallsBackToAnswerWhenClarifyQuestionMissing(t 
 	}
 	if len(plan.SearchQueries) != 1 || plan.SearchQueries[0] != "features" {
 		t.Fatalf("search_queries = %#v, want raw message fallback", plan.SearchQueries)
+	}
+	if plan.IssueKey != "feature_comparison" {
+		t.Fatalf("issue_key = %q", plan.IssueKey)
+	}
+}
+
+func TestNormalizeSupportQueryPlanGeneratesIssueKeyWhenPlannerOmitsIt(t *testing.T) {
+	plan := normalizeSupportQueryPlan(SupportQueryPlanContract{
+		Decision:        supportDecisionAnswer,
+		StandaloneQuery: "How do I reset my password",
+		SearchQueries:   []string{"reset password"},
+	}, "How do I reset my password")
+
+	if plan.IssueKey != "how_reset_password" {
+		t.Fatalf("issue_key = %q", plan.IssueKey)
+	}
+	if plan.ProgressSignal != supportProgressNewIssue {
+		t.Fatalf("progress_signal = %q", plan.ProgressSignal)
 	}
 }
 

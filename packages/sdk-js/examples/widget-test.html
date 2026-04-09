@@ -62,10 +62,12 @@
         <div class="card">
             <h2>Widget Controls</h2>
             <div class="controls">
-                <button onclick="helpin('show')">Show</button>
-                <button onclick="helpin('hide')">Hide</button>
-                <button onclick="helpin('showMessages')">Show Messages</button>
-                <button onclick="helpin('showNewMessage', 'Hello!')">New Message</button>
+                <button onclick="helpin('show')">Show Launcher</button>
+                <button onclick="helpin('hide')">Hide Widget</button>
+                <button onclick="helpin('open')">Open Chat</button>
+                <button onclick="helpin('close')">Close Chat</button>
+                <button onclick="helpin('openMessages')">Open Messages</button>
+                <button onclick="helpin('openNewMessage', 'Hello!')">New Message</button>
             </div>
         </div>
 
@@ -140,8 +142,8 @@
         }
 
         // Register callbacks once SDK loads
-        helpin('onShow', function() { addLog('info', 'Widget shown'); });
-        helpin('onHide', function() { addLog('info', 'Widget hidden'); });
+        helpin('onOpen', function() { addLog('info', 'Chat opened'); });
+        helpin('onClose', function() { addLog('info', 'Chat closed'); });
         helpin('onUnreadCountChange', function(count) { addLog('info', 'Unread count:', count); });
         helpin('onUserEmailSupplied', function(email) { addLog('info', 'User email supplied:', email); });
     </script>

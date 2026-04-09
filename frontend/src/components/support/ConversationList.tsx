@@ -9,12 +9,13 @@ import {
   DropdownMenuCheckboxItem,
 } from '@/components/ui/dropdown-menu';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useConversations, useMarkConversationRead } from '@/hooks/queries/useSupport';
+import { useConversations, useInboxScopes, useMarkConversationRead } from '@/hooks/queries/useSupport';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { ConversationRow } from './ConversationRow';
 import { filterSupportConversations } from '@/lib/supportInboxFilters';
 import { supportStatusOptions } from '@/components/layout/sidebar/config';
+import type { SupportInboxScope } from '@/lib/pmTypes';
 
 const SkeletonRow = memo(function SkeletonRow() {
   return (
@@ -48,6 +49,7 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
   const wsSend = useSupportPresenceStore((s) => s.wsSend);
   const wsConnected = useSupportPresenceStore((s) => s.wsConnected);
   const markConversationRead = useMarkConversationRead(workspaceId);
+  const { data: inboxScopes } = useInboxScopes(workspaceId);
 
   const handleSelect = useCallback((id: string) => {
     selectConversation(id);
@@ -69,6 +71,10 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
   const filteredConversations = useMemo(() => {
     return filterSupportConversations(conversations, { navFilter, userId, searchQuery });
   }, [conversations, navFilter, userId, searchQuery]);
+  const mailboxMoveOptions = useMemo(
+    () => [inboxScopes?.shared_inbox, ...(inboxScopes?.mailboxes ?? [])].filter(Boolean) as SupportInboxScope[],
+    [inboxScopes]
+  );
 
   useEffect(() => {
     if (!wsSend || !wsConnected || filteredConversations.length === 0) return;
@@ -173,7 +179,9 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
         {filteredConversations.map((conversation) => (
           <ConversationRow
             key={conversation.id}
+            workspaceId={workspaceId}
             conversation={conversation}
+            moveOptions={mailboxMoveOptions}
             isSelected={selectedConversationId === conversation.id}
             onSelect={() => handleSelect(conversation.id)}
           />

@@ -1,21 +1,21 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { automationRuleService } from '@/lib/services/automationRuleService'
+import { automationService } from '@/lib/services/automationService'
 import { queryKeys } from '@/lib/queryKeys'
 import { unwrap } from '@/lib/queryUtils'
 import type { CreateAutomationRuleRequest, UpdateAutomationRuleRequest } from '@/lib/pmTypes'
 
 export function useAutomationRules(wsId?: string) {
   return useQuery({
-    queryKey: queryKeys.pm.automationRules(wsId!),
-    queryFn: async () => unwrap(await automationRuleService.list(wsId!)),
+    queryKey: queryKeys.automation.flows(wsId!),
+    queryFn: async () => unwrap(await automationService.listFlows(wsId!)),
     enabled: !!wsId,
   })
 }
 
 export function useAutomationRulesByWorkflow(wsId?: string, workflowId?: string) {
   return useQuery({
-    queryKey: queryKeys.pm.automationRulesByWorkflow(wsId!, workflowId!),
-    queryFn: async () => unwrap(await automationRuleService.listByWorkflow(wsId!, workflowId!)),
+    queryKey: queryKeys.automation.flowsByWorkflow(wsId!, workflowId!),
+    queryFn: async () => unwrap(await automationService.listFlowsByWorkflow(wsId!, workflowId!)),
     enabled: !!wsId && !!workflowId,
   })
 }
@@ -24,9 +24,10 @@ export function useCreateAutomationRule(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (data: CreateAutomationRuleRequest) =>
-      unwrap(await automationRuleService.create(wsId, data)),
+      unwrap(await automationService.createFlow(wsId, data)),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.pm.automationRules(wsId) })
+      qc.invalidateQueries({ queryKey: queryKeys.automation.flows(wsId) })
+      qc.invalidateQueries({ queryKey: queryKeys.automation.overview(wsId) })
     },
   })
 }
@@ -35,9 +36,10 @@ export function useUpdateAutomationRule(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async ({ ruleId, data }: { ruleId: string; data: UpdateAutomationRuleRequest }) =>
-      unwrap(await automationRuleService.update(wsId, ruleId, data)),
+      unwrap(await automationService.updateFlow(wsId, ruleId, data)),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.pm.automationRules(wsId) })
+      qc.invalidateQueries({ queryKey: queryKeys.automation.flows(wsId) })
+      qc.invalidateQueries({ queryKey: queryKeys.automation.overview(wsId) })
     },
   })
 }
@@ -46,9 +48,10 @@ export function useDeleteAutomationRule(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (ruleId: string) =>
-      unwrap(await automationRuleService.remove(wsId, ruleId)),
+      unwrap(await automationService.deleteFlow(wsId, ruleId)),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.pm.automationRules(wsId) })
+      qc.invalidateQueries({ queryKey: queryKeys.automation.flows(wsId) })
+      qc.invalidateQueries({ queryKey: queryKeys.automation.overview(wsId) })
     },
   })
 }

@@ -2,8 +2,11 @@ package service
 
 import (
 	"context"
+	"errors"
+	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/auth"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -16,13 +19,54 @@ func newAuthService(t *testing.T) (*AuthService, *repository.UserRepository) {
 	t.Helper()
 	db := newTestDB(t)
 	userRepo := repository.NewUserRepository(db)
+	resetRepo := repository.NewPasswordResetTokenRepository(db)
 	jwtMgr := auth.NewJWTManager("test-secret")
-	svc := NewAuthService(userRepo, nil, jwtMgr, nil)
+	svc := NewAuthService(userRepo, resetRepo, nil, jwtMgr, nil, nil, "http://localhost:5173")
 	return svc, userRepo
+}
+
+type stubAuthEmailSender struct {
+	to       string
+	fullName string
+	resetURL string
+	calls    int
+	err      error
+}
+
+func (s *stubAuthEmailSender) SendPasswordResetEmail(to, fullName, resetURL string) error {
+	s.to = to
+	s.fullName = fullName
+	s.resetURL = resetURL
+	s.calls++
+	return s.err
+}
+
+func newAuthServiceWithResetEmail(t *testing.T) (*AuthService, *repository.UserRepository, *repository.PasswordResetTokenRepository, *stubAuthEmailSender) {
+	t.Helper()
+	db := newTestDB(t)
+	userRepo := repository.NewUserRepository(db)
+	resetRepo := repository.NewPasswordResetTokenRepository(db)
+	jwtMgr := auth.NewJWTManager("test-secret")
+	emailSender := &stubAuthEmailSender{}
+	svc := NewAuthService(userRepo, resetRepo, nil, jwtMgr, nil, emailSender, "http://localhost:5173")
+	return svc, userRepo, resetRepo, emailSender
 }
 
 // ptr returns a pointer to the given string value.
 func ptr(s string) *string { return &s }
+
+func extractResetToken(t *testing.T, resetURL string) string {
+	t.Helper()
+	parsed, err := url.Parse(resetURL)
+	if err != nil {
+		t.Fatalf("parse reset URL: %v", err)
+	}
+	token := parsed.Query().Get("token")
+	if token == "" {
+		t.Fatalf("expected token query param in reset URL %q", resetURL)
+	}
+	return token
+}
 
 // ----- Signup Tests --------------------------------------------------------
 
@@ -315,6 +359,42 @@ func TestUpdateProfile(t *testing.T) {
 		}
 		if updated.AvatarURL == nil || *updated.AvatarURL != "https://example.com/avatar.png" {
 			t.Errorf("expected avatar URL 'https://example.com/avatar.png', got %v", updated.AvatarURL)
+		}
+	})
+
+	t.Run("update generated avatar preferences", func(t *testing.T) {
+		svc, _ := newAuthService(t)
+		ctx := context.Background()
+
+		signupResp, err := svc.Signup(ctx, model.SignupRequest{
+			Email:    "generated@example.com",
+			Password: "password123",
+			FullName: "Generated Avatar",
+		})
+		if err != nil {
+			t.Fatalf("signup failed: %v", err)
+		}
+
+		updated, err := svc.UpdateProfile(ctx, signupResp.User.ID, model.UpdateProfileRequest{
+			AvatarStyle:           ptr("personas"),
+			AvatarSeed:            ptr("generated-avatar-seed"),
+			AvatarBackgroundMode:  ptr("color"),
+			AvatarBackgroundColor: ptr("#f59e0b"),
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if updated.AvatarStyle == nil || *updated.AvatarStyle != "personas" {
+			t.Errorf("expected avatar style personas, got %v", updated.AvatarStyle)
+		}
+		if updated.AvatarSeed == nil || *updated.AvatarSeed != "generated-avatar-seed" {
+			t.Errorf("expected avatar seed generated-avatar-seed, got %v", updated.AvatarSeed)
+		}
+		if updated.AvatarBackgroundMode == nil || *updated.AvatarBackgroundMode != "color" {
+			t.Errorf("expected avatar background mode color, got %v", updated.AvatarBackgroundMode)
+		}
+		if updated.AvatarBackgroundColor == nil || *updated.AvatarBackgroundColor != "#f59e0b" {
+			t.Errorf("expected avatar background color #f59e0b, got %v", updated.AvatarBackgroundColor)
 		}
 	})
 
@@ -617,6 +697,226 @@ func TestChangePassword(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "at least 8 characters") {
 			t.Errorf("expected 'at least 8 characters' error, got: %v", err)
+		}
+	})
+}
+
+// ----- Forgot / Reset Password Tests --------------------------------------
+
+func TestForgotAndResetPassword(t *testing.T) {
+	t.Run("request sends reset email and reset succeeds", func(t *testing.T) {
+		svc, _, _, emailSender := newAuthServiceWithResetEmail(t)
+		ctx := context.Background()
+
+		_, err := svc.Signup(ctx, model.SignupRequest{
+			Email:    "reset@example.com",
+			Password: "oldpassword1",
+			FullName: "Reset User",
+		})
+		if err != nil {
+			t.Fatalf("signup failed: %v", err)
+		}
+
+		if err := svc.ForgotPassword(ctx, model.ForgotPasswordRequest{Email: "reset@example.com"}); err != nil {
+			t.Fatalf("forgot password failed: %v", err)
+		}
+		if emailSender.calls != 1 {
+			t.Fatalf("expected 1 reset email, got %d", emailSender.calls)
+		}
+		if emailSender.to != "reset@example.com" {
+			t.Fatalf("expected reset email to reset@example.com, got %q", emailSender.to)
+		}
+		if !strings.Contains(emailSender.resetURL, "/reset-password?token=") {
+			t.Fatalf("expected reset URL, got %q", emailSender.resetURL)
+		}
+
+		token := extractResetToken(t, emailSender.resetURL)
+		if err := svc.ResetPassword(ctx, model.ResetPasswordRequest{
+			Token:    token,
+			Password: "newpassword1",
+		}); err != nil {
+			t.Fatalf("reset password failed: %v", err)
+		}
+
+		if _, err := svc.Signin(ctx, model.SigninRequest{
+			Email:    "reset@example.com",
+			Password: "oldpassword1",
+		}); err == nil {
+			t.Fatal("expected old password to fail after reset")
+		}
+
+		if _, err := svc.Signin(ctx, model.SigninRequest{
+			Email:    "reset@example.com",
+			Password: "newpassword1",
+		}); err != nil {
+			t.Fatalf("signin with new password failed: %v", err)
+		}
+	})
+
+	t.Run("request for unknown email succeeds without sending email", func(t *testing.T) {
+		svc, _, _, emailSender := newAuthServiceWithResetEmail(t)
+		ctx := context.Background()
+
+		if err := svc.ForgotPassword(ctx, model.ForgotPasswordRequest{Email: "missing@example.com"}); err != nil {
+			t.Fatalf("forgot password failed: %v", err)
+		}
+		if emailSender.calls != 0 {
+			t.Fatalf("expected no email to be sent, got %d calls", emailSender.calls)
+		}
+	})
+
+	t.Run("token is single-use", func(t *testing.T) {
+		svc, _, _, emailSender := newAuthServiceWithResetEmail(t)
+		ctx := context.Background()
+
+		_, err := svc.Signup(ctx, model.SignupRequest{
+			Email:    "singleuse@example.com",
+			Password: "oldpassword1",
+			FullName: "Single Use",
+		})
+		if err != nil {
+			t.Fatalf("signup failed: %v", err)
+		}
+
+		if err := svc.ForgotPassword(ctx, model.ForgotPasswordRequest{Email: "singleuse@example.com"}); err != nil {
+			t.Fatalf("forgot password failed: %v", err)
+		}
+		token := extractResetToken(t, emailSender.resetURL)
+
+		if err := svc.ResetPassword(ctx, model.ResetPasswordRequest{
+			Token:    token,
+			Password: "newpassword1",
+		}); err != nil {
+			t.Fatalf("first reset password failed: %v", err)
+		}
+
+		err = svc.ResetPassword(ctx, model.ResetPasswordRequest{
+			Token:    token,
+			Password: "newpassword2",
+		})
+		if err == nil {
+			t.Fatal("expected reused token to fail")
+		}
+		if !strings.Contains(err.Error(), "invalid or has expired") {
+			t.Fatalf("expected invalid/expired error, got %v", err)
+		}
+	})
+
+	t.Run("new reset request invalidates prior token", func(t *testing.T) {
+		svc, _, _, emailSender := newAuthServiceWithResetEmail(t)
+		ctx := context.Background()
+
+		_, err := svc.Signup(ctx, model.SignupRequest{
+			Email:    "rotate@example.com",
+			Password: "oldpassword1",
+			FullName: "Rotate User",
+		})
+		if err != nil {
+			t.Fatalf("signup failed: %v", err)
+		}
+
+		if err := svc.ForgotPassword(ctx, model.ForgotPasswordRequest{Email: "rotate@example.com"}); err != nil {
+			t.Fatalf("first forgot password failed: %v", err)
+		}
+		firstToken := extractResetToken(t, emailSender.resetURL)
+
+		if err := svc.ForgotPassword(ctx, model.ForgotPasswordRequest{Email: "rotate@example.com"}); err != nil {
+			t.Fatalf("second forgot password failed: %v", err)
+		}
+		secondToken := extractResetToken(t, emailSender.resetURL)
+		if firstToken == secondToken {
+			t.Fatal("expected a new token to be generated")
+		}
+
+		err = svc.ResetPassword(ctx, model.ResetPasswordRequest{
+			Token:    firstToken,
+			Password: "newpassword1",
+		})
+		if err == nil {
+			t.Fatal("expected first token to be invalidated")
+		}
+
+		if err := svc.ResetPassword(ctx, model.ResetPasswordRequest{
+			Token:    secondToken,
+			Password: "newpassword1",
+		}); err != nil {
+			t.Fatalf("second token should remain valid: %v", err)
+		}
+	})
+
+	t.Run("failed resend does not invalidate prior delivered token", func(t *testing.T) {
+		svc, _, _, emailSender := newAuthServiceWithResetEmail(t)
+		ctx := context.Background()
+
+		_, err := svc.Signup(ctx, model.SignupRequest{
+			Email:    "delivery@example.com",
+			Password: "oldpassword1",
+			FullName: "Delivery User",
+		})
+		if err != nil {
+			t.Fatalf("signup failed: %v", err)
+		}
+
+		if err := svc.ForgotPassword(ctx, model.ForgotPasswordRequest{Email: "delivery@example.com"}); err != nil {
+			t.Fatalf("first forgot password failed: %v", err)
+		}
+		firstToken := extractResetToken(t, emailSender.resetURL)
+
+		emailSender.err = errors.New("smtp unavailable")
+		if err := svc.ForgotPassword(ctx, model.ForgotPasswordRequest{Email: "delivery@example.com"}); err != nil {
+			t.Fatalf("second forgot password failed: %v", err)
+		}
+		secondToken := extractResetToken(t, emailSender.resetURL)
+		if firstToken == secondToken {
+			t.Fatal("expected a distinct token for resend attempt")
+		}
+
+		if err := svc.ResetPassword(ctx, model.ResetPasswordRequest{
+			Token:    secondToken,
+			Password: "newpassword2",
+		}); err == nil {
+			t.Fatal("expected undelivered token to be inactive")
+		}
+
+		if err := svc.ResetPassword(ctx, model.ResetPasswordRequest{
+			Token:    firstToken,
+			Password: "newpassword1",
+		}); err != nil {
+			t.Fatalf("first delivered token should remain valid: %v", err)
+		}
+	})
+
+	t.Run("expired token is rejected", func(t *testing.T) {
+		svc, _, resetRepo, _ := newAuthServiceWithResetEmail(t)
+		ctx := context.Background()
+
+		signupResp, err := svc.Signup(ctx, model.SignupRequest{
+			Email:    "expired@example.com",
+			Password: "oldpassword1",
+			FullName: "Expired User",
+		})
+		if err != nil {
+			t.Fatalf("signup failed: %v", err)
+		}
+
+		rawToken := "expired-reset-token"
+		if err := resetRepo.Create(ctx, &model.PasswordResetToken{
+			UserID:    signupResp.User.ID,
+			TokenHash: hashPasswordResetToken(rawToken),
+			ExpiresAt: time.Now().UTC().Add(-time.Minute),
+		}); err != nil {
+			t.Fatalf("create expired token: %v", err)
+		}
+
+		err = svc.ResetPassword(ctx, model.ResetPasswordRequest{
+			Token:    rawToken,
+			Password: "newpassword1",
+		})
+		if err == nil {
+			t.Fatal("expected expired token to fail")
+		}
+		if !strings.Contains(err.Error(), "invalid or has expired") {
+			t.Fatalf("expected invalid/expired error, got %v", err)
 		}
 	})
 }

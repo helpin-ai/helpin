@@ -3,6 +3,7 @@ package repository
 import (
 	"fmt"
 
+	"github.com/helpin-ai/helpin/server/internal/model"
 	"gorm.io/gorm"
 )
 
@@ -43,6 +44,39 @@ END $$;`
 
 	if err := db.Exec(stmt).Error; err != nil {
 		return fmt.Errorf("migrate pm import schema: %w", err)
+	}
+	if err := EnsurePMChecklistItemsTaskColumn(db); err != nil {
+		return err
+	}
+	return nil
+}
+
+// EnsurePMChecklistItemsTaskColumn reconciles legacy story_id drift on checklist
+// items so imports can write through the current task_id-based model.
+func EnsurePMChecklistItemsTaskColumn(db *gorm.DB) error {
+	tableName := model.PMChecklistItem{}.TableName()
+	if !db.Migrator().HasTable(tableName) {
+		return nil
+	}
+
+	hasStoryID := db.Migrator().HasColumn(tableName, "story_id")
+	if !hasStoryID {
+		return nil
+	}
+
+	hasTaskID := db.Migrator().HasColumn(tableName, "task_id")
+	if !hasTaskID {
+		if err := db.Migrator().RenameColumn(tableName, "story_id", "task_id"); err != nil {
+			return fmt.Errorf("rename %s.story_id to task_id: %w", tableName, err)
+		}
+		return nil
+	}
+
+	if err := db.Exec(`UPDATE pm_checklist_items SET task_id = story_id WHERE task_id IS NULL AND story_id IS NOT NULL`).Error; err != nil {
+		return fmt.Errorf("backfill pm_checklist_items.task_id from story_id: %w", err)
+	}
+	if err := db.Exec(`ALTER TABLE pm_checklist_items DROP COLUMN story_id`).Error; err != nil {
+		return fmt.Errorf("drop legacy %s.story_id column: %w", tableName, err)
 	}
 	return nil
 }

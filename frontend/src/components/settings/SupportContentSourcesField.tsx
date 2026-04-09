@@ -207,7 +207,7 @@ export function SupportContentSourcesField({
 
   if (isLoading || selectedLoading) {
     return (
-      <div className="space-y-3 rounded-xl border border-border/70 bg-background p-4">
+      <div className="space-y-3 rounded-xl border border-border/70 bg-card p-4">
         <Skeleton className="h-16 rounded-lg" />
         <Skeleton className="h-24 rounded-lg" />
       </div>
@@ -216,7 +216,7 @@ export function SupportContentSourcesField({
 
   return (
     <>
-      <div className="overflow-hidden rounded-xl border border-border/70 bg-background">
+      <div className="overflow-hidden rounded-xl border border-border/70 bg-card">
         <div className="flex flex-col gap-3 border-b border-border/70 px-4 py-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 space-y-1">
             <div className="flex items-center gap-2">

@@ -1,4 +1,5 @@
 import type { FC, CSSProperties } from 'react';
+import type { Permission } from '@/lib/types';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   UserIcon,
@@ -20,9 +21,9 @@ import {
   FolderKanbanIcon,
   Mail01Icon,
   SlidersHorizontalIcon,
-  SparklesIcon,
   BubbleChatIcon,
   Route01Icon,
+  Shield01Icon,
 } from '@hugeicons/core-free-icons';
 
 export type IconComponent = FC<{ className?: string; style?: CSSProperties }>;
@@ -55,14 +56,15 @@ const Redirects = hi(LinkForwardIcon);
 const Pipelines = hi(FolderKanbanIcon);
 const EmailAccounts = hi(Mail01Icon);
 const Autonomy = hi(SlidersHorizontalIcon);
-const AIAutomations = hi(SparklesIcon);
 const ChatWidget = hi(BubbleChatIcon);
 const InboxesRouting = hi(Route01Icon);
+const Access = hi(Shield01Icon);
 
 export type SettingsSection =
   | 'general'
   | 'members'
   | 'teams'
+  | 'access'
   | 'knowledge'
   | 'workflows'
   | 'labels'
@@ -76,7 +78,6 @@ export type SettingsSection =
   | 'crm-pipelines'
   | 'crm-email'
   | 'crm-autonomy'
-  | 'ai-automations'
   | 'chat-general'
   | 'inboxes-routing';
 
@@ -89,6 +90,7 @@ export type SettingsSectionMeta<T extends SettingsRouteSection = SettingsRouteSe
   icon: IconComponent;
   group: string;
   requiresManageSettings?: boolean;
+  requiredPermission?: Permission;
   sidebar?: boolean;
 };
 
@@ -136,6 +138,14 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
     group: 'Workspace',
   },
   {
+    id: 'access',
+    label: 'Module Access',
+    description: 'Grant CRM and Support access by team or by direct workspace member exception.',
+    icon: Access,
+    group: 'Workspace',
+    requiredPermission: 'module_access.manage',
+  },
+  {
     id: 'knowledge',
     label: 'Knowledge',
     description: 'Manage help center docs and website content sources used across AI experiences.',
@@ -145,7 +155,7 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
   {
     id: 'workflows',
     label: 'Workflows',
-    description: 'Legacy workflow settings route kept for compatibility. Workflow management now lives under teams.',
+    description: 'Manage workflows, pipeline rules, and workspace-level GitHub event rules.',
     icon: Workflows,
     group: 'Project Settings',
     sidebar: false,
@@ -228,14 +238,6 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
     group: 'CRM Settings',
   },
   {
-    id: 'ai-automations',
-    label: 'AI & Automations',
-    description: 'Read-only inventory and health for shared built-ins and contextual agents.',
-    icon: AIAutomations,
-    group: 'AI & Automations',
-    requiresManageSettings: true,
-  },
-  {
     id: 'chat-general',
     label: 'Chat Widget',
     description: 'Widget installation, availability, identity capture, appearance, and AI auto-reply behavior.',
@@ -276,11 +278,14 @@ export type SettingsSidebarGroup = {
   sections: SettingsSectionMeta[];
 };
 
-export function getSettingsSidebarGroups(canManageSettings: boolean): SettingsSidebarGroup[] {
+export function getSettingsSidebarGroups(canManageSettings: boolean, permissionSet?: Set<string>): SettingsSidebarGroup[] {
   const groups: SettingsSidebarGroup[] = [];
 
   for (const section of SETTINGS_ROUTE_SECTIONS) {
     if (section.requiresManageSettings && !canManageSettings) {
+      continue;
+    }
+    if (section.requiredPermission && !permissionSet?.has(section.requiredPermission)) {
       continue;
     }
     if (section.sidebar === false) {

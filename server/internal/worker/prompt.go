@@ -17,6 +17,13 @@ import (
 // BuildSystemPrompt assembles the system prompt from agent config, target context, and WORKFLOW.md.
 func BuildSystemPrompt(agent *model.Agent, story *model.PMTask, epic *model.PMEpic, ticket *model.SupportConversation, planningStage, planningMethodology string, config *WorkflowConfig) string {
 	var parts []string
+	resolvedProfile := ResolveAgentProfile(agent)
+	toolSet := make(map[string]bool, len(resolvedProfile.Tools))
+	for _, toolName := range resolvedProfile.Tools {
+		toolSet[toolName] = true
+	}
+	hasRepoAccess := hasRepoTools(resolvedProfile.Tools)
+	hasFileMutationTools := toolSet["write_file"] || toolSet["edit_file"] || toolSet["apply_patch"]
 
 	if agent != nil && agent.SystemPrompt != nil && strings.TrimSpace(*agent.SystemPrompt) != "" {
 		parts = append(parts, strings.TrimSpace(*agent.SystemPrompt))
@@ -68,13 +75,22 @@ func BuildSystemPrompt(agent *model.Agent, story *model.PMTask, epic *model.PMEp
 
 	parts = append(parts, "\n## Rules")
 	parts = append(parts, "- Work within the cloned repository only.")
-	parts = append(parts, "- Use the provided tools to read, write, and search files.")
-	if story != nil || epic != nil {
+	switch {
+	case hasRepoAccess && hasFileMutationTools:
+		parts = append(parts, "- Use the provided tools to read, write, and search files.")
+	case hasRepoAccess:
+		parts = append(parts, "- Use the provided tools to inspect the repository and search for relevant context. Keep repository interactions read-only.")
+	}
+	if (story != nil || epic != nil) && hasRepoAccess {
 		parts = append(parts, "- Start by locating the relevant code with list_directory, ripgrep, search_files, or list_symbols before reading large files.")
 		parts = append(parts, "- read_file now returns a bounded window by default; use offset_line to continue and use read_file_range for targeted spans.")
-		parts = append(parts, "- Prefer edit_file for focused in-place changes and apply_patch for coordinated multi-file edits.")
-		parts = append(parts, "- Use write_file for new files or full rewrites only after you have read the current file state.")
-		parts = append(parts, "- If an edit tool reports that a file changed or was not read first, re-read the file and retry with fresh context.")
+		if hasFileMutationTools {
+			parts = append(parts, "- Prefer edit_file for focused in-place changes and apply_patch for coordinated multi-file edits.")
+			parts = append(parts, "- Use write_file for new files or full rewrites only after you have read the current file state.")
+			parts = append(parts, "- If an edit tool reports that a file changed or was not read first, re-read the file and retry with fresh context.")
+		} else {
+			parts = append(parts, "- This run is planning-only and read-only. Do not change code, create files, or alter git state.")
+		}
 		parts = append(parts, "- When available, keep a short working execution checklist with update_plan instead of repeating plan status in prose. Do not use update_plan as a substitute for publish_prd_draft, publish_task_plan, or publish_task_plan_doc.")
 	}
 	if story != nil && strings.TrimSpace(planningStage) != model.PlanningStageStoryPlanDoc {
@@ -118,7 +134,7 @@ func BuildUserPrompt(
 		if strings.TrimSpace(planningStage) == model.PlanningStageStoryPlanDoc {
 			contextParts = append(contextParts, fmt.Sprintf("Please draft or refine the canonical task planning document for task: **%s**", story.Name))
 		} else {
-			contextParts = append(contextParts, fmt.Sprintf("Please work on the story: **%s**", story.Name))
+			contextParts = append(contextParts, fmt.Sprintf("Please work on the task: **%s**", story.Name))
 		}
 		if story.Description != nil {
 			if description := tiptap.RichTextToMarkdown(*story.Description); description != "" {

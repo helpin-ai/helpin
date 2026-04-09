@@ -1,4 +1,4 @@
-import type { WidgetAdapter, Message, CustomerInfo, WidgetConfig } from '@helpin/widget-core';
+import type { WidgetAdapter, Message, CustomerInfo, WidgetConfig } from '@helpin-ai/widget-core';
 
 export class WebSocketWidgetAdapter implements WidgetAdapter {
   getMessages(_conversationId: string): Message[] {

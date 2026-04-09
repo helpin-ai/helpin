@@ -17,8 +17,9 @@ export default {
   ],
   plugins: [
     external(),
-    resolve(),
+    resolve({ resolveOnly: [/^(?!@helpin-ai\/)/] }),
     typescript(),
     commonjs({ extensions: ['.js', '.ts'] }),
   ],
+  external: [/@helpin-ai\//],
 };

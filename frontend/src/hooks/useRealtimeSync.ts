@@ -187,6 +187,14 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
     } else if (event.entity === 'agent_run') {
       queryClient.invalidateQueries({ queryKey: ['agent_runs', workspaceId] })
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.all(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.automation.runsRoot(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.automation.agentsRoot(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.automation.activityRoot(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.automation.overview(workspaceId) })
+      if (typeof event.data?.agent_id === 'string' && event.data.agent_id) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.automation.agent(workspaceId, event.data.agent_id) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.automation.agentUsage(workspaceId, event.data.agent_id) })
+      }
       if (event.parent_type === 'task' && event.parent_id) {
         queryClient.invalidateQueries({ queryKey: queryKeys.pm.task(workspaceId, event.parent_id) })
       }
@@ -276,6 +284,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       }
     } else if (event.entity === 'support_teammate_presence') {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.teammatePresence(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.memberPresence(workspaceId) })
     } else if (event.entity === 'support_conversation_message') {
       if (event.parent_id) {
         const s = useSupportPresenceStore.getState()

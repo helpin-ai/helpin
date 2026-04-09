@@ -67,6 +67,7 @@ export function Header() {
       settings: "Settings",
       tasks: "Tasks",
       pm: "Projects",
+      automation: "Automation",
       support: "Support",
       docs: "Docs",
       crm: "CRM",
@@ -95,6 +96,15 @@ export function Header() {
       reports: "Reports",
     };
 
+    const automationSubMap: Record<string, string> = {
+      flows: "Flows",
+      activity: "Activity",
+      agents: "Agents",
+      library: "Trigger Catalog",
+      tools: "Tool Catalog",
+      runs: "Runs",
+    };
+
     if (section === "pm") {
       crumbs.push({ label: "Projects", to: `/w/${slug}/pm/my-work` });
       if (subRoute[1]) {
@@ -105,6 +115,21 @@ export function Header() {
           crumbs.push({ label: `${pmLabel.replace(/s$/, "")} Detail` });
         } else {
           crumbs.push({ label: pmLabel });
+        }
+      }
+      return crumbs;
+    }
+
+    if (section === "automation") {
+      crumbs.push({ label: "Automation", to: `/w/${slug}/automation/flows` });
+      if (subRoute[1]) {
+        const automationSub = subRoute[1];
+        const automationLabel = automationSubMap[automationSub] ?? formatLabel(automationSub);
+        if (subRoute[2]) {
+          crumbs.push({ label: automationLabel, to: `/w/${slug}/automation/${automationSub}` });
+          crumbs.push({ label: `${automationLabel.replace(/s$/, "")} Detail` });
+        } else {
+          crumbs.push({ label: automationLabel });
         }
       }
       return crumbs;
@@ -141,7 +166,7 @@ export function Header() {
   }, [location.pathname, currentWorkspace?.name]);
 
   return (
-    <header className="relative flex h-14 items-center gap-3 bg-card/95 px-3 after:absolute after:right-3 after:bottom-0 after:left-3 after:h-px after:bg-border/70 after:[mask-image:linear-gradient(to_right,transparent,black_24px,black_calc(100%-24px),transparent)]">
+    <header className="relative flex h-14 items-center gap-3 bg-card/95 px-3 dark:bg-sidebar after:absolute after:right-3 after:bottom-0 after:left-3 after:h-px after:bg-border/70 after:[mask-image:linear-gradient(to_right,transparent,black_24px,black_calc(100%-24px),transparent)] dark:after:bg-sidebar-border">
       <div className="flex min-w-0 max-w-[45%] items-center gap-2 z-10">
         <SidebarTrigger className="-ml-1" />
         {breadcrumbs.length > 0 && (

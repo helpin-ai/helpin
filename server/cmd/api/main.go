@@ -143,10 +143,12 @@ func main() {
 		slog.Info("startup: running AutoMigrate")
 		if err := db.AutoMigrate(
 			&model.User{},
+			&model.PasswordResetToken{},
 			&model.Organization{},
 			&model.OrganizationMember{},
 			&model.Workspace{},
 			&model.WorkspaceMember{},
+			&model.WorkspaceModuleGrant{},
 			&model.WorkspaceSettings{},
 			&model.WorkspaceTeam{},
 			&model.TeamWorkspaceMembership{},
@@ -186,10 +188,12 @@ func main() {
 			&model.Agent{},
 			&model.WorkspaceAgentPresetVersion{},
 			&model.AgentRun{},
+			&model.AgentTriggerExecution{},
 			&model.AgentRunMessage{},
 			&model.AgentRunArtifact{},
 			&model.AgentRunInteraction{},
 			&model.CodingSessionStateSnapshot{},
+			&model.CodexWorkspaceAuth{},
 			&model.PMTaskLink{},
 			&model.SupportConversation{},
 			&model.SupportConversationTriage{},
@@ -458,6 +462,7 @@ func main() {
 	orgRepo := repository.NewOrganizationRepository(db)
 	workspaceRepo := repository.NewWorkspaceRepository(db)
 	settingsRepo := repository.NewSettingsRepository(db)
+	moduleGrantRepo := repository.NewWorkspaceModuleGrantRepository(db)
 	crmAutonomyRepo := repository.NewCRMAutonomyRepository(db)
 	pmWorkflowRepo := repository.NewPMWorkflowRepository(db)
 	pmLabelRepo := repository.NewPMLabelRepository(db)
@@ -481,11 +486,14 @@ func main() {
 	agentRepo := repository.NewAgentRepository(db)
 	workspacePresetVersionRepo := repository.NewWorkspaceAgentPresetVersionRepository(db)
 	agentRunRepo := repository.NewAgentRunRepository(db)
+	agentTriggerExecutionRepo := repository.NewAgentTriggerExecutionRepository(db)
 	agentRunMessageRepo := repository.NewAgentRunMessageRepository(db)
 	agentRunRepo.SetNotifier(ws.NewRunNotifier(wsPublisher)) // publishes run events via Redis/local Hub
+	agentRunRepo.SetTriggerExecutionRepository(agentTriggerExecutionRepo)
 	agentRunArtifactRepo := repository.NewAgentRunArtifactRepository(db)
 	agentRunInteractionRepo := repository.NewAgentRunInteractionRepository(db)
 	codingSessionStateSnapshotRepo := repository.NewCodingSessionStateSnapshotRepository(db)
+	codexWorkspaceAuthRepo := repository.NewCodexWorkspaceAuthRepository(db)
 	pmTaskLinkRepo := repository.NewPMTaskLinkRepository(db)
 	supportConversationRepo := repository.NewSupportConversationRepository(db)
 	supportConversationTriageRepo := repository.NewSupportConversationTriageRepository(db)
@@ -556,7 +564,8 @@ func main() {
 	}()
 
 	// Initialize services.
-	authService := service.NewAuthService(userRepo, orgRepo, jwtManager, s3Client)
+	passwordResetRepo := repository.NewPasswordResetTokenRepository(db)
+	authService := service.NewAuthService(userRepo, passwordResetRepo, orgRepo, jwtManager, s3Client, emailClient, cfg.AppBaseURL)
 	pmActivityService := service.NewPMActivityService(pmActivityRepo)
 	pmLabelService := service.NewPMLabelService(pmLabelRepo, wsPublisher)
 	pmTaskTemplateService := service.NewPMTaskTemplateService(pmTaskTemplateRepo, wsPublisher)
@@ -651,6 +660,10 @@ func main() {
 		slog.Info("Temporal configured", "address", cfg.TemporalAddress, "namespace", cfg.TemporalNamespace)
 	}
 	runEngine := temporalapp.NewRunEngine(temporalClient, cfg.TemporalNamespace)
+	codexWorkspaceAuthStore := workerpkg.NewCodexWorkspaceAuthStore(codexWorkspaceAuthRepo, resolveCodexAuthEncryptionKey(cfg))
+	if strings.TrimSpace(cfg.CodexOpenAIAuthMode) == "chatgpt_device_code" && codexWorkspaceAuthStore == nil {
+		slog.Warn("Codex workspace auth persistence disabled; set CODEX_AUTH_ENCRYPTION_KEY or a valid CRM_ENCRYPTION_KEY for durable device-code auth")
+	}
 	codexAuthManager := workerpkg.NewCodexAuthManager(workerpkg.CodexRuntimeConfig{
 		Path:                      cfg.CodexPath,
 		DefaultModel:              cfg.CodexModel,
@@ -663,7 +676,7 @@ func main() {
 		ChatGPTPlanType:           cfg.CodexChatGPTPlanType,
 		OpenRouterAPIKey:          cfg.OpenRouterAPIKey,
 		OpenRouterBaseURL:         cfg.OpenRouterBaseURL,
-	}, agentRunArtifactRepo)
+	}, agentRunArtifactRepo, codexWorkspaceAuthStore)
 
 	gitService := service.NewGitService(
 		gitIntegrationRepo,
@@ -694,6 +707,8 @@ func main() {
 		supportConversationRepo,
 		supportMessageRepo,
 		agentHandoffRepo,
+		automationRuleRepo,
+		supportInstallRepo,
 		settingsRepo,
 		docsSpaceRepo,
 		docsDocumentRepo,
@@ -713,7 +728,7 @@ func main() {
 		cfg.CodexEnableChatGPTOAuth,
 		cfg.CodexChatGPTAccessToken,
 		cfg.CodexChatGPTAccountID,
-	).SetCodexAuthManager(codexAuthManager)
+	).SetCodexAuthManager(codexAuthManager).SetTriggerExecutionRepository(agentTriggerExecutionRepo)
 	supportInboxService.SetConversationAgentRunner(agentService.RunConversationAgentAuto)
 	supportInboxService.SetNotificationService(notificationService, workspaceRepo)
 	emailFallbackService.SetNotificationService(notificationService)
@@ -732,6 +747,8 @@ func main() {
 	ruleEngine.SetAgentService(agentService)
 	ruleEngine.SetTaskService(pmTaskService)
 	ruleEngine.SetHealthObserver(automationHealthService)
+	ruleEngine.SetTriggerExecutionRepository(agentTriggerExecutionRepo)
+	gitService.SetRuleEngine(ruleEngine)
 	pmTaskService.SetRuleEngine(ruleEngine)
 	pmTaskService.SetAgentService(agentService)
 	pmTaskService.SetRecurringService(pmRecurringTemplateService)
@@ -740,23 +757,19 @@ func main() {
 	agentService.SetWorkflowService(pmWorkflowService)
 	pmRecurringTemplateService.SetTemporalClient(temporalClient)
 
-	go func() {
-		slog.Info("startup: backfilling built-in agents for existing workspaces")
-		workspaceIDs, err := workspaceRepo.ListIDs(context.Background())
-		if err != nil {
-			slog.Error("failed to list workspaces for built-in agent backfill", "error", err)
-			return
+	slog.Info("startup: backfilling built-in agents for existing workspaces")
+	workspaceIDs, err := workspaceRepo.ListIDs(context.Background())
+	if err != nil {
+		fatalWithSentry("failed to list workspaces for built-in agent backfill", err)
+	}
+	seeded := 0
+	for _, workspaceID := range workspaceIDs {
+		if err := agentService.SeedWorkspaceDefaults(context.Background(), workspaceID, ""); err != nil {
+			fatalWithSentry("failed to backfill built-in agents", fmt.Errorf("workspace %s: %w", workspaceID, err))
 		}
-		seeded := 0
-		for _, workspaceID := range workspaceIDs {
-			if err := agentService.SeedWorkspaceDefaults(context.Background(), workspaceID, ""); err != nil {
-				slog.Error("failed to backfill built-in agents", "workspace_id", workspaceID, "error", err)
-				continue
-			}
-			seeded++
-		}
-		slog.Info("startup: built-in agent backfill complete", "workspaces_processed", seeded)
-	}()
+		seeded++
+	}
+	slog.Info("startup: built-in agent backfill complete", "workspaces_processed", seeded)
 
 	// Log orchestration availability.
 	if cfg.AnthropicAPIKey != "" {
@@ -908,15 +921,17 @@ func main() {
 	orgService := service.NewOrganizationService(orgRepo)
 	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, crmDealService, supportInboxService, agentService)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
-	settingsService := service.NewSettingsService(settingsRepo, pmWorkflowService, wsPublisher)
-	automationInventoryService := service.NewAutomationInventoryService(settingsRepo, pmAutomationRepo, crmEmailRepo, automationHealthRepo, automationRuleRepo)
+	workspaceService.SetPresenceProvider(wsHub.Presence)
+	workspaceService.SetStatusOverrideRepo(supportTeammateStatusOverrideRepo)
+	settingsService := service.NewSettingsService(settingsRepo, moduleGrantRepo, pmWorkflowService, wsPublisher)
+	automationInventoryService := service.NewAutomationInventoryService(settingsRepo, pmAutomationRepo, crmEmailRepo, automationHealthRepo, automationRuleRepo, agentTriggerExecutionRepo, agentRepo, pmTaskRepo, supportInstallRepo)
 	if err := pmRecurringTemplateService.EnsureScheduler(context.Background()); err != nil {
 		slog.Error("failed to ensure PM recurring scheduler", "error", err)
 	}
 	inviteService := service.NewInviteService(invitationRepo, workspaceRepo, orgRepo, userRepo, settingsRepo, emailClient, cfg.AppBaseURL, jwtManager)
 	// Initialize authorization service.
 	authzMemberRepo := authorization.NewGORMMemberRepository(db)
-	authzService := authorization.NewAuthzService(db, authzMemberRepo)
+	authzService := authorization.NewAuthzService(db, authzMemberRepo, moduleGrantRepo)
 
 	// Inject authorization into WebSocket handler for workspace access checks.
 	wsHandler.SetAuthzService(authzService)
@@ -943,8 +958,9 @@ func main() {
 		Health:              handler.NewHealthHandler(s3Client),
 		Auth:                handler.NewAuthHandler(authService),
 		Organization:        handler.NewOrganizationHandler(orgService),
-		Workspace:           handler.NewWorkspaceHandler(workspaceService),
+		Workspace:           handler.NewWorkspaceHandler(workspaceService, authzService),
 		Settings:            handler.NewSettingsHandler(settingsService, automationInventoryService),
+		Automation:          handler.NewAutomationHandler(automationInventoryService, ruleEngine, agentService),
 		Invite:              handler.NewInviteHandler(inviteService),
 		PMWorkflow:          handler.NewPMWorkflowHandler(pmWorkflowService),
 		PMImport:            handler.NewPMImportHandler(pmImportService),
@@ -1239,4 +1255,36 @@ func fatalWithSentry(message string, err error, attrs ...any) {
 	slog.Error(message, logAttrs...)
 	observability.Flush(2 * time.Second)
 	os.Exit(1)
+}
+
+func resolveCodexAuthEncryptionKey(cfg *config.Config) []byte {
+	if cfg == nil {
+		return nil
+	}
+	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.CodexAuthEncryptionKey)); err != nil {
+		slog.Warn("invalid CODEX_AUTH_ENCRYPTION_KEY (must be a 32-byte hex-encoded AES key)", "error", err)
+	} else if len(key) == 32 {
+		return key
+	}
+	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.CRMEncryptionKey)); err != nil {
+		slog.Warn("invalid CRM_ENCRYPTION_KEY for Codex workspace auth fallback (must be a 32-byte hex-encoded AES key)", "error", err)
+	} else if len(key) == 32 {
+		return key
+	}
+	return nil
+}
+
+func decodeOptionalAES256HexKey(value string) ([]byte, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil, nil
+	}
+	key, err := hex.DecodeString(trimmed)
+	if err != nil {
+		return nil, err
+	}
+	if len(key) != 32 {
+		return nil, fmt.Errorf("expected 32 bytes after hex decode, got %d", len(key))
+	}
+	return key, nil
 }

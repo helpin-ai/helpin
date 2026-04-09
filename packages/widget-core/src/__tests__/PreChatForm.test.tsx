@@ -42,9 +42,10 @@ describe('PreChatForm', () => {
     expect(container.textContent).toContain('Please enter your email address');
   });
 
-  it('shows workspace name as agent name', () => {
+  it('renders the email prompt without duplicating workspace identity', () => {
     const { container } = render(<PreChatForm config={mockConfig} onSubmit={() => {}} />);
-    expect(container.textContent).toContain('Test Support');
+    expect(container.textContent).toContain('Please enter your email address');
+    expect(container.textContent).not.toContain('Test Support');
   });
 
   it('advances to phone step after email submit', async () => {

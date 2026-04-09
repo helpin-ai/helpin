@@ -5,14 +5,15 @@ import { globSync } from 'glob';
 import dts from 'vite-plugin-dts';
 
 /**
- * Vite plugin that injects the hashed SDK filename into the loader (lib.js).
- * Replaces __SDK_FILENAME__ with the actual content-hashed filename after build.
+ * Vite plugin that:
+ * 1. Injects the hashed SDK filename into the loader (lib.js) for CDN cache busting
+ * 2. Copies the hashed SDK bundle to helpin.es.js for npm consumers (stable filename)
  */
 function injectSDKFilename() {
   return {
     name: 'inject-sdk-filename',
     writeBundle(options: any, bundle: Record<string, any>) {
-      // Find the hashed SDK bundle filename
+      // Find the hashed SDK bundle filename (index.ts entry, not esm-entry.ts)
       const sdkChunk = Object.values(bundle).find(
         (chunk: any) => chunk.type === 'chunk' && chunk.facadeModuleId?.endsWith('index.ts')
       );
@@ -39,13 +40,14 @@ export default defineConfig(({ command }) => {
   return {
     resolve: {
       alias: [
-        { find: /^@helpin\/widget-core\/styles/, replacement: resolve(__dirname, '../widget-core/src/styles/widget.css') },
-        { find: /^@helpin\/widget-core$/, replacement: resolve(__dirname, '../widget-core/src/index.ts') },
-        { find: /^@helpin\/shared$/, replacement: resolve(__dirname, '../shared/src/index.ts') },
+        { find: /^@helpin-ai\/widget-core\/styles/, replacement: resolve(__dirname, '../widget-core/src/styles/widget.css') },
+        { find: /^@helpin-ai\/widget-core$/, replacement: resolve(__dirname, '../widget-core/src/index.ts') },
+        { find: /^@helpin-ai\/shared$/, replacement: resolve(__dirname, '../shared/src/index.ts') },
         { find: /^\.\.\/transport\/https$/, replacement: resolve(__dirname, 'src/transport/https.browser.ts') },
       ],
     },
     build: {
+      minify: false,
       cssCodeSplit: false,
       rollupOptions: {
         input: {
@@ -85,7 +87,7 @@ export default defineConfig(({ command }) => {
       },
     },
     optimizeDeps: {
-      exclude: ['@helpin/sdk-js'],
+      exclude: ['@helpin-ai/sdk-js'],
     },
   };
 });

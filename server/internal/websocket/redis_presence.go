@@ -101,6 +101,11 @@ func visitorSetKey(workspaceID string) string {
 	return fmt.Sprintf("support:visitors:online:%s", workspaceID)
 }
 
+// support:visitors:online:{workspaceID}:{anonymousID}
+func visitorOnlineKey(workspaceID, anonymousID string) string {
+	return fmt.Sprintf("support:visitors:online:%s:%s", workspaceID, anonymousID)
+}
+
 // --- Agent online presence ---
 
 // SetAgentOnline marks an internal agent connection as online.
@@ -791,6 +796,7 @@ func (p *RedisPresence) SetVisitorOnline(ctx context.Context, workspaceID, anony
 	// Set conn key with TTL.
 	connKey := visitorConnKey(workspaceID, anonymousID, p.podID, connID)
 	pipe.Set(ctx, connKey, "1", visitorConnTTL)
+	pipe.Set(ctx, visitorOnlineKey(workspaceID, anonymousID), "1", visitorConnTTL)
 
 	// Add to aggregate set.
 	setKey := visitorSetKey(workspaceID)
@@ -819,7 +825,12 @@ func (p *RedisPresence) SetVisitorOffline(ctx context.Context, workspaceID, anon
 	if len(keys) == 0 {
 		// Last connection — remove from aggregate set.
 		setKey := visitorSetKey(workspaceID)
-		p.rdb.SRem(ctx, setKey, anonymousID)
+		pipe := p.rdb.Pipeline()
+		pipe.SRem(ctx, setKey, anonymousID)
+		pipe.Del(ctx, visitorOnlineKey(workspaceID, anonymousID))
+		if _, err := pipe.Exec(ctx); err != nil {
+			return false, fmt.Errorf("redis presence SetVisitorOffline cleanup: %w", err)
+		}
 		return true, nil
 	}
 
@@ -828,12 +839,7 @@ func (p *RedisPresence) SetVisitorOffline(ctx context.Context, workspaceID, anon
 
 // IsVisitorOnline returns true if a visitor has at least one active connection.
 func (p *RedisPresence) IsVisitorOnline(ctx context.Context, workspaceID, anonymousID string) (bool, error) {
-	setKey := visitorSetKey(workspaceID)
-	isMember, err := p.rdb.SIsMember(ctx, setKey, anonymousID).Result()
-	if err != nil {
-		return false, fmt.Errorf("redis presence IsVisitorOnline: %w", err)
-	}
-	return isMember, nil
+	return p.ensureVisitorOnline(ctx, workspaceID, anonymousID)
 }
 
 // GetOnlineVisitors returns the list of online visitor IDs for a workspace.
@@ -843,14 +849,26 @@ func (p *RedisPresence) GetOnlineVisitors(ctx context.Context, workspaceID strin
 	if err != nil {
 		return nil, fmt.Errorf("redis presence GetOnlineVisitors: %w", err)
 	}
-	return members, nil
+	online := make([]string, 0, len(members))
+	for _, anonymousID := range members {
+		isOnline, err := p.ensureVisitorOnline(ctx, workspaceID, anonymousID)
+		if err != nil {
+			return nil, err
+		}
+		if isOnline {
+			online = append(online, anonymousID)
+		}
+	}
+	return online, nil
 }
 
 // RefreshVisitorOnline extends the TTL on a visitor's conn key.
 func (p *RedisPresence) RefreshVisitorOnline(ctx context.Context, workspaceID, anonymousID, connID string) error {
 	connKey := visitorConnKey(workspaceID, anonymousID, p.podID, connID)
-	err := p.rdb.Expire(ctx, connKey, visitorConnTTL).Err()
-	if err != nil {
+	pipe := p.rdb.Pipeline()
+	pipe.Expire(ctx, connKey, visitorConnTTL)
+	pipe.Expire(ctx, visitorOnlineKey(workspaceID, anonymousID), visitorConnTTL)
+	if _, err := pipe.Exec(ctx); err != nil {
 		return fmt.Errorf("redis presence RefreshVisitorOnline: %w", err)
 	}
 	return nil
@@ -926,6 +944,36 @@ func (p *RedisPresence) scanKeys(ctx context.Context, pattern string, limit int)
 		}
 	}
 	return allKeys, nil
+}
+
+func (p *RedisPresence) ensureVisitorOnline(ctx context.Context, workspaceID, anonymousID string) (bool, error) {
+	markerKey := visitorOnlineKey(workspaceID, anonymousID)
+	exists, err := p.rdb.Exists(ctx, markerKey).Result()
+	if err != nil {
+		return false, fmt.Errorf("redis presence ensureVisitorOnline marker: %w", err)
+	}
+	if exists > 0 {
+		return true, nil
+	}
+
+	keys, err := p.scanKeys(ctx, fmt.Sprintf("support:visitors:conn:%s:%s:*", workspaceID, anonymousID), 1)
+	if err != nil {
+		return false, fmt.Errorf("redis presence ensureVisitorOnline scan: %w", err)
+	}
+	if len(keys) == 0 {
+		if err := p.rdb.SRem(ctx, visitorSetKey(workspaceID), anonymousID).Err(); err != nil {
+			return false, fmt.Errorf("redis presence ensureVisitorOnline cleanup: %w", err)
+		}
+		return false, nil
+	}
+
+	pipe := p.rdb.Pipeline()
+	pipe.SAdd(ctx, visitorSetKey(workspaceID), anonymousID)
+	pipe.Set(ctx, markerKey, "1", visitorConnTTL)
+	if _, err := pipe.Exec(ctx); err != nil {
+		return false, fmt.Errorf("redis presence ensureVisitorOnline restore: %w", err)
+	}
+	return true, nil
 }
 
 // Compile-time check that RedisPresence implements PresenceProvider.

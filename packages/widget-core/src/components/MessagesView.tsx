@@ -15,6 +15,7 @@ interface MessagesViewProps {
   isTyping?: boolean;
   quickReplies?: string[];
   hasConversation: boolean;
+  connectionStatus?: 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed';
 }
 
 export const MessagesView: FunctionComponent<MessagesViewProps> = ({
@@ -26,7 +27,17 @@ export const MessagesView: FunctionComponent<MessagesViewProps> = ({
   isTyping = false,
   quickReplies = [],
   hasConversation,
+  connectionStatus = 'connected',
 }) => {
+  const composeDisabled = connectionStatus === 'connecting' || connectionStatus === 'disconnected' || connectionStatus === 'failed';
+  const composePlaceholder = connectionStatus === 'failed'
+    ? 'Offline. Reconnecting in the background...'
+    : connectionStatus === 'disconnected'
+      ? 'Connection lost. Reconnecting...'
+      : connectionStatus === 'connecting'
+        ? 'Connecting to support...'
+        : 'Ask a question...';
+
   if (!hasConversation || messages.length === 0) {
     return (
       <div className="helpin-messages-view">
@@ -60,7 +71,12 @@ export const MessagesView: FunctionComponent<MessagesViewProps> = ({
           <QuickReplies replies={quickReplies} onSelect={onQuickReply} />
         )}
       </div>
-      <ComposeBar onSend={onSendMessage} showBranding={config.branding?.showBranding ?? true} />
+      <ComposeBar
+        onSend={onSendMessage}
+        showBranding={config.branding?.showBranding ?? true}
+        disabled={composeDisabled}
+        placeholder={composePlaceholder}
+      />
     </div>
   );
 };

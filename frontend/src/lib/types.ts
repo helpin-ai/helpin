@@ -3,6 +3,10 @@ export interface User {
   email: string;
   full_name: string;
   avatar_url?: string;
+  avatar_style?: string;
+  avatar_seed?: string;
+  avatar_background_mode?: string;
+  avatar_background_color?: string;
   default_workspace_id?: string;
   created_at: string;
   updated_at: string;
@@ -69,6 +73,7 @@ export type Permission =
   | 'workspace.roles.manage'
   | 'settings.read'
   | 'settings.manage'
+  | 'module_access.manage'
   | 'team.read'
   | 'team.manage'
   | 'team.members.read'
@@ -95,6 +100,26 @@ export type Permission =
   | 'search.read'
   | 'ws.connect';
 
+export type WorkspaceModule = 'pm' | 'docs' | 'crm' | 'support';
+export type ModuleGrantSubjectType = 'team' | 'workspace_member';
+
+export interface WorkspaceModuleGrant {
+  id: string;
+  workspace_id: string;
+  module: WorkspaceModule;
+  subject_type: ModuleGrantSubjectType;
+  subject_id: string;
+  access_level: 'member';
+  created_by_id?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkspaceModuleAccessSettings {
+  modules: WorkspaceModule[];
+  grants: WorkspaceModuleGrant[];
+}
+
 // Response from GET /api/workspaces/{id}/me
 export interface WorkspaceAccess {
   workspace_id: string;
@@ -109,6 +134,7 @@ export interface WorkspaceAccess {
     team_id: string;
     role: string;
   }[];
+  modules: WorkspaceModule[];
 }
 
 export interface MemberWithUser {
@@ -118,6 +144,10 @@ export interface MemberWithUser {
   email: string;
   full_name: string;
   avatar_url?: string;
+  avatar_style?: string;
+  avatar_seed?: string;
+  avatar_background_mode?: string;
+  avatar_background_color?: string;
 }
 
 export interface AssignableMember {
@@ -127,10 +157,22 @@ export interface AssignableMember {
   email: string;
   display_name: string;
   avatar_url?: string;
+  avatar_style?: string;
+  avatar_seed?: string;
+  avatar_background_mode?: string;
+  avatar_background_color?: string;
   status: 'pending' | 'active' | 'revoked' | 'inactive';
   invited_by?: string;
   invited_at?: string;
   accepted_at?: string;
+}
+
+export interface WorkspaceMemberPresenceStatus {
+  user_id: string;
+  status: 'online' | 'away' | 'offline';
+  source: 'auto' | 'manual';
+  manual_status?: 'online' | 'away' | 'offline';
+  last_seen_at?: string;
 }
 
 export interface WorkspaceSettings {
@@ -343,8 +385,96 @@ export interface AutomationInventoryGroup {
   description: string;
 }
 
+export interface AutomationTriggerCatalogEntry {
+  id: string;
+  binding_kind: string;
+  category: string;
+  trigger_type: string;
+  title: string;
+  description: string;
+  source_surface: string;
+  config_surface?: string;
+  supports_agent_runs: boolean;
+  binding_count: number;
+  execution_search?: AutomationTriggerExecutionSearchPreset;
+  show_rules_search?: WorkflowRuleSearchPreset;
+  create_rule_search?: WorkflowRuleSearchPreset;
+}
+
 export interface AutomationInventoryResponse {
   groups: AutomationInventoryGroup[];
   items: AutomationInventoryItem[];
+  trigger_catalog: AutomationTriggerCatalogEntry[];
   generated_at: string;
+}
+
+export interface AutomationTriggerExecutionFilters {
+  agent_id?: string;
+  binding_id?: string;
+  trigger_type?: string;
+  status?: string;
+  source?: string;
+  reference_id?: string;
+  fired_after?: string;
+  fired_before?: string;
+  page?: number;
+  per_page?: number;
+}
+
+export interface AutomationTriggerExecutionSearchPreset {
+  agent_id?: string;
+  binding_id?: string;
+  trigger_type?: string;
+  source?: string;
+  reference_id?: string;
+  status?: string;
+}
+
+export interface WorkflowRuleSearchPreset {
+  show_trigger?: string;
+  show_trigger_title?: string;
+  template?: string;
+  template_title?: string;
+  template_description?: string;
+  create_event_rule?: boolean;
+  trigger_type?: string;
+  agent_id?: string;
+  repo_full_name?: string;
+  branch?: string;
+  base_branch?: string;
+  tag_name?: string;
+  conclusion?: string;
+  target_mode?: 'event' | 'task' | 'epic' | 'repository';
+  target_id?: string;
+}
+
+export interface AutomationTriggerExecutionListItem {
+  execution_id: string;
+  agent_id: string;
+  agent_name: string;
+  binding_id: string;
+  binding_kind: string;
+  binding_title: string;
+  trigger_type?: string;
+  trigger_title?: string;
+  reference_id?: string;
+  reference_type?: string;
+  reference_title?: string;
+  manage_path?: string;
+  target_type?: string;
+  target_id?: string;
+  run_id?: string;
+  status: string;
+  error_message?: string;
+  fired_at: string;
+  started_at?: string;
+  completed_at?: string;
+}
+
+export interface AutomationTriggerExecutionListResponse {
+  data: AutomationTriggerExecutionListItem[];
+  total: number;
+  page: number;
+  per_page: number;
+  total_pages: number;
 }

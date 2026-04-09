@@ -13,7 +13,7 @@ import {
   Loading01Icon,
   PlusSignIcon,
 } from '@/lib/icons'
-import { ICON_MAP } from '@/components/ui/icon-picker'
+import { ICON_MAP, StoredIcon } from '@/components/ui/icon-picker'
 import { Collapsible } from 'radix-ui'
 import { toast } from 'sonner'
 import { useTitle } from '@/hooks/useTitle'
@@ -203,11 +203,12 @@ function SpaceSection({
             <ArrowRight01Icon
               className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${expanded ? 'rotate-90' : ''}`}
             />
-            {space.icon ? (
-              <span className="text-base">{space.icon}</span>
-            ) : (
-              <Folder01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-            )}
+            <StoredIcon
+              name={space.icon}
+              className="h-4 w-4 shrink-0 text-muted-foreground"
+              textClassName="text-base"
+              fallback={<Folder01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />}
+            />
             <div className="min-w-0 flex-1">
               <span className="truncate text-sm font-semibold">{space.name}</span>
             </div>

@@ -631,6 +631,10 @@ func newWorkspaceIdentityTestDB(t *testing.T) *gorm.DB {
 			password_hash TEXT NOT NULL,
 			full_name TEXT NOT NULL,
 			avatar_url TEXT,
+			avatar_style TEXT,
+			avatar_seed TEXT,
+			avatar_background_mode TEXT,
+			avatar_background_color TEXT,
 			default_workspace_id TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
@@ -639,6 +643,7 @@ func newWorkspaceIdentityTestDB(t *testing.T) *gorm.DB {
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,
 			slug TEXT NOT NULL,
+			workspace_key TEXT,
 			owner_id TEXT NOT NULL,
 			organization_id TEXT,
 			description TEXT,
@@ -997,6 +1002,7 @@ func createSettingsIdentityTables(t *testing.T, db *gorm.DB) {
 			team_type TEXT NOT NULL DEFAULT 'engineering',
 			default_task_type TEXT NOT NULL DEFAULT 'feature',
 			docs_publisher_enabled BOOLEAN NOT NULL DEFAULT 0,
+			sprints_enabled BOOLEAN NOT NULL DEFAULT 1,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

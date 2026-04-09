@@ -1,221 +1,179 @@
-# Helpin SDK
+# @helpin-ai/sdk-js
 
-Helpin SDK is a powerful and flexible JavaScript/TypeScript library for tracking user behavior and events in web applications. It supports both client-side and server-side usage, with a focus on privacy, configurability, and robustness.
-
-## Features
-
-- Cross-platform compatibility (browser and server-side)
-- Flexible event tracking with custom payloads
-- Automatic tracking of page views, form submissions, and user interactions
-- Privacy-focused with configurable data sanitization
-- Robust error handling and retry mechanisms
-- Extensible architecture for custom tracking features
-- Performance optimizations including event batching and debouncing
+Analytics and live chat for your website. Install as an npm module or add a script tag — both give you event tracking, user identification, and full control over the Helpin chat widget.
 
 ## Installation
 
-### NPM or Yarn
-
-You can install the Helpin SDK using npm:
-
 ```bash
-npm install @helpin/sdk-js
+npm install @helpin-ai/sdk-js
 ```
 
-Or using yarn:
+## Quick Start (Module)
 
-```bash
-yarn add @helpin/sdk-js
-```
-
-### UMD (Universal Module Definition)
-
-For quick integration without a module bundler, you can include the SDK directly in your HTML using a script tag:
-
-```html
-<script src="https://cdn.helpin.ai/sdk/v1/lib.js"
-        data-key="your-api-key"
-        data-tracking-host="https://events.yourdomain.com"
-        data-log-level="debug"
-        data-autocapture="true"
-        data-form-tracking="true"
-        data-auto-pageview="true"></script>
-```
-
-Replace `https://cdn.helpin.ai/sdk/v1/lib.js` with the actual URL where the Helpin SDK is hosted.
-
-## Basic Usage
-
-### Using as a module
-
-```javascript
-import { helpinClient } from '@helpin/sdk-js';
+```ts
+import { helpinClient } from '@helpin-ai/sdk-js';
 
 const client = helpinClient({
-  apiKey: 'your-api-key',
-  trackingHost: 'https://events.yourdomain.com',
-  // Add other configuration options as needed
+  widgetKey: 'your-widget-key',
+  host: 'https://client.helpin.ai',
+  namespace: 'helpin',
+  autoBoot: false,
 });
 
-// Track an event
-client.track('button_click', {
-  buttonId: 'submit-form',
-  pageUrl: window.location.href
+if (!client) {
+  throw new Error('Helpin client failed to initialize');
+}
+
+await client.id({
+  id: 'user_123',
+  email: 'jane@example.com',
+  name: 'Jane Doe',
 });
 
-// Identify a user
-client.id({
-  id: 'user123',
-  email: 'user@example.com',
-  name: 'John Doe'
-});
-
-// Track a page view
+client.track('button_click', { cta: 'pricing' });
+client.lead({ email: 'lead@example.com', name: 'New Lead' });
 client.pageview();
+client.open();
 ```
 
-### Using via UMD
+By default, the widget boots automatically in browser environments when `widgetKey` and `host` are set. Pass `autoBoot: false` to keep the widget dormant until you explicitly call `boot()`, `show()`, `open()`, `openMessages()`, or `openNewMessage()`.
 
-When you include the SDK via a script tag, it automatically initializes with the configuration provided in the data attributes. You can then use the global `helpin` function to interact with the SDK:
+## Quick Start (Script Tag)
 
 ```html
 <script>
-  // Track an event
-  helpin('track', 'button_click', {
-    buttonId: 'submit-form',
-    pageUrl: window.location.href
-  });
+  window.helpinQ = window.helpinQ || [];
+  window.helpin = function () {
+    window.helpinQ.push(arguments);
+  };
 
-  // Identify a user
-  helpin('id', {
-    id: 'user123',
-    email: 'user@example.com',
-    name: 'John Doe'
+  helpin('onLoad', function () {
+    helpin('track', 'pageview');
+    helpin('open');
   });
-
-  // Track a page view (if not set to automatic in the script tag)
-  helpin('pageview');
 </script>
+
+<script
+  defer
+  src="https://cdn.helpin.ai/lib.js"
+  data-widget-key="your-widget-key"
+  data-host="https://client.helpin.ai"
+  data-namespace="helpin"
+></script>
 ```
 
-## Advanced Configuration
+The snippet queues commands until the SDK loads, so you can call `helpin(...)` immediately. Once ready, the global API handles both analytics and widget control.
 
-The SDK supports various configuration options to customize its behavior. When using as a module:
+## Exports
 
-```javascript
-const client = helpinClient({
-  apiKey: 'your-api-key',
-  trackingHost: 'https://events.yourdomain.com',
-  cookieDomain: '.yourdomain.com',
-  logLevel: 'DEBUG',
-  useBeaconApi: true,
-  autocapture: true,
-  formTracking: 'all',
-  autoPageview: true,
-  // ... other options
-});
-```
+| Export | Description |
+| --- | --- |
+| `helpinClient` | Factory — returns a `HelpinClient` or `null` |
+| `HelpinClient` | The client class (analytics + widget) |
+| `HelpinOptions` | Configuration type |
+| `UserProps` | User identity payload |
+| `EventPayload` | Event data payload |
+| `ClientProperties` | Browser/request environment shape |
+| `LogLevel` | Logger verbosity enum |
 
-When using via UMD, you can set these options using data attributes on the script tag:
+## Configuration
 
-```html
-<script src="https://cdn.helpin.ai/sdk/v1/lib.js"
-        data-key="your-api-key"
-        data-tracking-host="https://events.yourdomain.com"
-        data-log-level="debug"
-        data-autocapture="true"
-        data-form-tracking="all"
-        data-auto-pageview="true"
-        data-use-beacon-api="true"
-        data-cookie-domain=".yourdomain.com"></script>
-```
+Configure via the `HelpinOptions` object passed to `helpinClient(...)`, or with `data-*` attributes on the script tag.
 
-Refer to the `Config` interface in `src/core/config.ts` for a full list of configuration options.
+| Option | Description |
+| --- | --- |
+| `widgetKey` | **Required.** Your public widget key |
+| `host` | Helpin host URL, with or without protocol |
+| `autoBoot` | Boot the widget on initialization (default: `true`) |
+| `namespace` | Global name for the script-tag build (default: `helpin`) |
+| `autoPageview` | Track a pageview automatically on load |
+| `useBeaconApi` | Prefer the Beacon API for event transport |
+| `forceUseFetch` | Prefer `fetch` over `XMLHttpRequest` |
+| `cookieDomain` / `cookieName` | Customize the anonymous visitor ID cookie |
+| `crossDomainLinking` / `domains` | Share the visitor ID across specified domains |
+| `propertyBlacklist` | Omit specific fields from outgoing payloads |
+| `logLevel` | Internal logging verbosity |
 
-## Server-Side Usage
+**Script tag equivalents:** `data-widget-key`, `data-host`, `data-auto-boot`, `data-namespace`, `data-auto-pageview`, `data-log-level`.
 
-The SDK can also be used in server-side environments:
+## Client API
 
-```javascript
-const { helpinClient } = require('@helpin/sdk-js');
+Every method below is available on the object returned by `helpinClient(...)`.
 
-const client = helpinClient({
-  apiKey: 'your-api-key',
-  trackingHost: 'https://events.yourdomain.com'
-});
+### Analytics
 
-client.track('server_event', {
-  userId: 'user123',
-  action: 'item_purchased'
-});
-```
+| Method | Signature | Description |
+| --- | --- | --- |
+| `init` | `(config: HelpinOptions) => void` | Re-initialize with new options |
+| `id` | `(userData: UserProps, doNotSendEvent?: boolean) => Promise<void>` | Identify a user (optionally suppress the `user_identify` event) |
+| `track` | `(eventName: string, payload?: EventPayload, directSend?: boolean) => void` | Track a custom event |
+| `lead` | `(payload: EventPayload, directSend?: boolean) => void` | Track a validated lead event |
+| `rawTrack` | `(payload: unknown) => void` | Send a raw payload as event type `raw` |
+| `group` | `(company: { id: string; name: string; created_at: string; ... }, doNotSendEvent?: boolean) => Promise<void>` | Associate the user with a company or group |
+| `pageview` | `() => void` | Send a pageview event |
+| `set` | `(properties: Record<string, unknown>, opts?: { eventType?: string; persist?: boolean }) => void` | Attach global or event-scoped properties |
+| `unset` | `(propertyName: string, opts?: { eventType?: string; persist?: boolean }) => void` | Remove a property added with `set(...)` |
+| `setUserId` | `(userId: string) => void` | Update the stored user ID without a full identify call |
+| `reset` | `(resetAnonId?: boolean) => Promise<void>` | Clear all persisted user, company, and global state |
+
+### Widget
+
+| Method | Signature | Description |
+| --- | --- | --- |
+| `boot` | `(settings?: { widgetKey?, key?, host?, user? }) => void` | Boot or re-boot the widget |
+| `show` | `() => void` | Make the launcher/widget visible without opening the panel |
+| `hide` | `() => void` | Hide the launcher and close the panel |
+| `open` | `() => void` | Open the chat panel and ensure the widget is visible |
+| `close` | `() => void` | Close the chat panel while keeping the launcher visible |
+| `toggle` | `() => void` | Toggle the widget open or closed |
+| `openMessages` | `() => void` | Open the widget to the messages list |
+| `openNewMessage` | `(content?: string) => void` | Start a new conversation |
+| `openConversation` | `(conversationId: string) => void` | Open a specific conversation |
+| `openArticle` | `(articleId: string, options?: { collectionId?: string; spaceId?: string }) => void` | Display a help-center article |
+| `shutdown` | `() => void` | End the widget session and remove it from the page |
+
+### Event listeners
+
+| Method | Signature | Description |
+| --- | --- | --- |
+| `onOpen` | `(callback) => void` | Fired when the visitor opens the chat from the widget UI |
+| `onClose` | `(callback) => void` | Fired when the visitor closes the chat from the widget UI |
+| `onUnreadCountChange` | `(callback) => void` | Unread count changed |
+| `onUserEmailSupplied` | `(callback) => void` | Visitor submitted their email |
+| `onConversationStarted` | `(callback) => void` | New conversation created |
+| `onMessageReceived` | `(callback) => void` | Incoming message received |
+
+### Getters
+
+| Method | Signature | Description |
+| --- | --- | --- |
+| `getVisitorId` | `() => string` | Current anonymous visitor ID |
+| `isWidgetReady` | `() => boolean` | Whether the widget has finished loading |
+| `getConfig` | `() => HelpinOptions` | Merged runtime configuration |
+| `getLogger` | `() => logger` | Internal logger instance |
+| `getCookie` | `(name: string) => string \| null` | Read a browser cookie by name |
+
+## Script Tag Command Reference
+
+When using the script tag, every method above is available as `helpin('methodName', ...args)`. A few additional commands are specific to the global API:
+
+| Command | Arguments | Description |
+| --- | --- | --- |
+| `onLoad` | `(callback)` | Run a callback once the SDK has finished loading |
+
+## Module vs. Script Tag
+
+Both builds provide the same analytics and widget capabilities. The module build returns a typed `HelpinClient` object; the script-tag build exposes the same methods through the `window.helpin(...)` command API. Choose whichever fits your stack.
 
 ## Development
 
-To set up the project for development:
-
-1. Clone the repository
-2. Install dependencies: `npm install`
-3. Run tests: `npm test`
-4. Build the project: `npm run build`
-
-## Testing
-
-### Unit Tests
-
-To run unit tests:
-
 ```bash
-pnpm --filter @helpin/sdk-js test
+pnpm --filter @helpin-ai/sdk-js build
+pnpm --filter @helpin-ai/sdk-js test
 ```
 
-Unit tests cover:
-- `core/client.ts` - HelpinClient initialization and methods
-- `core/event-tracking.ts` - Event tracking functionality
-- `core/widget.ts` - WidgetManager for chat widget
-- `utils/queue.ts` - Retry queue implementation
-- `utils/helpers.ts` - Utility functions
-- `persistence/local-storage.ts` - Local storage persistence
-
-### Widget E2E Tests
-
-To run widget E2E tests (requires mock server):
+Widget E2E tests:
 
 ```bash
-pnpm exec playwright test --config=playwright.widget.config.ts
+pnpm --filter @helpin-ai/sdk-js test:e2e:widget
 ```
-
-Widget E2E tests cover:
-- Widget boot & initialization
-- Show/hide functionality
-- Callbacks (onShow, onHide, onUnreadCountChange, onUserEmailSupplied)
-- Launcher interactions
-- UI elements (header, pre-chat form, compose bar)
-- Mobile responsiveness
-- Widget configuration
-
-### All E2E Tests
-
-To run end-to-end tests with a specific browser (e.g., Chrome):
-
-```bash
-pnpm --filter @helpin/sdk-js test:e2e --project=chromium
-```
-
-You can replace `chromium` with other browsers like `firefox` or `webkit` to test on different browsers.
-
-To run E2E tests with a UI for debugging:
-
-```bash
-pnpm --filter @helpin/sdk-js test:e2e:ui
-```
-
-To view the Playwright report after running tests:
-
-```bash
-pnpm exec playwright show-report
-```
-
-## Contributing
-
-Contributions are welcome! Please read our contributing guidelines and code of conduct before submitting pull requests.

@@ -30,7 +30,7 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.30
+          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.49
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
@@ -87,7 +87,7 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.30
+          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.49
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
@@ -105,6 +105,193 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: helpin-temporal-opencode-autonomous
+  namespace: helpin
+  labels:
+    app: helpin-temporal-opencode-autonomous
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: helpin-temporal-opencode-autonomous
+  template:
+    metadata:
+      labels:
+        app: helpin-temporal-opencode-autonomous
+        env: prod
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      imagePullSecrets:
+        - name: ghcr-helpin-json-key
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: npm-cache
+          emptyDir: {}
+      containers:
+        - name: temporal-worker
+          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.49
+          command: ["./temporal-worker"]
+          env:
+            - name: TEMPORAL_WORKER_QUEUES
+              value: agent-opencode-autonomous
+          envFrom:
+            - secretRef:
+                name: helpin-secrets
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: npm-cache
+              mountPath: /.npm
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: helpin-temporal-codex-autonomous
+  namespace: helpin
+  labels:
+    app: helpin-temporal-codex-autonomous
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: helpin-temporal-codex-autonomous
+  template:
+    metadata:
+      labels:
+        app: helpin-temporal-codex-autonomous
+        env: prod
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      imagePullSecrets:
+        - name: ghcr-helpin-json-key
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: npm-cache
+          emptyDir: {}
+      containers:
+        - name: temporal-worker
+          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.49
+          command: ["./temporal-worker"]
+          env:
+            - name: TEMPORAL_WORKER_QUEUES
+              value: agent-codex-autonomous
+            - name: CODEX_SANDBOX_MODE
+              value: danger-full-access
+          envFrom:
+            - secretRef:
+                name: helpin-secrets
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: npm-cache
+              mountPath: /.npm
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: helpin-temporal-codex-interactive
+  namespace: helpin
+  labels:
+    app: helpin-temporal-codex-interactive
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: helpin-temporal-codex-interactive
+  template:
+    metadata:
+      labels:
+        app: helpin-temporal-codex-interactive
+        env: prod
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      imagePullSecrets:
+        - name: ghcr-helpin-json-key
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: npm-cache
+          emptyDir: {}
+      containers:
+        - name: temporal-worker
+          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.49
+          command: ["./temporal-worker"]
+          env:
+            - name: TEMPORAL_WORKER_QUEUES
+              value: agent-codex-interactive
+            - name: CODEX_SANDBOX_MODE
+              value: danger-full-access
+          envFrom:
+            - secretRef:
+                name: helpin-secrets
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: npm-cache
+              mountPath: /.npm
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -144,7 +331,7 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.30
+          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.49
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES

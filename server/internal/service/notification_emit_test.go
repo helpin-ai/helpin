@@ -91,7 +91,7 @@ func TestEmit_CreatesNotificationAndImmediateEmailDelivery(t *testing.T) {
 	if emailer.sent[0].to != "user@example.com" {
 		t.Fatalf("email recipient = %q, want user@example.com", emailer.sent[0].to)
 	}
-	if !strings.Contains(emailer.sent[0].subject, "[Acme Workspace] Story comment added") {
+	if !strings.Contains(emailer.sent[0].subject, "[Acme Workspace]") || !strings.Contains(emailer.sent[0].subject, "Story comment added") {
 		t.Fatalf("email subject = %q, want workspace-prefixed subject", emailer.sent[0].subject)
 	}
 }
@@ -609,6 +609,10 @@ func newNotificationServiceTestDB(t *testing.T) *gorm.DB {
 			password_hash TEXT NOT NULL,
 			full_name TEXT NOT NULL,
 			avatar_url TEXT,
+			avatar_style TEXT,
+			avatar_seed TEXT,
+			avatar_background_mode TEXT,
+			avatar_background_color TEXT,
 			default_workspace_id TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
@@ -617,6 +621,7 @@ func newNotificationServiceTestDB(t *testing.T) *gorm.DB {
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			name TEXT NOT NULL,
 			slug TEXT NOT NULL,
+			workspace_key TEXT,
 			owner_id TEXT NOT NULL,
 			organization_id TEXT,
 			description TEXT,

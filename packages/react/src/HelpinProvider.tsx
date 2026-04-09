@@ -1,11 +1,11 @@
 import * as React from 'react';
 import HelpinContext from './HelpinContext'; // Assuming you created this context earlier
-import { HelpinClient } from '@helpin/sdk-js';
+import { HelpinClient } from '@helpin-ai/sdk-js';
 import { PropsWithChildren } from 'react';
 
 // Define the props to accept the client
 export interface HelpinProviderProps {
-  client: HelpinClient;
+  client: HelpinClient | null;
 }
 
 // The functional component that provides the Helpin client context

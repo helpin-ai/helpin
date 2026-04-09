@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
-import { useOrganizationMembers } from '@/hooks/queries';
+import { useOrganizationMembers, useWorkspaceMemberPresenceMap } from '@/hooks/queries';
 import { workspacesService } from '@/lib/services/workspacesService';
 import { inviteService } from '@/lib/services/inviteService';
 import { settingsService } from '@/lib/services/settingsService';
@@ -44,6 +44,7 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
   const { user } = useAuthStore();
 
   const { data: orgMembers } = useOrganizationMembers(organizationId);
+  const { data: memberPresenceByUserId } = useWorkspaceMemberPresenceMap(workspaceId);
 
   // Org members not already in this workspace (and not pending invitation)
   const availableOrgMembers = useMemo(() => {
@@ -300,6 +301,7 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
                   const teamNames = teamNamesByUserId.get(m.user_id) ?? [];
                   const hasWorkspaceWideTeamAccess = m.role === 'owner' || m.role === 'admin';
                   const hasAllTeams = hasWorkspaceWideTeamAccess || (teams.length > 0 && teamNames.length === teams.length);
+                  const presenceStatus = memberPresenceByUserId?.get(m.user_id)?.status ?? null;
 
                   return (
                     <TableRow key={m.id}>
@@ -308,6 +310,11 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
                           <UserAvatar
                             name={m.full_name || m.email}
                             avatarUrl={m.avatar_url}
+                            avatarStyle={m.avatar_style}
+                            avatarSeed={m.avatar_seed}
+                            avatarBackgroundMode={m.avatar_background_mode}
+                            avatarBackgroundColor={m.avatar_background_color}
+                            presenceStatus={presenceStatus}
                             className="h-8 w-8"
                             fallbackClassName="text-[10px]"
                           />
@@ -488,6 +495,10 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
                                   <UserAvatar
                                     name={m.full_name || m.email}
                                     avatarUrl={m.avatar_url}
+                                    avatarStyle={m.avatar_style}
+                                    avatarSeed={m.avatar_seed}
+                                    avatarBackgroundMode={m.avatar_background_mode}
+                                    avatarBackgroundColor={m.avatar_background_color}
                                     className="h-6 w-6"
                                     fallbackClassName="text-[10px]"
                                   />

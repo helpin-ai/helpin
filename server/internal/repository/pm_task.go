@@ -280,8 +280,8 @@ func buildDoneTaskGroups(tasks []model.BoardTask, now time.Time) []model.TaskGro
 			index = len(groups)
 			groupIndexByKey[key] = index
 			groups = append(groups, model.TaskGroup{
-				Key:     key,
-				Label:   label,
+				Key:   key,
+				Label: label,
 				Tasks: []model.BoardTask{},
 			})
 		}
@@ -864,12 +864,12 @@ func (r *PMTaskRepository) ListByWorkflowState(ctx context.Context, workflowID s
 			taskGroups = buildDoneTaskGroups(colTasks, time.Now().UTC())
 		}
 		columns = append(columns, model.TaskStateColumn{
-			State:       state,
-			Tasks:       colTasks,
-			TaskGroups:  taskGroups,
-			TaskCount:   m.totalCount,
-			PointTotal:  m.pointTotal,
-			HasMore:     m.hasMore,
+			State:      state,
+			Tasks:      colTasks,
+			TaskGroups: taskGroups,
+			TaskCount:  m.totalCount,
+			PointTotal: m.pointTotal,
+			HasMore:    m.hasMore,
 		})
 	}
 	return columns, nil
@@ -974,7 +974,7 @@ func (r *PMTaskRepository) enrichBoardTasks(
 	result := make([]model.BoardTask, 0, len(tasks))
 	for _, task := range tasks {
 		bs := model.BoardTask{
-			PMTask:              task,
+			PMTask:               task,
 			Labels:               []model.PMLabel{},
 			Contacts:             contactsMap[task.ID],
 			Companies:            companiesMap[task.ID],
@@ -1099,11 +1099,11 @@ func (r *PMTaskRepository) batchTaskSupportConversationAssociations(ctx context.
 	result := r.batchTaskCRMObjectAssociations(ctx, taskIDs, model.CRMObjectSupportConversation)
 
 	var rows []struct {
-		ID            string `gorm:"column:id"`
+		ID           string `gorm:"column:id"`
 		LinkedTaskID string `gorm:"column:linked_task_id"`
-		DisplayID     int    `gorm:"column:display_id"`
-		Subject       string `gorm:"column:subject"`
-		Status        string `gorm:"column:status"`
+		DisplayID    int    `gorm:"column:display_id"`
+		Subject      string `gorm:"column:subject"`
+		Status       string `gorm:"column:status"`
 	}
 	if err := r.db.WithContext(ctx).
 		Table("support_conversations").
@@ -1579,7 +1579,7 @@ func (r *PMTaskRepository) ListByMember(ctx context.Context, workspaceID, workfl
 		var members []model.AssignableMember
 		if err := r.db.WithContext(ctx).
 			Table("workspace_members wm").
-			Select("wm.id, wm.user_id, wm.role, wm.email, COALESCE(NULLIF(wm.display_name, ''), u.full_name, wm.email) AS display_name, u.avatar_url, wm.status").
+			Select("wm.id, wm.user_id, wm.role, wm.email, COALESCE(NULLIF(wm.display_name, ''), u.full_name, wm.email) AS display_name, u.avatar_url, u.avatar_style, u.avatar_seed, u.avatar_background_mode, u.avatar_background_color, wm.status").
 			Joins("LEFT JOIN users u ON u.id = wm.user_id").
 			Where("wm.id IN ?", ids).
 			Scan(&members).Error; err != nil {
@@ -1600,17 +1600,17 @@ func (r *PMTaskRepository) ListByMember(ctx context.Context, workspaceID, workfl
 			colTasks = append(colTasks, enrichedMap[s.ID])
 		}
 		columns = append(columns, model.TaskMemberColumn{
-			Member:    nil,
-			Tasks:     colTasks,
-			TaskCount: meta.totalCount,
+			Member:     nil,
+			Tasks:      colTasks,
+			TaskCount:  meta.totalCount,
 			PointTotal: meta.pointTotal,
 			HasMore:    meta.hasMore,
 		})
 	} else if includeEmpty {
 		columns = append(columns, model.TaskMemberColumn{
-			Member:    nil,
-			Tasks:     []model.BoardTask{},
-			TaskCount: 0,
+			Member:     nil,
+			Tasks:      []model.BoardTask{},
+			TaskCount:  0,
 			PointTotal: 0,
 			HasMore:    false,
 		})
@@ -1676,9 +1676,9 @@ func (r *PMTaskRepository) ListByMember(ctx context.Context, workspaceID, workfl
 
 		m := memberInfoMap[entry.memberID]
 		columns = append(columns, model.TaskMemberColumn{
-			Member:    &m,
-			Tasks:     colTasks,
-			TaskCount: totalCount,
+			Member:     &m,
+			Tasks:      colTasks,
+			TaskCount:  totalCount,
 			PointTotal: pointTotal,
 			HasMore:    hasMore,
 		})
@@ -1758,6 +1758,30 @@ func (r *PMTaskRepository) CountByWorkflowState(ctx context.Context, stateID str
 		Where("workflow_state_id = ? AND archived = false", stateID).
 		Count(&count).Error; err != nil {
 		return 0, fmt.Errorf("count tasks in state: %w", err)
+	}
+	return count, nil
+}
+
+// CountAssignedToAgent returns the number of tasks explicitly assigned to an agent.
+func (r *PMTaskRepository) CountAssignedToAgent(ctx context.Context, workspaceID, agentID string) (int64, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).
+		Model(&model.PMTask{}).
+		Where("workspace_id = ? AND assigned_agent_id = ?", workspaceID, agentID).
+		Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count tasks assigned to agent: %w", err)
+	}
+	return count, nil
+}
+
+// CountAssignedTasks returns the number of tasks with any assigned agent.
+func (r *PMTaskRepository) CountAssignedTasks(ctx context.Context, workspaceID string) (int64, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).
+		Model(&model.PMTask{}).
+		Where("workspace_id = ? AND assigned_agent_id IS NOT NULL", workspaceID).
+		Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count tasks assigned to any agent: %w", err)
 	}
 	return count, nil
 }
@@ -2122,6 +2146,10 @@ func (r *PMTaskRepository) loadAssignableMember(ctx context.Context, workspaceID
 			wm.email,
 			wm.display_name,
 			u.avatar_url,
+			u.avatar_style,
+			u.avatar_seed,
+			u.avatar_background_mode,
+			u.avatar_background_color,
 			wm.status,
 			wm.invited_by,
 			wm.invited_at,

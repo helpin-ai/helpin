@@ -33,8 +33,8 @@ describe('Next.js SDK Compatibility Tests', () => {
     it('should return null when window is undefined', () => {
       // Server-side rendering scenario
       const client = createClient({
-        key: 'test-key',
-        trackingHost: 'https://example.com',
+        widgetKey: 'test-key',
+        host: 'https://example.com',
       });
       assert.strictEqual(client, null);
     });
@@ -43,8 +43,8 @@ describe('Next.js SDK Compatibility Tests', () => {
       // Client-side rendering scenario
       global.window = mockWindow;
       const client = createClient({
-        key: 'test-key',
-        trackingHost: 'https://example.com',
+        widgetKey: 'test-key',
+        host: 'https://example.com',
       });
       assert.notStrictEqual(client, null);
       delete global.window;

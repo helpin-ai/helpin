@@ -1,13 +1,15 @@
-import { memo } from 'react';
-import { CheckmarkCircle02Icon } from '@/lib/icons';
+import { memo, useMemo, useState, type KeyboardEvent } from 'react';
+import { CheckmarkCircle02Icon, MoreHorizontalIcon } from '@/lib/icons';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { type AgentTypingState, useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { useWorkspaceMembers } from '@/hooks/queries/useWorkspaces';
+import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { SupportConversation } from '@/lib/pmTypes';
 import { timeAgo, getInitial, getAvatarColor } from './helpers';
+import { ConversationActionsMenu, type ConversationActionMoveOption } from './ConversationActionsMenu';
 
 const EMPTY_ARRAY: string[] = [];
 
@@ -30,7 +32,7 @@ const AgentTypingActivity = memo(function AgentTypingActivity({
   viewingAgentIds: string[];
   agentTypingMap: Record<string, AgentTypingState> | undefined;
   agentTypingEntries: Array<[string, AgentTypingState]>;
-  members: Array<{ user_id: string; full_name?: string | null; email?: string | null; avatar_url?: string | null }>;
+  members: Array<{ user_id: string; full_name?: string | null; email?: string | null; avatar_url?: string | null; avatar_style?: string | null; avatar_seed?: string | null; avatar_background_mode?: string | null; avatar_background_color?: string | null }>;
 }) {
   return (
     <div className="flex items-center gap-1.5">
@@ -67,11 +69,18 @@ const AgentTypingActivity = memo(function AgentTypingActivity({
 function resolveAgentIdentity(
   userId: string,
   typingState: AgentTypingState | undefined,
-  members: Array<{ user_id: string; full_name?: string | null; email?: string | null; avatar_url?: string | null }>
+  members: Array<{ user_id: string; full_name?: string | null; email?: string | null; avatar_url?: string | null; avatar_style?: string | null; avatar_seed?: string | null; avatar_background_mode?: string | null; avatar_background_color?: string | null }>
 ) {
   const member = members.find((m) => m.user_id === userId);
   const name = typingState?.name || member?.full_name || member?.email || 'Agent';
-  const avatarUrl = typingState?.avatarUrl || member?.avatar_url || undefined;
+  const avatarUrl = typingState?.avatarUrl || resolveTeamMemberAvatarSrc({
+    avatarUrl: member?.avatar_url,
+    avatarStyle: member?.avatar_style,
+    avatarSeed: member?.avatar_seed,
+    avatarBackgroundMode: member?.avatar_background_mode,
+    avatarBackgroundColor: member?.avatar_background_color,
+    fallbackSeed: name,
+  });
   return { name, avatarUrl };
 }
 
@@ -90,7 +99,14 @@ const AgentAvatar = memo(function AgentAvatar({
   const { data: members = [] } = useWorkspaceMembers(wsId);
   const member = members.find((m) => m.user_id === userId);
   const name = nameOverride || member?.full_name || member?.email || 'Agent';
-  const avatarUrl = avatarUrlOverride || member?.avatar_url || undefined;
+  const avatarUrl = avatarUrlOverride || resolveTeamMemberAvatarSrc({
+    avatarUrl: member?.avatar_url,
+    avatarStyle: member?.avatar_style,
+    avatarSeed: member?.avatar_seed,
+    avatarBackgroundMode: member?.avatar_background_mode,
+    avatarBackgroundColor: member?.avatar_background_color,
+    fallbackSeed: name,
+  });
 
   return (
     <Tooltip>
@@ -111,16 +127,25 @@ const AgentAvatar = memo(function AgentAvatar({
 });
 
 interface ConversationRowProps {
+  workspaceId: string;
   conversation: SupportConversation;
+  moveOptions: ConversationActionMoveOption[];
   isSelected: boolean;
   onSelect: () => void;
 }
 
-export const ConversationRow = memo(function ConversationRow({ conversation, isSelected, onSelect }: ConversationRowProps) {
+export const ConversationRow = memo(function ConversationRow({
+  workspaceId,
+  conversation,
+  moveOptions,
+  isSelected,
+  onSelect,
+}: ConversationRowProps) {
   const visitorLabel = conversation.anonymous_id ? `Visitor #${conversation.anonymous_id.slice(0, 6)}` : 'Anonymous';
   const displayName = conversation.customer_name || conversation.customer_email || visitorLabel;
   const unreadCount = conversation.unread_count ?? 0;
   const isUnread = unreadCount > 0;
+  const [actionsOpen, setActionsOpen] = useState(false);
   const typingState = useSupportPresenceStore((s) => s.typingIndicators[conversation.id]);
   const isCustomerTyping = typeof typingState === 'string';
   const agentTypingMap = useSupportPresenceStore((s) => s.agentTyping[conversation.id]);
@@ -138,16 +163,30 @@ export const ConversationRow = memo(function ConversationRow({ conversation, isS
   const viewingAgentIds = isSelected && currentUserId && !remoteViewingIds.includes(currentUserId)
     ? [...remoteViewingIds, currentUserId]
     : remoteViewingIds;
+  const availableMoveOptions = useMemo(
+    () => moveOptions.filter((option) => option.id !== (conversation.mailbox_id ?? 'shared')),
+    [conversation.mailbox_id, moveOptions]
+  );
+
+  const handleRowKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.target !== event.currentTarget) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onSelect();
+    }
+  };
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onSelect}
-      className={`group relative w-full text-left px-3 py-2.5 transition-all duration-200 hover:bg-muted/50 ${
+      onKeyDown={handleRowKeyDown}
+      className={`group relative w-full cursor-pointer px-3 py-2.5 text-left transition-all duration-200 hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
         isSelected
           ? 'bg-muted'
           : isUnread
-            ? 'bg-red-50/50 dark:bg-red-950/20'
+            ? 'bg-blue-50/70 dark:bg-blue-950/20'
             : ''
       }`}
     >
@@ -157,7 +196,7 @@ export const ConversationRow = memo(function ConversationRow({ conversation, isS
           isSelected
             ? 'h-8 bg-primary'
             : isUnread
-              ? 'h-5 bg-red-500'
+              ? 'h-5 bg-blue-500'
               : 'h-0 bg-transparent'
         }`}
       />
@@ -172,7 +211,7 @@ export const ConversationRow = memo(function ConversationRow({ conversation, isS
             {getInitial(displayName)}
           </div>
           {isVisitorOnline && (
-            <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-green-400 ring-2 ring-background" />
+            <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-green-400 ring-2 ring-background" />
           )}
         </div>
 
@@ -183,9 +222,48 @@ export const ConversationRow = memo(function ConversationRow({ conversation, isS
             <span className={`text-[13.5px] leading-tight overflow-hidden text-ellipsis whitespace-nowrap ${isUnread ? 'font-semibold text-foreground' : 'font-medium text-foreground/90'}`}>
               {displayName}
             </span>
-            <span className="shrink-0 text-[11px] text-muted-foreground/70 tabular-nums">
-              {timeAgo(conversation.updated_at)}
-            </span>
+            <div className="relative flex min-w-[40px] items-center justify-end">
+              <span
+                className={`shrink-0 text-[11px] text-muted-foreground/70 tabular-nums transition-opacity duration-150 ${
+                  actionsOpen
+                    ? 'opacity-0'
+                    : 'group-hover:opacity-0 group-focus-within:opacity-0'
+                }`}
+              >
+                {timeAgo(conversation.updated_at)}
+              </span>
+              <div
+                className={`absolute inset-0 flex items-center justify-end transition-opacity duration-150 ${
+                  actionsOpen
+                    ? 'opacity-100'
+                    : 'pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100'
+                }`}
+              >
+                <ConversationActionsMenu
+                  workspaceId={workspaceId}
+                  conversation={conversation}
+                  moveOptions={availableMoveOptions}
+                  open={actionsOpen}
+                  onOpenChange={setActionsOpen}
+                  align="end"
+                  trigger={(
+                    <button
+                      type="button"
+                      aria-label={`Open actions for ${displayName}`}
+                      className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                      }}
+                      onKeyDown={(event) => {
+                        event.stopPropagation();
+                      }}
+                    >
+                      <MoreHorizontalIcon className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                />
+              </div>
+            </div>
           </div>
 
           {/* Context: message preview + activity */}
@@ -255,6 +333,6 @@ export const ConversationRow = memo(function ConversationRow({ conversation, isS
           </div>
         </div>
       </div>
-    </button>
+    </div>
   );
 });

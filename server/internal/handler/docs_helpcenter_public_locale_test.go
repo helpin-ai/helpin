@@ -148,6 +148,9 @@ func TestDocsHelpcenterPublicLocale_ConfigDoesNotMutateCollectionMirrors(t *test
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q, want %q", got, "no-store")
+	}
 
 	var storedCollection model.DocsCollection
 	if err := db.Where("id = ?", "collection-handler-i18n").First(&storedCollection).Error; err != nil {
@@ -155,6 +158,73 @@ func TestDocsHelpcenterPublicLocale_ConfigDoesNotMutateCollectionMirrors(t *test
 	}
 	if storedCollection.Slug != "" {
 		t.Fatalf("stored collection slug = %q, want empty", storedCollection.Slug)
+	}
+}
+
+func TestDocsHelpcenterPublicLocale_ConfigFiltersInvalidFeaturedCollectionCards(t *testing.T) {
+	t.Parallel()
+
+	db := setupDocsHelpcenterTranslationHandlerTestDB(t)
+	now := time.Date(2026, 4, 8, 20, 12, 0, 0, time.UTC)
+	seedDocsHelpcenterTranslationHandlerFixture(t, db, now)
+
+	homepageConfig := json.RawMessage(`{
+		"hero_title":"How can we help?",
+		"hero_subtitle":"Search our knowledge base or browse topics below",
+		"featured_cards":[
+			{
+				"title":"Welcome & Quick Start",
+				"description":"",
+				"icon":"airplay",
+				"link_type":"collection",
+				"link_value":"",
+				"space_slug":"getting-started"
+			},
+			{
+				"title":"Basics",
+				"description":"Old description",
+				"icon":"rocket",
+				"link_type":"collection",
+				"link_value":"basics",
+				"space_slug":"getting-started"
+			}
+		]
+	}`)
+	if err := db.Exec(`UPDATE docs_helpcenter_configs SET homepage_config = ? WHERE workspace_id = ?`, homepageConfig, "ws-handler-i18n").Error; err != nil {
+		t.Fatalf("update homepage config: %v", err)
+	}
+
+	h := newDocsHelpcenterPublicHandlerForTest(db)
+	req := httptest.NewRequest(http.MethodGet, "/api/hc/handler-i18n/config", nil)
+	req = withWorkspaceAndRoute(req, "ws-handler-i18n", map[string]string{
+		"subdomain": "handler-i18n",
+	})
+	rec := httptest.NewRecorder()
+
+	h.PublicGetConfig(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var cfg model.DocsHelpcenterConfig
+	if err := json.Unmarshal(rec.Body.Bytes(), &cfg); err != nil {
+		t.Fatalf("unmarshal config: %v, body = %s", err, rec.Body.String())
+	}
+
+	var homepage model.HelpcenterHomepageConfig
+	if err := json.Unmarshal(cfg.HomepageConfig, &homepage); err != nil {
+		t.Fatalf("unmarshal homepage config: %v, raw = %s", err, string(cfg.HomepageConfig))
+	}
+
+	if len(homepage.FeaturedCards) != 1 {
+		t.Fatalf("len(featured_cards) = %d, want %d", len(homepage.FeaturedCards), 1)
+	}
+	if got := homepage.FeaturedCards[0].Title; got != "Basics" {
+		t.Fatalf("featured_cards[0].title = %q, want %q", got, "Basics")
+	}
+	if got := homepage.FeaturedCards[0].LinkValue; got != "basics" {
+		t.Fatalf("featured_cards[0].link_value = %q, want %q", got, "basics")
 	}
 }
 
@@ -176,56 +246,6 @@ func TestDocsHelpcenterPublicLocale_NavigationBackfillsMissingCollectionSlug(t *
 	}
 	if err := db.Exec(`UPDATE docs_helpcenter_collection_translations SET slug = NULL WHERE collection_id = ? AND locale = ?`, "collection-handler-i18n", "en").Error; err != nil {
 		t.Fatalf("clear collection translation slug: %v", err)
-	}
-	if err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS docs_helpcenter_article_publications (
-			id TEXT PRIMARY KEY,
-			document_id TEXT NOT NULL,
-			workspace_id TEXT NOT NULL,
-			space_id TEXT NOT NULL,
-			collection_id TEXT,
-			locale TEXT NOT NULL,
-			title TEXT NOT NULL,
-			slug TEXT NOT NULL,
-			excerpt TEXT,
-			content JSON,
-			content_text TEXT,
-			seo_title TEXT,
-			seo_description TEXT,
-			published_at DATETIME NOT NULL,
-			created_at DATETIME,
-			updated_at DATETIME,
-			UNIQUE(document_id, locale),
-			UNIQUE(space_id, locale, slug)
-		)
-	`).Error; err != nil {
-		t.Fatalf("create article publications table: %v", err)
-	}
-	if err := db.Exec(`
-		INSERT INTO docs_helpcenter_article_publications (
-			id, document_id, workspace_id, space_id, collection_id, locale,
-			title, slug, excerpt, content, content_text, seo_title, seo_description,
-			published_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`,
-		"pub-document-handler-i18n-en",
-		"document-handler-i18n",
-		"ws-handler-i18n",
-		"space-handler-i18n",
-		"collection-handler-i18n",
-		"en",
-		"Start Here",
-		"start-here",
-		"How to begin",
-		nil,
-		"Hello",
-		nil,
-		nil,
-		now,
-		now,
-		now,
-	).Error; err != nil {
-		t.Fatalf("seed article publication: %v", err)
 	}
 	h := newDocsHelpcenterPublicHandlerForTest(db)
 
@@ -403,6 +423,23 @@ func TestDocsHelpcenterPublicLocale_SearchOnlyReturnsRequestedLocale(t *testing.
 		UpdatedAt:       now,
 	}).Error; err != nil {
 		t.Fatalf("seed fr article translation: %v", err)
+	}
+	if err := db.Create(&model.DocsHelpcenterArticlePublication{
+		ID:           "pub-handler-i18n-fr",
+		DocumentID:   "document-handler-i18n-fr",
+		WorkspaceID:  "ws-handler-i18n",
+		SpaceID:      "space-handler-i18n",
+		CollectionID: ptr("collection-handler-i18n"),
+		Locale:       "fr",
+		Title:        "Bonjour en francais",
+		Slug:         "bonjour-fr",
+		Content:      json.RawMessage(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"bonjour depuis le centre d'aide"}]}]}`),
+		ContentText:  "bonjour depuis le centre d'aide",
+		PublishedAt:  now,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}).Error; err != nil {
+		t.Fatalf("seed fr article publication: %v", err)
 	}
 
 	h := newDocsHelpcenterPublicHandlerForTest(db)

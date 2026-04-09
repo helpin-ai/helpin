@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -33,6 +34,7 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 			team_type TEXT NOT NULL DEFAULT 'engineering',
 			default_task_type TEXT NOT NULL DEFAULT 'feature',
 			docs_publisher_enabled BOOLEAN NOT NULL DEFAULT 0,
+			sprints_enabled BOOLEAN NOT NULL DEFAULT 1,
 			created_at DATETIME,
 			updated_at DATETIME,
 			default_invocation_mode TEXT NOT NULL DEFAULT 'autonomous'
@@ -92,6 +94,14 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 			monthly_token_budget INTEGER,
 			tokens_used_this_month INTEGER,
 			active_task_id TEXT,
+			team_id TEXT,
+			allowed_tools TEXT,
+			allowed_commands TEXT,
+			allowed_targets TEXT,
+			schedule TEXT,
+			approval_mode TEXT NOT NULL DEFAULT 'preset_default',
+			max_concurrent_runs INTEGER NOT NULL DEFAULT 1,
+			default_invocation_mode TEXT NOT NULL DEFAULT 'autonomous',
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -217,6 +227,30 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("create automation health snapshot: %v", err)
 	}
+	schedule := "0 * * * *"
+	if err := db.Create(&model.Agent{
+		ID:          "agent-1",
+		WorkspaceID: workspaceID,
+		Name:        "Scheduled Agent",
+		Status:      "idle",
+		RuntimeKind: "opencode",
+		TriggerMode: "manual",
+		Schedule:    &schedule,
+	}).Error; err != nil {
+		t.Fatalf("create scheduled agent: %v", err)
+	}
+	if err := db.Create(&model.AutomationRule{
+		ID:            "rule-cron-1",
+		WorkspaceID:   workspaceID,
+		Name:          "Hourly Repo Sweep",
+		Enabled:       true,
+		TriggerType:   model.TriggerCron,
+		TriggerConfig: json.RawMessage(`{}`),
+		ActionType:    model.ActionStartAgentRun,
+		ActionConfig:  json.RawMessage(`{"agent_id":"agent-1","target_type":"repository","target_id":"repo-1"}`),
+	}).Error; err != nil {
+		t.Fatalf("create cron automation rule: %v", err)
+	}
 
 	svc := NewAutomationInventoryService(
 		repository.NewSettingsRepository(db),
@@ -224,6 +258,10 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 		repository.NewCRMEmailRepository(db),
 		repository.NewAutomationHealthRepository(db),
 		repository.NewAutomationRuleRepository(db),
+		repository.NewAgentTriggerExecutionRepository(db),
+		repository.NewAgentRepository(db),
+		nil,
+		nil,
 	)
 
 	result, err := svc.GetWorkspaceInventory(ctx, workspaceID)
@@ -281,6 +319,23 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 	sprintAutoCreate := itemsByCatalog["pm.sprint_auto_create"][0]
 	if sprintAutoCreate.ScopeType != model.AutomationScopeTeam || sprintAutoCreate.ScopeID != teamID {
 		t.Fatalf("expected sprint auto-create to be team-scoped for %s, got %s/%s", teamID, sprintAutoCreate.ScopeType, sprintAutoCreate.ScopeID)
+	}
+
+	triggerCatalog, err := svc.triggerCatalogItems(ctx, workspaceID)
+	if err != nil {
+		t.Fatalf("get trigger catalog: %v", err)
+	}
+
+	triggerCounts := make(map[string]int, len(triggerCatalog))
+	for _, entry := range triggerCatalog {
+		triggerCounts[entry.ID] = entry.BindingCount
+	}
+
+	if got := triggerCounts["agent.schedule"]; got != 1 {
+		t.Fatalf("expected agent.schedule count 1, got %d", got)
+	}
+	if got := triggerCounts["automation_rule.cron"]; got != 1 {
+		t.Fatalf("expected automation_rule.cron count 1, got %d", got)
 	}
 }
 

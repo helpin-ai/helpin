@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { workspacesService } from '@/lib/services/workspacesService'
 import { queryKeys } from '@/lib/queryKeys'
 import { unwrap } from '@/lib/queryUtils'
-import type { Permission, WorkspaceAccess, WorkspaceMember } from '@/lib/types'
+import type { Permission, WorkspaceAccess, WorkspaceMember, WorkspaceModule } from '@/lib/types'
 
 /**
  * useSession fetches the legacy my-membership endpoint.
@@ -39,18 +39,24 @@ export function useWorkspaceAccess(wsId: string) {
 export function usePermissions(access: WorkspaceAccess | null | undefined) {
   return useMemo(() => {
     const permSet = new Set<string>(access?.permissions ?? [])
+    const moduleSet = new Set<string>(access?.modules ?? [])
     const role = access?.membership?.role ?? ''
 
     const has = (perm: Permission): boolean => permSet.has(perm)
     const hasAny = (...perms: Permission[]): boolean => perms.some(p => permSet.has(p))
+    const canAccessModule = (module: WorkspaceModule): boolean => moduleSet.has(module)
 
     return {
       /** Check a single permission */
       has,
       /** Check if at least one permission matches */
       hasAny,
+      /** Check module-level access */
+      canAccessModule,
       /** All effective permissions as a Set */
       permissionSet: permSet,
+      /** All accessible modules as a Set */
+      moduleSet,
       /** The actor's workspace role */
       role,
       /** Team memberships from the /me response */
@@ -66,6 +72,8 @@ export function usePermissions(access: WorkspaceAccess | null | undefined) {
       canEdit: has('pm.edit'),
       /** Can manage settings (admin+) */
       canManageSettings: has('settings.manage'),
+      /** Can manage module grants (admin+) */
+      canManageModuleAccess: has('module_access.manage'),
       /** Can manage workspace members (admin+) */
       canManageMembers: has('workspace.members.manage'),
       /** Can manage invitations (admin+) */
@@ -92,6 +100,8 @@ export function usePermissions(access: WorkspaceAccess | null | undefined) {
       canPublishDocs: has('docs.publish'),
       /** Can admin docs (admin+) */
       canAdminDocs: has('docs.admin'),
+      /** Accessible workspace modules */
+      modules: access?.modules ?? [],
     }
   }, [access])
 }

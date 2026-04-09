@@ -17,6 +17,7 @@ import type { AssignableMember, TeamUserMembership } from '@/lib/types';
 import type { BoardFilters } from '@/stores/pmBoardStore';
 import { buildAssignableMemberOptions } from '@/lib/assignableMembers';
 import { useCompanies, useContacts, useConversations, useDeals } from '@/hooks/queries';
+import { useWorkspaceMemberPresenceMap } from '@/hooks/queries';
 import { UserAvatar } from './UserAvatar';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { filterAssignableMembersForTeam } from '@/components/pm/task-detail/taskFilterMembers';
@@ -68,6 +69,7 @@ function filterStateToQueryParams(state: FilterState): BoardFilters {
 // ── Context for shared state between trigger + bar ─────────────────
 
 interface FilterContextValue {
+  workspaceId: string;
   filterState: FilterState;
   definitions: FilterDefinition[];
   assignableMembers: AssignableMember[];
@@ -373,6 +375,7 @@ export function TaskFilterProvider({
   }, [emitChange]);
 
   const value = useMemo<FilterContextValue>(() => ({
+    workspaceId,
     filterState,
     definitions,
     assignableMembers,
@@ -384,7 +387,7 @@ export function TaskFilterProvider({
     handleToggle,
     handleRemove,
     handleClearAll,
-  }), [filterState, definitions, assignableMembers, activeTeamId, userMemberships, activeKeys, handleAdd, handleToggle, handleRemove, handleClearAll]);
+  }), [workspaceId, filterState, definitions, assignableMembers, activeTeamId, userMemberships, activeKeys, handleAdd, handleToggle, handleRemove, handleClearAll]);
 
   return <FilterContext.Provider value={value}>{children}</FilterContext.Provider>;
 }
@@ -485,7 +488,8 @@ export function TaskFilterBar() {
 }
 
 export function TaskOwnerAvatarFilterRow() {
-  const { assignableMembers, activeTeamId, userMemberships, filterState, handleToggle } = useFilterContext();
+  const { workspaceId, assignableMembers, activeTeamId, userMemberships, filterState, handleToggle } = useFilterContext();
+  const { data: memberPresenceByUserId } = useWorkspaceMemberPresenceMap(workspaceId);
   const ownerFilters = filterState.owner_member_id ?? [];
   const members = useMemo(
     () => filterAssignableMembersForTeam(assignableMembers, activeTeamId, userMemberships),
@@ -499,15 +503,16 @@ export function TaskOwnerAvatarFilterRow() {
       {members.map((member) => {
         const isSelected = ownerFilters.includes(member.id);
         const label = member.display_name?.trim() || member.email;
+        const presenceStatus = member.user_id ? (memberPresenceByUserId?.get(member.user_id)?.status ?? null) : null;
         return (
           <QuickTooltip key={member.id} label={label}>
             <button
               type="button"
               onClick={() => handleToggle('owner_member_id', member.id)}
-              className={`relative shrink-0 rounded-full ring-1 ring-offset-1 ring-offset-background transition-all hover:z-10 ${
+              className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full ring-offset-1 ring-offset-background transition-all hover:z-10 ${
                 isSelected
-                  ? 'z-10 ring-foreground'
-                  : 'ring-transparent opacity-70 hover:opacity-100'
+                  ? 'z-10 ring-[1.5px] ring-ring'
+                  : 'ring-0 opacity-70 hover:opacity-100'
               }`}
               aria-pressed={isSelected}
               aria-label={`Filter by owner ${label}`}
@@ -515,6 +520,11 @@ export function TaskOwnerAvatarFilterRow() {
               <UserAvatar
                 name={label}
                 avatarUrl={member.avatar_url}
+                avatarStyle={member.avatar_style}
+                avatarSeed={member.avatar_seed}
+                avatarBackgroundMode={member.avatar_background_mode}
+                avatarBackgroundColor={member.avatar_background_color}
+                presenceStatus={presenceStatus}
                 className="h-6 w-6"
                 fallbackClassName="text-[8px]"
               />

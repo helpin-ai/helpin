@@ -1,38 +1,23 @@
 import { HelpinClient } from './core/client';
 import { WidgetManager, type ShowArticleOptions, type WidgetSettings } from './core/widget';
-import { defaultConfig } from './core/config';
 import type { Config } from './core/types';
+import { createHelpinClient } from './core/create-client';
 import { LogLevel } from './utils/logger';
 import type { UserProps, EventPayload, ClientProperties } from './core/types';
 import { parseLogLevel } from './utils/helpers';
-import { convertKeysToCamelCase, isWindowAvailable } from './utils/common';
+import { isWindowAvailable } from './utils/common';
 import { isAMDEnvironment, getAMDDefine } from './utils/amd-detector';
 
 const widgetManager = new WidgetManager();
 
-function helpinClient(config: Partial<Config>): HelpinClient {
-  const cleanConfig = JSON.parse(JSON.stringify(config));
-  const camelCaseConfig = convertKeysToCamelCase(cleanConfig);
-  const mergedConfig: Config = {
-    ...defaultConfig,
-    ...camelCaseConfig,
-  } as Config;
-
-  if (!mergedConfig.key) {
-    throw new Error('API key is required!');
-  }
-
-  if (!mergedConfig.trackingHost) {
-    throw new Error('Tracking host is required!');
-  }
-
-  return new HelpinClient(mergedConfig);
+function helpinClient(config: Partial<Config>): HelpinClient | null {
+  return createHelpinClient(config, widgetManager);
 }
 
-function initFromScript(script: HTMLScriptElement): HelpinClient {
+function initFromScript(script: HTMLScriptElement): HelpinClient | null {
   const config: Partial<Config> = {
-    key: script.getAttribute('data-widget-key') || script.getAttribute('data-key') || undefined,
-    trackingHost:
+    widgetKey: script.getAttribute('data-widget-key') || script.getAttribute('data-key') || undefined,
+    host:
       script.getAttribute('data-host') || script.getAttribute('data-tracking-host') || undefined,
     logLevel: parseLogLevel(script.getAttribute('data-log-level')),
     autoPageview:
@@ -41,6 +26,12 @@ function initFromScript(script: HTMLScriptElement): HelpinClient {
         : script.getAttribute('data-auto-pageview') === 'true'
           ? true
           : undefined, // Let default config handle it
+    autoBoot:
+      script.getAttribute('data-auto-boot') === 'false'
+        ? false
+        : script.getAttribute('data-auto-boot') === 'true'
+          ? true
+          : undefined,
     useBeaconApi: script.getAttribute('data-use-beacon-api') === 'true',
     forceUseFetch: script.getAttribute('data-force-use-fetch') === 'true',
     gaHook: script.getAttribute('data-ga-hook') === 'true',
@@ -98,6 +89,9 @@ function initFromScript(script: HTMLScriptElement): HelpinClient {
 
   const client = helpinClient(config);
   const namespace = config.namespace || 'helpin';
+  if (!client) {
+    return null;
+  }
 
   // Only send pageview if auto-pageview is enabled (default behavior for script tag)
   if (isWindowAvailable()) {
@@ -105,14 +99,6 @@ function initFromScript(script: HTMLScriptElement): HelpinClient {
   }
 
   initializeNamespacedClient(namespace, client);
-
-  // Auto-boot widget using the same key and host from script attributes
-  if (config.key) {
-    widgetManager.boot({
-      key: config.key,
-      host: config.trackingHost,
-    });
-  }
 
   return client;
 }
@@ -201,15 +187,21 @@ function initializeNamespacedClient(
       shutdown: () => widgetManager.shutdown(),
       show: () => widgetManager.show(),
       hide: () => widgetManager.hide(),
-      showMessages: () => widgetManager.showMessages(),
-      showNewMessage: (content?: string) => widgetManager.showNewMessage(content),
-      showConversation: (id: string) => widgetManager.showConversation(id),
-      showArticle: (id: string, options?: ShowArticleOptions) => widgetManager.showArticle(id, options),
-      onShow: (cb: (...args: any[]) => void) => widgetManager.onShow(cb),
-      onHide: (cb: (...args: any[]) => void) => widgetManager.onHide(cb),
+      open: () => widgetManager.open(),
+      close: () => widgetManager.close(),
+      toggle: () => widgetManager.toggle(),
+      openMessages: () => widgetManager.openMessages(),
+      openNewMessage: (content?: string) => widgetManager.openNewMessage(content),
+      openConversation: (id: string) => widgetManager.openConversation(id),
+      openArticle: (id: string, options?: ShowArticleOptions) => widgetManager.openArticle(id, options),
+      onOpen: (cb: (...args: any[]) => void) => widgetManager.onOpen(cb),
+      onClose: (cb: (...args: any[]) => void) => widgetManager.onClose(cb),
       onUnreadCountChange: (cb: (...args: any[]) => void) => widgetManager.onUnreadCountChange(cb),
       onUserEmailSupplied: (cb: (...args: any[]) => void) => widgetManager.onUserEmailSupplied(cb),
+      onConversationStarted: (cb: (...args: any[]) => void) => widgetManager.onConversationStarted(cb),
+      onMessageReceived: (cb: (...args: any[]) => void) => widgetManager.onMessageReceived(cb),
       getVisitorId: () => widgetManager.getVisitorId(),
+      isWidgetReady: () => widgetManager.isWidgetReady(),
     };
 
     if (widgetMethods[method]) {
@@ -355,14 +347,17 @@ if (isWindowAvailable()) {
       function widgetFunction(...args: any[]) {
         const method = args[0];
 
-        // Analytics client initialization: helpin('init', { key, trackingHost, ... })
+        // Analytics client initialization: helpin('init', { widgetKey, host, ... })
         if (method === 'init') {
           const config = args[1] as Partial<Config>;
-          if (!config?.key || !config?.trackingHost) {
-            console.error('Helpin: init requires key and trackingHost');
+          if (!config?.widgetKey || !config?.host) {
+            console.error('Helpin: init requires widgetKey and host');
             return;
           }
           analyticsClient = helpinClient(config);
+          if (!analyticsClient) {
+            return;
+          }
           scriptTagClient = analyticsClient;
           isInitialized = true;
           return;
@@ -374,13 +369,15 @@ if (isWindowAvailable()) {
           shutdown: () => widgetManager.shutdown(),
           show: () => widgetManager.show(),
           hide: () => widgetManager.hide(),
+          open: () => widgetManager.open(),
+          close: () => widgetManager.close(),
           toggle: () => widgetManager.toggle(),
-          showMessages: () => widgetManager.showMessages(),
-          showNewMessage: (content?: string) => widgetManager.showNewMessage(content),
-          showConversation: (id: string) => widgetManager.showConversation(id),
-          showArticle: (id: string, options?: ShowArticleOptions) => widgetManager.showArticle(id, options),
-          onShow: (cb: (...a: any[]) => void) => widgetManager.onShow(cb),
-          onHide: (cb: (...a: any[]) => void) => widgetManager.onHide(cb),
+          openMessages: () => widgetManager.openMessages(),
+          openNewMessage: (content?: string) => widgetManager.openNewMessage(content),
+          openConversation: (id: string) => widgetManager.openConversation(id),
+          openArticle: (id: string, options?: ShowArticleOptions) => widgetManager.openArticle(id, options),
+          onOpen: (cb: (...a: any[]) => void) => widgetManager.onOpen(cb),
+          onClose: (cb: (...a: any[]) => void) => widgetManager.onClose(cb),
           onUnreadCountChange: (cb: (...a: any[]) => void) => widgetManager.onUnreadCountChange(cb),
           onUserEmailSupplied: (cb: (...a: any[]) => void) => widgetManager.onUserEmailSupplied(cb),
           onMessageReceived: (cb: (...a: any[]) => void) => widgetManager.onMessageReceived(cb),
@@ -407,6 +404,8 @@ if (isWindowAvailable()) {
 
         console.error(`Helpin: Method "${method}" not found`);
       }
+
+      (widgetFunction as typeof widgetFunction & { _widgetManager?: typeof widgetManager })._widgetManager = widgetManager;
 
       // Replace the queue stub with the real function
       (window as any)[namespace] = widgetFunction;
@@ -436,7 +435,11 @@ if (isWindowAvailable()) {
       if (shouldAutoInitialize()) {
         console.log('[Helpin] Auto-initializing from script tag');
         scriptTagClient = initFromScript(currentScript!);
-        isInitialized = true;
+        if (scriptTagClient) {
+          isInitialized = true;
+        } else {
+          initializeWidgetBridge();
+        }
       } else if (currentScript && !isInitialized) {
         // No analytics client, but still set up widget bridge
         // so helpin('boot', {...}) works with data-no-auto-init
@@ -457,19 +460,6 @@ if (isWindowAvailable()) {
 }
 
 // For CommonJS/Node.js environments
-if (typeof module !== 'undefined' && module.exports && !isAMDEnvironment()) {
-  module.exports = {
-    helpinClient,
-    HelpinClient,
-    Config: undefined as any,
-    UserProps: undefined as any,
-    EventPayload: undefined as any,
-    LogLevel,
-    ClientProperties: undefined as any,
-  };
-}
-
-// For ES modules
 export {
   helpinClient,
   HelpinClient,

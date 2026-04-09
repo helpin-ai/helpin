@@ -51,8 +51,9 @@ export type ClientProperties = {
 };
 
 type CamelCaseConfig = {
-  key: string;
-  trackingHost: string;
+  widgetKey: string;
+  host: string;
+  autoBoot?: boolean;
   cookieDomain?: string;
   cookieName?: string;
   logLevel?: LogLevel;
@@ -81,8 +82,9 @@ type CamelCaseConfig = {
 };
 
 type SnakeCaseConfig = {
-  key: string;
-  tracking_host: string;
+  widget_key: string;
+  host: string;
+  auto_boot?: boolean;
   cookie_domain?: string;
   cookie_name?: string;
   log_level?: LogLevel;
@@ -111,10 +113,10 @@ type SnakeCaseConfig = {
 };
 
 export type Config = Partial<CamelCaseConfig & SnakeCaseConfig> & {
-  key: string;
-  trackingHost?: string;
-  tracking_host?: string;
-} & ({ trackingHost: string } | { tracking_host: string });
+  widgetKey: string;
+  host?: string;
+  widget_key?: string;
+} & { host: string };
 
 /**
  * HelpinGlobal interface that supports both command-style and object-oriented API styles
@@ -146,13 +148,27 @@ export interface HelpinGlobal {
   (command: 'onLoad', callback: () => void): void;
   (command: 'show', ...args: never[]): void;
   (command: 'hide', ...args: never[]): void;
+  (command: 'open', ...args: never[]): void;
+  (command: 'close', ...args: never[]): void;
   (command: 'toggle', ...args: never[]): void;
-  (command: 'showMessages', ...args: never[]): void;
-  (command: 'showNewMessage', content?: string): void;
-  (command: 'showConversation', conversationId: string): void;
-  (command: 'showArticle', articleId: string): void;
-  (command: 'boot', settings: { key: string; host?: string; user?: Record<string, unknown> }): void;
+  (command: 'openMessages', ...args: never[]): void;
+  (command: 'openNewMessage', content?: string): void;
+  (command: 'openConversation', conversationId: string): void;
+  (
+    command: 'openArticle',
+    articleId: string,
+    options?: { collectionId?: string; spaceId?: string },
+  ): void;
+  (command: 'boot', settings: { widgetKey?: string; key?: string; host?: string; user?: Record<string, unknown> }): void;
   (command: 'shutdown', ...args: never[]): void;
+  (command: 'onOpen', callback: (...args: any[]) => void): void;
+  (command: 'onClose', callback: (...args: any[]) => void): void;
+  (command: 'onUnreadCountChange', callback: (...args: any[]) => void): void;
+  (command: 'onUserEmailSupplied', callback: (...args: any[]) => void): void;
+  (command: 'onConversationStarted', callback: (...args: any[]) => void): void;
+  (command: 'onMessageReceived', callback: (...args: any[]) => void): void;
+  (command: 'getVisitorId'): string;
+  (command: 'isWidgetReady'): boolean;
 
   // Object-oriented API
   track(eventName: string, payload?: any): void;
@@ -171,14 +187,27 @@ export interface HelpinGlobal {
   rawTrack(payload: any): void;
   lead(payload: EventPayload, directSend?: boolean): void;
   setUserId(userId: string): void;
-  boot(settings: { key: string; host?: string; user?: Record<string, unknown> }): void;
+  boot(settings: { widgetKey?: string; key?: string; host?: string; user?: Record<string, unknown> }): void;
   shutdown(): void;
   show(): void;
   hide(): void;
+  open(): void;
+  close(): void;
   toggle(): void;
-  showMessages(): void;
-  showNewMessage(content?: string): void;
-  showConversation(conversationId: string): void;
-  showArticle(articleId: string): void;
+  openMessages(): void;
+  openNewMessage(content?: string): void;
+  openConversation(conversationId: string): void;
+  openArticle(
+    articleId: string,
+    options?: { collectionId?: string; spaceId?: string },
+  ): void;
+  onOpen(callback: (...args: any[]) => void): void;
+  onClose(callback: (...args: any[]) => void): void;
+  onUnreadCountChange(callback: (...args: any[]) => void): void;
+  onUserEmailSupplied(callback: (...args: any[]) => void): void;
+  onConversationStarted(callback: (...args: any[]) => void): void;
+  onMessageReceived(callback: (...args: any[]) => void): void;
+  getVisitorId(): string;
+  isWidgetReady(): boolean;
   getConfig(): Config | null;
 }
