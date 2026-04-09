@@ -87,8 +87,8 @@ type AgentRunActivities struct {
 	artifactRepo        *repository.AgentRunArtifactRepository
 	interactionRepo     *repository.AgentRunInteractionRepository
 	sessionSnapshotRepo *repository.CodingSessionStateSnapshotRepository
-	taskRepo           *repository.PMTaskRepository
-	taskLinkRepo       *repository.PMTaskLinkRepository
+	taskRepo            *repository.PMTaskRepository
+	taskLinkRepo        *repository.PMTaskLinkRepository
 	epicRepo            *repository.PMEpicRepository
 	conversationRepo    *repository.SupportConversationRepository
 	commentRepo         *repository.PMCommentRepository
@@ -161,8 +161,8 @@ func NewAgentRunActivities(
 		artifactRepo:        artifactRepo,
 		interactionRepo:     interactionRepo,
 		sessionSnapshotRepo: sessionSnapshotRepo,
-		taskRepo:           taskRepo,
-		taskLinkRepo:       taskLinkRepo,
+		taskRepo:            taskRepo,
+		taskLinkRepo:        taskLinkRepo,
 		epicRepo:            epicRepo,
 		conversationRepo:    conversationRepo,
 		commentRepo:         commentRepo,
@@ -3033,19 +3033,6 @@ func (a *AgentRunActivities) applyApprovedTaskDocPreview(ctx context.Context, st
 		})); err != nil {
 			return err
 		}
-		if _, err := a.commandExecutor.Execute(ctx, model.InternalCommandContext{
-			WorkspaceID: state.run.WorkspaceID,
-			ActorID:     runActorID(state.run),
-			TargetType:  "task",
-			TargetID:    state.task.ID,
-		}, "docs.link_document_to_object", mustJSON(map[string]any{
-			"document_id":        doc.ID,
-			"linked_object_type": model.LinkedObjectTask,
-			"linked_object_id":   state.task.ID,
-			"link_context":       model.LinkContextCreatedFrom,
-		})); err != nil {
-			return err
-		}
 	} else {
 		if _, err := a.docsContentRepo.Upsert(ctx, doc.ID, tiptap.MarkdownToJSON(markdown)); err != nil {
 			return err
@@ -5394,11 +5381,11 @@ func buildWorkingBranch(task *model.PMTask, teamDefault *model.PMTeamRepoDefault
 
 	taskKey := model.FormatTaskKey(workspaceKey, task.DisplayID)
 	replacements := map[string]string{
-		"{task_key}":       taskKey,
-		"{workspace_key}":  workspaceKey,
-		"{task_type}":      task.TaskType,
-		"{display_id}":     fmt.Sprintf("%d", task.DisplayID),
-		"{slug}":           slugifyBranchToken(task.Name),
+		"{task_key}":      taskKey,
+		"{workspace_key}": workspaceKey,
+		"{task_type}":     task.TaskType,
+		"{display_id}":    fmt.Sprintf("%d", task.DisplayID),
+		"{slug}":          slugifyBranchToken(task.Name),
 	}
 	for placeholder, value := range replacements {
 		template = strings.ReplaceAll(template, placeholder, value)

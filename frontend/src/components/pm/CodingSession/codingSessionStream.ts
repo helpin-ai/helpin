@@ -441,10 +441,85 @@ function parsePlanArtifact(argsText: string): RunPlanArtifact | null {
   }
 }
 
+const TASK_PLAN_DOC_PUBLISH_TOOLS = new Set(['publish_task_plan_doc', 'publish_story_plan_doc']);
+const REVIEW_CHECKPOINT_TOOLS = new Set(['request_review_checkpoint', 'request_human_approval']);
+
+function normalizePlanStepText(value: string) {
+  return value.toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function isTaskPlanDocumentStep(stepText: string) {
+  return (
+    stepText.includes('planning document')
+    || stepText.includes('task plan doc')
+    || stepText.includes('task planning doc')
+    || stepText.includes('story plan doc')
+    || stepText.includes('plan document')
+  );
+}
+
+function isDraftPlanDocumentStep(stepText: string) {
+  if (!isTaskPlanDocumentStep(stepText)) return false;
+  return stepText.includes('draft') || (stepText.includes('publish') && !stepText.includes('review') && !stepText.includes('approval'));
+}
+
+function isReviewStep(stepText: string) {
+  if (!(stepText.includes('review') || stepText.includes('approval'))) return false;
+  return stepText.includes('publish') || stepText.includes('request') || stepText.includes('checkpoint') || stepText.includes('wait');
+}
+
+function hasReviewCheckpointEvent(events: CodingSessionEvent[]) {
+  return events.some((event) => {
+    if (event.type === 'approval.requested') return true;
+    if (!event.type.startsWith('interaction.')) return false;
+    const payload = asRecord(event.payload);
+    return asString(payload?.interaction_kind) === 'review_checkpoint';
+  });
+}
+
+function reconcileObservedPlanState(
+  plan: RunPlanArtifact | null,
+  toolCalls: CodingSessionLiveToolCall[],
+  events: CodingSessionEvent[],
+): RunPlanArtifact | null {
+  if (!plan || plan.plan.length === 0) return plan;
+
+  const completedToolNames = new Set(
+    toolCalls
+      .filter((toolCall) => toolCall.status === 'completed')
+      .map((toolCall) => toolCall.tool_name.toLowerCase()),
+  );
+
+  const publishedTaskPlanDoc = [...TASK_PLAN_DOC_PUBLISH_TOOLS].some((toolName) => completedToolNames.has(toolName));
+  const requestedReviewCheckpoint = [...REVIEW_CHECKPOINT_TOOLS].some((toolName) => completedToolNames.has(toolName))
+    || hasReviewCheckpointEvent(events);
+
+  if (!publishedTaskPlanDoc && !requestedReviewCheckpoint) return plan;
+
+  let changed = false;
+  const nextPlan: RunPlanArtifact = {
+    ...plan,
+    plan: plan.plan.map((step) => {
+      const normalizedStep = normalizePlanStepText(step.step);
+      if (publishedTaskPlanDoc && step.status !== 'completed' && isDraftPlanDocumentStep(normalizedStep)) {
+        changed = true;
+        return { ...step, status: 'completed' };
+      }
+      if (requestedReviewCheckpoint && step.status !== 'completed' && isReviewStep(normalizedStep)) {
+        changed = true;
+        return { ...step, status: 'completed' };
+      }
+      return step;
+    }),
+  };
+
+  return changed ? nextPlan : plan;
+}
+
 function extractPlanAndToolCalls(
   transcriptMessages: CodingSessionTranscriptMessage[],
   liveAssistant: CodingSessionLiveAssistantMessage | null,
-): { currentPlan: RunPlanArtifact | null; completedToolCalls: CodingSessionLiveToolCall[] } {
+): { currentPlan: RunPlanArtifact | null; completedToolCalls: CodingSessionLiveToolCall[]; allToolCalls: CodingSessionLiveToolCall[] } {
   const allToolCalls: CodingSessionLiveToolCall[] = [];
 
   for (const message of transcriptMessages) {
@@ -481,7 +556,7 @@ function extractPlanAndToolCalls(
       return ta < tb ? -1 : ta > tb ? 1 : 0;
     });
 
-  return { currentPlan, completedToolCalls };
+  return { currentPlan, completedToolCalls, allToolCalls: deduped };
 }
 
 export function buildCodingSessionStreamState(
@@ -737,7 +812,8 @@ export function buildCodingSessionStreamState(
     liveReasoningMessage = null;
   }
 
-  const { currentPlan, completedToolCalls } = extractPlanAndToolCalls(transcriptMessages, liveAssistantMessage);
+  const { currentPlan, completedToolCalls, allToolCalls } = extractPlanAndToolCalls(transcriptMessages, liveAssistantMessage);
+  const reconciledPlan = reconcileObservedPlanState(currentPlanLive ?? currentPlan, allToolCalls, sortedEvents);
 
   return {
     transcript_messages: transcriptMessages,
@@ -747,7 +823,7 @@ export function buildCodingSessionStreamState(
       segment.kind !== 'tool_call' || segment.tool_call.tool_name !== 'update_plan'
     )),
     activity_events: activityEvents,
-    current_plan: currentPlanLive ?? currentPlan,
+    current_plan: reconciledPlan,
     completed_tool_calls: completedToolCalls,
   };
 }

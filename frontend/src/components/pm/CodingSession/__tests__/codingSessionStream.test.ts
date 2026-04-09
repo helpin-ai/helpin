@@ -365,4 +365,55 @@ describe('buildCodingSessionStreamState', () => {
       },
     });
   });
+
+  it('reconciles task-plan document steps from completed publish and review actions', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'assistant-plan',
+        type: 'assistant.message.completed',
+        sequence_no: 1,
+        runtime_metadata: { source: 'agent_run_message' },
+        payload: {
+          message_id: 'assistant-plan-1',
+          role: 'assistant',
+          content: 'Drafted the plan doc.',
+          tool_invocations: [
+            {
+              tool_name: 'update_plan',
+              input: {
+                plan: [
+                  { step: 'Explore repo structure and identify root cause', status: 'completed' },
+                  { step: 'Draft task planning document', status: 'in_progress' },
+                  { step: 'Publish and request review', status: 'pending' },
+                ],
+              },
+            },
+            {
+              tool_name: 'publish_task_plan_doc',
+              input: {
+                content: '# Plan',
+              },
+              output_summary: 'Published task planning document',
+            },
+          ],
+        },
+      }),
+      buildEvent({
+        id: 'review-requested',
+        type: 'interaction.requested',
+        sequence_no: 2,
+        payload: {
+          interaction_id: 'review-1',
+          interaction_kind: 'review_checkpoint',
+          status: 'pending',
+        },
+      }),
+    ]);
+
+    expect(state.current_plan?.plan).toEqual([
+      { step: 'Explore repo structure and identify root cause', status: 'completed' },
+      { step: 'Draft task planning document', status: 'completed' },
+      { step: 'Publish and request review', status: 'completed' },
+    ]);
+  });
 });

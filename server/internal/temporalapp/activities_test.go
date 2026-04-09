@@ -2743,7 +2743,7 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 					ID:              "db-" + planned.Ref,
 					WorkspaceID:     run.WorkspaceID,
 					Name:            planned.Name,
-					TaskType:       planned.TaskType,
+					TaskType:        planned.TaskType,
 					WorkflowID:      "wf-1",
 					WorkflowStateID: "state-1",
 					EpicID:          &epic.ID,
@@ -2767,7 +2767,7 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 		runRepo:         runRepo,
 		artifactRepo:    artifactRepo,
 		epicRepo:        epicRepo,
-		taskRepo:       taskRepo,
+		taskRepo:        taskRepo,
 		agentRepo:       agentRepo,
 		commandExecutor: commandExecutor,
 	}
@@ -3053,7 +3053,7 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 		WorkspaceID:     "ws-1",
 		Name:            "Track 4xx errors",
 		DisplayID:       1,
-		TaskType:       model.PMTaskTypeFeature,
+		TaskType:        model.PMTaskTypeFeature,
 		WorkflowID:      "wf-1",
 		WorkflowStateID: "state-1",
 		Priority:        model.PMTaskPriorityNone,
@@ -3120,7 +3120,7 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 	activity := &AgentRunActivities{
 		runRepo:         runRepo,
 		artifactRepo:    artifactRepo,
-		taskRepo:       taskRepo,
+		taskRepo:        taskRepo,
 		agentRepo:       agentRepo,
 		docsSpaceRepo:   docsSpaceRepo,
 		docsDocRepo:     docsDocRepo,
@@ -3142,8 +3142,8 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 	if action != "persist_task_doc" {
 		t.Fatalf("expected persist_task_doc action, got %q", action)
 	}
-	if len(executed) != 2 || executed[0] != "docs.write_document_content" || executed[1] != "docs.link_document_to_object" {
-		t.Fatalf("expected docs write then docs link commands, got %#v", executed)
+	if len(executed) != 1 || executed[0] != "docs.write_document_content" {
+		t.Fatalf("expected only docs.write_document_content to execute, got %#v", executed)
 	}
 
 	updatedTask, err := taskRepo.GetRawByID(context.Background(), story.ID)
