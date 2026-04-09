@@ -385,26 +385,29 @@ func (s *AuthService) ForgotPassword(ctx context.Context, req model.ForgotPasswo
 		ExpiresAt: now.Add(passwordResetTTL),
 	}
 
-	if err := s.passwordResetRepo.WithTx(ctx, func(txRepo *repository.PasswordResetTokenRepository, tx *gorm.DB) error {
-		if err := txRepo.InvalidateAllForUser(ctx, user.ID, now); err != nil {
-			return err
-		}
-		if err := txRepo.Create(ctx, resetToken); err != nil {
-			return err
-		}
+	if s.emailClient == nil {
+		s.logger.WarnContext(ctx, "password reset requested but email client not configured", "user_id", user.ID, "email", emailAddr)
 		return nil
-	}); err != nil {
+	}
+
+	if err := s.passwordResetRepo.Create(ctx, resetToken); err != nil {
 		s.logger.ErrorContext(ctx, "failed to persist password reset token", "user_id", user.ID, "error", err)
 		return err
 	}
 
 	resetURL := buildPasswordResetURL(s.appBaseURL, rawToken)
-	if s.emailClient == nil {
-		s.logger.WarnContext(ctx, "password reset requested but email client not configured", "user_id", user.ID, "email", emailAddr)
-		return nil
-	}
 	if err := s.emailClient.SendPasswordResetEmail(user.Email, user.FullName, resetURL); err != nil {
 		s.logger.ErrorContext(ctx, "failed to send password reset email", "user_id", user.ID, "email", emailAddr, "error", err)
+		if used, markErr := s.passwordResetRepo.MarkUsed(ctx, resetToken.ID, now); markErr != nil {
+			s.logger.ErrorContext(ctx, "failed to invalidate undelivered reset token", "user_id", user.ID, "token_id", resetToken.ID, "error", markErr)
+		} else if !used {
+			s.logger.WarnContext(ctx, "undelivered reset token was already inactive", "user_id", user.ID, "token_id", resetToken.ID)
+		}
+		return nil
+	}
+
+	if err := s.passwordResetRepo.InvalidateOtherTokensForUser(ctx, user.ID, resetToken.ID, now); err != nil {
+		s.logger.ErrorContext(ctx, "failed to invalidate older reset tokens after email send", "user_id", user.ID, "token_id", resetToken.ID, "error", err)
 	}
 
 	s.logger.InfoContext(ctx, "password reset requested", "user_id", user.ID, "email", emailAddr)
@@ -433,6 +436,28 @@ func (s *AuthService) ResetPassword(ctx context.Context, req model.ResetPassword
 			return err
 		}
 		if tokenRow == nil {
+			existingToken, lookupErr := txRepo.GetByTokenHash(ctx, tokenHash)
+			if lookupErr != nil {
+				return lookupErr
+			}
+			switch {
+			case existingToken == nil:
+				s.logger.WarnContext(ctx, "password reset rejected token not found")
+			case existingToken.UsedAt != nil:
+				s.logger.WarnContext(ctx, "password reset rejected token already used",
+					"token_id", existingToken.ID,
+					"user_id", existingToken.UserID,
+					"expires_at", existingToken.ExpiresAt,
+					"used_at", existingToken.UsedAt,
+				)
+			default:
+				s.logger.WarnContext(ctx, "password reset rejected token expired",
+					"token_id", existingToken.ID,
+					"user_id", existingToken.UserID,
+					"expires_at", existingToken.ExpiresAt,
+					"now", now,
+				)
+			}
 			return fmt.Errorf("password reset link is invalid or has expired")
 		}
 
@@ -455,6 +480,10 @@ func (s *AuthService) ResetPassword(ctx context.Context, req model.ResetPassword
 			return err
 		}
 		if !used {
+			s.logger.WarnContext(ctx, "password reset rejected token consumed concurrently",
+				"token_id", tokenRow.ID,
+				"user_id", tokenRow.UserID,
+			)
 			return fmt.Errorf("password reset link is invalid or has expired")
 		}
 
