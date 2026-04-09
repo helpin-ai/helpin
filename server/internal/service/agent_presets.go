@@ -249,6 +249,9 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 		worker.ToolRequestUserInput,
 		worker.ToolRequestReviewCheckpoint,
 	)
+	taskPlannerTools = slices.DeleteFunc(taskPlannerTools, func(toolName string) bool {
+		return toolName == "list_epic_tasks"
+	})
 
 	return []model.AgentPresetDefinition{
 		{

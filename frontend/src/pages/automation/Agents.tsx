@@ -1499,7 +1499,7 @@ export function AgentsPage() {
           }
         }}
       >
-        <SheetContent side="right" className="w-full gap-0 p-0 sm:w-[90vw] sm:!max-w-[900px]">
+        <SheetContent side="right" className="w-full gap-0 p-0 sm:w-[96vw] sm:!max-w-[96vw] xl:w-[1280px] xl:!max-w-[1280px]">
           <SheetHeader className="border-b border-border/60 bg-muted/20 px-6 py-5">
             <div className="flex items-start gap-4">
               <AgentAvatar agent={editingAgent ?? undefined} className="h-14 w-14 shrink-0" />
@@ -1530,7 +1530,7 @@ export function AgentsPage() {
             </div>
           </SheetHeader>
 
-          <div className="grid min-h-0 flex-1 lg:grid-cols-[22rem_minmax(0,1fr)]">
+          <div className="grid min-h-0 flex-1 lg:grid-cols-[18rem_minmax(0,1fr)]">
             <aside className="border-b border-border/60 bg-muted/20 lg:border-r lg:border-b-0">
               <div className="border-b border-border/60 px-5 py-4">
                 <p className="text-sm font-semibold">Preset Versions</p>

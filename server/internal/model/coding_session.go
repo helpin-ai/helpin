@@ -116,8 +116,19 @@ type CodingSessionLiveTurnSegment struct {
 	ToolCall         *CodingSessionLiveToolCall         `json:"tool_call,omitempty"`
 }
 
+type CodingSessionRunPlanStep struct {
+	Step   string `json:"step"`
+	Status string `json:"status"`
+}
+
+type CodingSessionRunPlan struct {
+	Note string                     `json:"note,omitempty"`
+	Plan []CodingSessionRunPlanStep `json:"plan"`
+}
+
 type CodingSessionStreamSnapshot struct {
 	LiveAssistantMessage *CodingSessionLiveAssistantMessage `json:"live_assistant_message,omitempty"`
 	LiveReasoningMessage *CodingSessionLiveReasoningMessage `json:"live_reasoning_message,omitempty"`
 	LiveTurnSegments     []CodingSessionLiveTurnSegment     `json:"live_turn_segments,omitempty"`
+	CurrentPlan          *CodingSessionRunPlan              `json:"current_plan,omitempty"`
 }

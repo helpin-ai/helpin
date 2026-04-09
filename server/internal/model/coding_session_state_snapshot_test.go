@@ -53,3 +53,25 @@ func TestApplyCodingSessionStreamEventMaintainsOrderedLiveTurnSegments(t *testin
 		t.Fatalf("unexpected third segment %#v", snapshot.LiveTurnSegments[2])
 	}
 }
+
+func TestApplyCodingSessionStreamEventStoresCurrentPlan(t *testing.T) {
+	base := time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC)
+
+	var snapshot *CodingSessionStreamSnapshot
+	snapshot = ApplyCodingSessionStreamEvent(snapshot, "plan.updated", map[string]any{
+		"content": `{"note":"Working through the task","plan":[{"step":"Inspect files","status":"completed"},{"step":"Patch the handler","status":"in_progress"},{"step":"Run tests","status":"pending"}]}`,
+	}, base)
+
+	if snapshot == nil || snapshot.CurrentPlan == nil {
+		t.Fatalf("expected current plan snapshot, got %#v", snapshot)
+	}
+	if got := snapshot.CurrentPlan.Note; got != "Working through the task" {
+		t.Fatalf("unexpected plan note %q", got)
+	}
+	if len(snapshot.CurrentPlan.Plan) != 3 {
+		t.Fatalf("expected 3 plan steps, got %#v", snapshot.CurrentPlan.Plan)
+	}
+	if got := snapshot.CurrentPlan.Plan[1]; got.Step != "Patch the handler" || got.Status != "in_progress" {
+		t.Fatalf("unexpected in-progress step %#v", got)
+	}
+}

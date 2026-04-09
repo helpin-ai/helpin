@@ -54,6 +54,22 @@ function firstNonEmptyString(...values: Array<string | undefined>) {
   return values.find((value) => typeof value === 'string' && value.trim().length > 0);
 }
 
+function isRunPlanStep(value: unknown): value is RunPlanArtifact['plan'][number] {
+  const record = asRecord(value);
+  if (!record) return false;
+  return (
+    typeof record.step === 'string'
+    && (record.status === 'pending' || record.status === 'in_progress' || record.status === 'completed')
+  );
+}
+
+function isRunPlanArtifact(value: unknown): value is RunPlanArtifact {
+  const record = asRecord(value);
+  if (!record) return false;
+  if ('note' in record && record.note != null && typeof record.note !== 'string') return false;
+  return Array.isArray(record.plan) && record.plan.every(isRunPlanStep);
+}
+
 function ensureAssistantMessage(
   current: CodingSessionLiveAssistantMessage | null,
   messageID: string,
@@ -429,13 +445,7 @@ function liveAssistantMatchesTranscript(
 function parsePlanArtifact(argsText: string): RunPlanArtifact | null {
   try {
     const parsed = JSON.parse(argsText) as unknown;
-    if (
-      !parsed
-      || typeof parsed !== 'object'
-      || Array.isArray(parsed)
-      || !Array.isArray((parsed as Record<string, unknown>).plan)
-    ) return null;
-    return parsed as RunPlanArtifact;
+    return isRunPlanArtifact(parsed) ? parsed : null;
   } catch {
     return null;
   }
@@ -443,6 +453,36 @@ function parsePlanArtifact(argsText: string): RunPlanArtifact | null {
 
 const TASK_PLAN_DOC_PUBLISH_TOOLS = new Set(['publish_task_plan_doc', 'publish_story_plan_doc']);
 const REVIEW_CHECKPOINT_TOOLS = new Set(['request_review_checkpoint', 'request_human_approval']);
+
+function parsePlanArtifactValue(value: unknown): RunPlanArtifact | null {
+  if (typeof value === 'string') return parsePlanArtifact(value);
+  return isRunPlanArtifact(value) ? value : null;
+}
+
+function extractPlanFromLiveTurnSegments(
+  segments: CodingSessionLiveTurnSegment[],
+): RunPlanArtifact | null {
+  let currentPlan: RunPlanArtifact | null = null;
+  for (const segment of segments) {
+    if (segment.kind !== 'tool_call') continue;
+    if (segment.tool_call.tool_name !== 'update_plan') continue;
+    if (!segment.tool_call.args_text) continue;
+    const parsed = parsePlanArtifact(segment.tool_call.args_text);
+    if (parsed) currentPlan = parsed;
+  }
+  return currentPlan;
+}
+
+function extractPlanFromEvents(events: CodingSessionEvent[]): RunPlanArtifact | null {
+  let currentPlan: RunPlanArtifact | null = null;
+  for (const event of events) {
+    if (event.type !== 'plan.updated' && event.type !== 'activity.updated') continue;
+    const payload = asRecord(event.payload);
+    const parsed = parsePlanArtifactValue(payload?.content);
+    if (parsed) currentPlan = parsed;
+  }
+  return currentPlan;
+}
 
 function normalizePlanStepText(value: string) {
   return value.toLowerCase().replace(/\s+/g, ' ').trim();
@@ -519,6 +559,7 @@ function reconcileObservedPlanState(
 function extractPlanAndToolCalls(
   transcriptMessages: CodingSessionTranscriptMessage[],
   liveAssistant: CodingSessionLiveAssistantMessage | null,
+  liveTurnSegments: CodingSessionLiveTurnSegment[],
 ): { currentPlan: RunPlanArtifact | null; completedToolCalls: CodingSessionLiveToolCall[]; allToolCalls: CodingSessionLiveToolCall[] } {
   const allToolCalls: CodingSessionLiveToolCall[] = [];
 
@@ -546,6 +587,7 @@ function extractPlanAndToolCalls(
       if (parsed) currentPlan = parsed;
     }
   }
+  currentPlan ??= extractPlanFromLiveTurnSegments(liveTurnSegments);
 
   // Collect completed non-plan tool calls sorted by completion time
   const completedToolCalls = deduped
@@ -569,7 +611,7 @@ export function buildCodingSessionStreamState(
   let liveAssistantMessage = cloneAssistantMessage(snapshot?.live_assistant_message);
   let liveReasoningMessage = cloneReasoningMessage(snapshot?.live_reasoning_message);
   const liveTurnSegments = cloneLiveTurnSegments(snapshot?.live_turn_segments);
-  let currentPlanLive: RunPlanArtifact | null = null;
+  let currentPlanLive: RunPlanArtifact | null = parsePlanArtifactValue(snapshot?.current_plan);
 
   if (liveTurnSegments.length === 0 && liveAssistantMessage) {
     if (liveAssistantMessage.content) {
@@ -812,8 +854,17 @@ export function buildCodingSessionStreamState(
     liveReasoningMessage = null;
   }
 
-  const { currentPlan, completedToolCalls, allToolCalls } = extractPlanAndToolCalls(transcriptMessages, liveAssistantMessage);
-  const reconciledPlan = reconcileObservedPlanState(currentPlanLive ?? currentPlan, allToolCalls, sortedEvents);
+  const { currentPlan, completedToolCalls, allToolCalls } = extractPlanAndToolCalls(
+    transcriptMessages,
+    liveAssistantMessage,
+    liveTurnSegments,
+  );
+  const eventPlan = extractPlanFromEvents(sortedEvents);
+  const reconciledPlan = reconcileObservedPlanState(
+    currentPlanLive ?? currentPlan ?? eventPlan,
+    allToolCalls,
+    sortedEvents,
+  );
 
   return {
     transcript_messages: transcriptMessages,
