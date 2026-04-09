@@ -70,16 +70,33 @@ export function CodingSessionHeader({
 
             <div className="mt-1 flex flex-wrap items-center gap-1.5">
               {session?.repo.repo_name ? (
-                <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-foreground">
+                <a
+                  href={`https://github.com/${session.repo.repo_name}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-foreground transition-colors hover:bg-muted/80 hover:text-primary"
+                >
                   <Folder01Icon className="h-3 w-3 text-muted-foreground" />
                   {session.repo.repo_name}
-                </span>
+                </a>
               ) : null}
               {session?.repo.branch ? (
-                <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-foreground">
-                  <GitBranchIcon className="h-3 w-3 text-muted-foreground" />
-                  {session.repo.branch}
-                </span>
+                session.repo.repo_name ? (
+                  <a
+                    href={`https://github.com/${session.repo.repo_name}/tree/${session.repo.branch}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-foreground transition-colors hover:bg-muted/80 hover:text-primary"
+                  >
+                    <GitBranchIcon className="h-3 w-3 text-muted-foreground" />
+                    {session.repo.branch}
+                  </a>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-foreground">
+                    <GitBranchIcon className="h-3 w-3 text-muted-foreground" />
+                    {session.repo.branch}
+                  </span>
+                )
               ) : null}
             </div>
 

@@ -31,10 +31,19 @@ export function CodingRepoPane({
             {files.length} files
           </Badge>
           {repo?.branch ? (
-            <Badge variant="outline" className="gap-1 text-[10px]">
-              <GitBranchIcon className="h-3 w-3" />
-              {repo.branch}
-            </Badge>
+            repo.repo_name ? (
+              <a href={`https://github.com/${repo.repo_name}/tree/${repo.branch}`} target="_blank" rel="noreferrer">
+                <Badge variant="outline" className="gap-1 text-[10px] transition-colors hover:bg-muted/80 hover:text-primary">
+                  <GitBranchIcon className="h-3 w-3" />
+                  {repo.branch}
+                </Badge>
+              </a>
+            ) : (
+              <Badge variant="outline" className="gap-1 text-[10px]">
+                <GitBranchIcon className="h-3 w-3" />
+                {repo.branch}
+              </Badge>
+            )
           ) : null}
         </div>
       </div>
