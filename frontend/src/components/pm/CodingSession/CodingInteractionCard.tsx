@@ -371,17 +371,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
         eyebrow={interaction.interaction_kind === 'command_execution_approval' ? 'Command approval' : 'File-change approval'}
         title={interaction.title ?? runtimeApproval.title}
       >
-        <div className={cn('space-y-2 rounded-lg border border-border bg-muted/25 p-3', compact ? 'text-xs' : 'text-sm')}>
-          {runtimeApproval.command ? (
-            <div><span className="font-medium text-foreground">Command:</span> <span className="text-muted-foreground"><code>{runtimeApproval.command}</code></span></div>
-          ) : null}
-          {runtimeApproval.reason ? (
-            <div><span className="font-medium text-foreground">Reason:</span> <span className="text-muted-foreground">{runtimeApproval.reason}</span></div>
-          ) : null}
-          {runtimeApproval.grantRoot ? (
-            <div><span className="font-medium text-foreground">Grant root:</span> <span className="text-muted-foreground"><code>{runtimeApproval.grantRoot}</code></span></div>
-          ) : null}
-        </div>
+        <CommandApprovalDetails command={runtimeApproval.command} reason={runtimeApproval.reason} grantRoot={runtimeApproval.grantRoot} cwd={runtimeApproval.cwd} compact={compact} />
         <Textarea
           value={followupMessage}
           onChange={(event) => setFollowupMessage(event.target.value)}
@@ -596,6 +586,72 @@ function parsePermissionsRequest(payload: Record<string, unknown>) {
       ? payload.permissions as Record<string, unknown>
       : {},
   };
+}
+
+const COMMAND_COLLAPSED_LINES = 6;
+
+function extractFilePaths(command: string): string[] {
+  const matches = command.match(/(?:^|\s)((?:\/|\.\.?\/)?[\w./-]+\.(?:ts|tsx|js|jsx|go|py|css|html|json|sql|md|yaml|yml|toml|sh))\b/g);
+  if (!matches) return [];
+  const unique = [...new Set(matches.map((m) => m.trim()))];
+  return unique.slice(0, 8);
+}
+
+function CommandApprovalDetails({ command, reason, grantRoot, cwd, compact }: { command: string; reason: string; grantRoot: string; cwd: string; compact?: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  const lines = command.split('\n');
+  const isLong = lines.length > COMMAND_COLLAPSED_LINES;
+  const filePaths = command ? extractFilePaths(command) : [];
+
+  return (
+    <div className={cn('space-y-2', compact ? 'text-xs' : 'text-sm')}>
+      {filePaths.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {filePaths.map((fp) => (
+            <span key={fp} className="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+              {fp}
+            </span>
+          ))}
+        </div>
+      )}
+      {command ? (
+        <div className="relative">
+          <pre className={cn(
+            'overflow-auto whitespace-pre-wrap break-all rounded-lg border border-border bg-slate-950 px-3 py-2 text-[11px] leading-5 text-slate-100',
+            !expanded && isLong && 'max-h-[156px]',
+            expanded && 'max-h-80',
+          )}>
+            {expanded || !isLong ? command : lines.slice(0, COMMAND_COLLAPSED_LINES).join('\n')}
+          </pre>
+          {isLong && !expanded && (
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 rounded-b-lg bg-gradient-to-t from-slate-950 to-transparent" />
+          )}
+          {isLong && (
+            <button
+              type="button"
+              className="mt-1 text-xs font-medium text-primary hover:underline"
+              onClick={() => setExpanded((prev) => !prev)}
+            >
+              {expanded ? 'Show less' : `Show more (${lines.length} lines)`}
+            </button>
+          )}
+        </div>
+      ) : null}
+      {(reason || grantRoot || cwd) ? (
+        <div className={cn('space-y-1 text-muted-foreground', compact ? 'text-xs' : 'text-sm')}>
+          {cwd ? (
+            <div><span className="font-medium text-foreground">Directory:</span> <code className="text-xs">{cwd}</code></div>
+          ) : null}
+          {reason ? (
+            <div><span className="font-medium text-foreground">Reason:</span> {reason}</div>
+          ) : null}
+          {grantRoot ? (
+            <div><span className="font-medium text-foreground">Grant root:</span> <code className="text-xs">{grantRoot}</code></div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function parseRuntimeApprovalRequest(interaction: CodingSessionInteraction) {
