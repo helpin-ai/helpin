@@ -1,6 +1,8 @@
-import { File01Icon, SparklesIcon } from '@/lib/icons';
+import { useState } from 'react';
+import { ArrowExpandIcon, File01Icon, SparklesIcon } from '@/lib/icons';
 
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import type { PublishedPreview } from '@/components/pm/runPreviews';
 import { MarkdownContent } from './MarkdownContent';
 
@@ -97,23 +99,87 @@ function parseTaskPlanPreviewModel(preview: PublishedPreview | undefined): TaskP
   };
 }
 
-function GenericPreviewPanel({ preview }: { preview: PublishedPreview }) {
+function PreviewExpandDialog({
+  open,
+  onOpenChange,
+  title,
+  children,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="rounded-md border border-border/60 bg-card/80 p-3">
-      <div className="mb-2 flex items-center gap-2">
-        <File01Icon className="h-4 w-4 text-muted-foreground" />
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{preview.title}</p>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="z-[140] gap-0 overflow-hidden border-border/70 bg-background p-0 shadow-2xl sm:max-w-5xl">
+        <DialogHeader className="border-b border-border/70 px-6 py-4">
+          <DialogTitle className="pr-10 text-lg font-semibold leading-tight text-foreground">
+            {title}
+          </DialogTitle>
+          <DialogDescription className="sr-only">Preview content</DialogDescription>
+        </DialogHeader>
+        <div className="max-h-[78vh] overflow-auto">
+          <div className="px-6 py-6 sm:px-10 sm:py-8">
+            {children}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ExpandPreviewButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+      onClick={onClick}
+    >
+      <ArrowExpandIcon className="h-3 w-3" />
+      Expand preview
+    </button>
+  );
+}
+
+function GenericPreviewPanel({ preview }: { preview: PublishedPreview }) {
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const isMarkdown = preview.format === 'markdown' && typeof preview.content === 'string';
+
+  return (
+    <>
+      <div className="rounded-md border border-border/60 bg-card/80 p-3">
+        <button
+          type="button"
+          className="mb-2 flex w-full items-center gap-2 text-left transition-colors hover:text-primary"
+          onClick={() => setDialogOpen(true)}
+        >
+          <File01Icon className="h-4 w-4 text-muted-foreground" />
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{preview.title}</p>
+        </button>
+        <div className="relative max-h-[200px] overflow-hidden rounded-md bg-muted/40 p-3">
+          {isMarkdown ? (
+            <MarkdownContent content={preview.content as string} className="text-[12px] leading-5" />
+          ) : (
+            <pre className="whitespace-pre-wrap text-[12px] leading-5 text-foreground">
+              {JSON.stringify(preview.content, null, 2)}
+            </pre>
+          )}
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 rounded-b-md bg-gradient-to-t from-muted/80 to-transparent" />
+        </div>
+        <ExpandPreviewButton onClick={() => setDialogOpen(true)} />
       </div>
-      <div className="max-h-[280px] overflow-auto rounded-md bg-muted/40 p-3">
-        {preview.format === 'markdown' && typeof preview.content === 'string' ? (
-          <MarkdownContent content={preview.content} className="text-[12px] leading-5" />
+
+      <PreviewExpandDialog open={dialogOpen} onOpenChange={setDialogOpen} title={preview.title}>
+        {isMarkdown ? (
+          <MarkdownContent content={preview.content as string} className="text-[15px] leading-7 text-foreground" />
         ) : (
-          <pre className="whitespace-pre-wrap text-[12px] leading-5 text-foreground">
+          <pre className="whitespace-pre-wrap break-all text-[12px] leading-6 text-foreground">
             {JSON.stringify(preview.content, null, 2)}
           </pre>
         )}
-      </div>
-    </div>
+      </PreviewExpandDialog>
+    </>
   );
 }
 
