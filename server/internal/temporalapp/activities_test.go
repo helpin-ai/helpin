@@ -3190,6 +3190,108 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 	}
 }
 
+func TestBuildInitialInstructionsIncludesTaskPlanningDocForTaskExecutionRun(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+
+	if err := db.Exec(`INSERT INTO docs_spaces (id, workspace_id, name, slug, visibility, type, created_by, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"space-1", "ws-1", "Product", "product", model.SpaceVisibilityWorkspaceWide, model.SpaceTypeInternal, "user-1",
+	).Error; err != nil {
+		t.Fatalf("create docs space: %v", err)
+	}
+
+	docID := "doc-task-prd"
+	if err := db.Exec(`INSERT INTO docs_documents (id, workspace_id, space_id, title, status, visibility, created_by, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		docID, "ws-1", "space-1", "Track 4xx errors", model.DocStatusDraft, model.SpaceVisibilityWorkspaceWide, "user-1",
+	).Error; err != nil {
+		t.Fatalf("create task planning doc: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_contents (id, document_id, content, content_text, created_at, updated_at)
+		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"content-task-prd", docID, []byte(`{"_markdown_source":"# Task PRD\n\nImplement the linked task PRD first."}`), "Implement the linked task PRD first.",
+	).Error; err != nil {
+		t.Fatalf("create task planning doc content: %v", err)
+	}
+
+	extraDocID := "doc-task-extra"
+	if err := db.Exec(`INSERT INTO docs_documents (id, workspace_id, space_id, title, status, visibility, created_by, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		extraDocID, "ws-1", "space-1", "Error Payload Notes", model.DocStatusDraft, model.SpaceVisibilityWorkspaceWide, "user-1",
+	).Error; err != nil {
+		t.Fatalf("create extra linked doc: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_contents (id, document_id, content, content_text, created_at, updated_at)
+		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"content-task-extra", extraDocID, []byte(`{"_markdown_source":"## Payload Fields\n\nCapture the upstream error payload fields."}`), "Capture the upstream error payload fields.",
+	).Error; err != nil {
+		t.Fatalf("create extra linked doc content: %v", err)
+	}
+
+	if err := db.Exec(`INSERT INTO docs_links (id, workspace_id, document_id, linked_object_type, linked_object_id, link_context, created_by, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+		"link-task-extra", "ws-1", extraDocID, model.LinkedObjectTask, "task-1", "reference", "user-1",
+	).Error; err != nil {
+		t.Fatalf("create docs link: %v", err)
+	}
+
+	task := &model.PMTask{
+		ID:              "task-1",
+		WorkspaceID:     "ws-1",
+		DisplayID:       1,
+		Name:            "Track 4xx errors",
+		TaskType:        model.PMTaskTypeFeature,
+		WorkflowID:      "wf-1",
+		WorkflowStateID: "state-1",
+		Priority:        model.PMTaskPriorityNone,
+		Severity:        model.PMTaskSeverityNone,
+		PlanDocumentID:  &docID,
+	}
+	if err := db.Create(task).Error; err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	run := &model.AgentRun{
+		ID:          "run-task-exec",
+		WorkspaceID: "ws-1",
+		AgentID:     "agent-forge",
+		TargetType:  "task",
+		TargetID:    task.ID,
+		Input:       json.RawMessage(`{"additional_context":"Focus on the capture pipeline."}`),
+	}
+
+	activity := &AgentRunActivities{
+		docsDocRepo:     repository.NewDocsDocumentRepository(db),
+		docsContentRepo: repository.NewDocsContentRepository(db),
+		docsLinkRepo:    repository.NewDocsLinkRepository(db),
+	}
+	state := &resolvedRunState{
+		run:  run,
+		task: task,
+	}
+
+	instructions, err := activity.buildInitialInstructions(context.Background(), state, planningRunInput{
+		AllowedTools: []string{"read_file", "run_command"},
+	})
+	if err != nil {
+		t.Fatalf("buildInitialInstructions returned error: %v", err)
+	}
+		for _, snippet := range []string{
+			"Operator notes:\nFocus on the capture pipeline.",
+			"Canonical task planning document: Track 4xx errors [doc-task-prd]",
+			"# Task PRD",
+			"Implement the linked task PRD first.",
+			"Other docs linked directly to this task:",
+			"Error Payload Notes [doc-task-extra]",
+			"## Payload Fields",
+			"Capture the upstream error payload fields.",
+		} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected instructions to contain %q\n%s", snippet, instructions)
+		}
+	}
+}
+
 func TestResolvePlanningRunInputClearsDeletedEpicSpecReferences(t *testing.T) {
 	dbName := fmt.Sprintf("file:resolve-planning-input-%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})

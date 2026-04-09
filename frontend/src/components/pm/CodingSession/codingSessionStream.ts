@@ -535,7 +535,7 @@ export function buildCodingSessionStreamState(
   let liveAssistantMessage = cloneAssistantMessage(snapshot?.live_assistant_message);
   let liveReasoningMessage = cloneReasoningMessage(snapshot?.live_reasoning_message);
   const liveTurnSegments = cloneLiveTurnSegments(snapshot?.live_turn_segments);
-  let currentPlanLive: RunPlanArtifact | null = null;
+  let currentPlanLive: RunPlanArtifact | null = parsePlanArtifactValue(snapshot?.current_plan);
 
   if (liveTurnSegments.length === 0 && liveAssistantMessage) {
     if (liveAssistantMessage.content) {

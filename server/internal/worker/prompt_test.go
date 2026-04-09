@@ -188,7 +188,7 @@ func TestBuildUserPromptPrependsSavedSystemPromptBeforeContext(t *testing.T) {
 	if !strings.HasPrefix(prompt, systemPrompt) {
 		t.Fatalf("expected prompt to start with saved system prompt\n%s", prompt)
 	}
-	if !strings.Contains(prompt, "\n\nContext:\nPlease work on the story: **Inbox triage automation**") {
+	if !strings.Contains(prompt, "\n\nContext:\nPlease work on the task: **Inbox triage automation**") {
 		t.Fatalf("expected context section after saved system prompt\n%s", prompt)
 	}
 	if strings.Index(prompt, "Context:") < strings.Index(prompt, systemPrompt) {
