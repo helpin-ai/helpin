@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { UnicodeSpinner } from '@/components/pm/CodingSession/UnicodeSpinner';
 import {
@@ -240,6 +240,8 @@ export function CodingTranscriptPane({
         </div>
       </div>
 
+      {session?.status === 'running' && <RunningIndicator since={session.created_at} />}
+
       {(session?.pause_reason === 'authentication' || activeInteraction) ? (
         <InterruptionOverlay
           session={session ?? null}
@@ -422,7 +424,7 @@ function TranscriptEntry({
             ? (live && streaming ? <RadioIcon className="h-3 w-3 animate-pulse" /> : <BotIcon className="h-3 w-3" />)
             : <UserIcon className="h-3 w-3" />}
         </span>
-        <span className="font-medium">{message.role}</span>
+        <span className="font-medium capitalize">{message.role}</span>
         {live ? (
           <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
             {streaming ? 'Live' : 'Finishing'}
@@ -489,12 +491,47 @@ function AssistantMessageBubble({
       'max-w-[90%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed shadow-sm',
       isAssistant
         ? 'rounded-bl-sm border border-border/60 bg-background text-foreground'
-        : 'rounded-br-sm border border-blue-200/80 bg-blue-50 text-blue-950 dark:border-blue-900/70 dark:bg-blue-950/30 dark:text-blue-50',
+        : 'rounded-br-sm bg-blue-600 text-white dark:bg-blue-500',
       placeholder && 'border-dashed text-muted-foreground',
     )}>
       {!placeholder
         ? <MarkdownContent content={content} className={isAssistant ? undefined : 'text-inherit'} />
         : <div className="whitespace-pre-wrap">{content}</div>}
+    </div>
+  );
+}
+
+// ─── Running indicator ──────────────────────────────────────────────────────
+
+function formatElapsed(ms: number): string {
+  const totalSec = Math.floor(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  if (m > 0) return `${m}m ${s.toString().padStart(2, '0')}s`;
+  return `${s}s`;
+}
+
+/** Subscribes to a 1-second tick so elapsed time stays live. */
+function useElapsedMs(since: string): number {
+  const origin = useMemo(() => new Date(since).getTime(), [since]);
+  const subscribe = useCallback((cb: () => void) => {
+    const id = setInterval(cb, 1_000);
+    return () => clearInterval(id);
+  }, []);
+  const getSnapshot = useCallback(() => Math.floor((Date.now() - origin) / 1000), [origin]);
+  const tick = useSyncExternalStore(subscribe, getSnapshot);
+  return tick * 1000;
+}
+
+function RunningIndicator({ since }: { since: string }) {
+  const elapsed = useElapsedMs(since);
+  return (
+    <div className="flex items-center gap-2.5 border-t border-border bg-muted/50 px-4 py-2">
+      <Loading01Icon className="h-3.5 w-3.5 animate-spin text-primary" />
+      <span className="text-xs font-medium text-primary">Running</span>
+      <span className="ml-auto text-xs tabular-nums text-muted-foreground">{formatElapsed(elapsed)}</span>
     </div>
   );
 }
