@@ -212,6 +212,8 @@ spec:
           env:
             - name: TEMPORAL_WORKER_QUEUES
               value: agent-codex-autonomous
+            - name: CODEX_SANDBOX_MODE
+              value: danger-full-access
           envFrom:
             - secretRef:
                 name: helpin-secrets
@@ -273,6 +275,8 @@ spec:
           env:
             - name: TEMPORAL_WORKER_QUEUES
               value: agent-codex-interactive
+            - name: CODEX_SANDBOX_MODE
+              value: danger-full-access
           envFrom:
             - secretRef:
                 name: helpin-secrets

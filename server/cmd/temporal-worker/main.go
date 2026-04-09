@@ -181,6 +181,7 @@ func main() {
 		workerpkg.CodexRuntimeConfig{
 			Path:                      cfg.CodexPath,
 			DefaultModel:              cfg.CodexModel,
+			SandboxMode:               cfg.CodexSandboxMode,
 			OpenAIAPIKey:              cfg.OpenAIAPIKey,
 			OpenAIBaseURL:             cfg.OpenAIBaseURL,
 			OpenAIAuthMode:            cfg.CodexOpenAIAuthMode,

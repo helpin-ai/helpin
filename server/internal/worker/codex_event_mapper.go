@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -75,7 +76,7 @@ func (m *codexEventMapper) HandleNotification(ctx context.Context, method string
 		if err := json.Unmarshal(params, &payload); err != nil {
 			return err
 		}
-		m.latestDiff = strings.TrimSpace(payload.Diff)
+		m.latestDiff = strings.TrimSpace(normalizeCodexUnifiedDiff(m.execCtx, payload.Diff))
 	case "turn/plan/updated":
 		var payload codexTurnPlanUpdatedNotification
 		if err := json.Unmarshal(params, &payload); err != nil {
@@ -287,7 +288,7 @@ func (m *codexEventMapper) completeAssistantStream() {
 }
 
 func (m *codexEventMapper) handleItemStarted(item codexThreadItem) {
-	toolName, input := codexToolEventDetails(item)
+	toolName, input := codexToolEventDetails(m.execCtx, item)
 	if toolName == "" {
 		return
 	}
@@ -329,7 +330,7 @@ func (m *codexEventMapper) handleItemCompleted(item codexThreadItem) {
 		return
 	}
 
-	toolName, _ := codexToolEventDetails(item)
+	toolName, _ := codexToolEventDetails(m.execCtx, item)
 	if toolName == "" {
 		return
 	}
@@ -341,7 +342,7 @@ func (m *codexEventMapper) handleItemCompleted(item codexThreadItem) {
 		derived := time.Since(live.Started).Milliseconds()
 		durationMs = &derived
 	}
-	outputSummary := codexToolOutputSummary(item)
+	outputSummary := codexToolOutputSummary(m.execCtx, item)
 	parentMessageID := m.ensureAssistantMessageID()
 	resultMessageID := uuid.NewString()
 	errorText := ""
@@ -370,9 +371,9 @@ func (m *codexEventMapper) handleItemCompleted(item codexThreadItem) {
 		Error:           errorText,
 	})
 
-	if strings.TrimSpace(item.Type) == "fileChange" && m.latestDiff == "" {
-		m.latestDiff = codexDiffFromFileChange(item)
-	}
+		if strings.TrimSpace(item.Type) == "fileChange" && m.latestDiff == "" {
+			m.latestDiff = codexDiffFromFileChange(m.execCtx, item)
+		}
 	if summary := strings.TrimSpace(outputSummary); summary != "" {
 		m.result.Messages = append(m.result.Messages, ExecutionMessage{
 			Role:    "tool",
@@ -457,7 +458,7 @@ func codexPlanStepStatus(value string) string {
 	}
 }
 
-func codexToolEventDetails(item codexThreadItem) (string, string) {
+func codexToolEventDetails(execCtx *ExecutionContext, item codexThreadItem) (string, string) {
 	switch strings.TrimSpace(item.Type) {
 	case "commandExecution":
 		command := strings.TrimSpace(item.Command)
@@ -466,7 +467,7 @@ func codexToolEventDetails(item codexThreadItem) (string, string) {
 		}
 		return "run_command", command
 	case "fileChange":
-		return "apply_patch", codexDiffFromFileChange(item)
+		return "apply_patch", codexDiffFromFileChange(execCtx, item)
 	case "mcpToolCall":
 		name := strings.TrimSpace(item.Tool)
 		if server := strings.TrimSpace(item.Server); server != "" && name != "" {
@@ -480,7 +481,7 @@ func codexToolEventDetails(item codexThreadItem) (string, string) {
 	}
 }
 
-func codexToolOutputSummary(item codexThreadItem) string {
+func codexToolOutputSummary(execCtx *ExecutionContext, item codexThreadItem) string {
 	switch strings.TrimSpace(item.Type) {
 	case "commandExecution":
 		if item.AggregatedOutput != nil && strings.TrimSpace(*item.AggregatedOutput) != "" {
@@ -503,7 +504,7 @@ func codexToolOutputSummary(item codexThreadItem) string {
 			return strings.TrimSpace(item.Status)
 		}
 	case "fileChange":
-		diff := codexDiffFromFileChange(item)
+		diff := codexDiffFromFileChange(execCtx, item)
 		if diff != "" {
 			return truncate(diff, 4000)
 		}
@@ -535,7 +536,7 @@ func codexToolOutputSummary(item codexThreadItem) string {
 	}
 }
 
-func codexDiffFromFileChange(item codexThreadItem) string {
+func codexDiffFromFileChange(execCtx *ExecutionContext, item codexThreadItem) string {
 	if len(item.Changes) == 0 {
 		return ""
 	}
@@ -547,12 +548,102 @@ func codexDiffFromFileChange(item codexThreadItem) string {
 		}
 		// Prepend standard unified diff file headers so the frontend can identify
 		// which file each hunk belongs to when rendering the diff.
-		if change.Path != "" && !strings.HasPrefix(diff, "---") && !strings.HasPrefix(diff, "diff ") {
-			diff = "--- a/" + change.Path + "\n+++ b/" + change.Path + "\n" + diff
+		normalizedPath := normalizeCodexDiffPath(execCtx, change.Path, item.Cwd)
+		if normalizedPath != "" && !strings.HasPrefix(diff, "---") && !strings.HasPrefix(diff, "diff ") {
+			diff = "--- a/" + normalizedPath + "\n+++ b/" + normalizedPath + "\n" + diff
 		}
+		diff = normalizeCodexUnifiedDiff(execCtx, diff, item.Cwd)
 		parts = append(parts, diff)
 	}
 	return strings.TrimSpace(strings.Join(parts, "\n\n"))
+}
+
+func normalizeCodexDiffPath(execCtx *ExecutionContext, rawPath string, extraRoots ...string) string {
+	cleaned := strings.TrimSpace(rawPath)
+	if cleaned == "" {
+		return ""
+	}
+
+	for _, root := range append([]string{workDirForCodexDiff(execCtx)}, extraRoots...) {
+		root = strings.TrimSpace(root)
+		if root == "" {
+			continue
+		}
+		rel, ok := codexRelativePathWithinRoot(root, cleaned)
+		if ok {
+			return rel
+		}
+	}
+
+	return codexDiffPathToSlashes(cleaned)
+}
+
+func workDirForCodexDiff(execCtx *ExecutionContext) string {
+	if execCtx == nil {
+		return ""
+	}
+	return strings.TrimSpace(execCtx.WorkDir)
+}
+
+func codexRelativePathWithinRoot(root, target string) (string, bool) {
+	rel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(target))
+	if err != nil {
+		return "", false
+	}
+	rel = strings.TrimSpace(rel)
+	if rel == "" || rel == "." {
+		return "", false
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	return codexDiffPathToSlashes(rel), true
+}
+
+func codexDiffPathToSlashes(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	return filepath.ToSlash(filepath.Clean(value))
+}
+
+func normalizeCodexUnifiedDiff(execCtx *ExecutionContext, diff string, extraRoots ...string) string {
+	if strings.TrimSpace(diff) == "" {
+		return ""
+	}
+	lines := strings.Split(diff, "\n")
+	for index, line := range lines {
+		switch {
+		case strings.HasPrefix(line, "--- a/"):
+			lines[index] = "--- a/" + normalizeCodexDiffPath(execCtx, strings.TrimPrefix(line, "--- a/"), extraRoots...)
+		case strings.HasPrefix(line, "+++ b/"):
+			lines[index] = "+++ b/" + normalizeCodexDiffPath(execCtx, strings.TrimPrefix(line, "+++ b/"), extraRoots...)
+		case strings.HasPrefix(line, "rename from "):
+			lines[index] = "rename from " + normalizeCodexDiffPath(execCtx, strings.TrimPrefix(line, "rename from "), extraRoots...)
+		case strings.HasPrefix(line, "rename to "):
+			lines[index] = "rename to " + normalizeCodexDiffPath(execCtx, strings.TrimPrefix(line, "rename to "), extraRoots...)
+		case strings.HasPrefix(line, "copy from "):
+			lines[index] = "copy from " + normalizeCodexDiffPath(execCtx, strings.TrimPrefix(line, "copy from "), extraRoots...)
+		case strings.HasPrefix(line, "copy to "):
+			lines[index] = "copy to " + normalizeCodexDiffPath(execCtx, strings.TrimPrefix(line, "copy to "), extraRoots...)
+		case strings.HasPrefix(line, "diff --git a/"):
+			lines[index] = normalizeCodexDiffGitHeader(execCtx, line, extraRoots...)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func normalizeCodexDiffGitHeader(execCtx *ExecutionContext, line string, extraRoots ...string) string {
+	rest := strings.TrimPrefix(line, "diff --git a/")
+	separator := " b/"
+	idx := strings.Index(rest, separator)
+	if idx <= 0 {
+		return line
+	}
+	left := normalizeCodexDiffPath(execCtx, rest[:idx], extraRoots...)
+	right := normalizeCodexDiffPath(execCtx, rest[idx+len(separator):], extraRoots...)
+	return "diff --git a/" + left + " b/" + right
 }
 
 func codexItemFailed(item codexThreadItem) bool {

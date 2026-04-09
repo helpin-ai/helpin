@@ -96,6 +96,7 @@ func TestBuildCodexConfigArtifactAddsOpenRouterProviderConfig(t *testing.T) {
 	var decoded struct {
 		Model          string `toml:"model"`
 		ApprovalPolicy string `toml:"approval_policy"`
+		SandboxMode    string `toml:"sandbox_mode"`
 		ModelProvider  string `toml:"model_provider"`
 		ModelProviders map[string]struct {
 			BaseURL            string `toml:"base_url"`
@@ -112,6 +113,9 @@ func TestBuildCodexConfigArtifactAddsOpenRouterProviderConfig(t *testing.T) {
 	}
 	if decoded.ApprovalPolicy != "on-request" {
 		t.Fatalf("expected approval policy to be written, got %q", decoded.ApprovalPolicy)
+	}
+	if decoded.SandboxMode != codexSandboxMode(&ExecutionContext{}) {
+		t.Fatalf("expected inferred sandbox mode %q, got %q", codexSandboxMode(&ExecutionContext{}), decoded.SandboxMode)
 	}
 	if decoded.ModelProvider != model.AgentModelProviderOpenRouter {
 		t.Fatalf("expected model provider %q, got %q", model.AgentModelProviderOpenRouter, decoded.ModelProvider)
@@ -131,6 +135,53 @@ func TestBuildCodexConfigArtifactAddsOpenRouterProviderConfig(t *testing.T) {
 	}
 	if openRouter.SupportsWebsockets {
 		t.Fatal("expected openrouter config to disable websockets")
+	}
+}
+
+func TestBuildCodexConfigArtifactUsesExplicitSandboxOverride(t *testing.T) {
+	provider := model.AgentModelProviderOpenRouter
+	executor := NewCodexExecutor("codex", CodexRuntimeConfig{
+		SandboxMode:      "danger-full-access",
+		OpenRouterAPIKey: "openrouter-secret",
+	}, nil, nil, nil)
+
+	profile, err := executor.resolveRuntimeProfile(&model.Agent{Provider: &provider})
+	if err != nil {
+		t.Fatalf("resolve runtime profile: %v", err)
+	}
+	payload, err := executor.buildConfigArtifact(&ExecutionContext{}, profile, "on-request")
+	if err != nil {
+		t.Fatalf("build config artifact: %v", err)
+	}
+
+	var decoded struct {
+		SandboxMode string `toml:"sandbox_mode"`
+	}
+	if err := toml.Unmarshal([]byte(payload), &decoded); err != nil {
+		t.Fatalf("unmarshal config artifact: %v", err)
+	}
+	if decoded.SandboxMode != "danger-full-access" {
+		t.Fatalf("expected explicit sandbox override, got %q", decoded.SandboxMode)
+	}
+}
+
+func TestNormalizeCodexSandboxMode(t *testing.T) {
+	cases := map[string]string{
+		"":                     "",
+		"read-only":            "read-only",
+		"readonly":             "read-only",
+		"workspace-write":      "workspace-write",
+		"workspace_write":      "workspace-write",
+		"danger-full-access":   "danger-full-access",
+		"danger_full_access":   "danger-full-access",
+		"danger":               "danger-full-access",
+		" something-unknown ":  "",
+	}
+
+	for input, want := range cases {
+		if got := normalizeCodexSandboxMode(input); got != want {
+			t.Fatalf("normalizeCodexSandboxMode(%q) = %q, want %q", input, got, want)
+		}
 	}
 }
 

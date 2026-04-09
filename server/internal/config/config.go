@@ -40,6 +40,7 @@ type Config struct {
 	OpenCodePath            string
 	CodexPath               string
 	CodexModel              string
+	CodexSandboxMode        string
 	CodexOpenAIAuthMode     string
 	CodexEnableChatGPTOAuth bool
 	CodexChatGPTAccessToken string
@@ -162,6 +163,7 @@ func Load() (*Config, error) {
 		OpenCodePath:                 strings.TrimSpace(firstNonEmpty(os.Getenv("OPENCODE_PATH"), "opencode")),
 		CodexPath:                    strings.TrimSpace(firstNonEmpty(os.Getenv("CODEX_PATH"), "codex")),
 		CodexModel:                   strings.TrimSpace(os.Getenv("CODEX_MODEL")),
+		CodexSandboxMode:             strings.TrimSpace(os.Getenv("CODEX_SANDBOX_MODE")),
 		CodexOpenAIAuthMode:          strings.TrimSpace(firstNonEmpty(os.Getenv("CODEX_OPENAI_AUTH_MODE"), "api_key")),
 		CodexEnableChatGPTOAuth:      parseBoolEnv(os.Getenv("CODEX_ENABLE_CHATGPT_OAUTH")),
 		CodexChatGPTAccessToken:      strings.TrimSpace(os.Getenv("CODEX_CHATGPT_ACCESS_TOKEN")),

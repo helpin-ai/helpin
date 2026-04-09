@@ -191,7 +191,7 @@ func (h *codexSessionHost) prepareSession(existing *codexSessionState) (*codexPr
 	state.Provider = profile.Provider
 	state.Model = profile.Model
 	state.AuthMode = profile.AuthMode
-	state.Sandbox = codexSandboxMode(h.execCtx)
+	state.Sandbox = h.executor.sandboxModeFor(h.execCtx)
 	state.InvocationMode = strings.TrimSpace(h.run.InvocationMode)
 
 	configContent, err := h.executor.buildConfigArtifact(h.execCtx, profile, codexApprovalPolicyForRun(h.run))
@@ -300,7 +300,7 @@ func (h *codexSessionHost) startOrResumeThread(ctx context.Context, client *code
 		"modelProvider":         profile.Provider,
 		"approvalPolicy":        approvalPolicy,
 		"approvalsReviewer":     "user",
-		"sandbox":               codexSandboxMode(h.execCtx),
+		"sandbox":               h.executor.sandboxModeFor(h.execCtx),
 		"serviceName":           "Helpin",
 		"developerInstructions": h.developerInstructions,
 	}
