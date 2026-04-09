@@ -144,7 +144,7 @@ export function ContactsTable({
   const [sorting, setSorting] = useState<SortingState>([]);
 
   const allColumnIds = useMemo(
-    () => ['select', 'email', 'displayId', 'name', 'phone', 'jobTitle', 'source', 'lifecycleStageName', 'leadStatusName', 'ownerName', 'createdAt', 'actions'],
+    () => ['select', 'email', 'contactId', 'name', 'phone', 'jobTitle', 'source', 'lifecycleStageName', 'leadStatusName', 'ownerName', 'createdAt', 'updatedAt', 'actions'],
     [],
   );
 
@@ -158,10 +158,11 @@ export function ContactsTable({
     resetColumnSize,
   } = useTableSettings(`${workspaceId}:crm-contacts`, {
     columnVisibility: {
-      displayId: false,
+      contactId: false,
       phone: false,
       jobTitle: false,
       source: false,
+      updatedAt: false,
     },
   }, allColumnIds);
 
@@ -225,12 +226,12 @@ export function ContactsTable({
           />
         ),
       }),
-      columnHelper.accessor('display_id', {
-        id: 'displayId',
+      columnHelper.accessor('id', {
+        id: 'contactId',
         header: 'ID',
-        size: 90,
+        size: 120,
         cell: (info) => (
-          <span className="font-mono text-xs text-muted-foreground">{info.getValue()}</span>
+          <span className="font-mono text-xs text-muted-foreground truncate">{info.getValue()}</span>
         ),
       }),
       columnHelper.accessor(
@@ -357,6 +358,21 @@ export function ContactsTable({
       columnHelper.accessor('created_at', {
         id: 'createdAt',
         header: 'Created',
+        size: 160,
+        enableGrouping: false,
+        cell: (info) => {
+          const val = info.getValue();
+          if (!val) return null;
+          return (
+            <span className="text-xs text-muted-foreground whitespace-nowrap">
+              {format(parseISO(val), 'MMM d, yyyy, h:mm a')}
+            </span>
+          );
+        },
+      }),
+      columnHelper.accessor('updated_at', {
+        id: 'updatedAt',
+        header: 'Updated',
         size: 160,
         enableGrouping: false,
         cell: (info) => {
