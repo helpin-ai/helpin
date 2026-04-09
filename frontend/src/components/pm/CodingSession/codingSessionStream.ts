@@ -441,9 +441,42 @@ function parsePlanArtifact(argsText: string): RunPlanArtifact | null {
   }
 }
 
+function parsePlanArtifactValue(value: unknown): RunPlanArtifact | null {
+  if (typeof value === 'string') return parsePlanArtifact(value);
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (!Array.isArray(record.plan)) return null;
+  return record as RunPlanArtifact;
+}
+
+function extractPlanFromLiveTurnSegments(
+  segments: CodingSessionLiveTurnSegment[],
+): RunPlanArtifact | null {
+  let currentPlan: RunPlanArtifact | null = null;
+  for (const segment of segments) {
+    if (segment.kind !== 'tool_call') continue;
+    if (segment.tool_call.tool_name !== 'update_plan') continue;
+    if (!segment.tool_call.args_text) continue;
+    const parsed = parsePlanArtifact(segment.tool_call.args_text);
+    if (parsed) currentPlan = parsed;
+  }
+  return currentPlan;
+}
+
+function extractPlanFromEvents(events: CodingSessionEvent[]): RunPlanArtifact | null {
+  let currentPlan: RunPlanArtifact | null = null;
+  for (const event of events) {
+    if (event.type !== 'plan.updated' && event.type !== 'activity.updated') continue;
+    const parsed = parsePlanArtifactValue(event.payload.content);
+    if (parsed) currentPlan = parsed;
+  }
+  return currentPlan;
+}
+
 function extractPlanAndToolCalls(
   transcriptMessages: CodingSessionTranscriptMessage[],
   liveAssistant: CodingSessionLiveAssistantMessage | null,
+  liveTurnSegments: CodingSessionLiveTurnSegment[],
 ): { currentPlan: RunPlanArtifact | null; completedToolCalls: CodingSessionLiveToolCall[] } {
   const allToolCalls: CodingSessionLiveToolCall[] = [];
 
@@ -471,6 +504,7 @@ function extractPlanAndToolCalls(
       if (parsed) currentPlan = parsed;
     }
   }
+  currentPlan ??= extractPlanFromLiveTurnSegments(liveTurnSegments);
 
   // Collect completed non-plan tool calls sorted by completion time
   const completedToolCalls = deduped
@@ -737,7 +771,12 @@ export function buildCodingSessionStreamState(
     liveReasoningMessage = null;
   }
 
-  const { currentPlan, completedToolCalls } = extractPlanAndToolCalls(transcriptMessages, liveAssistantMessage);
+  const { currentPlan, completedToolCalls } = extractPlanAndToolCalls(
+    transcriptMessages,
+    liveAssistantMessage,
+    liveTurnSegments,
+  );
+  const eventPlan = extractPlanFromEvents(sortedEvents);
 
   return {
     transcript_messages: transcriptMessages,
@@ -747,7 +786,7 @@ export function buildCodingSessionStreamState(
       segment.kind !== 'tool_call' || segment.tool_call.tool_name !== 'update_plan'
     )),
     activity_events: activityEvents,
-    current_plan: currentPlanLive ?? currentPlan,
+    current_plan: currentPlanLive ?? currentPlan ?? eventPlan,
     completed_tool_calls: completedToolCalls,
   };
 }

@@ -86,6 +86,12 @@ Use it when changing:
 }
 ```
 
+Rules:
+
+- `content` is required
+- `content` must be the full markdown draft being reviewed
+- `title` is optional metadata only and must not be sent by itself
+
 ### `request_human_approval`
 
 ```json

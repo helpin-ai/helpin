@@ -365,4 +365,99 @@ describe('buildCodingSessionStreamState', () => {
       },
     });
   });
+
+  it('keeps the latest plan visible across assistant rounds by reading update_plan tool segments', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'assistant-start-1',
+        type: 'assistant.message.started',
+        sequence_no: 1,
+        payload: { message_id: 'assistant-1' },
+      }),
+      buildEvent({
+        id: 'plan-tool-start',
+        type: 'tool.call.started',
+        sequence_no: 2,
+        payload: {
+          parent_message_id: 'assistant-1',
+          tool_call_id: 'plan-tool-1',
+          tool_name: 'update_plan',
+          args_text: JSON.stringify({
+            plan: [
+              { step: 'Inspect repo context', status: 'completed' },
+              { step: 'Draft task plan doc', status: 'in_progress' },
+            ],
+          }),
+        },
+      }),
+      buildEvent({
+        id: 'plan-tool-complete',
+        type: 'tool.call.completed',
+        sequence_no: 3,
+        payload: {
+          parent_message_id: 'assistant-1',
+          tool_call_id: 'plan-tool-1',
+          tool_name: 'update_plan',
+          output_summary: 'plan updated',
+        },
+      }),
+      buildEvent({
+        id: 'assistant-complete-1',
+        type: 'assistant.message.completed',
+        sequence_no: 4,
+        payload: { message_id: 'assistant-1', content: 'Repo inspected.' },
+      }),
+      buildEvent({
+        id: 'assistant-start-2',
+        type: 'assistant.message.started',
+        sequence_no: 5,
+        payload: { message_id: 'assistant-2' },
+      }),
+      buildEvent({
+        id: 'assistant-delta-2',
+        type: 'assistant.message.delta',
+        sequence_no: 6,
+        payload: { message_id: 'assistant-2', text: 'Writing the planning draft.' },
+      }),
+    ]);
+
+    expect(state.current_plan).toEqual({
+      plan: [
+        { step: 'Inspect repo context', status: 'completed' },
+        { step: 'Draft task plan doc', status: 'in_progress' },
+      ],
+    });
+    expect(state.live_turn_segments.every((segment) => (
+      segment.kind !== 'tool_call' || segment.tool_call.tool_name !== 'update_plan'
+    ))).toBe(true);
+  });
+
+  it('hydrates the current plan from persisted activity updates', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'artifact-plan',
+        type: 'activity.updated',
+        sequence_no: 10,
+        runtime_metadata: { source: 'agent_run_artifact', artifact_type: 'run_plan' },
+        payload: {
+          artifact_type: 'run_plan',
+          content: {
+            note: 'Keep the scope tight.',
+            plan: [
+              { step: 'Review PRD draft', status: 'completed' },
+              { step: 'Refine implementation tasks', status: 'in_progress' },
+            ],
+          },
+        },
+      }),
+    ]);
+
+    expect(state.current_plan).toEqual({
+      note: 'Keep the scope tight.',
+      plan: [
+        { step: 'Review PRD draft', status: 'completed' },
+        { step: 'Refine implementation tasks', status: 'in_progress' },
+      ],
+    });
+  });
 });

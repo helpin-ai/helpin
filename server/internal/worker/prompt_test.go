@@ -298,6 +298,41 @@ func TestBuildSystemPromptStoryIncludesSearchFirstAndGuardedEditGuidance(t *test
 	}
 }
 
+func TestBuildSystemPromptPlannerRunUsesReadOnlyRepoGuidance(t *testing.T) {
+	systemPrompt := "You are a planner."
+
+	prompt := BuildSystemPrompt(
+		&model.Agent{
+			Name:         "Planner",
+			PresetKey:    model.AgentPresetTaskPlanner,
+			SystemPrompt: &systemPrompt,
+		},
+		&model.PMTask{Name: "Plan inbox automation"},
+		nil,
+		nil,
+		model.PlanningStageStoryPlanDoc,
+		"",
+		nil,
+	)
+
+	for _, expected := range []string{
+		"Use the provided tools to inspect the repository and search for relevant context. Keep repository interactions read-only.",
+		"This run is planning-only and read-only. Do not change code, create files, or alter git state.",
+	} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("expected planner prompt to contain %q\n%s", expected, prompt)
+		}
+	}
+	for _, unexpected := range []string{
+		"Prefer edit_file for focused in-place changes and apply_patch for coordinated multi-file edits.",
+		"Use write_file for new files or full rewrites only after you have read the current file state.",
+	} {
+		if strings.Contains(prompt, unexpected) {
+			t.Fatalf("did not expect planner prompt to contain %q\n%s", unexpected, prompt)
+		}
+	}
+}
+
 func TestBuildSystemPromptSupportRunOmitsRepoEditingGuidance(t *testing.T) {
 	systemPrompt := "You are a support agent."
 
