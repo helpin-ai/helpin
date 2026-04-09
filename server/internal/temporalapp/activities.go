@@ -87,8 +87,8 @@ type AgentRunActivities struct {
 	artifactRepo        *repository.AgentRunArtifactRepository
 	interactionRepo     *repository.AgentRunInteractionRepository
 	sessionSnapshotRepo *repository.CodingSessionStateSnapshotRepository
-	taskRepo           *repository.PMTaskRepository
-	taskLinkRepo       *repository.PMTaskLinkRepository
+	taskRepo            *repository.PMTaskRepository
+	taskLinkRepo        *repository.PMTaskLinkRepository
 	epicRepo            *repository.PMEpicRepository
 	conversationRepo    *repository.SupportConversationRepository
 	commentRepo         *repository.PMCommentRepository
@@ -161,8 +161,8 @@ func NewAgentRunActivities(
 		artifactRepo:        artifactRepo,
 		interactionRepo:     interactionRepo,
 		sessionSnapshotRepo: sessionSnapshotRepo,
-		taskRepo:           taskRepo,
-		taskLinkRepo:       taskLinkRepo,
+		taskRepo:            taskRepo,
+		taskLinkRepo:        taskLinkRepo,
 		epicRepo:            epicRepo,
 		conversationRepo:    conversationRepo,
 		commentRepo:         commentRepo,
@@ -3672,6 +3672,7 @@ func (a *AgentRunActivities) buildTaskPlannerInstructions(ctx context.Context, s
 	sections = append(sections, "Keep approvals soft and inline. When you need approval, call request_review_checkpoint with phase=\"task_doc\" and stop after the request.")
 	sections = append(sections, "Treat request_review_checkpoint as the final action in that turn. Do not call more tools after it, and do not append extra approval-choice prose after requesting the checkpoint.")
 	sections = append(sections, "Use publish_task_plan_doc for reviewable right-pane task planning documents.")
+	sections = append(sections, "publish_task_plan_doc must receive a JSON object where content is the full markdown planning draft under review. Do not send title-only payloads or empty content.")
 	sections = append(sections, "Treat parent epic details, the epic PRD, and epic-linked docs as background context only. Use them to understand constraints, inherited requirements, and non-goals, but do not copy them wholesale into the task planning document unless they directly affect this task's implementation.")
 	sections = append(sections, "Ground the planning document primarily in the task description, task comments, task-linked docs, and the current codebase context. Keep the output focused on this task's implementation plan.")
 
@@ -5394,11 +5395,11 @@ func buildWorkingBranch(task *model.PMTask, teamDefault *model.PMTeamRepoDefault
 
 	taskKey := model.FormatTaskKey(workspaceKey, task.DisplayID)
 	replacements := map[string]string{
-		"{task_key}":       taskKey,
-		"{workspace_key}":  workspaceKey,
-		"{task_type}":      task.TaskType,
-		"{display_id}":     fmt.Sprintf("%d", task.DisplayID),
-		"{slug}":           slugifyBranchToken(task.Name),
+		"{task_key}":      taskKey,
+		"{workspace_key}": workspaceKey,
+		"{task_type}":     task.TaskType,
+		"{display_id}":    fmt.Sprintf("%d", task.DisplayID),
+		"{slug}":          slugifyBranchToken(task.Name),
 	}
 	for placeholder, value := range replacements {
 		template = strings.ReplaceAll(template, placeholder, value)

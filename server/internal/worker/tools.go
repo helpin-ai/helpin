@@ -512,11 +512,17 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		"additionalProperties": false,
 	}, toolPublishTaskPlan)
 
-	r.register("publish_task_plan_doc", "Publish the current task planning document markdown for review.", map[string]interface{}{
+	r.register("publish_task_plan_doc", "Publish the current task planning document markdown for review. Always include the full markdown draft in \"content\"; do not send title-only payloads.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"title":   map[string]interface{}{"type": "string"},
-			"content": map[string]interface{}{"type": "string"},
+			"title": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional preview title. The default is Task Planning Document.",
+			},
+			"content": map[string]interface{}{
+				"type":        "string",
+				"description": "Required. The full markdown task planning document body under review, for example \"# Outcome\\n...\".",
+			},
 			"replace": map[string]interface{}{"type": "boolean"},
 		},
 		"required":             []string{"content"},

@@ -124,6 +124,42 @@ func TestEnsureSystemProductPlannerAgentRefreshesLegacyPrompt(t *testing.T) {
 	}
 }
 
+func TestEnsureBuiltInTaskPlannerRefreshesLegacyPrompt(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	svc := &AgentService{agentRepo: agentRepo}
+
+	now := time.Now().UTC()
+	legacyPrompt := "Use `publish_preview` and `request_human_approval` once the runtime tells you the current planner phase."
+	if err := db.Exec(`INSERT INTO agents (
+		id, workspace_id, is_system, name, preset_key, role, status, runtime_kind,
+		skills, trigger_mode, system_prompt, allowed_tools, allowed_commands, allowed_targets,
+		approval_mode, max_concurrent_runs, default_invocation_mode, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"agent-task-planner", "ws-test", true, "Task Planner", model.AgentPresetTaskPlanner, "Task Planner", "idle", "native_sdk",
+		[]byte("[]"), "manual", legacyPrompt, []byte("[]"), []byte("[]"), []byte("[]"), "never", 1, model.InvocationModeInteractive, now, now,
+	).Error; err != nil {
+		t.Fatalf("insert task planner system agent: %v", err)
+	}
+
+	updated, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetTaskPlanner)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+	if updated.SystemPrompt == nil || *updated.SystemPrompt == "" {
+		t.Fatal("expected refreshed task planner prompt")
+	}
+	if strings.Contains(*updated.SystemPrompt, "`publish_preview`") || strings.Contains(*updated.SystemPrompt, "`request_human_approval`") {
+		t.Fatalf("expected refreshed task planner prompt to remove legacy preview/approval tools, got %q", *updated.SystemPrompt)
+	}
+	if !strings.Contains(*updated.SystemPrompt, "`publish_task_plan_doc`") {
+		t.Fatalf("expected refreshed task planner prompt to include publish_task_plan_doc, got %q", *updated.SystemPrompt)
+	}
+	if updated.Name != "Scribe" {
+		t.Fatalf("expected renamed task planner %q, got %q", "Scribe", updated.Name)
+	}
+}
+
 func TestCreateAgentRejectsUnknownPreset(t *testing.T) {
 	db := newAgentServiceTestDB(t)
 	agentRepo := repository.NewAgentRepository(db)

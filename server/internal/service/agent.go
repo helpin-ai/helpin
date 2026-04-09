@@ -277,9 +277,19 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 		beforeAllowedTools := string(existing.AllowedTools)
 		beforeAllowedCommands := string(existing.AllowedCommands)
 		beforeAllowedTargets := string(existing.AllowedTargets)
+		beforeSystemPrompt := trimPtr(existing.SystemPrompt)
 		hadPlanningNotes := existing.PlanningNotes != nil
-		if existing.PlanningNotes != nil || (presetKey == model.AgentPresetEpicPlanner && productPlannerPromptNeedsRefresh(existing.SystemPrompt)) {
-			existing.SystemPrompt = storedSystemPromptForPreset(presetKey, nil, existing.PlanningNotes)
+		refreshedSystemPrompt := storedSystemPromptForPreset(presetKey, existing.SystemPrompt, existing.PlanningNotes)
+		if trimPtr(refreshedSystemPrompt) != nil {
+			if beforeSystemPrompt == nil || *beforeSystemPrompt != *trimPtr(refreshedSystemPrompt) {
+				existing.SystemPrompt = refreshedSystemPrompt
+				changed = true
+			}
+		} else if beforeSystemPrompt != nil {
+			existing.SystemPrompt = nil
+			changed = true
+		}
+		if existing.PlanningNotes != nil {
 			existing.PlanningNotes = nil
 			changed = true
 		}
@@ -337,6 +347,8 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 			string(existing.AllowedTools) != beforeAllowedTools ||
 			string(existing.AllowedCommands) != beforeAllowedCommands ||
 			string(existing.AllowedTargets) != beforeAllowedTargets ||
+			((beforeSystemPrompt == nil) != (trimPtr(existing.SystemPrompt) == nil)) ||
+			(beforeSystemPrompt != nil && trimPtr(existing.SystemPrompt) != nil && *beforeSystemPrompt != *trimPtr(existing.SystemPrompt)) ||
 			(hadPlanningNotes && existing.PlanningNotes == nil) {
 			changed = true
 		}

@@ -11,12 +11,12 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
-func TestEpicPlannerProfileIncludesGuardedEditTools(t *testing.T) {
+func TestEpicPlannerProfileOmitsRepositoryEditTools(t *testing.T) {
 	profile := GetRuntimeProfile(model.AgentPresetEpicPlanner)
-	required := []string{"write_file", "edit_file", "apply_patch"}
-	for _, tool := range required {
-		if !strings.Contains(strings.Join(profile.AllowedTools, ","), tool) {
-			t.Fatalf("expected epic planner profile to allow %s, got %v", tool, profile.AllowedTools)
+	disallowed := []string{"write_file", "edit_file", "apply_patch"}
+	for _, tool := range disallowed {
+		if strings.Contains(strings.Join(profile.AllowedTools, ","), tool) {
+			t.Fatalf("expected epic planner profile to exclude %s, got %v", tool, profile.AllowedTools)
 		}
 	}
 }

@@ -62,6 +62,7 @@ export function CodingTranscriptPane({
   onResolveInteraction?: (interactionId: string, responsePayload: Record<string, unknown>, followupMessage?: string) => void;
 }) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const autoFollowRef = useRef(true);
   const visibleLiveSegments = liveTurnSegments.filter((segment) => {
     if (segment.kind === 'assistant_message') {
       return segment.assistant_message.content.trim().length > 0;
@@ -111,20 +112,44 @@ export function CodingTranscriptPane({
     overscan: 8,
   });
 
-  // Auto-scroll to bottom when new items arrive or content changes.
-  const prevItemCountRef = useRef(items.length);
   useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return undefined;
+
+    const updateAutoFollow = () => {
+      const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+      autoFollowRef.current = distanceFromBottom < 96;
+    };
+
+    updateAutoFollow();
+    container.addEventListener('scroll', updateAutoFollow, { passive: true });
+    return () => {
+      container.removeEventListener('scroll', updateAutoFollow);
+    };
+  }, []);
+
+  const scrollToTail = useCallback(() => {
     if (items.length === 0) return;
-    // Always follow the tail — scroll to the last item.
-    const isNewItem = items.length !== prevItemCountRef.current;
-    prevItemCountRef.current = items.length;
-    virtualizer.scrollToIndex(items.length - 1, {
-      align: 'end',
-      behavior: isNewItem ? 'auto' : 'smooth',
+    requestAnimationFrame(() => {
+      virtualizer.scrollToIndex(items.length - 1, {
+        align: 'end',
+        behavior: 'auto',
+      });
     });
   }, [items.length, virtualizer]);
 
-  // Also follow streaming content changes (content growing while count is stable).
+  // Auto-scroll to bottom when new items arrive, but only if the user is already following the tail.
+  const prevItemCountRef = useRef(items.length);
+  useEffect(() => {
+    if (items.length === 0) return;
+    const isNewItem = items.length !== prevItemCountRef.current;
+    const shouldFollow = autoFollowRef.current || prevItemCountRef.current === 0;
+    prevItemCountRef.current = items.length;
+    if (!isNewItem || !shouldFollow) return;
+    scrollToTail();
+  }, [items.length, scrollToTail]);
+
+  // Also follow streaming content changes, but only while the user remains pinned near the bottom.
   const streamingSignature = useMemo(() => {
     const lastSegment = visibleLiveSegments[visibleLiveSegments.length - 1];
     return [
@@ -136,9 +161,9 @@ export function CodingTranscriptPane({
   }, [liveAssistantMessage, liveReasoningMessage, visibleLiveSegments]);
 
   useEffect(() => {
-    if (items.length === 0) return;
-    virtualizer.scrollToIndex(items.length - 1, { align: 'end', behavior: 'smooth' });
-  }, [streamingSignature, items.length, virtualizer]);
+    if (items.length === 0 || !autoFollowRef.current) return;
+    scrollToTail();
+  }, [streamingSignature, items.length, scrollToTail]);
 
   const renderItem = useCallback((item: VirtualItem) => {
     switch (item.kind) {

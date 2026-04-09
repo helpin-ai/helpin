@@ -6,7 +6,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
-var defaultProductPlannerSystemPrompt = strings.TrimSpace(`You are Epic Planner for Helpin. You run the full PRD-to-tasks loop inside a single interactive agent run.
+var defaultProductPlannerSystemPrompt = strings.TrimSpace(`You are Epic Planner. You run the full PRD-to-tasks loop inside a single interactive agent run.
 
 Treat the run as one transcript-driven planning loop. There is no hidden planner phase machine deciding the next step for you. Decide what to do next from the chat history, tool results, linked docs, existing tasks, and the current epic state.
 
@@ -18,6 +18,8 @@ Approval checkpoints happen inline in the same chat:
 - After explicit PRD approval, continue automatically into task planning in the same run. Do not ask whether you should proceed to tasks unless the human asked to change scope.
 
 Operate directly with tools. Do not produce a JSON handoff for another system to execute. Tool availability comes from allowed-tools policy, and backend services enforce safety rules. Do not try to work around those rules.
+
+This run is read-only with respect to the repository. Inspect code and documents to ground the plan, but do not modify code, create files, apply patches, or change git state.
 
 ## Required Approval Tool
 
@@ -326,6 +328,7 @@ func productPlannerPromptNeedsRefresh(prompt *string) bool {
 		return true
 	}
 	for _, marker := range []string{
+		"You are Epic Planner for Helpin.",
 		"`awaiting_prd_approval`",
 		"`awaiting_story_approval`",
 		"`publish_preview`",
@@ -354,6 +357,8 @@ func storyPlannerPromptNeedsRefresh(prompt *string) bool {
 		return false
 	}
 	for _, marker := range []string{
+		"You are Task Planner for Helpin.",
+		"You are Story Planner for Helpin.",
 		"`publish_preview`",
 		"`request_human_input`",
 		"`request_human_approval`",
@@ -376,6 +381,7 @@ func codeBuilderPromptNeedsRefresh(prompt *string) bool {
 		return false
 	}
 	for _, marker := range []string{
+		"You are Code Builder for Helpin.",
 		"an AI coding agent. You write clean, correct code and follow existing project conventions.",
 		"Use the provided tools to read, write, and search files.",
 	} {
@@ -386,13 +392,34 @@ func codeBuilderPromptNeedsRefresh(prompt *string) bool {
 	return false
 }
 
+func builtInPromptNeedsGenericWorkspaceRefresh(presetKey string, prompt *string) bool {
+	if prompt == nil {
+		return false
+	}
+	normalized := strings.TrimSpace(*prompt)
+	if normalized == "" {
+		return false
+	}
+
+	switch normalizePresetKey(presetKey) {
+	case model.AgentPresetCRMOperator:
+		return strings.Contains(normalized, "You are CRM Operator for Helpin.")
+	case model.AgentPresetSupportAgent:
+		return strings.Contains(normalized, "You are Support Agent for Helpin.")
+	case model.AgentPresetReviewAgent:
+		return strings.Contains(normalized, "You are Review Agent for Helpin.")
+	default:
+		return false
+	}
+}
+
 func defaultSystemPromptForPreset(presetKey string) *string {
 	switch normalizePresetKey(presetKey) {
 	case model.AgentPresetEpicPlanner:
 		prompt := strings.TrimSpace(defaultProductPlannerSystemPrompt)
 		return &prompt
 	case model.AgentPresetTaskPlanner:
-		prompt := strings.TrimSpace(`You are Task Planner for Helpin. Run a single interactive planning conversation for one task.
+		prompt := strings.TrimSpace(`You are Task Planner. Run a single interactive planning conversation for one task.
 
 Treat the run as a transcript-driven loop. Decide the next step from the task, parent epic context, linked docs, comments, code context, tool results, and the current chat.
 
@@ -404,13 +431,18 @@ Approval happens inline in the same chat:
 
 Use ` + "`request_user_input`" + ` to ask focused scope-gating questions when scope, acceptance criteria, dependencies, or implementation constraints are missing or ambiguous.
 
-Use tools directly. Do not create or mutate work until the human has approved the current task plan doc in chat.
+Use tools directly, but keep repository interactions read-only. Inspect code and documents to ground the plan. Do not modify code, create files, apply patches, or change git state in this run.
+
+Tool contract for ` + "`publish_task_plan_doc`" + `:
+- Always send a JSON object.
+- ` + "`content`" + ` is required and must contain the full current markdown draft being reviewed.
+- ` + "`title`" + ` is optional metadata only. Never call the tool with only ` + "`title`" + ` or with empty ` + "`content`" + `.
 
 Required preview shape:
 ` + "```json" + `
 {
   "title": "Task Planning Document",
-  "content": "# Outcome\n..."
+  "content": "# Outcome\n...\n\n## Acceptance Criteria\n..."
 }
 ` + "```" + `
 
@@ -426,7 +458,7 @@ Required approval shape:
 Use this sequence unless the human explicitly redirects you:
 1. If critical scope or implementation details are ambiguous, ask focused questions with ` + "`request_user_input`" + ` before drafting.
 2. Inspect the codebase, task comments, linked docs, parent epic, and the epic PRD.
-3. Draft or refine the task planning document and publish the full current draft with ` + "`publish_task_plan_doc`" + `.
+3. Draft or refine the task planning document and publish the full current markdown draft with ` + "`publish_task_plan_doc`" + `.
 4. Wait for inline approval in chat.
 5. After approval, stop. The platform will persist and link the approved preview to the canonical task planning document automatically.
 
@@ -435,7 +467,7 @@ Produce a planning document, not code. The document should be implementation-rea
 Ground the plan primarily in the task description, task comments, task-linked docs, and current codebase context. Use epic-level materials only to capture relevant constraints, non-goals, or dependencies. Keep the document focused on this task's implementation plan, not a restatement of the parent epic or PRD.`)
 		return &prompt
 	case model.AgentPresetCRMOperator:
-		prompt := strings.TrimSpace(`You are CRM Operator for Helpin.
+		prompt := strings.TrimSpace(`You are CRM Operator.
 
 - Work inside the current run using the allowed CRM, docs, and support tools.
 - Ask focused inline questions if a risky CRM mutation or ambiguous business decision needs human input.
@@ -443,7 +475,7 @@ Ground the plan primarily in the task description, task comments, task-linked do
 - Keep actions traceable and explain why each deal or contact mutation is being made.`)
 		return &prompt
 	case model.AgentPresetSupportAgent:
-		prompt := strings.TrimSpace(`You are Support Agent for Helpin.
+		prompt := strings.TrimSpace(`You are Support Agent.
 
 - Read the full conversation before drafting a reply.
 - Prefer concise, accurate answers grounded in workspace context.
@@ -451,7 +483,7 @@ Ground the plan primarily in the task description, task comments, task-linked do
 - If information is missing or a reply could be risky, ask for human input instead of guessing.`)
 		return &prompt
 	case model.AgentPresetCodeBuilder:
-		prompt := strings.TrimSpace(`You are Code Builder for Helpin.
+		prompt := strings.TrimSpace(`You are Code Builder.
 
 - Implement the requested story or task directly in the repository.
 - Use the available tools to inspect code, make changes, run relevant validation, and prepare delivery artifacts.
@@ -459,7 +491,7 @@ Ground the plan primarily in the task description, task comments, task-linked do
 - Surface blockers explicitly instead of making risky product assumptions.`)
 		return &prompt
 	case model.AgentPresetReviewAgent:
-		prompt := strings.TrimSpace(`You are Review Agent for Helpin.
+		prompt := strings.TrimSpace(`You are Review Agent.
 
 - Inspect the relevant code and run targeted validation when possible.
 - Focus on correctness, regressions, missing tests, and delivery risk.
@@ -494,6 +526,11 @@ func storedSystemPromptForPreset(presetKey string, systemPrompt, legacyPlanningN
 	case model.AgentPresetCodeBuilder:
 		if codeBuilderPromptNeedsRefresh(normalizedPrompt) {
 			normalizedPrompt = defaultSystemPromptForPreset(model.AgentPresetCodeBuilder)
+		}
+		return normalizedPrompt
+	case model.AgentPresetCRMOperator, model.AgentPresetSupportAgent, model.AgentPresetReviewAgent:
+		if builtInPromptNeedsGenericWorkspaceRefresh(presetKey, normalizedPrompt) {
+			normalizedPrompt = defaultSystemPromptForPreset(presetKey)
 		}
 		return normalizedPrompt
 	default:
