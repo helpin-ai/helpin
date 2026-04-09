@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { UnicodeSpinner } from '@/components/pm/CodingSession/UnicodeSpinner';
 import {
   BotIcon,
@@ -61,8 +62,6 @@ export function CodingTranscriptPane({
   onResolveInteraction?: (interactionId: string, responsePayload: Record<string, unknown>, followupMessage?: string) => void;
 }) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const followAnimationFrameRef = useRef<number | null>(null);
-  const lastAutoScrollAtRef = useRef(0);
   const visibleLiveSegments = liveTurnSegments.filter((segment) => {
     if (segment.kind === 'assistant_message') {
       return segment.assistant_message.content.trim().length > 0;
@@ -70,56 +69,134 @@ export function CodingTranscriptPane({
     return segment.tool_call.tool_name !== 'update_plan';
   });
   const showLivePlaceholder = visibleLiveSegments.length === 0 && liveAssistantMessage?.status === 'streaming';
-  const scrollKey = useMemo(() => {
-    const lastTranscript = transcriptMessages[transcriptMessages.length - 1];
-    const lastLiveSegment = visibleLiveSegments[visibleLiveSegments.length - 1];
-    const lastLiveSignature = lastLiveSegment
-      ? lastLiveSegment.kind === 'assistant_message'
-        ? `${lastLiveSegment.segment_id}:${lastLiveSegment.assistant_message.content.length}:${lastLiveSegment.assistant_message.status}`
-        : `${lastLiveSegment.segment_id}:${lastLiveSegment.tool_call.status}:${lastLiveSegment.tool_call.result?.content.length ?? 0}`
-      : '';
 
+  // Build a flat list of all renderable items for the virtualizer.
+  type VirtualItem =
+    | { kind: 'transcript'; message: CodingSessionTranscriptMessage }
+    | { kind: 'thinking'; reasoning: CodingSessionLiveReasoningMessage }
+    | { kind: 'live-message'; segment: CodingSessionLiveTurnSegment }
+    | { kind: 'live-tool'; segment: CodingSessionLiveTurnSegment; isLast: boolean }
+    | { kind: 'placeholder' }
+    | { kind: 'empty' };
+
+  const items = useMemo((): VirtualItem[] => {
+    const list: VirtualItem[] = [];
+    for (const message of transcriptMessages) {
+      list.push({ kind: 'transcript', message });
+    }
+    if (liveReasoningMessage) {
+      list.push({ kind: 'thinking', reasoning: liveReasoningMessage });
+    }
+    for (let i = 0; i < visibleLiveSegments.length; i++) {
+      const segment = visibleLiveSegments[i];
+      if (segment.kind === 'assistant_message') {
+        list.push({ kind: 'live-message', segment });
+      } else {
+        list.push({ kind: 'live-tool', segment, isLast: i === visibleLiveSegments.length - 1 });
+      }
+    }
+    if (showLivePlaceholder) {
+      list.push({ kind: 'placeholder' });
+    }
+    if (!loading && list.length === 0) {
+      list.push({ kind: 'empty' });
+    }
+    return list;
+  }, [transcriptMessages, liveReasoningMessage, visibleLiveSegments, showLivePlaceholder, loading]);
+
+  const virtualizer = useVirtualizer({
+    count: items.length,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: () => 120,
+    overscan: 8,
+  });
+
+  // Auto-scroll to bottom when new items arrive or content changes.
+  const prevItemCountRef = useRef(items.length);
+  useEffect(() => {
+    if (items.length === 0) return;
+    // Always follow the tail — scroll to the last item.
+    const isNewItem = items.length !== prevItemCountRef.current;
+    prevItemCountRef.current = items.length;
+    virtualizer.scrollToIndex(items.length - 1, {
+      align: 'end',
+      behavior: isNewItem ? 'auto' : 'smooth',
+    });
+  }, [items.length, virtualizer]);
+
+  // Also follow streaming content changes (content growing while count is stable).
+  const streamingSignature = useMemo(() => {
+    const lastSegment = visibleLiveSegments[visibleLiveSegments.length - 1];
     return [
-      transcriptMessages.length,
-      lastTranscript?.event_id ?? '',
-      lastTranscript?.content.length ?? 0,
-      liveAssistantMessage?.message_id ?? '',
       liveAssistantMessage?.content.length ?? 0,
-      liveReasoningMessage?.message_id ?? '',
       liveReasoningMessage?.content.length ?? 0,
-      visibleLiveSegments.length,
-      lastLiveSignature,
-      showLivePlaceholder ? 1 : 0,
+      lastSegment?.kind === 'assistant_message' ? lastSegment.assistant_message.content.length : 0,
+      lastSegment?.kind === 'tool_call' ? (lastSegment.tool_call.result?.content.length ?? 0) : 0,
     ].join('|');
-  }, [transcriptMessages, liveAssistantMessage, liveReasoningMessage, visibleLiveSegments, showLivePlaceholder]);
+  }, [liveAssistantMessage, liveReasoningMessage, visibleLiveSegments]);
 
   useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-    if (followAnimationFrameRef.current !== null) {
-      window.cancelAnimationFrame(followAnimationFrameRef.current);
+    if (items.length === 0) return;
+    virtualizer.scrollToIndex(items.length - 1, { align: 'end', behavior: 'smooth' });
+  }, [streamingSignature, items.length, virtualizer]);
+
+  const renderItem = useCallback((item: VirtualItem) => {
+    switch (item.kind) {
+      case 'transcript':
+        return <TranscriptEntry message={item.message} />;
+      case 'thinking':
+        return <ThinkingStrip reasoning={item.reasoning} />;
+      case 'live-message': {
+        const seg = item.segment;
+        if (seg.kind !== 'assistant_message') return null;
+        return (
+          <TranscriptEntry
+            message={{
+              event_id: `live:${seg.segment_id}`,
+              message_id: seg.assistant_message.message_id,
+              role: 'assistant',
+              content: seg.assistant_message.content,
+              timestamp: seg.assistant_message.started_at ?? new Date().toISOString(),
+              sequence_no: Number.MAX_SAFE_INTEGER,
+            }}
+            live
+            streaming={seg.assistant_message.status === 'streaming'}
+          />
+        );
+      }
+      case 'live-tool': {
+        const seg = item.segment;
+        if (seg.kind !== 'tool_call') return null;
+        return (
+          <div className="w-full max-w-[90%]">
+            <ActivityToolCallRow toolCall={seg.tool_call} isLast={item.isLast} />
+          </div>
+        );
+      }
+      case 'placeholder':
+        return (
+          <TranscriptEntry
+            message={{
+              event_id: `live:${liveAssistantMessage?.message_id ?? 'assistant'}`,
+              message_id: liveAssistantMessage?.message_id,
+              role: 'assistant',
+              content: 'Preparing reply…',
+              timestamp: liveAssistantMessage?.started_at ?? new Date().toISOString(),
+              sequence_no: Number.MAX_SAFE_INTEGER,
+            }}
+            live
+            streaming
+            placeholder
+          />
+        );
+      case 'empty':
+        return (
+          <div className="rounded-lg border border-dashed border-border px-5 py-8 text-center text-sm text-muted-foreground">
+            No transcript yet. Assistant and user-visible turns will appear here once the session starts talking.
+          </div>
+        );
     }
-    followAnimationFrameRef.current = window.requestAnimationFrame(() => {
-      const now = window.performance.now();
-      const useSmooth = now - lastAutoScrollAtRef.current > 120;
-      if (typeof container.scrollTo === 'function') {
-        container.scrollTo({
-          top: container.scrollHeight,
-          behavior: useSmooth ? 'smooth' : 'auto',
-        });
-      } else {
-        container.scrollTop = container.scrollHeight;
-      }
-      lastAutoScrollAtRef.current = now;
-      followAnimationFrameRef.current = null;
-    });
-    return () => {
-      if (followAnimationFrameRef.current !== null) {
-        window.cancelAnimationFrame(followAnimationFrameRef.current);
-        followAnimationFrameRef.current = null;
-      }
-    };
-  }, [scrollKey]);
+  }, [liveAssistantMessage]);
 
   return (
     <section className="relative flex h-full min-h-[20rem] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm xl:min-h-0">
@@ -133,60 +210,33 @@ export function CodingTranscriptPane({
         </Badge>
       </div>
 
-      <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-auto px-4 py-4">
-        <div className="mx-auto flex max-w-4xl flex-col gap-2">
-          {transcriptMessages.map((message) => (
-            <TranscriptEntry key={message.event_id} message={message} />
-          ))}
-
-          {liveReasoningMessage ? <ThinkingStrip reasoning={liveReasoningMessage} /> : null}
-
-          {visibleLiveSegments.map((segment, idx) =>
-            segment.kind === 'assistant_message' ? (
-              <TranscriptEntry
-                key={segment.segment_id}
-                message={{
-                  event_id: `live:${segment.segment_id}`,
-                  message_id: segment.assistant_message.message_id,
-                  role: 'assistant',
-                  content: segment.assistant_message.content,
-                  timestamp: segment.assistant_message.started_at ?? new Date().toISOString(),
-                  sequence_no: Number.MAX_SAFE_INTEGER,
+      <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-auto">
+        <div
+          className="relative mx-auto w-full max-w-4xl px-4"
+          style={{ height: virtualizer.getTotalSize() }}
+        >
+          {virtualizer.getVirtualItems().map((virtualRow) => {
+            const item = items[virtualRow.index];
+            return (
+              <div
+                key={virtualRow.key}
+                data-index={virtualRow.index}
+                ref={virtualizer.measureElement}
+                className="pb-2"
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  transform: `translateY(${virtualRow.start}px)`,
+                  paddingLeft: '1rem',
+                  paddingRight: '1rem',
                 }}
-                live
-                streaming={segment.assistant_message.status === 'streaming'}
-              />
-            ) : (
-              <div key={segment.segment_id} className="w-full max-w-[90%]">
-                <ActivityToolCallRow
-                  toolCall={segment.tool_call}
-                  isLast={idx === visibleLiveSegments.length - 1}
-                />
+              >
+                {renderItem(item)}
               </div>
-            ),
-          )}
-
-          {showLivePlaceholder ? (
-            <TranscriptEntry
-              message={{
-                event_id: `live:${liveAssistantMessage?.message_id ?? 'assistant'}`,
-                message_id: liveAssistantMessage?.message_id,
-                role: 'assistant',
-                content: 'Preparing reply…',
-                timestamp: liveAssistantMessage?.started_at ?? new Date().toISOString(),
-                sequence_no: Number.MAX_SAFE_INTEGER,
-              }}
-              live
-              streaming
-              placeholder
-            />
-          ) : null}
-
-          {!loading && transcriptMessages.length === 0 && visibleLiveSegments.length === 0 && !showLivePlaceholder && !liveReasoningMessage ? (
-            <div className="rounded-lg border border-dashed border-border px-5 py-8 text-center text-sm text-muted-foreground">
-              No transcript yet. Assistant and user-visible turns will appear here once the session starts talking.
-            </div>
-          ) : null}
+            );
+          })}
         </div>
       </div>
 
