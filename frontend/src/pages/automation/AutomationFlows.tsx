@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowRight01Icon, MoreHorizontalIcon, PlayIcon } from '@/lib/icons';
 import { toast } from 'sonner';
+import { RepositoryBranchPicker } from '@/components/git/RepositoryBranchPicker';
+import { BASE_BRANCH_TOKEN, TASK_BRANCH_TOKEN, describeMergeInto, describeRunBranchOverrides } from '@/lib/branchLabels';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -60,6 +62,8 @@ type FlowDraft = {
   targetId: string;
   targetStateId: string;
   targetBranch: string;
+  runBaseBranch: string;
+  runWorkingBranch: string;
   repoFullName: string;
   branch: string;
   baseBranch: string;
@@ -84,7 +88,7 @@ const TRIGGER_OPTIONS = [
 const ACTION_LABELS: Record<FlowDraft['actionType'], string> = {
   start_agent_run: 'Start an agent run',
   move_to_state: 'Move the task to a state',
-  merge_branch: 'Merge into a branch',
+  merge_branch: 'Merge into',
 };
 
 const TARGET_LABELS: Record<FlowDraft['targetMode'], string> = {
@@ -107,6 +111,8 @@ function defaultDraft(): FlowDraft {
     targetId: '',
     targetStateId: '',
     targetBranch: '',
+    runBaseBranch: '',
+    runWorkingBranch: '',
     repoFullName: '',
     branch: '',
     baseBranch: 'main',
@@ -167,6 +173,8 @@ function applyTriggerDefaults(next: FlowDraft, workflows: WorkflowWithStates[]) 
   if (next.actionType !== 'start_agent_run') {
     next.targetMode = 'event';
     next.targetId = '';
+    next.runBaseBranch = '';
+    next.runWorkingBranch = '';
   }
   if (next.actionType !== 'move_to_state') {
     next.targetStateId = '';
@@ -215,6 +223,8 @@ function draftFromRule(rule: AutomationRule, workflows: WorkflowWithStates[]): F
   draft.targetId = stringValue(rule.action_config?.target_id);
   draft.targetStateId = stringValue(rule.action_config?.target_state_id);
   draft.targetBranch = stringValue(rule.action_config?.target_branch);
+  draft.runBaseBranch = stringValue(rule.action_config?.base_branch);
+  draft.runWorkingBranch = stringValue(rule.action_config?.working_branch);
   draft.repoFullName = stringValue(rule.trigger_config?.repo_full_name);
   draft.branch = stringValue(rule.trigger_config?.branch);
   draft.baseBranch = stringValue(rule.trigger_config?.base_branch) || 'main';
@@ -253,6 +263,12 @@ function serializeDraft(draft: FlowDraft) {
     if (draft.targetMode !== 'event' && draft.targetId) {
       actionConfig.target_type = draft.targetMode;
       actionConfig.target_id = draft.targetId;
+    }
+    if (draft.runBaseBranch.trim()) {
+      actionConfig.base_branch = draft.runBaseBranch.trim();
+    }
+    if (draft.runWorkingBranch.trim()) {
+      actionConfig.working_branch = draft.runWorkingBranch.trim();
     }
   } else if (draft.actionType === 'move_to_state') {
     actionConfig = { target_state_id: draft.targetStateId };
@@ -331,7 +347,7 @@ function describeFilters(rule: AutomationRule, statesById: Map<string, WorkflowS
   const category = stringValue(rule.trigger_config?.category);
   if (repoFullName) filters.push(`repo = ${repoFullName}`);
   if (branch) filters.push(`branch = ${branch}`);
-  if (baseBranch) filters.push(`base = ${baseBranch}`);
+  if (baseBranch) filters.push(`base branch = ${baseBranch}`);
   if (tagName) filters.push(`tag = ${tagName}`);
   if (conclusion) filters.push(`conclusion = ${conclusion}`);
   if (category) filters.push(`category = ${category}`);
@@ -339,14 +355,21 @@ function describeFilters(rule: AutomationRule, statesById: Map<string, WorkflowS
 }
 
 function describeThen(rule: AutomationRule, statesById: Map<string, WorkflowState>) {
-  if (rule.action_type === 'start_agent_run') return 'Start an agent run';
+  if (rule.action_type === 'start_agent_run') {
+    const parts = ['Start an agent run'];
+    const baseBranch = stringValue(rule.action_config?.base_branch);
+    const workingBranch = stringValue(rule.action_config?.working_branch);
+    const overrides = describeRunBranchOverrides(baseBranch, workingBranch);
+    if (overrides) parts.push(overrides);
+    return parts.join(' ');
+  }
   if (rule.action_type === 'move_to_state') {
     const stateId = stringValue(rule.action_config?.target_state_id);
     return stateId ? `Move the task to ${statesById.get(stateId)?.name ?? 'another state'}` : 'Move the task to another state';
   }
   if (rule.action_type === 'merge_branch') {
     const branch = stringValue(rule.action_config?.target_branch);
-    return branch ? `Merge into ${branch}` : 'Merge to a branch';
+    return describeMergeInto(branch || BASE_BRANCH_TOKEN);
   }
   return rule.action_type.replaceAll('_', ' ');
 }
@@ -377,7 +400,7 @@ function draftSentence(draft: FlowDraft, workflows: WorkflowWithStates[], states
     const parts = [];
     if (draft.repoFullName.trim()) parts.push(`repo = ${draft.repoFullName.trim()}`);
     if (draft.branch.trim()) parts.push(`branch = ${draft.branch.trim()}`);
-    if (draft.baseBranch.trim()) parts.push(`base = ${draft.baseBranch.trim()}`);
+    if (draft.baseBranch.trim()) parts.push(`base branch = ${draft.baseBranch.trim()}`);
     if (draft.tagName.trim()) parts.push(`tag = ${draft.tagName.trim()}`);
     if (draft.conclusion.trim()) parts.push(`conclusion = ${draft.conclusion.trim()}`);
     if (draft.cronCategory.trim() && draft.triggerType === 'cron') parts.push(`category = ${draft.cronCategory.trim()}`);
@@ -386,8 +409,11 @@ function draftSentence(draft: FlowDraft, workflows: WorkflowWithStates[], states
   const then = draft.actionType === 'move_to_state'
     ? `Move the task to ${destinationStateName || 'another state'}`
     : draft.actionType === 'merge_branch'
-      ? `Merge into ${draft.targetBranch.trim() || 'a branch'}`
-      : ACTION_LABELS[draft.actionType];
+      ? describeMergeInto(draft.targetBranch.trim() || BASE_BRANCH_TOKEN)
+      : [
+          ACTION_LABELS[draft.actionType],
+          describeRunBranchOverrides(draft.runBaseBranch.trim(), draft.runWorkingBranch.trim()),
+        ].filter(Boolean).join(' ');
   const using = draft.actionType === 'start_agent_run' ? (agents.get(draft.agentId) ?? 'Choose an agent') : 'No agent';
   const on = draft.actionType === 'start_agent_run' ? TARGET_LABELS[draft.targetMode] : 'Current task context';
   return { when, conditions, then, using, on };
@@ -407,7 +433,7 @@ function describeFlowTitle(rule: AutomationRule, statesById: Map<string, Workflo
       : rule.trigger_type === 'github.pull_request_opened' ? 'opened'
       : 'review requested';
     const baseBranch = stringValue(rule.trigger_config?.base_branch);
-    triggerPart = `PR ${action}${baseBranch ? ` to ${baseBranch}` : ''}`;
+    triggerPart = `PR ${action}${baseBranch ? ` to base branch ${baseBranch}` : ''}`;
   } else if (rule.trigger_type === 'github.push') {
     triggerPart = 'Push arrives';
   } else if (rule.trigger_type === 'github.release_published') {
@@ -424,14 +450,18 @@ function describeFlowTitle(rule: AutomationRule, statesById: Map<string, Workflo
   if (rule.action_type === 'start_agent_run') {
     const agentId = stringValue(rule.action_config?.agent_id);
     const agentName = agentNames.get(agentId);
-    actionPart = agentName ? `Run ${agentName}` : 'Start agent';
+    const overrides = describeRunBranchOverrides(
+      stringValue(rule.action_config?.base_branch),
+      stringValue(rule.action_config?.working_branch),
+    );
+    actionPart = agentName ? `Run ${agentName}${overrides}` : 'Start agent';
   } else if (rule.action_type === 'move_to_state') {
     const targetStateId = stringValue(rule.action_config?.target_state_id);
     const targetStateName = statesById.get(targetStateId)?.name;
     actionPart = targetStateName ? `Move to ${targetStateName}` : 'Move task state';
   } else if (rule.action_type === 'merge_branch') {
     const branch = stringValue(rule.action_config?.target_branch);
-    actionPart = branch ? `Merge into ${branch}` : 'Merge branch';
+    actionPart = describeMergeInto(branch || BASE_BRANCH_TOKEN);
   } else {
     actionPart = rule.action_type.replaceAll('_', ' ');
   }
@@ -586,6 +616,7 @@ function FlowRow({
 }
 
 function FlowComposer({
+  workspaceId,
   open,
   mode,
   draft,
@@ -601,6 +632,7 @@ function FlowComposer({
   onDraftChange,
   onSave,
 }: {
+  workspaceId: string;
   open: boolean;
   mode: 'create' | 'edit';
   draft: FlowDraft;
@@ -724,14 +756,30 @@ function FlowComposer({
                 {(draft.triggerType === 'github.push' || draft.triggerType === 'github.check_suite_completed') && (
                   <div className="space-y-2">
                     <Label>Branch</Label>
-                    <Input value={draft.branch} onChange={(event) => updateDraft((current) => ({ ...current, branch: event.target.value }))} placeholder="main" />
+                    <RepositoryBranchPicker
+                      workspaceId={workspaceId}
+                      repositoryId={repositories.find((repo) => repo.full_name === draft.repoFullName)?.id}
+                      value={draft.branch}
+                      onChange={(value) => updateDraft((current) => ({ ...current, branch: value }))}
+                      placeholder="main"
+                      emptyLabel="Any branch"
+                      disabled={saving}
+                    />
                   </div>
                 )}
 
                 {(draft.triggerType === 'github.pull_request_opened' || draft.triggerType === 'github.pull_request_merged' || draft.triggerType === 'github.pull_request_review_requested') && (
                   <div className="space-y-2">
                     <Label>Base branch</Label>
-                    <Input value={draft.baseBranch} onChange={(event) => updateDraft((current) => ({ ...current, baseBranch: event.target.value }))} placeholder="main" />
+                    <RepositoryBranchPicker
+                      workspaceId={workspaceId}
+                      repositoryId={repositories.find((repo) => repo.full_name === draft.repoFullName)?.id}
+                      value={draft.baseBranch}
+                      onChange={(value) => updateDraft((current) => ({ ...current, baseBranch: value }))}
+                      placeholder="main"
+                      emptyLabel="Any base branch"
+                      disabled={saving}
+                    />
                   </div>
                 )}
 
@@ -834,6 +882,30 @@ function FlowComposer({
               </div>
             )}
 
+            {draft.actionType === 'start_agent_run' && (
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Base branch override</Label>
+                  <Input
+                    value={draft.runBaseBranch}
+                    onChange={(event) => updateDraft((current) => ({ ...current, runBaseBranch: event.target.value }))}
+                    placeholder="{base_branch} or release/2026.04"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Task branch override</Label>
+                  <Input
+                    value={draft.runWorkingBranch}
+                    onChange={(event) => updateDraft((current) => ({ ...current, runWorkingBranch: event.target.value }))}
+                    placeholder={TASK_BRANCH_TOKEN}
+                  />
+                </div>
+                <p className="text-[11px] text-muted-foreground md:col-span-2">
+                  Use <code>{TASK_BRANCH_TOKEN}</code> for the branch the agent checks out and pushes to, and <code>{BASE_BRANCH_TOKEN}</code> for the branch the task starts from and pull requests target by default.
+                </p>
+              </div>
+            )}
+
             {draft.actionType === 'move_to_state' && (
               <div className="space-y-2">
                 <Label>Move to</Label>
@@ -852,7 +924,7 @@ function FlowComposer({
 
             {draft.actionType === 'merge_branch' && (
               <div className="space-y-2">
-                <Label>Merge into branch</Label>
+                <Label>Merge into</Label>
                 <Input value={draft.targetBranch} onChange={(event) => updateDraft((current) => ({ ...current, targetBranch: event.target.value }))} placeholder="main" />
               </div>
             )}
@@ -1085,6 +1157,7 @@ export function AutomationFlowsPage({
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <FlowComposer
+        workspaceId={workspaceId}
         open={composerOpen}
         mode={editingRuleId ? 'edit' : 'create'}
         draft={draft}

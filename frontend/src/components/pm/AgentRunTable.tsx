@@ -56,7 +56,7 @@ export function AgentRunTable({ runs, selectedRunId, onSelectRun, loading }: Pro
         const displayStatus = getAgentRunDisplayStatus(run);
         const meta = STATUS_META[displayStatus] ?? STATUS_META.queued;
         const isSelected = run.id === selectedRunId;
-        const branch = run.working_branch || run.base_branch || '';
+        const branch = run.working_branch ? `task ${run.working_branch}` : run.base_branch ? `base ${run.base_branch}` : '';
 
         return (
           <button

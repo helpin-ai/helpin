@@ -45,6 +45,7 @@ func setupRuleEngineTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE pm_tasks (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,
+			display_id INTEGER NOT NULL DEFAULT 0,
 			workflow_state_id TEXT NOT NULL,
 			workflow_id TEXT NOT NULL DEFAULT '',
 			team_id TEXT,
@@ -71,6 +72,67 @@ func setupRuleEngineTestDB(t *testing.T) *gorm.DB {
 			state_type TEXT NOT NULL DEFAULT 'unstarted',
 			position INTEGER NOT NULL DEFAULT 0,
 			color TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE workspaces (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL DEFAULT '',
+			slug TEXT NOT NULL DEFAULT '',
+			workspace_key TEXT NOT NULL DEFAULT '',
+			owner_id TEXT NOT NULL DEFAULT '',
+			organization_id TEXT,
+			description TEXT,
+			website_url TEXT,
+			logo_url TEXT,
+			timezone TEXT NOT NULL DEFAULT 'UTC',
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE pm_team_repo_defaults (
+			id TEXT PRIMARY KEY,
+			team_id TEXT NOT NULL,
+			repository_id TEXT NOT NULL,
+			base_branch TEXT NOT NULL DEFAULT 'main',
+			branch_template TEXT NOT NULL DEFAULT '{task_key}-{slug}',
+			auto_sync_states BOOLEAN NOT NULL DEFAULT 1,
+			review_state_id TEXT,
+			done_state_id TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE git_repositories (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			integration_id TEXT NOT NULL,
+			provider TEXT NOT NULL DEFAULT 'github',
+			external_id TEXT NOT NULL DEFAULT '',
+			full_name TEXT NOT NULL,
+			default_branch TEXT NOT NULL DEFAULT 'main',
+			permissions TEXT NOT NULL DEFAULT '{}',
+			private BOOLEAN NOT NULL DEFAULT 1,
+			archived BOOLEAN NOT NULL DEFAULT 0,
+			selected BOOLEAN NOT NULL DEFAULT 1,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE task_delivery_targets (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			task_id TEXT NOT NULL UNIQUE,
+			repository_id TEXT,
+			repo_full_name TEXT,
+			integration_id TEXT,
+			base_branch TEXT,
+			working_branch TEXT,
+			delivery_state TEXT NOT NULL DEFAULT 'unconfigured',
+			active_pr_number INTEGER,
+			active_pr_title TEXT,
+			active_pr_url TEXT,
+			active_pr_status TEXT,
+			last_commit_sha TEXT,
+			last_run_id TEXT,
+			last_synced_at DATETIME,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -111,6 +173,124 @@ func TestEvaluateEvent_CronTrigger_SkipsStoryLoading(t *testing.T) {
 		WorkspaceID: "ws-1",
 		TriggerType: model.TriggerCron,
 	}, nil)
+}
+
+func TestResolveRunBranchOverrides_UsesEffectiveTaskDeliveryBranches(t *testing.T) {
+	db := setupRuleEngineTestDB(t)
+	ctx := context.Background()
+
+	if err := db.Create(&model.Workspace{
+		ID:           "ws-1",
+		Name:         "Workspace",
+		Slug:         "workspace",
+		WorkspaceKey: "HLP",
+		OwnerID:      "owner-1",
+	}).Error; err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+	if err := db.Create(&model.GitRepository{
+		ID:            "repo-1",
+		WorkspaceID:   "ws-1",
+		IntegrationID: "integration-1",
+		Provider:      "github",
+		ExternalID:    "101",
+		FullName:      "acme/api",
+		DefaultBranch: "main",
+		Permissions:   json.RawMessage(`{}`),
+		Private:       true,
+		Selected:      true,
+	}).Error; err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	teamID := "team-1"
+	if err := db.Create(&model.PMTeamRepoDefault{
+		ID:             "team-default-1",
+		TeamID:         teamID,
+		RepositoryID:   "repo-1",
+		BaseBranch:     "develop",
+		BranchTemplate: "{task_key}-{slug}",
+		AutoSyncStates: true,
+	}).Error; err != nil {
+		t.Fatalf("create team repo default: %v", err)
+	}
+	task := &model.PMTask{
+		ID:              "task-1",
+		WorkspaceID:     "ws-1",
+		DisplayID:       42,
+		Name:            "Ship review agent",
+		TaskType:        "feature",
+		WorkflowID:      "wf-1",
+		WorkflowStateID: "state-1",
+		TeamID:          &teamID,
+		Priority:        "none",
+		Severity:        "none",
+	}
+	if err := db.Exec(
+		`INSERT INTO pm_tasks (id, workspace_id, display_id, name, task_type, workflow_id, workflow_state_id, team_id, priority, position, started, completed, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		task.ID,
+		task.WorkspaceID,
+		task.DisplayID,
+		task.Name,
+		task.TaskType,
+		task.WorkflowID,
+		task.WorkflowStateID,
+		teamID,
+		task.Priority,
+		0,
+		false,
+		false,
+		time.Now().UTC(),
+		time.Now().UTC(),
+	).Error; err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	gitSvc := NewGitService(
+		nil,
+		repository.NewGitRepositoryRepository(db),
+		nil,
+		repository.NewTaskDeliveryTargetRepository(db),
+		repository.NewSettingsRepository(db),
+		repository.NewWorkspaceRepository(db),
+		repository.NewPMTaskRepository(db),
+		nil,
+		nil,
+		nil,
+		"",
+		"",
+		"",
+	)
+	engine := NewAutomationRuleEngine(
+		repository.NewAutomationRuleRepository(db),
+		repository.NewPMTaskRepository(db),
+		repository.NewPMWorkflowRepository(db),
+		repository.NewTaskDeliveryTargetRepository(db),
+		gitSvc,
+		nil,
+		nil,
+		nil,
+	)
+
+	baseBranch, workingBranch, err := engine.resolveRunBranchOverrides(ctx, model.AutomationEvent{
+		WorkspaceID: "ws-1",
+		StoryID:     task.ID,
+		TaskID:      task.ID,
+		TargetType:  "task",
+		TargetID:    task.ID,
+	}, task, model.ActionConfigRunAgent{
+		BaseBranch:    "{base_branch}",
+		WorkingBranch: "{task_branch}",
+	})
+	if err != nil {
+		t.Fatalf("resolveRunBranchOverrides returned error: %v", err)
+	}
+	if baseBranch != "develop" {
+		t.Fatalf("baseBranch = %q, want develop", baseBranch)
+	}
+	if workingBranch != "hlp-42-ship-review-agent" {
+		t.Fatalf("workingBranch = %q, want hlp-42-ship-review-agent", workingBranch)
+	}
 }
 
 func TestMatchesTriggerConfig_StateType(t *testing.T) {

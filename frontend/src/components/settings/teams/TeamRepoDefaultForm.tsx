@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { repositoryDefaultBranchLabel } from '@/lib/branchLabels';
+import { RepositoryBranchPicker } from '@/components/git/RepositoryBranchPicker';
 import { Button } from '@/components/ui/button';
 import { DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -9,6 +11,7 @@ import type { TeamRepoDefault } from '@/lib/types';
 import type { GitRepository, WorkflowState } from '@/lib/pmTypes';
 
 export function TeamRepoDefaultForm({
+  workspaceId,
   initial,
   repositories,
   workflowStates,
@@ -16,6 +19,7 @@ export function TeamRepoDefaultForm({
   saving,
   onSave,
 }: {
+  workspaceId: string;
   initial: TeamRepoDefault | null;
   repositories: GitRepository[];
   workflowStates: WorkflowState[];
@@ -51,7 +55,7 @@ export function TeamRepoDefaultForm({
   return (
     <div className="space-y-5 py-2">
       <p className="text-sm text-muted-foreground">
-        Tasks on this team inherit these delivery defaults. Task detail can still override the repository or base branch.
+        Tasks on this team inherit this repository and default base branch. The base branch is where task branches start and what pull requests target by default. Task details can still override either one.
       </p>
       <div className="space-y-2">
         <Label>Repository</Label>
@@ -68,15 +72,19 @@ export function TeamRepoDefaultForm({
           </SelectContent>
         </Select>
         {selectedRepository && (
-          <p className="text-xs text-muted-foreground">Default branch: {selectedRepository.default_branch}</p>
+          <p className="text-xs text-muted-foreground">Repository default branch: {selectedRepository.default_branch}</p>
         )}
       </div>
       <div className="space-y-2">
-        <Label>Base branch</Label>
-        <Input
+        <Label>Default base branch</Label>
+        <RepositoryBranchPicker
+          workspaceId={workspaceId}
+          repositoryId={repositoryId || undefined}
           value={baseBranch}
-          onChange={(event) => setBaseBranch(event.target.value)}
+          onChange={setBaseBranch}
           placeholder={selectedRepository?.default_branch || 'main'}
+          emptyLabel={repositoryDefaultBranchLabel(selectedRepository?.default_branch)}
+          disabled={saving}
         />
       </div>
       <div className="space-y-2">

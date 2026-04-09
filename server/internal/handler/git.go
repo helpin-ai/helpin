@@ -170,6 +170,22 @@ func (h *GitHandler) UpdateRepository(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, repo)
 }
 
+// ListRepositoryBranches handles GET /api/git/repositories/{id}/branches.
+func (h *GitHandler) ListRepositoryBranches(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	repoID := chi.URLParam(r, "id")
+
+	branches, err := h.gitService.ListRepositoryBranches(r.Context(), workspaceID, repoID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if branches == nil {
+		branches = []model.GitBranch{}
+	}
+	writeJSON(w, http.StatusOK, branches)
+}
+
 // GetTaskGitLinks handles GET /api/pm/tasks/{id}/git-links.
 func (h *GitHandler) GetTaskGitLinks(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)

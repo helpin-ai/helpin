@@ -166,6 +166,8 @@ export interface AgentRunStreamEvent {
 export interface StartAgentRunRequest {
   agent_id?: string;
   additional_context?: string;
+  base_branch?: string;
+  working_branch?: string;
 }
 
 export interface SendAgentRunMessageRequest {

@@ -99,6 +99,15 @@ function trimFilterValue(value?: string) {
   return trimmed || undefined;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function asNonEmptyString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+}
+
 function formatBindingKind(kind: string): string {
   switch (kind) {
     case 'manual': return 'Manual';
@@ -116,6 +125,29 @@ function buildTriggerLabel(item: AutomationTriggerExecutionListItem): string {
   if (!name) return kind;
   if (kind === 'Manual') return `Manual ${name}`;
   return `${kind} \u00b7 ${name}`;
+}
+
+function formatRunTriggerLabel(input: Record<string, unknown> | undefined): string {
+  const trigger = asRecord(input?.trigger);
+  if (!trigger) return 'Manual';
+
+  const source = asNonEmptyString(trigger.source);
+  const triggerType = asNonEmptyString(trigger.trigger_type);
+
+  switch (source) {
+    case 'manual':
+      return 'Manual';
+    case 'automation_rule':
+      return triggerType ? `Automation rule · ${triggerType}` : 'Automation rule';
+    case 'schedule':
+      return triggerType ? `Scheduled · ${triggerType}` : 'Scheduled';
+    case 'support_widget':
+      return triggerType ? `Support widget · ${triggerType}` : 'Support widget';
+    case 'task_assignment':
+      return triggerType ? `Task assignment · ${triggerType}` : 'Task assignment';
+    default:
+      return triggerType ?? source ?? 'Manual';
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -219,7 +251,7 @@ function ActiveRunCard({
 
         <div className="space-y-0.5">
           <p className="text-[11px] text-muted-foreground">Trigger</p>
-          <p className="text-sm">{(run.input?.trigger as string) || 'Manual'}</p>
+          <p className="text-sm">{formatRunTriggerLabel(run.input)}</p>
         </div>
 
         <div className="space-y-0.5">

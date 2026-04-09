@@ -2,6 +2,7 @@ import { api } from '../api';
 import type {
   GitIntegration,
   GitHubInstallURLResponse,
+  GitBranch,
   GitRepository,
   TaskDeliveryTarget,
   TaskGitLink,
@@ -26,6 +27,8 @@ export const gitService = {
     api.post<GitRepository[]>(`/git/integrations/${integrationId}/sync${qs(workspaceId)}`, {}),
   listRepositories: (workspaceId: string, options?: { all?: boolean }) =>
     api.get<GitRepository[]>(`/git/repositories${qs(workspaceId)}${options?.all ? '&all=true' : ''}`),
+  listRepositoryBranches: (workspaceId: string, repoId: string) =>
+    api.get<GitBranch[]>(`/git/repositories/${repoId}/branches${qs(workspaceId)}`),
   updateRepository: (workspaceId: string, repoId: string, payload: UpdateGitRepositoryRequest) =>
     api.put<GitRepository>(`/git/repositories/${repoId}${qs(workspaceId)}`, payload),
   getTaskGitLinks: (workspaceId: string, taskId: string) =>

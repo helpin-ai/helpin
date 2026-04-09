@@ -2,10 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircleIcon, ArrowRight01Icon, GitBranchIcon, GitPullRequestIcon, Loading01Icon, PlayIcon, FloppyDiskIcon, UserAdd01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
+import { RepositoryBranchPicker } from '@/components/git/RepositoryBranchPicker';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import {
   Select,
@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { agentService } from '@/lib/services/agentService';
+import { repositoryDefaultBranchLabel, taskBranchOptionLabel } from '@/lib/branchLabels';
 import { gitService } from '@/lib/services/gitService';
 import { pmTaskService } from '@/lib/services/pmTaskService';
 import type {
@@ -238,6 +239,40 @@ export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, onT
     await ensureDeliveryTargetSaved(true);
   };
 
+  const handleBaseBranchChange = async (nextBaseBranch: string) => {
+    setBaseBranch(nextBaseBranch);
+    if (!repositoryId) {
+      toast.error('Choose a repository first');
+      return false;
+    }
+
+    const resolved = nextBaseBranch.trim() || selectedRepository?.default_branch || 'main';
+    if (resolved === resolvedBaseBranch && deliveryTargetSaved) {
+      return true;
+    }
+
+    setSavingTarget(true);
+    const { data, error } = await gitService.updateTaskDeliveryTarget(workspaceId, taskDetail.task.id, {
+      repository_id: repositoryId,
+      base_branch: resolved,
+    });
+    setSavingTarget(false);
+    if (error) {
+      toast.error(error);
+      return false;
+    }
+
+    setTarget(data ?? null);
+    if (data) {
+      setRepositoryId(data.repository_id ?? repositoryId);
+      setBaseBranch(data.base_branch ?? resolved);
+    } else {
+      setBaseBranch(resolved);
+    }
+    toast.success('Delivery target updated');
+    return true;
+  };
+
   const handleAssignAgent = async () => {
     await ensureAgentAssigned(true);
   };
@@ -341,6 +376,7 @@ export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, onT
     deliveryStateCfg,
     selectedRepository,
     handleSaveDelivery,
+    handleBaseBranchChange,
     handleAssignAgent,
     handleAgentChange,
     handleRepoChange,
@@ -470,19 +506,27 @@ export function TaskDeliveryPanel({ workspaceId, taskDetail, onTaskUpdated }: Pr
 
               <div className="space-y-1">
                 <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Base Branch
+                  Base branch
                 </label>
-                <Input
+                <RepositoryBranchPicker
+                  workspaceId={workspaceId}
+                  repositoryId={d.repositoryId || undefined}
                   value={d.baseBranch}
-                  onChange={(event) => d.setBaseBranch(event.target.value)}
+                  onChange={d.setBaseBranch}
                   placeholder={d.selectedRepository?.default_branch || 'main'}
-                  className="h-8 text-sm"
+                  emptyLabel={repositoryDefaultBranchLabel(d.selectedRepository?.default_branch)}
+                  extraOptions={
+                    d.branchPreview
+                      ? [{ value: d.branchPreview, label: taskBranchOptionLabel(d.branchPreview) }]
+                      : []
+                  }
+                  disabled={d.savingTarget}
                 />
               </div>
 
               <div className="space-y-1">
                 <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Working Branch
+                  Task branch
                 </label>
                 <div className="flex h-8 items-center rounded-md border border-border/70 bg-muted/30 px-2.5 text-sm">
                   <span className="truncate font-mono">{d.branchPreview}</span>

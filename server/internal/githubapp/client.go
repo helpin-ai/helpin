@@ -34,6 +34,10 @@ type Installation struct {
 	HTMLURL      string
 }
 
+type Branch struct {
+	Name string
+}
+
 // Client creates GitHub App JWTs and installation tokens.
 type Client struct {
 	appID      string
@@ -199,6 +203,67 @@ func (c *Client) GetInstallation(ctx context.Context, installationID string) (*I
 		AccountType:  payload.Account.Type,
 		HTMLURL:      payload.HTMLURL,
 	}, nil
+}
+
+// ListRepositoryBranches returns repository branch names visible to the installation.
+func (c *Client) ListRepositoryBranches(ctx context.Context, installationID, owner, repo string) ([]Branch, error) {
+	if c == nil {
+		return nil, fmt.Errorf("github app is not configured")
+	}
+	token, err := c.MintInstallationToken(ctx, installationID)
+	if err != nil {
+		return nil, err
+	}
+
+	owner = strings.TrimSpace(owner)
+	repo = strings.TrimSpace(repo)
+	if owner == "" || repo == "" {
+		return nil, fmt.Errorf("owner and repo are required")
+	}
+
+	branches := make([]Branch, 0, 64)
+	for page := 1; ; page++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/repos/%s/%s/branches?per_page=100&page=%d", c.apiBaseURL, owner, repo, page), nil)
+		if err != nil {
+			return nil, fmt.Errorf("build github branches request: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Accept", "application/vnd.github+json")
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("request github branches: %w", err)
+		}
+
+		var payload []struct {
+			Name string `json:"name"`
+		}
+		var errorPayload struct {
+			Message string `json:"message"`
+		}
+		if resp.StatusCode >= 300 {
+			_ = json.NewDecoder(resp.Body).Decode(&errorPayload)
+			resp.Body.Close()
+			return nil, fmt.Errorf("github branches failed (%d): %s", resp.StatusCode, errorPayload.Message)
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("decode github branches response: %w", err)
+		}
+		resp.Body.Close()
+
+		for _, branch := range payload {
+			name := strings.TrimSpace(branch.Name)
+			if name == "" {
+				continue
+			}
+			branches = append(branches, Branch{Name: name})
+		}
+		if len(payload) < 100 {
+			break
+		}
+	}
+	return branches, nil
 }
 
 // MergeBranch merges the head branch into the base branch using the GitHub REST API.
