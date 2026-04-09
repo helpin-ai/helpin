@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils';
 import type { CodingSessionEvent, CodingSessionLiveToolCall, RunPlanArtifact } from '@/lib/pmTypes';
 import { codingSessionEventContent, formatCodingSessionRelative, prettyCodingSessionEventType } from './codingSessionUtils';
 import { PublishedToolPreviewCard } from './PublishedToolPreviewCard';
+import { describeToolCall } from './toolCallPresentation';
 
 type TimelineItem =
   | { kind: 'event'; event: CodingSessionEvent }
@@ -175,26 +176,32 @@ function ToolCallTimelineItem({ toolCall, isLast }: { toolCall: CodingSessionLiv
   const publishedPreviewCard = !isFailed && argsText ? (
     <PublishedToolPreviewCard toolName={toolCall.tool_name} argsText={argsText} resultText={resultText} compact />
   ) : null;
+  const presentation = describeToolCall(toolCall);
   const filePaths = !publishedPreviewCard && argsText ? extractFilePathsFromText(argsText) : [];
+  const chips = [...presentation.chips];
+  for (const filePath of filePaths) {
+    if (!chips.includes(filePath)) chips.push(filePath);
+  }
 
   return (
     <TimelineRow
       icon={icon}
       iconClass={iconClass}
-      title={toolCall.tool_name.replaceAll('_', ' ')}
+      title={presentation.primaryLabel}
       timestamp={toolCall.completed_at ?? toolCall.started_at ?? ''}
       isLast={isLast}
     >
       <div className="space-y-1.5 text-xs text-muted-foreground">
-        {filePaths.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {filePaths.map((fp) => (
-              <span key={fp} className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-                {fp}
-              </span>
-            ))}
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Badge variant="outline" className="h-5 rounded-full px-1.5 text-[10px] font-medium text-muted-foreground">
+            {presentation.secondaryLabel}
+          </Badge>
+          {chips.map((chip) => (
+            <span key={chip} className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+              {chip}
+            </span>
+          ))}
+        </div>
         {publishedPreviewCard ?? (
           <>
             {argsText ? <CollapsibleCodeBlock text={argsText} /> : null}

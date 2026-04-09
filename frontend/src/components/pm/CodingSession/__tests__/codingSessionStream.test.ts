@@ -270,6 +270,45 @@ describe('buildCodingSessionStreamState', () => {
     });
   });
 
+  it('falls back to tool_input for persisted historical tool segments', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'assistant-persisted-tool-input',
+        type: 'assistant.message.completed',
+        sequence_no: 6,
+        runtime_metadata: { source: 'agent_run_message' },
+        payload: {
+          message_id: 'assistant-persisted-3',
+          content: 'Searching the codebase.',
+          turn_segments: [
+            {
+              segment_id: 'tool-segment-1',
+              kind: 'tool_call',
+              tool_call: {
+                tool_call_id: 'tool-legacy-1',
+                tool_name: 'ripgrep',
+                status: 'completed',
+                tool_input: '{"pattern":"openShareModal","path":"frontend/src"}',
+                result: {
+                  content: 'frontend/src/components/ArticleEditorHeader.tsx',
+                },
+              },
+            },
+          ],
+        },
+      }),
+    ]);
+
+    expect(state.transcript_messages[0]?.turn_segments?.[0]).toMatchObject({
+      kind: 'tool_call',
+      tool_call: {
+        tool_call_id: 'tool-legacy-1',
+        tool_name: 'ripgrep',
+        args_text: '{"pattern":"openShareModal","path":"frontend/src"}',
+      },
+    });
+  });
+
   it('hydrates a live turn from the session snapshot and applies future deltas on top', () => {
     const state = buildCodingSessionStreamState([
       buildEvent({
