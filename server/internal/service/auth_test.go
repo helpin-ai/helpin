@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"net/url"
 	"strings"
 	"testing"
@@ -840,6 +841,48 @@ func TestForgotAndResetPassword(t *testing.T) {
 			Password: "newpassword1",
 		}); err != nil {
 			t.Fatalf("second token should remain valid: %v", err)
+		}
+	})
+
+	t.Run("failed resend does not invalidate prior delivered token", func(t *testing.T) {
+		svc, _, _, emailSender := newAuthServiceWithResetEmail(t)
+		ctx := context.Background()
+
+		_, err := svc.Signup(ctx, model.SignupRequest{
+			Email:    "delivery@example.com",
+			Password: "oldpassword1",
+			FullName: "Delivery User",
+		})
+		if err != nil {
+			t.Fatalf("signup failed: %v", err)
+		}
+
+		if err := svc.ForgotPassword(ctx, model.ForgotPasswordRequest{Email: "delivery@example.com"}); err != nil {
+			t.Fatalf("first forgot password failed: %v", err)
+		}
+		firstToken := extractResetToken(t, emailSender.resetURL)
+
+		emailSender.err = errors.New("smtp unavailable")
+		if err := svc.ForgotPassword(ctx, model.ForgotPasswordRequest{Email: "delivery@example.com"}); err != nil {
+			t.Fatalf("second forgot password failed: %v", err)
+		}
+		secondToken := extractResetToken(t, emailSender.resetURL)
+		if firstToken == secondToken {
+			t.Fatal("expected a distinct token for resend attempt")
+		}
+
+		if err := svc.ResetPassword(ctx, model.ResetPasswordRequest{
+			Token:    secondToken,
+			Password: "newpassword2",
+		}); err == nil {
+			t.Fatal("expected undelivered token to be inactive")
+		}
+
+		if err := svc.ResetPassword(ctx, model.ResetPasswordRequest{
+			Token:    firstToken,
+			Password: "newpassword1",
+		}); err != nil {
+			t.Fatalf("first delivered token should remain valid: %v", err)
 		}
 	})
 

@@ -16,8 +16,9 @@ export default function ResetPassword() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [invalidLink, setInvalidLink] = useState(false);
 
-  if (!token) {
+  if (!token || invalidLink) {
     return (
       <PublicPageShell>
         <Card className="w-full">
@@ -49,6 +50,10 @@ export default function ResetPassword() {
     const { error } = await authService.resetPassword(token, password);
     setLoading(false);
     if (error) {
+      if (error.includes('invalid or has expired')) {
+        setInvalidLink(true);
+        return;
+      }
       toast.error(error);
       return;
     }

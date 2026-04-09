@@ -23,7 +23,7 @@ func TestCreateTaskRelationshipMapsReciprocalActions(t *testing.T) {
 
 	link, err := svc.CreateTaskRelationship(context.Background(), "ws-1", "task-a", "user-1", model.CreateTaskRelationshipRequest{
 		RelationshipType: model.TaskRelationshipActionIsBlockedBy,
-		OtherTaskID:     "task-b",
+		OtherTaskID:      "task-b",
 	})
 	if err != nil {
 		t.Fatalf("CreateTaskRelationship returned error: %v", err)
@@ -47,7 +47,7 @@ func TestCreateTaskRelationshipRejectsCycles(t *testing.T) {
 
 	_, err := svc.CreateTaskRelationship(context.Background(), "ws-1", "task-a", "user-1", model.CreateTaskRelationshipRequest{
 		RelationshipType: model.TaskRelationshipActionBlocks,
-		OtherTaskID:     "task-b",
+		OtherTaskID:      "task-b",
 	})
 	if err == nil {
 		t.Fatalf("expected cycle error, got nil")
@@ -81,6 +81,25 @@ func TestListGroupedTaskAssociationsIncludesRelationshipsLegacySupportAndDocs(t 
 	}
 	if len(grouped.Docs) != 1 {
 		t.Fatalf("expected one docs association, got %d", len(grouped.Docs))
+	}
+}
+
+func TestListGroupedTaskAssociationsDeduplicatesDuplicateDocLinks(t *testing.T) {
+	db := newAssociationsTestDB(t)
+	svc := newAssociationsServiceForTest(db)
+
+	seedAssociationTask(t, db, "task-a", "ws-1", 101, "Task A", false)
+	seedDocsDocument(t, db, "doc-1", "ws-1", "Spec Doc")
+	seedDocsLink(t, db, "doc-link-1", "ws-1", "doc-1", model.LinkedObjectTask, "task-a")
+	seedDocsLink(t, db, "doc-link-2", "ws-1", "doc-1", model.LinkedObjectTask, "task-a")
+
+	grouped, err := svc.ListGrouped(context.Background(), "ws-1", model.CRMObjectTask, "task-a")
+	if err != nil {
+		t.Fatalf("ListGrouped returned error: %v", err)
+	}
+
+	if len(grouped.Docs) != 1 {
+		t.Fatalf("expected duplicate doc links to collapse to one entry, got %d", len(grouped.Docs))
 	}
 }
 

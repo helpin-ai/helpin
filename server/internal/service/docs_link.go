@@ -12,7 +12,7 @@ import (
 // DocsLinkService handles business logic for document links.
 type DocsLinkService struct {
 	linkRepo    *repository.DocsLinkRepository
-	taskRepo   *repository.PMTaskRepository
+	taskRepo    *repository.PMTaskRepository
 	docRepo     *repository.DocsDocumentRepository
 	wsPublisher *websocket.Publisher
 }
@@ -29,6 +29,15 @@ func (s *DocsLinkService) Create(ctx context.Context, workspaceID, documentID st
 	}
 	if req.LinkContext == "" {
 		req.LinkContext = model.LinkContextAttached
+	}
+	existingLinks, err := s.linkRepo.ListByObject(ctx, workspaceID, req.LinkedObjectType, req.LinkedObjectID)
+	if err != nil {
+		return nil, err
+	}
+	for _, existing := range existingLinks {
+		if existing.DocumentID == documentID {
+			return &existing, nil
+		}
 	}
 
 	link := &model.DocsLink{

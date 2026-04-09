@@ -270,6 +270,45 @@ describe('buildCodingSessionStreamState', () => {
     });
   });
 
+  it('falls back to tool_input for persisted historical tool segments', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'assistant-persisted-tool-input',
+        type: 'assistant.message.completed',
+        sequence_no: 6,
+        runtime_metadata: { source: 'agent_run_message' },
+        payload: {
+          message_id: 'assistant-persisted-3',
+          content: 'Searching the codebase.',
+          turn_segments: [
+            {
+              segment_id: 'tool-segment-1',
+              kind: 'tool_call',
+              tool_call: {
+                tool_call_id: 'tool-legacy-1',
+                tool_name: 'ripgrep',
+                status: 'completed',
+                tool_input: '{"pattern":"openShareModal","path":"frontend/src"}',
+                result: {
+                  content: 'frontend/src/components/ArticleEditorHeader.tsx',
+                },
+              },
+            },
+          ],
+        },
+      }),
+    ]);
+
+    expect(state.transcript_messages[0]?.turn_segments?.[0]).toMatchObject({
+      kind: 'tool_call',
+      tool_call: {
+        tool_call_id: 'tool-legacy-1',
+        tool_name: 'ripgrep',
+        args_text: '{"pattern":"openShareModal","path":"frontend/src"}',
+      },
+    });
+  });
+
   it('hydrates a live turn from the session snapshot and applies future deltas on top', () => {
     const state = buildCodingSessionStreamState([
       buildEvent({
@@ -364,6 +403,57 @@ describe('buildCodingSessionStreamState', () => {
         content: ' world',
       },
     });
+  });
+
+  it('reconciles task-plan document steps from completed publish and review actions', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'assistant-plan',
+        type: 'assistant.message.completed',
+        sequence_no: 1,
+        runtime_metadata: { source: 'agent_run_message' },
+        payload: {
+          message_id: 'assistant-plan-1',
+          role: 'assistant',
+          content: 'Drafted the plan doc.',
+          tool_invocations: [
+            {
+              tool_name: 'update_plan',
+              input: {
+                plan: [
+                  { step: 'Explore repo structure and identify root cause', status: 'completed' },
+                  { step: 'Draft task planning document', status: 'in_progress' },
+                  { step: 'Publish and request review', status: 'pending' },
+                ],
+              },
+            },
+            {
+              tool_name: 'publish_task_plan_doc',
+              input: {
+                content: '# Plan',
+              },
+              output_summary: 'Published task planning document',
+            },
+          ],
+        },
+      }),
+      buildEvent({
+        id: 'review-requested',
+        type: 'interaction.requested',
+        sequence_no: 2,
+        payload: {
+          interaction_id: 'review-1',
+          interaction_kind: 'review_checkpoint',
+          status: 'pending',
+        },
+      }),
+    ]);
+
+    expect(state.current_plan?.plan).toEqual([
+      { step: 'Explore repo structure and identify root cause', status: 'completed' },
+      { step: 'Draft task planning document', status: 'completed' },
+      { step: 'Publish and request review', status: 'completed' },
+    ]);
   });
 
   it('hydrates the current plan from the session snapshot and keeps later live updates', () => {

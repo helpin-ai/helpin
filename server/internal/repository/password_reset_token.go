@@ -42,6 +42,21 @@ func (r *PasswordResetTokenRepository) GetActiveByTokenHash(ctx context.Context,
 	return &token, nil
 }
 
+// GetByTokenHash returns a reset token regardless of whether it is active.
+func (r *PasswordResetTokenRepository) GetByTokenHash(ctx context.Context, tokenHash string) (*model.PasswordResetToken, error) {
+	var token model.PasswordResetToken
+	err := r.db.WithContext(ctx).
+		Where("token_hash = ?", tokenHash).
+		First(&token).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get password reset token by hash: %w", err)
+	}
+	return &token, nil
+}
+
 // MarkUsed marks a reset token as consumed if it is still active.
 func (r *PasswordResetTokenRepository) MarkUsed(ctx context.Context, id string, usedAt time.Time) (bool, error) {
 	result := r.db.WithContext(ctx).

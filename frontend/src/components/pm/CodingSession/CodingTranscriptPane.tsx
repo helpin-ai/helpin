@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { UnicodeSpinner } from '@/components/pm/CodingSession/UnicodeSpinner';
 import {
@@ -12,6 +12,7 @@ import {
   LockKeyIcon,
   RadioIcon,
   Wrench01Icon,
+  File01Icon,
 } from '@/lib/icons';
 
 import { Badge } from '@/components/ui/badge';
@@ -31,6 +32,50 @@ import { formatCodingSessionRelative } from './codingSessionUtils';
 import { ApplyPatchDiff } from './ApplyPatchDiff';
 import { CodingInteractionCard } from './CodingInteractionCard';
 import { MarkdownContent } from './MarkdownContent';
+import { PublishedToolPreviewCard } from './PublishedToolPreviewCard';
+import { describeToolCall } from './toolCallPresentation';
+
+// ─── Tool call grouping ──────────────────────────────────────────────────────
+
+const TOOL_GROUP_COLLAPSE_THRESHOLD = 2;
+
+type ToolCategory = 'read' | 'search' | 'command' | 'write' | 'other';
+
+function categorizeToolCall(toolName: string): ToolCategory {
+  const name = toolName.toLowerCase();
+  if (name.includes('read')) return 'read';
+  if (name === 'grep' || name === 'glob' || name === 'find' || name.includes('search') || name.includes('grep')) return 'search';
+  if (name === 'run_command' || name === 'bash' || name.includes('shell') || name.includes('exec')) return 'command';
+  if (name === 'apply_patch' || name === 'write_file' || name === 'str_replace_editor' || name.includes('write') || name.includes('edit') || name.includes('patch')) return 'write';
+  return 'other';
+}
+
+type SegmentGroup =
+  | { kind: 'assistant'; segment: CodingSessionLiveTurnSegment }
+  | { kind: 'tool_group'; toolCalls: CodingSessionLiveToolCall[] };
+
+function partitionTurnSegments(segments: CodingSessionLiveTurnSegment[]): SegmentGroup[] {
+  const groups: SegmentGroup[] = [];
+  let pendingToolCalls: CodingSessionLiveToolCall[] = [];
+
+  for (const seg of segments) {
+    if (seg.kind === 'assistant_message') {
+      if (pendingToolCalls.length > 0) {
+        groups.push({ kind: 'tool_group', toolCalls: pendingToolCalls });
+        pendingToolCalls = [];
+      }
+      groups.push({ kind: 'assistant', segment: seg });
+    } else {
+      pendingToolCalls.push(seg.tool_call);
+    }
+  }
+
+  if (pendingToolCalls.length > 0) {
+    groups.push({ kind: 'tool_group', toolCalls: pendingToolCalls });
+  }
+
+  return groups;
+}
 
 export function CodingTranscriptPane({
   transcriptMessages,
@@ -265,6 +310,8 @@ export function CodingTranscriptPane({
         </div>
       </div>
 
+      {session?.status === 'running' && <RunningIndicator since={session.created_at} />}
+
       {(session?.pause_reason === 'authentication' || activeInteraction) ? (
         <InterruptionOverlay
           session={session ?? null}
@@ -434,68 +481,141 @@ function TranscriptEntry({
       ))
     : [];
   const hasSegmentTimeline = visibleTurnSegments.length > 0;
+  const segmentGroups = hasSegmentTimeline ? partitionTurnSegments(visibleTurnSegments) : [];
 
-  return (
-    <div className={cn('flex flex-col gap-2', isAssistant ? 'items-start' : 'items-end')}>
-      {/* Role + timestamp label */}
-      <div className={cn('flex items-center gap-2 px-1 text-[11px] text-muted-foreground', isAssistant ? 'justify-start' : 'justify-end')}>
-        <span className={cn(
-          'flex h-6 w-6 items-center justify-center rounded-full text-[10px]',
-          isAssistant ? 'bg-primary/10 text-primary' : 'bg-blue-600 text-white',
-        )}>
-          {isAssistant
-            ? (live && streaming ? <RadioIcon className="h-3 w-3 animate-pulse" /> : <BotIcon className="h-3 w-3" />)
-            : <UserIcon className="h-3 w-3" />}
-        </span>
-        <span className="font-medium">{message.role}</span>
-        {live ? (
-          <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
-            {streaming ? 'Live' : 'Finishing'}
-          </Badge>
-        ) : null}
-        <span>{formatCodingSessionRelative(message.timestamp)}</span>
-      </div>
-
-      {hasSegmentTimeline ? (
-        <div className="w-full max-w-[90%]">
-          {visibleTurnSegments.map((segment, idx) => (
-            segment.kind === 'assistant_message' ? (
-              <AssistantMessageBubble
-                key={segment.segment_id}
-                content={segment.assistant_message.content}
+  if (isAssistant) {
+    return (
+      <div className="w-full max-w-[90%]">
+        {hasSegmentTimeline ? (
+          segmentGroups.map((group, groupIdx) => {
+            const isLastGroup = groupIdx === segmentGroups.length - 1;
+            if (group.kind === 'assistant') {
+              const seg = group.segment;
+              if (seg.kind !== 'assistant_message') return null;
+              return (
+                <AssistantTimelineRow
+                  key={seg.segment_id}
+                  content={seg.assistant_message.content}
+                  timestamp={seg.assistant_message.started_at ?? message.timestamp}
+                  live={live}
+                  streaming={seg.assistant_message.status === 'streaming'}
+                  isLast={isLastGroup}
+                />
+              );
+            }
+            if (group.toolCalls.length >= TOOL_GROUP_COLLAPSE_THRESHOLD) {
+              return (
+                <CollapsedToolCallGroup
+                  key={group.toolCalls[0].tool_call_id}
+                  toolCalls={group.toolCalls}
+                  isLast={isLastGroup}
+                />
+              );
+            }
+            return (
+              <Fragment key={group.toolCalls[0].tool_call_id}>
+                {group.toolCalls.map((tc, tcIdx) => (
+                  <ActivityToolCallRow
+                    key={tc.tool_call_id}
+                    toolCall={tc}
+                    isLast={isLastGroup && tcIdx === group.toolCalls.length - 1}
+                  />
+                ))}
+              </Fragment>
+            );
+          })
+        ) : (
+          <>
+            {message.content.trim() ? (
+              <AssistantTimelineRow
+                content={message.content}
+                timestamp={message.timestamp}
+                live={live}
+                streaming={streaming}
+                placeholder={placeholder}
+                isLast={visibleToolCalls.length === 0}
               />
-            ) : (
-              <ActivityToolCallRow
-                key={segment.segment_id}
-                toolCall={segment.tool_call}
-                isLast={idx === visibleTurnSegments.length - 1}
-              />
-            )
-          ))}
-        </div>
-      ) : (
-        <>
-          {message.content.trim() ? (
-            <AssistantMessageBubble
-              content={message.content}
-              isAssistant={isAssistant}
-              placeholder={placeholder}
-            />
-          ) : null}
+            ) : null}
 
-          {visibleToolCalls.length > 0 ? (
-            <div className="w-full max-w-[90%]">
-              {visibleToolCalls.map((tc, idx) => (
+            {visibleToolCalls.length >= TOOL_GROUP_COLLAPSE_THRESHOLD ? (
+              <CollapsedToolCallGroup toolCalls={visibleToolCalls} isLast />
+            ) : visibleToolCalls.length > 0 ? (
+              visibleToolCalls.map((tc, idx) => (
                 <ActivityToolCallRow
                   key={tc.tool_call_id}
                   toolCall={tc}
                   isLast={idx === visibleToolCalls.length - 1}
                 />
-              ))}
-            </div>
+              ))
+            ) : null}
+          </>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-2">
+      <div className="flex items-center justify-end gap-2 px-1 text-[11px] text-muted-foreground">
+        <span>{formatCodingSessionRelative(message.timestamp)}</span>
+        <span className="font-medium capitalize">{message.role}</span>
+        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-[10px] text-white">
+          <UserIcon className="h-3 w-3" />
+        </span>
+      </div>
+
+      {message.content.trim() ? (
+        <AssistantMessageBubble
+          content={message.content}
+          isAssistant={false}
+          placeholder={placeholder}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function AssistantTimelineRow({
+  content,
+  isLast,
+  live = false,
+  streaming = false,
+  placeholder = false,
+}: {
+  content: string;
+  timestamp?: string;
+  isLast: boolean;
+  live?: boolean;
+  streaming?: boolean;
+  placeholder?: boolean;
+}) {
+  return (
+    <div className="flex gap-3">
+      <div className="flex flex-col items-center">
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-primary/20 bg-primary/10 text-primary">
+          {live && streaming ? <RadioIcon className="h-3.5 w-3.5 animate-pulse" /> : <BotIcon className="h-3.5 w-3.5" />}
+        </div>
+        {!isLast && <div className="mt-1 h-full min-h-[1rem] w-px bg-border/50" />}
+      </div>
+
+      <div className={cn('min-w-0 flex-1', isLast ? 'pb-0' : 'pb-4')}>
+        <div className="mb-1 flex items-center gap-2">
+          <span className="text-xs font-medium text-foreground">Assistant</span>
+          {live ? (
+            <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+              {streaming ? 'Live' : 'Finishing'}
+            </Badge>
           ) : null}
-        </>
-      )}
+        </div>
+
+        <div className={cn(
+          placeholder && 'text-muted-foreground',
+        )}>
+          {!placeholder
+            ? <MarkdownContent content={content} className="text-[13px] leading-6 text-foreground" />
+            : <div className="whitespace-pre-wrap text-[13px] leading-6">{content}</div>}
+        </div>
+      </div>
     </div>
   );
 }
@@ -514,12 +634,47 @@ function AssistantMessageBubble({
       'max-w-[90%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed shadow-sm',
       isAssistant
         ? 'rounded-bl-sm border border-border/60 bg-background text-foreground'
-        : 'rounded-br-sm border border-blue-200/80 bg-blue-50 text-blue-950 dark:border-blue-900/70 dark:bg-blue-950/30 dark:text-blue-50',
+        : 'rounded-br-sm bg-blue-600 text-white dark:bg-blue-500',
       placeholder && 'border-dashed text-muted-foreground',
     )}>
       {!placeholder
         ? <MarkdownContent content={content} className={isAssistant ? undefined : 'text-inherit'} />
         : <div className="whitespace-pre-wrap">{content}</div>}
+    </div>
+  );
+}
+
+// ─── Running indicator ──────────────────────────────────────────────────────
+
+function formatElapsed(ms: number): string {
+  const totalSec = Math.floor(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  if (m > 0) return `${m}m ${s.toString().padStart(2, '0')}s`;
+  return `${s}s`;
+}
+
+/** Subscribes to a 1-second tick so elapsed time stays live. */
+function useElapsedMs(since: string): number {
+  const origin = useMemo(() => new Date(since).getTime(), [since]);
+  const subscribe = useCallback((cb: () => void) => {
+    const id = setInterval(cb, 1_000);
+    return () => clearInterval(id);
+  }, []);
+  const getSnapshot = useCallback(() => Math.floor((Date.now() - origin) / 1000), [origin]);
+  const tick = useSyncExternalStore(subscribe, getSnapshot);
+  return tick * 1000;
+}
+
+function RunningIndicator({ since }: { since: string }) {
+  const elapsed = useElapsedMs(since);
+  return (
+    <div className="flex items-center gap-2.5 border-t border-border bg-muted/50 px-4 py-2">
+      <Loading01Icon className="h-3.5 w-3.5 animate-spin text-primary" />
+      <span className="text-xs font-medium text-primary">Running</span>
+      <span className="ml-auto text-xs tabular-nums text-muted-foreground">{formatElapsed(elapsed)}</span>
     </div>
   );
 }
@@ -544,6 +699,17 @@ function toolChrome(toolName: string, isFailed: boolean, isRunning: boolean): { 
     return {
       icon: <TerminalIcon className="h-3.5 w-3.5" />,
       iconClass: 'bg-slate-100 border-slate-300 dark:bg-slate-900 dark:border-slate-700 text-slate-600 dark:text-slate-400',
+    };
+  }
+  if (
+    name.startsWith('publish_')
+    || name.startsWith('preview_')
+    || name.includes('plan_doc')
+    || name.includes('draft')
+  ) {
+    return {
+      icon: <File01Icon className="h-3.5 w-3.5" />,
+      iconClass: 'bg-blue-50 border-blue-200 dark:bg-blue-950/20 dark:border-blue-900/50 text-blue-600 dark:text-blue-400',
     };
   }
   if (
@@ -618,7 +784,16 @@ function ActivityToolCallRow({ toolCall, isLast }: { toolCall: CodingSessionLive
   const isApplyPatch = toolCall.tool_name === 'apply_patch';
   const argsText = toolCall.args_text.trim();
   const resultText = toolCall.result?.output_summary?.trim() || toolCall.result?.content?.trim() || '';
-  const filePaths = !isApplyPatch && argsText ? extractFilePathsFromText(argsText) : [];
+  const publishedPreviewCard = !isFailed && argsText ? (
+    <PublishedToolPreviewCard toolName={toolCall.tool_name} argsText={argsText} resultText={resultText} />
+  ) : null;
+  const presentation = describeToolCall(toolCall);
+  const showSecondaryBadge = presentation.secondaryLabel.trim().toLowerCase() !== presentation.primaryLabel.trim().toLowerCase();
+  const filePaths = !isApplyPatch && !publishedPreviewCard && argsText ? extractFilePathsFromText(argsText) : [];
+  const chips = [...presentation.chips];
+  for (const filePath of filePaths) {
+    if (!chips.includes(filePath)) chips.push(filePath);
+  }
 
   return (
     <div className="flex gap-3">
@@ -633,37 +808,172 @@ function ActivityToolCallRow({ toolCall, isLast }: { toolCall: CodingSessionLive
       {/* Content */}
       <div className={cn('min-w-0 flex-1', isLast ? 'pb-0' : 'pb-4')}>
         <div className="mb-1 flex items-start justify-between gap-2">
-          <span className="text-xs font-medium capitalize text-foreground">
-            {toolCall.tool_name.replaceAll('_', ' ')}
-          </span>
-          <div className="flex shrink-0 items-center gap-2">
-            {toolCall.completed_at ?? toolCall.started_at ? (
-              <span className="text-[11px] text-muted-foreground">
-                {formatCodingSessionRelative(toolCall.completed_at ?? toolCall.started_at ?? '')}
-              </span>
-            ) : null}
+          <div className="min-w-0 space-y-1">
+            <p className="truncate text-xs font-medium text-foreground">{presentation.primaryLabel}</p>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {showSecondaryBadge ? (
+                <Badge variant="outline" className="h-5 rounded-full px-1.5 text-[10px] font-medium text-muted-foreground">
+                  {presentation.secondaryLabel}
+                </Badge>
+              ) : null}
+              {chips.map((chip) => (
+                <span key={chip} className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                  {chip}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
-        {filePaths.length > 0 && (
-          <div className="mb-1.5 flex flex-wrap gap-1">
-            {filePaths.map((fp) => (
-              <span key={fp} className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-                {fp}
+        <div className="space-y-1.5 text-xs text-muted-foreground">
+          {publishedPreviewCard ?? (
+            <>
+              {isApplyPatch
+                ? <ApplyPatchDiff argsText={toolCall.args_text} />
+                : argsText ? <CollapsibleCodeBlock text={argsText} /> : null}
+              {resultText ? (
+                isFailed
+                  ? <CollapsibleCodeBlock text={resultText} failed />
+                  : <p className="text-[11px] text-muted-foreground">{resultText.length > 200 ? `${resultText.slice(0, 200)}…` : resultText}</p>
+              ) : null}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Collapsed tool call group ──────────────────────────────────────────────
+
+function CollapsedToolCallGroup({
+  toolCalls,
+  isLast,
+}: {
+  toolCalls: CodingSessionLiveToolCall[];
+  isLast: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  const { chips, failedCount, durationLabel } = useMemo(() => {
+    const counts: Record<ToolCategory, number> = { read: 0, search: 0, command: 0, write: 0, other: 0 };
+    let failed = 0;
+    let durationMs = 0;
+
+    for (const tc of toolCalls) {
+      counts[categorizeToolCall(tc.tool_name)]++;
+      if (tc.duration_ms) durationMs += tc.duration_ms;
+      if (tc.status === 'failed') failed++;
+    }
+
+    const parts: string[] = [];
+    if (counts.read > 0) parts.push(`${counts.read} read${counts.read !== 1 ? 's' : ''}`);
+    if (counts.search > 0) parts.push(`${counts.search} search${counts.search !== 1 ? 'es' : ''}`);
+    if (counts.command > 0) parts.push(`${counts.command} command${counts.command !== 1 ? 's' : ''}`);
+    if (counts.write > 0) parts.push(`${counts.write} write${counts.write !== 1 ? 's' : ''}`);
+    if (counts.other > 0) parts.push(`${counts.other} other`);
+
+    const label = durationMs >= 1000
+      ? `${Math.round(durationMs / 1000)}s`
+      : durationMs > 0 ? `${durationMs}ms` : null;
+
+    return { chips: parts, failedCount: failed, durationLabel: label };
+  }, [toolCalls]);
+
+  return (
+    <div className="flex gap-3">
+      {/* Timeline connector */}
+      <div className="flex flex-col items-center">
+        <div className={cn(
+          'flex h-7 w-7 shrink-0 items-center justify-center rounded-full border',
+          failedCount > 0
+            ? 'border-destructive/30 bg-destructive/10 text-destructive'
+            : 'border-border bg-muted/50 text-muted-foreground',
+        )}>
+          <Wrench01Icon className="h-3.5 w-3.5" />
+        </div>
+        {!isLast && (
+          <div className="mt-1 h-full min-h-[1rem] w-px border-l border-dashed border-border/60" />
+        )}
+      </div>
+
+      {/* Content */}
+      <div className={cn('min-w-0 flex-1', isLast ? 'pb-0' : 'pb-4')}>
+        <button
+          type="button"
+          className={cn(
+            'w-full rounded-lg border px-3 py-2 text-left transition-colors',
+            'border-border/60 bg-muted/25 hover:bg-muted/40',
+            expanded && 'rounded-b-none border-b-0',
+          )}
+          onClick={() => setExpanded((prev) => !prev)}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-foreground">
+                Performed {toolCalls.length} tool calls
               </span>
+              {failedCount > 0 && (
+                <span className="inline-flex items-center gap-1 rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
+                  <CancelCircleIcon className="h-3 w-3" />
+                  {failedCount} failed
+                </span>
+              )}
+            </div>
+            <span className="text-[11px] font-medium text-primary">
+              {expanded ? '▾ Hide' : '▸ Show'}
+            </span>
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            {chips.map((chip) => (
+              <span key={chip} className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                {chip}
+              </span>
+            ))}
+            {durationLabel && (
+              <span className="text-[10px] text-muted-foreground">· {durationLabel}</span>
+            )}
+          </div>
+        </button>
+
+        {expanded && (
+          <div className="rounded-b-lg border border-t-0 border-border/60 bg-muted/15 py-1">
+            {toolCalls.map((tc) => (
+              <CompactToolCallRow key={tc.tool_call_id} toolCall={tc} />
             ))}
           </div>
         )}
-        <div className="space-y-1.5 text-xs text-muted-foreground">
-          {isApplyPatch
-            ? <ApplyPatchDiff argsText={toolCall.args_text} />
-            : argsText ? <CollapsibleCodeBlock text={argsText} /> : null}
-          {resultText ? (
-            isFailed
-              ? <CollapsibleCodeBlock text={resultText} failed />
-              : <p className="text-[11px] text-muted-foreground">{resultText.length > 200 ? `${resultText.slice(0, 200)}…` : resultText}</p>
-          ) : null}
-        </div>
       </div>
+    </div>
+  );
+}
+
+function CompactToolCallRow({ toolCall }: { toolCall: CodingSessionLiveToolCall }) {
+  const isFailed = toolCall.status === 'failed';
+  const { icon, iconClass } = toolChrome(toolCall.tool_name, isFailed, false);
+  const presentation = describeToolCall(toolCall);
+
+  return (
+    <div className={cn(
+      'flex items-center gap-2 px-3 py-1.5',
+      isFailed && 'bg-destructive/5',
+    )}>
+      <div className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded-full border', iconClass)}>
+        <span className="flex scale-75 items-center justify-center">{icon}</span>
+      </div>
+      <span className={cn(
+        'min-w-0 truncate text-[11px]',
+        isFailed ? 'font-medium text-destructive' : 'text-foreground/80',
+      )}>
+        {presentation.primaryLabel}
+      </span>
+      {presentation.chips.length > 0 && (
+        <span className="shrink-0 text-[10px] text-muted-foreground">
+          {presentation.chips[0]}
+        </span>
+      )}
+      {isFailed && (
+        <CancelCircleIcon className="ml-auto h-3 w-3 shrink-0 text-destructive" />
+      )}
     </div>
   );
 }

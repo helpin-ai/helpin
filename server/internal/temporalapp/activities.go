@@ -3030,19 +3030,6 @@ func (a *AgentRunActivities) applyApprovedTaskDocPreview(ctx context.Context, st
 		})); err != nil {
 			return err
 		}
-		if _, err := a.commandExecutor.Execute(ctx, model.InternalCommandContext{
-			WorkspaceID: state.run.WorkspaceID,
-			ActorID:     runActorID(state.run),
-			TargetType:  "task",
-			TargetID:    state.task.ID,
-		}, "docs.link_document_to_object", mustJSON(map[string]any{
-			"document_id":        doc.ID,
-			"linked_object_type": model.LinkedObjectTask,
-			"linked_object_id":   state.task.ID,
-			"link_context":       model.LinkContextCreatedFrom,
-		})); err != nil {
-			return err
-		}
 	} else {
 		if _, err := a.docsContentRepo.Upsert(ctx, doc.ID, tiptap.MarkdownToJSON(markdown)); err != nil {
 			return err

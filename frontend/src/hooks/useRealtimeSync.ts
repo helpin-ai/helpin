@@ -198,6 +198,15 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       if (event.parent_type === 'task' && event.parent_id) {
         queryClient.invalidateQueries({ queryKey: queryKeys.pm.task(workspaceId, event.parent_id) })
       }
+    } else if (event.entity === 'crm_contact') {
+      queryClient.invalidateQueries({ queryKey: queryKeys.crm.contacts(workspaceId) })
+      if (event.entity_id) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.crm.contact(workspaceId, event.entity_id) })
+      }
+    } else if (event.entity === 'crm_company') {
+      queryClient.invalidateQueries({ queryKey: queryKeys.crm.companies(workspaceId) })
+    } else if (event.entity === 'crm_deal') {
+      queryClient.invalidateQueries({ queryKey: queryKeys.crm.deals(workspaceId) })
     } else if (event.entity === 'support_conversation') {
       if (event.action === 'typing_started' || event.action === 'typing_stopped') {
         if (!event.entity_id) return

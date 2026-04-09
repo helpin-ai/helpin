@@ -3226,8 +3226,8 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 	if action != "persist_task_doc" {
 		t.Fatalf("expected persist_task_doc action, got %q", action)
 	}
-	if len(executed) != 2 || executed[0] != "docs.write_document_content" || executed[1] != "docs.link_document_to_object" {
-		t.Fatalf("expected docs write then docs link commands, got %#v", executed)
+	if len(executed) != 1 || executed[0] != "docs.write_document_content" {
+		t.Fatalf("expected only docs.write_document_content to execute, got %#v", executed)
 	}
 
 	updatedTask, err := taskRepo.GetRawByID(context.Background(), story.ID)

@@ -555,6 +555,10 @@ Key stores: `authStore`, `workspaceStore`, `organizationStore`, `quarterStore`, 
 - **dnd-kit**: Drag and drop
 - **react-hook-form + zod**: Form validation
 
+### Select / Dropdown Conventions
+- **Caret icon**: Always use `ArrowUpDownIcon` from `@/lib/icons` (same as the workspace switcher). This is already the default in `SelectTrigger` — do not override it with other chevron/unfold icons.
+- **Compact selects**: Use `<Select size="sm">` for table inline editors, filter bars, toolbars, and any context where the trigger uses `text-xs` or `h-7`. The `size="sm"` prop flows via React context to `SelectTrigger`, `SelectItem`, and `SelectGroup` for consistent compact styling.
+
 ### Styling
 - **Tailwind CSS v4** with oklch() color system
 - CSS custom properties for theming (light + dark via `next-themes`)
