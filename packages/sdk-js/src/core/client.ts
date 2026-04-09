@@ -25,6 +25,44 @@ import type { ShowArticleOptions, WidgetSettings } from './widget';
 
 type WidgetCallback = (...args: any[]) => void;
 
+type BackendIdentityPayload = {
+  email: string;
+  name: string;
+  firstName: string;
+  lastName: string;
+};
+
+function getIdentityString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function buildIdentityName(firstName: string, lastName: string, fallbackName: string): string {
+  return fallbackName || [firstName, lastName].filter(Boolean).join(' ');
+}
+
+function resolveIdentityPayload(payload: Record<string, any>): BackendIdentityPayload {
+  const firstName = getIdentityString(payload.first_name ?? payload.firstName);
+  const lastName = getIdentityString(payload.last_name ?? payload.lastName);
+  const name = buildIdentityName(firstName, lastName, getIdentityString(payload.name));
+  return {
+    email: getIdentityString(payload.email),
+    name,
+    firstName,
+    lastName,
+  };
+}
+
+function getStoredIdentityName(identity: { firstName?: string; lastName?: string; name?: string } | null | undefined): string {
+  if (!identity) {
+    return '';
+  }
+  return buildIdentityName(
+    getIdentityString(identity.firstName),
+    getIdentityString(identity.lastName),
+    getIdentityString(identity.name),
+  );
+}
+
 export type HelpinWidgetController = {
   boot(settings: WidgetSettings): void;
   shutdown(): void;
@@ -168,15 +206,15 @@ export class HelpinClient {
     const storedIdentity = this.config.widgetKey
       ? getStoredIdentity(this.config.widgetKey)
       : null;
+    const identity = resolveIdentityPayload({
+      ...(storedIdentity || {}),
+      ...userProps,
+    });
     const user = {
-      email:
-        typeof userProps.email === 'string'
-          ? userProps.email
-          : storedIdentity?.email,
-      name:
-        typeof userProps.name === 'string'
-          ? userProps.name
-          : storedIdentity?.name,
+      email: identity.email || storedIdentity?.email,
+      name: identity.name || getStoredIdentityName(storedIdentity),
+      firstName: identity.firstName || storedIdentity?.firstName,
+      lastName: identity.lastName || storedIdentity?.lastName,
       userId:
         typeof persistedUserId === 'string'
           ? persistedUserId
@@ -394,8 +432,10 @@ export class HelpinClient {
     this.syncWidgetSettings();
 
     // Persist identity for widget auto-restore on page refresh
-    if (userData.email && this.config.widgetKey) {
-      persistIdentity(this.config.widgetKey, userData.email.trim(), userData.name || '');
+    const identity = resolveIdentityPayload(userData);
+
+    if (identity.email && this.config.widgetKey) {
+      persistIdentity(this.config.widgetKey, identity.email, identity.name, identity.firstName, identity.lastName);
     }
 
     if (!doNotSendEvent) {
@@ -408,8 +448,8 @@ export class HelpinClient {
     }
 
     // Also send to Go backend for CRM contact creation + conversation backfill
-    if (userData.email) {
-      this.sendIdentifyToBackend(userData.email.trim(), userData.name || '', 'sdk_identify');
+    if (identity.email) {
+      this.sendIdentifyToBackend(identity, 'sdk_identify');
     }
 
     this.logger.info('User identified:', userData);
@@ -449,7 +489,7 @@ export class HelpinClient {
     this.track('lead', payload, directSend);
 
     // Also send to Go backend for CRM lead creation + conversation backfill
-    this.sendIdentifyToBackend(trimmedEmail, (payload.name as string) || '', 'sdk_lead');
+    this.sendIdentifyToBackend(resolveIdentityPayload(payload), 'sdk_lead');
   }
 
   private trackInternal(
@@ -686,11 +726,11 @@ export class HelpinClient {
    * Sends identity data to the Go backend for CRM contact creation and conversation backfill.
    * If the widget WebSocket is open, sends via session:upgrade; otherwise falls back to HTTP POST.
    */
-  private sendIdentifyToBackend(email: string, name: string, source: string): void {
+  private sendIdentifyToBackend(identity: BackendIdentityPayload, source: string): void {
     // Try widget WS path first via the public sendSessionUpgrade method
     const namespace = this.config.namespace || 'helpin';
     const nsFunc = (globalThis as any)[namespace];
-    if (nsFunc?._widgetManager?.sendSessionUpgrade?.(email, name, source)) {
+    if (nsFunc?._widgetManager?.sendSessionUpgrade?.(identity.email, identity.name, source, identity.firstName, identity.lastName)) {
       return;
     }
 
@@ -702,8 +742,10 @@ export class HelpinClient {
     const body = JSON.stringify({
       api_key: this.config.widgetKey,
       anonymous_id: this.anonymousId,
-      email,
-      name,
+      email: identity.email,
+      name: identity.name,
+      first_name: identity.firstName,
+      last_name: identity.lastName,
       source,
     });
 

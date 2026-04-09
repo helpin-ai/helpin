@@ -798,21 +798,36 @@ func (r *SupportConversationRepository) applyMailboxAccess(query *gorm.DB, works
 // UpdateIdentityByAnonymousID batch-updates all anonymous conversations for a visitor
 // with the provided email, name, and CRM contact ID. Returns the IDs of updated conversations.
 func (r *SupportConversationRepository) UpdateIdentityByAnonymousID(ctx context.Context, workspaceID, anonymousID, email, name string, crmContactID *string) ([]string, error) {
-	// Build the update map
+	normalizedEmail := strings.ToLower(strings.TrimSpace(email))
+	if normalizedEmail == "" {
+		return nil, nil
+	}
+
 	updates := map[string]interface{}{
 		"customer_email": email,
-		"customer_name":  name,
+	}
+	if strings.TrimSpace(name) != "" {
+		updates["customer_name"] = name
+	}
+	if crmContactID != nil {
+		updates["crm_contact_id"] = gorm.Expr("COALESCE(crm_contact_id, ?)", *crmContactID)
 	}
 
 	query := r.db.WithContext(ctx).
 		Model(&model.SupportConversation{}).
-		Where("workspace_id = ? AND anonymous_id = ? AND (customer_email IS NULL OR customer_email = '')", workspaceID, anonymousID)
+		Where(
+			"workspace_id = ? AND anonymous_id = ? AND (customer_email IS NULL OR customer_email = '' OR LOWER(customer_email) = ?)",
+			workspaceID, anonymousID, normalizedEmail,
+		)
 
 	// First, get the IDs of conversations that will be updated
 	var ids []string
 	if err := r.db.WithContext(ctx).
 		Model(&model.SupportConversation{}).
-		Where("workspace_id = ? AND anonymous_id = ? AND (customer_email IS NULL OR customer_email = '')", workspaceID, anonymousID).
+		Where(
+			"workspace_id = ? AND anonymous_id = ? AND (customer_email IS NULL OR customer_email = '' OR LOWER(customer_email) = ?)",
+			workspaceID, anonymousID, normalizedEmail,
+		).
 		Pluck("id", &ids).Error; err != nil {
 		return nil, fmt.Errorf("find anonymous conversations: %w", err)
 	}
@@ -821,19 +836,8 @@ func (r *SupportConversationRepository) UpdateIdentityByAnonymousID(ctx context.
 		return nil, nil
 	}
 
-	// Apply CRM contact ID only where not already set
-	if crmContactID != nil {
-		// Use raw SQL to handle COALESCE for crm_contact_id
-		if err := r.db.WithContext(ctx).Exec(
-			"UPDATE support_conversations SET customer_email = ?, customer_name = ?, crm_contact_id = COALESCE(crm_contact_id, ?) WHERE id IN ? AND (customer_email IS NULL OR customer_email = '')",
-			email, name, *crmContactID, ids,
-		).Error; err != nil {
-			return nil, fmt.Errorf("backfill conversation identity: %w", err)
-		}
-	} else {
-		if err := query.Updates(updates).Error; err != nil {
-			return nil, fmt.Errorf("backfill conversation identity: %w", err)
-		}
+	if err := query.Updates(updates).Error; err != nil {
+		return nil, fmt.Errorf("backfill conversation identity: %w", err)
 	}
 
 	return ids, nil
@@ -842,14 +846,26 @@ func (r *SupportConversationRepository) UpdateIdentityByAnonymousID(ctx context.
 // UpdateSessionsByAnonymousID batch-updates all anonymous sessions for a visitor
 // with the provided email and name.
 func (r *SupportInboxSessionRepository) UpdateSessionsByAnonymousID(ctx context.Context, workspaceID, anonymousID, email, name string) error {
+	normalizedEmail := strings.ToLower(strings.TrimSpace(email))
+	if normalizedEmail == "" {
+		return nil
+	}
+
+	updates := map[string]interface{}{
+		"customer_email": email,
+		"is_anonymous":   false,
+	}
+	if strings.TrimSpace(name) != "" {
+		updates["customer_name"] = name
+	}
+
 	if err := r.db.WithContext(ctx).
 		Model(&model.SupportWidgetSession{}).
-		Where("workspace_id = ? AND anonymous_id = ? AND is_anonymous = true", workspaceID, anonymousID).
-		Updates(map[string]interface{}{
-			"customer_email": email,
-			"customer_name":  name,
-			"is_anonymous":   false,
-		}).Error; err != nil {
+		Where(
+			"workspace_id = ? AND anonymous_id = ? AND (is_anonymous = ? OR customer_email IS NULL OR customer_email = '' OR LOWER(customer_email) = ?)",
+			workspaceID, anonymousID, true, normalizedEmail,
+		).
+		Updates(updates).Error; err != nil {
 		return fmt.Errorf("backfill session identity: %w", err)
 	}
 	return nil

@@ -859,7 +859,26 @@ func newTestDB(t *testing.T) *gorm.DB {
 			locale TEXT,
 			revoked_at DATETIME,
 			expires_at DATETIME NOT NULL,
-			created_at DATETIME
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE crm_contacts (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT NOT NULL,
+			display_id TEXT NOT NULL,
+			first_name TEXT NOT NULL,
+			last_name TEXT,
+			email TEXT,
+			phone TEXT,
+			job_title TEXT,
+			lifecycle_stage TEXT NOT NULL DEFAULT 'subscriber',
+			lead_status TEXT NOT NULL DEFAULT 'new',
+			owner_member_id TEXT,
+			avatar_url TEXT,
+			source TEXT,
+			custom_properties TEXT NOT NULL DEFAULT '{}',
+			created_at DATETIME,
+			updated_at DATETIME
 		)`,
 	}
 

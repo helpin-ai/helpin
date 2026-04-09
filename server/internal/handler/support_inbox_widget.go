@@ -233,7 +233,8 @@ func (h *SupportInboxWidgetHandler) Identify(w http.ResponseWriter, r *http.Requ
 
 	// Allow empty email — visitor skipped identification.
 	if req.Email != "" {
-		if err := h.supportService.IdentifyByAnonymousID(r.Context(), req.APIKey, req.AnonymousID, req.Email, req.Name, source); err != nil {
+		req.Source = source
+		if err := h.supportService.IdentifyByAnonymousID(r.Context(), req.APIKey, req.AnonymousID, req.WidgetIdentityPayload); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}

@@ -87,11 +87,13 @@ func (s *SupportInboxService) GetVisitorConversations(ctx context.Context, works
 // It creates/promotes a CRM contact, backfills all conversations and sessions
 // for the same anonymous_id, and broadcasts real-time updates.
 // The source parameter controls lifecycle promotion: "identify" promotes lead→customer.
-func (s *SupportInboxService) UpgradeWidgetSession(ctx context.Context, sessionToken, email, name, source string) error {
+func (s *SupportInboxService) UpgradeWidgetSession(ctx context.Context, sessionToken string, identity model.WidgetIdentityPayload) error {
 	session, err := s.GetWidgetSession(ctx, sessionToken)
 	if err != nil {
 		return err
 	}
+
+	resolved := resolveWidgetIdentityPayload(identity)
 
 	// Run all state changes in a single transaction
 	var contactID *string
@@ -104,25 +106,27 @@ func (s *SupportInboxService) UpgradeWidgetSession(ctx context.Context, sessionT
 		contactRepoTx := s.contactRepo.WithTx(tx)
 
 		// 1. Update current session
-		session.CustomerEmail = &email
-		session.CustomerName = &name
+		session.CustomerEmail = &resolved.email
+		if resolved.displayName != "" {
+			session.CustomerName = &resolved.displayName
+		}
 		session.IsAnonymous = false
 		if err := sessionRepoTx.Update(ctx, session); err != nil {
 			return err
 		}
 
 		// 2. Create or match CRM contact — always as lead with source=live_chat
-		contactID = s.matchOrCreateCRMContactTx(ctx, contactRepoTx, session.WorkspaceID, &email, &name, source)
+		contactID = s.matchOrCreateCRMContactIdentityTx(ctx, contactRepoTx, session.WorkspaceID, identity)
 
 		// 3. Backfill ALL conversations for this anonymous_id
-		ids, err := convRepoTx.UpdateIdentityByAnonymousID(ctx, session.WorkspaceID, session.AnonymousID, email, name, contactID)
+		ids, err := convRepoTx.UpdateIdentityByAnonymousID(ctx, session.WorkspaceID, session.AnonymousID, resolved.email, resolved.displayName, contactID)
 		if err != nil {
 			return err
 		}
 		updatedConvIDs = ids
 
 		// 4. Backfill ALL sessions for this anonymous_id (multi-tab)
-		if err := sessionRepoTx.UpdateSessionsByAnonymousID(ctx, session.WorkspaceID, session.AnonymousID, email, name); err != nil {
+		if err := sessionRepoTx.UpdateSessionsByAnonymousID(ctx, session.WorkspaceID, session.AnonymousID, resolved.email, resolved.displayName); err != nil {
 			return err
 		}
 
@@ -145,8 +149,8 @@ func (s *SupportInboxService) UpgradeWidgetSession(ctx context.Context, sessionT
 
 	slog.InfoContext(ctx, "widget session upgraded",
 		"session_id", session.ID,
-		"email", email,
-		"source", source,
+		"email", resolved.email,
+		"source", resolved.source,
 		"conversations_backfilled", len(updatedConvIDs),
 	)
 	return nil
@@ -155,7 +159,7 @@ func (s *SupportInboxService) UpgradeWidgetSession(ctx context.Context, sessionT
 // IdentifyByAnonymousID is the HTTP-based identity path for headless SDK usage.
 // It looks up sessions by anonymous_id + widget key, then performs the same
 // CRM contact creation, lifecycle promotion, and conversation backfill as UpgradeWidgetSession.
-func (s *SupportInboxService) IdentifyByAnonymousID(ctx context.Context, widgetKey, anonymousID, email, name, source string) error {
+func (s *SupportInboxService) IdentifyByAnonymousID(ctx context.Context, widgetKey, anonymousID string, identity model.WidgetIdentityPayload) error {
 	inst, err := s.installationRepo.GetByWidgetKey(ctx, widgetKey)
 	if err != nil {
 		return err
@@ -165,6 +169,7 @@ func (s *SupportInboxService) IdentifyByAnonymousID(ctx context.Context, widgetK
 	}
 
 	workspaceID := inst.WorkspaceID
+	resolved := resolveWidgetIdentityPayload(identity)
 
 	var contactID *string
 	var updatedConvIDs []string
@@ -176,17 +181,17 @@ func (s *SupportInboxService) IdentifyByAnonymousID(ctx context.Context, widgetK
 		contactRepoTx := s.contactRepo.WithTx(tx)
 
 		// 1. Create or match CRM contact
-		contactID = s.matchOrCreateCRMContactTx(ctx, contactRepoTx, workspaceID, &email, &name, source)
+		contactID = s.matchOrCreateCRMContactIdentityTx(ctx, contactRepoTx, workspaceID, identity)
 
 		// 2. Backfill ALL conversations for this anonymous_id
-		ids, err := convRepoTx.UpdateIdentityByAnonymousID(ctx, workspaceID, anonymousID, email, name, contactID)
+		ids, err := convRepoTx.UpdateIdentityByAnonymousID(ctx, workspaceID, anonymousID, resolved.email, resolved.displayName, contactID)
 		if err != nil {
 			return err
 		}
 		updatedConvIDs = ids
 
 		// 3. Backfill ALL sessions for this anonymous_id
-		if err := sessionRepoTx.UpdateSessionsByAnonymousID(ctx, workspaceID, anonymousID, email, name); err != nil {
+		if err := sessionRepoTx.UpdateSessionsByAnonymousID(ctx, workspaceID, anonymousID, resolved.email, resolved.displayName); err != nil {
 			return err
 		}
 
@@ -209,8 +214,8 @@ func (s *SupportInboxService) IdentifyByAnonymousID(ctx context.Context, widgetK
 
 	slog.InfoContext(ctx, "widget identify via HTTP",
 		"anonymous_id", anonymousID,
-		"email", email,
-		"source", source,
+		"email", resolved.email,
+		"source", resolved.source,
 		"conversations_backfilled", len(updatedConvIDs),
 	)
 	return nil
@@ -315,7 +320,11 @@ func (s *SupportInboxService) SendWidgetConversationTranscript(ctx context.Conte
 		if name == "" {
 			name = strings.TrimSpace(derefString(conversation.CustomerName))
 		}
-		if err := s.UpgradeWidgetSession(ctx, sessionToken, recipientEmail, name, "transcript_request"); err != nil {
+		if err := s.UpgradeWidgetSession(ctx, sessionToken, model.WidgetIdentityPayload{
+			Email:  recipientEmail,
+			Name:   name,
+			Source: "transcript_request",
+		}); err != nil {
 			slog.ErrorContext(ctx, "failed to upgrade widget session during transcript request", "error", err, "conversation_id", conversationID)
 		}
 	}

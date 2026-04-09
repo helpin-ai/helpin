@@ -575,6 +575,35 @@ function TranscriptEntry({
   );
 }
 
+const CONTENT_COLLAPSE_CHAR_THRESHOLD = 600;
+
+function CollapsibleMarkdown({ content }: { content: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = content.length > CONTENT_COLLAPSE_CHAR_THRESHOLD;
+
+  if (!isLong) {
+    return <MarkdownContent content={content} className="text-[13px] leading-6 text-foreground" />;
+  }
+
+  return (
+    <div>
+      <div className={cn('relative', !expanded && 'max-h-[10rem] overflow-hidden')}>
+        <MarkdownContent content={content} className="text-[13px] leading-6 text-foreground" />
+        {!expanded && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-card to-transparent" />
+        )}
+      </div>
+      <button
+        type="button"
+        className="mt-1 text-[11px] font-medium text-primary hover:underline"
+        onClick={() => setExpanded((prev) => !prev)}
+      >
+        {expanded ? 'Show less' : 'Show more'}
+      </button>
+    </div>
+  );
+}
+
 function AssistantTimelineRow({
   content,
   isLast,
@@ -608,13 +637,11 @@ function AssistantTimelineRow({
           ) : null}
         </div>
 
-        <div className={cn(
-          placeholder && 'text-muted-foreground',
-        )}>
-          {!placeholder
-            ? <MarkdownContent content={content} className="text-[13px] leading-6 text-foreground" />
-            : <div className="whitespace-pre-wrap text-[13px] leading-6">{content}</div>}
-        </div>
+        {placeholder ? (
+          <div className="whitespace-pre-wrap text-[13px] leading-6 text-muted-foreground">{content}</div>
+        ) : (
+          <CollapsibleMarkdown content={content} />
+        )}
       </div>
     </div>
   );
@@ -887,7 +914,7 @@ function CollapsedToolCallGroup({
           'flex h-7 w-7 shrink-0 items-center justify-center rounded-full border',
           failedCount > 0
             ? 'border-destructive/30 bg-destructive/10 text-destructive'
-            : 'border-border bg-muted/50 text-muted-foreground',
+            : 'border-primary/30 bg-primary/10 text-primary',
         )}>
           <Wrench01Icon className="h-3.5 w-3.5" />
         </div>

@@ -93,7 +93,9 @@ export function clearSession(widgetKey: string): void {
 
 export interface StoredIdentity {
   email: string;
-  name: string;
+  firstName?: string;
+  lastName?: string;
+  name?: string; // legacy compatibility for older cookies
 }
 
 const IDENTITY_COOKIE_TTL_DAYS = 365;
@@ -103,9 +105,13 @@ const IDENTITY_COOKIE_TTL_DAYS = 365;
  * Cookie-based (not localStorage) so it works across subdomains
  * (e.g. app.example.com and example.com share the same identity).
  */
-export function persistIdentity(widgetKey: string, email: string, name: string): void {
+export function persistIdentity(widgetKey: string, email: string, _name: string, firstName: string = '', lastName: string = ''): void {
   try {
-    cookieManager.set(`helpin_uid_${widgetKey}`, JSON.stringify({ email, name }), IDENTITY_COOKIE_TTL_DAYS);
+    cookieManager.set(
+      `helpin_uid_${widgetKey}`,
+      JSON.stringify({ email, firstName: firstName.trim(), lastName: lastName.trim() }),
+      IDENTITY_COOKIE_TTL_DAYS,
+    );
   } catch {
     // cookie may be unavailable
   }

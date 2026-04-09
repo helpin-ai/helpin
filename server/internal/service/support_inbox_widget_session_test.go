@@ -271,6 +271,366 @@ func TestSupportInboxServiceSessionConversationLifecycle(t *testing.T) {
 	}
 }
 
+func TestSupportInboxServiceIdentifyByAnonymousIDRefreshesContactIdentity(t *testing.T) {
+	db := newTestDB(t)
+
+	const (
+		workspaceID = "ws-widget-identify-refresh"
+		widgetKey   = "wk_widget_identify_refresh"
+		anonymousID = "anon-refresh"
+		email       = "jane@example.com"
+	)
+
+	seedWorkspace(t, db, workspaceID, "Widget Identify Refresh", "widget-identify-refresh", "user-123")
+
+	ctx := context.Background()
+	installationRepo := repository.NewSupportInboxInstallationRepository(db)
+	conversationRepo := repository.NewSupportConversationRepository(db)
+	sessionRepo := repository.NewSupportInboxSessionRepository(db)
+	contactRepo := repository.NewCRMContactRepository(db)
+
+	if err := installationRepo.Create(ctx, &model.SupportWidgetInstallation{
+		WorkspaceID: workspaceID,
+		WidgetKey:   widgetKey,
+		SecretKey:   "sk_widget_identify_refresh",
+		Settings:    "{}",
+		Active:      true,
+	}); err != nil {
+		t.Fatalf("create installation: %v", err)
+	}
+
+	contact := &model.CRMContact{
+		WorkspaceID:    workspaceID,
+		DisplayID:      "CON-1",
+		FirstName:      "Jane",
+		LastName:       strPtr("Old"),
+		Email:          strPtr(email),
+		LifecycleStage: model.CRMLifecycleLead,
+		LeadStatus:     model.CRMLeadStatusNew,
+	}
+	if err := contactRepo.Create(ctx, contact); err != nil {
+		t.Fatalf("create contact: %v", err)
+	}
+
+	conversation := &model.SupportConversation{
+		WorkspaceID:   workspaceID,
+		Subject:       "Widget identity refresh",
+		Status:        "open",
+		AnonymousID:   strPtr(anonymousID),
+		CustomerEmail: strPtr(email),
+		CustomerName:  strPtr("Jane Old"),
+	}
+	if err := conversationRepo.Create(ctx, conversation); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	session := &model.SupportWidgetSession{
+		WorkspaceID:   workspaceID,
+		SessionToken:  "widget-refresh-token",
+		AnonymousID:   anonymousID,
+		IsAnonymous:   false,
+		CustomerEmail: strPtr(email),
+		CustomerName:  strPtr("Jane Old"),
+		ExpiresAt:     time.Now().Add(24 * time.Hour),
+	}
+	if err := sessionRepo.Create(ctx, session); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	oldTime := time.Now().Add(-2 * time.Hour).UTC()
+	for _, stmt := range []struct {
+		query string
+		args  []any
+	}{
+		{
+			query: "UPDATE crm_contacts SET created_at = ?, updated_at = ? WHERE id = ?",
+			args:  []any{oldTime, oldTime, contact.ID},
+		},
+		{
+			query: "UPDATE support_conversations SET created_at = ?, updated_at = ? WHERE id = ?",
+			args:  []any{oldTime, oldTime, conversation.ID},
+		},
+		{
+			query: "UPDATE support_widget_sessions SET created_at = ?, updated_at = ? WHERE id = ?",
+			args:  []any{oldTime, oldTime, session.ID},
+		},
+	} {
+		if err := db.Exec(stmt.query, stmt.args...).Error; err != nil {
+			t.Fatalf("seed old timestamps: %v", err)
+		}
+	}
+
+	svc := NewSupportInboxService(
+		conversationRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		installationRepo,
+		sessionRepo,
+		nil,
+		nil,
+		nil,
+		contactRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	if err := svc.IdentifyByAnonymousID(ctx, widgetKey, anonymousID, model.WidgetIdentityPayload{
+		Email:  email,
+		Name:   "Jane New",
+		Source: "sdk_identify",
+	}); err != nil {
+		t.Fatalf("IdentifyByAnonymousID: %v", err)
+	}
+
+	updatedContact, err := contactRepo.GetByID(ctx, contact.ID)
+	if err != nil {
+		t.Fatalf("get contact: %v", err)
+	}
+	if updatedContact == nil {
+		t.Fatal("expected updated contact")
+	}
+	if updatedContact.FirstName != "Jane" {
+		t.Fatalf("contact first_name = %q, want %q", updatedContact.FirstName, "Jane")
+	}
+	if updatedContact.LastName == nil || *updatedContact.LastName != "New" {
+		t.Fatalf("contact last_name = %v, want %q", updatedContact.LastName, "New")
+	}
+	if updatedContact.LifecycleStage != model.CRMLifecycleCustomer {
+		t.Fatalf("contact lifecycle_stage = %q, want %q", updatedContact.LifecycleStage, model.CRMLifecycleCustomer)
+	}
+	if !updatedContact.UpdatedAt.After(oldTime) {
+		t.Fatalf("contact updated_at = %v, want after %v", updatedContact.UpdatedAt, oldTime)
+	}
+
+	updatedConversation, err := conversationRepo.GetByID(ctx, workspaceID, conversation.ID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("get conversation: %v", err)
+	}
+	if updatedConversation == nil {
+		t.Fatal("expected updated conversation")
+	}
+	if updatedConversation.CustomerName == nil || *updatedConversation.CustomerName != "Jane New" {
+		t.Fatalf("conversation customer_name = %v, want %q", updatedConversation.CustomerName, "Jane New")
+	}
+	if updatedConversation.CRMContactID == nil || *updatedConversation.CRMContactID != contact.ID {
+		t.Fatalf("conversation crm_contact_id = %v, want %q", updatedConversation.CRMContactID, contact.ID)
+	}
+	if !updatedConversation.UpdatedAt.After(oldTime) {
+		t.Fatalf("conversation updated_at = %v, want after %v", updatedConversation.UpdatedAt, oldTime)
+	}
+
+	updatedSession, err := sessionRepo.GetByToken(ctx, session.SessionToken)
+	if err != nil {
+		t.Fatalf("get session: %v", err)
+	}
+	if updatedSession == nil {
+		t.Fatal("expected updated session")
+	}
+	if updatedSession.CustomerName == nil || *updatedSession.CustomerName != "Jane New" {
+		t.Fatalf("session customer_name = %v, want %q", updatedSession.CustomerName, "Jane New")
+	}
+	if !updatedSession.UpdatedAt.After(oldTime) {
+		t.Fatalf("session updated_at = %v, want after %v", updatedSession.UpdatedAt, oldTime)
+	}
+}
+
+func TestSupportInboxServiceIdentifyByAnonymousIDStoresExplicitFirstAndLastName(t *testing.T) {
+	db := newTestDB(t)
+
+	const (
+		workspaceID = "ws-widget-identify-explicit-names"
+		widgetKey   = "wk_widget_identify_explicit_names"
+		anonymousID = "anon-explicit-names"
+		email       = "mary@example.com"
+	)
+
+	seedWorkspace(t, db, workspaceID, "Widget Explicit Names", "widget-explicit-names", "user-123")
+
+	ctx := context.Background()
+	installationRepo := repository.NewSupportInboxInstallationRepository(db)
+	conversationRepo := repository.NewSupportConversationRepository(db)
+	sessionRepo := repository.NewSupportInboxSessionRepository(db)
+	contactRepo := repository.NewCRMContactRepository(db)
+
+	if err := installationRepo.Create(ctx, &model.SupportWidgetInstallation{
+		WorkspaceID: workspaceID,
+		WidgetKey:   widgetKey,
+		SecretKey:   "sk_widget_identify_explicit_names",
+		Settings:    "{}",
+		Active:      true,
+	}); err != nil {
+		t.Fatalf("create installation: %v", err)
+	}
+
+	conversation := &model.SupportConversation{
+		WorkspaceID: workspaceID,
+		Subject:     "Widget explicit name parts",
+		Status:      "open",
+		AnonymousID: strPtr(anonymousID),
+	}
+	if err := conversationRepo.Create(ctx, conversation); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	session := &model.SupportWidgetSession{
+		WorkspaceID:  workspaceID,
+		SessionToken: "widget-explicit-name-token",
+		AnonymousID:  anonymousID,
+		IsAnonymous:  true,
+		ExpiresAt:    time.Now().Add(24 * time.Hour),
+	}
+	if err := sessionRepo.Create(ctx, session); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	if err := svcWithWidgetRepos(installationRepo, conversationRepo, sessionRepo, contactRepo).IdentifyByAnonymousID(ctx, widgetKey, anonymousID, model.WidgetIdentityPayload{
+		Email:     email,
+		FirstName: "Mary Jane",
+		LastName:  "van Dyke",
+		Source:    "sdk_identify",
+	}); err != nil {
+		t.Fatalf("IdentifyByAnonymousID: %v", err)
+	}
+
+	contacts, _, err := contactRepo.List(ctx, workspaceID, model.CRMContactListFilters{}, model.PMPagination{Page: 1, PerPage: 10})
+	if err != nil {
+		t.Fatalf("list contacts: %v", err)
+	}
+	if len(contacts) != 1 {
+		t.Fatalf("contact count = %d, want 1", len(contacts))
+	}
+	if contacts[0].FirstName != "Mary Jane" {
+		t.Fatalf("contact first_name = %q, want %q", contacts[0].FirstName, "Mary Jane")
+	}
+	if contacts[0].LastName == nil || *contacts[0].LastName != "van Dyke" {
+		t.Fatalf("contact last_name = %v, want %q", contacts[0].LastName, "van Dyke")
+	}
+
+	updatedConversation, err := conversationRepo.GetByID(ctx, workspaceID, conversation.ID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("get conversation: %v", err)
+	}
+	if updatedConversation.CustomerName == nil || *updatedConversation.CustomerName != "Mary Jane van Dyke" {
+		t.Fatalf("conversation customer_name = %v, want %q", updatedConversation.CustomerName, "Mary Jane van Dyke")
+	}
+}
+
+func TestSupportInboxServiceIdentifyByAnonymousIDDerivesNameFromEmail(t *testing.T) {
+	db := newTestDB(t)
+
+	const (
+		workspaceID = "ws-widget-identify-derived-name"
+		widgetKey   = "wk_widget_identify_derived_name"
+		anonymousID = "anon-derived-name"
+		email       = "jane.doe+trial@example.com"
+	)
+
+	seedWorkspace(t, db, workspaceID, "Widget Derived Name", "widget-derived-name", "user-123")
+
+	ctx := context.Background()
+	installationRepo := repository.NewSupportInboxInstallationRepository(db)
+	conversationRepo := repository.NewSupportConversationRepository(db)
+	sessionRepo := repository.NewSupportInboxSessionRepository(db)
+	contactRepo := repository.NewCRMContactRepository(db)
+
+	if err := installationRepo.Create(ctx, &model.SupportWidgetInstallation{
+		WorkspaceID: workspaceID,
+		WidgetKey:   widgetKey,
+		SecretKey:   "sk_widget_identify_derived_name",
+		Settings:    "{}",
+		Active:      true,
+	}); err != nil {
+		t.Fatalf("create installation: %v", err)
+	}
+
+	conversation := &model.SupportConversation{
+		WorkspaceID: workspaceID,
+		Subject:     "Widget derived name",
+		Status:      "open",
+		AnonymousID: strPtr(anonymousID),
+	}
+	if err := conversationRepo.Create(ctx, conversation); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	session := &model.SupportWidgetSession{
+		WorkspaceID:  workspaceID,
+		SessionToken: "widget-derived-name-token",
+		AnonymousID:  anonymousID,
+		IsAnonymous:  true,
+		ExpiresAt:    time.Now().Add(24 * time.Hour),
+	}
+	if err := sessionRepo.Create(ctx, session); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	if err := svcWithWidgetRepos(installationRepo, conversationRepo, sessionRepo, contactRepo).IdentifyByAnonymousID(ctx, widgetKey, anonymousID, model.WidgetIdentityPayload{
+		Email:  email,
+		Source: "sdk_lead",
+	}); err != nil {
+		t.Fatalf("IdentifyByAnonymousID: %v", err)
+	}
+
+	contacts, _, err := contactRepo.List(ctx, workspaceID, model.CRMContactListFilters{}, model.PMPagination{Page: 1, PerPage: 10})
+	if err != nil {
+		t.Fatalf("list contacts: %v", err)
+	}
+	if len(contacts) != 1 {
+		t.Fatalf("contact count = %d, want 1", len(contacts))
+	}
+	if contacts[0].FirstName != "Jane" {
+		t.Fatalf("contact first_name = %q, want %q", contacts[0].FirstName, "Jane")
+	}
+	if contacts[0].LastName == nil || *contacts[0].LastName != "Doe" {
+		t.Fatalf("contact last_name = %v, want %q", contacts[0].LastName, "Doe")
+	}
+
+	updatedConversation, err := conversationRepo.GetByID(ctx, workspaceID, conversation.ID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("get conversation: %v", err)
+	}
+	if updatedConversation.CustomerName == nil || *updatedConversation.CustomerName != "Jane Doe" {
+		t.Fatalf("conversation customer_name = %v, want %q", updatedConversation.CustomerName, "Jane Doe")
+	}
+
+	updatedSession, err := sessionRepo.GetByToken(ctx, session.SessionToken)
+	if err != nil {
+		t.Fatalf("get session: %v", err)
+	}
+	if updatedSession.CustomerName == nil || *updatedSession.CustomerName != "Jane Doe" {
+		t.Fatalf("session customer_name = %v, want %q", updatedSession.CustomerName, "Jane Doe")
+	}
+}
+
+func svcWithWidgetRepos(
+	installationRepo *repository.SupportInboxInstallationRepository,
+	conversationRepo *repository.SupportConversationRepository,
+	sessionRepo *repository.SupportInboxSessionRepository,
+	contactRepo *repository.CRMContactRepository,
+) *SupportInboxService {
+	return NewSupportInboxService(
+		conversationRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		installationRepo,
+		sessionRepo,
+		nil,
+		nil,
+		nil,
+		contactRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+}
+
 func TestSupportInboxServiceListConversationMessages_AllowsWidgetValidatedContextWithoutActor(t *testing.T) {
 	db := newTestDB(t)
 
