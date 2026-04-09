@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { UnicodeSpinner } from '@/components/pm/CodingSession/UnicodeSpinner';
 import {
@@ -34,6 +34,48 @@ import { CodingInteractionCard } from './CodingInteractionCard';
 import { MarkdownContent } from './MarkdownContent';
 import { PublishedToolPreviewCard } from './PublishedToolPreviewCard';
 import { describeToolCall } from './toolCallPresentation';
+
+// ─── Tool call grouping ──────────────────────────────────────────────────────
+
+const TOOL_GROUP_COLLAPSE_THRESHOLD = 4;
+
+type ToolCategory = 'read' | 'search' | 'command' | 'write' | 'other';
+
+function categorizeToolCall(toolName: string): ToolCategory {
+  const name = toolName.toLowerCase();
+  if (name.includes('read')) return 'read';
+  if (name === 'grep' || name === 'glob' || name === 'find' || name.includes('search') || name.includes('grep')) return 'search';
+  if (name === 'run_command' || name === 'bash' || name.includes('shell') || name.includes('exec')) return 'command';
+  if (name === 'apply_patch' || name === 'write_file' || name === 'str_replace_editor' || name.includes('write') || name.includes('edit') || name.includes('patch')) return 'write';
+  return 'other';
+}
+
+type SegmentGroup =
+  | { kind: 'assistant'; segment: CodingSessionLiveTurnSegment }
+  | { kind: 'tool_group'; toolCalls: CodingSessionLiveToolCall[] };
+
+function partitionTurnSegments(segments: CodingSessionLiveTurnSegment[]): SegmentGroup[] {
+  const groups: SegmentGroup[] = [];
+  let pendingToolCalls: CodingSessionLiveToolCall[] = [];
+
+  for (const seg of segments) {
+    if (seg.kind === 'assistant_message') {
+      if (pendingToolCalls.length > 0) {
+        groups.push({ kind: 'tool_group', toolCalls: pendingToolCalls });
+        pendingToolCalls = [];
+      }
+      groups.push({ kind: 'assistant', segment: seg });
+    } else {
+      pendingToolCalls.push(seg.tool_call);
+    }
+  }
+
+  if (pendingToolCalls.length > 0) {
+    groups.push({ kind: 'tool_group', toolCalls: pendingToolCalls });
+  }
+
+  return groups;
+}
 
 export function CodingTranscriptPane({
   transcriptMessages,
@@ -439,29 +481,49 @@ function TranscriptEntry({
       ))
     : [];
   const hasSegmentTimeline = visibleTurnSegments.length > 0;
+  const segmentGroups = hasSegmentTimeline ? partitionTurnSegments(visibleTurnSegments) : [];
 
   if (isAssistant) {
     return (
       <div className="w-full max-w-[90%]">
         {hasSegmentTimeline ? (
-          visibleTurnSegments.map((segment, idx) => (
-            segment.kind === 'assistant_message' ? (
-              <AssistantTimelineRow
-                key={segment.segment_id}
-                content={segment.assistant_message.content}
-                timestamp={segment.assistant_message.started_at ?? message.timestamp}
-                live={live}
-                streaming={segment.assistant_message.status === 'streaming'}
-                isLast={idx === visibleTurnSegments.length - 1}
-              />
-            ) : (
-              <ActivityToolCallRow
-                key={segment.segment_id}
-                toolCall={segment.tool_call}
-                isLast={idx === visibleTurnSegments.length - 1}
-              />
-            )
-          ))
+          segmentGroups.map((group, groupIdx) => {
+            const isLastGroup = groupIdx === segmentGroups.length - 1;
+            if (group.kind === 'assistant') {
+              const seg = group.segment;
+              if (seg.kind !== 'assistant_message') return null;
+              return (
+                <AssistantTimelineRow
+                  key={seg.segment_id}
+                  content={seg.assistant_message.content}
+                  timestamp={seg.assistant_message.started_at ?? message.timestamp}
+                  live={live}
+                  streaming={seg.assistant_message.status === 'streaming'}
+                  isLast={isLastGroup}
+                />
+              );
+            }
+            if (group.toolCalls.length >= TOOL_GROUP_COLLAPSE_THRESHOLD) {
+              return (
+                <CollapsedToolCallGroup
+                  key={group.toolCalls[0].tool_call_id}
+                  toolCalls={group.toolCalls}
+                  isLast={isLastGroup}
+                />
+              );
+            }
+            return (
+              <Fragment key={group.toolCalls[0].tool_call_id}>
+                {group.toolCalls.map((tc, tcIdx) => (
+                  <ActivityToolCallRow
+                    key={tc.tool_call_id}
+                    toolCall={tc}
+                    isLast={isLastGroup && tcIdx === group.toolCalls.length - 1}
+                  />
+                ))}
+              </Fragment>
+            );
+          })
         ) : (
           <>
             {message.content.trim() ? (
@@ -475,7 +537,9 @@ function TranscriptEntry({
               />
             ) : null}
 
-            {visibleToolCalls.length > 0 ? (
+            {visibleToolCalls.length >= TOOL_GROUP_COLLAPSE_THRESHOLD ? (
+              <CollapsedToolCallGroup toolCalls={visibleToolCalls} isLast />
+            ) : visibleToolCalls.length > 0 ? (
               visibleToolCalls.map((tc, idx) => (
                 <ActivityToolCallRow
                   key={tc.tool_call_id}
@@ -791,6 +855,141 @@ function ActivityToolCallRow({ toolCall, isLast }: { toolCall: CodingSessionLive
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── Collapsed tool call group ──────────────────────────────────────────────
+
+function CollapsedToolCallGroup({
+  toolCalls,
+  isLast,
+}: {
+  toolCalls: CodingSessionLiveToolCall[];
+  isLast: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  const { chips, failedCount, durationLabel } = useMemo(() => {
+    const counts: Record<ToolCategory, number> = { read: 0, search: 0, command: 0, write: 0, other: 0 };
+    let failed = 0;
+    let durationMs = 0;
+
+    for (const tc of toolCalls) {
+      counts[categorizeToolCall(tc.tool_name)]++;
+      if (tc.duration_ms) durationMs += tc.duration_ms;
+      if (tc.status === 'failed') failed++;
+    }
+
+    const parts: string[] = [];
+    if (counts.read > 0) parts.push(`${counts.read} read${counts.read !== 1 ? 's' : ''}`);
+    if (counts.search > 0) parts.push(`${counts.search} search${counts.search !== 1 ? 'es' : ''}`);
+    if (counts.command > 0) parts.push(`${counts.command} command${counts.command !== 1 ? 's' : ''}`);
+    if (counts.write > 0) parts.push(`${counts.write} write${counts.write !== 1 ? 's' : ''}`);
+    if (counts.other > 0) parts.push(`${counts.other} other`);
+
+    const label = durationMs >= 1000
+      ? `${Math.round(durationMs / 1000)}s`
+      : durationMs > 0 ? `${durationMs}ms` : null;
+
+    return { chips: parts, failedCount: failed, durationLabel: label };
+  }, [toolCalls]);
+
+  return (
+    <div className="flex gap-3">
+      {/* Timeline connector */}
+      <div className="flex flex-col items-center">
+        <div className={cn(
+          'flex h-7 w-7 shrink-0 items-center justify-center rounded-full border',
+          failedCount > 0
+            ? 'border-destructive/30 bg-destructive/10 text-destructive'
+            : 'border-border bg-muted/50 text-muted-foreground',
+        )}>
+          <Wrench01Icon className="h-3.5 w-3.5" />
+        </div>
+        {!isLast && (
+          <div className="mt-1 h-full min-h-[1rem] w-px border-l border-dashed border-border/60" />
+        )}
+      </div>
+
+      {/* Content */}
+      <div className={cn('min-w-0 flex-1', isLast ? 'pb-0' : 'pb-4')}>
+        <button
+          type="button"
+          className={cn(
+            'w-full rounded-lg border px-3 py-2 text-left transition-colors',
+            'border-border/60 bg-muted/25 hover:bg-muted/40',
+            expanded && 'rounded-b-none border-b-0',
+          )}
+          onClick={() => setExpanded((prev) => !prev)}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-foreground">
+                Performed {toolCalls.length} tool calls
+              </span>
+              {failedCount > 0 && (
+                <span className="inline-flex items-center gap-1 rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
+                  <CancelCircleIcon className="h-3 w-3" />
+                  {failedCount} failed
+                </span>
+              )}
+            </div>
+            <span className="text-[11px] font-medium text-primary">
+              {expanded ? '▾ Hide' : '▸ Show'}
+            </span>
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            {chips.map((chip) => (
+              <span key={chip} className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                {chip}
+              </span>
+            ))}
+            {durationLabel && (
+              <span className="text-[10px] text-muted-foreground">· {durationLabel}</span>
+            )}
+          </div>
+        </button>
+
+        {expanded && (
+          <div className="rounded-b-lg border border-t-0 border-border/60 bg-muted/15 py-1">
+            {toolCalls.map((tc) => (
+              <CompactToolCallRow key={tc.tool_call_id} toolCall={tc} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CompactToolCallRow({ toolCall }: { toolCall: CodingSessionLiveToolCall }) {
+  const isFailed = toolCall.status === 'failed';
+  const { icon, iconClass } = toolChrome(toolCall.tool_name, isFailed, false);
+  const presentation = describeToolCall(toolCall);
+
+  return (
+    <div className={cn(
+      'flex items-center gap-2 px-3 py-1.5',
+      isFailed && 'bg-destructive/5',
+    )}>
+      <div className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded-full border', iconClass)}>
+        <span className="flex scale-75 items-center justify-center">{icon}</span>
+      </div>
+      <span className={cn(
+        'min-w-0 truncate text-[11px]',
+        isFailed ? 'font-medium text-destructive' : 'text-foreground/80',
+      )}>
+        {presentation.primaryLabel}
+      </span>
+      {presentation.chips.length > 0 && (
+        <span className="shrink-0 text-[10px] text-muted-foreground">
+          {presentation.chips[0]}
+        </span>
+      )}
+      {isFailed && (
+        <CancelCircleIcon className="ml-auto h-3 w-3 shrink-0 text-destructive" />
+      )}
     </div>
   );
 }

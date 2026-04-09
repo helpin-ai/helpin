@@ -149,44 +149,22 @@ export function PublishedToolPreviewCard({
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="z-[140] gap-0 overflow-hidden border-border/70 bg-background p-0 shadow-2xl sm:max-w-5xl">
-          <DialogHeader className="border-b border-border/70 px-6 py-5">
-            <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-              <File01Icon className="h-3.5 w-3.5" />
-              {subtitle}
-            </div>
-            <div className="mt-2 flex flex-wrap items-center gap-2 pr-10">
-              <DialogTitle className="text-xl font-semibold leading-tight text-foreground sm:text-2xl">
-                {preview.title}
-              </DialogTitle>
-              <Badge variant="outline" className="h-6 rounded-full px-2 text-[10px] uppercase tracking-wide">
-                {preview.panelKey}
-              </Badge>
-            </div>
-            {secondaryResult ? (
-              <DialogDescription className="mt-2 max-w-3xl text-sm leading-6">
-                {secondaryResult}
-              </DialogDescription>
-            ) : null}
+          <DialogHeader className="border-b border-border/70 px-6 py-4">
+            <DialogTitle className="pr-10 text-lg font-semibold leading-tight text-foreground">
+              {preview.title}
+            </DialogTitle>
+            <DialogDescription className="sr-only">Preview content</DialogDescription>
           </DialogHeader>
 
-          <div className="max-h-[78vh] overflow-auto bg-muted/10">
-            <div className="mx-auto w-full max-w-4xl px-6 py-8 sm:px-10 sm:py-10">
-              <div className="rounded-2xl border border-border/60 bg-background shadow-sm">
-                <div className="border-b border-border/60 px-6 py-4">
-                  <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
-                    {preview.format === 'markdown' ? 'Markdown preview' : 'JSON preview'}
-                  </p>
-                </div>
-                <div className="px-6 py-6 sm:px-8 sm:py-8">
-                  {preview.format === 'markdown' && typeof preview.content === 'string' ? (
-                    <MarkdownContent content={preview.content} className="text-[15px] leading-7 text-foreground" />
-                  ) : (
-                    <pre className="whitespace-pre-wrap break-all text-[12px] leading-6 text-foreground">
-                      {JSON.stringify(preview.content, null, 2)}
-                    </pre>
-                  )}
-                </div>
-              </div>
+          <div className="max-h-[78vh] overflow-auto">
+            <div className="px-6 py-6 sm:px-10 sm:py-8">
+              {preview.format === 'markdown' && typeof preview.content === 'string' ? (
+                <MarkdownContent content={preview.content} className="text-[15px] leading-7 text-foreground" />
+              ) : (
+                <pre className="whitespace-pre-wrap break-all text-[12px] leading-6 text-foreground">
+                  {JSON.stringify(preview.content, null, 2)}
+                </pre>
+              )}
             </div>
           </div>
         </DialogContent>
