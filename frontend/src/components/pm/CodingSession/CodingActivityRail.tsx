@@ -127,7 +127,7 @@ function EventTimelineItem({ event, isLast }: { event: CodingSessionEvent; isLas
       icon={icon}
       iconClass={iconClass}
       title={prettyCodingSessionEventType(event.type)}
-      timestamp={event.timestamp}
+      timestamp=""
       isLast={isLast}
     >
       <div className="space-y-1 text-xs text-muted-foreground">
@@ -149,6 +149,7 @@ function EventTimelineItem({ event, isLast }: { event: CodingSessionEvent; isLas
 }
 
 function ToolCallTimelineItem({ toolCall, isLast }: { toolCall: CodingSessionLiveToolCall; isLast: boolean }) {
+  const [showReadOutput, setShowReadOutput] = useState(false);
   const isFailed = toolCall.status === 'failed';
 
   if (toolCall.tool_name === 'update_plan') {
@@ -160,7 +161,7 @@ function ToolCallTimelineItem({ toolCall, isLast }: { toolCall: CodingSessionLiv
         icon={<CheckListIcon className="h-3.5 w-3.5" />}
         iconClass="bg-blue-50 border-blue-200 dark:bg-blue-950/30 dark:border-blue-900/50 text-blue-600 dark:text-blue-400"
         title="Plan updated"
-        timestamp={toolCall.completed_at ?? toolCall.started_at ?? ''}
+        timestamp=""
         isLast={isLast}
       >
         {totalCount > 0 ? (
@@ -173,12 +174,18 @@ function ToolCallTimelineItem({ toolCall, isLast }: { toolCall: CodingSessionLiv
   const { icon, iconClass } = toolChrome(toolCall.tool_name, isFailed);
   const argsText = toolCall.args_text.trim();
   const resultText = toolCall.result?.output_summary?.trim() || toolCall.result?.content?.trim() || '';
+  const readOutputText = !isFailed && (toolCall.tool_name === 'read_file' || toolCall.tool_name === 'read_file_range')
+    ? toolCall.result?.content?.trim() || ''
+    : '';
+  const readLineCount = readOutputText ? readOutputText.split('\n').length : null;
+  const readLineChip = readLineCount ? `${readLineCount} line${readLineCount === 1 ? '' : 's'}` : null;
   const publishedPreviewCard = !isFailed && argsText ? (
     <PublishedToolPreviewCard toolName={toolCall.tool_name} argsText={argsText} resultText={resultText} compact />
   ) : null;
   const presentation = describeToolCall(toolCall);
+  const showSecondaryBadge = presentation.secondaryLabel.trim().toLowerCase() !== presentation.primaryLabel.trim().toLowerCase();
   const filePaths = !publishedPreviewCard && argsText ? extractFilePathsFromText(argsText) : [];
-  const chips = [...presentation.chips];
+  const chips = presentation.chips.filter((chip) => !readLineChip || !/^\d+\s+lines?$/.test(chip));
   for (const filePath of filePaths) {
     if (!chips.includes(filePath)) chips.push(filePath);
   }
@@ -188,14 +195,23 @@ function ToolCallTimelineItem({ toolCall, isLast }: { toolCall: CodingSessionLiv
       icon={icon}
       iconClass={iconClass}
       title={presentation.primaryLabel}
-      timestamp={toolCall.completed_at ?? toolCall.started_at ?? ''}
+      timestamp=""
       isLast={isLast}
     >
       <div className="space-y-1.5 text-xs text-muted-foreground">
         <div className="flex flex-wrap items-center gap-1.5">
-          <Badge variant="outline" className="h-5 rounded-full px-1.5 text-[10px] font-medium text-muted-foreground">
-            {presentation.secondaryLabel}
-          </Badge>
+          {showSecondaryBadge ? (
+            <Badge variant="outline" className="h-5 rounded-full px-1.5 text-[10px] font-medium text-muted-foreground">
+              {presentation.secondaryLabel}
+            </Badge>
+          ) : null}
+          {readLineChip ? (
+            <ExpandableChip
+              label={readLineChip}
+              expanded={showReadOutput}
+              onToggle={() => setShowReadOutput((prev) => !prev)}
+            />
+          ) : null}
           {chips.map((chip) => (
             <span key={chip} className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
               {chip}
@@ -205,7 +221,8 @@ function ToolCallTimelineItem({ toolCall, isLast }: { toolCall: CodingSessionLiv
         {publishedPreviewCard ?? (
           <>
             {argsText ? <CollapsibleCodeBlock text={argsText} /> : null}
-            {resultText ? (
+            {showReadOutput && readOutputText ? <CollapsibleCodeBlock text={readOutputText} /> : null}
+            {resultText && !readOutputText ? (
               isFailed
                 ? <CollapsibleCodeBlock text={resultText} failed />
                 : <p className="text-[11px]">{resultText.length > 150 ? `${resultText.slice(0, 150)}…` : resultText}</p>
@@ -342,6 +359,31 @@ function CollapsibleCodeBlock({ text, failed }: { text: string; failed?: boolean
         </button>
       )}
     </div>
+  );
+}
+
+function ExpandableChip({
+  label,
+  expanded,
+  onToggle,
+}: {
+  label: string;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={cn(
+        'inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors',
+        expanded
+          ? 'bg-primary text-primary-foreground'
+          : 'bg-primary/10 text-primary hover:bg-primary/15',
+      )}
+      onClick={onToggle}
+    >
+      {label}
+    </button>
   );
 }
 
