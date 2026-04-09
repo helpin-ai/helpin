@@ -490,11 +490,49 @@ function toolChrome(toolName: string, isFailed: boolean, isRunning: boolean): { 
   };
 }
 
-function firstLine(text: string): string {
-  const trimmed = text.trim();
-  const nl = trimmed.indexOf('\n');
-  const line = nl === -1 ? trimmed : trimmed.slice(0, nl);
-  return line.length > 120 ? `${line.slice(0, 120)}…` : line;
+const TOOL_COLLAPSED_LINES = 4;
+
+function extractFilePathsFromText(text: string): string[] {
+  const matches = text.match(/(?:^|\s)((?:\/|\.\.?\/)?[\w./-]+\.(?:ts|tsx|js|jsx|go|py|css|html|json|sql|md|yaml|yml|toml|sh))\b/g);
+  if (!matches) return [];
+  const unique = [...new Set(matches.map((m) => m.trim()))];
+  return unique.slice(0, 6);
+}
+
+function CollapsibleCodeBlock({ text, failed }: { text: string; failed?: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  const lines = text.split('\n');
+  const isLong = lines.length > TOOL_COLLAPSED_LINES;
+
+  return (
+    <div className="relative">
+      <pre className={cn(
+        'overflow-auto whitespace-pre-wrap break-all rounded-md border px-2.5 py-1.5 text-[11px] leading-5',
+        failed
+          ? 'border-destructive/30 bg-destructive/5 text-destructive dark:bg-destructive/10'
+          : 'border-border bg-slate-950 text-slate-100',
+        !expanded && isLong && 'max-h-[100px]',
+        expanded && 'max-h-60',
+      )}>
+        {expanded || !isLong ? text : lines.slice(0, TOOL_COLLAPSED_LINES).join('\n')}
+      </pre>
+      {isLong && !expanded && (
+        <div className={cn(
+          'pointer-events-none absolute inset-x-0 bottom-0 h-8 rounded-b-md bg-gradient-to-t',
+          failed ? 'from-destructive/5 to-transparent dark:from-destructive/10' : 'from-slate-950 to-transparent',
+        )} />
+      )}
+      {isLong && (
+        <button
+          type="button"
+          className="mt-0.5 text-[11px] font-medium text-primary hover:underline"
+          onClick={() => setExpanded((prev) => !prev)}
+        >
+          {expanded ? 'Show less' : `Show more (${lines.length} lines)`}
+        </button>
+      )}
+    </div>
+  );
 }
 
 function ActivityToolCallRow({ toolCall, isLast }: { toolCall: CodingSessionLiveToolCall; isLast: boolean }) {
@@ -502,9 +540,9 @@ function ActivityToolCallRow({ toolCall, isLast }: { toolCall: CodingSessionLive
   const isRunning = toolCall.status === 'running';
   const { icon, iconClass } = toolChrome(toolCall.tool_name, isFailed, isRunning);
   const isApplyPatch = toolCall.tool_name === 'apply_patch';
+  const argsText = toolCall.args_text.trim();
   const resultText = toolCall.result?.output_summary?.trim() || toolCall.result?.content?.trim() || '';
-  const argsPreview = isApplyPatch ? null : firstLine(toolCall.args_text);
-  const resultPreview = firstLine(resultText);
+  const filePaths = !isApplyPatch && argsText ? extractFilePathsFromText(argsText) : [];
 
   return (
     <div className="flex gap-3">
@@ -530,12 +568,23 @@ function ActivityToolCallRow({ toolCall, isLast }: { toolCall: CodingSessionLive
             ) : null}
           </div>
         </div>
-        <div className="space-y-0.5 text-xs text-muted-foreground">
+        {filePaths.length > 0 && (
+          <div className="mb-1.5 flex flex-wrap gap-1">
+            {filePaths.map((fp) => (
+              <span key={fp} className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                {fp}
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="space-y-1.5 text-xs text-muted-foreground">
           {isApplyPatch
             ? <ApplyPatchDiff argsText={toolCall.args_text} />
-            : argsPreview ? <p className="font-mono">{argsPreview}</p> : null}
-          {resultPreview ? (
-            <p className={cn(isFailed && 'text-destructive')}>{resultPreview}</p>
+            : argsText ? <CollapsibleCodeBlock text={argsText} /> : null}
+          {resultText ? (
+            isFailed
+              ? <CollapsibleCodeBlock text={resultText} failed />
+              : <p className="text-[11px] text-muted-foreground">{resultText.length > 200 ? `${resultText.slice(0, 200)}…` : resultText}</p>
           ) : null}
         </div>
       </div>
