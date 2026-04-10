@@ -235,6 +235,10 @@ function isPathHostTenantRoot(host) {
   return PATH_HOST_TENANT_ROOTS.has(normalizeHostname(host))
 }
 
+function isRootStaticAssetPath(pathname) {
+  return pathname === '/assets' || pathname.startsWith('/assets/')
+}
+
 function extractFirstPathSegment(pathname) {
   if (!pathname) return ''
   const trimmed = pathname.replace(/^\/+/, '')
@@ -250,6 +254,9 @@ function resolveHelpCenterContext(host, pathname) {
   const hostname = normalizeHostname(host)
 
   if (isPathHostTenantRoot(hostname)) {
+    if (isRootStaticAssetPath(pathname)) {
+      return { subdomain: '', basepath: '' }
+    }
     const slug = extractFirstPathSegment(pathname)
     if (!slug) return { subdomain: '', basepath: '' }
     return { subdomain: slug, basepath: `/${slug}` }
@@ -391,6 +398,11 @@ function stripBasepath(pathname, basepath) {
   return pathname
 }
 
+function prefixAssetUrls(html, basepath) {
+  if (!basepath) return html
+  return html.replaceAll(/([("'=])\/assets\//g, `$1${basepath}/assets/`)
+}
+
 async function handleRequest(request, response) {
   if (request.url === '/healthz') {
     response.statusCode = 200
@@ -464,7 +476,8 @@ async function handleRequest(request, response) {
     const responseType = fetchResponse.headers.get('content-type') || ''
 
     if (isHtmlRequest(request, routeUrl) && responseType.includes('text/html') && fetchResponse.ok) {
-      const body = await fetchResponse.text()
+      const renderedBody = await fetchResponse.text()
+      const body = prefixAssetUrls(renderedBody, hcContext.basepath)
       const headersToCache = Array.from(fetchResponse.headers.entries())
       setCachedResponse(cacheKey, {
         body,
