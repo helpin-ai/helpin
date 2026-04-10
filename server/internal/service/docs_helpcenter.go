@@ -1020,6 +1020,10 @@ func (s *DocsHelpcenterService) GetSpaceNavigation(ctx context.Context, workspac
 		return nil, err
 	}
 
+	if err := s.ensureDefaultLocaleMirrors(ctx, workspaceID); err != nil {
+		return nil, err
+	}
+
 	spaceTranslation, _, _, err := s.resolvePublicSpaceTranslationBySlug(ctx, cfg, workspaceID, requestedLocale, spaceSlug)
 	if err != nil {
 		return nil, err
@@ -1241,6 +1245,10 @@ func (s *DocsHelpcenterService) GetPublicLocalizedCollection(ctx context.Context
 		return nil, nil, err
 	}
 
+	if err := s.ensureDefaultLocaleMirrors(ctx, workspaceID); err != nil {
+		return nil, nil, err
+	}
+
 	spaceTranslation, _, _, err := s.resolvePublicSpaceTranslationBySlug(ctx, cfg, workspaceID, requestedLocale, spaceSlug)
 	if err != nil {
 		return nil, nil, err
@@ -1318,6 +1326,10 @@ func (s *DocsHelpcenterService) GetPublicLocalizedCollection(ctx context.Context
 func (s *DocsHelpcenterService) GetPublicLocalizedCollectionByCanonicalPath(ctx context.Context, workspaceID, requestedLocale, collectionSlug string) (*model.PublicNavCollection, []model.PublicNavArticle, error) {
 	cfg, defaultLocale, err := s.getPublicLocaleConfig(ctx, workspaceID)
 	if err != nil {
+		return nil, nil, err
+	}
+
+	if err := s.ensureDefaultLocaleMirrors(ctx, workspaceID); err != nil {
 		return nil, nil, err
 	}
 
@@ -1406,6 +1418,10 @@ func (s *DocsHelpcenterService) GetPublicLocalizedCollectionByCanonicalPath(ctx 
 func (s *DocsHelpcenterService) GetPublicArticleByLocalizedCanonicalPath(ctx context.Context, workspaceID, requestedLocale, collectionSlug, articleSlug string) (*model.PublicArticleResponse, error) {
 	cfg, _, err := s.getPublicLocaleConfig(ctx, workspaceID)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := s.ensureDefaultLocaleMirrors(ctx, workspaceID); err != nil {
 		return nil, err
 	}
 
