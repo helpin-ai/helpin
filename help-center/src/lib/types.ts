@@ -184,8 +184,15 @@ export interface SearchResult {
   requested_locale?: string
   is_fallback?: boolean
   excerpt: string | null
+  collection_id?: string | null
   collection_name: string | null
   collection_slug?: string | null
+  /**
+   * Human-readable localized ancestor breadcrumb such as
+   * "Root / Middle / Current". Present only when the article lives in
+   * a nested collection; null for top-level or uncategorized articles.
+   */
+  collection_ancestor_path?: string | null
   space_slug: string
   space_name?: string
   highlights?: string[]

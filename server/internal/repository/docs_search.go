@@ -95,6 +95,7 @@ func (r *DocsSearchRepository) PublicSearch(ctx context.Context, workspaceID, lo
 			p.slug AS slug,
 			p.locale AS locale,
 			p.excerpt AS excerpt,
+			p.collection_id AS collection_id,
 			ct.name AS collection_name,
 			ct.slug AS collection_slug,
 			st.slug AS space_slug,
@@ -143,7 +144,95 @@ func (r *DocsSearchRepository) PublicSearch(ctx context.Context, workspaceID, lo
 	if err := dbQuery.Scan(&results).Error; err != nil {
 		return nil, fmt.Errorf("docs public search: %w", err)
 	}
+
+	// Build a localized ancestor-path string for every result that has
+	// an owning collection. The loop is bounded by (limit × depth ≤ 3)
+	// and reuses a per-call cache so sibling results under the same
+	// collection don't re-query the ancestor chain.
+	if len(results) > 0 {
+		pathCache := make(map[string]*string, len(results))
+		for i := range results {
+			if results[i].CollectionID == nil || *results[i].CollectionID == "" {
+				continue
+			}
+			if cached, ok := pathCache[*results[i].CollectionID]; ok {
+				results[i].CollectionAncestorPath = cached
+				continue
+			}
+			path, err := r.buildLocalizedCollectionPath(ctx, *results[i].CollectionID, locale)
+			if err != nil {
+				return nil, err
+			}
+			pathCache[*results[i].CollectionID] = path
+			results[i].CollectionAncestorPath = path
+		}
+	}
+
 	return results, nil
+}
+
+// buildLocalizedCollectionPath walks a collection's ancestor chain and
+// returns a slash-joined breadcrumb string like "Root / Middle / Self"
+// using localized names per the requested locale, falling back to the
+// source collection name when no translation exists. Returns nil when
+// the collection has no ancestors beyond itself (top-level single node).
+func (r *DocsSearchRepository) buildLocalizedCollectionPath(ctx context.Context, collectionID, locale string) (*string, error) {
+	// Load the target collection + every ancestor in a single query.
+	type nameRow struct {
+		ID                 string  `gorm:"column:id"`
+		ParentCollectionID *string `gorm:"column:parent_collection_id"`
+		SourceName         string  `gorm:"column:source_name"`
+		LocaleName         *string `gorm:"column:locale_name"`
+	}
+	const maxDepth = 4 // depth cap 0..2 + safety margin
+	chain := make([]nameRow, 0, maxDepth)
+	cursor := collectionID
+	for i := 0; i < maxDepth; i++ {
+		var row nameRow
+		q := r.db.WithContext(ctx).
+			Table("docs_collections c").
+			Select(`
+				c.id AS id,
+				c.parent_collection_id AS parent_collection_id,
+				c.name AS source_name,
+				ct.name AS locale_name
+			`).
+			Joins(`
+				LEFT JOIN docs_helpcenter_collection_translations ct
+					ON ct.collection_id = c.id
+					AND ct.locale = ?
+			`, locale).
+			Where("c.id = ? AND c.deleted_at IS NULL", cursor)
+		if err := q.Scan(&row).Error; err != nil {
+			return nil, fmt.Errorf("load collection for search path: %w", err)
+		}
+		if row.ID == "" {
+			break
+		}
+		chain = append(chain, row)
+		if row.ParentCollectionID == nil || *row.ParentCollectionID == "" {
+			break
+		}
+		cursor = *row.ParentCollectionID
+	}
+
+	if len(chain) <= 1 {
+		// No ancestors -> no breadcrumb context worth rendering.
+		return nil, nil
+	}
+
+	// chain is walked leaf -> root. Reverse into top-down order.
+	parts := make([]string, 0, len(chain))
+	for i := len(chain) - 1; i >= 0; i-- {
+		row := chain[i]
+		name := row.SourceName
+		if row.LocaleName != nil && *row.LocaleName != "" {
+			name = *row.LocaleName
+		}
+		parts = append(parts, name)
+	}
+	joined := strings.Join(parts, " / ")
+	return &joined, nil
 }
 
 // toTSQuery converts a user search string to a Postgres tsquery with AND semantics.

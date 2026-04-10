@@ -674,17 +674,27 @@ type PreviewArticleResponse struct {
 	ContentHTML    string  `json:"content_html"`
 }
 
-// PublicSearchResultResponse is a search result with space context.
+// PublicSearchResultResponse is a search result with space + collection
+// tree context.
+//
+// CollectionAncestorPath is a human-readable breadcrumb string such as
+// "Root / Middle / Current" built from the localized ancestor names of
+// the owning collection. It is nil when the article lives directly in
+// the space (no owning collection) or when the collection has no
+// ancestors beyond itself. The frontend can render it unchanged above
+// the title to give nested search hits obvious context.
 type PublicSearchResultResponse struct {
-	ID              string  `json:"id"`
-	Title           string  `json:"title"`
-	Slug            string  `json:"slug"`
-	Locale          string  `json:"locale,omitempty"`
-	RequestedLocale string  `json:"requested_locale,omitempty"`
-	IsFallback      bool    `json:"is_fallback,omitempty"`
-	Excerpt         *string `json:"excerpt"`
-	CollectionName  *string `json:"collection_name"`
-	CollectionSlug  *string `json:"collection_slug,omitempty"`
-	SpaceSlug       string  `json:"space_slug"`
-	SpaceName       string  `json:"space_name"`
+	ID                     string  `json:"id"`
+	Title                  string  `json:"title"`
+	Slug                   string  `json:"slug"`
+	Locale                 string  `json:"locale,omitempty"`
+	RequestedLocale        string  `json:"requested_locale,omitempty"`
+	IsFallback             bool    `json:"is_fallback,omitempty"`
+	Excerpt                *string `json:"excerpt"`
+	CollectionID           *string `json:"collection_id,omitempty"`
+	CollectionName         *string `json:"collection_name"`
+	CollectionSlug         *string `json:"collection_slug,omitempty"`
+	CollectionAncestorPath *string `json:"collection_ancestor_path,omitempty"`
+	SpaceSlug              string  `json:"space_slug"`
+	SpaceName              string  `json:"space_name"`
 }
