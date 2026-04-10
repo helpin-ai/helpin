@@ -1,9 +1,10 @@
-import { useState, type Dispatch, type SetStateAction } from 'react';
+import { useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { Collapsible } from 'radix-ui';
 import { ArrowRight01Icon, HelpCircleIcon, MoreVerticalIcon, FolderOpenIcon, InboxIcon, PlusSignIcon, Setting06Icon, Delete01Icon } from '@/lib/icons';
 import { ICON_MAP } from '@/components/ui/icon-picker';
 import { useDocsCollections, useDocsDocuments, useDocsSpaces, useDeleteDocsSpace } from '@/hooks/queries';
 import type { DocsSpace } from '@/lib/docsTypes';
+import { buildCollectionTreeOptions } from '@/components/docs/CollectionTreePicker';
 import { useTruncationDetection } from '@/hooks/useTruncationDetection';
 import { SpaceDialog } from '@/components/docs/SpaceDialog';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
@@ -58,20 +59,41 @@ function DocsSpaceCollections({
   const uncollectedLink = `/w/${wsSlug}/docs/spaces/${spaceId}?collection=__uncollected__`;
   const { checkRef: checkColTruncation, isTruncated: isColTruncated } = useTruncationDetection();
 
+  // Fold the flat collection list into tree order so children render
+  // directly under their parent, and pass depth through to each row
+  // for depth-based indentation. Memoised on (spaceId, collections)
+  // so rerenders caused by unrelated sidebar state don't rebuild
+  // the tree options on every pass.
+  const treeOptions = useMemo(
+    () => buildCollectionTreeOptions(spaceId, collections ?? []),
+    [spaceId, collections],
+  );
+  const collectionById = useMemo(
+    () => new Map((collections ?? []).map((c) => [c.id, c])),
+    [collections],
+  );
+
   return (
     <SidebarMenuSub>
-      {(collections ?? []).map((collection) => {
+      {treeOptions.map((option) => {
+        const collection = collectionById.get(option.id);
+        if (!collection) return null;
         const link = `/w/${wsSlug}/docs/spaces/${spaceId}?collection=${collection.id}`;
         const showTooltip = isColTruncated(collection.id);
+        // Depth 0 stays flush with the sidebar's base indent; each
+        // additional depth adds a small left pad + a muted "↳" so
+        // the hierarchy is readable without hover.
+        const depthStyle = option.depth > 0 ? { paddingLeft: `${option.depth * 12}px` } : undefined;
 
         return (
-          <SidebarMenuSubItem key={collection.id}>
+          <SidebarMenuSubItem key={collection.id} style={depthStyle}>
             <Tooltip open={showTooltip ? undefined : false}>
               <TooltipTrigger asChild>
                 <SidebarMenuSubButton
                   asChild
                   size="sm"
                   isActive={isActive(link)}
+                  title={option.depth > 0 ? option.path : undefined}
                 >
                   <a
                     href={link}
@@ -84,6 +106,14 @@ function DocsSpaceCollections({
                       });
                     }}
                   >
+                    {option.depth > 0 && (
+                      <span
+                        className="select-none text-[10px] text-muted-foreground/50"
+                        aria-hidden="true"
+                      >
+                        ↳
+                      </span>
+                    )}
                     <SidebarCollectionIcon name={collection.icon} />
                     <span className="truncate" ref={(element) => checkColTruncation(collection.id, element)}>
                       {collection.name}
@@ -92,7 +122,7 @@ function DocsSpaceCollections({
                 </SidebarMenuSubButton>
               </TooltipTrigger>
               <TooltipContent side="right" align="center">
-                {collection.name}
+                {option.depth > 0 ? option.path : collection.name}
               </TooltipContent>
             </Tooltip>
           </SidebarMenuSubItem>
