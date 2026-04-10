@@ -55,12 +55,28 @@ export function TaskGitPanel({
         <div className="overflow-hidden rounded-md border border-border/60 bg-card divide-y divide-border/40">
           {links.map((link) => (
             <div key={link.id} className="space-y-1.5 px-4 py-3 text-xs">
-              <div className="font-medium">{link.repo}</div>
+              <div>
+                <a
+                  href={`https://github.com/${link.repo}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 font-medium text-foreground transition-colors hover:text-primary"
+                >
+                  <span>{link.repo}</span>
+                  <LinkSquare01Icon className="h-2.5 w-2.5 shrink-0" />
+                </a>
+              </div>
               {link.branch && (
-                <div className="flex items-center gap-1.5 text-muted-foreground">
+                <a
+                  href={`https://github.com/${link.repo}/tree/${link.branch}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-muted-foreground transition-colors hover:text-primary"
+                >
                   <GitBranchIcon className="h-3 w-3 shrink-0" />
                   <span className="truncate font-mono">{link.branch}</span>
-                </div>
+                  <LinkSquare01Icon className="h-2.5 w-2.5 shrink-0" />
+                </a>
               )}
               {link.pr_url && (
                 <div className="flex items-center gap-1.5">

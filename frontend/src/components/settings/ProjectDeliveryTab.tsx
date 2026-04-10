@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { GitBranchIcon, GitPullRequestIcon, Loading01Icon, PlusSignIcon, ArrowReloadHorizontalIcon, Delete01Icon } from '@/lib/icons';
+import { GitBranchIcon, GitPullRequestIcon, Loading01Icon, PlusSignIcon, ArrowReloadHorizontalIcon, Delete01Icon, LinkSquare01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
 
@@ -271,14 +271,18 @@ export function ProjectDeliveryTab({ workspaceId, editable }: {
                         <p className="mb-2 text-xs font-medium text-muted-foreground">Repositories with access</p>
                         <div className="flex flex-wrap gap-1.5">
                           {activeRepos.map((repo) => (
-                            <span
+                            <a
                               key={repo.id}
+                              href={`https://github.com/${repo.full_name}`}
+                              target="_blank"
+                              rel="noreferrer"
                               className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-muted/50 px-2 py-1 text-xs"
                             >
                               <GitBranchIcon className="h-3 w-3 text-muted-foreground" />
                               <span className="font-medium">{repo.full_name}</span>
+                              <LinkSquare01Icon className="h-2.5 w-2.5 shrink-0 text-muted-foreground" />
                               {repo.private && <Badge variant="outline" className="h-4 px-1 text-[9px]">Private</Badge>}
-                            </span>
+                            </a>
                           ))}
                         </div>
                       </div>
@@ -318,13 +322,27 @@ export function ProjectDeliveryTab({ workspaceId, editable }: {
                   <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-medium">{repo.full_name}</p>
+                        <a
+                          href={`https://github.com/${repo.full_name}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 font-medium text-foreground transition-colors hover:text-primary"
+                        >
+                          <span>{repo.full_name}</span>
+                          <LinkSquare01Icon className="h-2.5 w-2.5 shrink-0" />
+                        </a>
                         <Badge variant="outline" className="text-[10px]">{repo.private ? 'Private' : 'Public'}</Badge>
                         {repo.archived ? <Badge variant="secondary" className="text-[10px]">Archived</Badge> : null}
                       </div>
-                      <p className="mt-0.5 text-xs text-muted-foreground">
+                      <a
+                        href={`https://github.com/${repo.full_name}/tree/${repo.default_branch}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-0.5 inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-primary"
+                      >
                         <span className="font-mono">{repo.default_branch}</span>
-                      </p>
+                        <LinkSquare01Icon className="h-2.5 w-2.5 shrink-0" />
+                      </a>
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="text-xs text-muted-foreground">Available for delivery</span>
