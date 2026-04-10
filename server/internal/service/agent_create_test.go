@@ -15,6 +15,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 func TestCreateAgentDefaultsToCodeBuilderPreset(t *testing.T) {
@@ -158,6 +159,43 @@ func TestEnsureBuiltInTaskPlannerRefreshesLegacyPrompt(t *testing.T) {
 	}
 	if updated.Name != "Scribe" {
 		t.Fatalf("expected renamed task planner %q, got %q", "Scribe", updated.Name)
+	}
+}
+
+func TestEnsureBuiltInReviewAgentRefreshesPromptVersionAndTools(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	svc := &AgentService{agentRepo: agentRepo}
+
+	now := time.Now().UTC()
+	legacyPrompt := "You are Review Agent.\n\n- Inspect the relevant code and run targeted validation when possible.\n- Focus on correctness, regressions, missing tests, and delivery risk.\n- Report findings first, ordered by severity, with concrete file references when available.\n- Avoid low-signal commentary and avoid proposing unnecessary rewrites."
+	if err := db.Exec(`INSERT INTO agents (
+		id, workspace_id, is_system, name, preset_key, preset_version_key, role, status, runtime_kind,
+		skills, trigger_mode, system_prompt, allowed_tools, allowed_commands, allowed_targets,
+		approval_mode, max_concurrent_runs, default_invocation_mode, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"agent-reviewer", "ws-test", true, "Lens", model.AgentPresetReviewAgent, "review_agent_default", "Review Agent", "idle", "codex",
+		[]byte("[]"), "manual", legacyPrompt, mustJSONStringSlice([]string{"read_file", "run_command"}), []byte("[]"), []byte("[]"), "never", 1, model.InvocationModeAutonomous, now, now,
+	).Error; err != nil {
+		t.Fatalf("insert review agent: %v", err)
+	}
+
+	updated, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetReviewAgent)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+	if updated.PresetVersionKey != defaultPresetVersionKeyForPresetKey(model.AgentPresetReviewAgent) {
+		t.Fatalf("expected review preset version %q, got %q", defaultPresetVersionKeyForPresetKey(model.AgentPresetReviewAgent), updated.PresetVersionKey)
+	}
+	if updated.SystemPrompt == nil || !strings.Contains(*updated.SystemPrompt, "`request_user_input`") {
+		t.Fatalf("expected refreshed review prompt with request_user_input, got %+v", updated.SystemPrompt)
+	}
+	var tools []string
+	if err := json.Unmarshal(updated.AllowedTools, &tools); err != nil {
+		t.Fatalf("unmarshal allowed tools: %v", err)
+	}
+	if !slices.Contains(tools, worker.ToolRequestUserInput) {
+		t.Fatalf("expected review agent tools to include %q, got %v", worker.ToolRequestUserInput, tools)
 	}
 }
 

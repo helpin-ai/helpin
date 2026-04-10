@@ -97,7 +97,7 @@ func defaultPresetVersionKeyForPresetKey(presetKey string) string {
 	case model.AgentPresetCodeBuilder:
 		return "code_builder_local_commit_delivery"
 	case model.AgentPresetReviewAgent:
-		return "review_agent_default"
+		return "review_agent_interactive_loop"
 	default:
 		return ""
 	}
@@ -374,7 +374,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Model:                 &reviewAgentModel,
 			ExecutionConfig:       codexOpenAIDefaultExecutionConfig,
 			Label:                 "Review Agent",
-			Description:           "Validation and review agent for story quality checks without repo mutation.",
+			Description:           "Review-first agent for validation, follow-up discussion, and agreed fixes in the same branch.",
 			DefaultRole:           "Review Agent",
 			RuntimeKind:           "codex",
 			DefaultTriggerMode:    "manual",

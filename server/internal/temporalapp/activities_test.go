@@ -83,6 +83,49 @@ func TestExecutionRuntimeKindPrefersRunOverride(t *testing.T) {
 	}
 }
 
+func TestIsExplicitReviewCloseoutReply(t *testing.T) {
+	cases := []struct {
+		reply string
+		want  bool
+	}{
+		{reply: "Looks good, done reviewing.", want: true},
+		{reply: "- Next step -> Done reviewing", want: true},
+		{reply: "All set, review complete.", want: true},
+		{reply: "Can you clarify finding 2?", want: false},
+		{reply: "Done with #1, but please re-review after changes.", want: false},
+		{reply: "Please review again once Forge lands the fixes.", want: false},
+	}
+
+	for _, tc := range cases {
+		if got := isExplicitReviewCloseoutReply(tc.reply); got != tc.want {
+			t.Fatalf("isExplicitReviewCloseoutReply(%q) = %v, want %v", tc.reply, got, tc.want)
+		}
+	}
+}
+
+func TestReviewAgentFollowupRequest(t *testing.T) {
+	req := reviewAgentFollowupRequest()
+	if req == nil || len(req.Questions) != 1 {
+		t.Fatalf("expected one follow-up question, got %#v", req)
+	}
+	question := req.Questions[0]
+	if question.ID != "next_step" {
+		t.Fatalf("expected next_step question id, got %q", question.ID)
+	}
+	if !question.IsOther {
+		t.Fatal("expected follow-up question to allow freeform replies")
+	}
+	if len(question.Options) != 4 {
+		t.Fatalf("expected four follow-up options, got %#v", question.Options)
+	}
+	if question.Options[1].Label != "Implement changes" {
+		t.Fatalf("expected implement option, got %#v", question.Options)
+	}
+	if question.Options[3].Label != "Done reviewing" {
+		t.Fatalf("expected done option, got %#v", question.Options)
+	}
+}
+
 func TestPrepareTaskDeliveryKeepsRunBranchOverridesOffSavedTarget(t *testing.T) {
 	dbName := fmt.Sprintf("file:prepare-task-delivery-%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
