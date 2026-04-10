@@ -11,53 +11,56 @@ import (
 
 // ExecutionContext holds all state for a single agent run execution.
 type ExecutionContext struct {
-	Context                context.Context
-	WorkDir                string // path to cloned repo on disk
-	WorkspaceID            string
-	AgentID                string
-	RunID                  string
-	TargetType             string
-	TargetID               string
-	TaskID                 string
-	ConversationID         string
-	Agent                  *model.Agent
-	Task                   *model.PMTask
-	Epic                   *model.PMEpic
-	EpicTasks              []model.PMTask
-	Conversation           *model.SupportConversation
-	GitIntegration         *model.GitIntegration
-	GitAccessToken         string
-	Repo                   string // e.g. "owner/repo"
-	BaseBranch             string
-	WorkingBranch          string
-	InitialInstructions    string
-	PlanningStage          string
-	PlanningMethodology    string
-	PlanningSpecDocumentID string
-	PlanningSpecVersionID  string
-	Config                 *WorkflowConfig
-	ResolvedProfile        ResolvedProfile
-	AllowedTools           map[string]bool
-	Services               *ServiceBridge
-	PendingSupportDraft    *SupportDraftReply
-	LatestPRMetadata       *PRMetadata
-	Heartbeat              func(stage string) error
-	OnExecutionEvent       func(event ExecutionEvent)
-	OnGitPush              func(branch, sha string) error
-	OnPROpen               func(metadata PRMetadata, title string) error
-	HeartbeatStageProvider func() string
-	HandleInteractivePause func(result *ExecutionResult) (*LiveExecutionResumeSignal, error)
-	PlanningTurnKind       string
-	PlanningTurnAttempt    int
-	RunFacts               map[string]string
-	ArtifactContext        *ArtifactContext
-	ProviderContinuation   *ProviderContinuation
-	ConversationHistory    []ExecutionMessage
-	LastExecutionResult    *ExecutionResult
-	ToolFileState          *ToolFileState
-	toolFileStateMu        sync.Mutex
-	PublishedPreviews      map[string]PublishedPreview
-	CurrentAssistantText   string
+	Context                 context.Context
+	WorkDir                 string // path to cloned repo on disk
+	WorkspaceID             string
+	AgentID                 string
+	RunID                   string
+	TargetType              string
+	TargetID                string
+	TaskID                  string
+	ConversationID          string
+	Agent                   *model.Agent
+	Task                    *model.PMTask
+	Epic                    *model.PMEpic
+	EpicTasks               []model.PMTask
+	Conversation            *model.SupportConversation
+	GitIntegration          *model.GitIntegration
+	GitAccessToken          string
+	Repo                    string // e.g. "owner/repo"
+	BaseBranch              string
+	WorkingBranch           string
+	BranchSyncStatus        string
+	BranchSyncConflictFiles []string
+	InitialInstructions     string
+	PlanningStage           string
+	PlanningMethodology     string
+	PlanningSpecDocumentID  string
+	PlanningSpecVersionID   string
+	Config                  *WorkflowConfig
+	ResolvedProfile         ResolvedProfile
+	AllowedTools            map[string]bool
+	Services                *ServiceBridge
+	PendingSupportDraft     *SupportDraftReply
+	LatestPRMetadata        *PRMetadata
+	LocalGitCommit          *GitCommitMetadata
+	Heartbeat               func(stage string) error
+	OnExecutionEvent        func(event ExecutionEvent)
+	OnGitPush               func(branch, sha string) error
+	OnPROpen                func(metadata PRMetadata, title string) error
+	HeartbeatStageProvider  func() string
+	HandleInteractivePause  func(result *ExecutionResult) (*LiveExecutionResumeSignal, error)
+	PlanningTurnKind        string
+	PlanningTurnAttempt     int
+	RunFacts                map[string]string
+	ArtifactContext         *ArtifactContext
+	ProviderContinuation    *ProviderContinuation
+	ConversationHistory     []ExecutionMessage
+	LastExecutionResult     *ExecutionResult
+	ToolFileState           *ToolFileState
+	toolFileStateMu         sync.Mutex
+	PublishedPreviews       map[string]PublishedPreview
+	CurrentAssistantText    string
 }
 
 type LiveExecutionResumeSignal struct {
@@ -124,8 +127,8 @@ type ServiceBridge struct {
 	AssignTaskAgent     func(ctx context.Context, workspaceID, actorID, taskID, agentID string) error
 	SetTaskDependencies func(ctx context.Context, workspaceID, actorID string, dependencies []TaskDependencyLink) error
 	ListEpicTasks       func(ctx context.Context, workspaceID, epicID string) ([]EpicTaskSummary, error)
-	ListWorkspaceTeams   func(ctx context.Context, workspaceID string) ([]WorkspaceTeamSummary, error)
-	ApproveEpicSpec      func(ctx context.Context, workspaceID, epicID, actorID string, versionID *string) (*model.ApprovedSpecSummary, error)
+	ListWorkspaceTeams  func(ctx context.Context, workspaceID string) ([]WorkspaceTeamSummary, error)
+	ApproveEpicSpec     func(ctx context.Context, workspaceID, epicID, actorID string, versionID *string) (*model.ApprovedSpecSummary, error)
 
 	// Support
 	ListConversationMessages func(ctx context.Context, workspaceID, conversationID string) ([]model.SupportMessage, error)
@@ -212,4 +215,12 @@ type PRMetadata struct {
 	Number   int    `json:"number"`
 	Head     string `json:"head"`
 	Base     string `json:"base"`
+}
+
+// GitCommitMetadata captures a local commit produced during a coding run.
+type GitCommitMetadata struct {
+	Branch        string   `json:"branch"`
+	CommitSHA     string   `json:"commit_sha"`
+	CommitMessage string   `json:"commit_message"`
+	ChangedFiles  []string `json:"changed_files,omitempty"`
 }

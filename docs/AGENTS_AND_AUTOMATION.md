@@ -10,6 +10,8 @@ This is the current backend reference for:
 
 Use this doc for runtime and model truth. For the product-facing mental model, see [AUTOMATION_PRODUCT_MODEL.md](/root/teampulse/docs/AUTOMATION_PRODUCT_MODEL.md).
 
+For repository-backed coding-agent execution, see [CODING_AGENT_RUNTIME_FLOW.md](/root/teampulse/docs/CODING_AGENT_RUNTIME_FLOW.md).
+
 ## Core model
 
 The platform now treats Automation as one system with four related concepts:

@@ -21,6 +21,13 @@ export type AgentModelProvider = 'anthropic' | 'openai' | 'openrouter';
 export type AgentInvocationMode = 'interactive' | 'autonomous';
 export type AgentRunPauseReason = 'none' | 'human_input' | 'human_approval' | 'authentication';
 export type CodexAuthStateStatus = 'required' | 'pending' | 'connected' | 'failed' | 'cancelled';
+export type AgentReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+export type AgentServiceTier = 'fast' | 'flex';
+
+export interface AgentExecutionConfig {
+  reasoning_effort?: AgentReasoningEffort;
+  service_tier?: AgentServiceTier;
+}
 
 export interface Agent {
   id: string;
@@ -36,6 +43,7 @@ export interface Agent {
   trigger_mode: AgentTriggerMode;
   provider?: AgentModelProvider;
   model?: string;
+  execution_config?: AgentExecutionConfig;
   system_prompt?: string;
   planning_notes?: string;
   tools: unknown[];
@@ -293,6 +301,7 @@ export interface CreateAgentRequest {
   trigger_mode?: AgentTriggerMode;
   provider?: AgentModelProvider;
   model?: string;
+  execution_config?: AgentExecutionConfig;
   system_prompt?: string;
   planning_notes?: string;
   tools?: unknown[];
@@ -320,6 +329,7 @@ export interface UpdateAgentRequest {
   trigger_mode?: AgentTriggerMode;
   provider?: AgentModelProvider;
   model?: string;
+  execution_config?: AgentExecutionConfig;
   system_prompt?: string;
   planning_notes?: string;
   tools?: unknown[];
@@ -365,6 +375,7 @@ export interface AgentPresetDefinition {
   source_version_key?: string;
   provider?: AgentModelProvider;
   model?: string;
+  execution_config?: AgentExecutionConfig;
   label: string;
   description: string;
   default_role: string;
@@ -389,6 +400,7 @@ export interface CreateWorkspaceAgentPresetVersionRequest {
   runtime_kind?: AgentRuntimeKind;
   provider?: AgentModelProvider;
   model?: string;
+  execution_config?: AgentExecutionConfig;
   system_prompt?: string;
   allowed_tools?: string[];
   supported_modes?: AgentInvocationMode[];
@@ -400,6 +412,10 @@ export interface AgentModelProviderOption {
   value: AgentModelProvider;
   label: string;
   model_placeholder: string;
+  supports_reasoning_effort: boolean;
+  supported_reasoning_efforts?: AgentReasoningEffort[];
+  supports_service_tier: boolean;
+  supported_service_tiers?: AgentServiceTier[];
 }
 
 export interface RunnerHealth {

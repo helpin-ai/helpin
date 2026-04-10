@@ -36,6 +36,7 @@ func TestPrepareRunActivityMarksRunRunning(t *testing.T) {
 			trigger_mode TEXT NOT NULL DEFAULT 'manual',
 			provider TEXT,
 			model TEXT,
+			execution_config BLOB NOT NULL DEFAULT x'7b7d',
 			system_prompt TEXT,
 			planning_notes TEXT,
 			monthly_token_budget INTEGER,

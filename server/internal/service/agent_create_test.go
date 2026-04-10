@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"reflect"
 	"slices"
 	"strings"
@@ -494,6 +495,49 @@ func TestUpdateAgent_PreservesSelectedSystemPresetVersion(t *testing.T) {
 	}
 }
 
+func TestEnsureBuiltInAgent_UpgradesLegacyCodeBuilderRuntimeToCodex(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	activitySvc := NewPMActivityService(repository.NewPMActivityRepository(db))
+	svc := &AgentService{
+		agentRepo:   agentRepo,
+		activitySvc: activitySvc,
+		wsPublisher: nil,
+	}
+	svc.SetModelProviderConfig("", "test-openai-key", "", "", false, "", "")
+
+	defaultPrompt := defaultSystemPromptForPreset(model.AgentPresetCodeBuilder)
+	if defaultPrompt == nil {
+		t.Fatal("expected code builder default prompt")
+	}
+	now := time.Now().UTC()
+	if err := db.Exec(`INSERT INTO agents (
+		id, workspace_id, is_system, name, preset_key, preset_version_key, role, status, runtime_kind,
+		skills, trigger_mode, system_prompt, allowed_tools, allowed_commands, allowed_targets,
+		approval_mode, max_concurrent_runs, default_invocation_mode, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"agent-system-legacy-forge", "ws-test", true, "Code Builder", model.AgentPresetCodeBuilder, "code_builder_default",
+		"Code Builder", "idle", "opencode", []byte("[]"), "manual", *defaultPrompt,
+		mustJSONStringSlice([]string{"read_file", "run_command"}),
+		mustJSONStringSlice([]string{}),
+		mustJSONStringSlice([]string{"task"}),
+		"never", 1, model.InvocationModeAutonomous, now, now,
+	).Error; err != nil {
+		t.Fatalf("insert legacy forge system agent: %v", err)
+	}
+
+	updated, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCodeBuilder)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+	if updated.RuntimeKind != "codex" {
+		t.Fatalf("expected legacy forge runtime to upgrade to codex, got %q", updated.RuntimeKind)
+	}
+	if updated.PresetVersionKey != defaultPresetVersionKeyForPresetKey(model.AgentPresetCodeBuilder) {
+		t.Fatalf("expected preset version %q, got %q", defaultPresetVersionKeyForPresetKey(model.AgentPresetCodeBuilder), updated.PresetVersionKey)
+	}
+}
+
 func TestUpdateAgent_AllowsSystemPresetVersionRuntimeFromSelectedVersion(t *testing.T) {
 	db := newAgentServiceTestDB(t)
 	agentRepo := repository.NewAgentRepository(db)
@@ -586,6 +630,7 @@ func TestCreateWorkspacePresetVersion(t *testing.T) {
 		SourceVersionKey: agentTestStringPtr(defaultPresetVersionKeyForPresetKey(model.AgentPresetCodeBuilder)),
 		RuntimeKind:      agentTestStringPtr("codex"),
 		Model:            agentTestStringPtr("gpt-5-mini"),
+		ExecutionConfig:  json.RawMessage(`{"reasoning_effort":"high","service_tier":"fast"}`),
 		SystemPrompt:     agentTestStringPtr("Use the repo conventions and keep changes incremental."),
 		AllowedTools:     mustJSONStringSlice([]string{"read_file", "run_command"}),
 		SupportedModes:   mustJSONStringSlice([]string{model.InvocationModeAutonomous}),
@@ -608,6 +653,9 @@ func TestCreateWorkspacePresetVersion(t *testing.T) {
 	if version.Model == nil || *version.Model != "gpt-5-mini" {
 		t.Fatalf("expected persisted model override, got %+v", version.Model)
 	}
+	if strings.TrimSpace(string(version.ExecutionConfig)) != `{"reasoning_effort":"high","service_tier":"fast"}` {
+		t.Fatalf("expected persisted execution config override, got %s", version.ExecutionConfig)
+	}
 	if version.RuntimeKind != "codex" {
 		t.Fatalf("expected persisted runtime override, got %q", version.RuntimeKind)
 	}
@@ -622,6 +670,28 @@ func TestCreateWorkspacePresetVersion(t *testing.T) {
 	}
 	if version.ApprovalMode != "never" {
 		t.Fatalf("expected workspace preset version approval mode to be forced to never, got %q", version.ApprovalMode)
+	}
+}
+
+func TestEnsureBuiltInAgent_AppliesDefaultExecutionConfigForForgeAndLens(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	activitySvc := NewPMActivityService(repository.NewPMActivityRepository(db))
+	svc := &AgentService{
+		agentRepo:   agentRepo,
+		activitySvc: activitySvc,
+		wsPublisher: nil,
+	}
+	svc.SetModelProviderConfig("", "test-openai-key", "", "", false, "", "")
+
+	for _, presetKey := range []string{model.AgentPresetCodeBuilder, model.AgentPresetReviewAgent} {
+		agent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", presetKey)
+		if err != nil {
+			t.Fatalf("ensureBuiltInAgent(%s) returned error: %v", presetKey, err)
+		}
+		if strings.TrimSpace(string(agent.ExecutionConfig)) != `{"reasoning_effort":"high","service_tier":"fast"}` {
+			t.Fatalf("expected %s execution config to default to fast+high, got %s", presetKey, agent.ExecutionConfig)
+		}
 	}
 }
 
@@ -710,6 +780,7 @@ func newAgentServiceTestDB(t *testing.T) *gorm.DB {
 			trigger_mode TEXT NOT NULL,
 			provider TEXT,
 			model TEXT,
+			execution_config BLOB NOT NULL DEFAULT x'7b7d',
 			system_prompt TEXT,
 			planning_notes TEXT,
 			tools BLOB NOT NULL DEFAULT '[]',
@@ -740,6 +811,7 @@ func newAgentServiceTestDB(t *testing.T) *gorm.DB {
 			runtime_kind TEXT NOT NULL,
 			provider TEXT,
 			model TEXT,
+			execution_config BLOB NOT NULL DEFAULT x'7b7d',
 			system_prompt TEXT,
 			allowed_tools BLOB NOT NULL DEFAULT '[]',
 			supported_modes BLOB NOT NULL DEFAULT '[]',

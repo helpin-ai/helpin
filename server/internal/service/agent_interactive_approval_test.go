@@ -1862,6 +1862,7 @@ func newInteractiveApprovalTestDB(t *testing.T) *gorm.DB {
 			trigger_mode TEXT NOT NULL,
 			provider TEXT,
 			model TEXT,
+			execution_config BLOB NOT NULL DEFAULT x'7b7d',
 			system_prompt TEXT,
 			planning_notes TEXT,
 			tools BLOB NOT NULL DEFAULT (CAST('[]' AS BLOB)),

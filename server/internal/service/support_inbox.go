@@ -5,12 +5,15 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -47,7 +50,24 @@ type SupportInboxService struct {
 	presence                websocket.PresenceProvider
 	statusOverrideRepo      *repository.SupportTeammateStatusOverrideRepository
 	triageService           *SupportInboxTriageService
+	taskService             *PMTaskService
 }
+
+type supportConversationTaskDraft struct {
+	Title       string
+	Summary     string
+	Description string
+	TaskType    string
+	Priority    string
+}
+
+type supportTaskAssociationCopyCounts struct {
+	Contacts  int
+	Companies int
+	Deals     int
+}
+
+var ErrSupportTaskInsufficientContext = errors.New("Not enough support context to create a useful task. Add more internal notes with the issue, impact, and expected outcome, then try again.")
 
 // NewSupportInboxService creates a new SupportInboxService.
 func NewSupportInboxService(
@@ -307,6 +327,15 @@ func (s *SupportInboxService) SetConversationAgentRunner(runner func(ctx context
 		return nil
 	}
 	s.conversationAgentRunner = runner
+	return s
+}
+
+// SetTaskService injects the PM task service used for support-created tasks.
+func (s *SupportInboxService) SetTaskService(taskService *PMTaskService) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.taskService = taskService
 	return s
 }
 
@@ -1010,6 +1039,686 @@ func (s *SupportInboxService) LinkConversationStory(ctx context.Context, workspa
 	})
 
 	return nil
+}
+
+// CreateTaskFromConversation summarizes a support conversation and creates a linked PM task.
+func (s *SupportInboxService) CreateTaskFromConversation(
+	ctx context.Context,
+	workspaceID, conversationID, actorID string,
+	req model.CreateTaskFromConversationRequest,
+) (*model.CreateTaskFromConversationResponse, error) {
+	if s == nil || s.taskService == nil {
+		return nil, fmt.Errorf("task service is unavailable")
+	}
+
+	conversation, err := s.loadConversationAccessible(ctx, workspaceID, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	if conversation == nil {
+		return nil, fmt.Errorf("conversation not found")
+	}
+
+	messages, err := s.ListConversationMessages(ctx, workspaceID, conversationID, true)
+	if err != nil {
+		return nil, err
+	}
+
+	draft, err := s.generateTaskDraftFromConversation(ctx, workspaceID, conversation, messages)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateSupportTaskDraft(conversation, messages, draft); err != nil {
+		slog.WarnContext(ctx, "support task creation blocked due to weak draft context",
+			"workspace_id", workspaceID,
+			"conversation_id", conversationID,
+			"title", strings.TrimSpace(draft.Title),
+			"summary_preview", truncateLog(strings.TrimSpace(draft.Summary), 160),
+			"error", err,
+		)
+		return nil, err
+	}
+
+	taskType := normalizeSupportTaskType(firstNonEmptyString(trimPtrValue(req.TaskType), draft.TaskType))
+	priority := normalizeSupportTaskPriority(firstNonEmptyString(trimPtrValue(req.Priority), draft.Priority))
+	description := supportTaskDescriptionToRichText(draft.Description)
+	createReq := model.CreateTaskRequest{
+		WorkspaceID:       workspaceID,
+		Name:              draft.Title,
+		Description:       description,
+		TaskType:          taskType,
+		WorkflowID:        trimPtrValue(req.WorkflowID),
+		WorkflowStateID:   trimPtrValue(req.WorkflowStateID),
+		TeamID:            trimOptionalPtr(req.TeamID),
+		OwnerMemberID:     trimOptionalPtr(req.OwnerMemberID),
+		RequesterID:       strPtr(actorID),
+		RequesterMemberID: nil,
+	}
+	if priority != "" {
+		createReq.Priority = &priority
+	}
+
+	detail, err := s.taskService.Create(ctx, createReq, actorID)
+	if err != nil {
+		return nil, err
+	}
+
+	taskID := detail.Task.ID
+	if err := s.LinkConversationStory(ctx, workspaceID, conversationID, taskID, actorID); err != nil {
+		return nil, err
+	}
+
+	counts, err := s.copyConversationAssociationsToTask(ctx, workspaceID, conversation, taskID)
+	if err != nil {
+		return nil, err
+	}
+
+	slog.InfoContext(ctx, "created task from support conversation",
+		"workspace_id", workspaceID,
+		"conversation_id", conversationID,
+		"task_id", taskID,
+		"task_key", detail.Task.TaskKey,
+		"contact_associations", counts.Contacts,
+		"company_associations", counts.Companies,
+		"deal_associations", counts.Deals,
+	)
+
+	return &model.CreateTaskFromConversationResponse{
+		TaskID:                    taskID,
+		TaskKey:                   detail.Task.TaskKey,
+		TaskName:                  detail.Task.Name,
+		Summary:                   strings.TrimSpace(draft.Summary),
+		CopiedContactAssociations: counts.Contacts,
+		CopiedCompanyAssociations: counts.Companies,
+		CopiedDealAssociations:    counts.Deals,
+	}, nil
+}
+
+func (s *SupportInboxService) generateTaskDraftFromConversation(
+	ctx context.Context,
+	workspaceID string,
+	conversation *model.SupportConversation,
+	messages []model.SupportMessage,
+) (*supportConversationTaskDraft, error) {
+	if s.supportAIService != nil {
+		draft, err := s.supportAIService.GenerateTaskDraftFromConversation(ctx, workspaceID, conversation, messages)
+		if err == nil && draft != nil {
+			normalized := *draft
+			normalized.Title = fallbackSupportTaskTitle(conversation, messages, normalized.Title)
+			normalized.Summary = strings.TrimSpace(normalized.Summary)
+			normalized.Description = firstNonEmptyString(strings.TrimSpace(normalized.Description), fallbackSupportTaskDescription(conversation, messages, normalized))
+			normalized.TaskType = normalizeSupportTaskType(normalized.TaskType)
+			normalized.Priority = normalizeSupportTaskPriority(normalized.Priority)
+			return &normalized, nil
+		}
+		if err != nil {
+			slog.WarnContext(ctx, "support task draft generation fell back to deterministic summary",
+				"workspace_id", workspaceID,
+				"conversation_id", conversation.ID,
+				"error", err,
+			)
+		}
+	}
+
+	fallback := fallbackSupportConversationTaskDraft(conversation, messages)
+	return &fallback, nil
+}
+
+func (s *SupportInboxService) copyConversationAssociationsToTask(
+	ctx context.Context,
+	workspaceID string,
+	conversation *model.SupportConversation,
+	taskID string,
+) (supportTaskAssociationCopyCounts, error) {
+	var counts supportTaskAssociationCopyCounts
+	if conversation == nil {
+		return counts, nil
+	}
+
+	contactIDs := map[string]struct{}{}
+	companyIDs := map[string]struct{}{}
+	dealIDs := map[string]struct{}{}
+
+	if conversation.CRMContactID != nil && strings.TrimSpace(*conversation.CRMContactID) != "" {
+		contactIDs[strings.TrimSpace(*conversation.CRMContactID)] = struct{}{}
+	}
+
+	assocs, err := s.assocRepo.ListByObject(ctx, workspaceID, model.CRMObjectSupportConversation, conversation.ID)
+	if err != nil {
+		return counts, err
+	}
+	for _, assoc := range assocs {
+		otherType, otherID := supportAssociationPeer(assoc, model.CRMObjectSupportConversation, conversation.ID)
+		switch otherType {
+		case model.CRMObjectContact:
+			contactIDs[otherID] = struct{}{}
+		case model.CRMObjectCompany:
+			companyIDs[otherID] = struct{}{}
+		case model.CRMObjectDeal:
+			dealIDs[otherID] = struct{}{}
+		}
+	}
+
+	for _, id := range supportSortedSetKeys(contactIDs) {
+		assoc := &model.CRMAssociation{
+			WorkspaceID:    workspaceID,
+			FromObjectType: model.CRMObjectTask,
+			FromObjectID:   taskID,
+			ToObjectType:   model.CRMObjectContact,
+			ToObjectID:     id,
+		}
+		if err := s.assocRepo.Create(ctx, assoc); err != nil {
+			return counts, err
+		}
+		counts.Contacts++
+	}
+	for _, id := range supportSortedSetKeys(companyIDs) {
+		assoc := &model.CRMAssociation{
+			WorkspaceID:    workspaceID,
+			FromObjectType: model.CRMObjectTask,
+			FromObjectID:   taskID,
+			ToObjectType:   model.CRMObjectCompany,
+			ToObjectID:     id,
+		}
+		if err := s.assocRepo.Create(ctx, assoc); err != nil {
+			return counts, err
+		}
+		counts.Companies++
+	}
+	for _, id := range supportSortedSetKeys(dealIDs) {
+		assoc := &model.CRMAssociation{
+			WorkspaceID:    workspaceID,
+			FromObjectType: model.CRMObjectTask,
+			FromObjectID:   taskID,
+			ToObjectType:   model.CRMObjectDeal,
+			ToObjectID:     id,
+		}
+		if err := s.assocRepo.Create(ctx, assoc); err != nil {
+			return counts, err
+		}
+		counts.Deals++
+	}
+
+	return counts, nil
+}
+
+func fallbackSupportConversationTaskDraft(
+	conversation *model.SupportConversation,
+	messages []model.SupportMessage,
+) supportConversationTaskDraft {
+	summary := fallbackSupportTaskSummary(conversation, messages)
+	return supportConversationTaskDraft{
+		Title:       fallbackSupportTaskTitle(conversation, messages, ""),
+		Summary:     summary,
+		Description: fallbackSupportTaskDescription(conversation, messages, supportConversationTaskDraft{Summary: summary}),
+		TaskType:    model.PMTaskTypeFeature,
+		Priority:    fallbackSupportTaskPriority(conversation),
+	}
+}
+
+func fallbackSupportTaskTitle(conversation *model.SupportConversation, messages []model.SupportMessage, proposed string) string {
+	if candidate := cleanSupportTaskTitleCandidate(proposed); candidate != "" && !isWeakSupportTaskTitle(candidate) {
+		return candidate
+	}
+	if conversation != nil {
+		if candidate := cleanSupportTaskTitleCandidate(conversation.Subject); candidate != "" && !isWeakSupportTaskTitle(candidate) {
+			return candidate
+		}
+	}
+	if candidate := supportTaskTitleFromMessages(messages); candidate != "" {
+		return candidate
+	}
+	if conversation != nil {
+		return fmt.Sprintf("Customer-reported issue in conversation #%d", conversation.DisplayID)
+	}
+	return "Customer-reported issue"
+}
+
+func fallbackSupportTaskSummary(conversation *model.SupportConversation, messages []model.SupportMessage) string {
+	if candidate := supportPreferredContextExcerpt(messages, 220); candidate != "" {
+		return candidate
+	}
+	if candidate := supportLastNonEmptyMessageExcerpt(messages, 220); candidate != "" {
+		return candidate
+	}
+	if conversation == nil {
+		return ""
+	}
+	if subject := cleanSupportTaskTitleCandidate(conversation.Subject); subject != "" && !isWeakSupportTaskTitle(subject) {
+		return subject
+	}
+	return fmt.Sprintf("Support conversation #%d follow-up.", conversation.DisplayID)
+}
+
+func fallbackSupportTaskDescription(
+	conversation *model.SupportConversation,
+	messages []model.SupportMessage,
+	draft supportConversationTaskDraft,
+) string {
+	var b strings.Builder
+	problem := strings.TrimSpace(draft.Summary)
+	if problem == "" && conversation != nil {
+		problem = strings.TrimSpace(conversation.Subject)
+	}
+	if problem != "" {
+		b.WriteString("## Problem\n")
+		b.WriteString(problem)
+		b.WriteString("\n\n")
+	}
+	if impact := fallbackSupportTaskImpact(conversation, messages); impact != "" {
+		b.WriteString("## Impact\n")
+		b.WriteString(impact)
+		b.WriteString("\n\n")
+	}
+	b.WriteString("## Requested Outcome\n")
+	b.WriteString(fallbackSupportRequestedOutcome(conversation))
+	b.WriteString("\n\n")
+	if conversation != nil {
+		b.WriteString("## Customer Context\n")
+		b.WriteString(fmt.Sprintf("- Conversation: #%d\n", conversation.DisplayID))
+		if subject := strings.TrimSpace(conversation.Subject); subject != "" {
+			b.WriteString("- Subject: ")
+			b.WriteString(subject)
+			b.WriteString("\n")
+		}
+		if name := strings.TrimSpace(derefString(conversation.CustomerName)); name != "" {
+			b.WriteString("- Customer: ")
+			b.WriteString(name)
+			b.WriteString("\n")
+		}
+		if email := strings.TrimSpace(derefString(conversation.CustomerEmail)); email != "" {
+			b.WriteString("- Email: ")
+			b.WriteString(email)
+			b.WriteString("\n")
+		}
+		if priority := strings.TrimSpace(conversation.Priority); priority != "" {
+			b.WriteString("- Support Priority: ")
+			b.WriteString(priority)
+			b.WriteString("\n")
+		}
+		b.WriteString("\n\n")
+	}
+	if len(messages) == 0 {
+		return strings.TrimSpace(b.String())
+	}
+	b.WriteString("## Conversation Notes\n")
+	start := 0
+	if len(messages) > 12 {
+		start = len(messages) - 12
+	}
+	for _, msg := range messages[start:] {
+		content := strings.TrimSpace(msg.Content)
+		if content == "" {
+			continue
+		}
+		label := strings.TrimSpace(msg.SenderType)
+		if label == "" {
+			label = "message"
+		}
+		b.WriteString("- ")
+		b.WriteString(label)
+		if msg.IsInternal {
+			b.WriteString(" (internal)")
+		}
+		b.WriteString(": ")
+		b.WriteString(excerptSupportText(content, 400))
+		b.WriteString("\n")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func fallbackSupportTaskImpact(conversation *model.SupportConversation, messages []model.SupportMessage) string {
+	if candidate := supportPreferredContextExcerpt(messages, 240); candidate != "" {
+		return candidate
+	}
+	if candidate := supportLastNonEmptyMessageExcerpt(messages, 240); candidate != "" {
+		return candidate
+	}
+	if conversation == nil {
+		return ""
+	}
+	if subject := cleanSupportTaskTitleCandidate(conversation.Subject); subject != "" && !isWeakSupportTaskTitle(subject) {
+		return subject
+	}
+	return fmt.Sprintf("Customer-facing issue reported in support conversation #%d.", conversation.DisplayID)
+}
+
+func fallbackSupportRequestedOutcome(conversation *model.SupportConversation) string {
+	if conversation == nil {
+		return "Determine the next internal action needed to resolve the customer request."
+	}
+	subject := strings.ToLower(strings.TrimSpace(conversation.Subject))
+	switch {
+	case strings.Contains(subject, "request"), strings.Contains(subject, "feature"):
+		return "Assess the requested capability and decide the appropriate product follow-up for the customer request."
+	case strings.Contains(subject, "billing"), strings.Contains(subject, "invoice"), strings.Contains(subject, "payment"):
+		return "Identify the underlying issue and complete the internal follow-up needed to unblock the customer."
+	default:
+		return "Determine the next internal product or support action needed to resolve the customer issue."
+	}
+}
+
+func cleanSupportTaskTitleCandidate(value string) string {
+	candidate := strings.TrimSpace(value)
+	if candidate == "" {
+		return ""
+	}
+	candidate = strings.Join(strings.Fields(candidate), " ")
+	candidate = trimSupportEmailPrefixes(candidate)
+	candidate = trimSupportTaskActionPrefixes(candidate)
+	candidate = strings.Trim(candidate, " \t\r\n-:;,.")
+	if candidate == "" {
+		return ""
+	}
+	return titleCaseSupportIssue(candidate)
+}
+
+func trimSupportEmailPrefixes(value string) string {
+	candidate := strings.TrimSpace(value)
+	for {
+		lower := strings.ToLower(candidate)
+		switch {
+		case strings.HasPrefix(lower, "re:"):
+			candidate = strings.TrimSpace(candidate[3:])
+		case strings.HasPrefix(lower, "fw:"):
+			candidate = strings.TrimSpace(candidate[3:])
+		case strings.HasPrefix(lower, "fwd:"):
+			candidate = strings.TrimSpace(candidate[4:])
+		default:
+			return candidate
+		}
+	}
+}
+
+func trimSupportTaskActionPrefixes(value string) string {
+	candidate := strings.TrimSpace(value)
+	prefixes := []string{
+		"investigate ",
+		"fix ",
+		"handle ",
+		"follow up on ",
+		"follow up ",
+		"follow-up on ",
+		"follow-up ",
+		"look into ",
+		"review ",
+		"resolve ",
+		"debug ",
+		"triage ",
+		"check ",
+	}
+	for {
+		lower := strings.ToLower(candidate)
+		trimmed := false
+		for _, prefix := range prefixes {
+			if strings.HasPrefix(lower, prefix) {
+				candidate = strings.TrimSpace(candidate[len(prefix):])
+				trimmed = true
+				break
+			}
+		}
+		if !trimmed {
+			return candidate
+		}
+	}
+}
+
+func isWeakSupportTaskTitle(value string) bool {
+	candidate := strings.ToLower(strings.TrimSpace(value))
+	if candidate == "" {
+		return true
+	}
+	if len(candidate) < 4 {
+		return true
+	}
+	switch candidate {
+	case "new convo", "new conversation", "support conversation", "customer issue", "customer request", "support request", "follow up", "follow-up", "what about me", "help", "hi", "hello", "thanks", "thank you", "test", "testing":
+		return true
+	}
+	if strings.HasPrefix(candidate, "conversation #") {
+		return true
+	}
+	return false
+}
+
+func supportTaskTitleFromMessages(messages []model.SupportMessage) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].SenderType != "customer" {
+			continue
+		}
+		if !isSubstantiveSupportContextText(messages[i].Content) {
+			continue
+		}
+		if candidate := supportTaskTitleFromText(messages[i].Content); candidate != "" {
+			return candidate
+		}
+	}
+	for i := len(messages) - 1; i >= 0; i-- {
+		if !isSubstantiveSupportContextText(messages[i].Content) {
+			continue
+		}
+		if candidate := supportTaskTitleFromText(messages[i].Content); candidate != "" {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func supportTaskTitleFromText(value string) string {
+	candidate := strings.TrimSpace(value)
+	if candidate == "" {
+		return ""
+	}
+	if newline := strings.Index(candidate, "\n"); newline >= 0 {
+		candidate = candidate[:newline]
+	}
+	if sentence := strings.Index(candidate, ". "); sentence >= 0 {
+		candidate = candidate[:sentence]
+	}
+	candidate = excerptSupportText(candidate, 90)
+	candidate = cleanSupportTaskTitleCandidate(candidate)
+	if isWeakSupportTaskTitle(candidate) {
+		return ""
+	}
+	return candidate
+}
+
+func titleCaseSupportIssue(value string) string {
+	if value == "" {
+		return ""
+	}
+	r, size := utf8.DecodeRuneInString(value)
+	if r == utf8.RuneError && size == 0 {
+		return ""
+	}
+	if !unicode.IsLetter(r) || unicode.IsUpper(r) {
+		return value
+	}
+	return string(unicode.ToUpper(r)) + value[size:]
+}
+
+func validateSupportTaskDraft(
+	conversation *model.SupportConversation,
+	messages []model.SupportMessage,
+	draft *supportConversationTaskDraft,
+) error {
+	if draft == nil {
+		return ErrSupportTaskInsufficientContext
+	}
+	title := cleanSupportTaskTitleCandidate(draft.Title)
+	if isWeakSupportTaskTitle(title) {
+		return ErrSupportTaskInsufficientContext
+	}
+	summary := strings.TrimSpace(draft.Summary)
+	if !isSubstantiveSupportContextText(summary) {
+		if fallback := supportPreferredContextExcerpt(messages, 220); !isSubstantiveSupportContextText(fallback) {
+			if conversation == nil {
+				return ErrSupportTaskInsufficientContext
+			}
+			subject := cleanSupportTaskTitleCandidate(conversation.Subject)
+			if !isSubstantiveSupportContextText(subject) || isWeakSupportTaskTitle(subject) {
+				return ErrSupportTaskInsufficientContext
+			}
+		}
+	}
+	return nil
+}
+
+func supportPreferredContextExcerpt(messages []model.SupportMessage, maxLen int) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].SenderType != "customer" {
+			continue
+		}
+		if isSubstantiveSupportContextText(messages[i].Content) {
+			return excerptSupportText(messages[i].Content, maxLen)
+		}
+	}
+	for i := len(messages) - 1; i >= 0; i-- {
+		if !messages[i].IsInternal {
+			continue
+		}
+		if isSubstantiveSupportContextText(messages[i].Content) {
+			return excerptSupportText(messages[i].Content, maxLen)
+		}
+	}
+	for i := len(messages) - 1; i >= 0; i-- {
+		if isSubstantiveSupportContextText(messages[i].Content) {
+			return excerptSupportText(messages[i].Content, maxLen)
+		}
+	}
+	return ""
+}
+
+func supportLastNonEmptyMessageExcerpt(messages []model.SupportMessage, maxLen int) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		content := strings.TrimSpace(messages[i].Content)
+		if content == "" {
+			continue
+		}
+		return excerptSupportText(content, maxLen)
+	}
+	return ""
+}
+
+func isSubstantiveSupportContextText(value string) bool {
+	candidate := strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(value)), " "))
+	if candidate == "" {
+		return false
+	}
+	switch candidate {
+	case "new convo", "new conversation", "what about me", "help", "hi", "hello", "thanks", "thank you", "test", "testing":
+		return false
+	}
+	if len(candidate) >= 18 {
+		return true
+	}
+	if strings.Count(candidate, " ") >= 3 {
+		return true
+	}
+	if strings.ContainsAny(candidate, "0123456789") && len(candidate) >= 10 {
+		return true
+	}
+	for _, keyword := range []string{
+		"error", "fail", "issue", "broken", "request", "problem", "cannot", "can't",
+		"mismatch", "missing", "wrong", "incorrect", "bug", "sync", "import", "export",
+		"billing", "invoice", "payment", "attribution", "conversion",
+	} {
+		if strings.Contains(candidate, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
+func fallbackSupportTaskPriority(conversation *model.SupportConversation) string {
+	if conversation == nil {
+		return model.PMTaskPriorityNone
+	}
+	switch strings.TrimSpace(conversation.Priority) {
+	case model.PMTaskPriorityUrgent, model.PMTaskPriorityHigh, model.PMTaskPriorityMedium, model.PMTaskPriorityLow:
+		return strings.TrimSpace(conversation.Priority)
+	default:
+		return model.PMTaskPriorityNone
+	}
+}
+
+func normalizeSupportTaskType(value string) string {
+	switch strings.TrimSpace(value) {
+	case model.PMTaskTypeBug, model.PMTaskTypeChore, model.PMTaskTypeFeature:
+		return strings.TrimSpace(value)
+	default:
+		return model.PMTaskTypeFeature
+	}
+}
+
+func normalizeSupportTaskPriority(value string) string {
+	switch strings.TrimSpace(value) {
+	case model.PMTaskPriorityUrgent, model.PMTaskPriorityHigh, model.PMTaskPriorityMedium, model.PMTaskPriorityLow, model.PMTaskPriorityNone:
+		return strings.TrimSpace(value)
+	default:
+		return ""
+	}
+}
+
+func supportTaskDescriptionToRichText(markdown string) *string {
+	trimmed := strings.TrimSpace(markdown)
+	if trimmed == "" {
+		return nil
+	}
+	rendered, err := tiptap.RenderHTML(tiptap.MarkdownToJSON(trimmed))
+	if err != nil {
+		slog.Warn("failed to render support task markdown to html", "error", err)
+		return strPtr(trimmed)
+	}
+	return strPtr(strings.TrimSpace(rendered))
+}
+
+func trimOptionalPtr(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
+}
+
+func trimPtrValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(*value)
+}
+
+func supportAssociationPeer(assoc model.CRMAssociation, currentType, currentID string) (string, string) {
+	if assoc.FromObjectType == currentType && assoc.FromObjectID == currentID {
+		return assoc.ToObjectType, assoc.ToObjectID
+	}
+	return assoc.FromObjectType, assoc.FromObjectID
+}
+
+func supportSortedSetKeys(values map[string]struct{}) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	result := make([]string, 0, len(values))
+	for value := range values {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		result = append(result, strings.TrimSpace(value))
+	}
+	slices.Sort(result)
+	return result
+}
+
+func excerptSupportText(value string, maxLen int) string {
+	normalized := strings.Join(strings.Fields(strings.TrimSpace(value)), " ")
+	if maxLen <= 0 || len(normalized) <= maxLen {
+		return normalized
+	}
+	return strings.TrimSpace(normalized[:maxLen]) + "..."
 }
 
 // AssignConversationAgent assigns an agent to a conversation.

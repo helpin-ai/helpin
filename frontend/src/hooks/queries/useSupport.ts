@@ -410,6 +410,24 @@ export function useRunConversationAgent(workspaceId: string) {
   });
 }
 
+export function useCreateTaskFromConversation(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (conversationId: string) =>
+      supportService.createTaskFromConversation(workspaceId, conversationId).then(unwrap),
+    onSuccess: (_data, conversationId) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversationAssociations(workspaceId, conversationId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.tasks(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.board(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to create task', { description: error.message });
+    },
+  });
+}
+
 export function useSupportAgents(workspaceId: string) {
   return useQuery({
     queryKey: [...queryKeys.agents.all(workspaceId), 'support'] as const,

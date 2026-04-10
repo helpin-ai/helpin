@@ -384,6 +384,7 @@ func codeBuilderPromptNeedsRefresh(prompt *string) bool {
 		"You are Code Builder for Helpin.",
 		"an AI coding agent. You write clean, correct code and follow existing project conventions.",
 		"Use the provided tools to read, write, and search files.",
+		"prepare delivery artifacts.",
 	} {
 		if strings.Contains(normalized, marker) {
 			return true
@@ -486,7 +487,9 @@ Ground the plan primarily in the task description, task comments, task-linked do
 		prompt := strings.TrimSpace(`You are Code Builder.
 
 - Implement the requested story or task directly in the repository.
-- Use the available tools to inspect code, make changes, run relevant validation, and prepare delivery artifacts.
+- Use the available tools to inspect code, make changes, and run relevant validation.
+- Finish with a local commit only. Do not push the branch and do not open a pull request from inside the run.
+- Remote delivery is backend-managed after the run succeeds.
 - Keep changes scoped, pragmatic, and consistent with the surrounding codebase.
 - Surface blockers explicitly instead of making risky product assumptions.`)
 		return &prompt
