@@ -363,7 +363,10 @@ func (r *DocsHelpcenterRepository) ListPublicArticleTranslationsBySpace(ctx cont
 			COALESCE(p.content_text, hat.content_text) AS content_text,
 			COALESCE(p.seo_title, hat.seo_title) AS seo_title,
 			COALESCE(p.seo_description, hat.seo_description) AS seo_description,
-			hat.status,
+			CASE
+				WHEN p.document_id IS NOT NULL AND hat.locale = cfg.default_locale THEN 'published'
+				ELSE hat.status
+			END AS status,
 			hat.source_updated_at,
 			hat.source_synced,
 			hat.published_at,
@@ -380,12 +383,16 @@ func (r *DocsHelpcenterRepository) ListPublicArticleTranslationsBySpace(ctx cont
 		Where(`
 			hat.space_id = ?
 			AND hat.locale = ?
-			AND hat.status = ?
-			AND hat.published_at IS NOT NULL
 			AND d.deleted_at IS NULL
 			AND d.status = ?
 			AND ha.public_published_at IS NOT NULL
-			AND (p.document_id IS NOT NULL OR hat.locale = cfg.default_locale)
+			AND (
+				(
+					hat.status = ? AND hat.published_at IS NOT NULL
+					AND (p.document_id IS NOT NULL OR hat.locale = cfg.default_locale)
+				)
+				OR (hat.locale = cfg.default_locale AND p.document_id IS NOT NULL)
+			)
 		`, spaceID, locale, model.DocsHelpcenterTranslationStatusPublished, model.DocStatusPublished).
 		Order("d.position ASC, d.created_at ASC").
 		Scan(&translations).Error; err != nil {
@@ -411,7 +418,10 @@ func (r *DocsHelpcenterRepository) GetPublicArticleTranslationBySlug(ctx context
 			COALESCE(p.content_text, hat.content_text) AS content_text,
 			COALESCE(p.seo_title, hat.seo_title) AS seo_title,
 			COALESCE(p.seo_description, hat.seo_description) AS seo_description,
-			hat.status,
+			CASE
+				WHEN p.document_id IS NOT NULL AND hat.locale = cfg.default_locale THEN 'published'
+				ELSE hat.status
+			END AS status,
 			hat.source_updated_at,
 			hat.source_synced,
 			hat.published_at,
@@ -429,12 +439,16 @@ func (r *DocsHelpcenterRepository) GetPublicArticleTranslationBySlug(ctx context
 			hat.space_id = ?
 			AND hat.locale = ?
 			AND COALESCE(p.slug, hat.slug) = ?
-			AND hat.status = ?
-			AND hat.published_at IS NOT NULL
 			AND d.deleted_at IS NULL
 			AND d.status = ?
 			AND ha.public_published_at IS NOT NULL
-			AND (p.document_id IS NOT NULL OR hat.locale = cfg.default_locale)
+			AND (
+				(
+					hat.status = ? AND hat.published_at IS NOT NULL
+					AND (p.document_id IS NOT NULL OR hat.locale = cfg.default_locale)
+				)
+				OR (hat.locale = cfg.default_locale AND p.document_id IS NOT NULL)
+			)
 		`, spaceID, locale, slug, model.DocsHelpcenterTranslationStatusPublished, model.DocStatusPublished)
 
 	if collectionID != nil {
@@ -469,7 +483,10 @@ func (r *DocsHelpcenterRepository) ListPublicArticleTranslationsByCollection(ctx
 			COALESCE(p.content_text, hat.content_text) AS content_text,
 			COALESCE(p.seo_title, hat.seo_title) AS seo_title,
 			COALESCE(p.seo_description, hat.seo_description) AS seo_description,
-			hat.status,
+			CASE
+				WHEN p.document_id IS NOT NULL AND hat.locale = cfg.default_locale THEN 'published'
+				ELSE hat.status
+			END AS status,
 			hat.source_updated_at,
 			hat.source_synced,
 			hat.published_at,
@@ -486,12 +503,16 @@ func (r *DocsHelpcenterRepository) ListPublicArticleTranslationsByCollection(ctx
 		Where(`
 			hat.collection_id = ?
 			AND hat.locale = ?
-			AND hat.status = ?
-			AND hat.published_at IS NOT NULL
 			AND d.deleted_at IS NULL
 			AND d.status = ?
 			AND ha.public_published_at IS NOT NULL
-			AND (p.document_id IS NOT NULL OR hat.locale = cfg.default_locale)
+			AND (
+				(
+					hat.status = ? AND hat.published_at IS NOT NULL
+					AND (p.document_id IS NOT NULL OR hat.locale = cfg.default_locale)
+				)
+				OR (hat.locale = cfg.default_locale AND p.document_id IS NOT NULL)
+			)
 		`, collectionID, locale, model.DocsHelpcenterTranslationStatusPublished, model.DocStatusPublished).
 		Order("d.position ASC, d.created_at ASC").
 		Scan(&translations).Error; err != nil {
@@ -518,7 +539,10 @@ func (r *DocsHelpcenterRepository) GetPublicArticleTranslationByCollectionSlug(c
 			COALESCE(p.content_text, hat.content_text) AS content_text,
 			COALESCE(p.seo_title, hat.seo_title) AS seo_title,
 			COALESCE(p.seo_description, hat.seo_description) AS seo_description,
-			hat.status,
+			CASE
+				WHEN p.document_id IS NOT NULL AND hat.locale = cfg.default_locale THEN 'published'
+				ELSE hat.status
+			END AS status,
 			hat.source_updated_at,
 			hat.source_synced,
 			hat.published_at,
@@ -536,12 +560,16 @@ func (r *DocsHelpcenterRepository) GetPublicArticleTranslationByCollectionSlug(c
 			hat.collection_id = ?
 			AND hat.locale = ?
 			AND COALESCE(p.slug, hat.slug) = ?
-			AND hat.status = ?
-			AND hat.published_at IS NOT NULL
 			AND d.deleted_at IS NULL
 			AND d.status = ?
 			AND ha.public_published_at IS NOT NULL
-			AND (p.document_id IS NOT NULL OR hat.locale = cfg.default_locale)
+			AND (
+				(
+					hat.status = ? AND hat.published_at IS NOT NULL
+					AND (p.document_id IS NOT NULL OR hat.locale = cfg.default_locale)
+				)
+				OR (hat.locale = cfg.default_locale AND p.document_id IS NOT NULL)
+			)
 		`, collectionID, locale, slug, model.DocsHelpcenterTranslationStatusPublished, model.DocStatusPublished).
 		First(&translation).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

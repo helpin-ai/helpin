@@ -121,12 +121,16 @@ func (r *DocsSearchRepository) PublicSearch(ctx context.Context, workspaceID, lo
 		Where(`
 			hat.workspace_id = ?
 			AND hat.locale = ?
-			AND hat.status = ?
-			AND hat.published_at IS NOT NULL
 			AND d.deleted_at IS NULL
 			AND d.status = ?
 			AND ha.public_published_at IS NOT NULL
-			AND (p.document_id IS NOT NULL OR hat.locale = cfg.default_locale)
+			AND (
+				(
+					hat.status = ? AND hat.published_at IS NOT NULL
+					AND (p.document_id IS NOT NULL OR hat.locale = cfg.default_locale)
+				)
+				OR (hat.locale = cfg.default_locale AND p.document_id IS NOT NULL)
+			)
 			AND (
 				LOWER(COALESCE(p.title, hat.title, '')) LIKE ?
 				OR LOWER(COALESCE(p.content_text, hat.content_text, '')) LIKE ?
