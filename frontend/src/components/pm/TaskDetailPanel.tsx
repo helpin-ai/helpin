@@ -1817,7 +1817,7 @@ export function TaskDetailPanel({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="w-[80vw] !max-w-[1200px] p-0"
+        className="p-0 data-[side=right]:w-[80vw] data-[side=right]:!max-w-[1200px]"
         showCloseButton={false}
         onOpenAutoFocus={(e) => e.preventDefault()}
         onPointerDownOutside={(event) => {

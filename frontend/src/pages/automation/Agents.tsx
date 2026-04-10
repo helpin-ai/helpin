@@ -1499,7 +1499,7 @@ export function AgentsPage() {
           }
         }}
       >
-        <SheetContent side="right" className="w-full gap-0 p-0 sm:w-[96vw] sm:!max-w-[96vw] xl:w-[1280px] xl:!max-w-[1280px]">
+        <SheetContent side="right" className="w-full gap-0 p-0 data-[side=right]:w-[88vw] data-[side=right]:sm:max-w-[88vw] xl:data-[side=right]:w-[1280px] xl:data-[side=right]:max-w-[1280px]">
           <SheetHeader className="border-b border-border/60 bg-muted/20 px-6 py-5">
             <div className="flex items-start gap-4">
               <AgentAvatar agent={editingAgent ?? undefined} className="h-14 w-14 shrink-0" />
@@ -1969,7 +1969,7 @@ export function AgentsPage() {
           }
         }}
       >
-        <SheetContent side="right" className="w-full gap-0 p-0 sm:w-[92vw] sm:!max-w-[92vw] xl:w-[1100px] xl:!max-w-[1100px]">
+        <SheetContent side="right" className="w-full gap-0 p-0 data-[side=right]:w-[88vw] data-[side=right]:sm:max-w-[88vw] xl:data-[side=right]:w-[1100px] xl:data-[side=right]:max-w-[1100px]">
           <SheetHeader className="border-b border-border/60 bg-muted/20 px-6 py-5">
             <SheetTitle>{editingAgent ? 'Edit Custom Agent' : 'New Custom Agent'}</SheetTitle>
             <SheetDescription className="max-w-3xl">
