@@ -23,6 +23,17 @@ func NewDocsCollectionRepository(db *gorm.DB) *DocsCollectionRepository {
 	return &DocsCollectionRepository{db: db}
 }
 
+// DB returns the underlying *gorm.DB the repository was constructed
+// with. It is exposed so service-layer callers can start a shared
+// transaction and instantiate tx-scoped sibling repositories
+// (DocsRedirectRepository, etc) when they need to atomically span
+// multiple tables. Regular CRUD should go through the named methods
+// on this repository — DB() is a controlled escape hatch, not a
+// general-purpose accessor.
+func (r *DocsCollectionRepository) DB() *gorm.DB {
+	return r.db
+}
+
 // Create inserts a new collection. If the incoming struct has no ID set,
 // a v4 UUID is generated here so SQLite-backed unit tests do not rely on
 // Postgres's pgcrypto default. In production the result is identical to

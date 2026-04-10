@@ -224,27 +224,39 @@ func (r *DocsRedirectRepository) Create(ctx context.Context, redirect *model.Doc
 	return nil
 }
 
-// UpsertWithReconciliation inserts or replaces a redirect while breaking
-// any cycle it would create.
+// isAutoRedirectType reports whether a redirect type is one of the
+// automatic kinds emitted by the tree rollout. Manual and imported
+// redirects are preserved across automatic moves/renames so that
+// user-configured redirects are never silently overwritten.
+func isAutoRedirectType(t string) bool {
+	switch t {
+	case model.RedirectTypeAutoArticleMove,
+		model.RedirectTypeAutoCollectionRename,
+		model.RedirectTypeSlugChange:
+		return true
+	}
+	return false
+}
+
+// UpsertWithReconciliation inserts or replaces an automatic redirect
+// while breaking any cycle it would create.
 //
-// Before inserting, any auto-generated redirect whose source path
-// equals the new target path is deleted. "Auto-generated" means the
-// RedirectType was one of the automatic types this rollout emits:
-// auto_article_move, auto_collection_rename, or the legacy slug_change
-// type. Manual and imported redirects are deliberately preserved — a
-// user-created redirect at the new canonical path reflects explicit
-// user intent and must not be silently blown away by an article move
-// or collection rename.
+// The input redirect must be an automatic type (auto_article_move,
+// auto_collection_rename, or the legacy slug_change). This method will
+// refuse to mutate a manual or imported redirect under any branch:
 //
-// This ensures an A -> B -> A move does not leave a stale chain: the
-// old auto "A is a redirect to B" row is removed the moment "B is a
-// redirect to A" is written. After the delete the new redirect is
-// upserted on (workspace_id, source_path) so re-running the same move
-// is idempotent.
+//   - Before inserting, any auto-generated redirect whose source path
+//     equals the new target path is deleted so an A -> B -> A move
+//     collapses back to a single hop. Manual/imported redirects at
+//     the same path are left in place.
+//   - Before inserting, any existing row at the new SOURCE path is
+//     inspected. If the existing row is manual or imported, the
+//     entire upsert is skipped — the user-configured redirect wins.
+//     If the existing row is auto, its target + type are replaced so
+//     a repeated move from the same origin is idempotent.
 //
 // If the computed source and target paths are identical the call is a
-// no-op (a redirect to itself is never a useful row and always breaks
-// invariants).
+// no-op (a redirect to itself would loop forever).
 func (r *DocsRedirectRepository) UpsertWithReconciliation(ctx context.Context, redirect *model.DocsRedirect) error {
 	normalizeDocsRedirectRecord(redirect)
 	targetPath := buildRedirectTargetPath(redirect.TargetCollectionSlug, redirect.TargetArticleSlug)
@@ -254,6 +266,9 @@ func (r *DocsRedirectRepository) UpsertWithReconciliation(ctx context.Context, r
 	if redirect.SourcePath == targetPath {
 		// No-op: pointing a path at itself would loop forever.
 		return nil
+	}
+	if !isAutoRedirectType(redirect.Type) {
+		return fmt.Errorf("UpsertWithReconciliation requires an automatic redirect type, got %q", redirect.Type)
 	}
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Break any existing auto redirect chain where the new target
@@ -272,7 +287,24 @@ func (r *DocsRedirectRepository) UpsertWithReconciliation(ctx context.Context, r
 			Delete(&model.DocsRedirect{}).Error; err != nil {
 			return fmt.Errorf("delete stale auto redirect at target: %w", err)
 		}
-		// Upsert on (workspace_id, source_path). If a redirect already
+
+		// If a redirect already exists at the new source path, check
+		// its type before deciding what to do. Manual and imported
+		// redirects are preserved — user intent wins over automatic
+		// rewrites. Auto redirects are replaced in place.
+		var existing model.DocsRedirect
+		err := tx.
+			Where("workspace_id = ? AND source_path = ?", redirect.WorkspaceID, redirect.SourcePath).
+			First(&existing).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("lookup existing redirect at source: %w", err)
+		}
+		if err == nil && !isAutoRedirectType(existing.Type) {
+			// User-configured row already lives here. Leave it alone.
+			return nil
+		}
+
+		// Upsert on (workspace_id, source_path). If an auto row already
 		// exists at this source path, replace its target + type so a
 		// second move from the same origin overwrites the first.
 		return tx.Clauses(clause.OnConflict{

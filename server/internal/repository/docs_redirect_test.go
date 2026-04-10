@@ -432,6 +432,76 @@ func TestDocsRedirectRepository_UpsertWithReconciliation(t *testing.T) {
 		}
 	})
 
+	t.Run("preserves manual redirect at the same source path as the new auto redirect", func(t *testing.T) {
+		db := setupDocsRedirectTestDB(t)
+		repo := NewDocsRedirectRepository(db)
+		ctx := context.Background()
+
+		// A user has already created a manual redirect at
+		// /A/start-here pointing somewhere of their own choosing.
+		manualTarget := "custom-target-slug"
+		manual := model.DocsRedirect{
+			ID:                   "manual-1",
+			WorkspaceID:          "ws-1",
+			SourcePath:           "/A/start-here",
+			TargetCollectionSlug: "elsewhere",
+			TargetArticleSlug:    &manualTarget,
+			Type:                 model.RedirectTypeManual,
+		}
+		if err := db.Create(&manual).Error; err != nil {
+			t.Fatalf("seed manual redirect: %v", err)
+		}
+
+		// Now an article move tries to write an auto redirect at the
+		// same source path. UpsertWithReconciliation must NOT mutate
+		// the manual row — user intent wins.
+		autoSlug := "start-here"
+		if err := repo.UpsertWithReconciliation(ctx, &model.DocsRedirect{
+			WorkspaceID:          "ws-1",
+			SourcePath:           "/A/start-here",
+			TargetCollectionSlug: "B",
+			TargetArticleSlug:    &autoSlug,
+			Type:                 model.RedirectTypeAutoArticleMove,
+		}); err != nil {
+			t.Fatalf("upsert (manual at same source): %v", err)
+		}
+
+		kept, err := repo.GetBySourcePath(ctx, "ws-1", "/A/start-here")
+		if err != nil {
+			t.Fatalf("get manual redirect: %v", err)
+		}
+		if kept == nil {
+			t.Fatalf("manual redirect was removed")
+		}
+		if kept.Type != model.RedirectTypeManual {
+			t.Fatalf("type = %q, want manual (untouched)", kept.Type)
+		}
+		if kept.TargetCollectionSlug != "elsewhere" {
+			t.Fatalf("target collection slug = %q, want elsewhere (untouched)", kept.TargetCollectionSlug)
+		}
+		if kept.TargetArticleSlug == nil || *kept.TargetArticleSlug != manualTarget {
+			t.Fatalf("target article slug = %v, want %q (untouched)", kept.TargetArticleSlug, manualTarget)
+		}
+	})
+
+	t.Run("rejects non-auto redirect types", func(t *testing.T) {
+		db := setupDocsRedirectTestDB(t)
+		repo := NewDocsRedirectRepository(db)
+		ctx := context.Background()
+
+		slug := "x"
+		err := repo.UpsertWithReconciliation(ctx, &model.DocsRedirect{
+			WorkspaceID:          "ws-1",
+			SourcePath:           "/old",
+			TargetCollectionSlug: "new",
+			TargetArticleSlug:    &slug,
+			Type:                 model.RedirectTypeManual,
+		})
+		if err == nil {
+			t.Fatalf("expected error when upserting a manual type, got nil")
+		}
+	})
+
 	t.Run("self-referential redirect is a no-op", func(t *testing.T) {
 		db := setupDocsRedirectTestDB(t)
 		repo := NewDocsRedirectRepository(db)

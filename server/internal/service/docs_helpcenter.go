@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
+
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/storage"
@@ -819,6 +821,12 @@ func (s *DocsHelpcenterService) EmitArticleMoveRedirect(ctx context.Context, doc
 // auto_collection_rename redirects for the collection itself and for
 // every published article directly attached to it.
 //
+// The entire operation — redirect writes plus slug update — runs in a
+// single GORM transaction so a partial failure cannot leave redirects
+// pointing at a slug that never became canonical. If the slug update
+// fails after redirect writes, the transaction rolls back and the DB
+// state is unchanged.
+//
 // Uniqueness is enforced at the service layer against all non-deleted
 // collections in the same workspace; a duplicate returns
 // ErrDocsCollectionSlugTaken. The partial unique index added in the
@@ -849,53 +857,64 @@ func (s *DocsHelpcenterService) UpdateCollectionSlug(ctx context.Context, collec
 
 	oldSlug := collection.Slug
 
-	// Collection-level redirect: old /:slug -> new /:slug.
-	if s.redirectRepo != nil && oldSlug != "" {
-		collectionRedirect := &model.DocsRedirect{
-			WorkspaceID:          collection.WorkspaceID,
-			SourcePath:           buildDocsRedirectPath(oldSlug, nil),
-			TargetCollectionSlug: newSlug,
-			Type:                 model.RedirectTypeAutoCollectionRename,
-		}
-		if err := s.redirectRepo.UpsertWithReconciliation(ctx, collectionRedirect); err != nil {
-			return nil, err
-		}
-	}
+	var updated *model.DocsCollection
+	txErr := s.collectionRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		txCollectionRepo := repository.NewDocsCollectionRepository(tx)
+		txRedirectRepo := repository.NewDocsRedirectRepository(tx)
+		txHcRepo := repository.NewDocsHelpcenterRepository(tx)
 
-	// Per-article redirects for every directly-published article.
-	// ListPublishedArticleSlugsInCollection reads the canonical source
-	// slug from docs_helpcenter_articles.slug so we cover articles that
-	// have not yet synthesised a publication row.
-	if s.redirectRepo != nil && oldSlug != "" {
-		articles, err := s.hcRepo.ListPublishedArticleSlugsInCollection(ctx, collection.ID)
-		if err != nil {
-			return nil, err
-		}
-		for i := range articles {
-			slug := articles[i].Slug
-			if slug == "" {
-				continue
-			}
-			articleRedirect := &model.DocsRedirect{
+		// Collection-level redirect: old /:slug -> new /:slug.
+		if oldSlug != "" {
+			collectionRedirect := &model.DocsRedirect{
 				WorkspaceID:          collection.WorkspaceID,
-				SourcePath:           buildDocsRedirectPath(oldSlug, &slug),
+				SourcePath:           buildDocsRedirectPath(oldSlug, nil),
 				TargetCollectionSlug: newSlug,
-				TargetArticleSlug:    &slug,
 				Type:                 model.RedirectTypeAutoCollectionRename,
 			}
-			if err := s.redirectRepo.UpsertWithReconciliation(ctx, articleRedirect); err != nil {
-				return nil, err
+			if err := txRedirectRepo.UpsertWithReconciliation(ctx, collectionRedirect); err != nil {
+				return err
+			}
+
+			// Per-article redirects for every directly-published article.
+			// ListPublishedArticleSlugsInCollection reads the canonical
+			// source slug from docs_helpcenter_articles.slug so we cover
+			// articles that have not yet synthesised a publication row.
+			articles, err := txHcRepo.ListPublishedArticleSlugsInCollection(ctx, collection.ID)
+			if err != nil {
+				return err
+			}
+			for i := range articles {
+				slug := articles[i].Slug
+				if slug == "" {
+					continue
+				}
+				articleRedirect := &model.DocsRedirect{
+					WorkspaceID:          collection.WorkspaceID,
+					SourcePath:           buildDocsRedirectPath(oldSlug, &slug),
+					TargetCollectionSlug: newSlug,
+					TargetArticleSlug:    &slug,
+					Type:                 model.RedirectTypeAutoCollectionRename,
+				}
+				if err := txRedirectRepo.UpsertWithReconciliation(ctx, articleRedirect); err != nil {
+					return err
+				}
 			}
 		}
+
+		slugUpdated, err := txCollectionRepo.Update(ctx, collection.ID, map[string]interface{}{"slug": newSlug})
+		if err != nil {
+			if isUniqueConstraintViolation(err) {
+				return ErrDocsCollectionSlugTaken
+			}
+			return err
+		}
+		updated = slugUpdated
+		return nil
+	})
+	if txErr != nil {
+		return nil, txErr
 	}
 
-	updated, err := s.collectionRepo.Update(ctx, collection.ID, map[string]interface{}{"slug": newSlug})
-	if err != nil {
-		if isUniqueConstraintViolation(err) {
-			return nil, ErrDocsCollectionSlugTaken
-		}
-		return nil, err
-	}
 	publishWorkspaceEventWithParent(s.wsPublisher, "updated", "docs_collection", collection.ID, collection.WorkspaceID, "", "docs_space", collection.SpaceID, nil)
 	return updated, nil
 }
