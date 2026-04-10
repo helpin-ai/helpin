@@ -505,6 +505,8 @@ export function SprintDetailPage() {
                   assignableMembers={assignableMembers}
                   epics={allEpics}
                   sprints={allSprints}
+                  teamId={sprint.sprint.team_id ?? null}
+                  sprintId={sprintId}
                   externalTasks={tasks}
                   onOpenTask={openTask}
                 />
