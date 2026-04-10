@@ -893,17 +893,20 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
           <div className="grid gap-6 lg:grid-cols-2">
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="hc-subdomain">Subdomain</Label>
+              <Label htmlFor="hc-subdomain">Help Center URL</Label>
               <div className="flex items-center">
+                <span className="flex h-9 shrink-0 items-center rounded-l-md border border-r-0 bg-muted/50 px-3 text-sm text-muted-foreground">helpin.center/</span>
                 <Input
                   id="hc-subdomain"
                   value={config.subdomain}
                   onChange={(e) => setConfig({ ...config, subdomain: e.target.value })}
                   placeholder="yourcompany"
-                  className="rounded-r-none border-r-0"
+                  className="rounded-l-none"
                 />
-                <span className="flex h-9 shrink-0 items-center rounded-r-md border bg-muted/50 px-3 text-sm text-muted-foreground">.helpin.ai</span>
               </div>
+              <p className="text-[11px] text-muted-foreground">
+                Used as your default URL when no custom domain is set.
+              </p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="hc-custom-domain">Custom Domain</Label>
@@ -913,6 +916,17 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
                 onChange={(e) => setConfig({ ...config, custom_domain: e.target.value })}
                 placeholder="help.yourcompany.com"
               />
+              <div className="rounded-md border border-border/60 bg-muted/40 p-3 text-[11px] leading-relaxed text-muted-foreground">
+                <p className="mb-1.5 font-medium text-foreground">DNS setup</p>
+                <p>
+                  Create a <span className="font-mono text-foreground">CNAME</span> record on your domain pointing to{' '}
+                  <span className="font-mono text-foreground">helpin.center</span>. SSL certificates are issued automatically once DNS resolves.
+                </p>
+                <p className="mt-1.5">
+                  Example: <span className="font-mono text-foreground">help.yourcompany.com</span> →{' '}
+                  <span className="font-mono text-foreground">helpin.center</span>
+                </p>
+              </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="hc-support-email">Support Email</Label>

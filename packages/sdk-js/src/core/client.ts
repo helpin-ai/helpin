@@ -1,6 +1,6 @@
 import { defaultConfig } from './config';
 import { Config } from './types';
-import { CompanyProps, EventPayload, Transport, UserProps } from './types';
+import { CompanyPayload, CompanyProps, EventPayload, LeadProps, Transport, UserProps } from './types';
 import { getLogger, Logger } from '../utils/logger';
 import { CookieManager } from '../utils/cookie';
 import { PageviewTracking } from '../tracking/pageviews';
@@ -61,6 +61,10 @@ function getStoredIdentityName(identity: { firstName?: string; lastName?: string
     getIdentityString(identity.lastName),
     getIdentityString(identity.name),
   );
+}
+
+function resolveCompanyPayload(value: unknown): CompanyPayload | undefined {
+  return isObject(value) ? value as CompanyPayload : undefined;
 }
 
 export type HelpinWidgetController = {
@@ -463,7 +467,7 @@ export class HelpinClient {
     this.trackInternal(typeName, payload, directSend);
   }
 
-  public lead(payload: EventPayload, directSend: boolean = false): void {
+  public lead(payload: LeadProps, directSend: boolean = false): void {
     if (!isObject(payload)) {
       throw new Error(
         'Lead payload must be a non-null object and not an array',
@@ -571,15 +575,18 @@ export class HelpinClient {
     eventName: string,
     eventProps?: EventPayload,
   ): any {
-      const { event_id: incomingEventId, ...restEventProps } = eventProps || {};
+    const { event_id: incomingEventId, ...restEventProps } = eventProps || {};
     const userProps = this.persistence.get('userProps') || {};
-    const companyProps =
-      this.persistence.get('companyProps') || userProps?.company || {};
+    const eventCompanyProps = resolveCompanyPayload(restEventProps.company);
+    const persistedCompanyProps = resolveCompanyPayload(this.persistence.get('companyProps'));
+    const userCompanyProps = resolveCompanyPayload(userProps?.company);
+    const companyProps = eventCompanyProps || persistedCompanyProps || userCompanyProps;
     const userId = this.persistence.get('userId');
     const globalProps = this.persistence.get('global_props') || {};
     const eventTypeProps = this.persistence.get(`props_${eventName}`) || {};
-
-    let processedProps = restEventProps;
+    const processedProps = eventCompanyProps
+      ? (({ company: _company, ...rest }) => rest)(restEventProps)
+      : restEventProps;
 
     const payload: any = {
       event_id: incomingEventId || generateId(),
@@ -588,7 +595,7 @@ export class HelpinClient {
         id: userId,
         ...userProps,
       },
-      ...(companyProps && { company: companyProps }),
+      ...(companyProps ? { company: companyProps } : {}),
       ids: this.getThirdPartyIds(),
       utc_time: new Date().toISOString(),
       local_tz_offset: new Date().getTimezoneOffset(),

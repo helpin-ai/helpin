@@ -4,18 +4,33 @@ export interface EventPayload {
   [key: string]: any;
 }
 
+export interface CompanyPayload extends EventPayload {
+  id?: string;
+  name?: string;
+  created_at?: string;
+  custom?: {
+    [key: string]: any;
+  };
+}
+
 export interface UserProps extends EventPayload {
   id?: string;
   email?: string;
-  company?: {
-    id?: string;
-    name?: string;
-    created_at?: string;
-    custom?: {
-      [key: string]: any;
-    };
-  };
+  first_name?: string;
+  last_name?: string;
+  firstName?: string;
+  lastName?: string;
+  company?: CompanyPayload | null;
   [key: string]: any;
+}
+
+export interface LeadProps extends EventPayload {
+  email: string;
+  first_name?: string;
+  last_name?: string;
+  firstName?: string;
+  lastName?: string;
+  company?: CompanyPayload | null;
 }
 
 export interface Transport {
@@ -24,11 +39,10 @@ export interface Transport {
 
 export type Policy = 'strict' | 'keep' | 'comply';
 
-export interface CompanyProps {
+export interface CompanyProps extends CompanyPayload {
   id: string;
   name: string;
   created_at: string;
-  [key: string]: any;
 }
 
 /**
@@ -143,7 +157,7 @@ export interface HelpinGlobal {
     options?: { eventType?: string; persist?: boolean },
   ): void;
   (command: 'rawTrack', payload: any): void;
-  (command: 'lead', payload: EventPayload, directSend?: boolean): void;
+  (command: 'lead', payload: LeadProps, directSend?: boolean): void;
   (command: 'setUserId', userId: string): void;
   (command: 'onLoad', callback: () => void): void;
   (command: 'show', ...args: never[]): void;
@@ -185,7 +199,7 @@ export interface HelpinGlobal {
     options?: { eventType?: string; persist?: boolean },
   ): void;
   rawTrack(payload: any): void;
-  lead(payload: EventPayload, directSend?: boolean): void;
+  lead(payload: LeadProps, directSend?: boolean): void;
   setUserId(userId: string): void;
   boot(settings: { widgetKey?: string; key?: string; host?: string; user?: Record<string, unknown> }): void;
   shutdown(): void;
