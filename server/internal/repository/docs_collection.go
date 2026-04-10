@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -21,8 +22,15 @@ func NewDocsCollectionRepository(db *gorm.DB) *DocsCollectionRepository {
 	return &DocsCollectionRepository{db: db}
 }
 
-// Create inserts a new collection.
+// Create inserts a new collection. If the incoming struct has no ID set,
+// a v4 UUID is generated here so SQLite-backed unit tests do not rely on
+// Postgres's pgcrypto default. In production the result is identical to
+// using the DB default — a v4 UUID string — because GORM sends the ID as
+// part of the INSERT whether it was generated in Go or by the DB.
 func (r *DocsCollectionRepository) Create(ctx context.Context, coll *model.DocsCollection) (*model.DocsCollection, error) {
+	if coll.ID == "" {
+		coll.ID = uuid.NewString()
+	}
 	if err := r.db.WithContext(ctx).Create(coll).Error; err != nil {
 		return nil, fmt.Errorf("create docs collection: %w", err)
 	}
@@ -135,26 +143,6 @@ func (r *DocsCollectionRepository) Restore(ctx context.Context, id string) (*mod
 		return nil, fmt.Errorf("restore docs collection: %w", err)
 	}
 	return r.GetByID(ctx, id)
-}
-
-// NextPosition returns the next position for a collection in the given space.
-func (r *DocsCollectionRepository) NextPosition(ctx context.Context, spaceID string) (int, error) {
-	if err := r.NormalizeSpace(ctx, spaceID); err != nil {
-		return 0, err
-	}
-	var maxPos *int
-	err := r.db.WithContext(ctx).
-		Model(&model.DocsCollection{}).
-		Where("space_id = ? AND deleted_at IS NULL", spaceID).
-		Select("COALESCE(MAX(position), -1)").
-		Scan(&maxPos).Error
-	if err != nil {
-		return 0, fmt.Errorf("next collection position: %w", err)
-	}
-	if maxPos == nil {
-		return 0, nil
-	}
-	return *maxPos + 1, nil
 }
 
 // Reorder sets contiguous positions for the given collection IDs within a space.

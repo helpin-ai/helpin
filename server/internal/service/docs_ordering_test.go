@@ -835,6 +835,251 @@ func TestDocsCollectionRepo_Tree(t *testing.T) {
 	})
 }
 
+// TestDocsCollectionService_TreeValidation exercises the Task 3 validation
+// rules for Create and Update in the service layer. It uses in-memory
+// SQLite through the real repository so the tree helpers added in Task 2
+// are exercised end-to-end from the service's perspective.
+func TestDocsCollectionService_TreeValidation(t *testing.T) {
+	t.Parallel()
+
+	const (
+		workspaceID = "ws-val"
+		userID      = "user-val"
+	)
+
+	setup := func(t *testing.T) (*DocsCollectionService, *gorm.DB) {
+		t.Helper()
+		db := setupDocsOrderingTestDB(t)
+		collectionRepo := repository.NewDocsCollectionRepository(db)
+		spaceRepo := repository.NewDocsSpaceRepository(db)
+		svc := NewDocsCollectionService(collectionRepo, spaceRepo, nil)
+		return svc, db
+	}
+
+	seedSpace := func(t *testing.T, db *gorm.DB, id string) {
+		t.Helper()
+		seedDocsSpace(t, db, model.DocsSpace{
+			ID:          id,
+			WorkspaceID: workspaceID,
+			Name:        id,
+			Slug:        id,
+			Visibility:  model.SpaceVisibilityWorkspaceWide,
+			Type:        model.SpaceTypeInternal,
+			Position:    0,
+			CreatedBy:   userID,
+			CreatedAt:   time.Date(2026, 4, 10, 12, 0, 0, 0, time.UTC),
+			UpdatedAt:   time.Date(2026, 4, 10, 12, 0, 0, 0, time.UTC),
+		})
+	}
+
+	t.Run("Create top-level collection sets depth 0 and nil parent", func(t *testing.T) {
+		svc, db := setup(t)
+		seedSpace(t, db, "space")
+		ctx := context.Background()
+
+		created, err := svc.Create(ctx, workspaceID, "space", model.CreateDocsCollectionRequest{Name: "Top"}, userID)
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		if created.Depth != 0 {
+			t.Fatalf("depth = %d, want 0", created.Depth)
+		}
+		if created.ParentCollectionID != nil {
+			t.Fatalf("ParentCollectionID = %v, want nil", created.ParentCollectionID)
+		}
+	})
+
+	t.Run("Create nested collection inherits parent's depth + 1", func(t *testing.T) {
+		svc, db := setup(t)
+		seedSpace(t, db, "space")
+		ctx := context.Background()
+
+		parent, err := svc.Create(ctx, workspaceID, "space", model.CreateDocsCollectionRequest{Name: "Parent"}, userID)
+		if err != nil {
+			t.Fatalf("Create parent: %v", err)
+		}
+		parentID := parent.ID
+		child, err := svc.Create(ctx, workspaceID, "space", model.CreateDocsCollectionRequest{
+			Name:               "Child",
+			ParentCollectionID: &parentID,
+		}, userID)
+		if err != nil {
+			t.Fatalf("Create child: %v", err)
+		}
+		if child.Depth != 1 {
+			t.Fatalf("child depth = %d, want 1", child.Depth)
+		}
+		if child.ParentCollectionID == nil || *child.ParentCollectionID != parentID {
+			t.Fatalf("child parent = %v, want %q", child.ParentCollectionID, parentID)
+		}
+	})
+
+	t.Run("Create rejects a parent that lives in a different space", func(t *testing.T) {
+		svc, db := setup(t)
+		seedSpace(t, db, "space-a")
+		seedSpace(t, db, "space-b")
+		ctx := context.Background()
+
+		parent, err := svc.Create(ctx, workspaceID, "space-a", model.CreateDocsCollectionRequest{Name: "P"}, userID)
+		if err != nil {
+			t.Fatalf("Create parent: %v", err)
+		}
+		parentID := parent.ID
+
+		_, err = svc.Create(ctx, workspaceID, "space-b", model.CreateDocsCollectionRequest{
+			Name:               "X",
+			ParentCollectionID: &parentID,
+		}, userID)
+		if err == nil {
+			t.Fatalf("expected cross-space parent error, got nil")
+		}
+	})
+
+	t.Run("Create rejects a missing parent", func(t *testing.T) {
+		svc, db := setup(t)
+		seedSpace(t, db, "space")
+		ctx := context.Background()
+
+		ghost := "does-not-exist"
+		_, err := svc.Create(ctx, workspaceID, "space", model.CreateDocsCollectionRequest{
+			Name:               "X",
+			ParentCollectionID: &ghost,
+		}, userID)
+		if err == nil {
+			t.Fatalf("expected missing parent error, got nil")
+		}
+	})
+
+	t.Run("Create rejects a fourth level (depth 3)", func(t *testing.T) {
+		svc, db := setup(t)
+		seedSpace(t, db, "space")
+		ctx := context.Background()
+
+		root, _ := svc.Create(ctx, workspaceID, "space", model.CreateDocsCollectionRequest{Name: "root"}, userID)
+		rootID := root.ID
+		lvl1, _ := svc.Create(ctx, workspaceID, "space", model.CreateDocsCollectionRequest{Name: "l1", ParentCollectionID: &rootID}, userID)
+		lvl1ID := lvl1.ID
+		lvl2, err := svc.Create(ctx, workspaceID, "space", model.CreateDocsCollectionRequest{Name: "l2", ParentCollectionID: &lvl1ID}, userID)
+		if err != nil {
+			t.Fatalf("Create lvl2: %v", err)
+		}
+		lvl2ID := lvl2.ID
+
+		_, err = svc.Create(ctx, workspaceID, "space", model.CreateDocsCollectionRequest{Name: "l3", ParentCollectionID: &lvl2ID}, userID)
+		if err == nil {
+			t.Fatalf("expected depth-exceeded error on 4th level, got nil")
+		}
+	})
+
+	t.Run("Update reparent under a valid sibling works", func(t *testing.T) {
+		svc, db := setup(t)
+		seedSpace(t, db, "space")
+		ctx := context.Background()
+
+		a, _ := svc.Create(ctx, workspaceID, "space", model.CreateDocsCollectionRequest{Name: "A"}, userID)
+		b, _ := svc.Create(ctx, workspaceID, "space", model.CreateDocsCollectionRequest{Name: "B"}, userID)
+
+		aID := a.ID
+		moved, err := svc.Update(ctx, b.ID, model.UpdateDocsCollectionRequest{
+			ParentCollectionID: &aID,
+		})
+		if err != nil {
+			t.Fatalf("Update reparent: %v", err)
+		}
+		if moved.ParentCollectionID == nil || *moved.ParentCollectionID != aID {
+			t.Fatalf("moved.ParentCollectionID = %v, want %q", moved.ParentCollectionID, aID)
+		}
+		if moved.Depth != 1 {
+			t.Fatalf("moved.Depth = %d, want 1", moved.Depth)
+		}
+	})
+
+	t.Run("Update rejects self-parent", func(t *testing.T) {
+		svc, db := setup(t)
+		seedSpace(t, db, "space")
+		ctx := context.Background()
+
+		a, _ := svc.Create(ctx, workspaceID, "space", model.CreateDocsCollectionRequest{Name: "A"}, userID)
+		aID := a.ID
+
+		_, err := svc.Update(ctx, a.ID, model.UpdateDocsCollectionRequest{
+			ParentCollectionID: &aID,
+		})
+		if err == nil {
+			t.Fatalf("expected self-parent error, got nil")
+		}
+	})
+
+	t.Run("Update rejects a descendant as the new parent", func(t *testing.T) {
+		svc, db := setup(t)
+		seedSpace(t, db, "space")
+		ctx := context.Background()
+
+		root, _ := svc.Create(ctx, workspaceID, "space", model.CreateDocsCollectionRequest{Name: "root"}, userID)
+		rootID := root.ID
+		child, _ := svc.Create(ctx, workspaceID, "space", model.CreateDocsCollectionRequest{Name: "child", ParentCollectionID: &rootID}, userID)
+		childID := child.ID
+
+		_, err := svc.Update(ctx, root.ID, model.UpdateDocsCollectionRequest{
+			ParentCollectionID: &childID,
+		})
+		if err == nil {
+			t.Fatalf("expected descendant-parent cycle error, got nil")
+		}
+	})
+
+	t.Run("Update rejects a reparent that would push a descendant past max depth", func(t *testing.T) {
+		svc, db := setup(t)
+		seedSpace(t, db, "space")
+		ctx := context.Background()
+
+		// Build: root -> mid -> leaf. Also a separate depth-1 other.
+		root, _ := svc.Create(ctx, workspaceID, "space", model.CreateDocsCollectionRequest{Name: "root"}, userID)
+		rootID := root.ID
+		mid, _ := svc.Create(ctx, workspaceID, "space", model.CreateDocsCollectionRequest{Name: "mid", ParentCollectionID: &rootID}, userID)
+		midID := mid.ID
+		_, _ = svc.Create(ctx, workspaceID, "space", model.CreateDocsCollectionRequest{Name: "leaf", ParentCollectionID: &midID}, userID)
+
+		other, _ := svc.Create(ctx, workspaceID, "space", model.CreateDocsCollectionRequest{Name: "other"}, userID)
+		otherID := other.ID
+		otherChild, _ := svc.Create(ctx, workspaceID, "space", model.CreateDocsCollectionRequest{Name: "otherChild", ParentCollectionID: &otherID}, userID)
+		otherChildID := otherChild.ID
+
+		// Moving "mid" (which has "leaf" at depth 2) under "otherChild"
+		// (depth 1) would place mid at depth 2 and leaf at depth 3 → reject.
+		_, err := svc.Update(ctx, mid.ID, model.UpdateDocsCollectionRequest{
+			ParentCollectionID: &otherChildID,
+		})
+		if err == nil {
+			t.Fatalf("expected depth-overflow error on subtree move, got nil")
+		}
+	})
+
+	t.Run("Update reparent to top level uses empty-string sentinel", func(t *testing.T) {
+		svc, db := setup(t)
+		seedSpace(t, db, "space")
+		ctx := context.Background()
+
+		parent, _ := svc.Create(ctx, workspaceID, "space", model.CreateDocsCollectionRequest{Name: "parent"}, userID)
+		parentID := parent.ID
+		child, _ := svc.Create(ctx, workspaceID, "space", model.CreateDocsCollectionRequest{Name: "child", ParentCollectionID: &parentID}, userID)
+
+		empty := ""
+		moved, err := svc.Update(ctx, child.ID, model.UpdateDocsCollectionRequest{
+			ParentCollectionID: &empty,
+		})
+		if err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+		if moved.ParentCollectionID != nil {
+			t.Fatalf("moved.ParentCollectionID = %v, want nil", moved.ParentCollectionID)
+		}
+		if moved.Depth != 0 {
+			t.Fatalf("moved.Depth = %d, want 0", moved.Depth)
+		}
+	})
+}
+
 func ids(colls []model.DocsCollection) []string {
 	out := make([]string, len(colls))
 	for i, c := range colls {

@@ -27,7 +27,15 @@ func (s *DocsCollectionService) SetTranslationService(translationSvc *DocsHelpce
 	s.translationSvc = translationSvc
 }
 
-// Create creates a new collection inside a space.
+// maxCollectionDepth is the deepest allowed value of DocsCollection.Depth.
+// With the root at depth 0 this gives three navigable tiers per space:
+// top-level, child, and grandchild.
+const maxCollectionDepth = 2
+
+// Create creates a new collection inside a space. If ParentCollectionID is
+// provided and non-empty, the collection is inserted as a child of that
+// parent within the same space; the depth is derived from the parent and
+// validated against maxCollectionDepth.
 func (s *DocsCollectionService) Create(ctx context.Context, workspaceID, spaceID string, req model.CreateDocsCollectionRequest, userID string) (*model.DocsCollection, error) {
 	if req.Name == "" {
 		return nil, fmt.Errorf("name is required")
@@ -44,21 +52,35 @@ func (s *DocsCollectionService) Create(ctx context.Context, workspaceID, spaceID
 		return nil, fmt.Errorf("space does not belong to this workspace")
 	}
 
-	// Append to end of space.
-	nextPos, err := s.collectionRepo.NextPosition(ctx, spaceID)
+	parentID, parentDepth, err := s.resolveParentForCreate(ctx, spaceID, req.ParentCollectionID)
+	if err != nil {
+		return nil, err
+	}
+	newDepth := 0
+	if parentID != nil {
+		newDepth = parentDepth + 1
+	}
+	if newDepth > maxCollectionDepth {
+		return nil, fmt.Errorf("collection depth %d exceeds maximum %d", newDepth, maxCollectionDepth)
+	}
+
+	// Append to end of the target sibling bucket.
+	nextPos, err := s.collectionRepo.NextPositionInBucket(ctx, spaceID, parentID)
 	if err != nil {
 		nextPos = 0
 	}
 
 	coll := &model.DocsCollection{
-		SpaceID:     spaceID,
-		WorkspaceID: workspaceID,
-		Name:        req.Name,
-		Slug:        slugify(req.Name),
-		Description: req.Description,
-		Icon:        req.Icon,
-		Position:    nextPos,
-		CreatedBy:   userID,
+		SpaceID:            spaceID,
+		WorkspaceID:        workspaceID,
+		ParentCollectionID: parentID,
+		Depth:              newDepth,
+		Name:               req.Name,
+		Slug:               slugify(req.Name),
+		Description:        req.Description,
+		Icon:               req.Icon,
+		Position:           nextPos,
+		CreatedBy:          userID,
 	}
 	if req.Slug != nil && *req.Slug != "" {
 		coll.Slug = *req.Slug
@@ -97,8 +119,32 @@ func (s *DocsCollectionService) ListByWorkspace(ctx context.Context, workspaceID
 	return s.collectionRepo.ListByWorkspace(ctx, workspaceID)
 }
 
-// Update updates a collection.
+// Update updates a collection. If ParentCollectionID is set in the request,
+// the collection is reparented first (validated + Reparent), then the
+// remaining field updates are applied.
 func (s *DocsCollectionService) Update(ctx context.Context, id string, req model.UpdateDocsCollectionRequest) (*model.DocsCollection, error) {
+	current, err := s.collectionRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if current == nil {
+		return nil, fmt.Errorf("collection not found")
+	}
+
+	// Step 1: reparent if requested. The nil-pointer sentinel means "leave
+	// parent unchanged"; a pointer to the empty string means "reparent to
+	// the top of the space"; anything else is an explicit parent ID.
+	if req.ParentCollectionID != nil {
+		newParentID, err := s.resolveParentForReparent(ctx, current, *req.ParentCollectionID)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.collectionRepo.Reparent(ctx, id, newParentID); err != nil {
+			return nil, err
+		}
+	}
+
+	// Step 2: apply the remaining partial updates.
 	updates := map[string]interface{}{}
 	shouldRefreshTranslations := false
 	if req.Name != nil {
@@ -116,11 +162,25 @@ func (s *DocsCollectionService) Update(ctx context.Context, id string, req model
 		updates["position"] = *req.Position
 	}
 	if len(updates) == 0 {
-		return s.collectionRepo.GetByID(ctx, id)
+		updated, err := s.collectionRepo.GetByID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if updated != nil {
+			publishWorkspaceEventWithParent(s.wsPublisher, "updated", "docs_collection", updated.ID, updated.WorkspaceID, "", "docs_space", updated.SpaceID, nil)
+		}
+		return updated, nil
 	}
 	updated, err := s.collectionRepo.Update(ctx, id, updates)
 	if err != nil {
 		return nil, err
+	}
+	if req.Position != nil && updated != nil {
+		// Position was changed by hand — re-normalize the owning bucket so
+		// any ties introduced by manual position overrides are compacted.
+		if err := s.collectionRepo.NormalizeBucket(ctx, updated.SpaceID, updated.ParentCollectionID); err != nil {
+			slog.WarnContext(ctx, "normalize bucket after position update failed", "collection_id", id, "error", err)
+		}
 	}
 	if shouldRefreshTranslations && s.translationSvc != nil {
 		if err := s.translationSvc.RefreshCollectionSource(ctx, id); err != nil {
@@ -129,6 +189,82 @@ func (s *DocsCollectionService) Update(ctx context.Context, id string, req model
 	}
 	publishWorkspaceEventWithParent(s.wsPublisher, "updated", "docs_collection", updated.ID, updated.WorkspaceID, "", "docs_space", updated.SpaceID, nil)
 	return updated, nil
+}
+
+// resolveParentForCreate validates the requested parent for a new
+// collection. It returns the canonical parent ID (nil for top-level), the
+// parent's depth (0 when no parent), and an error if the parent is missing
+// or lives in a different space.
+func (s *DocsCollectionService) resolveParentForCreate(ctx context.Context, spaceID string, requested *string) (*string, int, error) {
+	if requested == nil || *requested == "" {
+		return nil, 0, nil
+	}
+	parent, err := s.collectionRepo.GetByID(ctx, *requested)
+	if err != nil {
+		return nil, 0, err
+	}
+	if parent == nil {
+		return nil, 0, fmt.Errorf("parent collection not found")
+	}
+	if parent.SpaceID != spaceID {
+		return nil, 0, fmt.Errorf("parent collection belongs to a different space")
+	}
+	id := parent.ID
+	return &id, parent.Depth, nil
+}
+
+// resolveParentForReparent validates a reparent target for an existing
+// collection. It enforces:
+//   - parent exists and is in the same space
+//   - target is not the collection itself
+//   - target is not one of the collection's descendants (no cycles)
+//   - moving under the target does not push the collection's subtree past
+//     maxCollectionDepth
+func (s *DocsCollectionService) resolveParentForReparent(ctx context.Context, current *model.DocsCollection, requested string) (*string, error) {
+	if requested == "" {
+		// Reparent to the top of the space — no parent, no further checks.
+		return nil, nil
+	}
+	if requested == current.ID {
+		return nil, fmt.Errorf("collection cannot be its own parent")
+	}
+
+	parent, err := s.collectionRepo.GetByID(ctx, requested)
+	if err != nil {
+		return nil, err
+	}
+	if parent == nil {
+		return nil, fmt.Errorf("parent collection not found")
+	}
+	if parent.SpaceID != current.SpaceID {
+		return nil, fmt.Errorf("parent collection belongs to a different space")
+	}
+
+	descendants, err := s.collectionRepo.ListDescendants(ctx, current.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, d := range descendants {
+		if d.ID == requested {
+			return nil, fmt.Errorf("cannot move collection under one of its descendants")
+		}
+	}
+
+	// The moved collection takes on parent.Depth + 1. Its deepest
+	// descendant takes on that depth plus the subtree's relative depth.
+	newRootDepth := parent.Depth + 1
+	if newRootDepth > maxCollectionDepth {
+		return nil, fmt.Errorf("collection depth %d exceeds maximum %d", newRootDepth, maxCollectionDepth)
+	}
+	delta := newRootDepth - current.Depth
+	for _, d := range descendants {
+		if d.Depth+delta > maxCollectionDepth {
+			return nil, fmt.Errorf("reparenting would push descendant %s past maximum depth %d", d.ID, maxCollectionDepth)
+		}
+	}
+
+	id := parent.ID
+	return &id, nil
 }
 
 // Delete soft-deletes a collection.
