@@ -105,13 +105,31 @@ export function useAllDocsCollections(wsId: string) {
   })
 }
 
+// invalidateDocsCollectionTree invalidates every query that can be
+// affected by a collection create/update/delete/reorder/reparent.
+// Tree writes may move documents across collections (delete flattens
+// children up, reparent recomputes descendant depths), so document
+// lists for the space must be refreshed, not just the collection list.
+// Help center config is refreshed as a safety net because it caches
+// nav trees derived from the same rows.
+function invalidateDocsCollectionTree(
+  qc: ReturnType<typeof useQueryClient>,
+  wsId: string,
+  spaceId: string,
+) {
+  qc.invalidateQueries({ queryKey: queryKeys.docs.collections(wsId, spaceId) })
+  qc.invalidateQueries({ queryKey: queryKeys.docs.allCollections(wsId) })
+  qc.invalidateQueries({ queryKey: queryKeys.docs.documents(wsId) })
+  qc.invalidateQueries({ queryKey: queryKeys.docs.helpcenterConfig(wsId) })
+}
+
 export function useCreateDocsCollection(wsId: string, spaceId: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (data: CreateDocsCollectionRequest) =>
       unwrap(await docsService.createCollection(wsId, spaceId, data)),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.docs.collections(wsId, spaceId) })
+      invalidateDocsCollectionTree(qc, wsId, spaceId)
     },
   })
 }
@@ -127,7 +145,7 @@ export function useUpdateDocsCollection(wsId: string) {
       return unwrap(await docsService.updateCollection(wsId, id, payload))
     },
     onSuccess: (_, { spaceId }) => {
-      qc.invalidateQueries({ queryKey: queryKeys.docs.collections(wsId, spaceId) })
+      invalidateDocsCollectionTree(qc, wsId, spaceId)
     },
   })
 }
@@ -138,7 +156,7 @@ export function useDeleteDocsCollection(wsId: string) {
     mutationFn: async ({ id }: { id: string; spaceId: string }) =>
       unwrap(await docsService.deleteCollection(wsId, id)),
     onSuccess: (_, { spaceId }) => {
-      qc.invalidateQueries({ queryKey: queryKeys.docs.collections(wsId, spaceId) })
+      invalidateDocsCollectionTree(qc, wsId, spaceId)
     },
   })
 }
@@ -149,7 +167,7 @@ export function useRestoreDocsCollection(wsId: string) {
     mutationFn: async ({ id }: { id: string; spaceId: string }) =>
       unwrap(await docsService.restoreCollection(wsId, id)),
     onSuccess: (_, { spaceId }) => {
-      qc.invalidateQueries({ queryKey: queryKeys.docs.collections(wsId, spaceId) })
+      invalidateDocsCollectionTree(qc, wsId, spaceId)
     },
   })
 }
@@ -792,7 +810,7 @@ export function useReorderDocsCollections(wsId: string) {
     mutationFn: async ({ spaceId, data }: { spaceId: string; data: ReorderDocsCollectionsRequest }) =>
       unwrap(await docsService.reorderCollections(wsId, spaceId, data)),
     onSuccess: (_, { spaceId }) => {
-      qc.invalidateQueries({ queryKey: queryKeys.docs.collections(wsId, spaceId) })
+      invalidateDocsCollectionTree(qc, wsId, spaceId)
     },
   })
 }

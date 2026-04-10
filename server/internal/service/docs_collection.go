@@ -294,12 +294,20 @@ func (s *DocsCollectionService) Restore(ctx context.Context, id string) (*model.
 	return collection, err
 }
 
-// ReorderCollections reorders collections within a space.
+// ReorderCollections reorders one (space_id, parent_collection_id)
+// sibling bucket. An empty or nil ParentCollectionID targets the
+// top-level bucket in the space. Collection IDs that do not belong to
+// the targeted bucket are silently skipped by the repository, so a
+// stale payload cannot displace sibling groups.
 func (s *DocsCollectionService) ReorderCollections(ctx context.Context, spaceID string, req model.ReorderDocsCollectionsRequest) error {
 	if len(req.CollectionIDs) == 0 {
 		return nil
 	}
-	if err := s.collectionRepo.Reorder(ctx, spaceID, req.CollectionIDs); err != nil {
+	var parentID *string
+	if req.ParentCollectionID != nil && *req.ParentCollectionID != "" {
+		parentID = req.ParentCollectionID
+	}
+	if err := s.collectionRepo.ReorderSiblings(ctx, spaceID, parentID, req.CollectionIDs); err != nil {
 		return err
 	}
 	if space, err := s.spaceRepo.GetByID(ctx, spaceID); err == nil && space != nil {

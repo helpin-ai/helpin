@@ -215,20 +215,6 @@ func (r *DocsCollectionRepository) Restore(ctx context.Context, id string) (*mod
 	return r.GetByID(ctx, id)
 }
 
-// Reorder sets contiguous positions for the given collection IDs within a space.
-func (r *DocsCollectionRepository) Reorder(ctx context.Context, spaceID string, orderedIDs []string) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		for i, id := range orderedIDs {
-			if err := tx.Model(&model.DocsCollection{}).
-				Where("id = ? AND space_id = ? AND deleted_at IS NULL", id, spaceID).
-				UpdateColumn("position", i).Error; err != nil {
-				return fmt.Errorf("reorder collection %s: %w", id, err)
-			}
-		}
-		return nil
-	})
-}
-
 // NormalizeSpace re-numbers collection positions in every sibling bucket in
 // the space. Each (parent_collection_id) bucket becomes contiguous starting
 // from 0, preserving relative order. Safe to call after reorders, reparents,

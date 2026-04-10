@@ -476,8 +476,12 @@ type ReorderDocsSpacesRequest struct {
 }
 
 // ReorderDocsCollectionsRequest reorders collections within a space.
+// ReorderDocsCollectionsRequest reorders one (space_id, parent_collection_id)
+// sibling bucket. ParentCollectionID is optional and defaults to the
+// top-level bucket when nil or an empty string.
 type ReorderDocsCollectionsRequest struct {
-	CollectionIDs []string `json:"collection_ids"` // full ordered list for one space
+	CollectionIDs      []string `json:"collection_ids"`                 // full ordered list for one sibling bucket
+	ParentCollectionID *string  `json:"parent_collection_id,omitempty"` // nil / "" = top-level bucket
 }
 
 // ReorderDocsDocumentsRequest reorders documents within a bucket (collection or uncategorized).

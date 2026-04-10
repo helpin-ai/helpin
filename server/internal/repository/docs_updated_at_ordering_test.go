@@ -207,8 +207,8 @@ func TestDocsOrdering_PositionOnlyWritesDoNotTouchUpdatedAt(t *testing.T) {
 		if err := spaceRepo.Reorder(ctx, workspaceID, model.SpaceTypeInternal, []string{"space-b", "space-a"}); err != nil {
 			t.Fatalf("Reorder spaces: %v", err)
 		}
-		if err := collectionRepo.Reorder(ctx, "space-a", []string{"coll-b", "coll-a"}); err != nil {
-			t.Fatalf("Reorder collections: %v", err)
+		if err := collectionRepo.ReorderSiblings(ctx, "space-a", nil, []string{"coll-b", "coll-a"}); err != nil {
+			t.Fatalf("ReorderSiblings collections: %v", err)
 		}
 		if err := docRepo.Reorder(ctx, "space-a", ptr("coll-a"), []string{"doc-b", "doc-a"}); err != nil {
 			t.Fatalf("Reorder documents: %v", err)
