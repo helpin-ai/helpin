@@ -608,14 +608,28 @@ type PublicNavArticle struct {
 	PublishedAt *string `json:"published_at"`
 }
 
-// PublicNavCollection is a collection with its published articles for sidebar navigation.
+// PublicNavCollection is a collection with its published articles for
+// sidebar navigation. The nav tree is returned as a flat list; callers
+// build the nested structure using ParentCollectionID and Depth.
 type PublicNavCollection struct {
-	ID        string             `json:"id"`
-	Name      string             `json:"name"`
-	Slug      string             `json:"slug"`
-	SpaceSlug string             `json:"space_slug,omitempty"`
-	Icon      *string            `json:"icon"`
-	Articles  []PublicNavArticle `json:"articles"`
+	ID                 string             `json:"id"`
+	Name               string             `json:"name"`
+	Slug               string             `json:"slug"`
+	SpaceSlug          string             `json:"space_slug,omitempty"`
+	Icon               *string            `json:"icon"`
+	ParentCollectionID *string            `json:"parent_collection_id"`
+	Depth              int                `json:"depth"`
+	Articles           []PublicNavArticle `json:"articles"`
+}
+
+// PublicNavBreadcrumbEntry is one segment of a localized collection
+// breadcrumb path. The segments are ordered from the top-level ancestor
+// down to the active collection itself, so the public help center can
+// render them as "Root > Parent > Current".
+type PublicNavBreadcrumbEntry struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Slug string `json:"slug"`
 }
 
 // PublicArticleResponse is the full article detail for the help center content area.

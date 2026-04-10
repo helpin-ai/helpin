@@ -1003,13 +1003,18 @@ type WidgetHelpSpace struct {
 	Icon *string `json:"icon,omitempty"`
 }
 
-// WidgetHelpCollection is a widget help collection row.
+// WidgetHelpCollection is a widget help collection row. ParentCollectionID
+// and Depth let the widget renderer build a nested drilldown from a flat
+// response. ArticleCount counts only direct articles in this collection,
+// not descendants.
 type WidgetHelpCollection struct {
-	ID           string  `json:"id"`
-	Name         string  `json:"name"`
-	Slug         string  `json:"slug"`
-	Icon         *string `json:"icon,omitempty"`
-	ArticleCount int     `json:"article_count"`
+	ID                 string  `json:"id"`
+	Name               string  `json:"name"`
+	Slug               string  `json:"slug"`
+	Icon               *string `json:"icon,omitempty"`
+	ParentCollectionID *string `json:"parent_collection_id"`
+	Depth              int     `json:"depth"`
+	ArticleCount       int     `json:"article_count"`
 }
 
 // WidgetHelpArticleSummary is a widget help article list row.

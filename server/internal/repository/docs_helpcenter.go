@@ -583,11 +583,14 @@ func sourceArticleRowToModels(row sourceArticleRow) (*model.DocsDocument, *model
 
 // ListSpaceNavigation returns collections with their published articles for sidebar navigation.
 func (r *DocsHelpcenterRepository) ListSpaceNavigation(ctx context.Context, spaceID string) ([]model.PublicNavCollection, error) {
-	// 1. Get collections in this space, ordered by position.
+	// 1. Get collections in this space. The result is a flat list, but
+	//    the ordering — (depth, parent, position) — keeps siblings
+	//    contiguous and ancestors before descendants so callers can fold
+	//    the response into a tree in a single pass.
 	var collections []model.DocsCollection
 	if err := r.db.WithContext(ctx).
 		Where("space_id = ? AND deleted_at IS NULL", spaceID).
-		Order("position ASC, created_at ASC").
+		Order("depth ASC, parent_collection_id ASC, position ASC, created_at ASC").
 		Find(&collections).Error; err != nil {
 		return nil, fmt.Errorf("list space collections: %w", err)
 	}
@@ -626,23 +629,54 @@ func (r *DocsHelpcenterRepository) ListSpaceNavigation(ctx context.Context, spac
 		}
 	}
 
-	// 4. Build response — only include collections that have published articles.
+	// 4. Compute the set of collections that should appear in public nav:
+	//    every collection with at least one direct published article,
+	//    plus every ancestor of such a collection. A parent with no
+	//    direct articles but a child that has some must still render as
+	//    a container node so the tree is connected.
+	collectionByID := make(map[string]model.DocsCollection, len(collections))
+	for _, c := range collections {
+		collectionByID[c.ID] = c
+	}
+	includedSet := make(map[string]bool, len(collections))
+	for id := range articlesByCollection {
+		cursor := id
+		for {
+			node, exists := collectionByID[cursor]
+			if !exists || includedSet[cursor] {
+				break
+			}
+			includedSet[cursor] = true
+			if node.ParentCollectionID == nil {
+				break
+			}
+			cursor = *node.ParentCollectionID
+		}
+	}
+
+	// 5. Emit included collections in (depth, parent, position) order so
+	//    the frontend can fold them into a tree without an extra sort.
 	var result []model.PublicNavCollection
 	for _, c := range collections {
-		arts, ok := articlesByCollection[c.ID]
-		if !ok || len(arts) == 0 {
+		if !includedSet[c.ID] {
 			continue
 		}
+		slug := c.Slug
+		if slug == "" {
+			slug = c.ID // legacy fallback for rows seeded before the tree migration
+		}
 		result = append(result, model.PublicNavCollection{
-			ID:       c.ID,
-			Name:     c.Name,
-			Slug:     c.ID, // collections don't have slugs; use ID as identifier
-			Icon:     c.Icon,
-			Articles: arts,
+			ID:                 c.ID,
+			Name:               c.Name,
+			Slug:               slug,
+			Icon:               c.Icon,
+			ParentCollectionID: c.ParentCollectionID,
+			Depth:              c.Depth,
+			Articles:           articlesByCollection[c.ID],
 		})
 	}
 
-	// Add uncategorized articles if any.
+	// Add uncategorized articles if any. Uncategorized stays top-level.
 	if len(uncategorized) > 0 {
 		result = append(result, model.PublicNavCollection{
 			ID:       "uncategorized",
@@ -653,6 +687,42 @@ func (r *DocsHelpcenterRepository) ListSpaceNavigation(ctx context.Context, spac
 	}
 
 	return result, nil
+}
+
+// ListCollectionAncestors returns the ancestor chain of a collection
+// ordered top-down (root first, immediate parent last). The chain does
+// not include the collection itself. It is iterative and capped at the
+// collection tree depth so a dangling parent reference cannot loop.
+func (r *DocsHelpcenterRepository) ListCollectionAncestors(ctx context.Context, collectionID string) ([]model.DocsCollection, error) {
+	var current model.DocsCollection
+	if err := r.db.WithContext(ctx).
+		Where("id = ? AND deleted_at IS NULL", collectionID).
+		First(&current).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("load collection for ancestor walk: %w", err)
+	}
+
+	const maxDepth = 3
+	chain := make([]model.DocsCollection, 0, maxDepth)
+	for i := 0; i < maxDepth; i++ {
+		if current.ParentCollectionID == nil {
+			break
+		}
+		var parent model.DocsCollection
+		if err := r.db.WithContext(ctx).
+			Where("id = ? AND deleted_at IS NULL", *current.ParentCollectionID).
+			First(&parent).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				break
+			}
+			return nil, fmt.Errorf("load ancestor collection: %w", err)
+		}
+		chain = append([]model.DocsCollection{parent}, chain...)
+		current = parent
+	}
+	return chain, nil
 }
 
 // ListPublicDocumentsBySpace returns internally published + externally published docs for a help-center space.
@@ -670,41 +740,91 @@ func (r *DocsHelpcenterRepository) ListPublicDocumentsBySpace(ctx context.Contex
 	return docs, nil
 }
 
-// ListWidgetCollections returns widget help collections for a space, including article counts.
+// ListWidgetCollections returns widget help collections for a space,
+// including tree metadata and per-collection direct article counts. The
+// result is flat; the widget renderer folds it into a drilldown tree
+// using ParentCollectionID.
+//
+// A collection is included when it has at least one directly published
+// article OR is an ancestor of such a collection, so container nodes
+// that hold content in descendants remain navigable.
 func (r *DocsHelpcenterRepository) ListWidgetCollections(ctx context.Context, spaceID string) ([]model.WidgetHelpCollection, error) {
-	type collectionRow struct {
-		ID           string  `gorm:"column:id"`
-		Name         string  `gorm:"column:name"`
-		Icon         *string `gorm:"column:icon"`
-		ArticleCount int     `gorm:"column:article_count"`
+	var collections []model.DocsCollection
+	if err := r.db.WithContext(ctx).
+		Where("space_id = ? AND deleted_at IS NULL", spaceID).
+		Order("depth ASC, parent_collection_id ASC, position ASC, created_at ASC").
+		Find(&collections).Error; err != nil {
+		return nil, fmt.Errorf("list widget collections: %w", err)
 	}
 
-	var rows []collectionRow
+	// Direct article counts per collection.
+	type articleCountRow struct {
+		CollectionID string `gorm:"column:collection_id"`
+		Count        int    `gorm:"column:count"`
+	}
+	var counts []articleCountRow
 	if err := r.db.WithContext(ctx).Raw(`
-		SELECT c.id, c.name, c.icon, COUNT(d.id) AS article_count
-		FROM docs_collections c
-		JOIN docs_documents d ON d.collection_id = c.id
+		SELECT d.collection_id, COUNT(d.id) AS count
+		FROM docs_documents d
 		JOIN docs_helpcenter_articles ha ON ha.document_id = d.id
-		WHERE c.space_id = ?
-		  AND c.deleted_at IS NULL
+		WHERE d.space_id = ?
+		  AND d.collection_id IS NOT NULL
 		  AND d.status = 'published'
 		  AND d.deleted_at IS NULL
 		  AND ha.public_published_at IS NOT NULL
 		  AND ha.slug != ''
-		GROUP BY c.id, c.name, c.icon, c.position, c.created_at
-		ORDER BY c.position ASC, c.created_at ASC
-	`, spaceID).Scan(&rows).Error; err != nil {
-		return nil, fmt.Errorf("list widget collections: %w", err)
+		GROUP BY d.collection_id
+	`, spaceID).Scan(&counts).Error; err != nil {
+		return nil, fmt.Errorf("count widget articles per collection: %w", err)
+	}
+	countByID := make(map[string]int, len(counts))
+	for _, c := range counts {
+		countByID[c.CollectionID] = c.Count
 	}
 
-	result := make([]model.WidgetHelpCollection, 0, len(rows)+1)
-	for _, row := range rows {
+	collectionByID := make(map[string]model.DocsCollection, len(collections))
+	for _, c := range collections {
+		collectionByID[c.ID] = c
+	}
+
+	// Include every collection that has direct articles OR is an ancestor
+	// of one that does.
+	included := make(map[string]bool, len(collections))
+	for id, n := range countByID {
+		if n == 0 {
+			continue
+		}
+		cursor := id
+		for {
+			node, exists := collectionByID[cursor]
+			if !exists || included[cursor] {
+				break
+			}
+			included[cursor] = true
+			if node.ParentCollectionID == nil {
+				break
+			}
+			cursor = *node.ParentCollectionID
+		}
+	}
+
+	result := make([]model.WidgetHelpCollection, 0, len(collections)+1)
+	for _, c := range collections {
+		if !included[c.ID] {
+			continue
+		}
+		slug := c.Slug
+		if slug == "" {
+			slug = c.ID
+		}
 		result = append(result, model.WidgetHelpCollection{
-			ID:           row.ID,
-			Name:         row.Name,
-			Slug:         row.ID,
-			Icon:         row.Icon,
-			ArticleCount: row.ArticleCount,
+			ID:                 c.ID,
+			Name:               c.Name,
+			Slug:               slug,
+			Icon:               c.Icon,
+			ParentCollectionID: c.ParentCollectionID,
+			Depth:              c.Depth,
+			ArticleCount:       countByID[c.ID],
 		})
 	}
 

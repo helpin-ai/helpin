@@ -1441,3 +1441,185 @@ func TestDocsHelpcenterPublicLocale_GetArticleFallsBackToDefaultLocale(t *testin
 		t.Fatalf("article = %+v, want default-locale fallback article", article)
 	}
 }
+
+// TestDocsHelpcenterTranslation_NestedCollectionBreadcrumb verifies the
+// Task 6 tree-aware helpers: nested collection translation lookup still
+// works, and GetLocalizedCollectionBreadcrumb returns the ancestor chain
+// top-down with each entry localized to the requested locale, falling
+// back to source name/slug when no translation exists.
+func TestDocsHelpcenterTranslation_NestedCollectionBreadcrumb(t *testing.T) {
+	t.Parallel()
+
+	const (
+		workspaceID = "ws-hc-bc"
+		userID      = "user-hc-bc"
+		spaceID     = "space-hc-bc"
+	)
+
+	now := time.Date(2026, 4, 10, 12, 0, 0, 0, time.UTC)
+	ptr := func(s string) *string { return &s }
+
+	db := setupDocsHelpcenterTranslationServiceTestDB(t)
+	ctx := context.Background()
+
+	seedDocsHelpcenterTranslationServiceConfig(t, db, model.DocsHelpcenterConfig{
+		ID:                      "cfg-hc-bc",
+		WorkspaceID:             workspaceID,
+		Subdomain:               "hc-bc",
+		BrandName:               "HC BC",
+		BrandColor:              "#000000",
+		ThemeMode:               "system",
+		HeaderLinks:             json.RawMessage(`[]`),
+		FooterConfig:            json.RawMessage(`{}`),
+		HomepageConfig:          json.RawMessage(`{}`),
+		SpaceNavConfig:          json.RawMessage(`{}`),
+		DefaultLocale:           "en",
+		EnabledLocales:          model.DocsStringArray{"en", "fr"},
+		ShowLanguageSwitcher:    true,
+		FallbackToDefaultLocale: true,
+		IsPublished:             true,
+		CreatedAt:               now,
+		UpdatedAt:               now,
+	})
+	seedDocsHelpcenterTranslationServiceSpace(t, db, model.DocsSpace{
+		ID:          spaceID,
+		WorkspaceID: workspaceID,
+		Name:        "Docs",
+		Slug:        "docs",
+		Visibility:  model.SpaceVisibilityWorkspaceWide,
+		Type:        model.SpaceTypeExternalCapable,
+		Position:    0,
+		CreatedBy:   userID,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	})
+
+	// Build a three-level collection chain: root -> mid -> leaf.
+	seedDocsHelpcenterTranslationServiceCollection(t, db, model.DocsCollection{
+		ID:          "root",
+		SpaceID:     spaceID,
+		WorkspaceID: workspaceID,
+		Name:        "Root",
+		Slug:        "root",
+		Depth:       0,
+		Position:    0,
+		CreatedBy:   userID,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	})
+	rootID := "root"
+	seedDocsHelpcenterTranslationServiceCollection(t, db, model.DocsCollection{
+		ID:                 "mid",
+		SpaceID:            spaceID,
+		WorkspaceID:        workspaceID,
+		ParentCollectionID: &rootID,
+		Name:               "Middle",
+		Slug:               "middle",
+		Depth:              1,
+		Position:           0,
+		CreatedBy:          userID,
+		CreatedAt:          now.Add(time.Minute),
+		UpdatedAt:          now.Add(time.Minute),
+	})
+	midID := "mid"
+	seedDocsHelpcenterTranslationServiceCollection(t, db, model.DocsCollection{
+		ID:                 "leaf",
+		SpaceID:            spaceID,
+		WorkspaceID:        workspaceID,
+		ParentCollectionID: &midID,
+		Name:               "Leaf",
+		Slug:               "leaf",
+		Depth:              2,
+		Position:           0,
+		CreatedBy:          userID,
+		CreatedAt:          now.Add(2 * time.Minute),
+		UpdatedAt:          now.Add(2 * time.Minute),
+	})
+
+	// Seed French translations for root and mid, but not leaf — so the
+	// breadcrumb must fall back to the source name/slug for leaf.
+	if err := db.WithContext(ctx).Create(&model.DocsHelpcenterCollectionTranslation{
+		ID:           "tr-root-fr",
+		CollectionID: "root",
+		Locale:       "fr",
+		Name:         "Racine",
+		Slug:         ptr("racine"),
+		Status:       model.DocsHelpcenterTranslationStatusPublished,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}).Error; err != nil {
+		t.Fatalf("seed root fr translation: %v", err)
+	}
+	if err := db.WithContext(ctx).Create(&model.DocsHelpcenterCollectionTranslation{
+		ID:           "tr-mid-fr",
+		CollectionID: "mid",
+		Locale:       "fr",
+		Name:         "Milieu",
+		Slug:         ptr("milieu"),
+		Status:       model.DocsHelpcenterTranslationStatusPublished,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}).Error; err != nil {
+		t.Fatalf("seed mid fr translation: %v", err)
+	}
+
+	svc := newDocsHelpcenterTranslationServiceForTest(db)
+
+	t.Run("Breadcrumb for leaf in fr locale returns localized ancestors top-down", func(t *testing.T) {
+		entries, err := svc.GetLocalizedCollectionBreadcrumb(ctx, "leaf", "fr")
+		if err != nil {
+			t.Fatalf("GetLocalizedCollectionBreadcrumb: %v", err)
+		}
+		if len(entries) != 3 {
+			t.Fatalf("entries = %d, want 3", len(entries))
+		}
+		// Root first — "Racine" / "racine"
+		if entries[0].ID != "root" || entries[0].Name != "Racine" || entries[0].Slug != "racine" {
+			t.Fatalf("entries[0] = %+v, want Racine/racine", entries[0])
+		}
+		// Middle next — "Milieu" / "milieu"
+		if entries[1].ID != "mid" || entries[1].Name != "Milieu" || entries[1].Slug != "milieu" {
+			t.Fatalf("entries[1] = %+v, want Milieu/milieu", entries[1])
+		}
+		// Leaf last — falls back to source name/slug (no fr translation)
+		if entries[2].ID != "leaf" || entries[2].Name != "Leaf" || entries[2].Slug != "leaf" {
+			t.Fatalf("entries[2] = %+v, want Leaf/leaf (source fallback)", entries[2])
+		}
+	})
+
+	t.Run("Breadcrumb for top-level collection returns single entry", func(t *testing.T) {
+		entries, err := svc.GetLocalizedCollectionBreadcrumb(ctx, "root", "en")
+		if err != nil {
+			t.Fatalf("GetLocalizedCollectionBreadcrumb: %v", err)
+		}
+		if len(entries) != 1 {
+			t.Fatalf("entries = %d, want 1", len(entries))
+		}
+		if entries[0].ID != "root" || entries[0].Name != "Root" || entries[0].Slug != "root" {
+			t.Fatalf("entries[0] = %+v, want source Root/root", entries[0])
+		}
+	})
+
+	t.Run("Breadcrumb with empty locale returns source names", func(t *testing.T) {
+		entries, err := svc.GetLocalizedCollectionBreadcrumb(ctx, "mid", "")
+		if err != nil {
+			t.Fatalf("GetLocalizedCollectionBreadcrumb: %v", err)
+		}
+		if len(entries) != 2 {
+			t.Fatalf("entries = %d, want 2", len(entries))
+		}
+		if entries[0].Name != "Root" || entries[1].Name != "Middle" {
+			t.Fatalf("entries = %+v, want source names", entries)
+		}
+	})
+
+	t.Run("Breadcrumb for missing collection returns empty slice", func(t *testing.T) {
+		entries, err := svc.GetLocalizedCollectionBreadcrumb(ctx, "ghost", "en")
+		if err != nil {
+			t.Fatalf("GetLocalizedCollectionBreadcrumb: %v", err)
+		}
+		if len(entries) != 0 {
+			t.Fatalf("entries = %+v, want empty", entries)
+		}
+	})
+}
