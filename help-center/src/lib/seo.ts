@@ -12,17 +12,10 @@ import {
   buildCanonicalHomePath,
   buildCanonicalSearchPath,
 } from '@/lib/locale'
-
-function tenantPath(basepath: string, path: string) {
-  const normalizedBasepath = basepath ? basepath.replace(/\/+$/, '') : ''
-  const normalizedPath = path.startsWith('/') ? path : `/${path}`
-  if (!normalizedBasepath) return normalizedPath
-  if (normalizedPath === '/') return `${normalizedBasepath}/`
-  return `${normalizedBasepath}${normalizedPath}`
-}
+import { prefixBasepath } from '@/lib/pathUtils'
 
 function absoluteUrl(rootData: RootRouteData, path: string) {
-  return new URL(tenantPath(rootData.basepath, path), rootData.origin).toString()
+  return new URL(prefixBasepath(rootData.basepath, path), rootData.origin).toString()
 }
 
 function createBaseMeta(title: string, description: string) {

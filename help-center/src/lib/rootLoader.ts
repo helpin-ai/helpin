@@ -5,6 +5,7 @@ import {
   spacesQueryOptions,
 } from '@/hooks/queries'
 import { isMultilingualEnabled, resolveActiveLocale } from '@/lib/locale'
+import { stripBasepath } from '@/lib/pathUtils'
 import { getHelpCenterRequestContext } from '@/lib/requestContext'
 
 export interface RootRouteData {
@@ -16,15 +17,6 @@ export interface RootRouteData {
   origin: string
   spaces: Space[]
   subdomain: string
-}
-
-function stripBasepath(pathname: string, basepath: string) {
-  if (!basepath) return pathname
-  if (pathname === basepath) return '/'
-  if (pathname.startsWith(`${basepath}/`)) {
-    return pathname.slice(basepath.length) || '/'
-  }
-  return pathname
 }
 
 function getPrimaryPathSegment(pathname: string) {

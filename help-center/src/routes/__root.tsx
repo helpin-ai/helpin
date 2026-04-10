@@ -71,6 +71,7 @@ function RootLayout() {
   const isPreview = pathname.startsWith('/preview/')
   const {
     activeLocale,
+    basepath,
     config,
     multilingualEnabled,
     spaces,
@@ -103,6 +104,7 @@ function RootLayout() {
   return (
     <RootDocument lang={activeLocale || config.default_locale || 'en'} brandColor={config?.brand_color}>
       <DocsProvider
+        basepath={basepath}
         subdomain={subdomain}
         locale={activeLocale}
         defaultLocale={config.default_locale}

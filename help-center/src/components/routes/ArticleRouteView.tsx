@@ -6,6 +6,7 @@ import { useScrollSpy } from '@/hooks/useScrollSpy'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { extractTocFromHtml } from '@/lib/toc'
 import { buildCanonicalCollectionPath } from '@/lib/locale'
+import { prefixBasepath } from '@/lib/pathUtils'
 import { ArticleShell } from '@/components/article/ArticleShell'
 import { ArticleContent } from '@/components/ArticleContent'
 import { TableOfContents } from '@/components/layout/TableOfContents'
@@ -28,7 +29,7 @@ export function ArticleRouteView({
   articleSlug,
   multilingualEnabled,
 }: ArticleRouteViewProps) {
-  const { subdomain, spaces } = useDocsContext()
+  const { subdomain, spaces, basepath } = useDocsContext()
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const closeMobileNav = useCallback(() => setMobileNavOpen(false), [])
   const matchingSpace = spaces.find((space) => space.slug === collectionSlug)
@@ -54,9 +55,12 @@ export function ArticleRouteView({
     }
 
     window.location.replace(
-      buildCanonicalCollectionPath(multilingualEnabled, locale, articleSlug),
+      prefixBasepath(
+        basepath,
+        buildCanonicalCollectionPath(multilingualEnabled, locale, articleSlug),
+      ),
     )
-  }, [article, articleSlug, isLoading, locale, matchingSpace, multilingualEnabled])
+  }, [article, articleSlug, basepath, isLoading, locale, matchingSpace, multilingualEnabled])
 
   const tocItems = useMemo(
     () => (article?.content_html ? extractTocFromHtml(article.content_html) : []),

@@ -2,6 +2,7 @@ import { createContext, useContext, type ReactNode } from 'react'
 import type { HelpCenterConfig, Space } from '@/lib/types'
 
 interface DocsContextValue {
+  basepath: string
   subdomain: string
   locale: string
   defaultLocale: string
@@ -15,6 +16,7 @@ const DocsContext = createContext<DocsContextValue | null>(null)
 
 export function DocsProvider({
   children,
+  basepath,
   subdomain,
   locale,
   defaultLocale,
@@ -26,6 +28,7 @@ export function DocsProvider({
   return (
     <DocsContext.Provider
       value={{
+        basepath,
         subdomain,
         locale,
         defaultLocale,
