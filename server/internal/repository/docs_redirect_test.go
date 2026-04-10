@@ -42,6 +42,8 @@ func setupDocsRedirectTestDB(t *testing.T) *gorm.DB {
 			id TEXT PRIMARY KEY,
 			space_id TEXT NOT NULL,
 			workspace_id TEXT NOT NULL,
+			parent_collection_id TEXT,
+			depth INTEGER NOT NULL DEFAULT 0,
 			name TEXT NOT NULL,
 			slug TEXT NOT NULL DEFAULT ''
 		)`,

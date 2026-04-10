@@ -140,20 +140,28 @@ type DocsSpaceWithTeams struct {
 	TeamIDs []string `json:"team_ids" gorm:"-"`
 }
 
-// DocsCollection groups documents inside a space.
+// DocsCollection groups documents inside a space. Collections form a bounded
+// tree: each collection has an optional parent collection within the same
+// space, with a maximum depth of 0..2 enforced at the service layer.
+//
+// Ordering is scoped to the (space_id, parent_collection_id) sibling bucket.
+// The partial unique index on (workspace_id, slug) for non-deleted rows is
+// enforced via dbmigrate SQL (GORM tags cannot express partial uniqueness).
 type DocsCollection struct {
-	ID          string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	SpaceID     string     `json:"space_id" gorm:"type:uuid;not null;index:idx_docs_collection_space_pos,priority:1"`
-	WorkspaceID string     `json:"workspace_id" gorm:"type:uuid;not null"`
-	Name        string     `json:"name" gorm:"not null"`
-	Slug        string     `json:"slug" gorm:"not null;default:''"`
-	Description *string    `json:"description"`
-	Icon        *string    `json:"icon"`
-	Position    int        `json:"position" gorm:"not null;default:0;index:idx_docs_collection_space_pos,priority:2"`
-	CreatedBy   string     `json:"created_by" gorm:"type:uuid;not null"`
-	CreatedAt   time.Time  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt   time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
-	DeletedAt   *time.Time `json:"deleted_at" gorm:"index"`
+	ID                 string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	SpaceID            string     `json:"space_id" gorm:"type:uuid;not null;index:idx_docs_collections_space_parent_pos,priority:1"`
+	WorkspaceID        string     `json:"workspace_id" gorm:"type:uuid;not null"`
+	ParentCollectionID *string    `json:"parent_collection_id" gorm:"type:uuid;index:idx_docs_collections_space_parent_pos,priority:2;index:idx_docs_collections_parent"`
+	Depth              int        `json:"depth" gorm:"not null;default:0"`
+	Name               string     `json:"name" gorm:"not null"`
+	Slug               string     `json:"slug" gorm:"not null;default:''"`
+	Description        *string    `json:"description"`
+	Icon               *string    `json:"icon"`
+	Position           int        `json:"position" gorm:"not null;default:0;index:idx_docs_collections_space_parent_pos,priority:3"`
+	CreatedBy          string     `json:"created_by" gorm:"type:uuid;not null"`
+	CreatedAt          time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt          time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+	DeletedAt          *time.Time `json:"deleted_at" gorm:"index"`
 }
 
 func (DocsCollection) TableName() string { return "docs_collections" }
@@ -423,19 +431,29 @@ type UpdateDocsSpaceRequest struct {
 }
 
 // CreateDocsCollectionRequest is the payload for creating a collection.
+//
+// ParentCollectionID is optional. When nil the collection is created at the
+// top of the space. Service-layer validation enforces the depth cap.
 type CreateDocsCollectionRequest struct {
-	Name        string  `json:"name"`
-	Slug        *string `json:"slug"`
-	Description *string `json:"description"`
-	Icon        *string `json:"icon"`
+	Name               string  `json:"name"`
+	Slug               *string `json:"slug"`
+	Description        *string `json:"description"`
+	Icon               *string `json:"icon"`
+	ParentCollectionID *string `json:"parent_collection_id"`
 }
 
 // UpdateDocsCollectionRequest is the payload for updating a collection.
+//
+// ParentCollectionID semantics: a nil pointer leaves the parent unchanged;
+// a pointer to the empty string reparents the collection to the top of the
+// space; any other value reparents under the referenced collection within
+// the same space. The depth cap is enforced at the service layer.
 type UpdateDocsCollectionRequest struct {
-	Name        *string `json:"name"`
-	Description *string `json:"description"`
-	Icon        *string `json:"icon"`
-	Position    *int    `json:"position"`
+	Name               *string `json:"name"`
+	Description        *string `json:"description"`
+	Icon               *string `json:"icon"`
+	Position           *int    `json:"position"`
+	ParentCollectionID *string `json:"parent_collection_id"`
 }
 
 // CreateDocsDocumentRequest is the payload for creating a document.

@@ -50,6 +50,8 @@ func setupDocsOrderingTestDB(t *testing.T) *gorm.DB {
 			id TEXT PRIMARY KEY,
 			space_id TEXT NOT NULL,
 			workspace_id TEXT NOT NULL,
+			parent_collection_id TEXT,
+			depth INTEGER NOT NULL DEFAULT 0,
 			name TEXT NOT NULL,
 			slug TEXT NOT NULL DEFAULT '',
 			description TEXT,
@@ -421,6 +423,135 @@ func TestDocsOrdering_MoveDeleteAndTypeChange(t *testing.T) {
 		}
 		if remaining.Position != 0 {
 			t.Fatalf("remaining internal space position = %d, want 0", remaining.Position)
+		}
+	})
+}
+
+// TestDocsCollection_TreeSchemaFields verifies that the new parent_collection_id
+// and depth fields on DocsCollection round-trip through the DB correctly at the
+// model layer. This is the minimum bar for Task 1: the schema is in place and
+// existing flows still work, without introducing any repository or service
+// changes (those come in later tasks).
+func TestDocsCollection_TreeSchemaFields(t *testing.T) {
+	t.Parallel()
+
+	const (
+		workspaceID = "ws-tree"
+		userID      = "user-tree"
+	)
+
+	now := time.Date(2026, 4, 10, 12, 0, 0, 0, time.UTC)
+
+	t.Run("existing collection loads with nil parent and zero depth", func(t *testing.T) {
+		db := setupDocsOrderingTestDB(t)
+		ctx := context.Background()
+
+		seedDocsSpace(t, db, model.DocsSpace{
+			ID:          "space-tree",
+			WorkspaceID: workspaceID,
+			Name:        "Tree space",
+			Slug:        "tree-space",
+			Visibility:  model.SpaceVisibilityWorkspaceWide,
+			Type:        model.SpaceTypeInternal,
+			Position:    0,
+			CreatedBy:   userID,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		})
+		seedDocsCollection(t, db, model.DocsCollection{
+			ID:          "coll-root",
+			SpaceID:     "space-tree",
+			WorkspaceID: workspaceID,
+			Name:        "Root",
+			Slug:        "root",
+			Position:    0,
+			CreatedBy:   userID,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		})
+
+		var loaded model.DocsCollection
+		if err := db.WithContext(ctx).Where("id = ?", "coll-root").First(&loaded).Error; err != nil {
+			t.Fatalf("load collection: %v", err)
+		}
+		if loaded.ParentCollectionID != nil {
+			t.Fatalf("ParentCollectionID = %v, want nil", loaded.ParentCollectionID)
+		}
+		if loaded.Depth != 0 {
+			t.Fatalf("Depth = %d, want 0", loaded.Depth)
+		}
+	})
+
+	t.Run("child collection persists parent_collection_id and depth", func(t *testing.T) {
+		db := setupDocsOrderingTestDB(t)
+		ctx := context.Background()
+
+		seedDocsSpace(t, db, model.DocsSpace{
+			ID:          "space-tree",
+			WorkspaceID: workspaceID,
+			Name:        "Tree space",
+			Slug:        "tree-space",
+			Visibility:  model.SpaceVisibilityWorkspaceWide,
+			Type:        model.SpaceTypeInternal,
+			Position:    0,
+			CreatedBy:   userID,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		})
+		seedDocsCollection(t, db, model.DocsCollection{
+			ID:          "coll-parent",
+			SpaceID:     "space-tree",
+			WorkspaceID: workspaceID,
+			Name:        "Parent",
+			Slug:        "parent",
+			Position:    0,
+			CreatedBy:   userID,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		})
+
+		parentID := "coll-parent"
+		seedDocsCollection(t, db, model.DocsCollection{
+			ID:                 "coll-child",
+			SpaceID:            "space-tree",
+			WorkspaceID:        workspaceID,
+			ParentCollectionID: &parentID,
+			Depth:              1,
+			Name:               "Child",
+			Slug:               "child",
+			Position:           0,
+			CreatedBy:          userID,
+			CreatedAt:          now.Add(time.Minute),
+			UpdatedAt:          now.Add(time.Minute),
+		})
+
+		var loaded model.DocsCollection
+		if err := db.WithContext(ctx).Where("id = ?", "coll-child").First(&loaded).Error; err != nil {
+			t.Fatalf("load child collection: %v", err)
+		}
+		if loaded.ParentCollectionID == nil {
+			t.Fatalf("ParentCollectionID = nil, want %q", parentID)
+		}
+		if *loaded.ParentCollectionID != parentID {
+			t.Fatalf("ParentCollectionID = %q, want %q", *loaded.ParentCollectionID, parentID)
+		}
+		if loaded.Depth != 1 {
+			t.Fatalf("Depth = %d, want 1", loaded.Depth)
+		}
+	})
+
+	t.Run("create and update request DTOs carry parent_collection_id", func(t *testing.T) {
+		// Pure struct-level check — no DB needed. Guards against accidental
+		// removal of the field from the request DTOs in a later refactor.
+		empty := ""
+		createReq := model.CreateDocsCollectionRequest{ParentCollectionID: &empty}
+		if createReq.ParentCollectionID == nil {
+			t.Fatalf("CreateDocsCollectionRequest.ParentCollectionID is not wired")
+		}
+
+		updateReq := model.UpdateDocsCollectionRequest{ParentCollectionID: &empty}
+		if updateReq.ParentCollectionID == nil {
+			t.Fatalf("UpdateDocsCollectionRequest.ParentCollectionID is not wired")
 		}
 	})
 }
