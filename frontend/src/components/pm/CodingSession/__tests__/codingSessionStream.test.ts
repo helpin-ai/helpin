@@ -309,6 +309,60 @@ describe('buildCodingSessionStreamState', () => {
     });
   });
 
+  it('stringifies object-shaped tool input for persisted historical tool segments', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'assistant-persisted-tool-object-input',
+        type: 'assistant.message.completed',
+        sequence_no: 7,
+        runtime_metadata: { source: 'agent_run_message' },
+        payload: {
+          message_id: 'assistant-persisted-4',
+          content: 'Applying the patch.',
+          turn_segments: [
+            {
+              segment_id: 'tool-segment-2',
+              kind: 'tool_call',
+              tool_call: {
+                tool_call_id: 'tool-legacy-2',
+                tool_name: 'apply_patch',
+                status: 'completed',
+                input: {
+                  patch: [
+                    '*** Begin Patch',
+                    '*** Update File: frontend/src/App.tsx',
+                    '@@',
+                    '-old',
+                    '+new',
+                    '*** End Patch',
+                  ].join('\n'),
+                },
+              },
+            },
+          ],
+        },
+      }),
+    ]);
+
+    expect(state.transcript_messages[0]?.turn_segments?.[0]).toMatchObject({
+      kind: 'tool_call',
+      tool_call: {
+        tool_call_id: 'tool-legacy-2',
+        tool_name: 'apply_patch',
+        args_text: JSON.stringify({
+          patch: [
+            '*** Begin Patch',
+            '*** Update File: frontend/src/App.tsx',
+            '@@',
+            '-old',
+            '+new',
+            '*** End Patch',
+          ].join('\n'),
+        }, null, 2),
+      },
+    });
+  });
+
   it('hydrates a live turn from the session snapshot and applies future deltas on top', () => {
     const state = buildCodingSessionStreamState([
       buildEvent({

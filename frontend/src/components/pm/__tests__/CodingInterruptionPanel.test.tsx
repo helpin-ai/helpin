@@ -3,6 +3,21 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('@tanstack/react-virtual', () => ({
+  useVirtualizer: ({ count, getScrollElement }: { count: number; getScrollElement: () => HTMLElement | null }) => ({
+    getTotalSize: () => count * 120,
+    getVirtualItems: () => Array.from({ length: count }, (_, index) => ({
+      index,
+      key: index,
+      start: index * 120,
+    })),
+    measureElement: () => {},
+    scrollToIndex: (index: number) => {
+      getScrollElement()?.scrollTo?.({ top: index * 120 });
+    },
+  }),
+}));
+
 import { CodingTranscriptPane } from '../CodingSession/CodingTranscriptPane';
 import type { CodingSession, CodingSessionInteraction } from '@/lib/pmTypes';
 
@@ -309,6 +324,85 @@ describe('CodingInterruptionPanel', () => {
     });
   });
 
+  it('renders persisted apply_patch tool calls that are not present in turn segments', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <CodingTranscriptPane
+          transcriptMessages={[
+            {
+              event_id: 'event-apply-patch',
+              message_id: 'assistant-apply-patch',
+              role: 'assistant',
+              content: '',
+              timestamp: '2026-03-31T10:00:00Z',
+              sequence_no: 1,
+              turn_segments: [
+                {
+                  segment_id: 'assistant-segment-1',
+                  kind: 'assistant_message',
+                  assistant_message: {
+                    message_id: 'assistant-apply-patch',
+                    content: 'Applying the requested change.',
+                    status: 'completed',
+                    tool_calls: [],
+                  },
+                },
+                {
+                  segment_id: 'tool-segment-1',
+                  kind: 'tool_call',
+                  tool_call: {
+                    tool_call_id: 'tool-read-1',
+                    parent_message_id: 'assistant-apply-patch',
+                    tool_name: 'read_file',
+                    args_text: '{"path":"frontend/src/App.tsx"}',
+                    status: 'completed',
+                  },
+                },
+              ],
+              tool_calls: [
+                {
+                  tool_call_id: 'tool-read-1-fallback',
+                  parent_message_id: 'assistant-apply-patch',
+                  tool_name: 'read_file',
+                  args_text: '{"path":"frontend/src/App.tsx"}',
+                  status: 'completed',
+                },
+                {
+                  tool_call_id: 'tool-patch-1',
+                  parent_message_id: 'assistant-apply-patch',
+                  tool_name: 'apply_patch',
+                  args_text: [
+                    '*** Begin Patch',
+                    '*** Update File: frontend/src/App.tsx',
+                    '@@',
+                    '-old',
+                    '+new',
+                    '*** End Patch',
+                  ].join('\n'),
+                  status: 'completed',
+                },
+              ],
+            },
+          ]}
+          liveAssistantMessage={null}
+          liveReasoningMessage={null}
+          liveTurnSegments={[]}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('Apply patch');
+    expect(container.textContent).toContain('frontend/src/App.tsx');
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
   it('scrolls the transcript to the latest content when new turns arrive', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -364,7 +458,7 @@ describe('CodingInterruptionPanel', () => {
       );
     });
 
-    const scrollContainer = container.querySelector('.min-h-0.flex-1.overflow-auto.px-4.py-4') as HTMLDivElement | null;
+    const scrollContainer = container.querySelector('.min-h-0.flex-1.overflow-auto') as HTMLDivElement | null;
     expect(scrollContainer).toBeTruthy();
     if (!scrollContainer) {
       throw new Error('expected transcript scroll container');
@@ -398,7 +492,7 @@ describe('CodingInterruptionPanel', () => {
       );
     });
 
-    expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 640 }));
+    expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 0 }));
 
     act(() => {
       root.unmount();
