@@ -166,6 +166,39 @@ func TestCodeBuilderPromptNeedsRefreshForLegacyPrompt(t *testing.T) {
 	}
 }
 
+func TestReviewAgentSystemPromptIncludesInteractiveLoop(t *testing.T) {
+	prompt := defaultSystemPromptForPreset(model.AgentPresetReviewAgent)
+	if prompt == nil {
+		t.Fatal("expected review prompt")
+	}
+	for _, snippet := range []string{
+		"You are Review Agent.",
+		"`request_user_input`",
+		"Treat review as an interactive loop, not a one-shot report.",
+		"Do not finish immediately after posting findings unless the latest human reply clearly says the review is done",
+		"If the human asks you to implement changes based on the review",
+	} {
+		if !strings.Contains(*prompt, snippet) {
+			t.Fatalf("expected review prompt to contain %q\n%s", snippet, *prompt)
+		}
+	}
+}
+
+func TestReviewAgentPromptNeedsRefreshForLegacyPrompt(t *testing.T) {
+	legacyPrompt := "You are Review Agent.\n\n- Inspect the relevant code and run targeted validation when possible.\n- Focus on correctness, regressions, missing tests, and delivery risk.\n- Report findings first, ordered by severity, with concrete file references when available.\n- Avoid low-signal commentary and avoid proposing unnecessary rewrites."
+	if !reviewAgentPromptNeedsRefresh(&legacyPrompt) {
+		t.Fatal("expected legacy review prompt to require refresh")
+	}
+
+	currentPrompt := defaultSystemPromptForPreset(model.AgentPresetReviewAgent)
+	if currentPrompt == nil {
+		t.Fatal("expected review prompt")
+	}
+	if reviewAgentPromptNeedsRefresh(currentPrompt) {
+		t.Fatal("expected current review prompt to remain valid")
+	}
+}
+
 func TestBuiltInNonPlannerPromptsAreWorkspaceGeneric(t *testing.T) {
 	for _, presetKey := range []string{
 		model.AgentPresetCRMOperator,

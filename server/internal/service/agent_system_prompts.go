@@ -393,6 +393,29 @@ func codeBuilderPromptNeedsRefresh(prompt *string) bool {
 	return false
 }
 
+func reviewAgentPromptNeedsRefresh(prompt *string) bool {
+	if prompt == nil {
+		return false
+	}
+	normalized := strings.TrimSpace(*prompt)
+	if normalized == "" {
+		return false
+	}
+	requiredSnippets := []string{
+		"You are Review Agent.",
+		"`request_user_input`",
+		"Treat review as an interactive loop, not a one-shot report.",
+		"Do not finish immediately after posting findings unless the latest human reply clearly says the review is done",
+		"If the human asks you to implement changes based on the review",
+	}
+	for _, snippet := range requiredSnippets {
+		if !strings.Contains(normalized, snippet) {
+			return true
+		}
+	}
+	return false
+}
+
 func builtInPromptNeedsGenericWorkspaceRefresh(presetKey string, prompt *string) bool {
 	if prompt == nil {
 		return false
@@ -499,7 +522,16 @@ Ground the plan primarily in the task description, task comments, task-linked do
 - Inspect the relevant code and run targeted validation when possible.
 - Focus on correctness, regressions, missing tests, and delivery risk.
 - Report findings first, ordered by severity, with concrete file references when available.
-- Avoid low-signal commentary and avoid proposing unnecessary rewrites.`)
+- Avoid low-signal commentary and avoid proposing unnecessary rewrites.
+- Treat review as an interactive loop, not a one-shot report.
+- After you present findings or answer a follow-up, hand control back with ` + "`request_user_input`" + ` unless the latest human reply clearly says the review is done.
+- Use ` + "`request_user_input`" + ` to ask what should happen next. Prefer a short next-step question with options like follow-up discussion, re-review after changes, or done.
+- Do not finish immediately after posting findings unless the latest human reply clearly says the review is done, finished, complete, or equivalent.
+- If the human asks for clarification, answer it, then ask what to do next with ` + "`request_user_input`" + `.
+- If the human asks for another review pass after changes, perform the re-review, report the result, and ask what to do next with ` + "`request_user_input`" + `.
+- If the human asks you to implement changes based on the review, switch into implementation mode in the SAME branch and workspace, make the requested fixes directly, run focused validation, create a LOCAL commit only, then summarize what changed and ask what to do next with ` + "`request_user_input`" + ` unless the human clearly closes the review.
+- When implementing agreed fixes, keep the change scoped to the selected findings instead of rewriting unrelated code.
+- Do not push the branch or open a pull request from inside the run. Remote delivery remains backend-managed after the run finally completes.`)
 		return &prompt
 	default:
 		return nil
@@ -532,7 +564,8 @@ func storedSystemPromptForPreset(presetKey string, systemPrompt, legacyPlanningN
 		}
 		return normalizedPrompt
 	case model.AgentPresetCRMOperator, model.AgentPresetSupportAgent, model.AgentPresetReviewAgent:
-		if builtInPromptNeedsGenericWorkspaceRefresh(presetKey, normalizedPrompt) {
+		if builtInPromptNeedsGenericWorkspaceRefresh(presetKey, normalizedPrompt) ||
+			(normalizePresetKey(presetKey) == model.AgentPresetReviewAgent && reviewAgentPromptNeedsRefresh(normalizedPrompt)) {
 			normalizedPrompt = defaultSystemPromptForPreset(presetKey)
 		}
 		return normalizedPrompt

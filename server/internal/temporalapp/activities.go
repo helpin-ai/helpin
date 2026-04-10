@@ -641,6 +641,15 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		return ExecuteRunResult{}, err
 	}
 
+	humanInputRequest, err = a.maybeInjectReviewAgentFollowupInput(ctx, state, assistantMessage, humanInputRequest)
+	if err != nil {
+		if persistWorkspace {
+			_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
+		}
+		_ = a.failRun(ctx, state, err.Error())
+		return ExecuteRunResult{}, nonRetryableRunError(err)
+	}
+
 	waitForApproval, waitForInput, waitForAuth := resolveExecutionWaitState(state.run, humanInputRequest, approvalRequest, authRequest)
 	continueExecution := false
 	if state.run.InvocationMode == model.InvocationModeInteractive && humanInputRequest != nil {
@@ -726,6 +735,133 @@ func resolveExecutionWaitState(run *model.AgentRun, humanInputRequest *workerpkg
 		return waitForApproval, false, false
 	}
 	return waitForApproval, false, false
+}
+
+func (a *AgentRunActivities) maybeInjectReviewAgentFollowupInput(
+	ctx context.Context,
+	state *resolvedRunState,
+	assistantMessage *model.AgentRunMessage,
+	existing *workerpkg.UserInputRequest,
+) (*workerpkg.UserInputRequest, error) {
+	if existing != nil || state == nil || state.run == nil || state.agent == nil || assistantMessage == nil {
+		return existing, nil
+	}
+	if strings.TrimSpace(state.agent.PresetKey) != model.AgentPresetReviewAgent {
+		return existing, nil
+	}
+
+	latestReply, err := a.latestMeaningfulUserRunReply(ctx, state.run)
+	if err != nil {
+		return nil, err
+	}
+	if isExplicitReviewCloseoutReply(latestReply) {
+		return existing, nil
+	}
+
+	req := reviewAgentFollowupRequest()
+	metadata := buildAssistantSequenceArtifactMetadata(assistantMessage.SequenceNo)
+	artifactPayload := humanInputArtifactFromWorker(req)
+	if a.artifactRepo != nil {
+		if _, err := a.appendRunArtifactWithMetadata(ctx, state.run, model.AgentRunArtifactTypeHumanInputRequest, "json", artifactPayload, metadata); err != nil {
+			return nil, err
+		}
+	}
+	interaction, err := a.persistHumanInputInteraction(ctx, state, req, metadata, assistantMessage.SequenceNo)
+	if err != nil {
+		return nil, err
+	}
+	if interaction != nil {
+		a.publishCodingSessionInteractionEvent(state.run, interaction)
+	} else {
+		a.publishCodingSessionEvent(state.run, "input.requested", map[string]any{
+			"content": artifactPayload,
+		})
+	}
+	return req, nil
+}
+
+func (a *AgentRunActivities) latestMeaningfulUserRunReply(ctx context.Context, run *model.AgentRun) (string, error) {
+	if a == nil || a.runMessageRepo == nil || run == nil {
+		return "", nil
+	}
+	messages, err := a.runMessageRepo.ListByRun(ctx, run.WorkspaceID, run.ID)
+	if err != nil {
+		return "", err
+	}
+	for i := len(messages) - 1; i >= 0; i-- {
+		message := messages[i]
+		if strings.TrimSpace(message.Role) != "user" {
+			continue
+		}
+		if strings.TrimSpace(message.MessageType) == "prompt" {
+			continue
+		}
+		content := strings.TrimSpace(message.Content)
+		if content == "" {
+			continue
+		}
+		return content, nil
+	}
+	return "", nil
+}
+
+func reviewAgentFollowupRequest() *workerpkg.UserInputRequest {
+	return &workerpkg.UserInputRequest{
+		Questions: []workerpkg.UserInputQuestion{
+			{
+				ID:       "next_step",
+				Header:   "Next step",
+				Question: "What should I do next with this review?",
+				IsOther:  true,
+				Options: []workerpkg.UserInputOption{
+					{
+						Label:       "Discuss a finding (Recommended)",
+						Description: "Ask a follow-up or request more detail about one of the findings.",
+					},
+					{
+						Label:       "Implement changes",
+						Description: "Apply the agreed fixes in this same branch and continue the review loop.",
+					},
+					{
+						Label:       "Re-review changes",
+						Description: "Review the code again after changes are made.",
+					},
+					{
+						Label:       "Done reviewing",
+						Description: "Close this review run.",
+					},
+				},
+			},
+		},
+	}
+}
+
+func isExplicitReviewCloseoutReply(reply string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(reply))
+	if normalized == "" || strings.Contains(normalized, "?") {
+		return false
+	}
+
+	for _, marker := range []string{
+		"follow up", "follow-up", "clarify", "clarification", "question", "re-review", "review again",
+		"check again", "look again", "implement", "fix", "address", "change", "changes",
+		"revise", "revision", "another pass", "one more", "but ", "however",
+	} {
+		if strings.Contains(normalized, marker) {
+			return false
+		}
+	}
+
+	for _, marker := range []string{
+		"done", "done reviewing", "review complete", "review is complete", "finished",
+		"finished reviewing", "complete", "completed", "looks good", "all set",
+		"nothing else", "that's all", "thats all", "no more issues",
+	} {
+		if strings.Contains(normalized, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeApprovalStateAfterExecution(run *model.AgentRun, waitForApproval bool) {
