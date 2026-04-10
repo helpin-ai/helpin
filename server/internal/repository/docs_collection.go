@@ -171,20 +171,290 @@ func (r *DocsCollectionRepository) Reorder(ctx context.Context, spaceID string, 
 	})
 }
 
-// NormalizeSpace re-numbers collection positions in a space to be contiguous starting from 0.
+// NormalizeSpace re-numbers collection positions in every sibling bucket in
+// the space. Each (parent_collection_id) bucket becomes contiguous starting
+// from 0, preserving relative order. Safe to call after reorders, reparents,
+// and deletes.
 func (r *DocsCollectionRepository) NormalizeSpace(ctx context.Context, spaceID string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return normalizeCollectionPositionsTx(tx, spaceID)
+		return normalizeAllBucketsInSpaceTx(tx, spaceID)
 	})
 }
 
-func normalizeCollectionPositionsTx(tx *gorm.DB, spaceID string) error {
+// NormalizeBucket re-numbers positions within a single (space_id,
+// parent_collection_id) sibling bucket. parentID == nil targets the
+// top-level bucket in the space.
+func (r *DocsCollectionRepository) NormalizeBucket(ctx context.Context, spaceID string, parentID *string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return normalizeBucketTx(tx, spaceID, parentID)
+	})
+}
+
+// ListChildren returns the direct children of parentID in a space (or all
+// top-level collections when parentID is nil), ordered by position.
+func (r *DocsCollectionRepository) ListChildren(ctx context.Context, spaceID string, parentID *string) ([]model.DocsCollection, error) {
 	var colls []model.DocsCollection
-	if err := tx.
+	q := r.db.WithContext(ctx).
+		Where("space_id = ? AND deleted_at IS NULL", spaceID)
+	if parentID == nil {
+		q = q.Where("parent_collection_id IS NULL")
+	} else {
+		q = q.Where("parent_collection_id = ?", *parentID)
+	}
+	if err := q.Order("position ASC, created_at ASC, id ASC").Find(&colls).Error; err != nil {
+		return nil, fmt.Errorf("list docs collection children: %w", err)
+	}
+	return colls, nil
+}
+
+// ListAncestors walks from collectionID up to the top of the tree and
+// returns the ancestor chain ordered from the immediate parent to the
+// root. It is iterative and capped at maxCollectionTreeDepth levels, which
+// matches the depth cap enforced at the service layer. Missing or dangling
+// parent references terminate the walk cleanly.
+func (r *DocsCollectionRepository) ListAncestors(ctx context.Context, collectionID string) ([]model.DocsCollection, error) {
+	var ancestors []model.DocsCollection
+	current, err := r.GetByID(ctx, collectionID)
+	if err != nil {
+		return nil, err
+	}
+	if current == nil {
+		return nil, nil
+	}
+	for i := 0; i < maxCollectionTreeDepth; i++ {
+		if current.ParentCollectionID == nil {
+			return ancestors, nil
+		}
+		parent, err := r.GetByID(ctx, *current.ParentCollectionID)
+		if err != nil {
+			return nil, err
+		}
+		if parent == nil {
+			return ancestors, nil
+		}
+		ancestors = append(ancestors, *parent)
+		current = parent
+	}
+	return ancestors, nil
+}
+
+// ListDescendants returns every descendant of collectionID via breadth-first
+// iteration capped at maxCollectionTreeDepth levels. The root itself is not
+// included in the result. Order is stable: each level is listed before the
+// next, and within a level rows are ordered by position then created_at.
+func (r *DocsCollectionRepository) ListDescendants(ctx context.Context, collectionID string) ([]model.DocsCollection, error) {
+	root, err := r.GetByID(ctx, collectionID)
+	if err != nil {
+		return nil, err
+	}
+	if root == nil {
+		return nil, nil
+	}
+
+	var result []model.DocsCollection
+	frontier := []string{collectionID}
+	for level := 0; level < maxCollectionTreeDepth && len(frontier) > 0; level++ {
+		var nextFrontier []string
+		for _, parentID := range frontier {
+			pid := parentID
+			children, err := r.ListChildren(ctx, root.SpaceID, &pid)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, children...)
+			for _, c := range children {
+				nextFrontier = append(nextFrontier, c.ID)
+			}
+		}
+		frontier = nextFrontier
+	}
+	return result, nil
+}
+
+// NextPositionInBucket returns the next free position in a specific sibling
+// bucket. parentID == nil targets the top-level bucket in the space.
+// Normalizes the bucket before reading max+1 to avoid drift after deletes.
+func (r *DocsCollectionRepository) NextPositionInBucket(ctx context.Context, spaceID string, parentID *string) (int, error) {
+	if err := r.NormalizeBucket(ctx, spaceID, parentID); err != nil {
+		return 0, err
+	}
+	var maxPos *int
+	q := r.db.WithContext(ctx).
+		Model(&model.DocsCollection{}).
 		Where("space_id = ? AND deleted_at IS NULL", spaceID).
+		Select("COALESCE(MAX(position), -1)")
+	if parentID == nil {
+		q = q.Where("parent_collection_id IS NULL")
+	} else {
+		q = q.Where("parent_collection_id = ?", *parentID)
+	}
+	if err := q.Scan(&maxPos).Error; err != nil {
+		return 0, fmt.Errorf("next collection position in bucket: %w", err)
+	}
+	if maxPos == nil {
+		return 0, nil
+	}
+	return *maxPos + 1, nil
+}
+
+// ReorderSiblings sets contiguous positions for the given collection IDs
+// within one (space_id, parent_collection_id) sibling bucket. IDs that do
+// not belong to that bucket are ignored so a caller cannot accidentally
+// displace sibling groups with a stale or mis-scoped payload.
+func (r *DocsCollectionRepository) ReorderSiblings(ctx context.Context, spaceID string, parentID *string, orderedIDs []string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for i, id := range orderedIDs {
+			q := tx.Model(&model.DocsCollection{}).
+				Where("id = ? AND space_id = ? AND deleted_at IS NULL", id, spaceID)
+			if parentID == nil {
+				q = q.Where("parent_collection_id IS NULL")
+			} else {
+				q = q.Where("parent_collection_id = ?", *parentID)
+			}
+			if err := q.UpdateColumn("position", i).Error; err != nil {
+				return fmt.Errorf("reorder sibling %s: %w", id, err)
+			}
+		}
+		return normalizeBucketTx(tx, spaceID, parentID)
+	})
+}
+
+// Reparent moves a collection to a new parent within the same space,
+// recalculates the depth of the moved node and every descendant, and
+// normalizes both the old and new sibling buckets. newParentID == nil
+// reparents to the top of the space. This method is a dumb mover — it
+// does not enforce the depth cap or prevent cycles. Both invariants live
+// in the service layer (Task 3) so the repo remains reusable for tests
+// and future data migrations.
+func (r *DocsCollectionRepository) Reparent(ctx context.Context, collectionID string, newParentID *string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var coll model.DocsCollection
+		if err := tx.Where("id = ? AND deleted_at IS NULL", collectionID).First(&coll).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return fmt.Errorf("get collection for reparent: %w", err)
+		}
+
+		newDepth, err := resolveDepthForParentTx(tx, newParentID)
+		if err != nil {
+			return err
+		}
+
+		oldParentID := coll.ParentCollectionID
+
+		// Append to the end of the new sibling bucket. Counting current
+		// rows in the bucket (excluding the moved row itself) gives us an
+		// unambiguous trailing position independent of the moved row's
+		// stale Position value from its old bucket.
+		var newPos int64
+		bucketCount := tx.Model(&model.DocsCollection{}).
+			Where("space_id = ? AND deleted_at IS NULL AND id <> ?", coll.SpaceID, collectionID)
+		if newParentID == nil {
+			bucketCount = bucketCount.Where("parent_collection_id IS NULL")
+		} else {
+			bucketCount = bucketCount.Where("parent_collection_id = ?", *newParentID)
+		}
+		if err := bucketCount.Count(&newPos).Error; err != nil {
+			return fmt.Errorf("count new bucket for reparent: %w", err)
+		}
+
+		updates := map[string]interface{}{
+			"parent_collection_id": newParentID,
+			"depth":                newDepth,
+			"position":             int(newPos),
+		}
+		if err := tx.Model(&model.DocsCollection{}).
+			Where("id = ? AND deleted_at IS NULL", collectionID).
+			Updates(updates).Error; err != nil {
+			return fmt.Errorf("reparent collection %s: %w", collectionID, err)
+		}
+
+		if err := recalculateDescendantDepthsTx(tx, collectionID, newDepth); err != nil {
+			return err
+		}
+
+		if err := normalizeBucketTx(tx, coll.SpaceID, oldParentID); err != nil {
+			return err
+		}
+		if err := normalizeBucketTx(tx, coll.SpaceID, newParentID); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+// maxCollectionTreeDepth is the number of distinct levels in the collection
+// tree, inclusive of the root. The depth column stores 0..maxCollectionTreeDepth-1.
+// The service layer enforces this cap — the repository respects it when
+// iterating ancestors and descendants so a dangling or corrupted parent
+// reference cannot cause an infinite loop.
+const maxCollectionTreeDepth = 3
+
+func resolveDepthForParentTx(tx *gorm.DB, parentID *string) (int, error) {
+	if parentID == nil {
+		return 0, nil
+	}
+	var parent model.DocsCollection
+	if err := tx.Where("id = ? AND deleted_at IS NULL", *parentID).First(&parent).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, fmt.Errorf("reparent: parent collection %s not found", *parentID)
+		}
+		return 0, fmt.Errorf("load parent collection for reparent: %w", err)
+	}
+	return parent.Depth + 1, nil
+}
+
+func recalculateDescendantDepthsTx(tx *gorm.DB, rootID string, rootDepth int) error {
+	frontier := []struct {
+		id    string
+		depth int
+	}{{id: rootID, depth: rootDepth}}
+
+	for level := 0; level < maxCollectionTreeDepth && len(frontier) > 0; level++ {
+		var next []struct {
+			id    string
+			depth int
+		}
+		for _, node := range frontier {
+			var children []model.DocsCollection
+			if err := tx.
+				Where("parent_collection_id = ? AND deleted_at IS NULL", node.id).
+				Find(&children).Error; err != nil {
+				return fmt.Errorf("load children for depth recalc: %w", err)
+			}
+			childDepth := node.depth + 1
+			for _, child := range children {
+				if child.Depth != childDepth {
+					if err := tx.Model(&model.DocsCollection{}).
+						Where("id = ? AND deleted_at IS NULL", child.ID).
+						UpdateColumn("depth", childDepth).Error; err != nil {
+						return fmt.Errorf("update descendant depth %s: %w", child.ID, err)
+					}
+				}
+				next = append(next, struct {
+					id    string
+					depth int
+				}{id: child.ID, depth: childDepth})
+			}
+		}
+		frontier = next
+	}
+	return nil
+}
+
+func normalizeBucketTx(tx *gorm.DB, spaceID string, parentID *string) error {
+	var colls []model.DocsCollection
+	q := tx.Where("space_id = ? AND deleted_at IS NULL", spaceID)
+	if parentID == nil {
+		q = q.Where("parent_collection_id IS NULL")
+	} else {
+		q = q.Where("parent_collection_id = ?", *parentID)
+	}
+	if err := q.
 		Order("position ASC, created_at ASC, id ASC").
 		Find(&colls).Error; err != nil {
-		return fmt.Errorf("list collections for normalization: %w", err)
+		return fmt.Errorf("list collections for bucket normalization: %w", err)
 	}
 
 	for i, coll := range colls {
@@ -199,4 +469,34 @@ func normalizeCollectionPositionsTx(tx *gorm.DB, spaceID string) error {
 	}
 
 	return nil
+}
+
+func normalizeAllBucketsInSpaceTx(tx *gorm.DB, spaceID string) error {
+	// Collect every distinct parent_collection_id value present in the
+	// space (including NULL for the top-level bucket), then normalize each
+	// bucket independently. A bounded set of distinct parents keeps this
+	// cheap even for moderate tree sizes.
+	type bucketRow struct {
+		ParentCollectionID *string
+	}
+	var buckets []bucketRow
+	if err := tx.Model(&model.DocsCollection{}).
+		Where("space_id = ? AND deleted_at IS NULL", spaceID).
+		Distinct("parent_collection_id").
+		Scan(&buckets).Error; err != nil {
+		return fmt.Errorf("list buckets for space normalization: %w", err)
+	}
+	for _, b := range buckets {
+		if err := normalizeBucketTx(tx, spaceID, b.ParentCollectionID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// normalizeCollectionPositionsTx is kept for backwards compatibility with
+// existing call sites that predate the tree refactor. It now normalizes
+// every sibling bucket in the space rather than a single flat list.
+func normalizeCollectionPositionsTx(tx *gorm.DB, spaceID string) error {
+	return normalizeAllBucketsInSpaceTx(tx, spaceID)
 }

@@ -555,3 +555,302 @@ func TestDocsCollection_TreeSchemaFields(t *testing.T) {
 		}
 	})
 }
+
+// seedTreeCollection is a small convenience helper that builds a typical
+// DocsCollection seed row with sane defaults so test bodies stay compact.
+func seedTreeCollection(t *testing.T, db *gorm.DB, id, spaceID, workspaceID string, parentID *string, depth, position int, name string) {
+	t.Helper()
+	slug := name
+	seedDocsCollection(t, db, model.DocsCollection{
+		ID:                 id,
+		SpaceID:            spaceID,
+		WorkspaceID:        workspaceID,
+		ParentCollectionID: parentID,
+		Depth:              depth,
+		Name:               name,
+		Slug:               slug,
+		Position:           position,
+		CreatedBy:          "user-tree",
+		CreatedAt:          time.Date(2026, 4, 10, 12, 0, 0, 0, time.UTC).Add(time.Duration(position) * time.Minute),
+		UpdatedAt:          time.Date(2026, 4, 10, 12, 0, 0, 0, time.UTC).Add(time.Duration(position) * time.Minute),
+	})
+}
+
+// TestDocsCollectionRepo_Tree exercises the tree-aware repository helpers
+// added in Task 2: ListChildren, ListAncestors, ListDescendants,
+// NextPositionInBucket, ReorderSiblings, and Reparent. Each subtest starts
+// from a fresh in-memory DB so state cannot leak across cases.
+func TestDocsCollectionRepo_Tree(t *testing.T) {
+	t.Parallel()
+
+	const (
+		workspaceID = "ws-tree"
+		spaceID     = "space-tree"
+	)
+
+	seedSpace := func(t *testing.T, db *gorm.DB) {
+		t.Helper()
+		seedDocsSpace(t, db, model.DocsSpace{
+			ID:          spaceID,
+			WorkspaceID: workspaceID,
+			Name:        "Tree space",
+			Slug:        "tree-space",
+			Visibility:  model.SpaceVisibilityWorkspaceWide,
+			Type:        model.SpaceTypeInternal,
+			Position:    0,
+			CreatedBy:   "user-tree",
+			CreatedAt:   time.Date(2026, 4, 10, 12, 0, 0, 0, time.UTC),
+			UpdatedAt:   time.Date(2026, 4, 10, 12, 0, 0, 0, time.UTC),
+		})
+	}
+
+	t.Run("ListChildren returns only the requested bucket in position order", func(t *testing.T) {
+		db := setupDocsOrderingTestDB(t)
+		seedSpace(t, db)
+		ctx := context.Background()
+		repo := repository.NewDocsCollectionRepository(db)
+
+		// Top-level: A (0), B (1). Nested under A: A1 (0), A2 (1).
+		seedTreeCollection(t, db, "A", spaceID, workspaceID, nil, 0, 0, "A")
+		seedTreeCollection(t, db, "B", spaceID, workspaceID, nil, 0, 1, "B")
+		parentA := "A"
+		seedTreeCollection(t, db, "A1", spaceID, workspaceID, &parentA, 1, 0, "A1")
+		seedTreeCollection(t, db, "A2", spaceID, workspaceID, &parentA, 1, 1, "A2")
+
+		topLevel, err := repo.ListChildren(ctx, spaceID, nil)
+		if err != nil {
+			t.Fatalf("ListChildren(nil): %v", err)
+		}
+		if got, want := ids(topLevel), []string{"A", "B"}; !equalIDs(got, want) {
+			t.Fatalf("top-level ids = %v, want %v", got, want)
+		}
+
+		underA, err := repo.ListChildren(ctx, spaceID, &parentA)
+		if err != nil {
+			t.Fatalf("ListChildren(A): %v", err)
+		}
+		if got, want := ids(underA), []string{"A1", "A2"}; !equalIDs(got, want) {
+			t.Fatalf("under-A ids = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("ListAncestors walks up a three-level chain in order", func(t *testing.T) {
+		db := setupDocsOrderingTestDB(t)
+		seedSpace(t, db)
+		ctx := context.Background()
+		repo := repository.NewDocsCollectionRepository(db)
+
+		root := "root"
+		child := "child"
+		grand := "grand"
+		seedTreeCollection(t, db, root, spaceID, workspaceID, nil, 0, 0, "root")
+		rootID := root
+		seedTreeCollection(t, db, child, spaceID, workspaceID, &rootID, 1, 0, "child")
+		childID := child
+		seedTreeCollection(t, db, grand, spaceID, workspaceID, &childID, 2, 0, "grand")
+
+		got, err := repo.ListAncestors(ctx, grand)
+		if err != nil {
+			t.Fatalf("ListAncestors(grand): %v", err)
+		}
+		// Expected order: immediate parent first, then grandparent.
+		if want := []string{"child", "root"}; !equalIDs(ids(got), want) {
+			t.Fatalf("ancestors = %v, want %v", ids(got), want)
+		}
+	})
+
+	t.Run("ListAncestors returns empty for a top-level collection", func(t *testing.T) {
+		db := setupDocsOrderingTestDB(t)
+		seedSpace(t, db)
+		ctx := context.Background()
+		repo := repository.NewDocsCollectionRepository(db)
+
+		seedTreeCollection(t, db, "root", spaceID, workspaceID, nil, 0, 0, "root")
+
+		got, err := repo.ListAncestors(ctx, "root")
+		if err != nil {
+			t.Fatalf("ListAncestors: %v", err)
+		}
+		if len(got) != 0 {
+			t.Fatalf("ancestors = %v, want empty", ids(got))
+		}
+	})
+
+	t.Run("ListDescendants walks two levels BFS", func(t *testing.T) {
+		db := setupDocsOrderingTestDB(t)
+		seedSpace(t, db)
+		ctx := context.Background()
+		repo := repository.NewDocsCollectionRepository(db)
+
+		seedTreeCollection(t, db, "root", spaceID, workspaceID, nil, 0, 0, "root")
+		rootID := "root"
+		seedTreeCollection(t, db, "c1", spaceID, workspaceID, &rootID, 1, 0, "c1")
+		seedTreeCollection(t, db, "c2", spaceID, workspaceID, &rootID, 1, 1, "c2")
+		c1 := "c1"
+		seedTreeCollection(t, db, "c1a", spaceID, workspaceID, &c1, 2, 0, "c1a")
+		c2 := "c2"
+		seedTreeCollection(t, db, "c2a", spaceID, workspaceID, &c2, 2, 0, "c2a")
+
+		got, err := repo.ListDescendants(ctx, "root")
+		if err != nil {
+			t.Fatalf("ListDescendants: %v", err)
+		}
+		// Level 1 before level 2; within a level, ordered by position.
+		if want := []string{"c1", "c2", "c1a", "c2a"}; !equalIDs(ids(got), want) {
+			t.Fatalf("descendants = %v, want %v", ids(got), want)
+		}
+	})
+
+	t.Run("NextPositionInBucket scopes to the requested parent", func(t *testing.T) {
+		db := setupDocsOrderingTestDB(t)
+		seedSpace(t, db)
+		ctx := context.Background()
+		repo := repository.NewDocsCollectionRepository(db)
+
+		seedTreeCollection(t, db, "A", spaceID, workspaceID, nil, 0, 0, "A")
+		seedTreeCollection(t, db, "B", spaceID, workspaceID, nil, 0, 1, "B")
+		a := "A"
+		seedTreeCollection(t, db, "A1", spaceID, workspaceID, &a, 1, 0, "A1")
+
+		top, err := repo.NextPositionInBucket(ctx, spaceID, nil)
+		if err != nil {
+			t.Fatalf("NextPositionInBucket(nil): %v", err)
+		}
+		if top != 2 {
+			t.Fatalf("top next position = %d, want 2", top)
+		}
+
+		underA, err := repo.NextPositionInBucket(ctx, spaceID, &a)
+		if err != nil {
+			t.Fatalf("NextPositionInBucket(A): %v", err)
+		}
+		if underA != 1 {
+			t.Fatalf("under-A next position = %d, want 1", underA)
+		}
+	})
+
+	t.Run("ReorderSiblings only touches the targeted bucket", func(t *testing.T) {
+		db := setupDocsOrderingTestDB(t)
+		seedSpace(t, db)
+		ctx := context.Background()
+		repo := repository.NewDocsCollectionRepository(db)
+
+		// Three top-level collections and two nested under the second one.
+		seedTreeCollection(t, db, "A", spaceID, workspaceID, nil, 0, 0, "A")
+		seedTreeCollection(t, db, "B", spaceID, workspaceID, nil, 0, 1, "B")
+		seedTreeCollection(t, db, "C", spaceID, workspaceID, nil, 0, 2, "C")
+		b := "B"
+		seedTreeCollection(t, db, "B1", spaceID, workspaceID, &b, 1, 0, "B1")
+		seedTreeCollection(t, db, "B2", spaceID, workspaceID, &b, 1, 1, "B2")
+
+		// Reorder the top-level bucket: C, A, B.
+		if err := repo.ReorderSiblings(ctx, spaceID, nil, []string{"C", "A", "B"}); err != nil {
+			t.Fatalf("ReorderSiblings(nil): %v", err)
+		}
+
+		topLevel, err := repo.ListChildren(ctx, spaceID, nil)
+		if err != nil {
+			t.Fatalf("ListChildren(nil): %v", err)
+		}
+		if got, want := ids(topLevel), []string{"C", "A", "B"}; !equalIDs(got, want) {
+			t.Fatalf("top-level after reorder = %v, want %v", got, want)
+		}
+
+		// Nested bucket positions must be untouched.
+		underB, err := repo.ListChildren(ctx, spaceID, &b)
+		if err != nil {
+			t.Fatalf("ListChildren(B): %v", err)
+		}
+		if got, want := ids(underB), []string{"B1", "B2"}; !equalIDs(got, want) {
+			t.Fatalf("under-B after reorder = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("Reparent recalculates descendant depths and normalizes both buckets", func(t *testing.T) {
+		db := setupDocsOrderingTestDB(t)
+		seedSpace(t, db)
+		ctx := context.Background()
+		repo := repository.NewDocsCollectionRepository(db)
+
+		// Two top-level roots; "mover" lives under rootA and carries one child.
+		seedTreeCollection(t, db, "rootA", spaceID, workspaceID, nil, 0, 0, "rootA")
+		seedTreeCollection(t, db, "rootB", spaceID, workspaceID, nil, 0, 1, "rootB")
+		rootA := "rootA"
+		seedTreeCollection(t, db, "mover", spaceID, workspaceID, &rootA, 1, 0, "mover")
+		seedTreeCollection(t, db, "sibling", spaceID, workspaceID, &rootA, 1, 1, "sibling")
+		mover := "mover"
+		seedTreeCollection(t, db, "moverChild", spaceID, workspaceID, &mover, 2, 0, "moverChild")
+
+		// Reparent mover from under rootA to the top of the space.
+		if err := repo.Reparent(ctx, "mover", nil); err != nil {
+			t.Fatalf("Reparent(mover -> top): %v", err)
+		}
+
+		// mover should now be at depth 0 with parent_collection_id NULL.
+		var moved model.DocsCollection
+		if err := db.WithContext(ctx).Where("id = ?", "mover").First(&moved).Error; err != nil {
+			t.Fatalf("load mover: %v", err)
+		}
+		if moved.ParentCollectionID != nil {
+			t.Fatalf("mover.ParentCollectionID = %v, want nil", moved.ParentCollectionID)
+		}
+		if moved.Depth != 0 {
+			t.Fatalf("mover.Depth = %d, want 0", moved.Depth)
+		}
+
+		// moverChild should be depth 1 now (was depth 2).
+		var movedChild model.DocsCollection
+		if err := db.WithContext(ctx).Where("id = ?", "moverChild").First(&movedChild).Error; err != nil {
+			t.Fatalf("load moverChild: %v", err)
+		}
+		if movedChild.Depth != 1 {
+			t.Fatalf("moverChild.Depth = %d, want 1", movedChild.Depth)
+		}
+		if movedChild.ParentCollectionID == nil || *movedChild.ParentCollectionID != "mover" {
+			t.Fatalf("moverChild.ParentCollectionID = %v, want mover", movedChild.ParentCollectionID)
+		}
+
+		// Old bucket (under rootA) must be normalized: sibling at position 0.
+		underA, err := repo.ListChildren(ctx, spaceID, &rootA)
+		if err != nil {
+			t.Fatalf("ListChildren(rootA): %v", err)
+		}
+		if len(underA) != 1 || underA[0].ID != "sibling" || underA[0].Position != 0 {
+			t.Fatalf("under-A after reparent = %+v, want [sibling@0]", underA)
+		}
+
+		// New bucket (top-level) must contain rootA, rootB, mover — positions 0,1,2.
+		topLevel, err := repo.ListChildren(ctx, spaceID, nil)
+		if err != nil {
+			t.Fatalf("ListChildren(nil): %v", err)
+		}
+		if got, want := ids(topLevel), []string{"rootA", "rootB", "mover"}; !equalIDs(got, want) {
+			t.Fatalf("top-level after reparent = %v, want %v", got, want)
+		}
+		for i, c := range topLevel {
+			if c.Position != i {
+				t.Fatalf("top-level[%d].Position = %d, want %d", i, c.Position, i)
+			}
+		}
+	})
+}
+
+func ids(colls []model.DocsCollection) []string {
+	out := make([]string, len(colls))
+	for i, c := range colls {
+		out[i] = c.ID
+	}
+	return out
+}
+
+func equalIDs(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
