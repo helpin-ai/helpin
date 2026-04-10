@@ -1287,6 +1287,238 @@ func TestDocsDocumentMoves_NestedCollections(t *testing.T) {
 	})
 }
 
+// TestDocsCollection_TreeDelete exercises the Task 5 safe-delete rules:
+// when a collection is deleted, its direct child collections and direct
+// articles are flattened up one level to the deleted node's parent (or
+// become top-level / uncategorized when the deleted node was top-level).
+// No descendant content is lost; all descendant depths are recalculated.
+func TestDocsCollection_TreeDelete(t *testing.T) {
+	t.Parallel()
+
+	const (
+		workspaceID = "ws-del"
+		userID      = "user-del"
+		spaceID     = "space-del"
+	)
+
+	now := time.Date(2026, 4, 10, 12, 0, 0, 0, time.UTC)
+
+	setup := func(t *testing.T) (*DocsCollectionService, *repository.DocsCollectionRepository, *repository.DocsDocumentRepository, *gorm.DB) {
+		t.Helper()
+		db := setupDocsOrderingTestDB(t)
+		collectionRepo := repository.NewDocsCollectionRepository(db)
+		spaceRepo := repository.NewDocsSpaceRepository(db)
+		docRepo := repository.NewDocsDocumentRepository(db)
+		svc := NewDocsCollectionService(collectionRepo, spaceRepo, nil)
+
+		seedDocsSpace(t, db, model.DocsSpace{
+			ID:          spaceID,
+			WorkspaceID: workspaceID,
+			Name:        "Del space",
+			Slug:        "del-space",
+			Visibility:  model.SpaceVisibilityWorkspaceWide,
+			Type:        model.SpaceTypeInternal,
+			Position:    0,
+			CreatedBy:   userID,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		})
+		return svc, collectionRepo, docRepo, db
+	}
+
+	// seedCollection inserts a raw collection row with a fixed ID so tests
+	// can refer to each node by name.
+	seedCollection := func(t *testing.T, db *gorm.DB, id string, parentID *string, depth, pos int) {
+		t.Helper()
+		seedDocsCollection(t, db, model.DocsCollection{
+			ID: id, SpaceID: spaceID, WorkspaceID: workspaceID,
+			ParentCollectionID: parentID, Depth: depth,
+			Name: id, Slug: id, Position: pos,
+			CreatedBy: userID,
+			CreatedAt: now.Add(time.Duration(pos) * time.Minute),
+			UpdatedAt: now.Add(time.Duration(pos) * time.Minute),
+		})
+	}
+
+	seedDoc := func(t *testing.T, db *gorm.DB, id string, collectionID *string, pos int) {
+		t.Helper()
+		seedDocsOrderingDocument(t, db, model.DocsDocument{
+			ID:           id,
+			WorkspaceID:  workspaceID,
+			SpaceID:      spaceID,
+			CollectionID: collectionID,
+			Title:        id,
+			Status:       model.DocStatusDraft,
+			Visibility:   model.SpaceVisibilityWorkspaceWide,
+			Position:     pos,
+			CreatedBy:    userID,
+			CreatedAt:    now.Add(time.Duration(pos) * time.Minute),
+			UpdatedAt:    now.Add(time.Duration(pos) * time.Minute),
+		})
+	}
+
+	t.Run("Delete top-level collection flattens children to top-level", func(t *testing.T) {
+		svc, collectionRepo, _, db := setup(t)
+		ctx := context.Background()
+
+		// Tree:
+		//   root (delete)
+		//    ├─ child (depth 1)
+		//    │   └─ grand (depth 2)
+		//    └─ sibling (depth 1)
+		//   other (depth 0)
+		seedCollection(t, db, "root", nil, 0, 0)
+		seedCollection(t, db, "other", nil, 0, 1)
+		root := "root"
+		seedCollection(t, db, "child", &root, 1, 0)
+		seedCollection(t, db, "sibling", &root, 1, 1)
+		child := "child"
+		seedCollection(t, db, "grand", &child, 2, 0)
+
+		if err := svc.Delete(ctx, "root"); err != nil {
+			t.Fatalf("Delete: %v", err)
+		}
+
+		// root should be soft-deleted.
+		deleted, err := collectionRepo.GetByID(ctx, "root")
+		if err != nil {
+			t.Fatalf("GetByID root: %v", err)
+		}
+		if deleted != nil {
+			t.Fatalf("root still live after delete")
+		}
+
+		// child and sibling should now be top-level (depth 0, nil parent).
+		topLevel, err := collectionRepo.ListChildren(ctx, spaceID, nil)
+		if err != nil {
+			t.Fatalf("ListChildren(nil): %v", err)
+		}
+		if want := []string{"other", "child", "sibling"}; !equalIDs(ids(topLevel), want) {
+			t.Fatalf("top-level after delete = %v, want %v", ids(topLevel), want)
+		}
+		for i, c := range topLevel {
+			if c.Position != i {
+				t.Fatalf("top-level[%d].Position = %d, want %d", i, c.Position, i)
+			}
+			if c.Depth != 0 {
+				t.Fatalf("top-level[%d].Depth = %d, want 0", i, c.Depth)
+			}
+		}
+
+		// grand should now be depth 1 (was 2), parent still child.
+		var grandRow model.DocsCollection
+		if err := db.WithContext(ctx).Where("id = ?", "grand").First(&grandRow).Error; err != nil {
+			t.Fatalf("load grand: %v", err)
+		}
+		if grandRow.Depth != 1 {
+			t.Fatalf("grand.Depth = %d, want 1", grandRow.Depth)
+		}
+		if grandRow.ParentCollectionID == nil || *grandRow.ParentCollectionID != "child" {
+			t.Fatalf("grand.ParentCollectionID = %v, want child", grandRow.ParentCollectionID)
+		}
+	})
+
+	t.Run("Delete nested collection moves direct articles to the parent", func(t *testing.T) {
+		svc, _, docRepo, db := setup(t)
+		ctx := context.Background()
+
+		// Tree:
+		//   root
+		//    └─ target (delete)
+		//         ├─ doc-a
+		//         └─ doc-b
+		//   (root already has its own doc-root)
+		seedCollection(t, db, "root", nil, 0, 0)
+		root := "root"
+		seedCollection(t, db, "target", &root, 1, 0)
+		target := "target"
+
+		seedDoc(t, db, "doc-root", &root, 0)
+		seedDoc(t, db, "doc-a", &target, 0)
+		seedDoc(t, db, "doc-b", &target, 1)
+
+		if err := svc.Delete(ctx, "target"); err != nil {
+			t.Fatalf("Delete: %v", err)
+		}
+
+		// All three docs should now live under root, positions contiguous.
+		space := spaceID
+		docs, err := docRepo.List(ctx, workspaceID, &space, &root, nil, nil, "", true)
+		if err != nil {
+			t.Fatalf("List docs under root: %v", err)
+		}
+		if len(docs) != 3 {
+			t.Fatalf("root doc bucket = %d, want 3", len(docs))
+		}
+		want := []string{"doc-root", "doc-a", "doc-b"}
+		for i, d := range docs {
+			if d.ID != want[i] {
+				t.Fatalf("doc[%d] = %s, want %s", i, d.ID, want[i])
+			}
+			if d.Position != i {
+				t.Fatalf("doc[%d].Position = %d, want %d", i, d.Position, i)
+			}
+			if d.CollectionID == nil || *d.CollectionID != "root" {
+				t.Fatalf("doc[%d].CollectionID = %v, want root", i, d.CollectionID)
+			}
+		}
+	})
+
+	t.Run("Delete preserves grandchildren depths and no content is orphaned", func(t *testing.T) {
+		svc, collectionRepo, docRepo, db := setup(t)
+		ctx := context.Background()
+
+		// Tree:
+		//   root
+		//    ├─ mid (delete)
+		//    │    ├─ leaf (depth 2)
+		//    │    └─ sub (depth 2)
+		//    └─ other-mid
+		seedCollection(t, db, "root", nil, 0, 0)
+		root := "root"
+		seedCollection(t, db, "mid", &root, 1, 0)
+		seedCollection(t, db, "other-mid", &root, 1, 1)
+		mid := "mid"
+		seedCollection(t, db, "leaf", &mid, 2, 0)
+		seedCollection(t, db, "sub", &mid, 2, 1)
+
+		seedDoc(t, db, "mid-doc", &mid, 0)
+
+		if err := svc.Delete(ctx, "mid"); err != nil {
+			t.Fatalf("Delete: %v", err)
+		}
+
+		// Children of mid should now sit under root at depth 1,
+		// appended after other-mid which was already there.
+		underRoot, err := collectionRepo.ListChildren(ctx, spaceID, &root)
+		if err != nil {
+			t.Fatalf("ListChildren(root): %v", err)
+		}
+		want := []string{"other-mid", "leaf", "sub"}
+		if !equalIDs(ids(underRoot), want) {
+			t.Fatalf("under-root after delete = %v, want %v", ids(underRoot), want)
+		}
+		for i, c := range underRoot {
+			if c.Position != i {
+				t.Fatalf("under-root[%d].Position = %d, want %d", i, c.Position, i)
+			}
+			if c.Depth != 1 {
+				t.Fatalf("under-root[%d].Depth = %d, want 1", i, c.Depth)
+			}
+		}
+
+		// mid's article should now live under root.
+		space := spaceID
+		docs, err := docRepo.List(ctx, workspaceID, &space, &root, nil, nil, "", true)
+		if err != nil {
+			t.Fatalf("List docs under root: %v", err)
+		}
+		if len(docs) != 1 || docs[0].ID != "mid-doc" {
+			t.Fatalf("root doc bucket = %+v, want [mid-doc]", docs)
+		}
+	})
+}
+
 func ids(colls []model.DocsCollection) []string {
 	out := make([]string, len(colls))
 	for i, c := range colls {

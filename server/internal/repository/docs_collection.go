@@ -81,7 +81,20 @@ func (r *DocsCollectionRepository) Update(ctx context.Context, id string, update
 	return r.GetByID(ctx, id)
 }
 
-// Delete soft-deletes a collection and uncategorizes its documents.
+// Delete soft-deletes a collection while preserving every descendant
+// collection and every direct article. Tree-aware delete rules (Task 5):
+//
+//   - Direct child collections are reparented to the deleted node's parent
+//     (or become top-level when the deleted node was top-level). Their
+//     depth is recalculated and propagated through the subtree.
+//   - Direct articles move to the deleted node's parent collection (or
+//     become uncategorized when the deleted node was top-level).
+//   - The deleted node's sibling bucket and all destination buckets are
+//     normalized at the end so positions stay contiguous.
+//
+// This preserves hierarchy continuity: deleting a middle collection
+// flattens its content up one level rather than orphaning it or pushing
+// everything into a global uncategorized bucket.
 func (r *DocsCollectionRepository) Delete(ctx context.Context, id string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var coll model.DocsCollection
@@ -92,10 +105,56 @@ func (r *DocsCollectionRepository) Delete(ctx context.Context, id string) error 
 			return fmt.Errorf("get docs collection for delete: %w", err)
 		}
 
-		if err := normalizeDocumentBucketTx(tx, coll.SpaceID, nil); err != nil {
+		destParentID := coll.ParentCollectionID
+		destDepth, err := resolveDepthForParentTx(tx, destParentID)
+		if err != nil {
 			return err
 		}
 
+		// Reparent direct child collections to the destination bucket.
+		var children []model.DocsCollection
+		if err := tx.
+			Where("parent_collection_id = ? AND deleted_at IS NULL", id).
+			Order("position ASC, created_at ASC, id ASC").
+			Find(&children).Error; err != nil {
+			return fmt.Errorf("load child collections for delete: %w", err)
+		}
+
+		// Count current occupants of the destination collection bucket
+		// INCLUDING the node we are about to delete. The deleted node is
+		// itself a member of its parent's bucket until the soft-delete
+		// lands, so counting it ensures appended children land strictly
+		// after every existing row. The final normalize step compacts
+		// the gap left by the soft-delete.
+		var destCollCount int64
+		destCollQuery := tx.Model(&model.DocsCollection{}).
+			Where("space_id = ? AND deleted_at IS NULL", coll.SpaceID)
+		if destParentID == nil {
+			destCollQuery = destCollQuery.Where("parent_collection_id IS NULL")
+		} else {
+			destCollQuery = destCollQuery.Where("parent_collection_id = ?", *destParentID)
+		}
+		if err := destCollQuery.Count(&destCollCount).Error; err != nil {
+			return fmt.Errorf("count destination collection bucket: %w", err)
+		}
+
+		for i, child := range children {
+			updates := map[string]interface{}{
+				"parent_collection_id": destParentID,
+				"depth":                destDepth,
+				"position":             int(destCollCount) + i,
+			}
+			if err := tx.Model(&model.DocsCollection{}).
+				Where("id = ? AND deleted_at IS NULL", child.ID).
+				Updates(updates).Error; err != nil {
+				return fmt.Errorf("reparent child collection %s: %w", child.ID, err)
+			}
+			if err := recalculateDescendantDepthsTx(tx, child.ID, destDepth); err != nil {
+				return err
+			}
+		}
+
+		// Move direct articles to the destination article bucket.
 		var docs []model.DocsDocument
 		if err := tx.
 			Where("collection_id = ? AND deleted_at IS NULL", id).
@@ -104,36 +163,47 @@ func (r *DocsCollectionRepository) Delete(ctx context.Context, id string) error 
 			return fmt.Errorf("list docs in collection for delete: %w", err)
 		}
 
-		var existingUncategorizedCount int64
-		if err := tx.Model(&model.DocsDocument{}).
-			Where("space_id = ? AND collection_id IS NULL AND deleted_at IS NULL", coll.SpaceID).
-			Count(&existingUncategorizedCount).Error; err != nil {
-			return fmt.Errorf("count uncategorized docs: %w", err)
+		var destDocCount int64
+		destDocQuery := tx.Model(&model.DocsDocument{}).
+			Where("space_id = ? AND deleted_at IS NULL", coll.SpaceID)
+		if destParentID == nil {
+			destDocQuery = destDocQuery.Where("collection_id IS NULL")
+		} else {
+			destDocQuery = destDocQuery.Where("collection_id = ?", *destParentID)
+		}
+		if err := destDocQuery.Count(&destDocCount).Error; err != nil {
+			return fmt.Errorf("count destination document bucket: %w", err)
 		}
 
 		for i, doc := range docs {
 			updates := map[string]interface{}{
-				"collection_id": nil,
-				"position":      int(existingUncategorizedCount) + i,
+				"collection_id": destParentID,
+				"position":      int(destDocCount) + i,
 			}
 			if err := tx.Model(&model.DocsDocument{}).
 				Where("id = ? AND deleted_at IS NULL", doc.ID).
 				Updates(updates).Error; err != nil {
-				return fmt.Errorf("move doc %s to uncategorized: %w", doc.ID, err)
+				return fmt.Errorf("move doc %s to destination bucket: %w", doc.ID, err)
 			}
 		}
 
+		// Soft-delete the collection itself.
 		if err := tx.Model(&model.DocsCollection{}).
 			Where("id = ? AND deleted_at IS NULL", id).
 			Update("deleted_at", time.Now().UTC()).Error; err != nil {
 			return fmt.Errorf("delete docs collection: %w", err)
 		}
 
-		if err := normalizeCollectionPositionsTx(tx, coll.SpaceID); err != nil {
+		// Normalize affected buckets. The collection's old sibling bucket
+		// is the same as the destination bucket because the children were
+		// flattened up one level. A single normalize call is enough for
+		// the collection side. The document side mirrors this — the
+		// deleted node's doc bucket no longer exists, and its articles
+		// now live in destParentID's article bucket.
+		if err := normalizeBucketTx(tx, coll.SpaceID, destParentID); err != nil {
 			return err
 		}
-
-		return normalizeDocumentBucketTx(tx, coll.SpaceID, nil)
+		return normalizeDocumentBucketTx(tx, coll.SpaceID, destParentID)
 	})
 }
 
@@ -482,9 +552,3 @@ func normalizeAllBucketsInSpaceTx(tx *gorm.DB, spaceID string) error {
 	return nil
 }
 
-// normalizeCollectionPositionsTx is kept for backwards compatibility with
-// existing call sites that predate the tree refactor. It now normalizes
-// every sibling bucket in the space rather than a single flat list.
-func normalizeCollectionPositionsTx(tx *gorm.DB, spaceID string) error {
-	return normalizeAllBucketsInSpaceTx(tx, spaceID)
-}
