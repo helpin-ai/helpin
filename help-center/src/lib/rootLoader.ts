@@ -5,10 +5,12 @@ import {
   spacesQueryOptions,
 } from '@/hooks/queries'
 import { isMultilingualEnabled, resolveActiveLocale } from '@/lib/locale'
+import { stripBasepath } from '@/lib/pathUtils'
 import { getHelpCenterRequestContext } from '@/lib/requestContext'
 
 export interface RootRouteData {
   activeLocale: string
+  basepath: string
   config: HelpCenterConfig
   host: string
   multilingualEnabled: boolean
@@ -31,7 +33,8 @@ export async function loadRootRouteData(
     helpCenterConfigQueryOptions(requestContext.subdomain),
   )
 
-  const firstSegment = getPrimaryPathSegment(pathname)
+  const normalizedPathname = stripBasepath(pathname, requestContext.basepath)
+  const firstSegment = getPrimaryPathSegment(normalizedPathname)
   const activeLocale = resolveActiveLocale({
     paramsLocale: firstSegment,
     paramsSpaceSlug: firstSegment,
@@ -49,6 +52,7 @@ export async function loadRootRouteData(
 
   return {
     activeLocale,
+    basepath: requestContext.basepath,
     config,
     host: requestContext.host,
     multilingualEnabled,

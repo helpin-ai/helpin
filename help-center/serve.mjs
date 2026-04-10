@@ -412,6 +412,8 @@ async function handleRequest(request, response) {
     basepath: resolved.basepath,
   }
   const internalPath = stripBasepath(url.pathname, hcContext.basepath)
+  const routeUrl = new URL(url)
+  routeUrl.pathname = internalPath
 
   await requestContextStorage.run(hcContext, async () => {
     if (internalPath === '/robots.txt') {
@@ -424,18 +426,18 @@ async function handleRequest(request, response) {
       return
     }
 
-    if (tryServeStatic(url, response)) {
+    if (tryServeStatic(routeUrl, response)) {
       return
     }
 
-    if (isApiRequest(url)) {
-      await proxyApiRequest(request, response, url)
+    if (isApiRequest(routeUrl)) {
+      await proxyApiRequest(request, response, routeUrl)
       return
     }
 
     const cacheKey = getCacheKey(url, request)
 
-    if (isHtmlRequest(request, url)) {
+    if (isHtmlRequest(request, routeUrl)) {
       const cached = getCachedResponse(cacheKey)
       if (cached) {
         writeCachedResponse(response, cached)
@@ -451,7 +453,7 @@ async function handleRequest(request, response) {
       headers.set(name, normalizeHeaderValue(value))
     }
 
-    const fetchRequest = new Request(url, {
+    const fetchRequest = new Request(routeUrl, {
       method: request.method,
       headers,
       body: shouldReadBody(request.method || 'GET') ? Readable.toWeb(request) : undefined,
@@ -461,7 +463,7 @@ async function handleRequest(request, response) {
     const fetchResponse = await serverEntry.fetch(fetchRequest)
     const responseType = fetchResponse.headers.get('content-type') || ''
 
-    if (isHtmlRequest(request, url) && responseType.includes('text/html') && fetchResponse.ok) {
+    if (isHtmlRequest(request, routeUrl) && responseType.includes('text/html') && fetchResponse.ok) {
       const body = await fetchResponse.text()
       const headersToCache = Array.from(fetchResponse.headers.entries())
       setCachedResponse(cacheKey, {
@@ -479,7 +481,7 @@ async function handleRequest(request, response) {
       return
     }
 
-    await writeFetchResponse(response, fetchResponse, url)
+    await writeFetchResponse(response, fetchResponse, routeUrl)
   })
 }
 

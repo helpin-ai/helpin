@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link } from '@tanstack/react-router'
 import { ArrowRight, Menu } from 'lucide-react'
+import { DocsLink } from '@/components/DocsLink'
 import { useCollection, useSpaceNavigation } from '@/hooks/queries'
 import { useDocsContext } from '@/contexts/DocsContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { buildCanonicalArticlePath, buildCanonicalCollectionPath } from '@/lib/locale'
+import { prefixBasepath } from '@/lib/pathUtils'
 import { LoadingState } from '@/components/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
 import { Sidebar } from '@/components/layout/Sidebar'
@@ -21,7 +22,7 @@ export function CollectionRouteView({
   collectionOrSpaceSlug,
   multilingualEnabled,
 }: CollectionRouteViewProps) {
-  const { subdomain, spaces } = useDocsContext()
+  const { subdomain, spaces, basepath } = useDocsContext()
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const closeMobileNav = useCallback(() => setMobileNavOpen(false), [])
   const matchingSpace = spaces.find((space) => space.slug === collectionOrSpaceSlug)
@@ -60,9 +61,13 @@ export function CollectionRouteView({
     }
 
     window.location.replace(
-      buildCanonicalCollectionPath(multilingualEnabled, locale, firstCollection.slug),
+      prefixBasepath(
+        basepath,
+        buildCanonicalCollectionPath(multilingualEnabled, locale, firstCollection.slug),
+      ),
     )
   }, [
+    basepath,
     collection,
     collectionLoading,
     locale,
@@ -182,7 +187,7 @@ export function CollectionRouteView({
           ) : (
             <div className="mt-8 space-y-3">
               {articles.map((article) => (
-                <Link
+                <DocsLink
                   key={article.id}
                   to={buildCanonicalArticlePath(
                     multilingualEnabled,
@@ -201,7 +206,7 @@ export function CollectionRouteView({
                     size={16}
                     className="shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
                   />
-                </Link>
+                </DocsLink>
               ))}
             </div>
           )}
