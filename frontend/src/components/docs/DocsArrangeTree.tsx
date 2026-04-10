@@ -14,7 +14,7 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { ArrowRight01Icon, File01Icon, Folder01Icon, DragDropVerticalIcon } from '@/lib/icons'
+import { ArrowRight01Icon, File01Icon, Folder01Icon, DragDropVerticalIcon, PlusSignIcon } from '@/lib/icons'
 import { timeAgo } from '@/lib/utils'
 import { DOC_STATUS_LABELS } from '@/lib/docsTypes'
 import { ICON_MAP, StoredIcon } from '@/components/ui/icon-picker'
@@ -29,6 +29,11 @@ import {
 import { toast } from 'sonner'
 import type { DocsSpace, DocsDocument, SpaceType } from '@/lib/docsTypes'
 import { buildCollectionTree, type CollectionTreeNode } from './docsCollectionTree'
+import { CreateCollectionDialog } from './CreateCollectionDialog'
+
+// Must match maxCollectionDepth in server/internal/service/docs_collection.go.
+// Collections at this depth cannot host any more children.
+const MAX_COLLECTION_DEPTH = 2
 
 // ── Sortable item wrapper ───────────────────────────────────────────────────
 
@@ -91,11 +96,18 @@ function ArrangeCollectionChildren({
   children,
   spaceId,
   wsId,
+  onAddSubCollection,
 }: {
   parentCollectionId: string | null
   children: CollectionTreeNode[]
   spaceId: string
   wsId: string
+  /**
+   * Called when the user clicks "Add sub-collection" on one of the
+   * rendered collection rows. The parent component (ArrangeSpace)
+   * uses it to open the create dialog with the parent preselected.
+   */
+  onAddSubCollection: (parentId: string) => void
 }) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
   const reorderColls = useReorderDocsCollections(wsId)
@@ -139,7 +151,12 @@ function ArrangeCollectionChildren({
       <SortableContext items={ordered.map((n) => n.collection.id)} strategy={verticalListSortingStrategy}>
         {ordered.map((node) => (
           <SortableItem key={node.collection.id} id={node.collection.id}>
-            <ArrangeCollectionNode node={node} spaceId={spaceId} wsId={wsId} />
+            <ArrangeCollectionNode
+              node={node}
+              spaceId={spaceId}
+              wsId={wsId}
+              onAddSubCollection={onAddSubCollection}
+            />
           </SortableItem>
         ))}
       </SortableContext>
@@ -158,16 +175,22 @@ function ArrangeCollectionNode({
   node,
   spaceId,
   wsId,
+  onAddSubCollection,
 }: {
   node: CollectionTreeNode
   spaceId: string
   wsId: string
+  onAddSubCollection: (parentId: string) => void
 }) {
   const [open, setOpen] = useState(true)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
   const reorderDocs = useReorderDocsDocuments(wsId)
   const [localDocs, setLocalDocs] = useState<DocsDocument[] | null>(null)
   const displayDocs = localDocs ?? node.documents
+  // Collections at the maximum allowed depth cannot host children —
+  // the backend would reject a depth=3 create. Hide the action
+  // button entirely so the UI doesn't offer something that will fail.
+  const canHostChildren = node.collection.depth < MAX_COLLECTION_DEPTH
 
   const handleDocDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
@@ -203,26 +226,42 @@ function ArrangeCollectionNode({
 
   return (
     <Collapsible.Root open={open} onOpenChange={setOpen}>
-      <Collapsible.Trigger asChild>
-        <button
-          type="button"
-          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-foreground/70 hover:bg-muted/40"
-        >
-          <ArrowRight01Icon className={`h-3.5 w-3.5 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`} />
-          <CollIcon className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate">{node.collection.name}</span>
-          {displayDocs.length > 0 && (
-            <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums text-muted-foreground">
-              {displayDocs.length} {displayDocs.length === 1 ? 'doc' : 'docs'}
-            </span>
-          )}
-          {totalChildren > 0 && (
-            <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums text-muted-foreground">
-              {totalChildren} sub
-            </span>
-          )}
-        </button>
-      </Collapsible.Trigger>
+      <div className="group/arrange-node flex w-full items-center gap-1">
+        <Collapsible.Trigger asChild>
+          <button
+            type="button"
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-foreground/70 hover:bg-muted/40"
+          >
+            <ArrowRight01Icon className={`h-3.5 w-3.5 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`} />
+            <CollIcon className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">{node.collection.name}</span>
+            {displayDocs.length > 0 && (
+              <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums text-muted-foreground">
+                {displayDocs.length} {displayDocs.length === 1 ? 'doc' : 'docs'}
+              </span>
+            )}
+            {totalChildren > 0 && (
+              <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums text-muted-foreground">
+                {totalChildren} sub
+              </span>
+            )}
+          </button>
+        </Collapsible.Trigger>
+        {canHostChildren && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onAddSubCollection(node.collection.id)
+            }}
+            className="shrink-0 rounded-md p-1.5 text-muted-foreground/70 opacity-0 transition-opacity hover:bg-muted/60 hover:text-foreground group-hover/arrange-node:opacity-100 focus:opacity-100"
+            aria-label={`Add sub-collection under ${node.collection.name}`}
+            title="Add sub-collection"
+          >
+            <PlusSignIcon className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
       <Collapsible.Content>
         <div className="ml-4 border-l border-border/50 pl-1">
           {/* Nested child collections first — they act as container nodes. */}
@@ -232,6 +271,7 @@ function ArrangeCollectionNode({
               children={node.children}
               spaceId={spaceId}
               wsId={wsId}
+              onAddSubCollection={onAddSubCollection}
             />
           )}
           {/* Then direct articles of this collection. */}
@@ -339,6 +379,11 @@ function ArrangeSpace({
   const [expanded, setExpanded] = useState(false)
   const { data: collections } = useDocsCollections(wsId, space.id)
   const { data: documents } = useDocsDocuments(wsId, { space_id: space.id })
+  // Dialog state for the "Add sub-collection" action. When a user
+  // clicks the + button on an ArrangeCollectionNode, we stash the
+  // parent id here and open the create dialog. A null parent means
+  // the dialog is closed.
+  const [addSubParentId, setAddSubParentId] = useState<string | null>(null)
 
   // Fold the flat (collections, documents) response into a tree rooted
   // at this space. Memoised on the two query results so rerenders from
@@ -396,6 +441,7 @@ function ArrangeSpace({
               children={tree.topLevel}
               spaceId={space.id}
               wsId={wsId}
+              onAddSubCollection={setAddSubParentId}
             />
           )}
           {/* Uncategorized articles bucket sits alongside top-level
@@ -407,6 +453,15 @@ function ArrangeSpace({
           />
         </div>
       </Collapsible.Content>
+      <CreateCollectionDialog
+        wsId={wsId}
+        spaceId={space.id}
+        open={addSubParentId !== null}
+        onOpenChange={(open) => {
+          if (!open) setAddSubParentId(null)
+        }}
+        defaultParentCollectionId={addSubParentId}
+      />
     </Collapsible.Root>
   )
 }

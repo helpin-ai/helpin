@@ -21,7 +21,13 @@ import {
 } from '@/components/ui/select'
 import { IconPicker } from '@/components/ui/icon-picker'
 import { StoredIcon } from '@/components/ui/icon-picker'
-import { useCreateDocsCollection, useDocsSpaces, useUpdateDocsCollection } from '@/hooks/queries'
+import { CollectionTreePicker } from '@/components/docs/CollectionTreePicker'
+import {
+  useCreateDocsCollection,
+  useDocsCollections,
+  useDocsSpaces,
+  useUpdateDocsCollection,
+} from '@/hooks/queries'
 import type { DocsCollection } from '@/lib/docsTypes'
 import { toast } from 'sonner'
 
@@ -31,6 +37,13 @@ interface CreateCollectionDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   collection?: DocsCollection | null
+  /**
+   * When provided, the dialog opens with this collection preselected
+   * as the parent so the new row lands as a sub-collection. Callers
+   * like the Arrange tree's "Add sub-collection" button pass the
+   * parent collection's id here.
+   */
+  defaultParentCollectionId?: string | null
 }
 
 export function CreateCollectionDialog({
@@ -39,12 +52,14 @@ export function CreateCollectionDialog({
   open,
   onOpenChange,
   collection,
+  defaultParentCollectionId,
 }: CreateCollectionDialogProps) {
   const isEdit = !!collection
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [icon, setIcon] = useState('')
   const [selectedSpaceId, setSelectedSpaceId] = useState(defaultSpaceId ?? '')
+  const [parentCollectionId, setParentCollectionId] = useState<string | null>(null)
 
   const { data: spaces } = useDocsSpaces(wsId)
 
@@ -56,6 +71,7 @@ export function CreateCollectionDialog({
       setDescription(collection.description ?? '')
       setIcon(collection.icon ?? '')
       setSelectedSpaceId(collection.space_id)
+      setParentCollectionId(collection.parent_collection_id ?? null)
       return
     }
 
@@ -63,7 +79,8 @@ export function CreateCollectionDialog({
     setDescription('')
     setIcon('folder')
     setSelectedSpaceId(defaultSpaceId ?? (spaces?.[0]?.id ?? ''))
-  }, [open, collection, defaultSpaceId, spaces])
+    setParentCollectionId(defaultParentCollectionId ?? null)
+  }, [open, collection, defaultSpaceId, defaultParentCollectionId, spaces])
 
   useEffect(() => {
     if (!open || collection || selectedSpaceId || !spaces?.length) return
@@ -75,11 +92,23 @@ export function CreateCollectionDialog({
   const createCollection = useCreateDocsCollection(wsId, effectiveSpaceId)
   const updateCollection = useUpdateDocsCollection(wsId)
 
+  // Load the collection list for the selected space so the parent
+  // picker can show the tree the user is adding to. The hook is safe
+  // to call with an empty spaceId (it just returns nothing).
+  const { data: spaceCollections } = useDocsCollections(wsId, effectiveSpaceId)
+  // Remove the collection being edited from the parent choices so a
+  // user cannot accidentally reparent it under itself from the edit
+  // dialog. The service layer also rejects this case.
+  const parentCandidates = (spaceCollections ?? []).filter(
+    (c) => !collection || c.id !== collection.id,
+  )
+
   const reset = () => {
     setName('')
     setDescription('')
     setIcon('folder')
     setSelectedSpaceId(defaultSpaceId ?? (spaces?.[0]?.id ?? ''))
+    setParentCollectionId(null)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -88,12 +117,20 @@ export function CreateCollectionDialog({
 
     try {
       if (isEdit && collection) {
+        // Only send parent_collection_id when it actually changed.
+        // The empty-string sentinel means "move to top-level"; nil
+        // means leave the parent alone. Matching values short-circuit.
+        let parentUpdate: string | null | undefined = undefined
+        if (parentCollectionId !== (collection.parent_collection_id ?? null)) {
+          parentUpdate = parentCollectionId ?? ''
+        }
         await updateCollection.mutateAsync({
           id: collection.id,
           spaceId: collection.space_id,
           name: name.trim(),
           description: description.trim(),
           icon: icon.trim(),
+          ...(parentUpdate !== undefined ? { parent_collection_id: parentUpdate } : {}),
         })
         toast.success('Collection updated')
       } else {
@@ -101,6 +138,7 @@ export function CreateCollectionDialog({
           name: name.trim(),
           description: description.trim() || undefined,
           icon: icon.trim() || undefined,
+          parent_collection_id: parentCollectionId ?? undefined,
         })
         toast.success('Collection created')
       }
@@ -191,6 +229,22 @@ export function CreateCollectionDialog({
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            )}
+
+            {effectiveSpaceId && (
+              <div className="grid gap-2">
+                <Label>Parent collection</Label>
+                <CollectionTreePicker
+                  collections={parentCandidates}
+                  spaceId={effectiveSpaceId}
+                  value={parentCollectionId}
+                  onChange={setParentCollectionId}
+                  noneLabel="None (top-level)"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Pick an existing collection to make this a sub-collection. Max 3 levels.
+                </p>
               </div>
             )}
           </div>
