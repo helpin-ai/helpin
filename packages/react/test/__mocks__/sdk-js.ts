@@ -42,6 +42,10 @@ export type UserProps = {
 
 export type EventPayload = Record<string, any>;
 
+export type LeadProps = EventPayload & {
+  email: string;
+};
+
 export type ClientProperties = Record<string, any>;
 
 export function helpinClient(config: Partial<HelpinOptions>): HelpinClient | null {

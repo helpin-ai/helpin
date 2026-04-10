@@ -1,12 +1,12 @@
 import { useCallback, useContext } from 'react';
 import HelpinContext from './HelpinContext';
-import { EventPayload, UserProps } from '@helpin-ai/sdk-js';
+import { EventPayload, LeadProps, UserProps } from '@helpin-ai/sdk-js';
 
 export type HelpinClient = {
   trackPageView: () => void;
   id: (userData: UserProps, doNotSendEvent?: boolean) => Promise<void>;
   track: (typeName: string, payload?: EventPayload) => void;
-  lead: (payload: EventPayload, directSend?: boolean) => void;
+  lead: (payload: LeadProps, directSend?: boolean) => void;
   show: () => void;
   hide: () => void;
   open: () => void;
@@ -82,7 +82,7 @@ function useHelpin(): HelpinClient {
   );
 
   const lead = useCallback(
-    (payload: EventPayload, directSend?: boolean): void =>
+    (payload: LeadProps, directSend?: boolean): void =>
       client?.lead(payload, directSend),
     [client],
   );
