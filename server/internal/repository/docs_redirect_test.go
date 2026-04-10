@@ -36,6 +36,11 @@ func setupDocsRedirectTestDB(t *testing.T) *gorm.DB {
 	if err := db.Exec(stmt).Error; err != nil {
 		t.Fatalf("create docs_redirects table: %v", err)
 	}
+	// Mirror the production (workspace_id, source_path) unique index so
+	// OnConflict clauses resolve identically in test and prod.
+	if err := db.Exec(`CREATE UNIQUE INDEX idx_docs_redirects_ws_source ON docs_redirects (workspace_id, source_path)`).Error; err != nil {
+		t.Fatalf("create unique index on docs_redirects: %v", err)
+	}
 
 	for _, extra := range []string{
 		`CREATE TABLE docs_collections (
@@ -241,4 +246,162 @@ func TestDocsRedirectRepository_ListRepairsBlankCollectionSlugAfterPathWasAlread
 
 func docsRedirectStringPtr(value string) *string {
 	return &value
+}
+
+// TestDocsRedirectRepository_UpsertWithReconciliation verifies the new
+// Task 7 helper: it upserts on (workspace_id, source_path), breaks any
+// chain where the new target was itself a redirect source, and is a
+// no-op for self-referential requests.
+func TestDocsRedirectRepository_UpsertWithReconciliation(t *testing.T) {
+	t.Parallel()
+
+	t.Run("initial insert creates the row", func(t *testing.T) {
+		db := setupDocsRedirectTestDB(t)
+		repo := NewDocsRedirectRepository(db)
+		ctx := context.Background()
+
+		slug := "start-here"
+		err := repo.UpsertWithReconciliation(ctx, &model.DocsRedirect{
+			WorkspaceID:          "ws-1",
+			SourcePath:           "/old-coll/start-here",
+			TargetCollectionSlug: "new-coll",
+			TargetArticleSlug:    &slug,
+			Type:                 model.RedirectTypeAutoArticleMove,
+		})
+		if err != nil {
+			t.Fatalf("upsert: %v", err)
+		}
+		got, err := repo.GetBySourcePath(ctx, "ws-1", "/old-coll/start-here")
+		if err != nil {
+			t.Fatalf("get by source path: %v", err)
+		}
+		if got == nil {
+			t.Fatalf("redirect not found after upsert")
+		}
+		if got.TargetCollectionSlug != "new-coll" {
+			t.Fatalf("target collection slug = %q, want new-coll", got.TargetCollectionSlug)
+		}
+		if got.Type != model.RedirectTypeAutoArticleMove {
+			t.Fatalf("type = %q, want auto_article_move", got.Type)
+		}
+	})
+
+	t.Run("second upsert on same source replaces target", func(t *testing.T) {
+		db := setupDocsRedirectTestDB(t)
+		repo := NewDocsRedirectRepository(db)
+		ctx := context.Background()
+
+		slug := "start-here"
+		must := func(err error) {
+			if err != nil {
+				t.Fatalf("upsert: %v", err)
+			}
+		}
+		must(repo.UpsertWithReconciliation(ctx, &model.DocsRedirect{
+			WorkspaceID:          "ws-1",
+			SourcePath:           "/old-coll/start-here",
+			TargetCollectionSlug: "new-coll",
+			TargetArticleSlug:    &slug,
+			Type:                 model.RedirectTypeAutoArticleMove,
+		}))
+		must(repo.UpsertWithReconciliation(ctx, &model.DocsRedirect{
+			WorkspaceID:          "ws-1",
+			SourcePath:           "/old-coll/start-here",
+			TargetCollectionSlug: "newer-coll",
+			TargetArticleSlug:    &slug,
+			Type:                 model.RedirectTypeAutoArticleMove,
+		}))
+
+		got, err := repo.GetBySourcePath(ctx, "ws-1", "/old-coll/start-here")
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		if got == nil || got.TargetCollectionSlug != "newer-coll" {
+			t.Fatalf("second upsert did not replace target: %+v", got)
+		}
+	})
+
+	t.Run("A -> B -> A move leaves no cycle", func(t *testing.T) {
+		db := setupDocsRedirectTestDB(t)
+		repo := NewDocsRedirectRepository(db)
+		ctx := context.Background()
+
+		slug := "start-here"
+		// Step 1: article moves from A to B. Emit /A/start-here -> /B/start-here.
+		if err := repo.UpsertWithReconciliation(ctx, &model.DocsRedirect{
+			WorkspaceID:          "ws-1",
+			SourcePath:           "/A/start-here",
+			TargetCollectionSlug: "B",
+			TargetArticleSlug:    &slug,
+			Type:                 model.RedirectTypeAutoArticleMove,
+		}); err != nil {
+			t.Fatalf("first move upsert: %v", err)
+		}
+
+		// Step 2: article moves back from B to A. Emit /B/start-here -> /A/start-here.
+		// This must also DELETE the now-stale /A/start-here row because
+		// /A/start-here is the new canonical path.
+		if err := repo.UpsertWithReconciliation(ctx, &model.DocsRedirect{
+			WorkspaceID:          "ws-1",
+			SourcePath:           "/B/start-here",
+			TargetCollectionSlug: "A",
+			TargetArticleSlug:    &slug,
+			Type:                 model.RedirectTypeAutoArticleMove,
+		}); err != nil {
+			t.Fatalf("second move upsert: %v", err)
+		}
+
+		// The old /A/start-here redirect must be gone — otherwise resolving
+		// /A/start-here would chain through /B/start-here -> /A/start-here
+		// which is the cycle we reconciled.
+		old, err := repo.GetBySourcePath(ctx, "ws-1", "/A/start-here")
+		if err != nil {
+			t.Fatalf("get A: %v", err)
+		}
+		if old != nil {
+			t.Fatalf("stale A redirect still present: %+v", old)
+		}
+
+		// The B redirect should point back to A.
+		back, err := repo.GetBySourcePath(ctx, "ws-1", "/B/start-here")
+		if err != nil {
+			t.Fatalf("get B: %v", err)
+		}
+		if back == nil || back.TargetCollectionSlug != "A" {
+			t.Fatalf("expected /B/start-here -> A, got %+v", back)
+		}
+
+		// Only one row should remain workspace-wide.
+		var count int64
+		if err := db.Model(&model.DocsRedirect{}).Where("workspace_id = ?", "ws-1").Count(&count).Error; err != nil {
+			t.Fatalf("count: %v", err)
+		}
+		if count != 1 {
+			t.Fatalf("redirect row count = %d, want 1", count)
+		}
+	})
+
+	t.Run("self-referential redirect is a no-op", func(t *testing.T) {
+		db := setupDocsRedirectTestDB(t)
+		repo := NewDocsRedirectRepository(db)
+		ctx := context.Background()
+
+		slug := "start-here"
+		if err := repo.UpsertWithReconciliation(ctx, &model.DocsRedirect{
+			WorkspaceID:          "ws-1",
+			SourcePath:           "/A/start-here",
+			TargetCollectionSlug: "A",
+			TargetArticleSlug:    &slug,
+			Type:                 model.RedirectTypeAutoArticleMove,
+		}); err != nil {
+			t.Fatalf("self upsert: %v", err)
+		}
+		var count int64
+		if err := db.Model(&model.DocsRedirect{}).Where("workspace_id = ?", "ws-1").Count(&count).Error; err != nil {
+			t.Fatalf("count: %v", err)
+		}
+		if count != 0 {
+			t.Fatalf("self redirect was stored, count = %d", count)
+		}
+	})
 }

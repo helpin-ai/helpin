@@ -224,6 +224,73 @@ func (r *DocsRedirectRepository) Create(ctx context.Context, redirect *model.Doc
 	return nil
 }
 
+// UpsertWithReconciliation inserts or replaces a redirect while breaking
+// any cycle it would create.
+//
+// Before inserting, any existing redirect whose source path equals the
+// new target path is deleted. This ensures an A -> B -> A move does not
+// leave a stale chain: the old "A is a redirect to B" row is removed the
+// moment "B is a redirect to A" is written. After the delete the new
+// redirect is upserted on (workspace_id, source_path) so re-running the
+// same move is idempotent.
+//
+// If the computed source and target paths are identical the call is a
+// no-op (a redirect to itself is never a useful row and always breaks
+// invariants).
+func (r *DocsRedirectRepository) UpsertWithReconciliation(ctx context.Context, redirect *model.DocsRedirect) error {
+	normalizeDocsRedirectRecord(redirect)
+	targetPath := buildRedirectTargetPath(redirect.TargetCollectionSlug, redirect.TargetArticleSlug)
+	if redirect.SourcePath == "" || targetPath == "" {
+		return fmt.Errorf("redirect source and target paths are required")
+	}
+	if redirect.SourcePath == targetPath {
+		// No-op: pointing a path at itself would loop forever.
+		return nil
+	}
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Break any existing chain where the new target is currently a
+		// redirect source. Those rows reference a path that is now
+		// canonical again and must not keep redirecting elsewhere.
+		if err := tx.
+			Where("workspace_id = ? AND source_path = ?", redirect.WorkspaceID, targetPath).
+			Delete(&model.DocsRedirect{}).Error; err != nil {
+			return fmt.Errorf("delete stale redirect at target: %w", err)
+		}
+		// Upsert on (workspace_id, source_path). If a redirect already
+		// exists at this source path, replace its target + type so a
+		// second move from the same origin overwrites the first.
+		return tx.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "workspace_id"}, {Name: "source_path"}},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"target_collection_slug",
+				"target_article_slug",
+				"type",
+			}),
+		}).Create(redirect).Error
+	})
+}
+
+// buildRedirectTargetPath mirrors buildDocsRedirectPath from the service
+// layer but lives in the repo to avoid a dependency cycle. Both produce
+// canonical public help-center paths from (collectionSlug, articleSlug).
+func buildRedirectTargetPath(collectionSlug string, articleSlug *string) string {
+	collection := collectionSlug
+	article := ""
+	if articleSlug != nil {
+		article = *articleSlug
+	}
+	switch {
+	case collection != "" && article != "":
+		return "/" + collection + "/" + article
+	case collection != "":
+		return "/" + collection
+	case article != "":
+		return "/" + article
+	default:
+		return ""
+	}
+}
+
 // BulkCreate inserts multiple redirect records, skipping duplicates on
 // (workspace_id, source_path) conflicts.
 func (r *DocsRedirectRepository) BulkCreate(ctx context.Context, redirects []model.DocsRedirect) error {

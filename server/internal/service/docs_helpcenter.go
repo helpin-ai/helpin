@@ -724,24 +724,9 @@ func (s *DocsHelpcenterService) createSourceArticleRedirect(ctx context.Context,
 	if s.redirectRepo == nil || oldSlug == "" || oldSlug == newSlug {
 		return nil
 	}
-	collectionSlug := ""
-	if doc.CollectionID != nil {
-		collection, err := s.collectionRepo.GetByID(ctx, *doc.CollectionID)
-		if err != nil {
-			return err
-		}
-		if collection != nil {
-			collectionSlug = strings.TrimSpace(collection.Slug)
-			if collectionSlug == "" {
-				collectionSlug = slugify(collection.Name)
-				if collectionSlug == "" {
-					return fmt.Errorf("collection slug is missing")
-				}
-				if _, err := s.collectionRepo.Update(ctx, collection.ID, map[string]interface{}{"slug": collectionSlug}); err != nil {
-					return fmt.Errorf("backfill collection slug for redirect: %w", err)
-				}
-			}
-		}
+	collectionSlug, err := s.ensureCollectionSlugForRedirect(ctx, doc.CollectionID)
+	if err != nil {
+		return err
 	}
 	redirect := &model.DocsRedirect{
 		WorkspaceID:          doc.WorkspaceID,
@@ -750,7 +735,194 @@ func (s *DocsHelpcenterService) createSourceArticleRedirect(ctx context.Context,
 		TargetArticleSlug:    &newSlug,
 		Type:                 model.RedirectTypeSlugChange,
 	}
-	return s.redirectRepo.Create(ctx, redirect)
+	return s.redirectRepo.UpsertWithReconciliation(ctx, redirect)
+}
+
+// ensureCollectionSlugForRedirect returns the canonical slug of the
+// collection referenced by id, back-filling the slug from the collection
+// name when the row predates the slug-hardening migration. Returns an
+// empty string when id is nil (article lives in the uncategorized bucket).
+func (s *DocsHelpcenterService) ensureCollectionSlugForRedirect(ctx context.Context, collectionID *string) (string, error) {
+	if collectionID == nil {
+		return "", nil
+	}
+	collection, err := s.collectionRepo.GetByID(ctx, *collectionID)
+	if err != nil {
+		return "", err
+	}
+	if collection == nil {
+		return "", nil
+	}
+	slug := strings.TrimSpace(collection.Slug)
+	if slug != "" {
+		return slug, nil
+	}
+	slug = slugify(collection.Name)
+	if slug == "" {
+		return "", fmt.Errorf("collection slug is missing")
+	}
+	if _, err := s.collectionRepo.Update(ctx, collection.ID, map[string]interface{}{"slug": slug}); err != nil {
+		return "", fmt.Errorf("backfill collection slug for redirect: %w", err)
+	}
+	return slug, nil
+}
+
+// EmitArticleMoveRedirect writes an auto_article_move redirect when a
+// document has moved to a different collection. The redirect maps the
+// old canonical public path to the new one. Cycles are broken by the
+// repository's UpsertWithReconciliation helper, so repeated back-and-
+// forth moves collapse instead of chaining.
+//
+// It is safe to call this with an unchanged collection, a missing
+// article, or a document that has no help center presence — in those
+// cases the method is a no-op.
+func (s *DocsHelpcenterService) EmitArticleMoveRedirect(ctx context.Context, doc *model.DocsDocument, oldCollectionID *string) error {
+	if s.redirectRepo == nil || doc == nil {
+		return nil
+	}
+	if sameCollectionPointer(oldCollectionID, doc.CollectionID) {
+		return nil
+	}
+	art, err := s.hcRepo.GetArticle(ctx, doc.ID)
+	if err != nil {
+		return err
+	}
+	if art == nil || art.Slug == "" || art.PublicPublishedAt == nil {
+		return nil
+	}
+
+	oldCollectionSlug, err := s.ensureCollectionSlugForRedirect(ctx, oldCollectionID)
+	if err != nil {
+		return err
+	}
+	newCollectionSlug, err := s.ensureCollectionSlugForRedirect(ctx, doc.CollectionID)
+	if err != nil {
+		return err
+	}
+	slug := art.Slug
+	oldPath := buildDocsRedirectPath(oldCollectionSlug, &slug)
+	newPath := buildDocsRedirectPath(newCollectionSlug, &slug)
+	if oldPath == newPath {
+		return nil
+	}
+	redirect := &model.DocsRedirect{
+		WorkspaceID:          doc.WorkspaceID,
+		SourcePath:           oldPath,
+		TargetCollectionSlug: newCollectionSlug,
+		TargetArticleSlug:    &slug,
+		Type:                 model.RedirectTypeAutoArticleMove,
+	}
+	return s.redirectRepo.UpsertWithReconciliation(ctx, redirect)
+}
+
+// UpdateCollectionSlug changes the slug of a collection and emits
+// auto_collection_rename redirects for the collection itself and for
+// every published article directly attached to it.
+//
+// Uniqueness is enforced at the service layer against all non-deleted
+// collections in the same workspace; a duplicate returns
+// ErrDocsCollectionSlugTaken. The partial unique index added in the
+// Task 1 migration is the DB-level safety net for races.
+func (s *DocsHelpcenterService) UpdateCollectionSlug(ctx context.Context, collectionID, rawNewSlug string) (*model.DocsCollection, error) {
+	collection, err := s.collectionRepo.GetByID(ctx, collectionID)
+	if err != nil {
+		return nil, err
+	}
+	if collection == nil {
+		return nil, ErrDocsCollectionNotFound
+	}
+	newSlug := strings.TrimSpace(slugify(rawNewSlug))
+	if newSlug == "" {
+		return nil, fmt.Errorf("collection slug is required")
+	}
+	if newSlug == collection.Slug {
+		return collection, nil
+	}
+
+	taken, err := s.collectionSlugTaken(ctx, collection.WorkspaceID, newSlug, collection.ID)
+	if err != nil {
+		return nil, err
+	}
+	if taken {
+		return nil, ErrDocsCollectionSlugTaken
+	}
+
+	oldSlug := collection.Slug
+
+	// Collection-level redirect: old /:slug -> new /:slug.
+	if s.redirectRepo != nil && oldSlug != "" {
+		collectionRedirect := &model.DocsRedirect{
+			WorkspaceID:          collection.WorkspaceID,
+			SourcePath:           buildDocsRedirectPath(oldSlug, nil),
+			TargetCollectionSlug: newSlug,
+			Type:                 model.RedirectTypeAutoCollectionRename,
+		}
+		if err := s.redirectRepo.UpsertWithReconciliation(ctx, collectionRedirect); err != nil {
+			return nil, err
+		}
+	}
+
+	// Per-article redirects for every directly-published article.
+	// ListPublishedArticleSlugsInCollection reads the canonical source
+	// slug from docs_helpcenter_articles.slug so we cover articles that
+	// have not yet synthesised a publication row.
+	if s.redirectRepo != nil && oldSlug != "" {
+		articles, err := s.hcRepo.ListPublishedArticleSlugsInCollection(ctx, collection.ID)
+		if err != nil {
+			return nil, err
+		}
+		for i := range articles {
+			slug := articles[i].Slug
+			if slug == "" {
+				continue
+			}
+			articleRedirect := &model.DocsRedirect{
+				WorkspaceID:          collection.WorkspaceID,
+				SourcePath:           buildDocsRedirectPath(oldSlug, &slug),
+				TargetCollectionSlug: newSlug,
+				TargetArticleSlug:    &slug,
+				Type:                 model.RedirectTypeAutoCollectionRename,
+			}
+			if err := s.redirectRepo.UpsertWithReconciliation(ctx, articleRedirect); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	updated, err := s.collectionRepo.Update(ctx, collection.ID, map[string]interface{}{"slug": newSlug})
+	if err != nil {
+		return nil, err
+	}
+	publishWorkspaceEventWithParent(s.wsPublisher, "updated", "docs_collection", collection.ID, collection.WorkspaceID, "", "docs_space", collection.SpaceID, nil)
+	return updated, nil
+}
+
+// collectionSlugTaken returns true when another non-deleted collection
+// in the same workspace already uses this slug.
+func (s *DocsHelpcenterService) collectionSlugTaken(ctx context.Context, workspaceID, slug, excludeID string) (bool, error) {
+	existing, err := s.collectionRepo.ListByWorkspace(ctx, workspaceID)
+	if err != nil {
+		return false, err
+	}
+	for _, c := range existing {
+		if c.ID == excludeID {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(c.Slug), slug) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func sameCollectionPointer(a, b *string) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return *a == *b
 }
 
 func (s *DocsHelpcenterService) getPublicLocaleConfig(ctx context.Context, workspaceID string) (*model.DocsHelpcenterConfig, string, error) {

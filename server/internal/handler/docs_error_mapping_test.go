@@ -77,6 +77,12 @@ func TestWriteDocsError(t *testing.T) {
 			wantBody:   "does not belong",
 		},
 		{
+			name:       "slug taken -> 409",
+			err:        service.ErrDocsCollectionSlugTaken,
+			wantStatus: http.StatusConflict,
+			wantBody:   "already in use",
+		},
+		{
 			name:       "wrapped sentinel still maps via errors.Is",
 			err:        fmt.Errorf("reparent failed: %w", service.ErrDocsCollectionCycle),
 			wantStatus: http.StatusBadRequest,

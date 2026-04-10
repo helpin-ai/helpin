@@ -34,6 +34,8 @@ func writeDocsError(w http.ResponseWriter, err error) {
 		errors.Is(err, service.ErrDocsCollectionCycle),
 		errors.Is(err, service.ErrDocsCollectionDepthExceeded):
 		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, service.ErrDocsCollectionSlugTaken):
+		writeError(w, http.StatusConflict, err.Error())
 	case errors.Is(err, service.ErrDocsCrossWorkspace):
 		writeError(w, http.StatusForbidden, err.Error())
 	default:

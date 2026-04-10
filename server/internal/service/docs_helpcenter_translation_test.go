@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -349,7 +350,7 @@ func newDocsHelpcenterPublicServiceForTest(db *gorm.DB) *DocsHelpcenterService {
 		repository.NewDocsContentRepository(db),
 		repository.NewDocsSpaceRepository(db),
 		repository.NewDocsCollectionRepository(db),
-		nil,
+		repository.NewDocsRedirectRepository(db),
 		nil,
 		nil,
 	)
@@ -1620,6 +1621,255 @@ func TestDocsHelpcenterTranslation_NestedCollectionBreadcrumb(t *testing.T) {
 		}
 		if len(entries) != 0 {
 			t.Fatalf("entries = %+v, want empty", entries)
+		}
+	})
+}
+
+// TestDocsHelpcenterService_CollectionRedirects covers Task 7:
+// UpdateCollectionSlug emits auto_collection_rename redirects for the
+// collection itself and each published article, rejects duplicate slugs,
+// and EmitArticleMoveRedirect handles the article move path without
+// creating cycles on A -> B -> A moves.
+func TestDocsHelpcenterService_CollectionRedirects(t *testing.T) {
+	t.Parallel()
+
+	const (
+		workspaceID = "ws-redir"
+		userID      = "user-redir"
+		spaceID     = "space-redir"
+	)
+
+	now := time.Date(2026, 4, 10, 12, 0, 0, 0, time.UTC)
+	ptr := func(s string) *string { return &s }
+
+	setup := func(t *testing.T) (*gorm.DB, *DocsHelpcenterService, context.Context) {
+		t.Helper()
+		db := setupDocsHelpcenterTranslationServiceTestDB(t)
+
+		seedDocsHelpcenterTranslationServiceConfig(t, db, model.DocsHelpcenterConfig{
+			ID:                      "cfg-redir",
+			WorkspaceID:             workspaceID,
+			Subdomain:               "redir",
+			BrandName:               "Redir",
+			BrandColor:              "#000000",
+			ThemeMode:               "system",
+			HeaderLinks:             json.RawMessage(`[]`),
+			FooterConfig:            json.RawMessage(`{}`),
+			HomepageConfig:          json.RawMessage(`{}`),
+			SpaceNavConfig:          json.RawMessage(`{}`),
+			DefaultLocale:           "en",
+			EnabledLocales:          model.DocsStringArray{"en"},
+			IsPublished:             true,
+			FallbackToDefaultLocale: true,
+			CreatedAt:               now,
+			UpdatedAt:               now,
+		})
+		seedDocsHelpcenterTranslationServiceSpace(t, db, model.DocsSpace{
+			ID:          spaceID,
+			WorkspaceID: workspaceID,
+			Name:        "Docs",
+			Slug:        "docs",
+			Visibility:  model.SpaceVisibilityWorkspaceWide,
+			Type:        model.SpaceTypeExternalCapable,
+			Position:    0,
+			CreatedBy:   userID,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		})
+		return db, newDocsHelpcenterPublicServiceForTest(db), context.Background()
+	}
+
+	seedCollection := func(t *testing.T, db *gorm.DB, id, slug string) {
+		t.Helper()
+		seedDocsHelpcenterTranslationServiceCollection(t, db, model.DocsCollection{
+			ID:          id,
+			SpaceID:     spaceID,
+			WorkspaceID: workspaceID,
+			Name:        id,
+			Slug:        slug,
+			Position:    0,
+			CreatedBy:   userID,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		})
+	}
+
+	seedPublishedArticle := func(t *testing.T, db *gorm.DB, docID, slug string, collectionID *string) {
+		t.Helper()
+		seedDocsHelpcenterTranslationServiceDocument(t, db, model.DocsDocument{
+			ID:           docID,
+			WorkspaceID:  workspaceID,
+			SpaceID:      spaceID,
+			CollectionID: collectionID,
+			Title:        docID,
+			Status:       model.DocStatusPublished,
+			Visibility:   model.SpaceVisibilityWorkspaceWide,
+			Position:     0,
+			PublishedAt:  &now,
+			CreatedBy:    userID,
+			CreatedAt:    now,
+			UpdatedAt:    now,
+		})
+		seedDocsHelpcenterTranslationServiceArticle(t, db, model.DocsHelpcenterArticle{
+			ID:                "art-" + docID,
+			DocumentID:        docID,
+			Slug:              slug,
+			PublicPublishedAt: &now,
+			CreatedAt:         now,
+			UpdatedAt:         now,
+		})
+	}
+
+	t.Run("UpdateCollectionSlug emits collection + article redirects", func(t *testing.T) {
+		db, svc, ctx := setup(t)
+		seedCollection(t, db, "coll-A", "old-slug")
+		seedPublishedArticle(t, db, "doc-1", "start-here", ptr("coll-A"))
+		seedPublishedArticle(t, db, "doc-2", "next-step", ptr("coll-A"))
+
+		if _, err := svc.UpdateCollectionSlug(ctx, "coll-A", "new-slug"); err != nil {
+			t.Fatalf("UpdateCollectionSlug: %v", err)
+		}
+
+		redirectRepo := repository.NewDocsRedirectRepository(db)
+		collRedir, err := redirectRepo.GetBySourcePath(ctx, workspaceID, "/old-slug")
+		if err != nil {
+			t.Fatalf("get collection redirect: %v", err)
+		}
+		if collRedir == nil || collRedir.TargetCollectionSlug != "new-slug" || collRedir.Type != model.RedirectTypeAutoCollectionRename {
+			t.Fatalf("collection redirect = %+v, want /old-slug -> new-slug (auto_collection_rename)", collRedir)
+		}
+
+		for _, slug := range []string{"start-here", "next-step"} {
+			got, err := redirectRepo.GetBySourcePath(ctx, workspaceID, "/old-slug/"+slug)
+			if err != nil {
+				t.Fatalf("get article redirect %s: %v", slug, err)
+			}
+			if got == nil {
+				t.Fatalf("article redirect for %s missing", slug)
+			}
+			if got.TargetCollectionSlug != "new-slug" {
+				t.Fatalf("article redirect target = %q, want new-slug", got.TargetCollectionSlug)
+			}
+			if got.TargetArticleSlug == nil || *got.TargetArticleSlug != slug {
+				t.Fatalf("article redirect target slug = %v, want %q", got.TargetArticleSlug, slug)
+			}
+			if got.Type != model.RedirectTypeAutoCollectionRename {
+				t.Fatalf("article redirect type = %q, want auto_collection_rename", got.Type)
+			}
+		}
+
+		// The collection itself should be updated.
+		collection, err := repository.NewDocsCollectionRepository(db).GetByID(ctx, "coll-A")
+		if err != nil {
+			t.Fatalf("load collection: %v", err)
+		}
+		if collection.Slug != "new-slug" {
+			t.Fatalf("collection slug = %q, want new-slug", collection.Slug)
+		}
+	})
+
+	t.Run("UpdateCollectionSlug rejects duplicate slugs in the same workspace", func(t *testing.T) {
+		db, svc, ctx := setup(t)
+		seedCollection(t, db, "coll-A", "apples")
+		seedCollection(t, db, "coll-B", "bananas")
+
+		_, err := svc.UpdateCollectionSlug(ctx, "coll-A", "bananas")
+		if err == nil {
+			t.Fatalf("expected duplicate slug error, got nil")
+		}
+		if !errors.Is(err, ErrDocsCollectionSlugTaken) {
+			t.Fatalf("err = %v, want ErrDocsCollectionSlugTaken", err)
+		}
+	})
+
+	t.Run("UpdateCollectionSlug is a no-op when slug is unchanged", func(t *testing.T) {
+		db, svc, ctx := setup(t)
+		seedCollection(t, db, "coll-A", "unchanged")
+
+		if _, err := svc.UpdateCollectionSlug(ctx, "coll-A", "unchanged"); err != nil {
+			t.Fatalf("UpdateCollectionSlug: %v", err)
+		}
+
+		redirectRepo := repository.NewDocsRedirectRepository(db)
+		items, _, err := redirectRepo.List(ctx, workspaceID, model.DocsRedirectFilter{})
+		if err != nil {
+			t.Fatalf("list redirects: %v", err)
+		}
+		if len(items) != 0 {
+			t.Fatalf("no-op rename emitted redirects: %+v", items)
+		}
+	})
+
+	t.Run("EmitArticleMoveRedirect produces auto_article_move redirect and survives A->B->A", func(t *testing.T) {
+		db, svc, ctx := setup(t)
+		seedCollection(t, db, "A", "coll-a")
+		seedCollection(t, db, "B", "coll-b")
+		seedPublishedArticle(t, db, "doc-hop", "hop-article", ptr("A"))
+
+		docRepo := repository.NewDocsDocumentRepository(db)
+
+		// Move A -> B
+		oldA := "A"
+		targetB := "B"
+		if err := docRepo.Move(ctx, "doc-hop", spaceID, &targetB); err != nil {
+			t.Fatalf("move to B: %v", err)
+		}
+		docAfterB, err := docRepo.GetByID(ctx, "doc-hop")
+		if err != nil {
+			t.Fatalf("load doc after B: %v", err)
+		}
+		if err := svc.EmitArticleMoveRedirect(ctx, docAfterB, &oldA); err != nil {
+			t.Fatalf("emit move A->B: %v", err)
+		}
+
+		redirectRepo := repository.NewDocsRedirectRepository(db)
+		got, err := redirectRepo.GetBySourcePath(ctx, workspaceID, "/coll-a/hop-article")
+		if err != nil {
+			t.Fatalf("get A redirect: %v", err)
+		}
+		if got == nil || got.TargetCollectionSlug != "coll-b" || got.Type != model.RedirectTypeAutoArticleMove {
+			t.Fatalf("A redirect = %+v, want /coll-a/hop-article -> coll-b (auto_article_move)", got)
+		}
+
+		// Move B -> A (round trip)
+		oldB := "B"
+		targetA := "A"
+		if err := docRepo.Move(ctx, "doc-hop", spaceID, &targetA); err != nil {
+			t.Fatalf("move to A: %v", err)
+		}
+		docAfterA, err := docRepo.GetByID(ctx, "doc-hop")
+		if err != nil {
+			t.Fatalf("load doc after A: %v", err)
+		}
+		if err := svc.EmitArticleMoveRedirect(ctx, docAfterA, &oldB); err != nil {
+			t.Fatalf("emit move B->A: %v", err)
+		}
+
+		// The stale /coll-a/hop-article redirect must be gone.
+		stale, err := redirectRepo.GetBySourcePath(ctx, workspaceID, "/coll-a/hop-article")
+		if err != nil {
+			t.Fatalf("get stale A redirect: %v", err)
+		}
+		if stale != nil {
+			t.Fatalf("stale A redirect still present: %+v", stale)
+		}
+
+		// /coll-b/hop-article should now redirect to coll-a.
+		back, err := redirectRepo.GetBySourcePath(ctx, workspaceID, "/coll-b/hop-article")
+		if err != nil {
+			t.Fatalf("get B redirect: %v", err)
+		}
+		if back == nil || back.TargetCollectionSlug != "coll-a" {
+			t.Fatalf("B redirect = %+v, want -> coll-a", back)
+		}
+
+		// Exactly one redirect row workspace-wide after the round trip.
+		var count int64
+		if err := db.Model(&model.DocsRedirect{}).Where("workspace_id = ?", workspaceID).Count(&count).Error; err != nil {
+			t.Fatalf("count: %v", err)
+		}
+		if count != 1 {
+			t.Fatalf("redirect count = %d, want 1", count)
 		}
 	})
 }

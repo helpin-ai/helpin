@@ -2,10 +2,17 @@ package model
 
 import "time"
 
+// DocsRedirect type values. Manual, imported, and legacy slug_change types
+// are retained for backwards compatibility with existing rows. New
+// automatic redirects emitted by the tree-aware collection rollout use
+// the auto_* variants so callers can distinguish them in filters and
+// admin UIs.
 const (
-	RedirectTypeImported   = "imported"
-	RedirectTypeSlugChange = "slug_change"
-	RedirectTypeManual     = "manual"
+	RedirectTypeImported             = "imported"
+	RedirectTypeSlugChange           = "slug_change" // legacy article slug change — kept for historical rows
+	RedirectTypeManual               = "manual"
+	RedirectTypeAutoArticleMove      = "auto_article_move"
+	RedirectTypeAutoCollectionRename = "auto_collection_rename"
 )
 
 // DocsRedirect stores URL redirect rules for the public help center.

@@ -689,6 +689,44 @@ func (r *DocsHelpcenterRepository) ListSpaceNavigation(ctx context.Context, spac
 	return result, nil
 }
 
+// DocsHelpcenterPublishedArticleSlug is a minimal projection of a
+// published help center article returned by
+// ListPublishedArticleSlugsInCollection.
+type DocsHelpcenterPublishedArticleSlug struct {
+	DocumentID string
+	Slug       string
+}
+
+// ListPublishedArticleSlugsInCollection returns (document_id, slug) for
+// every externally published help center article whose owning collection
+// is the given collection. The slug is the canonical source slug stored
+// on docs_helpcenter_articles, not a localized publication slug. Used by
+// collection-rename redirect emission.
+func (r *DocsHelpcenterRepository) ListPublishedArticleSlugsInCollection(ctx context.Context, collectionID string) ([]DocsHelpcenterPublishedArticleSlug, error) {
+	type row struct {
+		DocumentID string `gorm:"column:document_id"`
+		Slug       string `gorm:"column:slug"`
+	}
+	var rows []row
+	if err := r.db.WithContext(ctx).Raw(`
+		SELECT d.id AS document_id, ha.slug
+		FROM docs_documents d
+		JOIN docs_helpcenter_articles ha ON ha.document_id = d.id
+		WHERE d.collection_id = ?
+		  AND d.deleted_at IS NULL
+		  AND d.status = 'published'
+		  AND ha.public_published_at IS NOT NULL
+		  AND ha.slug != ''
+	`, collectionID).Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list published article slugs in collection: %w", err)
+	}
+	out := make([]DocsHelpcenterPublishedArticleSlug, len(rows))
+	for i, r := range rows {
+		out[i] = DocsHelpcenterPublishedArticleSlug{DocumentID: r.DocumentID, Slug: r.Slug}
+	}
+	return out, nil
+}
+
 // ListCollectionAncestors returns the ancestor chain of a collection
 // ordered top-down (root first, immediate parent last). The chain does
 // not include the collection itself. It is iterative and capped at the

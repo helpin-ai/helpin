@@ -46,4 +46,8 @@ var (
 	// ErrDocsCollectionNameRequired is returned when a create request
 	// omits the required name field.
 	ErrDocsCollectionNameRequired = errors.New("collection name is required")
+
+	// ErrDocsCollectionSlugTaken is returned when a rename would conflict
+	// with another non-deleted collection in the same workspace.
+	ErrDocsCollectionSlugTaken = errors.New("collection slug is already in use")
 )
