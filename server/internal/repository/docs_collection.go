@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -232,6 +233,31 @@ func (r *DocsCollectionRepository) NormalizeBucket(ctx context.Context, spaceID 
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		return normalizeBucketTx(tx, spaceID, parentID)
 	})
+}
+
+// SlugTakenInWorkspace reports whether another non-deleted collection
+// in the given workspace already uses this slug. excludeID is skipped
+// so an update to a collection's non-slug fields does not report a
+// false positive against itself. Case-insensitive to match the
+// partial unique index added in the Task 1 migration, which is
+// case-sensitive but effectively guards against collisions the same
+// way because slugs are always normalised to lowercase by slugify().
+func (r *DocsCollectionRepository) SlugTakenInWorkspace(ctx context.Context, workspaceID, slug, excludeID string) (bool, error) {
+	slug = strings.ToLower(strings.TrimSpace(slug))
+	if slug == "" {
+		return false, nil
+	}
+	var count int64
+	q := r.db.WithContext(ctx).
+		Model(&model.DocsCollection{}).
+		Where("workspace_id = ? AND LOWER(slug) = ? AND deleted_at IS NULL", workspaceID, slug)
+	if excludeID != "" {
+		q = q.Where("id <> ?", excludeID)
+	}
+	if err := q.Count(&count).Error; err != nil {
+		return false, fmt.Errorf("check docs collection slug uniqueness: %w", err)
+	}
+	return count > 0, nil
 }
 
 // ListChildren returns the direct children of parentID in a space (or all

@@ -381,6 +381,57 @@ func TestDocsRedirectRepository_UpsertWithReconciliation(t *testing.T) {
 		}
 	})
 
+	t.Run("preserves manual redirect at the new target path", func(t *testing.T) {
+		db := setupDocsRedirectTestDB(t)
+		repo := NewDocsRedirectRepository(db)
+		ctx := context.Background()
+
+		// Seed a user-created manual redirect at a canonical path.
+		slug := "start-here"
+		manual := model.DocsRedirect{
+			ID:                   "manual-1",
+			WorkspaceID:          "ws-1",
+			SourcePath:           "/B/start-here",
+			TargetCollectionSlug: "elsewhere",
+			TargetArticleSlug:    &slug,
+			Type:                 model.RedirectTypeManual,
+		}
+		if err := db.Create(&manual).Error; err != nil {
+			t.Fatalf("seed manual redirect: %v", err)
+		}
+
+		// Now an article move writes an auto redirect whose target
+		// path happens to match the manual redirect's source path.
+		// UpsertWithReconciliation must preserve the manual row.
+		if err := repo.UpsertWithReconciliation(ctx, &model.DocsRedirect{
+			WorkspaceID:          "ws-1",
+			SourcePath:           "/A/start-here",
+			TargetCollectionSlug: "B",
+			TargetArticleSlug:    &slug,
+			Type:                 model.RedirectTypeAutoArticleMove,
+		}); err != nil {
+			t.Fatalf("upsert with manual preserved: %v", err)
+		}
+
+		// The manual redirect must still exist.
+		kept, err := repo.GetBySourcePath(ctx, "ws-1", "/B/start-here")
+		if err != nil {
+			t.Fatalf("get manual redirect: %v", err)
+		}
+		if kept == nil || kept.Type != model.RedirectTypeManual || kept.TargetCollectionSlug != "elsewhere" {
+			t.Fatalf("manual redirect was lost or mutated: %+v", kept)
+		}
+
+		// And the new auto redirect must exist alongside it.
+		fresh, err := repo.GetBySourcePath(ctx, "ws-1", "/A/start-here")
+		if err != nil {
+			t.Fatalf("get new redirect: %v", err)
+		}
+		if fresh == nil || fresh.Type != model.RedirectTypeAutoArticleMove {
+			t.Fatalf("new redirect missing or wrong type: %+v", fresh)
+		}
+	})
+
 	t.Run("self-referential redirect is a no-op", func(t *testing.T) {
 		db := setupDocsRedirectTestDB(t)
 		repo := NewDocsRedirectRepository(db)

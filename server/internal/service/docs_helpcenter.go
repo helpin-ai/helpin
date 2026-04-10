@@ -891,6 +891,9 @@ func (s *DocsHelpcenterService) UpdateCollectionSlug(ctx context.Context, collec
 
 	updated, err := s.collectionRepo.Update(ctx, collection.ID, map[string]interface{}{"slug": newSlug})
 	if err != nil {
+		if isUniqueConstraintViolation(err) {
+			return nil, ErrDocsCollectionSlugTaken
+		}
 		return nil, err
 	}
 	publishWorkspaceEventWithParent(s.wsPublisher, "updated", "docs_collection", collection.ID, collection.WorkspaceID, "", "docs_space", collection.SpaceID, nil)
@@ -898,21 +901,11 @@ func (s *DocsHelpcenterService) UpdateCollectionSlug(ctx context.Context, collec
 }
 
 // collectionSlugTaken returns true when another non-deleted collection
-// in the same workspace already uses this slug.
+// in the same workspace already uses this slug. Routed through the
+// repository helper so this check and DocsCollectionService.Create
+// share the same uniqueness definition.
 func (s *DocsHelpcenterService) collectionSlugTaken(ctx context.Context, workspaceID, slug, excludeID string) (bool, error) {
-	existing, err := s.collectionRepo.ListByWorkspace(ctx, workspaceID)
-	if err != nil {
-		return false, err
-	}
-	for _, c := range existing {
-		if c.ID == excludeID {
-			continue
-		}
-		if strings.EqualFold(strings.TrimSpace(c.Slug), slug) {
-			return true, nil
-		}
-	}
-	return false, nil
+	return s.collectionRepo.SlugTakenInWorkspace(ctx, workspaceID, slug, excludeID)
 }
 
 func sameCollectionPointer(a, b *string) bool {

@@ -227,12 +227,20 @@ func (r *DocsRedirectRepository) Create(ctx context.Context, redirect *model.Doc
 // UpsertWithReconciliation inserts or replaces a redirect while breaking
 // any cycle it would create.
 //
-// Before inserting, any existing redirect whose source path equals the
-// new target path is deleted. This ensures an A -> B -> A move does not
-// leave a stale chain: the old "A is a redirect to B" row is removed the
-// moment "B is a redirect to A" is written. After the delete the new
-// redirect is upserted on (workspace_id, source_path) so re-running the
-// same move is idempotent.
+// Before inserting, any auto-generated redirect whose source path
+// equals the new target path is deleted. "Auto-generated" means the
+// RedirectType was one of the automatic types this rollout emits:
+// auto_article_move, auto_collection_rename, or the legacy slug_change
+// type. Manual and imported redirects are deliberately preserved — a
+// user-created redirect at the new canonical path reflects explicit
+// user intent and must not be silently blown away by an article move
+// or collection rename.
+//
+// This ensures an A -> B -> A move does not leave a stale chain: the
+// old auto "A is a redirect to B" row is removed the moment "B is a
+// redirect to A" is written. After the delete the new redirect is
+// upserted on (workspace_id, source_path) so re-running the same move
+// is idempotent.
 //
 // If the computed source and target paths are identical the call is a
 // no-op (a redirect to itself is never a useful row and always breaks
@@ -248,13 +256,21 @@ func (r *DocsRedirectRepository) UpsertWithReconciliation(ctx context.Context, r
 		return nil
 	}
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Break any existing chain where the new target is currently a
-		// redirect source. Those rows reference a path that is now
-		// canonical again and must not keep redirecting elsewhere.
+		// Break any existing auto redirect chain where the new target
+		// is currently a redirect source. Manual or imported redirects
+		// at the same path are left in place — they represent explicit
+		// user intent and must not be silently deleted by the
+		// collection move/rename flow.
 		if err := tx.
-			Where("workspace_id = ? AND source_path = ?", redirect.WorkspaceID, targetPath).
+			Where(
+				"workspace_id = ? AND source_path = ? AND type IN (?, ?, ?)",
+				redirect.WorkspaceID, targetPath,
+				model.RedirectTypeAutoArticleMove,
+				model.RedirectTypeAutoCollectionRename,
+				model.RedirectTypeSlugChange,
+			).
 			Delete(&model.DocsRedirect{}).Error; err != nil {
-			return fmt.Errorf("delete stale redirect at target: %w", err)
+			return fmt.Errorf("delete stale auto redirect at target: %w", err)
 		}
 		// Upsert on (workspace_id, source_path). If a redirect already
 		// exists at this source path, replace its target + type so a

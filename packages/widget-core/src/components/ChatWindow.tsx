@@ -7,6 +7,10 @@ import { MessagesView } from './MessagesView';
 import { HelpView } from './HelpView';
 import { HelpSpaceView } from './HelpSpaceView';
 import { HelpCollectionView } from './HelpCollectionView';
+import {
+  computeHelpCollectionBackTarget,
+  pushHelpCollectionOnDrilldown,
+} from './helpNavigationStack';
 import { HelpArticleView } from './HelpArticleView';
 import { ConversationView } from './ConversationView';
 import { ConversationListView } from './ConversationListView';
@@ -103,6 +107,12 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   const [activeHelpSpaceSlug, setActiveHelpSpaceSlug] = useState<string | null>(null);
   const [activeCollectionSlug, setActiveCollectionSlug] = useState<string | null>(null);
   const [activeArticleSlug, setActiveArticleSlug] = useState<string | null>(null);
+  // Breadcrumb stack of ancestor collection slugs the user drilled
+  // through to reach activeCollectionSlug, oldest-first. Pop on back
+  // to walk up the tree one level at a time. Empty when the user is
+  // viewing a top-level collection or has navigated directly via the
+  // help-space list.
+  const [helpCollectionStack, setHelpCollectionStack] = useState<string[]>([]);
   const [shouldRender, setShouldRender] = useState(isOpen);
   const [isVisible, setIsVisible] = useState(isOpen);
   const [humanSupportRequested, setHumanSupportRequested] = useState(false);
@@ -210,16 +220,61 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
     setActiveHelpSpaceSlug(spaceSlug);
     setActiveCollectionSlug(null);
     setActiveArticleSlug(null);
+    setHelpCollectionStack([]);
     setActiveView('help-space');
     onViewChange?.('help-space');
   };
 
+  // handleOpenHelpCollection opens a collection view. When the user
+  // is already on a collection page (help-collection view) and clicks
+  // a child tile, we push the current slug onto the breadcrumb stack
+  // so the back button can walk up the tree one level at a time.
+  // Direct navigation from home or help-space resets the stack so
+  // subsequent back navigation doesn't surface unrelated ancestors.
   const handleOpenHelpCollection = (collectionSlug: string) => {
     setActiveHelpSpaceSlug((current) => current ?? helpSpaces[0]?.slug ?? null);
+    setHelpCollectionStack(
+      pushHelpCollectionOnDrilldown(
+        helpCollectionStack,
+        activeView,
+        activeCollectionSlug,
+        collectionSlug,
+      ),
+    );
     setActiveCollectionSlug(collectionSlug);
     setActiveArticleSlug(null);
     setActiveView('help-collection');
     onViewChange?.('help-collection');
+  };
+
+  // handleBackFromHelpCollection pops the nearest ancestor from the
+  // breadcrumb stack and opens it. When the stack is empty the user
+  // has reached the collection root, so we fall through to the space
+  // view (or home when there's only one space configured). Logic
+  // lives in a pure helper so it can be unit tested without the
+  // full widget render tree.
+  const handleBackFromHelpCollection = () => {
+    setActiveArticleSlug(null);
+    const target = computeHelpCollectionBackTarget(
+      helpCollectionStack,
+      helpSpaces.length,
+      activeHelpSpaceSlug,
+    );
+    switch (target.kind) {
+      case 'collection':
+        setHelpCollectionStack(target.remainingStack);
+        setActiveCollectionSlug(target.slug);
+        setActiveView('help-collection');
+        onViewChange?.('help-collection');
+        return;
+      case 'help-space':
+        setActiveView('help-space');
+        onViewChange?.('help-space');
+        return;
+      case 'help':
+        setActiveView('help');
+        onViewChange?.('help');
+    }
   };
 
   const handleOpenHelpArticle = (articleSlug: string) => {
@@ -383,16 +438,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
             widgetKey={widgetKey}
             collectionSlug={activeCollectionSlug}
             spaceSlug={activeHelpSpaceSlug ?? helpSpaces[0]?.slug}
-            onBack={() => {
-              setActiveArticleSlug(null);
-              if (helpSpaces.length > 1 && activeHelpSpaceSlug) {
-                setActiveView('help-space');
-                onViewChange?.('help-space');
-                return;
-              }
-              setActiveView('help');
-              onViewChange?.('help');
-            }}
+            onBack={handleBackFromHelpCollection}
             onSelectCollection={handleOpenHelpCollection}
             onSelectArticle={handleOpenHelpArticle}
           />

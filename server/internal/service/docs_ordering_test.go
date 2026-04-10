@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -1052,6 +1053,69 @@ func TestDocsCollectionService_TreeValidation(t *testing.T) {
 		})
 		if err == nil {
 			t.Fatalf("expected depth-overflow error on subtree move, got nil")
+		}
+	})
+
+	t.Run("Create rejects a duplicate slug in the same workspace", func(t *testing.T) {
+		svc, db := setup(t)
+		seedSpace(t, db, "space")
+		ctx := context.Background()
+
+		// First create with an explicit slug succeeds.
+		slug := "shared"
+		if _, err := svc.Create(ctx, workspaceID, "space", model.CreateDocsCollectionRequest{
+			Name: "First",
+			Slug: &slug,
+		}, userID); err != nil {
+			t.Fatalf("first create: %v", err)
+		}
+
+		// Second create that slugifies to the same value fails with the
+		// typed sentinel so the handler maps it to 409.
+		_, err := svc.Create(ctx, workspaceID, "space", model.CreateDocsCollectionRequest{
+			Name: "shared",
+		}, userID)
+		if err == nil {
+			t.Fatalf("expected duplicate slug error, got nil")
+		}
+		if !errors.Is(err, ErrDocsCollectionSlugTaken) {
+			t.Fatalf("err = %v, want ErrDocsCollectionSlugTaken", err)
+		}
+	})
+
+	t.Run("Update with unchanged parent does not reshuffle siblings", func(t *testing.T) {
+		svc, db := setup(t)
+		seedSpace(t, db, "space")
+		ctx := context.Background()
+
+		// Create two top-level siblings in order a, b.
+		a, _ := svc.Create(ctx, workspaceID, "space", model.CreateDocsCollectionRequest{Name: "a"}, userID)
+		b, _ := svc.Create(ctx, workspaceID, "space", model.CreateDocsCollectionRequest{Name: "b"}, userID)
+
+		// Echo the current (nil) parent back via the empty-string
+		// sentinel on a simple rename. Before the fix, Reparent would
+		// append `a` to the end of its own bucket and shuffle b ahead
+		// of it.
+		empty := ""
+		newName := "Alpha"
+		if _, err := svc.Update(ctx, a.ID, model.UpdateDocsCollectionRequest{
+			Name:               &newName,
+			ParentCollectionID: &empty,
+		}); err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+
+		// Order should remain [a, b] with contiguous positions.
+		collectionRepo := repository.NewDocsCollectionRepository(db)
+		topLevel, err := collectionRepo.ListChildren(ctx, "space", nil)
+		if err != nil {
+			t.Fatalf("ListChildren: %v", err)
+		}
+		if len(topLevel) != 2 || topLevel[0].ID != a.ID || topLevel[1].ID != b.ID {
+			t.Fatalf("top-level after no-op reparent = %+v, want [a, b]", topLevel)
+		}
+		if topLevel[0].Position != 0 || topLevel[1].Position != 1 {
+			t.Fatalf("positions = %d,%d, want 0,1", topLevel[0].Position, topLevel[1].Position)
 		}
 	})
 

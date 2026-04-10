@@ -3,11 +3,49 @@ package service
 import (
 	"context"
 	"log/slog"
+	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
+
+// sameCollectionParentPointer returns true when two *string parent
+// references point at the same collection. Nil == nil (both top-level),
+// non-nil values compare by dereferenced string, and mismatched
+// nil/non-nil combinations are considered different.
+func sameCollectionParentPointer(a, b *string) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return *a == *b
+}
+
+// isUniqueConstraintViolation returns true when err looks like a
+// Postgres unique-constraint violation from the partial unique index
+// on docs_collections(workspace_id, slug) where deleted_at is null.
+// Postgres returns SQLSTATE 23505 for unique violations; the fallback
+// substring match catches sqlite-driver test contexts where the error
+// type wrapping is slightly different.
+func isUniqueConstraintViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "sqlstate 23505") {
+		return true
+	}
+	if strings.Contains(msg, "unique constraint") {
+		return true
+	}
+	if strings.Contains(msg, "unique") && strings.Contains(msg, "violation") {
+		return true
+	}
+	return false
+}
 
 // DocsCollectionService handles business logic for docs collections.
 type DocsCollectionService struct {
@@ -63,6 +101,20 @@ func (s *DocsCollectionService) Create(ctx context.Context, workspaceID, spaceID
 		return nil, ErrDocsCollectionDepthExceeded
 	}
 
+	// Compute the final slug up front so we can pre-check workspace-wide
+	// uniqueness and return a typed conflict instead of a raw DB error.
+	slug := slugify(req.Name)
+	if req.Slug != nil && *req.Slug != "" {
+		slug = slugify(*req.Slug)
+	}
+	taken, err := s.collectionRepo.SlugTakenInWorkspace(ctx, workspaceID, slug, "")
+	if err != nil {
+		return nil, err
+	}
+	if taken {
+		return nil, ErrDocsCollectionSlugTaken
+	}
+
 	// Append to end of the target sibling bucket.
 	nextPos, err := s.collectionRepo.NextPositionInBucket(ctx, spaceID, parentID)
 	if err != nil {
@@ -75,17 +127,20 @@ func (s *DocsCollectionService) Create(ctx context.Context, workspaceID, spaceID
 		ParentCollectionID: parentID,
 		Depth:              newDepth,
 		Name:               req.Name,
-		Slug:               slugify(req.Name),
+		Slug:               slug,
 		Description:        req.Description,
 		Icon:               req.Icon,
 		Position:           nextPos,
 		CreatedBy:          userID,
 	}
-	if req.Slug != nil && *req.Slug != "" {
-		coll.Slug = *req.Slug
-	}
 	created, err := s.collectionRepo.Create(ctx, coll)
 	if err != nil {
+		// The partial unique index is the DB-level safety net — map
+		// any constraint violation back to the typed conflict so the
+		// handler layer still returns 409 instead of 500 on races.
+		if isUniqueConstraintViolation(err) {
+			return nil, ErrDocsCollectionSlugTaken
+		}
 		return nil, err
 	}
 	if s.translationSvc != nil {
@@ -133,13 +188,22 @@ func (s *DocsCollectionService) Update(ctx context.Context, id string, req model
 	// Step 1: reparent if requested. The nil-pointer sentinel means "leave
 	// parent unchanged"; a pointer to the empty string means "reparent to
 	// the top of the space"; anything else is an explicit parent ID.
+	//
+	// When the resolved parent matches the current parent we skip the
+	// reparent call entirely — repo.Reparent appends to the end of the
+	// target sibling bucket, so a no-op "update" that happened to echo
+	// the current parent_collection_id would silently reshuffle sibling
+	// order. Comparing the pointer values handles all three cases
+	// (both nil, both non-nil equal, mismatch) cleanly.
 	if req.ParentCollectionID != nil {
 		newParentID, err := s.resolveParentForReparent(ctx, current, *req.ParentCollectionID)
 		if err != nil {
 			return nil, err
 		}
-		if err := s.collectionRepo.Reparent(ctx, id, newParentID); err != nil {
-			return nil, err
+		if !sameCollectionParentPointer(current.ParentCollectionID, newParentID) {
+			if err := s.collectionRepo.Reparent(ctx, id, newParentID); err != nil {
+				return nil, err
+			}
 		}
 	}
 
