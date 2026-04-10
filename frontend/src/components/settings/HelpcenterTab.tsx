@@ -39,6 +39,7 @@ import {
 import { cn } from '@/lib/utils';
 import { IconPicker, StoredIcon } from '@/components/ui/icon-picker';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { buildCollectionTreeOptions } from '@/components/docs/CollectionTreePicker';
 import type {
   HelpcenterHeaderLink,
   HelpcenterFooterLink,
@@ -153,6 +154,7 @@ function SortableFeaturedCollectionRow({
   id,
   collection,
   card,
+  pathLabel,
   onToggle,
   onDescriptionChange,
   onIconChange,
@@ -160,6 +162,13 @@ function SortableFeaturedCollectionRow({
   id: string;
   collection: DocsCollection;
   card: HomepageFeaturedCard;
+  /**
+   * Optional breadcrumb-style ancestor path, e.g. "Parent / Middle".
+   * When present, rendered as a small muted line above the collection
+   * name so users can disambiguate nested collections that share a
+   * leaf name across different parents.
+   */
+  pathLabel?: string;
   onToggle: () => void;
   onDescriptionChange: (value: string) => void;
   onIconChange: (value: string) => void;
@@ -195,7 +204,12 @@ function SortableFeaturedCollectionRow({
           value={card.icon}
           onChange={onIconChange}
         />
-        <span className="text-sm font-medium truncate">{collection.name}</span>
+        <div className="min-w-0">
+          {pathLabel && (
+            <div className="text-[10px] text-muted-foreground/70 truncate">{pathLabel}</div>
+          )}
+          <span className="text-sm font-medium truncate block">{collection.name}</span>
+        </div>
         <Input
           value={card.description}
           onChange={(event) => onDescriptionChange(event.target.value)}
@@ -1025,47 +1039,75 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
               </SelectContent>
             </Select>
 
-            {spaceCollections.length > 0 && (
-              <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleFeaturedCardsDragEnd}>
-                <SortableContext items={selectedFeaturedCollectionIds} strategy={verticalListSortingStrategy}>
-                  <div className="space-y-1.5">
-                {orderedSpaceCollections.map(col => {
-                  const card = findFeaturedCardForCollection(
-                    config.homepage_featured_cards,
-                    col,
-                    homepageSpaceSlug,
-                  );
-                  const checked = !!card;
-                  if (checked && card) {
-                    return (
-                      <SortableFeaturedCollectionRow
-                        key={col.id}
-                        id={col.id}
-                        collection={col}
-                        card={card}
-                        onToggle={() => toggleCollection(col.id)}
-                        onDescriptionChange={(value) => updateCardByCollectionId(col.id, { description: value })}
-                        onIconChange={(value) => updateCardByCollectionId(col.id, { icon: value })}
-                      />
-                    );
-                  }
-                  return (
-                    <div
-                      key={col.id}
-                      className={`flex items-center gap-3 rounded-lg border p-3 transition-colors ${checked ? 'border-primary/20 bg-primary/[0.03]' : 'border-transparent bg-muted/30'}`}
-                    >
-                      <Checkbox
-                        checked={checked}
-                        onCheckedChange={() => toggleCollection(col.id)}
-                      />
-                      <span className="text-sm text-muted-foreground">{col.name}</span>
+            {spaceCollections.length > 0 && (() => {
+              // Build a (collection_id -> ancestor path) map for the
+              // active space so we can show nested collections with
+              // their full breadcrumb ("Parent / Middle"). Depth-0
+              // collections get no path label.
+              const homepageSpace = spaces?.find((s) => s.slug === homepageSpaceSlug);
+              const pathOptions = homepageSpace
+                ? buildCollectionTreeOptions(homepageSpace.id, spaceCollections)
+                : [];
+              const pathBySourceId = new Map<string, string>();
+              for (const opt of pathOptions) {
+                if (opt.depth === 0) continue;
+                // The option path already ends with the collection's own
+                // name; strip the trailing segment so the breadcrumb
+                // label shows only ancestors.
+                const segments = opt.path.split(' / ');
+                if (segments.length > 1) {
+                  pathBySourceId.set(opt.id, segments.slice(0, -1).join(' / '));
+                }
+              }
+              return (
+                <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleFeaturedCardsDragEnd}>
+                  <SortableContext items={selectedFeaturedCollectionIds} strategy={verticalListSortingStrategy}>
+                    <div className="space-y-1.5">
+                      {orderedSpaceCollections.map(col => {
+                        const card = findFeaturedCardForCollection(
+                          config.homepage_featured_cards,
+                          col,
+                          homepageSpaceSlug,
+                        );
+                        const checked = !!card;
+                        const pathLabel = pathBySourceId.get(col.id);
+                        if (checked && card) {
+                          return (
+                            <SortableFeaturedCollectionRow
+                              key={col.id}
+                              id={col.id}
+                              collection={col}
+                              card={card}
+                              pathLabel={pathLabel}
+                              onToggle={() => toggleCollection(col.id)}
+                              onDescriptionChange={(value) => updateCardByCollectionId(col.id, { description: value })}
+                              onIconChange={(value) => updateCardByCollectionId(col.id, { icon: value })}
+                            />
+                          );
+                        }
+                        return (
+                          <div
+                            key={col.id}
+                            className={`flex items-center gap-3 rounded-lg border p-3 transition-colors ${checked ? 'border-primary/20 bg-primary/[0.03]' : 'border-transparent bg-muted/30'}`}
+                          >
+                            <Checkbox
+                              checked={checked}
+                              onCheckedChange={() => toggleCollection(col.id)}
+                            />
+                            <div className="min-w-0">
+                              {pathLabel && (
+                                <div className="text-[10px] text-muted-foreground/70 truncate">{pathLabel}</div>
+                              )}
+                              <span className="text-sm text-muted-foreground block truncate">{col.name}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                  );
-                })}
-                  </div>
-                </SortableContext>
-              </DndContext>
-            )}
+                  </SortableContext>
+                </DndContext>
+              );
+            })()}
           </div>
           </div>
           </div>

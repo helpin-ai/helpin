@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { docsService } from '@/lib/services/docsService'
 import { getHelpcenterLocaleLabel } from '@/lib/docsTypes'
 import { StoredIcon } from '@/components/ui/icon-picker'
+import { buildCollectionTreeOptions } from '@/components/docs/CollectionTreePicker'
 import type {
   DocsSpace,
   DocsCollection,
@@ -226,6 +227,19 @@ export function HelpcenterTranslationsTable({
           <tbody>
             {spaces.map((space) => {
               const colls = collectionsBySpace.get(space.id) ?? []
+              // Fold the flat collection list into tree order so
+              // nested collections appear under their parent and get
+              // indented by depth. We look each collection up by id
+              // to render the ordered tree while keeping the raw
+              // DocsCollection object for translation cells.
+              const treeOptions = buildCollectionTreeOptions(space.id, colls)
+              const collsById = new Map(colls.map((c) => [c.id, c]))
+              const orderedColls = treeOptions
+                .map((opt) => {
+                  const coll = collsById.get(opt.id)
+                  return coll ? { coll, depth: opt.depth } : null
+                })
+                .filter((entry): entry is { coll: DocsCollection; depth: number } => entry !== null)
               return (
                 <>
                   {/* Space row */}
@@ -288,10 +302,15 @@ export function HelpcenterTranslationsTable({
                     })}
                   </tr>
 
-                  {/* Collection rows */}
-                  {colls.map((coll) => (
+                  {/* Collection rows — rendered in tree order, indented by depth. */}
+                  {orderedColls.map(({ coll, depth }) => (
                     <tr key={coll.id} className="border-b border-border/20">
-                      <td className="sticky left-0 z-10 bg-background px-3 py-2 font-medium">{coll.name}</td>
+                      <td
+                        className="sticky left-0 z-10 bg-background px-3 py-2 font-medium"
+                        style={{ paddingLeft: `${12 + depth * 16}px` }}
+                      >
+                        {coll.name}
+                      </td>
                       {nonDefaultLocales.map((locale) => {
                         const cell = getCollectionTranslation(coll.id, locale)
                         const cellKey = `collection-${coll.id}-${locale}`
