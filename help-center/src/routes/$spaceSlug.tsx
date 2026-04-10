@@ -11,10 +11,17 @@ import {
   buildCanonicalHomePath,
   isMultilingualEnabled,
 } from '@/lib/locale'
+import { stripBasepath } from '@/lib/pathUtils'
 
 export const Route = createFileRoute('/$spaceSlug')({
   beforeLoad: async ({ context, location, params }) => {
     const rootData = await loadRootRouteData(context.queryClient, location.pathname)
+    const internalPath = stripBasepath(location.pathname, rootData.basepath)
+
+    if (!rootData.multilingualEnabled && internalPath === '/') {
+      return
+    }
+
     const normalizedSlug = params.spaceSlug.trim().toLowerCase()
     const isKnownLocaleSlug = rootData.config.enabled_locales.some(
       (locale) => locale.toLowerCase() === normalizedSlug,
@@ -40,6 +47,12 @@ export const Route = createFileRoute('/$spaceSlug')({
   },
   loader: async ({ context, location, params }) => {
     const rootData = await loadRootRouteData(context.queryClient, location.pathname)
+    const internalPath = stripBasepath(location.pathname, rootData.basepath)
+
+    if (!rootData.multilingualEnabled && internalPath === '/') {
+      return { kind: 'home' as const, rootData, collection: null, alternates: [] }
+    }
+
     const normalizedSlug = params.spaceSlug.trim().toLowerCase()
     const isKnownLocaleSlug = rootData.config.enabled_locales.some(
       (locale) => locale.toLowerCase() === normalizedSlug,
@@ -75,12 +88,16 @@ export const Route = createFileRoute('/$spaceSlug')({
 
 function LegacySpaceRedirect() {
   const { spaceSlug } = Route.useParams()
-  const { defaultLocale, enabledLocales } = useDocsContext()
+  const { basepath, defaultLocale, enabledLocales } = useDocsContext()
   const normalizedSlug = spaceSlug.trim().toLowerCase()
   const multilingualEnabled = isMultilingualEnabled(enabledLocales)
   const isKnownLocaleSlug = enabledLocales.some(
     (locale) => locale.toLowerCase() === normalizedSlug,
   )
+
+  if (!multilingualEnabled && basepath === `/${spaceSlug}`) {
+    return <LocalizedHomePage />
+  }
 
   if (multilingualEnabled && isKnownLocaleSlug) {
     return <LocalizedHomePage />
