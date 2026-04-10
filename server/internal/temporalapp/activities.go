@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -12,7 +13,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -34,6 +37,7 @@ const (
 )
 
 var codexLivePausePollEvery = time.Second
+var errBranchSyncUnrelatedHistory = errors.New("working branch does not share history with base branch")
 
 type planningRunInput struct {
 	Stage               string   `json:"stage,omitempty"`
@@ -203,6 +207,15 @@ type resolvedRunState struct {
 	integration    *model.GitIntegration
 	teamDefault    *model.PMTeamRepoDefault
 	accessToken    string
+	branchSync     branchSyncState
+}
+
+type branchSyncState struct {
+	Status        string
+	BaseBranch    string
+	WorkingBranch string
+	ConflictFiles []string
+	BackupBranch  string
 }
 
 func executionRuntimeKind(state *resolvedRunState) string {
@@ -413,6 +426,13 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 				"run_id", state.run.ID,
 				"repo", state.repository.FullName,
 			)
+			if err := a.syncBaseIntoWorkingBranch(ctx, workDir, state); err != nil {
+				if persistWorkspace {
+					_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
+				}
+				_ = a.failRun(ctx, state, err.Error())
+				return ExecuteRunResult{}, nonRetryableRunError(err)
+			}
 		} else {
 			slog.InfoContext(ctx, "agent run reusing existing workspace checkout",
 				"workspace_id", state.run.WorkspaceID,
@@ -432,36 +452,38 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 
 	bridge := a.serviceBridge()
 	execCtx := &workerpkg.ExecutionContext{
-		Context:                ctx,
-		WorkDir:                workDir,
-		WorkspaceID:            state.run.WorkspaceID,
-		AgentID:                state.run.AgentID,
-		RunID:                  state.run.ID,
-		TargetType:             state.run.TargetType,
-		TargetID:               state.run.TargetID,
-		Agent:                  state.agent,
-		Task:                   state.task,
-		Epic:                   state.epic,
-		EpicTasks:              state.epicTasks,
-		Conversation:           state.conversation,
-		GitIntegration:         state.integration,
-		GitAccessToken:         state.accessToken,
-		Repo:                   repoFullName(state),
-		BaseBranch:             derefString(state.run.BaseBranch),
-		WorkingBranch:          derefString(state.run.WorkingBranch),
-		InitialInstructions:    initialInstructions,
-		PlanningStage:          planningInput.Stage,
-		PlanningMethodology:    planningInput.PlanningMethodology,
-		PlanningSpecDocumentID: planningInput.SpecDocumentID,
-		PlanningSpecVersionID:  planningInput.SpecVersionID,
-		RunFacts:               buildDurableRunFacts(state, planningInput),
-		Config:                 config,
-		ResolvedProfile:        state.resolved,
-		AllowedTools:           allowedTools,
-		Services:               bridge,
-		ArtifactContext:        artifactContext,
-		ProviderContinuation:   providerContinuation,
-		ConversationHistory:    history,
+		Context:                 ctx,
+		WorkDir:                 workDir,
+		WorkspaceID:             state.run.WorkspaceID,
+		AgentID:                 state.run.AgentID,
+		RunID:                   state.run.ID,
+		TargetType:              state.run.TargetType,
+		TargetID:                state.run.TargetID,
+		Agent:                   state.agent,
+		Task:                    state.task,
+		Epic:                    state.epic,
+		EpicTasks:               state.epicTasks,
+		Conversation:            state.conversation,
+		GitIntegration:          state.integration,
+		GitAccessToken:          state.accessToken,
+		Repo:                    repoFullName(state),
+		BaseBranch:              derefString(state.run.BaseBranch),
+		WorkingBranch:           derefString(state.run.WorkingBranch),
+		BranchSyncStatus:        strings.TrimSpace(state.branchSync.Status),
+		BranchSyncConflictFiles: slices.Clone(state.branchSync.ConflictFiles),
+		InitialInstructions:     initialInstructions,
+		PlanningStage:           planningInput.Stage,
+		PlanningMethodology:     planningInput.PlanningMethodology,
+		PlanningSpecDocumentID:  planningInput.SpecDocumentID,
+		PlanningSpecVersionID:   planningInput.SpecVersionID,
+		RunFacts:                buildDurableRunFacts(state, planningInput),
+		Config:                  config,
+		ResolvedProfile:         state.resolved,
+		AllowedTools:            allowedTools,
+		Services:                bridge,
+		ArtifactContext:         artifactContext,
+		ProviderContinuation:    providerContinuation,
+		ConversationHistory:     history,
 		Heartbeat: func(stage string) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -569,6 +591,15 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		"run_id", state.run.ID,
 		"runtime_kind", runtimeKind,
 	)
+	if runtimeKind == "codex" {
+		if err := a.pushCodexLocalCommit(ctx, workDir, state, execCtx); err != nil {
+			if persistWorkspace {
+				_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
+			}
+			_ = a.failRun(ctx, state, err.Error())
+			return ExecuteRunResult{}, nonRetryableRunError(err)
+		}
+	}
 	assistantMessage, err := a.persistAssistantRunMessage(ctx, state, execCtx)
 	if err != nil {
 		if persistWorkspace {
@@ -3326,8 +3357,8 @@ func (a *AgentRunActivities) checkoutRunRef(ctx context.Context, workDir string,
 	baseBranch := derefString(state.run.BaseBranch)
 	workingBranch := derefString(state.run.WorkingBranch)
 	if workingBranch != "" {
-		if _, err := a.runGitInDir(ctx, workDir, state.integration, state.accessToken, "fetch", "origin", workingBranch); err == nil {
-			if _, err := a.runGitInDir(ctx, workDir, state.integration, state.accessToken, "checkout", "-B", workingBranch, "origin/"+workingBranch); err == nil {
+		if refName, err := a.fetchRemoteTrackingBranch(ctx, workDir, state.integration, state.accessToken, workingBranch); err == nil {
+			if _, err := a.runGitInDir(ctx, workDir, state.integration, state.accessToken, "checkout", "-B", workingBranch, refName); err == nil {
 				return nil
 			}
 		}
@@ -3335,19 +3366,85 @@ func (a *AgentRunActivities) checkoutRunRef(ctx context.Context, workDir string,
 	if baseBranch == "" {
 		baseBranch = defaultString(state.repository.DefaultBranch, "main")
 	}
-	if _, err := a.runGitInDir(ctx, workDir, state.integration, state.accessToken, "fetch", "origin", baseBranch); err != nil {
+	baseRefName, err := a.fetchRemoteTrackingBranch(ctx, workDir, state.integration, state.accessToken, baseBranch)
+	if err != nil {
 		return fmt.Errorf("fetch base branch: %w", err)
 	}
 	if workingBranch != "" {
-		if _, err := a.runGitInDir(ctx, workDir, state.integration, state.accessToken, "checkout", "-B", workingBranch, "origin/"+baseBranch); err != nil {
+		if _, err := a.runGitInDir(ctx, workDir, state.integration, state.accessToken, "checkout", "-B", workingBranch, baseRefName); err != nil {
 			return fmt.Errorf("checkout working branch: %w", err)
 		}
 		return nil
 	}
-	if _, err := a.runGitInDir(ctx, workDir, state.integration, state.accessToken, "checkout", "-B", baseBranch, "origin/"+baseBranch); err != nil {
+	if _, err := a.runGitInDir(ctx, workDir, state.integration, state.accessToken, "checkout", "-B", baseBranch, baseRefName); err != nil {
 		return fmt.Errorf("checkout base branch: %w", err)
 	}
 	return nil
+}
+
+func (a *AgentRunActivities) syncBaseIntoWorkingBranch(ctx context.Context, workDir string, state *resolvedRunState) error {
+	if state == nil {
+		return nil
+	}
+	baseBranch := strings.TrimSpace(derefString(state.run.BaseBranch))
+	workingBranch := strings.TrimSpace(derefString(state.run.WorkingBranch))
+	state.branchSync = branchSyncState{
+		Status:        "not_applicable",
+		BaseBranch:    baseBranch,
+		WorkingBranch: workingBranch,
+	}
+	if baseBranch == "" || workingBranch == "" {
+		return nil
+	}
+	if baseBranch == workingBranch {
+		state.branchSync.Status = "same_branch"
+		return nil
+	}
+
+	baseRefName, err := a.fetchRemoteTrackingBranch(ctx, workDir, state.integration, state.accessToken, baseBranch)
+	if err != nil {
+		return fmt.Errorf("fetch base branch for sync: %w", err)
+	}
+	needsMerge, err := a.workingBranchNeedsBaseSync(ctx, workDir, state.integration, state.accessToken, baseRefName)
+	if err != nil {
+		if errors.Is(err, errBranchSyncUnrelatedHistory) {
+			if err := a.recoverUnrelatedWorkingBranch(ctx, workDir, state, baseRefName, baseBranch, workingBranch); err != nil {
+				state.branchSync.Status = "unrelated_history"
+				return err
+			}
+			return nil
+		}
+		return fmt.Errorf("check base sync status: %w", err)
+	}
+	if !needsMerge {
+		state.branchSync.Status = "up_to_date"
+		return nil
+	}
+
+	if _, err := a.runGitInDir(ctx, workDir, state.integration, state.accessToken, "merge", "--no-ff", "--no-edit", baseRefName); err == nil {
+		state.branchSync.Status = "merged"
+		return nil
+	} else {
+		conflictFiles, conflictErr := a.gitMergeConflictFiles(ctx, workDir, state.integration, state.accessToken)
+		if conflictErr == nil && len(conflictFiles) > 0 {
+			state.branchSync.Status = "conflicted"
+			state.branchSync.ConflictFiles = conflictFiles
+			if executionRuntimeKind(state) == "codex" {
+				slog.WarnContext(ctx, "agent run branch sync produced merge conflicts; handing off to codex",
+					"workspace_id", state.run.WorkspaceID,
+					"run_id", state.run.ID,
+					"base_branch", baseBranch,
+					"working_branch", workingBranch,
+					"conflict_files", conflictFiles,
+				)
+				return nil
+			}
+			_, _ = a.runGitInDir(ctx, workDir, state.integration, state.accessToken, "merge", "--abort")
+			return fmt.Errorf("sync base branch into working branch: merge conflicts in %s", strings.Join(conflictFiles, ", "))
+		}
+		_, _ = a.runGitInDir(ctx, workDir, state.integration, state.accessToken, "merge", "--abort")
+		return fmt.Errorf("sync base branch into working branch: %w", err)
+	}
 }
 
 func (a *AgentRunActivities) ensureRemoteBranch(ctx context.Context, integration *model.GitIntegration, accessToken, repoFullName, baseBranch, workingBranch string) error {
@@ -3357,19 +3454,148 @@ func (a *AgentRunActivities) ensureRemoteBranch(ctx context.Context, integration
 	}
 	defer os.RemoveAll(workDir)
 
-	if _, err := a.runGitInDir(ctx, workDir, integration, accessToken, "fetch", "origin", baseBranch); err != nil {
+	baseRefName, err := a.fetchRemoteTrackingBranch(ctx, workDir, integration, accessToken, baseBranch)
+	if err != nil {
 		return fmt.Errorf("fetch base branch: %w", err)
 	}
-	if _, err := a.runGitInDir(ctx, workDir, integration, accessToken, "fetch", "origin", workingBranch); err == nil {
+	if _, err := a.fetchRemoteTrackingBranch(ctx, workDir, integration, accessToken, workingBranch); err == nil {
 		return nil
 	}
-	if _, err := a.runGitInDir(ctx, workDir, integration, accessToken, "checkout", "-B", workingBranch, "origin/"+baseBranch); err != nil {
+	if _, err := a.runGitInDir(ctx, workDir, integration, accessToken, "checkout", "-B", workingBranch, baseRefName); err != nil {
 		return fmt.Errorf("create working branch: %w", err)
 	}
 	if _, err := a.runGitInDir(ctx, workDir, integration, accessToken, "push", "-u", "origin", workingBranch); err != nil {
 		return fmt.Errorf("push working branch: %w", err)
 	}
 	return nil
+}
+
+func (a *AgentRunActivities) fetchRemoteTrackingBranch(
+	ctx context.Context,
+	workDir string,
+	integration *model.GitIntegration,
+	accessToken string,
+	branch string,
+) (string, error) {
+	trimmed := strings.TrimSpace(branch)
+	if trimmed == "" {
+		return "", fmt.Errorf("branch is required")
+	}
+	refName := "refs/remotes/origin/" + trimmed
+	refspec := fmt.Sprintf("refs/heads/%s:%s", trimmed, refName)
+	if _, err := a.runGitInDir(ctx, workDir, integration, accessToken, "fetch", "origin", refspec); err != nil {
+		return "", err
+	}
+	return "origin/" + trimmed, nil
+}
+
+func (a *AgentRunActivities) workingBranchNeedsBaseSync(
+	ctx context.Context,
+	workDir string,
+	integration *model.GitIntegration,
+	accessToken string,
+	baseRefName string,
+) (bool, error) {
+	mergeBaseOutput, err := a.runGitInDir(ctx, workDir, integration, accessToken, "merge-base", "HEAD", strings.TrimSpace(baseRefName))
+	if err != nil {
+		if strings.TrimSpace(mergeBaseOutput) == "" {
+			return false, fmt.Errorf("%w", errBranchSyncUnrelatedHistory)
+		}
+		detail := strings.TrimSpace(mergeBaseOutput)
+		if detail == "" {
+			detail = strings.TrimSpace(err.Error())
+		}
+		return false, fmt.Errorf("determine merge base: %s", detail)
+	}
+	output, err := a.runGitInDir(ctx, workDir, integration, accessToken, "rev-list", "--count", "HEAD.."+strings.TrimSpace(baseRefName))
+	if err != nil {
+		return false, err
+	}
+	count, parseErr := strconv.Atoi(strings.TrimSpace(output))
+	if parseErr != nil {
+		return false, fmt.Errorf("parse rev-list count: %w", parseErr)
+	}
+	return count > 0, nil
+}
+
+func (a *AgentRunActivities) recoverUnrelatedWorkingBranch(
+	ctx context.Context,
+	workDir string,
+	state *resolvedRunState,
+	baseRefName, baseBranch, workingBranch string,
+) error {
+	if state == nil {
+		return fmt.Errorf("sync base branch into working branch: working branch %q does not share history with base branch %q", workingBranch, baseBranch)
+	}
+	if state.deliveryTarget != nil && state.deliveryTarget.ActivePRNumber != nil {
+		state.branchSync.Status = "unrelated_history"
+		return fmt.Errorf("sync base branch into working branch: working branch %q does not share history with base branch %q and has an active pull request", workingBranch, baseBranch)
+	}
+
+	headSHAOutput, err := a.runGitInDir(ctx, workDir, state.integration, state.accessToken, "rev-parse", "HEAD")
+	if err != nil {
+		return fmt.Errorf("sync base branch into working branch: resolve unrelated branch head: %w", err)
+	}
+	headSHA := strings.TrimSpace(headSHAOutput)
+	backupBranch := buildUnrelatedHistoryBackupBranch(headSHA)
+
+	if _, err := a.runGitInDir(ctx, workDir, state.integration, state.accessToken, "branch", "-f", backupBranch, "HEAD"); err != nil {
+		return fmt.Errorf("sync base branch into working branch: create backup branch: %w", err)
+	}
+	if _, err := a.runGitInDir(ctx, workDir, state.integration, state.accessToken, "push", "-u", "origin", backupBranch); err != nil {
+		return fmt.Errorf("sync base branch into working branch: push backup branch: %w", err)
+	}
+	if _, err := a.runGitInDir(ctx, workDir, state.integration, state.accessToken, "checkout", "-B", workingBranch, baseRefName); err != nil {
+		return fmt.Errorf("sync base branch into working branch: recreate working branch from base: %w", err)
+	}
+	leaseRef := fmt.Sprintf("--force-with-lease=refs/heads/%s:%s", workingBranch, headSHA)
+	if _, err := a.runGitInDir(ctx, workDir, state.integration, state.accessToken, "push", leaseRef, "-u", "origin", workingBranch); err != nil {
+		return fmt.Errorf("sync base branch into working branch: reset remote working branch from base: %w", err)
+	}
+
+	state.branchSync.Status = "recreated_from_base"
+	state.branchSync.BackupBranch = backupBranch
+	slog.WarnContext(ctx, "agent run recovered unrelated working branch by recreating it from base",
+		"workspace_id", state.run.WorkspaceID,
+		"run_id", state.run.ID,
+		"base_branch", baseBranch,
+		"working_branch", workingBranch,
+		"backup_branch", backupBranch,
+	)
+	return nil
+}
+
+func buildUnrelatedHistoryBackupBranch(headSHA string) string {
+	shortSHA := strings.TrimSpace(headSHA)
+	if len(shortSHA) > 12 {
+		shortSHA = shortSHA[:12]
+	}
+	if shortSHA == "" {
+		shortSHA = "unknown"
+	}
+	return fmt.Sprintf("helpin-backup/unrelated-history/%s-%s", time.Now().UTC().Format("20060102150405"), shortSHA)
+}
+
+func (a *AgentRunActivities) gitMergeConflictFiles(
+	ctx context.Context,
+	workDir string,
+	integration *model.GitIntegration,
+	accessToken string,
+) ([]string, error) {
+	output, err := a.runGitInDir(ctx, workDir, integration, accessToken, "diff", "--name-only", "--diff-filter=U")
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for _, line := range strings.Split(output, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		files = append(files, trimmed)
+	}
+	slices.Sort(files)
+	return files, nil
 }
 
 func (a *AgentRunActivities) recordPush(ctx context.Context, state *resolvedRunState, branch, sha string) error {
@@ -3391,6 +3617,58 @@ func (a *AgentRunActivities) recordPush(ctx context.Context, state *resolvedRunS
 		return err
 	}
 	return a.upsertGitLink(ctx, state, sha, nil)
+}
+
+func (a *AgentRunActivities) pushCodexLocalCommit(ctx context.Context, workDir string, state *resolvedRunState, execCtx *workerpkg.ExecutionContext) error {
+	if execCtx == nil || execCtx.LocalGitCommit == nil {
+		return nil
+	}
+	if state == nil || state.run == nil {
+		return fmt.Errorf("push codex commit: missing run state")
+	}
+
+	branch := strings.TrimSpace(execCtx.LocalGitCommit.Branch)
+	if branch == "" {
+		branch = strings.TrimSpace(execCtx.WorkingBranch)
+	}
+	if branch == "" {
+		return fmt.Errorf("push codex commit: working branch is empty")
+	}
+
+	sha := strings.TrimSpace(execCtx.LocalGitCommit.CommitSHA)
+	if sha == "" {
+		return fmt.Errorf("push codex commit: commit sha is empty")
+	}
+
+	if execCtx.Heartbeat != nil {
+		_ = execCtx.Heartbeat("pushing_changes")
+	}
+
+	if _, err := a.runGitInDir(ctx, workDir, state.integration, state.accessToken, "push", "-u", "origin", branch); err != nil {
+		return fmt.Errorf("push repository changes: %w", err)
+	}
+	if err := a.recordPush(ctx, state, branch, sha); err != nil {
+		return fmt.Errorf("record pushed branch: %w", err)
+	}
+
+	if a.artifactRepo != nil && state != nil && state.run != nil {
+		payload := map[string]any{
+			"branch":         branch,
+			"commit_sha":     sha,
+			"commit_message": strings.TrimSpace(execCtx.LocalGitCommit.CommitMessage),
+			"changed_files":  slices.Clone(execCtx.LocalGitCommit.ChangedFiles),
+			"delivery":       "pushed",
+		}
+		if _, err := a.appendRunArtifact(ctx, state.run, "git_delivery_result", "json", payload); err != nil {
+			slog.WarnContext(ctx, "failed to save git delivery result artifact",
+				"error", err,
+				"run_id", state.run.ID,
+				"branch", branch,
+			)
+		}
+	}
+
+	return nil
 }
 
 func (a *AgentRunActivities) recordPR(ctx context.Context, state *resolvedRunState, metadata workerpkg.PRMetadata, title string) error {
@@ -5510,6 +5788,12 @@ func buildDurableRunFacts(state *resolvedRunState, input planningRunInput) map[s
 	setFact(facts, "repo_full_name", repoFullName(state))
 	setFact(facts, "base_branch", derefString(state.run.BaseBranch))
 	setFact(facts, "working_branch", derefString(state.run.WorkingBranch))
+	setFact(facts, "branch_sync_status", strings.TrimSpace(state.branchSync.Status))
+	setFact(facts, "branch_sync_base_branch", strings.TrimSpace(state.branchSync.BaseBranch))
+	setFact(facts, "branch_sync_working_branch", strings.TrimSpace(state.branchSync.WorkingBranch))
+	if len(state.branchSync.ConflictFiles) > 0 {
+		setFact(facts, "branch_sync_conflict_files", strings.Join(state.branchSync.ConflictFiles, ","))
+	}
 
 	targetType := sanitizeFactKey(state.run.TargetType)
 	if targetType != "" && strings.TrimSpace(state.run.TargetID) != "" {

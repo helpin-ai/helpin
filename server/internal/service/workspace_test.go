@@ -79,6 +79,7 @@ func newWorkspaceDefaultsTestHarness(t *testing.T) (*gorm.DB, *WorkspaceService,
 			trigger_mode TEXT NOT NULL,
 			provider TEXT,
 			model TEXT,
+			execution_config BLOB NOT NULL DEFAULT x'7b7d',
 			system_prompt TEXT,
 			planning_notes TEXT,
 			monthly_token_budget INTEGER,
@@ -114,6 +115,7 @@ func newWorkspaceDefaultsTestHarness(t *testing.T) (*gorm.DB, *WorkspaceService,
 		activitySvc: NewPMActivityService(repository.NewPMActivityRepository(db)),
 		wsPublisher: nil,
 	}
+	agentService.SetModelProviderConfig("", "test-openai-key", "", "", false, "", "")
 	defaults := NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, agentService)
 	svc := NewWorkspaceService(wsRepo, attachRepo, nil, defaults)
 
@@ -306,7 +308,7 @@ func TestWorkspaceService_Create_EmptySlugFails(t *testing.T) {
 	}
 }
 
-func TestWorkspaceService_Create_DuplicateSlugFails(t *testing.T) {
+func TestWorkspaceService_Create_DuplicateSlugDeduplicates(t *testing.T) {
 	_, svc := newWorkspaceTestHarness(t)
 	ctx := context.Background()
 
@@ -325,9 +327,12 @@ func TestWorkspaceService_Create_DuplicateSlugFails(t *testing.T) {
 		Slug:         "dup-slug",
 		WorkspaceKey: "DUPE",
 	}
-	_, err = svc.Create(ctx, req2, "owner-1")
-	if err == nil {
-		t.Fatal("expected error for duplicate slug, got nil")
+	ws, err := svc.Create(ctx, req2, "owner-1")
+	if err != nil {
+		t.Fatalf("second Create: %v", err)
+	}
+	if ws.Slug != "dup-slug-2" {
+		t.Fatalf("expected deduplicated slug dup-slug-2, got %q", ws.Slug)
 	}
 }
 

@@ -88,6 +88,7 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 			trigger_mode TEXT,
 			provider TEXT,
 			model TEXT,
+			execution_config BLOB NOT NULL DEFAULT x'7b7d',
 			system_prompt TEXT,
 			planning_notes TEXT,
 			tools TEXT,
