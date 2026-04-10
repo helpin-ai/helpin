@@ -27,7 +27,11 @@ client.lead({
   email: 'prospect@example.com',
   first_name: 'Jamie',
   last_name: 'Rivera',
-  company: 'Acme Corp',
+  company: {
+    id: 'company_123',
+    name: 'Acme Corp',
+    created_at: '2024-01-15T00:00:00Z',
+  },
   phone: '+1 555 0100',
   lifecycle_stage: 'marketing_qualified',
 });
@@ -40,6 +44,13 @@ client.lead({
   window.helpin = window.helpin || [];
   window.helpin('lead', {
     email: 'prospect@example.com',
+    first_name: 'Jamie',
+    last_name: 'Rivera',
+    company: {
+      id: 'company_123',
+      name: 'Acme Corp',
+      created_at: '2024-01-15T00:00:00Z'
+    },
     source: 'Webinar Sign-up',
     campaign: 'Q1 Product Launch'
   });
@@ -51,7 +62,7 @@ client.lead({
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `email` | string | ✔︎ | Must be non-empty and pass standard email validation. Trimmed automatically before sending. |
-| `...` | any | optional | Add any custom attributes (e.g., `first_name`, `utm_source`, `plan_interest`). |
+| `...` | any | optional | Add any custom attributes (e.g., `first_name`, `last_name`, `company`, `utm_source`, `plan_interest`). |
 
 If the payload is not an object or the `email` field is missing/invalid, the SDK logs `Lead event requires a valid email attribute` and skips sending the event.
 

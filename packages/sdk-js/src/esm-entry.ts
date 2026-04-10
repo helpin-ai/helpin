@@ -5,7 +5,7 @@
  */
 export { HelpinClient } from './core/client';
 export { LogLevel } from './utils/logger';
-export type { Config as HelpinOptions, UserProps, EventPayload, ClientProperties } from './core/types';
+export type { Config as HelpinOptions, UserProps, LeadProps, CompanyPayload, EventPayload, ClientProperties } from './core/types';
 
 import { HelpinClient } from './core/client';
 import { WidgetManager } from './core/widget';

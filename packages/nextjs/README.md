@@ -54,7 +54,13 @@ export function BillingCTA() {
     void id({
       id: 'user_123',
       email: 'jane@example.com',
-      name: 'Jane Doe',
+      first_name: 'Jane',
+      last_name: 'Doe',
+      company: {
+        id: 'company_123',
+        name: 'Acme Inc',
+        created_at: '2024-01-15T00:00:00Z',
+      },
     });
     set({ app: 'web' });
   }, [id, set]);

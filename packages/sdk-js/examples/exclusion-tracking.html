@@ -171,7 +171,8 @@
             window.helpin.id({
                 id: 'test-user-' + Math.floor(Math.random() * 1000),
                 email: 'test@example.com',
-                name: 'Test User'
+                first_name: 'Test',
+                last_name: 'User'
             });
             
             const isExcluded = localStorage.getItem('helpin_exclusion') === 'true';

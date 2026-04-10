@@ -27,11 +27,26 @@ if (!client) {
 await client.id({
   id: 'user_123',
   email: 'jane@example.com',
-  name: 'Jane Doe',
+  first_name: 'Jane',
+  last_name: 'Doe',
+  company: {
+    id: 'company_123',
+    name: 'Acme Inc',
+    created_at: '2024-01-15T00:00:00Z',
+  },
 });
 
 client.track('button_click', { cta: 'pricing' });
-client.lead({ email: 'lead@example.com', name: 'New Lead' });
+client.lead({
+  email: 'lead@example.com',
+  first_name: 'New',
+  last_name: 'Lead',
+  company: {
+    id: 'company_456',
+    name: 'Acme Inc',
+    created_at: '2024-01-15T00:00:00Z',
+  },
+});
 client.pageview();
 client.open();
 ```

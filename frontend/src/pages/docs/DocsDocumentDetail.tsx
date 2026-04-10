@@ -112,9 +112,21 @@ function docStatusColor(status: string): string {
   }
 }
 
-function resolveHelpcenterPreviewBaseUrl(): string {
+interface HelpcenterPreviewBase {
+  baseUrl: string
+  /**
+   * When true, the workspace slug is embedded in the URL path
+   * (helpin.center/{slug}/preview/...). When false, it goes in the
+   * `subdomain` query param (legacy/local dev fallback).
+   */
+  pathBased: boolean
+}
+
+function resolveHelpcenterPreviewBase(): HelpcenterPreviewBase {
   const explicit = import.meta.env.VITE_HELPCENTER_URL?.trim()
-  if (explicit) return explicit.replace(/\/+$/, '')
+  if (explicit) {
+    return { baseUrl: explicit.replace(/\/+$/, ''), pathBased: false }
+  }
 
   const appBase = import.meta.env.VITE_APP_BASE_URL?.trim()
   const fallbackOrigin = typeof window !== 'undefined' ? window.location.origin : ''
@@ -123,19 +135,33 @@ function resolveHelpcenterPreviewBaseUrl(): string {
   if (candidate) {
     try {
       const url = new URL(candidate)
-      if (url.hostname === 'app.helpin.ai') return 'https://helpcenter.helpin.ai'
+      if (url.hostname === 'app.helpin.ai') {
+        return { baseUrl: 'https://helpin.center', pathBased: true }
+      }
       if (url.hostname === 'client.stage.helpin.ai' || url.hostname === 'stage.helpin.ai') {
-        return 'https://helpcenter-stage.helpin.ai'
+        return { baseUrl: 'https://stage.helpin.center', pathBased: true }
       }
       if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
-        return 'http://localhost:5174'
+        return { baseUrl: 'http://localhost:5174', pathBased: false }
       }
     } catch {
       // Fall through to the local dev default below.
     }
   }
 
-  return 'http://localhost:5174'
+  return { baseUrl: 'http://localhost:5174', pathBased: false }
+}
+
+function buildHelpcenterPreviewUrl(
+  subdomain: string,
+  docId: string,
+  token: string,
+): string {
+  const { baseUrl, pathBased } = resolveHelpcenterPreviewBase()
+  if (pathBased) {
+    return `${baseUrl}/${subdomain}/preview/${docId}?token=${token}`
+  }
+  return `${baseUrl}/preview/${docId}?subdomain=${subdomain}&token=${token}`
 }
 
 function DocCollectionIcon({ name }: { name?: string | null }) {
@@ -892,10 +918,9 @@ export function DocsDocumentDetail() {
                   toast.error(res.error || 'Failed to generate preview')
                   return
                 }
-                const hcUrl = resolveHelpcenterPreviewBaseUrl()
                 const { token, subdomain } = res.data
                 window.open(
-                  `${hcUrl}/preview/${docId}?subdomain=${subdomain}&token=${token}`,
+                  buildHelpcenterPreviewUrl(subdomain, docId, token),
                   '_blank',
                   'noopener',
                 )

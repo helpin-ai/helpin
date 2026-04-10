@@ -12,6 +12,9 @@ spec:
     - api.prod.helpin.ai
     - helpcenter.helpin.ai
     secretName: cert-prod-helpin-wildcard
+  - hosts:
+    - helpin.center
+    secretName: cert-prod-helpin-center
   rules:
   - host: api.prod.helpin.ai
     http:
@@ -24,6 +27,16 @@ spec:
             port:
               number: 8080
   - host: helpcenter.helpin.ai
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: helpin-helpcenter-svc
+            port:
+              number: 80
+  - host: helpin.center
     http:
       paths:
       - path: /

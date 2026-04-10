@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Readable } from 'node:stream'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import serverEntry from './dist/server/server.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -224,13 +225,54 @@ function resolveHostInfo(request) {
   return { host, protocol, origin: `${protocol}://${host}` }
 }
 
-function resolveSubdomainFromHost(host) {
-  const hostname = host.split(':')[0]
-  const parts = hostname.split('.')
-  if (parts.length >= 3) return parts[0]
-  if (parts.length === 2 && parts[1] !== 'localhost') return parts[0]
-  return hostname
+const PATH_HOST_TENANT_ROOTS = new Set(['helpin.center', 'stage.helpin.center'])
+
+function normalizeHostname(host) {
+  return host.split(':')[0].trim().toLowerCase()
 }
+
+function isPathHostTenantRoot(host) {
+  return PATH_HOST_TENANT_ROOTS.has(normalizeHostname(host))
+}
+
+function extractFirstPathSegment(pathname) {
+  if (!pathname) return ''
+  const trimmed = pathname.replace(/^\/+/, '')
+  const slash = trimmed.indexOf('/')
+  return slash === -1 ? trimmed : trimmed.slice(0, slash)
+}
+
+/**
+ * Mirrors `resolveHelpCenterContext` in src/lib/utils.ts but adapted for the
+ * Node entrypoint. Keep these in sync.
+ */
+function resolveHelpCenterContext(host, pathname) {
+  const hostname = normalizeHostname(host)
+
+  if (isPathHostTenantRoot(hostname)) {
+    const slug = extractFirstPathSegment(pathname)
+    if (!slug) return { subdomain: '', basepath: '' }
+    return { subdomain: slug, basepath: `/${slug}` }
+  }
+
+  if (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)
+  ) {
+    return { subdomain: process.env.VITE_HC_SUBDOMAIN || 'demo', basepath: '' }
+  }
+
+  // Custom domain — pass hostname through; backend resolves it.
+  return { subdomain: hostname, basepath: '' }
+}
+
+const requestContextStorage = new AsyncLocalStorage()
+
+// Exposed to the bundled SSR entry (router.tsx) so it can read per-request
+// context without importing any server-only modules.
+globalThis.__hcGetRequestContext__ = () => requestContextStorage.getStore() ?? null
+
 
 function xmlEscape(value) {
   return value
@@ -241,13 +283,13 @@ function xmlEscape(value) {
     .replaceAll("'", '&apos;')
 }
 
-async function handleRobotsTxt(request, response) {
-  const { host, origin } = resolveHostInfo(request)
+async function handleRobotsTxt(_request, response, hcContext) {
+  const { origin, basepath } = hcContext
   const body = [
     'User-agent: *',
     'Disallow: /preview/',
     'Crawl-delay: 1',
-    `Sitemap: ${origin}/sitemap.xml`,
+    `Sitemap: ${origin}${basepath || ''}/sitemap.xml`,
   ].join('\n')
   response.statusCode = 200
   response.setHeader('Cache-Control', 'public, max-age=3600')
@@ -255,9 +297,9 @@ async function handleRobotsTxt(request, response) {
   response.end(body)
 }
 
-async function handleSitemapXml(request, response) {
+async function handleSitemapXml(_request, response, hcContext) {
   try {
-    const { host, origin } = resolveHostInfo(request)
+    const { origin, basepath, subdomain } = hcContext
     const apiBase = process.env.INTERNAL_API_URL
     if (!apiBase) {
       response.statusCode = 503
@@ -265,7 +307,12 @@ async function handleSitemapXml(request, response) {
       response.end('Sitemap unavailable')
       return
     }
-    const subdomain = resolveSubdomainFromHost(host)
+    if (!subdomain) {
+      response.statusCode = 404
+      response.setHeader('Content-Type', 'text/plain')
+      response.end('Sitemap unavailable')
+      return
+    }
     const configRes = await fetch(`${apiBase}/hc/${subdomain}/config`)
     if (!configRes.ok) throw new Error(`config fetch failed: ${configRes.status}`)
     const config = await configRes.json()
@@ -273,8 +320,9 @@ async function handleSitemapXml(request, response) {
       ? config.enabled_locales
       : [config.default_locale || 'en']
     const multilingual = config.enabled_locales?.length > 1
+    const baseUrl = `${origin}${basepath || ''}`
     const urls = new Map()
-    urls.set(`${origin}${multilingual ? `/${config.default_locale}` : '/'}`, null)
+    urls.set(`${baseUrl}${multilingual ? `/${config.default_locale}` : '/'}`, null)
 
     for (const locale of locales) {
       const spacesPath = multilingual
@@ -296,13 +344,13 @@ async function handleSitemapXml(request, response) {
           const collPath = multilingual
             ? `/${locale}/${coll.slug}`
             : `/${coll.slug}`
-          urls.set(`${origin}${collPath}`, null)
+          urls.set(`${baseUrl}${collPath}`, null)
 
           for (const article of coll.articles || []) {
             const artPath = multilingual
               ? `/${locale}/${coll.slug}/${article.slug}`
               : `/${coll.slug}/${article.slug}`
-            urls.set(`${origin}${artPath}`, article.published_at || null)
+            urls.set(`${baseUrl}${artPath}`, article.published_at || null)
           }
         }
       }
@@ -329,6 +377,20 @@ async function handleSitemapXml(request, response) {
   }
 }
 
+/**
+ * Strip the resolved basepath from a pathname so we can match
+ * top-level routes like /sitemap.xml or /robots.txt under multi-tenant hosts
+ * (e.g. helpin.center/{slug}/sitemap.xml).
+ */
+function stripBasepath(pathname, basepath) {
+  if (!basepath) return pathname
+  if (pathname === basepath) return '/'
+  if (pathname.startsWith(`${basepath}/`)) {
+    return pathname.slice(basepath.length) || '/'
+  }
+  return pathname
+}
+
 async function handleRequest(request, response) {
   if (request.url === '/healthz') {
     response.statusCode = 200
@@ -338,74 +400,87 @@ async function handleRequest(request, response) {
     return
   }
 
-  if (request.url === '/robots.txt') {
-    await handleRobotsTxt(request, response)
-    return
-  }
-
-  if (request.url === '/sitemap.xml') {
-    await handleSitemapXml(request, response)
-    return
-  }
-
-  const { host, protocol } = resolveHostInfo(request)
+  const { host, protocol, origin } = resolveHostInfo(request)
   const url = new URL(request.url || '/', `${protocol}://${host}`)
-  const cacheKey = getCacheKey(url, request)
-
-  if (tryServeStatic(url, response)) {
-    return
+  const resolved = resolveHelpCenterContext(host, url.pathname)
+  const hcContext = {
+    host: normalizeHostname(host),
+    protocol,
+    origin,
+    pathname: url.pathname,
+    subdomain: resolved.subdomain,
+    basepath: resolved.basepath,
   }
+  const internalPath = stripBasepath(url.pathname, hcContext.basepath)
 
-  if (isApiRequest(url)) {
-    await proxyApiRequest(request, response, url)
-    return
-  }
-
-  if (isHtmlRequest(request, url)) {
-    const cached = getCachedResponse(cacheKey)
-    if (cached) {
-      writeCachedResponse(response, cached)
+  await requestContextStorage.run(hcContext, async () => {
+    if (internalPath === '/robots.txt') {
+      await handleRobotsTxt(request, response, hcContext)
       return
     }
-  }
 
-  const headers = new Headers()
-  for (const [name, value] of Object.entries(request.headers)) {
-    if (value == null) {
-      continue
+    if (internalPath === '/sitemap.xml') {
+      await handleSitemapXml(request, response, hcContext)
+      return
     }
-    headers.set(name, normalizeHeaderValue(value))
-  }
 
-  const fetchRequest = new Request(url, {
-    method: request.method,
-    headers,
-    body: shouldReadBody(request.method || 'GET') ? Readable.toWeb(request) : undefined,
-    duplex: 'half',
-  })
+    if (tryServeStatic(url, response)) {
+      return
+    }
 
-  const fetchResponse = await serverEntry.fetch(fetchRequest)
-  const responseType = fetchResponse.headers.get('content-type') || ''
+    if (isApiRequest(url)) {
+      await proxyApiRequest(request, response, url)
+      return
+    }
 
-  if (isHtmlRequest(request, url) && responseType.includes('text/html') && fetchResponse.ok) {
-    const body = await fetchResponse.text()
-    const headersToCache = Array.from(fetchResponse.headers.entries())
-    setCachedResponse(cacheKey, {
-      body,
-      expiresAt: Date.now() + HTML_CACHE_TTL_MS,
-      headers: headersToCache,
-      status: fetchResponse.status,
+    const cacheKey = getCacheKey(url, request)
+
+    if (isHtmlRequest(request, url)) {
+      const cached = getCachedResponse(cacheKey)
+      if (cached) {
+        writeCachedResponse(response, cached)
+        return
+      }
+    }
+
+    const headers = new Headers()
+    for (const [name, value] of Object.entries(request.headers)) {
+      if (value == null) {
+        continue
+      }
+      headers.set(name, normalizeHeaderValue(value))
+    }
+
+    const fetchRequest = new Request(url, {
+      method: request.method,
+      headers,
+      body: shouldReadBody(request.method || 'GET') ? Readable.toWeb(request) : undefined,
+      duplex: 'half',
     })
 
-    response.statusCode = fetchResponse.status
-    for (const [name, value] of headersToCache) {
-      response.setHeader(name, value)
-    }
-    response.end(body)
-    return
-  }
+    const fetchResponse = await serverEntry.fetch(fetchRequest)
+    const responseType = fetchResponse.headers.get('content-type') || ''
 
-  await writeFetchResponse(response, fetchResponse, url)
+    if (isHtmlRequest(request, url) && responseType.includes('text/html') && fetchResponse.ok) {
+      const body = await fetchResponse.text()
+      const headersToCache = Array.from(fetchResponse.headers.entries())
+      setCachedResponse(cacheKey, {
+        body,
+        expiresAt: Date.now() + HTML_CACHE_TTL_MS,
+        headers: headersToCache,
+        status: fetchResponse.status,
+      })
+
+      response.statusCode = fetchResponse.status
+      for (const [name, value] of headersToCache) {
+        response.setHeader(name, value)
+      }
+      response.end(body)
+      return
+    }
+
+    await writeFetchResponse(response, fetchResponse, url)
+  })
 }
 
 const server = http.createServer((request, response) => {

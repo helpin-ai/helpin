@@ -317,14 +317,25 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   helpin('id', {
     id: 'your-internal-user-id',
     email: 'user@example.com',
-    name: 'Jane Doe'
+    first_name: 'Jane',
+    last_name: 'Doe',
+    company: {
+      id: 'company-123',
+      name: 'Acme Inc',
+      created_at: '2024-01-15T00:00:00Z'
+    }
   });
 
   // Capture a lead (e.g. from a signup form)
   helpin('lead', {
     email: 'visitor@example.com',
-    name: 'New Lead',
-    company: 'Acme Inc'
+    first_name: 'New',
+    last_name: 'Lead',
+    company: {
+      id: 'company-123',
+      name: 'Acme Inc',
+      created_at: '2024-01-15T00:00:00Z'
+    }
   });
 </script>`;
 
@@ -355,10 +366,29 @@ function Dashboard() {
 
   useEffect(() => {
     // Identify a logged-in user
-    id({ email: 'user@example.com', name: 'Jane Doe', id: 'user-123' });
+    id({
+      id: 'user-123',
+      email: 'user@example.com',
+      first_name: 'Jane',
+      last_name: 'Doe',
+      company: {
+        id: 'company-123',
+        name: 'Acme Inc',
+        created_at: '2024-01-15T00:00:00Z',
+      },
+    });
 
     // Or capture a lead
-    lead({ email: 'visitor@example.com', name: 'New Lead' });
+    lead({
+      email: 'visitor@example.com',
+      first_name: 'New',
+      last_name: 'Lead',
+      company: {
+        id: 'company-123',
+        name: 'Acme Inc',
+        created_at: '2024-01-15T00:00:00Z',
+      },
+    });
   }, []);
 }`;
 
@@ -394,10 +424,29 @@ function Dashboard() {
 
   useEffect(() => {
     // Identify a logged-in user
-    id({ email: 'user@example.com', name: 'Jane Doe', id: 'user-123' });
+    id({
+      id: 'user-123',
+      email: 'user@example.com',
+      first_name: 'Jane',
+      last_name: 'Doe',
+      company: {
+        id: 'company-123',
+        name: 'Acme Inc',
+        created_at: '2024-01-15T00:00:00Z',
+      },
+    });
 
     // Or capture a lead
-    lead({ email: 'visitor@example.com', name: 'New Lead' });
+    lead({
+      email: 'visitor@example.com',
+      first_name: 'New',
+      last_name: 'Lead',
+      company: {
+        id: 'company-123',
+        name: 'Acme Inc',
+        created_at: '2024-01-15T00:00:00Z',
+      },
+    });
   }, []);
 }`;
 
