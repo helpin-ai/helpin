@@ -1,9 +1,9 @@
 import { useState, useCallback } from 'react'
-import { Link } from '@tanstack/react-router'
 import { Search, Menu, ArrowRight } from 'lucide-react'
 import { useDocsContext } from '@/contexts/DocsContext'
 import { useSpaceNavigation } from '@/hooks/queries'
 import { buildCanonicalCollectionPath } from '@/lib/locale'
+import { DocsLink } from '@/components/DocsLink'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { MobileNav } from '@/components/navigation/MobileNav'
 import { PhIcon } from '@/components/PhIcon'
@@ -170,7 +170,7 @@ function FeaturedCard({
 
   if (card.link_type === 'space') {
     return (
-      <Link
+      <DocsLink
         to={buildCanonicalCollectionPath(
           multilingualEnabled,
           locale,
@@ -179,13 +179,13 @@ function FeaturedCard({
         className={cls}
       >
         {inner}
-      </Link>
+      </DocsLink>
     )
   }
 
   if (card.link_type === 'collection' && card.space_slug) {
     return (
-      <Link
+      <DocsLink
         to={buildCanonicalCollectionPath(
           multilingualEnabled,
           locale,
@@ -194,13 +194,13 @@ function FeaturedCard({
         className={cls}
       >
         {inner}
-      </Link>
+      </DocsLink>
     )
   }
 
   const spaceSlug = card.space_slug || card.link_value
   return (
-    <Link
+    <DocsLink
       to={buildCanonicalCollectionPath(
         multilingualEnabled,
         locale,
@@ -209,6 +209,6 @@ function FeaturedCard({
       className={cls}
     >
       {inner}
-    </Link>
+    </DocsLink>
   )
 }

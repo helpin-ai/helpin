@@ -1,6 +1,8 @@
-import { Link, useRouterState } from '@tanstack/react-router'
+import { useRouterState } from '@tanstack/react-router'
+import { DocsLink } from '@/components/DocsLink'
 import { useDocsContext } from '@/contexts/DocsContext'
 import { buildCanonicalArticlePath, isMultilingualEnabled } from '@/lib/locale'
+import { prefixBasepath } from '@/lib/pathUtils'
 import { cn } from '@/lib/utils'
 import { PhIcon } from '@/components/PhIcon'
 import type { NavItem } from '@/lib/types'
@@ -16,7 +18,7 @@ export function NavTree({
   navigation,
   onArticleClick,
 }: NavTreeProps) {
-  const { enabledLocales } = useDocsContext()
+  const { enabledLocales, basepath } = useDocsContext()
   const multilingualEnabled = isMultilingualEnabled(enabledLocales)
 
   return (
@@ -27,6 +29,7 @@ export function NavTree({
           locale={locale}
           collection={collection}
           multilingualEnabled={multilingualEnabled}
+          basepath={basepath}
           onArticleClick={onArticleClick}
           isFirst={idx === 0}
         />
@@ -39,12 +42,14 @@ function CollectionGroup({
   collection,
   locale,
   multilingualEnabled,
+  basepath,
   onArticleClick,
   isFirst,
 }: {
   collection: NavItem
   locale: string
   multilingualEnabled: boolean
+  basepath: string
   onArticleClick?: () => void
   isFirst: boolean
 }) {
@@ -67,10 +72,10 @@ function CollectionGroup({
             collection.slug,
             article.slug,
           )
-          const isActive = pathname === href
+          const isActive = pathname === prefixBasepath(basepath, href)
 
           return (
-            <Link
+            <DocsLink
               key={article.id}
               to={href}
               onClick={onArticleClick}
@@ -82,7 +87,7 @@ function CollectionGroup({
               )}
             >
               {article.title}
-            </Link>
+            </DocsLink>
           )
         })}
       </div>
