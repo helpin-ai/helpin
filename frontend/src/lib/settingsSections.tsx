@@ -153,6 +153,13 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
     group: 'Workspace',
   },
   {
+    id: 'import',
+    label: 'Import / Export',
+    description: 'Import data from Shortcut and other project management tools.',
+    icon: ImportExport,
+    group: 'Data',
+  },
+  {
     id: 'workflows',
     label: 'Workflows',
     description: 'Manage workflows, pipeline rules, and workspace-level GitHub event rules.',
@@ -194,13 +201,6 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
     description: 'Connect GitHub and manage synced repositories.',
     icon: Delivery,
     group: 'Project Settings',
-  },
-  {
-    id: 'import',
-    label: 'Import / Export',
-    description: 'Import data from Shortcut and other project management tools.',
-    icon: ImportExport,
-    group: 'Data',
   },
   {
     id: 'helpcenter',
