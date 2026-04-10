@@ -13,9 +13,9 @@ export const TABLE_HEADER_CELL =
 /** Sortable header cell – adds cursor pointer */
 export const TABLE_HEADER_CELL_SORTABLE = 'cursor-pointer select-none hover:bg-muted';
 
-/** Data row – compact h-9 (36px), `group` class for hover-reveal actions */
+/** Data row – compact h-9 (36px), named group for hover-reveal actions */
 export const TABLE_ROW =
-  'group group/row flex h-9 items-center bg-card transition-colors hover:bg-muted';
+  'group/row flex h-9 items-center bg-card hover:bg-muted';
 
 /** Data cell – right border for grid lines */
 export const TABLE_CELL =
@@ -43,15 +43,15 @@ export const ACTIONS_COL_SIZE = 44;
 
 /** Pinned cell (left) – sticky with background so content doesn't bleed through */
 export const TABLE_PINNED_LEFT =
-  'sticky z-[3] bg-card group-hover:bg-muted group-hover/row:bg-muted';
+  'sticky z-[3] bg-inherit';
 
 /** Pinned cell (left, after checkbox) – higher z so it layers above the select column */
 export const TABLE_PINNED_LEFT_NAME =
-  'sticky z-[4] bg-card group-hover:bg-muted group-hover/row:bg-muted';
+  'sticky z-[4] bg-inherit';
 
 /** Pinned cell (right) – sticky right with background */
 export const TABLE_PINNED_RIGHT =
-  'sticky right-0 z-[3] bg-card group-hover:bg-muted group-hover/row:bg-muted';
+  'sticky right-0 z-[3] bg-inherit';
 
 /** Pinned header cell (left) – higher z-index than both header and pinned cells */
 export const TABLE_PINNED_HEADER_LEFT = 'sticky z-[11] bg-card';
@@ -64,7 +64,7 @@ export const TABLE_PINNED_HEADER_RIGHT = 'sticky right-0 z-[11] bg-card';
 
 /** Checkbox hover-reveal – hidden by default, visible on row hover or when checked */
 export const TABLE_CHECKBOX_HOVER =
-  'opacity-0 group-hover:opacity-100 transition-opacity data-[state=checked]:opacity-100 data-[state=indeterminate]:opacity-100 data-checked:opacity-100';
+  'opacity-0 group-hover/row:opacity-100 data-[state=checked]:opacity-100 data-[state=indeterminate]:opacity-100 data-checked:opacity-100';
 
 /**
  * Returns inline style for pinned columns.

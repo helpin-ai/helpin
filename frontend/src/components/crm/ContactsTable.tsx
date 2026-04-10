@@ -641,13 +641,14 @@ export function ContactsTable({
                 <div
                   key={row.id}
                   data-index={virtualRow.index}
-                  ref={virtualizer.measureElement}
                   style={{
                     position: 'absolute',
                     top: 0,
                     left: 0,
                     width: '100%',
-                    transform: `translateY(${virtualRow.start}px)`,
+                    transform: `translate3d(0, ${virtualRow.start}px, 0)`,
+                    contain: 'paint',
+                    willChange: 'transform',
                   }}
                 >
                   {isGrouped ? (
@@ -892,7 +893,7 @@ const InlineActionsCell = memo(function InlineActionsCell({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
-          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
+          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground opacity-0 hover:bg-muted group-hover/row:opacity-100"
           onClick={(e) => e.stopPropagation()}
         >
           <MoreVerticalIcon className="h-3.5 w-3.5" />

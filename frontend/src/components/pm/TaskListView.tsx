@@ -1094,7 +1094,9 @@ export function TaskListView({
                     top: 0,
                     left: 0,
                     width: '100%',
-                    transform: `translateY(${virtualRow.start}px)`,
+                    transform: `translate3d(0, ${virtualRow.start}px, 0)`,
+                    contain: 'paint',
+                    willChange: 'transform',
                   }}
                 >
                   {isGrouped ? (
@@ -1216,7 +1218,7 @@ const MemoDataRow = memo(function DataRow({
   void columnSizingVersion; // used by arePMDataRowPropsEqual for memo comparison
   return (
     <div
-      className={`group/row ${TABLE_ROW} cursor-pointer`}
+      className={`${TABLE_ROW} cursor-pointer`}
       onClick={() => onOpenTask(row.original)}
     >
       {row.getVisibleCells().map((cell) => {
