@@ -1080,6 +1080,213 @@ func TestDocsCollectionService_TreeValidation(t *testing.T) {
 	})
 }
 
+// TestDocsDocumentMoves_NestedCollections verifies that the existing
+// document move / reorder pipeline works for documents whose owning
+// collection is nested below the top of the space. The plan's Task 4
+// keeps `collection_id` as the single owning bucket — nothing about the
+// move semantics should change based on the collection's depth.
+//
+// These tests serve as regression coverage: if a future refactor breaks
+// nested-collection bucketing for documents, these fail loudly.
+func TestDocsDocumentMoves_NestedCollections(t *testing.T) {
+	t.Parallel()
+
+	const (
+		workspaceID = "ws-doc-tree"
+		userID      = "user-doc-tree"
+		spaceID     = "space-doc-tree"
+	)
+
+	now := time.Date(2026, 4, 10, 12, 0, 0, 0, time.UTC)
+
+	// Common setup: a space with a top-level collection and two nested
+	// children ("nest-a", "nest-b") under it.
+	setup := func(t *testing.T) (*DocsDocumentService, *gorm.DB) {
+		t.Helper()
+		db := setupDocsOrderingTestDB(t)
+		spaceRepo := repository.NewDocsSpaceRepository(db)
+		docRepo := repository.NewDocsDocumentRepository(db)
+		svc := NewDocsDocumentService(docRepo, spaceRepo, nil)
+
+		seedDocsSpace(t, db, model.DocsSpace{
+			ID:          spaceID,
+			WorkspaceID: workspaceID,
+			Name:        "Doc tree space",
+			Slug:        "doc-tree-space",
+			Visibility:  model.SpaceVisibilityWorkspaceWide,
+			Type:        model.SpaceTypeInternal,
+			Position:    0,
+			CreatedBy:   userID,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		})
+		seedDocsCollection(t, db, model.DocsCollection{
+			ID: "parent", SpaceID: spaceID, WorkspaceID: workspaceID,
+			Name: "Parent", Slug: "parent", Position: 0,
+			CreatedBy: userID, CreatedAt: now, UpdatedAt: now,
+		})
+		parentID := "parent"
+		seedDocsCollection(t, db, model.DocsCollection{
+			ID: "nest-a", SpaceID: spaceID, WorkspaceID: workspaceID,
+			ParentCollectionID: &parentID, Depth: 1,
+			Name: "Nest A", Slug: "nest-a", Position: 0,
+			CreatedBy: userID, CreatedAt: now.Add(time.Minute), UpdatedAt: now.Add(time.Minute),
+		})
+		seedDocsCollection(t, db, model.DocsCollection{
+			ID: "nest-b", SpaceID: spaceID, WorkspaceID: workspaceID,
+			ParentCollectionID: &parentID, Depth: 1,
+			Name: "Nest B", Slug: "nest-b", Position: 1,
+			CreatedBy: userID, CreatedAt: now.Add(2 * time.Minute), UpdatedAt: now.Add(2 * time.Minute),
+		})
+		return svc, db
+	}
+
+	seedDoc := func(t *testing.T, db *gorm.DB, id, collectionID string, pos int) {
+		t.Helper()
+		coll := collectionID
+		seedDocsOrderingDocument(t, db, model.DocsDocument{
+			ID:           id,
+			WorkspaceID:  workspaceID,
+			SpaceID:      spaceID,
+			CollectionID: &coll,
+			Title:        id,
+			Status:       model.DocStatusDraft,
+			Visibility:   model.SpaceVisibilityWorkspaceWide,
+			Position:     pos,
+			CreatedBy:    userID,
+			CreatedAt:    now.Add(time.Duration(pos) * time.Minute),
+			UpdatedAt:    now.Add(time.Duration(pos) * time.Minute),
+		})
+	}
+
+	t.Run("Move document between nested collections", func(t *testing.T) {
+		svc, db := setup(t)
+		ctx := context.Background()
+
+		seedDoc(t, db, "doc-1", "nest-a", 0)
+		seedDoc(t, db, "doc-2", "nest-a", 1)
+		seedDoc(t, db, "doc-3", "nest-b", 0)
+
+		targetColl := "nest-b"
+		if _, err := svc.Move(ctx, "doc-1", model.MoveDocsDocumentRequest{
+			SpaceID:      spaceID,
+			CollectionID: &targetColl,
+		}); err != nil {
+			t.Fatalf("Move: %v", err)
+		}
+
+		// doc-1 should now be in nest-b at position 1 (appended).
+		var moved model.DocsDocument
+		if err := db.WithContext(ctx).Where("id = ?", "doc-1").First(&moved).Error; err != nil {
+			t.Fatalf("load moved doc: %v", err)
+		}
+		if moved.CollectionID == nil || *moved.CollectionID != "nest-b" {
+			t.Fatalf("moved.CollectionID = %v, want nest-b", moved.CollectionID)
+		}
+		if moved.Position != 1 {
+			t.Fatalf("moved.Position = %d, want 1", moved.Position)
+		}
+
+		// Source bucket (nest-a) should contain only doc-2 at position 0.
+		var sourceDocs []model.DocsDocument
+		if err := db.WithContext(ctx).
+			Where("space_id = ? AND collection_id = ? AND deleted_at IS NULL", spaceID, "nest-a").
+			Order("position ASC").
+			Find(&sourceDocs).Error; err != nil {
+			t.Fatalf("load source: %v", err)
+		}
+		if len(sourceDocs) != 1 || sourceDocs[0].ID != "doc-2" || sourceDocs[0].Position != 0 {
+			t.Fatalf("source after move = %+v, want [doc-2@0]", sourceDocs)
+		}
+	})
+
+	t.Run("Reorder within a nested collection", func(t *testing.T) {
+		svc, db := setup(t)
+		ctx := context.Background()
+
+		seedDoc(t, db, "doc-a", "nest-a", 0)
+		seedDoc(t, db, "doc-b", "nest-a", 1)
+		seedDoc(t, db, "doc-c", "nest-a", 2)
+
+		nestA := "nest-a"
+		if err := svc.ReorderDocuments(ctx, spaceID, model.ReorderDocsDocumentsRequest{
+			CollectionID: &nestA,
+			DocumentIDs:  []string{"doc-c", "doc-a", "doc-b"},
+		}); err != nil {
+			t.Fatalf("ReorderDocuments: %v", err)
+		}
+
+		var docs []model.DocsDocument
+		if err := db.WithContext(ctx).
+			Where("space_id = ? AND collection_id = ? AND deleted_at IS NULL", spaceID, "nest-a").
+			Order("position ASC").
+			Find(&docs).Error; err != nil {
+			t.Fatalf("load nest-a: %v", err)
+		}
+		want := []string{"doc-c", "doc-a", "doc-b"}
+		if len(docs) != 3 {
+			t.Fatalf("nest-a after reorder = %d docs, want 3", len(docs))
+		}
+		for i, d := range docs {
+			if d.ID != want[i] || d.Position != i {
+				t.Fatalf("nest-a[%d] = %s@%d, want %s@%d", i, d.ID, d.Position, want[i], i)
+			}
+		}
+	})
+
+	t.Run("Contiguous positions preserved after move", func(t *testing.T) {
+		svc, db := setup(t)
+		ctx := context.Background()
+
+		seedDoc(t, db, "s1", "nest-a", 0)
+		seedDoc(t, db, "s2", "nest-a", 1)
+		seedDoc(t, db, "s3", "nest-a", 2)
+		seedDoc(t, db, "t1", "nest-b", 0)
+
+		targetColl := "nest-b"
+		if _, err := svc.Move(ctx, "s2", model.MoveDocsDocumentRequest{
+			SpaceID:      spaceID,
+			CollectionID: &targetColl,
+		}); err != nil {
+			t.Fatalf("Move: %v", err)
+		}
+
+		// nest-a: [s1@0, s3@1]
+		var sourceDocs []model.DocsDocument
+		if err := db.WithContext(ctx).
+			Where("space_id = ? AND collection_id = ? AND deleted_at IS NULL", spaceID, "nest-a").
+			Order("position ASC").
+			Find(&sourceDocs).Error; err != nil {
+			t.Fatalf("load nest-a: %v", err)
+		}
+		if len(sourceDocs) != 2 {
+			t.Fatalf("nest-a size after move = %d, want 2", len(sourceDocs))
+		}
+		for i, d := range sourceDocs {
+			if d.Position != i {
+				t.Fatalf("nest-a[%d] position = %d, want %d", i, d.Position, i)
+			}
+		}
+
+		// nest-b: [t1@0, s2@1]
+		var targetDocs []model.DocsDocument
+		if err := db.WithContext(ctx).
+			Where("space_id = ? AND collection_id = ? AND deleted_at IS NULL", spaceID, "nest-b").
+			Order("position ASC").
+			Find(&targetDocs).Error; err != nil {
+			t.Fatalf("load nest-b: %v", err)
+		}
+		if len(targetDocs) != 2 {
+			t.Fatalf("nest-b size after move = %d, want 2", len(targetDocs))
+		}
+		for i, d := range targetDocs {
+			if d.Position != i {
+				t.Fatalf("nest-b[%d] position = %d, want %d", i, d.Position, i)
+			}
+		}
+	})
+}
+
 func ids(colls []model.DocsCollection) []string {
 	out := make([]string, len(colls))
 	for i, c := range colls {
