@@ -382,6 +382,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
             host={host}
             widgetKey={widgetKey}
             collectionSlug={activeCollectionSlug}
+            spaceSlug={activeHelpSpaceSlug ?? helpSpaces[0]?.slug}
             onBack={() => {
               setActiveArticleSlug(null);
               if (helpSpaces.length > 1 && activeHelpSpaceSlug) {
@@ -392,6 +393,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
               setActiveView('help');
               onViewChange?.('help');
             }}
+            onSelectCollection={handleOpenHelpCollection}
             onSelectArticle={handleOpenHelpArticle}
           />
         )}

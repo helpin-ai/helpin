@@ -3,6 +3,10 @@ export interface HelpCollection {
   name: string;
   slug: string;
   icon?: string;
+  /** Parent collection id. null means top-level in the space. */
+  parent_collection_id: string | null;
+  /** Tree depth: 0 top-level, 1 child, 2 grandchild. */
+  depth: number;
   article_count: number;
 }
 

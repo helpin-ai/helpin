@@ -1,8 +1,9 @@
 import { FunctionComponent } from 'preact';
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useMemo, useState } from 'preact/hooks';
 import type { HelpSpace } from '@helpin-ai/shared';
 import { ChevronLeftIcon, ChevronRightIcon, FileTextIcon } from './icons';
 import { fetchHelpCollections, type HelpCollection } from './helpApi';
+import { buildHelpCollectionTree } from './helpTree';
 
 interface HelpSpaceViewProps {
   host: string;
@@ -26,6 +27,11 @@ export const HelpSpaceView: FunctionComponent<HelpSpaceViewProps> = ({
   const [collections, setCollections] = useState<HelpCollection[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Fold the flat collection list into a tree so we only show top-level
+  // nodes at the space root. Users drill into child collections from
+  // HelpCollectionView.
+  const topLevelNodes = useMemo(() => buildHelpCollectionTree(collections), [collections]);
 
   useEffect(() => {
     let cancelled = false;
@@ -72,30 +78,50 @@ export const HelpSpaceView: FunctionComponent<HelpSpaceViewProps> = ({
       <div className="helpin-help-content">
         {isLoading && <p className="helpin-help-empty">Loading collections...</p>}
         {!isLoading && error && <p className="helpin-help-empty">{error}</p>}
-        {!isLoading && !error && collections.length === 0 && (
+        {!isLoading && !error && topLevelNodes.length === 0 && (
           <p className="helpin-help-empty">No published collections are available yet.</p>
         )}
-        {!isLoading && !error && collections.length > 0 && (
+        {!isLoading && !error && topLevelNodes.length > 0 && (
           <div className="helpin-help-list">
-            {collections.map((collection) => (
-              <button
-                key={collection.slug}
-                className="helpin-help-link"
-                onClick={() => onSelectCollection(collection.slug)}
-              >
-                <FileTextIcon size={20} />
-                <div className="helpin-help-link-text">
-                  <span className="helpin-help-link-title">{collection.name}</span>
-                  <span className="helpin-help-link-desc">
-                    {collection.article_count} article{collection.article_count === 1 ? '' : 's'}
-                  </span>
-                </div>
-                <ChevronRightIcon size={16} class="helpin-help-link-arrow" />
-              </button>
-            ))}
+            {topLevelNodes.map((node) => {
+              const totalArticles = sumDescendantArticles(node);
+              const childCount = node.children.length;
+              const descParts: string[] = [];
+              if (totalArticles > 0) {
+                descParts.push(`${totalArticles} article${totalArticles === 1 ? '' : 's'}`);
+              }
+              if (childCount > 0) {
+                descParts.push(`${childCount} sub-collection${childCount === 1 ? '' : 's'}`);
+              }
+              return (
+                <button
+                  key={node.collection.slug}
+                  className="helpin-help-link"
+                  onClick={() => onSelectCollection(node.collection.slug)}
+                >
+                  <FileTextIcon size={20} />
+                  <div className="helpin-help-link-text">
+                    <span className="helpin-help-link-title">{node.collection.name}</span>
+                    <span className="helpin-help-link-desc">
+                      {descParts.join(' · ')}
+                    </span>
+                  </div>
+                  <ChevronRightIcon size={16} class="helpin-help-link-arrow" />
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
     </div>
   );
 };
+
+/** Sums the article counts of a node plus every descendant. */
+function sumDescendantArticles(node: { collection: HelpCollection; children: Array<{ collection: HelpCollection; children: unknown[] }> }): number {
+  let total = node.collection.article_count;
+  for (const child of node.children) {
+    total += sumDescendantArticles(child as { collection: HelpCollection; children: Array<{ collection: HelpCollection; children: unknown[] }> });
+  }
+  return total;
+}
