@@ -80,6 +80,7 @@ import { ConfirmDialog } from '@/components/pm/ConfirmDialog'
 import { formatAssignableMemberName } from '@/lib/assignableMembers'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import { CreateCollectionDialog } from '@/components/docs/CreateCollectionDialog'
+import { buildCollectionTreeOptions } from '@/components/docs/CollectionTreePicker'
 import { TypedConfirmDialog } from '@/components/docs/TypedConfirmDialog'
 import { SpaceDialog } from '@/components/docs/SpaceDialog'
 import { MoveDocumentDialog } from '@/components/docs/MoveDocumentDialog'
@@ -482,8 +483,19 @@ export function DocsSpaceDetail() {
         </div>
       </header>
 
-      {/* Collection tabs */}
-      {((collections ?? []).length > 0 || uncollected.length > 0) && <div className="flex flex-wrap items-center gap-1.5">
+      {/* Collection tabs
+          Rendered depth-first so children appear directly after their
+          parent, and each pill carries a depth marker ("↳") plus its
+          full breadcrumb path on hover so users can disambiguate
+          nested collections at a glance. */}
+      {(() => {
+        const collectionList = collections ?? []
+        const treeOptions = buildCollectionTreeOptions(spaceId, collectionList)
+        const collectionById = new Map(collectionList.map((c) => [c.id, c]))
+        const hasAny = collectionList.length > 0 || uncollected.length > 0
+        if (!hasAny) return null
+        return (
+      <div className="flex flex-wrap items-center gap-1.5">
         <button
           type="button"
           onClick={() => setActiveCollection(null)}
@@ -496,17 +508,36 @@ export function DocsSpaceDetail() {
           All Collections ({documents?.length ?? 0})
         </button>
 
-        {(collections ?? []).map((col) => (
-          <div key={col.id} className="group/tab relative flex items-center">
+        {treeOptions.map((option) => {
+          const col = collectionById.get(option.id)
+          if (!col) return null
+          // A subtle indent + arrow for nested collections so the
+          // hierarchy is obvious in the flat pill row. Depth 0 gets
+          // nothing, depth 1 gets a small indent + "↳", depth 2 gets
+          // a deeper indent + "↳".
+          const indentStyle = option.depth > 0 ? { marginLeft: `${option.depth * 10}px` } : undefined
+          return (
+          <div key={col.id} className="group/tab relative flex items-center" style={indentStyle}>
             <button
               type="button"
               onClick={() => setActiveCollection(col.id)}
+              title={option.path}
               className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1 pr-7 text-sm font-medium transition-colors ${
                 activeCollection === col.id
                   ? 'bg-foreground text-background'
                   : 'bg-muted/60 text-muted-foreground hover:bg-muted border border-border/40'
               }`}
             >
+              {option.depth > 0 && (
+                <span
+                  className={`select-none text-[11px] ${
+                    activeCollection === col.id ? 'text-background/60' : 'text-muted-foreground/60'
+                  }`}
+                  aria-hidden="true"
+                >
+                  ↳
+                </span>
+              )}
               <CollectionTabIcon name={col.icon} />
               <span>{col.name} ({collectionMap.get(col.id)?.length ?? 0})</span>
             </button>
@@ -542,7 +573,8 @@ export function DocsSpaceDetail() {
               </DropdownMenu>
             )}
           </div>
-        ))}
+          )
+        })}
 
         {uncollected.length > 0 && (
           <button
@@ -571,7 +603,9 @@ export function DocsSpaceDetail() {
             </button>
           </QuickTooltip>
         )}
-      </div>}
+      </div>
+        )
+      })()}
 
       {/* Filters row */}
       {showStatusFilter && <div className="flex items-center justify-end gap-2">
