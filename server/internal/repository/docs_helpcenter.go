@@ -348,42 +348,44 @@ func (r *DocsHelpcenterRepository) GetPublicCollectionTranslationByWorkspaceSlug
 func (r *DocsHelpcenterRepository) ListPublicArticleTranslationsBySpace(ctx context.Context, spaceID, locale string) ([]model.DocsHelpcenterArticleTranslation, error) {
 	var translations []model.DocsHelpcenterArticleTranslation
 	if err := r.db.WithContext(ctx).
-		Table("docs_helpcenter_article_publications p").
+		Table("docs_helpcenter_article_translations hat").
 		Select(`
 			hat.id,
-			p.document_id,
-			p.workspace_id,
-			p.space_id,
-			p.collection_id,
-			p.locale,
-			p.title,
-			p.slug,
-			p.excerpt,
-			p.content,
-			p.content_text,
-			p.seo_title,
-			p.seo_description,
+			hat.document_id,
+			COALESCE(p.workspace_id, hat.workspace_id) AS workspace_id,
+			COALESCE(p.space_id, hat.space_id) AS space_id,
+			COALESCE(p.collection_id, hat.collection_id) AS collection_id,
+			hat.locale,
+			COALESCE(p.title, hat.title) AS title,
+			COALESCE(p.slug, hat.slug) AS slug,
+			COALESCE(p.excerpt, hat.excerpt) AS excerpt,
+			COALESCE(p.content, hat.content) AS content,
+			COALESCE(p.content_text, hat.content_text) AS content_text,
+			COALESCE(p.seo_title, hat.seo_title) AS seo_title,
+			COALESCE(p.seo_description, hat.seo_description) AS seo_description,
 			hat.status,
 			hat.source_updated_at,
 			hat.source_synced,
-			p.published_at,
+			hat.published_at,
 			hat.view_count,
 			hat.helpful_count,
 			hat.not_helpful_count,
 			hat.created_at,
-			p.updated_at
+			hat.updated_at
 		`).
-		Joins("JOIN docs_helpcenter_article_translations hat ON hat.document_id = p.document_id AND hat.locale = p.locale").
 		Joins("JOIN docs_documents d ON d.id = hat.document_id").
 		Joins("JOIN docs_helpcenter_articles ha ON ha.document_id = hat.document_id").
+		Joins("JOIN docs_helpcenter_configs cfg ON cfg.workspace_id = hat.workspace_id").
+		Joins("LEFT JOIN docs_helpcenter_article_publications p ON p.document_id = hat.document_id AND p.locale = hat.locale").
 		Where(`
-			p.space_id = ?
-			AND p.locale = ?
+			hat.space_id = ?
+			AND hat.locale = ?
 			AND hat.status = ?
 			AND hat.published_at IS NOT NULL
 			AND d.deleted_at IS NULL
 			AND d.status = ?
 			AND ha.public_published_at IS NOT NULL
+			AND (p.document_id IS NOT NULL OR hat.locale = cfg.default_locale)
 		`, spaceID, locale, model.DocsHelpcenterTranslationStatusPublished, model.DocStatusPublished).
 		Order("d.position ASC, d.created_at ASC").
 		Scan(&translations).Error; err != nil {
@@ -394,47 +396,49 @@ func (r *DocsHelpcenterRepository) ListPublicArticleTranslationsBySpace(ctx cont
 
 func (r *DocsHelpcenterRepository) GetPublicArticleTranslationBySlug(ctx context.Context, spaceID string, collectionID *string, locale, slug string) (*model.DocsHelpcenterArticleTranslation, error) {
 	query := r.db.WithContext(ctx).
-		Table("docs_helpcenter_article_publications p").
+		Table("docs_helpcenter_article_translations hat").
 		Select(`
 			hat.id,
-			p.document_id,
-			p.workspace_id,
-			p.space_id,
-			p.collection_id,
-			p.locale,
-			p.title,
-			p.slug,
-			p.excerpt,
-			p.content,
-			p.content_text,
-			p.seo_title,
-			p.seo_description,
+			hat.document_id,
+			COALESCE(p.workspace_id, hat.workspace_id) AS workspace_id,
+			COALESCE(p.space_id, hat.space_id) AS space_id,
+			COALESCE(p.collection_id, hat.collection_id) AS collection_id,
+			hat.locale,
+			COALESCE(p.title, hat.title) AS title,
+			COALESCE(p.slug, hat.slug) AS slug,
+			COALESCE(p.excerpt, hat.excerpt) AS excerpt,
+			COALESCE(p.content, hat.content) AS content,
+			COALESCE(p.content_text, hat.content_text) AS content_text,
+			COALESCE(p.seo_title, hat.seo_title) AS seo_title,
+			COALESCE(p.seo_description, hat.seo_description) AS seo_description,
 			hat.status,
 			hat.source_updated_at,
 			hat.source_synced,
-			p.published_at,
+			hat.published_at,
 			hat.view_count,
 			hat.helpful_count,
 			hat.not_helpful_count,
 			hat.created_at,
-			p.updated_at
+			hat.updated_at
 		`).
-		Joins("JOIN docs_helpcenter_article_translations hat ON hat.document_id = p.document_id AND hat.locale = p.locale").
 		Joins("JOIN docs_documents d ON d.id = hat.document_id").
 		Joins("JOIN docs_helpcenter_articles ha ON ha.document_id = hat.document_id").
+		Joins("JOIN docs_helpcenter_configs cfg ON cfg.workspace_id = hat.workspace_id").
+		Joins("LEFT JOIN docs_helpcenter_article_publications p ON p.document_id = hat.document_id AND p.locale = hat.locale").
 		Where(`
-			p.space_id = ?
-			AND p.locale = ?
-			AND p.slug = ?
+			hat.space_id = ?
+			AND hat.locale = ?
+			AND COALESCE(p.slug, hat.slug) = ?
 			AND hat.status = ?
 			AND hat.published_at IS NOT NULL
 			AND d.deleted_at IS NULL
 			AND d.status = ?
 			AND ha.public_published_at IS NOT NULL
+			AND (p.document_id IS NOT NULL OR hat.locale = cfg.default_locale)
 		`, spaceID, locale, slug, model.DocsHelpcenterTranslationStatusPublished, model.DocStatusPublished)
 
 	if collectionID != nil {
-		query = query.Where("p.collection_id = ?", *collectionID)
+		query = query.Where("hat.collection_id = ?", *collectionID)
 	}
 
 	var translation model.DocsHelpcenterArticleTranslation
@@ -450,42 +454,44 @@ func (r *DocsHelpcenterRepository) GetPublicArticleTranslationBySlug(ctx context
 func (r *DocsHelpcenterRepository) ListPublicArticleTranslationsByCollection(ctx context.Context, collectionID, locale string) ([]model.DocsHelpcenterArticleTranslation, error) {
 	var translations []model.DocsHelpcenterArticleTranslation
 	if err := r.db.WithContext(ctx).
-		Table("docs_helpcenter_article_publications p").
+		Table("docs_helpcenter_article_translations hat").
 		Select(`
 			hat.id,
-			p.document_id,
-			p.workspace_id,
-			p.space_id,
-			p.collection_id,
-			p.locale,
-			p.title,
-			p.slug,
-			p.excerpt,
-			p.content,
-			p.content_text,
-			p.seo_title,
-			p.seo_description,
+			hat.document_id,
+			COALESCE(p.workspace_id, hat.workspace_id) AS workspace_id,
+			COALESCE(p.space_id, hat.space_id) AS space_id,
+			COALESCE(p.collection_id, hat.collection_id) AS collection_id,
+			hat.locale,
+			COALESCE(p.title, hat.title) AS title,
+			COALESCE(p.slug, hat.slug) AS slug,
+			COALESCE(p.excerpt, hat.excerpt) AS excerpt,
+			COALESCE(p.content, hat.content) AS content,
+			COALESCE(p.content_text, hat.content_text) AS content_text,
+			COALESCE(p.seo_title, hat.seo_title) AS seo_title,
+			COALESCE(p.seo_description, hat.seo_description) AS seo_description,
 			hat.status,
 			hat.source_updated_at,
 			hat.source_synced,
-			p.published_at,
+			hat.published_at,
 			hat.view_count,
 			hat.helpful_count,
 			hat.not_helpful_count,
 			hat.created_at,
-			p.updated_at
+			hat.updated_at
 		`).
-		Joins("JOIN docs_helpcenter_article_translations hat ON hat.document_id = p.document_id AND hat.locale = p.locale").
 		Joins("JOIN docs_documents d ON d.id = hat.document_id").
 		Joins("JOIN docs_helpcenter_articles ha ON ha.document_id = hat.document_id").
+		Joins("JOIN docs_helpcenter_configs cfg ON cfg.workspace_id = hat.workspace_id").
+		Joins("LEFT JOIN docs_helpcenter_article_publications p ON p.document_id = hat.document_id AND p.locale = hat.locale").
 		Where(`
-			p.collection_id = ?
-			AND p.locale = ?
+			hat.collection_id = ?
+			AND hat.locale = ?
 			AND hat.status = ?
 			AND hat.published_at IS NOT NULL
 			AND d.deleted_at IS NULL
 			AND d.status = ?
 			AND ha.public_published_at IS NOT NULL
+			AND (p.document_id IS NOT NULL OR hat.locale = cfg.default_locale)
 		`, collectionID, locale, model.DocsHelpcenterTranslationStatusPublished, model.DocStatusPublished).
 		Order("d.position ASC, d.created_at ASC").
 		Scan(&translations).Error; err != nil {
@@ -497,43 +503,45 @@ func (r *DocsHelpcenterRepository) ListPublicArticleTranslationsByCollection(ctx
 func (r *DocsHelpcenterRepository) GetPublicArticleTranslationByCollectionSlug(ctx context.Context, collectionID, locale, slug string) (*model.DocsHelpcenterArticleTranslation, error) {
 	var translation model.DocsHelpcenterArticleTranslation
 	if err := r.db.WithContext(ctx).
-		Table("docs_helpcenter_article_publications p").
+		Table("docs_helpcenter_article_translations hat").
 		Select(`
 			hat.id,
-			p.document_id,
-			p.workspace_id,
-			p.space_id,
-			p.collection_id,
-			p.locale,
-			p.title,
-			p.slug,
-			p.excerpt,
-			p.content,
-			p.content_text,
-			p.seo_title,
-			p.seo_description,
+			hat.document_id,
+			COALESCE(p.workspace_id, hat.workspace_id) AS workspace_id,
+			COALESCE(p.space_id, hat.space_id) AS space_id,
+			COALESCE(p.collection_id, hat.collection_id) AS collection_id,
+			hat.locale,
+			COALESCE(p.title, hat.title) AS title,
+			COALESCE(p.slug, hat.slug) AS slug,
+			COALESCE(p.excerpt, hat.excerpt) AS excerpt,
+			COALESCE(p.content, hat.content) AS content,
+			COALESCE(p.content_text, hat.content_text) AS content_text,
+			COALESCE(p.seo_title, hat.seo_title) AS seo_title,
+			COALESCE(p.seo_description, hat.seo_description) AS seo_description,
 			hat.status,
 			hat.source_updated_at,
 			hat.source_synced,
-			p.published_at,
+			hat.published_at,
 			hat.view_count,
 			hat.helpful_count,
 			hat.not_helpful_count,
 			hat.created_at,
-			p.updated_at
+			hat.updated_at
 		`).
-		Joins("JOIN docs_helpcenter_article_translations hat ON hat.document_id = p.document_id AND hat.locale = p.locale").
 		Joins("JOIN docs_documents d ON d.id = hat.document_id").
 		Joins("JOIN docs_helpcenter_articles ha ON ha.document_id = hat.document_id").
+		Joins("JOIN docs_helpcenter_configs cfg ON cfg.workspace_id = hat.workspace_id").
+		Joins("LEFT JOIN docs_helpcenter_article_publications p ON p.document_id = hat.document_id AND p.locale = hat.locale").
 		Where(`
-			p.collection_id = ?
-			AND p.locale = ?
-			AND p.slug = ?
+			hat.collection_id = ?
+			AND hat.locale = ?
+			AND COALESCE(p.slug, hat.slug) = ?
 			AND hat.status = ?
 			AND hat.published_at IS NOT NULL
 			AND d.deleted_at IS NULL
 			AND d.status = ?
 			AND ha.public_published_at IS NOT NULL
+			AND (p.document_id IS NOT NULL OR hat.locale = cfg.default_locale)
 		`, collectionID, locale, slug, model.DocsHelpcenterTranslationStatusPublished, model.DocStatusPublished).
 		First(&translation).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

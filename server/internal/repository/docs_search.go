@@ -88,46 +88,48 @@ func (r *DocsSearchRepository) PublicSearch(ctx context.Context, workspaceID, lo
 
 	needle := "%" + strings.ToLower(strings.TrimSpace(query)) + "%"
 	dbQuery := r.db.WithContext(ctx).
-		Table("docs_helpcenter_article_publications p").
+		Table("docs_helpcenter_article_translations hat").
 		Select(`
-			p.document_id AS id,
-			p.title AS title,
-			p.slug AS slug,
-			p.locale AS locale,
-			p.excerpt AS excerpt,
+			hat.document_id AS id,
+			COALESCE(p.title, hat.title) AS title,
+			COALESCE(p.slug, hat.slug) AS slug,
+			hat.locale AS locale,
+			COALESCE(p.excerpt, hat.excerpt) AS excerpt,
 			ct.name AS collection_name,
 			ct.slug AS collection_slug,
 			st.slug AS space_slug,
 			st.name AS space_name
 		`).
-		Joins("JOIN docs_helpcenter_article_translations hat ON hat.document_id = p.document_id AND hat.locale = p.locale").
 		Joins("JOIN docs_documents d ON d.id = hat.document_id").
 		Joins("JOIN docs_helpcenter_articles ha ON ha.document_id = hat.document_id").
+		Joins("JOIN docs_helpcenter_configs cfg ON cfg.workspace_id = hat.workspace_id").
+		Joins("LEFT JOIN docs_helpcenter_article_publications p ON p.document_id = hat.document_id AND p.locale = hat.locale").
 		Joins(`
 			JOIN docs_helpcenter_space_translations st
-				ON st.space_id = p.space_id
-				AND st.locale = p.locale
+				ON st.space_id = hat.space_id
+				AND st.locale = hat.locale
 				AND st.status = ?
 				AND st.published_at IS NOT NULL
 		`, model.DocsHelpcenterTranslationStatusPublished).
 		Joins(`
 			LEFT JOIN docs_helpcenter_collection_translations ct
-				ON ct.collection_id = p.collection_id
-				AND ct.locale = p.locale
+				ON ct.collection_id = hat.collection_id
+				AND ct.locale = hat.locale
 				AND ct.status = ?
 				AND ct.published_at IS NOT NULL
 		`, model.DocsHelpcenterTranslationStatusPublished).
 		Where(`
-			p.workspace_id = ?
-			AND p.locale = ?
+			hat.workspace_id = ?
+			AND hat.locale = ?
 			AND hat.status = ?
 			AND hat.published_at IS NOT NULL
 			AND d.deleted_at IS NULL
 			AND d.status = ?
 			AND ha.public_published_at IS NOT NULL
+			AND (p.document_id IS NOT NULL OR hat.locale = cfg.default_locale)
 			AND (
-				LOWER(COALESCE(p.title, '')) LIKE ?
-				OR LOWER(COALESCE(p.content_text, '')) LIKE ?
+				LOWER(COALESCE(p.title, hat.title, '')) LIKE ?
+				OR LOWER(COALESCE(p.content_text, hat.content_text, '')) LIKE ?
 			)
 		`, workspaceID, locale, model.DocsHelpcenterTranslationStatusPublished, model.DocStatusPublished, needle, needle)
 
@@ -136,7 +138,7 @@ func (r *DocsSearchRepository) PublicSearch(ctx context.Context, workspaceID, lo
 	}
 
 	dbQuery = dbQuery.
-		Order("p.updated_at DESC").
+		Order("COALESCE(p.updated_at, hat.updated_at) DESC").
 		Limit(limit)
 
 	var results []model.PublicSearchResultResponse
