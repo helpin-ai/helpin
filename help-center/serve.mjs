@@ -226,6 +226,8 @@ function resolveHostInfo(request) {
 }
 
 const PATH_HOST_TENANT_ROOTS = new Set(['helpin.center', 'stage.helpin.center'])
+const ROOT_SERVICE_PATH_PREFIXES = ['/api/', '/assets/']
+const ROOT_SERVICE_PATHS = new Set(['/api', '/assets', '/healthz'])
 
 function normalizeHostname(host) {
   return host.split(':')[0].trim().toLowerCase()
@@ -235,8 +237,9 @@ function isPathHostTenantRoot(host) {
   return PATH_HOST_TENANT_ROOTS.has(normalizeHostname(host))
 }
 
-function isRootStaticAssetPath(pathname) {
-  return pathname === '/assets' || pathname.startsWith('/assets/')
+function shouldBypassTenantExtraction(pathname) {
+  if (ROOT_SERVICE_PATHS.has(pathname)) return true
+  return ROOT_SERVICE_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix))
 }
 
 function extractFirstPathSegment(pathname) {
@@ -254,7 +257,7 @@ function resolveHelpCenterContext(host, pathname) {
   const hostname = normalizeHostname(host)
 
   if (isPathHostTenantRoot(hostname)) {
-    if (isRootStaticAssetPath(pathname)) {
+    if (shouldBypassTenantExtraction(pathname)) {
       return { subdomain: '', basepath: '' }
     }
     const slug = extractFirstPathSegment(pathname)
