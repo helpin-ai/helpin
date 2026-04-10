@@ -491,13 +491,14 @@ export function DealsTable({
                 <div
                   key={row.id}
                   data-index={virtualRow.index}
-                  ref={virtualizer.measureElement}
                   style={{
                     position: 'absolute',
                     top: 0,
                     left: 0,
                     width: '100%',
-                    transform: `translateY(${virtualRow.start}px)`,
+                    transform: `translate3d(0, ${virtualRow.start}px, 0)`,
+                    contain: 'paint',
+                    willChange: 'transform',
                   }}
                 >
                   {isGrouped ? (
@@ -562,13 +563,24 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
 
 // ── Data Row ──────────────────────────────────────────────────────
 
+interface DealDataRowProps {
+  row: Row<CRMDeal>;
+  columnSizingVersion: string;
+}
+
+function areDealDataRowPropsEqual(prev: DealDataRowProps, next: DealDataRowProps): boolean {
+  return (
+    prev.row.id === next.row.id &&
+    prev.row.original === next.row.original &&
+    prev.columnSizingVersion === next.columnSizingVersion
+  );
+}
+
 const MemoDataRow = memo(function DataRow({
   row,
   columnSizingVersion,
-}: {
-  row: Row<CRMDeal>;
-  columnSizingVersion: string;
-}) {
+}: DealDataRowProps) {
+  void columnSizingVersion;
   return (
     <div className={TABLE_ROW} data-column-sizing={columnSizingVersion}>
       {row.getVisibleCells().map((cell) => {
@@ -593,7 +605,7 @@ const MemoDataRow = memo(function DataRow({
       })}
     </div>
   );
-});
+}, areDealDataRowPropsEqual);
 
 // ── Inline Editing Cells ──────────────────────────────────────────
 
@@ -857,7 +869,7 @@ function InlineActionsCell({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
-          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
+          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground opacity-0 hover:bg-muted group-hover/row:opacity-100"
           onClick={(e) => e.stopPropagation()}
         >
           <MoreVerticalIcon className="h-3.5 w-3.5" />
