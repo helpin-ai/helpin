@@ -22,7 +22,7 @@ export function CodingSessionDrawer({
 }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full border-l p-0 sm:w-[78vw] sm:!max-w-[78vw]">
+      <SheetContent side="right" className="w-full border-l p-0 data-[side=right]:w-[78vw] data-[side=right]:sm:max-w-[78vw]">
         <SheetHeader className="sr-only">
           <SheetTitle>{title}</SheetTitle>
           <SheetDescription>{description}</SheetDescription>
