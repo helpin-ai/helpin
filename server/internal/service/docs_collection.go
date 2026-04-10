@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -38,7 +37,7 @@ const maxCollectionDepth = 2
 // validated against maxCollectionDepth.
 func (s *DocsCollectionService) Create(ctx context.Context, workspaceID, spaceID string, req model.CreateDocsCollectionRequest, userID string) (*model.DocsCollection, error) {
 	if req.Name == "" {
-		return nil, fmt.Errorf("name is required")
+		return nil, ErrDocsCollectionNameRequired
 	}
 
 	space, err := s.spaceRepo.GetByID(ctx, spaceID)
@@ -46,10 +45,10 @@ func (s *DocsCollectionService) Create(ctx context.Context, workspaceID, spaceID
 		return nil, err
 	}
 	if space == nil {
-		return nil, fmt.Errorf("space not found")
+		return nil, ErrDocsSpaceNotFound
 	}
 	if space.WorkspaceID != workspaceID {
-		return nil, fmt.Errorf("space does not belong to this workspace")
+		return nil, ErrDocsCrossWorkspace
 	}
 
 	parentID, parentDepth, err := s.resolveParentForCreate(ctx, spaceID, req.ParentCollectionID)
@@ -61,7 +60,7 @@ func (s *DocsCollectionService) Create(ctx context.Context, workspaceID, spaceID
 		newDepth = parentDepth + 1
 	}
 	if newDepth > maxCollectionDepth {
-		return nil, fmt.Errorf("collection depth %d exceeds maximum %d", newDepth, maxCollectionDepth)
+		return nil, ErrDocsCollectionDepthExceeded
 	}
 
 	// Append to end of the target sibling bucket.
@@ -128,7 +127,7 @@ func (s *DocsCollectionService) Update(ctx context.Context, id string, req model
 		return nil, err
 	}
 	if current == nil {
-		return nil, fmt.Errorf("collection not found")
+		return nil, ErrDocsCollectionNotFound
 	}
 
 	// Step 1: reparent if requested. The nil-pointer sentinel means "leave
@@ -193,8 +192,8 @@ func (s *DocsCollectionService) Update(ctx context.Context, id string, req model
 
 // resolveParentForCreate validates the requested parent for a new
 // collection. It returns the canonical parent ID (nil for top-level), the
-// parent's depth (0 when no parent), and an error if the parent is missing
-// or lives in a different space.
+// parent's depth (0 when no parent), and a typed sentinel error if the
+// parent is missing or lives in a different space.
 func (s *DocsCollectionService) resolveParentForCreate(ctx context.Context, spaceID string, requested *string) (*string, int, error) {
 	if requested == nil || *requested == "" {
 		return nil, 0, nil
@@ -204,10 +203,10 @@ func (s *DocsCollectionService) resolveParentForCreate(ctx context.Context, spac
 		return nil, 0, err
 	}
 	if parent == nil {
-		return nil, 0, fmt.Errorf("parent collection not found")
+		return nil, 0, ErrDocsCollectionParentNotFound
 	}
 	if parent.SpaceID != spaceID {
-		return nil, 0, fmt.Errorf("parent collection belongs to a different space")
+		return nil, 0, ErrDocsCollectionParentDifferentSpace
 	}
 	id := parent.ID
 	return &id, parent.Depth, nil
@@ -220,13 +219,16 @@ func (s *DocsCollectionService) resolveParentForCreate(ctx context.Context, spac
 //   - target is not one of the collection's descendants (no cycles)
 //   - moving under the target does not push the collection's subtree past
 //     maxCollectionDepth
+//
+// All rejection cases return typed sentinel errors so handlers can map
+// them to precise HTTP responses.
 func (s *DocsCollectionService) resolveParentForReparent(ctx context.Context, current *model.DocsCollection, requested string) (*string, error) {
 	if requested == "" {
 		// Reparent to the top of the space — no parent, no further checks.
 		return nil, nil
 	}
 	if requested == current.ID {
-		return nil, fmt.Errorf("collection cannot be its own parent")
+		return nil, ErrDocsCollectionSelfParent
 	}
 
 	parent, err := s.collectionRepo.GetByID(ctx, requested)
@@ -234,10 +236,10 @@ func (s *DocsCollectionService) resolveParentForReparent(ctx context.Context, cu
 		return nil, err
 	}
 	if parent == nil {
-		return nil, fmt.Errorf("parent collection not found")
+		return nil, ErrDocsCollectionParentNotFound
 	}
 	if parent.SpaceID != current.SpaceID {
-		return nil, fmt.Errorf("parent collection belongs to a different space")
+		return nil, ErrDocsCollectionParentDifferentSpace
 	}
 
 	descendants, err := s.collectionRepo.ListDescendants(ctx, current.ID)
@@ -246,7 +248,7 @@ func (s *DocsCollectionService) resolveParentForReparent(ctx context.Context, cu
 	}
 	for _, d := range descendants {
 		if d.ID == requested {
-			return nil, fmt.Errorf("cannot move collection under one of its descendants")
+			return nil, ErrDocsCollectionCycle
 		}
 	}
 
@@ -254,12 +256,12 @@ func (s *DocsCollectionService) resolveParentForReparent(ctx context.Context, cu
 	// descendant takes on that depth plus the subtree's relative depth.
 	newRootDepth := parent.Depth + 1
 	if newRootDepth > maxCollectionDepth {
-		return nil, fmt.Errorf("collection depth %d exceeds maximum %d", newRootDepth, maxCollectionDepth)
+		return nil, ErrDocsCollectionDepthExceeded
 	}
 	delta := newRootDepth - current.Depth
 	for _, d := range descendants {
 		if d.Depth+delta > maxCollectionDepth {
-			return nil, fmt.Errorf("reparenting would push descendant %s past maximum depth %d", d.ID, maxCollectionDepth)
+			return nil, ErrDocsCollectionDepthExceeded
 		}
 	}
 
@@ -274,7 +276,7 @@ func (s *DocsCollectionService) Delete(ctx context.Context, id string) error {
 		return err
 	}
 	if collection == nil {
-		return fmt.Errorf("collection not found")
+		return ErrDocsCollectionNotFound
 	}
 	if err := s.collectionRepo.Delete(ctx, id); err != nil {
 		return err

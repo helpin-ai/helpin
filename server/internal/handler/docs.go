@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -16,6 +17,30 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
+
+// writeDocsError maps service-layer sentinel errors from the docs module
+// to precise HTTP status codes and user-safe messages. Unrecognised errors
+// fall through to 500 with a generic message so raw internal errors never
+// leak to the wire.
+func writeDocsError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, service.ErrDocsCollectionNotFound),
+		errors.Is(err, service.ErrDocsSpaceNotFound):
+		writeError(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, service.ErrDocsCollectionNameRequired),
+		errors.Is(err, service.ErrDocsCollectionParentNotFound),
+		errors.Is(err, service.ErrDocsCollectionParentDifferentSpace),
+		errors.Is(err, service.ErrDocsCollectionSelfParent),
+		errors.Is(err, service.ErrDocsCollectionCycle),
+		errors.Is(err, service.ErrDocsCollectionDepthExceeded):
+		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, service.ErrDocsCrossWorkspace):
+		writeError(w, http.StatusForbidden, err.Error())
+	default:
+		slog.Error("unexpected docs error", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal server error")
+	}
+}
 
 // DocsHandler handles HTTP requests for the Docs module.
 type DocsHandler struct {
@@ -174,7 +199,7 @@ func (h *DocsHandler) CreateCollection(w http.ResponseWriter, r *http.Request) {
 	}
 	coll, err := h.collectionSvc.Create(r.Context(), wsID, spaceID, req, userID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeDocsError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, coll)
@@ -188,7 +213,7 @@ func (h *DocsHandler) UpdateCollection(w http.ResponseWriter, r *http.Request) {
 	}
 	coll, err := h.collectionSvc.Update(r.Context(), chi.URLParam(r, "collectionId"), req)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeDocsError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, coll)
@@ -196,7 +221,7 @@ func (h *DocsHandler) UpdateCollection(w http.ResponseWriter, r *http.Request) {
 
 func (h *DocsHandler) DeleteCollection(w http.ResponseWriter, r *http.Request) {
 	if err := h.collectionSvc.Delete(r.Context(), chi.URLParam(r, "collectionId")); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeDocsError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -205,7 +230,7 @@ func (h *DocsHandler) DeleteCollection(w http.ResponseWriter, r *http.Request) {
 func (h *DocsHandler) RestoreCollection(w http.ResponseWriter, r *http.Request) {
 	coll, err := h.collectionSvc.Restore(r.Context(), chi.URLParam(r, "collectionId"))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeDocsError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, coll)
