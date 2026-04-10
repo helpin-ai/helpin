@@ -122,10 +122,41 @@ interface HelpcenterPreviewBase {
   pathBased: boolean
 }
 
+function normalizeExplicitHelpcenterPreviewBase(
+  explicit: string,
+): HelpcenterPreviewBase | null {
+  try {
+    const url = new URL(explicit)
+
+    if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
+      return { baseUrl: url.origin, pathBased: false }
+    }
+
+    if (url.hostname === 'helpcenter.helpin.ai') {
+      return { baseUrl: 'https://helpin.center', pathBased: true }
+    }
+
+    if (url.hostname === 'helpcenter-stage.helpin.ai') {
+      return { baseUrl: 'https://stage.helpin.center', pathBased: true }
+    }
+
+    if (url.hostname === 'helpin.center' || url.hostname === 'stage.helpin.center') {
+      return { baseUrl: url.origin, pathBased: true }
+    }
+
+    return { baseUrl: url.origin, pathBased: false }
+  } catch {
+    return null
+  }
+}
+
 function resolveHelpcenterPreviewBase(): HelpcenterPreviewBase {
   const explicit = import.meta.env.VITE_HELPCENTER_URL?.trim()
   if (explicit) {
-    return { baseUrl: explicit.replace(/\/+$/, ''), pathBased: false }
+    const normalized = normalizeExplicitHelpcenterPreviewBase(explicit)
+    if (normalized) {
+      return normalized
+    }
   }
 
   const appBase = import.meta.env.VITE_APP_BASE_URL?.trim()

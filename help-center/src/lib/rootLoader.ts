@@ -9,12 +9,22 @@ import { getHelpCenterRequestContext } from '@/lib/requestContext'
 
 export interface RootRouteData {
   activeLocale: string
+  basepath: string
   config: HelpCenterConfig
   host: string
   multilingualEnabled: boolean
   origin: string
   spaces: Space[]
   subdomain: string
+}
+
+function stripBasepath(pathname: string, basepath: string) {
+  if (!basepath) return pathname
+  if (pathname === basepath) return '/'
+  if (pathname.startsWith(`${basepath}/`)) {
+    return pathname.slice(basepath.length) || '/'
+  }
+  return pathname
 }
 
 function getPrimaryPathSegment(pathname: string) {
@@ -31,7 +41,8 @@ export async function loadRootRouteData(
     helpCenterConfigQueryOptions(requestContext.subdomain),
   )
 
-  const firstSegment = getPrimaryPathSegment(pathname)
+  const normalizedPathname = stripBasepath(pathname, requestContext.basepath)
+  const firstSegment = getPrimaryPathSegment(normalizedPathname)
   const activeLocale = resolveActiveLocale({
     paramsLocale: firstSegment,
     paramsSpaceSlug: firstSegment,
@@ -49,6 +60,7 @@ export async function loadRootRouteData(
 
   return {
     activeLocale,
+    basepath: requestContext.basepath,
     config,
     host: requestContext.host,
     multilingualEnabled,

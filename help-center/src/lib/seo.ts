@@ -13,8 +13,16 @@ import {
   buildCanonicalSearchPath,
 } from '@/lib/locale'
 
-function absoluteUrl(origin: string, path: string) {
-  return new URL(path, origin).toString()
+function tenantPath(basepath: string, path: string) {
+  const normalizedBasepath = basepath ? basepath.replace(/\/+$/, '') : ''
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  if (!normalizedBasepath) return normalizedPath
+  if (normalizedPath === '/') return `${normalizedBasepath}/`
+  return `${normalizedBasepath}${normalizedPath}`
+}
+
+function absoluteUrl(rootData: RootRouteData, path: string) {
+  return new URL(tenantPath(rootData.basepath, path), rootData.origin).toString()
 }
 
 function createBaseMeta(title: string, description: string) {
@@ -42,18 +50,12 @@ function createHomeHreflangLinks(rootData: RootRouteData) {
     ...rootData.config.enabled_locales.map((locale) => ({
       rel: 'alternate' as const,
       hrefLang: locale,
-      href: absoluteUrl(
-        rootData.origin,
-        buildCanonicalHomePath(true, locale),
-      ),
+      href: absoluteUrl(rootData, buildCanonicalHomePath(true, locale)),
     })),
     {
       rel: 'alternate' as const,
       hrefLang: 'x-default',
-      href: absoluteUrl(
-        rootData.origin,
-        buildCanonicalHomePath(true, rootData.config.default_locale),
-      ),
+      href: absoluteUrl(rootData, buildCanonicalHomePath(true, rootData.config.default_locale)),
     },
   ]
 }
@@ -64,7 +66,7 @@ export function buildHomeHead(rootData: RootRouteData) {
     rootData.config.seo_description ||
     `Browse help articles and guides from ${rootData.config.brand_name}.`
   const canonicalUrl = absoluteUrl(
-    rootData.origin,
+    rootData,
     buildCanonicalHomePath(rootData.multilingualEnabled, rootData.activeLocale),
   )
 
@@ -104,7 +106,7 @@ export function buildCollectionHead(
   const description =
     `Browse articles in ${collection.collection.name} from ${rootData.config.brand_name}.`
   const canonicalUrl = absoluteUrl(
-    rootData.origin,
+    rootData,
     buildCanonicalCollectionPath(
       rootData.multilingualEnabled,
       rootData.activeLocale,
@@ -137,7 +139,7 @@ export function buildArticleHead(
     rootData.config.seo_description ||
     `Read ${article.title} in ${rootData.config.brand_name}.`
   const canonicalUrl = absoluteUrl(
-    rootData.origin,
+    rootData,
     buildCanonicalArticlePath(
       rootData.multilingualEnabled,
       rootData.activeLocale,
@@ -207,7 +209,7 @@ export function buildSearchHead(
     title,
     description,
     absoluteUrl(
-      rootData.origin,
+      rootData,
       buildCanonicalSearchPath(
         rootData.multilingualEnabled,
         rootData.activeLocale,
@@ -230,7 +232,7 @@ export function buildPreviewHead(
   return buildNoIndexHead(
     title,
     description,
-    absoluteUrl(rootData.origin, '/preview'),
+    absoluteUrl(rootData, '/preview'),
   )
 }
 

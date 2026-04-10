@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircleIcon, ArrowRight01Icon, GitBranchIcon, GitPullRequestIcon, Loading01Icon, PlayIcon, FloppyDiskIcon, UserAdd01Icon } from '@/lib/icons';
+import { AlertCircleIcon, ArrowRight01Icon, GitBranchIcon, GitPullRequestIcon, Loading01Icon, PlayIcon, FloppyDiskIcon, UserAdd01Icon, LinkSquare01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { RepositoryBranchPicker } from '@/components/git/RepositoryBranchPicker';
@@ -583,11 +583,35 @@ export function TaskDeliveryPanel({ workspaceId, taskDetail, onTaskUpdated }: Pr
               <div className="space-y-1 px-2 py-2 text-xs">
                 <div>
                   <p className="mb-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Repository</p>
-                  <p className="text-xs font-medium">{d.target?.repo_full_name || d.selectedRepository?.full_name || 'Unconfigured'}</p>
+                  {d.target?.repo_full_name || d.selectedRepository?.full_name ? (
+                    <a
+                      href={`https://github.com/${d.target?.repo_full_name || d.selectedRepository?.full_name}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-xs font-medium text-foreground transition-colors hover:text-primary"
+                    >
+                      <span>{d.target?.repo_full_name || d.selectedRepository?.full_name}</span>
+                      <LinkSquare01Icon className="h-2.5 w-2.5 shrink-0" />
+                    </a>
+                  ) : (
+                    <p className="text-xs font-medium">Unconfigured</p>
+                  )}
                 </div>
                 <div>
                   <p className="mb-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Last Commit</p>
-                  <p className="font-mono text-xs">{d.target?.last_commit_sha ? d.target.last_commit_sha.slice(0, 7) : <span className="text-muted-foreground">None</span>}</p>
+                  {d.target?.last_commit_sha && d.target?.repo_full_name ? (
+                    <a
+                      href={`https://github.com/${d.target.repo_full_name}/commit/${d.target.last_commit_sha}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 font-mono text-xs text-foreground transition-colors hover:text-primary"
+                    >
+                      <span>{d.target.last_commit_sha.slice(0, 7)}</span>
+                      <LinkSquare01Icon className="h-2.5 w-2.5 shrink-0" />
+                    </a>
+                  ) : (
+                    <p className="font-mono text-xs">{d.target?.last_commit_sha ? d.target.last_commit_sha.slice(0, 7) : <span className="text-muted-foreground">None</span>}</p>
+                  )}
                 </div>
                 <div>
                   <p className="mb-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Pull Request</p>
