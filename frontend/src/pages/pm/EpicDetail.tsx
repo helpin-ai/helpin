@@ -645,6 +645,8 @@ export function EpicDetailPage() {
                   assignableMembers={assignableMembers}
                   epics={allEpics}
                   sprints={allSprints}
+                  teamId={epic.epic.team_id ?? null}
+                  epicId={epicId}
                   externalTasks={tasks}
                   onOpenTask={openTask}
                 />

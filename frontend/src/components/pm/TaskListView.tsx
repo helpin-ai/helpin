@@ -96,6 +96,10 @@ interface TaskListViewProps {
   sprints: SprintWithStats[];
   filters?: BoardFilters;
   teamId?: string | null;
+  /** When the list is scoped to a single epic, hide the redundant Epic column. */
+  epicId?: string | null;
+  /** When the list is scoped to a single sprint, hide the redundant Sprint column. */
+  sprintId?: string | null;
   /** When provided, use these tasks instead of fetching internally. */
   externalTasks?: Task[];
   onOpenTask: (task: Task) => void;
@@ -131,6 +135,8 @@ export function TaskListView({
   sprints,
   filters,
   teamId,
+  epicId,
+  sprintId,
   externalTasks,
   onOpenTask,
   groupBy: controlledGroupBy,
@@ -786,6 +792,10 @@ export function TaskListView({
     if (!fieldVis.due_date) vis['deadline'] = false;
     if (!fieldVis.labels) vis['labels'] = false;
     if (teamId) vis['teamName'] = false;
+    // Context-scoping: when the list lives inside a specific epic/sprint, the
+    // corresponding column is the same value for every row and adds only noise.
+    if (epicId) vis['epicName'] = false;
+    if (sprintId) vis['sprintName'] = false;
     // User-level display preferences (only hides columns the team allows)
     if (!displayProps.state) vis['stateName'] = false;
     if (!displayProps.priority && vis['priorityIcon'] !== false) vis['priorityIcon'] = false;
@@ -803,7 +813,7 @@ export function TaskListView({
     if (!displayProps.labels && vis['labels'] !== false) vis['labels'] = false;
     if (!displayProps.updated_at) vis['updatedAt'] = false;
     return vis;
-  }, [fieldVis, teamId, displayProps]);
+  }, [fieldVis, teamId, epicId, sprintId, displayProps]);
 
   const grouping: GroupingState = useMemo(() => {
     const colId = GROUP_COLUMN_MAP[groupBy];

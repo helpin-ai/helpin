@@ -318,9 +318,23 @@ func (s *PMSprintService) GetCurrentSprint(ctx context.Context, workspaceID stri
 	return s.sprintRepo.GetCurrentSprint(ctx, workspaceID, teamID)
 }
 
-// ListTasks returns tasks in a sprint.
+// ListTasks returns tasks in a sprint, with TaskKey populated.
 func (s *PMSprintService) ListTasks(ctx context.Context, sprintID string) ([]model.PMTask, error) {
-	return s.sprintRepo.ListTasks(ctx, sprintID)
+	tasks, err := s.sprintRepo.ListTasks(ctx, sprintID)
+	if err != nil {
+		return nil, err
+	}
+	if len(tasks) == 0 {
+		return tasks, nil
+	}
+	ws, err := s.workspaceRepo.GetByID(ctx, tasks[0].WorkspaceID)
+	if err != nil || ws == nil {
+		return tasks, nil
+	}
+	for i := range tasks {
+		tasks[i].TaskKey = model.FormatTaskKey(ws.WorkspaceKey, tasks[i].DisplayID)
+	}
+	return tasks, nil
 }
 
 // ListPreviewTasksPage returns lightweight task previews for a sprint page.
