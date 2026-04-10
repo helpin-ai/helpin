@@ -2,9 +2,12 @@ package service
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
@@ -870,6 +873,417 @@ func TestMarkConversationRead_MarksSupportReplyNotificationsRead(t *testing.T) {
 	}
 	if notification.ReadAt == nil {
 		t.Fatal("expected notification read_at to be set")
+	}
+}
+
+func TestSupportInboxServiceCreateTaskFromConversation_CreatesLinkedTaskAndCopiesAssociations(t *testing.T) {
+	env := newTaskTestEnv(t)
+	ctx := context.Background()
+
+	convRepo := repository.NewSupportConversationRepository(env.db)
+	messageRepo := repository.NewSupportMessageRepository(env.db)
+	assocRepo := repository.NewCRMAssociationRepository(env.db)
+
+	svc := NewSupportInboxService(
+		convRepo,
+		nil,
+		messageRepo,
+		nil,
+		assocRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		repository.NewUserRepository(env.db),
+		nil,
+		nil,
+		nil,
+	)
+	svc.SetTaskService(env.svc)
+	svc.SetSupportAIService(&SupportAIService{
+		llmProvider: &scriptedSupportRewriteLLM{
+			response: llm.ChatResponse{
+				Content: `{"title":"Xero invoice import fails after sync attempt","summary":"Customer cannot sync invoices from Xero after the latest import attempt.","description_markdown":"## Problem\nXero invoice import fails after a sync attempt.\n\n## Impact\nThe customer cannot import invoices into the workspace.\n\n## Requested Outcome\nRestore invoice import for the affected account.\n\n## Reproduction\n- Start a Xero sync\n- Observe a 500 error when archived invoices are present","task_type":"bug","priority":"high"}`,
+			},
+		},
+	})
+
+	conversation := &model.SupportConversation{
+		WorkspaceID:   env.wsID,
+		Subject:       "Invoice sync is failing",
+		Status:        "open",
+		Priority:      model.PMTaskPriorityUrgent,
+		CustomerName:  strPtr("Casey Customer"),
+		CustomerEmail: strPtr("casey@example.com"),
+		CRMContactID:  strPtr("contact-1"),
+	}
+	if err := convRepo.Create(ctx, conversation); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	customerName := "Casey Customer"
+	for _, msg := range []model.SupportMessage{
+		{
+			WorkspaceID:       env.wsID,
+			ConversationID:    conversation.ID,
+			SenderType:        "customer",
+			MessageType:       "reply",
+			SenderDisplayName: &customerName,
+			Content:           "After the latest sync attempt, invoice imports from Xero fail with a 500 error.",
+		},
+		{
+			WorkspaceID:    env.wsID,
+			ConversationID: conversation.ID,
+			SenderType:     "user",
+			MessageType:    "reply",
+			SenderUserID:   &env.userID,
+			Content:        "We can reproduce it when the account has archived invoices.",
+			IsInternal:     true,
+		},
+	} {
+		message := msg
+		if err := messageRepo.Create(ctx, &message); err != nil {
+			t.Fatalf("create message: %v", err)
+		}
+	}
+
+	for _, assoc := range []model.CRMAssociation{
+		{
+			WorkspaceID:    env.wsID,
+			FromObjectType: model.CRMObjectSupportConversation,
+			FromObjectID:   conversation.ID,
+			ToObjectType:   model.CRMObjectContact,
+			ToObjectID:     "contact-1",
+		},
+		{
+			WorkspaceID:    env.wsID,
+			FromObjectType: model.CRMObjectSupportConversation,
+			FromObjectID:   conversation.ID,
+			ToObjectType:   model.CRMObjectCompany,
+			ToObjectID:     "company-1",
+		},
+		{
+			WorkspaceID:    env.wsID,
+			FromObjectType: model.CRMObjectSupportConversation,
+			FromObjectID:   conversation.ID,
+			ToObjectType:   model.CRMObjectDeal,
+			ToObjectID:     "deal-1",
+		},
+	} {
+		association := assoc
+		if err := assocRepo.Create(ctx, &association); err != nil {
+			t.Fatalf("create association: %v", err)
+		}
+	}
+
+	resp, err := svc.CreateTaskFromConversation(ctx, env.wsID, conversation.ID, env.userID, model.CreateTaskFromConversationRequest{})
+	if err != nil {
+		t.Fatalf("CreateTaskFromConversation: %v", err)
+	}
+
+	if resp.TaskID == "" {
+		t.Fatal("expected created task id")
+	}
+	if resp.TaskName != "Xero invoice import fails after sync attempt" {
+		t.Fatalf("task_name = %q, want %q", resp.TaskName, "Xero invoice import fails after sync attempt")
+	}
+	if resp.Summary == "" {
+		t.Fatal("expected summary in response")
+	}
+	if resp.CopiedContactAssociations != 1 {
+		t.Fatalf("copied_contact_associations = %d, want 1", resp.CopiedContactAssociations)
+	}
+	if resp.CopiedCompanyAssociations != 1 {
+		t.Fatalf("copied_company_associations = %d, want 1", resp.CopiedCompanyAssociations)
+	}
+	if resp.CopiedDealAssociations != 1 {
+		t.Fatalf("copied_deal_associations = %d, want 1", resp.CopiedDealAssociations)
+	}
+
+	updatedConversation, err := convRepo.GetByID(ctx, env.wsID, conversation.ID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("reload conversation: %v", err)
+	}
+	if updatedConversation == nil || updatedConversation.LinkedTaskID == nil || *updatedConversation.LinkedTaskID != resp.TaskID {
+		t.Fatalf("linked_task_id = %v, want %q", updatedConversation.LinkedTaskID, resp.TaskID)
+	}
+
+	taskDetail, err := env.svc.GetByID(ctx, resp.TaskID)
+	if err != nil {
+		t.Fatalf("load task detail: %v", err)
+	}
+	if taskDetail == nil || taskDetail.Task.Description == nil {
+		t.Fatal("expected task description to be stored")
+	}
+	if !strings.Contains(*taskDetail.Task.Description, "<h2") || !strings.Contains(*taskDetail.Task.Description, "Problem") {
+		t.Fatalf("task description = %q, want rendered html with structured sections", *taskDetail.Task.Description)
+	}
+
+	taskAssociations, err := assocRepo.ListByObject(ctx, env.wsID, model.CRMObjectTask, resp.TaskID)
+	if err != nil {
+		t.Fatalf("list task associations: %v", err)
+	}
+
+	seen := map[string]string{}
+	for _, assoc := range taskAssociations {
+		otherType, otherID := supportAssociationPeer(assoc, model.CRMObjectTask, resp.TaskID)
+		seen[otherType] = otherID
+	}
+
+	if seen[model.CRMObjectSupportConversation] != conversation.ID {
+		t.Fatalf("support conversation association = %q, want %q", seen[model.CRMObjectSupportConversation], conversation.ID)
+	}
+	if seen[model.CRMObjectContact] != "contact-1" {
+		t.Fatalf("contact association = %q, want %q", seen[model.CRMObjectContact], "contact-1")
+	}
+	if seen[model.CRMObjectCompany] != "company-1" {
+		t.Fatalf("company association = %q, want %q", seen[model.CRMObjectCompany], "company-1")
+	}
+	if seen[model.CRMObjectDeal] != "deal-1" {
+		t.Fatalf("deal association = %q, want %q", seen[model.CRMObjectDeal], "deal-1")
+	}
+}
+
+func TestSupportInboxServiceCreateTaskFromConversation_NormalizesGenericActionTitle(t *testing.T) {
+	env := newTaskTestEnv(t)
+	ctx := context.Background()
+
+	convRepo := repository.NewSupportConversationRepository(env.db)
+	messageRepo := repository.NewSupportMessageRepository(env.db)
+
+	svc := NewSupportInboxService(
+		convRepo,
+		nil,
+		messageRepo,
+		nil,
+		repository.NewCRMAssociationRepository(env.db),
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		repository.NewUserRepository(env.db),
+		nil,
+		nil,
+		nil,
+	)
+	svc.SetTaskService(env.svc)
+	svc.SetSupportAIService(&SupportAIService{
+		llmProvider: &scriptedSupportRewriteLLM{
+			response: llm.ChatResponse{
+				Content: `{"title":"Investigate invoice sync failure for archived invoices","summary":"Archived invoices cause Xero sync imports to fail for the customer.","description_markdown":"## Problem\nInvoice sync fails when archived invoices are present.\n\n## Impact\nThe customer cannot import invoices.\n\n## Requested Outcome\nRestore invoice import when archived invoices exist.","task_type":"bug","priority":"high"}`,
+			},
+		},
+	})
+
+	conversation := &model.SupportConversation{
+		WorkspaceID:   env.wsID,
+		Subject:       "Re: Invoice sync failure for archived invoices",
+		Status:        "open",
+		Priority:      model.PMTaskPriorityHigh,
+		CustomerName:  strPtr("Casey Customer"),
+		CustomerEmail: strPtr("casey@example.com"),
+	}
+	if err := convRepo.Create(ctx, conversation); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	customerName := "Casey Customer"
+	message := model.SupportMessage{
+		WorkspaceID:       env.wsID,
+		ConversationID:    conversation.ID,
+		SenderType:        "customer",
+		MessageType:       "reply",
+		SenderDisplayName: &customerName,
+		Content:           "Invoice sync fails when archived invoices are included in the Xero import.",
+	}
+	if err := messageRepo.Create(ctx, &message); err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+
+	resp, err := svc.CreateTaskFromConversation(ctx, env.wsID, conversation.ID, env.userID, model.CreateTaskFromConversationRequest{})
+	if err != nil {
+		t.Fatalf("CreateTaskFromConversation: %v", err)
+	}
+
+	if resp.TaskName != "Invoice sync failure for archived invoices" {
+		t.Fatalf("task_name = %q, want %q", resp.TaskName, "Invoice sync failure for archived invoices")
+	}
+
+	taskDetail, err := env.svc.GetByID(ctx, resp.TaskID)
+	if err != nil {
+		t.Fatalf("load task detail: %v", err)
+	}
+	if taskDetail == nil || taskDetail.Task.Description == nil {
+		t.Fatal("expected task description to be stored")
+	}
+	if !strings.Contains(*taskDetail.Task.Description, "Requested Outcome") {
+		t.Fatalf("task description = %q, want structured html", *taskDetail.Task.Description)
+	}
+}
+
+func TestSupportInboxServiceCreateTaskFromConversation_FailsWhenContextIsTooWeak(t *testing.T) {
+	env := newTaskTestEnv(t)
+	ctx := context.Background()
+
+	convRepo := repository.NewSupportConversationRepository(env.db)
+	messageRepo := repository.NewSupportMessageRepository(env.db)
+
+	svc := NewSupportInboxService(
+		convRepo,
+		nil,
+		messageRepo,
+		nil,
+		repository.NewCRMAssociationRepository(env.db),
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		repository.NewUserRepository(env.db),
+		nil,
+		nil,
+		nil,
+	)
+	svc.SetTaskService(env.svc)
+
+	conversation := &model.SupportConversation{
+		WorkspaceID:   env.wsID,
+		Subject:       "New convo",
+		Status:        "open",
+		Priority:      model.PMTaskPriorityMedium,
+		CustomerName:  strPtr("Untidy"),
+		CustomerEmail: strPtr("support@untidy.com"),
+	}
+	if err := convRepo.Create(ctx, conversation); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	customerName := "Untidy"
+	message := model.SupportMessage{
+		WorkspaceID:       env.wsID,
+		ConversationID:    conversation.ID,
+		SenderType:        "customer",
+		MessageType:       "reply",
+		SenderDisplayName: &customerName,
+		Content:           "what about me",
+	}
+	if err := messageRepo.Create(ctx, &message); err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+
+	resp, err := svc.CreateTaskFromConversation(ctx, env.wsID, conversation.ID, env.userID, model.CreateTaskFromConversationRequest{})
+	if err == nil {
+		t.Fatalf("expected error, got response %#v", resp)
+	}
+	if !errors.Is(err, ErrSupportTaskInsufficientContext) {
+		t.Fatalf("error = %v, want ErrSupportTaskInsufficientContext", err)
+	}
+
+	var taskCount int64
+	if err := env.db.WithContext(ctx).Model(&model.PMTask{}).Count(&taskCount).Error; err != nil {
+		t.Fatalf("count tasks: %v", err)
+	}
+	if taskCount != 0 {
+		t.Fatalf("task_count = %d, want 0", taskCount)
+	}
+
+	updatedConversation, err := convRepo.GetByID(ctx, env.wsID, conversation.ID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("reload conversation: %v", err)
+	}
+	if updatedConversation == nil {
+		t.Fatal("expected conversation to exist")
+	}
+	if updatedConversation.LinkedTaskID != nil {
+		t.Fatalf("linked_task_id = %v, want nil", updatedConversation.LinkedTaskID)
+	}
+}
+
+func TestSupportInboxServiceCreateTaskFromConversation_UsesInternalNotesAsFallbackContext(t *testing.T) {
+	env := newTaskTestEnv(t)
+	ctx := context.Background()
+
+	convRepo := repository.NewSupportConversationRepository(env.db)
+	messageRepo := repository.NewSupportMessageRepository(env.db)
+
+	svc := NewSupportInboxService(
+		convRepo,
+		nil,
+		messageRepo,
+		nil,
+		repository.NewCRMAssociationRepository(env.db),
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		repository.NewUserRepository(env.db),
+		nil,
+		nil,
+		nil,
+	)
+	svc.SetTaskService(env.svc)
+
+	conversation := &model.SupportConversation{
+		WorkspaceID:   env.wsID,
+		Subject:       "New convo",
+		Status:        "open",
+		Priority:      model.PMTaskPriorityMedium,
+		CustomerName:  strPtr("Untidy"),
+		CustomerEmail: strPtr("support@untidy.com"),
+	}
+	if err := convRepo.Create(ctx, conversation); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	customerName := "Untidy"
+	for _, msg := range []model.SupportMessage{
+		{
+			WorkspaceID:       env.wsID,
+			ConversationID:    conversation.ID,
+			SenderType:        "customer",
+			MessageType:       "reply",
+			SenderDisplayName: &customerName,
+			Content:           "what about me",
+		},
+		{
+			WorkspaceID:    env.wsID,
+			ConversationID: conversation.ID,
+			SenderType:     "user",
+			MessageType:    "reply",
+			SenderUserID:   &env.userID,
+			IsInternal:     true,
+			Content:        "The customer is having an issue with incorrect attribution. Google Analytics shows 200 conversions for March 15-17 while Usermaven shows 150, which is throwing off paid ads attribution.",
+		},
+	} {
+		message := msg
+		if err := messageRepo.Create(ctx, &message); err != nil {
+			t.Fatalf("create message: %v", err)
+		}
+	}
+
+	resp, err := svc.CreateTaskFromConversation(ctx, env.wsID, conversation.ID, env.userID, model.CreateTaskFromConversationRequest{})
+	if err != nil {
+		t.Fatalf("CreateTaskFromConversation: %v", err)
+	}
+
+	if resp.TaskID == "" {
+		t.Fatal("expected created task id")
+	}
+	if strings.EqualFold(resp.TaskName, "New convo") || strings.EqualFold(resp.TaskName, "What about me") {
+		t.Fatalf("task_name = %q, want internal-note-derived issue title", resp.TaskName)
+	}
+	if !strings.Contains(strings.ToLower(resp.TaskName), "incorrect attribution") {
+		t.Fatalf("task_name = %q, want internal note context", resp.TaskName)
+	}
+	if !strings.Contains(strings.ToLower(resp.Summary), "google analytics") {
+		t.Fatalf("summary = %q, want internal note context", resp.Summary)
 	}
 }
 
