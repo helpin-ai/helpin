@@ -1020,6 +1020,10 @@ func (s *DocsHelpcenterService) GetSpaceNavigation(ctx context.Context, workspac
 		return nil, err
 	}
 
+	if err := s.ensureDefaultLocaleMirrors(ctx, workspaceID); err != nil {
+		return nil, err
+	}
+
 	spaceTranslation, _, _, err := s.resolvePublicSpaceTranslationBySlug(ctx, cfg, workspaceID, requestedLocale, spaceSlug)
 	if err != nil {
 		return nil, err
