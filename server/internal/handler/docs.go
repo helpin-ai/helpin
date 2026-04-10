@@ -1135,8 +1135,8 @@ func (h *DocsHandler) VerifyDomain(w http.ResponseWriter, r *http.Request) {
 	// Allow our own domains always.
 	if domain == "helpcenter.helpin.ai" ||
 		domain == "helpcenter-stage.helpin.ai" ||
-		domain == "helpin.center" ||
-		domain == "stage.helpin.center" {
+		strings.HasSuffix(domain, ".helpin.center") ||
+		strings.HasSuffix(domain, ".stage.helpin.center") {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
