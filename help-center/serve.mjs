@@ -225,28 +225,30 @@ function resolveHostInfo(request) {
   return { host, protocol, origin: `${protocol}://${host}` }
 }
 
-const PATH_HOST_TENANT_ROOTS = new Set(['helpin.center', 'stage.helpin.center'])
-const ROOT_SERVICE_PATH_PREFIXES = ['/api/', '/assets/']
-const ROOT_SERVICE_PATHS = new Set(['/api', '/assets', '/healthz'])
+const HOSTED_HELP_CENTER_ROOTS = ['stage.helpin.center', 'helpin.center']
 
 function normalizeHostname(host) {
   return host.split(':')[0].trim().toLowerCase()
 }
 
-function isPathHostTenantRoot(host) {
-  return PATH_HOST_TENANT_ROOTS.has(normalizeHostname(host))
-}
+function resolveHostedSubdomain(host) {
+  const hostname = normalizeHostname(host)
 
-function shouldBypassTenantExtraction(pathname) {
-  if (ROOT_SERVICE_PATHS.has(pathname)) return true
-  return ROOT_SERVICE_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix))
-}
+  for (const root of HOSTED_HELP_CENTER_ROOTS) {
+    if (hostname === root) {
+      return ''
+    }
+    const suffix = `.${root}`
+    if (!hostname.endsWith(suffix)) {
+      continue
+    }
+    const candidate = hostname.slice(0, -suffix.length)
+    if (candidate && !candidate.includes('.')) {
+      return candidate
+    }
+  }
 
-function extractFirstPathSegment(pathname) {
-  if (!pathname) return ''
-  const trimmed = pathname.replace(/^\/+/, '')
-  const slash = trimmed.indexOf('/')
-  return slash === -1 ? trimmed : trimmed.slice(0, slash)
+  return ''
 }
 
 /**
@@ -256,13 +258,9 @@ function extractFirstPathSegment(pathname) {
 function resolveHelpCenterContext(host, pathname) {
   const hostname = normalizeHostname(host)
 
-  if (isPathHostTenantRoot(hostname)) {
-    if (shouldBypassTenantExtraction(pathname)) {
-      return { subdomain: '', basepath: '' }
-    }
-    const slug = extractFirstPathSegment(pathname)
-    if (!slug) return { subdomain: '', basepath: '' }
-    return { subdomain: slug, basepath: `/${slug}` }
+  const hostedSubdomain = resolveHostedSubdomain(hostname)
+  if (hostedSubdomain) {
+    return { subdomain: hostedSubdomain, basepath: '' }
   }
 
   if (
@@ -388,9 +386,9 @@ async function handleSitemapXml(_request, response, hcContext) {
 }
 
 /**
- * Strip the resolved basepath from a pathname so we can match
- * top-level routes like /sitemap.xml or /robots.txt under multi-tenant hosts
- * (e.g. helpin.center/{slug}/sitemap.xml).
+ * Strip the resolved basepath from a pathname so we can match top-level routes
+ * like /sitemap.xml or /robots.txt. Hosted and custom-domain help centers use
+ * an empty basepath, but the helper remains safe for any future prefixed mode.
  */
 function stripBasepath(pathname, basepath) {
   if (!basepath) return pathname

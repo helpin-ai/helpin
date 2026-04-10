@@ -895,14 +895,14 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
             <div className="space-y-2">
               <Label htmlFor="hc-subdomain">Help Center URL</Label>
               <div className="flex items-center">
-                <span className="flex h-9 shrink-0 items-center rounded-l-md border border-r-0 bg-muted/50 px-3 text-sm text-muted-foreground">helpin.center/</span>
                 <Input
                   id="hc-subdomain"
                   value={config.subdomain}
                   onChange={(e) => setConfig({ ...config, subdomain: e.target.value })}
                   placeholder="yourcompany"
-                  className="rounded-l-none"
+                  className="rounded-r-none"
                 />
+                <span className="flex h-9 shrink-0 items-center rounded-r-md border border-l-0 bg-muted/50 px-3 text-sm text-muted-foreground">.helpin.center</span>
               </div>
               <p className="text-[11px] text-muted-foreground">
                 Used as your default URL when no custom domain is set.
@@ -920,11 +920,11 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
                 <p className="mb-1.5 font-medium text-foreground">DNS setup</p>
                 <p>
                   Create a <span className="font-mono text-foreground">CNAME</span> record on your domain pointing to{' '}
-                  <span className="font-mono text-foreground">helpin.center</span>. SSL certificates are issued automatically once DNS resolves.
+                  <span className="font-mono text-foreground">helpcenter.helpin.ai</span>. SSL certificates are issued automatically once DNS resolves.
                 </p>
                 <p className="mt-1.5">
                   Example: <span className="font-mono text-foreground">help.yourcompany.com</span> →{' '}
-                  <span className="font-mono text-foreground">helpin.center</span>
+                  <span className="font-mono text-foreground">helpcenter.helpin.ai</span>
                 </p>
               </div>
             </div>

@@ -113,13 +113,13 @@ function docStatusColor(status: string): string {
 }
 
 interface HelpcenterPreviewBase {
-  baseUrl: string
+  hostRoot: string
   /**
-   * When true, the workspace slug is embedded in the URL path
-   * (helpin.center/{slug}/preview/...). When false, it goes in the
-   * `subdomain` query param (legacy/local dev fallback).
+   * When true, previews are served from the hosted subdomain runtime
+   * (https://{slug}.helpin.center/preview/...). When false, the slug goes in
+   * the `subdomain` query param (legacy/local dev fallback).
    */
-  pathBased: boolean
+  hostedSubdomain: boolean
 }
 
 function normalizeExplicitHelpcenterPreviewBase(
@@ -129,22 +129,22 @@ function normalizeExplicitHelpcenterPreviewBase(
     const url = new URL(explicit)
 
     if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
-      return { baseUrl: url.origin, pathBased: false }
+      return { hostRoot: url.origin, hostedSubdomain: false }
     }
 
     if (url.hostname === 'helpcenter.helpin.ai') {
-      return { baseUrl: 'https://helpin.center', pathBased: true }
+      return { hostRoot: 'helpin.center', hostedSubdomain: true }
     }
 
     if (url.hostname === 'helpcenter-stage.helpin.ai') {
-      return { baseUrl: 'https://stage.helpin.center', pathBased: true }
+      return { hostRoot: 'stage.helpin.center', hostedSubdomain: true }
     }
 
     if (url.hostname === 'helpin.center' || url.hostname === 'stage.helpin.center') {
-      return { baseUrl: url.origin, pathBased: true }
+      return { hostRoot: url.hostname, hostedSubdomain: true }
     }
 
-    return { baseUrl: url.origin, pathBased: false }
+    return { hostRoot: url.origin, hostedSubdomain: false }
   } catch {
     return null
   }
@@ -167,20 +167,20 @@ function resolveHelpcenterPreviewBase(): HelpcenterPreviewBase {
     try {
       const url = new URL(candidate)
       if (url.hostname === 'app.helpin.ai') {
-        return { baseUrl: 'https://helpin.center', pathBased: true }
+        return { hostRoot: 'helpin.center', hostedSubdomain: true }
       }
       if (url.hostname === 'client.stage.helpin.ai' || url.hostname === 'stage.helpin.ai') {
-        return { baseUrl: 'https://stage.helpin.center', pathBased: true }
+        return { hostRoot: 'stage.helpin.center', hostedSubdomain: true }
       }
       if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
-        return { baseUrl: 'http://localhost:5174', pathBased: false }
+        return { hostRoot: 'http://localhost:5174', hostedSubdomain: false }
       }
     } catch {
       // Fall through to the local dev default below.
     }
   }
 
-  return { baseUrl: 'http://localhost:5174', pathBased: false }
+  return { hostRoot: 'http://localhost:5174', hostedSubdomain: false }
 }
 
 function buildHelpcenterPreviewUrl(
@@ -188,11 +188,11 @@ function buildHelpcenterPreviewUrl(
   docId: string,
   token: string,
 ): string {
-  const { baseUrl, pathBased } = resolveHelpcenterPreviewBase()
-  if (pathBased) {
-    return `${baseUrl}/${subdomain}/preview/${docId}?token=${token}`
+  const { hostRoot, hostedSubdomain } = resolveHelpcenterPreviewBase()
+  if (hostedSubdomain) {
+    return `https://${subdomain}.${hostRoot}/preview/${docId}?token=${token}`
   }
-  return `${baseUrl}/preview/${docId}?subdomain=${subdomain}&token=${token}`
+  return `${hostRoot}/preview/${docId}?subdomain=${subdomain}&token=${token}`
 }
 
 function DocCollectionIcon({ name }: { name?: string | null }) {

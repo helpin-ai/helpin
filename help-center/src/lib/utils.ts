@@ -9,30 +9,35 @@ function normalizeHostname(hostname: string) {
   return hostname.replace(/:\d+$/, '').trim().toLowerCase()
 }
 
-const PATH_HOST_TENANT_ROOTS = new Set([
-  'helpin.center',
+const HOSTED_HELP_CENTER_ROOTS = [
   'stage.helpin.center',
-])
+  'helpin.center',
+]
 
-/**
- * Returns true if the given hostname is a multi-tenant root that serves help
- * centers under a path prefix (e.g. helpin.center/{slug}/...).
- */
-export function isPathHostTenantRoot(hostname: string): boolean {
-  return PATH_HOST_TENANT_ROOTS.has(normalizeHostname(hostname))
-}
+function resolveHostedSubdomain(hostname: string): string {
+  const normalized = normalizeHostname(hostname)
 
-function extractFirstPathSegment(pathname: string): string {
-  if (!pathname) return ''
-  const trimmed = pathname.replace(/^\/+/, '')
-  const slash = trimmed.indexOf('/')
-  return slash === -1 ? trimmed : trimmed.slice(0, slash)
+  for (const root of HOSTED_HELP_CENTER_ROOTS) {
+    if (normalized === root) {
+      return ''
+    }
+    const suffix = `.${root}`
+    if (!normalized.endsWith(suffix)) {
+      continue
+    }
+    const candidate = normalized.slice(0, -suffix.length)
+    if (candidate && !candidate.includes('.')) {
+      return candidate
+    }
+  }
+
+  return ''
 }
 
 export interface HelpCenterContext {
   /** The workspace identifier the backend understands (subdomain or hostname). */
   subdomain: string
-  /** Router basepath when serving under a path prefix; '' when at root. */
+  /** Router basepath. Hosted and custom-domain help centers serve at root. */
   basepath: string
 }
 
@@ -40,14 +45,13 @@ export interface HelpCenterContext {
  * Resolve the help-center request context for a given hostname + pathname.
  *
  * Routing modes:
- *  - helpin.center / stage.helpin.center → path-based: first path segment is the
- *    workspace slug; basepath is `/{slug}`
- *  - localhost / IP                      → dev mode, slug from VITE_HC_SUBDOMAIN
- *  - custom domain                       → backend resolves by full hostname
+ *  - <slug>.helpin.center / <slug>.stage.helpin.center → hosted subdomain
+ *  - localhost / IP                                    → dev mode via VITE_HC_SUBDOMAIN
+ *  - custom domain                                     → backend resolves by full hostname
  */
 export function resolveHelpCenterContext(
   hostname: string,
-  pathname: string,
+  _pathname: string,
   search?: string,
 ): HelpCenterContext {
   // Dev override via query param wins everywhere
@@ -64,13 +68,12 @@ export function resolveHelpCenterContext(
     }
   }
 
-  // Multi-tenant root: extract slug from first path segment
-  if (isPathHostTenantRoot(host)) {
-    const slug = overrideParam || extractFirstPathSegment(pathname)
-    if (!slug) {
-      return { subdomain: '', basepath: '' }
+  const hostedSubdomain = resolveHostedSubdomain(host)
+  if (hostedSubdomain) {
+    return {
+      subdomain: overrideParam || hostedSubdomain,
+      basepath: '',
     }
-    return { subdomain: slug, basepath: `/${slug}` }
   }
 
   // Dev / localhost / IP address fallback
@@ -88,4 +91,3 @@ export function resolveHelpCenterContext(
   // Custom domain — pass hostname as-is; backend resolves it
   return { subdomain: overrideParam || host, basepath: '' }
 }
-
