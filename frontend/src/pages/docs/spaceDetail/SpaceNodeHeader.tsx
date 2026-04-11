@@ -1,7 +1,11 @@
 import type { DocsSpace } from '@/lib/docsTypes'
+import { StoredIcon } from '@/components/ui/icon-picker'
 import {
   ArrowRight01Icon,
   Delete01Icon,
+  Folder01Icon,
+  FolderOpenIcon,
+  InboxIcon,
   LanguageCircleIcon,
   MoreHorizontalIcon,
   PencilEdit01Icon,
@@ -118,6 +122,29 @@ export function SpaceNodeHeader({
   })()
 
   // ── Title content ────────────────────────────────────────────────
+  // Icon renders only on the current node, not on ancestors, so
+  // admins see exactly the icon that the public help center will
+  // render next to this collection/space. Ancestors stay text-only
+  // so the breadcrumb row doesn't become icon-spam.
+  const titleIcon =
+    view.kind === 'collection' ? (
+      <StoredIcon
+        name={view.node.collection.icon}
+        className="h-[18px] w-[18px] shrink-0 text-muted-foreground"
+        textClassName="text-lg"
+        fallback={<FolderOpenIcon className="h-[18px] w-[18px] shrink-0 text-muted-foreground" />}
+      />
+    ) : view.kind === 'uncategorized' ? (
+      <InboxIcon className="h-[18px] w-[18px] shrink-0 text-muted-foreground" />
+    ) : view.kind === 'space_root' ? (
+      <StoredIcon
+        name={space.icon}
+        className="h-[18px] w-[18px] shrink-0 text-muted-foreground"
+        textClassName="text-lg"
+        fallback={<Folder01Icon className="h-[18px] w-[18px] shrink-0 text-muted-foreground" />}
+      />
+    ) : null
+
   const titleLabel =
     view.kind === 'collection'
       ? view.node.collection.name
@@ -148,13 +175,13 @@ export function SpaceNodeHeader({
               className="group flex min-w-0 items-center gap-2"
             >
               {ancestors.map((ancestor) => (
-                <span key={ancestor.id} className="flex shrink-0 items-center gap-2">
+                <span key={ancestor.id} className="flex shrink-0 items-center gap-1.5">
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button
                         type="button"
                         onClick={ancestor.onClick}
-                        className="max-w-[200px] truncate rounded text-xl font-normal text-muted-foreground transition-colors hover:text-foreground"
+                        className="max-w-[200px] truncate rounded text-lg font-normal text-muted-foreground transition-colors hover:text-foreground"
                       >
                         {ancestor.label}
                       </button>
@@ -162,11 +189,12 @@ export function SpaceNodeHeader({
                     <TooltipContent>{ancestor.label}</TooltipContent>
                   </Tooltip>
                   <ArrowRight01Icon
-                    className="h-4 w-4 shrink-0 text-muted-foreground/40"
+                    className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40"
                     aria-hidden="true"
                   />
                 </span>
               ))}
+              {titleIcon}
               {view.kind === 'space_root' && renamingSpace ? (
                 <input
                   key="space-rename-input"
@@ -179,10 +207,10 @@ export function SpaceNodeHeader({
                     if (event.key === 'Enter') onCommitRenameSpace()
                     if (event.key === 'Escape') onCancelRenameSpace()
                   }}
-                  className="min-w-0 border-b border-primary/40 bg-transparent px-0 py-0 text-xl font-semibold outline-none"
+                  className="min-w-0 border-b border-primary/40 bg-transparent px-0 py-0 text-lg font-semibold outline-none"
                 />
               ) : (
-                <h1 className="truncate text-xl font-semibold">{titleLabel}</h1>
+                <h1 className="truncate text-lg font-semibold">{titleLabel}</h1>
               )}
               {view.kind === 'space_root' && canEdit && !renamingSpace && (
                 <button
