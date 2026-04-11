@@ -2,6 +2,7 @@ import type { DocsSpace } from '@/lib/docsTypes'
 import { StoredIcon } from '@/components/ui/icon-picker'
 import {
   ArrowLeft02Icon,
+  ArrowRight01Icon,
   Delete01Icon,
   Folder01Icon,
   FolderOpenIcon,
@@ -20,8 +21,14 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { NodeView } from './nodeSelection'
-import { SpaceBreadcrumb, type SpaceBreadcrumbItem } from './SpaceBreadcrumb'
+
+interface AncestorLink {
+  id: string
+  label: string
+  onClick: () => void
+}
 
 export interface SpaceNodeHeaderProps {
   space: DocsSpace
@@ -100,13 +107,13 @@ export function SpaceNodeHeader({
 }: SpaceNodeHeaderProps) {
   const isExternalCapable = space.type === 'external_capable'
 
-  // ── Breadcrumb ────────────────────────────────────────────────────
-  // Ancestors only — the current node is already the page title
-  // below, so including it here would double up the name. The
-  // space itself is always the leftmost clickable segment.
-  const breadcrumbItems: SpaceBreadcrumbItem[] = (() => {
+  // ── Ancestors (rendered inline, left of the title) ─────────────────
+  // The current node is NOT in this list — it's the big title to the
+  // right of the last arrow. That keeps the "you are here" signal
+  // compact and matches the GitHub/Notion/Linear pattern.
+  const ancestors: AncestorLink[] = (() => {
     if (view.kind === 'space_root' || view.kind === 'loading') return []
-    const items: SpaceBreadcrumbItem[] = [
+    const items: AncestorLink[] = [
       {
         id: 'space',
         label: space.name,
@@ -181,8 +188,6 @@ export function SpaceNodeHeader({
 
   return (
     <header className="flex flex-col gap-2">
-      {breadcrumbItems.length > 0 && <SpaceBreadcrumb items={breadcrumbItems} />}
-
       <div className="flex items-start justify-between gap-4">
         <div className="flex min-w-0 items-start gap-3">
           {view.kind === 'space_root' && (
@@ -196,7 +201,30 @@ export function SpaceNodeHeader({
             </button>
           )}
           <div className="min-w-0">
-            <div className="group flex items-center gap-2">
+            <nav
+              aria-label="Breadcrumb"
+              className="group flex min-w-0 items-center gap-2"
+            >
+              {ancestors.map((ancestor) => (
+                <span key={ancestor.id} className="flex shrink-0 items-center gap-2">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={ancestor.onClick}
+                        className="max-w-[160px] truncate rounded text-sm text-muted-foreground transition-colors hover:text-foreground"
+                      >
+                        {ancestor.label}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>{ancestor.label}</TooltipContent>
+                  </Tooltip>
+                  <ArrowRight01Icon
+                    className="h-3 w-3 shrink-0 text-muted-foreground/40"
+                    aria-hidden="true"
+                  />
+                </span>
+              ))}
               {titleIcon}
               {view.kind === 'space_root' && renamingSpace ? (
                 <input
@@ -230,7 +258,7 @@ export function SpaceNodeHeader({
                   <PencilEdit01Icon className="h-3.5 w-3.5" />
                 </button>
               )}
-            </div>
+            </nav>
             {description && (
               <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{description}</p>
             )}
