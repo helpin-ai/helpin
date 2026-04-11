@@ -300,6 +300,40 @@ export interface UpsertDocsHelpcenterCollectionTranslationRequest {
   status?: DocsHelpcenterTranslationStatus;
 }
 
+/**
+ * Payload for POST /docs/helpcenter/translations/auto-translate-missing.
+ * One request targets one locale; the frontend loops over every enabled
+ * non-default locale when the admin kicks off a bulk auto-translate.
+ */
+export interface AutoTranslateMissingRequest {
+  locale: string;
+}
+
+/**
+ * One failed target in an auto-translate response. Kind is `space` or
+ * `collection`, id identifies the entity, reason is a short human-
+ * readable string the UI can show in the results modal.
+ */
+export interface AutoTranslateFailedItem {
+  kind: 'space' | 'collection';
+  id: string;
+  reason: string;
+}
+
+/**
+ * Response from POST /docs/helpcenter/translations/auto-translate-missing.
+ * Carries the created rows plus any per-target failures so the frontend
+ * can both splice new translations into local state and surface diagnostic
+ * detail in the results modal.
+ */
+export interface AutoTranslateMissingResponse {
+  locale: string;
+  requested: number;
+  spaces?: DocsHelpcenterSpaceTranslation[];
+  collections?: DocsHelpcenterCollectionTranslation[];
+  failed?: AutoTranslateFailedItem[];
+}
+
 export interface UpsertDocsHelpcenterArticleTranslationRequest {
   locale: string;
   title: string;

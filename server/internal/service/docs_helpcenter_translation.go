@@ -175,12 +175,26 @@ func (s *DocsHelpcenterTranslationService) UpsertSpaceTranslation(ctx context.Co
 		status = req.Status
 	}
 
+	// Translation slugs are frozen after first set. Once a row has a
+	// non-nil slug, this upsert path ignores any slug field in the
+	// request and preserves the stored value. The public help center
+	// routes by slug, and docs_redirects does not track translation
+	// slug changes today — mutating the stored slug would silently
+	// break localized URLs for every article in the collection. On
+	// first write the slug is derived from the explicit request slug
+	// or from the name as a fallback. See 2026-04-11 Option C decision.
+	var existingSlug *string
+	if existing != nil {
+		existingSlug = existing.Slug
+	}
+	storedSlug := freezeOrDeriveTranslationSlug(existingSlug, req.Slug, req.Name)
+
 	translation := &model.DocsHelpcenterSpaceTranslation{
 		SpaceID:         space.ID,
 		WorkspaceID:     space.WorkspaceID,
 		Locale:          locale,
 		Name:            req.Name,
-		Slug:            normalizeSlugPointer(req.Slug),
+		Slug:            storedSlug,
 		Description:     req.Description,
 		Status:          status,
 		SourceUpdatedAt: &space.UpdatedAt,
@@ -188,9 +202,6 @@ func (s *DocsHelpcenterTranslationService) UpsertSpaceTranslation(ctx context.Co
 	}
 	if existing != nil {
 		translation.PublishedAt = existing.PublishedAt
-		if req.Slug == nil {
-			translation.Slug = existing.Slug
-		}
 	}
 
 	return s.translationRepo.UpsertSpaceTranslation(ctx, translation)
@@ -239,6 +250,16 @@ func (s *DocsHelpcenterTranslationService) UpsertCollectionTranslation(ctx conte
 		status = req.Status
 	}
 
+	// See the UpsertSpaceTranslation comment: translation slugs are
+	// frozen after first set. On first write we derive the slug from
+	// the explicit request slug or from the name as a fallback; every
+	// subsequent update leaves the stored slug untouched.
+	var existingSlug *string
+	if existing != nil {
+		existingSlug = existing.Slug
+	}
+	storedSlug := freezeOrDeriveTranslationSlug(existingSlug, req.Slug, req.Name)
+
 	translation := &model.DocsHelpcenterCollectionTranslation{
 		CollectionID:    collection.ID,
 		WorkspaceID:     collection.WorkspaceID,
@@ -246,16 +267,13 @@ func (s *DocsHelpcenterTranslationService) UpsertCollectionTranslation(ctx conte
 		Locale:          locale,
 		Name:            req.Name,
 		Description:     req.Description,
-		Slug:            normalizeSlugPointer(req.Slug),
+		Slug:            storedSlug,
 		Status:          status,
 		SourceUpdatedAt: &collection.UpdatedAt,
 		SourceSynced:    true,
 	}
 	if existing != nil {
 		translation.PublishedAt = existing.PublishedAt
-		if req.Slug == nil {
-			translation.Slug = existing.Slug
-		}
 	}
 
 	return s.translationRepo.UpsertCollectionTranslation(ctx, translation)
@@ -1635,6 +1653,31 @@ func normalizedSlugOrFallback(candidate, sourceSlug, title, locale string) strin
 		base = "article"
 	}
 	return fmt.Sprintf("%s-%s", base, normalizeSlug(locale))
+}
+
+// freezeOrDeriveTranslationSlug implements the "set once, then frozen"
+// rule for help-center translation slugs. A stored non-nil slug is
+// returned as-is — the caller cannot overwrite it. When no slug has
+// been set yet, the caller-provided slug is preferred, falling back
+// to a slug derived from the translation name so first-time inserts
+// never produce a nil URL segment. Returns nil only when neither
+// the existing row, the request, nor the name can yield a usable
+// slug (e.g. all empty strings).
+func freezeOrDeriveTranslationSlug(existing *string, requested *string, name string) *string {
+	if existing != nil {
+		return existing
+	}
+	if requested != nil {
+		if normalized := normalizeSlugPointer(requested); normalized != nil {
+			return normalized
+		}
+	}
+	if trimmed := strings.TrimSpace(name); trimmed != "" {
+		if derived := normalizeSlug(trimmed); derived != "" {
+			return &derived
+		}
+	}
+	return nil
 }
 
 func normalizeSlugPointer(value *string) *string {

@@ -121,3 +121,35 @@ type UpsertDocsHelpcenterArticleTranslationRequest struct {
 	SEODescription *string         `json:"seo_description"`
 	Status         string          `json:"status"`
 }
+
+// AutoTranslateMissingRequest is the payload for the bulk
+// auto-translate endpoint. A single request targets one locale; the
+// frontend loops through every enabled non-default locale when the
+// admin hits "Auto-translate missing" in the settings table.
+type AutoTranslateMissingRequest struct {
+	Locale string `json:"locale"`
+}
+
+// AutoTranslateMissingResponse returns the outcome of a bulk
+// auto-translate run for one locale: how many rows were requested,
+// which rows were actually created, and which individual targets
+// failed (with a human-readable reason so the frontend can surface
+// per-row diagnostics in the results modal).
+type AutoTranslateMissingResponse struct {
+	Locale      string                                 `json:"locale"`
+	Requested   int                                    `json:"requested"`
+	Spaces      []DocsHelpcenterSpaceTranslation       `json:"spaces,omitempty"`
+	Collections []DocsHelpcenterCollectionTranslation  `json:"collections,omitempty"`
+	Failed      []AutoTranslateFailedItem              `json:"failed,omitempty"`
+}
+
+// AutoTranslateFailedItem identifies one target that could not be
+// auto-translated. Kind is "space" or "collection", ID is the
+// entity id, Reason is a short string the frontend can display to
+// the admin (e.g. "no llm output for this target" or "slug
+// conflict").
+type AutoTranslateFailedItem struct {
+	Kind   string `json:"kind"`
+	ID     string `json:"id"`
+	Reason string `json:"reason"`
+}
