@@ -395,8 +395,6 @@ export function DocsSpaceDetail() {
       <SpaceNodeHeader
         space={space}
         view={view}
-        docCount={scopedDocs.length}
-        subCount={childNodes.length}
         canEdit={canEditDocs}
         onNavigateToCollection={navigateToCollection}
         onCreateDocument={() => openCreate('docs_document', {
@@ -458,12 +456,9 @@ export function DocsSpaceDetail() {
           />
 
           {scopedDocs.length > 0 ? (
-            <section className="space-y-3">
-              {/* Kept for screen readers; the table structure already
-                  communicates "documents" visually and the header
-                  subtitle already shows the count. */}
-              <h2 className="sr-only">
-                {view.kind === 'space_root' ? 'All documents' : 'Documents'}
+            <section className="space-y-2">
+              <h2 className="text-xs font-medium text-muted-foreground">
+                {scopedDocs.length === 1 ? '1 document' : `${scopedDocs.length} documents`}
               </h2>
               <DocumentsTable
                 documents={scopedDocs}
