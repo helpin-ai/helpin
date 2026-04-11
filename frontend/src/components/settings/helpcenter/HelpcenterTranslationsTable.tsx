@@ -342,11 +342,18 @@ export function HelpcenterTranslationsTable({
                 <>
                   {/* Space row */}
                   <tr key={space.id} className="border-b border-border/40">
-                    <td className="sticky left-0 z-10 bg-background px-3 py-2 font-medium">
+                    <td className="sticky left-0 z-10 bg-background px-3 py-2 font-medium align-top">
                       <span className="inline-flex items-center gap-1.5">
                         <StoredIcon name={space.icon} className="h-4 w-4 shrink-0" textClassName="" />
                         <span>{space.name}</span>
                       </span>
+                      {field === 'description' && (
+                        // Spaces don't have a source description field
+                        // at the model level — show an em-dash so
+                        // translators can still add a localized
+                        // description but know there's no source.
+                        <p className="mt-0.5 text-[11px] text-muted-foreground/70">—</p>
+                      )}
                     </td>
                     {nonDefaultLocales.map((locale) => {
                       const cell = getSpaceCell(space.id, locale)
@@ -379,10 +386,19 @@ export function HelpcenterTranslationsTable({
                   {orderedColls.map(({ coll, depth }) => (
                     <tr key={coll.id} className="border-b border-border/20">
                       <td
-                        className="sticky left-0 z-10 bg-background px-3 py-2 font-medium"
+                        className="sticky left-0 z-10 bg-background px-3 py-2 font-medium align-top"
                         style={{ paddingLeft: `${12 + depth * 16}px` }}
                       >
                         {coll.name}
+                        {field === 'description' && (
+                          // Source description for context. Translators
+                          // need to see what they're translating FROM
+                          // — otherwise descriptions mode looks like
+                          // empty cells with no anchor text.
+                          <p className="mt-0.5 line-clamp-2 text-[11px] font-normal text-muted-foreground/70">
+                            {coll.description?.trim() || '—'}
+                          </p>
+                        )}
                       </td>
                       {nonDefaultLocales.map((locale) => {
                         const cell = getCollectionCell(coll.id, locale)
