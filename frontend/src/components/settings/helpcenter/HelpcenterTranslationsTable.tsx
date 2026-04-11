@@ -1,18 +1,28 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Tick01Icon, Loading01Icon, PencilEdit02Icon, PlusSignIcon, MagicWand01Icon, Cancel01Icon } from '@/lib/icons'
+import {
+  Cancel01Icon,
+  Loading01Icon,
+  MagicWand01Icon,
+  PencilEdit02Icon,
+  PlusSignIcon,
+  Tick01Icon,
+} from '@/lib/icons'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { docsService } from '@/lib/services/docsService'
 import { getHelpcenterLocaleLabel } from '@/lib/docsTypes'
 import { StoredIcon } from '@/components/ui/icon-picker'
 import { buildCollectionTreeOptions } from '@/components/docs/CollectionTreePicker'
 import type {
-  DocsSpace,
   DocsCollection,
-  DocsHelpcenterSpaceTranslation,
   DocsHelpcenterCollectionTranslation,
+  DocsHelpcenterSpaceTranslation,
+  DocsSpace,
 } from '@/lib/docsTypes'
+
+type Field = 'name' | 'description'
 
 interface TranslationsTableProps {
   workspaceId: string
@@ -21,15 +31,35 @@ interface TranslationsTableProps {
 }
 
 interface TranslationCell {
-  name: string
-  exists: boolean
+  /** The text to display for the selected field. Empty string when the row exists but the field is empty. */
+  value: string
+  /** True when a translation row exists for this entity/locale — drives edit vs generate UI. */
+  rowExists: boolean
 }
 
 interface EditingCell {
   type: 'space' | 'collection'
   id: string
   locale: string
-  name: string
+  field: Field
+  value: string
+}
+
+/**
+ * Replace (or insert) a translation entry in a per-entity map while
+ * leaving the rest of the map untouched. Used to splice local state
+ * in place after a save instead of re-fetching the whole table.
+ */
+function upsertTranslationInMap<T extends { locale: string }>(
+  map: Map<string, T[]>,
+  entityId: string,
+  translation: T,
+): Map<string, T[]> {
+  const next = new Map(map)
+  const current = next.get(entityId) ?? []
+  const without = current.filter((t) => t.locale !== translation.locale)
+  next.set(entityId, [...without, translation])
+  return next
 }
 
 export function HelpcenterTranslationsTable({
@@ -47,6 +77,7 @@ export function HelpcenterTranslationsTable({
   const [saving, setSaving] = useState(false)
   const [generatingAll, setGeneratingAll] = useState(false)
   const [generatingCell, setGeneratingCell] = useState<string | null>(null)
+  const [field, setField] = useState<Field>('name')
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -83,40 +114,66 @@ export function HelpcenterTranslationsTable({
 
   useEffect(() => { void loadData() }, [loadData])
 
-  const getSpaceTranslation = (spaceId: string, locale: string): TranslationCell => {
-    const trans = spaceTranslations.get(spaceId)?.find((t) => t.locale === locale)
-    return { name: trans?.name ?? '', exists: !!trans }
+  const getSpaceRow = (spaceId: string, locale: string) =>
+    spaceTranslations.get(spaceId)?.find((t) => t.locale === locale) ?? null
+  const getCollectionRow = (collectionId: string, locale: string) =>
+    collectionTranslations.get(collectionId)?.find((t) => t.locale === locale) ?? null
+
+  const getSpaceCell = (spaceId: string, locale: string): TranslationCell => {
+    const row = getSpaceRow(spaceId, locale)
+    if (!row) return { value: '', rowExists: false }
+    const value = field === 'name' ? row.name : row.description ?? ''
+    return { value, rowExists: true }
   }
 
-  const getCollectionTranslation = (collectionId: string, locale: string): TranslationCell => {
-    const trans = collectionTranslations.get(collectionId)?.find((t) => t.locale === locale)
-    return { name: trans?.name ?? '', exists: !!trans }
+  const getCollectionCell = (collectionId: string, locale: string): TranslationCell => {
+    const row = getCollectionRow(collectionId, locale)
+    if (!row) return { value: '', rowExists: false }
+    const value = field === 'name' ? row.name : row.description ?? ''
+    return { value, rowExists: true }
   }
 
   const handleSaveEdit = async () => {
-    if (!editing || !editing.name.trim()) return
+    if (!editing) return
+    // Names must be non-empty — slug derivation depends on it.
+    // Descriptions may be cleared by saving an empty value.
+    if (editing.field === 'name' && !editing.value.trim()) return
+
     setSaving(true)
     try {
-      // Don't send a slug from the client. Translation slugs are
-      // frozen after first set by the backend — the server will
-      // derive a slug from the name on the very first write and
-      // keep that value for every subsequent edit. Sending a
-      // client-derived slug here used to silently break localized
-      // public URLs on every name edit; see 2026-04-11 Option C.
+      // Build a full payload for the row: always include name (either
+      // the new typed value when editing name, or the stored name
+      // when editing description) so the backend never silently
+      // blanks out the other field. Slug is intentionally omitted —
+      // the backend owns slug selection (Option C, 2026-04-11).
+      const existingSpace = editing.type === 'space' ? getSpaceRow(editing.id, editing.locale) : null
+      const existingCollection = editing.type === 'collection' ? getCollectionRow(editing.id, editing.locale) : null
+
       if (editing.type === 'space') {
-        await docsService.upsertSpaceTranslation(workspaceId, editing.id, {
+        const payload = {
           locale: editing.locale,
-          name: editing.name.trim(),
-        })
+          name: editing.field === 'name' ? editing.value.trim() : existingSpace?.name ?? '',
+          description: editing.field === 'description' ? editing.value : existingSpace?.description ?? undefined,
+        }
+        const res = await docsService.upsertSpaceTranslation(workspaceId, editing.id, payload)
+        if (res.error) throw new Error(res.error)
+        if (res.data) {
+          setSpaceTranslations((prev) => upsertTranslationInMap(prev, editing.id, res.data!))
+        }
       } else {
-        await docsService.upsertCollectionTranslation(workspaceId, editing.id, {
+        const payload = {
           locale: editing.locale,
-          name: editing.name.trim(),
-        })
+          name: editing.field === 'name' ? editing.value.trim() : existingCollection?.name ?? '',
+          description: editing.field === 'description' ? editing.value : existingCollection?.description ?? undefined,
+        }
+        const res = await docsService.upsertCollectionTranslation(workspaceId, editing.id, payload)
+        if (res.error) throw new Error(res.error)
+        if (res.data) {
+          setCollectionTranslations((prev) => upsertTranslationInMap(prev, editing.id, res.data!))
+        }
       }
       toast.success('Translation saved')
       setEditing(null)
-      void loadData()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to save')
     } finally {
@@ -129,12 +186,19 @@ export function HelpcenterTranslationsTable({
     setGeneratingCell(key)
     try {
       if (type === 'space') {
-        await docsService.generateSpaceTranslation(workspaceId, id, locale)
+        const res = await docsService.generateSpaceTranslation(workspaceId, id, locale)
+        if (res.error) throw new Error(res.error)
+        if (res.data) {
+          setSpaceTranslations((prev) => upsertTranslationInMap(prev, id, res.data!))
+        }
       } else {
-        await docsService.generateCollectionTranslation(workspaceId, id, locale)
+        const res = await docsService.generateCollectionTranslation(workspaceId, id, locale)
+        if (res.error) throw new Error(res.error)
+        if (res.data) {
+          setCollectionTranslations((prev) => upsertTranslationInMap(prev, id, res.data!))
+        }
       }
       toast.success('Translation generated')
-      void loadData()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to generate')
     } finally {
@@ -147,19 +211,20 @@ export function HelpcenterTranslationsTable({
     try {
       for (const locale of nonDefaultLocales) {
         for (const space of spaces) {
-          const st = getSpaceTranslation(space.id, locale)
-          if (!st.exists) {
+          const spaceRow = getSpaceRow(space.id, locale)
+          if (!spaceRow) {
             await docsService.generateSpaceTranslation(workspaceId, space.id, locale)
           }
           for (const coll of collectionsBySpace.get(space.id) ?? []) {
-            const ct = getCollectionTranslation(coll.id, locale)
-            if (!ct.exists) {
+            const collRow = getCollectionRow(coll.id, locale)
+            if (!collRow) {
               await docsService.generateCollectionTranslation(workspaceId, coll.id, locale)
             }
           }
         }
       }
       toast.success('All missing translations generated')
+      // Bulk path: re-fetch rather than splicing many updates.
       void loadData()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to generate some translations')
@@ -170,9 +235,9 @@ export function HelpcenterTranslationsTable({
 
   const hasMissing = spaces.some((space) =>
     nonDefaultLocales.some((locale) => {
-      if (!getSpaceTranslation(space.id, locale).exists) return true
+      if (!getSpaceRow(space.id, locale)) return true
       return (collectionsBySpace.get(space.id) ?? []).some(
-        (coll) => !getCollectionTranslation(coll.id, locale).exists,
+        (coll) => !getCollectionRow(coll.id, locale),
       )
     }),
   )
@@ -196,24 +261,55 @@ export function HelpcenterTranslationsTable({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <div>
           <h3 className="text-sm font-medium">Translations</h3>
-          <p className="text-xs text-muted-foreground mt-1">Space and collection names for each locale.</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {field === 'name'
+              ? 'Space and collection names per locale.'
+              : 'Space and collection descriptions per locale.'}
+          </p>
         </div>
-        {hasMissing && (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="h-7 gap-1.5 text-xs"
-            disabled={generatingAll}
-            onClick={() => void handleGenerateAll()}
+        <div className="flex items-center gap-2">
+          <div
+            role="tablist"
+            aria-label="Translation field"
+            className="inline-flex rounded-md border border-border/60 p-0.5 text-xs"
           >
-            <MagicWand01Icon className="h-3 w-3" />
-            {generatingAll ? 'Generating...' : 'Generate all missing'}
-          </Button>
-        )}
+            {(['name', 'description'] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                role="tab"
+                aria-selected={field === option}
+                onClick={() => {
+                  setField(option)
+                  setEditing(null)
+                }}
+                className={`rounded px-2.5 py-1 font-medium transition-colors ${
+                  field === option
+                    ? 'bg-muted text-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {option === 'name' ? 'Names' : 'Descriptions'}
+              </button>
+            ))}
+          </div>
+          {field === 'name' && hasMissing && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1.5 text-xs"
+              disabled={generatingAll}
+              onClick={() => void handleGenerateAll()}
+            >
+              <MagicWand01Icon className="h-3 w-3" />
+              {generatingAll ? 'Generating...' : 'Generate all missing'}
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-border/60">
@@ -233,9 +329,7 @@ export function HelpcenterTranslationsTable({
               const colls = collectionsBySpace.get(space.id) ?? []
               // Fold the flat collection list into tree order so
               // nested collections appear under their parent and get
-              // indented by depth. We look each collection up by id
-              // to render the ordered tree while keeping the raw
-              // DocsCollection object for translation cells.
+              // indented by depth.
               const treeOptions = buildCollectionTreeOptions(space.id, colls)
               const collsById = new Map(colls.map((c) => [c.id, c]))
               const orderedColls = treeOptions
@@ -255,52 +349,27 @@ export function HelpcenterTranslationsTable({
                       </span>
                     </td>
                     {nonDefaultLocales.map((locale) => {
-                      const cell = getSpaceTranslation(space.id, locale)
+                      const cell = getSpaceCell(space.id, locale)
                       const cellKey = `space-${space.id}-${locale}`
                       const isEditing = editing?.type === 'space' && editing.id === space.id && editing.locale === locale
                       const isGenerating = generatingCell === cellKey
 
                       return (
                         <td key={locale} className="px-3 py-1.5">
-                          {isEditing ? (
-                            <div className="flex items-center gap-1">
-                              <Input
-                                autoFocus
-                                value={editing.name}
-                                onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') void handleSaveEdit()
-                                  if (e.key === 'Escape') setEditing(null)
-                                }}
-                                className="h-7 text-xs"
-                              />
-                              <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" disabled={saving} onClick={() => void handleSaveEdit()}>
-                                <Tick01Icon className="h-3 w-3" />
-                              </Button>
-                              <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={() => setEditing(null)}>
-                                <Cancel01Icon className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          ) : cell.exists ? (
-                            <button
-                              type="button"
-                              onClick={() => setEditing({ type: 'space', id: space.id, locale, name: cell.name })}
-                              className="group flex items-center gap-1 text-xs text-foreground hover:text-primary transition-colors"
-                            >
-                              <span className="truncate max-w-[140px]">{cell.name}</span>
-                              <PencilEdit02Icon className="h-3 w-3 opacity-0 group-hover:opacity-100 text-muted-foreground" />
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              disabled={isGenerating}
-                              onClick={() => void handleGenerateCell('space', space.id, locale)}
-                              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors disabled:opacity-50"
-                            >
-                              {isGenerating ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <PlusSignIcon className="h-3 w-3" />}
-                              Generate
-                            </button>
-                          )}
+                          {renderCell({
+                            isEditing,
+                            editing,
+                            field,
+                            saving,
+                            cell,
+                            isGenerating,
+                            onStartEdit: () =>
+                              setEditing({ type: 'space', id: space.id, locale, field, value: cell.value }),
+                            onChangeEdit: (value) => editing && setEditing({ ...editing, value }),
+                            onSave: handleSaveEdit,
+                            onCancel: () => setEditing(null),
+                            onGenerate: () => void handleGenerateCell('space', space.id, locale),
+                          })}
                         </td>
                       )
                     })}
@@ -316,52 +385,27 @@ export function HelpcenterTranslationsTable({
                         {coll.name}
                       </td>
                       {nonDefaultLocales.map((locale) => {
-                        const cell = getCollectionTranslation(coll.id, locale)
+                        const cell = getCollectionCell(coll.id, locale)
                         const cellKey = `collection-${coll.id}-${locale}`
                         const isEditing = editing?.type === 'collection' && editing.id === coll.id && editing.locale === locale
                         const isGenerating = generatingCell === cellKey
 
                         return (
                           <td key={locale} className="px-3 py-1.5">
-                            {isEditing ? (
-                              <div className="flex items-center gap-1">
-                                <Input
-                                  autoFocus
-                                  value={editing.name}
-                                  onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') void handleSaveEdit()
-                                    if (e.key === 'Escape') setEditing(null)
-                                  }}
-                                  className="h-7 text-xs"
-                                />
-                                <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" disabled={saving} onClick={() => void handleSaveEdit()}>
-                                  <Tick01Icon className="h-3 w-3" />
-                                </Button>
-                                <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={() => setEditing(null)}>
-                                  <Cancel01Icon className="h-3 w-3" />
-                                </Button>
-                              </div>
-                            ) : cell.exists ? (
-                              <button
-                                type="button"
-                                onClick={() => setEditing({ type: 'collection', id: coll.id, locale, name: cell.name })}
-                                className="group flex items-center gap-1 text-xs text-foreground hover:text-primary transition-colors"
-                              >
-                                <span className="truncate max-w-[140px]">{cell.name}</span>
-                                <PencilEdit02Icon className="h-3 w-3 opacity-0 group-hover:opacity-100 text-muted-foreground" />
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                disabled={isGenerating}
-                                onClick={() => void handleGenerateCell('collection', coll.id, locale)}
-                                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors disabled:opacity-50"
-                              >
-                                {isGenerating ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <PlusSignIcon className="h-3 w-3" />}
-                                Generate
-                              </button>
-                            )}
+                            {renderCell({
+                              isEditing,
+                              editing,
+                              field,
+                              saving,
+                              cell,
+                              isGenerating,
+                              onStartEdit: () =>
+                                setEditing({ type: 'collection', id: coll.id, locale, field, value: cell.value }),
+                              onChangeEdit: (value) => editing && setEditing({ ...editing, value }),
+                              onSave: handleSaveEdit,
+                              onCancel: () => setEditing(null),
+                              onGenerate: () => void handleGenerateCell('collection', coll.id, locale),
+                            })}
                           </td>
                         )
                       })}
@@ -374,5 +418,123 @@ export function HelpcenterTranslationsTable({
         </table>
       </div>
     </div>
+  )
+}
+
+interface RenderCellArgs {
+  isEditing: boolean
+  editing: EditingCell | null
+  field: Field
+  saving: boolean
+  cell: TranslationCell
+  isGenerating: boolean
+  onStartEdit: () => void
+  onChangeEdit: (value: string) => void
+  onSave: () => void
+  onCancel: () => void
+  onGenerate: () => void
+}
+
+/**
+ * renderCell draws one translation cell based on its current state.
+ * - Editing → inline Input (name) or Textarea (description) with save/cancel
+ * - Row exists → current value (or em-dash for empty descriptions) + edit pencil
+ * - Row missing → Generate button that triggers AI fill for that locale
+ */
+function renderCell({
+  isEditing,
+  editing,
+  field,
+  saving,
+  cell,
+  isGenerating,
+  onStartEdit,
+  onChangeEdit,
+  onSave,
+  onCancel,
+  onGenerate,
+}: RenderCellArgs) {
+  if (isEditing && editing) {
+    if (field === 'description') {
+      return (
+        <div className="flex items-start gap-1">
+          <Textarea
+            autoFocus
+            rows={3}
+            value={editing.value}
+            onChange={(e) => onChangeEdit(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) onSave()
+              if (e.key === 'Escape') onCancel()
+            }}
+            placeholder="Description (optional)"
+            className="min-h-[72px] text-xs"
+          />
+          <div className="flex flex-col gap-1">
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-6 w-6 shrink-0"
+              disabled={saving}
+              onClick={onSave}
+            >
+              <Tick01Icon className="h-3 w-3" />
+            </Button>
+            <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={onCancel}>
+              <Cancel01Icon className="h-3 w-3" />
+            </Button>
+          </div>
+        </div>
+      )
+    }
+    return (
+      <div className="flex items-center gap-1">
+        <Input
+          autoFocus
+          value={editing.value}
+          onChange={(e) => onChangeEdit(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') onSave()
+            if (e.key === 'Escape') onCancel()
+          }}
+          className="h-7 text-xs"
+        />
+        <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" disabled={saving} onClick={onSave}>
+          <Tick01Icon className="h-3 w-3" />
+        </Button>
+        <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={onCancel}>
+          <Cancel01Icon className="h-3 w-3" />
+        </Button>
+      </div>
+    )
+  }
+
+  if (cell.rowExists) {
+    return (
+      <button
+        type="button"
+        onClick={onStartEdit}
+        className="group flex items-center gap-1 text-left text-xs text-foreground hover:text-primary transition-colors"
+      >
+        {cell.value ? (
+          <span className="truncate max-w-[160px]">{cell.value}</span>
+        ) : (
+          <span className="text-muted-foreground/60">—</span>
+        )}
+        <PencilEdit02Icon className="h-3 w-3 opacity-0 group-hover:opacity-100 text-muted-foreground" />
+      </button>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      disabled={isGenerating}
+      onClick={onGenerate}
+      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors disabled:opacity-50"
+    >
+      {isGenerating ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <PlusSignIcon className="h-3 w-3" />}
+      Generate
+    </button>
   )
 }
