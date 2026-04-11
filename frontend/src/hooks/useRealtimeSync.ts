@@ -129,7 +129,15 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       queryClient.invalidateQueries({ queryKey: queryKeys.docs.spaces(workspaceId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.docs.space(workspaceId, event.entity_id) })
     } else if (event.entity === 'docs_collection') {
+      // Collection writes can reparent children or move documents between
+      // buckets (safe delete flatten, tree reparent). Invalidate the
+      // per-space collection list plus the workspace-wide collection
+      // cache and every document query so nav trees stay in sync after
+      // a peer's mutation.
       queryClient.invalidateQueries({ queryKey: queryKeys.docs.collections(workspaceId, event.parent_id ?? '') })
+      queryClient.invalidateQueries({ queryKey: queryKeys.docs.allCollections(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.docs.documents(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.docs.helpcenterConfig(workspaceId) })
     } else if (event.entity === 'docs_version') {
       const docId = event.parent_id ?? ''
       if (docId) {

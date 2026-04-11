@@ -224,6 +224,121 @@ func (r *DocsRedirectRepository) Create(ctx context.Context, redirect *model.Doc
 	return nil
 }
 
+// isAutoRedirectType reports whether a redirect type is one of the
+// automatic kinds emitted by the tree rollout. Manual and imported
+// redirects are preserved across automatic moves/renames so that
+// user-configured redirects are never silently overwritten.
+func isAutoRedirectType(t string) bool {
+	switch t {
+	case model.RedirectTypeAutoArticleMove,
+		model.RedirectTypeAutoCollectionRename,
+		model.RedirectTypeSlugChange:
+		return true
+	}
+	return false
+}
+
+// UpsertWithReconciliation inserts or replaces an automatic redirect
+// while breaking any cycle it would create.
+//
+// The input redirect must be an automatic type (auto_article_move,
+// auto_collection_rename, or the legacy slug_change). This method will
+// refuse to mutate a manual or imported redirect under any branch:
+//
+//   - Before inserting, any auto-generated redirect whose source path
+//     equals the new target path is deleted so an A -> B -> A move
+//     collapses back to a single hop. Manual/imported redirects at
+//     the same path are left in place.
+//   - Before inserting, any existing row at the new SOURCE path is
+//     inspected. If the existing row is manual or imported, the
+//     entire upsert is skipped — the user-configured redirect wins.
+//     If the existing row is auto, its target + type are replaced so
+//     a repeated move from the same origin is idempotent.
+//
+// If the computed source and target paths are identical the call is a
+// no-op (a redirect to itself would loop forever).
+func (r *DocsRedirectRepository) UpsertWithReconciliation(ctx context.Context, redirect *model.DocsRedirect) error {
+	normalizeDocsRedirectRecord(redirect)
+	targetPath := buildRedirectTargetPath(redirect.TargetCollectionSlug, redirect.TargetArticleSlug)
+	if redirect.SourcePath == "" || targetPath == "" {
+		return fmt.Errorf("redirect source and target paths are required")
+	}
+	if redirect.SourcePath == targetPath {
+		// No-op: pointing a path at itself would loop forever.
+		return nil
+	}
+	if !isAutoRedirectType(redirect.Type) {
+		return fmt.Errorf("UpsertWithReconciliation requires an automatic redirect type, got %q", redirect.Type)
+	}
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Break any existing auto redirect chain where the new target
+		// is currently a redirect source. Manual or imported redirects
+		// at the same path are left in place — they represent explicit
+		// user intent and must not be silently deleted by the
+		// collection move/rename flow.
+		if err := tx.
+			Where(
+				"workspace_id = ? AND source_path = ? AND type IN (?, ?, ?)",
+				redirect.WorkspaceID, targetPath,
+				model.RedirectTypeAutoArticleMove,
+				model.RedirectTypeAutoCollectionRename,
+				model.RedirectTypeSlugChange,
+			).
+			Delete(&model.DocsRedirect{}).Error; err != nil {
+			return fmt.Errorf("delete stale auto redirect at target: %w", err)
+		}
+
+		// If a redirect already exists at the new source path, check
+		// its type before deciding what to do. Manual and imported
+		// redirects are preserved — user intent wins over automatic
+		// rewrites. Auto redirects are replaced in place.
+		var existing model.DocsRedirect
+		err := tx.
+			Where("workspace_id = ? AND source_path = ?", redirect.WorkspaceID, redirect.SourcePath).
+			First(&existing).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("lookup existing redirect at source: %w", err)
+		}
+		if err == nil && !isAutoRedirectType(existing.Type) {
+			// User-configured row already lives here. Leave it alone.
+			return nil
+		}
+
+		// Upsert on (workspace_id, source_path). If an auto row already
+		// exists at this source path, replace its target + type so a
+		// second move from the same origin overwrites the first.
+		return tx.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "workspace_id"}, {Name: "source_path"}},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"target_collection_slug",
+				"target_article_slug",
+				"type",
+			}),
+		}).Create(redirect).Error
+	})
+}
+
+// buildRedirectTargetPath mirrors buildDocsRedirectPath from the service
+// layer but lives in the repo to avoid a dependency cycle. Both produce
+// canonical public help-center paths from (collectionSlug, articleSlug).
+func buildRedirectTargetPath(collectionSlug string, articleSlug *string) string {
+	collection := collectionSlug
+	article := ""
+	if articleSlug != nil {
+		article = *articleSlug
+	}
+	switch {
+	case collection != "" && article != "":
+		return "/" + collection + "/" + article
+	case collection != "":
+		return "/" + collection
+	case article != "":
+		return "/" + article
+	default:
+		return ""
+	}
+}
+
 // BulkCreate inserts multiple redirect records, skipping duplicates on
 // (workspace_id, source_path) conflicts.
 func (r *DocsRedirectRepository) BulkCreate(ctx context.Context, redirects []model.DocsRedirect) error {

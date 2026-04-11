@@ -34,6 +34,13 @@ export interface DocsCollection {
   id: string;
   space_id: string;
   workspace_id: string;
+  /**
+   * Parent collection in the same space. null means top-level.
+   * The backend enforces a bounded tree with depth 0..2.
+   */
+  parent_collection_id: string | null;
+  /** Tree depth: 0 for top-level, 1 for child, 2 for grandchild. */
+  depth: number;
   name: string;
   slug: string;
   description?: string;
@@ -382,6 +389,12 @@ export interface CreateDocsCollectionRequest {
   name: string;
   description?: string;
   icon?: string;
+  /**
+   * Optional parent collection id. When omitted or empty the collection
+   * is created at the top of the space. Must live in the same space and
+   * respect the depth cap.
+   */
+  parent_collection_id?: string | null;
 }
 
 export interface UpdateDocsCollectionRequest {
@@ -389,6 +402,14 @@ export interface UpdateDocsCollectionRequest {
   description?: string;
   icon?: string;
   position?: number;
+  /**
+   * Tri-state reparent sentinel:
+   *   - undefined -> leave the parent unchanged
+   *   - ""        -> reparent to the top of the space (top-level)
+   *   - "id"      -> reparent under that collection in the same space
+   * The backend rejects self-parenting, cycles, and depth overflows.
+   */
+  parent_collection_id?: string | null;
 }
 
 export interface CreateDocsDocumentRequest {
@@ -480,6 +501,13 @@ export interface ReorderDocsSpacesRequest {
 
 export interface ReorderDocsCollectionsRequest {
   collection_ids: string[];
+  /**
+   * Parent collection whose sibling bucket is being reordered.
+   * undefined / null / "" means the top-level bucket in the space.
+   * Collection IDs that do not belong to this bucket are silently
+   * ignored by the backend.
+   */
+  parent_collection_id?: string | null;
 }
 
 export interface ReorderDocsDocumentsRequest {

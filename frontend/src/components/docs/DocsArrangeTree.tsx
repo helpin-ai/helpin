@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   DndContext,
   closestCenter,
@@ -14,7 +14,7 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { ArrowRight01Icon, File01Icon, Folder01Icon, DragDropVerticalIcon } from '@/lib/icons'
+import { ArrowRight01Icon, File01Icon, Folder01Icon, DragDropVerticalIcon, PlusSignIcon } from '@/lib/icons'
 import { timeAgo } from '@/lib/utils'
 import { DOC_STATUS_LABELS } from '@/lib/docsTypes'
 import { ICON_MAP, StoredIcon } from '@/components/ui/icon-picker'
@@ -27,7 +27,13 @@ import {
   useReorderDocsDocuments,
 } from '@/hooks/queries'
 import { toast } from 'sonner'
-import type { DocsSpace, DocsDocument, DocsCollection, SpaceType } from '@/lib/docsTypes'
+import type { DocsSpace, DocsDocument, SpaceType } from '@/lib/docsTypes'
+import { buildCollectionTree, type CollectionTreeNode } from './docsCollectionTree'
+import { CreateCollectionDialog } from './CreateCollectionDialog'
+
+// Must match maxCollectionDepth in server/internal/service/docs_collection.go.
+// Collections at this depth cannot host any more children.
+const MAX_COLLECTION_DEPTH = 2
 
 // ── Sortable item wrapper ───────────────────────────────────────────────────
 
@@ -78,21 +84,225 @@ function ArrangeDocRow({ doc }: { doc: DocsDocument }) {
   )
 }
 
-// ── Document bucket (collection or uncategorized) ───────────────────────────
+// ── Reorderable child collection group ──────────────────────────────────────
+//
+// Renders one sibling bucket of collection tree nodes. A parent passes its
+// direct children here; they become a dnd-kit SortableContext scoped to
+// this specific (space_id, parent_collection_id) bucket. Reordering inside
+// one bucket never touches siblings in a different bucket because the
+// backend's ReorderSiblings is bucket-scoped by design.
+function ArrangeCollectionChildren({
+  parentCollectionId,
+  children,
+  spaceId,
+  wsId,
+  onAddSubCollection,
+}: {
+  parentCollectionId: string | null
+  children: CollectionTreeNode[]
+  spaceId: string
+  wsId: string
+  /**
+   * Called when the user clicks "Add sub-collection" on one of the
+   * rendered collection rows. The parent component (ArrangeSpace)
+   * uses it to open the create dialog with the parent preselected.
+   */
+  onAddSubCollection: (parentId: string) => void
+}) {
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+  const reorderColls = useReorderDocsCollections(wsId)
+  const [localOrder, setLocalOrder] = useState<CollectionTreeNode[] | null>(null)
+  const ordered = localOrder ?? children
 
-function ArrangeBucket({
-  label,
-  icon,
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const ids = ordered.map((node) => node.collection.id)
+    const oldIdx = ids.indexOf(active.id as string)
+    const newIdx = ids.indexOf(over.id as string)
+    if (oldIdx === -1 || newIdx === -1) return
+    const reorderedIds = arrayMove(ids, oldIdx, newIdx)
+    const reorderedNodes = reorderedIds
+      .map((id) => ordered.find((node) => node.collection.id === id)!)
+      .filter(Boolean)
+    setLocalOrder(reorderedNodes)
+    reorderColls.mutate(
+      {
+        spaceId,
+        data: {
+          collection_ids: reorderedIds,
+          parent_collection_id: parentCollectionId ?? '',
+        },
+      },
+      {
+        onSuccess: () => toast.success('Collection order updated'),
+        onError: () => {
+          toast.error('Failed to reorder')
+          setLocalOrder(null)
+        },
+      },
+    )
+  }
+
+  if (ordered.length === 0) return null
+
+  return (
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <SortableContext items={ordered.map((n) => n.collection.id)} strategy={verticalListSortingStrategy}>
+        {ordered.map((node) => (
+          <SortableItem key={node.collection.id} id={node.collection.id}>
+            <ArrangeCollectionNode
+              node={node}
+              spaceId={spaceId}
+              wsId={wsId}
+              onAddSubCollection={onAddSubCollection}
+            />
+          </SortableItem>
+        ))}
+      </SortableContext>
+    </DndContext>
+  )
+}
+
+// ── Recursive collection node ───────────────────────────────────────────────
+//
+// Renders one collection with its direct articles and nested children.
+// Child collections live in their own reorderable bucket and articles
+// live in their own reorderable bucket — this matches the backend
+// contract where (space_id, parent_collection_id) and (space_id,
+// collection_id) are independent ordering keys.
+function ArrangeCollectionNode({
+  node,
+  spaceId,
+  wsId,
+  onAddSubCollection,
+}: {
+  node: CollectionTreeNode
+  spaceId: string
+  wsId: string
+  onAddSubCollection: (parentId: string) => void
+}) {
+  const [open, setOpen] = useState(true)
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+  const reorderDocs = useReorderDocsDocuments(wsId)
+  const [localDocs, setLocalDocs] = useState<DocsDocument[] | null>(null)
+  const displayDocs = localDocs ?? node.documents
+  // Collections at the maximum allowed depth cannot host children —
+  // the backend would reject a depth=3 create. Hide the action
+  // button entirely so the UI doesn't offer something that will fail.
+  const canHostChildren = node.collection.depth < MAX_COLLECTION_DEPTH
+
+  const handleDocDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const ids = displayDocs.map((d) => d.id)
+    const oldIdx = ids.indexOf(active.id as string)
+    const newIdx = ids.indexOf(over.id as string)
+    if (oldIdx === -1 || newIdx === -1) return
+    const reorderedIds = arrayMove(ids, oldIdx, newIdx)
+    const reorderedDocs = reorderedIds.map((id) => displayDocs.find((d) => d.id === id)!).filter(Boolean)
+    setLocalDocs(reorderedDocs)
+    reorderDocs.mutate(
+      {
+        spaceId,
+        data: {
+          collection_id: node.collection.id,
+          document_ids: reorderedIds,
+        },
+      },
+      {
+        onSuccess: () => toast.success('Document order updated'),
+        onError: () => {
+          toast.error('Failed to reorder')
+          setLocalDocs(null)
+        },
+      },
+    )
+  }
+
+  const CollIcon = node.collection.icon ? (ICON_MAP[node.collection.icon] ?? Folder01Icon) : Folder01Icon
+  const totalChildren = node.children.length
+  const hasContent = totalChildren > 0 || displayDocs.length > 0
+
+  return (
+    <Collapsible.Root open={open} onOpenChange={setOpen}>
+      <div className="group/arrange-node flex w-full items-center gap-1">
+        <Collapsible.Trigger asChild>
+          <button
+            type="button"
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-foreground/70 hover:bg-muted/40"
+          >
+            <ArrowRight01Icon className={`h-3.5 w-3.5 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`} />
+            <CollIcon className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">{node.collection.name}</span>
+            {displayDocs.length > 0 && (
+              <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums text-muted-foreground">
+                {displayDocs.length} {displayDocs.length === 1 ? 'doc' : 'docs'}
+              </span>
+            )}
+            {totalChildren > 0 && (
+              <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums text-muted-foreground">
+                {totalChildren} sub
+              </span>
+            )}
+          </button>
+        </Collapsible.Trigger>
+        {canHostChildren && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onAddSubCollection(node.collection.id)
+            }}
+            className="shrink-0 rounded-md p-1.5 text-muted-foreground/70 opacity-0 transition-opacity hover:bg-muted/60 hover:text-foreground group-hover/arrange-node:opacity-100 focus:opacity-100"
+            aria-label={`Add sub-collection under ${node.collection.name}`}
+            title="Add sub-collection"
+          >
+            <PlusSignIcon className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+      <Collapsible.Content>
+        <div className="ml-4 border-l border-border/50 pl-1">
+          {/* Nested child collections first — they act as container nodes. */}
+          {totalChildren > 0 && (
+            <ArrangeCollectionChildren
+              parentCollectionId={node.collection.id}
+              children={node.children}
+              spaceId={spaceId}
+              wsId={wsId}
+              onAddSubCollection={onAddSubCollection}
+            />
+          )}
+          {/* Then direct articles of this collection. */}
+          {displayDocs.length > 0 ? (
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDocDragEnd}>
+              <SortableContext items={displayDocs.map((d) => d.id)} strategy={verticalListSortingStrategy}>
+                {displayDocs.map((doc) => (
+                  <SortableItem key={doc.id} id={doc.id}>
+                    <ArrangeDocRow doc={doc} />
+                  </SortableItem>
+                ))}
+              </SortableContext>
+            </DndContext>
+          ) : !hasContent ? (
+            <p className="px-2 py-1.5 text-[11px] text-muted-foreground/60">No documents</p>
+          ) : null}
+        </div>
+      </Collapsible.Content>
+    </Collapsible.Root>
+  )
+}
+
+// ── Uncategorized articles bucket ───────────────────────────────────────────
+
+function ArrangeUncategorizedBucket({
   documents,
   spaceId,
-  collectionId,
   wsId,
 }: {
-  label: string
-  icon?: string
   documents: DocsDocument[]
   spaceId: string
-  collectionId: string | null
   wsId: string
 }) {
   const [open, setOpen] = useState(true)
@@ -100,6 +310,8 @@ function ArrangeBucket({
   const reorderDocs = useReorderDocsDocuments(wsId)
   const [localDocs, setLocalDocs] = useState<DocsDocument[] | null>(null)
   const displayDocs = localDocs ?? documents
+
+  if (displayDocs.length === 0) return null
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
@@ -112,15 +324,16 @@ function ArrangeBucket({
     const reorderedDocs = reorderedIds.map((id) => displayDocs.find((d) => d.id === id)!).filter(Boolean)
     setLocalDocs(reorderedDocs)
     reorderDocs.mutate(
-      { spaceId, data: { collection_id: collectionId ?? undefined, document_ids: reorderedIds } },
+      { spaceId, data: { collection_id: undefined, document_ids: reorderedIds } },
       {
         onSuccess: () => toast.success('Document order updated'),
-        onError: () => { toast.error('Failed to reorder'); setLocalDocs(null) },
+        onError: () => {
+          toast.error('Failed to reorder')
+          setLocalDocs(null)
+        },
       },
     )
   }
-
-  const CollIcon = icon ? (ICON_MAP[icon] ?? Folder01Icon) : Folder01Icon
 
   return (
     <Collapsible.Root open={open} onOpenChange={setOpen}>
@@ -130,26 +343,24 @@ function ArrangeBucket({
           className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-foreground/70 hover:bg-muted/40"
         >
           <ArrowRight01Icon className={`h-3.5 w-3.5 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`} />
-          <CollIcon className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate">{label}</span>
-          <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums text-muted-foreground">{displayDocs.length} {displayDocs.length === 1 ? 'doc' : 'docs'}</span>
+          <Folder01Icon className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">Uncategorized</span>
+          <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums text-muted-foreground">
+            {displayDocs.length} {displayDocs.length === 1 ? 'doc' : 'docs'}
+          </span>
         </button>
       </Collapsible.Trigger>
       <Collapsible.Content>
         <div className="ml-4 border-l border-border/50 pl-1">
-          {displayDocs.length > 0 ? (
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-              <SortableContext items={displayDocs.map((d) => d.id)} strategy={verticalListSortingStrategy}>
-                {displayDocs.map((doc) => (
-                  <SortableItem key={doc.id} id={doc.id}>
-                    <ArrangeDocRow doc={doc} />
-                  </SortableItem>
-                ))}
-              </SortableContext>
-            </DndContext>
-          ) : (
-            <p className="px-2 py-1.5 text-[11px] text-muted-foreground/60">No documents</p>
-          )}
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={displayDocs.map((d) => d.id)} strategy={verticalListSortingStrategy}>
+              {displayDocs.map((doc) => (
+                <SortableItem key={doc.id} id={doc.id}>
+                  <ArrangeDocRow doc={doc} />
+                </SortableItem>
+              ))}
+            </SortableContext>
+          </DndContext>
         </div>
       </Collapsible.Content>
     </Collapsible.Root>
@@ -168,44 +379,22 @@ function ArrangeSpace({
   const [expanded, setExpanded] = useState(false)
   const { data: collections } = useDocsCollections(wsId, space.id)
   const { data: documents } = useDocsDocuments(wsId, { space_id: space.id })
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
-  const reorderColls = useReorderDocsCollections(wsId)
-  const [localColls, setLocalColls] = useState<DocsCollection[] | null>(null)
+  // Dialog state for the "Add sub-collection" action. When a user
+  // clicks the + button on an ArrangeCollectionNode, we stash the
+  // parent id here and open the create dialog. A null parent means
+  // the dialog is closed.
+  const [addSubParentId, setAddSubParentId] = useState<string | null>(null)
 
-  const sortedColls = localColls ?? (collections ?? []).slice().sort((a, b) => a.position - b.position)
+  // Fold the flat (collections, documents) response into a tree rooted
+  // at this space. Memoised on the two query results so rerenders from
+  // unrelated state don't rebuild the tree on every pass.
+  const tree = useMemo(
+    () => buildCollectionTree(space.id, collections ?? [], documents ?? []),
+    [space.id, collections, documents],
+  )
 
-  const collectionMap = new Map<string, DocsDocument[]>()
-  const uncollected: DocsDocument[] = []
-  if (documents) {
-    for (const doc of documents) {
-      if (doc.collection_id) {
-        const list = collectionMap.get(doc.collection_id) ?? []
-        list.push(doc)
-        collectionMap.set(doc.collection_id, list)
-      } else {
-        uncollected.push(doc)
-      }
-    }
-  }
-
-  const handleCollDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event
-    if (!over || active.id === over.id) return
-    const ids = sortedColls.map((c) => c.id)
-    const oldIdx = ids.indexOf(active.id as string)
-    const newIdx = ids.indexOf(over.id as string)
-    if (oldIdx === -1 || newIdx === -1) return
-    const reorderedIds = arrayMove(ids, oldIdx, newIdx)
-    const reordered = reorderedIds.map((id) => sortedColls.find((c) => c.id === id)!).filter(Boolean)
-    setLocalColls(reordered)
-    reorderColls.mutate(
-      { spaceId: space.id, data: { collection_ids: reorderedIds } },
-      {
-        onSuccess: () => toast.success('Collection order updated'),
-        onError: () => { toast.error('Failed to reorder'); setLocalColls(null) },
-      },
-    )
-  }
+  const collectionCount = collections?.length ?? 0
+  const documentCount = documents?.length ?? 0
 
   return (
     <Collapsible.Root open={expanded} onOpenChange={setExpanded}>
@@ -226,11 +415,15 @@ function ArrangeSpace({
           </div>
           {!expanded && (
             <div className="flex items-center gap-5 shrink-0">
-              {sortedColls.length > 0 && (
-                <span className="text-[11px] text-muted-foreground">{sortedColls.length} {sortedColls.length === 1 ? 'collection' : 'collections'}</span>
+              {collectionCount > 0 && (
+                <span className="text-[11px] text-muted-foreground">
+                  {collectionCount} {collectionCount === 1 ? 'collection' : 'collections'}
+                </span>
               )}
-              {(documents?.length ?? 0) > 0 && (
-                <span className="text-[11px] text-muted-foreground">{documents?.length} {documents?.length === 1 ? 'doc' : 'docs'}</span>
+              {documentCount > 0 && (
+                <span className="text-[11px] text-muted-foreground">
+                  {documentCount} {documentCount === 1 ? 'doc' : 'docs'}
+                </span>
               )}
             </div>
           )}
@@ -238,38 +431,37 @@ function ArrangeSpace({
       </Collapsible.Trigger>
       <Collapsible.Content>
         <div className="ml-5 border-l border-border/50 pb-2 pl-2">
-          {/* Sortable collections */}
-          {sortedColls.length > 0 && (
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleCollDragEnd}>
-              <SortableContext items={sortedColls.map((c) => c.id)} strategy={verticalListSortingStrategy}>
-                {sortedColls.map((coll) => (
-                  <SortableItem key={coll.id} id={coll.id}>
-                    <ArrangeBucket
-                      label={coll.name}
-                      icon={coll.icon}
-                      documents={collectionMap.get(coll.id) ?? []}
-                      spaceId={space.id}
-                      collectionId={coll.id}
-                      wsId={wsId}
-                    />
-                  </SortableItem>
-                ))}
-              </SortableContext>
-            </DndContext>
-          )}
-
-          {/* Uncategorized bucket */}
-          {uncollected.length > 0 && (
-            <ArrangeBucket
-              label="Uncategorized"
-              documents={uncollected}
+          {/* Top-level collections form the first sibling bucket. Each
+              recursive ArrangeCollectionNode owns its own children bucket
+              and doc bucket so drag-drop stays scoped to one (space,
+              parent) pair at a time. */}
+          {tree.topLevel.length > 0 && (
+            <ArrangeCollectionChildren
+              parentCollectionId={null}
+              children={tree.topLevel}
               spaceId={space.id}
-              collectionId={null}
               wsId={wsId}
+              onAddSubCollection={setAddSubParentId}
             />
           )}
+          {/* Uncategorized articles bucket sits alongside top-level
+              collections and is always top-level in the space. */}
+          <ArrangeUncategorizedBucket
+            documents={tree.uncategorizedDocuments}
+            spaceId={space.id}
+            wsId={wsId}
+          />
         </div>
       </Collapsible.Content>
+      <CreateCollectionDialog
+        wsId={wsId}
+        spaceId={space.id}
+        open={addSubParentId !== null}
+        onOpenChange={(open) => {
+          if (!open) setAddSubParentId(null)
+        }}
+        defaultParentCollectionId={addSubParentId}
+      />
     </Collapsible.Root>
   )
 }

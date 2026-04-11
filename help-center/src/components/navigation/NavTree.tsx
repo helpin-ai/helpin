@@ -5,7 +5,8 @@ import { buildCanonicalArticlePath, isMultilingualEnabled } from '@/lib/locale'
 import { prefixBasepath } from '@/lib/pathUtils'
 import { cn } from '@/lib/utils'
 import { PhIcon } from '@/components/PhIcon'
-import type { NavItem } from '@/lib/types'
+import { buildNavTree } from '@/lib/navigation'
+import type { NavItem, NavTreeNode } from '@/lib/types'
 
 interface NavTreeProps {
   locale: string
@@ -20,18 +21,20 @@ export function NavTree({
 }: NavTreeProps) {
   const { enabledLocales, basepath } = useDocsContext()
   const multilingualEnabled = isMultilingualEnabled(enabledLocales)
+  const tree = buildNavTree(navigation)
 
   return (
     <nav className="py-4 px-3">
-      {navigation.map((collection, idx) => (
+      {tree.map((node, idx) => (
         <CollectionGroup
-          key={collection.id}
+          key={node.item.id}
           locale={locale}
-          collection={collection}
+          node={node}
           multilingualEnabled={multilingualEnabled}
           basepath={basepath}
           onArticleClick={onArticleClick}
           isFirst={idx === 0}
+          level={0}
         />
       ))}
     </nav>
@@ -39,37 +42,50 @@ export function NavTree({
 }
 
 function CollectionGroup({
-  collection,
+  node,
   locale,
   multilingualEnabled,
   basepath,
   onArticleClick,
   isFirst,
+  level,
 }: {
-  collection: NavItem
+  node: NavTreeNode
   locale: string
   multilingualEnabled: boolean
   basepath: string
   onArticleClick?: () => void
   isFirst: boolean
+  level: number
 }) {
   const pathname = useRouterState({ select: (state) => state.location.pathname })
 
+  // Top-level sections are spaced out for visual grouping. Nested
+  // sub-collections sit flush under their parent header and use their
+  // parent's spacing; the indentation comes from the `level` offset.
+  const spacing = level === 0 && !isFirst ? 'mt-5' : level > 0 ? 'mt-1' : ''
+  // Each depth level indents children by a small amount so the tree is
+  // visually readable without overwhelming narrower sidebars.
+  const indent = level === 0 ? 'px-3' : level === 1 ? 'pl-5 pr-3' : 'pl-7 pr-3'
+  const headingClass = level === 0
+    ? 'text-[14px] font-medium text-foreground'
+    : 'text-[13px] font-medium text-muted-foreground'
+
   return (
-    <div className={cn(!isFirst && 'mt-5')}>
-      <div className="flex items-center gap-2 px-3 py-[7px] text-[14px] font-medium text-foreground">
-        {collection.icon && (
-          <PhIcon name={collection.icon} size={16} weight="regular" className="shrink-0 text-muted-foreground" />
+    <div className={cn(spacing)}>
+      <div className={cn('flex items-center gap-2 py-[7px]', indent, headingClass)}>
+        {node.item.icon && (
+          <PhIcon name={node.item.icon} size={16} weight="regular" className="shrink-0 text-muted-foreground" />
         )}
-        <span className="truncate">{collection.name}</span>
+        <span className="truncate">{node.item.name}</span>
       </div>
 
       <div className="mt-0.5">
-        {collection.articles.map((article) => {
+        {node.item.articles.map((article) => {
           const href = buildCanonicalArticlePath(
             multilingualEnabled,
             locale,
-            collection.slug,
+            node.item.slug,
             article.slug,
           )
           const isActive = pathname === prefixBasepath(basepath, href)
@@ -80,7 +96,8 @@ function CollectionGroup({
               to={href}
               onClick={onArticleClick}
               className={cn(
-                'block rounded-lg px-3 py-[7px] text-[13px] transition-colors',
+                'block rounded-lg py-[7px] text-[13px] transition-colors',
+                indent,
                 isActive
                   ? 'bg-sidebar-active text-sidebar-active-foreground font-medium'
                   : 'text-muted-foreground hover:text-foreground',
@@ -90,6 +107,18 @@ function CollectionGroup({
             </DocsLink>
           )
         })}
+
+        {node.children.map((child, idx) => (
+          <CollectionGroup
+            key={child.item.id}
+            locale={locale}
+            node={child}
+            multilingualEnabled={multilingualEnabled}
+            onArticleClick={onArticleClick}
+            isFirst={idx === 0}
+            level={level + 1}
+          />
+        ))}
       </div>
     </div>
   )

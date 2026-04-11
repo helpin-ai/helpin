@@ -17,6 +17,7 @@ type DocsDocumentService struct {
 	docRepo        *repository.DocsDocumentRepository
 	spaceRepo      *repository.DocsSpaceRepository
 	translationSvc *DocsHelpcenterTranslationService
+	helpcenterSvc  *DocsHelpcenterService
 	wsPublisher    *websocket.Publisher
 }
 
@@ -27,6 +28,14 @@ func NewDocsDocumentService(docRepo *repository.DocsDocumentRepository, spaceRep
 
 func (s *DocsDocumentService) SetTranslationService(translationSvc *DocsHelpcenterTranslationService) {
 	s.translationSvc = translationSvc
+}
+
+// SetHelpcenterService wires the help center service lazily so the
+// document move path can emit auto_article_move redirects without a
+// circular constructor dependency. Call this once in main.go after both
+// services have been constructed.
+func (s *DocsDocumentService) SetHelpcenterService(helpcenterSvc *DocsHelpcenterService) {
+	s.helpcenterSvc = helpcenterSvc
 }
 
 // Create creates a new document.
@@ -298,6 +307,9 @@ func (s *DocsDocumentService) Unarchive(ctx context.Context, id string) (*model.
 
 // Move moves a document to a different space and/or collection.
 // Enforces: help_center_article moved to non-external space loses external publication.
+// When the owning collection changes and the document is a published
+// help center article, emits an auto_article_move redirect via the help
+// center service so old public URLs keep resolving.
 func (s *DocsDocumentService) Move(ctx context.Context, id string, req model.MoveDocsDocumentRequest) (*model.DocsDocument, error) {
 	doc, err := s.docRepo.GetByID(ctx, id)
 	if err != nil {
@@ -322,16 +334,34 @@ func (s *DocsDocumentService) Move(ctx context.Context, id string, req model.Mov
 		return nil, fmt.Errorf("target space does not belong to this workspace")
 	}
 
+	// Snapshot the old collection before the move so we can emit an
+	// accurate redirect. doc.CollectionID is a *string so we copy the
+	// underlying value into a new pointer to avoid aliasing once the
+	// row is mutated below.
+	var oldCollectionID *string
+	if doc.CollectionID != nil {
+		copied := *doc.CollectionID
+		oldCollectionID = &copied
+	}
+
 	if err := s.docRepo.Move(ctx, id, req.SpaceID, req.CollectionID); err != nil {
 		return nil, err
 	}
 	updated, err := s.docRepo.GetByID(ctx, id)
-	if err == nil && updated != nil {
+	if err != nil {
+		return nil, err
+	}
+	if updated != nil {
+		if s.helpcenterSvc != nil {
+			if redirectErr := s.helpcenterSvc.EmitArticleMoveRedirect(ctx, updated, oldCollectionID); redirectErr != nil {
+				slog.WarnContext(ctx, "emit article move redirect failed", "document_id", id, "error", redirectErr)
+			}
+		}
 		publishWorkspaceEventWithParent(s.wsPublisher, "moved", "docs_document", updated.ID, updated.WorkspaceID, "", "docs_space", updated.SpaceID, map[string]any{
 			"collection_id": updated.CollectionID,
 		})
 	}
-	return updated, err
+	return updated, nil
 }
 
 // Delete soft-deletes a document.
