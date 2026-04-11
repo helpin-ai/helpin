@@ -25,6 +25,7 @@ import type {
   CreateDocsLinkRequest,
   UpdateDocsHelpcenterConfigRequest,
   UpdateDocsHelpcenterLocalesRequest,
+  AutoTranslateMissingResponse,
   UpsertDocsHelpcenterSpaceTranslationRequest,
   UpsertDocsHelpcenterCollectionTranslationRequest,
   UpsertDocsHelpcenterArticleTranslationRequest,
@@ -182,6 +183,8 @@ export const docsService = {
     api.post<DocsHelpcenterCollectionTranslation>(`/docs/collections/${collectionId}/helpcenter/translations/${encodeURIComponent(locale)}/mark-reviewed${qs(wsId)}`),
   generateCollectionTranslation: (wsId: string, collectionId: string, locale: string) =>
     api.post<DocsHelpcenterCollectionTranslation>(`/docs/collections/${collectionId}/helpcenter/translations/${encodeURIComponent(locale)}/generate${qs(wsId)}`),
+  autoTranslateMissing: (wsId: string, locale: string) =>
+    api.post<AutoTranslateMissingResponse>(`/docs/helpcenter/translations/auto-translate-missing${qs(wsId)}`, { locale }),
   listArticleTranslations: (wsId: string, docId: string) =>
     api.get<DocsHelpcenterArticleTranslation[]>(`/docs/documents/${docId}/helpcenter/translations${qs(wsId)}`),
   upsertArticleTranslation: (wsId: string, docId: string, payload: UpsertDocsHelpcenterArticleTranslationRequest) =>

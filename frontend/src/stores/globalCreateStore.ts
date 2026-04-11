@@ -11,7 +11,14 @@ interface GlobalCreateState {
   initialSpaceId: string | undefined;
   /** Optional collection ID context for docs document creation */
   initialCollectionId: string | undefined;
-  openCreate: (modal: Exclude<CreateModal, null>, options?: { teamId?: string; ownerMemberId?: string; sprintId?: string; spaceId?: string; collectionId?: string }) => void;
+  /**
+   * Optional parent collection ID for docs collection creation. When
+   * set, the create-collection dialog opens with this collection
+   * preselected as the parent so the new row lands as a sub-collection.
+   * Left undefined for top-level collection creates.
+   */
+  initialParentCollectionId: string | undefined;
+  openCreate: (modal: Exclude<CreateModal, null>, options?: { teamId?: string; ownerMemberId?: string; sprintId?: string; spaceId?: string; collectionId?: string; parentCollectionId?: string }) => void;
   closeCreate: () => void;
 }
 
@@ -22,6 +29,7 @@ export const useGlobalCreateStore = create<GlobalCreateState>((set) => ({
   initialSprintId: undefined,
   initialSpaceId: undefined,
   initialCollectionId: undefined,
-  openCreate: (modal, options) => set({ activeModal: modal, initialTeamId: options?.teamId, initialOwnerMemberId: options?.ownerMemberId, initialSprintId: options?.sprintId, initialSpaceId: options?.spaceId, initialCollectionId: options?.collectionId }),
-  closeCreate: () => set({ activeModal: null, initialTeamId: undefined, initialOwnerMemberId: undefined, initialSprintId: undefined, initialSpaceId: undefined, initialCollectionId: undefined }),
+  initialParentCollectionId: undefined,
+  openCreate: (modal, options) => set({ activeModal: modal, initialTeamId: options?.teamId, initialOwnerMemberId: options?.ownerMemberId, initialSprintId: options?.sprintId, initialSpaceId: options?.spaceId, initialCollectionId: options?.collectionId, initialParentCollectionId: options?.parentCollectionId }),
+  closeCreate: () => set({ activeModal: null, initialTeamId: undefined, initialOwnerMemberId: undefined, initialSprintId: undefined, initialSpaceId: undefined, initialCollectionId: undefined, initialParentCollectionId: undefined }),
 }));

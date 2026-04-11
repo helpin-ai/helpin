@@ -272,3 +272,28 @@ func (h *DocsHandler) GenerateCollectionTranslation(w http.ResponseWriter, r *ht
 	}
 	writeJSON(w, http.StatusOK, translation)
 }
+
+// AutoTranslateMissing runs a bulk AI fill for every missing space /
+// collection translation in the workspace for one locale. The request
+// body carries { "locale": "fr" }; the response reports how many
+// targets were requested, which rows were created, and which
+// individual targets failed with a reason string.
+//
+// The service method makes exactly one LLM call per request. The
+// frontend loops across enabled non-default locales and calls this
+// endpoint once per locale so failures in one language don't block
+// another.
+func (h *DocsHandler) AutoTranslateMissing(w http.ResponseWriter, r *http.Request) {
+	wsID := middleware.GetWorkspaceID(r.Context())
+	var req model.AutoTranslateMissingRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	result, err := h.translationSvc.AutoTranslateMissing(r.Context(), wsID, req.Locale)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
