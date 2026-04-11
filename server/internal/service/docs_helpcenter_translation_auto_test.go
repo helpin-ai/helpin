@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -547,3 +548,316 @@ func TestCollectAutoTranslateTargets(t *testing.T) {
 		}
 	})
 }
+
+// TestAutoTranslateMissing exercises the end-to-end service method:
+// collect targets → LLM call → parse → write rows via the existing
+// upsert helpers. A scripted LLM returns a canned JSON array so the
+// test runs without any real network traffic.
+func TestAutoTranslateMissing(t *testing.T) {
+	ctx := context.Background()
+	const workspaceID = "ws-auto-e2e"
+	const userID = "user-auto-e2e"
+	now := time.Now().UTC()
+	pstr := func(s string) *string { return &s }
+
+	// Helper that stitches together the shared setup: tables,
+	// helpcenter config with French enabled, one external space,
+	// two collections (one with description, one without), and a
+	// service instance bound to a scripted LLM.
+	setup := func(t *testing.T, llmResponse string, llmErr error) (*DocsHelpcenterTranslationService, *scriptedDocsTranslationLLM, string, string, string) {
+		t.Helper()
+		db := setupDocsHelpcenterTranslationServiceTestDB(t)
+		provider := &scriptedDocsTranslationLLM{response: llmResponse, err: llmErr}
+		svc := newDocsHelpcenterTranslationServiceForTestWithLLM(db, provider)
+
+		seedDocsHelpcenterTranslationServiceConfig(t, db, model.DocsHelpcenterConfig{
+			ID:                      "cfg-auto",
+			WorkspaceID:             workspaceID,
+			Subdomain:               "auto",
+			BrandName:               "Auto",
+			BrandColor:              "#000000",
+			ThemeMode:               "light",
+			DefaultLocale:           "en",
+			EnabledLocales:          model.DocsStringArray{"en", "fr"},
+			FallbackToDefaultLocale: true,
+			CreatedAt:               now,
+			UpdatedAt:               now,
+		})
+		seedDocsHelpcenterTranslationServiceSpace(t, db, model.DocsSpace{
+			ID:          "space-auto",
+			WorkspaceID: workspaceID,
+			Name:        "Help Center",
+			Slug:        "help-center",
+			Visibility:  model.SpaceVisibilityWorkspaceWide,
+			Type:        model.SpaceTypeExternalCapable,
+			CreatedBy:   userID,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		})
+		seedDocsHelpcenterTranslationServiceCollection(t, db, model.DocsCollection{
+			ID:          "coll-desc",
+			SpaceID:     "space-auto",
+			WorkspaceID: workspaceID,
+			Name:        "Getting Started",
+			Slug:        "getting-started",
+			Description: pstr("Welcome to our product."),
+			Position:    0,
+			CreatedBy:   userID,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		})
+		seedDocsHelpcenterTranslationServiceCollection(t, db, model.DocsCollection{
+			ID:          "coll-nodesc",
+			SpaceID:     "space-auto",
+			WorkspaceID: workspaceID,
+			Name:        "Billing",
+			Slug:        "billing",
+			Position:    1,
+			CreatedBy:   userID,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		})
+		return svc, provider, "space-auto", "coll-desc", "coll-nodesc"
+	}
+
+	t.Run("happy path: all targets translated and written", func(t *testing.T) {
+		// The fixture has 3 missing targets in deterministic order:
+		//   index 1 = space-auto (Help Center)
+		//   index 2 = coll-desc (Getting Started)
+		//   index 3 = coll-nodesc (Billing)
+		// The LLM returns a matching JSON array.
+		llmResponse := `[
+			{"index": 1, "name": "Centre d'aide", "description": ""},
+			{"index": 2, "name": "Commencer", "description": "Bienvenue dans notre produit."},
+			{"index": 3, "name": "Facturation", "description": ""}
+		]`
+		svc, provider, spaceID, collDescID, collNoDescID := setup(t, llmResponse, nil)
+
+		result, err := svc.AutoTranslateMissing(ctx, workspaceID, "fr")
+		if err != nil {
+			t.Fatalf("AutoTranslateMissing: %v", err)
+		}
+		if result.Locale != "fr" {
+			t.Errorf("Locale = %q, want fr", result.Locale)
+		}
+		if result.Requested != 3 {
+			t.Errorf("Requested = %d, want 3", result.Requested)
+		}
+		if len(result.Spaces) != 1 {
+			t.Errorf("Spaces len = %d, want 1", len(result.Spaces))
+		}
+		if len(result.Collections) != 2 {
+			t.Errorf("Collections len = %d, want 2", len(result.Collections))
+		}
+		if len(result.Failed) != 0 {
+			t.Errorf("Failed len = %d, want 0: %+v", len(result.Failed), result.Failed)
+		}
+		if len(provider.requests) != 1 {
+			t.Errorf("expected exactly 1 llm call, got %d", len(provider.requests))
+		}
+
+		// Verify correct mapping: index 1 → space, index 2 → coll-desc, index 3 → coll-nodesc
+		if result.Spaces[0].SpaceID != spaceID {
+			t.Errorf("space translation wrong space, got %q", result.Spaces[0].SpaceID)
+		}
+		if result.Spaces[0].Name != "Centre d'aide" {
+			t.Errorf("space translation name = %q", result.Spaces[0].Name)
+		}
+
+		gotColls := map[string]model.DocsHelpcenterCollectionTranslation{}
+		for _, c := range result.Collections {
+			gotColls[c.CollectionID] = c
+		}
+		if gotColls[collDescID].Name != "Commencer" {
+			t.Errorf("coll-desc name = %q, want Commencer", gotColls[collDescID].Name)
+		}
+		if gotColls[collDescID].Description == nil || *gotColls[collDescID].Description != "Bienvenue dans notre produit." {
+			t.Errorf("coll-desc description not saved")
+		}
+		if gotColls[collNoDescID].Name != "Facturation" {
+			t.Errorf("coll-nodesc name = %q, want Facturation", gotColls[collNoDescID].Name)
+		}
+	})
+
+	t.Run("zero targets via pre-seeded rows short-circuits LLM", func(t *testing.T) {
+		db := setupDocsHelpcenterTranslationServiceTestDB(t)
+		provider := &scriptedDocsTranslationLLM{response: `should not be called`}
+		svc := newDocsHelpcenterTranslationServiceForTestWithLLM(db, provider)
+
+		seedDocsHelpcenterTranslationServiceConfig(t, db, model.DocsHelpcenterConfig{
+			ID:                      "cfg-zero",
+			WorkspaceID:             workspaceID,
+			Subdomain:               "zero",
+			BrandName:               "Zero",
+			BrandColor:              "#000000",
+			ThemeMode:               "light",
+			DefaultLocale:           "en",
+			EnabledLocales:          model.DocsStringArray{"en", "fr"},
+			FallbackToDefaultLocale: true,
+			CreatedAt:               now,
+			UpdatedAt:               now,
+		})
+		// No spaces seeded — nothing to translate.
+
+		result, err := svc.AutoTranslateMissing(ctx, workspaceID, "fr")
+		if err != nil {
+			t.Fatalf("AutoTranslateMissing: %v", err)
+		}
+		if result.Requested != 0 {
+			t.Errorf("Requested = %d, want 0", result.Requested)
+		}
+		if len(provider.requests) != 0 {
+			t.Errorf("LLM was called for zero-target case: %d calls", len(provider.requests))
+		}
+	})
+
+	t.Run("missing llm output marks target as failed, others succeed", func(t *testing.T) {
+		// LLM returns index 1 and 3, drops index 2. Expect space and
+		// coll-nodesc to be created, coll-desc to be in Failed.
+		llmResponse := `[
+			{"index": 1, "name": "Centre d'aide", "description": ""},
+			{"index": 3, "name": "Facturation", "description": ""}
+		]`
+		svc, _, _, collDescID, _ := setup(t, llmResponse, nil)
+
+		result, err := svc.AutoTranslateMissing(ctx, workspaceID, "fr")
+		if err != nil {
+			t.Fatalf("AutoTranslateMissing: %v", err)
+		}
+		if len(result.Spaces) != 1 {
+			t.Errorf("Spaces len = %d, want 1", len(result.Spaces))
+		}
+		if len(result.Collections) != 1 {
+			t.Errorf("Collections len = %d, want 1", len(result.Collections))
+		}
+		if len(result.Failed) != 1 {
+			t.Fatalf("Failed len = %d, want 1", len(result.Failed))
+		}
+		if result.Failed[0].Kind != "collection" || result.Failed[0].ID != collDescID {
+			t.Errorf("Failed item = %+v, want coll-desc", result.Failed[0])
+		}
+	})
+
+	t.Run("out-of-range indices from llm are dropped, targets marked failed", func(t *testing.T) {
+		// LLM returns an index that doesn't exist (99). No valid
+		// items at all — expect all targets to be marked failed and
+		// no rows created.
+		llmResponse := `[{"index": 99, "name": "Ghost", "description": ""}]`
+		svc, _, _, _, _ := setup(t, llmResponse, nil)
+
+		result, err := svc.AutoTranslateMissing(ctx, workspaceID, "fr")
+		if err != nil {
+			t.Fatalf("AutoTranslateMissing: %v", err)
+		}
+		if len(result.Spaces) != 0 || len(result.Collections) != 0 {
+			t.Errorf("nothing should have been written; got %d spaces, %d colls",
+				len(result.Spaces), len(result.Collections))
+		}
+		if len(result.Failed) != 3 {
+			t.Errorf("Failed len = %d, want 3 (all targets)", len(result.Failed))
+		}
+	})
+
+	t.Run("llm error propagates as service error", func(t *testing.T) {
+		llmErr := errors.New("model is busy")
+		svc, _, _, _, _ := setup(t, "", llmErr)
+
+		_, err := svc.AutoTranslateMissing(ctx, workspaceID, "fr")
+		if err == nil {
+			t.Fatalf("expected error from llm failure")
+		}
+	})
+
+	t.Run("existing row is not overwritten (race guard)", func(t *testing.T) {
+		// Pre-seed a translation row for the space. After the LLM
+		// call, the re-check must skip writing that row — the
+		// existing name stays.
+		db := setupDocsHelpcenterTranslationServiceTestDB(t)
+		provider := &scriptedDocsTranslationLLM{response: `[
+			{"index": 1, "name": "Should Not Overwrite", "description": ""},
+			{"index": 2, "name": "Commencer", "description": ""},
+			{"index": 3, "name": "Facturation", "description": ""}
+		]`}
+		svc := newDocsHelpcenterTranslationServiceForTestWithLLM(db, provider)
+
+		seedDocsHelpcenterTranslationServiceConfig(t, db, model.DocsHelpcenterConfig{
+			ID:                      "cfg-race",
+			WorkspaceID:             workspaceID,
+			Subdomain:               "race",
+			BrandName:               "Race",
+			BrandColor:              "#000000",
+			ThemeMode:               "light",
+			DefaultLocale:           "en",
+			EnabledLocales:          model.DocsStringArray{"en", "fr"},
+			FallbackToDefaultLocale: true,
+			CreatedAt:               now,
+			UpdatedAt:               now,
+		})
+		seedDocsHelpcenterTranslationServiceSpace(t, db, model.DocsSpace{
+			ID:          "space-auto",
+			WorkspaceID: workspaceID,
+			Name:        "Help Center",
+			Slug:        "help-center",
+			Visibility:  model.SpaceVisibilityWorkspaceWide,
+			Type:        model.SpaceTypeExternalCapable,
+			CreatedBy:   userID,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		})
+		seedDocsHelpcenterTranslationServiceCollection(t, db, model.DocsCollection{
+			ID:          "coll-desc",
+			SpaceID:     "space-auto",
+			WorkspaceID: workspaceID,
+			Name:        "Getting Started",
+			Slug:        "getting-started",
+			Position:    0,
+			CreatedBy:   userID,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		})
+		seedDocsHelpcenterTranslationServiceCollection(t, db, model.DocsCollection{
+			ID:          "coll-nodesc",
+			SpaceID:     "space-auto",
+			WorkspaceID: workspaceID,
+			Name:        "Billing",
+			Slug:        "billing",
+			Position:    1,
+			CreatedBy:   userID,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		})
+		// This collect cycle will run before we pre-seed the space
+		// translation so the space IS collected as a target. We
+		// seed the translation between collect and write by using
+		// a fresh run where the translation already exists.
+		seedDocsHelpcenterTranslationServiceSpaceTranslation(t, db, model.DocsHelpcenterSpaceTranslation{
+			ID:          "pre-existing",
+			SpaceID:     "space-auto",
+			WorkspaceID: workspaceID,
+			Locale:      "fr",
+			Name:        "Pre-existing Name",
+			Slug:        pstr("pre-existing"),
+			Status:      model.DocsHelpcenterTranslationStatusDraft,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		})
+
+		result, err := svc.AutoTranslateMissing(ctx, workspaceID, "fr")
+		if err != nil {
+			t.Fatalf("AutoTranslateMissing: %v", err)
+		}
+		// Since the space is now pre-filled, only the two collections
+		// are targets. The service should write both and not touch
+		// the pre-existing space row.
+		if result.Requested != 2 {
+			t.Errorf("Requested = %d, want 2 (space was pre-filled)", result.Requested)
+		}
+		if len(result.Collections) != 2 {
+			t.Errorf("Collections len = %d, want 2", len(result.Collections))
+		}
+		if len(result.Spaces) != 0 {
+			t.Errorf("Spaces len = %d, want 0 (pre-filled)", len(result.Spaces))
+		}
+	})
+}
+
