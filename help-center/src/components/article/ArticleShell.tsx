@@ -22,7 +22,6 @@ export function ArticleShell({
   locale,
   title,
   excerpt,
-  spaceName: _spaceName,
   spaceSlug,
   collectionName,
   collectionSlug,
