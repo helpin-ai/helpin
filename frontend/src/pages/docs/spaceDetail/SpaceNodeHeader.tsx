@@ -3,7 +3,6 @@ import { StoredIcon } from '@/components/ui/icon-picker'
 import {
   ArrowRight01Icon,
   Delete01Icon,
-  Folder01Icon,
   FolderOpenIcon,
   InboxIcon,
   LanguageCircleIcon,
@@ -122,10 +121,10 @@ export function SpaceNodeHeader({
   })()
 
   // ── Title content ────────────────────────────────────────────────
-  // Icon renders only on the current node, not on ancestors, so
-  // admins see exactly the icon that the public help center will
-  // render next to this collection/space. Ancestors stay text-only
-  // so the breadcrumb row doesn't become icon-spam.
+  // Icon renders on the current collection or uncategorized bucket
+  // so admins see exactly what the public help center will display
+  // next to this node. Spaces themselves have no icon-picker UI so
+  // there's nothing meaningful to show — skip the fallback folder.
   const titleIcon =
     view.kind === 'collection' ? (
       <StoredIcon
@@ -136,13 +135,6 @@ export function SpaceNodeHeader({
       />
     ) : view.kind === 'uncategorized' ? (
       <InboxIcon className="h-[18px] w-[18px] shrink-0 text-muted-foreground" />
-    ) : view.kind === 'space_root' ? (
-      <StoredIcon
-        name={space.icon}
-        className="h-[18px] w-[18px] shrink-0 text-muted-foreground"
-        textClassName="text-lg"
-        fallback={<Folder01Icon className="h-[18px] w-[18px] shrink-0 text-muted-foreground" />}
-      />
     ) : null
 
   const titleLabel =
