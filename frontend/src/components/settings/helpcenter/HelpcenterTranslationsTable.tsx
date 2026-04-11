@@ -395,18 +395,28 @@ export function HelpcenterTranslationsTable({
                   {orderedColls.map(({ coll, depth }) => (
                     <tr key={coll.id} className="border-b border-border/20">
                       <td
-                        className="sticky left-0 z-10 bg-background px-3 py-2 font-medium align-top"
+                        className="sticky left-0 z-10 bg-background px-3 py-2 align-top"
                         style={{ paddingLeft: `${12 + depth * 16}px` }}
                       >
-                        {coll.name}
-                        {field === 'description' && (
-                          // Source description for context. Translators
-                          // need to see what they're translating FROM
-                          // — otherwise descriptions mode looks like
-                          // empty cells with no anchor text.
-                          <p className="mt-0.5 line-clamp-2 text-[11px] font-normal text-muted-foreground/70">
-                            {coll.description?.trim() || '—'}
-                          </p>
+                        {field === 'description' ? (
+                          // Descriptions mode: the translator is
+                          // comparing source description → target
+                          // description in the cells to the right,
+                          // so the source description is primary
+                          // text and the collection name becomes a
+                          // small identifier underneath.
+                          <>
+                            <div className="line-clamp-2 text-xs font-medium">
+                              {coll.description?.trim() || (
+                                <span className="text-muted-foreground/60">—</span>
+                              )}
+                            </div>
+                            <div className="mt-0.5 text-[10px] font-normal text-muted-foreground/70">
+                              {coll.name}
+                            </div>
+                          </>
+                        ) : (
+                          <div className="font-medium">{coll.name}</div>
                         )}
                       </td>
                       {nonDefaultLocales.map((locale) => {
