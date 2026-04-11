@@ -272,6 +272,12 @@ func TestDocsHelpcenterPublicLocale_NavigationBackfillsMissingCollectionSlug(t *
 	if nav[0].Slug != "basics" {
 		t.Fatalf("nav[0].slug = %q, want %q", nav[0].Slug, "basics")
 	}
+	if len(nav[0].Articles) == 0 {
+		t.Fatalf("len(nav[0].articles) = %d, want at least 1", len(nav[0].Articles))
+	}
+	if nav[0].Articles[0].PublicID != "handler123" {
+		t.Fatalf("nav[0].articles[0].public_id = %q, want %q", nav[0].Articles[0].PublicID, "handler123")
+	}
 
 	var storedCollection model.DocsCollection
 	if err := db.Where("id = ?", "collection-handler-i18n").First(&storedCollection).Error; err != nil {
