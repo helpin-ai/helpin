@@ -243,29 +243,24 @@ export function SpaceNodeHeader({
 
         {canEdit && view.kind !== 'loading' && (
           <div className="flex shrink-0 items-center gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-muted"
-                >
-                  <PlusSignIcon className="h-3.5 w-3.5" />
-                  Add
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem onClick={onCreateDocument}>
-                  <PlusSignIcon className="h-3.5 w-3.5" />
-                  Document
-                </DropdownMenuItem>
-                {onCreateChildCollection && (
-                  <DropdownMenuItem onClick={onCreateChildCollection}>
-                    <PlusSignIcon className="h-3.5 w-3.5" />
-                    {view.kind === 'collection' ? 'Sub-collection' : 'Collection'}
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {onCreateChildCollection && (
+              <button
+                type="button"
+                onClick={onCreateChildCollection}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <PlusSignIcon className="h-3.5 w-3.5" />
+                {view.kind === 'collection' ? 'Sub-collection' : 'Collection'}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onCreateDocument}
+              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+            >
+              <PlusSignIcon className="h-3.5 w-3.5" />
+              Document
+            </button>
 
             {hasOverflowMenu && (
               <DropdownMenu>
