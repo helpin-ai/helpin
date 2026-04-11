@@ -4,6 +4,8 @@ import type {
   SupportMessage,
   CreateConversationRequest,
   CreateMessageRequest,
+  CreateTaskFromConversationRequest,
+  CreateTaskFromConversationResponse,
   LinkTaskRequest,
   AssignConversationAgentRequest,
   AgentRun,
@@ -83,6 +85,14 @@ export const supportService = {
     api.put<SupportConversation>(`/support/inbox/conversations/${conversationId}/status${qs(workspaceId)}`, { status }),
   linkConversationTask: (workspaceId: string, conversationId: string, payload: LinkTaskRequest) =>
     api.post(`/support/inbox/conversations/${conversationId}/link-story${qs(workspaceId)}`, { story_id: payload.task_id }),
+  createTaskFromConversation: (
+    workspaceId: string,
+    conversationId: string,
+    payload: CreateTaskFromConversationRequest = {},
+  ) => api.post<CreateTaskFromConversationResponse>(
+    `/support/inbox/conversations/${conversationId}/create-task${qs(workspaceId)}`,
+    payload,
+  ),
   /** @deprecated Use linkConversationTask instead */
   linkConversationStory: (workspaceId: string, conversationId: string, payload: { story_id: string }) =>
     api.post(`/support/inbox/conversations/${conversationId}/link-story${qs(workspaceId)}`, payload),

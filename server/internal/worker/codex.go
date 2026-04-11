@@ -59,17 +59,21 @@ type codexResolvedRuntimeProfile struct {
 	ForcedLoginMethod string
 	OpenAIBaseURL     string
 	OpenRouterBaseURL string
+	ReasoningEffort   string
+	ServiceTier       string
 }
 
 type codexConfigArtifact struct {
-	Model             string                                  `toml:"model,omitempty"`
-	ApprovalPolicy    string                                  `toml:"approval_policy"`
-	ApprovalsReviewer string                                  `toml:"approvals_reviewer,omitempty"`
-	SandboxMode       string                                  `toml:"sandbox_mode"`
-	ModelProvider     string                                  `toml:"model_provider"`
-	OpenAIBaseURL     string                                  `toml:"openai_base_url,omitempty"`
-	ForcedLoginMethod string                                  `toml:"forced_login_method,omitempty"`
-	ModelProviders    map[string]codexConfigModelProviderInfo `toml:"model_providers,omitempty"`
+	Model                string                                  `toml:"model,omitempty"`
+	ModelReasoningEffort string                                  `toml:"model_reasoning_effort,omitempty"`
+	ServiceTier          string                                  `toml:"service_tier,omitempty"`
+	ApprovalPolicy       string                                  `toml:"approval_policy"`
+	ApprovalsReviewer    string                                  `toml:"approvals_reviewer,omitempty"`
+	SandboxMode          string                                  `toml:"sandbox_mode"`
+	ModelProvider        string                                  `toml:"model_provider"`
+	OpenAIBaseURL        string                                  `toml:"openai_base_url,omitempty"`
+	ForcedLoginMethod    string                                  `toml:"forced_login_method,omitempty"`
+	ModelProviders       map[string]codexConfigModelProviderInfo `toml:"model_providers,omitempty"`
 }
 
 type codexConfigModelProviderInfo struct {
@@ -268,6 +272,7 @@ func (e *CodexExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) 
 			}
 			return normalizeCodexPostRunError(postRunCtx, err)
 		}
+		syncPostRunExecutionState(execCtx, postRunExecCtx)
 	}
 
 	if postRunExecCtx.Heartbeat != nil {
@@ -345,11 +350,19 @@ func buildCodexRuntimeInstructions(execCtx *ExecutionContext) string {
 
 	parts = append(parts, "You are running inside the Codex CLI runtime, not the Helpin native tool runtime.")
 	parts = append(parts, "Do not wait for Helpin-native tool calls like read_file, write_file, run_command, create_branch, commit_and_push, or open_pr. In this runtime, use Codex's own shell/file-edit capabilities directly inside the workspace.")
+	parts = append(parts, "Do not push the branch or open a pull request from Codex. Finish with a local commit only; the backend will handle remote push and delivery after the run succeeds.")
 
 	if hasRepoMutationTools(resolved.Tools) {
 		parts = append(parts, "This is an autonomous implementation run. You must make concrete repository changes in the working tree unless you can prove the task is already complete or blocked by a real external constraint.")
 		parts = append(parts, "Start by inspecting the repository with fast shell commands such as rg, ls, git status, and targeted file reads. Then edit the relevant files, run practical validation, and stop only after the repository reflects your implementation.")
 		parts = append(parts, "A text-only analysis with no file modifications is a failed outcome for this run.")
+	}
+	if strings.TrimSpace(execCtx.BranchSyncStatus) == "conflicted" {
+		parts = append(parts, "Before continuing the task, resolve the current git merge conflict that came from syncing the base branch into the working branch.")
+		parts = append(parts, "Preserve the task's intended changes while incorporating the incoming base-branch changes. Remove all conflict markers, stage the resolved files, and complete the merge commit before doing additional implementation work.")
+		if len(execCtx.BranchSyncConflictFiles) > 0 {
+			parts = append(parts, "Conflicted files: "+strings.Join(execCtx.BranchSyncConflictFiles, ", ")+".")
+		}
 	}
 
 	if len(resolved.Commands) > 0 {
@@ -357,6 +370,26 @@ func buildCodexRuntimeInstructions(execCtx *ExecutionContext) string {
 	}
 
 	return strings.TrimSpace(strings.Join(parts, "\n"))
+}
+
+func syncPostRunExecutionState(execCtx, postRunExecCtx *ExecutionContext) {
+	if execCtx == nil || postRunExecCtx == nil {
+		return
+	}
+	if strings.TrimSpace(postRunExecCtx.WorkingBranch) != "" {
+		execCtx.WorkingBranch = strings.TrimSpace(postRunExecCtx.WorkingBranch)
+	}
+	if postRunExecCtx.LocalGitCommit != nil {
+		commitCopy := *postRunExecCtx.LocalGitCommit
+		if len(commitCopy.ChangedFiles) > 0 {
+			commitCopy.ChangedFiles = append([]string(nil), commitCopy.ChangedFiles...)
+		}
+		execCtx.LocalGitCommit = &commitCopy
+	}
+	if postRunExecCtx.LatestPRMetadata != nil {
+		prCopy := *postRunExecCtx.LatestPRMetadata
+		execCtx.LatestPRMetadata = &prCopy
+	}
 }
 
 func (e *CodexExecutor) sandboxModeFor(execCtx *ExecutionContext) string {
@@ -459,12 +492,16 @@ func removeEnvKeys(env []string, keys ...string) []string {
 
 func (e *CodexExecutor) buildConfigArtifact(execCtx *ExecutionContext, profile codexResolvedRuntimeProfile, approvalPolicy string) (string, error) {
 	config := codexConfigArtifact{
-		Model:             strings.TrimSpace(profile.Model),
-		ApprovalPolicy:    strings.TrimSpace(approvalPolicy),
-		ApprovalsReviewer: "user",
-		SandboxMode:       e.sandboxModeFor(execCtx),
-		ModelProvider:     strings.TrimSpace(profile.Provider),
-		ForcedLoginMethod: strings.TrimSpace(profile.ForcedLoginMethod),
+		Model:                strings.TrimSpace(profile.Model),
+		ModelReasoningEffort: strings.TrimSpace(profile.ReasoningEffort),
+		ApprovalPolicy:       strings.TrimSpace(approvalPolicy),
+		ApprovalsReviewer:    "user",
+		SandboxMode:          e.sandboxModeFor(execCtx),
+		ModelProvider:        strings.TrimSpace(profile.Provider),
+		ForcedLoginMethod:    strings.TrimSpace(profile.ForcedLoginMethod),
+	}
+	if strings.TrimSpace(profile.Provider) == model.AgentModelProviderOpenAI {
+		config.ServiceTier = strings.TrimSpace(profile.ServiceTier)
 	}
 	if strings.TrimSpace(profile.OpenAIBaseURL) != "" {
 		config.OpenAIBaseURL = strings.TrimSpace(profile.OpenAIBaseURL)
@@ -514,9 +551,18 @@ func (e *CodexExecutor) openAIConfigured() bool {
 }
 
 func (e *CodexExecutor) resolveRuntimeProfile(agent *model.Agent) (codexResolvedRuntimeProfile, error) {
+	executionConfig, err := model.ParseAgentExecutionConfig(nil)
+	if agent != nil {
+		executionConfig, err = model.ParseAgentExecutionConfig(agent.ExecutionConfig)
+	}
+	if err != nil {
+		return codexResolvedRuntimeProfile{}, fmt.Errorf("invalid execution_config: %w", err)
+	}
 	profile := codexResolvedRuntimeProfile{
-		Provider: e.resolveProvider(agent),
-		Model:    e.selectedModelID(agent),
+		Provider:        e.resolveProvider(agent),
+		Model:           e.selectedModelID(agent),
+		ReasoningEffort: derefOpenCodeString(executionConfig.ReasoningEffort),
+		ServiceTier:     derefOpenCodeString(executionConfig.ServiceTier),
 	}
 
 	switch profile.Provider {
@@ -715,7 +761,7 @@ func (e *CodexExecutor) persistEngineerWorkspace(execCtx *ExecutionContext, run 
 			return err
 		}
 		if committedChange != nil {
-			return persistExistingEngineerCommit(execCtx, artifactWriter, committedChange)
+			return persistExistingEngineerCommitLocally(execCtx, artifactWriter, committedChange)
 		}
 		if isInteractiveRunInvocation(run) {
 			slog.InfoContext(execCtx.Context, "interactive codex run ended without staged repository diff; requesting follow-up input",
@@ -728,42 +774,48 @@ func (e *CodexExecutor) persistEngineerWorkspace(execCtx *ExecutionContext, run 
 	artifactWriter.Save(execCtx.Context, "diff", "patch", diff, false)
 	artifactWriter.Save(execCtx.Context, "file_bundle", "json", toJSONString(changedFiles), false)
 
+	if err := validateCodexResolvedMergeState(execCtx); err != nil {
+		return err
+	}
+
 	commitMessage := buildEngineerCommitMessage(execCtx.Task)
 	if out, err := runGit(execCtx, "commit", "-m", commitMessage); err != nil {
 		return fmt.Errorf("commit repository changes: %s", strings.TrimSpace(firstNonEmptyText(out, err.Error())))
-	}
-
-	if execCtx.Heartbeat != nil {
-		_ = execCtx.Heartbeat("pushing_changes")
 	}
 
 	branch, err := resolveWorkingBranch(execCtx)
 	if err != nil {
 		return err
 	}
-	if out, err := runGit(execCtx, "push", "-u", "origin", branch); err != nil {
-		return fmt.Errorf("push repository changes: %s", strings.TrimSpace(firstNonEmptyText(out, err.Error())))
-	}
-
 	shaOutput, err := runGit(execCtx, "rev-parse", "HEAD")
 	if err != nil {
 		return fmt.Errorf("resolve commit SHA: %s", strings.TrimSpace(firstNonEmptyText(shaOutput, err.Error())))
 	}
 	sha := strings.TrimSpace(shaOutput)
-	execCtx.WorkingBranch = branch
-	if execCtx.OnGitPush != nil {
-		if err := execCtx.OnGitPush(branch, sha); err != nil {
-			return fmt.Errorf("record pushed branch: %w", err)
+	return recordLocalEngineerCommit(execCtx, artifactWriter, branch, sha, commitMessage, changedFiles)
+}
+
+func validateCodexResolvedMergeState(execCtx *ExecutionContext) error {
+	if execCtx == nil || strings.TrimSpace(execCtx.BranchSyncStatus) != "conflicted" {
+		return nil
+	}
+
+	unmergedOutput, err := runGit(execCtx, "diff", "--name-only", "--diff-filter=U")
+	if err != nil {
+		return fmt.Errorf("verify merge resolution: %s", strings.TrimSpace(firstNonEmptyText(unmergedOutput, err.Error())))
+	}
+	if unresolved := strings.Fields(strings.TrimSpace(unmergedOutput)); len(unresolved) > 0 {
+		return fmt.Errorf("cannot commit repository changes while merge conflicts remain unresolved: %s", strings.Join(unresolved, ", "))
+	}
+
+	checkOutput, checkErr := runGit(execCtx, "diff", "--cached", "--check")
+	if checkErr != nil {
+		normalized := strings.ToLower(checkOutput)
+		if strings.Contains(normalized, "leftover conflict marker") || strings.Contains(normalized, "conflict marker") {
+			return fmt.Errorf("cannot commit repository changes while merge conflict markers remain in staged files: %s", strings.TrimSpace(checkOutput))
 		}
 	}
 
-	persistenceResult := map[string]any{
-		"branch":         branch,
-		"commit_sha":     sha,
-		"commit_message": commitMessage,
-		"changed_files":  changedFiles,
-	}
-	artifactWriter.Save(execCtx.Context, "git_persistence_result", "json", toJSONString(persistenceResult), false)
 	return nil
 }
 

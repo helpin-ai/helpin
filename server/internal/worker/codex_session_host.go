@@ -209,6 +209,11 @@ func (h *codexSessionHost) prepareSession(existing *codexSessionState) (*codexPr
 	env = upsertEnv(env, "HOME", runRoot)
 	env = upsertEnv(env, "CODEX_HOME", codexHome)
 	env = h.executor.upsertProviderEnv(env, profile.Provider)
+	guardBinDir, err := installCodexCommandGuards(runRoot)
+	if err != nil {
+		return nil, err
+	}
+	env = prependPathEnv(env, guardBinDir)
 
 	return &codexPreparedSession{
 		state:         state,

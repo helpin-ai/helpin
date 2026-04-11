@@ -1,7 +1,9 @@
 package model
 
 import (
+	"database/sql/driver"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -44,6 +46,7 @@ type Agent struct {
 	TriggerMode            string          `json:"trigger_mode" gorm:"not null;default:'manual'"`
 	Provider               *string         `json:"provider"`
 	Model                  *string         `json:"model"`
+	ExecutionConfig        JSONBlob        `json:"execution_config" gorm:"type:jsonb;not null;default:'{}'"`
 	SystemPrompt           *string         `json:"system_prompt"`
 	PlanningNotes          *string         `json:"planning_notes"`
 	MonthlyTokenBudget     *int            `json:"monthly_token_budget"`
@@ -89,6 +92,7 @@ type WorkspaceAgentPresetVersion struct {
 	RuntimeKind           string          `json:"runtime_kind" gorm:"not null"`
 	Provider              *string         `json:"provider"`
 	Model                 *string         `json:"model"`
+	ExecutionConfig       JSONBlob        `json:"execution_config" gorm:"type:jsonb;not null;default:'{}'"`
 	SystemPrompt          *string         `json:"system_prompt"`
 	AllowedTools          json.RawMessage `json:"allowed_tools" gorm:"type:jsonb;not null;default:'[]'"`
 	SupportedModes        json.RawMessage `json:"supported_modes" gorm:"type:jsonb;not null;default:'[]'"`
@@ -194,6 +198,7 @@ type CreateAgentRequest struct {
 	TriggerMode           *string         `json:"trigger_mode"`
 	Provider              *string         `json:"provider"`
 	Model                 *string         `json:"model"`
+	ExecutionConfig       json.RawMessage `json:"execution_config"`
 	SystemPrompt          *string         `json:"system_prompt"`
 	PlanningNotes         *string         `json:"planning_notes"`
 	MonthlyTokenBudget    *int            `json:"monthly_token_budget"`
@@ -219,6 +224,7 @@ type UpdateAgentRequest struct {
 	TriggerMode           *string         `json:"trigger_mode"`
 	Provider              *string         `json:"provider"`
 	Model                 *string         `json:"model"`
+	ExecutionConfig       json.RawMessage `json:"execution_config"`
 	SystemPrompt          *string         `json:"system_prompt"`
 	PlanningNotes         *string         `json:"planning_notes"`
 	MonthlyTokenBudget    *int            `json:"monthly_token_budget"`
@@ -242,6 +248,7 @@ type CreateWorkspaceAgentPresetVersionRequest struct {
 	RuntimeKind           *string         `json:"runtime_kind"`
 	Provider              *string         `json:"provider"`
 	Model                 *string         `json:"model"`
+	ExecutionConfig       json.RawMessage `json:"execution_config"`
 	SystemPrompt          *string         `json:"system_prompt"`
 	AllowedTools          json.RawMessage `json:"allowed_tools"`
 	SupportedModes        json.RawMessage `json:"supported_modes"`
@@ -530,6 +537,7 @@ type AgentPresetDefinition struct {
 	SourceVersionKey      *string  `json:"source_version_key,omitempty"`
 	Provider              *string  `json:"provider,omitempty"`
 	Model                 *string  `json:"model,omitempty"`
+	ExecutionConfig       JSONBlob `json:"execution_config,omitempty"`
 	Label                 string   `json:"label"`
 	Description           string   `json:"description"`
 	DefaultRole           string   `json:"default_role"`
@@ -546,9 +554,117 @@ type AgentPresetDefinition struct {
 }
 
 type AgentModelProviderOption struct {
-	Value            string `json:"value"`
-	Label            string `json:"label"`
-	ModelPlaceholder string `json:"model_placeholder"`
+	Value                     string   `json:"value"`
+	Label                     string   `json:"label"`
+	ModelPlaceholder          string   `json:"model_placeholder"`
+	SupportsReasoningEffort   bool     `json:"supports_reasoning_effort"`
+	SupportedReasoningEfforts []string `json:"supported_reasoning_efforts,omitempty"`
+	SupportsServiceTier       bool     `json:"supports_service_tier"`
+	SupportedServiceTiers     []string `json:"supported_service_tiers,omitempty"`
+}
+
+type AgentExecutionConfig struct {
+	ReasoningEffort *string `json:"reasoning_effort,omitempty"`
+	ServiceTier     *string `json:"service_tier,omitempty"`
+}
+
+type JSONBlob []byte
+
+func (j JSONBlob) MarshalJSON() ([]byte, error) {
+	if len(j) == 0 {
+		return []byte("null"), nil
+	}
+	return []byte(j), nil
+}
+
+func (j *JSONBlob) UnmarshalJSON(data []byte) error {
+	if j == nil {
+		return nil
+	}
+	if len(data) == 0 {
+		*j = nil
+		return nil
+	}
+	*j = append((*j)[:0], data...)
+	return nil
+}
+
+func (j *JSONBlob) Scan(value interface{}) error {
+	if j == nil {
+		return nil
+	}
+	switch typed := value.(type) {
+	case nil:
+		*j = nil
+		return nil
+	case []byte:
+		*j = append((*j)[:0], typed...)
+		return nil
+	case string:
+		*j = append((*j)[:0], typed...)
+		return nil
+	default:
+		return fmt.Errorf("unsupported JSONBlob scan type %T", value)
+	}
+}
+
+func (j JSONBlob) Value() (driver.Value, error) {
+	if len(j) == 0 {
+		return "{}", nil
+	}
+	return string(j), nil
+}
+
+func (c AgentExecutionConfig) Normalize() AgentExecutionConfig {
+	if c.ReasoningEffort != nil {
+		value := strings.TrimSpace(*c.ReasoningEffort)
+		if value == "" {
+			c.ReasoningEffort = nil
+		} else {
+			c.ReasoningEffort = &value
+		}
+	}
+	if c.ServiceTier != nil {
+		value := strings.TrimSpace(*c.ServiceTier)
+		if value == "" {
+			c.ServiceTier = nil
+		} else {
+			c.ServiceTier = &value
+		}
+	}
+	return c
+}
+
+func (c AgentExecutionConfig) IsZero() bool {
+	normalized := c.Normalize()
+	return normalized.ReasoningEffort == nil && normalized.ServiceTier == nil
+}
+
+func ParseAgentExecutionConfig(raw []byte) (AgentExecutionConfig, error) {
+	if len(raw) == 0 {
+		return AgentExecutionConfig{}, nil
+	}
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" || trimmed == "{}" {
+		return AgentExecutionConfig{}, nil
+	}
+	var config AgentExecutionConfig
+	if err := json.Unmarshal(raw, &config); err != nil {
+		return AgentExecutionConfig{}, err
+	}
+	return config.Normalize(), nil
+}
+
+func MarshalAgentExecutionConfig(config AgentExecutionConfig) JSONBlob {
+	config = config.Normalize()
+	if config.IsZero() {
+		return JSONBlob("{}")
+	}
+	payload, err := json.Marshal(config)
+	if err != nil {
+		return JSONBlob("{}")
+	}
+	return JSONBlob(payload)
 }
 
 // ToolCatalogEntry describes a tool with its category and preset usage.

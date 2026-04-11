@@ -400,6 +400,49 @@ func TestPublishStoryPlanDocToolUsesCurrentAssistantDraftOnFirstMalformedCall(t 
 	}
 }
 
+func TestPublishStoryPlanDocToolFallsBackToExistingTaskPlanDocument(t *testing.T) {
+	registry := NewToolRegistry(nil)
+	documentID := "doc-task-plan-1"
+	ctx := &ExecutionContext{
+		Context: context.Background(),
+		Task: &appmodel.PMTask{
+			PlanDocumentID: &documentID,
+		},
+		Services: &ServiceBridge{
+			GetDocumentContent: func(ctx context.Context, id string) (string, error) {
+				if id != documentID {
+					t.Fatalf("expected document id %q, got %q", documentID, id)
+				}
+				return "# Outcome\nRecovered draft", nil
+			},
+		},
+		AllowedTools: map[string]bool{
+			ToolPublishTaskPlanDoc: true,
+		},
+	}
+
+	output, err := registry.ExecuteAllowed(ctx, ToolPublishTaskPlanDoc, json.RawMessage(`{
+		"title": "Story Planning Document"
+	}`))
+	if err != nil {
+		t.Fatalf("publish_story_plan_doc should have reused the existing task plan doc draft, got error: %v", err)
+	}
+	if !strings.Contains(output, `"panel_key":"task_plan_doc"`) {
+		t.Fatalf("expected task plan doc publish payload, got %s", output)
+	}
+	preview, ok := ctx.PublishedPreviews["task_plan_doc"]
+	if !ok {
+		t.Fatal("expected published preview to be cached")
+	}
+	var content string
+	if err := json.Unmarshal(preview.Content, &content); err != nil {
+		t.Fatalf("expected markdown content, got %v", err)
+	}
+	if content != "# Outcome\nRecovered draft" {
+		t.Fatalf("expected recovered draft content, got %q", content)
+	}
+}
+
 func TestPublishStoryPlanDocToolPublishesCanonicalPreview(t *testing.T) {
 	registry := NewToolRegistry(nil)
 	ctx := &ExecutionContext{

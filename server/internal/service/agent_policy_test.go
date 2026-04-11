@@ -344,6 +344,62 @@ func TestListModelProvidersIncludesOpenAIForCodexDeviceCodeMode(t *testing.T) {
 	}
 }
 
+func TestListModelProvidersIncludesExecutionCapabilities(t *testing.T) {
+	svc := &AgentService{
+		openAIAPIKey:     "openai-secret",
+		openRouterAPIKey: "openrouter-secret",
+	}
+
+	options := svc.ListModelProviders()
+	for _, option := range options {
+		switch option.Value {
+		case model.AgentModelProviderOpenAI:
+			if !option.SupportsReasoningEffort || !option.SupportsServiceTier {
+				t.Fatalf("expected openai provider capabilities, got %#v", option)
+			}
+		case model.AgentModelProviderOpenRouter:
+			if !option.SupportsReasoningEffort || option.SupportsServiceTier {
+				t.Fatalf("expected openrouter provider capabilities, got %#v", option)
+			}
+		}
+	}
+}
+
+func TestValidateModelRoutingRejectsCodexServiceTierForOpenRouter(t *testing.T) {
+	openRouter := model.AgentModelProviderOpenRouter
+	agent := &model.Agent{
+		PresetKey:       model.AgentPresetCodeBuilder,
+		RuntimeKind:     "codex",
+		Provider:        &openRouter,
+		ExecutionConfig: model.JSONBlob(`{"service_tier":"fast"}`),
+	}
+
+	svc := &AgentService{openRouterAPIKey: "openrouter-secret"}
+	if err := svc.validateModelRouting(agent); err == nil {
+		t.Fatal("expected openrouter codex service tier to be rejected")
+	}
+}
+
+func TestValidateModelRoutingAllowsCodexReasoningConfig(t *testing.T) {
+	openAI := model.AgentModelProviderOpenAI
+	agent := &model.Agent{
+		PresetKey:       model.AgentPresetCodeBuilder,
+		RuntimeKind:     "codex",
+		Provider:        &openAI,
+		ExecutionConfig: model.JSONBlob(`{"reasoning_effort":"high","service_tier":"fast"}`),
+	}
+
+	svc := &AgentService{
+		openAIAPIKey: "openai-secret",
+	}
+	if err := svc.validateModelRouting(agent); err != nil {
+		t.Fatalf("expected codex openai execution config to validate, got %v", err)
+	}
+	if strings.TrimSpace(string(agent.ExecutionConfig)) != `{"reasoning_effort":"high","service_tier":"fast"}` {
+		t.Fatalf("expected normalized execution config to persist, got %s", agent.ExecutionConfig)
+	}
+}
+
 func TestValidateRuntimeForAgentAllowsReviewAgentCodexPreset(t *testing.T) {
 	openAI := model.AgentModelProviderOpenAI
 	agent := &model.Agent{

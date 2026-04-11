@@ -482,48 +482,72 @@ function TranscriptEntry({
     : [];
   const hasSegmentTimeline = visibleTurnSegments.length > 0;
   const segmentGroups = hasSegmentTimeline ? partitionTurnSegments(visibleTurnSegments) : [];
+  const toolCallTimelineKeys = hasSegmentTimeline
+    ? new Set(
+      visibleTurnSegments
+        .filter((segment): segment is Extract<typeof visibleTurnSegments[number], { kind: 'tool_call' }> => segment.kind === 'tool_call')
+        .map((segment) => toolCallTimelineKey(segment.tool_call)),
+    )
+    : null;
+  const fallbackToolCalls = hasSegmentTimeline && toolCallTimelineKeys
+    ? visibleToolCalls.filter((toolCall) => !toolCallTimelineKeys.has(toolCallTimelineKey(toolCall)))
+    : visibleToolCalls;
 
   if (isAssistant) {
     return (
       <div className="w-full max-w-[90%]">
         {hasSegmentTimeline ? (
-          segmentGroups.map((group, groupIdx) => {
-            const isLastGroup = groupIdx === segmentGroups.length - 1;
-            if (group.kind === 'assistant') {
-              const seg = group.segment;
-              if (seg.kind !== 'assistant_message') return null;
-              return (
-                <AssistantTimelineRow
-                  key={seg.segment_id}
-                  content={seg.assistant_message.content}
-                  timestamp={seg.assistant_message.started_at ?? message.timestamp}
-                  live={live}
-                  streaming={seg.assistant_message.status === 'streaming'}
-                  isLast={isLastGroup}
-                />
-              );
-            }
-            if (group.toolCalls.length >= TOOL_GROUP_COLLAPSE_THRESHOLD) {
-              return (
-                <CollapsedToolCallGroup
-                  key={group.toolCalls[0].tool_call_id}
-                  toolCalls={group.toolCalls}
-                  isLast={isLastGroup}
-                />
-              );
-            }
-            return (
-              <Fragment key={group.toolCalls[0].tool_call_id}>
-                {group.toolCalls.map((tc, tcIdx) => (
-                  <ActivityToolCallRow
-                    key={tc.tool_call_id}
-                    toolCall={tc}
-                    isLast={isLastGroup && tcIdx === group.toolCalls.length - 1}
+          <>
+            {segmentGroups.map((group, groupIdx) => {
+              const isLastGroup = groupIdx === segmentGroups.length - 1 && fallbackToolCalls.length === 0;
+              if (group.kind === 'assistant') {
+                const seg = group.segment;
+                if (seg.kind !== 'assistant_message') return null;
+                return (
+                  <AssistantTimelineRow
+                    key={seg.segment_id}
+                    content={seg.assistant_message.content}
+                    timestamp={seg.assistant_message.started_at ?? message.timestamp}
+                    live={live}
+                    streaming={seg.assistant_message.status === 'streaming'}
+                    isLast={isLastGroup}
                   />
-                ))}
-              </Fragment>
-            );
-          })
+                );
+              }
+              if (group.toolCalls.length >= TOOL_GROUP_COLLAPSE_THRESHOLD) {
+                return (
+                  <CollapsedToolCallGroup
+                    key={group.toolCalls[0].tool_call_id}
+                    toolCalls={group.toolCalls}
+                    isLast={isLastGroup}
+                  />
+                );
+              }
+              return (
+                <Fragment key={group.toolCalls[0].tool_call_id}>
+                  {group.toolCalls.map((tc, tcIdx) => (
+                    <ActivityToolCallRow
+                      key={tc.tool_call_id}
+                      toolCall={tc}
+                      isLast={isLastGroup && tcIdx === group.toolCalls.length - 1}
+                    />
+                  ))}
+                </Fragment>
+              );
+            })}
+
+            {fallbackToolCalls.length >= TOOL_GROUP_COLLAPSE_THRESHOLD ? (
+              <CollapsedToolCallGroup toolCalls={fallbackToolCalls} isLast />
+            ) : fallbackToolCalls.length > 0 ? (
+              fallbackToolCalls.map((tc, idx) => (
+                <ActivityToolCallRow
+                  key={tc.tool_call_id}
+                  toolCall={tc}
+                  isLast={idx === fallbackToolCalls.length - 1}
+                />
+              ))
+            ) : null}
+          </>
         ) : (
           <>
             {message.content.trim() ? (
@@ -573,6 +597,15 @@ function TranscriptEntry({
       ) : null}
     </div>
   );
+}
+
+function toolCallTimelineKey(toolCall: CodingSessionLiveToolCall) {
+  return [
+    toolCall.tool_name.trim().toLowerCase(),
+    toolCall.args_text.trim(),
+    toolCall.result?.output_summary?.trim() ?? '',
+    toolCall.result?.content?.trim() ?? '',
+  ].join('\n');
 }
 
 const CONTENT_COLLAPSE_CHAR_THRESHOLD = 600;

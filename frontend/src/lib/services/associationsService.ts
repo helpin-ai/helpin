@@ -15,7 +15,7 @@ export const associationsService = {
   listByEpic: (workspaceId: string, epicId: string) =>
     api.get<GroupedAssociations>(`/pm/epics/${epicId}/associations${qs(workspaceId)}`),
   listByConversation: (workspaceId: string, conversationId: string) =>
-    api.get<GroupedAssociations>(`/support/conversations/${conversationId}/associations${qs(workspaceId)}`),
+    api.get<GroupedAssociations>(`/support/inbox/conversations/${conversationId}/associations${qs(workspaceId)}`),
   createTaskRelationship: (workspaceId: string, taskId: string, payload: CreateTaskRelationshipRequest) =>
     api.post(`/pm/tasks/${taskId}/relationships${qs(workspaceId)}`, payload),
   deleteTaskRelationship: (workspaceId: string, relationshipId: string) =>
