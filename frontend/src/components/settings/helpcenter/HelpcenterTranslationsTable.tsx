@@ -262,15 +262,13 @@ export function HelpcenterTranslationsTable({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-3">
-        <div>
+        <div className="max-w-xl">
           <h3 className="text-sm font-medium">Translations</h3>
           <p className="mt-1 text-xs text-muted-foreground">
-            {field === 'name'
-              ? 'Space and collection names per locale.'
-              : 'Space and collection descriptions per locale.'}
+            Translate space and collection names and descriptions for each enabled locale. Slugs are derived from the first saved name and then frozen, so public help-center URLs stay stable.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <div
             role="tablist"
             aria-label="Translation field"
@@ -296,7 +294,7 @@ export function HelpcenterTranslationsTable({
               </button>
             ))}
           </div>
-          {field === 'name' && hasMissing && (
+          {hasMissing && (
             <Button
               type="button"
               size="sm"
@@ -330,16 +328,17 @@ export function HelpcenterTranslationsTable({
             {spaces.map((space) => {
               const colls = collectionsBySpace.get(space.id) ?? []
               // Fold the flat collection list into tree order so
-              // nested collections appear under their parent and get
-              // indented by depth.
+              // nested collections appear under their parent. Depth
+              // is intentionally NOT used for indentation here —
+              // the sticky Text column is narrow and depth-based
+              // padding ate into the already-tight source description
+              // space. Parent-then-child ordering alone is enough to
+              // communicate hierarchy in this table.
               const treeOptions = buildCollectionTreeOptions(space.id, colls)
               const collsById = new Map(colls.map((c) => [c.id, c]))
               const orderedColls = treeOptions
-                .map((opt) => {
-                  const coll = collsById.get(opt.id)
-                  return coll ? { coll, depth: opt.depth } : null
-                })
-                .filter((entry): entry is { coll: DocsCollection; depth: number } => entry !== null)
+                .map((opt) => collsById.get(opt.id))
+                .filter((coll): coll is DocsCollection => coll !== undefined)
               return (
                 <>
                   {/* Space row — hidden entirely in Descriptions mode
@@ -385,12 +384,11 @@ export function HelpcenterTranslationsTable({
                     </tr>
                   )}
 
-                  {/* Collection rows — rendered in tree order, indented by depth. */}
-                  {orderedColls.map(({ coll, depth }) => (
+                  {/* Collection rows — rendered in tree order. */}
+                  {orderedColls.map((coll) => (
                     <tr key={coll.id} className="border-b border-border/20">
                       <td
                         className="sticky left-0 z-10 bg-background px-3 py-2 align-top"
-                        style={{ paddingLeft: `${12 + depth * 16}px` }}
                       >
                         {field === 'description' ? (
                           // Descriptions mode: the translator is
