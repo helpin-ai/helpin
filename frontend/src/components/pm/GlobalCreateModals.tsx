@@ -1171,7 +1171,7 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
 // ── Main export ──────────────────────────────────────────────────────
 
 export function GlobalCreateModals({ workspaceId }: { workspaceId: string }) {
-  const { activeModal, closeCreate, initialSpaceId, initialCollectionId } = useGlobalCreateStore();
+  const { activeModal, closeCreate, initialSpaceId, initialCollectionId, initialParentCollectionId } = useGlobalCreateStore();
   const navigate = useNavigate();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const wsSlug = workspace?.slug ?? '';
@@ -1208,6 +1208,7 @@ export function GlobalCreateModals({ workspaceId }: { workspaceId: string }) {
         <CreateCollectionDialog
           wsId={workspaceId}
           spaceId={initialSpaceId}
+          defaultParentCollectionId={initialParentCollectionId}
           open
           onOpenChange={(open) => !open && closeCreate()}
         />
