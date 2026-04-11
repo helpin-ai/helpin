@@ -181,6 +181,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 			// Canonical collection + article routes
 			r.Get("/c/{collectionSlug}", h.Docs.PublicGetCollectionPage)
+			r.Get("/articles/{articleKey}", h.Docs.PublicGetCanonicalArticle)
 			r.Get("/c/{collectionSlug}/{articleSlug}", h.Docs.PublicGetCanonicalArticle)
 
 			// Document preview (token-authenticated)
@@ -227,6 +228,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/{locale}/spaces/{spaceSlug}/collections/{collectionSlug}", h.Docs.PublicGetCollectionPage)
 			r.Get("/{locale}/spaces/{spaceSlug}/collections/{collectionSlug}/articles/{articleSlug}", h.Docs.PublicGetSpaceArticle)
 			r.Post("/{locale}/spaces/{spaceSlug}/collections/{collectionSlug}/articles/{articleSlug}/feedback", h.Docs.PublicSubmitFeedback)
+			r.Get("/{locale}/c/{collectionSlug}", h.Docs.PublicGetCollectionPage)
+			r.Get("/{locale}/articles/{articleKey}", h.Docs.PublicGetCanonicalArticle)
+			r.Post("/{locale}/articles/{articleKey}/feedback", h.Docs.PublicSubmitFeedback)
 			r.Get("/{locale}/collections/{collectionSlug}", h.Docs.PublicGetCollectionPage)
 			r.Get("/{locale}/collections/{collectionSlug}/articles/{articleSlug}", h.Docs.PublicGetSpaceArticle)
 			r.Post("/{locale}/collections/{collectionSlug}/articles/{articleSlug}/feedback", h.Docs.PublicSubmitFeedback)
@@ -240,6 +244,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 			// Canonical collection + article routes
 			r.Get("/c/{collectionSlug}", h.Docs.PublicGetCollectionPage)
+			r.Get("/articles/{articleKey}", h.Docs.PublicGetCanonicalArticle)
+			r.Post("/articles/{articleKey}/feedback", h.Docs.PublicSubmitFeedback)
 			r.Get("/c/{collectionSlug}/{articleSlug}", h.Docs.PublicGetCanonicalArticle)
 
 			// Document preview (token-authenticated)

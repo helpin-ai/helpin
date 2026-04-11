@@ -299,12 +299,13 @@ function resolveHostedSubdomain(host) {
  * Mirrors `resolveHelpCenterContext` in src/lib/utils.ts but adapted for the
  * Node entrypoint. Keep these in sync.
  */
-function resolveHelpCenterContext(host, pathname) {
+function resolveHelpCenterContext(host, pathname, search = '') {
   const hostname = normalizeHostname(host)
+  const overrideParam = new URLSearchParams(search).get('subdomain')
 
   const hostedSubdomain = resolveHostedSubdomain(hostname)
   if (hostedSubdomain) {
-    return { subdomain: hostedSubdomain, basepath: '' }
+    return { subdomain: overrideParam || hostedSubdomain, basepath: '' }
   }
 
   if (
@@ -312,11 +313,14 @@ function resolveHelpCenterContext(host, pathname) {
     hostname === '127.0.0.1' ||
     /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)
   ) {
-    return { subdomain: process.env.VITE_HC_SUBDOMAIN || 'demo', basepath: '' }
+    return {
+      subdomain: overrideParam || process.env.VITE_HC_SUBDOMAIN || 'demo',
+      basepath: '',
+    }
   }
 
   // Custom domain — pass hostname through; backend resolves it.
-  return { subdomain: hostname, basepath: '' }
+  return { subdomain: overrideParam || hostname, basepath: '' }
 }
 
 const requestContextStorage = new AsyncLocalStorage()
@@ -502,12 +506,13 @@ async function handleRequest(request, response) {
 
   const { host, protocol, origin } = resolveHostInfo(request)
   const url = new URL(request.url || '/', `${protocol}://${host}`)
-  const resolved = resolveHelpCenterContext(host, url.pathname)
+  const resolved = resolveHelpCenterContext(host, url.pathname, url.search)
   const hcContext = {
     host: normalizeHostname(host),
     protocol,
     origin,
     pathname: url.pathname,
+    search: url.search,
     subdomain: resolved.subdomain,
     basepath: resolved.basepath,
   }

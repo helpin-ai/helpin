@@ -61,6 +61,7 @@ func setupDocsRedirectTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE docs_helpcenter_articles (
 			id TEXT PRIMARY KEY,
 			document_id TEXT NOT NULL UNIQUE,
+			public_id TEXT NOT NULL DEFAULT '',
 			slug TEXT NOT NULL DEFAULT ''
 		)`,
 	} {
@@ -153,8 +154,8 @@ func TestDocsRedirectRepository_ListBackfillsMissingCollectionSlugForCategorized
 	).Error; err != nil {
 		t.Fatalf("seed document: %v", err)
 	}
-	if err := db.Exec(`INSERT INTO docs_helpcenter_articles (id, document_id, slug) VALUES (?, ?, ?)`,
-		"article-1", "doc-1", "start-here11",
+	if err := db.Exec(`INSERT INTO docs_helpcenter_articles (id, document_id, public_id, slug) VALUES (?, ?, ?, ?)`,
+		"article-1", "doc-1", "aa11bb22", "start-here11",
 	).Error; err != nil {
 		t.Fatalf("seed helpcenter article: %v", err)
 	}
@@ -211,8 +212,8 @@ func TestDocsRedirectRepository_ListRepairsBlankCollectionSlugAfterPathWasAlread
 	).Error; err != nil {
 		t.Fatalf("seed document: %v", err)
 	}
-	if err := db.Exec(`INSERT INTO docs_helpcenter_articles (id, document_id, slug) VALUES (?, ?, ?)`,
-		"article-2", "doc-2", "start-here12",
+	if err := db.Exec(`INSERT INTO docs_helpcenter_articles (id, document_id, public_id, slug) VALUES (?, ?, ?, ?)`,
+		"article-2", "doc-2", "cc33dd44", "start-here12",
 	).Error; err != nil {
 		t.Fatalf("seed helpcenter article: %v", err)
 	}

@@ -24,7 +24,7 @@ describe('helpCenterService', () => {
     expect(fetchMock).toHaveBeenNthCalledWith(1, expect.any(String), expect.any(Object))
     expect(fetchMock).toHaveBeenNthCalledWith(2, expect.any(String), expect.any(Object))
     expect(fetchMock.mock.calls[0]?.[0]).toMatch(
-      /\/api\/hc\/contentpen\/fr\/collections\/bases$/,
+      /\/api\/hc\/contentpen\/fr\/c\/bases$/,
     )
     expect(fetchMock.mock.calls[1]?.[0]).toMatch(
       /\/api\/hc\/contentpen\/fr\/search\?q=bonjour&space=demarrage$/,
@@ -44,14 +44,17 @@ describe('helpCenterService', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     await helpCenterService.getCollection('docs.contentpen.ai', 'en', 'basics', false)
-    await helpCenterService.getArticle('docs.contentpen.ai', 'en', 'basics', 'start-here', false)
+    await helpCenterService.getArticle(
+      'docs.contentpen.ai',
+      'en',
+      'start-here-abc123ef',
+      false,
+    )
     await helpCenterService.search('docs.contentpen.ai', 'en', 'publish', false, 'help-center')
     await helpCenterService.submitFeedback(
       'docs.contentpen.ai',
       'en',
-      'help-center',
-      'basics',
-      'start-here',
+      'start-here-abc123ef',
       false,
       { is_helpful: true },
     )
@@ -64,13 +67,13 @@ describe('helpCenterService', () => {
       /\/api\/hc\/docs\.contentpen\.ai\/c\/basics$/,
     )
     expect(fetchMock.mock.calls[1]?.[0]).toMatch(
-      /\/api\/hc\/docs\.contentpen\.ai\/c\/basics\/start-here$/,
+      /\/api\/hc\/docs\.contentpen\.ai\/articles\/start-here-abc123ef$/,
     )
     expect(fetchMock.mock.calls[2]?.[0]).toMatch(
       /\/api\/hc\/docs\.contentpen\.ai\/search\?q=publish&space=help-center$/,
     )
     expect(fetchMock.mock.calls[3]?.[0]).toMatch(
-      /\/api\/hc\/docs\.contentpen\.ai\/spaces\/help-center\/articles\/start-here\/feedback$/,
+      /\/api\/hc\/docs\.contentpen\.ai\/articles\/start-here-abc123ef\/feedback$/,
     )
   })
 })

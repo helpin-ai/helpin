@@ -2,7 +2,6 @@ import { FileText, ArrowRight } from 'lucide-react'
 import { DocsLink } from '@/components/DocsLink'
 import {
   buildCanonicalArticlePath,
-  buildCanonicalCollectionPath,
 } from '@/lib/locale'
 import type { SearchResult } from '@/lib/types'
 
@@ -74,10 +73,11 @@ export function SearchResultItem({
   if (!collectionSlug) {
     return (
       <DocsLink
-        to={buildCanonicalCollectionPath(
+        to={buildCanonicalArticlePath(
           multilingualEnabled,
           targetLocale,
-          result.space_slug,
+          result.slug,
+          result.public_id,
         )}
         onClick={onClick}
         className={className}
@@ -92,8 +92,8 @@ export function SearchResultItem({
       to={buildCanonicalArticlePath(
         multilingualEnabled,
         targetLocale,
-        collectionSlug,
         result.slug,
+        result.public_id,
       )}
       onClick={onClick}
       className={className}

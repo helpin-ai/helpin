@@ -62,7 +62,7 @@ function renderWithDocsContext(ui: ReactNode) {
 }
 
 describe('SearchResultItem', () => {
-  it('uses locale-aware article paths with collection slugs', () => {
+  it('uses locale-aware canonical article paths', () => {
     renderWithDocsContext(
       <SearchResultItem
         locale="fr"
@@ -70,6 +70,7 @@ describe('SearchResultItem', () => {
           id: 'article-1',
           title: 'Bonjour',
           slug: 'bonjour',
+          public_id: 'abc123ef',
           locale: 'fr',
           excerpt: 'Salut',
           collection_name: 'Bases',
@@ -83,6 +84,6 @@ describe('SearchResultItem', () => {
 
     const link = screen.getByText('Bonjour').closest('a')
     expect(link).not.toBeNull()
-    expect(link?.getAttribute('href')).toBe('/fr/bases/bonjour')
+    expect(link?.getAttribute('href')).toBe('/fr/articles/bonjour-abc123ef')
   })
 })

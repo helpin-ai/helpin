@@ -339,6 +339,7 @@ func (DocsHelpcenterConfig) TableName() string { return "docs_helpcenter_configs
 type DocsHelpcenterArticle struct {
 	ID                string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	DocumentID        string     `json:"document_id" gorm:"type:uuid;not null;uniqueIndex"`
+	PublicID          string     `json:"public_id" gorm:"uniqueIndex"`
 	Slug              string     `json:"slug" gorm:"not null;default:''"`
 	SEOTitle          *string    `json:"seo_title"`
 	SEODescription    *string    `json:"seo_description"`
@@ -609,6 +610,7 @@ type PublicNavArticle struct {
 	ID          string  `json:"id"`
 	Title       string  `json:"title"`
 	Slug        string  `json:"slug"`
+	PublicID    string  `json:"public_id"`
 	PublishedAt *string `json:"published_at"`
 }
 
@@ -641,6 +643,7 @@ type PublicArticleResponse struct {
 	ID              string  `json:"id"`
 	Title           string  `json:"title"`
 	Slug            string  `json:"slug"`
+	PublicID        string  `json:"public_id"`
 	Locale          string  `json:"locale,omitempty"`
 	RequestedLocale string  `json:"requested_locale,omitempty"`
 	IsFallback      bool    `json:"is_fallback,omitempty"`
@@ -687,6 +690,7 @@ type PublicSearchResultResponse struct {
 	ID                     string  `json:"id"`
 	Title                  string  `json:"title"`
 	Slug                   string  `json:"slug"`
+	PublicID               string  `json:"public_id"`
 	Locale                 string  `json:"locale,omitempty"`
 	RequestedLocale        string  `json:"requested_locale,omitempty"`
 	IsFallback             bool    `json:"is_fallback,omitempty"`

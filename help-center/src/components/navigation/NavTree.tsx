@@ -85,8 +85,8 @@ function CollectionGroup({
           const href = buildCanonicalArticlePath(
             multilingualEnabled,
             locale,
-            node.item.slug,
             article.slug,
+            article.public_id,
           )
           const isActive = pathname === prefixBasepath(basepath, href)
 
@@ -114,6 +114,7 @@ function CollectionGroup({
             locale={locale}
             node={child}
             multilingualEnabled={multilingualEnabled}
+            basepath={basepath}
             onArticleClick={onArticleClick}
             isFirst={idx === 0}
             level={level + 1}

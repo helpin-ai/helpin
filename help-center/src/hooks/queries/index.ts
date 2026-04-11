@@ -122,24 +122,17 @@ export function useCollection(
 export function articleQueryOptions(
   subdomain: string,
   locale: string,
-  collectionSlug: string,
-  articleSlug: string,
+  articleKey: string,
   multilingualEnabled: boolean,
 ) {
   return queryOptions({
-    queryKey: queryKeys.articles.bySlug(
-      subdomain,
-      locale,
-      collectionSlug,
-      articleSlug,
-    ),
+    queryKey: queryKeys.articles.byKey(subdomain, locale, articleKey),
     queryFn: async () =>
       unwrap(
         await helpCenterService.getArticle(
           subdomain,
           locale,
-          collectionSlug,
-          articleSlug,
+          articleKey,
           multilingualEnabled,
         ),
       ),
@@ -149,19 +142,17 @@ export function articleQueryOptions(
 export function useArticle(
   subdomain: string,
   locale: string,
-  collectionSlug: string,
-  articleSlug: string,
+  articleKey: string,
   multilingualEnabled: boolean,
 ) {
   return useQuery({
     ...articleQueryOptions(
       subdomain,
       locale,
-      collectionSlug,
-      articleSlug,
+      articleKey,
       multilingualEnabled,
     ),
-    enabled: !!subdomain && !!locale && !!collectionSlug && !!articleSlug,
+    enabled: !!subdomain && !!locale && !!articleKey,
   })
 }
 

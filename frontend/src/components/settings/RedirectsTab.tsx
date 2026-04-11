@@ -17,7 +17,7 @@ import { formatRedirectTargetPath, normalizeRedirectSourcePathForDisplay } from 
 const PER_PAGE = 20;
 
 function formatTarget(redirect: DocsRedirect): string {
-  return formatRedirectTargetPath(redirect.target_collection_slug, redirect.target_article_slug);
+  return redirect.target_path ?? formatRedirectTargetPath(redirect.target_collection_slug, redirect.target_article_slug);
 }
 
 function typeBadge(type: DocsRedirect['type']) {

@@ -22,6 +22,7 @@ type DocsRedirect struct {
 	SourcePath           string    `json:"source_path" gorm:"not null;uniqueIndex:idx_docs_redirects_ws_source,priority:2"`
 	TargetCollectionSlug string    `json:"target_collection_slug" gorm:"not null"`
 	TargetArticleSlug    *string   `json:"target_article_slug"`
+	TargetPath           *string   `json:"target_path,omitempty" gorm:"-"`
 	Type                 string    `json:"type" gorm:"not null;default:'manual'"`
 	SourceSystem         *string   `json:"source_system"`
 	SourceObjectType     *string   `json:"source_object_type"`

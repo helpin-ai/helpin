@@ -13,13 +13,11 @@ export const queryKeys = {
       ['collections', subdomain, locale, collectionSlug] as const,
   },
   articles: {
-    bySlug: (
+    byKey: (
       subdomain: string,
       locale: string,
-      collectionSlug: string,
-      articleSlug: string,
-    ) =>
-      ['articles', subdomain, locale, collectionSlug, articleSlug] as const,
+      articleKey: string,
+    ) => ['articles', subdomain, locale, articleKey] as const,
     search: (
       subdomain: string,
       locale: string,

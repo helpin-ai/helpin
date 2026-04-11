@@ -261,8 +261,8 @@ export function CollectionRouteView({
                   to={buildCanonicalArticlePath(
                     multilingualEnabled,
                     locale,
-                    collection.slug,
                     article.slug,
+                    article.public_id,
                   )}
                   className="group flex items-center justify-between rounded-2xl border border-border/70 px-4 py-4 transition-colors hover:border-primary/30 hover:bg-primary/[0.02]"
                 >
