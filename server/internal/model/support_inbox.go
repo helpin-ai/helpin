@@ -1040,11 +1040,13 @@ type WidgetHelpCollection struct {
 
 // WidgetHelpArticleSummary is a widget help article list row.
 type WidgetHelpArticleSummary struct {
-	ID      string  `json:"id"`
-	Title   string  `json:"title"`
-	Slug    string  `json:"slug"`
-	Excerpt *string `json:"excerpt,omitempty"`
-	Icon    *string `json:"icon,omitempty"`
+	ID         string  `json:"id"`
+	Title      string  `json:"title"`
+	Slug       string  `json:"slug"`
+	PublicID   string  `json:"public_id"`
+	ArticleKey string  `json:"article_key"`
+	Excerpt    *string `json:"excerpt,omitempty"`
+	Icon       *string `json:"icon,omitempty"`
 }
 
 // WidgetHelpArticle is a widget help article detail response.
@@ -1052,6 +1054,8 @@ type WidgetHelpArticle struct {
 	ID          string  `json:"id"`
 	Title       string  `json:"title"`
 	Slug        string  `json:"slug"`
+	PublicID    string  `json:"public_id"`
+	ArticleKey  string  `json:"article_key"`
 	Excerpt     *string `json:"excerpt,omitempty"`
 	Icon        *string `json:"icon,omitempty"`
 	ContentHTML *string `json:"content_html"`

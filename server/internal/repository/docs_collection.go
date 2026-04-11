@@ -61,6 +61,20 @@ func (r *DocsCollectionRepository) GetByID(ctx context.Context, id string) (*mod
 	return &coll, nil
 }
 
+// GetBySlug returns a collection by workspace and slug.
+func (r *DocsCollectionRepository) GetBySlug(ctx context.Context, workspaceID, slug string) (*model.DocsCollection, error) {
+	var coll model.DocsCollection
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND slug = ? AND deleted_at IS NULL", workspaceID, slug).
+		First(&coll).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get docs collection by slug: %w", err)
+	}
+	return &coll, nil
+}
+
 // ListBySpace returns all collections in a space, ordered by position.
 func (r *DocsCollectionRepository) ListBySpace(ctx context.Context, spaceID string) ([]model.DocsCollection, error) {
 	var colls []model.DocsCollection
@@ -574,4 +588,3 @@ func normalizeAllBucketsInSpaceTx(tx *gorm.DB, spaceID string) error {
 	}
 	return nil
 }
-

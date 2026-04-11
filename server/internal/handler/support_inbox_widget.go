@@ -303,7 +303,7 @@ func (h *SupportInboxWidgetHandler) GetHelpArticles(w http.ResponseWriter, r *ht
 	writeJSON(w, http.StatusOK, articles)
 }
 
-// GetHelpArticle handles GET /api/widget/support/help/articles/{articleSlug}?widget_key=...
+// GetHelpArticle handles GET /api/widget/support/help/articles/{articleKey}?widget_key=...
 func (h *SupportInboxWidgetHandler) GetHelpArticle(w http.ResponseWriter, r *http.Request) {
 	widgetKey := widgetKeyFromRequest(r)
 	if widgetKey == "" {
@@ -311,13 +311,13 @@ func (h *SupportInboxWidgetHandler) GetHelpArticle(w http.ResponseWriter, r *htt
 		return
 	}
 
-	articleSlug := chi.URLParam(r, "articleSlug")
-	if articleSlug == "" {
-		writeError(w, http.StatusBadRequest, "articleSlug is required")
+	articleKey := chi.URLParam(r, "articleKey")
+	if articleKey == "" {
+		writeError(w, http.StatusBadRequest, "articleKey is required")
 		return
 	}
 
-	article, err := h.supportService.GetWidgetHelpArticle(r.Context(), widgetKey, articleSlug)
+	article, err := h.supportService.GetWidgetHelpArticle(r.Context(), widgetKey, articleKey)
 	if err != nil {
 		if err.Error() == "widget not found" || err.Error() == "article not found" {
 			writeError(w, http.StatusNotFound, err.Error())
