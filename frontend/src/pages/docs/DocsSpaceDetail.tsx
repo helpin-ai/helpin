@@ -398,7 +398,6 @@ export function DocsSpaceDetail() {
         docCount={scopedDocs.length}
         subCount={childNodes.length}
         canEdit={canEditDocs}
-        onNavigateToDocs={() => navigate({ to: '/w/$slug/docs', params: { slug: wsSlug } })}
         onNavigateToCollection={navigateToCollection}
         onCreateDocument={() => openCreate('docs_document', {
           spaceId,

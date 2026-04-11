@@ -1,7 +1,6 @@
 import type { DocsSpace } from '@/lib/docsTypes'
 import { StoredIcon } from '@/components/ui/icon-picker'
 import {
-  ArrowLeft02Icon,
   ArrowRight01Icon,
   Delete01Icon,
   Folder01Icon,
@@ -40,7 +39,6 @@ export interface SpaceNodeHeaderProps {
   canEdit: boolean
 
   // Navigation
-  onNavigateToDocs: () => void
   /** Passed the target collection id, or null to reset to space root. */
   onNavigateToCollection: (collectionId: string | null) => void
 
@@ -89,7 +87,6 @@ export function SpaceNodeHeader({
   docCount,
   subCount,
   canEdit,
-  onNavigateToDocs,
   onNavigateToCollection,
   onCreateDocument,
   onCreateChildCollection,
@@ -190,16 +187,6 @@ export function SpaceNodeHeader({
     <header className="flex flex-col gap-2">
       <div className="flex items-start justify-between gap-4">
         <div className="flex min-w-0 items-start gap-3">
-          {view.kind === 'space_root' && (
-            <button
-              type="button"
-              onClick={onNavigateToDocs}
-              className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-muted"
-              aria-label="Back to docs"
-            >
-              <ArrowLeft02Icon className="h-4 w-4" />
-            </button>
-          )}
           <div className="min-w-0">
             <nav
               aria-label="Breadcrumb"
