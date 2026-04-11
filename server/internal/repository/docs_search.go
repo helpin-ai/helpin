@@ -93,6 +93,7 @@ func (r *DocsSearchRepository) PublicSearch(ctx context.Context, workspaceID, lo
 			hat.document_id AS id,
 			COALESCE(p.title, hat.title) AS title,
 			COALESCE(p.slug, hat.slug) AS slug,
+			ha.public_id AS public_id,
 			hat.locale AS locale,
 			COALESCE(p.excerpt, hat.excerpt) AS excerpt,
 			COALESCE(p.collection_id, hat.collection_id) AS collection_id,

@@ -17,6 +17,7 @@ interface ServerRequestSnapshot {
   host?: string
   protocol?: string
   pathname?: string
+  search?: string
   subdomain?: string
   basepath?: string
 }
@@ -44,7 +45,11 @@ const getServerRequestContext = createServerFn({ method: 'GET' }).handler(
               subdomain: snapshot.subdomain,
               basepath: snapshot.basepath,
             }
-          : resolveHelpCenterContext(snapshot.host, snapshot.pathname ?? '/')
+          : resolveHelpCenterContext(
+              snapshot.host,
+              snapshot.pathname ?? '/',
+              snapshot.search ?? '',
+            )
 
       return {
         host: snapshot.host,
@@ -61,7 +66,7 @@ const getServerRequestContext = createServerFn({ method: 'GET' }).handler(
       xForwardedProto: true,
     })
 
-    const ctx = resolveHelpCenterContext(host, url.pathname)
+    const ctx = resolveHelpCenterContext(host, url.pathname, url.search)
 
     return {
       host,

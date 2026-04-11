@@ -23,8 +23,8 @@ export function ArticlePager({ locale, prev, next }: ArticlePagerProps) {
           to={buildCanonicalArticlePath(
             multilingualEnabled,
             locale,
-            prev.collectionSlug,
             prev.slug,
+            prev.publicId,
           )}
           className="flex-1 group rounded-lg border border-border/70 px-4 py-3.5 transition-colors hover:border-primary/30 hover:bg-primary/[0.02]"
         >
@@ -44,8 +44,8 @@ export function ArticlePager({ locale, prev, next }: ArticlePagerProps) {
           to={buildCanonicalArticlePath(
             multilingualEnabled,
             locale,
-            next.collectionSlug,
             next.slug,
+            next.publicId,
           )}
           className="flex-1 group rounded-lg border border-border/70 px-4 py-3.5 text-right transition-colors hover:border-primary/30 hover:bg-primary/[0.02]"
         >

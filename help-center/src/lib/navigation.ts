@@ -3,6 +3,7 @@ import type { NavItem, NavTreeNode } from './types'
 export interface ArticlePagerLink {
   title: string
   slug: string
+  publicId: string
   collectionSlug: string
   collectionName: string
 }
@@ -79,7 +80,7 @@ export function navAncestorChain(tree: NavTreeNode[], collectionId: string): Nav
  */
 export function getArticlePager(
   navigation: NavItem[],
-  currentArticleSlug: string,
+  currentArticleID: string,
 ): { prev?: ArticlePagerLink; next?: ArticlePagerLink } {
   const tree = buildNavTree(navigation)
   const flat: ArticlePagerLink[] = []
@@ -89,6 +90,7 @@ export function getArticlePager(
         flat.push({
           title: article.title,
           slug: article.slug,
+          publicId: article.public_id,
           collectionSlug: node.item.slug,
           collectionName: node.item.name,
         })
@@ -98,7 +100,7 @@ export function getArticlePager(
   }
   walk(tree)
 
-  const idx = flat.findIndex((a) => a.slug === currentArticleSlug)
+  const idx = flat.findIndex((a) => a.publicId === currentArticleID)
   if (idx === -1) return {}
 
   return {

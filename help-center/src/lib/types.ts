@@ -97,6 +97,7 @@ export interface Article {
   id: string
   title: string
   slug: string
+  public_id: string
   locale?: string
   requested_locale?: string
   is_fallback?: boolean
@@ -162,6 +163,7 @@ export interface NavArticle {
   id: string
   title: string
   slug: string
+  public_id: string
   published_at?: string | null
 }
 
@@ -180,6 +182,7 @@ export interface SearchResult {
   id: string
   title: string
   slug: string
+  public_id: string
   locale?: string
   requested_locale?: string
   is_fallback?: boolean

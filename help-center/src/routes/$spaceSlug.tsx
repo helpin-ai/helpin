@@ -1,40 +1,25 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
-import { LoadingState } from '@/components/LoadingState'
-import { LocalizedHomePage } from '@/components/home/LocalizedHomePage'
 import { CollectionRouteView } from '@/components/routes/CollectionRouteView'
+import { LoadingState } from '@/components/LoadingState'
 import { useDocsContext } from '@/contexts/DocsContext'
-import { prefetchCollectionRouteData } from '@/lib/routeData'
 import { loadRootRouteData } from '@/lib/rootLoader'
-import { buildCollectionHead, buildHomeHead } from '@/lib/seo'
-import {
-  buildCanonicalCollectionPath,
-  buildCanonicalHomePath,
-  isMultilingualEnabled,
-} from '@/lib/locale'
-import { stripBasepath } from '@/lib/pathUtils'
+import { buildCanonicalCollectionPath, buildCanonicalHomePath } from '@/lib/locale'
 
 export const Route = createFileRoute('/$spaceSlug')({
   beforeLoad: async ({ context, location, params }) => {
     const rootData = await loadRootRouteData(context.queryClient, location.pathname)
-    const internalPath = stripBasepath(location.pathname, rootData.basepath)
-
-    if (!rootData.multilingualEnabled && internalPath === '/') {
-      return
-    }
-
     const normalizedSlug = params.spaceSlug.trim().toLowerCase()
     const isKnownLocaleSlug = rootData.config.enabled_locales.some(
       (locale) => locale.toLowerCase() === normalizedSlug,
+    )
+    const isSpaceSlug = rootData.spaces.some(
+      (space) => space.slug.toLowerCase() === normalizedSlug,
     )
 
     if (rootData.multilingualEnabled && !isKnownLocaleSlug) {
       throw redirect({
         statusCode: 301,
-        to: buildCanonicalCollectionPath(
-          true,
-          rootData.config.default_locale,
-          params.spaceSlug,
-        ),
+        href: `/${rootData.config.default_locale}/${params.spaceSlug}`,
       })
     }
 
@@ -44,66 +29,27 @@ export const Route = createFileRoute('/$spaceSlug')({
         to: buildCanonicalHomePath(false, rootData.config.default_locale),
       })
     }
-  },
-  loader: async ({ context, location, params }) => {
-    const rootData = await loadRootRouteData(context.queryClient, location.pathname)
-    const internalPath = stripBasepath(location.pathname, rootData.basepath)
 
-    if (!rootData.multilingualEnabled && internalPath === '/') {
-      return { kind: 'home' as const, rootData, collection: null, alternates: [] }
+    if (!rootData.multilingualEnabled && !isSpaceSlug) {
+      throw redirect({
+        statusCode: 301,
+        to: buildCanonicalCollectionPath(false, rootData.config.default_locale, params.spaceSlug),
+      })
     }
-
-    const normalizedSlug = params.spaceSlug.trim().toLowerCase()
-    const isKnownLocaleSlug = rootData.config.enabled_locales.some(
-      (locale) => locale.toLowerCase() === normalizedSlug,
-    )
-
-    if (!rootData.multilingualEnabled && !isKnownLocaleSlug) {
-      const collection = await prefetchCollectionRouteData(
-        context.queryClient,
-        rootData,
-        params.spaceSlug,
-      )
-      return { kind: 'collection' as const, rootData, collection, alternates: [] }
-    }
-
-    return { kind: 'home' as const, rootData, collection: null, alternates: [] }
   },
-  head: ({ loaderData, params }) => {
-    if (!loaderData) {
-      return {}
-    }
-
-    return loaderData.kind === 'collection' && loaderData.collection
-      ? buildCollectionHead(
-          loaderData.rootData,
-          loaderData.collection,
-          params.spaceSlug,
-          loaderData.alternates,
-        )
-      : buildHomeHead(loaderData.rootData)
-  },
-  component: LegacySpaceRedirect,
+  component: SpaceOrLegacyRedirect,
 })
 
-function LegacySpaceRedirect() {
+function SpaceOrLegacyRedirect() {
   const { spaceSlug } = Route.useParams()
-  const { basepath, defaultLocale, enabledLocales } = useDocsContext()
+  const { defaultLocale, enabledLocales, spaces } = useDocsContext()
   const normalizedSlug = spaceSlug.trim().toLowerCase()
-  const multilingualEnabled = isMultilingualEnabled(enabledLocales)
   const isKnownLocaleSlug = enabledLocales.some(
     (locale) => locale.toLowerCase() === normalizedSlug,
   )
+  const isSpaceSlug = spaces.some((space) => space.slug.toLowerCase() === normalizedSlug)
 
-  if (!multilingualEnabled && basepath === `/${spaceSlug}`) {
-    return <LocalizedHomePage />
-  }
-
-  if (multilingualEnabled && isKnownLocaleSlug) {
-    return <LocalizedHomePage />
-  }
-
-  if (!multilingualEnabled && !isKnownLocaleSlug) {
+  if (!isKnownLocaleSlug && isSpaceSlug) {
     return (
       <CollectionRouteView
         locale={defaultLocale}

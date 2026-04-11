@@ -1,16 +1,11 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { LocalizedHomePage } from '@/components/home/LocalizedHomePage'
-import { CollectionRouteView } from '@/components/routes/CollectionRouteView'
 import { LoadingState } from '@/components/LoadingState'
 import { useDocsContext } from '@/contexts/DocsContext'
-import { prefetchCollectionRouteData, prefetchHomeRouteData } from '@/lib/routeData'
+import { prefetchHomeRouteData } from '@/lib/routeData'
 import { loadRootRouteData } from '@/lib/rootLoader'
-import { buildCollectionHead, buildHomeHead } from '@/lib/seo'
-import {
-  buildCanonicalCollectionPath,
-  buildCanonicalHomePath,
-  isMultilingualEnabled,
-} from '@/lib/locale'
+import { buildHomeHead } from '@/lib/seo'
+import { isMultilingualEnabled } from '@/lib/locale'
 
 export const Route = createFileRoute('/$locale/')({
   beforeLoad: async ({ context, location, params }) => {
@@ -22,75 +17,38 @@ export const Route = createFileRoute('/$locale/')({
     if (!isValidLocaleParam && rootData.multilingualEnabled) {
       throw redirect({
         statusCode: 301,
-        to: buildCanonicalCollectionPath(
-          true,
-          rootData.config.default_locale,
-          params.locale,
-        ),
+        href: `/${rootData.config.default_locale}`,
       })
     }
 
     if (isValidLocaleParam && !rootData.multilingualEnabled) {
       throw redirect({
         statusCode: 301,
-        to: buildCanonicalHomePath(false, rootData.config.default_locale),
+        to: '/',
+      })
+    }
+
+    if (!isValidLocaleParam && !rootData.multilingualEnabled) {
+      throw redirect({
+        statusCode: 301,
+        href: `/c/${params.locale}`,
       })
     }
   },
-  loader: async ({ context, location, params }) => {
+  loader: async ({ context, location }) => {
     const rootData = await loadRootRouteData(context.queryClient, location.pathname)
-    const isValidLocaleParam = rootData.config.enabled_locales.some(
-      (enabledLocale) => enabledLocale.toLowerCase() === params.locale.toLowerCase(),
-    )
-
-    if (!isValidLocaleParam && !rootData.multilingualEnabled) {
-      const collection = await prefetchCollectionRouteData(
-        context.queryClient,
-        rootData,
-        params.locale,
-      )
-      return { kind: 'collection' as const, collection, rootData, alternates: [] }
-    }
-
     await prefetchHomeRouteData(context.queryClient, rootData)
-    return { kind: 'home' as const, collection: null, rootData, alternates: [] }
+    return rootData
   },
-  head: ({ loaderData, params }) => {
-    if (!loaderData) {
-      return {}
-    }
-
-    return loaderData.kind === 'collection' && loaderData.collection
-      ? buildCollectionHead(
-          loaderData.rootData,
-          loaderData.collection,
-          params.locale,
-          loaderData.alternates,
-        )
-      : buildHomeHead(loaderData.rootData)
-  },
+  head: ({ loaderData }) => (loaderData ? buildHomeHead(loaderData) : {}),
   component: LocalizedHomeRoute,
 })
 
 function LocalizedHomeRoute() {
-  const { defaultLocale, enabledLocales } = useDocsContext()
-  const { locale: localeParam } = Route.useParams()
+  const { enabledLocales } = useDocsContext()
   const multilingualEnabled = isMultilingualEnabled(enabledLocales)
-  const isValidLocaleParam = enabledLocales.some(
-    (enabledLocale) => enabledLocale.toLowerCase() === localeParam.toLowerCase(),
-  )
 
-  if (!isValidLocaleParam && !multilingualEnabled) {
-    return (
-      <CollectionRouteView
-        locale={defaultLocale}
-        collectionOrSpaceSlug={localeParam}
-        multilingualEnabled={false}
-      />
-    )
-  }
-
-  if (!isValidLocaleParam || !multilingualEnabled) {
+  if (!multilingualEnabled) {
     return <LoadingState message="Redirecting..." />
   }
 

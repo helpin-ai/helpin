@@ -1,12 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Menu } from 'lucide-react'
 import { useArticle, useSpaceNavigation } from '@/hooks/queries'
 import { useDocsContext } from '@/contexts/DocsContext'
 import { useScrollSpy } from '@/hooks/useScrollSpy'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { extractTocFromHtml } from '@/lib/toc'
-import { buildCanonicalCollectionPath } from '@/lib/locale'
-import { prefixBasepath } from '@/lib/pathUtils'
 import { ArticleShell } from '@/components/article/ArticleShell'
 import { ArticleContent } from '@/components/ArticleContent'
 import { TableOfContents } from '@/components/layout/TableOfContents'
@@ -18,26 +16,22 @@ import { getArticlePager } from '@/lib/navigation'
 
 interface ArticleRouteViewProps {
   locale: string
-  collectionSlug: string
-  articleSlug: string
+  articleKey: string
   multilingualEnabled: boolean
 }
 
 export function ArticleRouteView({
   locale,
-  collectionSlug,
-  articleSlug,
+  articleKey,
   multilingualEnabled,
 }: ArticleRouteViewProps) {
-  const { subdomain, spaces, basepath } = useDocsContext()
+  const { subdomain } = useDocsContext()
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const closeMobileNav = useCallback(() => setMobileNavOpen(false), [])
-  const matchingSpace = spaces.find((space) => space.slug === collectionSlug)
   const { data: article, isLoading, error } = useArticle(
     subdomain,
     locale,
-    collectionSlug,
-    articleSlug,
+    articleKey,
     multilingualEnabled,
   )
   const resolvedSpaceSlug = article?.space_slug ?? ''
@@ -49,26 +43,16 @@ export function ArticleRouteView({
       multilingualEnabled,
     )
 
-  useEffect(() => {
-    if (article || isLoading || !matchingSpace) {
-      return
-    }
-
-    window.location.replace(
-      prefixBasepath(
-        basepath,
-        buildCanonicalCollectionPath(multilingualEnabled, locale, articleSlug),
-      ),
-    )
-  }, [article, articleSlug, basepath, isLoading, locale, matchingSpace, multilingualEnabled])
-
   const tocItems = useMemo(
     () => (article?.content_html ? extractTocFromHtml(article.content_html) : []),
     [article?.content_html],
   )
   const tocIds = useMemo(() => tocItems.map((item) => item.id), [tocItems])
   const activeHeadingId = useScrollSpy(tocIds)
-  const pager = useMemo(() => getArticlePager(navigation, articleSlug), [navigation, articleSlug])
+  const pager = useMemo(
+    () => getArticlePager(navigation, article?.public_id ?? ''),
+    [navigation, article?.public_id],
+  )
 
   useDocumentTitle(article?.title)
 
@@ -122,8 +106,8 @@ export function ArticleRouteView({
           excerpt={article.excerpt}
           collectionName={article.collection_name}
           collectionSlug={article.collection_slug}
-          spaceSlug={article.space_slug}
-          articleSlug={articleSlug}
+          articleSlug={article.slug}
+          articlePublicId={article.public_id}
           pager={pager}
           multilingualEnabled={multilingualEnabled}
         >

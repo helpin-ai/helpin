@@ -194,10 +194,26 @@ func (s *DocsHelpcenterService) PublishExternally(ctx context.Context, documentI
 		return err
 	}
 	if art == nil {
-		art = &model.DocsHelpcenterArticle{DocumentID: documentID}
+		publicID, err := s.ensureUniqueHelpcenterPublicID(ctx, documentID)
+		if err != nil {
+			return err
+		}
+		art = &model.DocsHelpcenterArticle{
+			DocumentID: documentID,
+			PublicID:   publicID,
+		}
 		if _, err := s.hcRepo.CreateArticle(ctx, art); err != nil {
 			return err
 		}
+	} else if strings.TrimSpace(art.PublicID) == "" {
+		publicID, err := s.ensureUniqueHelpcenterPublicID(ctx, documentID)
+		if err != nil {
+			return err
+		}
+		if err := s.hcRepo.SetPublicID(ctx, documentID, publicID); err != nil {
+			return err
+		}
+		art.PublicID = publicID
 	}
 
 	cfg, err := s.hcRepo.GetConfig(ctx, doc.WorkspaceID)
@@ -388,6 +404,13 @@ func (s *DocsHelpcenterService) EnrichDocumentPublishState(ctx context.Context, 
 
 // CreateArticle creates a help center article extension record.
 func (s *DocsHelpcenterService) CreateArticle(ctx context.Context, art *model.DocsHelpcenterArticle) (*model.DocsHelpcenterArticle, error) {
+	if art != nil && strings.TrimSpace(art.PublicID) == "" {
+		publicID, err := s.ensureUniqueHelpcenterPublicID(ctx, art.DocumentID)
+		if err != nil {
+			return nil, err
+		}
+		art.PublicID = publicID
+	}
 	return s.hcRepo.CreateArticle(ctx, art)
 }
 
@@ -720,6 +743,23 @@ func (s *DocsHelpcenterService) ensureUniqueSourcePublicationSlug(ctx context.Co
 		}
 		slug = fmt.Sprintf("%s-%d", baseSlug, i)
 	}
+}
+
+func (s *DocsHelpcenterService) ensureUniqueHelpcenterPublicID(ctx context.Context, documentID string) (string, error) {
+	for attempts := 0; attempts < 16; attempts++ {
+		publicID, err := generateDocsHelpcenterPublicID()
+		if err != nil {
+			return "", err
+		}
+		exists, err := s.hcRepo.PublicIDExists(ctx, publicID, documentID)
+		if err != nil {
+			return "", err
+		}
+		if !exists {
+			return publicID, nil
+		}
+	}
+	return "", fmt.Errorf("generate unique helpcenter public id: exhausted retries")
 }
 
 func (s *DocsHelpcenterService) createSourceArticleRedirect(ctx context.Context, doc *model.DocsDocument, oldSlug, newSlug string) error {
@@ -1371,6 +1411,14 @@ func (s *DocsHelpcenterService) GetPublicArticle(ctx context.Context, workspaceI
 	if doc == nil {
 		return nil, fmt.Errorf("article not found")
 	}
+	articleExt, err := s.hcRepo.GetArticle(ctx, translation.DocumentID)
+	if err != nil {
+		return nil, err
+	}
+	publicID := ""
+	if articleExt != nil {
+		publicID = articleExt.PublicID
+	}
 
 	if collectionName == nil && doc.CollectionID != nil {
 		coll, err := s.collectionRepo.GetByID(ctx, *doc.CollectionID)
@@ -1402,6 +1450,7 @@ func (s *DocsHelpcenterService) GetPublicArticle(ctx context.Context, workspaceI
 		ID:              doc.ID,
 		Title:           translation.Title,
 		Slug:            stringValue(translation.Slug),
+		PublicID:        publicID,
 		Locale:          resolvedLocale,
 		RequestedLocale: requestedLocale,
 		IsFallback:      fellBack,
@@ -1472,6 +1521,7 @@ func (s *DocsHelpcenterService) GetPublicLocalizedCollection(ctx context.Context
 	}
 
 	articles := make([]model.PublicNavArticle, 0, len(docs))
+	publicIDs := s.loadHelpcenterPublicIDs(ctx, docs)
 	for _, doc := range docs {
 		translation, ok := requestedArticleByID[doc.ID]
 		if !ok {
@@ -1484,6 +1534,7 @@ func (s *DocsHelpcenterService) GetPublicLocalizedCollection(ctx context.Context
 			ID:          doc.ID,
 			Title:       translation.Title,
 			Slug:        stringValue(translation.Slug),
+			PublicID:    publicIDs[doc.ID],
 			PublishedAt: formatPublicPublishedAt(translation.PublishedAt),
 		})
 	}
@@ -1564,6 +1615,7 @@ func (s *DocsHelpcenterService) GetPublicLocalizedCollectionByCanonicalPath(ctx 
 	}
 
 	articles := make([]model.PublicNavArticle, 0, len(docs))
+	publicIDs := s.loadHelpcenterPublicIDs(ctx, docs)
 	for _, doc := range docs {
 		translation, ok := requestedArticleByID[doc.ID]
 		if !ok {
@@ -1576,6 +1628,7 @@ func (s *DocsHelpcenterService) GetPublicLocalizedCollectionByCanonicalPath(ctx 
 			ID:          doc.ID,
 			Title:       translation.Title,
 			Slug:        stringValue(translation.Slug),
+			PublicID:    publicIDs[doc.ID],
 			PublishedAt: formatPublicPublishedAt(translation.PublishedAt),
 		})
 	}
@@ -1648,6 +1701,14 @@ func (s *DocsHelpcenterService) GetPublicArticleByLocalizedCanonicalPath(ctx con
 	if doc == nil {
 		return nil, fmt.Errorf("article not found")
 	}
+	articleExt, err := s.hcRepo.GetArticle(ctx, translation.DocumentID)
+	if err != nil {
+		return nil, err
+	}
+	publicID := ""
+	if articleExt != nil {
+		publicID = articleExt.PublicID
+	}
 
 	collection, err := s.collectionRepo.GetByID(ctx, collectionTranslation.CollectionID)
 	if err != nil {
@@ -1686,6 +1747,135 @@ func (s *DocsHelpcenterService) GetPublicArticleByLocalizedCanonicalPath(ctx con
 		ID:              doc.ID,
 		Title:           translation.Title,
 		Slug:            stringValue(translation.Slug),
+		PublicID:        publicID,
+		Locale:          resolvedLocale,
+		RequestedLocale: requestedLocale,
+		IsFallback:      fellBack,
+		Excerpt:         translation.Excerpt,
+		Icon:            doc.Icon,
+		Status:          doc.Status,
+		SpaceSlug:       spaceSlugValue,
+		CollectionID:    doc.CollectionID,
+		CollectionName:  collectionName,
+		CollectionSlug:  collectionSlugValue,
+		PublishedAt:     publishedAt,
+		SEOTitle:        translation.SEOTitle,
+		SEODescription:  translation.SEODescription,
+		HelpfulCount:    translation.HelpfulCount,
+		NotHelpfulCount: translation.NotHelpfulCount,
+		ViewCount:       translation.ViewCount,
+		ContentHTML:     contentHTML,
+	}, nil
+}
+
+func (s *DocsHelpcenterService) GetPublicArticleByLocalizedCanonicalKey(ctx context.Context, workspaceID, requestedLocale, articleKey string) (*model.PublicArticleResponse, error) {
+	_, publicID, ok := parseDocsHelpcenterArticleKey(articleKey)
+	if !ok {
+		return nil, fmt.Errorf("article not found")
+	}
+
+	cfg, _, err := s.getPublicLocaleConfig(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.ensureDefaultLocaleMirrors(ctx, workspaceID); err != nil {
+		return nil, err
+	}
+
+	translation, resolvedLocale, fellBack, err := func() (*model.DocsHelpcenterArticleTranslation, string, bool, error) {
+		translation, err := s.hcRepo.GetPublicArticleTranslationByPublicID(ctx, workspaceID, requestedLocale, publicID)
+		if err != nil {
+			return nil, "", false, err
+		}
+		if translation != nil {
+			return translation, requestedLocale, false, nil
+		}
+
+		defaultLocale := defaultHelpcenterLocale(cfg)
+		if !cfg.FallbackToDefaultLocale || requestedLocale == defaultLocale {
+			return nil, "", false, fmt.Errorf("article not found")
+		}
+
+		fallback, err := s.hcRepo.GetPublicArticleTranslationByPublicID(ctx, workspaceID, defaultLocale, publicID)
+		if err != nil {
+			return nil, "", false, err
+		}
+		if fallback == nil {
+			return nil, "", false, fmt.Errorf("article not found")
+		}
+		return fallback, defaultLocale, true, nil
+	}()
+	if err != nil {
+		return nil, err
+	}
+
+	doc, err := s.docRepo.GetByID(ctx, translation.DocumentID)
+	if err != nil {
+		return nil, err
+	}
+	if doc == nil {
+		return nil, fmt.Errorf("article not found")
+	}
+
+	articleExt, err := s.hcRepo.GetArticle(ctx, translation.DocumentID)
+	if err != nil {
+		return nil, err
+	}
+
+	var collectionName *string
+	var collectionSlugValue *string
+	var spaceSlugValue string
+	if doc.CollectionID != nil {
+		collection, err := s.collectionRepo.GetByID(ctx, *doc.CollectionID)
+		if err != nil {
+			return nil, err
+		}
+		if collection != nil {
+			collectionName = &collection.Name
+			if collection.Slug != "" {
+				collectionSlugValue = &collection.Slug
+			}
+			space, err := s.spaceRepo.GetByID(ctx, collection.SpaceID)
+			if err == nil && space != nil {
+				spaceSlugValue = space.Slug
+			}
+		}
+	} else {
+		space, err := s.spaceRepo.GetByID(ctx, doc.SpaceID)
+		if err == nil && space != nil {
+			spaceSlugValue = space.Slug
+		}
+	}
+
+	var contentHTML *string
+	if len(translation.Content) > 0 {
+		rendered, err := tiptap.RenderHTML(translation.Content)
+		if err == nil && rendered != "" {
+			contentHTML = &rendered
+		}
+	}
+
+	var publishedAt *string
+	if translation.PublishedAt != nil {
+		formatted := translation.PublishedAt.Format(time.RFC3339)
+		publishedAt = &formatted
+	}
+
+	go func() {
+		_ = s.hcRepo.IncrementTranslatedViewCount(ctx, translation.DocumentID, resolvedLocale)
+	}()
+
+	publicIDValue := ""
+	if articleExt != nil {
+		publicIDValue = articleExt.PublicID
+	}
+
+	return &model.PublicArticleResponse{
+		ID:              doc.ID,
+		Title:           translation.Title,
+		Slug:            stringValue(translation.Slug),
+		PublicID:        publicIDValue,
 		Locale:          resolvedLocale,
 		RequestedLocale: requestedLocale,
 		IsFallback:      fellBack,
@@ -1757,6 +1947,80 @@ func (s *DocsHelpcenterService) GetPublicArticleByCanonicalPath(ctx context.Cont
 		ID:              doc.ID,
 		Title:           doc.Title,
 		Slug:            ha.Slug,
+		PublicID:        ha.PublicID,
+		Excerpt:         doc.Excerpt,
+		Icon:            doc.Icon,
+		Status:          doc.Status,
+		SpaceSlug:       spaceSlug,
+		CollectionID:    doc.CollectionID,
+		CollectionName:  collectionName,
+		CollectionSlug:  resolvedCollSlug,
+		PublishedAt:     publishedAt,
+		SEOTitle:        ha.SEOTitle,
+		SEODescription:  ha.SEODescription,
+		HelpfulCount:    ha.HelpfulCount,
+		NotHelpfulCount: ha.NotHelpfulCount,
+		ViewCount:       ha.ViewCount,
+		ContentHTML:     contentHTML,
+	}, nil
+}
+
+func (s *DocsHelpcenterService) GetPublicArticleByCanonicalKey(ctx context.Context, workspaceID, articleKey string) (*model.PublicArticleResponse, error) {
+	_, publicID, ok := parseDocsHelpcenterArticleKey(articleKey)
+	if !ok {
+		return nil, nil
+	}
+
+	doc, ha, content, err := s.hcRepo.GetPublicArticleByPublicID(ctx, workspaceID, publicID)
+	if err != nil {
+		return nil, err
+	}
+	if doc == nil || ha == nil {
+		return nil, nil
+	}
+
+	var collectionName *string
+	var resolvedCollSlug *string
+	var spaceSlug string
+	if doc.CollectionID != nil {
+		coll, err := s.collectionRepo.GetByID(ctx, *doc.CollectionID)
+		if err == nil && coll != nil {
+			collectionName = &coll.Name
+			if coll.Slug != "" {
+				resolvedCollSlug = &coll.Slug
+			}
+			if space, err := s.spaceRepo.GetByID(ctx, coll.SpaceID); err == nil && space != nil {
+				spaceSlug = space.Slug
+			}
+		}
+	} else if space, err := s.spaceRepo.GetByID(ctx, doc.SpaceID); err == nil && space != nil {
+		spaceSlug = space.Slug
+	}
+
+	var contentHTML *string
+	if content != nil && len(content.Content) > 0 {
+		rendered, err := tiptap.RenderHTML(content.Content)
+		if err == nil && rendered != "" {
+			contentHTML = &rendered
+		}
+	}
+
+	var publishedAt *string
+	if ha.PublicPublishedAt != nil {
+		formatted := ha.PublicPublishedAt.Format(time.RFC3339)
+		publishedAt = &formatted
+	}
+
+	go func() {
+		defer func() { recover() }()
+		_ = s.hcRepo.IncrementViewCount(ctx, doc.ID)
+	}()
+
+	return &model.PublicArticleResponse{
+		ID:              doc.ID,
+		Title:           doc.Title,
+		Slug:            ha.Slug,
+		PublicID:        ha.PublicID,
 		Excerpt:         doc.Excerpt,
 		Icon:            doc.Icon,
 		Status:          doc.Status,
@@ -1848,7 +2112,12 @@ func (s *DocsHelpcenterService) PreviewArticleHTML(ctx context.Context, workspac
 
 // ListRedirects returns paginated redirects for a workspace.
 func (s *DocsHelpcenterService) ListRedirects(ctx context.Context, workspaceID string, filter model.DocsRedirectFilter) ([]model.DocsRedirect, int64, error) {
-	return s.redirectRepo.List(ctx, workspaceID, filter)
+	items, total, err := s.redirectRepo.List(ctx, workspaceID, filter)
+	if err != nil {
+		return nil, 0, err
+	}
+	s.hydrateRedirectTargetPaths(ctx, workspaceID, items)
+	return items, total, nil
 }
 
 // CreateRedirect creates a manual redirect.
@@ -1870,6 +2139,7 @@ func (s *DocsHelpcenterService) CreateRedirect(ctx context.Context, workspaceID 
 	if err := s.redirectRepo.Create(ctx, redirect); err != nil {
 		return nil, err
 	}
+	s.hydrateRedirectTargetPath(ctx, workspaceID, redirect)
 	return redirect, nil
 }
 
@@ -1900,7 +2170,12 @@ func (s *DocsHelpcenterService) UpdateRedirect(ctx context.Context, id string, r
 	if len(updates) == 0 {
 		return nil, fmt.Errorf("no fields to update")
 	}
-	return s.redirectRepo.Update(ctx, id, updates)
+	redirect, err := s.redirectRepo.Update(ctx, id, updates)
+	if err != nil {
+		return nil, err
+	}
+	s.hydrateRedirectTargetPath(ctx, redirect.WorkspaceID, redirect)
+	return redirect, nil
 }
 
 func (s *DocsHelpcenterService) DeleteRedirect(ctx context.Context, id string) error {
@@ -1908,8 +2183,16 @@ func (s *DocsHelpcenterService) DeleteRedirect(ctx context.Context, id string) e
 }
 
 // ResolvePublicPath resolves a legacy or imported URL path to a redirect target.
-func (s *DocsHelpcenterService) ResolvePublicPath(ctx context.Context, workspaceID, path string) (*model.DocsRedirect, error) {
-	return s.redirectRepo.GetBySourcePath(ctx, workspaceID, path)
+func (s *DocsHelpcenterService) ResolvePublicPath(ctx context.Context, workspaceID, path string) (string, error) {
+	cfg, err := s.hcRepo.GetConfig(ctx, workspaceID)
+	if err != nil {
+		return "", err
+	}
+	if cfg == nil {
+		return "", nil
+	}
+
+	return s.resolvePublicPathTarget(ctx, cfg, workspaceID, path, map[string]struct{}{}, 0)
 }
 
 // SubmitFeedback records article feedback and updates counts.
@@ -1943,4 +2226,242 @@ func formatPublicPublishedAt(value *time.Time) *string {
 
 	formatted := value.Format(time.RFC3339)
 	return &formatted
+}
+
+func (s *DocsHelpcenterService) loadHelpcenterPublicIDs(ctx context.Context, docs []model.DocsDocument) map[string]string {
+	result := make(map[string]string, len(docs))
+	for _, doc := range docs {
+		article, err := s.hcRepo.GetArticle(ctx, doc.ID)
+		if err != nil || article == nil {
+			continue
+		}
+		result[doc.ID] = article.PublicID
+	}
+	return result
+}
+
+func (s *DocsHelpcenterService) hydrateRedirectTargetPaths(ctx context.Context, workspaceID string, redirects []model.DocsRedirect) {
+	for i := range redirects {
+		s.hydrateRedirectTargetPath(ctx, workspaceID, &redirects[i])
+	}
+}
+
+func (s *DocsHelpcenterService) hydrateRedirectTargetPath(ctx context.Context, workspaceID string, redirect *model.DocsRedirect) {
+	if redirect == nil {
+		return
+	}
+
+	targetPath, err := s.resolveRedirectTargetPath(ctx, workspaceID, redirect)
+	if err != nil || targetPath == "" {
+		return
+	}
+	redirect.TargetPath = &targetPath
+}
+
+func (s *DocsHelpcenterService) resolveRedirectTargetPath(ctx context.Context, workspaceID string, redirect *model.DocsRedirect) (string, error) {
+	if redirect == nil {
+		return "", nil
+	}
+	target := buildDocsRedirectPath(redirect.TargetCollectionSlug, redirect.TargetArticleSlug)
+	if target == "" || target == "/" {
+		return target, nil
+	}
+
+	resolved, err := s.ResolvePublicPath(ctx, workspaceID, target)
+	if err != nil {
+		return "", err
+	}
+	if resolved != "" {
+		return resolved, nil
+	}
+	return target, nil
+}
+
+func (s *DocsHelpcenterService) resolvePublicPathTarget(
+	ctx context.Context,
+	cfg *model.DocsHelpcenterConfig,
+	workspaceID string,
+	path string,
+	seen map[string]struct{},
+	depth int,
+) (string, error) {
+	normalizedPath := normalizeDocsRedirectSourcePath(path)
+	if normalizedPath == "" {
+		return "", nil
+	}
+	if depth > 8 {
+		return "", nil
+	}
+	if _, exists := seen[normalizedPath]; exists {
+		return "", nil
+	}
+	seen[normalizedPath] = struct{}{}
+
+	if redirect, err := s.redirectRepo.GetBySourcePath(ctx, workspaceID, normalizedPath); err != nil {
+		return "", err
+	} else if redirect != nil {
+		target := buildDocsRedirectPath(redirect.TargetCollectionSlug, redirect.TargetArticleSlug)
+		if target == "" || target == normalizedPath {
+			return "", nil
+		}
+		if resolved, err := s.resolveDynamicPublicPath(ctx, cfg, workspaceID, target); err != nil {
+			return "", err
+		} else if resolved != "" && resolved != normalizedPath {
+			return resolved, nil
+		}
+		if resolved, err := s.resolvePublicPathTarget(ctx, cfg, workspaceID, target, seen, depth+1); err != nil {
+			return "", err
+		} else if resolved != "" && resolved != normalizedPath {
+			return resolved, nil
+		}
+		return target, nil
+	}
+
+	return s.resolveDynamicPublicPath(ctx, cfg, workspaceID, normalizedPath)
+}
+
+func (s *DocsHelpcenterService) resolveDynamicPublicPath(
+	ctx context.Context,
+	cfg *model.DocsHelpcenterConfig,
+	workspaceID string,
+	path string,
+) (string, error) {
+	multilingual := docsHelpcenterMultilingualEnabled(cfg)
+	defaultLocale := defaultHelpcenterLocale(cfg)
+	locale, hasLocalePrefix, segments := parseDocsHelpcenterPublicPath(cfg, path)
+	normalizedPath := normalizeDocsRedirectSourcePath(path)
+
+	if hasLocalePrefix && !multilingual {
+		trimmed := "/" + strings.Join(segments, "/")
+		if trimmed == "/" {
+			return "/", nil
+		}
+		if trimmed != normalizedPath {
+			if resolved, err := s.resolveDynamicPublicPath(ctx, cfg, workspaceID, trimmed); err != nil {
+				return "", err
+			} else if resolved != "" {
+				return resolved, nil
+			}
+			return trimmed, nil
+		}
+	}
+
+	if len(segments) == 0 {
+		if multilingual && !hasLocalePrefix {
+			return buildCanonicalHomePath(defaultLocale, true), nil
+		}
+		if !multilingual && hasLocalePrefix {
+			return "/", nil
+		}
+		return "", nil
+	}
+
+	switch segments[0] {
+	case "c":
+		if len(segments) != 2 {
+			return "", nil
+		}
+		collectionSlug := segments[1]
+		if multilingual {
+			translation, resolvedLocale, _, err := s.resolvePublicCollectionTranslationByCanonicalSlug(ctx, cfg, workspaceID, locale, collectionSlug)
+			if err != nil || translation == nil {
+				return "", nil
+			}
+			target := buildDocsHelpcenterCollectionCanonicalPath(cfg, resolvedLocale, stringValue(translation.Slug))
+			if target != normalizedPath {
+				return target, nil
+			}
+			return "", nil
+		}
+		coll, _, _, err := s.GetPublicCollection(ctx, workspaceID, collectionSlug)
+		if err != nil || coll == nil {
+			return "", nil
+		}
+		target := buildDocsHelpcenterCollectionCanonicalPath(cfg, defaultLocale, coll.Slug)
+		if target != normalizedPath {
+			return target, nil
+		}
+		return "", nil
+	case "articles":
+		if len(segments) != 2 {
+			return "", nil
+		}
+		if multilingual {
+			article, err := s.GetPublicArticleByLocalizedCanonicalKey(ctx, workspaceID, locale, segments[1])
+			if err != nil || article == nil {
+				return "", nil
+			}
+			target := buildDocsHelpcenterArticleCanonicalPath(cfg, article.Locale, article.Slug, article.PublicID)
+			if target != normalizedPath {
+				return target, nil
+			}
+			return "", nil
+		}
+		article, err := s.GetPublicArticleByCanonicalKey(ctx, workspaceID, segments[1])
+		if err != nil || article == nil {
+			return "", nil
+		}
+		target := buildDocsHelpcenterArticleCanonicalPath(cfg, defaultLocale, article.Slug, article.PublicID)
+		if target != normalizedPath {
+			return target, nil
+		}
+		return "", nil
+	}
+
+	if len(segments) == 1 {
+		collectionSlug := segments[0]
+		if multilingual {
+			translation, resolvedLocale, _, err := s.resolvePublicCollectionTranslationByCanonicalSlug(ctx, cfg, workspaceID, locale, collectionSlug)
+			if err == nil && translation != nil {
+				return buildDocsHelpcenterCollectionCanonicalPath(cfg, resolvedLocale, stringValue(translation.Slug)), nil
+			}
+		} else if coll, _, _, err := s.GetPublicCollection(ctx, workspaceID, collectionSlug); err == nil && coll != nil {
+			return buildDocsHelpcenterCollectionCanonicalPath(cfg, defaultLocale, coll.Slug), nil
+		}
+		return "", nil
+	}
+
+	if len(segments) >= 2 {
+		legacyCollectionSlug := segments[len(segments)-2]
+		legacyArticleSlug := segments[len(segments)-1]
+
+		if multilingual {
+			article, err := s.GetPublicArticleByLocalizedCanonicalPath(ctx, workspaceID, locale, legacyCollectionSlug, legacyArticleSlug)
+			if err == nil && article != nil {
+				return buildDocsHelpcenterArticleCanonicalPath(cfg, article.Locale, article.Slug, article.PublicID), nil
+			}
+		} else if article, err := s.GetPublicArticleByCanonicalPath(ctx, workspaceID, legacyCollectionSlug, legacyArticleSlug); err == nil && article != nil {
+			return buildDocsHelpcenterArticleCanonicalPath(cfg, defaultLocale, article.Slug, article.PublicID), nil
+		}
+	}
+
+	return "", nil
+}
+
+func parseDocsHelpcenterPublicPath(cfg *model.DocsHelpcenterConfig, path string) (locale string, hasLocalePrefix bool, segments []string) {
+	normalized := normalizeDocsRedirectSourcePath(path)
+	if normalized == "" || normalized == "/" {
+		return defaultHelpcenterLocale(cfg), false, nil
+	}
+
+	parts := strings.Split(strings.Trim(normalized, "/"), "/")
+	if len(parts) == 0 {
+		return defaultHelpcenterLocale(cfg), false, nil
+	}
+
+	first := strings.TrimSpace(strings.ToLower(parts[0]))
+	for _, enabled := range cfg.EnabledLocales {
+		if strings.TrimSpace(strings.ToLower(enabled)) == first {
+			return first, true, parts[1:]
+		}
+	}
+
+	return defaultHelpcenterLocale(cfg), false, parts
+}
+
+func buildCanonicalHomePath(locale string, multilingual bool) string {
+	if multilingual {
+		return "/" + strings.Trim(strings.TrimSpace(locale), "/")
+	}
+	return "/"
 }

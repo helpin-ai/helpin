@@ -195,6 +195,29 @@ func (r *DocsHelpcenterRepository) CreateArticle(ctx context.Context, art *model
 	return art, nil
 }
 
+func (r *DocsHelpcenterRepository) PublicIDExists(ctx context.Context, publicID, excludeDocumentID string) (bool, error) {
+	var count int64
+	query := r.db.WithContext(ctx).
+		Model(&model.DocsHelpcenterArticle{}).
+		Where("public_id = ?", publicID)
+	if excludeDocumentID != "" {
+		query = query.Where("document_id != ?", excludeDocumentID)
+	}
+	if err := query.Count(&count).Error; err != nil {
+		return false, fmt.Errorf("check helpcenter public id exists: %w", err)
+	}
+	return count > 0, nil
+}
+
+func (r *DocsHelpcenterRepository) SetPublicID(ctx context.Context, documentID, publicID string) error {
+	if err := r.db.WithContext(ctx).Model(&model.DocsHelpcenterArticle{}).
+		Where("document_id = ?", documentID).
+		Update("public_id", publicID).Error; err != nil {
+		return fmt.Errorf("set helpcenter public id: %w", err)
+	}
+	return nil
+}
+
 // SetPublicPublishedAt sets or clears the public_published_at timestamp.
 func (r *DocsHelpcenterRepository) SetPublicPublishedAt(ctx context.Context, documentID string, publishedAt *time.Time) error {
 	if err := r.db.WithContext(ctx).Model(&model.DocsHelpcenterArticle{}).
@@ -465,6 +488,65 @@ func (r *DocsHelpcenterRepository) GetPublicArticleTranslationBySlug(ctx context
 	return &translation, nil
 }
 
+func (r *DocsHelpcenterRepository) GetPublicArticleTranslationByPublicID(ctx context.Context, workspaceID, locale, publicID string) (*model.DocsHelpcenterArticleTranslation, error) {
+	var translation model.DocsHelpcenterArticleTranslation
+	if err := r.db.WithContext(ctx).
+		Table("docs_helpcenter_article_translations hat").
+		Select(`
+			hat.id,
+			hat.document_id,
+			COALESCE(p.workspace_id, hat.workspace_id) AS workspace_id,
+			COALESCE(p.space_id, hat.space_id) AS space_id,
+			COALESCE(p.collection_id, hat.collection_id) AS collection_id,
+			hat.locale,
+			COALESCE(p.title, hat.title) AS title,
+			COALESCE(p.slug, hat.slug) AS slug,
+			COALESCE(p.excerpt, hat.excerpt) AS excerpt,
+			COALESCE(p.content, hat.content) AS content,
+			COALESCE(p.content_text, hat.content_text) AS content_text,
+			COALESCE(p.seo_title, hat.seo_title) AS seo_title,
+			COALESCE(p.seo_description, hat.seo_description) AS seo_description,
+			CASE
+				WHEN p.document_id IS NOT NULL AND hat.locale = cfg.default_locale THEN 'published'
+				ELSE hat.status
+			END AS status,
+			hat.source_updated_at,
+			hat.source_synced,
+			hat.published_at,
+			hat.view_count,
+			hat.helpful_count,
+			hat.not_helpful_count,
+			hat.created_at,
+			hat.updated_at
+		`).
+		Joins("JOIN docs_documents d ON d.id = hat.document_id").
+		Joins("JOIN docs_helpcenter_articles ha ON ha.document_id = hat.document_id").
+		Joins("JOIN docs_helpcenter_configs cfg ON cfg.workspace_id = hat.workspace_id").
+		Joins("LEFT JOIN docs_helpcenter_article_publications p ON p.document_id = hat.document_id AND p.locale = hat.locale").
+		Where(`
+			hat.workspace_id = ?
+			AND hat.locale = ?
+			AND ha.public_id = ?
+			AND d.deleted_at IS NULL
+			AND d.status = ?
+			AND ha.public_published_at IS NOT NULL
+			AND (
+				(
+					hat.status = ? AND hat.published_at IS NOT NULL
+					AND (p.document_id IS NOT NULL OR hat.locale = cfg.default_locale)
+				)
+				OR (hat.locale = cfg.default_locale AND p.document_id IS NOT NULL)
+			)
+		`, workspaceID, locale, publicID, model.DocStatusPublished, model.DocsHelpcenterTranslationStatusPublished).
+		First(&translation).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get public article translation by public id: %w", err)
+	}
+	return &translation, nil
+}
+
 func (r *DocsHelpcenterRepository) ListPublicArticleTranslationsByCollection(ctx context.Context, collectionID, locale string) ([]model.DocsHelpcenterArticleTranslation, error) {
 	var translations []model.DocsHelpcenterArticleTranslation
 	if err := r.db.WithContext(ctx).
@@ -583,6 +665,7 @@ func (r *DocsHelpcenterRepository) GetPublicArticleTranslationByCollectionSlug(c
 type sourceArticleRow struct {
 	model.DocsDocument
 	HelpcenterArticleID string          `gorm:"column:helpcenter_article_id"`
+	HelpcenterPublicID  string          `gorm:"column:helpcenter_public_id"`
 	HelpcenterSlug      string          `gorm:"column:helpcenter_slug"`
 	PublicationContent  json.RawMessage `gorm:"column:publication_content"`
 	PublicationTitle    string          `gorm:"column:publication_title"`
@@ -602,6 +685,7 @@ func sourceArticleRowToModels(row sourceArticleRow) (*model.DocsDocument, *model
 	ha := &model.DocsHelpcenterArticle{
 		ID:                row.HelpcenterArticleID,
 		DocumentID:        row.ID,
+		PublicID:          row.HelpcenterPublicID,
 		Slug:              row.HelpcenterSlug,
 		SEOTitle:          row.PublicationSEOTitle,
 		SEODescription:    row.PublicationSEODesc,
@@ -636,11 +720,12 @@ func (r *DocsHelpcenterRepository) ListSpaceNavigation(ctx context.Context, spac
 		ID           string  `gorm:"column:id"`
 		Title        string  `gorm:"column:title"`
 		Slug         string  `gorm:"column:slug"`
+		PublicID     string  `gorm:"column:public_id"`
 		CollectionID *string `gorm:"column:collection_id"`
 	}
 	var articles []navArticleRow
 	if err := r.db.WithContext(ctx).Raw(`
-		SELECT d.id, d.title, ha.slug, d.collection_id
+		SELECT d.id, d.title, ha.slug, ha.public_id, d.collection_id
 		FROM docs_documents d
 		JOIN docs_helpcenter_articles ha ON ha.document_id = d.id
 		WHERE d.space_id = ?
@@ -657,7 +742,12 @@ func (r *DocsHelpcenterRepository) ListSpaceNavigation(ctx context.Context, spac
 	articlesByCollection := map[string][]model.PublicNavArticle{}
 	var uncategorized []model.PublicNavArticle
 	for _, a := range articles {
-		na := model.PublicNavArticle{ID: a.ID, Title: a.Title, Slug: a.Slug}
+		na := model.PublicNavArticle{
+			ID:       a.ID,
+			Title:    a.Title,
+			Slug:     a.Slug,
+			PublicID: a.PublicID,
+		}
 		if a.CollectionID != nil {
 			articlesByCollection[*a.CollectionID] = append(articlesByCollection[*a.CollectionID], na)
 		} else {
@@ -1021,6 +1111,7 @@ func (r *DocsHelpcenterRepository) GetPublicArticleBySlug(ctx context.Context, s
 		Select(`
 			d.*,
 			ha.id AS helpcenter_article_id,
+			ha.public_id AS helpcenter_public_id,
 			p.slug AS helpcenter_slug,
 			p.content AS publication_content,
 			p.title AS publication_title,
@@ -1066,6 +1157,7 @@ func (r *DocsHelpcenterRepository) GetPublicArticleByDocumentIDInSpaces(ctx cont
 		Select(`
 			d.*,
 			ha.id AS helpcenter_article_id,
+			ha.public_id AS helpcenter_public_id,
 			p.slug AS helpcenter_slug,
 			p.content AS publication_content,
 			p.title AS publication_title,
@@ -1098,6 +1190,46 @@ func (r *DocsHelpcenterRepository) GetPublicArticleByDocumentIDInSpaces(ctx cont
 	return doc, ha, content, nil
 }
 
+func (r *DocsHelpcenterRepository) GetPublicArticleByPublicID(ctx context.Context, workspaceID, publicID string) (*model.DocsDocument, *model.DocsHelpcenterArticle, *model.DocsContent, error) {
+	var row sourceArticleRow
+	if err := r.db.WithContext(ctx).
+		Table("docs_helpcenter_article_publications p").
+		Select(`
+			d.*,
+			ha.id AS helpcenter_article_id,
+			ha.public_id AS helpcenter_public_id,
+			p.slug AS helpcenter_slug,
+			p.content AS publication_content,
+			p.title AS publication_title,
+			p.excerpt AS publication_excerpt,
+			p.seo_title AS publication_seo_title,
+			p.seo_description AS publication_seo_description,
+			ha.public_published_at,
+			ha.helpful_count,
+			ha.not_helpful_count,
+			ha.view_count
+		`).
+		Joins("JOIN docs_documents d ON d.id = p.document_id").
+		Joins("JOIN docs_helpcenter_articles ha ON ha.document_id = p.document_id").
+		Joins("JOIN docs_helpcenter_configs cfg ON cfg.workspace_id = d.workspace_id").
+		Where(`
+			d.workspace_id = ?
+			AND ha.public_id = ?
+			AND p.locale = cfg.default_locale
+			AND d.status = 'published'
+			AND d.deleted_at IS NULL
+			AND ha.public_published_at IS NOT NULL
+		`, workspaceID, publicID).
+		First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil, nil, nil
+		}
+		return nil, nil, nil, fmt.Errorf("get public article by public id: %w", err)
+	}
+	doc, ha, content := sourceArticleRowToModels(row)
+	return doc, ha, content, nil
+}
+
 // GetPublicArticleByCollectionSlug finds a publicly published article by collection slug and article slug.
 func (r *DocsHelpcenterRepository) GetPublicArticleByCollectionSlug(ctx context.Context, workspaceID, collectionSlug, articleSlug string) (*model.DocsDocument, *model.DocsHelpcenterArticle, *model.DocsContent, error) {
 	var row sourceArticleRow
@@ -1106,6 +1238,7 @@ func (r *DocsHelpcenterRepository) GetPublicArticleByCollectionSlug(ctx context.
 		Select(`
 			d.*,
 			ha.id AS helpcenter_article_id,
+			ha.public_id AS helpcenter_public_id,
 			p.slug AS helpcenter_slug,
 			p.content AS publication_content,
 			p.title AS publication_title,
@@ -1146,13 +1279,14 @@ func (r *DocsHelpcenterRepository) GetPublicCollectionBySlug(ctx context.Context
 	}
 
 	type navArticleRow struct {
-		ID    string `gorm:"column:id"`
-		Title string `gorm:"column:title"`
-		Slug  string `gorm:"column:slug"`
+		ID       string `gorm:"column:id"`
+		Title    string `gorm:"column:title"`
+		Slug     string `gorm:"column:slug"`
+		PublicID string `gorm:"column:public_id"`
 	}
 	var rows []navArticleRow
 	if err := r.db.WithContext(ctx).Raw(`
-		SELECT d.id, p.title, p.slug
+		SELECT d.id, p.title, p.slug, ha.public_id
 		FROM docs_documents d
 		JOIN docs_helpcenter_articles ha ON ha.document_id = d.id
 		JOIN docs_helpcenter_article_publications p ON p.document_id = d.id
@@ -1170,7 +1304,12 @@ func (r *DocsHelpcenterRepository) GetPublicCollectionBySlug(ctx context.Context
 
 	articles := make([]model.PublicNavArticle, len(rows))
 	for i, row := range rows {
-		articles[i] = model.PublicNavArticle{ID: row.ID, Title: row.Title, Slug: row.Slug}
+		articles[i] = model.PublicNavArticle{
+			ID:       row.ID,
+			Title:    row.Title,
+			Slug:     row.Slug,
+			PublicID: row.PublicID,
+		}
 	}
 
 	return &coll, articles, nil

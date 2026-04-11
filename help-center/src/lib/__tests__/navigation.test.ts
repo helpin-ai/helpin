@@ -13,7 +13,7 @@ function makeNavItem(
   depth: number,
   name = id,
   slug = id,
-  articles: { id: string; title: string; slug: string }[] = [],
+  articles: { id: string; title: string; slug: string; public_id: string }[] = [],
 ): NavItem {
   return {
     id,
@@ -89,26 +89,26 @@ describe('navAncestorChain', () => {
 describe('getArticlePager', () => {
   const items = [
     makeNavItem('root', null, 0, 'Root', 'root', [
-      { id: 'r1', title: 'R1', slug: 'r1' },
-      { id: 'r2', title: 'R2', slug: 'r2' },
+      { id: 'r1', title: 'R1', slug: 'r1', public_id: 'aaa111aa' },
+      { id: 'r2', title: 'R2', slug: 'r2', public_id: 'bbb222bb' },
     ]),
     makeNavItem('child', 'root', 1, 'Child', 'child', [
-      { id: 'c1', title: 'C1', slug: 'c1' },
+      { id: 'c1', title: 'C1', slug: 'c1', public_id: 'ccc333cc' },
     ]),
   ]
 
   it('advances from a parent-level article into the first child-level article', () => {
-    const pager = getArticlePager(items, 'r2')
+    const pager = getArticlePager(items, 'bbb222bb')
     expect(pager.next?.slug).toBe('c1')
     expect(pager.prev?.slug).toBe('r1')
   })
 
   it('returns undefined ends at the first and last article', () => {
-    const first = getArticlePager(items, 'r1')
+    const first = getArticlePager(items, 'aaa111aa')
     expect(first.prev).toBeUndefined()
     expect(first.next?.slug).toBe('r2')
 
-    const last = getArticlePager(items, 'c1')
+    const last = getArticlePager(items, 'ccc333cc')
     expect(last.prev?.slug).toBe('r2')
     expect(last.next).toBeUndefined()
   })

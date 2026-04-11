@@ -30,16 +30,14 @@ export async function prefetchHomeRouteData(
 export async function prefetchArticleRouteData(
   queryClient: QueryClient,
   rootData: RootRouteData,
-  collectionSlug: string,
-  articleSlug: string,
+  articleKey: string,
 ) {
   const article = await queryClient
     .fetchQuery(
       articleQueryOptions(
         rootData.subdomain,
         rootData.activeLocale,
-        collectionSlug,
-        articleSlug,
+        articleKey,
         rootData.multilingualEnabled,
       ),
     )

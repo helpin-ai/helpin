@@ -5,6 +5,10 @@ import { fileURLToPath } from 'node:url'
 import { Readable } from 'node:stream'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import serverEntry from './dist/server/server.js'
+import {
+  resolvePublicRedirect,
+  shouldAttemptRedirectResolution,
+} from './serverRedirects.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const CLIENT_DIR = path.join(__dirname, 'dist', 'client')
@@ -57,8 +61,13 @@ const HTML_CACHE_MAX_ENTRIES = Number.parseInt(
   process.env.HTML_CACHE_MAX_ENTRIES || '500',
   10,
 )
+const REDIRECT_CACHE_TTL_MS = Number.parseInt(
+  process.env.REDIRECT_CACHE_TTL_MS || '300000',
+  10,
+)
 
 const htmlCache = new Map()
+const redirectCache = new Map()
 
 function normalizeHeaderValue(value) {
   return Array.isArray(value) ? value.join(', ') : value ?? ''
@@ -123,6 +132,41 @@ function setCachedResponse(key, response) {
       break
     }
     htmlCache.delete(oldestKey)
+  }
+}
+
+function getRedirectCacheKey(hcContext, url) {
+  return `${hcContext.host}:${url.pathname}${url.search}`
+}
+
+function getCachedRedirect(key) {
+  const cached = redirectCache.get(key)
+  if (!cached) {
+    return { hit: false, redirect: null }
+  }
+
+  if (cached.expiresAt <= Date.now()) {
+    redirectCache.delete(key)
+    return { hit: false, redirect: null }
+  }
+
+  redirectCache.delete(key)
+  redirectCache.set(key, cached)
+  return { hit: true, redirect: cached.redirect }
+}
+
+function setCachedRedirect(key, redirect) {
+  redirectCache.set(key, {
+    redirect,
+    expiresAt: Date.now() + REDIRECT_CACHE_TTL_MS,
+  })
+
+  while (redirectCache.size > HTML_CACHE_MAX_ENTRIES) {
+    const oldestKey = redirectCache.keys().next().value
+    if (!oldestKey) {
+      break
+    }
+    redirectCache.delete(oldestKey)
   }
 }
 
@@ -255,12 +299,13 @@ function resolveHostedSubdomain(host) {
  * Mirrors `resolveHelpCenterContext` in src/lib/utils.ts but adapted for the
  * Node entrypoint. Keep these in sync.
  */
-function resolveHelpCenterContext(host, pathname) {
+function resolveHelpCenterContext(host, pathname, search = '') {
   const hostname = normalizeHostname(host)
+  const overrideParam = new URLSearchParams(search).get('subdomain')
 
   const hostedSubdomain = resolveHostedSubdomain(hostname)
   if (hostedSubdomain) {
-    return { subdomain: hostedSubdomain, basepath: '' }
+    return { subdomain: overrideParam || hostedSubdomain, basepath: '' }
   }
 
   if (
@@ -268,11 +313,14 @@ function resolveHelpCenterContext(host, pathname) {
     hostname === '127.0.0.1' ||
     /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)
   ) {
-    return { subdomain: process.env.VITE_HC_SUBDOMAIN || 'demo', basepath: '' }
+    return {
+      subdomain: overrideParam || process.env.VITE_HC_SUBDOMAIN || 'demo',
+      basepath: '',
+    }
   }
 
   // Custom domain — pass hostname through; backend resolves it.
-  return { subdomain: hostname, basepath: '' }
+  return { subdomain: overrideParam || hostname, basepath: '' }
 }
 
 const requestContextStorage = new AsyncLocalStorage()
@@ -404,6 +452,49 @@ function prefixAssetUrls(html, basepath) {
   return html.replaceAll(/([("'=])\/assets\//g, `$1${basepath}/assets/`)
 }
 
+async function maybeResolvePublicRedirect(request, routeUrl, hcContext) {
+  if (!shouldAttemptRedirectResolution(request.method, routeUrl.pathname)) {
+    return null
+  }
+
+  const apiBase = process.env.INTERNAL_API_URL
+  if (!apiBase || !hcContext.subdomain) {
+    return null
+  }
+
+  const cacheKey = getRedirectCacheKey(hcContext, routeUrl)
+  const cached = getCachedRedirect(cacheKey)
+  if (cached.hit) {
+    return cached.redirect
+  }
+
+  try {
+    const redirect = await resolvePublicRedirect({
+      apiBase,
+      subdomain: hcContext.subdomain,
+      pathname: routeUrl.pathname,
+      basepath: hcContext.basepath,
+      search: routeUrl.search,
+    })
+    setCachedRedirect(cacheKey, redirect)
+    return redirect
+  } catch (error) {
+    console.error('help-center redirect resolution failed', {
+      path: routeUrl.pathname,
+      host: hcContext.host,
+      error,
+    })
+    return null
+  }
+}
+
+function toAbsoluteLocation(origin, location) {
+  if (/^[a-z]+:/i.test(location) || location.startsWith('//')) {
+    return location
+  }
+  return `${origin}${location}`
+}
+
 async function handleRequest(request, response) {
   if (request.url === '/healthz') {
     response.statusCode = 200
@@ -415,12 +506,13 @@ async function handleRequest(request, response) {
 
   const { host, protocol, origin } = resolveHostInfo(request)
   const url = new URL(request.url || '/', `${protocol}://${host}`)
-  const resolved = resolveHelpCenterContext(host, url.pathname)
+  const resolved = resolveHelpCenterContext(host, url.pathname, url.search)
   const hcContext = {
     host: normalizeHostname(host),
     protocol,
     origin,
     pathname: url.pathname,
+    search: url.search,
     subdomain: resolved.subdomain,
     basepath: resolved.basepath,
   }
@@ -445,6 +537,15 @@ async function handleRequest(request, response) {
 
     if (isApiRequest(routeUrl)) {
       await proxyApiRequest(request, response, routeUrl)
+      return
+    }
+
+    const redirect = await maybeResolvePublicRedirect(request, routeUrl, hcContext)
+    if (redirect) {
+      response.statusCode = redirect.status
+      response.setHeader('Cache-Control', 'public, max-age=300')
+      response.setHeader('Location', toAbsoluteLocation(hcContext.origin, redirect.location))
+      response.end()
       return
     }
 

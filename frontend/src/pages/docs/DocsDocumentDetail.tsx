@@ -94,6 +94,7 @@ import { ConfirmDialog } from '@/components/pm/ConfirmDialog'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DOC_STATUS_LABELS, getHelpcenterLocaleLabel } from '@/lib/docsTypes'
 import { suggestDocsSlug } from '@/lib/docsSlugs'
+import { buildHelpcenterPreviewUrlFromEnv } from '@/lib/helpcenterPreview'
 import { docsService } from '@/lib/services/docsService'
 import { queryKeys } from '@/lib/queryKeys'
 import type { DocsVersion, DocsHelpcenterTranslationState } from '@/lib/docsTypes'
@@ -110,89 +111,6 @@ function docStatusColor(status: string): string {
     default:
       return 'text-amber-600 dark:text-amber-400'
   }
-}
-
-interface HelpcenterPreviewBase {
-  hostRoot: string
-  /**
-   * When true, previews are served from the hosted subdomain runtime
-   * (https://{slug}.helpin.center/preview/...). When false, the slug goes in
-   * the `subdomain` query param (legacy/local dev fallback).
-   */
-  hostedSubdomain: boolean
-}
-
-function normalizeExplicitHelpcenterPreviewBase(
-  explicit: string,
-): HelpcenterPreviewBase | null {
-  try {
-    const url = new URL(explicit)
-
-    if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
-      return { hostRoot: url.origin, hostedSubdomain: false }
-    }
-
-    if (url.hostname === 'helpcenter.helpin.ai') {
-      return { hostRoot: 'helpin.center', hostedSubdomain: true }
-    }
-
-    if (url.hostname === 'helpcenter-stage.helpin.ai') {
-      return { hostRoot: 'stage.helpin.center', hostedSubdomain: true }
-    }
-
-    if (url.hostname === 'helpin.center' || url.hostname === 'stage.helpin.center') {
-      return { hostRoot: url.hostname, hostedSubdomain: true }
-    }
-
-    return { hostRoot: url.origin, hostedSubdomain: false }
-  } catch {
-    return null
-  }
-}
-
-function resolveHelpcenterPreviewBase(): HelpcenterPreviewBase {
-  const explicit = import.meta.env.VITE_HELPCENTER_URL?.trim()
-  if (explicit) {
-    const normalized = normalizeExplicitHelpcenterPreviewBase(explicit)
-    if (normalized) {
-      return normalized
-    }
-  }
-
-  const appBase = import.meta.env.VITE_APP_BASE_URL?.trim()
-  const fallbackOrigin = typeof window !== 'undefined' ? window.location.origin : ''
-  const candidate = appBase || fallbackOrigin
-
-  if (candidate) {
-    try {
-      const url = new URL(candidate)
-      if (url.hostname === 'app.helpin.ai') {
-        return { hostRoot: 'helpin.center', hostedSubdomain: true }
-      }
-      if (url.hostname === 'client.stage.helpin.ai' || url.hostname === 'stage.helpin.ai') {
-        return { hostRoot: 'stage.helpin.center', hostedSubdomain: true }
-      }
-      if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
-        return { hostRoot: 'http://localhost:5174', hostedSubdomain: false }
-      }
-    } catch {
-      // Fall through to the local dev default below.
-    }
-  }
-
-  return { hostRoot: 'http://localhost:5174', hostedSubdomain: false }
-}
-
-function buildHelpcenterPreviewUrl(
-  subdomain: string,
-  docId: string,
-  token: string,
-): string {
-  const { hostRoot, hostedSubdomain } = resolveHelpcenterPreviewBase()
-  if (hostedSubdomain) {
-    return `https://${subdomain}.${hostRoot}/preview/${docId}?token=${token}`
-  }
-  return `${hostRoot}/preview/${docId}?subdomain=${subdomain}&token=${token}`
 }
 
 function DocCollectionIcon({ name }: { name?: string | null }) {
@@ -949,9 +867,13 @@ export function DocsDocumentDetail() {
                   toast.error(res.error || 'Failed to generate preview')
                   return
                 }
-                const { token, subdomain } = res.data
+                const { token, subdomain, custom_domain } = res.data
                 window.open(
-                  buildHelpcenterPreviewUrl(subdomain, docId, token),
+                  buildHelpcenterPreviewUrlFromEnv(
+                    { subdomain, customDomain: custom_domain },
+                    docId,
+                    token,
+                  ),
                   '_blank',
                   'noopener',
                 )

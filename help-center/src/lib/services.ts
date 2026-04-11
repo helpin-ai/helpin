@@ -64,7 +64,7 @@ export const helpCenterService = {
         subdomain,
         locale,
         multilingualEnabled,
-        `/collections/${collectionSlug}`,
+        `/c/${collectionSlug}`,
         `/c/${collectionSlug}`,
       ),
     ),
@@ -72,8 +72,7 @@ export const helpCenterService = {
   getArticle: (
     subdomain: string,
     locale: string,
-    collectionSlug: string,
-    articleSlug: string,
+    articleKey: string,
     multilingualEnabled: boolean,
   ) =>
     api.get<ArticleDetail>(
@@ -81,8 +80,8 @@ export const helpCenterService = {
         subdomain,
         locale,
         multilingualEnabled,
-        `/collections/${collectionSlug}/articles/${articleSlug}`,
-        `/c/${collectionSlug}/${articleSlug}`,
+        `/articles/${articleKey}`,
+        `/articles/${articleKey}`,
       ),
     ),
 
@@ -106,9 +105,7 @@ export const helpCenterService = {
   submitFeedback: (
     subdomain: string,
     locale: string,
-    spaceSlug: string,
-    collectionSlug: string,
-    articleSlug: string,
+    articleKey: string,
     multilingualEnabled: boolean,
     payload: { is_helpful: boolean; comment?: string },
   ) =>
@@ -117,8 +114,8 @@ export const helpCenterService = {
         subdomain,
         locale,
         multilingualEnabled,
-        `/collections/${collectionSlug}/articles/${articleSlug}/feedback`,
-        `/spaces/${spaceSlug}/articles/${articleSlug}/feedback`,
+        `/articles/${articleKey}/feedback`,
+        `/articles/${articleKey}/feedback`,
       ),
       payload,
     ),

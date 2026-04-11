@@ -1107,6 +1107,11 @@ func (s *SupportInboxService) buildWidgetHelpArticlePublicPath(ctx context.Conte
 	}
 
 	articleSlug := strings.TrimSpace(article.Slug)
+	publicID := strings.TrimSpace(article.PublicID)
+	if publicID == "" {
+		return nil, nil
+	}
+	articleKey := buildDocsHelpcenterArticleKey(articleSlug, publicID)
 
 	// Only build a public URL when the workspace has a custom domain configured.
 	// Without a custom domain the help center may not be publicly reachable,
@@ -1121,19 +1126,7 @@ func (s *SupportInboxService) buildWidgetHelpArticlePublicPath(ctx context.Conte
 	}
 	baseURL := strings.TrimRight(domain, "/")
 
-	if doc.CollectionID != nil && strings.TrimSpace(*doc.CollectionID) != "" && s.docsCollectionRepo != nil {
-		collection, err := s.docsCollectionRepo.GetByID(ctx, strings.TrimSpace(*doc.CollectionID))
-		if err != nil {
-			return nil, fmt.Errorf("get docs collection: %w", err)
-		}
-		if collection != nil && strings.TrimSpace(collection.Slug) != "" {
-			path := fmt.Sprintf("%s/%s/%s", baseURL, strings.TrimSpace(collection.Slug), articleSlug)
-			return &path, nil
-		}
-	}
-
-	// Fallback: article without collection.
-	path := fmt.Sprintf("%s/%s", baseURL, articleSlug)
+	path := fmt.Sprintf("%s/articles/%s", baseURL, articleKey)
 	return &path, nil
 }
 

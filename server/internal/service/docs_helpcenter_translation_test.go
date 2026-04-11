@@ -145,6 +145,7 @@ func setupDocsHelpcenterTranslationServiceTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE docs_helpcenter_articles (
 			id TEXT PRIMARY KEY,
 			document_id TEXT NOT NULL UNIQUE,
+			public_id TEXT NOT NULL DEFAULT '',
 			slug TEXT NOT NULL DEFAULT '',
 			seo_title TEXT,
 			seo_description TEXT,
@@ -1378,6 +1379,7 @@ func TestDocsHelpcenterPublicLocale_GetArticleFallsBackToDefaultLocale(t *testin
 		ID:                "article-hc-public-article",
 		DocumentID:        documentID,
 		Slug:              "start-here",
+		PublicID:          "abc123ef",
 		PublicPublishedAt: &now,
 		CreatedAt:         now,
 		UpdatedAt:         now,
@@ -1488,6 +1490,36 @@ func TestDocsHelpcenterPublicLocale_GetArticleFallsBackToDefaultLocale(t *testin
 	}
 	if article.Title != "Start Here" || article.Slug != "start-here" {
 		t.Fatalf("article = %+v, want default-locale fallback article", article)
+	}
+	if article.PublicID != "abc123ef" {
+		t.Fatalf("article.PublicID = %q, want abc123ef", article.PublicID)
+	}
+
+	canonicalArticle, err := svc.GetPublicArticleByLocalizedCanonicalKey(
+		ctx,
+		workspaceID,
+		"fr",
+		"start-here-abc123ef",
+	)
+	if err != nil {
+		t.Fatalf("GetPublicArticleByLocalizedCanonicalKey: %v", err)
+	}
+	if canonicalArticle == nil {
+		t.Fatal("canonicalArticle = nil, want fallback article")
+	}
+	if canonicalArticle.Slug != "start-here" || canonicalArticle.PublicID != "abc123ef" {
+		t.Fatalf("canonicalArticle = %+v, want canonical article key lookup", canonicalArticle)
+	}
+	if canonicalArticle.Locale != "en" || !canonicalArticle.IsFallback {
+		t.Fatalf("canonicalArticle locale fallback = (%q, %v), want (en, true)", canonicalArticle.Locale, canonicalArticle.IsFallback)
+	}
+
+	resolvedPath, err := svc.ResolvePublicPath(ctx, workspaceID, "/fr/bases/start-here")
+	if err != nil {
+		t.Fatalf("ResolvePublicPath: %v", err)
+	}
+	if resolvedPath != "/en/articles/start-here-abc123ef" {
+		t.Fatalf("resolvedPath = %q, want /en/articles/start-here-abc123ef", resolvedPath)
 	}
 }
 
