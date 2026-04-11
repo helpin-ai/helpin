@@ -332,6 +332,7 @@ func seedDocsHelpcenterTranslationHandlerFixture(t *testing.T, db *gorm.DB, now 
 			ID:                "article-handler-i18n",
 			DocumentID:        documentID,
 			Slug:              "start-here",
+			PublicID:          "handler123",
 			PublicPublishedAt: &now,
 			CreatedAt:         now,
 			UpdatedAt:         now,

@@ -1306,6 +1306,7 @@ func (s *DocsHelpcenterService) GetSpaceNavigation(ctx context.Context, workspac
 	if err != nil {
 		return nil, err
 	}
+	publicIDs := s.loadHelpcenterPublicIDs(ctx, docs)
 
 	articlesByCollection := map[string][]model.PublicNavArticle{}
 	uncategorized := make([]model.PublicNavArticle, 0)
@@ -1322,6 +1323,7 @@ func (s *DocsHelpcenterService) GetSpaceNavigation(ctx context.Context, workspac
 			ID:          doc.ID,
 			Title:       translation.Title,
 			Slug:        stringValue(translation.Slug),
+			PublicID:    publicIDs[doc.ID],
 			PublishedAt: formatPublicPublishedAt(translation.PublishedAt),
 		}
 		if doc.CollectionID == nil {
