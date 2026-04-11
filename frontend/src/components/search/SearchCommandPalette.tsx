@@ -28,6 +28,7 @@ import {
   type SearchResponse,
   type SearchResult,
 } from '@/lib/services/searchService';
+import { buildTaskCommandValue } from '@/components/search/searchCommandPalette';
 
 const EMPTY: SearchResponse = {
   tasks: [],
@@ -205,7 +206,7 @@ export function SearchCommandPalette({
             {taskResults.map((item) => (
               <CommandItem
                 key={item.id}
-                value={`task-${item.id}-${item.name}`}
+                value={buildTaskCommandValue(item)}
                 onSelect={() => handleSelect('task', item)}
                 className="cursor-pointer"
               >
