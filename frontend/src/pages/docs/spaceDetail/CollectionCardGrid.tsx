@@ -37,7 +37,7 @@ export function CollectionCardGrid({
       <h2 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
         {title}
       </h2>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <div className="grid gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]">
         {nodes.map((node) => (
           <CollectionCard
             key={node.collection.id}

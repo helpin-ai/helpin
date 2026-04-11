@@ -27,7 +27,7 @@ export function SpaceBreadcrumb({ items }: SpaceBreadcrumbProps) {
   return (
     <nav
       aria-label="Breadcrumb"
-      className="flex items-center gap-1 text-xs text-muted-foreground"
+      className="flex items-center gap-1 text-sm text-muted-foreground"
     >
       {items.map((item, index) => {
         const isLast = index === items.length - 1

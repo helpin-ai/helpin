@@ -49,30 +49,37 @@ export function CollectionCard({
       ? `Open ${collection.name}, ${docLabel}, ${subLabel}`
       : `Open ${collection.name}, ${docLabel}`
 
+  // Cards with zero docs dim slightly so non-empty areas are easier
+  // to spot in a dense grid. Hover + focus reset the opacity so the
+  // card still feels interactive.
+  const isEmpty = docCount === 0 && subCount === 0
+
   return (
     <div className="group/card relative">
       <button
         type="button"
         onClick={onOpen}
         aria-label={ariaLabel}
-        className="flex w-full items-start gap-3 rounded-lg border border-border/60 bg-card p-4 text-left transition-colors hover:border-border hover:bg-muted/40"
+        className={`flex w-full items-start gap-2.5 rounded-lg border border-border/60 bg-card p-3 text-left transition-all hover:border-border hover:bg-muted/40 hover:opacity-100 focus-visible:opacity-100 ${
+          isEmpty ? 'opacity-70' : ''
+        }`}
       >
         <StoredIcon
           name={collection.icon}
-          className="h-5 w-5 shrink-0 text-muted-foreground"
-          textClassName="text-lg"
-          fallback={<FolderOpenIcon className="h-5 w-5 shrink-0 text-muted-foreground" />}
+          className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
+          textClassName="text-base"
+          fallback={<FolderOpenIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />}
         />
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium">{collection.name}</div>
+          <div className="line-clamp-2 text-sm font-medium leading-snug">{collection.name}</div>
           {collection.description && (
-            <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+            <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
               {collection.description}
             </p>
           )}
-          <div className="mt-2 flex gap-3 text-[11px] text-muted-foreground/80">
-            <span>{docLabel}</span>
-            {subCount > 0 && <span>{subLabel}</span>}
+          <div className="mt-1.5 flex gap-2 text-[11px] text-muted-foreground/80">
+            <span>{isEmpty ? 'Empty' : docLabel}</span>
+            {subCount > 0 && <span>· {subLabel}</span>}
           </div>
         </div>
       </button>
