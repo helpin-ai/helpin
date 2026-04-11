@@ -942,6 +942,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/collections/{collectionId}/helpcenter/translations/{locale}/unpublish", h.Docs.UnpublishCollectionTranslation)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/collections/{collectionId}/helpcenter/translations/{locale}/mark-reviewed", h.Docs.MarkCollectionTranslationReviewed)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/collections/{collectionId}/helpcenter/translations/{locale}/generate", h.Docs.GenerateCollectionTranslation)
+				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/helpcenter/translations/auto-translate-missing", h.Docs.AutoTranslateMissing)
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/helpcenter/translations", h.Docs.ListArticleTranslations)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Put("/documents/{docId}/helpcenter/translations", h.Docs.UpsertArticleTranslation)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/documents/{docId}/helpcenter/translations/{locale}/generate", h.Docs.GenerateArticleTranslationDraft)
