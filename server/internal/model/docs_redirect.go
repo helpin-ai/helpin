@@ -2,10 +2,17 @@ package model
 
 import "time"
 
+// DocsRedirect type values. Manual, imported, and legacy slug_change types
+// are retained for backwards compatibility with existing rows. New
+// automatic redirects emitted by the tree-aware collection rollout use
+// the auto_* variants so callers can distinguish them in filters and
+// admin UIs.
 const (
-	RedirectTypeImported   = "imported"
-	RedirectTypeSlugChange = "slug_change"
-	RedirectTypeManual     = "manual"
+	RedirectTypeImported             = "imported"
+	RedirectTypeSlugChange           = "slug_change" // legacy article slug change — kept for historical rows
+	RedirectTypeManual               = "manual"
+	RedirectTypeAutoArticleMove      = "auto_article_move"
+	RedirectTypeAutoCollectionRename = "auto_collection_rename"
 )
 
 // DocsRedirect stores URL redirect rules for the public help center.
@@ -15,6 +22,7 @@ type DocsRedirect struct {
 	SourcePath           string    `json:"source_path" gorm:"not null;uniqueIndex:idx_docs_redirects_ws_source,priority:2"`
 	TargetCollectionSlug string    `json:"target_collection_slug" gorm:"not null"`
 	TargetArticleSlug    *string   `json:"target_article_slug"`
+	TargetPath           *string   `json:"target_path,omitempty" gorm:"-"`
 	Type                 string    `json:"type" gorm:"not null;default:'manual'"`
 	SourceSystem         *string   `json:"source_system"`
 	SourceObjectType     *string   `json:"source_object_type"`

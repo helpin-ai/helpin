@@ -8,6 +8,7 @@ export interface DocsRedirect {
   source_path: string;
   target_collection_slug: string;
   target_article_slug?: string;
+  target_path?: string;
   type: 'imported' | 'slug_change' | 'manual';
   source_system?: string;
   source_object_type?: string;

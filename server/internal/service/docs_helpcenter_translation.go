@@ -1403,6 +1403,74 @@ func (s *DocsHelpcenterTranslationService) localizedCollectionSlugForArticlePath
 	return strings.TrimSpace(collection.Slug), nil
 }
 
+// GetLocalizedCollectionBreadcrumb returns the ancestor chain of a
+// collection as localized breadcrumb entries ordered from the topmost
+// ancestor down to the collection itself (inclusive). Each entry uses
+// the requested locale's translated name and slug when available,
+// falling back to the canonical source row otherwise.
+//
+// This is the public helper the help-center and widget routes call to
+// render "Root > Parent > Current" paths without touching the repo
+// directly.
+func (s *DocsHelpcenterTranslationService) GetLocalizedCollectionBreadcrumb(ctx context.Context, collectionID, locale string) ([]model.PublicNavBreadcrumbEntry, error) {
+	if collectionID == "" {
+		return nil, nil
+	}
+
+	collection, err := s.collectionRepo.GetByID(ctx, collectionID)
+	if err != nil {
+		return nil, err
+	}
+	if collection == nil {
+		return nil, nil
+	}
+
+	ancestors, err := s.collectionRepo.ListAncestors(ctx, collectionID)
+	if err != nil {
+		return nil, err
+	}
+
+	// ListAncestors returns the chain from nearest parent to root. Reverse
+	// it so the breadcrumb reads top-down, then append the collection
+	// itself as the final entry.
+	chain := make([]model.DocsCollection, 0, len(ancestors)+1)
+	for i := len(ancestors) - 1; i >= 0; i-- {
+		chain = append(chain, ancestors[i])
+	}
+	chain = append(chain, *collection)
+
+	result := make([]model.PublicNavBreadcrumbEntry, 0, len(chain))
+	for i := range chain {
+		c := chain[i]
+		entry := model.PublicNavBreadcrumbEntry{
+			ID:   c.ID,
+			Name: c.Name,
+			Slug: c.Slug,
+		}
+		if locale != "" {
+			translation, err := s.translationRepo.GetCollectionTranslation(ctx, c.ID, locale)
+			if err != nil {
+				return nil, err
+			}
+			if translation != nil {
+				if name := strings.TrimSpace(translation.Name); name != "" {
+					entry.Name = name
+				}
+				if translation.Slug != nil {
+					if slug := strings.TrimSpace(*translation.Slug); slug != "" {
+						entry.Slug = slug
+					}
+				}
+			}
+		}
+		if entry.Slug == "" {
+			entry.Slug = c.ID
+		}
+		result = append(result, entry)
+	}
+	return result, nil
+}
+
 func (s *DocsHelpcenterTranslationService) ResolveArticleTranslation(ctx context.Context, documentID, requestedLocale string) (*model.DocsHelpcenterArticleTranslation, string, bool, error) {
 	doc, err := s.docRepo.GetByID(ctx, documentID)
 	if err != nil {

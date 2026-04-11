@@ -2,7 +2,10 @@ import { useState, useCallback } from 'react'
 import { Search, Menu, ArrowRight } from 'lucide-react'
 import { useDocsContext } from '@/contexts/DocsContext'
 import { useSpaceNavigation } from '@/hooks/queries'
-import { buildCanonicalCollectionPath } from '@/lib/locale'
+import {
+  buildCanonicalCollectionPath,
+  buildCanonicalSpacePath,
+} from '@/lib/locale'
 import { DocsLink } from '@/components/DocsLink'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { MobileNav } from '@/components/navigation/MobileNav'
@@ -171,7 +174,7 @@ function FeaturedCard({
   if (card.link_type === 'space') {
     return (
       <DocsLink
-        to={buildCanonicalCollectionPath(
+        to={buildCanonicalSpacePath(
           multilingualEnabled,
           locale,
           card.link_value,
@@ -201,7 +204,7 @@ function FeaturedCard({
   const spaceSlug = card.space_slug || card.link_value
   return (
     <DocsLink
-      to={buildCanonicalCollectionPath(
+      to={buildCanonicalSpacePath(
         multilingualEnabled,
         locale,
         spaceSlug,

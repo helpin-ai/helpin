@@ -21,9 +21,9 @@ describe('locale helpers', () => {
 
   it('builds canonical paths for non-multilingual mode without locale prefixes', () => {
     expect(buildCanonicalHomePath(false, 'en')).toBe('/')
-    expect(buildCanonicalCollectionPath(false, 'en', 'bases')).toBe('/bases')
-    expect(buildCanonicalArticlePath(false, 'en', 'bases', 'bonjour-fr')).toBe(
-      '/bases/bonjour-fr',
+    expect(buildCanonicalCollectionPath(false, 'en', 'bases')).toBe('/c/bases')
+    expect(buildCanonicalArticlePath(false, 'en', 'bonjour-fr', 'abc123ef')).toBe(
+      '/articles/bonjour-fr-abc123ef',
     )
     expect(buildCanonicalSearchPath(false, 'en', 'billing', 'facturation')).toBe(
       '/search?q=billing&space=facturation',
@@ -32,9 +32,9 @@ describe('locale helpers', () => {
 
   it('builds canonical paths for multilingual mode with locale prefixes', () => {
     expect(buildCanonicalHomePath(true, 'en')).toBe('/en')
-    expect(buildCanonicalCollectionPath(true, 'en', 'bases')).toBe('/en/bases')
-    expect(buildCanonicalArticlePath(true, 'en', 'bases', 'bonjour-fr')).toBe(
-      '/en/bases/bonjour-fr',
+    expect(buildCanonicalCollectionPath(true, 'en', 'bases')).toBe('/en/c/bases')
+    expect(buildCanonicalArticlePath(true, 'en', 'bonjour-fr', 'abc123ef')).toBe(
+      '/en/articles/bonjour-fr-abc123ef',
     )
     expect(buildCanonicalSearchPath(true, 'en', 'billing', 'facturation')).toBe(
       '/en/search?q=billing&space=facturation',
@@ -42,12 +42,10 @@ describe('locale helpers', () => {
   })
 
   it('builds locale-aware article and collection paths', () => {
-    expect(buildLocaleCollectionPath('fr', 'bases')).toBe(
-      '/fr/bases',
+    expect(buildLocaleCollectionPath('fr', 'bases')).toBe('/fr/c/bases')
+    expect(buildLocaleArticlePath('fr', 'bonjour-fr', 'abc123ef')).toBe(
+      '/fr/articles/bonjour-fr-abc123ef',
     )
-    expect(
-      buildLocaleArticlePath('fr', 'bases', 'bonjour-fr'),
-    ).toBe('/fr/bases/bonjour-fr')
   })
 
   it('falls back to default locale path when translation is missing', () => {
@@ -70,12 +68,21 @@ describe('locale helpers', () => {
           name: 'Basics',
           slug: 'basics',
           icon: null,
-          articles: [{ id: 'article-1', title: 'Start Here', slug: 'start-here' }],
+          parent_collection_id: null,
+          depth: 0,
+          articles: [
+            {
+              id: 'article-1',
+              title: 'Start Here',
+              slug: 'start-here',
+              public_id: 'abc123ef',
+            },
+          ],
         },
       ],
     })
 
-    expect(path).toBe('/en/basics/start-here')
+    expect(path).toBe('/en/articles/start-here-abc123ef')
   })
 
   it('preserves the scoped search space when switching locales', () => {
@@ -137,7 +144,16 @@ describe('locale helpers', () => {
           name: 'Bases',
           slug: 'bases',
           icon: null,
-          articles: [{ id: 'article-1', title: 'Bonjour', slug: 'bonjour-fr' }],
+          parent_collection_id: null,
+          depth: 0,
+          articles: [
+            {
+              id: 'article-1',
+              title: 'Bonjour',
+              slug: 'bonjour-fr',
+              public_id: 'abc123ef',
+            },
+          ],
         },
       ],
       fallbackSpaces: [
@@ -155,12 +171,21 @@ describe('locale helpers', () => {
           name: 'Basics',
           slug: 'basics',
           icon: null,
-          articles: [{ id: 'article-1', title: 'Start Here', slug: 'start-here' }],
+          parent_collection_id: null,
+          depth: 0,
+          articles: [
+            {
+              id: 'article-1',
+              title: 'Start Here',
+              slug: 'start-here',
+              public_id: 'def456ab',
+            },
+          ],
         },
       ],
     })
 
-    expect(path).toBe('/bases/bonjour-fr')
+    expect(path).toBe('/articles/bonjour-fr-abc123ef')
   })
 
   it('returns an exact locale path only when the translated entity exists', () => {
@@ -188,12 +213,21 @@ describe('locale helpers', () => {
           name: 'Bases',
           slug: 'bases',
           icon: null,
-          articles: [{ id: 'article-1', title: 'Bonjour', slug: 'bonjour-fr' }],
+          parent_collection_id: null,
+          depth: 0,
+          articles: [
+            {
+              id: 'article-1',
+              title: 'Bonjour',
+              slug: 'bonjour-fr',
+              public_id: 'abc123ef',
+            },
+          ],
         },
       ],
     })
 
-    expect(path).toBe('/fr/bases/bonjour-fr')
+    expect(path).toBe('/fr/articles/bonjour-fr-abc123ef')
   })
 
   it('returns null for exact locale paths when the translation does not exist', () => {

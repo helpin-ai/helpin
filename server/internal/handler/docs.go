@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -16,6 +17,32 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
+
+// writeDocsError maps service-layer sentinel errors from the docs module
+// to precise HTTP status codes and user-safe messages. Unrecognised errors
+// fall through to 500 with a generic message so raw internal errors never
+// leak to the wire.
+func writeDocsError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, service.ErrDocsCollectionNotFound),
+		errors.Is(err, service.ErrDocsSpaceNotFound):
+		writeError(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, service.ErrDocsCollectionNameRequired),
+		errors.Is(err, service.ErrDocsCollectionParentNotFound),
+		errors.Is(err, service.ErrDocsCollectionParentDifferentSpace),
+		errors.Is(err, service.ErrDocsCollectionSelfParent),
+		errors.Is(err, service.ErrDocsCollectionCycle),
+		errors.Is(err, service.ErrDocsCollectionDepthExceeded):
+		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, service.ErrDocsCollectionSlugTaken):
+		writeError(w, http.StatusConflict, err.Error())
+	case errors.Is(err, service.ErrDocsCrossWorkspace):
+		writeError(w, http.StatusForbidden, err.Error())
+	default:
+		slog.Error("unexpected docs error", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal server error")
+	}
+}
 
 // DocsHandler handles HTTP requests for the Docs module.
 type DocsHandler struct {
@@ -74,7 +101,7 @@ func (h *DocsHandler) ListSpaces(w http.ResponseWriter, r *http.Request) {
 	actor := authorization.GetActor(r.Context())
 	spaces, err := h.spaceSvc.List(r.Context(), wsID, actor)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeError(w, http.StatusNotFound, "article not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, spaces)
@@ -174,7 +201,7 @@ func (h *DocsHandler) CreateCollection(w http.ResponseWriter, r *http.Request) {
 	}
 	coll, err := h.collectionSvc.Create(r.Context(), wsID, spaceID, req, userID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeDocsError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, coll)
@@ -188,7 +215,7 @@ func (h *DocsHandler) UpdateCollection(w http.ResponseWriter, r *http.Request) {
 	}
 	coll, err := h.collectionSvc.Update(r.Context(), chi.URLParam(r, "collectionId"), req)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeDocsError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, coll)
@@ -196,7 +223,7 @@ func (h *DocsHandler) UpdateCollection(w http.ResponseWriter, r *http.Request) {
 
 func (h *DocsHandler) DeleteCollection(w http.ResponseWriter, r *http.Request) {
 	if err := h.collectionSvc.Delete(r.Context(), chi.URLParam(r, "collectionId")); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeDocsError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -205,7 +232,7 @@ func (h *DocsHandler) DeleteCollection(w http.ResponseWriter, r *http.Request) {
 func (h *DocsHandler) RestoreCollection(w http.ResponseWriter, r *http.Request) {
 	coll, err := h.collectionSvc.Restore(r.Context(), chi.URLParam(r, "collectionId"))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeDocsError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, coll)
@@ -509,9 +536,10 @@ func (h *DocsHandler) GeneratePreviewToken(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{
-		"token":     token,
-		"subdomain": cfg.Subdomain,
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"token":         token,
+		"subdomain":     cfg.Subdomain,
+		"custom_domain": cfg.CustomDomain,
 	})
 }
 
@@ -1305,9 +1333,26 @@ func (h *DocsHandler) PublicGetCanonicalArticle(w http.ResponseWriter, r *http.R
 	if cfg == nil {
 		return
 	}
-	collectionSlug := chi.URLParam(r, "collectionSlug")
-	articleSlug := chi.URLParam(r, "articleSlug")
-	article, err := h.helpcenterSvc.GetPublicArticleByCanonicalPath(r.Context(), cfg.WorkspaceID, collectionSlug, articleSlug)
+	articleKey := chi.URLParam(r, "articleKey")
+	var (
+		article *model.PublicArticleResponse
+		err     error
+	)
+	if articleKey != "" {
+		if localeParam := chi.URLParam(r, "locale"); localeParam != "" {
+			locale, ok := h.resolveRequestedPublicLocale(w, r, cfg)
+			if !ok {
+				return
+			}
+			article, err = h.helpcenterSvc.GetPublicArticleByLocalizedCanonicalKey(r.Context(), cfg.WorkspaceID, locale, articleKey)
+		} else {
+			article, err = h.helpcenterSvc.GetPublicArticleByCanonicalKey(r.Context(), cfg.WorkspaceID, articleKey)
+		}
+	} else {
+		collectionSlug := chi.URLParam(r, "collectionSlug")
+		articleSlug := chi.URLParam(r, "articleSlug")
+		article, err = h.helpcenterSvc.GetPublicArticleByCanonicalPath(r.Context(), cfg.WorkspaceID, collectionSlug, articleSlug)
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -1332,16 +1377,15 @@ func (h *DocsHandler) PublicResolvePath(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusNotFound, "path required")
 		return
 	}
-	redirect, err := h.helpcenterSvc.ResolvePublicPath(r.Context(), cfg.WorkspaceID, path)
+	target, err := h.helpcenterSvc.ResolvePublicPath(r.Context(), cfg.WorkspaceID, path)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if redirect == nil {
+	if target == "" {
 		writeError(w, http.StatusNotFound, "no redirect found")
 		return
 	}
-	target := buildDocsRedirectTargetPath(redirect.TargetCollectionSlug, redirect.TargetArticleSlug)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"redirect": true,
 		"target":   target,
@@ -1390,6 +1434,7 @@ func (h *DocsHandler) PublicSubmitFeedback(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	articleSlug := chi.URLParam(r, "articleSlug")
+	articleKey := chi.URLParam(r, "articleKey")
 	spaceSlug := chi.URLParam(r, "spaceSlug")
 	collectionSlug := chi.URLParam(r, "collectionSlug")
 
@@ -1398,7 +1443,9 @@ func (h *DocsHandler) PublicSubmitFeedback(w http.ResponseWriter, r *http.Reques
 		article *model.PublicArticleResponse
 		err     error
 	)
-	if spaceSlug == "" {
+	if articleKey != "" {
+		article, err = h.helpcenterSvc.GetPublicArticleByLocalizedCanonicalKey(r.Context(), cfg.WorkspaceID, locale, articleKey)
+	} else if spaceSlug == "" {
 		article, err = h.helpcenterSvc.GetPublicArticleByLocalizedCanonicalPath(r.Context(), cfg.WorkspaceID, locale, collectionSlug, articleSlug)
 	} else {
 		article, err = h.helpcenterSvc.GetPublicArticle(r.Context(), cfg.WorkspaceID, locale, spaceSlug, collectionSlug, articleSlug)

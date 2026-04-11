@@ -2,20 +2,19 @@ import { useState, useCallback } from 'react'
 import { ThumbsUp, ThumbsDown, Check } from 'lucide-react'
 import { helpCenterService } from '@/lib/services'
 import { useDocsContext } from '@/contexts/DocsContext'
+import { buildArticleKey } from '@/lib/articleKey'
 
 interface ArticleFeedbackProps {
   locale: string
-  spaceSlug?: string
-  collectionSlug?: string | null
   articleSlug: string
+  articlePublicId: string
   multilingualEnabled: boolean
 }
 
 export function ArticleFeedback({
   locale,
-  spaceSlug,
-  collectionSlug,
   articleSlug,
+  articlePublicId,
   multilingualEnabled,
 }: ArticleFeedbackProps) {
   const { subdomain } = useDocsContext()
@@ -24,15 +23,13 @@ export function ArticleFeedback({
   const handleFeedback = useCallback(
     async (isHelpful: boolean) => {
       if (submitted !== null) return
-      if (!spaceSlug || !collectionSlug) return
+      if (!articleSlug || !articlePublicId) return
       setSubmitted(isHelpful)
       try {
         await helpCenterService.submitFeedback(
           subdomain,
           locale,
-          spaceSlug,
-          collectionSlug,
-          articleSlug,
+          buildArticleKey(articleSlug, articlePublicId),
           multilingualEnabled,
           {
             is_helpful: isHelpful,
@@ -42,7 +39,7 @@ export function ArticleFeedback({
         // Feedback is best-effort
       }
     },
-    [subdomain, locale, spaceSlug, collectionSlug, articleSlug, multilingualEnabled, submitted],
+    [subdomain, locale, articleSlug, articlePublicId, multilingualEnabled, submitted],
   )
 
   return (
@@ -60,7 +57,7 @@ export function ArticleFeedback({
           <div className="flex gap-2">
             <button
               onClick={() => handleFeedback(true)}
-              disabled={!spaceSlug || !collectionSlug}
+              disabled={!articleSlug || !articlePublicId}
               className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-[13px] text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
             >
               <ThumbsUp size={13} />
@@ -68,7 +65,7 @@ export function ArticleFeedback({
             </button>
             <button
               onClick={() => handleFeedback(false)}
-              disabled={!spaceSlug || !collectionSlug}
+              disabled={!articleSlug || !articlePublicId}
               className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-[13px] text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
             >
               <ThumbsDown size={13} />

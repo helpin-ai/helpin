@@ -2,7 +2,6 @@ import { FileText, ArrowRight } from 'lucide-react'
 import { DocsLink } from '@/components/DocsLink'
 import {
   buildCanonicalArticlePath,
-  buildCanonicalCollectionPath,
 } from '@/lib/locale'
 import type { SearchResult } from '@/lib/types'
 
@@ -35,11 +34,21 @@ export function SearchResultItem({
         <h3 className={`font-medium ${isCompact ? 'text-[13px]' : 'text-sm mb-1'}`}>
           {result.title}
         </h3>
-        {(result.space_name || result.collection_name) && (
+        {(result.space_name || result.collection_name || result.collection_ancestor_path) && (
           <div className={`flex items-center gap-1.5 text-[11px] text-muted-foreground/60 ${isCompact ? 'mt-0.5' : 'mb-1'}`}>
             {result.space_name && <span>{result.space_name}</span>}
-            {result.space_name && result.collection_name && <span>/</span>}
-            {result.collection_name && <span>{result.collection_name}</span>}
+            {/* Prefer the full ancestor path when the backend supplied
+                one ("Parent / Middle / Current") — it already includes
+                the active collection name. Fall back to the flat
+                collection_name for top-level collections. */}
+            {(result.collection_ancestor_path || result.collection_name) && result.space_name && (
+              <span>/</span>
+            )}
+            {result.collection_ancestor_path ? (
+              <span>{result.collection_ancestor_path}</span>
+            ) : (
+              result.collection_name && <span>{result.collection_name}</span>
+            )}
           </div>
         )}
         {!isCompact && result.excerpt && (
@@ -64,10 +73,11 @@ export function SearchResultItem({
   if (!collectionSlug) {
     return (
       <DocsLink
-        to={buildCanonicalCollectionPath(
+        to={buildCanonicalArticlePath(
           multilingualEnabled,
           targetLocale,
-          result.space_slug,
+          result.slug,
+          result.public_id,
         )}
         onClick={onClick}
         className={className}
@@ -82,8 +92,8 @@ export function SearchResultItem({
       to={buildCanonicalArticlePath(
         multilingualEnabled,
         targetLocale,
-        collectionSlug,
         result.slug,
+        result.public_id,
       )}
       onClick={onClick}
       className={className}

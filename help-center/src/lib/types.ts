@@ -97,6 +97,7 @@ export interface Article {
   id: string
   title: string
   slug: string
+  public_id: string
   locale?: string
   requested_locale?: string
   is_fallback?: boolean
@@ -141,11 +142,20 @@ export interface PreviewArticleDetail {
 
 // ─── Navigation ─────────────────────────────────────────────────────────────
 
+/**
+ * NavItem is a collection node returned by the public space navigation
+ * endpoint. The backend returns a flat list; callers fold it into a tree
+ * using parent_collection_id + depth.
+ */
 export interface NavItem {
   id: string
   name: string
   slug: string
   icon: string | null
+  /** Parent collection id. null means top-level. */
+  parent_collection_id: string | null
+  /** Tree depth: 0 for top-level, 1 for child, 2 for grandchild. */
+  depth: number
   articles: NavArticle[]
 }
 
@@ -153,7 +163,17 @@ export interface NavArticle {
   id: string
   title: string
   slug: string
+  public_id: string
   published_at?: string | null
+}
+
+/**
+ * NavTreeNode is a client-side folding of NavItem[] into a nested tree.
+ * Each node owns its direct child NavItems plus its direct articles.
+ */
+export interface NavTreeNode {
+  item: NavItem
+  children: NavTreeNode[]
 }
 
 // ─── Search ─────────────────────────────────────────────────────────────────
@@ -162,12 +182,20 @@ export interface SearchResult {
   id: string
   title: string
   slug: string
+  public_id: string
   locale?: string
   requested_locale?: string
   is_fallback?: boolean
   excerpt: string | null
+  collection_id?: string | null
   collection_name: string | null
   collection_slug?: string | null
+  /**
+   * Human-readable localized ancestor breadcrumb such as
+   * "Root / Middle / Current". Present only when the article lives in
+   * a nested collection; null for top-level or uncategorized articles.
+   */
+  collection_ancestor_path?: string | null
   space_slug: string
   space_name?: string
   highlights?: string[]

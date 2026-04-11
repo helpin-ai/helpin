@@ -158,6 +158,25 @@ export function DocsSpaceDetail() {
     (collections ?? []).map((c) => [c.id, c.name])
   )
 
+  // Collection id lookup reused below for drill-down state.
+  const collectionById = new Map<string, DocsCollection>(
+    (collections ?? []).map((c) => [c.id, c])
+  )
+
+  // Map of parent_collection_id -> direct children in space-order,
+  // used for drill-down pill rendering. A missing key means the
+  // parent has no direct children.
+  const directChildrenByParent = new Map<string, DocsCollection[]>()
+  for (const c of (collections ?? [])) {
+    const key = c.parent_collection_id ?? '__root__'
+    const list = directChildrenByParent.get(key) ?? []
+    list.push(c)
+    directChildrenByParent.set(key, list)
+  }
+  for (const [, list] of directChildrenByParent) {
+    list.sort((a, b) => a.position - b.position)
+  }
+
   // Group documents by collection
   const collectionMap = new Map<string, DocsDocument[]>()
   const uncollected: DocsDocument[] = []
@@ -181,6 +200,52 @@ export function DocsSpaceDetail() {
   useEffect(() => {
     setActiveCollection(collectionParam)
   }, [collectionParam])
+
+  // Derive the current drill-down level from the active collection.
+  //   null          -> top-level (pills = root collections + Uncategorized)
+  //   collection id -> that collection's children are the pills
+  //
+  // Rule: if activeCollection has direct children, we drill into it (the
+  // pill row shows those children). If it is a leaf, we stay at the
+  // sibling level — the pill row shows its parent's children with the
+  // leaf highlighted. This gives single-click sibling hopping for leaves
+  // and explicit drill-in for parents.
+  const currentLevel: string | null = (() => {
+    if (!activeCollection || activeCollection === '__uncollected__') return null
+    const node = collectionById.get(activeCollection)
+    if (!node) return null
+    const hasKids = (directChildrenByParent.get(node.id) ?? []).length > 0
+    return hasKids ? node.id : (node.parent_collection_id ?? null)
+  })()
+
+  // The pill row iterates these — direct children of the current level.
+  const levelChildren = currentLevel === null
+    ? (directChildrenByParent.get('__root__') ?? [])
+    : (directChildrenByParent.get(currentLevel) ?? [])
+
+  // Breadcrumb chain: ancestors of currentLevel + currentLevel itself,
+  // top-down. Empty when at root.
+  const breadcrumbChain: DocsCollection[] = (() => {
+    const chain: DocsCollection[] = []
+    let cursor = currentLevel
+    let guard = 0
+    while (cursor && guard < 10) {
+      const node = collectionById.get(cursor)
+      if (!node) break
+      chain.unshift(node)
+      cursor = node.parent_collection_id ?? null
+      guard += 1
+    }
+    return chain
+  })()
+
+  // Back action: pop the drill level up one. If we're at a top-level
+  // collection, back goes all the way to null (All Collections).
+  const handleDrillBack = () => {
+    if (!currentLevel) return
+    const node = collectionById.get(currentLevel)
+    setActiveCollection(node?.parent_collection_id ?? null)
+  }
 
   const activeCollectionDocuments = activeCollection === '__uncollected__'
     ? uncollected
@@ -482,96 +547,171 @@ export function DocsSpaceDetail() {
         </div>
       </header>
 
-      {/* Collection tabs */}
-      {((collections ?? []).length > 0 || uncollected.length > 0) && <div className="flex flex-wrap items-center gap-1.5">
-        <button
-          type="button"
-          onClick={() => setActiveCollection(null)}
-          className={`rounded-full px-3.5 py-1 text-sm font-medium transition-colors ${
-            !activeCollection
-              ? 'bg-foreground text-background'
-              : 'bg-muted/60 text-muted-foreground hover:bg-muted border border-border/40'
-          }`}
-        >
-          All Collections ({documents?.length ?? 0})
-        </button>
+      {/* Collection navigator — Option A drill-down design.
+          Row 1: breadcrumb strip showing the current drill level.
+          Row 2: pills for the children of the current level (plus
+          a Back pill, an All Collections reset, and Uncategorized).
+          Clicking a pill that has children drills into it; clicking
+          a leaf just filters the doc list. A single activeCollection
+          state drives both the filter and the derived drill level. */}
+      {((collections ?? []).length > 0 || uncollected.length > 0) && (
+        <div className="space-y-2">
+          {/* Breadcrumb: only rendered when the user has drilled in. */}
+          {breadcrumbChain.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1 text-[12px] text-muted-foreground">
+              <button
+                type="button"
+                onClick={() => setActiveCollection(null)}
+                className="rounded px-1.5 py-0.5 transition-colors hover:bg-muted/60 hover:text-foreground"
+              >
+                All Collections
+              </button>
+              {breadcrumbChain.map((entry, idx) => {
+                const isLast = idx === breadcrumbChain.length - 1
+                return (
+                  <span key={entry.id} className="flex items-center gap-1">
+                    <span className="text-muted-foreground/50" aria-hidden="true">›</span>
+                    <button
+                      type="button"
+                      onClick={() => setActiveCollection(entry.id)}
+                      className={`rounded px-1.5 py-0.5 transition-colors hover:bg-muted/60 hover:text-foreground ${
+                        isLast ? 'font-medium text-foreground' : ''
+                      }`}
+                    >
+                      {entry.name}
+                    </button>
+                  </span>
+                )
+              })}
+            </div>
+          )}
 
-        {(collections ?? []).map((col) => (
-          <div key={col.id} className="group/tab relative flex items-center">
-            <button
-              type="button"
-              onClick={() => setActiveCollection(col.id)}
-              className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1 pr-7 text-sm font-medium transition-colors ${
-                activeCollection === col.id
-                  ? 'bg-foreground text-background'
-                  : 'bg-muted/60 text-muted-foreground hover:bg-muted border border-border/40'
-              }`}
-            >
-              <CollectionTabIcon name={col.icon} />
-              <span>{col.name} ({collectionMap.get(col.id)?.length ?? 0})</span>
-            </button>
+          {/* Pill row: Back (when drilled in), All Collections, level pills, Uncategorized, Add. */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {currentLevel !== null && (
+              <button
+                type="button"
+                onClick={handleDrillBack}
+                className="inline-flex items-center gap-1 rounded-full border border-border/40 bg-muted/40 px-2.5 py-1 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                title="Back to parent level"
+              >
+                <span aria-hidden="true">←</span>
+                Back
+              </button>
+            )}
+            {currentLevel === null && (
+              <button
+                type="button"
+                onClick={() => setActiveCollection(null)}
+                className={`rounded-full px-3.5 py-1 text-sm font-medium transition-colors ${
+                  !activeCollection
+                    ? 'bg-foreground text-background'
+                    : 'bg-muted/60 text-muted-foreground hover:bg-muted border border-border/40'
+                }`}
+              >
+                All Collections ({documents?.length ?? 0})
+              </button>
+            )}
 
-            {canEditDocs && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
+            {levelChildren.map((col) => {
+              const childCount = (directChildrenByParent.get(col.id) ?? []).length
+              const isActive = activeCollection === col.id
+              return (
+                <div key={col.id} className="group/tab relative flex items-center">
                   <button
                     type="button"
-                    className={`absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-0.5 opacity-0 transition-opacity outline-none focus:outline-none group-hover/tab:opacity-100 ${
-                      activeCollection === col.id
-                        ? 'text-background/80 hover:text-background'
-                        : 'text-muted-foreground hover:text-foreground'
+                    onClick={() => setActiveCollection(col.id)}
+                    className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1 pr-7 text-sm font-medium transition-colors ${
+                      isActive
+                        ? 'bg-foreground text-background'
+                        : 'bg-muted/60 text-muted-foreground hover:bg-muted border border-border/40'
                     }`}
-                    onClick={(e) => e.stopPropagation()}
                   >
-                    <MoreHorizontalIcon className="h-3.5 w-3.5" />
+                    <CollectionTabIcon name={col.icon} />
+                    <span>{col.name} ({collectionMap.get(col.id)?.length ?? 0})</span>
+                    {childCount > 0 && (
+                      <span
+                        className={`ml-0.5 inline-flex items-center rounded-full px-1.5 text-[10px] tabular-nums ${
+                          isActive
+                            ? 'bg-background/20 text-background'
+                            : 'bg-muted text-muted-foreground/70'
+                        }`}
+                        aria-label={`${childCount} sub-collections`}
+                        title={`${childCount} sub-collection${childCount === 1 ? '' : 's'} — click to drill in`}
+                      >
+                        {childCount} ›
+                      </span>
+                    )}
                   </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-44">
-                  <DropdownMenuItem onClick={() => setEditingCollection(col)}>
-                    <PencilEdit01Icon className="h-3.5 w-3.5" />
-                    Edit collection
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => setConfirmDelete({ type: 'collection', id: col.id, name: col.name })}
-                    className="text-destructive focus:text-destructive"
-                  >
-                    <Delete01Icon className="h-3.5 w-3.5" />
-                    Delete
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+
+                  {canEditDocs && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          className={`absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-0.5 opacity-0 transition-opacity outline-none focus:outline-none group-hover/tab:opacity-100 ${
+                            isActive
+                              ? 'text-background/80 hover:text-background'
+                              : 'text-muted-foreground hover:text-foreground'
+                          }`}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <MoreHorizontalIcon className="h-3.5 w-3.5" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="w-44">
+                        <DropdownMenuItem onClick={() => setEditingCollection(col)}>
+                          <PencilEdit01Icon className="h-3.5 w-3.5" />
+                          Edit collection
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => setConfirmDelete({ type: 'collection', id: col.id, name: col.name })}
+                          className="text-destructive focus:text-destructive"
+                        >
+                          <Delete01Icon className="h-3.5 w-3.5" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+                </div>
+              )
+            })}
+
+            {/* Uncategorized only at the root level — nested levels can't
+                have uncategorized docs, those belong to their parent. */}
+            {currentLevel === null && uncollected.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setActiveCollection('__uncollected__')}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  activeCollection === '__uncollected__'
+                    ? 'bg-foreground text-background'
+                    : 'bg-muted/60 text-muted-foreground hover:bg-muted border border-border/40'
+                }`}
+              >
+                Uncategorized ({uncollected.length})
+              </button>
+            )}
+
+            {/* Add collection — when drilled in, pre-parent to the
+                current level so the user drops a sub-collection in
+                one click. */}
+            {canEditDocs && (
+              <QuickTooltip label={currentLevel ? 'Add sub-collection' : 'Add collection'}>
+                <button
+                  type="button"
+                  onClick={() => openCreate('docs_collection', { spaceId })}
+                  className="flex items-center gap-1 rounded-full border border-dashed border-primary/40 px-2.5 py-1 text-xs font-medium text-primary/70 transition-colors hover:border-primary hover:text-primary hover:bg-primary/5"
+                >
+                  <PlusSignIcon className="h-3 w-3" />
+                  {currentLevel ? 'Sub-collection' : 'Collection'}
+                </button>
+              </QuickTooltip>
             )}
           </div>
-        ))}
-
-        {uncollected.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setActiveCollection('__uncollected__')}
-            className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-              activeCollection === '__uncollected__'
-                ? 'bg-foreground text-background'
-                : 'bg-muted/60 text-muted-foreground hover:bg-muted border border-border/40'
-            }`}
-          >
-            Uncategorized ({uncollected.length})
-          </button>
-        )}
-
-        {/* Add collection */}
-        {canEditDocs && (
-          <QuickTooltip label="Add collection">
-            <button
-              type="button"
-              onClick={() => openCreate('docs_collection', { spaceId })}
-              className="flex items-center gap-1 rounded-full border border-dashed border-primary/40 px-2.5 py-1 text-xs font-medium text-primary/70 transition-colors hover:border-primary hover:text-primary hover:bg-primary/5"
-            >
-              <PlusSignIcon className="h-3 w-3" />
-              Collection
-            </button>
-          </QuickTooltip>
-        )}
-      </div>}
+        </div>
+      )}
 
       {/* Filters row */}
       {showStatusFilter && <div className="flex items-center justify-end gap-2">

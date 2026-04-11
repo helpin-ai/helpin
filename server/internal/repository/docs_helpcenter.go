@@ -195,6 +195,29 @@ func (r *DocsHelpcenterRepository) CreateArticle(ctx context.Context, art *model
 	return art, nil
 }
 
+func (r *DocsHelpcenterRepository) PublicIDExists(ctx context.Context, publicID, excludeDocumentID string) (bool, error) {
+	var count int64
+	query := r.db.WithContext(ctx).
+		Model(&model.DocsHelpcenterArticle{}).
+		Where("public_id = ?", publicID)
+	if excludeDocumentID != "" {
+		query = query.Where("document_id != ?", excludeDocumentID)
+	}
+	if err := query.Count(&count).Error; err != nil {
+		return false, fmt.Errorf("check helpcenter public id exists: %w", err)
+	}
+	return count > 0, nil
+}
+
+func (r *DocsHelpcenterRepository) SetPublicID(ctx context.Context, documentID, publicID string) error {
+	if err := r.db.WithContext(ctx).Model(&model.DocsHelpcenterArticle{}).
+		Where("document_id = ?", documentID).
+		Update("public_id", publicID).Error; err != nil {
+		return fmt.Errorf("set helpcenter public id: %w", err)
+	}
+	return nil
+}
+
 // SetPublicPublishedAt sets or clears the public_published_at timestamp.
 func (r *DocsHelpcenterRepository) SetPublicPublishedAt(ctx context.Context, documentID string, publishedAt *time.Time) error {
 	if err := r.db.WithContext(ctx).Model(&model.DocsHelpcenterArticle{}).
@@ -465,6 +488,65 @@ func (r *DocsHelpcenterRepository) GetPublicArticleTranslationBySlug(ctx context
 	return &translation, nil
 }
 
+func (r *DocsHelpcenterRepository) GetPublicArticleTranslationByPublicID(ctx context.Context, workspaceID, locale, publicID string) (*model.DocsHelpcenterArticleTranslation, error) {
+	var translation model.DocsHelpcenterArticleTranslation
+	if err := r.db.WithContext(ctx).
+		Table("docs_helpcenter_article_translations hat").
+		Select(`
+			hat.id,
+			hat.document_id,
+			COALESCE(p.workspace_id, hat.workspace_id) AS workspace_id,
+			COALESCE(p.space_id, hat.space_id) AS space_id,
+			COALESCE(p.collection_id, hat.collection_id) AS collection_id,
+			hat.locale,
+			COALESCE(p.title, hat.title) AS title,
+			COALESCE(p.slug, hat.slug) AS slug,
+			COALESCE(p.excerpt, hat.excerpt) AS excerpt,
+			COALESCE(p.content, hat.content) AS content,
+			COALESCE(p.content_text, hat.content_text) AS content_text,
+			COALESCE(p.seo_title, hat.seo_title) AS seo_title,
+			COALESCE(p.seo_description, hat.seo_description) AS seo_description,
+			CASE
+				WHEN p.document_id IS NOT NULL AND hat.locale = cfg.default_locale THEN 'published'
+				ELSE hat.status
+			END AS status,
+			hat.source_updated_at,
+			hat.source_synced,
+			hat.published_at,
+			hat.view_count,
+			hat.helpful_count,
+			hat.not_helpful_count,
+			hat.created_at,
+			hat.updated_at
+		`).
+		Joins("JOIN docs_documents d ON d.id = hat.document_id").
+		Joins("JOIN docs_helpcenter_articles ha ON ha.document_id = hat.document_id").
+		Joins("JOIN docs_helpcenter_configs cfg ON cfg.workspace_id = hat.workspace_id").
+		Joins("LEFT JOIN docs_helpcenter_article_publications p ON p.document_id = hat.document_id AND p.locale = hat.locale").
+		Where(`
+			hat.workspace_id = ?
+			AND hat.locale = ?
+			AND ha.public_id = ?
+			AND d.deleted_at IS NULL
+			AND d.status = ?
+			AND ha.public_published_at IS NOT NULL
+			AND (
+				(
+					hat.status = ? AND hat.published_at IS NOT NULL
+					AND (p.document_id IS NOT NULL OR hat.locale = cfg.default_locale)
+				)
+				OR (hat.locale = cfg.default_locale AND p.document_id IS NOT NULL)
+			)
+		`, workspaceID, locale, publicID, model.DocStatusPublished, model.DocsHelpcenterTranslationStatusPublished).
+		First(&translation).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get public article translation by public id: %w", err)
+	}
+	return &translation, nil
+}
+
 func (r *DocsHelpcenterRepository) ListPublicArticleTranslationsByCollection(ctx context.Context, collectionID, locale string) ([]model.DocsHelpcenterArticleTranslation, error) {
 	var translations []model.DocsHelpcenterArticleTranslation
 	if err := r.db.WithContext(ctx).
@@ -583,6 +665,7 @@ func (r *DocsHelpcenterRepository) GetPublicArticleTranslationByCollectionSlug(c
 type sourceArticleRow struct {
 	model.DocsDocument
 	HelpcenterArticleID string          `gorm:"column:helpcenter_article_id"`
+	HelpcenterPublicID  string          `gorm:"column:helpcenter_public_id"`
 	HelpcenterSlug      string          `gorm:"column:helpcenter_slug"`
 	PublicationContent  json.RawMessage `gorm:"column:publication_content"`
 	PublicationTitle    string          `gorm:"column:publication_title"`
@@ -602,6 +685,7 @@ func sourceArticleRowToModels(row sourceArticleRow) (*model.DocsDocument, *model
 	ha := &model.DocsHelpcenterArticle{
 		ID:                row.HelpcenterArticleID,
 		DocumentID:        row.ID,
+		PublicID:          row.HelpcenterPublicID,
 		Slug:              row.HelpcenterSlug,
 		SEOTitle:          row.PublicationSEOTitle,
 		SEODescription:    row.PublicationSEODesc,
@@ -619,11 +703,14 @@ func sourceArticleRowToModels(row sourceArticleRow) (*model.DocsDocument, *model
 
 // ListSpaceNavigation returns collections with their published articles for sidebar navigation.
 func (r *DocsHelpcenterRepository) ListSpaceNavigation(ctx context.Context, spaceID string) ([]model.PublicNavCollection, error) {
-	// 1. Get collections in this space, ordered by position.
+	// 1. Get collections in this space. The result is a flat list, but
+	//    the ordering — (depth, parent, position) — keeps siblings
+	//    contiguous and ancestors before descendants so callers can fold
+	//    the response into a tree in a single pass.
 	var collections []model.DocsCollection
 	if err := r.db.WithContext(ctx).
 		Where("space_id = ? AND deleted_at IS NULL", spaceID).
-		Order("position ASC, created_at ASC").
+		Order("depth ASC, parent_collection_id ASC, position ASC, created_at ASC").
 		Find(&collections).Error; err != nil {
 		return nil, fmt.Errorf("list space collections: %w", err)
 	}
@@ -633,11 +720,12 @@ func (r *DocsHelpcenterRepository) ListSpaceNavigation(ctx context.Context, spac
 		ID           string  `gorm:"column:id"`
 		Title        string  `gorm:"column:title"`
 		Slug         string  `gorm:"column:slug"`
+		PublicID     string  `gorm:"column:public_id"`
 		CollectionID *string `gorm:"column:collection_id"`
 	}
 	var articles []navArticleRow
 	if err := r.db.WithContext(ctx).Raw(`
-		SELECT d.id, d.title, ha.slug, d.collection_id
+		SELECT d.id, d.title, ha.slug, ha.public_id, d.collection_id
 		FROM docs_documents d
 		JOIN docs_helpcenter_articles ha ON ha.document_id = d.id
 		WHERE d.space_id = ?
@@ -654,7 +742,12 @@ func (r *DocsHelpcenterRepository) ListSpaceNavigation(ctx context.Context, spac
 	articlesByCollection := map[string][]model.PublicNavArticle{}
 	var uncategorized []model.PublicNavArticle
 	for _, a := range articles {
-		na := model.PublicNavArticle{ID: a.ID, Title: a.Title, Slug: a.Slug}
+		na := model.PublicNavArticle{
+			ID:       a.ID,
+			Title:    a.Title,
+			Slug:     a.Slug,
+			PublicID: a.PublicID,
+		}
 		if a.CollectionID != nil {
 			articlesByCollection[*a.CollectionID] = append(articlesByCollection[*a.CollectionID], na)
 		} else {
@@ -662,23 +755,54 @@ func (r *DocsHelpcenterRepository) ListSpaceNavigation(ctx context.Context, spac
 		}
 	}
 
-	// 4. Build response — only include collections that have published articles.
+	// 4. Compute the set of collections that should appear in public nav:
+	//    every collection with at least one direct published article,
+	//    plus every ancestor of such a collection. A parent with no
+	//    direct articles but a child that has some must still render as
+	//    a container node so the tree is connected.
+	collectionByID := make(map[string]model.DocsCollection, len(collections))
+	for _, c := range collections {
+		collectionByID[c.ID] = c
+	}
+	includedSet := make(map[string]bool, len(collections))
+	for id := range articlesByCollection {
+		cursor := id
+		for {
+			node, exists := collectionByID[cursor]
+			if !exists || includedSet[cursor] {
+				break
+			}
+			includedSet[cursor] = true
+			if node.ParentCollectionID == nil {
+				break
+			}
+			cursor = *node.ParentCollectionID
+		}
+	}
+
+	// 5. Emit included collections in (depth, parent, position) order so
+	//    the frontend can fold them into a tree without an extra sort.
 	var result []model.PublicNavCollection
 	for _, c := range collections {
-		arts, ok := articlesByCollection[c.ID]
-		if !ok || len(arts) == 0 {
+		if !includedSet[c.ID] {
 			continue
 		}
+		slug := c.Slug
+		if slug == "" {
+			slug = c.ID // legacy fallback for rows seeded before the tree migration
+		}
 		result = append(result, model.PublicNavCollection{
-			ID:       c.ID,
-			Name:     c.Name,
-			Slug:     c.ID, // collections don't have slugs; use ID as identifier
-			Icon:     c.Icon,
-			Articles: arts,
+			ID:                 c.ID,
+			Name:               c.Name,
+			Slug:               slug,
+			Icon:               c.Icon,
+			ParentCollectionID: c.ParentCollectionID,
+			Depth:              c.Depth,
+			Articles:           articlesByCollection[c.ID],
 		})
 	}
 
-	// Add uncategorized articles if any.
+	// Add uncategorized articles if any. Uncategorized stays top-level.
 	if len(uncategorized) > 0 {
 		result = append(result, model.PublicNavCollection{
 			ID:       "uncategorized",
@@ -689,6 +813,80 @@ func (r *DocsHelpcenterRepository) ListSpaceNavigation(ctx context.Context, spac
 	}
 
 	return result, nil
+}
+
+// DocsHelpcenterPublishedArticleSlug is a minimal projection of a
+// published help center article returned by
+// ListPublishedArticleSlugsInCollection.
+type DocsHelpcenterPublishedArticleSlug struct {
+	DocumentID string
+	Slug       string
+}
+
+// ListPublishedArticleSlugsInCollection returns (document_id, slug) for
+// every externally published help center article whose owning collection
+// is the given collection. The slug is the canonical source slug stored
+// on docs_helpcenter_articles, not a localized publication slug. Used by
+// collection-rename redirect emission.
+func (r *DocsHelpcenterRepository) ListPublishedArticleSlugsInCollection(ctx context.Context, collectionID string) ([]DocsHelpcenterPublishedArticleSlug, error) {
+	type row struct {
+		DocumentID string `gorm:"column:document_id"`
+		Slug       string `gorm:"column:slug"`
+	}
+	var rows []row
+	if err := r.db.WithContext(ctx).Raw(`
+		SELECT d.id AS document_id, ha.slug
+		FROM docs_documents d
+		JOIN docs_helpcenter_articles ha ON ha.document_id = d.id
+		WHERE d.collection_id = ?
+		  AND d.deleted_at IS NULL
+		  AND d.status = 'published'
+		  AND ha.public_published_at IS NOT NULL
+		  AND ha.slug != ''
+	`, collectionID).Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list published article slugs in collection: %w", err)
+	}
+	out := make([]DocsHelpcenterPublishedArticleSlug, len(rows))
+	for i, r := range rows {
+		out[i] = DocsHelpcenterPublishedArticleSlug{DocumentID: r.DocumentID, Slug: r.Slug}
+	}
+	return out, nil
+}
+
+// ListCollectionAncestors returns the ancestor chain of a collection
+// ordered top-down (root first, immediate parent last). The chain does
+// not include the collection itself. It is iterative and capped at the
+// collection tree depth so a dangling parent reference cannot loop.
+func (r *DocsHelpcenterRepository) ListCollectionAncestors(ctx context.Context, collectionID string) ([]model.DocsCollection, error) {
+	var current model.DocsCollection
+	if err := r.db.WithContext(ctx).
+		Where("id = ? AND deleted_at IS NULL", collectionID).
+		First(&current).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("load collection for ancestor walk: %w", err)
+	}
+
+	const maxDepth = 3
+	chain := make([]model.DocsCollection, 0, maxDepth)
+	for i := 0; i < maxDepth; i++ {
+		if current.ParentCollectionID == nil {
+			break
+		}
+		var parent model.DocsCollection
+		if err := r.db.WithContext(ctx).
+			Where("id = ? AND deleted_at IS NULL", *current.ParentCollectionID).
+			First(&parent).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				break
+			}
+			return nil, fmt.Errorf("load ancestor collection: %w", err)
+		}
+		chain = append([]model.DocsCollection{parent}, chain...)
+		current = parent
+	}
+	return chain, nil
 }
 
 // ListPublicDocumentsBySpace returns internally published + externally published docs for a help-center space.
@@ -706,41 +904,91 @@ func (r *DocsHelpcenterRepository) ListPublicDocumentsBySpace(ctx context.Contex
 	return docs, nil
 }
 
-// ListWidgetCollections returns widget help collections for a space, including article counts.
+// ListWidgetCollections returns widget help collections for a space,
+// including tree metadata and per-collection direct article counts. The
+// result is flat; the widget renderer folds it into a drilldown tree
+// using ParentCollectionID.
+//
+// A collection is included when it has at least one directly published
+// article OR is an ancestor of such a collection, so container nodes
+// that hold content in descendants remain navigable.
 func (r *DocsHelpcenterRepository) ListWidgetCollections(ctx context.Context, spaceID string) ([]model.WidgetHelpCollection, error) {
-	type collectionRow struct {
-		ID           string  `gorm:"column:id"`
-		Name         string  `gorm:"column:name"`
-		Icon         *string `gorm:"column:icon"`
-		ArticleCount int     `gorm:"column:article_count"`
+	var collections []model.DocsCollection
+	if err := r.db.WithContext(ctx).
+		Where("space_id = ? AND deleted_at IS NULL", spaceID).
+		Order("depth ASC, parent_collection_id ASC, position ASC, created_at ASC").
+		Find(&collections).Error; err != nil {
+		return nil, fmt.Errorf("list widget collections: %w", err)
 	}
 
-	var rows []collectionRow
+	// Direct article counts per collection.
+	type articleCountRow struct {
+		CollectionID string `gorm:"column:collection_id"`
+		Count        int    `gorm:"column:count"`
+	}
+	var counts []articleCountRow
 	if err := r.db.WithContext(ctx).Raw(`
-		SELECT c.id, c.name, c.icon, COUNT(d.id) AS article_count
-		FROM docs_collections c
-		JOIN docs_documents d ON d.collection_id = c.id
+		SELECT d.collection_id, COUNT(d.id) AS count
+		FROM docs_documents d
 		JOIN docs_helpcenter_articles ha ON ha.document_id = d.id
-		WHERE c.space_id = ?
-		  AND c.deleted_at IS NULL
+		WHERE d.space_id = ?
+		  AND d.collection_id IS NOT NULL
 		  AND d.status = 'published'
 		  AND d.deleted_at IS NULL
 		  AND ha.public_published_at IS NOT NULL
 		  AND ha.slug != ''
-		GROUP BY c.id, c.name, c.icon, c.position, c.created_at
-		ORDER BY c.position ASC, c.created_at ASC
-	`, spaceID).Scan(&rows).Error; err != nil {
-		return nil, fmt.Errorf("list widget collections: %w", err)
+		GROUP BY d.collection_id
+	`, spaceID).Scan(&counts).Error; err != nil {
+		return nil, fmt.Errorf("count widget articles per collection: %w", err)
+	}
+	countByID := make(map[string]int, len(counts))
+	for _, c := range counts {
+		countByID[c.CollectionID] = c.Count
 	}
 
-	result := make([]model.WidgetHelpCollection, 0, len(rows)+1)
-	for _, row := range rows {
+	collectionByID := make(map[string]model.DocsCollection, len(collections))
+	for _, c := range collections {
+		collectionByID[c.ID] = c
+	}
+
+	// Include every collection that has direct articles OR is an ancestor
+	// of one that does.
+	included := make(map[string]bool, len(collections))
+	for id, n := range countByID {
+		if n == 0 {
+			continue
+		}
+		cursor := id
+		for {
+			node, exists := collectionByID[cursor]
+			if !exists || included[cursor] {
+				break
+			}
+			included[cursor] = true
+			if node.ParentCollectionID == nil {
+				break
+			}
+			cursor = *node.ParentCollectionID
+		}
+	}
+
+	result := make([]model.WidgetHelpCollection, 0, len(collections)+1)
+	for _, c := range collections {
+		if !included[c.ID] {
+			continue
+		}
+		slug := c.Slug
+		if slug == "" {
+			slug = c.ID
+		}
 		result = append(result, model.WidgetHelpCollection{
-			ID:           row.ID,
-			Name:         row.Name,
-			Slug:         row.ID,
-			Icon:         row.Icon,
-			ArticleCount: row.ArticleCount,
+			ID:                 c.ID,
+			Name:               c.Name,
+			Slug:               slug,
+			Icon:               c.Icon,
+			ParentCollectionID: c.ParentCollectionID,
+			Depth:              c.Depth,
+			ArticleCount:       countByID[c.ID],
 		})
 	}
 
@@ -863,6 +1111,7 @@ func (r *DocsHelpcenterRepository) GetPublicArticleBySlug(ctx context.Context, s
 		Select(`
 			d.*,
 			ha.id AS helpcenter_article_id,
+			ha.public_id AS helpcenter_public_id,
 			p.slug AS helpcenter_slug,
 			p.content AS publication_content,
 			p.title AS publication_title,
@@ -908,6 +1157,7 @@ func (r *DocsHelpcenterRepository) GetPublicArticleByDocumentIDInSpaces(ctx cont
 		Select(`
 			d.*,
 			ha.id AS helpcenter_article_id,
+			ha.public_id AS helpcenter_public_id,
 			p.slug AS helpcenter_slug,
 			p.content AS publication_content,
 			p.title AS publication_title,
@@ -940,6 +1190,46 @@ func (r *DocsHelpcenterRepository) GetPublicArticleByDocumentIDInSpaces(ctx cont
 	return doc, ha, content, nil
 }
 
+func (r *DocsHelpcenterRepository) GetPublicArticleByPublicID(ctx context.Context, workspaceID, publicID string) (*model.DocsDocument, *model.DocsHelpcenterArticle, *model.DocsContent, error) {
+	var row sourceArticleRow
+	if err := r.db.WithContext(ctx).
+		Table("docs_helpcenter_article_publications p").
+		Select(`
+			d.*,
+			ha.id AS helpcenter_article_id,
+			ha.public_id AS helpcenter_public_id,
+			p.slug AS helpcenter_slug,
+			p.content AS publication_content,
+			p.title AS publication_title,
+			p.excerpt AS publication_excerpt,
+			p.seo_title AS publication_seo_title,
+			p.seo_description AS publication_seo_description,
+			ha.public_published_at,
+			ha.helpful_count,
+			ha.not_helpful_count,
+			ha.view_count
+		`).
+		Joins("JOIN docs_documents d ON d.id = p.document_id").
+		Joins("JOIN docs_helpcenter_articles ha ON ha.document_id = p.document_id").
+		Joins("JOIN docs_helpcenter_configs cfg ON cfg.workspace_id = d.workspace_id").
+		Where(`
+			d.workspace_id = ?
+			AND ha.public_id = ?
+			AND p.locale = cfg.default_locale
+			AND d.status = 'published'
+			AND d.deleted_at IS NULL
+			AND ha.public_published_at IS NOT NULL
+		`, workspaceID, publicID).
+		First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil, nil, nil
+		}
+		return nil, nil, nil, fmt.Errorf("get public article by public id: %w", err)
+	}
+	doc, ha, content := sourceArticleRowToModels(row)
+	return doc, ha, content, nil
+}
+
 // GetPublicArticleByCollectionSlug finds a publicly published article by collection slug and article slug.
 func (r *DocsHelpcenterRepository) GetPublicArticleByCollectionSlug(ctx context.Context, workspaceID, collectionSlug, articleSlug string) (*model.DocsDocument, *model.DocsHelpcenterArticle, *model.DocsContent, error) {
 	var row sourceArticleRow
@@ -948,6 +1238,7 @@ func (r *DocsHelpcenterRepository) GetPublicArticleByCollectionSlug(ctx context.
 		Select(`
 			d.*,
 			ha.id AS helpcenter_article_id,
+			ha.public_id AS helpcenter_public_id,
 			p.slug AS helpcenter_slug,
 			p.content AS publication_content,
 			p.title AS publication_title,
@@ -988,13 +1279,14 @@ func (r *DocsHelpcenterRepository) GetPublicCollectionBySlug(ctx context.Context
 	}
 
 	type navArticleRow struct {
-		ID    string `gorm:"column:id"`
-		Title string `gorm:"column:title"`
-		Slug  string `gorm:"column:slug"`
+		ID       string `gorm:"column:id"`
+		Title    string `gorm:"column:title"`
+		Slug     string `gorm:"column:slug"`
+		PublicID string `gorm:"column:public_id"`
 	}
 	var rows []navArticleRow
 	if err := r.db.WithContext(ctx).Raw(`
-		SELECT d.id, p.title, p.slug
+		SELECT d.id, p.title, p.slug, ha.public_id
 		FROM docs_documents d
 		JOIN docs_helpcenter_articles ha ON ha.document_id = d.id
 		JOIN docs_helpcenter_article_publications p ON p.document_id = d.id
@@ -1012,7 +1304,12 @@ func (r *DocsHelpcenterRepository) GetPublicCollectionBySlug(ctx context.Context
 
 	articles := make([]model.PublicNavArticle, len(rows))
 	for i, row := range rows {
-		articles[i] = model.PublicNavArticle{ID: row.ID, Title: row.Title, Slug: row.Slug}
+		articles[i] = model.PublicNavArticle{
+			ID:       row.ID,
+			Title:    row.Title,
+			Slug:     row.Slug,
+			PublicID: row.PublicID,
+		}
 	}
 
 	return &coll, articles, nil

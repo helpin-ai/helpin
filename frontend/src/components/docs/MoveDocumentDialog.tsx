@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/select'
 import { useDocsSpaces, useDocsCollections, useMoveDocsDocument } from '@/hooks/queries'
 import { toast } from 'sonner'
+import { CollectionTreePicker } from './CollectionTreePicker'
 
 interface MoveDocumentDialogProps {
   wsId: string
@@ -39,7 +40,7 @@ export function MoveDocumentDialog({
   currentCollectionId,
 }: MoveDocumentDialogProps) {
   const [spaceId, setSpaceId] = useState(currentSpaceId)
-  const [collectionId, setCollectionId] = useState(currentCollectionId ?? '__none__')
+  const [collectionId, setCollectionId] = useState<string | null>(currentCollectionId ?? null)
 
   const { data: spaces } = useDocsSpaces(wsId)
   const { data: collections } = useDocsCollections(wsId, spaceId)
@@ -48,20 +49,18 @@ export function MoveDocumentDialog({
   useEffect(() => {
     if (open) {
       setSpaceId(currentSpaceId)
-      setCollectionId(currentCollectionId ?? '__none__')
+      setCollectionId(currentCollectionId ?? null)
     }
   }, [open, currentSpaceId, currentCollectionId])
 
-  // Reset collection when space changes
+  // Reset collection when space changes.
   useEffect(() => {
     if (spaceId !== currentSpaceId) {
-      setCollectionId('__none__')
+      setCollectionId(null)
     }
   }, [spaceId, currentSpaceId])
 
-  const hasChanged =
-    spaceId !== currentSpaceId ||
-    (collectionId === '__none__' ? null : collectionId) !== (currentCollectionId ?? null)
+  const hasChanged = spaceId !== currentSpaceId || collectionId !== (currentCollectionId ?? null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -69,7 +68,7 @@ export function MoveDocumentDialog({
       await moveDoc.mutateAsync({
         id: docId,
         space_id: spaceId,
-        collection_id: collectionId === '__none__' ? undefined : collectionId,
+        collection_id: collectionId ?? undefined,
       })
       toast.success('Document moved')
       onOpenChange(false)
@@ -108,19 +107,13 @@ export function MoveDocumentDialog({
 
             <div className="grid gap-2">
               <Label>Collection</Label>
-              <Select value={collectionId} onValueChange={setCollectionId}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">None (Uncategorized)</SelectItem>
-                  {(collections ?? []).map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <CollectionTreePicker
+                collections={collections ?? []}
+                spaceId={spaceId}
+                value={collectionId}
+                onChange={setCollectionId}
+                noneLabel="None (Uncategorized)"
+              />
             </div>
           </div>
 

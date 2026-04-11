@@ -1,8 +1,6 @@
 // @vitest-environment node
 
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import type { AddressInfo } from 'node:net'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { QueryClient } from '@tanstack/react-query'
 import {
   helpCenterConfigQueryOptions,
@@ -71,17 +69,21 @@ const brandNavigationItem: NavItem = {
   name: 'Brands',
   slug: 'brands',
   icon: null,
+  parent_collection_id: null,
+  depth: 0,
   articles: [
     {
       id: 'article-brand-settings',
       title: 'Brand settings',
       slug: 'brand-settings',
+      public_id: 'abc123ef',
       published_at: '2026-04-10T18:30:00Z',
     },
     {
       id: 'article-brand-domains',
       title: 'Custom brand domains',
       slug: 'custom-brand-domains',
+      public_id: 'def456ab',
       published_at: '2026-04-10T18:35:00Z',
     },
   ],
@@ -95,50 +97,52 @@ const mockCollection: CollectionPage = {
   space_slug: 'help-center',
 }
 
-function writeJSON(res: ServerResponse, body: unknown, statusCode = 200) {
-  res.statusCode = statusCode
-  res.setHeader('Content-Type', 'application/json')
-  res.end(JSON.stringify(body))
-}
-
 describe('hosted help-center mock server integration', () => {
-  let server: ReturnType<typeof createServer>
-  let baseUrl = ''
   let originalInternalApiUrl: string | undefined
+  let originalFetch: typeof globalThis.fetch | undefined
   const requests: string[] = []
 
   beforeAll(async () => {
     originalInternalApiUrl = process.env.INTERNAL_API_URL
+    originalFetch = globalThis.fetch
+    process.env.INTERNAL_API_URL = 'https://internal.test/api'
 
-    server = createServer((req: IncomingMessage, res: ServerResponse) => {
-      const path = req.url || '/'
-      requests.push(path)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = typeof input === 'string' ? input : input.toString()
+        const path = new URL(url).pathname
+        requests.push(path)
 
-      switch (path) {
-        case '/api/hc/replug/config':
-          writeJSON(res, mockConfig)
-          return
-        case '/api/hc/replug/spaces':
-          writeJSON(res, mockSpaces)
-          return
-        case '/api/hc/replug/spaces/help-center/navigation':
-          writeJSON(res, mockNavigation)
-          return
-        case '/api/hc/replug/c/brands':
-          writeJSON(res, mockCollection)
-          return
-        default:
-          writeJSON(res, { error: `Unhandled path: ${path}` }, 404)
-      }
-    })
-
-    await new Promise<void>((resolve) => {
-      server.listen(0, '127.0.0.1', () => resolve())
-    })
-
-    const address = server.address() as AddressInfo
-    baseUrl = `http://${address.address}:${address.port}/api`
-    process.env.INTERNAL_API_URL = baseUrl
+        switch (path) {
+          case '/api/hc/replug/config':
+            return new Response(JSON.stringify(mockConfig), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            })
+          case '/api/hc/replug/spaces':
+            return new Response(JSON.stringify(mockSpaces), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            })
+          case '/api/hc/replug/spaces/help-center/navigation':
+            return new Response(JSON.stringify(mockNavigation), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            })
+          case '/api/hc/replug/c/brands':
+            return new Response(JSON.stringify(mockCollection), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            })
+          default:
+            return new Response(JSON.stringify({ error: `Unhandled path: ${path}` }), {
+              status: 404,
+              headers: { 'Content-Type': 'application/json' },
+            })
+        }
+      }),
+    )
   })
 
   afterEach(() => {
@@ -147,9 +151,11 @@ describe('hosted help-center mock server integration', () => {
 
   afterAll(async () => {
     process.env.INTERNAL_API_URL = originalInternalApiUrl
-    await new Promise<void>((resolve, reject) => {
-      server.close((err) => (err ? reject(err) : resolve()))
-    })
+    if (originalFetch) {
+      vi.stubGlobal('fetch', originalFetch)
+    } else {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('loads hosted subdomain spaces, sidebar navigation, and collection articles through the public API', async () => {

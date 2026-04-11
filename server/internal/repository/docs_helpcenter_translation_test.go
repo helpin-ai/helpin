@@ -44,6 +44,8 @@ func setupDocsHelpcenterTranslationTestDB(t *testing.T) *gorm.DB {
 			id TEXT PRIMARY KEY,
 			space_id TEXT NOT NULL,
 			workspace_id TEXT NOT NULL,
+			parent_collection_id TEXT,
+			depth INTEGER NOT NULL DEFAULT 0,
 			name TEXT NOT NULL,
 			slug TEXT NOT NULL DEFAULT '',
 			description TEXT,
@@ -125,6 +127,7 @@ func setupDocsHelpcenterTranslationTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE docs_helpcenter_articles (
 			id TEXT PRIMARY KEY,
 			document_id TEXT NOT NULL UNIQUE,
+			public_id TEXT NOT NULL DEFAULT '',
 			slug TEXT NOT NULL DEFAULT '',
 			seo_title TEXT,
 			seo_description TEXT,

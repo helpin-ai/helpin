@@ -3,7 +3,7 @@ export function formatRedirectTargetPath(targetCollectionSlug: string, targetArt
   const article = (targetArticleSlug ?? '').trim().replace(/^\/+|\/+$/g, '')
 
   if (collection && article) return `/${collection}/${article}`
-  if (collection) return `/${collection}`
+  if (collection) return `/c/${collection}`
   if (article) return `/${article}`
   return '/'
 }

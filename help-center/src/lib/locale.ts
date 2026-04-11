@@ -1,4 +1,5 @@
 import type { NavItem, Space } from '@/lib/types'
+import { buildArticleKey } from '@/lib/articleKey'
 
 export type LocaleRouteKind = 'home' | 'space' | 'collection' | 'article' | 'search'
 
@@ -53,15 +54,15 @@ export function buildLocaleSpacePath(locale: string, spaceSlug: string) {
 }
 
 export function buildLocaleCollectionPath(locale: string, collectionSlug: string) {
-  return `/${locale}/${collectionSlug}`
+  return `/${locale}/c/${collectionSlug}`
 }
 
 export function buildLocaleArticlePath(
   locale: string,
-  collectionSlug: string,
   articleSlug: string,
+  publicId: string,
 ) {
-  return `/${locale}/${collectionSlug}/${articleSlug}`
+  return `/${locale}/articles/${buildArticleKey(articleSlug, publicId)}`
 }
 
 export function buildLocaleSearchPath(
@@ -90,18 +91,28 @@ export function buildCanonicalCollectionPath(
 ) {
   return multilingualEnabled
     ? buildLocaleCollectionPath(locale, collectionSlug)
-    : `/${collectionSlug}`
+    : `/c/${collectionSlug}`
+}
+
+export function buildCanonicalSpacePath(
+  multilingualEnabled: boolean,
+  locale: string,
+  spaceSlug: string,
+) {
+  return multilingualEnabled
+    ? buildLocaleSpacePath(locale, spaceSlug)
+    : `/${spaceSlug}`
 }
 
 export function buildCanonicalArticlePath(
   multilingualEnabled: boolean,
   locale: string,
-  collectionSlug: string,
   articleSlug: string,
+  publicId: string,
 ) {
   return multilingualEnabled
-    ? buildLocaleArticlePath(locale, collectionSlug, articleSlug)
-    : `/${collectionSlug}/${articleSlug}`
+    ? buildLocaleArticlePath(locale, articleSlug, publicId)
+    : `/articles/${buildArticleKey(articleSlug, publicId)}`
 }
 
 export function buildCanonicalSearchPath(
@@ -194,7 +205,7 @@ export function resolveLocaleSwitchPath({
     case 'space': {
       const targetSpace = findSpaceByID(targetSpaces, current.spaceId)
       if (targetSpace) {
-        return buildCanonicalCollectionPath(
+        return buildCanonicalSpacePath(
           multilingualEnabled,
           targetLocale,
           targetSpace.slug,
@@ -202,7 +213,7 @@ export function resolveLocaleSwitchPath({
       }
       const fallbackSpace = findSpaceByID(fallbackSpaces, current.spaceId)
       return fallbackSpace
-        ? buildCanonicalCollectionPath(
+        ? buildCanonicalSpacePath(
             multilingualEnabled,
             defaultLocale,
             fallbackSpace.slug,
@@ -233,7 +244,7 @@ export function resolveLocaleSwitchPath({
 
       const fallbackSpace = findSpaceByID(fallbackSpaces, current.spaceId)
       if (fallbackSpace) {
-        return buildCanonicalCollectionPath(
+        return buildCanonicalSpacePath(
           multilingualEnabled,
           defaultLocale,
           fallbackSpace.slug,
@@ -248,8 +259,8 @@ export function resolveLocaleSwitchPath({
         return buildCanonicalArticlePath(
           multilingualEnabled,
           targetLocale,
-          targetArticle.collection.slug,
           targetArticle.article.slug,
+          targetArticle.article.public_id,
         )
       }
 
@@ -258,14 +269,14 @@ export function resolveLocaleSwitchPath({
         return buildCanonicalArticlePath(
           multilingualEnabled,
           defaultLocale,
-          fallbackArticle.collection.slug,
           fallbackArticle.article.slug,
+          fallbackArticle.article.public_id,
         )
       }
 
       const fallbackSpace = findSpaceByID(fallbackSpaces, current.spaceId)
       if (fallbackSpace) {
-        return buildCanonicalCollectionPath(
+        return buildCanonicalSpacePath(
           multilingualEnabled,
           defaultLocale,
           fallbackSpace.slug,
@@ -299,7 +310,7 @@ export function resolveExactLocalePath({
     case 'space': {
       const targetSpace = findSpaceByID(targetSpaces, current.spaceId)
       return targetSpace
-        ? buildCanonicalCollectionPath(
+        ? buildCanonicalSpacePath(
             multilingualEnabled,
             targetLocale,
             targetSpace.slug,
@@ -325,8 +336,8 @@ export function resolveExactLocalePath({
         ? buildCanonicalArticlePath(
             multilingualEnabled,
             targetLocale,
-            targetArticle.collection.slug,
             targetArticle.article.slug,
+            targetArticle.article.public_id,
           )
         : null
     }

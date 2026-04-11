@@ -16,10 +16,14 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as SpaceSlugIndexRouteImport } from './routes/$spaceSlug/index'
 import { Route as LocaleIndexRouteImport } from './routes/$locale/index'
 import { Route as PreviewDocIdRouteImport } from './routes/preview.$docId'
+import { Route as CCollectionSlugRouteImport } from './routes/c/$collectionSlug'
+import { Route as ArticlesArticleKeyRouteImport } from './routes/articles/$articleKey'
 import { Route as SpaceSlugArticleSlugRouteImport } from './routes/$spaceSlug/$articleSlug'
 import { Route as LocaleSearchRouteImport } from './routes/$locale/search'
 import { Route as LocaleSpaceSlugRouteImport } from './routes/$locale/$spaceSlug'
 import { Route as LocaleSpaceSlugIndexRouteImport } from './routes/$locale/$spaceSlug/index'
+import { Route as LocaleCCollectionSlugRouteImport } from './routes/$locale/c/$collectionSlug'
+import { Route as LocaleArticlesArticleKeyRouteImport } from './routes/$locale/articles/$articleKey'
 import { Route as LocaleSpaceSlugCollectionSlugIndexRouteImport } from './routes/$locale/$spaceSlug/$collectionSlug/index'
 import { Route as LocaleSpaceSlugCollectionSlugArticleSlugRouteImport } from './routes/$locale/$spaceSlug/$collectionSlug/$articleSlug'
 
@@ -58,6 +62,16 @@ const PreviewDocIdRoute = PreviewDocIdRouteImport.update({
   path: '/preview/$docId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CCollectionSlugRoute = CCollectionSlugRouteImport.update({
+  id: '/c/$collectionSlug',
+  path: '/c/$collectionSlug',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ArticlesArticleKeyRoute = ArticlesArticleKeyRouteImport.update({
+  id: '/articles/$articleKey',
+  path: '/articles/$articleKey',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SpaceSlugArticleSlugRoute = SpaceSlugArticleSlugRouteImport.update({
   id: '/$articleSlug',
   path: '/$articleSlug',
@@ -78,6 +92,17 @@ const LocaleSpaceSlugIndexRoute = LocaleSpaceSlugIndexRouteImport.update({
   path: '/',
   getParentRoute: () => LocaleSpaceSlugRoute,
 } as any)
+const LocaleCCollectionSlugRoute = LocaleCCollectionSlugRouteImport.update({
+  id: '/c/$collectionSlug',
+  path: '/c/$collectionSlug',
+  getParentRoute: () => LocaleRoute,
+} as any)
+const LocaleArticlesArticleKeyRoute =
+  LocaleArticlesArticleKeyRouteImport.update({
+    id: '/articles/$articleKey',
+    path: '/articles/$articleKey',
+    getParentRoute: () => LocaleRoute,
+  } as any)
 const LocaleSpaceSlugCollectionSlugIndexRoute =
   LocaleSpaceSlugCollectionSlugIndexRouteImport.update({
     id: '/$collectionSlug/',
@@ -99,9 +124,13 @@ export interface FileRoutesByFullPath {
   '/$locale/$spaceSlug': typeof LocaleSpaceSlugRouteWithChildren
   '/$locale/search': typeof LocaleSearchRoute
   '/$spaceSlug/$articleSlug': typeof SpaceSlugArticleSlugRoute
+  '/articles/$articleKey': typeof ArticlesArticleKeyRoute
+  '/c/$collectionSlug': typeof CCollectionSlugRoute
   '/preview/$docId': typeof PreviewDocIdRoute
   '/$locale/': typeof LocaleIndexRoute
   '/$spaceSlug/': typeof SpaceSlugIndexRoute
+  '/$locale/articles/$articleKey': typeof LocaleArticlesArticleKeyRoute
+  '/$locale/c/$collectionSlug': typeof LocaleCCollectionSlugRoute
   '/$locale/$spaceSlug/': typeof LocaleSpaceSlugIndexRoute
   '/$locale/$spaceSlug/$collectionSlug/$articleSlug': typeof LocaleSpaceSlugCollectionSlugArticleSlugRoute
   '/$locale/$spaceSlug/$collectionSlug/': typeof LocaleSpaceSlugCollectionSlugIndexRoute
@@ -111,9 +140,13 @@ export interface FileRoutesByTo {
   '/search': typeof SearchRoute
   '/$locale/search': typeof LocaleSearchRoute
   '/$spaceSlug/$articleSlug': typeof SpaceSlugArticleSlugRoute
+  '/articles/$articleKey': typeof ArticlesArticleKeyRoute
+  '/c/$collectionSlug': typeof CCollectionSlugRoute
   '/preview/$docId': typeof PreviewDocIdRoute
   '/$locale': typeof LocaleIndexRoute
   '/$spaceSlug': typeof SpaceSlugIndexRoute
+  '/$locale/articles/$articleKey': typeof LocaleArticlesArticleKeyRoute
+  '/$locale/c/$collectionSlug': typeof LocaleCCollectionSlugRoute
   '/$locale/$spaceSlug': typeof LocaleSpaceSlugIndexRoute
   '/$locale/$spaceSlug/$collectionSlug/$articleSlug': typeof LocaleSpaceSlugCollectionSlugArticleSlugRoute
   '/$locale/$spaceSlug/$collectionSlug': typeof LocaleSpaceSlugCollectionSlugIndexRoute
@@ -127,9 +160,13 @@ export interface FileRoutesById {
   '/$locale/$spaceSlug': typeof LocaleSpaceSlugRouteWithChildren
   '/$locale/search': typeof LocaleSearchRoute
   '/$spaceSlug/$articleSlug': typeof SpaceSlugArticleSlugRoute
+  '/articles/$articleKey': typeof ArticlesArticleKeyRoute
+  '/c/$collectionSlug': typeof CCollectionSlugRoute
   '/preview/$docId': typeof PreviewDocIdRoute
   '/$locale/': typeof LocaleIndexRoute
   '/$spaceSlug/': typeof SpaceSlugIndexRoute
+  '/$locale/articles/$articleKey': typeof LocaleArticlesArticleKeyRoute
+  '/$locale/c/$collectionSlug': typeof LocaleCCollectionSlugRoute
   '/$locale/$spaceSlug/': typeof LocaleSpaceSlugIndexRoute
   '/$locale/$spaceSlug/$collectionSlug/$articleSlug': typeof LocaleSpaceSlugCollectionSlugArticleSlugRoute
   '/$locale/$spaceSlug/$collectionSlug/': typeof LocaleSpaceSlugCollectionSlugIndexRoute
@@ -144,9 +181,13 @@ export interface FileRouteTypes {
     | '/$locale/$spaceSlug'
     | '/$locale/search'
     | '/$spaceSlug/$articleSlug'
+    | '/articles/$articleKey'
+    | '/c/$collectionSlug'
     | '/preview/$docId'
     | '/$locale/'
     | '/$spaceSlug/'
+    | '/$locale/articles/$articleKey'
+    | '/$locale/c/$collectionSlug'
     | '/$locale/$spaceSlug/'
     | '/$locale/$spaceSlug/$collectionSlug/$articleSlug'
     | '/$locale/$spaceSlug/$collectionSlug/'
@@ -156,9 +197,13 @@ export interface FileRouteTypes {
     | '/search'
     | '/$locale/search'
     | '/$spaceSlug/$articleSlug'
+    | '/articles/$articleKey'
+    | '/c/$collectionSlug'
     | '/preview/$docId'
     | '/$locale'
     | '/$spaceSlug'
+    | '/$locale/articles/$articleKey'
+    | '/$locale/c/$collectionSlug'
     | '/$locale/$spaceSlug'
     | '/$locale/$spaceSlug/$collectionSlug/$articleSlug'
     | '/$locale/$spaceSlug/$collectionSlug'
@@ -171,9 +216,13 @@ export interface FileRouteTypes {
     | '/$locale/$spaceSlug'
     | '/$locale/search'
     | '/$spaceSlug/$articleSlug'
+    | '/articles/$articleKey'
+    | '/c/$collectionSlug'
     | '/preview/$docId'
     | '/$locale/'
     | '/$spaceSlug/'
+    | '/$locale/articles/$articleKey'
+    | '/$locale/c/$collectionSlug'
     | '/$locale/$spaceSlug/'
     | '/$locale/$spaceSlug/$collectionSlug/$articleSlug'
     | '/$locale/$spaceSlug/$collectionSlug/'
@@ -184,6 +233,8 @@ export interface RootRouteChildren {
   LocaleRoute: typeof LocaleRouteWithChildren
   SpaceSlugRoute: typeof SpaceSlugRouteWithChildren
   SearchRoute: typeof SearchRoute
+  ArticlesArticleKeyRoute: typeof ArticlesArticleKeyRoute
+  CCollectionSlugRoute: typeof CCollectionSlugRoute
   PreviewDocIdRoute: typeof PreviewDocIdRoute
 }
 
@@ -238,6 +289,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PreviewDocIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/c/$collectionSlug': {
+      id: '/c/$collectionSlug'
+      path: '/c/$collectionSlug'
+      fullPath: '/c/$collectionSlug'
+      preLoaderRoute: typeof CCollectionSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/articles/$articleKey': {
+      id: '/articles/$articleKey'
+      path: '/articles/$articleKey'
+      fullPath: '/articles/$articleKey'
+      preLoaderRoute: typeof ArticlesArticleKeyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/$spaceSlug/$articleSlug': {
       id: '/$spaceSlug/$articleSlug'
       path: '/$articleSlug'
@@ -265,6 +330,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/$locale/$spaceSlug/'
       preLoaderRoute: typeof LocaleSpaceSlugIndexRouteImport
       parentRoute: typeof LocaleSpaceSlugRoute
+    }
+    '/$locale/c/$collectionSlug': {
+      id: '/$locale/c/$collectionSlug'
+      path: '/c/$collectionSlug'
+      fullPath: '/$locale/c/$collectionSlug'
+      preLoaderRoute: typeof LocaleCCollectionSlugRouteImport
+      parentRoute: typeof LocaleRoute
+    }
+    '/$locale/articles/$articleKey': {
+      id: '/$locale/articles/$articleKey'
+      path: '/articles/$articleKey'
+      fullPath: '/$locale/articles/$articleKey'
+      preLoaderRoute: typeof LocaleArticlesArticleKeyRouteImport
+      parentRoute: typeof LocaleRoute
     }
     '/$locale/$spaceSlug/$collectionSlug/': {
       id: '/$locale/$spaceSlug/$collectionSlug/'
@@ -305,12 +384,16 @@ interface LocaleRouteChildren {
   LocaleSpaceSlugRoute: typeof LocaleSpaceSlugRouteWithChildren
   LocaleSearchRoute: typeof LocaleSearchRoute
   LocaleIndexRoute: typeof LocaleIndexRoute
+  LocaleArticlesArticleKeyRoute: typeof LocaleArticlesArticleKeyRoute
+  LocaleCCollectionSlugRoute: typeof LocaleCCollectionSlugRoute
 }
 
 const LocaleRouteChildren: LocaleRouteChildren = {
   LocaleSpaceSlugRoute: LocaleSpaceSlugRouteWithChildren,
   LocaleSearchRoute: LocaleSearchRoute,
   LocaleIndexRoute: LocaleIndexRoute,
+  LocaleArticlesArticleKeyRoute: LocaleArticlesArticleKeyRoute,
+  LocaleCCollectionSlugRoute: LocaleCCollectionSlugRoute,
 }
 
 const LocaleRouteWithChildren =
@@ -335,6 +418,8 @@ const rootRouteChildren: RootRouteChildren = {
   LocaleRoute: LocaleRouteWithChildren,
   SpaceSlugRoute: SpaceSlugRouteWithChildren,
   SearchRoute: SearchRoute,
+  ArticlesArticleKeyRoute: ArticlesArticleKeyRoute,
+  CCollectionSlugRoute: CCollectionSlugRoute,
   PreviewDocIdRoute: PreviewDocIdRoute,
 }
 export const routeTree = rootRouteImport

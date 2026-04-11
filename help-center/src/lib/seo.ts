@@ -121,8 +121,6 @@ export function buildCollectionHead(
 export function buildArticleHead(
   rootData: RootRouteData,
   article: ArticleDetail,
-  fallbackCollectionSlug: string,
-  fallbackArticleSlug: string,
   alternateLinks: AlternateLink[] = [],
 ) {
   const title = article.seo_title || `${article.title} | ${rootData.config.brand_name}`
@@ -136,8 +134,8 @@ export function buildArticleHead(
     buildCanonicalArticlePath(
       rootData.multilingualEnabled,
       rootData.activeLocale,
-      article.collection_slug || fallbackCollectionSlug,
-      article.slug || fallbackArticleSlug,
+      article.slug,
+      article.public_id,
     ),
   )
 

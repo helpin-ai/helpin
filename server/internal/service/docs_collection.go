@@ -2,13 +2,50 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
+
+// sameCollectionParentPointer returns true when two *string parent
+// references point at the same collection. Nil == nil (both top-level),
+// non-nil values compare by dereferenced string, and mismatched
+// nil/non-nil combinations are considered different.
+func sameCollectionParentPointer(a, b *string) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return *a == *b
+}
+
+// isUniqueConstraintViolation returns true when err looks like a
+// Postgres unique-constraint violation from the partial unique index
+// on docs_collections(workspace_id, slug) where deleted_at is null.
+// Postgres returns SQLSTATE 23505 for unique violations; the fallback
+// substring match catches sqlite-driver test contexts where the error
+// type wrapping is slightly different.
+func isUniqueConstraintViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "sqlstate 23505") {
+		return true
+	}
+	if strings.Contains(msg, "unique constraint") {
+		return true
+	}
+	if strings.Contains(msg, "unique") && strings.Contains(msg, "violation") {
+		return true
+	}
+	return false
+}
 
 // DocsCollectionService handles business logic for docs collections.
 type DocsCollectionService struct {
@@ -27,10 +64,18 @@ func (s *DocsCollectionService) SetTranslationService(translationSvc *DocsHelpce
 	s.translationSvc = translationSvc
 }
 
-// Create creates a new collection inside a space.
+// maxCollectionDepth is the deepest allowed value of DocsCollection.Depth.
+// With the root at depth 0 this gives three navigable tiers per space:
+// top-level, child, and grandchild.
+const maxCollectionDepth = 2
+
+// Create creates a new collection inside a space. If ParentCollectionID is
+// provided and non-empty, the collection is inserted as a child of that
+// parent within the same space; the depth is derived from the parent and
+// validated against maxCollectionDepth.
 func (s *DocsCollectionService) Create(ctx context.Context, workspaceID, spaceID string, req model.CreateDocsCollectionRequest, userID string) (*model.DocsCollection, error) {
 	if req.Name == "" {
-		return nil, fmt.Errorf("name is required")
+		return nil, ErrDocsCollectionNameRequired
 	}
 
 	space, err := s.spaceRepo.GetByID(ctx, spaceID)
@@ -38,33 +83,64 @@ func (s *DocsCollectionService) Create(ctx context.Context, workspaceID, spaceID
 		return nil, err
 	}
 	if space == nil {
-		return nil, fmt.Errorf("space not found")
+		return nil, ErrDocsSpaceNotFound
 	}
 	if space.WorkspaceID != workspaceID {
-		return nil, fmt.Errorf("space does not belong to this workspace")
+		return nil, ErrDocsCrossWorkspace
 	}
 
-	// Append to end of space.
-	nextPos, err := s.collectionRepo.NextPosition(ctx, spaceID)
+	parentID, parentDepth, err := s.resolveParentForCreate(ctx, spaceID, req.ParentCollectionID)
+	if err != nil {
+		return nil, err
+	}
+	newDepth := 0
+	if parentID != nil {
+		newDepth = parentDepth + 1
+	}
+	if newDepth > maxCollectionDepth {
+		return nil, ErrDocsCollectionDepthExceeded
+	}
+
+	// Compute the final slug up front so we can pre-check workspace-wide
+	// uniqueness and return a typed conflict instead of a raw DB error.
+	slug := slugify(req.Name)
+	if req.Slug != nil && *req.Slug != "" {
+		slug = slugify(*req.Slug)
+	}
+	taken, err := s.collectionRepo.SlugTakenInWorkspace(ctx, workspaceID, slug, "")
+	if err != nil {
+		return nil, err
+	}
+	if taken {
+		return nil, ErrDocsCollectionSlugTaken
+	}
+
+	// Append to end of the target sibling bucket.
+	nextPos, err := s.collectionRepo.NextPositionInBucket(ctx, spaceID, parentID)
 	if err != nil {
 		nextPos = 0
 	}
 
 	coll := &model.DocsCollection{
-		SpaceID:     spaceID,
-		WorkspaceID: workspaceID,
-		Name:        req.Name,
-		Slug:        slugify(req.Name),
-		Description: req.Description,
-		Icon:        req.Icon,
-		Position:    nextPos,
-		CreatedBy:   userID,
-	}
-	if req.Slug != nil && *req.Slug != "" {
-		coll.Slug = *req.Slug
+		SpaceID:            spaceID,
+		WorkspaceID:        workspaceID,
+		ParentCollectionID: parentID,
+		Depth:              newDepth,
+		Name:               req.Name,
+		Slug:               slug,
+		Description:        req.Description,
+		Icon:               req.Icon,
+		Position:           nextPos,
+		CreatedBy:          userID,
 	}
 	created, err := s.collectionRepo.Create(ctx, coll)
 	if err != nil {
+		// The partial unique index is the DB-level safety net — map
+		// any constraint violation back to the typed conflict so the
+		// handler layer still returns 409 instead of 500 on races.
+		if isUniqueConstraintViolation(err) {
+			return nil, ErrDocsCollectionSlugTaken
+		}
 		return nil, err
 	}
 	if s.translationSvc != nil {
@@ -97,8 +173,41 @@ func (s *DocsCollectionService) ListByWorkspace(ctx context.Context, workspaceID
 	return s.collectionRepo.ListByWorkspace(ctx, workspaceID)
 }
 
-// Update updates a collection.
+// Update updates a collection. If ParentCollectionID is set in the request,
+// the collection is reparented first (validated + Reparent), then the
+// remaining field updates are applied.
 func (s *DocsCollectionService) Update(ctx context.Context, id string, req model.UpdateDocsCollectionRequest) (*model.DocsCollection, error) {
+	current, err := s.collectionRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if current == nil {
+		return nil, ErrDocsCollectionNotFound
+	}
+
+	// Step 1: reparent if requested. The nil-pointer sentinel means "leave
+	// parent unchanged"; a pointer to the empty string means "reparent to
+	// the top of the space"; anything else is an explicit parent ID.
+	//
+	// When the resolved parent matches the current parent we skip the
+	// reparent call entirely — repo.Reparent appends to the end of the
+	// target sibling bucket, so a no-op "update" that happened to echo
+	// the current parent_collection_id would silently reshuffle sibling
+	// order. Comparing the pointer values handles all three cases
+	// (both nil, both non-nil equal, mismatch) cleanly.
+	if req.ParentCollectionID != nil {
+		newParentID, err := s.resolveParentForReparent(ctx, current, *req.ParentCollectionID)
+		if err != nil {
+			return nil, err
+		}
+		if !sameCollectionParentPointer(current.ParentCollectionID, newParentID) {
+			if err := s.collectionRepo.Reparent(ctx, id, newParentID); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	// Step 2: apply the remaining partial updates.
 	updates := map[string]interface{}{}
 	shouldRefreshTranslations := false
 	if req.Name != nil {
@@ -116,11 +225,25 @@ func (s *DocsCollectionService) Update(ctx context.Context, id string, req model
 		updates["position"] = *req.Position
 	}
 	if len(updates) == 0 {
-		return s.collectionRepo.GetByID(ctx, id)
+		updated, err := s.collectionRepo.GetByID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if updated != nil {
+			publishWorkspaceEventWithParent(s.wsPublisher, "updated", "docs_collection", updated.ID, updated.WorkspaceID, "", "docs_space", updated.SpaceID, nil)
+		}
+		return updated, nil
 	}
 	updated, err := s.collectionRepo.Update(ctx, id, updates)
 	if err != nil {
 		return nil, err
+	}
+	if req.Position != nil && updated != nil {
+		// Position was changed by hand — re-normalize the owning bucket so
+		// any ties introduced by manual position overrides are compacted.
+		if err := s.collectionRepo.NormalizeBucket(ctx, updated.SpaceID, updated.ParentCollectionID); err != nil {
+			slog.WarnContext(ctx, "normalize bucket after position update failed", "collection_id", id, "error", err)
+		}
 	}
 	if shouldRefreshTranslations && s.translationSvc != nil {
 		if err := s.translationSvc.RefreshCollectionSource(ctx, id); err != nil {
@@ -131,6 +254,85 @@ func (s *DocsCollectionService) Update(ctx context.Context, id string, req model
 	return updated, nil
 }
 
+// resolveParentForCreate validates the requested parent for a new
+// collection. It returns the canonical parent ID (nil for top-level), the
+// parent's depth (0 when no parent), and a typed sentinel error if the
+// parent is missing or lives in a different space.
+func (s *DocsCollectionService) resolveParentForCreate(ctx context.Context, spaceID string, requested *string) (*string, int, error) {
+	if requested == nil || *requested == "" {
+		return nil, 0, nil
+	}
+	parent, err := s.collectionRepo.GetByID(ctx, *requested)
+	if err != nil {
+		return nil, 0, err
+	}
+	if parent == nil {
+		return nil, 0, ErrDocsCollectionParentNotFound
+	}
+	if parent.SpaceID != spaceID {
+		return nil, 0, ErrDocsCollectionParentDifferentSpace
+	}
+	id := parent.ID
+	return &id, parent.Depth, nil
+}
+
+// resolveParentForReparent validates a reparent target for an existing
+// collection. It enforces:
+//   - parent exists and is in the same space
+//   - target is not the collection itself
+//   - target is not one of the collection's descendants (no cycles)
+//   - moving under the target does not push the collection's subtree past
+//     maxCollectionDepth
+//
+// All rejection cases return typed sentinel errors so handlers can map
+// them to precise HTTP responses.
+func (s *DocsCollectionService) resolveParentForReparent(ctx context.Context, current *model.DocsCollection, requested string) (*string, error) {
+	if requested == "" {
+		// Reparent to the top of the space — no parent, no further checks.
+		return nil, nil
+	}
+	if requested == current.ID {
+		return nil, ErrDocsCollectionSelfParent
+	}
+
+	parent, err := s.collectionRepo.GetByID(ctx, requested)
+	if err != nil {
+		return nil, err
+	}
+	if parent == nil {
+		return nil, ErrDocsCollectionParentNotFound
+	}
+	if parent.SpaceID != current.SpaceID {
+		return nil, ErrDocsCollectionParentDifferentSpace
+	}
+
+	descendants, err := s.collectionRepo.ListDescendants(ctx, current.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, d := range descendants {
+		if d.ID == requested {
+			return nil, ErrDocsCollectionCycle
+		}
+	}
+
+	// The moved collection takes on parent.Depth + 1. Its deepest
+	// descendant takes on that depth plus the subtree's relative depth.
+	newRootDepth := parent.Depth + 1
+	if newRootDepth > maxCollectionDepth {
+		return nil, ErrDocsCollectionDepthExceeded
+	}
+	delta := newRootDepth - current.Depth
+	for _, d := range descendants {
+		if d.Depth+delta > maxCollectionDepth {
+			return nil, ErrDocsCollectionDepthExceeded
+		}
+	}
+
+	id := parent.ID
+	return &id, nil
+}
+
 // Delete soft-deletes a collection.
 func (s *DocsCollectionService) Delete(ctx context.Context, id string) error {
 	collection, err := s.collectionRepo.GetByID(ctx, id)
@@ -138,7 +340,7 @@ func (s *DocsCollectionService) Delete(ctx context.Context, id string) error {
 		return err
 	}
 	if collection == nil {
-		return fmt.Errorf("collection not found")
+		return ErrDocsCollectionNotFound
 	}
 	if err := s.collectionRepo.Delete(ctx, id); err != nil {
 		return err
@@ -156,12 +358,20 @@ func (s *DocsCollectionService) Restore(ctx context.Context, id string) (*model.
 	return collection, err
 }
 
-// ReorderCollections reorders collections within a space.
+// ReorderCollections reorders one (space_id, parent_collection_id)
+// sibling bucket. An empty or nil ParentCollectionID targets the
+// top-level bucket in the space. Collection IDs that do not belong to
+// the targeted bucket are silently skipped by the repository, so a
+// stale payload cannot displace sibling groups.
 func (s *DocsCollectionService) ReorderCollections(ctx context.Context, spaceID string, req model.ReorderDocsCollectionsRequest) error {
 	if len(req.CollectionIDs) == 0 {
 		return nil
 	}
-	if err := s.collectionRepo.Reorder(ctx, spaceID, req.CollectionIDs); err != nil {
+	var parentID *string
+	if req.ParentCollectionID != nil && *req.ParentCollectionID != "" {
+		parentID = req.ParentCollectionID
+	}
+	if err := s.collectionRepo.ReorderSiblings(ctx, spaceID, parentID, req.CollectionIDs); err != nil {
 		return err
 	}
 	if space, err := s.spaceRepo.GetByID(ctx, spaceID); err == nil && space != nil {
