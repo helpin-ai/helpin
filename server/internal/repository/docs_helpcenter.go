@@ -1023,16 +1023,17 @@ func (r *DocsHelpcenterRepository) ListWidgetCollections(ctx context.Context, sp
 // ListWidgetArticlesByCollectionID returns externally published articles in a collection.
 func (r *DocsHelpcenterRepository) ListWidgetArticlesByCollectionID(ctx context.Context, collectionID string) ([]model.WidgetHelpArticleSummary, error) {
 	type articleRow struct {
-		ID      string  `gorm:"column:id"`
-		Title   string  `gorm:"column:title"`
-		Excerpt *string `gorm:"column:excerpt"`
-		Slug    string  `gorm:"column:slug"`
-		Icon    *string `gorm:"column:icon"`
+		ID       string  `gorm:"column:id"`
+		Title    string  `gorm:"column:title"`
+		Excerpt  *string `gorm:"column:excerpt"`
+		Slug     string  `gorm:"column:slug"`
+		PublicID string  `gorm:"column:public_id"`
+		Icon     *string `gorm:"column:icon"`
 	}
 
 	var rows []articleRow
 	if err := r.db.WithContext(ctx).Raw(`
-		SELECT d.id, p.title, p.excerpt, p.slug, d.icon
+		SELECT d.id, p.title, p.excerpt, p.slug, ha.public_id, d.icon
 		FROM docs_documents d
 		JOIN docs_helpcenter_articles ha ON ha.document_id = d.id
 		JOIN docs_helpcenter_article_publications p ON p.document_id = d.id
@@ -1051,11 +1052,12 @@ func (r *DocsHelpcenterRepository) ListWidgetArticlesByCollectionID(ctx context.
 	result := make([]model.WidgetHelpArticleSummary, len(rows))
 	for i, row := range rows {
 		result[i] = model.WidgetHelpArticleSummary{
-			ID:      row.ID,
-			Title:   row.Title,
-			Slug:    row.Slug,
-			Excerpt: row.Excerpt,
-			Icon:    row.Icon,
+			ID:       row.ID,
+			Title:    row.Title,
+			Slug:     row.Slug,
+			PublicID: row.PublicID,
+			Excerpt:  row.Excerpt,
+			Icon:     row.Icon,
 		}
 	}
 	return result, nil
@@ -1064,16 +1066,17 @@ func (r *DocsHelpcenterRepository) ListWidgetArticlesByCollectionID(ctx context.
 // ListWidgetArticlesBySpaceUncategorized returns externally published uncategorized articles in a space.
 func (r *DocsHelpcenterRepository) ListWidgetArticlesBySpaceUncategorized(ctx context.Context, spaceID string) ([]model.WidgetHelpArticleSummary, error) {
 	type articleRow struct {
-		ID      string  `gorm:"column:id"`
-		Title   string  `gorm:"column:title"`
-		Excerpt *string `gorm:"column:excerpt"`
-		Slug    string  `gorm:"column:slug"`
-		Icon    *string `gorm:"column:icon"`
+		ID       string  `gorm:"column:id"`
+		Title    string  `gorm:"column:title"`
+		Excerpt  *string `gorm:"column:excerpt"`
+		Slug     string  `gorm:"column:slug"`
+		PublicID string  `gorm:"column:public_id"`
+		Icon     *string `gorm:"column:icon"`
 	}
 
 	var rows []articleRow
 	if err := r.db.WithContext(ctx).Raw(`
-		SELECT d.id, p.title, p.excerpt, p.slug, d.icon
+		SELECT d.id, p.title, p.excerpt, p.slug, ha.public_id, d.icon
 		FROM docs_documents d
 		JOIN docs_helpcenter_articles ha ON ha.document_id = d.id
 		JOIN docs_helpcenter_article_publications p ON p.document_id = d.id
@@ -1093,11 +1096,12 @@ func (r *DocsHelpcenterRepository) ListWidgetArticlesBySpaceUncategorized(ctx co
 	result := make([]model.WidgetHelpArticleSummary, len(rows))
 	for i, row := range rows {
 		result[i] = model.WidgetHelpArticleSummary{
-			ID:      row.ID,
-			Title:   row.Title,
-			Slug:    row.Slug,
-			Excerpt: row.Excerpt,
-			Icon:    row.Icon,
+			ID:       row.ID,
+			Title:    row.Title,
+			Slug:     row.Slug,
+			PublicID: row.PublicID,
+			Excerpt:  row.Excerpt,
+			Icon:     row.Icon,
 		}
 	}
 	return result, nil
@@ -1185,6 +1189,51 @@ func (r *DocsHelpcenterRepository) GetPublicArticleByDocumentIDInSpaces(ctx cont
 			return nil, nil, nil, nil
 		}
 		return nil, nil, nil, fmt.Errorf("get public article by document id: %w", err)
+	}
+	doc, ha, content := sourceArticleRowToModels(row)
+	return doc, ha, content, nil
+}
+
+// GetPublicArticleByPublicIDInSpaces finds a public article by canonical public ID constrained to allowed spaces.
+func (r *DocsHelpcenterRepository) GetPublicArticleByPublicIDInSpaces(ctx context.Context, spaceIDs []string, publicID string) (*model.DocsDocument, *model.DocsHelpcenterArticle, *model.DocsContent, error) {
+	if len(spaceIDs) == 0 {
+		return nil, nil, nil, nil
+	}
+
+	var row sourceArticleRow
+	if err := r.db.WithContext(ctx).
+		Table("docs_helpcenter_article_publications p").
+		Select(`
+			d.*,
+			ha.id AS helpcenter_article_id,
+			ha.public_id AS helpcenter_public_id,
+			p.slug AS helpcenter_slug,
+			p.content AS publication_content,
+			p.title AS publication_title,
+			p.excerpt AS publication_excerpt,
+			p.seo_title AS publication_seo_title,
+			p.seo_description AS publication_seo_description,
+			ha.public_published_at,
+			ha.helpful_count,
+			ha.not_helpful_count,
+			ha.view_count
+		`).
+		Joins("JOIN docs_documents d ON d.id = p.document_id").
+		Joins("JOIN docs_helpcenter_articles ha ON ha.document_id = p.document_id").
+		Joins("JOIN docs_helpcenter_configs cfg ON cfg.workspace_id = d.workspace_id").
+		Where(`
+			ha.public_id = ?
+			AND d.space_id IN ?
+			AND p.locale = cfg.default_locale
+			AND d.status = 'published'
+			AND d.deleted_at IS NULL
+			AND ha.public_published_at IS NOT NULL
+		`, publicID, spaceIDs).
+		First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil, nil, nil
+		}
+		return nil, nil, nil, fmt.Errorf("get public article by public id in spaces: %w", err)
 	}
 	doc, ha, content := sourceArticleRowToModels(row)
 	return doc, ha, content, nil

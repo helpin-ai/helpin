@@ -190,14 +190,14 @@ func TestSupportInboxWidgetHandlerValidation(t *testing.T) {
 		assertAPIError(t, rec, http.StatusBadRequest, "widget_key is required")
 	})
 
-	t.Run("GetHelpArticle requires articleSlug", func(t *testing.T) {
+	t.Run("GetHelpArticle requires articleKey", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/widget/support/help/articles/?widget_key=wk_123", nil)
-		req = withURLParam(req, "articleSlug", "")
+		req = withURLParam(req, "articleKey", "")
 		rec := httptest.NewRecorder()
 
 		h.GetHelpArticle(rec, req)
 
-		assertAPIError(t, rec, http.StatusBadRequest, "articleSlug is required")
+		assertAPIError(t, rec, http.StatusBadRequest, "articleKey is required")
 	})
 }
 

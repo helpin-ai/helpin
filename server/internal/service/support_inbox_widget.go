@@ -1021,13 +1021,17 @@ func (s *SupportInboxService) ListWidgetHelpArticles(ctx context.Context, widget
 		spaceID := strings.TrimPrefix(collectionSlug, "uncategorized:")
 		for _, space := range allowedSpaces {
 			if space.ID == spaceID {
-				return s.docsHelpcenterRepo.ListWidgetArticlesBySpaceUncategorized(ctx, spaceID)
+				articles, err := s.docsHelpcenterRepo.ListWidgetArticlesBySpaceUncategorized(ctx, spaceID)
+				if err != nil {
+					return nil, err
+				}
+				return withWidgetArticleKeys(articles), nil
 			}
 		}
 		return nil, fmt.Errorf("collection not found")
 	}
 
-	collection, err := s.docsCollectionRepo.GetByID(ctx, collectionSlug)
+	collection, err := s.docsCollectionRepo.GetBySlug(ctx, inst.WorkspaceID, collectionSlug)
 	if err != nil {
 		return nil, err
 	}
@@ -1043,11 +1047,15 @@ func (s *SupportInboxService) ListWidgetHelpArticles(ctx context.Context, widget
 		return nil, fmt.Errorf("collection not found")
 	}
 
-	return s.docsHelpcenterRepo.ListWidgetArticlesByCollectionID(ctx, collection.ID)
+	articles, err := s.docsHelpcenterRepo.ListWidgetArticlesByCollectionID(ctx, collection.ID)
+	if err != nil {
+		return nil, err
+	}
+	return withWidgetArticleKeys(articles), nil
 }
 
 // GetWidgetHelpArticle returns a widget-visible article with rendered HTML content.
-func (s *SupportInboxService) GetWidgetHelpArticle(ctx context.Context, widgetKey, articleSlug string) (*model.WidgetHelpArticle, error) {
+func (s *SupportInboxService) GetWidgetHelpArticle(ctx context.Context, widgetKey, articleKey string) (*model.WidgetHelpArticle, error) {
 	inst, allowedSpaces, err := s.getAllowedWidgetHelpSpaces(ctx, widgetKey)
 	if err != nil {
 		return nil, err
@@ -1056,11 +1064,21 @@ func (s *SupportInboxService) GetWidgetHelpArticle(ctx context.Context, widgetKe
 		return nil, fmt.Errorf("docs helpcenter repository not configured")
 	}
 
-	doc, _, content, err := s.docsHelpcenterRepo.GetPublicArticleByDocumentIDInSpaces(ctx, widgetHelpSpaceIDs(allowedSpaces), articleSlug)
+	spaceIDs := widgetHelpSpaceIDs(allowedSpaces)
+	var (
+		doc     *model.DocsDocument
+		article *model.DocsHelpcenterArticle
+		content *model.DocsContent
+	)
+	if _, publicID, ok := parseDocsHelpcenterArticleKey(articleKey); ok {
+		doc, article, content, err = s.docsHelpcenterRepo.GetPublicArticleByPublicIDInSpaces(ctx, spaceIDs, publicID)
+	} else {
+		doc, article, content, err = s.docsHelpcenterRepo.GetPublicArticleByDocumentIDInSpaces(ctx, spaceIDs, articleKey)
+	}
 	if err != nil {
 		return nil, err
 	}
-	if doc == nil {
+	if doc == nil || article == nil {
 		return nil, fmt.Errorf("article not found")
 	}
 
@@ -1069,15 +1087,20 @@ func (s *SupportInboxService) GetWidgetHelpArticle(ctx context.Context, widgetKe
 		contentJSON = content.Content
 	}
 
-	publicPath, err := s.buildWidgetHelpArticlePublicPath(ctx, inst.WorkspaceID, doc)
+	publicPath, err := s.buildWidgetHelpArticlePublicPath(ctx, inst.WorkspaceID, article)
 	if err != nil {
 		return nil, err
 	}
 
+	slug := strings.TrimSpace(article.Slug)
+	publicID := strings.TrimSpace(article.PublicID)
+
 	return &model.WidgetHelpArticle{
 		ID:          doc.ID,
 		Title:       doc.Title,
-		Slug:        doc.ID,
+		Slug:        slug,
+		PublicID:    publicID,
+		ArticleKey:  buildDocsHelpcenterArticleKey(slug, publicID),
 		Excerpt:     doc.Excerpt,
 		Icon:        doc.Icon,
 		ContentHTML: renderWidgetArticleHTML(contentJSON),
@@ -1085,8 +1108,15 @@ func (s *SupportInboxService) GetWidgetHelpArticle(ctx context.Context, widgetKe
 	}, nil
 }
 
-func (s *SupportInboxService) buildWidgetHelpArticlePublicPath(ctx context.Context, workspaceID string, doc *model.DocsDocument) (*string, error) {
-	if doc == nil || s.docsHelpcenterRepo == nil {
+func withWidgetArticleKeys(articles []model.WidgetHelpArticleSummary) []model.WidgetHelpArticleSummary {
+	for i := range articles {
+		articles[i].ArticleKey = buildDocsHelpcenterArticleKey(articles[i].Slug, articles[i].PublicID)
+	}
+	return articles
+}
+
+func (s *SupportInboxService) buildWidgetHelpArticlePublicPath(ctx context.Context, workspaceID string, article *model.DocsHelpcenterArticle) (*string, error) {
+	if article == nil || s.docsHelpcenterRepo == nil {
 		return nil, nil
 	}
 
@@ -1098,19 +1128,12 @@ func (s *SupportInboxService) buildWidgetHelpArticlePublicPath(ctx context.Conte
 		return nil, nil
 	}
 
-	article, err := s.docsHelpcenterRepo.GetArticle(ctx, doc.ID)
-	if err != nil {
-		return nil, fmt.Errorf("get help center article: %w", err)
-	}
-	if article == nil || strings.TrimSpace(article.Slug) == "" {
+	articleSlug := strings.TrimSpace(article.Slug)
+	publicID := strings.TrimSpace(article.PublicID)
+	if articleSlug == "" || publicID == "" {
 		return nil, nil
 	}
 
-	articleSlug := strings.TrimSpace(article.Slug)
-	publicID := strings.TrimSpace(article.PublicID)
-	if publicID == "" {
-		return nil, nil
-	}
 	articleKey := buildDocsHelpcenterArticleKey(articleSlug, publicID)
 
 	// Only build a public URL when the workspace has a custom domain configured.

@@ -55,7 +55,8 @@ interface ChatWindowProps {
   host?: string;
   openArticleRequest?: {
     key: number;
-    articleSlug: string;
+    articleKey?: string;
+    articleSlug?: string;
   };
   onImageClick?: (src: string, alt: string) => void;
 }
@@ -106,7 +107,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   const [previousView, setPreviousView] = useState<WidgetBaseView>(initialPreviousView);
   const [activeHelpSpaceSlug, setActiveHelpSpaceSlug] = useState<string | null>(null);
   const [activeCollectionSlug, setActiveCollectionSlug] = useState<string | null>(null);
-  const [activeArticleSlug, setActiveArticleSlug] = useState<string | null>(null);
+  const [activeArticleKey, setActiveArticleKey] = useState<string | null>(null);
   // Breadcrumb stack of ancestor collection slugs the user drilled
   // through to reach activeCollectionSlug, oldest-first. Pop on back
   // to walk up the tree one level at a time. Empty when the user is
@@ -123,11 +124,12 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   }, [initialView]);
 
   useEffect(() => {
-    if (!openArticleRequest) {
+    const requestedArticleKey = openArticleRequest?.articleKey ?? openArticleRequest?.articleSlug;
+    if (!requestedArticleKey) {
       return;
     }
 
-    setActiveArticleSlug(openArticleRequest.articleSlug);
+    setActiveArticleKey(requestedArticleKey);
     setActiveCollectionSlug(null);
     setActiveHelpSpaceSlug(null);
     setActiveView('help-article');
@@ -194,7 +196,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
     if (view !== 'help') {
       setActiveHelpSpaceSlug(null);
       setActiveCollectionSlug(null);
-      setActiveArticleSlug(null);
+      setActiveArticleKey(null);
     }
     setActiveView(view as WidgetView);
     onViewChange?.(view as WidgetView);
@@ -219,7 +221,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   const handleOpenHelpSpace = (spaceSlug: string) => {
     setActiveHelpSpaceSlug(spaceSlug);
     setActiveCollectionSlug(null);
-    setActiveArticleSlug(null);
+    setActiveArticleKey(null);
     setHelpCollectionStack([]);
     setActiveView('help-space');
     onViewChange?.('help-space');
@@ -242,7 +244,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
       ),
     );
     setActiveCollectionSlug(collectionSlug);
-    setActiveArticleSlug(null);
+    setActiveArticleKey(null);
     setActiveView('help-collection');
     onViewChange?.('help-collection');
   };
@@ -254,7 +256,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   // lives in a pure helper so it can be unit tested without the
   // full widget render tree.
   const handleBackFromHelpCollection = () => {
-    setActiveArticleSlug(null);
+    setActiveArticleKey(null);
     const target = computeHelpCollectionBackTarget(
       helpCollectionStack,
       helpSpaces.length,
@@ -278,7 +280,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   };
 
   const handleOpenHelpArticle = (articleSlug: string) => {
-    setActiveArticleSlug(articleSlug);
+    setActiveArticleKey(articleSlug);
     setActiveView('help-article');
     onViewChange?.('help-article');
   };
@@ -443,18 +445,18 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
             onSelectArticle={handleOpenHelpArticle}
           />
         )}
-        {activeView === 'help-article' && activeArticleSlug && host && widgetKey && (
+        {activeView === 'help-article' && activeArticleKey && host && widgetKey && (
           <HelpArticleView
             host={host}
             widgetKey={widgetKey}
-            articleSlug={activeArticleSlug}
+            articleKey={activeArticleKey}
             onBack={() => {
               if (activeCollectionSlug) {
                 setActiveView('help-collection');
                 onViewChange?.('help-collection');
                 return;
               }
-              setActiveArticleSlug(null);
+              setActiveArticleKey(null);
               setActiveView('help');
               onViewChange?.('help');
             }}

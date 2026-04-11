@@ -14,6 +14,8 @@ export interface HelpArticleSummary {
   id: string;
   title: string;
   slug: string;
+  public_id: string;
+  article_key: string;
   excerpt?: string;
   icon?: string;
 }
@@ -22,10 +24,21 @@ export interface HelpArticle {
   id: string;
   title: string;
   slug: string;
+  public_id: string;
+  article_key: string;
   excerpt?: string;
   icon?: string;
   content_html?: string | null;
   public_path?: string;
+}
+
+export function buildHelpArticleKey(slug: string, publicId?: string | null): string {
+  const trimmedSlug = slug.trim().replace(/^\/+|\/+$/g, '');
+  const trimmedPublicId = (publicId ?? '').trim().toLowerCase();
+  if (trimmedSlug && trimmedPublicId) {
+    return `${trimmedSlug}-${trimmedPublicId}`;
+  }
+  return trimmedSlug || trimmedPublicId;
 }
 
 function getApiBase(host: string): string {
@@ -51,6 +64,6 @@ export function fetchHelpArticles(host: string, widgetKey: string, collectionSlu
   return fetchHelpJSON(host, widgetKey, `/widget/support/help/collections/${encodeURIComponent(collectionSlug)}/articles`);
 }
 
-export function fetchHelpArticle(host: string, widgetKey: string, articleSlug: string): Promise<HelpArticle> {
-  return fetchHelpJSON(host, widgetKey, `/widget/support/help/articles/${encodeURIComponent(articleSlug)}`);
+export function fetchHelpArticle(host: string, widgetKey: string, articleKey: string): Promise<HelpArticle> {
+  return fetchHelpJSON(host, widgetKey, `/widget/support/help/articles/${encodeURIComponent(articleKey)}`);
 }
