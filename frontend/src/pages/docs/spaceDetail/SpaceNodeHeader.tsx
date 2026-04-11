@@ -2,7 +2,6 @@ import type { DocsSpace } from '@/lib/docsTypes'
 import {
   ArrowRight01Icon,
   Delete01Icon,
-  GlobeIcon,
   LanguageCircleIcon,
   MoreHorizontalIcon,
   PencilEdit01Icon,
@@ -15,7 +14,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { NodeView } from './nodeSelection'
 
@@ -185,11 +183,6 @@ export function SpaceNodeHeader({
                 />
               ) : (
                 <h1 className="truncate text-xl font-semibold">{titleLabel}</h1>
-              )}
-              {view.kind === 'space_root' && isExternalCapable && (
-                <QuickTooltip label="Published to public help center">
-                  <GlobeIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
-                </QuickTooltip>
               )}
               {view.kind === 'space_root' && canEdit && !renamingSpace && (
                 <button
