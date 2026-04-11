@@ -97,17 +97,21 @@ export function HelpcenterTranslationsTable({
     if (!editing || !editing.name.trim()) return
     setSaving(true)
     try {
+      // Don't send a slug from the client. Translation slugs are
+      // frozen after first set by the backend — the server will
+      // derive a slug from the name on the very first write and
+      // keep that value for every subsequent edit. Sending a
+      // client-derived slug here used to silently break localized
+      // public URLs on every name edit; see 2026-04-11 Option C.
       if (editing.type === 'space') {
         await docsService.upsertSpaceTranslation(workspaceId, editing.id, {
           locale: editing.locale,
           name: editing.name.trim(),
-          slug: editing.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
         })
       } else {
         await docsService.upsertCollectionTranslation(workspaceId, editing.id, {
           locale: editing.locale,
           name: editing.name.trim(),
-          slug: editing.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
         })
       }
       toast.success('Translation saved')
