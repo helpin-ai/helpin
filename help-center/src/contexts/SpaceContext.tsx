@@ -39,33 +39,36 @@ export function SpaceProvider({
   )
 
   const space = spaces.find((s) => s.slug === spaceSlug)
-  const nav = navigation ?? []
 
   const value = useMemo<SpaceContextValue>(
-    () => ({
-      space,
-      spaceSlug,
-      navigation: nav,
-      isLoading,
-      getPager: (articleSlug: string) => getArticlePager(nav, articleSlug),
-      getCollectionName: (articleSlug: string) => {
-        for (const collection of nav) {
-          if (collection.articles.some((a) => a.slug === articleSlug)) {
-            return collection.name
+    () => {
+      const nav = navigation ?? []
+
+      return {
+        space,
+        spaceSlug,
+        navigation: nav,
+        isLoading,
+        getPager: (articleSlug: string) => getArticlePager(nav, articleSlug),
+        getCollectionName: (articleSlug: string) => {
+          for (const collection of nav) {
+            if (collection.articles.some((a) => a.slug === articleSlug)) {
+              return collection.name
+            }
           }
-        }
-        return undefined
-      },
-      getCollectionSlug: (articleSlug: string) => {
-        for (const collection of nav) {
-          if (collection.articles.some((a) => a.slug === articleSlug)) {
-            return collection.slug
+          return undefined
+        },
+        getCollectionSlug: (articleSlug: string) => {
+          for (const collection of nav) {
+            if (collection.articles.some((a) => a.slug === articleSlug)) {
+              return collection.slug
+            }
           }
-        }
-        return undefined
-      },
-    }),
-    [space, spaceSlug, nav, isLoading],
+          return undefined
+        },
+      }
+    },
+    [space, spaceSlug, navigation, isLoading],
   )
 
   return <SpaceContext.Provider value={value}>{children}</SpaceContext.Provider>
