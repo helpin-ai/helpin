@@ -163,19 +163,10 @@ export function DocumentsTable({
     }
   }
 
-  const countLabel = (() => {
-    if (filterStatus) {
-      const base = displayDocs.length === 1 ? '1 document' : `${displayDocs.length} documents`
-      return `${base} · ${DOC_STATUS_LABELS[filterStatus]}`
-    }
-    return displayDocs.length === 1 ? '1 document' : `${displayDocs.length} documents`
-  })()
-
   return (
     <>
       {showStatusFilter && (
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-xs text-muted-foreground">{countLabel}</span>
+        <div className="flex items-center justify-end gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button

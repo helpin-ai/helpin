@@ -15,11 +15,13 @@ export interface SpaceBreadcrumbProps {
 }
 
 /**
- * SpaceBreadcrumb renders an ancestor chain above the page title on
- * the docs space detail page. Each clickable segment jumps the URL
- * back up the tree. Individual labels truncate with a tooltip when
- * they overflow. The max depth is Space ▸ L0 ▸ L1 ▸ L2, so four
- * segments is the worst case — no middle-ellipsis is needed.
+ * SpaceBreadcrumb renders the ancestor chain above the page title.
+ * The current node is NOT part of the items — it is already the
+ * page title below, so including it would double up the name.
+ * Every segment is clickable and navigates up the tree. Labels
+ * truncate with a tooltip when they overflow. Max chain in
+ * practice is three ancestors (Space ▸ L0 ▸ L1) above a depth-2
+ * collection view.
  */
 export function SpaceBreadcrumb({ items }: SpaceBreadcrumbProps) {
   if (items.length === 0) return null
@@ -37,23 +39,17 @@ export function SpaceBreadcrumb({ items }: SpaceBreadcrumbProps) {
             <span className="truncate">{item.label}</span>
           </span>
         )
-        const segment =
-          isLast || !item.onClick ? (
-            <span
-              className={isLast ? 'font-medium text-foreground' : undefined}
-              aria-current={isLast ? 'page' : undefined}
-            >
-              {body}
-            </span>
-          ) : (
-            <button
-              type="button"
-              onClick={item.onClick}
-              className="rounded transition-colors hover:text-foreground"
-            >
-              {body}
-            </button>
-          )
+        const segment = item.onClick ? (
+          <button
+            type="button"
+            onClick={item.onClick}
+            className="rounded transition-colors hover:text-foreground"
+          >
+            {body}
+          </button>
+        ) : (
+          <span>{body}</span>
+        )
 
         return (
           <span key={item.id} className="flex items-center gap-1">

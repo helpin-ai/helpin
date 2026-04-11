@@ -34,9 +34,11 @@ export function CollectionCardGrid({
 
   return (
     <section className="space-y-3">
-      <h2 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        {title}
-      </h2>
+      {/* Section label kept for screen readers — the card shape +
+          folder icons already communicate "collections" visually,
+          and showing the label adds repetitive chrome above the
+          header subtitle. */}
+      <h2 className="sr-only">{title}</h2>
       <div className="grid gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]">
         {nodes.map((node) => (
           <CollectionCard

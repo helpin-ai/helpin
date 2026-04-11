@@ -101,6 +101,9 @@ export function SpaceNodeHeader({
   const isExternalCapable = space.type === 'external_capable'
 
   // ── Breadcrumb ────────────────────────────────────────────────────
+  // Ancestors only — the current node is already the page title
+  // below, so including it here would double up the name. The
+  // space itself is always the leftmost clickable segment.
   const breadcrumbItems: SpaceBreadcrumbItem[] = (() => {
     if (view.kind === 'space_root' || view.kind === 'loading') return []
     const items: SpaceBreadcrumbItem[] = [
@@ -118,12 +121,6 @@ export function SpaceNodeHeader({
           onClick: () => onNavigateToCollection(ancestor.collection.id),
         })
       }
-      items.push({
-        id: view.node.collection.id,
-        label: view.node.collection.name,
-      })
-    } else if (view.kind === 'uncategorized') {
-      items.push({ id: 'uncategorized', label: 'Uncategorized' })
     }
     return items
   })()

@@ -460,11 +460,12 @@ export function DocsSpaceDetail() {
 
           {scopedDocs.length > 0 ? (
             <section className="space-y-3">
-              {childNodes.length > 0 && (
-                <h2 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                  {view.kind === 'space_root' ? 'All documents' : 'Documents'}
-                </h2>
-              )}
+              {/* Kept for screen readers; the table structure already
+                  communicates "documents" visually and the header
+                  subtitle already shows the count. */}
+              <h2 className="sr-only">
+                {view.kind === 'space_root' ? 'All documents' : 'Documents'}
+              </h2>
               <DocumentsTable
                 documents={scopedDocs}
                 members={members}
