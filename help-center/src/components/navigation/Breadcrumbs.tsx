@@ -1,5 +1,5 @@
 import { Fragment } from 'react'
-import { Link } from '@tanstack/react-router'
+import { DocsLink } from '@/components/DocsLink'
 import { useDocsContext } from '@/contexts/DocsContext'
 import { buildCanonicalCollectionPath, isMultilingualEnabled } from '@/lib/locale'
 
@@ -57,12 +57,12 @@ export function Breadcrumbs({
         const isLast = idx === entries.length - 1
         const content =
           entry.slug != null ? (
-            <Link
+            <DocsLink
               to={buildCanonicalCollectionPath(multilingualEnabled, locale, entry.slug)}
               className="font-medium text-primary transition-colors hover:text-primary/80"
             >
               {entry.name}
-            </Link>
+            </DocsLink>
           ) : (
             <span className="font-medium text-primary">{entry.name}</span>
           )

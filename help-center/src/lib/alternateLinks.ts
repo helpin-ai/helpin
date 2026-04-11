@@ -9,6 +9,7 @@ import {
   resolveLocaleSwitchPath,
   type LocaleRouteState,
 } from '@/lib/locale'
+import { prefixBasepath } from '@/lib/pathUtils'
 import type { NavItem, Space } from '@/lib/types'
 
 export interface AlternateLink {
@@ -17,8 +18,8 @@ export interface AlternateLink {
   href: string
 }
 
-function absoluteUrl(origin: string, path: string) {
-  return new URL(path, origin).toString()
+function absoluteUrl(rootData: RootRouteData, path: string) {
+  return new URL(prefixBasepath(rootData.basepath, path), rootData.origin).toString()
 }
 
 async function loadSpacesForLocale(
@@ -105,7 +106,7 @@ export async function loadAlternateLinks(
     links.push({
       rel: 'alternate',
       hrefLang: locale,
-      href: absoluteUrl(rootData.origin, href),
+      href: absoluteUrl(rootData, href),
     })
   }
 
@@ -123,7 +124,7 @@ export async function loadAlternateLinks(
   links.push({
     rel: 'alternate',
     hrefLang: 'x-default',
-    href: absoluteUrl(rootData.origin, xDefaultHref),
+    href: absoluteUrl(rootData, xDefaultHref),
   })
 
   return links

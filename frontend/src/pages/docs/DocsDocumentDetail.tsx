@@ -112,9 +112,52 @@ function docStatusColor(status: string): string {
   }
 }
 
-function resolveHelpcenterPreviewBaseUrl(): string {
+interface HelpcenterPreviewBase {
+  hostRoot: string
+  /**
+   * When true, previews are served from the hosted subdomain runtime
+   * (https://{slug}.helpin.center/preview/...). When false, the slug goes in
+   * the `subdomain` query param (legacy/local dev fallback).
+   */
+  hostedSubdomain: boolean
+}
+
+function normalizeExplicitHelpcenterPreviewBase(
+  explicit: string,
+): HelpcenterPreviewBase | null {
+  try {
+    const url = new URL(explicit)
+
+    if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
+      return { hostRoot: url.origin, hostedSubdomain: false }
+    }
+
+    if (url.hostname === 'helpcenter.helpin.ai') {
+      return { hostRoot: 'helpin.center', hostedSubdomain: true }
+    }
+
+    if (url.hostname === 'helpcenter-stage.helpin.ai') {
+      return { hostRoot: 'stage.helpin.center', hostedSubdomain: true }
+    }
+
+    if (url.hostname === 'helpin.center' || url.hostname === 'stage.helpin.center') {
+      return { hostRoot: url.hostname, hostedSubdomain: true }
+    }
+
+    return { hostRoot: url.origin, hostedSubdomain: false }
+  } catch {
+    return null
+  }
+}
+
+function resolveHelpcenterPreviewBase(): HelpcenterPreviewBase {
   const explicit = import.meta.env.VITE_HELPCENTER_URL?.trim()
-  if (explicit) return explicit.replace(/\/+$/, '')
+  if (explicit) {
+    const normalized = normalizeExplicitHelpcenterPreviewBase(explicit)
+    if (normalized) {
+      return normalized
+    }
+  }
 
   const appBase = import.meta.env.VITE_APP_BASE_URL?.trim()
   const fallbackOrigin = typeof window !== 'undefined' ? window.location.origin : ''
@@ -123,19 +166,33 @@ function resolveHelpcenterPreviewBaseUrl(): string {
   if (candidate) {
     try {
       const url = new URL(candidate)
-      if (url.hostname === 'app.helpin.ai') return 'https://helpcenter.helpin.ai'
+      if (url.hostname === 'app.helpin.ai') {
+        return { hostRoot: 'helpin.center', hostedSubdomain: true }
+      }
       if (url.hostname === 'client.stage.helpin.ai' || url.hostname === 'stage.helpin.ai') {
-        return 'https://helpcenter-stage.helpin.ai'
+        return { hostRoot: 'stage.helpin.center', hostedSubdomain: true }
       }
       if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
-        return 'http://localhost:5174'
+        return { hostRoot: 'http://localhost:5174', hostedSubdomain: false }
       }
     } catch {
       // Fall through to the local dev default below.
     }
   }
 
-  return 'http://localhost:5174'
+  return { hostRoot: 'http://localhost:5174', hostedSubdomain: false }
+}
+
+function buildHelpcenterPreviewUrl(
+  subdomain: string,
+  docId: string,
+  token: string,
+): string {
+  const { hostRoot, hostedSubdomain } = resolveHelpcenterPreviewBase()
+  if (hostedSubdomain) {
+    return `https://${subdomain}.${hostRoot}/preview/${docId}?token=${token}`
+  }
+  return `${hostRoot}/preview/${docId}?subdomain=${subdomain}&token=${token}`
 }
 
 function DocCollectionIcon({ name }: { name?: string | null }) {
@@ -892,10 +949,9 @@ export function DocsDocumentDetail() {
                   toast.error(res.error || 'Failed to generate preview')
                   return
                 }
-                const hcUrl = resolveHelpcenterPreviewBaseUrl()
                 const { token, subdomain } = res.data
                 window.open(
-                  `${hcUrl}/preview/${docId}?subdomain=${subdomain}&token=${token}`,
+                  buildHelpcenterPreviewUrl(subdomain, docId, token),
                   '_blank',
                   'noopener',
                 )

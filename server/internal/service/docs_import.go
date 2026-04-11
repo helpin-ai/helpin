@@ -210,13 +210,20 @@ func (s *DocsImportService) Start(ctx context.Context, req model.DocsImportStart
 	}
 
 	now := time.Now()
+	configJSON, err := json.Marshal(docsImportJobConfig{
+		HelpScoutCollectionID: req.HelpscoutCollectionID,
+		ImportStatus:          normalizeDocsImportStatus(req.ImportStatus),
+	})
+	if err != nil {
+		return "", fmt.Errorf("marshal import config: %w", err)
+	}
 	job := &model.DocsImportJob{
 		WorkspaceID: workspaceID,
 		SpaceID:     &spaceID,
 		Source:      "helpscout",
 		Status:      model.DocsImportStatusPending,
 		Failures:    json.RawMessage("[]"),
-		Config:      json.RawMessage("{}"),
+		Config:      configJSON,
 		StartedBy:   userID,
 		StartedAt:   &now,
 	}
@@ -254,6 +261,11 @@ type articleStats struct {
 	HTMLBlockFallbacks   int
 	ImageRewriteFailures int
 	NormalizedNoteBlocks int
+}
+
+type docsImportJobConfig struct {
+	HelpScoutCollectionID string `json:"helpscout_collection_id,omitempty"`
+	ImportStatus          string `json:"import_status,omitempty"`
 }
 
 type helpscoutCategoryTarget struct {
@@ -336,18 +348,18 @@ func (s *DocsImportService) runImport(jobID, apiKey string, req model.DocsImport
 	}
 
 	var (
-		completed                    int
-		failed                       int
-		published                    int
-		drafted                      int
-		artRedirects                 int
-		articlesUncategorized        int
-		articlesWithWarnings         int
-		htmlBlockFallbacks           int
-		imageRewriteFailures         int
-		normalizedNoteBlocks         int
-		failures                     []model.ImportFailure
-		redirects                    []redirectEntry
+		completed             int
+		failed                int
+		published             int
+		drafted               int
+		artRedirects          int
+		articlesUncategorized int
+		articlesWithWarnings  int
+		htmlBlockFallbacks    int
+		imageRewriteFailures  int
+		normalizedNoteBlocks  int
+		failures              []model.ImportFailure
+		redirects             []redirectEntry
 	)
 
 	categoryMapping := buildHelpScoutCategoryMapping(categories, categoryToCollection, categoryToCollectionSlug)
@@ -460,8 +472,11 @@ func (s *DocsImportService) importArticle(
 	importStatus string,
 	redirects *[]redirectEntry,
 ) (*articleStats, error) {
-	// Fetch full article. Use draft if import_status is "match_source" and article has a draft.
-	useDraft := importStatus == "match_source" && ref.HasDraft
+	mode := normalizeDocsImportStatus(importStatus)
+
+	// Preserve the source-published version for live articles, but allow draft
+	// content to import when the source article itself is not published.
+	useDraft := shouldImportHelpScoutDraft(ref, mode)
 	article, err := client.GetArticle(ctx, ref.ID, useDraft)
 	if err != nil {
 		return nil, fmt.Errorf("fetch article %s: %w", ref.ID, err)
@@ -511,7 +526,7 @@ func (s *DocsImportService) importArticle(
 	doc, err := s.documentSvc.Create(ctx, workspaceID, model.CreateDocsDocumentRequest{
 		SpaceID:      spaceID,
 		CollectionID: collectionID,
-		Title:        ref.Name,
+		Title:        article.Name,
 	}, userID)
 	if err != nil {
 		return nil, fmt.Errorf("create document for article %s: %w", ref.ID, err)
@@ -534,7 +549,7 @@ func (s *DocsImportService) importArticle(
 	// Create helpcenter article record with slug from HelpScout.
 	hcArticle := &model.DocsHelpcenterArticle{
 		DocumentID: doc.ID,
-		Slug:       ref.Slug,
+		Slug:       article.Slug,
 	}
 	if _, err := s.helpcenterSvc.CreateArticle(ctx, hcArticle); err != nil {
 		return nil, fmt.Errorf("create helpcenter article for %s: %w", ref.ID, err)
@@ -544,10 +559,10 @@ func (s *DocsImportService) importArticle(
 	stats := summarizeImportWarnings(allWarnings)
 	stats.Uncategorized = collectionID == nil
 	if collectionSlug != "" {
-		articleSlug := ref.Slug
+		articleSlug := article.Slug
 		articleRedirect := &model.DocsRedirect{
 			WorkspaceID:          workspaceID,
-			SourcePath:           fmt.Sprintf("/article/%d-%s", ref.Number, ref.Slug),
+			SourcePath:           fmt.Sprintf("/article/%d-%s", article.Number, article.Slug),
 			TargetCollectionSlug: collectionSlug,
 			TargetArticleSlug:    &articleSlug,
 			Type:                 model.RedirectTypeImported,
@@ -563,23 +578,20 @@ func (s *DocsImportService) importArticle(
 		}
 	}
 
-	// Publish if the source article is published and import_status allows it.
-	if ref.Status == "published" && importStatus != "all_draft" {
+	if shouldPublishImportedArticle(ref, mode) {
 		if _, err := s.documentSvc.Publish(ctx, doc.ID); err != nil {
-			s.logger.Warn("failed to publish imported article",
-				"article_id", ref.ID,
-				"document_id", doc.ID,
-				"error", err,
-			)
-		} else {
-			stats.Published = true
+			return nil, fmt.Errorf("publish imported article internally %s: %w", ref.ID, err)
 		}
+		if err := s.helpcenterSvc.PublishExternally(ctx, doc.ID, article.Slug); err != nil {
+			return nil, fmt.Errorf("publish imported article externally %s: %w", ref.ID, err)
+		}
+		stats.Published = true
 	}
 
 	// Add to redirect map.
 	*redirects = append(*redirects, redirectEntry{
-		OldURL:  fmt.Sprintf("/article/%s-%s", ref.Slug, ref.ID),
-		NewSlug: ref.Slug,
+		OldURL:  fmt.Sprintf("/article/%s-%s", article.Slug, ref.ID),
+		NewSlug: article.Slug,
 	})
 
 	return stats, nil
@@ -729,10 +741,26 @@ func (s *DocsImportService) Retry(ctx context.Context, jobID, apiKey string) err
 	return nil
 }
 
+func readDocsImportJobConfig(job *model.DocsImportJob) docsImportJobConfig {
+	cfg := docsImportJobConfig{}
+	if job == nil || len(job.Config) == 0 {
+		return cfg
+	}
+	_ = json.Unmarshal(job.Config, &cfg)
+	cfg.ImportStatus = normalizeDocsImportStatus(cfg.ImportStatus)
+	return cfg
+}
+
 // runRetry re-imports failed articles in the background.
 func (s *DocsImportService) runRetry(jobID, apiKey string, failures []model.ImportFailure, spaceID, workspaceID, userID string) {
 	ctx := context.Background()
 	client := helpscout.NewClient(apiKey)
+	job, err := s.importRepo.GetByID(ctx, jobID)
+	if err != nil {
+		s.logger.Error("retry load job failed", "job_id", jobID, "error", err)
+		return
+	}
+	importCfg := readDocsImportJobConfig(job)
 
 	var uploader helpscout.ImageUploader
 	if s.s3Client != nil {
@@ -761,7 +789,7 @@ func (s *DocsImportService) runRetry(jobID, apiKey string, failures []model.Impo
 		}
 
 		ref := article.ArticleRef
-		if _, err := s.importArticle(ctx, client, ref, spaceID, workspaceID, userID, helpscoutCategoryMapping{uncategorized: helpscoutCategoryTarget{collectionSlug: "uncategorized"}}, uploader, "", &redirects); err != nil {
+		if _, err := s.importArticle(ctx, client, ref, spaceID, workspaceID, userID, helpscoutCategoryMapping{uncategorized: helpscoutCategoryTarget{collectionSlug: "uncategorized"}}, uploader, importCfg.ImportStatus, &redirects); err != nil {
 			s.logger.Error("retry article import failed", "article_id", f.ArticleID, "error", err)
 			retryFailed++
 			newFailures = append(newFailures, model.ImportFailure{
@@ -896,4 +924,43 @@ func convertHelpScoutHTML(rawHTML string) (*docsimport.ConversionResult, []docsi
 	}
 	allWarnings := append(preprocessingWarnings, convResult.Warnings...)
 	return convResult, allWarnings, nil
+}
+
+func normalizeDocsImportStatus(status string) string {
+	switch strings.TrimSpace(strings.ToLower(status)) {
+	case "draft", "published", "match_source":
+		return strings.TrimSpace(strings.ToLower(status))
+	case "all_draft":
+		return "draft"
+	default:
+		return "match_source"
+	}
+}
+
+func shouldImportHelpScoutDraft(ref helpscout.ArticleRef, importStatus string) bool {
+	if !ref.HasDraft {
+		return false
+	}
+
+	switch normalizeDocsImportStatus(importStatus) {
+	case "draft":
+		return true
+	case "published", "match_source":
+		return ref.Status != "published"
+	default:
+		return ref.Status != "published"
+	}
+}
+
+func shouldPublishImportedArticle(ref helpscout.ArticleRef, importStatus string) bool {
+	switch normalizeDocsImportStatus(importStatus) {
+	case "draft":
+		return false
+	case "published":
+		return true
+	case "match_source":
+		return ref.Status == "published"
+	default:
+		return ref.Status == "published"
+	}
 }

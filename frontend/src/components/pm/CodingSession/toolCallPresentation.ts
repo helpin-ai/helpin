@@ -87,10 +87,20 @@ export function describeToolCall(toolCall: CodingSessionLiveToolCall): ToolCallP
     };
   }
 
-  if ((toolName === 'run_command' || toolName === 'bash' || toolName.includes('shell') || toolName.includes('exec')) && command) {
+  if (toolName === 'run_command' || toolName === 'bash' || toolName.includes('shell') || toolName.includes('exec')) {
+    const resolvedCommand = command
+      ?? asString(parsed?.input)
+      ?? asString(parsed?.script)
+      ?? asString(parsed?.shell_command)
+      ?? (Array.isArray(parsed?.command) ? parsed.command.map(String).join(' ') : null)
+      ?? (!parsed && toolCall.args_text.trim() ? toolCall.args_text.trim() : null);
     const chips = [];
     if (cwd) chips.push(cwd);
-    return { primaryLabel: `Run ${command}`, secondaryLabel, chips };
+    if (resolvedCommand) {
+      const truncated = resolvedCommand.length > 120 ? `${resolvedCommand.slice(0, 117)}…` : resolvedCommand;
+      return { primaryLabel: `Run ${truncated}`, secondaryLabel, chips };
+    }
+    return { primaryLabel: 'Run Command', secondaryLabel, chips };
   }
 
   if (toolName === 'list_directory' && path) {

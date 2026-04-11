@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
 import { Copy01Icon, PlusSignIcon, ArrowReloadHorizontalIcon, Search01Icon, Delete01Icon, UserGroupIcon } from '@/lib/icons';
 import { toast } from 'sonner';
@@ -474,43 +475,47 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
                             Add from organization
                           </button>
                         </PopoverTrigger>
-                        <PopoverContent align="end" className="w-64 p-0">
-                          <div className="max-h-56 overflow-y-auto">
-                            {availableOrgMembers.map((m) => {
-                              const alreadyAdded = pendingInviteEmails.includes(m.email.toLowerCase());
-                              return (
-                                <button
-                                  key={m.user_id}
-                                  type="button"
-                                  disabled={alreadyAdded}
-                                  onClick={() => {
-                                    setInvEmails((prev) => mergeEmailChips(prev, [m.email]));
-                                  }}
-                                  className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors ${
-                                    alreadyAdded
-                                      ? 'opacity-40 cursor-default'
-                                      : 'hover:bg-accent'
-                                  }`}
-                                >
-                                  <UserAvatar
-                                    name={m.full_name || m.email}
-                                    avatarUrl={m.avatar_url}
-                                    avatarStyle={m.avatar_style}
-                                    avatarSeed={m.avatar_seed}
-                                    avatarBackgroundMode={m.avatar_background_mode}
-                                    avatarBackgroundColor={m.avatar_background_color}
-                                    className="h-6 w-6"
-                                    fallbackClassName="text-[10px]"
-                                  />
-                                  <div className="min-w-0 flex-1">
-                                    {m.full_name && <p className="truncate text-sm font-medium">{m.full_name}</p>}
-                                    <p className="truncate text-xs text-muted-foreground">{m.email}</p>
-                                  </div>
-                                  {alreadyAdded && <span className="text-[10px] text-muted-foreground shrink-0">Added</span>}
-                                </button>
-                              );
-                            })}
-                          </div>
+                        <PopoverContent align="end" className="w-72 p-0">
+                          <Command>
+                            <CommandInput placeholder="Search members..." />
+                            <CommandList>
+                              <CommandEmpty>No members found.</CommandEmpty>
+                              <CommandGroup>
+                                {availableOrgMembers.map((m) => {
+                                  const alreadyAdded = pendingInviteEmails.includes(m.email.toLowerCase());
+                                  return (
+                                    <CommandItem
+                                      key={m.user_id}
+                                      value={`${m.full_name ?? ''} ${m.email}`}
+                                      disabled={alreadyAdded}
+                                      onSelect={() => {
+                                        if (!alreadyAdded) {
+                                          setInvEmails((prev) => mergeEmailChips(prev, [m.email]));
+                                        }
+                                      }}
+                                      className={alreadyAdded ? 'opacity-40' : ''}
+                                    >
+                                      <UserAvatar
+                                        name={m.full_name || m.email}
+                                        avatarUrl={m.avatar_url}
+                                        avatarStyle={m.avatar_style}
+                                        avatarSeed={m.avatar_seed}
+                                        avatarBackgroundMode={m.avatar_background_mode}
+                                        avatarBackgroundColor={m.avatar_background_color}
+                                        className="h-6 w-6"
+                                        fallbackClassName="text-[10px]"
+                                      />
+                                      <div className="min-w-0 flex-1">
+                                        {m.full_name && <p className="truncate text-xs font-medium">{m.full_name}</p>}
+                                        <p className="truncate text-xs text-muted-foreground">{m.email}</p>
+                                      </div>
+                                      {alreadyAdded && <span className="text-[10px] text-muted-foreground shrink-0">Added</span>}
+                                    </CommandItem>
+                                  );
+                                })}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
                         </PopoverContent>
                       </Popover>
                     )}

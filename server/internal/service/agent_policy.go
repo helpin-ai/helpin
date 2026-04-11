@@ -46,6 +46,9 @@ func normalizeJSONSlice(raw json.RawMessage) json.RawMessage {
 	return raw
 }
 
+var supportedAgentReasoningEfforts = []string{"none", "minimal", "low", "medium", "high", "xhigh"}
+var supportedAgentServiceTiers = []string{"fast", "flex"}
+
 func jsonSliceIsEmpty(raw json.RawMessage) bool {
 	if len(raw) == 0 {
 		return true
@@ -160,6 +163,7 @@ func normalizeAgentRecord(agent *model.Agent) {
 	if agent.Skills == nil {
 		agent.Skills = json.RawMessage("[]")
 	}
+	agent.ExecutionConfig = normalizeExecutionConfigJSON(agent.ExecutionConfig)
 	if agent.Provider != nil {
 		normalized := normalizeModelProvider(*agent.Provider)
 		if normalized == "" {
@@ -183,6 +187,61 @@ func normalizeAgentRecord(agent *model.Agent) {
 	}
 	agent.SupportedModes = supportedModesForAgent(agent)
 	agent.DefaultInvocationMode = normalizeDefaultInvocationMode(agent.DefaultInvocationMode, agent)
+}
+
+func normalizeExecutionConfigJSON(raw []byte) model.JSONBlob {
+	config, err := model.ParseAgentExecutionConfig(raw)
+	if err != nil {
+		return model.JSONBlob("{}")
+	}
+	return model.MarshalAgentExecutionConfig(config)
+}
+
+func parseAndValidateExecutionConfig(agent *model.Agent) (model.AgentExecutionConfig, error) {
+	if agent == nil {
+		return model.AgentExecutionConfig{}, nil
+	}
+
+	config, err := model.ParseAgentExecutionConfig(agent.ExecutionConfig)
+	if err != nil {
+		return model.AgentExecutionConfig{}, fmt.Errorf("execution_config must be a JSON object")
+	}
+	if config.IsZero() {
+		return config, nil
+	}
+
+	if strings.TrimSpace(agent.RuntimeKind) != "codex" {
+		return model.AgentExecutionConfig{}, fmt.Errorf("execution_config is only supported for runtime_kind codex")
+	}
+
+	if config.ReasoningEffort != nil && !slices.Contains(supportedAgentReasoningEfforts, strings.ToLower(strings.TrimSpace(*config.ReasoningEffort))) {
+		return model.AgentExecutionConfig{}, fmt.Errorf(
+			"execution_config.reasoning_effort must be one of %s",
+			strings.Join(supportedAgentReasoningEfforts, ", "),
+		)
+	}
+
+	if config.ServiceTier != nil {
+		serviceTier := strings.ToLower(strings.TrimSpace(*config.ServiceTier))
+		if !slices.Contains(supportedAgentServiceTiers, serviceTier) {
+			return model.AgentExecutionConfig{}, fmt.Errorf(
+				"execution_config.service_tier must be one of %s",
+				strings.Join(supportedAgentServiceTiers, ", "),
+			)
+		}
+		provider := ""
+		if agent.Provider != nil {
+			provider = normalizeModelProvider(*agent.Provider)
+		}
+		if provider == "" {
+			provider = model.AgentModelProviderOpenAI
+		}
+		if provider != model.AgentModelProviderOpenAI {
+			return model.AgentExecutionConfig{}, fmt.Errorf("execution_config.service_tier is only supported for provider openai")
+		}
+	}
+
+	return config, nil
 }
 
 func migrateLegacyPreviewTools(raw json.RawMessage, presetKey string) json.RawMessage {

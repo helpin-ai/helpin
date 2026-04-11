@@ -29,14 +29,17 @@ import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
 import { buildAutomationActivityPath, buildAutomationFlowsPath } from '@/lib/automationUi';
 import type {
   Agent,
+  AgentExecutionConfig,
   AgentPresetDefinition,
   AgentPresetKey,
   AgentApprovalMode,
   AgentInvocationMode,
   AgentModelProvider,
   AgentModelProviderOption,
+  AgentReasoningEffort,
   AgentRun,
   AgentRuntimeKind,
+  AgentServiceTier,
   AgentTriggerUsage,
   AgentTriggerUsageSummary,
   AgentTargetType,
@@ -106,6 +109,8 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 const RUNTIME_KIND_OPTIONS: AgentRuntimeKind[] = ['opencode', 'codex', 'native_sdk'];
+const REASONING_EFFORT_OPTIONS: AgentReasoningEffort[] = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
+const SERVICE_TIER_OPTIONS: AgentServiceTier[] = ['fast', 'flex'];
 const DEFAULT_SYSTEM_PRESET_KEY: AgentPresetKey = 'code_builder';
 const PRESET_FALLBACKS: Record<AgentPresetKey, {
   label: string;
@@ -212,6 +217,8 @@ interface AgentFormData {
   supported_modes: AgentInvocationMode[];
   provider: AgentModelProvider;
   model: string;
+  reasoning_effort: AgentReasoningEffort | '';
+  service_tier: AgentServiceTier | '';
   system_prompt: string;
   monthly_token_budget: string;
   team_id: string;
@@ -233,9 +240,30 @@ const CUSTOM_AGENT_TARGET_OPTIONS: Array<{ value: AgentTargetType; label: string
 ];
 
 const FALLBACK_PROVIDER_OPTIONS: AgentModelProviderOption[] = [
-  { value: 'anthropic', label: 'Anthropic', model_placeholder: 'claude-sonnet-4-20250514' },
-  { value: 'openai', label: 'OpenAI', model_placeholder: 'gpt-5.4' },
-  { value: 'openrouter', label: 'OpenRouter', model_placeholder: 'openai/gpt-5.4' },
+  {
+    value: 'anthropic',
+    label: 'Anthropic',
+    model_placeholder: 'claude-sonnet-4-20250514',
+    supports_reasoning_effort: false,
+    supports_service_tier: false,
+  },
+  {
+    value: 'openai',
+    label: 'OpenAI',
+    model_placeholder: 'gpt-5.4',
+    supports_reasoning_effort: true,
+    supported_reasoning_efforts: REASONING_EFFORT_OPTIONS,
+    supports_service_tier: true,
+    supported_service_tiers: SERVICE_TIER_OPTIONS,
+  },
+  {
+    value: 'openrouter',
+    label: 'OpenRouter',
+    model_placeholder: 'openai/gpt-5.4',
+    supports_reasoning_effort: true,
+    supported_reasoning_efforts: REASONING_EFFORT_OPTIONS,
+    supports_service_tier: false,
+  },
 ];
 
 function allowedRuntimeKindsForPreset(presetKey: AgentPresetKey): AgentRuntimeKind[] {
@@ -363,6 +391,8 @@ function createEmptyCustomForm(): AgentFormData {
     supported_modes: ['autonomous'],
     provider: 'anthropic',
     model: '',
+    reasoning_effort: '',
+    service_tier: '',
     system_prompt: '',
     monthly_token_budget: '',
     team_id: '',
@@ -373,6 +403,36 @@ function createEmptyCustomForm(): AgentFormData {
     max_concurrent_runs: '1',
     default_invocation_mode: 'autonomous',
   };
+}
+
+function deriveExecutionConfigFields(
+  runtimeKind: AgentRuntimeKind,
+  provider: AgentModelProvider,
+  executionConfig?: AgentExecutionConfig,
+): Pick<AgentFormData, 'reasoning_effort' | 'service_tier'> {
+  const normalizedProvider = normalizeProviderForRuntime(runtimeKind, provider);
+  const reasoningEffort = runtimeKind === 'codex' ? (executionConfig?.reasoning_effort ?? '') : '';
+  const serviceTier = runtimeKind === 'codex' && normalizedProvider === 'openai'
+    ? (executionConfig?.service_tier ?? '')
+    : '';
+  return {
+    reasoning_effort: reasoningEffort,
+    service_tier: serviceTier,
+  };
+}
+
+function buildExecutionConfigPayload(form: AgentFormData): AgentExecutionConfig | undefined {
+  if (form.runtime_kind !== 'codex') {
+    return undefined;
+  }
+  const config: AgentExecutionConfig = {};
+  if (form.reasoning_effort) {
+    config.reasoning_effort = form.reasoning_effort;
+  }
+  if (form.provider === 'openai' && form.service_tier) {
+    config.service_tier = form.service_tier;
+  }
+  return Object.keys(config).length > 0 ? config : undefined;
 }
 
 function supportedModesForForm(runtimeKind: AgentRuntimeKind): AgentInvocationMode[] {
@@ -400,13 +460,13 @@ function normalizeDefaultInvocationMode(
 function hasConfiguredAdvancedFields(agent: Agent | null, presets: AgentPresetDefinition[]): boolean {
   if (!agent) return false;
   if (!agent.is_system) {
-    return Boolean(agent.monthly_token_budget);
+    return Boolean(agent.monthly_token_budget || agent.execution_config?.reasoning_effort || agent.execution_config?.service_tier);
   }
   const presetKey = fallbackPresetKey(agent);
   const presetVersionKey = agent.preset_version_key ?? fallbackPresetVersionKey(presetKey);
   return (
     agent.runtime_kind !== presetRuntimeKindForSelection(presetKey, presetVersionKey, presets) ||
-    Boolean(agent.monthly_token_budget)
+    Boolean(agent.monthly_token_budget || agent.execution_config?.reasoning_effort || agent.execution_config?.service_tier)
   );
 }
 
@@ -418,6 +478,7 @@ function buildCreatePayload(workspaceId: string, form: AgentFormData, advancedOp
     name: form.name.trim(),
     provider,
     model: form.model.trim() || undefined,
+    execution_config: buildExecutionConfigPayload(form),
     system_prompt: form.system_prompt.trim() || undefined,
     trigger_mode: 'manual',
     team_id: form.team_id,
@@ -456,6 +517,7 @@ function buildUpdatePayload(
     trigger_mode: 'manual',
     provider: provider || undefined,
     model: form.model.trim() || undefined,
+    execution_config: buildExecutionConfigPayload(form),
     system_prompt: form.system_prompt.trim() || undefined,
     team_id: form.team_id,
     allowed_tools: normalizeToolList(form.allowed_tools),
@@ -507,6 +569,14 @@ function buildSystemAgentForm(agent: Agent, presets: AgentPresetDefinition[]): A
       agent.provider ?? preset?.provider ?? PRESET_FALLBACKS[presetKey].provider ?? 'anthropic',
     ),
     model: agent.model ?? preset?.model ?? PRESET_FALLBACKS[presetKey].model ?? '',
+    ...deriveExecutionConfigFields(
+      agent.runtime_kind || runtimeKind,
+      normalizeProviderForRuntime(
+        agent.runtime_kind || runtimeKind,
+        agent.provider ?? preset?.provider ?? PRESET_FALLBACKS[presetKey].provider ?? 'anthropic',
+      ),
+      agent.execution_config ?? preset?.execution_config,
+    ),
     system_prompt: agent.system_prompt ?? preset?.system_prompt ?? '',
     monthly_token_budget: agent.monthly_token_budget?.toString() ?? '',
     team_id: '',
@@ -1130,6 +1200,11 @@ export function AgentsPage() {
       supported_modes: supportedModesForForm(runtimeKind),
       provider: normalizeProviderForRuntime(runtimeKind, agent.provider ?? 'anthropic'),
       model: agent.model ?? '',
+      ...deriveExecutionConfigFields(
+        runtimeKind,
+        normalizeProviderForRuntime(runtimeKind, agent.provider ?? 'anthropic'),
+        agent.execution_config,
+      ),
       system_prompt: agent.system_prompt ?? '',
       monthly_token_budget: agent.monthly_token_budget?.toString() ?? '',
       team_id: agent.team_id ?? '',
@@ -1184,6 +1259,7 @@ export function AgentsPage() {
       runtime_kind: form.runtime_kind,
       provider: form.provider,
       model: form.model.trim() || undefined,
+      execution_config: buildExecutionConfigPayload(form),
       system_prompt: form.system_prompt.trim() || undefined,
       allowed_tools: normalizeToolList(form.allowed_tools),
       supported_modes: form.supported_modes,
@@ -1284,6 +1360,9 @@ export function AgentsPage() {
   const supportedModes = form.supported_modes.length > 0 ? form.supported_modes : supportedModesForForm(form.runtime_kind);
   const availableRuntimeKinds = editingSystemAgent ? allowedRuntimeKindsForPreset(form.preset_key) : (['opencode', 'native_sdk'] as AgentRuntimeKind[]);
   const visibleProviderOptions = availableProvidersForRuntime(form.runtime_kind, providerOptions);
+  const selectedProviderOption = visibleProviderOptions.find((option) => option.value === form.provider);
+  const supportsReasoningEffort = form.runtime_kind === 'codex' && Boolean(selectedProviderOption?.supports_reasoning_effort);
+  const supportsServiceTier = form.runtime_kind === 'codex' && Boolean(selectedProviderOption?.supports_service_tier);
   const codexUsesPresetCapabilities = form.runtime_kind === 'codex';
   const toolCatalogEntries = toolCatalog?.tools ?? [];
   const availableToolEntries = toolCatalogEntries.filter((tool) => !form.allowed_tools.includes(tool.name));
@@ -1319,6 +1398,10 @@ export function AgentsPage() {
     if (!editingAgent?.is_system) return;
     const nextPreset = presetMetaForSelection(form.preset_key, versionKey, presets);
     if (!nextPreset) return;
+    const nextProvider = normalizeProviderForRuntime(
+      nextPreset.runtime_kind,
+      nextPreset.provider ?? PRESET_FALLBACKS[form.preset_key].provider ?? form.provider,
+    );
     setVersionDraftOpen(false);
     setVersionLabelDraft('');
     setVersionDescriptionDraft('');
@@ -1327,11 +1410,9 @@ export function AgentsPage() {
       preset_version_key: nextPreset.version_key,
       runtime_kind: nextPreset.runtime_kind,
       supported_modes: nextPreset.supported_modes,
-      provider: normalizeProviderForRuntime(
-        nextPreset.runtime_kind,
-        nextPreset.provider ?? PRESET_FALLBACKS[form.preset_key].provider ?? current.provider,
-      ),
+      provider: nextProvider,
       model: nextPreset.model ?? PRESET_FALLBACKS[form.preset_key].model ?? '',
+      ...deriveExecutionConfigFields(nextPreset.runtime_kind, nextProvider, nextPreset.execution_config),
       system_prompt: nextPreset.system_prompt ?? '',
       allowed_tools: normalizeToolList(nextPreset.allowed_tools ?? []),
       approval_mode: 'never',
@@ -1499,7 +1580,7 @@ export function AgentsPage() {
           }
         }}
       >
-        <SheetContent side="right" className="w-full gap-0 p-0 sm:w-[96vw] sm:!max-w-[96vw] xl:w-[1280px] xl:!max-w-[1280px]">
+        <SheetContent side="right" className="w-full gap-0 p-0 data-[side=right]:w-[88vw] data-[side=right]:sm:max-w-[88vw] xl:data-[side=right]:w-[1280px] xl:data-[side=right]:max-w-[1280px]">
           <SheetHeader className="border-b border-border/60 bg-muted/20 px-6 py-5">
             <div className="flex items-start gap-4">
               <AgentAvatar agent={editingAgent ?? undefined} className="h-14 w-14 shrink-0" />
@@ -1720,6 +1801,11 @@ export function AgentsPage() {
                                 runtime_kind: runtimeKind,
                                 supported_modes: nextSupportedModes,
                                 provider: normalizeProviderForRuntime(runtimeKind, current.provider),
+                                ...deriveExecutionConfigFields(
+                                  runtimeKind,
+                                  normalizeProviderForRuntime(runtimeKind, current.provider),
+                                  buildExecutionConfigPayload(current),
+                                ),
                                 default_invocation_mode: nextDefaultMode,
                               };
                             })
@@ -1772,7 +1858,16 @@ export function AgentsPage() {
                         <Select
                           value={form.provider}
                           disabled={systemVersionReadOnly}
-                          onValueChange={(value) => setForm((current) => ({ ...current, provider: normalizeProviderForRuntime(current.runtime_kind, value as AgentModelProvider) }))}
+                          onValueChange={(value) =>
+                            setForm((current) => {
+                              const provider = normalizeProviderForRuntime(current.runtime_kind, value as AgentModelProvider);
+                              return {
+                                ...current,
+                                provider,
+                                ...deriveExecutionConfigFields(current.runtime_kind, provider, buildExecutionConfigPayload(current)),
+                              };
+                            })
+                          }
                         >
                           <SelectTrigger>
                             <SelectValue />
@@ -1794,9 +1889,65 @@ export function AgentsPage() {
                           value={form.model}
                           disabled={systemVersionReadOnly}
                           onChange={(e) => setForm((current) => ({ ...current, model: e.target.value }))}
-                          placeholder={visibleProviderOptions.find((o) => o.value === form.provider)?.model_placeholder ?? 'Auto'}
+                          placeholder={selectedProviderOption?.model_placeholder ?? 'Auto'}
                         />
                       </div>
+
+                      {supportsReasoningEffort && (
+                        <div className="space-y-2">
+                          <FieldLabel>Reasoning effort</FieldLabel>
+                          <Select
+                            value={form.reasoning_effort || '_default'}
+                            disabled={systemVersionReadOnly}
+                            onValueChange={(value) =>
+                              setForm((current) => ({
+                                ...current,
+                                reasoning_effort: value === '_default' ? '' : value as AgentReasoningEffort,
+                              }))
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="_default">Model default</SelectItem>
+                              {(selectedProviderOption?.supported_reasoning_efforts ?? REASONING_EFFORT_OPTIONS).map((effort) => (
+                                <SelectItem key={effort} value={effort}>
+                                  {effort}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+
+                      {supportsServiceTier && (
+                        <div className="space-y-2">
+                          <FieldLabel>Service tier</FieldLabel>
+                          <Select
+                            value={form.service_tier || '_default'}
+                            disabled={systemVersionReadOnly}
+                            onValueChange={(value) =>
+                              setForm((current) => ({
+                                ...current,
+                                service_tier: value === '_default' ? '' : value as AgentServiceTier,
+                              }))
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="_default">Provider default</SelectItem>
+                              {(selectedProviderOption?.supported_service_tiers ?? SERVICE_TIER_OPTIONS).map((tier) => (
+                                <SelectItem key={tier} value={tier}>
+                                  {tier}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
                     </div>
 
                     <div className="space-y-2">
@@ -1969,7 +2120,7 @@ export function AgentsPage() {
           }
         }}
       >
-        <SheetContent side="right" className="w-full gap-0 p-0 sm:w-[92vw] sm:!max-w-[92vw] xl:w-[1100px] xl:!max-w-[1100px]">
+        <SheetContent side="right" className="w-full gap-0 p-0 data-[side=right]:w-[88vw] data-[side=right]:sm:max-w-[88vw] xl:data-[side=right]:w-[1100px] xl:data-[side=right]:max-w-[1100px]">
           <SheetHeader className="border-b border-border/60 bg-muted/20 px-6 py-5">
             <SheetTitle>{editingAgent ? 'Edit Custom Agent' : 'New Custom Agent'}</SheetTitle>
             <SheetDescription className="max-w-3xl">
@@ -2088,6 +2239,11 @@ export function AgentsPage() {
                         runtime_kind: runtimeKind,
                         supported_modes: supportedModesForForm(runtimeKind),
                         provider: normalizeProviderForRuntime(runtimeKind, current.provider),
+                        ...deriveExecutionConfigFields(
+                          runtimeKind,
+                          normalizeProviderForRuntime(runtimeKind, current.provider),
+                          buildExecutionConfigPayload(current),
+                        ),
                         default_invocation_mode: normalizeDefaultInvocationMode(
                           current.default_invocation_mode,
                           runtimeKind,
@@ -2146,7 +2302,16 @@ export function AgentsPage() {
                 <FieldLabel tooltip="The AI service that powers this agent.">AI Provider</FieldLabel>
                 <Select
                   value={form.provider}
-                  onValueChange={(value) => setForm((current) => ({ ...current, provider: normalizeProviderForRuntime(current.runtime_kind, value as AgentModelProvider) }))}
+                  onValueChange={(value) =>
+                    setForm((current) => {
+                      const provider = normalizeProviderForRuntime(current.runtime_kind, value as AgentModelProvider);
+                      return {
+                        ...current,
+                        provider,
+                        ...deriveExecutionConfigFields(current.runtime_kind, provider, buildExecutionConfigPayload(current)),
+                      };
+                    })
+                  }
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -2171,7 +2336,7 @@ export function AgentsPage() {
                   id="agent-model"
                   value={form.model}
                   onChange={(e) => setForm((current) => ({ ...current, model: e.target.value }))}
-                  placeholder={visibleProviderOptions.find((o) => o.value === form.provider)?.model_placeholder ?? 'Auto'}
+                  placeholder={selectedProviderOption?.model_placeholder ?? 'Auto'}
                 />
               </div>
             </div>
@@ -2394,6 +2559,62 @@ export function AgentsPage() {
                 </Button>
               </Collapsible.Trigger>
               <Collapsible.Content className="space-y-4 rounded-md border bg-muted/30 p-3 mt-2">
+                {supportsReasoningEffort && (
+                  <div className="space-y-2">
+                    <FieldLabel tooltip="Codex-only reasoning control for supported providers. Leave on model default unless you need a specific tradeoff.">
+                      Reasoning effort
+                    </FieldLabel>
+                    <Select
+                      value={form.reasoning_effort || '_default'}
+                      onValueChange={(value) =>
+                        setForm((current) => ({
+                          ...current,
+                          reasoning_effort: value === '_default' ? '' : value as AgentReasoningEffort,
+                        }))
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="_default">Model default</SelectItem>
+                        {(selectedProviderOption?.supported_reasoning_efforts ?? REASONING_EFFORT_OPTIONS).map((effort) => (
+                          <SelectItem key={effort} value={effort}>
+                            {effort}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                {supportsServiceTier && (
+                  <div className="space-y-2">
+                    <FieldLabel tooltip="OpenAI-only Codex service tier. Fast mode trades more plan usage for lower latency.">
+                      Service tier
+                    </FieldLabel>
+                    <Select
+                      value={form.service_tier || '_default'}
+                      onValueChange={(value) =>
+                        setForm((current) => ({
+                          ...current,
+                          service_tier: value === '_default' ? '' : value as AgentServiceTier,
+                        }))
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="_default">Provider default</SelectItem>
+                        {(selectedProviderOption?.supported_service_tiers ?? SERVICE_TIER_OPTIONS).map((tier) => (
+                          <SelectItem key={tier} value={tier}>
+                            {tier}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 <div className="space-y-2">
                   <FieldLabel
                     htmlFor="agent-budget"

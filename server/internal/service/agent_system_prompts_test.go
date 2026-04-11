@@ -146,12 +146,56 @@ func TestCodeBuilderPromptNeedsRefreshForLegacyPrompt(t *testing.T) {
 		t.Fatal("expected branded code builder prompt to require refresh")
 	}
 
+	legacyCurrentPrompt := "You are Code Builder.\n\n- Implement the requested story or task directly in the repository.\n- Use the available tools to inspect code, make changes, run relevant validation, and prepare delivery artifacts."
+	if !codeBuilderPromptNeedsRefresh(&legacyCurrentPrompt) {
+		t.Fatal("expected previous code builder prompt to require refresh")
+	}
+
 	currentPrompt := defaultSystemPromptForPreset(model.AgentPresetCodeBuilder)
 	if currentPrompt == nil {
 		t.Fatal("expected code builder prompt")
 	}
 	if codeBuilderPromptNeedsRefresh(currentPrompt) {
 		t.Fatal("expected current code builder prompt to remain valid")
+	}
+	if !strings.Contains(*currentPrompt, "Finish with a local commit only.") {
+		t.Fatalf("expected current code builder prompt to require local commits only, got %q", *currentPrompt)
+	}
+	if !strings.Contains(*currentPrompt, "Remote delivery is backend-managed") {
+		t.Fatalf("expected current code builder prompt to mention backend-managed delivery, got %q", *currentPrompt)
+	}
+}
+
+func TestReviewAgentSystemPromptIncludesInteractiveLoop(t *testing.T) {
+	prompt := defaultSystemPromptForPreset(model.AgentPresetReviewAgent)
+	if prompt == nil {
+		t.Fatal("expected review prompt")
+	}
+	for _, snippet := range []string{
+		"You are Review Agent.",
+		"`request_user_input`",
+		"Treat review as an interactive loop, not a one-shot report.",
+		"Do not finish immediately after posting findings unless the latest human reply clearly says the review is done",
+		"If the human asks you to implement changes based on the review",
+	} {
+		if !strings.Contains(*prompt, snippet) {
+			t.Fatalf("expected review prompt to contain %q\n%s", snippet, *prompt)
+		}
+	}
+}
+
+func TestReviewAgentPromptNeedsRefreshForLegacyPrompt(t *testing.T) {
+	legacyPrompt := "You are Review Agent.\n\n- Inspect the relevant code and run targeted validation when possible.\n- Focus on correctness, regressions, missing tests, and delivery risk.\n- Report findings first, ordered by severity, with concrete file references when available.\n- Avoid low-signal commentary and avoid proposing unnecessary rewrites."
+	if !reviewAgentPromptNeedsRefresh(&legacyPrompt) {
+		t.Fatal("expected legacy review prompt to require refresh")
+	}
+
+	currentPrompt := defaultSystemPromptForPreset(model.AgentPresetReviewAgent)
+	if currentPrompt == nil {
+		t.Fatal("expected review prompt")
+	}
+	if reviewAgentPromptNeedsRefresh(currentPrompt) {
+		t.Fatal("expected current review prompt to remain valid")
 	}
 }
 
@@ -174,9 +218,9 @@ func TestBuiltInNonPlannerPromptsAreWorkspaceGeneric(t *testing.T) {
 
 func TestBuiltInPromptNeedsGenericWorkspaceRefresh(t *testing.T) {
 	cases := map[string]string{
-		model.AgentPresetCRMOperator: "You are CRM Operator for Helpin.\n- Work inside the current run using the allowed CRM, docs, and support tools.",
+		model.AgentPresetCRMOperator:  "You are CRM Operator for Helpin.\n- Work inside the current run using the allowed CRM, docs, and support tools.",
 		model.AgentPresetSupportAgent: "You are Support Agent for Helpin.\n- Read the full conversation before drafting a reply.",
-		model.AgentPresetReviewAgent: "You are Review Agent for Helpin.\n- Inspect the relevant code and run targeted validation when possible.",
+		model.AgentPresetReviewAgent:  "You are Review Agent for Helpin.\n- Inspect the relevant code and run targeted validation when possible.",
 	}
 	for presetKey, legacyPrompt := range cases {
 		if !builtInPromptNeedsGenericWorkspaceRefresh(presetKey, &legacyPrompt) {

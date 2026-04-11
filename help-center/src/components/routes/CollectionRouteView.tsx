@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
-import { Link } from '@tanstack/react-router'
 import { ArrowRight, Folder, Menu } from 'lucide-react'
+import { DocsLink } from '@/components/DocsLink'
 import { useCollection, useSpaceNavigation } from '@/hooks/queries'
 import { useDocsContext } from '@/contexts/DocsContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
@@ -256,7 +256,7 @@ export function CollectionRouteView({
                 </h2>
               )}
               {directArticles.map((article) => (
-                <Link
+                <DocsLink
                   key={article.id}
                   to={buildCanonicalArticlePath(
                     multilingualEnabled,
@@ -275,7 +275,7 @@ export function CollectionRouteView({
                     size={16}
                     className="shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
                   />
-                </Link>
+                </DocsLink>
               ))}
             </div>
           )}
@@ -318,7 +318,7 @@ function CollectionCard({
   const description = buildCollectionCardSummary(articleCount, childCount, totalArticles)
 
   return (
-    <Link
+    <DocsLink
       to={buildCanonicalCollectionPath(multilingualEnabled, locale, node.item.slug)}
       className="group flex items-start gap-3 rounded-2xl border border-border/70 px-4 py-4 transition-colors hover:border-primary/30 hover:bg-primary/[0.02]"
     >
@@ -333,7 +333,7 @@ function CollectionCard({
         size={16}
         className="mt-0.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
       />
-    </Link>
+    </DocsLink>
   )
 }
 

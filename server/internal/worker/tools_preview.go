@@ -195,9 +195,41 @@ func applyPreviewContentFallback(ctx *ExecutionContext, req PublishedPreviewRequ
 			if strings.TrimSpace(req.Title) == "" {
 				req.Title = defaultPreviewTitle(panelKey)
 			}
+			return req
+		}
+		if draft, ok := latestTaskPlanDocumentMarkdown(ctx, panelKey); ok {
+			req.Content, _ = json.Marshal(draft)
+			if strings.TrimSpace(req.Title) == "" {
+				req.Title = defaultPreviewTitle(panelKey)
+			}
 		}
 	}
 	return req
+}
+
+func latestTaskPlanDocumentMarkdown(ctx *ExecutionContext, panelKey string) (string, bool) {
+	if ctx == nil || ctx.Task == nil || ctx.Services == nil || ctx.Services.GetDocumentContent == nil {
+		return "", false
+	}
+	if normalizePreviewPanelKey(panelKey) != "task_plan_doc" {
+		return "", false
+	}
+	documentID := ""
+	if ctx.Task.PlanDocumentID != nil {
+		documentID = strings.TrimSpace(*ctx.Task.PlanDocumentID)
+	}
+	if documentID == "" {
+		return "", false
+	}
+	content, err := ctx.Services.GetDocumentContent(ctx.Context, documentID)
+	if err != nil {
+		return "", false
+	}
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return "", false
+	}
+	return content, true
 }
 
 func cachePublishedPreview(ctx *ExecutionContext, preview PublishedPreview) {

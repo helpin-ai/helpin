@@ -504,6 +504,25 @@ export interface LinkTaskRequest {
   task_id: string;
 }
 
+export interface CreateTaskFromConversationRequest {
+  task_type?: 'feature' | 'bug' | 'chore';
+  priority?: 'none' | 'low' | 'medium' | 'high' | 'urgent';
+  team_id?: string;
+  workflow_id?: string;
+  workflow_state_id?: string;
+  owner_member_id?: string;
+}
+
+export interface CreateTaskFromConversationResponse {
+  task_id: string;
+  task_key?: string;
+  task_name: string;
+  summary?: string;
+  copied_contact_associations: number;
+  copied_company_associations: number;
+  copied_deal_associations: number;
+}
+
 export interface AssignConversationAgentRequest {
   agent_id: string;
 }

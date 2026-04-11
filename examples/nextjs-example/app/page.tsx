@@ -9,15 +9,26 @@ export default function Home() {
     await helpin.id({
       id: 'user-123',
       email: 'user@example.com',
-      name: 'Example User',
+      first_name: 'Example',
+      last_name: 'User',
+      company: {
+        id: 'company-123',
+        name: 'Acme Corp',
+        created_at: '2024-01-15T00:00:00Z',
+      },
     });
   };
 
   const handleLead = () => {
     helpin.lead({
       email: 'lead@example.com',
-      name: 'New Lead',
-      company: 'Acme Corp',
+      first_name: 'New',
+      last_name: 'Lead',
+      company: {
+        id: 'company-123',
+        name: 'Acme Corp',
+        created_at: '2024-01-15T00:00:00Z',
+      },
     });
   };
 

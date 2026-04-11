@@ -12,6 +12,9 @@ spec:
     - api.prod.helpin.ai
     - helpcenter.helpin.ai
     secretName: cert-prod-helpin-wildcard
+  - hosts:
+    - helpin.center
+    secretName: cert-prod-helpin-center
   rules:
   - host: api.prod.helpin.ai
     http:
@@ -25,6 +28,59 @@ spec:
               number: 8080
   - host: helpcenter.helpin.ai
     http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: helpin-helpcenter-svc
+            port:
+              number: 80
+  - host: helpin.center
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: helpin-helpcenter-svc
+            port:
+              number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-helpin-helpcenter-wildcard
+  namespace: helpin
+  annotations:
+    ingress.kubernetes.io/force-ssl-redirect: "true"
+spec:
+  ingressClassName: pp-nginx
+  tls:
+  - hosts:
+    - '*.helpin.center'
+    secretName: cert-prod-helpin-center-wildcard
+  rules:
+  - host: '*.helpin.center'
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: helpin-helpcenter-svc
+            port:
+              number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-helpin-helpcenter-catchall
+  namespace: helpin
+spec:
+  ingressClassName: pp-nginx
+  rules:
+  - http:
       paths:
       - path: /
         pathType: Prefix

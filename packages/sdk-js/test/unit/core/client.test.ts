@@ -192,6 +192,36 @@ describe('HelpinClient', () => {
         'Lead payload must be a non-null object and not an array',
       );
     });
+
+    it('should elevate a lead company object to the top-level company payload', () => {
+      client.lead({
+        email: 'lead@example.com',
+        first_name: 'Lead',
+        last_name: 'User',
+        company: {
+          id: 'company123',
+          name: 'Test Company',
+          created_at: '2023-01-01',
+        },
+        source: 'landing-page',
+      });
+
+      expect(addSpy).toHaveBeenCalled();
+      const queuedPayload = addSpy.mock.calls.at(-1)?.[0] as any;
+
+      expect(queuedPayload.company).toEqual({
+        id: 'company123',
+        name: 'Test Company',
+        created_at: '2023-01-01',
+      });
+      expect(queuedPayload.event_attributes).toEqual({
+        email: 'lead@example.com',
+        first_name: 'Lead',
+        last_name: 'User',
+        source: 'landing-page',
+      });
+      expect(queuedPayload.event_attributes.company).toBeUndefined();
+    });
   });
 
   describe('group method', () => {

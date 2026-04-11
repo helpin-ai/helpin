@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -170,6 +171,30 @@ func (h *SupportInboxHandler) LinkConversationStory(w http.ResponseWriter, r *ht
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"linked": true})
+}
+
+// CreateTaskFromConversation handles POST /api/support/inbox/conversations/{id}/create-task.
+func (h *SupportInboxHandler) CreateTaskFromConversation(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	conversationID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+
+	var req model.CreateTaskFromConversationRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	response, err := h.supportService.CreateTaskFromConversation(r.Context(), workspaceID, conversationID, actorID, req)
+	if err != nil {
+		if errors.Is(err, service.ErrSupportTaskInsufficientContext) {
+			writeError(w, http.StatusUnprocessableEntity, err.Error())
+			return
+		}
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, response)
 }
 
 // AssignConversationAgent handles POST /api/support/tickets/{id}/assign-agent.

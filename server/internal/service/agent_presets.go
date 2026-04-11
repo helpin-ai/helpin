@@ -95,9 +95,9 @@ func defaultPresetVersionKeyForPresetKey(presetKey string) string {
 	case model.AgentPresetSupportAgent:
 		return "support_agent_default"
 	case model.AgentPresetCodeBuilder:
-		return "code_builder_default"
+		return "code_builder_local_commit_delivery"
 	case model.AgentPresetReviewAgent:
-		return "review_agent_default"
+		return "review_agent_interactive_loop"
 	default:
 		return ""
 	}
@@ -133,6 +133,7 @@ func workspacePresetDefinition(base model.AgentPresetDefinition, version model.W
 	definition.SourceVersionKey = version.SourceVersionKey
 	definition.Provider = trimPtr(version.Provider)
 	definition.Model = trimPtr(version.Model)
+	definition.ExecutionConfig = normalizeExecutionConfigJSON(version.ExecutionConfig)
 	definition.SystemPrompt = trimPtr(version.SystemPrompt)
 	if description := strings.TrimSpace(stringOrDefault(version.Description, "")); description != "" {
 		definition.Description = description
@@ -229,6 +230,12 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	codeBuilderModel := "gpt-5.4"
 	reviewAgentProvider := model.AgentModelProviderOpenAI
 	reviewAgentModel := "gpt-5.4"
+	highReasoning := "high"
+	fastServiceTier := "fast"
+	codexOpenAIDefaultExecutionConfig := model.MarshalAgentExecutionConfig(model.AgentExecutionConfig{
+		ReasoningEffort: &highReasoning,
+		ServiceTier:     &fastServiceTier,
+	})
 
 	epicPlannerPrompt := defaultSystemPromptForPreset(model.AgentPresetEpicPlanner)
 	taskPlannerPrompt := defaultSystemPromptForPreset(model.AgentPresetTaskPlanner)
@@ -342,6 +349,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			IsDefaultVersion:      true,
 			Provider:              &codeBuilderProvider,
 			Model:                 &codeBuilderModel,
+			ExecutionConfig:       codexOpenAIDefaultExecutionConfig,
 			Label:                 "Code Builder",
 			Description:           "Repository-writing implementation agent for story execution.",
 			DefaultRole:           "Code Builder",
@@ -364,8 +372,9 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			IsDefaultVersion:      true,
 			Provider:              &reviewAgentProvider,
 			Model:                 &reviewAgentModel,
+			ExecutionConfig:       codexOpenAIDefaultExecutionConfig,
 			Label:                 "Review Agent",
-			Description:           "Validation and review agent for story quality checks without repo mutation.",
+			Description:           "Review-first agent for validation, follow-up discussion, and agreed fixes in the same branch.",
 			DefaultRole:           "Review Agent",
 			RuntimeKind:           "codex",
 			DefaultTriggerMode:    "manual",

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useMemo, memo } from 'react';
+import { useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { Message01Icon, BotIcon, Loading01Icon, CheckmarkCircle02Icon, CancelCircleIcon, MoreHorizontalIcon } from '@/lib/icons';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +13,7 @@ import {
   useSupportTeammatePresence,
   useUpdateConversationStatus,
   useRunConversationAgent,
+  useCreateTaskFromConversation,
   useMoveConversation,
   useDismissConversationTriage,
 } from '@/hooks/queries/useSupport';
@@ -23,6 +25,8 @@ import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useAuthStore } from '@/stores/authStore';
 import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
 import type { AgentRun, SupportMessage, ConversationStatus } from '@/lib/pmTypes';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { getDayLabel, getEffectiveSenderType, isSameDay, getInitial } from './helpers';
 import { MessageBubble } from './MessageBubble';
 import { ReplyComposer } from './ReplyComposer';
@@ -195,6 +199,9 @@ const MessageSkeleton = memo(function MessageSkeleton() {
 });
 
 export function MessageThread({ workspaceId, conversationId }: MessageThreadProps) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const workspaceSlug = useWorkspaceStore((s) => s.currentWorkspace?.slug ?? '');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const separatorRefs = useRef(new Map<number, HTMLDivElement>());
@@ -206,6 +213,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
   const { data: members = [] } = useWorkspaceMembers(workspaceId);
   const updateStatus = useUpdateConversationStatus(workspaceId);
   const runAgent = useRunConversationAgent(workspaceId);
+  const createTaskFromConversation = useCreateTaskFromConversation(workspaceId);
   const moveConversation = useMoveConversation(workspaceId);
   const dismissTriage = useDismissConversationTriage(workspaceId);
   const currentUser = useAuthStore((s) => s.user);
@@ -380,6 +388,15 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
     );
   };
 
+  const handleCreateTask = async () => {
+    if (!conversationId || !workspaceSlug) return;
+    const created = await createTaskFromConversation.mutateAsync(conversationId);
+    toast.success(`Created ${created.task_key ?? 'task'}`, {
+      description: created.summary || created.task_name,
+    });
+    openTaskRoute(navigate as never, location as never, workspaceSlug, created.task_id);
+  };
+
   // Group messages with day separators and consecutive sender detection
   // Find the last outbound reply message (for read receipt display)
   const receiptMessageId = useMemo(() => {
@@ -506,6 +523,17 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1 text-xs"
+              disabled={createTaskFromConversation.isPending}
+              onClick={handleCreateTask}
+            >
+              {createTaskFromConversation.isPending ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <CheckmarkCircle02Icon className="h-3.5 w-3.5" />}
+              Create Task
+            </Button>
+
             {/* Run Agent */}
             {conversation.assigned_agent_id && (
               <Button

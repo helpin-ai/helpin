@@ -9,56 +9,85 @@ function normalizeHostname(hostname: string) {
   return hostname.replace(/:\d+$/, '').trim().toLowerCase()
 }
 
+const HOSTED_HELP_CENTER_ROOTS = [
+  'stage.helpin.center',
+  'helpin.center',
+]
+
+function resolveHostedSubdomain(hostname: string): string {
+  const normalized = normalizeHostname(hostname)
+
+  for (const root of HOSTED_HELP_CENTER_ROOTS) {
+    if (normalized === root) {
+      return ''
+    }
+    const suffix = `.${root}`
+    if (!normalized.endsWith(suffix)) {
+      continue
+    }
+    const candidate = normalized.slice(0, -suffix.length)
+    if (candidate && !candidate.includes('.')) {
+      return candidate
+    }
+  }
+
+  return ''
+}
+
+export interface HelpCenterContext {
+  /** The workspace identifier the backend understands (subdomain or hostname). */
+  subdomain: string
+  /** Router basepath. Hosted and custom-domain help centers serve at root. */
+  basepath: string
+}
+
 /**
- * Extract the help center subdomain from the current hostname.
- * Supports:
- *  - ?subdomain=X query param → X (dev override)
- *  - {subdomain}.helpin.ai    → subdomain
- *  - localhost / IP addresses  → reads from VITE_HC_SUBDOMAIN env or defaults to "demo"
- *  - custom domain             → returns full hostname (resolved by backend)
+ * Resolve the help-center request context for a given hostname + pathname.
+ *
+ * Routing modes:
+ *  - <slug>.helpin.center / <slug>.stage.helpin.center → hosted subdomain
+ *  - localhost / IP                                    → dev mode via VITE_HC_SUBDOMAIN
+ *  - custom domain                                     → backend resolves by full hostname
  */
-export function resolveSubdomain(hostname?: string, search?: string): string {
+export function resolveHelpCenterContext(
+  hostname: string,
+  _pathname: string,
+  search?: string,
+): HelpCenterContext {
+  // Dev override via query param wins everywhere
   const searchValue =
-    search ??
-    (typeof window !== 'undefined' ? window.location.search : '')
+    search ?? (typeof window !== 'undefined' ? window.location.search : '')
+  const overrideParam = new URLSearchParams(searchValue).get('subdomain')
 
-  // Dev override via query param (?subdomain=contentstudio)
-  const params = new URLSearchParams(searchValue)
-  const override = params.get('subdomain')
-  if (override) return override
+  const host = normalizeHostname(hostname)
 
-  const resolvedHostname = normalizeHostname(
-    hostname ??
-      (typeof window !== 'undefined' ? window.location.hostname : ''),
-  )
+  if (!host) {
+    return {
+      subdomain: overrideParam || import.meta.env.VITE_HC_SUBDOMAIN || 'demo',
+      basepath: '',
+    }
+  }
 
-  if (!resolvedHostname) {
-    return import.meta.env.VITE_HC_SUBDOMAIN || 'demo'
+  const hostedSubdomain = resolveHostedSubdomain(host)
+  if (hostedSubdomain) {
+    return {
+      subdomain: overrideParam || hostedSubdomain,
+      basepath: '',
+    }
   }
 
   // Dev / localhost / IP address fallback
   if (
-    resolvedHostname === 'localhost' ||
-    resolvedHostname === '127.0.0.1' ||
-    /^\d{1,3}(\.\d{1,3}){3}$/.test(resolvedHostname)
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    /^\d{1,3}(\.\d{1,3}){3}$/.test(host)
   ) {
-    return import.meta.env.VITE_HC_SUBDOMAIN || 'demo'
-  }
-
-  // Base help-center domains — not a workspace subdomain
-  if (
-    resolvedHostname === 'helpcenter.helpin.ai' ||
-    resolvedHostname === 'helpcenter-stage.helpin.ai'
-  ) {
-    return ''
-  }
-
-  // *.helpin.ai pattern — extract subdomain
-  const helpin = resolvedHostname.match(/^(.+)\.helpin\.ai$/)
-  if (helpin?.[1]) {
-    return helpin[1]
+    return {
+      subdomain: overrideParam || import.meta.env.VITE_HC_SUBDOMAIN || 'demo',
+      basepath: '',
+    }
   }
 
   // Custom domain — pass hostname as-is; backend resolves it
-  return resolvedHostname
+  return { subdomain: overrideParam || host, basepath: '' }
 }

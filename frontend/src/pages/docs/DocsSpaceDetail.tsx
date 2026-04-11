@@ -967,7 +967,7 @@ export function DocsSpaceDetail() {
       })()}
 
       <Sheet open={translationsOpen} onOpenChange={setTranslationsOpen}>
-        <SheetContent className="w-full sm:max-w-2xl">
+        <SheetContent className="w-full data-[side=right]:w-full data-[side=right]:sm:max-w-2xl">
           <SheetHeader className="border-b border-border/60">
             <SheetTitle className="flex items-center gap-2">
               <LanguageCircleIcon className="h-4 w-4 text-primary" />

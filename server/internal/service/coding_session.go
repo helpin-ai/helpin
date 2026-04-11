@@ -605,6 +605,9 @@ func requestUserInputResumeContent(interaction *model.AgentRunInteraction, respo
 	if interaction == nil {
 		return ""
 	}
+	if content := structuredReviewNextStepResumeContent(interaction.RequestPayload, responsePayload); content != "" {
+		return content
+	}
 	if strings.TrimSpace(interaction.RequestSchemaVersion) == model.AgentRunInteractionSchemaVersionHelpinV1 {
 		var payload struct {
 			Content string `json:"content"`
@@ -617,6 +620,55 @@ func requestUserInputResumeContent(interaction *model.AgentRunInteraction, respo
 		return content
 	}
 	return strings.TrimSpace(string(responsePayload))
+}
+
+func structuredReviewNextStepResumeContent(requestPayload, responsePayload json.RawMessage) string {
+	var request struct {
+		Questions []struct {
+			ID       string `json:"id"`
+			Question string `json:"question"`
+		} `json:"questions"`
+	}
+	var response struct {
+		Answers map[string]struct {
+			Answers []string `json:"answers"`
+		} `json:"answers"`
+	}
+	if err := json.Unmarshal(requestPayload, &request); err != nil {
+		return ""
+	}
+	if err := json.Unmarshal(responsePayload, &response); err != nil {
+		return ""
+	}
+	for _, question := range request.Questions {
+		if strings.TrimSpace(question.ID) != "next_step" {
+			continue
+		}
+		if !strings.Contains(strings.ToLower(strings.TrimSpace(question.Question)), "what should i do next with this review") {
+			return ""
+		}
+		answer, ok := response.Answers["next_step"]
+		if !ok || len(answer.Answers) == 0 {
+			return ""
+		}
+		value := strings.TrimSpace(answer.Answers[0])
+		if value == "" {
+			return ""
+		}
+		switch strings.ToLower(value) {
+		case "discuss a finding (recommended)", "discuss a finding":
+			return "Discuss the selected review finding and answer the human's follow-up before asking what to do next."
+		case "implement changes":
+			return "Implement the requested changes based on the review findings in the same branch, run focused validation, create a local commit, then summarize what changed and ask what to do next."
+		case "re-review changes":
+			return "Re-review the latest code changes, report the updated findings, and ask what to do next."
+		case "done reviewing":
+			return "The review is done."
+		default:
+			return value
+		}
+	}
+	return ""
 }
 
 func codexUserInputResumeContent(requestPayload, responsePayload json.RawMessage) string {

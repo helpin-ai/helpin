@@ -482,48 +482,72 @@ function TranscriptEntry({
     : [];
   const hasSegmentTimeline = visibleTurnSegments.length > 0;
   const segmentGroups = hasSegmentTimeline ? partitionTurnSegments(visibleTurnSegments) : [];
+  const toolCallTimelineKeys = hasSegmentTimeline
+    ? new Set(
+      visibleTurnSegments
+        .filter((segment): segment is Extract<typeof visibleTurnSegments[number], { kind: 'tool_call' }> => segment.kind === 'tool_call')
+        .map((segment) => toolCallTimelineKey(segment.tool_call)),
+    )
+    : null;
+  const fallbackToolCalls = hasSegmentTimeline && toolCallTimelineKeys
+    ? visibleToolCalls.filter((toolCall) => !toolCallTimelineKeys.has(toolCallTimelineKey(toolCall)))
+    : visibleToolCalls;
 
   if (isAssistant) {
     return (
       <div className="w-full max-w-[90%]">
         {hasSegmentTimeline ? (
-          segmentGroups.map((group, groupIdx) => {
-            const isLastGroup = groupIdx === segmentGroups.length - 1;
-            if (group.kind === 'assistant') {
-              const seg = group.segment;
-              if (seg.kind !== 'assistant_message') return null;
-              return (
-                <AssistantTimelineRow
-                  key={seg.segment_id}
-                  content={seg.assistant_message.content}
-                  timestamp={seg.assistant_message.started_at ?? message.timestamp}
-                  live={live}
-                  streaming={seg.assistant_message.status === 'streaming'}
-                  isLast={isLastGroup}
-                />
-              );
-            }
-            if (group.toolCalls.length >= TOOL_GROUP_COLLAPSE_THRESHOLD) {
-              return (
-                <CollapsedToolCallGroup
-                  key={group.toolCalls[0].tool_call_id}
-                  toolCalls={group.toolCalls}
-                  isLast={isLastGroup}
-                />
-              );
-            }
-            return (
-              <Fragment key={group.toolCalls[0].tool_call_id}>
-                {group.toolCalls.map((tc, tcIdx) => (
-                  <ActivityToolCallRow
-                    key={tc.tool_call_id}
-                    toolCall={tc}
-                    isLast={isLastGroup && tcIdx === group.toolCalls.length - 1}
+          <>
+            {segmentGroups.map((group, groupIdx) => {
+              const isLastGroup = groupIdx === segmentGroups.length - 1 && fallbackToolCalls.length === 0;
+              if (group.kind === 'assistant') {
+                const seg = group.segment;
+                if (seg.kind !== 'assistant_message') return null;
+                return (
+                  <AssistantTimelineRow
+                    key={seg.segment_id}
+                    content={seg.assistant_message.content}
+                    timestamp={seg.assistant_message.started_at ?? message.timestamp}
+                    live={live}
+                    streaming={seg.assistant_message.status === 'streaming'}
+                    isLast={isLastGroup}
                   />
-                ))}
-              </Fragment>
-            );
-          })
+                );
+              }
+              if (group.toolCalls.length >= TOOL_GROUP_COLLAPSE_THRESHOLD) {
+                return (
+                  <CollapsedToolCallGroup
+                    key={group.toolCalls[0].tool_call_id}
+                    toolCalls={group.toolCalls}
+                    isLast={isLastGroup}
+                  />
+                );
+              }
+              return (
+                <Fragment key={group.toolCalls[0].tool_call_id}>
+                  {group.toolCalls.map((tc, tcIdx) => (
+                    <ActivityToolCallRow
+                      key={tc.tool_call_id}
+                      toolCall={tc}
+                      isLast={isLastGroup && tcIdx === group.toolCalls.length - 1}
+                    />
+                  ))}
+                </Fragment>
+              );
+            })}
+
+            {fallbackToolCalls.length >= TOOL_GROUP_COLLAPSE_THRESHOLD ? (
+              <CollapsedToolCallGroup toolCalls={fallbackToolCalls} isLast />
+            ) : fallbackToolCalls.length > 0 ? (
+              fallbackToolCalls.map((tc, idx) => (
+                <ActivityToolCallRow
+                  key={tc.tool_call_id}
+                  toolCall={tc}
+                  isLast={idx === fallbackToolCalls.length - 1}
+                />
+              ))
+            ) : null}
+          </>
         ) : (
           <>
             {message.content.trim() ? (
@@ -573,6 +597,15 @@ function TranscriptEntry({
       ) : null}
     </div>
   );
+}
+
+function toolCallTimelineKey(toolCall: CodingSessionLiveToolCall) {
+  return [
+    toolCall.tool_name.trim().toLowerCase(),
+    toolCall.args_text.trim(),
+    toolCall.result?.output_summary?.trim() ?? '',
+    toolCall.result?.content?.trim() ?? '',
+  ].join('\n');
 }
 
 const CONTENT_COLLAPSE_CHAR_THRESHOLD = 600;
@@ -656,6 +689,9 @@ function AssistantMessageBubble({
   isAssistant?: boolean;
   placeholder?: boolean;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = content.length > CONTENT_COLLAPSE_CHAR_THRESHOLD;
+
   return (
     <div className={cn(
       'max-w-[90%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed shadow-sm',
@@ -664,9 +700,33 @@ function AssistantMessageBubble({
         : 'rounded-br-sm bg-blue-600 text-white dark:bg-blue-500',
       placeholder && 'border-dashed text-muted-foreground',
     )}>
-      {!placeholder
-        ? <MarkdownContent content={content} className={isAssistant ? undefined : 'text-inherit'} />
-        : <div className="whitespace-pre-wrap">{content}</div>}
+      {placeholder ? (
+        <div className="whitespace-pre-wrap">{content}</div>
+      ) : isLong ? (
+        <div>
+          <div className={cn('relative', !expanded && 'max-h-[10rem] overflow-hidden')}>
+            <MarkdownContent content={content} className={isAssistant ? undefined : 'text-inherit'} />
+            {!expanded && (
+              <div className={cn(
+                'pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t to-transparent',
+                isAssistant ? 'from-background' : 'from-blue-600 dark:from-blue-500',
+              )} />
+            )}
+          </div>
+          <button
+            type="button"
+            className={cn(
+              'mt-1 text-[11px] font-medium hover:underline',
+              isAssistant ? 'text-primary' : 'text-white/80',
+            )}
+            onClick={() => setExpanded((prev) => !prev)}
+          >
+            {expanded ? 'Show less' : 'Show more'}
+          </button>
+        </div>
+      ) : (
+        <MarkdownContent content={content} className={isAssistant ? undefined : 'text-inherit'} />
+      )}
     </div>
   );
 }
@@ -855,12 +915,15 @@ function ActivityToolCallRow({ toolCall, isLast }: { toolCall: CodingSessionLive
           {publishedPreviewCard ?? (
             <>
               {isApplyPatch
-                ? <ApplyPatchDiff argsText={toolCall.args_text} />
+                ? <ApplyPatchDiff argsText={argsText || resultText} />
                 : argsText ? <CollapsibleCodeBlock text={argsText} /> : null}
-              {resultText ? (
+              {resultText && !isApplyPatch ? (
                 isFailed
                   ? <CollapsibleCodeBlock text={resultText} failed />
                   : <p className="text-[11px] text-muted-foreground">{resultText.length > 200 ? `${resultText.slice(0, 200)}…` : resultText}</p>
+              ) : null}
+              {isApplyPatch && isFailed && resultText ? (
+                <CollapsibleCodeBlock text={resultText} failed />
               ) : null}
             </>
           )}
@@ -914,7 +977,7 @@ function CollapsedToolCallGroup({
           'flex h-7 w-7 shrink-0 items-center justify-center rounded-full border',
           failedCount > 0
             ? 'border-destructive/30 bg-destructive/10 text-destructive'
-            : 'border-primary/30 bg-primary/10 text-primary',
+            : 'border-blue-200 bg-blue-50 text-blue-600 dark:border-blue-900/50 dark:bg-blue-950/20 dark:text-blue-400',
         )}>
           <Wrench01Icon className="h-3.5 w-3.5" />
         </div>

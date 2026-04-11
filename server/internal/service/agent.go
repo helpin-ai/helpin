@@ -277,6 +277,7 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 		beforeAllowedTools := string(existing.AllowedTools)
 		beforeAllowedCommands := string(existing.AllowedCommands)
 		beforeAllowedTargets := string(existing.AllowedTargets)
+		beforeExecutionConfig := string(normalizeExecutionConfigJSON(existing.ExecutionConfig))
 		beforeSystemPrompt := trimPtr(existing.SystemPrompt)
 		hadPlanningNotes := existing.PlanningNotes != nil
 		refreshedSystemPrompt := storedSystemPromptForPreset(presetKey, existing.SystemPrompt, existing.PlanningNotes)
@@ -329,7 +330,15 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 			existing.Model = trimPtr(preset.Model)
 			changed = true
 		}
-		if strings.TrimSpace(existing.RuntimeKind) == "" {
+		expectedExecutionConfig := normalizeExecutionConfigJSON(preset.ExecutionConfig)
+		if string(normalizeExecutionConfigJSON(existing.ExecutionConfig)) == "{}" && string(expectedExecutionConfig) != "{}" {
+			existing.ExecutionConfig = expectedExecutionConfig
+			changed = true
+		}
+		if ok && strings.TrimSpace(preset.RuntimeKind) != "" && strings.TrimSpace(existing.RuntimeKind) != strings.TrimSpace(preset.RuntimeKind) {
+			existing.RuntimeKind = preset.RuntimeKind
+			changed = true
+		} else if strings.TrimSpace(existing.RuntimeKind) == "" {
 			existing.RuntimeKind = preset.RuntimeKind
 			changed = true
 		}
@@ -347,6 +356,7 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 			string(existing.AllowedTools) != beforeAllowedTools ||
 			string(existing.AllowedCommands) != beforeAllowedCommands ||
 			string(existing.AllowedTargets) != beforeAllowedTargets ||
+			string(normalizeExecutionConfigJSON(existing.ExecutionConfig)) != beforeExecutionConfig ||
 			((beforeSystemPrompt == nil) != (trimPtr(existing.SystemPrompt) == nil)) ||
 			(beforeSystemPrompt != nil && trimPtr(existing.SystemPrompt) != nil && *beforeSystemPrompt != *trimPtr(existing.SystemPrompt)) ||
 			(hadPlanningNotes && existing.PlanningNotes == nil) {
@@ -374,6 +384,7 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 		TriggerMode:           preset.DefaultTriggerMode,
 		Provider:              trimPtr(preset.Provider),
 		Model:                 trimPtr(preset.Model),
+		ExecutionConfig:       normalizeExecutionConfigJSON(preset.ExecutionConfig),
 		SystemPrompt:          systemPrompt,
 		PlanningNotes:         nil,
 		AllowedTools:          normalizeAllowedToolsJSON(mustJSONStringSlice(preset.AllowedTools)),
@@ -1109,6 +1120,7 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 		RuntimeKind:           runtimeKind,
 		Provider:              trimPtr(req.Provider),
 		Model:                 trimPtr(req.Model),
+		ExecutionConfig:       normalizeExecutionConfigJSON(req.ExecutionConfig),
 		SystemPrompt:          trimPtr(req.SystemPrompt),
 		AllowedTools:          normalizeAllowedToolsJSON(mustJSONStringSlice(basePreset.AllowedTools)),
 		SupportedModes:        mustJSONStringSlice(normalizedSupportedModes),
@@ -1127,6 +1139,21 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 	}
 	if version.Model == nil {
 		version.Model = trimPtr(basePreset.Model)
+	}
+	if string(version.ExecutionConfig) == "{}" {
+		version.ExecutionConfig = normalizeExecutionConfigJSON(basePreset.ExecutionConfig)
+	}
+	versionValidationAgent := &model.Agent{
+		IsSystem:         true,
+		PresetKey:        familyKey,
+		PresetVersionKey: version.VersionKey,
+		RuntimeKind:      version.RuntimeKind,
+		Provider:         version.Provider,
+		Model:            version.Model,
+		ExecutionConfig:  version.ExecutionConfig,
+	}
+	if _, err := parseAndValidateExecutionConfig(versionValidationAgent); err != nil {
+		return nil, err
 	}
 	if err := s.workspacePresetVersionRepo.Create(ctx, version); err != nil {
 		return nil, err
@@ -1161,23 +1188,32 @@ func (s *AgentService) ListModelProviders() []model.AgentModelProviderOption {
 	options := make([]model.AgentModelProviderOption, 0, 3)
 	if s.isModelProviderConfigured(model.AgentModelProviderAnthropic) {
 		options = append(options, model.AgentModelProviderOption{
-			Value:            model.AgentModelProviderAnthropic,
-			Label:            "Anthropic",
-			ModelPlaceholder: "claude-sonnet-4-6",
+			Value:                   model.AgentModelProviderAnthropic,
+			Label:                   "Anthropic",
+			ModelPlaceholder:        "claude-sonnet-4-6",
+			SupportsReasoningEffort: false,
+			SupportsServiceTier:     false,
 		})
 	}
 	if s.isModelProviderConfigured(model.AgentModelProviderOpenAI) || s.isCodexOpenAIConfigured() {
 		options = append(options, model.AgentModelProviderOption{
-			Value:            model.AgentModelProviderOpenAI,
-			Label:            "OpenAI",
-			ModelPlaceholder: "gpt-5.4",
+			Value:                     model.AgentModelProviderOpenAI,
+			Label:                     "OpenAI",
+			ModelPlaceholder:          "gpt-5.4",
+			SupportsReasoningEffort:   true,
+			SupportedReasoningEfforts: slices.Clone(supportedAgentReasoningEfforts),
+			SupportsServiceTier:       true,
+			SupportedServiceTiers:     slices.Clone(supportedAgentServiceTiers),
 		})
 	}
 	if s.isModelProviderConfigured(model.AgentModelProviderOpenRouter) {
 		options = append(options, model.AgentModelProviderOption{
-			Value:            model.AgentModelProviderOpenRouter,
-			Label:            "OpenRouter",
-			ModelPlaceholder: "openai/gpt-5.4",
+			Value:                     model.AgentModelProviderOpenRouter,
+			Label:                     "OpenRouter",
+			ModelPlaceholder:          "openai/gpt-5.4",
+			SupportsReasoningEffort:   true,
+			SupportedReasoningEfforts: slices.Clone(supportedAgentReasoningEfforts),
+			SupportsServiceTier:       false,
 		})
 	}
 	return options
@@ -1239,6 +1275,7 @@ func (s *AgentService) CreateAgent(ctx context.Context, req model.CreateAgentReq
 		TriggerMode:            triggerMode,
 		Provider:               trimPtr(req.Provider),
 		Model:                  trimPtr(req.Model),
+		ExecutionConfig:        normalizeExecutionConfigJSON(req.ExecutionConfig),
 		SystemPrompt:           trimPtr(req.SystemPrompt),
 		PlanningNotes:          nil,
 		MonthlyTokenBudget:     normalizeTokenBudget(req.MonthlyTokenBudget),
@@ -1386,6 +1423,11 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 	}
 	if req.Model != nil {
 		agent.Model = trimPtr(req.Model)
+	}
+	if req.ExecutionConfig != nil {
+		agent.ExecutionConfig = normalizeExecutionConfigJSON(req.ExecutionConfig)
+	} else if presetChanged && hasPreset {
+		agent.ExecutionConfig = normalizeExecutionConfigJSON(preset.ExecutionConfig)
 	}
 	if req.SystemPrompt != nil {
 		agent.SystemPrompt = trimPtr(req.SystemPrompt)
@@ -3567,6 +3609,11 @@ func (s *AgentService) validateModelRouting(agent *model.Agent) error {
 	if err := s.validateRuntimeProviderCompatibility(agent); err != nil {
 		return err
 	}
+	config, err := parseAndValidateExecutionConfig(agent)
+	if err != nil {
+		return err
+	}
+	agent.ExecutionConfig = model.MarshalAgentExecutionConfig(config)
 	if agent.Provider == nil {
 		if agent.Model == nil || strings.TrimSpace(*agent.Model) == "" {
 			return nil
@@ -3582,9 +3629,7 @@ func (s *AgentService) validateModelRouting(agent *model.Agent) error {
 		if !s.isCodexOpenAIConfigured() {
 			return fmt.Errorf("provider openai is not configured for codex (requires OPENAI_API_KEY or Helpin-managed ChatGPT OAuth)")
 		}
-		return nil
-	}
-	if !s.isModelProviderConfigured(provider) {
+	} else if !s.isModelProviderConfigured(provider) {
 		switch provider {
 		case model.AgentModelProviderAnthropic:
 			return fmt.Errorf("provider anthropic is not configured (missing ANTHROPIC_API_KEY)")

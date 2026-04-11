@@ -2,11 +2,11 @@ import { useMemo } from 'react'
 import { useQueries } from '@tanstack/react-query'
 import { Search, Moon, Sun } from 'lucide-react'
 import {
-  Link,
   useParams,
   useRouterState,
   useSearch,
 } from '@tanstack/react-router'
+import { DocsLink } from '@/components/DocsLink'
 import { cn } from '@/lib/utils'
 import { useDocsContext } from '@/contexts/DocsContext'
 import { useSpaceNavigation } from '@/hooks/queries'
@@ -19,6 +19,7 @@ import {
   buildCanonicalHomePath,
   resolveLocaleSwitchPath,
 } from '@/lib/locale'
+import { prefixBasepath } from '@/lib/pathUtils'
 import { PhIcon } from '@/components/PhIcon'
 import { LocaleSwitcher } from './LocaleSwitcher'
 import type { NavItem, Space } from '@/lib/types'
@@ -71,6 +72,7 @@ export function TopBar({ onSearchClick }: TopBarProps) {
     enabledLocales,
     spaces,
     multilingualEnabled,
+    basepath,
   } = useDocsContext()
   const params = useParams({ strict: false }) as {
     locale?: string
@@ -323,21 +325,25 @@ export function TopBar({ onSearchClick }: TopBarProps) {
       return {
         code,
         label: getLocaleLabel(code),
-        href: resolveLocaleSwitchPath({
-          multilingualEnabled,
-          targetLocale: code,
-          defaultLocale,
-          current: currentRouteState,
-          targetSpaces,
-          targetNavigation,
-          fallbackSpaces,
-          fallbackNavigation,
-        }),
+        href: prefixBasepath(
+          basepath,
+          resolveLocaleSwitchPath({
+            multilingualEnabled,
+            targetLocale: code,
+            defaultLocale,
+            current: currentRouteState,
+            targetSpaces,
+            targetNavigation,
+            fallbackSpaces,
+            fallbackNavigation,
+          }),
+        ),
         active: code === locale,
       }
     })
   }, [
     config.show_language_switcher,
+    basepath,
     currentResolvedNavigation,
     currentRouteState,
     defaultLocale,
@@ -354,7 +360,7 @@ export function TopBar({ onSearchClick }: TopBarProps) {
     <header className="sticky top-0 z-30 grid grid-cols-[1fr_auto_1fr] items-center border-b border-border bg-background/95 backdrop-blur-sm px-5 h-[var(--hc-header-height)]">
       {/* Left: Brand + Space tabs */}
       <div className="flex items-center min-w-0">
-        <Link
+        <DocsLink
           to={buildCanonicalHomePath(multilingualEnabled, locale)}
           className="flex items-center gap-2.5 shrink-0"
         >
@@ -381,7 +387,7 @@ export function TopBar({ onSearchClick }: TopBarProps) {
               {config.brand_name || 'Docs'}
             </span>
           )}
-        </Link>
+        </DocsLink>
 
         {spaces.length > 1 && (
           <>
@@ -390,7 +396,7 @@ export function TopBar({ onSearchClick }: TopBarProps) {
             {spaces.map((space) => {
               const isActive = currentResolvedSpaceSlug === space.slug
               return (
-                <Link
+                <DocsLink
                   key={space.id}
                   to={buildCanonicalCollectionPath(
                     multilingualEnabled,
@@ -413,7 +419,7 @@ export function TopBar({ onSearchClick }: TopBarProps) {
                     />
                   )}
                   {space.name}
-                </Link>
+                </DocsLink>
               )
             })}
           </nav>

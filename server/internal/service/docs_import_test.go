@@ -3,6 +3,7 @@ package service
 import (
 	"testing"
 
+	"github.com/helpin-ai/helpin/server/internal/helpscout"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
@@ -67,5 +68,60 @@ func TestImportSummaryIncludesQualityCounters(t *testing.T) {
 	}
 	if summary.NormalizedNoteBlocks != 4 {
 		t.Fatalf("expected normalized note block count to be tracked, got %d", summary.NormalizedNoteBlocks)
+	}
+}
+
+func TestNormalizeDocsImportStatus(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		expect string
+	}{
+		{name: "draft", input: "draft", expect: "draft"},
+		{name: "published", input: "published", expect: "published"},
+		{name: "match source", input: "match_source", expect: "match_source"},
+		{name: "legacy all draft", input: "all_draft", expect: "draft"},
+		{name: "empty defaults to match source", input: "", expect: "match_source"},
+		{name: "unknown defaults to match source", input: "weird", expect: "match_source"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := normalizeDocsImportStatus(tt.input); got != tt.expect {
+				t.Fatalf("normalizeDocsImportStatus(%q) = %q, want %q", tt.input, got, tt.expect)
+			}
+		})
+	}
+}
+
+func TestHelpScoutImportBehavior(t *testing.T) {
+	publishedNoDraft := helpscout.ArticleRef{Status: "published", HasDraft: false}
+	publishedWithDraft := helpscout.ArticleRef{Status: "published", HasDraft: true}
+	draftWithDraft := helpscout.ArticleRef{Status: "notpublished", HasDraft: true}
+
+	if shouldImportHelpScoutDraft(publishedNoDraft, "match_source") {
+		t.Fatal("published source without draft should not import draft content")
+	}
+	if shouldImportHelpScoutDraft(publishedWithDraft, "match_source") {
+		t.Fatal("match_source should keep the published source version when Help Scout has unpublished draft changes")
+	}
+	if !shouldImportHelpScoutDraft(draftWithDraft, "draft") {
+		t.Fatal("draft imports should use available draft content")
+	}
+	if !shouldImportHelpScoutDraft(draftWithDraft, "published") {
+		t.Fatal("published imports should use draft content for source articles that are not yet published")
+	}
+
+	if shouldPublishImportedArticle(publishedWithDraft, "draft") {
+		t.Fatal("draft imports must not publish articles")
+	}
+	if !shouldPublishImportedArticle(publishedWithDraft, "published") {
+		t.Fatal("published imports should publish all articles")
+	}
+	if !shouldPublishImportedArticle(publishedWithDraft, "match_source") {
+		t.Fatal("match_source should publish source-published articles")
+	}
+	if shouldPublishImportedArticle(draftWithDraft, "match_source") {
+		t.Fatal("match_source should keep source-draft articles unpublished")
 	}
 }

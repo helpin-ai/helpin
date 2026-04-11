@@ -3,7 +3,7 @@ import { WidgetManager, type ShowArticleOptions, type WidgetSettings } from './c
 import type { Config } from './core/types';
 import { createHelpinClient } from './core/create-client';
 import { LogLevel } from './utils/logger';
-import type { UserProps, EventPayload, ClientProperties } from './core/types';
+import type { UserProps, LeadProps, EventPayload, ClientProperties } from './core/types';
 import { parseLogLevel } from './utils/helpers';
 import { isWindowAvailable } from './utils/common';
 import { isAMDEnvironment, getAMDDefine } from './utils/amd-detector';
@@ -465,6 +465,7 @@ export {
   HelpinClient,
   Config as HelpinOptions,
   UserProps,
+  LeadProps,
   EventPayload,
   LogLevel,
   ClientProperties,

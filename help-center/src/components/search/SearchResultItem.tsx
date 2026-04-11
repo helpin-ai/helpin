@@ -1,5 +1,5 @@
-import { Link } from '@tanstack/react-router'
 import { FileText, ArrowRight } from 'lucide-react'
+import { DocsLink } from '@/components/DocsLink'
 import {
   buildCanonicalArticlePath,
   buildCanonicalCollectionPath,
@@ -73,7 +73,7 @@ export function SearchResultItem({
 
   if (!collectionSlug) {
     return (
-      <Link
+      <DocsLink
         to={buildCanonicalCollectionPath(
           multilingualEnabled,
           targetLocale,
@@ -83,12 +83,12 @@ export function SearchResultItem({
         className={className}
       >
         {content}
-      </Link>
+      </DocsLink>
     )
   }
 
   return (
-    <Link
+    <DocsLink
       to={buildCanonicalArticlePath(
         multilingualEnabled,
         targetLocale,
@@ -99,6 +99,6 @@ export function SearchResultItem({
       className={className}
     >
       {content}
-    </Link>
+    </DocsLink>
   )
 }

@@ -1122,6 +1122,81 @@ func (s *SupportAIService) RewriteSupportDraft(
 	}, nil
 }
 
+// GenerateTaskDraftFromConversation turns a support conversation into a structured PM task draft.
+func (s *SupportAIService) GenerateTaskDraftFromConversation(
+	ctx context.Context,
+	workspaceID string,
+	conversation *model.SupportConversation,
+	history []model.SupportMessage,
+) (*supportConversationTaskDraft, error) {
+	if s == nil {
+		return nil, fmt.Errorf("support AI service not initialized")
+	}
+	if s.llmProvider == nil {
+		return nil, fmt.Errorf("support chat LLM provider is not configured")
+	}
+	if conversation == nil {
+		return nil, fmt.Errorf("conversation is required")
+	}
+
+	sanitized := sanitizeConversationHistory(history, "")
+	var agent *model.Agent
+	if conversation.AssignedAgentID != nil && strings.TrimSpace(*conversation.AssignedAgentID) != "" && s.agentRepo != nil {
+		loaded, err := s.agentRepo.GetByID(ctx, workspaceID, strings.TrimSpace(*conversation.AssignedAgentID))
+		if err == nil {
+			agent = loaded
+		}
+	}
+	providerName, modelName := resolveSupportLLMConfig(agent)
+
+	messages := buildConversationMessages(sanitized)
+	messages = append(messages, llm.Message{
+		Role: "user",
+		Content: fmt.Sprintf(
+			"Create one internal PM task draft for this support conversation.\n\nConversation ID: %s\nConversation Number: %d\nSubject: %s\nCustomer Name: %s\nCustomer Email: %s\nCurrent Status: %s\nCurrent Priority: %s\n\nReturn the JSON only.",
+			conversation.ID,
+			conversation.DisplayID,
+			strings.TrimSpace(conversation.Subject),
+			strings.TrimSpace(derefString(conversation.CustomerName)),
+			strings.TrimSpace(derefString(conversation.CustomerEmail)),
+			strings.TrimSpace(conversation.Status),
+			strings.TrimSpace(conversation.Priority),
+		),
+	})
+
+	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
+		SystemPrompt: supportTaskDraftSystemPrompt,
+		Messages:     messages,
+		Provider:     providerName,
+		Model:        modelName,
+		Temperature:  0.2,
+		MaxTokens:    1200,
+		JSONMode:     true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("generate support task draft: %w", err)
+	}
+
+	var parsed struct {
+		Title               string `json:"title"`
+		Summary             string `json:"summary"`
+		DescriptionMarkdown string `json:"description_markdown"`
+		TaskType            string `json:"task_type"`
+		Priority            string `json:"priority"`
+	}
+	if err := llm.UnmarshalResponse(resp.Content, &parsed); err != nil {
+		return nil, fmt.Errorf("parse support task draft: %w", err)
+	}
+
+	return &supportConversationTaskDraft{
+		Title:       strings.TrimSpace(parsed.Title),
+		Summary:     strings.TrimSpace(parsed.Summary),
+		Description: strings.TrimSpace(parsed.DescriptionMarkdown),
+		TaskType:    strings.TrimSpace(parsed.TaskType),
+		Priority:    strings.TrimSpace(parsed.Priority),
+	}, nil
+}
+
 func (s *SupportAIService) resolvePreviewHistory(
 	ctx context.Context,
 	workspaceID string,
@@ -1371,6 +1446,35 @@ func buildConversationMessages(history []model.SupportMessage) []llm.Message {
 	}
 	return messages
 }
+
+const supportTaskDraftSystemPrompt = `You convert support conversations into one internal PM task draft.
+
+Return JSON with exactly these fields:
+- title: concise issue-oriented task title
+- summary: 1-2 sentence summary
+- description_markdown: internal markdown task description
+- task_type: one of "feature", "bug", "chore"
+- priority: one of "none", "low", "medium", "high", "urgent"
+
+Rules:
+- Create exactly one task.
+- Focus on the concrete work the team should do next.
+- Do not write a customer reply.
+- Make the title name the issue or request itself, not the action to take.
+- Avoid titles that start with generic verbs like "Investigate", "Fix", "Handle", or "Follow up" unless unavoidable.
+- Include useful reproduction context, observed impact, and the latest customer need when present.
+- Keep title short, specific, and product-facing.
+- Write description_markdown as an adaptive internal brief with:
+  - ## Problem
+  - ## Impact
+  - ## Requested Outcome
+- Add ## Reproduction only when concrete repro steps exist in the conversation.
+- Add ## Customer Context or ## Internal Notes only when they add useful detail.
+- Do not emit empty sections.
+- Prefer "bug" when the conversation describes something broken, failing, or incorrect.
+- Prefer "feature" for requests or missing capability.
+- Prefer "chore" for operational follow-up, cleanup, or non-user-facing work.
+- If priority is unclear, use "medium".`
 
 func previewHistoryToMessages(history []model.SupportAIPreviewHistoryTurn) []model.SupportMessage {
 	if len(history) == 0 {

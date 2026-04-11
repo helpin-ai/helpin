@@ -559,3 +559,533 @@ func TestDocsHelpcenterTranslationRepository_DefaultLocaleBackfillCreatesMirrorR
 		t.Fatalf("article translation published_at = %+v, want %s", articleTranslations[0].PublishedAt, now.Format(time.RFC3339))
 	}
 }
+
+func TestDocsHelpcenterRepository_ListPublicArticleTranslationsByCollection_FallsBackToDefaultLocaleMirror(t *testing.T) {
+	t.Parallel()
+
+	const (
+		workspaceID = "ws-public-list"
+		spaceID     = "space-public-list"
+		collID      = "collection-public-list"
+		docID       = "doc-public-list"
+		userID      = "user-public-list"
+	)
+
+	db := setupDocsHelpcenterTranslationTestDB(t)
+	repo := NewDocsHelpcenterRepository(db)
+	ctx := context.Background()
+	now := time.Date(2026, 4, 10, 17, 0, 0, 0, time.UTC)
+
+	links := json.RawMessage(`[]`)
+	footer := json.RawMessage(`{}`)
+	hero := json.RawMessage(`{}`)
+	spaceNav := json.RawMessage(`{}`)
+
+	seedDocsHelpcenterTranslationConfig(t, db, model.DocsHelpcenterConfig{
+		ID:                      "cfg-public-list",
+		WorkspaceID:             workspaceID,
+		Subdomain:               "replug",
+		BrandName:               "Replug",
+		BrandColor:              "#2b70fb",
+		HeaderLinks:             links,
+		FooterConfig:            footer,
+		HomepageConfig:          hero,
+		SpaceNavConfig:          spaceNav,
+		DefaultLocale:           "en",
+		EnabledLocales:          model.DocsStringArray{"en", "fr"},
+		FallbackToDefaultLocale: true,
+		IsPublished:             true,
+		CreatedAt:               now,
+		UpdatedAt:               now,
+	})
+	seedDocsHelpcenterTranslationSpace(t, db, model.DocsSpace{
+		ID:          spaceID,
+		WorkspaceID: workspaceID,
+		Name:        "Help Center",
+		Slug:        "help-center",
+		Visibility:  model.SpaceVisibilityWorkspaceWide,
+		Type:        model.SpaceTypeExternalCapable,
+		CreatedBy:   userID,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	})
+	seedDocsHelpcenterTranslationCollection(t, db, model.DocsCollection{
+		ID:          collID,
+		SpaceID:     spaceID,
+		WorkspaceID: workspaceID,
+		Name:        "Getting Started",
+		Slug:        "getting-started",
+		CreatedBy:   userID,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	})
+	excerpt := "Start here"
+	seedDocsHelpcenterTranslationDocument(t, db, model.DocsDocument{
+		ID:           docID,
+		WorkspaceID:  workspaceID,
+		SpaceID:      spaceID,
+		CollectionID: ptrString(collID),
+		Title:        "Legacy source title",
+		Excerpt:      &excerpt,
+		Status:       model.DocStatusPublished,
+		Visibility:   model.SpaceVisibilityWorkspaceWide,
+		PublishedAt:  &now,
+		CreatedBy:    userID,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	})
+	seedDocsHelpcenterTranslationArticle(t, db, model.DocsHelpcenterArticle{
+		ID:                "hc-public-list",
+		DocumentID:        docID,
+		Slug:              "legacy-source-title",
+		PublicPublishedAt: &now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	})
+
+	if err := db.Create(&model.DocsHelpcenterArticleTranslation{
+		ID:              "hat-public-en",
+		DocumentID:      docID,
+		WorkspaceID:     workspaceID,
+		SpaceID:         spaceID,
+		CollectionID:    ptrString(collID),
+		Locale:          "en",
+		Title:           "Published from mirror",
+		Slug:            ptrString("published-from-mirror"),
+		Excerpt:         ptrString("Mirror excerpt"),
+		Content:         json.RawMessage(`{"type":"doc","content":[]}`),
+		ContentText:     "Mirror body",
+		Status:          model.DocsHelpcenterTranslationStatusPublished,
+		SourceUpdatedAt: &now,
+		SourceSynced:    true,
+		PublishedAt:     &now,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}).Error; err != nil {
+		t.Fatalf("seed default locale article translation: %v", err)
+	}
+	if err := db.Create(&model.DocsHelpcenterArticleTranslation{
+		ID:              "hat-public-fr",
+		DocumentID:      docID,
+		WorkspaceID:     workspaceID,
+		SpaceID:         spaceID,
+		CollectionID:    ptrString(collID),
+		Locale:          "fr",
+		Title:           "Publication manquante",
+		Slug:            ptrString("publication-manquante"),
+		Excerpt:         ptrString("FR excerpt"),
+		Content:         json.RawMessage(`{"type":"doc","content":[]}`),
+		ContentText:     "FR body",
+		Status:          model.DocsHelpcenterTranslationStatusPublished,
+		SourceUpdatedAt: &now,
+		SourceSynced:    true,
+		PublishedAt:     &now,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}).Error; err != nil {
+		t.Fatalf("seed non-default locale article translation: %v", err)
+	}
+
+	translations, err := repo.ListPublicArticleTranslationsByCollection(ctx, collID, "en")
+	if err != nil {
+		t.Fatalf("ListPublicArticleTranslationsByCollection default locale fallback: %v", err)
+	}
+	if len(translations) != 1 {
+		t.Fatalf("default locale public translations = %d, want 1", len(translations))
+	}
+	if translations[0].Title != "Published from mirror" || helpcenterStringValue(translations[0].Slug) != "published-from-mirror" {
+		t.Fatalf("unexpected default locale translation: %+v", translations[0])
+	}
+
+	frTranslations, err := repo.ListPublicArticleTranslationsByCollection(ctx, collID, "fr")
+	if err != nil {
+		t.Fatalf("ListPublicArticleTranslationsByCollection non-default locale: %v", err)
+	}
+	if len(frTranslations) != 0 {
+		t.Fatalf("non-default locale public translations = %d, want 0 without publication snapshot", len(frTranslations))
+	}
+}
+
+func TestDocsHelpcenterRepository_ListPublicArticleTranslationsBySpace_UsesDefaultLocalePublicationWhenMirrorDraft(t *testing.T) {
+	t.Parallel()
+
+	const (
+		workspaceID = "ws-public-space-live"
+		spaceID     = "space-public-space-live"
+		collID      = "collection-public-space-live"
+		docID       = "doc-public-space-live"
+		userID      = "user-public-space-live"
+	)
+
+	db := setupDocsHelpcenterTranslationTestDB(t)
+	repo := NewDocsHelpcenterRepository(db)
+	ctx := context.Background()
+	now := time.Date(2026, 4, 10, 18, 0, 0, 0, time.UTC)
+
+	links := json.RawMessage(`[]`)
+	footer := json.RawMessage(`{}`)
+	hero := json.RawMessage(`{}`)
+	spaceNav := json.RawMessage(`{}`)
+
+	seedDocsHelpcenterTranslationConfig(t, db, model.DocsHelpcenterConfig{
+		ID:                      "cfg-public-space-live",
+		WorkspaceID:             workspaceID,
+		Subdomain:               "replug",
+		BrandName:               "Replug",
+		BrandColor:              "#2b70fb",
+		HeaderLinks:             links,
+		FooterConfig:            footer,
+		HomepageConfig:          hero,
+		SpaceNavConfig:          spaceNav,
+		DefaultLocale:           "en",
+		EnabledLocales:          model.DocsStringArray{"en"},
+		FallbackToDefaultLocale: true,
+		IsPublished:             true,
+		CreatedAt:               now,
+		UpdatedAt:               now,
+	})
+	seedDocsHelpcenterTranslationSpace(t, db, model.DocsSpace{
+		ID:          spaceID,
+		WorkspaceID: workspaceID,
+		Name:        "Help Center",
+		Slug:        "help-center",
+		Visibility:  model.SpaceVisibilityWorkspaceWide,
+		Type:        model.SpaceTypeExternalCapable,
+		CreatedBy:   userID,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	})
+	seedDocsHelpcenterTranslationCollection(t, db, model.DocsCollection{
+		ID:          collID,
+		SpaceID:     spaceID,
+		WorkspaceID: workspaceID,
+		Name:        "Brands",
+		Slug:        "brands",
+		CreatedBy:   userID,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	})
+	seedDocsHelpcenterTranslationDocument(t, db, model.DocsDocument{
+		ID:           docID,
+		WorkspaceID:  workspaceID,
+		SpaceID:      spaceID,
+		CollectionID: ptrString(collID),
+		Title:        "Draft mirror title",
+		Status:       model.DocStatusPublished,
+		Visibility:   model.SpaceVisibilityWorkspaceWide,
+		PublishedAt:  &now,
+		CreatedBy:    userID,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	})
+	seedDocsHelpcenterTranslationArticle(t, db, model.DocsHelpcenterArticle{
+		ID:                "hc-public-space-live",
+		DocumentID:        docID,
+		Slug:              "draft-mirror-title",
+		PublicPublishedAt: &now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	})
+	if err := db.Create(&model.DocsHelpcenterArticleTranslation{
+		ID:              "hat-public-space-live-en",
+		DocumentID:      docID,
+		WorkspaceID:     workspaceID,
+		SpaceID:         spaceID,
+		CollectionID:    ptrString(collID),
+		Locale:          "en",
+		Title:           "Draft mirror title",
+		Slug:            ptrString("draft-mirror-title"),
+		Excerpt:         ptrString("Draft mirror excerpt"),
+		Content:         json.RawMessage(`{"type":"doc","content":[]}`),
+		ContentText:     "Draft mirror body",
+		Status:          model.DocsHelpcenterTranslationStatusDraft,
+		SourceUpdatedAt: &now,
+		SourceSynced:    true,
+		PublishedAt:     nil,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}).Error; err != nil {
+		t.Fatalf("seed default locale draft article translation: %v", err)
+	}
+	if err := db.Create(&model.DocsHelpcenterArticlePublication{
+		ID:           "pub-public-space-live-en",
+		DocumentID:   docID,
+		WorkspaceID:  workspaceID,
+		SpaceID:      spaceID,
+		CollectionID: ptrString(collID),
+		Locale:       "en",
+		Title:        "Published live title",
+		Slug:         "published-live-title",
+		Excerpt:      ptrString("Published live excerpt"),
+		Content:      json.RawMessage(`{"type":"doc","content":[]}`),
+		ContentText:  "Published live body",
+		PublishedAt:  now,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}).Error; err != nil {
+		t.Fatalf("seed article publication: %v", err)
+	}
+
+	translations, err := repo.ListPublicArticleTranslationsBySpace(ctx, spaceID, "en")
+	if err != nil {
+		t.Fatalf("ListPublicArticleTranslationsBySpace default locale live publication: %v", err)
+	}
+	if len(translations) != 1 {
+		t.Fatalf("default locale public translations = %d, want 1", len(translations))
+	}
+	if translations[0].Title != "Published live title" || helpcenterStringValue(translations[0].Slug) != "published-live-title" {
+		t.Fatalf("unexpected default locale live publication translation: %+v", translations[0])
+	}
+	if translations[0].Status != model.DocsHelpcenterTranslationStatusPublished {
+		t.Fatalf("translation status = %q, want published", translations[0].Status)
+	}
+}
+
+func TestDocsHelpcenterRepository_GetPublicArticleTranslationByCollectionSlug_FallsBackToDefaultLocaleMirror(t *testing.T) {
+	t.Parallel()
+
+	const (
+		workspaceID = "ws-public-get"
+		spaceID     = "space-public-get"
+		collID      = "collection-public-get"
+		docID       = "doc-public-get"
+		userID      = "user-public-get"
+	)
+
+	db := setupDocsHelpcenterTranslationTestDB(t)
+	repo := NewDocsHelpcenterRepository(db)
+	ctx := context.Background()
+	now := time.Date(2026, 4, 10, 17, 30, 0, 0, time.UTC)
+
+	links := json.RawMessage(`[]`)
+	footer := json.RawMessage(`{}`)
+	hero := json.RawMessage(`{}`)
+	spaceNav := json.RawMessage(`{}`)
+
+	seedDocsHelpcenterTranslationConfig(t, db, model.DocsHelpcenterConfig{
+		ID:                      "cfg-public-get",
+		WorkspaceID:             workspaceID,
+		Subdomain:               "replug",
+		BrandName:               "Replug",
+		BrandColor:              "#2b70fb",
+		HeaderLinks:             links,
+		FooterConfig:            footer,
+		HomepageConfig:          hero,
+		SpaceNavConfig:          spaceNav,
+		DefaultLocale:           "en",
+		EnabledLocales:          model.DocsStringArray{"en"},
+		FallbackToDefaultLocale: true,
+		IsPublished:             true,
+		CreatedAt:               now,
+		UpdatedAt:               now,
+	})
+	seedDocsHelpcenterTranslationSpace(t, db, model.DocsSpace{
+		ID:          spaceID,
+		WorkspaceID: workspaceID,
+		Name:        "Help Center",
+		Slug:        "help-center",
+		Visibility:  model.SpaceVisibilityWorkspaceWide,
+		Type:        model.SpaceTypeExternalCapable,
+		CreatedBy:   userID,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	})
+	seedDocsHelpcenterTranslationCollection(t, db, model.DocsCollection{
+		ID:          collID,
+		SpaceID:     spaceID,
+		WorkspaceID: workspaceID,
+		Name:        "Getting Started",
+		Slug:        "getting-started",
+		CreatedBy:   userID,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	})
+	seedDocsHelpcenterTranslationDocument(t, db, model.DocsDocument{
+		ID:           docID,
+		WorkspaceID:  workspaceID,
+		SpaceID:      spaceID,
+		CollectionID: ptrString(collID),
+		Title:        "Legacy source title",
+		Status:       model.DocStatusPublished,
+		Visibility:   model.SpaceVisibilityWorkspaceWide,
+		PublishedAt:  &now,
+		CreatedBy:    userID,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	})
+	seedDocsHelpcenterTranslationArticle(t, db, model.DocsHelpcenterArticle{
+		ID:                "hc-public-get",
+		DocumentID:        docID,
+		Slug:              "legacy-source-title",
+		PublicPublishedAt: &now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	})
+
+	if err := db.Create(&model.DocsHelpcenterArticleTranslation{
+		ID:              "hat-public-get-en",
+		DocumentID:      docID,
+		WorkspaceID:     workspaceID,
+		SpaceID:         spaceID,
+		CollectionID:    ptrString(collID),
+		Locale:          "en",
+		Title:           "Published from mirror",
+		Slug:            ptrString("published-from-mirror"),
+		Excerpt:         ptrString("Mirror excerpt"),
+		Content:         json.RawMessage(`{"type":"doc","content":[]}`),
+		ContentText:     "Mirror body",
+		Status:          model.DocsHelpcenterTranslationStatusPublished,
+		SourceUpdatedAt: &now,
+		SourceSynced:    true,
+		PublishedAt:     &now,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}).Error; err != nil {
+		t.Fatalf("seed default locale article translation: %v", err)
+	}
+
+	translation, err := repo.GetPublicArticleTranslationByCollectionSlug(ctx, collID, "en", "published-from-mirror")
+	if err != nil {
+		t.Fatalf("GetPublicArticleTranslationByCollectionSlug default locale fallback: %v", err)
+	}
+	if translation == nil {
+		t.Fatal("expected article translation from default locale mirror fallback")
+	}
+	if translation.Title != "Published from mirror" || helpcenterStringValue(translation.Slug) != "published-from-mirror" {
+		t.Fatalf("unexpected translation: %+v", translation)
+	}
+}
+
+func TestDocsHelpcenterRepository_GetPublicArticleTranslationByCollectionSlug_UsesDefaultLocalePublicationWhenMirrorDraft(t *testing.T) {
+	t.Parallel()
+
+	const (
+		workspaceID = "ws-public-get-live"
+		spaceID     = "space-public-get-live"
+		collID      = "collection-public-get-live"
+		docID       = "doc-public-get-live"
+		userID      = "user-public-get-live"
+	)
+
+	db := setupDocsHelpcenterTranslationTestDB(t)
+	repo := NewDocsHelpcenterRepository(db)
+	ctx := context.Background()
+	now := time.Date(2026, 4, 10, 18, 30, 0, 0, time.UTC)
+
+	links := json.RawMessage(`[]`)
+	footer := json.RawMessage(`{}`)
+	hero := json.RawMessage(`{}`)
+	spaceNav := json.RawMessage(`{}`)
+
+	seedDocsHelpcenterTranslationConfig(t, db, model.DocsHelpcenterConfig{
+		ID:                      "cfg-public-get-live",
+		WorkspaceID:             workspaceID,
+		Subdomain:               "replug",
+		BrandName:               "Replug",
+		BrandColor:              "#2b70fb",
+		HeaderLinks:             links,
+		FooterConfig:            footer,
+		HomepageConfig:          hero,
+		SpaceNavConfig:          spaceNav,
+		DefaultLocale:           "en",
+		EnabledLocales:          model.DocsStringArray{"en"},
+		FallbackToDefaultLocale: true,
+		IsPublished:             true,
+		CreatedAt:               now,
+		UpdatedAt:               now,
+	})
+	seedDocsHelpcenterTranslationSpace(t, db, model.DocsSpace{
+		ID:          spaceID,
+		WorkspaceID: workspaceID,
+		Name:        "Help Center",
+		Slug:        "help-center",
+		Visibility:  model.SpaceVisibilityWorkspaceWide,
+		Type:        model.SpaceTypeExternalCapable,
+		CreatedBy:   userID,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	})
+	seedDocsHelpcenterTranslationCollection(t, db, model.DocsCollection{
+		ID:          collID,
+		SpaceID:     spaceID,
+		WorkspaceID: workspaceID,
+		Name:        "Getting Started",
+		Slug:        "getting-started",
+		CreatedBy:   userID,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	})
+	seedDocsHelpcenterTranslationDocument(t, db, model.DocsDocument{
+		ID:           docID,
+		WorkspaceID:  workspaceID,
+		SpaceID:      spaceID,
+		CollectionID: ptrString(collID),
+		Title:        "Draft mirror title",
+		Status:       model.DocStatusPublished,
+		Visibility:   model.SpaceVisibilityWorkspaceWide,
+		PublishedAt:  &now,
+		CreatedBy:    userID,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	})
+	seedDocsHelpcenterTranslationArticle(t, db, model.DocsHelpcenterArticle{
+		ID:                "hc-public-get-live",
+		DocumentID:        docID,
+		Slug:              "draft-mirror-title",
+		PublicPublishedAt: &now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	})
+	if err := db.Create(&model.DocsHelpcenterArticleTranslation{
+		ID:              "hat-public-get-live-en",
+		DocumentID:      docID,
+		WorkspaceID:     workspaceID,
+		SpaceID:         spaceID,
+		CollectionID:    ptrString(collID),
+		Locale:          "en",
+		Title:           "Draft mirror title",
+		Slug:            ptrString("draft-mirror-title"),
+		Excerpt:         ptrString("Draft mirror excerpt"),
+		Content:         json.RawMessage(`{"type":"doc","content":[]}`),
+		ContentText:     "Draft mirror body",
+		Status:          model.DocsHelpcenterTranslationStatusDraft,
+		SourceUpdatedAt: &now,
+		SourceSynced:    true,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}).Error; err != nil {
+		t.Fatalf("seed default locale draft article translation: %v", err)
+	}
+	if err := db.Create(&model.DocsHelpcenterArticlePublication{
+		ID:           "pub-public-get-live-en",
+		DocumentID:   docID,
+		WorkspaceID:  workspaceID,
+		SpaceID:      spaceID,
+		CollectionID: ptrString(collID),
+		Locale:       "en",
+		Title:        "Published live title",
+		Slug:         "published-live-title",
+		Excerpt:      ptrString("Published live excerpt"),
+		Content:      json.RawMessage(`{"type":"doc","content":[]}`),
+		ContentText:  "Published live body",
+		PublishedAt:  now,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}).Error; err != nil {
+		t.Fatalf("seed article publication: %v", err)
+	}
+
+	translation, err := repo.GetPublicArticleTranslationByCollectionSlug(ctx, collID, "en", "published-live-title")
+	if err != nil {
+		t.Fatalf("GetPublicArticleTranslationByCollectionSlug default locale live publication: %v", err)
+	}
+	if translation == nil {
+		t.Fatal("expected article translation from default locale live publication")
+	}
+	if translation.Title != "Published live title" || helpcenterStringValue(translation.Slug) != "published-live-title" {
+		t.Fatalf("unexpected translation: %+v", translation)
+	}
+	if translation.Status != model.DocsHelpcenterTranslationStatusPublished {
+		t.Fatalf("translation status = %q, want published", translation.Status)
+	}
+}

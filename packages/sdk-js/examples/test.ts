@@ -22,6 +22,8 @@ document.addEventListener('DOMContentLoaded', () => {
       helpin('id', {
         id: 'user123',
         email: 'test@example.com',
+        first_name: 'Test',
+        last_name: 'User',
         custom: {},
 
         company: {

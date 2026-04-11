@@ -487,6 +487,27 @@ type LinkStoryRequest struct {
 	TaskID string `json:"task_id"`
 }
 
+// CreateTaskFromConversationRequest creates a PM task from the current support conversation.
+type CreateTaskFromConversationRequest struct {
+	TaskType        *string `json:"task_type,omitempty"`
+	Priority        *string `json:"priority,omitempty"`
+	TeamID          *string `json:"team_id,omitempty"`
+	WorkflowID      *string `json:"workflow_id,omitempty"`
+	WorkflowStateID *string `json:"workflow_state_id,omitempty"`
+	OwnerMemberID   *string `json:"owner_member_id,omitempty"`
+}
+
+// CreateTaskFromConversationResponse summarizes the created PM task and copied associations.
+type CreateTaskFromConversationResponse struct {
+	TaskID                    string `json:"task_id"`
+	TaskKey                   string `json:"task_key,omitempty"`
+	TaskName                  string `json:"task_name"`
+	Summary                   string `json:"summary,omitempty"`
+	CopiedContactAssociations int    `json:"copied_contact_associations"`
+	CopiedCompanyAssociations int    `json:"copied_company_associations"`
+	CopiedDealAssociations    int    `json:"copied_deal_associations"`
+}
+
 // AssignConversationAgentRequest assigns an agent to a conversation.
 type AssignConversationAgentRequest struct {
 	AgentID string `json:"agent_id"`

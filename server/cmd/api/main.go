@@ -616,6 +616,7 @@ func main() {
 	supportInboxService.SetEmailFallbackService(emailFallbackService)
 	supportInboxService.SetEmailRouteRepository(supportEmailRouteRepo)
 	supportInboxService.SetWorkspaceRepo(workspaceRepo)
+	supportInboxService.SetTaskService(pmTaskService)
 	supportInboxService.SetPresenceProvider(wsHub.Presence)
 	supportInboxService.SetStatusOverrideRepo(supportTeammateStatusOverrideRepo)
 	emailFallbackService.SetSupportInboxService(supportInboxService)

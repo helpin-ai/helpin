@@ -526,6 +526,54 @@ func TestDocsHelpcenterTranslationService(t *testing.T) {
 		}
 	})
 
+	t.Run("EnsureDefaultLocaleMirrorsForWorkspace skips draft-only helpcenter articles during public backfill", func(t *testing.T) {
+		db, svc, ctx := setupBase(t)
+
+		otherDocumentID := "document-hc-i18n-draft-conflict"
+		seedDocsHelpcenterTranslationServiceDocument(t, db, model.DocsDocument{
+			ID:           otherDocumentID,
+			WorkspaceID:  workspaceID,
+			SpaceID:      spaceID,
+			CollectionID: ptr(collectionID),
+			Title:        "Conflicting Draft",
+			Status:       model.DocStatusPublished,
+			Visibility:   model.SpaceVisibilityWorkspaceWide,
+			Position:     1,
+			PublishedAt:  &now,
+			CreatedBy:    userID,
+			CreatedAt:    now,
+			UpdatedAt:    now,
+		})
+		seedDocsHelpcenterTranslationServiceArticle(t, db, model.DocsHelpcenterArticle{
+			ID:                "article-hc-i18n-draft-conflict",
+			DocumentID:        otherDocumentID,
+			Slug:              "start-here",
+			PublicPublishedAt: nil,
+			CreatedAt:         now,
+			UpdatedAt:         now,
+		})
+
+		if err := svc.EnsureDefaultLocaleMirrorsForWorkspace(ctx, workspaceID); err != nil {
+			t.Fatalf("EnsureDefaultLocaleMirrorsForWorkspace: %v", err)
+		}
+
+		var publicTranslation model.DocsHelpcenterArticleTranslation
+		if err := db.WithContext(ctx).Where("document_id = ? AND locale = ?", documentID, "en").First(&publicTranslation).Error; err != nil {
+			t.Fatalf("load public mirrored translation: %v", err)
+		}
+		if publicTranslation.Status != model.DocsHelpcenterTranslationStatusPublished || stringValue(publicTranslation.Slug) != "start-here" {
+			t.Fatalf("public mirrored translation = %+v, want published default mirror", publicTranslation)
+		}
+
+		var draftTranslationCount int64
+		if err := db.WithContext(ctx).Model(&model.DocsHelpcenterArticleTranslation{}).Where("document_id = ? AND locale = ?", otherDocumentID, "en").Count(&draftTranslationCount).Error; err != nil {
+			t.Fatalf("count draft conflict translations: %v", err)
+		}
+		if draftTranslationCount != 0 {
+			t.Fatalf("draft conflict translations = %d, want 0", draftTranslationCount)
+		}
+	})
+
 	t.Run("MarkArticleTranslationsForSourceChange marks non-default locales needs_review", func(t *testing.T) {
 		db, svc, ctx := setupBase(t)
 		if _, err := svc.SyncDefaultLocaleArticleMirror(ctx, documentID); err != nil {

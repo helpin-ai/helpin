@@ -898,13 +898,39 @@ func (s *DocsHelpcenterTranslationService) EnsureDefaultLocaleMirrorsForWorkspac
 			return err
 		}
 		for _, doc := range docs {
+			article, err := s.hcRepo.GetArticle(ctx, doc.ID)
+			if err != nil {
+				return err
+			}
+			if article == nil || article.Slug == "" || article.PublicPublishedAt == nil {
+				continue
+			}
+
 			if err := s.RefreshArticleSource(ctx, doc.ID); err != nil {
+				if isArticleTranslationSlugConflict(err) {
+					slog.WarnContext(ctx, "skipping conflicting public helpcenter article mirror during workspace backfill", "workspace_id", workspaceID, "document_id", doc.ID, "error", err)
+					continue
+				}
 				return err
 			}
 		}
 	}
 
 	return nil
+}
+
+func isArticleTranslationSlugConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	message := err.Error()
+	if !strings.Contains(message, "upsert helpcenter article translation") {
+		return false
+	}
+
+	return strings.Contains(message, "idx_docs_hc_article_space_locale_slug") ||
+		strings.Contains(message, "docs_helpcenter_article_translations.space_id, docs_helpcenter_article_translations.locale, docs_helpcenter_article_translations.slug")
 }
 
 // GenerateSpaceTranslation uses AI to translate a space's name and description for a locale.
