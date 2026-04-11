@@ -316,7 +316,9 @@ export function HelpcenterTranslationsTable({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-muted/30">
-              <th className="sticky left-0 z-10 bg-muted/30 px-3 py-2 text-left text-xs font-medium text-muted-foreground w-[200px]">Text</th>
+              <th className="sticky left-0 z-10 bg-muted/30 px-3 py-2 text-left text-xs font-medium text-muted-foreground w-[200px]">
+                {defaultLocale.toUpperCase()} (source)
+              </th>
               {nonDefaultLocales.map((locale) => (
                 <th key={locale} className="px-3 py-2 text-left text-xs font-medium text-muted-foreground min-w-[180px]">
                   {getHelpcenterLocaleLabel(locale)}
@@ -340,29 +342,21 @@ export function HelpcenterTranslationsTable({
                 .filter((entry): entry is { coll: DocsCollection; depth: number } => entry !== null)
               return (
                 <>
-                  {/* Space row */}
-                  <tr key={space.id} className="border-b border-border/40">
-                    <td className="sticky left-0 z-10 bg-background px-3 py-2 font-medium align-top">
-                      <span className="inline-flex items-center gap-1.5">
-                        <StoredIcon name={space.icon} className="h-4 w-4 shrink-0" textClassName="" />
-                        <span>{space.name}</span>
-                      </span>
-                    </td>
-                    {field === 'description' ? (
-                      // DocsSpace has no description field at the model
-                      // level — there's nothing to translate. Keep the
-                      // space row as a grouping header for its
-                      // collections below, but skip the editable cells
-                      // entirely so translators are not misled into
-                      // writing orphan space descriptions.
-                      <td
-                        colSpan={nonDefaultLocales.length}
-                        className="px-3 py-1.5 text-[11px] italic text-muted-foreground/60"
-                      >
-                        Spaces don't have descriptions
+                  {/* Space row — hidden entirely in Descriptions mode
+                      because DocsSpace has no description field to
+                      translate and the placeholder row added more
+                      noise than it removed. Names mode keeps the
+                      full space row with per-locale editable name
+                      cells. */}
+                  {field === 'name' && (
+                    <tr key={space.id} className="border-b border-border/40">
+                      <td className="sticky left-0 z-10 bg-background px-3 py-2 font-medium align-top">
+                        <span className="inline-flex items-center gap-1.5">
+                          <StoredIcon name={space.icon} className="h-4 w-4 shrink-0" textClassName="" />
+                          <span>{space.name}</span>
+                        </span>
                       </td>
-                    ) : (
-                      nonDefaultLocales.map((locale) => {
+                      {nonDefaultLocales.map((locale) => {
                         const cell = getSpaceCell(space.id, locale)
                         const cellKey = `space-${space.id}-${locale}`
                         const isEditing =
@@ -387,9 +381,9 @@ export function HelpcenterTranslationsTable({
                             })}
                           </td>
                         )
-                      })
-                    )}
-                  </tr>
+                      })}
+                    </tr>
+                  )}
 
                   {/* Collection rows — rendered in tree order, indented by depth. */}
                   {orderedColls.map(({ coll, depth }) => (
