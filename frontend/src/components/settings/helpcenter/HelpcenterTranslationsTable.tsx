@@ -347,39 +347,48 @@ export function HelpcenterTranslationsTable({
                         <StoredIcon name={space.icon} className="h-4 w-4 shrink-0" textClassName="" />
                         <span>{space.name}</span>
                       </span>
-                      {field === 'description' && (
-                        // Spaces don't have a source description field
-                        // at the model level — show an em-dash so
-                        // translators can still add a localized
-                        // description but know there's no source.
-                        <p className="mt-0.5 text-[11px] text-muted-foreground/70">—</p>
-                      )}
                     </td>
-                    {nonDefaultLocales.map((locale) => {
-                      const cell = getSpaceCell(space.id, locale)
-                      const cellKey = `space-${space.id}-${locale}`
-                      const isEditing = editing?.type === 'space' && editing.id === space.id && editing.locale === locale
-                      const isGenerating = generatingCell === cellKey
+                    {field === 'description' ? (
+                      // DocsSpace has no description field at the model
+                      // level — there's nothing to translate. Keep the
+                      // space row as a grouping header for its
+                      // collections below, but skip the editable cells
+                      // entirely so translators are not misled into
+                      // writing orphan space descriptions.
+                      <td
+                        colSpan={nonDefaultLocales.length}
+                        className="px-3 py-1.5 text-[11px] italic text-muted-foreground/60"
+                      >
+                        Spaces don't have descriptions
+                      </td>
+                    ) : (
+                      nonDefaultLocales.map((locale) => {
+                        const cell = getSpaceCell(space.id, locale)
+                        const cellKey = `space-${space.id}-${locale}`
+                        const isEditing =
+                          editing?.type === 'space' && editing.id === space.id && editing.locale === locale
+                        const isGenerating = generatingCell === cellKey
 
-                      return (
-                        <td key={locale} className="px-3 py-1.5">
-                          {renderCell({
-                            isEditing,
-                            editing,
-                            field,
-                            saving,
-                            cell,
-                            isGenerating,
-                            onStartEdit: () =>
-                              setEditing({ type: 'space', id: space.id, locale, field, value: cell.value }),
-                            onChangeEdit: (value) => editing && setEditing({ ...editing, value }),
-                            onSave: handleSaveEdit,
-                            onCancel: () => setEditing(null),
-                            onGenerate: () => void handleGenerateCell('space', space.id, locale),
-                          })}
-                        </td>
-                      )
-                    })}
+                        return (
+                          <td key={locale} className="px-3 py-1.5">
+                            {renderCell({
+                              isEditing,
+                              editing,
+                              field,
+                              saving,
+                              cell,
+                              isGenerating,
+                              onStartEdit: () =>
+                                setEditing({ type: 'space', id: space.id, locale, field, value: cell.value }),
+                              onChangeEdit: (value) => editing && setEditing({ ...editing, value }),
+                              onSave: handleSaveEdit,
+                              onCancel: () => setEditing(null),
+                              onGenerate: () => void handleGenerateCell('space', space.id, locale),
+                            })}
+                          </td>
+                        )
+                      })
+                    )}
                   </tr>
 
                   {/* Collection rows — rendered in tree order, indented by depth. */}
