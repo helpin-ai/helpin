@@ -163,13 +163,17 @@ export function SpaceNodeHeader({
         : null
 
   // ── Count line ────────────────────────────────────────────────────
+  // At space root the child buckets are top-level *collections*;
+  // inside a collection they are *sub-collections*. Using the right
+  // word at the right level matches the card-grid section heading.
   const docPart = docCount === 1 ? '1 document' : `${docCount} documents`
-  const subPart =
-    subCount === 0
-      ? null
-      : subCount === 1
-        ? '1 sub-collection'
-        : `${subCount} sub-collections`
+  const subPart = (() => {
+    if (subCount === 0) return null
+    if (view.kind === 'space_root') {
+      return subCount === 1 ? '1 collection' : `${subCount} collections`
+    }
+    return subCount === 1 ? '1 sub-collection' : `${subCount} sub-collections`
+  })()
   const countLine = subPart ? `${docPart} · ${subPart}` : docPart
 
   // ── Overflow menu content ─────────────────────────────────────────
