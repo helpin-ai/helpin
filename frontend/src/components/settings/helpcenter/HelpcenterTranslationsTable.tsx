@@ -15,6 +15,7 @@ import { docsService } from '@/lib/services/docsService'
 import { getHelpcenterLocaleLabel } from '@/lib/docsTypes'
 import { StoredIcon } from '@/components/ui/icon-picker'
 import { buildCollectionTreeOptions } from '@/components/docs/CollectionTreePicker'
+import { AutoTranslateMissingDialog } from '@/components/settings/helpcenter/AutoTranslateMissingDialog'
 import type {
   DocsCollection,
   DocsHelpcenterCollectionTranslation,
@@ -75,7 +76,7 @@ export function HelpcenterTranslationsTable({
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<EditingCell | null>(null)
   const [saving, setSaving] = useState(false)
-  const [generatingAll, setGeneratingAll] = useState(false)
+  const [autoTranslateOpen, setAutoTranslateOpen] = useState(false)
   const [generatingCell, setGeneratingCell] = useState<string | null>(null)
   const [field, setField] = useState<Field>('name')
 
@@ -206,40 +207,21 @@ export function HelpcenterTranslationsTable({
     }
   }
 
-  const handleGenerateAll = async () => {
-    setGeneratingAll(true)
-    try {
-      for (const locale of nonDefaultLocales) {
-        for (const space of spaces) {
-          const spaceRow = getSpaceRow(space.id, locale)
-          if (!spaceRow) {
-            await docsService.generateSpaceTranslation(workspaceId, space.id, locale)
-          }
-          for (const coll of collectionsBySpace.get(space.id) ?? []) {
-            const collRow = getCollectionRow(coll.id, locale)
-            if (!collRow) {
-              await docsService.generateCollectionTranslation(workspaceId, coll.id, locale)
-            }
-          }
-        }
-      }
-      toast.success('All missing translations generated')
-      // Bulk path: re-fetch rather than splicing many updates.
-      void loadData()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to generate some translations')
-    } finally {
-      setGeneratingAll(false)
-    }
-  }
-
-  const hasMissing = spaces.some((space) =>
-    nonDefaultLocales.some((locale) => {
-      if (!getSpaceRow(space.id, locale)) return true
-      return (collectionsBySpace.get(space.id) ?? []).some(
-        (coll) => !getCollectionRow(coll.id, locale),
-      )
-    }),
+  // The auto-translate bulk action is owned by a dialog now (see
+  // AutoTranslateMissingDialog). The dialog fires one request per
+  // non-default locale in parallel and splices returned rows into
+  // the local maps via callbacks.
+  const handleSpliceSpaceTranslation = useCallback(
+    (row: DocsHelpcenterSpaceTranslation) => {
+      setSpaceTranslations((prev) => upsertTranslationInMap(prev, row.space_id, row))
+    },
+    [],
+  )
+  const handleSpliceCollectionTranslation = useCallback(
+    (row: DocsHelpcenterCollectionTranslation) => {
+      setCollectionTranslations((prev) => upsertTranslationInMap(prev, row.collection_id, row))
+    },
+    [],
   )
 
   if (nonDefaultLocales.length === 0) return null
@@ -294,19 +276,16 @@ export function HelpcenterTranslationsTable({
               </button>
             ))}
           </div>
-          {hasMissing && (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-7 gap-1.5 text-xs"
-              disabled={generatingAll}
-              onClick={() => void handleGenerateAll()}
-            >
-              <MagicWand01Icon className="h-3 w-3" />
-              {generatingAll ? 'Generating...' : 'Generate all missing'}
-            </Button>
-          )}
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1.5 text-xs"
+            onClick={() => setAutoTranslateOpen(true)}
+          >
+            <MagicWand01Icon className="h-3 w-3" />
+            Auto-translate missing
+          </Button>
         </div>
       </div>
 
@@ -444,6 +423,15 @@ export function HelpcenterTranslationsTable({
           </tbody>
         </table>
       </div>
+
+      <AutoTranslateMissingDialog
+        wsId={workspaceId}
+        locales={nonDefaultLocales}
+        open={autoTranslateOpen}
+        onOpenChange={setAutoTranslateOpen}
+        onSpaceTranslationCreated={handleSpliceSpaceTranslation}
+        onCollectionTranslationCreated={handleSpliceCollectionTranslation}
+      />
     </div>
   )
 }
