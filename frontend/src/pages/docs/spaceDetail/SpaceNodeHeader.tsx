@@ -1,12 +1,8 @@
 import type { DocsSpace } from '@/lib/docsTypes'
-import { StoredIcon } from '@/components/ui/icon-picker'
 import {
   ArrowRight01Icon,
   Delete01Icon,
-  Folder01Icon,
-  FolderOpenIcon,
   GlobeIcon,
-  InboxIcon,
   LanguageCircleIcon,
   MoreHorizontalIcon,
   PencilEdit01Icon,
@@ -124,25 +120,6 @@ export function SpaceNodeHeader({
   })()
 
   // ── Title content ────────────────────────────────────────────────
-  const titleIcon =
-    view.kind === 'collection' ? (
-      <StoredIcon
-        name={view.node.collection.icon}
-        className="h-5 w-5 shrink-0 text-muted-foreground"
-        textClassName="text-xl"
-        fallback={<FolderOpenIcon className="h-5 w-5 shrink-0 text-muted-foreground" />}
-      />
-    ) : view.kind === 'uncategorized' ? (
-      <InboxIcon className="h-5 w-5 shrink-0 text-muted-foreground" />
-    ) : (
-      <StoredIcon
-        name={space.icon}
-        className="h-5 w-5 shrink-0 text-muted-foreground"
-        textClassName="text-xl"
-        fallback={<Folder01Icon className="h-5 w-5 shrink-0 text-muted-foreground" />}
-      />
-    )
-
   const titleLabel =
     view.kind === 'collection'
       ? view.node.collection.name
@@ -179,7 +156,7 @@ export function SpaceNodeHeader({
                       <button
                         type="button"
                         onClick={ancestor.onClick}
-                        className="max-w-[160px] truncate rounded text-sm text-muted-foreground transition-colors hover:text-foreground"
+                        className="max-w-[200px] truncate rounded text-xl font-normal text-muted-foreground transition-colors hover:text-foreground"
                       >
                         {ancestor.label}
                       </button>
@@ -187,12 +164,11 @@ export function SpaceNodeHeader({
                     <TooltipContent>{ancestor.label}</TooltipContent>
                   </Tooltip>
                   <ArrowRight01Icon
-                    className="h-3 w-3 shrink-0 text-muted-foreground/40"
+                    className="h-4 w-4 shrink-0 text-muted-foreground/40"
                     aria-hidden="true"
                   />
                 </span>
               ))}
-              {titleIcon}
               {view.kind === 'space_root' && renamingSpace ? (
                 <input
                   key="space-rename-input"
