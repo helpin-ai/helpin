@@ -456,11 +456,7 @@ export function DocsSpaceDetail() {
           />
 
           {scopedDocs.length > 0 ? (
-            <section className="space-y-2">
-              <h2 className="text-xs font-medium text-muted-foreground">
-                {scopedDocs.length === 1 ? '1 document' : `${scopedDocs.length} documents`}
-              </h2>
-              <DocumentsTable
+            <DocumentsTable
                 documents={scopedDocs}
                 members={members}
                 collectionNames={collectionNames}
@@ -494,13 +490,12 @@ export function DocsSpaceDetail() {
                 collectionId:
                   view.kind === 'collection' ? view.node.collection.id : undefined,
               })}
-                onCreateCollection={() => openCreate('docs_collection', {
-                  spaceId,
-                  parentCollectionId:
-                    view.kind === 'collection' ? view.node.collection.id : undefined,
-                })}
-              />
-            </section>
+              onCreateCollection={() => openCreate('docs_collection', {
+                spaceId,
+                parentCollectionId:
+                  view.kind === 'collection' ? view.node.collection.id : undefined,
+              })}
+            />
           ) : childNodes.length === 0 ? (
             <EmptyNodeState
               view={view}

@@ -166,7 +166,10 @@ export function DocumentsTable({
   return (
     <>
       {showStatusFilter && (
-        <div className="flex items-center justify-end gap-2">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs text-muted-foreground">
+            {displayDocs.length === 1 ? '1 document' : `${displayDocs.length} documents`}
+          </span>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
