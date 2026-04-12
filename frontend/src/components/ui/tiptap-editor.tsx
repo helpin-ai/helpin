@@ -509,20 +509,25 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
       {/* Editor area */}
       <EditorContent editor={editor} className="min-h-0 flex-1 overflow-y-auto" />
       {mentionState && mentionState.items.length > 0 ? (
-        <div className="border-t border-border/60 bg-muted/40 px-2 py-2">
-          <MentionSuggestionsList
-            items={mentionState.items}
-            selectedIndex={mentionState.selectedIndex}
-            onSelect={(item) => {
-              if (!editorRef.current) return;
-              editorRef.current
-                .chain()
-                .focus()
-                .insertContentAt({ from: mentionState.from, to: mentionState.to }, `@${item.handle} `)
-                .run();
-              setMentionState(null);
-            }}
-          />
+        <div className="border-t border-border/40 p-1.5">
+          <p className="px-2 pb-1 pt-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50">
+            Suggestions
+          </p>
+          <div className="max-h-[200px] overflow-y-auto">
+            <MentionSuggestionsList
+              items={mentionState.items}
+              selectedIndex={mentionState.selectedIndex}
+              onSelect={(item) => {
+                if (!editorRef.current) return;
+                editorRef.current
+                  .chain()
+                  .focus()
+                  .insertContentAt({ from: mentionState.from, to: mentionState.to }, `@${item.handle} `)
+                  .run();
+                setMentionState(null);
+              }}
+            />
+          </div>
         </div>
       ) : null}
     </div>
