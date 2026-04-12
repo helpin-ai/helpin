@@ -84,7 +84,8 @@ export interface MountWidgetOptions {
   host?: string;
   openArticleRequest?: {
     key: number;
-    articleSlug: string;
+    articleKey?: string;
+    articleSlug?: string;
   };
   onImageClick?: (src: string, alt: string) => void;
 }

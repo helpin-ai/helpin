@@ -2,6 +2,7 @@ import { FunctionComponent } from 'preact';
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { ChevronLeftIcon, ChevronRightIcon, FileTextIcon } from './icons';
 import {
+  buildHelpArticleKey,
   fetchHelpArticles,
   fetchHelpCollections,
   type HelpArticleSummary,
@@ -31,7 +32,7 @@ interface HelpCollectionViewProps {
    * slug, which re-renders this view.
    */
   onSelectCollection?: (collectionSlug: string) => void;
-  onSelectArticle: (articleSlug: string) => void;
+  onSelectArticle: (articleKey: string) => void;
 }
 
 export const HelpCollectionView: FunctionComponent<HelpCollectionViewProps> = ({
@@ -150,7 +151,7 @@ export const HelpCollectionView: FunctionComponent<HelpCollectionViewProps> = ({
               <button
                 key={article.slug}
                 className="helpin-help-link"
-                onClick={() => onSelectArticle(article.slug)}
+                onClick={() => onSelectArticle(article.article_key || buildHelpArticleKey(article.slug, article.public_id))}
               >
                 <FileTextIcon size={20} />
                 <div className="helpin-help-link-text">

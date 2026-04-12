@@ -6,14 +6,14 @@ import { fetchHelpArticle, type HelpArticle } from './helpApi';
 interface HelpArticleViewProps {
   host: string;
   widgetKey: string;
-  articleSlug: string;
+  articleKey: string;
   onBack: () => void;
 }
 
 export const HelpArticleView: FunctionComponent<HelpArticleViewProps> = ({
   host,
   widgetKey,
-  articleSlug,
+  articleKey,
   onBack,
 }) => {
   const [article, setArticle] = useState<HelpArticle | null>(null);
@@ -30,7 +30,7 @@ export const HelpArticleView: FunctionComponent<HelpArticleViewProps> = ({
     setIsLoading(true);
     setError(null);
 
-    fetchHelpArticle(host, widgetKey, articleSlug)
+    fetchHelpArticle(host, widgetKey, articleKey)
       .then((data) => {
         if (!cancelled) {
           setArticle(data);
@@ -50,7 +50,7 @@ export const HelpArticleView: FunctionComponent<HelpArticleViewProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [articleSlug, host, widgetKey]);
+  }, [articleKey, host, widgetKey]);
 
   return (
     <div className="helpin-article-view">
