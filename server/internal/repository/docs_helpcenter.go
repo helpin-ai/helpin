@@ -802,15 +802,12 @@ func (r *DocsHelpcenterRepository) ListSpaceNavigation(ctx context.Context, spac
 		})
 	}
 
-	// Add uncategorized articles if any. Uncategorized stays top-level.
-	if len(uncategorized) > 0 {
-		result = append(result, model.PublicNavCollection{
-			ID:       "uncategorized",
-			Name:     "General",
-			Slug:     "uncategorized",
-			Articles: uncategorized,
-		})
-	}
+	// Uncategorized articles are intentionally excluded from public
+	// navigation. The publish endpoint requires a collection for
+	// external-capable spaces, so this branch should not be reached
+	// in normal operation. If legacy data has published uncategorized
+	// docs, they silently drop from the nav rather than showing as a
+	// fake "General" collection.
 
 	return result, nil
 }

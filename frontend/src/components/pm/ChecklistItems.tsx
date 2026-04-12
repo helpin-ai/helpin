@@ -379,7 +379,10 @@ export function ChecklistItems({ workspaceId, taskId, members = [], teams = [] }
         </div>
         {/* Mention autocomplete dropdown */}
         {mentionQuery !== null && mentionResults.length > 0 && (
-          <div className="absolute left-6 bottom-full z-50 mb-1 w-52 rounded-lg border border-border/60 bg-popover shadow-lg overflow-hidden">
+          <div className="absolute left-6 bottom-full z-50 mb-1.5 w-56 max-h-[260px] overflow-y-auto rounded-xl border border-border/60 bg-popover p-1.5 shadow-lg">
+            <p className="px-2 pb-1 pt-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50">
+              Suggestions
+            </p>
             <MentionSuggestionsList
               items={mentionResults}
               selectedIndex={mentionIndex}

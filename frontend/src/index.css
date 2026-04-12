@@ -408,11 +408,15 @@
 .tiptap-compact ul[data-type="taskList"] { margin: 0.25rem 0 0.5rem; }
 
 .mention-highlight {
-  color: oklch(0.55 0.2 260);
+  color: oklch(0.45 0.2 260);
   font-weight: 500;
+  background: oklch(0.55 0.15 260 / 0.1);
+  border-radius: 0.25rem;
+  padding: 0.1em 0.25em;
 }
 .dark .mention-highlight {
-  color: oklch(0.72 0.18 260);
+  color: oklch(0.75 0.16 260);
+  background: oklch(0.55 0.15 260 / 0.15);
 }
 
 /* Prose-chat: compact markdown styles for support message bubbles */

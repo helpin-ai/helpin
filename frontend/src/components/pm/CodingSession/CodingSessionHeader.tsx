@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Folder01Icon, GitBranchIcon, Loading01Icon, Cancel01Icon, ArrowReloadHorizontalIcon } from '@/lib/icons';
+import { Folder01Icon, GitBranchIcon, Loading01Icon, CancelCircleIcon, ArrowReloadHorizontalIcon } from '@/lib/icons';
 
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { Badge } from '@/components/ui/badge';
@@ -112,8 +112,8 @@ export function CodingSessionHeader({
           </div>
         </div>
 
-        {/* Actions */}
-        <div className="flex items-center gap-1.5">
+        {/* Actions — pr-10 reserves space for the sheet close button */}
+        <div className="flex items-center gap-1.5 pr-10">
           {workspaceSlug ? (
             <Button asChild variant="outline" size="sm">
               <a href={buildAutomationRunsPath(workspaceSlug)}>
@@ -125,7 +125,7 @@ export function CodingSessionHeader({
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="outline" size="icon" className="h-8 w-8" onClick={onCancelRun} disabled={acting !== null || !canCancel}>
-                  {acting === 'cancel' ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" /> : <Cancel01Icon className="h-3.5 w-3.5" />}
+                  {acting === 'cancel' ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" /> : <CancelCircleIcon className="h-3.5 w-3.5" />}
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Cancel run</TooltipContent>

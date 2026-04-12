@@ -397,7 +397,7 @@ export function DocsHome() {
       </header>
 
       {arrangeMode && (
-        <p className="text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/40 rounded-md px-3 py-2 text-center">
+        <p className="text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/40 rounded-md px-3 py-2 text-left">
           Drag to reorder spaces, collections, and documents within the same group. Moving items between collections or changing hierarchy is available from each item's <strong>⋯</strong> menu. Changes to external spaces will be reflected on your public help center.
         </p>
       )}

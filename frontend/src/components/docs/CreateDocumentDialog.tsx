@@ -19,8 +19,8 @@ import {
 } from '@/components/ui/select'
 import { useCreateDocsDocument, useDocsSpaces, useDocsCollections } from '@/hooks/queries'
 import { ICON_MAP } from '@/components/ui/icon-picker'
-import { FolderOpenIcon } from '@/lib/icons'
 import { toast } from 'sonner'
+import { CollectionTreePicker } from '@/components/docs/CollectionTreePicker'
 
 interface CreateDocumentDialogProps {
   wsId: string
@@ -45,6 +45,7 @@ export function CreateDocumentDialog({
   const createDocument = useCreateDocsDocument(wsId)
   const { data: spaces } = useDocsSpaces(wsId)
   const { data: collections } = useDocsCollections(wsId, spaceId || '')
+  const currentSpace = spaces?.find((s) => s.id === spaceId)
 
   useEffect(() => {
     if (!open) return
@@ -142,25 +143,20 @@ export function CreateDocumentDialog({
             {spaceId && (
               <div className="grid gap-2">
                 <Label>Collection</Label>
-                <Select value={collectionId || '__none__'} onValueChange={(v) => setCollectionId(v === '__none__' ? '' : v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Uncategorized" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">Uncategorized</SelectItem>
-                    {(collections ?? []).map((c) => {
-                      const ColIcon = c.icon ? ICON_MAP[c.icon] : null;
-                      return (
-                        <SelectItem key={c.id} value={c.id}>
-                          <span className="inline-flex items-center gap-1.5">
-                            {ColIcon ? <ColIcon className="h-4 w-4 shrink-0" /> : <FolderOpenIcon className="h-4 w-4 shrink-0" />}
-                            <span>{c.name}</span>
-                          </span>
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
+                <CollectionTreePicker
+                  collections={collections ?? []}
+                  spaceId={spaceId}
+                  value={collectionId || null}
+                  onChange={(next) => setCollectionId(next ?? '')}
+                  allowNone={currentSpace?.type !== 'external_capable'}
+                  noneLabel="Uncategorized"
+                  placeholder="Select collection…"
+                />
+                {currentSpace?.type === 'external_capable' && !collectionId && (
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                    A collection is required to publish to the help center.
+                  </p>
+                )}
               </div>
             )}
 

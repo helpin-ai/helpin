@@ -171,7 +171,11 @@ export function IconPicker({ value, onChange, placeholder = 'Icon' }: IconPicker
             autoFocus
           />
         </div>
-        <div className="grid grid-cols-6 gap-0.5 p-2 max-h-[240px] overflow-y-auto">
+        <div
+          className="grid grid-cols-6 gap-0.5 p-2 max-h-[240px] overflow-y-auto overscroll-contain"
+          onWheel={(e) => e.stopPropagation()}
+          onTouchMove={(e) => e.stopPropagation()}
+        >
           {filtered.map((entry) => (
             <button
               key={entry.value}
