@@ -36,20 +36,114 @@ export function NavTree({
 
   return (
     <nav key={pathname} className="px-3 py-4">
-      <CollectionAccordionList
-        locale={locale}
-        nodes={tree}
-        multilingualEnabled={multilingualEnabled}
-        basepath={basepath}
-        pathname={pathname}
-        onArticleClick={onArticleClick}
-        level={0}
-      />
+      {tree.map((node, idx) => (
+        <CollectionGroup
+          key={node.item.id}
+          locale={locale}
+          node={node}
+          multilingualEnabled={multilingualEnabled}
+          basepath={basepath}
+          pathname={pathname}
+          onArticleClick={onArticleClick}
+          isFirst={idx === 0}
+          level={0}
+        />
+      ))}
     </nav>
   )
 }
 
-function CollectionAccordionList({
+function CollectionGroup({
+  node,
+  locale,
+  multilingualEnabled,
+  basepath,
+  pathname,
+  onArticleClick,
+  isFirst,
+  level,
+}: {
+  node: NavTreeNode
+  locale: string
+  multilingualEnabled: boolean
+  basepath: string
+  pathname: string
+  onArticleClick?: () => void
+  isFirst: boolean
+  level: number
+}) {
+  const spacing = level === 0 && !isFirst ? 'mt-5' : level > 0 ? 'mt-1' : ''
+  const indent = collectionIndent(level)
+  const headingClass = level === 0
+    ? 'text-[14px] font-medium text-foreground'
+    : 'text-[13px] font-medium text-muted-foreground'
+  const collectionHref = buildCanonicalCollectionPath(
+    multilingualEnabled,
+    locale,
+    node.item.slug,
+  )
+  const isActiveCollection =
+    pathname === prefixBasepath(basepath, collectionHref)
+
+  return (
+    <div className={cn(spacing)}>
+      <div
+        className={cn(
+          'flex items-center gap-2 rounded-lg py-[7px]',
+          indent,
+          headingClass,
+          isActiveCollection && 'bg-sidebar-active text-sidebar-active-foreground',
+        )}
+      >
+        {node.item.icon && level === 0 ? (
+          <PhIcon
+            name={node.item.icon}
+            size={16}
+            weight="regular"
+            className={cn(
+              'shrink-0',
+              isActiveCollection
+                ? 'text-sidebar-active-foreground'
+                : 'text-muted-foreground',
+            )}
+          />
+        ) : null}
+        <span className="truncate">{node.item.name}</span>
+      </div>
+
+      <div className="mt-0.5">
+        {node.item.articles.map((article) => (
+          <ArticleLink
+            key={article.id}
+            locale={locale}
+            articleSlug={article.slug}
+            publicId={article.public_id}
+            title={article.title}
+            multilingualEnabled={multilingualEnabled}
+            basepath={basepath}
+            pathname={pathname}
+            onArticleClick={onArticleClick}
+            level={level}
+          />
+        ))}
+
+        {node.children.length > 0 ? (
+          <NestedCollectionAccordion
+            locale={locale}
+            nodes={node.children}
+            multilingualEnabled={multilingualEnabled}
+            basepath={basepath}
+            pathname={pathname}
+            onArticleClick={onArticleClick}
+            level={level + 1}
+          />
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function NestedCollectionAccordion({
   nodes,
   locale,
   multilingualEnabled,
@@ -66,8 +160,6 @@ function CollectionAccordionList({
   onArticleClick?: () => void
   level: number
 }) {
-  if (nodes.length === 0) return null
-
   const defaultValue = nodes
     .filter((node) =>
       nodeContainsActivePath(node, {
@@ -80,13 +172,9 @@ function CollectionAccordionList({
     .map((node) => node.item.id)
 
   return (
-    <Accordion
-      type="multiple"
-      defaultValue={defaultValue}
-      className={cn(level === 0 ? 'flex flex-col gap-2' : 'mt-1')}
-    >
-      {nodes.map((node) => (
-        <CollectionAccordionItem
+    <Accordion type="multiple" defaultValue={defaultValue} className="mt-1">
+      {nodes.map((node, idx) => (
+        <NestedCollectionItem
           key={node.item.id}
           locale={locale}
           node={node}
@@ -94,6 +182,7 @@ function CollectionAccordionList({
           basepath={basepath}
           pathname={pathname}
           onArticleClick={onArticleClick}
+          isFirst={idx === 0}
           level={level}
         />
       ))}
@@ -101,13 +190,14 @@ function CollectionAccordionList({
   )
 }
 
-function CollectionAccordionItem({
+function NestedCollectionItem({
   node,
   locale,
   multilingualEnabled,
   basepath,
   pathname,
   onArticleClick,
+  isFirst,
   level,
 }: {
   node: NavTreeNode
@@ -116,11 +206,14 @@ function CollectionAccordionItem({
   basepath: string
   pathname: string
   onArticleClick?: () => void
+  isFirst: boolean
   level: number
 }) {
   const hasArticles = node.item.articles.length > 0
   const hasChildren = node.children.length > 0
   const hasExpandableContent = hasArticles || hasChildren
+  const spacing = !isFirst ? 'mt-1' : ''
+  const indent = collectionIndent(level)
   const collectionHref = buildCanonicalCollectionPath(
     multilingualEnabled,
     locale,
@@ -128,8 +221,6 @@ function CollectionAccordionItem({
   )
   const isActiveCollection =
     pathname === prefixBasepath(basepath, collectionHref)
-  const triggerIndent =
-    level === 0 ? 'px-3' : level === 1 ? 'pl-4 pr-2' : 'pl-5 pr-2'
 
   if (!hasExpandableContent) {
     return (
@@ -137,107 +228,52 @@ function CollectionAccordionItem({
         to={collectionHref}
         onClick={onArticleClick}
         className={cn(
-          'flex items-center gap-2 rounded-lg py-2 text-[13px] transition-colors',
-          triggerIndent,
+          'block rounded-lg py-[7px] text-[13px] transition-colors',
+          spacing,
+          indent,
           isActiveCollection
             ? 'bg-sidebar-active font-medium text-sidebar-active-foreground'
-            : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
+            : 'text-muted-foreground hover:text-foreground',
         )}
       >
-        {level === 0 && node.item.icon ? (
-          <PhIcon
-            name={node.item.icon}
-            size={16}
-            weight="regular"
-            className={cn(
-              'shrink-0',
-              isActiveCollection
-                ? 'text-sidebar-active-foreground'
-                : 'text-muted-foreground',
-            )}
-          />
-        ) : null}
-        <span className="truncate">{node.item.name}</span>
+        {node.item.name}
       </DocsLink>
     )
   }
 
   return (
-    <AccordionItem
-      value={node.item.id}
-      className={cn(
-        'border-none',
-        level === 0 ? 'rounded-xl bg-background/60' : 'rounded-lg',
-      )}
-    >
+    <AccordionItem value={node.item.id} className={cn('border-none', spacing)}>
       <AccordionTrigger
         className={cn(
-          'hover:no-underline',
-          triggerIndent,
-          level === 0 ? 'text-[14px]' : 'text-[13px] text-muted-foreground',
+          'py-[7px] text-[13px] font-medium hover:bg-transparent hover:no-underline',
+          indent,
           isActiveCollection
             ? 'bg-sidebar-active text-sidebar-active-foreground'
-            : 'hover:bg-muted/60',
+            : 'text-muted-foreground hover:text-foreground',
         )}
       >
-        <span className="flex min-w-0 items-center gap-2">
-          {level === 0 && node.item.icon ? (
-            <PhIcon
-              name={node.item.icon}
-              size={16}
-              weight="regular"
-              className={cn(
-                'shrink-0',
-                isActiveCollection
-                  ? 'text-sidebar-active-foreground'
-                  : 'text-muted-foreground',
-              )}
-            />
-          ) : null}
-          <span className="truncate">{node.item.name}</span>
-        </span>
+        <span className="truncate">{node.item.name}</span>
       </AccordionTrigger>
 
-      <AccordionContent className={cn(level === 0 ? 'px-2' : 'px-0')}>
-        <div
-          className={cn(
-            'ml-4 border-l border-border/70 pl-2',
-            level === 0 ? 'pb-1' : 'pb-0',
-          )}
-        >
-          {hasArticles ? (
-            <div className="space-y-1">
-              {node.item.articles.map((article) => {
-                const href = buildCanonicalArticlePath(
-                  multilingualEnabled,
-                  locale,
-                  article.slug,
-                  article.public_id,
-                )
-                const isActiveArticle =
-                  pathname === prefixBasepath(basepath, href)
+      <AccordionContent className="pb-0">
+        <div className="mt-0.5">
+          {node.item.articles.map((article) => (
+            <ArticleLink
+              key={article.id}
+              locale={locale}
+              articleSlug={article.slug}
+              publicId={article.public_id}
+              title={article.title}
+              multilingualEnabled={multilingualEnabled}
+              basepath={basepath}
+              pathname={pathname}
+              onArticleClick={onArticleClick}
+              level={level}
+            />
+          ))}
 
-                return (
-                  <DocsLink
-                    key={article.id}
-                    to={href}
-                    onClick={onArticleClick}
-                    className={cn(
-                      'block rounded-lg px-3 py-2 text-[13px] transition-colors',
-                      isActiveArticle
-                        ? 'bg-sidebar-active font-medium text-sidebar-active-foreground'
-                        : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
-                    )}
-                  >
-                    {article.title}
-                  </DocsLink>
-                )
-              })}
-            </div>
-          ) : null}
-
-          {hasChildren ? (
-            <CollectionAccordionList
+          {node.children.length > 0 ? (
+            <NestedCollectionAccordion
               locale={locale}
               nodes={node.children}
               multilingualEnabled={multilingualEnabled}
@@ -251,6 +287,67 @@ function CollectionAccordionItem({
       </AccordionContent>
     </AccordionItem>
   )
+}
+
+function ArticleLink({
+  locale,
+  articleSlug,
+  publicId,
+  title,
+  multilingualEnabled,
+  basepath,
+  pathname,
+  onArticleClick,
+  level,
+}: {
+  locale: string
+  articleSlug: string
+  publicId: string
+  title: string
+  multilingualEnabled: boolean
+  basepath: string
+  pathname: string
+  onArticleClick?: () => void
+  level: number
+}) {
+  const href = buildCanonicalArticlePath(
+    multilingualEnabled,
+    locale,
+    articleSlug,
+    publicId,
+  )
+  const isActive = pathname === prefixBasepath(basepath, href)
+  const indent = articleIndent(level)
+
+  return (
+    <DocsLink
+      to={href}
+      onClick={onArticleClick}
+      className={cn(
+        'block rounded-lg py-[7px] text-[13px] transition-colors',
+        indent,
+        isActive
+          ? 'bg-sidebar-active font-medium text-sidebar-active-foreground'
+          : 'text-muted-foreground hover:text-foreground',
+      )}
+    >
+      {title}
+    </DocsLink>
+  )
+}
+
+function collectionIndent(level: number) {
+  if (level <= 0) return 'px-3'
+  if (level === 1) return 'pl-5 pr-3'
+  if (level === 2) return 'pl-7 pr-3'
+  return 'pl-9 pr-3'
+}
+
+function articleIndent(level: number) {
+  if (level <= 0) return 'px-3'
+  if (level === 1) return 'pl-7 pr-3'
+  if (level === 2) return 'pl-9 pr-3'
+  return 'pl-11 pr-3'
 }
 
 function nodeContainsActivePath(
