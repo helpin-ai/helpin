@@ -128,17 +128,15 @@ function CollectionGroup({
         ))}
 
         {node.children.length > 0 ? (
-          <div className={cn(level === 0 && 'ml-3 border-l border-border/60 pl-1')}>
-            <NestedCollectionAccordion
-              locale={locale}
-              nodes={node.children}
-              multilingualEnabled={multilingualEnabled}
-              basepath={basepath}
-              pathname={pathname}
-              onArticleClick={onArticleClick}
-              level={level + 1}
-            />
-          </div>
+          <NestedCollectionAccordion
+            locale={locale}
+            nodes={node.children}
+            multilingualEnabled={multilingualEnabled}
+            basepath={basepath}
+            pathname={pathname}
+            onArticleClick={onArticleClick}
+            level={level + 1}
+          />
         ) : null}
       </div>
     </div>
@@ -235,7 +233,7 @@ function NestedCollectionItem({
           indent,
           isActiveCollection
             ? 'bg-sidebar-active font-medium text-sidebar-active-foreground'
-            : 'text-muted-foreground hover:text-foreground',
+            : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
         )}
       >
         {node.item.name}
@@ -247,11 +245,11 @@ function NestedCollectionItem({
     <AccordionItem value={node.item.id} className={cn('border-none', spacing)}>
       <AccordionTrigger
         className={cn(
-          'py-[7px] text-[13px] font-medium hover:bg-transparent hover:no-underline',
+          'py-[7px] text-[13px] font-medium hover:no-underline',
           indent,
           isActiveCollection
             ? 'bg-sidebar-active text-sidebar-active-foreground'
-            : 'text-muted-foreground hover:text-foreground',
+            : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
         )}
       >
         <span className="truncate">{node.item.name}</span>
@@ -275,17 +273,15 @@ function NestedCollectionItem({
           ))}
 
           {node.children.length > 0 ? (
-            <div className="ml-2 border-l border-border/60 pl-1">
-              <NestedCollectionAccordion
-                locale={locale}
-                nodes={node.children}
-                multilingualEnabled={multilingualEnabled}
-                basepath={basepath}
-                pathname={pathname}
-                onArticleClick={onArticleClick}
-                level={level + 1}
-              />
-            </div>
+            <NestedCollectionAccordion
+              locale={locale}
+              nodes={node.children}
+              multilingualEnabled={multilingualEnabled}
+              basepath={basepath}
+              pathname={pathname}
+              onArticleClick={onArticleClick}
+              level={level + 1}
+            />
           ) : null}
         </div>
       </AccordionContent>
@@ -332,7 +328,7 @@ function ArticleLink({
         indent,
         isActive
           ? 'bg-sidebar-active font-medium text-sidebar-active-foreground'
-          : 'text-muted-foreground hover:text-foreground',
+          : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
       )}
     >
       {title}
@@ -342,16 +338,18 @@ function ArticleLink({
 
 function collectionIndent(level: number) {
   if (level <= 0) return 'px-3'
-  if (level === 1) return 'pl-2 pr-3'
-  if (level === 2) return 'pl-4 pr-3'
-  return 'pl-6 pr-3'
+  // Subcollection headers sit at the same indent as their sibling articles
+  if (level === 1) return 'pl-5 pr-3'
+  if (level === 2) return 'pl-8 pr-3'
+  return 'pl-11 pr-3'
 }
 
 function articleIndent(level: number) {
   if (level <= 0) return 'pl-5 pr-3'
-  if (level === 1) return 'pl-4 pr-3'
-  if (level === 2) return 'pl-6 pr-3'
-  return 'pl-8 pr-3'
+  // Articles inside subcollections are indented from their collection header
+  if (level === 1) return 'pl-8 pr-3'
+  if (level === 2) return 'pl-11 pr-3'
+  return 'pl-14 pr-3'
 }
 
 function nodeContainsActivePath(

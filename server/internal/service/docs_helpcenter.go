@@ -1339,10 +1339,38 @@ func (s *DocsHelpcenterService) GetSpaceNavigation(ctx context.Context, workspac
 		articlesByCollection[*doc.CollectionID] = append(articlesByCollection[*doc.CollectionID], article)
 	}
 
+	// Build a set of collection IDs that have articles so we can also
+	// include ancestor collections that have no direct articles but
+	// contain subcollections with articles.
+	collectionsWithArticles := make(map[string]bool, len(articlesByCollection))
+	for id := range articlesByCollection {
+		collectionsWithArticles[id] = true
+	}
+	// Walk up parent chains so parent collections are included even
+	// when they have no direct articles.
+	collectionByID := make(map[string]model.DocsCollection, len(collections))
+	for _, c := range collections {
+		collectionByID[c.ID] = c
+	}
+	for id := range collectionsWithArticles {
+		cur := collectionByID[id]
+		for cur.ParentCollectionID != nil && *cur.ParentCollectionID != "" {
+			pid := *cur.ParentCollectionID
+			if collectionsWithArticles[pid] {
+				break
+			}
+			collectionsWithArticles[pid] = true
+			parent, ok := collectionByID[pid]
+			if !ok {
+				break
+			}
+			cur = parent
+		}
+	}
+
 	result := make([]model.PublicNavCollection, 0, len(collections)+1)
 	for _, collection := range collections {
-		articles, ok := articlesByCollection[collection.ID]
-		if !ok || len(articles) == 0 {
+		if !collectionsWithArticles[collection.ID] {
 			continue
 		}
 
@@ -1355,11 +1383,13 @@ func (s *DocsHelpcenterService) GetSpaceNavigation(ctx context.Context, workspac
 		}
 
 		result = append(result, model.PublicNavCollection{
-			ID:       collection.ID,
-			Name:     translation.Name,
-			Slug:     stringValue(translation.Slug),
-			Icon:     collection.Icon,
-			Articles: articles,
+			ID:                 collection.ID,
+			Name:               translation.Name,
+			Slug:               stringValue(translation.Slug),
+			Icon:               collection.Icon,
+			ParentCollectionID: collection.ParentCollectionID,
+			Depth:              collection.Depth,
+			Articles:           articlesByCollection[collection.ID],
 		})
 	}
 
