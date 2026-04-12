@@ -6,6 +6,7 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragStartEvent,
 } from '@dnd-kit/core'
 import {
   SortableContext,
@@ -121,9 +122,11 @@ function ArrangeCollectionChildren({
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
   const reorderColls = useReorderDocsCollections(wsId)
   const [localOrder, setLocalOrder] = useState<CollectionTreeNode[] | null>(null)
+  const [dragActiveId, setDragActiveId] = useState<string | null>(null)
   const ordered = localOrder ?? children
 
   const handleDragEnd = (event: DragEndEvent) => {
+    setDragActiveId(null)
     const { active, over } = event
     if (!over || active.id === over.id) return
     const ids = ordered.map((node) => node.collection.id)
@@ -156,7 +159,13 @@ function ArrangeCollectionChildren({
   if (ordered.length === 0) return null
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragStart={(event: DragStartEvent) => setDragActiveId(event.active.id as string)}
+      onDragEnd={handleDragEnd}
+      onDragCancel={() => setDragActiveId(null)}
+    >
       <SortableContext items={ordered.map((n) => n.collection.id)} strategy={verticalListSortingStrategy}>
         {ordered.map((node) => (
           <SortableItem key={node.collection.id} id={node.collection.id}>
@@ -165,6 +174,7 @@ function ArrangeCollectionChildren({
               spaceId={spaceId}
               wsId={wsId}
               onAddSubCollection={onAddSubCollection}
+              forceCollapsed={dragActiveId === node.collection.id}
             />
           </SortableItem>
         ))}
@@ -185,13 +195,18 @@ function ArrangeCollectionNode({
   spaceId,
   wsId,
   onAddSubCollection,
+  forceCollapsed = false,
 }: {
   node: CollectionTreeNode
   spaceId: string
   wsId: string
   onAddSubCollection: (parentId: string) => void
+  /** When true, the node collapses to a single row during drag so
+   *  the user sees a compact preview instead of the full subtree. */
+  forceCollapsed?: boolean
 }) {
   const [open, setOpen] = useState(true)
+  const effectiveOpen = forceCollapsed ? false : open
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
   const reorderDocs = useReorderDocsDocuments(wsId)
   const [localDocs, setLocalDocs] = useState<DocsDocument[] | null>(null)
@@ -234,14 +249,14 @@ function ArrangeCollectionNode({
   const hasContent = totalChildren > 0 || displayDocs.length > 0
 
   return (
-    <Collapsible.Root open={open} onOpenChange={setOpen}>
+    <Collapsible.Root open={effectiveOpen} onOpenChange={setOpen}>
       <div className="group/arrange-node flex w-full items-center gap-1">
         <Collapsible.Trigger asChild>
           <button
             type="button"
             className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-foreground/70 hover:bg-muted/40"
           >
-            <ArrowRight01Icon className={`h-3.5 w-3.5 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`} />
+            <ArrowRight01Icon className={`h-3.5 w-3.5 shrink-0 transition-transform ${effectiveOpen ? 'rotate-90' : ''}`} />
             <CollIcon className="h-3.5 w-3.5 shrink-0" />
             <span className="truncate">{node.collection.name}</span>
             {displayDocs.length > 0 && (
