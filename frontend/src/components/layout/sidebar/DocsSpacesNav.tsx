@@ -79,7 +79,7 @@ function DocsSpaceCollections({
   );
 
   return (
-    <SidebarMenuSub>
+    <SidebarMenuSub className="mr-0 pr-0">
       {treeOptions.map((option) => {
         const collection = collectionById.get(option.id);
         if (!collection) return null;
