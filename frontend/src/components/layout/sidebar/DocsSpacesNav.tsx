@@ -138,7 +138,9 @@ function DocsSpaceCollections({
                     type="button"
                     className="absolute inset-y-0 right-0 flex w-9 items-center justify-end pr-1.5 opacity-0 transition-opacity bg-gradient-to-l from-sidebar from-65% to-transparent group-hover/collection:opacity-100 data-[state=open]:opacity-100"
                   >
-                    <MoreVerticalIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="flex h-5 w-5 items-center justify-center rounded hover:bg-muted transition-colors">
+                      <MoreVerticalIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                    </span>
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent side="right" align="start">
@@ -296,7 +298,9 @@ export function DocsSpacesNav({
                   type="button"
                   className="absolute inset-y-0 right-0 flex w-9 items-center justify-end pr-1.5 opacity-0 transition-opacity bg-gradient-to-l from-sidebar from-65% to-transparent group-hover/space:opacity-100 data-[state=open]:opacity-100"
                 >
-                  <MoreVerticalIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="flex h-5 w-5 items-center justify-center rounded hover:bg-muted transition-colors">
+                    <MoreVerticalIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                  </span>
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent side="right" align="start">
