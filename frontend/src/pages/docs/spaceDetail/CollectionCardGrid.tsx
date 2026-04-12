@@ -39,7 +39,7 @@ export function CollectionCardGrid({
           and showing the label adds repetitive chrome above the
           header subtitle. */}
       <h2 className="sr-only">{title}</h2>
-      <div className="grid gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]">
+      <div className="grid gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]">
         {nodes.map((node) => (
           <CollectionCard
             key={node.collection.id}

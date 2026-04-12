@@ -5,7 +5,6 @@ import {
   Delete01Icon,
   FolderOpenIcon,
   InboxIcon,
-  LanguageCircleIcon,
   MoreHorizontalIcon,
   PencilEdit01Icon,
   PlusSignIcon,
@@ -44,18 +43,9 @@ export interface SpaceNodeHeaderProps {
    */
   onCreateChildCollection: (() => void) | null
 
-  // Space-level inline rename (only used at space_root)
-  renamingSpace: boolean
-  spaceNameValue: string
-  onStartRenameSpace: () => void
-  onSpaceNameChange: (value: string) => void
-  onCommitRenameSpace: () => void
-  onCancelRenameSpace: () => void
-
   // Space-level overflow actions (space_root only)
   onEditSpace: () => void
   onDeleteSpace: () => void
-  onOpenTranslations: () => void
 
   // Collection-level overflow actions (collection view only)
   onEditCollection: (() => void) | null
@@ -69,10 +59,6 @@ export interface SpaceNodeHeaderProps {
  * line, and the [+] / [⋯] action menus. All three view kinds
  * (space_root / collection / uncategorized) flow through this
  * single component so the layout stays consistent.
- *
- * External-capable spaces expose their translations action as a
- * first-class overflow item; all other translation-related dialogs
- * stay with the parent controller.
  */
 export function SpaceNodeHeader({
   space,
@@ -81,20 +67,11 @@ export function SpaceNodeHeader({
   onNavigateToCollection,
   onCreateDocument,
   onCreateChildCollection,
-  renamingSpace,
-  spaceNameValue,
-  onStartRenameSpace,
-  onSpaceNameChange,
-  onCommitRenameSpace,
-  onCancelRenameSpace,
   onEditSpace,
   onDeleteSpace,
-  onOpenTranslations,
   onEditCollection,
   onDeleteCollection,
 }: SpaceNodeHeaderProps) {
-  const isExternalCapable = space.type === 'external_capable'
-
   // ── Ancestors (rendered inline, left of the title) ─────────────────
   // The current node is NOT in this list — it's the big title to the
   // right of the last arrow. That keeps the "you are here" signal
@@ -152,6 +129,8 @@ export function SpaceNodeHeader({
         : null
 
   // ── Overflow menu content ─────────────────────────────────────────
+  // Translations are managed from Settings > Help Center > Languages & Translation.
+  // Do not re-add a translations action here — see commit history for why this was removed.
   const hasOverflowMenu =
     canEdit &&
     ((view.kind === 'space_root') ||
@@ -187,33 +166,7 @@ export function SpaceNodeHeader({
                 </span>
               ))}
               {titleIcon}
-              {view.kind === 'space_root' && renamingSpace ? (
-                <input
-                  key="space-rename-input"
-                  autoFocus
-                  value={spaceNameValue}
-                  onChange={(event) => onSpaceNameChange(event.target.value)}
-                  onFocus={(event) => event.target.select()}
-                  onBlur={onCommitRenameSpace}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') onCommitRenameSpace()
-                    if (event.key === 'Escape') onCancelRenameSpace()
-                  }}
-                  className="min-w-0 border-b border-primary/40 bg-transparent px-0 py-0 text-lg font-semibold outline-none"
-                />
-              ) : (
-                <h1 className="truncate text-lg font-semibold">{titleLabel}</h1>
-              )}
-              {view.kind === 'space_root' && canEdit && !renamingSpace && (
-                <button
-                  type="button"
-                  onClick={onStartRenameSpace}
-                  className="rounded p-1 text-muted-foreground/60 opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 focus:opacity-100"
-                  aria-label="Rename space"
-                >
-                  <PencilEdit01Icon className="h-3.5 w-3.5" />
-                </button>
-              )}
+              <h1 className="truncate text-lg font-medium">{titleLabel}</h1>
             </nav>
             {description && (
               <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{description}</p>
@@ -260,12 +213,6 @@ export function SpaceNodeHeader({
                         <PencilEdit01Icon className="h-3.5 w-3.5" />
                         Edit space
                       </DropdownMenuItem>
-                      {isExternalCapable && (
-                        <DropdownMenuItem onClick={onOpenTranslations}>
-                          <LanguageCircleIcon className="h-3.5 w-3.5" />
-                          Translations
-                        </DropdownMenuItem>
-                      )}
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
                         onClick={onDeleteSpace}

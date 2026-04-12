@@ -25,9 +25,11 @@ import { CollectionTreePicker } from '@/components/docs/CollectionTreePicker'
 import {
   useCreateDocsCollection,
   useDocsCollections,
+  useDocsHelpcenterLocales,
   useDocsSpaces,
   useUpdateDocsCollection,
 } from '@/hooks/queries'
+import { showAutoTranslateToast } from '@/lib/autoTranslateEntity'
 import type { DocsCollection } from '@/lib/docsTypes'
 import { toast } from 'sonner'
 
@@ -91,6 +93,10 @@ export function CreateCollectionDialog({
   const currentSpace = spaces?.find((space) => space.id === effectiveSpaceId)
   const createCollection = useCreateDocsCollection(wsId, effectiveSpaceId)
   const updateCollection = useUpdateDocsCollection(wsId)
+  const { data: localesConfig } = useDocsHelpcenterLocales(wsId)
+  const nonDefaultLocales = (localesConfig?.enabled_locales ?? []).filter(
+    (l) => l !== (localesConfig?.default_locale ?? 'en'),
+  )
 
   // Load the collection list for the selected space so the parent
   // picker can show the tree the user is adding to. The hook is safe
@@ -134,13 +140,17 @@ export function CreateCollectionDialog({
         })
         toast.success('Collection updated')
       } else {
-        await createCollection.mutateAsync({
+        const created = await createCollection.mutateAsync({
           name: name.trim(),
           description: description.trim() || undefined,
           icon: icon.trim() || undefined,
           parent_collection_id: parentCollectionId ?? undefined,
         })
-        toast.success('Collection created')
+        if (currentSpace?.type === 'external_capable' && nonDefaultLocales.length > 0 && created?.id) {
+          showAutoTranslateToast('Collection created', wsId, 'collection', created.id, nonDefaultLocales)
+        } else {
+          toast.success('Collection created')
+        }
       }
       reset()
       onOpenChange(false)

@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react'
 import {
   DndContext,
+  DragOverlay,
   closestCenter,
   PointerSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragStartEvent,
 } from '@dnd-kit/core'
 import {
   SortableContext,
@@ -33,20 +35,23 @@ import { CreateCollectionDialog } from './CreateCollectionDialog'
 
 // Must match maxCollectionDepth in server/internal/service/docs_collection.go.
 // Collections at this depth cannot host any more children.
-const MAX_COLLECTION_DEPTH = 2
+const MAX_COLLECTION_DEPTH = 1
 
 // ── Sortable item wrapper ───────────────────────────────────────────────────
 
 function SortableItem({ id, children }: { id: string; children: React.ReactNode }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
-  const style = {
+  const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-    zIndex: isDragging ? 50 : undefined,
+    transition: transition ?? 'transform 200ms ease',
   }
   return (
-    <div ref={setNodeRef} style={style} {...attributes} className="flex items-center group/sortable">
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      className={`flex items-center group/sortable ${isDragging ? 'opacity-30' : ''}`}
+    >
       <button
         type="button"
         {...listeners}
@@ -56,6 +61,73 @@ function SortableItem({ id, children }: { id: string; children: React.ReactNode 
       </button>
       <div className="min-w-0 flex-1">{children}</div>
     </div>
+  )
+}
+
+/**
+ * DragPreview is the compact floating card rendered inside every
+ * DragOverlay. It shows just the icon + name of the dragged item
+ * so the cursor follows a clean, fixed-size preview regardless
+ * of how large the source item's subtree is.
+ */
+function DragPreview({
+  icon,
+  label,
+  kind,
+  docCount,
+  subCount,
+}: {
+  icon?: string | null
+  label: string
+  kind: 'space' | 'collection' | 'document'
+  /** Direct documents inside (collections/spaces only). */
+  docCount?: number
+  /** Direct sub-collections inside (collections/spaces only). */
+  subCount?: number
+}) {
+  const meta: string[] = [kind === 'document' ? 'Document' : kind === 'space' ? 'Space' : 'Collection']
+  if (kind !== 'document') {
+    if ((docCount ?? 0) > 0) meta.push(`${docCount} ${docCount === 1 ? 'document' : 'documents'}`)
+    if ((subCount ?? 0) > 0) meta.push(`${subCount} ${subCount === 1 ? (kind === 'space' ? 'collection' : 'sub-collection') : (kind === 'space' ? 'collections' : 'sub-collections')}`)
+  }
+
+  return (
+    <div className="flex items-center gap-2.5 rounded-md border border-border/60 bg-card px-3 py-2 shadow-lg">
+      {kind === 'document' ? (
+        <File01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+      ) : (
+        <StoredIcon
+          name={icon}
+          className="h-4 w-4 shrink-0 text-muted-foreground"
+          textClassName=""
+          fallback={<Folder01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />}
+        />
+      )}
+      <div className="min-w-0">
+        <div className="max-w-[220px] truncate text-sm font-medium">{label}</div>
+        <div className="text-[11px] text-muted-foreground">{meta.join(' · ')}</div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * SpaceDragPreview wraps DragPreview with hooks that read the
+ * space's collection/document counts from the TanStack Query cache.
+ * ArrangeSpace already fetched this data, so the hooks resolve
+ * instantly from cache with no new network requests.
+ */
+function SpaceDragPreview({ space, wsId }: { space: DocsSpace; wsId: string }) {
+  const { data: collections } = useDocsCollections(wsId, space.id)
+  const { data: documents } = useDocsDocuments(wsId, { space_id: space.id })
+  return (
+    <DragPreview
+      icon={space.icon}
+      label={space.name}
+      kind="space"
+      docCount={documents?.length}
+      subCount={collections?.length}
+    />
   )
 }
 
@@ -112,9 +184,11 @@ function ArrangeCollectionChildren({
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
   const reorderColls = useReorderDocsCollections(wsId)
   const [localOrder, setLocalOrder] = useState<CollectionTreeNode[] | null>(null)
+  const [dragActiveId, setDragActiveId] = useState<string | null>(null)
   const ordered = localOrder ?? children
 
   const handleDragEnd = (event: DragEndEvent) => {
+    setDragActiveId(null)
     const { active, over } = event
     if (!over || active.id === over.id) return
     const ids = ordered.map((node) => node.collection.id)
@@ -147,7 +221,13 @@ function ArrangeCollectionChildren({
   if (ordered.length === 0) return null
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragStart={(event: DragStartEvent) => setDragActiveId(event.active.id as string)}
+      onDragEnd={handleDragEnd}
+      onDragCancel={() => setDragActiveId(null)}
+    >
       <SortableContext items={ordered.map((n) => n.collection.id)} strategy={verticalListSortingStrategy}>
         {ordered.map((node) => (
           <SortableItem key={node.collection.id} id={node.collection.id}>
@@ -156,10 +236,25 @@ function ArrangeCollectionChildren({
               spaceId={spaceId}
               wsId={wsId}
               onAddSubCollection={onAddSubCollection}
+              forceCollapsed={dragActiveId === node.collection.id}
             />
           </SortableItem>
         ))}
       </SortableContext>
+      <DragOverlay dropAnimation={null}>
+        {dragActiveId ? (() => {
+          const node = ordered.find((n) => n.collection.id === dragActiveId)
+          return node ? (
+            <DragPreview
+              icon={node.collection.icon}
+              label={node.collection.name}
+              kind="collection"
+              docCount={node.documents.length}
+              subCount={node.children.length}
+            />
+          ) : null
+        })() : null}
+      </DragOverlay>
     </DndContext>
   )
 }
@@ -176,16 +271,22 @@ function ArrangeCollectionNode({
   spaceId,
   wsId,
   onAddSubCollection,
+  forceCollapsed = false,
 }: {
   node: CollectionTreeNode
   spaceId: string
   wsId: string
   onAddSubCollection: (parentId: string) => void
+  /** When true, the node collapses to a single row during drag so
+   *  the user sees a compact preview instead of the full subtree. */
+  forceCollapsed?: boolean
 }) {
   const [open, setOpen] = useState(true)
+  const effectiveOpen = forceCollapsed ? false : open
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
   const reorderDocs = useReorderDocsDocuments(wsId)
   const [localDocs, setLocalDocs] = useState<DocsDocument[] | null>(null)
+  const [docDragActiveId, setDocDragActiveId] = useState<string | null>(null)
   const displayDocs = localDocs ?? node.documents
   // Collections at the maximum allowed depth cannot host children —
   // the backend would reject a depth=3 create. Hide the action
@@ -225,14 +326,14 @@ function ArrangeCollectionNode({
   const hasContent = totalChildren > 0 || displayDocs.length > 0
 
   return (
-    <Collapsible.Root open={open} onOpenChange={setOpen}>
+    <Collapsible.Root open={effectiveOpen} onOpenChange={setOpen}>
       <div className="group/arrange-node flex w-full items-center gap-1">
         <Collapsible.Trigger asChild>
           <button
             type="button"
             className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-foreground/70 hover:bg-muted/40"
           >
-            <ArrowRight01Icon className={`h-3.5 w-3.5 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`} />
+            <ArrowRight01Icon className={`h-3.5 w-3.5 shrink-0 transition-transform ${effectiveOpen ? 'rotate-90' : ''}`} />
             <CollIcon className="h-3.5 w-3.5 shrink-0" />
             <span className="truncate">{node.collection.name}</span>
             {displayDocs.length > 0 && (
@@ -276,7 +377,13 @@ function ArrangeCollectionNode({
           )}
           {/* Then direct articles of this collection. */}
           {displayDocs.length > 0 ? (
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDocDragEnd}>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragStart={(event: DragStartEvent) => setDocDragActiveId(event.active.id as string)}
+              onDragEnd={(event: DragEndEvent) => { setDocDragActiveId(null); handleDocDragEnd(event) }}
+              onDragCancel={() => setDocDragActiveId(null)}
+            >
               <SortableContext items={displayDocs.map((d) => d.id)} strategy={verticalListSortingStrategy}>
                 {displayDocs.map((doc) => (
                   <SortableItem key={doc.id} id={doc.id}>
@@ -284,6 +391,12 @@ function ArrangeCollectionNode({
                   </SortableItem>
                 ))}
               </SortableContext>
+              <DragOverlay dropAnimation={null}>
+                {docDragActiveId ? (() => {
+                  const doc = displayDocs.find((d) => d.id === docDragActiveId)
+                  return doc ? <DragPreview label={doc.title} kind="document" /> : null
+                })() : null}
+              </DragOverlay>
             </DndContext>
           ) : !hasContent ? (
             <p className="px-2 py-1.5 text-[11px] text-muted-foreground/60">No documents</p>
@@ -309,11 +422,13 @@ function ArrangeUncategorizedBucket({
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
   const reorderDocs = useReorderDocsDocuments(wsId)
   const [localDocs, setLocalDocs] = useState<DocsDocument[] | null>(null)
+  const [uncatDragActiveId, setUncatDragActiveId] = useState<string | null>(null)
   const displayDocs = localDocs ?? documents
 
   if (displayDocs.length === 0) return null
 
   const handleDragEnd = (event: DragEndEvent) => {
+    setUncatDragActiveId(null)
     const { active, over } = event
     if (!over || active.id === over.id) return
     const ids = displayDocs.map((d) => d.id)
@@ -352,7 +467,13 @@ function ArrangeUncategorizedBucket({
       </Collapsible.Trigger>
       <Collapsible.Content>
         <div className="ml-4 border-l border-border/50 pl-1">
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={(event: DragStartEvent) => setUncatDragActiveId(event.active.id as string)}
+            onDragEnd={handleDragEnd}
+            onDragCancel={() => setUncatDragActiveId(null)}
+          >
             <SortableContext items={displayDocs.map((d) => d.id)} strategy={verticalListSortingStrategy}>
               {displayDocs.map((doc) => (
                 <SortableItem key={doc.id} id={doc.id}>
@@ -360,6 +481,12 @@ function ArrangeUncategorizedBucket({
                 </SortableItem>
               ))}
             </SortableContext>
+            <DragOverlay dropAnimation={null}>
+              {uncatDragActiveId ? (() => {
+                const doc = displayDocs.find((d) => d.id === uncatDragActiveId)
+                return doc ? <DragPreview label={doc.title} kind="document" /> : null
+              })() : null}
+            </DragOverlay>
           </DndContext>
         </div>
       </Collapsible.Content>
@@ -482,11 +609,13 @@ function ArrangeSection({
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
   const reorderSpaces = useReorderDocsSpaces(wsId)
   const [localSpaces, setLocalSpaces] = useState<DocsSpace[] | null>(null)
+  const [spaceDragActiveId, setSpaceDragActiveId] = useState<string | null>(null)
   const displaySpaces = localSpaces ?? spaces
 
   if (displaySpaces.length === 0) return null
 
   const handleDragEnd = (event: DragEndEvent) => {
+    setSpaceDragActiveId(null)
     const { active, over } = event
     if (!over || active.id === over.id) return
     const ids = displaySpaces.map((s) => s.id)
@@ -511,7 +640,13 @@ function ArrangeSection({
         {label}
       </h3>
       <div className="divide-y divide-border/50 rounded-lg border border-border/60 bg-card">
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={(event: DragStartEvent) => setSpaceDragActiveId(event.active.id as string)}
+          onDragEnd={handleDragEnd}
+          onDragCancel={() => setSpaceDragActiveId(null)}
+        >
           <SortableContext items={displaySpaces.map((s) => s.id)} strategy={verticalListSortingStrategy}>
             {displaySpaces.map((space) => (
               <SortableItem key={space.id} id={space.id}>
@@ -519,6 +654,12 @@ function ArrangeSection({
               </SortableItem>
             ))}
           </SortableContext>
+          <DragOverlay dropAnimation={null}>
+            {spaceDragActiveId ? (() => {
+              const space = displaySpaces.find((s) => s.id === spaceDragActiveId)
+              return space ? <SpaceDragPreview space={space} wsId={wsId} /> : null
+            })() : null}
+          </DragOverlay>
         </DndContext>
       </div>
     </div>

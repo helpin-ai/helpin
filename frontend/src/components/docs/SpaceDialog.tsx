@@ -10,9 +10,10 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { useCreateDocsSpace, useUpdateDocsSpace } from '@/hooks/queries'
+import { useCreateDocsSpace, useDocsHelpcenterLocales, useUpdateDocsSpace } from '@/hooks/queries'
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams'
 import type { DocsSpace, SpaceType } from '@/lib/docsTypes'
+import { showAutoTranslateToast } from '@/lib/autoTranslateEntity'
 import { toast } from 'sonner'
 
 type TeamAccessMode = 'all_teams' | 'specific_teams'
@@ -38,6 +39,10 @@ export function SpaceDialog({ wsId, open, onOpenChange, space, defaultType }: Sp
   const { teams } = useWorkspaceTeams(wsId)
   const createSpace = useCreateDocsSpace(wsId)
   const updateSpace = useUpdateDocsSpace(wsId)
+  const { data: localesConfig } = useDocsHelpcenterLocales(wsId)
+  const nonDefaultLocales = (localesConfig?.enabled_locales ?? []).filter(
+    (l) => l !== (localesConfig?.default_locale ?? 'en'),
+  )
 
   // Populate form when opening
   useEffect(() => {
@@ -85,13 +90,17 @@ export function SpaceDialog({ wsId, open, onOpenChange, space, defaultType }: Sp
         })
         toast.success('Space updated')
       } else {
-        await createSpace.mutateAsync({
+        const created = await createSpace.mutateAsync({
           name: name.trim(),
           visibility: derivedVisibility,
           type,
           team_ids: derivedTeamIds,
         })
-        toast.success('Space created')
+        if (type === 'external_capable' && nonDefaultLocales.length > 0 && created?.id) {
+          showAutoTranslateToast('Space created', wsId, 'space', created.id, nonDefaultLocales)
+        } else {
+          toast.success('Space created')
+        }
       }
       onOpenChange(false)
     } catch (err) {
