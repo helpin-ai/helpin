@@ -70,10 +70,30 @@ function SortableItem({ id, children }: { id: string; children: React.ReactNode 
  * so the cursor follows a clean, fixed-size preview regardless
  * of how large the source item's subtree is.
  */
-function DragPreview({ icon, label, isDoc }: { icon?: string | null; label: string; isDoc?: boolean }) {
+function DragPreview({
+  icon,
+  label,
+  kind,
+  docCount,
+  subCount,
+}: {
+  icon?: string | null
+  label: string
+  kind: 'space' | 'collection' | 'document'
+  /** Direct documents inside (collections/spaces only). */
+  docCount?: number
+  /** Direct sub-collections inside (collections/spaces only). */
+  subCount?: number
+}) {
+  const meta: string[] = [kind === 'document' ? 'Document' : kind === 'space' ? 'Space' : 'Collection']
+  if (kind !== 'document') {
+    if ((docCount ?? 0) > 0) meta.push(`${docCount} ${docCount === 1 ? 'document' : 'documents'}`)
+    if ((subCount ?? 0) > 0) meta.push(`${subCount} ${subCount === 1 ? (kind === 'space' ? 'collection' : 'sub-collection') : (kind === 'space' ? 'collections' : 'sub-collections')}`)
+  }
+
   return (
-    <div className="flex items-center gap-2 rounded-md border border-border/60 bg-card px-3 py-2 text-sm font-medium shadow-lg">
-      {isDoc ? (
+    <div className="flex items-center gap-2.5 rounded-md border border-border/60 bg-card px-3 py-2 shadow-lg">
+      {kind === 'document' ? (
         <File01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
       ) : (
         <StoredIcon
@@ -83,8 +103,31 @@ function DragPreview({ icon, label, isDoc }: { icon?: string | null; label: stri
           fallback={<Folder01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />}
         />
       )}
-      <span className="max-w-[220px] truncate">{label}</span>
+      <div className="min-w-0">
+        <div className="max-w-[220px] truncate text-sm font-medium">{label}</div>
+        <div className="text-[11px] text-muted-foreground">{meta.join(' · ')}</div>
+      </div>
     </div>
+  )
+}
+
+/**
+ * SpaceDragPreview wraps DragPreview with hooks that read the
+ * space's collection/document counts from the TanStack Query cache.
+ * ArrangeSpace already fetched this data, so the hooks resolve
+ * instantly from cache with no new network requests.
+ */
+function SpaceDragPreview({ space, wsId }: { space: DocsSpace; wsId: string }) {
+  const { data: collections } = useDocsCollections(wsId, space.id)
+  const { data: documents } = useDocsDocuments(wsId, { space_id: space.id })
+  return (
+    <DragPreview
+      icon={space.icon}
+      label={space.name}
+      kind="space"
+      docCount={documents?.length}
+      subCount={collections?.length}
+    />
   )
 }
 
@@ -201,7 +244,15 @@ function ArrangeCollectionChildren({
       <DragOverlay dropAnimation={null}>
         {dragActiveId ? (() => {
           const node = ordered.find((n) => n.collection.id === dragActiveId)
-          return node ? <DragPreview icon={node.collection.icon} label={node.collection.name} /> : null
+          return node ? (
+            <DragPreview
+              icon={node.collection.icon}
+              label={node.collection.name}
+              kind="collection"
+              docCount={node.documents.length}
+              subCount={node.children.length}
+            />
+          ) : null
         })() : null}
       </DragOverlay>
     </DndContext>
@@ -343,7 +394,7 @@ function ArrangeCollectionNode({
               <DragOverlay dropAnimation={null}>
                 {docDragActiveId ? (() => {
                   const doc = displayDocs.find((d) => d.id === docDragActiveId)
-                  return doc ? <DragPreview label={doc.title} isDoc /> : null
+                  return doc ? <DragPreview label={doc.title} kind="document" /> : null
                 })() : null}
               </DragOverlay>
             </DndContext>
@@ -433,7 +484,7 @@ function ArrangeUncategorizedBucket({
             <DragOverlay dropAnimation={null}>
               {uncatDragActiveId ? (() => {
                 const doc = displayDocs.find((d) => d.id === uncatDragActiveId)
-                return doc ? <DragPreview label={doc.title} isDoc /> : null
+                return doc ? <DragPreview label={doc.title} kind="document" /> : null
               })() : null}
             </DragOverlay>
           </DndContext>
@@ -606,7 +657,7 @@ function ArrangeSection({
           <DragOverlay dropAnimation={null}>
             {spaceDragActiveId ? (() => {
               const space = displaySpaces.find((s) => s.id === spaceDragActiveId)
-              return space ? <DragPreview icon={space.icon} label={space.name} /> : null
+              return space ? <SpaceDragPreview space={space} wsId={wsId} /> : null
             })() : null}
           </DragOverlay>
         </DndContext>
