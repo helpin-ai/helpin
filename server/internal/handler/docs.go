@@ -733,6 +733,23 @@ func (h *DocsHandler) PublishDocument(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = decodeJSON(r, &body)
 
+	// Pre-check: external-capable spaces require a collection before
+	// publish. Uncategorized docs must not go public — they have no
+	// collection slug for the URL and would appear as a fake "General"
+	// bucket in the help center navigation.
+	preDoc, err := h.documentSvc.Get(r.Context(), docID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if preDoc != nil && preDoc.CollectionID == nil {
+		space, _ := h.spaceSvc.GetUnfiltered(r.Context(), preDoc.SpaceID)
+		if space != nil && space.Type == model.SpaceTypeExternalCapable {
+			writeError(w, http.StatusBadRequest, "Assign this document to a collection before publishing to the help center.")
+			return
+		}
+	}
+
 	doc, err := h.documentSvc.Publish(r.Context(), docID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
