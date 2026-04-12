@@ -5,7 +5,7 @@ import {
   BotIcon,
   SourceCodeIcon,
   Loading01Icon,
-  SentIcon,
+  ArrowUp02Icon,
   TerminalIcon,
   UserIcon,
   CancelCircleIcon,
@@ -364,9 +364,9 @@ function InterruptionOverlay({
       <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-full h-36" style={{ backdropFilter: 'blur(8px)', maskImage: 'linear-gradient(to bottom, transparent 0%, transparent 70%, black 100%)', WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, transparent 70%, black 100%)' }} />
       <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-full h-48" style={{ backdropFilter: 'blur(14px)', maskImage: 'linear-gradient(to bottom, transparent 0%, transparent 80%, black 100%)', WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, transparent 80%, black 100%)' }} />
       {/* Colour fade on top of the blur layers */}
-      <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-full h-48" style={{ background: 'linear-gradient(to top, color-mix(in oklch, var(--card) 78%, oklch(0.93 0.03 70) 22%), transparent)' }} />
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-full h-48 bg-gradient-to-t from-card to-transparent" />
 
-      <div className="border-t border-amber-200/70 bg-[color:color-mix(in_oklch,var(--card)_84%,oklch(0.94_0.03_72)_16%)] px-4 py-4 backdrop-blur-md dark:border-border/80 dark:bg-card/95">
+      <div className="border-t border-border/80 bg-card/95 px-4 py-4 backdrop-blur-md">
       {session?.pause_reason === 'authentication' ? (
         <div className="rounded-lg border border-amber-200/80 bg-amber-50 p-4 dark:border-amber-800/50 dark:bg-amber-950/20">
           <div className="mb-2 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400">
@@ -434,7 +434,7 @@ function MessageInput({ onSend, sending }: { onSend: (content: string) => Promis
 
   return (
     <div className="border-t border-border bg-background px-3 py-3">
-      <div className="flex gap-2">
+      <div className="flex items-center gap-2">
         <Textarea
           value={value}
           onChange={(e) => setValue(e.target.value)}
@@ -450,11 +450,12 @@ function MessageInput({ onSend, sending }: { onSend: (content: string) => Promis
           rows={1}
         />
         <Button
-          size="sm"
+          size="icon"
+          className="h-10 w-10 shrink-0 rounded-full"
           onClick={() => void handleSubmit()}
           disabled={!value.trim() || sending}
         >
-          {sending ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" /> : <SentIcon className="h-3.5 w-3.5" />}
+          {sending ? <Loading01Icon className="h-5 w-5 animate-spin" /> : <ArrowUp02Icon className="h-5 w-5" />}
         </Button>
       </div>
     </div>

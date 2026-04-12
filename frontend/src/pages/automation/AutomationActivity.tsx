@@ -198,6 +198,8 @@ const PAUSE_LABELS: Record<string, string> = {
   authentication: 'Paused \u00b7 awaiting sign-in',
 };
 
+const ACTIVE_RUN_GRID = 'grid grid-cols-[minmax(160px,auto)_minmax(100px,1fr)_100px_120px_90px_110px] items-center gap-x-4';
+
 function ActiveRunCard({
   run,
   agent,
@@ -226,13 +228,13 @@ function ActiveRunCard({
   return (
     <button
       type="button"
-      className="w-full rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-left transition-colors hover:bg-amber-500/10 dark:bg-amber-900/10 dark:hover:bg-amber-900/20"
+      className="w-full rounded-lg border border-border/60 bg-card px-4 py-3 text-left transition-colors hover:bg-muted/50"
       onClick={() => onOpenRun(run.id)}
     >
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+      <div className={ACTIVE_RUN_GRID}>
         <Badge
           variant="outline"
-          className="gap-1.5 border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+          className="w-fit gap-1.5 border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
         >
           {isPaused ? (
             <PauseIcon className="h-3 w-3" />
@@ -244,29 +246,11 @@ function ActiveRunCard({
           {pauseLabel}
         </Badge>
 
-        <div className="space-y-0.5">
-          <p className="text-[11px] text-muted-foreground">Agent</p>
-          <p className="text-sm font-medium">{agent?.name ?? 'Agent'}</p>
-        </div>
-
-        <div className="space-y-0.5">
-          <p className="text-[11px] text-muted-foreground">Trigger</p>
-          <p className="text-sm">{formatRunTriggerLabel(run.input)}</p>
-        </div>
-
-        <div className="space-y-0.5">
-          <p className="text-[11px] text-muted-foreground">Target</p>
-          <p className="text-sm font-mono">{run.target_id ? truncateMiddle(run.target_id, 8, 4) : '\u2014'}</p>
-        </div>
-
-        <div className="space-y-0.5">
-          <p className="text-[11px] text-muted-foreground">Duration</p>
-          <p className="text-sm font-medium">{elapsed}</p>
-        </div>
-
-        <p className="ml-auto text-xs text-muted-foreground">
-          {formatShortDate(run.created_at)}
-        </p>
+        <p className="truncate text-sm font-medium">{agent?.name ?? 'Agent'}</p>
+        <p className="text-sm text-muted-foreground">{formatRunTriggerLabel(run.input)}</p>
+        <p className="text-sm font-mono text-muted-foreground">{run.target_id ? truncateMiddle(run.target_id, 8, 4) : '\u2014'}</p>
+        <p className="text-sm tabular-nums">{elapsed}</p>
+        <p className="text-xs text-muted-foreground">{formatShortDate(run.created_at)}</p>
       </div>
     </button>
   );
@@ -274,13 +258,13 @@ function ActiveRunCard({
 
 function ActiveRunLabels() {
   return (
-    <div className="flex items-center gap-x-6 gap-y-2 px-4 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-      <span className="shrink-0">Status</span>
-      <span className="min-w-[120px]">Agent</span>
-      <span className="min-w-[120px]">Trigger</span>
-      <span className="min-w-[120px]">Target</span>
-      <span className="min-w-[90px]">Duration</span>
-      <span className="ml-auto shrink-0">Started</span>
+    <div className={`${ACTIVE_RUN_GRID} px-4 text-[11px] font-medium uppercase tracking-wide text-muted-foreground`}>
+      <span>Status</span>
+      <span>Agent</span>
+      <span>Trigger</span>
+      <span>Target</span>
+      <span>Duration</span>
+      <span>Started</span>
     </div>
   );
 }

@@ -1783,8 +1783,33 @@ export function AgentsPage() {
                       </p>
                     </div>
 
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-2">
+                    {/* Interactive mode — full width, first */}
+                    <div className="rounded-xl border border-border/60 bg-card p-3">
+                      <label className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium">Interactive mode</p>
+                          <p className="text-xs text-muted-foreground">
+                            {supportedModesForForm(form.runtime_kind).includes('interactive')
+                              ? 'On opens a live back-and-forth run. Off runs autonomously end-to-end.'
+                              : 'This runtime only supports autonomous runs.'}
+                          </p>
+                        </div>
+                        <Switch
+                          checked={form.default_invocation_mode === 'interactive'}
+                          disabled={systemVersionReadOnly || !supportedModesForForm(form.runtime_kind).includes('interactive')}
+                          onCheckedChange={(isInteractive) => {
+                            setForm((current) => ({
+                              ...current,
+                              supported_modes: [isInteractive ? 'interactive' : 'autonomous'],
+                              default_invocation_mode: isInteractive ? 'interactive' : 'autonomous',
+                            }));
+                          }}
+                        />
+                      </label>
+                    </div>
+
+                    <div className="grid gap-x-3 gap-y-3 md:grid-cols-2">
+                      <div className="space-y-1.5">
                         <FieldLabel>Execution engine</FieldLabel>
                         <Select
                           value={form.runtime_kind}
@@ -1826,34 +1851,7 @@ export function AgentsPage() {
                         </Select>
                       </div>
 
-                      <div className="space-y-2">
-                        <FieldLabel>Interactive mode</FieldLabel>
-                        <div className="rounded-xl border border-border/60 bg-card p-3">
-                          <label className="flex items-center justify-between gap-3">
-                            <div>
-                              <p className="text-sm">Use interactive runs</p>
-                              <p className="text-xs text-muted-foreground">
-                                {supportedModesForForm(form.runtime_kind).includes('interactive')
-                                  ? 'On opens a live back-and-forth run. Off runs autonomously end-to-end.'
-                                  : 'This runtime only supports autonomous runs.'}
-                              </p>
-                            </div>
-                            <Switch
-                              checked={form.default_invocation_mode === 'interactive'}
-                              disabled={systemVersionReadOnly || !supportedModesForForm(form.runtime_kind).includes('interactive')}
-                              onCheckedChange={(isInteractive) => {
-                                setForm((current) => ({
-                                  ...current,
-                                  supported_modes: [isInteractive ? 'interactive' : 'autonomous'],
-                                  default_invocation_mode: isInteractive ? 'interactive' : 'autonomous',
-                                }));
-                              }}
-                            />
-                          </label>
-                        </div>
-                      </div>
-
-                      <div className="space-y-2">
+                      <div className="space-y-1.5">
                         <FieldLabel>AI Provider</FieldLabel>
                         <Select
                           value={form.provider}
@@ -1882,7 +1880,7 @@ export function AgentsPage() {
                         </Select>
                       </div>
 
-                      <div className="space-y-2">
+                      <div className="space-y-1.5">
                         <FieldLabel htmlFor="system-agent-model">Model</FieldLabel>
                         <Input
                           id="system-agent-model"
@@ -1894,7 +1892,7 @@ export function AgentsPage() {
                       </div>
 
                       {supportsReasoningEffort && (
-                        <div className="space-y-2">
+                        <div className="space-y-1.5">
                           <FieldLabel>Reasoning effort</FieldLabel>
                           <Select
                             value={form.reasoning_effort || '_default'}
@@ -1922,7 +1920,7 @@ export function AgentsPage() {
                       )}
 
                       {supportsServiceTier && (
-                        <div className="space-y-2">
+                        <div className="space-y-1.5">
                           <FieldLabel>Service tier</FieldLabel>
                           <Select
                             value={form.service_tier || '_default'}
