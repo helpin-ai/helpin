@@ -1257,7 +1257,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
       </div>
 
       {/* ── Section: Locales ── */}
-      <div className={cn("overflow-hidden rounded-lg border bg-card transition-shadow", isExpanded('locales') ? "border-primary/20" : "border-border/60")}>
+      <div className={cn("rounded-lg border bg-card transition-shadow", isExpanded('locales') ? "border-primary/20" : "border-border/60")}>
         <button type="button" onClick={() => toggleSection('locales')} className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
             <LanguageCircleIcon className="h-4 w-4" />
