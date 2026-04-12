@@ -9,7 +9,7 @@ export interface DocsRedirect {
   target_collection_slug: string;
   target_article_slug?: string;
   target_path?: string;
-  type: 'imported' | 'slug_change' | 'manual';
+  type: 'imported' | 'slug_change' | 'manual' | 'auto_article_move' | 'auto_collection_rename';
   source_system?: string;
   source_object_type?: string;
   source_object_id?: string;

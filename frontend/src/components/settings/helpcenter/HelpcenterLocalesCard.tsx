@@ -5,6 +5,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { ConfirmDialog } from '@/components/pm/ConfirmDialog'
 import {
   HELP_CENTER_LOCALE_OPTIONS,
   getHelpcenterLocaleLabel,
@@ -31,6 +32,7 @@ export function HelpcenterLocalesCard({ config, isSaving, onSave }: HelpcenterLo
     show_language_switcher: config.show_language_switcher,
     fallback_to_default_locale: config.fallback_to_default_locale,
   })
+  const [pendingLocaleChange, setPendingLocaleChange] = useState<string | null>(null)
 
   const localeOptions = useMemo(() => {
     const byValue = new Map(HELP_CENTER_LOCALE_OPTIONS.map((option) => [option.value, option]))
@@ -65,13 +67,10 @@ export function HelpcenterLocalesCard({ config, isSaving, onSave }: HelpcenterLo
             <Label htmlFor="helpcenter-default-locale">Default locale</Label>
             <Select
               value={draft.default_locale}
-              onValueChange={(value) =>
-                setDraft((current) => ({
-                  ...current,
-                  default_locale: value,
-                  enabled_locales: withDefaultFirst([...current.enabled_locales, value], value),
-                }))
-              }
+              onValueChange={(value) => {
+                if (value === draft.default_locale) return
+                setPendingLocaleChange(value)
+              }}
             >
               <SelectTrigger id="helpcenter-default-locale" className="w-full">
                 <SelectValue />
@@ -167,6 +166,24 @@ export function HelpcenterLocalesCard({ config, isSaving, onSave }: HelpcenterLo
           </Button>
         </div>
       </CardContent>
+
+      <ConfirmDialog
+        open={pendingLocaleChange !== null}
+        onOpenChange={(open) => { if (!open) setPendingLocaleChange(null) }}
+        title="Change default locale?"
+        description={`Changing the default locale to ${pendingLocaleChange ? getHelpcenterLocaleLabel(pendingLocaleChange) : ''} will update how fallback pages resolve and re-mirror source content for all spaces and collections. Already-published translations are not affected, but untranslated pages will now fall back to the new default language.`}
+        confirmLabel="Change default locale"
+        variant="destructive"
+        onConfirm={() => {
+          if (!pendingLocaleChange) return
+          setDraft((current) => ({
+            ...current,
+            default_locale: pendingLocaleChange,
+            enabled_locales: withDefaultFirst([...current.enabled_locales, pendingLocaleChange], pendingLocaleChange),
+          }))
+          setPendingLocaleChange(null)
+        }}
+      />
     </Card>
   )
 }
