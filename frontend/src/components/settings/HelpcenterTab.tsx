@@ -213,7 +213,7 @@ function SortableFeaturedCollectionRow({
         <Input
           value={card.description}
           onChange={(event) => onDescriptionChange(event.target.value)}
-          placeholder="Short description that goes on the featured card"
+          placeholder="Description shown on the homepage card"
           className="h-8 text-sm"
         />
       </div>
