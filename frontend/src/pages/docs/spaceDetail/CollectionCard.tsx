@@ -70,7 +70,7 @@ export function CollectionCard({
           textClassName="text-base"
           fallback={<FolderOpenIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />}
         />
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 pr-5">
           <div className="line-clamp-2 text-sm font-medium leading-snug">{collection.name}</div>
           {collection.description && (
             <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">

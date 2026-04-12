@@ -56,13 +56,6 @@ export interface DocumentsTableProps {
   /** collection id → display name, used for the Collection column. */
   collectionNames: Map<string, string>
   /**
-   * Whether the "Collection" column should render. True only at
-   * space root where it adds context; hidden inside a collection
-   * view (every row would repeat the same collection name) and in
-   * the uncategorized view (every row would be blank).
-   */
-  showCollectionColumn: boolean
-  /**
    * Whether any collection exists in the current space. Controls
    * which empty-state variant renders when there are no documents.
    */
@@ -113,7 +106,6 @@ export function DocumentsTable({
   documents,
   members,
   collectionNames,
-  showCollectionColumn,
   hasCollections,
   wsSlug,
   filterStatus,
@@ -257,7 +249,7 @@ export function DocumentsTable({
               {sortField === 'title' && (sortDir === 'asc' ? <ArrowUp02Icon className="h-3 w-3" /> : <ArrowDown02Icon className="h-3 w-3" />)}
             </button>
             <span className="w-36 shrink-0">Owner</span>
-            {showCollectionColumn && <span className="w-28 shrink-0">Collection</span>}
+            <span className="w-28 shrink-0">Collection</span>
             <button
               type="button"
               onClick={() => cycleSort('status')}
@@ -309,11 +301,9 @@ export function DocumentsTable({
                     </span>
                   ) : '—'}
                 </span>
-                {showCollectionColumn && (
-                  <span className="w-28 shrink-0 truncate text-xs text-muted-foreground">
-                    {doc.collection_id ? collectionNames.get(doc.collection_id) ?? '—' : '—'}
-                  </span>
-                )}
+                <span className="w-28 shrink-0 truncate text-xs text-muted-foreground">
+                  {doc.collection_id ? collectionNames.get(doc.collection_id) ?? '—' : '—'}
+                </span>
                 <span className={`w-20 shrink-0 text-xs font-medium ${statusColor(doc.status)}`}>
                   {DOC_STATUS_LABELS[doc.status] ?? doc.status}
                 </span>

@@ -67,7 +67,7 @@ func (s *DocsCollectionService) SetTranslationService(translationSvc *DocsHelpce
 // maxCollectionDepth is the deepest allowed value of DocsCollection.Depth.
 // With the root at depth 0 this gives three navigable tiers per space:
 // top-level, child, and grandchild.
-const maxCollectionDepth = 2
+const maxCollectionDepth = 1
 
 // Create creates a new collection inside a space. If ParentCollectionID is
 // provided and non-empty, the collection is inserted as a child of that

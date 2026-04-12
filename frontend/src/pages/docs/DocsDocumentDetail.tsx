@@ -765,34 +765,27 @@ export function DocsDocumentDetail() {
           <ArrowLeft02Icon className="h-4 w-4" />
         </Button>
 
-        {/* Breadcrumb */}
+        {/* Breadcrumb — starts at the space, not "Docs". The sidebar
+            already tells users they're in the Docs module; repeating
+            it here wastes the first breadcrumb slot on something
+            they already know. */}
         <nav className="flex min-w-0 flex-1 items-center gap-1 text-xs text-muted-foreground">
-          <button
-            type="button"
-            onClick={() => navigate({ to: '/w/$slug/docs', params: { slug: wsSlug } })}
-            className="shrink-0 hover:text-foreground transition-colors"
-          >
-            Docs
-          </button>
           {space && (
-            <>
-              <ArrowRight01Icon className="h-3 w-3 shrink-0" />
-              <button
-                type="button"
-                onClick={() =>
-                  navigate({
-                    to: '/w/$slug/docs/spaces/$spaceId',
-                    params: { slug: wsSlug, spaceId: space.id },
-                  })
-                }
-                className="truncate hover:text-foreground transition-colors"
-              >
-                <span className="inline-flex items-center gap-1">
-                  <StoredIcon name={space.icon} className="h-3.5 w-3.5 shrink-0" textClassName="" />
-                  <span>{space.name}</span>
-                </span>
-              </button>
-            </>
+            <button
+              type="button"
+              onClick={() =>
+                navigate({
+                  to: '/w/$slug/docs/spaces/$spaceId',
+                  params: { slug: wsSlug, spaceId: space.id },
+                })
+              }
+              className="truncate hover:text-foreground transition-colors"
+            >
+              <span className="inline-flex items-center gap-1">
+                <StoredIcon name={space.icon} className="h-3.5 w-3.5 shrink-0" textClassName="" />
+                <span>{space.name}</span>
+              </span>
+            </button>
           )}
           {doc.collection_id && (() => {
             const col = collections.find((c) => c.id === doc.collection_id)
