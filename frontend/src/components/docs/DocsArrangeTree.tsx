@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import {
   DndContext,
+  DragOverlay,
   closestCenter,
   PointerSensor,
   useSensor,
@@ -43,18 +44,13 @@ function SortableItem({ id, children }: { id: string; children: React.ReactNode 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition: transition ?? 'transform 200ms ease',
-    zIndex: isDragging ? 50 : undefined,
   }
   return (
     <div
       ref={setNodeRef}
       style={style}
       {...attributes}
-      className={`flex items-center group/sortable ${
-        isDragging
-          ? 'rounded-md bg-muted/50 shadow-sm'
-          : ''
-      }`}
+      className={`flex items-center group/sortable ${isDragging ? 'opacity-30' : ''}`}
     >
       <button
         type="button"
@@ -64,6 +60,30 @@ function SortableItem({ id, children }: { id: string; children: React.ReactNode 
         <DragDropVerticalIcon className="h-4 w-4" />
       </button>
       <div className="min-w-0 flex-1">{children}</div>
+    </div>
+  )
+}
+
+/**
+ * DragPreview is the compact floating card rendered inside every
+ * DragOverlay. It shows just the icon + name of the dragged item
+ * so the cursor follows a clean, fixed-size preview regardless
+ * of how large the source item's subtree is.
+ */
+function DragPreview({ icon, label, isDoc }: { icon?: string | null; label: string; isDoc?: boolean }) {
+  return (
+    <div className="flex items-center gap-2 rounded-md border border-border/60 bg-card px-3 py-2 text-sm font-medium shadow-lg">
+      {isDoc ? (
+        <File01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+      ) : (
+        <StoredIcon
+          name={icon}
+          className="h-4 w-4 shrink-0 text-muted-foreground"
+          textClassName=""
+          fallback={<Folder01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />}
+        />
+      )}
+      <span className="max-w-[220px] truncate">{label}</span>
     </div>
   )
 }
@@ -178,6 +198,12 @@ function ArrangeCollectionChildren({
           </SortableItem>
         ))}
       </SortableContext>
+      <DragOverlay dropAnimation={null}>
+        {dragActiveId ? (() => {
+          const node = ordered.find((n) => n.collection.id === dragActiveId)
+          return node ? <DragPreview icon={node.collection.icon} label={node.collection.name} /> : null
+        })() : null}
+      </DragOverlay>
     </DndContext>
   )
 }
@@ -209,6 +235,7 @@ function ArrangeCollectionNode({
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
   const reorderDocs = useReorderDocsDocuments(wsId)
   const [localDocs, setLocalDocs] = useState<DocsDocument[] | null>(null)
+  const [docDragActiveId, setDocDragActiveId] = useState<string | null>(null)
   const displayDocs = localDocs ?? node.documents
   // Collections at the maximum allowed depth cannot host children —
   // the backend would reject a depth=3 create. Hide the action
@@ -299,7 +326,13 @@ function ArrangeCollectionNode({
           )}
           {/* Then direct articles of this collection. */}
           {displayDocs.length > 0 ? (
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDocDragEnd}>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragStart={(event: DragStartEvent) => setDocDragActiveId(event.active.id as string)}
+              onDragEnd={(event: DragEndEvent) => { setDocDragActiveId(null); handleDocDragEnd(event) }}
+              onDragCancel={() => setDocDragActiveId(null)}
+            >
               <SortableContext items={displayDocs.map((d) => d.id)} strategy={verticalListSortingStrategy}>
                 {displayDocs.map((doc) => (
                   <SortableItem key={doc.id} id={doc.id}>
@@ -307,6 +340,12 @@ function ArrangeCollectionNode({
                   </SortableItem>
                 ))}
               </SortableContext>
+              <DragOverlay dropAnimation={null}>
+                {docDragActiveId ? (() => {
+                  const doc = displayDocs.find((d) => d.id === docDragActiveId)
+                  return doc ? <DragPreview label={doc.title} isDoc /> : null
+                })() : null}
+              </DragOverlay>
             </DndContext>
           ) : !hasContent ? (
             <p className="px-2 py-1.5 text-[11px] text-muted-foreground/60">No documents</p>
@@ -332,11 +371,13 @@ function ArrangeUncategorizedBucket({
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
   const reorderDocs = useReorderDocsDocuments(wsId)
   const [localDocs, setLocalDocs] = useState<DocsDocument[] | null>(null)
+  const [uncatDragActiveId, setUncatDragActiveId] = useState<string | null>(null)
   const displayDocs = localDocs ?? documents
 
   if (displayDocs.length === 0) return null
 
   const handleDragEnd = (event: DragEndEvent) => {
+    setUncatDragActiveId(null)
     const { active, over } = event
     if (!over || active.id === over.id) return
     const ids = displayDocs.map((d) => d.id)
@@ -375,7 +416,13 @@ function ArrangeUncategorizedBucket({
       </Collapsible.Trigger>
       <Collapsible.Content>
         <div className="ml-4 border-l border-border/50 pl-1">
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={(event: DragStartEvent) => setUncatDragActiveId(event.active.id as string)}
+            onDragEnd={handleDragEnd}
+            onDragCancel={() => setUncatDragActiveId(null)}
+          >
             <SortableContext items={displayDocs.map((d) => d.id)} strategy={verticalListSortingStrategy}>
               {displayDocs.map((doc) => (
                 <SortableItem key={doc.id} id={doc.id}>
@@ -383,6 +430,12 @@ function ArrangeUncategorizedBucket({
                 </SortableItem>
               ))}
             </SortableContext>
+            <DragOverlay dropAnimation={null}>
+              {uncatDragActiveId ? (() => {
+                const doc = displayDocs.find((d) => d.id === uncatDragActiveId)
+                return doc ? <DragPreview label={doc.title} isDoc /> : null
+              })() : null}
+            </DragOverlay>
           </DndContext>
         </div>
       </Collapsible.Content>
@@ -505,11 +558,13 @@ function ArrangeSection({
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
   const reorderSpaces = useReorderDocsSpaces(wsId)
   const [localSpaces, setLocalSpaces] = useState<DocsSpace[] | null>(null)
+  const [spaceDragActiveId, setSpaceDragActiveId] = useState<string | null>(null)
   const displaySpaces = localSpaces ?? spaces
 
   if (displaySpaces.length === 0) return null
 
   const handleDragEnd = (event: DragEndEvent) => {
+    setSpaceDragActiveId(null)
     const { active, over } = event
     if (!over || active.id === over.id) return
     const ids = displaySpaces.map((s) => s.id)
@@ -534,7 +589,13 @@ function ArrangeSection({
         {label}
       </h3>
       <div className="divide-y divide-border/50 rounded-lg border border-border/60 bg-card">
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={(event: DragStartEvent) => setSpaceDragActiveId(event.active.id as string)}
+          onDragEnd={handleDragEnd}
+          onDragCancel={() => setSpaceDragActiveId(null)}
+        >
           <SortableContext items={displaySpaces.map((s) => s.id)} strategy={verticalListSortingStrategy}>
             {displaySpaces.map((space) => (
               <SortableItem key={space.id} id={space.id}>
@@ -542,6 +603,12 @@ function ArrangeSection({
               </SortableItem>
             ))}
           </SortableContext>
+          <DragOverlay dropAnimation={null}>
+            {spaceDragActiveId ? (() => {
+              const space = displaySpaces.find((s) => s.id === spaceDragActiveId)
+              return space ? <DragPreview icon={space.icon} label={space.name} /> : null
+            })() : null}
+          </DragOverlay>
         </DndContext>
       </div>
     </div>
