@@ -213,7 +213,7 @@ function SortableFeaturedCollectionRow({
         <Input
           value={card.description}
           onChange={(event) => onDescriptionChange(event.target.value)}
-          placeholder="Short description"
+          placeholder="Short description that goes on the featured card"
           className="h-8 text-sm"
         />
       </div>
@@ -559,17 +559,44 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
         homepage_featured_cards: prev.homepage_featured_cards.filter(c => c.link_value !== col.slug),
       }));
     } else {
-      setConfig(prev => ({
-        ...prev,
-        homepage_featured_cards: [...prev.homepage_featured_cards, {
-          title: col.name,
-          description: col.description ?? '',
-          icon: col.icon ?? '',
-          link_type: 'collection',
-          link_value: col.slug,
-          space_slug: homepageSpaceSlug,
-        }],
-      }));
+      // Insert the new card at the position matching the collection's
+      // natural order in the space, not at the end. This way unchecking
+      // and re-checking a collection puts it back where it was instead
+      // of dumping it at the bottom of the featured list.
+      const newCard: HomepageFeaturedCard = {
+        title: col.name,
+        description: col.description ?? '',
+        icon: col.icon ?? '',
+        link_type: 'collection',
+        link_value: col.slug,
+        space_slug: homepageSpaceSlug,
+      };
+      setConfig(prev => {
+        const spaceCards = prev.homepage_featured_cards.filter(
+          c => c.link_type === 'collection' && c.space_slug === homepageSpaceSlug,
+        );
+        const otherCards = prev.homepage_featured_cards.filter(
+          c => !(c.link_type === 'collection' && c.space_slug === homepageSpaceSlug),
+        );
+        // Find where this collection sits relative to existing cards
+        // based on the collections' natural order in the space.
+        const collectionSlugs = spaceCollections.map(c => c.slug);
+        const newIdx = collectionSlugs.indexOf(col.slug);
+        let insertAt = spaceCards.length;
+        for (let i = 0; i < spaceCards.length; i++) {
+          const cardIdx = collectionSlugs.indexOf(spaceCards[i].link_value);
+          if (cardIdx > newIdx) {
+            insertAt = i;
+            break;
+          }
+        }
+        const updatedSpaceCards = [...spaceCards];
+        updatedSpaceCards.splice(insertAt, 0, newCard);
+        return {
+          ...prev,
+          homepage_featured_cards: [...otherCards, ...updatedSpaceCards],
+        };
+      });
     }
   };
 
@@ -665,8 +692,14 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
     );
   }
 
+  // Featured cards are homepage-level tiles — only top-level
+  // collections (no parent) make sense here. Sub-collections are
+  // reachable from their parent collection's page.
+  const topLevelCollections = spaceCollections.filter(
+    (c) => !c.parent_collection_id,
+  );
   const orderedSpaceCollections = orderCollectionsForFeaturedCards(
-    spaceCollections,
+    topLevelCollections,
     config.homepage_featured_cards,
     homepageSpaceSlug,
   );
