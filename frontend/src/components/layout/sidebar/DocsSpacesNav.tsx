@@ -99,8 +99,6 @@ function DocsSpaceCollections({
                     asChild
                     size="sm"
                     isActive={isActive(link)}
-                    title={option.depth > 0 ? option.path : undefined}
-                    className=""
                   >
                     <a
                       href={link}
@@ -129,7 +127,7 @@ function DocsSpaceCollections({
                   </SidebarMenuSubButton>
                 </TooltipTrigger>
                 <TooltipContent side="right" align="center">
-                  {option.depth > 0 ? option.path : collection.name}
+                  {collection.name}
                 </TooltipContent>
               </Tooltip>
               <DropdownMenu>
