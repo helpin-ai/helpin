@@ -199,10 +199,10 @@ export function SpaceNodeHeader({
                     if (event.key === 'Enter') onCommitRenameSpace()
                     if (event.key === 'Escape') onCancelRenameSpace()
                   }}
-                  className="min-w-0 border-b border-primary/40 bg-transparent px-0 py-0 text-lg font-semibold outline-none"
+                  className="min-w-0 border-b border-primary/40 bg-transparent px-0 py-0 text-lg font-medium outline-none"
                 />
               ) : (
-                <h1 className="truncate text-lg font-semibold">{titleLabel}</h1>
+                <h1 className="truncate text-lg font-medium">{titleLabel}</h1>
               )}
               {view.kind === 'space_root' && canEdit && !renamingSpace && (
                 <button
