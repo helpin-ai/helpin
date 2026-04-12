@@ -34,6 +34,8 @@ dev-tmux:
     tmux split-window -h -t helpin:dev 'cd frontend && pnpm dev'
     tmux split-window -v -t helpin:dev.1 'cd server && go run ./cmd/temporal-worker'
     tmux split-window -v -t helpin:dev.0 'cd website && pnpm dev'
+    tmux new-window -t helpin -n helpcenter 'cd help-center && pnpm dev'
+    tmux select-window -t helpin:dev
     tmux attach -t helpin
 
 build-server:
@@ -46,7 +48,7 @@ build-frontend:
     @echo "✅ frontend built → frontend/dist"
 
 help-center:
-    cd help-center && npm run dev
+    cd help-center && pnpm dev
 
 build-help-center:
     cd help-center && npm install && npm run build

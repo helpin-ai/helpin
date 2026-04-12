@@ -128,15 +128,17 @@ function CollectionGroup({
         ))}
 
         {node.children.length > 0 ? (
-          <NestedCollectionAccordion
-            locale={locale}
-            nodes={node.children}
-            multilingualEnabled={multilingualEnabled}
-            basepath={basepath}
-            pathname={pathname}
-            onArticleClick={onArticleClick}
-            level={level + 1}
-          />
+          <div className={cn(level === 0 && 'ml-3 border-l border-border/60 pl-1')}>
+            <NestedCollectionAccordion
+              locale={locale}
+              nodes={node.children}
+              multilingualEnabled={multilingualEnabled}
+              basepath={basepath}
+              pathname={pathname}
+              onArticleClick={onArticleClick}
+              level={level + 1}
+            />
+          </div>
         ) : null}
       </div>
     </div>
@@ -273,15 +275,17 @@ function NestedCollectionItem({
           ))}
 
           {node.children.length > 0 ? (
-            <NestedCollectionAccordion
-              locale={locale}
-              nodes={node.children}
-              multilingualEnabled={multilingualEnabled}
-              basepath={basepath}
-              pathname={pathname}
-              onArticleClick={onArticleClick}
-              level={level + 1}
-            />
+            <div className="ml-2 border-l border-border/60 pl-1">
+              <NestedCollectionAccordion
+                locale={locale}
+                nodes={node.children}
+                multilingualEnabled={multilingualEnabled}
+                basepath={basepath}
+                pathname={pathname}
+                onArticleClick={onArticleClick}
+                level={level + 1}
+              />
+            </div>
           ) : null}
         </div>
       </AccordionContent>
@@ -338,16 +342,16 @@ function ArticleLink({
 
 function collectionIndent(level: number) {
   if (level <= 0) return 'px-3'
-  if (level === 1) return 'pl-5 pr-3'
-  if (level === 2) return 'pl-7 pr-3'
-  return 'pl-9 pr-3'
+  if (level === 1) return 'pl-2 pr-3'
+  if (level === 2) return 'pl-4 pr-3'
+  return 'pl-6 pr-3'
 }
 
 function articleIndent(level: number) {
-  if (level <= 0) return 'px-3'
-  if (level === 1) return 'pl-7 pr-3'
-  if (level === 2) return 'pl-9 pr-3'
-  return 'pl-11 pr-3'
+  if (level <= 0) return 'pl-5 pr-3'
+  if (level === 1) return 'pl-4 pr-3'
+  if (level === 2) return 'pl-6 pr-3'
+  return 'pl-8 pr-3'
 }
 
 function nodeContainsActivePath(
