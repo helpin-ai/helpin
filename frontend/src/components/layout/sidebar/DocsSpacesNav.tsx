@@ -2,8 +2,9 @@ import { useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { Collapsible } from 'radix-ui';
 import { ArrowRight01Icon, HelpCircleIcon, MoreVerticalIcon, FolderOpenIcon, InboxIcon, PlusSignIcon, PencilEdit01Icon, Delete01Icon } from '@/lib/icons';
 import { ICON_MAP } from '@/components/ui/icon-picker';
-import { useDocsCollections, useDocsDocuments, useDocsSpaces, useDeleteDocsSpace } from '@/hooks/queries';
-import type { DocsSpace } from '@/lib/docsTypes';
+import { useDocsCollections, useDocsDocuments, useDocsSpaces, useDeleteDocsSpace, useDeleteDocsCollection } from '@/hooks/queries';
+import type { DocsCollection, DocsSpace } from '@/lib/docsTypes';
+import { CreateCollectionDialog } from '@/components/docs/CreateCollectionDialog';
 import { buildCollectionTreeOptions } from '@/components/docs/CollectionTreePicker';
 import { useTruncationDetection } from '@/hooks/useTruncationDetection';
 import { SpaceDialog } from '@/components/docs/SpaceDialog';
@@ -45,6 +46,8 @@ function DocsSpaceCollections({
   isActive,
   openCreate,
   onNavigate,
+  onEditCollection,
+  onDeleteCollection,
 }: {
   wsId: string;
   spaceId: string;
@@ -52,6 +55,8 @@ function DocsSpaceCollections({
   isActive: (link: string) => boolean;
   openCreate: (modal: 'docs_collection', options?: { spaceId?: string }) => void;
   onNavigate: (args: { to: string; params?: Record<string, string>; search?: Record<string, string> }) => void;
+  onEditCollection: (collection: DocsCollection) => void;
+  onDeleteCollection: (collection: DocsCollection) => void;
 }) {
   const { data: collections } = useDocsCollections(wsId, spaceId);
   const { data: documents } = useDocsDocuments(wsId, { space_id: spaceId });
@@ -87,44 +92,69 @@ function DocsSpaceCollections({
 
         return (
           <SidebarMenuSubItem key={collection.id} style={depthStyle}>
-            <Tooltip open={showTooltip ? undefined : false}>
-              <TooltipTrigger asChild>
-                <SidebarMenuSubButton
-                  asChild
-                  size="sm"
-                  isActive={isActive(link)}
-                  title={option.depth > 0 ? option.path : undefined}
-                >
-                  <a
-                    href={link}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      onNavigate({
-                        to: '/w/$slug/docs/spaces/$spaceId',
-                        params: { slug: wsSlug, spaceId },
-                        search: { collection: collection.id },
-                      });
-                    }}
+            <div className="group/collection relative flex items-center">
+              <Tooltip open={showTooltip ? undefined : false}>
+                <TooltipTrigger asChild>
+                  <SidebarMenuSubButton
+                    asChild
+                    size="sm"
+                    isActive={isActive(link)}
+                    title={option.depth > 0 ? option.path : undefined}
                   >
-                    {option.depth > 0 && (
-                      <span
-                        className="select-none text-[10px] text-muted-foreground/50"
-                        aria-hidden="true"
-                      >
-                        ↳
+                    <a
+                      href={link}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        onNavigate({
+                          to: '/w/$slug/docs/spaces/$spaceId',
+                          params: { slug: wsSlug, spaceId },
+                          search: { collection: collection.id },
+                        });
+                      }}
+                    >
+                      {option.depth > 0 && (
+                        <span
+                          className="select-none text-[10px] text-muted-foreground/50"
+                          aria-hidden="true"
+                        >
+                          ↳
+                        </span>
+                      )}
+                      <SidebarCollectionIcon name={collection.icon} />
+                      <span className="truncate" ref={(element) => checkColTruncation(collection.id, element)}>
+                        {collection.name}
                       </span>
-                    )}
-                    <SidebarCollectionIcon name={collection.icon} />
-                    <span className="truncate" ref={(element) => checkColTruncation(collection.id, element)}>
-                      {collection.name}
-                    </span>
-                  </a>
-                </SidebarMenuSubButton>
-              </TooltipTrigger>
-              <TooltipContent side="right" align="center">
-                {option.depth > 0 ? option.path : collection.name}
-              </TooltipContent>
-            </Tooltip>
+                    </a>
+                  </SidebarMenuSubButton>
+                </TooltipTrigger>
+                <TooltipContent side="right" align="center">
+                  {option.depth > 0 ? option.path : collection.name}
+                </TooltipContent>
+              </Tooltip>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="absolute right-1 flex h-5 w-5 items-center justify-center rounded opacity-0 transition-opacity hover:bg-muted group-hover/collection:opacity-100 data-[state=open]:opacity-100"
+                  >
+                    <MoreVerticalIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent side="right" align="start">
+                  <DropdownMenuItem onClick={() => onEditCollection(collection)}>
+                    <PencilEdit01Icon className="h-4 w-4" />
+                    Edit collection
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => onDeleteCollection(collection)}
+                    className="text-destructive focus:text-destructive"
+                  >
+                    <Delete01Icon className="h-4 w-4" />
+                    Delete collection
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </SidebarMenuSubItem>
         );
       })}
@@ -187,10 +217,13 @@ export function DocsSpacesNav({
 }: DocsSpacesNavProps) {
   const { data: spaces } = useDocsSpaces(wsId);
   const deleteSpace = useDeleteDocsSpace(wsId);
+  const deleteCollection = useDeleteDocsCollection(wsId);
   const [editingSpace, setEditingSpace] = useState<DocsSpace | null>(null);
   const [showCreateSpace, setShowCreateSpace] = useState(false);
   const [createSpaceType, setCreateSpaceType] = useState<'internal' | 'external_capable'>('internal');
   const [deletingSpace, setDeletingSpace] = useState<DocsSpace | null>(null);
+  const [editingCollection, setEditingCollection] = useState<DocsCollection | null>(null);
+  const [deletingCollection, setDeletingCollection] = useState<DocsCollection | null>(null);
   const { checkRef: checkSpaceTruncation, isTruncated: isSpaceTruncated } = useTruncationDetection();
 
   const toggleDocSpace = (spaceKey: string) => {
@@ -288,6 +321,8 @@ export function DocsSpacesNav({
               isActive={isActive}
               openCreate={openCreate}
               onNavigate={onNavigate}
+              onEditCollection={setEditingCollection}
+              onDeleteCollection={setDeletingCollection}
             />
           </Collapsible.Content>
         </SidebarMenuItem>
@@ -385,6 +420,41 @@ export function DocsSpacesNav({
             onSuccess: () => {
               setDeletingSpace(null);
               onNavigate({ to: '/w/$slug/docs', params: { slug: wsSlug } });
+            },
+          });
+        }}
+      />
+
+      <CreateCollectionDialog
+        wsId={wsId}
+        open={editingCollection !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setTimeout(() => setEditingCollection(null), 150);
+          }
+        }}
+        collection={editingCollection}
+      />
+
+      <ConfirmDialog
+        open={deletingCollection !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setTimeout(() => setDeletingCollection(null), 150);
+          }
+        }}
+        title="Delete collection"
+        description="This will permanently delete this collection. Documents in this collection will become uncategorized."
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={() => {
+          if (!deletingCollection) {
+            return;
+          }
+
+          deleteCollection.mutate({ id: deletingCollection.id, spaceId: deletingCollection.space_id }, {
+            onSuccess: () => {
+              setDeletingCollection(null);
             },
           });
         }}
