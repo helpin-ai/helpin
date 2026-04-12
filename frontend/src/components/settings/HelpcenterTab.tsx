@@ -30,6 +30,7 @@ import { toast } from 'sonner';
 import { useDocsHelpcenterLocales, useUpdateDocsHelpcenterLocales } from '@/hooks/queries';
 import { HelpcenterLocalesCard } from '@/components/settings/helpcenter/HelpcenterLocalesCard';
 import { HelpcenterTranslationsTable } from '@/components/settings/helpcenter/HelpcenterTranslationsTable';
+import { StickyFormFooter } from '@/components/settings/StickyFormFooter';
 import { SortableFooterLinkRow, SortableHeaderLinkRow } from '@/components/settings/helpcenter/HelpcenterSortableRows';
 import {
   PlusSignIcon, InformationCircleIcon, ArrowDown01Icon, Cancel01Icon,
@@ -303,6 +304,9 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [config, setConfig] = useState<ConfigState>(DEFAULT_CONFIG);
+  // Snapshot of config at the time of last load or save. Used to
+  // detect unsaved changes via JSON comparison.
+  const [savedSnapshot, setSavedSnapshot] = useState('');
   const [spaces, setSpaces] = useState<DocsSpace[]>([]);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
   const toggleSection = (key: string) => {
@@ -401,6 +405,16 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
     load();
   }, [workspaceId, workspaceName]);
 
+  // Capture the snapshot once loading finishes — this is the
+  // baseline for dirty detection. Intentionally reads config at
+  // the moment loading completes, after all sync/default logic.
+  useEffect(() => {
+    if (!loading && !savedSnapshot) {
+      setSavedSnapshot(JSON.stringify(config));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
+
   const handleSave = async (e: FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -445,6 +459,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
       toast.error(res.error);
     } else {
       toast.success('Help center settings saved');
+      setSavedSnapshot(JSON.stringify(config));
     }
   };
 
@@ -715,12 +730,13 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
 
   return (
     <form onSubmit={handleSave} className="space-y-5">
-      {/* ── Top Actions ── */}
-      <div className="flex items-center justify-end">
+      {/* ── Sticky Save Bar — only visible when there are unsaved changes ── */}
+      <StickyFormFooter visible={savedSnapshot !== '' && JSON.stringify(config) !== savedSnapshot}>
+        <span className="text-xs text-muted-foreground mr-2">Unsaved changes</span>
         <Button type="submit" disabled={saving} size="sm">
           {saving ? 'Saving...' : 'Save Changes'}
         </Button>
-      </div>
+      </StickyFormFooter>
 
       {/* ── Publish Status Bar ── */}
       <div className="flex items-center justify-between rounded-xl border border-border bg-card p-4">
