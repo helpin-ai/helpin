@@ -398,7 +398,7 @@ export function DocsHome() {
 
       {arrangeMode && (
         <p className="text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/40 rounded-md px-3 py-2 text-center">
-          <span className="font-semibold">Note:</span> Drag and drop to reorder spaces, collections, and articles. Changes to external spaces will be reflected on your public help center.
+          Drag to reorder items within the same group. To move items between collections, use the item's menu.
         </p>
       )}
 
