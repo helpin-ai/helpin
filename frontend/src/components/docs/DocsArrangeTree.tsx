@@ -39,14 +39,23 @@ const MAX_COLLECTION_DEPTH = 1
 
 function SortableItem({ id, children }: { id: string; children: React.ReactNode }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
-  const style = {
+  const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
+    transition: transition ?? 'transform 200ms ease',
     zIndex: isDragging ? 50 : undefined,
+    position: isDragging ? 'relative' as const : undefined,
   }
   return (
-    <div ref={setNodeRef} style={style} {...attributes} className="flex items-center group/sortable">
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      className={`flex items-center group/sortable ${
+        isDragging
+          ? 'rounded-lg bg-card shadow-md ring-1 ring-primary/20'
+          : ''
+      }`}
+    >
       <button
         type="button"
         {...listeners}
