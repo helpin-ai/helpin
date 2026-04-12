@@ -44,7 +44,6 @@ function SortableItem({ id, children }: { id: string; children: React.ReactNode 
     transform: CSS.Transform.toString(transform),
     transition: transition ?? 'transform 200ms ease',
     zIndex: isDragging ? 50 : undefined,
-    position: isDragging ? 'relative' as const : undefined,
   }
   return (
     <div
@@ -53,7 +52,7 @@ function SortableItem({ id, children }: { id: string; children: React.ReactNode 
       {...attributes}
       className={`flex items-center group/sortable ${
         isDragging
-          ? 'rounded-lg bg-card shadow-md ring-1 ring-primary/20'
+          ? 'rounded-md bg-muted/50 shadow-sm'
           : ''
       }`}
     >
