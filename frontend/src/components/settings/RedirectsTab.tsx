@@ -26,6 +26,10 @@ function typeBadge(type: DocsRedirect['type']) {
       return <Badge variant="secondary">Imported</Badge>;
     case 'slug_change':
       return <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-300">Slug Change</Badge>;
+    case 'auto_article_move':
+      return <Badge variant="outline" className="border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-950 dark:text-blue-300">Article Move</Badge>;
+    case 'auto_collection_rename':
+      return <Badge variant="outline" className="border-purple-300 bg-purple-50 text-purple-700 dark:border-purple-700 dark:bg-purple-950 dark:text-purple-300">Collection Rename</Badge>;
     case 'manual':
     default:
       return <Badge variant="default">Manual</Badge>;
@@ -183,9 +187,11 @@ export function RedirectsTab({ workspaceId, editable }: { workspaceId: string; e
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Types</SelectItem>
-                <SelectItem value="imported">Imported</SelectItem>
-                <SelectItem value="slug_change">Slug Change</SelectItem>
                 <SelectItem value="manual">Manual</SelectItem>
+                <SelectItem value="auto_article_move">Article Move</SelectItem>
+                <SelectItem value="auto_collection_rename">Collection Rename</SelectItem>
+                <SelectItem value="slug_change">Slug Change</SelectItem>
+                <SelectItem value="imported">Imported</SelectItem>
               </SelectContent>
             </Select>
             {editable && (

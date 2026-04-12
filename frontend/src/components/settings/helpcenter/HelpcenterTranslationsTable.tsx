@@ -243,14 +243,14 @@ export function HelpcenterTranslationsTable({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="max-w-xl">
+      <div className="space-y-3">
+        <div>
           <h3 className="text-sm font-medium">Translations</h3>
           <p className="mt-1 text-xs text-muted-foreground">
             Translate space and collection names and descriptions for each enabled locale. Slugs are derived from the first saved name and then frozen, so public help-center URLs stay stable.
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex items-center justify-between gap-3">
           <div
             role="tablist"
             aria-label="Translation field"
@@ -293,11 +293,11 @@ export function HelpcenterTranslationsTable({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-muted/30">
-              <th className="sticky left-0 z-10 bg-muted/30 px-3 py-2 text-left text-xs font-medium text-muted-foreground w-[200px]">
+              <th className="sticky left-0 z-10 bg-muted/30 px-3 py-2 text-left text-xs font-medium text-muted-foreground min-w-[280px]">
                 {defaultLocale.toUpperCase()} (source)
               </th>
               {nonDefaultLocales.map((locale) => (
-                <th key={locale} className="px-3 py-2 text-left text-xs font-medium text-muted-foreground min-w-[180px]">
+                <th key={locale} className="px-3 py-2 text-left text-xs font-medium text-muted-foreground min-w-[280px]">
                   {getHelpcenterLocaleLabel(locale)}
                 </th>
               ))}
@@ -542,14 +542,25 @@ function renderCell({
   }
 
   return (
-    <button
-      type="button"
-      disabled={isGenerating}
-      onClick={onGenerate}
-      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors disabled:opacity-50"
-    >
-      {isGenerating ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <PlusSignIcon className="h-3 w-3" />}
-      Generate
-    </button>
+    <div className="flex items-center gap-2">
+      <button
+        type="button"
+        disabled={isGenerating}
+        onClick={onGenerate}
+        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors disabled:opacity-50"
+      >
+        {isGenerating ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <PlusSignIcon className="h-3 w-3" />}
+        Generate
+      </button>
+      <span className="text-muted-foreground/40">|</span>
+      <button
+        type="button"
+        onClick={onStartEdit}
+        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
+      >
+        <PencilEdit02Icon className="h-3 w-3" />
+        Add
+      </button>
+    </div>
   )
 }
