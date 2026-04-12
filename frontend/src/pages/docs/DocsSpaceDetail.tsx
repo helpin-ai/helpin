@@ -10,7 +10,6 @@ import {
   useDocsCollections,
   useDocsDocuments,
   useDeleteDocsCollection,
-  useUpdateDocsSpace,
   useDeleteDocsSpace,
   useArchiveDocsDocument,
   useUnarchiveDocsDocument,
@@ -143,30 +142,8 @@ export function DocsSpaceDetail() {
   }
 
   const deleteCollection = useDeleteDocsCollection(wsId)
-  const updateSpace = useUpdateDocsSpace(wsId)
   const deleteSpace = useDeleteDocsSpace(wsId)
   const [editingCollection, setEditingCollection] = useState<DocsCollection | null>(null)
-
-  // Inline space rename
-  const [renamingSpace, setRenamingSpace] = useState(false)
-  const [spaceNameValue, setSpaceNameValue] = useState('')
-
-  const startRenameSpace = () => {
-    setRenamingSpace(true)
-    setSpaceNameValue(space?.name ?? '')
-  }
-
-  const commitRenameSpace = async () => {
-    setRenamingSpace(false)
-    const name = spaceNameValue.trim()
-    if (!name || !space || name === space.name) return
-    try {
-      await updateSpace.mutateAsync({ id: spaceId, name })
-      toast.success('Space renamed')
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to rename space')
-    }
-  }
 
   // Typed confirm dialog state
   const [confirmDelete, setConfirmDelete] = useState<{
@@ -256,12 +233,6 @@ export function DocsSpaceDetail() {
                   view.kind === 'collection' ? view.node.collection.id : undefined,
               })
         }
-        renamingSpace={renamingSpace}
-        spaceNameValue={spaceNameValue}
-        onStartRenameSpace={startRenameSpace}
-        onSpaceNameChange={setSpaceNameValue}
-        onCommitRenameSpace={commitRenameSpace}
-        onCancelRenameSpace={() => setRenamingSpace(false)}
         onEditSpace={() => setEditSpaceOpen(true)}
         onDeleteSpace={() => setConfirmDelete({ type: 'space', id: spaceId, name: space.name })}
         onEditCollection={

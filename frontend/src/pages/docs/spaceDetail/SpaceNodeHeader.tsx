@@ -43,14 +43,6 @@ export interface SpaceNodeHeaderProps {
    */
   onCreateChildCollection: (() => void) | null
 
-  // Space-level inline rename (only used at space_root)
-  renamingSpace: boolean
-  spaceNameValue: string
-  onStartRenameSpace: () => void
-  onSpaceNameChange: (value: string) => void
-  onCommitRenameSpace: () => void
-  onCancelRenameSpace: () => void
-
   // Space-level overflow actions (space_root only)
   onEditSpace: () => void
   onDeleteSpace: () => void
@@ -75,12 +67,6 @@ export function SpaceNodeHeader({
   onNavigateToCollection,
   onCreateDocument,
   onCreateChildCollection,
-  renamingSpace,
-  spaceNameValue,
-  onStartRenameSpace,
-  onSpaceNameChange,
-  onCommitRenameSpace,
-  onCancelRenameSpace,
   onEditSpace,
   onDeleteSpace,
   onEditCollection,
@@ -180,33 +166,7 @@ export function SpaceNodeHeader({
                 </span>
               ))}
               {titleIcon}
-              {view.kind === 'space_root' && renamingSpace ? (
-                <input
-                  key="space-rename-input"
-                  autoFocus
-                  value={spaceNameValue}
-                  onChange={(event) => onSpaceNameChange(event.target.value)}
-                  onFocus={(event) => event.target.select()}
-                  onBlur={onCommitRenameSpace}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') onCommitRenameSpace()
-                    if (event.key === 'Escape') onCancelRenameSpace()
-                  }}
-                  className="min-w-0 border-b border-primary/40 bg-transparent px-0 py-0 text-lg font-medium outline-none"
-                />
-              ) : (
-                <h1 className="truncate text-lg font-medium">{titleLabel}</h1>
-              )}
-              {view.kind === 'space_root' && canEdit && !renamingSpace && (
-                <button
-                  type="button"
-                  onClick={onStartRenameSpace}
-                  className="rounded p-1 text-muted-foreground/60 opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 focus:opacity-100"
-                  aria-label="Rename space"
-                >
-                  <PencilEdit01Icon className="h-3.5 w-3.5" />
-                </button>
-              )}
+              <h1 className="truncate text-lg font-medium">{titleLabel}</h1>
             </nav>
             {description && (
               <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{description}</p>
