@@ -33,7 +33,7 @@ import { CreateCollectionDialog } from './CreateCollectionDialog'
 
 // Must match maxCollectionDepth in server/internal/service/docs_collection.go.
 // Collections at this depth cannot host any more children.
-const MAX_COLLECTION_DEPTH = 2
+const MAX_COLLECTION_DEPTH = 1
 
 // ── Sortable item wrapper ───────────────────────────────────────────────────
 

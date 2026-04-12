@@ -248,7 +248,7 @@ export function DocsSpaceDetail() {
         })}
         onCreateChildCollection={
           view.kind === 'uncategorized' ||
-          (view.kind === 'collection' && view.node.collection.depth >= 2)
+          (view.kind === 'collection' && view.node.collection.depth >= 1)
             ? null
             : () => openCreate('docs_collection', {
                 spaceId,
@@ -345,7 +345,7 @@ export function DocsSpaceDetail() {
               canEdit={canEditDocs}
               canAddChildCollection={
                 view.kind !== 'uncategorized' &&
-                !(view.kind === 'collection' && view.node.collection.depth >= 2)
+                !(view.kind === 'collection' && view.node.collection.depth >= 1)
               }
               onCreateDocument={() => openCreate('docs_document', {
                 spaceId,
