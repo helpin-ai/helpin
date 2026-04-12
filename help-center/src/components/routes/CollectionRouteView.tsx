@@ -1,6 +1,12 @@
 import { useCallback, useMemo, useState } from 'react'
 import { ArrowRight, Folder, Menu } from 'lucide-react'
 import { DocsLink } from '@/components/DocsLink'
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion'
 import { useCollection, useSpaceNavigation } from '@/hooks/queries'
 import { useDocsContext } from '@/contexts/DocsContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
@@ -15,6 +21,7 @@ import {
   navAncestorChain,
 } from '@/lib/navigation'
 import type { NavTreeNode } from '@/lib/types'
+import { cn } from '@/lib/utils'
 
 interface CollectionRouteViewProps {
   locale: string
@@ -232,27 +239,14 @@ export function CollectionRouteView({
             </h1>
           </header>
 
-          {/* Child collections first — they act as further drilldowns
-              before the direct article list. */}
-          {hasChildren && (
-            <div className="mt-8 grid gap-3 sm:grid-cols-2">
-              {childNodes.map((child) => (
-                <CollectionCard
-                  key={child.item.id}
-                  node={child}
-                  locale={locale}
-                  multilingualEnabled={multilingualEnabled}
-                />
-              ))}
-            </div>
-          )}
-
-          {/* Then direct articles of this collection. */}
+          {/* Direct articles stay as the simplest view: just article rows.
+              When mixed with sub-collections they come first, so the
+              current collection's own content is immediately visible. */}
           {hasArticles && (
-            <div className={hasChildren ? 'mt-10 space-y-3' : 'mt-8 space-y-3'}>
+            <div className={hasChildren ? 'mt-8 space-y-3' : 'mt-8 space-y-3'}>
               {hasChildren && (
                 <h2 className="text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Articles
+                  Articles In This Section
                 </h2>
               )}
               {directArticles.map((article) => (
@@ -280,6 +274,24 @@ export function CollectionRouteView({
             </div>
           )}
 
+          {/* Nested collections are rendered as accordion rows instead of
+              cards so visitors can preview the structure inline without
+              drilling into each child page one by one. */}
+          {hasChildren && (
+            <div className={hasArticles ? 'mt-10 space-y-4' : 'mt-8 space-y-4'}>
+              {hasArticles && (
+                <h2 className="text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Sub-collections
+                </h2>
+              )}
+              <CollectionAccordionList
+                nodes={childNodes}
+                locale={locale}
+                multilingualEnabled={multilingualEnabled}
+              />
+            </div>
+          )}
+
           {!hasChildren && !hasArticles && (
             <div className="py-10 text-sm text-muted-foreground">
               No articles are published in this collection yet.
@@ -288,6 +300,151 @@ export function CollectionRouteView({
         </section>
       </main>
     </div>
+  )
+}
+
+function CollectionAccordionList({
+  nodes,
+  locale,
+  multilingualEnabled,
+  level = 0,
+}: {
+  nodes: NavTreeNode[]
+  locale: string
+  multilingualEnabled: boolean
+  level?: number
+}) {
+  if (nodes.length === 0) return null
+
+  return (
+    <Accordion
+      type="single"
+      collapsible
+      className={cn(level === 0 ? 'rounded-2xl border border-border/70 bg-background' : 'mt-3')}
+    >
+      {nodes.map((node) => (
+        <CollectionAccordionItem
+          key={node.item.id}
+          node={node}
+          locale={locale}
+          multilingualEnabled={multilingualEnabled}
+          level={level}
+        />
+      ))}
+    </Accordion>
+  )
+}
+
+function CollectionAccordionItem({
+  node,
+  locale,
+  multilingualEnabled,
+  level,
+}: {
+  node: NavTreeNode
+  locale: string
+  multilingualEnabled: boolean
+  level: number
+}) {
+  const directArticles = node.item.articles
+  const childNodes = node.children
+  const hasArticles = directArticles.length > 0
+  const hasChildren = childNodes.length > 0
+  const hasExpandableContent = hasArticles || hasChildren
+  const totalArticles = countDescendantArticles(node)
+  const summary = buildCollectionCardSummary(
+    directArticles.length,
+    childNodes.length,
+    totalArticles,
+  )
+
+  if (!hasExpandableContent) {
+    return (
+      <DocsLink
+        to={buildCanonicalCollectionPath(multilingualEnabled, locale, node.item.slug)}
+        className={cn(
+          'group flex items-center justify-between rounded-2xl border border-border/70 px-4 py-4 transition-colors hover:border-primary/30 hover:bg-primary/[0.02]',
+          level > 0 && 'rounded-xl',
+        )}
+      >
+        <div className="min-w-0">
+          <div className="text-sm font-medium text-foreground">{node.item.name}</div>
+          {summary && (
+            <div className="mt-1 text-[12px] text-muted-foreground">{summary}</div>
+          )}
+        </div>
+        <ArrowRight
+          size={16}
+          className="shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+        />
+      </DocsLink>
+    )
+  }
+
+  return (
+    <AccordionItem
+      value={node.item.id}
+      className={cn(
+        'border-b border-border/70 px-2 last:border-b-0',
+        level > 0 && 'rounded-xl border border-border/70 px-0 last:border-b',
+      )}
+    >
+      <AccordionTrigger
+        className={cn(
+          'rounded-xl px-3 py-4 hover:bg-primary/[0.02] hover:no-underline',
+          level > 0 && 'px-4',
+        )}
+      >
+        <div className="flex min-w-0 flex-1 items-center justify-between gap-4 text-left">
+          <div className="min-w-0">
+            <div className="truncate text-sm font-medium text-foreground">
+              {node.item.name}
+            </div>
+            {summary && (
+              <div className="mt-1 text-[12px] text-muted-foreground">{summary}</div>
+            )}
+          </div>
+        </div>
+      </AccordionTrigger>
+
+      <AccordionContent className={cn('px-3 pb-4', level > 0 && 'px-4')}>
+        <div className="border-l border-border/70 pl-4">
+          {hasArticles ? (
+            <div className="space-y-2">
+              {directArticles.map((article) => (
+                <DocsLink
+                  key={article.id}
+                  to={buildCanonicalArticlePath(
+                    multilingualEnabled,
+                    locale,
+                    article.slug,
+                    article.public_id,
+                  )}
+                  className="group flex items-center justify-between rounded-xl px-3 py-3 transition-colors hover:bg-primary/[0.02]"
+                >
+                  <div className="min-w-0">
+                    <div className="text-sm text-foreground">{article.title}</div>
+                  </div>
+                  <ArrowRight
+                    size={16}
+                    className="shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+                  />
+                </DocsLink>
+              ))}
+            </div>
+          ) : null}
+
+          {hasChildren ? (
+            <CollectionAccordionList
+              nodes={childNodes}
+              locale={locale}
+              multilingualEnabled={multilingualEnabled}
+              level={level + 1}
+            />
+          ) : null}
+        </div>
+      </AccordionContent>
+    </AccordionItem>
   )
 }
 
@@ -306,15 +463,7 @@ function CollectionCard({
 }) {
   const articleCount = node.item.articles.length
   const childCount = node.children.length
-  const flattenDescendantArticles = (nodes: NavTreeNode[]): number => {
-    let total = 0
-    for (const n of nodes) {
-      total += n.item.articles.length
-      total += flattenDescendantArticles(n.children)
-    }
-    return total
-  }
-  const totalArticles = articleCount + flattenDescendantArticles(node.children)
+  const totalArticles = countDescendantArticles(node)
   const description = buildCollectionCardSummary(articleCount, childCount, totalArticles)
 
   return (
@@ -335,6 +484,14 @@ function CollectionCard({
       />
     </DocsLink>
   )
+}
+
+function countDescendantArticles(node: NavTreeNode): number {
+  let total = node.item.articles.length
+  for (const child of node.children) {
+    total += countDescendantArticles(child)
+  }
+  return total
 }
 
 /**
