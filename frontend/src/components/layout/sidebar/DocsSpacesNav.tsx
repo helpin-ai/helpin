@@ -100,7 +100,7 @@ function DocsSpaceCollections({
                     size="sm"
                     isActive={isActive(link)}
                     title={option.depth > 0 ? option.path : undefined}
-                    className="pr-6"
+                    className=""
                   >
                     <a
                       href={link}
@@ -136,7 +136,7 @@ function DocsSpaceCollections({
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    className="absolute right-1 flex h-5 w-5 items-center justify-center rounded opacity-0 transition-opacity hover:bg-muted group-hover/collection:opacity-100 data-[state=open]:opacity-100"
+                    className="absolute inset-y-0 right-0 flex w-9 items-center justify-end pr-1.5 opacity-0 transition-opacity bg-gradient-to-l from-sidebar from-65% to-transparent group-hover/collection:opacity-100 data-[state=open]:opacity-100"
                   >
                     <MoreVerticalIcon className="h-3.5 w-3.5 text-muted-foreground" />
                   </button>
@@ -294,7 +294,7 @@ export function DocsSpacesNav({
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className="absolute right-1 flex h-5 w-5 items-center justify-center rounded opacity-0 transition-opacity hover:bg-muted group-hover/space:opacity-100 data-[state=open]:opacity-100"
+                  className="absolute inset-y-0 right-0 flex w-9 items-center justify-end pr-1.5 opacity-0 transition-opacity bg-gradient-to-l from-sidebar from-65% to-transparent group-hover/space:opacity-100 data-[state=open]:opacity-100"
                 >
                   <MoreVerticalIcon className="h-3.5 w-3.5 text-muted-foreground" />
                 </button>
