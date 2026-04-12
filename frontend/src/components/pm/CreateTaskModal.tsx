@@ -843,6 +843,7 @@ export function CreateTaskModal({
                     uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
                     onUploadStateChange={setDescriptionPendingUploads}
                     teams={mentionTeams}
+                    members={assignableMembers}
                     onEditorReady={(editor) => {
                       descriptionEditorRef.current = editor;
                     }}

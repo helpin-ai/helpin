@@ -109,7 +109,7 @@ function MentionChip({ mention }: { mention: MentionMatch }) {
         className={`cursor-pointer font-medium ${
           isTeam
             ? 'rounded-md border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-emerald-700 dark:text-emerald-300'
-            : 'text-blue-600 dark:text-blue-400'
+            : 'rounded-md bg-blue-500/10 px-1 py-0.5 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400'
         }`}
       >
         @{mention.member?.display_name ?? mention.team?.name ?? mention.handle}

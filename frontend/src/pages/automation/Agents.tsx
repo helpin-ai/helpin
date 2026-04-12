@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Collapsible } from 'radix-ui';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import {
   BotIcon,
   ArrowDown01Icon,
@@ -15,6 +16,8 @@ import {
   UserGroupIcon,
   Cancel01Icon,
   ZapIcon,
+  WorkflowSquare01Icon,
+  Loading01Icon,
 } from '@/lib/icons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
@@ -76,6 +79,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { Separator } from '@/components/ui/separator';
 import {
   Command,
   CommandEmpty,
@@ -238,6 +242,31 @@ const CUSTOM_AGENT_TARGET_OPTIONS: Array<{ value: AgentTargetType; label: string
   { value: 'document', label: 'Document', description: 'Run on documents and docs-backed context.' },
   { value: 'support_conversation', label: 'Support Conversation', description: 'Run on support inbox conversations.' },
 ];
+
+function ProviderIcon({ provider, className = 'h-4 w-4' }: { provider: string; className?: string }) {
+  switch (provider) {
+    case 'anthropic':
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M17.304 3.541h-3.672l6.696 16.918h3.672l-6.696-16.918zM6.696 3.541L0 20.459h3.672l1.344-3.541h6.86l1.344 3.541h3.672L10.196 3.541H6.696zm-.672 10.459l2.424-6.391 2.424 6.391H6.024z" />
+        </svg>
+      );
+    case 'openai':
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M22.282 9.821a5.985 5.985 0 0 0-.516-4.91 6.046 6.046 0 0 0-6.51-2.9A6.065 6.065 0 0 0 4.981 4.18a5.998 5.998 0 0 0-3.992 2.9 6.042 6.042 0 0 0 .743 7.097 5.98 5.98 0 0 0 .51 4.911 6.051 6.051 0 0 0 6.515 2.9A5.985 5.985 0 0 0 13.26 24a6.056 6.056 0 0 0 5.772-4.206 5.99 5.99 0 0 0 3.997-2.9 6.056 6.056 0 0 0-.747-7.073zM13.26 22.43a4.476 4.476 0 0 1-2.876-1.04l.141-.081 4.779-2.758a.795.795 0 0 0 .392-.681v-6.737l2.02 1.168a.071.071 0 0 1 .038.052v5.583a4.504 4.504 0 0 1-4.494 4.494zM3.6 18.304a4.47 4.47 0 0 1-.535-3.014l.142.085 4.783 2.759a.771.771 0 0 0 .78 0l5.843-3.369v2.332a.08.08 0 0 1-.033.062L9.74 19.95a4.5 4.5 0 0 1-6.14-1.646zM2.34 7.896a4.485 4.485 0 0 1 2.366-1.973V11.6a.766.766 0 0 0 .388.676l5.815 3.355-2.02 1.168a.076.076 0 0 1-.071 0l-4.83-2.786A4.504 4.504 0 0 1 2.34 7.872zm16.597 3.855l-5.833-3.387L15.119 7.2a.076.076 0 0 1 .071 0l4.83 2.791a4.494 4.494 0 0 1-.676 8.105v-5.678a.79.79 0 0 0-.407-.667zm2.01-3.023l-.141-.085-4.774-2.782a.776.776 0 0 0-.785 0L9.409 9.23V6.897a.066.066 0 0 1 .028-.061l4.83-2.787a4.5 4.5 0 0 1 6.68 4.66zm-12.64 4.135l-2.02-1.164a.08.08 0 0 1-.038-.057V6.075a4.5 4.5 0 0 1 7.375-3.453l-.142.08L8.704 5.46a.795.795 0 0 0-.393.681zm1.097-2.365l2.602-1.5 2.607 1.5v2.999l-2.597 1.5-2.607-1.5z" />
+        </svg>
+      );
+    case 'openrouter':
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
+        </svg>
+      );
+    default:
+      return <BotIcon className={className} />;
+  }
+}
 
 const FALLBACK_PROVIDER_OPTIONS: AgentModelProviderOption[] = [
   {
@@ -601,10 +630,24 @@ function buildSystemAgentForm(agent: Agent, presets: AgentPresetDefinition[]): A
 // Inline helper: label + optional tooltip
 // ---------------------------------------------------------------------------
 
+function SectionHeader({ number, title, description }: { number: string; title: string; description?: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 border-b border-border/60 pb-2">
+      <div className="flex items-baseline gap-2">
+        <span className="text-xs font-medium text-primary/70">{number}</span>
+        <h3 className="text-sm font-semibold">{title}</h3>
+      </div>
+      {description && (
+        <p className="shrink-0 text-xs text-muted-foreground">{description}</p>
+      )}
+    </div>
+  );
+}
+
 function FieldLabel({ htmlFor, children, tooltip }: { htmlFor?: string; children: React.ReactNode; tooltip?: string }) {
   return (
     <div className="flex items-center gap-1.5">
-      <Label htmlFor={htmlFor}>{children}</Label>
+      <Label htmlFor={htmlFor} className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{children}</Label>
       {tooltip && (
         <Tooltip>
           <TooltipTrigger asChild>
@@ -666,27 +709,30 @@ function AgentTriggerPanel({
   };
 
   return (
-    <div className="space-y-4 rounded-md border bg-muted/30 p-3">
-      <div className="space-y-1">
-        <p className="text-sm font-medium">Triggered By</p>
-        <p className="text-[11px] text-muted-foreground">
-          Active triggers and schedules that can start this agent.
-        </p>
+    <div className="rounded-2xl border border-border/60 bg-muted/20 p-5">
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Triggered By</p>
         {usage?.agent_id && (
           <a
             href={resolveTriggerHistoryPath(workspaceSlug, usage.agent_id)}
-            className="inline-flex text-[11px] text-muted-foreground hover:text-foreground"
+            className="text-[11px] text-muted-foreground transition-colors hover:text-foreground"
           >
-            View workspace execution history
+            View history
           </a>
         )}
       </div>
+      <p className="mt-1 text-[11px] text-muted-foreground">
+        Active triggers and schedules that can start this agent.
+      </p>
 
-      <div className="space-y-2">
+      <div className="mt-4 space-y-2">
         {loading ? (
-          <p className="text-sm text-muted-foreground">Loading trigger usage...</p>
+          <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+            <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
+            Loading triggers...
+          </div>
         ) : usage?.items.length ? (
-	          usage.items.map((item) => {
+          usage.items.map((item) => {
             const managePath = resolveManagePath(item.manage_path, workspaceSlug);
             const historyPath = resolveTriggerHistoryPath(workspaceSlug, usage.agent_id, item);
             const removable = item.reference_type === 'automation_rule' && item.reference_id;
@@ -694,78 +740,105 @@ function AgentTriggerPanel({
             const lastSuccess = item.last_success_at ? formatDistanceToNow(new Date(item.last_success_at), { addSuffix: true }) : null;
             const lastError = item.last_error_at ? formatDistanceToNow(new Date(item.last_error_at), { addSuffix: true }) : null;
             return (
-              <div key={item.id} className="flex items-start gap-3 rounded-md border border-border/60 bg-card/70 px-3 py-2">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-sm font-medium">{item.title}</p>
-                    {!item.enabled && <Badge variant="outline">Off</Badge>}
-                    {item.trigger_type && <Badge variant="outline" className="font-mono text-[10px]">{item.trigger_type}</Badge>}
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">{item.description}</p>
-                  {(lastTriggered || lastSuccess || lastError) && (
-                    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-                      {lastTriggered && <span>Last fired {lastTriggered}</span>}
-                      {lastSuccess && <span>Last success {lastSuccess}</span>}
-                      {lastError && <span>Last error {lastError}</span>}
+              <div key={item.id} className="rounded-lg border border-border/60 bg-card px-3 py-2.5">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <ZapIcon className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+                      <p className="text-sm font-medium">{item.title}</p>
+                      {!item.enabled && <Badge variant="outline" className="text-[10px]">Off</Badge>}
+                      {item.trigger_type && <Badge variant="outline" className="font-mono text-[10px]">{item.trigger_type}</Badge>}
                     </div>
-                  )}
-                  {item.last_error && (
-                    <div className="mt-2 rounded-sm border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300">
-                      {item.last_error}
-                    </div>
-                  )}
-                  {item.recent_executions && item.recent_executions.length > 0 && (
-                    <div className="mt-3 space-y-1.5">
-                      <p className="text-[11px] font-medium text-muted-foreground">Recent executions</p>
-                      {item.recent_executions.map((execution) => (
-                        <div key={execution.execution_id} className="flex flex-wrap items-center gap-2 rounded-sm border border-border/50 px-2 py-1 text-[11px]">
-                          <Badge variant="outline" className="text-[10px] capitalize">{execution.status}</Badge>
-                          <span className="text-muted-foreground">
-                            {formatDistanceToNow(new Date(execution.fired_at), { addSuffix: true })}
-                          </span>
-                          <span className="font-mono text-muted-foreground">{execution.target_type || 'unknown'}</span>
-                          {execution.error_message && (
-                            <span className="truncate text-rose-600 dark:text-rose-400">{execution.error_message}</span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <div className="mt-2 flex flex-wrap gap-3">
-                    <a href={historyPath} className="inline-flex text-[11px] text-muted-foreground hover:text-foreground">
-                      History
-                    </a>
-                    {managePath && (
-                      <a href={managePath} className="inline-flex text-[11px] text-muted-foreground hover:text-foreground">
-                        Manage
-                      </a>
+                    {item.description && (
+                      <p className="mt-1 pl-[1.375rem] text-xs text-muted-foreground">{item.description}</p>
                     )}
+                    {(lastTriggered || lastSuccess || lastError) && (
+                      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 pl-[1.375rem] text-[11px] text-muted-foreground">
+                        {lastTriggered && <span>Fired {lastTriggered}</span>}
+                        {lastSuccess && <span className="text-emerald-600 dark:text-emerald-400">Success {lastSuccess}</span>}
+                        {lastError && <span className="text-rose-600 dark:text-rose-400">Error {lastError}</span>}
+                      </div>
+                    )}
+                    {item.last_error && (
+                      <div className="mt-2 ml-[1.375rem] rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-[11px] text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300">
+                        {item.last_error}
+                      </div>
+                    )}
+                    {item.recent_executions && item.recent_executions.length > 0 && (
+                      <div className="mt-3 ml-[1.375rem] space-y-1.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Recent</p>
+                        {item.recent_executions.map((execution) => (
+                          <div key={execution.execution_id} className="flex flex-wrap items-center gap-2 text-[11px]">
+                            <span className={cn(
+                              'inline-block h-1.5 w-1.5 rounded-full',
+                              execution.status === 'completed' ? 'bg-emerald-500' : execution.status === 'failed' ? 'bg-rose-500' : 'bg-amber-500',
+                            )} />
+                            <span className="capitalize">{execution.status}</span>
+                            <span className="text-muted-foreground">
+                              {formatDistanceToNow(new Date(execution.fired_at), { addSuffix: true })}
+                            </span>
+                            {execution.error_message && (
+                              <span className="truncate text-rose-600 dark:text-rose-400">{execution.error_message}</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="mt-2 flex flex-wrap gap-3 pl-[1.375rem]">
+                      <a href={historyPath} className="text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
+                        History
+                      </a>
+                      {managePath && (
+                        <a href={managePath} className="text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
+                          Manage
+                        </a>
+                      )}
+                    </div>
                   </div>
+                  {removable ? (
+                    <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" onClick={() => handleDeleteRule(item.reference_id!)}>
+                      Remove
+                    </Button>
+                  ) : null}
                 </div>
-                {removable ? (
-                  <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => handleDeleteRule(item.reference_id!)}>
-                    Remove
-                  </Button>
-                ) : null}
               </div>
             );
           })
         ) : (
-          <p className="text-sm text-muted-foreground">No active inbound triggers beyond manual runs.</p>
+          /* Empty state */
+          <div className="flex flex-col items-center py-5 text-center">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
+              <ZapIcon className="h-5 w-5 text-muted-foreground/60" />
+            </div>
+            <p className="mt-2.5 text-sm font-medium text-muted-foreground">No active triggers</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground/70">
+              Only manual runs can start this agent.
+            </p>
+            {workspaceSlug && (
+              <a
+                href={buildAutomationFlowsPath(workspaceSlug)}
+                className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-border/60 px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted"
+              >
+                <WorkflowSquare01Icon className="h-3.5 w-3.5" />
+                Open Automation Flows
+              </a>
+            )}
+          </div>
         )}
       </div>
 
-      <div className="rounded-md border border-border/60 bg-card/70 p-3 text-[11px] text-muted-foreground">
-        Create or update GitHub and other event-driven flows from the Automation flows surface.
-        {workspaceSlug && (
-          <>
-            {' '}
-            <a href={buildAutomationFlowsPath(workspaceSlug)} className="text-foreground underline underline-offset-2">
-              Open flows
-            </a>
-          </>
-        )}
-      </div>
+      {/* Show flows link when there ARE triggers too */}
+      {usage?.items.length && workspaceSlug ? (
+        <div className="mt-3 border-t border-border/40 pt-3 text-center">
+          <a
+            href={buildAutomationFlowsPath(workspaceSlug)}
+            className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <WorkflowSquare01Icon className="h-3 w-3" />
+            Manage flows
+          </a>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1668,7 +1741,7 @@ export function AgentsPage() {
 
             <div className="min-h-0 overflow-y-auto px-6 py-6">
               <div className="space-y-6">
-                <section className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+                <section className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 dark:bg-amber-900/10">
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div className="space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
@@ -1691,15 +1764,15 @@ export function AgentsPage() {
                     <div className="flex flex-wrap gap-2">
                       <Button
                         type="button"
-                        variant="outline"
                         size="sm"
+                        variant="outline"
                         onClick={() => {
                           setVersionDraftOpen(true);
                           setVersionLabelDraft(`${selectedPreset?.version_label ?? 'Version'} Copy`);
                           setVersionDescriptionDraft(selectedPreset?.description ?? '');
                         }}
                       >
-                        Duplicate as workspace version
+                        Duplicate to workspace
                       </Button>
                     </div>
                   </div>
@@ -1716,7 +1789,7 @@ export function AgentsPage() {
                       </div>
                       <div className="grid gap-4 md:grid-cols-2">
                         <div className="space-y-2">
-                          <FieldLabel htmlFor="preset-version-label">Version label</FieldLabel>
+                          <FieldLabel htmlFor="preset-version-label">Version Label</FieldLabel>
                           <Input
                             id="preset-version-label"
                             value={versionLabelDraft}
@@ -1765,192 +1838,233 @@ export function AgentsPage() {
                 )}
 
                 <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_18rem]">
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <FieldLabel htmlFor="agent-system-prompt">System instructions</FieldLabel>
-                      <Textarea
-                        id="agent-system-prompt"
-                        value={form.system_prompt}
-                        onChange={(e) => setForm((current) => ({ ...current, system_prompt: e.target.value }))}
-                        disabled={systemVersionReadOnly}
-                        placeholder="Agent instructions"
-                        rows={8}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        {systemVersionReadOnly
-                          ? 'Select a version to inspect it. Duplicate it to create an editable workspace copy.'
-                          : 'You are editing a workspace version draft.'}
-                      </p>
+                  <div className="space-y-6">
+                    {/* 01 — System Instructions */}
+                    <div className="space-y-3">
+                      <SectionHeader number="01" title="System Instructions" description="Shown to the model on every turn" />
+                      <div className="rounded-xl border border-border/60 bg-card p-4">
+                        {systemVersionReadOnly && (
+                          <div className="mb-3 flex items-center justify-between">
+                            <p className="text-xs font-mono text-muted-foreground">system-prompt</p>
+                            <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">Read-only</span>
+                          </div>
+                        )}
+                        <Textarea
+                          id="agent-system-prompt"
+                          value={form.system_prompt}
+                          onChange={(e) => setForm((current) => ({ ...current, system_prompt: e.target.value }))}
+                          disabled={systemVersionReadOnly}
+                          placeholder="Agent instructions"
+                          rows={8}
+                          className="border-0 bg-transparent p-0 shadow-none focus-visible:ring-0"
+                        />
+                        <p className="mt-3 text-xs text-muted-foreground">
+                          {systemVersionReadOnly
+                            ? 'Select a version to inspect it. Duplicate it to create an editable workspace copy.'
+                            : 'You are editing a workspace version draft.'}
+                        </p>
+                      </div>
                     </div>
 
-                    {/* Interactive mode — full width, first */}
-                    <div className="rounded-xl border border-border/60 bg-card p-3">
-                      <label className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-medium">Interactive mode</p>
-                          <p className="text-xs text-muted-foreground">
-                            {supportedModesForForm(form.runtime_kind).includes('interactive')
-                              ? 'On opens a live back-and-forth run. Off runs autonomously end-to-end.'
-                              : 'This runtime only supports autonomous runs.'}
-                          </p>
-                        </div>
-                        <Switch
-                          checked={form.default_invocation_mode === 'interactive'}
-                          disabled={systemVersionReadOnly || !supportedModesForForm(form.runtime_kind).includes('interactive')}
-                          onCheckedChange={(isInteractive) => {
-                            setForm((current) => ({
-                              ...current,
-                              supported_modes: [isInteractive ? 'interactive' : 'autonomous'],
-                              default_invocation_mode: isInteractive ? 'interactive' : 'autonomous',
-                            }));
-                          }}
-                        />
-                      </label>
-                    </div>
-
-                    <div className="grid gap-x-3 gap-y-3 md:grid-cols-2">
-                      <div className="space-y-1.5">
-                        <FieldLabel>Execution engine</FieldLabel>
-                        <Select
-                          value={form.runtime_kind}
-                          disabled={systemVersionReadOnly}
-                          onValueChange={(value) =>
-                            setForm((current) => {
-                              const runtimeKind = value as AgentRuntimeKind;
-                              const nextSupportedModes = supportedModesForForm(runtimeKind);
-                              const nextDefaultMode = nextSupportedModes.includes(current.default_invocation_mode)
-                                ? current.default_invocation_mode
-                                : nextSupportedModes[0];
-                              return {
-                                ...current,
-                                runtime_kind: runtimeKind,
-                                supported_modes: nextSupportedModes,
-                                provider: normalizeProviderForRuntime(runtimeKind, current.provider),
-                                ...deriveExecutionConfigFields(
-                                  runtimeKind,
-                                  normalizeProviderForRuntime(runtimeKind, current.provider),
-                                  buildExecutionConfigPayload(current),
-                                ),
-                                default_invocation_mode: nextDefaultMode,
-                              };
-                            })
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {RUNTIME_KIND_OPTIONS
-                              .filter((runtimeKind) => availableRuntimeKinds.includes(runtimeKind))
-                              .map((runtimeKind) => (
-                                <SelectItem key={runtimeKind} value={runtimeKind}>
-                                  {AGENT_RUNTIME_LABELS[runtimeKind]}
-                                </SelectItem>
-                              ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <FieldLabel>AI Provider</FieldLabel>
-                        <Select
-                          value={form.provider}
-                          disabled={systemVersionReadOnly}
-                          onValueChange={(value) =>
-                            setForm((current) => {
-                              const provider = normalizeProviderForRuntime(current.runtime_kind, value as AgentModelProvider);
-                              return {
-                                ...current,
-                                provider,
-                                ...deriveExecutionConfigFields(current.runtime_kind, provider, buildExecutionConfigPayload(current)),
-                              };
-                            })
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {visibleProviderOptions.map((provider) => (
-                              <SelectItem key={provider.value} value={provider.value}>
-                                {provider.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <FieldLabel htmlFor="system-agent-model">Model</FieldLabel>
-                        <Input
-                          id="system-agent-model"
-                          value={form.model}
-                          disabled={systemVersionReadOnly}
-                          onChange={(e) => setForm((current) => ({ ...current, model: e.target.value }))}
-                          placeholder={selectedProviderOption?.model_placeholder ?? 'Auto'}
-                        />
-                      </div>
-
-                      {supportsReasoningEffort && (
-                        <div className="space-y-1.5">
-                          <FieldLabel>Reasoning effort</FieldLabel>
-                          <Select
-                            value={form.reasoning_effort || '_default'}
-                            disabled={systemVersionReadOnly}
-                            onValueChange={(value) =>
+                    {/* 02 — Run Mode */}
+                    <div className="space-y-3">
+                      <SectionHeader number="02" title="Run Mode" />
+                      <div className="rounded-xl border border-border/60 bg-card px-4 py-3">
+                        <label className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-medium">Interactive mode</p>
+                            <p className="text-xs text-muted-foreground">
+                              {supportedModesForForm(form.runtime_kind).includes('interactive')
+                                ? 'On \u2014 opens a live back-and-forth run. Off \u2014 runs autonomously end-to-end.'
+                                : 'This runtime only supports autonomous runs.'}
+                            </p>
+                          </div>
+                          <Switch
+                            checked={form.default_invocation_mode === 'interactive'}
+                            disabled={systemVersionReadOnly || !supportedModesForForm(form.runtime_kind).includes('interactive')}
+                            onCheckedChange={(isInteractive) => {
                               setForm((current) => ({
                                 ...current,
-                                reasoning_effort: value === '_default' ? '' : value as AgentReasoningEffort,
-                              }))
-                            }
-                          >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="_default">Model default</SelectItem>
-                              {(selectedProviderOption?.supported_reasoning_efforts ?? REASONING_EFFORT_OPTIONS).map((effort) => (
-                                <SelectItem key={effort} value={effort}>
-                                  {effort}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      )}
-
-                      {supportsServiceTier && (
-                        <div className="space-y-1.5">
-                          <FieldLabel>Service tier</FieldLabel>
-                          <Select
-                            value={form.service_tier || '_default'}
-                            disabled={systemVersionReadOnly}
-                            onValueChange={(value) =>
-                              setForm((current) => ({
-                                ...current,
-                                service_tier: value === '_default' ? '' : value as AgentServiceTier,
-                              }))
-                            }
-                          >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="_default">Provider default</SelectItem>
-                              {(selectedProviderOption?.supported_service_tiers ?? SERVICE_TIER_OPTIONS).map((tier) => (
-                                <SelectItem key={tier} value={tier}>
-                                  {tier}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      )}
+                                supported_modes: [isInteractive ? 'interactive' : 'autonomous'],
+                                default_invocation_mode: isInteractive ? 'interactive' : 'autonomous',
+                              }));
+                            }}
+                          />
+                        </label>
+                      </div>
                     </div>
 
-                    <div className="space-y-2">
+                    {/* 03 — Execution */}
+                    <div className="space-y-3">
+                      <SectionHeader number="03" title="Execution" description="Runtime, model and inference settings" />
+                      {systemVersionReadOnly && (
+                        <p className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-700 dark:bg-amber-900/10 dark:text-amber-400">
+                          These settings are locked to this version. Duplicate to workspace to create an editable copy with a new version.
+                        </p>
+                      )}
+                      <div className="rounded-xl border border-border/60 bg-card p-5">
+                        <div className="grid gap-5 md:grid-cols-2">
+                          <div className="space-y-2">
+                            <FieldLabel>Execution Engine</FieldLabel>
+                            <Select
+                              value={form.runtime_kind}
+                              disabled={systemVersionReadOnly}
+                              onValueChange={(value) =>
+                                setForm((current) => {
+                                  const runtimeKind = value as AgentRuntimeKind;
+                                  const nextSupportedModes = supportedModesForForm(runtimeKind);
+                                  const nextDefaultMode = nextSupportedModes.includes(current.default_invocation_mode)
+                                    ? current.default_invocation_mode
+                                    : nextSupportedModes[0];
+                                  return {
+                                    ...current,
+                                    runtime_kind: runtimeKind,
+                                    supported_modes: nextSupportedModes,
+                                    provider: normalizeProviderForRuntime(runtimeKind, current.provider),
+                                    ...deriveExecutionConfigFields(
+                                      runtimeKind,
+                                      normalizeProviderForRuntime(runtimeKind, current.provider),
+                                      buildExecutionConfigPayload(current),
+                                    ),
+                                    default_invocation_mode: nextDefaultMode,
+                                  };
+                                })
+                              }
+                            >
+                              <SelectTrigger className="h-9">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {RUNTIME_KIND_OPTIONS
+                                  .filter((runtimeKind) => availableRuntimeKinds.includes(runtimeKind))
+                                  .map((runtimeKind) => (
+                                    <SelectItem key={runtimeKind} value={runtimeKind}>
+                                      {AGENT_RUNTIME_LABELS[runtimeKind]}
+                                    </SelectItem>
+                                  ))}
+                              </SelectContent>
+                            </Select>
+                            <p className="text-[11px] leading-relaxed text-muted-foreground">Sandbox + tool runtime used to execute the agent.</p>
+                          </div>
+
+                          <div className="space-y-2">
+                            <FieldLabel>AI Provider</FieldLabel>
+                            <Select
+                              value={form.provider}
+                              disabled={systemVersionReadOnly}
+                              onValueChange={(value) =>
+                                setForm((current) => {
+                                  const provider = normalizeProviderForRuntime(current.runtime_kind, value as AgentModelProvider);
+                                  return {
+                                    ...current,
+                                    provider,
+                                    ...deriveExecutionConfigFields(current.runtime_kind, provider, buildExecutionConfigPayload(current)),
+                                  };
+                                })
+                              }
+                            >
+                              <SelectTrigger className="h-9">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {visibleProviderOptions.map((provider) => (
+                                  <SelectItem key={provider.value} value={provider.value}>
+                                    <span className="flex items-center gap-2">
+                                      <ProviderIcon provider={provider.value} className="h-3.5 w-3.5 shrink-0" />
+                                      {provider.label}
+                                    </span>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <p className="text-[11px] leading-relaxed text-muted-foreground">LLM vendor powering this engine.</p>
+                          </div>
+                        </div>
+
+                        <Separator className="my-5" />
+
+                        <div className="grid gap-5 md:grid-cols-2">
+                          <div className="space-y-2">
+                            <FieldLabel htmlFor="system-agent-model">Model</FieldLabel>
+                            <Input
+                              id="system-agent-model"
+                              value={form.model}
+                              disabled={systemVersionReadOnly}
+                              onChange={(e) => setForm((current) => ({ ...current, model: e.target.value }))}
+                              placeholder={selectedProviderOption?.model_placeholder ?? 'Auto'}
+                              className="h-9"
+                            />
+                            <p className="text-[11px] leading-relaxed text-muted-foreground">The language model that powers this agent.</p>
+                          </div>
+
+                          {supportsReasoningEffort && (
+                            <div className="space-y-2">
+                              <FieldLabel>Reasoning Effort</FieldLabel>
+                              <Select
+                                value={form.reasoning_effort || '_default'}
+                                disabled={systemVersionReadOnly}
+                                onValueChange={(value) =>
+                                  setForm((current) => ({
+                                    ...current,
+                                    reasoning_effort: value === '_default' ? '' : value as AgentReasoningEffort,
+                                  }))
+                                }
+                              >
+                                <SelectTrigger className="h-9 capitalize">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="_default">Model default</SelectItem>
+                                  {(selectedProviderOption?.supported_reasoning_efforts ?? REASONING_EFFORT_OPTIONS).map((effort) => (
+                                    <SelectItem key={effort} value={effort} className="capitalize">
+                                      {effort}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <p className="text-[11px] leading-relaxed text-muted-foreground">How hard the model thinks before responding.</p>
+                            </div>
+                          )}
+
+                          {supportsServiceTier && (
+                            <div className="space-y-2">
+                              <FieldLabel>Service Tier</FieldLabel>
+                              <Select
+                                value={form.service_tier || '_default'}
+                                disabled={systemVersionReadOnly}
+                                onValueChange={(value) =>
+                                  setForm((current) => ({
+                                    ...current,
+                                    service_tier: value === '_default' ? '' : value as AgentServiceTier,
+                                  }))
+                                }
+                              >
+                                <SelectTrigger className="h-9 capitalize">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="_default">Provider default</SelectItem>
+                                  {(selectedProviderOption?.supported_service_tiers ?? SERVICE_TIER_OPTIONS).map((tier) => (
+                                    <SelectItem key={tier} value={tier} className="capitalize">
+                                      {tier}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <p className="text-[11px] leading-relaxed text-muted-foreground">Fast lanes prioritize latency over cost.</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 04 — Allowed Tools */}
+                    <div className="space-y-3">
+                      <SectionHeader number="04" title="Allowed Tools" description="Capabilities the agent may invoke during a run" />
                       <div className="flex items-center justify-between gap-2">
-                        <FieldLabel>Allowed tools</FieldLabel>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <span className="font-medium">{form.allowed_tools.length} enabled</span>
+                        </div>
                         <Popover open={toolPickerOpen} onOpenChange={setToolPickerOpen}>
                           <PopoverTrigger asChild>
                             <Button
@@ -1996,77 +2110,203 @@ export function AgentsPage() {
                           </PopoverContent>
                         </Popover>
                       </div>
-                      <div className="flex max-h-44 flex-wrap gap-1.5 overflow-y-auto rounded-xl border border-border/60 bg-card p-3">
-                        {form.allowed_tools.length > 0 ? form.allowed_tools.map((tool) => (
-                          <Badge key={tool} variant="secondary" className="gap-1 pr-1 font-mono text-[11px]">
-                            <span>{tool}</span>
-                            {versionDraftOpen && !codexUsesPresetCapabilities && (
-                              <button
-                                type="button"
-                                className="rounded-sm p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
-                                onClick={() => removeTool(tool)}
-                                aria-label={`Remove ${tool}`}
-                              >
-                                <Cancel01Icon className="h-3 w-3" />
-                              </button>
-                            )}
-                          </Badge>
-                        )) : (
-                          <span className="text-sm text-muted-foreground">No tools configured</span>
-                        )}
-                      </div>
+                      {form.allowed_tools.length > 0 ? (
+                        <div className="space-y-3">
+                          {(toolCatalog?.categories ?? []).map((category) => {
+                            const categoryTools = form.allowed_tools.filter((toolName) => {
+                              const entry = toolCatalogEntries.find((t) => t.name === toolName);
+                              return entry?.category === category;
+                            });
+                            if (categoryTools.length === 0) return null;
+                            return (
+                              <div key={category}>
+                                <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">{category}</p>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {categoryTools.map((tool) => (
+                                    <Badge key={tool} variant="secondary" className="gap-1 pr-1 font-mono text-[11px]">
+                                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                                      <span>{tool}</span>
+                                      {versionDraftOpen && !codexUsesPresetCapabilities && (
+                                        <button
+                                          type="button"
+                                          className="rounded-sm p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                                          onClick={() => removeTool(tool)}
+                                          aria-label={`Remove ${tool}`}
+                                        >
+                                          <Cancel01Icon className="h-3 w-3" />
+                                        </button>
+                                      )}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })}
+                          {/* Tools without a matching category */}
+                          {form.allowed_tools.filter((toolName) => {
+                            const entry = toolCatalogEntries.find((t) => t.name === toolName);
+                            return !entry || !(toolCatalog?.categories ?? []).includes(entry.category);
+                          }).length > 0 && (
+                            <div>
+                              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Other</p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {form.allowed_tools.filter((toolName) => {
+                                  const entry = toolCatalogEntries.find((t) => t.name === toolName);
+                                  return !entry || !(toolCatalog?.categories ?? []).includes(entry.category);
+                                }).map((tool) => (
+                                  <Badge key={tool} variant="secondary" className="gap-1 pr-1 font-mono text-[11px]">
+                                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                                    <span>{tool}</span>
+                                    {versionDraftOpen && !codexUsesPresetCapabilities && (
+                                      <button
+                                        type="button"
+                                        className="rounded-sm p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                                        onClick={() => removeTool(tool)}
+                                        aria-label={`Remove ${tool}`}
+                                      >
+                                        <Cancel01Icon className="h-3 w-3" />
+                                      </button>
+                                    )}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">No tools configured</p>
+                      )}
                     </div>
                   </div>
 
                   <div className="space-y-4">
-                    <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
-                      <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Effective configuration</p>
-                      <div className="mt-4 space-y-4">
-                        <div>
-                          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Runtime</p>
-                          <p className="mt-1 text-sm">{AGENT_RUNTIME_LABELS[form.runtime_kind] ?? form.runtime_kind}</p>
-                        </div>
-                        <div>
-                          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Targets</p>
-                          <div className="mt-2 flex flex-wrap gap-1.5">
-                            {effectiveTargets.length > 0 ? effectiveTargets.map((target) => (
-                              <Badge key={target} variant="outline" className="text-[11px]">
-                                {target}
-                              </Badge>
-                            )) : (
-                              <span className="text-sm text-muted-foreground">No targets</span>
-                            )}
+                    <div className="rounded-2xl border border-border/60 bg-muted/20 p-5">
+                      <div className="flex items-center gap-2">
+                        <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Effective Configuration</p>
+                      </div>
+
+                      {/* Key-value table */}
+                      <div className="mt-4 space-y-2.5 text-sm">
+                        {([
+                          ['Runtime', AGENT_RUNTIME_LABELS[form.runtime_kind] ?? form.runtime_kind],
+                          ['Model', form.model || 'Auto'],
+                          ...(supportsReasoningEffort ? [['Reasoning', form.reasoning_effort || 'Default']] : []),
+                          ...(supportsServiceTier ? [['Tier', form.service_tier || 'Default']] : []),
+                          ['Tools', `${form.allowed_tools.length} enabled`],
+                        ] as [string, string][]).map(([label, value]) => (
+                          <div key={label} className="flex items-center justify-between">
+                            <span className="text-muted-foreground">{label}</span>
+                            <span className="font-medium">{value}</span>
                           </div>
+                        ))}
+                      </div>
+
+                      {/* Targets */}
+                      <div className="mt-5">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Targets</p>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {effectiveTargets.length > 0 ? effectiveTargets.map((target) => (
+                            <Badge key={target} variant="outline" className="text-[11px]">
+                              {target}
+                            </Badge>
+                          )) : (
+                            <span className="text-xs text-muted-foreground">No targets</span>
+                          )}
                         </div>
-                        <div>
-                          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Supported modes</p>
-                          <div className="mt-2 flex flex-wrap gap-1.5">
-                            {supportedModes.map((mode) => (
-                              <Badge key={mode} variant="outline" className="text-[11px]">
-                                {INVOCATION_MODE_LABELS[mode]}
-                              </Badge>
-                            ))}
-                          </div>
+                      </div>
+
+                      {/* Supported Modes */}
+                      <div className="mt-4">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Supported Modes</p>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {supportedModes.map((mode) => (
+                            <Badge key={mode} variant="outline" className="text-[11px]">
+                              {INVOCATION_MODE_LABELS[mode]}
+                            </Badge>
+                          ))}
                         </div>
                       </div>
                     </div>
 
-                    <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
-                      <div className="space-y-2">
-                        <FieldLabel htmlFor="agent-budget">Monthly usage limit</FieldLabel>
+                    {/* Monthly Usage Limit */}
+                    <div className="rounded-2xl border border-border/60 bg-muted/20 p-5">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Monthly Usage Limit</p>
+
+                      {/* Preset quick-select */}
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {[
+                          { label: 'No Limit', value: '' },
+                          { label: '$50', value: '50' },
+                          { label: '$100', value: '100' },
+                          { label: '$250', value: '250' },
+                          { label: '$500', value: '500' },
+                          { label: '$1,000', value: '1000' },
+                        ].map((preset) => {
+                          const isActive = form.monthly_token_budget === preset.value;
+                          return (
+                            <button
+                              key={preset.value}
+                              type="button"
+                              onClick={() => setForm((current) => ({ ...current, monthly_token_budget: preset.value }))}
+                              className={cn(
+                                'rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors',
+                                isActive
+                                  ? 'border-primary bg-primary/10 text-primary'
+                                  : 'border-border/60 text-muted-foreground hover:border-border hover:text-foreground',
+                              )}
+                            >
+                              {preset.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Custom input */}
+                      <div className="mt-3">
                         <Input
                           id="agent-budget"
                           type="number"
                           value={form.monthly_token_budget}
                           onChange={(e) => setForm((current) => ({ ...current, monthly_token_budget: e.target.value }))}
-                          placeholder="No limit"
+                          placeholder="Custom amount..."
+                          className="h-8 text-xs"
                         />
-                        <p className="text-xs text-muted-foreground">
-                          This applies to the built-in agent itself, not to the preset version.
-                        </p>
                       </div>
+
+                      {/* Progress bar — usage vs limit */}
+                      {editingAgent && (
+                        <div className="mt-3">
+                          {(() => {
+                            const used = editingAgent.tokens_used_this_month ?? 0;
+                            const budget = form.monthly_token_budget ? Number.parseInt(form.monthly_token_budget, 10) : 0;
+                            const pct = budget > 0 ? Math.min(100, Math.round((used / budget) * 100)) : 0;
+                            return (
+                              <>
+                                {budget > 0 && (
+                                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                                    <div
+                                      className={cn(
+                                        'h-full rounded-full transition-all',
+                                        pct >= 90 ? 'bg-destructive' : pct >= 70 ? 'bg-amber-500' : 'bg-primary',
+                                      )}
+                                      style={{ width: `${pct}%` }}
+                                    />
+                                  </div>
+                                )}
+                                <p className="mt-1.5 text-[11px] text-muted-foreground">
+                                  {budget > 0
+                                    ? `$${used.toLocaleString()} of $${budget.toLocaleString()} used this cycle (${pct}%)`
+                                    : `$${used.toLocaleString()} spent this cycle. Applies to the built-in agent, not the preset version.`}
+                                </p>
+                              </>
+                            );
+                          })()}
+                        </div>
+                      )}
                     </div>
 
+                    {/* Triggers */}
                     {editingAgent && (
                       <AgentTriggerPanel
                         workspaceId={workspaceId}
@@ -2219,145 +2459,159 @@ export function AgentsPage() {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <FieldLabel tooltip="The execution engine that runs this agent.">
-                  Execution engine
-                </FieldLabel>
-                <Select
-                  value={form.runtime_kind}
-                  onValueChange={(value) =>
-                    setForm((current) => {
-                      const runtimeKind = value as AgentRuntimeKind;
-                      if (!availableRuntimeKinds.includes(runtimeKind)) {
-                        return current;
-                      }
-                      return {
+            <div className="rounded-xl border border-border/60 bg-card p-5">
+              <div className="grid gap-5 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <FieldLabel tooltip="The execution engine that runs this agent.">
+                    Execution engine
+                  </FieldLabel>
+                  <Select
+                    value={form.runtime_kind}
+                    onValueChange={(value) =>
+                      setForm((current) => {
+                        const runtimeKind = value as AgentRuntimeKind;
+                        if (!availableRuntimeKinds.includes(runtimeKind)) {
+                          return current;
+                        }
+                        return {
+                          ...current,
+                          runtime_kind: runtimeKind,
+                          supported_modes: supportedModesForForm(runtimeKind),
+                          provider: normalizeProviderForRuntime(runtimeKind, current.provider),
+                          ...deriveExecutionConfigFields(
+                            runtimeKind,
+                            normalizeProviderForRuntime(runtimeKind, current.provider),
+                            buildExecutionConfigPayload(current),
+                          ),
+                          default_invocation_mode: normalizeDefaultInvocationMode(
+                            current.default_invocation_mode,
+                            runtimeKind,
+                            'autonomous',
+                          ),
+                        };
+                      })
+                    }
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {RUNTIME_KIND_OPTIONS
+                        .filter((runtimeKind) => availableRuntimeKinds.includes(runtimeKind))
+                        .map((runtimeKind) => (
+                          <SelectItem key={runtimeKind} value={runtimeKind}>
+                            {AGENT_RUNTIME_LABELS[runtimeKind]}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] leading-relaxed text-muted-foreground">Sandbox + tool runtime used to execute the agent.</p>
+                </div>
+
+                <div className="space-y-2">
+                  <FieldLabel tooltip="This agent owns its default run mode. Launchers should not decide whether it is interactive or autonomous.">
+                    Default run mode
+                  </FieldLabel>
+                  <Select
+                    value={form.default_invocation_mode}
+                    onValueChange={(value) =>
+                      setForm((current) => ({
                         ...current,
-                        runtime_kind: runtimeKind,
-                        supported_modes: supportedModesForForm(runtimeKind),
-                        provider: normalizeProviderForRuntime(runtimeKind, current.provider),
-                        ...deriveExecutionConfigFields(
-                          runtimeKind,
-                          normalizeProviderForRuntime(runtimeKind, current.provider),
-                          buildExecutionConfigPayload(current),
-                        ),
-                        default_invocation_mode: normalizeDefaultInvocationMode(
-                          current.default_invocation_mode,
-                          runtimeKind,
-                          'autonomous',
-                        ),
-                      };
-                    })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {RUNTIME_KIND_OPTIONS
-                      .filter((runtimeKind) => availableRuntimeKinds.includes(runtimeKind))
-                      .map((runtimeKind) => (
-                        <SelectItem key={runtimeKind} value={runtimeKind}>
-                          {AGENT_RUNTIME_LABELS[runtimeKind]}
+                        default_invocation_mode: value as AgentInvocationMode,
+                      }))
+                    }
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {supportedModes.map((mode) => (
+                        <SelectItem key={mode} value={mode}>
+                          {INVOCATION_MODE_LABELS[mode]}
                         </SelectItem>
                       ))}
-                  </SelectContent>
-                </Select>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] leading-relaxed text-muted-foreground">
+                    {form.default_invocation_mode === 'interactive'
+                      ? 'New runs open as a live chat and can ask follow-up questions before acting.'
+                      : 'New runs execute autonomously unless you open the run drawer to inspect them.'}
+                  </p>
+                </div>
               </div>
 
-              <div className="space-y-2">
-                <FieldLabel tooltip="This agent owns its default run mode. Launchers should not decide whether it is interactive or autonomous.">
-                  Default run mode
-                </FieldLabel>
-                <Select
-                  value={form.default_invocation_mode}
-                  onValueChange={(value) =>
-                    setForm((current) => ({
-                      ...current,
-                      default_invocation_mode: value as AgentInvocationMode,
-                    }))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {supportedModes.map((mode) => (
-                      <SelectItem key={mode} value={mode}>
-                        {INVOCATION_MODE_LABELS[mode]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-[11px] text-muted-foreground">
-                  {form.default_invocation_mode === 'interactive'
-                    ? 'New runs open as a live chat and can ask follow-up questions before acting.'
-                    : 'New runs execute autonomously unless you open the run drawer to inspect them.'}
-                </p>
-              </div>
-              <div className="space-y-2">
-                <FieldLabel tooltip="The AI service that powers this agent.">AI Provider</FieldLabel>
-                <Select
-                  value={form.provider}
-                  onValueChange={(value) =>
-                    setForm((current) => {
-                      const provider = normalizeProviderForRuntime(current.runtime_kind, value as AgentModelProvider);
-                      return {
-                        ...current,
-                        provider,
-                        ...deriveExecutionConfigFields(current.runtime_kind, provider, buildExecutionConfigPayload(current)),
-                      };
-                    })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {visibleProviderOptions.map((provider) => (
-                      <SelectItem key={provider.value} value={provider.value}>
-                        {provider.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <FieldLabel
-                  htmlFor="agent-model"
-                  tooltip="Leave blank to use the recommended model. Only change this if you need a specific model."
-                >
-                  Model
-                </FieldLabel>
-                <Input
-                  id="agent-model"
-                  value={form.model}
-                  onChange={(e) => setForm((current) => ({ ...current, model: e.target.value }))}
-                  placeholder={selectedProviderOption?.model_placeholder ?? 'Auto'}
-                />
+              <Separator className="my-5" />
+
+              <div className="grid gap-5 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <FieldLabel tooltip="The AI service that powers this agent.">AI Provider</FieldLabel>
+                  <Select
+                    value={form.provider}
+                    onValueChange={(value) =>
+                      setForm((current) => {
+                        const provider = normalizeProviderForRuntime(current.runtime_kind, value as AgentModelProvider);
+                        return {
+                          ...current,
+                          provider,
+                          ...deriveExecutionConfigFields(current.runtime_kind, provider, buildExecutionConfigPayload(current)),
+                        };
+                      })
+                    }
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {visibleProviderOptions.map((provider) => (
+                        <SelectItem key={provider.value} value={provider.value}>
+                          <span className="flex items-center gap-2">
+                            <ProviderIcon provider={provider.value} className="h-3.5 w-3.5 shrink-0" />
+                            {provider.label}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] leading-relaxed text-muted-foreground">LLM vendor powering this engine.</p>
+                </div>
+                <div className="space-y-2">
+                  <FieldLabel
+                    htmlFor="agent-model"
+                    tooltip="Leave blank to use the recommended model. Only change this if you need a specific model."
+                  >
+                    Model
+                  </FieldLabel>
+                  <Input
+                    id="agent-model"
+                    value={form.model}
+                    onChange={(e) => setForm((current) => ({ ...current, model: e.target.value }))}
+                    placeholder={selectedProviderOption?.model_placeholder ?? 'Auto'}
+                    className="h-9"
+                  />
+                  <p className="text-[11px] leading-relaxed text-muted-foreground">The language model that powers this agent.</p>
+                </div>
               </div>
             </div>
 
-            <div className="space-y-3 rounded-md border bg-muted/30 p-3">
-              <div className="space-y-1">
-                <p className="text-sm font-medium">Effective capabilities</p>
-                <p className="text-[11px] text-muted-foreground">
+            <div className="rounded-xl border border-border/60 bg-muted/30 p-5">
+              <div className="space-y-1 mb-5">
+                <p className="text-sm font-semibold">Effective capabilities</p>
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
                   These are the effective defaults produced by this agent&apos;s runtime, mode, and policy settings.
                 </p>
               </div>
 
-              <div className="grid gap-3 md:grid-cols-3">
-                <div className="space-y-1">
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Runtime</p>
-                  <p className="text-sm">{AGENT_RUNTIME_LABELS[form.runtime_kind] ?? form.runtime_kind}</p>
+              <div className="grid gap-5 sm:grid-cols-3">
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Runtime</p>
+                  <p className="text-sm font-medium">{AGENT_RUNTIME_LABELS[form.runtime_kind] ?? form.runtime_kind}</p>
                 </div>
-                <div className="space-y-1">
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Default mode</p>
-                  <p className="text-sm">{INVOCATION_MODE_LABELS[form.default_invocation_mode]}</p>
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Default mode</p>
+                  <p className="text-sm font-medium">{INVOCATION_MODE_LABELS[form.default_invocation_mode]}</p>
                 </div>
-                <div className="space-y-1">
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Targets</p>
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Targets</p>
                   <div className="flex flex-wrap gap-1.5">
                     {effectiveTargets.length > 0 ? effectiveTargets.map((target) => (
                       <Badge key={target} variant="outline" className="text-[11px]">
@@ -2368,21 +2622,26 @@ export function AgentsPage() {
                     )}
                   </div>
                 </div>
-                <div className="space-y-1 md:col-span-3">
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Supported modes</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {supportedModes.map((mode) => (
-                      <Badge key={mode} variant="outline" className="text-[11px]">
-                        {INVOCATION_MODE_LABELS[mode]}
-                      </Badge>
-                    ))}
-                  </div>
+              </div>
+
+              <Separator className="my-5" />
+
+              <div className="space-y-1.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Supported modes</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {supportedModes.map((mode) => (
+                    <Badge key={mode} variant="outline" className="text-[11px]">
+                      {INVOCATION_MODE_LABELS[mode]}
+                    </Badge>
+                  ))}
                 </div>
               </div>
 
-              <div className="space-y-1">
+              <Separator className="my-5" />
+
+              <div className="space-y-3">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Available tools</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Available tools</p>
                   <Popover open={toolPickerOpen} onOpenChange={setToolPickerOpen}>
                     <PopoverTrigger asChild>
                       <Button
@@ -2428,12 +2687,12 @@ export function AgentsPage() {
                     </PopoverContent>
                   </Popover>
                 </div>
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
                   {codexUsesPresetCapabilities
                     ? 'Codex currently uses the preset capability set as-is. Custom tool overrides are disabled for this runtime.'
                     : 'Choose from the workspace tool catalog. Selected tools become this agent&apos;s allowed tool list.'}
                 </p>
-                <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto rounded-md border border-border/50 bg-card/70 p-2">
+                <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto rounded-lg border border-border/50 bg-card/70 p-2.5">
                   {form.allowed_tools.length > 0 ? form.allowed_tools.map((tool) => (
                     <Badge key={tool} variant="secondary" className="gap-1 pr-1 font-mono text-[11px]">
                       <span>{tool}</span>

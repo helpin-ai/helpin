@@ -20,7 +20,7 @@ export function MentionSuggestionsList({
   compact: _compact = false,
 }: MentionSuggestionsListProps) {
   return (
-    <div className={cn('space-y-0.5', className)} role="listbox" aria-label="Mention suggestions">
+    <div className={cn('space-y-px', className)} role="listbox" aria-label="Mention suggestions">
       {items.map((item, index) => {
         const selected = index === selectedIndex;
 
@@ -28,9 +28,13 @@ export function MentionSuggestionsList({
           <button
             key={`${item.type}:${item.id}:${item.handle}`}
             type="button"
+            role="option"
+            aria-selected={selected}
             className={cn(
-              'flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left transition-colors',
-              selected ? 'bg-accent text-foreground' : 'hover:bg-accent/70',
+              'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left transition-colors',
+              selected
+                ? 'bg-primary/10 text-foreground dark:bg-primary/15'
+                : 'text-foreground/80 hover:bg-accent/60',
             )}
             onMouseDown={(event) => {
               event.preventDefault();
@@ -41,23 +45,28 @@ export function MentionSuggestionsList({
               <UserAvatar
                 name={item.label}
                 avatarUrl={item.avatarUrl}
-                className="h-7 w-7 shrink-0 text-[10px]"
+                className="h-6 w-6 shrink-0 text-[10px]"
               />
             ) : (
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
-                <UserGroupIcon className="h-3.5 w-3.5" />
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                <UserGroupIcon className="h-3 w-3" />
               </span>
             )}
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-medium text-foreground">
+              <span className="block truncate text-[13px] font-medium leading-tight text-foreground">
                 {item.label}
               </span>
               {item.type === 'team' && (
-                <span className="block truncate text-xs text-muted-foreground">
+                <span className="block truncate text-xs leading-tight text-muted-foreground">
                   @{item.handle}
                 </span>
               )}
             </span>
+            {item.type === 'member' && item.handle && (
+              <span className="shrink-0 text-xs text-muted-foreground/60">
+                @{item.handle}
+              </span>
+            )}
           </button>
         );
       })}
