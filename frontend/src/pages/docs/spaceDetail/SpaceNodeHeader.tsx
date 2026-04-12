@@ -5,7 +5,6 @@ import {
   Delete01Icon,
   FolderOpenIcon,
   InboxIcon,
-  LanguageCircleIcon,
   MoreHorizontalIcon,
   PencilEdit01Icon,
   PlusSignIcon,
@@ -55,7 +54,6 @@ export interface SpaceNodeHeaderProps {
   // Space-level overflow actions (space_root only)
   onEditSpace: () => void
   onDeleteSpace: () => void
-  onOpenTranslations: () => void
 
   // Collection-level overflow actions (collection view only)
   onEditCollection: (() => void) | null
@@ -69,10 +67,6 @@ export interface SpaceNodeHeaderProps {
  * line, and the [+] / [⋯] action menus. All three view kinds
  * (space_root / collection / uncategorized) flow through this
  * single component so the layout stays consistent.
- *
- * External-capable spaces expose their translations action as a
- * first-class overflow item; all other translation-related dialogs
- * stay with the parent controller.
  */
 export function SpaceNodeHeader({
   space,
@@ -89,12 +83,9 @@ export function SpaceNodeHeader({
   onCancelRenameSpace,
   onEditSpace,
   onDeleteSpace,
-  onOpenTranslations,
   onEditCollection,
   onDeleteCollection,
 }: SpaceNodeHeaderProps) {
-  const isExternalCapable = space.type === 'external_capable'
-
   // ── Ancestors (rendered inline, left of the title) ─────────────────
   // The current node is NOT in this list — it's the big title to the
   // right of the last arrow. That keeps the "you are here" signal
@@ -152,6 +143,8 @@ export function SpaceNodeHeader({
         : null
 
   // ── Overflow menu content ─────────────────────────────────────────
+  // Translations are managed from Settings > Help Center > Languages & Translation.
+  // Do not re-add a translations action here — see commit history for why this was removed.
   const hasOverflowMenu =
     canEdit &&
     ((view.kind === 'space_root') ||
@@ -260,12 +253,6 @@ export function SpaceNodeHeader({
                         <PencilEdit01Icon className="h-3.5 w-3.5" />
                         Edit space
                       </DropdownMenuItem>
-                      {isExternalCapable && (
-                        <DropdownMenuItem onClick={onOpenTranslations}>
-                          <LanguageCircleIcon className="h-3.5 w-3.5" />
-                          Translations
-                        </DropdownMenuItem>
-                      )}
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
                         onClick={onDeleteSpace}
