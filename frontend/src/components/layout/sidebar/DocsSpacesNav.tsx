@@ -299,7 +299,7 @@ export function DocsSpacesNav({
                   className="absolute inset-y-0 right-0 flex w-9 items-center justify-end pr-1.5 opacity-0 transition-opacity bg-gradient-to-l from-sidebar from-65% to-transparent group-hover/space:opacity-100 data-[state=open]:opacity-100"
                 >
                   <span className="flex h-5 w-5 items-center justify-center rounded hover:bg-muted transition-colors group/dots">
-                    <MoreVerticalIcon className="h-3.5 w-3.5 text-foreground/80 group-hover/dots:text-foreground" />
+                    <MoreVerticalIcon className="h-3.5 w-3.5 text-foreground/70 group-hover/dots:text-foreground" />
                   </span>
                 </button>
               </DropdownMenuTrigger>
