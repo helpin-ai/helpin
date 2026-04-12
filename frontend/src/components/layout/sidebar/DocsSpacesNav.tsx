@@ -100,6 +100,7 @@ function DocsSpaceCollections({
                     size="sm"
                     isActive={isActive(link)}
                     title={option.depth > 0 ? option.path : undefined}
+                    className="pr-6"
                   >
                     <a
                       href={link}
