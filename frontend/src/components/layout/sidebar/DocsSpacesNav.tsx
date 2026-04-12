@@ -1,6 +1,6 @@
 import { useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { Collapsible } from 'radix-ui';
-import { ArrowRight01Icon, HelpCircleIcon, MoreVerticalIcon, FolderOpenIcon, InboxIcon, PlusSignIcon, Setting06Icon, Delete01Icon } from '@/lib/icons';
+import { ArrowRight01Icon, HelpCircleIcon, MoreVerticalIcon, FolderOpenIcon, InboxIcon, PlusSignIcon, PencilEdit01Icon, Delete01Icon } from '@/lib/icons';
 import { ICON_MAP } from '@/components/ui/icon-picker';
 import { useDocsCollections, useDocsDocuments, useDocsSpaces, useDeleteDocsSpace } from '@/hooks/queries';
 import type { DocsSpace } from '@/lib/docsTypes';
@@ -267,7 +267,7 @@ export function DocsSpacesNav({
               </DropdownMenuTrigger>
               <DropdownMenuContent side="right" align="start">
                 <DropdownMenuItem onClick={() => setEditingSpace(space)}>
-                  <Setting06Icon className="h-4 w-4" />
+                  <PencilEdit01Icon className="h-4 w-4" />
                   Edit space
                 </DropdownMenuItem>
                 <DropdownMenuItem
