@@ -186,10 +186,6 @@ function SortableFeaturedCollectionRow({
       style={style}
       className="flex items-center gap-3 rounded-lg border border-primary/20 bg-primary/[0.03] p-3"
     >
-      <Checkbox
-        checked
-        onCheckedChange={onToggle}
-      />
       <button
         type="button"
         {...attributes}
@@ -199,6 +195,10 @@ function SortableFeaturedCollectionRow({
       >
         <DragDropVerticalIcon className="h-4 w-4" />
       </button>
+      <Checkbox
+        checked
+        onCheckedChange={onToggle}
+      />
       <div className="flex-1 grid gap-2 grid-cols-[40px_140px_1fr] items-center">
         <IconPicker
           value={card.icon}
