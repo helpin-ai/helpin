@@ -303,7 +303,6 @@ export function DocsSpaceDetail() {
                 documents={scopedDocs}
                 members={members}
                 collectionNames={collectionNames}
-                showCollectionColumn={view.kind === 'space_root'}
                 hasCollections={(collections ?? []).length > 0}
                 wsSlug={wsSlug}
               filterStatus={filterStatus}
