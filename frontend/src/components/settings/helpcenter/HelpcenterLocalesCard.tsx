@@ -59,7 +59,7 @@ export function HelpcenterLocalesCard({ config, isSaving, onSave }: HelpcenterLo
 
   return (
     <Card className="border-0 shadow-none p-0">
-      <CardContent className="space-y-5 px-0 pb-0 pt-0">
+      <CardContent className="space-y-5 px-0 pb-0 pt-1">
         <div className="grid gap-6 lg:grid-cols-[2fr_3fr]">
           <div className="space-y-2">
             <Label htmlFor="helpcenter-default-locale">Default locale</Label>
