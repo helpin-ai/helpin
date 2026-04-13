@@ -321,7 +321,7 @@ export const ConversationRow = memo(function ConversationRow({
                     <AgentAvatar key={uid} userId={uid} tooltip="viewing" />
                   ))}
                 </div>
-              ) : (conversation.status === 'resolved' || conversation.status === 'closed') ? (
+              ) : conversation.status === 'resolved' ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <CheckmarkCircle02Icon className="h-5 w-5 text-green-500" />

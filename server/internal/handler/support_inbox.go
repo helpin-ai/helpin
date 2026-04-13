@@ -46,17 +46,20 @@ func (h *SupportInboxHandler) ListConversations(w http.ResponseWriter, r *http.R
 	status := r.URL.Query().Get("status")
 	priority := r.URL.Query().Get("priority")
 	aiState := r.URL.Query().Get("ai_state")
-	mailboxParam := r.URL.Query().Get("mailbox_id")
+	flowState := r.URL.Query().Get("flow_state")
 	var mailboxID *string
-	if mailboxParam == "shared" || mailboxParam == "" {
-		empty := ""
-		mailboxID = &empty
-	} else {
-		mailboxID = &mailboxParam
+	if values, ok := r.URL.Query()["mailbox_id"]; ok {
+		mailboxParam := strings.TrimSpace(values[0])
+		if mailboxParam == "shared" || mailboxParam == "" {
+			empty := ""
+			mailboxID = &empty
+		} else {
+			mailboxID = &mailboxParam
+		}
 	}
 	pagination := queryPagination(r)
 
-	resp, err := h.supportService.ListConversationsWithMeta(r.Context(), workspaceID, userID, status, priority, pagination, mailboxID, aiState)
+	resp, err := h.supportService.ListConversationsWithMeta(r.Context(), workspaceID, userID, status, priority, pagination, mailboxID, flowState, aiState)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -285,13 +288,15 @@ func (h *SupportInboxHandler) GetUnreadStats(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	userID := middleware.GetUserID(r.Context())
-	mailboxParam := r.URL.Query().Get("mailbox_id")
 	var mailboxID *string
-	if mailboxParam == "shared" || mailboxParam == "" {
-		empty := ""
-		mailboxID = &empty
-	} else {
-		mailboxID = &mailboxParam
+	if values, ok := r.URL.Query()["mailbox_id"]; ok {
+		mailboxParam := strings.TrimSpace(values[0])
+		if mailboxParam == "shared" || mailboxParam == "" {
+			empty := ""
+			mailboxID = &empty
+		} else {
+			mailboxID = &mailboxParam
+		}
 	}
 
 	stats, err := h.supportService.GetUnreadStats(r.Context(), workspaceID, userID, mailboxID)

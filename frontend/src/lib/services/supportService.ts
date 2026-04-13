@@ -34,13 +34,14 @@ import type {
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
 
 export const supportService = {
-  listConversations: (workspaceId: string, filters?: { status?: string; priority?: string; filter?: string; mailbox_id?: string | null; ai_state?: string }) => {
+  listConversations: (workspaceId: string, filters?: { status?: string; priority?: string; filter?: string; mailbox_id?: string | null; ai_state?: string; flow_state?: string }) => {
     let path = `/support/inbox/conversations${qs(workspaceId)}`;
     if (filters?.status) path += `&status=${filters.status}`;
     if (filters?.priority) path += `&priority=${filters.priority}`;
     if (filters?.filter) path += `&filter=${filters.filter}`;
-    if (filters?.mailbox_id) path += `&mailbox_id=${encodeURIComponent(filters.mailbox_id)}`;
+    if (filters?.mailbox_id && filters.mailbox_id !== 'all') path += `&mailbox_id=${encodeURIComponent(filters.mailbox_id)}`;
     if (filters?.ai_state) path += `&ai_state=${encodeURIComponent(filters.ai_state)}`;
+    if (filters?.flow_state) path += `&flow_state=${encodeURIComponent(filters.flow_state)}`;
     return api.get<ConversationListResponse>(path);
   },
   listInboxScopes: (workspaceId: string) =>
@@ -108,7 +109,7 @@ export const supportService = {
   // Unread
   getUnreadStats: (workspaceId: string, mailboxId?: string | null) => {
     let path = `/support/inbox/unread-stats${qs(workspaceId)}`;
-    if (mailboxId) path += `&mailbox_id=${encodeURIComponent(mailboxId)}`;
+    if (mailboxId && mailboxId !== 'all') path += `&mailbox_id=${encodeURIComponent(mailboxId)}`;
     return api.get<UnreadStats>(path);
   },
   listTeammatePresence: (workspaceId: string) =>

@@ -57,20 +57,28 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
   }, [markConversationRead, selectConversation]);
 
   const filters = useMemo(() => {
-    const f: Record<string, string> = { mailbox_id: selectedMailboxId };
+    const f: Record<string, string> = {};
+    if (selectedMailboxId !== 'all') {
+      f.mailbox_id = selectedMailboxId;
+    }
     if (statusFilter !== 'all') f.status = statusFilter;
     if (navFilter === 'mentions') f.filter = 'mentions';
-    if (navFilter === 'ai_pending') f.ai_state = 'pending';
-    if (navFilter === 'ai_resolved') f.ai_state = 'resolved';
-    if (navFilter === 'ai_escalated') f.ai_state = 'escalated';
+    if (navFilter === 'ai_active') f.flow_state = 'ai_handling';
+    if (navFilter === 'resolved_by_ai') f.flow_state = 'resolved_by_ai';
     return Object.keys(f).length > 0 ? f : undefined;
   }, [statusFilter, navFilter, selectedMailboxId]);
   const { data: response, isLoading, error } = useConversations(workspaceId, filters);
   const conversations = response?.data ?? [];
 
   const filteredConversations = useMemo(() => {
-    return filterSupportConversations(conversations, { navFilter, userId, searchQuery });
-  }, [conversations, navFilter, userId, searchQuery]);
+    return filterSupportConversations(conversations, {
+      navFilter,
+      mailboxScope: selectedMailboxId,
+      statusFilter,
+      userId,
+      searchQuery,
+    });
+  }, [conversations, navFilter, selectedMailboxId, statusFilter, userId, searchQuery]);
   const mailboxMoveOptions = useMemo(
     () => [inboxScopes?.shared_inbox, ...(inboxScopes?.mailboxes ?? [])].filter(Boolean) as SupportInboxScope[],
     [inboxScopes]
@@ -119,17 +127,25 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
           <>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-xs font-medium">
-                  {(() => {
-                    const active = supportStatusOptions.find((o) => o.value === statusFilter);
-                    const Icon = active?.icon;
-                    return Icon ? <Icon className={`h-3.5 w-3.5 ${active.color}`} /> : null;
-                  })()}
-                  {supportStatusOptions.find((o) => o.value === statusFilter)?.label ?? 'All statuses'}
-                  <ArrowDown01Icon className="h-3 w-3 opacity-50" />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-[208px] justify-between gap-2 px-2 text-xs font-medium"
+                >
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    {(() => {
+                      const active = supportStatusOptions.find((o) => o.value === statusFilter);
+                      const Icon = active?.icon;
+                      return Icon ? <Icon className={`h-3.5 w-3.5 shrink-0 ${active.color}`} /> : null;
+                    })()}
+                    <span className="truncate">
+                      {supportStatusOptions.find((o) => o.value === statusFilter)?.label ?? 'All statuses'}
+                    </span>
+                  </span>
+                  <ArrowDown01Icon className="h-3 w-3 shrink-0 opacity-50" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-44">
+              <DropdownMenuContent align="start" className="w-[208px]">
                 {supportStatusOptions.map((option) => (
                   <DropdownMenuCheckboxItem
                     key={option.value}

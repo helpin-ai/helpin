@@ -19,6 +19,7 @@ function resetStore() {
   useSupportInboxStore.setState({
     drafts: {},
     navFilter: 'all',
+    selectedMailboxId: 'all',
     statusFilter: 'open',
     searchQuery: '',
     selectedConversationId: null,
@@ -91,5 +92,13 @@ describe('supportInboxStore', () => {
       // removeDraftFromStorage is synchronous
       expect(localStorageMock.removeItem).toHaveBeenCalledWith('support_inbox_drafts');
     });
+  });
+
+  it('returns to the global inbox view when switching queue filters', () => {
+    useSupportInboxStore.setState({ selectedMailboxId: 'mailbox-billing' });
+
+    useSupportInboxStore.getState().setNavFilter('ai_active');
+
+    expect(useSupportInboxStore.getState().selectedMailboxId).toBe('all');
   });
 });

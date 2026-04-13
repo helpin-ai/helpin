@@ -570,7 +570,7 @@ func TestEmailFallbackProcessInboundEmailRouteCreatesConversation(t *testing.T) 
 		t.Fatalf("process routed inbound email: %v", err)
 	}
 
-	resp, total, err := env.convRepo.List(ctx, workspaceID, "", "", model.PMPagination{Page: 1, PerPage: 10}, "", model.RoleOwner, nil)
+	resp, total, err := env.convRepo.List(ctx, workspaceID, "", "", model.PMPagination{Page: 1, PerPage: 10}, "", model.RoleOwner, nil, "")
 	if err != nil {
 		t.Fatalf("list conversations: %v", err)
 	}
@@ -684,7 +684,7 @@ func TestEmailFallbackProcessInboundEmailRouteThreadsReply(t *testing.T) {
 		t.Fatalf("expected threaded reply to stay in existing conversation, got %d messages", len(messages))
 	}
 
-	resp, total, err := env.convRepo.List(ctx, workspaceID, "", "", model.PMPagination{Page: 1, PerPage: 10}, "", model.RoleOwner, nil)
+	resp, total, err := env.convRepo.List(ctx, workspaceID, "", "", model.PMPagination{Page: 1, PerPage: 10}, "", model.RoleOwner, nil, "")
 	if err != nil {
 		t.Fatalf("list conversations: %v", err)
 	}
@@ -716,12 +716,15 @@ func TestEmailFallbackRenderBodiesIncludesUnsubscribeLink(t *testing.T) {
 
 func TestIsEmailFallbackTerminalStatus(t *testing.T) {
 	if !isEmailFallbackTerminalStatus("closed") {
-		t.Fatal("closed should be terminal")
+		t.Fatal("legacy closed alias should still be terminal")
+	}
+	if !isEmailFallbackTerminalStatus("resolved") {
+		t.Fatal("resolved should be terminal")
 	}
 	if !isEmailFallbackTerminalStatus("spam") {
 		t.Fatal("spam should be terminal")
 	}
-	if isEmailFallbackTerminalStatus("resolved") {
-		t.Fatal("resolved should not be terminal")
+	if isEmailFallbackTerminalStatus("open") {
+		t.Fatal("open should not be terminal")
 	}
 }

@@ -28,11 +28,12 @@ interface CreateConversationDialogProps {
 export function CreateConversationDialog({ workspaceId, open, onOpenChange }: CreateConversationDialogProps) {
   const { data: inboxScopes } = useInboxScopes(workspaceId);
   const selectedMailboxId = useSupportInboxStore((s) => s.selectedMailboxId);
+  const initialMailboxId = selectedMailboxId === 'all' ? 'shared' : selectedMailboxId;
   const [subject, setSubject] = useState('');
   const [priority, setPriority] = useState<ConversationPriority>('medium');
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
-  const [mailboxId, setMailboxId] = useState(selectedMailboxId);
+  const [mailboxId, setMailboxId] = useState(initialMailboxId);
 
   const createMutation = useCreateConversation(workspaceId);
 
@@ -43,9 +44,9 @@ export function CreateConversationDialog({ workspaceId, open, onOpenChange }: Cr
 
   useEffect(() => {
     if (open) {
-      setMailboxId(selectedMailboxId);
+      setMailboxId(initialMailboxId);
     }
-  }, [open, selectedMailboxId]);
+  }, [initialMailboxId, open]);
 
   const handleCreate = async () => {
     if (!subject.trim()) return;
@@ -60,7 +61,7 @@ export function CreateConversationDialog({ workspaceId, open, onOpenChange }: Cr
     setPriority('medium');
     setCustomerName('');
     setCustomerEmail('');
-    setMailboxId(selectedMailboxId);
+    setMailboxId(initialMailboxId);
     onOpenChange(false);
   };
 

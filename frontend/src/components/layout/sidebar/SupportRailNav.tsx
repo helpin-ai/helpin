@@ -18,10 +18,8 @@ type SupportNavFilter =
   | 'unassigned'
   | 'mentions'
   | 'all'
-  | 'ai_all'
-  | 'ai_pending'
-  | 'ai_resolved'
-  | 'ai_escalated';
+  | 'ai_active'
+  | 'resolved_by_ai';
 
 type InboxScopes = {
   mailboxes?: Array<{
@@ -34,13 +32,11 @@ type InboxScopes = {
 
 type SupportRailNavProps = {
   navFilter: SupportNavFilter;
-  activeContext: 'nav' | 'mailbox';
   unreadStats?: {
     my_inbox?: number;
     unassigned?: number;
     total?: number;
-    ai_all?: number;
-    ai_pending?: number;
+    ai_active?: number;
   } | null;
   inboxScopes?: InboxScopes | null;
   selectedMailboxId: string;
@@ -56,7 +52,6 @@ type SupportRailNavProps = {
 
 export function SupportRailNav({
   navFilter,
-  activeContext,
   unreadStats,
   inboxScopes,
   selectedMailboxId,
@@ -78,54 +73,54 @@ export function SupportRailNav({
 
   return (
     <>
-      <SidebarMenu className="p-0 pb-3">
-        {supportFilterItems.map((item) => {
-          const badge =
-            item.key === 'my_inbox'
-              ? unreadStats?.my_inbox
-              : item.key === 'unassigned'
-                ? unreadStats?.unassigned
-                : item.key === 'all'
-                  ? unreadStats?.total
-                  : undefined;
-
-          return (
-            <SidebarMenuItem key={item.key}>
-              <SidebarMenuButton
-                isActive={navFilter === item.key && activeContext === 'nav'}
-                className="h-8 rounded-md px-2 text-sm"
-                onClick={() => onNavFilterChange(item.key)}
-              >
-                <item.icon />
-                <span className="flex-1">{item.label}</span>
-                {badge != null && badge > 0 && (
-                  <span className="ml-auto inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
-                    {badge > 99 ? '99+' : badge}
-                  </span>
-                )}
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          );
-        })}
-      </SidebarMenu>
-
       <SidebarGroup className="p-0 pb-3">
-        <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
-          Helpin AI Agent
-        </SidebarGroupLabel>
         <SidebarMenu>
-          {supportAiItems.map((item) => {
+          {supportFilterItems.map((item) => {
             const badge =
-              item.key === 'ai_all'
-                ? unreadStats?.ai_all
-                : item.key === 'ai_pending'
-                  ? unreadStats?.ai_pending
-                  : undefined;
+              item.key === 'my_inbox'
+                ? unreadStats?.my_inbox
+                : item.key === 'unassigned'
+                  ? unreadStats?.unassigned
+                  : item.key === 'all'
+                    ? unreadStats?.total
+                    : undefined;
 
             return (
               <SidebarMenuItem key={item.key}>
                 <SidebarMenuButton
-                  isActive={navFilter === item.key && activeContext === 'nav'}
+                  isActive={navFilter === item.key}
+                  className="h-8 rounded-md px-2 text-sm"
+                  onClick={() => onNavFilterChange(item.key)}
+                >
+                  <item.icon />
+                  <span className="flex-1">{item.label}</span>
+                  {badge != null && badge > 0 && (
+                    <span className="ml-auto inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
+                      {badge > 99 ? '99+' : badge}
+                    </span>
+                  )}
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            );
+          })}
+        </SidebarMenu>
+      </SidebarGroup>
+
+      <SidebarGroup className="p-0 pb-3">
+        <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
+          Helpin AI
+        </SidebarGroupLabel>
+        <SidebarMenu>
+          {supportAiItems.map((item) => {
+            const badge =
+              item.key === 'ai_active'
+                ? unreadStats?.ai_active
+                : undefined;
+
+            return (
+              <SidebarMenuItem key={item.key}>
+                <SidebarMenuButton
+                  isActive={navFilter === item.key}
                   className="h-8 rounded-md px-2 text-sm"
                   onClick={() => onNavFilterChange(item.key)}
                 >
@@ -175,40 +170,52 @@ export function SupportRailNav({
                 <SidebarMenuButton
                   isActive={isActiveMailbox}
                   className="h-8 rounded-md px-2 text-sm"
-                  onClick={() => onMailboxSelect(isActiveMailbox ? 'shared' : mailbox.id)}
+                  onClick={() => onMailboxSelect(mailbox.id)}
                 >
                   <MailboxIcon className="h-4 w-4" />
                   <span className="flex-1 truncate">{mailbox.name}</span>
-                  {mailbox.unread_count > 0 && !isMenuOpen && (
-                    <span className="ml-auto inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white group-hover/mailbox:hidden">
-                      {mailbox.unread_count > 99 ? '99+' : mailbox.unread_count}
-                    </span>
-                  )}
-                  {canManageSettings && (
-                    <DropdownMenu onOpenChange={(open) => setOpenMenuId(open ? mailbox.id : null)}>
-                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                        <span
-                          role="button"
-                          className={`ml-auto inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground ${isMenuOpen ? 'opacity-100' : 'opacity-0 group-hover/mailbox:opacity-100'}`}
-                        >
-                          <MoreVerticalIcon className="h-3.5 w-3.5" />
-                        </span>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent side="right" align="start" className="w-36">
-                        <DropdownMenuItem onClick={() => onEditMailbox(mailbox.id)}>
-                          <PencilEdit01Icon className="mr-2 h-3.5 w-3.5" />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          className="text-destructive focus:text-destructive"
-                          onClick={() => onArchiveMailbox(mailbox.id)}
-                        >
-                          <ArchiveIcon className="mr-2 h-3.5 w-3.5" />
-                          Archive
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
+                  <span className="ml-auto relative flex h-5 min-w-5 items-center justify-center">
+                    {mailbox.unread_count > 0 && (
+                      <span
+                        className={`inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white transition-opacity ${
+                          canManageSettings && !isMenuOpen ? 'group-hover/mailbox:opacity-0' : ''
+                        } ${isMenuOpen ? 'opacity-0' : 'opacity-100'}`}
+                      >
+                        {mailbox.unread_count > 99 ? '99+' : mailbox.unread_count}
+                      </span>
+                    )}
+                    {canManageSettings && (
+                      <DropdownMenu onOpenChange={(open) => setOpenMenuId(open ? mailbox.id : null)}>
+                        <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                          <span
+                            role="button"
+                            className={`absolute inset-0 inline-flex items-center justify-center rounded-sm text-muted-foreground transition-opacity hover:text-foreground ${
+                              isMenuOpen
+                                ? 'opacity-100'
+                                : mailbox.unread_count > 0
+                                  ? 'opacity-0 group-hover/mailbox:opacity-100'
+                                  : 'opacity-0 group-hover/mailbox:opacity-100'
+                            }`}
+                          >
+                            <MoreVerticalIcon className="h-3.5 w-3.5" />
+                          </span>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent side="right" align="start" className="w-36">
+                          <DropdownMenuItem onClick={() => onEditMailbox(mailbox.id)}>
+                            <PencilEdit01Icon className="mr-2 h-3.5 w-3.5" />
+                            Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onClick={() => onArchiveMailbox(mailbox.id)}
+                          >
+                            <ArchiveIcon className="mr-2 h-3.5 w-3.5" />
+                            Archive
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             );

@@ -350,11 +350,57 @@ func (r *SupportConversationRepository) maybeAcquireWorkspaceDisplayIDLock(tx *g
 	tx.Exec("SELECT pg_advisory_xact_lock(hashtext(?))", workspaceID)
 }
 
+func conversationAIActiveCondition(alias string) string {
+	return fmt.Sprintf("(COALESCE(%s.flow_state, '') = '%s' OR (COALESCE(%s.flow_state, '') = '' AND COALESCE(%s.ai_state, '') = 'pending'))",
+		alias,
+		model.SupportConversationFlowStateAIHandling,
+		alias,
+		alias,
+	)
+}
+
+func conversationResolvedByAICondition(alias string) string {
+	return fmt.Sprintf("(COALESCE(%s.flow_state, '') = '%s' OR (COALESCE(%s.flow_state, '') = '' AND COALESCE(%s.ai_state, '') = 'resolved'))",
+		alias,
+		model.SupportConversationFlowStateResolvedByAI,
+		alias,
+		alias,
+	)
+}
+
+func conversationHumanQueueCondition(alias string) string {
+	return fmt.Sprintf("NOT (%s) AND NOT (%s)",
+		conversationAIActiveCondition(alias),
+		conversationResolvedByAICondition(alias),
+	)
+}
+
+func applyConversationFlowState(query *gorm.DB, alias, flowState string) *gorm.DB {
+	trimmed := strings.TrimSpace(flowState)
+	if trimmed == "" {
+		return query
+	}
+	switch trimmed {
+	case model.SupportConversationFlowStateAIHandling:
+		return query.Where(conversationAIActiveCondition(alias))
+	case model.SupportConversationFlowStateResolvedByAI:
+		return query.Where(conversationResolvedByAICondition(alias))
+	case model.SupportConversationFlowStateWaitingForHuman:
+		return query.Where(fmt.Sprintf("(%s.flow_state = ? OR %s.flow_state = ?)", alias, alias),
+			model.SupportConversationFlowStateWaitingForHuman,
+			model.SupportConversationFlowStateQueuedForHuman,
+		)
+	default:
+		return query.Where(fmt.Sprintf("%s.flow_state = ?", alias), trimmed)
+	}
+}
+
 // List returns conversations with optional filters and pagination.
-func (r *SupportConversationRepository) List(ctx context.Context, workspaceID string, status string, priority string, pagination model.PMPagination, workspaceMemberID, role string, mailboxID *string, aiState ...string) ([]model.SupportConversation, int64, error) {
+func (r *SupportConversationRepository) List(ctx context.Context, workspaceID string, status string, priority string, pagination model.PMPagination, workspaceMemberID, role string, mailboxID *string, flowState string, aiState ...string) ([]model.SupportConversation, int64, error) {
 	base := r.db.WithContext(ctx).Model(&model.SupportConversation{}).Where("support_conversations.workspace_id = ?", workspaceID)
 	base = r.applyMailboxAccess(base, workspaceMemberID, role)
 	base = r.applyMailboxScope(base, mailboxID)
+	base = applyConversationFlowState(base, "support_conversations", flowState)
 
 	if status != "" {
 		base = base.Where("status = ?", status)
@@ -390,6 +436,7 @@ func (r *SupportConversationRepository) List(ctx context.Context, workspaceID st
 	fetch := r.db.WithContext(ctx).Table("support_conversations").Where("support_conversations.workspace_id = ?", workspaceID)
 	fetch = r.applyMailboxAccess(fetch, workspaceMemberID, role)
 	fetch = r.applyMailboxScope(fetch, mailboxID)
+	fetch = applyConversationFlowState(fetch, "support_conversations", flowState)
 	if status != "" {
 		fetch = fetch.Where("support_conversations.status = ?", status)
 	}
@@ -666,6 +713,8 @@ func (r *SupportConversationRepository) MarkContactRead(ctx context.Context, con
 // GetUnreadStats returns aggregate unread conversation counts for an accessible inbox scope.
 func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, workspaceID, userID, workspaceMemberID, role string, mailboxID *string) (model.UnreadStats, error) {
 	var stats model.UnreadStats
+	humanQueueCondition := conversationHumanQueueCondition("sc")
+	aiActiveCondition := conversationAIActiveCondition("sc")
 	baseQuery := `
 		SELECT
 			COUNT(*) FILTER (
@@ -678,7 +727,7 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 					  AND sm.message_type = 'reply'
 					  AND sm.created_at > COALESCE(sc.team_last_seen_at, %s)
 				) > 0
-				  AND (sc.ai_state IS NULL OR sc.ai_state = 'escalated')
+				  AND ` + humanQueueCondition + `
 			) AS total,
 			COUNT(*) FILTER (
 				WHERE (
@@ -690,7 +739,7 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 					  AND sm.message_type = 'reply'
 					  AND sm.created_at > COALESCE(sc.team_last_seen_at, %s)
 				) > 0
-				  AND (sc.ai_state IS NULL OR sc.ai_state = 'escalated')
+				  AND ` + humanQueueCondition + `
 				  AND sc.opened_by_user_id = ?
 			) AS my_inbox,
 			COUNT(*) FILTER (
@@ -703,7 +752,7 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 					  AND sm.message_type = 'reply'
 					  AND sm.created_at > COALESCE(sc.team_last_seen_at, %s)
 				) > 0
-				  AND (sc.ai_state IS NULL OR sc.ai_state = 'escalated')
+				  AND ` + humanQueueCondition + `
 				  AND sc.assigned_agent_id IS NULL
 				  AND sc.opened_by_user_id IS NULL
 			) AS unassigned,
@@ -717,23 +766,11 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 					  AND sm.message_type = 'reply'
 					  AND sm.created_at > COALESCE(sc.team_last_seen_at, %s)
 				) > 0
-				  AND sc.ai_state IS NOT NULL
-			) AS ai_all,
-			COUNT(*) FILTER (
-				WHERE (
-					SELECT COUNT(*)
-					FROM support_messages sm
-					WHERE sm.conversation_id = sc.id
-					  AND sm.is_internal = false
-					  AND sm.sender_type = 'customer'
-					  AND sm.message_type = 'reply'
-					  AND sm.created_at > COALESCE(sc.team_last_seen_at, %s)
-				) > 0
-				  AND sc.ai_state = 'pending'
-			) AS ai_pending
+				  AND ` + aiActiveCondition + `
+			) AS ai_active
 		FROM support_conversations sc
 		WHERE sc.workspace_id = ?
-		  AND sc.status != 'closed'
+		  AND sc.status NOT IN ('resolved', 'spam')
 	`
 
 	args := []any{userID, workspaceID}
@@ -758,7 +795,7 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 		args = append(args, workspaceMemberID, workspaceMemberID)
 	}
 
-	err := r.db.WithContext(ctx).Raw(fmt.Sprintf(baseQuery, r.epochExpr(), r.epochExpr(), r.epochExpr(), r.epochExpr(), r.epochExpr()), args...).Scan(&stats).Error
+	err := r.db.WithContext(ctx).Raw(fmt.Sprintf(baseQuery, r.epochExpr(), r.epochExpr(), r.epochExpr(), r.epochExpr()), args...).Scan(&stats).Error
 	if err != nil {
 		return stats, fmt.Errorf("get unread stats: %w", err)
 	}

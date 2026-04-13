@@ -1342,8 +1342,8 @@ func headerValue(headers []email.EmailHeader, name string) string {
 }
 
 func isEmailFallbackTerminalStatus(status string) bool {
-	switch strings.ToLower(strings.TrimSpace(status)) {
-	case "closed", "spam":
+	switch model.NormalizeSupportConversationStatus(status) {
+	case model.SupportConversationStatusResolved, model.SupportConversationStatusSpam:
 		return true
 	default:
 		return false
