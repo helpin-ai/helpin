@@ -1,4 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
+import type { ComponentType, SVGProps } from 'react';
 import {
   ArrowReloadHorizontalIcon,
   PriorityIcon as PMPriorityIcon,
@@ -8,17 +9,39 @@ import {
 } from '@/lib/pmIcons';
 import type { ObjectiveState, Priority, Severity, SprintStatus, StateType, TaskType } from './pmTypes';
 
+type ConfigIcon = ComponentType<SVGProps<SVGSVGElement>>;
+
 // ── Priority icons & colors ────────────────────────────────────────
 
 export const PRIORITY_CONFIG: Record<
   Priority,
-  { color: string; label: string }
+  { color: string; label: string; icon: ConfigIcon }
 > = {
-  urgent: { color: 'text-red-500', label: 'Urgent' },
-  high: { color: 'text-orange-500', label: 'High' },
-  medium: { color: 'text-amber-500', label: 'Medium' },
-  low: { color: 'text-sky-500', label: 'Low' },
-  none: { color: 'text-zinc-400', label: 'None' },
+  urgent: {
+    color: 'text-red-500',
+    label: 'Urgent',
+    icon: (props) => <PMPriorityIcon priority="urgent" {...props} />,
+  },
+  high: {
+    color: 'text-orange-500',
+    label: 'High',
+    icon: (props) => <PMPriorityIcon priority="high" {...props} />,
+  },
+  medium: {
+    color: 'text-amber-500',
+    label: 'Medium',
+    icon: (props) => <PMPriorityIcon priority="medium" {...props} />,
+  },
+  low: {
+    color: 'text-sky-500',
+    label: 'Low',
+    icon: (props) => <PMPriorityIcon priority="low" {...props} />,
+  },
+  none: {
+    color: 'text-zinc-400',
+    label: 'None',
+    icon: (props) => <PMPriorityIcon priority="none" {...props} />,
+  },
 };
 
 export const PRIORITY_BORDER_COLOR: Record<Priority, string> = {
@@ -43,12 +66,28 @@ export function PriorityIcon({
 
 export const SEVERITY_CONFIG: Record<
   Severity,
-  { color: string; label: string }
+  { color: string; label: string; icon: ConfigIcon }
 > = {
-  critical: { color: 'text-red-600', label: 'Critical' },
-  major: { color: 'text-orange-500', label: 'Major' },
-  minor: { color: 'text-amber-500', label: 'Minor' },
-  none: { color: 'text-zinc-400', label: 'None' },
+  critical: {
+    color: 'text-red-600',
+    label: 'Critical',
+    icon: (props) => <PMSeverityIcon severity="critical" {...props} />,
+  },
+  major: {
+    color: 'text-orange-500',
+    label: 'Major',
+    icon: (props) => <PMSeverityIcon severity="major" {...props} />,
+  },
+  minor: {
+    color: 'text-amber-500',
+    label: 'Minor',
+    icon: (props) => <PMSeverityIcon severity="minor" {...props} />,
+  },
+  none: {
+    color: 'text-zinc-400',
+    label: 'None',
+    icon: (props) => <PMSeverityIcon severity="none" {...props} />,
+  },
 };
 
 export function SeverityIcon({
@@ -65,12 +104,24 @@ export function SeverityIcon({
 
 export const STATE_TYPE_ICON_CONFIG: Record<
   StateType,
-  { color: string }
+  { color: string; icon: ConfigIcon }
 > = {
-  backlog: { color: 'text-zinc-400' },
-  unstarted: { color: 'text-zinc-400' },
-  started: { color: 'text-amber-500' },
-  done: { color: 'text-green-500' },
+  backlog: {
+    color: 'text-zinc-400',
+    icon: (props) => <PMStateTypeIcon stateType="backlog" {...props} />,
+  },
+  unstarted: {
+    color: 'text-zinc-400',
+    icon: (props) => <PMStateTypeIcon stateType="unstarted" {...props} />,
+  },
+  started: {
+    color: 'text-amber-500',
+    icon: (props) => <PMStateTypeIcon stateType="started" {...props} />,
+  },
+  done: {
+    color: 'text-green-500',
+    icon: (props) => <PMStateTypeIcon stateType="done" {...props} />,
+  },
 };
 
 export function StateTypeIcon({
@@ -143,11 +194,23 @@ export const OBJECTIVE_STATE_CONFIG: Record<
 
 export const TASK_TYPE_CONFIG: Record<
   TaskType,
-  { color: string; label: string }
+  { color: string; label: string; icon: ConfigIcon }
 > = {
-  feature: { color: 'text-amber-500', label: 'Feature' },
-  bug: { color: 'text-red-500', label: 'Bug' },
-  chore: { color: 'text-indigo-500', label: 'Chore' },
+  feature: {
+    color: 'text-amber-500',
+    label: 'Feature',
+    icon: (props) => <PMTaskTypeIcon taskType="feature" {...props} />,
+  },
+  bug: {
+    color: 'text-red-500',
+    label: 'Bug',
+    icon: (props) => <PMTaskTypeIcon taskType="bug" {...props} />,
+  },
+  chore: {
+    color: 'text-indigo-500',
+    label: 'Chore',
+    icon: (props) => <PMTaskTypeIcon taskType="chore" {...props} />,
+  },
 };
 
 /** @deprecated Use TASK_TYPE_CONFIG */

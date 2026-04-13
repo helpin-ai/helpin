@@ -924,7 +924,7 @@ export function TaskListView({
           epic: fieldVis.epic,
           sprint: fieldVis.sprint,
         },
-        { epicId, sprintId },
+        { epicId: epicId ?? undefined, sprintId: sprintId ?? undefined },
       ),
     [fieldVis.epic, fieldVis.priority, fieldVis.severity, fieldVis.sprint, fieldVis.task_type, epicId, sprintId],
   );
