@@ -955,24 +955,22 @@ func TestDocsCollectionService_TreeValidation(t *testing.T) {
 		}
 	})
 
-	t.Run("Create rejects a fourth level (depth 3)", func(t *testing.T) {
+	t.Run("Create rejects a third level (depth 2)", func(t *testing.T) {
 		svc, db := setup(t)
 		seedSpace(t, db, "space")
 		ctx := context.Background()
 
 		root, _ := svc.Create(ctx, workspaceID, "space", model.CreateDocsCollectionRequest{Name: "root"}, userID)
 		rootID := root.ID
-		lvl1, _ := svc.Create(ctx, workspaceID, "space", model.CreateDocsCollectionRequest{Name: "l1", ParentCollectionID: &rootID}, userID)
-		lvl1ID := lvl1.ID
-		lvl2, err := svc.Create(ctx, workspaceID, "space", model.CreateDocsCollectionRequest{Name: "l2", ParentCollectionID: &lvl1ID}, userID)
+		lvl1, err := svc.Create(ctx, workspaceID, "space", model.CreateDocsCollectionRequest{Name: "l1", ParentCollectionID: &rootID}, userID)
 		if err != nil {
-			t.Fatalf("Create lvl2: %v", err)
+			t.Fatalf("Create lvl1: %v", err)
 		}
-		lvl2ID := lvl2.ID
+		lvl1ID := lvl1.ID
 
-		_, err = svc.Create(ctx, workspaceID, "space", model.CreateDocsCollectionRequest{Name: "l3", ParentCollectionID: &lvl2ID}, userID)
+		_, err = svc.Create(ctx, workspaceID, "space", model.CreateDocsCollectionRequest{Name: "l2", ParentCollectionID: &lvl1ID}, userID)
 		if err == nil {
-			t.Fatalf("expected depth-exceeded error on 4th level, got nil")
+			t.Fatalf("expected depth-exceeded error on 3rd level, got nil")
 		}
 	})
 
