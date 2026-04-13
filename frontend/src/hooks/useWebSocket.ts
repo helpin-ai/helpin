@@ -74,6 +74,8 @@ export function useWebSocket({ workspaceId, onEvent, onPresenceSnapshot, onDocsP
   const retriesRef = useRef(0)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const activityDirtyRef = useRef(false)
+  const lastActivitySampleAtRef = useRef(0)
   const onEventRef = useRef(onEvent)
   onEventRef.current = onEvent
   const onSnapshotRef = useRef(onPresenceSnapshot)
@@ -107,7 +109,9 @@ export function useWebSocket({ workspaceId, onEvent, onPresenceSnapshot, onDocsP
       // Start keepalive ping every 45s to refresh server-side presence keys.
       pingIntervalRef.current = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'support:ping', data: {} }))
+          const active = activityDirtyRef.current
+          ws.send(JSON.stringify({ type: 'support:ping', data: active ? { active: true } : {} }))
+          activityDirtyRef.current = false
         }
       }, 45_000)
     }
@@ -157,6 +161,41 @@ export function useWebSocket({ workspaceId, onEvent, onPresenceSnapshot, onDocsP
   }, [workspaceId])
 
   useEffect(() => {
+    if (!workspaceId) return
+
+    const markActivity = () => {
+      activityDirtyRef.current = true
+      lastActivitySampleAtRef.current = Date.now()
+    }
+    const sampleActivity = () => {
+      const now = Date.now()
+      if (now - lastActivitySampleAtRef.current < 15_000) return
+      markActivity()
+    }
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        markActivity()
+      }
+    }
+
+    window.addEventListener('pointerdown', markActivity, { passive: true })
+    window.addEventListener('keydown', markActivity)
+    window.addEventListener('focus', markActivity)
+    window.addEventListener('wheel', sampleActivity, { passive: true })
+    window.addEventListener('pointermove', sampleActivity, { passive: true })
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.removeEventListener('pointerdown', markActivity)
+      window.removeEventListener('keydown', markActivity)
+      window.removeEventListener('focus', markActivity)
+      window.removeEventListener('wheel', sampleActivity)
+      window.removeEventListener('pointermove', sampleActivity)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [workspaceId])
+
+  useEffect(() => {
     connect()
 
     return () => {
@@ -170,6 +209,7 @@ export function useWebSocket({ workspaceId, onEvent, onPresenceSnapshot, onDocsP
         wsRef.current.close()
         wsRef.current = null
       }
+      activityDirtyRef.current = false
       setIsConnected(false)
     }
   }, [connect])

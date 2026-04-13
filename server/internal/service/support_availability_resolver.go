@@ -153,10 +153,17 @@ func resolveSupportTeammatePresenceStatuses(
 			entry.Status = manualStatus
 			entry.Source = model.SupportTeammateStatusSourceManual
 			entry.ManualStatus = &manualStatus
-		} else if _, ok := onlineSet[member.UserID]; ok {
-			entry.Status = model.SupportTeammateStatusOnline
-		} else if entry.LastSeenAt != nil && now.Sub(*entry.LastSeenAt) <= supportTeammateAwayThreshold {
-			entry.Status = model.SupportTeammateStatusAway
+		} else {
+			recentlyActive := entry.LastSeenAt != nil && now.Sub(*entry.LastSeenAt) <= supportTeammateAwayThreshold
+			if _, ok := onlineSet[member.UserID]; ok {
+				if recentlyActive {
+					entry.Status = model.SupportTeammateStatusOnline
+				} else {
+					entry.Status = model.SupportTeammateStatusAway
+				}
+			} else if recentlyActive {
+				entry.Status = model.SupportTeammateStatusAway
+			}
 		}
 		statuses = append(statuses, entry)
 	}

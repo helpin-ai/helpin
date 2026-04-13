@@ -115,6 +115,13 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"name":"Helpin API","status":"running"}`))
 	})
+	r.With(cors.Handler(cors.Options{
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{"GET", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Content-Type", "Authorization", "X-Session-Token"},
+		AllowCredentials: false,
+		MaxAge:           3600,
+	})).Get("/view_headers", h.Health.ViewHeaders)
 	r.Get("/health", h.Health.Check)
 
 	// ---- Public widget routes for client.helpin.ai (no JWT, open CORS) ----

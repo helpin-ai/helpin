@@ -17,8 +17,10 @@ type PresenceProvider interface {
 	SetAgentOnline(ctx context.Context, workspaceID, userID, connID string) (firstConn bool, err error)
 	SetAgentOffline(ctx context.Context, workspaceID, userID, connID string) (lastConn bool, err error)
 	GetOnlineAgents(ctx context.Context, workspaceID string) ([]string, error)
+	// GetAgentLastSeen returns the server-observed last-activity timestamp for each agent.
 	GetAgentLastSeen(ctx context.Context, workspaceID string) (map[string]time.Time, error)
 	RefreshAgentOnline(ctx context.Context, workspaceID, userID, connID string) error
+	TouchAgentActivity(ctx context.Context, workspaceID, userID, connID string) error
 
 	// Viewing — conn-scoped (one agent can view from multiple tabs).
 	SetViewing(ctx context.Context, workspaceID, conversationID, userID, connID string) (changed bool, err error)

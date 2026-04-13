@@ -63,4 +63,29 @@ describe('UserAvatar', () => {
     })
     container.remove()
   })
+
+  it('renders an amber presence indicator for away users', () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(
+        <UserAvatar
+          name="Alice Johnson"
+          presenceStatus="away"
+          className="h-5 w-5"
+        />,
+      )
+    })
+
+    const indicator = container.querySelector('[data-presence-status="away"]')
+    expect(indicator).toBeTruthy()
+    expect(indicator?.className).toContain('bg-amber-500')
+
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  })
 })

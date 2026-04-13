@@ -129,9 +129,6 @@ func (p *RedisPresence) SetAgentOnline(ctx context.Context, workspaceID, userID,
 // SetAgentOffline removes an internal agent connection. Returns true if this was the last connection.
 func (p *RedisPresence) SetAgentOffline(ctx context.Context, workspaceID, userID, connID string) (bool, error) {
 	p.rdb.Del(ctx, agentConnKey(workspaceID, userID, p.podID, connID))
-	if err := p.rdb.Set(ctx, agentLastSeenKey(workspaceID, userID), time.Now().UTC().Format(time.RFC3339Nano), agentSeenTTL).Err(); err != nil {
-		return false, fmt.Errorf("redis presence SetAgentOffline last_seen: %w", err)
-	}
 
 	remaining, err := p.scanKeys(ctx, agentConnKey(workspaceID, userID, "*", "*"), 1)
 	if err != nil {
@@ -201,14 +198,26 @@ func (p *RedisPresence) GetAgentLastSeen(ctx context.Context, workspaceID string
 	return out, nil
 }
 
-// RefreshAgentOnline refreshes the TTL and last-seen timestamp for an internal agent connection.
+// RefreshAgentOnline refreshes the TTL for an internal agent connection without
+// mutating the last-activity timestamp.
 func (p *RedisPresence) RefreshAgentOnline(ctx context.Context, workspaceID, userID, connID string) error {
-	now := time.Now().UTC().Format(time.RFC3339Nano)
-	pipe := p.rdb.Pipeline()
-	pipe.Set(ctx, agentConnKey(workspaceID, userID, p.podID, connID), "1", agentConnTTL)
-	pipe.Set(ctx, agentLastSeenKey(workspaceID, userID), now, agentSeenTTL)
-	if _, err := pipe.Exec(ctx); err != nil {
+	if err := p.rdb.Set(ctx, agentConnKey(workspaceID, userID, p.podID, connID), "1", agentConnTTL).Err(); err != nil {
 		return fmt.Errorf("redis presence RefreshAgentOnline: %w", err)
+	}
+	return nil
+}
+
+// TouchAgentActivity records recent agent activity for an active connection.
+func (p *RedisPresence) TouchAgentActivity(ctx context.Context, workspaceID, userID, connID string) error {
+	connExists, err := p.rdb.Exists(ctx, agentConnKey(workspaceID, userID, p.podID, connID)).Result()
+	if err != nil {
+		return fmt.Errorf("redis presence TouchAgentActivity exists: %w", err)
+	}
+	if connExists == 0 {
+		return nil
+	}
+	if err := p.rdb.Set(ctx, agentLastSeenKey(workspaceID, userID), time.Now().UTC().Format(time.RFC3339Nano), agentSeenTTL).Err(); err != nil {
+		return fmt.Errorf("redis presence TouchAgentActivity last_seen: %w", err)
 	}
 	return nil
 }
