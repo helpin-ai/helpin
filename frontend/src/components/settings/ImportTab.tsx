@@ -6,28 +6,32 @@ import type { MemberWithUser } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { ArrowRight01Icon, FileImportIcon } from '@/lib/icons';
+import { ArrowRight01Icon } from '@/lib/icons';
+import shortcutIcon from '@/assets/import/shortcut.svg';
+import jiraIcon from '@/assets/import/jira.svg';
+import linearIcon from '@/assets/import/linear.svg';
+import helpscoutIcon from '@/assets/import/helpscout.svg';
 
 const IMPORT_SOURCES = [
   {
     key: 'shortcut' as const,
     title: 'Shortcut',
     description: 'Import tasks, epics, workflows, and members from Shortcut.',
-    icon: FileImportIcon,
+    icon: shortcutIcon,
     comingSoon: false,
   },
   {
     key: 'jira' as const,
     title: 'Jira',
     description: 'Import issues, projects, and workflows from Jira.',
-    icon: FileImportIcon,
+    icon: jiraIcon,
     comingSoon: true,
   },
   {
     key: 'linear' as const,
     title: 'Linear',
     description: 'Import issues, projects, and cycles from Linear.',
-    icon: FileImportIcon,
+    icon: linearIcon,
     comingSoon: true,
   },
 ];
@@ -85,8 +89,8 @@ export function ImportTab({ workspaceId, editable = true }: { workspaceId: strin
                 idx > 0 && 'border-t border-border',
               )}
             >
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                <source.icon className="h-4 w-4" />
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+                <img src={source.icon} alt={source.title} className="h-5 w-5" />
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium">{source.title}</p>
@@ -112,8 +116,8 @@ export function ImportTab({ workspaceId, editable = true }: { workspaceId: strin
             onClick={() => setSelected('helpscout')}
             className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
           >
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-              <FileImportIcon className="h-4 w-4" />
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+              <img src={helpscoutIcon} alt="HelpScout" className="h-5 w-5" />
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium">HelpScout</p>
