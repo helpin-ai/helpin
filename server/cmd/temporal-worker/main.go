@@ -117,6 +117,7 @@ func main() {
 	externalLinkRepo := repository.NewPMExternalLinkRepository(db)
 	recurringRepo := repository.NewPMRecurringTemplateRepository(db)
 	sprintRepo := repository.NewPMSprintRepository(db)
+	sprintCloseoutRepo := repository.NewPMSprintCloseoutRepository(db)
 	pmActivityRepo := repository.NewPMActivityRepository(db)
 	supportMessageRepo := repository.NewSupportMessageRepository(db)
 	supportMailboxRepo := repository.NewSupportMailboxRepository(db)
@@ -320,6 +321,7 @@ func main() {
 		workflowRepo,
 		pmActivityService,
 		wsPublisher,
+		sprintCloseoutRepo,
 	)
 	pmWorkflowService := service.NewPMWorkflowService(workflowRepo, storyRepo, labelRepo, nil)
 	pmStoryService := service.NewPMTaskService(

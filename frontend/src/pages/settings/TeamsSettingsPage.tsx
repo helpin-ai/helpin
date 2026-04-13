@@ -5,7 +5,7 @@ import { SettingsPageFrame, type SettingsPageContext } from './SettingsPageFrame
 
 export function TeamsSettingsPage({ initialTeamId, initialSection }: { initialTeamId?: string; initialSection?: string }) {
   return (
-    <SettingsPageFrame section="teams">
+    <SettingsPageFrame section="teams" hideHeader={!!initialTeamId}>
       {(context) => <TeamsSettingsContent {...context} initialTeamId={initialTeamId} initialSection={initialSection} />}
     </SettingsPageFrame>
   );

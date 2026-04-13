@@ -66,6 +66,9 @@ export const queryKeys = {
     sprintPlanning: (wsId: string, filters?: Record<string, unknown>) =>
       filters ? (['pm', wsId, 'sprints', 'planning', filters] as const) : (['pm', wsId, 'sprints', 'planning'] as const),
     sprint: (wsId: string, id: string) => ['pm', wsId, 'sprints', id] as const,
+    sprintCloseout: (wsId: string, id: string) => ['pm', wsId, 'sprints', id, 'closeout'] as const,
+    sprintCloseouts: (wsId: string, filters?: Record<string, unknown>) =>
+      filters ? (['pm', wsId, 'sprints', 'closeouts', filters] as const) : (['pm', wsId, 'sprints', 'closeouts'] as const),
     sprintTasks: (wsId: string, sprintId: string) => ['pm', wsId, 'sprints', sprintId, 'tasks'] as const,
     sprintPreviewTasksRoot: (wsId: string) => ['pm', wsId, 'sprints', 'previewTasks'] as const,
     sprintPreviewTasks: (wsId: string, sprintId: string) => ['pm', wsId, 'sprints', 'previewTasks', sprintId] as const,

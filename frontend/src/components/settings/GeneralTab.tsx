@@ -238,10 +238,7 @@ export function GeneralTab({ workspaceId, editable }: {
   return (
     <div className="space-y-6">
       <Card className={LINEAR_CARD_CLASS}>
-        <CardHeader>
-          <CardTitle>General</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
+        <CardContent className="space-y-6 pt-6">
           <div className="space-y-2">
             <Label>Logo</Label>
             <div className="flex items-center gap-4">

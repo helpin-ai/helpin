@@ -178,6 +178,7 @@ func newPMMentionTestEnv(t *testing.T) *pmMentionTestEnv {
 		activityService,
 		nil,
 		notifService,
+		nil,
 	)
 	env.objectiveService = NewPMObjectiveService(
 		repository.NewPMObjectiveRepository(db),

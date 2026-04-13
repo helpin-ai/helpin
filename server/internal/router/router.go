@@ -669,8 +669,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				// Sprints (PM) — pm.read / pm.edit
 				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints", h.PMSprint.List)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints/planning", h.PMSprint.PlanningWorkspace)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints/closeouts", h.PMSprint.ListCloseouts)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/sprints", h.PMSprint.Create)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints/{id}", h.PMSprint.Get)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints/{id}/closeout", h.PMSprint.GetCloseout)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/sprints/{id}", h.PMSprint.Update)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/sprints/{id}", h.PMSprint.Delete)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints/{id}/tasks", h.PMSprint.ListTasks)
