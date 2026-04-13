@@ -129,6 +129,14 @@ func (r *DocsSpaceRepository) Update(ctx context.Context, id string, updates map
 	return r.GetByID(ctx, id)
 }
 
+// UpdateSlug changes the slug of a space.
+func (r *DocsSpaceRepository) UpdateSlug(ctx context.Context, id, slug string) error {
+	if err := r.db.WithContext(ctx).Model(&model.DocsSpace{}).Where("id = ? AND deleted_at IS NULL", id).Update("slug", slug).Error; err != nil {
+		return fmt.Errorf("update docs space slug: %w", err)
+	}
+	return nil
+}
+
 // Delete soft-deletes a space.
 func (r *DocsSpaceRepository) Delete(ctx context.Context, id string) error {
 	if err := r.db.WithContext(ctx).Exec("UPDATE docs_spaces SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL", id).Error; err != nil {

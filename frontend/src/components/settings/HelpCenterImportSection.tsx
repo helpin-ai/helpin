@@ -303,7 +303,7 @@ export function HelpCenterImportSection({
                 <SelectValue placeholder="Select a space or create new" />
               </SelectTrigger>
               <SelectContent>
-                {spaces?.map((space) => (
+                {spaces?.filter((space) => space.type === 'external_capable').map((space) => (
                   <SelectItem key={space.id} value={space.id}>{space.name}</SelectItem>
                 ))}
                 <SelectItem value="__new">Create new space</SelectItem>

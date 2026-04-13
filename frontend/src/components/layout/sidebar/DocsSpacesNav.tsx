@@ -10,6 +10,7 @@ import { useTruncationDetection } from '@/hooks/useTruncationDetection';
 import { SpaceDialog } from '@/components/docs/SpaceDialog';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
+import { TypedConfirmDialog } from '@/components/docs/TypedConfirmDialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -403,7 +404,7 @@ export function DocsSpacesNav({
         defaultType={createSpaceType}
       />
 
-      <ConfirmDialog
+      <TypedConfirmDialog
         open={deletingSpace !== null}
         onOpenChange={(open) => {
           if (!open) {
@@ -412,19 +413,12 @@ export function DocsSpacesNav({
         }}
         title="Delete space"
         description="This will permanently delete this space and all its documents. This action cannot be undone."
-        confirmLabel="Delete"
-        variant="destructive"
-        onConfirm={() => {
-          if (!deletingSpace) {
-            return;
-          }
-
-          deleteSpace.mutate(deletingSpace.id, {
-            onSuccess: () => {
-              setDeletingSpace(null);
-              onNavigate({ to: '/w/$slug/docs', params: { slug: wsSlug } });
-            },
-          });
+        confirmText={deletingSpace?.name ?? ''}
+        onConfirm={async () => {
+          if (!deletingSpace) return;
+          await deleteSpace.mutateAsync(deletingSpace.id);
+          setDeletingSpace(null);
+          onNavigate({ to: '/w/$slug/docs', params: { slug: wsSlug } });
         }}
       />
 

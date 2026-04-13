@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -336,6 +337,12 @@ func (s *DocsSpaceService) Delete(ctx context.Context, id string) error {
 	}
 	if space.IsSystem {
 		return fmt.Errorf("cannot delete a system space")
+	}
+	// Mangle the slug before soft-deleting so the unique constraint (workspace_id, slug)
+	// is freed up and a new space with the same name can be created.
+	deletedSlug := fmt.Sprintf("%s-deleted-%d", space.Slug, time.Now().UnixMilli())
+	if err := s.spaceRepo.UpdateSlug(ctx, id, deletedSlug); err != nil {
+		slog.WarnContext(ctx, "failed to mangle slug before delete", "space_id", id, "error", err)
 	}
 	if err := s.spaceRepo.Delete(ctx, id); err != nil {
 		return err
