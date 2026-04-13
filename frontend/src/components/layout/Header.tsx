@@ -7,6 +7,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useGlobalCreateStore } from "@/stores/globalCreateStore";
 import { SearchCommandPalette } from "@/components/search/SearchCommandPalette";
 import { useSupportInboxStore } from "@/stores/supportInboxStore";
 import { buildSettingsRoutePath, SETTINGS_SECTION_LABELS } from "@/lib/settingsSections";
@@ -22,8 +23,10 @@ export function Header() {
   const { currentWorkspace } = useWorkspaceStore();
   const [searchOpen, setSearchOpen] = useState(false);
   const setCreateDialogOpen = useSupportInboxStore((s) => s.setCreateDialogOpen);
+  const openGlobalCreate = useGlobalCreateStore((s) => s.openCreate);
   const navFilter = useSupportInboxStore((s) => s.navFilter);
   const isSupport = location.pathname.includes("/support");
+  const isContactsIndex = /\/crm\/contacts\/?$/.test(location.pathname);
 
   // Cmd+K / Ctrl+K shortcut
   useEffect(() => {
@@ -222,6 +225,15 @@ export function Header() {
           <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
             <PlusSignIcon className="mr-1.5 h-4 w-4" />
             <span className="hidden sm:inline">New Conversation</span>
+          </Button>
+        </div>
+      )}
+
+      {!isSupport && isContactsIndex && (
+        <div className="ml-auto flex items-center z-10">
+          <Button size="sm" onClick={() => openGlobalCreate('crm_contact')}>
+            <PlusSignIcon className="mr-1.5 h-4 w-4" />
+            <span className="hidden sm:inline">Contact</span>
           </Button>
         </div>
       )}

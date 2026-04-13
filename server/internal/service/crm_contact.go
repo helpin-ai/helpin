@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -81,6 +82,60 @@ func (s *CRMContactService) Create(ctx context.Context, req model.CreateCRMConta
 	return contact, nil
 }
 
+// Seed creates a batch of synthetic contacts for list-performance testing.
+func (s *CRMContactService) Seed(ctx context.Context, req model.SeedCRMContactsRequest) (*model.SeedCRMContactsResponse, error) {
+	if req.WorkspaceID == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+
+	count := req.Count
+	if count <= 0 {
+		count = 500
+	}
+	if count > 2000 {
+		return nil, fmt.Errorf("count cannot exceed 2000")
+	}
+
+	existingCount, err := s.contactRepo.CountByWorkspace(ctx, req.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now().UTC()
+	contacts := make([]model.CRMContact, 0, count)
+	for i := 0; i < count; i++ {
+		sequence := int(existingCount) + i + 1
+		firstName, lastName := seededContactName(sequence)
+		email := fmt.Sprintf("seed-contact-%d@helpin.test", sequence)
+		phone := fmt.Sprintf("+1-555-%04d", sequence%10000)
+		jobTitle := seededJobTitle(i)
+		source := "seed"
+		createdAt := now.Add(-time.Duration(i) * time.Minute)
+
+		contacts = append(contacts, model.CRMContact{
+			WorkspaceID:      req.WorkspaceID,
+			DisplayID:        fmt.Sprintf("CON-%d", sequence),
+			FirstName:        firstName,
+			LastName:         &lastName,
+			Email:            &email,
+			Phone:            &phone,
+			JobTitle:         &jobTitle,
+			LifecycleStage:   seededLifecycleStage(i),
+			LeadStatus:       seededLeadStatus(i),
+			Source:           &source,
+			CustomProperties: model.JSONB{"seeded": true},
+			CreatedAt:        createdAt,
+			UpdatedAt:        createdAt,
+		})
+	}
+
+	if err := s.contactRepo.CreateInBatches(ctx, contacts, 100); err != nil {
+		return nil, err
+	}
+
+	return &model.SeedCRMContactsResponse{Created: len(contacts)}, nil
+}
+
 // Update updates a contact.
 func (s *CRMContactService) Update(ctx context.Context, id string, req model.UpdateCRMContactRequest) (*model.CRMContact, error) {
 	contact, err := s.contactRepo.GetByID(ctx, id)
@@ -145,4 +200,46 @@ func (s *CRMContactService) Delete(ctx context.Context, id string) error {
 		return fmt.Errorf("contact not found")
 	}
 	return s.contactRepo.Delete(ctx, id)
+}
+
+func seededContactName(sequence int) (string, string) {
+	firstNames := []string{"Avery", "Jordan", "Taylor", "Parker", "Morgan", "Riley", "Casey", "Drew"}
+	lastNames := []string{"Stone", "Bennett", "Coleman", "Reed", "Foster", "Hayes", "Morris", "Brooks"}
+	first := firstNames[(sequence-1)%len(firstNames)]
+	last := fmt.Sprintf("%s %d", lastNames[(sequence-1)%len(lastNames)], sequence)
+	return first, last
+}
+
+func seededJobTitle(index int) string {
+	jobTitles := []string{
+		"Revenue Operations Manager",
+		"Growth Lead",
+		"Customer Success Director",
+		"VP Sales",
+		"Marketing Operations Manager",
+		"Partnerships Manager",
+	}
+	return jobTitles[index%len(jobTitles)]
+}
+
+func seededLifecycleStage(index int) string {
+	stages := []string{
+		model.CRMLifecycleSubscriber,
+		model.CRMLifecycleLead,
+		model.CRMLifecycleMarketingQualified,
+		model.CRMLifecycleSalesQualified,
+		model.CRMLifecycleOpportunity,
+		model.CRMLifecycleCustomer,
+	}
+	return stages[index%len(stages)]
+}
+
+func seededLeadStatus(index int) string {
+	statuses := []string{
+		model.CRMLeadStatusNew,
+		model.CRMLeadStatusOpen,
+		model.CRMLeadStatusInProgress,
+		model.CRMLeadStatusUnqualified,
+	}
+	return statuses[index%len(statuses)]
 }

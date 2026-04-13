@@ -1,5 +1,4 @@
-import { Search01Icon, Cancel01Icon } from '@/lib/icons';
-import { Input } from '@/components/ui/input';
+import { Cancel01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -42,17 +41,6 @@ export function ContactsFilterBar({ assignableMembers }: ContactsFilterBarProps)
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      {/* Search */}
-      <div className="relative">
-        <Search01Icon className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Search contacts..."
-          value={params.search ?? ''}
-          onChange={(e) => setParam('search', e.target.value)}
-          className="h-7 w-48 pl-7 text-xs"
-        />
-      </div>
-
       {/* Lifecycle Stage */}
       <Select
         size="sm"

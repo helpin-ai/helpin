@@ -67,6 +67,24 @@ func (h *CRMContactHandler) Create(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, contact)
 }
 
+// Seed handles POST /api/crm/contacts/seed.
+func (h *CRMContactHandler) Seed(w http.ResponseWriter, r *http.Request) {
+	var req model.SeedCRMContactsRequest
+	if err := decodeJSON(r, &req); err != nil && r.ContentLength > 0 {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.WorkspaceID == "" {
+		req.WorkspaceID = getWorkspaceID(r)
+	}
+	result, err := h.contactService.Seed(r.Context(), req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, result)
+}
+
 // Get handles GET /api/crm/contacts/{id}.
 func (h *CRMContactHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")

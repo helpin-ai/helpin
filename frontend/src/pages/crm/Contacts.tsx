@@ -1,26 +1,50 @@
-import { useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { PlusSignIcon } from '@/lib/icons';
+import { Loading01Icon, Search01Icon, UserGroupIcon, Cancel01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { useContactsSearchParams } from '@/hooks/useContactsSearchParams';
 import { useInfiniteContacts } from '@/hooks/useInfiniteContacts';
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
+import { queryKeys } from '@/lib/queryKeys';
+import { crmContactService } from '@/lib/services/crmService';
 import { ContactsTable } from '@/components/crm/ContactsTable';
 import { ContactsFilterBar } from '@/components/crm/ContactsFilterBar';
-import { CreateContactDialog } from '@/components/crm/CreateContactDialog';
 import { useTitle } from '@/hooks/useTitle';
+import { toast } from 'sonner';
 
 export function ContactsPage() {
   useTitle('Contacts');
   const { currentWorkspace } = useWorkspaceStore();
+  const openGlobalCreate = useGlobalCreateStore((s) => s.openCreate);
   const wsId = currentWorkspace?.id ?? '';
   const wsSlug = currentWorkspace?.slug ?? '';
   const navigate = useNavigate();
-  const [showCreate, setShowCreate] = useState(false);
+  const queryClient = useQueryClient();
+  const [seedConfirmOpen, setSeedConfirmOpen] = useState(false);
+  const [isSeeding, setIsSeeding] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const { search: searchParams, hasActiveFilters, clearFilters } = useContactsSearchParams();
+  const { search: searchParams, setParam, hasActiveFilters, clearFilters } = useContactsSearchParams();
+  const showSeedButton = import.meta.env.DEV;
+
+  useEffect(() => {
+    if (searchParams.search) {
+      setShowSearch(true);
+    }
+  }, [searchParams.search]);
+
+  useEffect(() => {
+    if (showSearch) {
+      searchInputRef.current?.focus();
+    }
+  }, [showSearch]);
 
   const {
     data,
@@ -40,6 +64,7 @@ export function ContactsPage() {
     () => data?.pages.flatMap((p) => p.data) ?? [],
     [data],
   );
+  const deferredContacts = useDeferredValue(contacts);
   const totalCount = data?.pages[0]?.total ?? 0;
 
   const { members: assignableMembers } = useAssignableWorkspaceMembers(wsId);
@@ -48,23 +73,92 @@ export function ContactsPage() {
     [assignableMembers],
   );
 
+  const handleSeedContacts = async () => {
+    if (!wsId || isSeeding) return;
+    setIsSeeding(true);
+    try {
+      const { data: result, error } = await crmContactService.seed({
+        workspace_id: wsId,
+        count: 500,
+      });
+      if (error) {
+        toast.error(error);
+        return;
+      }
+      await queryClient.invalidateQueries({ queryKey: queryKeys.crm.contacts(wsId) });
+      await refetch();
+      toast.success(`Created ${result?.created ?? 500} test contacts`);
+      setSeedConfirmOpen(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to seed contacts');
+    } finally {
+      setIsSeeding(false);
+    }
+  };
+
   return (
     <div className="flex h-full flex-col">
       {/* Header bar */}
       <header className="ui-divider-bottom-fade flex flex-wrap items-center gap-2 px-3 py-2">
         <ContactsFilterBar assignableMembers={assignableMembers} />
         <div className="ml-auto flex items-center gap-1">
-          <Button size="sm" className="h-7 text-xs" onClick={() => setShowCreate(true)}>
-            <PlusSignIcon className="mr-1 h-3.5 w-3.5" />
-            Contact
-          </Button>
+          {showSearch ? (
+            <div className="relative">
+              <Search01Icon className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                ref={searchInputRef}
+                placeholder="Search contacts..."
+                value={searchParams.search ?? ''}
+                onChange={(e) => setParam('search', e.target.value)}
+                className="h-7 w-52 pl-7 pr-7 text-xs"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="absolute right-0 top-0 h-7 w-7 text-muted-foreground"
+                onClick={() => {
+                  setParam('search', undefined);
+                  setShowSearch(false);
+                }}
+              >
+                <Cancel01Icon className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ) : (
+            <Button
+              type="button"
+              size="icon"
+              variant="outline"
+              className="h-7 w-7"
+              onClick={() => setShowSearch(true)}
+            >
+              <Search01Icon className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          {showSeedButton && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs"
+              onClick={() => setSeedConfirmOpen(true)}
+              disabled={!wsId || isSeeding}
+            >
+              {isSeeding ? (
+                <Loading01Icon className="mr-1 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <UserGroupIcon className="mr-1 h-3.5 w-3.5" />
+              )}
+              Seed 500
+            </Button>
+          )}
         </div>
       </header>
 
       {/* Content */}
-      <div className="min-h-0 flex-1 overflow-auto p-3">
+      <div className="min-h-0 flex-1 overflow-hidden p-3">
         <ContactsTable
-          contacts={contacts}
+          contacts={deferredContacts}
           totalCount={totalCount}
           workspaceId={wsId}
           assignableMembers={assignableMembers}
@@ -75,14 +169,22 @@ export function ContactsPage() {
           isFetchingNextPage={isFetchingNextPage}
           onFetchNextPage={fetchNextPage}
           onRowClick={(id) => navigate({ to: '/w/$slug/crm/contacts/$contactId', params: { slug: wsSlug, contactId: id } })}
-          onCreateClick={() => setShowCreate(true)}
+          onCreateClick={() => openGlobalCreate('crm_contact')}
           onClearFilters={clearFilters}
           onContactUpdated={() => refetch()}
           onContactDeleted={() => refetch()}
         />
       </div>
 
-      <CreateContactDialog open={showCreate} onOpenChange={setShowCreate} />
+      <ConfirmDialog
+        open={seedConfirmOpen}
+        onOpenChange={(open) => { if (!isSeeding) setSeedConfirmOpen(open); }}
+        title="Seed 500 test contacts"
+        description="This will create 500 synthetic contacts in the current workspace so you can test list performance and scrolling."
+        confirmLabel={isSeeding ? 'Seeding...' : 'Seed contacts'}
+        variant="default"
+        onConfirm={handleSeedContacts}
+      />
     </div>
   );
 }

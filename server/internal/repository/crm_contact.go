@@ -21,11 +21,20 @@ func NewCRMContactRepository(db *gorm.DB) *CRMContactRepository {
 	return &CRMContactRepository{db: db}
 }
 
-// GetNextDisplayID generates the next sequential display ID for contacts in a workspace.
-func (r *CRMContactRepository) GetNextDisplayID(ctx context.Context, workspaceID string) (string, error) {
+// CountByWorkspace returns the number of contacts in a workspace.
+func (r *CRMContactRepository) CountByWorkspace(ctx context.Context, workspaceID string) (int64, error) {
 	var count int64
 	if err := r.db.WithContext(ctx).Model(&model.CRMContact{}).Where("workspace_id = ?", workspaceID).Count(&count).Error; err != nil {
-		return "", fmt.Errorf("count contacts: %w", err)
+		return 0, fmt.Errorf("count contacts: %w", err)
+	}
+	return count, nil
+}
+
+// GetNextDisplayID generates the next sequential display ID for contacts in a workspace.
+func (r *CRMContactRepository) GetNextDisplayID(ctx context.Context, workspaceID string) (string, error) {
+	count, err := r.CountByWorkspace(ctx, workspaceID)
+	if err != nil {
+		return "", err
 	}
 	return fmt.Sprintf("CON-%d", count+1), nil
 }
@@ -77,6 +86,17 @@ func (r *CRMContactRepository) GetByID(ctx context.Context, id string) (*model.C
 func (r *CRMContactRepository) Create(ctx context.Context, contact *model.CRMContact) error {
 	if err := r.db.WithContext(ctx).Create(contact).Error; err != nil {
 		return fmt.Errorf("create contact: %w", err)
+	}
+	return nil
+}
+
+// CreateInBatches inserts a set of contacts in batches.
+func (r *CRMContactRepository) CreateInBatches(ctx context.Context, contacts []model.CRMContact, batchSize int) error {
+	if len(contacts) == 0 {
+		return nil
+	}
+	if err := r.db.WithContext(ctx).CreateInBatches(contacts, batchSize).Error; err != nil {
+		return fmt.Errorf("create contacts in batches: %w", err)
 	}
 	return nil
 }

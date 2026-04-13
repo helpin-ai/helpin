@@ -1,5 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router';
-import { ContactsPage } from '@/pages/crm/Contacts';
+import { createFileRoute, lazyRouteComponent } from '@tanstack/react-router';
 
 export type ContactsSearch = {
   search?: string;
@@ -23,6 +22,8 @@ export const Route = createFileRoute('/_authenticated/w/$slug/crm/contacts/')({
     group: typeof search.group === 'string' ? search.group : undefined,
   }),
 });
+
+const ContactsPage = lazyRouteComponent(() => import('@/pages/crm/Contacts'), 'ContactsPage');
 
 function ContactsRoute() {
   return (

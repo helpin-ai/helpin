@@ -76,6 +76,17 @@ type CreateCRMContactRequest struct {
 	CustomProperties map[string]interface{} `json:"custom_properties"`
 }
 
+// SeedCRMContactsRequest is the payload for bulk-seeding test contacts.
+type SeedCRMContactsRequest struct {
+	WorkspaceID string `json:"workspace_id"`
+	Count       int    `json:"count"`
+}
+
+// SeedCRMContactsResponse reports how many contacts were created by a seed run.
+type SeedCRMContactsResponse struct {
+	Created int `json:"created"`
+}
+
 // UpdateCRMContactRequest is the payload for updating a contact.
 type UpdateCRMContactRequest struct {
 	FirstName        *string                `json:"first_name"`

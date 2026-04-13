@@ -65,6 +65,15 @@ export interface UpdateCRMContactRequest {
   custom_properties?: Record<string, unknown>;
 }
 
+export interface SeedCRMContactsRequest {
+  workspace_id: string;
+  count?: number;
+}
+
+export interface SeedCRMContactsResponse {
+  created: number;
+}
+
 export interface CRMCompany {
   id: string;
   workspace_id: string;
