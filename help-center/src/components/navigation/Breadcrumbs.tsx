@@ -7,6 +7,7 @@ export interface BreadcrumbEntry {
   id: string
   name: string
   slug: string | null
+  public_id?: string | null
 }
 
 interface BreadcrumbsProps {
@@ -27,6 +28,7 @@ interface BreadcrumbsProps {
    */
   collectionName?: string | null
   collectionSlug?: string | null
+  collectionPublicId?: string | null
 }
 
 export function Breadcrumbs({
@@ -34,6 +36,7 @@ export function Breadcrumbs({
   ancestors,
   collectionName,
   collectionSlug,
+  collectionPublicId,
 }: BreadcrumbsProps) {
   const { enabledLocales } = useDocsContext()
   const multilingualEnabled = isMultilingualEnabled(enabledLocales)
@@ -44,7 +47,14 @@ export function Breadcrumbs({
   const entries: BreadcrumbEntry[] = (() => {
     if (ancestors && ancestors.length > 0) return ancestors
     if (collectionName) {
-      return [{ id: 'legacy', name: collectionName, slug: collectionSlug ?? null }]
+      return [
+        {
+          id: 'legacy',
+          name: collectionName,
+          slug: collectionSlug ?? null,
+          public_id: collectionPublicId ?? null,
+        },
+      ]
     }
     return []
   })()
@@ -58,7 +68,12 @@ export function Breadcrumbs({
         const content =
           entry.slug != null ? (
             <DocsLink
-              to={buildCanonicalCollectionPath(multilingualEnabled, locale, entry.slug)}
+              to={buildCanonicalCollectionPath(
+                multilingualEnabled,
+                locale,
+                entry.slug,
+                entry.public_id ?? '',
+              )}
               className="font-medium text-primary transition-colors hover:text-primary/80"
             >
               {entry.name}

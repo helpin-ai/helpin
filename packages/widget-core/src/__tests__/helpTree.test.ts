@@ -17,6 +17,7 @@ function makeCollection(
     id,
     name: id,
     slug,
+    public_id: id.slice(0, 8).padEnd(8, '0'),
     parent_collection_id: parent,
     depth,
     article_count: articleCount,

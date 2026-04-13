@@ -47,6 +47,42 @@ func parseDocsHelpcenterArticleKey(key string) (slug string, publicID string, ok
 	return candidateSlug, candidatePublicID, true
 }
 
+func buildDocsHelpcenterCollectionKey(slug, publicID string) string {
+	trimmedSlug := strings.Trim(strings.TrimSpace(slug), "/")
+	trimmedPublicID := normalizeDocsHelpcenterPublicID(publicID)
+	if trimmedSlug == "" {
+		return trimmedPublicID
+	}
+	if trimmedPublicID == "" {
+		return trimmedSlug
+	}
+	return trimmedSlug + "-" + trimmedPublicID
+}
+
+func parseDocsHelpcenterCollectionKey(key string) (slug string, publicID string, ok bool) {
+	trimmed := strings.Trim(strings.TrimSpace(key), "/")
+	if trimmed == "" {
+		return "", "", false
+	}
+
+	lastDash := strings.LastIndex(trimmed, "-")
+	if lastDash <= 0 || lastDash >= len(trimmed)-1 {
+		return "", "", false
+	}
+
+	candidatePublicID := normalizeDocsHelpcenterPublicID(trimmed[lastDash+1:])
+	if len(candidatePublicID) != docsHelpcenterPublicIDLength {
+		return "", "", false
+	}
+
+	candidateSlug := strings.TrimSpace(trimmed[:lastDash])
+	if candidateSlug == "" {
+		return "", "", false
+	}
+
+	return candidateSlug, candidatePublicID, true
+}
+
 func normalizeDocsHelpcenterPublicID(value string) string {
 	trimmed := strings.ToLower(strings.TrimSpace(value))
 	if len(trimmed) != docsHelpcenterPublicIDLength {
@@ -72,17 +108,17 @@ func generateDocsHelpcenterPublicID() (string, error) {
 	return hex.EncodeToString(buf), nil
 }
 
-func buildDocsHelpcenterCollectionCanonicalPath(cfg *model.DocsHelpcenterConfig, locale, collectionSlug string) string {
-	trimmedCollection := strings.Trim(strings.TrimSpace(collectionSlug), "/")
-	if trimmedCollection == "" {
+func buildDocsHelpcenterCollectionCanonicalPath(cfg *model.DocsHelpcenterConfig, locale, collectionSlug, publicID string) string {
+	collectionKey := buildDocsHelpcenterCollectionKey(collectionSlug, publicID)
+	if collectionKey == "" {
 		return "/"
 	}
 
 	if docsHelpcenterMultilingualEnabled(cfg) {
-		return "/" + defaultDocsHelpcenterRouteLocale(cfg, locale) + "/c/" + trimmedCollection
+		return "/" + defaultDocsHelpcenterRouteLocale(cfg, locale) + "/c/" + collectionKey
 	}
 
-	return "/c/" + trimmedCollection
+	return "/c/" + collectionKey
 }
 
 func buildDocsHelpcenterArticleCanonicalPath(cfg *model.DocsHelpcenterConfig, locale, slug, publicID string) string {
@@ -120,4 +156,3 @@ func docsHelpcenterMultilingualEnabled(cfg *model.DocsHelpcenterConfig) bool {
 	}
 	return len(seen) > 1
 }
-

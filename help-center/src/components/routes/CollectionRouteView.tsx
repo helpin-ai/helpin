@@ -361,7 +361,12 @@ function CollectionAccordionItem({
   if (!hasExpandableContent) {
     return (
       <DocsLink
-        to={buildCanonicalCollectionPath(multilingualEnabled, locale, node.item.slug)}
+        to={buildCanonicalCollectionPath(
+          multilingualEnabled,
+          locale,
+          node.item.slug,
+          node.item.public_id,
+        )}
         className={cn(
           'group flex items-center justify-between rounded-2xl border border-border/70 px-4 py-4 transition-colors hover:border-primary/30 hover:bg-primary/[0.02]',
           level > 0 && 'rounded-xl',
@@ -468,7 +473,12 @@ function CollectionCard({
 
   return (
     <DocsLink
-      to={buildCanonicalCollectionPath(multilingualEnabled, locale, node.item.slug)}
+      to={buildCanonicalCollectionPath(
+        multilingualEnabled,
+        locale,
+        node.item.slug,
+        node.item.public_id,
+      )}
       className="group flex items-start gap-3 rounded-2xl border border-border/70 px-4 py-4 transition-colors hover:border-primary/30 hover:bg-primary/[0.02]"
     >
       <Folder size={18} className="mt-0.5 shrink-0 text-muted-foreground" />

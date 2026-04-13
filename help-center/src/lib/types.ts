@@ -87,6 +87,7 @@ export interface Collection {
   description: string | null
   icon: string | null
   slug: string
+  public_id: string
   position: number
   article_count?: number
 }
@@ -108,6 +109,7 @@ export interface Article {
   collection_id: string | null
   collection_name?: string
   collection_slug?: string | null
+  collection_public_id?: string | null
   published_at: string | null
   seo_title: string | null
   seo_description: string | null
@@ -151,6 +153,7 @@ export interface NavItem {
   id: string
   name: string
   slug: string
+  public_id: string
   icon: string | null
   /** Parent collection id. null means top-level. */
   parent_collection_id: string | null
@@ -190,6 +193,7 @@ export interface SearchResult {
   collection_id?: string | null
   collection_name: string | null
   collection_slug?: string | null
+  collection_public_id?: string | null
   /**
    * Human-readable localized ancestor breadcrumb such as
    * "Root / Middle / Current". Present only when the article lives in

@@ -81,6 +81,7 @@ function CollectionGroup({
     multilingualEnabled,
     locale,
     node.item.slug,
+    node.item.public_id,
   )
   const isActiveCollection =
     pathname === prefixBasepath(basepath, collectionHref)
@@ -218,6 +219,7 @@ function NestedCollectionItem({
     multilingualEnabled,
     locale,
     node.item.slug,
+    node.item.public_id,
   )
   const isActiveCollection =
     pathname === prefixBasepath(basepath, collectionHref)
@@ -368,7 +370,12 @@ function nodeContainsActivePath(
 ): boolean {
   const collectionPath = prefixBasepath(
     basepath,
-    buildCanonicalCollectionPath(multilingualEnabled, locale, node.item.slug),
+    buildCanonicalCollectionPath(
+      multilingualEnabled,
+      locale,
+      node.item.slug,
+      node.item.public_id,
+    ),
   )
 
   if (pathname === collectionPath) return true

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 
@@ -115,6 +116,11 @@ func (s *DocsCollectionService) Create(ctx context.Context, workspaceID, spaceID
 		return nil, ErrDocsCollectionSlugTaken
 	}
 
+	publicID, err := s.generateUniqueCollectionPublicID(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+
 	// Append to end of the target sibling bucket.
 	nextPos, err := s.collectionRepo.NextPositionInBucket(ctx, spaceID, parentID)
 	if err != nil {
@@ -127,6 +133,7 @@ func (s *DocsCollectionService) Create(ctx context.Context, workspaceID, spaceID
 		ParentCollectionID: parentID,
 		Depth:              newDepth,
 		Name:               req.Name,
+		PublicID:           publicID,
 		Slug:               slug,
 		Description:        req.Description,
 		Icon:               req.Icon,
@@ -252,6 +259,24 @@ func (s *DocsCollectionService) Update(ctx context.Context, id string, req model
 	}
 	publishWorkspaceEventWithParent(s.wsPublisher, "updated", "docs_collection", updated.ID, updated.WorkspaceID, "", "docs_space", updated.SpaceID, nil)
 	return updated, nil
+}
+
+func (s *DocsCollectionService) generateUniqueCollectionPublicID(ctx context.Context, excludeID string) (string, error) {
+	const maxAttempts = 16
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		publicID, err := generateDocsHelpcenterPublicID()
+		if err != nil {
+			return "", err
+		}
+		taken, err := s.collectionRepo.PublicIDExists(ctx, publicID, excludeID)
+		if err != nil {
+			return "", err
+		}
+		if !taken {
+			return publicID, nil
+		}
+	}
+	return "", fmt.Errorf("generate unique docs collection public id: exhausted %d attempts", maxAttempts)
 }
 
 // resolveParentForCreate validates the requested parent for a new

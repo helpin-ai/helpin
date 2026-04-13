@@ -154,6 +154,7 @@ type DocsCollection struct {
 	ParentCollectionID *string    `json:"parent_collection_id" gorm:"type:uuid;index:idx_docs_collections_space_parent_pos,priority:2;index:idx_docs_collections_parent"`
 	Depth              int        `json:"depth" gorm:"not null;default:0"`
 	Name               string     `json:"name" gorm:"not null"`
+	PublicID           string     `json:"public_id" gorm:"not null;default:''"`
 	Slug               string     `json:"slug" gorm:"not null;default:''"`
 	Description        *string    `json:"description"`
 	Icon               *string    `json:"icon"`
@@ -621,6 +622,7 @@ type PublicNavCollection struct {
 	ID                 string             `json:"id"`
 	Name               string             `json:"name"`
 	Slug               string             `json:"slug"`
+	PublicID           string             `json:"public_id"`
 	SpaceSlug          string             `json:"space_slug,omitempty"`
 	Icon               *string            `json:"icon"`
 	ParentCollectionID *string            `json:"parent_collection_id"`
@@ -633,34 +635,36 @@ type PublicNavCollection struct {
 // down to the active collection itself, so the public help center can
 // render them as "Root > Parent > Current".
 type PublicNavBreadcrumbEntry struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Slug string `json:"slug"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Slug     string `json:"slug"`
+	PublicID string `json:"public_id"`
 }
 
 // PublicArticleResponse is the full article detail for the help center content area.
 type PublicArticleResponse struct {
-	ID              string  `json:"id"`
-	Title           string  `json:"title"`
-	Slug            string  `json:"slug"`
-	PublicID        string  `json:"public_id"`
-	Locale          string  `json:"locale,omitempty"`
-	RequestedLocale string  `json:"requested_locale,omitempty"`
-	IsFallback      bool    `json:"is_fallback,omitempty"`
-	Excerpt         *string `json:"excerpt"`
-	Icon            *string `json:"icon"`
-	Status          string  `json:"status"`
-	SpaceSlug       string  `json:"space_slug,omitempty"`
-	CollectionID    *string `json:"collection_id"`
-	CollectionName  *string `json:"collection_name"`
-	CollectionSlug  *string `json:"collection_slug,omitempty"`
-	PublishedAt     *string `json:"published_at"`
-	SEOTitle        *string `json:"seo_title"`
-	SEODescription  *string `json:"seo_description"`
-	HelpfulCount    int     `json:"helpful_count"`
-	NotHelpfulCount int     `json:"not_helpful_count"`
-	ViewCount       int     `json:"view_count"`
-	ContentHTML     *string `json:"content_html"`
+	ID                 string  `json:"id"`
+	Title              string  `json:"title"`
+	Slug               string  `json:"slug"`
+	PublicID           string  `json:"public_id"`
+	Locale             string  `json:"locale,omitempty"`
+	RequestedLocale    string  `json:"requested_locale,omitempty"`
+	IsFallback         bool    `json:"is_fallback,omitempty"`
+	Excerpt            *string `json:"excerpt"`
+	Icon               *string `json:"icon"`
+	Status             string  `json:"status"`
+	SpaceSlug          string  `json:"space_slug,omitempty"`
+	CollectionID       *string `json:"collection_id"`
+	CollectionName     *string `json:"collection_name"`
+	CollectionSlug     *string `json:"collection_slug,omitempty"`
+	CollectionPublicID *string `json:"collection_public_id,omitempty"`
+	PublishedAt        *string `json:"published_at"`
+	SEOTitle           *string `json:"seo_title"`
+	SEODescription     *string `json:"seo_description"`
+	HelpfulCount       int     `json:"helpful_count"`
+	NotHelpfulCount    int     `json:"not_helpful_count"`
+	ViewCount          int     `json:"view_count"`
+	ContentHTML        *string `json:"content_html"`
 }
 
 // PreviewArticleResponse contains rendered HTML for article preview (any status).
@@ -698,6 +702,7 @@ type PublicSearchResultResponse struct {
 	CollectionID           *string `json:"collection_id,omitempty"`
 	CollectionName         *string `json:"collection_name"`
 	CollectionSlug         *string `json:"collection_slug,omitempty"`
+	CollectionPublicID     *string `json:"collection_public_id,omitempty"`
 	CollectionAncestorPath *string `json:"collection_ancestor_path,omitempty"`
 	SpaceSlug              string  `json:"space_slug"`
 	SpaceName              string  `json:"space_name"`

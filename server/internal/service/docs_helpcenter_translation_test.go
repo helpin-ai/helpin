@@ -65,6 +65,7 @@ func setupDocsHelpcenterTranslationServiceTestDB(t *testing.T) *gorm.DB {
 			parent_collection_id TEXT,
 			depth INTEGER NOT NULL DEFAULT 0,
 			name TEXT NOT NULL,
+			public_id TEXT NOT NULL DEFAULT '',
 			slug TEXT NOT NULL DEFAULT '',
 			description TEXT,
 			icon TEXT,
@@ -357,6 +358,219 @@ func newDocsHelpcenterPublicServiceForTest(db *gorm.DB) *DocsHelpcenterService {
 	)
 	svc.SetTranslationService(newDocsHelpcenterTranslationServiceForTest(db))
 	return svc
+}
+
+func TestDocsHelpcenterPublicCollectionLookupUsesPublicIDWithSlugFallback(t *testing.T) {
+	t.Parallel()
+
+	const (
+		workspaceID  = "workspace-public-collection"
+		spaceID      = "space-public-collection"
+		collectionID = "collection-public-key"
+		documentID   = "doc-public-key"
+	)
+
+	now := time.Date(2026, 4, 13, 12, 0, 0, 0, time.UTC)
+	db := setupDocsHelpcenterTranslationServiceTestDB(t)
+	ctx := context.Background()
+
+	seedDocsHelpcenterTranslationServiceConfig(t, db, model.DocsHelpcenterConfig{
+		ID:                   "cfg-public-collection",
+		WorkspaceID:          workspaceID,
+		Subdomain:            "public-collection",
+		BrandName:            "Docs",
+		BrandColor:           "#111111",
+		ThemeMode:            "light",
+		DefaultLocale:        "en",
+		EnabledLocales:       model.DocsStringArray{"en"},
+		IsPublished:          true,
+		HeaderLinks:          json.RawMessage(`[]`),
+		FooterConfig:         json.RawMessage(`{}`),
+		HomepageConfig:       json.RawMessage(`{}`),
+		SpaceNavConfig:       json.RawMessage(`{}`),
+		ProtectedTerms:       model.DocsStringArray{},
+		ShowLanguageSwitcher: false,
+		CreatedAt:            now,
+		UpdatedAt:            now,
+	})
+	seedDocsHelpcenterTranslationServiceSpace(t, db, model.DocsSpace{
+		ID:          spaceID,
+		WorkspaceID: workspaceID,
+		Name:        "Knowledge Base",
+		Slug:        "knowledge-base",
+		Visibility:  model.SpaceVisibilityWorkspaceWide,
+		Type:        model.SpaceTypeExternalCapable,
+		CreatedBy:   "user-public",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	})
+	seedDocsHelpcenterTranslationServiceCollection(t, db, model.DocsCollection{
+		ID:          collectionID,
+		SpaceID:     spaceID,
+		WorkspaceID: workspaceID,
+		Name:        "Getting Started",
+		PublicID:    "abc123ef",
+		Slug:        "getting-started",
+		CreatedBy:   "user-public",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	})
+	seedDocsHelpcenterTranslationServiceDocument(t, db, model.DocsDocument{
+		ID:           documentID,
+		WorkspaceID:  workspaceID,
+		SpaceID:      spaceID,
+		CollectionID: ptr(collectionID),
+		Title:        "Welcome",
+		Status:       model.DocStatusPublished,
+		Visibility:   "workspace_wide",
+		CreatedBy:    "user-public",
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	})
+	seedDocsHelpcenterTranslationServiceArticle(t, db, model.DocsHelpcenterArticle{
+		ID:                "article-public-key",
+		DocumentID:        documentID,
+		PublicID:          "def456ab",
+		Slug:              "welcome",
+		PublicPublishedAt: &now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	})
+	if err := db.Create(&model.DocsHelpcenterArticlePublication{
+		ID:           "pub-public-key",
+		DocumentID:   documentID,
+		WorkspaceID:  workspaceID,
+		SpaceID:      spaceID,
+		CollectionID: ptr(collectionID),
+		Locale:       "en",
+		Title:        "Welcome",
+		Slug:         "welcome",
+		PublishedAt:  now,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}).Error; err != nil {
+		t.Fatalf("seed article publication: %v", err)
+	}
+
+	svc := newDocsHelpcenterPublicServiceForTest(db)
+
+	byKey, articles, _, err := svc.GetPublicCollection(ctx, workspaceID, "renamed-slug-abc123ef")
+	if err != nil {
+		t.Fatalf("GetPublicCollection by key: %v", err)
+	}
+	if byKey == nil || byKey.ID != collectionID {
+		t.Fatalf("collection by public key = %+v, want %s", byKey, collectionID)
+	}
+	if len(articles) != 1 || articles[0].PublicID != "def456ab" {
+		t.Fatalf("articles by public key = %+v", articles)
+	}
+
+	byOldSlug, _, _, err := svc.GetPublicCollection(ctx, workspaceID, "getting-started")
+	if err != nil {
+		t.Fatalf("GetPublicCollection by old slug: %v", err)
+	}
+	if byOldSlug == nil || byOldSlug.ID != collectionID {
+		t.Fatalf("collection by slug fallback = %+v, want %s", byOldSlug, collectionID)
+	}
+}
+
+func TestDocsHelpcenterLocalizedCollectionLookupUsesPublicIDWithSlugFallback(t *testing.T) {
+	t.Parallel()
+
+	const (
+		workspaceID  = "workspace-localized-collection"
+		spaceID      = "space-localized-collection"
+		collectionID = "collection-localized-key"
+	)
+
+	now := time.Date(2026, 4, 13, 13, 0, 0, 0, time.UTC)
+	db := setupDocsHelpcenterTranslationServiceTestDB(t)
+	ctx := context.Background()
+
+	seedDocsHelpcenterTranslationServiceConfig(t, db, model.DocsHelpcenterConfig{
+		ID:                      "cfg-localized-collection",
+		WorkspaceID:             workspaceID,
+		Subdomain:               "localized-collection",
+		BrandName:               "Docs",
+		BrandColor:              "#111111",
+		ThemeMode:               "light",
+		DefaultLocale:           "en",
+		EnabledLocales:          model.DocsStringArray{"en", "fr"},
+		FallbackToDefaultLocale: true,
+		IsPublished:             true,
+		HeaderLinks:             json.RawMessage(`[]`),
+		FooterConfig:            json.RawMessage(`{}`),
+		HomepageConfig:          json.RawMessage(`{}`),
+		SpaceNavConfig:          json.RawMessage(`{}`),
+		ProtectedTerms:          model.DocsStringArray{},
+		ShowLanguageSwitcher:    true,
+	})
+	seedDocsHelpcenterTranslationServiceSpace(t, db, model.DocsSpace{
+		ID:          spaceID,
+		WorkspaceID: workspaceID,
+		Name:        "Knowledge Base",
+		Slug:        "knowledge-base",
+		Visibility:  model.SpaceVisibilityWorkspaceWide,
+		Type:        model.SpaceTypeExternalCapable,
+		CreatedBy:   "user-public",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	})
+	seedDocsHelpcenterTranslationServiceCollection(t, db, model.DocsCollection{
+		ID:          collectionID,
+		SpaceID:     spaceID,
+		WorkspaceID: workspaceID,
+		Name:        "Getting Started",
+		PublicID:    "abc123ef",
+		Slug:        "getting-started",
+		CreatedBy:   "user-public",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	})
+	seedDocsHelpcenterTranslationServiceCollectionTranslation(t, db, model.DocsHelpcenterCollectionTranslation{
+		ID:           "en-localized-collection",
+		CollectionID: collectionID,
+		WorkspaceID:  workspaceID,
+		SpaceID:      spaceID,
+		Locale:       "en",
+		Name:         "Getting Started",
+		Slug:         ptr("getting-started"),
+		Status:       model.DocsHelpcenterTranslationStatusPublished,
+		PublishedAt:  &now,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	})
+	seedDocsHelpcenterTranslationServiceCollectionTranslation(t, db, model.DocsHelpcenterCollectionTranslation{
+		ID:           "fr-localized-collection",
+		CollectionID: collectionID,
+		WorkspaceID:  workspaceID,
+		SpaceID:      spaceID,
+		Locale:       "fr",
+		Name:         "Premiers pas",
+		Slug:         ptr("premiers-pas"),
+		Status:       model.DocsHelpcenterTranslationStatusPublished,
+		PublishedAt:  &now,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	})
+
+	svc := newDocsHelpcenterPublicServiceForTest(db)
+
+	byKey, _, err := svc.GetPublicLocalizedCollectionByCanonicalPath(ctx, workspaceID, "fr", "anything-abc123ef")
+	if err != nil {
+		t.Fatalf("GetPublicLocalizedCollectionByCanonicalPath by key: %v", err)
+	}
+	if byKey == nil || byKey.ID != collectionID || byKey.Name != "Premiers pas" {
+		t.Fatalf("localized collection by public key = %+v", byKey)
+	}
+
+	byOldSlug, _, err := svc.GetPublicLocalizedCollectionByCanonicalPath(ctx, workspaceID, "fr", "premiers-pas")
+	if err != nil {
+		t.Fatalf("GetPublicLocalizedCollectionByCanonicalPath by slug: %v", err)
+	}
+	if byOldSlug == nil || byOldSlug.ID != collectionID {
+		t.Fatalf("localized collection by slug fallback = %+v", byOldSlug)
+	}
 }
 
 func TestDocsHelpcenterTranslationService(t *testing.T) {

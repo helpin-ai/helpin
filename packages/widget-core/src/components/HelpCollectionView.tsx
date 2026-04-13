@@ -5,6 +5,7 @@ import {
   buildHelpArticleKey,
   fetchHelpArticles,
   fetchHelpCollections,
+  buildHelpCollectionKey,
   type HelpArticleSummary,
   type HelpCollection,
 } from './helpApi';
@@ -131,7 +132,7 @@ export const HelpCollectionView: FunctionComponent<HelpCollectionViewProps> = ({
               <button
                 key={child.collection.slug}
                 className="helpin-help-link"
-                onClick={() => onSelectCollection?.(child.collection.slug)}
+                onClick={() => onSelectCollection?.(buildHelpCollectionKey(child.collection.slug, child.collection.public_id))}
               >
                 <FileTextIcon size={20} />
                 <div className="helpin-help-link-text">

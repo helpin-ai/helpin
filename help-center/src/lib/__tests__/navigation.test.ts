@@ -19,6 +19,7 @@ function makeNavItem(
     id,
     name,
     slug,
+    public_id: id.slice(0, 8).padEnd(8, '0'),
     icon: null,
     parent_collection_id: parent,
     depth,

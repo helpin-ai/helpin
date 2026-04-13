@@ -3,6 +3,7 @@ import { useSpaceNavigation } from '@/hooks/queries'
 import { useDocsContext } from './DocsContext'
 import type { NavItem, Space } from '@/lib/types'
 import { getArticlePager, type ArticlePagerLink } from '@/lib/navigation'
+import { buildCollectionKey } from '@/lib/collectionKey'
 
 // ─── Context Value ──────────────────────────────────────────────────────────
 
@@ -61,7 +62,7 @@ export function SpaceProvider({
         getCollectionSlug: (articleSlug: string) => {
           for (const collection of nav) {
             if (collection.articles.some((a) => a.slug === articleSlug)) {
-              return collection.slug
+              return buildCollectionKey(collection.slug, collection.public_id)
             }
           }
           return undefined

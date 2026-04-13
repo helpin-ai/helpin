@@ -1,5 +1,6 @@
 import type { NavItem, Space } from '@/lib/types'
 import { buildArticleKey } from '@/lib/articleKey'
+import { buildCollectionKey } from '@/lib/collectionKey'
 
 export type LocaleRouteKind = 'home' | 'space' | 'collection' | 'article' | 'search'
 
@@ -53,8 +54,12 @@ export function buildLocaleSpacePath(locale: string, spaceSlug: string) {
   return `/${locale}/${spaceSlug}`
 }
 
-export function buildLocaleCollectionPath(locale: string, collectionSlug: string) {
-  return `/${locale}/c/${collectionSlug}`
+export function buildLocaleCollectionPath(
+  locale: string,
+  collectionSlug: string,
+  publicId = '',
+) {
+  return `/${locale}/c/${buildCollectionKey(collectionSlug, publicId)}`
 }
 
 export function buildLocaleArticlePath(
@@ -88,10 +93,11 @@ export function buildCanonicalCollectionPath(
   multilingualEnabled: boolean,
   locale: string,
   collectionSlug: string,
+  publicId = '',
 ) {
   return multilingualEnabled
-    ? buildLocaleCollectionPath(locale, collectionSlug)
-    : `/c/${collectionSlug}`
+    ? buildLocaleCollectionPath(locale, collectionSlug, publicId)
+    : `/c/${buildCollectionKey(collectionSlug, publicId)}`
 }
 
 export function buildCanonicalSpacePath(
@@ -227,6 +233,7 @@ export function resolveLocaleSwitchPath({
           multilingualEnabled,
           targetLocale,
           targetCollection.slug,
+          targetCollection.public_id,
         )
       }
 
@@ -239,6 +246,7 @@ export function resolveLocaleSwitchPath({
           multilingualEnabled,
           defaultLocale,
           fallbackCollection.slug,
+          fallbackCollection.public_id,
         )
       }
 
@@ -327,6 +335,7 @@ export function resolveExactLocalePath({
             multilingualEnabled,
             targetLocale,
             targetCollection.slug,
+            targetCollection.public_id,
           )
         : null
     }

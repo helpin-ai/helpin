@@ -54,6 +54,7 @@ func setupDocsOrderingTestDB(t *testing.T) *gorm.DB {
 			parent_collection_id TEXT,
 			depth INTEGER NOT NULL DEFAULT 0,
 			name TEXT NOT NULL,
+			public_id TEXT NOT NULL DEFAULT '',
 			slug TEXT NOT NULL DEFAULT '',
 			description TEXT,
 			icon TEXT,
@@ -258,6 +259,9 @@ func TestDocsOrdering_MoveDeleteAndTypeChange(t *testing.T) {
 
 		if created.Slug != "getting-started" {
 			t.Fatalf("created collection slug = %q, want %q", created.Slug, "getting-started")
+		}
+		if len(created.PublicID) != docsHelpcenterPublicIDLength {
+			t.Fatalf("created collection public_id = %q, want %d chars", created.PublicID, docsHelpcenterPublicIDLength)
 		}
 	})
 

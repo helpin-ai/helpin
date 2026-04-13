@@ -68,6 +68,7 @@ const brandNavigationItem: NavItem = {
   id: 'collection-brands',
   name: 'Brands',
   slug: 'brands',
+  public_id: '11111111',
   icon: null,
   parent_collection_id: null,
   depth: 0,

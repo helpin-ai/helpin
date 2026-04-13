@@ -1031,9 +1031,17 @@ func (s *SupportInboxService) ListWidgetHelpArticles(ctx context.Context, widget
 		return nil, fmt.Errorf("collection not found")
 	}
 
-	collection, err := s.docsCollectionRepo.GetBySlug(ctx, inst.WorkspaceID, collectionSlug)
-	if err != nil {
-		return nil, err
+	var collection *model.DocsCollection
+	if _, publicID, ok := parseDocsHelpcenterCollectionKey(collectionSlug); ok {
+		collection, err = s.docsCollectionRepo.GetByPublicID(ctx, publicID)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		collection, err = s.docsCollectionRepo.GetBySlug(ctx, inst.WorkspaceID, collectionSlug)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if collection == nil || collection.WorkspaceID != inst.WorkspaceID {
 		return nil, fmt.Errorf("collection not found")
