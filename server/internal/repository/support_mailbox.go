@@ -282,7 +282,7 @@ func (r *SupportMailboxRepository) IsMember(ctx context.Context, mailboxID, work
 }
 
 func (r *SupportMailboxRepository) CountUnread(ctx context.Context, workspaceID string, mailboxID *string) (int, error) {
-	query := r.db.WithContext(ctx).Table("support_conversations sc").Where("sc.workspace_id = ? AND sc.status != 'closed'", workspaceID)
+	query := r.db.WithContext(ctx).Table("support_conversations sc").Where("sc.workspace_id = ? AND sc.status NOT IN ?", workspaceID, []string{model.SupportConversationStatusResolved, model.SupportConversationStatusSpam})
 	if mailboxID == nil {
 		query = query.Where("sc.mailbox_id IS NULL")
 	} else {

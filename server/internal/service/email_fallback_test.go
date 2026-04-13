@@ -716,12 +716,15 @@ func TestEmailFallbackRenderBodiesIncludesUnsubscribeLink(t *testing.T) {
 
 func TestIsEmailFallbackTerminalStatus(t *testing.T) {
 	if !isEmailFallbackTerminalStatus("closed") {
-		t.Fatal("closed should be terminal")
+		t.Fatal("legacy closed alias should still be terminal")
+	}
+	if !isEmailFallbackTerminalStatus("resolved") {
+		t.Fatal("resolved should be terminal")
 	}
 	if !isEmailFallbackTerminalStatus("spam") {
 		t.Fatal("spam should be terminal")
 	}
-	if isEmailFallbackTerminalStatus("resolved") {
-		t.Fatal("resolved should not be terminal")
+	if isEmailFallbackTerminalStatus("open") {
+		t.Fatal("open should not be terminal")
 	}
 }

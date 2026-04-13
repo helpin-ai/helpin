@@ -770,7 +770,7 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 			) AS ai_active
 		FROM support_conversations sc
 		WHERE sc.workspace_id = ?
-		  AND sc.status != 'closed'
+		  AND sc.status NOT IN ('resolved', 'spam')
 	`
 
 	args := []any{userID, workspaceID}

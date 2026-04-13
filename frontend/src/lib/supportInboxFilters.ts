@@ -57,7 +57,7 @@ export function filterSupportConversations(
   }
 
   result.sort((a, b) => {
-    const resolvedStatuses = new Set(['resolved', 'closed']);
+    const resolvedStatuses = new Set(['resolved']);
     const aResolved = resolvedStatuses.has(a.status) ? 1 : 0;
     const bResolved = resolvedStatuses.has(b.status) ? 1 : 0;
     if (aResolved !== bResolved) return aResolved - bResolved;

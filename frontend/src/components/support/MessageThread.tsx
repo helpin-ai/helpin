@@ -327,7 +327,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
     const email = conversation?.customer_email?.trim();
     if (!conversation || !settings?.email_fallback_enabled || !email) return null;
     if (conversation.email_unsubscribed) return null;
-    if (conversation.status === 'closed' || conversation.status === 'spam') return null;
+    if (conversation.status === 'resolved' || conversation.status === 'spam') return null;
     if (conversation.anonymous_id && isVisitorOnline) return null;
 
     return {

@@ -343,7 +343,7 @@ export function useUpdateConversationStatus(workspaceId: string) {
       const { conversationId, status } = variables;
 
       // Auto-advance: when resolving/spamming, select the next conversation in the list
-      if (status === 'resolved' || status === 'spam' || status === 'closed') {
+      if (status === 'resolved' || status === 'spam') {
         const { selectedConversationId, selectConversation } = useSupportInboxStore.getState();
         if (selectedConversationId === conversationId) {
           // Find the next conversation from the cached list (before invalidation)

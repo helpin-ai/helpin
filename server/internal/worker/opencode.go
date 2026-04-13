@@ -122,7 +122,7 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 	)
 	if execCtx.Conversation != nil {
 		systemPrompt += "\nFor support conversations, respond with valid JSON only in this shape: " +
-			`{"status":"open|in_progress|pending|resolved|closed","draft_reply":{"content":"...","is_internal":false,"sender_display_name":"optional","approval_required":true}}.`
+			`{"status":"open|waiting_on_customer|resolved|spam","draft_reply":{"content":"...","is_internal":false,"sender_display_name":"optional","approval_required":true}}.`
 	}
 
 	userPrompt = buildOpenCodeUserPrompt(execCtx, userPrompt)

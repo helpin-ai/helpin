@@ -127,17 +127,25 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
           <>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-xs font-medium">
-                  {(() => {
-                    const active = supportStatusOptions.find((o) => o.value === statusFilter);
-                    const Icon = active?.icon;
-                    return Icon ? <Icon className={`h-3.5 w-3.5 ${active.color}`} /> : null;
-                  })()}
-                  {supportStatusOptions.find((o) => o.value === statusFilter)?.label ?? 'All statuses'}
-                  <ArrowDown01Icon className="h-3 w-3 opacity-50" />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-[208px] justify-between gap-2 px-2 text-xs font-medium"
+                >
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    {(() => {
+                      const active = supportStatusOptions.find((o) => o.value === statusFilter);
+                      const Icon = active?.icon;
+                      return Icon ? <Icon className={`h-3.5 w-3.5 shrink-0 ${active.color}`} /> : null;
+                    })()}
+                    <span className="truncate">
+                      {supportStatusOptions.find((o) => o.value === statusFilter)?.label ?? 'All statuses'}
+                    </span>
+                  </span>
+                  <ArrowDown01Icon className="h-3 w-3 shrink-0 opacity-50" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-44">
+              <DropdownMenuContent align="start" className="w-[208px]">
                 {supportStatusOptions.map((option) => (
                   <DropdownMenuCheckboxItem
                     key={option.value}

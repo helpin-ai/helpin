@@ -166,7 +166,7 @@ func (e *CodexExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) 
 	systemPrompt := BuildSystemPrompt(execCtx.Agent, execCtx.Task, execCtx.Epic, execCtx.Conversation, execCtx.PlanningStage, execCtx.PlanningMethodology, config)
 	if execCtx.Conversation != nil {
 		systemPrompt += "\nFor support conversations, respond with valid JSON only in this shape: " +
-			`{"status":"open|in_progress|pending|resolved|closed","draft_reply":{"content":"...","is_internal":false,"sender_display_name":"optional","approval_required":true}}.`
+			`{"status":"open|waiting_on_customer|resolved|spam","draft_reply":{"content":"...","is_internal":false,"sender_display_name":"optional","approval_required":true}}.`
 	}
 	if supplement := BuildExecutionSupplementPrompt(run, execCtx.RunFacts, execCtx.ArtifactContext); supplement != "" {
 		systemPrompt = strings.TrimSpace(systemPrompt + "\n\n## Current Run State\n" + supplement)

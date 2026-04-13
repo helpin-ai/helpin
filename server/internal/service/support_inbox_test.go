@@ -70,7 +70,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		conversation2 := &model.SupportConversation{
 			WorkspaceID: workspaceID,
 			Subject:     "Second conversation",
-			Status:      "closed",
+			Status:      model.SupportConversationStatusResolved,
 			Priority:    "high",
 		}
 		err := repo.Create(ctx, conversation2)
@@ -1746,14 +1746,19 @@ func TestTruncate(t *testing.T) {
 }
 
 func TestValidConversationStatuses(t *testing.T) {
-	valid := []string{"open", "in_progress", "waiting", "resolved", "closed"}
+	valid := []string{
+		model.SupportConversationStatusOpen,
+		model.SupportConversationStatusWaitingOnCustomer,
+		model.SupportConversationStatusResolved,
+		model.SupportConversationStatusSpam,
+	}
 	for _, s := range valid {
 		if !validConversationStatuses[s] {
 			t.Errorf("expected %q to be valid", s)
 		}
 	}
 
-	invalid := []string{"", "pending", "spam", "snoozed", "OPEN", "Closed", "deleted"}
+	invalid := []string{"", "pending", "in_progress", "waiting", "closed", "OPEN", "Closed", "deleted"}
 	for _, s := range invalid {
 		if validConversationStatuses[s] {
 			t.Errorf("expected %q to be invalid", s)

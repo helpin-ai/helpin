@@ -15,7 +15,7 @@ type SupportConversation struct {
 	MailboxID         *string    `json:"mailbox_id" gorm:"type:uuid;index"`
 	DisplayID         int        `json:"display_id" gorm:"not null;index"`
 	Subject           string     `json:"subject" gorm:"not null"`
-	Status            string     `json:"status" gorm:"not null;default:'open'"`     // open, in_progress, waiting, resolved, closed
+	Status            string     `json:"status" gorm:"not null;default:'open'"`     // open, waiting_on_customer, resolved, spam
 	FlowState         *string    `json:"flow_state" gorm:"index"`                   // ai_handling, waiting_for_human, queued_for_human, after_hours_queue, assigned_to_human, resolved_by_ai, resolved_by_human
 	Priority          string     `json:"priority" gorm:"not null;default:'medium'"` // low, medium, high, urgent
 	Channel           string     `json:"channel" gorm:"not null;default:'widget'"`  // widget, internal, email, api
@@ -60,6 +60,11 @@ type SupportConversation struct {
 func (SupportConversation) TableName() string { return "support_conversations" }
 
 const (
+	SupportConversationStatusOpen              = "open"
+	SupportConversationStatusWaitingOnCustomer = "waiting_on_customer"
+	SupportConversationStatusResolved          = "resolved"
+	SupportConversationStatusSpam              = "spam"
+
 	SupportConversationFlowStateAIHandling      = "ai_handling"
 	SupportConversationFlowStateWaitingForHuman = "waiting_for_human"
 	SupportConversationFlowStateQueuedForHuman  = "queued_for_human"
@@ -68,6 +73,28 @@ const (
 	SupportConversationFlowStateResolvedByAI    = "resolved_by_ai"
 	SupportConversationFlowStateResolvedByHuman = "resolved_by_human"
 )
+
+func NormalizeSupportConversationStatus(status string) string {
+	switch strings.TrimSpace(strings.ToLower(status)) {
+	case "in_progress":
+		return SupportConversationStatusOpen
+	case "waiting":
+		return SupportConversationStatusWaitingOnCustomer
+	case "closed":
+		return SupportConversationStatusResolved
+	default:
+		return strings.TrimSpace(strings.ToLower(status))
+	}
+}
+
+func IsValidSupportConversationStatus(status string) bool {
+	switch NormalizeSupportConversationStatus(status) {
+	case SupportConversationStatusOpen, SupportConversationStatusWaitingOnCustomer, SupportConversationStatusResolved, SupportConversationStatusSpam:
+		return true
+	default:
+		return false
+	}
+}
 
 const (
 	SupportTeammateStatusOnline  = "online"

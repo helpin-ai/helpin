@@ -10,7 +10,6 @@ import {
   InboxIcon,
   LayoutTable01Icon,
   BulbIcon,
-  Loading01Icon,
   Mail01Icon,
   Message01Icon,
   PauseIcon,
@@ -21,7 +20,6 @@ import {
   Target01Icon,
   UserIcon,
   UserGroupIcon,
-  CancelCircleIcon,
   type IconComponent,
 } from '@/lib/icons';
 import {
@@ -155,10 +153,8 @@ export const supportFilterItems = [
 export const supportStatusOptions: readonly { value: string; label: string; icon: IconComponent; color: string }[] = [
   { value: 'all', label: 'All statuses', icon: InboxIcon, color: 'text-muted-foreground' },
   { value: 'open', label: 'Open', icon: RecordIcon, color: 'text-blue-500' },
-  { value: 'in_progress', label: 'In Progress', icon: Loading01Icon, color: 'text-amber-500' },
-  { value: 'waiting', label: 'Waiting on Customer', icon: PauseIcon, color: 'text-orange-500' },
+  { value: 'waiting_on_customer', label: 'Waiting on Customer', icon: PauseIcon, color: 'text-orange-500' },
   { value: 'resolved', label: 'Resolved', icon: CheckmarkCircle02Icon, color: 'text-emerald-500' },
-  { value: 'closed', label: 'Closed', icon: CancelCircleIcon, color: 'text-slate-400' },
   { value: 'spam', label: 'Spam', icon: OctagonXIcon, color: 'text-red-500' },
 ] as const;
 

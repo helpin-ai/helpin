@@ -386,6 +386,7 @@ func (s *SupportInboxService) ListConversations(ctx context.Context, workspaceID
 	if workspaceID == "" {
 		return nil, 0, fmt.Errorf("workspace_id is required")
 	}
+	status = model.NormalizeSupportConversationStatus(status)
 	workspaceMemberID, role := s.actorMailboxScope(ctx, workspaceID)
 	return s.conversationRepo.List(ctx, workspaceID, status, priority, pagination, workspaceMemberID, role, nil, "")
 }
@@ -395,6 +396,7 @@ func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, wor
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
+	status = model.NormalizeSupportConversationStatus(status)
 	if err := s.requireMailboxAccess(ctx, workspaceID, mailboxID); err != nil {
 		return nil, err
 	}
@@ -726,11 +728,15 @@ func (s *SupportInboxService) CreateConversation(ctx context.Context, req model.
 
 // validConversationStatuses defines allowed status transitions.
 var validConversationStatuses = map[string]bool{
-	"open": true, "in_progress": true, "waiting": true, "resolved": true, "closed": true,
+	model.SupportConversationStatusOpen:              true,
+	model.SupportConversationStatusWaitingOnCustomer: true,
+	model.SupportConversationStatusResolved:          true,
+	model.SupportConversationStatusSpam:              true,
 }
 
 // UpdateConversationStatus changes conversation status.
 func (s *SupportInboxService) UpdateConversationStatus(ctx context.Context, workspaceID, ticketID, status, actorID string) (*model.SupportConversation, error) {
+	status = model.NormalizeSupportConversationStatus(status)
 	if !validConversationStatuses[status] {
 		return nil, fmt.Errorf("invalid status: %s", status)
 	}
@@ -748,19 +754,15 @@ func (s *SupportInboxService) UpdateConversationStatus(ctx context.Context, work
 
 	now := time.Now()
 	switch status {
-	case "resolved":
+	case model.SupportConversationStatusResolved:
 		ticket.ResolvedAt = &now
 		if ticket.FlowState == nil || *ticket.FlowState != model.SupportConversationFlowStateResolvedByAI {
 			ticket.FlowState = strPtr(model.SupportConversationFlowStateResolvedByHuman)
 		}
-	case "closed":
+	case model.SupportConversationStatusOpen:
+		ticket.FlowState = strPtr(defaultConversationFlowState(ticket.OpenedByUserID, ticket.AssignedAgentID))
+	case model.SupportConversationStatusSpam:
 		ticket.ClosedAt = &now
-	case "open", "in_progress":
-		if status == "open" || status == "in_progress" {
-			ticket.FlowState = strPtr(defaultConversationFlowState(ticket.OpenedByUserID, ticket.AssignedAgentID))
-		}
-	case "waiting":
-		ticket.FlowState = strPtr(model.SupportConversationFlowStateWaitingForHuman)
 	}
 
 	if err := s.conversationRepo.Update(ctx, ticket); err != nil {
@@ -772,11 +774,9 @@ func (s *SupportInboxService) UpdateConversationStatus(ctx context.Context, work
 	}
 
 	// Insert a system message for status transitions visible in the thread.
-	if oldStatus != status && (status == "resolved" || status == "closed" || (oldStatus == "resolved" && status == "open")) {
+	if oldStatus != status && (status == model.SupportConversationStatusResolved || (oldStatus == model.SupportConversationStatusResolved && status == model.SupportConversationStatusOpen)) {
 		label := "Resolved conversation"
-		if status == "closed" {
-			label = "Closed conversation"
-		} else if status == "open" && oldStatus == "resolved" {
+		if status == model.SupportConversationStatusOpen && oldStatus == model.SupportConversationStatusResolved {
 			label = "Reopened conversation"
 		}
 
@@ -948,6 +948,20 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	if !msg.IsInternal && msg.MessageType == "reply" && msg.SenderType == "customer" {
 		senderName := derefString(msg.SenderDisplayName)
 		ProcessSupportCustomerReplyNotification(ctx, s.notificationService, conv, msg.Content, senderName)
+		if conv.Status == model.SupportConversationStatusWaitingOnCustomer || conv.Status == model.SupportConversationStatusResolved {
+			conv.Status = model.SupportConversationStatusOpen
+			conv.FlowState = strPtr(defaultConversationFlowState(conv.OpenedByUserID, conv.AssignedAgentID))
+			conv.ClosedAt = nil
+			if err := s.conversationRepo.UpdateFields(ctx, workspaceID, ticketID, map[string]any{
+				"status":      conv.Status,
+				"flow_state":  derefString(conv.FlowState),
+				"resolved_at": nil,
+				"closed_at":   nil,
+				"updated_at":  time.Now(),
+			}); err != nil {
+				slog.ErrorContext(ctx, "failed to reopen support conversation after customer reply", "error", err, "conversation_id", ticketID)
+			}
+		}
 		if s.triageService != nil {
 			go func(workspaceID, conversationID, messageID string) {
 				if _, triageErr := s.triageService.EvaluateAndRoute(context.WithoutCancel(ctx), workspaceID, conversationID, messageID); triageErr != nil {
