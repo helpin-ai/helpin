@@ -160,7 +160,7 @@ export function SpaceNodeHeader({
                     <TooltipContent>{ancestor.label}</TooltipContent>
                   </Tooltip>
                   <ArrowRight01Icon
-                    className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40"
+                    className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
                     aria-hidden="true"
                   />
                 </span>
