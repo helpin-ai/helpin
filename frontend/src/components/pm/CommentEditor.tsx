@@ -2,14 +2,10 @@ import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { MentionHighlight } from '@/components/pm/mention-highlight'
-import { diffRemovedInlineAttachmentIds, extractInlineAttachmentIds } from '@/components/pm/editorImageAttachments'
-import { ResizableImageExtension } from '@/components/ui/resizable-image-extension'
 import { MentionSuggestionsList } from '@/components/pm/MentionSuggestionsList'
-import { uploadEditorImage, type EditorUploadConfig } from '@/hooks/useEditorImageUpload'
-import { pmAttachmentService } from '@/lib/services/pmAttachmentService'
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
 import { Loading01Icon, SentIcon, Image01Icon, AttachmentIcon, Cancel01Icon } from '@/lib/icons'
-import { toast } from 'sonner'
+import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import type { WorkspaceTeam, AssignableMember } from '@/lib/types'
 import {
   getMentionSuggestions,
@@ -22,10 +18,9 @@ interface CommentEditorProps {
   placeholder?: string
   teams?: Pick<WorkspaceTeam, 'id' | 'name' | 'handle'>[]
   members?: AssignableMember[]
-  uploadConfig?: EditorUploadConfig
-  onUploadStateChange?: (pendingUploads: number) => void
+  onImageSelect?: (files: File[]) => void
   onFileSelect?: () => void
-  uploadedFiles?: { id: string; name: string }[]
+  uploadedFiles?: { id: string; name: string; url?: string }[]
   onRemoveUploadedFile?: (id: string) => void
 }
 
@@ -73,8 +68,7 @@ export function CommentEditor({
   placeholder = 'Leave a comment...',
   teams = [],
   members = [],
-  uploadConfig,
-  onUploadStateChange,
+  onImageSelect,
   onFileSelect,
   uploadedFiles = [],
   onRemoveUploadedFile,
@@ -91,12 +85,8 @@ export function CommentEditor({
   teamsRef.current = teams
   const membersRef = useRef(members)
   membersRef.current = members
-  const uploadConfigRef = useRef(uploadConfig)
-  uploadConfigRef.current = uploadConfig
-  const onUploadStateChangeRef = useRef(onUploadStateChange)
-  onUploadStateChangeRef.current = onUploadStateChange
-  const pendingUploadsRef = useRef(0)
-  const [pendingUploads, setPendingUploads] = useState(0)
+  const onImageSelectRef = useRef(onImageSelect)
+  onImageSelectRef.current = onImageSelect
   const [hasContent, setHasContent] = useState(false)
   const currentHtmlRef = useRef('')
   const skipNextCleanupRef = useRef(false)
@@ -107,87 +97,9 @@ export function CommentEditor({
     return editor.getHTML()
   }, [])
 
-  const handleImageUpload = useCallback(
-    async (file: File, editorInstance: ReturnType<typeof useEditor>) => {
-      if (!editorInstance || !uploadConfigRef.current) return
-      if (!file.type.startsWith('image/')) return
-
-      const uploadId = `img-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
-
-      // Read file as data URI for instant preview
-      const dataUri = await new Promise<string>((resolve) => {
-        const reader = new FileReader()
-        reader.onload = () => resolve(reader.result as string)
-        reader.readAsDataURL(file)
-      })
-
-      editorInstance.chain().focus().setResizableImage({ src: dataUri, alt: file.name, title: uploadId }).run()
-
-      pendingUploadsRef.current += 1
-      setPendingUploads(pendingUploadsRef.current)
-      onUploadStateChangeRef.current?.(pendingUploadsRef.current)
-      try {
-        const upload = await uploadEditorImage(file, uploadConfigRef.current!)
-
-        const { doc } = editorInstance.state
-        let targetPos: number | null = null
-        doc.descendants((node, pos) => {
-          if (node.type.name === 'resizableImage' && node.attrs.title === uploadId) {
-            targetPos = pos
-            return false
-          }
-        })
-
-        if (targetPos !== null) {
-          const node = doc.nodeAt(targetPos)
-          if (node) {
-            editorInstance.view.dispatch(
-              editorInstance.state.tr.setNodeMarkup(targetPos, undefined, {
-                ...node.attrs,
-                src: upload.publicUrl,
-                title: null,
-                attachmentId: upload.attachmentId,
-              }),
-            )
-          }
-        }
-      } catch {
-        // On failure, remove the placeholder image
-        const { doc } = editorInstance.state
-        let targetPos: number | null = null
-        doc.descendants((node, pos) => {
-          if (node.type.name === 'resizableImage' && node.attrs.title === uploadId) {
-            targetPos = pos
-            return false
-          }
-        })
-
-        if (targetPos !== null) {
-          const node = doc.nodeAt(targetPos)
-          if (node) {
-            editorInstance.view.dispatch(
-              editorInstance.state.tr.delete(targetPos, targetPos + node.nodeSize),
-            )
-          }
-        }
-        toast.error('Failed to upload image')
-      } finally {
-        pendingUploadsRef.current = Math.max(0, pendingUploadsRef.current - 1)
-        setPendingUploads(pendingUploadsRef.current)
-        onUploadStateChangeRef.current?.(pendingUploadsRef.current)
-      }
-    },
-    [],
-  )
-
-  const cleanupDraftAttachments = useCallback(async (attachmentIds: string[]) => {
-    const currentConfig = uploadConfigRef.current
-    if (!currentConfig || currentConfig.entityType !== 'editor_upload' || attachmentIds.length === 0) {
-      return
-    }
-    await Promise.allSettled(
-      attachmentIds.map((attachmentId) => pmAttachmentService.remove(currentConfig.workspaceId, attachmentId)),
-    )
+  const handleImageFiles = useCallback((files: File[]) => {
+    const imageFiles = files.filter((f) => f.type.startsWith('image/'))
+    if (imageFiles.length > 0) onImageSelectRef.current?.(imageFiles)
   }, [])
 
   const handleSubmit = useCallback(async () => {
@@ -206,64 +118,58 @@ export function CommentEditor({
   const handleSubmitRef = useRef(handleSubmit)
   handleSubmitRef.current = handleSubmit
 
-  const hasMentionables = teams.length > 0 || members.length > 0
-
-  const extensions = useMemo(() => {
-    const exts = [
-      StarterKit.configure({
-        heading: false,
-        blockquote: false,
-        codeBlock: false,
-        horizontalRule: false,
-        bulletList: false,
-        orderedList: false,
-        listItem: false,
-        link: {
-          openOnClick: false,
-          autolink: true,
-          HTMLAttributes: { class: 'text-blue-600 dark:text-blue-400 underline cursor-pointer', target: '_blank', rel: 'noopener noreferrer' },
-        },
-      }),
-      Placeholder.configure({ placeholder, showOnlyCurrent: false, emptyNodeClass: 'is-empty', emptyEditorClass: 'is-editor-empty' }),
-      MentionHighlight,
-    ]
-    if (uploadConfig) {
-      exts.push(ResizableImageExtension as typeof exts[number])
-    }
-    return exts
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [placeholder, !!uploadConfig])
+  const extensions = useMemo(() => [
+    StarterKit.configure({
+      heading: false,
+      blockquote: false,
+      codeBlock: false,
+      horizontalRule: false,
+      bulletList: false,
+      orderedList: false,
+      listItem: false,
+      link: {
+        openOnClick: false,
+        autolink: true,
+        HTMLAttributes: { class: 'text-blue-600 dark:text-blue-400 underline cursor-pointer', target: '_blank', rel: 'noopener noreferrer' },
+      },
+    }),
+    Placeholder.configure({ placeholder, showOnlyCurrent: false, emptyNodeClass: 'is-empty', emptyEditorClass: 'is-editor-empty' }),
+    MentionHighlight,
+  ], [placeholder])
 
   const editor = useEditor({
     extensions,
     editorProps: {
       attributes: {
-        class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[40px] max-h-[120px] overflow-y-auto px-3 py-2 text-[13px]',
+        class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[40px] max-h-[120px] overflow-y-auto px-3 py-2 text-[13px] bg-transparent',
       },
       handlePaste: (_view, event) => {
-        if (!uploadConfigRef.current) return false
+        if (!onImageSelectRef.current) return false
         const items = event.clipboardData?.items
         if (!items) return false
+        const images: File[] = []
         for (const item of items) {
           if (item.type.startsWith('image/')) {
-            event.preventDefault()
             const file = item.getAsFile()
-            if (file) handleImageUpload(file, editorRef.current)
-            return true
+            if (file) images.push(file)
           }
+        }
+        if (images.length > 0) {
+          event.preventDefault()
+          handleImageFiles(images)
+          return true
         }
         return false
       },
       handleDrop: (_view, event, _slice, moved) => {
-        if (!uploadConfigRef.current || moved) return false
+        if (!onImageSelectRef.current || moved) return false
         const files = event.dataTransfer?.files
         if (!files?.length) return false
-        for (const file of files) {
-          if (file.type.startsWith('image/')) {
-            event.preventDefault()
-            handleImageUpload(file, editorRef.current)
-            return true
-          }
+        const images = Array.from(files).filter((f) => f.type.startsWith('image/'))
+        if (images.length > 0) {
+          event.preventDefault()
+          handleImageFiles(images)
+          return true
         }
         return false
       },
@@ -322,17 +228,9 @@ export function CommentEditor({
     },
     onUpdate: ({ editor: e }) => {
       setHasContent(!e.isEmpty)
-      const html = editorRef.current?.getHTML() ?? ''
+      currentHtmlRef.current = editorRef.current?.getHTML() ?? ''
       if (skipNextCleanupRef.current) {
         skipNextCleanupRef.current = false
-        currentHtmlRef.current = html
-        setMentionState(detectMentions(editorRef.current, teamsRef.current, membersRef.current))
-        return
-      }
-      const removedDraftAttachmentIds = diffRemovedInlineAttachmentIds(currentHtmlRef.current, html)
-      currentHtmlRef.current = html
-      if (removedDraftAttachmentIds.length > 0) {
-        void cleanupDraftAttachments(removedDraftAttachmentIds)
       }
       setMentionState(detectMentions(editorRef.current, teamsRef.current, membersRef.current))
     },
@@ -348,17 +246,9 @@ export function CommentEditor({
     if (!editor) return
 
     const handleUpdate = () => {
-      const html = editor.getHTML()
+      currentHtmlRef.current = editor.getHTML()
       if (skipNextCleanupRef.current) {
         skipNextCleanupRef.current = false
-        currentHtmlRef.current = html
-        setMentionState(detectMentions(editor, teamsRef.current, membersRef.current))
-        return
-      }
-      const removedDraftAttachmentIds = diffRemovedInlineAttachmentIds(currentHtmlRef.current, html)
-      currentHtmlRef.current = html
-      if (removedDraftAttachmentIds.length > 0) {
-        void cleanupDraftAttachments(removedDraftAttachmentIds)
       }
       setMentionState(detectMentions(editor, teamsRef.current, membersRef.current))
     }
@@ -371,28 +261,14 @@ export function CommentEditor({
       editor.off('update', handleUpdate)
       editor.off('blur', handleBlur)
     }
-  }, [cleanupDraftAttachments, editor])
-
-  useEffect(
-    () => () => {
-      const currentConfig = uploadConfigRef.current
-      if (!currentConfig || currentConfig.entityType !== 'editor_upload') {
-        return
-      }
-      const draftAttachmentIds = extractInlineAttachmentIds(currentHtmlRef.current)
-      if (draftAttachmentIds.length > 0) {
-        void cleanupDraftAttachments(draftAttachmentIds)
-      }
-    },
-    [cleanupDraftAttachments],
-  )
+  }, [editor])
 
   if (!editor) return null
 
-  const canSubmit = !loading && pendingUploads === 0 && (hasContent || uploadedFiles.length > 0)
+  const canSubmit = !loading && (hasContent || uploadedFiles.length > 0)
 
   return (
-    <div className="relative rounded-2xl border border-transparent bg-input/50 transition-[color,box-shadow,background-color] focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30">
+    <div className="relative bg-muted/50 px-4 pt-3 pb-2 rounded-b-lg transition-[color,box-shadow,background-color] focus-within:ring-2 focus-within:ring-ring/30">
       {mentionState && mentionState.items.length > 0 ? (
         <div className="absolute bottom-full left-0 right-0 z-50 mb-1.5">
           <div className="mx-1 max-h-[260px] overflow-y-auto rounded-xl border border-border/60 bg-popover p-1.5 shadow-lg">
@@ -419,17 +295,22 @@ export function CommentEditor({
         </div>
       ) : null}
       <EditorContent editor={editor} />
-      {/* Uploaded files preview */}
+      {/* Uploaded files / image previews */}
       {uploadedFiles.length > 0 && onRemoveUploadedFile && (
-        <div className="flex flex-wrap gap-1.5 border-t border-border/60 px-3 py-2">
+        <div className="flex flex-wrap gap-1.5 px-3 py-2">
           {uploadedFiles.map((f) => {
             const ext = getFileExtension(f.name)
+            const isImage = /^(png|jpg|jpeg|gif|webp|svg|bmp)$/i.test(ext)
             return (
               <div
                 key={f.id}
-                className="flex items-center gap-1.5 rounded-md border border-border/60 bg-muted/20 pl-2 pr-1 py-1 text-xs"
+                className="group/file relative flex items-center gap-1.5 rounded-md border border-border/60 bg-background/60 pl-2 pr-1 py-1 text-xs"
               >
-                <span className="uppercase text-[10px] font-medium text-muted-foreground/70 w-6">{ext || 'FILE'}</span>
+                {isImage && f.url ? (
+                  <img src={f.url} alt={f.name} className="h-10 w-10 rounded object-cover" />
+                ) : (
+                  <span className="uppercase text-[10px] font-medium text-muted-foreground/70 w-6">{ext || 'FILE'}</span>
+                )}
                 <span className="truncate max-w-[120px] text-muted-foreground">{f.name}</span>
                 <button
                   type="button"
@@ -445,51 +326,52 @@ export function CommentEditor({
       )}
       <div className="flex items-center justify-between px-2 py-1">
         <div className="flex items-center gap-1">
-          <span className="text-[10px] text-muted-foreground">
-            {hasMentionables ? 'Type @ to mention' : ''}
-          </span>
-          {uploadConfig && (
-            <button
-              type="button"
-              className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
-              title="Add image"
-              onClick={() => {
-                const input = document.createElement('input')
-                input.type = 'file'
-                input.accept = 'image/*'
-                input.onchange = () => {
-                  const file = input.files?.[0]
-                  if (file) handleImageUpload(file, editor)
-                }
-                input.click()
-              }}
-            >
-              <Image01Icon className="h-3.5 w-3.5" />
-            </button>
+          {onImageSelect && (
+            <QuickTooltip label="Add image">
+              <button
+                type="button"
+                className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
+                onClick={() => {
+                  const input = document.createElement('input')
+                  input.type = 'file'
+                  input.accept = 'image/*'
+                  input.multiple = true
+                  input.onchange = () => {
+                    if (input.files?.length) handleImageFiles(Array.from(input.files))
+                  }
+                  input.click()
+                }}
+              >
+                <Image01Icon className="h-3.5 w-3.5" />
+              </button>
+            </QuickTooltip>
           )}
           {onFileSelect && (
-            <button
-              type="button"
-              className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
-              title="Attach file"
-              onClick={onFileSelect}
-            >
-              <AttachmentIcon className="h-3.5 w-3.5" />
-            </button>
+            <QuickTooltip label="Attach file">
+              <button
+                type="button"
+                className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
+                onClick={onFileSelect}
+              >
+                <AttachmentIcon className="h-3.5 w-3.5" />
+              </button>
+            </QuickTooltip>
           )}
         </div>
-        <button
-          type="button"
-          className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-border/60 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer disabled:opacity-40"
-          disabled={!canSubmit}
-          onClick={handleSubmit}
-        >
-          {loading ? (
-            <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <SentIcon className="h-3.5 w-3.5" />
-          )}
-        </button>
+        <QuickTooltip label="Send (⌘+Enter)">
+          <button
+            type="button"
+            className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-border/60 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer disabled:opacity-40"
+            disabled={!canSubmit}
+            onClick={handleSubmit}
+          >
+            {loading ? (
+              <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <SentIcon className="h-3.5 w-3.5" />
+            )}
+          </button>
+        </QuickTooltip>
       </div>
     </div>
   )

@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEditor, EditorContent } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import { MentionHighlight } from '@/components/pm/mention-highlight';
 import { ArrowRight01Icon, Message01Icon, PencilEdit01Icon, ArrowTurnBackwardIcon, SmilePlusIcon, Delete01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -14,7 +17,6 @@ import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import { uploadToS3 } from '@/lib/api';
 import type { CommentWithAuthor, ReactionSummary, AttachmentResponse } from '@/lib/pmTypes';
 import type { AssignableMember, WorkspaceTeam } from '@/lib/types';
-import type { EditorUploadConfig } from '@/hooks/useEditorImageUpload';
 
 // File type icons
 import pdfIcon from '@/assets/attachment/pdf-icon.png';
@@ -25,6 +27,78 @@ import videoIcon from '@/assets/attachment/video-icon.png';
 import audioIcon from '@/assets/attachment/audio-icon.png';
 import zipIcon from '@/assets/attachment/zip-icon.png';
 import defaultIcon from '@/assets/attachment/default-icon.png';
+
+/** Lightweight TipTap editor for editing existing comments (renders HTML properly). */
+function CommentEditEditor({
+  initialContent,
+  onChange,
+  onSave,
+  onCancel,
+}: {
+  initialContent: string;
+  onChange: (html: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  const onSaveRef = useRef(onSave);
+  onSaveRef.current = onSave;
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
+
+  const extensions = useMemo(() => [
+    StarterKit.configure({
+      heading: false,
+      blockquote: false,
+      codeBlock: false,
+      horizontalRule: false,
+      bulletList: false,
+      orderedList: false,
+      listItem: false,
+      link: {
+        openOnClick: false,
+        autolink: true,
+        HTMLAttributes: { class: 'text-blue-600 dark:text-blue-400 underline cursor-pointer', target: '_blank', rel: 'noopener noreferrer' },
+      },
+    }),
+    MentionHighlight,
+  ], []);
+
+  const editor = useEditor({
+    extensions,
+    content: initialContent,
+    editorProps: {
+      attributes: {
+        class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[40px] max-h-[120px] overflow-y-auto px-2 py-1.5 text-sm bg-transparent',
+      },
+      handleKeyDown: (_view, event) => {
+        if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+          event.preventDefault();
+          onSaveRef.current();
+          return true;
+        }
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          onCancelRef.current();
+          return true;
+        }
+        return false;
+      },
+    },
+    onUpdate: ({ editor: e }) => {
+      onChangeRef.current(e.getHTML());
+    },
+  });
+
+  if (!editor) return null;
+
+  return (
+    <div className="rounded-md border border-border/60 focus-within:ring-1 focus-within:ring-primary">
+      <EditorContent editor={editor} />
+    </div>
+  );
+}
 
 function formatRelativeTime(dateStr: string): string {
   try {
@@ -204,7 +278,6 @@ interface CommentThreadProps {
   teams?: Pick<WorkspaceTeam, 'id' | 'name' | 'handle'>[];
   members?: AssignableMember[];
   onCommentsChange: (comments: CommentWithAuthor[]) => void;
-  uploadConfig?: EditorUploadConfig;
 }
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -225,19 +298,10 @@ export function CommentThread({
   const [replyLoading, setReplyLoading] = useState(false);
   const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set());
 
+  type PendingFile = { id: string; name: string; url?: string };
   // Uploaded attachment IDs for new comment and per-reply
-  const [pendingAttachments, setPendingAttachments] = useState<{ id: string; name: string }[]>([]);
-  const [replyPendingAttachments, setReplyPendingAttachments] = useState<Map<string, { id: string; name: string }[]>>(new Map());
-  const draftUploadConfig = useRef<EditorUploadConfig>({
-    workspaceId,
-    entityType: 'editor_upload',
-    entityId: workspaceId,
-  });
-  draftUploadConfig.current = {
-    workspaceId,
-    entityType: 'editor_upload',
-    entityId: workspaceId,
-  };
+  const [pendingAttachments, setPendingAttachments] = useState<PendingFile[]>([]);
+  const [replyPendingAttachments, setReplyPendingAttachments] = useState<Map<string, PendingFile[]>>(new Map());
 
   // Member name map for reaction tooltips
   const memberNameMap = useRef(new Map<string, string>());
@@ -246,8 +310,8 @@ export function CommentThread({
     memberNameMap.current.set(m.user_id || m.id, m.display_name);
   }
 
-  // Upload a file immediately and return the attachment ID
-  const uploadFileImmediately = useCallback(async (file: File): Promise<{ id: string; name: string } | null> => {
+  // Upload a file immediately and return the attachment ID + public URL
+  const uploadFileImmediately = useCallback(async (file: File): Promise<PendingFile | null> => {
     if (file.size > MAX_FILE_SIZE) return null;
 
     const { data: initData, error: initError } = await pmAttachmentService.initiateUpload(workspaceId, {
@@ -263,7 +327,7 @@ export function CommentThread({
     if (!uploadResult.ok) return null;
 
     await pmAttachmentService.confirmUpload(workspaceId, initData.attachment.id);
-    return { id: initData.attachment.id, name: file.name };
+    return { id: initData.attachment.id, name: file.name, url: initData.public_url || initData.url };
   }, [workspaceId]);
 
   useEffect(
@@ -306,6 +370,22 @@ export function CommentThread({
       }
     };
     input.click();
+  }, [uploadFileImmediately]);
+
+  const handleImageUpload = useCallback(async (files: File[], parentId?: string) => {
+    for (const file of files) {
+      const result = await uploadFileImmediately(file);
+      if (!result) continue;
+      if (parentId) {
+        setReplyPendingAttachments((prev) => {
+          const next = new Map(prev);
+          next.set(parentId, [...(prev.get(parentId) ?? []), result]);
+          return next;
+        });
+      } else {
+        setPendingAttachments((prev) => [...prev, result]);
+      }
+    }
   }, [uploadFileImmediately]);
 
   const removePendingAttachment = useCallback(async (attachmentId: string, parentId?: string) => {
@@ -488,18 +568,11 @@ export function CommentThread({
 
   const renderEditForm = (indent: string) => (
     <div className={`mt-1.5 ${indent}`}>
-      <textarea
-        value={editingCommentBody}
-        rows={2}
-        className="w-full resize-none rounded-md border border-border/60 bg-transparent px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-        onChange={(e) => setEditingCommentBody(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-            e.preventDefault();
-            saveEditComment();
-          }
-          if (e.key === 'Escape') cancelEditComment();
-        }}
+      <CommentEditEditor
+        initialContent={editingCommentBody}
+        onChange={setEditingCommentBody}
+        onSave={saveEditComment}
+        onCancel={cancelEditComment}
       />
       <div className="mt-1 flex items-center gap-1.5">
         <Button variant="default" size="sm" className="h-6 px-2 text-xs" onClick={saveEditComment}>
@@ -658,7 +731,7 @@ export function CommentThread({
                       placeholder="Write a reply..."
                       teams={teams}
                       members={members}
-                      uploadConfig={draftUploadConfig.current}
+                      onImageSelect={(files) => handleImageUpload(files, entry.comment.id)}
                       onFileSelect={() => handleFileUpload(entry.comment.id)}
                       uploadedFiles={replyPendingAttachments.get(entry.comment.id) ?? []}
                       onRemoveUploadedFile={(id) => removePendingAttachment(id, entry.comment.id)}
@@ -673,14 +746,14 @@ export function CommentThread({
 
       {/* Comment input */}
       {comments.length > 0 && <Separator />}
-      <div className="px-4 py-3">
+      <div>
         <CommentEditor
           onSubmit={addComment}
           loading={commentLoading}
           placeholder="Leave a comment... (type @ to mention)"
           teams={teams}
           members={members}
-          uploadConfig={draftUploadConfig.current}
+          onImageSelect={(files) => handleImageUpload(files)}
           onFileSelect={() => handleFileUpload()}
           uploadedFiles={pendingAttachments}
           onRemoveUploadedFile={(id) => removePendingAttachment(id)}

@@ -50,6 +50,7 @@ import { repositoryDefaultBranchLabel, taskBranchOptionLabel } from '@/lib/branc
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -533,10 +534,12 @@ function TaskDetailPanelBody({
   const savedDescriptionRef = useRef(taskDetail.task.description ?? '');
 
   const [comments, setComments] = useState<CommentWithAuthor[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(true);
 
   const currentUser = useAuthStore((s) => s.user);
 
   const [activity, setActivity] = useState<ActivityLogEntry[]>([]);
+  const [activityLoading, setActivityLoading] = useState(true);
 
   const [epics, setEpics] = useState<EpicWithStats[]>([]);
   const [sprints, setSprints] = useState<SprintWithStats[]>([]);
@@ -572,11 +575,13 @@ function TaskDetailPanelBody({
   const reloadComments = useCallback(async () => {
     const res = await pmCommentService.list(workspaceId, 'task', taskDetail.task.id);
     setComments(res.data ?? []);
+    setCommentsLoading(false);
   }, [workspaceId, taskDetail.task.id]);
 
   const reloadActivity = useCallback(async () => {
     const res = await pmTaskService.listActivity(workspaceId, taskDetail.task.id, 1, 30);
     setActivity(res.data?.data ?? []);
+    setActivityLoading(false);
   }, [workspaceId, taskDetail.task.id]);
 
   useEffect(() => {
@@ -913,7 +918,7 @@ function TaskDetailPanelBody({
     <div className="flex h-full flex-col">
       {/* ── Header bar ──────────────────────────────────────────── */}
       <div className="ui-divider-bottom-fade flex items-center gap-2 px-4 py-2.5">
-        <div className="flex min-w-0 flex-1 items-center gap-1 text-sm text-muted-foreground">
+        <div className="flex min-w-0 flex-1 items-center gap-1 text-xs text-muted-foreground">
           {taskDetail.objective_name && taskDetail.objective_id && workspace && (
             <>
               <Target01Icon className="h-3.5 w-3.5 shrink-0 text-blue-500" />
@@ -966,7 +971,7 @@ function TaskDetailPanelBody({
             </>
           )}
           {currentState && <StateTypeIcon stateType={currentState.state_type} className="h-3.5 w-3.5 shrink-0" />}
-          <span className="shrink-0 font-medium text-foreground">{taskDetail.task.task_key}</span>
+          <span className="shrink-0 text-xs font-medium text-foreground">{taskDetail.task.task_key}</span>
           {taskDetail.task.recurring_template_id ? (
             <RecurringTemplateBadge
               compact
@@ -1297,20 +1302,44 @@ function TaskDetailPanelBody({
           {/* Comments + Activity */}
           <div>
             {/* Comments card */}
-            <CommentThread
-              workspaceId={workspaceId}
-              entityType="task"
-              entityId={taskDetail.task.id}
-              comments={comments}
-              currentUserId={currentUser?.id}
-              teams={mentionTeams}
-              members={assignableMembers}
-              onCommentsChange={setComments}
-              uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
-            />
+            {commentsLoading ? (
+              <div className="space-y-3 rounded-lg border border-border/60 p-4">
+                {[1, 2].map((i) => (
+                  <div key={i} className="flex items-start gap-3">
+                    <Skeleton className="h-8 w-8 rounded-full shrink-0" />
+                    <div className="flex-1 space-y-2">
+                      <Skeleton className="h-3 w-32" />
+                      <Skeleton className="h-3 w-full" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <CommentThread
+                workspaceId={workspaceId}
+                entityType="task"
+                entityId={taskDetail.task.id}
+                comments={comments}
+                currentUserId={currentUser?.id}
+                teams={mentionTeams}
+                members={assignableMembers}
+                onCommentsChange={setComments}
+              />
+            )}
 
             {/* Activity section */}
-            {activity.length > 0 && (
+            {activityLoading ? (
+              <div className="mt-6 space-y-3">
+                <Skeleton className="h-3 w-20" />
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <Skeleton className="h-4 w-4 rounded-full shrink-0" />
+                    <Skeleton className="h-3 w-48" />
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {!activityLoading && activity.length > 0 && (
               <div className="mt-6">
                 <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Activity</h3>
                 <div className="relative mt-3">

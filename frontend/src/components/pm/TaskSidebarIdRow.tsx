@@ -50,7 +50,7 @@ export function TaskSidebarIdRow({ displayId, taskKey, taskName, taskType, class
   return (
     <div className={cn('mb-4 flex min-w-0 items-center gap-2', className)}>
       <span className="shrink-0 text-xs font-medium text-muted-foreground">Task ID:</span>
-      <span className="min-w-0 truncate text-sm font-semibold text-foreground">{taskKey ?? displayId}</span>
+      <span className="min-w-0 truncate text-xs font-semibold text-foreground">{taskKey ?? displayId}</span>
       <QuickTooltip label="Copy task ID">
         <Button
           type="button"
