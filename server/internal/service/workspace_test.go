@@ -109,7 +109,7 @@ func newWorkspaceDefaultsTestHarness(t *testing.T) (*gorm.DB, *WorkspaceService,
 	agentRepo := repository.NewAgentRepository(db)
 
 	pmWorkflowService := NewPMWorkflowService(workflowRepo, nil, labelRepo, nil)
-	pmAutomationService := NewPMAutomationService(automationRepo, nil, nil, nil, workflowRepo, nil, nil)
+	pmAutomationService := NewPMAutomationService(automationRepo, nil, nil, nil, workflowRepo, nil, nil, nil)
 	agentService := &AgentService{
 		agentRepo:   agentRepo,
 		activitySvc: NewPMActivityService(repository.NewPMActivityRepository(db)),

@@ -26,6 +26,22 @@ export function useSprint(wsId: string, id: string) {
   })
 }
 
+export function useSprintCloseout(wsId: string, id: string) {
+  return useQuery({
+    queryKey: queryKeys.pm.sprintCloseout(wsId, id),
+    queryFn: async () => unwrap(await pmSprintService.getCloseout(wsId, id)),
+    enabled: !!wsId && !!id,
+  })
+}
+
+export function useSprintCloseouts(wsId: string, filters?: { team_id?: string }) {
+  return useQuery({
+    queryKey: queryKeys.pm.sprintCloseouts(wsId, filters as Record<string, unknown> | undefined),
+    queryFn: async () => unwrap(await pmSprintService.listCloseouts(wsId, filters)),
+    enabled: !!wsId,
+  })
+}
+
 export function useSprintPlanningWorkspace(wsId: string, filters?: SprintPlanningFilters) {
   return useQuery({
     queryKey: queryKeys.pm.sprintPlanning(wsId, filters as Record<string, unknown> | undefined),
@@ -96,6 +112,8 @@ export function useUpdateSprint(wsId: string) {
       qc.invalidateQueries({ queryKey: queryKeys.pm.sprints(wsId) })
       qc.invalidateQueries({ queryKey: queryKeys.pm.sprintPlanning(wsId) })
       qc.invalidateQueries({ queryKey: queryKeys.pm.sprint(wsId, id) })
+      qc.invalidateQueries({ queryKey: queryKeys.pm.sprintCloseout(wsId, id) })
+      qc.invalidateQueries({ queryKey: queryKeys.pm.sprintCloseouts(wsId) })
     },
   })
 }
@@ -107,6 +125,7 @@ export function useDeleteSprint(wsId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.pm.sprints(wsId) })
       qc.invalidateQueries({ queryKey: queryKeys.pm.sprintPlanning(wsId) })
+      qc.invalidateQueries({ queryKey: queryKeys.pm.sprintCloseouts(wsId) })
     },
   })
 }

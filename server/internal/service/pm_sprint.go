@@ -15,6 +15,7 @@ import (
 // PMSprintService contains sprint business logic.
 type PMSprintService struct {
 	sprintRepo          *repository.PMSprintRepository
+	closeoutRepo        *repository.PMSprintCloseoutRepository
 	labelRepo           *repository.PMLabelRepository
 	attachmentRepo      *repository.PMAttachmentRepository
 	workspaceRepo       *repository.WorkspaceRepository
@@ -26,8 +27,8 @@ type PMSprintService struct {
 }
 
 // NewPMSprintService creates a new PMSprintService.
-func NewPMSprintService(sprintRepo *repository.PMSprintRepository, labelRepo *repository.PMLabelRepository, attachmentRepo *repository.PMAttachmentRepository, workspaceRepo *repository.WorkspaceRepository, settingsRepo *repository.SettingsRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, notificationService *NotificationService) *PMSprintService {
-	return &PMSprintService{sprintRepo: sprintRepo, labelRepo: labelRepo, attachmentRepo: attachmentRepo, workspaceRepo: workspaceRepo, settingsRepo: settingsRepo, activityService: activityService, wsPublisher: wsPublisher, notificationService: notificationService, logger: slog.Default().With("service", "pm_sprint")}
+func NewPMSprintService(sprintRepo *repository.PMSprintRepository, labelRepo *repository.PMLabelRepository, attachmentRepo *repository.PMAttachmentRepository, workspaceRepo *repository.WorkspaceRepository, settingsRepo *repository.SettingsRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, notificationService *NotificationService, closeoutRepo *repository.PMSprintCloseoutRepository) *PMSprintService {
+	return &PMSprintService{sprintRepo: sprintRepo, closeoutRepo: closeoutRepo, labelRepo: labelRepo, attachmentRepo: attachmentRepo, workspaceRepo: workspaceRepo, settingsRepo: settingsRepo, activityService: activityService, wsPublisher: wsPublisher, notificationService: notificationService, logger: slog.Default().With("service", "pm_sprint")}
 }
 
 // List returns sprints with filters.
@@ -75,6 +76,81 @@ func (s *PMSprintService) GetByID(ctx context.Context, id string) (*model.Sprint
 		return nil, fmt.Errorf("sprint not found")
 	}
 	return sprint, nil
+}
+
+// GetCloseout returns frozen sprint results plus inbound rollover context.
+func (s *PMSprintService) GetCloseout(ctx context.Context, sprintID string) (*model.SprintCloseoutResponse, error) {
+	sprint, err := s.sprintRepo.GetWithStats(ctx, sprintID)
+	if err != nil {
+		return nil, err
+	}
+	if sprint == nil {
+		return nil, fmt.Errorf("sprint not found")
+	}
+	if err := requireTeamAccess(ctx, sprint.Sprint.TeamID); err != nil {
+		return nil, fmt.Errorf("sprint not found")
+	}
+	if s.closeoutRepo == nil {
+		return &model.SprintCloseoutResponse{RolledInFrom: []model.SprintInboundRolloverSummary{}}, nil
+	}
+
+	closeout, _, err := s.closeoutRepo.GetCloseoutBySprintID(ctx, sprintID)
+	if err != nil {
+		return nil, err
+	}
+	rolledInFrom, err := s.closeoutRepo.ListInboundRolloverSummaries(ctx, sprintID)
+	if err != nil {
+		return nil, err
+	}
+	if rolledInFrom == nil {
+		rolledInFrom = []model.SprintInboundRolloverSummary{}
+	}
+	return &model.SprintCloseoutResponse{
+		Closeout:     closeout,
+		RolledInFrom: rolledInFrom,
+	}, nil
+}
+
+// ListCloseouts returns frozen closeout summaries for PM reports.
+func (s *PMSprintService) ListCloseouts(ctx context.Context, workspaceID string, teamID *string) ([]model.SprintCloseoutListItem, error) {
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	if s.closeoutRepo == nil {
+		return []model.SprintCloseoutListItem{}, nil
+	}
+	if teamID != nil && *teamID != "" && !canAccessTeam(ctx, teamID) {
+		return []model.SprintCloseoutListItem{}, nil
+	}
+
+	items, err := s.closeoutRepo.ListCloseoutSummaries(ctx, workspaceID, teamID)
+	if err != nil {
+		return nil, err
+	}
+
+	accessible := accessibleTeamIDs(ctx)
+	if accessible == nil {
+		return items, nil
+	}
+	if len(accessible) == 0 {
+		return []model.SprintCloseoutListItem{}, nil
+	}
+
+	allowed := make(map[string]struct{}, len(accessible))
+	for _, id := range accessible {
+		allowed[id] = struct{}{}
+	}
+
+	filtered := make([]model.SprintCloseoutListItem, 0, len(items))
+	for _, item := range items {
+		if item.TeamID == nil || *item.TeamID == "" {
+			continue
+		}
+		if _, ok := allowed[*item.TeamID]; ok {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered, nil
 }
 
 // Create creates a sprint.
