@@ -2,6 +2,7 @@ import { createFileRoute, lazyRouteComponent } from '@tanstack/react-router';
 
 export type ContactsSearch = {
   search?: string;
+  filters?: string;
   stage?: string;
   status?: string;
   owner?: string;
@@ -14,6 +15,7 @@ export const Route = createFileRoute('/_authenticated/w/$slug/crm/contacts/')({
   component: ContactsRoute,
   validateSearch: (search: Record<string, unknown>): ContactsSearch => ({
     search: typeof search.search === 'string' ? search.search : undefined,
+    filters: typeof search.filters === 'string' ? search.filters : undefined,
     stage: typeof search.stage === 'string' ? search.stage : undefined,
     status: typeof search.status === 'string' ? search.status : undefined,
     owner: typeof search.owner === 'string' ? search.owner : undefined,
@@ -27,7 +29,7 @@ const ContactsPage = lazyRouteComponent(() => import('@/pages/crm/Contacts'), 'C
 
 function ContactsRoute() {
   return (
-    <div className="h-full overflow-hidden pt-4 md:pt-6">
+    <div className="h-full overflow-hidden">
       <ContactsPage />
     </div>
   );

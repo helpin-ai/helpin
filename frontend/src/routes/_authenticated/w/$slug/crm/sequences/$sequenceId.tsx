@@ -9,7 +9,7 @@ const SequenceDetailPage = lazyRouteComponent(() => import('@/pages/crm/Sequence
 function SequenceDetailRoute() {
   const { sequenceId } = Route.useParams();
   return (
-    <div className="h-full overflow-hidden pt-4 md:pt-6">
+    <div className="h-full overflow-hidden">
       <SequenceDetailPage sequenceId={sequenceId} />
     </div>
   );

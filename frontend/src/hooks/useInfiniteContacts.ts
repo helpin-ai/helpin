@@ -8,6 +8,7 @@ interface InfiniteContactFilters {
   lead_status?: string;
   owner_member_id?: string;
   search?: string;
+  filters?: string;
 }
 
 const PER_PAGE = 50;

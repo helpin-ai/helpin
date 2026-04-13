@@ -8,7 +8,7 @@ const DealsPage = lazyRouteComponent(() => import('@/pages/crm/Deals'), 'DealsPa
 
 function DealsRoute() {
   return (
-    <div className="h-full overflow-hidden pt-4 md:pt-6">
+    <div className="h-full overflow-hidden">
       <DealsPage />
     </div>
   );

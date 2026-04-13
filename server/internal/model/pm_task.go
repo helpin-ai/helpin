@@ -25,52 +25,52 @@ const (
 
 // PMTask represents a single work item.
 type PMTask struct {
-	ID                        string                 `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID               string                 `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	DisplayID                 int                    `json:"display_id" gorm:"not null;index"`
-	Name                      string                 `json:"name" gorm:"not null"`
-	Description               *string                `json:"description"`
-	TaskType                  string                 `json:"task_type" gorm:"column:task_type;not null;default:'feature'"`
-	WorkflowID                string                 `json:"workflow_id" gorm:"type:uuid;not null;index"`
-	WorkflowStateID           string                 `json:"workflow_state_id" gorm:"type:uuid;not null;index"`
-	EpicID                    *string                `json:"epic_id" gorm:"type:uuid;index"`
-	SprintID                  *string                `json:"sprint_id" gorm:"type:uuid;index"`
-	TeamID                    *string                `json:"team_id" gorm:"type:uuid;index"`
-	OwnerID                   *string                `json:"owner_id" gorm:"type:uuid;index"`
-	OwnerMemberID             *string                `json:"owner_member_id" gorm:"type:uuid;index"`
-	RequesterID               *string                `json:"requester_id" gorm:"type:uuid"`
-	RequesterMemberID         *string                `json:"requester_member_id" gorm:"type:uuid;index"`
-	Estimate                  *int                   `json:"estimate"`
-	Priority                  string                 `json:"priority" gorm:"not null;default:'none'"`
-	Severity                  string                 `json:"severity" gorm:"not null;default:'none'"`
-	Deadline                  *time.Time             `json:"deadline" gorm:"type:date"`
-	Position                  int                    `json:"position" gorm:"not null;default:0"`
-	Started                   bool                   `json:"started" gorm:"not null;default:false"`
-	StartedAt                 *time.Time             `json:"started_at"`
-	Completed                 bool                   `json:"completed" gorm:"not null;default:false"`
-	CompletedAt               *time.Time             `json:"completed_at"`
-	MovedAt                   *time.Time             `json:"moved_at"`
-	Blocked                   bool                   `json:"blocked" gorm:"not null;default:false"`
-	Blocker                   *string                `json:"blocker"`
-	Archived                  bool                   `json:"archived" gorm:"not null;default:false"`
-	AssignedAgentID           *string                `json:"assigned_agent_id" gorm:"type:uuid;index"`
-	PlanDocumentID            *string                `json:"plan_document_id" gorm:"type:uuid;index"`
-	TemplateID                *string                `json:"template_id"`
-	RecurringTemplateID       *string                `json:"recurring_template_id" gorm:"type:uuid;index"`
-	RecurringRunID            *string                `json:"recurring_run_id" gorm:"type:uuid;index"`
-	RecurringOccurrenceNumber *int                   `json:"recurring_occurrence_number"`
-	ExternalID                *string                `json:"external_id"`
-	SliceType                 *string                `json:"slice_type,omitempty" gorm:"type:text"`
-	ImplementationBrief       json.RawMessage        `json:"implementation_brief,omitempty" gorm:"type:jsonb"`
-	IsBlockedByTask           bool                   `json:"is_blocked_by_task" gorm:"-"`
-	BlockedByCount            int                    `json:"blocked_by_count" gorm:"-"`
-	IsBlockingOtherTask       bool                   `json:"is_blocking_other_task" gorm:"-"`
-	BlockingCount             int                    `json:"blocking_count" gorm:"-"`
-	BlockedByTasks            []TaskDependencyTask   `json:"blocked_by_tasks,omitempty" gorm:"-"`
-	BlockingTasks             []TaskDependencyTask   `json:"blocking_tasks,omitempty" gorm:"-"`
-	TaskKey                   string                 `json:"task_key" gorm:"-"`
-	CreatedAt                 time.Time              `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt                 time.Time              `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                        string               `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID               string               `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	DisplayID                 int                  `json:"display_id" gorm:"not null;index"`
+	Name                      string               `json:"name" gorm:"not null"`
+	Description               *string              `json:"description"`
+	TaskType                  string               `json:"task_type" gorm:"column:task_type;not null;default:'feature'"`
+	WorkflowID                string               `json:"workflow_id" gorm:"type:uuid;not null;index"`
+	WorkflowStateID           string               `json:"workflow_state_id" gorm:"type:uuid;not null;index"`
+	EpicID                    *string              `json:"epic_id" gorm:"type:uuid;index"`
+	SprintID                  *string              `json:"sprint_id" gorm:"type:uuid;index"`
+	TeamID                    *string              `json:"team_id" gorm:"type:uuid;index"`
+	OwnerID                   *string              `json:"owner_id" gorm:"type:uuid;index"`
+	OwnerMemberID             *string              `json:"owner_member_id" gorm:"type:uuid;index"`
+	RequesterID               *string              `json:"requester_id" gorm:"type:uuid"`
+	RequesterMemberID         *string              `json:"requester_member_id" gorm:"type:uuid;index"`
+	Estimate                  *int                 `json:"estimate"`
+	Priority                  string               `json:"priority" gorm:"not null;default:'none'"`
+	Severity                  string               `json:"severity" gorm:"not null;default:'none'"`
+	Deadline                  *time.Time           `json:"deadline" gorm:"type:date"`
+	Position                  int                  `json:"position" gorm:"not null;default:0"`
+	Started                   bool                 `json:"started" gorm:"not null;default:false"`
+	StartedAt                 *time.Time           `json:"started_at"`
+	Completed                 bool                 `json:"completed" gorm:"not null;default:false"`
+	CompletedAt               *time.Time           `json:"completed_at"`
+	MovedAt                   *time.Time           `json:"moved_at"`
+	Blocked                   bool                 `json:"blocked" gorm:"not null;default:false"`
+	Blocker                   *string              `json:"blocker"`
+	Archived                  bool                 `json:"archived" gorm:"not null;default:false"`
+	AssignedAgentID           *string              `json:"assigned_agent_id" gorm:"type:uuid;index"`
+	PlanDocumentID            *string              `json:"plan_document_id" gorm:"type:uuid;index"`
+	TemplateID                *string              `json:"template_id"`
+	RecurringTemplateID       *string              `json:"recurring_template_id" gorm:"type:uuid;index"`
+	RecurringRunID            *string              `json:"recurring_run_id" gorm:"type:uuid;index"`
+	RecurringOccurrenceNumber *int                 `json:"recurring_occurrence_number"`
+	ExternalID                *string              `json:"external_id"`
+	SliceType                 *string              `json:"slice_type,omitempty" gorm:"type:text"`
+	ImplementationBrief       json.RawMessage      `json:"implementation_brief,omitempty" gorm:"type:jsonb"`
+	IsBlockedByTask           bool                 `json:"is_blocked_by_task" gorm:"-"`
+	BlockedByCount            int                  `json:"blocked_by_count" gorm:"-"`
+	IsBlockingOtherTask       bool                 `json:"is_blocking_other_task" gorm:"-"`
+	BlockingCount             int                  `json:"blocking_count" gorm:"-"`
+	BlockedByTasks            []TaskDependencyTask `json:"blocked_by_tasks,omitempty" gorm:"-"`
+	BlockingTasks             []TaskDependencyTask `json:"blocking_tasks,omitempty" gorm:"-"`
+	TaskKey                   string               `json:"task_key" gorm:"-"`
+	CreatedAt                 time.Time            `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt                 time.Time            `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (PMTask) TableName() string { return "pm_tasks" }
@@ -177,6 +177,17 @@ type CreateTaskRequest struct {
 	ExternalLinks     []CreateExternalLinkRequest  `json:"external_links,omitempty"`
 }
 
+// SeedPMTasksRequest is the payload for bulk-seeding test tasks.
+type SeedPMTasksRequest struct {
+	WorkspaceID string `json:"workspace_id"`
+	Count       int    `json:"count"`
+}
+
+// SeedPMTasksResponse reports how many tasks were created by a seed run.
+type SeedPMTasksResponse struct {
+	Created int `json:"created"`
+}
+
 // UpdateTaskRequest is the payload for updating a task.
 type UpdateTaskRequest struct {
 	Name              *string    `json:"name"`
@@ -273,19 +284,19 @@ type BoardTask struct {
 
 // TaskGroup is a labeled bucket of tasks inside a board column.
 type TaskGroup struct {
-	Key     string      `json:"key"`
-	Label   string      `json:"label"`
+	Key   string      `json:"key"`
+	Label string      `json:"label"`
 	Tasks []BoardTask `json:"tasks"`
 }
 
 // TaskStateColumn is the data shape used for board columns.
 type TaskStateColumn struct {
-	State       PMWorkflowState `json:"state"`
-	Tasks       []BoardTask     `json:"tasks"`
-	TaskGroups  []TaskGroup     `json:"task_groups,omitempty"`
-	TaskCount   int             `json:"task_count"`
-	PointTotal  int             `json:"point_total"`
-	HasMore     bool            `json:"has_more"`
+	State      PMWorkflowState `json:"state"`
+	Tasks      []BoardTask     `json:"tasks"`
+	TaskGroups []TaskGroup     `json:"task_groups,omitempty"`
+	TaskCount  int             `json:"task_count"`
+	PointTotal int             `json:"point_total"`
+	HasMore    bool            `json:"has_more"`
 }
 
 // TaskMemberColumn is the data shape for member-grouped board columns.
@@ -299,9 +310,9 @@ type TaskMemberColumn struct {
 
 // ColumnTasksResponse is the paginated payload for a single board column.
 type ColumnTasksResponse struct {
-	Tasks       []BoardTask `json:"tasks"`
-	TaskGroups  []TaskGroup `json:"task_groups,omitempty"`
-	Total       int         `json:"total"`
+	Tasks      []BoardTask `json:"tasks"`
+	TaskGroups []TaskGroup `json:"task_groups,omitempty"`
+	Total      int         `json:"total"`
 }
 
 // TaskStateCount stores aggregate count per state.

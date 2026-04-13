@@ -4,21 +4,21 @@ import "time"
 
 // CRM Contact lifecycle stages.
 const (
-	CRMLifecycleSubscriber          = "subscriber"
-	CRMLifecycleLead                = "lead"
-	CRMLifecycleMarketingQualified  = "marketing_qualified"
-	CRMLifecycleSalesQualified      = "sales_qualified"
-	CRMLifecycleOpportunity         = "opportunity"
-	CRMLifecycleCustomer            = "customer"
-	CRMLifecycleEvangelist          = "evangelist"
+	CRMLifecycleSubscriber         = "subscriber"
+	CRMLifecycleLead               = "lead"
+	CRMLifecycleMarketingQualified = "marketing_qualified"
+	CRMLifecycleSalesQualified     = "sales_qualified"
+	CRMLifecycleOpportunity        = "opportunity"
+	CRMLifecycleCustomer           = "customer"
+	CRMLifecycleEvangelist         = "evangelist"
 )
 
 // CRM Contact lead statuses.
 const (
-	CRMLeadStatusNew          = "new"
-	CRMLeadStatusOpen         = "open"
-	CRMLeadStatusInProgress   = "in_progress"
-	CRMLeadStatusUnqualified  = "unqualified"
+	CRMLeadStatusNew         = "new"
+	CRMLeadStatusOpen        = "open"
+	CRMLeadStatusInProgress  = "in_progress"
+	CRMLeadStatusUnqualified = "unqualified"
 )
 
 // crmLifecycleOrder maps lifecycle stages to their ordinal position.
@@ -108,4 +108,5 @@ type CRMContactListFilters struct {
 	LeadStatus     *string
 	OwnerMemberID  *string
 	Search         *string
+	Query          *QueryFilterGroup
 }

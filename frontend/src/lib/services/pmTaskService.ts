@@ -6,6 +6,8 @@ import type {
   MoveTaskRequest,
   PaginatedResponse,
   ReorderTaskRequest,
+  SeedPMTasksRequest,
+  SeedPMTasksResponse,
   Task,
   TaskDetail,
   TaskLabelLinkRequest,
@@ -174,6 +176,8 @@ export const pmTaskService = {
       ...payload,
       deadline: toRFC3339(payload.deadline),
     }),
+  seed: (payload: SeedPMTasksRequest) =>
+    api.post<SeedPMTasksResponse>(`/pm/tasks/seed?${qs(payload.workspace_id)}`, payload),
   get: (workspaceId: string, id: string) => api.get<TaskDetail>(`/pm/tasks/${id}?${qs(workspaceId)}`),
   getByDisplayId: (workspaceId: string, displayId: number) =>
     api.get<TaskDetail>(`/pm/tasks/display/${displayId}?${qs(workspaceId)}`),

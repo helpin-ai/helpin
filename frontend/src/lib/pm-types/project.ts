@@ -850,6 +850,15 @@ export interface CreateTaskRequest {
   external_links?: { url: string; title?: string }[];
 }
 
+export interface SeedPMTasksRequest {
+  workspace_id: string;
+  count?: number;
+}
+
+export interface SeedPMTasksResponse {
+  created: number;
+}
+
 
 export interface UpdateTaskRequest {
   name?: string;

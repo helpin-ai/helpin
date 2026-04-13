@@ -12,11 +12,21 @@ interface EstimatePickerProps {
   teamId?: string | null;
   onChange: (displayValue: string, apiValue: number | undefined) => void;
   className?: string;
+  estimateSettings?: TeamEstimateSettings | null;
+  lazyMount?: boolean;
 }
 
-export function EstimatePicker({ value, teamId, onChange, className }: EstimatePickerProps) {
-  const wsId = useWorkspaceStore((s) => s.currentWorkspace?.id) ?? '';
-  const config = useTeamEstimateSettingsForTeam(wsId, teamId);
+interface EstimatePickerBaseProps extends EstimatePickerProps {
+  config: TeamEstimateSettings | null;
+}
+
+function EstimatePickerBase({
+  value,
+  onChange,
+  className,
+  config,
+  lazyMount = false,
+}: EstimatePickerBaseProps) {
   const [open, setOpen] = useState(false);
 
   // If team has estimate settings enabled, use scale-aware picker
@@ -24,20 +34,31 @@ export function EstimatePicker({ value, teamId, onChange, className }: EstimateP
     const options = getEstimateOptions(config.scale, config.extended, config.allow_zero);
     const numValue = value === '' ? undefined : Number(value);
     const displayLabel = formatEstimateValue(numValue, config.scale);
+    const trigger = (
+      <button
+        type="button"
+        className={cn(
+          'inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer',
+          className,
+        )}
+        onClick={(event) => {
+          event.stopPropagation();
+          if (lazyMount && !open) {
+            setOpen(true);
+          }
+        }}
+      >
+        {displayLabel}
+      </button>
+    );
+
+    if (lazyMount && !open) {
+      return trigger;
+    }
 
     return (
       <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            className={cn(
-              'inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer',
-              className,
-            )}
-          >
-            {displayLabel}
-          </button>
-        </PopoverTrigger>
+        <PopoverTrigger asChild>{trigger}</PopoverTrigger>
         <PopoverContent className="w-auto p-2" align="start">
           <div className="flex flex-col gap-0.5">
             <button
@@ -76,19 +97,31 @@ export function EstimatePicker({ value, teamId, onChange, className }: EstimateP
   }
 
   // Fallback: free-form number input (no team config or disabled)
+  const trigger = (
+    <button
+      type="button"
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer',
+        className,
+      )}
+      onClick={(event) => {
+        event.stopPropagation();
+        if (lazyMount && !open) {
+          setOpen(true);
+        }
+      }}
+    >
+      {value ? `${value} pts` : 'None'}
+    </button>
+  );
+
+  if (lazyMount && !open) {
+    return trigger;
+  }
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className={cn(
-            'inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer',
-            className,
-          )}
-        >
-          {value ? `${value} pts` : 'None'}
-        </button>
-      </PopoverTrigger>
+      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent className="w-36 p-3" align="start">
         <Input
           type="number"
@@ -112,6 +145,22 @@ export function EstimatePicker({ value, teamId, onChange, className }: EstimateP
   );
 }
 
+function EstimatePickerWithQuery(props: EstimatePickerProps) {
+  const wsId = useWorkspaceStore((s) => s.currentWorkspace?.id) ?? '';
+  const config = useTeamEstimateSettingsForTeam(wsId, props.teamId);
+
+  return <EstimatePickerBase {...props} config={config} />;
+}
+
+export function EstimatePicker(props: EstimatePickerProps) {
+  if (props.estimateSettings !== undefined) {
+    return <EstimatePickerBase {...props} config={props.estimateSettings} />;
+  }
+
+  return <EstimatePickerWithQuery {...props} />;
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
 export function formatEstimateDisplay(value: number | undefined | null, _teamId: string | undefined | null, config?: TeamEstimateSettings | null): string {
   if (config?.enabled) {
     return formatEstimateValue(value, config.scale);

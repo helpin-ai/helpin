@@ -13,7 +13,8 @@ import {
   useDroppable,
 } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { ChartColumnIcon, BotIcon, ArrowExpandIcon, ArrowShrinkIcon, LayoutTwoColumnIcon, LayoutTable01Icon, Loading01Icon, PlusSignIcon, StickyNote01Icon, UserIcon } from '@/lib/icons';
+import { BotIcon, ArrowExpandIcon, ArrowShrinkIcon, LayoutTwoColumnIcon, LayoutTable01Icon, Loading01Icon, PlusSignIcon, UserIcon } from '@/lib/icons';
+import { ChartColumnIcon, StickyNote01Icon } from '@/lib/pmIcons';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -22,6 +23,7 @@ import type { Agent, CreateTaskRequest, Task, TaskMemberColumn, TaskStateColumn,
 import { pmLabelService } from '@/lib/services/pmLabelService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
+import { pmTaskService } from '@/lib/services/pmTaskService';
 import { StateTypeIcon } from '@/lib/pmConstants';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
@@ -46,6 +48,8 @@ import { BoardDataContext, BoardCallbacksContext, DragPreviewContext } from './K
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { getVisibleTaskListGroupOptions, type TaskListGroupByOption } from '@/components/pm/task-detail/taskListGrouping';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
+import { toast } from 'sonner';
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -539,6 +543,9 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   const [createOpen, setCreateOpen] = useState(false);
   const [createStateId, setCreateStateId] = useState<string>('');
   const [createOwnerMemberId, setCreateOwnerMemberId] = useState<string | undefined>(undefined);
+  const [seedConfirmOpen, setSeedConfirmOpen] = useState(false);
+  const [isSeeding, setIsSeeding] = useState(false);
+  const showSeedButton = import.meta.env.DEV;
   const VIEW_MODE_KEY = `pm_view_mode_${workspaceId}`;
   const [viewMode, setViewModeState] = useState<'board' | 'list'>(() => {
     try {
@@ -1051,6 +1058,31 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     [createTask]
   );
 
+  const handleSeedTasks = useCallback(async () => {
+    if (!workspaceId || isSeeding) return;
+    setIsSeeding(true);
+    try {
+      const { data: result, error } = await pmTaskService.seed({
+        workspace_id: workspaceId,
+        count: 500,
+      });
+      if (error) {
+        toast.error(error);
+        return;
+      }
+      await loadBoard(workspaceId);
+      if (groupBy === 'members') {
+        await loadMemberBoard(showEmptyColumns ? activeMemberIds : undefined, showEmptyColumns);
+      }
+      toast.success(`Created ${result?.created ?? 500} test tasks`);
+      setSeedConfirmOpen(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to seed tasks');
+    } finally {
+      setIsSeeding(false);
+    }
+  }, [workspaceId, isSeeding, loadBoard, groupBy, loadMemberBoard, showEmptyColumns, activeMemberIds]);
+
   const handleTaskPatched = useCallback((task: Task) => {
     // Enrich with owner_name for board display (update API doesn't include it)
     const ownerKey = task.owner_member_id;
@@ -1184,6 +1216,22 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
             {viewMode === 'board' ? <BoardDisplayMenu /> : <ListDisplayMenu disabledKeys={listDisabledKeys} />}
           </BoardToolbarSlot>
           <BoardToolbarSlot className="gap-1">
+            {showSeedButton ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs"
+                onClick={() => setSeedConfirmOpen(true)}
+                disabled={!workspaceId || isSeeding}
+              >
+                {isSeeding ? (
+                  <Loading01Icon className="mr-1 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <StickyNote01Icon className="mr-1 h-3.5 w-3.5" />
+                )}
+                Seed 500
+              </Button>
+            ) : null}
             <QuickTooltip label="Board view">
               <Button
                 variant={viewMode === 'board' ? 'default' : 'ghost'}
@@ -1301,6 +1349,16 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
           onCreate={handleCreate}
         />
       ) : null}
+
+      <ConfirmDialog
+        open={seedConfirmOpen}
+        onOpenChange={(open) => { if (!isSeeding) setSeedConfirmOpen(open); }}
+        title="Seed 500 test tasks"
+        description="This will create 500 synthetic tasks across the default workflow so you can test the board, grouping, and list performance."
+        confirmLabel={isSeeding ? 'Seeding...' : 'Seed tasks'}
+        variant="default"
+        onConfirm={handleSeedTasks}
+      />
 
     </div>
     </TaskFilterProvider>

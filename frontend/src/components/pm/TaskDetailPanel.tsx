@@ -7,13 +7,11 @@ import {
   ArchiveIcon,
   ArrowLeftRightIcon,
   BotIcon,
-  Calendar03Icon,
   DashboardSpeed01Icon,
   HashtagIcon,
   HexagonIcon,
   Layers01Icon,
   LayoutGridIcon,
-  Tick01Icon,
   CheckmarkSquare02Icon,
   ArrowRight01Icon,
   GitBranchIcon,
@@ -25,7 +23,6 @@ import {
   AttachmentIcon,
   PencilEdit01Icon,
   PlayIcon,
-  ArrowReloadHorizontalIcon,
   Shield02Icon,
   Tag01Icon,
   Target01Icon,
@@ -34,6 +31,7 @@ import {
   UserGroupIcon,
   Cancel01Icon,
 } from '@/lib/icons';
+import { ArrowReloadHorizontalIcon, Calendar03Icon, Tick01Icon } from '@/lib/pmIcons';
 import {
   PRIORITY_CONFIG,
   PriorityIcon,

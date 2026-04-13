@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/querybuilder"
 )
 
 // CRMContactRepository handles DB operations for CRM contacts.
@@ -53,8 +54,20 @@ func (r *CRMContactRepository) List(ctx context.Context, workspaceID string, fil
 		query = query.Where("owner_member_id = ?", *filters.OwnerMemberID)
 	}
 	if filters.Search != nil && *filters.Search != "" {
-		search := "%" + *filters.Search + "%"
-		query = query.Where("(first_name ILIKE ? OR last_name ILIKE ? OR email ILIKE ?)", search, search, search)
+		search := "%" + strings.ToLower(strings.TrimSpace(*filters.Search)) + "%"
+		query = query.Where(
+			"(LOWER(first_name) LIKE ? OR LOWER(COALESCE(last_name, '')) LIKE ? OR LOWER(COALESCE(email, '')) LIKE ?)",
+			search,
+			search,
+			search,
+		)
+	}
+	if filters.Query != nil {
+		var err error
+		query, err = querybuilder.ApplyGORM(query, filters.Query, crmContactFilterDefinitions)
+		if err != nil {
+			return nil, 0, err
+		}
 	}
 
 	var total int64

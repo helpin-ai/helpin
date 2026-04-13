@@ -679,6 +679,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				// Tasks — pm.read / pm.edit
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks", h.PMTask.List)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks", h.PMTask.Create)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/seed", h.PMTask.Seed)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/board", h.PMTask.ListBoard)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/board/column", h.PMTask.ListBoardColumn)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/board/members", h.PMTask.ListBoardByMember)
