@@ -2,7 +2,7 @@ import { FunctionComponent } from 'preact';
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import type { HelpSpace } from '@helpin-ai/shared';
 import { ChevronLeftIcon, ChevronRightIcon, FileTextIcon } from './icons';
-import { fetchHelpCollections, type HelpCollection } from './helpApi';
+import { buildHelpCollectionKey, fetchHelpCollections, type HelpCollection } from './helpApi';
 import { buildHelpCollectionTree } from './helpTree';
 
 interface HelpSpaceViewProps {
@@ -97,7 +97,7 @@ export const HelpSpaceView: FunctionComponent<HelpSpaceViewProps> = ({
                 <button
                   key={node.collection.slug}
                   className="helpin-help-link"
-                  onClick={() => onSelectCollection(node.collection.slug)}
+                  onClick={() => onSelectCollection(buildHelpCollectionKey(node.collection.slug, node.collection.public_id))}
                 >
                   <FileTextIcon size={20} />
                   <div className="helpin-help-link-text">

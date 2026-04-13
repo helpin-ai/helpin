@@ -106,6 +106,7 @@ export function ArticleRouteView({
           excerpt={article.excerpt}
           collectionName={article.collection_name}
           collectionSlug={article.collection_slug}
+          collectionPublicId={article.collection_public_id}
           articleSlug={article.slug}
           articlePublicId={article.public_id}
           pager={pager}

@@ -14,6 +14,7 @@ import { useTheme } from '@/hooks/useTheme'
 import { queryKeys } from '@/lib/queryKeys'
 import { helpCenterService } from '@/lib/services'
 import { parseArticleKey } from '@/lib/articleKey'
+import { parseCollectionKey } from '@/lib/collectionKey'
 import type { LocaleRouteState } from '@/lib/locale'
 import {
   buildCanonicalHomePath,
@@ -47,7 +48,12 @@ function getLocaleLabel(code: string) {
 
 function findCollectionId(navigation: NavItem[], collectionSlug?: string) {
   if (!collectionSlug) return undefined
-  return navigation.find((collection) => collection.slug === collectionSlug)?.id
+  const parsed = parseCollectionKey(collectionSlug)
+  return navigation.find((collection) =>
+    parsed
+      ? collection.public_id === parsed.publicId
+      : collection.slug === collectionSlug,
+  )?.id
 }
 
 function findArticleId(navigation: NavItem[], articleKey?: string) {

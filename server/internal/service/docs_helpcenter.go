@@ -1073,6 +1073,19 @@ func (s *DocsHelpcenterService) resolvePublicSpaceTranslationBySlug(ctx context.
 }
 
 func (s *DocsHelpcenterService) resolvePublicCollectionTranslationBySlug(ctx context.Context, cfg *model.DocsHelpcenterConfig, spaceID, requestedLocale, slug string) (*model.DocsHelpcenterCollectionTranslation, string, bool, error) {
+	if _, publicID, ok := parseDocsHelpcenterCollectionKey(slug); ok {
+		coll, err := s.collectionRepo.GetByPublicID(ctx, publicID)
+		if err != nil {
+			return nil, "", false, err
+		}
+		if coll == nil || coll.SpaceID != spaceID {
+			return nil, "", false, fmt.Errorf("collection not found")
+		}
+		return s.resolvePublicCollectionTranslationByID(ctx, cfg, coll.ID, requestedLocale, func() error {
+			return s.ensureDefaultLocaleCollectionMirrorsForSpace(ctx, spaceID)
+		})
+	}
+
 	translation, err := s.hcRepo.GetPublicCollectionTranslationBySlug(ctx, spaceID, requestedLocale, slug)
 	if err != nil {
 		return nil, "", false, err
@@ -1109,6 +1122,26 @@ func (s *DocsHelpcenterService) resolvePublicCollectionTranslationBySlug(ctx con
 }
 
 func (s *DocsHelpcenterService) resolvePublicCollectionTranslationByCanonicalSlug(ctx context.Context, cfg *model.DocsHelpcenterConfig, workspaceID, requestedLocale, slug string) (*model.DocsHelpcenterCollectionTranslation, string, bool, error) {
+	if _, publicID, ok := parseDocsHelpcenterCollectionKey(slug); ok {
+		coll, err := s.collectionRepo.GetByPublicID(ctx, publicID)
+		if err != nil {
+			return nil, "", false, err
+		}
+		if coll == nil || coll.WorkspaceID != workspaceID {
+			return nil, "", false, fmt.Errorf("collection not found")
+		}
+		space, err := s.spaceRepo.GetByID(ctx, coll.SpaceID)
+		if err != nil {
+			return nil, "", false, err
+		}
+		if space == nil || space.Type != model.SpaceTypeExternalCapable {
+			return nil, "", false, fmt.Errorf("collection not found")
+		}
+		return s.resolvePublicCollectionTranslationByID(ctx, cfg, coll.ID, requestedLocale, func() error {
+			return s.ensureDefaultLocaleCollectionMirrorsForWorkspace(ctx, workspaceID)
+		})
+	}
+
 	translation, err := s.hcRepo.GetPublicCollectionTranslationByWorkspaceSlug(ctx, workspaceID, requestedLocale, slug)
 	if err != nil {
 		return nil, "", false, err
@@ -1135,6 +1168,44 @@ func (s *DocsHelpcenterService) resolvePublicCollectionTranslationByCanonicalSlu
 	}
 
 	fallback, err := s.hcRepo.GetPublicCollectionTranslationByWorkspaceSlug(ctx, workspaceID, defaultLocale, slug)
+	if err != nil {
+		return nil, "", false, err
+	}
+	if fallback == nil {
+		return nil, "", false, fmt.Errorf("collection not found")
+	}
+	return fallback, defaultLocale, true, nil
+}
+
+func (s *DocsHelpcenterService) resolvePublicCollectionTranslationByID(ctx context.Context, cfg *model.DocsHelpcenterConfig, collectionID, requestedLocale string, ensureDefaultMirrors func() error) (*model.DocsHelpcenterCollectionTranslation, string, bool, error) {
+	translation, err := s.hcRepo.GetPublicCollectionTranslationByCollectionID(ctx, collectionID, requestedLocale)
+	if err != nil {
+		return nil, "", false, err
+	}
+	if translation != nil {
+		return translation, requestedLocale, false, nil
+	}
+
+	if ensureDefaultMirrors != nil {
+		if err := ensureDefaultMirrors(); err != nil {
+			return nil, "", false, err
+		}
+	}
+
+	translation, err = s.hcRepo.GetPublicCollectionTranslationByCollectionID(ctx, collectionID, requestedLocale)
+	if err != nil {
+		return nil, "", false, err
+	}
+	if translation != nil {
+		return translation, requestedLocale, false, nil
+	}
+
+	defaultLocale := defaultHelpcenterLocale(cfg)
+	if !cfg.FallbackToDefaultLocale || requestedLocale == defaultLocale {
+		return nil, "", false, fmt.Errorf("collection not found")
+	}
+
+	fallback, err := s.hcRepo.GetPublicCollectionTranslationByCollectionID(ctx, collectionID, defaultLocale)
 	if err != nil {
 		return nil, "", false, err
 	}
@@ -1386,6 +1457,7 @@ func (s *DocsHelpcenterService) GetSpaceNavigation(ctx context.Context, workspac
 			ID:                 collection.ID,
 			Name:               translation.Name,
 			Slug:               stringValue(translation.Slug),
+			PublicID:           collection.PublicID,
 			Icon:               collection.Icon,
 			ParentCollectionID: collection.ParentCollectionID,
 			Depth:              collection.Depth,
@@ -1474,32 +1546,37 @@ func (s *DocsHelpcenterService) GetPublicArticle(ctx context.Context, workspaceI
 	}()
 
 	var collectionSlugValue *string
+	var collectionPublicIDValue *string
 	if resolvedColl != nil {
 		collectionSlugValue = resolvedColl.Slug
+		if publicID := s.collectionPublicID(ctx, resolvedColl.CollectionID); publicID != "" {
+			collectionPublicIDValue = &publicID
+		}
 	}
 
 	return &model.PublicArticleResponse{
-		ID:              doc.ID,
-		Title:           translation.Title,
-		Slug:            stringValue(translation.Slug),
-		PublicID:        publicID,
-		Locale:          resolvedLocale,
-		RequestedLocale: requestedLocale,
-		IsFallback:      fellBack,
-		Excerpt:         translation.Excerpt,
-		Icon:            doc.Icon,
-		Status:          doc.Status,
-		SpaceSlug:       stringValue(spaceTranslation.Slug),
-		CollectionID:    doc.CollectionID,
-		CollectionName:  collectionName,
-		CollectionSlug:  collectionSlugValue,
-		PublishedAt:     publishedAt,
-		SEOTitle:        translation.SEOTitle,
-		SEODescription:  translation.SEODescription,
-		HelpfulCount:    translation.HelpfulCount,
-		NotHelpfulCount: translation.NotHelpfulCount,
-		ViewCount:       translation.ViewCount,
-		ContentHTML:     contentHTML,
+		ID:                 doc.ID,
+		Title:              translation.Title,
+		Slug:               stringValue(translation.Slug),
+		PublicID:           publicID,
+		Locale:             resolvedLocale,
+		RequestedLocale:    requestedLocale,
+		IsFallback:         fellBack,
+		Excerpt:            translation.Excerpt,
+		Icon:               doc.Icon,
+		Status:             doc.Status,
+		SpaceSlug:          stringValue(spaceTranslation.Slug),
+		CollectionID:       doc.CollectionID,
+		CollectionName:     collectionName,
+		CollectionSlug:     collectionSlugValue,
+		CollectionPublicID: collectionPublicIDValue,
+		PublishedAt:        publishedAt,
+		SEOTitle:           translation.SEOTitle,
+		SEODescription:     translation.SEODescription,
+		HelpfulCount:       translation.HelpfulCount,
+		NotHelpfulCount:    translation.NotHelpfulCount,
+		ViewCount:          translation.ViewCount,
+		ContentHTML:        contentHTML,
 	}, nil
 }
 
@@ -1576,14 +1653,17 @@ func (s *DocsHelpcenterService) GetPublicLocalizedCollection(ctx context.Context
 		return nil, nil, err
 	}
 	var icon *string
+	var collectionPublicID string
 	if collection != nil {
 		icon = collection.Icon
+		collectionPublicID = collection.PublicID
 	}
 
 	return &model.PublicNavCollection{
 		ID:        collectionTranslation.CollectionID,
 		Name:      collectionTranslation.Name,
 		Slug:      stringValue(collectionTranslation.Slug),
+		PublicID:  collectionPublicID,
 		SpaceSlug: stringValue(spaceTranslation.Slug),
 		Icon:      icon,
 		Articles:  articles,
@@ -1678,6 +1758,7 @@ func (s *DocsHelpcenterService) GetPublicLocalizedCollectionByCanonicalPath(ctx 
 		ID:        collectionTranslation.CollectionID,
 		Name:      collectionTranslation.Name,
 		Slug:      stringValue(collectionTranslation.Slug),
+		PublicID:  collection.PublicID,
 		SpaceSlug: resolvedSpaceSlug,
 		Icon:      icon,
 		Articles:  articles,
@@ -1748,10 +1829,14 @@ func (s *DocsHelpcenterService) GetPublicArticleByLocalizedCanonicalPath(ctx con
 	}
 	var collectionName *string
 	var collectionSlugValue *string
+	var collectionPublicIDValue *string
 	var spaceSlugValue string
 	if collection != nil {
 		collectionName = &collectionTranslation.Name
 		collectionSlugValue = collectionTranslation.Slug
+		if collection.PublicID != "" {
+			collectionPublicIDValue = &collection.PublicID
+		}
 		if space, err := s.spaceRepo.GetByID(ctx, collection.SpaceID); err == nil && space != nil {
 			spaceSlugValue = space.Slug
 		}
@@ -1776,27 +1861,28 @@ func (s *DocsHelpcenterService) GetPublicArticleByLocalizedCanonicalPath(ctx con
 	}()
 
 	return &model.PublicArticleResponse{
-		ID:              doc.ID,
-		Title:           translation.Title,
-		Slug:            stringValue(translation.Slug),
-		PublicID:        publicID,
-		Locale:          resolvedLocale,
-		RequestedLocale: requestedLocale,
-		IsFallback:      fellBack,
-		Excerpt:         translation.Excerpt,
-		Icon:            doc.Icon,
-		Status:          doc.Status,
-		SpaceSlug:       spaceSlugValue,
-		CollectionID:    doc.CollectionID,
-		CollectionName:  collectionName,
-		CollectionSlug:  collectionSlugValue,
-		PublishedAt:     publishedAt,
-		SEOTitle:        translation.SEOTitle,
-		SEODescription:  translation.SEODescription,
-		HelpfulCount:    translation.HelpfulCount,
-		NotHelpfulCount: translation.NotHelpfulCount,
-		ViewCount:       translation.ViewCount,
-		ContentHTML:     contentHTML,
+		ID:                 doc.ID,
+		Title:              translation.Title,
+		Slug:               stringValue(translation.Slug),
+		PublicID:           publicID,
+		Locale:             resolvedLocale,
+		RequestedLocale:    requestedLocale,
+		IsFallback:         fellBack,
+		Excerpt:            translation.Excerpt,
+		Icon:               doc.Icon,
+		Status:             doc.Status,
+		SpaceSlug:          spaceSlugValue,
+		CollectionID:       doc.CollectionID,
+		CollectionName:     collectionName,
+		CollectionSlug:     collectionSlugValue,
+		CollectionPublicID: collectionPublicIDValue,
+		PublishedAt:        publishedAt,
+		SEOTitle:           translation.SEOTitle,
+		SEODescription:     translation.SEODescription,
+		HelpfulCount:       translation.HelpfulCount,
+		NotHelpfulCount:    translation.NotHelpfulCount,
+		ViewCount:          translation.ViewCount,
+		ContentHTML:        contentHTML,
 	}, nil
 }
 
@@ -1857,6 +1943,7 @@ func (s *DocsHelpcenterService) GetPublicArticleByLocalizedCanonicalKey(ctx cont
 
 	var collectionName *string
 	var collectionSlugValue *string
+	var collectionPublicIDValue *string
 	var spaceSlugValue string
 	if doc.CollectionID != nil {
 		collection, err := s.collectionRepo.GetByID(ctx, *doc.CollectionID)
@@ -1867,6 +1954,9 @@ func (s *DocsHelpcenterService) GetPublicArticleByLocalizedCanonicalKey(ctx cont
 			collectionName = &collection.Name
 			if collection.Slug != "" {
 				collectionSlugValue = &collection.Slug
+			}
+			if collection.PublicID != "" {
+				collectionPublicIDValue = &collection.PublicID
 			}
 			space, err := s.spaceRepo.GetByID(ctx, collection.SpaceID)
 			if err == nil && space != nil {
@@ -1904,33 +1994,51 @@ func (s *DocsHelpcenterService) GetPublicArticleByLocalizedCanonicalKey(ctx cont
 	}
 
 	return &model.PublicArticleResponse{
-		ID:              doc.ID,
-		Title:           translation.Title,
-		Slug:            stringValue(translation.Slug),
-		PublicID:        publicIDValue,
-		Locale:          resolvedLocale,
-		RequestedLocale: requestedLocale,
-		IsFallback:      fellBack,
-		Excerpt:         translation.Excerpt,
-		Icon:            doc.Icon,
-		Status:          doc.Status,
-		SpaceSlug:       spaceSlugValue,
-		CollectionID:    doc.CollectionID,
-		CollectionName:  collectionName,
-		CollectionSlug:  collectionSlugValue,
-		PublishedAt:     publishedAt,
-		SEOTitle:        translation.SEOTitle,
-		SEODescription:  translation.SEODescription,
-		HelpfulCount:    translation.HelpfulCount,
-		NotHelpfulCount: translation.NotHelpfulCount,
-		ViewCount:       translation.ViewCount,
-		ContentHTML:     contentHTML,
+		ID:                 doc.ID,
+		Title:              translation.Title,
+		Slug:               stringValue(translation.Slug),
+		PublicID:           publicIDValue,
+		Locale:             resolvedLocale,
+		RequestedLocale:    requestedLocale,
+		IsFallback:         fellBack,
+		Excerpt:            translation.Excerpt,
+		Icon:               doc.Icon,
+		Status:             doc.Status,
+		SpaceSlug:          spaceSlugValue,
+		CollectionID:       doc.CollectionID,
+		CollectionName:     collectionName,
+		CollectionSlug:     collectionSlugValue,
+		CollectionPublicID: collectionPublicIDValue,
+		PublishedAt:        publishedAt,
+		SEOTitle:           translation.SEOTitle,
+		SEODescription:     translation.SEODescription,
+		HelpfulCount:       translation.HelpfulCount,
+		NotHelpfulCount:    translation.NotHelpfulCount,
+		ViewCount:          translation.ViewCount,
+		ContentHTML:        contentHTML,
 	}, nil
 }
 
 // GetPublicArticleByCanonicalPath returns a public article by collection slug and article slug.
 func (s *DocsHelpcenterService) GetPublicArticleByCanonicalPath(ctx context.Context, workspaceID, collectionSlug, articleSlug string) (*model.PublicArticleResponse, error) {
-	doc, ha, content, err := s.hcRepo.GetPublicArticleByCollectionSlug(ctx, workspaceID, collectionSlug, articleSlug)
+	var (
+		doc     *model.DocsDocument
+		ha      *model.DocsHelpcenterArticle
+		content *model.DocsContent
+		err     error
+	)
+	if _, publicID, ok := parseDocsHelpcenterCollectionKey(collectionSlug); ok {
+		collection, lookupErr := s.collectionRepo.GetByPublicID(ctx, publicID)
+		if lookupErr != nil {
+			return nil, lookupErr
+		}
+		if collection == nil || collection.WorkspaceID != workspaceID {
+			return nil, nil
+		}
+		doc, ha, content, err = s.hcRepo.GetPublicArticleByCollectionIDAndSlug(ctx, collection.ID, articleSlug)
+	} else {
+		doc, ha, content, err = s.hcRepo.GetPublicArticleByCollectionSlug(ctx, workspaceID, collectionSlug, articleSlug)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -1941,6 +2049,7 @@ func (s *DocsHelpcenterService) GetPublicArticleByCanonicalPath(ctx context.Cont
 	// Resolve collection name, slug, and space slug if present.
 	var collectionName *string
 	var resolvedCollSlug *string
+	var resolvedCollPublicID *string
 	var spaceSlug string
 	if doc.CollectionID != nil {
 		coll, err := s.collectionRepo.GetByID(ctx, *doc.CollectionID)
@@ -1948,6 +2057,9 @@ func (s *DocsHelpcenterService) GetPublicArticleByCanonicalPath(ctx context.Cont
 			collectionName = &coll.Name
 			slug := coll.Slug
 			resolvedCollSlug = &slug
+			if coll.PublicID != "" {
+				resolvedCollPublicID = &coll.PublicID
+			}
 			if space, err := s.spaceRepo.GetByID(ctx, coll.SpaceID); err == nil && space != nil {
 				spaceSlug = space.Slug
 			}
@@ -1976,24 +2088,25 @@ func (s *DocsHelpcenterService) GetPublicArticleByCanonicalPath(ctx context.Cont
 	}()
 
 	return &model.PublicArticleResponse{
-		ID:              doc.ID,
-		Title:           doc.Title,
-		Slug:            ha.Slug,
-		PublicID:        ha.PublicID,
-		Excerpt:         doc.Excerpt,
-		Icon:            doc.Icon,
-		Status:          doc.Status,
-		SpaceSlug:       spaceSlug,
-		CollectionID:    doc.CollectionID,
-		CollectionName:  collectionName,
-		CollectionSlug:  resolvedCollSlug,
-		PublishedAt:     publishedAt,
-		SEOTitle:        ha.SEOTitle,
-		SEODescription:  ha.SEODescription,
-		HelpfulCount:    ha.HelpfulCount,
-		NotHelpfulCount: ha.NotHelpfulCount,
-		ViewCount:       ha.ViewCount,
-		ContentHTML:     contentHTML,
+		ID:                 doc.ID,
+		Title:              doc.Title,
+		Slug:               ha.Slug,
+		PublicID:           ha.PublicID,
+		Excerpt:            doc.Excerpt,
+		Icon:               doc.Icon,
+		Status:             doc.Status,
+		SpaceSlug:          spaceSlug,
+		CollectionID:       doc.CollectionID,
+		CollectionName:     collectionName,
+		CollectionSlug:     resolvedCollSlug,
+		CollectionPublicID: resolvedCollPublicID,
+		PublishedAt:        publishedAt,
+		SEOTitle:           ha.SEOTitle,
+		SEODescription:     ha.SEODescription,
+		HelpfulCount:       ha.HelpfulCount,
+		NotHelpfulCount:    ha.NotHelpfulCount,
+		ViewCount:          ha.ViewCount,
+		ContentHTML:        contentHTML,
 	}, nil
 }
 
@@ -2013,6 +2126,7 @@ func (s *DocsHelpcenterService) GetPublicArticleByCanonicalKey(ctx context.Conte
 
 	var collectionName *string
 	var resolvedCollSlug *string
+	var resolvedCollPublicID *string
 	var spaceSlug string
 	if doc.CollectionID != nil {
 		coll, err := s.collectionRepo.GetByID(ctx, *doc.CollectionID)
@@ -2020,6 +2134,9 @@ func (s *DocsHelpcenterService) GetPublicArticleByCanonicalKey(ctx context.Conte
 			collectionName = &coll.Name
 			if coll.Slug != "" {
 				resolvedCollSlug = &coll.Slug
+			}
+			if coll.PublicID != "" {
+				resolvedCollPublicID = &coll.PublicID
 			}
 			if space, err := s.spaceRepo.GetByID(ctx, coll.SpaceID); err == nil && space != nil {
 				spaceSlug = space.Slug
@@ -2049,30 +2166,52 @@ func (s *DocsHelpcenterService) GetPublicArticleByCanonicalKey(ctx context.Conte
 	}()
 
 	return &model.PublicArticleResponse{
-		ID:              doc.ID,
-		Title:           doc.Title,
-		Slug:            ha.Slug,
-		PublicID:        ha.PublicID,
-		Excerpt:         doc.Excerpt,
-		Icon:            doc.Icon,
-		Status:          doc.Status,
-		SpaceSlug:       spaceSlug,
-		CollectionID:    doc.CollectionID,
-		CollectionName:  collectionName,
-		CollectionSlug:  resolvedCollSlug,
-		PublishedAt:     publishedAt,
-		SEOTitle:        ha.SEOTitle,
-		SEODescription:  ha.SEODescription,
-		HelpfulCount:    ha.HelpfulCount,
-		NotHelpfulCount: ha.NotHelpfulCount,
-		ViewCount:       ha.ViewCount,
-		ContentHTML:     contentHTML,
+		ID:                 doc.ID,
+		Title:              doc.Title,
+		Slug:               ha.Slug,
+		PublicID:           ha.PublicID,
+		Excerpt:            doc.Excerpt,
+		Icon:               doc.Icon,
+		Status:             doc.Status,
+		SpaceSlug:          spaceSlug,
+		CollectionID:       doc.CollectionID,
+		CollectionName:     collectionName,
+		CollectionSlug:     resolvedCollSlug,
+		CollectionPublicID: resolvedCollPublicID,
+		PublishedAt:        publishedAt,
+		SEOTitle:           ha.SEOTitle,
+		SEODescription:     ha.SEODescription,
+		HelpfulCount:       ha.HelpfulCount,
+		NotHelpfulCount:    ha.NotHelpfulCount,
+		ViewCount:          ha.ViewCount,
+		ContentHTML:        contentHTML,
 	}, nil
 }
 
-// GetPublicCollection returns a collection, its published articles, and the parent space slug by workspace and collection slug.
-func (s *DocsHelpcenterService) GetPublicCollection(ctx context.Context, workspaceID, collectionSlug string) (*model.DocsCollection, []model.PublicNavArticle, string, error) {
-	coll, articles, err := s.hcRepo.GetPublicCollectionBySlug(ctx, workspaceID, collectionSlug)
+// GetPublicCollection returns a collection, its published articles, and the parent space slug by workspace and collection key.
+func (s *DocsHelpcenterService) GetPublicCollection(ctx context.Context, workspaceID, collectionKey string) (*model.DocsCollection, []model.PublicNavArticle, string, error) {
+	var (
+		coll     *model.DocsCollection
+		articles []model.PublicNavArticle
+		err      error
+	)
+	if _, publicID, ok := parseDocsHelpcenterCollectionKey(collectionKey); ok {
+		coll, err = s.collectionRepo.GetByPublicID(ctx, publicID)
+		if err != nil {
+			return nil, nil, "", err
+		}
+		if coll != nil && coll.WorkspaceID != workspaceID {
+			coll = nil
+		}
+		if coll != nil {
+			articles, err = s.hcRepo.ListPublicCollectionArticles(ctx, coll.ID)
+			if err != nil {
+				return nil, nil, "", err
+			}
+		}
+	} else {
+		coll, articles, err = s.hcRepo.GetPublicCollectionBySlug(ctx, workspaceID, collectionKey)
+	}
 	if err != nil {
 		return nil, nil, "", err
 	}
@@ -2272,6 +2411,14 @@ func (s *DocsHelpcenterService) loadHelpcenterPublicIDs(ctx context.Context, doc
 	return result
 }
 
+func (s *DocsHelpcenterService) collectionPublicID(ctx context.Context, collectionID string) string {
+	collection, err := s.collectionRepo.GetByID(ctx, collectionID)
+	if err != nil || collection == nil {
+		return ""
+	}
+	return collection.PublicID
+}
+
 func (s *DocsHelpcenterService) hydrateRedirectTargetPaths(ctx context.Context, workspaceID string, redirects []model.DocsRedirect) {
 	for i := range redirects {
 		s.hydrateRedirectTargetPath(ctx, workspaceID, &redirects[i])
@@ -2399,7 +2546,7 @@ func (s *DocsHelpcenterService) resolveDynamicPublicPath(
 			if err != nil || translation == nil {
 				return "", nil
 			}
-			target := buildDocsHelpcenterCollectionCanonicalPath(cfg, resolvedLocale, stringValue(translation.Slug))
+			target := buildDocsHelpcenterCollectionCanonicalPath(cfg, resolvedLocale, stringValue(translation.Slug), s.collectionPublicID(ctx, translation.CollectionID))
 			if target != normalizedPath {
 				return target, nil
 			}
@@ -2409,7 +2556,7 @@ func (s *DocsHelpcenterService) resolveDynamicPublicPath(
 		if err != nil || coll == nil {
 			return "", nil
 		}
-		target := buildDocsHelpcenterCollectionCanonicalPath(cfg, defaultLocale, coll.Slug)
+		target := buildDocsHelpcenterCollectionCanonicalPath(cfg, defaultLocale, coll.Slug, coll.PublicID)
 		if target != normalizedPath {
 			return target, nil
 		}
@@ -2445,10 +2592,10 @@ func (s *DocsHelpcenterService) resolveDynamicPublicPath(
 		if multilingual {
 			translation, resolvedLocale, _, err := s.resolvePublicCollectionTranslationByCanonicalSlug(ctx, cfg, workspaceID, locale, collectionSlug)
 			if err == nil && translation != nil {
-				return buildDocsHelpcenterCollectionCanonicalPath(cfg, resolvedLocale, stringValue(translation.Slug)), nil
+				return buildDocsHelpcenterCollectionCanonicalPath(cfg, resolvedLocale, stringValue(translation.Slug), s.collectionPublicID(ctx, translation.CollectionID)), nil
 			}
 		} else if coll, _, _, err := s.GetPublicCollection(ctx, workspaceID, collectionSlug); err == nil && coll != nil {
-			return buildDocsHelpcenterCollectionCanonicalPath(cfg, defaultLocale, coll.Slug), nil
+			return buildDocsHelpcenterCollectionCanonicalPath(cfg, defaultLocale, coll.Slug, coll.PublicID), nil
 		}
 		return "", nil
 	}

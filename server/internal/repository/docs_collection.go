@@ -75,6 +75,24 @@ func (r *DocsCollectionRepository) GetBySlug(ctx context.Context, workspaceID, s
 	return &coll, nil
 }
 
+// GetByPublicID returns a non-deleted collection by its globally unique public id.
+func (r *DocsCollectionRepository) GetByPublicID(ctx context.Context, publicID string) (*model.DocsCollection, error) {
+	publicID = strings.ToLower(strings.TrimSpace(publicID))
+	if publicID == "" {
+		return nil, nil
+	}
+	var coll model.DocsCollection
+	if err := r.db.WithContext(ctx).
+		Where("public_id = ? AND deleted_at IS NULL", publicID).
+		First(&coll).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get docs collection by public id: %w", err)
+	}
+	return &coll, nil
+}
+
 // ListBySpace returns all collections in a space, ordered by position.
 func (r *DocsCollectionRepository) ListBySpace(ctx context.Context, spaceID string) ([]model.DocsCollection, error) {
 	var colls []model.DocsCollection
@@ -279,6 +297,25 @@ func (r *DocsCollectionRepository) SlugTakenInWorkspace(ctx context.Context, wor
 	}
 	if err := q.Count(&count).Error; err != nil {
 		return false, fmt.Errorf("check docs collection slug uniqueness: %w", err)
+	}
+	return count > 0, nil
+}
+
+// PublicIDExists reports whether another non-deleted collection already uses publicID.
+func (r *DocsCollectionRepository) PublicIDExists(ctx context.Context, publicID, excludeID string) (bool, error) {
+	publicID = strings.ToLower(strings.TrimSpace(publicID))
+	if publicID == "" {
+		return false, nil
+	}
+	var count int64
+	q := r.db.WithContext(ctx).
+		Model(&model.DocsCollection{}).
+		Where("public_id = ? AND deleted_at IS NULL", publicID)
+	if excludeID != "" {
+		q = q.Where("id <> ?", excludeID)
+	}
+	if err := q.Count(&count).Error; err != nil {
+		return false, fmt.Errorf("check docs collection public id uniqueness: %w", err)
 	}
 	return count > 0, nil
 }

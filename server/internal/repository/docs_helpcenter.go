@@ -368,6 +368,28 @@ func (r *DocsHelpcenterRepository) GetPublicCollectionTranslationByWorkspaceSlug
 	return &translation, nil
 }
 
+func (r *DocsHelpcenterRepository) GetPublicCollectionTranslationByCollectionID(ctx context.Context, collectionID, locale string) (*model.DocsHelpcenterCollectionTranslation, error) {
+	var translation model.DocsHelpcenterCollectionTranslation
+	if err := r.db.WithContext(ctx).
+		Table("docs_helpcenter_collection_translations ct").
+		Select("ct.*").
+		Joins("JOIN docs_collections c ON c.id = ct.collection_id").
+		Where(`
+			ct.collection_id = ?
+			AND ct.locale = ?
+			AND ct.status = ?
+			AND ct.published_at IS NOT NULL
+			AND c.deleted_at IS NULL
+		`, collectionID, locale, model.DocsHelpcenterTranslationStatusPublished).
+		First(&translation).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get public collection translation by collection id: %w", err)
+	}
+	return &translation, nil
+}
+
 func (r *DocsHelpcenterRepository) ListPublicArticleTranslationsBySpace(ctx context.Context, spaceID, locale string) ([]model.DocsHelpcenterArticleTranslation, error) {
 	var translations []model.DocsHelpcenterArticleTranslation
 	if err := r.db.WithContext(ctx).
@@ -795,6 +817,7 @@ func (r *DocsHelpcenterRepository) ListSpaceNavigation(ctx context.Context, spac
 			ID:                 c.ID,
 			Name:               c.Name,
 			Slug:               slug,
+			PublicID:           c.PublicID,
 			Icon:               c.Icon,
 			ParentCollectionID: c.ParentCollectionID,
 			Depth:              c.Depth,
@@ -982,6 +1005,7 @@ func (r *DocsHelpcenterRepository) ListWidgetCollections(ctx context.Context, sp
 			ID:                 c.ID,
 			Name:               c.Name,
 			Slug:               slug,
+			PublicID:           c.PublicID,
 			Icon:               c.Icon,
 			ParentCollectionID: c.ParentCollectionID,
 			Depth:              c.Depth,
@@ -1312,6 +1336,40 @@ func (r *DocsHelpcenterRepository) GetPublicArticleByCollectionSlug(ctx context.
 	return doc, ha, content, nil
 }
 
+func (r *DocsHelpcenterRepository) GetPublicArticleByCollectionIDAndSlug(ctx context.Context, collectionID, articleSlug string) (*model.DocsDocument, *model.DocsHelpcenterArticle, *model.DocsContent, error) {
+	var row sourceArticleRow
+	if err := r.db.WithContext(ctx).
+		Table("docs_helpcenter_article_publications p").
+		Select(`
+			d.*,
+			ha.id AS helpcenter_article_id,
+			ha.public_id AS helpcenter_public_id,
+			p.slug AS helpcenter_slug,
+			p.content AS publication_content,
+			p.title AS publication_title,
+			p.excerpt AS publication_excerpt,
+			p.seo_title AS publication_seo_title,
+			p.seo_description AS publication_seo_description,
+			ha.public_published_at,
+			ha.helpful_count,
+			ha.not_helpful_count,
+			ha.view_count
+		`).
+		Joins("JOIN docs_documents d ON d.id = p.document_id").
+		Joins("JOIN docs_helpcenter_articles ha ON ha.document_id = p.document_id").
+		Joins("JOIN docs_helpcenter_configs cfg ON cfg.workspace_id = d.workspace_id").
+		Where("d.collection_id = ? AND p.slug = ? AND p.locale = cfg.default_locale AND d.status = 'published' AND d.deleted_at IS NULL AND ha.public_published_at IS NOT NULL",
+			collectionID, articleSlug).
+		First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil, nil, nil
+		}
+		return nil, nil, nil, fmt.Errorf("get public article by collection id and slug: %w", err)
+	}
+	doc, ha, content := sourceArticleRowToModels(row)
+	return doc, ha, content, nil
+}
+
 // GetPublicCollectionBySlug returns a collection and its published articles by workspace and collection slug.
 func (r *DocsHelpcenterRepository) GetPublicCollectionBySlug(ctx context.Context, workspaceID, collectionSlug string) (*model.DocsCollection, []model.PublicNavArticle, error) {
 	var coll model.DocsCollection
@@ -1324,6 +1382,16 @@ func (r *DocsHelpcenterRepository) GetPublicCollectionBySlug(ctx context.Context
 		return nil, nil, fmt.Errorf("get public collection by slug: %w", err)
 	}
 
+	articles, err := r.ListPublicCollectionArticles(ctx, coll.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return &coll, articles, nil
+}
+
+// ListPublicCollectionArticles returns published article nav rows for a collection.
+func (r *DocsHelpcenterRepository) ListPublicCollectionArticles(ctx context.Context, collectionID string) ([]model.PublicNavArticle, error) {
 	type navArticleRow struct {
 		ID       string `gorm:"column:id"`
 		Title    string `gorm:"column:title"`
@@ -1344,8 +1412,8 @@ func (r *DocsHelpcenterRepository) GetPublicCollectionBySlug(ctx context.Context
 		  AND p.locale = cfg.default_locale
 		  AND p.slug != ''
 		ORDER BY d.position ASC, d.created_at ASC
-	`, coll.ID).Scan(&rows).Error; err != nil {
-		return nil, nil, fmt.Errorf("list public collection articles: %w", err)
+	`, collectionID).Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list public collection articles: %w", err)
 	}
 
 	articles := make([]model.PublicNavArticle, len(rows))
@@ -1358,7 +1426,7 @@ func (r *DocsHelpcenterRepository) GetPublicCollectionBySlug(ctx context.Context
 		}
 	}
 
-	return &coll, articles, nil
+	return articles, nil
 }
 
 func (r *DocsHelpcenterRepository) IncrementTranslatedViewCount(ctx context.Context, documentID, locale string) error {

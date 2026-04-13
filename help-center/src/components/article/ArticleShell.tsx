@@ -11,6 +11,7 @@ interface ArticleShellProps {
   spaceName?: string
   collectionName?: string | null
   collectionSlug?: string | null
+  collectionPublicId?: string | null
   articleSlug: string
   articlePublicId: string
   pager: { prev?: ArticlePagerLink; next?: ArticlePagerLink }
@@ -24,6 +25,7 @@ export function ArticleShell({
   excerpt,
   collectionName,
   collectionSlug,
+  collectionPublicId,
   articleSlug,
   articlePublicId,
   pager,
@@ -41,6 +43,7 @@ export function ArticleShell({
             locale={locale}
             collectionName={collectionName}
             collectionSlug={collectionSlug}
+            collectionPublicId={collectionPublicId}
           />
         </div>
       )}

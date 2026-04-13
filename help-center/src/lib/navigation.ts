@@ -5,6 +5,7 @@ export interface ArticlePagerLink {
   slug: string
   publicId: string
   collectionSlug: string
+  collectionPublicId: string
   collectionName: string
 }
 
@@ -92,6 +93,7 @@ export function getArticlePager(
           slug: article.slug,
           publicId: article.public_id,
           collectionSlug: node.item.slug,
+          collectionPublicId: node.item.public_id,
           collectionName: node.item.name,
         })
       }

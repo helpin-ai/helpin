@@ -1032,6 +1032,7 @@ type WidgetHelpCollection struct {
 	ID                 string  `json:"id"`
 	Name               string  `json:"name"`
 	Slug               string  `json:"slug"`
+	PublicID           string  `json:"public_id"`
 	Icon               *string `json:"icon,omitempty"`
 	ParentCollectionID *string `json:"parent_collection_id"`
 	Depth              int     `json:"depth"`

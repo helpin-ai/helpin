@@ -1461,9 +1461,10 @@ func (s *DocsHelpcenterTranslationService) GetLocalizedCollectionBreadcrumb(ctx 
 	for i := range chain {
 		c := chain[i]
 		entry := model.PublicNavBreadcrumbEntry{
-			ID:   c.ID,
-			Name: c.Name,
-			Slug: c.Slug,
+			ID:       c.ID,
+			Name:     c.Name,
+			Slug:     c.Slug,
+			PublicID: c.PublicID,
 		}
 		if locale != "" {
 			translation, err := s.translationRepo.GetCollectionTranslation(ctx, c.ID, locale)

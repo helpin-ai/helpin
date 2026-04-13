@@ -104,6 +104,7 @@ export function buildCollectionHead(
       rootData.multilingualEnabled,
       rootData.activeLocale,
       collection.collection.slug || fallbackSlug,
+      collection.collection.public_id,
     ),
   )
 

@@ -1,5 +1,15 @@
 import type { HelpCollection } from './helpApi';
 
+function parseHelpCollectionKey(key: string): { slug: string; publicId: string } | null {
+  const trimmed = key.trim().replace(/^\/+|\/+$/g, '');
+  const lastDash = trimmed.lastIndexOf('-');
+  if (lastDash <= 0 || lastDash === trimmed.length - 1) return null;
+  const publicId = trimmed.slice(lastDash + 1).trim().toLowerCase();
+  if (!/^[0-9a-f]{8}$/.test(publicId)) return null;
+  const slug = trimmed.slice(0, lastDash).trim();
+  return slug ? { slug, publicId } : null;
+}
+
 /**
  * A folded widget collection tree node: one collection plus its
  * direct children. Articles are fetched per-collection by the
@@ -42,8 +52,9 @@ export function findHelpCollectionBySlug(
   tree: HelpCollectionTreeNode[],
   slug: string,
 ): HelpCollectionTreeNode | null {
+  const parsed = parseHelpCollectionKey(slug);
   for (const node of tree) {
-    if (node.collection.slug === slug) return node;
+    if (parsed ? node.collection.public_id === parsed.publicId : node.collection.slug === slug) return node;
     const hit = findHelpCollectionBySlug(node.children, slug);
     if (hit) return hit;
   }
@@ -60,11 +71,12 @@ export function helpCollectionAncestorPath(
   tree: HelpCollectionTreeNode[],
   slug: string,
 ): HelpCollectionTreeNode[] {
+  const parsed = parseHelpCollectionKey(slug);
   const path: HelpCollectionTreeNode[] = [];
   const walk = (nodes: HelpCollectionTreeNode[]): boolean => {
     for (const node of nodes) {
       path.push(node);
-      if (node.collection.slug === slug) return true;
+      if (parsed ? node.collection.public_id === parsed.publicId : node.collection.slug === slug) return true;
       if (walk(node.children)) return true;
       path.pop();
     }

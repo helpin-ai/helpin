@@ -99,6 +99,7 @@ func (r *DocsSearchRepository) PublicSearch(ctx context.Context, workspaceID, lo
 			COALESCE(p.collection_id, hat.collection_id) AS collection_id,
 			ct.name AS collection_name,
 			ct.slug AS collection_slug,
+			cc.public_id AS collection_public_id,
 			st.slug AS space_slug,
 			st.name AS space_name
 		`).
@@ -120,6 +121,7 @@ func (r *DocsSearchRepository) PublicSearch(ctx context.Context, workspaceID, lo
 				AND ct.status = ?
 				AND ct.published_at IS NOT NULL
 		`, model.DocsHelpcenterTranslationStatusPublished).
+		Joins("LEFT JOIN docs_collections cc ON cc.id = COALESCE(p.collection_id, hat.collection_id) AND cc.deleted_at IS NULL").
 		Where(`
 			hat.workspace_id = ?
 			AND hat.locale = ?

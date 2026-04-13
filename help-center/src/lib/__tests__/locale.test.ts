@@ -21,7 +21,9 @@ describe('locale helpers', () => {
 
   it('builds canonical paths for non-multilingual mode without locale prefixes', () => {
     expect(buildCanonicalHomePath(false, 'en')).toBe('/')
-    expect(buildCanonicalCollectionPath(false, 'en', 'bases')).toBe('/c/bases')
+    expect(buildCanonicalCollectionPath(false, 'en', 'bases', 'abc123ef')).toBe(
+      '/c/bases-abc123ef',
+    )
     expect(buildCanonicalArticlePath(false, 'en', 'bonjour-fr', 'abc123ef')).toBe(
       '/articles/bonjour-fr-abc123ef',
     )
@@ -32,7 +34,9 @@ describe('locale helpers', () => {
 
   it('builds canonical paths for multilingual mode with locale prefixes', () => {
     expect(buildCanonicalHomePath(true, 'en')).toBe('/en')
-    expect(buildCanonicalCollectionPath(true, 'en', 'bases')).toBe('/en/c/bases')
+    expect(buildCanonicalCollectionPath(true, 'en', 'bases', 'abc123ef')).toBe(
+      '/en/c/bases-abc123ef',
+    )
     expect(buildCanonicalArticlePath(true, 'en', 'bonjour-fr', 'abc123ef')).toBe(
       '/en/articles/bonjour-fr-abc123ef',
     )
@@ -42,7 +46,9 @@ describe('locale helpers', () => {
   })
 
   it('builds locale-aware article and collection paths', () => {
-    expect(buildLocaleCollectionPath('fr', 'bases')).toBe('/fr/c/bases')
+    expect(buildLocaleCollectionPath('fr', 'bases', 'abc123ef')).toBe(
+      '/fr/c/bases-abc123ef',
+    )
     expect(buildLocaleArticlePath('fr', 'bonjour-fr', 'abc123ef')).toBe(
       '/fr/articles/bonjour-fr-abc123ef',
     )
@@ -67,6 +73,7 @@ describe('locale helpers', () => {
           id: 'collection-1',
           name: 'Basics',
           slug: 'basics',
+          public_id: '11111111',
           icon: null,
           parent_collection_id: null,
           depth: 0,
@@ -143,6 +150,7 @@ describe('locale helpers', () => {
           id: 'collection-1',
           name: 'Bases',
           slug: 'bases',
+          public_id: '22222222',
           icon: null,
           parent_collection_id: null,
           depth: 0,
@@ -170,6 +178,7 @@ describe('locale helpers', () => {
           id: 'collection-1',
           name: 'Basics',
           slug: 'basics',
+          public_id: '11111111',
           icon: null,
           parent_collection_id: null,
           depth: 0,
@@ -212,6 +221,7 @@ describe('locale helpers', () => {
           id: 'collection-1',
           name: 'Bases',
           slug: 'bases',
+          public_id: '22222222',
           icon: null,
           parent_collection_id: null,
           depth: 0,

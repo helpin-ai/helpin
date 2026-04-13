@@ -2,6 +2,7 @@ export interface HelpCollection {
   id: string;
   name: string;
   slug: string;
+  public_id: string;
   icon?: string;
   /** Parent collection id. null means top-level in the space. */
   parent_collection_id: string | null;
@@ -33,6 +34,15 @@ export interface HelpArticle {
 }
 
 export function buildHelpArticleKey(slug: string, publicId?: string | null): string {
+  const trimmedSlug = slug.trim().replace(/^\/+|\/+$/g, '');
+  const trimmedPublicId = (publicId ?? '').trim().toLowerCase();
+  if (trimmedSlug && trimmedPublicId) {
+    return `${trimmedSlug}-${trimmedPublicId}`;
+  }
+  return trimmedSlug || trimmedPublicId;
+}
+
+export function buildHelpCollectionKey(slug: string, publicId?: string | null): string {
   const trimmedSlug = slug.trim().replace(/^\/+|\/+$/g, '');
   const trimmedPublicId = (publicId ?? '').trim().toLowerCase();
   if (trimmedSlug && trimmedPublicId) {
