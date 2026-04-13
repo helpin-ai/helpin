@@ -2,11 +2,9 @@ import { memo, useCallback, useContext, useMemo, useState } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import {
   Alert01Icon,
-  Calendar03Icon,
   Layers01Icon,
-  Tick01Icon,
-  UserAdd01Icon,
 } from '@/lib/icons';
+import { Calendar03Icon, Tick01Icon, UserAdd01Icon } from '@/lib/pmIcons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { differenceInDays, format, isBefore, parseISO, startOfDay } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';

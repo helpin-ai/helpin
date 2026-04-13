@@ -69,6 +69,7 @@ interface ContactFilters {
   lead_status?: string
   owner_member_id?: string
   search?: string
+  filters?: string
   page?: number
   per_page?: number
 }

@@ -8,7 +8,7 @@ const SequencesPage = lazyRouteComponent(() => import('@/pages/crm/Sequences'), 
 
 function SequencesRoute() {
   return (
-    <div className="h-full overflow-hidden pt-4 md:pt-6">
+    <div className="h-full overflow-hidden">
       <SequencesPage />
     </div>
   );

@@ -9,7 +9,11 @@ export default defineConfig(({ mode }) => {
   return {
   plugins: [
     TanStackRouterVite({ autoCodeSplitting: true }),
-    react(),
+    react({
+      babel: {
+        plugins: ['babel-plugin-react-compiler'],
+      },
+    }),
     tailwindcss(),
     mode === 'development' && env.VITE_REACT_SCAN === 'true' && {
       name: 'react-scan',

@@ -8,7 +8,7 @@ const InsightsPage = lazyRouteComponent(() => import('@/pages/crm/Insights'), 'I
 
 function InsightsRoute() {
   return (
-    <div className="h-full overflow-hidden pt-4 md:pt-6">
+    <div className="h-full overflow-hidden">
       <InsightsPage />
     </div>
   );

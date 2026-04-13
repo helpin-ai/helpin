@@ -55,6 +55,7 @@ export function ContactsPage() {
     isFetchingNextPage,
   } = useInfiniteContacts(wsId, {
     search: searchParams.search || undefined,
+    filters: searchParams.filters || undefined,
     lifecycle_stage: searchParams.stage || undefined,
     lead_status: searchParams.status || undefined,
     owner_member_id: searchParams.owner || undefined,

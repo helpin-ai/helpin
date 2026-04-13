@@ -21,6 +21,7 @@ interface BaseMemberPickerProps {
   onOpenChange?: (open: boolean) => void;
   getMemberValue?: MemberValueGetter;
   disabled?: boolean;
+  lazyMount?: boolean;
 }
 
 interface MemberPickerPopoverProps extends BaseMemberPickerProps {
@@ -130,6 +131,7 @@ export function MemberPickerPopover({
   onOpenChange,
   getMemberValue = defaultGetMemberValue,
   disabled = false,
+  lazyMount = false,
 }: MemberPickerPopoverProps) {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const isOpen = open ?? uncontrolledOpen;
@@ -145,21 +147,32 @@ export function MemberPickerPopover({
     setOpen(false);
   };
 
+  const trigger = (
+    <button
+      type="button"
+      disabled={disabled}
+      className={cn(DEFAULT_TRIGGER_CLASSNAME, disabled && 'cursor-default hover:bg-transparent', triggerClassName)}
+      onClick={(event) => {
+        event.stopPropagation();
+        if (lazyMount && !disabled && !isOpen) {
+          setOpen(true);
+        }
+      }}
+      onKeyDown={(event) => event.stopPropagation()}
+    >
+      <span className="flex min-w-0 max-w-full items-center gap-1.5 overflow-hidden [&_span:last-child]:truncate [&_span:last-child]:whitespace-nowrap">
+        {renderTrigger()}
+      </span>
+    </button>
+  );
+
+  if (lazyMount && !disabled && !isOpen) {
+    return trigger;
+  }
+
   return (
     <Popover open={isOpen} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          disabled={disabled}
-          className={cn(DEFAULT_TRIGGER_CLASSNAME, disabled && 'cursor-default hover:bg-transparent', triggerClassName)}
-          onClick={(event) => event.stopPropagation()}
-          onKeyDown={(event) => event.stopPropagation()}
-        >
-          <span className="flex min-w-0 max-w-full items-center gap-1.5 overflow-hidden [&_span:last-child]:truncate [&_span:last-child]:whitespace-nowrap">
-            {renderTrigger()}
-          </span>
-        </button>
-      </PopoverTrigger>
+      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       {!disabled ? (
         <PopoverContent
           className={cn('z-[60] w-[240px] p-0', contentClassName)}
@@ -193,6 +206,7 @@ export function MultiMemberPickerPopover({
   onOpenChange,
   getMemberValue = defaultGetMemberValue,
   disabled = false,
+  lazyMount = false,
 }: MultiMemberPickerPopoverProps) {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const isOpen = open ?? uncontrolledOpen;
@@ -210,21 +224,32 @@ export function MultiMemberPickerPopover({
     onChange(nextValues);
   };
 
+  const trigger = (
+    <button
+      type="button"
+      disabled={disabled}
+      className={cn(DEFAULT_TRIGGER_CLASSNAME, disabled && 'cursor-default hover:bg-transparent', triggerClassName)}
+      onClick={(event) => {
+        event.stopPropagation();
+        if (lazyMount && !disabled && !isOpen) {
+          setOpen(true);
+        }
+      }}
+      onKeyDown={(event) => event.stopPropagation()}
+    >
+      <span className="flex min-w-0 max-w-full items-center gap-1.5 overflow-hidden [&_span:last-child]:truncate [&_span:last-child]:whitespace-nowrap">
+        {renderTrigger()}
+      </span>
+    </button>
+  );
+
+  if (lazyMount && !disabled && !isOpen) {
+    return trigger;
+  }
+
   return (
     <Popover open={isOpen} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          disabled={disabled}
-          className={cn(DEFAULT_TRIGGER_CLASSNAME, disabled && 'cursor-default hover:bg-transparent', triggerClassName)}
-          onClick={(event) => event.stopPropagation()}
-          onKeyDown={(event) => event.stopPropagation()}
-        >
-          <span className="flex min-w-0 max-w-full items-center gap-1.5 overflow-hidden [&_span:last-child]:truncate [&_span:last-child]:whitespace-nowrap">
-            {renderTrigger()}
-          </span>
-        </button>
-      </PopoverTrigger>
+      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       {!disabled ? (
         <PopoverContent
           className={cn('z-[60] w-[240px] p-0', contentClassName)}

@@ -1,4 +1,4 @@
-import { ArrowReloadHorizontalIcon } from '@/lib/icons';
+import { ArrowReloadHorizontalIcon } from '@/lib/pmIcons';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 

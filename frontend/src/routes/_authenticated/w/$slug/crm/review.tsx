@@ -8,7 +8,7 @@ const ReviewFeed = lazyRouteComponent(() => import('@/pages/crm/ReviewFeed'), 'R
 
 function ReviewRoute() {
   return (
-    <div className="h-full overflow-hidden pt-4 md:pt-6">
+    <div className="h-full overflow-hidden">
       <ReviewFeed />
     </div>
   )

@@ -462,6 +462,30 @@ func (r *PMTaskRepository) Create(ctx context.Context, task *model.PMTask) error
 	})
 }
 
+// GetMaxDisplayID returns the highest display ID currently assigned in a workspace.
+func (r *PMTaskRepository) GetMaxDisplayID(ctx context.Context, workspaceID string) (int, error) {
+	var maxDisplayID int
+	if err := r.db.WithContext(ctx).
+		Model(&model.PMTask{}).
+		Where("workspace_id = ?", workspaceID).
+		Select("COALESCE(MAX(display_id), 0)").
+		Scan(&maxDisplayID).Error; err != nil {
+		return 0, fmt.Errorf("get max task display id: %w", err)
+	}
+	return maxDisplayID, nil
+}
+
+// CreateInBatches inserts a set of tasks in batches.
+func (r *PMTaskRepository) CreateInBatches(ctx context.Context, tasks []model.PMTask, batchSize int) error {
+	if len(tasks) == 0 {
+		return nil
+	}
+	if err := r.db.WithContext(ctx).CreateInBatches(tasks, batchSize).Error; err != nil {
+		return fmt.Errorf("create tasks in batches: %w", err)
+	}
+	return nil
+}
+
 // NextPosition returns the next append position for a workflow state after
 // normalizing any existing duplicate or sparse positions in that column.
 func (r *PMTaskRepository) NextPosition(ctx context.Context, workspaceID, stateID string) (int, error) {

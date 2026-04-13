@@ -218,6 +218,17 @@ db.Order(userInput + " ASC").Find(&users)
 ### Repository Conventions
 
 - Repository returns `nil` (not error) for not-found cases — let the service layer decide how to handle
+- For rule-builder style filtering, use a shared query-builder package around GORM instead of screen-specific condition code scattered across handlers and repositories
+- Keep entity field mappings in separate files from the generic query-builder implementation so future lists can reuse the same operator engine
+- Canonical operators:
+  `is`, `is_not`, `contains`, `not_contains`, `starts_with`, `ends_with`, `is_empty`, `is_not_empty`, `on`, `before`, `after`, `on_or_before`, `on_or_after`, `between`
+- Operator conventions:
+  text comparisons are case-insensitive
+  enum/id/member fields allow only exact-match and empty operators
+  date fields allow date comparisons and empty operators
+  `between` requires exactly two values
+  `is_empty` and `is_not_empty` carry no value payload
+  date inputs should default to `YYYY-MM-DD`
 - Always use `db.WithContext(ctx)` on every query
 - Use `db.Transaction(func(tx *gorm.DB) error { ... })` for multi-step writes (auto-rollback on error)
 - Prefer `Preload` over manual joins to avoid N+1 queries
