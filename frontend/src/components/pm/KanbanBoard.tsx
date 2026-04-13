@@ -1237,7 +1237,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
           onDragCancel={clearDragPreview}
         >
           <div className="min-h-0 flex-1 overflow-x-auto">
-            <div className="flex h-full min-w-full gap-3 pb-2">
+            <div className="flex h-full min-w-full gap-1.5 pb-2">
               {groupBy === 'members' ? (
                 memberColumns.filter((col) => showEmptyColumns || isDragging || col.task_count > 0).map((col) => {
                   const colKey = col.member?.id ?? '__unassigned__';

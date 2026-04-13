@@ -55,6 +55,7 @@ import { useAgents, useTeamFieldVisibilityForTeam } from '@/hooks/queries';
 import { useBoardDisplayStore, type DisplayPropertyKey } from '@/stores/boardDisplayStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { ListDisplayMenu } from '@/components/pm/ListDisplayMenu';
+import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { RecurringTemplateBadge } from '@/components/pm/RecurringTemplateBadge';
 import {
@@ -1192,15 +1193,21 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
       {stateType && <StateTypeIcon stateType={stateType} className="h-4 w-4" />}
       <span>{String(row.groupingValue)}</span>
       <span className="flex items-center gap-3 ml-1 font-normal text-muted-foreground">
-        <span className="flex items-center gap-1" title="Tasks">
-          <StickyNote01Icon className="h-3 w-3" /> {storyCount}
-        </span>
-        <span className="flex items-center gap-1" title="Total Points">
-          <ChartColumnIcon className="h-3 w-3" /> {totalPoints}
-        </span>
-        <span className="flex items-center gap-1" title="Completed Points">
-          <CheckmarkCircle02Icon className="h-3 w-3" /> {completedPoints}
-        </span>
+        <QuickTooltip label={`${storyCount} ${storyCount === 1 ? 'task' : 'tasks'}`}>
+          <span className="flex items-center gap-1">
+            <StickyNote01Icon className="h-3 w-3" /> {storyCount}
+          </span>
+        </QuickTooltip>
+        <QuickTooltip label={`${totalPoints} total ${totalPoints === 1 ? 'point' : 'points'}`}>
+          <span className="flex items-center gap-1">
+            <ChartColumnIcon className="h-3 w-3" /> {totalPoints}
+          </span>
+        </QuickTooltip>
+        <QuickTooltip label={`${completedPoints} completed ${completedPoints === 1 ? 'point' : 'points'}`}>
+          <span className="flex items-center gap-1">
+            <CheckmarkCircle02Icon className="h-3 w-3" /> {completedPoints}
+          </span>
+        </QuickTooltip>
       </span>
     </button>
   );
