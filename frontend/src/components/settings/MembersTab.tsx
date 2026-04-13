@@ -22,6 +22,7 @@ import { cn } from '@/lib/utils';
 import { Copy01Icon, PlusSignIcon, ArrowReloadHorizontalIcon, Search01Icon, Delete01Icon, UserGroupIcon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
+import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 
 export function MembersTab({ workspaceId, organizationId, editable, teams, userMemberships }: {
   workspaceId: string;
@@ -42,6 +43,8 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
   const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([]);
   const [query, setQuery] = useState('');
   const [updatingMemberId, setUpdatingMemberId] = useState<string | null>(null);
+  const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
+  const [removeMemberConfirm, setRemoveMemberConfirm] = useState<MemberWithUser | null>(null);
   const { user } = useAuthStore();
 
   const { data: orgMembers } = useOrganizationMembers(organizationId);
@@ -244,6 +247,27 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
     toast.success('Member role updated');
   };
 
+  const canRemoveMember = (member: MemberWithUser) => {
+    if (!editable || !user) return false;
+    if (member.user_id === user.id) return false;
+    if (actorRole !== 'owner' && actorRole !== 'admin') return false;
+    if (member.role === 'owner') return false;
+    if (member.role === 'admin' && actorRole !== 'owner') return false;
+    return true;
+  };
+
+  const handleRemoveMember = async (member: MemberWithUser) => {
+    setRemovingMemberId(member.id);
+    const { error } = await workspacesService.removeMember(workspaceId, member.id);
+    setRemovingMemberId(null);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    setMembers((prev) => prev.filter((current) => current.id !== member.id));
+    toast.success('Member removed from workspace');
+  };
+
   if (loading) return <Skeleton className="h-96" />;
 
   return (
@@ -295,6 +319,7 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
                   <TableHead>Email</TableHead>
                   <TableHead>Teams</TableHead>
                   <TableHead className="w-[120px]">Role</TableHead>
+                  {editable && <TableHead className="w-[72px] text-right">Actions</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -367,12 +392,27 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
                           <Badge variant={m.role === 'owner' ? 'default' : 'outline'} className="text-xs">{m.role}</Badge>
                         )}
                       </TableCell>
+                      {editable && (
+                        <TableCell className="text-right">
+                          {canRemoveMember(m) ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                              disabled={removingMemberId === m.id}
+                              onClick={() => setRemoveMemberConfirm(m)}
+                            >
+                              <Delete01Icon className="h-3.5 w-3.5" />
+                            </Button>
+                          ) : null}
+                        </TableCell>
+                      )}
                     </TableRow>
                   );
                 })}
                 {filteredMembers.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={4} className="py-8 text-center text-sm text-muted-foreground">
+                    <TableCell colSpan={editable ? 5 : 4} className="py-8 text-center text-sm text-muted-foreground">
                       No members match your search.
                     </TableCell>
                   </TableRow>
@@ -437,6 +477,29 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={removeMemberConfirm !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRemoveMemberConfirm(null);
+          }
+        }}
+        title="Remove member"
+        description={(
+          <>
+            This will remove <span className="font-medium text-foreground">{removeMemberConfirm?.full_name || removeMemberConfirm?.email || 'this member'}</span> from this workspace.
+            They will lose access immediately.
+          </>
+        )}
+        confirmLabel={removingMemberId === removeMemberConfirm?.id ? 'Removing...' : 'Remove'}
+        variant="destructive"
+        onConfirm={() => {
+          if (!removeMemberConfirm) return;
+          void handleRemoveMember(removeMemberConfirm);
+          setRemoveMemberConfirm(null);
+        }}
+      />
 
       <Dialog open={inviteOpen} onOpenChange={closeInviteDialog}>
         <DialogContent className="sm:max-w-2xl">

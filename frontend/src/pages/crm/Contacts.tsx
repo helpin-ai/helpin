@@ -62,7 +62,7 @@ export function ContactsPage() {
       </header>
 
       {/* Content */}
-      <div className="min-h-0 flex-1 overflow-auto p-3">
+      <div className="min-h-0 flex-1 overflow-hidden p-3">
         <ContactsTable
           contacts={contacts}
           totalCount={totalCount}

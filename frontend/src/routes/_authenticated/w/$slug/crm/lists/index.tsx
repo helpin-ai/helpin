@@ -1,9 +1,10 @@
-import { createFileRoute } from '@tanstack/react-router';
-import { ListsPage } from '@/pages/crm/Lists';
+import { createFileRoute, lazyRouteComponent } from '@tanstack/react-router';
 
 export const Route = createFileRoute('/_authenticated/w/$slug/crm/lists/')({
   component: ListsRoute,
 });
+
+const ListsPage = lazyRouteComponent(() => import('@/pages/crm/Lists'), 'ListsPage');
 
 function ListsRoute() {
   return (

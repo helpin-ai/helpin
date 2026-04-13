@@ -478,6 +478,7 @@ export function ContactsTable({
       }
     };
     el.addEventListener('scroll', handleScroll, { passive: true });
+    handleScroll();
     return () => el.removeEventListener('scroll', handleScroll);
   }, [hasNextPage, isFetchingNextPage, onFetchNextPage]);
 
@@ -530,7 +531,7 @@ export function ContactsTable({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2">
+    <div className="flex h-full min-h-0 flex-col gap-2">
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-1">
         <span className="text-xs text-muted-foreground">

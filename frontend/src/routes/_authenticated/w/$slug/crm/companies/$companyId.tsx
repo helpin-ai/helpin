@@ -1,9 +1,10 @@
-import { createFileRoute } from '@tanstack/react-router';
-import { CompanyDetailPage } from '@/pages/crm/CompanyDetail';
+import { createFileRoute, lazyRouteComponent } from '@tanstack/react-router';
 
 export const Route = createFileRoute('/_authenticated/w/$slug/crm/companies/$companyId')({
   component: CompanyDetailRoute,
 });
+
+const CompanyDetailPage = lazyRouteComponent(() => import('@/pages/crm/CompanyDetail'), 'CompanyDetailPage');
 
 function CompanyDetailRoute() {
   const { companyId } = Route.useParams();

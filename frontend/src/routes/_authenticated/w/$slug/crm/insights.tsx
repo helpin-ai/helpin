@@ -1,9 +1,10 @@
-import { createFileRoute } from '@tanstack/react-router';
-import { InsightsPage } from '@/pages/crm/Insights';
+import { createFileRoute, lazyRouteComponent } from '@tanstack/react-router';
 
 export const Route = createFileRoute('/_authenticated/w/$slug/crm/insights')({
   component: InsightsRoute,
 });
+
+const InsightsPage = lazyRouteComponent(() => import('@/pages/crm/Insights'), 'InsightsPage');
 
 function InsightsRoute() {
   return (

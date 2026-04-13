@@ -1,9 +1,10 @@
-import { createFileRoute } from '@tanstack/react-router';
-import { SequenceDetailPage } from '@/pages/crm/SequenceDetail';
+import { createFileRoute, lazyRouteComponent } from '@tanstack/react-router';
 
 export const Route = createFileRoute('/_authenticated/w/$slug/crm/sequences/$sequenceId')({
   component: SequenceDetailRoute,
 });
+
+const SequenceDetailPage = lazyRouteComponent(() => import('@/pages/crm/SequenceDetail'), 'SequenceDetailPage');
 
 function SequenceDetailRoute() {
   const { sequenceId } = Route.useParams();
