@@ -10,6 +10,8 @@ import type {
   CRMActivity,
   CreateCRMContactRequest,
   UpdateCRMContactRequest,
+  SeedCRMContactsRequest,
+  SeedCRMContactsResponse,
   CreateCRMCompanyRequest,
   UpdateCRMCompanyRequest,
   CreateCRMDealRequest,
@@ -84,6 +86,8 @@ export const crmContactService = {
     api.get<CRMContact>(`/crm/contacts/${id}${qs(workspaceId)}`),
   create: (payload: CreateCRMContactRequest) =>
     api.post<CRMContact>(`/crm/contacts${qs(payload.workspace_id)}`, payload),
+  seed: (payload: SeedCRMContactsRequest) =>
+    api.post<SeedCRMContactsResponse>(`/crm/contacts/seed${qs(payload.workspace_id)}`, payload),
   update: (workspaceId: string, id: string, payload: UpdateCRMContactRequest) =>
     api.put<CRMContact>(`/crm/contacts/${id}${qs(workspaceId)}`, payload),
   remove: (workspaceId: string, id: string) =>
