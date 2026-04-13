@@ -18,6 +18,12 @@ interface MentionMatch {
   team?: Pick<WorkspaceTeam, 'id' | 'name' | 'handle'>
 }
 
+function isValidMentionBoundary(text: string, index: number): boolean {
+  if (index === 0) return true
+  const previousChar = text[index - 1]
+  return !/[A-Za-z0-9._%+-]/.test(previousChar)
+}
+
 function resolveMention(
   handle: string,
   membersByHandle: Map<string, AssignableMember>,
@@ -154,7 +160,11 @@ export function MentionText({ text, members = [], teams = [], className }: Menti
         result.push(text.slice(lastIndex, match.index))
       }
       if (match[1]) {
-        result.push(resolveMention(match[1], membersByHandle, teamsByHandle))
+        if (isValidMentionBoundary(text, match.index)) {
+          result.push(resolveMention(match[1], membersByHandle, teamsByHandle))
+        } else {
+          result.push(match[0])
+        }
       } else {
         result.push({ __url: match[0] })
       }
