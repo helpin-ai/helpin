@@ -8,7 +8,7 @@ export function TaskRouteFallbackBackground({
   teamId,
 }: TaskRouteFallbackBackgroundProps) {
   return (
-    <div className="h-full overflow-hidden pt-4 md:pt-6">
+    <div className="h-full overflow-hidden">
       <TasksPage teamId={teamId} />
     </div>
   );

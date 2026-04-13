@@ -17,7 +17,8 @@ import { SprintPlanningTaskCard } from './SprintPlanningTaskCard';
 import { cn } from '@/lib/utils';
 
 const SPRINT_PREVIEW_PAGE_SIZE = 20;
-const SPRINT_TASK_ESTIMATE_HEIGHT = 116;
+const SPRINT_TASK_ROW_GAP = 10;
+const SPRINT_TASK_ESTIMATE_HEIGHT = 126;
 
 interface SprintPlanningColumnProps {
   card: SprintPlanningCard;
@@ -196,6 +197,7 @@ export const SprintPlanningColumn = memo(function SprintPlanningColumn({
                         left: 0,
                         width: '100%',
                         transform: `translateY(${virtualRow.start}px)`,
+                        paddingBottom: isLoaderRow ? 0 : `${SPRINT_TASK_ROW_GAP}px`,
                       }}
                     >
                       {isLoaderRow ? (

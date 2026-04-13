@@ -1,34 +1,47 @@
+/* eslint-disable react-refresh/only-export-components */
+import type { ComponentType, SVGProps } from 'react';
 import {
-  ArrowUpDoubleIcon,
-  Bug01Icon,
-  CancelCircleIcon,
-  CheckmarkCircle02Icon,
-  DashedLineCircleIcon,
-  MinusSignIcon,
-  OctagonIcon,
-  RecordIcon,
-  Shield02Icon,
-  SignalFull01Icon,
-  SignalLow01Icon,
-  SignalMedium01Icon,
-  SparklesIcon,
   ArrowReloadHorizontalIcon,
-  Alert01Icon,
-  Wrench01Icon,
-} from '@/lib/icons';
+  PriorityIcon as PMPriorityIcon,
+  SeverityIcon as PMSeverityIcon,
+  StateTypeIcon as PMStateTypeIcon,
+  TaskTypeIcon as PMTaskTypeIcon,
+} from '@/lib/pmIcons';
 import type { ObjectiveState, Priority, Severity, SprintStatus, StateType, TaskType } from './pmTypes';
+
+type ConfigIcon = ComponentType<SVGProps<SVGSVGElement>>;
 
 // ── Priority icons & colors ────────────────────────────────────────
 
 export const PRIORITY_CONFIG: Record<
   Priority,
-  { icon: React.ElementType; color: string; label: string; bold?: boolean }
+  { color: string; label: string; icon: ConfigIcon }
 > = {
-  urgent: { icon: ArrowUpDoubleIcon, color: 'text-red-500', label: 'Urgent', bold: true },
-  high: { icon: SignalFull01Icon, color: 'text-orange-500', label: 'High', bold: true },
-  medium: { icon: SignalMedium01Icon, color: 'text-amber-500', label: 'Medium', bold: true },
-  low: { icon: SignalLow01Icon, color: 'text-sky-500', label: 'Low', bold: true },
-  none: { icon: CancelCircleIcon, color: 'text-zinc-400', label: 'None' },
+  urgent: {
+    color: 'text-red-500',
+    label: 'Urgent',
+    icon: (props) => <PMPriorityIcon priority="urgent" {...props} />,
+  },
+  high: {
+    color: 'text-orange-500',
+    label: 'High',
+    icon: (props) => <PMPriorityIcon priority="high" {...props} />,
+  },
+  medium: {
+    color: 'text-amber-500',
+    label: 'Medium',
+    icon: (props) => <PMPriorityIcon priority="medium" {...props} />,
+  },
+  low: {
+    color: 'text-sky-500',
+    label: 'Low',
+    icon: (props) => <PMPriorityIcon priority="low" {...props} />,
+  },
+  none: {
+    color: 'text-zinc-400',
+    label: 'None',
+    icon: (props) => <PMPriorityIcon priority="none" {...props} />,
+  },
 };
 
 export const PRIORITY_BORDER_COLOR: Record<Priority, string> = {
@@ -46,21 +59,35 @@ export function PriorityIcon({
   priority: Priority;
   className?: string;
 }) {
-  const config = PRIORITY_CONFIG[priority];
-  const Icon = config.icon;
-  return <Icon className={`${className} ${config.color}`} {...(config.bold ? { strokeWidth: 3 } : {})} />;
+  return <PMPriorityIcon priority={priority} className={className} />;
 }
 
 // ── Severity icons & colors ─────────────────────────────────────────
 
 export const SEVERITY_CONFIG: Record<
   Severity,
-  { icon: React.ElementType; color: string; label: string }
+  { color: string; label: string; icon: ConfigIcon }
 > = {
-  critical: { icon: OctagonIcon, color: 'text-red-600', label: 'Critical' },
-  major: { icon: Shield02Icon, color: 'text-orange-500', label: 'Major' },
-  minor: { icon: Alert01Icon, color: 'text-amber-500', label: 'Minor' },
-  none: { icon: CancelCircleIcon, color: 'text-zinc-400', label: 'None' },
+  critical: {
+    color: 'text-red-600',
+    label: 'Critical',
+    icon: (props) => <PMSeverityIcon severity="critical" {...props} />,
+  },
+  major: {
+    color: 'text-orange-500',
+    label: 'Major',
+    icon: (props) => <PMSeverityIcon severity="major" {...props} />,
+  },
+  minor: {
+    color: 'text-amber-500',
+    label: 'Minor',
+    icon: (props) => <PMSeverityIcon severity="minor" {...props} />,
+  },
+  none: {
+    color: 'text-zinc-400',
+    label: 'None',
+    icon: (props) => <PMSeverityIcon severity="none" {...props} />,
+  },
 };
 
 export function SeverityIcon({
@@ -70,21 +97,31 @@ export function SeverityIcon({
   severity: Severity;
   className?: string;
 }) {
-  const config = SEVERITY_CONFIG[severity];
-  const Icon = config.icon;
-  return <Icon className={`${className} ${config.color}`} />;
+  return <PMSeverityIcon severity={severity} className={className} />;
 }
 
 // ── Workflow state icons & colors ──────────────────────────────────
 
 export const STATE_TYPE_ICON_CONFIG: Record<
   StateType,
-  { icon: React.ElementType; color: string }
+  { color: string; icon: ConfigIcon }
 > = {
-  backlog: { icon: DashedLineCircleIcon, color: 'text-zinc-400' },
-  unstarted: { icon: MinusSignIcon, color: 'text-zinc-400' },
-  started: { icon: RecordIcon, color: 'text-amber-500' },
-  done: { icon: CheckmarkCircle02Icon, color: 'text-green-500' },
+  backlog: {
+    color: 'text-zinc-400',
+    icon: (props) => <PMStateTypeIcon stateType="backlog" {...props} />,
+  },
+  unstarted: {
+    color: 'text-zinc-400',
+    icon: (props) => <PMStateTypeIcon stateType="unstarted" {...props} />,
+  },
+  started: {
+    color: 'text-amber-500',
+    icon: (props) => <PMStateTypeIcon stateType="started" {...props} />,
+  },
+  done: {
+    color: 'text-green-500',
+    icon: (props) => <PMStateTypeIcon stateType="done" {...props} />,
+  },
 };
 
 export function StateTypeIcon({
@@ -94,9 +131,7 @@ export function StateTypeIcon({
   stateType: StateType;
   className?: string;
 }) {
-  const config = STATE_TYPE_ICON_CONFIG[stateType];
-  const Icon = config.icon;
-  return <Icon className={`${className} ${config.color}`} />;
+  return <PMStateTypeIcon stateType={stateType} className={className} />;
 }
 
 // ── Sprint icon ───────────────────────────────────────────────────
@@ -159,11 +194,23 @@ export const OBJECTIVE_STATE_CONFIG: Record<
 
 export const TASK_TYPE_CONFIG: Record<
   TaskType,
-  { icon: React.ElementType; color: string; label: string }
+  { color: string; label: string; icon: ConfigIcon }
 > = {
-  feature: { icon: SparklesIcon, color: 'text-amber-500', label: 'Feature' },
-  bug: { icon: Bug01Icon, color: 'text-red-500', label: 'Bug' },
-  chore: { icon: Wrench01Icon, color: 'text-indigo-500', label: 'Chore' },
+  feature: {
+    color: 'text-amber-500',
+    label: 'Feature',
+    icon: (props) => <PMTaskTypeIcon taskType="feature" {...props} />,
+  },
+  bug: {
+    color: 'text-red-500',
+    label: 'Bug',
+    icon: (props) => <PMTaskTypeIcon taskType="bug" {...props} />,
+  },
+  chore: {
+    color: 'text-indigo-500',
+    label: 'Chore',
+    icon: (props) => <PMTaskTypeIcon taskType="chore" {...props} />,
+  },
 };
 
 /** @deprecated Use TASK_TYPE_CONFIG */
@@ -176,9 +223,7 @@ export function TaskTypeIcon({
   taskType: TaskType;
   className?: string;
 }) {
-  const config = TASK_TYPE_CONFIG[taskType];
-  const Icon = config.icon;
-  return <Icon className={`${className} ${config.color}`} />;
+  return <PMTaskTypeIcon taskType={taskType} className={className} />;
 }
 
 /** @deprecated Use TaskTypeIcon */

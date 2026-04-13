@@ -1,11 +1,13 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/querybuilder"
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
 
@@ -26,16 +28,27 @@ func (h *CRMContactHandler) List(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "workspace_id is required")
 		return
 	}
+	queryFilters, err := queryFilterGroup(r, "filters")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid filters query")
+		return
+	}
 	filters := model.CRMContactListFilters{
 		LifecycleStage: queryStringPtr(r, "lifecycle_stage"),
 		LeadStatus:     queryStringPtr(r, "lead_status"),
 		OwnerMemberID:  queryStringPtr(r, "owner_member_id"),
 		Search:         queryStringPtr(r, "search"),
+		Query:          queryFilters,
 	}
 	pagination := queryPagination(r)
 
 	contacts, total, err := h.contactService.List(r.Context(), workspaceID, filters, pagination)
 	if err != nil {
+		var validationErr *querybuilder.ValidationError
+		if errors.As(err, &validationErr) {
+			writeError(w, http.StatusBadRequest, validationErr.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -65,6 +78,24 @@ func (h *CRMContactHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, contact)
+}
+
+// Seed handles POST /api/crm/contacts/seed.
+func (h *CRMContactHandler) Seed(w http.ResponseWriter, r *http.Request) {
+	var req model.SeedCRMContactsRequest
+	if err := decodeJSON(r, &req); err != nil && r.ContentLength > 0 {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.WorkspaceID == "" {
+		req.WorkspaceID = getWorkspaceID(r)
+	}
+	result, err := h.contactService.Seed(r.Context(), req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, result)
 }
 
 // Get handles GET /api/crm/contacts/{id}.

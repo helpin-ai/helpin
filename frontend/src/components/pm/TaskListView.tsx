@@ -1,4 +1,5 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { RefObject } from 'react';
 import {
   useReactTable,
   getCoreRowModel,
@@ -14,7 +15,7 @@ import {
   type ColumnSizingState,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ArchiveIcon, ArrowDown02Icon, ArrowUp02Icon, ArrowUpDownIcon, ChartColumnIcon, Calendar03Icon, Tick01Icon, ArrowDown01Icon, ArrowRight01Icon, CheckmarkCircle02Icon, MoreVerticalIcon, LinkSquare01Icon, Link01Icon, Loading01Icon, StickyNote01Icon, UserAdd01Icon } from '@/lib/icons';
+import { Loading01Icon } from '@/lib/icons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -24,16 +25,34 @@ import { Calendar } from '@/components/ui/calendar';
 import { format, parseISO } from 'date-fns';
 import { pmTaskService } from '@/lib/services/pmTaskService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
+import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
+import { cn, getInitials } from '@/lib/utils';
 import {
-  PriorityIcon,
-  SeverityIcon,
-  TaskTypeIcon,
-  StateTypeIcon,
   PRIORITY_CONFIG,
+  PriorityIcon as TaskListPriorityIcon,
   SEVERITY_CONFIG,
+  SeverityIcon as TaskListSeverityIcon,
+  SprintIcon as TaskListRecurringIcon,
+  StateTypeIcon as TaskListStateTypeIcon,
   TASK_TYPE_CONFIG,
+  TaskTypeIcon as TaskListTaskTypeIcon,
 } from '@/lib/pmConstants';
-import { UserAvatar } from './UserAvatar';
+import {
+  ArchiveIcon as TaskListArchiveIcon,
+  ArrowUpDownIcon as TaskListArrowUpDownIcon,
+  Calendar03Icon as TaskListCalendarIcon,
+  ChartColumnIcon as TaskListChartIcon,
+  CheckmarkCircle02Icon as TaskListDoneCircleIcon,
+  ChevronDownIcon as TaskListChevronDownIcon,
+  ChevronRightIcon as TaskListChevronRightIcon,
+  ChevronUpIcon as TaskListChevronUpIcon,
+  Link01Icon as TaskListLinkIcon,
+  LinkSquare01Icon as TaskListOpenTaskIcon,
+  MoreVerticalIcon as TaskListMoreVerticalIcon,
+  StickyNote01Icon as TaskListNoteIcon,
+  Tick01Icon as TaskListCheckIcon,
+  UserAdd01Icon as TaskListUserAddIcon,
+} from '@/lib/pmIcons';
 import type {
   AssociationObjectSummary,
   Label,
@@ -45,28 +64,21 @@ import type {
   EpicWithStats,
   SprintWithStats,
 } from '@/lib/pmTypes';
-import type { AssignableMember, WorkspaceTeam } from '@/lib/types';
+import type { AssignableMember, TeamEstimateSettings, WorkspaceTeam } from '@/lib/types';
 import { EstimatePicker } from '@/components/pm/EstimatePicker';
 import { LabelPicker } from '@/components/pm/LabelPicker';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { buildTaskCopyUrl } from '@/lib/pmTaskLinks';
-import { useAgents, useTeamFieldVisibilityForTeam } from '@/hooks/queries';
+import { useAgents, useTeamEstimateSettings, useTeamFieldVisibilityForTeam } from '@/hooks/queries';
 import { useBoardDisplayStore, type DisplayPropertyKey } from '@/stores/boardDisplayStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { ListDisplayMenu } from '@/components/pm/ListDisplayMenu';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
-import { RecurringTemplateBadge } from '@/components/pm/RecurringTemplateBadge';
 import {
   TABLE_CONTAINER,
-  TABLE_HEADER,
-  TABLE_HEADER_CELL,
-  TABLE_HEADER_CELL_SORTABLE,
   TABLE_RESIZE_HANDLE,
-  TABLE_ROW,
-  TABLE_CELL,
-  TABLE_GROUP_ROW,
   TABLE_PINNED_LEFT,
   TABLE_PINNED_RIGHT,
   TABLE_PINNED_HEADER_LEFT,
@@ -77,7 +89,7 @@ import {
   pinnedStyle,
 } from '@/lib/tableStyles';
 import type { BoardFilters } from '@/stores/pmBoardStore';
-import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
+import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 import { getTaskListPinnedOffsets, type TaskListPinnedOffsets } from '@/components/pm/task-detail/taskListPinnedOffsets';
 import {
   getVisibleTaskListGroupOptions,
@@ -86,6 +98,110 @@ import {
 
 const ALL_PRIORITIES: Priority[] = ['urgent', 'high', 'medium', 'low', 'none'];
 const ALL_SEVERITIES: Severity[] = ['critical', 'major', 'minor', 'none'];
+const TASK_LIST_AVATAR_COLORS = [
+  { bg: 'bg-rose-100 dark:bg-rose-900/40', text: 'text-rose-700 dark:text-rose-300' },
+  { bg: 'bg-pink-100 dark:bg-pink-900/40', text: 'text-pink-700 dark:text-pink-300' },
+  { bg: 'bg-fuchsia-100 dark:bg-fuchsia-900/40', text: 'text-fuchsia-700 dark:text-fuchsia-300' },
+  { bg: 'bg-purple-100 dark:bg-purple-900/40', text: 'text-purple-700 dark:text-purple-300' },
+  { bg: 'bg-indigo-100 dark:bg-indigo-900/40', text: 'text-indigo-700 dark:text-indigo-300' },
+  { bg: 'bg-blue-100 dark:bg-blue-900/40', text: 'text-blue-700 dark:text-blue-300' },
+  { bg: 'bg-teal-100 dark:bg-teal-900/40', text: 'text-teal-700 dark:text-teal-300' },
+  { bg: 'bg-emerald-100 dark:bg-emerald-900/40', text: 'text-emerald-700 dark:text-emerald-300' },
+  { bg: 'bg-lime-100 dark:bg-lime-900/40', text: 'text-lime-700 dark:text-lime-300' },
+  { bg: 'bg-amber-100 dark:bg-amber-900/40', text: 'text-amber-700 dark:text-amber-300' },
+  { bg: 'bg-orange-100 dark:bg-orange-900/40', text: 'text-orange-700 dark:text-orange-300' },
+  { bg: 'bg-red-100 dark:bg-red-900/40', text: 'text-red-700 dark:text-red-300' },
+] as const;
+const TASK_LIST_HEADER = 'sticky top-0 z-10 bg-card';
+const TASK_LIST_HEADER_CELL =
+  'relative shrink-0 border-r border-b border-border/60 px-2.5 py-1.5 text-left text-[11px] font-medium text-muted-foreground last:border-r-0';
+const TASK_LIST_HEADER_CELL_SORTABLE = 'cursor-pointer select-none hover:bg-muted';
+const TASK_LIST_ROW =
+  'group/row flex h-9 cursor-pointer items-center border-b border-border/60 bg-card hover:bg-muted';
+const TASK_LIST_CELL =
+  'flex shrink-0 items-center self-stretch border-r border-border/60 bg-inherit px-2.5 last:border-r-0';
+const TASK_LIST_GROUP_ROW =
+  'flex h-9 cursor-pointer items-center gap-2 border-b border-border/60 bg-muted/20 px-3 text-sm font-semibold hover:bg-muted';
+
+function hashTaskListAvatarName(name: string): number {
+  let hash = 0;
+  for (let index = 0; index < name.length; index += 1) {
+    hash = ((hash << 5) - hash + name.charCodeAt(index)) | 0;
+  }
+  return Math.abs(hash);
+}
+
+function getTaskListAvatarColor(name?: string | null) {
+  if (!name) return TASK_LIST_AVATAR_COLORS[0];
+  return TASK_LIST_AVATAR_COLORS[hashTaskListAvatarName(name) % TASK_LIST_AVATAR_COLORS.length];
+}
+
+// Task list avatars stay off the shared Radix avatar path to keep the virtualized row hot path lightweight.
+function TaskListOwnerAvatar({
+  name,
+  avatarUrl,
+  avatarStyle,
+  avatarSeed,
+  avatarBackgroundMode,
+  avatarBackgroundColor,
+  className,
+  fallbackClassName,
+}: {
+  name?: string | null;
+  avatarUrl?: string | null;
+  avatarStyle?: string | null;
+  avatarSeed?: string | null;
+  avatarBackgroundMode?: string | null;
+  avatarBackgroundColor?: string | null;
+  className?: string;
+  fallbackClassName?: string;
+}) {
+  const color = getTaskListAvatarColor(name);
+  const avatarSrc = resolveTeamMemberAvatarSrc({
+    avatarUrl,
+    avatarStyle,
+    avatarSeed,
+    avatarBackgroundMode,
+    avatarBackgroundColor,
+    fallbackSeed: name,
+  });
+
+  if (!avatarSrc) {
+    return (
+      <span
+        className={cn(
+          'inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-border/80 bg-background text-[9px] font-semibold',
+          color.bg,
+          color.text,
+          className,
+          fallbackClassName,
+        )}
+        aria-hidden
+      >
+        {getInitials(name)}
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className={cn(
+        'inline-flex shrink-0 overflow-hidden rounded-full border border-border/80 bg-background',
+        className,
+      )}
+      aria-hidden
+    >
+      <img
+        src={avatarSrc}
+        alt=""
+        className="size-full object-cover"
+        loading="lazy"
+        decoding="async"
+        draggable={false}
+      />
+    </span>
+  );
+}
 
 interface TaskListViewProps {
   workspaceId: string;
@@ -123,6 +239,9 @@ const GROUP_COLUMN_MAP: Record<TaskListGroupByOption, string | null> = {
 
 const HIDDEN_GROUP_COLUMNS = ['typeName', 'priorityName', 'severityName'];
 const LIST_PAGE_SIZE = 50;
+const GROUP_LOAD_SENTINEL_HEIGHT = 28;
+const GROUPED_OVERSCAN = 4;
+const FLAT_OVERSCAN = 6;
 
 const columnHelper = createColumnHelper<Task>();
 
@@ -145,7 +264,9 @@ export function TaskListView({
   showToolbar = true,
 }: TaskListViewProps) {
   const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.slug ?? null);
+  const currentWorkspaceId = useWorkspaceStore((state) => state.currentWorkspace?.id ?? '');
   const fieldVis = useTeamFieldVisibilityForTeam(workspaceId, teamId);
+  const teamEstimateSettings = useTeamEstimateSettings(currentWorkspaceId);
   const displayInit = useBoardDisplayStore((s) => s.init);
   const displayProps = useBoardDisplayStore((s) => s.properties);
   const includeAssociationData = useMemo(
@@ -172,9 +293,6 @@ export function TaskListView({
   const [expanded, setExpanded] = useState<ExpandedState>(true);
   const parentRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
-  const pinnedGroupRef = useRef<number | null>(null);
-  const pinnedGroupRafRef = useRef<number | null>(null);
-  const [pinnedGroupIdx, setPinnedGroupIdx] = useState<number | null>(null);
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
   const columnSizingVersion = useMemo(() => JSON.stringify(columnSizing), [columnSizing]);
@@ -186,6 +304,15 @@ export function TaskListView({
   const [groupLoadingId, setGroupLoadingId] = useState<string | null>(null);
   const groupLoadingRef = useRef(false);
   const isPerGroupMode = groupBy === 'workflow_state' && !isExternal;
+  const onOpenTaskRef = useRef(onOpenTask);
+
+  useEffect(() => {
+    onOpenTaskRef.current = onOpenTask;
+  }, [onOpenTask]);
+
+  const handleOpenTask = useCallback((task: Task) => {
+    onOpenTaskRef.current(task);
+  }, []);
 
   useEffect(() => {
     pmLabelService.list(workspaceId).then((r) => { if (r.data) setAllLabels(r.data); });
@@ -218,6 +345,10 @@ export function TaskListView({
     [assignableMembers],
   );
   const ownerNameMap = assignableMemberMap;
+  const assignableMemberById = useMemo(
+    () => new Map(assignableMembers.map((member) => [member.id, member])),
+    [assignableMembers],
+  );
   const agentById = useMemo(
     () => new Map(agents.map((agent) => [agent.id, agent])),
     [agents],
@@ -246,6 +377,14 @@ export function TaskListView({
     }
     return map;
   }, [sprints]);
+
+  const estimateSettingsByTeamId = useMemo(() => {
+    const map = new Map<string, TeamEstimateSettings>();
+    for (const settings of teamEstimateSettings) {
+      map.set(settings.team_id, settings);
+    }
+    return map;
+  }, [teamEstimateSettings]);
 
   // ── Flat pagination (non-state grouping) ──
   const fetchTasksFlat = useCallback(async (page = 1, append = false) => {
@@ -368,7 +507,6 @@ export function TaskListView({
     } else {
       fetchTasksFlat(1, false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isExternal, isPerGroupMode, fetchTasksByState, fetchTasksFlat]);
 
   // Sync external tasks when they change
@@ -390,12 +528,10 @@ export function TaskListView({
         snapshot = current;
         return current.map((s) => (s.id === taskId ? { ...s, ...optimisticPatch } : s));
       });
-      const {
-        owner_name: _ownerName,
-        epic_name: _epicName,
-        labels: _labels,
-        ...apiPatch
-      } = patch;
+      const apiPatch = { ...patch };
+      delete apiPatch.owner_name;
+      delete apiPatch.epic_name;
+      delete apiPatch.labels;
       const { error } = await pmTaskService.update(workspaceId, taskId, apiPatch);
       if (error) setTasks(snapshot);
     },
@@ -481,14 +617,19 @@ export function TaskListView({
             className="flex max-w-full cursor-pointer items-center gap-1.5 text-left text-sm hover:text-primary"
             onClick={(e) => {
               e.stopPropagation();
-              onOpenTask(info.row.original);
+              handleOpenTask(info.row.original);
             }}
           >
             {fieldVis.task_type && displayProps.task_type ? (
-              <TaskTypeIcon taskType={info.row.original.task_type} className="h-4 w-4 shrink-0" />
+              <TaskListTaskTypeIcon taskType={info.row.original.task_type} className="h-4 w-4 shrink-0" />
             ) : null}
             {info.row.original.recurring_template_id ? (
-              <RecurringTemplateBadge compact occurrenceNumber={info.row.original.recurring_occurrence_number} />
+              <span className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-1.5 py-0 text-[10px] text-sky-700 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-200">
+                <TaskListRecurringIcon className="h-2.5 w-2.5 shrink-0" />
+                <span className="truncate">
+                  {info.row.original.recurring_occurrence_number ? `Recurring #${info.row.original.recurring_occurrence_number}` : 'Recurring'}
+                </span>
+              </span>
             ) : null}
             <span className="min-w-0 truncate">{info.getValue()}</span>
             {info.row.original.assigned_agent_id && (
@@ -549,6 +690,7 @@ export function TaskListView({
         cell: (info) => (
           <InlineEstimateCell
             task={info.row.original}
+            estimateSettings={info.row.original.team_id ? estimateSettingsByTeamId.get(info.row.original.team_id) ?? null : null}
             onUpdate={updateTaskField}
           />
         ),
@@ -566,6 +708,7 @@ export function TaskListView({
             <InlineOwnerCell
               task={info.row.original}
               assignableMembers={assignableMembers}
+              assignableMemberById={assignableMemberById}
               ownerNameMap={ownerNameMap}
               onUpdate={updateTaskField}
             />
@@ -733,17 +876,17 @@ export function TaskListView({
         enableSorting: false,
         enableResizing: false,
         cell: (info) => (
-          <InlineActionsCell
-            task={info.row.original}
-            workspaceId={workspaceId}
-            workspaceSlug={workspaceSlug}
-            onOpenTask={onOpenTask}
-            setTasks={setTasks}
-          />
-        ),
-      }),
+            <InlineActionsCell
+              task={info.row.original}
+              workspaceId={workspaceId}
+              workspaceSlug={workspaceSlug}
+              onOpenTask={handleOpenTask}
+              setTasks={setTasks}
+            />
+          ),
+        }),
     ],
-    [stateMap, statesByWorkflowId, ownerNameMap, teamMap, epicMap, sprintMap, onOpenTask, workflow.states, assignableMembers, teams, epics, sprints, updateTaskField, allLabels, workspaceId, workspaceSlug, fieldVis.task_type, displayProps.task_type]
+    [stateMap, statesByWorkflowId, ownerNameMap, teamMap, epicMap, sprintMap, estimateSettingsByTeamId, handleOpenTask, workflow.states, assignableMembers, assignableMemberById, teams, epics, sprints, updateTaskField, allLabels, workspaceId, workspaceSlug, fieldVis.task_type, displayProps.task_type, agentById]
   );
 
   // Team-level disabled keys (for hiding toggles in display menu)
@@ -782,7 +925,7 @@ export function TaskListView({
           epic: fieldVis.epic,
           sprint: fieldVis.sprint,
         },
-        { epicId, sprintId },
+        { epicId: epicId ?? undefined, sprintId: sprintId ?? undefined },
       ),
     [fieldVis.epic, fieldVis.priority, fieldVis.severity, fieldVis.sprint, fieldVis.task_type, epicId, sprintId],
   );
@@ -834,6 +977,7 @@ export function TaskListView({
     const colId = GROUP_COLUMN_MAP[groupBy];
     return colId ? [colId] : [];
   }, [groupBy]);
+  const hasGroupedRows = grouping.length > 0;
 
   const table = useReactTable({
     data: tasks,
@@ -859,37 +1003,59 @@ export function TaskListView({
   });
 
   const { rows } = table.getRowModel();
-  const typeIconColumn = table.getAllLeafColumns().find((column) => column.id === 'typeIcon');
+  const displayIdWidth = table.getColumn('displayId')?.getSize() ?? 90;
+  const typeIconColumn = table.getColumn('typeIcon');
+  const typeIconWidth = typeIconColumn?.getSize() ?? 40;
+  const showTypeIcon = typeIconColumn?.getIsVisible() ?? false;
   const pinnedOffsets = useMemo(
     () =>
       getTaskListPinnedOffsets({
-        displayIdWidth: table.getColumn('displayId')?.getSize() ?? 90,
-        typeIconWidth: typeIconColumn?.getSize() ?? 40,
-        showTypeIcon: typeIconColumn?.getIsVisible() ?? false,
+        displayIdWidth,
+        typeIconWidth,
+        showTypeIcon,
       }),
-    [columnSizing, columnVisibility, table, typeIconColumn],
+    [displayIdWidth, typeIconWidth, showTypeIcon],
   );
-  const pinnedGroupRow = pinnedGroupIdx !== null ? (rows[pinnedGroupIdx] as Row<Task> | undefined) : undefined;
+
+  const getTrailingGroupStateId = useCallback(
+    (index: number): string | null => {
+      if (!isPerGroupMode) return null;
+
+      const row = rows[index];
+      if (!row || row.getIsGrouped()) return null;
+
+      const nextRow = rows[index + 1];
+      const isLastInGroup = !nextRow || nextRow.getIsGrouped();
+      if (!isLastInGroup) return null;
+
+      return row.original.workflow_state_id;
+    },
+    [isPerGroupMode, rows],
+  );
 
   const estimateSize = useCallback(
-    (index: number) => rows[index]?.getIsGrouped() ? GROUP_ROW_HEIGHT : ROW_HEIGHT,
-    [rows],
+    (index: number) => {
+      const row = rows[index];
+      if (!row) return ROW_HEIGHT;
+      if (row.getIsGrouped()) return GROUP_ROW_HEIGHT;
+
+      const trailingGroupStateId = getTrailingGroupStateId(index);
+      const hasLoadingSentinel = trailingGroupStateId !== null && groupLoadingId === trailingGroupStateId;
+
+      return ROW_HEIGHT + (hasLoadingSentinel ? GROUP_LOAD_SENTINEL_HEIGHT : 0);
+    },
+    [getTrailingGroupStateId, groupLoadingId, rows],
   );
 
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
     estimateSize,
-    overscan: 10,
+    overscan: hasGroupedRows ? GROUPED_OVERSCAN : FLAT_OVERSCAN,
   });
 
   const groupSummaries = useMemo(() => {
-    const summaries = new Map<string, {
-      storyCount: number;
-      totalPoints: number;
-      completedPoints: number;
-      stateType?: StateType;
-    }>();
+    const summaries = new Map<string, PMGroupSummary>();
 
     for (const row of rows) {
       if (!row.getIsGrouped()) continue;
@@ -926,11 +1092,24 @@ export function TaskListView({
   }, [groupBy, groupHasMore, isPerGroupMode, rows, stateMap]);
 
   useEffect(() => {
-    return () => {
-      if (pinnedGroupRafRef.current !== null) {
-        cancelAnimationFrame(pinnedGroupRafRef.current);
-      }
+    const headerEl = headerRef.current;
+    const scrollEl = parentRef.current;
+    if (!headerEl || !scrollEl) return;
+
+    const updateHeight = () => {
+      scrollEl.style.setProperty('--task-list-header-height', `${headerEl.offsetHeight}px`);
     };
+
+    updateHeight();
+
+    if (typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver(() => {
+      updateHeight();
+    });
+    observer.observe(headerEl);
+
+    return () => observer.disconnect();
   }, []);
 
   // Compute total task count (including unloaded) for per-group mode
@@ -987,33 +1166,11 @@ export function TaskListView({
               loadMore();
             }
           }
-
-          if (pinnedGroupRafRef.current !== null) return;
-          pinnedGroupRafRef.current = requestAnimationFrame(() => {
-            pinnedGroupRafRef.current = null;
-            const vItems = virtualizer.getVirtualItems();
-            let newPinnedIdx: number | null = null;
-            if (scrollTop > 10) {
-              for (const vItem of vItems) {
-                if (vItem.start > scrollTop) break;
-                if (rows[vItem.index]?.getIsGrouped()) newPinnedIdx = vItem.index;
-              }
-              if (newPinnedIdx === null && vItems.length > 0) {
-                for (let i = vItems[0].index - 1; i >= 0; i--) {
-                  if (rows[i]?.getIsGrouped()) { newPinnedIdx = i; break; }
-                }
-              }
-            }
-            if (newPinnedIdx !== pinnedGroupRef.current) {
-              pinnedGroupRef.current = newPinnedIdx;
-              setPinnedGroupIdx(newPinnedIdx);
-            }
-          });
         }}
       >
         <div className="min-w-fit">
         {/* Header */}
-        <div ref={headerRef} className={TABLE_HEADER}>
+        <div ref={headerRef} className={TASK_LIST_HEADER}>
           {table.getHeaderGroups().map((headerGroup) => (
             <div key={headerGroup.id} className="flex items-center">
               {headerGroup.headers.map((header) => {
@@ -1035,7 +1192,7 @@ export function TaskListView({
                 return (
                   <div
                     key={header.id}
-                    className={`${TABLE_HEADER_CELL} ${canSort ? TABLE_HEADER_CELL_SORTABLE : ''} ${pinnedClass}`}
+                    className={`${TASK_LIST_HEADER_CELL} ${canSort ? TASK_LIST_HEADER_CELL_SORTABLE : ''} ${pinnedClass}`}
                     style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 400), ...pinnedSt }}
                     onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
                   >
@@ -1046,11 +1203,11 @@ export function TaskListView({
                       {canSort && (
                         <span className="ml-auto shrink-0">
                           {sorted === 'asc' ? (
-                            <ArrowUp02Icon className="h-3 w-3 text-foreground/80 stroke-[2.5]" />
+                            <TaskListChevronUpIcon className="h-3 w-3 text-foreground/80" />
                           ) : sorted === 'desc' ? (
-                            <ArrowDown02Icon className="h-3 w-3 text-foreground/80 stroke-[2.5]" />
+                            <TaskListChevronDownIcon className="h-3 w-3 text-foreground/80" />
                           ) : (
-                            <ArrowUpDownIcon className="h-3 w-3 text-muted-foreground stroke-[2]" />
+                            <TaskListArrowUpDownIcon className="h-3 w-3 text-muted-foreground" />
                           )}
                         </span>
                       )}
@@ -1072,14 +1229,14 @@ export function TaskListView({
 
         {/* Virtualized body */}
           <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}>
-            {/* Pinned sticky group header — offset below the table header */}
-            {pinnedGroupRow && (
-              <div className="sticky z-[5]" style={{ top: headerRef.current?.offsetHeight ?? 0, height: 0, overflow: 'visible' }}>
-                <div className="ui-divider-bottom-fade bg-background">
-                  <MemoGroupHeaderRow row={pinnedGroupRow} summary={groupSummaries.get(pinnedGroupRow.id)} />
-                </div>
-              </div>
-            )}
+            {hasGroupedRows ? (
+              <StickyPinnedGroupOverlay
+                parentRef={parentRef}
+                rows={rows}
+                virtualizer={virtualizer}
+                groupSummaries={groupSummaries}
+              />
+            ) : null}
             {virtualizer.getVirtualItems().map((virtualRow) => {
               const row = rows[virtualRow.index] as Row<Task>;
               const isGrouped = row.getIsGrouped();
@@ -1103,15 +1260,12 @@ export function TaskListView({
                 <div
                   key={row.id}
                   data-index={virtualRow.index}
-                  ref={isPerGroupMode ? virtualizer.measureElement : undefined}
                   style={{
                     position: 'absolute',
                     top: 0,
                     left: 0,
                     width: '100%',
-                    transform: `translate3d(0, ${virtualRow.start}px, 0)`,
-                    contain: 'paint',
-                    willChange: 'transform',
+                    transform: `translateY(${virtualRow.start}px)`,
                   }}
                 >
                   {isGrouped ? (
@@ -1120,7 +1274,7 @@ export function TaskListView({
                     <>
                       <MemoDataRow
                         row={row}
-                        onOpenTask={onOpenTask}
+                        onOpenTask={handleOpenTask}
                         columnSizingVersion={columnSizingVersion}
                         pinnedOffsets={pinnedOffsets}
                       />
@@ -1151,12 +1305,7 @@ export function TaskListView({
 
 interface PMGroupRowProps {
   row: Row<Task>;
-  summary?: {
-    storyCount: number;
-    totalPoints: number;
-    completedPoints: number;
-    stateType?: StateType;
-  };
+  summary?: PMGroupSummary;
 }
 
 function arePMGroupRowPropsEqual(prev: PMGroupRowProps, next: PMGroupRowProps): boolean {
@@ -1182,36 +1331,135 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
 
   return (
     <button
-      className={`${TABLE_GROUP_ROW} w-full text-left text-xs`}
+      className={`${TASK_LIST_GROUP_ROW} w-full text-left text-xs`}
       onClick={row.getToggleExpandedHandler()}
     >
       {row.getIsExpanded() ? (
-        <ArrowDown01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+        <TaskListChevronDownIcon className="h-3.5 w-3.5 text-muted-foreground" />
       ) : (
-        <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+        <TaskListChevronRightIcon className="h-3.5 w-3.5 text-muted-foreground" />
       )}
-      {stateType && <StateTypeIcon stateType={stateType} className="h-4 w-4" />}
+      {stateType && <TaskListStateTypeIcon stateType={stateType} className="h-4 w-4" />}
       <span>{String(row.groupingValue)}</span>
       <span className="flex items-center gap-3 ml-1 font-normal text-muted-foreground">
         <QuickTooltip label={`${storyCount} ${storyCount === 1 ? 'task' : 'tasks'}`}>
           <span className="flex items-center gap-1">
-            <StickyNote01Icon className="h-3 w-3" /> {storyCount}
+            <TaskListNoteIcon className="h-3 w-3" /> {storyCount}
           </span>
         </QuickTooltip>
         <QuickTooltip label={`${totalPoints} total ${totalPoints === 1 ? 'point' : 'points'}`}>
           <span className="flex items-center gap-1">
-            <ChartColumnIcon className="h-3 w-3" /> {totalPoints}
+            <TaskListChartIcon className="h-3 w-3" /> {totalPoints}
           </span>
         </QuickTooltip>
         <QuickTooltip label={`${completedPoints} completed ${completedPoints === 1 ? 'point' : 'points'}`}>
           <span className="flex items-center gap-1">
-            <CheckmarkCircle02Icon className="h-3 w-3" /> {completedPoints}
+            <TaskListDoneCircleIcon className="h-3 w-3" /> {completedPoints}
           </span>
         </QuickTooltip>
       </span>
     </button>
   );
 }, arePMGroupRowPropsEqual);
+
+interface PMGroupSummary {
+  storyCount: number;
+  totalPoints: number;
+  completedPoints: number;
+  stateType?: StateType;
+}
+
+interface TaskListVirtualizerLike {
+  getVirtualItems: () => Array<{ index: number; start: number }>;
+}
+
+function StickyPinnedGroupOverlay({
+  parentRef,
+  rows,
+  virtualizer,
+  groupSummaries,
+}: {
+  parentRef: RefObject<HTMLDivElement | null>;
+  rows: Row<Task>[];
+  virtualizer: TaskListVirtualizerLike;
+  groupSummaries: Map<string, PMGroupSummary>;
+}) {
+  const pinnedGroupRef = useRef<number | null>(null);
+  const pinnedGroupRafRef = useRef<number | null>(null);
+  const [pinnedGroupIdx, setPinnedGroupIdx] = useState<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (pinnedGroupRafRef.current !== null) {
+        cancelAnimationFrame(pinnedGroupRafRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const scrollEl = parentRef.current;
+    if (!scrollEl) return;
+
+    const syncPinnedGroup = () => {
+      const scrollTop = scrollEl.scrollTop;
+      const virtualItems = virtualizer.getVirtualItems();
+      let newPinnedIdx: number | null = null;
+
+      if (scrollTop > 10) {
+        for (const vItem of virtualItems) {
+          if (vItem.start > scrollTop) break;
+          if (rows[vItem.index]?.getIsGrouped()) newPinnedIdx = vItem.index;
+        }
+        if (newPinnedIdx === null && virtualItems.length > 0) {
+          for (let index = virtualItems[0].index - 1; index >= 0; index -= 1) {
+            if (rows[index]?.getIsGrouped()) {
+              newPinnedIdx = index;
+              break;
+            }
+          }
+        }
+      }
+
+      if (newPinnedIdx !== pinnedGroupRef.current) {
+        pinnedGroupRef.current = newPinnedIdx;
+        startTransition(() => {
+          setPinnedGroupIdx((current) => (current === newPinnedIdx ? current : newPinnedIdx));
+        });
+      }
+    };
+
+    const handleScroll = () => {
+      if (pinnedGroupRafRef.current !== null) return;
+      pinnedGroupRafRef.current = requestAnimationFrame(() => {
+        pinnedGroupRafRef.current = null;
+        syncPinnedGroup();
+      });
+    };
+
+    syncPinnedGroup();
+    scrollEl.addEventListener('scroll', handleScroll, { passive: true });
+
+    return () => {
+      scrollEl.removeEventListener('scroll', handleScroll);
+      if (pinnedGroupRafRef.current !== null) {
+        cancelAnimationFrame(pinnedGroupRafRef.current);
+        pinnedGroupRafRef.current = null;
+      }
+    };
+  }, [parentRef, rows, virtualizer]);
+
+  const pinnedGroupRow = pinnedGroupIdx !== null ? rows[pinnedGroupIdx] : undefined;
+
+  if (!pinnedGroupRow) return null;
+
+  return (
+    <div className="sticky z-[5]" style={{ top: 'var(--task-list-header-height, 0px)', height: 0, overflow: 'visible' }}>
+      <div className="border-b border-border/60 bg-background">
+        <MemoGroupHeaderRow row={pinnedGroupRow} summary={groupSummaries.get(pinnedGroupRow.id)} />
+      </div>
+    </div>
+  );
+}
 
 interface PMDataRowProps {
   row: Row<Task>;
@@ -1239,7 +1487,7 @@ const MemoDataRow = memo(function DataRow({
   void columnSizingVersion; // used by arePMDataRowPropsEqual for memo comparison
   return (
     <div
-      className={`${TABLE_ROW} cursor-pointer`}
+      className={TASK_LIST_ROW}
       onClick={() => onOpenTask(row.original)}
     >
       {row.getVisibleCells().map((cell) => {
@@ -1260,7 +1508,7 @@ const MemoDataRow = memo(function DataRow({
         return (
           <div
             key={cell.id}
-            className={`${TABLE_CELL} overflow-hidden ${pinnedClass}`}
+            className={`${TASK_LIST_CELL} overflow-hidden ${pinnedClass}`}
             style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 400), ...pinnedSt }}
           >
             {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -1314,6 +1562,19 @@ function InlinePriorityCell({
   const [open, setOpen] = useState(false);
   const p = task.priority;
 
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+        onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+      >
+        <TaskListPriorityIcon priority={p} className="h-3.5 w-3.5" />
+        {PRIORITY_CONFIG[p].label}
+      </button>
+    );
+  }
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -1322,7 +1583,7 @@ function InlinePriorityCell({
           className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
           onClick={(e) => { e.stopPropagation(); setOpen(true); }}
         >
-          <PriorityIcon priority={p} className="h-3.5 w-3.5" />
+          <TaskListPriorityIcon priority={p} className="h-3.5 w-3.5" />
           {PRIORITY_CONFIG[p].label}
         </button>
       </PopoverTrigger>
@@ -1351,9 +1612,9 @@ function InlinePriorityCell({
                       }}
                       className="flex items-center gap-2 text-xs"
                     >
-                      <PriorityIcon priority={pri} className="h-3.5 w-3.5" />
+                      <TaskListPriorityIcon priority={pri} className="h-3.5 w-3.5" />
                       <span>{cfg.label}</span>
-                      {p === pri && <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" />}
+                      {p === pri && <TaskListCheckIcon className="ml-auto h-3.5 w-3.5 text-primary" />}
                     </CommandItem>
                   );
                 })}
@@ -1380,6 +1641,21 @@ function InlineStateCell({
   const [open, setOpen] = useState(false);
   const current = stateMap.get(task.workflow_state_id);
 
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+        onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+      >
+        {current && (
+          <TaskListStateTypeIcon stateType={current.stateType as 'backlog' | 'unstarted' | 'started' | 'done'} className="h-3.5 w-3.5" />
+        )}
+        {current?.name ?? 'Unknown'}
+      </button>
+    );
+  }
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -1389,7 +1665,7 @@ function InlineStateCell({
           onClick={(e) => { e.stopPropagation(); setOpen(true); }}
         >
           {current && (
-            <StateTypeIcon stateType={current.stateType as 'backlog' | 'unstarted' | 'started' | 'done'} className="h-3.5 w-3.5" />
+            <TaskListStateTypeIcon stateType={current.stateType as 'backlog' | 'unstarted' | 'started' | 'done'} className="h-3.5 w-3.5" />
           )}
           {current?.name ?? 'Unknown'}
         </button>
@@ -1418,9 +1694,9 @@ function InlineStateCell({
                     }}
                     className="flex items-center gap-2 text-xs"
                   >
-                    <StateTypeIcon stateType={s.state_type} className="h-3.5 w-3.5" />
+                    <TaskListStateTypeIcon stateType={s.state_type} className="h-3.5 w-3.5" />
                     <span>{s.name}</span>
-                    {task.workflow_state_id === s.id && <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" />}
+                    {task.workflow_state_id === s.id && <TaskListCheckIcon className="ml-auto h-3.5 w-3.5 text-primary" />}
                   </CommandItem>
                 ))}
               </CommandGroup>
@@ -1435,30 +1711,33 @@ function InlineStateCell({
 function InlineOwnerCell({
   task,
   assignableMembers,
+  assignableMemberById,
   ownerNameMap,
   onUpdate,
 }: {
   task: Task;
   assignableMembers: AssignableMember[];
+  assignableMemberById: Map<string, AssignableMember>;
   ownerNameMap: Map<string, string>;
   onUpdate: (taskId: string, patch: Partial<Task>) => Promise<void>;
 }) {
   const ownerKey = task.owner_member_id;
   const ownerName = ownerKey ? ownerNameMap.get(ownerKey) ?? 'Unknown' : null;
+  const selectedMember = ownerKey ? assignableMemberById.get(ownerKey) ?? null : null;
 
   return (
     <MemberPickerPopover
       value={task.owner_member_id || '__none__'}
       members={assignableMembers}
       noneLabel="Unassigned"
+      lazyMount
       onChange={(value) => {
         void onUpdate(task.id, { owner_member_id: value === '__none__' ? '' : value });
       }}
       renderTrigger={() => {
-        const selectedMember = findAssignableMember(assignableMembers, task.owner_member_id);
         return selectedMember ? (
           <>
-            <UserAvatar
+            <TaskListOwnerAvatar
               name={selectedMember.display_name || selectedMember.email}
               avatarUrl={selectedMember.avatar_url}
               avatarStyle={selectedMember.avatar_style}
@@ -1472,7 +1751,7 @@ function InlineOwnerCell({
           </>
         ) : (
           <>
-            <UserAdd01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+            <TaskListUserAddIcon className="h-3.5 w-3.5 text-muted-foreground" />
             <span className="text-muted-foreground">Assign</span>
           </>
         );
@@ -1491,6 +1770,25 @@ function InlineSeverityCell({
   const [open, setOpen] = useState(false);
   const s = task.severity;
 
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+        onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+      >
+        {s !== 'none' ? (
+          <>
+            <TaskListSeverityIcon severity={s} className="h-3.5 w-3.5" />
+            {SEVERITY_CONFIG[s].label}
+          </>
+        ) : (
+          <span className="text-muted-foreground">None</span>
+        )}
+      </button>
+    );
+  }
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -1501,7 +1799,7 @@ function InlineSeverityCell({
         >
           {s !== 'none' ? (
             <>
-              <SeverityIcon severity={s} className="h-3.5 w-3.5" />
+              <TaskListSeverityIcon severity={s} className="h-3.5 w-3.5" />
               {SEVERITY_CONFIG[s].label}
             </>
           ) : (
@@ -1534,9 +1832,9 @@ function InlineSeverityCell({
                       }}
                       className="flex items-center gap-2 text-xs"
                     >
-                      <SeverityIcon severity={sev} className="h-3.5 w-3.5" />
+                      <TaskListSeverityIcon severity={sev} className="h-3.5 w-3.5" />
                       <span>{cfg.label}</span>
-                      {s === sev && <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" />}
+                      {s === sev && <TaskListCheckIcon className="ml-auto h-3.5 w-3.5 text-primary" />}
                     </CommandItem>
                   );
                 })}
@@ -1551,9 +1849,11 @@ function InlineSeverityCell({
 
 function InlineEstimateCell({
   task,
+  estimateSettings,
   onUpdate,
 }: {
   task: Task;
+  estimateSettings: TeamEstimateSettings | null;
   onUpdate: (taskId: string, patch: Partial<Task>) => Promise<void>;
 }) {
   return (
@@ -1561,6 +1861,8 @@ function InlineEstimateCell({
       <EstimatePicker
         value={task.estimate?.toString() ?? ''}
         teamId={task.team_id}
+        estimateSettings={estimateSettings}
+        lazyMount
         onChange={(_displayValue, apiValue) => {
           const next = apiValue ?? null;
           if (next !== task.estimate) {
@@ -1585,6 +1887,22 @@ function InlineTeamCell({
 }) {
   const [open, setOpen] = useState(false);
   const teamName = task.team_id ? teamMap.get(task.team_id) ?? 'Unknown' : null;
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+        onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+      >
+        {teamName ? (
+          <span className="truncate">{teamName}</span>
+        ) : (
+          <span className="text-muted-foreground">No Team</span>
+        )}
+      </button>
+    );
+  }
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -1626,7 +1944,7 @@ function InlineTeamCell({
                     className="flex items-center gap-2 text-xs"
                   >
                     <span className="truncate">{t.name}</span>
-                    {task.team_id === t.id && <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" />}
+                    {task.team_id === t.id && <TaskListCheckIcon className="ml-auto h-3.5 w-3.5 text-primary" />}
                   </CommandItem>
                 ))}
               </CommandGroup>
@@ -1651,6 +1969,22 @@ function InlineEpicCell({
 }) {
   const [open, setOpen] = useState(false);
   const epicName = task.epic_id ? epicMap.get(task.epic_id) ?? 'Unknown' : null;
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+        onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+      >
+        {epicName ? (
+          <span className="truncate">{epicName}</span>
+        ) : (
+          <span className="text-muted-foreground">No Epic</span>
+        )}
+      </button>
+    );
+  }
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -1692,7 +2026,7 @@ function InlineEpicCell({
                     className="flex items-center gap-2 text-xs"
                   >
                     <span className="truncate">{e.epic.name}</span>
-                    {task.epic_id === e.epic.id && <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" />}
+                    {task.epic_id === e.epic.id && <TaskListCheckIcon className="ml-auto h-3.5 w-3.5 text-primary" />}
                   </CommandItem>
                 ))}
               </CommandGroup>
@@ -1717,6 +2051,22 @@ function InlineSprintCell({
 }) {
   const [open, setOpen] = useState(false);
   const sprintName = task.sprint_id ? sprintMap.get(task.sprint_id) ?? 'Unknown' : null;
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+        onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+      >
+        {sprintName ? (
+          <span className="truncate">{sprintName}</span>
+        ) : (
+          <span className="text-muted-foreground">No Sprint</span>
+        )}
+      </button>
+    );
+  }
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -1758,7 +2108,7 @@ function InlineSprintCell({
                     className="flex items-center gap-2 text-xs"
                   >
                     <span className="truncate">{sp.sprint.name}</span>
-                    {task.sprint_id === sp.sprint.id && <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" />}
+                    {task.sprint_id === sp.sprint.id && <TaskListCheckIcon className="ml-auto h-3.5 w-3.5 text-primary" />}
                   </CommandItem>
                 ))}
               </CommandGroup>
@@ -1808,6 +2158,30 @@ function InlineDeadlineCell({
   const selected = v ? parseISO(v) : undefined;
   const isOverdue = selected ? selected < new Date() : false;
 
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+        onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+      >
+        {selected ? (
+          <>
+            <TaskListCalendarIcon className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className={isOverdue ? 'text-red-500' : 'text-muted-foreground'}>
+              {format(selected, 'MMM d, yyyy')}
+            </span>
+          </>
+        ) : (
+          <>
+            <TaskListCalendarIcon className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="text-muted-foreground">No date</span>
+          </>
+        )}
+      </button>
+    );
+  }
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -1818,14 +2192,14 @@ function InlineDeadlineCell({
         >
           {selected ? (
             <>
-              <Calendar03Icon className="h-3.5 w-3.5 text-muted-foreground" />
+              <TaskListCalendarIcon className="h-3.5 w-3.5 text-muted-foreground" />
               <span className={isOverdue ? 'text-red-500' : 'text-muted-foreground'}>
                 {format(selected, 'MMM d, yyyy')}
               </span>
             </>
           ) : (
             <>
-              <Calendar03Icon className="h-3.5 w-3.5 text-muted-foreground" />
+              <TaskListCalendarIcon className="h-3.5 w-3.5 text-muted-foreground" />
               <span className="text-muted-foreground">No date</span>
             </>
           )}
@@ -1905,6 +2279,7 @@ function InlineActionsCell({
   onOpenTask: (task: Task) => void;
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const { copy } = useCopyToClipboard();
 
@@ -1928,43 +2303,57 @@ function InlineActionsCell({
     }
   };
 
+  const trigger = (
+    <button
+      type="button"
+      className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover/row:opacity-100 data-[state=open]:opacity-100 cursor-pointer"
+      onClick={(event) => {
+        event.stopPropagation();
+        if (!menuOpen) {
+          setMenuOpen(true);
+        }
+      }}
+    >
+      <TaskListMoreVerticalIcon className="h-4 w-4" />
+    </button>
+  );
+
+  if (!menuOpen && !archiveOpen) {
+    return <div onClick={(e) => e.stopPropagation()}>{trigger}</div>;
+  }
+
   return (
     <div onClick={(e) => e.stopPropagation()}>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover/row:opacity-100 data-[state=open]:opacity-100 cursor-pointer"
-          >
-            <MoreVerticalIcon className="h-4 w-4" />
-          </button>
-        </DropdownMenuTrigger>
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+        <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem onClick={() => onOpenTask(task)}>
-            <LinkSquare01Icon className="mr-2 h-3.5 w-3.5" />
+            <TaskListOpenTaskIcon className="mr-2 h-3.5 w-3.5" />
             Open Task
           </DropdownMenuItem>
           <DropdownMenuItem onClick={copyLink}>
-            <Link01Icon className="mr-2 h-3.5 w-3.5" />
+            <TaskListLinkIcon className="mr-2 h-3.5 w-3.5" />
             Copy Link
           </DropdownMenuItem>
           <DropdownMenuItem
             onClick={() => setArchiveOpen(true)}
             className="text-destructive focus:text-destructive"
           >
-            <ArchiveIcon className="mr-2 h-3.5 w-3.5" />
+            <TaskListArchiveIcon className="mr-2 h-3.5 w-3.5" />
             Archive Task
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      <ConfirmDialog
-        open={archiveOpen}
-        onOpenChange={setArchiveOpen}
-        title="Archive Task"
-        description="This task will be hidden from the board and lists. You can restore it later from archived items."
-        confirmLabel="Archive"
-        onConfirm={archiveTask}
-      />
+      {archiveOpen ? (
+        <ConfirmDialog
+          open={archiveOpen}
+          onOpenChange={setArchiveOpen}
+          title="Archive Task"
+          description="This task will be hidden from the board and lists. You can restore it later from archived items."
+          confirmLabel="Archive"
+          onConfirm={archiveTask}
+        />
+      ) : null}
     </div>
   );
 }

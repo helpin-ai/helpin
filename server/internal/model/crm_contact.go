@@ -4,21 +4,21 @@ import "time"
 
 // CRM Contact lifecycle stages.
 const (
-	CRMLifecycleSubscriber          = "subscriber"
-	CRMLifecycleLead                = "lead"
-	CRMLifecycleMarketingQualified  = "marketing_qualified"
-	CRMLifecycleSalesQualified      = "sales_qualified"
-	CRMLifecycleOpportunity         = "opportunity"
-	CRMLifecycleCustomer            = "customer"
-	CRMLifecycleEvangelist          = "evangelist"
+	CRMLifecycleSubscriber         = "subscriber"
+	CRMLifecycleLead               = "lead"
+	CRMLifecycleMarketingQualified = "marketing_qualified"
+	CRMLifecycleSalesQualified     = "sales_qualified"
+	CRMLifecycleOpportunity        = "opportunity"
+	CRMLifecycleCustomer           = "customer"
+	CRMLifecycleEvangelist         = "evangelist"
 )
 
 // CRM Contact lead statuses.
 const (
-	CRMLeadStatusNew          = "new"
-	CRMLeadStatusOpen         = "open"
-	CRMLeadStatusInProgress   = "in_progress"
-	CRMLeadStatusUnqualified  = "unqualified"
+	CRMLeadStatusNew         = "new"
+	CRMLeadStatusOpen        = "open"
+	CRMLeadStatusInProgress  = "in_progress"
+	CRMLeadStatusUnqualified = "unqualified"
 )
 
 // crmLifecycleOrder maps lifecycle stages to their ordinal position.
@@ -76,6 +76,17 @@ type CreateCRMContactRequest struct {
 	CustomProperties map[string]interface{} `json:"custom_properties"`
 }
 
+// SeedCRMContactsRequest is the payload for bulk-seeding test contacts.
+type SeedCRMContactsRequest struct {
+	WorkspaceID string `json:"workspace_id"`
+	Count       int    `json:"count"`
+}
+
+// SeedCRMContactsResponse reports how many contacts were created by a seed run.
+type SeedCRMContactsResponse struct {
+	Created int `json:"created"`
+}
+
 // UpdateCRMContactRequest is the payload for updating a contact.
 type UpdateCRMContactRequest struct {
 	FirstName        *string                `json:"first_name"`
@@ -97,4 +108,5 @@ type CRMContactListFilters struct {
 	LeadStatus     *string
 	OwnerMemberID  *string
 	Search         *string
+	Query          *QueryFilterGroup
 }

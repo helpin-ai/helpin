@@ -472,3 +472,51 @@ func (s *WorkspaceService) UpdateMember(ctx context.Context, workspaceID, actorI
 
 	return s.workspaceRepo.UpdateMemberRole(ctx, workspaceID, memberID, req.Role)
 }
+
+// RemoveMember revokes a workspace member with owner/admin safeguards.
+func (s *WorkspaceService) RemoveMember(ctx context.Context, workspaceID, actorID, memberID string) error {
+	if actorID == "" {
+		return fmt.Errorf("actor is required")
+	}
+	if memberID == "" {
+		return fmt.Errorf("member id is required")
+	}
+
+	actorMember, err := s.workspaceRepo.GetMembership(ctx, workspaceID, actorID)
+	if err != nil {
+		return err
+	}
+	if actorMember == nil {
+		return fmt.Errorf("actor membership not found")
+	}
+	if actorMember.ID == memberID {
+		return fmt.Errorf("cannot remove yourself")
+	}
+
+	targetMember, err := s.workspaceRepo.GetMembershipByID(ctx, workspaceID, memberID)
+	if err != nil {
+		return err
+	}
+	if targetMember == nil || targetMember.Status != model.WorkspaceMemberStatusActive {
+		return fmt.Errorf("member not found")
+	}
+
+	actorRole := actorMember.Role
+	targetRole := targetMember.Role
+	if actorRole != model.RoleOwner && actorRole != model.RoleAdmin {
+		return fmt.Errorf("only owner or admin can remove members")
+	}
+	if targetRole == model.RoleOwner {
+		return fmt.Errorf("cannot remove an owner")
+	}
+	if targetRole == model.RoleAdmin && actorRole != model.RoleOwner {
+		return fmt.Errorf("only owners can remove admins")
+	}
+
+	if err := s.workspaceRepo.RemoveMember(ctx, workspaceID, memberID); err != nil {
+		return err
+	}
+
+	s.logger.InfoContext(ctx, "workspace member removed", "workspace_id", workspaceID, "actor_id", actorID, "member_id", memberID)
+	return nil
+}

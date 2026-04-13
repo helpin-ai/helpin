@@ -443,6 +443,21 @@ export const workspacesService = {
 };
 ```
 
+### Query Builder Conventions
+- For CRM, PM, or other list filtering UIs, prefer the shared query-builder abstractions instead of page-specific filter dropdowns.
+- Frontend query-builder metadata must live in a separate config file per entity and feed a reusable builder component. Do not hardcode field/operator/value controls directly in page components.
+- Backend query-builder behavior must live in a reusable package that wraps the ORM/query layer. Do not concatenate raw SQL from handlers or embed one-off operator logic in route files.
+- Canonical operator set:
+  `is`, `is_not`, `contains`, `not_contains`, `starts_with`, `ends_with`, `is_empty`, `is_not_empty`, `on`, `before`, `after`, `on_or_before`, `on_or_after`, `between`
+- Operator rules:
+  text fields use case-insensitive matching
+  enum/member/id fields only use exact-match or empty operators
+  date fields use date operators plus empty operators
+  `is_empty` and `is_not_empty` render no value input
+  `between` requires exactly two values
+  date values should be passed in `YYYY-MM-DD` unless a route explicitly requires a timestamp
+- Query-builder payloads should be structured, serializable rule groups such as `{ logic, rules[] }`. Avoid bespoke query-param names for every filterable field once a screen adopts the query builder.
+
 ### Zustand Stores (`src/stores/`)
 Used for UI state alongside TanStack Query for server state:
 ```tsx

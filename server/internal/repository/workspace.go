@@ -592,6 +592,46 @@ func (r *WorkspaceRepository) UpdateMemberRole(ctx context.Context, workspaceID,
 	return nil
 }
 
+// RemoveMember revokes an active workspace member and clears membership-specific state.
+func (r *WorkspaceRepository) RemoveMember(ctx context.Context, workspaceID, memberID string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		member, err := r.getMembershipByIDTx(tx, workspaceID, memberID)
+		if err != nil {
+			return err
+		}
+		if member == nil {
+			return fmt.Errorf("member not found")
+		}
+
+		if err := tx.Where("workspace_member_id = ?", memberID).Delete(&model.TeamWorkspaceMembership{}).Error; err != nil {
+			return fmt.Errorf("delete team memberships: %w", err)
+		}
+
+		if member.UserID != nil && *member.UserID != "" {
+			if err := tx.Exec(
+				"UPDATE users SET default_workspace_id = NULL WHERE id = ? AND default_workspace_id = ?",
+				*member.UserID,
+				workspaceID,
+			).Error; err != nil {
+				return fmt.Errorf("clear default workspace: %w", err)
+			}
+
+			if err := tx.Where("workspace_id = ? AND user_id = ?", workspaceID, *member.UserID).
+				Delete(&model.SupportTeammateStatusOverride{}).Error; err != nil {
+				return fmt.Errorf("delete support teammate status override: %w", err)
+			}
+		}
+
+		if err := tx.Model(&model.WorkspaceMember{}).
+			Where("workspace_id = ? AND id = ?", workspaceID, memberID).
+			Update("status", model.WorkspaceMemberStatusRevoked).Error; err != nil {
+			return fmt.Errorf("revoke workspace member: %w", err)
+		}
+
+		return nil
+	})
+}
+
 // CountMembersByRole returns the number of workspace members with a given role.
 func (r *WorkspaceRepository) CountMembersByRole(ctx context.Context, workspaceID, role string) (int64, error) {
 	var count int64

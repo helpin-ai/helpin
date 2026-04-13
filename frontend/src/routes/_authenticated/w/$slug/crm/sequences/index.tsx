@@ -1,13 +1,14 @@
-import { createFileRoute } from '@tanstack/react-router';
-import { SequencesPage } from '@/pages/crm/Sequences';
+import { createFileRoute, lazyRouteComponent } from '@tanstack/react-router';
 
 export const Route = createFileRoute('/_authenticated/w/$slug/crm/sequences/')({
   component: SequencesRoute,
 });
 
+const SequencesPage = lazyRouteComponent(() => import('@/pages/crm/Sequences'), 'SequencesPage');
+
 function SequencesRoute() {
   return (
-    <div className="h-full overflow-hidden pt-4 md:pt-6">
+    <div className="h-full overflow-hidden">
       <SequencesPage />
     </div>
   );

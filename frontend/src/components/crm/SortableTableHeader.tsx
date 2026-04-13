@@ -14,9 +14,10 @@ interface SortableTableHeaderProps {
 export function SortableTableHeader({
   headerId,
   columnId,
+  disabled: disabledProp = false,
   children,
 }: SortableTableHeaderProps) {
-  const disabled = NON_DRAGGABLE.has(columnId);
+  const disabled = disabledProp || NON_DRAGGABLE.has(columnId);
 
   const {
     attributes,

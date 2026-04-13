@@ -23,6 +23,7 @@ import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
 import { CreateDocumentDialog } from '@/components/docs/CreateDocumentDialog';
 import { CreateSpaceDialog } from '@/components/docs/CreateSpaceDialog';
 import { CreateCollectionDialog } from '@/components/docs/CreateCollectionDialog';
+import { CreateContactDialog } from '@/components/crm/CreateContactDialog';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
@@ -1184,6 +1185,12 @@ export function GlobalCreateModals({ workspaceId }: { workspaceId: string }) {
       {activeModal === 'epic' && <GlobalCreateEpic workspaceId={workspaceId} onClose={closeCreate} />}
       {activeModal === 'sprint' && <GlobalCreateSprint workspaceId={workspaceId} onClose={closeCreate} />}
       {activeModal === 'objective' && <GlobalCreateObjective workspaceId={workspaceId} onClose={closeCreate} />}
+      {activeModal === 'crm_contact' && (
+        <CreateContactDialog
+          open
+          onOpenChange={(open) => !open && closeCreate()}
+        />
+      )}
       {activeModal === 'docs_document' && (
         <CreateDocumentDialog
           wsId={workspaceId}

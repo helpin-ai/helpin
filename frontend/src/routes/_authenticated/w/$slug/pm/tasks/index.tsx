@@ -14,7 +14,7 @@ export const Route = createFileRoute('/_authenticated/w/$slug/pm/tasks/')({
 function TasksRoute() {
   const { team } = Route.useSearch();
   return (
-    <div className="h-full overflow-hidden pt-4 md:pt-6">
+    <div className="h-full overflow-hidden">
       <TasksPage teamId={team} />
     </div>
   );

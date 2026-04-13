@@ -49,7 +49,7 @@ func (h *PMTaskHandler) List(w http.ResponseWriter, r *http.Request) {
 		IncludeSupport:        r.URL.Query().Get("include_support") == "true",
 		WorkflowID:            queryStringPtr(r, "workflow_id"),
 		WorkflowStateID:       queryStringPtr(r, "state_id"),
-		TaskType:             queryStringPtr(r, "task_type"),
+		TaskType:              queryStringPtr(r, "task_type"),
 		OwnerID:               queryStringPtr(r, "owner_id"),
 		OwnerMemberID:         queryStringPtr(r, "owner_member_id"),
 		RequesterID:           queryStringPtr(r, "requester_id"),
@@ -127,9 +127,9 @@ func (h *PMTaskHandler) ListBoardColumn(w http.ResponseWriter, r *http.Request) 
 		taskGroups = []model.TaskGroup{}
 	}
 	writeJSON(w, http.StatusOK, model.ColumnTasksResponse{
-		Tasks:       tasks,
-		TaskGroups:  taskGroups,
-		Total:       total,
+		Tasks:      tasks,
+		TaskGroups: taskGroups,
+		Total:      total,
 	})
 }
 
@@ -191,8 +191,8 @@ func (h *PMTaskHandler) ListBoardMemberColumn(w http.ResponseWriter, r *http.Req
 		tasks = []model.BoardTask{}
 	}
 	writeJSON(w, http.StatusOK, model.ColumnTasksResponse{
-		Tasks:  tasks,
-		Total:  total,
+		Tasks: tasks,
+		Total: total,
 	})
 }
 
@@ -201,7 +201,7 @@ func boardFilters(r *http.Request) model.PMTaskFilters {
 		TeamID:                queryStringPtr(r, "team_id"),
 		Priority:              queryStringPtr(r, "priority"),
 		Severity:              queryStringPtr(r, "severity"),
-		TaskType:             queryStringPtr(r, "task_type"),
+		TaskType:              queryStringPtr(r, "task_type"),
 		EpicID:                queryStringPtr(r, "epic_id"),
 		SprintID:              queryStringPtr(r, "sprint_id"),
 		ContactID:             queryStringPtr(r, "contact_id"),
@@ -258,6 +258,24 @@ func (h *PMTaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, task)
+}
+
+// Seed handles POST /api/pm/tasks/seed.
+func (h *PMTaskHandler) Seed(w http.ResponseWriter, r *http.Request) {
+	var req model.SeedPMTasksRequest
+	if err := decodeJSON(r, &req); err != nil && r.ContentLength > 0 {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.WorkspaceID == "" {
+		req.WorkspaceID = getWorkspaceID(r)
+	}
+	result, err := h.taskService.Seed(r.Context(), req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, result)
 }
 
 // Get handles GET /api/pm/tasks/{id}.

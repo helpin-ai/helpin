@@ -1,10 +1,12 @@
 import { useCallback } from 'react';
+import { parseQueryFilterGroup, serializeQueryFilterGroup, type QueryFilterGroup } from '@/lib/queryBuilder';
 import { Route } from '@/routes/_authenticated/w/$slug/crm/contacts/index';
 import type { ContactsSearch } from '@/routes/_authenticated/w/$slug/crm/contacts/index';
 
 export function useContactsSearchParams() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
+  const filterGroup = parseQueryFilterGroup(search.filters);
 
   const setParam = useCallback(
     <K extends keyof ContactsSearch>(key: K, value: ContactsSearch[K]) => {
@@ -40,6 +42,7 @@ export function useContactsSearchParams() {
       search: (prev) => ({
         ...prev,
         search: undefined,
+        filters: undefined,
         stage: undefined,
         status: undefined,
         owner: undefined,
@@ -48,7 +51,23 @@ export function useContactsSearchParams() {
     });
   }, [navigate]);
 
-  const hasActiveFilters = !!(search.search || search.stage || search.status || search.owner);
+  const setFilterGroup = useCallback((group?: QueryFilterGroup) => {
+    void navigate({
+      search: (prev) => ({
+        ...prev,
+        filters: serializeQueryFilterGroup(group),
+      }),
+      replace: true,
+    });
+  }, [navigate]);
 
-  return { search, setParam, setParams, clearFilters, hasActiveFilters };
+  const hasActiveFilters = !!(
+    search.search ||
+    filterGroup?.rules.length ||
+    search.stage ||
+    search.status ||
+    search.owner
+  );
+
+  return { search, filterGroup, setParam, setParams, setFilterGroup, clearFilters, hasActiveFilters };
 }

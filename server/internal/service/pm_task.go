@@ -566,6 +566,156 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 	return detail, nil
 }
 
+// Seed creates a batch of synthetic tasks for board and list testing.
+func (s *PMTaskService) Seed(ctx context.Context, req model.SeedPMTasksRequest) (*model.SeedPMTasksResponse, error) {
+	if req.WorkspaceID == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+
+	count := req.Count
+	if count <= 0 {
+		count = 500
+	}
+	if count > 2000 {
+		return nil, fmt.Errorf("count cannot exceed 2000")
+	}
+
+	workflow, err := s.workflowRepo.GetDefaultWorkflow(ctx, req.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if workflow == nil || len(workflow.States) == 0 {
+		workflow, err = s.workflowRepo.SeedDefaultWorkflow(ctx, req.WorkspaceID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if workflow == nil || len(workflow.States) == 0 {
+		return nil, fmt.Errorf("default workflow is required")
+	}
+
+	maxDisplayID, err := s.taskRepo.GetMaxDisplayID(ctx, req.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+
+	nextPositionByState := make(map[string]int, len(workflow.States))
+	for _, state := range workflow.States {
+		position, err := s.taskRepo.NextPosition(ctx, req.WorkspaceID, state.ID)
+		if err != nil {
+			return nil, err
+		}
+		nextPositionByState[state.ID] = position
+	}
+
+	assignableMembers, err := s.workspaceRepo.ListAssignableMembers(ctx, req.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	activeMembers := make([]model.AssignableMember, 0, len(assignableMembers))
+	for _, member := range assignableMembers {
+		if member.Status == model.WorkspaceMemberStatusActive {
+			activeMembers = append(activeMembers, member)
+		}
+	}
+
+	now := time.Now().UTC()
+	tasks := make([]model.PMTask, 0, count)
+	for i := 0; i < count; i++ {
+		sequence := maxDisplayID + i + 1
+		state := seededTaskWorkflowState(workflow.States, i)
+		position := nextPositionByState[state.ID]
+		nextPositionByState[state.ID] = position + 1
+
+		taskType := seededTaskType(i)
+		priority := seededTaskPriority(i)
+		severity := seededTaskSeverity(i)
+		estimate := seededTaskEstimate(i)
+		name := seededTaskName(sequence, taskType)
+		description := seededTaskDescription(sequence, taskType, state.Name)
+		externalID := fmt.Sprintf("seed-task-%d", sequence)
+		createdAt := now.Add(-time.Duration(i) * 11 * time.Minute)
+		updatedAt := createdAt.Add(time.Duration((i%5)+1) * time.Minute)
+
+		var (
+			started     bool
+			startedAt   *time.Time
+			completed   bool
+			completedAt *time.Time
+			movedAt     *time.Time
+			deadline    *time.Time
+			blocked     bool
+			blocker     *string
+		)
+
+		switch state.StateType {
+		case model.PMStateTypeStarted:
+			started = true
+			startedAtValue := createdAt.Add(2 * time.Hour)
+			startedAt = &startedAtValue
+			movedAtValue := updatedAt
+			movedAt = &movedAtValue
+		case model.PMStateTypeDone:
+			started = true
+			completed = true
+			startedAtValue := createdAt.Add(90 * time.Minute)
+			completedAtValue := updatedAt.Add(45 * time.Minute)
+			startedAt = &startedAtValue
+			completedAt = &completedAtValue
+			movedAtValue := completedAtValue
+			movedAt = &movedAtValue
+		}
+
+		if state.StateType != model.PMStateTypeDone && i%6 != 0 {
+			deadlineValue := createdAt.AddDate(0, 0, 3+(i%12))
+			deadline = &deadlineValue
+		}
+		if state.StateType != model.PMStateTypeDone && i%9 == 0 {
+			blocked = true
+			blockerValue := seededTaskBlocker(i)
+			blocker = &blockerValue
+		}
+
+		ownerMember := seededTaskMember(activeMembers, i)
+		requesterMember := seededTaskMember(activeMembers, i+1)
+
+		tasks = append(tasks, model.PMTask{
+			WorkspaceID:       req.WorkspaceID,
+			DisplayID:         sequence,
+			Name:              name,
+			Description:       &description,
+			TaskType:          taskType,
+			WorkflowID:        workflow.Workflow.ID,
+			WorkflowStateID:   state.ID,
+			OwnerID:           seededAssignableMemberUserIDPtr(ownerMember),
+			OwnerMemberID:     seededAssignableMemberIDPtr(ownerMember),
+			RequesterID:       seededAssignableMemberUserIDPtr(requesterMember),
+			RequesterMemberID: seededAssignableMemberIDPtr(requesterMember),
+			Estimate:          &estimate,
+			Priority:          priority,
+			Severity:          severity,
+			Deadline:          deadline,
+			Position:          position,
+			Started:           started,
+			StartedAt:         startedAt,
+			Completed:         completed,
+			CompletedAt:       completedAt,
+			MovedAt:           movedAt,
+			Blocked:           blocked,
+			Blocker:           blocker,
+			ExternalID:        &externalID,
+			CreatedAt:         createdAt,
+			UpdatedAt:         updatedAt,
+		})
+	}
+
+	if err := s.taskRepo.CreateInBatches(ctx, tasks, 100); err != nil {
+		return nil, err
+	}
+
+	return &model.SeedPMTasksResponse{Created: len(tasks)}, nil
+}
+
 // Update updates task fields.
 func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateTaskRequest, actorID string) (*model.TaskDetail, error) {
 	current, err := s.taskRepo.GetRawByID(ctx, id)
@@ -1445,6 +1595,95 @@ func (s *PMTaskService) CountByState(ctx context.Context, workflowID string) ([]
 // ListActivity returns task activity entries.
 func (s *PMTaskService) ListActivity(ctx context.Context, taskID string, pagination model.PMPagination) ([]model.ActivityLogEntry, int64, error) {
 	return s.activityService.ListEntity(ctx, "task", taskID, pagination)
+}
+
+func seededTaskWorkflowState(states []model.PMWorkflowState, index int) model.PMWorkflowState {
+	if len(states) == 0 {
+		return model.PMWorkflowState{}
+	}
+	return states[index%len(states)]
+}
+
+func seededTaskType(index int) string {
+	types := []string{
+		model.PMTaskTypeFeature,
+		model.PMTaskTypeBug,
+		model.PMTaskTypeChore,
+	}
+	return types[index%len(types)]
+}
+
+func seededTaskPriority(index int) string {
+	priorities := []string{
+		model.PMTaskPriorityLow,
+		model.PMTaskPriorityMedium,
+		model.PMTaskPriorityHigh,
+		model.PMTaskPriorityUrgent,
+		model.PMTaskPriorityNone,
+	}
+	return priorities[index%len(priorities)]
+}
+
+func seededTaskSeverity(index int) string {
+	severities := []string{
+		model.PMTaskSeverityNone,
+		model.PMTaskSeverityMinor,
+		model.PMTaskSeverityMajor,
+		model.PMTaskSeverityCritical,
+	}
+	return severities[index%len(severities)]
+}
+
+func seededTaskEstimate(index int) int {
+	estimates := []int{1, 2, 3, 5, 8, 13}
+	return estimates[index%len(estimates)]
+}
+
+func seededTaskName(sequence int, taskType string) string {
+	prefix := map[string]string{
+		model.PMTaskTypeFeature: "Seeded feature",
+		model.PMTaskTypeBug:     "Seeded bug",
+		model.PMTaskTypeChore:   "Seeded chore",
+	}
+	return fmt.Sprintf("%s %d", prefix[taskType], sequence)
+}
+
+func seededTaskDescription(sequence int, taskType, stateName string) string {
+	return fmt.Sprintf("Synthetic %s task %d seeded for workspace testing in %s.", taskType, sequence, stateName)
+}
+
+func seededTaskBlocker(index int) string {
+	blockers := []string{
+		"Waiting on API contract confirmation",
+		"Pending customer feedback on scope",
+		"Dependency deployment has not completed",
+		"Needs design approval before implementation",
+	}
+	return blockers[index%len(blockers)]
+}
+
+func seededTaskMember(members []model.AssignableMember, index int) *model.AssignableMember {
+	if len(members) == 0 {
+		return nil
+	}
+	member := members[index%len(members)]
+	return &member
+}
+
+func seededAssignableMemberIDPtr(member *model.AssignableMember) *string {
+	if member == nil || strings.TrimSpace(member.ID) == "" {
+		return nil
+	}
+	id := member.ID
+	return &id
+}
+
+func seededAssignableMemberUserIDPtr(member *model.AssignableMember) *string {
+	if member == nil || member.UserID == nil || strings.TrimSpace(*member.UserID) == "" {
+		return nil
+	}
+	id := *member.UserID
+	return &id
 }
 
 func isValidTaskType(value string) bool {

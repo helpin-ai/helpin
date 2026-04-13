@@ -24,6 +24,8 @@ export const workspacesService = {
   listMemberPresence: (id: string) => api.get<WorkspaceMemberPresenceStatus[]>(`/workspaces/${id}/members/presence`),
   updateMemberRole: (id: string, memberId: string, data: { role: WorkspaceMember['role'] }) =>
     api.put(`/workspaces/${id}/members/${memberId}`, data),
+  removeMember: (id: string, memberId: string) =>
+    api.del(`/workspaces/${id}/members/${memberId}`),
   listAssignableMembers: (id: string) => api.get<AssignableMember[]>(`/workspaces/${id}/assignable-members`),
   getKeyHistory: (id: string) => api.get<{ id: string; workspace_id: string; old_key: string; new_key: string; changed_at: string; changed_by: string }[]>(`/workspaces/${id}/key-history`),
 

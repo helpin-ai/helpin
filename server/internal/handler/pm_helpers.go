@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -36,6 +37,25 @@ func queryStringPtrWithFallback(r *http.Request, keys ...string) *string {
 		}
 	}
 	return nil
+}
+
+func queryFilterGroup(r *http.Request, key string) (*model.QueryFilterGroup, error) {
+	raw := r.URL.Query().Get(key)
+	if raw == "" {
+		return nil, nil
+	}
+
+	var group model.QueryFilterGroup
+	if err := json.Unmarshal([]byte(raw), &group); err != nil {
+		return nil, err
+	}
+	if len(group.Rules) == 0 {
+		return nil, nil
+	}
+	if group.Logic == "" {
+		group.Logic = model.QueryFilterLogicAnd
+	}
+	return &group, nil
 }
 
 func queryBoolPtr(r *http.Request, key string) (*bool, error) {

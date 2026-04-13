@@ -375,6 +375,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Get("/assignable-members", h.Workspace.ListAssignableMembers)
 				r.Get("/key-history", h.Workspace.GetKeyHistory)
 				r.With(requirePerm(authorization.PermWorkspaceMembersManage)).Put("/members/{memberId}", h.Workspace.UpdateMember)
+				r.With(requirePerm(authorization.PermWorkspaceMembersManage)).Delete("/members/{memberId}", h.Workspace.RemoveMember)
 
 				r.With(requirePerm(authorization.PermWorkspaceUpdate)).Put("/", h.Workspace.Update)
 				r.With(requirePerm(authorization.PermWorkspaceUpdate)).Post("/logo", h.Workspace.UploadLogo)
@@ -680,6 +681,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				// Tasks — pm.read / pm.edit
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks", h.PMTask.List)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks", h.PMTask.Create)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/seed", h.PMTask.Seed)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/board", h.PMTask.ListBoard)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/board/column", h.PMTask.ListBoardColumn)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/board/members", h.PMTask.ListBoardByMember)
@@ -987,6 +989,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				// Contacts — crm.read / crm.edit
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/contacts", h.CRMContact.List)
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/contacts", h.CRMContact.Create)
+				r.With(requirePerm(authorization.PermCRMEdit)).Post("/contacts/seed", h.CRMContact.Seed)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/contacts/{id}", h.CRMContact.Get)
 				r.With(requirePerm(authorization.PermCRMEdit)).Put("/contacts/{id}", h.CRMContact.Update)
 				r.With(requirePerm(authorization.PermCRMEdit)).Delete("/contacts/{id}", h.CRMContact.Delete)

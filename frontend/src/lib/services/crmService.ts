@@ -10,6 +10,8 @@ import type {
   CRMActivity,
   CreateCRMContactRequest,
   UpdateCRMContactRequest,
+  SeedCRMContactsRequest,
+  SeedCRMContactsResponse,
   CreateCRMCompanyRequest,
   UpdateCRMCompanyRequest,
   CreateCRMDealRequest,
@@ -78,12 +80,14 @@ const filterQuery = (filters: Record<string, string | number | boolean | undefin
 };
 
 export const crmContactService = {
-  list: (workspaceId: string, filters?: { lifecycle_stage?: string; lead_status?: string; owner_member_id?: string; search?: string; page?: number; per_page?: number }) =>
+  list: (workspaceId: string, filters?: { lifecycle_stage?: string; lead_status?: string; owner_member_id?: string; search?: string; filters?: string; page?: number; per_page?: number }) =>
     api.get<CRMPaginatedResponse<CRMContact[]>>(`/crm/contacts${qs(workspaceId)}${filterQuery(filters ?? {})}`),
   get: (workspaceId: string, id: string) =>
     api.get<CRMContact>(`/crm/contacts/${id}${qs(workspaceId)}`),
   create: (payload: CreateCRMContactRequest) =>
     api.post<CRMContact>(`/crm/contacts${qs(payload.workspace_id)}`, payload),
+  seed: (payload: SeedCRMContactsRequest) =>
+    api.post<SeedCRMContactsResponse>(`/crm/contacts/seed${qs(payload.workspace_id)}`, payload),
   update: (workspaceId: string, id: string, payload: UpdateCRMContactRequest) =>
     api.put<CRMContact>(`/crm/contacts/${id}${qs(workspaceId)}`, payload),
   remove: (workspaceId: string, id: string) =>

@@ -983,11 +983,11 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
                 <p className="mb-1.5 font-medium text-foreground">DNS setup</p>
                 <p>
                   Create a <span className="font-mono text-foreground">CNAME</span> record on your domain pointing to{' '}
-                  <span className="font-mono text-foreground">helpcenter.helpin.ai</span>. SSL certificates are issued automatically once DNS resolves.
+                  <span className="font-mono text-foreground">helpin.center</span>. SSL certificates are issued automatically once DNS resolves.
                 </p>
                 <p className="mt-1.5">
                   Example: <span className="font-mono text-foreground">help.yourcompany.com</span> →{' '}
-                  <span className="font-mono text-foreground">helpcenter.helpin.ai</span>
+                  <span className="font-mono text-foreground">helpin.center</span>
                 </p>
               </div>
             </div>
