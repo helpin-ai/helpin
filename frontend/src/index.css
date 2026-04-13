@@ -482,6 +482,8 @@
   color: inherit;
   text-decoration: underline;
   text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .prose-chat h1,
 .prose-chat h2,

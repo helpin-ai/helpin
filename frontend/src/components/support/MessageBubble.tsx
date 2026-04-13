@@ -43,7 +43,14 @@ function containsMarkdownTable(content: string): boolean {
 
 const markdownComponents = {
   a: ({ href, children }: ComponentPropsWithoutRef<'a'>) => (
-    <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="[overflow-wrap:anywhere] break-words"
+    >
+      {children}
+    </a>
   ),
   table: ({ children }: ComponentPropsWithoutRef<'table'>) => (
     <div className="chat-markdown-table-wrap">
@@ -362,7 +369,10 @@ export const MessageBubble = memo(function MessageBubble({
           </div>
         )}
 
-        <div className={hasTableContent ? 'max-w-[min(78vw,46rem)] lg:max-w-[min(72vw,48rem)]' : 'max-w-[70%]'}>
+        <div
+          data-slot="support-message-bubble"
+          className={hasTableContent ? 'min-w-0 max-w-[min(78vw,46rem)] lg:max-w-[min(72vw,48rem)]' : 'min-w-0 max-w-[70%]'}
+        >
           {showBubble && (
             <Tooltip>
               <TooltipTrigger asChild>
