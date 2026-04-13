@@ -46,6 +46,40 @@ describe('RichTextMentionContent', () => {
     container.remove()
   })
 
+  it('does not convert email domains into mention chips inside rich text content', () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(
+        <RichTextMentionContent
+          html="<p>Email: paul.sonneveld@merchantspring.com.au and ping @alice</p>"
+          members={[
+            {
+              id: 'member-1',
+              status: 'active',
+              role: 'member',
+              email: 'alice@example.com',
+              display_name: 'Alice',
+            },
+          ]}
+        />,
+      )
+    })
+
+    const mentions = container.querySelectorAll('[data-mention-type]')
+
+    expect(mentions).toHaveLength(1)
+    expect(mentions[0]?.textContent).toContain('@Alice')
+    expect(container.textContent).toContain('paul.sonneveld@merchantspring.com.au')
+
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  })
+
   it('shows an image loader until inline task images finish loading', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
