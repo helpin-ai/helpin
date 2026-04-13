@@ -1,39 +1,48 @@
 import type { SupportConversation } from './pmTypes';
 import type { NavFilter } from '@/stores/supportInboxStore';
+import {
+  isAIActiveConversation,
+  isHumanQueueConversation,
+  isResolvedByAIConversation,
+} from '@/components/support/helpers';
 
-function isAIManagedConversation(conversation: SupportConversation): boolean {
-  return conversation.ai_state === 'pending' || conversation.ai_state === 'resolved';
-}
-
-function isHumanInboxConversation(conversation: SupportConversation): boolean {
-  return !isAIManagedConversation(conversation);
+function matchesMailboxScope(conversation: SupportConversation, mailboxScope: string): boolean {
+  if (mailboxScope === 'all') {
+    return true;
+  }
+  if (mailboxScope === 'shared') {
+    return !conversation.mailbox_id;
+  }
+  return conversation.mailbox_id === mailboxScope;
 }
 
 export function filterSupportConversations(
   conversations: SupportConversation[],
   options: {
     navFilter: NavFilter;
+    mailboxScope: string;
+    statusFilter?: string;
     userId?: string;
     searchQuery: string;
   }
 ): SupportConversation[] {
-  const { navFilter, userId, searchQuery } = options;
-  let result = [...conversations];
+  const { navFilter, mailboxScope, statusFilter = 'all', userId, searchQuery } = options;
+  let result = conversations.filter((conversation) => matchesMailboxScope(conversation, mailboxScope));
+
+  if (statusFilter !== 'all') {
+    result = result.filter((conversation) => conversation.status === statusFilter);
+  }
 
   if (navFilter === 'my_inbox' && userId) {
-    result = result.filter((conversation) => isHumanInboxConversation(conversation) && conversation.opened_by_user_id === userId);
+    result = result.filter((conversation) => isHumanQueueConversation(conversation) && conversation.opened_by_user_id === userId);
   } else if (navFilter === 'unassigned') {
-    result = result.filter((conversation) => isHumanInboxConversation(conversation) && !conversation.assigned_agent_id && !conversation.opened_by_user_id);
-  } else if (navFilter === 'ai_all') {
-    result = result.filter((conversation) => conversation.ai_state != null);
-  } else if (navFilter === 'ai_resolved') {
-    result = result.filter((conversation) => conversation.ai_state === 'resolved');
-  } else if (navFilter === 'ai_escalated') {
-    result = result.filter((conversation) => conversation.ai_state === 'escalated');
-  } else if (navFilter === 'ai_pending') {
-    result = result.filter((conversation) => conversation.ai_state === 'pending');
+    result = result.filter((conversation) => isHumanQueueConversation(conversation) && !conversation.assigned_agent_id && !conversation.opened_by_user_id);
+  } else if (navFilter === 'ai_active') {
+    result = result.filter(isAIActiveConversation);
+  } else if (navFilter === 'resolved_by_ai') {
+    result = result.filter(isResolvedByAIConversation);
   } else if (navFilter !== 'mentions') {
-    result = result.filter(isHumanInboxConversation);
+    result = result.filter(isHumanQueueConversation);
   }
 
   if (searchQuery.trim()) {

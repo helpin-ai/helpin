@@ -67,8 +67,7 @@ export interface UnreadStats {
   total: number;
   my_inbox: number;
   unassigned: number;
-  ai_all: number;
-  ai_pending: number;
+  ai_active: number;
 }
 
 export interface SupportInboxScope {

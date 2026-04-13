@@ -32,6 +32,7 @@ describe('ConversationList presence resync', () => {
       searchQuery: '',
       selectedConversationId: null,
       navFilter: 'all',
+      selectedMailboxId: 'all',
     })
     useSupportPresenceStore.setState({
       typingIndicators: {},

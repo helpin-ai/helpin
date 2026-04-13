@@ -57,20 +57,28 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
   }, [markConversationRead, selectConversation]);
 
   const filters = useMemo(() => {
-    const f: Record<string, string> = { mailbox_id: selectedMailboxId };
+    const f: Record<string, string> = {};
+    if (selectedMailboxId !== 'all') {
+      f.mailbox_id = selectedMailboxId;
+    }
     if (statusFilter !== 'all') f.status = statusFilter;
     if (navFilter === 'mentions') f.filter = 'mentions';
-    if (navFilter === 'ai_pending') f.ai_state = 'pending';
-    if (navFilter === 'ai_resolved') f.ai_state = 'resolved';
-    if (navFilter === 'ai_escalated') f.ai_state = 'escalated';
+    if (navFilter === 'ai_active') f.flow_state = 'ai_handling';
+    if (navFilter === 'resolved_by_ai') f.flow_state = 'resolved_by_ai';
     return Object.keys(f).length > 0 ? f : undefined;
   }, [statusFilter, navFilter, selectedMailboxId]);
   const { data: response, isLoading, error } = useConversations(workspaceId, filters);
   const conversations = response?.data ?? [];
 
   const filteredConversations = useMemo(() => {
-    return filterSupportConversations(conversations, { navFilter, userId, searchQuery });
-  }, [conversations, navFilter, userId, searchQuery]);
+    return filterSupportConversations(conversations, {
+      navFilter,
+      mailboxScope: selectedMailboxId,
+      statusFilter,
+      userId,
+      searchQuery,
+    });
+  }, [conversations, navFilter, selectedMailboxId, statusFilter, userId, searchQuery]);
   const mailboxMoveOptions = useMemo(
     () => [inboxScopes?.shared_inbox, ...(inboxScopes?.mailboxes ?? [])].filter(Boolean) as SupportInboxScope[],
     [inboxScopes]

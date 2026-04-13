@@ -387,11 +387,11 @@ func (s *SupportInboxService) ListConversations(ctx context.Context, workspaceID
 		return nil, 0, fmt.Errorf("workspace_id is required")
 	}
 	workspaceMemberID, role := s.actorMailboxScope(ctx, workspaceID)
-	return s.conversationRepo.List(ctx, workspaceID, status, priority, pagination, workspaceMemberID, role, nil)
+	return s.conversationRepo.List(ctx, workspaceID, status, priority, pagination, workspaceMemberID, role, nil, "")
 }
 
 // ListConversationsWithMeta returns conversations plus aggregate unread stats.
-func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, workspaceID, userID, status, priority string, pagination model.PMPagination, mailboxID *string, aiState ...string) (*model.ConversationListResponse, error) {
+func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, workspaceID, userID, status, priority string, pagination model.PMPagination, mailboxID *string, flowState string, aiState ...string) (*model.ConversationListResponse, error) {
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
@@ -399,7 +399,7 @@ func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, wor
 		return nil, err
 	}
 	workspaceMemberID, role := s.actorMailboxScope(ctx, workspaceID)
-	conversations, total, err := s.conversationRepo.List(ctx, workspaceID, status, priority, pagination, workspaceMemberID, role, mailboxID, aiState...)
+	conversations, total, err := s.conversationRepo.List(ctx, workspaceID, status, priority, pagination, workspaceMemberID, role, mailboxID, flowState, aiState...)
 	if err != nil {
 		return nil, err
 	}

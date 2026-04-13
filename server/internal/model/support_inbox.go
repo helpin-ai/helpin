@@ -117,8 +117,7 @@ type UnreadStats struct {
 	Total      int `json:"total"`
 	MyInbox    int `json:"my_inbox"`
 	Unassigned int `json:"unassigned"`
-	AIAll      int `json:"ai_all"`
-	AIPending  int `json:"ai_pending"`
+	AIActive   int `json:"ai_active"`
 }
 
 type SupportInboxScope struct {

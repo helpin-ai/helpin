@@ -59,8 +59,7 @@ describe('supportQueryCache', () => {
           total: 0,
           my_inbox: 0,
           unassigned: 0,
-          ai_all: 0,
-          ai_pending: 0,
+          ai_active: 0,
         },
       },
     };

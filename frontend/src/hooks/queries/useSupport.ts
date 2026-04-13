@@ -71,7 +71,7 @@ export function useRegenerateWidgetKey(workspaceId: string) {
 
 // ── Conversations ───────────────────────────────────────────────────
 
-export function useConversations(workspaceId: string, filters?: { status?: string; priority?: string; filter?: string; mailbox_id?: string | null; ai_state?: string }) {
+export function useConversations(workspaceId: string, filters?: { status?: string; priority?: string; filter?: string; mailbox_id?: string | null; ai_state?: string; flow_state?: string }) {
   return useQuery({
     queryKey: [...queryKeys.support.conversations(workspaceId), filters] as const,
     queryFn: async (): Promise<ConversationListResponse> => {
@@ -84,7 +84,7 @@ export function useConversations(workspaceId: string, filters?: { status?: strin
       }
       // Legacy fallback
       const arr = Array.isArray(data) ? data : [];
-      return { data: arr, total: arr.length, page: 1, per_page: 50, total_pages: 1, meta: { unread: { total: 0, my_inbox: 0, unassigned: 0, ai_all: 0, ai_pending: 0 } } } as ConversationListResponse;
+      return { data: arr, total: arr.length, page: 1, per_page: 50, total_pages: 1, meta: { unread: { total: 0, my_inbox: 0, unassigned: 0, ai_active: 0 } } } as ConversationListResponse;
     },
     enabled: !!workspaceId,
     staleTime: 15_000,
@@ -93,7 +93,7 @@ export function useConversations(workspaceId: string, filters?: { status?: strin
 
 export function useUnreadStats(workspaceId: string, mailboxId?: string | null, enabled = true) {
   return useQuery({
-    queryKey: [...queryKeys.support.unreadStats(workspaceId), mailboxId ?? 'shared'] as const,
+    queryKey: [...queryKeys.support.unreadStats(workspaceId), mailboxId ?? 'all'] as const,
     queryFn: async () => unwrap(await supportService.getUnreadStats(workspaceId, mailboxId)),
     enabled: !!workspaceId && enabled,
     staleTime: 15_000,

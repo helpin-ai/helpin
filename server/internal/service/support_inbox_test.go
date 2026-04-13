@@ -79,7 +79,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// List all
-		conversations, total, err := repo.List(ctx, workspaceID, "", "", model.PMPagination{}, "", model.RoleOwner, nil)
+		conversations, total, err := repo.List(ctx, workspaceID, "", "", model.PMPagination{}, "", model.RoleOwner, nil, "")
 		if err != nil {
 			t.Fatalf("list conversations: %v", err)
 		}
@@ -91,7 +91,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// Filter by status
-		openConvs, totalOpen, err := repo.List(ctx, workspaceID, "open", "", model.PMPagination{}, "", model.RoleOwner, nil)
+		openConvs, totalOpen, err := repo.List(ctx, workspaceID, "open", "", model.PMPagination{}, "", model.RoleOwner, nil, "")
 		if err != nil {
 			t.Fatalf("list open conversations: %v", err)
 		}
@@ -103,7 +103,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// Filter by priority
-		_, totalHigh, err := repo.List(ctx, workspaceID, "", "high", model.PMPagination{}, "", model.RoleOwner, nil)
+		_, totalHigh, err := repo.List(ctx, workspaceID, "", "high", model.PMPagination{}, "", model.RoleOwner, nil, "")
 		if err != nil {
 			t.Fatalf("list high priority: %v", err)
 		}
@@ -218,7 +218,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// Page 1, 2 per page
-		page1, total, err := pRepo.List(ctx, paginationWS, "", "", model.PMPagination{Page: 1, PerPage: 2}, "", model.RoleOwner, nil)
+		page1, total, err := pRepo.List(ctx, paginationWS, "", "", model.PMPagination{Page: 1, PerPage: 2}, "", model.RoleOwner, nil, "")
 		if err != nil {
 			t.Fatalf("page 1: %v", err)
 		}
@@ -230,7 +230,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// Page 3, 2 per page → 1 result
-		page3, _, err := pRepo.List(ctx, paginationWS, "", "", model.PMPagination{Page: 3, PerPage: 2}, "", model.RoleOwner, nil)
+		page3, _, err := pRepo.List(ctx, paginationWS, "", "", model.PMPagination{Page: 3, PerPage: 2}, "", model.RoleOwner, nil, "")
 		if err != nil {
 			t.Fatalf("page 3: %v", err)
 		}
@@ -304,7 +304,7 @@ func TestSupportConversationRepository(t *testing.T) {
 			t.Fatal("expected linked team member to have mailbox access")
 		}
 
-		teamConversations, total, err := repo.List(ctx, linkedWorkspaceID, "", "", model.PMPagination{}, "wm-linked-team", model.RoleMember, nil)
+		teamConversations, total, err := repo.List(ctx, linkedWorkspaceID, "", "", model.PMPagination{}, "wm-linked-team", model.RoleMember, nil, "")
 		if err != nil {
 			t.Fatalf("list conversations for linked team member: %v", err)
 		}
@@ -312,7 +312,7 @@ func TestSupportConversationRepository(t *testing.T) {
 			t.Fatalf("expected linked team member to see private conversation, got total=%d conversations=%#v", total, teamConversations)
 		}
 
-		outsiderConversations, outsiderTotal, err := repo.List(ctx, linkedWorkspaceID, "", "", model.PMPagination{}, "wm-linked-outsider", model.RoleMember, nil)
+		outsiderConversations, outsiderTotal, err := repo.List(ctx, linkedWorkspaceID, "", "", model.PMPagination{}, "wm-linked-outsider", model.RoleMember, nil, "")
 		if err != nil {
 			t.Fatalf("list conversations for outsider: %v", err)
 		}
@@ -373,14 +373,15 @@ func TestSupportConversationRepository(t *testing.T) {
 			Status:         "open",
 			OpenedByUserID: strPtr("user-123"),
 			AIState:        &aiPending,
+			FlowState:      strPtr(model.SupportConversationFlowStateAIHandling),
 			TeamLastSeenAt: &now,
 		}
 		if err := repo.Create(ctx, aiConv); err != nil {
 			t.Fatalf("create AI conversation: %v", err)
 		}
 		if err := db.Exec(
-			`UPDATE support_conversations SET team_last_seen_at = ?, updated_at = ?, ai_state = ? WHERE id = ?`,
-			now.Add(-2*time.Minute), now, aiPending, aiConv.ID,
+			`UPDATE support_conversations SET team_last_seen_at = ?, updated_at = ?, ai_state = ?, flow_state = ? WHERE id = ?`,
+			now.Add(-2*time.Minute), now, aiPending, model.SupportConversationFlowStateAIHandling, aiConv.ID,
 		).Error; err != nil {
 			t.Fatalf("seed AI state: %v", err)
 		}
@@ -397,14 +398,15 @@ func TestSupportConversationRepository(t *testing.T) {
 			Subject:        "Escalated AI conversation",
 			Status:         "open",
 			AIState:        &aiEscalated,
+			FlowState:      strPtr(model.SupportConversationFlowStateWaitingForHuman),
 			TeamLastSeenAt: &now,
 		}
 		if err := repo.Create(ctx, escalatedConv); err != nil {
 			t.Fatalf("create escalated conversation: %v", err)
 		}
 		if err := db.Exec(
-			`UPDATE support_conversations SET team_last_seen_at = ?, updated_at = ?, ai_state = ?, assigned_agent_id = NULL, opened_by_user_id = NULL WHERE id = ?`,
-			now.Add(-2*time.Minute), now, aiEscalated, escalatedConv.ID,
+			`UPDATE support_conversations SET team_last_seen_at = ?, updated_at = ?, ai_state = ?, flow_state = ?, assigned_agent_id = NULL, opened_by_user_id = NULL WHERE id = ?`,
+			now.Add(-2*time.Minute), now, aiEscalated, model.SupportConversationFlowStateWaitingForHuman, escalatedConv.ID,
 		).Error; err != nil {
 			t.Fatalf("seed escalated state: %v", err)
 		}
@@ -429,15 +431,12 @@ func TestSupportConversationRepository(t *testing.T) {
 		if stats.Unassigned != 1 {
 			t.Fatalf("expected unassigned count 1, got %d", stats.Unassigned)
 		}
-		if stats.AIAll != 2 {
-			t.Fatalf("expected all AI unread count 2, got %d", stats.AIAll)
-		}
-		if stats.AIPending != 0 {
-			t.Fatalf("expected AI pending unread count 0 in sqlite-backed unread stats test, got %d", stats.AIPending)
+		if stats.AIActive != 1 {
+			t.Fatalf("expected AI active unread count 1, got %d", stats.AIActive)
 		}
 	})
 
-	t.Run("Mailbox unread counts exclude AI-managed conversations that stay in AI views", func(t *testing.T) {
+	t.Run("Mailbox unread counts include active AI conversations but exclude AI-resolved ones", func(t *testing.T) {
 		ctx := context.Background()
 		now := time.Now()
 		customerMessageAt := now.Add(-time.Minute)
@@ -487,13 +486,14 @@ func TestSupportConversationRepository(t *testing.T) {
 			Subject:     "AI pending billing conversation",
 			Status:      "open",
 			AIState:     &aiPending,
+			FlowState:   strPtr(model.SupportConversationFlowStateAIHandling),
 		}
 		if err := repo.Create(ctx, aiPendingConv); err != nil {
 			t.Fatalf("create AI pending billing conversation: %v", err)
 		}
 		if err := db.Exec(
-			`UPDATE support_conversations SET team_last_seen_at = ?, updated_at = ?, ai_state = ? WHERE id = ?`,
-			now.Add(-2*time.Minute), now, aiPending, aiPendingConv.ID,
+			`UPDATE support_conversations SET team_last_seen_at = ?, updated_at = ?, ai_state = ?, flow_state = ? WHERE id = ?`,
+			now.Add(-2*time.Minute), now, aiPending, model.SupportConversationFlowStateAIHandling, aiPendingConv.ID,
 		).Error; err != nil {
 			t.Fatalf("seed AI pending billing state: %v", err)
 		}
@@ -511,13 +511,14 @@ func TestSupportConversationRepository(t *testing.T) {
 			Subject:     "Escalated billing conversation",
 			Status:      "open",
 			AIState:     &aiEscalated,
+			FlowState:   strPtr(model.SupportConversationFlowStateWaitingForHuman),
 		}
 		if err := repo.Create(ctx, aiEscalatedConv); err != nil {
 			t.Fatalf("create escalated billing conversation: %v", err)
 		}
 		if err := db.Exec(
-			`UPDATE support_conversations SET team_last_seen_at = ?, updated_at = ?, ai_state = ? WHERE id = ?`,
-			now.Add(-2*time.Minute), now, aiEscalated, aiEscalatedConv.ID,
+			`UPDATE support_conversations SET team_last_seen_at = ?, updated_at = ?, ai_state = ?, flow_state = ? WHERE id = ?`,
+			now.Add(-2*time.Minute), now, aiEscalated, model.SupportConversationFlowStateWaitingForHuman, aiEscalatedConv.ID,
 		).Error; err != nil {
 			t.Fatalf("seed escalated billing state: %v", err)
 		}
@@ -528,12 +529,37 @@ func TestSupportConversationRepository(t *testing.T) {
 			t.Fatalf("seed escalated billing unread message: %v", err)
 		}
 
+		aiResolved := "resolved"
+		aiResolvedConv := &model.SupportConversation{
+			WorkspaceID: workspaceID,
+			MailboxID:   &billingMailbox.ID,
+			Subject:     "AI resolved billing conversation",
+			Status:      "resolved",
+			AIState:     &aiResolved,
+			FlowState:   strPtr(model.SupportConversationFlowStateResolvedByAI),
+		}
+		if err := repo.Create(ctx, aiResolvedConv); err != nil {
+			t.Fatalf("create AI resolved billing conversation: %v", err)
+		}
+		if err := db.Exec(
+			`UPDATE support_conversations SET team_last_seen_at = ?, updated_at = ?, ai_state = ?, flow_state = ? WHERE id = ?`,
+			now.Add(-2*time.Minute), now, aiResolved, model.SupportConversationFlowStateResolvedByAI, aiResolvedConv.ID,
+		).Error; err != nil {
+			t.Fatalf("seed AI resolved billing state: %v", err)
+		}
+		if err := db.Exec(
+			`INSERT INTO support_messages (id, workspace_id, conversation_id, sender_type, content, message_type, is_internal, created_at, updated_at) VALUES (?, ?, ?, 'customer', ?, 'reply', 0, ?, ?)`,
+			"msg-billing-ai-resolved-unread", workspaceID, aiResolvedConv.ID, "Thanks, that fixed billing", customerMessageAt, customerMessageAt,
+		).Error; err != nil {
+			t.Fatalf("seed AI resolved billing unread message: %v", err)
+		}
+
 		count, err := mailboxRepo.CountUnread(ctx, workspaceID, &billingMailbox.ID)
 		if err != nil {
 			t.Fatalf("count billing mailbox unread: %v", err)
 		}
-		if count != 2 {
-			t.Fatalf("expected billing mailbox unread count 2, got %d", count)
+		if count != 3 {
+			t.Fatalf("expected billing mailbox unread count 3, got %d", count)
 		}
 	})
 }

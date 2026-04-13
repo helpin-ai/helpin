@@ -55,11 +55,11 @@ export function Sidebar() {
     setSelectedMailboxId,
     setTeamInboxDialogOpen,
     setEditMailboxId,
-    activeContext,
   } = useSupportInboxStore();
 
   const { data: inboxScopes } = useInboxScopes(workspaceId ?? '', hasSupportModule);
-  const { data: unreadStats } = useUnreadStats(workspaceId ?? '', selectedMailboxId, hasSupportModule);
+  const unreadMailboxScope = selectedMailboxId === 'all' ? undefined : selectedMailboxId;
+  const { data: unreadStats } = useUnreadStats(workspaceId ?? '', unreadMailboxScope, hasSupportModule);
   const archiveMailbox = useArchiveMailbox(workspaceId ?? '');
   const totalSupportUnread = useMemo(
     () => (inboxScopes?.shared_inbox.unread_count ?? 0) + (inboxScopes?.mailboxes ?? []).reduce((sum, mailbox) => sum + mailbox.unread_count, 0),
@@ -311,7 +311,6 @@ export function Sidebar() {
             {activeRail === 'support' && (
               <SupportRailNav
                 navFilter={navFilter}
-                activeContext={activeContext}
                 unreadStats={unreadStats}
                 inboxScopes={inboxScopes}
                 selectedMailboxId={selectedMailboxId}

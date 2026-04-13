@@ -570,7 +570,7 @@ func TestEmailFallbackProcessInboundEmailRouteCreatesConversation(t *testing.T) 
 		t.Fatalf("process routed inbound email: %v", err)
 	}
 
-	resp, total, err := env.convRepo.List(ctx, workspaceID, "", "", model.PMPagination{Page: 1, PerPage: 10}, "", model.RoleOwner, nil)
+	resp, total, err := env.convRepo.List(ctx, workspaceID, "", "", model.PMPagination{Page: 1, PerPage: 10}, "", model.RoleOwner, nil, "")
 	if err != nil {
 		t.Fatalf("list conversations: %v", err)
 	}
@@ -684,7 +684,7 @@ func TestEmailFallbackProcessInboundEmailRouteThreadsReply(t *testing.T) {
 		t.Fatalf("expected threaded reply to stay in existing conversation, got %d messages", len(messages))
 	}
 
-	resp, total, err := env.convRepo.List(ctx, workspaceID, "", "", model.PMPagination{Page: 1, PerPage: 10}, "", model.RoleOwner, nil)
+	resp, total, err := env.convRepo.List(ctx, workspaceID, "", "", model.PMPagination{Page: 1, PerPage: 10}, "", model.RoleOwner, nil, "")
 	if err != nil {
 		t.Fatalf("list conversations: %v", err)
 	}
