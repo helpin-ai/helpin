@@ -24,6 +24,24 @@ describe('getVisibleTaskListGroupOptions', () => {
     ]);
   });
 
+  it('hides epic group option inside epic detail', () => {
+    const labels = getVisibleTaskListGroupOptions(
+      { task_type: true, priority: true, severity: true, epic: true, sprint: true },
+      { epicId: 'epic-1' },
+    ).map((o) => o.value);
+    expect(labels).not.toContain('epic');
+    expect(labels).toContain('sprint');
+  });
+
+  it('hides sprint group option inside sprint detail', () => {
+    const labels = getVisibleTaskListGroupOptions(
+      { task_type: true, priority: true, severity: true, epic: true, sprint: true },
+      { sprintId: 'sprint-1' },
+    ).map((o) => o.value);
+    expect(labels).not.toContain('sprint');
+    expect(labels).toContain('epic');
+  });
+
   it('hides advanced options when team field visibility disables them', () => {
     expect(
       getVisibleTaskListGroupOptions({

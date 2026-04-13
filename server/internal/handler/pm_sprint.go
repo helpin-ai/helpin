@@ -106,6 +106,35 @@ func (h *PMSprintHandler) Get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, sprint)
 }
 
+// GetCloseout handles GET /api/pm/sprints/{id}/closeout.
+func (h *PMSprintHandler) GetCloseout(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	closeout, err := h.sprintService.GetCloseout(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, closeout)
+}
+
+// ListCloseouts handles GET /api/pm/sprints/closeouts.
+func (h *PMSprintHandler) ListCloseouts(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	items, err := h.sprintService.ListCloseouts(r.Context(), workspaceID, queryStringPtr(r, "team_id"))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if items == nil {
+		items = []model.SprintCloseoutListItem{}
+	}
+	writeJSON(w, http.StatusOK, model.SprintCloseoutListResponse{Items: items})
+}
+
 // Update handles PUT /api/pm/sprints/{id}.
 func (h *PMSprintHandler) Update(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())

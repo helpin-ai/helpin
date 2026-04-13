@@ -21,6 +21,13 @@ export interface TaskListGroupingVisibility {
   sprint: boolean;
 }
 
+export interface TaskListGroupingContext {
+  /** When set, the list is inside an epic — hide the "Epic" group option. */
+  epicId?: string;
+  /** When set, the list is inside a sprint — hide the "Sprint" group option. */
+  sprintId?: string;
+}
+
 const TASK_LIST_GROUP_OPTIONS: TaskListGroupOption[] = [
   { value: 'none', label: 'None' },
   { value: 'workflow_state', label: 'States' },
@@ -34,13 +41,14 @@ const TASK_LIST_GROUP_OPTIONS: TaskListGroupOption[] = [
 
 export function getVisibleTaskListGroupOptions(
   visibility: TaskListGroupingVisibility,
+  context?: TaskListGroupingContext,
 ): TaskListGroupOption[] {
   return TASK_LIST_GROUP_OPTIONS.filter((option) => {
     if (option.value === 'task_type') return visibility.task_type;
     if (option.value === 'priority') return visibility.priority;
     if (option.value === 'severity') return visibility.severity;
-    if (option.value === 'epic') return visibility.epic;
-    if (option.value === 'sprint') return visibility.sprint;
+    if (option.value === 'epic') return visibility.epic && !context?.epicId;
+    if (option.value === 'sprint') return visibility.sprint && !context?.sprintId;
     return true;
   });
 }

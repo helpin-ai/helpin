@@ -38,6 +38,7 @@ func newSprintTestEnvWithDB(t *testing.T) (*PMSprintService, *gorm.DB, string) {
 		activityService,
 		nil,
 		nil,
+		nil,
 	)
 	return svc, db, "ws-sprint"
 }
@@ -273,11 +274,11 @@ func TestListPlanningWorkspace_GroupsSprintsAndBacklog(t *testing.T) {
 	ctx := context.Background()
 
 	const (
-		teamIDValue = "team-planning"
-		workflowID  = "wf-planning"
-		todoStateID = "state-planning-todo"
+		teamIDValue  = "team-planning"
+		workflowID   = "wf-planning"
+		todoStateID  = "state-planning-todo"
 		doingStateID = "state-planning-doing"
-		doneStateID = "state-planning-done"
+		doneStateID  = "state-planning-done"
 	)
 	teamID := teamIDValue
 
@@ -714,6 +715,7 @@ func TestGetCurrentSprint_WithTeamID(t *testing.T) {
 		repository.NewWorkspaceRepository(db),
 		repository.NewSettingsRepository(db),
 		activityService,
+		nil,
 		nil,
 		nil,
 	)

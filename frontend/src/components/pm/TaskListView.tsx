@@ -891,6 +891,7 @@ export function TaskListView({
   // Team-level disabled keys (for hiding toggles in display menu)
   const teamDisabledKeys = useMemo(() => {
     const keys = new Set<DisplayPropertyKey>();
+    // Team-level field visibility
     if (!fieldVis.priority) keys.add('priority');
     if (!fieldVis.severity) keys.add('severity');
     if (!fieldVis.task_type) keys.add('task_type');
@@ -900,19 +901,32 @@ export function TaskListView({
     if (!fieldVis.due_date) keys.add('due_date');
     if (!fieldVis.labels) keys.add('labels');
     if (teamId) keys.add('team');
+    // Context scoping: hide columns that are redundant in the current view
+    if (epicId) keys.add('epic');
+    if (sprintId) keys.add('sprint');
+    // CRM columns are not useful inside epic/sprint detail views
+    if (epicId || sprintId) {
+      keys.add('contacts');
+      keys.add('companies');
+      keys.add('deals');
+      keys.add('support');
+    }
     return keys;
-  }, [fieldVis, teamId]);
+  }, [fieldVis, teamId, epicId, sprintId]);
 
   const visibleGroupOptions = useMemo(
     () =>
-      getVisibleTaskListGroupOptions({
-        task_type: fieldVis.task_type,
-        priority: fieldVis.priority,
-        severity: fieldVis.severity,
-        epic: fieldVis.epic,
-        sprint: fieldVis.sprint,
-      }),
-    [fieldVis.epic, fieldVis.priority, fieldVis.severity, fieldVis.sprint, fieldVis.task_type],
+      getVisibleTaskListGroupOptions(
+        {
+          task_type: fieldVis.task_type,
+          priority: fieldVis.priority,
+          severity: fieldVis.severity,
+          epic: fieldVis.epic,
+          sprint: fieldVis.sprint,
+        },
+        { epicId: epicId ?? undefined, sprintId: sprintId ?? undefined },
+      ),
+    [fieldVis.epic, fieldVis.priority, fieldVis.severity, fieldVis.sprint, fieldVis.task_type, epicId, sprintId],
   );
 
   useEffect(() => {

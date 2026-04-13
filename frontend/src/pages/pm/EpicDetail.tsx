@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getRouteApi, useLocation, useNavigate } from '@tanstack/react-router';
+import { toast } from 'sonner';
 import { useTitle } from '@/hooks/useTitle';
 import {
   ArchiveIcon,
@@ -19,6 +20,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { pmTaskService } from '@/lib/services/pmTaskService';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { UserAvatar } from '@/components/pm/UserAvatar';
@@ -167,6 +170,14 @@ export function EpicDetailPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
+  const [pendingTeamChange, setPendingTeamChange] = useState<{
+    newTeamId: string;
+    newTeamName: string;
+    oldTeamId: string;
+    oldTeamName: string;
+    affectedTaskCount: number;
+  } | null>(null);
+  const [movingTasks, setMovingTasks] = useState(false);
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
   const [editingDescription, setEditingDescription] = useState(false);
   const savedDescriptionRef = useRef('');
@@ -728,6 +739,26 @@ export function EpicDetailPage() {
                 ]}
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;
+                  if (val === form.team_id) return;
+
+                  // Check if tasks exist on the current team
+                  const oldTeamId = form.team_id;
+                  const tasksOnOldTeam = tasks.filter((t) => t.team_id === oldTeamId);
+
+                  if (tasksOnOldTeam.length > 0 && oldTeamId) {
+                    const newTeam = teams.find((team) => team.id === val);
+                    const oldTeam = teams.find((team) => team.id === oldTeamId);
+                    setPendingTeamChange({
+                      newTeamId: val,
+                      newTeamName: newTeam?.name ?? 'the new team',
+                      oldTeamId,
+                      oldTeamName: oldTeam?.name ?? 'the current team',
+                      affectedTaskCount: tasksOnOldTeam.length,
+                    });
+                    return;
+                  }
+
+                  // No tasks affected — apply directly
                   const nextTeam = teams.find((team) => team.id === val);
                   const nextIsEngineering = normalizeTeamType(nextTeam?.team_type) === 'engineering';
                   const nextPlanningRepositoryId = nextIsEngineering ? form.planning_repository_id : '';
@@ -882,6 +913,60 @@ export function EpicDetailPage() {
           ) : null}
         </aside>
       </div>
+
+      {/* Team change confirmation — shown when epic has tasks on the old team */}
+      <Dialog open={pendingTeamChange !== null} onOpenChange={(open) => { if (!open) setPendingTeamChange(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Change team?</DialogTitle>
+            <DialogDescription>
+              This epic has {pendingTeamChange?.affectedTaskCount} task{pendingTeamChange?.affectedTaskCount === 1 ? '' : 's'} on {pendingTeamChange?.oldTeamName}. What should happen to them?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-col gap-2 sm:flex-col">
+            <Button
+              disabled={movingTasks}
+              onClick={async () => {
+                if (!pendingTeamChange || !workspaceId) return;
+                setMovingTasks(true);
+                // Apply team change to epic
+                const nextTeam = teams.find((t) => t.id === pendingTeamChange.newTeamId);
+                const nextIsEngineering = normalizeTeamType(nextTeam?.team_type) === 'engineering';
+                setForm((current) => current ? { ...current, team_id: pendingTeamChange.newTeamId, planning_repository_id: nextIsEngineering ? current.planning_repository_id : '' } : current);
+                queuePatch({ team_id: pendingTeamChange.newTeamId || undefined });
+                // Move tasks to new team
+                const tasksToMove = tasks.filter((t) => t.team_id === pendingTeamChange.oldTeamId);
+                await Promise.allSettled(
+                  tasksToMove.map((t) => pmTaskService.update(workspaceId, t.id, { team_id: pendingTeamChange.newTeamId }))
+                );
+                setMovingTasks(false);
+                setPendingTeamChange(null);
+                toast.success(`Epic and ${tasksToMove.length} task${tasksToMove.length === 1 ? '' : 's'} moved to ${pendingTeamChange.newTeamName}`);
+              }}
+            >
+              {movingTasks ? 'Moving...' : `Move ${pendingTeamChange?.affectedTaskCount} task${pendingTeamChange?.affectedTaskCount === 1 ? '' : 's'} to ${pendingTeamChange?.newTeamName}`}
+            </Button>
+            <Button
+              variant="outline"
+              disabled={movingTasks}
+              onClick={() => {
+                if (!pendingTeamChange) return;
+                const nextTeam = teams.find((t) => t.id === pendingTeamChange.newTeamId);
+                const nextIsEngineering = normalizeTeamType(nextTeam?.team_type) === 'engineering';
+                setForm((current) => current ? { ...current, team_id: pendingTeamChange.newTeamId, planning_repository_id: nextIsEngineering ? current.planning_repository_id : '' } : current);
+                queuePatch({ team_id: pendingTeamChange.newTeamId || undefined });
+                setPendingTeamChange(null);
+                toast.success(`Epic moved to ${pendingTeamChange.newTeamName}. Tasks remain on ${pendingTeamChange.oldTeamName}.`);
+              }}
+            >
+              Keep tasks on {pendingTeamChange?.oldTeamName}
+            </Button>
+            <Button variant="ghost" disabled={movingTasks} onClick={() => setPendingTeamChange(null)}>
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <ConfirmDialog
         open={archiveConfirmOpen}
