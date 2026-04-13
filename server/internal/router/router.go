@@ -182,7 +182,6 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			// Canonical collection + article routes
 			r.Get("/c/{collectionSlug}", h.Docs.PublicGetCollectionPage)
 			r.Get("/articles/{articleKey}", h.Docs.PublicGetCanonicalArticle)
-			r.Get("/c/{collectionSlug}/{articleSlug}", h.Docs.PublicGetCanonicalArticle)
 
 			// Document preview (token-authenticated)
 			r.Get("/preview/{docId}", h.Docs.PublicPreviewArticle)
@@ -246,7 +245,6 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/c/{collectionSlug}", h.Docs.PublicGetCollectionPage)
 			r.Get("/articles/{articleKey}", h.Docs.PublicGetCanonicalArticle)
 			r.Post("/articles/{articleKey}/feedback", h.Docs.PublicSubmitFeedback)
-			r.Get("/c/{collectionSlug}/{articleSlug}", h.Docs.PublicGetCanonicalArticle)
 
 			// Document preview (token-authenticated)
 			r.Get("/preview/{docId}", h.Docs.PublicPreviewArticle)

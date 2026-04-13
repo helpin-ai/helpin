@@ -357,6 +357,15 @@ func (s *DocsSpaceService) Restore(ctx context.Context, id string) (*model.DocsS
 	if err != nil {
 		return nil, err
 	}
+	// Un-mangle the slug if it was mangled during deletion.
+	if idx := strings.LastIndex(space.Slug, "-deleted-"); idx > 0 {
+		originalSlug := space.Slug[:idx]
+		if err := s.spaceRepo.UpdateSlug(ctx, space.ID, originalSlug); err != nil {
+			slog.WarnContext(ctx, "failed to restore original slug", "space_id", id, "original_slug", originalSlug, "error", err)
+		} else {
+			space.Slug = originalSlug
+		}
+	}
 	spaceWithTeams, err := s.withTeams(ctx, space)
 	if err == nil {
 		publishWorkspaceEvent(s.wsPublisher, "updated", "docs_space", space.ID, space.WorkspaceID, "")
