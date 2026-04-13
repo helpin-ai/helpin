@@ -1344,7 +1344,7 @@ func (h *DocsHandler) PublicGetCollectionPage(w http.ResponseWriter, r *http.Req
 	})
 }
 
-// PublicGetCanonicalArticle returns a public article by canonical collection/article slug path.
+// PublicGetCanonicalArticle returns a public article by its canonical key ({slug}-{publicID}).
 func (h *DocsHandler) PublicGetCanonicalArticle(w http.ResponseWriter, r *http.Request) {
 	cfg := h.resolveSubdomain(w, r)
 	if cfg == nil {
@@ -1355,20 +1355,14 @@ func (h *DocsHandler) PublicGetCanonicalArticle(w http.ResponseWriter, r *http.R
 		article *model.PublicArticleResponse
 		err     error
 	)
-	if articleKey != "" {
-		if localeParam := chi.URLParam(r, "locale"); localeParam != "" {
-			locale, ok := h.resolveRequestedPublicLocale(w, r, cfg)
-			if !ok {
-				return
-			}
-			article, err = h.helpcenterSvc.GetPublicArticleByLocalizedCanonicalKey(r.Context(), cfg.WorkspaceID, locale, articleKey)
-		} else {
-			article, err = h.helpcenterSvc.GetPublicArticleByCanonicalKey(r.Context(), cfg.WorkspaceID, articleKey)
+	if localeParam := chi.URLParam(r, "locale"); localeParam != "" {
+		locale, ok := h.resolveRequestedPublicLocale(w, r, cfg)
+		if !ok {
+			return
 		}
+		article, err = h.helpcenterSvc.GetPublicArticleByLocalizedCanonicalKey(r.Context(), cfg.WorkspaceID, locale, articleKey)
 	} else {
-		collectionSlug := chi.URLParam(r, "collectionSlug")
-		articleSlug := chi.URLParam(r, "articleSlug")
-		article, err = h.helpcenterSvc.GetPublicArticleByCanonicalPath(r.Context(), cfg.WorkspaceID, collectionSlug, articleSlug)
+		article, err = h.helpcenterSvc.GetPublicArticleByCanonicalKey(r.Context(), cfg.WorkspaceID, articleKey)
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

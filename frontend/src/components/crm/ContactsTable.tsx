@@ -52,6 +52,7 @@ import { ContactsTableSkeleton } from '@/components/crm/ContactsTableSkeleton';
 import { SortableTableHeader } from '@/components/crm/SortableTableHeader';
 import { BulkActionsBar } from '@/components/crm/BulkActionsBar';
 import type { CRMContact, LifecycleStage, LeadStatus } from '@/lib/crmTypes';
+import { shouldFetchNextContactPage } from '@/lib/contactInfiniteScroll';
 import type { AssignableMember } from '@/lib/types';
 
 type GroupByOption = 'none' | 'lifecycle_stage' | 'lead_status' | 'owner';
@@ -516,22 +517,23 @@ export function ContactsTable({
     estimateSize,
     overscan: 6,
   });
+  const virtualItems = virtualizer.getVirtualItems();
 
-  // Infinite scroll: fetch next page when near bottom
+  // Infinite scroll: fetch the next page when the rendered range reaches the end
+  // of the currently loaded dataset. This is more reliable than raw scrollHeight
+  // checks with a virtualized table, especially after appending a new page.
   useEffect(() => {
-    if (!hasNextPage || isFetchingNextPage || !onFetchNextPage) return;
-    const el = parentRef.current;
-    if (!el) return;
-    const handleScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = el;
-      if (scrollHeight - scrollTop - clientHeight < 300) {
-        onFetchNextPage();
-      }
-    };
-    el.addEventListener('scroll', handleScroll, { passive: true });
-    handleScroll();
-    return () => el.removeEventListener('scroll', handleScroll);
-  }, [hasNextPage, isFetchingNextPage, onFetchNextPage]);
+    if (!onFetchNextPage) return;
+    const lastVisibleIndex = virtualItems[virtualItems.length - 1]?.index ?? null;
+    if (shouldFetchNextContactPage({
+      hasNextPage,
+      isFetchingNextPage,
+      loadedCount: rows.length,
+      lastVisibleIndex,
+    })) {
+      onFetchNextPage();
+    }
+  }, [hasNextPage, isFetchingNextPage, onFetchNextPage, rows.length, virtualItems]);
 
   const selectedIds = useMemo(
     () => Object.keys(rowSelection).filter((id) => rowSelection[id]),
@@ -651,7 +653,7 @@ export function ContactsTable({
 
           {/* Virtualized body */}
           <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}>
-            {virtualizer.getVirtualItems().map((virtualRow) => {
+            {virtualItems.map((virtualRow) => {
               const row = rows[virtualRow.index] as Row<CRMContact>;
               const isGrouped = row.getIsGrouped();
 

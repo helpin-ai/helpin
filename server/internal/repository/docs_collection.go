@@ -263,10 +263,8 @@ func (r *DocsCollectionRepository) NormalizeBucket(ctx context.Context, spaceID 
 // SlugTakenInWorkspace reports whether another non-deleted collection
 // in the given workspace already uses this slug. excludeID is skipped
 // so an update to a collection's non-slug fields does not report a
-// false positive against itself. Case-insensitive to match the
-// partial unique index added in the Task 1 migration, which is
-// case-sensitive but effectively guards against collisions the same
-// way because slugs are always normalised to lowercase by slugify().
+// false positive against itself. Case-insensitive because slugs are
+// always normalised to lowercase by slugify().
 func (r *DocsCollectionRepository) SlugTakenInWorkspace(ctx context.Context, workspaceID, slug, excludeID string) (bool, error) {
 	slug = strings.ToLower(strings.TrimSpace(slug))
 	if slug == "" {

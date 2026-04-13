@@ -45,17 +45,51 @@ describe('MentionText', () => {
     expect(teamMention).toBeTruthy()
     expect(unresolvedMention).toBeTruthy()
 
-    expect(personMention?.textContent).toContain('@alice')
+    expect(personMention?.textContent).toContain('@Alice')
     expect(personMention?.closest('[data-mention-type="person"]')).toBeTruthy()
     expect(personMention?.querySelector('span')?.className).toContain('text-blue-600')
 
-    expect(teamMention?.textContent).toContain('@engineering')
+    expect(teamMention?.textContent).toContain('@Engineering')
     expect(teamMention?.closest('[data-mention-type="team"]')).toBeTruthy()
     expect(teamMention?.querySelector('span')?.className).toContain('emerald')
 
     expect(unresolvedMention?.textContent).toContain('@ghost')
     expect(unresolvedMention?.closest('[data-mention-type="unresolved"]')).toBeTruthy()
     expect(unresolvedMention?.querySelector('span')?.className).toContain('text-blue-600')
+
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  })
+
+  it('does not style email domains as mentions', () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(
+        <MentionText
+          text="Email: paul.sonneveld@merchantspring.com.au and ping @alice"
+          members={[
+            {
+              id: 'member-1',
+              status: 'active',
+              role: 'member',
+              email: 'alice@example.com',
+              display_name: 'Alice',
+            },
+          ]}
+        />,
+      )
+    })
+
+    const mentions = container.querySelectorAll('[data-mention-type]')
+
+    expect(mentions).toHaveLength(1)
+    expect(mentions[0]?.textContent).toContain('@Alice')
+    expect(container.textContent).toContain('paul.sonneveld@merchantspring.com.au')
 
     act(() => {
       root.unmount()
