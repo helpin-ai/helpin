@@ -33,7 +33,7 @@ import { RichTextMentionContent } from '@/components/pm/RichTextMentionContent';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
-import { useWorkflows, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
+import { useSprintCloseout, useWorkflows, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { filterMentionTeams } from '@/components/pm/mentionSuggestions';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
@@ -42,6 +42,8 @@ import type { AttachmentResponse, SprintWithStats, Task, EpicWithStats, UpdateSp
 import { SPRINT_STATUS_CONFIG } from '@/lib/pmConstants';
 import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
+import { SprintCloseoutSummary } from '@/components/pm/sprints/SprintCloseoutSummary';
+import { SprintRolledInBanner } from '@/components/pm/sprints/SprintRolledInBanner';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/sprints/$sprintId');
 
@@ -112,6 +114,7 @@ export function SprintDetailPage() {
 
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { canEdit } = usePermissions(access);
+  const closeoutQuery = useSprintCloseout(workspaceId ?? '', sprintId);
 
   const { teams, findTeamName, getTeamMembers } = useAccessibleTeams(workspaceId ?? '');
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
@@ -397,6 +400,15 @@ export function SprintDetailPage() {
             placeholder="Untitled"
           />
 
+          {closeoutQuery.data?.rolled_in_from && closeoutQuery.data.rolled_in_from.length > 0 && (
+            <div className="mt-4">
+              <SprintRolledInBanner
+                items={closeoutQuery.data.rolled_in_from}
+                onOpenSprint={(sourceSprintId) => navigate({ to: '/w/$slug/pm/sprints/$sprintId', params: { slug, sprintId: sourceSprintId } })}
+              />
+            </div>
+          )}
+
           {/* Description */}
           <div className="mt-4">
             {editingDescription ? (
@@ -454,6 +466,18 @@ export function SprintDetailPage() {
           </div>
 
           <Separator className="my-6" />
+
+          {closeoutQuery.data?.closeout && (
+            <>
+              <div>
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sprint closeout</h3>
+                <div className="mt-3">
+                  <SprintCloseoutSummary closeout={closeoutQuery.data.closeout} />
+                </div>
+              </div>
+              <Separator className="my-6" />
+            </>
+          )}
 
           {/* Progress */}
           <div className="space-y-2">

@@ -183,6 +183,63 @@ export interface SprintWithStats {
   stats: PMSprintStats;
 }
 
+export interface SprintCloseout {
+  id: string;
+  sprint_id: string;
+  workspace_id: string;
+  team_id?: string;
+  rolled_to_sprint_id?: string;
+  committed_count: number;
+  completed_count: number;
+  unfinished_count: number;
+  rolled_over_count: number;
+  committed_points: number;
+  completed_points: number;
+  unfinished_points: number;
+  rolled_over_points: number;
+  closed_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SprintInboundRolloverSummary {
+  source_sprint_id: string;
+  source_sprint_name: string;
+  rolled_over_count: number;
+  rolled_over_points: number;
+}
+
+export interface SprintCloseoutResponse {
+  closeout: SprintCloseout | null;
+  rolled_in_from: SprintInboundRolloverSummary[];
+}
+
+export interface SprintCloseoutListItem {
+  closeout_id: string;
+  sprint_id: string;
+  sprint_name: string;
+  team_id?: string;
+  team_name?: string;
+  start_date?: string;
+  end_date?: string;
+  committed_count: number;
+  completed_count: number;
+  unfinished_count: number;
+  rolled_over_count: number;
+  committed_points: number;
+  completed_points: number;
+  unfinished_points: number;
+  rolled_over_points: number;
+  completion_rate: number;
+  rolled_to_sprint_id?: string;
+  rolled_to_sprint_name?: string;
+  closed_at: string;
+}
+
+export interface SprintCloseoutListResponse {
+  items: SprintCloseoutListItem[];
+}
+
 export interface SprintPlanningTaskPreview {
   id: string;
   display_id: number;

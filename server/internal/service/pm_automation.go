@@ -15,8 +15,9 @@ import (
 type PMAutomationService struct {
 	automationRepo  *repository.PMAutomationRepository
 	epicRepo        *repository.PMEpicRepository
-	taskRepo       *repository.PMTaskRepository
+	taskRepo        *repository.PMTaskRepository
 	sprintRepo      *repository.PMSprintRepository
+	closeoutRepo    *repository.PMSprintCloseoutRepository
 	workflowRepo    *repository.PMWorkflowRepository
 	activityService *PMActivityService
 	wsPublisher     *websocket.Publisher
@@ -33,12 +34,14 @@ func NewPMAutomationService(
 	workflowRepo *repository.PMWorkflowRepository,
 	activityService *PMActivityService,
 	wsPublisher *websocket.Publisher,
+	closeoutRepo *repository.PMSprintCloseoutRepository,
 ) *PMAutomationService {
 	return &PMAutomationService{
 		automationRepo:  automationRepo,
 		epicRepo:        epicRepo,
-		taskRepo:       taskRepo,
+		taskRepo:        taskRepo,
 		sprintRepo:      sprintRepo,
+		closeoutRepo:    closeoutRepo,
 		workflowRepo:    workflowRepo,
 		activityService: activityService,
 		wsPublisher:     wsPublisher,
@@ -519,7 +522,18 @@ func (s *PMAutomationService) runSprintMoveUnfinished(ctx context.Context) {
 			}
 		}
 
+		if _, err := s.ensureSprintCloseout(ctx, *endedSprint, nextSprint); err != nil {
+			s.logger.ErrorContext(ctx, "failed to create sprint closeout", "error", err, "sprint_id", endedSprint.ID, "workspace_id", cfg.WorkspaceID)
+			s.observeFailure(ctx, cfg.WorkspaceID, "pm.sprint_move_unfinished", model.AutomationScopeTeam, teamID, err, metrics)
+			failed = true
+			continue
+		}
+
 		if nextSprint == nil {
+			s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "sprint", EntityID: endedSprint.ID, WorkspaceID: cfg.WorkspaceID})
+			if !failed {
+				s.observeSuccess(ctx, cfg.WorkspaceID, "pm.sprint_move_unfinished", model.AutomationScopeTeam, teamID, metrics)
+			}
 			continue
 		}
 
@@ -547,10 +561,83 @@ func (s *PMAutomationService) runSprintMoveUnfinished(ctx context.Context) {
 			metrics["stories_moved"] = metrics["stories_moved"].(int) + 1
 			s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: story.ID, WorkspaceID: cfg.WorkspaceID})
 		}
+		s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "sprint", EntityID: endedSprint.ID, WorkspaceID: cfg.WorkspaceID})
+		s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "sprint", EntityID: nextSprint.ID, WorkspaceID: cfg.WorkspaceID})
 		if !failed {
 			s.observeSuccess(ctx, cfg.WorkspaceID, "pm.sprint_move_unfinished", model.AutomationScopeTeam, teamID, metrics)
 		}
 	}
+}
+
+func (s *PMAutomationService) ensureSprintCloseout(ctx context.Context, endedSprint model.PMSprint, nextSprint *model.PMSprint) (*model.PMSprintCloseout, error) {
+	if s.closeoutRepo == nil {
+		return nil, nil
+	}
+
+	existing, _, err := s.closeoutRepo.GetCloseoutBySprintID(ctx, endedSprint.ID)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return existing, nil
+	}
+
+	stories, err := s.sprintRepo.ListTasks(ctx, endedSprint.ID)
+	if err != nil {
+		return nil, fmt.Errorf("list sprint tasks for closeout: %w", err)
+	}
+
+	closeout := &model.PMSprintCloseout{
+		SprintID:    endedSprint.ID,
+		WorkspaceID: endedSprint.WorkspaceID,
+		TeamID:      endedSprint.TeamID,
+		ClosedAt:    time.Now().UTC(),
+	}
+	rows := make([]model.PMSprintCloseoutTask, 0, len(stories))
+	for _, story := range stories {
+		estimate := 0
+		if story.Estimate != nil {
+			estimate = *story.Estimate
+		}
+
+		closeout.CommittedCount++
+		closeout.CommittedPoints += estimate
+
+		state, err := s.workflowRepo.GetStateByID(ctx, story.WorkflowStateID)
+		if err != nil {
+			return nil, fmt.Errorf("load workflow state for closeout: %w", err)
+		}
+		if state == nil {
+			return nil, fmt.Errorf("workflow state %s not found", story.WorkflowStateID)
+		}
+
+		outcome := model.PMSprintCloseoutOutcomeCompleted
+		if state.StateType == model.PMStateTypeDone {
+			closeout.CompletedCount++
+			closeout.CompletedPoints += estimate
+		} else {
+			closeout.UnfinishedCount++
+			closeout.UnfinishedPoints += estimate
+			if nextSprint != nil {
+				outcome = model.PMSprintCloseoutOutcomeRolledOver
+				closeout.RolledOverCount++
+				closeout.RolledOverPoints += estimate
+			} else {
+				outcome = model.PMSprintCloseoutOutcomeUnfinishedNotRolled
+			}
+		}
+
+		rows = append(rows, model.PMSprintCloseoutTask{
+			TaskID:   story.ID,
+			Outcome:  outcome,
+			Estimate: estimate,
+		})
+	}
+
+	if nextSprint != nil && closeout.RolledOverCount > 0 {
+		closeout.RolledToSprintID = &nextSprint.ID
+	}
+	return s.closeoutRepo.CreateCloseout(ctx, closeout, rows)
 }
 
 // nextWeekday returns d if it's already the target weekday, otherwise the next occurrence.

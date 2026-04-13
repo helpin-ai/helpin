@@ -2,6 +2,8 @@ import { api } from '../api';
 import type {
   CreateSprintRequest,
   PaginatedResponse,
+  SprintCloseoutListResponse,
+  SprintCloseoutResponse,
   SprintPlanningFilters,
   SprintPlanningTaskPreview,
   SprintPlanningWorkspace,
@@ -60,6 +62,14 @@ export const pmSprintService = {
     }),
   remove: (workspaceId: string, id: string) => api.del(`/pm/sprints/${id}${qs(workspaceId)}`),
   listTasks: (workspaceId: string, id: string) => api.get<Task[]>(`/pm/sprints/${id}/tasks${qs(workspaceId)}`),
+  getCloseout: (workspaceId: string, id: string) =>
+    api.get<SprintCloseoutResponse>(`/pm/sprints/${id}/closeout${qs(workspaceId)}`),
+  listCloseouts: (
+    workspaceId: string,
+    filters?: {
+      team_id?: string;
+    }
+  ) => api.get<SprintCloseoutListResponse>(`/pm/sprints/closeouts${qs(workspaceId)}${filterQuery(filters ?? {})}`),
   listPreviewTasks: (
     workspaceId: string,
     id: string,
