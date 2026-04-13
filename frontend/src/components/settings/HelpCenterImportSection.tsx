@@ -413,39 +413,6 @@ export function HelpCenterImportSection({
                       )}
                       .
                     </p>
-                    {(jobStatus.summary.articles_uncategorized > 0 ||
-                      jobStatus.summary.articles_with_conversion_warnings > 0 ||
-                      jobStatus.summary.html_block_fallbacks > 0 ||
-                      jobStatus.summary.image_rewrite_failures > 0 ||
-                      jobStatus.summary.normalized_note_blocks > 0) && (
-                      <div className="flex flex-wrap gap-2">
-                        {jobStatus.summary.normalized_note_blocks > 0 && (
-                          <Badge variant="secondary" className="text-xs">
-                            {jobStatus.summary.normalized_note_blocks} note blocks normalized
-                          </Badge>
-                        )}
-                        {jobStatus.summary.articles_uncategorized > 0 && (
-                          <Badge variant="secondary" className="text-xs">
-                            {jobStatus.summary.articles_uncategorized} uncategorized
-                          </Badge>
-                        )}
-                        {jobStatus.summary.html_block_fallbacks > 0 && (
-                          <Badge variant="secondary" className="text-xs">
-                            {jobStatus.summary.html_block_fallbacks} HTML fallbacks
-                          </Badge>
-                        )}
-                        {jobStatus.summary.image_rewrite_failures > 0 && (
-                          <Badge variant="secondary" className="text-xs">
-                            {jobStatus.summary.image_rewrite_failures} image URLs kept
-                          </Badge>
-                        )}
-                        {jobStatus.summary.articles_with_conversion_warnings > 0 && (
-                          <Badge variant="secondary" className="text-xs">
-                            {jobStatus.summary.articles_with_conversion_warnings} articles with warnings
-                          </Badge>
-                        )}
-                      </div>
-                    )}
                   </div>
                 )}
                 <p className="text-sm">
