@@ -106,11 +106,6 @@ func (p *PresenceState) SetAgentOffline(_ context.Context, workspaceID, userID, 
 		}
 	}
 
-	if p.agentLastSeen[workspaceID] == nil {
-		p.agentLastSeen[workspaceID] = make(map[string]time.Time)
-	}
-	p.agentLastSeen[workspaceID][userID] = time.Now().UTC()
-
 	return lastConn, nil
 }
 
@@ -148,8 +143,14 @@ func (p *PresenceState) GetAgentLastSeen(_ context.Context, workspaceID string) 
 	return out, nil
 }
 
-// RefreshAgentOnline updates the last-seen timestamp for an internal agent connection.
-func (p *PresenceState) RefreshAgentOnline(_ context.Context, workspaceID, userID, connID string) error {
+// RefreshAgentOnline is a no-op for the in-memory implementation.
+// It exists to keep the interface aligned with the Redis-backed TTL refresh path.
+func (p *PresenceState) RefreshAgentOnline(_ context.Context, _, _, _ string) error {
+	return nil
+}
+
+// TouchAgentActivity records user activity for an active internal agent connection.
+func (p *PresenceState) TouchAgentActivity(_ context.Context, workspaceID, userID, connID string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 

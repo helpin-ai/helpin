@@ -368,8 +368,17 @@ func TestRedisPresence_AgentOnlineOfflineAndLastSeen(t *testing.T) {
 		t.Fatalf("RefreshAgentOnline: %v", err)
 	}
 	lastSeen, _ = p.GetAgentLastSeen(ctx, "ws-1")
+	if !lastSeen["user-1"].Equal(firstSeen) {
+		t.Fatal("expected keepalive refresh to leave last_seen unchanged")
+	}
+
+	time.Sleep(10 * time.Millisecond)
+	if err := p.TouchAgentActivity(ctx, "ws-1", "user-1", "conn-2"); err != nil {
+		t.Fatalf("TouchAgentActivity: %v", err)
+	}
+	lastSeen, _ = p.GetAgentLastSeen(ctx, "ws-1")
 	if lastSeen["user-1"].Before(firstSeen) {
-		t.Fatal("expected refreshed last_seen to be >= original")
+		t.Fatal("expected activity touch to advance last_seen")
 	}
 
 	lastConn, err := p.SetAgentOffline(ctx, "ws-1", "user-1", "conn-1")

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -84,6 +85,42 @@ func TestListTeammatePresence_UsesLivePresenceAndRecentLastSeen(t *testing.T) {
 	}
 	if got[userOnline].Source != model.SupportTeammateStatusSourceAuto {
 		t.Fatalf("online user source = %q, want %q", got[userOnline].Source, model.SupportTeammateStatusSourceAuto)
+	}
+}
+
+func TestResolveTeammatePresence_ConnectedIdleUserShowsAway(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	ownerID := "owner-idle"
+	workspaceID := "ws-idle"
+	userID := "user-idle"
+	seedUser(t, db, ownerID, "owner-idle@example.com", "Owner", "hash")
+	seedWorkspace(t, db, workspaceID, "Idle", "idle", ownerID)
+	seedUser(t, db, userID, "idle@example.com", "Idle User", "hash")
+	seedWorkspaceMember(t, db, "wm-idle", workspaceID, userID, "idle@example.com", "Idle User", "member")
+
+	presence := websocket.NewPresenceState()
+	if _, err := presence.SetAgentOnline(ctx, workspaceID, userID, "conn-1"); err != nil {
+		t.Fatalf("SetAgentOnline: %v", err)
+	}
+
+	statuses, err := resolveSupportTeammatePresenceStatuses(
+		ctx,
+		repository.NewWorkspaceRepository(db),
+		presence,
+		nil,
+		workspaceID,
+		time.Now().UTC().Add(supportTeammateAwayThreshold+time.Second),
+	)
+	if err != nil {
+		t.Fatalf("resolveSupportTeammatePresenceStatuses: %v", err)
+	}
+	if len(statuses) != 1 {
+		t.Fatalf("expected 1 status, got %d", len(statuses))
+	}
+	if statuses[0].Status != model.SupportTeammateStatusAway {
+		t.Fatalf("connected idle status = %q, want %q", statuses[0].Status, model.SupportTeammateStatusAway)
 	}
 }
 

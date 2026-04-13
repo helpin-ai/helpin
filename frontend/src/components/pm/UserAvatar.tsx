@@ -30,6 +30,12 @@ export function getAvatarColor(name?: string | null) {
   return AVATAR_COLORS[hashName(name) % AVATAR_COLORS.length];
 }
 
+function getPresenceIndicatorClass(status?: 'online' | 'away' | 'offline' | null) {
+  if (status === 'online') return 'bg-emerald-500';
+  if (status === 'away') return 'bg-amber-500';
+  return null;
+}
+
 function bumpAvatarDimensions(className?: string) {
   if (!className) return className;
 
@@ -77,6 +83,7 @@ export function UserAvatar({
 }: UserAvatarProps) {
   const color = getAvatarColor(name);
   const avatarClassName = bumpAvatarDimensions(className);
+  const presenceIndicatorClass = getPresenceIndicatorClass(presenceStatus);
   const resolvedAvatarUrl = resolveTeamMemberAvatarSrc({
     avatarUrl,
     avatarStyle,
@@ -94,8 +101,11 @@ export function UserAvatar({
           {getInitials(name)}
         </AvatarFallback>
       </Avatar>
-      {presenceStatus === 'online' ? (
-        <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border border-background bg-emerald-500" />
+      {presenceIndicatorClass ? (
+        <span
+          className={cn('absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border border-background', presenceIndicatorClass)}
+          data-presence-status={presenceStatus}
+        />
       ) : null}
     </span>
   );
