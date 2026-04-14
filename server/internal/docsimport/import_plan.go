@@ -127,9 +127,18 @@ func ValidateImportPlan(plan *ImportPlan) []Warning {
 	})
 	plan.Collections = topoSortCollections(plan.Collections)
 
-	// Sort articles by position.
+	// Sort articles by (collection, position, slug) so that articles
+	// within the same collection are ordered by their _meta position,
+	// with deterministic filename-based tiebreak for unlisted articles.
 	sort.SliceStable(plan.Articles, func(i, j int) bool {
-		return plan.Articles[i].Position < plan.Articles[j].Position
+		a, b := plan.Articles[i], plan.Articles[j]
+		if a.CollectionSourceID != b.CollectionSourceID {
+			return a.CollectionSourceID < b.CollectionSourceID
+		}
+		if a.Position != b.Position {
+			return a.Position < b.Position
+		}
+		return a.Slug < b.Slug
 	})
 
 	return warnings
