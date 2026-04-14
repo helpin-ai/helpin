@@ -25,6 +25,8 @@ Current implementation progress:
 - desktop support UI has been brought much closer to web parity, including desktop-specific shell polish and a `WorkspaceSwitcher` in the sidebar
 - native desktop notifications are now implemented for inbound support messages, including permission handling, dedupe, per-conversation cooldown, focused-thread suppression, click-through routing, and window reveal/focus while the app is already running
 - the desktop shell now includes a light/dark/system theme menu in the native Tauri menu bar
+- the desktop shell now includes a system tray entry point with window hide-to-tray behavior and unread badge syncing owned at the app-shell level
+- the shared support inbox now preserves manual "mark unread" actions instead of immediately flipping those conversations back to read through the row selection path
 
 Current delivery state:
 
@@ -36,12 +38,11 @@ Current delivery state:
   - support-only realtime resilience for desktop
   - shared support inbox mounted in desktop
   - native desktop notifications for support messages
+  - system tray integration and app-shell unread badge behavior
   - desktop visual parity pass for the core support workspace
 - in progress:
   - validating the integrated support experience end to end in desktop across real app lifecycle scenarios
 - remaining:
-  - tray/menu bar
-  - unread badge
   - deep links
   - single-instance behavior
   - updater
@@ -56,12 +57,13 @@ What is done now:
 - the desktop app renders the real shared support inbox UI instead of a placeholder preview
 - support realtime is resilient enough for reconnect, offline/online transitions, and wake/stale recovery
 - desktop notifications can alert for inbound support messages and route to the correct conversation while the app is already running
+- the desktop app can stay alive in the tray after the main window is closed and can reopen quickly from the tray menu
+- unread badge state is now synchronized at the desktop app-shell level instead of being tied to the support route lifecycle
+- the manual "mark unread" action no longer gets immediately overwritten by the conversation auto-read selection path
 - support-linked CRM, docs, and PM routes intentionally hand off to the web app instead of bloating the desktop surface
 
 What is left now:
 
-- tray or menu bar presence
-- unread badge integration
 - deep-link handling from outside the app
 - single-instance behavior
 - updater integration
@@ -419,7 +421,9 @@ Exit criteria:
 
 Status:
 
-- not started beyond the base Tauri shell scaffold
+- partially completed
+- native notifications, tray/menu presence, and unread badge behavior are implemented
+- deep links and single-instance behavior are still pending
 
 ## Phase 6: Beta Hardening
 
@@ -501,7 +505,7 @@ If package boundaries become too elaborate too early, the team will spend time p
 
 ## Immediate Next Steps
 
-1. Add native desktop behavior: notifications, tray/menu bar, unread badge, and deep links.
+1. Add deep-link handling from outside the app into support conversations.
 2. Add single-instance handling and startup behavior for desktop workflows.
 3. Decide whether the current Tauri store-backed session persistence needs stronger secret storage hardening.
 4. Add packaging/signing/build automation for macOS and Windows.
