@@ -42,7 +42,7 @@ export function AgentRunPanel({ taskId, workspaceId, assignedAgentId }: Props) {
         toast.error(res.error);
         return;
       }
-      setAgents((res.data ?? []).filter(isTaskRunnableAgent));
+      setAgents(res.data ?? []);
     } finally {
       setLoadingAgents(false);
     }
@@ -171,6 +171,7 @@ export function AgentRunPanel({ taskId, workspaceId, assignedAgentId }: Props) {
       <div className="overflow-hidden rounded-md border border-border/60">
         <AgentRunTable
           runs={runs}
+          agents={agents}
           selectedRunId={selectedRunId}
           onSelectRun={(run) => {
             setSelectedRunId(run.id);
