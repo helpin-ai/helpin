@@ -428,19 +428,15 @@ func TestMarkdownToJSON_Image(t *testing.T) {
 	if len(doc.Content) != 1 {
 		t.Fatalf("expected 1 node, got %d", len(doc.Content))
 	}
-	p := doc.Content[0]
-	found := false
-	for _, n := range p.Content {
-		if n.Type == "image" {
-			src, _ := n.Attrs["src"].(string)
-			alt, _ := n.Attrs["alt"].(string)
-			if src == "https://example.com/image.png" && alt == "alt text" {
-				found = true
-			}
-		}
+	// Standalone image-only paragraphs are hoisted to block-level resizableImage nodes.
+	img := doc.Content[0]
+	if img.Type != "resizableImage" {
+		t.Fatalf("expected top-level resizableImage node, got %q", img.Type)
 	}
-	if !found {
-		t.Fatalf("expected image node with correct src/alt, got %+v", p.Content)
+	src, _ := img.Attrs["src"].(string)
+	alt, _ := img.Attrs["alt"].(string)
+	if src != "https://example.com/image.png" || alt != "alt text" {
+		t.Fatalf("expected src/alt, got src=%q alt=%q", src, alt)
 	}
 }
 

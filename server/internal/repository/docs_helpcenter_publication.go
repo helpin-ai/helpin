@@ -82,16 +82,16 @@ func (r *DocsHelpcenterPublicationRepository) ListArticlePublicationsBySpace(ctx
 }
 
 func (r *DocsHelpcenterPublicationRepository) GetArticlePublicationByCollectionSlug(ctx context.Context, collectionID, locale, slug string) (*model.DocsHelpcenterArticlePublication, error) {
-	var publication model.DocsHelpcenterArticlePublication
+	var publications []model.DocsHelpcenterArticlePublication
 	if err := r.db.WithContext(ctx).
 		Where("collection_id = ? AND locale = ? AND slug = ?", collectionID, locale, slug).
-		First(&publication).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
+		Limit(2).Find(&publications).Error; err != nil {
 		return nil, fmt.Errorf("get article publication by collection slug: %w", err)
 	}
-	return &publication, nil
+	if len(publications) != 1 {
+		return nil, nil
+	}
+	return &publications[0], nil
 }
 
 func (r *DocsHelpcenterPublicationRepository) GetArticlePublicationBySpaceSlug(ctx context.Context, spaceID, locale, slug string) (*model.DocsHelpcenterArticlePublication, error) {

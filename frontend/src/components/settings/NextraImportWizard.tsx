@@ -2,28 +2,28 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Progress } from '@/components/ui/progress';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
+import { Progress } from '@/components/ui/progress';
+import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import { Tick01Icon, Loading01Icon } from '@/lib/icons';
-import { ImportHistory as SharedImportHistory } from '@/components/settings/ImportHistory';
-import { useDocsSpaces } from '@/hooks/queries';
+import { Tick01Icon, Upload01Icon, AlertCircleIcon, InformationCircleIcon, Loading01Icon } from '@/lib/icons';
 import {
   docsImportService,
-  type ImportPreviewResponse,
+  type NextraImportPreviewResponse,
   type ImportStatusResponse,
 } from '@/lib/services/docsImportService';
+import { useDocsSpaces } from '@/hooks/queries/useDocs';
+import { ImportHistory } from '@/components/settings/ImportHistory';
 
 type WizardStep = 0 | 1 | 2;
-const STEP_LABELS = ['Connect', 'Configure', 'Import'];
+const STEP_LABELS = ['Select Source', 'Configure', 'Import'];
+
+const STATUS_OPTIONS = [
+  { value: 'draft' as const, label: 'Import as draft', description: 'All articles will be imported as drafts for review' },
+  { value: 'published' as const, label: 'Import as published', description: 'All articles will be published immediately' },
+];
 
 function formatDuration(startISO: string, endISO: string): string {
   const seconds = Math.round((new Date(endISO).getTime() - new Date(startISO).getTime()) / 1000);
@@ -33,31 +33,29 @@ function formatDuration(startISO: string, endISO: string): string {
   return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
 }
 
-export function HelpCenterImportSection({
-  workspaceId,
-  editable,
-}: {
-  workspaceId: string;
-  editable: boolean;
-}) {
-  const STORAGE_KEY = `helpin_docs_import_job_${workspaceId}`;
+export function NextraImportWizard({ workspaceId }: { workspaceId: string }) {
+  const STORAGE_KEY = `helpin_nextra_import_job_${workspaceId}`;
 
   const [step, setStep] = useState<WizardStep>(0);
-  const [apiKey, setApiKey] = useState('');
-  const [connecting, setConnecting] = useState(false);
-  const [preview, setPreview] = useState<ImportPreviewResponse | null>(null);
-  const [selectedCollection, setSelectedCollection] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+  const [sourceCommit, setSourceCommit] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState('');
+  const [preview, setPreview] = useState<NextraImportPreviewResponse | null>(null);
   const [targetSpaceId, setTargetSpaceId] = useState('');
   const [newSpaceName, setNewSpaceName] = useState('');
-  const [importStatus, setImportStatus] = useState<'draft' | 'published' | 'match_source'>('match_source');
+  const [importStatus, setImportStatus] = useState<'draft' | 'published'>('draft');
   const [jobId, setJobId] = useState('');
   const [jobStatus, setJobStatus] = useState<ImportStatusResponse | null>(null);
   const [starting, setStarting] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: spaces } = useDocsSpaces(workspaceId);
   const isFinished = jobStatus?.status === 'done' || jobStatus?.status === 'failed';
+
+  // --- Polling ---
 
   const startPolling = useCallback((id: string) => {
     if (pollRef.current) clearInterval(pollRef.current);
@@ -73,7 +71,7 @@ export function HelpCenterImportSection({
     }, 2000);
   }, [workspaceId]);
 
-  // Resume active import job on mount
+  // Resume active import on mount.
   useEffect(() => {
     const savedJobId = localStorage.getItem(STORAGE_KEY);
     if (savedJobId) {
@@ -97,53 +95,70 @@ export function HelpCenterImportSection({
     };
   }, [STORAGE_KEY, startPolling, workspaceId]);
 
+  // ETA timer.
   useEffect(() => {
-    if (step !== 2 || isFinished || !jobStatus?.started_at || jobStatus.completed === 0) {
-      return;
-    }
-    const timer = setInterval(() => {
-      setNowMs(Date.now());
-    }, 1000);
+    if (step !== 2 || isFinished || !jobStatus?.started_at || jobStatus.completed === 0) return;
+    const timer = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [isFinished, jobStatus?.completed, jobStatus?.started_at, step]);
 
-  const handleConnect = async () => {
-    if (!apiKey.trim()) {
-      toast.error('Please enter an API key');
-      return;
-    }
-    setConnecting(true);
-    const { data, error } = await docsImportService.previewHelpscout(workspaceId, apiKey);
-    setConnecting(false);
-    if (error) {
-      toast.error(error);
-      return;
-    }
-    if (data) {
-      setPreview(data);
-      if (data.collections.length > 0) {
-        setSelectedCollection(data.collections[0].id);
+  // --- Handlers ---
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = e.target.files?.[0];
+    if (selected) {
+      if (!selected.name.endsWith('.zip')) {
+        toast.error('Please select a .zip file');
+        return;
       }
-      setStep(1);
+      setFile(selected);
+    }
+  };
+
+  const handlePreview = async () => {
+    if (!file) return;
+    setUploading(true);
+    setUploadStatus(`Analyzing ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)...`);
+    try {
+      const { data, error } = await docsImportService.previewNextra(workspaceId, {
+        archive: file,
+        source_commit: sourceCommit || undefined,
+      });
+      setUploading(false);
+      setUploadStatus('');
+      if (error) {
+        toast.error(error);
+        return;
+      }
+      if (data) {
+        data.spaces = data.spaces || [];
+        data.warnings = data.warnings || [];
+        data.broken_links = data.broken_links || [];
+        data.unsupported_components = data.unsupported_components || [];
+        setPreview(data);
+        setNewSpaceName('');
+        setStep(1);
+      }
+    } catch {
+      setUploading(false);
+      setUploadStatus('');
+      toast.error('Analysis failed. The file may be too large or the connection timed out.');
     }
   };
 
   const handleStart = async () => {
-    if (!selectedCollection) {
-      toast.error('Please select a collection');
-      return;
-    }
+    if (!preview) return;
     if (targetSpaceId === '__new' && !newSpaceName.trim()) {
       toast.error('Please enter a name for the new space');
       return;
     }
     setStarting(true);
-    const { data, error } = await docsImportService.startHelpscout(workspaceId, {
-      api_key: apiKey,
-      helpscout_collection_id: selectedCollection,
+    const { data, error } = await docsImportService.startNextra(workspaceId, {
+      job_id: preview.job_id,
       target_space_id: targetSpaceId && targetSpaceId !== '__new' ? targetSpaceId : undefined,
       new_space_name: targetSpaceId === '__new' ? newSpaceName.trim() : undefined,
       import_status: importStatus,
+      create_redirects: true,
     });
     setStarting(false);
     if (error) {
@@ -157,16 +172,6 @@ export function HelpCenterImportSection({
       localStorage.setItem(STORAGE_KEY, data.job_id);
       startPolling(data.job_id);
     }
-  };
-
-  const handleRetry = async () => {
-    const { error } = await docsImportService.retry(workspaceId, jobId, apiKey);
-    if (error) {
-      toast.error(error);
-      return;
-    }
-    setJobStatus(null);
-    startPolling(jobId);
   };
 
   const handleDownloadRedirectMap = async () => {
@@ -189,12 +194,12 @@ export function HelpCenterImportSection({
     pollRef.current = null;
     localStorage.removeItem(STORAGE_KEY);
     setStep(0);
-    setApiKey('');
+    setFile(null);
+    setSourceCommit('');
     setPreview(null);
-    setSelectedCollection('');
     setTargetSpaceId('');
     setNewSpaceName('');
-    setImportStatus('match_source');
+    setImportStatus('draft');
     setJobId('');
     setJobStatus(null);
   };
@@ -202,12 +207,6 @@ export function HelpCenterImportSection({
   const progressPercent = jobStatus && jobStatus.total > 0
     ? Math.round(((jobStatus.completed + jobStatus.failed) / jobStatus.total) * 100)
     : 0;
-
-  const STATUS_OPTIONS = [
-    { value: 'draft' as const, label: 'Import as draft', description: 'All articles will be imported as drafts for review' },
-    { value: 'published' as const, label: 'Import as published', description: 'All articles will be published immediately' },
-    { value: 'match_source' as const, label: 'Match source status', description: 'Preserves original published/draft status from HelpScout' },
-  ];
 
   return (
     <div className="space-y-6">
@@ -237,62 +236,110 @@ export function HelpCenterImportSection({
         ))}
       </div>
 
-      {/* Step 0: Connect */}
+      {/* Step 0: Upload */}
       {step === 0 && (
         <div className="mx-auto max-w-md rounded-xl border border-border bg-card p-6 space-y-4">
           <div className="space-y-2">
-            <Label>Source</Label>
-            <Select value="helpscout" disabled>
-              <SelectTrigger>
-                <SelectValue placeholder="Select source" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="helpscout">HelpScout</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>API Key</Label>
-            <Input
-              type="password"
-              placeholder="Enter your HelpScout Docs API key"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              disabled={!editable || connecting}
-            />
+            <Label htmlFor="nextra-archive">Archive (.zip)</Label>
+            <div className="flex items-center gap-3">
+              <input
+                ref={fileInputRef}
+                id="nextra-archive"
+                type="file"
+                accept=".zip"
+                onChange={handleFileChange}
+                className="hidden"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="gap-2"
+              >
+                <Upload01Icon className="h-4 w-4" />
+                Choose file
+              </Button>
+              {file && (
+                <span className="text-sm text-muted-foreground truncate">
+                  {file.name} ({(file.size / 1024 / 1024).toFixed(1)} MB)
+                </span>
+              )}
+            </div>
             <p className="text-xs text-muted-foreground">
-              Find your API key in HelpScout → Your Profile → Authentication → API Keys
+              Select a .zip of your Nextra docs repository
             </p>
           </div>
-          <div className="flex justify-center">
-            <Button onClick={handleConnect} disabled={!editable || connecting || !apiKey.trim()}>
-              {connecting ? <><Loading01Icon className="h-4 w-4 animate-spin mr-1.5" />Connecting...</> : 'Connect & Preview'}
+
+          <div className="flex flex-col items-center gap-2">
+            <Button onClick={handlePreview} disabled={!file || uploading} className="w-full">
+              {uploading ? <><Loading01Icon className="h-4 w-4 animate-spin mr-1.5" />Analyzing...</> : 'Analyze & Preview'}
             </Button>
+            {uploading && uploadStatus && (
+              <p className="text-xs text-muted-foreground">{uploadStatus}</p>
+            )}
           </div>
         </div>
       )}
 
       {/* Step 1: Configure */}
-      {step === 1 && (
+      {step === 1 && preview && (
         <div className="mx-auto max-w-md rounded-xl border border-border bg-card p-6 space-y-4">
-          {preview && preview.collections.length > 0 && (
-            <div className="space-y-2">
-              <Label>Collection</Label>
-              <Select value={selectedCollection} onValueChange={setSelectedCollection} disabled={preview.collections.length === 1}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select collection" />
-                </SelectTrigger>
-                <SelectContent>
-                  {preview.collections.map((col) => (
-                    <SelectItem key={col.id} value={col.id}>
-                      {col.name} ({col.article_count} articles)
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          {/* Preview stats */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-md bg-muted/50 p-2.5 text-center">
+              <p className="text-lg font-bold">{preview.collections}</p>
+              <p className="text-xs text-muted-foreground">Collections</p>
+            </div>
+            <div className="rounded-md bg-muted/50 p-2.5 text-center">
+              <p className="text-lg font-bold">{preview.articles}</p>
+              <p className="text-xs text-muted-foreground">Articles</p>
+            </div>
+            <div className="rounded-md bg-muted/50 p-2.5 text-center">
+              <p className="text-lg font-bold">{preview.assets}</p>
+              <p className="text-xs text-muted-foreground">Assets</p>
+            </div>
+            <div className="rounded-md bg-muted/50 p-2.5 text-center">
+              <p className="text-lg font-bold">{preview.redirects}</p>
+              <p className="text-xs text-muted-foreground">Redirects</p>
+            </div>
+          </div>
+
+          {/* Warnings */}
+          {preview.unsupported_components.length > 0 && (
+            <div className="flex items-start gap-2 rounded-md bg-amber-500/10 p-3 text-sm">
+              <InformationCircleIcon className="h-4 w-4 mt-0.5 shrink-0 text-amber-600" />
+              <div>
+                <span className="font-medium">Unsupported components: </span>
+                {preview.unsupported_components.map((c) => (
+                  <Badge key={c.name} variant="secondary" className="mx-0.5 text-xs">
+                    {c.name} ({c.count})
+                  </Badge>
+                ))}
+              </div>
             </div>
           )}
 
+          {preview.broken_links.length > 0 && (
+            <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-3 text-sm">
+              <AlertCircleIcon className="h-4 w-4 mt-0.5 shrink-0 text-destructive" />
+              <span>{preview.broken_links.length} broken internal link{preview.broken_links.length > 1 ? 's' : ''} detected</span>
+            </div>
+          )}
+
+          {preview.warnings.length > 0 && (
+            <details className="text-xs text-muted-foreground">
+              <summary className="cursor-pointer">{preview.warnings.length} warning{preview.warnings.length > 1 ? 's' : ''}</summary>
+              <ul className="mt-2 space-y-1 pl-4 list-disc max-h-32 overflow-y-auto">
+                {preview.warnings.slice(0, 30).map((w, i) => (
+                  <li key={i}>{w.message}</li>
+                ))}
+                {preview.warnings.length > 30 && <li>...and {preview.warnings.length - 30} more</li>}
+              </ul>
+            </details>
+          )}
+
+          {/* Target space */}
           <div className="space-y-2">
             <Label>Target Space</Label>
             <Select value={targetSpaceId} onValueChange={setTargetSpaceId}>
@@ -300,8 +347,8 @@ export function HelpCenterImportSection({
                 <SelectValue placeholder="Select a space or create new" />
               </SelectTrigger>
               <SelectContent>
-                {spaces?.filter((space) => space.type === 'external_capable').map((space) => (
-                  <SelectItem key={space.id} value={space.id}>{space.name}</SelectItem>
+                {spaces?.filter((s) => s.type === 'external_capable').map((s) => (
+                  <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
                 ))}
                 <SelectItem value="__new">Create new space</SelectItem>
               </SelectContent>
@@ -311,10 +358,12 @@ export function HelpCenterImportSection({
                 placeholder="New space name"
                 value={newSpaceName}
                 onChange={(e) => setNewSpaceName(e.target.value)}
+                autoFocus
               />
             )}
           </div>
 
+          {/* Import status */}
           <div className="space-y-2">
             <Label>Import Status</Label>
             <div className="space-y-2">
@@ -348,7 +397,7 @@ export function HelpCenterImportSection({
           <div className="flex items-center justify-between">
             <Button variant="ghost" onClick={() => setStep(0)}>Back</Button>
             <Button onClick={handleStart} disabled={starting}>
-              {starting ? 'Starting...' : 'Start Import'}
+              {starting ? <><Loading01Icon className="h-4 w-4 animate-spin mr-1.5" />Starting...</> : 'Start Import'}
             </Button>
           </div>
         </div>
@@ -369,6 +418,8 @@ export function HelpCenterImportSection({
                 ? 'Import complete'
                 : `Importing... ${jobStatus ? jobStatus.completed + jobStatus.failed : 0} of ${jobStatus?.total ?? '...'} articles`}
             </p>
+
+            {/* ETA */}
             {!isFinished && jobStatus && jobStatus.completed > 0 && jobStatus.started_at && (() => {
               const elapsed = (nowMs - new Date(jobStatus.started_at).getTime()) / 1000;
               const done = jobStatus.completed + jobStatus.failed;
@@ -383,6 +434,7 @@ export function HelpCenterImportSection({
                 </p>
               );
             })()}
+
             {!isFinished && (
               <p className="text-xs text-muted-foreground/50 text-center">
                 You can continue using the app. Come back here later to see the progress.
@@ -390,28 +442,28 @@ export function HelpCenterImportSection({
             )}
           </div>
 
+          {/* Completion details */}
           {isFinished && jobStatus && (
             <Card>
               <CardContent className="pt-4 space-y-3">
                 {jobStatus.summary && (
-                  <div className="space-y-2">
-                    <p className="text-sm text-muted-foreground">
-                      Created {jobStatus.summary.collections_created}{' '}
-                      {jobStatus.summary.collections_created === 1 ? 'collection' : 'collections'} and{' '}
-                      {jobStatus.completed}{' '}
-                      {jobStatus.completed === 1 ? 'article' : 'articles'}
-                      {(jobStatus.summary.articles_published > 0 || jobStatus.summary.articles_drafted > 0) && (
-                        <> ({jobStatus.summary.articles_published} published, {jobStatus.summary.articles_drafted} draft)</>
-                      )}
-                      . {jobStatus.summary.redirects_created} URL{' '}
-                      {jobStatus.summary.redirects_created === 1 ? 'redirect' : 'redirects'} set up
-                      {jobStatus.started_at && jobStatus.completed_at && (
-                        <>. Completed in {formatDuration(jobStatus.started_at, jobStatus.completed_at)}</>
-                      )}
-                      .
-                    </p>
-                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Created {jobStatus.summary.collections_created}{' '}
+                    {jobStatus.summary.collections_created === 1 ? 'collection' : 'collections'} and{' '}
+                    {jobStatus.completed}{' '}
+                    {jobStatus.completed === 1 ? 'article' : 'articles'}
+                    {(jobStatus.summary.articles_published > 0 || jobStatus.summary.articles_drafted > 0) && (
+                      <> ({jobStatus.summary.articles_published} published, {jobStatus.summary.articles_drafted} draft)</>
+                    )}
+                    . {jobStatus.summary.redirects_created} URL{' '}
+                    {jobStatus.summary.redirects_created === 1 ? 'redirect' : 'redirects'} set up
+                    {jobStatus.started_at && jobStatus.completed_at && (
+                      <>. Completed in {formatDuration(jobStatus.started_at, jobStatus.completed_at)}</>
+                    )}
+                    .
+                  </p>
                 )}
+
                 <p className="text-sm">
                   {jobStatus.completed} succeeded, {jobStatus.failed} failed
                 </p>
@@ -428,11 +480,6 @@ export function HelpCenterImportSection({
                 )}
 
                 <div className="flex flex-wrap items-center gap-2">
-                  {jobStatus.failed > 0 && (
-                    <Button size="sm" variant="outline" onClick={handleRetry}>
-                      Retry Failed
-                    </Button>
-                  )}
                   <Button size="sm" variant="outline" onClick={handleDownloadRedirectMap}>
                     Download Redirect Map
                   </Button>
@@ -445,9 +492,7 @@ export function HelpCenterImportSection({
           )}
         </div>
       )}
-      {/* Import History */}
-      <SharedImportHistory workspaceId={workspaceId} />
+      <ImportHistory workspaceId={workspaceId} source="nextra" />
     </div>
   );
 }
-

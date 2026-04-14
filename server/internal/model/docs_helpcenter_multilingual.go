@@ -37,11 +37,11 @@ type DocsHelpcenterCollectionTranslation struct {
 	ID              string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	CollectionID    string     `json:"collection_id" gorm:"type:uuid;not null;uniqueIndex:idx_docs_hc_collection_locale,priority:1;index:idx_docs_hc_collection_translation_space_locale,priority:1"`
 	WorkspaceID     string     `json:"workspace_id" gorm:"type:uuid;not null"`
-	SpaceID         string     `json:"space_id" gorm:"type:uuid;not null;uniqueIndex:idx_docs_hc_collection_space_locale_slug,priority:1;index:idx_docs_hc_collection_translation_space_locale,priority:2"`
-	Locale          string     `json:"locale" gorm:"not null;size:16;uniqueIndex:idx_docs_hc_collection_locale,priority:2;uniqueIndex:idx_docs_hc_collection_space_locale_slug,priority:2;index:idx_docs_hc_collection_translation_space_locale,priority:3"`
+	SpaceID         string     `json:"space_id" gorm:"type:uuid;not null;index:idx_docs_hc_collection_space_locale_slug_lookup,priority:1;index:idx_docs_hc_collection_translation_space_locale,priority:2"`
+	Locale          string     `json:"locale" gorm:"not null;size:16;uniqueIndex:idx_docs_hc_collection_locale,priority:2;index:idx_docs_hc_collection_space_locale_slug_lookup,priority:2;index:idx_docs_hc_collection_translation_space_locale,priority:3"`
 	Name            string     `json:"name" gorm:"not null"`
 	Description     *string    `json:"description"`
-	Slug            *string    `json:"slug" gorm:"uniqueIndex:idx_docs_hc_collection_space_locale_slug,priority:3"`
+	Slug            *string    `json:"slug" gorm:"index:idx_docs_hc_collection_space_locale_slug_lookup,priority:3"`
 	Status          string     `json:"status" gorm:"not null;default:'draft'"`
 	SourceUpdatedAt *time.Time `json:"source_updated_at"`
 	SourceSynced    bool       `json:"source_synced" gorm:"not null;default:false"`
@@ -59,11 +59,11 @@ type DocsHelpcenterArticleTranslation struct {
 	ID              string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	DocumentID      string          `json:"document_id" gorm:"type:uuid;not null;uniqueIndex:idx_docs_hc_article_locale,priority:1;index:idx_docs_hc_article_translation_space_locale,priority:1"`
 	WorkspaceID     string          `json:"workspace_id" gorm:"type:uuid;not null"`
-	SpaceID         string          `json:"space_id" gorm:"type:uuid;not null;uniqueIndex:idx_docs_hc_article_space_locale_slug,priority:1;index:idx_docs_hc_article_translation_space_locale,priority:2"`
+	SpaceID         string          `json:"space_id" gorm:"type:uuid;not null;index:idx_docs_hc_article_space_locale_slug_lookup,priority:1;index:idx_docs_hc_article_translation_space_locale,priority:2"`
 	CollectionID    *string         `json:"collection_id" gorm:"type:uuid"`
-	Locale          string          `json:"locale" gorm:"not null;size:16;uniqueIndex:idx_docs_hc_article_locale,priority:2;uniqueIndex:idx_docs_hc_article_space_locale_slug,priority:2;index:idx_docs_hc_article_translation_space_locale,priority:3"`
+	Locale          string          `json:"locale" gorm:"not null;size:16;uniqueIndex:idx_docs_hc_article_locale,priority:2;index:idx_docs_hc_article_space_locale_slug_lookup,priority:2;index:idx_docs_hc_article_translation_space_locale,priority:3"`
 	Title           string          `json:"title" gorm:"not null"`
-	Slug            *string         `json:"slug" gorm:"uniqueIndex:idx_docs_hc_article_space_locale_slug,priority:3"`
+	Slug            *string         `json:"slug" gorm:"index:idx_docs_hc_article_space_locale_slug_lookup,priority:3"`
 	Excerpt         *string         `json:"excerpt"`
 	Content         json.RawMessage `json:"content" gorm:"type:jsonb"`
 	ContentText     string          `json:"content_text" gorm:"type:text"`

@@ -1,6 +1,6 @@
 import { NodeViewContent, NodeViewWrapper, type NodeViewProps } from '@tiptap/react'
-import { useState, useRef, useEffect, useMemo } from 'react'
-import { ArrowDown01Icon } from '@/lib/icons'
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
+import { ArrowDown01Icon, Copy01Icon, Tick01Icon } from '@/lib/icons'
 import { common } from 'lowlight'
 
 const LANGUAGES = Object.keys(common).sort()
@@ -47,8 +47,17 @@ export function CodeBlockNodeView({ node, updateAttributes, extension }: NodeVie
   const language = (node.attrs.language as string) || extension.options.defaultLanguage || 'plaintext'
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
+  const [copied, setCopied] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  const handleCopy = useCallback(() => {
+    const text = node.textContent
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }, [node])
 
   const filtered = useMemo(() => {
     if (!search) return LANGUAGES
@@ -81,7 +90,17 @@ export function CodeBlockNodeView({ node, updateAttributes, extension }: NodeVie
   return (
     <NodeViewWrapper className="relative my-3">
       <div className="relative rounded-md border border-border bg-muted/50">
-        <div className="flex items-center justify-end px-3 py-1.5 border-b border-border/50" ref={dropdownRef}>
+        <div className="flex items-center justify-end gap-1 px-3 py-1.5 border-b border-border/50" ref={dropdownRef}>
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-1.5 py-0.5 rounded hover:bg-muted"
+            contentEditable={false}
+            title="Copy code"
+          >
+            {copied ? <Tick01Icon className="h-3 w-3" /> : <Copy01Icon className="h-3 w-3" />}
+            {copied ? 'Copied' : 'Copy'}
+          </button>
           <button
             type="button"
             onClick={() => setOpen(!open)}

@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -2062,40 +2061,20 @@ func TestDocsHelpcenterService_CollectionRedirects(t *testing.T) {
 		}
 	})
 
-	t.Run("UpdateCollectionSlug rejects duplicate slugs in the same workspace", func(t *testing.T) {
+	t.Run("UpdateCollectionSlug allows duplicate slugs in the same workspace", func(t *testing.T) {
 		db, svc, ctx := setup(t)
 		seedCollection(t, db, "coll-A", "apples")
 		seedCollection(t, db, "coll-B", "bananas")
 		seedPublishedArticle(t, db, "doc-1", "start-here", ptr("coll-A"))
 
-		_, err := svc.UpdateCollectionSlug(ctx, "coll-A", "bananas")
-		if err == nil {
-			t.Fatalf("expected duplicate slug error, got nil")
-		}
-		if !errors.Is(err, ErrDocsCollectionSlugTaken) {
-			t.Fatalf("err = %v, want ErrDocsCollectionSlugTaken", err)
-		}
-
-		// The failed rename must leave zero redirect rows behind. If
-		// the pre-check or the enclosing transaction leaked any
-		// partial writes, this count would be non-zero.
-		var count int64
-		if err := db.Model(&model.DocsRedirect{}).
-			Where("workspace_id = ?", workspaceID).
-			Count(&count).Error; err != nil {
-			t.Fatalf("count: %v", err)
-		}
-		if count != 0 {
-			t.Fatalf("failed rename leaked %d redirect(s); want 0", count)
-		}
-
-		// Collection slug must still be the original.
-		collection, err := repository.NewDocsCollectionRepository(db).GetByID(ctx, "coll-A")
+		// Duplicate slugs are now allowed — application-level
+		// uniqueness has been removed.
+		updated, err := svc.UpdateCollectionSlug(ctx, "coll-A", "bananas")
 		if err != nil {
-			t.Fatalf("load collection: %v", err)
+			t.Fatalf("UpdateCollectionSlug should succeed: %v", err)
 		}
-		if collection == nil || collection.Slug != "apples" {
-			t.Fatalf("collection slug = %v, want apples", collection)
+		if updated.Slug != "bananas" {
+			t.Fatalf("collection slug = %q, want bananas", updated.Slug)
 		}
 	})
 

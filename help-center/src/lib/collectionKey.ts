@@ -12,6 +12,14 @@ export function parseCollectionKey(collectionKey: string) {
   const trimmed = collectionKey.trim().replace(/^\/+|\/+$/g, '')
   if (!trimmed) return null
 
+  // Bare PublicID: if the entire key is a valid 8-char hex ID.
+  if (trimmed.length === COLLECTION_PUBLIC_ID_LENGTH) {
+    const bareId = normalizeCollectionPublicId(trimmed)
+    if (bareId.length === COLLECTION_PUBLIC_ID_LENGTH) {
+      return { slug: '', publicId: bareId }
+    }
+  }
+
   const lastDash = trimmed.lastIndexOf('-')
   if (lastDash <= 0 || lastDash === trimmed.length - 1) {
     return null

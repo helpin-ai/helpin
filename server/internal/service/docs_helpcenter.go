@@ -732,17 +732,7 @@ func (s *DocsHelpcenterService) ensureUniqueSourcePublicationSlug(ctx context.Co
 	if slug == "" {
 		slug = "article"
 	}
-	baseSlug := slug
-	for i := 2; ; i++ {
-		taken, err := s.publicationRepo.ArticlePublicationSlugExists(ctx, spaceID, locale, slug, documentID)
-		if err != nil {
-			return "", err
-		}
-		if !taken {
-			return slug, nil
-		}
-		slug = fmt.Sprintf("%s-%d", baseSlug, i)
-	}
+	return slug, nil
 }
 
 func (s *DocsHelpcenterService) ensureUniqueHelpcenterPublicID(ctx context.Context, documentID string) (string, error) {
@@ -867,10 +857,9 @@ func (s *DocsHelpcenterService) EmitArticleMoveRedirect(ctx context.Context, doc
 // fails after redirect writes, the transaction rolls back and the DB
 // state is unchanged.
 //
-// Uniqueness is enforced at the service layer against all non-deleted
-// collections in the same workspace; a duplicate returns
-// ErrDocsCollectionSlugTaken. The partial unique index added in the
-// Task 1 migration is the DB-level safety net for races.
+// Collection slugs are no longer required to be unique — duplicate slugs
+// are allowed. The method updates the slug and creates redirects from the
+// old slug to the new one.
 func (s *DocsHelpcenterService) UpdateCollectionSlug(ctx context.Context, collectionID, rawNewSlug string) (*model.DocsCollection, error) {
 	collection, err := s.collectionRepo.GetByID(ctx, collectionID)
 	if err != nil {
@@ -885,14 +874,6 @@ func (s *DocsHelpcenterService) UpdateCollectionSlug(ctx context.Context, collec
 	}
 	if newSlug == collection.Slug {
 		return collection, nil
-	}
-
-	taken, err := s.collectionSlugTaken(ctx, collection.WorkspaceID, newSlug, collection.ID)
-	if err != nil {
-		return nil, err
-	}
-	if taken {
-		return nil, ErrDocsCollectionSlugTaken
 	}
 
 	oldSlug := collection.Slug
@@ -943,9 +924,6 @@ func (s *DocsHelpcenterService) UpdateCollectionSlug(ctx context.Context, collec
 
 		slugUpdated, err := txCollectionRepo.Update(ctx, collection.ID, map[string]interface{}{"slug": newSlug})
 		if err != nil {
-			if isUniqueConstraintViolation(err) {
-				return ErrDocsCollectionSlugTaken
-			}
 			return err
 		}
 		updated = slugUpdated
@@ -957,14 +935,6 @@ func (s *DocsHelpcenterService) UpdateCollectionSlug(ctx context.Context, collec
 
 	publishWorkspaceEventWithParent(s.wsPublisher, "updated", "docs_collection", collection.ID, collection.WorkspaceID, "", "docs_space", collection.SpaceID, nil)
 	return updated, nil
-}
-
-// collectionSlugTaken returns true when another non-deleted collection
-// in the same workspace already uses this slug. Routed through the
-// repository helper so this check and DocsCollectionService.Create
-// share the same uniqueness definition.
-func (s *DocsHelpcenterService) collectionSlugTaken(ctx context.Context, workspaceID, slug, excludeID string) (bool, error) {
-	return s.collectionRepo.SlugTakenInWorkspace(ctx, workspaceID, slug, excludeID)
 }
 
 func sameCollectionPointer(a, b *string) bool {
