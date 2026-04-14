@@ -39,12 +39,12 @@ function InfoRow({
 }) {
   if (!value) return null;
   return (
-    <div className="flex items-center justify-between gap-2 text-xs">
-      <span className="text-muted-foreground shrink-0 flex items-center gap-1.5">
+    <div className="grid grid-cols-[88px_1fr] items-center gap-2 text-xs">
+      <span className="text-muted-foreground flex items-center gap-1.5">
         {Icon && <Icon className="h-3 w-3" />}
         {label}
       </span>
-      <span className="truncate text-right" title={value}>{value}</span>
+      <span className="truncate font-medium text-foreground/90" title={value}>{value}</span>
     </div>
   );
 }
@@ -158,8 +158,8 @@ function MainInfoRow({
   href?: string;
 }) {
   return (
-    <div className="flex items-center gap-2 text-xs">
-      <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground">
+    <div className="flex items-center gap-2.5 text-xs">
+      <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground/70">
         {icon}
       </span>
       {href ? (
@@ -173,7 +173,7 @@ function MainInfoRow({
           {value}
         </a>
       ) : (
-        <span className="truncate" title={value}>{value}</span>
+        <span className="truncate text-foreground/90" title={value}>{value}</span>
       )}
     </div>
   );
@@ -247,17 +247,23 @@ export function SidebarVisitorContext({ workspaceId, conversationId }: SidebarVi
       {hasDevice && (
         <CollapsibleSection title="Visitor device" icon={ComputerIcon} count={0} defaultOpen>
           <div className="space-y-2">
-            <div className="flex items-center gap-2 text-xs">
-              <BrowserIcon browser={device.browser} />
-              <span>{device.browser}{device.browser_version ? ` ${device.browser_version}` : ''}</span>
+            <div className="flex items-center gap-2.5 text-xs">
+              <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground/70">
+                <BrowserIcon browser={device.browser} />
+              </span>
+              <span className="text-foreground/90">{device.browser}{device.browser_version ? ` ${device.browser_version}` : ''}</span>
             </div>
-            <div className="flex items-center gap-2 text-xs">
-              <OSIcon os={device.os} />
-              <span>{device.os}{device.os_version ? ` ${device.os_version}` : ''}</span>
+            <div className="flex items-center gap-2.5 text-xs">
+              <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground/70">
+                <OSIcon os={device.os} />
+              </span>
+              <span className="text-foreground/90">{device.os}{device.os_version ? ` ${device.os_version}` : ''}</span>
             </div>
-            <div className="flex items-center gap-2 text-xs">
-              <DeviceIcon type={device.device_type} />
-              <span className="capitalize">{device.device_type}</span>
+            <div className="flex items-center gap-2.5 text-xs">
+              <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground/70">
+                <DeviceIcon type={device.device_type} />
+              </span>
+              <span className="capitalize text-foreground/90">{device.device_type}</span>
             </div>
           </div>
         </CollapsibleSection>
@@ -271,20 +277,22 @@ export function SidebarVisitorContext({ workspaceId, conversationId }: SidebarVi
               <InfoRow label="Job title" value={contact.job_title} />
             )}
             {contact.lifecycle_stage && (
-              <div className="flex items-center justify-between gap-2 text-xs">
-                <span className="text-muted-foreground shrink-0">Lifecycle</span>
-                <Badge variant="secondary" className={`h-4 px-1.5 text-[10px] font-medium ${LIFECYCLE_COLORS[contact.lifecycle_stage] ?? LIFECYCLE_COLORS.other}`}>
-                  {contact.lifecycle_stage}
-                </Badge>
+              <div className="grid grid-cols-[88px_1fr] items-center gap-2 text-xs">
+                <span className="text-muted-foreground">Lifecycle</span>
+                <span>
+                  <Badge variant="secondary" className={`h-4 rounded-full px-1.5 text-[10px] font-medium ${LIFECYCLE_COLORS[contact.lifecycle_stage] ?? LIFECYCLE_COLORS.other}`}>
+                    {contact.lifecycle_stage}
+                  </Badge>
+                </span>
               </div>
             )}
             {contact.source && (
-              <div className="flex items-center justify-between gap-2 text-xs">
-                <span className="text-muted-foreground shrink-0">Source</span>
-                <span className="flex items-center gap-1 truncate text-right capitalize">
+              <div className="grid grid-cols-[88px_1fr] items-center gap-2 text-xs">
+                <span className="text-muted-foreground">Source</span>
+                <span className="flex items-center gap-1.5 truncate capitalize font-medium text-foreground/90">
                   {(() => {
                     const SourceIcon = SOURCE_ICONS[contact.source] ?? GlobeIcon;
-                    return <SourceIcon className="h-3 w-3 text-muted-foreground shrink-0" />;
+                    return <SourceIcon className="h-3 w-3 text-muted-foreground/70 shrink-0" />;
                   })()}
                   {SOURCE_LABELS[contact.source] ?? contact.source.replace(/_/g, ' ')}
                 </span>

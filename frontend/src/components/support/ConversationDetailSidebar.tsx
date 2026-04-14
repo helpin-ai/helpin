@@ -1,7 +1,7 @@
 import { memo, type JSX, type SVGProps } from 'react';
 import * as Flags from 'country-flag-icons/react/3x2';
 import { Link } from '@tanstack/react-router';
-import { ArrowDown01Icon, ArrowLeft01Icon, ArrowRight01Icon, Mail01Icon, UserIcon, Clock01Icon } from '@/lib/icons';
+import { ArrowDown01Icon, ArrowLeft01Icon, ArrowRight01Icon, Mail01Icon, UserIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { CollapsibleSection } from '@/components/ui/collapsible-section';
@@ -103,7 +103,7 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
       ) : (
         <div className="flex-1 overflow-y-auto">
           {/* ── Contact Card ─────────────────────────────── */}
-          <div className="flex flex-col items-center gap-1.5 px-3 py-4 border-b">
+          <div className="flex flex-col items-center gap-1.5 px-3 py-4 border-b border-border/50">
             <div className="relative">
               <div className={`flex h-12 w-12 items-center justify-center rounded-full text-base font-semibold ${getAvatarColor(conversation.customer_email || conversation.customer_name || conversation.id)}`}>
                 {getInitial(conversation.customer_name || conversation.customer_email)}
@@ -133,14 +133,14 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
           </div>
 
           {/* ── Conversation Info ────────────────────────── */}
-          <div className="border-b px-3 py-3 space-y-2">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-muted-foreground flex items-center gap-1"><Clock01Icon className="h-3 w-3" /> Created</span>
-              <span>{formatTimestamp(conversation.created_at)}</span>
+          <div className="border-b border-border/50 px-4 py-3 space-y-1.5">
+            <div className="grid grid-cols-[88px_1fr] items-center gap-2 text-xs">
+              <span className="text-muted-foreground">Created</span>
+              <span className="font-medium text-foreground/90">{formatTimestamp(conversation.created_at)}</span>
             </div>
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-muted-foreground flex items-center gap-1"><Clock01Icon className="h-3 w-3" /> Updated</span>
-              <span>{formatTimestamp(conversation.updated_at)}</span>
+            <div className="grid grid-cols-[88px_1fr] items-center gap-2 text-xs">
+              <span className="text-muted-foreground">Updated</span>
+              <span className="font-medium text-foreground/90">{formatTimestamp(conversation.updated_at)}</span>
             </div>
           </div>
 
