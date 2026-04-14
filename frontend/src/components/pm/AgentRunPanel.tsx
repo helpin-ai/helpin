@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import { BotIcon, Loading01Icon, PlayIcon } from '@/lib/icons';
 import { toast } from 'sonner';
 
@@ -25,14 +26,38 @@ interface Props {
 }
 
 export function AgentRunPanel({ taskId, workspaceId, assignedAgentId }: Props) {
+  const navigate = useNavigate();
+  const search = useSearch({ strict: false }) as { run?: string };
+  const urlRunId = search.run ?? null;
+
   const [agents, setAgents] = useState<Agent[]>([]);
   const [runs, setRuns] = useState<AgentRun[]>([]);
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(urlRunId);
   const [selectedAgentId, setSelectedAgentId] = useState('');
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState<boolean>(Boolean(urlRunId));
   const [triggering, setTriggering] = useState(false);
   const [loadingAgents, setLoadingAgents] = useState(true);
   const [loading, setLoading] = useState(true);
+
+  const setRunInUrl = useCallback(
+    (runId: string | null) => {
+      navigate({
+        to: '.',
+        search: (prev) => ({ ...prev, run: runId ?? undefined }),
+        replace: true,
+      });
+    },
+    [navigate],
+  );
+
+  useEffect(() => {
+    if (urlRunId) {
+      setSelectedRunId(urlRunId);
+      setDrawerOpen(true);
+    } else {
+      setDrawerOpen(false);
+    }
+  }, [urlRunId]);
 
   const fetchAgents = useCallback(async () => {
     setLoadingAgents(true);
@@ -115,8 +140,7 @@ export function AgentRunPanel({ taskId, workspaceId, assignedAgentId }: Props) {
       }
       await fetchRuns();
       if (res.data?.id) {
-        setSelectedRunId(res.data.id);
-        setDrawerOpen(true);
+        setRunInUrl(res.data.id);
       }
     } finally {
       setTriggering(false);
@@ -173,10 +197,7 @@ export function AgentRunPanel({ taskId, workspaceId, assignedAgentId }: Props) {
           runs={runs}
           agents={agents}
           selectedRunId={selectedRunId}
-          onSelectRun={(run) => {
-            setSelectedRunId(run.id);
-            setDrawerOpen(true);
-          }}
+          onSelectRun={(run) => setRunInUrl(run.id)}
           loading={loading}
         />
       </div>
@@ -184,7 +205,9 @@ export function AgentRunPanel({ taskId, workspaceId, assignedAgentId }: Props) {
       <CodingSessionDrawer
         sessionId={selectedRunId}
         open={drawerOpen && !!selectedRunId}
-        onOpenChange={setDrawerOpen}
+        onOpenChange={(open) => {
+          if (!open) setRunInUrl(null);
+        }}
         title="Task Agent Run"
       />
 
