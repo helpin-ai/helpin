@@ -889,7 +889,7 @@ function ActivityToolCallRow({ toolCall, isLast }: { toolCall: CodingSessionLive
   const isApplyPatch = toolCall.tool_name === 'apply_patch';
   const argsText = toolCall.args_text.trim();
   const resultText = toolCall.result?.output_summary?.trim() || toolCall.result?.content?.trim() || '';
-  const publishedPreviewCard = !isFailed && argsText ? (
+  const publishedPreviewCard = !isFailed && !isApplyPatch && argsText ? (
     <PublishedToolPreviewCard toolName={toolCall.tool_name} argsText={argsText} resultText={resultText} />
   ) : null;
   const presentation = describeToolCall(toolCall);
