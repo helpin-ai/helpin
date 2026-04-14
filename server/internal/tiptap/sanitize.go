@@ -1,6 +1,7 @@
 package tiptap
 
 import (
+	"html"
 	"regexp"
 	"strings"
 
@@ -72,6 +73,9 @@ func SanitizeHTMLBlock(rawHTML string) string {
 
 // StripHTML removes all HTML tags and returns plain text.
 // Useful for generating notification bodies from rich-text content.
-func StripHTML(html string) string {
-	return strings.TrimSpace(bluemonday.StrictPolicy().Sanitize(html))
+// Unescapes HTML entities (e.g. &#39; → ') after sanitizing so the
+// output reads as natural text.
+func StripHTML(raw string) string {
+	sanitized := bluemonday.StrictPolicy().Sanitize(raw)
+	return strings.TrimSpace(html.UnescapeString(sanitized))
 }
