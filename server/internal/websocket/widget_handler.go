@@ -11,6 +11,7 @@ import (
 	"nhooyr.io/websocket"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/requestmeta"
 )
 
 // WidgetService defines the service methods needed by the widget WS handler.
@@ -44,12 +45,17 @@ func NewWidgetHandler(hub *Hub, service WidgetService) *WidgetHandler {
 
 // ServeHTTP handles the WebSocket upgrade for widget connections.
 func (h *WidgetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if clientIP, ok := requestmeta.ExtractClientIP(r); ok {
+		ctx = requestmeta.WithClientIP(ctx, clientIP)
+	}
+
 	widgetKey := r.URL.Query().Get("key")
 
 	// Backwards compat: also accept session_token for legacy clients
 	legacyToken := r.URL.Query().Get("session_token")
 	if widgetKey == "" && legacyToken != "" {
-		h.serveLegacy(w, r, legacyToken)
+		h.serveLegacy(ctx, w, r, legacyToken)
 		return
 	}
 
@@ -59,7 +65,7 @@ func (h *WidgetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate widget_key exists
-	_, err := h.service.GetInstallationByWidgetKey(r.Context(), widgetKey)
+	_, err := h.service.GetInstallationByWidgetKey(ctx, widgetKey)
 	if err != nil {
 		http.Error(w, "invalid widget key", http.StatusBadRequest)
 		return
@@ -74,7 +80,7 @@ func (h *WidgetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Wait for first message: session:create or session:restore (10s timeout)
-	firstMsgCtx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	firstMsgCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	_, data, err := conn.Read(firstMsgCtx)
 	cancel()
 	if err != nil {
@@ -93,9 +99,9 @@ func (h *WidgetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var session *model.SupportWidgetSession
 	switch msg.Type {
 	case "session:create":
-		session, err = h.handleSessionCreate(r.Context(), widgetKey, msg, conn)
+		session, err = h.handleSessionCreate(ctx, widgetKey, msg, conn)
 	case "session:restore":
-		session, err = h.handleSessionRestore(r.Context(), widgetKey, msg, conn)
+		session, err = h.handleSessionRestore(ctx, widgetKey, msg, conn)
 	default:
 		slog.Warn("widget ws: unexpected first message type", "type", msg.Type)
 		conn.Close(websocket.StatusPolicyViolation, "expected session:create or session:restore")
@@ -107,12 +113,12 @@ func (h *WidgetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Register client and enter bidirectional message loop
-	h.handleConnection(r.Context(), conn, session, widgetKey)
+	h.handleConnection(ctx, conn, session, widgetKey)
 }
 
 // serveLegacy handles legacy widget connections that pass session_token in the URL.
-func (h *WidgetHandler) serveLegacy(w http.ResponseWriter, r *http.Request, sessionToken string) {
-	session, err := h.service.GetWidgetSession(r.Context(), sessionToken)
+func (h *WidgetHandler) serveLegacy(ctx context.Context, w http.ResponseWriter, r *http.Request, sessionToken string) {
+	session, err := h.service.GetWidgetSession(ctx, sessionToken)
 	if err != nil {
 		slog.Warn("widget ws: invalid session", "error", err)
 		http.Error(w, "invalid or expired session", http.StatusUnauthorized)
@@ -140,7 +146,7 @@ func (h *WidgetHandler) serveLegacy(w http.ResponseWriter, r *http.Request, sess
 	h.hub.Register(client)
 	if session.AnonymousID != "" {
 		h.hub.SetVisitorOnline(session.WorkspaceID, session.AnonymousID)
-		if err := h.hub.Presence.SetVisitorOnline(r.Context(), session.WorkspaceID, session.AnonymousID, client.ConnID); err != nil {
+		if err := h.hub.Presence.SetVisitorOnline(ctx, session.WorkspaceID, session.AnonymousID, client.ConnID); err != nil {
 			slog.Error("presence SetVisitorOnline (legacy)", "error", err)
 		}
 		h.hub.BroadcastAll(Event{
@@ -154,7 +160,7 @@ func (h *WidgetHandler) serveLegacy(w http.ResponseWriter, r *http.Request, sess
 		h.hub.Unregister(client)
 		if session.AnonymousID != "" {
 			h.hub.SetVisitorOffline(session.WorkspaceID, session.AnonymousID)
-			lastConn, err := h.hub.Presence.SetVisitorOffline(r.Context(), session.WorkspaceID, session.AnonymousID, client.ConnID)
+			lastConn, err := h.hub.Presence.SetVisitorOffline(ctx, session.WorkspaceID, session.AnonymousID, client.ConnID)
 			if err != nil {
 				slog.Error("presence SetVisitorOffline (legacy)", "error", err)
 			}
@@ -172,7 +178,7 @@ func (h *WidgetHandler) serveLegacy(w http.ResponseWriter, r *http.Request, sess
 
 	// Legacy read loop: keep alive
 	for {
-		_, _, err := conn.Read(r.Context())
+		_, _, err := conn.Read(ctx)
 		if err != nil {
 			return
 		}

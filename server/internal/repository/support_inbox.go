@@ -233,6 +233,11 @@ func (r *SupportInboxSessionRepository) Create(ctx context.Context, session *mod
 		"last_page_url":   session.LastPageURL,
 		"timezone":        session.Timezone,
 		"locale":          session.Locale,
+		"ip_address":      session.IPAddress,
+		"country_code":    session.CountryCode,
+		"country_name":    session.CountryName,
+		"region_name":     session.RegionName,
+		"city_name":       session.CityName,
 		"revoked_at":      session.RevokedAt,
 		"expires_at":      session.ExpiresAt,
 	}
@@ -308,6 +313,41 @@ func (r *SupportInboxSessionRepository) GetLatestByAnonymousID(ctx context.Conte
 	return &session, nil
 }
 
+// ListGeoBackfillCandidates returns recent sessions that have an IP address but no country metadata yet.
+func (r *SupportInboxSessionRepository) ListGeoBackfillCandidates(ctx context.Context, limit int) ([]model.SupportWidgetSession, error) {
+	if limit <= 0 {
+		limit = 500
+	}
+
+	var sessions []model.SupportWidgetSession
+	if err := r.db.WithContext(ctx).
+		Where("COALESCE(LENGTH(TRIM(ip_address)), 0) > 0").
+		Where("COALESCE(LENGTH(TRIM(country_code)), 0) = 0").
+		Order("created_at DESC").
+		Limit(limit).
+		Find(&sessions).Error; err != nil {
+		return nil, fmt.Errorf("list geo backfill sessions: %w", err)
+	}
+	return sessions, nil
+}
+
+// UpdateGeoLocation updates the session's stored GeoIP fields.
+func (r *SupportInboxSessionRepository) UpdateGeoLocation(ctx context.Context, sessionID string, countryCode, countryName, regionName, cityName *string) error {
+	updates := map[string]interface{}{
+		"country_code": countryCode,
+		"country_name": countryName,
+		"region_name":  regionName,
+		"city_name":    cityName,
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.SupportWidgetSession{}).
+		Where("id = ?", sessionID).
+		Updates(updates).Error; err != nil {
+		return fmt.Errorf("update session geo location: %w", err)
+	}
+	return nil
+}
+
 // SupportConversationRepository handles DB operations for support conversations.
 type SupportConversationRepository struct {
 	db *gorm.DB
@@ -341,6 +381,28 @@ func (r *SupportConversationRepository) textPrefixExpr(column string, limit int)
 		return fmt.Sprintf("substr(%s, 1, %d)", column, limit)
 	}
 	return fmt.Sprintf("LEFT(%s, %d)", column, limit)
+}
+
+func (r *SupportConversationRepository) latestSessionCountryExpr(column, alias string) string {
+	return fmt.Sprintf(`COALESCE(
+		(SELECT sws.%s
+			FROM support_widget_sessions sws
+			WHERE sws.workspace_id = %s.workspace_id
+			  AND sws.conversation_id = %s.id
+			  AND sws.%s IS NOT NULL
+			  AND sws.%s <> ''
+			ORDER BY sws.created_at DESC
+			LIMIT 1),
+		(SELECT sws.%s
+			FROM support_widget_sessions sws
+			WHERE sws.workspace_id = %s.workspace_id
+			  AND %s.anonymous_id IS NOT NULL
+			  AND sws.anonymous_id = %s.anonymous_id
+			  AND sws.%s IS NOT NULL
+			  AND sws.%s <> ''
+			ORDER BY sws.created_at DESC
+			LIMIT 1)
+	)`, column, alias, alias, column, column, column, alias, alias, alias, column, column)
 }
 
 func (r *SupportConversationRepository) maybeAcquireWorkspaceDisplayIDLock(tx *gorm.DB, workspaceID string) {
@@ -468,9 +530,17 @@ func (r *SupportConversationRepository) List(ctx context.Context, workspaceID st
 			  AND sm.message_type = 'reply'
 			  AND sm.created_at > COALESCE(support_conversations.team_last_seen_at, %s)
 		) AS unread_count,
+		%s AS country_code,
+		%s AS country_name,
 		sm.name AS mailbox_name,
 		sm.handle AS mailbox_handle,
-		sm.icon AS mailbox_icon`, r.textPrefixExpr("m.content", 100), r.textPrefixExpr("m.content", 100), r.epochExpr())).
+		sm.icon AS mailbox_icon`,
+			r.textPrefixExpr("m.content", 100),
+			r.textPrefixExpr("m.content", 100),
+			r.epochExpr(),
+			r.latestSessionCountryExpr("country_code", "support_conversations"),
+			r.latestSessionCountryExpr("country_name", "support_conversations"),
+		)).
 		Order("support_conversations.updated_at DESC").Offset(offset).Limit(perPage).Find(&conversations).Error; err != nil {
 		return nil, 0, fmt.Errorf("list conversations: %w", err)
 	}
@@ -485,7 +555,10 @@ func (r *SupportConversationRepository) GetByID(ctx context.Context, workspaceID
 		Joins("LEFT JOIN support_mailboxes sm ON sm.id = support_conversations.mailbox_id").
 		Where("support_conversations.workspace_id = ? AND support_conversations.id = ?", workspaceID, id)
 	query = r.applyMailboxAccess(query, workspaceMemberID, role)
-	if err := query.Select("support_conversations.*, sm.name AS mailbox_name, sm.handle AS mailbox_handle, sm.icon AS mailbox_icon").First(&conversation).Error; err != nil {
+	if err := query.Select(fmt.Sprintf("support_conversations.*, %s AS country_code, %s AS country_name, sm.name AS mailbox_name, sm.handle AS mailbox_handle, sm.icon AS mailbox_icon",
+		r.latestSessionCountryExpr("country_code", "support_conversations"),
+		r.latestSessionCountryExpr("country_name", "support_conversations"),
+	)).First(&conversation).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
 		}
@@ -566,7 +639,10 @@ func (r *SupportConversationRepository) ListByIDs(ctx context.Context, workspace
 		Where("support_conversations.workspace_id = ? AND support_conversations.id IN ?", workspaceID, ids)
 	query = r.applyMailboxAccess(query, workspaceMemberID, role)
 	if err := query.
-		Select("support_conversations.*, sm.name AS mailbox_name, sm.handle AS mailbox_handle, sm.icon AS mailbox_icon").
+		Select(fmt.Sprintf("support_conversations.*, %s AS country_code, %s AS country_name, sm.name AS mailbox_name, sm.handle AS mailbox_handle, sm.icon AS mailbox_icon",
+			r.latestSessionCountryExpr("country_code", "support_conversations"),
+			r.latestSessionCountryExpr("country_name", "support_conversations"),
+		)).
 		Order("updated_at DESC").
 		Find(&conversations).Error; err != nil {
 		return nil, fmt.Errorf("list conversations by ids: %w", err)
@@ -740,7 +816,7 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 					  AND sm.created_at > COALESCE(sc.team_last_seen_at, %s)
 				) > 0
 				  AND ` + humanQueueCondition + `
-				  AND sc.opened_by_user_id = ?
+				  AND sc.assigned_user_id = ?
 			) AS my_inbox,
 			COUNT(*) FILTER (
 				WHERE (
@@ -754,7 +830,7 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 				) > 0
 				  AND ` + humanQueueCondition + `
 				  AND sc.assigned_agent_id IS NULL
-				  AND sc.opened_by_user_id IS NULL
+				  AND sc.assigned_user_id IS NULL
 			) AS unassigned,
 			COUNT(*) FILTER (
 				WHERE (

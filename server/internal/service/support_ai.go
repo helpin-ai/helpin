@@ -868,7 +868,7 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		supportRecipientSelectorInput{
 			WorkspaceID:         workspaceID,
 			MailboxID:           handoffMailboxID,
-			OwnerUserID:         conv.OpenedByUserID,
+			OwnerUserID:         conv.AssignedUserID,
 			HandoffBehavior:     settings.HandoffBehavior,
 			HandoffTeamID:       settings.HandoffTeamID,
 			RequireAvailability: true,
@@ -886,12 +886,13 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 	fields := map[string]any{
 		"ai_state":          "escalated",
 		"ai_escalated_at":   now,
+		"assigned_user_id":  nil,
 		"assigned_agent_id": nil,
 		"mailbox_id":        handoffMailboxID,
 		"flow_state":        flowState,
 	}
 	if selection != nil {
-		fields["opened_by_user_id"] = selection.UserID
+		fields["assigned_user_id"] = selection.UserID
 	}
 	if reason == "customer_requested" || reason == "customer_requested_human" {
 		fields["customer_requested_human_at"] = now

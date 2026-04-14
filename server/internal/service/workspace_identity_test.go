@@ -157,6 +157,119 @@ func TestInviteServiceCreateAndAcceptInvitationUsesWorkspaceMemberIdentity(t *te
 	}
 }
 
+func TestWorkspaceRepositoryListSupportAssignableMembers(t *testing.T) {
+	db := newWorkspaceIdentityTestDB(t)
+	ctx := context.Background()
+
+	workspaceRepo := repository.NewWorkspaceRepository(db)
+
+	mustExecWorkspaceIdentity(t, db, `CREATE TABLE IF NOT EXISTS workspace_module_grants (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		module TEXT NOT NULL,
+		subject_type TEXT NOT NULL,
+		subject_id TEXT NOT NULL,
+		access_level TEXT NOT NULL,
+		created_by_id TEXT,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`)
+	mustExecWorkspaceIdentity(t, db, `CREATE TABLE IF NOT EXISTS team_workspace_memberships (
+		id TEXT PRIMARY KEY,
+		team_id TEXT NOT NULL,
+		workspace_member_id TEXT NOT NULL,
+		role TEXT NOT NULL DEFAULT 'member',
+		created_at DATETIME,
+		updated_at DATETIME
+	)`)
+	mustExecWorkspaceIdentity(t, db, `CREATE TABLE IF NOT EXISTS support_mailboxes (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		name TEXT NOT NULL,
+		handle TEXT NOT NULL,
+		icon TEXT NOT NULL,
+		description TEXT,
+		routing_prompt TEXT,
+		triage_eligible BOOLEAN NOT NULL DEFAULT 1,
+		linked_team_id TEXT,
+		visibility_mode TEXT NOT NULL DEFAULT 'members_only',
+		assignment_mode TEXT NOT NULL DEFAULT 'manual',
+		position INTEGER NOT NULL DEFAULT 0,
+		active BOOLEAN NOT NULL DEFAULT 1,
+		created_by_id TEXT NOT NULL,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`)
+	mustExecWorkspaceIdentity(t, db, `CREATE TABLE IF NOT EXISTS support_mailbox_memberships (
+		id TEXT PRIMARY KEY,
+		mailbox_id TEXT NOT NULL,
+		workspace_member_id TEXT NOT NULL,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`)
+
+	owner := seedWorkspaceIdentityUser(t, db, "user-owner", "owner@example.com", "Owner User")
+	direct := seedWorkspaceIdentityUser(t, db, "user-direct", "direct@example.com", "Direct User")
+	team := seedWorkspaceIdentityUser(t, db, "user-team", "team@example.com", "Team User")
+	explicit := seedWorkspaceIdentityUser(t, db, "user-explicit", "explicit@example.com", "Explicit User")
+	supportOnly := seedWorkspaceIdentityUser(t, db, "user-support-only", "support-only@example.com", "Support Only")
+	outsider := seedWorkspaceIdentityUser(t, db, "user-outsider", "outsider@example.com", "Outsider User")
+
+	seedWorkspaceIdentityWorkspace(t, db, "ws-1", owner.ID)
+
+	ownerMember, _ := workspaceRepo.AddMember(ctx, "ws-1", owner.ID, model.RoleOwner)
+	directMember, _ := workspaceRepo.AddMember(ctx, "ws-1", direct.ID, model.RoleMember)
+	teamMember, _ := workspaceRepo.AddMember(ctx, "ws-1", team.ID, model.RoleMember)
+	explicitMember, _ := workspaceRepo.AddMember(ctx, "ws-1", explicit.ID, model.RoleMember)
+	supportOnlyMember, _ := workspaceRepo.AddMember(ctx, "ws-1", supportOnly.ID, model.RoleMember)
+	_, _ = workspaceRepo.AddMember(ctx, "ws-1", outsider.ID, model.RoleMember)
+
+	now := time.Now().UTC()
+	mustExecWorkspaceIdentity(t, db, `INSERT INTO team_workspace_memberships (id, team_id, workspace_member_id, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		"twm-support", "team-support", teamMember.ID, "member", now, now)
+	mustExecWorkspaceIdentity(t, db, `INSERT INTO workspace_module_grants (id, workspace_id, module, subject_type, subject_id, access_level, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		"grant-direct", "ws-1", model.ModuleSupport, model.ModuleGrantSubjectWorkspaceMember, directMember.ID, "member", now, now)
+	mustExecWorkspaceIdentity(t, db, `INSERT INTO workspace_module_grants (id, workspace_id, module, subject_type, subject_id, access_level, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		"grant-explicit", "ws-1", model.ModuleSupport, model.ModuleGrantSubjectWorkspaceMember, explicitMember.ID, "member", now, now)
+	mustExecWorkspaceIdentity(t, db, `INSERT INTO workspace_module_grants (id, workspace_id, module, subject_type, subject_id, access_level, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		"grant-support-only", "ws-1", model.ModuleSupport, model.ModuleGrantSubjectWorkspaceMember, supportOnlyMember.ID, "member", now, now)
+	mustExecWorkspaceIdentity(t, db, `INSERT INTO workspace_module_grants (id, workspace_id, module, subject_type, subject_id, access_level, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		"grant-team", "ws-1", model.ModuleSupport, model.ModuleGrantSubjectTeam, "team-support", "member", now, now)
+	mustExecWorkspaceIdentity(t, db, `INSERT INTO support_mailboxes (id, workspace_id, name, handle, icon, linked_team_id, visibility_mode, assignment_mode, position, active, created_by_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"mailbox-support", "ws-1", "Support", "support", "inbox", "team-support", "members_only", "manual", 0, true, owner.ID, now, now)
+	mustExecWorkspaceIdentity(t, db, `INSERT INTO support_mailbox_memberships (id, mailbox_id, workspace_member_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+		"smm-explicit", "mailbox-support", explicitMember.ID, now, now)
+
+	allSupportMembers, err := workspaceRepo.ListSupportAssignableMembers(ctx, "ws-1", nil)
+	if err != nil {
+		t.Fatalf("list support assignable members: %v", err)
+	}
+	allIDs := assignableUserIDs(allSupportMembers)
+	for _, expected := range []string{owner.ID, direct.ID, team.ID, explicit.ID, supportOnly.ID} {
+		assertContainsString(t, allIDs, expected)
+	}
+	if containsTestString(allIDs, outsider.ID) {
+		t.Fatalf("did not expect outsider %q in %#v", outsider.ID, allIDs)
+	}
+
+	mailboxID := "mailbox-support"
+	mailboxMembers, err := workspaceRepo.ListSupportAssignableMembers(ctx, "ws-1", &mailboxID)
+	if err != nil {
+		t.Fatalf("list mailbox assignable members: %v", err)
+	}
+	mailboxIDs := assignableUserIDs(mailboxMembers)
+	for _, expected := range []string{owner.ID, team.ID, explicit.ID} {
+		assertContainsString(t, mailboxIDs, expected)
+	}
+	for _, unexpected := range []string{direct.ID, supportOnly.ID, outsider.ID} {
+		if containsTestString(mailboxIDs, unexpected) {
+			t.Fatalf("did not expect %q in mailbox candidates %#v", unexpected, mailboxIDs)
+		}
+	}
+
+	_ = ownerMember
+}
+
 func TestPMTaskServiceCreateSupportsPendingOwnerMember(t *testing.T) {
 	db := newWorkspaceIdentityTestDB(t)
 	ctx := context.Background()
@@ -1053,6 +1166,24 @@ func assertContainsString(t *testing.T, values []string, target string) {
 	t.Helper()
 	if !containsTestString(values, target) {
 		t.Fatalf("expected %q in %#v", target, values)
+	}
+}
+
+func assignableUserIDs(members []model.AssignableMember) []string {
+	result := make([]string, 0, len(members))
+	for _, member := range members {
+		if member.UserID == nil {
+			continue
+		}
+		result = append(result, *member.UserID)
+	}
+	return result
+}
+
+func mustExecWorkspaceIdentity(t *testing.T, db *gorm.DB, query string, args ...any) {
+	t.Helper()
+	if err := db.Exec(query, args...).Error; err != nil {
+		t.Fatalf("exec %q: %v", query, err)
 	}
 }
 

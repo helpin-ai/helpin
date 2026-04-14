@@ -112,6 +112,76 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 	})
 
+	t.Run("List conversations includes latest visitor country", func(t *testing.T) {
+		ctx := context.Background()
+
+		conversation := &model.SupportConversation{
+			WorkspaceID: workspaceID,
+			Subject:     "Country conversation",
+			Status:      model.SupportConversationStatusOpen,
+			AnonymousID: strPtr("anon-country"),
+		}
+		if err := repo.Create(ctx, conversation); err != nil {
+			t.Fatalf("create conversation: %v", err)
+		}
+
+		sessionRepo := repository.NewSupportInboxSessionRepository(db)
+		oldSession := &model.SupportWidgetSession{
+			WorkspaceID:    workspaceID,
+			ConversationID: &conversation.ID,
+			SessionToken:   "country-old",
+			AnonymousID:    "anon-country",
+			IsAnonymous:    true,
+			CountryCode:    strPtr("CA"),
+			CountryName:    strPtr("Canada"),
+			ExpiresAt:      time.Now().Add(24 * time.Hour),
+			CreatedAt:      time.Now().Add(-2 * time.Hour),
+		}
+		if err := sessionRepo.Create(ctx, oldSession); err != nil {
+			t.Fatalf("create old session: %v", err)
+		}
+
+		newSession := &model.SupportWidgetSession{
+			WorkspaceID:    workspaceID,
+			ConversationID: &conversation.ID,
+			SessionToken:   "country-new",
+			AnonymousID:    "anon-country",
+			IsAnonymous:    true,
+			CountryCode:    strPtr("DE"),
+			CountryName:    strPtr("Germany"),
+			ExpiresAt:      time.Now().Add(24 * time.Hour),
+			CreatedAt:      time.Now().Add(-1 * time.Hour),
+		}
+		if err := sessionRepo.Create(ctx, newSession); err != nil {
+			t.Fatalf("create new session: %v", err)
+		}
+
+		conversations, total, err := repo.List(ctx, workspaceID, "", "", model.PMPagination{}, "", model.RoleOwner, nil, "")
+		if err != nil {
+			t.Fatalf("list conversations: %v", err)
+		}
+		if total < 1 {
+			t.Fatalf("expected conversations, got %d", total)
+		}
+
+		var found *model.SupportConversation
+		for i := range conversations {
+			if conversations[i].ID == conversation.ID {
+				found = &conversations[i]
+				break
+			}
+		}
+		if found == nil {
+			t.Fatal("expected seeded conversation in list")
+		}
+		if found.CountryCode == nil || *found.CountryCode != "DE" {
+			t.Fatalf("country_code = %v, want %q", found.CountryCode, "DE")
+		}
+		if found.CountryName == nil || *found.CountryName != "Germany" {
+			t.Fatalf("country_name = %v, want %q", found.CountryName, "Germany")
+		}
+	})
+
 	t.Run("Update conversation", func(t *testing.T) {
 		ctx := context.Background()
 
@@ -347,6 +417,7 @@ func TestSupportConversationRepository(t *testing.T) {
 			Subject:         "Human owned conversation",
 			Status:          "open",
 			OpenedByUserID:  strPtr("user-123"),
+			AssignedUserID:  strPtr("user-123"),
 			TeamLastSeenAt:  &now,
 			AssignedAgentID: nil,
 		}
@@ -405,7 +476,7 @@ func TestSupportConversationRepository(t *testing.T) {
 			t.Fatalf("create escalated conversation: %v", err)
 		}
 		if err := db.Exec(
-			`UPDATE support_conversations SET team_last_seen_at = ?, updated_at = ?, ai_state = ?, flow_state = ?, assigned_agent_id = NULL, opened_by_user_id = NULL WHERE id = ?`,
+			`UPDATE support_conversations SET team_last_seen_at = ?, updated_at = ?, ai_state = ?, flow_state = ?, assigned_agent_id = NULL, assigned_user_id = NULL, opened_by_user_id = NULL WHERE id = ?`,
 			now.Add(-2*time.Minute), now, aiEscalated, model.SupportConversationFlowStateWaitingForHuman, escalatedConv.ID,
 		).Error; err != nil {
 			t.Fatalf("seed escalated state: %v", err)
@@ -900,6 +971,128 @@ func TestMarkConversationRead_MarksSupportReplyNotificationsRead(t *testing.T) {
 	if notification.ReadAt == nil {
 		t.Fatal("expected notification read_at to be set")
 	}
+}
+
+func TestAssignConversationUserAcceptsSupportAccessibleUserOutsideMailboxMembership(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	mustExec(t, db, `CREATE TABLE IF NOT EXISTS workspace_module_grants (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		module TEXT NOT NULL,
+		subject_type TEXT NOT NULL,
+		subject_id TEXT NOT NULL,
+		access_level TEXT NOT NULL,
+		created_by_id TEXT,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`)
+
+	workspaceID := "ws-support-assign"
+	ownerID := "user-owner"
+	eligibleID := "user-eligible"
+	blockedID := "user-blocked"
+
+	seedUser(t, db, ownerID, "owner@example.com", "Owner User", "hash")
+	seedUser(t, db, eligibleID, "eligible@example.com", "Eligible User", "hash")
+	seedUser(t, db, blockedID, "blocked@example.com", "Blocked User", "hash")
+	seedWorkspace(t, db, workspaceID, "Support Assign WS", "support-assign-ws", ownerID)
+
+	workspaceRepo := repository.NewWorkspaceRepository(db)
+	ownerMember, err := workspaceRepo.AddMember(ctx, workspaceID, ownerID, model.RoleOwner)
+	if err != nil {
+		t.Fatalf("add owner member: %v", err)
+	}
+	eligibleMember, err := workspaceRepo.AddMember(ctx, workspaceID, eligibleID, model.RoleMember)
+	if err != nil {
+		t.Fatalf("add eligible member: %v", err)
+	}
+	blockedMember, err := workspaceRepo.AddMember(ctx, workspaceID, blockedID, model.RoleMember)
+	if err != nil {
+		t.Fatalf("add blocked member: %v", err)
+	}
+
+	mailboxRepo := repository.NewSupportMailboxRepository(db)
+	mailbox := &model.SupportMailbox{
+		WorkspaceID:    workspaceID,
+		Name:           "Billing",
+		Handle:         "billing",
+		Icon:           "inbox",
+		VisibilityMode: "members_only",
+		AssignmentMode: "manual",
+		Active:         true,
+		CreatedByID:    ownerID,
+	}
+	if err := mailboxRepo.Create(ctx, mailbox); err != nil {
+		t.Fatalf("create mailbox: %v", err)
+	}
+	if err := mailboxRepo.AddMembers(ctx, mailbox.ID, []string{eligibleMember.ID}); err != nil {
+		t.Fatalf("add mailbox member: %v", err)
+	}
+
+	for _, grant := range []struct {
+		id       string
+		memberID string
+	}{
+		{id: "grant-eligible", memberID: eligibleMember.ID},
+		{id: "grant-blocked", memberID: blockedMember.ID},
+	} {
+		mustExec(t, db, `INSERT INTO workspace_module_grants (id, workspace_id, module, subject_type, subject_id, access_level, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			grant.id, workspaceID, model.ModuleSupport, model.ModuleGrantSubjectWorkspaceMember, grant.memberID, "member", now, now)
+	}
+
+	convRepo := repository.NewSupportConversationRepository(db)
+	conv := &model.SupportConversation{
+		WorkspaceID:    workspaceID,
+		MailboxID:      &mailbox.ID,
+		Subject:        "Need help",
+		Status:         "open",
+		OpenedByUserID: &ownerID,
+	}
+	if err := convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	svc := NewSupportInboxService(
+		convRepo,
+		mailboxRepo,
+		repository.NewSupportMessageRepository(db),
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		repository.NewUserRepository(db),
+		nil,
+		nil,
+		nil,
+	).SetWorkspaceRepo(workspaceRepo)
+
+	if err := svc.AssignConversationUser(ctx, workspaceID, conv.ID, &blockedID, ownerID); err != nil {
+		t.Fatalf("assign support-accessible user outside mailbox membership: %v", err)
+	}
+
+	if err := svc.AssignConversationUser(ctx, workspaceID, conv.ID, &eligibleID, ownerID); err != nil {
+		t.Fatalf("assign eligible user: %v", err)
+	}
+
+	updated, err := convRepo.GetByID(ctx, workspaceID, conv.ID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("reload conversation: %v", err)
+	}
+	if updated.AssignedUserID == nil || *updated.AssignedUserID != eligibleID {
+		t.Fatalf("assigned_user_id = %#v, want %q", updated.AssignedUserID, eligibleID)
+	}
+	if updated.OpenedByUserID == nil || *updated.OpenedByUserID != ownerID {
+		t.Fatalf("opened_by_user_id = %#v, want %q", updated.OpenedByUserID, ownerID)
+	}
+
+	_ = ownerMember
 }
 
 func TestSupportInboxServiceCreateTaskFromConversation_CreatesLinkedTaskAndCopiesAssociations(t *testing.T) {

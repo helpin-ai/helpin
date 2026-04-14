@@ -39,9 +39,9 @@ describe('filterSupportConversations', () => {
 
   it('keeps AI-managed conversations out of my inbox but preserves escalated ones', () => {
     const conversations = [
-      buildConversation({ id: 'human', opened_by_user_id: 'user-1' }),
-      buildConversation({ id: 'ai-pending', opened_by_user_id: 'user-1', ai_state: 'pending' }),
-      buildConversation({ id: 'ai-escalated', opened_by_user_id: 'user-1', ai_state: 'escalated' }),
+      buildConversation({ id: 'human', assigned_user_id: 'user-1' }),
+      buildConversation({ id: 'ai-pending', assigned_user_id: 'user-1', ai_state: 'pending' }),
+      buildConversation({ id: 'ai-escalated', assigned_user_id: 'user-1', ai_state: 'escalated' }),
     ];
 
     const result = filterSupportConversations(conversations, {
@@ -77,6 +77,7 @@ describe('filterSupportConversations', () => {
       buildConversation({ id: 'human-unassigned' }),
       buildConversation({ id: 'ai-pending', ai_state: 'pending' }),
       buildConversation({ id: 'ai-escalated', ai_state: 'escalated' }),
+      buildConversation({ id: 'assigned-user', assigned_user_id: 'user-1' }),
       buildConversation({ id: 'assigned-human', assigned_agent_id: 'agent-1' }),
     ];
 

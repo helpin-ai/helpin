@@ -33,6 +33,10 @@ func (s *SupportInboxService) CreateWidgetSession(ctx context.Context, widgetKey
 	}
 
 	isAnonymous := customerEmail == nil || *customerEmail == ""
+	clientIP, geoLookup, geoErr := s.widgetSessionGeoContext(ctx)
+	if geoErr != nil {
+		slog.WarnContext(ctx, "widget session geoip lookup failed", "error", geoErr)
+	}
 
 	session := &model.SupportWidgetSession{
 		WorkspaceID:   inst.WorkspaceID,
@@ -45,7 +49,14 @@ func (s *SupportInboxService) CreateWidgetSession(ctx context.Context, widgetKey
 		LastPageURL:   pageURL,
 		Timezone:      timezone,
 		Locale:        locale,
+		IPAddress:     clientIP,
 		ExpiresAt:     time.Now().Add(30 * 24 * time.Hour),
+	}
+	if geoLookup != nil {
+		session.CountryCode = stringPtrOrNil(geoLookup.CountryCode)
+		session.CountryName = stringPtrOrNil(geoLookup.CountryName)
+		session.RegionName = stringPtrOrNil(geoLookup.RegionName)
+		session.CityName = stringPtrOrNil(geoLookup.CityName)
 	}
 
 	if err := s.sessionRepo.Create(ctx, session); err != nil {
@@ -70,6 +81,7 @@ func (s *SupportInboxService) GetWidgetSession(ctx context.Context, token string
 	if time.Now().After(session.ExpiresAt) {
 		return nil, fmt.Errorf("session expired")
 	}
+	s.refreshWidgetSessionGeo(ctx, session)
 	return session, nil
 }
 
@@ -389,7 +401,7 @@ func (s *SupportInboxService) WidgetCreateConversation(ctx context.Context, sess
 		if ownerErr != nil {
 			return nil, ownerErr
 		}
-		ticket.OpenedByUserID = ownerID
+		ticket.AssignedUserID = ownerID
 		ticket.FlowState = strPtr(flowState)
 	}
 
@@ -461,7 +473,7 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 			if ownerErr != nil {
 				return nil, ownerErr
 			}
-			ticket.OpenedByUserID = ownerID
+			ticket.AssignedUserID = ownerID
 			ticket.FlowState = strPtr(flowState)
 		}
 

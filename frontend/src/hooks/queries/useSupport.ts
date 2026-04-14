@@ -4,6 +4,7 @@ import { queryKeys } from '@/lib/queryKeys';
 import { supportService } from '@/lib/services/supportService';
 import { supportAttachmentService } from '@/lib/services/supportAttachmentService';
 import { agentService } from '@/lib/services/agentService';
+import { workspacesService } from '@/lib/services/workspacesService';
 import { unwrap } from '@/lib/queryUtils';
 import {
   isSupportConversationListQueryKey,
@@ -251,6 +252,23 @@ export function useConversation(workspaceId: string, conversationId: string | nu
   });
 }
 
+export function useConversationAssignees(workspaceId: string, conversationId: string | null) {
+  return useQuery({
+    queryKey: queryKeys.support.conversationAssignees(workspaceId, conversationId ?? ''),
+    queryFn: async () => {
+      const response = await supportService.listConversationAssignees(workspaceId, conversationId!);
+      if (!response.error && Array.isArray(response.data) && response.data.length > 0) {
+        return response.data;
+      }
+
+      const fallback = await workspacesService.listAssignableMembers(workspaceId);
+      return unwrap(fallback);
+    },
+    enabled: !!workspaceId && !!conversationId,
+    staleTime: 30_000,
+  });
+}
+
 export function useConversationMessages(workspaceId: string, conversationId: string | null) {
   return useQuery({
     queryKey: queryKeys.support.messages(workspaceId, conversationId ?? ''),
@@ -384,6 +402,22 @@ export function useAssignAgent(workspaceId: string) {
   });
 }
 
+export function useAssignConversationUser(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ conversationId, userId }: { conversationId: string; userId: string | null }) =>
+      supportService.assignConversationUser(workspaceId, conversationId, { user_id: userId }).then(unwrap),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, variables.conversationId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to assign conversation', { description: error.message });
+    },
+  });
+}
+
 export function useCreateConversation(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -470,8 +504,6 @@ export function useMarkConversationUnread(workspaceId: string) {
         queryKeys.support.conversation(workspaceId, conversationId),
         (current) => updateConversationUnreadCount(current, Math.max(current?.unread_count ?? 0, 1))
       );
-      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });
     },
@@ -498,8 +530,6 @@ export function useMarkConversationRead(workspaceId: string) {
         queryKeys.support.conversation(workspaceId, conversationId),
         (current) => updateConversationUnreadCount(current, 0)
       );
-      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });
     },
