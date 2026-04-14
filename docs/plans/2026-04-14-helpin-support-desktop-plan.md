@@ -22,6 +22,9 @@ Current implementation progress:
 - desktop auth persistence now hydrates and stores session data through a Tauri-native store-backed adapter
 - desktop support now mounts the real shared support inbox UI from `frontend/src/components/support`
 - desktop realtime now handles connect, reconnect, offline/online transitions, wake/stale recovery, and support query resync
+- desktop support UI has been brought much closer to web parity, including desktop-specific shell polish and a `WorkspaceSwitcher` in the sidebar
+- native desktop notifications are now implemented for inbound support messages, including permission handling, dedupe, per-conversation cooldown, focused-thread suppression, click-through routing, and window reveal/focus while the app is already running
+- the desktop shell now includes a light/dark/system theme menu in the native Tauri menu bar
 
 Current delivery state:
 
@@ -32,10 +35,11 @@ Current delivery state:
   - support-core extraction for the initial support logic layer
   - support-only realtime resilience for desktop
   - shared support inbox mounted in desktop
+  - native desktop notifications for support messages
+  - desktop visual parity pass for the core support workspace
 - in progress:
-  - validating the integrated support experience end to end in desktop
+  - validating the integrated support experience end to end in desktop across real app lifecycle scenarios
 - remaining:
-  - native notifications
   - tray/menu bar
   - unread badge
   - deep links
@@ -43,6 +47,32 @@ Current delivery state:
   - updater
   - signing/packaging pipeline
   - stronger secret storage hardening beyond the current Tauri store adapter
+  - bundle trimming and code-splitting for the large desktop bundle
+  - full desktop QA across sleep/wake, reconnect, notification click-through, workspace switching, and installed macOS/Windows builds
+
+What is done now:
+
+- the desktop app can sign in, persist session, restore session, and switch into a real support workspace
+- the desktop app renders the real shared support inbox UI instead of a placeholder preview
+- support realtime is resilient enough for reconnect, offline/online transitions, and wake/stale recovery
+- desktop notifications can alert for inbound support messages and route to the correct conversation while the app is already running
+- support-linked CRM, docs, and PM routes intentionally hand off to the web app instead of bloating the desktop surface
+
+What is left now:
+
+- tray or menu bar presence
+- unread badge integration
+- deep-link handling from outside the app
+- single-instance behavior
+- updater integration
+- release packaging, signing, and notarization
+- stronger credential hardening if Tauri Store is not sufficient for long-lived secrets
+- performance and bundle-size cleanup
+- end-to-end QA and release hardening
+
+Known current limitation:
+
+- notification click-to-open works when the desktop app process is already running; cold-start open from a notification is not implemented yet
 
 ## Goal
 

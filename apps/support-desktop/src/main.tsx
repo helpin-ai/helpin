@@ -4,11 +4,13 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { RouterProvider } from '@tanstack/react-router'
 import { Toaster } from 'sonner'
-import { configureSessionStorage, createBrowserSessionStorage } from '@helpin-ai/support-core'
+import { configureSessionStorage, createBrowserSessionStorage, useUnreadStats } from '@helpin-ai/support-core'
 import { setupVisibilityRefresh, startTokenRefreshTimer } from '@/lib/api'
 import { queryClient } from '@/lib/queryClient'
 import { useAuthStore } from '@/stores/authStore'
+import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { isTauriDesktop } from '@desktop/lib/desktopHost'
+import { updateBadgeCount } from '@desktop/lib/desktopBadge'
 import { registerNotificationClickHandler, setupNotificationClickListener } from '@desktop/lib/desktopNotifications'
 import { router } from '@desktop/router'
 import { createTauriSessionStorage } from '@desktop/lib/sessionStorage'
@@ -23,6 +25,29 @@ registerNotificationClickHandler((to) => {
   router.navigate({ to: to as string })
 })
 setupNotificationClickListener()
+
+function DesktopShellSync() {
+  const user = useAuthStore((state) => state.user)
+  const workspaceId = useWorkspaceStore((state) => state.currentWorkspace?.id ?? '')
+  const { data: unreadStats } = useUnreadStats(workspaceId, undefined, !!user && !!workspaceId)
+
+  useEffect(() => {
+    if (!user || !workspaceId) {
+      void updateBadgeCount(0)
+      return
+    }
+
+    void updateBadgeCount(unreadStats?.total ?? 0)
+  }, [user, workspaceId, unreadStats?.total])
+
+  useEffect(() => {
+    return () => {
+      void updateBadgeCount(0)
+    }
+  }, [])
+
+  return null
+}
 
 function InnerApp() {
   const user = useAuthStore((state) => state.user)
@@ -55,6 +80,7 @@ function InnerApp() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <DesktopShellSync />
       <InnerApp />
       <Toaster richColors />
       <ReactQueryDevtools initialIsOpen={false} />

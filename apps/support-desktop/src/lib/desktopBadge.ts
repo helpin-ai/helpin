@@ -14,7 +14,7 @@ export async function updateBadgeCount(count: number) {
   try {
     const { getCurrentWindow } = await import('@tauri-apps/api/window')
     const appWindow = getCurrentWindow()
-    await appWindow.setBadgeCount(count > 0 ? count : null)
+    await appWindow.setBadgeCount(count > 0 ? count : undefined)
   } catch {
     // Badge not supported on this platform — ignore.
   }

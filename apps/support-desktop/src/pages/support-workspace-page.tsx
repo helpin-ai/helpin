@@ -1,7 +1,7 @@
 import { useCallback, useEffect } from 'react'
 import { useParams } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { useSupportRealtime, useUnreadStats, type SupportRealtimeEvent } from '@helpin-ai/support-core'
+import { useSupportRealtime, type SupportRealtimeEvent } from '@helpin-ai/support-core'
 import { useSupportInboxStore } from '@/stores/supportInboxStore'
 import { SupportInboxLayout } from '@/components/support/SupportInboxLayout'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
@@ -10,7 +10,6 @@ import { workspacesService } from '@/lib/services/workspacesService'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useAuthStore } from '@/stores/authStore'
 import { DesktopSupportSidebar } from '@desktop/components/DesktopSupportSidebar'
-import { updateBadgeCount } from '@desktop/lib/desktopBadge'
 import { handleSupportRealtimeEvent, ensureNotificationPermission } from '@desktop/lib/desktopNotifications'
 
 export function SupportWorkspacePage() {
@@ -62,13 +61,6 @@ export function SupportWorkspacePage() {
       setCurrentWorkspace(workspaceQuery.data)
     }
   }, [setCurrentWorkspace, workspaceQuery.data])
-
-  // Sync unread count → dock/taskbar badge.
-  const { data: unreadStats } = useUnreadStats(workspaceId)
-  useEffect(() => {
-    updateBadgeCount(unreadStats?.total ?? 0)
-    return () => { updateBadgeCount(0) }
-  }, [unreadStats?.total])
 
   if (workspaceQuery.isLoading || (workspaceQuery.data && currentWorkspace?.id !== workspaceQuery.data.id)) {
     return (
