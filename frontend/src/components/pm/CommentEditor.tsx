@@ -268,7 +268,7 @@ export function CommentEditor({
   const canSubmit = !loading && (hasContent || uploadedFiles.length > 0)
 
   return (
-    <div className="relative bg-muted/50 px-4 pt-3 pb-2 rounded-b-lg transition-[color,box-shadow,background-color] focus-within:ring-2 focus-within:ring-ring/30">
+    <div className="relative bg-muted/50 px-4 pt-3 pb-2 rounded-b-lg transition-[color,box-shadow,background-color] focus-within:ring-1 focus-within:ring-ring/40">
       {mentionState && mentionState.items.length > 0 ? (
         <div className="absolute bottom-full left-0 right-0 z-50 mb-1.5">
           <div className="mx-1 max-h-[260px] overflow-y-auto rounded-xl border border-border/60 bg-popover p-1.5 shadow-lg">
@@ -324,13 +324,13 @@ export function CommentEditor({
           })}
         </div>
       )}
-      <div className="flex items-center justify-between px-2 py-1">
-        <div className="flex items-center gap-1">
+      <div className="flex items-center justify-between gap-2 px-1 pt-1.5 pb-0.5">
+        <div className="flex items-center gap-0.5">
           {onImageSelect && (
             <QuickTooltip label="Add image">
               <button
                 type="button"
-                className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
                 onClick={() => {
                   const input = document.createElement('input')
                   input.type = 'file'
@@ -342,7 +342,7 @@ export function CommentEditor({
                   input.click()
                 }}
               >
-                <Image01Icon className="h-3.5 w-3.5" />
+                <Image01Icon className="h-4 w-4" />
               </button>
             </QuickTooltip>
           )}
@@ -350,10 +350,10 @@ export function CommentEditor({
             <QuickTooltip label="Attach file">
               <button
                 type="button"
-                className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
                 onClick={onFileSelect}
               >
-                <AttachmentIcon className="h-3.5 w-3.5" />
+                <AttachmentIcon className="h-4 w-4" />
               </button>
             </QuickTooltip>
           )}
@@ -361,14 +361,18 @@ export function CommentEditor({
         <QuickTooltip label="Send (⌘+Enter)">
           <button
             type="button"
-            className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-border/60 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer disabled:opacity-40"
+            className={
+              canSubmit
+                ? 'inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow active:scale-95 cursor-pointer'
+                : 'inline-flex h-8 w-8 items-center justify-center rounded-full border border-border/60 bg-background text-muted-foreground/60 transition-colors cursor-not-allowed'
+            }
             disabled={!canSubmit}
             onClick={handleSubmit}
           >
             {loading ? (
-              <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
+              <Loading01Icon className="h-4 w-4 animate-spin" />
             ) : (
-              <SentIcon className="h-3.5 w-3.5" />
+              <SentIcon className="h-4 w-4" />
             )}
           </button>
         </QuickTooltip>
