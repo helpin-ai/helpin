@@ -28,6 +28,18 @@ export default defineConfig({
         find: '@helpin-ai/support-core',
         replacement: path.resolve(__dirname, '../../packages/support-core/src/index.ts'),
       },
+      {
+        find: '@helpin-ai/shared',
+        replacement: path.resolve(__dirname, '../../packages/shared/src/index.ts'),
+      },
+      {
+        find: '@helpin-ai/widget-core/styles',
+        replacement: path.resolve(__dirname, '../../packages/widget-core/src/styles/widget.css'),
+      },
+      {
+        find: '@helpin-ai/widget-core',
+        replacement: path.resolve(__dirname, '../../packages/widget-core/src/index.ts'),
+      },
     ],
   },
   server: {

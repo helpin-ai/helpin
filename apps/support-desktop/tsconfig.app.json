@@ -23,7 +23,8 @@
       "@desktop/*": ["./src/*"],
       "@/components/pm/task-detail/taskRouteNavigation": ["./src/shims/taskRouteNavigation.ts"],
       "@/*": ["../../frontend/src/*"],
-      "@helpin-ai/support-core": ["../../packages/support-core/src/index.ts"]
+      "@helpin-ai/support-core": ["../../packages/support-core/src/index.ts"],
+      "@helpin-ai/shared": ["../../packages/shared/src/index.ts"]
     }
   },
   "include": ["src"]
