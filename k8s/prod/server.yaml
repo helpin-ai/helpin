@@ -28,6 +28,8 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
+        - name: app-data
+          emptyDir: {}
       containers:
         - name: helpin-server
           image: ghcr.io/helpin-ai/helpin/server:server-v0.95.74
@@ -49,6 +51,8 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: app-data
+              mountPath: /app/data
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
