@@ -98,7 +98,7 @@ export function ProjectsTeamsNav({
               <SidebarMenuItem>
                 <div className="group/team relative flex items-center">
                   <Collapsible.Trigger asChild>
-                    <SidebarMenuButton className="h-8 flex-1 rounded-md px-2">
+                    <SidebarMenuButton className="h-8 flex-1 rounded-md px-2 cursor-pointer">
                       <ArrowRight01Icon className={`h-3.5 w-3.5 shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
                       <span className="truncate">{team.name}</span>
                     </SidebarMenuButton>

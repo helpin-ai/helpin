@@ -271,7 +271,7 @@ export function DocsSpacesNav({
             <Tooltip open={showTooltip ? undefined : false}>
               <TooltipTrigger asChild>
                 <SidebarMenuButton
-                  className="h-8 flex-1 rounded-md px-2"
+                  className="h-8 flex-1 rounded-md px-2 cursor-pointer"
                   isActive={isActive(spaceLink)}
                   onClick={() => {
                     toggleDocSpace(spaceKey);
