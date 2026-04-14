@@ -1,4 +1,4 @@
-import { api, API_BASE } from '../api';
+import { api, API_BASE, fetchWithSessionAuth } from '../api';
 import type { AuthResponse, User } from '../types';
 
 export const authService = {
@@ -20,13 +20,11 @@ export const authService = {
   verifyEmail: (token: string) =>
     api.post<{ message: string }>('/auth/verify-email', { token }),
   uploadAvatar: async (file: File): Promise<{ data: User | null; error: string | null }> => {
-    const token = localStorage.getItem('access_token');
     const formData = new FormData();
     formData.append('avatar', file);
     try {
-      const res = await fetch(`${API_BASE}/auth/me/avatar`, {
+      const res = await fetchWithSessionAuth(API_BASE, '/auth/me/avatar', {
         method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,
       });
       if (!res.ok) {

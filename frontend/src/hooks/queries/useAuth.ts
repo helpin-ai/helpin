@@ -3,6 +3,7 @@ import { authService } from '@/lib/services/authService'
 import { queryKeys } from '@/lib/queryKeys'
 import { unwrap } from '@/lib/queryUtils'
 import type { User } from '@/lib/types'
+import { writeSession } from '@helpin-ai/support-core'
 
 export function useCurrentUser(enabled = true) {
   return useQuery({
@@ -28,8 +29,11 @@ export function useSignIn() {
     mutationFn: async ({ email, password }: { email: string; password: string }) => {
       const res = await authService.signin(email, password)
       if (res.error || !res.data) throw new Error(res.error || 'Sign in failed')
-      localStorage.setItem('access_token', res.data.access_token)
-      localStorage.setItem('refresh_token', res.data.refresh_token)
+      await writeSession({
+        accessToken: res.data.access_token,
+        refreshToken: res.data.refresh_token,
+        rememberMe: false,
+      })
       return res.data.user
     },
   })
@@ -40,8 +44,11 @@ export function useSignUp() {
     mutationFn: async ({ email, password, fullName }: { email: string; password: string; fullName: string }) => {
       const res = await authService.signup(email, password, fullName)
       if (res.error || !res.data) throw new Error(res.error || 'Sign up failed')
-      localStorage.setItem('access_token', res.data.access_token)
-      localStorage.setItem('refresh_token', res.data.refresh_token)
+      await writeSession({
+        accessToken: res.data.access_token,
+        refreshToken: res.data.refresh_token,
+        rememberMe: false,
+      })
       return res.data.user
     },
   })

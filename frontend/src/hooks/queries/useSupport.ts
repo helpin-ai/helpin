@@ -1,5 +1,18 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import {
+  useConversation as useSharedConversation,
+  useConversationMessages as useSharedConversationMessages,
+  useConversations as useSharedConversations,
+  useInboxScopes as useSharedInboxScopes,
+  useMailboxMembers as useSharedMailboxMembers,
+  useMarkConversationRead as useSharedMarkConversationRead,
+  useMarkConversationUnread as useSharedMarkConversationUnread,
+  useSupportMailboxes as useSharedSupportMailboxes,
+  useSupportTeammatePresence as useSharedSupportTeammatePresence,
+  useUnreadStats as useSharedUnreadStats,
+  useVisitorContext as useSharedVisitorContext,
+} from '@helpin-ai/support-core';
 import { queryKeys } from '@/lib/queryKeys';
 import { supportService } from '@/lib/services/supportService';
 import { supportAttachmentService } from '@/lib/services/supportAttachmentService';
@@ -8,8 +21,6 @@ import { workspacesService } from '@/lib/services/workspacesService';
 import { unwrap } from '@/lib/queryUtils';
 import {
   isSupportConversationListQueryKey,
-  updateConversationListUnreadCount,
-  updateConversationUnreadCount,
 } from '@/lib/supportQueryCache';
 import { useAuthStore } from '@/stores/authStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
@@ -23,7 +34,6 @@ import type {
   ConversationStatus,
   ConversationListResponse,
   SupportConversation,
-  VisitorContextResponse,
   SupportAIRewriteDraftRequest,
   CreateSupportMailboxRequest,
   UpdateSupportMailboxRequest,
@@ -74,62 +84,23 @@ export function useRegenerateWidgetKey(workspaceId: string) {
 // ── Conversations ───────────────────────────────────────────────────
 
 export function useConversations(workspaceId: string, filters?: { status?: string; priority?: string; filter?: string; mailbox_id?: string | null; ai_state?: string; flow_state?: string }) {
-  return useQuery({
-    queryKey: [...queryKeys.support.conversations(workspaceId), filters] as const,
-    queryFn: async (): Promise<ConversationListResponse> => {
-      const res = await supportService.listConversations(workspaceId, filters);
-      if (res.error) throw new Error(res.error);
-      const data = res.data;
-      // Handle both new ConversationListResponse and legacy array formats
-      if (data && 'data' in data && Array.isArray(data.data)) {
-        return data as ConversationListResponse;
-      }
-      // Legacy fallback
-      const arr = Array.isArray(data) ? data : [];
-      return { data: arr, total: arr.length, page: 1, per_page: 50, total_pages: 1, meta: { unread: { total: 0, my_inbox: 0, unassigned: 0, ai_active: 0 } } } as ConversationListResponse;
-    },
-    enabled: !!workspaceId,
-    staleTime: 15_000,
-  });
+  return useSharedConversations(workspaceId, filters);
 }
 
 export function useUnreadStats(workspaceId: string, mailboxId?: string | null, enabled = true) {
-  return useQuery({
-    queryKey: [...queryKeys.support.unreadStats(workspaceId), mailboxId ?? 'all'] as const,
-    queryFn: async () => unwrap(await supportService.getUnreadStats(workspaceId, mailboxId)),
-    enabled: !!workspaceId && enabled,
-    staleTime: 15_000,
-  });
+  return useSharedUnreadStats(workspaceId, mailboxId, enabled);
 }
 
 export function useInboxScopes(workspaceId: string, enabled = true) {
-  return useQuery({
-    queryKey: queryKeys.support.inboxScopes(workspaceId),
-    queryFn: async () => unwrap(await supportService.listInboxScopes(workspaceId)),
-    enabled: !!workspaceId && enabled,
-    staleTime: 15_000,
-  });
+  return useSharedInboxScopes(workspaceId, enabled);
 }
 
 export function useSupportMailboxes(workspaceId: string) {
-  return useQuery({
-    queryKey: queryKeys.support.mailboxes(workspaceId),
-    queryFn: async () => unwrap(await supportService.listMailboxes(workspaceId)),
-    enabled: !!workspaceId,
-    staleTime: 15_000,
-  });
+  return useSharedSupportMailboxes(workspaceId);
 }
 
 export function useMailboxMembers(workspaceId: string, mailboxId?: string | null) {
-  return useQuery({
-    queryKey: queryKeys.support.mailboxMembers(workspaceId, mailboxId ?? ''),
-    queryFn: async () => {
-      const data = unwrap(await supportService.listMailboxMembers(workspaceId, mailboxId!));
-      return Array.isArray(data) ? data : [];
-    },
-    enabled: !!workspaceId && !!mailboxId,
-    staleTime: 15_000,
-  });
+  return useSharedMailboxMembers(workspaceId, mailboxId);
 }
 
 export function useSupportEmailRoutes(workspaceId: string) {
@@ -151,14 +122,7 @@ export function useSupportTriageRules(workspaceId: string) {
 }
 
 export function useSupportTeammatePresence(workspaceId: string, enabled = true) {
-  return useQuery({
-    queryKey: queryKeys.support.teammatePresence(workspaceId),
-    queryFn: async () => unwrap(await supportService.listTeammatePresence(workspaceId)),
-    enabled: !!workspaceId && enabled,
-    staleTime: 15_000,
-    refetchInterval: 30_000,
-    refetchIntervalInBackground: true,
-  });
+  return useSharedSupportTeammatePresence(workspaceId, enabled);
 }
 
 export function useUpdateMySupportTeammatePresence(workspaceId: string) {
@@ -245,12 +209,7 @@ export function useDisableSupportEmailRoute(workspaceId: string) {
 }
 
 export function useConversation(workspaceId: string, conversationId: string | null) {
-  return useQuery({
-    queryKey: queryKeys.support.conversation(workspaceId, conversationId ?? ''),
-    queryFn: async () => unwrap(await supportService.getConversation(workspaceId, conversationId!)),
-    enabled: !!workspaceId && !!conversationId,
-    staleTime: 30_000,
-  });
+  return useSharedConversation(workspaceId, conversationId);
 }
 
 export function useConversationAssignees(workspaceId: string, conversationId: string | null) {
@@ -281,21 +240,11 @@ export function useConversationAssignees(workspaceId: string, conversationId: st
 }
 
 export function useConversationMessages(workspaceId: string, conversationId: string | null) {
-  return useQuery({
-    queryKey: queryKeys.support.messages(workspaceId, conversationId ?? ''),
-    queryFn: async () => unwrap(await supportService.listConversationMessages(workspaceId, conversationId!)),
-    enabled: !!workspaceId && !!conversationId,
-    staleTime: 5_000,
-  });
+  return useSharedConversationMessages(workspaceId, conversationId);
 }
 
 export function useVisitorContext(workspaceId: string, conversationId: string | null) {
-  return useQuery<VisitorContextResponse>({
-    queryKey: queryKeys.support.visitorContext(workspaceId, conversationId ?? ''),
-    queryFn: async () => unwrap(await supportService.getVisitorContext(workspaceId, conversationId!)),
-    enabled: !!workspaceId && !!conversationId,
-    staleTime: 60_000,
-  });
+  return useSharedVisitorContext(workspaceId, conversationId);
 }
 
 // ── Mutations ───────────────────────────────────────────────────────
@@ -490,64 +439,11 @@ export function useSupportAgents(workspaceId: string) {
 }
 
 export function useMarkConversationUnread(workspaceId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (conversationId: string) =>
-      supportService.markConversationUnread(workspaceId, conversationId),
-    onSuccess: (_data, conversationId) => {
-      queryClient.setQueriesData<ConversationListResponse>(
-        {
-          queryKey: queryKeys.support.conversations(workspaceId),
-          predicate: (query) => isSupportConversationListQueryKey(query.queryKey, workspaceId),
-        },
-        (current) => {
-          const currentUnreadCount = Array.isArray(current?.data)
-            ? current.data.find((conversation) => conversation.id === conversationId)?.unread_count ?? 0
-            : 0;
-          return updateConversationListUnreadCount(
-            current,
-            conversationId,
-            Math.max(currentUnreadCount, 1),
-          );
-        }
-      );
-      queryClient.setQueryData<SupportConversation>(
-        queryKeys.support.conversation(workspaceId, conversationId),
-        (current) => updateConversationUnreadCount(current, Math.max(current?.unread_count ?? 0, 1))
-      );
-      queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });
-    },
-    onError: (error: Error) => {
-      toast.error('Failed to mark as unread', { description: error.message });
-    },
-  });
+  return useSharedMarkConversationUnread(workspaceId);
 }
 
 export function useMarkConversationRead(workspaceId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (conversationId: string) =>
-      supportService.markConversationRead(workspaceId, conversationId),
-    onSuccess: (_data, conversationId) => {
-      queryClient.setQueriesData<ConversationListResponse>(
-        {
-          queryKey: queryKeys.support.conversations(workspaceId),
-          predicate: (query) => isSupportConversationListQueryKey(query.queryKey, workspaceId),
-        },
-        (current) => updateConversationListUnreadCount(current, conversationId, 0)
-      );
-      queryClient.setQueryData<SupportConversation>(
-        queryKeys.support.conversation(workspaceId, conversationId),
-        (current) => updateConversationUnreadCount(current, 0)
-      );
-      queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });
-    },
-    onError: (error: Error) => {
-      toast.error('Failed to mark conversation as read', { description: error.message });
-    },
-  });
+  return useSharedMarkConversationRead(workspaceId);
 }
 
 export function useUpdateConversationSubject(workspaceId: string) {

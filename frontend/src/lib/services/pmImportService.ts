@@ -1,4 +1,4 @@
-import { API_BASE } from '../api';
+import { API_BASE, fetchWithSessionAuth } from '../api';
 
 export interface ShortcutImportPreviewSummary {
   total_tasks: number;
@@ -103,11 +103,9 @@ export interface WorkflowStateMappingPayload {
 
 // Multipart upload needs raw fetch (api.ts adds Content-Type: application/json)
 async function multipartRequest<T>(path: string, form: FormData): Promise<{ data: T | null; error: string | null }> {
-  const token = localStorage.getItem('access_token');
   try {
-    const res = await fetch(`${API_BASE}${path}`, {
+    const res = await fetchWithSessionAuth(API_BASE, path, {
       method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
       body: form,
     });
     if (!res.ok) {
@@ -122,11 +120,9 @@ async function multipartRequest<T>(path: string, form: FormData): Promise<{ data
 }
 
 function statusRequest<T>(path: string): Promise<{ data: T | null; error: string | null }> {
-  const token = localStorage.getItem('access_token');
-  return fetch(`${API_BASE}${path}`, {
+  return fetchWithSessionAuth(API_BASE, path, {
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
   })
     .then(async (res) => {

@@ -1,0 +1,19 @@
+[package]
+name = "helpin-support-desktop"
+version = "0.1.0"
+description = "Helpin Support Desktop"
+authors = ["Helpin"]
+edition = "2021"
+
+[lib]
+name = "helpin_support_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.5.1", features = [] }
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2.9.1", features = [] }
+tauri-plugin-store = "2.4.0"

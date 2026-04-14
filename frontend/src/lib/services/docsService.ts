@@ -1,4 +1,4 @@
-import { api, API_BASE } from '../api';
+import { api, API_BASE, fetchWithSessionAuth } from '../api';
 import type {
   DocsSpace,
   DocsCollection,
@@ -206,13 +206,11 @@ export const docsService = {
   markArticleTranslationReviewed: (wsId: string, docId: string, locale: string) =>
     api.post<DocsHelpcenterArticleTranslation>(`/docs/documents/${docId}/helpcenter/translations/${encodeURIComponent(locale)}/mark-reviewed${qs(wsId)}`),
   uploadHelpcenterAsset: async (wsId: string, assetType: 'logo' | 'logo_dark' | 'favicon', file: File): Promise<{ data: { url: string } | null; error: string | null }> => {
-    const token = localStorage.getItem('access_token');
     const formData = new FormData();
     formData.append('file', file);
     try {
-      const res = await fetch(`${API_BASE}/docs/helpcenter/upload?workspace_id=${encodeURIComponent(wsId)}&type=${assetType}`, {
+      const res = await fetchWithSessionAuth(API_BASE, `/docs/helpcenter/upload?workspace_id=${encodeURIComponent(wsId)}&type=${assetType}`, {
         method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,
       });
       if (!res.ok) {

@@ -1,4 +1,4 @@
-import { api, API_BASE } from '../api';
+import { api, API_BASE, fetchWithSessionAuth } from '../api';
 import type {
   AssignableMember,
   MemberWithUser,
@@ -30,13 +30,11 @@ export const workspacesService = {
   getKeyHistory: (id: string) => api.get<{ id: string; workspace_id: string; old_key: string; new_key: string; changed_at: string; changed_by: string }[]>(`/workspaces/${id}/key-history`),
 
   uploadLogo: async (id: string, file: File): Promise<{ data: Workspace | null; error: string | null }> => {
-    const token = localStorage.getItem('access_token');
     const formData = new FormData();
     formData.append('logo', file);
     try {
-      const res = await fetch(`${API_BASE}/workspaces/${id}/logo`, {
+      const res = await fetchWithSessionAuth(API_BASE, `/workspaces/${id}/logo`, {
         method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,
       });
       if (!res.ok) {
