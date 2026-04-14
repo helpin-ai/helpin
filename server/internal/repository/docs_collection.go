@@ -281,28 +281,6 @@ func (r *DocsCollectionRepository) NormalizeBucket(ctx context.Context, spaceID 
 	})
 }
 
-// SlugTakenInWorkspace reports whether another non-deleted collection
-// in the given workspace already uses this slug. excludeID is skipped
-// so an update to a collection's non-slug fields does not report a
-// false positive against itself. Case-insensitive because slugs are
-// always normalised to lowercase by slugify().
-func (r *DocsCollectionRepository) SlugTakenInWorkspace(ctx context.Context, workspaceID, slug, excludeID string) (bool, error) {
-	slug = strings.ToLower(strings.TrimSpace(slug))
-	if slug == "" {
-		return false, nil
-	}
-	var count int64
-	q := r.db.WithContext(ctx).
-		Model(&model.DocsCollection{}).
-		Where("workspace_id = ? AND LOWER(slug) = ? AND deleted_at IS NULL", workspaceID, slug)
-	if excludeID != "" {
-		q = q.Where("id <> ?", excludeID)
-	}
-	if err := q.Count(&count).Error; err != nil {
-		return false, fmt.Errorf("check docs collection slug uniqueness: %w", err)
-	}
-	return count > 0, nil
-}
 
 // PublicIDExists reports whether another non-deleted collection already uses publicID.
 func (r *DocsCollectionRepository) PublicIDExists(ctx context.Context, publicID, excludeID string) (bool, error) {
