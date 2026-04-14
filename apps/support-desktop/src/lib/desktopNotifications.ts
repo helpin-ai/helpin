@@ -1,5 +1,6 @@
 import type { SupportRealtimeEvent } from '@helpin-ai/support-core'
 import { isTauriDesktop } from './desktopHost'
+import { revealDesktopWindow } from './desktopWindow'
 
 /** Cooldown per conversation to avoid notification storms (ms). */
 const COOLDOWN_MS = 5_000
@@ -11,6 +12,7 @@ const seenOrder: string[] = []
 const lastNotifyAt = new Map<string, number>()
 
 let permissionGranted = false
+let nextNotificationId = 1
 
 // ── Permission ──────────────────────────────────────────────
 
@@ -37,10 +39,11 @@ export async function ensureNotificationPermission(): Promise<boolean> {
 // ── Send ────────────────────────────────────────────────────
 
 interface NotifyPayload {
+  id?: number
   title: string
   body: string
   /** Passed through to click handler for routing. */
-  data?: {
+  extra?: {
     workspaceSlug: string
     conversationId: string
   }
@@ -52,26 +55,18 @@ async function sendNativeNotification(payload: NotifyPayload) {
   try {
     const { sendNotification } = await import('@tauri-apps/plugin-notification')
     sendNotification({
+      id: payload.id,
       title: payload.title,
       body: payload.body,
-      // Store routing data so the click handler can navigate.
-      // Tauri v2 supports extra data via the `extra` field on some platforms,
-      // but for V1 we store last-notification context in memory (see click handler).
+      extra: payload.extra,
+      autoCancel: true,
     })
-
-    // Persist last notification context for click-through routing.
-    if (payload.data) {
-      lastNotificationContext = payload.data
-    }
   } catch {
     // Notification send failed — silently ignore.
   }
 }
 
 // ── Click handling ──────────────────────────────────────────
-
-/** Last notification context for click-through routing. */
-let lastNotificationContext: { workspaceSlug: string; conversationId: string } | null = null
 
 type NavigateFn = (to: string) => void
 let registeredNavigate: NavigateFn | null = null
@@ -80,12 +75,20 @@ export function registerNotificationClickHandler(navigate: NavigateFn) {
   registeredNavigate = navigate
 }
 
-export function handleNotificationClick() {
-  if (!lastNotificationContext || !registeredNavigate) return
+async function handleNotificationClick(extra: Record<string, unknown> | undefined) {
+  if (!registeredNavigate) return
 
-  const { workspaceSlug, conversationId } = lastNotificationContext
+  const workspaceSlug =
+    typeof extra?.workspaceSlug === 'string' ? extra.workspaceSlug : null
+  const conversationId =
+    typeof extra?.conversationId === 'string' ? extra.conversationId : null
+
+  if (!workspaceSlug || !conversationId) {
+    return
+  }
+
+  await revealDesktopWindow()
   registeredNavigate(`/w/${workspaceSlug}/support/${conversationId}`)
-  lastNotificationContext = null
 }
 
 export async function setupNotificationClickListener() {
@@ -93,8 +96,8 @@ export async function setupNotificationClickListener() {
 
   try {
     const { onAction } = await import('@tauri-apps/plugin-notification')
-    await onAction(() => {
-      handleNotificationClick()
+    await onAction((notification) => {
+      void handleNotificationClick(notification.extra)
     })
   } catch {
     // Plugin not available — ignore.
@@ -182,18 +185,19 @@ export function handleSupportRealtimeEvent(
   const senderName = typeof event.data?.sender_name === 'string'
     ? event.data.sender_name
     : 'Customer'
-  const preview = typeof event.data?.preview === 'string'
-    ? event.data.preview
-    : 'New message'
-
   const title = event.actor_id?.startsWith('widget:')
     ? senderName
     : 'New support message'
+  const notificationId = nextNotificationId++
+  const preview = typeof event.data?.content === 'string'
+    ? event.data.content
+    : 'New message'
 
   sendNativeNotification({
+    id: notificationId,
     title,
     body: preview.length > 120 ? `${preview.slice(0, 117)}...` : preview,
-    data: {
+    extra: {
       workspaceSlug: ctx.workspaceSlug,
       conversationId,
     },

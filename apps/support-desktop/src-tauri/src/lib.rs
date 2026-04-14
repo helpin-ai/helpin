@@ -1,6 +1,7 @@
 use serde::Serialize;
 use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
-use tauri::Emitter;
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder};
+use tauri::{Emitter, Manager};
 
 #[derive(Serialize)]
 struct DesktopShellInfo {
@@ -79,6 +80,54 @@ pub fn run() {
                     _ => {}
                 }
             });
+
+            // ── System tray ──────────────────────────────────────
+            let tray_open = MenuItemBuilder::with_id("tray_open", "Open Helpin Support")
+                .build(app)?;
+            let tray_quit = MenuItemBuilder::with_id("tray_quit", "Quit")
+                .build(app)?;
+
+            let tray_menu = MenuBuilder::new(app)
+                .item(&tray_open)
+                .separator()
+                .item(&tray_quit)
+                .build()?;
+
+            TrayIconBuilder::new()
+                .icon(app.default_window_icon().cloned().expect("app icon"))
+                .tooltip("Helpin Support")
+                .menu(&tray_menu)
+                .on_menu_event(|app_handle, event| {
+                    match event.id().0.as_str() {
+                        "tray_open" => {
+                            if let Some(w) = app_handle.get_webview_window("main") {
+                                let _ = w.unminimize();
+                                let _ = w.show();
+                                let _ = w.set_focus();
+                            }
+                        }
+                        "tray_quit" => {
+                            app_handle.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let tauri::tray::TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app_handle = tray.app_handle();
+                        if let Some(w) = app_handle.get_webview_window("main") {
+                            let _ = w.unminimize();
+                            let _ = w.show();
+                            let _ = w.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
 
             Ok(())
         })
