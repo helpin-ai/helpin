@@ -56,8 +56,8 @@ export function DocsSpaceDetail() {
   const { canEditDocs } = usePermissions(access)
 
   const [filterStatus, setFilterStatus] = useState<DocStatus | null>(null)
-  const [sortField, setSortField] = useState<DocumentsTableSortField>('updated_at')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [sortField, setSortField] = useState<DocumentsTableSortField>('position')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
   const { data: space, isLoading: spaceLoading } = useDocsSpace(wsId, spaceId)
   const { data: collections } = useDocsCollections(wsId, spaceId)
@@ -80,6 +80,11 @@ export function DocsSpaceDetail() {
   // Collection column when rendered at space root.
   const collectionNames = useMemo(
     () => new Map<string, string>((collections ?? []).map((c) => [c.id, c.name])),
+    [collections],
+  )
+
+  const collectionDepths = useMemo(
+    () => new Map<string, number>((collections ?? []).map((c) => [c.id, c.depth])),
     [collections],
   )
 
@@ -273,6 +278,7 @@ export function DocsSpaceDetail() {
             <DocumentsTable
                 documents={scopedDocs}
                 members={members}
+                collectionDepths={collectionDepths}
                 collectionNames={collectionNames}
                 hasCollections={(collections ?? []).length > 0}
                 wsSlug={wsSlug}

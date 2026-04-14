@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { timeAgo } from '@/lib/utils'
+import { COLLECTION_ROW_CLASS, ARTICLE_ROW_CLASS, DOC_ICON_CLASS, STATUS_BADGE_CLASS, UPDATED_TEXT_CLASS, COUNT_BADGE_CLASS, statusColor } from './docsTreeStyles'
 import {
   ArrowUpDownIcon,
   BookOpen01Icon,
@@ -58,16 +59,6 @@ const SPACE_TEMPLATES: SpaceTemplate[] = [
 
 // ── Status color ─────────────────────────────────────────────────────────────
 
-function statusColor(status: string): string {
-  switch (status) {
-    case 'published':
-      return 'text-emerald-600 dark:text-emerald-400'
-    case 'archived':
-      return 'text-muted-foreground/60'
-    default:
-      return 'text-amber-600 dark:text-amber-400'
-  }
-}
 
 // ── Document row ────────────────────────────────────────────────────────────
 
@@ -91,16 +82,48 @@ function DocRow({
       }
       className="group flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-muted/60"
     >
-      <File01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-      <span className="min-w-0 flex-1 truncate font-medium">{doc.title}</span>
-      <span className={`shrink-0 text-xs font-medium ${statusColor(doc.status)}`}>
+      <File01Icon className={DOC_ICON_CLASS} />
+      <span className={`min-w-0 flex-1 truncate ${ARTICLE_ROW_CLASS}`}>{doc.title}</span>
+      <span className={`${STATUS_BADGE_CLASS} ${statusColor(doc.status)}`}>
         {DOC_STATUS_LABELS[doc.status] ?? doc.status}
       </span>
-      <span className="shrink-0 text-[11px] text-muted-foreground">
+      <span className={UPDATED_TEXT_CLASS}>
         Updated: {timeAgo(doc.updated_at)}
       </span>
     </button>
   )
+}
+
+// ── Collection tree helper ──────────────────────────────────────────────────
+
+/** Builds a recursive tree of CollectionNodes from a flat collection list. */
+function buildCollectionNodeTree(
+  collections: DocsCollection[],
+  docsByCollection: Map<string, DocsDocument[]>,
+): CollectionNode[] {
+  const byParent = new Map<string | null, DocsCollection[]>()
+  for (const c of collections) {
+    const key = c.parent_collection_id ?? null
+    const list = byParent.get(key) ?? []
+    list.push(c)
+    byParent.set(key, list)
+  }
+  // Sort siblings by position.
+  for (const list of byParent.values()) {
+    list.sort((a, b) => a.position - b.position)
+  }
+
+  function build(parentId: string | null): CollectionNode[] {
+    return (byParent.get(parentId) ?? []).map((c) => ({
+      id: c.id,
+      name: c.name,
+      icon: c.icon,
+      depth: c.depth,
+      documents: docsByCollection.get(c.id) ?? [],
+      children: build(c.id),
+    }))
+  }
+  return build(null)
 }
 
 // ── Collection section ──────────────────────────────────────────────────────
@@ -113,45 +136,55 @@ function CollectionIcon({ name }: { name?: string }) {
   return <Folder01Icon className="h-3.5 w-3.5 shrink-0" />
 }
 
+interface CollectionNode {
+  id: string
+  name: string
+  icon?: string | null
+  depth: number
+  documents: DocsDocument[]
+  children: CollectionNode[]
+}
+
 function CollectionSection({
-  name,
-  icon,
-  documents,
+  node,
   wsSlug,
   navigate,
 }: {
-  name: string
-  icon?: string
-  documents: DocsDocument[]
+  node: CollectionNode
   wsSlug: string
   navigate: ReturnType<typeof useNavigate>
 }) {
-  const [open, setOpen] = useState(documents.length > 0)
+  const hasContent = node.documents.length > 0 || node.children.length > 0
+  const [open, setOpen] = useState(hasContent)
 
   return (
     <Collapsible.Root open={open} onOpenChange={setOpen}>
       <Collapsible.Trigger asChild>
         <button
           type="button"
-          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-foreground/70 transition-colors hover:bg-muted/40"
+          className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 ${COLLECTION_ROW_CLASS} transition-colors hover:bg-muted/40`}
         >
           <ArrowRight01Icon
             className={`h-3.5 w-3.5 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`}
           />
-          <CollectionIcon name={icon} />
-          <span className="truncate">{name}</span>
-          <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums text-muted-foreground">{documents.length} {documents.length === 1 ? 'doc' : 'docs'}</span>
+          <CollectionIcon name={node.icon ?? undefined} />
+          <span className="truncate">{node.name}</span>
+          {node.documents.length > 0 && (
+            <span className={COUNT_BADGE_CLASS}>{node.documents.length} {node.documents.length === 1 ? 'doc' : 'docs'}</span>
+          )}
+          {node.children.length > 0 && (
+            <span className={COUNT_BADGE_CLASS}>{node.children.length} sub</span>
+          )}
         </button>
       </Collapsible.Trigger>
       <Collapsible.Content>
-        <div className="ml-4 border-l border-border/50 pl-1">
-          {documents.length > 0 ? (
-            documents.map((doc) => (
-              <DocRow key={doc.id} doc={doc} wsSlug={wsSlug} navigate={navigate} />
-            ))
-          ) : (
-            <p className="px-3 py-1.5 text-[11px] text-muted-foreground/60">No documents</p>
-          )}
+        <div className="ml-[14px] border-l border-border/50 pl-3">
+          {node.children.map((child) => (
+            <CollectionSection key={child.id} node={child} wsSlug={wsSlug} navigate={navigate} />
+          ))}
+          {node.documents.map((doc) => (
+            <DocRow key={doc.id} doc={doc} wsSlug={wsSlug} navigate={navigate} />
+          ))}
         </div>
       </Collapsible.Content>
     </Collapsible.Root>
@@ -189,6 +222,9 @@ function SpaceSection({
       uncollected.push(doc)
     }
   }
+
+  // Build recursive tree of CollectionNodes.
+  const collectionTree = buildCollectionNodeTree(collections, collectionMap)
   const docCount = documents.length
   const collCount = collections.length
 
@@ -246,23 +282,15 @@ function SpaceSection({
 
       <Collapsible.Content>
         <div className="ml-5 border-l border-border/50 pb-2 pl-2">
-          {/* Collections */}
-          {(collections ?? []).map((col) => (
-            <CollectionSection
-              key={col.id}
-              name={col.name}
-              icon={col.icon}
-              documents={collectionMap.get(col.id) ?? []}
-              wsSlug={wsSlug}
-              navigate={navigate}
-            />
+          {/* Collections — rendered as recursive tree */}
+          {collectionTree.map((node) => (
+            <CollectionSection key={node.id} node={node} wsSlug={wsSlug} navigate={navigate} />
           ))}
 
           {/* Uncategorized documents (no collection) */}
           {uncollected.length > 0 && (
             <CollectionSection
-              name="Uncategorized"
-              documents={uncollected}
+              node={{ id: '__uncategorized', name: 'Uncategorized', depth: 0, documents: uncollected, children: [] }}
               wsSlug={wsSlug}
               navigate={navigate}
             />
@@ -309,6 +337,10 @@ export function DocsHome() {
       const list = map.get(d.space_id) ?? []
       list.push(d)
       map.set(d.space_id, list)
+    }
+    // Sort by position within each space for correct display order.
+    for (const list of map.values()) {
+      list.sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
     }
     return map
   }, [allDocuments])
@@ -558,6 +590,7 @@ export function DocsHome() {
           </div>
         )}
       <CreateSpaceDialog wsId={wsId} open={createSpaceOpen} onOpenChange={setCreateSpaceOpen} />
+      <div className="h-32" />
     </div>
   )
 }
