@@ -4,17 +4,17 @@ import {
   SidebarContent,
   SidebarHeader,
 } from '@/components/ui/sidebar'
+import { WorkspaceSwitcher } from '@/components/layout/WorkspaceSwitcher'
 import { SupportRailNav } from '@/components/layout/sidebar/SupportRailNav'
 import { useSupportInboxStore } from '@/stores/supportInboxStore'
 import { useInboxScopes, useUnreadStats, useArchiveMailbox } from '@/hooks/queries/useSupport'
 
 interface DesktopSupportSidebarProps {
   workspaceId: string
-  workspaceName: string
   wsSlug: string
 }
 
-export function DesktopSupportSidebar({ workspaceId, workspaceName, wsSlug }: DesktopSupportSidebarProps) {
+export function DesktopSupportSidebar({ workspaceId, wsSlug }: DesktopSupportSidebarProps) {
   const navigate = useNavigate()
   const {
     navFilter,
@@ -33,9 +33,7 @@ export function DesktopSupportSidebar({ workspaceId, workspaceName, wsSlug }: De
   return (
     <Sidebar collapsible="none" className="border-r border-border/70 bg-[#f0f0f2] dark:bg-sidebar [&_.support-bottom-bar]:ml-0 [&_.support-bottom-bar]:w-(--sidebar-width)">
       <SidebarHeader className="relative p-2 after:absolute after:right-2 after:bottom-0 after:left-2 after:h-px after:bg-border/70 after:[mask-image:linear-gradient(to_right,transparent,black_24px,black_calc(100%-24px),transparent)] dark:after:bg-sidebar-border">
-        <div className="flex items-center gap-2 px-1">
-          <span className="text-sm font-semibold truncate">{workspaceName}</span>
-        </div>
+        <WorkspaceSwitcher />
       </SidebarHeader>
 
       <SidebarContent className="gap-0 p-2 pb-16">

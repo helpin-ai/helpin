@@ -63,7 +63,6 @@ export function SupportWorkspacePage() {
       <SidebarProvider className="!min-h-0 h-full">
         <DesktopSupportSidebar
           workspaceId={workspaceId}
-          workspaceName={workspaceQuery.data.name}
           wsSlug={params.slug}
         />
         <SidebarInset className="relative min-w-0 overflow-hidden">
