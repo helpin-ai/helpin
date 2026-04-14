@@ -9,6 +9,7 @@ import { setupVisibilityRefresh, startTokenRefreshTimer } from '@/lib/api'
 import { queryClient } from '@/lib/queryClient'
 import { useAuthStore } from '@/stores/authStore'
 import { isTauriDesktop } from '@desktop/lib/desktopHost'
+import { registerNotificationClickHandler, setupNotificationClickListener } from '@desktop/lib/desktopNotifications'
 import { router } from '@desktop/router'
 import { createTauriSessionStorage } from '@desktop/lib/sessionStorage'
 import './index.css'
@@ -16,6 +17,12 @@ import './index.css'
 configureSessionStorage(
   isTauriDesktop() ? createTauriSessionStorage() : createBrowserSessionStorage(),
 )
+
+// Register notification click-through routing.
+registerNotificationClickHandler((to) => {
+  router.navigate({ to: to as string })
+})
+setupNotificationClickListener()
 
 function InnerApp() {
   const user = useAuthStore((state) => state.user)

@@ -1,18 +1,23 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect } from 'react'
 import { useParams } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { useSupportRealtime } from '@helpin-ai/support-core'
+import { useSupportRealtime, type SupportRealtimeEvent } from '@helpin-ai/support-core'
+import { useSupportInboxStore } from '@/stores/supportInboxStore'
 import { SupportInboxLayout } from '@/components/support/SupportInboxLayout'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { API_BASE } from '@/lib/api'
 import { workspacesService } from '@/lib/services/workspacesService'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
+import { useAuthStore } from '@/stores/authStore'
 import { DesktopSupportSidebar } from '@desktop/components/DesktopSupportSidebar'
+import { handleSupportRealtimeEvent, ensureNotificationPermission } from '@desktop/lib/desktopNotifications'
 
 export function SupportWorkspacePage() {
   const params = useParams({ strict: false }) as { slug: string; conversationId?: string }
   const currentWorkspace = useWorkspaceStore((state) => state.currentWorkspace)
   const setCurrentWorkspace = useWorkspaceStore((state) => state.setCurrentWorkspace)
+  const currentUserId = useAuthStore((state) => state.user?.id ?? '')
+  const selectedConversationId = useSupportInboxStore((state) => state.selectedConversationId)
 
   const workspaceQuery = useQuery({
     queryKey: ['desktop-workspace', params.slug],
@@ -27,10 +32,27 @@ export function SupportWorkspacePage() {
 
   const workspaceId = workspaceQuery.data?.id ?? ''
 
+  // Request notification permission on mount.
+  useEffect(() => {
+    ensureNotificationPermission()
+  }, [])
+
+  const handleRealtimeEvent = useCallback(
+    (event: SupportRealtimeEvent) => {
+      handleSupportRealtimeEvent(event, {
+        currentUserId,
+        selectedConversationId,
+        workspaceSlug: params.slug,
+      })
+    },
+    [currentUserId, selectedConversationId, params.slug],
+  )
+
   useSupportRealtime({
     apiBase: API_BASE,
     workspaceId,
     selectedConversationId: params.conversationId ?? null,
+    onEvent: handleRealtimeEvent,
   })
 
   useEffect(() => {

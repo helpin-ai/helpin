@@ -35,6 +35,8 @@ interface SupportRealtimeOptions {
   apiBase: string
   workspaceId: string
   selectedConversationId?: string | null
+  /** Called for every meaningful support event (message, assignment, etc.). Excludes presence/typing. */
+  onEvent?: (event: SupportRealtimeEvent) => void
 }
 
 const PING_INTERVAL_MS = 45_000
@@ -84,6 +86,7 @@ export function useSupportRealtime({
   apiBase,
   workspaceId,
   selectedConversationId,
+  onEvent,
 }: SupportRealtimeOptions) {
   const queryClient = useQueryClient()
   const wsRef = useRef<WebSocket | null>(null)
@@ -97,6 +100,8 @@ export function useSupportRealtime({
   const lastWakeSampleAtRef = useRef(Date.now())
   const latestSelectedConversationIdRef = useRef<string | null>(selectedConversationId ?? null)
   latestSelectedConversationIdRef.current = selectedConversationId ?? null
+  const onEventRef = useRef(onEvent)
+  onEventRef.current = onEvent
 
   const setRealtimeStatus = useSupportRealtimeStore((state) => state.setStatus)
   const markConnected = useSupportRealtimeStore((state) => state.markConnected)
@@ -139,6 +144,7 @@ export function useSupportRealtime({
         } else if (conversationId && event.actor_id) {
           useSupportPresenceStore.getState().clearOneAgentTyping(conversationId, event.actor_id)
         }
+        onEventRef.current?.(event)
         runResync(conversationId)
         return
       }
@@ -190,6 +196,7 @@ export function useSupportRealtime({
           return
         }
 
+        onEventRef.current?.(event)
         runResync(event.entity_id || latestSelectedConversationIdRef.current)
         return
       }
