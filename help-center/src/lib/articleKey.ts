@@ -12,6 +12,14 @@ export function parseArticleKey(articleKey: string) {
   const trimmed = articleKey.trim().replace(/^\/+|\/+$/g, '')
   if (!trimmed) return null
 
+  // Bare PublicID: if the entire key is a valid 8-char hex ID.
+  if (trimmed.length === ARTICLE_PUBLIC_ID_LENGTH) {
+    const bareId = normalizeArticlePublicId(trimmed)
+    if (bareId.length === ARTICLE_PUBLIC_ID_LENGTH) {
+      return { slug: '', publicId: bareId }
+    }
+  }
+
   const lastDash = trimmed.lastIndexOf('-')
   if (lastDash <= 0 || lastDash === trimmed.length - 1) {
     return null

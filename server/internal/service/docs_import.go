@@ -20,6 +20,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/storage"
+	"github.com/helpin-ai/helpin/server/internal/tiptap"
 )
 
 // DocsImportService orchestrates help center article imports.
@@ -633,21 +634,39 @@ func (s *DocsImportService) Reconvert(ctx context.Context, jobID string) (*Recon
 			continue
 		}
 
-		convResult, warnings, err := convertHelpScoutHTML(*c.ImportSourceHTML)
-		if err != nil {
-			s.logger.Error("reconvert failed", "content_id", c.ID, "error", err)
-			result.Failed++
-			continue
+		sourceSystem := ""
+		if c.ImportSourceSystem != nil {
+			sourceSystem = *c.ImportSourceSystem
 		}
 
-		contentJSON, err := json.Marshal(convResult.Doc)
-		if err != nil {
-			s.logger.Error("reconvert marshal failed", "content_id", c.ID, "error", err)
-			result.Failed++
-			continue
+		var contentJSON json.RawMessage
+		var warnings []docsimport.Warning
+
+		switch sourceSystem {
+		case "nextra":
+			// Re-run MDX preprocessing and markdown-to-TipTap conversion.
+			contentJSON = tiptap.MarkdownToJSON(*c.ImportSourceHTML)
+			// No warnings tracked for markdown conversion currently.
+
+		default:
+			// HelpScout and other HTML-based sources.
+			convResult, convWarnings, err := convertHelpScoutHTML(*c.ImportSourceHTML)
+			if err != nil {
+				s.logger.Error("reconvert failed", "content_id", c.ID, "error", err)
+				result.Failed++
+				continue
+			}
+			var marshalErr error
+			contentJSON, marshalErr = json.Marshal(convResult.Doc)
+			if marshalErr != nil {
+				s.logger.Error("reconvert marshal failed", "content_id", c.ID, "error", marshalErr)
+				result.Failed++
+				continue
+			}
+			warnings = convWarnings
 		}
 
-		if _, err := s.contentSvc.Save(ctx, c.DocumentID, json.RawMessage(contentJSON), ""); err != nil {
+		if _, err := s.contentSvc.Save(ctx, c.DocumentID, contentJSON, ""); err != nil {
 			s.logger.Error("reconvert save failed", "content_id", c.ID, "error", err)
 			result.Failed++
 			continue

@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -1058,7 +1057,7 @@ func TestDocsCollectionService_TreeValidation(t *testing.T) {
 		}
 	})
 
-	t.Run("Create rejects a duplicate slug in the same workspace", func(t *testing.T) {
+	t.Run("Create allows duplicate slugs in the same workspace", func(t *testing.T) {
 		svc, db := setup(t)
 		seedSpace(t, db, "space")
 		ctx := context.Background()
@@ -1072,16 +1071,12 @@ func TestDocsCollectionService_TreeValidation(t *testing.T) {
 			t.Fatalf("first create: %v", err)
 		}
 
-		// Second create that slugifies to the same value fails with the
-		// typed sentinel so the handler maps it to 409.
-		_, err := svc.Create(ctx, workspaceID, "space", model.CreateDocsCollectionRequest{
+		// Second create that slugifies to the same value now succeeds
+		// because application-level slug uniqueness has been removed.
+		if _, err := svc.Create(ctx, workspaceID, "space", model.CreateDocsCollectionRequest{
 			Name: "shared",
-		}, userID)
-		if err == nil {
-			t.Fatalf("expected duplicate slug error, got nil")
-		}
-		if !errors.Is(err, ErrDocsCollectionSlugTaken) {
-			t.Fatalf("err = %v, want ErrDocsCollectionSlugTaken", err)
+		}, userID); err != nil {
+			t.Fatalf("second create should succeed: %v", err)
 		}
 	})
 

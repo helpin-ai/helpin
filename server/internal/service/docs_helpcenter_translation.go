@@ -1614,15 +1614,17 @@ func (s *DocsHelpcenterTranslationService) ensureUniqueSpaceTranslationSlug(ctx 
 }
 
 func (s *DocsHelpcenterTranslationService) ensureUniqueCollectionTranslationSlug(ctx context.Context, spaceID, locale, excludeCollectionID, base string) (string, error) {
-	return ensureUniqueSlug(base, func(candidate string) (bool, error) {
-		return s.translationRepo.CollectionTranslationSlugExists(ctx, spaceID, locale, candidate, excludeCollectionID)
-	})
+	if base == "" {
+		return "collection", nil
+	}
+	return base, nil
 }
 
 func (s *DocsHelpcenterTranslationService) ensureUniqueArticleTranslationSlug(ctx context.Context, spaceID, locale, excludeDocumentID, base string) (string, error) {
-	return ensureUniqueSlug(base, func(candidate string) (bool, error) {
-		return s.translationRepo.ArticleTranslationSlugExists(ctx, spaceID, locale, candidate, excludeDocumentID)
-	})
+	if base == "" {
+		return "article", nil
+	}
+	return base, nil
 }
 
 func ensureUniqueSlug(base string, exists func(candidate string) (bool, error)) (string, error) {

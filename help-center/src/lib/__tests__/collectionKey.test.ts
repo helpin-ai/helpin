@@ -27,11 +27,22 @@ describe('collectionKey helpers', () => {
     })
   })
 
+  it('parses bare public ID', () => {
+    expect(parseCollectionKey('abc123ef')).toEqual({
+      slug: '',
+      publicId: 'abc123ef',
+    })
+    expect(parseCollectionKey('ABC123EF')).toEqual({
+      slug: '',
+      publicId: 'abc123ef',
+    })
+  })
+
   it('returns null for legacy slug-only or malformed keys', () => {
     expect(parseCollectionKey('getting-started')).toBeNull()
-    expect(parseCollectionKey('abc123ef')).toBeNull()
     expect(parseCollectionKey('getting-started-zzzzzzzz')).toBeNull()
     expect(parseCollectionKey('getting-started-abc123')).toBeNull()
+    expect(parseCollectionKey('zzzzzzzz')).toBeNull()
   })
 
   it('normalizes only valid 8-char hex public IDs', () => {

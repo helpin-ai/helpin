@@ -48,15 +48,19 @@ type ImportFailure struct {
 
 // ImportSummary holds high-level stats shown to the user when an import completes.
 type ImportSummary struct {
-	CollectionsCreated             int `json:"collections_created"`
-	ArticlesPublished              int `json:"articles_published"`
-	ArticlesDrafted                int `json:"articles_drafted"`
-	RedirectsCreated               int `json:"redirects_created"`
-	ArticlesUncategorized          int `json:"articles_uncategorized"`
-	ArticlesWithConversionWarnings int `json:"articles_with_conversion_warnings"`
-	HTMLBlockFallbacks             int `json:"html_block_fallbacks"`
-	ImageRewriteFailures           int `json:"image_rewrite_failures"`
-	NormalizedNoteBlocks           int `json:"normalized_note_blocks"`
+	CollectionsCreated             int    `json:"collections_created"`
+	ArticlesPublished              int    `json:"articles_published"`
+	ArticlesDrafted                int    `json:"articles_drafted"`
+	RedirectsCreated               int    `json:"redirects_created"`
+	ArticlesUncategorized          int    `json:"articles_uncategorized"`
+	ArticlesWithConversionWarnings int    `json:"articles_with_conversion_warnings"`
+	HTMLBlockFallbacks             int    `json:"html_block_fallbacks"`
+	ImageRewriteFailures           int    `json:"image_rewrite_failures"`
+	NormalizedNoteBlocks           int    `json:"normalized_note_blocks"`
+	SourceSystem                   string `json:"source_system,omitempty"`
+	UnsupportedComponents          int    `json:"unsupported_components,omitempty"`
+	BrokenLinks                    int    `json:"broken_links,omitempty"`
+	AssetRewriteFailures           int    `json:"asset_rewrite_failures,omitempty"`
 }
 
 // DocsImportPreviewRequest is the payload for previewing available collections from an external source.
@@ -85,4 +89,83 @@ type HelpscoutCollectionPreview struct {
 	Slug          string `json:"slug"`
 	CategoryCount int    `json:"category_count"`
 	ArticleCount  int    `json:"article_count"`
+}
+
+// --- Nextra Import DTOs ---
+
+// DocsImportJobConfig stores source-agnostic configuration for an
+// import job. It is serialised into the job's Config JSON column.
+type DocsImportJobConfig struct {
+	// HelpScout fields (existing, kept for backward compatibility).
+	APIKey                string `json:"api_key,omitempty"`
+	HelpscoutCollectionID string `json:"helpscout_collection_id,omitempty"`
+	TargetSpaceID         string `json:"target_space_id,omitempty"`
+	NewSpaceName          string `json:"new_space_name,omitempty"`
+	ImportStatus          string `json:"import_status,omitempty"`
+
+	// Source-agnostic fields.
+	SourceSystem string `json:"source_system,omitempty"`
+	ArchiveKey   string `json:"archive_key,omitempty"`
+	ArchiveName  string `json:"archive_name,omitempty"`
+	DetectedRoot string `json:"detected_root,omitempty"`
+	SourceCommit string `json:"source_commit,omitempty"`
+}
+
+// DocsNextraImportPreviewResponse is returned after previewing a
+// Nextra archive upload.
+type DocsNextraImportPreviewResponse struct {
+	JobID                 string                                `json:"job_id"`
+	ArchiveName           string                                `json:"archive_name"`
+	SourceCommit          string                                `json:"source_commit,omitempty"`
+	DetectedRoot          string                                `json:"detected_root"`
+	Spaces                []DocsNextraImportSpacePreview        `json:"spaces"`
+	Collections           int                                   `json:"collections"`
+	Articles              int                                   `json:"articles"`
+	Assets                int                                   `json:"assets"`
+	Redirects             int                                   `json:"redirects"`
+	Warnings              []DocsImportWarningResponse           `json:"warnings"`
+	BrokenLinks           []DocsImportBrokenLinkResponse        `json:"broken_links"`
+	UnsupportedComponents []DocsImportUnsupportedComponentResponse `json:"unsupported_components"`
+}
+
+// DocsNextraImportSpacePreview summarises one target space in a
+// Nextra import preview.
+type DocsNextraImportSpacePreview struct {
+	SourceID        string `json:"source_id"`
+	Name            string `json:"name"`
+	CollectionCount int    `json:"collection_count"`
+	ArticleCount    int    `json:"article_count"`
+}
+
+// DocsNextraImportStartRequest is the payload for starting a
+// previously previewed Nextra import.
+type DocsNextraImportStartRequest struct {
+	JobID           string  `json:"job_id"`
+	TargetSpaceID   *string `json:"target_space_id"`
+	NewSpaceName    *string `json:"new_space_name"`
+	ImportStatus    string  `json:"import_status"`
+	CreateRedirects bool    `json:"create_redirects"`
+}
+
+// DocsImportWarningResponse represents one warning in an import
+// preview or report.
+type DocsImportWarningResponse struct {
+	Type       string `json:"type"`
+	SourcePath string `json:"source_path,omitempty"`
+	Message    string `json:"message"`
+}
+
+// DocsImportBrokenLinkResponse represents an internal link that could
+// not be resolved.
+type DocsImportBrokenLinkResponse struct {
+	SourcePath string `json:"source_path"`
+	Target     string `json:"target"`
+	Message    string `json:"message"`
+}
+
+// DocsImportUnsupportedComponentResponse tallies how many times an
+// unknown MDX component appeared across all articles.
+type DocsImportUnsupportedComponentResponse struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
 }

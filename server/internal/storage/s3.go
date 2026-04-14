@@ -158,6 +158,23 @@ func (s *S3Client) GeneratePresignedGetURL(key, filename string) (string, error)
 	return result.URL, nil
 }
 
+// GetObject downloads an object from S3 and returns its contents.
+func (s *S3Client) GetObject(ctx context.Context, key string) ([]byte, error) {
+	result, err := s.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("get S3 object: %w", err)
+	}
+	defer result.Body.Close()
+	data, err := io.ReadAll(result.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read S3 object: %w", err)
+	}
+	return data, nil
+}
+
 // DeleteObject deletes an object from S3.
 func (s *S3Client) DeleteObject(ctx context.Context, key string) error {
 	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{

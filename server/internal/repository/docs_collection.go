@@ -61,18 +61,21 @@ func (r *DocsCollectionRepository) GetByID(ctx context.Context, id string) (*mod
 	return &coll, nil
 }
 
-// GetBySlug returns a collection by workspace and slug.
+// GetBySlug returns a collection by workspace and slug. If multiple
+// non-deleted collections share the same slug (possible after slug
+// uniqueness removal), nil is returned to avoid choosing arbitrarily.
 func (r *DocsCollectionRepository) GetBySlug(ctx context.Context, workspaceID, slug string) (*model.DocsCollection, error) {
-	var coll model.DocsCollection
+	var cols []model.DocsCollection
 	if err := r.db.WithContext(ctx).
 		Where("workspace_id = ? AND slug = ? AND deleted_at IS NULL", workspaceID, slug).
-		First(&coll).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
+		Limit(2).
+		Find(&cols).Error; err != nil {
 		return nil, fmt.Errorf("get docs collection by slug: %w", err)
 	}
-	return &coll, nil
+	if len(cols) != 1 {
+		return nil, nil // not found or ambiguous
+	}
+	return &cols[0], nil
 }
 
 // GetByPublicID returns a non-deleted collection by its globally unique public id.
