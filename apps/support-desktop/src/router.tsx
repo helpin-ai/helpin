@@ -7,6 +7,9 @@ import {
   createRouter,
   redirect,
 } from '@tanstack/react-router'
+import { ThemeProvider } from 'next-themes'
+import { ConfirmProvider } from '@/components/ui/confirm-dialog'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { useQuery } from '@tanstack/react-query'
 import { workspacesService } from '@/lib/services/workspacesService'
 import { useAuthStore } from '@/stores/authStore'
@@ -134,7 +137,15 @@ declare module '@tanstack/react-router' {
 }
 
 function RootComponent() {
-  return <Outlet />
+  return (
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+      <TooltipProvider>
+        <ConfirmProvider>
+          <Outlet />
+        </ConfirmProvider>
+      </TooltipProvider>
+    </ThemeProvider>
+  )
 }
 
 function IndexPage() {

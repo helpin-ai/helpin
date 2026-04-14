@@ -127,6 +127,9 @@ importers:
       '@tauri-apps/plugin-store':
         specifier: ^2.4.0
         version: 2.4.2
+      next-themes:
+        specifier: ^0.4.6
+        version: 0.4.6(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       react:
         specifier: ^19.2.0
         version: 19.2.4
