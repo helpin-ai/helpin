@@ -1343,7 +1343,8 @@ func (s *DocsHelpcenterTranslationService) PublishArticleTranslation(ctx context
 			Type:                 model.RedirectTypeSlugChange,
 		}
 		if ha, haErr := s.hcRepo.GetArticle(ctx, documentID); haErr == nil && ha != nil {
-			setRedirectTargetPath(redirect, "", ha.PublicID)
+			cfg, _ := s.GetLocales(ctx, translation.WorkspaceID)
+			setRedirectTargetPathLocalized(redirect, cfg, locale, "", ha.PublicID)
 		}
 		if err := s.redirectRepo.Create(ctx, redirect); err != nil {
 			slog.ErrorContext(ctx, "create localized slug change redirect", "error", err, "document_id", documentID, "locale", locale)

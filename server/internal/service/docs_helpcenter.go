@@ -2424,15 +2424,22 @@ func (s *DocsHelpcenterService) hydrateRedirectTargetPaths(ctx context.Context, 
 // setRedirectTargetPath computes and sets the canonical PublicID-backed
 // target_path on a redirect from the given entity PublicIDs. If a
 // PublicID is empty, target_path is left nil (legacy slug fallback).
+// cfg and locale are optional — pass nil/"" for default-locale paths.
 func setRedirectTargetPath(redirect *model.DocsRedirect, collectionPublicID string, articlePublicID string) {
+	setRedirectTargetPathLocalized(redirect, nil, "", collectionPublicID, articlePublicID)
+}
+
+// setRedirectTargetPathLocalized is like setRedirectTargetPath but
+// produces locale-aware canonical paths for multilingual deployments.
+func setRedirectTargetPathLocalized(redirect *model.DocsRedirect, cfg *model.DocsHelpcenterConfig, locale string, collectionPublicID string, articlePublicID string) {
 	if redirect == nil {
 		return
 	}
 	if redirect.TargetArticleSlug != nil && *redirect.TargetArticleSlug != "" && articlePublicID != "" {
-		p := buildDocsHelpcenterArticleCanonicalPath(nil, "", *redirect.TargetArticleSlug, articlePublicID)
+		p := buildDocsHelpcenterArticleCanonicalPath(cfg, locale, *redirect.TargetArticleSlug, articlePublicID)
 		redirect.TargetPath = &p
 	} else if redirect.TargetCollectionSlug != "" && collectionPublicID != "" {
-		p := buildDocsHelpcenterCollectionCanonicalPath(nil, "", redirect.TargetCollectionSlug, collectionPublicID)
+		p := buildDocsHelpcenterCollectionCanonicalPath(cfg, locale, redirect.TargetCollectionSlug, collectionPublicID)
 		redirect.TargetPath = &p
 	}
 }
