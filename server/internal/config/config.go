@@ -85,6 +85,12 @@ type Config struct {
 	QueryExpansionModel    string
 	QueryExpansionProvider string
 
+	// MaxMind GeoIP configuration (optional — enables GeoIP enrichment for support/widget traffic)
+	MaxMindAccountID   string
+	MaxMindDBPath      string
+	MaxMindDownloadURL string
+	MaxMindLicenseKey  string
+
 	// Redis (optional — empty = local-only mode, no cross-pod broadcasting)
 	RedisURL string
 
@@ -194,6 +200,10 @@ func Load() (*Config, error) {
 		CRMLLMModel:                  os.Getenv("CRM_LLM_MODEL"),
 		QueryExpansionModel:          strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_MODEL"), "gpt-5.4-mini")),
 		QueryExpansionProvider:       strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_PROVIDER"), "openai")),
+		MaxMindAccountID:             strings.TrimSpace(os.Getenv("MAXMIND_ACCOUNT_ID")),
+		MaxMindDBPath:                strings.TrimSpace(os.Getenv("MAXMIND_DB_PATH")),
+		MaxMindDownloadURL:           strings.TrimSpace(os.Getenv("MAXMIND_DOWNLOAD_URL")),
+		MaxMindLicenseKey:            strings.TrimSpace(os.Getenv("MAXMIND_LICENSE_KEY")),
 		RedisURL:                     os.Getenv("REDIS_URL"),
 		AgentPreviewDebug:            parseBoolEnv(os.Getenv("AGENT_PREVIEW_DEBUG")),
 	}, nil

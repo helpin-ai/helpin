@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"html"
 	"log/slog"
+	"net/netip"
 	"slices"
 	"strings"
 	"time"
@@ -16,8 +17,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/helpin-ai/helpin/server/internal/authorization"
+	"github.com/helpin-ai/helpin/server/internal/geoip"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/requestmeta"
 	"github.com/helpin-ai/helpin/server/internal/tiptap"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
@@ -45,12 +48,14 @@ type SupportInboxService struct {
 	emailFallbackService    *EmailFallbackService
 	notificationService     *NotificationService
 	workspaceRepo           *repository.WorkspaceRepository
+	authzService            *authorization.AuthzService
 	attachmentService       *SupportAttachmentService
 	linkPreviewService      SupportMessageLinkPreviewer
 	presence                websocket.PresenceProvider
 	statusOverrideRepo      *repository.SupportTeammateStatusOverrideRepository
 	triageService           *SupportInboxTriageService
 	taskService             *PMTaskService
+	geoIPResolver           geoip.Resolver
 }
 
 type supportConversationTaskDraft struct {
@@ -137,6 +142,201 @@ func renderWidgetArticleHTML(content json.RawMessage) *string {
 
 func formatSupportTranscriptTimestamp(ts time.Time) string {
 	return ts.UTC().Format("Jan 2, 2006 15:04 UTC")
+}
+
+func (s *SupportInboxService) SetGeoIPResolver(resolver geoip.Resolver) {
+	s.geoIPResolver = resolver
+}
+
+func (s *SupportInboxService) widgetSessionGeoContext(ctx context.Context) (*string, *geoip.Result, error) {
+	if s.geoIPResolver == nil {
+		return nil, nil, nil
+	}
+
+	clientIP, ok := requestmeta.ClientIPFromContext(ctx)
+	if !ok || !requestmeta.IsPublicIP(clientIP.Addr) {
+		return nil, nil, nil
+	}
+
+	ipText := clientIP.Addr.String()
+	result, err := s.geoIPResolver.Lookup(clientIP.Addr)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &ipText, result, nil
+}
+
+func (s *SupportInboxService) refreshWidgetSessionGeo(ctx context.Context, session *model.SupportWidgetSession) {
+	if s == nil || session == nil {
+		return
+	}
+
+	clientIP, ok := requestmeta.ClientIPFromContext(ctx)
+	if !ok || !requestmeta.IsPublicIP(clientIP.Addr) {
+		return
+	}
+
+	ipText := clientIP.Addr.Unmap().String()
+	changed := false
+	if strings.TrimSpace(derefString(session.IPAddress)) != ipText {
+		session.IPAddress = &ipText
+		changed = true
+	}
+
+	if s.geoIPResolver != nil {
+		result, err := s.geoIPResolver.Lookup(clientIP.Addr)
+		if err != nil {
+			slog.WarnContext(ctx, "widget session geoip refresh failed", "session_id", session.ID, "ip_address", ipText, "error", err)
+		} else if result != nil {
+			if next := stringPtrOrNil(result.CountryCode); derefString(session.CountryCode) != derefString(next) {
+				session.CountryCode = next
+				changed = true
+			}
+			if next := stringPtrOrNil(result.CountryName); derefString(session.CountryName) != derefString(next) {
+				session.CountryName = next
+				changed = true
+			}
+			if next := stringPtrOrNil(result.RegionName); derefString(session.RegionName) != derefString(next) {
+				session.RegionName = next
+				changed = true
+			}
+			if next := stringPtrOrNil(result.CityName); derefString(session.CityName) != derefString(next) {
+				session.CityName = next
+				changed = true
+			}
+		}
+	}
+
+	if !changed || s.sessionRepo == nil {
+		return
+	}
+	if err := s.sessionRepo.Update(ctx, session); err != nil {
+		slog.WarnContext(ctx, "widget session geoip refresh save failed", "session_id", session.ID, "ip_address", ipText, "error", err)
+	}
+}
+
+func (s *SupportInboxService) BackfillWidgetSessionGeo(ctx context.Context, limit int) (int, error) {
+	if s == nil || s.geoIPResolver == nil || s.sessionRepo == nil {
+		return 0, nil
+	}
+
+	sessions, err := s.sessionRepo.ListGeoBackfillCandidates(ctx, limit)
+	if err != nil {
+		return 0, err
+	}
+
+	updated := 0
+	for _, session := range sessions {
+		ipText := strings.TrimSpace(derefString(session.IPAddress))
+		if ipText == "" {
+			continue
+		}
+
+		addr, err := netip.ParseAddr(ipText)
+		if err != nil {
+			slog.WarnContext(ctx, "skip widget geoip backfill for invalid ip", "session_id", session.ID, "ip_address", ipText, "error", err)
+			continue
+		}
+		addr = addr.Unmap()
+		if !requestmeta.IsPublicIP(addr) {
+			continue
+		}
+
+		result, err := s.geoIPResolver.Lookup(addr)
+		if err != nil {
+			slog.WarnContext(ctx, "widget geoip backfill lookup failed", "session_id", session.ID, "ip_address", ipText, "error", err)
+			continue
+		}
+		if result == nil {
+			continue
+		}
+
+		if err := s.sessionRepo.UpdateGeoLocation(
+			ctx,
+			session.ID,
+			stringPtrOrNil(result.CountryCode),
+			stringPtrOrNil(result.CountryName),
+			stringPtrOrNil(result.RegionName),
+			stringPtrOrNil(result.CityName),
+		); err != nil {
+			return updated, err
+		}
+		updated++
+	}
+
+	return updated, nil
+}
+
+func (s *SupportInboxService) ListConversationAssignableUsers(ctx context.Context, workspaceID, conversationID string) ([]model.AssignableMember, error) {
+	if s.workspaceRepo == nil {
+		return nil, fmt.Errorf("workspace repository unavailable")
+	}
+
+	conversation, err := s.loadConversationAccessible(ctx, workspaceID, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	if conversation == nil {
+		return nil, fmt.Errorf("conversation not found")
+	}
+
+	if s.authzService == nil {
+		return s.workspaceRepo.ListSupportAssignableMembers(ctx, workspaceID, nil)
+	}
+
+	members, err := s.workspaceRepo.ListAssignableMembers(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+
+	assignable := make([]model.AssignableMember, 0, len(members))
+	for _, member := range members {
+		if member.UserID == nil || strings.TrimSpace(*member.UserID) == "" {
+			continue
+		}
+		if member.Status != model.WorkspaceMemberStatusActive {
+			continue
+		}
+		if s.userHasSupportModuleAccess(ctx, workspaceID, strings.TrimSpace(*member.UserID)) {
+			assignable = append(assignable, member)
+		}
+	}
+
+	return assignable, nil
+}
+
+func (s *SupportInboxService) userHasSupportModuleAccess(ctx context.Context, workspaceID, userID string) bool {
+	trimmedUserID := strings.TrimSpace(userID)
+	if trimmedUserID == "" {
+		return false
+	}
+
+	if s.authzService != nil {
+		actor, err := s.authzService.ResolveActor(ctx, workspaceID, trimmedUserID)
+		if err == nil && actor != nil {
+			allowed, err := s.authzService.CanAccessModule(ctx, actor, model.ModuleSupport)
+			return err == nil && allowed
+		}
+	}
+
+	if s.workspaceRepo == nil {
+		return false
+	}
+
+	members, err := s.workspaceRepo.ListSupportAssignableMembers(ctx, workspaceID, nil)
+	if err != nil {
+		return false
+	}
+	for _, member := range members {
+		if member.UserID != nil && strings.TrimSpace(*member.UserID) == trimmedUserID {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *SupportInboxService) isConversationAssignableUser(ctx context.Context, workspaceID string, mailboxID *string, userID string) bool {
+	return s.userHasSupportModuleAccess(ctx, workspaceID, userID)
 }
 
 func supportTranscriptSenderName(workspaceName string, msg model.SupportMessage) string {
@@ -291,6 +491,15 @@ func (s *SupportInboxService) SetWorkspaceRepo(workspaceRepo *repository.Workspa
 		return nil
 	}
 	s.workspaceRepo = workspaceRepo
+	return s
+}
+
+// SetAuthzService injects the canonical authorization service for module access checks.
+func (s *SupportInboxService) SetAuthzService(authzService *authorization.AuthzService) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.authzService = authzService
 	return s
 }
 
@@ -668,12 +877,13 @@ func (s *SupportInboxService) CreateConversation(ctx context.Context, req model.
 		MailboxID:      req.MailboxID,
 		Subject:        strings.TrimSpace(req.Subject),
 		Status:         "open",
-		FlowState:      strPtr(defaultConversationFlowState(&actorID, nil)),
+		FlowState:      strPtr(defaultConversationFlowState(&actorID, &actorID, nil)),
 		Priority:       priority,
 		Channel:        source,
 		CustomerName:   req.CustomerName,
 		CustomerEmail:  req.CustomerEmail,
 		OpenedByUserID: &actorID,
+		AssignedUserID: &actorID,
 		Source:         source,
 	}
 
@@ -686,11 +896,11 @@ func (s *SupportInboxService) CreateConversation(ctx context.Context, req model.
 	}
 	ticket.MailboxID = mailboxID
 	if mailbox != nil {
-		ownerID, flowState, ownerErr := s.determineMailboxOwner(ctx, req.WorkspaceID, mailbox, ticket.OpenedByUserID)
+		ownerID, flowState, ownerErr := s.determineMailboxOwner(ctx, req.WorkspaceID, mailbox, ticket.AssignedUserID)
 		if ownerErr != nil {
 			return nil, ownerErr
 		}
-		ticket.OpenedByUserID = ownerID
+		ticket.AssignedUserID = ownerID
 		ticket.FlowState = strPtr(flowState)
 	}
 
@@ -760,7 +970,7 @@ func (s *SupportInboxService) UpdateConversationStatus(ctx context.Context, work
 			ticket.FlowState = strPtr(model.SupportConversationFlowStateResolvedByHuman)
 		}
 	case model.SupportConversationStatusOpen:
-		ticket.FlowState = strPtr(defaultConversationFlowState(ticket.OpenedByUserID, ticket.AssignedAgentID))
+		ticket.FlowState = strPtr(defaultConversationFlowState(ticket.OpenedByUserID, ticket.AssignedUserID, ticket.AssignedAgentID))
 	case model.SupportConversationStatusSpam:
 		ticket.ClosedAt = &now
 	}
@@ -950,7 +1160,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		ProcessSupportCustomerReplyNotification(ctx, s.notificationService, conv, msg.Content, senderName)
 		if conv.Status == model.SupportConversationStatusWaitingOnCustomer || conv.Status == model.SupportConversationStatusResolved {
 			conv.Status = model.SupportConversationStatusOpen
-			conv.FlowState = strPtr(defaultConversationFlowState(conv.OpenedByUserID, conv.AssignedAgentID))
+			conv.FlowState = strPtr(defaultConversationFlowState(conv.OpenedByUserID, conv.AssignedUserID, conv.AssignedAgentID))
 			conv.ClosedAt = nil
 			if err := s.conversationRepo.UpdateFields(ctx, workspaceID, ticketID, map[string]any{
 				"status":      conv.Status,
@@ -1740,6 +1950,11 @@ func (s *SupportInboxService) AssignConversationAgent(ctx context.Context, works
 	return s.assignConversationAgent(ctx, workspaceID, ticketID, agentID, &actorID)
 }
 
+// AssignConversationUser assigns a teammate to a conversation, or clears the assignee when userID is empty.
+func (s *SupportInboxService) AssignConversationUser(ctx context.Context, workspaceID, ticketID string, userID *string, actorID string) error {
+	return s.assignConversationUser(ctx, workspaceID, ticketID, userID, &actorID)
+}
+
 // ListContactConversations returns support conversations linked to a CRM contact.
 func (s *SupportInboxService) ListContactConversations(ctx context.Context, workspaceID, contactID string, pagination model.PMPagination) ([]model.SupportConversation, int64, error) {
 	conversations, _, err := s.conversationRepo.ListByContact(ctx, workspaceID, contactID, pagination)
@@ -2144,6 +2359,55 @@ func (s *SupportInboxService) assignConversationAgent(ctx context.Context, works
 
 	if s.activitySvc != nil {
 		_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", conversationID, actorID, "updated", strPtr("assigned_agent_id"), nil, &agentID, nil)
+	}
+
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      "updated",
+		Entity:      "support_conversation",
+		EntityID:    conversationID,
+		WorkspaceID: workspaceID,
+		ActorID:     derefString(actorID),
+	})
+
+	return nil
+}
+
+func (s *SupportInboxService) assignConversationUser(ctx context.Context, workspaceID, conversationID string, userID *string, actorID *string) error {
+	ticket, err := s.loadConversationAccessible(ctx, workspaceID, conversationID)
+	if err != nil {
+		return err
+	}
+	if ticket == nil {
+		return fmt.Errorf("ticket not found")
+	}
+
+	var normalizedUserID *string
+	if userID != nil {
+		trimmed := strings.TrimSpace(*userID)
+		if trimmed != "" {
+			normalizedUserID = &trimmed
+		}
+	}
+
+	if normalizedUserID != nil {
+		if !s.isConversationAssignableUser(ctx, workspaceID, ticket.MailboxID, *normalizedUserID) {
+			return fmt.Errorf("user is not eligible for this conversation")
+		}
+	}
+
+	previousAssignedUserID := derefString(ticket.AssignedUserID)
+	ticket.AssignedUserID = normalizedUserID
+	ticket.FlowState = strPtr(defaultConversationFlowState(ticket.OpenedByUserID, ticket.AssignedUserID, ticket.AssignedAgentID))
+	if err := s.conversationRepo.Update(ctx, ticket); err != nil {
+		return err
+	}
+
+	if s.activitySvc != nil {
+		var oldValue *string
+		if previousAssignedUserID != "" {
+			oldValue = &previousAssignedUserID
+		}
+		_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", conversationID, actorID, "updated", strPtr("assigned_user_id"), oldValue, normalizedUserID, nil)
 	}
 
 	s.wsPublisher.Publish(websocket.Event{

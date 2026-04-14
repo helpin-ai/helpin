@@ -1,4 +1,5 @@
 import { api } from '../api';
+import type { AssignableMember } from '../types';
 import type {
   SupportConversation,
   SupportMessage,
@@ -8,6 +9,7 @@ import type {
   CreateTaskFromConversationResponse,
   LinkTaskRequest,
   AssignConversationAgentRequest,
+  AssignConversationUserRequest,
   AgentRun,
   ConversationStatus,
   SupportInstallationResponse,
@@ -74,6 +76,8 @@ export const supportService = {
     api.del(`/support/inbox/triage-rules/${ruleId}${qs(workspaceId)}`),
   getConversation: (workspaceId: string, id: string) =>
     api.get<SupportConversation>(`/support/inbox/conversations/${id}${qs(workspaceId)}`),
+  listConversationAssignees: (workspaceId: string, conversationId: string) =>
+    api.get<AssignableMember[]>(`/support/inbox/conversations/${conversationId}/assignees${qs(workspaceId)}`),
   createConversation: (workspaceId: string, payload: CreateConversationRequest) =>
     api.post<SupportConversation>(`/support/inbox/conversations${qs(workspaceId)}`, payload),
   listConversationMessages: (workspaceId: string, conversationId: string) =>
@@ -99,6 +103,8 @@ export const supportService = {
     api.post(`/support/inbox/conversations/${conversationId}/link-story${qs(workspaceId)}`, payload),
   assignConversationAgent: (workspaceId: string, conversationId: string, payload: AssignConversationAgentRequest) =>
     api.post(`/support/inbox/conversations/${conversationId}/assign-agent${qs(workspaceId)}`, payload),
+  assignConversationUser: (workspaceId: string, conversationId: string, payload: AssignConversationUserRequest) =>
+    api.post(`/support/inbox/conversations/${conversationId}/assign-user${qs(workspaceId)}`, payload),
   runAgent: (workspaceId: string, conversationId: string) =>
     api.post<AgentRun>(`/support/inbox/conversations/${conversationId}/run-agent${qs(workspaceId)}`, {}),
 

@@ -2,22 +2,25 @@ package handler
 
 import (
 	"log/slog"
-	"net"
 	"net/http"
+	"net/netip"
 	"sort"
 	"strings"
 
+	"github.com/helpin-ai/helpin/server/internal/geoip"
+	"github.com/helpin-ai/helpin/server/internal/requestmeta"
 	"github.com/helpin-ai/helpin/server/internal/storage"
 )
 
 // HealthHandler handles health check and system setup requests.
 type HealthHandler struct {
-	s3Client *storage.S3Client
+	s3Client      *storage.S3Client
+	geoIPResolver geoip.Resolver
 }
 
 // NewHealthHandler creates a new HealthHandler.
-func NewHealthHandler(s3Client *storage.S3Client) *HealthHandler {
-	return &HealthHandler{s3Client: s3Client}
+func NewHealthHandler(s3Client *storage.S3Client, geoIPResolver geoip.Resolver) *HealthHandler {
+	return &HealthHandler{s3Client: s3Client, geoIPResolver: geoIPResolver}
 }
 
 // Check returns a 200 OK health check response.
@@ -37,9 +40,19 @@ type headerViewResponse struct {
 	Host            string            `json:"host"`
 	RemoteAddr      string            `json:"remote_addr"`
 	ClientIP        string            `json:"client_ip,omitempty"`
+	ClientIPSource  string            `json:"client_ip_source,omitempty"`
 	ForwardedIP     string            `json:"forwarded_ip,omitempty"`
+	GeoIP           *geoLookupView    `json:"geoip,omitempty"`
 	SelectedHeaders map[string]string `json:"selected_headers"`
 	Headers         []headerViewEntry `json:"headers"`
+}
+
+type geoLookupView struct {
+	CountryCode string `json:"country_code,omitempty"`
+	CountryName string `json:"country_name,omitempty"`
+	RegionName  string `json:"region_name,omitempty"`
+	CityName    string `json:"city_name,omitempty"`
+	Timezone    string `json:"timezone,omitempty"`
 }
 
 var selectedDebugHeaders = []string{
@@ -53,6 +66,7 @@ var selectedDebugHeaders = []string{
 	"Forwarded",
 	"True-Client-IP",
 	"User-Agent",
+	"X-Original-Forwarded-For",
 	"X-Forwarded-For",
 	"X-Forwarded-Host",
 	"X-Forwarded-Proto",
@@ -85,16 +99,22 @@ func (h *HealthHandler) ViewHeaders(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	clientIP, clientIPText, clientIPSource := resolveRequestClientIP(r)
+
 	resp := headerViewResponse{
 		Method:          r.Method,
 		Path:            r.URL.Path,
 		Query:           r.URL.RawQuery,
 		Host:            r.Host,
 		RemoteAddr:      r.RemoteAddr,
-		ClientIP:        extractRemoteIP(r.RemoteAddr),
+		ClientIP:        clientIPText,
+		ClientIPSource:  clientIPSource,
 		ForwardedIP:     firstForwardedIP(r.Header.Get("X-Forwarded-For")),
 		SelectedHeaders: selected,
 		Headers:         headers,
+	}
+	if geo := h.lookupGeoIP(clientIP); geo != nil {
+		resp.GeoIP = geo
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -128,15 +148,12 @@ func sanitizeHeaderValues(name string, values []string) []string {
 	}
 }
 
-func extractRemoteIP(remoteAddr string) string {
-	if remoteAddr == "" {
-		return ""
+func resolveRequestClientIP(r *http.Request) (netip.Addr, string, string) {
+	clientIP, ok := requestmeta.ExtractClientIP(r)
+	if !ok {
+		return netip.Addr{}, "", ""
 	}
-	host, _, err := net.SplitHostPort(remoteAddr)
-	if err == nil {
-		return host
-	}
-	return remoteAddr
+	return clientIP.Addr, clientIP.Addr.String(), clientIP.Source
 }
 
 func firstForwardedIP(raw string) string {
@@ -148,4 +165,23 @@ func firstForwardedIP(raw string) string {
 		return ""
 	}
 	return strings.TrimSpace(parts[0])
+}
+
+func (h *HealthHandler) lookupGeoIP(addr netip.Addr) *geoLookupView {
+	if h.geoIPResolver == nil || !requestmeta.IsPublicIP(addr) {
+		return nil
+	}
+
+	result, err := h.geoIPResolver.Lookup(addr)
+	if err != nil || result == nil {
+		return nil
+	}
+
+	return &geoLookupView{
+		CountryCode: result.CountryCode,
+		CountryName: result.CountryName,
+		RegionName:  result.RegionName,
+		CityName:    result.CityName,
+		Timezone:    result.Timezone,
+	}
 }

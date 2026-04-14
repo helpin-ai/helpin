@@ -53,6 +53,10 @@ func (s *SupportInboxService) GetVisitorContext(ctx context.Context, workspaceID
 			Timezone:    session.Timezone,
 			Locale:      session.Locale,
 			LastPageURL: session.LastPageURL,
+			CountryCode: session.CountryCode,
+			CountryName: session.CountryName,
+			RegionName:  session.RegionName,
+			CityName:    session.CityName,
 		}
 	}
 
@@ -96,21 +100,27 @@ func (s *SupportInboxService) GetVisitorContext(ctx context.Context, workspaceID
 	}
 
 	// Other conversations
-	var otherConvs []model.SupportConversation
+	const otherConvsLimit = 25
+
+	var (
+		otherConvs []model.SupportConversation
+		totalCount int
+	)
 	if conversation.CRMContactID != nil && *conversation.CRMContactID != "" {
-		convs, _, err := s.conversationRepo.ListByContact(ctx, workspaceID, *conversation.CRMContactID, model.PMPagination{Page: 1, PerPage: 6})
+		convs, total, err := s.conversationRepo.ListByContact(ctx, workspaceID, *conversation.CRMContactID, model.PMPagination{Page: 1, PerPage: otherConvsLimit})
 		if err != nil {
 			slog.ErrorContext(ctx, "visitor context: list contact conversations failed", "error", err)
 		}
 		otherConvs = convs
+		totalCount = int(total)
 	} else if conversation.AnonymousID != nil {
 		convs, err := s.conversationRepo.ListByAnonymousID(ctx, workspaceID, *conversation.AnonymousID)
 		if err != nil {
 			slog.ErrorContext(ctx, "visitor context: list anonymous conversations failed", "error", err)
 		}
-		// Cap to avoid unbounded results; ListByAnonymousID has no LIMIT.
-		if len(convs) > 6 {
-			convs = convs[:6]
+		totalCount = len(convs)
+		if len(convs) > otherConvsLimit {
+			convs = convs[:otherConvsLimit]
 		}
 		otherConvs = convs
 	}
@@ -126,12 +136,9 @@ func (s *SupportInboxService) GetVisitorContext(ctx context.Context, workspaceID
 			Status:    c.Status,
 			CreatedAt: c.CreatedAt.Format(time.RFC3339),
 		})
-		if len(resp.OtherConversations) >= 5 {
-			break
-		}
 	}
 
-	resp.TotalConversations = len(otherConvs)
+	resp.TotalConversations = totalCount
 
 	return resp, nil
 }

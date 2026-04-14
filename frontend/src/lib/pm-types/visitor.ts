@@ -12,6 +12,10 @@ export interface VisitorLocation {
   timezone: string | null;
   locale: string | null;
   last_page_url: string | null;
+  country_code: string | null;
+  country_name: string | null;
+  region_name: string | null;
+  city_name: string | null;
 }
 
 export interface VisitorContactData {

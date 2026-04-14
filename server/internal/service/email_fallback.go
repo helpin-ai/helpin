@@ -1070,7 +1070,7 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		if ownerErr != nil {
 			return ownerErr
 		}
-		conversation.OpenedByUserID = ownerID
+		conversation.AssignedUserID = ownerID
 		conversation.FlowState = strPtr(flowState)
 	}
 

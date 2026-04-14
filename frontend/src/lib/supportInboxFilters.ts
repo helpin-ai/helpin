@@ -34,9 +34,9 @@ export function filterSupportConversations(
   }
 
   if (navFilter === 'my_inbox' && userId) {
-    result = result.filter((conversation) => isHumanQueueConversation(conversation) && conversation.opened_by_user_id === userId);
+    result = result.filter((conversation) => isHumanQueueConversation(conversation) && conversation.assigned_user_id === userId);
   } else if (navFilter === 'unassigned') {
-    result = result.filter((conversation) => isHumanQueueConversation(conversation) && !conversation.assigned_agent_id && !conversation.opened_by_user_id);
+    result = result.filter((conversation) => isHumanQueueConversation(conversation) && !conversation.assigned_agent_id && !conversation.assigned_user_id);
   } else if (navFilter === 'ai_active') {
     result = result.filter(isAIActiveConversation);
   } else if (navFilter === 'resolved_by_ai') {

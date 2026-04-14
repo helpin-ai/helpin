@@ -38,22 +38,24 @@ interface ConversationListProps {
 }
 
 export function ConversationList({ workspaceId, userId }: ConversationListProps) {
-  const {
-    statusFilter, setStatusFilter,
-    searchQuery, setSearchQuery,
-    selectedConversationId, selectConversation,
-    navFilter,
-    selectedMailboxId,
-  } = useSupportInboxStore();
+  const statusFilter = useSupportInboxStore((s) => s.statusFilter);
+  const setStatusFilter = useSupportInboxStore((s) => s.setStatusFilter);
+  const searchQuery = useSupportInboxStore((s) => s.searchQuery);
+  const setSearchQuery = useSupportInboxStore((s) => s.setSearchQuery);
+  const navFilter = useSupportInboxStore((s) => s.navFilter);
+  const selectedMailboxId = useSupportInboxStore((s) => s.selectedMailboxId);
+  const selectConversation = useSupportInboxStore((s) => s.selectConversation);
   const [searchExpanded, setSearchExpanded] = useState(false);
   const wsSend = useSupportPresenceStore((s) => s.wsSend);
   const wsConnected = useSupportPresenceStore((s) => s.wsConnected);
   const markConversationRead = useMarkConversationRead(workspaceId);
   const { data: inboxScopes } = useInboxScopes(workspaceId);
 
-  const handleSelect = useCallback((id: string) => {
+  const handleSelect = useCallback((id: string, unreadCount?: number) => {
     selectConversation(id);
-    markConversationRead.mutate(id);
+    if ((unreadCount ?? 0) > 0) {
+      markConversationRead.mutate(id);
+    }
   }, [markConversationRead, selectConversation]);
 
   const filters = useMemo(() => {
@@ -130,7 +132,7 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-7 w-[208px] justify-between gap-2 px-2 text-xs font-medium"
+                  className="h-7 max-w-[208px] gap-1.5 px-2 text-xs font-medium"
                 >
                   <span className="flex min-w-0 items-center gap-1.5">
                     {(() => {
@@ -145,7 +147,7 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
                   <ArrowDown01Icon className="h-3 w-3 shrink-0 opacity-50" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-[208px]">
+              <DropdownMenuContent align="start" className="min-w-[var(--radix-dropdown-menu-trigger-width)]">
                 {supportStatusOptions.map((option) => (
                   <DropdownMenuCheckboxItem
                     key={option.value}
@@ -198,8 +200,7 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
             workspaceId={workspaceId}
             conversation={conversation}
             moveOptions={mailboxMoveOptions}
-            isSelected={selectedConversationId === conversation.id}
-            onSelect={() => handleSelect(conversation.id)}
+            onSelectConversation={handleSelect}
           />
         ))}
       </ScrollArea>

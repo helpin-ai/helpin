@@ -219,6 +219,41 @@ func (h *SupportInboxHandler) AssignConversationAgent(w http.ResponseWriter, r *
 	writeJSON(w, http.StatusOK, map[string]bool{"assigned": true})
 }
 
+// AssignConversationUser handles POST /api/support/tickets/{id}/assign-user.
+func (h *SupportInboxHandler) AssignConversationUser(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	ticketID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+
+	var req model.AssignConversationUserRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if err := h.supportService.AssignConversationUser(r.Context(), workspaceID, ticketID, req.UserID, actorID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"assigned": true})
+}
+
+// ListConversationAssignableUsers handles GET /api/support/inbox/conversations/{id}/assignees.
+func (h *SupportInboxHandler) ListConversationAssignableUsers(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	conversationID := chi.URLParam(r, "id")
+
+	members, err := h.supportService.ListConversationAssignableUsers(r.Context(), workspaceID, conversationID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if members == nil {
+		members = []model.AssignableMember{}
+	}
+	writeJSON(w, http.StatusOK, members)
+}
+
 // MarkConversationRead handles POST /api/support/inbox/conversations/{id}/read.
 func (h *SupportInboxHandler) MarkConversationRead(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)

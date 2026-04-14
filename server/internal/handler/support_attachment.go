@@ -9,6 +9,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/requestmeta"
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
 
@@ -78,7 +79,12 @@ func (h *SupportAttachmentHandler) WidgetCreate(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	session, err := h.inboxService.GetWidgetSession(r.Context(), sessionToken)
+	ctx := r.Context()
+	if clientIP, ok := requestmeta.ExtractClientIP(r); ok {
+		ctx = requestmeta.WithClientIP(ctx, clientIP)
+	}
+
+	session, err := h.inboxService.GetWidgetSession(ctx, sessionToken)
 	if err != nil || session == nil {
 		writeError(w, http.StatusUnauthorized, "invalid session")
 		return
@@ -117,7 +123,12 @@ func (h *SupportAttachmentHandler) WidgetConfirmUpload(w http.ResponseWriter, r 
 		return
 	}
 
-	session, err := h.inboxService.GetWidgetSession(r.Context(), sessionToken)
+	ctx := r.Context()
+	if clientIP, ok := requestmeta.ExtractClientIP(r); ok {
+		ctx = requestmeta.WithClientIP(ctx, clientIP)
+	}
+
+	session, err := h.inboxService.GetWidgetSession(ctx, sessionToken)
 	if err != nil || session == nil {
 		writeError(w, http.StatusUnauthorized, "invalid session")
 		return

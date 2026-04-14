@@ -319,7 +319,7 @@ func (r *SupportMailboxRepository) SelectRoundRobinOwnerUserID(ctx context.Conte
 		LEFT JOIN support_conversations sc
 		  ON sc.workspace_id = ?
 		 AND sc.mailbox_id = ?
-		 AND sc.opened_by_user_id = wm.user_id
+		 AND sc.assigned_user_id = wm.user_id
 		WHERE wm.workspace_id = ?
 		  AND wm.status = ?
 		  AND wm.user_id IS NOT NULL

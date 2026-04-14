@@ -691,6 +691,77 @@ func (r *WorkspaceRepository) ListSupportAccessibleUserIDs(ctx context.Context, 
 	return userIDs, nil
 }
 
+// ListSupportAssignableMembers returns active linked users who can access support, optionally narrowed to a mailbox.
+func (r *WorkspaceRepository) ListSupportAssignableMembers(ctx context.Context, workspaceID string, mailboxID *string) ([]model.AssignableMember, error) {
+	var members []model.AssignableMember
+
+	query := r.db.WithContext(ctx).
+		Table("workspace_members wm").
+		Select(`
+			wm.id,
+			wm.user_id,
+			wm.role,
+			wm.email,
+			COALESCE(NULLIF(wm.display_name, ''), u.full_name, wm.email) AS display_name,
+			u.avatar_url,
+			u.avatar_style,
+			u.avatar_seed,
+			u.avatar_background_mode,
+			u.avatar_background_color,
+			wm.status,
+			wm.invited_by,
+			wm.invited_at,
+			wm.accepted_at
+		`).
+		Joins("LEFT JOIN users u ON u.id = wm.user_id").
+		Joins("LEFT JOIN team_workspace_memberships twm_support ON twm_support.workspace_member_id = wm.id").
+		Joins(
+			"LEFT JOIN workspace_module_grants member_grant ON member_grant.workspace_id = wm.workspace_id AND member_grant.module = ? AND member_grant.subject_type = ? AND member_grant.subject_id = wm.id",
+			model.ModuleSupport,
+			model.ModuleGrantSubjectWorkspaceMember,
+		).
+		Joins(
+			"LEFT JOIN workspace_module_grants team_grant ON team_grant.workspace_id = wm.workspace_id AND team_grant.module = ? AND team_grant.subject_type = ? AND team_grant.subject_id = twm_support.team_id",
+			model.ModuleSupport,
+			model.ModuleGrantSubjectTeam,
+		).
+		Where("wm.workspace_id = ? AND wm.status = ? AND wm.user_id IS NOT NULL", workspaceID, model.WorkspaceMemberStatusActive).
+		Where(
+			"(wm.role IN ? OR member_grant.id IS NOT NULL OR team_grant.id IS NOT NULL)",
+			[]string{model.RoleOwner, model.RoleAdmin},
+		)
+
+	if mailboxID != nil && strings.TrimSpace(*mailboxID) != "" {
+		trimmedMailboxID := strings.TrimSpace(*mailboxID)
+		query = query.Where(`
+			(
+				wm.role IN ?
+				OR EXISTS (
+					SELECT 1
+					FROM support_mailbox_memberships smm
+					WHERE smm.mailbox_id = ?
+					  AND smm.workspace_member_id = wm.id
+				)
+				OR EXISTS (
+					SELECT 1
+					FROM support_mailboxes sm
+					JOIN team_workspace_memberships twm_mailbox ON twm_mailbox.team_id = sm.linked_team_id
+					WHERE sm.id = ?
+					  AND twm_mailbox.workspace_member_id = wm.id
+				)
+			)
+		`, []string{model.RoleOwner, model.RoleAdmin}, trimmedMailboxID, trimmedMailboxID)
+	}
+
+	if err := query.
+		Distinct().
+		Order("LOWER(COALESCE(NULLIF(wm.display_name, ''), u.full_name, wm.email)) ASC, LOWER(wm.email) ASC").
+		Scan(&members).Error; err != nil {
+		return nil, fmt.Errorf("list support assignable members: %w", err)
+	}
+	return members, nil
+}
+
 // ListAssignableMembers returns both joined and pending identities for PM assignment pickers.
 func (r *WorkspaceRepository) ListAssignableMembers(ctx context.Context, workspaceID string) ([]model.AssignableMember, error) {
 	var members []model.AssignableMember

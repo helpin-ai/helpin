@@ -23,6 +23,7 @@ type SupportConversation struct {
 	CustomerEmail     *string    `json:"customer_email"`
 	CustomerPhone     *string    `json:"customer_phone"`
 	OpenedByUserID    *string    `json:"opened_by_user_id" gorm:"type:uuid"`
+	AssignedUserID    *string    `json:"assigned_user_id" gorm:"type:uuid"`
 	AssignedAgentID   *string    `json:"assigned_agent_id" gorm:"type:uuid"`
 	LinkedTaskID      *string    `json:"linked_task_id" gorm:"column:linked_task_id;type:uuid"`
 	Source            string     `json:"source" gorm:"not null;default:'internal'"` // widget, internal, email, api - kept for backward compat
@@ -48,6 +49,8 @@ type SupportConversation struct {
 	// Virtual fields — populated by SELECT subqueries, not stored as columns.
 	LastMessage         *string                    `json:"last_message,omitempty" gorm:"->"`
 	UnreadCount         int                        `json:"unread_count" gorm:"->"`
+	CountryCode         *string                    `json:"country_code,omitempty" gorm:"->"`
+	CountryName         *string                    `json:"country_name,omitempty" gorm:"->"`
 	OpenedByDisplayName *string                    `json:"opened_by_display_name,omitempty" gorm:"-"`
 	OpenedByAvatarURL   *string                    `json:"opened_by_avatar_url,omitempty" gorm:"-"`
 	OpenedByStatus      *string                    `json:"opened_by_status,omitempty" gorm:"-"`
@@ -258,6 +261,11 @@ type SupportWidgetSession struct {
 	LastPageURL    *string    `json:"last_page_url"`
 	Timezone       *string    `json:"timezone"`
 	Locale         *string    `json:"locale"`
+	IPAddress      *string    `json:"ip_address,omitempty" gorm:"size:64"`
+	CountryCode    *string    `json:"country_code,omitempty" gorm:"size:8"`
+	CountryName    *string    `json:"country_name,omitempty" gorm:"size:128"`
+	RegionName     *string    `json:"region_name,omitempty" gorm:"size:128"`
+	CityName       *string    `json:"city_name,omitempty" gorm:"size:128"`
 	RevokedAt      *time.Time `json:"-" gorm:"index"`
 	ExpiresAt      time.Time  `json:"expires_at" gorm:"not null"`
 	CreatedAt      time.Time  `json:"created_at" gorm:"autoCreateTime"`
@@ -537,6 +545,11 @@ type CreateTaskFromConversationResponse struct {
 // AssignConversationAgentRequest assigns an agent to a conversation.
 type AssignConversationAgentRequest struct {
 	AgentID string `json:"agent_id"`
+}
+
+// AssignConversationUserRequest assigns a teammate to a conversation.
+type AssignConversationUserRequest struct {
+	UserID *string `json:"user_id"`
 }
 
 // UpdateConversationStatusRequest changes conversation status.
@@ -1117,6 +1130,10 @@ type VisitorLocation struct {
 	Timezone    *string `json:"timezone"`
 	Locale      *string `json:"locale"`
 	LastPageURL *string `json:"last_page_url"`
+	CountryCode *string `json:"country_code,omitempty"`
+	CountryName *string `json:"country_name,omitempty"`
+	RegionName  *string `json:"region_name,omitempty"`
+	CityName    *string `json:"city_name,omitempty"`
 }
 
 // VisitorContactData holds CRM contact details for visitor context.
