@@ -276,7 +276,7 @@ export function CodingSessionSurface({
         />
 
         <div className="min-h-0 space-y-4 overflow-y-auto">
-          <CodingPlanPanel plan={streamState.current_plan} />
+          <CodingPlanPanel plan={streamState.current_plan} runStatus={session?.status} />
           <CodingPreviewPanels previewsByKey={previewsByKey} />
         </div>
       </div>
