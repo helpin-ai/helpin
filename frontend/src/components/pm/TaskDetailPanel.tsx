@@ -242,6 +242,16 @@ const ACTIVITY_ICON_MAP: Record<string, { icon: React.ElementType; color: string
   severity: { icon: Shield02Icon, color: 'text-red-500' },
   name: { icon: PencilEdit01Icon, color: 'text-muted-foreground' },
   description: { icon: PencilEdit01Icon, color: 'text-muted-foreground' },
+  agent_run: { icon: BotIcon, color: 'text-indigo-500' },
+};
+
+const AGENT_RUN_ACTION_LABELS: Record<string, string> = {
+  started: 'started',
+  completed: 'completed',
+  failed: 'failed',
+  cancelled: 'cancelled',
+  paused: 'paused',
+  resumed: 'resumed',
 };
 
 /** Map raw action strings like "comment_added" to readable labels. */
@@ -336,6 +346,8 @@ function TimelineEntry({ item, states = [] }: { item: TimelineItem; states?: Wor
   // Build rich inline label
   let richLabel: React.ReactNode = null;
 
+  const isAgentRunActivity = activity.field_name === 'agent_run';
+
   if (isStateChange && targetStateName) {
     richLabel = (
       <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
@@ -346,6 +358,21 @@ function TimelineEntry({ item, states = [] }: { item: TimelineItem; states?: Wor
         >
           {matchedState && <StateTypeIcon stateType={matchedState.state_type} className="h-3 w-3" />}
           {targetStateName}
+        </span>
+      </span>
+    );
+  } else if (isAgentRunActivity) {
+    const meta = activity.metadata as { agent_name?: string } | undefined;
+    const rawAction = activity.new_value ?? 'started';
+    const actionLabel = AGENT_RUN_ACTION_LABELS[rawAction] ?? rawAction;
+    const agentName = meta?.agent_name ?? 'agent';
+
+    richLabel = (
+      <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+        {actionLabel} agent run
+        <span className="inline-flex items-center gap-1 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700 dark:text-indigo-300">
+          <AgentAvatar name={agentName} className="h-3 w-3" />
+          {agentName}
         </span>
       </span>
     );
