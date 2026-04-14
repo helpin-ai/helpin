@@ -44,6 +44,7 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
   const setSearchQuery = useSupportInboxStore((s) => s.setSearchQuery);
   const navFilter = useSupportInboxStore((s) => s.navFilter);
   const selectedMailboxId = useSupportInboxStore((s) => s.selectedMailboxId);
+  const selectedConversationId = useSupportInboxStore((s) => s.selectedConversationId);
   const selectConversation = useSupportInboxStore((s) => s.selectConversation);
   const [searchExpanded, setSearchExpanded] = useState(false);
   const wsSend = useSupportPresenceStore((s) => s.wsSend);
@@ -52,11 +53,12 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
   const { data: inboxScopes } = useInboxScopes(workspaceId);
 
   const handleSelect = useCallback((id: string, unreadCount?: number) => {
+    const isNewSelection = selectedConversationId !== id;
     selectConversation(id);
-    if ((unreadCount ?? 0) > 0) {
+    if (isNewSelection && (unreadCount ?? 0) > 0) {
       markConversationRead.mutate(id);
     }
-  }, [markConversationRead, selectConversation]);
+  }, [markConversationRead, selectConversation, selectedConversationId]);
 
   const filters = useMemo(() => {
     const f: Record<string, string> = {};

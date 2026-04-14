@@ -17,7 +17,19 @@ vi.mock('@/hooks/queries/useSupport', () => ({
 }))
 
 vi.mock('../ConversationRow', () => ({
-  ConversationRow: ({ conversation }: { conversation: { id: string } }) => <div data-conversation-id={conversation.id} />,
+  ConversationRow: ({
+    conversation,
+    onSelectConversation,
+  }: {
+    conversation: { id: string; unread_count?: number | null }
+    onSelectConversation: (id: string, unreadCount?: number) => void
+  }) => (
+    <button
+      type="button"
+      data-conversation-id={conversation.id}
+      onClick={() => onSelectConversation(conversation.id, conversation.unread_count ?? 0)}
+    />
+  ),
 }))
 
 import { ConversationList } from '../ConversationList'
@@ -45,8 +57,8 @@ describe('ConversationList presence resync', () => {
     mockUseConversations.mockReturnValue({
       data: {
         data: [
-          { id: 'conv-1', updated_at: '2026-03-27T20:00:00Z' },
-          { id: 'conv-2', updated_at: '2026-03-27T20:01:00Z' },
+          { id: 'conv-1', unread_count: 1, updated_at: '2026-03-27T20:00:00Z' },
+          { id: 'conv-2', unread_count: 0, updated_at: '2026-03-27T20:01:00Z' },
         ],
       },
       isLoading: false,
@@ -82,6 +94,55 @@ describe('ConversationList presence resync', () => {
     expect(wsSend).toHaveBeenCalledWith('support:presence:sync', {
       conversation_ids: expect.arrayContaining(['conv-1', 'conv-2']),
     })
+
+    act(() => root.unmount())
+  })
+
+  it('marks a newly selected unread conversation as read', () => {
+    const mutate = vi.fn()
+    mockUseMarkConversationRead.mockReturnValue({ mutate })
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<ConversationList workspaceId="ws-1" userId="user-1" />)
+    })
+
+    const row = container.querySelector('[data-conversation-id="conv-1"]')
+    expect(row).not.toBeNull()
+
+    act(() => {
+      (row as HTMLButtonElement).click()
+    })
+
+    expect(mutate).toHaveBeenCalledWith('conv-1')
+
+    act(() => root.unmount())
+  })
+
+  it('does not mark an already selected unread conversation as read again', () => {
+    const mutate = vi.fn()
+    mockUseMarkConversationRead.mockReturnValue({ mutate })
+    useSupportInboxStore.setState({ selectedConversationId: 'conv-1' })
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<ConversationList workspaceId="ws-1" userId="user-1" />)
+    })
+
+    const row = container.querySelector('[data-conversation-id="conv-1"]')
+    expect(row).not.toBeNull()
+
+    act(() => {
+      (row as HTMLButtonElement).click()
+    })
+
+    expect(mutate).not.toHaveBeenCalled()
 
     act(() => root.unmount())
   })
