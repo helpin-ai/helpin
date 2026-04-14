@@ -67,7 +67,7 @@ export function AgentRunTable({ runs, agents, selectedRunId, onSelectRun, loadin
         <div className={TABLE_HEADER_CELL} style={{ width: 120 }}>Status</div>
         <div className={TABLE_HEADER_CELL} style={{ width: 150 }}>Agent</div>
         <div className={TABLE_HEADER_CELL} style={{ flex: '1 1 0%', minWidth: 100 }}>Branch</div>
-        <div className={TABLE_HEADER_CELL} style={{ width: 100 }}>Time</div>
+        <div className={TABLE_HEADER_CELL} style={{ width: 130 }}>Time</div>
         <div className={`${TABLE_HEADER_CELL} text-right`} style={{ width: 70 }}>Tokens</div>
       </div>
 
@@ -110,7 +110,7 @@ export function AgentRunTable({ runs, agents, selectedRunId, onSelectRun, loadin
                 <span className="truncate">-</span>
               )}
             </div>
-            <div className={`${TABLE_CELL} text-muted-foreground`} style={{ width: 100 }}>
+            <div className={`${TABLE_CELL} text-muted-foreground`} style={{ width: 130 }}>
               {formatDistanceToNow(parseISO(run.created_at), { addSuffix: true })}
             </div>
             <div className={`${TABLE_CELL} justify-end text-muted-foreground`} style={{ width: 70 }}>
