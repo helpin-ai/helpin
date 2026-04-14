@@ -147,13 +147,13 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
                   <ArrowDown01Icon className="h-3 w-3 shrink-0 opacity-50" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="min-w-[var(--radix-dropdown-menu-trigger-width)]">
+              <DropdownMenuContent align="start" className="w-56">
                 {supportStatusOptions.map((option) => (
                   <DropdownMenuCheckboxItem
                     key={option.value}
                     checked={statusFilter === option.value}
                     onCheckedChange={() => setStatusFilter(option.value)}
-                    className="gap-2"
+                    className="gap-2 whitespace-nowrap"
                   >
                     <option.icon className={`h-3.5 w-3.5 ${option.color}`} />
                     {option.label}

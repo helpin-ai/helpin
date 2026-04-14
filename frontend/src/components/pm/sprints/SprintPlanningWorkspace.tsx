@@ -32,6 +32,7 @@ const sprintCollision: CollisionDetection = (args) => {
 interface SprintPlanningWorkspaceProps {
   workspace: SprintPlanningWorkspaceData | null;
   workspaceId: string;
+  workspaceSlug: string;
   backlogOpen: boolean;
   onBacklogToggle: () => void;
   canEdit: boolean;
@@ -46,6 +47,7 @@ interface SprintPlanningWorkspaceProps {
 export function SprintPlanningWorkspace({
   workspace,
   workspaceId,
+  workspaceSlug,
   backlogOpen,
   onBacklogToggle,
   canEdit,
@@ -182,6 +184,7 @@ export function SprintPlanningWorkspace({
                 key={card.sprint.id}
                 card={card}
                 workspaceId={workspaceId}
+                workspaceSlug={workspaceSlug}
                 ownerByMemberId={ownerByMemberId}
                 canEdit={canEdit}
                 isDropTargetActive={activeDropTargetId === `sprint:${card.sprint.id}`}

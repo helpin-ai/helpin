@@ -320,7 +320,7 @@ func (r *DocsHelpcenterRepository) ListPublicCollectionTranslations(ctx context.
 }
 
 func (r *DocsHelpcenterRepository) GetPublicCollectionTranslationBySlug(ctx context.Context, spaceID, locale, slug string) (*model.DocsHelpcenterCollectionTranslation, error) {
-	var translation model.DocsHelpcenterCollectionTranslation
+	var translations []model.DocsHelpcenterCollectionTranslation
 	if err := r.db.WithContext(ctx).
 		Table("docs_helpcenter_collection_translations ct").
 		Select("ct.*").
@@ -333,17 +333,17 @@ func (r *DocsHelpcenterRepository) GetPublicCollectionTranslationBySlug(ctx cont
 			AND ct.published_at IS NOT NULL
 			AND c.deleted_at IS NULL
 		`, spaceID, locale, slug, model.DocsHelpcenterTranslationStatusPublished).
-		First(&translation).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
+		Limit(2).Find(&translations).Error; err != nil {
 		return nil, fmt.Errorf("get public collection translation by slug: %w", err)
 	}
-	return &translation, nil
+	if len(translations) != 1 {
+		return nil, nil
+	}
+	return &translations[0], nil
 }
 
 func (r *DocsHelpcenterRepository) GetPublicCollectionTranslationByWorkspaceSlug(ctx context.Context, workspaceID, locale, slug string) (*model.DocsHelpcenterCollectionTranslation, error) {
-	var translation model.DocsHelpcenterCollectionTranslation
+	var translations []model.DocsHelpcenterCollectionTranslation
 	if err := r.db.WithContext(ctx).
 		Table("docs_helpcenter_collection_translations ct").
 		Select("ct.*").
@@ -359,13 +359,13 @@ func (r *DocsHelpcenterRepository) GetPublicCollectionTranslationByWorkspaceSlug
 			AND s.deleted_at IS NULL
 			AND s.type = ?
 		`, workspaceID, locale, slug, model.DocsHelpcenterTranslationStatusPublished, model.SpaceTypeExternalCapable).
-		First(&translation).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
+		Limit(2).Find(&translations).Error; err != nil {
 		return nil, fmt.Errorf("get public collection translation by workspace slug: %w", err)
 	}
-	return &translation, nil
+	if len(translations) != 1 {
+		return nil, nil
+	}
+	return &translations[0], nil
 }
 
 func (r *DocsHelpcenterRepository) GetPublicCollectionTranslationByCollectionID(ctx context.Context, collectionID, locale string) (*model.DocsHelpcenterCollectionTranslation, error) {
@@ -500,14 +500,14 @@ func (r *DocsHelpcenterRepository) GetPublicArticleTranslationBySlug(ctx context
 		query = query.Where("hat.collection_id = ?", *collectionID)
 	}
 
-	var translation model.DocsHelpcenterArticleTranslation
-	if err := query.First(&translation).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
+	var translations []model.DocsHelpcenterArticleTranslation
+	if err := query.Limit(2).Find(&translations).Error; err != nil {
 		return nil, fmt.Errorf("get public article translation by slug: %w", err)
 	}
-	return &translation, nil
+	if len(translations) != 1 {
+		return nil, nil
+	}
+	return &translations[0], nil
 }
 
 func (r *DocsHelpcenterRepository) GetPublicArticleTranslationByPublicID(ctx context.Context, workspaceID, locale, publicID string) (*model.DocsHelpcenterArticleTranslation, error) {
@@ -626,7 +626,7 @@ func (r *DocsHelpcenterRepository) ListPublicArticleTranslationsByCollection(ctx
 }
 
 func (r *DocsHelpcenterRepository) GetPublicArticleTranslationByCollectionSlug(ctx context.Context, collectionID, locale, slug string) (*model.DocsHelpcenterArticleTranslation, error) {
-	var translation model.DocsHelpcenterArticleTranslation
+	var translations []model.DocsHelpcenterArticleTranslation
 	if err := r.db.WithContext(ctx).
 		Table("docs_helpcenter_article_translations hat").
 		Select(`
@@ -675,13 +675,13 @@ func (r *DocsHelpcenterRepository) GetPublicArticleTranslationByCollectionSlug(c
 				OR (hat.locale = cfg.default_locale AND p.document_id IS NOT NULL)
 			)
 		`, collectionID, locale, slug, model.DocsHelpcenterTranslationStatusPublished, model.DocStatusPublished).
-		First(&translation).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
+		Limit(2).Find(&translations).Error; err != nil {
 		return nil, fmt.Errorf("get public article translation by collection slug: %w", err)
 	}
-	return &translation, nil
+	if len(translations) != 1 {
+		return nil, nil
+	}
+	return &translations[0], nil
 }
 
 type sourceArticleRow struct {
@@ -1130,7 +1130,7 @@ func (r *DocsHelpcenterRepository) ListWidgetArticlesBySpaceUncategorized(ctx co
 
 // GetPublicArticleBySlug finds a publicly published article by space and slug.
 func (r *DocsHelpcenterRepository) GetPublicArticleBySlug(ctx context.Context, spaceID, slug string) (*model.DocsDocument, *model.DocsHelpcenterArticle, *model.DocsContent, error) {
-	var row sourceArticleRow
+	var rows []sourceArticleRow
 	if err := r.db.WithContext(ctx).
 		Table("docs_helpcenter_article_publications p").
 		Select(`
@@ -1153,13 +1153,13 @@ func (r *DocsHelpcenterRepository) GetPublicArticleBySlug(ctx context.Context, s
 		Joins("JOIN docs_helpcenter_configs cfg ON cfg.workspace_id = d.workspace_id").
 		Where("d.space_id = ? AND p.slug = ? AND p.locale = cfg.default_locale AND d.status = 'published' AND d.deleted_at IS NULL AND ha.public_published_at IS NOT NULL",
 			spaceID, slug).
-		First(&row).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil, nil, nil
-		}
+		Limit(2).Find(&rows).Error; err != nil {
 		return nil, nil, nil, fmt.Errorf("get public article by slug: %w", err)
 	}
-	doc, ha, content := sourceArticleRowToModels(row)
+	if len(rows) != 1 {
+		return nil, nil, nil, nil
+	}
+	doc, ha, content := sourceArticleRowToModels(rows[0])
 	return doc, ha, content, nil
 }
 
@@ -1176,7 +1176,7 @@ func (r *DocsHelpcenterRepository) GetPublicArticleByDocumentIDInSpaces(ctx cont
 		matchClause = "p.document_id = ?"
 	}
 
-	var row sourceArticleRow
+	var rows []sourceArticleRow
 	if err := r.db.WithContext(ctx).
 		Table("docs_helpcenter_article_publications p").
 		Select(`
@@ -1205,13 +1205,14 @@ func (r *DocsHelpcenterRepository) GetPublicArticleByDocumentIDInSpaces(ctx cont
 			AND d.deleted_at IS NULL
 			AND ha.public_published_at IS NOT NULL
 		`, slugOrID, spaceIDs).
-		First(&row).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil, nil, nil
-		}
+		Limit(2).
+		Find(&rows).Error; err != nil {
 		return nil, nil, nil, fmt.Errorf("get public article by document id: %w", err)
 	}
-	doc, ha, content := sourceArticleRowToModels(row)
+	if len(rows) != 1 {
+		return nil, nil, nil, nil // not found or ambiguous
+	}
+	doc, ha, content := sourceArticleRowToModels(rows[0])
 	return doc, ha, content, nil
 }
 
@@ -1302,7 +1303,7 @@ func (r *DocsHelpcenterRepository) GetPublicArticleByPublicID(ctx context.Contex
 
 // GetPublicArticleByCollectionSlug finds a publicly published article by collection slug and article slug.
 func (r *DocsHelpcenterRepository) GetPublicArticleByCollectionSlug(ctx context.Context, workspaceID, collectionSlug, articleSlug string) (*model.DocsDocument, *model.DocsHelpcenterArticle, *model.DocsContent, error) {
-	var row sourceArticleRow
+	var rows []sourceArticleRow
 	if err := r.db.WithContext(ctx).
 		Table("docs_helpcenter_article_publications p").
 		Select(`
@@ -1326,13 +1327,13 @@ func (r *DocsHelpcenterRepository) GetPublicArticleByCollectionSlug(ctx context.
 		Joins("JOIN docs_helpcenter_configs cfg ON cfg.workspace_id = d.workspace_id").
 		Where("c.workspace_id = ? AND c.slug = ? AND p.slug = ? AND p.locale = cfg.default_locale AND d.status = 'published' AND d.deleted_at IS NULL AND ha.public_published_at IS NOT NULL",
 			workspaceID, collectionSlug, articleSlug).
-		First(&row).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil, nil, nil
-		}
+		Limit(2).Find(&rows).Error; err != nil {
 		return nil, nil, nil, fmt.Errorf("get public article by collection slug: %w", err)
 	}
-	doc, ha, content := sourceArticleRowToModels(row)
+	if len(rows) != 1 {
+		return nil, nil, nil, nil
+	}
+	doc, ha, content := sourceArticleRowToModels(rows[0])
 	return doc, ha, content, nil
 }
 
@@ -1372,22 +1373,22 @@ func (r *DocsHelpcenterRepository) GetPublicArticleByCollectionIDAndSlug(ctx con
 
 // GetPublicCollectionBySlug returns a collection and its published articles by workspace and collection slug.
 func (r *DocsHelpcenterRepository) GetPublicCollectionBySlug(ctx context.Context, workspaceID, collectionSlug string) (*model.DocsCollection, []model.PublicNavArticle, error) {
-	var coll model.DocsCollection
+	var colls []model.DocsCollection
 	if err := r.db.WithContext(ctx).
 		Where("workspace_id = ? AND slug = ? AND deleted_at IS NULL", workspaceID, collectionSlug).
-		First(&coll).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil, nil
-		}
+		Limit(2).Find(&colls).Error; err != nil {
 		return nil, nil, fmt.Errorf("get public collection by slug: %w", err)
 	}
+	if len(colls) != 1 {
+		return nil, nil, nil
+	}
 
-	articles, err := r.ListPublicCollectionArticles(ctx, coll.ID)
+	articles, err := r.ListPublicCollectionArticles(ctx, colls[0].ID)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	return &coll, articles, nil
+	return &colls[0], articles, nil
 }
 
 // ListPublicCollectionArticles returns published article nav rows for a collection.

@@ -91,8 +91,19 @@ func convertDocument(n ast.Node, source []byte) *Node {
 }
 
 func convertParagraph(n ast.Node, source []byte) *Node {
+	children := convertInlineChildren(n, source, nil)
+
+	// TipTap treats image as a block-level node. If this paragraph
+	// contains only an image (the common markdown pattern
+	// `![alt](src)` on its own line), return the image directly
+	// instead of wrapping it in a paragraph.
+	if len(children) == 1 && children[0].Type == "resizableImage" {
+		img := children[0]
+		return &img
+	}
+
 	p := &Node{Type: "paragraph"}
-	p.Content = convertInlineChildren(n, source, nil)
+	p.Content = children
 	return p
 }
 
@@ -335,7 +346,7 @@ func convertImage(n ast.Node, source []byte) []Node {
 		}
 	}
 	node := Node{
-		Type: "image",
+		Type: "resizableImage",
 		Attrs: map[string]any{
 			"src": string(img.Destination),
 			"alt": altBuf.String(),

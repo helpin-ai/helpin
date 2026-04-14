@@ -61,18 +61,21 @@ func (r *DocsCollectionRepository) GetByID(ctx context.Context, id string) (*mod
 	return &coll, nil
 }
 
-// GetBySlug returns a collection by workspace and slug.
+// GetBySlug returns a collection by workspace and slug. If multiple
+// non-deleted collections share the same slug (possible after slug
+// uniqueness removal), nil is returned to avoid choosing arbitrarily.
 func (r *DocsCollectionRepository) GetBySlug(ctx context.Context, workspaceID, slug string) (*model.DocsCollection, error) {
-	var coll model.DocsCollection
+	var cols []model.DocsCollection
 	if err := r.db.WithContext(ctx).
 		Where("workspace_id = ? AND slug = ? AND deleted_at IS NULL", workspaceID, slug).
-		First(&coll).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
+		Limit(2).
+		Find(&cols).Error; err != nil {
 		return nil, fmt.Errorf("get docs collection by slug: %w", err)
 	}
-	return &coll, nil
+	if len(cols) != 1 {
+		return nil, nil // not found or ambiguous
+	}
+	return &cols[0], nil
 }
 
 // GetByPublicID returns a non-deleted collection by its globally unique public id.
@@ -278,28 +281,6 @@ func (r *DocsCollectionRepository) NormalizeBucket(ctx context.Context, spaceID 
 	})
 }
 
-// SlugTakenInWorkspace reports whether another non-deleted collection
-// in the given workspace already uses this slug. excludeID is skipped
-// so an update to a collection's non-slug fields does not report a
-// false positive against itself. Case-insensitive because slugs are
-// always normalised to lowercase by slugify().
-func (r *DocsCollectionRepository) SlugTakenInWorkspace(ctx context.Context, workspaceID, slug, excludeID string) (bool, error) {
-	slug = strings.ToLower(strings.TrimSpace(slug))
-	if slug == "" {
-		return false, nil
-	}
-	var count int64
-	q := r.db.WithContext(ctx).
-		Model(&model.DocsCollection{}).
-		Where("workspace_id = ? AND LOWER(slug) = ? AND deleted_at IS NULL", workspaceID, slug)
-	if excludeID != "" {
-		q = q.Where("id <> ?", excludeID)
-	}
-	if err := q.Count(&count).Error; err != nil {
-		return false, fmt.Errorf("check docs collection slug uniqueness: %w", err)
-	}
-	return count > 0, nil
-}
 
 // PublicIDExists reports whether another non-deleted collection already uses publicID.
 func (r *DocsCollectionRepository) PublicIDExists(ctx context.Context, publicID, excludeID string) (bool, error) {

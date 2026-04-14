@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -112,4 +113,67 @@ func (h *DocsHandler) ImportGetRedirectMap(w http.ResponseWriter, r *http.Reques
 	w.Header().Set("Content-Disposition", `attachment; filename="redirect-map.json"`)
 	w.WriteHeader(http.StatusOK)
 	w.Write(data)
+}
+
+// ImportPreviewNextra handles POST /api/docs/import/nextra/preview.
+// Accepts multipart/form-data with an "archive" file and optional
+// "source_commit" field.
+func (h *DocsHandler) ImportPreviewNextra(w http.ResponseWriter, r *http.Request) {
+	wsID := middleware.GetWorkspaceID(r.Context())
+	if wsID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	userID := middleware.GetUserID(r.Context())
+
+	// Limit request body to 100 MB.
+	r.Body = http.MaxBytesReader(w, r.Body, 100*1024*1024)
+
+	if err := r.ParseMultipartForm(32 * 1024 * 1024); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid multipart form: %v", err))
+		return
+	}
+
+	file, header, err := r.FormFile("archive")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "archive file is required")
+		return
+	}
+	defer file.Close()
+
+	sourceCommit := r.FormValue("source_commit")
+
+	result, err := h.importService.PreviewNextra(r.Context(), wsID, userID, header.Filename, sourceCommit, file, header.Size)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+// ImportStartNextra handles POST /api/docs/import/nextra/start.
+func (h *DocsHandler) ImportStartNextra(w http.ResponseWriter, r *http.Request) {
+	wsID := middleware.GetWorkspaceID(r.Context())
+	if wsID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	userID := middleware.GetUserID(r.Context())
+
+	var req model.DocsNextraImportStartRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.JobID == "" {
+		writeError(w, http.StatusBadRequest, "job_id is required")
+		return
+	}
+
+	jobID, err := h.importService.StartNextra(r.Context(), req, wsID, userID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": jobID})
 }

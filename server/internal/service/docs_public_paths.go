@@ -29,6 +29,13 @@ func parseDocsHelpcenterArticleKey(key string) (slug string, publicID string, ok
 		return "", "", false
 	}
 
+	// Bare PublicID: if the entire key is a valid 8-char hex ID, return
+	// it with an empty slug. This supports opening articles by PublicID
+	// directly (e.g. widget embeds, SDK openArticle calls).
+	if bareID := normalizeDocsHelpcenterPublicID(trimmed); len(bareID) == docsHelpcenterPublicIDLength && len(trimmed) == docsHelpcenterPublicIDLength {
+		return "", bareID, true
+	}
+
 	lastDash := strings.LastIndex(trimmed, "-")
 	if lastDash <= 0 || lastDash >= len(trimmed)-1 {
 		return "", "", false
@@ -63,6 +70,12 @@ func parseDocsHelpcenterCollectionKey(key string) (slug string, publicID string,
 	trimmed := strings.Trim(strings.TrimSpace(key), "/")
 	if trimmed == "" {
 		return "", "", false
+	}
+
+	// Bare PublicID: if the entire key is a valid 8-char hex ID, return
+	// it with an empty slug.
+	if bareID := normalizeDocsHelpcenterPublicID(trimmed); len(bareID) == docsHelpcenterPublicIDLength && len(trimmed) == docsHelpcenterPublicIDLength {
+		return "", bareID, true
 	}
 
 	lastDash := strings.LastIndex(trimmed, "-")

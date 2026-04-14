@@ -102,18 +102,9 @@ func (s *DocsCollectionService) Create(ctx context.Context, workspaceID, spaceID
 		return nil, ErrDocsCollectionDepthExceeded
 	}
 
-	// Compute the final slug up front so we can pre-check workspace-wide
-	// uniqueness and return a typed conflict instead of a raw DB error.
 	slug := slugify(req.Name)
 	if req.Slug != nil && *req.Slug != "" {
 		slug = slugify(*req.Slug)
-	}
-	taken, err := s.collectionRepo.SlugTakenInWorkspace(ctx, workspaceID, slug, "")
-	if err != nil {
-		return nil, err
-	}
-	if taken {
-		return nil, ErrDocsCollectionSlugTaken
 	}
 
 	publicID, err := s.generateUniqueCollectionPublicID(ctx, "")
@@ -142,12 +133,6 @@ func (s *DocsCollectionService) Create(ctx context.Context, workspaceID, spaceID
 	}
 	created, err := s.collectionRepo.Create(ctx, coll)
 	if err != nil {
-		// The partial unique index is the DB-level safety net — map
-		// any constraint violation back to the typed conflict so the
-		// handler layer still returns 409 instead of 500 on races.
-		if isUniqueConstraintViolation(err) {
-			return nil, ErrDocsCollectionSlugTaken
-		}
 		return nil, err
 	}
 	if s.translationSvc != nil {

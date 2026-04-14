@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ShortcutImportWizard } from '@/components/pm/ShortcutImportWizard';
 import { HelpCenterImportSection } from '@/components/settings/HelpCenterImportSection';
+import { NextraImportWizard } from '@/components/settings/NextraImportWizard';
 import { workspacesService } from '@/lib/services/workspacesService';
 import type { MemberWithUser } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
@@ -11,6 +12,7 @@ import shortcutIcon from '@/assets/import/shortcut.svg';
 import jiraIcon from '@/assets/import/jira.svg';
 import linearIcon from '@/assets/import/linear.svg';
 import helpscoutIcon from '@/assets/import/helpscout.svg';
+import nextraIcon from '@/assets/import/nextra.svg';
 
 const IMPORT_SOURCES = [
   {
@@ -70,6 +72,18 @@ export function ImportTab({ workspaceId, editable = true }: { workspaceId: strin
     );
   }
 
+  if (selected === 'nextra') {
+    return (
+      <div className="space-y-4">
+        <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground" onClick={() => setSelected(null)}>
+          <ArrowRight01Icon className="h-4 w-4 rotate-180" />
+          Back to sources
+        </Button>
+        <NextraImportWizard workspaceId={workspaceId} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8">
       {/* Project Management */}
@@ -122,6 +136,21 @@ export function ImportTab({ workspaceId, editable = true }: { workspaceId: strin
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium">HelpScout</p>
               <p className="text-sm text-muted-foreground">Import articles, categories, and images from HelpScout Docs.</p>
+            </div>
+            <ArrowRight01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+          </button>
+          <button
+            type="button"
+            disabled={!editable}
+            onClick={() => setSelected('nextra')}
+            className="flex w-full items-center gap-4 border-t border-border px-4 py-4 text-left transition-colors hover:bg-muted/40"
+          >
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+              <img src={nextraIcon} alt="Nextra" className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium">Nextra</p>
+              <p className="text-sm text-muted-foreground">Import MDX docs, navigation, images, and redirects from a Nextra repo zip.</p>
             </div>
             <ArrowRight01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
           </button>

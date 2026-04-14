@@ -259,7 +259,13 @@ func isAutoRedirectType(t string) bool {
 // no-op (a redirect to itself would loop forever).
 func (r *DocsRedirectRepository) UpsertWithReconciliation(ctx context.Context, redirect *model.DocsRedirect) error {
 	normalizeDocsRedirectRecord(redirect)
-	targetPath := buildRedirectTargetPath(redirect.TargetCollectionSlug, redirect.TargetArticleSlug)
+	// Prefer pre-computed target_path; fall back to slug-based rebuild.
+	var targetPath string
+	if redirect.TargetPath != nil && *redirect.TargetPath != "" {
+		targetPath = *redirect.TargetPath
+	} else {
+		targetPath = buildRedirectTargetPath(redirect.TargetCollectionSlug, redirect.TargetArticleSlug)
+	}
 	if redirect.SourcePath == "" || targetPath == "" {
 		return fmt.Errorf("redirect source and target paths are required")
 	}
@@ -312,6 +318,7 @@ func (r *DocsRedirectRepository) UpsertWithReconciliation(ctx context.Context, r
 			DoUpdates: clause.AssignmentColumns([]string{
 				"target_collection_slug",
 				"target_article_slug",
+				"target_path",
 				"type",
 			}),
 		}).Create(redirect).Error
