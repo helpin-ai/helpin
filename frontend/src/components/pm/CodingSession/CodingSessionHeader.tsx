@@ -4,6 +4,7 @@ import { Folder01Icon, GitBranchIcon, Loading01Icon, CancelCircleIcon, ArrowRelo
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
 import { buildAutomationRunsPath } from '@/lib/automationUi';
 import type { CodingSession } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
@@ -57,7 +58,16 @@ export function CodingSessionHeader({
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h1 className="text-base font-semibold leading-tight">{agentName}</h1>
-              <Badge variant="outline" className="gap-1 px-2 py-0.5 text-[11px] font-medium capitalize">
+              <Badge
+                variant="outline"
+                className={cn(
+                  'gap-1 px-2 py-0.5 text-[11px] font-medium capitalize',
+                  session?.status === 'completed'
+                    && 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
+                  (session?.status === 'failed' || session?.status === 'cancelled')
+                    && 'border-destructive/30 bg-destructive/10 text-destructive',
+                )}
+              >
                 {statusIcon}
                 {session?.status === 'running' ? 'Running' : capitalize(session?.status ?? 'Loading')}
               </Badge>
@@ -68,47 +78,64 @@ export function CodingSessionHeader({
               ) : null}
             </div>
 
-            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            <dl className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1.5 text-[11px] sm:grid-cols-[auto_minmax(0,1fr)_auto_auto]">
               {session?.repo.repo_name ? (
-                <a
-                  href={`https://github.com/${session.repo.repo_name}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-foreground transition-colors hover:bg-muted/80 hover:text-primary"
-                >
-                  <Folder01Icon className="h-3 w-3 text-muted-foreground" />
-                  {session.repo.repo_name}
-                </a>
-              ) : null}
-              {session?.repo.branch ? (
-                session.repo.repo_name ? (
-                  <a
-                    href={`https://github.com/${session.repo.repo_name}/tree/${session.repo.branch}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-foreground transition-colors hover:bg-muted/80 hover:text-primary"
-                  >
-                    <GitBranchIcon className="h-3 w-3 text-muted-foreground" />
-                    {session.repo.branch}
-                  </a>
-                ) : (
-                  <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-foreground">
-                    <GitBranchIcon className="h-3 w-3 text-muted-foreground" />
-                    {session.repo.branch}
-                  </span>
-                )
-              ) : null}
-            </div>
-
-            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-              {session ? <span>{session.runtime_kind}</span> : null}
-              {session?.updated_at ? (
                 <>
-                  <span>·</span>
-                  <span>Updated {formatCodingSessionRelative(session.updated_at)}</span>
+                  <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Repository</dt>
+                  <dd className="min-w-0">
+                    <a
+                      href={`https://github.com/${session.repo.repo_name}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex max-w-full items-center gap-1 rounded-md bg-muted px-2 py-0.5 font-medium text-foreground transition-colors hover:bg-muted/80 hover:text-primary"
+                    >
+                      <Folder01Icon className="h-3 w-3 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{session.repo.repo_name}</span>
+                    </a>
+                  </dd>
                 </>
               ) : null}
-            </div>
+
+              {session ? (
+                <>
+                  <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Runtime</dt>
+                  <dd className="font-medium text-foreground">
+                    {AGENT_RUNTIME_LABELS[session.runtime_kind] ?? capitalize(session.runtime_kind)}
+                  </dd>
+                </>
+              ) : null}
+
+              {session?.repo.branch ? (
+                <>
+                  <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Branch</dt>
+                  <dd className="min-w-0">
+                    {session.repo.repo_name ? (
+                      <a
+                        href={`https://github.com/${session.repo.repo_name}/tree/${session.repo.branch}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex max-w-full items-center gap-1 rounded-md bg-muted px-2 py-0.5 font-medium text-foreground transition-colors hover:bg-muted/80 hover:text-primary"
+                      >
+                        <GitBranchIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
+                        <span className="truncate font-mono text-[10.5px]">{session.repo.branch}</span>
+                      </a>
+                    ) : (
+                      <span className="inline-flex max-w-full items-center gap-1 rounded-md bg-muted px-2 py-0.5 font-medium text-foreground">
+                        <GitBranchIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
+                        <span className="truncate font-mono text-[10.5px]">{session.repo.branch}</span>
+                      </span>
+                    )}
+                  </dd>
+                </>
+              ) : null}
+
+              {session?.updated_at ? (
+                <>
+                  <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Updated</dt>
+                  <dd className="text-muted-foreground">{formatCodingSessionRelative(session.updated_at)}</dd>
+                </>
+              ) : null}
+            </dl>
           </div>
         </div>
 

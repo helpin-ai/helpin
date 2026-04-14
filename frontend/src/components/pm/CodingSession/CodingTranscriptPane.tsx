@@ -284,7 +284,7 @@ export function CodingTranscriptPane({
         </Badge>
       </div>
 
-      <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-auto">
+      <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-auto pt-3">
         <div
           className="relative mx-auto w-full max-w-4xl px-4"
           style={{ height: virtualizer.getTotalSize() }}
