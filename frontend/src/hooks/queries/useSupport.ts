@@ -11,6 +11,7 @@ import {
   updateConversationListUnreadCount,
   updateConversationUnreadCount,
 } from '@/lib/supportQueryCache';
+import { useAuthStore } from '@/stores/authStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import type {
   AgentKnowledgeSource,
@@ -262,7 +263,17 @@ export function useConversationAssignees(workspaceId: string, conversationId: st
       }
 
       const fallback = await workspacesService.listAssignableMembers(workspaceId);
-      return unwrap(fallback);
+      const members = unwrap(fallback);
+      const currentUserID = useAuthStore.getState().user?.id;
+      return members.filter((member) =>
+        member.status === 'active' &&
+        !!member.user_id &&
+        (
+          member.role === 'owner' ||
+          member.role === 'admin' ||
+          member.user_id === currentUserID
+        ),
+      );
     },
     enabled: !!workspaceId && !!conversationId,
     staleTime: 30_000,

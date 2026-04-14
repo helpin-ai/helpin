@@ -961,6 +961,7 @@ func main() {
 	// Initialize authorization service.
 	authzMemberRepo := authorization.NewGORMMemberRepository(db)
 	authzService := authorization.NewAuthzService(db, authzMemberRepo, moduleGrantRepo)
+	supportInboxService.SetAuthzService(authzService)
 
 	// Inject authorization into WebSocket handler for workspace access checks.
 	wsHandler.SetAuthzService(authzService)

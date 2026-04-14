@@ -48,6 +48,7 @@ type SupportInboxService struct {
 	emailFallbackService    *EmailFallbackService
 	notificationService     *NotificationService
 	workspaceRepo           *repository.WorkspaceRepository
+	authzService            *authorization.AuthzService
 	attachmentService       *SupportAttachmentService
 	linkPreviewService      SupportMessageLinkPreviewer
 	presence                websocket.PresenceProvider
@@ -279,11 +280,46 @@ func (s *SupportInboxService) ListConversationAssignableUsers(ctx context.Contex
 		return nil, fmt.Errorf("conversation not found")
 	}
 
-	return s.workspaceRepo.ListSupportAssignableMembers(ctx, workspaceID, nil)
+	if s.authzService == nil {
+		return s.workspaceRepo.ListSupportAssignableMembers(ctx, workspaceID, nil)
+	}
+
+	members, err := s.workspaceRepo.ListAssignableMembers(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+
+	assignable := make([]model.AssignableMember, 0, len(members))
+	for _, member := range members {
+		if member.UserID == nil || strings.TrimSpace(*member.UserID) == "" {
+			continue
+		}
+		if member.Status != model.WorkspaceMemberStatusActive {
+			continue
+		}
+		if s.userHasSupportModuleAccess(ctx, workspaceID, strings.TrimSpace(*member.UserID)) {
+			assignable = append(assignable, member)
+		}
+	}
+
+	return assignable, nil
 }
 
-func (s *SupportInboxService) isConversationAssignableUser(ctx context.Context, workspaceID string, mailboxID *string, userID string) bool {
-	if s.workspaceRepo == nil || strings.TrimSpace(userID) == "" {
+func (s *SupportInboxService) userHasSupportModuleAccess(ctx context.Context, workspaceID, userID string) bool {
+	trimmedUserID := strings.TrimSpace(userID)
+	if trimmedUserID == "" {
+		return false
+	}
+
+	if s.authzService != nil {
+		actor, err := s.authzService.ResolveActor(ctx, workspaceID, trimmedUserID)
+		if err == nil && actor != nil {
+			allowed, err := s.authzService.CanAccessModule(ctx, actor, model.ModuleSupport)
+			return err == nil && allowed
+		}
+	}
+
+	if s.workspaceRepo == nil {
 		return false
 	}
 
@@ -292,11 +328,15 @@ func (s *SupportInboxService) isConversationAssignableUser(ctx context.Context, 
 		return false
 	}
 	for _, member := range members {
-		if member.UserID != nil && strings.TrimSpace(*member.UserID) == strings.TrimSpace(userID) {
+		if member.UserID != nil && strings.TrimSpace(*member.UserID) == trimmedUserID {
 			return true
 		}
 	}
 	return false
+}
+
+func (s *SupportInboxService) isConversationAssignableUser(ctx context.Context, workspaceID string, mailboxID *string, userID string) bool {
+	return s.userHasSupportModuleAccess(ctx, workspaceID, userID)
 }
 
 func supportTranscriptSenderName(workspaceName string, msg model.SupportMessage) string {
@@ -451,6 +491,15 @@ func (s *SupportInboxService) SetWorkspaceRepo(workspaceRepo *repository.Workspa
 		return nil
 	}
 	s.workspaceRepo = workspaceRepo
+	return s
+}
+
+// SetAuthzService injects the canonical authorization service for module access checks.
+func (s *SupportInboxService) SetAuthzService(authzService *authorization.AuthzService) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.authzService = authzService
 	return s
 }
 

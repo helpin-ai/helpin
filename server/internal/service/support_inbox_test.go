@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -994,10 +995,12 @@ func TestAssignConversationUserAcceptsSupportAccessibleUserOutsideMailboxMembers
 	ownerID := "user-owner"
 	eligibleID := "user-eligible"
 	blockedID := "user-blocked"
+	noSupportID := "user-no-support"
 
 	seedUser(t, db, ownerID, "owner@example.com", "Owner User", "hash")
 	seedUser(t, db, eligibleID, "eligible@example.com", "Eligible User", "hash")
 	seedUser(t, db, blockedID, "blocked@example.com", "Blocked User", "hash")
+	seedUser(t, db, noSupportID, "nosupport@example.com", "No Support User", "hash")
 	seedWorkspace(t, db, workspaceID, "Support Assign WS", "support-assign-ws", ownerID)
 
 	workspaceRepo := repository.NewWorkspaceRepository(db)
@@ -1012,6 +1015,10 @@ func TestAssignConversationUserAcceptsSupportAccessibleUserOutsideMailboxMembers
 	blockedMember, err := workspaceRepo.AddMember(ctx, workspaceID, blockedID, model.RoleMember)
 	if err != nil {
 		t.Fatalf("add blocked member: %v", err)
+	}
+	_, err = workspaceRepo.AddMember(ctx, workspaceID, noSupportID, model.RoleMember)
+	if err != nil {
+		t.Fatalf("add no-support member: %v", err)
 	}
 
 	mailboxRepo := repository.NewSupportMailboxRepository(db)
@@ -1071,7 +1078,36 @@ func TestAssignConversationUserAcceptsSupportAccessibleUserOutsideMailboxMembers
 		nil,
 		nil,
 		nil,
-	).SetWorkspaceRepo(workspaceRepo)
+	).SetWorkspaceRepo(workspaceRepo).SetAuthzService(
+		authorization.NewAuthzService(
+			db,
+			authorization.NewGORMMemberRepository(db),
+			repository.NewWorkspaceModuleGrantRepository(db),
+		),
+	)
+
+	assignable, err := svc.ListConversationAssignableUsers(ctx, workspaceID, conv.ID)
+	if err != nil {
+		t.Fatalf("list conversation assignable users: %v", err)
+	}
+	assignableByUserID := make(map[string]struct{}, len(assignable))
+	for _, member := range assignable {
+		if member.UserID != nil {
+			assignableByUserID[*member.UserID] = struct{}{}
+		}
+	}
+	for _, userID := range []string{ownerID, eligibleID, blockedID} {
+		if _, ok := assignableByUserID[userID]; !ok {
+			t.Fatalf("expected %s in assignable users, got %#v", userID, assignableByUserID)
+		}
+	}
+	if _, ok := assignableByUserID[noSupportID]; ok {
+		t.Fatalf("did not expect %s in assignable users, got %#v", noSupportID, assignableByUserID)
+	}
+
+	if err := svc.AssignConversationUser(ctx, workspaceID, conv.ID, &noSupportID, ownerID); err == nil {
+		t.Fatal("expected user without support access to be rejected")
+	}
 
 	if err := svc.AssignConversationUser(ctx, workspaceID, conv.ID, &blockedID, ownerID); err != nil {
 		t.Fatalf("assign support-accessible user outside mailbox membership: %v", err)
