@@ -2289,7 +2289,9 @@ func (s *DocsHelpcenterService) CreateRedirect(ctx context.Context, workspaceID 
 	// Resolve and persist canonical target_path after creation.
 	s.hydrateRedirectTargetPath(ctx, workspaceID, redirect)
 	if redirect.TargetPath != nil && *redirect.TargetPath != "" {
-		s.redirectRepo.Update(ctx, redirect.ID, map[string]interface{}{"target_path": *redirect.TargetPath})
+		if _, err := s.redirectRepo.Update(ctx, redirect.ID, map[string]interface{}{"target_path": *redirect.TargetPath}); err != nil {
+			slog.WarnContext(ctx, "persist redirect target_path failed", "redirect_id", redirect.ID, "error", err)
+		}
 	}
 	return redirect, nil
 }
@@ -2336,7 +2338,9 @@ func (s *DocsHelpcenterService) UpdateRedirect(ctx context.Context, id string, r
 	// Recompute and persist target_path after slug changes.
 	s.hydrateRedirectTargetPath(ctx, redirect.WorkspaceID, redirect)
 	if slugChanged && redirect.TargetPath != nil && *redirect.TargetPath != "" {
-		s.redirectRepo.Update(ctx, redirect.ID, map[string]interface{}{"target_path": *redirect.TargetPath})
+		if _, err := s.redirectRepo.Update(ctx, redirect.ID, map[string]interface{}{"target_path": *redirect.TargetPath}); err != nil {
+			slog.WarnContext(ctx, "persist redirect target_path failed", "redirect_id", redirect.ID, "error", err)
+		}
 	}
 	return redirect, nil
 }

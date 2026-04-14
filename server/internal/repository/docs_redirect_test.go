@@ -27,6 +27,7 @@ func setupDocsRedirectTestDB(t *testing.T) *gorm.DB {
 		source_path TEXT NOT NULL,
 		target_collection_slug TEXT NOT NULL,
 		target_article_slug TEXT,
+		target_path TEXT,
 		type TEXT NOT NULL,
 		source_system TEXT,
 		source_object_type TEXT,
