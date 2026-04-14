@@ -1,4 +1,4 @@
-import { memo, useMemo, useState, type JSX, type KeyboardEvent, type SVGProps } from 'react';
+import { memo, useMemo, useState, type JSX, type KeyboardEvent, type MouseEvent, type SVGProps } from 'react';
 import * as Flags from 'country-flag-icons/react/3x2';
 import { CheckmarkCircle02Icon, MoreHorizontalIcon } from '@/lib/icons';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -213,12 +213,19 @@ export const ConversationRow = memo(function ConversationRow({
     }
   };
 
+  const handleContextMenu = (e: MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setActionsOpen(true);
+  };
+
   return (
     <div
       role="button"
       tabIndex={0}
       onClick={() => onSelectConversation(conversation.id, unreadCount)}
       onKeyDown={handleRowKeyDown}
+      onContextMenu={handleContextMenu}
       className={`group relative w-full cursor-pointer px-3 py-2.5 text-left transition-all duration-200 hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
         isSelected
           ? 'bg-muted'

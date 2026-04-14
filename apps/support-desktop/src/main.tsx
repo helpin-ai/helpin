@@ -20,6 +20,9 @@ configureSessionStorage(
   isTauriDesktop() ? createTauriSessionStorage() : createBrowserSessionStorage(),
 )
 
+// Disable right-click context menu globally in the desktop app.
+document.addEventListener('contextmenu', (e) => { e.preventDefault() })
+
 // Register notification click-through routing.
 registerNotificationClickHandler((to) => {
   router.navigate({ to: to as string })
