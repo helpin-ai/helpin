@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/requestmeta"
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
 
@@ -20,6 +22,14 @@ func NewSupportInboxWidgetHandler(supportService *service.SupportInboxService) *
 
 func widgetKeyFromRequest(r *http.Request) string {
 	return r.URL.Query().Get("widget_key")
+}
+
+func widgetRequestContext(r *http.Request) context.Context {
+	ctx := r.Context()
+	if clientIP, ok := requestmeta.ExtractClientIP(r); ok {
+		ctx = requestmeta.WithClientIP(ctx, clientIP)
+	}
+	return ctx
 }
 
 // GetWidgetTokens handles GET /api/internal/widget-tokens.
@@ -81,7 +91,7 @@ func (h *SupportInboxWidgetHandler) CreateSession(w http.ResponseWriter, r *http
 	}
 
 	// Legacy HTTP path — anonymous_id defaults to empty, will be set by WS flow
-	session, err := h.supportService.CreateWidgetSession(r.Context(), req.WidgetKey, "", req.CustomerName, req.CustomerEmail, nil, nil, nil, nil)
+	session, err := h.supportService.CreateWidgetSession(widgetRequestContext(r), req.WidgetKey, "", req.CustomerName, req.CustomerEmail, nil, nil, nil, nil)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -125,7 +135,7 @@ func (h *SupportInboxWidgetHandler) SendMessage(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	msg, err := h.supportService.WidgetCreateMessage(r.Context(), req.SessionToken, req.Content, nil)
+	msg, err := h.supportService.WidgetCreateMessage(widgetRequestContext(r), req.SessionToken, req.Content, nil)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -161,7 +171,7 @@ func (h *SupportInboxWidgetHandler) GetMessages(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	session, err := h.supportService.GetWidgetSession(r.Context(), sessionToken)
+	session, err := h.supportService.GetWidgetSession(widgetRequestContext(r), sessionToken)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err.Error())
 		return
@@ -201,7 +211,7 @@ func (h *SupportInboxWidgetHandler) SendTranscript(w http.ResponseWriter, r *htt
 		return
 	}
 
-	resp, err := h.supportService.SendWidgetConversationTranscript(r.Context(), req.SessionToken, conversationID, req.Email)
+	resp, err := h.supportService.SendWidgetConversationTranscript(widgetRequestContext(r), req.SessionToken, conversationID, req.Email)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

@@ -15,7 +15,7 @@ type SupportConversation struct {
 	MailboxID         *string    `json:"mailbox_id" gorm:"type:uuid;index"`
 	DisplayID         int        `json:"display_id" gorm:"not null;index"`
 	Subject           string     `json:"subject" gorm:"not null"`
-	Status            string     `json:"status" gorm:"not null;default:'open'"`     // open, in_progress, waiting, resolved, closed
+	Status            string     `json:"status" gorm:"not null;default:'open'"`     // open, waiting_on_customer, resolved, spam
 	FlowState         *string    `json:"flow_state" gorm:"index"`                   // ai_handling, waiting_for_human, queued_for_human, after_hours_queue, assigned_to_human, resolved_by_ai, resolved_by_human
 	Priority          string     `json:"priority" gorm:"not null;default:'medium'"` // low, medium, high, urgent
 	Channel           string     `json:"channel" gorm:"not null;default:'widget'"`  // widget, internal, email, api
@@ -23,6 +23,7 @@ type SupportConversation struct {
 	CustomerEmail     *string    `json:"customer_email"`
 	CustomerPhone     *string    `json:"customer_phone"`
 	OpenedByUserID    *string    `json:"opened_by_user_id" gorm:"type:uuid"`
+	AssignedUserID    *string    `json:"assigned_user_id" gorm:"type:uuid"`
 	AssignedAgentID   *string    `json:"assigned_agent_id" gorm:"type:uuid"`
 	LinkedTaskID      *string    `json:"linked_task_id" gorm:"column:linked_task_id;type:uuid"`
 	Source            string     `json:"source" gorm:"not null;default:'internal'"` // widget, internal, email, api - kept for backward compat
@@ -48,6 +49,8 @@ type SupportConversation struct {
 	// Virtual fields — populated by SELECT subqueries, not stored as columns.
 	LastMessage         *string                    `json:"last_message,omitempty" gorm:"->"`
 	UnreadCount         int                        `json:"unread_count" gorm:"->"`
+	CountryCode         *string                    `json:"country_code,omitempty" gorm:"->"`
+	CountryName         *string                    `json:"country_name,omitempty" gorm:"->"`
 	OpenedByDisplayName *string                    `json:"opened_by_display_name,omitempty" gorm:"-"`
 	OpenedByAvatarURL   *string                    `json:"opened_by_avatar_url,omitempty" gorm:"-"`
 	OpenedByStatus      *string                    `json:"opened_by_status,omitempty" gorm:"-"`
@@ -60,6 +63,11 @@ type SupportConversation struct {
 func (SupportConversation) TableName() string { return "support_conversations" }
 
 const (
+	SupportConversationStatusOpen              = "open"
+	SupportConversationStatusWaitingOnCustomer = "waiting_on_customer"
+	SupportConversationStatusResolved          = "resolved"
+	SupportConversationStatusSpam              = "spam"
+
 	SupportConversationFlowStateAIHandling      = "ai_handling"
 	SupportConversationFlowStateWaitingForHuman = "waiting_for_human"
 	SupportConversationFlowStateQueuedForHuman  = "queued_for_human"
@@ -68,6 +76,28 @@ const (
 	SupportConversationFlowStateResolvedByAI    = "resolved_by_ai"
 	SupportConversationFlowStateResolvedByHuman = "resolved_by_human"
 )
+
+func NormalizeSupportConversationStatus(status string) string {
+	switch strings.TrimSpace(strings.ToLower(status)) {
+	case "in_progress":
+		return SupportConversationStatusOpen
+	case "waiting":
+		return SupportConversationStatusWaitingOnCustomer
+	case "closed":
+		return SupportConversationStatusResolved
+	default:
+		return strings.TrimSpace(strings.ToLower(status))
+	}
+}
+
+func IsValidSupportConversationStatus(status string) bool {
+	switch NormalizeSupportConversationStatus(status) {
+	case SupportConversationStatusOpen, SupportConversationStatusWaitingOnCustomer, SupportConversationStatusResolved, SupportConversationStatusSpam:
+		return true
+	default:
+		return false
+	}
+}
 
 const (
 	SupportTeammateStatusOnline  = "online"
@@ -117,8 +147,7 @@ type UnreadStats struct {
 	Total      int `json:"total"`
 	MyInbox    int `json:"my_inbox"`
 	Unassigned int `json:"unassigned"`
-	AIAll      int `json:"ai_all"`
-	AIPending  int `json:"ai_pending"`
+	AIActive   int `json:"ai_active"`
 }
 
 type SupportInboxScope struct {
@@ -232,6 +261,11 @@ type SupportWidgetSession struct {
 	LastPageURL    *string    `json:"last_page_url"`
 	Timezone       *string    `json:"timezone"`
 	Locale         *string    `json:"locale"`
+	IPAddress      *string    `json:"ip_address,omitempty" gorm:"size:64"`
+	CountryCode    *string    `json:"country_code,omitempty" gorm:"size:8"`
+	CountryName    *string    `json:"country_name,omitempty" gorm:"size:128"`
+	RegionName     *string    `json:"region_name,omitempty" gorm:"size:128"`
+	CityName       *string    `json:"city_name,omitempty" gorm:"size:128"`
 	RevokedAt      *time.Time `json:"-" gorm:"index"`
 	ExpiresAt      time.Time  `json:"expires_at" gorm:"not null"`
 	CreatedAt      time.Time  `json:"created_at" gorm:"autoCreateTime"`
@@ -511,6 +545,11 @@ type CreateTaskFromConversationResponse struct {
 // AssignConversationAgentRequest assigns an agent to a conversation.
 type AssignConversationAgentRequest struct {
 	AgentID string `json:"agent_id"`
+}
+
+// AssignConversationUserRequest assigns a teammate to a conversation.
+type AssignConversationUserRequest struct {
+	UserID *string `json:"user_id"`
 }
 
 // UpdateConversationStatusRequest changes conversation status.
@@ -1091,6 +1130,10 @@ type VisitorLocation struct {
 	Timezone    *string `json:"timezone"`
 	Locale      *string `json:"locale"`
 	LastPageURL *string `json:"last_page_url"`
+	CountryCode *string `json:"country_code,omitempty"`
+	CountryName *string `json:"country_name,omitempty"`
+	RegionName  *string `json:"region_name,omitempty"`
+	CityName    *string `json:"city_name,omitempty"`
 }
 
 // VisitorContactData holds CRM contact details for visitor context.

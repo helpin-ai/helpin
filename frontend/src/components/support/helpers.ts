@@ -1,4 +1,4 @@
-import type { AIMessageMetadata, SupportLinkPreview, SupportMessage } from '@/lib/pmTypes';
+import type { AIMessageMetadata, SupportConversation, SupportLinkPreview, SupportMessage } from '@/lib/pmTypes';
 
 export const HELPIN_AI_DISPLAY_NAME = 'Helpin AI';
 
@@ -96,6 +96,74 @@ export function isAIMessage(message: Pick<SupportMessage, 'sender_type' | 'metad
 
 export function getEffectiveSenderType(message: Pick<SupportMessage, 'sender_type' | 'metadata'>): SupportMessage['sender_type'] {
   return isAIMessage(message) ? 'ai' : message.sender_type;
+}
+
+export type EffectiveSupportFlowState =
+  | 'ai_handling'
+  | 'waiting_for_human'
+  | 'after_hours_queue'
+  | 'assigned_to_human'
+  | 'resolved_by_ai'
+  | 'resolved_by_human'
+  | null;
+
+export type ConversationStateBadge = {
+  key: string;
+  label: string;
+  tone: 'blue' | 'emerald' | 'amber' | 'slate';
+};
+
+export function getEffectiveFlowState(conversation: Pick<SupportConversation, 'flow_state' | 'ai_state'>): EffectiveSupportFlowState {
+  if (conversation.flow_state === 'queued_for_human') {
+    return 'waiting_for_human';
+  }
+  if (conversation.flow_state) {
+    return conversation.flow_state;
+  }
+  if (conversation.ai_state === 'pending') {
+    return 'ai_handling';
+  }
+  if (conversation.ai_state === 'resolved') {
+    return 'resolved_by_ai';
+  }
+  return null;
+}
+
+export function isAIActiveConversation(conversation: Pick<SupportConversation, 'flow_state' | 'ai_state'>): boolean {
+  return getEffectiveFlowState(conversation) === 'ai_handling';
+}
+
+export function isResolvedByAIConversation(conversation: Pick<SupportConversation, 'flow_state' | 'ai_state'>): boolean {
+  return getEffectiveFlowState(conversation) === 'resolved_by_ai';
+}
+
+export function isHumanQueueConversation(conversation: Pick<SupportConversation, 'flow_state' | 'ai_state'>): boolean {
+  return !isAIActiveConversation(conversation) && !isResolvedByAIConversation(conversation);
+}
+
+export function getConversationStateBadges(
+  conversation: Pick<SupportConversation, 'flow_state' | 'ai_state' | 'customer_requested_human_at'>,
+): ConversationStateBadge[] {
+  const badges: ConversationStateBadge[] = [];
+  const flowState = getEffectiveFlowState(conversation);
+
+  if (flowState === 'ai_handling') {
+    badges.push({ key: 'ai_active', label: 'AI Active', tone: 'blue' });
+  }
+  if (conversation.ai_state === 'escalated') {
+    badges.push({ key: 'ai_escalated', label: 'Escalated by AI', tone: 'amber' });
+  }
+  if (flowState === 'after_hours_queue') {
+    badges.push({ key: 'after_hours', label: 'After Hours', tone: 'slate' });
+  }
+  if (flowState === 'resolved_by_ai') {
+    badges.push({ key: 'resolved_by_ai', label: 'Resolved by AI', tone: 'emerald' });
+  }
+  if (conversation.customer_requested_human_at) {
+    badges.push({ key: 'requested_human', label: 'Requested Human', tone: 'amber' });
+  }
+
+  return badges;
 }
 
 export function parseSupportLinkPreviews(metadata?: string): SupportLinkPreview[] {

@@ -3,6 +3,7 @@ server/api
 server/migrate
 server/bin/
 server/tmp/
+server/data/*.mmdb
 server/temporal-worker
 server/migrate
 

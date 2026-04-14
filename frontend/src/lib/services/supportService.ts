@@ -1,4 +1,5 @@
 import { api } from '../api';
+import type { AssignableMember } from '../types';
 import type {
   SupportConversation,
   SupportMessage,
@@ -8,6 +9,7 @@ import type {
   CreateTaskFromConversationResponse,
   LinkTaskRequest,
   AssignConversationAgentRequest,
+  AssignConversationUserRequest,
   AgentRun,
   ConversationStatus,
   SupportInstallationResponse,
@@ -34,13 +36,14 @@ import type {
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
 
 export const supportService = {
-  listConversations: (workspaceId: string, filters?: { status?: string; priority?: string; filter?: string; mailbox_id?: string | null; ai_state?: string }) => {
+  listConversations: (workspaceId: string, filters?: { status?: string; priority?: string; filter?: string; mailbox_id?: string | null; ai_state?: string; flow_state?: string }) => {
     let path = `/support/inbox/conversations${qs(workspaceId)}`;
     if (filters?.status) path += `&status=${filters.status}`;
     if (filters?.priority) path += `&priority=${filters.priority}`;
     if (filters?.filter) path += `&filter=${filters.filter}`;
-    if (filters?.mailbox_id) path += `&mailbox_id=${encodeURIComponent(filters.mailbox_id)}`;
+    if (filters?.mailbox_id && filters.mailbox_id !== 'all') path += `&mailbox_id=${encodeURIComponent(filters.mailbox_id)}`;
     if (filters?.ai_state) path += `&ai_state=${encodeURIComponent(filters.ai_state)}`;
+    if (filters?.flow_state) path += `&flow_state=${encodeURIComponent(filters.flow_state)}`;
     return api.get<ConversationListResponse>(path);
   },
   listInboxScopes: (workspaceId: string) =>
@@ -73,6 +76,8 @@ export const supportService = {
     api.del(`/support/inbox/triage-rules/${ruleId}${qs(workspaceId)}`),
   getConversation: (workspaceId: string, id: string) =>
     api.get<SupportConversation>(`/support/inbox/conversations/${id}${qs(workspaceId)}`),
+  listConversationAssignees: (workspaceId: string, conversationId: string) =>
+    api.get<AssignableMember[]>(`/support/inbox/conversations/${conversationId}/assignees${qs(workspaceId)}`),
   createConversation: (workspaceId: string, payload: CreateConversationRequest) =>
     api.post<SupportConversation>(`/support/inbox/conversations${qs(workspaceId)}`, payload),
   listConversationMessages: (workspaceId: string, conversationId: string) =>
@@ -98,6 +103,8 @@ export const supportService = {
     api.post(`/support/inbox/conversations/${conversationId}/link-story${qs(workspaceId)}`, payload),
   assignConversationAgent: (workspaceId: string, conversationId: string, payload: AssignConversationAgentRequest) =>
     api.post(`/support/inbox/conversations/${conversationId}/assign-agent${qs(workspaceId)}`, payload),
+  assignConversationUser: (workspaceId: string, conversationId: string, payload: AssignConversationUserRequest) =>
+    api.post(`/support/inbox/conversations/${conversationId}/assign-user${qs(workspaceId)}`, payload),
   runAgent: (workspaceId: string, conversationId: string) =>
     api.post<AgentRun>(`/support/inbox/conversations/${conversationId}/run-agent${qs(workspaceId)}`, {}),
 
@@ -108,7 +115,7 @@ export const supportService = {
   // Unread
   getUnreadStats: (workspaceId: string, mailboxId?: string | null) => {
     let path = `/support/inbox/unread-stats${qs(workspaceId)}`;
-    if (mailboxId) path += `&mailbox_id=${encodeURIComponent(mailboxId)}`;
+    if (mailboxId && mailboxId !== 'all') path += `&mailbox_id=${encodeURIComponent(mailboxId)}`;
     return api.get<UnreadStats>(path);
   },
   listTeammatePresence: (workspaceId: string) =>

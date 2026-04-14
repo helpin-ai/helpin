@@ -282,13 +282,13 @@ func (r *SupportMailboxRepository) IsMember(ctx context.Context, mailboxID, work
 }
 
 func (r *SupportMailboxRepository) CountUnread(ctx context.Context, workspaceID string, mailboxID *string) (int, error) {
-	query := r.db.WithContext(ctx).Table("support_conversations sc").Where("sc.workspace_id = ? AND sc.status != 'closed'", workspaceID)
+	query := r.db.WithContext(ctx).Table("support_conversations sc").Where("sc.workspace_id = ? AND sc.status NOT IN ?", workspaceID, []string{model.SupportConversationStatusResolved, model.SupportConversationStatusSpam})
 	if mailboxID == nil {
 		query = query.Where("sc.mailbox_id IS NULL")
 	} else {
 		query = query.Where("sc.mailbox_id = ?", *mailboxID)
 	}
-	query = query.Where("(sc.ai_state IS NULL OR sc.ai_state = ?)", "escalated")
+	query = query.Where("NOT (" + conversationResolvedByAICondition("sc") + ")")
 
 	var count int64
 	if err := query.Where(`
@@ -319,7 +319,7 @@ func (r *SupportMailboxRepository) SelectRoundRobinOwnerUserID(ctx context.Conte
 		LEFT JOIN support_conversations sc
 		  ON sc.workspace_id = ?
 		 AND sc.mailbox_id = ?
-		 AND sc.opened_by_user_id = wm.user_id
+		 AND sc.assigned_user_id = wm.user_id
 		WHERE wm.workspace_id = ?
 		  AND wm.status = ?
 		  AND wm.user_id IS NOT NULL

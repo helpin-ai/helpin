@@ -4,12 +4,14 @@ import { queryKeys } from '@/lib/queryKeys';
 import { supportService } from '@/lib/services/supportService';
 import { supportAttachmentService } from '@/lib/services/supportAttachmentService';
 import { agentService } from '@/lib/services/agentService';
+import { workspacesService } from '@/lib/services/workspacesService';
 import { unwrap } from '@/lib/queryUtils';
 import {
   isSupportConversationListQueryKey,
   updateConversationListUnreadCount,
   updateConversationUnreadCount,
 } from '@/lib/supportQueryCache';
+import { useAuthStore } from '@/stores/authStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import type {
   AgentKnowledgeSource,
@@ -71,7 +73,7 @@ export function useRegenerateWidgetKey(workspaceId: string) {
 
 // ── Conversations ───────────────────────────────────────────────────
 
-export function useConversations(workspaceId: string, filters?: { status?: string; priority?: string; filter?: string; mailbox_id?: string | null; ai_state?: string }) {
+export function useConversations(workspaceId: string, filters?: { status?: string; priority?: string; filter?: string; mailbox_id?: string | null; ai_state?: string; flow_state?: string }) {
   return useQuery({
     queryKey: [...queryKeys.support.conversations(workspaceId), filters] as const,
     queryFn: async (): Promise<ConversationListResponse> => {
@@ -84,7 +86,7 @@ export function useConversations(workspaceId: string, filters?: { status?: strin
       }
       // Legacy fallback
       const arr = Array.isArray(data) ? data : [];
-      return { data: arr, total: arr.length, page: 1, per_page: 50, total_pages: 1, meta: { unread: { total: 0, my_inbox: 0, unassigned: 0, ai_all: 0, ai_pending: 0 } } } as ConversationListResponse;
+      return { data: arr, total: arr.length, page: 1, per_page: 50, total_pages: 1, meta: { unread: { total: 0, my_inbox: 0, unassigned: 0, ai_active: 0 } } } as ConversationListResponse;
     },
     enabled: !!workspaceId,
     staleTime: 15_000,
@@ -93,7 +95,7 @@ export function useConversations(workspaceId: string, filters?: { status?: strin
 
 export function useUnreadStats(workspaceId: string, mailboxId?: string | null, enabled = true) {
   return useQuery({
-    queryKey: [...queryKeys.support.unreadStats(workspaceId), mailboxId ?? 'shared'] as const,
+    queryKey: [...queryKeys.support.unreadStats(workspaceId), mailboxId ?? 'all'] as const,
     queryFn: async () => unwrap(await supportService.getUnreadStats(workspaceId, mailboxId)),
     enabled: !!workspaceId && enabled,
     staleTime: 15_000,
@@ -251,6 +253,33 @@ export function useConversation(workspaceId: string, conversationId: string | nu
   });
 }
 
+export function useConversationAssignees(workspaceId: string, conversationId: string | null) {
+  return useQuery({
+    queryKey: queryKeys.support.conversationAssignees(workspaceId, conversationId ?? ''),
+    queryFn: async () => {
+      const response = await supportService.listConversationAssignees(workspaceId, conversationId!);
+      if (!response.error && Array.isArray(response.data) && response.data.length > 0) {
+        return response.data;
+      }
+
+      const fallback = await workspacesService.listAssignableMembers(workspaceId);
+      const members = unwrap(fallback);
+      const currentUserID = useAuthStore.getState().user?.id;
+      return members.filter((member) =>
+        member.status === 'active' &&
+        !!member.user_id &&
+        (
+          member.role === 'owner' ||
+          member.role === 'admin' ||
+          member.user_id === currentUserID
+        ),
+      );
+    },
+    enabled: !!workspaceId && !!conversationId,
+    staleTime: 30_000,
+  });
+}
+
 export function useConversationMessages(workspaceId: string, conversationId: string | null) {
   return useQuery({
     queryKey: queryKeys.support.messages(workspaceId, conversationId ?? ''),
@@ -343,7 +372,7 @@ export function useUpdateConversationStatus(workspaceId: string) {
       const { conversationId, status } = variables;
 
       // Auto-advance: when resolving/spamming, select the next conversation in the list
-      if (status === 'resolved' || status === 'spam' || status === 'closed') {
+      if (status === 'resolved' || status === 'spam') {
         const { selectedConversationId, selectConversation } = useSupportInboxStore.getState();
         if (selectedConversationId === conversationId) {
           // Find the next conversation from the cached list (before invalidation)
@@ -380,6 +409,22 @@ export function useAssignAgent(workspaceId: string) {
     },
     onError: (error: Error) => {
       toast.error('Failed to assign agent', { description: error.message });
+    },
+  });
+}
+
+export function useAssignConversationUser(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ conversationId, userId }: { conversationId: string; userId: string | null }) =>
+      supportService.assignConversationUser(workspaceId, conversationId, { user_id: userId }).then(unwrap),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, variables.conversationId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to assign conversation', { description: error.message });
     },
   });
 }
@@ -470,8 +515,6 @@ export function useMarkConversationUnread(workspaceId: string) {
         queryKeys.support.conversation(workspaceId, conversationId),
         (current) => updateConversationUnreadCount(current, Math.max(current?.unread_count ?? 0, 1))
       );
-      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });
     },
@@ -498,8 +541,6 @@ export function useMarkConversationRead(workspaceId: string) {
         queryKeys.support.conversation(workspaceId, conversationId),
         (current) => updateConversationUnreadCount(current, 0)
       );
-      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });
     },

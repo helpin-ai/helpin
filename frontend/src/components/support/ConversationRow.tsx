@@ -1,4 +1,5 @@
-import { memo, useMemo, useState, type KeyboardEvent } from 'react';
+import { memo, useMemo, useState, type JSX, type KeyboardEvent, type SVGProps } from 'react';
+import * as Flags from 'country-flag-icons/react/3x2';
 import { CheckmarkCircle02Icon, MoreHorizontalIcon } from '@/lib/icons';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
@@ -12,6 +13,43 @@ import { timeAgo, getInitial, getAvatarColor } from './helpers';
 import { ConversationActionsMenu, type ConversationActionMoveOption } from './ConversationActionsMenu';
 
 const EMPTY_ARRAY: string[] = [];
+
+function normalizeCountryCode(code?: string | null): keyof typeof Flags | null {
+  const normalized = code?.trim().toUpperCase().replace(/-/g, '_');
+  if (!normalized || !/^[A-Z]{2,3}(?:_[A-Z]{2,3})?$/.test(normalized)) {
+    return null;
+  }
+  return normalized as keyof typeof Flags;
+}
+
+const ConversationCountryFlag = memo(function ConversationCountryFlag({
+  countryCode,
+  countryName,
+}: {
+  countryCode?: string | null;
+  countryName?: string | null;
+}) {
+  const flagKey = normalizeCountryCode(countryCode);
+  if (!flagKey) return null;
+
+  const Flag = Flags[flagKey] as ((props: SVGProps<SVGSVGElement>) => JSX.Element) | undefined;
+  if (!Flag) return null;
+
+  const label = countryName?.trim() || countryCode?.trim()?.toUpperCase() || 'Visitor country';
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="absolute -bottom-0.5 -right-0.5 flex h-3 w-[18px] items-center justify-center overflow-hidden rounded-[3px] border border-background/80 shadow-sm">
+          <Flag aria-label={label} className="h-full w-full object-cover" />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="left">
+        <span className="text-xs">{label}</span>
+      </TooltipContent>
+    </Tooltip>
+  );
+});
 
 const TypingDotsPill = memo(function TypingDotsPill() {
   return (
@@ -130,17 +168,16 @@ interface ConversationRowProps {
   workspaceId: string;
   conversation: SupportConversation;
   moveOptions: ConversationActionMoveOption[];
-  isSelected: boolean;
-  onSelect: () => void;
+  onSelectConversation: (id: string, unreadCount?: number) => void;
 }
 
 export const ConversationRow = memo(function ConversationRow({
   workspaceId,
   conversation,
   moveOptions,
-  isSelected,
-  onSelect,
+  onSelectConversation,
 }: ConversationRowProps) {
+  const isSelected = useSupportInboxStore((s) => s.selectedConversationId === conversation.id);
   const visitorLabel = conversation.anonymous_id ? `Visitor #${conversation.anonymous_id.slice(0, 6)}` : 'Anonymous';
   const displayName = conversation.customer_name || conversation.customer_email || visitorLabel;
   const unreadCount = conversation.unread_count ?? 0;
@@ -172,7 +209,7 @@ export const ConversationRow = memo(function ConversationRow({
     if (event.target !== event.currentTarget) return;
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
-      onSelect();
+      onSelectConversation(conversation.id, unreadCount);
     }
   };
 
@@ -180,7 +217,7 @@ export const ConversationRow = memo(function ConversationRow({
     <div
       role="button"
       tabIndex={0}
-      onClick={onSelect}
+      onClick={() => onSelectConversation(conversation.id, unreadCount)}
       onKeyDown={handleRowKeyDown}
       className={`group relative w-full cursor-pointer px-3 py-2.5 text-left transition-all duration-200 hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
         isSelected
@@ -211,8 +248,9 @@ export const ConversationRow = memo(function ConversationRow({
             {getInitial(displayName)}
           </div>
           {isVisitorOnline && (
-            <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-green-400 ring-2 ring-background" />
+            <span className="absolute -left-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-green-400 ring-2 ring-background shadow-sm" />
           )}
+          <ConversationCountryFlag countryCode={conversation.country_code} countryName={conversation.country_name} />
         </div>
 
         {/* Content */}
@@ -321,7 +359,7 @@ export const ConversationRow = memo(function ConversationRow({
                     <AgentAvatar key={uid} userId={uid} tooltip="viewing" />
                   ))}
                 </div>
-              ) : (conversation.status === 'resolved' || conversation.status === 'closed') ? (
+              ) : conversation.status === 'resolved' ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <CheckmarkCircle02Icon className="h-5 w-5 text-green-500" />

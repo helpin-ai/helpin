@@ -1,4 +1,6 @@
 import { Link } from '@tanstack/react-router';
+import * as Flags from 'country-flag-icons/react/3x2';
+import type { JSX, SVGProps } from 'react';
 import {
   GlobeIcon,
   Mail01Icon,
@@ -9,11 +11,15 @@ import {
   LaptopIcon,
   SmartPhone01Icon,
   Tablet01Icon,
+  MapPinIcon,
+  Clock01Icon,
+  Link01Icon,
+  InformationCircleIcon,
 } from '@/lib/icons';
 import { Badge } from '@/components/ui/badge';
 import { CollapsibleSection } from '@/components/ui/collapsible-section';
 import { STATUS_COLORS, STATUS_LABELS } from './constants';
-import { useVisitorContext } from '@/hooks/queries/useSupport';
+import { useConversation, useVisitorContext } from '@/hooks/queries/useSupport';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { ConversationStatus } from '@/lib/pmTypes';
 
@@ -33,12 +39,12 @@ function InfoRow({
 }) {
   if (!value) return null;
   return (
-    <div className="flex items-center justify-between gap-2 text-xs">
-      <span className="text-muted-foreground shrink-0 flex items-center gap-1.5">
+    <div className="grid grid-cols-[88px_1fr] items-center gap-2 text-xs">
+      <span className="text-muted-foreground flex items-center gap-1.5">
         {Icon && <Icon className="h-3 w-3" />}
         {label}
       </span>
-      <span className="truncate text-right" title={value}>{value}</span>
+      <span className="truncate font-medium text-foreground/90" title={value}>{value}</span>
     </div>
   );
 }
@@ -98,8 +104,84 @@ const SOURCE_LABELS: Record<string, string> = {
   manual: 'Manual',
 };
 
+const CHANNEL_LABELS: Record<string, string> = {
+  widget: 'Chat',
+  email: 'Email',
+  api: 'API',
+  internal: 'Internal',
+};
+
+const CHANNEL_ICONS: Record<string, React.ElementType> = {
+  widget: Message01Icon,
+  email: Mail01Icon,
+  api: GlobeIcon,
+  internal: UserIcon,
+};
+
+function normalizeCountryCode(code?: string | null): keyof typeof Flags | null {
+  const normalized = code?.trim().toUpperCase().replace(/-/g, '_');
+  if (!normalized || !/^[A-Z]{2,3}(?:_[A-Z]{2,3})?$/.test(normalized)) {
+    return null;
+  }
+  return normalized as keyof typeof Flags;
+}
+
+function formatLocalTime(timezone?: string | null): string | null {
+  if (!timezone) return null;
+  const now = new Date();
+  try {
+    const time = new Intl.DateTimeFormat(undefined, {
+      timeZone: timezone,
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    }).format(now);
+    const offsetPart = new Intl.DateTimeFormat(undefined, {
+      timeZone: timezone,
+      timeZoneName: 'shortOffset',
+    })
+      .formatToParts(now)
+      .find((p) => p.type === 'timeZoneName')?.value;
+    return offsetPart ? `${time} (${offsetPart})` : time;
+  } catch {
+    return null;
+  }
+}
+
+function MainInfoRow({
+  icon,
+  value,
+  href,
+}: {
+  icon: React.ReactNode;
+  value: string;
+  href?: string;
+}) {
+  return (
+    <div className="flex items-center gap-2.5 text-xs">
+      <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground/70">
+        {icon}
+      </span>
+      {href ? (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="truncate text-blue-600 hover:underline dark:text-blue-400"
+          title={value}
+        >
+          {value}
+        </a>
+      ) : (
+        <span className="truncate text-foreground/90" title={value}>{value}</span>
+      )}
+    </div>
+  );
+}
+
 export function SidebarVisitorContext({ workspaceId, conversationId }: SidebarVisitorContextProps) {
   const { data, isLoading } = useVisitorContext(workspaceId, conversationId);
+  const { data: conversation } = useConversation(workspaceId, conversationId);
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
 
   if (isLoading || !data) return null;
@@ -107,80 +189,110 @@ export function SidebarVisitorContext({ workspaceId, conversationId }: SidebarVi
   const { device, location, contact, other_conversations, total_conversations } = data;
 
   const hasDevice = device && device.browser !== 'Unknown';
-  const hasLocation = location && (location.timezone || location.locale || location.last_page_url);
+  const locationText = [location?.city_name, location?.region_name, location?.country_name].filter(Boolean).join(', ');
+  const localTime = formatLocalTime(location?.timezone);
+  const flagKey = normalizeCountryCode(location?.country_code);
+  const Flag = flagKey ? (Flags[flagKey] as ((p: SVGProps<SVGSVGElement>) => JSX.Element) | undefined) : undefined;
+  const channel = conversation?.source;
+  const channelLabel = channel ? CHANNEL_LABELS[channel] ?? channel : null;
+  const ChannelIcon = channel ? CHANNEL_ICONS[channel] : undefined;
+  const currentPage = location?.last_page_url;
+
+  const hasMainInfo = !!(locationText || localTime || Flag || conversation?.customer_email || channelLabel || currentPage);
   const hasContact = !!contact;
   const hasOtherConvos = other_conversations.length > 0;
 
-  if (!hasDevice && !hasLocation && !hasContact && !hasOtherConvos) return null;
+  if (!hasDevice && !hasMainInfo && !hasContact && !hasOtherConvos) return null;
 
   return (
     <div>
-      {/* Device */}
-      {hasDevice && (
-        <CollapsibleSection title="Device" icon={ComputerIcon} count={0}>
+      {/* Main information */}
+      {hasMainInfo && (
+        <CollapsibleSection title="Main information" icon={InformationCircleIcon} count={0} defaultOpen>
           <div className="space-y-2">
-            <div className="flex items-center gap-2 text-xs">
-              <BrowserIcon browser={device.browser} />
-              <span>{device.browser}{device.browser_version ? ` ${device.browser_version}` : ''}</span>
-            </div>
-            <div className="flex items-center gap-2 text-xs">
-              <OSIcon os={device.os} />
-              <span>{device.os}{device.os_version ? ` ${device.os_version}` : ''}</span>
-            </div>
-            <div className="flex items-center gap-2 text-xs">
-              <DeviceIcon type={device.device_type} />
-              <span className="capitalize">{device.device_type}</span>
-            </div>
+            {locationText && (
+              <MainInfoRow icon={<MapPinIcon className="h-3.5 w-3.5" />} value={locationText} />
+            )}
+            {localTime && (
+              <MainInfoRow icon={<Clock01Icon className="h-3.5 w-3.5" />} value={localTime} />
+            )}
+            {Flag && location?.country_name && (
+              <div className="flex items-center gap-2 text-xs">
+                <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+                  <span className="flex h-[11px] w-4 items-center justify-center overflow-hidden rounded-[2px] border border-border/60">
+                    <Flag className="h-full w-full object-cover" />
+                  </span>
+                </span>
+                <span className="truncate" title={location.country_name}>{location.country_name}</span>
+              </div>
+            )}
+            {conversation?.customer_email && (
+              <MainInfoRow icon={<Mail01Icon className="h-3.5 w-3.5" />} value={conversation.customer_email} />
+            )}
+            {channelLabel && ChannelIcon && (
+              <MainInfoRow icon={<ChannelIcon className="h-3.5 w-3.5" />} value={channelLabel} />
+            )}
+            {currentPage && (
+              <MainInfoRow
+                icon={<Link01Icon className="h-3.5 w-3.5" />}
+                value={currentPage.replace(/^https?:\/\//, '')}
+                href={currentPage}
+              />
+            )}
           </div>
         </CollapsibleSection>
       )}
 
-      {/* Location */}
-      {hasLocation && (
-        <CollapsibleSection title="Location" icon={GlobeIcon} count={0}>
-          <div className="space-y-1.5">
-            <InfoRow label="Timezone" value={location.timezone} icon={GlobeIcon} />
-            <InfoRow label="Locale" value={location.locale} />
-            {location.last_page_url && (
-              <div className="text-xs">
-                <span className="text-muted-foreground block mb-0.5">Current page</span>
-                <a
-                  href={location.last_page_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 dark:text-blue-400 hover:underline truncate block"
-                  title={location.last_page_url}
-                >
-                  {location.last_page_url.replace(/^https?:\/\//, '')}
-                </a>
-              </div>
-            )}
+      {/* Visitor device */}
+      {hasDevice && (
+        <CollapsibleSection title="Visitor device" icon={ComputerIcon} count={0} defaultOpen>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2.5 text-xs">
+              <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground/70">
+                <BrowserIcon browser={device.browser} />
+              </span>
+              <span className="text-foreground/90">{device.browser}{device.browser_version ? ` ${device.browser_version}` : ''}</span>
+            </div>
+            <div className="flex items-center gap-2.5 text-xs">
+              <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground/70">
+                <OSIcon os={device.os} />
+              </span>
+              <span className="text-foreground/90">{device.os}{device.os_version ? ` ${device.os_version}` : ''}</span>
+            </div>
+            <div className="flex items-center gap-2.5 text-xs">
+              <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground/70">
+                <DeviceIcon type={device.device_type} />
+              </span>
+              <span className="capitalize text-foreground/90">{device.device_type}</span>
+            </div>
           </div>
         </CollapsibleSection>
       )}
 
       {/* Contact Details */}
       {hasContact && (
-        <CollapsibleSection title="Contact Details" icon={UserIcon} count={0}>
+        <CollapsibleSection title="Contact Details" icon={UserIcon} count={0} defaultOpen>
           <div className="space-y-2">
             {contact.job_title && (
               <InfoRow label="Job title" value={contact.job_title} />
             )}
             {contact.lifecycle_stage && (
-              <div className="flex items-center justify-between gap-2 text-xs">
-                <span className="text-muted-foreground shrink-0">Lifecycle</span>
-                <Badge variant="secondary" className={`h-4 px-1.5 text-[10px] font-medium ${LIFECYCLE_COLORS[contact.lifecycle_stage] ?? LIFECYCLE_COLORS.other}`}>
-                  {contact.lifecycle_stage}
-                </Badge>
+              <div className="grid grid-cols-[88px_1fr] items-center gap-2 text-xs">
+                <span className="text-muted-foreground">Lifecycle</span>
+                <span>
+                  <Badge variant="secondary" className={`h-4 rounded-full px-1.5 text-[10px] font-medium ${LIFECYCLE_COLORS[contact.lifecycle_stage] ?? LIFECYCLE_COLORS.other}`}>
+                    {contact.lifecycle_stage}
+                  </Badge>
+                </span>
               </div>
             )}
             {contact.source && (
-              <div className="flex items-center justify-between gap-2 text-xs">
-                <span className="text-muted-foreground shrink-0">Source</span>
-                <span className="flex items-center gap-1 truncate text-right capitalize">
+              <div className="grid grid-cols-[88px_1fr] items-center gap-2 text-xs">
+                <span className="text-muted-foreground">Source</span>
+                <span className="flex items-center gap-1.5 truncate capitalize font-medium text-foreground/90">
                   {(() => {
                     const SourceIcon = SOURCE_ICONS[contact.source] ?? GlobeIcon;
-                    return <SourceIcon className="h-3 w-3 text-muted-foreground shrink-0" />;
+                    return <SourceIcon className="h-3 w-3 text-muted-foreground/70 shrink-0" />;
                   })()}
                   {SOURCE_LABELS[contact.source] ?? contact.source.replace(/_/g, ' ')}
                 </span>
@@ -200,8 +312,8 @@ export function SidebarVisitorContext({ workspaceId, conversationId }: SidebarVi
 
       {/* Other Conversations */}
       {hasOtherConvos && (
-        <CollapsibleSection title="Other Conversations" icon={Message01Icon} count={total_conversations - 1}>
-          <div className="space-y-1.5">
+        <CollapsibleSection title="Other Conversations" icon={Message01Icon} count={Math.max(total_conversations - 1, other_conversations.length)}>
+          <div className="max-h-[240px] space-y-1.5 overflow-y-auto pr-1">
             {other_conversations.map((conv) => (
               <Link
                 key={conv.id}

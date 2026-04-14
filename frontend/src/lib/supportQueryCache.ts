@@ -22,13 +22,25 @@ export function updateConversationListUnreadCount(
     return current;
   }
 
+  let changed = false;
+  const nextData = current.data.map((conversation) => {
+    if (conversation.id !== conversationId) {
+      return conversation;
+    }
+    if ((conversation.unread_count ?? 0) === unreadCount) {
+      return conversation;
+    }
+    changed = true;
+    return { ...conversation, unread_count: unreadCount };
+  });
+
+  if (!changed) {
+    return current;
+  }
+
   return {
     ...current,
-    data: current.data.map((conversation) =>
-      conversation.id === conversationId
-        ? { ...conversation, unread_count: unreadCount }
-        : conversation,
-    ),
+    data: nextData,
   };
 }
 
@@ -36,5 +48,11 @@ export function updateConversationUnreadCount(
   current: SupportConversation | undefined,
   unreadCount: number,
 ): SupportConversation | undefined {
-  return current ? { ...current, unread_count: unreadCount } : current;
+  if (!current) {
+    return current;
+  }
+  if ((current.unread_count ?? 0) === unreadCount) {
+    return current;
+  }
+  return { ...current, unread_count: unreadCount };
 }

@@ -29,6 +29,7 @@ describe('filterSupportConversations', () => {
 
     const result = filterSupportConversations(conversations, {
       navFilter: 'all',
+      mailboxScope: 'all',
       userId: 'user-1',
       searchQuery: '',
     });
@@ -38,13 +39,14 @@ describe('filterSupportConversations', () => {
 
   it('keeps AI-managed conversations out of my inbox but preserves escalated ones', () => {
     const conversations = [
-      buildConversation({ id: 'human', opened_by_user_id: 'user-1' }),
-      buildConversation({ id: 'ai-pending', opened_by_user_id: 'user-1', ai_state: 'pending' }),
-      buildConversation({ id: 'ai-escalated', opened_by_user_id: 'user-1', ai_state: 'escalated' }),
+      buildConversation({ id: 'human', assigned_user_id: 'user-1' }),
+      buildConversation({ id: 'ai-pending', assigned_user_id: 'user-1', ai_state: 'pending' }),
+      buildConversation({ id: 'ai-escalated', assigned_user_id: 'user-1', ai_state: 'escalated' }),
     ];
 
     const result = filterSupportConversations(conversations, {
       navFilter: 'my_inbox',
+      mailboxScope: 'all',
       userId: 'user-1',
       searchQuery: '',
     });
@@ -52,25 +54,22 @@ describe('filterSupportConversations', () => {
     expect(result.map((conversation) => conversation.id)).toEqual(['human', 'ai-escalated']);
   });
 
-  it('shows only AI conversations in the Helpin AI view', () => {
+  it('shows only AI-active conversations in the AI Active view', () => {
     const conversations = [
       buildConversation({ id: 'human' }),
-      buildConversation({ id: 'ai-pending', ai_state: 'pending' }),
-      buildConversation({ id: 'ai-resolved', ai_state: 'resolved' }),
-      buildConversation({ id: 'ai-escalated', ai_state: 'escalated' }),
+      buildConversation({ id: 'ai-pending', flow_state: 'ai_handling', ai_state: 'pending' }),
+      buildConversation({ id: 'ai-resolved', flow_state: 'resolved_by_ai', ai_state: 'resolved' }),
+      buildConversation({ id: 'ai-escalated', flow_state: 'waiting_for_human', ai_state: 'escalated' }),
     ];
 
     const result = filterSupportConversations(conversations, {
-      navFilter: 'ai_all',
+      navFilter: 'ai_active',
+      mailboxScope: 'all',
       userId: 'user-1',
       searchQuery: '',
     });
 
-    expect(result.map((conversation) => conversation.id)).toEqual([
-      'ai-pending',
-      'ai-resolved',
-      'ai-escalated',
-    ]);
+    expect(result.map((conversation) => conversation.id)).toEqual(['ai-pending']);
   });
 
   it('treats escalated AI conversations as human-unassigned work', () => {
@@ -78,11 +77,13 @@ describe('filterSupportConversations', () => {
       buildConversation({ id: 'human-unassigned' }),
       buildConversation({ id: 'ai-pending', ai_state: 'pending' }),
       buildConversation({ id: 'ai-escalated', ai_state: 'escalated' }),
+      buildConversation({ id: 'assigned-user', assigned_user_id: 'user-1' }),
       buildConversation({ id: 'assigned-human', assigned_agent_id: 'agent-1' }),
     ];
 
     const result = filterSupportConversations(conversations, {
       navFilter: 'unassigned',
+      mailboxScope: 'all',
       userId: 'user-1',
       searchQuery: '',
     });
@@ -91,5 +92,38 @@ describe('filterSupportConversations', () => {
       'human-unassigned',
       'ai-escalated',
     ]);
+  });
+
+  it('keeps resolved-by-AI conversations only in the resolved-by-AI view', () => {
+    const conversations = [
+      buildConversation({ id: 'human' }),
+      buildConversation({ id: 'ai-resolved', flow_state: 'resolved_by_ai', ai_state: 'resolved' }),
+      buildConversation({ id: 'ai-escalated', flow_state: 'assigned_to_human', ai_state: 'escalated' }),
+    ];
+
+    const result = filterSupportConversations(conversations, {
+      navFilter: 'resolved_by_ai',
+      mailboxScope: 'all',
+      userId: 'user-1',
+      searchQuery: '',
+    });
+
+    expect(result.map((conversation) => conversation.id)).toEqual(['ai-resolved']);
+  });
+
+  it('applies the selected mailbox scope even in mentions or mixed result sets', () => {
+    const conversations = [
+      buildConversation({ id: 'shared-conv', mailbox_id: null }),
+      buildConversation({ id: 'billing-conv', mailbox_id: 'mailbox-billing' }),
+    ];
+
+    const result = filterSupportConversations(conversations, {
+      navFilter: 'mentions',
+      mailboxScope: 'mailbox-billing',
+      userId: 'user-1',
+      searchQuery: '',
+    });
+
+    expect(result.map((conversation) => conversation.id)).toEqual(['billing-conv']);
   });
 });

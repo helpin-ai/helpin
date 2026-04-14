@@ -1,14 +1,32 @@
-import { memo, useEffect, useMemo, useRef } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import type { InfiniteData } from '@tanstack/react-query';
 import { useQueryClient } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useDroppable } from '@dnd-kit/core';
-import { Calendar03Icon, Loading01Icon, PlusSignIcon } from '@/lib/icons';
+import { toast } from 'sonner';
+import {
+  ArrowUpRight01Icon,
+  Calendar03Icon,
+  Copy01Icon,
+  Delete01Icon,
+  Link01Icon,
+  Loading01Icon,
+  MoreHorizontalIcon,
+  PlusSignIcon,
+} from '@/lib/icons';
 import { format, parseISO } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { useInfiniteSprintPreviewTasks } from '@/hooks/queries/useSprints';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
+import { useDeleteSprint, useInfiniteSprintPreviewTasks } from '@/hooks/queries/useSprints';
 import { SPRINT_STATUS_CONFIG } from '@/lib/pmConstants';
 import { queryKeys } from '@/lib/queryKeys';
 import type { AssignableMember } from '@/lib/types';
@@ -23,6 +41,7 @@ const SPRINT_TASK_ESTIMATE_HEIGHT = 126;
 interface SprintPlanningColumnProps {
   card: SprintPlanningCard;
   workspaceId: string;
+  workspaceSlug: string;
   ownerByMemberId: Map<string, AssignableMember>;
   canEdit: boolean;
   isDropTargetActive?: boolean;
@@ -39,6 +58,7 @@ function formatSprintRange(startDate: string | null, endDate: string | null) {
 export const SprintPlanningColumn = memo(function SprintPlanningColumn({
   card,
   workspaceId,
+  workspaceSlug,
   ownerByMemberId,
   canEdit,
   isDropTargetActive = false,
@@ -47,9 +67,38 @@ export const SprintPlanningColumn = memo(function SprintPlanningColumn({
   onCreateTask,
 }: SprintPlanningColumnProps) {
   const queryClient = useQueryClient();
+  const deleteSprint = useDeleteSprint(workspaceId);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const sprintUrl = workspaceSlug ? `/w/${workspaceSlug}/pm/sprints/${card.sprint.id}` : '';
   const { setNodeRef, isOver } = useDroppable({
     id: `sprint:${card.sprint.id}`,
   });
+
+  const handleCopyLink = () => {
+    if (!sprintUrl) return;
+    const fullUrl = `${window.location.origin}${sprintUrl}`;
+    void navigator.clipboard.writeText(fullUrl).then(
+      () => toast.success('Link copied'),
+      () => toast.error('Failed to copy link'),
+    );
+  };
+
+  const handleOpenInNewTab = () => {
+    if (!sprintUrl) return;
+    window.open(sprintUrl, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleConfirmDelete = () => {
+    deleteSprint.mutate(card.sprint.id, {
+      onSuccess: () => {
+        toast.success('Sprint deleted');
+        setDeleteOpen(false);
+      },
+      onError: (err) => {
+        toast.error(err instanceof Error ? err.message : 'Failed to delete sprint');
+      },
+    });
+  };
   const showDropIndicator = isOver || isDropTargetActive;
   const statusConfig = SPRINT_STATUS_CONFIG[card.sprint.status];
   const cardTotal = card.stats.task_count;
@@ -157,7 +206,7 @@ export const SprintPlanningColumn = memo(function SprintPlanningColumn({
           </div>
         )}
         <CardHeader className="space-y-3 whitespace-normal pb-3">
-          <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start justify-between gap-2">
             <button type="button" className="min-w-0 cursor-pointer text-left" onClick={() => onOpenSprint(card.sprint.id)}>
               <h3 className="truncate text-base font-semibold hover:underline">{card.sprint.name}</h3>
               <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
@@ -165,7 +214,48 @@ export const SprintPlanningColumn = memo(function SprintPlanningColumn({
                 {formatSprintRange(card.sprint.start_date, card.sprint.end_date)}
               </p>
             </button>
-            <Badge className={cn('shrink-0 border-0', statusConfig.badge)}>{statusConfig.label}</Badge>
+            <div className="flex shrink-0 items-center gap-1">
+              <Badge className={cn('shrink-0 border-0', statusConfig.badge)}>{statusConfig.label}</Badge>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-muted-foreground"
+                    onClick={(e) => e.stopPropagation()}
+                    aria-label="Sprint actions"
+                  >
+                    <MoreHorizontalIcon className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                  <DropdownMenuItem onClick={() => onOpenSprint(card.sprint.id)}>
+                    <ArrowUpRight01Icon className="mr-2 h-4 w-4" />
+                    Open sprint
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleOpenInNewTab} disabled={!sprintUrl}>
+                    <Link01Icon className="mr-2 h-4 w-4" />
+                    Open in new tab
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleCopyLink} disabled={!sprintUrl}>
+                    <Copy01Icon className="mr-2 h-4 w-4" />
+                    Copy link
+                  </DropdownMenuItem>
+                  {canEdit && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onClick={() => setDeleteOpen(true)}
+                      >
+                        <Delete01Icon className="mr-2 h-4 w-4" />
+                        Delete sprint
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
 
           <div className="space-y-1.5">
@@ -247,6 +337,20 @@ export const SprintPlanningColumn = memo(function SprintPlanningColumn({
             </Button>
           )}
         </CardContent>
+        <ConfirmDialog
+          open={deleteOpen}
+          onOpenChange={setDeleteOpen}
+          title="Delete sprint"
+          description={
+            <>
+              This will permanently delete <span className="font-medium">{card.sprint.name}</span>.
+              Tasks in this sprint will be moved back to the backlog. This action cannot be undone.
+            </>
+          }
+          confirmLabel={deleteSprint.isPending ? 'Deleting…' : 'Delete'}
+          variant="destructive"
+          onConfirm={handleConfirmDelete}
+        />
       </Card>
   );
 });

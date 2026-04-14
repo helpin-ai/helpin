@@ -6,8 +6,11 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
-func defaultConversationFlowState(openedByUserID, assignedAgentID *string) string {
+func defaultConversationFlowState(openedByUserID, assignedUserID, assignedAgentID *string) string {
 	if assignedAgentID != nil && *assignedAgentID != "" {
+		return model.SupportConversationFlowStateAssignedToHuman
+	}
+	if assignedUserID != nil && *assignedUserID != "" {
 		return model.SupportConversationFlowStateAssignedToHuman
 	}
 	if openedByUserID != nil && *openedByUserID != "" {

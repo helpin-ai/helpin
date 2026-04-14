@@ -1,6 +1,6 @@
 // ── Support ─────────────────────────────────────────────────────────
 
-export type ConversationStatus = 'open' | 'in_progress' | 'waiting' | 'resolved' | 'closed' | 'spam';
+export type ConversationStatus = 'open' | 'waiting_on_customer' | 'resolved' | 'spam';
 export type ConversationPriority = 'low' | 'medium' | 'high' | 'urgent';
 export type TicketSource = 'widget' | 'internal' | 'email' | 'api';
 export type MessageSenderType = 'customer' | 'user' | 'agent' | 'ai';
@@ -40,6 +40,7 @@ export interface SupportConversation {
   email_unsubscribed?: boolean;
   anonymous_id?: string;
   opened_by_user_id?: string;
+  assigned_user_id?: string;
   assigned_agent_id?: string;
   linked_story_id?: string;
   linked_task_id?: string;
@@ -56,6 +57,8 @@ export interface SupportConversation {
   mailbox_name?: string | null;
   mailbox_handle?: string | null;
   mailbox_icon?: string | null;
+  country_code?: string | null;
+  country_name?: string | null;
   team_last_seen_at?: string;
   contact_last_seen_at?: string;
   triage?: SupportConversationTriage | null;
@@ -67,8 +70,7 @@ export interface UnreadStats {
   total: number;
   my_inbox: number;
   unassigned: number;
-  ai_all: number;
-  ai_pending: number;
+  ai_active: number;
 }
 
 export interface SupportInboxScope {
@@ -525,6 +527,10 @@ export interface CreateTaskFromConversationResponse {
 
 export interface AssignConversationAgentRequest {
   agent_id: string;
+}
+
+export interface AssignConversationUserRequest {
+  user_id: string | null;
 }
 
 // ── Support Installation Settings ───────────────────────────────────

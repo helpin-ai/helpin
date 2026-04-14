@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -70,7 +71,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		conversation2 := &model.SupportConversation{
 			WorkspaceID: workspaceID,
 			Subject:     "Second conversation",
-			Status:      "closed",
+			Status:      model.SupportConversationStatusResolved,
 			Priority:    "high",
 		}
 		err := repo.Create(ctx, conversation2)
@@ -79,7 +80,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// List all
-		conversations, total, err := repo.List(ctx, workspaceID, "", "", model.PMPagination{}, "", model.RoleOwner, nil)
+		conversations, total, err := repo.List(ctx, workspaceID, "", "", model.PMPagination{}, "", model.RoleOwner, nil, "")
 		if err != nil {
 			t.Fatalf("list conversations: %v", err)
 		}
@@ -91,7 +92,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// Filter by status
-		openConvs, totalOpen, err := repo.List(ctx, workspaceID, "open", "", model.PMPagination{}, "", model.RoleOwner, nil)
+		openConvs, totalOpen, err := repo.List(ctx, workspaceID, "open", "", model.PMPagination{}, "", model.RoleOwner, nil, "")
 		if err != nil {
 			t.Fatalf("list open conversations: %v", err)
 		}
@@ -103,12 +104,82 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// Filter by priority
-		_, totalHigh, err := repo.List(ctx, workspaceID, "", "high", model.PMPagination{}, "", model.RoleOwner, nil)
+		_, totalHigh, err := repo.List(ctx, workspaceID, "", "high", model.PMPagination{}, "", model.RoleOwner, nil, "")
 		if err != nil {
 			t.Fatalf("list high priority: %v", err)
 		}
 		if totalHigh != 1 {
 			t.Errorf("expected 1 high priority, got %d", totalHigh)
+		}
+	})
+
+	t.Run("List conversations includes latest visitor country", func(t *testing.T) {
+		ctx := context.Background()
+
+		conversation := &model.SupportConversation{
+			WorkspaceID: workspaceID,
+			Subject:     "Country conversation",
+			Status:      model.SupportConversationStatusOpen,
+			AnonymousID: strPtr("anon-country"),
+		}
+		if err := repo.Create(ctx, conversation); err != nil {
+			t.Fatalf("create conversation: %v", err)
+		}
+
+		sessionRepo := repository.NewSupportInboxSessionRepository(db)
+		oldSession := &model.SupportWidgetSession{
+			WorkspaceID:    workspaceID,
+			ConversationID: &conversation.ID,
+			SessionToken:   "country-old",
+			AnonymousID:    "anon-country",
+			IsAnonymous:    true,
+			CountryCode:    strPtr("CA"),
+			CountryName:    strPtr("Canada"),
+			ExpiresAt:      time.Now().Add(24 * time.Hour),
+			CreatedAt:      time.Now().Add(-2 * time.Hour),
+		}
+		if err := sessionRepo.Create(ctx, oldSession); err != nil {
+			t.Fatalf("create old session: %v", err)
+		}
+
+		newSession := &model.SupportWidgetSession{
+			WorkspaceID:    workspaceID,
+			ConversationID: &conversation.ID,
+			SessionToken:   "country-new",
+			AnonymousID:    "anon-country",
+			IsAnonymous:    true,
+			CountryCode:    strPtr("DE"),
+			CountryName:    strPtr("Germany"),
+			ExpiresAt:      time.Now().Add(24 * time.Hour),
+			CreatedAt:      time.Now().Add(-1 * time.Hour),
+		}
+		if err := sessionRepo.Create(ctx, newSession); err != nil {
+			t.Fatalf("create new session: %v", err)
+		}
+
+		conversations, total, err := repo.List(ctx, workspaceID, "", "", model.PMPagination{}, "", model.RoleOwner, nil, "")
+		if err != nil {
+			t.Fatalf("list conversations: %v", err)
+		}
+		if total < 1 {
+			t.Fatalf("expected conversations, got %d", total)
+		}
+
+		var found *model.SupportConversation
+		for i := range conversations {
+			if conversations[i].ID == conversation.ID {
+				found = &conversations[i]
+				break
+			}
+		}
+		if found == nil {
+			t.Fatal("expected seeded conversation in list")
+		}
+		if found.CountryCode == nil || *found.CountryCode != "DE" {
+			t.Fatalf("country_code = %v, want %q", found.CountryCode, "DE")
+		}
+		if found.CountryName == nil || *found.CountryName != "Germany" {
+			t.Fatalf("country_name = %v, want %q", found.CountryName, "Germany")
 		}
 	})
 
@@ -218,7 +289,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// Page 1, 2 per page
-		page1, total, err := pRepo.List(ctx, paginationWS, "", "", model.PMPagination{Page: 1, PerPage: 2}, "", model.RoleOwner, nil)
+		page1, total, err := pRepo.List(ctx, paginationWS, "", "", model.PMPagination{Page: 1, PerPage: 2}, "", model.RoleOwner, nil, "")
 		if err != nil {
 			t.Fatalf("page 1: %v", err)
 		}
@@ -230,7 +301,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// Page 3, 2 per page → 1 result
-		page3, _, err := pRepo.List(ctx, paginationWS, "", "", model.PMPagination{Page: 3, PerPage: 2}, "", model.RoleOwner, nil)
+		page3, _, err := pRepo.List(ctx, paginationWS, "", "", model.PMPagination{Page: 3, PerPage: 2}, "", model.RoleOwner, nil, "")
 		if err != nil {
 			t.Fatalf("page 3: %v", err)
 		}
@@ -304,7 +375,7 @@ func TestSupportConversationRepository(t *testing.T) {
 			t.Fatal("expected linked team member to have mailbox access")
 		}
 
-		teamConversations, total, err := repo.List(ctx, linkedWorkspaceID, "", "", model.PMPagination{}, "wm-linked-team", model.RoleMember, nil)
+		teamConversations, total, err := repo.List(ctx, linkedWorkspaceID, "", "", model.PMPagination{}, "wm-linked-team", model.RoleMember, nil, "")
 		if err != nil {
 			t.Fatalf("list conversations for linked team member: %v", err)
 		}
@@ -312,7 +383,7 @@ func TestSupportConversationRepository(t *testing.T) {
 			t.Fatalf("expected linked team member to see private conversation, got total=%d conversations=%#v", total, teamConversations)
 		}
 
-		outsiderConversations, outsiderTotal, err := repo.List(ctx, linkedWorkspaceID, "", "", model.PMPagination{}, "wm-linked-outsider", model.RoleMember, nil)
+		outsiderConversations, outsiderTotal, err := repo.List(ctx, linkedWorkspaceID, "", "", model.PMPagination{}, "wm-linked-outsider", model.RoleMember, nil, "")
 		if err != nil {
 			t.Fatalf("list conversations for outsider: %v", err)
 		}
@@ -347,6 +418,7 @@ func TestSupportConversationRepository(t *testing.T) {
 			Subject:         "Human owned conversation",
 			Status:          "open",
 			OpenedByUserID:  strPtr("user-123"),
+			AssignedUserID:  strPtr("user-123"),
 			TeamLastSeenAt:  &now,
 			AssignedAgentID: nil,
 		}
@@ -373,14 +445,15 @@ func TestSupportConversationRepository(t *testing.T) {
 			Status:         "open",
 			OpenedByUserID: strPtr("user-123"),
 			AIState:        &aiPending,
+			FlowState:      strPtr(model.SupportConversationFlowStateAIHandling),
 			TeamLastSeenAt: &now,
 		}
 		if err := repo.Create(ctx, aiConv); err != nil {
 			t.Fatalf("create AI conversation: %v", err)
 		}
 		if err := db.Exec(
-			`UPDATE support_conversations SET team_last_seen_at = ?, updated_at = ?, ai_state = ? WHERE id = ?`,
-			now.Add(-2*time.Minute), now, aiPending, aiConv.ID,
+			`UPDATE support_conversations SET team_last_seen_at = ?, updated_at = ?, ai_state = ?, flow_state = ? WHERE id = ?`,
+			now.Add(-2*time.Minute), now, aiPending, model.SupportConversationFlowStateAIHandling, aiConv.ID,
 		).Error; err != nil {
 			t.Fatalf("seed AI state: %v", err)
 		}
@@ -397,14 +470,15 @@ func TestSupportConversationRepository(t *testing.T) {
 			Subject:        "Escalated AI conversation",
 			Status:         "open",
 			AIState:        &aiEscalated,
+			FlowState:      strPtr(model.SupportConversationFlowStateWaitingForHuman),
 			TeamLastSeenAt: &now,
 		}
 		if err := repo.Create(ctx, escalatedConv); err != nil {
 			t.Fatalf("create escalated conversation: %v", err)
 		}
 		if err := db.Exec(
-			`UPDATE support_conversations SET team_last_seen_at = ?, updated_at = ?, ai_state = ?, assigned_agent_id = NULL, opened_by_user_id = NULL WHERE id = ?`,
-			now.Add(-2*time.Minute), now, aiEscalated, escalatedConv.ID,
+			`UPDATE support_conversations SET team_last_seen_at = ?, updated_at = ?, ai_state = ?, flow_state = ?, assigned_agent_id = NULL, assigned_user_id = NULL, opened_by_user_id = NULL WHERE id = ?`,
+			now.Add(-2*time.Minute), now, aiEscalated, model.SupportConversationFlowStateWaitingForHuman, escalatedConv.ID,
 		).Error; err != nil {
 			t.Fatalf("seed escalated state: %v", err)
 		}
@@ -429,15 +503,12 @@ func TestSupportConversationRepository(t *testing.T) {
 		if stats.Unassigned != 1 {
 			t.Fatalf("expected unassigned count 1, got %d", stats.Unassigned)
 		}
-		if stats.AIAll != 2 {
-			t.Fatalf("expected all AI unread count 2, got %d", stats.AIAll)
-		}
-		if stats.AIPending != 0 {
-			t.Fatalf("expected AI pending unread count 0 in sqlite-backed unread stats test, got %d", stats.AIPending)
+		if stats.AIActive != 1 {
+			t.Fatalf("expected AI active unread count 1, got %d", stats.AIActive)
 		}
 	})
 
-	t.Run("Mailbox unread counts exclude AI-managed conversations that stay in AI views", func(t *testing.T) {
+	t.Run("Mailbox unread counts include active AI conversations but exclude AI-resolved ones", func(t *testing.T) {
 		ctx := context.Background()
 		now := time.Now()
 		customerMessageAt := now.Add(-time.Minute)
@@ -487,13 +558,14 @@ func TestSupportConversationRepository(t *testing.T) {
 			Subject:     "AI pending billing conversation",
 			Status:      "open",
 			AIState:     &aiPending,
+			FlowState:   strPtr(model.SupportConversationFlowStateAIHandling),
 		}
 		if err := repo.Create(ctx, aiPendingConv); err != nil {
 			t.Fatalf("create AI pending billing conversation: %v", err)
 		}
 		if err := db.Exec(
-			`UPDATE support_conversations SET team_last_seen_at = ?, updated_at = ?, ai_state = ? WHERE id = ?`,
-			now.Add(-2*time.Minute), now, aiPending, aiPendingConv.ID,
+			`UPDATE support_conversations SET team_last_seen_at = ?, updated_at = ?, ai_state = ?, flow_state = ? WHERE id = ?`,
+			now.Add(-2*time.Minute), now, aiPending, model.SupportConversationFlowStateAIHandling, aiPendingConv.ID,
 		).Error; err != nil {
 			t.Fatalf("seed AI pending billing state: %v", err)
 		}
@@ -511,13 +583,14 @@ func TestSupportConversationRepository(t *testing.T) {
 			Subject:     "Escalated billing conversation",
 			Status:      "open",
 			AIState:     &aiEscalated,
+			FlowState:   strPtr(model.SupportConversationFlowStateWaitingForHuman),
 		}
 		if err := repo.Create(ctx, aiEscalatedConv); err != nil {
 			t.Fatalf("create escalated billing conversation: %v", err)
 		}
 		if err := db.Exec(
-			`UPDATE support_conversations SET team_last_seen_at = ?, updated_at = ?, ai_state = ? WHERE id = ?`,
-			now.Add(-2*time.Minute), now, aiEscalated, aiEscalatedConv.ID,
+			`UPDATE support_conversations SET team_last_seen_at = ?, updated_at = ?, ai_state = ?, flow_state = ? WHERE id = ?`,
+			now.Add(-2*time.Minute), now, aiEscalated, model.SupportConversationFlowStateWaitingForHuman, aiEscalatedConv.ID,
 		).Error; err != nil {
 			t.Fatalf("seed escalated billing state: %v", err)
 		}
@@ -528,12 +601,37 @@ func TestSupportConversationRepository(t *testing.T) {
 			t.Fatalf("seed escalated billing unread message: %v", err)
 		}
 
+		aiResolved := "resolved"
+		aiResolvedConv := &model.SupportConversation{
+			WorkspaceID: workspaceID,
+			MailboxID:   &billingMailbox.ID,
+			Subject:     "AI resolved billing conversation",
+			Status:      "resolved",
+			AIState:     &aiResolved,
+			FlowState:   strPtr(model.SupportConversationFlowStateResolvedByAI),
+		}
+		if err := repo.Create(ctx, aiResolvedConv); err != nil {
+			t.Fatalf("create AI resolved billing conversation: %v", err)
+		}
+		if err := db.Exec(
+			`UPDATE support_conversations SET team_last_seen_at = ?, updated_at = ?, ai_state = ?, flow_state = ? WHERE id = ?`,
+			now.Add(-2*time.Minute), now, aiResolved, model.SupportConversationFlowStateResolvedByAI, aiResolvedConv.ID,
+		).Error; err != nil {
+			t.Fatalf("seed AI resolved billing state: %v", err)
+		}
+		if err := db.Exec(
+			`INSERT INTO support_messages (id, workspace_id, conversation_id, sender_type, content, message_type, is_internal, created_at, updated_at) VALUES (?, ?, ?, 'customer', ?, 'reply', 0, ?, ?)`,
+			"msg-billing-ai-resolved-unread", workspaceID, aiResolvedConv.ID, "Thanks, that fixed billing", customerMessageAt, customerMessageAt,
+		).Error; err != nil {
+			t.Fatalf("seed AI resolved billing unread message: %v", err)
+		}
+
 		count, err := mailboxRepo.CountUnread(ctx, workspaceID, &billingMailbox.ID)
 		if err != nil {
 			t.Fatalf("count billing mailbox unread: %v", err)
 		}
-		if count != 2 {
-			t.Fatalf("expected billing mailbox unread count 2, got %d", count)
+		if count != 3 {
+			t.Fatalf("expected billing mailbox unread count 3, got %d", count)
 		}
 	})
 }
@@ -874,6 +972,163 @@ func TestMarkConversationRead_MarksSupportReplyNotificationsRead(t *testing.T) {
 	if notification.ReadAt == nil {
 		t.Fatal("expected notification read_at to be set")
 	}
+}
+
+func TestAssignConversationUserAcceptsSupportAccessibleUserOutsideMailboxMembership(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	mustExec(t, db, `CREATE TABLE IF NOT EXISTS workspace_module_grants (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		module TEXT NOT NULL,
+		subject_type TEXT NOT NULL,
+		subject_id TEXT NOT NULL,
+		access_level TEXT NOT NULL,
+		created_by_id TEXT,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`)
+
+	workspaceID := "ws-support-assign"
+	ownerID := "user-owner"
+	eligibleID := "user-eligible"
+	blockedID := "user-blocked"
+	noSupportID := "user-no-support"
+
+	seedUser(t, db, ownerID, "owner@example.com", "Owner User", "hash")
+	seedUser(t, db, eligibleID, "eligible@example.com", "Eligible User", "hash")
+	seedUser(t, db, blockedID, "blocked@example.com", "Blocked User", "hash")
+	seedUser(t, db, noSupportID, "nosupport@example.com", "No Support User", "hash")
+	seedWorkspace(t, db, workspaceID, "Support Assign WS", "support-assign-ws", ownerID)
+
+	workspaceRepo := repository.NewWorkspaceRepository(db)
+	ownerMember, err := workspaceRepo.AddMember(ctx, workspaceID, ownerID, model.RoleOwner)
+	if err != nil {
+		t.Fatalf("add owner member: %v", err)
+	}
+	eligibleMember, err := workspaceRepo.AddMember(ctx, workspaceID, eligibleID, model.RoleMember)
+	if err != nil {
+		t.Fatalf("add eligible member: %v", err)
+	}
+	blockedMember, err := workspaceRepo.AddMember(ctx, workspaceID, blockedID, model.RoleMember)
+	if err != nil {
+		t.Fatalf("add blocked member: %v", err)
+	}
+	_, err = workspaceRepo.AddMember(ctx, workspaceID, noSupportID, model.RoleMember)
+	if err != nil {
+		t.Fatalf("add no-support member: %v", err)
+	}
+
+	mailboxRepo := repository.NewSupportMailboxRepository(db)
+	mailbox := &model.SupportMailbox{
+		WorkspaceID:    workspaceID,
+		Name:           "Billing",
+		Handle:         "billing",
+		Icon:           "inbox",
+		VisibilityMode: "members_only",
+		AssignmentMode: "manual",
+		Active:         true,
+		CreatedByID:    ownerID,
+	}
+	if err := mailboxRepo.Create(ctx, mailbox); err != nil {
+		t.Fatalf("create mailbox: %v", err)
+	}
+	if err := mailboxRepo.AddMembers(ctx, mailbox.ID, []string{eligibleMember.ID}); err != nil {
+		t.Fatalf("add mailbox member: %v", err)
+	}
+
+	for _, grant := range []struct {
+		id       string
+		memberID string
+	}{
+		{id: "grant-eligible", memberID: eligibleMember.ID},
+		{id: "grant-blocked", memberID: blockedMember.ID},
+	} {
+		mustExec(t, db, `INSERT INTO workspace_module_grants (id, workspace_id, module, subject_type, subject_id, access_level, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			grant.id, workspaceID, model.ModuleSupport, model.ModuleGrantSubjectWorkspaceMember, grant.memberID, "member", now, now)
+	}
+
+	convRepo := repository.NewSupportConversationRepository(db)
+	conv := &model.SupportConversation{
+		WorkspaceID:    workspaceID,
+		MailboxID:      &mailbox.ID,
+		Subject:        "Need help",
+		Status:         "open",
+		OpenedByUserID: &ownerID,
+	}
+	if err := convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	svc := NewSupportInboxService(
+		convRepo,
+		mailboxRepo,
+		repository.NewSupportMessageRepository(db),
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		repository.NewUserRepository(db),
+		nil,
+		nil,
+		nil,
+	).SetWorkspaceRepo(workspaceRepo).SetAuthzService(
+		authorization.NewAuthzService(
+			db,
+			authorization.NewGORMMemberRepository(db),
+			repository.NewWorkspaceModuleGrantRepository(db),
+		),
+	)
+
+	assignable, err := svc.ListConversationAssignableUsers(ctx, workspaceID, conv.ID)
+	if err != nil {
+		t.Fatalf("list conversation assignable users: %v", err)
+	}
+	assignableByUserID := make(map[string]struct{}, len(assignable))
+	for _, member := range assignable {
+		if member.UserID != nil {
+			assignableByUserID[*member.UserID] = struct{}{}
+		}
+	}
+	for _, userID := range []string{ownerID, eligibleID, blockedID} {
+		if _, ok := assignableByUserID[userID]; !ok {
+			t.Fatalf("expected %s in assignable users, got %#v", userID, assignableByUserID)
+		}
+	}
+	if _, ok := assignableByUserID[noSupportID]; ok {
+		t.Fatalf("did not expect %s in assignable users, got %#v", noSupportID, assignableByUserID)
+	}
+
+	if err := svc.AssignConversationUser(ctx, workspaceID, conv.ID, &noSupportID, ownerID); err == nil {
+		t.Fatal("expected user without support access to be rejected")
+	}
+
+	if err := svc.AssignConversationUser(ctx, workspaceID, conv.ID, &blockedID, ownerID); err != nil {
+		t.Fatalf("assign support-accessible user outside mailbox membership: %v", err)
+	}
+
+	if err := svc.AssignConversationUser(ctx, workspaceID, conv.ID, &eligibleID, ownerID); err != nil {
+		t.Fatalf("assign eligible user: %v", err)
+	}
+
+	updated, err := convRepo.GetByID(ctx, workspaceID, conv.ID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("reload conversation: %v", err)
+	}
+	if updated.AssignedUserID == nil || *updated.AssignedUserID != eligibleID {
+		t.Fatalf("assigned_user_id = %#v, want %q", updated.AssignedUserID, eligibleID)
+	}
+	if updated.OpenedByUserID == nil || *updated.OpenedByUserID != ownerID {
+		t.Fatalf("opened_by_user_id = %#v, want %q", updated.OpenedByUserID, ownerID)
+	}
+
+	_ = ownerMember
 }
 
 func TestSupportInboxServiceCreateTaskFromConversation_CreatesLinkedTaskAndCopiesAssociations(t *testing.T) {
@@ -1720,14 +1975,19 @@ func TestTruncate(t *testing.T) {
 }
 
 func TestValidConversationStatuses(t *testing.T) {
-	valid := []string{"open", "in_progress", "waiting", "resolved", "closed"}
+	valid := []string{
+		model.SupportConversationStatusOpen,
+		model.SupportConversationStatusWaitingOnCustomer,
+		model.SupportConversationStatusResolved,
+		model.SupportConversationStatusSpam,
+	}
 	for _, s := range valid {
 		if !validConversationStatuses[s] {
 			t.Errorf("expected %q to be valid", s)
 		}
 	}
 
-	invalid := []string{"", "pending", "spam", "snoozed", "OPEN", "Closed", "deleted"}
+	invalid := []string{"", "pending", "in_progress", "waiting", "closed", "OPEN", "Closed", "deleted"}
 	for _, s := range invalid {
 		if validConversationStatuses[s] {
 			t.Errorf("expected %q to be invalid", s)

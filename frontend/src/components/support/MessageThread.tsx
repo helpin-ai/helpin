@@ -327,7 +327,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
     const email = conversation?.customer_email?.trim();
     if (!conversation || !settings?.email_fallback_enabled || !email) return null;
     if (conversation.email_unsubscribed) return null;
-    if (conversation.status === 'closed' || conversation.status === 'spam') return null;
+    if (conversation.status === 'resolved' || conversation.status === 'spam') return null;
     if (conversation.anonymous_id && isVisitorOnline) return null;
 
     return {
@@ -553,7 +553,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
               <Button
                 size="sm"
                 variant="outline"
-                className="h-7 gap-1 text-xs"
+                className="h-7 gap-1 border-red-200 bg-red-50 text-red-700 hover:bg-red-100 hover:text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300 dark:hover:bg-red-950/50"
                 onClick={() => updateStatus.mutate({ conversationId: conversation.id, status: 'open' as ConversationStatus })}
               >
                 <CancelCircleIcon className="h-3.5 w-3.5" />
@@ -563,7 +563,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
               <Button
                 size="sm"
                 variant="default"
-                className="h-7 gap-1 text-xs"
+                className="h-7 gap-1 bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-700"
                 onClick={() => updateStatus.mutate({ conversationId: conversation.id, status: 'resolved' as ConversationStatus })}
               >
                 <CheckmarkCircle02Icon className="h-3.5 w-3.5" />

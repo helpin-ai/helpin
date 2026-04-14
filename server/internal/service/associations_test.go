@@ -171,6 +171,7 @@ func newAssociationsTestDB(t *testing.T) *gorm.DB {
 			subject TEXT NOT NULL,
 			status TEXT NOT NULL,
 			priority TEXT NOT NULL,
+			assigned_user_id TEXT,
 			linked_task_id TEXT,
 			source TEXT NOT NULL,
 			created_at DATETIME,

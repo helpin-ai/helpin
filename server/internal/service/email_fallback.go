@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,6 +15,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/extension"
+	gmhtml "github.com/yuin/goldmark/renderer/html"
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/email"
@@ -21,6 +25,33 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
+
+// emailMarkdown renders agent-authored markdown into safe HTML for outbound email.
+// Hard breaks are enabled so single newlines in the editor become <br>, matching
+// what the agent sees in the composer preview.
+var emailMarkdown = goldmark.New(
+	goldmark.WithExtensions(extension.GFM),
+	goldmark.WithRendererOptions(
+		gmhtml.WithHardWraps(),
+		gmhtml.WithXHTML(),
+	),
+)
+
+func renderMessageMarkdownToHTML(content string) string {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return ""
+	}
+	var buf bytes.Buffer
+	if err := emailMarkdown.Convert([]byte(trimmed), &buf); err != nil {
+		return "<p>" + strings.ReplaceAll(html.EscapeString(trimmed), "\n", "<br>") + "</p>"
+	}
+	rendered := strings.TrimSpace(buf.String())
+	if rendered == "" {
+		return "<p>" + strings.ReplaceAll(html.EscapeString(trimmed), "\n", "<br>") + "</p>"
+	}
+	return rendered
+}
 
 const (
 	emailFallbackOutboxKey     = "email_fallback_outbox"
@@ -769,14 +800,12 @@ func (s *EmailFallbackService) renderBodies(messages []model.SupportMessage, age
 			continue
 		}
 		textChunks = append(textChunks, text)
-		htmlChunks = append(htmlChunks, strings.ReplaceAll(html.EscapeString(text), "\n", "<br>"))
+		htmlChunks = append(htmlChunks, renderMessageMarkdownToHTML(text))
 	}
 
 	var htmlBody strings.Builder
 	for _, chunk := range htmlChunks {
-		htmlBody.WriteString("<p>")
 		htmlBody.WriteString(chunk)
-		htmlBody.WriteString("</p>")
 	}
 	htmlBody.WriteString("<p>--<br>")
 	htmlBody.WriteString(html.EscapeString(agentName))
@@ -1070,7 +1099,7 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		if ownerErr != nil {
 			return ownerErr
 		}
-		conversation.OpenedByUserID = ownerID
+		conversation.AssignedUserID = ownerID
 		conversation.FlowState = strPtr(flowState)
 	}
 
@@ -1342,8 +1371,8 @@ func headerValue(headers []email.EmailHeader, name string) string {
 }
 
 func isEmailFallbackTerminalStatus(status string) bool {
-	switch strings.ToLower(strings.TrimSpace(status)) {
-	case "closed", "spam":
+	switch model.NormalizeSupportConversationStatus(status) {
+	case model.SupportConversationStatusResolved, model.SupportConversationStatusSpam:
 		return true
 	default:
 		return false

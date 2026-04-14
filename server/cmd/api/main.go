@@ -28,6 +28,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/crawler"
 	"github.com/helpin-ai/helpin/server/internal/crmemail"
 	"github.com/helpin-ai/helpin/server/internal/email"
+	"github.com/helpin-ai/helpin/server/internal/geoip"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
 	"github.com/helpin-ai/helpin/server/internal/handler"
 	"github.com/helpin-ai/helpin/server/internal/llm"
@@ -394,6 +395,23 @@ func main() {
 		slog.Info("S3 storage not configured — attachments disabled")
 	}
 
+	geoIPResolver, err := geoip.Open(geoip.Options{
+		Path:        cfg.MaxMindDBPath,
+		DownloadURL: cfg.MaxMindDownloadURL,
+		AccountID:   cfg.MaxMindAccountID,
+		LicenseKey:  cfg.MaxMindLicenseKey,
+	})
+	if err != nil {
+		fatalWithSentry("failed to initialize MaxMind DB", err)
+	}
+	if geoIPResolver != nil {
+		defer func() {
+			if closeErr := geoIPResolver.Close(); closeErr != nil {
+				slog.Warn("maxmind db close failed", "error", closeErr)
+			}
+		}()
+	}
+
 	// Initialize JWT manager.
 	jwtManager := auth.NewJWTManager(cfg.JWTSecret)
 
@@ -620,6 +638,14 @@ func main() {
 	supportInboxService.SetTaskService(pmTaskService)
 	supportInboxService.SetPresenceProvider(wsHub.Presence)
 	supportInboxService.SetStatusOverrideRepo(supportTeammateStatusOverrideRepo)
+	supportInboxService.SetGeoIPResolver(geoIPResolver)
+	if geoIPResolver != nil {
+		if updated, err := supportInboxService.BackfillWidgetSessionGeo(context.Background(), 5000); err != nil {
+			slog.Warn("support widget geoip backfill failed", "error", err)
+		} else if updated > 0 {
+			slog.Info("support widget geoip backfill completed", "updated_sessions", updated)
+		}
+	}
 	emailFallbackService.SetSupportInboxService(supportInboxService)
 	emailFallbackService.SetLinkPreviewService(supportLinkPreviewService)
 	notificationService.SetSupportRoutingDependencies(supportInstallRepo, supportMailboxRepo, wsHub.Presence, supportTeammateStatusOverrideRepo)
@@ -935,6 +961,7 @@ func main() {
 	// Initialize authorization service.
 	authzMemberRepo := authorization.NewGORMMemberRepository(db)
 	authzService := authorization.NewAuthzService(db, authzMemberRepo, moduleGrantRepo)
+	supportInboxService.SetAuthzService(authzService)
 
 	// Inject authorization into WebSocket handler for workspace access checks.
 	wsHandler.SetAuthzService(authzService)
@@ -958,7 +985,7 @@ func main() {
 
 	// Initialize handlers.
 	handlers := router.Handlers{
-		Health:              handler.NewHealthHandler(s3Client),
+		Health:              handler.NewHealthHandler(s3Client, geoIPResolver),
 		Auth:                handler.NewAuthHandler(authService),
 		Organization:        handler.NewOrganizationHandler(orgService),
 		Workspace:           handler.NewWorkspaceHandler(workspaceService, authzService),

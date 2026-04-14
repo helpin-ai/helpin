@@ -114,10 +114,10 @@ func (s *SupportInboxService) resolveAIHandoffMailbox(ctx context.Context, works
 	return s.resolveDefaultMailbox(ctx, workspaceID, settings)
 }
 
-func (s *SupportInboxService) determineMailboxOwner(ctx context.Context, workspaceID string, mailbox *model.SupportMailbox, currentOwner *string) (*string, string, error) {
+func (s *SupportInboxService) determineMailboxOwner(ctx context.Context, workspaceID string, mailbox *model.SupportMailbox, currentAssignee *string) (*string, string, error) {
 	if mailbox == nil {
-		if currentOwner != nil && strings.TrimSpace(*currentOwner) != "" {
-			return currentOwner, model.SupportConversationFlowStateAssignedToHuman, nil
+		if currentAssignee != nil && strings.TrimSpace(*currentAssignee) != "" {
+			return currentAssignee, model.SupportConversationFlowStateAssignedToHuman, nil
 		}
 		return nil, model.SupportConversationFlowStateWaitingForHuman, nil
 	}
@@ -132,8 +132,8 @@ func (s *SupportInboxService) determineMailboxOwner(ctx context.Context, workspa
 		}
 	}
 
-	if currentOwner != nil && strings.TrimSpace(*currentOwner) != "" && s.userCanAccessMailbox(ctx, workspaceID, &mailbox.ID, strings.TrimSpace(*currentOwner)) {
-		return currentOwner, model.SupportConversationFlowStateAssignedToHuman, nil
+	if currentAssignee != nil && strings.TrimSpace(*currentAssignee) != "" && s.userCanAccessMailbox(ctx, workspaceID, &mailbox.ID, strings.TrimSpace(*currentAssignee)) {
+		return currentAssignee, model.SupportConversationFlowStateAssignedToHuman, nil
 	}
 
 	return nil, model.SupportConversationFlowStateWaitingForHuman, nil
@@ -424,7 +424,7 @@ func (s *SupportInboxService) moveConversationInternal(ctx context.Context, work
 		}
 	}
 
-	ownerID, flowState, err := s.determineMailboxOwner(ctx, workspaceID, mailbox, conv.OpenedByUserID)
+	ownerID, flowState, err := s.determineMailboxOwner(ctx, workspaceID, mailbox, conv.AssignedUserID)
 	if err != nil {
 		return nil, err
 	}
@@ -432,7 +432,7 @@ func (s *SupportInboxService) moveConversationInternal(ctx context.Context, work
 	fields := map[string]any{
 		"mailbox_id":        targetMailboxID,
 		"team_last_seen_at": nil,
-		"opened_by_user_id": ownerID,
+		"assigned_user_id":  ownerID,
 		"flow_state":        flowState,
 	}
 	if err := s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, fields); err != nil {

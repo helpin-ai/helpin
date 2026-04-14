@@ -1,25 +1,39 @@
 import { create } from 'zustand';
 
-export type NavFilter = 'my_inbox' | 'all' | 'unassigned' | 'mentions' | 'ai_all' | 'ai_resolved' | 'ai_escalated' | 'ai_pending';
+export type NavFilter = 'my_inbox' | 'all' | 'unassigned' | 'mentions' | 'ai_active' | 'resolved_by_ai';
 export type ReplyMode = 'reply' | 'note';
 export type ActivePanel = 'nav' | 'list' | 'thread' | 'detail';
-export type ActiveContext = 'nav' | 'mailbox';
 
 const STORAGE_KEY = 'support_inbox_ui';
 const DRAFTS_STORAGE_KEY = 'support_inbox_drafts';
+const STORE_VERSION = 2;
 
 interface PersistedState {
   navCollapsed: boolean;
   detailSidebarCollapsed: boolean;
   selectedMailboxId: string;
+  version: number;
 }
 
 function loadPersisted(): PersistedState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return { ...{ navCollapsed: false, detailSidebarCollapsed: false, selectedMailboxId: 'shared' }, ...JSON.parse(raw) };
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<PersistedState>;
+      const version = typeof parsed.version === 'number' ? parsed.version : 1;
+      let selectedMailboxId = parsed.selectedMailboxId ?? 'all';
+      if (version < STORE_VERSION && selectedMailboxId === 'shared') {
+        selectedMailboxId = 'all';
+      }
+      return {
+        navCollapsed: parsed.navCollapsed ?? false,
+        detailSidebarCollapsed: parsed.detailSidebarCollapsed ?? false,
+        selectedMailboxId,
+        version: STORE_VERSION,
+      };
+    }
   } catch {}
-  return { navCollapsed: false, detailSidebarCollapsed: false, selectedMailboxId: 'shared' };
+  return { navCollapsed: false, detailSidebarCollapsed: false, selectedMailboxId: 'all', version: STORE_VERSION };
 }
 
 function savePersisted(state: PersistedState) {
@@ -78,7 +92,6 @@ interface SupportInboxState {
   navFilter: NavFilter;
   navCollapsed: boolean;
   selectedMailboxId: string;
-  activeContext: ActiveContext;
   // Filters
   statusFilter: string;
   searchQuery: string;
@@ -122,7 +135,6 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     navFilter: 'all',
     navCollapsed: persisted.navCollapsed,
     selectedMailboxId: persisted.selectedMailboxId,
-    activeContext: persisted.selectedMailboxId !== 'shared' ? 'mailbox' : 'nav',
     statusFilter: 'all',
     searchQuery: '',
     selectedConversationId: null,
@@ -138,15 +150,15 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
       set({
         navFilter: filter,
         statusFilter: 'all',
-        activeContext: 'nav',
-        selectedMailboxId: 'shared',
+        selectedMailboxId: 'all',
         selectedConversationId: null,
         activePanel: 'list',
       });
       savePersisted({
         navCollapsed: get().navCollapsed,
         detailSidebarCollapsed: get().detailSidebarCollapsed,
-        selectedMailboxId: 'shared',
+        selectedMailboxId: 'all',
+        version: STORE_VERSION,
       });
     },
     setSelectedMailboxId: (mailboxId) => {
@@ -154,13 +166,12 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
         selectedMailboxId: mailboxId,
         selectedConversationId: null,
         activePanel: 'list',
-        activeContext: mailboxId === 'shared' ? 'nav' : 'mailbox',
-        navFilter: 'all',
       });
       savePersisted({
         navCollapsed: get().navCollapsed,
         detailSidebarCollapsed: get().detailSidebarCollapsed,
         selectedMailboxId: mailboxId,
+        version: STORE_VERSION,
       });
     },
     toggleNavCollapsed: () => {
@@ -170,6 +181,7 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
         navCollapsed: next,
         detailSidebarCollapsed: get().detailSidebarCollapsed,
         selectedMailboxId: get().selectedMailboxId,
+        version: STORE_VERSION,
       });
     },
     setStatusFilter: (status) => set({ statusFilter: status }),
@@ -183,6 +195,7 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
         navCollapsed: get().navCollapsed,
         detailSidebarCollapsed: next,
         selectedMailboxId: get().selectedMailboxId,
+        version: STORE_VERSION,
       });
     },
     setCreateDialogOpen: (open) => set({ createDialogOpen: open }),

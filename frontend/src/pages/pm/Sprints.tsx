@@ -7,7 +7,7 @@ import { useTitle } from '@/hooks/useTitle';
 import { SprintPlanningFilters, type SprintStatusFilter } from '@/components/pm/sprints/SprintPlanningFilters';
 import { SprintPlanningWorkspace } from '@/components/pm/sprints/SprintPlanningWorkspace';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
-import { useSprintPlanningWorkspace, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
+import { useDeleteSprint, useSprintPlanningWorkspace, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { queryKeys } from '@/lib/queryKeys';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import type { SprintPlanningWorkspace as SprintPlanningWorkspaceData, SprintPlanningTaskPreview } from '@/lib/pmTypes';
@@ -17,12 +17,144 @@ import { unwrap } from '@/lib/queryUtils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
+import {
+  ArrowUpRight01Icon,
+  Copy01Icon,
+  Delete01Icon,
+  Link01Icon,
+  MoreHorizontalIcon,
+} from '@/lib/icons';
 
 const TASK_PREVIEW_LIMIT = 20;
 const BACKLOG_LIMIT = 50;
 
 interface SprintsPageProps {
   teamId?: string;
+}
+
+interface ArchivedSprintRowProps {
+  card: {
+    sprint: { id: string; name: string; start_date: string | null; end_date: string | null };
+    stats: { task_count: number; done_task_count: number };
+  };
+  workspaceId: string;
+  workspaceSlug: string;
+  canEdit: boolean;
+  onOpen: (sprintId: string) => void;
+}
+
+function ArchivedSprintRow({ card, workspaceId, workspaceSlug, canEdit, onOpen }: ArchivedSprintRowProps) {
+  const deleteSprint = useDeleteSprint(workspaceId);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const sprintPath = `/w/${workspaceSlug}/pm/sprints/${card.sprint.id}`;
+  const fullUrl = typeof window !== 'undefined' ? `${window.location.origin}${sprintPath}` : sprintPath;
+
+  const dateLabel = card.sprint.start_date && card.sprint.end_date
+    ? `${new Date(card.sprint.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${new Date(card.sprint.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+    : 'No dates set';
+
+  const handleCopyLink = () => {
+    void navigator.clipboard.writeText(fullUrl).then(
+      () => toast.success('Link copied'),
+      () => toast.error('Failed to copy link'),
+    );
+  };
+
+  const handleConfirmDelete = () => {
+    deleteSprint.mutate(card.sprint.id, {
+      onSuccess: () => {
+        toast.success('Sprint deleted');
+        setDeleteOpen(false);
+      },
+      onError: (err) => {
+        toast.error(err instanceof Error ? err.message : 'Failed to delete sprint');
+      },
+    });
+  };
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      className="group flex w-full items-center justify-between rounded-lg border border-border/60 bg-card px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      onClick={() => onOpen(card.sprint.id)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpen(card.sprint.id);
+        }
+      }}
+    >
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium">{card.sprint.name}</p>
+        <p className="text-xs text-muted-foreground">{dateLabel}</p>
+      </div>
+      <div className="flex shrink-0 items-center gap-3">
+        <span className="text-xs text-muted-foreground">
+          {card.stats.done_task_count}/{card.stats.task_count} tasks
+        </span>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground"
+              onClick={(e) => e.stopPropagation()}
+              aria-label="Sprint actions"
+            >
+              <MoreHorizontalIcon className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+            <DropdownMenuItem onClick={() => onOpen(card.sprint.id)}>
+              <ArrowUpRight01Icon className="mr-2 h-4 w-4" />
+              Open sprint
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => window.open(sprintPath, '_blank', 'noopener,noreferrer')}>
+              <Link01Icon className="mr-2 h-4 w-4" />
+              Open in new tab
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleCopyLink}>
+              <Copy01Icon className="mr-2 h-4 w-4" />
+              Copy link
+            </DropdownMenuItem>
+            {canEdit && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem variant="destructive" onClick={() => setDeleteOpen(true)}>
+                  <Delete01Icon className="mr-2 h-4 w-4" />
+                  Delete sprint
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="Delete sprint"
+        description={
+          <>
+            This will permanently delete <span className="font-medium">{card.sprint.name}</span>.
+            Tasks in this sprint will be moved back to the backlog. This action cannot be undone.
+          </>
+        }
+        confirmLabel={deleteSprint.isPending ? 'Deleting…' : 'Delete'}
+        variant="destructive"
+        onConfirm={handleConfirmDelete}
+      />
+    </div>
+  );
 }
 
 function clonePlanningWorkspace(workspace: SprintPlanningWorkspaceData): SprintPlanningWorkspaceData {
@@ -284,24 +416,14 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
         ) : archivedQuery.data && archivedQuery.data.length > 0 ? (
           <div className="space-y-2">
             {archivedQuery.data.map((s) => (
-              <button
+              <ArchivedSprintRow
                 key={s.sprint.id}
-                type="button"
-                className="flex w-full items-center justify-between rounded-lg border border-border/60 bg-card px-4 py-3 text-left transition-colors hover:bg-muted/40"
-                onClick={() => navigate({ to: '/w/$slug/pm/sprints/$sprintId', params: { slug: workspace.slug, sprintId: s.sprint.id } })}
-              >
-                <div>
-                  <p className="text-sm font-medium">{s.sprint.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {s.sprint.start_date && s.sprint.end_date
-                      ? `${new Date(s.sprint.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${new Date(s.sprint.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
-                      : 'No dates set'}
-                  </p>
-                </div>
-                <span className="text-xs text-muted-foreground">
-                  {s.stats.done_task_count}/{s.stats.task_count} tasks
-                </span>
-              </button>
+                card={s}
+                workspaceId={workspaceId}
+                workspaceSlug={workspace.slug}
+                canEdit={canEdit}
+                onOpen={(sprintId) => navigate({ to: '/w/$slug/pm/sprints/$sprintId', params: { slug: workspace.slug, sprintId } })}
+              />
             ))}
           </div>
         ) : (
@@ -321,6 +443,7 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
         <SprintPlanningWorkspace
           workspace={filteredWorkspace}
           workspaceId={workspaceId}
+          workspaceSlug={workspaceSlug}
           backlogOpen={backlogOpen}
           onBacklogToggle={() => setBacklogOpen((prev) => !prev)}
           canEdit={canEdit}

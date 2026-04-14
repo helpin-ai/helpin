@@ -44,6 +44,10 @@ type presenceSyncData struct {
 	ConversationIDs []string `json:"conversation_ids"`
 }
 
+type agentPingData struct {
+	Active bool `json:"active,omitempty"`
+}
+
 type docViewingData struct {
 	DocumentID string `json:"document_id"`
 }
@@ -628,12 +632,22 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 
 		case "support:ping":
+			var d agentPingData
+			if len(msg.Data) > 0 {
+				_ = json.Unmarshal(msg.Data, &d)
+			}
 			slog.Debug("presence ping",
 				"workspace_id", workspaceID,
 				"user_id", client.UserID,
-				"conn_id", client.ConnID)
+				"conn_id", client.ConnID,
+				"active", d.Active)
 			if err := h.hub.Presence.RefreshAgentOnline(r.Context(), workspaceID, client.UserID, client.ConnID); err != nil {
 				slog.Error("presence RefreshAgentOnline", "error", err)
+			}
+			if d.Active {
+				if err := h.hub.Presence.TouchAgentActivity(r.Context(), workspaceID, client.UserID, client.ConnID); err != nil {
+					slog.Error("presence TouchAgentActivity", "error", err)
+				}
 			}
 			// Refresh all active presence keys for this agent connection (keepalive).
 			if err := h.hub.Presence.RefreshAllForConn(r.Context(), workspaceID, client.UserID, client.ConnID); err != nil {

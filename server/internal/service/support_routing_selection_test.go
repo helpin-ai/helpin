@@ -167,8 +167,8 @@ func TestSupportAIServiceEscalateToHumanAssignsAvailableTeamRecipient(t *testing
 	if updated.FlowState == nil || *updated.FlowState != model.SupportConversationFlowStateAssignedToHuman {
 		t.Fatalf("flow_state = %#v, want %q", updated.FlowState, model.SupportConversationFlowStateAssignedToHuman)
 	}
-	if updated.OpenedByUserID == nil || *updated.OpenedByUserID != teammateID {
-		t.Fatalf("opened_by_user_id = %#v, want %q", updated.OpenedByUserID, teammateID)
+	if updated.AssignedUserID == nil || *updated.AssignedUserID != teammateID {
+		t.Fatalf("assigned_user_id = %#v, want %q", updated.AssignedUserID, teammateID)
 	}
 }
 

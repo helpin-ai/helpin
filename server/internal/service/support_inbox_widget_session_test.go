@@ -2,12 +2,15 @@ package service
 
 import (
 	"context"
+	"net/netip"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/geoip"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/requestmeta"
 )
 
 func TestSupportInboxServiceWidgetSessionLifecycle(t *testing.T) {
@@ -51,12 +54,24 @@ func TestSupportInboxServiceWidgetSessionLifecycle(t *testing.T) {
 		nil,
 		nil,
 	)
+	svc.SetGeoIPResolver(widgetTestGeoIPResolver{
+		result: &geoip.Result{
+			CountryCode: "US",
+			CountryName: "United States",
+			RegionName:  "California",
+			CityName:    "San Francisco",
+		},
+	})
 
 	name := "Jane Widget"
 	email := "jane@example.com"
 	pageURL := "https://example.com/pricing"
 	timezone := "America/New_York"
 	locale := "en-US"
+	ctx = requestmeta.WithClientIP(ctx, requestmeta.ClientIP{
+		Addr:   netip.MustParseAddr("198.51.100.8"),
+		Source: "cf-connecting-ip",
+	})
 
 	identified, err := svc.CreateWidgetSession(ctx, widgetKey, "anon-identified", &name, &email, nil, &pageURL, &timezone, &locale)
 	if err != nil {
@@ -76,6 +91,15 @@ func TestSupportInboxServiceWidgetSessionLifecycle(t *testing.T) {
 	}
 	if identified.LastPageURL == nil || *identified.LastPageURL != pageURL {
 		t.Fatalf("last_page_url = %v, want %q", identified.LastPageURL, pageURL)
+	}
+	if identified.IPAddress == nil || *identified.IPAddress != "198.51.100.8" {
+		t.Fatalf("ip_address = %v, want %q", identified.IPAddress, "198.51.100.8")
+	}
+	if identified.CountryCode == nil || *identified.CountryCode != "US" {
+		t.Fatalf("country_code = %v, want %q", identified.CountryCode, "US")
+	}
+	if identified.CityName == nil || *identified.CityName != "San Francisco" {
+		t.Fatalf("city_name = %v, want %q", identified.CityName, "San Francisco")
 	}
 	if remaining := time.Until(identified.ExpiresAt); remaining < (29*24*time.Hour) || remaining > (31*24*time.Hour) {
 		t.Fatalf("expires_at remaining = %v, want about 30 days", remaining)
@@ -109,6 +133,18 @@ func TestSupportInboxServiceWidgetSessionLifecycle(t *testing.T) {
 	}
 }
 
+type widgetTestGeoIPResolver struct {
+	result *geoip.Result
+	err    error
+}
+
+func (r widgetTestGeoIPResolver) Lookup(addr netip.Addr) (*geoip.Result, error) {
+	if !addr.IsValid() {
+		return nil, nil
+	}
+	return r.result, r.err
+}
+
 func TestSupportInboxServiceCreateWidgetSessionRejectsInvalidKey(t *testing.T) {
 	db := newTestDB(t)
 
@@ -136,6 +172,142 @@ func TestSupportInboxServiceCreateWidgetSessionRejectsInvalidKey(t *testing.T) {
 
 	if _, err := svc.CreateWidgetSession(ctx, "wk_missing", "anon-1", nil, nil, nil, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "invalid widget key") {
 		t.Fatalf("CreateWidgetSession error = %v, want invalid widget key", err)
+	}
+}
+
+func TestSupportInboxServiceBackfillWidgetSessionGeo(t *testing.T) {
+	db := newTestDB(t)
+
+	const workspaceID = "ws-widget-geo-backfill"
+	seedWorkspace(t, db, workspaceID, "Widget Geo Backfill WS", "widget-geo-backfill", "user-123")
+
+	ctx := context.Background()
+	sessionRepo := repository.NewSupportInboxSessionRepository(db)
+	svc := NewSupportInboxService(
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		sessionRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	svc.SetGeoIPResolver(widgetTestGeoIPResolver{
+		result: &geoip.Result{
+			CountryCode: "IN",
+			CountryName: "India",
+			RegionName:  "Karnataka",
+			CityName:    "Bengaluru",
+		},
+	})
+
+	ipAddress := "203.0.113.9"
+	session := &model.SupportWidgetSession{
+		WorkspaceID:  workspaceID,
+		SessionToken: "geo-backfill-token",
+		AnonymousID:  "anon-geo-backfill",
+		IsAnonymous:  true,
+		IPAddress:    &ipAddress,
+		ExpiresAt:    time.Now().Add(24 * time.Hour),
+	}
+	if err := sessionRepo.Create(ctx, session); err != nil {
+		t.Fatalf("create widget session: %v", err)
+	}
+
+	updated, err := svc.BackfillWidgetSessionGeo(ctx, 100)
+	if err != nil {
+		t.Fatalf("BackfillWidgetSessionGeo: %v", err)
+	}
+	if updated != 1 {
+		t.Fatalf("updated = %d, want 1", updated)
+	}
+
+	stored, err := sessionRepo.GetByToken(ctx, session.SessionToken)
+	if err != nil {
+		t.Fatalf("GetByToken: %v", err)
+	}
+	if stored.CountryCode == nil || *stored.CountryCode != "IN" {
+		t.Fatalf("country_code = %v, want %q", stored.CountryCode, "IN")
+	}
+	if stored.CountryName == nil || *stored.CountryName != "India" {
+		t.Fatalf("country_name = %v, want %q", stored.CountryName, "India")
+	}
+}
+
+func TestSupportInboxServiceGetWidgetSessionRefreshesGeoFromRequestIP(t *testing.T) {
+	db := newTestDB(t)
+
+	const workspaceID = "ws-widget-geo-refresh"
+	seedWorkspace(t, db, workspaceID, "Widget Geo Refresh WS", "widget-geo-refresh", "user-123")
+
+	ctx := context.Background()
+	sessionRepo := repository.NewSupportInboxSessionRepository(db)
+	svc := NewSupportInboxService(
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		sessionRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	svc.SetGeoIPResolver(widgetTestGeoIPResolver{
+		result: &geoip.Result{
+			CountryCode: "GB",
+			CountryName: "United Kingdom",
+			RegionName:  "England",
+			CityName:    "London",
+		},
+	})
+
+	session := &model.SupportWidgetSession{
+		WorkspaceID:  workspaceID,
+		SessionToken: "geo-refresh-token",
+		AnonymousID:  "anon-geo-refresh",
+		IsAnonymous:  true,
+		ExpiresAt:    time.Now().Add(24 * time.Hour),
+	}
+	if err := sessionRepo.Create(ctx, session); err != nil {
+		t.Fatalf("create widget session: %v", err)
+	}
+
+	ctx = requestmeta.WithClientIP(ctx, requestmeta.ClientIP{
+		Addr:   netip.MustParseAddr("8.8.8.8"),
+		Source: "cf-connecting-ip",
+	})
+	refreshed, err := svc.GetWidgetSession(ctx, session.SessionToken)
+	if err != nil {
+		t.Fatalf("GetWidgetSession: %v", err)
+	}
+	if refreshed.IPAddress == nil || *refreshed.IPAddress != "8.8.8.8" {
+		t.Fatalf("ip_address = %v, want %q", refreshed.IPAddress, "8.8.8.8")
+	}
+	if refreshed.CountryCode == nil || *refreshed.CountryCode != "GB" {
+		t.Fatalf("country_code = %v, want %q", refreshed.CountryCode, "GB")
+	}
+
+	stored, err := sessionRepo.GetByToken(context.Background(), session.SessionToken)
+	if err != nil {
+		t.Fatalf("GetByToken: %v", err)
+	}
+	if stored.CountryCode == nil || *stored.CountryCode != "GB" {
+		t.Fatalf("stored country_code = %v, want %q", stored.CountryCode, "GB")
 	}
 }
 
