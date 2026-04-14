@@ -31,9 +31,11 @@ export function DesktopSupportSidebar({ workspaceId, workspaceName, wsSlug }: De
   const archiveMailbox = useArchiveMailbox(workspaceId)
 
   return (
-    <Sidebar collapsible="none" className="border-r border-border/70 bg-sidebar">
-      <SidebarHeader className="relative p-3 pb-2 after:absolute after:right-2 after:bottom-0 after:left-2 after:h-px after:bg-border/70 after:[mask-image:linear-gradient(to_right,transparent,black_24px,black_calc(100%-24px),transparent)] dark:after:bg-sidebar-border">
-        <div className="text-sm font-semibold truncate">{workspaceName}</div>
+    <Sidebar collapsible="none" className="border-r border-border/70 bg-[#f0f0f2] dark:bg-sidebar [&_.support-bottom-bar]:ml-0 [&_.support-bottom-bar]:w-(--sidebar-width)">
+      <SidebarHeader className="relative p-2 after:absolute after:right-2 after:bottom-0 after:left-2 after:h-px after:bg-border/70 after:[mask-image:linear-gradient(to_right,transparent,black_24px,black_calc(100%-24px),transparent)] dark:after:bg-sidebar-border">
+        <div className="flex items-center gap-2 px-1">
+          <span className="text-sm font-semibold truncate">{workspaceName}</span>
+        </div>
       </SidebarHeader>
 
       <SidebarContent className="gap-0 p-2 pb-16">
