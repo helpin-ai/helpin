@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import {
   Link,
   Navigate,
@@ -7,7 +8,7 @@ import {
   createRouter,
   redirect,
 } from '@tanstack/react-router'
-import { ThemeProvider } from 'next-themes'
+import { ThemeProvider, useTheme } from 'next-themes'
 import { ConfirmProvider } from '@/components/ui/confirm-dialog'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useQuery } from '@tanstack/react-query'
@@ -136,11 +137,42 @@ declare module '@tanstack/react-router' {
   }
 }
 
+/** Listens for Tauri menu "theme-change" events and applies them via next-themes. */
+function TauriThemeListener() {
+  const { theme, setTheme } = useTheme()
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined
+
+    async function setup() {
+      try {
+        const { listen } = await import('@tauri-apps/api/event')
+        const unlistenFn = await listen<string>('theme-change', (event) => {
+          if (event.payload === 'toggle') {
+            setTheme(theme === 'dark' ? 'light' : 'dark')
+          } else {
+            setTheme(event.payload)
+          }
+        })
+        unlisten = unlistenFn
+      } catch {
+        // Not running inside Tauri (e.g. browser dev mode) — ignore
+      }
+    }
+
+    setup()
+    return () => unlisten?.()
+  }, [theme, setTheme])
+
+  return null
+}
+
 function RootComponent() {
   return (
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
       <TooltipProvider>
         <ConfirmProvider>
+          <TauriThemeListener />
           <Outlet />
         </ConfirmProvider>
       </TooltipProvider>
