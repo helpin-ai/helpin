@@ -1176,7 +1176,7 @@ func (r *DocsHelpcenterRepository) GetPublicArticleByDocumentIDInSpaces(ctx cont
 		matchClause = "p.document_id = ?"
 	}
 
-	var row sourceArticleRow
+	var rows []sourceArticleRow
 	if err := r.db.WithContext(ctx).
 		Table("docs_helpcenter_article_publications p").
 		Select(`
@@ -1205,13 +1205,14 @@ func (r *DocsHelpcenterRepository) GetPublicArticleByDocumentIDInSpaces(ctx cont
 			AND d.deleted_at IS NULL
 			AND ha.public_published_at IS NOT NULL
 		`, slugOrID, spaceIDs).
-		First(&row).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil, nil, nil
-		}
+		Limit(2).
+		Find(&rows).Error; err != nil {
 		return nil, nil, nil, fmt.Errorf("get public article by document id: %w", err)
 	}
-	doc, ha, content := sourceArticleRowToModels(row)
+	if len(rows) != 1 {
+		return nil, nil, nil, nil // not found or ambiguous
+	}
+	doc, ha, content := sourceArticleRowToModels(rows[0])
 	return doc, ha, content, nil
 }
 

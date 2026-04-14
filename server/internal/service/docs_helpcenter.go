@@ -2411,7 +2411,14 @@ func (s *DocsHelpcenterService) resolveRedirectTargetPath(ctx context.Context, w
 	if redirect == nil {
 		return "", nil
 	}
-	target := buildDocsRedirectPath(redirect.TargetCollectionSlug, redirect.TargetArticleSlug)
+	// Prefer the pre-computed PublicID-backed target path when present.
+	// Fall back to legacy slug-based path rebuild for old rows.
+	var target string
+	if redirect.TargetPath != nil && *redirect.TargetPath != "" {
+		target = *redirect.TargetPath
+	} else {
+		target = buildDocsRedirectPath(redirect.TargetCollectionSlug, redirect.TargetArticleSlug)
+	}
 	if target == "" || target == "/" {
 		return target, nil
 	}
@@ -2449,7 +2456,14 @@ func (s *DocsHelpcenterService) resolvePublicPathTarget(
 	if redirect, err := s.redirectRepo.GetBySourcePath(ctx, workspaceID, normalizedPath); err != nil {
 		return "", err
 	} else if redirect != nil {
-		target := buildDocsRedirectPath(redirect.TargetCollectionSlug, redirect.TargetArticleSlug)
+		// Prefer pre-computed PublicID-backed target path; fall back to
+		// slug-based rebuild for legacy rows without target_path.
+		var target string
+		if redirect.TargetPath != nil && *redirect.TargetPath != "" {
+			target = *redirect.TargetPath
+		} else {
+			target = buildDocsRedirectPath(redirect.TargetCollectionSlug, redirect.TargetArticleSlug)
+		}
 		if target == "" || target == normalizedPath {
 			return "", nil
 		}
