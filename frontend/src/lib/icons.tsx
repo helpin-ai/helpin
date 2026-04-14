@@ -99,6 +99,8 @@ import {
   LayoutGridIcon as _LayoutGridIcon,
   LayoutTable01Icon as _LayoutTable01Icon,
   LayoutTwoColumnIcon as _LayoutTwoColumnIcon,
+  LeftToRightListBulletIcon as _LeftToRightListBulletIcon,
+  LeftToRightListNumberIcon as _LeftToRightListNumberIcon,
   LifebuoyIcon as _LifebuoyIcon,
   Link01Icon as _Link01Icon,
   LinkSquare01Icon as _LinkSquare01Icon,
@@ -351,6 +353,8 @@ export const Key01Icon = hi(_Key01Icon);
 export const LayoutGridIcon = hi(_LayoutGridIcon);
 export const LayoutTable01Icon = hi(_LayoutTable01Icon);
 export const LayoutTwoColumnIcon = hi(_LayoutTwoColumnIcon);
+export const LeftToRightListBulletIcon = hi(_LeftToRightListBulletIcon);
+export const LeftToRightListNumberIcon = hi(_LeftToRightListNumberIcon);
 export const LifebuoyIcon = hi(_LifebuoyIcon);
 export const Link01Icon = hi(_Link01Icon);
 export const LinkSquare01Icon = hi(_LinkSquare01Icon);

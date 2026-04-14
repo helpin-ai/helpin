@@ -1,8 +1,15 @@
-import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import { useRef, useEffect, useState, useCallback, useMemo, type ReactNode } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
-import { SentIcon, AttachmentIcon, StickyNote01Icon, Comment01Icon, Cancel01Icon, Loading01Icon, Mail01Icon, SparklesIcon, ArrowUp01Icon, ArrowUpDownIcon, ArrowReloadHorizontalIcon, TickDouble01Icon, SmileIcon, Briefcase01Icon } from '@/lib/icons';
+import { Markdown } from 'tiptap-markdown';
+import {
+  SentIcon, AttachmentIcon, StickyNote01Icon, Comment01Icon, Cancel01Icon, Loading01Icon,
+  Mail01Icon, SparklesIcon, ArrowUp01Icon, ArrowUpDownIcon, ArrowReloadHorizontalIcon,
+  TickDouble01Icon, SmileIcon, Briefcase01Icon,
+  TextBoldIcon, TextItalicIcon, TextUnderlineIcon, TextStrikethroughIcon,
+  CodeIcon, QuoteDownIcon, LeftToRightListBulletIcon, LeftToRightListNumberIcon, Link01Icon,
+} from '@/lib/icons';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import {
@@ -40,6 +47,7 @@ import { toast } from 'sonner';
 import type { AssignableMember } from '@/lib/types';
 import type { SupportAIRewriteOperation } from '@/lib/pmTypes';
 import { EmojiPicker } from './EmojiPicker';
+import { LinkInsertModal } from './LinkInsertModal';
 
 const OFFLINE_EMAIL_CONFIRM_STORAGE_PREFIX = 'support_offline_email_confirm';
 
@@ -69,21 +77,46 @@ function saveSkipOfflineEmailConfirm(storageKey: string, skip: boolean) {
   } catch {}
 }
 
-function escapeHTML(text: string): string {
-  return text
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
+function getEditorMarkdown(editorInstance: ReturnType<typeof useEditor> | null | undefined): string {
+  if (!editorInstance) return '';
+  const storage = (editorInstance.storage as { markdown?: { getMarkdown(): string } }).markdown;
+  if (storage?.getMarkdown) return storage.getMarkdown();
+  return editorInstance.getText();
 }
 
-function plainTextToEditorHTML(text: string): string {
-  if (!text.trim()) return '<p><br></p>';
-  return text
-    .split('\n')
-    .map((line) => `<p>${line ? escapeHTML(line) : '<br>'}</p>`)
-    .join('');
+function FormatButton({
+  active = false,
+  title,
+  onClick,
+  children,
+}: {
+  active?: boolean;
+  title: string;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label={title}
+          aria-pressed={active}
+          onClick={(e) => { e.preventDefault(); onClick(); }}
+          onMouseDown={(e) => e.preventDefault()}
+          className={cn(
+            'inline-flex h-6 w-6 items-center justify-center rounded-md transition-colors',
+            active
+              ? 'bg-accent text-foreground'
+              : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+          )}
+        >
+          {children}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="text-xs">{title}</TooltipContent>
+    </Tooltip>
+  );
 }
 
 function detectMentions(
@@ -149,6 +182,16 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
   );
   const [offlineEmailConfirmOpen, setOfflineEmailConfirmOpen] = useState(false);
   const [doNotAskAgain, setDoNotAskAgain] = useState(false);
+
+  // Link insertion modal
+  const [linkModalOpen, setLinkModalOpen] = useState(false);
+  const [linkInitial, setLinkInitial] = useState<{ label: string; url: string }>({ label: '', url: '' });
+
+  // Toolbar visibility — show when the editor is focused, or while interacting
+  // with the toolbar itself, or when the link modal is open.
+  const [editorFocused, setEditorFocused] = useState(false);
+  const toolbarHasPointerRef = useRef(false);
+  const showToolbar = editorFocused || toolbarHasPointerRef.current || linkModalOpen;
 
   useEffect(() => {
     setSkipOfflineEmailConfirm(loadSkipOfflineEmailConfirm(offlineEmailConfirmStorageKey));
@@ -246,12 +289,24 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
   const extensions = useMemo(() => [
     StarterKit.configure({
       heading: false,
-      blockquote: false,
       codeBlock: false,
       horizontalRule: false,
-      bulletList: false,
-      orderedList: false,
-      listItem: false,
+      link: {
+        openOnClick: false,
+        autolink: true,
+        linkOnPaste: true,
+        HTMLAttributes: {
+          target: '_blank',
+          rel: 'noopener noreferrer nofollow',
+        },
+      },
+    }),
+    Markdown.configure({
+      html: false,
+      linkify: true,
+      breaks: true,
+      transformPastedText: true,
+      transformCopiedText: true,
     }),
     Placeholder.configure({
       placeholder: () => isNoteRef.current ? 'Add an internal note...' : 'Write a reply...',
@@ -320,12 +375,13 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
     },
     onUpdate: ({ editor: ed }) => {
       const text = ed.getText();
+      const markdown = getEditorMarkdown(ed);
 
-      // Debounce draft save
+      // Debounce draft save (markdown so formatting persists across reloads)
       if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
-      draftTimerRef.current = setTimeout(() => setDraft(conversationId, text), 500);
+      draftTimerRef.current = setTimeout(() => setDraft(conversationId, markdown), 500);
 
-      // Typing indicator
+      // Typing indicator (plain text preview is enough)
       text.trim() ? handleTyping(text) : sendTyping(false);
 
       // Mention detection
@@ -349,8 +405,9 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
 
     const handleUpdate = () => {
       const text = editor.getText();
+      const markdown = getEditorMarkdown(editor);
       if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
-      draftTimerRef.current = setTimeout(() => setDraft(conversationId, text), 500);
+      draftTimerRef.current = setTimeout(() => setDraft(conversationId, markdown), 500);
       text.trim() ? handleTyping(text) : sendTyping(false);
       const mention = detectMentions(editor, membersRef.current);
       setMentionState(mention);
@@ -358,14 +415,26 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
         setReplyMode('note');
       }
     };
-    const handleBlur = () => setMentionState(null);
+    const handleBlur = () => {
+      setMentionState(null);
+      // Defer so that clicking a toolbar button (which steals focus briefly)
+      // doesn't immediately collapse the toolbar.
+      setTimeout(() => {
+        if (!toolbarHasPointerRef.current) {
+          setEditorFocused(false);
+        }
+      }, 0);
+    };
+    const handleFocus = () => setEditorFocused(true);
 
     editor.on('update', handleUpdate);
     editor.on('blur', handleBlur);
+    editor.on('focus', handleFocus);
 
     return () => {
       editor.off('update', handleUpdate);
       editor.off('blur', handleBlur);
+      editor.off('focus', handleFocus);
     };
   }, [editor, conversationId, handleTyping, sendTyping, setDraft, setReplyMode]);
 
@@ -374,7 +443,8 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
     if (!editor) return;
     const saved = useSupportInboxStore.getState().drafts[conversationId] ?? '';
     if (saved) {
-      editor.commands.setContent(plainTextToEditorHTML(saved));
+      // Markdown extension parses markdown when content is a string
+      editor.commands.setContent(saved);
     } else {
       editor.commands.clearContent();
     }
@@ -395,9 +465,9 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
 
   const sendReply = useCallback(async () => {
     if (!editor) return;
-    const text = editor.getText().trim();
+    const markdown = getEditorMarkdown(editor).trim();
     const doneAttachments = pendingAttachments.filter((a) => a.status === 'done' && a.attachmentId);
-    if ((!text && doneAttachments.length === 0) || sendMutation.isPending) return;
+    if ((!markdown && doneAttachments.length === 0) || sendMutation.isPending) return;
 
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
@@ -406,7 +476,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
     const attachmentIds = doneAttachments.map((a) => a.attachmentId!);
 
     await sendMutation.mutateAsync({
-      content: text || ' ',
+      content: markdown || ' ',
       is_internal: useSupportInboxStore.getState().replyMode === 'note',
       ...(attachmentIds.length > 0 ? { attachment_ids: attachmentIds } : {}),
     });
@@ -421,9 +491,9 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
 
   const handleSend = useCallback(async () => {
     if (!editor) return;
-    const text = editor.getText().trim();
+    const markdown = getEditorMarkdown(editor).trim();
     const hasUploadedAttachments = pendingAttachments.some((a) => a.status === 'done' && a.attachmentId);
-    if ((!text && !hasUploadedAttachments) || sendMutation.isPending) return;
+    if ((!markdown && !hasUploadedAttachments) || sendMutation.isPending) return;
 
     if (!isNote && emailFallbackHint && !skipOfflineEmailConfirm) {
       setDoNotAskAgain(false);
@@ -444,7 +514,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
       operation,
     });
 
-    editor.commands.setContent(plainTextToEditorHTML(rewritten.content));
+    editor.commands.setContent(rewritten.content);
     editor.commands.focus('end');
   }, [editor, rewriteMutation]);
 
@@ -459,10 +529,51 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
 
   handleSendRef.current = handleSend;
 
+  const openLinkModal = useCallback(() => {
+    if (!editor) return;
+    const attrs = editor.getAttributes('link') as { href?: string };
+    const { from, to, empty } = editor.state.selection;
+    let initialLabel = '';
+    if (editor.isActive('link')) {
+      // Expand selection to entire link mark range
+      editor.chain().focus().extendMarkRange('link').run();
+      const expanded = editor.state.selection;
+      initialLabel = editor.state.doc.textBetween(expanded.from, expanded.to, ' ');
+    } else if (!empty) {
+      initialLabel = editor.state.doc.textBetween(from, to, ' ');
+    }
+    setLinkInitial({ label: initialLabel, url: attrs.href ?? '' });
+    setLinkModalOpen(true);
+  }, [editor]);
+
+  const handleLinkInsert = useCallback((label: string, url: string) => {
+    if (!editor) return;
+    const chain = editor.chain().focus();
+    if (editor.isActive('link')) {
+      chain.extendMarkRange('link').unsetLink().run();
+    }
+    const { from, to, empty } = editor.state.selection;
+    if (empty) {
+      editor.chain().focus()
+        .insertContent({ type: 'text', text: label, marks: [{ type: 'link', attrs: { href: url } }] })
+        .run();
+    } else {
+      editor.chain().focus()
+        .insertContentAt({ from, to }, { type: 'text', text: label, marks: [{ type: 'link', attrs: { href: url } }] })
+        .run();
+    }
+  }, [editor]);
+
+  const handleLinkRemove = useCallback(() => {
+    if (!editor) return;
+    editor.chain().focus().extendMarkRange('link').unsetLink().run();
+  }, [editor]);
+
   if (!editor) return null;
 
   const content = editor.getText();
-  const canUseAITools = content.trim().length > 0 && !rewriteMutation.isPending;
+  const hasContent = content.trim().length > 0;
+  const canUseAITools = hasContent && !rewriteMutation.isPending;
   const aiTools: Array<{ operation: SupportAIRewriteOperation; label: string; icon: typeof ArrowUpDownIcon }> = [
     { operation: 'expand', label: 'Expand', icon: ArrowUpDownIcon },
     { operation: 'rephrase', label: 'Rephrase', icon: ArrowReloadHorizontalIcon },
@@ -590,10 +701,115 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
         </DropdownMenu>
       </div>
 
+      {/* Formatting toolbar — appears when the editor is focused */}
+      <div
+        className={cn(
+          'grid overflow-hidden transition-[grid-template-rows,opacity] duration-150 ease-out',
+          showToolbar ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0',
+        )}
+        aria-hidden={!showToolbar}
+      >
+      <div
+        className="flex flex-wrap items-center gap-0.5 px-3 pt-1.5 min-h-0"
+        onMouseEnter={() => { toolbarHasPointerRef.current = true; }}
+        onMouseLeave={() => {
+          toolbarHasPointerRef.current = false;
+          if (!editor.isFocused) setEditorFocused(false);
+        }}
+      >
+        <FormatButton
+          title="Bold (Ctrl+B)"
+          active={editor.isActive('bold')}
+          onClick={() => editor.chain().focus().toggleBold().run()}
+        >
+          <TextBoldIcon className="h-3.5 w-3.5" />
+        </FormatButton>
+        <FormatButton
+          title="Italic (Ctrl+I)"
+          active={editor.isActive('italic')}
+          onClick={() => editor.chain().focus().toggleItalic().run()}
+        >
+          <TextItalicIcon className="h-3.5 w-3.5" />
+        </FormatButton>
+        <FormatButton
+          title="Underline (Ctrl+U)"
+          active={editor.isActive('underline')}
+          onClick={() => editor.chain().focus().toggleUnderline().run()}
+        >
+          <TextUnderlineIcon className="h-3.5 w-3.5" />
+        </FormatButton>
+        <FormatButton
+          title="Strikethrough"
+          active={editor.isActive('strike')}
+          onClick={() => editor.chain().focus().toggleStrike().run()}
+        >
+          <TextStrikethroughIcon className="h-3.5 w-3.5" />
+        </FormatButton>
+        <FormatButton
+          title="Inline code"
+          active={editor.isActive('code')}
+          onClick={() => editor.chain().focus().toggleCode().run()}
+        >
+          <CodeIcon className="h-3.5 w-3.5" />
+        </FormatButton>
+        <div className="mx-1 h-4 w-px bg-border/60" />
+        <FormatButton
+          title="Bullet list"
+          active={editor.isActive('bulletList')}
+          onClick={() => editor.chain().focus().toggleBulletList().run()}
+        >
+          <LeftToRightListBulletIcon className="h-3.5 w-3.5" />
+        </FormatButton>
+        <FormatButton
+          title="Numbered list"
+          active={editor.isActive('orderedList')}
+          onClick={() => editor.chain().focus().toggleOrderedList().run()}
+        >
+          <LeftToRightListNumberIcon className="h-3.5 w-3.5" />
+        </FormatButton>
+        <FormatButton
+          title="Quote"
+          active={editor.isActive('blockquote')}
+          onClick={() => editor.chain().focus().toggleBlockquote().run()}
+        >
+          <QuoteDownIcon className="h-3.5 w-3.5" />
+        </FormatButton>
+        <div className="mx-1 h-4 w-px bg-border/60" />
+        <FormatButton
+          title="Insert link"
+          active={editor.isActive('link')}
+          onClick={openLinkModal}
+        >
+          <Link01Icon className="h-3.5 w-3.5" />
+        </FormatButton>
+      </div>
+      </div>
+
       {/* TipTap Editor */}
-      <div className="px-3 py-1.5">
+      <div
+        className="px-3 py-1.5"
+        onClickCapture={(e) => {
+          const target = e.target as HTMLElement | null;
+          const anchor = target?.closest('a');
+          if (anchor) {
+            e.preventDefault();
+            e.stopPropagation();
+            openLinkModal();
+          }
+        }}
+      >
         <EditorContent editor={editor} />
       </div>
+
+      <LinkInsertModal
+        open={linkModalOpen}
+        onOpenChange={setLinkModalOpen}
+        workspaceId={workspaceId}
+        initialLabel={linkInitial.label}
+        initialUrl={linkInitial.url}
+        onInsert={handleLinkInsert}
+        onRemove={editor.isActive('link') ? handleLinkRemove : undefined}
+      />
 
       {/* Attachment preview strip */}
       {pendingAttachments.length > 0 && (
