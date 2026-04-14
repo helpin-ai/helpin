@@ -274,6 +274,10 @@ export function DocsSpaceDetail() {
             })}
           />
 
+          {(collections ?? []).length > 0 && scopedDocs.length > 0 && (
+            <hr className="border-border/40" />
+          )}
+
           {scopedDocs.length > 0 ? (
             <DocumentsTable
                 documents={scopedDocs}

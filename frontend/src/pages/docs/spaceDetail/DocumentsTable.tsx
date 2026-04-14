@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import {
   ArchiveIcon,
@@ -13,6 +14,7 @@ import {
   FolderOpenIcon,
   MoreHorizontalIcon,
   PlusSignIcon,
+  Search01Icon,
   SentIcon,
   Tick01Icon,
 } from '@/lib/icons'
@@ -129,12 +131,18 @@ export function DocumentsTable({
   onCreateCollection,
 }: DocumentsTableProps) {
   const navigate = useNavigate()
+  const [searchQuery, setSearchQuery] = useState('')
 
   const showStatusFilter = hasCollections && (documents.length > 0 || Boolean(filterStatus))
 
+  // Filter by search query, then sort.
+  const filtered = searchQuery.trim()
+    ? documents.filter((d) => d.title?.toLowerCase().includes(searchQuery.trim().toLowerCase()))
+    : documents
+
   // Sort the scoped documents. Kept local to match the existing
   // inline implementation — the caller does not need to pre-sort.
-  const displayDocs = [...documents].sort((a, b) => {
+  const displayDocs = [...filtered].sort((a, b) => {
     let cmp = 0
     switch (sortField) {
       case 'title':
@@ -166,9 +174,21 @@ export function DocumentsTable({
     <>
       {showStatusFilter && (
         <div className="flex items-center justify-between gap-2">
-          <span className="text-xs text-muted-foreground">
-            {displayDocs.length === 1 ? '1 document' : `${displayDocs.length} documents`}
-          </span>
+          <div className="flex items-center gap-2 flex-1">
+            <div className="relative w-64">
+              <Search01Icon className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground/60" />
+              <input
+                type="text"
+                placeholder="Search..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full rounded-md border border-border/60 bg-background py-1 pl-7 pr-2 text-xs outline-none placeholder:text-muted-foreground/50 focus:border-primary/40 focus:ring-1 focus:ring-primary/20"
+              />
+            </div>
+            <span className="text-xs text-muted-foreground shrink-0">
+              {displayDocs.length === 1 ? '1 document' : `${displayDocs.length} documents`}
+            </span>
+          </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button

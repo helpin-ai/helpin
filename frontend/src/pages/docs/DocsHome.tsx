@@ -13,6 +13,7 @@ import {
   GlobeIcon,
   Loading01Icon,
   PlusSignIcon,
+  Search01Icon,
 } from '@/lib/icons'
 import { ICON_MAP, StoredIcon } from '@/components/ui/icon-picker'
 import { Collapsible } from 'radix-ui'
@@ -347,10 +348,26 @@ export function DocsHome() {
 
   const [createSpaceOpen, setCreateSpaceOpen] = useState(false)
   const [arrangeMode, setArrangeMode] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
 
   const { data: settings } = useWorkspaceSettings(wsId)
   const allTeams = settings?.teams ?? []
   const teamMap = new Map(allTeams.map((t) => [t.id, t.name]))
+
+  // Search: filter documents across all spaces by title.
+  const searchResults = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q || !allDocuments) return null
+    return allDocuments.filter((d) =>
+      d.title?.toLowerCase().includes(q)
+    )
+  }, [searchQuery, allDocuments])
+
+  // Space name lookup for search results.
+  const spaceNames = useMemo(
+    () => new Map<string, string>((spaces ?? []).map((s) => [s.id, s.name])),
+    [spaces],
+  )
 
   const getTeamNames = (space: DocsSpace): string => {
     if (space.visibility === 'workspace_wide') return 'All teams'
@@ -408,23 +425,37 @@ export function DocsHome() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-4">
-      <header className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-semibold">All Docs</h2>
-          <p className="text-sm text-muted-foreground">
-            All spaces, collections, and articles in one place.
-          </p>
+      <header className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-semibold">All Docs</h2>
+            <p className="text-sm text-muted-foreground">
+              All spaces, collections, and articles in one place.
+            </p>
+          </div>
+          {canEditDocs && spaces && spaces.length > 0 && (
+            <Button
+              variant={arrangeMode ? 'default' : 'outline'}
+              size="sm"
+              className="gap-1.5"
+              onClick={() => setArrangeMode(!arrangeMode)}
+            >
+              <ArrowUpDownIcon className="h-3.5 w-3.5" />
+              {arrangeMode ? 'Done arranging' : 'Arrange'}
+            </Button>
+          )}
         </div>
-        {canEditDocs && spaces && spaces.length > 0 && (
-          <Button
-            variant={arrangeMode ? 'default' : 'outline'}
-            size="sm"
-            className="gap-1.5"
-            onClick={() => setArrangeMode(!arrangeMode)}
-          >
-            <ArrowUpDownIcon className="h-3.5 w-3.5" />
-            {arrangeMode ? 'Done arranging' : 'Arrange'}
-          </Button>
+        {!arrangeMode && (
+          <div className="relative">
+            <Search01Icon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search documents..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full rounded-lg border border-border/60 bg-background py-2 pl-9 pr-3 text-sm outline-none placeholder:text-muted-foreground/60 focus:border-primary/40 focus:ring-1 focus:ring-primary/20"
+            />
+          </div>
         )}
       </header>
 
@@ -434,7 +465,42 @@ export function DocsHome() {
         </p>
       )}
 
-      {isLoading ? (
+      {searchResults !== null ? (
+        <div className="rounded-lg border border-border/60 bg-card divide-y divide-border/40">
+          {searchResults.length === 0 ? (
+            <div className="flex flex-col items-center py-8 text-sm text-muted-foreground">
+              <Search01Icon className="h-8 w-8 text-muted-foreground/30 mb-2" />
+              No documents matching &ldquo;{searchQuery}&rdquo;
+            </div>
+          ) : (
+            searchResults.map((doc) => (
+              <button
+                key={doc.id}
+                type="button"
+                onClick={() =>
+                  navigate({
+                    to: '/w/$slug/docs/documents/$docId',
+                    params: { slug: wsSlug, docId: doc.id },
+                  })
+                }
+                className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors hover:bg-muted/40"
+              >
+                <File01Icon className={DOC_ICON_CLASS} />
+                <span className={`min-w-0 flex-1 truncate ${ARTICLE_ROW_CLASS}`}>{doc.title}</span>
+                <span className="shrink-0 text-[11px] text-muted-foreground">
+                  {spaceNames.get(doc.space_id) ?? ''}
+                  {doc.collection_id && allCollections
+                    ? ` / ${allCollections.find((c) => c.id === doc.collection_id)?.name ?? ''}`
+                    : ''}
+                </span>
+                <span className={`${STATUS_BADGE_CLASS} ${statusColor(doc.status)}`}>
+                  {DOC_STATUS_LABELS[doc.status] ?? doc.status}
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+      ) : isLoading ? (
         <div className="space-y-3 py-4">
           {[1, 2, 3].map((i) => (
             <div key={i} className="h-12 animate-pulse rounded-lg bg-muted/60" />
