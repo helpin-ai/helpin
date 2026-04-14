@@ -131,6 +131,7 @@ type AgentService struct {
 	docsContentRepo            *repository.DocsContentRepository
 	docsVersionRepo            *repository.DocsVersionRepository
 	docsLinkRepo               *repository.DocsLinkRepository
+	userRepo                   *repository.UserRepository
 	runEngine                  *temporalapp.RunEngine
 	gitService                 *GitService
 	taskService                *PMTaskService
@@ -231,6 +232,12 @@ func (s *AgentService) SetCodexAuthManager(manager *worker.CodexAuthManager) *Ag
 
 func (s *AgentService) SetTriggerExecutionRepository(repo *repository.AgentTriggerExecutionRepository) *AgentService {
 	s.triggerExecutionRepo = repo
+	return s
+}
+
+// SetUserRepository injects the user repository so coding sessions can hydrate the triggering actor.
+func (s *AgentService) SetUserRepository(repo *repository.UserRepository) *AgentService {
+	s.userRepo = repo
 	return s
 }
 

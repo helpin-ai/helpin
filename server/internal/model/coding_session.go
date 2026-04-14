@@ -19,8 +19,17 @@ type CodingSession struct {
 	Repo                CodingSessionRepoState       `json:"repo"`
 	AuthState           *CodexAuthState              `json:"auth_state,omitempty"`
 	StreamStateSnapshot *CodingSessionStreamSnapshot `json:"stream_state_snapshot,omitempty"`
+	TriggeredByUser     *CodingSessionActor          `json:"triggered_by_user,omitempty"`
 	CreatedAt           time.Time                    `json:"created_at"`
 	UpdatedAt           time.Time                    `json:"updated_at"`
+}
+
+// CodingSessionActor describes the human user who triggered a coding session run.
+type CodingSessionActor struct {
+	ID        string  `json:"id"`
+	Email     string  `json:"email"`
+	FullName  string  `json:"full_name"`
+	AvatarURL *string `json:"avatar_url,omitempty"`
 }
 
 type CodingSessionCapabilities struct {
