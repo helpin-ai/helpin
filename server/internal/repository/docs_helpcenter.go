@@ -841,6 +841,7 @@ func (r *DocsHelpcenterRepository) ListSpaceNavigation(ctx context.Context, spac
 type DocsHelpcenterPublishedArticleSlug struct {
 	DocumentID string
 	Slug       string
+	PublicID   string
 }
 
 // ListPublishedArticleSlugsInCollection returns (document_id, slug) for
@@ -852,10 +853,11 @@ func (r *DocsHelpcenterRepository) ListPublishedArticleSlugsInCollection(ctx con
 	type row struct {
 		DocumentID string `gorm:"column:document_id"`
 		Slug       string `gorm:"column:slug"`
+		PublicID   string `gorm:"column:public_id"`
 	}
 	var rows []row
 	if err := r.db.WithContext(ctx).Raw(`
-		SELECT d.id AS document_id, ha.slug
+		SELECT d.id AS document_id, ha.slug, ha.public_id
 		FROM docs_documents d
 		JOIN docs_helpcenter_articles ha ON ha.document_id = d.id
 		WHERE d.collection_id = ?
@@ -868,7 +870,7 @@ func (r *DocsHelpcenterRepository) ListPublishedArticleSlugsInCollection(ctx con
 	}
 	out := make([]DocsHelpcenterPublishedArticleSlug, len(rows))
 	for i, r := range rows {
-		out[i] = DocsHelpcenterPublishedArticleSlug{DocumentID: r.DocumentID, Slug: r.Slug}
+		out[i] = DocsHelpcenterPublishedArticleSlug{DocumentID: r.DocumentID, Slug: r.Slug, PublicID: r.PublicID}
 	}
 	return out, nil
 }

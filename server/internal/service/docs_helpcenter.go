@@ -767,6 +767,9 @@ func (s *DocsHelpcenterService) createSourceArticleRedirect(ctx context.Context,
 		TargetArticleSlug:    &newSlug,
 		Type:                 model.RedirectTypeSlugChange,
 	}
+	if ha, err := s.hcRepo.GetArticle(ctx, doc.ID); err == nil && ha != nil {
+		setRedirectTargetPath(redirect, "", ha.PublicID)
+	}
 	return s.redirectRepo.UpsertWithReconciliation(ctx, redirect)
 }
 
@@ -844,6 +847,7 @@ func (s *DocsHelpcenterService) EmitArticleMoveRedirect(ctx context.Context, doc
 		TargetArticleSlug:    &slug,
 		Type:                 model.RedirectTypeAutoArticleMove,
 	}
+	setRedirectTargetPath(redirect, "", art.PublicID)
 	return s.redirectRepo.UpsertWithReconciliation(ctx, redirect)
 }
 
@@ -892,6 +896,7 @@ func (s *DocsHelpcenterService) UpdateCollectionSlug(ctx context.Context, collec
 				TargetCollectionSlug: newSlug,
 				Type:                 model.RedirectTypeAutoCollectionRename,
 			}
+			setRedirectTargetPath(collectionRedirect, collection.PublicID, "")
 			if err := txRedirectRepo.UpsertWithReconciliation(ctx, collectionRedirect); err != nil {
 				return err
 			}
@@ -916,6 +921,7 @@ func (s *DocsHelpcenterService) UpdateCollectionSlug(ctx context.Context, collec
 					TargetArticleSlug:    &slug,
 					Type:                 model.RedirectTypeAutoCollectionRename,
 				}
+				setRedirectTargetPath(articleRedirect, "", articles[i].PublicID)
 				if err := txRedirectRepo.UpsertWithReconciliation(ctx, articleRedirect); err != nil {
 					return err
 				}
@@ -2280,7 +2286,11 @@ func (s *DocsHelpcenterService) CreateRedirect(ctx context.Context, workspaceID 
 	if err := s.redirectRepo.Create(ctx, redirect); err != nil {
 		return nil, err
 	}
+	// Resolve and persist canonical target_path after creation.
 	s.hydrateRedirectTargetPath(ctx, workspaceID, redirect)
+	if redirect.TargetPath != nil && *redirect.TargetPath != "" {
+		s.redirectRepo.Update(ctx, redirect.ID, map[string]interface{}{"target_path": *redirect.TargetPath})
+	}
 	return redirect, nil
 }
 
@@ -2295,11 +2305,13 @@ func (s *DocsHelpcenterService) UpdateRedirect(ctx context.Context, id string, r
 		}
 		updates["source_path"] = normalized
 	}
+	slugChanged := false
 	if req.TargetCollectionSlug != nil {
 		if *req.TargetCollectionSlug == "" {
 			return nil, fmt.Errorf("target_collection_slug is required")
 		}
 		updates["target_collection_slug"] = *req.TargetCollectionSlug
+		slugChanged = true
 	}
 	if req.TargetArticleSlug != nil {
 		if *req.TargetArticleSlug == "" {
@@ -2307,6 +2319,12 @@ func (s *DocsHelpcenterService) UpdateRedirect(ctx context.Context, id string, r
 		} else {
 			updates["target_article_slug"] = *req.TargetArticleSlug
 		}
+		slugChanged = true
+	}
+	// Clear stale target_path when slug fields change so resolution
+	// falls back to slug rebuild until recomputed.
+	if slugChanged {
+		updates["target_path"] = nil
 	}
 	if len(updates) == 0 {
 		return nil, fmt.Errorf("no fields to update")
@@ -2315,7 +2333,11 @@ func (s *DocsHelpcenterService) UpdateRedirect(ctx context.Context, id string, r
 	if err != nil {
 		return nil, err
 	}
+	// Recompute and persist target_path after slug changes.
 	s.hydrateRedirectTargetPath(ctx, redirect.WorkspaceID, redirect)
+	if slugChanged && redirect.TargetPath != nil && *redirect.TargetPath != "" {
+		s.redirectRepo.Update(ctx, redirect.ID, map[string]interface{}{"target_path": *redirect.TargetPath})
+	}
 	return redirect, nil
 }
 
@@ -2392,6 +2414,22 @@ func (s *DocsHelpcenterService) collectionPublicID(ctx context.Context, collecti
 func (s *DocsHelpcenterService) hydrateRedirectTargetPaths(ctx context.Context, workspaceID string, redirects []model.DocsRedirect) {
 	for i := range redirects {
 		s.hydrateRedirectTargetPath(ctx, workspaceID, &redirects[i])
+	}
+}
+
+// setRedirectTargetPath computes and sets the canonical PublicID-backed
+// target_path on a redirect from the given entity PublicIDs. If a
+// PublicID is empty, target_path is left nil (legacy slug fallback).
+func setRedirectTargetPath(redirect *model.DocsRedirect, collectionPublicID string, articlePublicID string) {
+	if redirect == nil {
+		return
+	}
+	if redirect.TargetArticleSlug != nil && *redirect.TargetArticleSlug != "" && articlePublicID != "" {
+		p := buildDocsHelpcenterArticleCanonicalPath(nil, "", *redirect.TargetArticleSlug, articlePublicID)
+		redirect.TargetPath = &p
+	} else if redirect.TargetCollectionSlug != "" && collectionPublicID != "" {
+		p := buildDocsHelpcenterCollectionCanonicalPath(nil, "", redirect.TargetCollectionSlug, collectionPublicID)
+		redirect.TargetPath = &p
 	}
 }
 
