@@ -132,8 +132,10 @@ func (h *SupportCoverageHandler) GetGap(w http.ResponseWriter, r *http.Request) 
 func (h *SupportCoverageHandler) UpdateGapStatus(w http.ResponseWriter, r *http.Request) {
 	wsID := middleware.GetWorkspaceID(r.Context())
 	gapID := chi.URLParam(r, "gapId")
+	userID := middleware.GetUserID(r.Context())
 	var req struct {
-		Status string `json:"status"`
+		Status        string `json:"status"`
+		IssueResolved *bool  `json:"issue_resolved"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -143,7 +145,7 @@ func (h *SupportCoverageHandler) UpdateGapStatus(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusBadRequest, "status is required")
 		return
 	}
-	if err := h.coverageSvc.UpdateGapStatus(r.Context(), wsID, gapID, req.Status); err != nil {
+	if err := h.coverageSvc.UpdateGapStatus(r.Context(), wsID, gapID, req.Status, userID, req.IssueResolved); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

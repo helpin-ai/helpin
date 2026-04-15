@@ -142,8 +142,8 @@ func (s *SupportCoverageService) GetGapDetail(ctx context.Context, workspaceID, 
 }
 
 // UpdateGapStatus sets the status of a gap.
-func (s *SupportCoverageService) UpdateGapStatus(ctx context.Context, workspaceID, gapID, status string) error {
-	return s.coverageRepo.UpdateGapStatus(ctx, workspaceID, gapID, status)
+func (s *SupportCoverageService) UpdateGapStatus(ctx context.Context, workspaceID, gapID, status, userID string, issueResolved *bool) error {
+	return s.coverageRepo.UpdateGapStatus(ctx, workspaceID, gapID, status, userID, issueResolved)
 }
 
 // ReclassifyGap changes the v1 gap type.

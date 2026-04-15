@@ -76,6 +76,9 @@ export interface SupportCoverageGapDetail {
   failure_mode: string
   first_seen_at: string
   last_seen_at: string
+  status_changed_by: string | null
+  status_changed_at: string | null
+  issue_resolved: boolean | null
   topic_title: string
   evidence: SupportGapEvidence[]
   suggestions: SupportGapSuggestion[]
@@ -115,5 +118,5 @@ export const GAP_STATUS_LABELS: Record<SupportCoverageGapStatus, string> = {
   fixed: 'Fixed',
   ignored: 'Ignored',
   merged: 'Merged',
-  human_only: 'Human Only',
+  human_only: 'Escalate Only',
 }

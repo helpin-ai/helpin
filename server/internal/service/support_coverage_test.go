@@ -46,7 +46,9 @@ func setupCoverageTestEnv(t *testing.T) (*SupportEventService, *SupportCoverageS
 			confidence REAL NOT NULL DEFAULT 0, evidence_count INTEGER NOT NULL DEFAULT 0,
 			failure_mode TEXT NOT NULL DEFAULT '', source_signal TEXT NOT NULL DEFAULT '',
 			can_answer TEXT, can_resolve TEXT, metadata TEXT NOT NULL DEFAULT '{}',
-			first_seen_at DATETIME, last_seen_at DATETIME, created_at DATETIME, updated_at DATETIME
+			first_seen_at DATETIME, last_seen_at DATETIME,
+			status_changed_by TEXT, status_changed_at DATETIME, issue_resolved BOOLEAN,
+			created_at DATETIME, updated_at DATETIME
 		)`,
 		`CREATE TABLE support_gap_evidence (
 			id TEXT PRIMARY KEY, gap_id TEXT NOT NULL, workspace_id TEXT NOT NULL,

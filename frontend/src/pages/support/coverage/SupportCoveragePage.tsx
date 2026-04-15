@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { CheckmarkCircle02Icon, FileSearchIcon, Loading01Icon } from '@/lib/icons'
+import { Cancel01Icon, CheckmarkCircle02Icon, FileSearchIcon, Loading01Icon } from '@/lib/icons'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { supportCoverageService } from '@/lib/services/supportCoverageService'
 import type {
@@ -37,7 +37,7 @@ export function SupportCoveragePage() {
   const [loading, setLoading] = useState(true)
   const [selectedGap, setSelectedGap] = useState<SupportCoverageGapDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
-  const [statusFilter, setStatusFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('open')
 
   useEffect(() => {
     if (!wsId) return
@@ -62,9 +62,8 @@ export function SupportCoveragePage() {
     setDetailLoading(false)
   }
 
-  const handleStatusUpdate = async (gapId: string, status: string) => {
-    await supportCoverageService.updateGapStatus(wsId, gapId, status)
-    // Refresh.
+  const handleStatusUpdate = async (gapId: string, status: string, issueResolved?: boolean) => {
+    await supportCoverageService.updateGapStatus(wsId, gapId, status, issueResolved)
     setSelectedGap(null)
     const { data } = await supportCoverageService.listGaps(wsId, statusFilter ? { status: statusFilter } : undefined)
     if (data) {
@@ -202,18 +201,17 @@ export function SupportCoveragePage() {
                       <Badge variant="secondary" className={`text-xs ${GAP_TYPE_COLORS[selectedGap.v1_gap_type] ?? ''}`}>
                         {V1_GAP_TYPE_LABELS[selectedGap.v1_gap_type] ?? selectedGap.v1_gap_type}
                       </Badge>
-                      <Badge variant="secondary" className={`text-xs ${STATUS_COLORS[selectedGap.status] ?? ''}`}>
-                        {GAP_STATUS_LABELS[selectedGap.status] ?? selectedGap.status}
-                      </Badge>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedGap(null)}
-                    className="text-muted-foreground hover:text-foreground text-xs"
-                  >
-                    Close
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedGap(null)}
+                      className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+                    >
+                      <Cancel01Icon className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="text-xs text-muted-foreground space-y-1">
@@ -238,7 +236,25 @@ export function SupportCoveragePage() {
                 )}
 
                 {/* Actions */}
-                <div className="flex flex-wrap gap-2 pt-2 border-t border-border/40">
+                {/* Status change info */}
+                {selectedGap.status !== 'open' && selectedGap.status_changed_at && (
+                  <div className="text-xs text-muted-foreground">
+                    Marked as <span className="font-medium">{GAP_STATUS_LABELS[selectedGap.status] ?? selectedGap.status}</span>
+                    {' '}{timeAgo(selectedGap.status_changed_at)}
+                    {selectedGap.issue_resolved != null && (
+                      <span className={selectedGap.issue_resolved ? 'text-green-600' : 'text-amber-600'}>
+                        {' '}&middot; Customer issue {selectedGap.issue_resolved ? 'resolved' : 'unresolved'}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border/40">
+                  <Badge variant="secondary" className={`text-xs ${STATUS_COLORS[selectedGap.status] ?? ''}`}>
+                    {GAP_STATUS_LABELS[selectedGap.status] ?? selectedGap.status}
+                  </Badge>
+                  <div className="flex-1" />
                   {selectedGap.status === 'open' && (
                     <>
                       <button
@@ -250,7 +266,7 @@ export function SupportCoveragePage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleStatusUpdate(selectedGap.id, 'fixed')}
+                        onClick={() => handleStatusUpdate(selectedGap.id, 'fixed', true)}
                         className="rounded-md bg-green-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-green-700"
                       >
                         <CheckmarkCircle02Icon className="inline h-3 w-3 mr-1" />
@@ -258,14 +274,14 @@ export function SupportCoveragePage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleStatusUpdate(selectedGap.id, 'human_only')}
-                        className="rounded-md border border-border/60 px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted"
+                        onClick={() => handleStatusUpdate(selectedGap.id, 'human_only', false)}
+                        className="rounded-md border border-border/60 px-2.5 py-1.5 text-xs font-medium text-purple-600 hover:bg-purple-50"
                       >
-                        Human Only
+                        Escalate Only
                       </button>
                     </>
                   )}
-                  {selectedGap.status === 'ignored' && (
+                  {(selectedGap.status === 'ignored' || selectedGap.status === 'human_only' || selectedGap.status === 'fixed') && (
                     <button
                       type="button"
                       onClick={() => handleStatusUpdate(selectedGap.id, 'open')}

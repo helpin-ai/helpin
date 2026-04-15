@@ -359,14 +359,21 @@ func (r *SupportCoverageRepository) FindOpenGapByConversation(ctx context.Contex
 }
 
 // UpdateGapStatus sets the status of a gap.
-func (r *SupportCoverageRepository) UpdateGapStatus(ctx context.Context, workspaceID, gapID, status string) error {
+func (r *SupportCoverageRepository) UpdateGapStatus(ctx context.Context, workspaceID, gapID, status, userID string, issueResolved *bool) error {
+	now := time.Now()
+	updates := map[string]interface{}{
+		"status":             status,
+		"status_changed_by":  userID,
+		"status_changed_at":  now,
+		"updated_at":         now,
+	}
+	if issueResolved != nil {
+		updates["issue_resolved"] = *issueResolved
+	}
 	result := r.db.WithContext(ctx).
 		Model(&model.SupportCoverageGap{}).
 		Where("id = ? AND workspace_id = ?", gapID, workspaceID).
-		Updates(map[string]interface{}{
-			"status":     status,
-			"updated_at": time.Now(),
-		})
+		Updates(updates)
 	if result.Error != nil {
 		return fmt.Errorf("update gap status: %w", result.Error)
 	}

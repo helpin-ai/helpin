@@ -96,7 +96,7 @@ func (s *SupportCoverageDraftService) GenerateArticleDraft(ctx context.Context, 
 	}
 
 	// Update gap status to drafted.
-	_ = s.coverageRepo.UpdateGapStatus(ctx, workspaceID, gapID, model.SupportCoverageGapStatusDrafted)
+	_ = s.coverageRepo.UpdateGapStatus(ctx, workspaceID, gapID, model.SupportCoverageGapStatusDrafted, "", nil)
 
 	return created, nil
 }
@@ -151,7 +151,7 @@ func (s *SupportCoverageDraftService) GenerateArticleUpdate(ctx context.Context,
 		return nil, fmt.Errorf("create suggestion: %w", err)
 	}
 
-	_ = s.coverageRepo.UpdateGapStatus(ctx, workspaceID, gapID, model.SupportCoverageGapStatusDrafted)
+	_ = s.coverageRepo.UpdateGapStatus(ctx, workspaceID, gapID, model.SupportCoverageGapStatusDrafted, "", nil)
 
 	return created, nil
 }
@@ -209,7 +209,7 @@ func (s *SupportCoverageDraftService) applyCreateArticle(ctx context.Context, su
 	}
 
 	// Close the loop: mark gap as fixed and link the new article.
-	_ = s.coverageRepo.UpdateGapStatus(ctx, suggestion.WorkspaceID, suggestion.GapID, model.SupportCoverageGapStatusFixed)
+	_ = s.coverageRepo.UpdateGapStatus(ctx, suggestion.WorkspaceID, suggestion.GapID, model.SupportCoverageGapStatusFixed, "", nil)
 	_ = s.coverageRepo.LinkGapArticle(ctx, suggestion.GapID, docID, suggestion.WorkspaceID)
 
 	return nil
@@ -251,7 +251,7 @@ func (s *SupportCoverageDraftService) applyUpdateArticle(ctx context.Context, su
 	}
 
 	// Close the loop: mark gap as fixed and link the updated article.
-	_ = s.coverageRepo.UpdateGapStatus(ctx, suggestion.WorkspaceID, suggestion.GapID, model.SupportCoverageGapStatusFixed)
+	_ = s.coverageRepo.UpdateGapStatus(ctx, suggestion.WorkspaceID, suggestion.GapID, model.SupportCoverageGapStatusFixed, "", nil)
 	_ = s.coverageRepo.LinkGapArticle(ctx, suggestion.GapID, docID, suggestion.WorkspaceID)
 
 	return nil
