@@ -1544,8 +1544,9 @@
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  margin: 0 16px 8px;
-  padding: 8px 12px;
+  margin: 12px 16px 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(217, 119, 6, 0.25);
   border-radius: 10px;
   background: #fef3c7;
   color: #92400e;
@@ -1584,6 +1585,28 @@
 .helpin-special-notice-dismiss:focus {
   background: rgba(146, 64, 14, 0.12);
   outline: none;
+}
+
+/* Dark mode — keep the amber feel but swap to a lower-luminance
+   surface so the banner reads as a warning without overpowering the
+   rest of the dark widget. */
+.helpin-theme-dark .helpin-special-notice {
+  background: rgba(120, 53, 15, 0.35);
+  border-color: rgba(245, 158, 11, 0.45);
+  color: #fde68a;
+}
+
+.helpin-theme-dark .helpin-special-notice-icon {
+  color: #fbbf24;
+}
+
+.helpin-theme-dark .helpin-special-notice-dismiss {
+  color: #fde68a;
+}
+
+.helpin-theme-dark .helpin-special-notice-dismiss:hover,
+.helpin-theme-dark .helpin-special-notice-dismiss:focus {
+  background: rgba(253, 230, 138, 0.18);
 }
 
 /* System message — centered "Jarek joined the conversation" line, matches
