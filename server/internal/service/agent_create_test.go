@@ -197,6 +197,9 @@ func TestEnsureBuiltInReviewAgentRefreshesPromptVersionAndTools(t *testing.T) {
 	if !slices.Contains(tools, worker.ToolRequestUserInput) {
 		t.Fatalf("expected review agent tools to include %q, got %v", worker.ToolRequestUserInput, tools)
 	}
+	if updated.DefaultInvocationMode != model.InvocationModeInteractive {
+		t.Fatalf("expected review agent default invocation mode interactive, got %q", updated.DefaultInvocationMode)
+	}
 }
 
 func TestCreateAgentRejectsUnknownPreset(t *testing.T) {
