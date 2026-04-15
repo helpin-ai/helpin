@@ -3878,7 +3878,7 @@ func TestBuildInitialInstructionsIncludesTaskPlanningDocForTaskExecutionRun(t *t
 	}
 }
 
-func TestBuildInitialInstructionsReviewAgentUsesReviewTaskGuidance(t *testing.T) {
+func TestBuildInitialInstructionsIncludesGenericRepositoryBranchContext(t *testing.T) {
 	run := &model.AgentRun{
 		ID:            "run-task-review",
 		WorkspaceID:   "ws-1",
@@ -3896,9 +3896,8 @@ func TestBuildInitialInstructionsReviewAgentUsesReviewTaskGuidance(t *testing.T)
 
 	activity := &AgentRunActivities{}
 	state := &resolvedRunState{
-		run:   run,
-		task:  task,
-		agent: &model.Agent{PresetKey: model.AgentPresetReviewAgent},
+		run:  run,
+		task: task,
 	}
 
 	instructions, err := activity.buildInitialInstructions(context.Background(), state, planningRunInput{
@@ -3908,14 +3907,11 @@ func TestBuildInitialInstructionsReviewAgentUsesReviewTaskGuidance(t *testing.T)
 		t.Fatalf("buildInitialInstructions returned error: %v", err)
 	}
 	for _, snippet := range []string{
-		"This is a review run for the current task branch, not an implementation run by default.",
-		"Start by inspecting the existing branch diff, relevant files, and focused validation results before deciding whether there are findings.",
-		"Do not make repository changes unless the human explicitly asks you to implement selected fixes during this review loop.",
-		"Review target branches: base `main`, working `tp-123-review`.",
+		"Repository branches: base `main`, working `tp-123-review`.",
 		"Operator notes:\nFocus on regressions in the sprint picker.",
 	} {
 		if !strings.Contains(instructions, snippet) {
-			t.Fatalf("expected review instructions to contain %q\n%s", snippet, instructions)
+			t.Fatalf("expected generic task instructions to contain %q\n%s", snippet, instructions)
 		}
 	}
 }

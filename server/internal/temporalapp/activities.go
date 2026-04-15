@@ -4082,9 +4082,6 @@ func (a *AgentRunActivities) buildInitialInstructions(ctx context.Context, state
 		if tools[workerpkg.ToolPublishTaskPlanDoc] {
 			return a.buildTaskPlannerInstructions(ctx, state, input)
 		}
-		if state.agent != nil && state.agent.EffectivePresetKey() == model.AgentPresetReviewAgent {
-			return a.buildTaskReviewInstructions(ctx, state, input)
-		}
 		return a.buildTaskExecutionInstructions(ctx, state, input)
 	}
 	if state.run.TargetType != "epic" || state.epic == nil {
@@ -4301,38 +4298,6 @@ func (a *AgentRunActivities) buildTaskExecutionInstructions(ctx context.Context,
 	return strings.Join(sections, "\n\n"), nil
 }
 
-func (a *AgentRunActivities) buildTaskReviewInstructions(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
-	if state.task == nil {
-		return runInputAdditionalContext(state.run.Input), nil
-	}
-
-	var sections []string
-	sections = append(sections, fmt.Sprintf("Run mode: %s", state.run.InvocationMode))
-	sections = append(sections, "This is a review run for the current task branch, not an implementation run by default.")
-	sections = append(sections, "Start by inspecting the existing branch diff, relevant files, and focused validation results before deciding whether there are findings.")
-	sections = append(sections, "Use the task plan and linked docs as expected-scope background for the review. Do not treat them as an instruction to begin implementing the task immediately.")
-	sections = append(sections, "Report findings first, ordered by severity, with concrete file references when available.")
-	sections = append(sections, "Do not make repository changes unless the human explicitly asks you to implement selected fixes during this review loop.")
-	baseBranch := strings.TrimSpace(derefString(state.run.BaseBranch))
-	workingBranch := strings.TrimSpace(derefString(state.run.WorkingBranch))
-	if baseBranch != "" || workingBranch != "" {
-		switch {
-		case baseBranch != "" && workingBranch != "":
-			sections = append(sections, fmt.Sprintf("Review target branches: base `%s`, working `%s`.", baseBranch, workingBranch))
-		case workingBranch != "":
-			sections = append(sections, fmt.Sprintf("Review target working branch: `%s`.", workingBranch))
-		case baseBranch != "":
-			sections = append(sections, fmt.Sprintf("Review target base branch: `%s`.", baseBranch))
-		}
-	}
-	contextSections, err := a.buildTaskRunContextSections(ctx, state, input)
-	if err != nil {
-		return "", err
-	}
-	sections = append(sections, contextSections...)
-	return strings.Join(sections, "\n\n"), nil
-}
-
 func (a *AgentRunActivities) buildTaskRunContextSections(ctx context.Context, state *resolvedRunState, input planningRunInput) ([]string, error) {
 	var sections []string
 	additionalContext := strings.TrimSpace(input.AdditionalContext)
@@ -4341,6 +4306,18 @@ func (a *AgentRunActivities) buildTaskRunContextSections(ctx context.Context, st
 	}
 	if additionalContext != "" {
 		sections = append(sections, "Operator notes:\n"+additionalContext)
+	}
+	baseBranch := strings.TrimSpace(derefString(state.run.BaseBranch))
+	workingBranch := strings.TrimSpace(derefString(state.run.WorkingBranch))
+	if baseBranch != "" || workingBranch != "" {
+		switch {
+		case baseBranch != "" && workingBranch != "":
+			sections = append(sections, fmt.Sprintf("Repository branches: base `%s`, working `%s`.", baseBranch, workingBranch))
+		case workingBranch != "":
+			sections = append(sections, fmt.Sprintf("Repository working branch: `%s`.", workingBranch))
+		case baseBranch != "":
+			sections = append(sections, fmt.Sprintf("Repository base branch: `%s`.", baseBranch))
+		}
 	}
 
 	planDocumentID := strings.TrimSpace(derefString(state.task.PlanDocumentID))
