@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { InboxIcon, PlusSignIcon, BookOpen01Icon, LifebuoyIcon, MoreVerticalIcon, PencilEdit01Icon, ArchiveIcon } from '@/lib/icons';
+import { InboxIcon, PlusSignIcon, BookOpen01Icon, LifebuoyIcon, MoreVerticalIcon, PencilEdit01Icon, ArchiveIcon, FileSearchIcon } from '@/lib/icons';
 import { ICON_MAP } from '@/components/ui/icon-picker';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -135,6 +135,20 @@ export function SupportRailNav({
               </SidebarMenuItem>
             );
           })}
+        </SidebarMenu>
+      </SidebarGroup>
+
+      <SidebarGroup className="p-0 pb-3">
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              className="h-8 rounded-md px-2 text-sm cursor-pointer"
+              onClick={() => onNavigate(`/w/${wsSlug}/support/coverage`)}
+            >
+              <FileSearchIcon className="h-4 w-4" />
+              <span>Coverage</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
         </SidebarMenu>
       </SidebarGroup>
 
