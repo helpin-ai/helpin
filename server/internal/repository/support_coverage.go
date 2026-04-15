@@ -251,6 +251,14 @@ func (r *SupportCoverageRepository) CreateSuggestion(ctx context.Context, sugges
 	return suggestion, nil
 }
 
+// GetSuggestionByID loads a suggestion by ID into the provided pointer.
+func (r *SupportCoverageRepository) GetSuggestionByID(ctx context.Context, suggestionID string, out *model.SupportGapSuggestion) error {
+	if err := r.db.WithContext(ctx).Where("id = ?", suggestionID).First(out).Error; err != nil {
+		return fmt.Errorf("get suggestion: %w", err)
+	}
+	return nil
+}
+
 // UpdateSuggestionResult records the outcome of applying a suggestion.
 func (r *SupportCoverageRepository) UpdateSuggestionResult(ctx context.Context, suggestionID string, documentID *string, articleID *string, status string) error {
 	updates := map[string]interface{}{
