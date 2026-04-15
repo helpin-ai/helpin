@@ -1505,15 +1505,19 @@ func (h *DocsHandler) PublicSubmitFeedback(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	h.recordSupportEvent(service.SupportEventInput{
-		WorkspaceID:  cfg.WorkspaceID,
-		EventType:    model.SupportEventArticleFeedback,
-		DocumentID:   &article.ID,
-		ActorType:    model.SupportEventActorCustomer,
-		Channel:      "widget",
-		SourceSignal: model.SupportCoverageSourceArticleFeedback,
-		Metadata:     map[string]any{"is_helpful": req.IsHelpful, "locale": article.Locale},
-	})
+	// Only record a coverage event for negative feedback — helpful feedback
+	// does not indicate a gap and would create noise in coverage tracking.
+	if !req.IsHelpful {
+		h.recordSupportEvent(service.SupportEventInput{
+			WorkspaceID:  cfg.WorkspaceID,
+			EventType:    model.SupportEventArticleFeedback,
+			DocumentID:   &article.ID,
+			ActorType:    model.SupportEventActorCustomer,
+			Channel:      "widget",
+			SourceSignal: model.SupportCoverageSourceArticleFeedback,
+			Metadata:     map[string]any{"is_helpful": req.IsHelpful, "locale": article.Locale},
+		})
+	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

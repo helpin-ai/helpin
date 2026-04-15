@@ -964,6 +964,11 @@ func main() {
 	supportAIService.SetSupportEventRecorder(supportEventRecorder)
 	supportInboxService.SetSupportEventRecorder(supportEventRecorder)
 
+	supportCoverageDigestService := service.NewSupportCoverageDigestService(
+		supportCoverageRepo, workspaceRepo, emailClient, cfg.AppBaseURL,
+	)
+	_ = supportCoverageDigestService // wired to ticker in follow-up
+
 	orgService := service.NewOrganizationService(orgRepo)
 	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, crmDealService, supportInboxService, agentService)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)

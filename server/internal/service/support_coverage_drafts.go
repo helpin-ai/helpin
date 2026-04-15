@@ -115,6 +115,15 @@ func (s *SupportCoverageDraftService) GenerateArticleUpdate(ctx context.Context,
 		return nil, fmt.Errorf("gap not found")
 	}
 
+	// Verify the target document belongs to the same workspace.
+	doc, err := s.documentSvc.Get(ctx, targetDocumentID)
+	if err != nil {
+		return nil, fmt.Errorf("get target document: %w", err)
+	}
+	if doc == nil || doc.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("document not found in workspace")
+	}
+
 	// Load existing article content for context.
 	existingContent, err := s.contentSvc.Get(ctx, targetDocumentID)
 	if err != nil {
@@ -213,6 +222,15 @@ func (s *SupportCoverageDraftService) applyUpdateArticle(ctx context.Context, su
 	}
 	if docID == "" {
 		return fmt.Errorf("target_document_id is required")
+	}
+
+	// Safety check: verify document still belongs to the workspace.
+	doc, err := s.documentSvc.Get(ctx, docID)
+	if err != nil {
+		return fmt.Errorf("get target document: %w", err)
+	}
+	if doc == nil || doc.WorkspaceID != suggestion.WorkspaceID {
+		return fmt.Errorf("document not found in workspace")
 	}
 
 	// Snapshot existing content before overwrite.

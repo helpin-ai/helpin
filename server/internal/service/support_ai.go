@@ -637,7 +637,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 			"reason", signal.Reason,
 		)
 		s.recordTokenUsage(ctx, agent.ID, plannerTokens)
-		if err := s.EscalateToHumanForMessage(ctx, workspaceID, conversationID, msg.ID, signal.Reason); err != nil {
+		if err := s.EscalateToHumanForMessageWithIssue(ctx, workspaceID, conversationID, msg.ID, signal.Reason, queryPlan.IssueKey, queryPlan.IssueSummary); err != nil {
 			return err
 		}
 		_ = s.processingRepo.MarkCompleted(ctx, processing.ID, nil, plannerTokens)
@@ -669,7 +669,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 			"planner_reason", queryPlan.Reason,
 		)
 		s.recordTokenUsage(ctx, agent.ID, plannerTokens)
-		if err := s.EscalateToHumanForMessage(ctx, workspaceID, conversationID, msg.ID, queryPlan.Reason); err != nil {
+		if err := s.EscalateToHumanForMessageWithIssue(ctx, workspaceID, conversationID, msg.ID, queryPlan.Reason, queryPlan.IssueKey, queryPlan.IssueSummary); err != nil {
 			return err
 		}
 		_ = s.processingRepo.MarkCompleted(ctx, processing.ID, nil, plannerTokens)
@@ -740,7 +740,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 				"reason", signal.Reason,
 				"score", signal.Score,
 			)
-			if err := s.EscalateToHumanForMessage(ctx, workspaceID, conversationID, msg.ID, signal.Reason); err != nil {
+			if err := s.EscalateToHumanForMessageWithIssue(ctx, workspaceID, conversationID, msg.ID, signal.Reason, queryPlan.IssueKey, queryPlan.IssueSummary); err != nil {
 				return err
 			}
 			_ = s.processingRepo.MarkCompleted(ctx, processing.ID, nil, totalTokens)
@@ -827,7 +827,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 			"grounded_confidence", confidence,
 			"confidence_threshold", settings.AIConfidenceThreshold,
 		)
-		if err := s.EscalateToHumanForMessage(ctx, workspaceID, conversationID, msg.ID, "low_confidence"); err != nil {
+		if err := s.EscalateToHumanForMessageWithIssue(ctx, workspaceID, conversationID, msg.ID, "low_confidence", queryPlan.IssueKey, queryPlan.IssueSummary); err != nil {
 			return err
 		}
 		_ = s.processingRepo.MarkCompleted(ctx, processing.ID, nil, totalTokens)
@@ -838,16 +838,22 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 
 // EscalateToHuman transitions a conversation from AI handling to human pickup.
 func (s *SupportAIService) EscalateToHuman(ctx context.Context, workspaceID, conversationID, reason string) error {
-	return s.escalateToHuman(ctx, workspaceID, conversationID, "", reason)
+	return s.escalateToHuman(ctx, workspaceID, conversationID, "", reason, "", "")
 }
 
 // EscalateToHumanForMessage transitions a conversation from AI handling to human pickup,
 // using the triggering customer message to reuse triage routing when available.
 func (s *SupportAIService) EscalateToHumanForMessage(ctx context.Context, workspaceID, conversationID, messageID, reason string) error {
-	return s.escalateToHuman(ctx, workspaceID, conversationID, messageID, reason)
+	return s.escalateToHuman(ctx, workspaceID, conversationID, messageID, reason, "", "")
 }
 
-func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, conversationID, messageID, reason string) error {
+// EscalateToHumanForMessageWithIssue transitions a conversation from AI handling to human pickup,
+// including the issue key and summary from the query plan for coverage tracking.
+func (s *SupportAIService) EscalateToHumanForMessageWithIssue(ctx context.Context, workspaceID, conversationID, messageID, reason, issueKey, issueSummary string) error {
+	return s.escalateToHuman(ctx, workspaceID, conversationID, messageID, reason, issueKey, issueSummary)
+}
+
+func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, conversationID, messageID, reason, issueKey, issueSummary string) error {
 	conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
 	if err != nil {
 		return fmt.Errorf("get conversation for escalation: %w", err)
@@ -964,20 +970,6 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		failureMode = model.SupportCoverageFailurePolicyBlocked
 	}
 
-	// Extract issue key and summary from the last AI message metadata.
-	var lastIssueKey, lastIssueSummary string
-	var lastAIMsg model.SupportMessage
-	if err := s.db.WithContext(ctx).
-		Where("conversation_id = ? AND sender_type = ?", conversationID, "ai").
-		Order("created_at DESC").
-		First(&lastAIMsg).Error; err == nil {
-		var meta AIMessageMetadata
-		if jsonErr := json.Unmarshal([]byte(lastAIMsg.Metadata), &meta); jsonErr == nil {
-			lastIssueKey = meta.AIIssueKey
-			lastIssueSummary = meta.AIIssueSummary
-		}
-	}
-
 	handoffEvent := SupportEventInput{
 		WorkspaceID:    workspaceID,
 		EventType:      model.SupportEventAIHandoffTriggered,
@@ -986,8 +978,8 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		SourceSignal:   model.SupportCoverageSourceAIHandoff,
 		ActorType:      model.SupportEventActorAI,
 		Channel:        "widget",
-		IssueKey:       lastIssueKey,
-		IssueSummary:   lastIssueSummary,
+		IssueKey:       issueKey,
+		IssueSummary:   issueSummary,
 	}
 	if messageID != "" {
 		handoffEvent.MessageID = &messageID
