@@ -60,6 +60,7 @@ export interface HomepageFeaturedCard {
   link_type: HomepageFeaturedCardLinkType
   link_value: string
   space_slug: string
+  public_id?: string
 }
 
 export interface HomepageConfig {

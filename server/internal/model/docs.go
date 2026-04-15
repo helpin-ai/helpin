@@ -289,6 +289,7 @@ type HomepageFeaturedCard struct {
 	LinkType    string `json:"link_type"`
 	LinkValue   string `json:"link_value"`
 	SpaceSlug   string `json:"space_slug"`
+	PublicID    string `json:"public_id"`
 }
 
 // HelpcenterHomepageConfig stores homepage hero and featured cards.
