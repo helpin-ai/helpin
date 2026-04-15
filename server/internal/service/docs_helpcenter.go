@@ -487,6 +487,7 @@ func (s *DocsHelpcenterService) enrichFeaturedCardTitles(ctx context.Context, cf
 			LinkType:    strings.TrimSpace(rawCard.LinkType),
 			LinkValue:   strings.TrimSpace(rawCard.LinkValue),
 			SpaceSlug:   strings.TrimSpace(rawCard.SpaceSlug),
+			PublicID:    strings.TrimSpace(rawCard.PublicID),
 		}
 		if card != rawCard {
 			changed = true
@@ -525,6 +526,10 @@ func (s *DocsHelpcenterService) enrichFeaturedCardTitles(ctx context.Context, cf
 			}
 			if col.Slug != "" && col.Slug != card.LinkValue {
 				card.LinkValue = col.Slug
+				changed = true
+			}
+			if col.PublicID != "" && col.PublicID != card.PublicID {
+				card.PublicID = col.PublicID
 				changed = true
 			}
 			space, err := s.spaceRepo.GetByID(ctx, col.SpaceID)

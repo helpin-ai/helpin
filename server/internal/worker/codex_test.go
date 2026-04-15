@@ -215,6 +215,52 @@ func TestCodexPersistEngineerWorkspaceCommitsLocallyWithoutPush(t *testing.T) {
 	}
 }
 
+func TestCodexPersistEngineerWorkspaceAllowsInteractiveRunWithoutRepoChanges(t *testing.T) {
+	tempDir := t.TempDir()
+	remoteDir := filepath.Join(tempDir, "remote.git")
+	runGitCmd(t, tempDir, "git", "init", "--bare", remoteDir)
+
+	seedDir := filepath.Join(tempDir, "seed")
+	runGitCmd(t, tempDir, "git", "clone", remoteDir, seedDir)
+	configureGitIdentity(t, seedDir)
+	writeTestFile(t, filepath.Join(seedDir, "README.md"), "hello\n")
+	runGitCmd(t, seedDir, "git", "add", "README.md")
+	runGitCmd(t, seedDir, "git", "commit", "-m", "initial commit")
+	runGitCmd(t, seedDir, "git", "branch", "-M", "task-branch")
+	runGitCmd(t, seedDir, "git", "push", "-u", "origin", "task-branch")
+
+	workDir := filepath.Join(tempDir, "work")
+	runGitCmd(t, tempDir, "git", "clone", remoteDir, workDir)
+	configureGitIdentity(t, workDir)
+	runGitCmd(t, workDir, "git", "checkout", "-B", "task-branch", "origin/task-branch")
+
+	executor := NewCodexExecutor("codex", CodexRuntimeConfig{}, nil, nil, nil)
+	execCtx := &ExecutionContext{
+		Context:       context.Background(),
+		WorkDir:       workDir,
+		BaseBranch:    "task-branch",
+		WorkingBranch: "task-branch",
+		Agent:         &model.Agent{PresetKey: model.AgentPresetReviewAgent, AllowedTools: []byte(`["write_file","run_command","apply_patch"]`)},
+		Task:          &model.PMTask{DisplayID: 123, Name: "Review same-branch work"},
+	}
+
+	err := executor.persistEngineerWorkspace(
+		execCtx,
+		&model.AgentRun{InvocationMode: model.InvocationModeInteractive},
+		&codexArtifactWriter{},
+		"Review closed.",
+		"assistant_turn",
+		"",
+		"",
+	)
+	if err != nil {
+		t.Fatalf("persistEngineerWorkspace returned error for interactive no-change review run: %v", err)
+	}
+	if execCtx.LocalGitCommit != nil {
+		t.Fatalf("did not expect local git commit metadata, got %#v", execCtx.LocalGitCommit)
+	}
+}
+
 func TestSyncPostRunExecutionStateCopiesLocalCommitMetadata(t *testing.T) {
 	execCtx := &ExecutionContext{
 		WorkingBranch: "feature/original",

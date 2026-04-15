@@ -21,6 +21,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import type {
   CodingSession,
+  CodingSessionActor,
   CodingSessionInteraction,
   CodingSessionLiveAssistantMessage,
   CodingSessionLiveReasoningMessage,
@@ -28,6 +29,7 @@ import type {
   CodingSessionLiveTurnSegment,
   CodingSessionTranscriptMessage,
 } from '@/lib/pmTypes';
+import { UserAvatar } from '@/components/pm/UserAvatar';
 import { formatCodingSessionRelative } from './codingSessionUtils';
 import { ApplyPatchDiff } from './ApplyPatchDiff';
 import { CodingInteractionCard } from './CodingInteractionCard';
@@ -210,10 +212,12 @@ export function CodingTranscriptPane({
     scrollToTail();
   }, [streamingSignature, items.length, scrollToTail]);
 
+  const triggeredBy = session?.triggered_by_user ?? null;
+
   const renderItem = useCallback((item: VirtualItem) => {
     switch (item.kind) {
       case 'transcript':
-        return <TranscriptEntry message={item.message} />;
+        return <TranscriptEntry message={item.message} actor={triggeredBy} />;
       case 'thinking':
         return <ThinkingStrip reasoning={item.reasoning} />;
       case 'live-message': {
@@ -266,7 +270,7 @@ export function CodingTranscriptPane({
           </div>
         );
     }
-  }, [liveAssistantMessage]);
+  }, [liveAssistantMessage, triggeredBy]);
 
   return (
     <section className="relative flex h-full min-h-[20rem] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm xl:min-h-0">
@@ -280,7 +284,7 @@ export function CodingTranscriptPane({
         </Badge>
       </div>
 
-      <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-auto">
+      <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-auto pt-3">
         <div
           className="relative mx-auto w-full max-w-4xl px-4"
           style={{ height: virtualizer.getTotalSize() }}
@@ -468,11 +472,13 @@ function TranscriptEntry({
   live = false,
   streaming = false,
   placeholder = false,
+  actor,
 }: {
   message: CodingSessionTranscriptMessage;
   live?: boolean;
   streaming?: boolean;
   placeholder?: boolean;
+  actor?: CodingSessionActor | null;
 }) {
   const isAssistant = message.role === 'assistant';
   const visibleToolCalls = (message.tool_calls ?? []).filter((tc) => tc.tool_name !== 'update_plan');
@@ -579,14 +585,25 @@ function TranscriptEntry({
     );
   }
 
+  const actorLabel = actor?.full_name || actor?.email || 'User';
+
   return (
     <div className="flex flex-col items-end gap-2">
       <div className="flex items-center justify-end gap-2 px-1 text-[11px] text-muted-foreground">
         <span>{formatCodingSessionRelative(message.timestamp)}</span>
-        <span className="font-medium capitalize">{message.role}</span>
-        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-[10px] text-white">
-          <UserIcon className="h-3 w-3" />
-        </span>
+        <span className="font-medium">{actorLabel}</span>
+        {actor ? (
+          <UserAvatar
+            name={actorLabel}
+            avatarUrl={actor.avatar_url}
+            className="h-6 w-6"
+            fallbackClassName="text-[10px]"
+          />
+        ) : (
+          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-[10px] text-white">
+            <UserIcon className="h-3 w-3" />
+          </span>
+        )}
       </div>
 
       {message.content.trim() ? (
@@ -872,7 +889,7 @@ function ActivityToolCallRow({ toolCall, isLast }: { toolCall: CodingSessionLive
   const isApplyPatch = toolCall.tool_name === 'apply_patch';
   const argsText = toolCall.args_text.trim();
   const resultText = toolCall.result?.output_summary?.trim() || toolCall.result?.content?.trim() || '';
-  const publishedPreviewCard = !isFailed && argsText ? (
+  const publishedPreviewCard = !isFailed && !isApplyPatch && argsText ? (
     <PublishedToolPreviewCard toolName={toolCall.tool_name} argsText={argsText} resultText={resultText} />
   ) : null;
   const presentation = describeToolCall(toolCall);

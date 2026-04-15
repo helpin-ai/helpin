@@ -4,6 +4,7 @@ import { TaskRouteFallbackBackground } from '@/components/pm/task-detail/TaskRou
 export const Route = createFileRoute('/_authenticated/w/$slug/pm/tasks/$taskId')({
   validateSearch: (search: Record<string, unknown>) => ({
     team: typeof search.team === 'string' ? search.team : undefined,
+    run: search.run != null ? String(search.run) : undefined,
   }),
   component: TaskRouteComponent,
 });

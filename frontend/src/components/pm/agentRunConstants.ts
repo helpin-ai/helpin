@@ -10,14 +10,18 @@ export interface StatusConfig {
 // Populated at runtime by the run list UI to avoid importing lucide here.
 // Instead, each consumer builds its own icon inline and references this for label+variant.
 
-export const STATUS_META: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
+export const STATUS_META: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline'; className?: string }> = {
   queued: { label: 'Queued', variant: 'secondary' },
   running: { label: 'Running', variant: 'default' },
   paused: { label: 'Paused', variant: 'secondary' },
   awaiting_input: { label: 'Awaiting input', variant: 'secondary' },
   awaiting_approval: { label: 'Awaiting approval', variant: 'secondary' },
   awaiting_auth: { label: 'Awaiting sign-in', variant: 'secondary' },
-  completed: { label: 'Completed', variant: 'outline' },
+  completed: {
+    label: 'Completed',
+    variant: 'outline',
+    className: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
+  },
   failed: { label: 'Failed', variant: 'destructive' },
   cancelled: { label: 'Cancelled', variant: 'secondary' },
 };
