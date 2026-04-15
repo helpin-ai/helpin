@@ -1002,6 +1002,10 @@ func (s *SupportInboxService) UpdateConversationStatus(ctx context.Context, work
 		}
 		senderUserID := &actorID
 
+		eventType := model.SystemEventResolved
+		if status == model.SupportConversationStatusOpen && oldStatus == model.SupportConversationStatusResolved {
+			eventType = model.SystemEventReopened
+		}
 		sysMsg := &model.SupportMessage{
 			WorkspaceID:       workspaceID,
 			ConversationID:    ticketID,
@@ -1011,6 +1015,7 @@ func (s *SupportInboxService) UpdateConversationStatus(ctx context.Context, work
 			SenderAvatarURL:   senderAvatarURL,
 			Content:           label,
 			MessageType:       "system",
+			SystemEventType:   model.SupportSystemEventTypeStrPtr(eventType),
 			IsInternal:        false,
 		}
 		if err := s.messageRepo.Create(ctx, sysMsg); err != nil {
@@ -2499,6 +2504,8 @@ func (s *SupportInboxService) emitAssignmentSystemMessage(
 		senderUserID = &actorUserID
 	}
 
+	eventType := assignmentTargetSystemEventType(target, actorUserID, targetUserID)
+
 	msg := &model.SupportMessage{
 		WorkspaceID:       workspaceID,
 		ConversationID:    conversationID,
@@ -2509,6 +2516,7 @@ func (s *SupportInboxService) emitAssignmentSystemMessage(
 		Content:           content,
 		IsInternal:        true,
 		MessageType:       "system",
+		SystemEventType:   model.SupportSystemEventTypeStrPtr(eventType),
 	}
 	if err := s.messageRepo.Create(ctx, msg); err != nil {
 		slog.ErrorContext(ctx, "create support assignment system message", "workspace_id", workspaceID, "conversation_id", conversationID, "error", err)
@@ -2541,6 +2549,24 @@ func (s *SupportInboxService) lookupUserAvatar(ctx context.Context, userID strin
 		return nil
 	}
 	return user.AvatarURL
+}
+
+// assignmentTargetSystemEventType maps an assignment action (plus actor /
+// target identity) onto the canonical system_event_type constant. Self
+// assignments surface as took; user vs. agent assignments surface distinctly.
+func assignmentTargetSystemEventType(target assignmentTargetKind, actorUserID, targetUserID string) model.SupportSystemEventType {
+	switch target {
+	case assignmentTargetUnassign:
+		return model.SystemEventUnassigned
+	case assignmentTargetAgent:
+		return model.SystemEventAgentAssigned
+	case assignmentTargetUser:
+		if actorUserID != "" && actorUserID == targetUserID {
+			return model.SystemEventTook
+		}
+		return model.SystemEventAssigned
+	}
+	return model.SystemEventAssigned
 }
 
 // formatAssignmentSystemMessage produces the human-readable copy for an
@@ -2634,6 +2660,7 @@ func (s *SupportInboxService) emitTeammateJoinedIfFirstReply(ctx context.Context
 		Content:           content,
 		IsInternal:        false,
 		MessageType:       "system",
+		SystemEventType:   model.SupportSystemEventTypeStrPtr(model.SystemEventTeammateJoined),
 	}
 	if err := s.messageRepo.Create(ctx, msg); err != nil {
 		slog.ErrorContext(ctx, "create teammate-joined system message", "error", err, "conversation_id", conversationID)

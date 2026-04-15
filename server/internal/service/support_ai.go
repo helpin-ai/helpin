@@ -847,6 +847,7 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		ConversationID:    conversationID,
 		SenderType:        "agent",
 		MessageType:       "system",
+		SystemEventType:   model.SupportSystemEventTypeStrPtr(model.SystemEventAIEscalated),
 		SenderDisplayName: strPtr(helpinAIDisplayName),
 		Content:           escalationContent,
 	}
@@ -924,6 +925,12 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		WorkspaceID: workspaceID,
 	})
 
+	// Push a refreshed visitor conversation list so the widget can observe the new
+	// ai_state / flow_state and render the "waiting for a teammate" indicator.
+	if conv.AnonymousID != nil && strings.TrimSpace(*conv.AnonymousID) != "" {
+		s.publishVisitorConversationsRefresh(ctx, workspaceID, *conv.AnonymousID)
+	}
+
 	slog.InfoContext(ctx, "AI escalated to human",
 		"workspace_id", workspaceID,
 		"conversation_id", conversationID,
@@ -932,6 +939,30 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		"mailbox_selection_source", mailboxSelectionSource,
 	)
 	return nil
+}
+
+func (s *SupportAIService) publishVisitorConversationsRefresh(ctx context.Context, workspaceID, anonymousID string) {
+	conversations, err := s.conversationRepo.ListByAnonymousID(ctx, workspaceID, anonymousID)
+	if err != nil {
+		slog.ErrorContext(ctx, "fetch visitor conversations for escalation refresh",
+			"error", err, "workspace_id", workspaceID, "anonymous_id", anonymousID)
+		return
+	}
+	if conversations == nil {
+		conversations = []model.SupportConversation{}
+	}
+	listJSON, err := json.Marshal(map[string]any{"conversations": conversations})
+	if err != nil {
+		slog.ErrorContext(ctx, "marshal visitor conversations for escalation refresh", "error", err)
+		return
+	}
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      "updated",
+		Entity:      "support_visitor_conversations",
+		EntityID:    anonymousID,
+		WorkspaceID: workspaceID,
+		Data:        listJSON,
+	})
 }
 
 func (s *SupportAIService) resolveEscalationMailbox(ctx context.Context, workspaceID, conversationID, messageID string, conv *model.SupportConversation, settings model.SupportInboxSettings) (*string, string) {

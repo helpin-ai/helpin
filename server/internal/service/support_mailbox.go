@@ -502,8 +502,9 @@ func (s *SupportInboxService) createMailboxMoveSystemMessage(ctx context.Context
 		SenderDisplayName: &displayName,
 		SenderAvatarURL:   avatarURL,
 		Content:           fmt.Sprintf("Moved to %s by %s", mailboxName, displayName),
-		IsInternal:        false,
+		IsInternal:        true,
 		MessageType:       "system",
+		SystemEventType:   model.SupportSystemEventTypeStrPtr(model.SystemEventMailboxMoved),
 	}
 	if err := s.messageRepo.Create(ctx, msg); err != nil {
 		slog.ErrorContext(ctx, "create support mailbox move system message", "error", err, "workspace_id", workspaceID, "conversation_id", conversationID, "actor_id", actorID)
