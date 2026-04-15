@@ -29,7 +29,7 @@ spec:
         - name: ghcr-helpin-json-key
       containers:
         - name: migrate
-          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.86
+          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.87
           command:
             - /bin/sh
             - -lc
