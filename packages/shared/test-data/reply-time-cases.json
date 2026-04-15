@@ -1,0 +1,104 @@
+[
+  {
+    "name": "few_minutes",
+    "preset": "few_minutes",
+    "custom_minutes": 0,
+    "expected": "Usually replies in a few minutes"
+  },
+  {
+    "name": "few_hours",
+    "preset": "few_hours",
+    "custom_minutes": 0,
+    "expected": "Usually replies in a few hours"
+  },
+  {
+    "name": "same_day",
+    "preset": "same_day",
+    "custom_minutes": 0,
+    "expected": "Usually replies within a day"
+  },
+  {
+    "name": "custom_1min",
+    "preset": "custom",
+    "custom_minutes": 1,
+    "expected": "Usually replies in about 1 minute"
+  },
+  {
+    "name": "custom_15min",
+    "preset": "custom",
+    "custom_minutes": 15,
+    "expected": "Usually replies in about 15 minutes"
+  },
+  {
+    "name": "custom_59min",
+    "preset": "custom",
+    "custom_minutes": 59,
+    "expected": "Usually replies in about 59 minutes"
+  },
+  {
+    "name": "custom_60min_edge",
+    "preset": "custom",
+    "custom_minutes": 60,
+    "expected": "Usually replies in about 1 hour"
+  },
+  {
+    "name": "custom_89min_rounds_down",
+    "preset": "custom",
+    "custom_minutes": 89,
+    "expected": "Usually replies in about 1 hour"
+  },
+  {
+    "name": "custom_90min_rounds_up",
+    "preset": "custom",
+    "custom_minutes": 90,
+    "expected": "Usually replies in about 2 hours"
+  },
+  {
+    "name": "custom_180min_exact",
+    "preset": "custom",
+    "custom_minutes": 180,
+    "expected": "Usually replies in about 3 hours"
+  },
+  {
+    "name": "custom_1439min_max_hours",
+    "preset": "custom",
+    "custom_minutes": 1439,
+    "expected": "Usually replies in about 24 hours"
+  },
+  {
+    "name": "custom_1440min_edge",
+    "preset": "custom",
+    "custom_minutes": 1440,
+    "expected": "Usually replies within 1 day"
+  },
+  {
+    "name": "custom_2880min_exact",
+    "preset": "custom",
+    "custom_minutes": 2880,
+    "expected": "Usually replies within 2 days"
+  },
+  {
+    "name": "custom_3600min_rounds_up",
+    "preset": "custom",
+    "custom_minutes": 3600,
+    "expected": "Usually replies within 3 days"
+  },
+  {
+    "name": "custom_10080min_max",
+    "preset": "custom",
+    "custom_minutes": 10080,
+    "expected": "Usually replies within 7 days"
+  },
+  {
+    "name": "custom_0_min_fallback",
+    "preset": "custom",
+    "custom_minutes": 0,
+    "expected": "Usually replies in a few minutes"
+  },
+  {
+    "name": "unknown_preset_fallback",
+    "preset": "not_a_preset",
+    "custom_minutes": 0,
+    "expected": "Usually replies in a few minutes"
+  }
+]

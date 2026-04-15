@@ -41,6 +41,7 @@ export { HelpArticleView } from './components/HelpArticleView';
 export { ConversationView } from './components/ConversationView';
 export { ConversationListView } from './components/ConversationListView';
 export { ImageLightbox } from './components/ImageLightbox';
+export { SpecialNoticeBanner } from './components/SpecialNoticeBanner';
 export { loadEmojiCatalog } from './components/emoji-loader';
 export type { EmojiCatalog } from './components/emoji-catalog';
 

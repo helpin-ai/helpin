@@ -20,6 +20,10 @@ export interface WidgetConfig extends Omit<SharedWidgetConfig, 'availableTeammat
     replyTimeText: string;
     outsideHoursMessage?: string;
     nextOnlineAt?: string;
+    replyTimePreset?: import('@helpin-ai/shared').ReplyTimePreset;
+    replyTimeMinutes?: number;
+    specialNoticeText?: string;
+    mailboxId?: string;
   };
 }
 

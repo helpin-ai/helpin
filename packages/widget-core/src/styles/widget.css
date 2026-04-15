@@ -1537,6 +1537,55 @@
   border: 1px dashed #f59e0b;
 }
 
+/* Outage / maintenance notice — slim amber banner anchored above the
+   conversation thread. Set by admin via the support inbox settings and
+   dismissible per-session. */
+.helpin-special-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 16px 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 12.5px;
+  line-height: 1.4;
+  animation: helpin-bubble-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.helpin-special-notice-icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: #d97706;
+}
+
+.helpin-special-notice-text {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
+.helpin-special-notice-dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: #92400e;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.helpin-special-notice-dismiss:hover,
+.helpin-special-notice-dismiss:focus {
+  background: rgba(146, 64, 14, 0.12);
+  outline: none;
+}
+
 /* System message — centered "Jarek joined the conversation" line, matches
    Intercom's inline-avatar + muted text pattern. Pill has no background. */
 .helpin-message-row--system {
