@@ -1434,6 +1434,10 @@ func (s *DocsHelpcenterService) GetSpaceNavigation(ctx context.Context, workspac
 			}
 		}
 
+		articles := articlesByCollection[collection.ID]
+		if articles == nil {
+			articles = []model.PublicNavArticle{}
+		}
 		result = append(result, model.PublicNavCollection{
 			ID:                 collection.ID,
 			Name:               translation.Name,
@@ -1442,7 +1446,7 @@ func (s *DocsHelpcenterService) GetSpaceNavigation(ctx context.Context, workspac
 			Icon:               collection.Icon,
 			ParentCollectionID: collection.ParentCollectionID,
 			Depth:              collection.Depth,
-			Articles:           articlesByCollection[collection.ID],
+			Articles:           articles,
 		})
 	}
 
