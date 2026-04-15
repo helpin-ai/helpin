@@ -55,8 +55,9 @@ type DocsHandler struct {
 	searchSvc      *service.DocsSearchService
 	importService  *service.DocsImportService
 	embeddingSvc   *service.DocsEmbeddingService
-	agentService   *service.AgentService
-	jwtManager     *auth.JWTManager
+	agentService           *service.AgentService
+	jwtManager             *auth.JWTManager
+	supportEventRecorder   service.SupportEventRecorder
 }
 
 // NewDocsHandler creates a new DocsHandler.
@@ -90,6 +91,21 @@ func NewDocsHandler(
 		agentService:   agentService,
 		jwtManager:     jwtManager,
 	}
+}
+
+// SetSupportEventRecorder injects the event recorder for coverage telemetry.
+func (h *DocsHandler) SetSupportEventRecorder(r service.SupportEventRecorder) {
+	if h == nil {
+		return
+	}
+	h.supportEventRecorder = r
+}
+
+func (h *DocsHandler) recordSupportEvent(input service.SupportEventInput) {
+	if h.supportEventRecorder == nil {
+		return
+	}
+	h.supportEventRecorder.RecordEventBestEffort(input)
 }
 
 // ─── Spaces ─────────────────────────────────────────────────────────────────
@@ -1429,6 +1445,16 @@ func (h *DocsHandler) PublicSearchArticles(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+
+	h.recordSupportEvent(service.SupportEventInput{
+		WorkspaceID:  cfg.WorkspaceID,
+		EventType:    model.SupportEventWidgetSearchPerformed,
+		ActorType:    model.SupportEventActorCustomer,
+		Channel:      "widget",
+		SourceSignal: model.SupportCoverageSourceSelfService,
+		Metadata:     map[string]any{"query": query, "result_count": len(results)},
+	})
+
 	setHelpcenterCacheHeader(w, "public, max-age=60")
 	writeJSON(w, http.StatusOK, results)
 }
@@ -1473,6 +1499,17 @@ func (h *DocsHandler) PublicSubmitFeedback(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+
+	h.recordSupportEvent(service.SupportEventInput{
+		WorkspaceID:  cfg.WorkspaceID,
+		EventType:    model.SupportEventArticleFeedback,
+		ArticleID:    &article.ID,
+		ActorType:    model.SupportEventActorCustomer,
+		Channel:      "widget",
+		SourceSignal: model.SupportCoverageSourceArticleFeedback,
+		Metadata:     map[string]any{"is_helpful": req.IsHelpful, "locale": article.Locale},
+	})
+
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 

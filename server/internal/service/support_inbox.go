@@ -56,6 +56,7 @@ type SupportInboxService struct {
 	triageService           *SupportInboxTriageService
 	taskService             *PMTaskService
 	geoIPResolver           geoip.Resolver
+	supportEventRecorder    SupportEventRecorder
 }
 
 type supportConversationTaskDraft struct {
@@ -142,6 +143,21 @@ func renderWidgetArticleHTML(content json.RawMessage) *string {
 
 func formatSupportTranscriptTimestamp(ts time.Time) string {
 	return ts.UTC().Format("Jan 2, 2006 15:04 UTC")
+}
+
+// SetSupportEventRecorder injects the event recorder for coverage telemetry.
+func (s *SupportInboxService) SetSupportEventRecorder(r SupportEventRecorder) {
+	if s == nil {
+		return
+	}
+	s.supportEventRecorder = r
+}
+
+func (s *SupportInboxService) recordSupportEvent(input SupportEventInput) {
+	if s.supportEventRecorder == nil {
+		return
+	}
+	s.supportEventRecorder.RecordEventBestEffort(input)
 }
 
 func (s *SupportInboxService) SetGeoIPResolver(resolver geoip.Resolver) {
@@ -979,6 +995,16 @@ func (s *SupportInboxService) UpdateConversationStatus(ctx context.Context, work
 		return nil, err
 	}
 
+	if status == model.SupportConversationStatusResolved {
+		s.recordSupportEvent(SupportEventInput{
+			WorkspaceID:    workspaceID,
+			EventType:      model.SupportEventConversationResolved,
+			ConversationID: &ticketID,
+			ActorType:      model.SupportEventActorAgent,
+			Channel:        "inbox",
+		})
+	}
+
 	if s.activitySvc != nil {
 		_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", ticketID, &actorID, "updated", strPtr("status"), &oldStatus, &status, nil)
 	}
@@ -1198,6 +1224,19 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 			"opened_by_user_id": conv.OpenedByUserID,
 		}); err != nil {
 			slog.ErrorContext(ctx, "failed to update support conversation flow state after teammate reply", "error", err, "conversation_id", ticketID)
+		}
+
+		// Emit human_reply_after_ai when a human agent replies to a conversation that was escalated from AI.
+		if conv.AIState != nil && *conv.AIState == "escalated" && msg.SenderType == "user" {
+			s.recordSupportEvent(SupportEventInput{
+				WorkspaceID:    workspaceID,
+				EventType:      model.SupportEventHumanReplyAfterAI,
+				ConversationID: &ticketID,
+				MessageID:      &msg.ID,
+				SourceSignal:   model.SupportCoverageSourceHumanReply,
+				ActorType:      model.SupportEventActorAgent,
+				Channel:        "inbox",
+			})
 		}
 	}
 

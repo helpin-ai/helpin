@@ -280,6 +280,7 @@ type SupportAIService struct {
 	js                     nats.JetStreamContext
 	redis                  *redis.Client
 	db                     *gorm.DB
+	supportEventRecorder   SupportEventRecorder
 }
 
 // NewSupportAIService creates a new SupportAIService with all dependencies.
@@ -349,6 +350,21 @@ func (s *SupportAIService) SetMailboxRepository(mailboxRepo *repository.SupportM
 	}
 	s.mailboxRepo = mailboxRepo
 	return s
+}
+
+// SetSupportEventRecorder injects the event recorder for coverage telemetry.
+func (s *SupportAIService) SetSupportEventRecorder(r SupportEventRecorder) {
+	if s == nil {
+		return
+	}
+	s.supportEventRecorder = r
+}
+
+func (s *SupportAIService) recordSupportEvent(input SupportEventInput) {
+	if s.supportEventRecorder == nil {
+		return
+	}
+	s.supportEventRecorder.RecordEventBestEffort(input)
 }
 
 func (s *SupportAIService) SetTriageService(triageService *SupportInboxTriageService) *SupportAIService {
@@ -768,6 +784,18 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 			return fmt.Errorf("create AI message: %w", err)
 		}
 
+		s.recordSupportEvent(SupportEventInput{
+			WorkspaceID:    workspaceID,
+			EventType:      model.SupportEventAIAnswerSent,
+			ConversationID: &conversationID,
+			MessageID:      &aiMsg.ID,
+			IssueKey:       queryPlan.IssueKey,
+			IssueSummary:   queryPlan.IssueSummary,
+			SourceSignal:   model.SupportCoverageSourceAIHandoff,
+			ActorType:      model.SupportEventActorAI,
+			Channel:        "widget",
+		})
+
 		// Broadcast to widget + inbox
 		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, aiMsg, "ai:"+agentID))
 
@@ -914,6 +942,41 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 	}); err != nil {
 		slog.ErrorContext(ctx, "record handoff failed", "error", err)
 	}
+
+	// Map escalation reason to coverage failure mode constant.
+	failureMode := model.SupportCoverageFailureUnknown
+	switch reason {
+	case "low_confidence":
+		failureMode = model.SupportCoverageFailureLowConfidence
+	case "no_retrieval":
+		failureMode = model.SupportCoverageFailureNoRetrieval
+	case "weak_retrieval":
+		failureMode = model.SupportCoverageFailureWeakRetrieval
+	case "stuck":
+		failureMode = model.SupportCoverageFailureStuck
+	case "customer_requested", "customer_requested_human":
+		failureMode = model.SupportCoverageFailureCustomerRequestedHuman
+	case "action_unavailable":
+		failureMode = model.SupportCoverageFailureActionUnavailable
+	case "context_unavailable":
+		failureMode = model.SupportCoverageFailureContextUnavailable
+	case "policy_blocked":
+		failureMode = model.SupportCoverageFailurePolicyBlocked
+	}
+
+	handoffEvent := SupportEventInput{
+		WorkspaceID:    workspaceID,
+		EventType:      model.SupportEventAIHandoffTriggered,
+		ConversationID: &conversationID,
+		FailureMode:    failureMode,
+		SourceSignal:   model.SupportCoverageSourceAIHandoff,
+		ActorType:      model.SupportEventActorAI,
+		Channel:        "widget",
+	}
+	if messageID != "" {
+		handoffEvent.MessageID = &messageID
+	}
+	s.recordSupportEvent(handoffEvent)
 
 	// 4. Broadcast events
 	s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, systemMsg, "ai:escalation"))
