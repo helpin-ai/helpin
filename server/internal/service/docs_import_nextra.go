@@ -484,10 +484,14 @@ func (s *DocsImportService) executeNextraImportPlan(ctx context.Context, jobID, 
 		}
 		created = append(created, ca)
 
-		// Publish if requested.
+		// Publish if requested: internal publish first, then external.
 		if config.ImportStatus == "published" && !ia.Hidden {
-			if err := s.helpcenterSvc.PublishExternally(ctx, doc.ID, ia.Slug); err != nil {
-				s.logger.Error("nextra import: publish failed",
+			if _, err := s.documentSvc.Publish(ctx, doc.ID); err != nil {
+				s.logger.Error("nextra import: internal publish failed",
+					"job_id", jobID, "title", ia.Title, "error", err)
+				summary.ArticlesDrafted++
+			} else if err := s.helpcenterSvc.PublishExternally(ctx, doc.ID, ia.Slug); err != nil {
+				s.logger.Error("nextra import: external publish failed",
 					"job_id", jobID, "title", ia.Title, "error", err)
 				summary.ArticlesDrafted++
 			} else {

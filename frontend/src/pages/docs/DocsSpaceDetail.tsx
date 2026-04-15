@@ -26,7 +26,7 @@ import { CreateCollectionDialog } from '@/components/docs/CreateCollectionDialog
 import { TypedConfirmDialog } from '@/components/docs/TypedConfirmDialog'
 import { SpaceDialog } from '@/components/docs/SpaceDialog'
 import { MoveDocumentDialog } from '@/components/docs/MoveDocumentDialog'
-import { DocumentsTable } from '@/pages/docs/spaceDetail/DocumentsTable'
+import { DocumentsTable, type DocumentsTableSortField } from '@/pages/docs/spaceDetail/DocumentsTable'
 import { SpaceNodeHeader } from '@/pages/docs/spaceDetail/SpaceNodeHeader'
 import { CollectionCardGrid } from '@/pages/docs/spaceDetail/CollectionCardGrid'
 import { EmptyNodeState } from '@/pages/docs/spaceDetail/EmptyNodeState'
@@ -56,8 +56,8 @@ export function DocsSpaceDetail() {
   const { canEditDocs } = usePermissions(access)
 
   const [filterStatus, setFilterStatus] = useState<DocStatus | null>(null)
-  const [sortField, setSortField] = useState<'updated_at' | 'title' | 'status'>('updated_at')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [sortField, setSortField] = useState<DocumentsTableSortField>('position')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
   const { data: space, isLoading: spaceLoading } = useDocsSpace(wsId, spaceId)
   const { data: collections } = useDocsCollections(wsId, spaceId)
@@ -80,6 +80,11 @@ export function DocsSpaceDetail() {
   // Collection column when rendered at space root.
   const collectionNames = useMemo(
     () => new Map<string, string>((collections ?? []).map((c) => [c.id, c.name])),
+    [collections],
+  )
+
+  const collectionDepths = useMemo(
+    () => new Map<string, number>((collections ?? []).map((c) => [c.id, c.depth])),
     [collections],
   )
 
@@ -273,6 +278,7 @@ export function DocsSpaceDetail() {
             <DocumentsTable
                 documents={scopedDocs}
                 members={members}
+                collectionDepths={collectionDepths}
                 collectionNames={collectionNames}
                 hasCollections={(collections ?? []).length > 0}
                 wsSlug={wsSlug}

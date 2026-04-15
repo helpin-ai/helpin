@@ -22,6 +22,7 @@ import type { DocsDocument, DocStatus } from '@/lib/docsTypes'
 import type { AssignableMember } from '@/lib/types'
 import { UserAvatar } from '@/components/pm/UserAvatar'
 import { formatAssignableMemberName } from '@/lib/assignableMembers'
+import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -45,7 +46,7 @@ function statusColor(status: string): string {
   }
 }
 
-export type DocumentsTableSortField = 'updated_at' | 'title' | 'status'
+export type DocumentsTableSortField = 'updated_at' | 'title' | 'status' | 'position'
 export type DocumentsTableSortDir = 'asc' | 'desc'
 
 export interface DocumentsTableProps {
@@ -55,6 +56,8 @@ export interface DocumentsTableProps {
   members: AssignableMember[]
   /** collection id → display name, used for the Collection column. */
   collectionNames: Map<string, string>
+  /** collection id → tree depth (0 = top-level, 1 = child, 2 = grandchild). */
+  collectionDepths?: Map<string, number>
   /**
    * Whether any collection exists in the current space. Controls
    * which empty-state variant renders when there are no documents.
@@ -106,6 +109,7 @@ export function DocumentsTable({
   documents,
   members,
   collectionNames,
+  collectionDepths,
   hasCollections,
   wsSlug,
   filterStatus,
@@ -138,6 +142,9 @@ export function DocumentsTable({
         break
       case 'status':
         cmp = (a.status ?? '').localeCompare(b.status ?? '')
+        break
+      case 'position':
+        cmp = (a.position ?? 0) - (b.position ?? 0)
         break
       case 'updated_at':
       default:
@@ -258,10 +265,20 @@ export function DocumentsTable({
               Status
               {sortField === 'status' && (sortDir === 'asc' ? <ArrowUp02Icon className="h-3 w-3" /> : <ArrowDown02Icon className="h-3 w-3" />)}
             </button>
+            <QuickTooltip label="Display order on the public help center">
+              <button
+                type="button"
+                onClick={() => cycleSort('position')}
+                className="w-14 shrink-0 flex items-center gap-1 hover:text-foreground transition-colors"
+              >
+                Order
+                {sortField === 'position' && (sortDir === 'asc' ? <ArrowUp02Icon className="h-3 w-3" /> : <ArrowDown02Icon className="h-3 w-3" />)}
+              </button>
+            </QuickTooltip>
             <button
               type="button"
               onClick={() => cycleSort('updated_at')}
-              className="w-20 shrink-0 flex items-center gap-1 justify-end hover:text-foreground transition-colors"
+              className="w-20 shrink-0 flex items-center gap-1 hover:text-foreground transition-colors"
             >
               Updated
               {sortField === 'updated_at' && (sortDir === 'asc' ? <ArrowUp02Icon className="h-3 w-3" /> : <ArrowDown02Icon className="h-3 w-3" />)}
@@ -302,12 +319,19 @@ export function DocumentsTable({
                   ) : '—'}
                 </span>
                 <span className="w-28 shrink-0 truncate text-xs text-muted-foreground">
-                  {doc.collection_id ? collectionNames.get(doc.collection_id) ?? '—' : '—'}
+                  {doc.collection_id ? (
+                    <span style={{ paddingLeft: `${(collectionDepths?.get(doc.collection_id) ?? 0) * 12}px` }}>
+                      {collectionNames.get(doc.collection_id) ?? '—'}
+                    </span>
+                  ) : '—'}
                 </span>
                 <span className={`w-20 shrink-0 text-xs font-medium ${statusColor(doc.status)}`}>
                   {DOC_STATUS_LABELS[doc.status] ?? doc.status}
                 </span>
-                <span className="w-20 shrink-0 text-right text-xs text-muted-foreground">
+                <span className="w-14 shrink-0 text-xs text-muted-foreground">
+                  {doc.position + 1}
+                </span>
+                <span className="w-20 shrink-0 text-xs text-muted-foreground">
                   {timeAgo(doc.updated_at)}
                 </span>
                 {canEdit && (

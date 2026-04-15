@@ -29,6 +29,7 @@ import {
   useReorderDocsDocuments,
 } from '@/hooks/queries'
 import { toast } from 'sonner'
+import { COLLECTION_ROW_CLASS, ARTICLE_ROW_CLASS, DOC_ICON_CLASS, COLLECTION_ICON_CLASS, STATUS_BADGE_CLASS, UPDATED_TEXT_CLASS, COUNT_BADGE_CLASS, statusColor } from '@/pages/docs/docsTreeStyles'
 import type { DocsSpace, DocsDocument, SpaceType } from '@/lib/docsTypes'
 import { buildCollectionTree, type CollectionTreeNode } from './docsCollectionTree'
 import { CreateCollectionDialog } from './CreateCollectionDialog'
@@ -133,23 +134,15 @@ function SpaceDragPreview({ space, wsId }: { space: DocsSpace; wsId: string }) {
 
 // ── Document row ────────────────────────────────────────────────────────────
 
-function statusColor(status: string): string {
-  switch (status) {
-    case 'published': return 'text-emerald-600 dark:text-emerald-400'
-    case 'archived': return 'text-muted-foreground/60'
-    default: return 'text-amber-600 dark:text-amber-400'
-  }
-}
-
 function ArrangeDocRow({ doc }: { doc: DocsDocument }) {
   return (
-    <div className="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm">
-      <File01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-      <span className="min-w-0 flex-1 truncate font-medium">{doc.title}</span>
-      <span className={`shrink-0 text-xs font-medium ${statusColor(doc.status)}`}>
+    <div className={`flex items-center gap-2.5 rounded-md px-3 py-2 ${ARTICLE_ROW_CLASS}`}>
+      <File01Icon className={DOC_ICON_CLASS} />
+      <span className="min-w-0 flex-1 truncate">{doc.title}</span>
+      <span className={`${STATUS_BADGE_CLASS} ${statusColor(doc.status)}`}>
         {DOC_STATUS_LABELS[doc.status] ?? doc.status}
       </span>
-      <span className="shrink-0 text-[11px] text-muted-foreground">
+      <span className={UPDATED_TEXT_CLASS}>
         Updated: {timeAgo(doc.updated_at)}
       </span>
     </div>
@@ -331,18 +324,18 @@ function ArrangeCollectionNode({
         <Collapsible.Trigger asChild>
           <button
             type="button"
-            className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-foreground/70 hover:bg-muted/40"
+            className={`flex min-w-0 flex-1 items-center gap-2 rounded-md px-3 py-2 ${COLLECTION_ROW_CLASS} hover:bg-muted/40`}
           >
             <ArrowRight01Icon className={`h-3.5 w-3.5 shrink-0 transition-transform ${effectiveOpen ? 'rotate-90' : ''}`} />
-            <CollIcon className="h-3.5 w-3.5 shrink-0" />
+            <CollIcon className={COLLECTION_ICON_CLASS} />
             <span className="truncate">{node.collection.name}</span>
             {displayDocs.length > 0 && (
-              <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums text-muted-foreground">
+              <span className={COUNT_BADGE_CLASS}>
                 {displayDocs.length} {displayDocs.length === 1 ? 'doc' : 'docs'}
               </span>
             )}
             {totalChildren > 0 && (
-              <span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums text-muted-foreground">
+              <span className={COUNT_BADGE_CLASS}>
                 {totalChildren} sub
               </span>
             )}

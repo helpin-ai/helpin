@@ -5,6 +5,7 @@ metadata:
   namespace: helpin
   annotations:
     ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
 spec:
   ingressClassName: pp-nginx
   tls:

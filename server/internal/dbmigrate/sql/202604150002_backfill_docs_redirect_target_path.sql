@@ -3,11 +3,13 @@
 -- was already applied in production before the backfill logic was added.
 
 -- Backfill target_path for article redirects: join on slug to get PublicID.
--- Only fills rows that have a target_article_slug and no target_path yet.
+-- Joins through collection to disambiguate when the same article slug
+-- exists in multiple collections within the same workspace.
 UPDATE docs_redirects r
 SET target_path = '/articles/' || ha.slug || '-' || ha.public_id
 FROM docs_helpcenter_articles ha
 JOIN docs_documents d ON d.id = ha.document_id
+LEFT JOIN docs_collections c ON c.id = d.collection_id AND c.deleted_at IS NULL
 WHERE r.target_article_slug IS NOT NULL
   AND r.target_article_slug != ''
   AND r.target_path IS NULL
@@ -15,7 +17,8 @@ WHERE r.target_article_slug IS NOT NULL
   AND d.workspace_id = r.workspace_id
   AND d.deleted_at IS NULL
   AND ha.public_id IS NOT NULL
-  AND ha.public_id != '';
+  AND ha.public_id != ''
+  AND (r.target_collection_slug = '' OR c.slug = r.target_collection_slug);
 
 -- Backfill target_path for collection-only redirects (no article slug).
 UPDATE docs_redirects r
