@@ -614,6 +614,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				// Docs coverage
 				if h.SupportCoverage != nil {
 					r.Route("/coverage", func(r chi.Router) {
+						r.With(requirePerm(authorization.PermSupportEdit)).Post("/events", h.SupportCoverage.RecordEvent)
 						r.With(requirePerm(authorization.PermSupportRead)).Get("/summary", h.SupportCoverage.GetSummary)
 						r.With(requirePerm(authorization.PermSupportRead)).Get("/gaps", h.SupportCoverage.ListGaps)
 						r.With(requirePerm(authorization.PermSupportRead)).Get("/gaps/{gapId}", h.SupportCoverage.GetGap)
