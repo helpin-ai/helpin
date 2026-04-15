@@ -955,6 +955,15 @@ func main() {
 	supportAIService.SetLinkPreviewService(supportLinkPreviewService)
 	supportInboxService.SetSupportAIService(supportAIService)
 
+	// Coverage telemetry: repos → services → async recorder → inject into hot-path services.
+	supportEventRepo := repository.NewSupportEventRepository(db)
+	supportCoverageRepo := repository.NewSupportCoverageRepository(db)
+	supportCoverageService := service.NewSupportCoverageService(supportCoverageRepo)
+	supportEventService := service.NewSupportEventService(supportEventRepo, supportCoverageService)
+	supportEventRecorder := service.NewSupportEventAsyncRecorder(supportEventService, 250)
+	supportAIService.SetSupportEventRecorder(supportEventRecorder)
+	supportInboxService.SetSupportEventRecorder(supportEventRecorder)
+
 	orgService := service.NewOrganizationService(orgRepo)
 	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, crmDealService, supportInboxService, agentService)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
@@ -1070,7 +1079,15 @@ func main() {
 			agentService,
 			jwtManager,
 		),
+		SupportCoverage: handler.NewSupportCoverageHandler(
+			supportCoverageService,
+			supportEventService,
+			service.NewSupportCoverageDraftService(supportCoverageRepo, docsDocumentService, docsContentService, docsVersionService, llmProvider),
+		),
 	}
+
+	// Set support event recorder on DocsHandler after handler creation.
+	handlers.Docs.SetSupportEventRecorder(supportEventRecorder)
 
 	// Slug resolver adapts workspace repo for RBAC middleware.
 	slugResolver := authorization.SlugResolver(func(ctx context.Context, slug string) (string, error) {

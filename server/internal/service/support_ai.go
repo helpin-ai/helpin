@@ -964,6 +964,20 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		failureMode = model.SupportCoverageFailurePolicyBlocked
 	}
 
+	// Extract issue key and summary from the last AI message metadata.
+	var lastIssueKey, lastIssueSummary string
+	var lastAIMsg model.SupportMessage
+	if err := s.db.WithContext(ctx).
+		Where("conversation_id = ? AND sender_type = ?", conversationID, "ai").
+		Order("created_at DESC").
+		First(&lastAIMsg).Error; err == nil {
+		var meta AIMessageMetadata
+		if jsonErr := json.Unmarshal([]byte(lastAIMsg.Metadata), &meta); jsonErr == nil {
+			lastIssueKey = meta.AIIssueKey
+			lastIssueSummary = meta.AIIssueSummary
+		}
+	}
+
 	handoffEvent := SupportEventInput{
 		WorkspaceID:    workspaceID,
 		EventType:      model.SupportEventAIHandoffTriggered,
@@ -972,6 +986,8 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		SourceSignal:   model.SupportCoverageSourceAIHandoff,
 		ActorType:      model.SupportEventActorAI,
 		Channel:        "widget",
+		IssueKey:       lastIssueKey,
+		IssueSummary:   lastIssueSummary,
 	}
 	if messageID != "" {
 		handoffEvent.MessageID = &messageID

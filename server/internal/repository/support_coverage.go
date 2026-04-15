@@ -468,6 +468,13 @@ func (r *SupportCoverageRepository) GetSummary(ctx context.Context, workspaceID 
 		Count(&fixedGaps)
 	summary.GapsFixedThisWeek = int(fixedGaps)
 
+	var totalEvidence int64
+	r.db.WithContext(ctx).
+		Table("support_gap_evidence").
+		Where("workspace_id = ?", workspaceID).
+		Count(&totalEvidence)
+	summary.TotalEvidenceCount = int(totalEvidence)
+
 	return summary, nil
 }
 

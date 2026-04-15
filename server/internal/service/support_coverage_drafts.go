@@ -195,7 +195,15 @@ func (s *SupportCoverageDraftService) applyCreateArticle(ctx context.Context, su
 	}
 
 	docID := doc.ID
-	return s.coverageRepo.UpdateSuggestionResult(ctx, suggestion.ID, &docID, nil, model.SupportCoverageSuggestionStatusApplied)
+	if err := s.coverageRepo.UpdateSuggestionResult(ctx, suggestion.ID, &docID, nil, model.SupportCoverageSuggestionStatusApplied); err != nil {
+		return fmt.Errorf("update suggestion result: %w", err)
+	}
+
+	// Close the loop: mark gap as fixed and link the new article.
+	_ = s.coverageRepo.UpdateGapStatus(ctx, suggestion.WorkspaceID, suggestion.GapID, model.SupportCoverageGapStatusFixed)
+	_ = s.coverageRepo.LinkGapArticle(ctx, suggestion.GapID, docID, suggestion.WorkspaceID)
+
+	return nil
 }
 
 func (s *SupportCoverageDraftService) applyUpdateArticle(ctx context.Context, suggestion *model.SupportGapSuggestion, userID string) error {
@@ -220,7 +228,15 @@ func (s *SupportCoverageDraftService) applyUpdateArticle(ctx context.Context, su
 		}
 	}
 
-	return s.coverageRepo.UpdateSuggestionResult(ctx, suggestion.ID, &docID, nil, model.SupportCoverageSuggestionStatusApplied)
+	if err := s.coverageRepo.UpdateSuggestionResult(ctx, suggestion.ID, &docID, nil, model.SupportCoverageSuggestionStatusApplied); err != nil {
+		return fmt.Errorf("update suggestion result: %w", err)
+	}
+
+	// Close the loop: mark gap as fixed and link the updated article.
+	_ = s.coverageRepo.UpdateGapStatus(ctx, suggestion.WorkspaceID, suggestion.GapID, model.SupportCoverageGapStatusFixed)
+	_ = s.coverageRepo.LinkGapArticle(ctx, suggestion.GapID, docID, suggestion.WorkspaceID)
+
+	return nil
 }
 
 // ─── LLM Generation ────────────────────────────────────────────────────────

@@ -1446,12 +1446,17 @@ func (h *DocsHandler) PublicSearchArticles(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	searchSourceSignal := model.SupportCoverageSourceSelfService
+	if len(results) == 0 {
+		searchSourceSignal = "no_results"
+	}
 	h.recordSupportEvent(service.SupportEventInput{
 		WorkspaceID:  cfg.WorkspaceID,
 		EventType:    model.SupportEventWidgetSearchPerformed,
 		ActorType:    model.SupportEventActorCustomer,
 		Channel:      "widget",
-		SourceSignal: model.SupportCoverageSourceSelfService,
+		SourceSignal: searchSourceSignal,
+		IssueSummary: query,
 		Metadata:     map[string]any{"query": query, "result_count": len(results)},
 	})
 
@@ -1503,7 +1508,7 @@ func (h *DocsHandler) PublicSubmitFeedback(w http.ResponseWriter, r *http.Reques
 	h.recordSupportEvent(service.SupportEventInput{
 		WorkspaceID:  cfg.WorkspaceID,
 		EventType:    model.SupportEventArticleFeedback,
-		ArticleID:    &article.ID,
+		DocumentID:   &article.ID,
 		ActorType:    model.SupportEventActorCustomer,
 		Channel:      "widget",
 		SourceSignal: model.SupportCoverageSourceArticleFeedback,

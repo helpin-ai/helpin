@@ -15,16 +15,19 @@ import (
 type SupportCoverageHandler struct {
 	coverageSvc *service.SupportCoverageService
 	eventSvc    *service.SupportEventService
+	draftSvc    *service.SupportCoverageDraftService
 }
 
 // NewSupportCoverageHandler creates a new SupportCoverageHandler.
 func NewSupportCoverageHandler(
 	coverageSvc *service.SupportCoverageService,
 	eventSvc *service.SupportEventService,
+	draftSvc *service.SupportCoverageDraftService,
 ) *SupportCoverageHandler {
 	return &SupportCoverageHandler{
 		coverageSvc: coverageSvc,
 		eventSvc:    eventSvc,
+		draftSvc:    draftSvc,
 	}
 }
 
@@ -142,21 +145,74 @@ func (h *SupportCoverageHandler) MergeGap(w http.ResponseWriter, r *http.Request
 }
 
 // CreateArticleDraftSuggestion handles POST /api/support/coverage/gaps/{gapId}/suggestions/article-draft.
-// Placeholder — full implementation in Task 6 (draft generation service).
 func (h *SupportCoverageHandler) CreateArticleDraftSuggestion(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusNotImplemented, "article draft generation not yet implemented")
+	if h.draftSvc == nil {
+		writeError(w, http.StatusNotImplemented, "draft service not configured")
+		return
+	}
+	wsID := middleware.GetWorkspaceID(r.Context())
+	gapID := chi.URLParam(r, "gapId")
+	var req struct {
+		TargetSpaceID      string  `json:"target_space_id"`
+		TargetCollectionID *string `json:"target_collection_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.TargetSpaceID == "" {
+		writeError(w, http.StatusBadRequest, "target_space_id is required")
+		return
+	}
+	suggestion, err := h.draftSvc.GenerateArticleDraft(r.Context(), wsID, gapID, req.TargetSpaceID, req.TargetCollectionID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, suggestion)
 }
 
 // CreateArticleUpdateSuggestion handles POST /api/support/coverage/gaps/{gapId}/suggestions/article-update.
-// Placeholder — full implementation in Task 6.
 func (h *SupportCoverageHandler) CreateArticleUpdateSuggestion(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusNotImplemented, "article update suggestion not yet implemented")
+	if h.draftSvc == nil {
+		writeError(w, http.StatusNotImplemented, "draft service not configured")
+		return
+	}
+	wsID := middleware.GetWorkspaceID(r.Context())
+	gapID := chi.URLParam(r, "gapId")
+	var req struct {
+		TargetDocumentID string `json:"target_document_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.TargetDocumentID == "" {
+		writeError(w, http.StatusBadRequest, "target_document_id is required")
+		return
+	}
+	suggestion, err := h.draftSvc.GenerateArticleUpdate(r.Context(), wsID, gapID, req.TargetDocumentID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, suggestion)
 }
 
 // ApplySuggestion handles POST /api/support/coverage/suggestions/{suggestionId}/apply.
-// Placeholder — full implementation in Task 6.
 func (h *SupportCoverageHandler) ApplySuggestion(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusNotImplemented, "suggestion apply not yet implemented")
+	if h.draftSvc == nil {
+		writeError(w, http.StatusNotImplemented, "draft service not configured")
+		return
+	}
+	wsID := middleware.GetWorkspaceID(r.Context())
+	suggestionID := chi.URLParam(r, "suggestionId")
+	userID := middleware.GetUserID(r.Context())
+	if err := h.draftSvc.ApplySuggestion(r.Context(), wsID, suggestionID, userID); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // GetConversationState handles GET /api/support/coverage/conversations/{conversationId}/state.
