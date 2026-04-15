@@ -18,7 +18,7 @@ export function WorkspacesPage() {
   const workspaces = useMemo(() => data ?? [], [data])
 
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-5xl flex-col px-6 py-10">
+    <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col px-6 py-10">
       <div className="mb-8">
         <div className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
           Workspace Picker

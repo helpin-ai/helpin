@@ -17,7 +17,7 @@ export function OpenInWebPage({ pathBuilder, title }: OpenInWebPageProps) {
   }, [pathname])
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-6">
+    <div className="flex min-h-full items-center justify-center px-6">
       <div className="w-full max-w-md rounded-3xl border border-border/70 bg-card/95 p-8 text-center shadow-lg shadow-black/5">
         <h1 className="text-xl font-semibold">{title}</h1>
         <p className="mt-2 text-sm text-muted-foreground">

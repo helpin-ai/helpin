@@ -64,7 +64,7 @@ export function SupportWorkspacePage() {
 
   if (workspaceQuery.isLoading || (workspaceQuery.data && currentWorkspace?.id !== workspaceQuery.data.id)) {
     return (
-      <div className="flex h-screen items-center justify-center">
+      <div className="flex h-full items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-primary" />
       </div>
     )
@@ -72,7 +72,7 @@ export function SupportWorkspacePage() {
 
   if (workspaceQuery.error || !workspaceQuery.data) {
     return (
-      <div className="flex h-screen items-center justify-center">
+      <div className="flex h-full items-center justify-center">
         <p className="text-sm text-muted-foreground">
           {workspaceQuery.error instanceof Error ? workspaceQuery.error.message : 'Failed to load workspace.'}
         </p>
@@ -81,8 +81,8 @@ export function SupportWorkspacePage() {
   }
 
   return (
-    <div className="h-screen bg-[radial-gradient(circle_at_20%_20%,rgba(188,214,231,0.75),rgba(245,248,251,0.92)_45%,rgba(187,210,229,0.55)_100%)]">
-      <div className="h-full w-full overflow-hidden border border-border/70 bg-background/92 shadow-[0_30px_80px_-45px_rgba(15,23,42,0.45)] backdrop-blur">
+    <div className="h-full">
+      <div className="h-full w-full overflow-hidden bg-background/92 shadow-[0_30px_80px_-45px_rgba(15,23,42,0.45)] backdrop-blur">
       <SidebarProvider className="!min-h-0 h-full">
         <DesktopSupportSidebar
           workspaceId={workspaceId}
