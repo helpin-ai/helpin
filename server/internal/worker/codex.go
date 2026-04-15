@@ -723,13 +723,13 @@ func (e *CodexExecutor) persistEngineerWorkspace(execCtx *ExecutionContext, run 
 		changed bool
 		err     error
 	)
-	if isInteractiveRunInvocation(run) {
+	if isInteractiveRunInvocation(run) || allowsCleanReviewNoop(execCtx) {
 		changed, err = openCodeRunProducedRepoChanges(execCtx)
 		if err != nil {
 			return err
 		}
 		if !changed {
-			slog.InfoContext(execCtx.Context, "skipping strict repo-change requirement for interactive codex run",
+			slog.InfoContext(execCtx.Context, "skipping strict repo-change requirement for codex review/noop run",
 				"run_id", run.ID)
 			return nil
 		}
@@ -774,8 +774,8 @@ func (e *CodexExecutor) persistEngineerWorkspace(execCtx *ExecutionContext, run 
 		if committedChange != nil {
 			return persistExistingEngineerCommitLocally(execCtx, artifactWriter, committedChange)
 		}
-		if isInteractiveRunInvocation(run) {
-			slog.InfoContext(execCtx.Context, "skipping strict staged-diff requirement for interactive codex run",
+		if isInteractiveRunInvocation(run) || allowsCleanReviewNoop(execCtx) {
+			slog.InfoContext(execCtx.Context, "skipping strict staged-diff requirement for codex review/noop run",
 				"run_id", run.ID)
 			return nil
 		}

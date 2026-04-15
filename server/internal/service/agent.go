@@ -365,7 +365,7 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 			existing.RuntimeKind = preset.RuntimeKind
 			changed = true
 		}
-		if strings.TrimSpace(existing.DefaultInvocationMode) == "" {
+		if strings.TrimSpace(existing.DefaultInvocationMode) != strings.TrimSpace(preset.DefaultInvocationMode) {
 			existing.DefaultInvocationMode = preset.DefaultInvocationMode
 			changed = true
 		}

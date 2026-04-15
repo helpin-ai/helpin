@@ -479,16 +479,27 @@ func (e *OpenCodeExecutor) persistEngineerWorkspace(execCtx *ExecutionContext, r
 		_ = execCtx.Heartbeat("persisting_changes")
 	}
 
-	changed, err := waitForOpenCodeRepoChanges(execCtx, openCodeRepoChangeWaitTimeout, openCodeRepoChangePollEvery)
-	if err != nil {
-		return err
-	}
-	if !changed {
-		if isInteractiveRunInvocation(run) {
-			slog.InfoContext(execCtx.Context, "skipping strict repo-change requirement for interactive opencode run",
+	var (
+		changed bool
+		err     error
+	)
+	if isInteractiveRunInvocation(run) || allowsCleanReviewNoop(execCtx) {
+		changed, err = openCodeRunProducedRepoChanges(execCtx)
+		if err != nil {
+			return err
+		}
+		if !changed {
+			slog.InfoContext(execCtx.Context, "skipping strict repo-change requirement for opencode review/noop run",
 				"run_id", run.ID)
 			return nil
 		}
+	} else {
+		changed, err = waitForOpenCodeRepoChanges(execCtx, openCodeRepoChangeWaitTimeout, openCodeRepoChangePollEvery)
+		if err != nil {
+			return err
+		}
+	}
+	if !changed {
 		statusSummary, diffStatSummary := captureOpenCodeNoChangeDiagnostics(execCtx, artifactWriter)
 		return fmt.Errorf(
 			"opencode completed without modifying the repository within %s; git_status=%s; git_diff=%s",
@@ -521,8 +532,8 @@ func (e *OpenCodeExecutor) persistEngineerWorkspace(execCtx *ExecutionContext, r
 		if committedChange != nil {
 			return persistExistingEngineerCommit(execCtx, artifactWriter, committedChange)
 		}
-		if isInteractiveRunInvocation(run) {
-			slog.InfoContext(execCtx.Context, "skipping strict staged-diff requirement for interactive opencode run",
+		if isInteractiveRunInvocation(run) || allowsCleanReviewNoop(execCtx) {
+			slog.InfoContext(execCtx.Context, "skipping strict staged-diff requirement for opencode review/noop run",
 				"run_id", run.ID)
 			return nil
 		}
@@ -588,6 +599,10 @@ func normalizeOpenCodePostRunError(ctx context.Context, err error) error {
 
 func isEngineerStoryRun(execCtx *ExecutionContext) bool {
 	return execCtx != nil && execCtx.Task != nil && hasRepoMutationTools(resolvedProfileFor(execCtx).Tools)
+}
+
+func allowsCleanReviewNoop(execCtx *ExecutionContext) bool {
+	return execCtx != nil && strings.TrimSpace(execCtx.Agent.EffectivePresetKey()) == model.AgentPresetReviewAgent
 }
 
 func isInteractiveRunInvocation(run *model.AgentRun) bool {
