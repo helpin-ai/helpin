@@ -266,24 +266,54 @@ export const MessageBubble = memo(function MessageBubble({
 
   // ── System message: centered pill with avatar (Intercom-style) ──
   if (message.message_type === 'system') {
-    const lower = message.content.toLowerCase();
-    const isResolved = lower.includes('resolved');
-    const isReopened = lower.includes('reopened');
-    const isClosed = lower.includes('closed');
-    const isRoutingEvent =
-      lower.includes('joined') ||
-      lower.includes('left') ||
-      lower.includes('assigned') ||
-      lower.includes('unassigned') ||
-      lower.includes('took this conversation');
+    // Dispatch on system_event_type set by the backend. The legacy
+    // content-keyword branch below is a TRANSITIONAL fallback for
+    // pre-migration rows only — tracked in
+    // docs/plans/2026-04-15-system-message-event-type-plan.md, slated for
+    // removal after the backfill has covered historic rows in prod.
+    const routingEventTypes: ReadonlyArray<string> = [
+      'teammate_joined',
+      'assigned',
+      'unassigned',
+      'took',
+      'agent_assigned',
+      'mailbox_moved',
+      'triage_routed',
+      'triage_dismissed',
+    ];
+    const stateEventTypes: ReadonlyArray<string> = ['resolved', 'reopened', 'closed'];
+    const eventType = message.system_event_type;
 
-    const statusIcon = isResolved ? <CheckmarkCircle02Icon className="h-4 w-4 shrink-0" />
-      : isReopened ? <RotateLeft01Icon className="h-3.5 w-3.5 shrink-0" />
-      : isClosed ? <CancelCircleIcon className="h-4 w-4 shrink-0" />
+    let isRoutingEvent: boolean;
+    let stateEventKind: 'resolved' | 'reopened' | 'closed' | null;
+    if (eventType) {
+      isRoutingEvent = routingEventTypes.includes(eventType);
+      stateEventKind = stateEventTypes.includes(eventType)
+        ? (eventType as 'resolved' | 'reopened' | 'closed')
+        : null;
+    } else {
+      // TODO: remove after system_event_type backfill rollout completes —
+      // plan 2026-04-15.
+      const lower = message.content.toLowerCase();
+      const resolved = lower.includes('resolved');
+      const reopened = lower.includes('reopened');
+      const closed = lower.includes('closed');
+      isRoutingEvent =
+        lower.includes('joined') ||
+        lower.includes('left') ||
+        lower.includes('assigned') ||
+        lower.includes('unassigned') ||
+        lower.includes('took this conversation');
+      stateEventKind = resolved ? 'resolved' : reopened ? 'reopened' : closed ? 'closed' : null;
+    }
+
+    const statusIcon = stateEventKind === 'resolved' ? <CheckmarkCircle02Icon className="h-4 w-4 shrink-0" />
+      : stateEventKind === 'reopened' ? <RotateLeft01Icon className="h-3.5 w-3.5 shrink-0" />
+      : stateEventKind === 'closed' ? <CancelCircleIcon className="h-4 w-4 shrink-0" />
       : null;
 
-    // Assignment events use a neutral muted style with leading avatar; other status
-    // events keep the stronger pill so state changes stay visually distinct.
+    // Routing events use a neutral muted style with leading avatar; state
+    // transitions keep the stronger slate pill so they stay visually distinct.
     if (isRoutingEvent) {
       return (
         <div className="my-3 flex items-center justify-center gap-2 animate-in fade-in duration-300">
