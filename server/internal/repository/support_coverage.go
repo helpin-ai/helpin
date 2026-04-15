@@ -334,6 +334,30 @@ func (r *SupportCoverageRepository) GetDigestDelivery(ctx context.Context, works
 	return &delivery, nil
 }
 
+// FindOpenGapByConversation returns the most recent open or drafted
+// gap that has evidence linked to the given conversation. Used to
+// attach human reply evidence to the original AI handoff gap.
+func (r *SupportCoverageRepository) FindOpenGapByConversation(ctx context.Context, workspaceID, conversationID string) (*model.SupportCoverageGap, error) {
+	var gap model.SupportCoverageGap
+	err := r.db.WithContext(ctx).
+		Table("support_coverage_gaps g").
+		Joins("JOIN support_gap_evidence e ON e.gap_id = g.id").
+		Where("g.workspace_id = ? AND e.conversation_id = ? AND g.status IN (?, ?)",
+			workspaceID, conversationID,
+			model.SupportCoverageGapStatusOpen, model.SupportCoverageGapStatusDrafted).
+		Order("g.last_seen_at DESC").
+		Limit(1).
+		Select("g.*").
+		First(&gap).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("find open gap by conversation: %w", err)
+	}
+	return &gap, nil
+}
+
 // UpdateGapStatus sets the status of a gap.
 func (r *SupportCoverageRepository) UpdateGapStatus(ctx context.Context, workspaceID, gapID, status string) error {
 	result := r.db.WithContext(ctx).

@@ -29,12 +29,39 @@ func NewSupportCoverageService(
 // ProcessSupportEvent evaluates a persisted event against v1 rules
 // and creates/upserts gaps with evidence.
 func (s *SupportCoverageService) ProcessSupportEvent(ctx context.Context, event *model.SupportEvent) error {
+	now := time.Now()
+
+	// For human_reply_after_ai, try to attach evidence to the existing
+	// gap for this conversation before creating a new one. This keeps
+	// the agent's answer alongside the original AI failure evidence.
+	if event.EventType == model.SupportEventHumanReplyAfterAI && event.ConversationID != nil {
+		existing, err := s.coverageRepo.FindOpenGapByConversation(ctx, event.WorkspaceID, *event.ConversationID)
+		if err != nil {
+			s.logger.WarnContext(ctx, "find gap by conversation failed", "error", err)
+		}
+		if existing != nil {
+			evidence := &model.SupportGapEvidence{
+				GapID:          existing.ID,
+				WorkspaceID:    event.WorkspaceID,
+				EvidenceType:   event.EventType,
+				ConversationID: event.ConversationID,
+				MessageID:      event.MessageID,
+				SourceSignal:   event.SourceSignal,
+				Excerpt:        coverageTruncate(event.IssueSummary, 500),
+				CreatedAt:      now,
+			}
+			if err := s.coverageRepo.CreateEvidence(ctx, evidence); err != nil {
+				s.logger.WarnContext(ctx, "attach human reply evidence failed", "error", err)
+			}
+			return nil // Evidence attached to existing gap, no new gap needed.
+		}
+		// No existing gap for this conversation — fall through to normal rule processing.
+	}
+
 	rule := classifyEvent(event)
 	if rule == nil {
 		return nil // No gap-producing rule matched.
 	}
-
-	now := time.Now()
 
 	// Upsert topic if issue key is available.
 	var topicID *string
