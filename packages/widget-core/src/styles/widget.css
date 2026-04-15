@@ -2631,20 +2631,6 @@
     height: 40px;
   }
 
-  .helpin-window-close--home {
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.18);
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
-  }
-
-  .helpin-window-close--home:hover,
-  .helpin-window-close--home:active {
-    background: rgba(255, 255, 255, 0.28);
-  }
-
   .helpin-home-header-row {
     padding-right: 44px;
   }
