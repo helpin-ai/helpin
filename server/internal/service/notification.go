@@ -622,17 +622,17 @@ func (s *NotificationService) renderImmediateEmail(ctx context.Context, event mo
     %s in %s: %s
   </div>
 
-  <table role="presentation" width="100%%%%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f5f5f5;">
+  <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f5f5f5;">
     <tr>
       <td align="center" style="padding: 40px 20px;">
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="max-width: 520px; width: 100%%%%; background: #ffffff; border-radius: 8px; border: 1px solid #e8e8e8; overflow: hidden;">
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="max-width: 520px; width: 100%%; background: #ffffff; border-radius: 8px; border: 1px solid #e8e8e8; overflow: hidden;">
 
           %s
 
           <!-- Content -->
           <tr>
             <td style="padding: 28px 32px 32px;">
-              <table role="presentation" width="100%%%%" cellspacing="0" cellpadding="0" border="0">
+              <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0">
 
                 <!-- Actor line -->
                 <tr>
@@ -1230,17 +1230,17 @@ func (s *NotificationService) renderDigestEmail(ctx context.Context, items []dig
     You have %d unread notifications
   </div>
 
-  <table role="presentation" width="100%%%%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f5f5f5;">
+  <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0" style="background-color: #f5f5f5;">
     <tr>
       <td align="center" style="padding: 40px 20px;">
-        <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="max-width: 520px; width: 100%%%%; background: #ffffff; border-radius: 8px; border: 1px solid #e8e8e8; overflow: hidden;">
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="max-width: 520px; width: 100%%; background: #ffffff; border-radius: 8px; border: 1px solid #e8e8e8; overflow: hidden;">
 
           %s
 
           <!-- Content -->
           <tr>
             <td style="padding: 28px 32px 32px;">
-              <table role="presentation" width="100%%%%" cellspacing="0" cellpadding="0" border="0">
+              <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0">
 
                 <!-- Heading -->
                 <tr>
