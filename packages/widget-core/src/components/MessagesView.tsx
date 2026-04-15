@@ -4,6 +4,7 @@ import { MessageList } from './MessageList';
 import { ComposeBar } from './ComposeBar';
 import { TypingIndicator } from './TypingIndicator';
 import { QuickReplies } from './QuickReplies';
+import { SpecialNoticeBanner } from './SpecialNoticeBanner';
 import { MessageSquareIcon, CircleHelpIcon } from './icons';
 
 interface MessagesViewProps {
@@ -44,6 +45,7 @@ export const MessagesView: FunctionComponent<MessagesViewProps> = ({
         <div className="helpin-messages-header">
           <span className="helpin-messages-title">Messages</span>
         </div>
+        <SpecialNoticeBanner text={config.availability?.specialNoticeText} workspaceId={config.workspaceId} />
         <div className="helpin-messages-empty">
           <MessageSquareIcon size={48} class="helpin-messages-empty-icon" />
           <h3 className="helpin-messages-empty-title">No messages</h3>
@@ -64,6 +66,7 @@ export const MessagesView: FunctionComponent<MessagesViewProps> = ({
       <div className="helpin-messages-header">
         <span className="helpin-messages-title">Messages</span>
       </div>
+      <SpecialNoticeBanner text={config.availability?.specialNoticeText} workspaceId={config.workspaceId} />
       <div className="helpin-messages-thread">
         <MessageList messages={messages} />
         {isTyping && <TypingIndicator />}

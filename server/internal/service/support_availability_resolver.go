@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -16,11 +17,26 @@ type supportAvailabilitySnapshot struct {
 }
 
 func resolveSupportAvailability(settings model.SupportInboxSettings, now time.Time) supportAvailabilitySnapshot {
+	return resolveSupportAvailabilityForMailbox(settings, nil, now)
+}
+
+// resolveSupportAvailabilityForMailbox returns the availability snapshot
+// for a given workspace + optional mailbox context. The mailbox, when
+// present, can override the reply-time expectation; office-hours
+// calculation itself is workspace-wide today.
+func resolveSupportAvailabilityForMailbox(settings model.SupportInboxSettings, mailbox *model.SupportMailbox, now time.Time) supportAvailabilitySnapshot {
+	expectation := ResolveReplyExpectation(settings, mailbox)
 	offlineMessage := defaultOutsideHoursMessage(settings)
+	specialNotice := normalizedSpecialNotice(settings.SpecialNoticeText)
+
 	onlineAvailability := model.WidgetConfigAvailability{
-		IsOnline:      true,
-		StatusText:    "Online now",
-		ReplyTimeText: defaultOnlineReplyTimeText,
+		IsOnline:          true,
+		StatusText:        "Online now",
+		ReplyTimeText:     expectation.Text,
+		ReplyTimePreset:   expectation.Preset,
+		ReplyTimeMinutes:  optionalMinutes(expectation),
+		SpecialNoticeText: specialNotice,
+		MailboxID:         expectation.FromMailboxID,
 	}
 
 	if !settings.BusinessHoursEnabled {
@@ -51,6 +67,10 @@ func resolveSupportAvailability(settings model.SupportInboxSettings, now time.Ti
 		StatusText:          "Offline now",
 		ReplyTimeText:       offlineMessage,
 		OutsideHoursMessage: &offlineMessage,
+		ReplyTimePreset:     expectation.Preset,
+		ReplyTimeMinutes:    optionalMinutes(expectation),
+		SpecialNoticeText:   specialNotice,
+		MailboxID:           expectation.FromMailboxID,
 	}
 
 	if nextOpen := nextBusinessHoursStart(settings, localNow); nextOpen != nil {
@@ -64,6 +84,29 @@ func resolveSupportAvailability(settings model.SupportInboxSettings, now time.Ti
 		IsWithinOfficeHours: false,
 		WidgetAvailability:  availability,
 	}
+}
+
+// optionalMinutes returns a pointer only for the custom preset so the
+// JSON payload stays minimal for preset-only cases.
+func optionalMinutes(exp ReplyExpectation) *int {
+	if exp.Preset != model.SupportReplyTimePresetCustom || exp.CustomMinutes <= 0 {
+		return nil
+	}
+	n := exp.CustomMinutes
+	return &n
+}
+
+// normalizedSpecialNotice collapses nil / whitespace / empty to nil so
+// the widget treats "no banner" and "empty banner" identically.
+func normalizedSpecialNotice(raw *string) *string {
+	if raw == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*raw)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
 }
 
 func loadSupportAvailability(

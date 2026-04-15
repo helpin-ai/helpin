@@ -6,6 +6,7 @@ import { ComposeBar } from './ComposeBar';
 import { TypingIndicator } from './TypingIndicator';
 import { PreChatForm } from './PreChatForm';
 import { ImageLightbox } from './ImageLightbox';
+import { SpecialNoticeBanner } from './SpecialNoticeBanner';
 import { ChevronLeftIcon, MoreVerticalIcon, XIcon } from './icons';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -482,6 +483,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
       </div>
 
       <div className="helpin-conversation-thread" ref={threadRef}>
+        <SpecialNoticeBanner text={availability?.specialNoticeText} workspaceId={config.workspaceId} />
         {showHumanHandoffState && (
           <div className="helpin-human-handoff-banner">
             <p className="helpin-human-handoff-title">

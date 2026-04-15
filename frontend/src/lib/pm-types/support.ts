@@ -103,6 +103,8 @@ export interface SupportMailbox {
   linked_team_name?: string | null;
   visibility_mode: 'members_only';
   assignment_mode: 'manual' | 'round_robin';
+  reply_time_preset?: string | null;
+  reply_time_custom_minutes?: number | null;
   position: number;
   active: boolean;
   member_count?: number;
@@ -172,6 +174,10 @@ export interface UpdateSupportMailboxRequest {
   workspace_member_ids?: string[];
   assignment_mode?: 'manual' | 'round_robin';
   import_linked_team?: boolean;
+  reply_time_preset?: string;
+  reply_time_custom_minutes?: number | null;
+  clear_reply_time_preset?: boolean;
+  clear_reply_time_custom_minutes?: boolean;
 }
 
 export interface SupportTriageRuleConditions {
@@ -596,6 +602,9 @@ export interface SupportInboxSettings {
   business_hours_timezone: string;
   business_hours_schedule: Record<string, BusinessHoursDay>;
   outside_hours_message: string;
+  reply_time_preset?: string;
+  reply_time_custom_minutes?: number | null;
+  special_notice_text?: string | null;
   email_fallback_enabled: boolean;
   email_fallback_delay_secs: number;
   email_fallback_from_name: string;
