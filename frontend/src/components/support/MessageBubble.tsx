@@ -264,38 +264,66 @@ export const MessageBubble = memo(function MessageBubble({
     </div>
   );
 
-  // ── System message: right-aligned pill with avatar (Crisp-style) ──
+  // ── System message: centered pill with avatar (Intercom-style) ──
   if (message.message_type === 'system') {
-    const isResolved = message.content.toLowerCase().includes('resolved');
-    const isReopened = message.content.toLowerCase().includes('reopened');
-    const isClosed = message.content.toLowerCase().includes('closed');
+    const lower = message.content.toLowerCase();
+    const isResolved = lower.includes('resolved');
+    const isReopened = lower.includes('reopened');
+    const isClosed = lower.includes('closed');
+    const isRoutingEvent =
+      lower.includes('joined') ||
+      lower.includes('left') ||
+      lower.includes('assigned') ||
+      lower.includes('unassigned') ||
+      lower.includes('took this conversation');
 
-    const icon = isResolved ? <CheckmarkCircle02Icon className="h-4 w-4 shrink-0" />
+    const statusIcon = isResolved ? <CheckmarkCircle02Icon className="h-4 w-4 shrink-0" />
       : isReopened ? <RotateLeft01Icon className="h-3.5 w-3.5 shrink-0" />
       : isClosed ? <CancelCircleIcon className="h-4 w-4 shrink-0" />
-      : <CheckmarkCircle02Icon className="h-4 w-4 shrink-0" />;
+      : null;
+
+    // Assignment events use a neutral muted style with leading avatar; other status
+    // events keep the stronger pill so state changes stay visually distinct.
+    if (isRoutingEvent) {
+      return (
+        <div className="my-3 flex items-center justify-center gap-2 animate-in fade-in duration-300">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="flex items-center gap-2 rounded-full px-3 py-1 text-xs text-muted-foreground">
+                {resolvedAvatarUrl ? (
+                  <img src={resolvedAvatarUrl} alt={resolvedSenderName} className="h-5 w-5 rounded-full object-cover" />
+                ) : (
+                  <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold leading-none ${getAvatarColor(avatarSeed)}`}>
+                    {getInitial(resolvedSenderName)}
+                  </div>
+                )}
+                <span>{message.content}</span>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side="top">
+              <div className="text-xs text-muted-foreground">{fullTimestamp}</div>
+            </TooltipContent>
+          </Tooltip>
+        </div>
+      );
+    }
 
     return (
-      <div className="my-4 flex items-center justify-end gap-2 animate-in fade-in slide-in-from-right-2 duration-300">
+      <div className="my-4 flex items-center justify-center gap-2 animate-in fade-in duration-300">
         <Tooltip>
           <TooltipTrigger asChild>
             <div className="flex items-center gap-2.5 rounded-full bg-slate-700 px-4 py-2 text-white shadow-sm" style={{ border: 'none' }}>
-              {icon}
+              {statusIcon ?? <CheckmarkCircle02Icon className="h-4 w-4 shrink-0" />}
               <span className="text-sm font-medium">{message.content}</span>
             </div>
           </TooltipTrigger>
-          <TooltipContent side="left">
+          <TooltipContent side="top">
             <div className="space-y-0.5 text-xs">
               <div className="font-medium">{resolvedSenderName}</div>
               <div className="text-muted-foreground">{fullTimestamp}</div>
             </div>
           </TooltipContent>
         </Tooltip>
-        {resolvedAvatarUrl ? (
-          <img src={resolvedAvatarUrl} alt={resolvedSenderName} className="h-7 w-7 rounded-full object-cover shadow-sm" />
-        ) : (
-          fallbackAvatar
-        )}
       </div>
     );
   }

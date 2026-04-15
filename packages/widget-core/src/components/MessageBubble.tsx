@@ -216,8 +216,30 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
 
   const agentName = message.senderName;
   const agentAvatar = message.senderAvatar;
+  const showSystemPill = isSystem && !agentName && !agentAvatar;
   const displayName = isCustomer ? '' : (isAI ? 'Helpin AI' : (agentName || config?.workspaceName || 'Support Agent'));
   const tooltipText = formatRelativeTime(message.createdAt);
+
+  if (showSystemPill) {
+    return (
+      <div
+        className="helpin-message-row helpin-message-row--system"
+        role="listitem"
+        aria-label={message.content}
+      >
+        <div className="helpin-system-message" data-tooltip={tooltipText}>
+          {agentAvatar ? (
+            <img src={agentAvatar} alt={agentName || ''} className="helpin-system-message-avatar" />
+          ) : agentName ? (
+            <span className="helpin-system-message-avatar helpin-system-message-avatar--placeholder">
+              {agentName.charAt(0).toUpperCase()}
+            </span>
+          ) : null}
+          <span className="helpin-system-message-text">{message.content}</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
