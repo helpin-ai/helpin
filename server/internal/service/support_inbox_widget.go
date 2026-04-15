@@ -1001,6 +1001,45 @@ func widgetHelpSpaceIDs(spaces []model.WidgetHelpSpace) []string {
 	return ids
 }
 
+func (s *SupportInboxService) resolveWidgetHelpCollection(ctx context.Context, workspaceID, collectionKey string, allowedSpaces []model.WidgetHelpSpace) (*model.DocsCollection, error) {
+	if s.docsCollectionRepo == nil {
+		return nil, fmt.Errorf("docs collections repository not configured")
+	}
+
+	if _, publicID, ok := parseDocsHelpcenterCollectionKey(collectionKey); ok {
+		return s.docsCollectionRepo.GetByPublicID(ctx, publicID)
+	}
+
+	allowedByID := make(map[string]struct{}, len(allowedSpaces))
+	for _, space := range allowedSpaces {
+		allowedByID[space.ID] = struct{}{}
+	}
+
+	collections, err := s.docsCollectionRepo.ListByWorkspace(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+
+	var match *model.DocsCollection
+	trimmedKey := strings.TrimSpace(collectionKey)
+	for i := range collections {
+		collection := collections[i]
+		if collection.Slug != trimmedKey {
+			continue
+		}
+		if _, ok := allowedByID[collection.SpaceID]; !ok {
+			continue
+		}
+		if match != nil {
+			return nil, nil
+		}
+		candidate := collection
+		match = &candidate
+	}
+
+	return match, nil
+}
+
 // ListWidgetHelpCollections returns widget-visible collections for a selected space.
 func (s *SupportInboxService) ListWidgetHelpCollections(ctx context.Context, widgetKey, spaceSlug string) ([]model.WidgetHelpCollection, error) {
 	_, allowedSpaces, err := s.getAllowedWidgetHelpSpaces(ctx, widgetKey)
@@ -1043,17 +1082,9 @@ func (s *SupportInboxService) ListWidgetHelpArticles(ctx context.Context, widget
 		return nil, fmt.Errorf("collection not found")
 	}
 
-	var collection *model.DocsCollection
-	if _, publicID, ok := parseDocsHelpcenterCollectionKey(collectionSlug); ok {
-		collection, err = s.docsCollectionRepo.GetByPublicID(ctx, publicID)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		collection, err = s.docsCollectionRepo.GetBySlug(ctx, inst.WorkspaceID, collectionSlug)
-		if err != nil {
-			return nil, err
-		}
+	collection, err := s.resolveWidgetHelpCollection(ctx, inst.WorkspaceID, collectionSlug, allowedSpaces)
+	if err != nil {
+		return nil, err
 	}
 	if collection == nil || collection.WorkspaceID != inst.WorkspaceID {
 		return nil, fmt.Errorf("collection not found")
