@@ -919,6 +919,8 @@ describe('WidgetManager', () => {
         type: 'session:upgrade',
         data: {
           email: 'boot@example.com',
+          first_name: '',
+          last_name: '',
           name: 'Boot User',
           source: 'sdk_identify',
         },
