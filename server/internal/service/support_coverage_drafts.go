@@ -17,13 +17,11 @@ import (
 // ErrLLMUnavailable is returned when no LLM provider is configured.
 var ErrLLMUnavailable = fmt.Errorf("LLM provider is not configured")
 
-// CoverageArticleDraft is the output of article draft generation.
+// CoverageArticleDraft is the parsed LLM output.
 type CoverageArticleDraft struct {
-	Title           string          `json:"title"`
-	Excerpt         string          `json:"excerpt"`
-	Content         json.RawMessage `json:"content"`
-	CommonQuestions []string        `json:"common_questions"`
-	EvidenceSummary string          `json:"evidence_summary"`
+	Title           string
+	MarkdownContent string
+	EvidenceSummary string
 }
 
 // SupportCoverageDraftService handles article draft and update
@@ -77,14 +75,16 @@ func (s *SupportCoverageDraftService) GenerateArticleDraft(ctx context.Context, 
 		return nil, fmt.Errorf("generate draft: %w", err)
 	}
 
-	// Create suggestion record (not the doc itself).
+	// Convert Markdown to TipTap JSON for storage and preview.
+	tiptapContent := tiptap.MarkdownToJSON(draft.MarkdownContent)
+
 	suggestion := &model.SupportGapSuggestion{
 		GapID:              gapID,
 		WorkspaceID:        workspaceID,
 		SuggestionType:     model.SupportCoverageSuggestionCreateArticle,
 		Status:             model.SupportCoverageSuggestionStatusDraft,
 		Title:              draft.Title,
-		Content:            draft.Content,
+		Content:            tiptapContent,
 		EvidenceSummary:    draft.EvidenceSummary,
 		TargetSpaceID:      &targetSpaceID,
 		TargetCollectionID: targetCollectionID,
@@ -135,13 +135,15 @@ func (s *SupportCoverageDraftService) GenerateArticleUpdate(ctx context.Context,
 		return nil, fmt.Errorf("generate update: %w", err)
 	}
 
+	tiptapContent := tiptap.MarkdownToJSON(draft.MarkdownContent)
+
 	suggestion := &model.SupportGapSuggestion{
 		GapID:            gapID,
 		WorkspaceID:      workspaceID,
 		SuggestionType:   model.SupportCoverageSuggestionUpdateArticle,
 		Status:           model.SupportCoverageSuggestionStatusDraft,
 		Title:            draft.Title,
-		Content:          draft.Content,
+		Content:          tiptapContent,
 		EvidenceSummary:  draft.EvidenceSummary,
 		TargetDocumentID: &targetDocumentID,
 	}
@@ -240,8 +242,21 @@ func (s *SupportCoverageDraftService) applyUpdateArticle(ctx context.Context, su
 		}
 	}
 
+	// Append new sections to existing content instead of replacing.
 	if suggestion.Content != nil {
-		if _, err := s.contentSvc.Save(ctx, docID, suggestion.Content, userID); err != nil {
+		existing, err := s.contentSvc.Get(ctx, docID)
+		if err != nil {
+			return fmt.Errorf("get existing content: %w", err)
+		}
+		var existingContent json.RawMessage
+		if existing != nil {
+			existingContent = existing.Content
+		}
+		merged, err := tiptap.AppendContent(existingContent, suggestion.Content)
+		if err != nil {
+			return fmt.Errorf("append content: %w", err)
+		}
+		if _, err := s.contentSvc.Save(ctx, docID, merged, userID); err != nil {
 			return fmt.Errorf("save updated content: %w", err)
 		}
 	}
@@ -292,7 +307,7 @@ func (s *SupportCoverageDraftService) generateDraftFromEvidence(ctx context.Cont
 		return nil, fmt.Errorf("LLM completion: %w", err)
 	}
 
-	return parseDraftResponse(resp.Content, detail.Title)
+	return parseDraftResponse(resp.Content, detail.Title, len(detail.Evidence))
 }
 
 func (s *SupportCoverageDraftService) generateUpdateFromEvidence(ctx context.Context, detail *model.SupportCoverageGapDetail, existing *model.DocsContent) (*CoverageArticleDraft, error) {
@@ -326,7 +341,7 @@ func (s *SupportCoverageDraftService) generateUpdateFromEvidence(ctx context.Con
 		return nil, fmt.Errorf("LLM completion: %w", err)
 	}
 
-	return parseDraftResponse(resp.Content, detail.Title)
+	return parseDraftResponse(resp.Content, detail.Title, len(detail.Evidence))
 }
 
 func buildDraftPrompt(title, issueKey string, questions, answers []string) string {
@@ -348,13 +363,15 @@ func buildDraftPrompt(title, issueKey string, questions, answers []string) strin
 			b.WriteString(fmt.Sprintf("- %s\n", a))
 		}
 	}
-	b.WriteString("\nRespond with JSON: {\"title\": \"...\", \"excerpt\": \"...\", \"sections\": [{\"heading\": \"...\", \"paragraphs\": [\"...\"]}], \"common_questions\": [\"...\"]}")
+	b.WriteString("\nWrite the full article in Markdown. Use headings, paragraphs, lists, and code blocks as appropriate.")
+	b.WriteString("\nRespond with JSON: {\"title\": \"article title\", \"content\": \"full markdown content\"}")
 	return b.String()
 }
 
 func buildUpdatePrompt(title string, questions []string, existingContent string) string {
 	var b strings.Builder
-	b.WriteString("Suggest improvements to an existing help center article.\n\n")
+	b.WriteString("Generate ONLY new sections to add to an existing help center article.\n")
+	b.WriteString("Do NOT rewrite or modify existing content. Write sections that will be appended.\n\n")
 	b.WriteString(fmt.Sprintf("Topic: %s\n", title))
 	if len(questions) > 0 {
 		b.WriteString("\nUnanswered customer questions:\n")
@@ -367,52 +384,29 @@ func buildUpdatePrompt(title string, questions []string, existingContent string)
 		if len(truncated) > 2000 {
 			truncated = truncated[:2000] + "..."
 		}
-		b.WriteString(fmt.Sprintf("\nExisting article content:\n%s\n", truncated))
+		b.WriteString(fmt.Sprintf("\nExisting article content (for context, do not repeat):\n%s\n", truncated))
 	}
-	b.WriteString("\nRespond with JSON: {\"title\": \"...\", \"excerpt\": \"...\", \"sections\": [{\"heading\": \"...\", \"paragraphs\": [\"...\"]}], \"common_questions\": [\"...\"]}")
+	b.WriteString("\nWrite new sections in Markdown. Use headings, paragraphs, lists, and code blocks as appropriate.")
+	b.WriteString("\nRespond with JSON: {\"title\": \"section title\", \"content\": \"markdown content for new sections\"}")
 	return b.String()
 }
 
-func parseDraftResponse(content, fallbackTitle string) (*CoverageArticleDraft, error) {
+func parseDraftResponse(content, fallbackTitle string, evidenceCount int) (*CoverageArticleDraft, error) {
 	var raw struct {
-		Title           string   `json:"title"`
-		Excerpt         string   `json:"excerpt"`
-		Sections        []struct {
-			Heading    string   `json:"heading"`
-			Paragraphs []string `json:"paragraphs"`
-		} `json:"sections"`
-		CommonQuestions []string `json:"common_questions"`
+		Title   string `json:"title"`
+		Content string `json:"content"`
 	}
-
 	if err := json.Unmarshal([]byte(content), &raw); err != nil {
 		return nil, fmt.Errorf("parse LLM response: %w", err)
 	}
-
 	title := raw.Title
 	if title == "" {
 		title = fallbackTitle
 	}
-
-	// Build safe TipTap JSON from structured sections.
-	var mdParts []string
-	for _, sec := range raw.Sections {
-		if sec.Heading != "" {
-			mdParts = append(mdParts, "## "+sec.Heading)
-		}
-		for _, p := range sec.Paragraphs {
-			mdParts = append(mdParts, p)
-		}
-		mdParts = append(mdParts, "")
-	}
-	markdown := strings.Join(mdParts, "\n\n")
-	tiptapJSON := tiptap.MarkdownToJSON(markdown)
-
 	return &CoverageArticleDraft{
 		Title:           title,
-		Excerpt:         raw.Excerpt,
-		Content:         tiptapJSON,
-		CommonQuestions: raw.CommonQuestions,
-		EvidenceSummary: fmt.Sprintf("Generated from %d evidence items", 0),
+		MarkdownContent: raw.Content,
+		EvidenceSummary: fmt.Sprintf("Generated from %d evidence items", evidenceCount),
 	}, nil
 }
 
