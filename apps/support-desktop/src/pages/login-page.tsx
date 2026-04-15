@@ -44,7 +44,7 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-full items-center justify-center px-6 py-10">
+    <div className="flex min-h-screen items-center justify-center px-6 py-10">
       <form
         className="w-full max-w-md rounded-3xl border border-border/70 bg-card/95 p-8 shadow-xl shadow-black/5 backdrop-blur"
         onSubmit={handleSubmit}

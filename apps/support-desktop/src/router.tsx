@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import {
   Link,
   Navigate,
+  Outlet,
   createRootRouteWithContext,
   createRoute,
   createRouter,
@@ -13,7 +14,6 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { useQuery } from '@tanstack/react-query'
 import { workspacesService } from '@/lib/services/workspacesService'
 import { useAuthStore } from '@/stores/authStore'
-import { DesktopWindowFrame } from '@desktop/components/DesktopWindowFrame'
 import type { User } from '@/lib/types'
 import { LoginPage } from '@desktop/pages/login-page'
 import { OpenInWebPage } from '@desktop/pages/open-in-web-page'
@@ -173,7 +173,7 @@ function RootComponent() {
       <TooltipProvider>
         <ConfirmProvider>
           <TauriThemeListener />
-          <DesktopWindowFrame />
+          <Outlet />
         </ConfirmProvider>
       </TooltipProvider>
     </ThemeProvider>
@@ -196,7 +196,7 @@ function IndexPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-full items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-primary" />
       </div>
     )
@@ -234,7 +234,7 @@ function LoginRouteComponent() {
 
 function NotFoundComponent() {
   return (
-    <div className="flex min-h-full items-center justify-center px-6">
+    <div className="flex min-h-screen items-center justify-center px-6">
       <div className="w-full max-w-md rounded-3xl border border-border/70 bg-card/95 p-8 text-center shadow-lg shadow-black/5">
         <h1 className="text-xl font-semibold">Page not found</h1>
         <p className="mt-2 text-sm text-muted-foreground">
