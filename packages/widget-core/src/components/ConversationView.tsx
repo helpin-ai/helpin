@@ -112,6 +112,17 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
       !isAIThinking &&
       !isTyping,
   );
+  const isWaitingForTeammate = Boolean(
+    (conversation?.aiState === 'escalated' ||
+      conversation?.flowState === 'waiting_for_human' ||
+      conversation?.flowState === 'queued_for_human' ||
+      conversation?.flowState === 'after_hours_queue' ||
+      conversation?.flowState === 'assigned_to_human') &&
+      !hasHumanReply &&
+      !isTyping &&
+      !isAIThinking,
+  );
+  const waitingTeammates = (config.availableTeammates || []).slice(0, 3);
 
   // Derive the most recent responding agent from messages.
   const activeAgent = useMemo(() => {
@@ -521,6 +532,30 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
           <button type="button" className="helpin-talk-to-human-btn" onClick={onEscalateToHuman}>
             Talk to a human
           </button>
+        </div>
+      )}
+      {isWaitingForTeammate && (
+        <div className="helpin-waiting-teammate" role="status" aria-live="polite">
+          {waitingTeammates.length > 0 && (
+            <div className="helpin-waiting-teammate-avatars">
+              {waitingTeammates.map((teammate) => (
+                <div key={teammate.userId} className="helpin-waiting-teammate-avatar-wrap">
+                  {teammate.avatarUrl ? (
+                    <img
+                      src={teammate.avatarUrl}
+                      alt={teammate.name}
+                      className="helpin-waiting-teammate-avatar"
+                    />
+                  ) : (
+                    <div className="helpin-waiting-teammate-avatar helpin-waiting-teammate-avatar--placeholder">
+                      {teammate.name ? teammate.name.charAt(0).toUpperCase() : '?'}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          <span className="helpin-waiting-teammate-label">Waiting for a teammate</span>
         </div>
       )}
       <ComposeBar
