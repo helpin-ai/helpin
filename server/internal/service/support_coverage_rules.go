@@ -192,17 +192,28 @@ func classifyDocsIssueFeedback(event *model.SupportEvent) *gapRule {
 }
 
 // classifyHumanReplyAfterAI handles human resolution after AI failure.
+// Even without issue key, the reply text is valuable evidence for drafts.
 func classifyHumanReplyAfterAI(event *model.SupportEvent) *gapRule {
-	if event.IssueKey == "" {
-		return nil // Not enough signal without issue key.
+	if event.IssueKey != "" {
+		return &gapRule{
+			DedupeKey:   buildDedupeKey(event.WorkspaceID, model.SupportCoverageV1GapNeedsReview, event.IssueKey, ""),
+			GapCategory: model.SupportCoverageGapCategoryUnknown,
+			V1GapType:   model.SupportCoverageV1GapNeedsReview,
+			Title:       titleFromIssueKey(event.IssueKey, "Human resolved after AI failure"),
+			Confidence:  0.5,
+		}
 	}
-	return &gapRule{
-		DedupeKey:   buildDedupeKey(event.WorkspaceID, model.SupportCoverageV1GapNeedsReview, event.IssueKey, ""),
-		GapCategory: model.SupportCoverageGapCategoryUnknown,
-		V1GapType:   model.SupportCoverageV1GapNeedsReview,
-		Title:       titleFromIssueKey(event.IssueKey, "Human resolved after AI failure"),
-		Confidence:  0.5,
+	// No issue key but reply text is still valuable evidence.
+	if event.IssueSummary != "" {
+		return &gapRule{
+			DedupeKey:   buildDedupeKey(event.WorkspaceID, model.SupportCoverageV1GapNeedsReview, "", hashExcerpt(event.IssueSummary)),
+			GapCategory: model.SupportCoverageGapCategoryUnknown,
+			V1GapType:   model.SupportCoverageV1GapNeedsReview,
+			Title:       "Human resolved after AI failure",
+			Confidence:  0.3,
+		}
 	}
+	return nil
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────

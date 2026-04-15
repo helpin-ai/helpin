@@ -1228,11 +1228,26 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 
 		// Emit human_reply_after_ai when a human agent replies to a conversation that was escalated from AI.
 		if conv.AIState != nil && *conv.AIState == "escalated" && msg.SenderType == "user" {
+			// Include reply text so draft generator can use real agent answers.
+			// IssueKey comes from triage intent if loaded; otherwise coverage
+			// creates a needs_review gap that can be reclassified later.
+			replyExcerpt := strings.TrimSpace(msg.Content)
+			if len(replyExcerpt) > 500 {
+				replyExcerpt = replyExcerpt[:500]
+			}
+			issueSummary := replyExcerpt
+			issueKey := ""
+			if conv.Triage != nil && conv.Triage.Intent != nil {
+				issueKey = *conv.Triage.Intent
+				issueSummary = replyExcerpt // keep reply as summary for drafts
+			}
 			s.recordSupportEvent(SupportEventInput{
 				WorkspaceID:    workspaceID,
 				EventType:      model.SupportEventHumanReplyAfterAI,
 				ConversationID: &ticketID,
 				MessageID:      &msg.ID,
+				IssueKey:       issueKey,
+				IssueSummary:   issueSummary,
 				SourceSignal:   model.SupportCoverageSourceHumanReply,
 				ActorType:      model.SupportEventActorAgent,
 				Channel:        "inbox",
