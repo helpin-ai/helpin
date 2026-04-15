@@ -3541,7 +3541,7 @@ func (a *AgentRunActivities) syncBaseIntoWorkingBranch(ctx context.Context, work
 	if err != nil {
 		return fmt.Errorf("fetch base branch for sync: %w", err)
 	}
-	needsMerge, err := a.workingBranchNeedsBaseSync(ctx, workDir, state.integration, state.accessToken, baseRefName)
+	needsMerge, err := a.workingBranchNeedsBaseSync(ctx, workDir, state.integration, state.accessToken, baseRefName, baseBranch, workingBranch)
 	if err != nil {
 		if errors.Is(err, errBranchSyncUnrelatedHistory) {
 			if err := a.recoverUnrelatedWorkingBranch(ctx, workDir, state, baseRefName, baseBranch, workingBranch); err != nil {
@@ -3631,8 +3631,30 @@ func (a *AgentRunActivities) workingBranchNeedsBaseSync(
 	integration *model.GitIntegration,
 	accessToken string,
 	baseRefName string,
+	baseBranch string,
+	workingBranch string,
 ) (bool, error) {
 	mergeBaseOutput, err := a.runGitInDir(ctx, workDir, integration, accessToken, "merge-base", "HEAD", strings.TrimSpace(baseRefName))
+	if mergeBaseHash := extractMergeBaseHash(mergeBaseOutput, errorText(err)); mergeBaseHash != "" {
+		mergeBaseOutput = mergeBaseHash
+		err = nil
+	}
+	if err != nil {
+		if strings.TrimSpace(mergeBaseOutput) == "" {
+			retried, retryErr := a.retryMergeBaseAfterFetchingHistory(ctx, workDir, integration, accessToken, baseRefName, baseBranch, workingBranch)
+			if retryErr == nil {
+				mergeBaseOutput = retried
+				err = nil
+			} else if mergeBaseHash := extractMergeBaseHash(retried, errorText(retryErr)); mergeBaseHash != "" {
+				mergeBaseOutput = mergeBaseHash
+				err = nil
+			}
+		}
+		if mergeBaseHash := extractMergeBaseHash(mergeBaseOutput, errorText(err)); mergeBaseHash != "" {
+			mergeBaseOutput = mergeBaseHash
+			err = nil
+		}
+	}
 	if err != nil {
 		if strings.TrimSpace(mergeBaseOutput) == "" {
 			return false, fmt.Errorf("%w", errBranchSyncUnrelatedHistory)
@@ -3652,6 +3674,81 @@ func (a *AgentRunActivities) workingBranchNeedsBaseSync(
 		return false, fmt.Errorf("parse rev-list count: %w", parseErr)
 	}
 	return count > 0, nil
+}
+
+func (a *AgentRunActivities) retryMergeBaseAfterFetchingHistory(
+	ctx context.Context,
+	workDir string,
+	integration *model.GitIntegration,
+	accessToken string,
+	baseRefName, baseBranch, workingBranch string,
+) (string, error) {
+	isShallowOutput, err := a.runGitInDir(ctx, workDir, integration, accessToken, "rev-parse", "--is-shallow-repository")
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(isShallowOutput) != "true" {
+		return "", fmt.Errorf("repository is not shallow")
+	}
+
+	trimmedBase := strings.TrimSpace(baseBranch)
+	trimmedWorking := strings.TrimSpace(workingBranch)
+	refspecs := make([]string, 0, 2)
+	if trimmedBase != "" {
+		refspecs = append(refspecs, fmt.Sprintf("refs/heads/%s:refs/remotes/origin/%s", trimmedBase, trimmedBase))
+	}
+	if trimmedWorking != "" && trimmedWorking != trimmedBase {
+		refspecs = append(refspecs, fmt.Sprintf("refs/heads/%s:refs/remotes/origin/%s", trimmedWorking, trimmedWorking))
+	}
+
+	args := []string{"fetch", "--update-shallow", "--unshallow", "origin"}
+	args = append(args, refspecs...)
+	if _, err := a.runGitInDir(ctx, workDir, integration, accessToken, args...); err != nil {
+		return "", err
+	}
+
+	mergeBaseOutput, err := a.runGitInDir(ctx, workDir, integration, accessToken, "merge-base", "HEAD", strings.TrimSpace(baseRefName))
+	if mergeBaseHash := extractMergeBaseHash(mergeBaseOutput, errorText(err)); mergeBaseHash != "" {
+		return mergeBaseHash, nil
+	}
+	if err != nil {
+		return mergeBaseOutput, err
+	}
+	return strings.TrimSpace(mergeBaseOutput), nil
+}
+
+func extractMergeBaseHash(texts ...string) string {
+	for _, text := range texts {
+		fields := strings.Fields(strings.TrimSpace(text))
+		for _, field := range fields {
+			candidate := strings.TrimSpace(field)
+			if len(candidate) < 7 || len(candidate) > 40 {
+				continue
+			}
+			valid := true
+			for _, r := range candidate {
+				switch {
+				case r >= '0' && r <= '9':
+				case r >= 'a' && r <= 'f':
+				case r >= 'A' && r <= 'F':
+				default:
+					valid = false
+					break
+				}
+			}
+			if valid {
+				return candidate
+			}
+		}
+	}
+	return ""
+}
+
+func errorText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 func (a *AgentRunActivities) recoverUnrelatedWorkingBranch(
@@ -3985,6 +4082,9 @@ func (a *AgentRunActivities) buildInitialInstructions(ctx context.Context, state
 		if tools[workerpkg.ToolPublishTaskPlanDoc] {
 			return a.buildTaskPlannerInstructions(ctx, state, input)
 		}
+		if state.agent != nil && state.agent.EffectivePresetKey() == model.AgentPresetReviewAgent {
+			return a.buildTaskReviewInstructions(ctx, state, input)
+		}
 		return a.buildTaskExecutionInstructions(ctx, state, input)
 	}
 	if state.run.TargetType != "epic" || state.epic == nil {
@@ -4194,6 +4294,46 @@ func (a *AgentRunActivities) buildTaskExecutionInstructions(ctx context.Context,
 		return runInputAdditionalContext(state.run.Input), nil
 	}
 
+	sections, err := a.buildTaskRunContextSections(ctx, state, input)
+	if err != nil {
+		return "", err
+	}
+	return strings.Join(sections, "\n\n"), nil
+}
+
+func (a *AgentRunActivities) buildTaskReviewInstructions(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
+	if state.task == nil {
+		return runInputAdditionalContext(state.run.Input), nil
+	}
+
+	var sections []string
+	sections = append(sections, fmt.Sprintf("Run mode: %s", state.run.InvocationMode))
+	sections = append(sections, "This is a review run for the current task branch, not an implementation run by default.")
+	sections = append(sections, "Start by inspecting the existing branch diff, relevant files, and focused validation results before deciding whether there are findings.")
+	sections = append(sections, "Use the task plan and linked docs as expected-scope background for the review. Do not treat them as an instruction to begin implementing the task immediately.")
+	sections = append(sections, "Report findings first, ordered by severity, with concrete file references when available.")
+	sections = append(sections, "Do not make repository changes unless the human explicitly asks you to implement selected fixes during this review loop.")
+	baseBranch := strings.TrimSpace(derefString(state.run.BaseBranch))
+	workingBranch := strings.TrimSpace(derefString(state.run.WorkingBranch))
+	if baseBranch != "" || workingBranch != "" {
+		switch {
+		case baseBranch != "" && workingBranch != "":
+			sections = append(sections, fmt.Sprintf("Review target branches: base `%s`, working `%s`.", baseBranch, workingBranch))
+		case workingBranch != "":
+			sections = append(sections, fmt.Sprintf("Review target working branch: `%s`.", workingBranch))
+		case baseBranch != "":
+			sections = append(sections, fmt.Sprintf("Review target base branch: `%s`.", baseBranch))
+		}
+	}
+	contextSections, err := a.buildTaskRunContextSections(ctx, state, input)
+	if err != nil {
+		return "", err
+	}
+	sections = append(sections, contextSections...)
+	return strings.Join(sections, "\n\n"), nil
+}
+
+func (a *AgentRunActivities) buildTaskRunContextSections(ctx context.Context, state *resolvedRunState, input planningRunInput) ([]string, error) {
 	var sections []string
 	additionalContext := strings.TrimSpace(input.AdditionalContext)
 	if additionalContext == "" && state != nil && state.run != nil {
@@ -4209,7 +4349,7 @@ func (a *AgentRunActivities) buildTaskExecutionInstructions(ctx context.Context,
 		if a.docsDocRepo != nil {
 			doc, err := a.docsDocRepo.GetByID(ctx, planDocumentID)
 			if err != nil {
-				return "", err
+				return nil, err
 			}
 			if doc != nil {
 				title = strings.TrimSpace(doc.Title)
@@ -4217,7 +4357,7 @@ func (a *AgentRunActivities) buildTaskExecutionInstructions(ctx context.Context,
 		}
 		content, err := a.docsContentRepo.GetByDocumentID(ctx, planDocumentID)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		if markdown := docsContentMarkdown(content); markdown != "" {
 			header := fmt.Sprintf("Canonical task planning document ID: %s", planDocumentID)
@@ -4230,13 +4370,13 @@ func (a *AgentRunActivities) buildTaskExecutionInstructions(ctx context.Context,
 
 	taskLinkedDocs, err := a.renderObjectLinkedDocsContext(ctx, state.run.WorkspaceID, model.LinkedObjectTask, state.task.ID, planDocumentID)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if taskLinkedDocs != "" {
 		sections = append(sections, "Other docs linked directly to this task:\n"+taskLinkedDocs)
 	}
 
-	return strings.Join(sections, "\n\n"), nil
+	return sections, nil
 }
 
 func (a *AgentRunActivities) buildAgenticEpicPlannerInstructions(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {

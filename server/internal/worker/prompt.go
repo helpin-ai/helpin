@@ -133,6 +133,8 @@ func BuildUserPrompt(
 	if story != nil {
 		if strings.TrimSpace(planningStage) == model.PlanningStageStoryPlanDoc {
 			contextParts = append(contextParts, fmt.Sprintf("Please draft or refine the canonical task planning document for task: **%s**", story.Name))
+		} else if agent != nil && agent.EffectivePresetKey() == model.AgentPresetReviewAgent {
+			contextParts = append(contextParts, fmt.Sprintf("Please review the current implementation for task: **%s**", story.Name))
 		} else {
 			contextParts = append(contextParts, fmt.Sprintf("Please work on the task: **%s**", story.Name))
 		}

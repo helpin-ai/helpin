@@ -143,6 +143,28 @@ func TestBuildUserPromptStoryPlannerUsesPlanningLanguage(t *testing.T) {
 	}
 }
 
+func TestBuildUserPromptReviewAgentUsesReviewLanguage(t *testing.T) {
+	prompt := BuildUserPrompt(
+		&model.Agent{PresetKey: model.AgentPresetReviewAgent},
+		&model.PMTask{Name: "Inbox triage automation"},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		"",
+		"",
+	)
+
+	if !strings.Contains(prompt, "Please review the current implementation for task: **Inbox triage automation**") {
+		t.Fatalf("expected review-oriented task prompt\n%s", prompt)
+	}
+	if strings.Contains(prompt, "Please work on the task: **Inbox triage automation**") {
+		t.Fatalf("did not expect generic implementation-oriented task prompt\n%s", prompt)
+	}
+}
+
 func TestBuildUserPromptNormalizesRichTextDescriptionsToMarkdown(t *testing.T) {
 	description := "<h2>Scope</h2><p><strong>Important</strong> rollout</p><ul><li>First</li></ul>"
 
