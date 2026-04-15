@@ -64,7 +64,8 @@ const WS_BASE_DELAY_MS = 1000;
 const WS_MAX_DELAY_MS = 30000;
 const MAX_AUTO_RECONNECT_WINDOW_MS = 25_000;
 const MAX_BACKGROUND_RETRY_DELAY_MS = 120_000;
-const NOTIFICATION_SOUND_URL = 'https://cdn.helpin.ai/sounds/ping.mp3';
+const RECEIVED_MESSAGE_SOUND_URL = 'https://cdn.helpin.ai/sounds/ping.mp3';
+const SENT_MESSAGE_SOUND_URL = 'https://cdn.helpin.ai/sounds/submit.mp3';
 
 function normalizeWidgetConfig(raw: any): WidgetConfig {
   const teammates = Array.isArray(raw?.availableTeammates)
@@ -125,8 +126,10 @@ export class WidgetManager {
   private currentEmail: string | null = null;
   private isConversationExpanded = false;
   private preChatDone = false;
-  private notificationAudio: HTMLAudioElement | null = null;
-  private notificationAudioUnlocked = false;
+  private receivedMessageAudio: HTMLAudioElement | null = null;
+  private receivedMessageAudioUnlocked = false;
+  private sentMessageAudio: HTMLAudioElement | null = null;
+  private sentMessageAudioUnlocked = false;
   private audioUnlockListener: (() => void) | null = null;
 
   private callbacks: Record<string, WidgetCallback[]> = {
@@ -181,7 +184,8 @@ export class WidgetManager {
     // Unlock notification audio on first user interaction with the page
     if (!this.audioUnlockListener) {
       this.audioUnlockListener = () => {
-        this.unlockNotificationSound();
+        this.unlockReceivedMessageSound();
+        this.unlockSentMessageSound();
         document.removeEventListener('click', this.audioUnlockListener!);
         document.removeEventListener('touchstart', this.audioUnlockListener!);
         this.audioUnlockListener = null;
@@ -289,7 +293,8 @@ export class WidgetManager {
   open(): void {
     this.isVisible = true;
     this.isOpen = true;
-    this.unlockNotificationSound();
+    this.unlockReceivedMessageSound();
+    this.unlockSentMessageSound();
     if (!this.hasBeenOpened && this.currentView === 'home') {
       this.hasBeenOpened = true;
       // If there's an active conversation (restored session), resume it;
@@ -589,30 +594,59 @@ export class WidgetManager {
   // ─── Unread Count ──────────────────────────────────────────
 
   /** Preload and unlock audio playback (call from a user-gesture handler like show/toggle). */
-  private unlockNotificationSound(): void {
-    if (this.notificationAudioUnlocked) return;
+  private unlockReceivedMessageSound(): void {
+    if (this.receivedMessageAudioUnlocked) return;
     try {
-      if (!this.notificationAudio) {
-        this.notificationAudio = new Audio(NOTIFICATION_SOUND_URL);
+      if (!this.receivedMessageAudio) {
+        this.receivedMessageAudio = new Audio(RECEIVED_MESSAGE_SOUND_URL);
       }
       // Silent play to unlock autoplay policy, then pause
-      this.notificationAudio.volume = 0;
-      this.notificationAudio.play().then(() => {
-        this.notificationAudio!.pause();
-        this.notificationAudio!.currentTime = 0;
-        this.notificationAudioUnlocked = true;
+      this.receivedMessageAudio.volume = 0;
+      this.receivedMessageAudio.play().then(() => {
+        this.receivedMessageAudio!.pause();
+        this.receivedMessageAudio!.currentTime = 0;
+        this.receivedMessageAudioUnlocked = true;
       }).catch(() => {/* ignore */});
     } catch { /* audio not supported */ }
   }
 
-  private playNotificationSound(): void {
+  private playReceivedMessageSound(): void {
     try {
-      if (!this.notificationAudio) {
-        this.notificationAudio = new Audio(NOTIFICATION_SOUND_URL);
+      if (!this.receivedMessageAudio) {
+        this.receivedMessageAudio = new Audio(RECEIVED_MESSAGE_SOUND_URL);
       }
-      this.notificationAudio.volume = 0.5;
-      this.notificationAudio.currentTime = 0;
-      this.notificationAudio.play().catch(() => {/* autoplay blocked — ignore */});
+      this.receivedMessageAudio.volume = 0.5;
+      this.receivedMessageAudio.currentTime = 0;
+      this.receivedMessageAudio.play().catch(() => {/* autoplay blocked — ignore */});
+    } catch { /* audio not supported — ignore */ }
+  }
+
+  /** Preload + unlock the customer "send" pop. Same gesture-unlock dance
+   *  as the received-message sound so the first send doesn't get blocked
+   *  by the browser's autoplay policy. */
+  private unlockSentMessageSound(): void {
+    if (this.sentMessageAudioUnlocked) return;
+    try {
+      if (!this.sentMessageAudio) {
+        this.sentMessageAudio = new Audio(SENT_MESSAGE_SOUND_URL);
+      }
+      this.sentMessageAudio.volume = 0;
+      this.sentMessageAudio.play().then(() => {
+        this.sentMessageAudio!.pause();
+        this.sentMessageAudio!.currentTime = 0;
+        this.sentMessageAudioUnlocked = true;
+      }).catch(() => {/* ignore */});
+    } catch { /* audio not supported */ }
+  }
+
+  private playSentMessageSound(): void {
+    try {
+      if (!this.sentMessageAudio) {
+        this.sentMessageAudio = new Audio(SENT_MESSAGE_SOUND_URL);
+      }
+      this.sentMessageAudio.volume = 0.4;
+      this.sentMessageAudio.currentTime = 0;
+      this.sentMessageAudio.play().catch(() => {/* autoplay blocked — ignore */});
     } catch { /* audio not supported — ignore */ }
   }
 
@@ -787,6 +821,7 @@ export class WidgetManager {
     };
     this.messages = [...this.messages, optimisticMsg];
     this.render();
+    this.playSentMessageSound();
 
     // Stop typing indicator before sending
     this.stopTyping();
@@ -1404,7 +1439,7 @@ export class WidgetManager {
 
         if (msg.sender_type !== 'customer') {
           this.isTyping = false;
-          this.playNotificationSound();
+          this.playReceivedMessageSound();
         }
 
         // Update conversation in the list (lastMessage preview + unread count + move to top)
