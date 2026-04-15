@@ -234,20 +234,43 @@ func AppendContent(existing, additions json.RawMessage) (json.RawMessage, error)
 
 **Integration:** `applyUpdateArticle` in `support_coverage_drafts.go` changes from:
 ```go
-// Before: full replacement
+// Before: full replacement with pre-built TipTap JSON
 s.contentSvc.Save(ctx, docID, suggestion.Content, userID)
 
-// After: load existing, append, save merged
+// After: convert Markdown to TipTap, append to existing, save merged
 existing, _ := s.contentSvc.Get(ctx, docID)
-merged, err := tiptap.AppendContent(existing.Content, suggestion.Content)
+newNodes := tiptap.MarkdownToJSON(suggestion.MarkdownContent)
+merged, err := tiptap.AppendContent(existing.Content, newNodes)
 s.contentSvc.Save(ctx, docID, merged, userID)
 ```
 
-### 5.2 LLM Prompt Changes
-- **Weak/outdated article prompt**: "Generate ONLY new sections that address these unanswered customer questions. Do not rewrite or modify existing content. Output sections that can be appended to the existing article."
-- **Missing article prompt**: unchanged (already generates full article)
-- Output format stays the same: `{ title, excerpt, sections[], common_questions[] }`
-- Fix `parseDraftResponse` to pass evidence count instead of hardcoded 0
+For missing articles, `applyCreateArticle` converts Markdown to TipTap and saves directly (no append needed).
+
+### 5.2 LLM Output Format: Markdown (replaces JSON sections)
+
+**Current approach (being replaced):** LLM outputs structured JSON `{ sections: [{ heading, paragraphs[] }] }`, then `buildTipTapJSON` manually constructs TipTap nodes. This produces only headings + paragraphs — no lists, code blocks, bold, links, etc.
+
+**New approach:** LLM outputs standard **Markdown**. The existing `tiptap.MarkdownToJSON` function converts it to TipTap JSON with full formatting support (headers, lists, code blocks, bold/italic, links, blockquotes, etc.).
+
+**LLM response format:**
+```json
+{
+  "title": "Article title",
+  "content": "## Section heading\n\nParagraph text with **bold** and [links](...).\n\n- List item 1\n- List item 2\n\n```code block```"
+}
+```
+
+- `title`: used for the document title (missing article) or display only (weak article)
+- `content`: Markdown string, converted via `tiptap.MarkdownToJSON`
+
+**Prompt changes:**
+- **Weak/outdated article**: "Generate ONLY new sections in Markdown that address these unanswered customer questions. Do not rewrite existing content. Output sections that will be appended to the existing article."
+- **Missing article**: "Write a complete help center article in Markdown."
+- Both prompts request JSON with `title` and `content` fields. `JSONMode: true` ensures parseable response.
+
+**Removes:** `buildTipTapJSON`, `parseDraftResponse`, the `sections[]` output schema. Replaced by `json.Unmarshal` + `tiptap.MarkdownToJSON`.
+
+**V1 scope:** Additive only (append new sections). In-place content modification is a V2 concern.
 
 ### 5.3 Gap Detail DTO Enhancement
 - Enrich `GetGapDetail` in the repository: join `support_coverage_gap_articles` with `docs_documents` table to resolve article title
