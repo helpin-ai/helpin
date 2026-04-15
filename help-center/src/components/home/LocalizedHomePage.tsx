@@ -193,6 +193,7 @@ function FeaturedCard({
           multilingualEnabled,
           locale,
           card.link_value,
+          card.public_id,
         )}
         className={cls}
       >

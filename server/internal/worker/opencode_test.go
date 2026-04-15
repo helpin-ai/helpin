@@ -547,6 +547,87 @@ func TestPersistEngineerWorkspacePushesExistingLocalCommit(t *testing.T) {
 	}
 }
 
+func TestPersistEngineerWorkspaceAllowsAutonomousReviewRunWithoutRepoChanges(t *testing.T) {
+	tempDir := t.TempDir()
+	remoteDir := filepath.Join(tempDir, "remote.git")
+	runGitCmd(t, tempDir, "git", "init", "--bare", remoteDir)
+
+	seedDir := filepath.Join(tempDir, "seed")
+	runGitCmd(t, tempDir, "git", "clone", remoteDir, seedDir)
+	configureGitIdentity(t, seedDir)
+	writeTestFile(t, filepath.Join(seedDir, "README.md"), "hello\n")
+	runGitCmd(t, seedDir, "git", "add", "README.md")
+	runGitCmd(t, seedDir, "git", "commit", "-m", "initial commit")
+	runGitCmd(t, seedDir, "git", "branch", "-M", "task-branch")
+	runGitCmd(t, seedDir, "git", "push", "-u", "origin", "task-branch")
+
+	workDir := filepath.Join(tempDir, "work")
+	runGitCmd(t, tempDir, "git", "clone", remoteDir, workDir)
+	configureGitIdentity(t, workDir)
+	runGitCmd(t, workDir, "git", "checkout", "-B", "task-branch", "origin/task-branch")
+
+	executor := NewOpenCodeExecutor("opencode", "opencode", "", "", "", "", "", "", nil, nil)
+	execCtx := &ExecutionContext{
+		Context:       context.Background(),
+		WorkDir:       workDir,
+		BaseBranch:    "task-branch",
+		WorkingBranch: "task-branch",
+		Agent:         &model.Agent{PresetKey: model.AgentPresetReviewAgent, AllowedTools: []byte(`["write_file","run_command","apply_patch"]`)},
+		Task:          &model.PMTask{DisplayID: 123, Name: "Review same-branch work"},
+	}
+
+	if err := executor.persistEngineerWorkspace(execCtx, &model.AgentRun{InvocationMode: model.InvocationModeAutonomous}, &openCodeArtifactWriter{}); err != nil {
+		t.Fatalf("persistEngineerWorkspace returned error for autonomous no-change review run: %v", err)
+	}
+	if execCtx.LocalGitCommit != nil {
+		t.Fatalf("did not expect pushed local git metadata, got %#v", execCtx.LocalGitCommit)
+	}
+}
+
+func TestDetectCommittedEngineerChangeUsesRemoteWorkingBranchBaseline(t *testing.T) {
+	tempDir := t.TempDir()
+	remoteDir := filepath.Join(tempDir, "remote.git")
+	runGitCmd(t, tempDir, "git", "init", "--bare", remoteDir)
+
+	seedDir := filepath.Join(tempDir, "seed")
+	runGitCmd(t, tempDir, "git", "clone", remoteDir, seedDir)
+	configureGitIdentity(t, seedDir)
+	writeTestFile(t, filepath.Join(seedDir, "README.md"), "hello\n")
+	runGitCmd(t, seedDir, "git", "add", "README.md")
+	runGitCmd(t, seedDir, "git", "commit", "-m", "initial commit")
+	runGitCmd(t, seedDir, "git", "branch", "-M", "task-branch")
+	runGitCmd(t, seedDir, "git", "push", "-u", "origin", "task-branch")
+
+	workDir := filepath.Join(tempDir, "work")
+	runGitCmd(t, tempDir, "git", "clone", remoteDir, workDir)
+	configureGitIdentity(t, workDir)
+	runGitCmd(t, workDir, "git", "checkout", "-B", "task-branch", "origin/task-branch")
+
+	writeTestFile(t, filepath.Join(workDir, "README.md"), "hello\nreview fix\n")
+	runGitCmd(t, workDir, "git", "add", "README.md")
+	runGitCmd(t, workDir, "git", "commit", "-m", "lens local follow-up")
+	localSHA := strings.TrimSpace(runGitCmd(t, workDir, "git", "rev-parse", "HEAD"))
+
+	change, err := detectCommittedEngineerChange(&ExecutionContext{
+		Context:       context.Background(),
+		WorkDir:       workDir,
+		BaseBranch:    "task-branch",
+		WorkingBranch: "task-branch",
+	})
+	if err != nil {
+		t.Fatalf("detectCommittedEngineerChange returned error: %v", err)
+	}
+	if change == nil {
+		t.Fatal("expected local same-branch commit to be detected against origin/task-branch")
+	}
+	if change.CommitSHA != localSHA {
+		t.Fatalf("expected detected sha %q, got %q", localSHA, change.CommitSHA)
+	}
+	if len(change.ChangedFiles) != 1 || change.ChangedFiles[0] != "README.md" {
+		t.Fatalf("unexpected changed files %#v", change.ChangedFiles)
+	}
+}
+
 func configureGitIdentity(t *testing.T, dir string) {
 	t.Helper()
 	runGitCmd(t, dir, "git", "config", "user.email", "test@example.com")

@@ -84,8 +84,16 @@ export interface CodingSession {
   repo: CodingSessionRepoState;
   auth_state?: CodexAuthState;
   stream_state_snapshot?: CodingSessionStreamSnapshot;
+  triggered_by_user?: CodingSessionActor;
   created_at: string;
   updated_at: string;
+}
+
+export interface CodingSessionActor {
+  id: string;
+  email: string;
+  full_name: string;
+  avatar_url?: string;
 }
 
 export interface CodingSessionEvent {

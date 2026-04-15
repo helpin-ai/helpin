@@ -383,7 +383,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			AllowedCommands:       slices.Clone(reviewerProfile.AllowedCommands),
 			AllowedTargetTypes:    slices.Clone(reviewerProfile.AllowedTargetTypes),
 			ApprovalMode:          "never",
-			DefaultInvocationMode: model.InvocationModeAutonomous,
+			DefaultInvocationMode: model.InvocationModeInteractive,
 			SupportedModes:        supportedModesForRuntime("codex"),
 			SystemPrompt:          reviewPrompt,
 		},

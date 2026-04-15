@@ -2618,6 +2618,10 @@
     right: calc(16px + env(safe-area-inset-right, 0px));
   }
 
+  .helpin-launcher--open {
+    display: none;
+  }
+
   .helpin-window-close,
   .helpin-window-close-inline,
   .helpin-help-back,
@@ -2625,6 +2629,10 @@
   .helpin-conversation-header-btn {
     width: 40px;
     height: 40px;
+  }
+
+  .helpin-home-header-row {
+    padding-right: 44px;
   }
 
   .helpin-window-close svg,
@@ -2714,7 +2722,28 @@
   }
 
   .helpin-inline-prechat {
-    padding: 4px 12px 8px;
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    padding: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: color-mix(in srgb, var(--helpin-bg) 82%, transparent);
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+  }
+
+  .helpin-inline-prechat .helpin-message-row {
+    width: 100%;
+    max-width: 360px;
+    margin: 0;
+  }
+
+  .helpin-inline-prechat .helpin-message-agent-bubble-wrap,
+  .helpin-inline-prechat .helpin-message-bubble {
+    width: 100%;
+    max-width: none;
   }
 
   .helpin-compose-wrapper {

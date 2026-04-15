@@ -79,6 +79,22 @@ func systemRunTriggerContext(triggerType string) *model.AgentRunTriggerContext {
 	}
 }
 
+func agentRunActivityMetadata(agent *model.Agent, run *model.AgentRun, action string) map[string]interface{} {
+	md := map[string]interface{}{
+		"run_action":   action,
+		"runtime_kind": string(run.RuntimeKind),
+		"run_id":       run.ID,
+	}
+	if agent != nil {
+		md["agent_id"] = agent.ID
+		md["agent_name"] = agent.Name
+		if agent.PresetKey != "" {
+			md["agent_preset_key"] = agent.PresetKey
+		}
+	}
+	return md
+}
+
 func buildAgentRunInputPayload(targetType, targetID string, trigger *model.AgentRunTriggerContext, event *model.AgentRunEventContext, additionalContext *string) ([]byte, error) {
 	payload := model.AgentRunInputPayload{
 		Trigger: trigger,
@@ -115,6 +131,7 @@ type AgentService struct {
 	docsContentRepo            *repository.DocsContentRepository
 	docsVersionRepo            *repository.DocsVersionRepository
 	docsLinkRepo               *repository.DocsLinkRepository
+	userRepo                   *repository.UserRepository
 	runEngine                  *temporalapp.RunEngine
 	gitService                 *GitService
 	taskService                *PMTaskService
@@ -215,6 +232,12 @@ func (s *AgentService) SetCodexAuthManager(manager *worker.CodexAuthManager) *Ag
 
 func (s *AgentService) SetTriggerExecutionRepository(repo *repository.AgentTriggerExecutionRepository) *AgentService {
 	s.triggerExecutionRepo = repo
+	return s
+}
+
+// SetUserRepository injects the user repository so coding sessions can hydrate the triggering actor.
+func (s *AgentService) SetUserRepository(repo *repository.UserRepository) *AgentService {
+	s.userRepo = repo
 	return s
 }
 
@@ -342,7 +365,7 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 			existing.RuntimeKind = preset.RuntimeKind
 			changed = true
 		}
-		if strings.TrimSpace(existing.DefaultInvocationMode) == "" {
+		if strings.TrimSpace(existing.DefaultInvocationMode) != strings.TrimSpace(preset.DefaultInvocationMode) {
 			existing.DefaultInvocationMode = preset.DefaultInvocationMode
 			changed = true
 		}
@@ -1871,7 +1894,7 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 			return nil, err
 		}
 		if s.activitySvc != nil {
-			_ = s.activitySvc.Log(ctx, workspaceID, "task", task.ID, actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), nil)
+			_ = s.activitySvc.Log(ctx, workspaceID, "task", task.ID, actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), agentRunActivityMetadata(agent, run, "started"))
 		}
 		s.publishRunEvent(run, derefString(actorID))
 		return run, nil
@@ -1915,7 +1938,7 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 		}
 
 		if s.activitySvc != nil {
-			_ = s.activitySvc.Log(ctx, workspaceID, "epic", epic.ID, actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), nil)
+			_ = s.activitySvc.Log(ctx, workspaceID, "epic", epic.ID, actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), agentRunActivityMetadata(agent, run, "started"))
 		}
 		s.publishRunEvent(run, derefString(actorID))
 		return run, nil
@@ -1977,7 +2000,7 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 		}
 
 		if s.activitySvc != nil {
-			_ = s.activitySvc.Log(ctx, workspaceID, "git_repository", repo.ID, actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), nil)
+			_ = s.activitySvc.Log(ctx, workspaceID, "git_repository", repo.ID, actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), agentRunActivityMetadata(agent, run, "started"))
 		}
 		s.publishRunEvent(run, derefString(actorID))
 		return run, nil
@@ -2038,7 +2061,7 @@ func (s *AgentService) runConversationAgent(ctx context.Context, workspaceID, co
 	}
 
 	if s.activitySvc != nil {
-		_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", conversationID, actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), nil)
+		_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", conversationID, actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), agentRunActivityMetadata(agent, run, "started"))
 	}
 	s.publishRunEvent(run, derefString(actorID))
 

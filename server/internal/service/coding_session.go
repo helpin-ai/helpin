@@ -387,6 +387,22 @@ func (s *AgentService) buildCodingSession(ctx context.Context, run *model.AgentR
 		}
 	}
 
+	var triggeredBy *model.CodingSessionActor
+	if run.TriggeredByUserID != nil && s.userRepo != nil {
+		user, userErr := s.userRepo.GetByID(ctx, *run.TriggeredByUserID)
+		if userErr != nil {
+			return nil, userErr
+		}
+		if user != nil {
+			triggeredBy = &model.CodingSessionActor{
+				ID:        user.ID,
+				Email:     user.Email,
+				FullName:  user.FullName,
+				AvatarURL: user.AvatarURL,
+			}
+		}
+	}
+
 	session := &model.CodingSession{
 		ID:                  run.ID,
 		RunID:               run.ID,
@@ -404,6 +420,7 @@ func (s *AgentService) buildCodingSession(ctx context.Context, run *model.AgentR
 		Repo:                repoState,
 		AuthState:           latestCodexAuthArtifact(artifacts),
 		StreamStateSnapshot: streamSnapshot,
+		TriggeredByUser:     triggeredBy,
 		CreatedAt:           run.CreatedAt,
 		UpdatedAt:           run.UpdatedAt,
 	}

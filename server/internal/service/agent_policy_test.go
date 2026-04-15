@@ -188,6 +188,23 @@ func TestListAgentPresetsIncludesEpicPlanner(t *testing.T) {
 	}
 }
 
+func TestListAgentPresetsIncludesInteractiveReviewAgent(t *testing.T) {
+	presets := ListAgentPresets()
+	for _, preset := range presets {
+		if preset.Key != model.AgentPresetReviewAgent {
+			continue
+		}
+		if preset.RuntimeKind != "codex" {
+			t.Fatalf("expected review agent runtime codex, got %q", preset.RuntimeKind)
+		}
+		if preset.DefaultInvocationMode != model.InvocationModeInteractive {
+			t.Fatalf("expected review agent default mode interactive, got %q", preset.DefaultInvocationMode)
+		}
+		return
+	}
+	t.Fatal("expected review agent preset in catalog")
+}
+
 func TestListAgentPresetsTaskPlannerExcludesListEpicTasks(t *testing.T) {
 	presets := ListAgentPresets()
 	for _, preset := range presets {
