@@ -52,9 +52,8 @@
   --helpin-internal-bg: #fef3c7;
   --helpin-internal-border: #f59e0b;
 
-  /* Typography — system-ui stack with explicit emoji fonts so rendering
-     stays neutral across host sites. */
-  --helpin-font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol';
+  /* Typography */
+  --helpin-font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
   --helpin-font-size-xs: 0.75rem;
   --helpin-font-size-sm: 0.875rem;
   --helpin-font-size-base: 1rem;
@@ -85,25 +84,6 @@
   color: var(--helpin-fg);
   font-size: var(--helpin-font-size-sm);
   line-height: 1.5;
-
-  /* Defensive typography resets — the widget renders inside a shadow
-     root, but a few host-page CSS properties (font-variant-numeric,
-     letter-spacing from an inherited Tailwind base, OS-level font
-     smoothing) can still bleed through initial declarations. Lock the
-     neutral defaults so copy renders identically everywhere. */
-  font-size-adjust: none;
-  font-stretch: normal;
-  font-style: normal;
-  font-variant: normal;
-  font-weight: normal;
-  letter-spacing: normal;
-  text-align: left;
-  text-align-last: initial;
-  text-indent: 0;
-  text-shadow: none;
-  text-transform: none;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
 
 /* Dark theme overrides */
