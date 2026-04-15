@@ -670,14 +670,27 @@ func repoDiffAgainstBase(execCtx *ExecutionContext) (diffOutput string, filesOut
 		return "", "", nil
 	}
 
+	workingBranch := strings.TrimSpace(execCtx.WorkingBranch)
+	if workingBranch != "" {
+		files, diff, ok, diffErr := repoDiffForRef(execCtx, "origin/"+workingBranch)
+		if diffErr != nil {
+			return "", "", diffErr
+		}
+		if ok {
+			return diff, files, nil
+		}
+	}
+
 	var lastErr error
 	for _, ref := range repoComparisonRefs(execCtx) {
-		files, diff, diffErr := repoDiffForRef(execCtx, ref)
+		files, diff, ok, diffErr := repoDiffForRef(execCtx, ref)
 		if diffErr != nil {
 			lastErr = diffErr
 			continue
 		}
-		return diff, files, nil
+		if ok {
+			return diff, files, nil
+		}
 	}
 	if lastErr != nil {
 		return "", "", lastErr
@@ -698,19 +711,20 @@ func repoComparisonRefs(execCtx *ExecutionContext) []string {
 	return []string{"origin/" + baseBranch, baseBranch}
 }
 
-func repoDiffForRef(execCtx *ExecutionContext, ref string) (filesOutput string, diffOutput string, err error) {
+func repoDiffForRef(execCtx *ExecutionContext, ref string) (filesOutput string, diffOutput string, ok bool, err error) {
 	filesOutput, err = runGit(execCtx, "diff", "--name-only", ref+"...HEAD")
 	if err != nil {
-		return "", "", nil
+		return "", "", false, nil
 	}
+	ok = true
 	if strings.TrimSpace(filesOutput) == "" {
-		return "", "", nil
+		return "", "", true, nil
 	}
 	diffOutput, err = runGit(execCtx, "diff", ref+"...HEAD")
 	if err != nil {
-		return "", "", fmt.Errorf("inspect committed diff: %s", strings.TrimSpace(firstNonEmptyText(diffOutput, err.Error())))
+		return "", "", true, fmt.Errorf("inspect committed diff: %s", strings.TrimSpace(firstNonEmptyText(diffOutput, err.Error())))
 	}
-	return filesOutput, diffOutput, nil
+	return filesOutput, diffOutput, true, nil
 }
 
 func persistExistingEngineerCommit(execCtx *ExecutionContext, artifactWriter interface {
