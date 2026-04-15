@@ -76,3 +76,10 @@ type SupportEvent struct {
 }
 
 func (SupportEvent) TableName() string { return "support_events" }
+
+// SupportEventFilter controls event list queries.
+type SupportEventFilter struct {
+	EventType      string `json:"event_type"`
+	ConversationID string `json:"conversation_id"`
+	Limit          int    `json:"limit"`
+}
