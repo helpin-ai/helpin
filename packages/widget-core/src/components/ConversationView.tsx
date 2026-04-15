@@ -379,7 +379,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
                 </span>
                 <span className="helpin-conversation-subtitle">
                   {showHumanHandoffState
-                    ? availability?.statusText || 'Our team will follow up as soon as someone is available.'
+                    ? availability?.replyTimeText || availability?.outsideHoursMessage || 'Our team will follow up as soon as someone is available.'
                     : aiFirst
                       ? 'Our AI assistant will reply first'
                       : availability?.statusText || 'Online now'}
@@ -484,16 +484,6 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
 
       <div className="helpin-conversation-thread" ref={threadRef}>
         <SpecialNoticeBanner text={availability?.specialNoticeText} workspaceId={config.workspaceId} />
-        {showHumanHandoffState && (
-          <div className="helpin-human-handoff-banner">
-            <p className="helpin-human-handoff-title">
-              {config.features?.escalationMessage || "We're handing this over to a team member."}
-            </p>
-            <p className="helpin-human-handoff-meta">
-              {availability?.replyTimeText || availability?.outsideHoursMessage || 'Our team will follow up as soon as someone is available.'}
-            </p>
-          </div>
-        )}
         <MessageList
           messages={displayMessages}
           showDateSeparators={true}
