@@ -1537,10 +1537,11 @@
   border: 1px dashed #f59e0b;
 }
 
-/* System message — centered "Jarek joined the conversation" line */
+/* System message — centered "Jarek joined the conversation" line, matches
+   Intercom's inline-avatar + muted text pattern. Pill has no background. */
 .helpin-message-row--system {
   align-items: center;
-  margin: 6px 0;
+  margin: 0;
 }
 
 .helpin-system-message {
@@ -1548,16 +1549,17 @@
   align-items: center;
   gap: 8px;
   max-width: 100%;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 12px;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1.4;
   color: var(--helpin-fg-secondary);
   background: transparent;
+  text-align: center;
 }
 
 .helpin-system-message-avatar {
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   object-fit: cover;
   display: inline-flex;
@@ -1569,15 +1571,14 @@
 .helpin-system-message-avatar--placeholder {
   background: var(--helpin-bg-muted);
   color: var(--helpin-fg-secondary);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
 }
 
 .helpin-system-message-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  word-break: break-word;
 }
 
 .helpin-message-content {
