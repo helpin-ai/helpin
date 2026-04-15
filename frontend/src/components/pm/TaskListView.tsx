@@ -95,6 +95,7 @@ import {
   getVisibleTaskListGroupOptions,
   type TaskListGroupByOption,
 } from '@/components/pm/task-detail/taskListGrouping';
+import { getVisibleSprintsForTaskScope } from '@/components/pm/task-detail/taskPlanningScope';
 
 const ALL_PRIORITIES: Priority[] = ['urgent', 'high', 'medium', 'low', 'none'];
 const ALL_SEVERITIES: Severity[] = ['critical', 'major', 'minor', 'none'];
@@ -756,6 +757,8 @@ export function TaskListView({
           cell: (info) => (
             <InlineSprintCell
               task={info.row.original}
+              taskTeamId={info.row.original.team_id}
+              listTeamId={teamId}
               sprints={sprints}
               sprintMap={sprintMap}
               onUpdate={updateTaskField}
@@ -2040,17 +2043,25 @@ function InlineEpicCell({
 
 function InlineSprintCell({
   task,
+  taskTeamId,
+  listTeamId,
   sprints,
   sprintMap,
   onUpdate,
 }: {
   task: Task;
+  taskTeamId?: string | null;
+  listTeamId?: string | null;
   sprints: SprintWithStats[];
   sprintMap: Map<string, string>;
   onUpdate: (taskId: string, patch: Partial<Task>) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const sprintName = task.sprint_id ? sprintMap.get(task.sprint_id) ?? 'Unknown' : null;
+  const visibleSprints = useMemo(
+    () => getVisibleSprintsForTaskScope(sprints, { taskTeamId, listTeamId }),
+    [listTeamId, sprints, taskTeamId],
+  );
 
   if (!open) {
     return (
@@ -2096,7 +2107,7 @@ function InlineSprintCell({
             <CommandList>
               <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No sprints found</CommandEmpty>
               <CommandGroup>
-                {sprints.map((sp) => (
+                {visibleSprints.map((sp) => (
                   <CommandItem
                     key={sp.sprint.id}
                     value={sp.sprint.name}
