@@ -639,7 +639,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 		)
 		s.recordTokenUsage(ctx, agent.ID, plannerTokens)
 		clarifyProgressState := determineAIProgressState(queryPlan, supportReplyKindClarify, 0.92, settings.AIConfidenceThreshold, issueStats)
-		aiMsg, err := s.publishAIReply(ctx, workspaceID, conversationID, agentID, queryPlan.ClarifyingQuestion, s.queryPlannerModelName(), plannerTokens, 0.92, nil, supportReplyKindClarify, queryPlan.IssueKey, queryPlan.IssueSummary, clarifyProgressState)
+		aiMsg, err := s.publishAIReply(ctx, workspaceID, conversationID, agentID, queryPlan.ClarifyingQuestion, s.queryPlannerModelName(), plannerTokens, 0.92, nil, supportReplyKindClarify, queryPlan.IssueKey, queryPlan.IssueSummary, clarifyProgressState, conv.CustomerEmail, conv.CustomerPhone)
 		if err != nil {
 			return err
 		}
@@ -731,7 +731,7 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 			return nil
 		}
 
-		cleanContent := stripPII(response.Content)
+		cleanContent := stripConversationPII(response.Content, conv.CustomerEmail, conv.CustomerPhone)
 		publicSources := buildAISources(response.SourceDocIDs, searchResults)
 		answerReplyKind := classifyAnswerReplyKind(msg.Content)
 		answerProgressState := determineAIProgressState(queryPlan, answerReplyKind, confidence, settings.AIConfidenceThreshold, issueStats)
@@ -1743,6 +1743,8 @@ func (s *SupportAIService) publishAIReply(
 	issueKey string,
 	issueSummary string,
 	progressState string,
+	customerEmail *string,
+	customerPhone *string,
 ) (*model.SupportMessage, error) {
 	metadata := AIMessageMetadata{
 		AIAutoReply:     true,
@@ -1764,7 +1766,7 @@ func (s *SupportAIService) publishAIReply(
 		SenderType:        "ai",
 		SenderAgentID:     &agentID,
 		SenderDisplayName: strPtr(helpinAIDisplayName),
-		Content:           stripPII(strings.TrimSpace(content)),
+		Content:           stripConversationPII(strings.TrimSpace(content), customerEmail, customerPhone),
 		MessageType:       "reply",
 		Metadata:          string(metadataJSON),
 	}
@@ -2685,5 +2687,23 @@ func stripPII(content string) string {
 	for _, re := range piiRegexes {
 		result = re.ReplaceAllString(result, "[REDACTED]")
 	}
+	return result
+}
+
+func stripConversationPII(content string, customerEmail, customerPhone *string) string {
+	result := content
+
+	for _, value := range []string{derefString(customerEmail), derefString(customerPhone)} {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		re := regexp.MustCompile(`(?i)` + regexp.QuoteMeta(trimmed))
+		result = re.ReplaceAllString(result, "[REDACTED]")
+	}
+
+	// Keep generic redaction for highly sensitive identifiers even in
+	// customer-facing text.
+	result = piiRegexes[2].ReplaceAllString(result, "[REDACTED]")
 	return result
 }
