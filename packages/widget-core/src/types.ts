@@ -1,8 +1,11 @@
-import type { Message as SharedMessage, WidgetConfig as SharedWidgetConfig, PendingAttachment as SharedPendingAttachment } from '@helpin-ai/shared';
+import type { Message as SharedMessage, WidgetConfig as SharedWidgetConfig, PendingAttachment as SharedPendingAttachment, SystemEventType as SharedSystemEventType } from '@helpin-ai/shared';
+import { SYSTEM_EVENT_TYPES as SHARED_SYSTEM_EVENT_TYPES } from '@helpin-ai/shared';
 
 // Re-export shared types
 export type Message = SharedMessage;
 export type PendingAttachment = SharedPendingAttachment;
+export type SystemEventType = SharedSystemEventType;
+export const SYSTEM_EVENT_TYPES = SHARED_SYSTEM_EVENT_TYPES;
 
 export interface WidgetConfig extends Omit<SharedWidgetConfig, 'availableTeammates' | 'features' | 'availability'> {
   availableTeammates?: ActiveTeammate[];

@@ -200,7 +200,7 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
                 onClick={handleFileSelect}
                 disabled={disabled}
               >
-                <PaperclipIcon size={20} />
+                <PaperclipIcon size={18} />
               </button>
             )}
             <EmojiPicker onEmojiSelect={handleEmojiSelect} disabled={disabled} />

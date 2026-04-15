@@ -252,6 +252,29 @@ export interface SupportLinkPreview {
   host: string;
 }
 
+/**
+ * Canonical set of system_event_type values the backend emits on
+ * message_type='system' rows. Renderers branch on this instead of
+ * keyword-matching content. Source of truth:
+ * server/internal/model/support_system_event.go.
+ */
+export const SUPPORT_SYSTEM_EVENT_TYPES = [
+  'teammate_joined',
+  'assigned',
+  'unassigned',
+  'took',
+  'agent_assigned',
+  'mailbox_moved',
+  'triage_routed',
+  'triage_dismissed',
+  'ai_escalated',
+  'resolved',
+  'reopened',
+  'closed',
+] as const;
+
+export type SupportSystemEventType = (typeof SUPPORT_SYSTEM_EVENT_TYPES)[number];
+
 export interface SupportMessage {
   id: string;
   workspace_id: string;
@@ -263,6 +286,7 @@ export interface SupportMessage {
   sender_avatar_url?: string;
   content: string;
   message_type?: string;
+  system_event_type?: SupportSystemEventType;
   is_internal: boolean;
   metadata?: string;
   via_channel?: 'email' | 'widget' | null;

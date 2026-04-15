@@ -189,6 +189,7 @@ type SupportMessage struct {
 	ConversationID    string     `json:"conversation_id" gorm:"type:uuid;index"`
 	SenderType        string     `json:"sender_type" gorm:"not null"`                  // customer, user, agent, ai
 	MessageType       string     `json:"message_type" gorm:"not null;default:'reply'"` // reply, csat_survey, system
+	SystemEventType   *string    `json:"system_event_type,omitempty" gorm:"size:40;index:idx_support_messages_system_event,where:system_event_type IS NOT NULL"`
 	SenderUserID      *string    `json:"sender_user_id" gorm:"type:uuid"`
 	SenderAgentID     *string    `json:"sender_agent_id" gorm:"type:uuid"`
 	SenderDisplayName *string    `json:"sender_display_name"`
@@ -679,16 +680,18 @@ type WidgetSessionJoinedPayload struct {
 
 // WidgetMessageReceivedPayload is sent to widget clients for new messages.
 type WidgetMessageReceivedPayload struct {
-	ID             string                     `json:"id"`
-	ConversationID string                     `json:"conversation_id"`
-	Content        string                     `json:"content"`
-	SenderType     string                     `json:"sender_type"`
-	SenderName     *string                    `json:"sender_name"`
-	SenderAvatar   *string                    `json:"sender_avatar"`
-	Metadata       *string                    `json:"metadata,omitempty"`
-	ViaChannel     string                     `json:"via_channel,omitempty"`
-	Attachments    []SupportAttachmentPayload `json:"attachments,omitempty"`
-	CreatedAt      string                     `json:"created_at"`
+	ID              string                     `json:"id"`
+	ConversationID  string                     `json:"conversation_id"`
+	Content         string                     `json:"content"`
+	SenderType      string                     `json:"sender_type"`
+	MessageType     string                     `json:"message_type,omitempty"`
+	SystemEventType *string                    `json:"system_event_type,omitempty"`
+	SenderName      *string                    `json:"sender_name"`
+	SenderAvatar    *string                    `json:"sender_avatar"`
+	Metadata        *string                    `json:"metadata,omitempty"`
+	ViaChannel      string                     `json:"via_channel,omitempty"`
+	Attachments     []SupportAttachmentPayload `json:"attachments,omitempty"`
+	CreatedAt       string                     `json:"created_at"`
 }
 
 // CannedResponseRequest is the payload for CRUD operations on canned responses.

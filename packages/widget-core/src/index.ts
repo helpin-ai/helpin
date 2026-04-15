@@ -14,7 +14,9 @@ export type {
   AiSource,
   Attachment,
   PendingAttachment,
+  SystemEventType,
 } from './types';
+export { SYSTEM_EVENT_TYPES } from './types';
 
 export type { WidgetView } from './components/BottomNav';
 
