@@ -719,16 +719,27 @@ func (e *CodexExecutor) persistEngineerWorkspace(execCtx *ExecutionContext, run 
 		_ = execCtx.Heartbeat("persisting_changes")
 	}
 
-	changed, err := waitForOpenCodeRepoChanges(execCtx, codexRepoChangeWaitTimeout, codexRepoChangePollEvery)
-	if err != nil {
-		return err
+	var (
+		changed bool
+		err     error
+	)
+	if isInteractiveRunInvocation(run) {
+		changed, err = openCodeRunProducedRepoChanges(execCtx)
+		if err != nil {
+			return err
+		}
+		if !changed {
+			slog.InfoContext(execCtx.Context, "skipping strict repo-change requirement for interactive codex run",
+				"run_id", run.ID)
+			return nil
+		}
+	} else {
+		changed, err = waitForOpenCodeRepoChanges(execCtx, codexRepoChangeWaitTimeout, codexRepoChangePollEvery)
+		if err != nil {
+			return err
+		}
 	}
 	if !changed {
-		if isInteractiveRunInvocation(run) {
-			slog.InfoContext(execCtx.Context, "interactive codex run produced no repository changes yet; requesting follow-up input",
-				"run_id", run.ID)
-			return ErrInteractiveRepoChangePending
-		}
 		statusSummary, diffStatSummary := e.captureCodexNoChangeDiagnostics(execCtx, artifactWriter)
 		return fmt.Errorf("codex completed without modifying the repository within %s; response_source=%s; response=%s; codex_stdout=%s; codex_stderr=%s; git_status=%s; git_diff=%s",
 			codexRepoChangeWaitTimeout,
@@ -764,9 +775,9 @@ func (e *CodexExecutor) persistEngineerWorkspace(execCtx *ExecutionContext, run 
 			return persistExistingEngineerCommitLocally(execCtx, artifactWriter, committedChange)
 		}
 		if isInteractiveRunInvocation(run) {
-			slog.InfoContext(execCtx.Context, "interactive codex run ended without staged repository diff; requesting follow-up input",
+			slog.InfoContext(execCtx.Context, "skipping strict staged-diff requirement for interactive codex run",
 				"run_id", run.ID)
-			return ErrInteractiveRepoChangePending
+			return nil
 		}
 		return fmt.Errorf("codex completed without producing a staged repository diff")
 	}
