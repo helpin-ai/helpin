@@ -356,7 +356,7 @@ func (s *SupportInboxTriageService) EvaluateAndRoute(ctx context.Context, worksp
 			}); err != nil {
 				return nil, err
 			}
-			s.createSystemMessage(ctx, workspaceID, conversationID, nil, "ai", "AI triage", autoMoveMessage(result.ClassifierSource, triage.SuggestedMailboxID, s.loadMailboxName(ctx, workspaceID, triage.SuggestedMailboxID)), true)
+			s.createSystemMessage(ctx, workspaceID, conversationID, nil, "ai", "AI triage", autoMoveMessage(result.ClassifierSource, triage.SuggestedMailboxID, s.loadMailboxName(ctx, workspaceID, triage.SuggestedMailboxID)), true, model.SystemEventTriageRouted)
 		} else {
 			slog.ErrorContext(ctx, "support triage auto-move failed", "workspace_id", workspaceID, "conversation_id", conversationID, "error", moveErr)
 		}
@@ -400,7 +400,7 @@ func (s *SupportInboxTriageService) DismissConversationTriage(ctx context.Contex
 		return nil, err
 	}
 
-	s.createSystemMessage(ctx, workspaceID, conversationID, &actorUserID, "user", "", "Routing suggestion dismissed", false)
+	s.createSystemMessage(ctx, workspaceID, conversationID, &actorUserID, "user", "", "Routing suggestion dismissed", true, model.SystemEventTriageDismissed)
 	s.publishConversationUpdated(workspaceID, conversationID, actorUserID)
 	return triage, nil
 }
@@ -1040,7 +1040,7 @@ func (s *SupportInboxTriageService) publishConversationUpdated(workspaceID, conv
 	})
 }
 
-func (s *SupportInboxTriageService) createSystemMessage(ctx context.Context, workspaceID, conversationID string, actorUserID *string, senderType, fallbackDisplayName, content string, isInternal bool) {
+func (s *SupportInboxTriageService) createSystemMessage(ctx context.Context, workspaceID, conversationID string, actorUserID *string, senderType, fallbackDisplayName, content string, isInternal bool, eventType model.SupportSystemEventType) {
 	if s == nil || s.supportService == nil || s.supportService.messageRepo == nil || strings.TrimSpace(content) == "" {
 		return
 	}
@@ -1068,6 +1068,7 @@ func (s *SupportInboxTriageService) createSystemMessage(ctx context.Context, wor
 		Content:           strings.TrimSpace(content),
 		IsInternal:        isInternal,
 		MessageType:       "system",
+		SystemEventType:   model.SupportSystemEventTypeStrPtr(eventType),
 	}
 	if err := s.supportService.messageRepo.Create(ctx, msg); err != nil {
 		slog.ErrorContext(ctx, "create support routing system message", "workspace_id", workspaceID, "conversation_id", conversationID, "error", err)

@@ -919,11 +919,57 @@ describe('WidgetManager', () => {
         type: 'session:upgrade',
         data: {
           email: 'boot@example.com',
+          first_name: '',
+          last_name: '',
           name: 'Boot User',
           source: 'sdk_identify',
         },
       });
       expect((widget as any).currentEmail).toBe('boot@example.com');
+    });
+
+    it('maps escalation system messages to the system role for restored sessions', () => {
+      (widget as any).widgetConfig = {
+        workspaceId: 'ws_test',
+        branding: { primaryColor: '#6366f1' },
+        features: {},
+      };
+      (widget as any).mountContainer = document.createElement('div');
+
+      (widget as any).handleWSMessage({
+        type: 'session:joined',
+        data: {
+          session_token: 'session-1',
+          expires_at: new Date(Date.now() + 60_000).toISOString(),
+          is_anonymous: true,
+          conversations: [
+            {
+              id: 'conv-1',
+              subject: 'Support',
+              status: 'open',
+              ai_state: 'escalated',
+              flow_state: 'waiting_for_human',
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            },
+          ],
+          messages: [
+            {
+              id: 'msg-1',
+              conversation_id: 'conv-1',
+              sender_type: 'agent',
+              message_type: 'system',
+              content: 'Let me connect you with a team member who can help further.',
+              created_at: new Date().toISOString(),
+            },
+          ],
+        },
+      });
+
+      const latestOptions = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+      expect(latestOptions?.messages?.[0]?.role).toBe('system');
+      expect(latestOptions?.activeConversation?.aiState).toBe('escalated');
+      expect(latestOptions?.activeConversation?.flowState).toBe('waiting_for_human');
     });
 
     it('refreshes conversation list when the rendered widget switches to messages view', async () => {

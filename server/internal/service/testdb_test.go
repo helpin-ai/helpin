@@ -746,6 +746,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			ticket_id TEXT,
 			sender_type TEXT NOT NULL,
 			message_type TEXT NOT NULL DEFAULT 'reply',
+			system_event_type TEXT,
 			sender_user_id TEXT,
 			sender_agent_id TEXT,
 			sender_display_name TEXT,

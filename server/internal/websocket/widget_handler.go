@@ -429,6 +429,7 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 				ConversationID: result.ConversationID,
 				Content:        result.Content,
 				SenderType:     result.SenderType,
+				MessageType:    result.MessageType,
 				SenderName:     result.SenderDisplayName,
 				SenderAvatar:   result.SenderAvatarURL,
 				ViaChannel:     derefStr(result.ViaChannel),

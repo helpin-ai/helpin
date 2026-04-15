@@ -36,7 +36,18 @@ func (r *SupportMessageRepository) ListByConversation(ctx context.Context, works
 }
 
 // Create creates a new message.
+//
+// Invariant: every row with MessageType == "system" MUST carry a recognized
+// SystemEventType. Rendering logic on both the widget and admin surfaces
+// dispatches on SystemEventType rather than keyword-matching the content, so
+// a missing value would silently render via the legacy fallback path.
+// Enforcing here means new emitters can't forget the event type.
 func (r *SupportMessageRepository) Create(ctx context.Context, message *model.SupportMessage) error {
+	if message != nil && message.MessageType == "system" {
+		if message.SystemEventType == nil || !model.IsValidSupportSystemEventType(*message.SystemEventType) {
+			return fmt.Errorf("create message: system message requires a valid system_event_type")
+		}
+	}
 	if err := r.db.WithContext(ctx).Create(message).Error; err != nil {
 		return fmt.Errorf("create message: %w", err)
 	}

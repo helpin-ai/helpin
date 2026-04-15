@@ -473,8 +473,8 @@
 }
 
 .helpin-home-teammate-avatar {
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
@@ -488,7 +488,7 @@
   justify-content: center;
   background: linear-gradient(135deg, var(--helpin-primary), color-mix(in srgb, var(--helpin-primary) 70%, white));
   color: var(--helpin-primary-foreground);
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -1525,7 +1525,8 @@
 }
 
 .helpin-message--agent,
-.helpin-message--ai {
+.helpin-message--ai,
+.helpin-message--system {
   background: var(--helpin-bg-muted);
   color: var(--helpin-fg);
   border-bottom-left-radius: 4px;
@@ -1534,6 +1535,50 @@
 .helpin-message--internal {
   background: #fef3c7;
   border: 1px dashed #f59e0b;
+}
+
+/* System message — centered "Jarek joined the conversation" line, matches
+   Intercom's inline-avatar + muted text pattern. Pill has no background. */
+.helpin-message-row--system {
+  align-items: center;
+  margin: 0;
+}
+
+.helpin-system-message {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--helpin-fg-secondary);
+  background: transparent;
+  text-align: center;
+}
+
+.helpin-system-message-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.helpin-system-message-avatar--placeholder {
+  background: var(--helpin-bg-muted);
+  color: var(--helpin-fg-secondary);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.helpin-system-message-text {
+  min-width: 0;
+  word-break: break-word;
 }
 
 .helpin-message-content {
@@ -1876,8 +1921,8 @@
 }
 
 .helpin-compose-tool-btn {
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   border-radius: 8px;
   border: none;
   background: transparent;
@@ -1956,14 +2001,14 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px 16px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--helpin-border);
   background: var(--helpin-bg);
 }
 
 .helpin-conversation-back {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   border-radius: 999px;
   border: none;
   background: transparent;
@@ -1984,16 +2029,16 @@
 .helpin-conversation-brand {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
   flex: 1;
 }
 
 .helpin-conversation-logo,
 .helpin-conversation-logo-placeholder {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
   flex-shrink: 0;
 }
 
@@ -2020,8 +2065,8 @@
 }
 
 .helpin-conversation-header-btn {
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   border-radius: 8px;
   border: none;
   background: transparent;
@@ -2321,23 +2366,23 @@
 }
 
 .helpin-message-avatar {
-  width: 32px;
-  height: 32px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
 }
 
 .helpin-message-avatar-placeholder {
-  width: 32px;
-  height: 32px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   background: var(--helpin-bg-muted);
   color: var(--helpin-fg-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 600;
   flex-shrink: 0;
 }
@@ -2350,7 +2395,7 @@
 
 /* Bubble wrapper — indented to align with name (avatar width + gap) */
 .helpin-message-agent-bubble-wrap {
-  padding-left: 40px; /* 32px avatar + 8px gap */
+  padding-left: 34px; /* 26px avatar + 8px gap */
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
@@ -2374,23 +2419,23 @@
 }
 
 .helpin-typing-avatar {
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
 }
 
 .helpin-typing-avatar-placeholder {
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   background: var(--helpin-bg-muted);
   color: var(--helpin-fg-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 600;
   flex-shrink: 0;
 }
@@ -2453,6 +2498,59 @@
   color: var(--helpin-fg-primary);
   border-color: var(--helpin-fg-secondary);
   background: var(--helpin-bg-muted);
+}
+
+/* Waiting-for-teammate indicator */
+.helpin-waiting-teammate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 6px 16px 8px;
+  font-size: 12px;
+  color: var(--helpin-fg-muted);
+}
+
+.helpin-waiting-teammate-avatars {
+  display: inline-flex;
+  align-items: center;
+}
+
+.helpin-waiting-teammate-avatar-wrap {
+  display: inline-flex;
+}
+
+.helpin-waiting-teammate-avatar-wrap + .helpin-waiting-teammate-avatar-wrap {
+  margin-left: -6px;
+}
+
+.helpin-waiting-teammate-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--helpin-bg);
+  box-shadow: 0 0 0 1px rgba(17, 24, 39, 0.06);
+}
+
+.helpin-waiting-teammate-avatar--placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--helpin-primary), color-mix(in srgb, var(--helpin-primary) 70%, white));
+  color: var(--helpin-primary-foreground);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.helpin-waiting-teammate-label {
+  position: relative;
+  animation: helpin-waiting-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes helpin-waiting-pulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
 }
 
 /* AI Thinking Indicator */

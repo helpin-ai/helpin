@@ -1,4 +1,4 @@
-import { mountWidget, unmountWidget } from '@helpin-ai/widget-core';
+import { mountWidget, unmountWidget, SYSTEM_EVENT_TYPES } from '@helpin-ai/widget-core';
 import type { WidgetConfig, Message, Conversation, WidgetView } from '@helpin-ai/widget-core';
 // @ts-ignore — Vite ?inline import returns CSS as a string
 import widgetStyles from '@helpin-ai/widget-core/styles?inline';
@@ -716,6 +716,53 @@ export class WidgetManager {
     };
   }
 
+  private mapSupportMessage(raw: any): Message {
+    let parsedMeta: any = null;
+    if (raw?.metadata) {
+      try { parsedMeta = typeof raw.metadata === 'string' ? JSON.parse(raw.metadata) : raw.metadata; } catch { /* ignore */ }
+    }
+
+    const isSystem = raw?.message_type === 'system';
+    const isAI = raw?.sender_type === 'ai' || !!(parsedMeta?.ai_agent_id);
+    const role: Message['role'] = isSystem
+      ? 'system'
+      : raw?.sender_type === 'customer'
+        ? 'customer'
+        : isAI
+          ? 'ai'
+          : 'agent';
+
+    // Validate system_event_type against the shared union before surfacing it
+    // so renderers can trust the value.
+    let systemEventType: Message['systemEventType'];
+    const rawEventType = typeof raw?.system_event_type === 'string' ? raw.system_event_type : undefined;
+    if (rawEventType && (SYSTEM_EVENT_TYPES as readonly string[]).includes(rawEventType)) {
+      systemEventType = rawEventType as Message['systemEventType'];
+    }
+
+    const message: Message = {
+      id: raw?.id || `ws-${Date.now()}`,
+      conversationId: raw?.conversation_id || '',
+      role,
+      content: raw?.content || '',
+      senderName: raw?.sender_display_name || raw?.sender_name || undefined,
+      senderAvatar: raw?.sender_avatar_url || raw?.sender_avatar || undefined,
+      systemEventType,
+      viaChannel: raw?.via_channel || undefined,
+      isInternal: raw?.is_internal || false,
+      attachments: WidgetManager.mapAttachments(raw?.attachments),
+      createdAt: raw?.created_at || new Date().toISOString(),
+    };
+
+    if (parsedMeta) {
+      if (parsedMeta.ai_sources) message.sources = parsedMeta.ai_sources;
+      if (parsedMeta.ai_confidence !== undefined) message.aiConfidence = parsedMeta.ai_confidence;
+      if (Array.isArray(parsedMeta.link_previews)) message.linkPreviews = parsedMeta.link_previews;
+    }
+
+    return message;
+  }
+
   private handleSendMessage(content: string, options: { startNewConversation?: boolean; attachmentIds?: string[] } = {}): void {
     if (!content.trim() && (!options.attachmentIds || options.attachmentIds.length === 0)) return;
 
@@ -1247,32 +1294,7 @@ export class WidgetManager {
 
         // Load conversation history from server
         if (payload.messages && payload.messages.length > 0) {
-          this.messages = payload.messages.map((m: any) => {
-            let parsedMeta: any = null;
-            if (m.metadata) {
-              try { parsedMeta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : m.metadata; } catch { /* ignore */ }
-            }
-            const isAI = m.sender_type === 'ai' || !!(parsedMeta?.ai_agent_id);
-            const msg: any = {
-              id: m.id,
-              conversationId: m.conversation_id,
-              role: m.sender_type === 'customer' ? 'customer' : isAI ? 'ai' : 'agent',
-              content: m.content,
-              senderName: m.sender_display_name || undefined,
-              senderAvatar: m.sender_avatar_url || undefined,
-              viaChannel: m.via_channel || undefined,
-              isInternal: m.is_internal || false,
-              attachments: WidgetManager.mapAttachments(m.attachments),
-              createdAt: m.created_at,
-            };
-            // Map AI metadata to widget Message fields
-            if (parsedMeta) {
-              if (parsedMeta.ai_sources) msg.sources = parsedMeta.ai_sources;
-              if (parsedMeta.ai_confidence !== undefined) msg.aiConfidence = parsedMeta.ai_confidence;
-              if (Array.isArray(parsedMeta.link_previews)) msg.linkPreviews = parsedMeta.link_previews;
-            }
-            return msg;
-          });
+          this.messages = payload.messages.map((m: any) => this.mapSupportMessage(m));
         }
 
         const hashConversationId = this.getConversationIdFromHash();
@@ -1363,29 +1385,7 @@ export class WidgetManager {
 
       case 'message:received': {
         const msg = data.data;
-        let wsMeta: any = null;
-        if (msg.metadata) {
-          try { wsMeta = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata; } catch { /* ignore */ }
-        }
-        const wsIsAI = msg.sender_type === 'ai' || !!(wsMeta?.ai_agent_id);
-        const newMsg: any = {
-          id: msg.id || `ws-${Date.now()}`,
-          conversationId: msg.conversation_id || '',
-          role: msg.sender_type === 'customer' ? 'customer' : wsIsAI ? 'ai' : 'agent',
-          content: msg.content || '',
-          senderName: msg.sender_name || undefined,
-          senderAvatar: msg.sender_avatar || undefined,
-          viaChannel: msg.via_channel || undefined,
-          isInternal: false,
-          attachments: WidgetManager.mapAttachments(msg.attachments),
-          createdAt: msg.created_at || new Date().toISOString(),
-        };
-        // Map AI metadata from WS payload
-        if (wsMeta) {
-          if (wsMeta.ai_sources) (newMsg as any).sources = wsMeta.ai_sources;
-          if (wsMeta.ai_confidence !== undefined) (newMsg as any).aiConfidence = wsMeta.ai_confidence;
-          if (Array.isArray(wsMeta.link_previews)) (newMsg as any).linkPreviews = wsMeta.link_previews;
-        }
+        const newMsg = this.mapSupportMessage(msg);
 
         // Replace optimistic message if this is an echo
         if (msg.sender_type === 'customer') {
@@ -1528,31 +1528,7 @@ export class WidgetManager {
         if (Array.isArray(msgs)) {
           this.activeTeammate = this.mapActiveTeammate(data.data?.active_teammate)
             || (this.activeConversationId ? this.conversations.find((c) => c.id === this.activeConversationId)?.activeTeammate : undefined);
-          this.messages = msgs.map((m: any) => {
-            let meta: any = null;
-            if (m.metadata) {
-              try { meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : m.metadata; } catch { /* ignore */ }
-            }
-            const mIsAI = m.sender_type === 'ai' || !!(meta?.ai_agent_id);
-            const mapped: any = {
-              id: m.id,
-              conversationId: m.conversation_id,
-              role: m.sender_type === 'customer' ? 'customer' : mIsAI ? 'ai' : 'agent',
-              content: m.content,
-              senderName: m.sender_display_name || undefined,
-              senderAvatar: m.sender_avatar_url || undefined,
-              viaChannel: m.via_channel || undefined,
-              isInternal: m.is_internal || false,
-              attachments: WidgetManager.mapAttachments(m.attachments),
-              createdAt: m.created_at,
-            };
-            if (meta) {
-              if (meta.ai_sources) mapped.sources = meta.ai_sources;
-              if (meta.ai_confidence !== undefined) mapped.aiConfidence = meta.ai_confidence;
-              if (Array.isArray(meta.link_previews)) mapped.linkPreviews = meta.link_previews;
-            }
-            return mapped;
-          });
+          this.messages = msgs.map((m: any) => this.mapSupportMessage(m));
           this.render();
         }
         break;

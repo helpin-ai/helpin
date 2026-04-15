@@ -359,6 +359,96 @@ describe('ChatWindow', () => {
     expect(getByText('Online now')).toBeTruthy();
   });
 
+  it('shows waiting for teammate after an escalated system handoff message', () => {
+    const { getByText, container } = render(
+      <ChatWindow
+        config={{
+          ...baseConfig,
+          availableTeammates: [
+            { userId: 'user-1', name: 'CS Azhar', status: 'online' as const },
+            { userId: 'user-2', name: 'Nora Support', status: 'away' as const },
+          ],
+        }}
+        messages={[
+          sampleMessage,
+          {
+            id: 'msg-2',
+            conversationId: 'conv-1',
+            role: 'system' as const,
+            content: 'Let me connect you with a team member who can help further.',
+            isInternal: false,
+            createdAt: new Date().toISOString(),
+          },
+        ]}
+        activeConversation={{
+          id: 'conv-1',
+          subject: 'Need help',
+          status: 'open',
+          aiState: 'escalated',
+          flowState: 'waiting_for_human',
+        }}
+        isOpen={true}
+        onClose={() => {}}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={false}
+        onPreChatSubmit={() => {}}
+        initialView="conversation"
+      />,
+    );
+
+    expect(getByText('Let me connect you with a team member who can help further.')).toBeTruthy();
+    expect(getByText('Waiting for a teammate')).toBeTruthy();
+    expect(container.querySelectorAll('.helpin-waiting-teammate-avatar').length).toBe(2);
+  });
+
+  it('groups consecutive Helpin AI handoff and reply messages under one sender label', () => {
+    const { container } = render(
+      <ChatWindow
+        config={{
+          ...baseConfig,
+          features: {
+            ...baseConfig.features,
+            aiEnabled: true,
+            aiFirst: true,
+          },
+        }}
+        messages={[
+          sampleMessage,
+          {
+            id: 'msg-2',
+            conversationId: 'conv-1',
+            role: 'system' as const,
+            content: 'Let me connect you with a team member who can help further.',
+            senderName: 'Helpin AI',
+            isInternal: false,
+            createdAt: new Date().toISOString(),
+          },
+          {
+            id: 'msg-3',
+            conversationId: 'conv-1',
+            role: 'ai' as const,
+            content: 'A teammate will respond shortly.',
+            isInternal: false,
+            createdAt: new Date().toISOString(),
+          },
+        ]}
+        isOpen={true}
+        onClose={() => {}}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={false}
+        onPreChatSubmit={() => {}}
+        initialView="conversation"
+      />,
+    );
+
+    const senderLabels = Array.from(container.querySelectorAll('.helpin-message-agent-name'))
+      .map((node) => node.textContent)
+      .filter((text) => text === 'Helpin AI');
+    expect(senderLabels).toHaveLength(1);
+  });
+
   it('shows the active teammate in conversation header before a human reply is sent', () => {
     const { getByText, container } = render(
       <ChatWindow
