@@ -1,6 +1,7 @@
 import type { BusinessHoursDay, SupportInboxSettings } from '@/lib/pmTypes';
 import type { WidgetConfig } from '@helpin-ai/widget-core';
-import { DAYS, DEFAULT_BUSINESS_HOURS_DAY, DEFAULT_ONLINE_REPLY_TEXT } from './constants';
+import { formatReplyTimeCopy } from '@helpin-ai/shared';
+import { DAYS, DEFAULT_BUSINESS_HOURS_DAY } from './constants';
 
 export type ChatSettingsDraft = Omit<
   SupportInboxSettings,
@@ -42,19 +43,35 @@ function zonedMinutes(date: Date, timezone: string): number {
   return (hour * 60) + minute;
 }
 
-export function buildPreviewAvailability(
-  businessHoursEnabled: boolean,
-  timezone: string,
-  schedule: Record<string, BusinessHoursDay>,
-  outsideMessage: string,
-): WidgetConfig['availability'] {
+export interface PreviewAvailabilityInput {
+  businessHoursEnabled: boolean;
+  timezone: string;
+  schedule: Record<string, BusinessHoursDay>;
+  outsideMessage: string;
+  replyTimePreset: string;
+  replyTimeCustomMinutes: number | null;
+  specialNoticeText: string | null;
+}
+
+type PreviewAvailability = NonNullable<WidgetConfig['availability']>;
+
+export function buildPreviewAvailability(input: PreviewAvailabilityInput): PreviewAvailability {
+  const { businessHoursEnabled, timezone, schedule, outsideMessage, replyTimePreset, replyTimeCustomMinutes, specialNoticeText } = input;
   const fallbackMessage = outsideMessage || "We're currently offline. Leave a message and we'll get back to you!";
+  const replyTimeText = formatReplyTimeCopy(replyTimePreset || 'few_minutes', replyTimeCustomMinutes ?? 0);
+  const notice = specialNoticeText && specialNoticeText.trim() ? specialNoticeText : undefined;
+
+  const online: PreviewAvailability = {
+    isOnline: true,
+    statusText: 'Online now',
+    replyTimeText,
+    replyTimePreset: (replyTimePreset || 'few_minutes') as PreviewAvailability['replyTimePreset'],
+    replyTimeMinutes: replyTimePreset === 'custom' && replyTimeCustomMinutes ? replyTimeCustomMinutes : undefined,
+    specialNoticeText: notice,
+  };
+
   if (!businessHoursEnabled) {
-    return {
-      isOnline: true,
-      statusText: 'Online now',
-      replyTimeText: DEFAULT_ONLINE_REPLY_TEXT,
-    };
+    return online;
   }
 
   try {
@@ -67,26 +84,17 @@ export function buildPreviewAvailability(
       && nowMinutes < parseTimeToMinutes(day.end),
     );
 
-    if (withinHours) {
-      return {
-        isOnline: true,
-        statusText: 'Online now',
-        replyTimeText: DEFAULT_ONLINE_REPLY_TEXT,
-      };
-    }
+    if (withinHours) return online;
 
     return {
       isOnline: false,
       statusText: 'Offline now',
       replyTimeText: fallbackMessage,
       outsideHoursMessage: fallbackMessage,
+      specialNoticeText: notice,
     };
   } catch {
-    return {
-      isOnline: true,
-      statusText: 'Online now',
-      replyTimeText: DEFAULT_ONLINE_REPLY_TEXT,
-    };
+    return online;
   }
 }
 

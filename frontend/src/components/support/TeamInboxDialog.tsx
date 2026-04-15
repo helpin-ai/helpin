@@ -28,6 +28,9 @@ type MailboxFormState = {
   linkedTeamId: string;
   assignmentMode: 'manual' | 'round_robin';
   workspaceMemberIds: string[];
+  replyTimeOverride: boolean;
+  replyTimePreset: string;
+  replyTimeCustomMinutes: number | null;
 };
 
 const DEFAULT_FORM: MailboxFormState = {
@@ -40,6 +43,9 @@ const DEFAULT_FORM: MailboxFormState = {
   linkedTeamId: 'none',
   assignmentMode: 'manual',
   workspaceMemberIds: [],
+  replyTimeOverride: false,
+  replyTimePreset: 'few_minutes',
+  replyTimeCustomMinutes: null,
 };
 
 const EMPTY_MEMBERS: never[] = [];
@@ -50,6 +56,7 @@ function normalizeHandle(value: string) {
 
 function buildFormState(mailbox?: SupportMailbox | null): MailboxFormState {
   if (!mailbox) return DEFAULT_FORM;
+  const hasOverride = Boolean(mailbox.reply_time_preset);
   return {
     name: mailbox.name,
     handle: mailbox.handle,
@@ -60,6 +67,9 @@ function buildFormState(mailbox?: SupportMailbox | null): MailboxFormState {
     linkedTeamId: mailbox.linked_team_id ?? 'none',
     assignmentMode: mailbox.assignment_mode,
     workspaceMemberIds: [],
+    replyTimeOverride: hasOverride,
+    replyTimePreset: mailbox.reply_time_preset ?? 'few_minutes',
+    replyTimeCustomMinutes: mailbox.reply_time_custom_minutes ?? null,
   };
 }
 
@@ -181,6 +191,14 @@ export function TeamInboxDialog({
         assignment_mode: form.assignmentMode,
         workspace_member_ids: form.workspaceMemberIds,
       };
+      if (form.replyTimeOverride) {
+        payload.reply_time_preset = form.replyTimePreset;
+        payload.reply_time_custom_minutes = form.replyTimePreset === 'custom' ? form.replyTimeCustomMinutes : null;
+        payload.clear_reply_time_custom_minutes = form.replyTimePreset !== 'custom';
+      } else {
+        payload.clear_reply_time_preset = true;
+        payload.clear_reply_time_custom_minutes = true;
+      }
       await updateMailbox.mutateAsync({ mailboxId: mailbox.id, payload });
       toast.success('Team inbox updated');
     } else {
@@ -338,6 +356,72 @@ export function TeamInboxDialog({
                       </SelectContent>
                     </Select>
                   </div>
+                </div>
+
+                <div className="space-y-3 rounded-md border border-dashed border-border/60 p-4">
+                  <FieldLabel tip="Override the workspace reply-time expectation for conversations in this inbox. Inherit to use the workspace default; set a preset here to give this team its own SLA.">
+                    Reply expectations
+                  </FieldLabel>
+                  <div className="flex items-center gap-4">
+                    <label className="flex items-center gap-2 text-xs">
+                      <input
+                        type="radio"
+                        checked={!form.replyTimeOverride}
+                        onChange={() => setForm((c) => ({ ...c, replyTimeOverride: false }))}
+                        className="h-3.5 w-3.5"
+                      />
+                      <span>Inherit workspace default</span>
+                    </label>
+                    <label className="flex items-center gap-2 text-xs">
+                      <input
+                        type="radio"
+                        checked={form.replyTimeOverride}
+                        onChange={() => setForm((c) => ({ ...c, replyTimeOverride: true }))}
+                        className="h-3.5 w-3.5"
+                      />
+                      <span>Override for this inbox</span>
+                    </label>
+                  </div>
+                  {form.replyTimeOverride && (
+                    <div className="grid grid-cols-[120px_1fr] gap-3 items-center">
+                      <Label className="text-xs">Preset</Label>
+                      <Select
+                        value={form.replyTimePreset}
+                        onValueChange={(v) => setForm((c) => ({ ...c, replyTimePreset: v }))}
+                      >
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="few_minutes">Usually a few minutes</SelectItem>
+                          <SelectItem value="few_hours">Usually a few hours</SelectItem>
+                          <SelectItem value="same_day">Within a day</SelectItem>
+                          <SelectItem value="custom">Custom…</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {form.replyTimePreset === 'custom' && (
+                        <>
+                          <Label className="text-xs">Custom time</Label>
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="number"
+                              min={1}
+                              max={10080}
+                              value={form.replyTimeCustomMinutes ?? ''}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setForm((c) => ({
+                                  ...c,
+                                  replyTimeCustomMinutes: v === '' ? null : Number(v),
+                                }));
+                              }}
+                              className="w-24 h-8 text-sm"
+                              placeholder="30"
+                            />
+                            <span className="text-xs text-muted-foreground">minutes</span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

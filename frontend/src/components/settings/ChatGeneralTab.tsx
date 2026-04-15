@@ -6,6 +6,7 @@ import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { formatReplyTimeCopy, SPECIAL_NOTICE_MAX_LENGTH } from '@helpin-ai/shared';
 import { toast } from 'sonner';
 import { Tick01Icon, Copy01Icon, CodeIcon, Loading01Icon, Message01Icon, HelpCircleIcon, Image01Icon, Key01Icon, BotIcon, ArrowDown01Icon, StarIcon } from '@/lib/icons';
 import { useChatSettings, useUpdateChatSettings, useRegenerateWidgetKey, useDocsSpaces } from '@/hooks/queries';
@@ -77,6 +78,9 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   const [timezone, setTimezone] = useState('America/New_York');
   const [schedule, setSchedule] = useState<Record<string, BusinessHoursDay>>({});
   const [outsideMessage, setOutsideMessage] = useState('');
+  const [replyTimePreset, setReplyTimePreset] = useState<string>('few_minutes');
+  const [replyTimeCustomMinutes, setReplyTimeCustomMinutes] = useState<number | null>(null);
+  const [specialNoticeText, setSpecialNoticeText] = useState<string>('');
   const [emailFallbackDelaySecs, setEmailFallbackDelaySecs] = useState(120);
   const [emailFallbackFromName, setEmailFallbackFromName] = useState('');
   const [csatEnabled, setCsatEnabled] = useState(false);
@@ -128,6 +132,9 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
       setTimezone(s.business_hours_timezone);
       setSchedule(normalizedSchedule);
       setOutsideMessage(s.outside_hours_message);
+      setReplyTimePreset(s.reply_time_preset ?? 'few_minutes');
+      setReplyTimeCustomMinutes(s.reply_time_custom_minutes ?? null);
+      setSpecialNoticeText(s.special_notice_text ?? '');
       setEmailFallbackDelaySecs(s.email_fallback_delay_secs ?? 120);
       setEmailFallbackFromName(s.email_fallback_from_name ?? '');
       setCsatEnabled(s.csat_enabled);
@@ -173,6 +180,9 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
     business_hours_timezone: timezone,
     business_hours_schedule: normalizeBusinessHoursSchedule(schedule),
     outside_hours_message: outsideMessage,
+    reply_time_preset: replyTimePreset,
+    reply_time_custom_minutes: replyTimePreset === 'custom' ? replyTimeCustomMinutes : null,
+    special_notice_text: specialNoticeText.trim() ? specialNoticeText : null,
     email_fallback_enabled: true,
     email_fallback_delay_secs: emailFallbackDelaySecs,
     email_fallback_from_name: emailFallbackFromName,
@@ -456,7 +466,15 @@ function Dashboard() {
     .map(space => ({ id: space.id, name: space.name, slug: space.slug }));
 
   const previewHost = (import.meta.env.VITE_API_URL || 'http://localhost:8080/api').replace(/\/api\/?$/, '');
-  const previewAvailability = buildPreviewAvailability(businessHoursEnabled, timezone, schedule, outsideMessage);
+  const previewAvailability = buildPreviewAvailability({
+    businessHoursEnabled,
+    timezone,
+    schedule,
+    outsideMessage,
+    replyTimePreset,
+    replyTimeCustomMinutes,
+    specialNoticeText: specialNoticeText.trim() || null,
+  });
 
   // Shared preview element used by both views
   const previewElement = (
@@ -1238,6 +1256,78 @@ function Dashboard() {
                     </div>
                   </>
                 )}
+
+                {/* Reply expectations — during business hours, what does the customer see? */}
+                <div className="space-y-3 rounded-md border border-dashed border-border/60 p-4">
+                  <div>
+                    <Label className="text-sm">Reply expectations</Label>
+                    <p className="text-xs text-muted-foreground">During business hours, tell customers when to expect a reply.</p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-[200px_1fr]">
+                    <Label htmlFor="reply-time-preset" className="sm:pt-2 text-xs">Preset</Label>
+                    <Select value={replyTimePreset} onValueChange={(v) => setReplyTimePreset(v)}>
+                      <SelectTrigger id="reply-time-preset" className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="few_minutes">Usually a few minutes</SelectItem>
+                        <SelectItem value="few_hours">Usually a few hours</SelectItem>
+                        <SelectItem value="same_day">Within a day</SelectItem>
+                        <SelectItem value="custom">Custom…</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {replyTimePreset === 'custom' && (
+                      <>
+                        <Label htmlFor="reply-time-custom-minutes" className="sm:pt-2 text-xs">Custom time</Label>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            id="reply-time-custom-minutes"
+                            type="number"
+                            min={1}
+                            max={10080}
+                            value={replyTimeCustomMinutes ?? ''}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setReplyTimeCustomMinutes(v === '' ? null : Number(v));
+                            }}
+                            className="w-32 h-8 text-sm"
+                            placeholder="30"
+                          />
+                          <span className="text-xs text-muted-foreground">minutes</span>
+                        </div>
+                      </>
+                    )}
+                    <Label className="sm:pt-2 text-xs">Preview</Label>
+                    <div className="rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                      “{formatReplyTimeCopy(replyTimePreset, replyTimeCustomMinutes ?? 0)}”
+                    </div>
+                  </div>
+                </div>
+
+                {/* Outage / maintenance banner — optional, renders as a slim amber banner in widget */}
+                <div className="space-y-3 rounded-md border border-dashed border-border/60 p-4">
+                  <div>
+                    <Label className="text-sm">Outage / maintenance banner</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Show a temporary notice across the widget when something is off. Leave empty to hide.
+                    </p>
+                  </div>
+                  <Textarea
+                    value={specialNoticeText}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      if (next.length <= SPECIAL_NOTICE_MAX_LENGTH) {
+                        setSpecialNoticeText(next);
+                      }
+                    }}
+                    placeholder="Our team is catching up on a backlog — replies may be slower today."
+                    rows={3}
+                    maxLength={SPECIAL_NOTICE_MAX_LENGTH}
+                  />
+                  <div className="flex justify-end text-xs text-muted-foreground">
+                    {specialNoticeText.length} / {SPECIAL_NOTICE_MAX_LENGTH}
+                  </div>
+                </div>
               </div>
               </div>
             </div>
