@@ -1176,9 +1176,24 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 	if len(req.AllowedTools) > 0 {
 		version.AllowedTools = normalizeAllowedToolsJSON(normalizeJSONSlice(req.AllowedTools))
 	}
-	if version.SystemPrompt == nil {
+	// If preamble or skills are provided, compile system_prompt from them.
+	hasPreamble := req.InstructionPreamble != nil
+	hasSkills := len(req.InstructionSkills) > 0
+	if hasPreamble || hasSkills {
+		preamble := strings.TrimSpace(stringOrDefault(req.InstructionPreamble, basePreset.InstructionPreamble))
+		skills := basePreset.InstructionSkills
+		if hasSkills {
+			skills = parseJSONStringSlice(req.InstructionSkills)
+		}
+		version.InstructionPreamble = trimPtr(&preamble)
+		version.InstructionSkills = mustJSONStringSlice(skills)
+		compiled := worker.CompilePresetInstructions(preamble, skills)
+		version.SystemPrompt = &compiled
+		version.InstructionTemplateVersion = worker.InstructionTemplateVersionForPreset(preamble, skills)
+	} else if version.SystemPrompt == nil {
 		version.SystemPrompt = trimPtr(basePreset.SystemPrompt)
 	} else {
+		// Raw system_prompt override — instruction decomposition no longer applies.
 		version.InstructionTemplateVersion = ""
 	}
 	if version.Provider == nil {
@@ -2692,12 +2707,16 @@ func (s *AgentService) maybePersistApprovedInteractivePreview(ctx context.Contex
 	if err != nil {
 		return err
 	}
-	sourceMessage, approval, preview, err := latestApprovalCheckpoint(messages, existingArtifacts)
+	sourceMessage, assistantSequenceNo, approval, preview, err := latestApprovalCheckpoint(messages, existingArtifacts)
 	if err != nil {
 		return err
 	}
-	if sourceMessage == nil || approval == nil {
+	if approval == nil {
 		return nil
+	}
+	sourceMessageID := ""
+	if sourceMessage != nil {
+		sourceMessageID = strings.TrimSpace(sourceMessage.ID)
 	}
 	for _, artifact := range existingArtifacts {
 		if strings.TrimSpace(artifact.ArtifactType) != model.AgentRunArtifactTypeApprovedPreview || artifact.InlineContent == nil {
@@ -2707,7 +2726,10 @@ func (s *AgentService) maybePersistApprovedInteractivePreview(ctx context.Contex
 		if err := json.Unmarshal([]byte(*artifact.InlineContent), &existing); err != nil {
 			continue
 		}
-		if strings.TrimSpace(existing.SourceMessageID) == sourceMessage.ID {
+		if sourceMessageID != "" && strings.TrimSpace(existing.SourceMessageID) == sourceMessageID {
+			return nil
+		}
+		if sourceMessageID == "" && assistantSequenceNo > 0 && existing.AssistantMessageSequenceNo == assistantSequenceNo {
 			return nil
 		}
 	}
@@ -2722,7 +2744,7 @@ func (s *AgentService) maybePersistApprovedInteractivePreview(ctx context.Contex
 	}
 
 	content := append(json.RawMessage(nil), preview.Content...)
-	if strings.EqualFold(strings.TrimSpace(approval.Phase), "stories") && strings.EqualFold(strings.TrimSpace(preview.Format), worker.PreviewFormatJSON) {
+	if (strings.EqualFold(strings.TrimSpace(approval.Phase), "tasks") || strings.EqualFold(strings.TrimSpace(approval.Phase), "stories")) && strings.EqualFold(strings.TrimSpace(preview.Format), worker.PreviewFormatJSON) {
 		normalizedContent, err := worker.NormalizeTaskPlanPreviewContent(content)
 		if err != nil {
 			if approvedPreviewDebugEnabled() {
@@ -2747,31 +2769,33 @@ func (s *AgentService) maybePersistApprovedInteractivePreview(ctx context.Contex
 			"phase", strings.TrimSpace(approval.Phase),
 			"panel_key", strings.TrimSpace(preview.PanelKey),
 			"format", strings.TrimSpace(preview.Format),
-			"source_message_id", sourceMessage.ID,
+			"source_message_id", sourceMessageID,
+			"assistant_message_sequence_no", assistantSequenceNo,
 			"content_preview", previewDebugSnippet(content, 1600),
 		)
 	}
 
 	payload := model.ApprovedRunPreview{
-		Phase:           strings.TrimSpace(approval.Phase),
-		ApprovalTitle:   strings.TrimSpace(approval.Title),
-		ApprovalSummary: strings.TrimSpace(approval.Summary),
-		PanelKey:        strings.TrimSpace(preview.PanelKey),
-		PreviewTitle:    strings.TrimSpace(preview.Title),
-		Format:          strings.TrimSpace(preview.Format),
-		Content:         content,
-		SourceMessageID: sourceMessage.ID,
-		ApprovedBy:      strings.TrimSpace(actorID),
-		ApprovedAt:      time.Now().UTC(),
+		Phase:                      strings.TrimSpace(approval.Phase),
+		ApprovalTitle:              strings.TrimSpace(approval.Title),
+		ApprovalSummary:            strings.TrimSpace(approval.Summary),
+		PanelKey:                   strings.TrimSpace(preview.PanelKey),
+		PreviewTitle:               strings.TrimSpace(preview.Title),
+		Format:                     strings.TrimSpace(preview.Format),
+		Content:                    content,
+		SourceMessageID:            sourceMessageID,
+		AssistantMessageSequenceNo: assistantSequenceNo,
+		ApprovedBy:                 strings.TrimSpace(actorID),
+		ApprovedAt:                 time.Now().UTC(),
 	}
 	return s.saveJSONArtifact(ctx, run, model.AgentRunArtifactTypeApprovedPreview, "json", payload)
 }
 
-func latestApprovalCheckpoint(messages []model.AgentRunMessage, artifacts []model.AgentRunArtifact) (*model.AgentRunMessage, *model.ApprovalRequest, *worker.PublishedPreview, error) {
+func latestApprovalCheckpoint(messages []model.AgentRunMessage, artifacts []model.AgentRunArtifact) (*model.AgentRunMessage, int, *model.ApprovalRequest, *worker.PublishedPreview, error) {
 	return latestApprovalCheckpointFromArtifacts(messages, artifacts)
 }
 
-func latestApprovalCheckpointFromArtifacts(messages []model.AgentRunMessage, artifacts []model.AgentRunArtifact) (*model.AgentRunMessage, *model.ApprovalRequest, *worker.PublishedPreview, error) {
+func latestApprovalCheckpointFromArtifacts(messages []model.AgentRunMessage, artifacts []model.AgentRunArtifact) (*model.AgentRunMessage, int, *model.ApprovalRequest, *worker.PublishedPreview, error) {
 	for i := len(artifacts) - 1; i >= 0; i-- {
 		artifact := artifacts[i]
 		if strings.TrimSpace(artifact.ArtifactType) != model.AgentRunArtifactTypeHumanApprovalRequest || artifact.InlineContent == nil {
@@ -2780,7 +2804,7 @@ func latestApprovalCheckpointFromArtifacts(messages []model.AgentRunMessage, art
 
 		var approval model.ApprovalRequest
 		if err := json.Unmarshal([]byte(*artifact.InlineContent), &approval); err != nil {
-			return nil, nil, nil, fmt.Errorf("parse approval request artifact: %w", err)
+			return nil, 0, nil, nil, fmt.Errorf("parse approval request artifact: %w", err)
 		}
 		if strings.TrimSpace(approval.Title) == "" {
 			continue
@@ -2791,32 +2815,29 @@ func latestApprovalCheckpointFromArtifacts(messages []model.AgentRunMessage, art
 			continue
 		}
 		sourceMessage := findAssistantMessageBySequence(messages, assistantSequenceNo)
-		if sourceMessage == nil {
-			continue
-		}
 
 		preview, err := latestRunPreviewArtifactForAssistantSequence(artifacts, assistantSequenceNo, previewPanelKeyForApprovalPhase(approval.Phase))
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, 0, nil, nil, err
 		}
 		if preview == nil {
 			preview, err = latestRunPreviewArtifact(artifacts, previewPanelKeyForApprovalPhase(approval.Phase))
 			if err != nil {
-				return nil, nil, nil, err
+				return nil, 0, nil, nil, err
 			}
 		}
-		return sourceMessage, &approval, preview, nil
+		return sourceMessage, assistantSequenceNo, &approval, preview, nil
 	}
-	return nil, nil, nil, nil
+	return nil, 0, nil, nil, nil
 }
 
 func previewPanelKeyForApprovalPhase(phase string) string {
 	switch strings.ToLower(strings.TrimSpace(phase)) {
 	case "prd":
 		return "prd_draft"
-	case "story_doc":
+	case "task_doc", "story_doc":
 		return "task_plan_doc"
-	case "stories":
+	case "tasks", "stories":
 		return "task_plan"
 	default:
 		return ""

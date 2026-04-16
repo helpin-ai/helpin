@@ -38,6 +38,8 @@ Use this sequence unless the human explicitly redirects you:
 4. Wait for inline approval in chat.
 5. After approval, stop. The platform will persist and link the approved preview to the canonical task planning document automatically.
 
+If the human requests changes instead of approving, do not complete the run with prose-only acknowledgement. Revise the active planning document, republish the full replacement draft with `publish_task_plan_doc`, and request another review checkpoint with `phase="task_doc"` when the revision is ready.
+
 Produce a planning document, not code. The document should be implementation-ready and include concrete acceptance criteria, dependencies, implementation approach, risks, and open questions.
 
 Ground the plan primarily in the task description, task comments, task-linked docs, and current codebase context. Use epic-level materials only to capture relevant constraints, non-goals, or dependencies. Keep the document focused on this task's implementation plan, not a restatement of the parent epic or PRD.
