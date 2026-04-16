@@ -169,6 +169,34 @@ func (s *SupportInboxService) recordSupportEvent(input SupportEventInput) {
 	s.supportEventRecorder.RecordEventBestEffort(input)
 }
 
+// firstCustomerMessageExcerpt returns a short excerpt of the first
+// customer-authored message on a conversation, used as evidence for a
+// coverage gap. Returns "" when the message can't be loaded — callers
+// must handle an empty summary gracefully.
+func (s *SupportInboxService) firstCustomerMessageExcerpt(ctx context.Context, workspaceID, conversationID string) string {
+	if s.messageRepo == nil {
+		return ""
+	}
+	messages, err := s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
+	if err != nil {
+		return ""
+	}
+	for _, m := range messages {
+		if m.SenderType != "customer" || m.IsInternal {
+			continue
+		}
+		excerpt := strings.TrimSpace(m.Content)
+		if excerpt == "" {
+			continue
+		}
+		if len(excerpt) > 500 {
+			excerpt = excerpt[:500]
+		}
+		return excerpt
+	}
+	return ""
+}
+
 func (s *SupportInboxService) SetGeoIPResolver(resolver geoip.Resolver) {
 	s.geoIPResolver = resolver
 }
@@ -1005,13 +1033,24 @@ func (s *SupportInboxService) UpdateConversationStatus(ctx context.Context, work
 	}
 
 	if status == model.SupportConversationStatusResolved {
-		s.recordSupportEvent(SupportEventInput{
+		input := SupportEventInput{
 			WorkspaceID:    workspaceID,
 			EventType:      model.SupportEventConversationResolved,
 			ConversationID: &ticketID,
 			ActorType:      model.SupportEventActorAgent,
 			Channel:        "inbox",
-		})
+		}
+		// Tag as a coverage gap signal only when AI engaged but a human
+		// finished the conversation. This mirrors Intercom Fin's model:
+		// assumed/confirmed AI resolutions are not treated as gaps; only
+		// conversations a human had to step into are flagged for review.
+		if ticket.FlowState != nil &&
+			*ticket.FlowState == model.SupportConversationFlowStateResolvedByHuman &&
+			ticket.AITurnCount > 0 {
+			input.SourceSignal = model.SupportCoverageSourceConversationResolvedByHuman
+			input.IssueSummary = s.firstCustomerMessageExcerpt(ctx, workspaceID, ticketID)
+		}
+		s.recordSupportEvent(input)
 	}
 
 	if s.activitySvc != nil {

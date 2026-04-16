@@ -392,6 +392,110 @@ func TestSupportCoverage_HumanReplyAfterAI_NoExistingGap_CreatesNew(t *testing.T
 	}
 }
 
+func TestSupportCoverage_ConversationResolvedByHuman_CreatesGap(t *testing.T) {
+	eventSvc, coverageSvc, _ := setupCoverageTestEnv(t)
+	ctx := context.Background()
+	convID := "conv-resolved-1"
+
+	err := eventSvc.RecordEvent(ctx, SupportEventInput{
+		WorkspaceID:    "ws-1",
+		EventType:      model.SupportEventConversationResolved,
+		ConversationID: &convID,
+		IssueSummary:   "I cannot reset my password — the link in the email is broken",
+		SourceSignal:   model.SupportCoverageSourceConversationResolvedByHuman,
+		ActorType:      model.SupportEventActorAgent,
+	})
+	if err != nil {
+		t.Fatalf("RecordEvent: %v", err)
+	}
+
+	gaps, total, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	if total != 1 {
+		t.Fatalf("expected 1 gap for human-resolved conversation, got %d", total)
+	}
+	gap := gaps[0]
+	if gap.V1GapType != model.SupportCoverageV1GapNeedsReview {
+		t.Errorf("expected needs_review, got %q", gap.V1GapType)
+	}
+	if gap.SourceSignal != model.SupportCoverageSourceConversationResolvedByHuman {
+		t.Errorf("expected source_signal %q, got %q",
+			model.SupportCoverageSourceConversationResolvedByHuman, gap.SourceSignal)
+	}
+}
+
+func TestSupportCoverage_ConversationResolved_WithoutSignal_NoGap(t *testing.T) {
+	// Bare conversation_resolved events (AI-resolved or human-only-no-AI)
+	// must not produce a gap. Only the explicit
+	// conversation_resolved_by_human source signal qualifies.
+	eventSvc, coverageSvc, _ := setupCoverageTestEnv(t)
+	ctx := context.Background()
+	convID := "conv-resolved-nosignal"
+
+	err := eventSvc.RecordEvent(ctx, SupportEventInput{
+		WorkspaceID:    "ws-1",
+		EventType:      model.SupportEventConversationResolved,
+		ConversationID: &convID,
+		ActorType:      model.SupportEventActorAgent,
+	})
+	if err != nil {
+		t.Fatalf("RecordEvent: %v", err)
+	}
+
+	_, total, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	if total != 0 {
+		t.Fatalf("expected no gap for untagged conversation_resolved event, got %d", total)
+	}
+}
+
+func TestSupportCoverage_ConversationResolvedByHuman_AttachesToExistingGap(t *testing.T) {
+	eventSvc, coverageSvc, db := setupCoverageTestEnv(t)
+	ctx := context.Background()
+	convID := "conv-resolved-merge"
+
+	// Seed: AI handoff created a gap earlier in the conversation lifetime.
+	err := eventSvc.RecordEvent(ctx, SupportEventInput{
+		WorkspaceID:    "ws-1",
+		EventType:      model.SupportEventAIHandoffTriggered,
+		ConversationID: &convID,
+		IssueKey:       "password_reset",
+		IssueSummary:   "Password reset link broken",
+		FailureMode:    model.SupportCoverageFailureNoRetrieval,
+		SourceSignal:   model.SupportCoverageSourceAIHandoff,
+	})
+	if err != nil {
+		t.Fatalf("RecordEvent (handoff): %v", err)
+	}
+	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	if len(gaps) != 1 {
+		t.Fatalf("setup: expected 1 gap after handoff, got %d", len(gaps))
+	}
+	gapID := gaps[0].ID
+
+	// Human resolves the same conversation — should attach evidence, not create a second gap.
+	err = eventSvc.RecordEvent(ctx, SupportEventInput{
+		WorkspaceID:    "ws-1",
+		EventType:      model.SupportEventConversationResolved,
+		ConversationID: &convID,
+		IssueSummary:   "Password reset link broken",
+		SourceSignal:   model.SupportCoverageSourceConversationResolvedByHuman,
+		ActorType:      model.SupportEventActorAgent,
+	})
+	if err != nil {
+		t.Fatalf("RecordEvent (resolved): %v", err)
+	}
+
+	_, total, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	if total != 1 {
+		t.Fatalf("expected 1 gap after human resolution (attached to existing), got %d", total)
+	}
+
+	var evidenceCount int64
+	db.Table("support_gap_evidence").Where("gap_id = ?", gapID).Count(&evidenceCount)
+	if evidenceCount != 2 {
+		t.Errorf("expected 2 evidence rows on gap %q, got %d", gapID, evidenceCount)
+	}
+}
+
 func TestSupportCoverage_AsyncRecorder_NilSafe(t *testing.T) {
 	// Nil recorder should not panic.
 	var recorder *SupportEventAsyncRecorder

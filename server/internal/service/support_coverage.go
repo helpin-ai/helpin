@@ -31,10 +31,15 @@ func NewSupportCoverageService(
 func (s *SupportCoverageService) ProcessSupportEvent(ctx context.Context, event *model.SupportEvent) error {
 	now := time.Now()
 
-	// For human_reply_after_ai, try to attach evidence to the existing
-	// gap for this conversation before creating a new one. This keeps
-	// the agent's answer alongside the original AI failure evidence.
-	if event.EventType == model.SupportEventHumanReplyAfterAI && event.ConversationID != nil {
+	// For human_reply_after_ai and conversation_resolved_by_human, try to
+	// attach evidence to the existing gap for this conversation before
+	// creating a new one. This keeps the agent's answer (and the
+	// resolution marker) alongside the original AI failure evidence, so
+	// one conversation produces one gap regardless of how many gap-worthy
+	// signals fired during its lifetime.
+	isResolvedByHumanSignal := event.EventType == model.SupportEventConversationResolved &&
+		event.SourceSignal == model.SupportCoverageSourceConversationResolvedByHuman
+	if (event.EventType == model.SupportEventHumanReplyAfterAI || isResolvedByHumanSignal) && event.ConversationID != nil {
 		existing, err := s.coverageRepo.FindOpenGapByConversation(ctx, event.WorkspaceID, *event.ConversationID)
 		if err != nil {
 			s.logger.WarnContext(ctx, "find gap by conversation failed", "error", err)
