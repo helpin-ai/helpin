@@ -468,7 +468,21 @@ type OrderedChild struct {
 // articles that share the same parent collection (or sit at the space
 // root when parentID is nil). Positions are assigned sequentially by the
 // given order across both types in a single transaction.
+//
+// NOTE: this does NOT call normalizeBucketTx. The normalizer renumbers
+// collections-only to be contiguous 0..N-1, which would destroy the
+// cross-type interleaved positions we just assigned here.
 func (r *DocsCollectionRepository) ReorderChildren(ctx context.Context, spaceID string, parentID *string, ordered []OrderedChild) error {
+	// Validate no duplicate IDs (cheap, catches UI bugs early).
+	seen := make(map[string]bool, len(ordered))
+	for _, item := range ordered {
+		key := string(item.Kind) + ":" + item.ID
+		if seen[key] {
+			return fmt.Errorf("duplicate child in reorder list: %s %s", item.Kind, item.ID)
+		}
+		seen[key] = true
+	}
+
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for i, item := range ordered {
 			switch item.Kind {
@@ -498,7 +512,7 @@ func (r *DocsCollectionRepository) ReorderChildren(ctx context.Context, spaceID 
 				return fmt.Errorf("unknown child kind: %s", item.Kind)
 			}
 		}
-		return normalizeBucketTx(tx, spaceID, parentID)
+		return nil
 	})
 }
 

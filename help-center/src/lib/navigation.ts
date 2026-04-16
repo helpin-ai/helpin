@@ -99,7 +99,13 @@ export function getArticlePager(
       for (const child of node.children) {
         entries.push({ kind: 'collection', position: child.item.position, child })
       }
-      entries.sort((a, b) => a.position - b.position)
+      entries.sort((a, b) => {
+        if (a.position !== b.position) return a.position - b.position
+        if (a.kind !== b.kind) return a.kind === 'collection' ? -1 : 1
+        const aId = a.kind === 'article' ? a.article.id : a.child.item.id
+        const bId = b.kind === 'article' ? b.article.id : b.child.item.id
+        return aId.localeCompare(bId)
+      })
       for (const e of entries) {
         if (e.kind === 'article') {
           flat.push({

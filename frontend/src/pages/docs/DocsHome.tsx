@@ -165,7 +165,16 @@ function mergeChildren(node: CollectionNode): MergedChild[] {
   for (const doc of node.documents) {
     items.push({ kind: 'doc', position: doc.position, doc })
   }
-  items.sort((a, b) => a.position - b.position)
+  // Primary: position. Tie-break: collections before docs (deterministic
+  // for legacy data where articles/sub-collections had independent
+  // 0..N sequences), then by id for full determinism.
+  items.sort((a, b) => {
+    if (a.position !== b.position) return a.position - b.position
+    if (a.kind !== b.kind) return a.kind === 'collection' ? -1 : 1
+    const aId = a.kind === 'doc' ? a.doc.id : a.node.id
+    const bId = b.kind === 'doc' ? b.doc.id : b.node.id
+    return aId.localeCompare(bId)
+  })
   return items
 }
 

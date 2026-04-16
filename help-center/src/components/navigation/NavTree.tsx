@@ -33,7 +33,16 @@ function buildMergedChildren(node: NavTreeNode): MergedChild[] {
   for (const child of node.children) {
     items.push({ kind: 'collection', position: child.item.position, node: child })
   }
-  items.sort((a, b) => a.position - b.position)
+  // Primary: position. Tie-break: collections before articles (stable for
+  // legacy imports where both types used independent 0..N sequences),
+  // then by id for full determinism.
+  items.sort((a, b) => {
+    if (a.position !== b.position) return a.position - b.position
+    if (a.kind !== b.kind) return a.kind === 'collection' ? -1 : 1
+    const aId = a.kind === 'article' ? a.article.id : a.node.item.id
+    const bId = b.kind === 'article' ? b.article.id : b.node.item.id
+    return aId.localeCompare(bId)
+  })
   return items
 }
 
