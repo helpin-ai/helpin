@@ -1,15 +1,25 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight01Icon, MoreHorizontalIcon, PlayIcon } from '@/lib/icons';
+import {
+  ArrowRight01Icon,
+  Clock03Icon,
+  GitBranchIcon,
+  GitPullRequestIcon,
+  MoreHorizontalIcon,
+  PlayIcon,
+  PlusSignIcon,
+  SparklesIcon,
+  Tag01Icon,
+  ZapIcon,
+} from '@/lib/icons';
 import { toast } from 'sonner';
 import { RepositoryBranchPicker } from '@/components/git/RepositoryBranchPicker';
 import { BASE_BRANCH_TOKEN, TASK_BRANCH_TOKEN, describeMergeInto, describeRunBranchOverrides } from '@/lib/branchLabels';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
@@ -92,10 +102,92 @@ const ACTION_LABELS: Record<FlowDraft['actionType'], string> = {
 };
 
 const TARGET_LABELS: Record<FlowDraft['targetMode'], string> = {
-  event: 'the event target',
-  task: 'a fixed task',
-  epic: 'a fixed epic',
-  repository: 'a fixed repository',
+  event: 'the task / repo that triggered it',
+  task: 'a specific task',
+  epic: 'a specific epic',
+  repository: 'a specific repository',
+};
+
+const TARGET_SHORT_LABELS: Record<FlowDraft['targetMode'], string> = {
+  event: 'whatever triggered it',
+  task: 'a specific task',
+  epic: 'a specific epic',
+  repository: 'a specific repository',
+};
+
+const CRON_CATEGORY_OPTIONS: { value: string; label: string; hint?: string }[] = [
+  { value: 'workspace_hourly', label: 'Every hour', hint: 'workspace_hourly' },
+  { value: 'workspace_daily', label: 'Every day', hint: 'workspace_daily' },
+  { value: 'workspace_weekly', label: 'Every week', hint: 'workspace_weekly' },
+];
+
+type FlowTemplate = {
+  id: string;
+  title: string;
+  description: string;
+  icon: typeof PlayIcon;
+  tone: 'emerald' | 'blue' | 'purple' | 'amber' | 'rose' | 'slate';
+  apply: (base: FlowDraft) => FlowDraft;
+};
+
+const FLOW_TEMPLATES: FlowTemplate[] = [
+  {
+    id: 'review-merged-prs',
+    title: 'Review merged PRs',
+    description: 'When a PR merges, start an agent to review the diff.',
+    icon: GitPullRequestIcon,
+    tone: 'emerald',
+    apply: (base) => ({ ...base, name: 'Review merged PRs', triggerType: 'github.pull_request_merged', baseBranch: 'main', actionType: 'start_agent_run' }),
+  },
+  {
+    id: 'run-on-check-failure',
+    title: 'Fix failing checks',
+    description: 'When CI check suite completes, start an agent if it failed.',
+    icon: ZapIcon,
+    tone: 'amber',
+    apply: (base) => ({ ...base, name: 'Fix failing checks', triggerType: 'github.check_suite_completed', conclusion: 'failure', actionType: 'start_agent_run' }),
+  },
+  {
+    id: 'approve-advances',
+    title: 'Advance on approval',
+    description: 'When an interactive agent run is approved, move the task to the next state.',
+    icon: SparklesIcon,
+    tone: 'blue',
+    apply: (base) => ({ ...base, name: 'Advance on approval', triggerType: 'agent_run.approved', actionType: 'move_to_state' }),
+  },
+  {
+    id: 'merge-on-done',
+    title: 'Merge when done',
+    description: 'When a task enters Done, merge its branch into main.',
+    icon: GitBranchIcon,
+    tone: 'purple',
+    apply: (base) => ({ ...base, name: 'Merge when done', triggerType: 'task.state_entered', actionType: 'merge_branch', targetBranch: 'main' }),
+  },
+  {
+    id: 'release-tag',
+    title: 'Run on release',
+    description: 'When a release is published, kick off a release agent.',
+    icon: Tag01Icon,
+    tone: 'rose',
+    apply: (base) => ({ ...base, name: 'Run on release', triggerType: 'github.release_published', actionType: 'start_agent_run' }),
+  },
+  {
+    id: 'hourly-tick',
+    title: 'Hourly digest',
+    description: 'On every hour, run an agent against a fixed task or repo.',
+    icon: Clock03Icon,
+    tone: 'slate',
+    apply: (base) => ({ ...base, name: 'Hourly digest', triggerType: 'cron', cronCategory: 'workspace_hourly', actionType: 'start_agent_run', targetMode: 'task' }),
+  },
+];
+
+const TEMPLATE_TONE: Record<FlowTemplate['tone'], string> = {
+  emerald: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+  blue: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
+  purple: 'bg-purple-500/10 text-purple-600 dark:text-purple-400',
+  amber: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+  rose: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
+  slate: 'bg-muted text-foreground/70',
 };
 
 function defaultDraft(): FlowDraft {
@@ -615,6 +707,83 @@ function FlowRow({
   );
 }
 
+function isGithubTrigger(triggerType: string) {
+  return triggerType.startsWith('github.');
+}
+function showRepoField(triggerType: string) {
+  return isGithubTrigger(triggerType);
+}
+function showBranchField(triggerType: string) {
+  return triggerType === 'github.push' || triggerType === 'github.check_suite_completed';
+}
+function showBaseBranchField(triggerType: string) {
+  return triggerType.startsWith('github.pull_request_');
+}
+function showTagField(triggerType: string) {
+  return triggerType === 'github.release_published';
+}
+function showConclusionField(triggerType: string) {
+  return triggerType === 'github.check_suite_completed';
+}
+function showBranchOverrideFields(triggerType: string, actionType: string) {
+  return actionType === 'start_agent_run' && isGithubTrigger(triggerType);
+}
+
+function SentenceRow({ connector, tone, children }: { connector: string; tone?: 'muted' | 'strong'; children: ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span
+        className={cn(
+          'mt-0.5 w-10 shrink-0 text-[10px] font-semibold uppercase tracking-[0.08em]',
+          tone === 'strong' ? 'text-foreground/70' : 'text-muted-foreground/80',
+        )}
+      >
+        {connector}
+      </span>
+      <div className="flex flex-1 flex-wrap items-center gap-1.5">{children}</div>
+    </div>
+  );
+}
+
+function PillGlue({ children }: { children: ReactNode }) {
+  return <span className="text-xs text-muted-foreground">{children}</span>;
+}
+
+function PillInput({
+  value,
+  onChange,
+  placeholder,
+  className,
+  width = 'auto',
+  disabled,
+  invalid,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  className?: string;
+  width?: 'auto' | 'sm' | 'md' | 'lg';
+  disabled?: boolean;
+  invalid?: boolean;
+}) {
+  const widthClass = width === 'sm' ? 'w-28' : width === 'md' ? 'w-40' : width === 'lg' ? 'w-56' : 'w-auto';
+  return (
+    <input
+      type="text"
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      placeholder={placeholder}
+      disabled={disabled}
+      aria-invalid={invalid || undefined}
+      className={cn(
+        'inline-flex h-7 items-center rounded-3xl border border-transparent bg-input/50 px-3 text-xs outline-none transition-[color,box-shadow,background-color] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 disabled:cursor-not-allowed disabled:opacity-50',
+        widthClass,
+        className,
+      )}
+    />
+  );
+}
+
 function FlowComposer({
   workspaceId,
   open,
@@ -629,6 +798,7 @@ function FlowComposer({
   saving,
   canEdit,
   onOpenChange,
+  onBack,
   onDraftChange,
   onSave,
 }: {
@@ -645,6 +815,7 @@ function FlowComposer({
   saving: boolean;
   canEdit: boolean;
   onOpenChange: (open: boolean) => void;
+  onBack?: () => void;
   onDraftChange: (updater: (current: FlowDraft) => FlowDraft) => void;
   onSave: () => Promise<void>;
 }) {
@@ -655,6 +826,10 @@ function FlowComposer({
   const targetTaskOptions = tasks.map((task) => ({ value: task.id, label: `${task.task_key} · ${task.name}` }));
   const targetEpicOptions = epics.map((epic) => ({ value: epic.epic.id, label: epic.epic.name }));
   const targetRepositoryOptions = repositories.map((repo) => ({ value: repo.id, label: repo.full_name }));
+  const selectedRepoId = repositories.find((repo) => repo.full_name === draft.repoFullName)?.id;
+  const isCronTrigger = draft.triggerType === 'cron';
+  const cronCategoryIsPreset = CRON_CATEGORY_OPTIONS.some((option) => option.value === draft.cronCategory);
+  const validation = validateDraft(draft);
 
   const updateDraft = (mutate: (current: FlowDraft) => FlowDraft) => onDraftChange((current) => {
     const next = mutate(current);
@@ -665,27 +840,45 @@ function FlowComposer({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>{mode === 'create' ? 'Create flow' : 'Edit flow'}</DialogTitle>
+          <DialogDescription className="text-xs">
+            Reads top to bottom as a sentence. Only fields relevant to your trigger and action appear.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-5">
-          <div className="grid gap-3 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="flow-name">Flow name</Label>
-              <Input id="flow-name" value={draft.name} onChange={(event) => updateDraft((current) => ({ ...current, name: event.target.value }))} placeholder="Review merged PRs" />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="flow-trigger">When this happens</Label>
-              <Select value={draft.triggerType} onValueChange={(value) => updateDraft((current) => ({ ...current, triggerType: value }))}>
-                <SelectTrigger id="flow-trigger">
+          <div className="space-y-2">
+            <Input
+              value={draft.name}
+              onChange={(event) => updateDraft((current) => ({ ...current, name: event.target.value }))}
+              placeholder="Flow name (e.g. Review merged PRs)"
+              className="h-10 text-base font-medium"
+              autoFocus={mode === 'create'}
+            />
+            <Textarea
+              rows={2}
+              value={draft.description}
+              onChange={(event) => updateDraft((current) => ({ ...current, description: event.target.value }))}
+              placeholder="Optional description — what is this flow for?"
+              className="resize-none text-sm"
+            />
+          </div>
+
+          <div className="space-y-3 rounded-xl border border-border/60 bg-muted/20 p-4">
+            <SentenceRow connector="When" tone="strong">
+              <Select
+                value={draft.triggerType}
+                onValueChange={(value) => updateDraft((current) => ({ ...current, triggerType: value }))}
+              >
+                <SelectTrigger size="sm" className="min-w-[12rem]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {Array.from(new Set(TRIGGER_OPTIONS.map((option) => option.group))).map((group) => (
                     <div key={group}>
-                      <div className="px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{group}</div>
+                      <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{group}</div>
                       {TRIGGER_OPTIONS.filter((option) => option.group === group).map((option) => (
                         <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
                       ))}
@@ -693,225 +886,36 @@ function FlowComposer({
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-          </div>
+            </SentenceRow>
 
-          <div className="space-y-2">
-            <Label htmlFor="flow-description">Description</Label>
-            <Textarea id="flow-description" rows={2} value={draft.description} onChange={(event) => updateDraft((current) => ({ ...current, description: event.target.value }))} placeholder="Explain what this flow is for and how the team should use it." />
-          </div>
-
-          <div className="space-y-4">
-            <div className="flex items-center gap-3">
-              <p className="text-sm font-medium text-muted-foreground">Conditions</p>
-              <div className="flex-1 border-t border-border/40" />
-            </div>
-            {isWorkflowTrigger(draft.triggerType) ? (
-              <div className="grid gap-3 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Workflow</Label>
-                  <Select value={draft.workflowId} onValueChange={(value) => updateDraft((current) => ({ ...current, workflowId: value, triggerStateId: firstStateIdForWorkflow(workflows, value), targetStateId: '' }))}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select workflow..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {workflows.map((workflow) => (
-                        <SelectItem key={workflow.workflow.id} value={workflow.workflow.id}>{workflow.workflow.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>State</Label>
-                  <Select value={draft.triggerStateId} onValueChange={(value) => updateDraft((current) => ({ ...current, triggerStateId: value }))}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select state..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {workflowStates.map((state) => (
-                        <SelectItem key={state.id} value={state.id}>{state.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            ) : (
-              <div className="grid gap-3 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Repository</Label>
-                  <Select value={draft.repoFullName || '__custom__'} onValueChange={(value) => updateDraft((current) => ({ ...current, repoFullName: value === '__custom__' ? '' : value }))}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Any repository" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__custom__">Custom / any repository</SelectItem>
-                      {repositoryOptions.map((repo) => (
-                        <SelectItem key={repo.value} value={repo.value}>{repo.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Input value={draft.repoFullName} onChange={(event) => updateDraft((current) => ({ ...current, repoFullName: event.target.value }))} placeholder="owner/repo" />
-                </div>
-
-                {(draft.triggerType === 'github.push' || draft.triggerType === 'github.check_suite_completed') && (
-                  <div className="space-y-2">
-                    <Label>Branch</Label>
-                    <RepositoryBranchPicker
-                      workspaceId={workspaceId}
-                      repositoryId={repositories.find((repo) => repo.full_name === draft.repoFullName)?.id}
-                      value={draft.branch}
-                      onChange={(value) => updateDraft((current) => ({ ...current, branch: value }))}
-                      placeholder="main"
-                      emptyLabel="Any branch"
-                      disabled={saving}
-                    />
-                  </div>
-                )}
-
-                {(draft.triggerType === 'github.pull_request_opened' || draft.triggerType === 'github.pull_request_merged' || draft.triggerType === 'github.pull_request_review_requested') && (
-                  <div className="space-y-2">
-                    <Label>Base branch</Label>
-                    <RepositoryBranchPicker
-                      workspaceId={workspaceId}
-                      repositoryId={repositories.find((repo) => repo.full_name === draft.repoFullName)?.id}
-                      value={draft.baseBranch}
-                      onChange={(value) => updateDraft((current) => ({ ...current, baseBranch: value }))}
-                      placeholder="main"
-                      emptyLabel="Any base branch"
-                      disabled={saving}
-                    />
-                  </div>
-                )}
-
-                {draft.triggerType === 'github.release_published' && (
-                  <div className="space-y-2">
-                    <Label>Tag</Label>
-                    <Input value={draft.tagName} onChange={(event) => updateDraft((current) => ({ ...current, tagName: event.target.value }))} placeholder="v1.0.0" />
-                  </div>
-                )}
-
-                {draft.triggerType === 'github.check_suite_completed' && (
-                  <div className="space-y-2">
-                    <Label>Conclusion</Label>
-                    <Input value={draft.conclusion} onChange={(event) => updateDraft((current) => ({ ...current, conclusion: event.target.value }))} placeholder="success" />
-                  </div>
-                )}
-
-                {draft.triggerType === 'cron' && (
-                  <div className="space-y-2">
-                    <Label>Schedule category</Label>
-                    <Input value={draft.cronCategory} onChange={(event) => updateDraft((current) => ({ ...current, cronCategory: event.target.value }))} placeholder="workspace_hourly" />
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-4">
-            <div className="flex items-center gap-3">
-              <p className="text-sm font-medium text-muted-foreground">Action</p>
-              <div className="flex-1 border-t border-border/40" />
-            </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label>Action</Label>
-                <Select value={draft.actionType} onValueChange={(value: FlowDraft['actionType']) => updateDraft((current) => ({ ...current, actionType: value }))}>
-                  <SelectTrigger>
-                    <SelectValue />
+            {isWorkflowTrigger(draft.triggerType) && (
+              <SentenceRow connector="if">
+                <PillGlue>workflow is</PillGlue>
+                <Select
+                  value={draft.workflowId}
+                  onValueChange={(value) => updateDraft((current) => ({
+                    ...current,
+                    workflowId: value,
+                    triggerStateId: firstStateIdForWorkflow(workflows, value),
+                    targetStateId: '',
+                  }))}
+                >
+                  <SelectTrigger size="sm" className="min-w-[10rem]">
+                    <SelectValue placeholder="select workflow…" />
                   </SelectTrigger>
                   <SelectContent>
-                    {actionOptions.map((action) => (
-                      <SelectItem key={action} value={action}>{ACTION_LABELS[action]}</SelectItem>
+                    {workflows.map((workflow) => (
+                      <SelectItem key={workflow.workflow.id} value={workflow.workflow.id}>{workflow.workflow.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-
-              {draft.actionType === 'start_agent_run' && (
-                <div className="space-y-2">
-                  <Label>Agent</Label>
-                  <Select value={draft.agentId} onValueChange={(value) => updateDraft((current) => ({ ...current, agentId: value }))}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select agent..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Array.from(agents.entries()).map(([id, name]) => (
-                        <SelectItem key={id} value={id}>{name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-            </div>
-
-            {draft.actionType === 'start_agent_run' && (
-              <div className="grid gap-3 md:grid-cols-[180px_minmax(0,1fr)]">
-                <div className="space-y-2">
-                  <Label>Target</Label>
-                  <Select value={draft.targetMode} onValueChange={(value: FlowDraft['targetMode']) => updateDraft((current) => ({ ...current, targetMode: value, targetId: '' }))}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="event">Use event target</SelectItem>
-                      <SelectItem value="task">Fixed task</SelectItem>
-                      <SelectItem value="epic">Fixed epic</SelectItem>
-                      <SelectItem value="repository">Fixed repository</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {draft.targetMode !== 'event' && (
-                  <div className="space-y-2">
-                    <Label>Fixed target</Label>
-                    <Select value={draft.targetId} onValueChange={(value) => updateDraft((current) => ({ ...current, targetId: value }))}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select target..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(draft.targetMode === 'task' ? targetTaskOptions : draft.targetMode === 'epic' ? targetEpicOptions : targetRepositoryOptions).map((option) => (
-                          <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <p className="text-[11px] text-muted-foreground">
-                      Always run this flow against the same target, regardless of the event.
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {draft.actionType === 'start_agent_run' && (
-              <div className="grid gap-3 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Base branch override</Label>
-                  <Input
-                    value={draft.runBaseBranch}
-                    onChange={(event) => updateDraft((current) => ({ ...current, runBaseBranch: event.target.value }))}
-                    placeholder="{base_branch} or release/2026.04"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Task branch override</Label>
-                  <Input
-                    value={draft.runWorkingBranch}
-                    onChange={(event) => updateDraft((current) => ({ ...current, runWorkingBranch: event.target.value }))}
-                    placeholder={TASK_BRANCH_TOKEN}
-                  />
-                </div>
-                <p className="text-[11px] text-muted-foreground md:col-span-2">
-                  Use <code>{TASK_BRANCH_TOKEN}</code> for the branch the agent checks out and pushes to, and <code>{BASE_BRANCH_TOKEN}</code> for the branch the task starts from and pull requests target by default.
-                </p>
-              </div>
-            )}
-
-            {draft.actionType === 'move_to_state' && (
-              <div className="space-y-2">
-                <Label>Move to</Label>
-                <Select value={draft.targetStateId} onValueChange={(value) => updateDraft((current) => ({ ...current, targetStateId: value }))}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select destination state..." />
+                <PillGlue>and state is</PillGlue>
+                <Select
+                  value={draft.triggerStateId}
+                  onValueChange={(value) => updateDraft((current) => ({ ...current, triggerStateId: value }))}
+                >
+                  <SelectTrigger size="sm" className="min-w-[9rem]">
+                    <SelectValue placeholder="select state…" />
                   </SelectTrigger>
                   <SelectContent>
                     {workflowStates.map((state) => (
@@ -919,44 +923,376 @@ function FlowComposer({
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
+              </SentenceRow>
             )}
 
-            {draft.actionType === 'merge_branch' && (
-              <div className="space-y-2">
-                <Label>Merge into</Label>
-                <Input value={draft.targetBranch} onChange={(event) => updateDraft((current) => ({ ...current, targetBranch: event.target.value }))} placeholder="main" />
-              </div>
+            {showRepoField(draft.triggerType) && (() => {
+              const isKnownRepo = repositoryOptions.some((option) => option.value === draft.repoFullName);
+              const repoSelectValue = draft.repoFullName && isKnownRepo ? draft.repoFullName : '__custom__';
+              return (
+                <SentenceRow connector="if">
+                  <PillGlue>repository is</PillGlue>
+                  <Select
+                    value={repoSelectValue}
+                    onValueChange={(value) => updateDraft((current) => ({
+                      ...current,
+                      repoFullName: value === '__custom__' ? '' : value,
+                    }))}
+                  >
+                    <SelectTrigger size="sm" className="min-w-[10rem]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__custom__">any / custom…</SelectItem>
+                      {repositoryOptions.map((repo) => (
+                        <SelectItem key={repo.value} value={repo.value}>{repo.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {repoSelectValue === '__custom__' && (
+                    <PillInput
+                      value={draft.repoFullName}
+                      onChange={(value) => updateDraft((current) => ({ ...current, repoFullName: value }))}
+                      placeholder="owner/repo (optional)"
+                      width="md"
+                    />
+                  )}
+                </SentenceRow>
+              );
+            })()}
+
+            {showBranchField(draft.triggerType) && (
+              <SentenceRow connector="and">
+                <PillGlue>branch is</PillGlue>
+                <div className="inline-flex">
+                  <RepositoryBranchPicker
+                    workspaceId={workspaceId}
+                    repositoryId={selectedRepoId}
+                    value={draft.branch}
+                    onChange={(value) => updateDraft((current) => ({ ...current, branch: value }))}
+                    placeholder="main"
+                    emptyLabel="any branch"
+                    disabled={saving}
+                  />
+                </div>
+              </SentenceRow>
+            )}
+
+            {showBaseBranchField(draft.triggerType) && (
+              <SentenceRow connector="and">
+                <PillGlue>base branch is</PillGlue>
+                <div className="inline-flex">
+                  <RepositoryBranchPicker
+                    workspaceId={workspaceId}
+                    repositoryId={selectedRepoId}
+                    value={draft.baseBranch}
+                    onChange={(value) => updateDraft((current) => ({ ...current, baseBranch: value }))}
+                    placeholder="main"
+                    emptyLabel="any base branch"
+                    disabled={saving}
+                  />
+                </div>
+              </SentenceRow>
+            )}
+
+            {showTagField(draft.triggerType) && (
+              <SentenceRow connector="and">
+                <PillGlue>tag matches</PillGlue>
+                <PillInput
+                  value={draft.tagName}
+                  onChange={(value) => updateDraft((current) => ({ ...current, tagName: value }))}
+                  placeholder="v1.0.0"
+                  width="sm"
+                />
+              </SentenceRow>
+            )}
+
+            {showConclusionField(draft.triggerType) && (
+              <SentenceRow connector="and">
+                <PillGlue>conclusion is</PillGlue>
+                <Select
+                  value={draft.conclusion || '__any__'}
+                  onValueChange={(value) => updateDraft((current) => ({ ...current, conclusion: value === '__any__' ? '' : value }))}
+                >
+                  <SelectTrigger size="sm" className="min-w-[8rem]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__any__">any</SelectItem>
+                    <SelectItem value="success">success</SelectItem>
+                    <SelectItem value="failure">failure</SelectItem>
+                    <SelectItem value="cancelled">cancelled</SelectItem>
+                    <SelectItem value="timed_out">timed out</SelectItem>
+                  </SelectContent>
+                </Select>
+              </SentenceRow>
+            )}
+
+            {isCronTrigger && (
+              <SentenceRow connector="at">
+                <PillGlue>interval</PillGlue>
+                <Select
+                  value={cronCategoryIsPreset ? draft.cronCategory : '__custom__'}
+                  onValueChange={(value) => updateDraft((current) => ({
+                    ...current,
+                    cronCategory: value === '__custom__' ? (cronCategoryIsPreset ? '' : current.cronCategory) : value,
+                  }))}
+                >
+                  <SelectTrigger size="sm" className="min-w-[10rem]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CRON_CATEGORY_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                    ))}
+                    <SelectItem value="__custom__">Custom category…</SelectItem>
+                  </SelectContent>
+                </Select>
+                {!cronCategoryIsPreset && (
+                  <PillInput
+                    value={draft.cronCategory}
+                    onChange={(value) => updateDraft((current) => ({ ...current, cronCategory: value }))}
+                    placeholder="workspace_hourly"
+                    width="md"
+                  />
+                )}
+              </SentenceRow>
+            )}
+
+            <div className="my-1 h-px bg-border/40" />
+
+            <SentenceRow connector="then" tone="strong">
+              <Select
+                value={draft.actionType}
+                onValueChange={(value: FlowDraft['actionType']) => updateDraft((current) => ({ ...current, actionType: value }))}
+              >
+                <SelectTrigger size="sm" className="min-w-[12rem]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {actionOptions.map((action) => (
+                    <SelectItem key={action} value={action}>{ACTION_LABELS[action]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {draft.actionType === 'start_agent_run' && (
+                <>
+                  <PillGlue>using</PillGlue>
+                  <Select
+                    value={draft.agentId}
+                    onValueChange={(value) => updateDraft((current) => ({ ...current, agentId: value }))}
+                  >
+                    <SelectTrigger
+                      size="sm"
+                      className={cn('min-w-[10rem]', !draft.agentId && 'border-destructive/50 bg-destructive/5')}
+                    >
+                      <SelectValue placeholder="choose an agent…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Array.from(agents.entries()).map(([id, name]) => (
+                        <SelectItem key={id} value={id}>{name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </>
+              )}
+              {draft.actionType === 'move_to_state' && (
+                <>
+                  <PillGlue>to</PillGlue>
+                  <Select
+                    value={draft.targetStateId}
+                    onValueChange={(value) => updateDraft((current) => ({ ...current, targetStateId: value }))}
+                  >
+                    <SelectTrigger size="sm" className="min-w-[10rem]">
+                      <SelectValue placeholder="choose state…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {workflowStates.map((state) => (
+                        <SelectItem key={state.id} value={state.id}>{state.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </>
+              )}
+              {draft.actionType === 'merge_branch' && (
+                <>
+                  <PillGlue>into branch</PillGlue>
+                  <PillInput
+                    value={draft.targetBranch}
+                    onChange={(value) => updateDraft((current) => ({ ...current, targetBranch: value }))}
+                    placeholder="main"
+                    width="md"
+                  />
+                </>
+              )}
+            </SentenceRow>
+
+            {draft.actionType === 'start_agent_run' && (
+              <SentenceRow connector="on">
+                <Select
+                  value={draft.targetMode}
+                  onValueChange={(value: FlowDraft['targetMode']) => updateDraft((current) => ({ ...current, targetMode: value, targetId: '' }))}
+                >
+                  <SelectTrigger size="sm" className="min-w-[14rem]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="event" disabled={isCronTrigger}>{TARGET_SHORT_LABELS.event}</SelectItem>
+                    <SelectItem value="task">{TARGET_SHORT_LABELS.task}</SelectItem>
+                    <SelectItem value="epic">{TARGET_SHORT_LABELS.epic}</SelectItem>
+                    <SelectItem value="repository">{TARGET_SHORT_LABELS.repository}</SelectItem>
+                  </SelectContent>
+                </Select>
+                {draft.targetMode !== 'event' && (
+                  <>
+                    <PillGlue>—</PillGlue>
+                    <Select
+                      value={draft.targetId}
+                      onValueChange={(value) => updateDraft((current) => ({ ...current, targetId: value }))}
+                    >
+                      <SelectTrigger size="sm" className="min-w-[12rem]">
+                        <SelectValue placeholder="pick one…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(draft.targetMode === 'task' ? targetTaskOptions : draft.targetMode === 'epic' ? targetEpicOptions : targetRepositoryOptions).map((option) => (
+                          <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </>
+                )}
+              </SentenceRow>
+            )}
+
+            {showBranchOverrideFields(draft.triggerType, draft.actionType) && (
+              <details className="ml-12 group">
+                <summary className="cursor-pointer list-none text-[11px] text-muted-foreground hover:text-foreground/80">
+                  <span className="group-open:hidden">+ branch overrides</span>
+                  <span className="hidden group-open:inline">− branch overrides</span>
+                </summary>
+                <div className="mt-2 space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="w-20 shrink-0 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/80">base</span>
+                    <PillGlue>agent checks out</PillGlue>
+                    <PillInput
+                      value={draft.runBaseBranch}
+                      onChange={(value) => updateDraft((current) => ({ ...current, runBaseBranch: value }))}
+                      placeholder={`${BASE_BRANCH_TOKEN} or release/2026.04`}
+                      width="lg"
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="w-20 shrink-0 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/80">task</span>
+                    <PillGlue>branch is</PillGlue>
+                    <PillInput
+                      value={draft.runWorkingBranch}
+                      onChange={(value) => updateDraft((current) => ({ ...current, runWorkingBranch: value }))}
+                      placeholder={TASK_BRANCH_TOKEN}
+                      width="lg"
+                    />
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-muted-foreground">
+                    Use <code className="rounded bg-muted px-1 py-0.5 text-[10px]">{TASK_BRANCH_TOKEN}</code> for the agent's working branch, and <code className="rounded bg-muted px-1 py-0.5 text-[10px]">{BASE_BRANCH_TOKEN}</code> for the default base branch.
+                  </p>
+                </div>
+              </details>
             )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-border/50 bg-muted/30 px-4 py-2.5">
-            <span className="inline-flex items-center rounded border border-border/60 bg-background px-2 py-0.5 text-xs font-medium">
-              {sentence.when}
-            </span>
+          <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-border/50 bg-background px-3 py-2 text-xs">
+            <span className="inline-flex items-center rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Preview</span>
+            <span className="font-medium">{sentence.when}</span>
             {sentence.conditions !== 'No additional filters' && (
               <>
-                <ArrowRight01Icon className="h-3 w-3 shrink-0 text-muted-foreground/40" />
-                <span className="text-xs text-muted-foreground">{sentence.conditions}</span>
+                <ArrowRight01Icon className="h-3 w-3 shrink-0 text-muted-foreground/50" />
+                <span className="text-muted-foreground">{sentence.conditions}</span>
               </>
             )}
-            <ArrowRight01Icon className="h-3 w-3 shrink-0 text-muted-foreground/40" />
-            <span className="text-xs">{sentence.then}</span>
+            <ArrowRight01Icon className="h-3 w-3 shrink-0 text-muted-foreground/50" />
+            <span>{sentence.then}</span>
             {draft.actionType === 'start_agent_run' && (
               <>
                 <span className="text-muted-foreground/40">·</span>
-                <span className="text-xs text-muted-foreground">{sentence.using}</span>
+                <span className="text-muted-foreground">{sentence.using}</span>
               </>
             )}
           </div>
+
+          {validation && (
+            <p className="flex items-center gap-2 text-xs text-destructive">
+              <span className="h-1.5 w-1.5 rounded-full bg-destructive" />
+              {validation}
+            </p>
+          )}
         </div>
 
-        <DialogFooter className="gap-2">
-          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button type="button" onClick={() => void onSave()} disabled={saving || !canEdit}>
-            {saving ? 'Saving...' : mode === 'create' ? 'Create flow' : 'Save changes'}
-          </Button>
+        <DialogFooter className="gap-2 sm:justify-between">
+          <div>
+            {mode === 'create' && onBack && (
+              <Button type="button" variant="ghost" size="sm" onClick={onBack}>
+                ← Back to templates
+              </Button>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="button" onClick={() => void onSave()} disabled={saving || !canEdit || !!validation}>
+              {saving ? 'Saving…' : mode === 'create' ? 'Create flow' : 'Save changes'}
+            </Button>
+          </div>
         </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function FlowTemplateGallery({
+  open,
+  onOpenChange,
+  onPick,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onPick: (template: FlowTemplate | null) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Create a flow</DialogTitle>
+          <DialogDescription>Start from a template, or build from scratch.</DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
+          {FLOW_TEMPLATES.map((template) => {
+            const Icon = template.icon;
+            return (
+              <button
+                key={template.id}
+                type="button"
+                onClick={() => onPick(template)}
+                className="group flex flex-col items-start gap-2 rounded-xl border border-border/60 bg-card p-4 text-left transition-colors hover:border-border hover:bg-muted/40 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+              >
+                <span className={cn('flex h-8 w-8 items-center justify-center rounded-lg', TEMPLATE_TONE[template.tone])}>
+                  <Icon className="h-4 w-4" />
+                </span>
+                <p className="text-sm font-medium leading-tight">{template.title}</p>
+                <p className="text-xs leading-relaxed text-muted-foreground">{template.description}</p>
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => onPick(null)}
+            className="group flex flex-col items-start gap-2 rounded-xl border border-dashed border-border/60 bg-transparent p-4 text-left transition-colors hover:border-border hover:bg-muted/30 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+          >
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted text-foreground/70">
+              <PlusSignIcon className="h-4 w-4" />
+            </span>
+            <p className="text-sm font-medium leading-tight">Start from scratch</p>
+            <p className="text-xs leading-relaxed text-muted-foreground">Build a custom flow from the ground up.</p>
+          </button>
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -1001,6 +1337,7 @@ export function AutomationFlowsPage({
   });
 
   const [composerOpen, setComposerOpen] = useState(false);
+  const [galleryOpen, setGalleryOpen] = useState(false);
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [draft, setDraft] = useState<FlowDraft>(defaultDraft());
   const [saving, setSaving] = useState(false);
@@ -1099,7 +1436,22 @@ export function AutomationFlowsPage({
   const openCreateComposer = () => {
     setEditingRuleId(null);
     setDraft(defaultDraft());
+    setGalleryOpen(true);
+  };
+
+  const handleTemplatePick = (template: FlowTemplate | null) => {
+    const base = defaultDraft();
+    const next = template ? template.apply(base) : base;
+    applyTriggerDefaults(next, workflows);
+    setDraft(next);
+    setEditingRuleId(null);
+    setGalleryOpen(false);
     setComposerOpen(true);
+  };
+
+  const backToGallery = () => {
+    setComposerOpen(false);
+    setGalleryOpen(true);
   };
 
   const openEditComposer = (rule: AutomationRule) => {
@@ -1156,6 +1508,14 @@ export function AutomationFlowsPage({
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
+      <FlowTemplateGallery
+        open={galleryOpen}
+        onOpenChange={(open) => {
+          setGalleryOpen(open);
+          if (!open) resetComposerSearch();
+        }}
+        onPick={handleTemplatePick}
+      />
       <FlowComposer
         workspaceId={workspaceId}
         open={composerOpen}
@@ -1175,6 +1535,7 @@ export function AutomationFlowsPage({
             resetComposerSearch();
           }
         }}
+        onBack={editingRuleId ? undefined : backToGallery}
         onDraftChange={setDraft}
         onSave={handleSave}
       />
