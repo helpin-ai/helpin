@@ -960,7 +960,7 @@ func (r *SupportConversationRepository) UpdateIdentityByAnonymousID(ctx context.
 		return nil, nil
 	}
 
-	if err := query.Updates(updates).Error; err != nil {
+	if err := query.UpdateColumns(updates).Error; err != nil {
 		return nil, fmt.Errorf("backfill conversation identity: %w", err)
 	}
 

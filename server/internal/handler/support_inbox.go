@@ -352,6 +352,23 @@ func (h *SupportInboxHandler) ListInboxScopes(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// ListWorkspaceUnread handles GET /api/support/workspace-unread.
+// Returns per-workspace unread counts across all workspaces the caller is a member of.
+// Used to render badges in the workspace switcher.
+func (h *SupportInboxHandler) ListWorkspaceUnread(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		writeError(w, http.StatusUnauthorized, "unauthenticated")
+		return
+	}
+	counts, err := h.supportService.ListUnreadByWorkspace(r.Context(), userID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, counts)
+}
+
 func (h *SupportInboxHandler) ListMailboxes(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	mailboxes, err := h.supportService.ListMailboxesAdmin(r.Context(), workspaceID)

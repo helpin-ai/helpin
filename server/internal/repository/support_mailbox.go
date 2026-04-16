@@ -281,6 +281,48 @@ func (r *SupportMailboxRepository) IsMember(ctx context.Context, mailboxID, work
 	return count > 0, nil
 }
 
+// WorkspaceUnreadCount pairs a workspace ID with the count of open conversations
+// containing unread customer replies in that workspace.
+type WorkspaceUnreadCount struct {
+	WorkspaceID string `gorm:"column:workspace_id"`
+	UnreadCount int    `gorm:"column:unread_count"`
+}
+
+// CountUnreadByWorkspacesForUser returns one row per workspace where the user is
+// an active member and there is at least one open, non-AI-resolved conversation
+// with unread customer replies. Workspaces with zero unread are omitted.
+func (r *SupportMailboxRepository) CountUnreadByWorkspacesForUser(ctx context.Context, userID string) ([]WorkspaceUnreadCount, error) {
+	if strings.TrimSpace(userID) == "" {
+		return nil, nil
+	}
+
+	query := r.db.WithContext(ctx).
+		Table("support_conversations sc").
+		Select("sc.workspace_id AS workspace_id, COUNT(*) AS unread_count").
+		Joins(`INNER JOIN workspace_members wm
+			ON wm.workspace_id = sc.workspace_id
+			AND wm.user_id = ?
+			AND wm.status = 'active'`, userID).
+		Where("sc.status NOT IN ?", []string{model.SupportConversationStatusResolved, model.SupportConversationStatusSpam}).
+		Where("NOT (" + conversationResolvedByAICondition("sc") + ")").
+		Where(`(
+			SELECT COUNT(*)
+			FROM support_messages sm
+			WHERE sm.conversation_id = sc.id
+			  AND sm.is_internal = false
+			  AND sm.sender_type = 'customer'
+			  AND sm.message_type = 'reply'
+			  AND sm.created_at > COALESCE(sc.team_last_seen_at, ?)
+		) > 0`, "1970-01-01 00:00:00").
+		Group("sc.workspace_id")
+
+	var rows []WorkspaceUnreadCount
+	if err := query.Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("count support unread by workspace: %w", err)
+	}
+	return rows, nil
+}
+
 func (r *SupportMailboxRepository) CountUnread(ctx context.Context, workspaceID string, mailboxID *string) (int, error) {
 	query := r.db.WithContext(ctx).Table("support_conversations sc").Where("sc.workspace_id = ? AND sc.status NOT IN ?", workspaceID, []string{model.SupportConversationStatusResolved, model.SupportConversationStatusSpam})
 	if mailboxID == nil {

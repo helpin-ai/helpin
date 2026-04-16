@@ -591,8 +591,8 @@ func TestSupportInboxServiceIdentifyByAnonymousIDRefreshesContactIdentity(t *tes
 	if updatedConversation.CRMContactID == nil || *updatedConversation.CRMContactID != contact.ID {
 		t.Fatalf("conversation crm_contact_id = %v, want %q", updatedConversation.CRMContactID, contact.ID)
 	}
-	if !updatedConversation.UpdatedAt.After(oldTime) {
-		t.Fatalf("conversation updated_at = %v, want after %v", updatedConversation.UpdatedAt, oldTime)
+	if updatedConversation.UpdatedAt.After(oldTime) {
+		t.Fatalf("conversation updated_at = %v, want unchanged from %v", updatedConversation.UpdatedAt, oldTime)
 	}
 
 	updatedSession, err := sessionRepo.GetByToken(ctx, session.SessionToken)

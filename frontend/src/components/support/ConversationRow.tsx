@@ -1,6 +1,7 @@
 import { memo, useMemo, useState, type JSX, type KeyboardEvent, type SVGProps } from 'react';
 import * as Flags from 'country-flag-icons/react/3x2';
-import { CheckmarkCircle02Icon, MoreHorizontalIcon } from '@/lib/icons';
+import { CheckmarkCircle02Icon, CodeIcon, Mail01Icon, Message01Icon, MoreHorizontalIcon, PencilEdit01Icon } from '@/lib/icons';
+import type { TicketSource } from '@/lib/pm-types/support';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
@@ -46,6 +47,34 @@ const ConversationCountryFlag = memo(function ConversationCountryFlag({
       </TooltipTrigger>
       <TooltipContent side="left">
         <span className="text-xs">{label}</span>
+      </TooltipContent>
+    </Tooltip>
+  );
+});
+
+type ChannelMeta = { icon: typeof Message01Icon; label: string };
+
+const CHANNEL_META: Record<TicketSource, ChannelMeta | null> = {
+  widget: { icon: Message01Icon, label: 'Live chat' },
+  email: { icon: Mail01Icon, label: 'Email' },
+  api: { icon: CodeIcon, label: 'API' },
+  internal: { icon: PencilEdit01Icon, label: 'Internal' },
+};
+
+const ChannelIcon = memo(function ChannelIcon({ source }: { source?: TicketSource | null }) {
+  if (!source) return null;
+  const meta = CHANNEL_META[source];
+  if (!meta) return null;
+  const Icon = meta.icon;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex h-3.5 w-3.5 items-center justify-center text-muted-foreground/70">
+          <Icon className="h-3.5 w-3.5" />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top">
+        <span className="text-xs">{meta.label}</span>
       </TooltipContent>
     </Tooltip>
   );
@@ -261,15 +290,18 @@ export const ConversationRow = memo(function ConversationRow({
               {displayName}
             </span>
             <div className="relative flex min-w-[40px] items-center justify-end">
-              <span
-                className={`shrink-0 text-[11px] text-muted-foreground/70 tabular-nums transition-opacity duration-150 ${
+              <div
+                className={`flex shrink-0 items-center gap-1 transition-opacity duration-150 ${
                   actionsOpen
                     ? 'opacity-0'
                     : 'group-hover:opacity-0 group-focus-within:opacity-0'
                 }`}
               >
-                {timeAgo(conversation.updated_at)}
-              </span>
+                <ChannelIcon source={conversation.source} />
+                <span className="text-[11px] text-muted-foreground/70 tabular-nums">
+                  {timeAgo(conversation.updated_at)}
+                </span>
+              </div>
               <div
                 className={`absolute inset-0 flex items-center justify-end transition-opacity duration-150 ${
                   actionsOpen

@@ -9,7 +9,6 @@ import { buildCollectionTreeOptions } from '@/components/docs/CollectionTreePick
 import { useTruncationDetection } from '@/hooks/useTruncationDetection';
 import { SpaceDialog } from '@/components/docs/SpaceDialog';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
-import { TypedConfirmDialog } from '@/components/docs/TypedConfirmDialog';
 import { DeleteCollectionDialog } from '@/components/docs/DeleteCollectionDialog';
 import { DeleteSpaceDialog } from '@/components/docs/DeleteSpaceDialog';
 import {

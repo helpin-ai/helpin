@@ -23,6 +23,15 @@ func normalizeSupportMailboxHandle(handle string) string {
 	return handle
 }
 
+func isReservedSupportMailboxHandle(handle string) bool {
+	switch strings.TrimSpace(strings.ToLower(handle)) {
+	case sharedSupportEmailRouteLocalPart:
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *SupportInboxService) isMailboxAccessible(ctx context.Context, workspaceID string, mailboxID *string) bool {
 	if mailboxID == nil || strings.TrimSpace(*mailboxID) == "" {
 		return true
@@ -208,6 +217,54 @@ func (s *SupportInboxService) ListMailboxesAdmin(ctx context.Context, workspaceI
 	return s.mailboxRepo.ListByWorkspace(ctx, workspaceID, true)
 }
 
+// ListUnreadByWorkspace returns the support unread conversation count for every
+// workspace where the caller both belongs to the workspace and has support
+// module access plus the support.read permission. Workspaces the user cannot
+// access are omitted entirely, matching the gating used by support routes.
+// Workspaces with zero unread are omitted so the frontend can treat missing
+// entries as zero.
+func (s *SupportInboxService) ListUnreadByWorkspace(ctx context.Context, userID string) ([]model.SupportWorkspaceUnreadCount, error) {
+	if s.mailboxRepo == nil {
+		return nil, fmt.Errorf("support mailbox repository is unavailable")
+	}
+	rows, err := s.mailboxRepo.CountUnreadByWorkspacesForUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.SupportWorkspaceUnreadCount, 0, len(rows))
+	for _, row := range rows {
+		if row.UnreadCount <= 0 {
+			continue
+		}
+		if !s.callerCanReadSupport(ctx, row.WorkspaceID, userID) {
+			continue
+		}
+		out = append(out, model.SupportWorkspaceUnreadCount{
+			WorkspaceID: row.WorkspaceID,
+			UnreadCount: row.UnreadCount,
+		})
+	}
+	return out, nil
+}
+
+// callerCanReadSupport gates a workspace unread count behind the same rules
+// enforced by the support routes: support module must be enabled for the actor
+// and the actor's role must grant PermSupportRead.
+func (s *SupportInboxService) callerCanReadSupport(ctx context.Context, workspaceID, userID string) bool {
+	if s.authzService == nil {
+		return false
+	}
+	actor, err := s.authzService.ResolveActor(ctx, workspaceID, userID)
+	if err != nil || actor == nil {
+		return false
+	}
+	hasModule, err := s.authzService.CanAccessModule(ctx, actor, model.ModuleSupport)
+	if err != nil || !hasModule {
+		return false
+	}
+	return s.authzService.Can(actor, authorization.PermSupportRead)
+}
+
 func (s *SupportInboxService) ListMailboxMembers(ctx context.Context, workspaceID, mailboxID string) ([]model.SupportMailboxMember, error) {
 	if s.mailboxRepo == nil {
 		return nil, fmt.Errorf("support mailbox repository is unavailable")
@@ -234,6 +291,9 @@ func (s *SupportInboxService) CreateMailbox(ctx context.Context, workspaceID str
 	}
 	if handle == "" {
 		return nil, fmt.Errorf("handle is required")
+	}
+	if isReservedSupportMailboxHandle(handle) {
+		return nil, fmt.Errorf("handle is reserved")
 	}
 	if icon == "" {
 		icon = "inbox"
@@ -308,6 +368,9 @@ func (s *SupportInboxService) UpdateMailbox(ctx context.Context, workspaceID, ma
 		handle := normalizeSupportMailboxHandle(*req.Handle)
 		if handle == "" {
 			return nil, fmt.Errorf("handle is required")
+		}
+		if isReservedSupportMailboxHandle(handle) {
+			return nil, fmt.Errorf("handle is reserved")
 		}
 		if existing, err := s.mailboxRepo.GetByHandle(ctx, workspaceID, handle); err != nil {
 			return nil, err
@@ -385,6 +448,20 @@ func (s *SupportInboxService) UpdateMailbox(ctx context.Context, workspaceID, ma
 	}
 	if err := s.mailboxRepo.Update(ctx, mailbox); err != nil {
 		return nil, err
+	}
+	if s.emailRouteRepo != nil {
+		route, err := s.emailRouteRepo.GetActiveByMailbox(ctx, workspaceID, &mailbox.ID)
+		if err != nil {
+			return nil, err
+		}
+		if route != nil {
+			if inboundAddress, buildErr := s.buildSupportEmailRouteAddress(ctx, workspaceID, mailbox); buildErr == nil && strings.TrimSpace(inboundAddress) != "" {
+				route.InboundAddress = inboundAddress
+				if err := s.emailRouteRepo.Update(ctx, route); err != nil {
+					return nil, err
+				}
+			}
+		}
 	}
 	if req.WorkspaceMemberIDs != nil {
 		if err := s.mailboxRepo.ReplaceMembers(ctx, mailbox.ID, req.WorkspaceMemberIDs); err != nil {
