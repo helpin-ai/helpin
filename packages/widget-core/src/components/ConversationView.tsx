@@ -547,7 +547,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
               ))}
             </div>
           )}
-          <span className="helpin-waiting-teammate-label">Waiting for a teammate</span>
+          <span className="helpin-waiting-teammate-label">A team member will reply soon</span>
         </div>
       )}
       <ComposeBar
