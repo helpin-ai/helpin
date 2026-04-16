@@ -267,6 +267,18 @@ func (h *SupportCoverageHandler) ApplySuggestion(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+// DiscardSuggestion handles POST /api/support/coverage/suggestions/{suggestionId}/discard.
+// Rejects the suggestion and reverts the gap to open.
+func (h *SupportCoverageHandler) DiscardSuggestion(w http.ResponseWriter, r *http.Request) {
+	wsID := middleware.GetWorkspaceID(r.Context())
+	suggestionID := chi.URLParam(r, "suggestionId")
+	if err := h.coverageSvc.DiscardSuggestion(r.Context(), wsID, suggestionID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
 // GetConversationState handles GET /api/support/coverage/conversations/{conversationId}/state.
 func (h *SupportCoverageHandler) GetConversationState(w http.ResponseWriter, r *http.Request) {
 	wsID := middleware.GetWorkspaceID(r.Context())

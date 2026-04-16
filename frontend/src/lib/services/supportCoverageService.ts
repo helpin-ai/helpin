@@ -39,6 +39,9 @@ export const supportCoverageService = {
   applySuggestion: (wsId: string, suggestionId: string) =>
     api.post(`/support/coverage/suggestions/${suggestionId}/apply${qs(wsId)}`, {}),
 
+  discardSuggestion: (wsId: string, suggestionId: string) =>
+    api.post(`/support/coverage/suggestions/${suggestionId}/discard${qs(wsId)}`, {}),
+
   getConversationState: (wsId: string, conversationId: string) =>
     api.get<SupportConversationCoverageState>(`/support/coverage/conversations/${conversationId}/state${qs(wsId)}`),
 

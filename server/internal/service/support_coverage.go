@@ -156,6 +156,11 @@ func (s *SupportCoverageService) MergeGaps(ctx context.Context, workspaceID, sou
 	return s.coverageRepo.MergeGaps(ctx, workspaceID, sourceGapID, targetGapID)
 }
 
+// DiscardSuggestion rejects a suggestion and reverts the gap to open.
+func (s *SupportCoverageService) DiscardSuggestion(ctx context.Context, workspaceID, suggestionID string) error {
+	return s.coverageRepo.DiscardSuggestion(ctx, suggestionID, workspaceID)
+}
+
 // GetConversationCoverageState checks docs-issue feedback state.
 func (s *SupportCoverageService) GetConversationCoverageState(ctx context.Context, workspaceID, conversationID string) (*model.SupportConversationCoverageState, error) {
 	return s.coverageRepo.GetConversationCoverageState(ctx, workspaceID, conversationID)

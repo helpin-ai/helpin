@@ -301,6 +301,31 @@ func (r *SupportCoverageRepository) UpdateSuggestionResult(ctx context.Context, 
 	return nil
 }
 
+// DiscardSuggestion sets a suggestion to rejected and reverts its gap to open.
+func (r *SupportCoverageRepository) DiscardSuggestion(ctx context.Context, suggestionID, workspaceID string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var suggestion model.SupportGapSuggestion
+		if err := tx.Where("id = ? AND workspace_id = ?", suggestionID, workspaceID).First(&suggestion).Error; err != nil {
+			return fmt.Errorf("suggestion not found: %w", err)
+		}
+		if err := tx.Model(&suggestion).Updates(map[string]interface{}{
+			"status":     model.SupportCoverageSuggestionStatusRejected,
+			"updated_at": time.Now(),
+		}).Error; err != nil {
+			return fmt.Errorf("reject suggestion: %w", err)
+		}
+		if err := tx.Model(&model.SupportCoverageGap{}).
+			Where("id = ? AND workspace_id = ?", suggestion.GapID, workspaceID).
+			Updates(map[string]interface{}{
+				"status":     model.SupportCoverageGapStatusOpen,
+				"updated_at": time.Now(),
+			}).Error; err != nil {
+			return fmt.Errorf("revert gap status: %w", err)
+		}
+		return nil
+	})
+}
+
 // GetConversationCoverageState checks if docs-issue feedback was
 // already submitted for a conversation.
 func (r *SupportCoverageRepository) GetConversationCoverageState(ctx context.Context, workspaceID, conversationID string) (*model.SupportConversationCoverageState, error) {
