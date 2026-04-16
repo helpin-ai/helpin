@@ -366,6 +366,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/workspaces", h.Workspace.List)
 			r.Post("/workspaces", h.Workspace.Create)
 
+			// Cross-workspace support unread summary for the workspace switcher badge.
+			r.Get("/support/workspace-unread", h.SupportInbox.ListWorkspaceUnread)
+
 			// Slug lookup — resolve slug to workspace ID, then check access
 			r.With(authorization.ResolveWorkspaceSlug(slugResolver), wsAccess).Get("/workspaces/by-slug/{slug}", h.Workspace.GetBySlug)
 

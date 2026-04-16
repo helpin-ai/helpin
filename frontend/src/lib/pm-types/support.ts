@@ -90,6 +90,11 @@ export interface SupportInboxScopeListResponse {
   mailboxes: SupportInboxScope[];
 }
 
+export interface SupportWorkspaceUnreadCount {
+  workspace_id: string;
+  unread_count: number;
+}
+
 export interface SupportMailbox {
   id: string;
   workspace_id: string;
