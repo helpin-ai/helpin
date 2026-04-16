@@ -1,12 +1,13 @@
 # Docs Ordering — Fractional Sort Keys Design
 
-**Status:** Draft v2 (post-review revisions)
+**Status:** Draft v3 (post-review revisions)
 **Owner:** azhar-teampulse
 **Last updated:** 2026-04-16
 
 ## Changelog
 
-- **v2 (this revision):** incorporated 15 review findings. Rewrote §6.3 with unified pseudocode and regenerated examples; replaced §9.2's broken spacing formula with sequential `Between` calls; committed to a Go one-shot backfill command in §9.3; enumerated all four reorder endpoints in §7.2/§8.1; gated writes behind the feature flag in §13; added shared Go↔TS test vectors in §6.5/§11.1; added authorization rules in §8.1; reworked §12 rollout to sequence flag flips separately from deploys; tightened §9.3 idempotency to per-row; removed panic from the algorithm in §6; switched default to a sentinel that sorts last; called out index-bloat; specified NULL handling in §7.3; strengthened the parity test assertion in §10; specified Nextra importer ordering.
+- **v3:** second review found a real correctness bug in the hand-rolled pseudocode (upper-exhausted conflated with upper-empty → `Between("", "a")` returned `"am"` > `"a"`). Rather than patch the pseudocode in the spec (source-of-drift risk), §6 now references the canonical dgreensp fractional-indexing algorithm by name, with test-vector-driven compliance as the implementation gate. The hand-rolled pseudocode has been removed in favor of a contract + reference-implementation pointer. Also fixed 6 polish items: shim-rebuilds-from-scratch clarification (§8.1), parity-test fixture sets sort_keys directly (§10), "stop-if-staging-parity-fails" instruction (§12), pre-prod-flip mixed-reorder checklist (§12).
+- **v2:** incorporated 15 review findings from v1: rewrote algorithm pseudocode, replaced broken backfill formula, committed to Go one-shot command, enumerated all four reorder endpoints, gated writes behind flag, shared Go↔TS test vectors, authz rules, per-row idempotency, no-panic, sentinel default, NULL handling, stronger parity assertion, Nextra sequential.
 
 ## 1. Goal
 
@@ -160,95 +161,36 @@ Reasoning: readable in DB browser, simple invariant (`^[a-z]+$` enforced by CHEC
 func Between(lower, upper string) (string, error)
 ```
 
-### 6.3 Algorithm
+### 6.3 Algorithm — contract and reference
 
-Keys are treated as base-26 fractional digits after an implicit leading `"0."`. E.g., `"m"` ≈ 12/26; `"mh"` ≈ 12/26 + 7/(26^2).
+We vendor the **canonical fractional-indexing algorithm by David Greenspan** (used by Figma, Notion, Linear) rather than hand-rolling our own. The algorithm is battle-tested against exactly the edge cases that trip up naive implementations (upper-exhausted vs upper-empty; descending from trailing-zero upper; etc.).
 
-Two internal primitives:
+**Reference implementation:** `https://github.com/rocicorp/fractional-indexing` (TypeScript original by dgreensp; MIT-licensed, widely ported). Our Go port in `server/internal/ordering/fractional.go` is a direct translation of that reference, restricted to the 26-letter alphabet `[a-z]`.
 
-```
-// Treat k as a base-26 fractional digit sequence:
-//   indexOf(c) returns int(c) - int('a')           // 0..25
-//   digits(k)  returns []int,  digit at position i
-// INCREMENT(k) returns the smallest key strictly greater than k that is
-//   expressible without extending depth; if k = "z" or any suffix-z chain,
-//   returns "" (caller must descend).
-// DECREMENT mirror.
+**Contract (what callers can rely on):**
 
-midpoint(lower, upper string) string:
-    // Guaranteed: lower < upper (strict) when both non-empty.
-    // Treat missing bound as 0.000... or 1.000...
-    pos := 0
-    var out []int
-    for {
-        loDigit := 0   if pos < len(lower) else 0       // default 0 when lower shorter
-        hiDigit := 25  if pos < len(upper) else 25      // default 25 when upper shorter
-        if pos < len(lower) { loDigit = indexOf(lower[pos]) }
-        if pos < len(upper) { hiDigit = indexOf(upper[pos]) }
+1. `Between("", "")` returns a canonical midpoint key (specifically `"a"` by the dgreensp convention, sorting at the start of an empty bucket). Subsequent appends produce `"b"`, `"c"`, etc., then `"cn"`, etc. as needed. Exact values are locked by the test vectors.
+2. `Between(lower, upper)` returns `k` such that `lower < k < upper` lexicographically, where empty strings on either side denote "no bound on this side."
+3. `Between` returns `(string, error)`. Errors — never panics — in these cases:
+   - `lower != "" && upper != "" && lower >= upper`
+   - Either argument contains a character outside `[a-z]`
+   - The neighbors are too tight to produce a strictly-between key (e.g., `Between("", "a")` — the only key that could fit is the empty string, which violates contract #1 above). The caller handles this by requesting a rebuild/compaction of the bucket, or by falling back to append semantics.
+4. Generated keys never end in the lowest alphabet char (`'a'`), so subsequent descent has room to prepend.
 
-        if hiDigit - loDigit > 1:
-            mid := (loDigit + hiDigit) / 2              // integer division; floor
-            out = append(out, mid)
-            return string(out)
+**What the spec DOES NOT specify:** the exact bytes `Between("m", "p")` returns. That's defined by the reference implementation and locked by test vectors (§6.5). Implementers port the algorithm to Go (and TS); the shared `testdata/vectors.json` is the correctness contract.
 
-        if hiDigit - loDigit == 1:
-            // No room for a midpoint digit at this position; emit loDigit
-            // and descend. We need the result to be > lower, so we consume
-            // lower's digit and look at the NEXT position's room.
-            out = append(out, loDigit)
-            pos++
-            // Continuation: ensure result > lower by finding first position
-            // where lower has a digit < 25, then bump.
-            for pos < len(lower):
-                ld := indexOf(lower[pos])
-                if ld < 25:
-                    out = append(out, (ld + 26) / 2)    // = (ld + 25) / 2 + bias; see below
-                    return string(out)
-                out = append(out, ld)
-                pos++
-            // lower ran out and every suffix digit was 25; append midpoint "m".
-            out = append(out, 12)                       // = index('m')
-            return string(out)
+### 6.3.1 Representative test-vector entries
 
-        // hiDigit == loDigit; descend at same digit.
-        out = append(out, loDigit)
-        pos++
+The full set of triples lives in `server/internal/ordering/testdata/vectors.json` and covers:
 
-// INVARIANT: result never ends in 'a' (index 0), because `(ld+26)/2` with
-// ld in [0, 24] gives at least 13. The "append 'm'" branch gives 12. Both
-// avoid trailing-'a' collisions with subsequent descents.
-```
+- **Empty bounds:** `Between("", "")`, `Between("", "c")`, `Between("x", "")`, `Between("y", "")`, `Between("z", "")`
+- **Both bounds:** `Between("a", "b")`, `Between("m", "n")`, `Between("mh", "n")`, `Between("a", "am")`, `Between("aa", "ab")`
+- **Tight-upper (potentially impossible):** `Between("", "a")`, `Between("", "aa")`, `Between("a", "aa")`, `Between("aaa", "aab")` — verify algorithm returns an error OR a valid strictly-between key per contract #3
+- **Reverse (must error):** `Between("n", "m")`, `Between("b", "a")`
+- **Invalid chars (must error):** `Between("A", "z")`, `Between("!", "m")`, `Between("m1", "m2")`
+- **Long keys:** at least 20 entries with keys 5+ chars long, exercising descent paths
 
-Canonical cases:
-
-```
-Between("",  "")   = midpoint("",  "")   = "m"          // (0 and 25 ⇒ 12)
-Between("",  "c")  = midpoint("",  "c")  = "a"          // (0 and 2 ⇒ 1 = "b") — see below
-Between("x", "")   = midpoint("x", "")   = ...                                       
-```
-
-(Worked table in §6.3.1 below, regenerated from the algorithm above.)
-
-### 6.3.1 Worked examples
-
-| `lower` | `upper` | Result | Why |
-|---------|---------|--------|-----|
-| `""`    | `""`    | `"m"`  | pos 0: lo=0, hi=25, mid=(0+25)/2=12 → `'m'` |
-| `""`    | `"c"`   | `"b"`  | pos 0: lo=0, hi=2, mid=1 → `'b'` |
-| `"x"`   | `""`    | `"y"`  | pos 0: lo=23 (`'x'`), hi=25, diff=2, mid=(23+25)/2=24 → `'y'` |
-| `"y"`   | `""`    | `"ym"` | pos 0: lo=23 (`'y'`=24? → actually 24), hi=25, diff=1 → emit `'y'`, descend; pos 1: lower exhausted, append `'m'` |
-| `"m"`   | `"s"`   | `"p"`  | pos 0: lo=12, hi=18, mid=15 → `'p'` |
-| `"m"`   | `"n"`   | `"mm"` | pos 0: lo=12, hi=13, diff=1 → emit `'m'`, descend; pos 1: lower exhausted, append `'m'` |
-| `"mh"`  | `"n"`   | `"mt"` | pos 0: both are 12, descend with `'m'`; pos 1: lo=7 (`'h'`), hi=25 (upper exhausted), mid=(7+25)/2=16 → `'q'`? wait, let me retrace |
-
-Let me redo `"mh"` / `"n"`:
-- pos 0: lo = 12 (`'m'`), hi = 13 (`'n'`); diff = 1 → emit `'m'`, descend.
-- Inner continuation looks at `lower[pos=1]` = `'h'` (index 7). Since 7 < 25, emit `(7 + 26) / 2 = 16` → `'q'`.
-- Result: `"mq"`.
-
-So correction: `Between("mh", "n") = "mq"`. The table above had `"mt"` — my handwritten trace was wrong. The single source of truth is the algorithm; the tests lock in the exact outputs.
-
-I'll produce the exact table programmatically from `fractional.go` after implementation and paste it into this spec as an addendum (task: "regenerate §6.3.1 from test vectors").
+Implementers do NOT hand-trace algorithm outputs in this spec. Expected values come from running the reference implementation (dgreensp's TS) once during vector-file generation; both the Go and TS ports assert on those expected values.
 
 ### 6.4 Properties
 
@@ -340,7 +282,7 @@ Four reorder endpoints exist in the codebase today. Each has a defined path forw
 | `POST /docs/spaces/:sid/documents/reorder`   | `ReorderDocuments`   | Reorder docs in one bucket by ordered IDs        | **Shim.** Same pattern as above. |
 | `POST /docs/spaces/:sid/children/reorder`    | `ReorderChildren`    | Reorder mixed list of collections + docs in one bucket | **Shim.** Same — this is the endpoint arrange-mode calls today; it must keep working across the rollout. |
 
-**Shim semantics** (for the three bucket reorders): the server accepts the client's ordered list, computes sort_keys sequentially from `"a"` to `"z"` (or with fractional `Between` if the list grows beyond depth-1 capacity), and writes each item's new `sort_key`. Idempotent: calling with the same list twice produces identical keys (because the algorithm is deterministic given no existing neighbors).
+**Shim semantics** (for the three bucket reorders): the server accepts the client's ordered list and **rebuilds sort_keys for every item in the submitted list from scratch** — ignoring any pre-existing `sort_key` on those items. It computes sequentially via `Between(prevKey, "")` starting from the empty prefix: first item gets `Between("", "")`, second gets `Between(firstKey, "")`, etc. This guarantees idempotency (calling with the same list twice produces identical keys) and eliminates drift risk from partial re-reorders. Items in the bucket NOT included in the submitted list retain their existing sort_keys.
 
 ### 8.2 New primary endpoint
 
@@ -449,6 +391,8 @@ Only after these pass does the engineer apply the post-backfill CHECK constraint
    - 5 uncategorized docs with interleaved sort keys (some before collections alphabetically, some after)
    - 2 sub-collections under the first top-level collection, also interleaved with that collection's docs
    - 8 docs distributed across the collections
+
+   **The fixture sets `sort_key` values DIRECTLY on each row** (via the test helper, bypassing the normal creation path) so the test exercises arbitrary user-chosen orderings rather than whatever the backfill or creation path would assign. This is what makes the test meaningful: it verifies the read path respects the stored keys regardless of how they got there.
 2. Runs the three surfaces' navigation queries:
    - Internal bucket walk (doc+collection repos via `listDocsInBucket` / `listCollectionsInBucket`).
    - Help center `ListSpaceNavigation`.
@@ -489,15 +433,19 @@ The deploy is **sequential** with explicit flag flips. No action combines "deplo
 1. **Deploy with feature flag `DOCS_ORDERING_USE_SORT_KEY=false`.** New code is present but dormant for reads. Writes still populate only `position`. Schema columns added. Indexes created. No functional change for users.
 2. **Run the backfill command in staging** (`--dry-run` first, then live).
 3. **Verify §9.4.**
-4. **Run §10 parity test in staging.**
+4. **Run §10 parity test in staging.** **STOP if parity fails:** the backfill or algorithm has a bug; do NOT proceed to production. Investigate, fix, re-run backfill, re-verify.
 5. **Deploy flag flip: set `DOCS_ORDERING_USE_SORT_KEY=true` in staging.** Reads now use `sort_key`. Writes now populate both `sort_key` and `position` per §13. Spot-check the UI.
 6. **24-hour staging soak.** Watch logs for 409s on move and any parity test failures in nightly CI.
-7. **Production: deploy code with flag `false`.** Run backfill, verify.
-8. **Production: flip flag `true`.** Soak.
-9. **Add CHECK constraint migration** (§5.1 Step 3) once the flag has been true in production for 1 week without incident.
-10. **(Later follow-up PR)** remove the flag and stop writing `position`; drop the column.
+7. **Pre-prod-flip checklist.** Before flipping production to `true`:
+   - Parity test green in staging nightly CI for the full soak window.
+   - No 409s from the move endpoint outside of known client retry cases.
+   - **Acknowledge rollback semantics:** if the flag is flipped back to `false` after this point, any mixed-type reorder (doc dragged above a collection) done under `true` will be lost. Review the staging soak to see whether such reorders occurred; if yes, accept that rollback requires a data rollback, not a flag flip.
+8. **Production: deploy code with flag `false`.** Run backfill, verify §9.4, run parity test. **STOP if parity fails.**
+9. **Production: flip flag `true`.** Soak.
+10. **Add CHECK constraint migration** (§5.1 Step 3) once the flag has been true in production for 1 week without incident.
+11. **(Later follow-up PR)** remove the flag and stop writing `position`; drop the column.
 
-Any step can revert to the previous state by flipping the flag off (steps 5–8) or reverting the PR (step 1).
+Any step before §12.5 (staging flag flip) can revert cleanly by reverting the PR. Steps §12.5–9 can revert by flipping the flag off — subject to the §12.7 mixed-reorder caveat.
 
 ## 13. Feature flag semantics
 
@@ -562,4 +510,5 @@ Writing both during `true` ensures we can flip back to `false` (read from `posit
 
 ## 17. Review history
 
-- **v1 → v2:** addressed 15 findings from spec review. Critical fixes: algorithm pseudocode rewritten, backfill formula replaced with sequential `Between`, committed to Go one-shot command, enumerated all four reorder endpoints, gated writes behind the flag, added shared test vectors, added authz rules, fixed rollout sequencing. Refinements: per-row idempotency, no-panic algorithm, sentinel default that sorts last, explicit NULL handling, parity-test assertion against expected keys, Nextra importer sequential assignment, index-bloat acknowledgment.
+- **v2 → v3:** second review caught a correctness bug in the hand-rolled pseudocode: the upper-exhausted branch conflated "upper string has been consumed" with "upper is empty/unbounded," causing `Between("", "a")` to return `"am"` — which is strictly greater than `"a"` and violates the contract. Rather than patch the pseudocode in-place (source-of-drift risk; any future edit risks re-introducing similar bugs), v3 replaces §6.3 with a contract-based specification that points to the canonical dgreensp fractional-indexing algorithm as the reference implementation. Test vectors are the compliance gate. Also fixed: §8.1 shim semantics explicit ("rebuilds from scratch"), §10 parity fixture sets sort_keys directly, §12 rollout has an explicit STOP if staging parity fails and a pre-prod-flip checklist that calls out the mixed-reorder rollback trade-off.
+- **v1 → v2:** addressed 15 findings from first spec review. Critical fixes: algorithm pseudocode rewritten, backfill formula replaced with sequential `Between`, committed to Go one-shot command, enumerated all four reorder endpoints, gated writes behind the flag, added shared test vectors, added authz rules, fixed rollout sequencing. Refinements: per-row idempotency, no-panic algorithm, sentinel default that sorts last, explicit NULL handling, parity-test assertion against expected keys, Nextra importer sequential assignment, index-bloat acknowledgment.
