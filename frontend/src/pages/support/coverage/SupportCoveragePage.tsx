@@ -249,9 +249,9 @@ export function SupportCoveragePage() {
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-6">
       <header>
-        <h2 className="text-xl font-semibold">Docs Coverage</h2>
+        <h2 className="text-xl font-semibold">Coverage Gaps</h2>
         <p className="text-sm text-muted-foreground">
-          Gaps preventing AI from resolving customer issues autonomously.
+          Where AI couldn't resolve a customer issue — and how to fix it.
         </p>
       </header>
 

@@ -154,7 +154,7 @@ export function SupportRailNav({
               onClick={() => onNavigate(`/w/${wsSlug}/support/coverage`)}
             >
               <FileSearchIcon className="h-4 w-4" />
-              <span>Coverage</span>
+              <span>Coverage Gaps</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
