@@ -21,6 +21,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/email"
+	"github.com/helpin-ai/helpin/server/internal/email/inboundhtml"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
@@ -51,6 +52,25 @@ func renderMessageMarkdownToHTML(content string) string {
 		return "<p>" + strings.ReplaceAll(html.EscapeString(trimmed), "\n", "<br>") + "</p>"
 	}
 	return rendered
+}
+
+// inboundPayloadContent picks the best content source from a Postmark inbound
+// payload. Preference order:
+//  1. HtmlBody converted to markdown — preserves anchor text so long tracking
+//     URLs don't render as plaintext walls.
+//  2. StrippedTextReply — Postmark-stripped plain-text reply (quoted history
+//     removed), used when HTML is absent or conversion yields nothing.
+//  3. TextBody — full plain-text body as final fallback.
+//
+// Returns an empty string when every source is empty.
+func inboundPayloadContent(payload model.PostmarkInboundPayload) string {
+	if md := inboundhtml.Convert(payload.HtmlBody, ""); md != "" {
+		return md
+	}
+	if stripped := strings.TrimSpace(payload.StrippedTextReply); stripped != "" {
+		return stripped
+	}
+	return strings.TrimSpace(payload.TextBody)
 }
 
 const (
@@ -340,10 +360,7 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		return nil
 	}
 
-	content := strings.TrimSpace(payload.StrippedTextReply)
-	if content == "" {
-		content = strings.TrimSpace(payload.TextBody)
-	}
+	content := inboundPayloadContent(payload)
 	if content == "" {
 		return nil
 	}
@@ -1063,10 +1080,7 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		return nil
 	}
 
-	content := strings.TrimSpace(payload.StrippedTextReply)
-	if content == "" {
-		content = strings.TrimSpace(payload.TextBody)
-	}
+	content := inboundPayloadContent(payload)
 	if content == "" {
 		return nil
 	}

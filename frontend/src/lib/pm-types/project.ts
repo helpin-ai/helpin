@@ -1055,6 +1055,7 @@ export interface CreateCommentRequest {
 
 export interface UpdateCommentRequest {
   body: string;
+  attachment_ids?: string[];
 }
 
 // Task is now the canonical type, Story is an alias (defined above)

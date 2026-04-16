@@ -45,7 +45,8 @@ type CreateCommentRequest struct {
 
 // UpdateCommentRequest is the payload for updating comments.
 type UpdateCommentRequest struct {
-	Body string `json:"body"`
+	Body          string   `json:"body"`
+	AttachmentIDs []string `json:"attachment_ids,omitempty"`
 }
 
 // ToggleReactionRequest is the payload for toggling a reaction.
