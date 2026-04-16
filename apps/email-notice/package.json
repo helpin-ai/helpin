@@ -1,0 +1,10 @@
+{
+  "name": "@helpin-ai/email-notice",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Static landing page served from helpin.email and *.helpin.email — explains the domain to recipients of customer emails.",
+  "scripts": {
+    "build": "echo 'static site — no build step'",
+    "dev": "npx serve public -l 4321"
+  }
+}
