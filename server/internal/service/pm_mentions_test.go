@@ -150,6 +150,7 @@ func newPMMentionTestEnv(t *testing.T) *pmMentionTestEnv {
 		nil,
 		notifService,
 		env.workspaceRepo,
+		nil,
 	)
 	env.checklistService = NewPMChecklistItemService(
 		repository.NewPMChecklistItemRepository(db),

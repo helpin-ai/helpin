@@ -30,6 +30,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: pnpm/action-setup@v4
+
       - name: Ensure Cloudflare Pages project exists
         run: npx wrangler@3.114.1 pages project create helpin-email-notice --production-branch=main 2>/dev/null || true
         env:

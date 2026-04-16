@@ -84,6 +84,46 @@ function getEditorMarkdown(editorInstance: ReturnType<typeof useEditor> | null |
   return editorInstance.getText();
 }
 
+const URL_TOKEN_REGEX =
+  /^((?:https?|ftp):\/\/\S+|www\.\S+\.[a-z]{2,}\S*|[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+\.[a-z]{2,}(?:[/?#]\S*)?)$/i;
+const TRAILING_PUNCT_REGEX = /[.,;:!?)\]}>'"]+$/;
+
+function normalizeUrl(raw: string): string {
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) return raw;
+  return `https://${raw}`;
+}
+
+function findBareUrlBeforeCaret(
+  editorInstance: ReturnType<typeof useEditor> | null | undefined,
+): { from: number; to: number; href: string } | null {
+  if (!editorInstance) return null;
+  const { state } = editorInstance;
+  const { selection } = state;
+  if (!selection.empty) return null;
+
+  const $from = selection.$from;
+  const paragraphStart = $from.start();
+  const caret = $from.pos;
+  if (caret <= paragraphStart) return null;
+
+  const textBefore = state.doc.textBetween(paragraphStart, caret, '\n', '\ufffc');
+  const match = textBefore.match(/(\S+)$/);
+  if (!match) return null;
+
+  const rawToken = match[1];
+  const trail = rawToken.match(TRAILING_PUNCT_REGEX);
+  const trimmed = trail ? rawToken.slice(0, -trail[0].length) : rawToken;
+  if (!trimmed || !URL_TOKEN_REGEX.test(trimmed)) return null;
+
+  const tokenStart = caret - rawToken.length;
+  const tokenEnd = tokenStart + trimmed.length;
+
+  const linkMark = state.schema.marks.link;
+  if (linkMark && state.doc.rangeHasMark(tokenStart, tokenEnd, linkMark)) return null;
+
+  return { from: tokenStart, to: tokenEnd, href: normalizeUrl(trimmed) };
+}
+
 function FormatButton({
   active = false,
   title,
@@ -368,6 +408,24 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
           event.preventDefault();
           handleSendRef.current();
           return true;
+        }
+
+        // Shift+Enter — auto-link the trailing URL token, then insert a hard break
+        if (event.key === 'Enter' && event.shiftKey && !event.ctrlKey && !event.metaKey) {
+          const ed = editorRef.current;
+          const found = findBareUrlBeforeCaret(ed);
+          if (ed && found) {
+            event.preventDefault();
+            ed.chain()
+              .focus()
+              .setTextSelection({ from: found.from, to: found.to })
+              .setLink({ href: found.href })
+              .setTextSelection(found.to)
+              .unsetMark('link')
+              .setHardBreak()
+              .run();
+            return true;
+          }
         }
 
         return false;
