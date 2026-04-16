@@ -907,6 +907,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/spaces/{spaceId}/collections", h.Docs.ListCollections)
 				r.With(requirePerm(authorization.PermDocsEdit)).Post("/spaces/{spaceId}/collections", h.Docs.CreateCollection)
 				r.With(requirePerm(authorization.PermDocsEdit)).Patch("/collections/{collectionId}", h.Docs.UpdateCollection)
+				r.With(requirePerm(authorization.PermDocsRead)).Get("/collections/{collectionId}/delete-impact", h.Docs.GetCollectionDeleteImpact)
 				r.With(requirePerm(authorization.PermDocsEdit)).Delete("/collections/{collectionId}", h.Docs.DeleteCollection)
 				r.With(requirePerm(authorization.PermDocsEdit)).Post("/collections/{collectionId}/restore", h.Docs.RestoreCollection)
 
@@ -927,6 +928,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermDocsEdit)).Put("/spaces/reorder", h.Docs.ReorderSpaces)
 				r.With(requirePerm(authorization.PermDocsEdit)).Put("/spaces/{spaceId}/collections/reorder", h.Docs.ReorderCollections)
 				r.With(requirePerm(authorization.PermDocsEdit)).Put("/spaces/{spaceId}/documents/reorder", h.Docs.ReorderDocuments)
+				r.With(requirePerm(authorization.PermDocsEdit)).Put("/spaces/{spaceId}/children/reorder", h.Docs.ReorderChildren)
 
 				// Content — docs.read / docs.edit
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/content", h.Docs.GetContent)

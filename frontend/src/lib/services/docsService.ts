@@ -15,6 +15,7 @@ import type {
   CreateDocsSpaceRequest,
   UpdateDocsSpaceRequest,
   CreateDocsCollectionRequest,
+  DocsCollectionDeleteImpact,
   UpdateDocsCollectionRequest,
   CreateDocsDocumentRequest,
   UpdateDocsDocumentRequest,
@@ -59,6 +60,8 @@ export const docsService = {
     api.post<DocsCollection>(`/docs/spaces/${spaceId}/collections${qs(wsId)}`, payload),
   updateCollection: (wsId: string, collectionId: string, payload: UpdateDocsCollectionRequest) =>
     api.patch<DocsCollection>(`/docs/collections/${collectionId}${qs(wsId)}`, payload),
+  getCollectionDeleteImpact: (wsId: string, collectionId: string) =>
+    api.get<DocsCollectionDeleteImpact>(`/docs/collections/${collectionId}/delete-impact${qs(wsId)}`),
   deleteCollection: (wsId: string, collectionId: string) =>
     api.del(`/docs/collections/${collectionId}${qs(wsId)}`),
   restoreCollection: (wsId: string, collectionId: string) =>
@@ -245,6 +248,8 @@ export const docsService = {
     api.put(`/docs/spaces/${spaceId}/collections/reorder${qs(wsId)}`, data),
   reorderDocuments: (wsId: string, spaceId: string, data: import('../docsTypes').ReorderDocsDocumentsRequest) =>
     api.put(`/docs/spaces/${spaceId}/documents/reorder${qs(wsId)}`, data),
+  reorderChildren: (wsId: string, spaceId: string, data: import('../docsTypes').ReorderDocsChildrenRequest) =>
+    api.put(`/docs/spaces/${spaceId}/children/reorder${qs(wsId)}`, data),
 
   // ── Preview ────────────────────────────────────────────────────────────
   getPreviewToken: (wsId: string, docId: string) =>

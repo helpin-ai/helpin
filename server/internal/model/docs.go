@@ -505,6 +505,22 @@ type ReorderDocsDocumentsRequest struct {
 	DocumentIDs  []string `json:"document_ids"`  // full ordered list for one bucket
 }
 
+// ReorderDocsChildItem is a single entry in a mixed-children reorder
+// payload. Kind must be "collection" or "article".
+type ReorderDocsChildItem struct {
+	Kind string `json:"kind"`
+	ID   string `json:"id"`
+}
+
+// ReorderDocsChildrenRequest reorders a mixed list of collections and
+// articles that share the same parent (or sit at the space root).
+// Positions are assigned sequentially across both types in one
+// transaction so cross-type drag-and-drop persists correctly.
+type ReorderDocsChildrenRequest struct {
+	ParentCollectionID *string                `json:"parent_collection_id"` // nil / "" => space root
+	Items              []ReorderDocsChildItem `json:"items"`
+}
+
 // UpdateDocsDocumentRequest is the payload for updating a document.
 type UpdateDocsDocumentRequest struct {
 	Title        *string  `json:"title"`

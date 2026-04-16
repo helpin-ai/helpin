@@ -44,20 +44,20 @@ func writeDocsError(w http.ResponseWriter, err error) {
 
 // DocsHandler handles HTTP requests for the Docs module.
 type DocsHandler struct {
-	spaceSvc       *service.DocsSpaceService
-	collectionSvc  *service.DocsCollectionService
-	documentSvc    *service.DocsDocumentService
-	contentSvc     *service.DocsContentService
-	versionSvc     *service.DocsVersionService
-	linkSvc        *service.DocsLinkService
-	helpcenterSvc  *service.DocsHelpcenterService
-	translationSvc *service.DocsHelpcenterTranslationService
-	searchSvc      *service.DocsSearchService
-	importService  *service.DocsImportService
-	embeddingSvc   *service.DocsEmbeddingService
-	agentService           *service.AgentService
-	jwtManager             *auth.JWTManager
-	supportEventRecorder   service.SupportEventRecorder
+	spaceSvc             *service.DocsSpaceService
+	collectionSvc        *service.DocsCollectionService
+	documentSvc          *service.DocsDocumentService
+	contentSvc           *service.DocsContentService
+	versionSvc           *service.DocsVersionService
+	linkSvc              *service.DocsLinkService
+	helpcenterSvc        *service.DocsHelpcenterService
+	translationSvc       *service.DocsHelpcenterTranslationService
+	searchSvc            *service.DocsSearchService
+	importService        *service.DocsImportService
+	embeddingSvc         *service.DocsEmbeddingService
+	agentService         *service.AgentService
+	jwtManager           *auth.JWTManager
+	supportEventRecorder service.SupportEventRecorder
 }
 
 // NewDocsHandler creates a new DocsHandler.
@@ -233,6 +233,15 @@ func (h *DocsHandler) UpdateCollection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, coll)
+}
+
+func (h *DocsHandler) GetCollectionDeleteImpact(w http.ResponseWriter, r *http.Request) {
+	impact, err := h.collectionSvc.GetDeleteImpact(r.Context(), chi.URLParam(r, "collectionId"))
+	if err != nil {
+		writeDocsError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, impact)
 }
 
 func (h *DocsHandler) DeleteCollection(w http.ResponseWriter, r *http.Request) {
@@ -521,6 +530,23 @@ func (h *DocsHandler) ReorderDocuments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.documentSvc.ReorderDocuments(r.Context(), spaceID, req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "order updated"})
+}
+
+// ReorderChildren reorders a mixed list of collections and articles
+// sharing the same parent (or the space root). Positions are assigned
+// sequentially across both types in one transaction.
+func (h *DocsHandler) ReorderChildren(w http.ResponseWriter, r *http.Request) {
+	spaceID := chi.URLParam(r, "spaceId")
+	var req model.ReorderDocsChildrenRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.collectionSvc.ReorderChildren(r.Context(), spaceID, req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
