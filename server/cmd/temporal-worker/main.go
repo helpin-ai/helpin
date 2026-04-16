@@ -35,6 +35,8 @@ import (
 	workerpkg "github.com/helpin-ai/helpin/server/internal/worker"
 )
 
+const temporalWorkerStopTimeout = 10 * time.Minute
+
 func main() {
 	_ = godotenv.Load()
 
@@ -536,6 +538,7 @@ func parseLogLevel(value string) slog.Level {
 func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, activities *temporalapp.AgentRunActivities, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, summaryActivities *temporalapp.CRMSummaryActivities, dealMgmtActivities *temporalapp.DealManagementActivities, scheduleActivities *temporalapp.ScheduledAgentActivities, recurringActivities *service.PMRecurringTemplateActivities, sprintActivities *temporalapp.SprintAutomationActivities, docsEmbeddingActivities *temporalapp.DocsEmbeddingActivities, contentSourceSyncActivities *temporalapp.ContentSourceSyncActivities) tworker.Worker {
 	options := tworker.Options{
 		MaxConcurrentActivityExecutionSize: concurrency,
+		WorkerStopTimeout:                  temporalWorkerStopTimeout,
 	}
 	w := tworker.New(client, taskQueue, options)
 	w.RegisterWorkflow(temporalapp.AgentRunWorkflow)
