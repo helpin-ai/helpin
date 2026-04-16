@@ -676,13 +676,11 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
         <div className="px-4 pb-4 pt-2">
           {isLoading && <MessageSkeleton />}
           {!isLoading && messages.length === 0 && (
-            <div className="flex flex-col items-center justify-center gap-2 py-12 text-muted-foreground">
-              <Message01Icon className="h-10 w-10 text-muted-foreground/30" />
-              <p className="text-sm font-medium text-muted-foreground">No messages yet</p>
-              <p className="max-w-xs text-xs leading-relaxed text-muted-foreground/70">
-                Start the conversation using the reply below.
-              </p>
-            </div>
+            <EmptyState
+              icon={Message01Icon}
+              title="No messages yet"
+              subtitle="Start the conversation using the reply below."
+            />
           )}
           {groupedMessages.map((item, idx) => {
             if (item.type === 'separator') {
@@ -725,9 +723,11 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
         </div>
       </ScrollArea>
 
-      {/* Reply composer — only render when the conversation actually loaded.
-          Guards against showing a reply input for stale/deleted conversation ids. */}
-      {conversationId && conversation && (
+      {/* Reply composer — show during loading (cache may still populate) and
+          after a successful load. Only hide when the fetch settled AND the
+          conversation didn't load (stale/deleted id) to avoid offering a
+          reply for a conversation that doesn't exist. */}
+      {conversationId && (conversation || !conversationFetched) && (
         <ReplyComposer
           workspaceId={workspaceId}
           conversationId={conversationId}
