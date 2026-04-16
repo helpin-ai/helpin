@@ -1131,6 +1131,83 @@ func TestAssignConversationUserAcceptsSupportAccessibleUserOutsideMailboxMembers
 	_ = ownerMember
 }
 
+func TestSupportInboxServiceUpdateConversationStatus_KeepsResolvedEventsInternal(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	workspaceID := "ws-status-events"
+	seedWorkspace(t, db, workspaceID, "Status Events", "status-events", "user-123")
+
+	convRepo := repository.NewSupportConversationRepository(db)
+	msgRepo := repository.NewSupportMessageRepository(db)
+	svc := NewSupportInboxService(
+		convRepo,
+		nil,
+		msgRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	conversation := &model.SupportConversation{
+		WorkspaceID: workspaceID,
+		Subject:     "Widget visibility",
+		Status:      model.SupportConversationStatusOpen,
+	}
+	if err := convRepo.Create(ctx, conversation); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	if _, err := svc.UpdateConversationStatus(ctx, workspaceID, conversation.ID, model.SupportConversationStatusResolved, ""); err != nil {
+		t.Fatalf("resolve conversation: %v", err)
+	}
+	if _, err := svc.UpdateConversationStatus(ctx, workspaceID, conversation.ID, model.SupportConversationStatusOpen, ""); err != nil {
+		t.Fatalf("reopen conversation: %v", err)
+	}
+
+	allMessages, err := msgRepo.ListByConversation(ctx, workspaceID, conversation.ID, true)
+	if err != nil {
+		t.Fatalf("list all messages: %v", err)
+	}
+	if len(allMessages) != 2 {
+		t.Fatalf("expected 2 system messages, got %d", len(allMessages))
+	}
+
+	wantEvents := []model.SupportSystemEventType{
+		model.SystemEventResolved,
+		model.SystemEventReopened,
+	}
+	for i, wantEvent := range wantEvents {
+		msg := allMessages[i]
+		if !msg.IsInternal {
+			t.Fatalf("message %d is public; want internal system event", i)
+		}
+		if msg.MessageType != "system" {
+			t.Fatalf("message %d type = %q, want system", i, msg.MessageType)
+		}
+		if msg.SystemEventType == nil || *msg.SystemEventType != wantEvent {
+			t.Fatalf("message %d system_event_type = %v, want %q", i, msg.SystemEventType, wantEvent)
+		}
+	}
+
+	publicMessages, err := msgRepo.ListByConversation(ctx, workspaceID, conversation.ID, false)
+	if err != nil {
+		t.Fatalf("list public messages: %v", err)
+	}
+	if len(publicMessages) != 0 {
+		t.Fatalf("expected no widget-visible messages, got %d", len(publicMessages))
+	}
+}
+
 func TestSupportInboxServiceCreateTaskFromConversation_CreatesLinkedTaskAndCopiesAssociations(t *testing.T) {
 	env := newTaskTestEnv(t)
 	ctx := context.Background()

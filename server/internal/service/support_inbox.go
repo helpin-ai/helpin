@@ -983,7 +983,8 @@ func (s *SupportInboxService) UpdateConversationStatus(ctx context.Context, work
 		_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", ticketID, &actorID, "updated", strPtr("status"), &oldStatus, &status, nil)
 	}
 
-	// Insert a system message for status transitions visible in the thread.
+	// Insert a system message for admin status transitions. These stay internal
+	// so the widget does not surface resolved/reopened thread notices.
 	if oldStatus != status && (status == model.SupportConversationStatusResolved || (oldStatus == model.SupportConversationStatusResolved && status == model.SupportConversationStatusOpen)) {
 		label := "Resolved conversation"
 		if status == model.SupportConversationStatusOpen && oldStatus == model.SupportConversationStatusResolved {
@@ -1016,7 +1017,7 @@ func (s *SupportInboxService) UpdateConversationStatus(ctx context.Context, work
 			Content:           label,
 			MessageType:       "system",
 			SystemEventType:   model.SupportSystemEventTypeStrPtr(eventType),
-			IsInternal:        false,
+			IsInternal:        true,
 		}
 		if err := s.messageRepo.Create(ctx, sysMsg); err != nil {
 			slog.ErrorContext(ctx, "create system message for status change", "error", err, "conversation_id", ticketID)
