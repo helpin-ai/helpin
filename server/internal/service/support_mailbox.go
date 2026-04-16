@@ -217,6 +217,30 @@ func (s *SupportInboxService) ListMailboxesAdmin(ctx context.Context, workspaceI
 	return s.mailboxRepo.ListByWorkspace(ctx, workspaceID, true)
 }
 
+// ListUnreadByWorkspace returns the support unread conversation count for every
+// workspace the user is an active member of. Workspaces with zero unread are
+// omitted so the frontend can treat missing entries as zero.
+func (s *SupportInboxService) ListUnreadByWorkspace(ctx context.Context, userID string) ([]model.SupportWorkspaceUnreadCount, error) {
+	if s.mailboxRepo == nil {
+		return nil, fmt.Errorf("support mailbox repository is unavailable")
+	}
+	rows, err := s.mailboxRepo.CountUnreadByWorkspacesForUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.SupportWorkspaceUnreadCount, 0, len(rows))
+	for _, row := range rows {
+		if row.UnreadCount <= 0 {
+			continue
+		}
+		out = append(out, model.SupportWorkspaceUnreadCount{
+			WorkspaceID: row.WorkspaceID,
+			UnreadCount: row.UnreadCount,
+		})
+	}
+	return out, nil
+}
+
 func (s *SupportInboxService) ListMailboxMembers(ctx context.Context, workspaceID, mailboxID string) ([]model.SupportMailboxMember, error) {
 	if s.mailboxRepo == nil {
 		return nil, fmt.Errorf("support mailbox repository is unavailable")

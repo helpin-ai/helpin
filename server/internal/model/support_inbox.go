@@ -167,6 +167,13 @@ type SupportInboxScopeListResponse struct {
 	Mailboxes   []SupportInboxScope `json:"mailboxes"`
 }
 
+// SupportWorkspaceUnreadCount is the per-workspace unread aggregate returned by
+// the workspace-switcher badge endpoint.
+type SupportWorkspaceUnreadCount struct {
+	WorkspaceID string `json:"workspace_id"`
+	UnreadCount int    `json:"unread_count"`
+}
+
 // ConversationListMeta holds metadata returned alongside paginated conversation lists.
 type ConversationListMeta struct {
 	Unread UnreadStats `json:"unread"`

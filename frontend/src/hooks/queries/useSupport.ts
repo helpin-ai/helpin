@@ -111,6 +111,17 @@ export function useInboxScopes(workspaceId: string, enabled = true) {
   });
 }
 
+export function useSupportUnreadByWorkspace(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.support.workspaceUnread(),
+    queryFn: async () => unwrap(await supportService.listWorkspaceUnread()),
+    enabled,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+  });
+}
+
 export function useSupportMailboxes(workspaceId: string) {
   return useQuery({
     queryKey: queryKeys.support.mailboxes(workspaceId),
