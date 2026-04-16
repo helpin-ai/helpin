@@ -20,7 +20,6 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/storage"
-	"github.com/helpin-ai/helpin/server/internal/tiptap"
 )
 
 // DocsImportService orchestrates help center article imports.
@@ -653,7 +652,7 @@ func (s *DocsImportService) Reconvert(ctx context.Context, jobID string) (*Recon
 		switch sourceSystem {
 		case "nextra":
 			// Re-run MDX preprocessing and markdown-to-TipTap conversion.
-			contentJSON = tiptap.MarkdownToJSON(*c.ImportSourceHTML)
+			contentJSON = nextraContentToTiptapJSON(*c.ImportSourceHTML)
 			// No warnings tracked for markdown conversion currently.
 
 		default:

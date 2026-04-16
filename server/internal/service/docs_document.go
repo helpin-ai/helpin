@@ -16,6 +16,7 @@ import (
 type DocsDocumentService struct {
 	docRepo        *repository.DocsDocumentRepository
 	spaceRepo      *repository.DocsSpaceRepository
+	deletionDeps   DocsDocumentDeletionDependencies
 	translationSvc *DocsHelpcenterTranslationService
 	helpcenterSvc  *DocsHelpcenterService
 	wsPublisher    *websocket.Publisher
@@ -28,6 +29,10 @@ func NewDocsDocumentService(docRepo *repository.DocsDocumentRepository, spaceRep
 
 func (s *DocsDocumentService) SetTranslationService(translationSvc *DocsHelpcenterTranslationService) {
 	s.translationSvc = translationSvc
+}
+
+func (s *DocsDocumentService) SetDeletionDependencies(deps DocsDocumentDeletionDependencies) {
+	s.deletionDeps = deps
 }
 
 // SetHelpcenterService wires the help center service lazily so the
@@ -364,7 +369,7 @@ func (s *DocsDocumentService) Move(ctx context.Context, id string, req model.Mov
 	return updated, nil
 }
 
-// Delete soft-deletes a document.
+// Delete permanently deletes a document and its owned, unreferenced imported assets.
 func (s *DocsDocumentService) Delete(ctx context.Context, id string) error {
 	doc, err := s.docRepo.GetByID(ctx, id)
 	if err != nil {
@@ -376,7 +381,7 @@ func (s *DocsDocumentService) Delete(ctx context.Context, id string) error {
 	if err := checkLocked(doc); err != nil {
 		return err
 	}
-	if err := s.docRepo.Delete(ctx, id); err != nil {
+	if err := s.deleteDocumentPermanently(ctx, doc); err != nil {
 		return err
 	}
 	publishWorkspaceEventWithParent(s.wsPublisher, "deleted", "docs_document", id, doc.WorkspaceID, "", "docs_space", doc.SpaceID, nil)

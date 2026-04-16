@@ -14,9 +14,12 @@ func TestPlanNextraAssets_RelativeImage(t *testing.T) {
 		SourcePath: "getting-started.mdx",
 		RawContent: "![Alt](./img.png)",
 	}
-	assets, _, warnings := PlanNextraAssets(files, nil, article)
+	assets, rewritten, warnings := PlanNextraAssets(files, nil, article)
 	if len(warnings) > 0 {
 		t.Errorf("unexpected warnings: %v", warnings)
+	}
+	if rewritten != "![Alt](img.png)" {
+		t.Fatalf("rewritten content = %q, want %q", rewritten, "![Alt](img.png)")
 	}
 	if len(assets) != 1 {
 		t.Fatalf("expected 1 asset, got %d", len(assets))
@@ -38,9 +41,12 @@ func TestPlanNextraAssets_PublicImage(t *testing.T) {
 		SourcePath: "getting-started.mdx",
 		RawContent: "![Logo](/logo.png)",
 	}
-	assets, _, warnings := PlanNextraAssets(files, publicFiles, article)
+	assets, rewritten, warnings := PlanNextraAssets(files, publicFiles, article)
 	if len(warnings) > 0 {
 		t.Errorf("unexpected warnings: %v", warnings)
+	}
+	if rewritten != "![Logo](public/logo.png)" {
+		t.Fatalf("rewritten content = %q, want %q", rewritten, "![Logo](public/logo.png)")
 	}
 	if len(assets) != 1 {
 		t.Fatalf("expected 1 asset, got %d", len(assets))
@@ -49,17 +55,20 @@ func TestPlanNextraAssets_PublicImage(t *testing.T) {
 
 func TestPlanNextraAssets_HTMLImg(t *testing.T) {
 	files := map[string][]byte{
-		"page.mdx":  []byte(`<img src="./hero.png" />`),
-		"hero.png":  []byte("PNG"),
+		"page.mdx": []byte(`<img src="./hero.png" />`),
+		"hero.png": []byte("PNG"),
 	}
 	article := ImportArticle{
 		SourceID:   "art-1",
 		SourcePath: "page.mdx",
 		RawContent: `<img src="./hero.png" />`,
 	}
-	assets, _, warnings := PlanNextraAssets(files, nil, article)
+	assets, rewritten, warnings := PlanNextraAssets(files, nil, article)
 	if len(warnings) > 0 {
 		t.Errorf("unexpected warnings: %v", warnings)
+	}
+	if rewritten != `<img src="hero.png" />` {
+		t.Fatalf("rewritten content = %q, want %q", rewritten, `<img src="hero.png" />`)
 	}
 	if len(assets) != 1 {
 		t.Fatalf("expected 1 asset, got %d", len(assets))
@@ -106,7 +115,7 @@ func TestPlanNextraAssets_RemoteURLKept(t *testing.T) {
 
 func TestPlanNextraAssets_NestedRelative(t *testing.T) {
 	files := map[string][]byte{
-		"guides/setup.mdx":  []byte(`![Alt](./images/hero.png)`),
+		"guides/setup.mdx":       []byte(`![Alt](./images/hero.png)`),
 		"guides/images/hero.png": []byte("PNG"),
 	}
 	article := ImportArticle{
@@ -114,9 +123,12 @@ func TestPlanNextraAssets_NestedRelative(t *testing.T) {
 		SourcePath: "guides/setup.mdx",
 		RawContent: "![Alt](./images/hero.png)",
 	}
-	assets, _, warnings := PlanNextraAssets(files, nil, article)
+	assets, rewritten, warnings := PlanNextraAssets(files, nil, article)
 	if len(warnings) > 0 {
 		t.Errorf("unexpected warnings: %v", warnings)
+	}
+	if rewritten != "![Alt](guides/images/hero.png)" {
+		t.Fatalf("rewritten content = %q, want %q", rewritten, "![Alt](guides/images/hero.png)")
 	}
 	if len(assets) != 1 {
 		t.Fatalf("expected 1 asset, got %d", len(assets))

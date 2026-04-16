@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-const { postMock } = vi.hoisted(() => ({
+const { getMock, postMock } = vi.hoisted(() => ({
+  getMock: vi.fn(),
   postMock: vi.fn(),
 }))
 
 vi.mock('@/lib/api', () => ({
   api: {
     post: postMock,
-    get: vi.fn(),
+    get: getMock,
     put: vi.fn(),
     patch: vi.fn(),
     del: vi.fn(),
@@ -16,6 +17,23 @@ vi.mock('@/lib/api', () => ({
 }))
 
 import { docsService } from '@/lib/services/docsService'
+
+describe('docsService.getCollectionDeleteImpact', () => {
+  afterEach(() => {
+    getMock.mockReset()
+  })
+
+  it('calls the collection delete impact endpoint', async () => {
+    getMock.mockResolvedValueOnce({ data: { collection_id: 'collection-1' }, error: null, status: 200 })
+
+    const result = await docsService.getCollectionDeleteImpact('ws-1', 'collection-1')
+
+    expect(getMock).toHaveBeenCalledWith(
+      '/docs/collections/collection-1/delete-impact?workspace_id=ws-1',
+    )
+    expect(result.error).toBeNull()
+  })
+})
 
 describe('docsService.updateArticleSlug', () => {
   afterEach(() => {

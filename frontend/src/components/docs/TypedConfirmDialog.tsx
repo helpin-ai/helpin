@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,10 +15,11 @@ interface TypedConfirmDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   title: string
-  description: string
+  description: ReactNode
   confirmText: string
   onConfirm: () => void | Promise<void>
   destructive?: boolean
+  disabled?: boolean
 }
 
 export function TypedConfirmDialog({
@@ -29,9 +30,10 @@ export function TypedConfirmDialog({
   confirmText,
   onConfirm,
   destructive = true,
+  disabled = false,
 }: TypedConfirmDialogProps) {
   const [value, setValue] = useState('')
-  const matches = value === confirmText
+  const matches = value === confirmText && !disabled
 
   const handleConfirm = async () => {
     if (!matches) return

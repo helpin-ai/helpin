@@ -17,6 +17,7 @@ func PlanNextraAssets(contentFiles map[string][]byte, publicFiles map[string][]b
 	var assets []ImportAsset
 	var warnings []Warning
 	seen := map[string]bool{}
+	rewritten := article.RawContent
 
 	// Find markdown image references: ![alt](src)
 	mdImgRe := regexp.MustCompile(`!\[[^\]]*\]\(([^)]+)\)`)
@@ -107,9 +108,20 @@ func PlanNextraAssets(contentFiles map[string][]byte, publicFiles map[string][]b
 			ContentType:  contentType,
 			Size:         size,
 		})
+		rewritten = rewriteNextraAssetRef(rewritten, ref, resolvedPath)
 	}
 
-	return assets, article.RawContent, warnings
+	return assets, rewritten, warnings
+}
+
+func rewriteNextraAssetRef(content, oldRef, newRef string) string {
+	if oldRef == "" || newRef == "" || oldRef == newRef {
+		return content
+	}
+	content = strings.ReplaceAll(content, "("+oldRef+")", "("+newRef+")")
+	content = strings.ReplaceAll(content, `"`+oldRef+`"`, `"`+newRef+`"`)
+	content = strings.ReplaceAll(content, `'`+oldRef+`'`, `'`+newRef+`'`)
+	return content
 }
 
 // extractRefs collects all capture group 1 matches from the given
