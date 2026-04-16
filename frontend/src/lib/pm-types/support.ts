@@ -308,6 +308,22 @@ export interface SupportMessage {
   updated_at: string;
 }
 
+export interface SupportMessageEmailDetail {
+  id: string;
+  message_id: string;
+  direction: 'inbound' | 'outbound' | string;
+  subject: string;
+  from_email: string;
+  to_email: string;
+  rfc_message_id?: string;
+  in_reply_to?: string;
+  references_header?: string;
+  stripped_text?: string;
+  status: string;
+  opened_at?: string;
+  created_at: string;
+}
+
 export interface SupportAIPreviewHistoryTurn {
   sender_type: MessageSenderType;
   message_type?: string;

@@ -53,6 +53,7 @@ type SupportInboxService struct {
 	linkPreviewService      SupportMessageLinkPreviewer
 	presence                websocket.PresenceProvider
 	statusOverrideRepo      *repository.SupportTeammateStatusOverrideRepository
+	emailLogRepo            *repository.SupportEmailLogRepository
 	triageService           *SupportInboxTriageService
 	taskService             *PMTaskService
 	geoIPResolver           geoip.Resolver
@@ -127,6 +128,59 @@ func (s *SupportInboxService) SetRouteDomain(domain string) *SupportInboxService
 	}
 	s.routeDomain = strings.TrimSpace(domain)
 	return s
+}
+
+// SetEmailLogRepo wires the email log repository used by GetMessageEmailDetail.
+func (s *SupportInboxService) SetEmailLogRepo(repo *repository.SupportEmailLogRepository) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.emailLogRepo = repo
+	return s
+}
+
+// GetMessageEmailDetail returns the email log tied to a support message,
+// scoped to the workspace. Returns ErrRecordNotFound-style nil when the
+// message does not exist, is not in this workspace, or has no email log.
+func (s *SupportInboxService) GetMessageEmailDetail(ctx context.Context, workspaceID, messageID string) (*model.SupportMessageEmailDetail, error) {
+	if s == nil || s.emailLogRepo == nil || s.messageRepo == nil {
+		return nil, fmt.Errorf("support inbox service not configured for email detail")
+	}
+	if workspaceID == "" || messageID == "" {
+		return nil, fmt.Errorf("workspace_id and message_id are required")
+	}
+
+	msg, err := s.messageRepo.GetByID(ctx, messageID)
+	if err != nil {
+		return nil, fmt.Errorf("get support message: %w", err)
+	}
+	if msg == nil || msg.WorkspaceID != workspaceID {
+		return nil, nil
+	}
+
+	log, err := s.emailLogRepo.GetByMessageID(ctx, workspaceID, messageID)
+	if err != nil {
+		return nil, err
+	}
+	if log == nil {
+		return nil, nil
+	}
+
+	return &model.SupportMessageEmailDetail{
+		ID:               log.ID,
+		MessageID:        messageID,
+		Direction:        log.Direction,
+		Subject:          log.Subject,
+		FromEmail:        log.FromEmail,
+		ToEmail:          log.ToEmail,
+		RFCMessageID:     log.RFCMessageID,
+		InReplyTo:        log.InReplyTo,
+		ReferencesHeader: log.ReferencesHeader,
+		StrippedText:     log.StrippedText,
+		Status:           log.Status,
+		OpenedAt:         log.OpenedAt,
+		CreatedAt:        log.CreatedAt,
+	}, nil
 }
 
 func (s *SupportInboxService) actorMailboxScope(ctx context.Context, workspaceID string) (workspaceMemberID, role string) {

@@ -2,7 +2,8 @@ import { memo, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode 
 import { createPortal } from 'react-dom';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { TickDouble01Icon, CheckmarkCircle02Icon, ArrowDown01Icon, ArrowUp01Icon, Download04Icon, LinkSquare01Icon, File01Icon, AttachmentIcon, RotateLeft01Icon, StickyNote01Icon, Cancel01Icon, CancelCircleIcon } from '@/lib/icons';
+import { TickDouble01Icon, CheckmarkCircle02Icon, ArrowDown01Icon, ArrowUp01Icon, Download04Icon, LinkSquare01Icon, File01Icon, AttachmentIcon, RotateLeft01Icon, StickyNote01Icon, Cancel01Icon, CancelCircleIcon, Mail01Icon } from '@/lib/icons';
+import { EmailDetailModal } from './EmailDetailModal';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
 import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
@@ -227,6 +228,7 @@ export const MessageBubble = memo(function MessageBubble({
 
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  const [emailDetailOpen, setEmailDetailOpen] = useState(false);
 
   const imageAttachments = message.attachments?.filter(a => a.file_type.startsWith('image/')) ?? [];
   const fileAttachments = message.attachments?.filter(a => !a.file_type.startsWith('image/')) ?? [];
@@ -519,6 +521,16 @@ export const MessageBubble = memo(function MessageBubble({
         )}
       </div>
 
+      {/* Email detail modal — rendered via Radix portal */}
+      {hasEmailBadge && (
+        <EmailDetailModal
+          workspaceId={message.workspace_id}
+          message={message}
+          open={emailDetailOpen}
+          onOpenChange={setEmailDetailOpen}
+        />
+      )}
+
       {/* Lightbox modal — rendered in portal for full-screen overlay */}
       {lightboxSrc && createPortal(
         <div
@@ -546,7 +558,15 @@ export const MessageBubble = memo(function MessageBubble({
         <div className={`mt-0.5 ${isCustomer ? 'pl-9' : 'pr-9'}`}>
           {hasEmailBadge && (
             <div className={`mb-0.5 flex ${isCustomer ? '' : 'justify-end'}`}>
-              <span className="text-[11px] text-muted-foreground">Sent via email</span>
+              <button
+                type="button"
+                onClick={() => setEmailDetailOpen(true)}
+                className="inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground hover:underline"
+              >
+                <Mail01Icon className="h-3 w-3" />
+                {isCustomer ? 'Received via email' : 'Sent via email'}
+                <span className="opacity-60">· View details</span>
+              </button>
             </div>
           )}
 
