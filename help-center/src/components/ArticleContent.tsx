@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react'
+import { slugifyHeading, uniqueSlug } from '@/lib/toc'
 
 interface ArticleContentProps {
   html?: string
@@ -11,16 +12,14 @@ export function ArticleContent({ html }: ArticleContentProps) {
     const container = contentRef.current
     if (!container) return
 
-    // Ensure all h2/h3 headings have id attributes for TOC linking
+    // Assign id attributes to h2/h3 headings for TOC linking. Track
+    // seen slugs in document order and suffix duplicates (-2, -3, …)
+    // so repeated headings like "Why this method" (one per option)
+    // get unique ids that match what extractTocFromHtml produces.
+    const seen = new Map<string, number>()
     container.querySelectorAll('h2, h3').forEach((heading) => {
-      if (!heading.id) {
-        heading.id = (heading.textContent || '')
-          .toLowerCase()
-          .replace(/[^\w\s-]/g, '')
-          .replace(/\s+/g, '-')
-          .replace(/-+/g, '-')
-          .trim()
-      }
+      const base = heading.id || slugifyHeading(heading.textContent || '')
+      heading.id = uniqueSlug(base, seen)
     })
 
     // Attach copy buttons to <pre> code blocks
