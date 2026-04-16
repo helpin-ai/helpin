@@ -40,6 +40,12 @@ func ParseNextraMDX(path string, data []byte) (*NextraDocumentSource, []Warning,
 	// Strip Nextra code fence modifiers (e.g. ```html copy → ```html).
 	content = stripCodeFenceModifiers(content)
 
+	// Collapse runs of consecutive thematic breaks (---) into a single
+	// horizontal rule. Source docs sometimes contain double/triple
+	// separators as visual padding; these render as stacked empty HR
+	// nodes in the editor. One rule is enough.
+	content = collapseConsecutiveSeparators(content)
+
 	// Process known MDX components.
 	content, compWarnings := processKnownComponents(content)
 	warnings = append(warnings, compWarnings...)
@@ -403,6 +409,22 @@ func stripLeadingH1(body, title string) string {
 		return strings.TrimSpace(body[loc[1]:])
 	}
 	return body
+}
+
+// collapseConsecutiveSeparators reduces any run of consecutive
+// thematic breaks (a `---` line, optionally separated by blank lines
+// from the next `---`) down to a single thematic break. Source docs
+// sometimes stack separators for visual padding but those render as
+// multiple empty horizontal rules in the editor, which looks broken.
+func collapseConsecutiveSeparators(content string) string {
+	re := regexp.MustCompile(`(?m)^---[ \t]*\n(?:[ \t]*\n)*---[ \t]*\n`)
+	for {
+		next := re.ReplaceAllString(content, "---\n")
+		if next == content {
+			return content
+		}
+		content = next
+	}
 }
 
 // stripCodeFenceModifiers removes Nextra-specific modifiers from

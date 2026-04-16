@@ -52,6 +52,50 @@ func TestStripCodeFenceModifiers_PreservesBody(t *testing.T) {
 	}
 }
 
+// TestCollapseConsecutiveSeparators covers the cleanup that reduces
+// stacked thematic breaks to a single rule.
+func TestCollapseConsecutiveSeparators(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "lone separator unchanged",
+			in:   "intro\n\n---\n\nbody\n",
+			want: "intro\n\n---\n\nbody\n",
+		},
+		{
+			name: "adjacent pair collapses to one",
+			in:   "a\n\n---\n---\n\nb\n",
+			want: "a\n\n---\n\nb\n",
+		},
+		{
+			name: "pair with blank line between collapses",
+			in:   "a\n\n---\n\n---\n\nb\n",
+			want: "a\n\n---\n\nb\n",
+		},
+		{
+			name: "triple collapses to one",
+			in:   "a\n\n---\n---\n---\n\nb\n",
+			want: "a\n\n---\n\nb\n",
+		},
+		{
+			name: "separators with real content between are untouched",
+			in:   "a\n\n---\n\nmiddle\n\n---\n\nb\n",
+			want: "a\n\n---\n\nmiddle\n\n---\n\nb\n",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := collapseConsecutiveSeparators(tc.in)
+			if got != tc.want {
+				t.Errorf("mismatch\nin:   %q\ngot:  %q\nwant: %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestParseNextraMDX_CurlyBracesInCodeBlock is the end-to-end guard:
 // a real code fence with curly-brace content must survive the full
 // Nextra MDX pipeline, not just the individual stripper.
