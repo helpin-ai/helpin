@@ -8,6 +8,7 @@ import {
   Image01Icon,
   Heading02Icon,
   Heading03Icon,
+  Heading04Icon,
   CheckListIcon,
   QuoteDownIcon,
   Message01Icon,
@@ -36,6 +37,12 @@ export const slashCommands: SlashCommand[] = [
     description: 'Small section heading',
     icon: Heading03Icon,
     action: (editor) => editor.chain().focus().toggleHeading({ level: 3 }).run(),
+  },
+  {
+    title: 'Heading 4',
+    description: 'Sub-subsection heading',
+    icon: Heading04Icon,
+    action: (editor) => editor.chain().focus().toggleHeading({ level: 4 }).run(),
   },
   {
     title: 'Bullet List',

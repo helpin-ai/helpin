@@ -84,6 +84,7 @@ import {
   HashtagIcon as _HashtagIcon,
   Heading02Icon as _Heading02Icon,
   Heading03Icon as _Heading03Icon,
+  Heading04Icon as _Heading04Icon,
   HeadphonesIcon as _HeadphonesIcon,
   HelpCircleIcon as _HelpCircleIcon,
   HexagonIcon as _HexagonIcon,
@@ -223,6 +224,7 @@ export const FolderKanbanIcon = hi(_FolderKanbanIcon);
 export const HashtagIcon = hi(_HashtagIcon);
 export const Heading02Icon = hi(_Heading02Icon);
 export const Heading03Icon = hi(_Heading03Icon);
+export const Heading04Icon = hi(_Heading04Icon);
 export const HeadphonesIcon = hi(_HeadphonesIcon);
 export const HexagonIcon = hi(_HexagonIcon);
 export const LanguageCircleIcon = hi(_LanguageCircleIcon);
