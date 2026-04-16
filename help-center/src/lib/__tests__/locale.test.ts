@@ -77,12 +77,14 @@ describe('locale helpers', () => {
           icon: null,
           parent_collection_id: null,
           depth: 0,
+          position: 0,
           articles: [
             {
               id: 'article-1',
               title: 'Start Here',
               slug: 'start-here',
               public_id: 'abc123ef',
+              position: 0,
             },
           ],
         },
@@ -154,12 +156,14 @@ describe('locale helpers', () => {
           icon: null,
           parent_collection_id: null,
           depth: 0,
+          position: 0,
           articles: [
             {
               id: 'article-1',
               title: 'Bonjour',
               slug: 'bonjour-fr',
               public_id: 'abc123ef',
+              position: 0,
             },
           ],
         },
@@ -182,12 +186,14 @@ describe('locale helpers', () => {
           icon: null,
           parent_collection_id: null,
           depth: 0,
+          position: 0,
           articles: [
             {
               id: 'article-1',
               title: 'Start Here',
               slug: 'start-here',
               public_id: 'def456ab',
+              position: 0,
             },
           ],
         },
@@ -225,12 +231,14 @@ describe('locale helpers', () => {
           icon: null,
           parent_collection_id: null,
           depth: 0,
+          position: 0,
           articles: [
             {
               id: 'article-1',
               title: 'Bonjour',
               slug: 'bonjour-fr',
               public_id: 'abc123ef',
+              position: 0,
             },
           ],
         },
