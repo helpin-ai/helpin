@@ -178,8 +178,7 @@ function CollectionSection({
   wsSlug: string
   navigate: ReturnType<typeof useNavigate>
 }) {
-  const hasContent = node.documents.length > 0 || node.children.length > 0
-  const [open, setOpen] = useState(hasContent)
+  const [open, setOpen] = useState(false)
 
   return (
     <Collapsible.Root open={open} onOpenChange={setOpen}>
@@ -315,7 +314,7 @@ function SpaceSection({
           {/* Uncategorized documents (no collection) */}
           {uncollected.length > 0 && (
             <CollectionSection
-              node={{ id: '__uncategorized', name: 'Uncategorized', depth: 0, documents: uncollected, children: [] }}
+              node={{ id: '__uncategorized', name: 'Uncategorized', position: 0, depth: 0, documents: uncollected, children: [] }}
               wsSlug={wsSlug}
               navigate={navigate}
             />
