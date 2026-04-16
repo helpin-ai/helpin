@@ -5,6 +5,14 @@
 
 DROP INDEX IF EXISTS idx_workspace_skill_key;
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_skill_key
-    ON workspace_skills (workspace_id, key)
-    WHERE is_archived = false;
+DO $$
+BEGIN
+    IF to_regclass('public.workspace_skills') IS NOT NULL THEN
+        EXECUTE '
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_skill_key
+                ON workspace_skills (workspace_id, key)
+                WHERE is_archived = false
+        ';
+    END IF;
+END
+$$;
