@@ -465,6 +465,15 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Route("/library", func(r chi.Router) {
 					r.With(requirePerm(authorization.PermSettingsManage)).Get("/triggers", h.Automation.ListTriggerCatalog)
 					r.With(requirePerm(authorization.PermPMRead)).Get("/tools", h.Automation.ListToolCatalog)
+					r.Route("/skills", func(r chi.Router) {
+						r.With(requirePerm(authorization.PermPMRead)).Get("/", h.Automation.ListSkillCatalog)
+						r.With(requirePerm(authorization.PermPMEdit)).Post("/", h.Automation.CreateSkill)
+						r.With(requirePerm(authorization.PermPMEdit)).Post("/import", h.Automation.ImportSkill)
+						r.Route("/{id}", func(r chi.Router) {
+							r.With(requirePerm(authorization.PermPMEdit)).Put("/", h.Automation.UpdateSkill)
+							r.With(requirePerm(authorization.PermPMEdit)).Delete("/", h.Automation.DeleteSkill)
+						})
+					})
 				})
 
 				r.Route("/agents", func(r chi.Router) {

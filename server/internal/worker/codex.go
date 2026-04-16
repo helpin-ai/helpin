@@ -163,7 +163,18 @@ func (e *CodexExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) 
 	defer cancel()
 	runExecCtx := cloneExecutionContext(execCtx, ctx)
 
-	systemPrompt := BuildSystemPrompt(execCtx.Agent, execCtx.Task, execCtx.Epic, execCtx.Conversation, execCtx.PlanningStage, execCtx.PlanningMethodology, config)
+	includeInlineSkills := strings.TrimSpace(execCtx.StagedRuntimeSkillRoot) == ""
+	systemPrompt := BuildRuntimeSystemPrompt(
+		execCtx.Agent,
+		execCtx.Task,
+		execCtx.Epic,
+		execCtx.Conversation,
+		execCtx.PlanningStage,
+		execCtx.PlanningMethodology,
+		config,
+		includeInlineSkills,
+		includeInlineSkills,
+	)
 	if execCtx.Conversation != nil {
 		systemPrompt += "\nFor support conversations, respond with valid JSON only in this shape: " +
 			`{"status":"open|waiting_on_customer|resolved|spam","draft_reply":{"content":"...","is_internal":false,"sender_display_name":"optional","approval_required":true}}.`
