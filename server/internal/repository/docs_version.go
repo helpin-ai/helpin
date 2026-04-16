@@ -63,6 +63,48 @@ func (r *DocsVersionRepository) ListByDocument(ctx context.Context, documentID s
 	return versions, nil
 }
 
+// ListByDocumentIDs returns all versions for the provided documents.
+func (r *DocsVersionRepository) ListByDocumentIDs(ctx context.Context, documentIDs []string) ([]model.DocsVersion, error) {
+	if len(documentIDs) == 0 {
+		return []model.DocsVersion{}, nil
+	}
+	var versions []model.DocsVersion
+	if err := r.db.WithContext(ctx).
+		Where("document_id IN ?", documentIDs).
+		Find(&versions).Error; err != nil {
+		return nil, fmt.Errorf("list docs versions by documents: %w", err)
+	}
+	return versions, nil
+}
+
+// ListByWorkspaceExcludingDocuments returns versions for documents that remain in a workspace.
+func (r *DocsVersionRepository) ListByWorkspaceExcludingDocuments(ctx context.Context, workspaceID string, excludeDocumentIDs []string) ([]model.DocsVersion, error) {
+	var versions []model.DocsVersion
+	query := r.db.WithContext(ctx).
+		Model(&model.DocsVersion{}).
+		Select("docs_versions.*").
+		Joins("JOIN docs_documents dd ON dd.id = docs_versions.document_id").
+		Where("dd.workspace_id = ? AND dd.deleted_at IS NULL", workspaceID)
+	if len(excludeDocumentIDs) > 0 {
+		query = query.Where("docs_versions.document_id NOT IN ?", excludeDocumentIDs)
+	}
+	if err := query.Find(&versions).Error; err != nil {
+		return nil, fmt.Errorf("list surviving docs versions: %w", err)
+	}
+	return versions, nil
+}
+
+// DeleteByDocumentIDs hard-deletes versions for the provided documents.
+func (r *DocsVersionRepository) DeleteByDocumentIDs(ctx context.Context, documentIDs []string) error {
+	if len(documentIDs) == 0 {
+		return nil
+	}
+	if err := r.db.WithContext(ctx).Where("document_id IN ?", documentIDs).Delete(&model.DocsVersion{}).Error; err != nil {
+		return fmt.Errorf("delete docs versions by documents: %w", err)
+	}
+	return nil
+}
+
 // GetLatestByDocument returns the most recent version for a document.
 func (r *DocsVersionRepository) GetLatestByDocument(ctx context.Context, documentID string) (*model.DocsVersion, error) {
 	var v model.DocsVersion

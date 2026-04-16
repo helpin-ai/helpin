@@ -57,6 +57,7 @@ type SupportInboxService struct {
 	taskService             *PMTaskService
 	geoIPResolver           geoip.Resolver
 	supportEventRecorder    SupportEventRecorder
+	routeDomain             string
 }
 
 type supportConversationTaskDraft struct {
@@ -118,6 +119,14 @@ func supportActorFromContext(ctx context.Context, workspaceID string) *authoriza
 		return nil
 	}
 	return actor
+}
+
+func (s *SupportInboxService) SetRouteDomain(domain string) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.routeDomain = strings.TrimSpace(domain)
+	return s
 }
 
 func (s *SupportInboxService) actorMailboxScope(ctx context.Context, workspaceID string) (workspaceMemberID, role string) {
@@ -1009,7 +1018,8 @@ func (s *SupportInboxService) UpdateConversationStatus(ctx context.Context, work
 		_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", ticketID, &actorID, "updated", strPtr("status"), &oldStatus, &status, nil)
 	}
 
-	// Insert a system message for status transitions visible in the thread.
+	// Insert a system message for admin status transitions. These stay internal
+	// so the widget does not surface resolved/reopened thread notices.
 	if oldStatus != status && (status == model.SupportConversationStatusResolved || (oldStatus == model.SupportConversationStatusResolved && status == model.SupportConversationStatusOpen)) {
 		label := "Resolved conversation"
 		if status == model.SupportConversationStatusOpen && oldStatus == model.SupportConversationStatusResolved {
@@ -1028,6 +1038,10 @@ func (s *SupportInboxService) UpdateConversationStatus(ctx context.Context, work
 		}
 		senderUserID := &actorID
 
+		eventType := model.SystemEventResolved
+		if status == model.SupportConversationStatusOpen && oldStatus == model.SupportConversationStatusResolved {
+			eventType = model.SystemEventReopened
+		}
 		sysMsg := &model.SupportMessage{
 			WorkspaceID:       workspaceID,
 			ConversationID:    ticketID,
@@ -1037,7 +1051,8 @@ func (s *SupportInboxService) UpdateConversationStatus(ctx context.Context, work
 			SenderAvatarURL:   senderAvatarURL,
 			Content:           label,
 			MessageType:       "system",
-			IsInternal:        false,
+			SystemEventType:   model.SupportSystemEventTypeStrPtr(eventType),
+			IsInternal:        true,
 		}
 		if err := s.messageRepo.Create(ctx, sysMsg); err != nil {
 			slog.ErrorContext(ctx, "create system message for status change", "error", err, "conversation_id", ticketID)
@@ -1151,6 +1166,13 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	}
 	if s.linkPreviewService != nil {
 		s.linkPreviewService.EnrichMessage(ctx, msg)
+	}
+
+	// Before persisting a teammate's first public reply, emit a widget-visible
+	// "{name} joined the conversation" system message so the customer sees a
+	// centered pill immediately ahead of the reply — Intercom's pattern.
+	if senderType == "user" && !req.IsInternal && messageType == "reply" && senderUserID != nil {
+		s.emitTeammateJoinedIfFirstReply(ctx, workspaceID, ticketID, strings.TrimSpace(*senderUserID), derefString(senderDisplayName), senderAvatarURL)
 	}
 
 	if err := s.messageRepo.Create(ctx, msg); err != nil {
@@ -2405,6 +2427,7 @@ func (s *SupportInboxService) assignConversationAgent(ctx context.Context, works
 		return err
 	}
 
+	previousAgentID := derefString(ticket.AssignedAgentID)
 	ticket.AssignedAgentID = &agentID
 	ticket.FlowState = strPtr(model.SupportConversationFlowStateAssignedToHuman)
 	if err := s.conversationRepo.Update(ctx, ticket); err != nil {
@@ -2413,6 +2436,10 @@ func (s *SupportInboxService) assignConversationAgent(ctx context.Context, works
 
 	if s.activitySvc != nil {
 		_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", conversationID, actorID, "updated", strPtr("assigned_agent_id"), nil, &agentID, nil)
+	}
+
+	if previousAgentID != agentID {
+		s.emitAssignmentSystemMessage(ctx, workspaceID, conversationID, derefString(actorID), assignmentTargetAgent, agent.Name, "")
 	}
 
 	s.wsPublisher.Publish(websocket.Event{
@@ -2464,6 +2491,16 @@ func (s *SupportInboxService) assignConversationUser(ctx context.Context, worksp
 		_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", conversationID, actorID, "updated", strPtr("assigned_user_id"), oldValue, normalizedUserID, nil)
 	}
 
+	newUserID := derefString(normalizedUserID)
+	if newUserID != previousAssignedUserID {
+		switch {
+		case newUserID != "":
+			s.emitAssignmentSystemMessage(ctx, workspaceID, conversationID, derefString(actorID), assignmentTargetUser, "", newUserID)
+		default:
+			s.emitAssignmentSystemMessage(ctx, workspaceID, conversationID, derefString(actorID), assignmentTargetUnassign, "", previousAssignedUserID)
+		}
+	}
+
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "updated",
 		Entity:      "support_conversation",
@@ -2473,4 +2510,227 @@ func (s *SupportInboxService) assignConversationUser(ctx context.Context, worksp
 	})
 
 	return nil
+}
+
+// assignmentTargetKind describes the kind of assignee referenced in an
+// assignment system message so the rendered copy can match intent (user,
+// agent, or unassignment).
+type assignmentTargetKind int
+
+const (
+	assignmentTargetUser assignmentTargetKind = iota
+	assignmentTargetAgent
+	assignmentTargetUnassign
+)
+
+// emitAssignmentSystemMessage writes an internal (admin-only) system message
+// describing an assignment change on the conversation. The message is marked
+// is_internal=true so it surfaces in the teammate-facing inbox thread but is
+// never broadcast or returned to the widget — avoiding a "joined" UX on the
+// customer side when the assignee may not actually reply for a while.
+//
+// targetUserID is the assignee's user ID (for user assignments) or the
+// previously assigned user ID (for unassignments); it is used to resolve the
+// target's display name and avatar.
+func (s *SupportInboxService) emitAssignmentSystemMessage(
+	ctx context.Context,
+	workspaceID, conversationID, actorUserID string,
+	target assignmentTargetKind,
+	fallbackTargetName, targetUserID string,
+) {
+	if s.messageRepo == nil {
+		return
+	}
+
+	actorName := s.lookupUserName(ctx, actorUserID)
+	actorAvatar := s.lookupUserAvatar(ctx, actorUserID)
+	targetName := strings.TrimSpace(fallbackTargetName)
+	if target != assignmentTargetAgent {
+		if name := s.lookupUserName(ctx, targetUserID); name != "" {
+			targetName = name
+		}
+	}
+
+	content := formatAssignmentSystemMessage(target, actorName, targetName, actorUserID, targetUserID)
+	if content == "" {
+		return
+	}
+
+	// Display the actor's identity alongside the system message so the pill
+	// shows who performed the action in the admin thread.
+	displayName := actorName
+	if displayName == "" {
+		displayName = "System"
+	}
+
+	var senderUserID *string
+	if actorUserID != "" {
+		senderUserID = &actorUserID
+	}
+
+	eventType := assignmentTargetSystemEventType(target, actorUserID, targetUserID)
+
+	msg := &model.SupportMessage{
+		WorkspaceID:       workspaceID,
+		ConversationID:    conversationID,
+		SenderType:        "user",
+		SenderUserID:      senderUserID,
+		SenderDisplayName: &displayName,
+		SenderAvatarURL:   actorAvatar,
+		Content:           content,
+		IsInternal:        true,
+		MessageType:       "system",
+		SystemEventType:   model.SupportSystemEventTypeStrPtr(eventType),
+	}
+	if err := s.messageRepo.Create(ctx, msg); err != nil {
+		slog.ErrorContext(ctx, "create support assignment system message", "workspace_id", workspaceID, "conversation_id", conversationID, "error", err)
+		return
+	}
+	if s.wsPublisher != nil {
+		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, msg, derefString(senderUserID)))
+	}
+}
+
+// lookupUserName returns the trimmed FullName for a user ID, or "" on miss.
+func (s *SupportInboxService) lookupUserName(ctx context.Context, userID string) string {
+	if userID == "" || s.userRepo == nil {
+		return ""
+	}
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil || user == nil {
+		return ""
+	}
+	return strings.TrimSpace(user.FullName)
+}
+
+// lookupUserAvatar returns the avatar URL pointer for a user ID, or nil on miss.
+func (s *SupportInboxService) lookupUserAvatar(ctx context.Context, userID string) *string {
+	if userID == "" || s.userRepo == nil {
+		return nil
+	}
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil || user == nil {
+		return nil
+	}
+	return user.AvatarURL
+}
+
+// assignmentTargetSystemEventType maps an assignment action (plus actor /
+// target identity) onto the canonical system_event_type constant. Self
+// assignments surface as took; user vs. agent assignments surface distinctly.
+func assignmentTargetSystemEventType(target assignmentTargetKind, actorUserID, targetUserID string) model.SupportSystemEventType {
+	switch target {
+	case assignmentTargetUnassign:
+		return model.SystemEventUnassigned
+	case assignmentTargetAgent:
+		return model.SystemEventAgentAssigned
+	case assignmentTargetUser:
+		if actorUserID != "" && actorUserID == targetUserID {
+			return model.SystemEventTook
+		}
+		return model.SystemEventAssigned
+	}
+	return model.SystemEventAssigned
+}
+
+// formatAssignmentSystemMessage produces the human-readable copy for an
+// assignment system message. It handles self-assignment, auto-assignment
+// (no actor), and unassignment so the thread reads naturally.
+func formatAssignmentSystemMessage(target assignmentTargetKind, actorName, targetName, actorUserID, targetUserID string) string {
+	actor := strings.TrimSpace(actorName)
+	name := strings.TrimSpace(targetName)
+
+	switch target {
+	case assignmentTargetUnassign:
+		if actor != "" {
+			return fmt.Sprintf("%s moved this conversation to unassigned", actor)
+		}
+		return "Moved to unassigned"
+
+	case assignmentTargetAgent:
+		if name == "" {
+			name = "an AI agent"
+		}
+		if actor != "" {
+			return fmt.Sprintf("%s assigned this conversation to %s", actor, name)
+		}
+		return fmt.Sprintf("Assigned to %s", name)
+
+	case assignmentTargetUser:
+		if name == "" {
+			name = "a teammate"
+		}
+		if actorUserID != "" && actorUserID == targetUserID {
+			if actor == "" {
+				actor = name
+			}
+			return fmt.Sprintf("%s took this conversation", actor)
+		}
+		if actor != "" {
+			return fmt.Sprintf("%s assigned this conversation to %s", actor, name)
+		}
+		return fmt.Sprintf("Assigned to %s", name)
+	}
+	return ""
+}
+
+// emitTeammateJoinedIfFirstReply emits a public "{name} joined the conversation"
+// system message on the widget-visible side the first time a given teammate
+// sends a non-internal reply on the conversation. Matches Intercom's behavior
+// of surfacing a "joined" pill on first engagement rather than on assignment.
+func (s *SupportInboxService) emitTeammateJoinedIfFirstReply(ctx context.Context, workspaceID, conversationID, senderUserID, displayName string, senderAvatar *string) {
+	if s.messageRepo == nil || senderUserID == "" {
+		return
+	}
+
+	priorMessages, err := s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
+	if err != nil {
+		slog.ErrorContext(ctx, "list messages for first-reply check", "error", err, "conversation_id", conversationID)
+		return
+	}
+	for _, prior := range priorMessages {
+		if prior.SenderType != "user" || prior.IsInternal {
+			continue
+		}
+		if prior.MessageType == "system" {
+			continue
+		}
+		if prior.SenderUserID != nil && strings.TrimSpace(*prior.SenderUserID) == senderUserID {
+			return
+		}
+	}
+
+	name := strings.TrimSpace(displayName)
+	if name == "" {
+		name = s.lookupUserName(ctx, senderUserID)
+	}
+	if name == "" {
+		name = "A teammate"
+	}
+	avatarURL := senderAvatar
+	if avatarURL == nil {
+		avatarURL = s.lookupUserAvatar(ctx, senderUserID)
+	}
+
+	content := fmt.Sprintf("%s joined the conversation", name)
+	userID := senderUserID
+	msg := &model.SupportMessage{
+		WorkspaceID:       workspaceID,
+		ConversationID:    conversationID,
+		SenderType:        "user",
+		SenderUserID:      &userID,
+		SenderDisplayName: &name,
+		SenderAvatarURL:   avatarURL,
+		Content:           content,
+		IsInternal:        false,
+		MessageType:       "system",
+		SystemEventType:   model.SupportSystemEventTypeStrPtr(model.SystemEventTeammateJoined),
+	}
+	if err := s.messageRepo.Create(ctx, msg); err != nil {
+		slog.ErrorContext(ctx, "create teammate-joined system message", "error", err, "conversation_id", conversationID)
+		return
+	}
+	if s.wsPublisher != nil {
+		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, msg, userID))
+	}
 }

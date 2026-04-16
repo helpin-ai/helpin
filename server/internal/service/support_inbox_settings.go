@@ -13,7 +13,6 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
-const defaultOnlineReplyTimeText = "We typically reply in a few minutes"
 
 // parseSettings unmarshals the JSONB settings string, applying defaults for missing fields.
 func parseSettings(raw string) model.SupportInboxSettings {
@@ -123,6 +122,25 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	}
 	if patch.OutsideHoursMessage != nil {
 		current.OutsideHoursMessage = *patch.OutsideHoursMessage
+	}
+	if patch.ReplyTimePreset != nil {
+		current.ReplyTimePreset = strings.TrimSpace(*patch.ReplyTimePreset)
+	}
+	if patch.ClearReplyTimeCustomMinutes != nil && *patch.ClearReplyTimeCustomMinutes {
+		current.ReplyTimeCustomMinutes = nil
+	} else if patch.ReplyTimeCustomMinutes != nil {
+		minutes := *patch.ReplyTimeCustomMinutes
+		current.ReplyTimeCustomMinutes = &minutes
+	}
+	if patch.ClearSpecialNotice != nil && *patch.ClearSpecialNotice {
+		current.SpecialNoticeText = nil
+	} else if patch.SpecialNoticeText != nil {
+		trimmed := strings.TrimSpace(*patch.SpecialNoticeText)
+		if trimmed == "" {
+			current.SpecialNoticeText = nil
+		} else {
+			current.SpecialNoticeText = &trimmed
+		}
 	}
 	if patch.EmailFallbackEnabled != nil {
 		current.EmailFallbackEnabled = *patch.EmailFallbackEnabled
@@ -240,6 +258,20 @@ func (s *SupportInboxService) validateSettings(ctx context.Context, workspaceID 
 	validResponseMode := map[string]bool{"ai_first": true, "off": true}
 	if settings.AIResponseMode != "" && !validResponseMode[settings.AIResponseMode] {
 		return fmt.Errorf("ai_response_mode must be ai_first or off")
+	}
+	if settings.ReplyTimePreset != "" && !model.IsValidSupportReplyTimePreset(settings.ReplyTimePreset) {
+		return fmt.Errorf("reply_time_preset must be few_minutes, few_hours, same_day, or custom")
+	}
+	if settings.ReplyTimePreset == model.SupportReplyTimePresetCustom {
+		if settings.ReplyTimeCustomMinutes == nil {
+			return fmt.Errorf("reply_time_custom_minutes is required when reply_time_preset is custom")
+		}
+		if !model.IsValidSupportReplyTimeCustomMinutes(*settings.ReplyTimeCustomMinutes) {
+			return fmt.Errorf("reply_time_custom_minutes must be between %d and %d", model.SupportReplyTimeCustomMinutesMin, model.SupportReplyTimeCustomMinutesMax)
+		}
+	}
+	if settings.SpecialNoticeText != nil && len(*settings.SpecialNoticeText) > model.SupportSpecialNoticeMaxLength {
+		return fmt.Errorf("special_notice_text must be %d characters or fewer", model.SupportSpecialNoticeMaxLength)
 	}
 	if settings.AIMaxFollowups < 0 || settings.AIMaxFollowups > 50 {
 		return fmt.Errorf("ai_max_followups must be between 0 and 50")

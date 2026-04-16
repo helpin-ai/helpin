@@ -42,6 +42,12 @@ func TestPrepareWorkspaceForRunReusesCheckoutAndPreservesLocalChanges(t *testing
 	if _, err := os.Stat(filepath.Join(workDir, ".git")); err != nil {
 		t.Fatalf("expected git checkout to exist: %v", err)
 	}
+	if got := strings.TrimSpace(runGitWorkspaceCmd(t, workDir, "git", "config", "user.name")); got != workspaceGitUserName {
+		t.Fatalf("expected git user.name %q, got %q", workspaceGitUserName, got)
+	}
+	if got := strings.TrimSpace(runGitWorkspaceCmd(t, workDir, "git", "config", "user.email")); got != workspaceGitUserEmail {
+		t.Fatalf("expected git user.email %q, got %q", workspaceGitUserEmail, got)
+	}
 
 	modifiedPath := filepath.Join(workDir, "README.md")
 	writeWorkspaceFile(t, modifiedPath, "hello\nupdated locally\n")
@@ -55,6 +61,12 @@ func TestPrepareWorkspaceForRunReusesCheckoutAndPreservesLocalChanges(t *testing
 	}
 	if reusedDir != workDir {
 		t.Fatalf("expected reused workspace path %q, got %q", workDir, reusedDir)
+	}
+	if got := strings.TrimSpace(runGitWorkspaceCmd(t, reusedDir, "git", "config", "user.name")); got != workspaceGitUserName {
+		t.Fatalf("expected reused workspace git user.name %q, got %q", workspaceGitUserName, got)
+	}
+	if got := strings.TrimSpace(runGitWorkspaceCmd(t, reusedDir, "git", "config", "user.email")); got != workspaceGitUserEmail {
+		t.Fatalf("expected reused workspace git user.email %q, got %q", workspaceGitUserEmail, got)
 	}
 	content, err := os.ReadFile(modifiedPath)
 	if err != nil {

@@ -316,9 +316,20 @@ export function Sidebar() {
                 selectedMailboxId={selectedMailboxId}
                 canManageSettings={canManageSettings}
                 wsSlug={wsSlug}
-                onNavFilterChange={setNavFilter}
-                onMailboxSelect={setSelectedMailboxId}
-                onCreateMailbox={() => setTeamInboxDialogOpen(true)}
+                pathname={location.pathname}
+                onNavFilterChange={(filter) => {
+                  setNavFilter(filter);
+                  if (!location.pathname.startsWith(`/w/${wsSlug}/support/inbox`)) {
+                    navigate({ to: `/w/${wsSlug}/support/inbox` });
+                  }
+                }}
+                onMailboxSelect={(id) => {
+                  setSelectedMailboxId(id);
+                  if (!location.pathname.startsWith(`/w/${wsSlug}/support/inbox`)) {
+                    navigate({ to: `/w/${wsSlug}/support/inbox` });
+                  }
+                }}
+                onCreateMailbox={() => { setEditMailboxId(null); setTeamInboxDialogOpen(true); }}
                 onEditMailbox={(id) => { setEditMailboxId(id); setTeamInboxDialogOpen(true); }}
                 onArchiveMailbox={(id) => archiveMailbox.mutate(id)}
                 onNavigate={(to) => navigate({ to })}

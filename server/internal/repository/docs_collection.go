@@ -254,6 +254,25 @@ func (r *DocsCollectionRepository) Delete(ctx context.Context, id string) error 
 	})
 }
 
+// HardDeleteByIDs permanently removes collection rows.
+func (r *DocsCollectionRepository) HardDeleteByIDs(ctx context.Context, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	if err := r.db.WithContext(ctx).Where("id IN ?", ids).Delete(&model.DocsCollection{}).Error; err != nil {
+		return fmt.Errorf("hard delete docs collections: %w", err)
+	}
+	return nil
+}
+
+// HardDeleteBySpaceID permanently removes every collection in a space.
+func (r *DocsCollectionRepository) HardDeleteBySpaceID(ctx context.Context, spaceID string) error {
+	if err := r.db.WithContext(ctx).Where("space_id = ?", spaceID).Delete(&model.DocsCollection{}).Error; err != nil {
+		return fmt.Errorf("hard delete docs collections by space: %w", err)
+	}
+	return nil
+}
+
 // Restore un-deletes a collection.
 func (r *DocsCollectionRepository) Restore(ctx context.Context, id string) (*model.DocsCollection, error) {
 	if err := r.db.WithContext(ctx).Exec("UPDATE docs_collections SET deleted_at = NULL WHERE id = ?", id).Error; err != nil {
@@ -280,7 +299,6 @@ func (r *DocsCollectionRepository) NormalizeBucket(ctx context.Context, spaceID 
 		return normalizeBucketTx(tx, spaceID, parentID)
 	})
 }
-
 
 // PublicIDExists reports whether another non-deleted collection already uses publicID.
 func (r *DocsCollectionRepository) PublicIDExists(ctx context.Context, publicID, excludeID string) (bool, error) {
@@ -427,6 +445,74 @@ func (r *DocsCollectionRepository) ReorderSiblings(ctx context.Context, spaceID 
 			}
 		}
 		return normalizeBucketTx(tx, spaceID, parentID)
+	})
+}
+
+// ChildKind identifies whether a child in a mixed-sibling bucket is a
+// collection or an article. Used by ReorderChildren to let the UI
+// express a unified ordering across both types.
+type ChildKind string
+
+const (
+	ChildKindCollection ChildKind = "collection"
+	ChildKindArticle    ChildKind = "article"
+)
+
+// OrderedChild is a single entry in a mixed reorder list.
+type OrderedChild struct {
+	Kind ChildKind
+	ID   string
+}
+
+// ReorderChildren reassigns positions to a mixed list of collections and
+// articles that share the same parent collection (or sit at the space
+// root when parentID is nil). Positions are assigned sequentially by the
+// given order across both types in a single transaction.
+//
+// NOTE: this does NOT call normalizeBucketTx. The normalizer renumbers
+// collections-only to be contiguous 0..N-1, which would destroy the
+// cross-type interleaved positions we just assigned here.
+func (r *DocsCollectionRepository) ReorderChildren(ctx context.Context, spaceID string, parentID *string, ordered []OrderedChild) error {
+	// Validate no duplicate IDs (cheap, catches UI bugs early).
+	seen := make(map[string]bool, len(ordered))
+	for _, item := range ordered {
+		key := string(item.Kind) + ":" + item.ID
+		if seen[key] {
+			return fmt.Errorf("duplicate child in reorder list: %s %s", item.Kind, item.ID)
+		}
+		seen[key] = true
+	}
+
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for i, item := range ordered {
+			switch item.Kind {
+			case ChildKindCollection:
+				q := tx.Model(&model.DocsCollection{}).
+					Where("id = ? AND space_id = ? AND deleted_at IS NULL", item.ID, spaceID)
+				if parentID == nil {
+					q = q.Where("parent_collection_id IS NULL")
+				} else {
+					q = q.Where("parent_collection_id = ?", *parentID)
+				}
+				if err := q.UpdateColumn("position", i).Error; err != nil {
+					return fmt.Errorf("reorder collection %s: %w", item.ID, err)
+				}
+			case ChildKindArticle:
+				q := tx.Model(&model.DocsDocument{}).
+					Where("id = ? AND space_id = ? AND deleted_at IS NULL", item.ID, spaceID)
+				if parentID == nil {
+					q = q.Where("collection_id IS NULL")
+				} else {
+					q = q.Where("collection_id = ?", *parentID)
+				}
+				if err := q.UpdateColumn("position", i).Error; err != nil {
+					return fmt.Errorf("reorder article %s: %w", item.ID, err)
+				}
+			default:
+				return fmt.Errorf("unknown child kind: %s", item.Kind)
+			}
+		}
+		return nil
 	})
 }
 

@@ -161,6 +161,6 @@ export const supportStatusOptions: readonly { value: string; label: string; icon
 ] as const;
 
 export const supportAiItems = [
-  { key: 'ai_active' as const, label: 'AI Active', icon: BotIcon },
-  { key: 'resolved_by_ai' as const, label: 'Resolved by AI', icon: CheckmarkCircle02Icon },
+  { key: 'ai_active' as const, label: 'AI Handling', icon: BotIcon },
+  { key: 'resolved_by_ai' as const, label: 'AI Resolved', icon: CheckmarkCircle02Icon },
 ];

@@ -85,19 +85,41 @@ export function getArticlePager(
 ): { prev?: ArticlePagerLink; next?: ArticlePagerLink } {
   const tree = buildNavTree(navigation)
   const flat: ArticlePagerLink[] = []
+  // Walk in merged (article + sub-collection) position order so the
+  // pager matches the visible sidebar order.
+  type Entry =
+    | { kind: 'article'; position: number; article: NavItem['articles'][number]; node: NavTreeNode }
+    | { kind: 'collection'; position: number; child: NavTreeNode }
   const walk = (nodes: NavTreeNode[]) => {
     for (const node of nodes) {
+      const entries: Entry[] = []
       for (const article of node.item.articles) {
-        flat.push({
-          title: article.title,
-          slug: article.slug,
-          publicId: article.public_id,
-          collectionSlug: node.item.slug,
-          collectionPublicId: node.item.public_id,
-          collectionName: node.item.name,
-        })
+        entries.push({ kind: 'article', position: article.position, article, node })
       }
-      if (node.children.length > 0) walk(node.children)
+      for (const child of node.children) {
+        entries.push({ kind: 'collection', position: child.item.position, child })
+      }
+      entries.sort((a, b) => {
+        if (a.position !== b.position) return a.position - b.position
+        if (a.kind !== b.kind) return a.kind === 'collection' ? -1 : 1
+        const aId = a.kind === 'article' ? a.article.id : a.child.item.id
+        const bId = b.kind === 'article' ? b.article.id : b.child.item.id
+        return aId.localeCompare(bId)
+      })
+      for (const e of entries) {
+        if (e.kind === 'article') {
+          flat.push({
+            title: e.article.title,
+            slug: e.article.slug,
+            publicId: e.article.public_id,
+            collectionSlug: e.node.item.slug,
+            collectionPublicId: e.node.item.public_id,
+            collectionName: e.node.item.name,
+          })
+        } else {
+          walk([e.child])
+        }
+      }
     }
   }
   walk(tree)

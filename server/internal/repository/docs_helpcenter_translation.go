@@ -183,6 +183,59 @@ func (r *DocsHelpcenterTranslationRepository) GetArticleTranslation(ctx context.
 	return &translation, nil
 }
 
+func (r *DocsHelpcenterTranslationRepository) ListArticleTranslationsByDocumentIDs(ctx context.Context, documentIDs []string) ([]model.DocsHelpcenterArticleTranslation, error) {
+	if len(documentIDs) == 0 {
+		return []model.DocsHelpcenterArticleTranslation{}, nil
+	}
+	var translations []model.DocsHelpcenterArticleTranslation
+	if err := r.db.WithContext(ctx).
+		Where("document_id IN ?", documentIDs).
+		Find(&translations).Error; err != nil {
+		return nil, fmt.Errorf("list helpcenter article translations by documents: %w", err)
+	}
+	return translations, nil
+}
+
+func (r *DocsHelpcenterTranslationRepository) ListArticleTranslationsByWorkspaceExcludingDocuments(ctx context.Context, workspaceID string, excludeDocumentIDs []string) ([]model.DocsHelpcenterArticleTranslation, error) {
+	var translations []model.DocsHelpcenterArticleTranslation
+	query := r.db.WithContext(ctx).
+		Where("workspace_id = ?", workspaceID)
+	if len(excludeDocumentIDs) > 0 {
+		query = query.Where("document_id NOT IN ?", excludeDocumentIDs)
+	}
+	if err := query.Find(&translations).Error; err != nil {
+		return nil, fmt.Errorf("list surviving helpcenter article translations: %w", err)
+	}
+	return translations, nil
+}
+
+func (r *DocsHelpcenterTranslationRepository) DeleteArticleTranslationsByDocumentIDs(ctx context.Context, documentIDs []string) error {
+	if len(documentIDs) == 0 {
+		return nil
+	}
+	if err := r.db.WithContext(ctx).Where("document_id IN ?", documentIDs).Delete(&model.DocsHelpcenterArticleTranslation{}).Error; err != nil {
+		return fmt.Errorf("delete helpcenter article translations by documents: %w", err)
+	}
+	return nil
+}
+
+func (r *DocsHelpcenterTranslationRepository) DeleteCollectionTranslationsByCollectionIDs(ctx context.Context, collectionIDs []string) error {
+	if len(collectionIDs) == 0 {
+		return nil
+	}
+	if err := r.db.WithContext(ctx).Where("collection_id IN ?", collectionIDs).Delete(&model.DocsHelpcenterCollectionTranslation{}).Error; err != nil {
+		return fmt.Errorf("delete helpcenter collection translations: %w", err)
+	}
+	return nil
+}
+
+func (r *DocsHelpcenterTranslationRepository) DeleteSpaceTranslations(ctx context.Context, spaceID string) error {
+	if err := r.db.WithContext(ctx).Where("space_id = ?", spaceID).Delete(&model.DocsHelpcenterSpaceTranslation{}).Error; err != nil {
+		return fmt.Errorf("delete helpcenter space translations: %w", err)
+	}
+	return nil
+}
+
 func (r *DocsHelpcenterTranslationRepository) ListArticleTranslations(ctx context.Context, documentID string) ([]model.DocsHelpcenterArticleTranslation, error) {
 	var translations []model.DocsHelpcenterArticleTranslation
 	if err := r.db.WithContext(ctx).

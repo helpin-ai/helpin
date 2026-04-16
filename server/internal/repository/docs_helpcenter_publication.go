@@ -81,6 +81,42 @@ func (r *DocsHelpcenterPublicationRepository) ListArticlePublicationsBySpace(ctx
 	return publications, nil
 }
 
+func (r *DocsHelpcenterPublicationRepository) ListArticlePublicationsByDocumentIDs(ctx context.Context, documentIDs []string) ([]model.DocsHelpcenterArticlePublication, error) {
+	if len(documentIDs) == 0 {
+		return []model.DocsHelpcenterArticlePublication{}, nil
+	}
+	var publications []model.DocsHelpcenterArticlePublication
+	if err := r.db.WithContext(ctx).
+		Where("document_id IN ?", documentIDs).
+		Find(&publications).Error; err != nil {
+		return nil, fmt.Errorf("list article publications by documents: %w", err)
+	}
+	return publications, nil
+}
+
+func (r *DocsHelpcenterPublicationRepository) ListArticlePublicationsByWorkspaceExcludingDocuments(ctx context.Context, workspaceID string, excludeDocumentIDs []string) ([]model.DocsHelpcenterArticlePublication, error) {
+	var publications []model.DocsHelpcenterArticlePublication
+	query := r.db.WithContext(ctx).
+		Where("workspace_id = ?", workspaceID)
+	if len(excludeDocumentIDs) > 0 {
+		query = query.Where("document_id NOT IN ?", excludeDocumentIDs)
+	}
+	if err := query.Find(&publications).Error; err != nil {
+		return nil, fmt.Errorf("list surviving article publications: %w", err)
+	}
+	return publications, nil
+}
+
+func (r *DocsHelpcenterPublicationRepository) DeleteArticlePublicationsByDocumentIDs(ctx context.Context, documentIDs []string) error {
+	if len(documentIDs) == 0 {
+		return nil
+	}
+	if err := r.db.WithContext(ctx).Where("document_id IN ?", documentIDs).Delete(&model.DocsHelpcenterArticlePublication{}).Error; err != nil {
+		return fmt.Errorf("delete article publications by documents: %w", err)
+	}
+	return nil
+}
+
 func (r *DocsHelpcenterPublicationRepository) GetArticlePublicationByCollectionSlug(ctx context.Context, collectionID, locale, slug string) (*model.DocsHelpcenterArticlePublication, error) {
 	var publications []model.DocsHelpcenterArticlePublication
 	if err := r.db.WithContext(ctx).

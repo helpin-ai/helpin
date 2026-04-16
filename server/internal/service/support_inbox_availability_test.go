@@ -20,8 +20,11 @@ func TestBuildWidgetAvailabilityDisabledBusinessHoursReturnsOnline(t *testing.T)
 	if availability.StatusText != "Online now" {
 		t.Fatalf("expected online status text, got %q", availability.StatusText)
 	}
-	if availability.ReplyTimeText != defaultOnlineReplyTimeText {
+	if availability.ReplyTimeText != FormatReplyTimeCopy(model.SupportReplyTimePresetFewMinutes, 0) {
 		t.Fatalf("expected default online reply text, got %q", availability.ReplyTimeText)
+	}
+	if availability.ReplyTimePreset != model.SupportReplyTimePresetFewMinutes {
+		t.Fatalf("expected default preset few_minutes, got %q", availability.ReplyTimePreset)
 	}
 	if availability.NextOnlineAt != nil {
 		t.Fatal("expected no next online timestamp while online")

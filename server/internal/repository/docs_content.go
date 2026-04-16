@@ -34,6 +34,48 @@ func (r *DocsContentRepository) GetByDocumentID(ctx context.Context, documentID 
 	return &content, nil
 }
 
+// ListByDocumentIDs returns content records for the provided documents.
+func (r *DocsContentRepository) ListByDocumentIDs(ctx context.Context, documentIDs []string) ([]model.DocsContent, error) {
+	if len(documentIDs) == 0 {
+		return []model.DocsContent{}, nil
+	}
+	var contents []model.DocsContent
+	if err := r.db.WithContext(ctx).
+		Where("document_id IN ?", documentIDs).
+		Find(&contents).Error; err != nil {
+		return nil, fmt.Errorf("list docs content by documents: %w", err)
+	}
+	return contents, nil
+}
+
+// ListByWorkspaceExcludingDocuments returns surviving content records in a workspace.
+func (r *DocsContentRepository) ListByWorkspaceExcludingDocuments(ctx context.Context, workspaceID string, excludeDocumentIDs []string) ([]model.DocsContent, error) {
+	var contents []model.DocsContent
+	query := r.db.WithContext(ctx).
+		Model(&model.DocsContent{}).
+		Select("docs_contents.*").
+		Joins("JOIN docs_documents dd ON dd.id = docs_contents.document_id").
+		Where("dd.workspace_id = ? AND dd.deleted_at IS NULL", workspaceID)
+	if len(excludeDocumentIDs) > 0 {
+		query = query.Where("docs_contents.document_id NOT IN ?", excludeDocumentIDs)
+	}
+	if err := query.Find(&contents).Error; err != nil {
+		return nil, fmt.Errorf("list surviving docs content: %w", err)
+	}
+	return contents, nil
+}
+
+// DeleteByDocumentIDs hard-deletes content rows for the provided documents.
+func (r *DocsContentRepository) DeleteByDocumentIDs(ctx context.Context, documentIDs []string) error {
+	if len(documentIDs) == 0 {
+		return nil
+	}
+	if err := r.db.WithContext(ctx).Where("document_id IN ?", documentIDs).Delete(&model.DocsContent{}).Error; err != nil {
+		return fmt.Errorf("delete docs content by documents: %w", err)
+	}
+	return nil
+}
+
 // Upsert creates or updates content for a document. Also extracts content_text and computes word_count.
 // Touches the parent document's updated_at so timestamps stay current.
 func (r *DocsContentRepository) Upsert(ctx context.Context, documentID string, content json.RawMessage) (*model.DocsContent, error) {

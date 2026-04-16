@@ -76,10 +76,14 @@ export interface SupportCoverageGapDetail {
   failure_mode: string
   first_seen_at: string
   last_seen_at: string
+  status_changed_by: string | null
+  status_changed_at: string | null
+  status_changed_by_name: string
+  issue_resolved: boolean | null
   topic_title: string
   evidence: SupportGapEvidence[]
   suggestions: SupportGapSuggestion[]
-  related_articles: { id: string; gap_id: string; document_id: string }[]
+  related_articles: { id: string; gap_id: string; document_id: string; article_title: string }[]
 }
 
 export interface SupportCoverageSummary {
@@ -106,7 +110,7 @@ export const V1_GAP_TYPE_LABELS: Record<SupportCoverageV1GapType, string> = {
   missing_article: 'Missing Article',
   weak_article: 'Weak Article',
   outdated_or_conflicting_article: 'Outdated / Conflicting',
-  needs_review: 'Needs Review',
+  needs_review: 'Unclassified',
 }
 
 export const GAP_STATUS_LABELS: Record<SupportCoverageGapStatus, string> = {
@@ -115,5 +119,5 @@ export const GAP_STATUS_LABELS: Record<SupportCoverageGapStatus, string> = {
   fixed: 'Fixed',
   ignored: 'Ignored',
   merged: 'Merged',
-  human_only: 'Human Only',
+  human_only: 'Requires Human',
 }

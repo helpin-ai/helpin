@@ -121,11 +121,14 @@ type SupportCoverageGap struct {
 	SourceSignal  string          `json:"source_signal" gorm:"not null;default:''"`
 	CanAnswer     *string         `json:"can_answer"`
 	CanResolve    *string         `json:"can_resolve"`
-	Metadata      json.RawMessage `json:"metadata" gorm:"type:jsonb;not null;default:'{}'"`
-	FirstSeenAt   time.Time       `json:"first_seen_at" gorm:"not null"`
-	LastSeenAt    time.Time       `json:"last_seen_at" gorm:"not null;index:idx_support_coverage_gaps_workspace_status_seen,priority:3,sort:desc"`
-	CreatedAt     time.Time       `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt     time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
+	Metadata        json.RawMessage `json:"metadata" gorm:"type:jsonb;not null;default:'{}'"`
+	FirstSeenAt     time.Time       `json:"first_seen_at" gorm:"not null"`
+	LastSeenAt      time.Time       `json:"last_seen_at" gorm:"not null;index:idx_support_coverage_gaps_workspace_status_seen,priority:3,sort:desc"`
+	StatusChangedBy *string         `json:"status_changed_by" gorm:"type:uuid"`
+	StatusChangedAt *time.Time      `json:"status_changed_at"`
+	IssueResolved   *bool           `json:"issue_resolved"`
+	CreatedAt       time.Time       `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt       time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (SupportCoverageGap) TableName() string { return "support_coverage_gaps" }
@@ -176,11 +179,12 @@ func (SupportGapSuggestion) TableName() string { return "support_gap_suggestions
 // SupportCoverageGapArticle links a gap to a related existing
 // docs article (N:N relationship).
 type SupportCoverageGapArticle struct {
-	ID          string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	GapID       string    `json:"gap_id" gorm:"type:uuid;not null"`
-	DocumentID  string    `json:"document_id" gorm:"type:uuid;not null"`
-	WorkspaceID string    `json:"workspace_id" gorm:"type:uuid;not null"`
-	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime"`
+	ID           string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	GapID        string    `json:"gap_id" gorm:"type:uuid;not null"`
+	DocumentID   string    `json:"document_id" gorm:"type:uuid;not null"`
+	WorkspaceID  string    `json:"workspace_id" gorm:"type:uuid;not null"`
+	ArticleTitle string    `json:"article_title" gorm:"-"`
+	CreatedAt    time.Time `json:"created_at" gorm:"autoCreateTime"`
 }
 
 func (SupportCoverageGapArticle) TableName() string { return "support_coverage_gap_articles" }
@@ -237,9 +241,10 @@ type SupportCoverageGapListItem struct {
 // and suggestions.
 type SupportCoverageGapDetail struct {
 	SupportCoverageGap
-	TopicTitle      string                      `json:"topic_title"`
-	Evidence        []SupportGapEvidence        `json:"evidence"`
-	Suggestions     []SupportGapSuggestion      `json:"suggestions"`
+	TopicTitle          string                      `json:"topic_title"`
+	StatusChangedByName string                      `json:"status_changed_by_name"`
+	Evidence            []SupportGapEvidence        `json:"evidence"`
+	Suggestions         []SupportGapSuggestion      `json:"suggestions"`
 	RelatedArticles []SupportCoverageGapArticle `json:"related_articles"`
 }
 

@@ -90,6 +90,11 @@ export interface SupportInboxScopeListResponse {
   mailboxes: SupportInboxScope[];
 }
 
+export interface SupportWorkspaceUnreadCount {
+  workspace_id: string;
+  unread_count: number;
+}
+
 export interface SupportMailbox {
   id: string;
   workspace_id: string;
@@ -103,6 +108,8 @@ export interface SupportMailbox {
   linked_team_name?: string | null;
   visibility_mode: 'members_only';
   assignment_mode: 'manual' | 'round_robin';
+  reply_time_preset?: string | null;
+  reply_time_custom_minutes?: number | null;
   position: number;
   active: boolean;
   member_count?: number;
@@ -172,6 +179,10 @@ export interface UpdateSupportMailboxRequest {
   workspace_member_ids?: string[];
   assignment_mode?: 'manual' | 'round_robin';
   import_linked_team?: boolean;
+  reply_time_preset?: string;
+  reply_time_custom_minutes?: number | null;
+  clear_reply_time_preset?: boolean;
+  clear_reply_time_custom_minutes?: boolean;
 }
 
 export interface SupportTriageRuleConditions {
@@ -252,6 +263,29 @@ export interface SupportLinkPreview {
   host: string;
 }
 
+/**
+ * Canonical set of system_event_type values the backend emits on
+ * message_type='system' rows. Renderers branch on this instead of
+ * keyword-matching content. Source of truth:
+ * server/internal/model/support_system_event.go.
+ */
+export const SUPPORT_SYSTEM_EVENT_TYPES = [
+  'teammate_joined',
+  'assigned',
+  'unassigned',
+  'took',
+  'agent_assigned',
+  'mailbox_moved',
+  'triage_routed',
+  'triage_dismissed',
+  'ai_escalated',
+  'resolved',
+  'reopened',
+  'closed',
+] as const;
+
+export type SupportSystemEventType = (typeof SUPPORT_SYSTEM_EVENT_TYPES)[number];
+
 export interface SupportMessage {
   id: string;
   workspace_id: string;
@@ -263,6 +297,7 @@ export interface SupportMessage {
   sender_avatar_url?: string;
   content: string;
   message_type?: string;
+  system_event_type?: SupportSystemEventType;
   is_internal: boolean;
   metadata?: string;
   via_channel?: 'email' | 'widget' | null;
@@ -572,6 +607,9 @@ export interface SupportInboxSettings {
   business_hours_timezone: string;
   business_hours_schedule: Record<string, BusinessHoursDay>;
   outside_hours_message: string;
+  reply_time_preset?: string;
+  reply_time_custom_minutes?: number | null;
+  special_notice_text?: string | null;
   email_fallback_enabled: boolean;
   email_fallback_delay_secs: number;
   email_fallback_from_name: string;

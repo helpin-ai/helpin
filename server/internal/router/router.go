@@ -366,6 +366,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/workspaces", h.Workspace.List)
 			r.Post("/workspaces", h.Workspace.Create)
 
+			// Cross-workspace support unread summary for the workspace switcher badge.
+			r.Get("/support/workspace-unread", h.SupportInbox.ListWorkspaceUnread)
+
 			// Slug lookup — resolve slug to workspace ID, then check access
 			r.With(authorization.ResolveWorkspaceSlug(slugResolver), wsAccess).Get("/workspaces/by-slug/{slug}", h.Workspace.GetBySlug)
 
@@ -623,6 +626,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				// Docs coverage
 				if h.SupportCoverage != nil {
 					r.Route("/coverage", func(r chi.Router) {
+						r.With(requirePerm(authorization.PermSupportEdit)).Post("/events", h.SupportCoverage.RecordEvent)
 						r.With(requirePerm(authorization.PermSupportRead)).Get("/summary", h.SupportCoverage.GetSummary)
 						r.With(requirePerm(authorization.PermSupportRead)).Get("/gaps", h.SupportCoverage.ListGaps)
 						r.With(requirePerm(authorization.PermSupportRead)).Get("/gaps/{gapId}", h.SupportCoverage.GetGap)
@@ -632,6 +636,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 						r.With(requirePerm(authorization.PermSupportEdit), requirePerm(authorization.PermDocsEdit)).Post("/gaps/{gapId}/suggestions/article-draft", h.SupportCoverage.CreateArticleDraftSuggestion)
 						r.With(requirePerm(authorization.PermSupportEdit), requirePerm(authorization.PermDocsEdit)).Post("/gaps/{gapId}/suggestions/article-update", h.SupportCoverage.CreateArticleUpdateSuggestion)
 						r.With(requirePerm(authorization.PermSupportEdit), requirePerm(authorization.PermDocsEdit)).Post("/suggestions/{suggestionId}/apply", h.SupportCoverage.ApplySuggestion)
+						r.With(requirePerm(authorization.PermSupportEdit)).Post("/suggestions/{suggestionId}/discard", h.SupportCoverage.DiscardSuggestion)
 						r.With(requirePerm(authorization.PermSupportRead)).Get("/conversations/{conversationId}/state", h.SupportCoverage.GetConversationState)
 						r.With(requirePerm(authorization.PermSupportEdit)).Post("/conversations/{conversationId}/docs-issue", h.SupportCoverage.SubmitDocsIssueFeedback)
 					})
@@ -906,6 +911,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermDocsEdit)).Post("/spaces", h.Docs.CreateSpace)
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/spaces/{spaceId}", h.Docs.GetSpace)
 				r.With(requirePerm(authorization.PermDocsEdit)).Patch("/spaces/{spaceId}", h.Docs.UpdateSpace)
+				r.With(requirePerm(authorization.PermDocsRead)).Get("/spaces/{spaceId}/delete-impact", h.Docs.GetSpaceDeleteImpact)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Delete("/spaces/{spaceId}", h.Docs.DeleteSpace)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/spaces/{spaceId}/restore", h.Docs.RestoreSpace)
 
@@ -914,6 +920,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/spaces/{spaceId}/collections", h.Docs.ListCollections)
 				r.With(requirePerm(authorization.PermDocsEdit)).Post("/spaces/{spaceId}/collections", h.Docs.CreateCollection)
 				r.With(requirePerm(authorization.PermDocsEdit)).Patch("/collections/{collectionId}", h.Docs.UpdateCollection)
+				r.With(requirePerm(authorization.PermDocsRead)).Get("/collections/{collectionId}/delete-impact", h.Docs.GetCollectionDeleteImpact)
 				r.With(requirePerm(authorization.PermDocsEdit)).Delete("/collections/{collectionId}", h.Docs.DeleteCollection)
 				r.With(requirePerm(authorization.PermDocsEdit)).Post("/collections/{collectionId}/restore", h.Docs.RestoreCollection)
 
@@ -934,6 +941,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermDocsEdit)).Put("/spaces/reorder", h.Docs.ReorderSpaces)
 				r.With(requirePerm(authorization.PermDocsEdit)).Put("/spaces/{spaceId}/collections/reorder", h.Docs.ReorderCollections)
 				r.With(requirePerm(authorization.PermDocsEdit)).Put("/spaces/{spaceId}/documents/reorder", h.Docs.ReorderDocuments)
+				r.With(requirePerm(authorization.PermDocsEdit)).Put("/spaces/{spaceId}/children/reorder", h.Docs.ReorderChildren)
 
 				// Content — docs.read / docs.edit
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/content", h.Docs.GetContent)

@@ -103,13 +103,17 @@ Recommended navigation over time:
 
 ## 4. Core Concepts
 
-### 4.1 Resolution Event
+### 4.1 Support Event
 
-A durable event representing something relevant to support autonomy.
+A durable operational event representing something relevant to support autonomy.
 
 Examples:
 
+- Conversation was created.
 - Customer asked a question.
+- Human agent replied.
+- Conversation status changed.
+- Conversation was assigned.
 - AI attempted an answer.
 - AI retrieved articles or content sources.
 - AI escalated due to low confidence.
@@ -123,7 +127,9 @@ Examples:
 - Article was opened from the widget.
 - Article received helpful or unhelpful feedback.
 
-Resolution events are the measurement foundation. Without them, coverage becomes a vanity score.
+Support events are the measurement foundation. Without them, coverage becomes a vanity score.
+
+This event layer should be broader than Coverage but narrower than generic product analytics. It should capture support/docs/widget/AI lifecycle events that can drive operational workflows, evidence, gaps, recurrence measurement, and future Support Analytics rollups.
 
 ### 4.2 Coverage Topic
 
@@ -278,7 +284,7 @@ The backend should use generic coverage primitives. The v1 UI should be docs-foc
 
 Do:
 
-- `support_resolution_events`
+- `support_events`
 - `support_coverage_gaps`
 - `support_gap_evidence`
 - `support_gap_suggestions`
@@ -348,7 +354,7 @@ A customer who searched, opened an article, and still opened a conversation is a
 The roadmap is phased by capability maturity, not necessarily by external release. For the first customer-facing release, Phases 0, 1, and 2 should ship together as the **Docs Coverage Loop**:
 
 ```text
-coverage events
+support events
   -> rule-based docs gap detection
   -> gap inbox
   -> article draft/update suggestion
@@ -363,7 +369,9 @@ Phase 0.5 can ship alongside or shortly after the first release as a cold-start 
 
 **Goal:** Make AI support outcomes observable.
 
-Build a resolution event ledger that records support, docs, widget, and AI outcomes.
+Build a shared lightweight support event ledger that records support, docs, widget, and AI outcomes.
+
+This ledger is the first operational event foundation for Support Coverage and future Support Analytics. It should not be a Coverage-owned table and it should not duplicate the existing product analytics pipeline.
 
 Capture:
 
@@ -388,6 +396,7 @@ Capture:
 
 Important implementation direction:
 
+- Store v1 operational support events in Postgres/Neon as `support_events`.
 - Use an append-only event table rather than bloating the hot conversation record.
 - Store canonical internal IDs and PublicIDs, not slugs.
 - Treat slugs as display-only.
@@ -396,10 +405,17 @@ Important implementation direction:
 - Do not power gap inbox page loads by scanning raw events. Gap pages should read from gap, topic, evidence, suggestion, and snapshot tables.
 - Compute aggregate metrics periodically into `support_coverage_snapshots`.
 - Plan for retention: keep recent raw events hot, then archive or compact older events once they have been reflected in gaps, evidence, and snapshots.
+- Keep the existing SDK/events-pipeline/Kafka/ClickHouse path for high-volume product and visitor analytics. Do not make ClickHouse the source of truth for Coverage v1.
+- Do not use Redis as the event source of truth. Redis remains appropriate for ephemeral locks, presence, WebSocket relay, and delayed outboxes.
+- A later Support Analytics product may export or replicate `support_events` into ClickHouse, but Coverage v1 should not depend on that pipeline.
 
 Initial event types should include:
 
+- `conversation_created`
 - `customer_message_created`
+- `human_reply_sent`
+- `conversation_status_changed`
+- `conversation_assigned`
 - `ai_attempt_started`
 - `ai_retrieval_completed`
 - `ai_answer_sent`
@@ -802,13 +818,96 @@ This should not be part of v1. It requires careful privacy, aggregation, and opt
 
 ---
 
+### Later: Code-Aware Docs Accuracy
+
+Support-driven Coverage answers:
+
+> Are the docs complete enough to resolve real customer issues?
+
+Code-aware docs accuracy answers:
+
+> Are the docs still true according to the current product, APIs, and codebase?
+
+This is strategically important, but it should not be part of the first Docs Coverage release. It uses a different signal source and requires repo/code access, change detection, and a review workflow. It should be introduced after the support-driven Coverage loop is working.
+
+Recommended product shape:
+
+- Product surface: Docs and Support Coverage.
+- Execution layer: system agents, automation rules, GitHub/repo tools, and durable agent runs.
+- Output: docs accuracy findings, evidence, and suggested article updates.
+
+The user should not experience this as "create an agent." The user-facing product should feel like:
+
+> Helpin found docs that are stale against your codebase.
+
+Possible names:
+
+- Docs Accuracy Audit.
+- Code-Aware Docs Review.
+- Docs Drift Detection.
+- Source-of-Truth Check.
+
+What it should detect:
+
+- docs mention a setting, flag, route, or API parameter that no longer exists
+- docs omit a new required field or changed workflow
+- docs describe old behavior after a PR/release changed the product
+- docs link to removed routes or outdated endpoints
+- docs miss coverage for newly shipped features
+- docs contain code examples that no longer compile or match the current API
+
+Recommended architecture:
+
+```text
+GitHub event / release / schedule / manual audit
+  -> automation rule starts a system agent run
+  -> Docs Accuracy Agent inspects repo, API schemas, routes, changelogs, and docs
+  -> durable finding is stored
+  -> finding may create or update a Coverage gap with source_signal=code_audit
+  -> user reviews suggested docs update
+  -> approved update creates or modifies a docs draft
+```
+
+Use normal backend checks for deterministic cases:
+
+- broken links
+- removed routes
+- OpenAPI parameter mismatch
+- docs last updated before release
+- missing docs for known public endpoints
+
+Use system agents for semantic/code-aware checks:
+
+- setup guide still matches implementation
+- docs accurately describe product behavior
+- PR/release implies docs updates
+- migration/config/feature-flag changes invalidate an article
+- suggested docs patch with repo evidence
+
+The durable product record should not be only an `agent_run`. Agent runs are execution history. Product state should be stored as docs accuracy findings and/or Coverage gaps so users can triage, assign, ignore, fix, and measure them.
+
+This later phase should reuse Coverage concepts where appropriate:
+
+- `source_signal = code_audit`
+- `gap_category = structure`, `knowledge`, or `conflict`
+- `v1_gap_type = outdated_or_conflicting_article` or `needs_review`
+- suggestions can use the same article draft/update workflow
+
+Non-goals for v1:
+
+- Do not connect GitHub/codebase analysis to Docs Coverage v1.
+- Do not compare docs to code in the first release.
+- Do not expose a generic "build an agent to audit docs" setup flow as the main UX.
+
+---
+
 ## 7. First Six-Week Bet
 
 The first focused bet should be the full **Docs Coverage Loop**, not isolated infrastructure or a standalone dashboard.
 
 Ship these together:
 
-1. Coverage event ledger.
+1. Shared lightweight support event ledger.
 2. Rule-based docs gap detection.
 3. Gap inbox.
 4. Article draft generation.
@@ -851,7 +950,7 @@ Do not build these first:
 - LLM-based gap classification as the primary source of truth.
 - A docs-only backend model that cannot later support context, action, workflow, policy, or evaluation gaps.
 
-These are valuable later, but they depend on trustworthy resolution events, gap labels, and fix outcomes.
+These are valuable later, but they depend on trustworthy support events, gap labels, and fix outcomes.
 
 ---
 
@@ -970,7 +1069,7 @@ Mitigation:
 
 Possible backend entities:
 
-- `support_resolution_events`
+- `support_events`
 - `support_coverage_topics`
 - `support_coverage_gaps`
 - `support_gap_evidence`
@@ -998,9 +1097,9 @@ support_gap_suggestion 0:1 docs_helpcenter_article
 
 support_gap_evidence N:1 support_conversation / support_message / search event / article feedback
 
-support_resolution_event N:1 support_conversation, when conversation-backed
-support_resolution_event N:1 docs article/document, when article-backed
-support_resolution_event 0:1 support_coverage_gap, once attached as evidence
+support_event N:1 support_conversation, when conversation-backed
+support_event N:1 docs article/document, when article-backed
+support_event 0:1 support_coverage_gap, once attached as evidence
 
 support_coverage_gap 1:N support_coverage_snapshots
 ```
@@ -1014,7 +1113,34 @@ Relationship intent:
 - A suggestion may create or update a real docs artifact. Once that happens, the suggestion should store the resulting document/article ID.
 - A gap can be related to multiple existing articles, and one article can be related to multiple gaps.
 - A published fix should remain linked to the originating gap through the suggestion and resulting docs artifact so recurrence can be measured after publish.
-- Raw resolution events should feed evidence, gaps, and snapshots, but user-facing pages should not scan raw events directly.
+- Raw support events should feed evidence, gaps, and snapshots, but user-facing pages should not scan raw events directly.
+
+### 11.2 Event Storage Strategy
+
+Use a two-lane architecture:
+
+```text
+Operational support intelligence:
+support/docs/widget/AI backend
+  -> support_events in Postgres
+  -> support_coverage_gaps / evidence / suggestions / snapshots
+  -> Coverage UI and weekly digest
+
+Product and visitor analytics:
+SDK/widget/browser/server analytics
+  -> existing events pipeline
+  -> Kafka/sessionization
+  -> ClickHouse
+  -> future analytics dashboards
+```
+
+Rationale:
+
+- Operational support events create Coverage product state and need reliable joins to conversations, messages, docs, articles, workspaces, and permissions.
+- The existing events pipeline is already the right path for high-volume visitor/product analytics, autocapture, pageviews, and long-window analytical scans.
+- Redis is not a durable source of truth for coverage or analytics events.
+- NATS/Temporal are useful execution primitives, but v1 does not need a new queue before writing operational events.
+- If Support Analytics later needs ClickHouse-scale reporting, mirror or export `support_events` to the existing analytics pipeline instead of changing Coverage's source of truth.
 
 Important fields to preserve early:
 

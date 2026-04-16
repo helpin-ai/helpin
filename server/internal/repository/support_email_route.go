@@ -70,6 +70,19 @@ func (r *SupportEmailRouteRepository) GetByRouteKey(ctx context.Context, routeKe
 	return &route, nil
 }
 
+func (r *SupportEmailRouteRepository) GetActiveByInboundAddress(ctx context.Context, inboundAddress string) (*model.SupportEmailRoute, error) {
+	var route model.SupportEmailRoute
+	if err := r.baseQuery(ctx).
+		Where("LOWER(ser.inbound_address) = LOWER(?) AND ser.active = ?", strings.TrimSpace(inboundAddress), true).
+		First(&route).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get active support email route by inbound address: %w", err)
+	}
+	return &route, nil
+}
+
 func (r *SupportEmailRouteRepository) GetActiveByMailbox(ctx context.Context, workspaceID string, mailboxID *string) (*model.SupportEmailRoute, error) {
 	query := r.baseQuery(ctx).
 		Where("ser.workspace_id = ? AND ser.active = ?", workspaceID, true)

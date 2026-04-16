@@ -6,8 +6,8 @@ import {
   Search01Icon,
   Tick01Icon,
   PlusSignIcon,
-  Upload04Icon,
-  Delete02Icon,
+  Upload01Icon,
+  Delete01Icon,
   PencilEdit02Icon,
 } from '@/lib/icons';
 
@@ -21,7 +21,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
+
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -150,7 +150,7 @@ function SkillCard({
                   onClick={onDelete}
                   title="Delete skill"
                 >
-                  <Delete02Icon className="h-3.5 w-3.5" />
+                  <Delete01Icon className="h-3.5 w-3.5" />
                 </button>
               )}
             </div>
@@ -475,7 +475,7 @@ function ImportSkillDialog({
                   </div>
                 ) : (
                   <div className="space-y-1">
-                    <Upload04Icon className="mx-auto h-6 w-6 text-muted-foreground" />
+                    <Upload01Icon className="mx-auto h-6 w-6 text-muted-foreground" />
                     <p className="text-sm text-muted-foreground">Click to select .zip archive</p>
                   </div>
                 )}
@@ -616,7 +616,7 @@ export function SkillCatalogContent({
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setImportOpen(true)}>
-              <Upload04Icon className="h-3.5 w-3.5" />
+              <Upload01Icon className="h-3.5 w-3.5" />
               Import
             </Button>
             <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setCreateOpen(true)}>

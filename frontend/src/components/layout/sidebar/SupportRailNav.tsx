@@ -10,6 +10,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarSeparator,
 } from '@/components/ui/sidebar';
 import { supportAiItems, supportFilterItems } from './config';
 
@@ -42,6 +43,7 @@ type SupportRailNavProps = {
   selectedMailboxId: string;
   canManageSettings: boolean;
   wsSlug: string;
+  pathname: string;
   onNavFilterChange: (value: SupportNavFilter) => void;
   onMailboxSelect: (mailboxId: string) => void;
   onCreateMailbox: () => void;
@@ -57,6 +59,7 @@ export function SupportRailNav({
   selectedMailboxId,
   canManageSettings,
   wsSlug,
+  pathname,
   onNavFilterChange,
   onMailboxSelect,
   onCreateMailbox,
@@ -64,6 +67,7 @@ export function SupportRailNav({
   onArchiveMailbox,
   onNavigate,
 }: SupportRailNavProps) {
+  const isOnCoverage = pathname.startsWith(`/w/${wsSlug}/support/coverage`);
   const mailboxes = inboxScopes?.mailboxes ?? [];
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
@@ -138,15 +142,18 @@ export function SupportRailNav({
         </SidebarMenu>
       </SidebarGroup>
 
+      <SidebarSeparator className="mx-2 my-1" />
+
       <SidebarGroup className="p-0 pb-3">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
-              className="h-8 rounded-md px-2 text-sm cursor-pointer"
+              isActive={isOnCoverage}
+              className="h-8 rounded-md px-2 text-sm"
               onClick={() => onNavigate(`/w/${wsSlug}/support/coverage`)}
             >
               <FileSearchIcon className="h-4 w-4" />
-              <span>Coverage</span>
+              <span>Coverage Gaps</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

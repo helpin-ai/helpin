@@ -6,6 +6,12 @@ metadata:
   labels:
     app: helpin-temporal-native-interactive
 spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  minReadySeconds: 10
   replicas: 1
   selector:
     matchLabels:
@@ -16,6 +22,7 @@ spec:
         app: helpin-temporal-native-interactive
         env: prod
     spec:
+      terminationGracePeriodSeconds: 660
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -30,7 +37,7 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.90
+          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.102
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
@@ -63,6 +70,12 @@ metadata:
   labels:
     app: helpin-temporal-native-autonomous
 spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  minReadySeconds: 10
   replicas: 1
   selector:
     matchLabels:
@@ -73,6 +86,7 @@ spec:
         app: helpin-temporal-native-autonomous
         env: prod
     spec:
+      terminationGracePeriodSeconds: 660
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -87,7 +101,7 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.90
+          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.102
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
@@ -120,6 +134,12 @@ metadata:
   labels:
     app: helpin-temporal-opencode-autonomous
 spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  minReadySeconds: 10
   replicas: 1
   selector:
     matchLabels:
@@ -130,6 +150,7 @@ spec:
         app: helpin-temporal-opencode-autonomous
         env: prod
     spec:
+      terminationGracePeriodSeconds: 660
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -146,7 +167,7 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.90
+          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.102
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
@@ -181,6 +202,12 @@ metadata:
   labels:
     app: helpin-temporal-codex-autonomous
 spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  minReadySeconds: 10
   replicas: 1
   selector:
     matchLabels:
@@ -191,6 +218,7 @@ spec:
         app: helpin-temporal-codex-autonomous
         env: prod
     spec:
+      terminationGracePeriodSeconds: 660
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -207,7 +235,7 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.90
+          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.102
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
@@ -244,6 +272,12 @@ metadata:
   labels:
     app: helpin-temporal-codex-interactive
 spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  minReadySeconds: 10
   replicas: 1
   selector:
     matchLabels:
@@ -254,6 +288,7 @@ spec:
         app: helpin-temporal-codex-interactive
         env: prod
     spec:
+      terminationGracePeriodSeconds: 660
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -270,7 +305,7 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.90
+          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.102
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
@@ -307,6 +342,12 @@ metadata:
   labels:
     app: helpin-temporal-automation
 spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  minReadySeconds: 10
   replicas: 1
   selector:
     matchLabels:
@@ -317,6 +358,7 @@ spec:
         app: helpin-temporal-automation
         env: prod
     spec:
+      terminationGracePeriodSeconds: 660
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -331,7 +373,7 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.90
+          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.102
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES

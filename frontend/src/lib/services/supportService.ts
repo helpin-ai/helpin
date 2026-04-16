@@ -21,6 +21,7 @@ import type {
   SupportAIRewriteDraftRequest,
   SupportAIRewriteDraftResponse,
   SupportInboxScopeListResponse,
+  SupportWorkspaceUnreadCount,
   SupportMailbox,
   CreateSupportMailboxRequest,
   UpdateSupportMailboxRequest,
@@ -48,6 +49,8 @@ export const supportService = {
   },
   listInboxScopes: (workspaceId: string) =>
     api.get<SupportInboxScopeListResponse>(`/support/inbox/mailboxes/scopes${qs(workspaceId)}`),
+  listWorkspaceUnread: () =>
+    api.get<SupportWorkspaceUnreadCount[]>(`/support/workspace-unread`),
   listMailboxes: (workspaceId: string) =>
     api.get<SupportMailbox[]>(`/support/inbox/mailboxes${qs(workspaceId)}`),
   createMailbox: (workspaceId: string, payload: CreateSupportMailboxRequest) =>

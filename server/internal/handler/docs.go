@@ -44,20 +44,20 @@ func writeDocsError(w http.ResponseWriter, err error) {
 
 // DocsHandler handles HTTP requests for the Docs module.
 type DocsHandler struct {
-	spaceSvc       *service.DocsSpaceService
-	collectionSvc  *service.DocsCollectionService
-	documentSvc    *service.DocsDocumentService
-	contentSvc     *service.DocsContentService
-	versionSvc     *service.DocsVersionService
-	linkSvc        *service.DocsLinkService
-	helpcenterSvc  *service.DocsHelpcenterService
-	translationSvc *service.DocsHelpcenterTranslationService
-	searchSvc      *service.DocsSearchService
-	importService  *service.DocsImportService
-	embeddingSvc   *service.DocsEmbeddingService
-	agentService           *service.AgentService
-	jwtManager             *auth.JWTManager
-	supportEventRecorder   service.SupportEventRecorder
+	spaceSvc             *service.DocsSpaceService
+	collectionSvc        *service.DocsCollectionService
+	documentSvc          *service.DocsDocumentService
+	contentSvc           *service.DocsContentService
+	versionSvc           *service.DocsVersionService
+	linkSvc              *service.DocsLinkService
+	helpcenterSvc        *service.DocsHelpcenterService
+	translationSvc       *service.DocsHelpcenterTranslationService
+	searchSvc            *service.DocsSearchService
+	importService        *service.DocsImportService
+	embeddingSvc         *service.DocsEmbeddingService
+	agentService         *service.AgentService
+	jwtManager           *auth.JWTManager
+	supportEventRecorder service.SupportEventRecorder
 }
 
 // NewDocsHandler creates a new DocsHandler.
@@ -166,11 +166,22 @@ func (h *DocsHandler) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *DocsHandler) DeleteSpace(w http.ResponseWriter, r *http.Request) {
-	if err := h.spaceSvc.Delete(r.Context(), chi.URLParam(r, "spaceId")); err != nil {
+	wsID := middleware.GetWorkspaceID(r.Context())
+	if err := h.spaceSvc.Delete(r.Context(), wsID, chi.URLParam(r, "spaceId")); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *DocsHandler) GetSpaceDeleteImpact(w http.ResponseWriter, r *http.Request) {
+	wsID := middleware.GetWorkspaceID(r.Context())
+	impact, err := h.spaceSvc.GetDeleteImpact(r.Context(), wsID, chi.URLParam(r, "spaceId"))
+	if err != nil {
+		writeDocsError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, impact)
 }
 
 func (h *DocsHandler) RestoreSpace(w http.ResponseWriter, r *http.Request) {
@@ -235,8 +246,19 @@ func (h *DocsHandler) UpdateCollection(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, coll)
 }
 
+func (h *DocsHandler) GetCollectionDeleteImpact(w http.ResponseWriter, r *http.Request) {
+	wsID := middleware.GetWorkspaceID(r.Context())
+	impact, err := h.collectionSvc.GetDeleteImpact(r.Context(), wsID, chi.URLParam(r, "collectionId"))
+	if err != nil {
+		writeDocsError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, impact)
+}
+
 func (h *DocsHandler) DeleteCollection(w http.ResponseWriter, r *http.Request) {
-	if err := h.collectionSvc.Delete(r.Context(), chi.URLParam(r, "collectionId")); err != nil {
+	wsID := middleware.GetWorkspaceID(r.Context())
+	if err := h.collectionSvc.Delete(r.Context(), wsID, chi.URLParam(r, "collectionId")); err != nil {
 		writeDocsError(w, err)
 		return
 	}
@@ -521,6 +543,23 @@ func (h *DocsHandler) ReorderDocuments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.documentSvc.ReorderDocuments(r.Context(), spaceID, req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "order updated"})
+}
+
+// ReorderChildren reorders a mixed list of collections and articles
+// sharing the same parent (or the space root). Positions are assigned
+// sequentially across both types in one transaction.
+func (h *DocsHandler) ReorderChildren(w http.ResponseWriter, r *http.Request) {
+	spaceID := chi.URLParam(r, "spaceId")
+	var req model.ReorderDocsChildrenRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.collectionSvc.ReorderChildren(r.Context(), spaceID, req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

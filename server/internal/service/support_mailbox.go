@@ -23,6 +23,15 @@ func normalizeSupportMailboxHandle(handle string) string {
 	return handle
 }
 
+func isReservedSupportMailboxHandle(handle string) bool {
+	switch strings.TrimSpace(strings.ToLower(handle)) {
+	case sharedSupportEmailRouteLocalPart:
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *SupportInboxService) isMailboxAccessible(ctx context.Context, workspaceID string, mailboxID *string) bool {
 	if mailboxID == nil || strings.TrimSpace(*mailboxID) == "" {
 		return true
@@ -208,6 +217,30 @@ func (s *SupportInboxService) ListMailboxesAdmin(ctx context.Context, workspaceI
 	return s.mailboxRepo.ListByWorkspace(ctx, workspaceID, true)
 }
 
+// ListUnreadByWorkspace returns the support unread conversation count for every
+// workspace the user is an active member of. Workspaces with zero unread are
+// omitted so the frontend can treat missing entries as zero.
+func (s *SupportInboxService) ListUnreadByWorkspace(ctx context.Context, userID string) ([]model.SupportWorkspaceUnreadCount, error) {
+	if s.mailboxRepo == nil {
+		return nil, fmt.Errorf("support mailbox repository is unavailable")
+	}
+	rows, err := s.mailboxRepo.CountUnreadByWorkspacesForUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.SupportWorkspaceUnreadCount, 0, len(rows))
+	for _, row := range rows {
+		if row.UnreadCount <= 0 {
+			continue
+		}
+		out = append(out, model.SupportWorkspaceUnreadCount{
+			WorkspaceID: row.WorkspaceID,
+			UnreadCount: row.UnreadCount,
+		})
+	}
+	return out, nil
+}
+
 func (s *SupportInboxService) ListMailboxMembers(ctx context.Context, workspaceID, mailboxID string) ([]model.SupportMailboxMember, error) {
 	if s.mailboxRepo == nil {
 		return nil, fmt.Errorf("support mailbox repository is unavailable")
@@ -234,6 +267,9 @@ func (s *SupportInboxService) CreateMailbox(ctx context.Context, workspaceID str
 	}
 	if handle == "" {
 		return nil, fmt.Errorf("handle is required")
+	}
+	if isReservedSupportMailboxHandle(handle) {
+		return nil, fmt.Errorf("handle is reserved")
 	}
 	if icon == "" {
 		icon = "inbox"
@@ -309,6 +345,9 @@ func (s *SupportInboxService) UpdateMailbox(ctx context.Context, workspaceID, ma
 		if handle == "" {
 			return nil, fmt.Errorf("handle is required")
 		}
+		if isReservedSupportMailboxHandle(handle) {
+			return nil, fmt.Errorf("handle is reserved")
+		}
 		if existing, err := s.mailboxRepo.GetByHandle(ctx, workspaceID, handle); err != nil {
 			return nil, err
 		} else if existing != nil && existing.ID != mailbox.ID {
@@ -356,8 +395,49 @@ func (s *SupportInboxService) UpdateMailbox(ctx context.Context, workspaceID, ma
 		}
 		mailbox.AssignmentMode = mode
 	}
+	if req.ClearReplyTimePreset != nil && *req.ClearReplyTimePreset {
+		mailbox.ReplyTimePreset = nil
+		mailbox.ReplyTimeCustomMinutes = nil
+	} else if req.ReplyTimePreset != nil {
+		preset := strings.TrimSpace(*req.ReplyTimePreset)
+		if preset == "" {
+			mailbox.ReplyTimePreset = nil
+			mailbox.ReplyTimeCustomMinutes = nil
+		} else {
+			if !model.IsValidSupportReplyTimePreset(preset) {
+				return nil, fmt.Errorf("reply_time_preset must be few_minutes, few_hours, same_day, or custom")
+			}
+			mailbox.ReplyTimePreset = &preset
+		}
+	}
+	if req.ClearReplyTimeCustomMinutes != nil && *req.ClearReplyTimeCustomMinutes {
+		mailbox.ReplyTimeCustomMinutes = nil
+	} else if req.ReplyTimeCustomMinutes != nil {
+		minutes := *req.ReplyTimeCustomMinutes
+		if !model.IsValidSupportReplyTimeCustomMinutes(minutes) {
+			return nil, fmt.Errorf("reply_time_custom_minutes must be between %d and %d", model.SupportReplyTimeCustomMinutesMin, model.SupportReplyTimeCustomMinutesMax)
+		}
+		mailbox.ReplyTimeCustomMinutes = &minutes
+	}
+	if mailbox.ReplyTimePreset != nil && *mailbox.ReplyTimePreset == model.SupportReplyTimePresetCustom && mailbox.ReplyTimeCustomMinutes == nil {
+		return nil, fmt.Errorf("reply_time_custom_minutes is required when reply_time_preset is custom")
+	}
 	if err := s.mailboxRepo.Update(ctx, mailbox); err != nil {
 		return nil, err
+	}
+	if s.emailRouteRepo != nil {
+		route, err := s.emailRouteRepo.GetActiveByMailbox(ctx, workspaceID, &mailbox.ID)
+		if err != nil {
+			return nil, err
+		}
+		if route != nil {
+			if inboundAddress, buildErr := s.buildSupportEmailRouteAddress(ctx, workspaceID, mailbox); buildErr == nil && strings.TrimSpace(inboundAddress) != "" {
+				route.InboundAddress = inboundAddress
+				if err := s.emailRouteRepo.Update(ctx, route); err != nil {
+					return nil, err
+				}
+			}
+		}
 	}
 	if req.WorkspaceMemberIDs != nil {
 		if err := s.mailboxRepo.ReplaceMembers(ctx, mailbox.ID, req.WorkspaceMemberIDs); err != nil {
@@ -502,8 +582,9 @@ func (s *SupportInboxService) createMailboxMoveSystemMessage(ctx context.Context
 		SenderDisplayName: &displayName,
 		SenderAvatarURL:   avatarURL,
 		Content:           fmt.Sprintf("Moved to %s by %s", mailboxName, displayName),
-		IsInternal:        false,
+		IsInternal:        true,
 		MessageType:       "system",
+		SystemEventType:   model.SupportSystemEventTypeStrPtr(model.SystemEventMailboxMoved),
 	}
 	if err := s.messageRepo.Create(ctx, msg); err != nil {
 		slog.ErrorContext(ctx, "create support mailbox move system message", "error", err, "workspace_id", workspaceID, "conversation_id", conversationID, "actor_id", actorID)

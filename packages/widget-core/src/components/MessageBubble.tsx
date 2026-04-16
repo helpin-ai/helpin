@@ -216,8 +216,34 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
 
   const agentName = message.senderName;
   const agentAvatar = message.senderAvatar;
+  // Flat Intercom-style pill is reserved for teammate_joined — the one and
+  // only widget-visible routing event. Every other system_event_type either
+  // falls through to a normal bubble (when sender context is present — e.g.
+  // ai_escalated renders as a "Helpin AI" bubble) or is filtered upstream.
+  const showSystemPill = isSystem && message.systemEventType === 'teammate_joined';
   const displayName = isCustomer ? '' : (isAI ? 'Helpin AI' : (agentName || config?.workspaceName || 'Support Agent'));
   const tooltipText = formatRelativeTime(message.createdAt);
+
+  if (showSystemPill) {
+    return (
+      <div
+        className="helpin-message-row helpin-message-row--system"
+        role="listitem"
+        aria-label={message.content}
+      >
+        <div className="helpin-system-message" data-tooltip={tooltipText}>
+          {agentAvatar ? (
+            <img src={agentAvatar} alt={agentName || ''} className="helpin-system-message-avatar" />
+          ) : agentName ? (
+            <span className="helpin-system-message-avatar helpin-system-message-avatar--placeholder">
+              {agentName.charAt(0).toUpperCase()}
+            </span>
+          ) : null}
+          <span className="helpin-system-message-text">{message.content}</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

@@ -73,6 +73,9 @@ func setupSupportCoverageTestDB(t *testing.T) *gorm.DB {
 			metadata TEXT NOT NULL DEFAULT '{}',
 			first_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			last_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			status_changed_by TEXT,
+			status_changed_at DATETIME,
+			issue_resolved BOOLEAN,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
@@ -273,12 +276,12 @@ func TestSupportCoverageRepository_UpdateGapStatus(t *testing.T) {
 		FirstSeenAt: time.Now(), LastSeenAt: time.Now(),
 	})
 
-	if err := repo.UpdateGapStatus(ctx, "ws-1", "gap-1", model.SupportCoverageGapStatusIgnored); err != nil {
+	if err := repo.UpdateGapStatus(ctx, "ws-1", "gap-1", model.SupportCoverageGapStatusIgnored, "user-1", nil); err != nil {
 		t.Fatalf("UpdateGapStatus: %v", err)
 	}
 
 	// Wrong workspace returns error.
-	if err := repo.UpdateGapStatus(ctx, "ws-other", "gap-1", model.SupportCoverageGapStatusFixed); err == nil {
+	if err := repo.UpdateGapStatus(ctx, "ws-other", "gap-1", model.SupportCoverageGapStatusFixed, "user-1", nil); err == nil {
 		t.Error("expected error for wrong workspace")
 	}
 }

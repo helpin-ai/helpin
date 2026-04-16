@@ -225,12 +225,29 @@ func (r *SupportCoverageRepository) GetGapDetail(ctx context.Context, workspaceI
 		Where("gap_id = ?", gapID).
 		Find(&relatedArticles)
 
+	// Resolve article titles from documents table.
+	for i := range relatedArticles {
+		var doc struct{ Title string }
+		if err := r.db.WithContext(ctx).Table("docs_documents").Select("title").Where("id = ?", relatedArticles[i].DocumentID).First(&doc).Error; err == nil {
+			relatedArticles[i].ArticleTitle = doc.Title
+		}
+	}
+
+	var statusChangedByName string
+	if gap.StatusChangedBy != nil && *gap.StatusChangedBy != "" {
+		var user struct{ Name string }
+		if err := r.db.WithContext(ctx).Table("users").Select("name").Where("id = ?", *gap.StatusChangedBy).First(&user).Error; err == nil {
+			statusChangedByName = user.Name
+		}
+	}
+
 	return &model.SupportCoverageGapDetail{
-		SupportCoverageGap: gap,
-		TopicTitle:         topicTitle,
-		Evidence:           evidence,
-		Suggestions:        suggestions,
-		RelatedArticles:    relatedArticles,
+		SupportCoverageGap:  gap,
+		TopicTitle:          topicTitle,
+		StatusChangedByName: statusChangedByName,
+		Evidence:            evidence,
+		Suggestions:         suggestions,
+		RelatedArticles:     relatedArticles,
 	}, nil
 }
 
@@ -284,6 +301,31 @@ func (r *SupportCoverageRepository) UpdateSuggestionResult(ctx context.Context, 
 	return nil
 }
 
+// DiscardSuggestion sets a suggestion to rejected and reverts its gap to open.
+func (r *SupportCoverageRepository) DiscardSuggestion(ctx context.Context, suggestionID, workspaceID string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var suggestion model.SupportGapSuggestion
+		if err := tx.Where("id = ? AND workspace_id = ?", suggestionID, workspaceID).First(&suggestion).Error; err != nil {
+			return fmt.Errorf("suggestion not found: %w", err)
+		}
+		if err := tx.Model(&suggestion).Updates(map[string]interface{}{
+			"status":     model.SupportCoverageSuggestionStatusRejected,
+			"updated_at": time.Now(),
+		}).Error; err != nil {
+			return fmt.Errorf("reject suggestion: %w", err)
+		}
+		if err := tx.Model(&model.SupportCoverageGap{}).
+			Where("id = ? AND workspace_id = ?", suggestion.GapID, workspaceID).
+			Updates(map[string]interface{}{
+				"status":     model.SupportCoverageGapStatusOpen,
+				"updated_at": time.Now(),
+			}).Error; err != nil {
+			return fmt.Errorf("revert gap status: %w", err)
+		}
+		return nil
+	})
+}
+
 // GetConversationCoverageState checks if docs-issue feedback was
 // already submitted for a conversation.
 func (r *SupportCoverageRepository) GetConversationCoverageState(ctx context.Context, workspaceID, conversationID string) (*model.SupportConversationCoverageState, error) {
@@ -334,15 +376,46 @@ func (r *SupportCoverageRepository) GetDigestDelivery(ctx context.Context, works
 	return &delivery, nil
 }
 
+// FindOpenGapByConversation returns the most recent open or drafted
+// gap that has evidence linked to the given conversation. Used to
+// attach human reply evidence to the original AI handoff gap.
+func (r *SupportCoverageRepository) FindOpenGapByConversation(ctx context.Context, workspaceID, conversationID string) (*model.SupportCoverageGap, error) {
+	var gap model.SupportCoverageGap
+	err := r.db.WithContext(ctx).
+		Table("support_coverage_gaps g").
+		Joins("JOIN support_gap_evidence e ON e.gap_id = g.id").
+		Where("g.workspace_id = ? AND e.conversation_id = ? AND g.status IN (?, ?)",
+			workspaceID, conversationID,
+			model.SupportCoverageGapStatusOpen, model.SupportCoverageGapStatusDrafted).
+		Order("g.last_seen_at DESC").
+		Limit(1).
+		Select("g.*").
+		First(&gap).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("find open gap by conversation: %w", err)
+	}
+	return &gap, nil
+}
+
 // UpdateGapStatus sets the status of a gap.
-func (r *SupportCoverageRepository) UpdateGapStatus(ctx context.Context, workspaceID, gapID, status string) error {
+func (r *SupportCoverageRepository) UpdateGapStatus(ctx context.Context, workspaceID, gapID, status, userID string, issueResolved *bool) error {
+	now := time.Now()
+	updates := map[string]interface{}{
+		"status":             status,
+		"status_changed_by":  userID,
+		"status_changed_at":  now,
+		"updated_at":         now,
+	}
+	if issueResolved != nil {
+		updates["issue_resolved"] = *issueResolved
+	}
 	result := r.db.WithContext(ctx).
 		Model(&model.SupportCoverageGap{}).
 		Where("id = ? AND workspace_id = ?", gapID, workspaceID).
-		Updates(map[string]interface{}{
-			"status":     status,
-			"updated_at": time.Now(),
-		})
+		Updates(updates)
 	if result.Error != nil {
 		return fmt.Errorf("update gap status: %w", result.Error)
 	}

@@ -446,6 +446,17 @@ export interface UpdateDocsCollectionRequest {
   parent_collection_id?: string | null;
 }
 
+export interface DocsCollectionDeleteImpact {
+  collection_id: string;
+  collection_name: string;
+  space_id: string;
+  collection_count: number;
+  document_count: number;
+  archived_document_count: number;
+  published_document_count: number;
+  public_document_count: number;
+}
+
 export interface CreateDocsDocumentRequest {
   space_id: string;
   collection_id?: string;
@@ -547,6 +558,32 @@ export interface ReorderDocsCollectionsRequest {
 export interface ReorderDocsDocumentsRequest {
   collection_id?: string;
   document_ids: string[];
+}
+
+export interface DocsSpaceDeleteImpact {
+  space_id: string;
+  space_name: string;
+  collection_count: number;
+  document_count: number;
+  archived_document_count: number;
+  published_document_count: number;
+  public_document_count: number;
+}
+
+export interface ReorderDocsChildItem {
+  kind: 'collection' | 'article';
+  id: string;
+}
+
+/**
+ * Cross-type reorder payload. Reassigns positions to a mixed list of
+ * collections and articles that share the same parent (or the space
+ * root when parent_collection_id is nil/empty). Positions are assigned
+ * sequentially by index across both types in one server transaction.
+ */
+export interface ReorderDocsChildrenRequest {
+  parent_collection_id?: string | null;
+  items: ReorderDocsChildItem[];
 }
 
 // ─── Display helpers ────────────────────────────────────────────────────────
