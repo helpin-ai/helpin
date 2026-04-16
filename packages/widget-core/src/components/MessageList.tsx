@@ -63,15 +63,34 @@ export const MessageList: FunctionComponent<MessageListProps> = ({
     return null;
   };
 
+  const getSenderGroupKey = (message: Message): string => {
+    if (message.role === 'customer') {
+      return 'customer';
+    }
+    // teammate_joined renders as the flat Intercom-style pill — a distinct
+    // layout with no bubble header. Force it into its own group so the
+    // following reply shows its full sender header instead of collapsing
+    // into the pill's "group".
+    if (message.role === 'system' && message.systemEventType === 'teammate_joined') {
+      return `pill:${message.id}`;
+    }
+    if (message.role === 'system' && !message.senderName && !message.senderAvatar) {
+      return 'system';
+    }
+    if (message.role === 'ai') {
+      return 'incoming:Helpin AI';
+    }
+    return `incoming:${message.senderName || config?.workspaceName || 'Support Agent'}`;
+  };
+
   return (
     <div className="helpin-message-list" ref={listRef} role="list" aria-label="Messages">
       {messages.map((message, idx) => {
         const dateSeparator = getDateSeparator(message.createdAt, idx);
-        // Consecutive = same role + same sender (like Crisp — no time limit)
+        // Consecutive = same sender identity for incoming messages.
         const prev = idx > 0 ? messages[idx - 1] : null;
         const isFirstInGroup = !prev
-          || prev.role !== message.role
-          || prev.senderName !== message.senderName
+          || getSenderGroupKey(prev) !== getSenderGroupKey(message)
           || !!dateSeparator;
         return (
           <div key={message.id}>

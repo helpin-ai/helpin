@@ -5,6 +5,21 @@ export interface HelpSpace {
   icon?: string;
 }
 
+/**
+ * Canonical reply-time presets. Mirrors
+ * server/internal/model/support_reply_expectations.go.
+ */
+export const REPLY_TIME_PRESETS = ['few_minutes', 'few_hours', 'same_day', 'custom'] as const;
+
+export type ReplyTimePreset = (typeof REPLY_TIME_PRESETS)[number];
+
+/** Min/Max bounds on the custom minutes field — matches the Go constants. */
+export const REPLY_TIME_CUSTOM_MINUTES_MIN = 1;
+export const REPLY_TIME_CUSTOM_MINUTES_MAX = 10080;
+
+/** Character cap on the outage / maintenance banner. Matches Go. */
+export const SPECIAL_NOTICE_MAX_LENGTH = 500;
+
 export interface WidgetConfig {
   workspaceId: string;
   workspaceName?: string;
@@ -43,6 +58,15 @@ export interface WidgetConfig {
     replyTimeText: string;
     outsideHoursMessage?: string;
     nextOnlineAt?: string;
+    /** Structured reply-time preset that drives replyTimeText. Widget uses
+     *  this when it needs to render its own copy (e.g. localized). */
+    replyTimePreset?: ReplyTimePreset;
+    /** Only set when replyTimePreset is "custom". */
+    replyTimeMinutes?: number;
+    /** Optional amber banner rendered above conversation surfaces. */
+    specialNoticeText?: string;
+    /** Set when the effective preset came from a mailbox override. */
+    mailboxId?: string;
   };
   helpSpaces?: HelpSpace[];
 }

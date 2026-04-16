@@ -356,6 +356,33 @@ func (s *SupportInboxService) UpdateMailbox(ctx context.Context, workspaceID, ma
 		}
 		mailbox.AssignmentMode = mode
 	}
+	if req.ClearReplyTimePreset != nil && *req.ClearReplyTimePreset {
+		mailbox.ReplyTimePreset = nil
+		mailbox.ReplyTimeCustomMinutes = nil
+	} else if req.ReplyTimePreset != nil {
+		preset := strings.TrimSpace(*req.ReplyTimePreset)
+		if preset == "" {
+			mailbox.ReplyTimePreset = nil
+			mailbox.ReplyTimeCustomMinutes = nil
+		} else {
+			if !model.IsValidSupportReplyTimePreset(preset) {
+				return nil, fmt.Errorf("reply_time_preset must be few_minutes, few_hours, same_day, or custom")
+			}
+			mailbox.ReplyTimePreset = &preset
+		}
+	}
+	if req.ClearReplyTimeCustomMinutes != nil && *req.ClearReplyTimeCustomMinutes {
+		mailbox.ReplyTimeCustomMinutes = nil
+	} else if req.ReplyTimeCustomMinutes != nil {
+		minutes := *req.ReplyTimeCustomMinutes
+		if !model.IsValidSupportReplyTimeCustomMinutes(minutes) {
+			return nil, fmt.Errorf("reply_time_custom_minutes must be between %d and %d", model.SupportReplyTimeCustomMinutesMin, model.SupportReplyTimeCustomMinutesMax)
+		}
+		mailbox.ReplyTimeCustomMinutes = &minutes
+	}
+	if mailbox.ReplyTimePreset != nil && *mailbox.ReplyTimePreset == model.SupportReplyTimePresetCustom && mailbox.ReplyTimeCustomMinutes == nil {
+		return nil, fmt.Errorf("reply_time_custom_minutes is required when reply_time_preset is custom")
+	}
 	if err := s.mailboxRepo.Update(ctx, mailbox); err != nil {
 		return nil, err
 	}
@@ -502,8 +529,9 @@ func (s *SupportInboxService) createMailboxMoveSystemMessage(ctx context.Context
 		SenderDisplayName: &displayName,
 		SenderAvatarURL:   avatarURL,
 		Content:           fmt.Sprintf("Moved to %s by %s", mailboxName, displayName),
-		IsInternal:        false,
+		IsInternal:        true,
 		MessageType:       "system",
+		SystemEventType:   model.SupportSystemEventTypeStrPtr(model.SystemEventMailboxMoved),
 	}
 	if err := s.messageRepo.Create(ctx, msg); err != nil {
 		slog.ErrorContext(ctx, "create support mailbox move system message", "error", err, "workspace_id", workspaceID, "conversation_id", conversationID, "actor_id", actorID)

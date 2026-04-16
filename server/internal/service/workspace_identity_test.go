@@ -194,6 +194,8 @@ func TestWorkspaceRepositoryListSupportAssignableMembers(t *testing.T) {
 		linked_team_id TEXT,
 		visibility_mode TEXT NOT NULL DEFAULT 'members_only',
 		assignment_mode TEXT NOT NULL DEFAULT 'manual',
+		reply_time_preset TEXT,
+		reply_time_custom_minutes INTEGER,
 		position INTEGER NOT NULL DEFAULT 0,
 		active BOOLEAN NOT NULL DEFAULT 1,
 		created_by_id TEXT NOT NULL,

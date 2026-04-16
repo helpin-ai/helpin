@@ -514,7 +514,9 @@ Ground the plan primarily in the task description, task comments, task-linked do
 - Finish with a local commit only. Do not push the branch and do not open a pull request from inside the run.
 - Remote delivery is backend-managed after the run succeeds.
 - Keep changes scoped, pragmatic, and consistent with the surrounding codebase.
-- Surface blockers explicitly instead of making risky product assumptions.`)
+- Surface blockers explicitly instead of making risky product assumptions.
+- Treat the shared task context, branch metadata, task plan, and linked docs as the authoritative execution brief for the current working branch.
+- Operate on the existing working branch against the configured base branch. Do not invent a separate delivery flow inside the run.`)
 		return &prompt
 	case model.AgentPresetReviewAgent:
 		prompt := strings.TrimSpace(`You are Review Agent.
@@ -531,7 +533,9 @@ Ground the plan primarily in the task description, task comments, task-linked do
 - If the human asks for another review pass after changes, perform the re-review, report the result, and ask what to do next with ` + "`request_user_input`" + `.
 - If the human asks you to implement changes based on the review, switch into implementation mode in the SAME branch and workspace, make the requested fixes directly, run focused validation, create a LOCAL commit only, then summarize what changed and ask what to do next with ` + "`request_user_input`" + ` unless the human clearly closes the review.
 - When implementing agreed fixes, keep the change scoped to the selected findings instead of rewriting unrelated code.
-- Do not push the branch or open a pull request from inside the run. Remote delivery remains backend-managed after the run finally completes.`)
+- Do not push the branch or open a pull request from inside the run. Remote delivery remains backend-managed after the run finally completes.
+- Treat the shared task context, branch metadata, task plan, and linked docs as review context for the current working branch, not as an instruction to start implementing by default.
+- Start by inspecting the existing branch diff and targeted validation against the configured base branch before deciding whether there are findings.`)
 		return &prompt
 	default:
 		return nil

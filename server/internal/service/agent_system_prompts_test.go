@@ -177,9 +177,26 @@ func TestReviewAgentSystemPromptIncludesInteractiveLoop(t *testing.T) {
 		"Treat review as an interactive loop, not a one-shot report.",
 		"Do not finish immediately after posting findings unless the latest human reply clearly says the review is done",
 		"If the human asks you to implement changes based on the review",
+		"Treat the shared task context, branch metadata, task plan, and linked docs as review context",
+		"Start by inspecting the existing branch diff and targeted validation against the configured base branch",
 	} {
 		if !strings.Contains(*prompt, snippet) {
 			t.Fatalf("expected review prompt to contain %q\n%s", snippet, *prompt)
+		}
+	}
+}
+
+func TestCodeBuilderSystemPromptIncludesGenericExecutionContextGuidance(t *testing.T) {
+	prompt := defaultSystemPromptForPreset(model.AgentPresetCodeBuilder)
+	if prompt == nil {
+		t.Fatal("expected code builder prompt")
+	}
+	for _, snippet := range []string{
+		"Treat the shared task context, branch metadata, task plan, and linked docs as the authoritative execution brief",
+		"Operate on the existing working branch against the configured base branch",
+	} {
+		if !strings.Contains(*prompt, snippet) {
+			t.Fatalf("expected code builder prompt to contain %q\n%s", snippet, *prompt)
 		}
 	}
 }

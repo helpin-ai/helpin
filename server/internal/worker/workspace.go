@@ -15,6 +15,9 @@ import (
 
 const persistentWorkspaceRootDir = "helpin-agent-workspaces"
 
+const workspaceGitUserName = "Helpin Agent"
+const workspaceGitUserEmail = "agent@helpin.ai"
+
 // PrepareWorkspace creates a temp workspace and clones the repository when configured.
 func PrepareWorkspace(ctx context.Context, gitIntegration *model.GitIntegration, repo, authToken string) (string, error) {
 	workDir, _, err := prepareWorkspace(ctx, gitIntegration, repo, authToken, "")
@@ -49,6 +52,9 @@ func prepareWorkspace(ctx context.Context, gitIntegration *model.GitIntegration,
 			workDir = filepath.Join(workRoot, "repo")
 		}
 		if info, err := os.Stat(workDir); err == nil && info.IsDir() {
+			if err := ensureWorkspaceGitIdentity(ctx, workDir); err != nil {
+				return "", false, err
+			}
 			return workDir, true, nil
 		}
 		if err := os.MkdirAll(filepath.Dir(workRoot), 0o755); err != nil {
@@ -113,6 +119,35 @@ func cloneWorkspace(ctx context.Context, workRoot, cloneDir string, gitIntegrati
 	unsetCmd.Dir = cloneDir
 	_ = unsetCmd.Run()
 
+	if err := ensureWorkspaceGitIdentity(ctx, cloneDir); err != nil {
+		_ = os.RemoveAll(workRoot)
+		return err
+	}
+
+	return nil
+}
+
+func ensureWorkspaceGitIdentity(ctx context.Context, cloneDir string) error {
+	if strings.TrimSpace(cloneDir) == "" {
+		return nil
+	}
+	configCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	for _, pair := range [][2]string{
+		{"user.name", workspaceGitUserName},
+		{"user.email", workspaceGitUserEmail},
+	} {
+		cmd := exec.CommandContext(configCtx, "git", "config", pair[0], pair[1])
+		cmd.Dir = cloneDir
+		if output, err := cmd.CombinedOutput(); err != nil {
+			outputText := strings.TrimSpace(string(output))
+			if outputText == "" {
+				return fmt.Errorf("configure git %s: %w", pair[0], err)
+			}
+			return fmt.Errorf("configure git %s: %w: %s", pair[0], err, outputText)
+		}
+	}
 	return nil
 }
 

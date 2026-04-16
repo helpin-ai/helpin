@@ -189,6 +189,7 @@ type SupportMessage struct {
 	ConversationID    string     `json:"conversation_id" gorm:"type:uuid;index"`
 	SenderType        string     `json:"sender_type" gorm:"not null"`                  // customer, user, agent, ai
 	MessageType       string     `json:"message_type" gorm:"not null;default:'reply'"` // reply, csat_survey, system
+	SystemEventType   *string    `json:"system_event_type,omitempty" gorm:"size:40;index:idx_support_messages_system_event,where:system_event_type IS NOT NULL"`
 	SenderUserID      *string    `json:"sender_user_id" gorm:"type:uuid"`
 	SenderAgentID     *string    `json:"sender_agent_id" gorm:"type:uuid"`
 	SenderDisplayName *string    `json:"sender_display_name"`
@@ -286,6 +287,11 @@ type SupportMailbox struct {
 	LinkedTeamID   *string   `json:"linked_team_id" gorm:"type:uuid"`
 	VisibilityMode string    `json:"visibility_mode" gorm:"not null;default:'members_only'"`
 	AssignmentMode string    `json:"assignment_mode" gorm:"not null;default:'manual'"`
+	// ReplyTimePreset / ReplyTimeCustomMinutes override the workspace-wide
+	// reply-time expectation for conversations routed into this mailbox.
+	// Nil preset means "inherit workspace default".
+	ReplyTimePreset        *string `json:"reply_time_preset,omitempty" gorm:"size:20;default:null"`
+	ReplyTimeCustomMinutes *int    `json:"reply_time_custom_minutes,omitempty" gorm:"default:null"`
 	Position       int       `json:"position" gorm:"not null;default:0"`
 	Active         bool      `json:"active" gorm:"not null;default:true"`
 	CreatedByID    string    `json:"created_by_id" gorm:"type:uuid;not null"`
@@ -469,6 +475,14 @@ type UpdateSupportMailboxRequest struct {
 	WorkspaceMemberIDs []string `json:"workspace_member_ids,omitempty"`
 	AssignmentMode     *string  `json:"assignment_mode,omitempty"`
 	ImportLinkedTeam   bool     `json:"import_linked_team,omitempty"`
+
+	// ReplyTimePreset overrides the workspace default for conversations in
+	// this mailbox. Pass an explicit value to set; set ClearReplyTimePreset
+	// to true to clear the override and inherit from workspace again.
+	ReplyTimePreset             *string `json:"reply_time_preset,omitempty"`
+	ReplyTimeCustomMinutes      *int    `json:"reply_time_custom_minutes,omitempty"`
+	ClearReplyTimePreset        *bool   `json:"clear_reply_time_preset,omitempty"`
+	ClearReplyTimeCustomMinutes *bool   `json:"clear_reply_time_custom_minutes,omitempty"`
 }
 
 type ReorderSupportMailboxesRequest struct {
@@ -679,16 +693,18 @@ type WidgetSessionJoinedPayload struct {
 
 // WidgetMessageReceivedPayload is sent to widget clients for new messages.
 type WidgetMessageReceivedPayload struct {
-	ID             string                     `json:"id"`
-	ConversationID string                     `json:"conversation_id"`
-	Content        string                     `json:"content"`
-	SenderType     string                     `json:"sender_type"`
-	SenderName     *string                    `json:"sender_name"`
-	SenderAvatar   *string                    `json:"sender_avatar"`
-	Metadata       *string                    `json:"metadata,omitempty"`
-	ViaChannel     string                     `json:"via_channel,omitempty"`
-	Attachments    []SupportAttachmentPayload `json:"attachments,omitempty"`
-	CreatedAt      string                     `json:"created_at"`
+	ID              string                     `json:"id"`
+	ConversationID  string                     `json:"conversation_id"`
+	Content         string                     `json:"content"`
+	SenderType      string                     `json:"sender_type"`
+	MessageType     string                     `json:"message_type,omitempty"`
+	SystemEventType *string                    `json:"system_event_type,omitempty"`
+	SenderName      *string                    `json:"sender_name"`
+	SenderAvatar    *string                    `json:"sender_avatar"`
+	Metadata        *string                    `json:"metadata,omitempty"`
+	ViaChannel      string                     `json:"via_channel,omitempty"`
+	Attachments     []SupportAttachmentPayload `json:"attachments,omitempty"`
+	CreatedAt       string                     `json:"created_at"`
 }
 
 // CannedResponseRequest is the payload for CRUD operations on canned responses.
@@ -771,6 +787,17 @@ type SupportInboxSettings struct {
 	BusinessHoursSchedule map[string]BusinessHoursDay `json:"business_hours_schedule"` // mon-sun
 	OutsideHoursMessage   string                      `json:"outside_hours_message"`
 
+	// Reply-time expectations rendered on the widget during business hours.
+	// Preset drives the copy; ReplyTimeCustomMinutes is only honored when
+	// ReplyTimePreset == "custom". See SupportReplyTimePreset* constants.
+	ReplyTimePreset        string `json:"reply_time_preset"`
+	ReplyTimeCustomMinutes *int   `json:"reply_time_custom_minutes,omitempty"`
+
+	// Optional workspace-wide notice rendered as a slim banner above
+	// conversation surfaces (outages, backlog, maintenance). Empty string
+	// or nil means the banner is hidden.
+	SpecialNoticeText *string `json:"special_notice_text,omitempty"`
+
 	// Offline email fallback
 	EmailFallbackEnabled   bool   `json:"email_fallback_enabled"`
 	EmailFallbackDelaySecs int    `json:"email_fallback_delay_secs"`
@@ -847,6 +874,9 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 			"sun": {Start: "09:00", End: "17:00", Enabled: false},
 		},
 		OutsideHoursMessage:    "We're currently offline. Leave a message and we'll get back to you!",
+		ReplyTimePreset:        SupportReplyTimePresetFewMinutes,
+		ReplyTimeCustomMinutes: nil,
+		SpecialNoticeText:      nil,
 		EmailFallbackEnabled:   false,
 		EmailFallbackDelaySecs: 120,
 		EmailFallbackFromName:  "",
@@ -902,6 +932,11 @@ type UpdateInstallationSettingsRequest struct {
 	BusinessHoursTimezone         *string                     `json:"business_hours_timezone,omitempty"`
 	BusinessHoursSchedule         map[string]BusinessHoursDay `json:"business_hours_schedule,omitempty"`
 	OutsideHoursMessage           *string                     `json:"outside_hours_message,omitempty"`
+	ReplyTimePreset               *string                     `json:"reply_time_preset,omitempty"`
+	ReplyTimeCustomMinutes        *int                        `json:"reply_time_custom_minutes,omitempty"`
+	SpecialNoticeText             *string                     `json:"special_notice_text,omitempty"`
+	ClearSpecialNotice            *bool                       `json:"clear_special_notice,omitempty"`
+	ClearReplyTimeCustomMinutes   *bool                       `json:"clear_reply_time_custom_minutes,omitempty"`
 	EmailFallbackEnabled          *bool                       `json:"email_fallback_enabled,omitempty"`
 	EmailFallbackDelaySecs        *int                        `json:"email_fallback_delay_secs,omitempty"`
 	EmailFallbackFromName         *string                     `json:"email_fallback_from_name,omitempty"`
@@ -1053,6 +1088,21 @@ type WidgetConfigAvailability struct {
 	ReplyTimeText       string  `json:"replyTimeText"`
 	OutsideHoursMessage *string `json:"outsideHoursMessage,omitempty"`
 	NextOnlineAt        *string `json:"nextOnlineAt,omitempty"`
+
+	// Structured reply-time expectation so the widget can choose to render
+	// its own copy (e.g. localized) instead of relying on ReplyTimeText.
+	// ReplyTimeMinutes is set only when the preset is "custom".
+	ReplyTimePreset  string `json:"replyTimePreset,omitempty"`
+	ReplyTimeMinutes *int   `json:"replyTimeMinutes,omitempty"`
+
+	// SpecialNoticeText drives the slim amber banner above conversation
+	// surfaces. Nil or empty means the banner is hidden.
+	SpecialNoticeText *string `json:"specialNoticeText,omitempty"`
+
+	// MailboxID is set when the effective preset came from a mailbox
+	// override rather than the workspace default. Widget can surface this
+	// for debugging / preview purposes but does not render it today.
+	MailboxID *string `json:"mailboxId,omitempty"`
 }
 
 // WidgetHelpSpace is an external-capable docs space exposed to the widget help tab.

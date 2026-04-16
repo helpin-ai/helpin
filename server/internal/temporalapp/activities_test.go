@@ -387,6 +387,92 @@ func TestSyncBaseIntoWorkingBranchLeavesConflictForCodexToResolve(t *testing.T) 
 	}
 }
 
+func TestSyncBaseIntoWorkingBranchDeepensShallowCloneBeforeDeclaringUnrelatedHistory(t *testing.T) {
+	ctx := context.Background()
+	remoteDir := filepath.Join(t.TempDir(), "remote.git")
+	runGitCommand(t, "", "init", "--bare", remoteDir)
+
+	seedDir := filepath.Join(t.TempDir(), "seed")
+	runGitCommand(t, "", "clone", "file://"+remoteDir, seedDir)
+	runGitCommand(t, seedDir, "config", "user.email", "test@example.com")
+	runGitCommand(t, seedDir, "config", "user.name", "Test User")
+
+	if err := os.WriteFile(filepath.Join(seedDir, "README.md"), []byte("base\n"), 0o644); err != nil {
+		t.Fatalf("write seed readme: %v", err)
+	}
+	runGitCommand(t, seedDir, "add", "README.md")
+	runGitCommand(t, seedDir, "commit", "-m", "initial main")
+	runGitCommand(t, seedDir, "branch", "-M", "main")
+	runGitCommand(t, seedDir, "push", "-u", "origin", "HEAD:main")
+
+	if err := os.WriteFile(filepath.Join(seedDir, "shared.txt"), []byte("shared history\n"), 0o644); err != nil {
+		t.Fatalf("write shared history file: %v", err)
+	}
+	runGitCommand(t, seedDir, "add", "shared.txt")
+	runGitCommand(t, seedDir, "commit", "-m", "shared history")
+	runGitCommand(t, seedDir, "push", "origin", "main")
+
+	if err := os.WriteFile(filepath.Join(seedDir, "task-context.txt"), []byte("branch point\n"), 0o644); err != nil {
+		t.Fatalf("write branch point file: %v", err)
+	}
+	runGitCommand(t, seedDir, "add", "task-context.txt")
+	runGitCommand(t, seedDir, "commit", "-m", "branch point")
+	runGitCommand(t, seedDir, "push", "origin", "main")
+
+	featureBranch := "tp-125-shallow-diverged"
+	runGitCommand(t, seedDir, "checkout", "-b", featureBranch)
+	if err := os.WriteFile(filepath.Join(seedDir, "task.txt"), []byte("task change\n"), 0o644); err != nil {
+		t.Fatalf("write task branch file: %v", err)
+	}
+	runGitCommand(t, seedDir, "add", "task.txt")
+	runGitCommand(t, seedDir, "commit", "-m", "task change")
+	runGitCommand(t, seedDir, "push", "-u", "origin", featureBranch)
+
+	runGitCommand(t, seedDir, "checkout", "main")
+	if err := os.WriteFile(filepath.Join(seedDir, "base.txt"), []byte("base change\n"), 0o644); err != nil {
+		t.Fatalf("write base branch file: %v", err)
+	}
+	runGitCommand(t, seedDir, "add", "base.txt")
+	runGitCommand(t, seedDir, "commit", "-m", "base change")
+	runGitCommand(t, seedDir, "push", "origin", "main")
+
+	workDir := filepath.Join(t.TempDir(), "work")
+	runGitCommand(t, "", "clone", "--depth", "1", "--branch", "main", "file://"+remoteDir, workDir)
+
+	activities := &AgentRunActivities{}
+	state := &resolvedRunState{
+		run: &model.AgentRun{
+			RuntimeKind:   "codex",
+			BaseBranch:    strPtr("main"),
+			WorkingBranch: strPtr(featureBranch),
+		},
+		repository: &model.GitRepository{DefaultBranch: "main"},
+	}
+
+	if err := activities.checkoutRunRef(ctx, workDir, state); err != nil {
+		t.Fatalf("checkoutRunRef returned error: %v", err)
+	}
+	if err := activities.syncBaseIntoWorkingBranch(ctx, workDir, state); err != nil {
+		t.Fatalf("syncBaseIntoWorkingBranch returned error: %v", err)
+	}
+
+	if state.branchSync.Status != "merged" {
+		t.Fatalf("branch sync status = %q, want merged", state.branchSync.Status)
+	}
+	if strings.TrimSpace(state.branchSync.BackupBranch) != "" {
+		t.Fatalf("did not expect backup branch for shallow-history recovery, got %q", state.branchSync.BackupBranch)
+	}
+	if _, err := os.Stat(filepath.Join(workDir, "task.txt")); err != nil {
+		t.Fatalf("expected task branch file after merge: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(workDir, "base.txt")); err != nil {
+		t.Fatalf("expected base branch file after merge: %v", err)
+	}
+	if got := strings.TrimSpace(runGitCommand(t, workDir, "diff", "--name-only", "--diff-filter=U")); got != "" {
+		t.Fatalf("expected no unresolved merge conflicts after deepened base sync, got %q", got)
+	}
+}
+
 func TestSyncBaseIntoWorkingBranchRecreatesUnrelatedHistoryBranchFromBase(t *testing.T) {
 	ctx := context.Background()
 	remoteDir := filepath.Join(t.TempDir(), "remote.git")
@@ -3788,6 +3874,44 @@ func TestBuildInitialInstructionsIncludesTaskPlanningDocForTaskExecutionRun(t *t
 	} {
 		if !strings.Contains(instructions, snippet) {
 			t.Fatalf("expected instructions to contain %q\n%s", snippet, instructions)
+		}
+	}
+}
+
+func TestBuildInitialInstructionsIncludesGenericRepositoryBranchContext(t *testing.T) {
+	run := &model.AgentRun{
+		ID:            "run-task-review",
+		WorkspaceID:   "ws-1",
+		TargetType:    "task",
+		TargetID:      "task-1",
+		BaseBranch:    strPtr("main"),
+		WorkingBranch: strPtr("tp-123-review"),
+		Input:         json.RawMessage(`{"additional_context":"Focus on regressions in the sprint picker."}`),
+	}
+	task := &model.PMTask{
+		ID:          "task-1",
+		WorkspaceID: "ws-1",
+		Name:        "Restrict Sprint Visibility",
+	}
+
+	activity := &AgentRunActivities{}
+	state := &resolvedRunState{
+		run:  run,
+		task: task,
+	}
+
+	instructions, err := activity.buildInitialInstructions(context.Background(), state, planningRunInput{
+		AllowedTools: []string{"read_file", "run_command"},
+	})
+	if err != nil {
+		t.Fatalf("buildInitialInstructions returned error: %v", err)
+	}
+	for _, snippet := range []string{
+		"Repository branches: base `main`, working `tp-123-review`.",
+		"Operator notes:\nFocus on regressions in the sprint picker.",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected generic task instructions to contain %q\n%s", snippet, instructions)
 		}
 	}
 }
