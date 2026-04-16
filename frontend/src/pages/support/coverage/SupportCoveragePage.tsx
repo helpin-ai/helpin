@@ -343,7 +343,7 @@ export function SupportCoveragePage() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">{gap.title}</p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      {gap.evidence_count} conversation{gap.evidence_count !== 1 ? 's' : ''}
+                      <span className="font-semibold text-foreground">{gap.evidence_count}</span> conversation{gap.evidence_count !== 1 ? 's' : ''}
                       {gap.topic_title && <> &middot; {gap.topic_title}</>}
                     </p>
                   </div>
