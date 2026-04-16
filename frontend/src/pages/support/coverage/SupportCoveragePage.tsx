@@ -353,6 +353,12 @@ export function SupportCoveragePage() {
                   >
                     {V1_GAP_TYPE_LABELS[gap.v1_gap_type] ?? gap.v1_gap_type}
                   </Badge>
+                  <Badge
+                    variant="secondary"
+                    className={`shrink-0 text-xs ${STATUS_COLORS[gap.status] ?? ''}`}
+                  >
+                    {GAP_STATUS_LABELS[gap.status] ?? gap.status}
+                  </Badge>
                   <span className="shrink-0 text-xs text-muted-foreground">
                     {timeAgo(gap.last_seen_at)}
                   </span>

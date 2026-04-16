@@ -110,7 +110,7 @@ export const V1_GAP_TYPE_LABELS: Record<SupportCoverageV1GapType, string> = {
   missing_article: 'Missing Article',
   weak_article: 'Weak Article',
   outdated_or_conflicting_article: 'Outdated / Conflicting',
-  needs_review: 'Needs Review',
+  needs_review: 'Unclassified',
 }
 
 export const GAP_STATUS_LABELS: Record<SupportCoverageGapStatus, string> = {
