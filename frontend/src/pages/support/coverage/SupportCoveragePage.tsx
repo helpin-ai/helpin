@@ -22,7 +22,7 @@ import {
 } from '@/lib/icons'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useDocsSpaces, useDocsCollections } from '@/hooks/queries/useDocs'
-import { useWorkspaceAccess, usePermissions } from '@/hooks/queries/useWorkspaces'
+import { useWorkspaceAccess, usePermissions } from '@/hooks/queries/useSession'
 import { supportCoverageService } from '@/lib/services/supportCoverageService'
 import type {
   SupportCoverageSummary,
