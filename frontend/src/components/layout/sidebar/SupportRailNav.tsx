@@ -42,6 +42,7 @@ type SupportRailNavProps = {
   selectedMailboxId: string;
   canManageSettings: boolean;
   wsSlug: string;
+  pathname: string;
   onNavFilterChange: (value: SupportNavFilter) => void;
   onMailboxSelect: (mailboxId: string) => void;
   onCreateMailbox: () => void;
@@ -57,6 +58,7 @@ export function SupportRailNav({
   selectedMailboxId,
   canManageSettings,
   wsSlug,
+  pathname,
   onNavFilterChange,
   onMailboxSelect,
   onCreateMailbox,
@@ -64,6 +66,8 @@ export function SupportRailNav({
   onArchiveMailbox,
   onNavigate,
 }: SupportRailNavProps) {
+  const isOnCoverage = pathname.startsWith(`/w/${wsSlug}/support/coverage`);
+  const isOnInbox = pathname.startsWith(`/w/${wsSlug}/support/inbox`);
   const mailboxes = inboxScopes?.mailboxes ?? [];
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
@@ -88,7 +92,7 @@ export function SupportRailNav({
             return (
               <SidebarMenuItem key={item.key}>
                 <SidebarMenuButton
-                  isActive={navFilter === item.key}
+                  isActive={isOnInbox && navFilter === item.key}
                   className="h-8 rounded-md px-2 text-sm"
                   onClick={() => onNavFilterChange(item.key)}
                 >
@@ -120,7 +124,7 @@ export function SupportRailNav({
             return (
               <SidebarMenuItem key={item.key}>
                 <SidebarMenuButton
-                  isActive={navFilter === item.key}
+                  isActive={isOnInbox && navFilter === item.key}
                   className="h-8 rounded-md px-2 text-sm"
                   onClick={() => onNavFilterChange(item.key)}
                 >
@@ -142,7 +146,8 @@ export function SupportRailNav({
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
-              className="h-8 rounded-md px-2 text-sm cursor-pointer"
+              isActive={isOnCoverage}
+              className="h-8 rounded-md px-2 text-sm"
               onClick={() => onNavigate(`/w/${wsSlug}/support/coverage`)}
             >
               <FileSearchIcon className="h-4 w-4" />
@@ -176,7 +181,7 @@ export function SupportRailNav({
         <SidebarMenu>
           {mailboxes.map((mailbox) => {
             const MailboxIcon = mailbox.icon ? (ICON_MAP[mailbox.icon] ?? InboxIcon) : InboxIcon;
-            const isActiveMailbox = selectedMailboxId === mailbox.id;
+            const isActiveMailbox = isOnInbox && selectedMailboxId === mailbox.id;
             const isMenuOpen = openMenuId === mailbox.id;
 
             return (
