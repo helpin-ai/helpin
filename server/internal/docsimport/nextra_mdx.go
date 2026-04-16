@@ -408,8 +408,15 @@ func stripLeadingH1(body, title string) string {
 // stripCodeFenceModifiers removes Nextra-specific modifiers from
 // code fence opening lines. For example, ```html copy becomes ```html.
 // Common modifiers: copy, filename="...", {1,3-5} (line highlighting).
+//
+// IMPORTANT: the whitespace class MUST be [ \t] (horizontal only). Go's
+// \s matches newlines too, so (?m)^(```lang)\s+.*$ would greedily
+// swallow the newline after the opening fence plus the first content
+// line — silently wiping single-line code snippets. This bit us with
+// Google Ads URL templates like ```javascript\n{lpurl}?...\n```
+// where the body vanished entirely during import.
 func stripCodeFenceModifiers(content string) string {
-	re := regexp.MustCompile("(?m)^(```\\w+)\\s+.*$")
+	re := regexp.MustCompile("(?m)^(```\\w+)[ \\t]+.*$")
 	return re.ReplaceAllString(content, "$1")
 }
 
