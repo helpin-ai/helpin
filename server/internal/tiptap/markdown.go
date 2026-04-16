@@ -204,29 +204,93 @@ func convertBlockquote(n ast.Node, source []byte) *Node {
 // the mapped callout variant, the remaining children (with the marker
 // stripped), and ok=true on a match. Recognizes: NOTE, TIP, IMPORTANT,
 // WARNING, CAUTION.
+//
+// Goldmark's tokenizer splits the marker across several text nodes (e.g.
+// `[`, `!WARNING`, `] `) because `[` and `]` are link delimiters, and
+// soft line breaks between the marker and the body get converted to
+// spaces rather than '\n'. We therefore scan leading plain-text nodes
+// character-by-character looking for a closing `]` that completes a
+// `[!MARKER]` prefix, then discard the consumed bytes and rebuild the
+// paragraph with whatever remains.
 func extractGFMAlert(children []Node) (variant string, rest []Node, ok bool) {
 	if len(children) == 0 || children[0].Type != "paragraph" || len(children[0].Content) == 0 {
 		return "", nil, false
 	}
-	first := children[0].Content[0]
-	if first.Type != "text" || first.Text == "" {
+	content := children[0].Content
+
+	// Accumulate leading plain-text nodes into a single string. Track
+	// where in this accumulated string each node starts so we can map a
+	// byte offset back onto a (node index, offset-within-node) pair.
+	type nodeSpan struct {
+		idx   int
+		start int
+		end   int
+	}
+	var buf strings.Builder
+	var spans []nodeSpan
+	for i, node := range content {
+		if node.Type != "text" || len(node.Marks) > 0 {
+			break
+		}
+		start := buf.Len()
+		buf.WriteString(node.Text)
+		spans = append(spans, nodeSpan{idx: i, start: start, end: buf.Len()})
+	}
+	accum := buf.String()
+	trimmed := strings.TrimLeft(accum, " \t\n")
+	if !strings.HasPrefix(trimmed, "[!") {
 		return "", nil, false
 	}
-	// The marker is on the first line, alone.
-	line, remainder, _ := strings.Cut(first.Text, "\n")
-	line = strings.TrimSpace(line)
-	mapped := mapGFMAlertMarker(line)
+	close := strings.IndexByte(trimmed, ']')
+	if close < 0 {
+		return "", nil, false
+	}
+	marker := trimmed[:close+1]
+	mapped := mapGFMAlertMarker(strings.TrimSpace(marker))
 	if mapped == "" {
 		return "", nil, false
 	}
 
-	// Rebuild children with the marker line stripped.
-	newFirstContent := make([]Node, 0, len(children[0].Content))
-	if remainder != "" {
-		remainder = strings.TrimLeft(remainder, "\n")
-		newFirstContent = append(newFirstContent, Node{Type: "text", Text: remainder, Marks: first.Marks})
+	// Offset (in bytes) within `accum` of the first byte *after* the
+	// marker. Leading whitespace was trimmed; account for it.
+	consumedInAccum := (len(accum) - len(trimmed)) + close + 1
+	// Skip any separator whitespace (spaces from soft-line-break, or
+	// leading newline characters) immediately following the marker.
+	for consumedInAccum < len(accum) {
+		c := accum[consumedInAccum]
+		if c == ' ' || c == '\t' || c == '\n' {
+			consumedInAccum++
+			continue
+		}
+		break
 	}
-	newFirstContent = append(newFirstContent, children[0].Content[1:]...)
+
+	// Map the consumed byte offset back to (node index, offset-in-node).
+	consumedNodes := 0
+	residualText := ""
+	for _, s := range spans {
+		if consumedInAccum >= s.end {
+			consumedNodes = s.idx + 1
+			continue
+		}
+		// Marker ends inside this node. Keep the remainder of this node
+		// as a fresh text node, and drop everything up to consumedNodes.
+		consumedNodes = s.idx
+		off := consumedInAccum - s.start
+		residualText = content[s.idx].Text[off:]
+		break
+	}
+	// If we consumed past every scanned node, there's no residual text
+	// from a partial node; consumedNodes already points past them.
+
+	newFirstContent := make([]Node, 0, len(content))
+	if residualText != "" {
+		newFirstContent = append(newFirstContent, Node{Type: "text", Text: residualText})
+		consumedNodes++ // skip the partially-consumed original node
+	}
+	if consumedNodes < len(content) {
+		newFirstContent = append(newFirstContent, content[consumedNodes:]...)
+	}
 
 	rest = make([]Node, 0, len(children))
 	if len(newFirstContent) > 0 {
