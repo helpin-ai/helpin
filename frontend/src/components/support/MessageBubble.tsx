@@ -365,7 +365,7 @@ export const MessageBubble = memo(function MessageBubble({
         <div className="max-w-[75%]">
           <Tooltip>
             <TooltipTrigger asChild>
-              <div className="rounded-lg border-r-[3px] border-r-amber-400 bg-amber-50 px-4 py-2.5 dark:bg-amber-950/20">
+              <div className="rounded-lg border-r-[3px] border-r-amber-400 bg-amber-50 px-4 py-2.5 [overflow-wrap:anywhere] dark:bg-amber-950/20">
                 <div className="mb-1.5 flex items-center gap-1.5">
                   <StickyNote01Icon className="h-3 w-3 text-amber-500 dark:text-amber-400" />
                   <span className="text-[11px] text-amber-600 dark:text-amber-400">
@@ -435,7 +435,7 @@ export const MessageBubble = memo(function MessageBubble({
             <Tooltip>
               <TooltipTrigger asChild>
                 <div
-                  className={`rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
+                  className={`rounded-2xl px-3.5 py-2 text-sm leading-relaxed [overflow-wrap:anywhere] ${
                     isCustomer
                       ? `bg-muted text-foreground ${isLastInGroup ? 'rounded-bl-sm' : ''}`
                       : `bg-blue-600 text-white dark:bg-blue-500 ${isLastInGroup ? 'rounded-br-sm' : ''}`
