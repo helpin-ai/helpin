@@ -343,8 +343,8 @@ export function SupportCoveragePage() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">{gap.title}</p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      {gap.evidence_count} conversation{gap.evidence_count !== 1 ? 's' : ''}
-                      {gap.topic_title && <> &middot; {gap.topic_title}</>}
+                      <span className="font-medium text-foreground/70">{gap.topic_title || formatTopic(gap.issue_key)}</span>
+                      {' '}&middot; {gap.evidence_count} conversation{gap.evidence_count !== 1 ? 's' : ''}
                     </p>
                   </div>
                   <Badge
