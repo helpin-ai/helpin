@@ -149,24 +149,29 @@ func convertListItem(n ast.Node, source []byte) *Node {
 
 func convertFencedCodeBlock(n ast.Node, source []byte) *Node {
 	fcb := n.(*ast.FencedCodeBlock)
+	code := codeBlockText(n, source)
+	// Skip empty code blocks entirely — some imported sources (e.g., Nextra
+	// that used a React component to inject code at runtime) emit fences
+	// with no content, which would render as empty boxes in the editor.
+	if code == "" {
+		return nil
+	}
 	node := &Node{Type: "codeBlock"}
 	lang := string(fcb.Language(source))
 	if lang != "" {
 		node.Attrs = map[string]any{"language": lang}
 	}
-	code := codeBlockText(n, source)
-	if code != "" {
-		node.Content = []Node{{Type: "text", Text: code}}
-	}
+	node.Content = []Node{{Type: "text", Text: code}}
 	return node
 }
 
 func convertCodeBlock(n ast.Node, source []byte) *Node {
-	node := &Node{Type: "codeBlock"}
 	code := codeBlockText(n, source)
-	if code != "" {
-		node.Content = []Node{{Type: "text", Text: code}}
+	if code == "" {
+		return nil
 	}
+	node := &Node{Type: "codeBlock"}
+	node.Content = []Node{{Type: "text", Text: code}}
 	return node
 }
 
