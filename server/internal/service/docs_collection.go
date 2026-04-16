@@ -360,13 +360,16 @@ func (s *DocsCollectionService) resolveParentForReparent(ctx context.Context, cu
 // Delete permanently deletes a collection subtree when permanent-delete
 // dependencies are wired. Without those dependencies it preserves the legacy
 // repository-level soft-delete behavior used by older tests and callers.
-func (s *DocsCollectionService) Delete(ctx context.Context, id string) error {
+func (s *DocsCollectionService) Delete(ctx context.Context, workspaceID, id string) error {
 	collection, err := s.collectionRepo.GetByID(ctx, id)
 	if err != nil {
 		return err
 	}
 	if collection == nil {
 		return ErrDocsCollectionNotFound
+	}
+	if workspaceID != "" && collection.WorkspaceID != workspaceID {
+		return ErrDocsCrossWorkspace
 	}
 	if s.documentSvc != nil && s.docRepo != nil {
 		collections, err := s.collectionRepo.ListBySpace(ctx, collection.SpaceID)
@@ -424,13 +427,16 @@ func docsCollectionSubtreeIDs(rootID string, collections []model.DocsCollection)
 	}
 }
 
-func (s *DocsCollectionService) GetDeleteImpact(ctx context.Context, id string) (*model.DocsCollectionDeleteImpact, error) {
+func (s *DocsCollectionService) GetDeleteImpact(ctx context.Context, workspaceID, id string) (*model.DocsCollectionDeleteImpact, error) {
 	collection, err := s.collectionRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 	if collection == nil {
 		return nil, ErrDocsCollectionNotFound
+	}
+	if workspaceID != "" && collection.WorkspaceID != workspaceID {
+		return nil, ErrDocsCrossWorkspace
 	}
 
 	collections, err := s.collectionRepo.ListBySpace(ctx, collection.SpaceID)

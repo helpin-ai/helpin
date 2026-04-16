@@ -52,13 +52,16 @@ func (s *DocsSpaceService) SetHelpcenterRepository(helpcenterRepo *repository.Do
 // affect: total collections, documents (by status), and publicly
 // published help-center articles. Safe for both internal spaces
 // (public count is always 0) and external spaces.
-func (s *DocsSpaceService) GetDeleteImpact(ctx context.Context, id string) (*model.DocsSpaceDeleteImpact, error) {
+func (s *DocsSpaceService) GetDeleteImpact(ctx context.Context, workspaceID, id string) (*model.DocsSpaceDeleteImpact, error) {
 	space, err := s.spaceRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 	if space == nil {
 		return nil, ErrDocsSpaceNotFound
+	}
+	if workspaceID != "" && space.WorkspaceID != workspaceID {
+		return nil, ErrDocsCrossWorkspace
 	}
 
 	impact := &model.DocsSpaceDeleteImpact{
@@ -404,13 +407,16 @@ func (s *DocsSpaceService) Update(ctx context.Context, id string, req model.Upda
 
 // Delete permanently deletes a space when permanent-delete dependencies are
 // wired. Without those dependencies it preserves the legacy soft-delete path.
-func (s *DocsSpaceService) Delete(ctx context.Context, id string) error {
+func (s *DocsSpaceService) Delete(ctx context.Context, workspaceID, id string) error {
 	space, err := s.spaceRepo.GetByID(ctx, id)
 	if err != nil {
 		return err
 	}
 	if space == nil {
 		return fmt.Errorf("space not found")
+	}
+	if workspaceID != "" && space.WorkspaceID != workspaceID {
+		return ErrDocsCrossWorkspace
 	}
 	if space.IsSystem {
 		return fmt.Errorf("cannot delete a system space")

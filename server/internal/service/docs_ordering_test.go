@@ -1436,7 +1436,7 @@ func TestDocsCollection_TreeDelete(t *testing.T) {
 		child := "child"
 		seedCollection(t, db, "grand", &child, 2, 0)
 
-		if err := svc.Delete(ctx, "root"); err != nil {
+		if err := svc.Delete(ctx, "", "root"); err != nil {
 			t.Fatalf("Delete: %v", err)
 		}
 
@@ -1498,7 +1498,7 @@ func TestDocsCollection_TreeDelete(t *testing.T) {
 		seedDoc(t, db, "doc-a", &target, 0)
 		seedDoc(t, db, "doc-b", &target, 1)
 
-		if err := svc.Delete(ctx, "target"); err != nil {
+		if err := svc.Delete(ctx, "", "target"); err != nil {
 			t.Fatalf("Delete: %v", err)
 		}
 
@@ -1545,7 +1545,7 @@ func TestDocsCollection_TreeDelete(t *testing.T) {
 
 		seedDoc(t, db, "mid-doc", &mid, 0)
 
-		if err := svc.Delete(ctx, "mid"); err != nil {
+		if err := svc.Delete(ctx, "", "mid"); err != nil {
 			t.Fatalf("Delete: %v", err)
 		}
 

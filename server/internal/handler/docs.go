@@ -166,7 +166,8 @@ func (h *DocsHandler) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *DocsHandler) DeleteSpace(w http.ResponseWriter, r *http.Request) {
-	if err := h.spaceSvc.Delete(r.Context(), chi.URLParam(r, "spaceId")); err != nil {
+	wsID := middleware.GetWorkspaceID(r.Context())
+	if err := h.spaceSvc.Delete(r.Context(), wsID, chi.URLParam(r, "spaceId")); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -174,7 +175,8 @@ func (h *DocsHandler) DeleteSpace(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *DocsHandler) GetSpaceDeleteImpact(w http.ResponseWriter, r *http.Request) {
-	impact, err := h.spaceSvc.GetDeleteImpact(r.Context(), chi.URLParam(r, "spaceId"))
+	wsID := middleware.GetWorkspaceID(r.Context())
+	impact, err := h.spaceSvc.GetDeleteImpact(r.Context(), wsID, chi.URLParam(r, "spaceId"))
 	if err != nil {
 		writeDocsError(w, err)
 		return
@@ -245,7 +247,8 @@ func (h *DocsHandler) UpdateCollection(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *DocsHandler) GetCollectionDeleteImpact(w http.ResponseWriter, r *http.Request) {
-	impact, err := h.collectionSvc.GetDeleteImpact(r.Context(), chi.URLParam(r, "collectionId"))
+	wsID := middleware.GetWorkspaceID(r.Context())
+	impact, err := h.collectionSvc.GetDeleteImpact(r.Context(), wsID, chi.URLParam(r, "collectionId"))
 	if err != nil {
 		writeDocsError(w, err)
 		return
@@ -254,7 +257,8 @@ func (h *DocsHandler) GetCollectionDeleteImpact(w http.ResponseWriter, r *http.R
 }
 
 func (h *DocsHandler) DeleteCollection(w http.ResponseWriter, r *http.Request) {
-	if err := h.collectionSvc.Delete(r.Context(), chi.URLParam(r, "collectionId")); err != nil {
+	wsID := middleware.GetWorkspaceID(r.Context())
+	if err := h.collectionSvc.Delete(r.Context(), wsID, chi.URLParam(r, "collectionId")); err != nil {
 		writeDocsError(w, err)
 		return
 	}
