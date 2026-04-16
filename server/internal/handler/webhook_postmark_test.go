@@ -88,3 +88,16 @@ func TestPostmarkOpen_AuthorizedWithoutServiceReturnsOK(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
 }
+
+func TestPostmarkInbound_AllowsAnyConfiguredSecret(t *testing.T) {
+	h := NewPostmarkInboundHandler(nil, "reply-secret", "route-secret")
+	req := httptest.NewRequest(http.MethodPost, "/api/webhooks/postmark/inbound", strings.NewReader(`{"MailboxHash":"route-123"}`))
+	req.SetBasicAuth("postmark", "route-secret")
+	rec := httptest.NewRecorder()
+
+	h.PostmarkInbound(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+}
