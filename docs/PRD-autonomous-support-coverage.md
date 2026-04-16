@@ -159,7 +159,8 @@ V1 should use a conservative, debuggable deduplication strategy:
 3. For no-retrieval missing-article gaps, group repeated failures by workspace + issue key.
 4. For weak/outdated article gaps, group by workspace + issue key + related article.
 5. For no-result search gaps, group normalized search terms into an existing issue-key gap when a subsequent conversation has the same issue key.
-6. Allow manual merge when users see duplicate gaps.
+6. For human-resolved AI conversations without a richer signal, dedupe by `conversation_id` so a single conversation produces at most one gap regardless of how many resolve/reopen cycles it goes through. If an earlier handoff already produced a gap for the same conversation, the resolution event attaches evidence to that gap instead of creating a new one.
+7. Allow manual merge when users see duplicate gaps.
 
 Do not make semantic clustering the primary v1 behavior. It can be added later for gaps without reliable issue keys. The first release should prefer stable, explainable grouping over clever clustering.
 
@@ -332,6 +333,11 @@ However, the product must not depend on human feedback as the primary signal. In
 - conversation reopened
 - no-result search
 - AI answer followed by no resolution
+- human-resolved AI conversation (conversation ends with `flow_state = resolved_by_human` and `ai_turn_count > 0`) — captures the case where AI engaged but no explicit handoff event ever fired
+
+Treat the human-resolved signal as a backstop, not a primary source. When a richer signal (handoff reason, retrieval quality, docs-issue feedback) exists for the same conversation, the resolution event should attach evidence to the existing gap rather than create a new one.
+
+**Alignment with industry baselines.** This matches Intercom Fin's outcome model: confirmed and *assumed* AI resolutions are both counted as successful outcomes, not gaps. A customer who ghosts after AI answers is an assumed resolution, not a coverage gap. Coverage gaps are reserved for conversations where a human had to step in. The upside is high signal-to-noise; the downside is missing genuine gaps hidden inside assumed resolutions. That trade-off is acceptable for v1 — lower-confidence gap classes (e.g., CX Score, assumed-resolution sampling) can layer in later as separate signals rather than being conflated with coverage.
 
 ### 5.8 Self-Service Is Part Of The Same Funnel
 
@@ -423,7 +429,7 @@ Initial event types should include:
 - `ai_handoff_triggered`
 - `ai_blocked_by_policy`
 - `human_reply_after_ai`
-- `conversation_resolved`
+- `conversation_resolved` — always recorded on resolution, but only produces a coverage gap when the emitter tags the event with `source_signal = "conversation_resolved_by_human"`. That tag is set only when `flow_state = resolved_by_human` and `ai_turn_count > 0`; bare resolution events (AI-resolved, or human-only conversations AI never touched) stay silent for coverage.
 - `widget_search_performed`
 - `widget_article_opened`
 - `article_feedback_submitted`
@@ -498,6 +504,7 @@ Initial detection sources:
 - Negative article feedback.
 - Search no-results.
 - Human reply after AI failed.
+- Conversation resolved by a human after AI engaged but did not finish. This covers the case where the handoff event never fires (AI engaged, customer and agent exchanged messages, agent marked the conversation resolved) — without this signal these conversations are silent for coverage. Only conversations where `flow_state = resolved_by_human` **and** `ai_turn_count > 0` qualify. Assumed and confirmed AI resolutions are treated as successful outcomes and do not produce gaps, matching the Intercom Fin model (see §5.7).
 
 UI should start simple:
 
