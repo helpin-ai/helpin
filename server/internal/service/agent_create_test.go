@@ -118,7 +118,7 @@ func TestEnsureSystemProductPlannerAgentRefreshesLegacyPrompt(t *testing.T) {
 	if strings.Contains(*updated.SystemPrompt, "awaiting_prd_approval") || strings.Contains(*updated.SystemPrompt, "awaiting_story_approval") {
 		t.Fatalf("expected refreshed prompt to remove legacy approval phases, got %q", *updated.SystemPrompt)
 	}
-	if !strings.Contains(*updated.SystemPrompt, "There is no hidden planner phase machine deciding the next step for you.") {
+	if !strings.Contains(*updated.SystemPrompt, "Approval checkpoints happen inline in the same chat.") {
 		t.Fatalf("expected refreshed prompt to include inline approval guidance, got %q", *updated.SystemPrompt)
 	}
 	if updated.Name != defaultSystemEpicPlannerName {
@@ -823,6 +823,7 @@ func newAgentServiceTestDB(t *testing.T) *gorm.DB {
 			model TEXT,
 			execution_config BLOB NOT NULL DEFAULT x'7b7d',
 			system_prompt TEXT,
+			instruction_template_version TEXT NOT NULL DEFAULT '',
 			planning_notes TEXT,
 			tools BLOB NOT NULL DEFAULT '[]',
 			monthly_token_budget INTEGER,
@@ -854,6 +855,7 @@ func newAgentServiceTestDB(t *testing.T) *gorm.DB {
 			model TEXT,
 			execution_config BLOB NOT NULL DEFAULT x'7b7d',
 			system_prompt TEXT,
+			instruction_template_version TEXT NOT NULL DEFAULT '',
 			allowed_tools BLOB NOT NULL DEFAULT '[]',
 			supported_modes BLOB NOT NULL DEFAULT '[]',
 			approval_mode TEXT NOT NULL DEFAULT 'preset_default',

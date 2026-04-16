@@ -23,6 +23,7 @@ import (
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/temporal"
 
+	"github.com/helpin-ai/helpin/server/internal/agentskills"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -85,6 +86,8 @@ type AgentRunActivities struct {
 	runRepo             *repository.AgentRunRepository
 	runMessageRepo      *repository.AgentRunMessageRepository
 	agentRepo           *repository.AgentRepository
+	workspaceSkillRepo  *repository.WorkspaceSkillRepository
+	skillPackageStore   agentskills.SkillPackageStore
 	artifactRepo        *repository.AgentRunArtifactRepository
 	interactionRepo     *repository.AgentRunInteractionRepository
 	sessionSnapshotRepo *repository.CodingSessionStateSnapshotRepository
@@ -123,6 +126,8 @@ func NewAgentRunActivities(
 	runRepo *repository.AgentRunRepository,
 	runMessageRepo *repository.AgentRunMessageRepository,
 	agentRepo *repository.AgentRepository,
+	workspaceSkillRepo *repository.WorkspaceSkillRepository,
+	skillPackageStore agentskills.SkillPackageStore,
 	artifactRepo *repository.AgentRunArtifactRepository,
 	interactionRepo *repository.AgentRunInteractionRepository,
 	sessionSnapshotRepo *repository.CodingSessionStateSnapshotRepository,
@@ -159,6 +164,8 @@ func NewAgentRunActivities(
 		runRepo:             runRepo,
 		runMessageRepo:      runMessageRepo,
 		agentRepo:           agentRepo,
+		workspaceSkillRepo:  workspaceSkillRepo,
+		skillPackageStore:   skillPackageStore,
 		artifactRepo:        artifactRepo,
 		interactionRepo:     interactionRepo,
 		sessionSnapshotRepo: sessionSnapshotRepo,
@@ -551,6 +558,36 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		"agent_id", state.run.AgentID,
 		"work_dir", workDir,
 	)
+	var repoSkillMask *workerpkg.RepoSkillMask
+	if runtimeKind == "codex" || runtimeKind == "opencode" {
+		repoSkillMask, err = workerpkg.MaskRepoSkillRoots(workDir, state.run.ID)
+		if err != nil {
+			if persistWorkspace {
+				_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
+			}
+			_ = a.failRun(ctx, state, err.Error())
+			return ExecuteRunResult{}, nonRetryableRunError(err)
+		}
+		if repoSkillMask != nil {
+			defer func() {
+				if restoreErr := repoSkillMask.Restore(); restoreErr != nil && !errors.Is(restoreErr, os.ErrNotExist) {
+					slog.WarnContext(ctx, "failed to restore masked repo skill roots",
+						"error", restoreErr,
+						"run_id", state.run.ID,
+						"runtime_kind", runtimeKind)
+				}
+			}()
+		}
+	}
+	if runtimeKind == "codex" || runtimeKind == "opencode" {
+		if err := a.stageRuntimeSkills(ctx, state, execCtx, runtimeKind); err != nil {
+			if persistWorkspace {
+				_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
+			}
+			_ = a.failRun(ctx, state, err.Error())
+			return ExecuteRunResult{}, nonRetryableRunError(err)
+		}
+	}
 
 	err = adapter.Execute(execCtx, state.run)
 	if err != nil {
@@ -713,6 +750,81 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		AwaitingAuth:      waitForAuth && !waitForApproval && !waitForInput,
 		ContinueExecution: continueExecution && !waitForApproval && !waitForInput && !waitForAuth,
 	}, nil
+}
+
+func (a *AgentRunActivities) stageRuntimeSkills(ctx context.Context, state *resolvedRunState, execCtx *workerpkg.ExecutionContext, runtimeKind string) error {
+	if a == nil || state == nil || state.run == nil || state.agent == nil || execCtx == nil {
+		return nil
+	}
+	if len(agentskills.EffectiveRuntimeRefs(state.agent)) == 0 {
+		return nil
+	}
+	stageRoot := workerpkg.RuntimeSkillRootPathForRun(state.run.ID, runtimeKind)
+	resolution, err := agentskills.StageInto(
+		ctx,
+		state.run.WorkspaceID,
+		state.agent,
+		state.resolved.Tools,
+		a.workspaceSkillRepo,
+		a.skillPackageStore,
+		stageRoot,
+	)
+	if err != nil {
+		return fmt.Errorf("stage runtime skills: %w", err)
+	}
+	execCtx.StagedRuntimeSkillRoot = stageRoot
+	a.persistRuntimeSkillManifest(ctx, state.run, runtimeKind, stageRoot, resolution)
+	return nil
+}
+
+func (a *AgentRunActivities) persistRuntimeSkillManifest(ctx context.Context, run *model.AgentRun, runtimeKind, stageRoot string, resolution agentskills.Resolution) {
+	if a == nil || a.artifactRepo == nil || run == nil {
+		return
+	}
+	type skillManifestEntry struct {
+		Key        string  `json:"key"`
+		SourceKind string  `json:"source_kind"`
+		VersionKey *string `json:"version_key,omitempty"`
+		SkillID    *string `json:"skill_id,omitempty"`
+	}
+	entries := make([]skillManifestEntry, 0, len(resolution.Refs))
+	for idx, ref := range resolution.Refs {
+		definition := resolution.Definitions[idx]
+		entries = append(entries, skillManifestEntry{
+			Key:        definition.Key,
+			SourceKind: definition.SourceKind,
+			VersionKey: ref.VersionKey,
+			SkillID:    ref.SkillID,
+		})
+	}
+	payload, err := json.Marshal(map[string]any{
+		"runtime_kind": runtimeKind,
+		"staged_root":  stageRoot,
+		"skills":       entries,
+	})
+	if err != nil {
+		slog.WarnContext(ctx, "failed to marshal runtime skill manifest", "error", err, "run_id", run.ID)
+		return
+	}
+	seqNo, err := a.artifactRepo.NextSequence(ctx, run.WorkspaceID, run.ID)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to allocate runtime skill manifest sequence", "error", err, "run_id", run.ID)
+		return
+	}
+	content := string(payload)
+	artifact := &model.AgentRunArtifact{
+		WorkspaceID:   run.WorkspaceID,
+		RunID:         run.ID,
+		ArtifactType:  "runtime_skill_manifest",
+		Format:        "json",
+		StorageMode:   "inline",
+		InlineContent: &content,
+		Metadata:      json.RawMessage("{}"),
+		SequenceNo:    seqNo,
+	}
+	if err := a.artifactRepo.Create(ctx, artifact); err != nil {
+		slog.WarnContext(ctx, "failed to persist runtime skill manifest", "error", err, "run_id", run.ID)
+	}
 }
 
 func resolveExecutionWaitState(run *model.AgentRun, humanInputRequest *workerpkg.UserInputRequest, approvalRequest *model.ApprovalRequest, authRequest *model.CodexAuthState) (waitForApproval bool, waitForInput bool, waitForAuth bool) {
@@ -3260,6 +3372,15 @@ func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*r
 	}
 
 	resolved := workerpkg.ResolveAgentProfile(agent, run.InvocationMode)
+	skillResolution, err := agentskills.Resolve(ctx, run.WorkspaceID, agent.Skills, a.workspaceSkillRepo)
+	if err != nil {
+		return nil, err
+	}
+	agent.Skills = skillResolution.Refs
+	if err := agentskills.ValidateRuntimeAndTools(agent.RuntimeKind, resolved.Tools, skillResolution.Definitions); err != nil {
+		return nil, err
+	}
+	agent.ResolvedSkillInstructions = agentskills.CompileInstructions(skillResolution.Definitions)
 	state := &resolvedRunState{
 		run:      run,
 		agent:    agent,

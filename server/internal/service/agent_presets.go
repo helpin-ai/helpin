@@ -121,6 +121,22 @@ func presetDefinitionForAgent(agent *model.Agent) (model.AgentPresetDefinition, 
 	return agentPresetVersionDefinition(defaultPresetKey, defaultPresetVersionKeyForPresetKey(defaultPresetKey))
 }
 
+func applyBuiltInPresetInstructionMetadata(presets []model.AgentPresetDefinition) []model.AgentPresetDefinition {
+	for idx := range presets {
+		bundle, ok := worker.BuiltInPresetSkillBundleForPreset(presets[idx].Key)
+		if !ok {
+			continue
+		}
+		presets[idx].InstructionPreamble = bundle.Preamble
+		presets[idx].InstructionSkills = append([]string(nil), bundle.SkillKeys...)
+		presets[idx].InstructionTemplateVersion = worker.BuiltInPresetInstructionTemplateVersion(presets[idx].Key)
+		if presets[idx].SystemPrompt == nil {
+			presets[idx].SystemPrompt = worker.BuiltInPresetPrompt(presets[idx].Key)
+		}
+	}
+	return presets
+}
+
 func workspacePresetDefinition(base model.AgentPresetDefinition, version model.WorkspaceAgentPresetVersion) model.AgentPresetDefinition {
 	definition := base
 	definition.Key = normalizePresetKey(version.FamilyKey)
@@ -134,7 +150,12 @@ func workspacePresetDefinition(base model.AgentPresetDefinition, version model.W
 	definition.Provider = trimPtr(version.Provider)
 	definition.Model = trimPtr(version.Model)
 	definition.ExecutionConfig = normalizeExecutionConfigJSON(version.ExecutionConfig)
-	definition.SystemPrompt = trimPtr(version.SystemPrompt)
+	if prompt := trimPtr(version.SystemPrompt); prompt != nil {
+		definition.SystemPrompt = prompt
+	}
+	if versionValue := strings.TrimSpace(version.InstructionTemplateVersion); versionValue != "" {
+		definition.InstructionTemplateVersion = versionValue
+	}
 	if description := strings.TrimSpace(stringOrDefault(version.Description, "")); description != "" {
 		definition.Description = description
 	}
@@ -260,7 +281,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 		return toolName == "list_epic_tasks"
 	})
 
-	return []model.AgentPresetDefinition{
+	presets := []model.AgentPresetDefinition{
 		{
 			Key:                   model.AgentPresetEpicPlanner,
 			FamilyKey:             model.AgentPresetEpicPlanner,
@@ -388,6 +409,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			SystemPrompt:          reviewPrompt,
 		},
 	}
+
+	return applyBuiltInPresetInstructionMetadata(presets)
 }
 
 func filterPresetTools(base []string, required ...string) []string {

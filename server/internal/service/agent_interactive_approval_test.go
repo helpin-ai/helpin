@@ -1864,6 +1864,7 @@ func newInteractiveApprovalTestDB(t *testing.T) *gorm.DB {
 			model TEXT,
 			execution_config BLOB NOT NULL DEFAULT x'7b7d',
 			system_prompt TEXT,
+			instruction_template_version TEXT NOT NULL DEFAULT '',
 			planning_notes TEXT,
 			tools BLOB NOT NULL DEFAULT (CAST('[]' AS BLOB)),
 			monthly_token_budget INTEGER,

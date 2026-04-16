@@ -29,6 +29,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/observability"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/service"
+	"github.com/helpin-ai/helpin/server/internal/storage"
 	syncpkg "github.com/helpin-ai/helpin/server/internal/sync"
 	"github.com/helpin-ai/helpin/server/internal/temporalapp"
 	ws "github.com/helpin-ai/helpin/server/internal/websocket"
@@ -57,6 +58,15 @@ func main() {
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: parseLogLevel(cfg.LogLevel)}))
 	slog.SetDefault(logger)
+
+	s3Client := storage.NewS3Client(
+		cfg.AWSAccessKeyID,
+		cfg.AWSSecretAccessKey,
+		cfg.AWSBucket,
+		cfg.AWSRegion,
+		cfg.AWSEndpointURL,
+		cfg.AWSPublicBaseURL,
+	)
 
 	db, err := gorm.Open(postgres.New(postgres.Config{
 		DSN:                  cfg.DatabaseURL,
@@ -101,6 +111,7 @@ func main() {
 	runMessageRepo := repository.NewAgentRunMessageRepository(db)
 	agentRepo := repository.NewAgentRepository(db)
 	workspacePresetVersionRepo := repository.NewWorkspaceAgentPresetVersionRepository(db)
+	workspaceSkillRepo := repository.NewWorkspaceSkillRepository(db)
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
 	interactionRepo := repository.NewAgentRunInteractionRepository(db)
 	sessionSnapshotRepo := repository.NewCodingSessionStateSnapshotRepository(db)
@@ -384,7 +395,7 @@ func main() {
 		pmStoryService,
 		pmActivityService,
 		wsPublisher,
-	).SetModelProviderConfig(
+	).SetWorkspaceSkillStore(workspaceSkillRepo, nil).SetModelProviderConfig(
 		cfg.AnthropicAPIKey,
 		cfg.OpenAIAPIKey,
 		cfg.OpenRouterAPIKey,
@@ -440,6 +451,8 @@ func main() {
 		runRepo,
 		runMessageRepo,
 		agentRepo,
+		workspaceSkillRepo,
+		s3Client,
 		artifactRepo,
 		interactionRepo,
 		sessionSnapshotRepo,

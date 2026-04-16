@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -104,7 +105,18 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 		}
 	}
 
-	systemPrompt := BuildSystemPrompt(execCtx.Agent, execCtx.Task, execCtx.Epic, execCtx.Conversation, execCtx.PlanningStage, execCtx.PlanningMethodology, config)
+	includeInlineSkills := strings.TrimSpace(execCtx.StagedRuntimeSkillRoot) == ""
+	systemPrompt := BuildRuntimeSystemPrompt(
+		execCtx.Agent,
+		execCtx.Task,
+		execCtx.Epic,
+		execCtx.Conversation,
+		execCtx.PlanningStage,
+		execCtx.PlanningMethodology,
+		config,
+		includeInlineSkills,
+		includeInlineSkills,
+	)
 	if supplement := BuildExecutionSupplementPrompt(run, execCtx.RunFacts, execCtx.ArtifactContext); supplement != "" {
 		systemPrompt = strings.TrimSpace(systemPrompt + "\n\n## Current Run State\n" + supplement)
 	}
@@ -145,7 +157,10 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 
 	cmd := exec.CommandContext(execCtx.Context, e.commandPath, args...)
 	cmd.Dir = execCtx.WorkDir
-	cmd.Env = e.buildEnv(execCtx.Agent, configContent)
+	cmd.Env, err = e.buildEnv(execCtx, configContent)
+	if err != nil {
+		return fmt.Errorf("build opencode env: %w", err)
+	}
 
 	// Run the subprocess in its own process group so we can signal the entire
 	// tree on cancellation instead of only the main PID.
@@ -355,8 +370,12 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 	return normalizeOpenCodePostRunError(postRunCtx, nil)
 }
 
-func (e *OpenCodeExecutor) buildEnv(agent *model.Agent, configContent string) []string {
+func (e *OpenCodeExecutor) buildEnv(execCtx *ExecutionContext, configContent string) ([]string, error) {
 	env := os.Environ()
+	var agent *model.Agent
+	if execCtx != nil {
+		agent = execCtx.Agent
+	}
 	provider := model.AgentModelProviderAnthropic
 	if agent != nil {
 		if resolvedProvider := normalizeOpenCodeProvider(strings.TrimSpace(derefOpenCodeString(agent.Provider))); resolvedProvider != "" {
@@ -374,7 +393,19 @@ func (e *OpenCodeExecutor) buildEnv(agent *model.Agent, configContent string) []
 	}
 	env = upsertEnv(env, "NO_COLOR", "1")
 	env = upsertEnv(env, "OPENCODE_CONFIG_CONTENT", configContent)
-	return env
+	if execCtx != nil && strings.TrimSpace(execCtx.RunID) != "" {
+		runRoot := filepath.Join(os.TempDir(), openCodeRuntimeRootDir, sanitizeWorkspacePathComponent(execCtx.RunID))
+		homeDir := filepath.Join(runRoot, "home")
+		if err := os.MkdirAll(homeDir, 0o755); err != nil {
+			return nil, fmt.Errorf("create opencode runtime home: %w", err)
+		}
+		env = upsertEnv(env, "HOME", homeDir)
+		env = upsertEnv(env, "XDG_CONFIG_HOME", filepath.Join(homeDir, ".config"))
+		env = upsertEnv(env, "XDG_DATA_HOME", filepath.Join(homeDir, ".local", "share"))
+		env = upsertEnv(env, "XDG_CACHE_HOME", filepath.Join(homeDir, ".cache"))
+		env = upsertEnv(env, "OPENCODE_HOME", filepath.Join(homeDir, ".opencode"))
+	}
+	return env, nil
 }
 
 func (e *OpenCodeExecutor) resolveModelID(agent *model.Agent) string {

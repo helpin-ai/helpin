@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,8 +13,44 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/tiptap"
 )
 
+func resolvedAgentSystemPrompt(agent *model.Agent) string {
+	if agent == nil {
+		return ""
+	}
+	if agent.SystemPrompt != nil && strings.TrimSpace(*agent.SystemPrompt) != "" {
+		return strings.TrimSpace(*agent.SystemPrompt)
+	}
+	if prompt := BuiltInPresetPrompt(strings.TrimSpace(agent.EffectivePresetKey())); prompt != nil && strings.TrimSpace(*prompt) != "" {
+		return strings.TrimSpace(*prompt)
+	}
+	return ""
+}
+
+type systemPromptOptions struct {
+	IncludeBehaviorInstructions bool
+	IncludeResolvedSkillText    bool
+}
+
+func defaultSystemPromptOptions() systemPromptOptions {
+	return systemPromptOptions{
+		IncludeBehaviorInstructions: true,
+		IncludeResolvedSkillText:    true,
+	}
+}
+
 // BuildSystemPrompt assembles the system prompt from agent config, target context, and WORKFLOW.md.
 func BuildSystemPrompt(agent *model.Agent, story *model.PMTask, epic *model.PMEpic, ticket *model.SupportConversation, planningStage, planningMethodology string, config *WorkflowConfig) string {
+	return buildSystemPromptWithOptions(agent, story, epic, ticket, planningStage, planningMethodology, config, defaultSystemPromptOptions())
+}
+
+func BuildRuntimeSystemPrompt(agent *model.Agent, story *model.PMTask, epic *model.PMEpic, ticket *model.SupportConversation, planningStage, planningMethodology string, config *WorkflowConfig, includeBehaviorInstructions, includeResolvedSkillText bool) string {
+	return buildSystemPromptWithOptions(agent, story, epic, ticket, planningStage, planningMethodology, config, systemPromptOptions{
+		IncludeBehaviorInstructions: includeBehaviorInstructions,
+		IncludeResolvedSkillText:    includeResolvedSkillText,
+	})
+}
+
+func buildSystemPromptWithOptions(agent *model.Agent, story *model.PMTask, epic *model.PMEpic, ticket *model.SupportConversation, planningStage, planningMethodology string, config *WorkflowConfig, options systemPromptOptions) string {
 	var parts []string
 	resolvedProfile := ResolveAgentProfile(agent)
 	toolSet := make(map[string]bool, len(resolvedProfile.Tools))
@@ -25,8 +60,22 @@ func BuildSystemPrompt(agent *model.Agent, story *model.PMTask, epic *model.PMEp
 	hasRepoAccess := hasRepoTools(resolvedProfile.Tools)
 	hasFileMutationTools := toolSet["write_file"] || toolSet["edit_file"] || toolSet["apply_patch"]
 
-	if agent != nil && agent.SystemPrompt != nil && strings.TrimSpace(*agent.SystemPrompt) != "" {
-		parts = append(parts, strings.TrimSpace(*agent.SystemPrompt))
+	basePrompt := ""
+	if options.IncludeBehaviorInstructions {
+		basePrompt = resolvedAgentSystemPrompt(agent)
+	}
+	skillInstructions := ""
+	if options.IncludeResolvedSkillText {
+		skillInstructions = strings.TrimSpace(agent.ResolvedSkillInstructions)
+	}
+	if basePrompt != "" {
+		parts = append(parts, basePrompt)
+		if skillInstructions != "" {
+			parts = append(parts, skillInstructions)
+		}
+	} else if skillInstructions != "" {
+		parts = append(parts, fmt.Sprintf("You are %s, an AI coding agent. You write clean, correct code and follow existing project conventions.", agent.Name))
+		parts = append(parts, skillInstructions)
 	} else {
 		parts = append(parts, fmt.Sprintf("You are %s, an AI coding agent. You write clean, correct code and follow existing project conventions.", agent.Name))
 	}
@@ -56,15 +105,6 @@ func BuildSystemPrompt(agent *model.Agent, story *model.PMTask, epic *model.PMEp
 		if ticket.CustomerName != nil && *ticket.CustomerName != "" {
 			parts = append(parts, fmt.Sprintf("**Customer**: %s", *ticket.CustomerName))
 		}
-	}
-
-	var skills []string
-	if len(agent.Skills) > 0 {
-		_ = json.Unmarshal(agent.Skills, &skills)
-	}
-	if len(skills) > 0 {
-		parts = append(parts, "\n## Enabled Skills")
-		parts = append(parts, "- "+strings.Join(skills, "\n- "))
 	}
 
 	// WORKFLOW.md extra prompt.

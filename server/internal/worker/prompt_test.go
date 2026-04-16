@@ -359,3 +359,54 @@ func TestBuildSystemPromptSupportRunOmitsRepoEditingGuidance(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildSystemPromptIncludesResolvedSkillInstructions(t *testing.T) {
+	prompt := BuildSystemPrompt(
+		&model.Agent{
+			Name:                      "Custom Agent",
+			ResolvedSkillInstructions: "Use the approval protocol skill instructions.",
+		},
+		nil,
+		nil,
+		nil,
+		"",
+		"",
+		nil,
+	)
+
+	if !strings.Contains(prompt, "Use the approval protocol skill instructions.") {
+		t.Fatalf("expected prompt to include resolved skill instructions\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "You are Custom Agent, an AI coding agent.") {
+		t.Fatalf("expected prompt to keep generic agent preamble\n%s", prompt)
+	}
+}
+
+func TestBuildRuntimeSystemPromptSkipsBehaviorAndSkillTextWhenDisabled(t *testing.T) {
+	systemPrompt := "Preset behavior instructions."
+	prompt := BuildRuntimeSystemPrompt(
+		&model.Agent{
+			Name:                      "Custom Agent",
+			SystemPrompt:              &systemPrompt,
+			ResolvedSkillInstructions: "Resolved skill instructions.",
+		},
+		nil,
+		nil,
+		nil,
+		"",
+		"",
+		nil,
+		false,
+		false,
+	)
+
+	if strings.Contains(prompt, "Preset behavior instructions.") {
+		t.Fatalf("did not expect runtime prompt to include preset behavior instructions\n%s", prompt)
+	}
+	if strings.Contains(prompt, "Resolved skill instructions.") {
+		t.Fatalf("did not expect runtime prompt to include resolved skill instructions\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "You are Custom Agent, an AI coding agent.") {
+		t.Fatalf("expected runtime prompt to keep generic preamble\n%s", prompt)
+	}
+}
