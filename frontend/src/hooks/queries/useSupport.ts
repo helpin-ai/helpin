@@ -300,6 +300,15 @@ export function useConversationMessages(workspaceId: string, conversationId: str
   });
 }
 
+export function useMessageEmailDetail(workspaceId: string, messageId: string | null, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.support.messageEmail(workspaceId, messageId ?? ''),
+    queryFn: async () => unwrap(await supportService.getMessageEmailDetail(workspaceId, messageId!)),
+    enabled: enabled && !!workspaceId && !!messageId,
+    staleTime: 5 * 60_000,
+  });
+}
+
 export function useVisitorContext(workspaceId: string, conversationId: string | null) {
   return useQuery<VisitorContextResponse>({
     queryKey: queryKeys.support.visitorContext(workspaceId, conversationId ?? ''),

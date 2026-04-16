@@ -80,6 +80,27 @@ func (h *SupportInboxHandler) GetConversation(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, conversation)
 }
 
+// GetMessageEmailDetail handles GET /api/support/inbox/messages/{id}/email.
+func (h *SupportInboxHandler) GetMessageEmailDetail(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "message id is required")
+		return
+	}
+
+	detail, err := h.supportService.GetMessageEmailDetail(r.Context(), workspaceID, id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if detail == nil {
+		writeError(w, http.StatusNotFound, "email details not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, detail)
+}
+
 // CreateConversation handles POST /api/support/tickets.
 func (h *SupportInboxHandler) CreateConversation(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
