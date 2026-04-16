@@ -57,6 +57,7 @@ type ExecutionContext struct {
 	ProviderContinuation    *ProviderContinuation
 	ConversationHistory     []ExecutionMessage
 	LastExecutionResult     *ExecutionResult
+	StagedRuntimeSkillRoot  string
 	ToolFileState           *ToolFileState
 	toolFileStateMu         sync.Mutex
 	PublishedPreviews       map[string]PublishedPreview

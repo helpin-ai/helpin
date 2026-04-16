@@ -214,6 +214,7 @@ vi.mock('@/lib/icons', () => {
     FileUpIcon: Icon,
     Heading02Icon: Icon,
     Heading03Icon: Icon,
+    Heading04Icon: Icon,
     TextItalicIcon: Icon,
     Link01Icon: Icon,
     Menu01Icon: Icon,
@@ -232,6 +233,18 @@ import { DocsEditor } from '../DocsEditor'
 describe('DocsEditor', () => {
   let container: HTMLDivElement
   let root: Root
+
+  async function markEditorReady() {
+    await act(async () => {
+      const originalRequestAnimationFrame = window.requestAnimationFrame
+      window.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+        callback(0)
+        return 0
+      }) as typeof window.requestAnimationFrame
+      testState.editorOptions?.onCreate?.({ editor: testState.editorBundle?.editor })
+      window.requestAnimationFrame = originalRequestAnimationFrame
+    })
+  }
 
   beforeEach(() => {
     vi.useFakeTimers()
@@ -272,6 +285,7 @@ describe('DocsEditor', () => {
         />,
       )
     })
+    await markEditorReady()
 
     await act(async () => {
       testState.editorOptions?.onUpdate?.({ editor: testState.editorBundle?.editor })
@@ -313,6 +327,7 @@ describe('DocsEditor', () => {
         />,
       )
     })
+    await markEditorReady()
 
     await act(async () => {
       testState.editorOptions?.onUpdate?.({ editor: testState.editorBundle?.editor })
@@ -336,6 +351,7 @@ describe('DocsEditor', () => {
         />,
       )
     })
+    await markEditorReady()
 
     const plainPaste = {
       clipboardData: {

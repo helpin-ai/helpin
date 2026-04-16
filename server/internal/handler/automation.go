@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -100,7 +101,7 @@ func (h *AutomationHandler) CreateFlow(w http.ResponseWriter, r *http.Request) {
 
 	rule, err := h.ruleEngine.CreateRule(r.Context(), workspaceID, req)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeWorkspaceSkillError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, rule)
@@ -144,7 +145,7 @@ func (h *AutomationHandler) UpdateFlow(w http.ResponseWriter, r *http.Request) {
 
 	rule, err := h.ruleEngine.UpdateRule(r.Context(), workspaceID, flowID, req)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeWorkspaceSkillError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, rule)
@@ -242,6 +243,99 @@ func (h *AutomationHandler) ListTriggerCatalog(w http.ResponseWriter, r *http.Re
 // ListToolCatalog handles GET /api/automation/library/tools.
 func (h *AutomationHandler) ListToolCatalog(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, h.agentService.ListToolCatalog())
+}
+
+// ListSkillCatalog handles GET /api/automation/library/skills.
+func (h *AutomationHandler) ListSkillCatalog(w http.ResponseWriter, r *http.Request) {
+	catalog, err := h.agentService.ListSkillCatalog(r.Context(), getWorkspaceID(r))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, catalog)
+}
+
+func writeWorkspaceSkillError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, service.ErrWorkspaceSkillNotFound):
+		writeError(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, service.ErrWorkspaceSkillStorageUnavailable):
+		writeError(w, http.StatusInternalServerError, err.Error())
+	default:
+		writeError(w, http.StatusBadRequest, err.Error())
+	}
+}
+
+// ImportSkill handles POST /api/automation/library/skills/import.
+func (h *AutomationHandler) ImportSkill(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	actorID := middleware.GetUserID(r.Context())
+	r.Body = http.MaxBytesReader(w, r.Body, 10*1024*1024)
+	if err := r.ParseMultipartForm(4 * 1024 * 1024); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid multipart form")
+		return
+	}
+	file, header, err := r.FormFile("archive")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "archive file is required")
+		return
+	}
+	defer file.Close()
+	var sourceRuntime *string
+	if raw := r.FormValue("source_runtime"); raw != "" {
+		sourceRuntime = &raw
+	}
+	skill, err := h.agentService.ImportWorkspaceSkill(r.Context(), workspaceID, actorID, header.Filename, file, header.Size, sourceRuntime)
+	if err != nil {
+		writeWorkspaceSkillError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, skill)
+}
+
+// CreateSkill handles POST /api/automation/library/skills.
+func (h *AutomationHandler) CreateSkill(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	actorID := middleware.GetUserID(r.Context())
+	var req model.CreateWorkspaceSkillRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	skill, err := h.agentService.CreateWorkspaceSkill(r.Context(), workspaceID, actorID, req)
+	if err != nil {
+		writeWorkspaceSkillError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, skill)
+}
+
+// UpdateSkill handles PUT /api/automation/library/skills/{id}.
+func (h *AutomationHandler) UpdateSkill(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	id := chi.URLParam(r, "id")
+	var req model.UpdateWorkspaceSkillRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	skill, err := h.agentService.UpdateWorkspaceSkill(r.Context(), workspaceID, id, req)
+	if err != nil {
+		writeWorkspaceSkillError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, skill)
+}
+
+// DeleteSkill handles DELETE /api/automation/library/skills/{id}.
+func (h *AutomationHandler) DeleteSkill(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	id := chi.URLParam(r, "id")
+	if err := h.agentService.DeleteWorkspaceSkill(r.Context(), workspaceID, id); err != nil {
+		writeWorkspaceSkillError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "skill archived"})
 }
 
 // ListAgents handles GET /api/automation/agents.

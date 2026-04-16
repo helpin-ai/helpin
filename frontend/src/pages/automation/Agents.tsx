@@ -18,6 +18,8 @@ import {
   ZapIcon,
   WorkflowSquare01Icon,
   Loading01Icon,
+  BookOpen01Icon,
+  SourceCodeIcon,
 } from '@/lib/icons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
@@ -43,11 +45,13 @@ import type {
   AgentRun,
   AgentRuntimeKind,
   AgentServiceTier,
+  AgentSkillRef,
   AgentTriggerUsage,
   AgentTriggerUsageSummary,
   AgentTargetType,
   CreateWorkspaceAgentPresetVersionRequest,
   CreateAgentRequest,
+  SkillCatalogResponse,
   ToolCatalogResponse,
   UpdateAgentRequest,
 } from '@/lib/pmTypes';
@@ -224,10 +228,13 @@ interface AgentFormData {
   reasoning_effort: AgentReasoningEffort | '';
   service_tier: AgentServiceTier | '';
   system_prompt: string;
+  instruction_preamble: string;
+  instruction_skills: string[];
   monthly_token_budget: string;
   team_id: string;
   allowed_targets: AgentTargetType[];
   allowed_tools: string[];
+  skills: AgentSkillRef[];
   schedule: string;
   approval_mode: AgentApprovalMode;
   max_concurrent_runs: string;
@@ -423,10 +430,13 @@ function createEmptyCustomForm(): AgentFormData {
     reasoning_effort: '',
     service_tier: '',
     system_prompt: '',
+    instruction_preamble: '',
+    instruction_skills: [],
     monthly_token_budget: '',
     team_id: '',
     allowed_targets: ['task'],
     allowed_tools: [],
+    skills: [],
     schedule: '',
     approval_mode: 'never',
     max_concurrent_runs: '1',
@@ -512,6 +522,7 @@ function buildCreatePayload(workspaceId: string, form: AgentFormData, advancedOp
     trigger_mode: 'manual',
     team_id: form.team_id,
     allowed_tools: normalizeToolList(form.allowed_tools),
+    skills: form.skills.length > 0 ? form.skills : undefined,
     allowed_targets: normalizeTargetList(form.allowed_targets),
     schedule: form.schedule.trim(),
     approval_mode: form.approval_mode,
@@ -573,6 +584,7 @@ function buildUpdatePayload(
       : 0;
   } else {
     payload.allowed_targets = normalizeTargetList(form.allowed_targets);
+    payload.skills = form.skills;
   }
   return payload;
 }
@@ -607,6 +619,8 @@ function buildSystemAgentForm(agent: Agent, presets: AgentPresetDefinition[]): A
       agent.execution_config ?? preset?.execution_config,
     ),
     system_prompt: agent.system_prompt ?? preset?.system_prompt ?? '',
+    instruction_preamble: preset?.instruction_preamble ?? '',
+    instruction_skills: preset?.instruction_skills ?? [],
     monthly_token_budget: agent.monthly_token_budget?.toString() ?? '',
     team_id: '',
     allowed_targets: normalizeTargetList(
@@ -615,6 +629,7 @@ function buildSystemAgentForm(agent: Agent, presets: AgentPresetDefinition[]): A
         : (preset?.allowed_target_types ?? []),
     ),
     allowed_tools: normalizeToolList(agent.allowed_tools?.length ? agent.allowed_tools : (preset?.allowed_tools ?? [])),
+    skills: agent.skills ?? [],
     schedule: '',
     approval_mode: 'never',
     max_concurrent_runs: agent.max_concurrent_runs?.toString() ?? '1',
@@ -1120,6 +1135,7 @@ export function AgentsPage() {
   const [providerOptions, setProviderOptions] = useState<AgentModelProviderOption[]>(FALLBACK_PROVIDER_OPTIONS);
   const [presets, setPresets] = useState<AgentPresetDefinition[]>([]);
   const [toolCatalog, setToolCatalog] = useState<ToolCatalogResponse | null>(null);
+  const [skillCatalog, setSkillCatalog] = useState<SkillCatalogResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1143,7 +1159,9 @@ export function AgentsPage() {
   const [form, setForm] = useState<AgentFormData>(createEmptyCustomForm());
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [automationOpen, setAutomationOpen] = useState(false);
+  const [compiledPromptOpen, setCompiledPromptOpen] = useState(false);
   const [toolPickerOpen, setToolPickerOpen] = useState(false);
+  const [skillPickerOpen, setSkillPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [versionDraftOpen, setVersionDraftOpen] = useState(false);
@@ -1188,6 +1206,14 @@ export function AgentsPage() {
     }
   }, [workspaceId]);
 
+  const loadSkillCatalog = useCallback(async () => {
+    if (!workspaceId) return;
+    const res = await automationService.listSkillCatalog(workspaceId);
+    if (!res.error && res.data) {
+      setSkillCatalog(res.data);
+    }
+  }, [workspaceId]);
+
   const loadAgentUsage = useCallback(async (agentId: string) => {
     if (!workspaceId) return;
     setAgentUsageLoading(true);
@@ -1206,7 +1232,8 @@ export function AgentsPage() {
     loadProviderOptions();
     loadPresets();
     loadToolCatalog();
-  }, [loadAgents, loadProviderOptions, loadPresets, loadToolCatalog]);
+    loadSkillCatalog();
+  }, [loadAgents, loadProviderOptions, loadPresets, loadToolCatalog, loadSkillCatalog]);
 
   // Fetch run stats for all agents
   useEffect(() => {
@@ -1279,10 +1306,13 @@ export function AgentsPage() {
         agent.execution_config,
       ),
       system_prompt: agent.system_prompt ?? '',
+      instruction_preamble: '',
+      instruction_skills: [],
       monthly_token_budget: agent.monthly_token_budget?.toString() ?? '',
       team_id: agent.team_id ?? '',
       allowed_targets: normalizeTargetList(agent.allowed_targets as AgentTargetType[]),
       allowed_tools: normalizeToolList(agent.allowed_tools),
+      skills: agent.skills ?? [],
       schedule: agent.schedule ?? '',
       approval_mode: agent.approval_mode ?? 'preset_default',
       max_concurrent_runs: agent.max_concurrent_runs?.toString() ?? '1',
@@ -1333,7 +1363,8 @@ export function AgentsPage() {
       provider: form.provider,
       model: form.model.trim() || undefined,
       execution_config: buildExecutionConfigPayload(form),
-      system_prompt: form.system_prompt.trim() || undefined,
+      instruction_preamble: form.instruction_preamble.trim() || undefined,
+      instruction_skills: form.instruction_skills.length > 0 ? form.instruction_skills : undefined,
       allowed_tools: normalizeToolList(form.allowed_tools),
       supported_modes: form.supported_modes,
       approval_mode: 'never',
@@ -1345,6 +1376,9 @@ export function AgentsPage() {
       setForm((current) => ({
         ...current,
         preset_version_key: res.data?.version_key ?? current.preset_version_key,
+        system_prompt: res.data?.system_prompt ?? current.system_prompt,
+        instruction_preamble: res.data?.instruction_preamble ?? current.instruction_preamble,
+        instruction_skills: res.data?.instruction_skills ?? current.instruction_skills,
       }));
       setVersionDraftOpen(false);
       setVersionLabelDraft('');
@@ -1452,7 +1486,23 @@ export function AgentsPage() {
       allowed_tools: current.allowed_tools.filter((tool) => tool !== toolName),
     }));
   };
-  const toggleTarget = (target: AgentTargetType) => {
+  const skillCatalogEntries = skillCatalog?.skills ?? [];
+  const attachedSkillKeys = new Set(form.skills.map((s) => s.key));
+  const availableSkillEntries = skillCatalogEntries.filter((s) => !attachedSkillKeys.has(s.key));
+  const addSkill = (entry: { id?: string; key: string; source_kind: string; required_tools?: string[] }) => {
+    const ref: AgentSkillRef = { key: entry.key };
+    if (entry.id) ref.skill_id = entry.id;
+    const missingTools = (entry.required_tools ?? []).filter((t) => !form.allowed_tools.includes(t));
+    if (missingTools.length > 0) {
+      toast.warning(`Skill "${entry.key}" requires tools not yet allowed: ${missingTools.join(', ')}`);
+    }
+    setForm((current) => ({ ...current, skills: [...current.skills, ref] }));
+    setSkillPickerOpen(false);
+  };
+  const removeSkill = (key: string) => {
+    setForm((current) => ({ ...current, skills: current.skills.filter((s) => s.key !== key) }));
+  };
+  const toggleTarget =(target: AgentTargetType) => {
     setForm((current) => {
       const hasTarget = current.allowed_targets.includes(target);
       if (hasTarget && current.allowed_targets.length === 1) {
@@ -1487,6 +1537,8 @@ export function AgentsPage() {
       model: nextPreset.model ?? PRESET_FALLBACKS[form.preset_key].model ?? '',
       ...deriveExecutionConfigFields(nextPreset.runtime_kind, nextProvider, nextPreset.execution_config),
       system_prompt: nextPreset.system_prompt ?? '',
+      instruction_preamble: nextPreset.instruction_preamble ?? '',
+      instruction_skills: nextPreset.instruction_skills ?? [],
       allowed_tools: normalizeToolList(nextPreset.allowed_tools ?? []),
       approval_mode: 'never',
       default_invocation_mode: normalizeDefaultInvocationMode(
@@ -1647,6 +1699,8 @@ export function AgentsPage() {
           setSystemDrawerOpen(open);
           if (!open) {
             setToolPickerOpen(false);
+            setSkillPickerOpen(false);
+            setCompiledPromptOpen(false);
             setVersionDraftOpen(false);
             setVersionLabelDraft('');
             setVersionDescriptionDraft('');
@@ -1839,31 +1893,145 @@ export function AgentsPage() {
 
                 <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_18rem]">
                   <div className="space-y-6">
-                    {/* 01 — System Instructions */}
+                    {/* 01A — Agent Identity (Preamble) */}
+                    {(form.instruction_preamble || !systemVersionReadOnly) && (
                     <div className="space-y-3">
-                      <SectionHeader number="01" title="System Instructions" description="Shown to the model on every turn" />
+                      <SectionHeader number="01" title="Agent Identity" description="Role definition and high-level objective" />
                       <div className="rounded-xl border border-border/60 bg-card p-4">
-                        {systemVersionReadOnly && (
-                          <div className="mb-3 flex items-center justify-between">
-                            <p className="text-xs font-mono text-muted-foreground">system-prompt</p>
-                            <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">Read-only</span>
-                          </div>
+                        {systemVersionReadOnly ? (
+                          <>
+                            <div className="mb-2 flex items-center justify-between">
+                              <p className="text-xs font-mono text-muted-foreground">preamble</p>
+                              <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">Read-only</span>
+                            </div>
+                            <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">{form.instruction_preamble}</p>
+                          </>
+                        ) : (
+                          <>
+                            <Textarea
+                              value={form.instruction_preamble}
+                              onChange={(e) => setForm((current) => ({ ...current, instruction_preamble: e.target.value }))}
+                              placeholder="e.g. You are Epic Planner. You run the full PRD-to-tasks loop inside a single interactive run."
+                              rows={3}
+                              className="border-0 bg-transparent p-0 shadow-none focus-visible:ring-0"
+                            />
+                          </>
                         )}
-                        <Textarea
-                          id="agent-system-prompt"
-                          value={form.system_prompt}
-                          onChange={(e) => setForm((current) => ({ ...current, system_prompt: e.target.value }))}
-                          disabled={systemVersionReadOnly}
-                          placeholder="Agent instructions"
-                          rows={8}
-                          className="border-0 bg-transparent p-0 shadow-none focus-visible:ring-0"
-                        />
-                        <p className="mt-3 text-xs text-muted-foreground">
-                          {systemVersionReadOnly
-                            ? 'Select a version to inspect it. Duplicate it to create an editable workspace copy.'
-                            : 'You are editing a workspace version draft.'}
-                        </p>
                       </div>
+                    </div>
+                    )}
+
+                    {/* 01B — Instruction Skills */}
+                    {(form.instruction_skills.length > 0 || !systemVersionReadOnly) && (
+                    <div className="space-y-3">
+                      <SectionHeader number="01" title="Skills" description="Ordered instruction modules attached to this preset" />
+                      <div className="space-y-2">
+                        {form.instruction_skills.map((skillKey, idx) => {
+                          const entry = skillCatalogEntries.find((s) => s.key === skillKey);
+                          return (
+                            <div key={skillKey} className="flex items-start gap-3 rounded-lg border border-border/50 bg-card px-3 py-2.5">
+                              <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded bg-muted text-[10px] font-semibold text-muted-foreground">{idx + 1}</span>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2">
+                                  <BookOpen01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                  <span className="font-mono text-xs font-medium">{skillKey}</span>
+                                  {entry && (
+                                    <Badge variant="outline" className="text-[9px] px-1.5 py-0">{entry.source_kind === 'built_in' ? 'built-in' : entry.source_kind}</Badge>
+                                  )}
+                                </div>
+                                {entry && (
+                                  <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{entry.title !== skillKey ? `${entry.title} — ` : ''}{entry.description}</p>
+                                )}
+                              </div>
+                              {!systemVersionReadOnly && (
+                                <button
+                                  type="button"
+                                  className="mt-0.5 shrink-0 rounded p-0.5 text-muted-foreground hover:text-destructive"
+                                  onClick={() => setForm((current) => ({
+                                    ...current,
+                                    instruction_skills: current.instruction_skills.filter((k) => k !== skillKey),
+                                  }))}
+                                >
+                                  <Cancel01Icon className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {!systemVersionReadOnly && (
+                        <Popover open={skillPickerOpen} onOpenChange={setSkillPickerOpen}>
+                          <PopoverTrigger asChild>
+                            <Button variant="outline" size="sm" className="h-8 gap-1.5 px-2 text-[11px]">
+                              <PlusSignIcon className="h-3.5 w-3.5" />
+                              Add skill
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent align="start" className="w-[28rem] p-0">
+                            <Command>
+                              <CommandInput placeholder="Search skills..." />
+                              <CommandList className="max-h-72">
+                                <CommandEmpty>No more skills available.</CommandEmpty>
+                                <CommandGroup heading={`${skillCatalogEntries.filter((s) => !form.instruction_skills.includes(s.key)).length} available`}>
+                                  {skillCatalogEntries
+                                    .filter((s) => !form.instruction_skills.includes(s.key))
+                                    .map((skill) => (
+                                    <CommandItem
+                                      key={skill.key}
+                                      value={skill.key}
+                                      onSelect={() => {
+                                        setForm((current) => ({
+                                          ...current,
+                                          instruction_skills: [...current.instruction_skills, skill.key],
+                                        }));
+                                        setSkillPickerOpen(false);
+                                      }}
+                                    >
+                                      <div className="min-w-0 flex-1 space-y-0.5">
+                                        <div className="flex items-center gap-2">
+                                          <span className="font-mono text-xs">{skill.key}</span>
+                                          <Badge variant="outline" className="text-[9px] px-1.5 py-0">{skill.source_kind === 'built_in' ? 'built-in' : skill.source_kind}</Badge>
+                                        </div>
+                                        <p className="text-xs text-muted-foreground">{skill.description}</p>
+                                      </div>
+                                    </CommandItem>
+                                  ))}
+                                </CommandGroup>
+                              </CommandList>
+                            </Command>
+                          </PopoverContent>
+                        </Popover>
+                      )}
+                    </div>
+                    )}
+
+                    {/* 01C — Compiled System Prompt (Preview) */}
+                    <div className="space-y-3">
+                      <Collapsible.Root open={compiledPromptOpen} onOpenChange={setCompiledPromptOpen}>
+                        <Collapsible.Trigger asChild>
+                          <button type="button" className="flex w-full items-center gap-2 text-left">
+                            {compiledPromptOpen ? <ArrowDown01Icon className="h-3.5 w-3.5 text-muted-foreground" /> : <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground" />}
+                            <SourceCodeIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                            <span className="text-xs font-medium text-muted-foreground">Compiled System Prompt</span>
+                            <Badge variant="outline" className="text-[9px] px-1.5 py-0">Preview</Badge>
+                          </button>
+                        </Collapsible.Trigger>
+                        <Collapsible.Content>
+                          <div className="mt-2 rounded-xl border border-border/60 bg-card p-4">
+                            <Textarea
+                              value={form.system_prompt}
+                              disabled
+                              rows={12}
+                              className="border-0 bg-transparent p-0 font-mono text-xs shadow-none focus-visible:ring-0"
+                            />
+                            <p className="mt-3 text-xs text-muted-foreground">
+                              {systemVersionReadOnly
+                                ? 'This is the full prompt sent to the model, compiled from the preamble and skills above.'
+                                : 'This prompt will be recompiled from your preamble and skills when you save.'}
+                            </p>
+                          </div>
+                        </Collapsible.Content>
+                      </Collapsible.Root>
                     </div>
 
                     {/* 02 — Run Mode */}
@@ -2177,6 +2345,7 @@ export function AgentsPage() {
                         <p className="text-sm text-muted-foreground">No tools configured</p>
                       )}
                     </div>
+
                   </div>
 
                   <div className="space-y-4">
@@ -2355,6 +2524,7 @@ export function AgentsPage() {
           setDialogOpen(open);
           if (!open) {
             setToolPickerOpen(false);
+            setSkillPickerOpen(false);
           }
         }}
       >
@@ -2711,6 +2881,84 @@ export function AgentsPage() {
                   )}
                 </div>
               </div>
+            </div>
+
+            {/* ---- Skills ---- */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm font-semibold">Skills</p>
+                  <p className="text-[11px] text-muted-foreground">Behavioral instruction modules attached to this agent</p>
+                </div>
+                <Popover open={skillPickerOpen} onOpenChange={setSkillPickerOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-1.5 px-2 text-[11px]"
+                      disabled={availableSkillEntries.length === 0}
+                    >
+                      <PlusSignIcon className="h-3.5 w-3.5" />
+                      Add skill
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-[28rem] p-0">
+                    <Command>
+                      <CommandInput placeholder="Search skills..." />
+                      <CommandList className="max-h-72">
+                        <CommandEmpty>No more skills available.</CommandEmpty>
+                        <CommandGroup heading={`${availableSkillEntries.length} available`}>
+                          {availableSkillEntries.map((skill) => (
+                            <CommandItem
+                              key={skill.key}
+                              value={`${skill.key} ${skill.title} ${skill.description}`}
+                              onSelect={() => addSkill(skill)}
+                              className="cursor-pointer items-start py-2"
+                            >
+                              <div className="min-w-0 flex-1 space-y-0.5">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono text-xs text-foreground">{skill.key}</span>
+                                  <Badge variant="outline" className="text-[10px]">
+                                    {skill.source_kind === 'built_in' ? 'built-in' : skill.source_kind}
+                                  </Badge>
+                                </div>
+                                <p className="text-xs leading-relaxed text-muted-foreground">{skill.description}</p>
+                              </div>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
+              {form.skills.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {form.skills.map((ref) => {
+                    const entry = skillCatalogEntries.find((s) => s.key === ref.key);
+                    return (
+                      <Badge key={ref.key} variant="secondary" className="gap-1.5 pr-1 font-mono text-[11px]">
+                        <BookOpen01Icon className="h-3 w-3 text-muted-foreground" />
+                        <span>{ref.key}</span>
+                        {entry?.source_kind && (
+                          <span className="text-[9px] text-muted-foreground/70">{entry.source_kind === 'built_in' ? 'built-in' : entry.source_kind}</span>
+                        )}
+                        <button
+                          type="button"
+                          className="rounded-sm p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                          onClick={() => removeSkill(ref.key)}
+                          aria-label={`Remove ${ref.key}`}
+                        >
+                          <Cancel01Icon className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">No skills attached. Skills provide behavioral instructions to the agent at runtime.</p>
+              )}
             </div>
 
             <Collapsible.Root open={automationOpen} onOpenChange={setAutomationOpen}>

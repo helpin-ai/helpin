@@ -78,6 +78,7 @@ import { Route as AuthenticatedWSlugDocsDraftsRouteImport } from './routes/_auth
 import { Route as AuthenticatedWSlugCrmReviewRouteImport } from './routes/_authenticated/w/$slug/crm/review'
 import { Route as AuthenticatedWSlugCrmInsightsRouteImport } from './routes/_authenticated/w/$slug/crm/insights'
 import { Route as AuthenticatedWSlugAutomationToolsRouteImport } from './routes/_authenticated/w/$slug/automation/tools'
+import { Route as AuthenticatedWSlugAutomationSkillsRouteImport } from './routes/_authenticated/w/$slug/automation/skills'
 import { Route as AuthenticatedWSlugAutomationRunsRouteImport } from './routes/_authenticated/w/$slug/automation/runs'
 import { Route as AuthenticatedWSlugAutomationLibraryRouteImport } from './routes/_authenticated/w/$slug/automation/library'
 import { Route as AuthenticatedWSlugAutomationFlowsRouteImport } from './routes/_authenticated/w/$slug/automation/flows'
@@ -501,6 +502,12 @@ const AuthenticatedWSlugAutomationToolsRoute =
     path: '/tools',
     getParentRoute: () => AuthenticatedWSlugAutomationRoute,
   } as any)
+const AuthenticatedWSlugAutomationSkillsRoute =
+  AuthenticatedWSlugAutomationSkillsRouteImport.update({
+    id: '/skills',
+    path: '/skills',
+    getParentRoute: () => AuthenticatedWSlugAutomationRoute,
+  } as any)
 const AuthenticatedWSlugAutomationRunsRoute =
   AuthenticatedWSlugAutomationRunsRouteImport.update({
     id: '/runs',
@@ -678,6 +685,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/automation/flows': typeof AuthenticatedWSlugAutomationFlowsRoute
   '/w/$slug/automation/library': typeof AuthenticatedWSlugAutomationLibraryRoute
   '/w/$slug/automation/runs': typeof AuthenticatedWSlugAutomationRunsRoute
+  '/w/$slug/automation/skills': typeof AuthenticatedWSlugAutomationSkillsRoute
   '/w/$slug/automation/tools': typeof AuthenticatedWSlugAutomationToolsRoute
   '/w/$slug/crm/insights': typeof AuthenticatedWSlugCrmInsightsRoute
   '/w/$slug/crm/review': typeof AuthenticatedWSlugCrmReviewRoute
@@ -768,6 +776,7 @@ export interface FileRoutesByTo {
   '/w/$slug/automation/flows': typeof AuthenticatedWSlugAutomationFlowsRoute
   '/w/$slug/automation/library': typeof AuthenticatedWSlugAutomationLibraryRoute
   '/w/$slug/automation/runs': typeof AuthenticatedWSlugAutomationRunsRoute
+  '/w/$slug/automation/skills': typeof AuthenticatedWSlugAutomationSkillsRoute
   '/w/$slug/automation/tools': typeof AuthenticatedWSlugAutomationToolsRoute
   '/w/$slug/crm/insights': typeof AuthenticatedWSlugCrmInsightsRoute
   '/w/$slug/crm/review': typeof AuthenticatedWSlugCrmReviewRoute
@@ -865,6 +874,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/automation/flows': typeof AuthenticatedWSlugAutomationFlowsRoute
   '/_authenticated/w/$slug/automation/library': typeof AuthenticatedWSlugAutomationLibraryRoute
   '/_authenticated/w/$slug/automation/runs': typeof AuthenticatedWSlugAutomationRunsRoute
+  '/_authenticated/w/$slug/automation/skills': typeof AuthenticatedWSlugAutomationSkillsRoute
   '/_authenticated/w/$slug/automation/tools': typeof AuthenticatedWSlugAutomationToolsRoute
   '/_authenticated/w/$slug/crm/insights': typeof AuthenticatedWSlugCrmInsightsRoute
   '/_authenticated/w/$slug/crm/review': typeof AuthenticatedWSlugCrmReviewRoute
@@ -962,6 +972,7 @@ export interface FileRouteTypes {
     | '/w/$slug/automation/flows'
     | '/w/$slug/automation/library'
     | '/w/$slug/automation/runs'
+    | '/w/$slug/automation/skills'
     | '/w/$slug/automation/tools'
     | '/w/$slug/crm/insights'
     | '/w/$slug/crm/review'
@@ -1052,6 +1063,7 @@ export interface FileRouteTypes {
     | '/w/$slug/automation/flows'
     | '/w/$slug/automation/library'
     | '/w/$slug/automation/runs'
+    | '/w/$slug/automation/skills'
     | '/w/$slug/automation/tools'
     | '/w/$slug/crm/insights'
     | '/w/$slug/crm/review'
@@ -1148,6 +1160,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/automation/flows'
     | '/_authenticated/w/$slug/automation/library'
     | '/_authenticated/w/$slug/automation/runs'
+    | '/_authenticated/w/$slug/automation/skills'
     | '/_authenticated/w/$slug/automation/tools'
     | '/_authenticated/w/$slug/crm/insights'
     | '/_authenticated/w/$slug/crm/review'
@@ -1715,6 +1728,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugAutomationToolsRouteImport
       parentRoute: typeof AuthenticatedWSlugAutomationRoute
     }
+    '/_authenticated/w/$slug/automation/skills': {
+      id: '/_authenticated/w/$slug/automation/skills'
+      path: '/skills'
+      fullPath: '/w/$slug/automation/skills'
+      preLoaderRoute: typeof AuthenticatedWSlugAutomationSkillsRouteImport
+      parentRoute: typeof AuthenticatedWSlugAutomationRoute
+    }
     '/_authenticated/w/$slug/automation/runs': {
       id: '/_authenticated/w/$slug/automation/runs'
       path: '/runs'
@@ -1899,6 +1919,7 @@ interface AuthenticatedWSlugAutomationRouteChildren {
   AuthenticatedWSlugAutomationFlowsRoute: typeof AuthenticatedWSlugAutomationFlowsRoute
   AuthenticatedWSlugAutomationLibraryRoute: typeof AuthenticatedWSlugAutomationLibraryRoute
   AuthenticatedWSlugAutomationRunsRoute: typeof AuthenticatedWSlugAutomationRunsRoute
+  AuthenticatedWSlugAutomationSkillsRoute: typeof AuthenticatedWSlugAutomationSkillsRoute
   AuthenticatedWSlugAutomationToolsRoute: typeof AuthenticatedWSlugAutomationToolsRoute
   AuthenticatedWSlugAutomationIndexRoute: typeof AuthenticatedWSlugAutomationIndexRoute
 }
@@ -1915,6 +1936,8 @@ const AuthenticatedWSlugAutomationRouteChildren: AuthenticatedWSlugAutomationRou
       AuthenticatedWSlugAutomationLibraryRoute,
     AuthenticatedWSlugAutomationRunsRoute:
       AuthenticatedWSlugAutomationRunsRoute,
+    AuthenticatedWSlugAutomationSkillsRoute:
+      AuthenticatedWSlugAutomationSkillsRoute,
     AuthenticatedWSlugAutomationToolsRoute:
       AuthenticatedWSlugAutomationToolsRoute,
     AuthenticatedWSlugAutomationIndexRoute:

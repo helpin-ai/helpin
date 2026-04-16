@@ -480,3 +480,85 @@ func extractNodeText(n Node) string {
 	}
 	return buf.String()
 }
+
+func TestMarkdownToJSON_GFMAlertCallout(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		variant string
+		body    string
+	}{
+		{
+			name:    "warning consecutive lines",
+			input:   "> [!WARNING]\n> body text",
+			variant: "yellow",
+			body:    "body text",
+		},
+		{
+			name:    "warning blank line between",
+			input:   "> [!WARNING]\n>\n> body text",
+			variant: "yellow",
+			body:    "body text",
+		},
+		{
+			name:    "note",
+			input:   "> [!NOTE]\n> note body",
+			variant: "blue",
+			body:    "note body",
+		},
+		{
+			name:    "info maps to blue",
+			input:   "> [!INFO]\n> info body",
+			variant: "blue",
+			body:    "info body",
+		},
+		{
+			name:    "important maps to blue",
+			input:   "> [!IMPORTANT]\n> important body",
+			variant: "blue",
+			body:    "important body",
+		},
+		{
+			name:    "tip",
+			input:   "> [!TIP]\n> tip body",
+			variant: "green",
+			body:    "tip body",
+		},
+		{
+			name:    "caution",
+			input:   "> [!CAUTION]\n> danger body",
+			variant: "red",
+			body:    "danger body",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var doc Node
+			if err := json.Unmarshal(MarkdownToJSON(tc.input), &doc); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if len(doc.Content) != 1 || doc.Content[0].Type != "callout" {
+				t.Fatalf("expected single callout, got %+v", doc.Content)
+			}
+			callout := doc.Content[0]
+			if got, _ := callout.Attrs["variant"].(string); got != tc.variant {
+				t.Errorf("variant: got %q, want %q", got, tc.variant)
+			}
+			gotBody := strings.TrimSpace(extractNodeText(callout))
+			if gotBody != tc.body {
+				t.Errorf("body: got %q, want %q", gotBody, tc.body)
+			}
+		})
+	}
+}
+
+func TestMarkdownToJSON_PlainBlockquoteUnchanged(t *testing.T) {
+	// Blockquotes without a GFM alert marker must remain blockquotes.
+	var doc Node
+	if err := json.Unmarshal(MarkdownToJSON("> just a quote\n> with two lines"), &doc); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(doc.Content) != 1 || doc.Content[0].Type != "blockquote" {
+		t.Fatalf("expected blockquote, got %+v", doc.Content)
+	}
+}
