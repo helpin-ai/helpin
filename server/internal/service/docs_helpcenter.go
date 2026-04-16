@@ -1376,6 +1376,7 @@ func (s *DocsHelpcenterService) GetSpaceNavigation(ctx context.Context, workspac
 			Title:       translation.Title,
 			Slug:        stringValue(translation.Slug),
 			PublicID:    publicIDs[doc.ID],
+			Position:    doc.Position,
 			PublishedAt: formatPublicPublishedAt(translation.PublishedAt),
 		}
 		if doc.CollectionID == nil {
@@ -1446,6 +1447,7 @@ func (s *DocsHelpcenterService) GetSpaceNavigation(ctx context.Context, workspac
 			Icon:               collection.Icon,
 			ParentCollectionID: collection.ParentCollectionID,
 			Depth:              collection.Depth,
+			Position:           collection.Position,
 			Articles:           articles,
 		})
 	}
