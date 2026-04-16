@@ -93,7 +93,7 @@ export function SupportRailNav({
             return (
               <SidebarMenuItem key={item.key}>
                 <SidebarMenuButton
-                  isActive={isOnInbox && navFilter === item.key}
+                  isActive={navFilter === item.key}
                   className="h-8 rounded-md px-2 text-sm"
                   onClick={() => onNavFilterChange(item.key)}
                 >
@@ -125,7 +125,7 @@ export function SupportRailNav({
             return (
               <SidebarMenuItem key={item.key}>
                 <SidebarMenuButton
-                  isActive={isOnInbox && navFilter === item.key}
+                  isActive={navFilter === item.key}
                   className="h-8 rounded-md px-2 text-sm"
                   onClick={() => onNavFilterChange(item.key)}
                 >
@@ -184,7 +184,7 @@ export function SupportRailNav({
         <SidebarMenu>
           {mailboxes.map((mailbox) => {
             const MailboxIcon = mailbox.icon ? (ICON_MAP[mailbox.icon] ?? InboxIcon) : InboxIcon;
-            const isActiveMailbox = isOnInbox && selectedMailboxId === mailbox.id;
+            const isActiveMailbox = selectedMailboxId === mailbox.id;
             const isMenuOpen = openMenuId === mailbox.id;
 
             return (
