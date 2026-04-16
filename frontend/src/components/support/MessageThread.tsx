@@ -206,7 +206,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const separatorRefs = useRef(new Map<number, HTMLDivElement>());
-  const { data: conversation } = useConversation(workspaceId, conversationId);
+  const { data: conversation, isFetched: conversationFetched } = useConversation(workspaceId, conversationId);
   const { data: messages = [], isLoading } = useConversationMessages(workspaceId, conversationId);
   const { data: inboxScopes } = useInboxScopes(workspaceId);
   const { data: installation } = useChatSettings(workspaceId);
@@ -496,7 +496,11 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
     };
   }, [groupedMessages]);
 
-  if (!conversationId) {
+  // Treat a stale conversation id (e.g., previous selection that no longer
+  // matches the active filter, or a deleted conversation) the same as no
+  // selection. Wait until the fetch settled so we don't flash during load.
+  const noSelection = !conversationId || (conversationFetched && !conversation);
+  if (noSelection) {
     return (
       <EmptyState
         icon={Message01Icon}
