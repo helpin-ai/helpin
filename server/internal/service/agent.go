@@ -1166,6 +1166,7 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 		Model:                      trimPtr(req.Model),
 		ExecutionConfig:            normalizeExecutionConfigJSON(req.ExecutionConfig),
 		SystemPrompt:               trimPtr(req.SystemPrompt),
+		InstructionSkills:          mustJSONStringSlice(nil),
 		InstructionTemplateVersion: strings.TrimSpace(basePreset.InstructionTemplateVersion),
 		AllowedTools:               normalizeAllowedToolsJSON(mustJSONStringSlice(basePreset.AllowedTools)),
 		SupportedModes:             mustJSONStringSlice(normalizedSupportedModes),
@@ -1569,7 +1570,13 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 		agent.TeamID = nil
 		agent.Schedule = nil
 		agent.ApprovalMode = "never"
-		agent.SystemPrompt, agent.InstructionTemplateVersion = syncManagedSystemPromptForPreset(systemPresetKey, agent.SystemPrompt, agent.PlanningNotes, agent.InstructionTemplateVersion)
+		if hasPreset && preset.Scope == "workspace" {
+			// Workspace version owns its own prompt — use it directly.
+			agent.SystemPrompt = preset.SystemPrompt
+			agent.InstructionTemplateVersion = preset.InstructionTemplateVersion
+		} else {
+			agent.SystemPrompt, agent.InstructionTemplateVersion = syncManagedSystemPromptForPreset(systemPresetKey, agent.SystemPrompt, agent.PlanningNotes, agent.InstructionTemplateVersion)
+		}
 		agent.PlanningNotes = nil
 	} else {
 		agent.SourcePresetKey = ""

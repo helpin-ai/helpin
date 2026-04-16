@@ -513,6 +513,7 @@ func TestUpdateAgent_PreservesSelectedSystemPresetVersion(t *testing.T) {
 		Label:                 "Workspace v2",
 		RuntimeKind:           "opencode",
 		SystemPrompt:          agentTestStringPtr("Workspace tuned code builder."),
+		InstructionSkills:     mustJSONStringSlice(nil),
 		AllowedTools:          mustJSONStringSlice([]string{"read_file", "run_command"}),
 		SupportedModes:        mustJSONStringSlice([]string{model.InvocationModeAutonomous}),
 		ApprovalMode:          "never",
@@ -533,6 +534,19 @@ func TestUpdateAgent_PreservesSelectedSystemPresetVersion(t *testing.T) {
 	}
 	if updated.ApprovalMode != "never" {
 		t.Fatalf("expected system agent approval mode never, got %q", updated.ApprovalMode)
+	}
+	// The workspace version's prompt must survive the update (not be replaced by the built-in family prompt).
+	if updated.SystemPrompt == nil || !strings.Contains(*updated.SystemPrompt, "Workspace tuned code builder.") {
+		t.Fatalf("expected workspace preset prompt preserved after update, got %v", updated.SystemPrompt)
+	}
+
+	// Verify the prompt also survives a re-read through the service (which runs normalizeAgentRecord + materialize).
+	reloaded, err := svc.GetAgent(context.Background(), "ws-test", updated.ID)
+	if err != nil {
+		t.Fatalf("GetAgent returned error: %v", err)
+	}
+	if reloaded.SystemPrompt == nil || !strings.Contains(*reloaded.SystemPrompt, "Workspace tuned code builder.") {
+		t.Fatalf("expected workspace preset prompt preserved after re-read, got %v", reloaded.SystemPrompt)
 	}
 }
 
@@ -603,6 +617,7 @@ func TestUpdateAgent_AllowsSystemPresetVersionRuntimeFromSelectedVersion(t *test
 		Label:                 "Workspace Codex",
 		RuntimeKind:           "codex",
 		SystemPrompt:          agentTestStringPtr("Use Codex for code builder runs."),
+		InstructionSkills:     mustJSONStringSlice(nil),
 		AllowedTools:          mustJSONStringSlice([]string{"read_file", "run_command"}),
 		SupportedModes:        mustJSONStringSlice([]string{model.InvocationModeAutonomous, model.InvocationModeInteractive}),
 		ApprovalMode:          "never",
@@ -752,6 +767,7 @@ func TestListAgentPresetsIncludesWorkspaceVersions(t *testing.T) {
 		Label:                 "Ops Variant",
 		RuntimeKind:           "native_sdk",
 		SystemPrompt:          agentTestStringPtr("Plan with explicit operational checkpoints."),
+		InstructionSkills:     mustJSONStringSlice(nil),
 		AllowedTools:          mustJSONStringSlice([]string{"publish_prd_draft", "request_user_input"}),
 		SupportedModes:        mustJSONStringSlice([]string{model.InvocationModeAutonomous, model.InvocationModeInteractive}),
 		ApprovalMode:          "never",
@@ -855,6 +871,8 @@ func newAgentServiceTestDB(t *testing.T) *gorm.DB {
 			model TEXT,
 			execution_config BLOB NOT NULL DEFAULT x'7b7d',
 			system_prompt TEXT,
+			instruction_preamble TEXT,
+			instruction_skills BLOB NOT NULL DEFAULT '[]',
 			instruction_template_version TEXT NOT NULL DEFAULT '',
 			allowed_tools BLOB NOT NULL DEFAULT '[]',
 			supported_modes BLOB NOT NULL DEFAULT '[]',

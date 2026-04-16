@@ -78,6 +78,12 @@ func legacyPromptIsManaged(presetKey string, prompt *string) bool {
 		if strings.Contains(normalized, "You are Review Agent for Helpin.") {
 			return true
 		}
+		// Older legacy prompts without interactive loop markers.
+		if strings.Contains(normalized, "You are Review Agent.") &&
+			(strings.Contains(normalized, "Inspect the relevant code and run targeted validation") ||
+				strings.Contains(normalized, "Focus on correctness, regressions, missing tests")) {
+			return true
+		}
 		for _, snippet := range []string{
 			"You are Review Agent.",
 			"`request_user_input`",

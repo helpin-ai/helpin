@@ -479,6 +479,7 @@ func TestNormalizeAgentRecordRefreshesLegacyCodeBuilderPrompt(t *testing.T) {
 	}
 
 	normalizeAgentRecord(agent)
+	materializeAgentSystemPrompt(agent)
 
 	if agent.SystemPrompt == nil {
 		t.Fatal("expected normalized system prompt")

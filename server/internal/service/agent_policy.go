@@ -117,6 +117,9 @@ func normalizeAgentRecord(agent *model.Agent) {
 		preset, hasPreset = agentPresetVersionDefinition(presetKey, defaultPresetVersionKeyForPresetKey(presetKey))
 	}
 	if hasPreset {
+		if agent.IsSystem && !strings.Contains(presetVersionKey, "_workspace_") {
+			agent.SystemPrompt, agent.InstructionTemplateVersion = syncManagedSystemPromptForPreset(presetKey, agent.SystemPrompt, agent.PlanningNotes, agent.InstructionTemplateVersion)
+		}
 		agent.AllowedTools = normalizeAllowedToolsJSON(agent.AllowedTools)
 		agent.AllowedTools = migrateLegacyPreviewTools(agent.AllowedTools, presetKey)
 		agent.AllowedTools = sanitizePlannerAgentTools(agent.AllowedTools, presetKey)

@@ -10,10 +10,10 @@ const (
 
 type WorkspaceSkill struct {
 	ID                string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID       string    `json:"workspace_id" gorm:"type:uuid;not null;index;uniqueIndex:idx_workspace_skill_key"`
+	WorkspaceID       string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	SourceKind        string    `json:"source_kind" gorm:"not null"`
 	SourceRuntime     *string   `json:"source_runtime,omitempty"`
-	Key               string    `json:"key" gorm:"not null;uniqueIndex:idx_workspace_skill_key"`
+	Key               string    `json:"key" gorm:"not null"`
 	VersionKey        string    `json:"version_key" gorm:"not null"`
 	Title             string    `json:"title" gorm:"not null"`
 	Description       *string   `json:"description,omitempty"`
@@ -26,7 +26,7 @@ type WorkspaceSkill struct {
 	PackageFileName   string    `json:"package_file_name" gorm:"not null"`
 	PackageSize       int64     `json:"package_size" gorm:"not null;default:0"`
 	PackageChecksum   string    `json:"package_checksum" gorm:"not null"`
-	IsArchived        bool      `json:"is_archived" gorm:"not null;default:false;uniqueIndex:idx_workspace_skill_key"`
+	IsArchived        bool      `json:"is_archived" gorm:"not null;default:false"`
 	CreatedBy         *string   `json:"created_by,omitempty" gorm:"type:uuid"`
 	CreatedAt         time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt         time.Time `json:"updated_at" gorm:"autoUpdateTime"`
