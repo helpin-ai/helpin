@@ -329,7 +329,7 @@ export function Sidebar() {
                     navigate({ to: `/w/${wsSlug}/support/inbox` });
                   }
                 }}
-                onCreateMailbox={() => setTeamInboxDialogOpen(true)}
+                onCreateMailbox={() => { setEditMailboxId(null); setTeamInboxDialogOpen(true); }}
                 onEditMailbox={(id) => { setEditMailboxId(id); setTeamInboxDialogOpen(true); }}
                 onArchiveMailbox={(id) => archiveMailbox.mutate(id)}
                 onNavigate={(to) => navigate({ to })}
