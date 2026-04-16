@@ -426,10 +426,14 @@ func (s *DocsSpaceService) Delete(ctx context.Context, workspaceID, id string) e
 		if err != nil {
 			return err
 		}
+		// Batch-delete all docs in the space in one pass. Avoids the per-doc
+		// survivor scan that made full-space deletes take minutes.
+		documentIDs := make([]string, 0, len(docs))
 		for _, doc := range docs {
-			if err := s.documentSvc.Delete(ctx, doc.ID); err != nil {
-				return err
-			}
+			documentIDs = append(documentIDs, doc.ID)
+		}
+		if err := s.documentSvc.DeleteDocumentsPermanently(ctx, space.WorkspaceID, documentIDs); err != nil {
+			return err
 		}
 		collections, err := s.collectionRepo.ListBySpace(ctx, space.ID)
 		if err != nil {

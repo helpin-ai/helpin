@@ -36,27 +36,8 @@ type DocsDocumentDeletionDependencies struct {
 var docsAssetTokenRE = regexp.MustCompile(`[^\s"'<>]+`)
 
 func (s *DocsDocumentService) deleteDocumentPermanently(ctx context.Context, doc *model.DocsDocument) error {
-	documentIDs := []string{doc.ID}
-
-	deleteCandidates, err := s.collectAssetKeysForDeletedDocuments(ctx, doc.WorkspaceID, documentIDs)
-	if err != nil {
-		return err
-	}
-	survivorRefs, err := s.collectAssetKeysForSurvivingDocuments(ctx, doc.WorkspaceID, documentIDs)
-	if err != nil {
-		return err
-	}
-	keysToDelete := unreferencedAssetKeys(deleteCandidates, survivorRefs)
-
-	if err := s.deleteDocumentRows(ctx, documentIDs); err != nil {
-		return err
-	}
-	if err := s.docRepo.HardDelete(ctx, doc.ID); err != nil {
-		return err
-	}
-
-	s.deleteAssetKeysBestEffort(ctx, doc.WorkspaceID, keysToDelete)
-	return nil
+	// Delegate to the batch path so there's a single deletion code path.
+	return s.DeleteDocumentsPermanently(ctx, doc.WorkspaceID, []string{doc.ID})
 }
 
 func (s *DocsDocumentService) deleteDocumentRows(ctx context.Context, documentIDs []string) error {
@@ -92,12 +73,43 @@ func (s *DocsDocumentService) deleteDocumentRows(ctx context.Context, documentID
 		}
 	}
 	if deps.ChunkRepo != nil {
-		for _, documentID := range documentIDs {
-			if err := deps.ChunkRepo.DeleteByDocumentID(ctx, documentID); err != nil {
-				return fmt.Errorf("delete docs chunks by document: %w", err)
-			}
+		if err := deps.ChunkRepo.DeleteByDocumentIDs(ctx, documentIDs); err != nil {
+			return fmt.Errorf("delete docs chunks by documents: %w", err)
 		}
 	}
+	return nil
+}
+
+// DeleteDocumentsPermanently hard-deletes a batch of documents in one pass.
+// Collects asset keys, runs the survivor scan once with all batch ids excluded
+// (eliminating the O(N^2) behavior of per-doc deletion), executes bulk row
+// deletes via deleteDocumentRows, hard-deletes all docs at once, then best-
+// effort cleans unreferenced S3 assets.
+//
+// All docs in the batch must belong to the same workspace.
+func (s *DocsDocumentService) DeleteDocumentsPermanently(ctx context.Context, workspaceID string, documentIDs []string) error {
+	if len(documentIDs) == 0 {
+		return nil
+	}
+
+	deleteCandidates, err := s.collectAssetKeysForDeletedDocuments(ctx, workspaceID, documentIDs)
+	if err != nil {
+		return err
+	}
+	survivorRefs, err := s.collectAssetKeysForSurvivingDocuments(ctx, workspaceID, documentIDs)
+	if err != nil {
+		return err
+	}
+	keysToDelete := unreferencedAssetKeys(deleteCandidates, survivorRefs)
+
+	if err := s.deleteDocumentRows(ctx, documentIDs); err != nil {
+		return err
+	}
+	if err := s.docRepo.HardDeleteByIDs(ctx, documentIDs); err != nil {
+		return err
+	}
+
+	s.deleteAssetKeysBestEffort(ctx, workspaceID, keysToDelete)
 	return nil
 }
 

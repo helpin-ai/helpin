@@ -377,16 +377,21 @@ func (s *DocsCollectionService) Delete(ctx context.Context, workspaceID, id stri
 			return err
 		}
 		subtreeIDs := docsCollectionSubtreeIDs(id, collections)
+		// Collect all doc ids across the subtree in one pass, then delete the
+		// whole batch at once. This avoids the per-doc survivor scan that
+		// dominates delete time for large collections.
+		var documentIDs []string
 		for _, collectionID := range subtreeIDs {
 			docs, err := s.docRepo.List(ctx, collection.WorkspaceID, &collection.SpaceID, &collectionID, nil, nil, "", true)
 			if err != nil {
 				return err
 			}
 			for _, doc := range docs {
-				if err := s.documentSvc.Delete(ctx, doc.ID); err != nil {
-					return err
-				}
+				documentIDs = append(documentIDs, doc.ID)
 			}
+		}
+		if err := s.documentSvc.DeleteDocumentsPermanently(ctx, collection.WorkspaceID, documentIDs); err != nil {
+			return err
 		}
 		if s.translationRepo != nil {
 			if err := s.translationRepo.DeleteCollectionTranslationsByCollectionIDs(ctx, subtreeIDs); err != nil {
