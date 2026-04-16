@@ -176,13 +176,89 @@ func convertCodeBlock(n ast.Node, source []byte) *Node {
 }
 
 func convertBlockquote(n ast.Node, source []byte) *Node {
-	bq := &Node{Type: "blockquote"}
+	// Convert children first so we can inspect the first paragraph for a
+	// GFM alert marker (e.g., [!NOTE], [!WARNING]).
+	var children []Node
 	for c := n.FirstChild(); c != nil; c = c.NextSibling() {
 		if child := convertNode(c, source); child != nil {
-			bq.Content = append(bq.Content, *child)
+			children = append(children, *child)
 		}
 	}
-	return bq
+
+	// Detect GFM alert: first child must be a paragraph whose first text
+	// node starts with "[!TYPE]" on its own line. Strip the marker line
+	// and wrap the remaining content as a callout node.
+	if variant, rest, ok := extractGFMAlert(children); ok {
+		return &Node{
+			Type:    "callout",
+			Attrs:   map[string]any{"variant": variant},
+			Content: rest,
+		}
+	}
+
+	return &Node{Type: "blockquote", Content: children}
+}
+
+// extractGFMAlert inspects the first paragraph of a blockquote's children
+// for a GitHub-style alert marker like "[!NOTE]" on its own line. Returns
+// the mapped callout variant, the remaining children (with the marker
+// stripped), and ok=true on a match. Recognizes: NOTE, TIP, IMPORTANT,
+// WARNING, CAUTION.
+func extractGFMAlert(children []Node) (variant string, rest []Node, ok bool) {
+	if len(children) == 0 || children[0].Type != "paragraph" || len(children[0].Content) == 0 {
+		return "", nil, false
+	}
+	first := children[0].Content[0]
+	if first.Type != "text" || first.Text == "" {
+		return "", nil, false
+	}
+	// The marker is on the first line, alone.
+	line, remainder, _ := strings.Cut(first.Text, "\n")
+	line = strings.TrimSpace(line)
+	mapped := mapGFMAlertMarker(line)
+	if mapped == "" {
+		return "", nil, false
+	}
+
+	// Rebuild children with the marker line stripped.
+	newFirstContent := make([]Node, 0, len(children[0].Content))
+	if remainder != "" {
+		remainder = strings.TrimLeft(remainder, "\n")
+		newFirstContent = append(newFirstContent, Node{Type: "text", Text: remainder, Marks: first.Marks})
+	}
+	newFirstContent = append(newFirstContent, children[0].Content[1:]...)
+
+	rest = make([]Node, 0, len(children))
+	if len(newFirstContent) > 0 {
+		rest = append(rest, Node{Type: "paragraph", Content: newFirstContent})
+	}
+	rest = append(rest, children[1:]...)
+	// Callout must contain at least one block — insert an empty paragraph
+	// if the body was only the marker.
+	if len(rest) == 0 {
+		rest = []Node{{Type: "paragraph"}}
+	}
+	return mapped, rest, true
+}
+
+// mapGFMAlertMarker returns the callout variant for a GFM alert marker
+// like "[!NOTE]" or empty string if the line isn't a marker.
+func mapGFMAlertMarker(line string) string {
+	if !strings.HasPrefix(line, "[!") || !strings.HasSuffix(line, "]") {
+		return ""
+	}
+	switch strings.ToUpper(line) {
+	case "[!NOTE]", "[!INFO]", "[!IMPORTANT]":
+		return "blue"
+	case "[!TIP]":
+		return "green"
+	case "[!WARNING]":
+		return "yellow"
+	case "[!CAUTION]", "[!ERROR]", "[!DANGER]":
+		return "red"
+	default:
+		return ""
+	}
 }
 
 func convertTable(n ast.Node, source []byte) *Node {
