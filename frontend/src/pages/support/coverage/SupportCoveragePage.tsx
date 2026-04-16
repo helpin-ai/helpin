@@ -133,6 +133,8 @@ export function SupportCoveragePage() {
   useEffect(() => {
     if (!wsId) return
     setLoading(true)
+    // Close detail panel when filter changes — the selected gap may no longer match.
+    setSelectedGap(null)
     Promise.all([
       supportCoverageService.getSummary(wsId),
       supportCoverageService.listGaps(wsId, statusFilter ? { status: statusFilter } : undefined),
