@@ -33,12 +33,10 @@ import type {
 import { V1_GAP_TYPE_LABELS, GAP_STATUS_LABELS } from '@/lib/supportCoverageTypes'
 import { timeAgo } from '@/lib/utils'
 
-const GAP_TYPE_COLORS: Record<string, string> = {
-  missing_article: 'bg-red-100 text-red-700',
-  weak_article: 'bg-amber-100 text-amber-700',
-  outdated_or_conflicting_article: 'bg-orange-100 text-orange-700',
-  needs_review: 'bg-blue-100 text-blue-700',
-}
+// Gap types use neutral styling — color is reserved for status badges
+// so users can scan the list by "what needs my attention next".
+const GAP_TYPE_BADGE_CLASS =
+  'bg-muted/60 text-muted-foreground border border-border/40'
 
 const STATUS_COLORS: Record<string, string> = {
   open: 'bg-muted text-muted-foreground',
@@ -349,7 +347,7 @@ export function SupportCoveragePage() {
                   </div>
                   <Badge
                     variant="secondary"
-                    className={`shrink-0 text-xs ${GAP_TYPE_COLORS[gap.v1_gap_type] ?? ''}`}
+                    className={`shrink-0 text-xs ${GAP_TYPE_BADGE_CLASS}`}
                   >
                     {V1_GAP_TYPE_LABELS[gap.v1_gap_type] ?? gap.v1_gap_type}
                   </Badge>
@@ -385,7 +383,7 @@ export function SupportCoveragePage() {
                       <div className="mt-1.5 flex flex-wrap items-center gap-2">
                         <Badge
                           variant="secondary"
-                          className={`text-xs ${GAP_TYPE_COLORS[selectedGap.v1_gap_type] ?? ''}`}
+                          className={`text-xs ${GAP_TYPE_BADGE_CLASS}`}
                         >
                           {V1_GAP_TYPE_LABELS[selectedGap.v1_gap_type] ?? selectedGap.v1_gap_type}
                         </Badge>
