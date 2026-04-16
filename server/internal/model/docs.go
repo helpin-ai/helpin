@@ -471,6 +471,19 @@ type DocsCollectionDeleteImpact struct {
 	PublicDocumentCount    int    `json:"public_document_count"`
 }
 
+// DocsSpaceDeleteImpact summarizes what permanent space deletion affects.
+// CollectionCount is the total number of collections in the space (no
+// self-counting; unlike collection impact, the space isn't a collection).
+type DocsSpaceDeleteImpact struct {
+	SpaceID                string `json:"space_id"`
+	SpaceName              string `json:"space_name"`
+	CollectionCount        int    `json:"collection_count"`
+	DocumentCount          int    `json:"document_count"`
+	ArchivedDocumentCount  int    `json:"archived_document_count"`
+	PublishedDocumentCount int    `json:"published_document_count"`
+	PublicDocumentCount    int    `json:"public_document_count"`
+}
+
 // CreateDocsDocumentRequest is the payload for creating a document.
 type CreateDocsDocumentRequest struct {
 	SpaceID      string   `json:"space_id"`

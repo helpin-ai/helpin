@@ -842,6 +842,23 @@ func main() {
 	docsContentService.SetTranslationService(docsHelpcenterTranslationService)
 	docsHelpcenterService.SetTranslationService(docsHelpcenterTranslationService)
 	docsDocumentService.SetHelpcenterService(docsHelpcenterService)
+	docsDeletionDeps := service.DocsDocumentDeletionDependencies{
+		ContentRepo:     docsContentRepo,
+		VersionRepo:     docsVersionRepo,
+		LinkRepo:        docsLinkRepo,
+		ChunkRepo:       docsChunkRepo,
+		HelpcenterRepo:  docsHelpcenterRepo,
+		PublicationRepo: docsHelpcenterPublicationRepo,
+		TranslationRepo: docsHelpcenterTranslationRepo,
+	}
+	if s3Client != nil {
+		docsDeletionDeps.AssetStore = s3Client
+	}
+	docsDocumentService.SetDeletionDependencies(docsDeletionDeps)
+	docsCollectionService.SetPermanentDeleteDependencies(docsDocumentRepo, docsDocumentService, docsHelpcenterTranslationRepo)
+	docsCollectionService.SetHelpcenterRepository(docsHelpcenterRepo)
+	docsSpaceService.SetPermanentDeleteDependencies(docsCollectionRepo, docsDocumentRepo, docsDocumentService, docsHelpcenterTranslationRepo)
+	docsSpaceService.SetHelpcenterRepository(docsHelpcenterRepo)
 	contentCrawler := crawler.NewSmartCrawler(
 		cfg.CrawlerMode,
 		cfg.CloudflareAccountID,

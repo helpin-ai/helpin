@@ -11,6 +11,7 @@ import { SpaceDialog } from '@/components/docs/SpaceDialog';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { TypedConfirmDialog } from '@/components/docs/TypedConfirmDialog';
 import { DeleteCollectionDialog } from '@/components/docs/DeleteCollectionDialog';
+import { DeleteSpaceDialog } from '@/components/docs/DeleteSpaceDialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -404,16 +405,15 @@ export function DocsSpacesNav({
         defaultType={createSpaceType}
       />
 
-      <TypedConfirmDialog
+      <DeleteSpaceDialog
+        wsId={wsId}
+        space={deletingSpace}
         open={deletingSpace !== null}
         onOpenChange={(open) => {
           if (!open) {
             setTimeout(() => setDeletingSpace(null), 150);
           }
         }}
-        title="Delete space"
-        description="This will permanently delete this space and all its documents. This action cannot be undone."
-        confirmText={deletingSpace?.name ?? ''}
         onConfirm={async () => {
           if (!deletingSpace) return;
           await deleteSpace.mutateAsync(deletingSpace.id);

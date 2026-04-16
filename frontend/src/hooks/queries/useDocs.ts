@@ -159,6 +159,14 @@ export function useDocsCollectionDeleteImpact(wsId: string, collectionId?: strin
   })
 }
 
+export function useDocsSpaceDeleteImpact(wsId: string, spaceId?: string | null) {
+  return useQuery({
+    queryKey: queryKeys.docs.spaceDeleteImpact(wsId, spaceId ?? ''),
+    queryFn: async () => unwrap(await docsService.getSpaceDeleteImpact(wsId, spaceId ?? '')),
+    enabled: !!wsId && !!spaceId,
+  })
+}
+
 export function useDeleteDocsCollection(wsId: string) {
   const qc = useQueryClient()
   return useMutation({

@@ -150,6 +150,10 @@ export const queryKeys = {
     space: (wsId: string, id: string) => ['docs', wsId, 'spaces', id] as const,
     collections: (wsId: string, spaceId: string) => ['docs', wsId, 'spaces', spaceId, 'collections'] as const,
     allCollections: (wsId: string) => ['docs', wsId, 'allCollections'] as const,
+    collectionDeleteImpact: (wsId: string, collectionId: string) =>
+      ['docs', wsId, 'collections', collectionId, 'deleteImpact'] as const,
+    spaceDeleteImpact: (wsId: string, spaceId: string) =>
+      ['docs', wsId, 'spaces', spaceId, 'deleteImpact'] as const,
     documents: (wsId: string, filters?: Record<string, unknown>) =>
       filters ? (['docs', wsId, 'documents', filters] as const) : (['docs', wsId, 'documents'] as const),
     document: (wsId: string, id: string) => ['docs', wsId, 'documents', id] as const,

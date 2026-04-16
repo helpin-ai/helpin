@@ -173,6 +173,15 @@ func (h *DocsHandler) DeleteSpace(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *DocsHandler) GetSpaceDeleteImpact(w http.ResponseWriter, r *http.Request) {
+	impact, err := h.spaceSvc.GetDeleteImpact(r.Context(), chi.URLParam(r, "spaceId"))
+	if err != nil {
+		writeDocsError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, impact)
+}
+
 func (h *DocsHandler) RestoreSpace(w http.ResponseWriter, r *http.Request) {
 	space, err := h.spaceSvc.Restore(r.Context(), chi.URLParam(r, "spaceId"))
 	if err != nil {

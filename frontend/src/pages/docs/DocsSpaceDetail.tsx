@@ -23,8 +23,8 @@ import {
 import type { DocsCollection, DocsDocument, DocStatus } from '@/lib/docsTypes'
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog'
 import { CreateCollectionDialog } from '@/components/docs/CreateCollectionDialog'
-import { TypedConfirmDialog } from '@/components/docs/TypedConfirmDialog'
 import { DeleteCollectionDialog } from '@/components/docs/DeleteCollectionDialog'
+import { DeleteSpaceDialog } from '@/components/docs/DeleteSpaceDialog'
 import { SpaceDialog } from '@/components/docs/SpaceDialog'
 import { MoveDocumentDialog } from '@/components/docs/MoveDocumentDialog'
 import { DocumentsTable, type DocumentsTableSortField } from '@/pages/docs/spaceDetail/DocumentsTable'
@@ -356,13 +356,16 @@ export function DocsSpaceDetail() {
           supports Names/Descriptions modes, bulk auto-translate, and
           optimistic updates. See commit history for the migration. */}
 
-      {/* Space delete — typed confirmation */}
-      <TypedConfirmDialog
+      {/* Space delete — shared impact-aware dialog */}
+      <DeleteSpaceDialog
+        wsId={wsId}
+        space={
+          confirmDelete?.type === 'space'
+            ? { id: confirmDelete.id, name: confirmDelete.name }
+            : null
+        }
         open={confirmDelete?.type === 'space'}
         onOpenChange={(open) => { if (!open) setTimeout(() => setConfirmDelete(null), 150) }}
-        title="Delete space"
-        description="This will permanently delete this space and all its documents. This action cannot be undone."
-        confirmText={confirmDelete?.type === 'space' ? confirmDelete.name : ''}
         onConfirm={handleConfirmDelete}
       />
 

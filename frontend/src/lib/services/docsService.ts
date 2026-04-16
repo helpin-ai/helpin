@@ -62,6 +62,8 @@ export const docsService = {
     api.patch<DocsCollection>(`/docs/collections/${collectionId}${qs(wsId)}`, payload),
   getCollectionDeleteImpact: (wsId: string, collectionId: string) =>
     api.get<DocsCollectionDeleteImpact>(`/docs/collections/${collectionId}/delete-impact${qs(wsId)}`),
+  getSpaceDeleteImpact: (wsId: string, spaceId: string) =>
+    api.get<import('../docsTypes').DocsSpaceDeleteImpact>(`/docs/spaces/${spaceId}/delete-impact${qs(wsId)}`),
   deleteCollection: (wsId: string, collectionId: string) =>
     api.del(`/docs/collections/${collectionId}${qs(wsId)}`),
   restoreCollection: (wsId: string, collectionId: string) =>

@@ -560,6 +560,16 @@ export interface ReorderDocsDocumentsRequest {
   document_ids: string[];
 }
 
+export interface DocsSpaceDeleteImpact {
+  space_id: string;
+  space_name: string;
+  collection_count: number;
+  document_count: number;
+  archived_document_count: number;
+  published_document_count: number;
+  public_document_count: number;
+}
+
 export interface ReorderDocsChildItem {
   kind: 'collection' | 'article';
   id: string;
