@@ -115,7 +115,7 @@ func (s *EmailFallbackService) SetSupportInboxService(supportInboxService *Suppo
 // InboundDomain returns the domain used for reply and forwarding aliases.
 func (s *EmailFallbackService) InboundDomain() string {
 	if s == nil || strings.TrimSpace(s.replyDomain) == "" {
-		return "replies.helpin.ai"
+		return "replies.helpin.email"
 	}
 	return strings.TrimSpace(s.replyDomain)
 }
@@ -251,15 +251,6 @@ func (s *EmailFallbackService) ProcessInboundEmail(ctx context.Context, payload 
 	}
 	s.recordWebhookEvent(ctx, "inbound", strings.TrimSpace(payload.MessageID), strings.TrimSpace(payload.MessageStream), rawPayload, resolvedConversation, nil, parseInboundWebhookReceivedAt(payload))
 
-	mailboxHash := mailboxHashFromInboundPayload(payload)
-	if mailboxHash == "" {
-		s.logger.WarnContext(ctx, "postmark inbound missing mailbox hash",
-			"message_id", strings.TrimSpace(payload.MessageID),
-			"original_recipient", strings.TrimSpace(payload.OriginalRecipient),
-			"to", strings.TrimSpace(payload.To),
-		)
-		return fmt.Errorf("missing mailbox hash")
-	}
 	if existing, err := s.emailLogRepo.GetByPostmarkMessageID(ctx, strings.TrimSpace(payload.MessageID)); err != nil {
 		return err
 	} else if existing != nil {
@@ -271,6 +262,7 @@ func (s *EmailFallbackService) ProcessInboundEmail(ctx context.Context, payload 
 		return nil
 	}
 
+	mailboxHash := mailboxHashFromInboundPayload(payload)
 	if strings.HasPrefix(mailboxHash, "unsubscribe-") {
 		conversationID := strings.TrimSpace(strings.TrimPrefix(mailboxHash, "unsubscribe-"))
 		if _, err := uuid.Parse(conversationID); err != nil {
@@ -289,6 +281,20 @@ func (s *EmailFallbackService) ProcessInboundEmail(ctx context.Context, payload 
 
 	if strings.HasPrefix(mailboxHash, "route-") {
 		return s.processInboundRouteEmail(ctx, mailboxHash, payload, rawPayload)
+	}
+
+	if mailboxHash == "" {
+		if route, err := s.findInboundRouteByRecipient(ctx, inboundRecipientAddress(payload)); err != nil {
+			return err
+		} else if route != nil {
+			return s.processInboundRoute(ctx, route, payload, rawPayload)
+		}
+		s.logger.WarnContext(ctx, "postmark inbound missing mailbox hash",
+			"message_id", strings.TrimSpace(payload.MessageID),
+			"original_recipient", strings.TrimSpace(payload.OriginalRecipient),
+			"to", strings.TrimSpace(payload.To),
+		)
+		return fmt.Errorf("missing mailbox hash")
 	}
 
 	if !strings.HasPrefix(mailboxHash, "conv-") {
@@ -952,7 +958,7 @@ func (s *EmailFallbackService) ListQueue(ctx context.Context) (*model.EmailQueue
 func (s *EmailFallbackService) unsubscribeAddress(conversationID string) string {
 	domain := strings.TrimSpace(s.replyDomain)
 	if domain == "" {
-		domain = "replies.helpin.ai"
+		domain = "replies.helpin.email"
 	}
 	return fmt.Sprintf("unsubscribe-%s@%s", conversationID, domain)
 }
@@ -1005,6 +1011,13 @@ func (s *EmailFallbackService) processInboundRouteEmail(ctx context.Context, mai
 		return nil
 	}
 
+	return s.processInboundRoute(ctx, route, payload, rawPayload)
+}
+
+func (s *EmailFallbackService) processInboundRoute(ctx context.Context, route *model.SupportEmailRoute, payload model.PostmarkInboundPayload, rawPayload string) error {
+	if route == nil {
+		return nil
+	}
 	if threadedConversation, err := s.resolveInboundRouteConversation(ctx, route.WorkspaceID, payload); err != nil {
 		return err
 	} else if threadedConversation != nil {
@@ -1012,6 +1025,17 @@ func (s *EmailFallbackService) processInboundRouteEmail(ctx context.Context, mai
 	}
 
 	return s.createInboundConversationFromRoute(ctx, route, payload, rawPayload)
+}
+
+func (s *EmailFallbackService) findInboundRouteByRecipient(ctx context.Context, recipientAddress string) (*model.SupportEmailRoute, error) {
+	if s == nil || s.supportInboxService == nil || s.supportInboxService.emailRouteRepo == nil {
+		return nil, nil
+	}
+	recipientAddress = strings.TrimSpace(recipientAddress)
+	if recipientAddress == "" {
+		return nil, nil
+	}
+	return s.supportInboxService.emailRouteRepo.GetActiveByInboundAddress(ctx, recipientAddress)
 }
 
 func (s *EmailFallbackService) resolveInboundRouteConversation(ctx context.Context, workspaceID string, payload model.PostmarkInboundPayload) (*model.SupportConversation, error) {

@@ -57,6 +57,7 @@ type SupportInboxService struct {
 	taskService             *PMTaskService
 	geoIPResolver           geoip.Resolver
 	supportEventRecorder    SupportEventRecorder
+	routeDomain             string
 }
 
 type supportConversationTaskDraft struct {
@@ -118,6 +119,14 @@ func supportActorFromContext(ctx context.Context, workspaceID string) *authoriza
 		return nil
 	}
 	return actor
+}
+
+func (s *SupportInboxService) SetRouteDomain(domain string) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.routeDomain = strings.TrimSpace(domain)
+	return s
 }
 
 func (s *SupportInboxService) actorMailboxScope(ctx context.Context, workspaceID string) (workspaceMemberID, role string) {

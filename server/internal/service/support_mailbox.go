@@ -23,6 +23,15 @@ func normalizeSupportMailboxHandle(handle string) string {
 	return handle
 }
 
+func isReservedSupportMailboxHandle(handle string) bool {
+	switch strings.TrimSpace(strings.ToLower(handle)) {
+	case sharedSupportEmailRouteLocalPart:
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *SupportInboxService) isMailboxAccessible(ctx context.Context, workspaceID string, mailboxID *string) bool {
 	if mailboxID == nil || strings.TrimSpace(*mailboxID) == "" {
 		return true
@@ -235,6 +244,9 @@ func (s *SupportInboxService) CreateMailbox(ctx context.Context, workspaceID str
 	if handle == "" {
 		return nil, fmt.Errorf("handle is required")
 	}
+	if isReservedSupportMailboxHandle(handle) {
+		return nil, fmt.Errorf("handle is reserved")
+	}
 	if icon == "" {
 		icon = "inbox"
 	}
@@ -308,6 +320,9 @@ func (s *SupportInboxService) UpdateMailbox(ctx context.Context, workspaceID, ma
 		handle := normalizeSupportMailboxHandle(*req.Handle)
 		if handle == "" {
 			return nil, fmt.Errorf("handle is required")
+		}
+		if isReservedSupportMailboxHandle(handle) {
+			return nil, fmt.Errorf("handle is reserved")
 		}
 		if existing, err := s.mailboxRepo.GetByHandle(ctx, workspaceID, handle); err != nil {
 			return nil, err
@@ -385,6 +400,20 @@ func (s *SupportInboxService) UpdateMailbox(ctx context.Context, workspaceID, ma
 	}
 	if err := s.mailboxRepo.Update(ctx, mailbox); err != nil {
 		return nil, err
+	}
+	if s.emailRouteRepo != nil {
+		route, err := s.emailRouteRepo.GetActiveByMailbox(ctx, workspaceID, &mailbox.ID)
+		if err != nil {
+			return nil, err
+		}
+		if route != nil {
+			if inboundAddress, buildErr := s.buildSupportEmailRouteAddress(ctx, workspaceID, mailbox); buildErr == nil && strings.TrimSpace(inboundAddress) != "" {
+				route.InboundAddress = inboundAddress
+				if err := s.emailRouteRepo.Update(ctx, route); err != nil {
+					return nil, err
+				}
+			}
+		}
 	}
 	if req.WorkspaceMemberIDs != nil {
 		if err := s.mailboxRepo.ReplaceMembers(ctx, mailbox.ID, req.WorkspaceMemberIDs); err != nil {
