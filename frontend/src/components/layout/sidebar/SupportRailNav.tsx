@@ -68,7 +68,6 @@ export function SupportRailNav({
   onNavigate,
 }: SupportRailNavProps) {
   const isOnCoverage = pathname.startsWith(`/w/${wsSlug}/support/coverage`);
-  const isOnInbox = pathname.startsWith(`/w/${wsSlug}/support/inbox`);
   const mailboxes = inboxScopes?.mailboxes ?? [];
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
