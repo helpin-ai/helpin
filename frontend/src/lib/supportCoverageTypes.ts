@@ -78,11 +78,12 @@ export interface SupportCoverageGapDetail {
   last_seen_at: string
   status_changed_by: string | null
   status_changed_at: string | null
+  status_changed_by_name: string
   issue_resolved: boolean | null
   topic_title: string
   evidence: SupportGapEvidence[]
   suggestions: SupportGapSuggestion[]
-  related_articles: { id: string; gap_id: string; document_id: string }[]
+  related_articles: { id: string; gap_id: string; document_id: string; article_title: string }[]
 }
 
 export interface SupportCoverageSummary {
@@ -118,5 +119,5 @@ export const GAP_STATUS_LABELS: Record<SupportCoverageGapStatus, string> = {
   fixed: 'Fixed',
   ignored: 'Ignored',
   merged: 'Merged',
-  human_only: 'Escalate Only',
+  human_only: 'Requires Human',
 }

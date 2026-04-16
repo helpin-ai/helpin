@@ -225,12 +225,29 @@ func (r *SupportCoverageRepository) GetGapDetail(ctx context.Context, workspaceI
 		Where("gap_id = ?", gapID).
 		Find(&relatedArticles)
 
+	// Resolve article titles from documents table.
+	for i := range relatedArticles {
+		var doc struct{ Title string }
+		if err := r.db.WithContext(ctx).Table("docs_documents").Select("title").Where("id = ?", relatedArticles[i].DocumentID).First(&doc).Error; err == nil {
+			relatedArticles[i].ArticleTitle = doc.Title
+		}
+	}
+
+	var statusChangedByName string
+	if gap.StatusChangedBy != nil && *gap.StatusChangedBy != "" {
+		var user struct{ Name string }
+		if err := r.db.WithContext(ctx).Table("users").Select("name").Where("id = ?", *gap.StatusChangedBy).First(&user).Error; err == nil {
+			statusChangedByName = user.Name
+		}
+	}
+
 	return &model.SupportCoverageGapDetail{
-		SupportCoverageGap: gap,
-		TopicTitle:         topicTitle,
-		Evidence:           evidence,
-		Suggestions:        suggestions,
-		RelatedArticles:    relatedArticles,
+		SupportCoverageGap:  gap,
+		TopicTitle:          topicTitle,
+		StatusChangedByName: statusChangedByName,
+		Evidence:            evidence,
+		Suggestions:         suggestions,
+		RelatedArticles:     relatedArticles,
 	}, nil
 }
 
