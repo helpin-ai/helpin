@@ -21,6 +21,7 @@ import { Input } from '@/components/ui/input';
 import { useAutomationToolCatalog } from '@/hooks/queries';
 import { useTitle } from '@/hooks/useTitle';
 import type { AgentPresetKey, ToolCatalogEntry } from '@/lib/pmTypes';
+import { PRESET_STYLES } from '@/lib/presetStyles';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { cn } from '@/lib/utils';
 
@@ -40,37 +41,7 @@ const CATEGORY_ICONS: Record<string, typeof Wrench01Icon> = {
   Docs: File01Icon,
 };
 
-const PRESET_STYLES: Record<AgentPresetKey, { label: string; className: string }> = {
-  code_builder: {
-    label: 'Code Builder',
-    className: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20',
-  },
-  epic_planner: {
-    label: 'Epic Planner',
-    className: 'bg-violet-500/10 text-violet-700 dark:text-violet-400 border-violet-500/20',
-  },
-  task_planner: {
-    label: 'Task Planner',
-    className: 'bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-400 border-fuchsia-500/20',
-  },
-  /** @deprecated Use task_planner */
-  story_planner: {
-    label: 'Task Planner',
-    className: 'bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-400 border-fuchsia-500/20',
-  },
-  review_agent: {
-    label: 'Review Agent',
-    className: 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20',
-  },
-  support_agent: {
-    label: 'Support Agent',
-    className: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20',
-  },
-  crm_operator: {
-    label: 'CRM Operator',
-    className: 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20',
-  },
-};
+// PRESET_STYLES imported from @/lib/presetStyles
 
 // ---------------------------------------------------------------------------
 // Sub-components

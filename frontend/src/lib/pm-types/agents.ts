@@ -1,4 +1,5 @@
 import type { SpecClarification } from './project';
+import type { AgentSkillRef } from './skills';
 
 // ── Agents ──────────────────────────────────────────────────────────
 
@@ -39,7 +40,7 @@ export interface Agent {
   role: string;
   status: AgentStatus;
   runtime_kind: AgentRuntimeKind;
-  skills: string[];
+  skills: AgentSkillRef[];
   trigger_mode: AgentTriggerMode;
   provider?: AgentModelProvider;
   model?: string;
@@ -297,7 +298,7 @@ export interface CreateAgentRequest {
   preset_version_key?: string;
   role?: string;
   runtime_kind?: AgentRuntimeKind;
-  skills?: string[];
+  skills?: AgentSkillRef[];
   trigger_mode?: AgentTriggerMode;
   provider?: AgentModelProvider;
   model?: string;
@@ -325,7 +326,7 @@ export interface UpdateAgentRequest {
   role?: string;
   status?: AgentStatus;
   runtime_kind?: AgentRuntimeKind;
-  skills?: string[];
+  skills?: AgentSkillRef[];
   trigger_mode?: AgentTriggerMode;
   provider?: AgentModelProvider;
   model?: string;

@@ -31,6 +31,7 @@ import {
   OctagonXIcon,
   UserRemove01Icon,
   Wrench01Icon,
+  BookOpen01Icon,
 } from '@/lib/icons';
 import { buildSettingsRoutePath, getSettingsSidebarGroups } from '@/lib/settingsSections';
 import type { NavGroup, RailId, RailItem } from './types';
@@ -119,6 +120,7 @@ export function buildPanelNavGroups(wsSlug: string, canManageSettings: boolean, 
         items: [
           { link: `/w/${wsSlug}/automation/library`, label: 'Trigger Catalog', icon: BotIcon },
           { link: `/w/${wsSlug}/automation/tools`, label: 'Tool Catalog', icon: Wrench01Icon },
+          { link: `/w/${wsSlug}/automation/skills`, label: 'Skill Catalog', icon: BookOpen01Icon },
         ],
       },
     ],

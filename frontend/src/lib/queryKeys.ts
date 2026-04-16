@@ -30,6 +30,7 @@ export const queryKeys = {
     flowsByWorkflow: (wsId: string, workflowId: string) => ['automation', wsId, 'flows', 'workflow', workflowId] as const,
     triggerCatalog: (wsId: string) => ['automation', wsId, 'library', 'triggers'] as const,
     toolCatalog: (wsId: string) => ['automation', wsId, 'library', 'tools'] as const,
+    skillCatalog: (wsId: string) => ['automation', wsId, 'library', 'skills'] as const,
     agentsRoot: (wsId: string) => ['automation', wsId, 'agents'] as const,
     agents: (wsId: string) => ['automation', wsId, 'agents'] as const,
     agent: (wsId: string, id: string) => ['automation', wsId, 'agents', id] as const,
