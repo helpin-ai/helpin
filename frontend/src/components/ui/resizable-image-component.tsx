@@ -205,7 +205,6 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
           ref={imageRef}
           src={src}
           alt={alt ?? ''}
-          crossOrigin="anonymous"
           onLoad={handleImageLoad}
           draggable={false}
           containerClassName="block max-w-full overflow-hidden rounded-md"
