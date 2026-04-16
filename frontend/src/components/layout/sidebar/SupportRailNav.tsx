@@ -10,6 +10,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarSeparator,
 } from '@/components/ui/sidebar';
 import { supportAiItems, supportFilterItems } from './config';
 
@@ -141,6 +142,8 @@ export function SupportRailNav({
           })}
         </SidebarMenu>
       </SidebarGroup>
+
+      <SidebarSeparator className="mx-2 my-1" />
 
       <SidebarGroup className="p-0 pb-3">
         <SidebarMenu>
