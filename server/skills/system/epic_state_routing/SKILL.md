@@ -47,6 +47,8 @@ If no approved spec exists but a draft PRD already exists:
 - Do not proceed to task planning until the spec is approved.
 
 If no approved spec exists and no draft PRD exists:
+- If scope is unclear or the available product context is sparse, ask 2-3 scope-gating questions with `request_user_input` before drafting any PRD.
+- Do not jump straight to a PRD just because the run started.
 - Follow the full planning loop from clarification through PRD drafting and approval.
 
 If approved PRD persistence is already complete:

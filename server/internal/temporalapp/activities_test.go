@@ -126,6 +126,175 @@ func TestReviewAgentFollowupRequest(t *testing.T) {
 	}
 }
 
+func TestApplyApprovedInteractivePreviewCreatesTasksFromApprovedTaskPlan(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	epicRepo := repository.NewPMEpicRepository(db)
+	taskRepo := repository.NewPMTaskRepository(db)
+	runRepo := repository.NewAgentRunRepository(db)
+	agentRepo := repository.NewAgentRepository(db)
+
+	agent := &model.Agent{
+		ID:                    "agent-epic-tasks",
+		WorkspaceID:           "ws-1",
+		Name:                  "Epic Planner",
+		Status:                "running",
+		RuntimeKind:           "native_sdk",
+		Skills:                model.AgentSkillRefs{},
+		TriggerMode:           "manual",
+		AllowedTools:          json.RawMessage(`[]`),
+		AllowedCommands:       json.RawMessage(`[]`),
+		AllowedTargets:        json.RawMessage(`[]`),
+		ApprovalMode:          "preset_default",
+		MaxConcurrentRuns:     1,
+		DefaultInvocationMode: model.InvocationModeInteractive,
+	}
+	if err := db.Create(agent).Error; err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+
+	run := &model.AgentRun{
+		ID:             "run-task-plan",
+		WorkspaceID:    "ws-1",
+		AgentID:        agent.ID,
+		TargetType:     "epic",
+		TargetID:       "epic-1",
+		InvocationMode: model.InvocationModeInteractive,
+		Status:         model.AgentRunStatusRunning,
+		Input:          json.RawMessage(`{}`),
+		OutputSummary:  json.RawMessage(`{}`),
+	}
+	if err := db.Create(run).Error; err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	epic := &model.PMEpic{
+		ID:                 "epic-1",
+		WorkspaceID:        "ws-1",
+		Name:               "Epic",
+		PlanningState:      model.EpicPlanningStateReadyForStoryPlanning,
+		SpecClarifications: json.RawMessage(`[]`),
+	}
+	if err := db.Create(epic).Error; err != nil {
+		t.Fatalf("create epic: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO pm_workflow_states (id, state_type) VALUES (?, ?)`, "state-1", model.PMStateTypeUnstarted).Error; err != nil {
+		t.Fatalf("create workflow state: %v", err)
+	}
+
+	previewPayload, err := json.Marshal(map[string]any{
+		"summary": "Breakdown",
+		"proposed_tasks": []map[string]any{
+			{
+				"ref":                 "task_1",
+				"name":                "Add tracking helper",
+				"description":         "Create shared metric helper",
+				"task_type":           "chore",
+				"acceptance_criteria": []string{"works"},
+				"dependency_refs":     []string{},
+			},
+			{
+				"ref":                 "task_2",
+				"name":                "Wire tracking into capture errors",
+				"description":         "Use the helper in capture",
+				"task_type":           "feature",
+				"acceptance_criteria": []string{"works"},
+				"dependency_refs":     []string{"task_1"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal preview payload: %v", err)
+	}
+	preview := model.ApprovedRunPreview{
+		Phase:    "tasks",
+		PanelKey: "task_plan",
+		Format:   workerpkg.PreviewFormatJSON,
+		Content:  previewPayload,
+	}
+	previewJSON, err := json.Marshal(preview)
+	if err != nil {
+		t.Fatalf("marshal approved preview: %v", err)
+	}
+	if err := db.Create(&model.AgentRunArtifact{
+		ID:            "approved-tasks-1",
+		WorkspaceID:   run.WorkspaceID,
+		RunID:         run.ID,
+		ArtifactType:  model.AgentRunArtifactTypeApprovedPreview,
+		Format:        "json",
+		StorageMode:   "inline",
+		InlineContent: strPtr(string(previewJSON)),
+		Metadata:      json.RawMessage(`{}`),
+		SequenceNo:    1,
+	}).Error; err != nil {
+		t.Fatalf("create approved preview artifact: %v", err)
+	}
+
+	var executed []string
+	commandExecutor := stubInternalCommandExecutor{
+		executeFn: func(ctx context.Context, meta model.InternalCommandContext, name string, input json.RawMessage) (json.RawMessage, error) {
+			executed = append(executed, name)
+			if name != "pm.create_task_batch" {
+				return json.RawMessage(`{}`), nil
+			}
+			var payload struct {
+				Tasks []model.ProposedTask `json:"tasks"`
+			}
+			if err := json.Unmarshal(input, &payload); err != nil {
+				return nil, err
+			}
+			for _, planned := range payload.Tasks {
+				task := &model.PMTask{
+					ID:              "db-" + planned.Ref,
+					WorkspaceID:     run.WorkspaceID,
+					Name:            planned.Name,
+					TaskType:        planned.TaskType,
+					WorkflowID:      "wf-1",
+					WorkflowStateID: "state-1",
+					EpicID:          &epic.ID,
+					Priority:        model.PMTaskPriorityNone,
+					Severity:        model.PMTaskSeverityNone,
+				}
+				if err := taskRepo.Create(ctx, task); err != nil {
+					return nil, err
+				}
+			}
+			return mustJSON(workerpkg.CreateTaskBatchResult{
+				Tasks: []workerpkg.CreateTaskBatchTaskResult{
+					{Ref: "task_1", TaskID: "db-task_1", Name: "Add tracking helper"},
+					{Ref: "task_2", TaskID: "db-task_2", Name: "Wire tracking into capture errors"},
+				},
+			}), nil
+		},
+	}
+
+	activity := &AgentRunActivities{
+		runRepo:         runRepo,
+		artifactRepo:    artifactRepo,
+		epicRepo:        epicRepo,
+		taskRepo:        taskRepo,
+		agentRepo:       agentRepo,
+		commandExecutor: commandExecutor,
+	}
+	state := &resolvedRunState{
+		run:  run,
+		epic: epic,
+	}
+	input := planningRunInput{Stage: model.PlanningStagePlanTasks}
+
+	action, err := activity.applyApprovedInteractivePreview(context.Background(), state, &input)
+	if err != nil {
+		t.Fatalf("applyApprovedInteractivePreview returned error: %v", err)
+	}
+	if action != "create_tasks" {
+		t.Fatalf("expected create_tasks action, got %q", action)
+	}
+	if len(executed) != 1 || executed[0] != "pm.create_task_batch" {
+		t.Fatalf("expected task batch command, got %#v", executed)
+	}
+}
+
 func TestPrepareTaskDeliveryKeepsRunBranchOverridesOffSavedTarget(t *testing.T) {
 	dbName := fmt.Sprintf("file:prepare-task-delivery-%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
@@ -694,6 +863,7 @@ func newPlannerApprovalTestDB(t *testing.T) *gorm.DB {
 			model TEXT,
 			execution_config BLOB NOT NULL DEFAULT x'7b7d',
 			system_prompt TEXT,
+			instruction_template_version TEXT NOT NULL DEFAULT '',
 			planning_notes TEXT,
 			monthly_token_budget INTEGER,
 			tokens_used_this_month INTEGER NOT NULL DEFAULT 0,

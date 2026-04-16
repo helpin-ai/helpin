@@ -57,6 +57,7 @@ func (s *AgentService) ListSkillCatalog(ctx context.Context, workspaceID string)
 			VersionKey:        skill.VersionKey,
 			Title:             skill.Title,
 			Description:       stringOrDefault(skill.Description, ""),
+			Instructions:      skill.Instructions,
 			SourceKind:        skill.SourceKind,
 			SourceRuntime:     trimPtr(skill.SourceRuntime),
 			RequiredTools:     parseJSONStringSlice(json.RawMessage(skill.RequiredTools)),

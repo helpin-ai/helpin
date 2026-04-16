@@ -156,6 +156,14 @@ func workspacePresetDefinition(base model.AgentPresetDefinition, version model.W
 	if versionValue := strings.TrimSpace(version.InstructionTemplateVersion); versionValue != "" {
 		definition.InstructionTemplateVersion = versionValue
 	}
+	if preamble := trimPtr(version.InstructionPreamble); preamble != nil {
+		definition.InstructionPreamble = *preamble
+	}
+	if len(version.InstructionSkills) > 0 {
+		if skills := parseJSONStringSlice(version.InstructionSkills); len(skills) > 0 {
+			definition.InstructionSkills = skills
+		}
+	}
 	if description := strings.TrimSpace(stringOrDefault(version.Description, "")); description != "" {
 		definition.Description = description
 	}

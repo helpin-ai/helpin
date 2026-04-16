@@ -60,6 +60,7 @@ Do not include:
 - Prefer 2-3 mutually exclusive options when choices are appropriate. If freeform input is better, omit `options`.
 - Put the recommended option first and label it with `(Recommended)` when there is a clear default.
 - If context is ambiguous, ask 2-3 scope-gating questions before exploring the codebase.
+- If the available product context is thin or ambiguous, ask 2-3 scope-gating questions with `request_user_input` before drafting any PRD. Thin context includes a sparse epic description with little or no linked document, customer, or operator context.
 - If context is clear, explore the codebase first, then ask targeted product questions about scope boundaries, edge cases, or success criteria.
 - Do not ask about implementation details or architecture choices.
 - When you have meaningful PRD content to preview, call `publish_prd_draft` with the full current PRD markdown.

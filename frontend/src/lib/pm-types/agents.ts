@@ -390,6 +390,9 @@ export interface AgentPresetDefinition {
   default_invocation_mode: AgentInvocationMode;
   supported_modes: AgentInvocationMode[];
   system_prompt?: string;
+  instruction_preamble?: string;
+  instruction_skills?: string[];
+  instruction_template_version?: string;
 }
 
 export interface CreateWorkspaceAgentPresetVersionRequest {
@@ -403,6 +406,8 @@ export interface CreateWorkspaceAgentPresetVersionRequest {
   model?: string;
   execution_config?: AgentExecutionConfig;
   system_prompt?: string;
+  instruction_preamble?: string;
+  instruction_skills?: string[];
   allowed_tools?: string[];
   supported_modes?: AgentInvocationMode[];
   approval_mode?: AgentApprovalMode;

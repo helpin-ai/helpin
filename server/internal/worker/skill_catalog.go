@@ -150,6 +150,7 @@ func ListSkillCatalog() model.SkillCatalogResponse {
 			Key:               skill.Key,
 			Title:             skill.Title,
 			Description:       skill.Description,
+			Instructions:      skill.Instructions,
 			SourceKind:        skill.SourceKind,
 			RequiredTools:     append([]string(nil), skill.RequiredTools...),
 			SupportedRuntimes: append([]string(nil), skill.SupportedRuntimes...),

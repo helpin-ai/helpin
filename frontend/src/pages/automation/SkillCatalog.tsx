@@ -100,8 +100,10 @@ function SkillCard({
   onEdit?: () => void;
   onDelete?: () => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const isEditable = skill.source_kind === 'workspace';
   const isDeletable = skill.source_kind === 'workspace' || skill.source_kind === 'imported';
+  const hasInstructions = !!skill.instructions?.trim();
 
   return (
     <div className="rounded-lg border border-border/60 bg-card/80 transition-colors hover:border-border">
@@ -128,6 +130,16 @@ function SkillCard({
                   </Badge>
                 ))}
               </div>
+            )}
+            {hasInstructions && (
+              <button
+                type="button"
+                className="flex items-center gap-1 pt-1 text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+                onClick={() => setExpanded(!expanded)}
+              >
+                {expanded ? <ArrowDown01Icon className="h-3 w-3" /> : <ArrowRight01Icon className="h-3 w-3" />}
+                {expanded ? 'Hide instructions' : 'View instructions'}
+              </button>
             )}
           </div>
 
@@ -157,6 +169,11 @@ function SkillCard({
           )}
         </div>
       </div>
+      {expanded && hasInstructions && (
+        <div className="border-t border-border/50 px-4 py-3">
+          <pre className="whitespace-pre-wrap text-xs leading-relaxed text-foreground/80 font-mono">{skill.instructions}</pre>
+        </div>
+      )}
     </div>
   );
 }

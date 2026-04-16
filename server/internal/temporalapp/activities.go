@@ -4492,6 +4492,8 @@ func (a *AgentRunActivities) buildAgenticEpicPlannerInstructions(ctx context.Con
 	sections = append(sections, "Keep approvals soft and inline. When you need approval, call request_review_checkpoint with phase=\"prd\" or phase=\"tasks\" and stop after the request.")
 	sections = append(sections, "Treat request_review_checkpoint as the final action in that turn. Do not call more tools after it in the same turn. Do not append extra approval-choice prose after requesting the checkpoint.")
 	sections = append(sections, "After explicit PRD approval, continue automatically to task planning in the same run. Do not ask whether to proceed to tasks unless the human explicitly redirects scope.")
+	sections = append(sections, "After PRD approval is persisted, your next turn must continue into task planning. Either ask the next blocking questions with request_user_input or publish_task_plan. Do not complete the run immediately after PRD approval.")
+	sections = append(sections, "If the latest human reply requests changes to the PRD or task plan, revise the active artifact, republish the full replacement preview, and request_review_checkpoint again when ready. Do not end the run with prose-only acknowledgement after change feedback.")
 	sections = append(sections, "Use publish_prd_draft for PRD markdown previews and publish_task_plan for task plan JSON previews.")
 	sections = append(sections, "Before approval, keep drafts in chat-backed preview artifacts only. After approval, the platform applies the approved artifact; do not replay approved PRDs or task plans through mutation tools.")
 

@@ -15,6 +15,7 @@ export interface SkillCatalogEntry {
   version_key?: string;
   title: string;
   description: string;
+  instructions?: string;
   source_kind: 'built_in' | 'workspace' | 'imported';
   source_runtime?: string;
   required_tools?: string[];

@@ -97,6 +97,8 @@ type WorkspaceAgentPresetVersion struct {
 	Model                      *string         `json:"model"`
 	ExecutionConfig            JSONBlob        `json:"execution_config" gorm:"type:jsonb;not null;default:'{}'"`
 	SystemPrompt               *string         `json:"system_prompt"`
+	InstructionPreamble        *string         `json:"instruction_preamble"`
+	InstructionSkills          json.RawMessage `json:"instruction_skills" gorm:"type:jsonb;not null;default:'[]'"`
 	InstructionTemplateVersion string          `json:"instruction_template_version" gorm:"not null;default:''"`
 	AllowedTools               json.RawMessage `json:"allowed_tools" gorm:"type:jsonb;not null;default:'[]'"`
 	SupportedModes             json.RawMessage `json:"supported_modes" gorm:"type:jsonb;not null;default:'[]'"`
@@ -254,6 +256,8 @@ type CreateWorkspaceAgentPresetVersionRequest struct {
 	Model                 *string         `json:"model"`
 	ExecutionConfig       json.RawMessage `json:"execution_config"`
 	SystemPrompt          *string         `json:"system_prompt"`
+	InstructionPreamble   *string         `json:"instruction_preamble"`
+	InstructionSkills     json.RawMessage `json:"instruction_skills"`
 	AllowedTools          json.RawMessage `json:"allowed_tools"`
 	SupportedModes        json.RawMessage `json:"supported_modes"`
 	ApprovalMode          *string         `json:"approval_mode"`
@@ -799,6 +803,7 @@ type SkillCatalogEntry struct {
 	VersionKey        string   `json:"version_key,omitempty"`
 	Title             string   `json:"title"`
 	Description       string   `json:"description"`
+	Instructions      string   `json:"instructions,omitempty"`
 	SourceKind        string   `json:"source_kind"`
 	SourceRuntime     *string  `json:"source_runtime,omitempty"`
 	RequiredTools     []string `json:"required_tools,omitempty"`
