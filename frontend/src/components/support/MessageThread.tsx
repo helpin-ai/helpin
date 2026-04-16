@@ -30,6 +30,7 @@ import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { getDayLabel, getEffectiveSenderType, isSameDay, getInitial } from './helpers';
 import { MessageBubble } from './MessageBubble';
 import { ReplyComposer } from './ReplyComposer';
+import { EmptyState } from './EmptyState';
 import { AgentRunsCard } from './AgentRunsCard';
 import { ConversationActionsMenu } from './ConversationActionsMenu';
 
@@ -497,10 +498,12 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
 
   if (!conversationId) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-muted/30 text-muted-foreground">
-        <Message01Icon className="h-12 w-12 opacity-20" />
-        <p className="text-sm">Select a conversation to view</p>
-      </div>
+      <EmptyState
+        icon={Message01Icon}
+        title="Select a conversation"
+        subtitle="Pick one from the list to view messages and reply."
+        background="muted"
+      />
     );
   }
 
@@ -670,8 +673,11 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
           {isLoading && <MessageSkeleton />}
           {!isLoading && messages.length === 0 && (
             <div className="flex flex-col items-center justify-center gap-2 py-12 text-muted-foreground">
-              <Message01Icon className="h-8 w-8 opacity-30" />
-              <p className="text-sm">No messages yet. Start the conversation below.</p>
+              <Message01Icon className="h-10 w-10 text-muted-foreground/30" />
+              <p className="text-sm font-medium text-muted-foreground">No messages yet</p>
+              <p className="max-w-xs text-xs leading-relaxed text-muted-foreground/70">
+                Start the conversation using the reply below.
+              </p>
             </div>
           )}
           {groupedMessages.map((item, idx) => {

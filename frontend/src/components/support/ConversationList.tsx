@@ -13,6 +13,7 @@ import { useConversations, useInboxScopes, useMarkConversationRead } from '@/hoo
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { ConversationRow } from './ConversationRow';
+import { EmptyState } from './EmptyState';
 import { filterSupportConversations } from '@/lib/supportInboxFilters';
 import { supportStatusOptions } from '@/components/layout/sidebar/config';
 import type { SupportInboxScope } from '@/lib/pmTypes';
@@ -31,6 +32,44 @@ const SkeletonRow = memo(function SkeletonRow() {
     </div>
   );
 });
+
+// Context-aware empty copy — same harmonious layout, different words per
+// nav filter so the user knows why the list is empty.
+function emptyCopyForNavFilter(navFilter: string): { title: string; subtitle: string } {
+  switch (navFilter) {
+    case 'my_inbox':
+      return {
+        title: 'Nothing assigned to you',
+        subtitle: 'Conversations assigned to you will appear here.',
+      };
+    case 'unassigned':
+      return {
+        title: 'No unassigned conversations',
+        subtitle: 'New conversations waiting for an owner will appear here.',
+      };
+    case 'mentions':
+      return {
+        title: 'No mentions',
+        subtitle: 'Conversations where teammates mention you will appear here.',
+      };
+    case 'ai_active':
+      return {
+        title: 'AI isn’t handling anything right now',
+        subtitle: 'Conversations the AI is actively working on will appear here.',
+      };
+    case 'resolved_by_ai':
+      return {
+        title: 'No AI-resolved conversations yet',
+        subtitle: 'Conversations the AI has fully resolved will appear here.',
+      };
+    case 'all':
+    default:
+      return {
+        title: 'No conversations yet',
+        subtitle: 'New support conversations will appear here as they arrive.',
+      };
+  }
+}
 
 interface ConversationListProps {
   workspaceId: string;
@@ -189,10 +228,11 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
           <p className="p-4 text-sm text-destructive">{String(error)}</p>
         )}
         {!isLoading && filteredConversations.length === 0 && !error && (
-          <div className="flex flex-col items-center justify-center gap-3 py-16">
-            <Message01Icon className="h-10 w-10 text-muted-foreground/30" />
-            <p className="text-sm text-muted-foreground">No conversations found.</p>
-          </div>
+          <EmptyState
+            icon={Message01Icon}
+            title={emptyCopyForNavFilter(navFilter).title}
+            subtitle={emptyCopyForNavFilter(navFilter).subtitle}
+          />
         )}
         {filteredConversations.map((conversation) => (
           <ConversationRow
