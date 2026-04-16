@@ -715,8 +715,9 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
         </div>
       </ScrollArea>
 
-      {/* Reply composer */}
-      {conversationId && (
+      {/* Reply composer — only render when the conversation actually loaded.
+          Guards against showing a reply input for stale/deleted conversation ids. */}
+      {conversationId && conversation && (
         <ReplyComposer
           workspaceId={workspaceId}
           conversationId={conversationId}
