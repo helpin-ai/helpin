@@ -96,6 +96,7 @@ export class WidgetManager {
   private isVisible = false;
   private isOpen = false;
   private unreadCount = 0;
+  private titleUnreadByConversation = new Map<string, number>();
   private sessionToken: string | null = null;
   private wsConnection: WebSocket | null = null;
   private wsRetryCount = 0;
@@ -125,12 +126,17 @@ export class WidgetManager {
   private activeTeammate: WidgetActiveTeammate | undefined;
   private currentEmail: string | null = null;
   private isConversationExpanded = false;
+  private originalDocumentTitle: string | null = null;
+  private pageIsFocused = true;
   private preChatDone = false;
   private receivedMessageAudio: HTMLAudioElement | null = null;
   private receivedMessageAudioUnlocked = false;
   private sentMessageAudio: HTMLAudioElement | null = null;
   private sentMessageAudioUnlocked = false;
   private audioUnlockListener: (() => void) | null = null;
+  private visibilityChangeListener: (() => void) | null = null;
+  private focusListener: (() => void) | null = null;
+  private blurListener: (() => void) | null = null;
 
   private callbacks: Record<string, WidgetCallback[]> = {
     onOpen: [],
@@ -163,6 +169,9 @@ export class WidgetManager {
 
     this.isShutdown = false;
     this.isVisible = true;
+    this.originalDocumentTitle = document.title;
+    this.pageIsFocused = this.computePageIsFocused();
+    this.registerTitleNotificationListeners();
     this.config = {
       ...settings,
       widgetKey,
@@ -243,12 +252,15 @@ export class WidgetManager {
 
   private cleanup(): void {
     this.stopTyping();
+    this.restoreDocumentTitle();
+    this.unregisterTitleNotificationListeners();
     this.config = null;
     this.widgetConfig = null;
     this.isVisible = false;
     this.sessionToken = null;
     this.isOpen = false;
     this.unreadCount = 0;
+    this.titleUnreadByConversation.clear();
     this.hasBeenOpened = false;
     this.wsRetryCount = 0;
     this.connectionIssueStartedAt = null;
@@ -263,6 +275,8 @@ export class WidgetManager {
     this.activeTeammate = undefined;
     this.currentEmail = null;
     this.isConversationExpanded = false;
+    this.originalDocumentTitle = null;
+    this.pageIsFocused = true;
 
     if (this.keepaliveTimer) {
       clearInterval(this.keepaliveTimer);
@@ -287,6 +301,7 @@ export class WidgetManager {
   hide(): void {
     this.isVisible = false;
     this.isOpen = false;
+    this.updateDocumentTitle();
     this.render();
   }
 
@@ -303,12 +318,15 @@ export class WidgetManager {
     } else {
       this.hasBeenOpened = true;
     }
+    this.clearTitleUnread(this.currentView === 'conversation' ? this.activeConversationId : null);
     this.ensureWidget();
+    this.updateDocumentTitle();
     this.render();
   }
 
   close(): void {
     this.isOpen = false;
+    this.updateDocumentTitle();
     this.render();
   }
 
@@ -659,6 +677,8 @@ export class WidgetManager {
       this.unreadCount = total;
       this.triggerCallback('onUnreadCountChange', total);
     }
+    this.syncTitleUnreadWithConversations();
+    this.updateDocumentTitle();
   }
 
   private clearActiveConversationUnread(): void {
@@ -669,6 +689,140 @@ export class WidgetManager {
       this.conversations = this.conversations.map((c, i) => i === convIdx ? updated : c);
       this.syncUnreadCount();
     }
+    this.clearTitleUnread(this.activeConversationId);
+  }
+
+  private isConversationVisibleToUser(conversationId?: string | null): boolean {
+    return Boolean(
+      conversationId &&
+      this.pageIsFocused &&
+      this.isOpen &&
+      this.currentView === 'conversation' &&
+      this.activeConversationId === conversationId,
+    );
+  }
+
+  private markConversationRead(conversationId?: string | null): void {
+    if (!conversationId) return;
+
+    const convIdx = this.conversations.findIndex((conversation) => conversation.id === conversationId);
+    if (convIdx >= 0 && this.conversations[convIdx].unreadCount) {
+      const updated = { ...this.conversations[convIdx], unreadCount: 0 };
+      this.conversations = this.conversations.map((conversation, index) => (
+        index === convIdx ? updated : conversation
+      ));
+      this.syncUnreadCount();
+    } else {
+      this.clearTitleUnread(conversationId);
+    }
+
+    if (this.wsConnection?.readyState === WebSocket.OPEN) {
+      this.wsSend('conversation:read', { conversation_id: conversationId });
+    }
+  }
+
+  private computePageIsFocused(): boolean {
+    if (typeof document === 'undefined') return true;
+    return document.visibilityState === 'visible' && document.hasFocus();
+  }
+
+  private registerTitleNotificationListeners(): void {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+
+    this.visibilityChangeListener = () => {
+      this.pageIsFocused = this.computePageIsFocused();
+      if (this.pageIsFocused && this.isConversationVisibleToUser(this.activeConversationId)) {
+        this.markConversationRead(this.activeConversationId);
+      }
+      this.updateDocumentTitle();
+    };
+    this.focusListener = () => {
+      this.pageIsFocused = true;
+      if (this.isConversationVisibleToUser(this.activeConversationId)) {
+        this.markConversationRead(this.activeConversationId);
+      }
+      this.updateDocumentTitle();
+    };
+    this.blurListener = () => {
+      this.pageIsFocused = this.computePageIsFocused();
+      this.updateDocumentTitle();
+    };
+
+    document.addEventListener('visibilitychange', this.visibilityChangeListener);
+    window.addEventListener('focus', this.focusListener);
+    window.addEventListener('blur', this.blurListener);
+  }
+
+  private unregisterTitleNotificationListeners(): void {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    if (this.visibilityChangeListener) {
+      document.removeEventListener('visibilitychange', this.visibilityChangeListener);
+      this.visibilityChangeListener = null;
+    }
+    if (this.focusListener) {
+      window.removeEventListener('focus', this.focusListener);
+      this.focusListener = null;
+    }
+    if (this.blurListener) {
+      window.removeEventListener('blur', this.blurListener);
+      this.blurListener = null;
+    }
+  }
+
+  private restoreDocumentTitle(): void {
+    if (typeof document === 'undefined' || this.originalDocumentTitle === null) return;
+    document.title = this.originalDocumentTitle;
+  }
+
+  private getTitleUnreadCount(): number {
+    return Array.from(this.titleUnreadByConversation.values()).reduce((sum, count) => sum + count, 0);
+  }
+
+  private syncTitleUnreadWithConversations(): void {
+    if (!this.titleUnreadByConversation.size) return;
+
+    const conversationIds = new Set(this.conversations.map((conversation) => conversation.id));
+    for (const [conversationId] of this.titleUnreadByConversation.entries()) {
+      const conversation = this.conversations.find((entry) => entry.id === conversationId);
+      if (!conversationIds.has(conversationId) || Number(conversation?.unreadCount ?? 0) <= 0) {
+        this.titleUnreadByConversation.delete(conversationId);
+      }
+    }
+  }
+
+  private clearTitleUnread(conversationId?: string | null): void {
+    if (!conversationId) {
+      this.updateDocumentTitle();
+      return;
+    }
+    if (this.titleUnreadByConversation.delete(conversationId)) {
+      this.updateDocumentTitle();
+      return;
+    }
+    this.updateDocumentTitle();
+  }
+
+  private incrementTitleUnread(conversationId?: string): void {
+    if (!conversationId) return;
+    this.titleUnreadByConversation.set(
+      conversationId,
+      (this.titleUnreadByConversation.get(conversationId) ?? 0) + 1,
+    );
+  }
+
+  private updateDocumentTitle(): void {
+    if (typeof document === 'undefined') return;
+    if (this.originalDocumentTitle === null) {
+      this.originalDocumentTitle = document.title;
+    }
+
+    const unread = this.getTitleUnreadCount();
+    if (unread <= 0 || this.pageIsFocused) {
+      this.restoreDocumentTitle();
+      return;
+    }
+
+    document.title = unread === 1 ? '(1) New reply' : `(${unread}) New replies`;
   }
 
   // ─── Message Handling ──────────────────────────────────────
@@ -770,7 +924,7 @@ export class WidgetManager {
     // so renderers can trust the value.
     let systemEventType: Message['systemEventType'];
     const rawEventType = typeof raw?.system_event_type === 'string' ? raw.system_event_type : undefined;
-    if (rawEventType && (SYSTEM_EVENT_TYPES as readonly string[]).includes(rawEventType)) {
+    if (rawEventType && Array.isArray(SYSTEM_EVENT_TYPES) && (SYSTEM_EVENT_TYPES as readonly string[]).includes(rawEventType)) {
       systemEventType = rawEventType as Message['systemEventType'];
     }
 
@@ -1127,6 +1281,7 @@ export class WidgetManager {
       this.conversations = this.conversations.map((c, i) => i === convIdx ? updated : c);
       this.syncUnreadCount();
     }
+    this.clearTitleUnread(conversationId);
 
     // Clear current messages while loading
     this.messages = [];
@@ -1445,8 +1600,11 @@ export class WidgetManager {
         // Update conversation in the list (lastMessage preview + unread count + move to top)
         if (newMsg.conversationId) {
           const convIdx = this.conversations.findIndex(c => c.id === newMsg.conversationId);
-          const isActiveAndOpen = this.isOpen && this.currentView === 'conversation' && this.activeConversationId === newMsg.conversationId;
+          const isActiveAndOpen = this.isConversationVisibleToUser(newMsg.conversationId);
           const nextUnreadCount = msg.sender_type !== 'customer' && !isActiveAndOpen ? 1 : 0;
+          if (msg.sender_type !== 'customer' && newMsg.role !== 'system' && !isActiveAndOpen) {
+            this.incrementTitleUnread(newMsg.conversationId);
+          }
           if (convIdx >= 0) {
             const prev = this.conversations[convIdx];
             const updated = {
@@ -1473,8 +1631,8 @@ export class WidgetManager {
             this.activeTeammate = this.conversations.find((conversation) => conversation.id === newMsg.conversationId)?.activeTeammate;
           }
 
-          if (msg.sender_type !== 'customer' && isActiveAndOpen && this.wsConnection?.readyState === WebSocket.OPEN) {
-            this.wsSend('conversation:read', { conversation_id: newMsg.conversationId });
+          if (msg.sender_type !== 'customer' && isActiveAndOpen) {
+            this.markConversationRead(newMsg.conversationId);
           }
         }
 
