@@ -39,7 +39,7 @@ const GAP_TYPE_BADGE_CLASS =
   'bg-muted/60 text-muted-foreground border border-border/40'
 
 const STATUS_COLORS: Record<string, string> = {
-  open: 'bg-muted text-muted-foreground',
+  open: 'bg-amber-100 text-amber-700',
   drafted: 'bg-blue-100 text-blue-700',
   fixed: 'bg-green-100 text-green-700',
   ignored: 'bg-muted text-muted-foreground/60',
