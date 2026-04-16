@@ -171,10 +171,9 @@ func BuildUserPrompt(
 	}
 
 	if story != nil {
+		contextParts = append(contextParts, fmt.Sprintf("Task: **%s**", story.Name))
 		if strings.TrimSpace(planningStage) == model.PlanningStageStoryPlanDoc {
-			contextParts = append(contextParts, fmt.Sprintf("Please draft or refine the canonical task planning document for task: **%s**", story.Name))
-		} else {
-			contextParts = append(contextParts, fmt.Sprintf("Please work on the task: **%s**", story.Name))
+			contextParts = append(contextParts, "Planning stage: task_plan_doc")
 		}
 		if story.Description != nil {
 			if description := tiptap.RichTextToMarkdown(*story.Description); description != "" {
@@ -183,7 +182,7 @@ func BuildUserPrompt(
 		}
 	}
 	if epic != nil {
-		contextParts = append(contextParts, fmt.Sprintf("Please work on epic: **%s**", epic.Name))
+		contextParts = append(contextParts, fmt.Sprintf("Epic: **%s**", epic.Name))
 		if epic.Description != nil {
 			if description := tiptap.RichTextToMarkdown(*epic.Description); description != "" {
 				contextParts = append(contextParts, "\nDescription:\n"+description)
@@ -201,7 +200,7 @@ func BuildUserPrompt(
 		}
 	}
 	if ticket != nil {
-		contextParts = append(contextParts, fmt.Sprintf("Please work on support ticket: **%s**", ticket.Subject))
+		contextParts = append(contextParts, fmt.Sprintf("Support conversation: **%s**", ticket.Subject))
 		if ticket.CustomerEmail != nil && *ticket.CustomerEmail != "" {
 			contextParts = append(contextParts, "Customer email: "+*ticket.CustomerEmail)
 		}
@@ -237,7 +236,7 @@ func BuildUserPrompt(
 	}
 
 	if ticket != nil {
-		contextParts = append(contextParts, "\nPlease triage the issue, update the ticket status if needed, and draft a reply for human approval.")
+		contextParts = append(contextParts, "\nSupport workflow expectations:\n- Triage the issue.\n- Update the ticket status if needed.\n- Draft any customer reply for human approval.")
 	}
 
 	if len(contextParts) > 0 {

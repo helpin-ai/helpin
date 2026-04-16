@@ -3,11 +3,13 @@ package worker
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -92,7 +94,7 @@ func MaskRepoSkillRoots(workDir, runID string) (*RepoSkillMask, error) {
 		originalPath := filepath.Join(workDir, relativePath)
 		info, err := os.Lstat(originalPath)
 		if err != nil {
-			if os.IsNotExist(err) {
+			if os.IsNotExist(err) || errors.Is(err, os.ErrNotExist) || isPathComponentNotDirectory(err) {
 				continue
 			}
 			_ = mask.Restore()
@@ -116,6 +118,17 @@ func MaskRepoSkillRoots(workDir, runID string) (*RepoSkillMask, error) {
 		return nil, nil
 	}
 	return mask, nil
+}
+
+func isPathComponentNotDirectory(err error) bool {
+	if err == nil {
+		return false
+	}
+	var pathErr *os.PathError
+	if !errors.As(err, &pathErr) {
+		return false
+	}
+	return errors.Is(pathErr.Err, os.ErrNotExist) || errors.Is(pathErr.Err, syscall.ENOTDIR)
 }
 
 func (m *RepoSkillMask) Restore() error {
