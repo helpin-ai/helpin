@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"path"
 	"regexp"
 	"sort"
@@ -193,7 +194,13 @@ func (s *AgentService) UpdateWorkspaceSkill(ctx context.Context, workspaceID, sk
 		return nil, fmt.Errorf("store skill archive: %w", err)
 	}
 	if skill.PackageObjectKey != "" && skill.PackageObjectKey != objectKey {
-		_ = s.skillPackageStore.DeleteObject(ctx, skill.PackageObjectKey)
+		if err := s.skillPackageStore.DeleteObject(ctx, skill.PackageObjectKey); err != nil {
+			slog.WarnContext(ctx, "failed to delete superseded workspace skill archive",
+				"error", err,
+				"workspace_id", workspaceID,
+				"skill_id", skill.ID,
+				"object_key", skill.PackageObjectKey)
+		}
 	}
 	skill.Key = key
 	skill.Title = title
@@ -259,6 +266,13 @@ func (s *AgentService) storeWorkspaceSkillArchive(ctx context.Context, workspace
 		CreatedBy:         trimPtr(&actorID),
 	}
 	if err := s.workspaceSkillRepo.Create(ctx, skill); err != nil {
+		if cleanupErr := s.skillPackageStore.DeleteObject(ctx, objectKey); cleanupErr != nil {
+			slog.WarnContext(ctx, "failed to clean up workspace skill archive after database create failure",
+				"error", cleanupErr,
+				"workspace_id", workspaceID,
+				"skill_id", skillID,
+				"object_key", objectKey)
+		}
 		return nil, err
 	}
 	resp := workspaceSkillResponse(skill)

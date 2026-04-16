@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -263,6 +264,34 @@ func TestDeleteWorkspaceSkillArchivesRecord(t *testing.T) {
 	}
 	if catalogHasSkill(catalog, created.Key, model.WorkspaceSkillSourceWorkspace) {
 		t.Fatalf("expected archived skill to be absent from catalog, got %+v", catalog.Skills)
+	}
+}
+
+func TestCreateWorkspaceSkillCleansUpArchiveOnDatabaseFailure(t *testing.T) {
+	db := newWorkspaceSkillTestDB(t)
+	if err := db.Callback().Create().Before("gorm:create").Register("test:fail_workspace_skill_create", func(tx *gorm.DB) {
+		tx.AddError(errors.New("forced create failure"))
+	}); err != nil {
+		t.Fatalf("register create callback: %v", err)
+	}
+	repo := repository.NewWorkspaceSkillRepository(db)
+	store := &fakeSkillPackageStore{objects: make(map[string][]byte)}
+	svc := (&AgentService{}).SetWorkspaceSkillStore(repo, store)
+	ctx := context.Background()
+
+	_, err := svc.CreateWorkspaceSkill(ctx, "ws-1", "user-1", model.CreateWorkspaceSkillRequest{
+		Key:          "repo_planner",
+		Description:  "Use when planning repository work.",
+		Instructions: "Produce a first-pass plan.",
+	})
+	if err == nil || !strings.Contains(err.Error(), "forced create failure") {
+		t.Fatal("expected CreateWorkspaceSkill to fail after database close")
+	}
+	if len(store.objects) != 0 {
+		t.Fatalf("expected uploaded archive to be cleaned up, got %d objects", len(store.objects))
+	}
+	if len(store.deleted) != 1 {
+		t.Fatalf("expected one cleanup delete call, got %d", len(store.deleted))
 	}
 }
 

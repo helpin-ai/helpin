@@ -117,10 +117,16 @@ func BuildSkillArchive(def SkillDefinition) ([]byte, string, string, error) {
 	var archive bytes.Buffer
 	zw := zip.NewWriter(&archive)
 	root := key
-	if err := writeZipFile(zw, path.Join(root, "SKILL.md"), renderSkillMarkdown(def)); err != nil {
+	skillMarkdown, err := renderSkillMarkdown(def)
+	if err != nil {
 		return nil, "", "", err
 	}
-	if cfg, ok := renderOpenAIConfig(def); ok {
+	if err := writeZipFile(zw, path.Join(root, "SKILL.md"), skillMarkdown); err != nil {
+		return nil, "", "", err
+	}
+	if cfg, ok, err := renderOpenAIConfig(def); err != nil {
+		return nil, "", "", err
+	} else if ok {
 		if err := writeZipFile(zw, path.Join(root, "agents", "openai.yaml"), cfg); err != nil {
 			return nil, "", "", err
 		}
@@ -192,7 +198,7 @@ func writeZipFile(zw *zip.Writer, name, body string) error {
 	return nil
 }
 
-func renderSkillMarkdown(def SkillDefinition) string {
+func renderSkillMarkdown(def SkillDefinition) (string, error) {
 	frontmatter := map[string]any{
 		"name":        strings.TrimSpace(def.Key),
 		"description": strings.TrimSpace(def.Description),
@@ -202,22 +208,25 @@ func renderSkillMarkdown(def SkillDefinition) string {
 			"supported_runtimes": append([]string(nil), def.SupportedRuntimes...),
 		},
 	}
-	payload, _ := yaml.Marshal(frontmatter)
-	return fmt.Sprintf("---\n%s---\n\n%s\n", string(payload), strings.TrimSpace(def.Instructions))
+	payload, err := yaml.Marshal(frontmatter)
+	if err != nil {
+		return "", fmt.Errorf("marshal skill frontmatter: %w", err)
+	}
+	return fmt.Sprintf("---\n%s---\n\n%s\n", string(payload), strings.TrimSpace(def.Instructions)), nil
 }
 
-func renderOpenAIConfig(def SkillDefinition) (string, bool) {
+func renderOpenAIConfig(def SkillDefinition) (string, bool, error) {
 	cfg := skillOpenAIConfig{}
 	cfg.Interface = def.Interface
 	cfg.Policy = def.Policy
 	if cfg.Interface == (SkillInterface{}) && cfg.Policy == (SkillPolicy{}) {
-		return "", false
+		return "", false, nil
 	}
 	payload, err := yaml.Marshal(cfg)
 	if err != nil {
-		return "", false
+		return "", false, fmt.Errorf("marshal skill openai config: %w", err)
 	}
-	return string(payload), true
+	return string(payload), true, nil
 }
 
 func normalizeArchivePath(name string) (string, error) {
