@@ -25,7 +25,7 @@ export function EmptyState({
   const bg = background === 'muted' ? 'bg-muted/30' : ''
   return (
     <div
-      className={`flex flex-1 flex-col items-center justify-center gap-2 px-6 py-12 text-center ${bg} ${className ?? ''}`}
+      className={`flex min-h-[280px] flex-1 flex-col items-center justify-center gap-2 px-6 py-12 text-center ${bg} ${className ?? ''}`}
     >
       <Icon className="h-10 w-10 text-muted-foreground/30" />
       <p className="text-sm font-medium text-muted-foreground">{title}</p>
