@@ -459,6 +459,18 @@ type UpdateDocsCollectionRequest struct {
 	ParentCollectionID *string `json:"parent_collection_id"`
 }
 
+// DocsCollectionDeleteImpact summarizes what permanent collection deletion affects.
+type DocsCollectionDeleteImpact struct {
+	CollectionID           string `json:"collection_id"`
+	CollectionName         string `json:"collection_name"`
+	SpaceID                string `json:"space_id"`
+	CollectionCount        int    `json:"collection_count"`
+	DocumentCount          int    `json:"document_count"`
+	ArchivedDocumentCount  int    `json:"archived_document_count"`
+	PublishedDocumentCount int    `json:"published_document_count"`
+	PublicDocumentCount    int    `json:"public_document_count"`
+}
+
 // CreateDocsDocumentRequest is the payload for creating a document.
 type CreateDocsDocumentRequest struct {
 	SpaceID      string   `json:"space_id"`
@@ -613,6 +625,7 @@ type PublicNavArticle struct {
 	Title       string  `json:"title"`
 	Slug        string  `json:"slug"`
 	PublicID    string  `json:"public_id"`
+	Position    int     `json:"position"`
 	PublishedAt *string `json:"published_at"`
 }
 
@@ -628,6 +641,7 @@ type PublicNavCollection struct {
 	Icon               *string            `json:"icon"`
 	ParentCollectionID *string            `json:"parent_collection_id"`
 	Depth              int                `json:"depth"`
+	Position           int                `json:"position"`
 	Articles           []PublicNavArticle `json:"articles"`
 }
 

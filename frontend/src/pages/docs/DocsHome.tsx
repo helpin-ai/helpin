@@ -120,6 +120,7 @@ function buildCollectionNodeTree(
       name: c.name,
       icon: c.icon,
       depth: c.depth,
+      position: c.position,
       documents: docsByCollection.get(c.id) ?? [],
       children: build(c.id),
     }))
@@ -142,8 +143,30 @@ interface CollectionNode {
   name: string
   icon?: string | null
   depth: number
+  position: number
   documents: DocsDocument[]
   children: CollectionNode[]
+}
+
+type MergedChild =
+  | { kind: 'collection'; position: number; node: CollectionNode }
+  | { kind: 'doc'; position: number; doc: DocsDocument }
+
+/**
+ * Merge a collection's direct documents with its sub-collections into a
+ * single list sorted by position, so the rendered order matches the
+ * author's intent (e.g., the Nextra _meta order when imported).
+ */
+function mergeChildren(node: CollectionNode): MergedChild[] {
+  const items: MergedChild[] = []
+  for (const child of node.children) {
+    items.push({ kind: 'collection', position: child.position, node: child })
+  }
+  for (const doc of node.documents) {
+    items.push({ kind: 'doc', position: doc.position, doc })
+  }
+  items.sort((a, b) => a.position - b.position)
+  return items
 }
 
 function CollectionSection({
@@ -180,12 +203,13 @@ function CollectionSection({
       </Collapsible.Trigger>
       <Collapsible.Content>
         <div className="ml-[14px] border-l border-border/50 pl-3">
-          {node.children.map((child) => (
-            <CollectionSection key={child.id} node={child} wsSlug={wsSlug} navigate={navigate} />
-          ))}
-          {node.documents.map((doc) => (
-            <DocRow key={doc.id} doc={doc} wsSlug={wsSlug} navigate={navigate} />
-          ))}
+          {mergeChildren(node).map((item) =>
+            item.kind === 'collection' ? (
+              <CollectionSection key={item.node.id} node={item.node} wsSlug={wsSlug} navigate={navigate} />
+            ) : (
+              <DocRow key={item.doc.id} doc={item.doc} wsSlug={wsSlug} navigate={navigate} />
+            ),
+          )}
         </div>
       </Collapsible.Content>
     </Collapsible.Root>

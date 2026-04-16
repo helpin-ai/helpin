@@ -160,6 +160,7 @@ export interface NavItem {
   parent_collection_id: string | null
   /** Tree depth: 0 for top-level, 1 for child, 2 for grandchild. */
   depth: number
+  position: number
   articles: NavArticle[]
 }
 
@@ -168,6 +169,7 @@ export interface NavArticle {
   title: string
   slug: string
   public_id: string
+  position: number
   published_at?: string | null
 }
 
