@@ -218,8 +218,11 @@ func (s *SupportInboxService) ListMailboxesAdmin(ctx context.Context, workspaceI
 }
 
 // ListUnreadByWorkspace returns the support unread conversation count for every
-// workspace the user is an active member of. Workspaces with zero unread are
-// omitted so the frontend can treat missing entries as zero.
+// workspace where the caller both belongs to the workspace and has support
+// module access plus the support.read permission. Workspaces the user cannot
+// access are omitted entirely, matching the gating used by support routes.
+// Workspaces with zero unread are omitted so the frontend can treat missing
+// entries as zero.
 func (s *SupportInboxService) ListUnreadByWorkspace(ctx context.Context, userID string) ([]model.SupportWorkspaceUnreadCount, error) {
 	if s.mailboxRepo == nil {
 		return nil, fmt.Errorf("support mailbox repository is unavailable")
@@ -233,12 +236,33 @@ func (s *SupportInboxService) ListUnreadByWorkspace(ctx context.Context, userID 
 		if row.UnreadCount <= 0 {
 			continue
 		}
+		if !s.callerCanReadSupport(ctx, row.WorkspaceID, userID) {
+			continue
+		}
 		out = append(out, model.SupportWorkspaceUnreadCount{
 			WorkspaceID: row.WorkspaceID,
 			UnreadCount: row.UnreadCount,
 		})
 	}
 	return out, nil
+}
+
+// callerCanReadSupport gates a workspace unread count behind the same rules
+// enforced by the support routes: support module must be enabled for the actor
+// and the actor's role must grant PermSupportRead.
+func (s *SupportInboxService) callerCanReadSupport(ctx context.Context, workspaceID, userID string) bool {
+	if s.authzService == nil {
+		return false
+	}
+	actor, err := s.authzService.ResolveActor(ctx, workspaceID, userID)
+	if err != nil || actor == nil {
+		return false
+	}
+	hasModule, err := s.authzService.CanAccessModule(ctx, actor, model.ModuleSupport)
+	if err != nil || !hasModule {
+		return false
+	}
+	return s.authzService.Can(actor, authorization.PermSupportRead)
 }
 
 func (s *SupportInboxService) ListMailboxMembers(ctx context.Context, workspaceID, mailboxID string) ([]model.SupportMailboxMember, error) {
