@@ -135,3 +135,14 @@ func (r *CRMAssociationRepository) GetByID(ctx context.Context, id string) (*mod
 	}
 	return &assoc, nil
 }
+
+// UpdateLabel updates an association label in place.
+func (r *CRMAssociationRepository) UpdateLabel(ctx context.Context, id string, label *string) error {
+	if err := r.db.WithContext(ctx).
+		Model(&model.CRMAssociation{}).
+		Where("id = ?", id).
+		Update("association_label", label).Error; err != nil {
+		return fmt.Errorf("update association label: %w", err)
+	}
+	return nil
+}

@@ -25,6 +25,7 @@ var toolCategory = map[string]string{
 
 	// Web Search
 	"web_search_brave": "Web Search",
+	"web_search_exa":   "Web Search",
 
 	// Git
 	"create_branch":   "Git",
@@ -83,39 +84,14 @@ var hiddenToolCatalogAliases = map[string]bool{
 	ToolRequestHumanApproval: true,
 }
 
-// webSearchDefinition returns the catalog entry for web_search_brave, which is
-// conditionally registered in the ToolRegistry only when a WebSearchClient is
-// provided. The catalog always includes it so users can see the full tool set.
-func webSearchDefinition() model.ToolCatalogEntry {
+// webSearchDefinition returns the catalog entry for a conditionally registered
+// web search tool. The catalog always includes it so users can see the full tool set.
+func webSearchDefinition(name, description string, schema map[string]interface{}) model.ToolCatalogEntry {
 	return model.ToolCatalogEntry{
-		Name:        "web_search_brave",
-		Description: "Search the public web with Brave Search. Use this for market context, standards, competitors, and external evidence. Returns normalized JSON results.",
+		Name:        name,
+		Description: description,
 		Category:    "Web Search",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"query": map[string]interface{}{
-					"type":        "string",
-					"description": "Search query to run",
-				},
-				"count": map[string]interface{}{
-					"type":        "integer",
-					"description": "Maximum number of results to return (default 5, max 10)",
-				},
-				"freshness": map[string]interface{}{
-					"type":        "string",
-					"description": "Optional freshness hint such as pd, pw, pm, or py",
-				},
-				"domain_allowlist": map[string]interface{}{
-					"type":        "array",
-					"description": "Optional list of domains to prioritize",
-					"items": map[string]interface{}{
-						"type": "string",
-					},
-				},
-			},
-			"required": []string{"query"},
-		},
+		InputSchema: schema,
 	}
 }
 
@@ -125,8 +101,8 @@ func ListToolCatalog() model.ToolCatalogResponse {
 	registry := NewToolRegistry(nil)
 	defs := registry.Definitions()
 
-	seen := make(map[string]bool, len(defs)+1)
-	entries := make([]model.ToolCatalogEntry, 0, len(defs)+1)
+	seen := make(map[string]bool, len(defs)+2)
+	entries := make([]model.ToolCatalogEntry, 0, len(defs)+2)
 
 	for _, def := range defs {
 		if hiddenToolCatalogAliases[def.Name] {
@@ -152,9 +128,14 @@ func ListToolCatalog() model.ToolCatalogResponse {
 		seen[def.Name] = true
 	}
 
-	// Always include web_search_brave even if the WebSearchClient was nil.
+	// Always include web search tools even if the backing clients were nil.
 	if !seen["web_search_brave"] {
-		ws := webSearchDefinition()
+		ws := webSearchDefinition("web_search_brave", webSearchBraveToolDescription(), webSearchBraveToolSchema())
+		ws.Presets = []string{}
+		entries = append(entries, ws)
+	}
+	if !seen["web_search_exa"] {
+		ws := webSearchDefinition("web_search_exa", webSearchExaToolDescription(), webSearchExaToolSchema())
 		ws.Presets = []string{}
 		entries = append(entries, ws)
 	}

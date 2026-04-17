@@ -213,6 +213,7 @@ func main() {
 		cfg.OpenRouterAPIKey,
 		cfg.OpenRouterBaseURL,
 		cfg.BraveSearchAPIKey,
+		cfg.ExaSearchAPIKey,
 		runRepo,
 		artifactRepo,
 		codexWorkspaceAuthStore,

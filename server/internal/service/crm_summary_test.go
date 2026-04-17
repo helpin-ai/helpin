@@ -276,6 +276,52 @@ func TestCRMSummaryService_RefreshContactSummaryPersistsReady(t *testing.T) {
 	}
 }
 
+func TestCRMSummaryService_LoadContactAssociationsPrefersPrimaryCompanyFirst(t *testing.T) {
+	db := setupCRMSummaryTestDB(t)
+	ctx := context.Background()
+
+	svc := NewCRMSummaryService(
+		repository.NewCRMSummaryRepository(db),
+		repository.NewCRMContactRepository(db),
+		repository.NewCRMCompanyRepository(db),
+		repository.NewCRMDealRepository(db),
+		repository.NewCRMAssociationRepository(db),
+		repository.NewCRMSignalRepository(db),
+		repository.NewCRMEmailRepository(db),
+		nil,
+		nil,
+	)
+
+	mustExecSummary(t, db, `INSERT INTO crm_contacts (id, workspace_id, display_id, first_name, custom_properties) VALUES (?, ?, ?, ?, CAST(? AS BLOB))`,
+		"contact-1", "ws-1", "CON-1", "Atsuyo", `{}`)
+	mustExecSummary(t, db, `INSERT INTO crm_companies (id, workspace_id, display_id, name, custom_properties) VALUES (?, ?, ?, ?, CAST(? AS BLOB))`,
+		"company-1", "ws-1", "COM-1", "Primary Co", `{}`)
+	mustExecSummary(t, db, `INSERT INTO crm_companies (id, workspace_id, display_id, name, custom_properties) VALUES (?, ?, ?, ?, CAST(? AS BLOB))`,
+		"company-2", "ws-1", "COM-2", "Secondary Co", `{}`)
+	mustExecSummary(t, db, `INSERT INTO crm_associations (id, workspace_id, from_object_type, from_object_id, to_object_type, to_object_id, association_label) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"assoc-secondary", "ws-1", model.CRMObjectContact, "contact-1", model.CRMObjectCompany, "company-2", nil)
+	mustExecSummary(t, db, `INSERT INTO crm_associations (id, workspace_id, from_object_type, from_object_id, to_object_type, to_object_id, association_label) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"assoc-primary", "ws-1", model.CRMObjectContact, "contact-1", model.CRMObjectCompany, "company-1", primaryCompanyAssociationLabel)
+
+	companies, companyNames, openDeals, err := svc.loadContactAssociations(ctx, "ws-1", "contact-1")
+	if err != nil {
+		t.Fatalf("loadContactAssociations returned error: %v", err)
+	}
+
+	if len(openDeals) != 0 {
+		t.Fatalf("expected no deals, got %d", len(openDeals))
+	}
+	if len(companies) != 2 {
+		t.Fatalf("expected two company snapshots, got %d", len(companies))
+	}
+	if got, want := companyNames, []string{"Primary Co", "Secondary Co"}; strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("companyNames = %v, want %v", got, want)
+	}
+	if companies[0].Name != "Primary Co" {
+		t.Fatalf("expected primary company first, got %+v", companies)
+	}
+}
+
 func TestCRMSummaryService_RefreshSummaryMarksPendingWhenNewerTriggerExists(t *testing.T) {
 	db := setupCRMSummaryTestDB(t)
 	ctx := context.Background()

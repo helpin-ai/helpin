@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -12,6 +13,8 @@ import (
 // AssociationsService aggregates task relationships, CRM/support links, and docs links into one read model.
 type AssociationsService struct {
 	assocRepo        *repository.CRMAssociationRepository
+	contactRepo      *repository.CRMContactRepository
+	workspaceRepo    *repository.WorkspaceRepository
 	taskLinkRepo     *repository.PMTaskLinkRepository
 	taskRepo         *repository.PMTaskRepository
 	supportRepo      *repository.SupportConversationRepository
@@ -22,6 +25,8 @@ type AssociationsService struct {
 // NewAssociationsService creates a new AssociationsService.
 func NewAssociationsService(
 	assocRepo *repository.CRMAssociationRepository,
+	contactRepo *repository.CRMContactRepository,
+	workspaceRepo *repository.WorkspaceRepository,
 	taskLinkRepo *repository.PMTaskLinkRepository,
 	taskRepo *repository.PMTaskRepository,
 	supportRepo *repository.SupportConversationRepository,
@@ -30,6 +35,8 @@ func NewAssociationsService(
 ) *AssociationsService {
 	return &AssociationsService{
 		assocRepo:        assocRepo,
+		contactRepo:      contactRepo,
+		workspaceRepo:    workspaceRepo,
 		taskLinkRepo:     taskLinkRepo,
 		taskRepo:         taskRepo,
 		supportRepo:      supportRepo,
@@ -65,21 +72,26 @@ func (s *AssociationsService) ListGrouped(ctx context.Context, workspaceID, obje
 		Docs:                 []model.AssociationObjectSummary{},
 	}
 
+	workspaceKey := s.workspaceKey(ctx, workspaceID)
+
 	if objectType == model.CRMObjectTask {
-		relationships, err := s.loadTaskRelationships(ctx, workspaceID, objectID)
+		relationships, err := s.loadTaskRelationships(ctx, workspaceID, objectID, workspaceKey)
 		if err != nil {
 			return nil, err
 		}
 		response.TaskRelationships = relationships
 	}
 
-	if err := s.populateCrossObjectAssociations(ctx, workspaceID, objectType, objectID, response); err != nil {
+	if err := s.populateCrossObjectAssociations(ctx, workspaceID, objectType, objectID, workspaceKey, response); err != nil {
+		return nil, err
+	}
+	if err := s.populateInferredCRMContext(ctx, workspaceID, objectType, response); err != nil {
 		return nil, err
 	}
 	if err := s.populateDocsAssociations(ctx, workspaceID, objectType, objectID, response); err != nil {
 		return nil, err
 	}
-	if err := s.populateLegacySupportLinks(ctx, workspaceID, objectType, objectID, response); err != nil {
+	if err := s.populateLegacySupportLinks(ctx, workspaceID, objectType, objectID, workspaceKey, response); err != nil {
 		return nil, err
 	}
 
@@ -168,7 +180,7 @@ func (s *AssociationsService) DeleteTaskRelationship(ctx context.Context, worksp
 	return s.taskLinkRepo.Delete(ctx, relationshipID)
 }
 
-func (s *AssociationsService) populateCrossObjectAssociations(ctx context.Context, workspaceID, objectType, objectID string, response *model.GroupedAssociationsResponse) error {
+func (s *AssociationsService) populateCrossObjectAssociations(ctx context.Context, workspaceID, objectType, objectID, workspaceKey string, response *model.GroupedAssociationsResponse) error {
 	assocs, err := s.assocRepo.ListByObject(ctx, workspaceID, objectType, objectID)
 	if err != nil {
 		return err
@@ -199,8 +211,13 @@ func (s *AssociationsService) populateCrossObjectAssociations(ctx context.Contex
 	}
 
 	tasksByID := make(map[string]model.PMTask)
+	taskStatusByID := make(map[string]string)
 	if len(taskIDs) > 0 {
 		tasks, err := s.taskRepo.ListByIDs(ctx, workspaceID, uniqueStrings(taskIDs))
+		if err != nil {
+			return err
+		}
+		taskStatusByID, err = s.taskStatusByID(ctx, tasks)
 		if err != nil {
 			return err
 		}
@@ -236,7 +253,7 @@ func (s *AssociationsService) populateCrossObjectAssociations(ctx context.Contex
 				continue
 			}
 			seenTasks[task.ID] = struct{}{}
-			response.Tasks = append(response.Tasks, taskAssociationSummary(assoc.ID, task))
+			response.Tasks = append(response.Tasks, taskAssociationSummary(assoc.ID, task, workspaceKey, taskStatusByID[task.ID]))
 		case model.CRMObjectSupportConversation:
 			conversation, ok := conversationsByID[otherID]
 			if !ok {
@@ -265,6 +282,84 @@ func (s *AssociationsService) populateCrossObjectAssociations(ctx context.Contex
 	sortAssociationObjects(response.CRMRecords)
 
 	return nil
+}
+
+func (s *AssociationsService) populateInferredCRMContext(ctx context.Context, workspaceID, objectType string, response *model.GroupedAssociationsResponse) error {
+	if objectType != model.CRMObjectTask && objectType != model.CRMObjectSupportConversation {
+		return nil
+	}
+	if len(response.CRMRecords) == 0 {
+		return nil
+	}
+
+	directSources := make([]model.AssociationObjectSummary, 0, len(response.CRMRecords))
+	seen := make(map[string]struct{}, len(response.CRMRecords))
+	for _, item := range response.CRMRecords {
+		key := item.ObjectType + ":" + item.ObjectID
+		seen[key] = struct{}{}
+		if item.Inferred {
+			continue
+		}
+		if !isCRMRecordObjectType(item.ObjectType) {
+			continue
+		}
+		directSources = append(directSources, item)
+	}
+
+	for _, source := range directSources {
+		enrichedAssocs, err := s.assocRepo.ListByObjectEnriched(ctx, workspaceID, source.ObjectType, source.ObjectID)
+		if err != nil {
+			return err
+		}
+		enrichedAssocs = preferredCRMInferredAssociations(source, enrichedAssocs)
+		for _, assoc := range enrichedAssocs {
+			otherType, otherID := otherAssociationSide(assoc.CRMAssociation, source.ObjectType, source.ObjectID)
+			if !isCRMRecordObjectType(otherType) {
+				continue
+			}
+			key := otherType + ":" + otherID
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			summary := crmAssociationSummary(assoc, otherType, otherID)
+			summary.AssociationID = ""
+			summary.Inferred = true
+			label := "via " + source.Title
+			summary.ContextLabel = &label
+			response.CRMRecords = append(response.CRMRecords, summary)
+			seen[key] = struct{}{}
+		}
+	}
+
+	sortAssociationObjects(response.CRMRecords)
+	return nil
+}
+
+func preferredCRMInferredAssociations(source model.AssociationObjectSummary, assocs []model.CRMAssociationEnriched) []model.CRMAssociationEnriched {
+	if source.ObjectType != model.CRMObjectContact || len(assocs) == 0 {
+		return assocs
+	}
+
+	hasPrimaryCompany := false
+	for _, assoc := range assocs {
+		otherType, _ := otherAssociationSide(assoc.CRMAssociation, source.ObjectType, source.ObjectID)
+		if otherType == model.CRMObjectCompany && isPrimaryCompanyAssociationLabel(assoc.AssociationLabel) {
+			hasPrimaryCompany = true
+			break
+		}
+	}
+	if !hasPrimaryCompany {
+		return assocs
+	}
+
+	filtered := make([]model.CRMAssociationEnriched, 0, len(assocs))
+	for _, assoc := range assocs {
+		otherType, _ := otherAssociationSide(assoc.CRMAssociation, source.ObjectType, source.ObjectID)
+		if otherType != model.CRMObjectCompany || isPrimaryCompanyAssociationLabel(assoc.AssociationLabel) {
+			filtered = append(filtered, assoc)
+		}
+	}
+	return filtered
 }
 
 func (s *AssociationsService) populateDocsAssociations(ctx context.Context, workspaceID, objectType, objectID string, response *model.GroupedAssociationsResponse) error {
@@ -317,7 +412,7 @@ func (s *AssociationsService) populateDocsAssociations(ctx context.Context, work
 	return nil
 }
 
-func (s *AssociationsService) populateLegacySupportLinks(ctx context.Context, workspaceID, objectType, objectID string, response *model.GroupedAssociationsResponse) error {
+func (s *AssociationsService) populateLegacySupportLinks(ctx context.Context, workspaceID, objectType, objectID, workspaceKey string, response *model.GroupedAssociationsResponse) error {
 	switch objectType {
 	case model.CRMObjectTask:
 		conversations, err := s.supportRepo.ListByLinkedStoryIDs(ctx, workspaceID, []string{objectID})
@@ -340,7 +435,27 @@ func (s *AssociationsService) populateLegacySupportLinks(ctx context.Context, wo
 		if err != nil {
 			return err
 		}
-		if conversation == nil || conversation.LinkedTaskID == nil || *conversation.LinkedTaskID == "" {
+		if conversation == nil {
+			return nil
+		}
+		existingCRM := make(map[string]struct{}, len(response.CRMRecords))
+		for _, item := range response.CRMRecords {
+			existingCRM[item.ObjectType+":"+item.ObjectID] = struct{}{}
+		}
+		if conversation.CRMContactID != nil && *conversation.CRMContactID != "" {
+			key := model.CRMObjectContact + ":" + *conversation.CRMContactID
+			if _, ok := existingCRM[key]; !ok && s.contactRepo != nil {
+				contact, err := s.contactRepo.GetByID(ctx, *conversation.CRMContactID)
+				if err != nil {
+					return err
+				}
+				if contact != nil && contact.WorkspaceID == workspaceID {
+					response.CRMRecords = append(response.CRMRecords, contactAssociationSummary("", *contact))
+					sortAssociationObjects(response.CRMRecords)
+				}
+			}
+		}
+		if conversation.LinkedTaskID == nil || *conversation.LinkedTaskID == "" {
 			return nil
 		}
 		existing := make(map[string]struct{}, len(response.Tasks))
@@ -355,14 +470,18 @@ func (s *AssociationsService) populateLegacySupportLinks(ctx context.Context, wo
 			return err
 		}
 		if len(tasks) == 1 {
-			response.Tasks = append(response.Tasks, taskAssociationSummary("", tasks[0]))
+			taskStatusByID, err := s.taskStatusByID(ctx, tasks)
+			if err != nil {
+				return err
+			}
+			response.Tasks = append(response.Tasks, taskAssociationSummary("", tasks[0], workspaceKey, taskStatusByID[tasks[0].ID]))
 			sortAssociationObjects(response.Tasks)
 		}
 	}
 	return nil
 }
 
-func (s *AssociationsService) loadTaskRelationships(ctx context.Context, workspaceID, taskID string) (model.TaskRelationshipGroups, error) {
+func (s *AssociationsService) loadTaskRelationships(ctx context.Context, workspaceID, taskID, workspaceKey string) (model.TaskRelationshipGroups, error) {
 	response := model.TaskRelationshipGroups{
 		BlockedBy:    []model.TaskRelationshipSummary{},
 		Blocking:     []model.TaskRelationshipSummary{},
@@ -392,6 +511,10 @@ func (s *AssociationsService) loadTaskRelationships(ctx context.Context, workspa
 	if err != nil {
 		return response, err
 	}
+	taskStatusByID, err := s.taskStatusByID(ctx, tasks)
+	if err != nil {
+		return response, err
+	}
 	tasksByID := make(map[string]model.PMTask, len(tasks))
 	for _, task := range tasks {
 		tasksByID[task.ID] = task
@@ -411,7 +534,7 @@ func (s *AssociationsService) loadTaskRelationships(ctx context.Context, workspa
 			RelationshipID: link.ID,
 			LinkType:       link.LinkType,
 			IsActive:       !otherTask.Completed,
-			Task:           taskAssociationSummary("", otherTask),
+			Task:           taskAssociationSummary("", otherTask, workspaceKey, taskStatusByID[otherTask.ID]),
 		}
 		switch link.LinkType {
 		case model.PMTaskLinkTypeBlocks:
@@ -530,16 +653,70 @@ func uniqueStrings(values []string) []string {
 	return result
 }
 
-func taskAssociationSummary(associationID string, task model.PMTask) model.AssociationObjectSummary {
+func (s *AssociationsService) taskStatusByID(ctx context.Context, tasks []model.PMTask) (map[string]string, error) {
+	if len(tasks) == 0 {
+		return map[string]string{}, nil
+	}
+
+	stateIDs := make([]string, 0, len(tasks))
+	for _, task := range tasks {
+		if task.WorkflowStateID != "" {
+			stateIDs = append(stateIDs, task.WorkflowStateID)
+		}
+	}
+
+	stateNamesByID, err := s.taskRepo.ListStateNamesByIDs(ctx, uniqueStrings(stateIDs))
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "no such table") {
+			return map[string]string{}, nil
+		}
+		return nil, err
+	}
+
+	result := make(map[string]string, len(tasks))
+	for _, task := range tasks {
+		if name := stateNamesByID[task.WorkflowStateID]; name != "" {
+			result[task.ID] = name
+		}
+	}
+	return result, nil
+}
+
+func (s *AssociationsService) workspaceKey(ctx context.Context, workspaceID string) string {
+	if s.workspaceRepo == nil || workspaceID == "" {
+		return ""
+	}
+	ws, err := s.workspaceRepo.GetByID(ctx, workspaceID)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "no such table") {
+			return ""
+		}
+		return ""
+	}
+	if ws == nil {
+		return ""
+	}
+	return ws.WorkspaceKey
+}
+
+func taskAssociationSummary(associationID string, task model.PMTask, workspaceKey, status string) model.AssociationObjectSummary {
 	displayID := fmt.Sprintf("%d", task.DisplayID)
+	if workspaceKey != "" {
+		displayID = model.FormatTaskKey(workspaceKey, task.DisplayID)
+	}
 	workflowStateID := task.WorkflowStateID
 	taskType := task.TaskType
+	var statusPtr *string
+	if status != "" {
+		statusPtr = &status
+	}
 	return model.AssociationObjectSummary{
 		AssociationID:   associationID,
 		ObjectType:      model.CRMObjectTask,
 		ObjectID:        task.ID,
 		DisplayID:       &displayID,
 		Title:           task.Name,
+		Status:          statusPtr,
 		WorkflowStateID: &workflowStateID,
 		Completed:       task.Completed,
 		TaskType:        &taskType,
@@ -577,8 +754,22 @@ func crmAssociationSummary(assoc model.CRMAssociationEnriched, objectType, objec
 	}
 }
 
+func contactAssociationSummary(associationID string, contact model.CRMContact) model.AssociationObjectSummary {
+	displayID := contact.DisplayID
+	return model.AssociationObjectSummary{
+		AssociationID: associationID,
+		ObjectType:    model.CRMObjectContact,
+		ObjectID:      contact.ID,
+		DisplayID:     &displayID,
+		Title:         contactDisplayName(contact),
+	}
+}
+
 func sortAssociationObjects(items []model.AssociationObjectSummary) {
 	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].Inferred != items[j].Inferred {
+			return !items[i].Inferred
+		}
 		return items[i].Title < items[j].Title
 	})
 }
@@ -595,6 +786,15 @@ func sortTaskRelationshipGroup(items []model.TaskRelationshipSummary) {
 func isSupportedAssociationsObjectType(objectType string) bool {
 	switch objectType {
 	case model.CRMObjectTask, model.CRMObjectEpic, model.CRMObjectSupportConversation:
+		return true
+	default:
+		return false
+	}
+}
+
+func isCRMRecordObjectType(objectType string) bool {
+	switch objectType {
+	case model.CRMObjectContact, model.CRMObjectCompany, model.CRMObjectDeal:
 		return true
 	default:
 		return false

@@ -48,6 +48,7 @@ type Config struct {
 	CodexChatGPTPlanType    string
 	CodexAuthEncryptionKey  string
 	BraveSearchAPIKey       string
+	ExaSearchAPIKey         string
 	CloudflareAccountID     string
 	CloudflareAPIToken      string
 	CloudflareAPIBaseURL    string
@@ -182,6 +183,7 @@ func Load() (*Config, error) {
 		CodexChatGPTPlanType:              strings.TrimSpace(os.Getenv("CODEX_CHATGPT_PLAN_TYPE")),
 		CodexAuthEncryptionKey:            strings.TrimSpace(os.Getenv("CODEX_AUTH_ENCRYPTION_KEY")),
 		BraveSearchAPIKey:                 strings.TrimSpace(os.Getenv("BRAVE_SEARCH_API_KEY")),
+		ExaSearchAPIKey:                   strings.TrimSpace(os.Getenv("EXA_API_KEY")),
 		CloudflareAccountID:               strings.TrimSpace(os.Getenv("CLOUDFLARE_ACCOUNT_ID")),
 		CloudflareAPIToken:                strings.TrimSpace(os.Getenv("CLOUDFLARE_API_TOKEN")),
 		CloudflareAPIBaseURL:              strings.TrimSpace(os.Getenv("CLOUDFLARE_API_BASE_URL")),
