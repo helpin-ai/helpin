@@ -24,6 +24,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/auth"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
+	"github.com/helpin-ai/helpin/server/internal/cache"
 	"github.com/helpin-ai/helpin/server/internal/config"
 	"github.com/helpin-ai/helpin/server/internal/crawler"
 	"github.com/helpin-ai/helpin/server/internal/crmemail"
@@ -834,6 +835,29 @@ func main() {
 	docsVersionService := service.NewDocsVersionService(docsVersionRepo, docsContentRepo, docsDocumentRepo, wsPublisher)
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, pmTaskRepo, docsDocumentRepo, wsPublisher)
 	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsHelpcenterPublicationRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, docsRedirectRepo, s3Client, wsPublisher)
+
+	// Tiered cache for hot public help-center reads. L1 is an in-process LRU;
+	// L2 is Redis when available so cache entries survive pod restarts and
+	// invalidations fan out across pods via pub/sub.
+	hcL1 := cache.NewLRU(2048)
+	var hcCache cache.Cache = hcL1
+	if redisClient != nil {
+		hcL2 := cache.NewRedis(redisClient, "hc")
+		tiered := cache.NewTiered(cache.TieredConfig{
+			L1:      hcL1,
+			L2:      hcL2,
+			Redis:   redisClient,
+			Channel: "cache:hc:invalidate",
+			PodID:   podID,
+			L1TTL:   60 * time.Second,
+		})
+		tiered.StartInvalidationSubscriber(context.Background())
+		hcCache = tiered
+		slog.Info("help-center cache: tiered L1+L2 (Redis) enabled")
+	} else {
+		slog.Info("help-center cache: L1-only (no Redis) — single-pod consistency only")
+	}
+	docsHelpcenterService.SetHelpcenterCache(hcCache)
 	docsHelpcenterTranslationService := service.NewDocsHelpcenterTranslationService(docsHelpcenterTranslationRepo, docsHelpcenterRepo, docsHelpcenterPublicationRepo, docsRedirectRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, llmProvider)
 	docsSearchService := service.NewDocsSearchService(docsSearchRepo)
 	docsImportService := service.NewDocsImportService(docsImportRepo, docsSpaceService, docsCollectionService, docsDocumentService, docsContentService, docsHelpcenterService, docsRedirectRepo, s3Client)
