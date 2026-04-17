@@ -41,6 +41,24 @@ func (r *SupportEmailLogRepository) ListByConversation(ctx context.Context, work
 	return logs, nil
 }
 
+// GetByMessageID returns the email log that referenced the given support_message ID.
+func (r *SupportEmailLogRepository) GetByMessageID(ctx context.Context, workspaceID, messageID string) (*model.SupportEmailLog, error) {
+	if workspaceID == "" || messageID == "" {
+		return nil, nil
+	}
+	var log model.SupportEmailLog
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND ? = ANY(message_ids)", workspaceID, messageID).
+		Order("created_at DESC").
+		First(&log).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get support email log by message id: %w", err)
+	}
+	return &log, nil
+}
+
 // GetByPostmarkMessageID returns an existing log for the provider message ID.
 func (r *SupportEmailLogRepository) GetByPostmarkMessageID(ctx context.Context, postmarkMessageID string) (*model.SupportEmailLog, error) {
 	if postmarkMessageID == "" {

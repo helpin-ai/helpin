@@ -27,3 +27,20 @@ type SupportEmailLog struct {
 }
 
 func (SupportEmailLog) TableName() string { return "support_email_logs" }
+
+// SupportMessageEmailDetail is the API response returned for a single message's email details.
+type SupportMessageEmailDetail struct {
+	ID               string     `json:"id"`
+	MessageID        string     `json:"message_id"`
+	Direction        string     `json:"direction"`
+	Subject          string     `json:"subject"`
+	FromEmail        string     `json:"from_email"`
+	ToEmail          string     `json:"to_email"`
+	RFCMessageID     string     `json:"rfc_message_id,omitempty"`
+	InReplyTo        string     `json:"in_reply_to,omitempty"`
+	ReferencesHeader string     `json:"references_header,omitempty"`
+	StrippedText     string     `json:"stripped_text,omitempty"`
+	Status           string     `json:"status"`
+	OpenedAt         *time.Time `json:"opened_at,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+}

@@ -33,6 +33,7 @@ import type {
   CreateSupportTriageRuleRequest,
   UpdateSupportTriageRuleRequest,
   SupportConversationTriage,
+  SupportMessageEmailDetail,
 } from '../pmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
@@ -160,4 +161,8 @@ export const supportService = {
    */
   sendViewingPresence: (workspaceId: string, conversationId: string, viewing: boolean) =>
     api.post(`/support/inbox/conversations/${conversationId}/viewing${qs(workspaceId)}`, { viewing }),
+
+  // Email details for an individual message (only when via_channel === 'email').
+  getMessageEmailDetail: (workspaceId: string, messageId: string) =>
+    api.get<SupportMessageEmailDetail>(`/support/inbox/messages/${messageId}/email${qs(workspaceId)}`),
 };

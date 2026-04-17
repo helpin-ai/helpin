@@ -961,6 +961,7 @@ func (r *PMTaskRepository) ListColumnTasks(ctx context.Context, stateID string, 
 // collectAndEnrich collects related IDs from tasks, batch-loads names/labels, and returns enriched BoardTask slices.
 func (r *PMTaskRepository) collectAndEnrich(ctx context.Context, tasks []model.PMTask, options taskEnrichOptions) []model.BoardTask {
 	tasks = r.applyDependencySummaries(ctx, tasks)
+	tasks = r.applyLatestActiveRuns(ctx, tasks)
 	epicIDs := map[string]struct{}{}
 	sprintIDs := map[string]struct{}{}
 	ownerMemberIDs := map[string]struct{}{}
@@ -1004,6 +1005,58 @@ type stateInfo struct {
 	Name      string
 	StateType string
 	Color     string
+}
+
+// latestActiveRunRow is a scan row for the latest non-terminal agent_run per task.
+type latestActiveRunRow struct {
+	TargetID string `gorm:"column:target_id"`
+	ID       string `gorm:"column:id"`
+	Status   string `gorm:"column:status"`
+}
+
+// applyLatestActiveRuns populates LatestRunID/LatestRunStatus on each task with
+// the most recent non-terminal agent_run targeting the task. Runs in terminal
+// states (completed/failed/cancelled) are ignored — only queued/running/paused
+// runs are surfaced, so card-level indicators reflect live work.
+func (r *PMTaskRepository) applyLatestActiveRuns(ctx context.Context, tasks []model.PMTask) []model.PMTask {
+	if len(tasks) == 0 {
+		return tasks
+	}
+	ids := make([]string, len(tasks))
+	for i, t := range tasks {
+		ids[i] = t.ID
+	}
+	var rows []latestActiveRunRow
+	activeStatuses := []string{
+		model.AgentRunStatusQueued,
+		model.AgentRunStatusRunning,
+		model.AgentRunStatusPaused,
+	}
+	if err := r.db.WithContext(ctx).
+		Table("agent_runs").
+		Select("target_id, id, status").
+		Where("target_type = ? AND target_id IN ? AND status IN ?", "task", ids, activeStatuses).
+		Order("target_id, COALESCE(started_at, created_at) DESC").
+		Find(&rows).Error; err != nil {
+		slog.WarnContext(ctx, "load latest active agent runs", "error", err)
+		return tasks
+	}
+	latest := make(map[string]latestActiveRunRow, len(rows))
+	for _, row := range rows {
+		if _, ok := latest[row.TargetID]; !ok {
+			latest[row.TargetID] = row
+		}
+	}
+	for i := range tasks {
+		row, ok := latest[tasks[i].ID]
+		if !ok {
+			continue
+		}
+		runID, runStatus := row.ID, row.Status
+		tasks[i].LatestRunID = &runID
+		tasks[i].LatestRunStatus = &runStatus
+	}
+	return tasks
 }
 
 // enrichBoardTasks maps epic/owner names, state info, and labels onto raw tasks for board display.
@@ -1888,6 +1941,7 @@ func (r *PMTaskRepository) UpdateSprintID(ctx context.Context, taskID string, sp
 
 func (r *PMTaskRepository) buildTaskDetail(ctx context.Context, task model.PMTask) (*model.TaskDetail, error) {
 	task = r.applyDependencySummaries(ctx, []model.PMTask{task})[0]
+	task = r.applyLatestActiveRuns(ctx, []model.PMTask{task})[0]
 
 	var owners []model.User
 	if err := r.db.WithContext(ctx).

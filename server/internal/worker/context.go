@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"sync"
 	"time"
 
@@ -107,12 +108,41 @@ type WorkflowConfig struct {
 	ExtraPrompt     string // the markdown body of WORKFLOW.md
 }
 
+const (
+	defaultWorkflowMaxIterations       = 50
+	plannerWorkflowMaxIterations       = 100
+	defaultWorkflowTimeoutMinutes      = 30
+	defaultWorkflowCommandTimeout      = 2 * time.Minute
+)
+
 // DefaultWorkflowConfig returns sensible defaults.
 func DefaultWorkflowConfig() *WorkflowConfig {
+	return DefaultWorkflowConfigForAgent(nil)
+}
+
+// DefaultWorkflowConfigForAgent returns runtime defaults, including higher
+// native planner tool budgets for Atlas and Scribe.
+func DefaultWorkflowConfigForAgent(agent *model.Agent) *WorkflowConfig {
+	maxIterations := defaultWorkflowMaxIterations
+	if isHighToolBudgetNativePlanner(agent) {
+		maxIterations = plannerWorkflowMaxIterations
+	}
 	return &WorkflowConfig{
-		MaxIterations:  50,
-		TimeoutMinutes: 30,
-		CommandTimeout: 2 * time.Minute,
+		MaxIterations:  maxIterations,
+		TimeoutMinutes: defaultWorkflowTimeoutMinutes,
+		CommandTimeout: defaultWorkflowCommandTimeout,
+	}
+}
+
+func isHighToolBudgetNativePlanner(agent *model.Agent) bool {
+	if agent == nil || strings.TrimSpace(agent.RuntimeKind) != "native_sdk" {
+		return false
+	}
+	switch strings.TrimSpace(agent.EffectivePresetKey()) {
+	case model.AgentPresetEpicPlanner, model.AgentPresetTaskPlanner:
+		return true
+	default:
+		return false
 	}
 }
 

@@ -135,6 +135,8 @@ export interface AgentRun {
   last_heartbeat_at?: string;
   input: Record<string, unknown>;
   output_summary: Record<string, unknown>;
+  input_tokens: number;
+  output_tokens: number;
   tokens_used: number;
   error_message?: string;
   started_at?: string;

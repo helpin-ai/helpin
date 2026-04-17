@@ -1,6 +1,8 @@
 package worker
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -434,5 +436,46 @@ func TestBuildRuntimeSystemPromptSkipsBehaviorAndSkillTextWhenDisabled(t *testin
 	}
 	if !strings.Contains(prompt, "You are Custom Agent, an AI coding agent.") {
 		t.Fatalf("expected runtime prompt to keep generic preamble\n%s", prompt)
+	}
+}
+
+func TestParseWorkflowConfigForAgent_UsesPlannerDefaultWhenFrontMatterOmitsMaxIterations(t *testing.T) {
+	dir := t.TempDir()
+	content := "---\ntimeout_minutes: 45\n---\nPlanner instructions"
+	if err := os.WriteFile(filepath.Join(dir, "WORKFLOW.md"), []byte(content), 0o644); err != nil {
+		t.Fatalf("write WORKFLOW.md: %v", err)
+	}
+
+	config := ParseWorkflowConfigForAgent(dir, &model.Agent{
+		PresetKey:   model.AgentPresetEpicPlanner,
+		RuntimeKind: "native_sdk",
+	})
+	if config == nil {
+		t.Fatal("expected config")
+	}
+	if config.MaxIterations != plannerWorkflowMaxIterations {
+		t.Fatalf("MaxIterations = %d, want %d", config.MaxIterations, plannerWorkflowMaxIterations)
+	}
+	if config.TimeoutMinutes != 45 {
+		t.Fatalf("TimeoutMinutes = %d, want 45", config.TimeoutMinutes)
+	}
+}
+
+func TestParseWorkflowConfigForAgent_RespectsExplicitMaxIterationsOverride(t *testing.T) {
+	dir := t.TempDir()
+	content := "---\nmax_iterations: 25\n---\nPlanner instructions"
+	if err := os.WriteFile(filepath.Join(dir, "WORKFLOW.md"), []byte(content), 0o644); err != nil {
+		t.Fatalf("write WORKFLOW.md: %v", err)
+	}
+
+	config := ParseWorkflowConfigForAgent(dir, &model.Agent{
+		PresetKey:   model.AgentPresetTaskPlanner,
+		RuntimeKind: "native_sdk",
+	})
+	if config == nil {
+		t.Fatal("expected config")
+	}
+	if config.MaxIterations != 25 {
+		t.Fatalf("MaxIterations = %d, want 25", config.MaxIterations)
 	}
 }

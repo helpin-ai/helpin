@@ -46,6 +46,7 @@ import { createPMDnDTraceID, logPMDnD } from '@/lib/pmDnDDebug';
 import { DragPreviewManager, useActiveTask, useColumnDragPreview, commitDropBeforeClearingPreview, getSameStateBoardDropIndex, getStateBoardPreviewInsertIndex, getStoredCrossColumnDropTarget, getStableCrossColumnPreviewIndex } from './KanbanBoard.dnd';
 import { BoardDataContext, BoardCallbacksContext, DragPreviewContext } from './KanbanBoard.contexts';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
+import { ACTIVE_RUN_STATUSES } from '@/components/pm/agentRunConstants';
 import { getVisibleTaskListGroupOptions, type TaskListGroupByOption } from '@/components/pm/task-detail/taskListGrouping';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
@@ -637,6 +638,22 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     },
     [navigate, workspaceSlug],
   );
+  const openAgentRun = useCallback(
+    (task: Task) => {
+      if (!workspaceSlug) return;
+      const hasActiveRun = !!task.latest_run_id
+        && !!task.latest_run_status
+        && ACTIVE_RUN_STATUSES.has(task.latest_run_status);
+      openTaskRoute(
+        navigate as never,
+        { pathname: window.location.pathname } as never,
+        workspaceSlug,
+        task.id,
+        hasActiveRun ? { run: task.latest_run_id! } : undefined,
+      );
+    },
+    [navigate, workspaceSlug],
+  );
   const resolveTeamName = useCallback(
     (taskTeamId: string | undefined) => {
       if (storeTeamId) return undefined;
@@ -1125,6 +1142,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   const boardCallbacksRef = useRef<import('./KanbanBoard.contexts').BoardCallbacksContextValue>({
     onTaskPatched: handleTaskPatched,
     onOpen: openTask,
+    onOpenAgentRun: openAgentRun,
     onCreate: handleCreateForState,
     onCreateForMember: handleCreateForMember,
     onToggleCollapse: toggleCollapse,
@@ -1134,6 +1152,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   boardCallbacksRef.current = {
     onTaskPatched: handleTaskPatched,
     onOpen: openTask,
+    onOpenAgentRun: openAgentRun,
     onCreate: handleCreateForState,
     onCreateForMember: handleCreateForMember,
     onToggleCollapse: toggleCollapse,

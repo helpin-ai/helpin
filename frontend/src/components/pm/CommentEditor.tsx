@@ -280,7 +280,10 @@ export function CommentEditor({
   return (
     <div className="relative bg-muted/50 px-3 pt-2 pb-1.5 rounded-b-lg transition-[color,box-shadow,background-color] focus-within:ring-1 focus-within:ring-ring/40">
       {mentionState && mentionState.items.length > 0 ? (
-        <div className="absolute bottom-full left-0 right-0 z-50 mb-1.5">
+        <div
+          className="absolute bottom-full left-0 right-0 z-50 mb-1.5"
+          onMouseDown={(e) => e.preventDefault()}
+        >
           <div className="mx-1 max-h-[260px] overflow-y-auto rounded-xl border border-border/60 bg-popover p-1.5 shadow-lg">
             <p className="px-2 pb-1 pt-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50">
               Suggestions
