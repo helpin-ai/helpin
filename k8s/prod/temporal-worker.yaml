@@ -37,7 +37,7 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.110
+          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.111
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
@@ -47,11 +47,11 @@ spec:
                 name: helpin-secrets
           resources:
             requests:
-              cpu: 250m
-              memory: 512Mi
+              cpu: 500m
+              memory: 2Gi
             limits:
-              cpu: "1"
-              memory: 1Gi
+              cpu: "2"
+              memory: 8Gi
           volumeMounts:
             - name: tmp
               mountPath: /tmp
@@ -101,7 +101,7 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.110
+          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.111
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
@@ -111,11 +111,11 @@ spec:
                 name: helpin-secrets
           resources:
             requests:
-              cpu: 250m
-              memory: 512Mi
+              cpu: 500m
+              memory: 2Gi
             limits:
-              cpu: "1"
-              memory: 1Gi
+              cpu: "2"
+              memory: 8Gi
           volumeMounts:
             - name: tmp
               mountPath: /tmp
@@ -167,7 +167,7 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.110
+          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.111
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
@@ -177,11 +177,11 @@ spec:
                 name: helpin-secrets
           resources:
             requests:
-              cpu: 250m
-              memory: 512Mi
+              cpu: 500m
+              memory: 2Gi
             limits:
-              cpu: "1"
-              memory: 1Gi
+              cpu: "2"
+              memory: 8Gi
           volumeMounts:
             - name: tmp
               mountPath: /tmp
@@ -235,7 +235,7 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.110
+          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.111
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
@@ -247,11 +247,11 @@ spec:
                 name: helpin-secrets
           resources:
             requests:
-              cpu: 250m
-              memory: 512Mi
+              cpu: 500m
+              memory: 2Gi
             limits:
-              cpu: "1"
-              memory: 1Gi
+              cpu: "2"
+              memory: 8Gi
           volumeMounts:
             - name: tmp
               mountPath: /tmp
@@ -305,7 +305,7 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.110
+          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.111
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
@@ -317,11 +317,11 @@ spec:
                 name: helpin-secrets
           resources:
             requests:
-              cpu: 250m
-              memory: 512Mi
+              cpu: 500m
+              memory: 2Gi
             limits:
-              cpu: "1"
-              memory: 1Gi
+              cpu: "2"
+              memory: 8Gi
           volumeMounts:
             - name: tmp
               mountPath: /tmp
@@ -373,7 +373,7 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.110
+          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.111
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
@@ -383,11 +383,11 @@ spec:
                 name: helpin-secrets
           resources:
             requests:
-              cpu: 250m
-              memory: 512Mi
-            limits:
-              cpu: "1"
+              cpu: 500m
               memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
           volumeMounts:
             - name: tmp
               mountPath: /tmp

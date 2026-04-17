@@ -82,6 +82,9 @@ export interface CodingSession {
   summary?: string;
   capabilities: CodingSessionCapabilities;
   repo: CodingSessionRepoState;
+  input_tokens: number;
+  output_tokens: number;
+  tokens_used: number;
   auth_state?: CodexAuthState;
   stream_state_snapshot?: CodingSessionStreamSnapshot;
   triggered_by_user?: CodingSessionActor;

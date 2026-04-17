@@ -19,6 +19,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries/useSession';
 import { useTitle } from '@/hooks/useTitle';
+import { formatRunTokenUsage } from '@/lib/agentTokenUsage';
 import type { Agent, AgentRun } from '@/lib/pmTypes';
 import { automationService } from '@/lib/services/automationService';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -123,7 +124,7 @@ function AgentRunRow({
           <div className="text-xs text-muted-foreground md:text-right">
             <p>{formatTimestamp(run.created_at)}</p>
             <p>
-              {run.tokens_used > 0 ? `${(run.tokens_used / 1000).toFixed(1)}k tokens` : 'No tokens yet'}
+              {formatRunTokenUsage(run, { emptyLabel: 'No tokens yet', includeUnit: true })}
             </p>
           </div>
         </div>

@@ -3,7 +3,9 @@ import { Clock01Icon, Loading01Icon, CheckmarkCircle02Icon, Key01Icon, MessagePr
 import { Badge } from '@/components/ui/badge';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
+import { formatRunTokenUsage } from '@/lib/agentTokenUsage';
 import { TABLE_HEADER, TABLE_HEADER_CELL, TABLE_ROW, TABLE_CELL } from '@/lib/tableStyles';
 import { getAgentRunDisplayStatus, STATUS_META } from './agentRunConstants';
 import type { Agent, AgentRun } from '@/lib/pmTypes';
@@ -68,7 +70,7 @@ export function AgentRunTable({ runs, agents, selectedRunId, onSelectRun, loadin
         <div className={TABLE_HEADER_CELL} style={{ width: 150 }}>Agent</div>
         <div className={TABLE_HEADER_CELL} style={{ flex: '1 1 0%', minWidth: 100 }}>Branch</div>
         <div className={TABLE_HEADER_CELL} style={{ width: 130 }}>Time</div>
-        <div className={`${TABLE_HEADER_CELL} text-right`} style={{ width: 70 }}>Tokens</div>
+        <div className={`${TABLE_HEADER_CELL} text-right`} style={{ width: 180 }}>Tokens</div>
       </div>
 
       {/* Rows */}
@@ -90,10 +92,24 @@ export function AgentRunTable({ runs, agents, selectedRunId, onSelectRun, loadin
             }`}
           >
             <div className={TABLE_CELL} style={{ width: 120 }}>
-              <Badge variant={meta.variant} className={`gap-1 px-1.5 py-0 text-[10px] ${meta.className ?? ''}`}>
-                {STATUS_ICONS[displayStatus]}
-                {meta.label}
-              </Badge>
+              {run.error_message ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge variant={meta.variant} className={`cursor-help gap-1 px-1.5 py-0 text-[10px] ${meta.className ?? ''}`}>
+                      {STATUS_ICONS[displayStatus]}
+                      {meta.label}
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" align="start" className="max-w-[360px] whitespace-pre-wrap break-words px-3 py-2 text-xs leading-relaxed">
+                    {run.error_message}
+                  </TooltipContent>
+                </Tooltip>
+              ) : (
+                <Badge variant={meta.variant} className={`gap-1 px-1.5 py-0 text-[10px] ${meta.className ?? ''}`}>
+                  {STATUS_ICONS[displayStatus]}
+                  {meta.label}
+                </Badge>
+              )}
             </div>
             <div className={`${TABLE_CELL} text-foreground`} style={{ width: 150 }}>
               <div className="flex min-w-0 items-center gap-1.5">
@@ -113,8 +129,8 @@ export function AgentRunTable({ runs, agents, selectedRunId, onSelectRun, loadin
             <div className={`${TABLE_CELL} text-muted-foreground`} style={{ width: 130 }}>
               {formatDistanceToNow(parseISO(run.created_at), { addSuffix: true })}
             </div>
-            <div className={`${TABLE_CELL} justify-end text-muted-foreground`} style={{ width: 70 }}>
-              {run.tokens_used > 0 ? `${(run.tokens_used / 1000).toFixed(1)}k` : '-'}
+            <div className={`${TABLE_CELL} justify-end text-muted-foreground`} style={{ width: 180 }}>
+              {formatRunTokenUsage(run)}
             </div>
           </button>
         );

@@ -15,6 +15,7 @@ export interface BoardDataContextValue {
 export interface BoardCallbacksContextValue {
   onTaskPatched: (task: Task) => void;
   onOpen: (task: Task) => void;
+  onOpenAgentRun: (task: Task) => void;
   onCreate: (id: string) => void;
   onCreateForMember: (memberId: string | null) => void;
   onToggleCollapse: (id: string) => void;

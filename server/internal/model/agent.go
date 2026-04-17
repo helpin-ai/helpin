@@ -141,6 +141,8 @@ type AgentRun struct {
 	LastHeartbeatAt   *time.Time      `json:"last_heartbeat_at"`
 	Input             json.RawMessage `json:"input" gorm:"type:jsonb;not null;default:'{}'"`
 	OutputSummary     json.RawMessage `json:"output_summary" gorm:"type:jsonb;not null;default:'{}'"`
+	InputTokens       int             `json:"input_tokens" gorm:"not null;default:0"`
+	OutputTokens      int             `json:"output_tokens" gorm:"not null;default:0"`
 	TokensUsed        int             `json:"tokens_used" gorm:"not null;default:0"`
 	ErrorMessage      *string         `json:"error_message"`
 	StartedAt         *time.Time      `json:"started_at"`
