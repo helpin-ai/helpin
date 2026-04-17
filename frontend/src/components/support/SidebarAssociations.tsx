@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowRight01Icon,
   Building03Icon,
   Delete01Icon,
   DollarCircleIcon,
@@ -16,6 +15,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { CollapsibleSection } from '@/components/ui/collapsible-section';
 import {
   Dialog,
   DialogContent,
@@ -37,7 +37,6 @@ import { supportService } from '@/lib/services/supportService';
 import { queryKeys } from '@/lib/queryKeys';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
-import { cn } from '@/lib/utils';
 import type { CRMObjectType, CRMSearchResult } from '@/lib/crmTypes';
 import type { CreateTaskRequest, GroupedAssociations } from '@/lib/pmTypes';
 
@@ -48,71 +47,11 @@ interface SidebarAssociationsProps {
 
 type SectionKey = 'tasks' | 'crm' | 'docs';
 
-const SECTION_PREVIEW_LIMIT = 3;
-
 const crmIconMap = {
   contact: UserGroupIcon,
   company: Building03Icon,
   deal: DollarCircleIcon,
 } as const;
-
-function SidebarAssociationSection({
-  title,
-  count,
-  emptyState,
-  expanded,
-  onToggle,
-  onAdd,
-  children,
-}: {
-  title: string;
-  count: number;
-  emptyState: string;
-  expanded: boolean;
-  onToggle: () => void;
-  onAdd: () => void;
-  children: React.ReactNode;
-}) {
-  const canToggle = count > SECTION_PREVIEW_LIMIT;
-  const hiddenCount = Math.max(count - SECTION_PREVIEW_LIMIT, 0);
-
-  return (
-    <>
-      <div className="flex items-center justify-between">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {title}
-          {count > 0 && <span className="ml-1.5 font-normal">{count}</span>}
-        </h3>
-        <button
-          type="button"
-          className="rounded-md p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          onClick={onAdd}
-          aria-label={`Add ${title.toLowerCase()}`}
-        >
-          <PlusSignIcon className="h-3.5 w-3.5" />
-        </button>
-      </div>
-
-      {count === 0 ? (
-        <p className="mt-2 py-2 text-[11px] italic text-muted-foreground">{emptyState}</p>
-      ) : (
-        <>
-          <div className="mt-2 space-y-1">{children}</div>
-          {canToggle && (
-            <button
-              type="button"
-              className="mt-1 inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
-              onClick={onToggle}
-            >
-              <ArrowRight01Icon className={cn('h-3 w-3 transition-transform', expanded && 'rotate-90')} />
-              {expanded ? 'Show less' : `Show ${hiddenCount} more`}
-            </button>
-          )}
-        </>
-      )}
-    </>
-  );
-}
 
 export function SidebarAssociations({ workspaceId, conversationId }: SidebarAssociationsProps) {
   const navigate = useNavigate();
@@ -153,11 +92,6 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
   const [results, setResults] = useState<SearchResult[]>([]);
   const [crmResults, setCRMResults] = useState<CRMSearchResult[]>([]);
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
-  const [expandedSections, setExpandedSections] = useState<Record<SectionKey, boolean>>({
-    tasks: false,
-    crm: false,
-    docs: false,
-  });
 
   const { data: workflows = [] } = useWorkflows(workspaceId);
   const workflow = workflows[0] ?? null;
@@ -296,150 +230,171 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
   const tasks = associationsData?.tasks ?? [];
   const crmRecords = associationsData?.crm_records ?? [];
   const docs = associationsData?.docs ?? [];
-  const visibleTasks = expandedSections.tasks ? tasks : tasks.slice(0, SECTION_PREVIEW_LIMIT);
-  const visibleCRMRecords = expandedSections.crm ? crmRecords : crmRecords.slice(0, SECTION_PREVIEW_LIMIT);
-  const visibleDocs = expandedSections.docs ? docs : docs.slice(0, SECTION_PREVIEW_LIMIT);
 
   return (
-    <div className="px-3 py-4">
-      <SidebarAssociationSection
+    <div>
+      <CollapsibleSection
         title="Tasks"
         count={tasks.length}
-        emptyState="No linked tasks"
-        expanded={expandedSections.tasks}
-        onToggle={() => setExpandedSections((current) => ({ ...current, tasks: !current.tasks }))}
+        defaultOpen={tasks.length > 0}
         onAdd={() => setPickerSection('tasks')}
       >
-        {visibleTasks.map((item) => (
-          <div
-            key={`${item.object_type}-${item.object_id}`}
-            className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-muted/40"
+        {tasks.length === 0 ? (
+          <button
+            type="button"
+            onClick={() => setPickerSection('tasks')}
+            className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-border/60 px-3 py-2 text-xs text-muted-foreground transition-colors hover:border-border hover:bg-muted/40 hover:text-foreground"
           >
-            <button
-              type="button"
-              className="flex min-w-0 flex-1 items-center gap-2 text-left"
-              onClick={() => handleNavigateTask(item.object_id)}
-            >
-              {item.display_id && (
-                <span className="shrink-0 text-muted-foreground">{item.display_id}</span>
-              )}
-              <span className="truncate">{item.title}</span>
-              {item.status && (
-                <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">{item.status}</span>
-              )}
-            </button>
-            {item.association_id ? (
-              <button
-                type="button"
-                className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-all hover:bg-background hover:text-destructive group-hover:opacity-100"
-                onClick={() => deleteAssociation.mutate(item.association_id!)}
-                aria-label="Remove task association"
+            <PlusSignIcon className="h-3.5 w-3.5" />
+            Link a task
+          </button>
+        ) : (
+          <div className="space-y-0.5">
+            {tasks.map((item) => (
+              <div
+                key={`${item.object_type}-${item.object_id}`}
+                className="group flex items-center gap-2 rounded-md px-1 py-1.5 text-xs transition-colors hover:bg-muted/40"
               >
-                <Delete01Icon className="h-3 w-3" />
-              </button>
-            ) : null}
+                <button
+                  type="button"
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                  onClick={() => handleNavigateTask(item.object_id)}
+                >
+                  {item.display_id && (
+                    <span className="shrink-0 text-muted-foreground">{item.display_id}</span>
+                  )}
+                  <span className="truncate">{item.title}</span>
+                  {item.status && (
+                    <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">{item.status}</span>
+                  )}
+                </button>
+                {item.association_id ? (
+                  <button
+                    type="button"
+                    className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-all hover:bg-background hover:text-destructive group-hover:opacity-100"
+                    onClick={() => deleteAssociation.mutate(item.association_id!)}
+                    aria-label="Remove task association"
+                  >
+                    <Delete01Icon className="h-3 w-3" />
+                  </button>
+                ) : null}
+              </div>
+            ))}
           </div>
-        ))}
-      </SidebarAssociationSection>
+        )}
+      </CollapsibleSection>
 
-      <div className="my-4 h-px bg-border/60" />
-
-      <SidebarAssociationSection
+      <CollapsibleSection
         title="CRM"
         count={crmRecords.length}
-        emptyState="No linked CRM records"
-        expanded={expandedSections.crm}
-        onToggle={() => setExpandedSections((current) => ({ ...current, crm: !current.crm }))}
+        defaultOpen={crmRecords.length > 0}
         onAdd={() => setPickerSection('crm')}
       >
-        {visibleCRMRecords.map((item) => (
-          <div
-            key={`${item.object_type}-${item.object_id}`}
-            className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-muted/40"
+        {crmRecords.length === 0 ? (
+          <button
+            type="button"
+            onClick={() => setPickerSection('crm')}
+            className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-border/60 px-3 py-2 text-xs text-muted-foreground transition-colors hover:border-border hover:bg-muted/40 hover:text-foreground"
           >
-            {(() => {
+            <PlusSignIcon className="h-3.5 w-3.5" />
+            Link a contact, company, or deal
+          </button>
+        ) : (
+          <div className="space-y-0.5">
+            {crmRecords.map((item) => {
               const CRMIcon = crmIconMap[item.object_type as keyof typeof crmIconMap] ?? Building03Icon;
-
               return (
-                <>
-            <button
-              type="button"
-              className="flex min-w-0 flex-1 items-center gap-2 text-left"
-              onClick={() => handleNavigateCRM(item.object_type as CRMObjectType, item.object_id)}
-            >
-              <CRMIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              <span className="truncate font-medium">{item.title}</span>
-              {(item.context_label || item.display_id) && (
-                <span className="ml-auto flex shrink-0 items-center gap-2">
-                  {item.context_label && (
-                    <span className="text-[10px] text-muted-foreground">
-                      {item.context_label}
-                    </span>
-                  )}
-                  {item.display_id && (
-                    <span className="text-[10px] text-muted-foreground opacity-0 transition-opacity delay-0 group-hover:opacity-100 group-hover:delay-200">
-                      {item.display_id}
-                    </span>
-                  )}
-                </span>
-              )}
-            </button>
-            {(item.association_id || (item.object_type === 'contact' && !item.inferred)) ? (
-              <button
-                type="button"
-                className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-all hover:bg-background hover:text-destructive group-hover:opacity-100"
-                onClick={() => void handleRemoveCRM(item)}
-                aria-label="Remove CRM association"
-              >
-                <Delete01Icon className="h-3 w-3" />
-              </button>
-            ) : null}
-                </>
+                <div
+                  key={`${item.object_type}-${item.object_id}`}
+                  className="group flex items-center gap-2 rounded-md px-1 py-1.5 text-xs transition-colors hover:bg-muted/40"
+                >
+                  <button
+                    type="button"
+                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    onClick={() => handleNavigateCRM(item.object_type as CRMObjectType, item.object_id)}
+                  >
+                    <CRMIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span className="truncate font-medium">{item.title}</span>
+                    {(item.context_label || item.display_id) && (
+                      <span className="ml-auto flex shrink-0 items-center gap-2">
+                        {item.context_label && (
+                          <span className="text-[10px] text-muted-foreground">
+                            {item.context_label}
+                          </span>
+                        )}
+                        {item.display_id && (
+                          <span className="text-[10px] text-muted-foreground opacity-0 transition-opacity delay-0 group-hover:opacity-100 group-hover:delay-200">
+                            {item.display_id}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                  </button>
+                  {(item.association_id || (item.object_type === 'contact' && !item.inferred)) ? (
+                    <button
+                      type="button"
+                      className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-all hover:bg-background hover:text-destructive group-hover:opacity-100"
+                      onClick={() => void handleRemoveCRM(item)}
+                      aria-label="Remove CRM association"
+                    >
+                      <Delete01Icon className="h-3 w-3" />
+                    </button>
+                  ) : null}
+                </div>
               );
-            })()}
+            })}
           </div>
-        ))}
-      </SidebarAssociationSection>
+        )}
+      </CollapsibleSection>
 
-      <div className="my-4 h-px bg-border/60" />
-
-      <SidebarAssociationSection
+      <CollapsibleSection
         title="Docs"
         count={docs.length}
-        emptyState="No linked docs"
-        expanded={expandedSections.docs}
-        onToggle={() => setExpandedSections((current) => ({ ...current, docs: !current.docs }))}
+        defaultOpen={docs.length > 0}
         onAdd={() => setPickerSection('docs')}
       >
-        {visibleDocs.map((item) => (
-          <div
-            key={`${item.object_type}-${item.object_id}`}
-            className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-muted/40"
+        {docs.length === 0 ? (
+          <button
+            type="button"
+            onClick={() => setPickerSection('docs')}
+            className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-border/60 px-3 py-2 text-xs text-muted-foreground transition-colors hover:border-border hover:bg-muted/40 hover:text-foreground"
           >
-            <button
-              type="button"
-              className="flex min-w-0 flex-1 items-center gap-2 text-left"
-              onClick={() => handleNavigateDoc(item.object_id)}
-            >
-              <File01Icon className="h-3 w-3 shrink-0 text-muted-foreground" />
-              <span className="truncate font-medium">{item.title}</span>
-              {item.display_id && (
-                <span className="ml-auto shrink-0 text-muted-foreground">{item.display_id}</span>
-              )}
-            </button>
-            {item.association_id ? (
-              <button
-                type="button"
-                className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-all hover:bg-background hover:text-destructive group-hover:opacity-100"
-                onClick={() => deleteDocAssociation.mutate(item.association_id!)}
-                aria-label="Remove document association"
+            <PlusSignIcon className="h-3.5 w-3.5" />
+            Link a doc
+          </button>
+        ) : (
+          <div className="space-y-0.5">
+            {docs.map((item) => (
+              <div
+                key={`${item.object_type}-${item.object_id}`}
+                className="group flex items-center gap-2 rounded-md px-1 py-1.5 text-xs transition-colors hover:bg-muted/40"
               >
-                <Delete01Icon className="h-3 w-3" />
-              </button>
-            ) : null}
+                <button
+                  type="button"
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                  onClick={() => handleNavigateDoc(item.object_id)}
+                >
+                  <File01Icon className="h-3 w-3 shrink-0 text-muted-foreground" />
+                  <span className="truncate font-medium">{item.title}</span>
+                  {item.display_id && (
+                    <span className="ml-auto shrink-0 text-muted-foreground">{item.display_id}</span>
+                  )}
+                </button>
+                {item.association_id ? (
+                  <button
+                    type="button"
+                    className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-all hover:bg-background hover:text-destructive group-hover:opacity-100"
+                    onClick={() => deleteDocAssociation.mutate(item.association_id!)}
+                    aria-label="Remove document association"
+                  >
+                    <Delete01Icon className="h-3 w-3" />
+                  </button>
+                ) : null}
+              </div>
+            ))}
           </div>
-        ))}
-      </SidebarAssociationSection>
+        )}
+      </CollapsibleSection>
 
       {/* Link existing modal */}
       <Dialog open={!!pickerSection} onOpenChange={(open) => { if (!open) setPickerSection(null); }}>

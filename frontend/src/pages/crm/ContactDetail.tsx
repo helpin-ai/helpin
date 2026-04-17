@@ -15,6 +15,7 @@ import {
   MoreVerticalIcon,
   PlusSignIcon,
   Search01Icon,
+  StickyNote01Icon,
   Tag01Icon,
   TelephoneIcon,
   UserIcon,
@@ -36,12 +37,12 @@ import {
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Textarea } from '@/components/ui/textarea';
+import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { usePageHeaderStore } from '@/stores/pageHeaderStore';
 import {
   useContact,
   useUpdateContact,
@@ -62,14 +63,17 @@ import { EmailTimeline } from '@/components/crm/EmailTimeline';
 import { CalendarEvents } from '@/components/crm/CalendarEvents';
 import { BuyerSignals } from '@/components/crm/BuyerSignals';
 import { EntitySummaryCard } from '@/components/crm/EntitySummaryCard';
-import { EnrichmentCard } from '@/components/crm/EnrichmentCard';
+import { EnrichmentRailCard } from '@/components/crm/contact-detail/EnrichmentRailCard';
 import { LinkedTasksPanel } from '@/components/crm/LinkedTasksPanel';
+import { ContactHeader } from '@/components/crm/contact-detail/ContactHeader';
+import { ContactComposer } from '@/components/crm/contact-detail/ContactComposer';
+import { RailSection } from '@/components/crm/contact-detail/RailSection';
+import { CompanyRailCard } from '@/components/crm/contact-detail/CompanyRailCard';
 import { crmSearchService } from '@/lib/services/crmService';
 import { supportService } from '@/lib/services/supportService';
 import { useTitle } from '@/hooks/useTitle';
 import { cn } from '@/lib/utils';
 import type {
-  CRMActivityType,
   CRMEmailProvider,
   CRMSearchResult,
   LifecycleStage,
@@ -113,11 +117,6 @@ const leadStatusOptions: { value: LeadStatus; label: string }[] = [
   { value: 'unqualified', label: 'Unqualified' },
 ];
 
-const activityCreationTypes: { type: CRMActivityType; label: string; icon: typeof Message01Icon }[] = [
-  { type: 'note', label: '+ Note', icon: Message01Icon },
-  { type: 'call', label: 'Log call', icon: TelephoneIcon },
-  { type: 'meeting', label: 'Log meeting', icon: Calendar01Icon },
-];
 
 const SIDEBAR_PREVIEW_LIMIT = 3;
 
@@ -134,69 +133,25 @@ function sourceLabel(source: string): string {
 
 // ── Small helpers ──
 
+function TabBadge({ children, active }: { children: React.ReactNode; active: boolean }) {
+  return (
+    <span
+      className={cn(
+        'ml-0.5 text-[11px] tabular-nums',
+        active ? 'text-muted-foreground' : 'text-muted-foreground/70',
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
 function MetadataRow({ icon: Icon, label, children }: { icon: React.ElementType; label: string; children: React.ReactNode }) {
   return (
     <>
       <Icon className="h-3.5 w-3.5 shrink-0 self-center text-muted-foreground" />
       <span className="self-center text-xs text-muted-foreground">{label}</span>
       <div className="min-w-0 self-center">{children}</div>
-    </>
-  );
-}
-
-function SidebarAssociationSection({
-  title,
-  count,
-  expanded,
-  onToggle,
-  onAdd,
-  addDisabled = false,
-  children,
-}: {
-  title: string;
-  count: number;
-  expanded: boolean;
-  onToggle: () => void;
-  onAdd: () => void;
-  addDisabled?: boolean;
-  children: React.ReactNode;
-}) {
-  const canToggle = count > SIDEBAR_PREVIEW_LIMIT;
-  const hiddenCount = Math.max(count - SIDEBAR_PREVIEW_LIMIT, 0);
-
-  return (
-    <>
-      <div className="flex items-center justify-between">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {title}
-          {count > 0 && <span className="ml-1.5 font-normal">{count}</span>}
-        </h3>
-        <button
-          type="button"
-          className="rounded-md p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
-          onClick={onAdd}
-          disabled={addDisabled}
-          aria-label={`Add ${title.toLowerCase()}`}
-        >
-          <PlusSignIcon className="h-3.5 w-3.5" />
-        </button>
-      </div>
-
-      {count > 0 && (
-        <>
-          <div className="mt-2 space-y-1">{children}</div>
-          {canToggle && (
-            <button
-              type="button"
-              className="mt-1 inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
-              onClick={onToggle}
-            >
-              <ArrowRight01Icon className={cn('h-3 w-3 transition-transform', expanded && 'rotate-90')} />
-              {expanded ? 'Show less' : `Show ${hiddenCount} more`}
-            </button>
-          )}
-        </>
-      )}
     </>
   );
 }
@@ -261,6 +216,46 @@ function statusColor(status: string) {
   }
 }
 
+// ── Empty-state previews ──
+
+function RecentActivityEmptyState() {
+  return (
+    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/60 px-6 py-10 text-center">
+      <div className="rounded-full bg-muted p-2.5">
+        <Message01Icon className="h-5 w-5 text-muted-foreground" />
+      </div>
+      <p className="mt-3 text-sm font-medium">No activity yet</p>
+      <p className="mt-1 max-w-xs text-xs text-muted-foreground">
+        Emails, meetings, and notes for this contact will appear here.
+      </p>
+    </div>
+  );
+}
+
+function NotesAndCallsEmptyState({ onAddNote, onLogCall }: { onAddNote: () => void; onLogCall: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/60 px-6 py-10 text-center">
+      <div className="rounded-full bg-muted p-2.5">
+        <StickyNote01Icon className="h-5 w-5 text-muted-foreground" />
+      </div>
+      <p className="mt-3 text-sm font-medium">No notes or calls yet</p>
+      <p className="mt-1 max-w-xs text-xs text-muted-foreground">
+        Log a call or drop a quick note to keep a shared history.
+      </p>
+      <div className="mt-4 flex items-center gap-2">
+        <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={onLogCall}>
+          <TelephoneIcon className="h-3 w-3" />
+          Log call
+        </Button>
+        <Button size="sm" className="h-7 gap-1.5 text-xs" onClick={onAddNote}>
+          <StickyNote01Icon className="h-3 w-3" />
+          Add note
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ──
 
 export function ContactDetailPage({ contactId }: { contactId: string }) {
@@ -295,10 +290,9 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
-  // ── Activity creation state (moved from ActivityTimeline) ──
-  const [creatingType, setCreatingType] = useState<CRMActivityType | null>(null);
-  const [newSubject, setNewSubject] = useState('');
-  const [newBody, setNewBody] = useState('');
+  // ── Inline composer state ──
+  const [composerMode, setComposerMode] = useState<'note' | 'call' | 'meeting'>('note');
+  const [composerFocusSeq, setComposerFocusSeq] = useState(0);
 
   // ── Activity delete state ──
   const [deleteActivityId, setDeleteActivityId] = useState<string | null>(null);
@@ -423,6 +417,36 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
 
   useTitle(fullName);
 
+  // Push contact name + inline actions into the global Header breadcrumb.
+  const setHeaderTitle = usePageHeaderStore((s) => s.setTitleOverride);
+  const setHeaderActions = usePageHeaderStore((s) => s.setActions);
+  const resetHeader = usePageHeaderStore((s) => s.reset);
+  useEffect(() => {
+    setHeaderTitle(fullName);
+    setHeaderActions(
+      <>
+        <SaveIndicator saving={saving} error={saveError} />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0">
+              <MoreVerticalIcon className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              onClick={() => setDeleteConfirmOpen(true)}
+            >
+              <Delete01Icon className="mr-2 h-3.5 w-3.5" />
+              Delete contact
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </>,
+    );
+    return () => resetHeader();
+  }, [fullName, saving, saveError, setHeaderTitle, setHeaderActions, resetHeader]);
+
   // ── Effects ──
   useEffect(() => {
     if (contact && !form) {
@@ -536,26 +560,6 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
     }
   };
 
-  const handleCreateActivity = async () => {
-    if (!wsId || !newSubject.trim() || !creatingType) return;
-    try {
-      await createActivity.mutateAsync({
-        workspace_id: wsId,
-        activity_type: creatingType,
-        contact_id: contactId,
-        subject: newSubject.trim(),
-        body: newBody.trim() || undefined,
-      });
-      toast.success('Activity logged');
-      setCreatingType(null);
-      setNewSubject('');
-      setNewBody('');
-      refetchActivities();
-    } catch {
-      toast.error('Failed to log activity');
-    }
-  };
-
   const handleAddDeal = async (dealId: string) => {
     try {
       await createAssociation.mutateAsync({
@@ -664,214 +668,125 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      {/* ── Header bar ── */}
-      <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
-        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={goBack}>
-          <ArrowLeft02Icon className="h-4 w-4" />
-        </Button>
-
-        <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
-          <UserIcon className="h-3.5 w-3.5 shrink-0 text-sky-500" />
-          <button type="button" className="shrink-0 transition-colors hover:text-foreground cursor-pointer" onClick={goBack}>
-            Contacts
-          </button>
-          <ArrowRight01Icon className="h-3 w-3 shrink-0" />
-          <span className="truncate font-medium text-foreground">{fullName}</span>
-          <span className="ml-1 text-xs text-muted-foreground">{contact.display_id}</span>
-        </div>
-
-        {/* Activity creation buttons */}
-        <div className="ml-auto flex items-center gap-1.5">
-          {activityCreationTypes.map(({ type, label, icon: Icon }) => (
-            <Button
-              key={type}
-              variant="outline"
-              size="sm"
-              className="h-7 gap-1.5 text-xs"
-              onClick={() => {
-                setCreatingType(creatingType === type ? null : type);
-                setNewSubject('');
-                setNewBody('');
-              }}
-            >
-              <Icon className="h-3.5 w-3.5" />
-              {label}
-            </Button>
-          ))}
-
-          <Separator orientation="vertical" className="mx-1 h-5" />
-          <SaveIndicator saving={saving} error={saveError} />
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0">
-                <MoreVerticalIcon className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                className="text-destructive focus:text-destructive"
-                onClick={() => setDeleteConfirmOpen(true)}
-              >
-                <Delete01Icon className="mr-2 h-3.5 w-3.5" />
-                Delete contact
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
-
-      {/* ── Activity creation dialog ── */}
-      <Dialog open={!!creatingType} onOpenChange={(open) => { if (!open) setCreatingType(null); }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-sm capitalize">
-              {creatingType === 'note' ? 'Add note' : creatingType === 'call' ? 'Log call' : 'Schedule meeting'}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <Input
-              placeholder="Subject"
-              value={newSubject}
-              onChange={(e) => setNewSubject(e.target.value)}
-              className="text-sm"
-              autoFocus
-            />
-            <Textarea
-              placeholder="Details..."
-              value={newBody}
-              onChange={(e) => setNewBody(e.target.value)}
-              className="min-h-[80px] text-sm"
-              rows={3}
-            />
-            <div className="flex justify-end gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setCreatingType(null)}>
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                disabled={!newSubject.trim() || createActivity.isPending}
-                onClick={handleCreateActivity}
-              >
-                {createActivity.isPending ? 'Saving...' : 'Save'}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+    <div
+      className={cn(
+        'grid h-full min-h-0',
+        activeTab === 'overview' ? 'grid-cols-1 lg:grid-cols-[1fr_300px]' : 'grid-cols-1',
+      )}
+    >
+      <div className="flex min-h-0 flex-col overflow-hidden">
+      {/* ── Contact identity header ── */}
+      <ContactHeader
+        firstName={form.first_name}
+        lastName={form.last_name}
+        jobTitle={form.job_title}
+        companyName={primaryCompanyAssociation?.linked_object_name ?? undefined}
+        companyHref={
+          primaryCompanyAssociation
+            ? `/w/${wsSlug}/crm/companies/${primaryCompanyAssociation.linkedId}`
+            : undefined
+        }
+        lifecycleStage={form.lifecycle_stage}
+        lifecycleLabel={
+          lifecycleOptions.find((o) => o.value === form.lifecycle_stage)?.label ?? form.lifecycle_stage
+        }
+        onNameChange={(first, last) => {
+          setForm((current) =>
+            current ? { ...current, first_name: first, last_name: last } : current,
+          );
+          queuePatch({ first_name: first, last_name: last });
+        }}
+      />
 
       {/* ── Tabs + content ── */}
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ContactTab)} className="min-h-0 flex-1 flex flex-col">
-        <div className="border-b border-border/60 px-4">
-          <TabsList variant="line" className="h-auto gap-6 rounded-none border-none p-0">
-            <TabsTrigger
-              value="overview"
-              className="h-auto rounded-none border-none px-0 pb-3 pt-2 text-sm data-[state=active]:bg-transparent data-[state=active]:shadow-none"
-            >
-              Overview
-            </TabsTrigger>
-            <TabsTrigger
-              value="emails"
-              className="h-auto rounded-none border-none px-0 pb-3 pt-2 text-sm data-[state=active]:bg-transparent data-[state=active]:shadow-none"
-            >
-              Emails
-              {emailCount > 0 && <span className="ml-1 text-xs text-muted-foreground">{emailCount}</span>}
-            </TabsTrigger>
-            <TabsTrigger
-              value="meetings"
-              className="h-auto rounded-none border-none px-0 pb-3 pt-2 text-sm data-[state=active]:bg-transparent data-[state=active]:shadow-none"
-            >
-              Meetings
-              {meetingCount > 0 && <span className="ml-1 text-xs text-muted-foreground">{meetingCount}</span>}
-            </TabsTrigger>
-            <TabsTrigger
-              value="tasks"
-              className="h-auto rounded-none border-none px-0 pb-3 pt-2 text-sm data-[state=active]:bg-transparent data-[state=active]:shadow-none"
-            >
-              Tasks
-              {taskCount > 0 && <span className="ml-1 text-xs text-muted-foreground">{taskCount}</span>}
-            </TabsTrigger>
-            <TabsTrigger
-              value="deals"
-              className="h-auto rounded-none border-none px-0 pb-3 pt-2 text-sm data-[state=active]:bg-transparent data-[state=active]:shadow-none"
-            >
-              Deals
-              {dealCount > 0 && <span className="ml-1 text-xs text-muted-foreground">{dealCount}</span>}
-            </TabsTrigger>
-            <TabsTrigger
-              value="support"
-              className="h-auto rounded-none border-none px-0 pb-3 pt-2 text-sm data-[state=active]:bg-transparent data-[state=active]:shadow-none"
-            >
-              Support
-              {supportCount > 0 && <span className="ml-1 text-xs text-muted-foreground">{supportCount}</span>}
-            </TabsTrigger>
-          </TabsList>
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ContactTab)} className="min-h-0 flex-1 flex flex-col gap-0">
+        <div className="flex items-center gap-0.5 border-b border-border/60 px-6">
+          {[
+            { id: 'overview' as const, label: 'Overview', count: 0 },
+            { id: 'emails' as const, label: 'Emails', count: emailCount },
+            { id: 'meetings' as const, label: 'Meetings', count: meetingCount },
+            { id: 'tasks' as const, label: 'Tasks', count: taskCount },
+            { id: 'deals' as const, label: 'Deals', count: dealCount },
+            { id: 'support' as const, label: 'Support', count: supportCount },
+          ].map((t) => {
+            const active = activeTab === t.id;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setActiveTab(t.id)}
+                className={cn(
+                  'inline-flex items-center gap-1 whitespace-nowrap border-b-2 px-2.5 py-1.5 -mb-px text-xs font-medium transition-colors',
+                  active
+                    ? 'border-primary text-foreground'
+                    : 'border-transparent text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {t.label}
+                {t.count > 0 && <TabBadge active={active}>{t.count}</TabBadge>}
+              </button>
+            );
+          })}
         </div>
 
-        <div className={cn(
-          'grid min-h-0 flex-1 overflow-hidden',
-          activeTab === 'overview' ? 'grid-cols-1 lg:grid-cols-[1fr_300px]' : 'grid-cols-1',
-        )}>
-          {/* ── Left column ── */}
-          <div className="min-h-0 overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto">
             {/* ──────── OVERVIEW TAB ──────── */}
             <TabsContent value="overview" className="mt-0 h-full overflow-y-auto px-8 py-6">
-              {/* Name */}
-              <div className="grid min-w-0 gap-2 sm:grid-cols-2">
-                <input
-                  className="min-w-0 bg-transparent text-2xl font-bold text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
-                  value={form.first_name}
-                  onChange={(event) => updateField('first_name', event.target.value, { first_name: event.target.value })}
-                  placeholder="First name"
-                />
-                <input
-                  className="min-w-0 bg-transparent text-2xl font-bold text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
-                  value={form.last_name}
-                  onChange={(event) => updateField('last_name', event.target.value, { last_name: event.target.value })}
-                  placeholder="Last name"
+              {/* AI Summary (renders its own SUMMARY heading) */}
+              <EntitySummaryCard workspaceId={wsId} contactId={contactId} />
+
+              {/* Inline composer (replaces modal) */}
+              <div className="mt-6">
+                <ContactComposer
+                  key={composerFocusSeq}
+                  initialMode={composerMode}
+                  isPending={createActivity.isPending}
+                  onSubmit={async ({ activityType, subject, body }) => {
+                    if (!wsId) return;
+                    try {
+                      await createActivity.mutateAsync({
+                        workspace_id: wsId,
+                        activity_type: activityType,
+                        contact_id: contactId,
+                        subject,
+                        body,
+                      });
+                      toast.success('Activity logged');
+                      refetchActivities();
+                    } catch {
+                      toast.error('Failed to log activity');
+                      throw new Error('failed');
+                    }
+                  }}
                 />
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">{contact.display_id}</p>
 
               {/* Support callout banner */}
               {openSupportCount > 0 && mostRecentSupportDate && (
-                <>
-                  <div className="mt-5 flex items-center gap-3 rounded-lg border border-amber-200/60 bg-amber-50/50 px-4 py-3 dark:border-amber-800/40 dark:bg-amber-950/20">
-                    <Message01Icon className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                    <span className="text-sm">
-                      {openSupportCount} open support conversation{openSupportCount > 1 ? 's' : ''}
-                      {' · '}last activity {format(mostRecentSupportDate, 'dd/MM/yyyy')}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('support')}
-                      className="ml-auto text-sm font-medium text-amber-700 transition-colors hover:underline dark:text-amber-400"
-                    >
-                      Open ↗
-                    </button>
-                  </div>
-                </>
+                <div className="mt-5 flex items-center gap-3 rounded-lg border border-amber-200/60 bg-amber-50/50 px-4 py-3 dark:border-amber-800/40 dark:bg-amber-950/20">
+                  <Message01Icon className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                  <span className="text-sm">
+                    {openSupportCount} open support conversation{openSupportCount > 1 ? 's' : ''}
+                    {' · '}last activity {format(mostRecentSupportDate, 'dd/MM/yyyy')}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('support')}
+                    className="ml-auto text-sm font-medium text-amber-700 transition-colors hover:underline dark:text-amber-400"
+                  >
+                    Open ↗
+                  </button>
+                </div>
               )}
 
-              <Separator className="my-6" />
-
-              {/* AI Summary */}
-              <div>
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">AI Summary</h3>
-                <div className="mt-3">
-                  <EntitySummaryCard workspaceId={wsId} contactId={contactId} />
-                </div>
-              </div>
-
-              <Separator className="my-6" />
+              <Separator className="my-6 bg-border/40" />
 
               {/* Recent activity (3 items across all types) */}
               <div>
                 <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Recent activity</h3>
                 <div className="mt-3">
                   {unifiedItems.length === 0 ? (
-                    <p className="py-4 text-center text-sm text-muted-foreground">No activities yet</p>
+                    <RecentActivityEmptyState />
                   ) : (
                     <div className="space-y-1">
                       {unifiedItems.slice(0, 3).map((item) => {
@@ -918,14 +833,23 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                 </div>
               </div>
 
-              <Separator className="my-6" />
+              <Separator className="my-6 bg-border/40" />
 
               {/* Notes & Calls */}
               <div>
                 <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Notes & calls</h3>
                 <div className="mt-3">
                   {notesAndCalls.length === 0 ? (
-                    <p className="py-4 text-center text-sm text-muted-foreground">No notes or calls logged yet</p>
+                    <NotesAndCallsEmptyState
+                      onAddNote={() => {
+                        setComposerMode('note');
+                        setComposerFocusSeq((n) => n + 1);
+                      }}
+                      onLogCall={() => {
+                        setComposerMode('call');
+                        setComposerFocusSeq((n) => n + 1);
+                      }}
+                    />
                   ) : (
                     <div className="space-y-1">
                       {notesAndCalls.map((activity) => {
@@ -965,14 +889,13 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                 </div>
               </div>
 
-              <Separator className="my-6" />
+              <Separator className="my-6 bg-border/40" />
 
-              {/* Signals & Enrichment */}
+              {/* Buyer signals */}
               <div>
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Signals & enrichment</h3>
-                <div className="mt-3 grid gap-6 2xl:grid-cols-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Buyer signals</h3>
+                <div className="mt-3">
                   <BuyerSignals workspaceId={wsId} contactId={contactId} />
-                  <EnrichmentCard workspaceId={wsId} objectType="contact" objectId={contactId} />
                 </div>
               </div>
             </TabsContent>
@@ -1136,266 +1059,365 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
               )}
             </TabsContent>
           </div>
+        </Tabs>
+      </div>
 
-          {/* ── Right sidebar (Overview tab only) ── */}
-          {activeTab === 'overview' && (
-            <aside className="hidden min-h-0 overflow-y-auto border-l border-border/60 px-4 py-6 lg:block">
-              {/* DETAILS */}
-              <h3 className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Details</h3>
-              <div className="grid grid-cols-[16px_80px_1fr] gap-x-2 gap-y-3">
-                <MetadataRow icon={Mail01Icon} label="Email">
-                  <input
-                    className="w-full bg-transparent text-xs outline-none"
-                    value={form.email}
-                    onChange={(event) => updateField('email', event.target.value, { email: event.target.value })}
-                    placeholder="—"
-                  />
-                </MetadataRow>
+      {/* ── Right sidebar (Overview tab only) ── */}
+      {activeTab === 'overview' && (
+        <aside className="hidden min-h-0 overflow-y-auto border-l border-border/60 bg-muted/30 pb-10 lg:block">
+              {/* DETAILS (always visible, non-collapsible) */}
+              <div className="border-b border-border/50 px-4 py-3">
+                <div className="grid grid-cols-[16px_68px_1fr] gap-x-2 gap-y-2.5">
+                  <MetadataRow icon={Mail01Icon} label="Email">
+                    <input
+                      className="w-full bg-transparent font-mono text-[11.5px] outline-none"
+                      value={form.email}
+                      onChange={(event) => updateField('email', event.target.value, { email: event.target.value })}
+                      placeholder="—"
+                    />
+                  </MetadataRow>
 
-                <MetadataRow icon={GlobeIcon} label="Source">
-                  <input
-                    className="w-full bg-transparent text-xs outline-none"
-                    value={form.source}
-                    onChange={(event) => updateField('source', event.target.value, { source: event.target.value })}
-                    placeholder="—"
-                  />
-                </MetadataRow>
+                  <MetadataRow icon={TelephoneIcon} label="Phone">
+                    <input
+                      className="w-full bg-transparent font-mono text-[11.5px] outline-none"
+                      value={form.phone}
+                      onChange={(event) => updateField('phone', event.target.value, { phone: event.target.value })}
+                      placeholder="—"
+                    />
+                  </MetadataRow>
 
-                <MetadataRow icon={Tag01Icon} label="Stage">
-                  <SidebarPopoverSelect
-                    value={form.lifecycle_stage}
-                    options={lifecycleOptions}
-                    onChange={(value) => updateField('lifecycle_stage', value, { lifecycle_stage: value })}
-                  />
-                </MetadataRow>
+                  <MetadataRow icon={UserIcon} label="Title">
+                    <input
+                      className="w-full bg-transparent text-xs outline-none"
+                      value={form.job_title}
+                      onChange={(event) => updateField('job_title', event.target.value, { job_title: event.target.value })}
+                      placeholder="—"
+                    />
+                  </MetadataRow>
 
-                <MetadataRow icon={Tag01Icon} label="Status">
-                  <SidebarPopoverSelect
-                    value={form.lead_status}
-                    options={leadStatusOptions}
-                    onChange={(value) => updateField('lead_status', value, { lead_status: value })}
-                  />
-                </MetadataRow>
+                  <MetadataRow icon={GlobeIcon} label="Source">
+                    <input
+                      className="w-full bg-transparent text-xs outline-none"
+                      value={form.source}
+                      onChange={(event) => updateField('source', event.target.value, { source: event.target.value })}
+                      placeholder="—"
+                    />
+                  </MetadataRow>
+
+                  <MetadataRow icon={Tag01Icon} label="Stage">
+                    <SidebarPopoverSelect
+                      value={form.lifecycle_stage}
+                      options={lifecycleOptions}
+                      onChange={(value) => updateField('lifecycle_stage', value, { lifecycle_stage: value })}
+                    />
+                  </MetadataRow>
+
+                  <MetadataRow icon={Tag01Icon} label="Status">
+                    <SidebarPopoverSelect
+                      value={form.lead_status}
+                      options={leadStatusOptions}
+                      onChange={(value) => updateField('lead_status', value, { lead_status: value })}
+                    />
+                  </MetadataRow>
+                </div>
               </div>
 
-              <Separator className="my-4" />
+              {/* ENRICHMENT (always visible, non-collapsible) */}
+              <div className="border-b border-border/50 px-4 py-3">
+                <h3 className="mb-2 text-[11px] font-medium uppercase tracking-tight text-foreground">
+                  Enrichment
+                </h3>
+                <EnrichmentRailCard workspaceId={wsId} objectType="contact" objectId={contactId} />
+              </div>
 
-              {/* PRIMARY COMPANY */}
-              <SidebarAssociationSection
-                title="Primary company"
-                count={primaryCompanyAssociation ? 1 : 0}
-                expanded={expandedSections['primary-company']}
-                onToggle={() => toggleExpandedSection('primary-company')}
-                onAdd={() => {
-                  setCompanyPickerMode('primary');
-                  setCompanyPickerOpen(true);
-                }}
-                addDisabled={!!primaryCompanyAssociation}
+              {/* COMPANY */}
+              <RailSection
+                title="Company"
+                action={
+                  !primaryCompanyAssociation ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCompanyPickerMode('primary');
+                        setCompanyPickerOpen(true);
+                      }}
+                      className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      aria-label="Link company"
+                    >
+                      <PlusSignIcon className="h-3.5 w-3.5" />
+                    </button>
+                  ) : null
+                }
               >
                 {primaryCompanyAssociation ? (
-                  <div className="group flex items-center gap-2 rounded-md px-1 py-1.5 text-xs transition-colors hover:bg-muted/40">
-                    <button
-                      type="button"
-                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                      onClick={() => navigate({ to: '/w/$slug/crm/companies/$companyId', params: { slug: wsSlug, companyId: primaryCompanyAssociation.linkedId } } as never)}
-                    >
-                      <GlobeIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
-                      <span className="truncate font-medium">{primaryCompanyAssociation.linked_object_name || 'Untitled'}</span>
-                      {primaryCompanyAssociation.linked_object_display_id && (
-                        <span className="ml-auto shrink-0 text-muted-foreground">{primaryCompanyAssociation.linked_object_display_id}</span>
-                      )}
-                    </button>
-                    <Badge variant="secondary" className="h-5 shrink-0 px-1.5 text-[10px] uppercase">
-                      Primary
-                    </Badge>
-                    <button
-                      type="button"
-                      className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-all hover:bg-background hover:text-destructive group-hover:opacity-100"
-                      onClick={() => setRemoveAssocId(primaryCompanyAssociation.id)}
-                      aria-label="Remove primary company association"
-                    >
-                      <Delete01Icon className="h-3 w-3" />
-                    </button>
-                  </div>
-                ) : null}
-              </SidebarAssociationSection>
-
-              <Separator className="my-4" />
-
-              {/* OTHER COMPANIES */}
-              <SidebarAssociationSection
-                title="Other companies"
-                count={otherCompanyCount}
-                expanded={expandedSections['other-companies']}
-                onToggle={() => toggleExpandedSection('other-companies')}
-                onAdd={() => {
-                  setCompanyPickerMode('secondary');
-                  setCompanyPickerOpen(true);
-                }}
-              >
-                {visibleOtherCompanyAssociations.map((assoc) => (
-                  <div
-                    key={assoc.id}
-                    className="group flex items-center gap-2 rounded-md px-1 py-1.5 text-xs transition-colors hover:bg-muted/40"
+                  <CompanyRailCard
+                    name={primaryCompanyAssociation.linked_object_name}
+                    displayId={primaryCompanyAssociation.linked_object_display_id}
+                    onOpen={() =>
+                      navigate({
+                        to: '/w/$slug/crm/companies/$companyId',
+                        params: { slug: wsSlug, companyId: primaryCompanyAssociation.linkedId },
+                      } as never)
+                    }
+                    onRemove={() => setRemoveAssocId(primaryCompanyAssociation.id)}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCompanyPickerMode('primary');
+                      setCompanyPickerOpen(true);
+                    }}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-border/60 px-3 py-2 text-xs text-muted-foreground transition-colors hover:border-border hover:bg-muted/40 hover:text-foreground"
                   >
-                    <button
-                      type="button"
-                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                      onClick={() => navigate({ to: '/w/$slug/crm/companies/$companyId', params: { slug: wsSlug, companyId: assoc.linkedId } } as never)}
-                    >
-                      <GlobeIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
-                      <span className="truncate font-medium">{assoc.linked_object_name || 'Untitled'}</span>
-                      {assoc.linked_object_display_id && (
-                        <span className="ml-auto shrink-0 text-muted-foreground">{assoc.linked_object_display_id}</span>
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground opacity-0 transition-all hover:bg-background hover:text-foreground group-hover:opacity-100"
-                      onClick={() => void handleMakePrimaryCompany(assoc.linkedId)}
-                    >
-                      Make primary
-                    </button>
-                    <button
-                      type="button"
-                      className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-all hover:bg-background hover:text-destructive group-hover:opacity-100"
-                      onClick={() => setRemoveAssocId(assoc.id)}
-                      aria-label="Remove company association"
-                    >
-                      <Delete01Icon className="h-3 w-3" />
-                    </button>
-                  </div>
-                ))}
-              </SidebarAssociationSection>
+                    <PlusSignIcon className="h-3.5 w-3.5" />
+                    Link a company
+                  </button>
+                )}
 
-              <Separator className="my-4" />
-
-              {/* DEALS */}
-              <SidebarAssociationSection
-                title="Deals"
-                count={dealCount}
-                expanded={expandedSections.deals}
-                onToggle={() => toggleExpandedSection('deals')}
-                onAdd={() => setDealPickerOpen(true)}
-              >
-                {visibleDealAssociations.map((assoc) => (
-                  <div
-                    key={assoc.id}
-                    className="group flex items-center gap-2 rounded-md px-1 py-1.5 text-xs transition-colors hover:bg-muted/40"
-                  >
-                    <button
-                      type="button"
-                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                      onClick={() => navigate({ to: '/w/$slug/crm/deals/$dealId', params: { slug: wsSlug, dealId: assoc.linkedId } } as never)}
-                    >
-                      <DollarCircleIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
-                      <span className="truncate font-medium">{assoc.linked_object_name || 'Untitled'}</span>
-                      {assoc.linked_object_display_id && (
-                        <span className="ml-auto shrink-0 text-muted-foreground">{assoc.linked_object_display_id}</span>
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-all hover:bg-background hover:text-destructive group-hover:opacity-100"
-                      onClick={() => setRemoveAssocId(assoc.id)}
-                      aria-label="Remove deal association"
-                    >
-                      <Delete01Icon className="h-3 w-3" />
-                    </button>
-                  </div>
-                ))}
-              </SidebarAssociationSection>
-
-              <Separator className="my-4" />
-
-              {/* SUPPORT */}
-              <SidebarAssociationSection
-                title="Support"
-                count={supportCount}
-                expanded={expandedSections.support}
-                onToggle={() => toggleExpandedSection('support')}
-                onAdd={() => setActiveTab('support')}
-              >
-                {visibleSupportConvos.map((c) => (
-                  <div
-                    key={c.id}
-                    className="group flex items-center gap-2 rounded-md px-1 py-1.5 text-xs transition-colors hover:bg-muted/40"
-                  >
-                    <Link
-                      to="/w/$slug/support/$conversationId"
-                      params={{ slug: wsSlug, conversationId: c.id }}
-                      className="flex min-w-0 flex-1 items-center gap-2"
-                    >
-                      <span className={cn('rounded-full px-1.5 py-0.5 text-[9px] font-medium leading-none', statusColor(c.status))}>
-                        {c.status.replace(/_/g, ' ')}
-                      </span>
-                      <span className="truncate">{c.subject}</span>
-                    </Link>
-                    <button
-                      type="button"
-                      className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-all hover:bg-background hover:text-destructive group-hover:opacity-100"
-                      onClick={() => void handleUnlinkSupportConversation(c.id)}
-                      aria-label="Remove support association"
-                    >
-                      <Delete01Icon className="h-3 w-3" />
-                    </button>
-                  </div>
-                ))}
-              </SidebarAssociationSection>
-
-              <Separator className="my-4" />
-
-              {/* TASKS */}
-              <SidebarAssociationSection
-                title="Tasks"
-                count={taskCount}
-                expanded={expandedSections.tasks}
-                onToggle={() => toggleExpandedSection('tasks')}
-                onAdd={() => setActiveTab('tasks')}
-              >
-                {visibleTasks.map((task) => {
-                  const removableAssociationId = taskAssociationIdByTaskId.get(task.id);
-
-                  return (
-                    <div
-                      key={task.id}
-                      className="group flex items-center gap-2 rounded-md px-1 py-1.5 text-xs transition-colors hover:bg-muted/40"
-                    >
+                {otherCompanyCount > 0 && (
+                  <div className="mt-2 space-y-1.5">
+                    {visibleOtherCompanyAssociations.map((assoc) => (
+                      <CompanyRailCard
+                        key={assoc.id}
+                        name={assoc.linked_object_name}
+                        displayId={assoc.linked_object_display_id}
+                        onOpen={() =>
+                          navigate({
+                            to: '/w/$slug/crm/companies/$companyId',
+                            params: { slug: wsSlug, companyId: assoc.linkedId },
+                          } as never)
+                        }
+                        onRemove={() => setRemoveAssocId(assoc.id)}
+                        onChangePrimary={() => void handleMakePrimaryCompany(assoc.linkedId)}
+                      />
+                    ))}
+                    {otherCompanyAssociations.length > SIDEBAR_PREVIEW_LIMIT && (
                       <button
                         type="button"
-                        className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                        onClick={() => openTaskRoute(navigate as never, location as never, wsSlug, task.id)}
+                        onClick={() => toggleExpandedSection('other-companies')}
+                        className="px-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
                       >
-                        <span className="shrink-0 text-muted-foreground">{task.task_key}</span>
-                        <span className="truncate">{task.name}</span>
-                        {task.state_name && (
-                          <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">{task.state_name}</span>
-                        )}
+                        {expandedSections['other-companies']
+                          ? 'Show less'
+                          : `Show ${otherCompanyAssociations.length - SIDEBAR_PREVIEW_LIMIT} more`}
                       </button>
-                      {removableAssociationId ? (
+                    )}
+                  </div>
+                )}
+                {primaryCompanyAssociation && otherCompanyCount === 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCompanyPickerMode('secondary');
+                      setCompanyPickerOpen(true);
+                    }}
+                    className="mt-2 inline-flex items-center gap-1 rounded-md px-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    <PlusSignIcon className="h-3 w-3" />
+                    Link another company
+                  </button>
+                )}
+              </RailSection>
+
+              {/* DEALS */}
+              <RailSection
+                title="Deals"
+                count={dealCount}
+                action={
+                  <button
+                    type="button"
+                    onClick={() => setDealPickerOpen(true)}
+                    className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    aria-label="Link deal"
+                  >
+                    <PlusSignIcon className="h-3.5 w-3.5" />
+                  </button>
+                }
+              >
+                {dealCount === 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setDealPickerOpen(true)}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-border/60 px-3 py-2 text-xs text-muted-foreground transition-colors hover:border-border hover:bg-muted/40 hover:text-foreground"
+                  >
+                    <PlusSignIcon className="h-3.5 w-3.5" />
+                    Link a deal
+                  </button>
+                ) : (
+                  <div className="space-y-0.5">
+                    {visibleDealAssociations.map((assoc) => (
+                      <div
+                        key={assoc.id}
+                        className="group flex items-center gap-2 rounded-md px-1 py-1.5 text-xs transition-colors hover:bg-muted/40"
+                      >
+                        <button
+                          type="button"
+                          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                          onClick={() =>
+                            navigate({
+                              to: '/w/$slug/crm/deals/$dealId',
+                              params: { slug: wsSlug, dealId: assoc.linkedId },
+                            } as never)
+                          }
+                        >
+                          <DollarCircleIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
+                          <span className="truncate font-medium">{assoc.linked_object_name || 'Untitled'}</span>
+                          {assoc.linked_object_display_id && (
+                            <span className="ml-auto shrink-0 font-mono text-[10.5px] text-muted-foreground">
+                              {assoc.linked_object_display_id}
+                            </span>
+                          )}
+                        </button>
                         <button
                           type="button"
                           className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-all hover:bg-background hover:text-destructive group-hover:opacity-100"
-                          onClick={() => setRemoveAssocId(removableAssociationId)}
-                          aria-label="Remove task association"
+                          onClick={() => setRemoveAssocId(assoc.id)}
+                          aria-label="Remove deal association"
                         >
                           <Delete01Icon className="h-3 w-3" />
                         </button>
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </SidebarAssociationSection>
+                      </div>
+                    ))}
+                    {dealAssociations.length > SIDEBAR_PREVIEW_LIMIT && (
+                      <button
+                        type="button"
+                        onClick={() => toggleExpandedSection('deals')}
+                        className="px-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+                      >
+                        {expandedSections.deals
+                          ? 'Show less'
+                          : `Show ${dealAssociations.length - SIDEBAR_PREVIEW_LIMIT} more`}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </RailSection>
 
-              <Separator className="my-4" />
+              {/* OPEN TASKS */}
+              <RailSection
+                title="Open tasks"
+                count={taskCount}
+                action={
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('tasks')}
+                    className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    aria-label="Manage tasks"
+                  >
+                    <PlusSignIcon className="h-3.5 w-3.5" />
+                  </button>
+                }
+              >
+                {taskCount === 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('tasks')}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-border/60 px-3 py-2 text-xs text-muted-foreground transition-colors hover:border-border hover:bg-muted/40 hover:text-foreground"
+                  >
+                    <PlusSignIcon className="h-3.5 w-3.5" />
+                    Link a task
+                  </button>
+                ) : (
+                  <div className="space-y-0.5">
+                    {visibleTasks.map((task) => {
+                      const removableAssociationId = taskAssociationIdByTaskId.get(task.id);
+                      return (
+                        <div
+                          key={task.id}
+                          className="group flex items-center gap-2 rounded-md px-1 py-1.5 text-xs transition-colors hover:bg-muted/40"
+                        >
+                          <button
+                            type="button"
+                            className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                            onClick={() => openTaskRoute(navigate as never, location as never, wsSlug, task.id)}
+                          >
+                            <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground">{task.task_key}</span>
+                            <span className="truncate">{task.name}</span>
+                            {task.state_name && (
+                              <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">{task.state_name}</span>
+                            )}
+                          </button>
+                          {removableAssociationId ? (
+                            <button
+                              type="button"
+                              className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-all hover:bg-background hover:text-destructive group-hover:opacity-100"
+                              onClick={() => setRemoveAssocId(removableAssociationId)}
+                              aria-label="Remove task association"
+                            >
+                              <Delete01Icon className="h-3 w-3" />
+                            </button>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                    {tasks.length > SIDEBAR_PREVIEW_LIMIT && (
+                      <button
+                        type="button"
+                        onClick={() => toggleExpandedSection('tasks')}
+                        className="px-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+                      >
+                        {expandedSections.tasks
+                          ? 'Show less'
+                          : `Show ${tasks.length - SIDEBAR_PREVIEW_LIMIT} more`}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </RailSection>
+
+              {/* SUPPORT */}
+              <RailSection title="Support" count={supportCount}>
+                {supportCount === 0 ? (
+                  <p className="px-1 text-xs italic text-muted-foreground">No support conversations.</p>
+                ) : (
+                  <div className="space-y-0.5">
+                    {visibleSupportConvos.map((c) => (
+                      <div
+                        key={c.id}
+                        className="group flex items-center gap-2 rounded-md px-1 py-1.5 text-xs transition-colors hover:bg-muted/40"
+                      >
+                        <Link
+                          to="/w/$slug/support/$conversationId"
+                          params={{ slug: wsSlug, conversationId: c.id }}
+                          className="flex min-w-0 flex-1 items-center gap-2"
+                        >
+                          <span className={cn('rounded-full px-1.5 py-0.5 text-[9px] font-medium leading-none', statusColor(c.status))}>
+                            {c.status.replace(/_/g, ' ')}
+                          </span>
+                          <span className="truncate">{c.subject}</span>
+                        </Link>
+                        <button
+                          type="button"
+                          className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-all hover:bg-background hover:text-destructive group-hover:opacity-100"
+                          onClick={() => void handleUnlinkSupportConversation(c.id)}
+                          aria-label="Remove support association"
+                        >
+                          <Delete01Icon className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                    {supportConvos.length > SIDEBAR_PREVIEW_LIMIT && (
+                      <button
+                        type="button"
+                        onClick={() => toggleExpandedSection('support')}
+                        className="px-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+                      >
+                        {expandedSections.support
+                          ? 'Show less'
+                          : `Show ${supportConvos.length - SIDEBAR_PREVIEW_LIMIT} more`}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </RailSection>
 
               {/* SIGNALS */}
-              <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Signals</h3>
-              <BuyerSignals workspaceId={wsId} contactId={contactId} />
-            </aside>
-          )}
-        </div>
-      </Tabs>
+              <RailSection title="Signals">
+                <BuyerSignals workspaceId={wsId} contactId={contactId} />
+              </RailSection>
+        </aside>
+      )}
 
       {/* ── Company picker dialog ── */}
       <Dialog open={companyPickerOpen} onOpenChange={setCompanyPickerOpen}>
