@@ -134,6 +134,8 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 			last_heartbeat_at DATETIME,
 			input TEXT,
 			output_summary TEXT,
+			input_tokens INTEGER NOT NULL DEFAULT 0,
+			output_tokens INTEGER NOT NULL DEFAULT 0,
 			tokens_used INTEGER,
 			error_message TEXT,
 			started_at DATETIME,

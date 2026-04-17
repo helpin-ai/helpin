@@ -337,6 +337,12 @@ func formatArtifactContext(ctx *ArtifactContext) string {
 // ParseWorkflowConfig reads a WORKFLOW.md file from the workspace root.
 // Returns nil if the file doesn't exist.
 func ParseWorkflowConfig(workDir string) *WorkflowConfig {
+	return ParseWorkflowConfigForAgent(workDir, nil)
+}
+
+// ParseWorkflowConfigForAgent reads a WORKFLOW.md file from the workspace root
+// using agent-aware runtime defaults when the file omits front matter values.
+func ParseWorkflowConfigForAgent(workDir string, agent *model.Agent) *WorkflowConfig {
 	path := filepath.Join(workDir, "WORKFLOW.md")
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -344,7 +350,7 @@ func ParseWorkflowConfig(workDir string) *WorkflowConfig {
 	}
 
 	content := string(data)
-	config := DefaultWorkflowConfig()
+	config := DefaultWorkflowConfigForAgent(agent)
 
 	// Check for YAML front matter.
 	if strings.HasPrefix(content, "---") {

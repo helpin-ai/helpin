@@ -450,9 +450,9 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		}
 	}
 
-	config := workerpkg.ParseWorkflowConfig(workDir)
+	config := workerpkg.ParseWorkflowConfigForAgent(workDir, state.agent)
 	if config == nil {
-		config = workerpkg.DefaultWorkflowConfig()
+		config = workerpkg.DefaultWorkflowConfigForAgent(state.agent)
 	}
 
 	allowedTools := effectiveToolSet(state.resolved, planningInput.AllowedTools)

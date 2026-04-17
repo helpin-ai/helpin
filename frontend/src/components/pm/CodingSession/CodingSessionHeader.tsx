@@ -5,6 +5,7 @@ import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
+import { formatSessionTokenUsage } from '@/lib/agentTokenUsage';
 import { buildAutomationRunsPath } from '@/lib/automationUi';
 import type { CodingSession } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
@@ -133,6 +134,15 @@ export function CodingSessionHeader({
                 <>
                   <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Updated</dt>
                   <dd className="text-muted-foreground">{formatCodingSessionRelative(session.updated_at)}</dd>
+                </>
+              ) : null}
+
+              {session?.tokens_used ? (
+                <>
+                  <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Tokens</dt>
+                  <dd className="font-medium text-foreground">
+                    {formatSessionTokenUsage(session, { includeUnit: true })}
+                  </dd>
                 </>
               ) : null}
             </dl>
