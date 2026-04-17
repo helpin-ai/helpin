@@ -30,6 +30,7 @@ import { SidebarCreateBar } from './sidebar/SidebarCreateBar';
 import { SidebarRail } from './sidebar/SidebarRail';
 import { SettingsRailNav } from './sidebar/SettingsRailNav';
 import { StandardRailNav } from './sidebar/StandardRailNav';
+import { CrmRailNav } from './sidebar/CrmRailNav';
 import { SupportRailNav } from './sidebar/SupportRailNav';
 
 export function Sidebar() {
@@ -299,6 +300,14 @@ export function Sidebar() {
                 collapsedGroups={collapsedSettingsGroups}
                 toggleGroup={toggleSettingsGroup}
                 onNavigate={(link) => handleNavigate(link)}
+              />
+            ) : activeRail === 'crm' ? (
+              <CrmRailNav
+                groups={currentNavGroups}
+                isActive={isActive}
+                wsSlug={wsSlug}
+                onNavigate={(link) => handleNavigate(link)}
+                onNavigateTo={(to) => navigate({ to })}
               />
             ) : (
               <StandardRailNav
