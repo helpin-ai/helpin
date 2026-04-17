@@ -80,7 +80,7 @@ func (e *OpenCodeExecutor) Kind() string {
 func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) error {
 	config := execCtx.Config
 	if config == nil {
-		config = DefaultWorkflowConfig()
+		config = DefaultWorkflowConfigForAgent(execCtx.Agent)
 	}
 
 	var checklist []model.PMChecklistItem

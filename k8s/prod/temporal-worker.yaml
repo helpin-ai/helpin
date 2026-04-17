@@ -47,11 +47,11 @@ spec:
                 name: helpin-secrets
           resources:
             requests:
-              cpu: 250m
-              memory: 512Mi
+              cpu: 500m
+              memory: 2Gi
             limits:
-              cpu: "1"
-              memory: 1Gi
+              cpu: "2"
+              memory: 8Gi
           volumeMounts:
             - name: tmp
               mountPath: /tmp
@@ -111,11 +111,11 @@ spec:
                 name: helpin-secrets
           resources:
             requests:
-              cpu: 250m
-              memory: 512Mi
+              cpu: 500m
+              memory: 2Gi
             limits:
-              cpu: "1"
-              memory: 1Gi
+              cpu: "2"
+              memory: 8Gi
           volumeMounts:
             - name: tmp
               mountPath: /tmp
@@ -177,11 +177,11 @@ spec:
                 name: helpin-secrets
           resources:
             requests:
-              cpu: 250m
-              memory: 512Mi
+              cpu: 500m
+              memory: 2Gi
             limits:
-              cpu: "1"
-              memory: 1Gi
+              cpu: "2"
+              memory: 8Gi
           volumeMounts:
             - name: tmp
               mountPath: /tmp
@@ -247,11 +247,11 @@ spec:
                 name: helpin-secrets
           resources:
             requests:
-              cpu: 250m
-              memory: 512Mi
+              cpu: 500m
+              memory: 2Gi
             limits:
-              cpu: "1"
-              memory: 1Gi
+              cpu: "2"
+              memory: 8Gi
           volumeMounts:
             - name: tmp
               mountPath: /tmp
@@ -317,11 +317,11 @@ spec:
                 name: helpin-secrets
           resources:
             requests:
-              cpu: 250m
-              memory: 512Mi
+              cpu: 500m
+              memory: 2Gi
             limits:
-              cpu: "1"
-              memory: 1Gi
+              cpu: "2"
+              memory: 8Gi
           volumeMounts:
             - name: tmp
               mountPath: /tmp
@@ -383,11 +383,11 @@ spec:
                 name: helpin-secrets
           resources:
             requests:
-              cpu: 250m
-              memory: 512Mi
-            limits:
-              cpu: "1"
+              cpu: 500m
               memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
           volumeMounts:
             - name: tmp
               mountPath: /tmp

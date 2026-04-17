@@ -1,3 +1,4 @@
+import type React from 'react';
 import { memo, useCallback, useContext, useMemo, useState } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import {
@@ -25,6 +26,7 @@ import { useTeamFieldVisibilityForTeam } from '@/hooks/queries';
 import { useBoardDisplayStore } from '@/stores/boardDisplayStore';
 import { findAssignableMember } from '@/lib/assignableMembers';
 import { BoardDataContext, BoardCallbacksContext } from './KanbanBoard.contexts';
+import { ACTIVE_RUN_STATUSES } from './agentRunConstants';
 
 // ── Shared constants ────────────────────────────────────────────────
 
@@ -40,6 +42,8 @@ interface TaskCardProps {
   task: Task;
   /** @deprecated Use BoardCallbacksContext instead. Kept for backward compat outside KanbanBoard. */
   onOpen?: (task: Task) => void;
+  /** @deprecated Use BoardCallbacksContext instead. Kept for backward compat outside KanbanBoard. */
+  onOpenAgentRun?: (task: Task) => void;
   isOverlay?: boolean;
   teamName?: string;
   /** @deprecated Use BoardDataContext instead */
@@ -109,6 +113,7 @@ function TaskCardAgentBadge({
 function TaskCardComponent({
   task,
   onOpen: onOpenProp,
+  onOpenAgentRun: onOpenAgentRunProp,
   isOverlay = false,
   teamName,
   workspaceId: workspaceIdProp,
@@ -132,6 +137,7 @@ function TaskCardComponent({
   const agentById = boardData?.agentById;
   const assignedAgent = assignedAgentProp ?? (agentById && task.assigned_agent_id ? agentById.get(task.assigned_agent_id) ?? null : null);
   const onOpen = callbacksRef?.current.onOpen ?? onOpenProp;
+  const onOpenAgentRun = callbacksRef?.current.onOpenAgentRun ?? onOpenAgentRunProp ?? onOpen;
   const onTaskPatched = callbacksRef?.current.onTaskPatched;
 
   const {
@@ -549,16 +555,48 @@ function TaskCardComponent({
         ) : null)}
         <span className="flex-1" />
         <div className="flex items-center gap-1.5">
-          {vis.agent && task.assigned_agent_id && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="shrink-0">
-                  <TaskCardAgentBadge agent={assignedAgent} />
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="top">{assignedAgent?.name ?? 'Agent assigned'}</TooltipContent>
-            </Tooltip>
-          )}
+          {vis.agent && task.assigned_agent_id && (() => {
+            const hasActiveRun =
+              !isOverlay
+              && !!task.latest_run_id
+              && !!task.latest_run_status
+              && ACTIVE_RUN_STATUSES.has(task.latest_run_status);
+            const baseLabel = assignedAgent?.name ?? 'Agent assigned';
+            const tooltipLabel = hasActiveRun ? `${baseLabel} — Open run` : baseLabel;
+            const handleAgentClick = (e: React.MouseEvent | React.KeyboardEvent) => {
+              e.stopPropagation();
+              e.preventDefault();
+              onOpenAgentRun?.(task);
+            };
+            return (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  {isOverlay ? (
+                    <span className="shrink-0">
+                      <TaskCardAgentBadge agent={assignedAgent} />
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleAgentClick}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          handleAgentClick(e);
+                        }
+                      }}
+                      className="shrink-0 rounded transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                      aria-label={tooltipLabel}
+                    >
+                      <TaskCardAgentBadge agent={assignedAgent} />
+                    </button>
+                  )}
+                </TooltipTrigger>
+                <TooltipContent side="top">{tooltipLabel}</TooltipContent>
+              </Tooltip>
+            );
+          })()}
           {/* Assignee avatar / assign button */}
           {vis.assignee && (assignableMembers && workspaceId ? (
             <MemberPickerPopover
@@ -616,8 +654,15 @@ function TaskCardComponent({
 export const TaskCard = memo(TaskCardComponent, (prev, next) => {
   // Fast path: same object reference means no change
   if (prev.task !== next.task) {
-    // Different reference — check if the task actually changed
-    if (prev.task.id !== next.task.id || prev.task.updated_at !== next.task.updated_at) return false;
+    // Different reference — check if the task actually changed.
+    // latest_run_* fields are populated server-side and may shift without
+    // bumping updated_at, so compare them explicitly.
+    if (
+      prev.task.id !== next.task.id
+      || prev.task.updated_at !== next.task.updated_at
+      || prev.task.latest_run_id !== next.task.latest_run_id
+      || prev.task.latest_run_status !== next.task.latest_run_status
+    ) return false;
   }
   return prev.isOverlay === next.isOverlay
     && prev.teamName === next.teamName

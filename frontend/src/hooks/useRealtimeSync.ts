@@ -205,6 +205,9 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       }
       if (event.parent_type === 'task' && event.parent_id) {
         queryClient.invalidateQueries({ queryKey: queryKeys.pm.task(workspaceId, event.parent_id) })
+        // Board/list caches carry latest_run_id/status on each card; refresh
+        // them so the agent badge reflects transitions into terminal states.
+        queryClient.invalidateQueries({ queryKey: ['pm', workspaceId, 'tasks'] })
       }
     } else if (event.entity === 'crm_contact') {
       queryClient.invalidateQueries({ queryKey: queryKeys.crm.contacts(workspaceId) })

@@ -156,7 +156,7 @@ func (e *CodexExecutor) persistWorkspaceAuth(ctx context.Context, workspaceID, p
 func (e *CodexExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) error {
 	config := execCtx.Config
 	if config == nil {
-		config = DefaultWorkflowConfig()
+		config = DefaultWorkflowConfigForAgent(execCtx.Agent)
 	}
 	timeout := time.Duration(config.TimeoutMinutes) * time.Minute
 	ctx, cancel := context.WithTimeout(execCtx.Context, timeout)
@@ -245,6 +245,8 @@ func (e *CodexExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) 
 		_ = execCtx.Heartbeat("codex_finished")
 	}
 
+	run.InputTokens = result.Usage.InputTokens
+	run.OutputTokens = result.Usage.OutputTokens
 	run.TokensUsed = result.Usage.InputTokens + result.Usage.OutputTokens
 
 	if result.CodexAuthState != nil {
