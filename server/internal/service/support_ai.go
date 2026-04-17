@@ -862,6 +862,18 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		return fmt.Errorf("conversation not found")
 	}
 
+	// Guard against duplicate escalation: the "Talk to human" button and the
+	// AI's own message-level escalation path can race and each append a system
+	// message. If the conversation is already escalated, skip.
+	if conv.AIState != nil && *conv.AIState == "escalated" {
+		slog.InfoContext(ctx, "support escalation skipped — already escalated",
+			"workspace_id", workspaceID,
+			"conversation_id", conversationID,
+			"reason", reason,
+		)
+		return nil
+	}
+
 	now := time.Now()
 	settings, availability, err := loadSupportAvailability(ctx, s.installationRepo, workspaceID, now)
 	if err != nil {
