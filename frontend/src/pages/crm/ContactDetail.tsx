@@ -137,7 +137,7 @@ function TabBadge({ children, active }: { children: React.ReactNode; active: boo
   return (
     <span
       className={cn(
-        'ml-0.5 text-[11px] tabular-nums',
+        'ml-0.5 text-xs tabular-nums',
         active ? 'text-muted-foreground' : 'text-muted-foreground/70',
       )}
     >
@@ -716,7 +716,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                 type="button"
                 onClick={() => setActiveTab(t.id)}
                 className={cn(
-                  'inline-flex items-center gap-1 whitespace-nowrap border-b-2 px-2.5 py-1.5 -mb-px text-xs font-medium transition-colors',
+                  'inline-flex items-center gap-1 whitespace-nowrap border-b-2 px-2.5 py-1.5 -mb-px text-[13px] font-medium transition-colors',
                   active
                     ? 'border-primary text-foreground'
                     : 'border-transparent text-muted-foreground hover:text-foreground',
