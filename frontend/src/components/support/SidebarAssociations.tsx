@@ -1,17 +1,21 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
+import { useQueryClient } from '@tanstack/react-query';
 import {
+  ArrowRight01Icon,
+  Building03Icon,
+  Delete01Icon,
+  DollarCircleIcon,
   File01Icon,
   GitBranchIcon,
   Loading01Icon,
   PlusSignIcon,
   Search01Icon,
+  UserGroupIcon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { CollapsibleSection } from '@/components/ui/collapsible-section';
-import { CompactChip } from '@/components/ui/compact-chip';
 import {
   Dialog,
   DialogContent,
@@ -27,10 +31,14 @@ import {
   useDeleteDocAssociation,
   useWorkflows,
 } from '@/hooks/queries';
-import { pmTaskService } from '@/lib/services/pmTaskService';
+import { crmSearchService } from '@/lib/services/crmService';
 import { searchService, type SearchResult } from '@/lib/services/searchService';
+import { supportService } from '@/lib/services/supportService';
+import { queryKeys } from '@/lib/queryKeys';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
+import { cn } from '@/lib/utils';
+import type { CRMObjectType, CRMSearchResult } from '@/lib/crmTypes';
 import type { CreateTaskRequest, GroupedAssociations } from '@/lib/pmTypes';
 
 interface SidebarAssociationsProps {
@@ -38,15 +46,82 @@ interface SidebarAssociationsProps {
   conversationId: string;
 }
 
-type SectionKey = 'tasks' | 'docs';
+type SectionKey = 'tasks' | 'crm' | 'docs';
+
+const SECTION_PREVIEW_LIMIT = 3;
+
+const crmIconMap = {
+  contact: UserGroupIcon,
+  company: Building03Icon,
+  deal: DollarCircleIcon,
+} as const;
+
+function SidebarAssociationSection({
+  title,
+  count,
+  emptyState,
+  expanded,
+  onToggle,
+  onAdd,
+  children,
+}: {
+  title: string;
+  count: number;
+  emptyState: string;
+  expanded: boolean;
+  onToggle: () => void;
+  onAdd: () => void;
+  children: React.ReactNode;
+}) {
+  const canToggle = count > SECTION_PREVIEW_LIMIT;
+  const hiddenCount = Math.max(count - SECTION_PREVIEW_LIMIT, 0);
+
+  return (
+    <>
+      <div className="flex items-center justify-between">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          {title}
+          {count > 0 && <span className="ml-1.5 font-normal">{count}</span>}
+        </h3>
+        <button
+          type="button"
+          className="rounded-md p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          onClick={onAdd}
+          aria-label={`Add ${title.toLowerCase()}`}
+        >
+          <PlusSignIcon className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {count === 0 ? (
+        <p className="mt-2 py-2 text-[11px] italic text-muted-foreground">{emptyState}</p>
+      ) : (
+        <>
+          <div className="mt-2 space-y-1">{children}</div>
+          {canToggle && (
+            <button
+              type="button"
+              className="mt-1 inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+              onClick={onToggle}
+            >
+              <ArrowRight01Icon className={cn('h-3 w-3 transition-transform', expanded && 'rotate-90')} />
+              {expanded ? 'Show less' : `Show ${hiddenCount} more`}
+            </button>
+          )}
+        </>
+      )}
+    </>
+  );
+}
 
 export function SidebarAssociations({ workspaceId, conversationId }: SidebarAssociationsProps) {
   const navigate = useNavigate();
   const location = useLocation();
+  const queryClient = useQueryClient();
   const slug = useWorkspaceStore((s) => s.currentWorkspace?.slug ?? '');
 
   const associationsQuery = useConversationAssociations(workspaceId, conversationId);
-  const data = associationsQuery.data as GroupedAssociations | undefined;
+  const associationsData = associationsQuery.data as GroupedAssociations | undefined;
 
   const createAssociation = useCreatePMAssociation(workspaceId);
   const deleteAssociation = useDeletePMAssociation(workspaceId);
@@ -62,34 +137,68 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
     navigate({ to: '/w/$slug/docs/documents/$docId', params: { slug, docId } } as any);
   };
 
+  const handleNavigateCRM = (objectType: CRMObjectType, objectId: string) => {
+    if (objectType === 'contact') {
+      navigate({ to: '/w/$slug/crm/contacts/$contactId', params: { slug, contactId: objectId } } as any);
+    } else if (objectType === 'company') {
+      navigate({ to: '/w/$slug/crm/companies/$companyId', params: { slug, companyId: objectId } } as any);
+    } else if (objectType === 'deal') {
+      navigate({ to: '/w/$slug/crm/deals/$dealId', params: { slug, dealId: objectId } } as any);
+    }
+  };
+
   const [pickerSection, setPickerSection] = useState<SectionKey | null>(null);
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<SearchResult[]>([]);
+  const [crmResults, setCRMResults] = useState<CRMSearchResult[]>([]);
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
+  const [expandedSections, setExpandedSections] = useState<Record<SectionKey, boolean>>({
+    tasks: false,
+    crm: false,
+    docs: false,
+  });
 
   const { data: workflows = [] } = useWorkflows(workspaceId);
   const workflow = workflows[0] ?? null;
+
+  const invalidateSupportAssociationViews = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['support', workspaceId] }),
+      queryClient.invalidateQueries({ queryKey: ['crm', workspaceId] }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversationAssociations(workspaceId, conversationId) }),
+    ]);
+  };
 
   useEffect(() => {
     if (!pickerSection) {
       setQuery('');
       setResults([]);
+      setCRMResults([]);
       setSearching(false);
       return;
     }
     if (query.trim().length < 2) {
       setResults([]);
+      setCRMResults([]);
       return;
     }
 
     const handle = window.setTimeout(async () => {
       setSearching(true);
-      const response = await searchService.search(workspaceId, query.trim());
-      if (pickerSection === 'tasks') {
-        setResults(response.data?.tasks ?? []);
-      } else if (pickerSection === 'docs') {
-        setResults(response.data?.documents ?? []);
+      if (pickerSection === 'crm') {
+        const response = await crmSearchService.search(workspaceId, query.trim());
+        setCRMResults(response.data ?? []);
+        setResults([]);
+      } else {
+        const response = await searchService.search(workspaceId, query.trim());
+        setCRMResults([]);
+        if (pickerSection === 'tasks') {
+          setResults(response.data?.tasks ?? []);
+        } else if (pickerSection === 'docs') {
+          setResults(response.data?.documents ?? []);
+        }
       }
       setSearching(false);
     }, 250);
@@ -115,27 +224,61 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
     setPickerSection(null);
   };
 
-  const handleCreateAndLinkStory = async (payload: CreateTaskRequest) => {
-    const { data, error } = await pmTaskService.create(payload);
-    if (error) throw new Error(error);
-    const taskId = data?.task?.id;
-    if (taskId) {
-      await createAssociation.mutateAsync({
-        workspace_id: workspaceId,
-        from_object_type: 'support_conversation',
-        from_object_id: conversationId,
-        to_object_type: 'task',
-        to_object_id: taskId,
+  const handleAddCRM = async (toObjectType: CRMObjectType, toObjectId: string) => {
+    if (toObjectType === 'contact') {
+      const response = await supportService.updateConversationCRMContact(workspaceId, conversationId, {
+        crm_contact_id: toObjectId,
       });
+      if (response.error) throw new Error(response.error);
+      await invalidateSupportAssociationViews();
+      setPickerSection(null);
+      return;
     }
-    return data?.task
+
+    await createAssociation.mutateAsync({
+      workspace_id: workspaceId,
+      from_object_type: 'support_conversation',
+      from_object_id: conversationId,
+      to_object_type: toObjectType,
+      to_object_id: toObjectId,
+    });
+    setPickerSection(null);
+  };
+
+  const handleRemoveCRM = async (item: GroupedAssociations['crm_records'][number]) => {
+    if (item.object_type === 'contact' && !item.inferred) {
+      const response = await supportService.updateConversationCRMContact(workspaceId, conversationId, {
+        crm_contact_id: null,
+      });
+      if (response.error) throw new Error(response.error);
+      await invalidateSupportAssociationViews();
+      return;
+    }
+    if (item.association_id) {
+      await deleteAssociation.mutateAsync(item.association_id);
+    }
+  };
+
+  const handleCreateAndLinkStory = async (payload: CreateTaskRequest) => {
+    const response = await supportService.createTaskFromConversation(workspaceId, conversationId, payload);
+    if (response.error) throw new Error(response.error);
+
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversationAssociations(workspaceId, conversationId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.tasks(workspaceId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.board(workspaceId) }),
+    ]);
+
+    return response.data
       ? {
-          id: data.task.id,
+          id: response.data.task_id,
           task: {
-            id: data.task.id,
-            name: data.task.name,
-            display_id: data.task.display_id,
-            task_key: data.task.task_key,
+            id: response.data.task_id,
+            name: response.data.task_name,
+            display_id: response.data.display_id,
+            task_key: response.data.task_key,
           },
         }
       : undefined;
@@ -150,61 +293,160 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
     );
   }
 
-  const tasks = data?.tasks ?? [];
-  const docs = data?.docs ?? [];
+  const tasks = associationsData?.tasks ?? [];
+  const crmRecords = associationsData?.crm_records ?? [];
+  const docs = associationsData?.docs ?? [];
+  const visibleTasks = expandedSections.tasks ? tasks : tasks.slice(0, SECTION_PREVIEW_LIMIT);
+  const visibleCRMRecords = expandedSections.crm ? crmRecords : crmRecords.slice(0, SECTION_PREVIEW_LIMIT);
+  const visibleDocs = expandedSections.docs ? docs : docs.slice(0, SECTION_PREVIEW_LIMIT);
 
   return (
-    <div>
-      <CollapsibleSection
+    <div className="px-3 py-4">
+      <SidebarAssociationSection
         title="Tasks"
-        icon={GitBranchIcon}
         count={tasks.length}
-        defaultOpen={tasks.length > 0}
+        emptyState="No linked tasks"
+        expanded={expandedSections.tasks}
+        onToggle={() => setExpandedSections((current) => ({ ...current, tasks: !current.tasks }))}
         onAdd={() => setPickerSection('tasks')}
       >
-        {tasks.length === 0 ? (
-          <p className="text-[11px] text-muted-foreground italic py-1">No linked tasks</p>
-        ) : (
-          tasks.map((item) => (
-            <CompactChip
-              key={`${item.object_type}-${item.object_id}`}
-              title={item.title}
-              displayId={item.display_id}
+        {visibleTasks.map((item) => (
+          <div
+            key={`${item.object_type}-${item.object_id}`}
+            className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-muted/40"
+          >
+            <button
+              type="button"
+              className="flex min-w-0 flex-1 items-center gap-2 text-left"
               onClick={() => handleNavigateTask(item.object_id)}
-              onRemove={item.association_id ? () => deleteAssociation.mutate(item.association_id!) : undefined}
-            />
-          ))
-        )}
-      </CollapsibleSection>
+            >
+              {item.display_id && (
+                <span className="shrink-0 text-muted-foreground">{item.display_id}</span>
+              )}
+              <span className="truncate">{item.title}</span>
+              {item.status && (
+                <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">{item.status}</span>
+              )}
+            </button>
+            {item.association_id ? (
+              <button
+                type="button"
+                className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-all hover:bg-background hover:text-destructive group-hover:opacity-100"
+                onClick={() => deleteAssociation.mutate(item.association_id!)}
+                aria-label="Remove task association"
+              >
+                <Delete01Icon className="h-3 w-3" />
+              </button>
+            ) : null}
+          </div>
+        ))}
+      </SidebarAssociationSection>
 
-      <CollapsibleSection
+      <div className="my-4 h-px bg-border/60" />
+
+      <SidebarAssociationSection
+        title="CRM"
+        count={crmRecords.length}
+        emptyState="No linked CRM records"
+        expanded={expandedSections.crm}
+        onToggle={() => setExpandedSections((current) => ({ ...current, crm: !current.crm }))}
+        onAdd={() => setPickerSection('crm')}
+      >
+        {visibleCRMRecords.map((item) => (
+          <div
+            key={`${item.object_type}-${item.object_id}`}
+            className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-muted/40"
+          >
+            {(() => {
+              const CRMIcon = crmIconMap[item.object_type as keyof typeof crmIconMap] ?? Building03Icon;
+
+              return (
+                <>
+            <button
+              type="button"
+              className="flex min-w-0 flex-1 items-center gap-2 text-left"
+              onClick={() => handleNavigateCRM(item.object_type as CRMObjectType, item.object_id)}
+            >
+              <CRMIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <span className="truncate font-medium">{item.title}</span>
+              {(item.context_label || item.display_id) && (
+                <span className="ml-auto flex shrink-0 items-center gap-2">
+                  {item.context_label && (
+                    <span className="text-[10px] text-muted-foreground">
+                      {item.context_label}
+                    </span>
+                  )}
+                  {item.display_id && (
+                    <span className="text-[10px] text-muted-foreground opacity-0 transition-opacity delay-0 group-hover:opacity-100 group-hover:delay-200">
+                      {item.display_id}
+                    </span>
+                  )}
+                </span>
+              )}
+            </button>
+            {(item.association_id || (item.object_type === 'contact' && !item.inferred)) ? (
+              <button
+                type="button"
+                className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-all hover:bg-background hover:text-destructive group-hover:opacity-100"
+                onClick={() => void handleRemoveCRM(item)}
+                aria-label="Remove CRM association"
+              >
+                <Delete01Icon className="h-3 w-3" />
+              </button>
+            ) : null}
+                </>
+              );
+            })()}
+          </div>
+        ))}
+      </SidebarAssociationSection>
+
+      <div className="my-4 h-px bg-border/60" />
+
+      <SidebarAssociationSection
         title="Docs"
-        icon={File01Icon}
         count={docs.length}
-        defaultOpen={docs.length > 0}
+        emptyState="No linked docs"
+        expanded={expandedSections.docs}
+        onToggle={() => setExpandedSections((current) => ({ ...current, docs: !current.docs }))}
         onAdd={() => setPickerSection('docs')}
       >
-        {docs.length === 0 ? (
-          <p className="text-[11px] text-muted-foreground italic py-1">No linked docs</p>
-        ) : (
-          docs.map((item) => (
-            <CompactChip
-              key={`${item.object_type}-${item.object_id}`}
-              title={item.title}
-              displayId={item.display_id}
+        {visibleDocs.map((item) => (
+          <div
+            key={`${item.object_type}-${item.object_id}`}
+            className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-muted/40"
+          >
+            <button
+              type="button"
+              className="flex min-w-0 flex-1 items-center gap-2 text-left"
               onClick={() => handleNavigateDoc(item.object_id)}
-              onRemove={item.association_id ? () => deleteDocAssociation.mutate(item.association_id!) : undefined}
-            />
-          ))
-        )}
-      </CollapsibleSection>
+            >
+              <File01Icon className="h-3 w-3 shrink-0 text-muted-foreground" />
+              <span className="truncate font-medium">{item.title}</span>
+              {item.display_id && (
+                <span className="ml-auto shrink-0 text-muted-foreground">{item.display_id}</span>
+              )}
+            </button>
+            {item.association_id ? (
+              <button
+                type="button"
+                className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-all hover:bg-background hover:text-destructive group-hover:opacity-100"
+                onClick={() => deleteDocAssociation.mutate(item.association_id!)}
+                aria-label="Remove document association"
+              >
+                <Delete01Icon className="h-3 w-3" />
+              </button>
+            ) : null}
+          </div>
+        ))}
+      </SidebarAssociationSection>
 
       {/* Link existing modal */}
       <Dialog open={!!pickerSection} onOpenChange={(open) => { if (!open) setPickerSection(null); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-sm">
-              Link {pickerSection === 'tasks' ? 'Task' : 'Document'}
+              Link {pickerSection === 'tasks' ? 'Task' : pickerSection === 'crm' ? 'CRM Record' : 'Document'}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
@@ -227,7 +469,13 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder={pickerSection === 'tasks' ? 'Search existing tasks...' : 'Search documents...'}
+                placeholder={
+                  pickerSection === 'tasks'
+                    ? 'Search existing tasks...'
+                    : pickerSection === 'crm'
+                      ? 'Search contacts, companies, or deals...'
+                      : 'Search documents...'
+                }
                 className="pl-9"
                 autoFocus
               />
@@ -238,6 +486,24 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
                   <Loading01Icon className="h-4 w-4 animate-spin" /> Searching...
                 </div>
               )}
+              {!searching && pickerSection === 'crm' && crmResults.map((result) => (
+                <button
+                  key={`${result.type}-${result.id}`}
+                  type="button"
+                  className="w-full rounded-md border px-3 py-2 text-left text-sm transition hover:bg-accent"
+                  onClick={() => handleAddCRM(result.type, result.id)}
+                >
+                  <div className="flex items-center gap-2">
+                    <Building03Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    <span className="font-medium truncate">{result.name}</span>
+                    {'display_id' in result.object && result.object.display_id && (
+                      <Badge variant="outline" className="h-5 px-1.5 text-[10px] shrink-0">
+                        #{result.object.display_id}
+                      </Badge>
+                    )}
+                  </div>
+                </button>
+              ))}
               {!searching && results.map((r) => (
                 <button
                   key={r.id}
@@ -256,7 +522,10 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
                   </div>
                 </button>
               ))}
-              {!searching && query.trim().length >= 2 && results.length === 0 && (
+              {!searching && query.trim().length >= 2 && pickerSection !== 'crm' && results.length === 0 && (
+                <p className="py-4 text-sm text-muted-foreground text-center">No results found</p>
+              )}
+              {!searching && query.trim().length >= 2 && pickerSection === 'crm' && crmResults.length === 0 && (
                 <p className="py-4 text-sm text-muted-foreground text-center">No results found</p>
               )}
               {!searching && query.trim().length < 2 && (

@@ -10,6 +10,7 @@ import type {
   LinkTaskRequest,
   AssignConversationAgentRequest,
   AssignConversationUserRequest,
+  UpdateConversationCRMContactRequest,
   AgentRun,
   ConversationStatus,
   SupportInstallationResponse,
@@ -109,6 +110,8 @@ export const supportService = {
     api.post(`/support/inbox/conversations/${conversationId}/assign-agent${qs(workspaceId)}`, payload),
   assignConversationUser: (workspaceId: string, conversationId: string, payload: AssignConversationUserRequest) =>
     api.post(`/support/inbox/conversations/${conversationId}/assign-user${qs(workspaceId)}`, payload),
+  updateConversationCRMContact: (workspaceId: string, conversationId: string, payload: UpdateConversationCRMContactRequest) =>
+    api.put<SupportConversation>(`/support/inbox/conversations/${conversationId}/crm-contact${qs(workspaceId)}`, payload),
   runAgent: (workspaceId: string, conversationId: string) =>
     api.post<AgentRun>(`/support/inbox/conversations/${conversationId}/run-agent${qs(workspaceId)}`, {}),
 
