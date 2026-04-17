@@ -534,6 +534,11 @@ func (s *CRMSummaryService) loadContactAssociations(ctx context.Context, workspa
 	openDeals := make([]dealSummarySnapshot, 0, crmSummaryContactOpenDealLimit)
 	seenCompanies := map[string]struct{}{}
 	seenDeals := map[string]struct{}{}
+	type companyAssociationRef struct {
+		id        string
+		isPrimary bool
+	}
+	companyRefs := make([]companyAssociationRef, 0, 4)
 
 	for _, assoc := range assocs {
 		otherType, otherID := associationPeer(assoc, model.CRMObjectContact, contactID)
@@ -543,12 +548,10 @@ func (s *CRMSummaryService) loadContactAssociations(ctx context.Context, workspa
 				continue
 			}
 			seenCompanies[otherID] = struct{}{}
-			company, err := s.companyRepo.GetByID(ctx, otherID)
-			if err != nil || company == nil {
-				continue
-			}
-			companySnaps = append(companySnaps, companySnapshot(*company))
-			companyNames = append(companyNames, company.Name)
+			companyRefs = append(companyRefs, companyAssociationRef{
+				id:        otherID,
+				isPrimary: isPrimaryCompanyAssociationLabel(assoc.AssociationLabel),
+			})
 		case model.CRMObjectDeal:
 			if len(openDeals) >= crmSummaryContactOpenDealLimit {
 				continue
@@ -564,6 +567,27 @@ func (s *CRMSummaryService) loadContactAssociations(ctx context.Context, workspa
 			openDeals = append(openDeals, *dealSnapshot(*deal))
 		}
 	}
+
+	slices.SortStableFunc(companyRefs, func(a, b companyAssociationRef) int {
+		switch {
+		case a.isPrimary == b.isPrimary:
+			return 0
+		case a.isPrimary:
+			return -1
+		default:
+			return 1
+		}
+	})
+
+	for _, ref := range companyRefs {
+		company, err := s.companyRepo.GetByID(ctx, ref.id)
+		if err != nil || company == nil {
+			continue
+		}
+		companySnaps = append(companySnaps, companySnapshot(*company))
+		companyNames = append(companyNames, company.Name)
+	}
+
 	return companySnaps, companyNames, openDeals, nil
 }
 

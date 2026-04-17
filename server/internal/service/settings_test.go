@@ -863,3 +863,128 @@ func TestGetAll_UnknownWorkspaceAutoInitializes(t *testing.T) {
 		t.Fatalf("expected 0 teams, got %d", len(cfg.Teams))
 	}
 }
+
+// ---------------------------------------------------------------------------
+// EnsureDefaultTeam
+// ---------------------------------------------------------------------------
+
+func TestEnsureDefaultTeam_CreatesSalesTeamWhenAbsent(t *testing.T) {
+	svc, db := newSettingsService(t)
+	ctx := context.Background()
+
+	seedUser(t, db, "u1", "owner@test.com", "Owner", "hash")
+	seedWorkspace(t, db, "ws1", "Test WS", "test-ws", "u1")
+	seedWorkspaceMember(t, db, "wm1", "ws1", "u1", "owner@test.com", "Owner", "admin")
+
+	team, err := svc.EnsureDefaultTeam(ctx, "ws1", model.TeamTypeSales, "u1")
+	if err != nil {
+		t.Fatalf("EnsureDefaultTeam: %v", err)
+	}
+	if team == nil {
+		t.Fatal("expected non-nil team")
+	}
+	if team.TeamType != model.TeamTypeSales {
+		t.Errorf("expected team_type %q, got %q", model.TeamTypeSales, team.TeamType)
+	}
+	if team.Name != "Sales" {
+		t.Errorf("expected default name 'Sales', got %q", team.Name)
+	}
+	if team.Handle == nil || *team.Handle != "sales" {
+		t.Errorf("expected handle 'sales', got %v", team.Handle)
+	}
+	if team.DefaultStoryType != model.PMTaskTypeChore {
+		t.Errorf("expected default task type 'chore' for sales, got %q", team.DefaultStoryType)
+	}
+}
+
+func TestEnsureDefaultTeam_Idempotent(t *testing.T) {
+	svc, db := newSettingsService(t)
+	ctx := context.Background()
+
+	seedUser(t, db, "u1", "owner@test.com", "Owner", "hash")
+	seedWorkspace(t, db, "ws1", "Test WS", "test-ws", "u1")
+	seedWorkspaceMember(t, db, "wm1", "ws1", "u1", "owner@test.com", "Owner", "admin")
+
+	first, err := svc.EnsureDefaultTeam(ctx, "ws1", model.TeamTypeSales, "u1")
+	if err != nil {
+		t.Fatalf("first EnsureDefaultTeam: %v", err)
+	}
+	second, err := svc.EnsureDefaultTeam(ctx, "ws1", model.TeamTypeSales, "u1")
+	if err != nil {
+		t.Fatalf("second EnsureDefaultTeam: %v", err)
+	}
+	if first.ID != second.ID {
+		t.Fatalf("expected idempotent result; got %q then %q", first.ID, second.ID)
+	}
+}
+
+func TestEnsureDefaultTeam_ReturnsExistingTeamOfType(t *testing.T) {
+	svc, db := newSettingsService(t)
+	ctx := context.Background()
+
+	seedUser(t, db, "u1", "owner@test.com", "Owner", "hash")
+	seedWorkspace(t, db, "ws1", "Test WS", "test-ws", "u1")
+	seedWorkspaceMember(t, db, "wm1", "ws1", "u1", "owner@test.com", "Owner", "admin")
+
+	manualHandle := "enterprise-sales"
+	manual, err := svc.CreateTeam(ctx, model.CreateTeamRequest{
+		WorkspaceID: "ws1",
+		Name:        "Enterprise Sales",
+		Handle:      &manualHandle,
+		TeamType:    model.TeamTypeSales,
+	}, "u1")
+	if err != nil {
+		t.Fatalf("seed manual sales team: %v", err)
+	}
+
+	ensured, err := svc.EnsureDefaultTeam(ctx, "ws1", model.TeamTypeSales, "u1")
+	if err != nil {
+		t.Fatalf("EnsureDefaultTeam: %v", err)
+	}
+	if ensured.ID != manual.ID {
+		t.Fatalf("expected EnsureDefaultTeam to reuse existing sales team %q, got %q", manual.ID, ensured.ID)
+	}
+}
+
+func TestEnsureDefaultTeam_HandleCollisionSuffixes(t *testing.T) {
+	svc, db := newSettingsService(t)
+	ctx := context.Background()
+
+	seedUser(t, db, "u1", "owner@test.com", "Owner", "hash")
+	seedWorkspace(t, db, "ws1", "Test WS", "test-ws", "u1")
+	seedWorkspaceMember(t, db, "wm1", "ws1", "u1", "owner@test.com", "Owner", "admin")
+
+	// User has already taken the "sales" handle with a non-sales team.
+	handle := "sales"
+	if _, err := svc.CreateTeam(ctx, model.CreateTeamRequest{
+		WorkspaceID: "ws1",
+		Name:        "Sales Engineering",
+		Handle:      &handle,
+		TeamType:    model.TeamTypeEngineering,
+	}, "u1"); err != nil {
+		t.Fatalf("seed conflicting team: %v", err)
+	}
+
+	team, err := svc.EnsureDefaultTeam(ctx, "ws1", model.TeamTypeSales, "u1")
+	if err != nil {
+		t.Fatalf("EnsureDefaultTeam: %v", err)
+	}
+	if team.Handle == nil || *team.Handle != "sales-1" {
+		t.Fatalf("expected suffixed handle 'sales-1', got %v", team.Handle)
+	}
+	if team.TeamType != model.TeamTypeSales {
+		t.Errorf("expected team_type %q, got %q", model.TeamTypeSales, team.TeamType)
+	}
+}
+
+func TestEnsureDefaultTeam_InvalidType(t *testing.T) {
+	svc, db := newSettingsService(t)
+	ctx := context.Background()
+
+	seedUser(t, db, "u1", "owner@test.com", "Owner", "hash")
+	seedWorkspace(t, db, "ws1", "Test WS", "test-ws", "u1")
+
+	if _, err := svc.EnsureDefaultTeam(ctx, "ws1", "not-a-real-type", "u1"); err == nil {
+		t.Fatal("expected error for invalid team_type")
+	}
+}

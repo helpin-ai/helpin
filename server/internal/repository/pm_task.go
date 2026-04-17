@@ -420,6 +420,25 @@ func (r *PMTaskRepository) ListByIDs(ctx context.Context, workspaceID string, id
 	return tasks, nil
 }
 
+func (r *PMTaskRepository) ListStateNamesByIDs(ctx context.Context, ids []string) (map[string]string, error) {
+	if len(ids) == 0 {
+		return map[string]string{}, nil
+	}
+
+	var states []model.PMWorkflowState
+	if err := r.db.WithContext(ctx).
+		Where("id IN ?", ids).
+		Find(&states).Error; err != nil {
+		return nil, fmt.Errorf("list workflow states by ids: %w", err)
+	}
+
+	result := make(map[string]string, len(states))
+	for _, state := range states {
+		result[state.ID] = state.Name
+	}
+	return result, nil
+}
+
 // ListByEpicAndExternalIDs returns raw tasks for an epic keyed by external IDs.
 func (r *PMTaskRepository) ListByEpicAndExternalIDs(ctx context.Context, workspaceID, epicID string, externalIDs []string) ([]model.PMTask, error) {
 	if len(externalIDs) == 0 {

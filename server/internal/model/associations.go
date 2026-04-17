@@ -23,6 +23,8 @@ type AssociationObjectSummary struct {
 	ObjectID        string  `json:"object_id"`
 	DisplayID       *string `json:"display_id,omitempty"`
 	Title           string  `json:"title"`
+	Inferred        bool    `json:"inferred,omitempty"`
+	ContextLabel    *string `json:"context_label,omitempty"`
 	Status          *string `json:"status,omitempty"`
 	WorkflowStateID *string `json:"workflow_state_id,omitempty"`
 	Completed       bool    `json:"completed,omitempty"`

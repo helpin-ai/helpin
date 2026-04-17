@@ -321,6 +321,7 @@ export interface Task {
   // Enriched by board/list endpoints
   epic_name?: string;
   sprint_name?: string;
+  team_name?: string;
   owner_name?: string;
   state_name?: string;
   state_type?: StateType;
@@ -368,6 +369,8 @@ export interface AssociationObjectSummary {
   display_id?: string;
   task_key?: string;
   title: string;
+  inferred?: boolean;
+  context_label?: string;
   status?: string;
   workflow_state_id?: string;
   completed?: boolean;

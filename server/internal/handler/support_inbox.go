@@ -238,6 +238,26 @@ func (h *SupportInboxHandler) AssignConversationUser(w http.ResponseWriter, r *h
 	writeJSON(w, http.StatusOK, map[string]bool{"assigned": true})
 }
 
+// UpdateConversationCRMContact handles PUT /api/support/inbox/conversations/{id}/crm-contact.
+func (h *SupportInboxHandler) UpdateConversationCRMContact(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	conversationID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+
+	var req model.UpdateConversationCRMContactRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	conversation, err := h.supportService.UpdateConversationCRMContact(r.Context(), workspaceID, conversationID, req.CRMContactID, actorID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, conversation)
+}
+
 // ListConversationAssignableUsers handles GET /api/support/inbox/conversations/{id}/assignees.
 func (h *SupportInboxHandler) ListConversationAssignableUsers(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)

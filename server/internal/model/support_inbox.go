@@ -544,17 +544,37 @@ type LinkStoryRequest struct {
 
 // CreateTaskFromConversationRequest creates a PM task from the current support conversation.
 type CreateTaskFromConversationRequest struct {
-	TaskType        *string `json:"task_type,omitempty"`
-	Priority        *string `json:"priority,omitempty"`
-	TeamID          *string `json:"team_id,omitempty"`
-	WorkflowID      *string `json:"workflow_id,omitempty"`
-	WorkflowStateID *string `json:"workflow_state_id,omitempty"`
-	OwnerMemberID   *string `json:"owner_member_id,omitempty"`
+	Name              *string                     `json:"name,omitempty"`
+	Description       *string                     `json:"description,omitempty"`
+	TaskType          *string                     `json:"task_type,omitempty"`
+	WorkflowID        *string                     `json:"workflow_id,omitempty"`
+	WorkflowStateID   *string                     `json:"workflow_state_id,omitempty"`
+	EpicID            *string                     `json:"epic_id,omitempty"`
+	SprintID          *string                     `json:"sprint_id,omitempty"`
+	TeamID            *string                     `json:"team_id,omitempty"`
+	OwnerMemberID     *string                     `json:"owner_member_id,omitempty"`
+	RequesterMemberID *string                     `json:"requester_member_id,omitempty"`
+	Estimate          *int                        `json:"estimate,omitempty"`
+	Priority          *string                     `json:"priority,omitempty"`
+	Severity          *string                     `json:"severity,omitempty"`
+	Deadline          *time.Time                  `json:"deadline,omitempty"`
+	Position          *int                        `json:"position,omitempty"`
+	Blocked           *bool                       `json:"blocked,omitempty"`
+	Blocker           *string                     `json:"blocker,omitempty"`
+	TemplateID        *string                     `json:"template_id,omitempty"`
+	ExternalID        *string                     `json:"external_id,omitempty"`
+	OwnerIDs          []string                    `json:"owner_ids,omitempty"`
+	FollowerIDs       []string                    `json:"follower_ids,omitempty"`
+	LabelIDs          []string                    `json:"label_ids,omitempty"`
+	AttachmentIDs     []string                    `json:"attachment_ids,omitempty"`
+	ChecklistItems    []CreateChecklistItemRequest `json:"checklist_items,omitempty"`
+	ExternalLinks     []CreateExternalLinkRequest `json:"external_links,omitempty"`
 }
 
 // CreateTaskFromConversationResponse summarizes the created PM task and copied associations.
 type CreateTaskFromConversationResponse struct {
 	TaskID                    string `json:"task_id"`
+	DisplayID                 int    `json:"display_id,omitempty"`
 	TaskKey                   string `json:"task_key,omitempty"`
 	TaskName                  string `json:"task_name"`
 	Summary                   string `json:"summary,omitempty"`
@@ -571,6 +591,11 @@ type AssignConversationAgentRequest struct {
 // AssignConversationUserRequest assigns a teammate to a conversation.
 type AssignConversationUserRequest struct {
 	UserID *string `json:"user_id"`
+}
+
+// UpdateConversationCRMContactRequest sets or clears the primary CRM contact link.
+type UpdateConversationCRMContactRequest struct {
+	CRMContactID *string `json:"crm_contact_id"`
 }
 
 // UpdateConversationStatusRequest changes conversation status.

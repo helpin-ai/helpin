@@ -266,10 +266,6 @@ func main() {
 			&model.CRMDeal{},
 			&model.CRMAssociation{},
 			&model.CRMActivity{},
-			&model.CRMPropertyDefinition{},
-			&model.CRMPropertyGroup{},
-			&model.CRMList{},
-			&model.CRMListMember{},
 			&model.CRMImportJob{},
 			// CRM Phase 3: Email & Calendar
 			&model.CRMEmailAccount{},
@@ -283,9 +279,7 @@ func main() {
 			&model.CRMEntitySummary{},
 			&model.CRMDealHealthScore{},
 			&model.CRMSuggestion{},
-			// CRM Phase 5: Sequences & Writing
-			&model.CRMSequence{},
-			&model.CRMSequenceEnrollment{},
+			// CRM Phase 5: Writing
 			&model.CRMWritingProfile{},
 			// CRM Autonomy
 			&model.CRMAutonomySettings{},
@@ -573,8 +567,6 @@ func main() {
 	crmDealRepo := repository.NewCRMDealRepository(db)
 	crmAssociationRepo := repository.NewCRMAssociationRepository(db)
 	crmActivityRepo := repository.NewCRMActivityRepository(db)
-	crmPropertyRepo := repository.NewCRMPropertyRepository(db)
-	crmListRepo := repository.NewCRMListRepository(db)
 	crmImportRepo := repository.NewCRMImportRepository(db)
 	crmEmailRepo := repository.NewCRMEmailRepository(db)
 	crmCalendarRepo := repository.NewCRMCalendarRepository(db)
@@ -582,7 +574,6 @@ func main() {
 	crmSignalRepo := repository.NewCRMSignalRepository(db)
 	crmSummaryRepo := repository.NewCRMSummaryRepository(db)
 	crmSuggestionRepo := repository.NewCRMSuggestionRepository(db)
-	crmSequenceRepo := repository.NewCRMSequenceRepository(db)
 	crmWritingProfileRepo := repository.NewCRMWritingProfileRepository(db)
 	crmEmailSyncSettingsRepo := repository.NewCRMEmailSyncSettingsRepository(db)
 	automationHealthRepo := repository.NewAutomationHealthRepository(db)
@@ -916,10 +907,8 @@ func main() {
 	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo)
 	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo)
 	crmAssociationService := service.NewCRMAssociationService(crmAssociationRepo)
-	associationsService := service.NewAssociationsService(crmAssociationRepo, pmTaskLinkRepo, pmTaskRepo, supportConversationRepo, docsLinkRepo, docsDocumentRepo)
+	associationsService := service.NewAssociationsService(crmAssociationRepo, crmContactRepo, workspaceRepo, pmTaskLinkRepo, pmTaskRepo, supportConversationRepo, docsLinkRepo, docsDocumentRepo)
 	crmActivityService := service.NewCRMActivityService(crmActivityRepo)
-	crmPropertyService := service.NewCRMPropertyService(crmPropertyRepo)
-	crmListService := service.NewCRMListService(crmListRepo)
 	crmImportService := service.NewCRMImportService(crmImportRepo, crmContactRepo, crmCompanyRepo, crmDealRepo)
 
 	// Gmail OAuth + encryption setup.
@@ -945,7 +934,6 @@ func main() {
 	crmEnrichmentService := service.NewCRMEnrichmentService(crmEnrichmentRepo)
 	crmSignalService := service.NewCRMSignalService(crmSignalRepo, crmSummaryService)
 	crmSuggestionService := service.NewCRMSuggestionService(crmSuggestionRepo, crmDealRepo, crmAssociationRepo)
-	crmSequenceService := service.NewCRMSequenceService(crmSequenceRepo)
 	crmWritingProfileService := service.NewCRMWritingProfileService(crmWritingProfileRepo)
 	crmSearchService := service.NewCRMSearchService(crmContactRepo, crmCompanyRepo, crmDealRepo)
 	commandService := service.NewInternalCommandService(
@@ -1075,8 +1063,6 @@ func main() {
 		CRMAssociation:      handler.NewCRMAssociationHandler(crmAssociationService),
 		Associations:        handler.NewAssociationsHandler(associationsService),
 		CRMActivity:         handler.NewCRMActivityHandler(crmActivityService),
-		CRMProperty:         handler.NewCRMPropertyHandler(crmPropertyService),
-		CRMList:             handler.NewCRMListHandler(crmListService),
 		CRMImport:           handler.NewCRMImportHandler(crmImportService),
 		CRMEmail:            handler.NewCRMEmailHandler(crmEmailService, cfg.AppBaseURL),
 		CRMCalendar:         handler.NewCRMCalendarHandler(crmCalendarService),
@@ -1084,7 +1070,6 @@ func main() {
 		CRMSignal:           handler.NewCRMSignalHandler(crmSignalService),
 		CRMSummary:          handler.NewCRMSummaryHandler(crmSummaryService),
 		CRMSuggestion:       handler.NewCRMSuggestionHandler(crmSuggestionService),
-		CRMSequence:         handler.NewCRMSequenceHandler(crmSequenceService),
 		CRMWritingProfile:   handler.NewCRMWritingProfileHandler(crmWritingProfileService),
 		CRMSearch:           handler.NewCRMSearchHandler(crmSearchService),
 		CRMDealAutomation:   handler.NewCRMDealAutomationHandler(dealAutomationService),

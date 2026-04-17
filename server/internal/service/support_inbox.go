@@ -1407,31 +1407,56 @@ func (s *SupportInboxService) CreateTaskFromConversation(
 	if err != nil {
 		return nil, err
 	}
-	if err := validateSupportTaskDraft(conversation, messages, draft); err != nil {
-		slog.WarnContext(ctx, "support task creation blocked due to weak draft context",
-			"workspace_id", workspaceID,
-			"conversation_id", conversationID,
-			"title", strings.TrimSpace(draft.Title),
-			"summary_preview", truncateLog(strings.TrimSpace(draft.Summary), 160),
-			"error", err,
-		)
-		return nil, err
+	if trimPtrValue(req.Name) == "" {
+		if err := validateSupportTaskDraft(conversation, messages, draft); err != nil {
+			slog.WarnContext(ctx, "support task creation blocked due to weak draft context",
+				"workspace_id", workspaceID,
+				"conversation_id", conversationID,
+				"title", strings.TrimSpace(draft.Title),
+				"summary_preview", truncateLog(strings.TrimSpace(draft.Summary), 160),
+				"error", err,
+			)
+			return nil, err
+		}
 	}
 
 	taskType := normalizeSupportTaskType(firstNonEmptyString(trimPtrValue(req.TaskType), draft.TaskType))
 	priority := normalizeSupportTaskPriority(firstNonEmptyString(trimPtrValue(req.Priority), draft.Priority))
-	description := supportTaskDescriptionToRichText(draft.Description)
+	description := trimRichTextPtr(req.Description)
+	if description == nil {
+		description = supportTaskDescriptionToRichText(draft.Description)
+	}
+	requesterMemberID := trimOptionalPtr(req.RequesterMemberID)
 	createReq := model.CreateTaskRequest{
 		WorkspaceID:       workspaceID,
-		Name:              draft.Title,
+		Name:              firstNonEmptyString(trimPtrValue(req.Name), draft.Title),
 		Description:       description,
 		TaskType:          taskType,
 		WorkflowID:        trimPtrValue(req.WorkflowID),
 		WorkflowStateID:   trimPtrValue(req.WorkflowStateID),
+		EpicID:            trimOptionalPtr(req.EpicID),
+		SprintID:          trimOptionalPtr(req.SprintID),
 		TeamID:            trimOptionalPtr(req.TeamID),
 		OwnerMemberID:     trimOptionalPtr(req.OwnerMemberID),
-		RequesterID:       strPtr(actorID),
-		RequesterMemberID: nil,
+		RequesterID:       nil,
+		RequesterMemberID: requesterMemberID,
+		Estimate:          req.Estimate,
+		Severity:          req.Severity,
+		Deadline:          req.Deadline,
+		Position:          req.Position,
+		Blocked:           req.Blocked,
+		Blocker:           trimOptionalPtr(req.Blocker),
+		TemplateID:        trimOptionalPtr(req.TemplateID),
+		ExternalID:        trimOptionalPtr(req.ExternalID),
+		OwnerIDs:          req.OwnerIDs,
+		FollowerIDs:       req.FollowerIDs,
+		LabelIDs:          req.LabelIDs,
+		AttachmentIDs:     req.AttachmentIDs,
+		ChecklistItems:    req.ChecklistItems,
+		ExternalLinks:     req.ExternalLinks,
+	}
+	if requesterMemberID == nil {
+		createReq.RequesterID = strPtr(actorID)
 	}
 	if priority != "" {
 		createReq.Priority = &priority
@@ -1464,6 +1489,7 @@ func (s *SupportInboxService) CreateTaskFromConversation(
 
 	return &model.CreateTaskFromConversationResponse{
 		TaskID:                    taskID,
+		DisplayID:                 detail.Task.DisplayID,
 		TaskKey:                   detail.Task.TaskKey,
 		TaskName:                  detail.Task.Name,
 		Summary:                   strings.TrimSpace(draft.Summary),
@@ -2012,6 +2038,17 @@ func supportTaskDescriptionToRichText(markdown string) *string {
 	return strPtr(strings.TrimSpace(rendered))
 }
 
+func trimRichTextPtr(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
+}
+
 func trimOptionalPtr(value *string) *string {
 	if value == nil {
 		return nil
@@ -2068,6 +2105,11 @@ func (s *SupportInboxService) AssignConversationAgent(ctx context.Context, works
 // AssignConversationUser assigns a teammate to a conversation, or clears the assignee when userID is empty.
 func (s *SupportInboxService) AssignConversationUser(ctx context.Context, workspaceID, ticketID string, userID *string, actorID string) error {
 	return s.assignConversationUser(ctx, workspaceID, ticketID, userID, &actorID)
+}
+
+// UpdateConversationCRMContact sets or clears the primary CRM contact link on a conversation.
+func (s *SupportInboxService) UpdateConversationCRMContact(ctx context.Context, workspaceID, conversationID string, contactID *string, actorID string) (*model.SupportConversation, error) {
+	return s.updateConversationCRMContact(ctx, workspaceID, conversationID, contactID, &actorID)
 }
 
 // ListContactConversations returns support conversations linked to a CRM contact.
@@ -2549,6 +2591,91 @@ func (s *SupportInboxService) assignConversationUser(ctx context.Context, worksp
 	})
 
 	return nil
+}
+
+func (s *SupportInboxService) updateConversationCRMContact(ctx context.Context, workspaceID, conversationID string, contactID *string, actorID *string) (*model.SupportConversation, error) {
+	ticket, err := s.loadConversationAccessible(ctx, workspaceID, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	if ticket == nil {
+		return nil, fmt.Errorf("ticket not found")
+	}
+
+	var normalizedContactID *string
+	if contactID != nil {
+		trimmed := strings.TrimSpace(*contactID)
+		if trimmed != "" {
+			contact, err := s.contactRepo.GetByID(ctx, trimmed)
+			if err != nil {
+				return nil, err
+			}
+			if contact == nil || contact.WorkspaceID != workspaceID {
+				return nil, fmt.Errorf("contact not found")
+			}
+			normalizedContactID = &trimmed
+		}
+	}
+
+	oldContactID := ticket.CRMContactID
+	if err := s.syncConversationContactAssociation(ctx, workspaceID, conversationID, normalizedContactID); err != nil {
+		return nil, err
+	}
+
+	fields := map[string]any{
+		"crm_contact_id": normalizedContactID,
+		"updated_at":     time.Now().UTC(),
+	}
+	if err := s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, fields); err != nil {
+		return nil, err
+	}
+	ticket.CRMContactID = normalizedContactID
+	ticket.UpdatedAt = time.Now().UTC()
+
+	if s.activitySvc != nil {
+		_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", conversationID, actorID, "updated", strPtr("crm_contact_id"), oldContactID, normalizedContactID, nil)
+	}
+
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      "updated",
+		Entity:      "support_conversation",
+		EntityID:    conversationID,
+		WorkspaceID: workspaceID,
+		ActorID:     derefString(actorID),
+	})
+
+	return ticket, nil
+}
+
+func (s *SupportInboxService) syncConversationContactAssociation(ctx context.Context, workspaceID, conversationID string, contactID *string) error {
+	assocs, err := s.assocRepo.ListByObject(ctx, workspaceID, model.CRMObjectSupportConversation, conversationID)
+	if err != nil {
+		return err
+	}
+	for _, assoc := range assocs {
+		otherType, otherID := otherAssociationSide(assoc, model.CRMObjectSupportConversation, conversationID)
+		if otherType != model.CRMObjectContact {
+			continue
+		}
+		if contactID != nil && otherID == *contactID {
+			continue
+		}
+		if err := s.assocRepo.Delete(ctx, assoc.ID); err != nil {
+			return err
+		}
+	}
+
+	if contactID == nil {
+		return nil
+	}
+
+	return s.assocRepo.Create(ctx, &model.CRMAssociation{
+		WorkspaceID:    workspaceID,
+		FromObjectType: model.CRMObjectSupportConversation,
+		FromObjectID:   conversationID,
+		ToObjectType:   model.CRMObjectContact,
+		ToObjectID:     *contactID,
+	})
 }
 
 // assignmentTargetKind describes the kind of assignee referenced in an
