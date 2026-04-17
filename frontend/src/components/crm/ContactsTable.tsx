@@ -296,7 +296,7 @@ export function ContactsTable({
             const fullName = info.getValue();
             return (
               <button
-                className="flex max-w-full cursor-pointer items-center gap-2 truncate text-left text-xs hover:text-primary"
+                className="flex max-w-full cursor-pointer items-center gap-2 truncate text-left text-sm hover:text-primary"
                 onClick={(e) => {
                   e.stopPropagation();
                   onRowClick(info.row.original.id);
@@ -316,7 +316,7 @@ export function ContactsTable({
         enableGrouping: false,
         cell: (info) => (
           <button
-            className="flex max-w-full cursor-pointer items-center truncate text-left text-xs hover:text-primary"
+            className="flex max-w-full cursor-pointer items-center truncate text-left text-sm hover:text-primary"
             onClick={(e) => {
               e.stopPropagation();
               onRowClick(info.row.original.id);

@@ -2,13 +2,16 @@ package model
 
 import "time"
 
-// CRM activity types.
+// CRM activity types. Activities record things that HAVE HAPPENED against a
+// CRM object (a call was made, an email was sent). Things TO DO live in PMTask
+// — see the "task" team type and LinkedTasksPanel in the frontend. The "task"
+// activity type was retired in 2026-04 when sales tasks were unified with PM
+// tasks (plan: docs/plans/2026-04-16-crm-pm-task-unification-plan.md).
 const (
 	CRMActivityNote    = "note"
 	CRMActivityCall    = "call"
 	CRMActivityMeeting = "meeting"
 	CRMActivityEmail   = "email"
-	CRMActivityTask    = "task"
 )
 
 // CRMActivity represents an activity logged against CRM objects.

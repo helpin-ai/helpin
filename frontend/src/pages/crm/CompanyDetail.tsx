@@ -20,6 +20,7 @@ import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useCompany, useUpdateCompany, useDeleteCompany, useCompanyActivities, useCompanyAssociations } from '@/hooks/queries';
 import { ActivityTimeline } from '@/components/crm/ActivityTimeline';
+import { LinkedTasksPanel } from '@/components/crm/LinkedTasksPanel';
 import { AssociationsList } from '@/components/crm/AssociationsList';
 import { useTitle } from '@/hooks/useTitle';
 import type { UpdateCRMCompanyRequest } from '@/lib/crmTypes';
@@ -201,6 +202,17 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
                 className="border-transparent shadow-none"
               />
             </div>
+          </div>
+
+          <Separator className="my-6" />
+
+          {/* Tasks */}
+          <div>
+            <LinkedTasksPanel
+              workspaceId={wsId}
+              workspaceSlug={wsSlug}
+              companyId={companyId}
+            />
           </div>
 
           <Separator className="my-6" />

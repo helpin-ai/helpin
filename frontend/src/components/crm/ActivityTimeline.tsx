@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
-import { Mail01Icon, Message01Icon, TelephoneIcon, Calendar01Icon, CheckmarkSquare02Icon, Delete01Icon } from '@/lib/icons';
+import { Mail01Icon, Message01Icon, TelephoneIcon, Calendar01Icon, Delete01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,17 +24,15 @@ const activityIcons: Record<CRMActivityType, typeof Mail01Icon> = {
   call: TelephoneIcon,
   meeting: Calendar01Icon,
   email: Mail01Icon,
-  task: CheckmarkSquare02Icon,
 };
 
 const activityTypes: { type: CRMActivityType; icon: typeof Message01Icon; label: string }[] = [
   { type: 'note', icon: Message01Icon, label: 'Note' },
   { type: 'call', icon: TelephoneIcon, label: 'Call' },
   { type: 'meeting', icon: Calendar01Icon, label: 'Meeting' },
-  { type: 'task', icon: CheckmarkSquare02Icon, label: 'Task' },
 ];
 
-const filterOptions = ['all', 'note', 'call', 'meeting', 'email', 'task'] as const;
+const filterOptions = ['all', 'note', 'call', 'meeting', 'email'] as const;
 
 export function ActivityTimeline({
   activities,

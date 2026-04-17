@@ -11,7 +11,7 @@ export type LifecycleStage =
 
 export type LeadStatus = 'new' | 'open' | 'in_progress' | 'unqualified';
 
-export type CRMActivityType = 'note' | 'call' | 'meeting' | 'email' | 'task';
+export type CRMActivityType = 'note' | 'call' | 'meeting' | 'email';
 
 export type PipelineStageType = 'open' | 'won' | 'lost';
 
@@ -279,114 +279,7 @@ export interface CRMPaginatedResponse<T> {
   page: number;
 }
 
-// ── Phase 2: Properties, Lists, Import ──
-
-export type CRMFieldType =
-  | 'text'
-  | 'number'
-  | 'date'
-  | 'select'
-  | 'multiselect'
-  | 'boolean'
-  | 'url'
-  | 'email'
-  | 'phone'
-  | 'currency';
-
-export interface CRMPropertyDefinition {
-  id: string;
-  workspace_id: string;
-  object_type: CRMObjectType;
-  internal_name: string;
-  label: string;
-  field_type: CRMFieldType;
-  options: Record<string, unknown>;
-  group_name?: string;
-  is_required: boolean;
-  is_system: boolean;
-  position: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface CreateCRMPropertyDefinitionRequest {
-  workspace_id: string;
-  object_type: CRMObjectType;
-  internal_name: string;
-  label: string;
-  field_type: CRMFieldType;
-  options?: Record<string, unknown>;
-  group_name?: string;
-  is_required?: boolean;
-  position?: number;
-}
-
-export interface UpdateCRMPropertyDefinitionRequest {
-  label?: string;
-  field_type?: CRMFieldType;
-  options?: Record<string, unknown>;
-  group_name?: string;
-  is_required?: boolean;
-  position?: number;
-}
-
-export interface CRMPropertyGroup {
-  id: string;
-  workspace_id: string;
-  object_type: CRMObjectType;
-  name: string;
-  position: number;
-  is_system: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface CreateCRMPropertyGroupRequest {
-  workspace_id: string;
-  object_type: CRMObjectType;
-  name: string;
-  position?: number;
-}
-
-export interface UpdateCRMPropertyGroupRequest {
-  name?: string;
-  position?: number;
-}
-
-export type CRMListType = 'static' | 'smart';
-
-export interface CRMList {
-  id: string;
-  workspace_id: string;
-  name: string;
-  list_type: CRMListType;
-  object_type: CRMObjectType;
-  filter_criteria: Record<string, unknown>;
-  member_count: number;
-  created_by?: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface CreateCRMListRequest {
-  workspace_id: string;
-  name: string;
-  list_type: CRMListType;
-  object_type: CRMObjectType;
-  filter_criteria?: Record<string, unknown>;
-}
-
-export interface UpdateCRMListRequest {
-  name?: string;
-  filter_criteria?: Record<string, unknown>;
-}
-
-export interface CRMListMember {
-  id: string;
-  list_id: string;
-  object_id: string;
-  created_at: string;
-}
+// ── Phase 2: Import ──
 
 export type CRMImportSource = 'csv' | 'hubspot';
 export type CRMImportStatus = 'pending' | 'processing' | 'completed' | 'failed';
@@ -554,6 +447,13 @@ export interface UpdateCRMCalendarEventRequest {
   deal_id?: string;
 }
 
+// ── Unified Activity Feed ──
+
+export type UnifiedActivityItem =
+  | { kind: 'activity'; data: CRMActivity; timestamp: string; source: 'manual' }
+  | { kind: 'email'; data: CRMEmailMessage; timestamp: string; source: CRMEmailProvider | 'unknown' }
+  | { kind: 'calendar'; data: CRMCalendarEvent; timestamp: string; source: CRMEmailProvider | 'unknown' };
+
 // ── Phase 4: AI Intelligence ──
 
 export type CRMEnrichmentSource = 'apollo' | 'ai' | 'manual';
@@ -718,70 +618,7 @@ export interface UpdateCRMSuggestionRequest {
   status?: CRMSuggestionStatus;
 }
 
-// ── Phase 5: Sequences & Writing ──
-
-export type CRMSequenceStatus = 'draft' | 'active' | 'paused';
-export type CRMEnrollmentStatus =
-  | 'active'
-  | 'completed'
-  | 'paused'
-  | 'bounced'
-  | 'unsubscribed'
-  | 'exited';
-
-export interface CRMSequence {
-  id: string;
-  workspace_id: string;
-  name: string;
-  description?: string;
-  status: CRMSequenceStatus;
-  steps: Record<string, unknown>;
-  enrollment_count: number;
-  created_by?: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface CreateCRMSequenceRequest {
-  workspace_id: string;
-  name: string;
-  description?: string;
-  status?: CRMSequenceStatus;
-  steps?: Record<string, unknown>;
-}
-
-export interface UpdateCRMSequenceRequest {
-  name?: string;
-  description?: string;
-  status?: CRMSequenceStatus;
-  steps?: Record<string, unknown>;
-}
-
-export interface CRMSequenceEnrollment {
-  id: string;
-  workspace_id: string;
-  sequence_id: string;
-  contact_id: string;
-  current_step: number;
-  status: CRMEnrollmentStatus;
-  enrolled_at: string;
-  completed_at?: string;
-  exit_reason?: string;
-  last_step_executed_at?: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface CreateCRMSequenceEnrollmentRequest {
-  workspace_id: string;
-  sequence_id: string;
-  contact_id: string;
-}
-
-export interface UpdateCRMSequenceEnrollmentRequest {
-  status?: CRMEnrollmentStatus;
-  exit_reason?: string;
-}
+// ── Phase 5: Writing ──
 
 export interface CRMWritingProfile {
   id: string;

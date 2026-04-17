@@ -130,7 +130,7 @@ func (s *CRMActivityService) Delete(ctx context.Context, id string) error {
 
 func isValidActivityType(t string) bool {
 	switch t {
-	case model.CRMActivityNote, model.CRMActivityCall, model.CRMActivityMeeting, model.CRMActivityEmail, model.CRMActivityTask:
+	case model.CRMActivityNote, model.CRMActivityCall, model.CRMActivityMeeting, model.CRMActivityEmail:
 		return true
 	default:
 		return false
