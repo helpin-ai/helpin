@@ -17,8 +17,10 @@ const exaSearchAPIURL = "https://api.exa.ai/search"
 
 var allowedExaSearchTypes = map[string]struct{}{
 	"auto":           {},
+	"neural":         {},
 	"fast":           {},
 	"instant":        {},
+	"deep-lite":      {},
 	"deep":           {},
 	"deep-reasoning": {},
 }
@@ -497,8 +499,8 @@ func webSearchExaToolSchema() map[string]interface{} {
 			},
 			"type": map[string]interface{}{
 				"type":        "string",
-				"description": "Search type: auto (default), fast, instant, deep, or deep-reasoning",
-				"enum":        []string{"auto", "fast", "instant", "deep", "deep-reasoning"},
+				"description": "Search type: auto (default), neural, fast, instant, deep-lite, deep, or deep-reasoning",
+				"enum":        []string{"auto", "neural", "fast", "instant", "deep-lite", "deep", "deep-reasoning"},
 			},
 			"num_results": map[string]interface{}{
 				"type":        "integer",
@@ -722,7 +724,7 @@ func defaultExaContents() *ExaSearchContents {
 
 func validateExaSearchRequest(request ExaSearchRequest) error {
 	if _, ok := allowedExaSearchTypes[request.Type]; !ok {
-		return fmt.Errorf("type must be one of auto, fast, instant, deep, or deep-reasoning")
+		return fmt.Errorf("type must be one of auto, neural, fast, instant, deep-lite, deep, or deep-reasoning")
 	}
 
 	if request.Category != "" {

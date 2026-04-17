@@ -58,10 +58,33 @@ func TestBuildExaSearchRequestRejectsUnsupportedPeopleFilters(t *testing.T) {
 	}
 }
 
-func TestBuildExaSearchRequestRejectsUnsupportedType(t *testing.T) {
+func TestBuildExaSearchRequestAcceptsNeuralType(t *testing.T) {
 	_, err := buildExaSearchRequest(exaSearchToolInput{
 		Query: "agent tooling",
 		Type:  "neural",
+	})
+	if err != nil {
+		t.Fatalf("expected neural type to be accepted, got %v", err)
+	}
+}
+
+func TestBuildExaSearchRequestAcceptsDeepLiteType(t *testing.T) {
+	req, err := buildExaSearchRequest(exaSearchToolInput{
+		Query: "agent tooling",
+		Type:  "deep-lite",
+	})
+	if err != nil {
+		t.Fatalf("expected deep-lite type to be accepted, got %v", err)
+	}
+	if req.Type != "deep-lite" {
+		t.Fatalf("expected deep-lite type, got %q", req.Type)
+	}
+}
+
+func TestBuildExaSearchRequestRejectsUnsupportedType(t *testing.T) {
+	_, err := buildExaSearchRequest(exaSearchToolInput{
+		Query: "agent tooling",
+		Type:  "unknown",
 	})
 	if err == nil {
 		t.Fatal("expected validation error")
