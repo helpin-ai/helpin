@@ -58,6 +58,35 @@ func TestBuildExaSearchRequestRejectsUnsupportedPeopleFilters(t *testing.T) {
 	}
 }
 
+func TestBuildExaSearchRequestRejectsUnsupportedType(t *testing.T) {
+	_, err := buildExaSearchRequest(exaSearchToolInput{
+		Query: "agent tooling",
+		Type:  "neural",
+	})
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "type must be one of") {
+		t.Fatalf("expected type validation error, got %v", err)
+	}
+}
+
+func TestBuildExaSearchRequestRejectsMultipleContentModes(t *testing.T) {
+	_, err := buildExaSearchRequest(exaSearchToolInput{
+		Query: "agent tooling",
+		Contents: &exaSearchContentsInput{
+			Text:       &exaTextInput{MaxCharacters: 1000},
+			Highlights: &exaHighlightsInput{MaxCharacters: 400},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "only one of text, highlights, or summary") {
+		t.Fatalf("expected content-mode validation error, got %v", err)
+	}
+}
+
 func TestExaSearchClientSearchUsesExpectedRequestShape(t *testing.T) {
 	var capturedMethod string
 	var capturedAuth string

@@ -15,6 +15,23 @@ import (
 const braveSearchAPIURL = "https://api.search.brave.com/res/v1/web/search"
 const exaSearchAPIURL = "https://api.exa.ai/search"
 
+var allowedExaSearchTypes = map[string]struct{}{
+	"auto":           {},
+	"fast":           {},
+	"instant":        {},
+	"deep":           {},
+	"deep-reasoning": {},
+}
+
+var allowedExaCategories = map[string]struct{}{
+	"company":          {},
+	"research paper":   {},
+	"news":             {},
+	"personal site":    {},
+	"financial report": {},
+	"people":           {},
+}
+
 type WebSearchClient interface {
 	Search(ctx context.Context, query WebSearchQuery) ([]WebSearchResult, error)
 }
@@ -480,8 +497,8 @@ func webSearchExaToolSchema() map[string]interface{} {
 			},
 			"type": map[string]interface{}{
 				"type":        "string",
-				"description": "Search type: auto (default), neural, fast, instant, deep-lite, deep, or deep-reasoning",
-				"enum":        []string{"auto", "neural", "fast", "instant", "deep-lite", "deep", "deep-reasoning"},
+				"description": "Search type: auto (default), fast, instant, deep, or deep-reasoning",
+				"enum":        []string{"auto", "fast", "instant", "deep", "deep-reasoning"},
 			},
 			"num_results": map[string]interface{}{
 				"type":        "integer",
@@ -547,7 +564,7 @@ func webSearchExaToolSchema() map[string]interface{} {
 			},
 			"contents": map[string]interface{}{
 				"type":        "object",
-				"description": "Optional content extraction settings. Defaults to highlights with max_characters 4000 when omitted.",
+				"description": "Optional content extraction settings. Choose exactly one of text, highlights, or summary. Defaults to highlights with max_characters 4000 when omitted.",
 				"properties": map[string]interface{}{
 					"text": map[string]interface{}{
 						"type": "object",
@@ -704,6 +721,20 @@ func defaultExaContents() *ExaSearchContents {
 }
 
 func validateExaSearchRequest(request ExaSearchRequest) error {
+	if _, ok := allowedExaSearchTypes[request.Type]; !ok {
+		return fmt.Errorf("type must be one of auto, fast, instant, deep, or deep-reasoning")
+	}
+
+	if request.Category != "" {
+		if _, ok := allowedExaCategories[request.Category]; !ok {
+			return fmt.Errorf("category must be one of company, research paper, news, personal site, financial report, or people")
+		}
+	}
+
+	if err := validateExaContents(request.Contents); err != nil {
+		return err
+	}
+
 	switch request.Category {
 	case "company", "people":
 		if len(request.ExcludeDomains) > 0 {
@@ -720,6 +751,28 @@ func validateExaSearchRequest(request ExaSearchRequest) error {
 				return fmt.Errorf("include_domains only supports LinkedIn domains for category %q", request.Category)
 			}
 		}
+	}
+
+	return nil
+}
+
+func validateExaContents(contents *ExaSearchContents) error {
+	if contents == nil {
+		return nil
+	}
+
+	contentModeCount := 0
+	if contents.Text != nil {
+		contentModeCount++
+	}
+	if contents.Highlights != nil {
+		contentModeCount++
+	}
+	if contents.Summary != nil {
+		contentModeCount++
+	}
+	if contentModeCount > 1 {
+		return fmt.Errorf("contents must specify only one of text, highlights, or summary")
 	}
 
 	return nil
