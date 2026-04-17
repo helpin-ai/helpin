@@ -905,6 +905,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Route("/docs", func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceID)
 				r.Use(wsAccess)
+				r.Use(handler.NoStoreOnWrites)
 
 				// Spaces — docs.read / docs.edit / docs.admin
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/spaces", h.Docs.ListSpaces)

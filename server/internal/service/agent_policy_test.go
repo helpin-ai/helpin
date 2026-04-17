@@ -219,6 +219,31 @@ func TestListAgentPresetsTaskPlannerExcludesListEpicTasks(t *testing.T) {
 	t.Fatal("expected task planner preset in catalog")
 }
 
+func TestListAgentPresetsPlannersIncludeExaSearch(t *testing.T) {
+	presets := ListAgentPresets()
+	expected := map[string]bool{
+		model.AgentPresetEpicPlanner: false,
+		model.AgentPresetTaskPlanner: false,
+	}
+
+	for _, preset := range presets {
+		_, ok := expected[preset.Key]
+		if !ok {
+			continue
+		}
+		if !slices.Contains(preset.AllowedTools, "web_search_exa") {
+			t.Fatalf("expected preset %q to include web_search_exa, got %v", preset.Key, preset.AllowedTools)
+		}
+		expected[preset.Key] = true
+	}
+
+	for presetKey, found := range expected {
+		if !found {
+			t.Fatalf("expected preset %q in catalog", presetKey)
+		}
+	}
+}
+
 func TestValidateRuntimeKindAllowsOnlyImplementedRuntimes(t *testing.T) {
 	valid := []string{"opencode", "codex", "native_sdk"}
 	for _, runtimeKind := range valid {

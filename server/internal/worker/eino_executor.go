@@ -27,13 +27,14 @@ func NewEinoExecutor(
 	kind string,
 	modelFactory *EinoModelFactory,
 	webSearch WebSearchClient,
+	exaSearch *ExaSearchClient,
 	runRepo *repository.AgentRunRepository,
 	artifactRepo *repository.AgentRunArtifactRepository,
 ) *EinoExecutor {
 	return &EinoExecutor{
 		kind:         kind,
 		modelFactory: modelFactory,
-		tools:        NewToolRegistry(webSearch),
+		tools:        NewToolRegistry(webSearch, exaSearch),
 		runRepo:      runRepo,
 		artifactRepo: artifactRepo,
 	}
