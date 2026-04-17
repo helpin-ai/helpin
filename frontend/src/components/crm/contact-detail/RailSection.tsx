@@ -1,24 +1,25 @@
-import { useState } from 'react';
-import { ArrowRight01Icon, PlusSignIcon } from '@/lib/icons';
+import { useState, type ReactNode } from 'react';
+import { ArrowRight01Icon } from '@/lib/icons';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
-interface CollapsibleSectionProps {
+interface RailSectionProps {
   title: string;
-  icon?: React.ElementType;
   count?: number;
   defaultOpen?: boolean;
-  onAdd?: () => void;
-  children: React.ReactNode;
+  action?: ReactNode;
+  children: ReactNode;
+  className?: string;
 }
 
-export function CollapsibleSection({
+export function RailSection({
   title,
-  count = 0,
-  defaultOpen = false,
-  onAdd,
+  count,
+  defaultOpen = true,
+  action,
   children,
-}: CollapsibleSectionProps) {
+  className,
+}: RailSectionProps) {
   const [open, setOpen] = useState(defaultOpen);
 
   return (
@@ -26,6 +27,7 @@ export function CollapsibleSection({
       className={cn(
         'border-b border-border/50 last:border-b-0 transition-colors',
         open && 'bg-muted/40 dark:bg-muted/25',
+        className,
       )}
     >
       <div
@@ -52,23 +54,19 @@ export function CollapsibleSection({
         >
           {title}
         </span>
-        {count > 0 && (
+        {typeof count === 'number' && count > 0 && (
           <Badge variant="secondary" className="h-4 rounded-full px-1.5 text-[10px] font-medium">
             {count}
           </Badge>
         )}
-        {onAdd && (
-          <button
-            type="button"
-            className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-            onClick={(event) => {
-              event.stopPropagation();
-              onAdd();
-            }}
-            aria-label={`Add ${title.toLowerCase()}`}
+        {action && (
+          <span
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+            className="flex items-center"
           >
-            <PlusSignIcon className="h-3.5 w-3.5" />
-          </button>
+            {action}
+          </span>
         )}
         <ArrowRight01Icon
           className={cn(
@@ -77,11 +75,7 @@ export function CollapsibleSection({
           )}
         />
       </div>
-      {open && (
-        <div className="px-4 pb-3 pt-0.5 space-y-2">
-          {children}
-        </div>
-      )}
+      {open && <div className="px-4 pb-3 pt-0.5 space-y-2">{children}</div>}
     </div>
   );
 }

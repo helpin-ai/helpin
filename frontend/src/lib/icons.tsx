@@ -158,6 +158,7 @@ import {
   SmilePlusIcon as _SmilePlusIcon,
   SourceCodeIcon as _SourceCodeIcon,
   SparklesIcon as _SparklesIcon,
+  AiMagicIcon as _AiMagicIcon,
   SquareUnlock01Icon as _SquareUnlock01Icon,
   StarIcon as _StarIcon,
   StickyNote01Icon as _StickyNote01Icon,
@@ -405,6 +406,7 @@ export const SmileIcon = hi(_SmileIcon);
 export const SmilePlusIcon = hi(_SmilePlusIcon);
 export const SourceCodeIcon = hi(_SourceCodeIcon);
 export const SparklesIcon = hi(_SparklesIcon);
+export const AiMagicIcon = hi(_AiMagicIcon);
 export const StarIcon = hi(_StarIcon);
 export const StickyNote01Icon = hi(_StickyNote01Icon);
 export const Sun01Icon = hi(_Sun01Icon);

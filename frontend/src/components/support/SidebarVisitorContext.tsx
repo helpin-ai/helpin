@@ -271,46 +271,43 @@ export function SidebarVisitorContext({ workspaceId, conversationId }: SidebarVi
 
       {/* Contact Details */}
       {hasContact && (
-        <>
-          <CollapsibleSection title="Contact Details" icon={UserIcon} count={0} defaultOpen>
-            <div className="space-y-2">
-              {contact.job_title && (
-                <InfoRow label="Job title" value={contact.job_title} />
-              )}
-              {contact.lifecycle_stage && (
-                <div className="grid grid-cols-[88px_1fr] items-center gap-2 text-xs">
-                  <span className="text-muted-foreground">Lifecycle</span>
-                  <span>
-                    <Badge variant="secondary" className={`h-4 rounded-full px-1.5 text-[10px] font-medium ${LIFECYCLE_COLORS[contact.lifecycle_stage] ?? LIFECYCLE_COLORS.other}`}>
-                      {contact.lifecycle_stage}
-                    </Badge>
-                  </span>
-                </div>
-              )}
-              {contact.source && (
-                <div className="grid grid-cols-[88px_1fr] items-center gap-2 text-xs">
-                  <span className="text-muted-foreground">Source</span>
-                  <span className="flex items-center gap-1.5 truncate capitalize font-medium text-foreground/90">
-                    {(() => {
-                      const SourceIcon = SOURCE_ICONS[contact.source] ?? GlobeIcon;
-                      return <SourceIcon className="h-3 w-3 text-muted-foreground/70 shrink-0" />;
-                    })()}
-                    {SOURCE_LABELS[contact.source] ?? contact.source.replace(/_/g, ' ')}
-                  </span>
-                </div>
-              )}
-              {contact.custom_properties && Object.keys(contact.custom_properties).length > 0 && (
-                <>
-                  <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider pt-1">Custom data</div>
-                  {Object.entries(contact.custom_properties).map(([key, value]) => (
-                    <InfoRow key={key} label={key} value={value} />
-                  ))}
-                </>
-              )}
-            </div>
-          </CollapsibleSection>
-          <div className="mx-4 my-2 h-px bg-border/60" />
-        </>
+        <CollapsibleSection title="Contact Details" icon={UserIcon} count={0} defaultOpen>
+          <div className="space-y-2">
+            {contact.job_title && (
+              <InfoRow label="Job title" value={contact.job_title} />
+            )}
+            {contact.lifecycle_stage && (
+              <div className="grid grid-cols-[88px_1fr] items-center gap-2 text-xs">
+                <span className="text-muted-foreground">Lifecycle</span>
+                <span>
+                  <Badge variant="secondary" className={`h-4 rounded-full px-1.5 text-[10px] font-medium ${LIFECYCLE_COLORS[contact.lifecycle_stage] ?? LIFECYCLE_COLORS.other}`}>
+                    {contact.lifecycle_stage}
+                  </Badge>
+                </span>
+              </div>
+            )}
+            {contact.source && (
+              <div className="grid grid-cols-[88px_1fr] items-center gap-2 text-xs">
+                <span className="text-muted-foreground">Source</span>
+                <span className="flex items-center gap-1.5 truncate capitalize font-medium text-foreground/90">
+                  {(() => {
+                    const SourceIcon = SOURCE_ICONS[contact.source] ?? GlobeIcon;
+                    return <SourceIcon className="h-3 w-3 text-muted-foreground/70 shrink-0" />;
+                  })()}
+                  {SOURCE_LABELS[contact.source] ?? contact.source.replace(/_/g, ' ')}
+                </span>
+              </div>
+            )}
+            {contact.custom_properties && Object.keys(contact.custom_properties).length > 0 && (
+              <>
+                <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider pt-1">Custom data</div>
+                {Object.entries(contact.custom_properties).map(([key, value]) => (
+                  <InfoRow key={key} label={key} value={value} />
+                ))}
+              </>
+            )}
+          </div>
+        </CollapsibleSection>
       )}
 
       {/* Other Conversations */}
