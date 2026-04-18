@@ -1318,6 +1318,26 @@ func (s *SupportAIService) GenerateTaskDraftFromConversation(
 		"output_tokens", resp.TokensUsed.OutputTokens,
 	)
 
+	// When the parser finds JSON but our expected fields come back empty,
+	// the model likely responded with a different schema (e.g. nested under
+	// a "task" key or with different field names). Log a bounded preview of
+	// the raw response so we can see what Claude actually produced.
+	if title == "" && description == "" {
+		preview := resp.Content
+		const maxPreviewLen = 600
+		if len(preview) > maxPreviewLen {
+			preview = preview[:maxPreviewLen] + "...[truncated]"
+		}
+		slog.WarnContext(ctx, "support task draft llm response had empty title and description",
+			"workspace_id", workspaceID,
+			"conversation_id", conversation.ID,
+			"provider", providerName,
+			"model", modelName,
+			"output_tokens", resp.TokensUsed.OutputTokens,
+			"response_preview", preview,
+		)
+	}
+
 	return &supportConversationTaskDraft{
 		Title:       title,
 		Summary:     summary,
