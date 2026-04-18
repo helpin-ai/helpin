@@ -451,7 +451,6 @@ func TestEmailFallbackProcessInboundEmailCreatesMessageAndDedupes(t *testing.T) 
 	ctx := context.Background()
 	settings := model.DefaultSupportInboxSettings()
 	env := setupEmailFallbackInboundTestEnv(t, settings)
-	env.service.SetLinkPreviewService(stubSupportLinkPreviewer{})
 
 	workspaceID := "11111111-1111-1111-1111-111111111111"
 	conversationID := "88888888-8888-8888-8888-888888888888"
@@ -537,7 +536,6 @@ func TestEmailFallbackProcessInboundEmailRouteCreatesConversation(t *testing.T) 
 	ctx := context.Background()
 	settings := model.DefaultSupportInboxSettings()
 	env := setupEmailFallbackInboundTestEnv(t, settings)
-	env.service.SetLinkPreviewService(stubSupportLinkPreviewer{})
 
 	workspaceID := "11111111-1111-1111-1111-111111111111"
 	route := &model.SupportEmailRoute{

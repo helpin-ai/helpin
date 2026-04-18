@@ -94,7 +94,6 @@ type EmailFallbackService struct {
 	workspaceRepo       *repository.WorkspaceRepository
 	supportInboxService *SupportInboxService
 	notificationService *NotificationService
-	linkPreviewService  SupportMessageLinkPreviewer
 	replyDomain         string
 	appBaseURL          string
 	logger              *slog.Logger
@@ -111,15 +110,6 @@ func (s *EmailFallbackService) SetNotificationService(notificationService *Notif
 		return nil
 	}
 	s.notificationService = notificationService
-	return s
-}
-
-// SetLinkPreviewService injects the support message link preview enricher.
-func (s *EmailFallbackService) SetLinkPreviewService(linkPreviewService SupportMessageLinkPreviewer) *EmailFallbackService {
-	if s == nil {
-		return nil
-	}
-	s.linkPreviewService = linkPreviewService
 	return s
 }
 
@@ -390,9 +380,6 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		IsInternal:        false,
 		MessageType:       "reply",
 		ViaChannel:        &viaEmail,
-	}
-	if s.linkPreviewService != nil {
-		s.linkPreviewService.EnrichMessage(ctx, msg)
 	}
 
 	var createdMsg *model.SupportMessage
@@ -1149,9 +1136,6 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		IsInternal:        false,
 		MessageType:       "reply",
 		ViaChannel:        &viaEmail,
-	}
-	if s.linkPreviewService != nil {
-		s.linkPreviewService.EnrichMessage(ctx, message)
 	}
 
 	rfcMessageID := inboundRFCMessageID(payload)
