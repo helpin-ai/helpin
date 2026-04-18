@@ -991,6 +991,9 @@ func main() {
 	supportAIService.SetMailboxRepository(supportMailboxRepo)
 	supportAIService.SetTriageService(supportInboxTriageService)
 	supportAIService.SetLinkPreviewService(supportLinkPreviewService)
+	if strings.TrimSpace(cfg.AnthropicAPIKey) != "" {
+		supportAIService.SetTaskDraftLLM(service.NewEinoSupportTaskDraftLLM(cfg.AnthropicAPIKey, "claude-sonnet-4-6"))
+	}
 	supportInboxService.SetSupportAIService(supportAIService)
 
 	// Coverage telemetry: repos → services → async recorder → inject into hot-path services.

@@ -1588,6 +1588,107 @@ func TestSupportInboxServiceCreateTaskFromConversation_DoesNotFallBackSilentlyWh
 	}
 }
 
+// Verifies the Eino-backed structured-output path: when a supportTaskDraftLLM
+// is injected, the service uses its schema-forced tool-call output and
+// bypasses the plain ChatCompletion path. Guards the wiring added in the
+// Eino migration.
+func TestSupportInboxServiceCreateTaskFromConversation_UsesInjectedTaskDraftLLM(t *testing.T) {
+	env := newTaskTestEnv(t)
+	ctx := context.Background()
+
+	convRepo := repository.NewSupportConversationRepository(env.db)
+	messageRepo := repository.NewSupportMessageRepository(env.db)
+
+	svc := NewSupportInboxService(
+		convRepo,
+		nil,
+		messageRepo,
+		nil,
+		repository.NewCRMAssociationRepository(env.db),
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		repository.NewUserRepository(env.db),
+		nil,
+		nil,
+		nil,
+	)
+	svc.SetTaskService(env.svc)
+
+	fake := &fakeSupportTaskDraftLLM{
+		draft: &supportConversationTaskDraft{
+			Title:       "SERP Analyzer token rejected during content generation",
+			Summary:     "The SERP Analyzer integration rejects the stored token, blocking content generation end-to-end.",
+			Description: "## Problem\nSERP token is rejected.\n\n## Impact\nCustomer cannot generate content.\n",
+			TaskType:    "bug",
+			Priority:    "high",
+		},
+	}
+	// No llmProvider is set — the legacy ChatCompletion path would fail.
+	// If the Eino path is wired correctly, the service must not touch it.
+	aiSvc := &SupportAIService{}
+	aiSvc.SetTaskDraftLLM(fake)
+	svc.SetSupportAIService(aiSvc)
+
+	conversation := &model.SupportConversation{
+		WorkspaceID:   env.wsID,
+		Subject:       "Error: SERP analysis failed",
+		Status:        "open",
+		Priority:      model.PMTaskPriorityMedium,
+		CustomerName:  strPtr("Fiorenzo Minnelli"),
+		CustomerEmail: strPtr("minnellif@example.com"),
+	}
+	if err := convRepo.Create(ctx, conversation); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+	customerName := "Fiorenzo Minnelli"
+	msg := model.SupportMessage{
+		WorkspaceID:       env.wsID,
+		ConversationID:    conversation.ID,
+		SenderType:        "customer",
+		MessageType:       "reply",
+		SenderDisplayName: &customerName,
+		Content:           "SERP Analyzer keeps returning Token is not valid on every generation attempt.",
+	}
+	if err := messageRepo.Create(ctx, &msg); err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+
+	resp, err := svc.CreateTaskFromConversation(ctx, env.wsID, conversation.ID, env.userID, model.CreateTaskFromConversationRequest{})
+	if err != nil {
+		t.Fatalf("CreateTaskFromConversation: %v", err)
+	}
+	if fake.calls != 1 {
+		t.Fatalf("expected taskDraftLLM to be called exactly once, got %d", fake.calls)
+	}
+	if fake.lastModel == "" {
+		t.Errorf("expected taskDraftLLM request to include a resolved model name")
+	}
+	if resp.TaskName != "SERP Analyzer token rejected during content generation" {
+		t.Errorf("task_name = %q, want the injected draft title", resp.TaskName)
+	}
+}
+
+type fakeSupportTaskDraftLLM struct {
+	draft     *supportConversationTaskDraft
+	err       error
+	calls     int
+	lastModel string
+}
+
+func (f *fakeSupportTaskDraftLLM) GenerateTaskDraft(_ context.Context, req supportTaskDraftRequest) (*supportConversationTaskDraft, error) {
+	f.calls++
+	f.lastModel = req.Model
+	if f.err != nil {
+		return nil, f.err
+	}
+	copy := *f.draft
+	return &copy, nil
+}
+
 func TestSupportInboxServiceCreateTaskFromConversation_FailsWhenContextIsTooWeak(t *testing.T) {
 	env := newTaskTestEnv(t)
 	ctx := context.Background()
