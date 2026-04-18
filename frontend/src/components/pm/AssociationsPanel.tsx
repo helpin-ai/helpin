@@ -7,7 +7,6 @@ import {
   DollarCircleIcon,
   File01Icon,
   Loading01Icon,
-  Message01Icon,
   Search01Icon,
   UserGroupIcon,
 } from '@/lib/icons';
@@ -23,7 +22,7 @@ import {
 import { crmSearchService } from '@/lib/services/crmService';
 import { searchService, type SearchResult } from '@/lib/services/searchService';
 import { supportService } from '@/lib/services/supportService';
-import { cn } from '@/lib/utils';
+import { cn, truncateText } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { CRMSearchResult, CRMObjectType } from '@/lib/crmTypes';
 import type {
@@ -31,7 +30,6 @@ import type {
   GroupedAssociations,
   SupportConversation,
 } from '@/lib/pmTypes';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import {
   Dialog,
@@ -414,11 +412,11 @@ export function AssociationsPanel({
       </AssociationsRailSection>
 
       <Dialog open={!!pickerSection} onOpenChange={(open) => { if (!open) setPickerSection(null); }}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle className="text-sm">Link {pickerTitle}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
+          <div className="space-y-2">
             <div className="relative">
               <Search01Icon className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
@@ -429,7 +427,7 @@ export function AssociationsPanel({
                 autoFocus
               />
             </div>
-            <div className="max-h-64 space-y-1 overflow-y-auto">
+            <div className="-mx-1 max-h-80 overflow-y-auto px-1">
               {searching && (
                 <div className="flex items-center gap-2 py-4 justify-center text-sm text-muted-foreground">
                   <Loading01Icon className="h-4 w-4 animate-spin" /> Searching...
@@ -440,16 +438,13 @@ export function AssociationsPanel({
                 <button
                   key={conversation.id}
                   type="button"
-                  className="w-full rounded-md border px-3 py-2 text-left text-sm transition hover:bg-accent"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent"
                   onClick={() => handleAddSupport(conversation.id)}
                 >
-                  <div className="flex items-center gap-2">
-                    <Message01Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <span className="font-medium truncate">{conversation.subject}</span>
-                    <Badge variant="outline" className="h-5 px-1.5 text-[10px] shrink-0">
-                      C-{conversation.display_id}
-                    </Badge>
-                  </div>
+                  <span className="min-w-0 flex-1">{truncateText(conversation.subject, 60)}</span>
+                  <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
+                    C-{conversation.display_id}
+                  </span>
                 </button>
               ))}
 
@@ -457,16 +452,14 @@ export function AssociationsPanel({
                 <button
                   key={`${result.type}-${result.id}`}
                   type="button"
-                  className="w-full rounded-md border px-3 py-2 text-left text-sm transition hover:bg-accent"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent"
                   onClick={() => handleAddCRM(result.type as CRMObjectType, result.id)}
                 >
-                  <div className="flex items-center gap-2">
-                    {(() => {
-                      const CRMIcon = crmIconMap[result.type as keyof typeof crmIconMap] ?? Building03Icon;
-                      return <CRMIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />;
-                    })()}
-                    <span className="font-medium truncate">{result.name}</span>
-                  </div>
+                  {(() => {
+                    const CRMIcon = crmIconMap[result.type as keyof typeof crmIconMap] ?? Building03Icon;
+                    return <CRMIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />;
+                  })()}
+                  <span className="min-w-0 flex-1">{truncateText(result.name, 60)}</span>
                 </button>
               ))}
 
@@ -474,13 +467,11 @@ export function AssociationsPanel({
                 <button
                   key={doc.id}
                   type="button"
-                  className="w-full rounded-md border px-3 py-2 text-left text-sm transition hover:bg-accent"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent"
                   onClick={() => handleAddDoc(doc.id)}
                 >
-                  <div className="flex items-center gap-2">
-                    <File01Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <span className="font-medium truncate">{doc.name}</span>
-                  </div>
+                  <File01Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  <span className="min-w-0 flex-1">{truncateText(doc.name, 60)}</span>
                 </button>
               ))}
 

@@ -1,8 +1,7 @@
 import { useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Mail01Icon, AttachmentIcon, Download04Icon, ArrowDown01Icon, ArrowUp01Icon, InformationCircleIcon } from '@/lib/icons';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { AttachmentIcon, Download04Icon, ArrowDown01Icon, ArrowUp01Icon, InformationCircleIcon } from '@/lib/icons';
 import { useMessageEmailDetail } from '@/hooks/queries/useSupport';
-import { getAvatarColor, getInitial } from './helpers';
 import type { SupportMessage } from '@/lib/pmTypes';
 
 interface EmailDetailModalProps {
@@ -31,7 +30,6 @@ function formatFullTimestamp(dateStr: string): string {
 function parseAddress(raw: string): { name: string; email: string } {
   const trimmed = (raw ?? '').trim();
   if (!trimmed) return { name: '', email: '' };
-  // "Name <email@example.com>" form
   const match = trimmed.match(/^(.*)<([^>]+)>\s*$/);
   if (match) {
     return { name: match[1].trim().replace(/^"|"$/g, ''), email: match[2].trim() };
@@ -47,95 +45,101 @@ export function EmailDetailModal({ workspaceId, message, open, onOpenChange }: E
   const subject = data?.subject || '(no subject)';
   const from = parseAddress(data?.from_email ?? '');
   const to = parseAddress(data?.to_email ?? '');
-  const fromInitial = getInitial(from.name || from.email || '?');
-  const avatarSeed = from.email || from.name || message.id;
   const body = (data?.stripped_text && data.stripped_text.trim()) || message.content || '';
   const timestamp = data?.created_at ?? message.created_at;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl gap-0 overflow-hidden p-0">
-        <DialogHeader className="border-b px-6 py-4">
-          <DialogTitle className="flex items-center gap-2 text-base">
-            <Mail01Icon className="h-4 w-4 text-muted-foreground" />
-            Email details
-          </DialogTitle>
-        </DialogHeader>
+      <DialogContent className="max-w-2xl gap-0 overflow-hidden p-0 sm:max-w-2xl">
+        <DialogTitle className="sr-only">{subject}</DialogTitle>
 
-        <div className="max-h-[75vh] overflow-y-auto px-6 py-4">
+        <div className="max-h-[80vh] overflow-y-auto">
           {isLoading && (
-            <div className="space-y-3 animate-pulse">
-              <div className="h-5 w-3/4 rounded bg-muted" />
-              <div className="h-10 w-full rounded bg-muted" />
+            <div className="space-y-3 animate-pulse px-8 py-8">
+              <div className="h-6 w-3/4 rounded bg-muted" />
+              <div className="h-4 w-1/2 rounded bg-muted" />
+              <div className="h-4 w-1/3 rounded bg-muted" />
               <div className="h-40 w-full rounded bg-muted" />
             </div>
           )}
 
           {isError && (
-            <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-              <InformationCircleIcon className="h-4 w-4" />
-              Failed to load email details.
+            <div className="px-8 py-8">
+              <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                <InformationCircleIcon className="h-4 w-4" />
+                Failed to load email details.
+              </div>
             </div>
           )}
 
           {!isLoading && !isError && data && (
-            <>
-              <h2 className="text-base font-semibold leading-snug">{subject}</h2>
+            <div className="px-8 py-8">
+              <h2 className="pr-10 text-[17px] font-semibold leading-snug tracking-tight">{subject}</h2>
 
-              <div className="mt-3 flex items-start gap-3">
-                <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${getAvatarColor(avatarSeed)}`}>
-                  {fromInitial}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-baseline gap-x-2 text-sm">
-                    <span className="font-medium">{from.name || from.email}</span>
-                    {from.name && from.email ? (
-                      <span className="text-muted-foreground">&lt;{from.email}&gt;</span>
-                    ) : null}
-                  </div>
-                  {to.email ? (
-                    <div className="text-xs text-muted-foreground">
-                      to {to.email}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
+              <dl className="mt-5 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-sm">
+                <dt className="text-muted-foreground">From</dt>
+                <dd className="min-w-0 [overflow-wrap:anywhere]">
+                  {from.name ? (
+                    <>
+                      <span className="font-medium text-foreground">{from.name}</span>
+                      {from.email ? <span className="ml-1 text-muted-foreground">&lt;{from.email}&gt;</span> : null}
+                    </>
+                  ) : (
+                    <span className="font-medium text-foreground">{from.email || '—'}</span>
+                  )}
+                </dd>
 
-              <div className="mt-2 text-xs text-muted-foreground">
-                {formatFullTimestamp(timestamp)}
-              </div>
+                {to.email || to.name ? (
+                  <>
+                    <dt className="text-muted-foreground">To</dt>
+                    <dd className="min-w-0 [overflow-wrap:anywhere]">
+                      {to.name ? (
+                        <>
+                          <span className="font-medium text-foreground">{to.name}</span>
+                          {to.email ? <span className="ml-1 text-muted-foreground">&lt;{to.email}&gt;</span> : null}
+                        </>
+                      ) : (
+                        <span className="font-medium text-foreground">{to.email}</span>
+                      )}
+                    </dd>
+                  </>
+                ) : null}
 
-              <div className="mt-4 border-t pt-4">
-                <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground [overflow-wrap:anywhere]">
+                <dt className="text-muted-foreground">Date</dt>
+                <dd className="text-foreground">{formatFullTimestamp(timestamp)}</dd>
+              </dl>
+
+              <div className="mt-6 border-t border-border/60 pt-6">
+                <div className="whitespace-pre-wrap text-[13.5px] leading-[1.7] text-foreground [overflow-wrap:anywhere]">
                   {body || <span className="italic text-muted-foreground">No message body.</span>}
                 </div>
               </div>
 
               {attachments.length > 0 && (
-                <div className="mt-5 border-t pt-4">
-                  <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Attachments ({attachments.length})
+                <div className="mt-6 border-t border-border/60 pt-5">
+                  <div className="mb-2.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    {attachments.length} attachment{attachments.length === 1 ? '' : 's'}
                   </div>
-                  <div className="space-y-1.5">
+                  <div className="grid gap-1.5 sm:grid-cols-2">
                     {attachments.map((att) => (
                       <a
                         key={att.id}
                         href={att.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs transition-colors hover:bg-muted/50"
+                        className="group flex items-center gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs transition-colors hover:border-border hover:bg-muted/60"
                       >
                         <AttachmentIcon className="h-3.5 w-3.5 shrink-0 opacity-60" />
-                        <span className="truncate font-medium">{att.file_name}</span>
+                        <span className="min-w-0 flex-1 truncate font-medium">{att.file_name}</span>
                         <span className="shrink-0 text-muted-foreground">{formatFileSize(att.file_size)}</span>
-                        <Download04Icon className="ml-auto h-3.5 w-3.5 shrink-0 opacity-60" />
+                        <Download04Icon className="h-3.5 w-3.5 shrink-0 opacity-60 transition-opacity group-hover:opacity-100" />
                       </a>
                     ))}
                   </div>
                 </div>
               )}
 
-              <div className="mt-5 border-t pt-3">
+              <div className="mt-6 border-t border-border/60 pt-4">
                 <button
                   type="button"
                   onClick={() => setShowTech(!showTech)}
@@ -156,7 +160,7 @@ export function EmailDetailModal({ workspaceId, message, open, onOpenChange }: E
                   </dl>
                 )}
               </div>
-            </>
+            </div>
           )}
         </div>
       </DialogContent>
