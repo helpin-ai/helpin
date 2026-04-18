@@ -260,17 +260,17 @@ func TestProcess(t *testing.T) {
 		notMarkdown   []string
 	}{
 		{
-			name:         "remote image src moved to data attribute",
+			name:         "remote image src preserved in html",
 			html:         `<p>Hi</p><img src="https://cdn.example.com/pic.png" alt="pic" width="100" height="100" />`,
-			wantHTML:     []string{`data-helpin-remote-src="https://cdn.example.com/pic.png"`, `data-helpin-remote-image="true"`, `alt="pic"`},
-			notHTML:      []string{` src="https://cdn.example.com/pic.png"`, `<img src=`},
+			wantHTML:     []string{`src="https://cdn.example.com/pic.png"`, `alt="pic"`},
 			wantMarkdown: []string{"Hi", "cdn.example.com/pic.png"},
 		},
 		{
-			name:     "tracking pixel removed from html variant",
-			html:     `<p>Body</p><img src="https://track.example.com/x.gif" width="1" height="1" />`,
-			wantHTML: []string{"Body"},
-			notHTML:  []string{"track.example.com"},
+			name:         "tracking pixel preserved in html but stripped from markdown",
+			html:         `<p>Body</p><img src="https://track.example.com/x.gif" width="1" height="1" />`,
+			wantHTML:     []string{"Body", "track.example.com"},
+			wantMarkdown: []string{"Body"},
+			notMarkdown:  []string{"track.example.com"},
 		},
 		{
 			name:         "gmail quoted reply marked not removed from html",
@@ -280,10 +280,10 @@ func TestProcess(t *testing.T) {
 			notMarkdown:  []string{"Old thread"},
 		},
 		{
-			name:     "cid inline image src stripped with cid stashed",
+			name:     "cid image src dropped by scheme allowlist",
 			html:     `<img src="cid:logo@example" alt="logo" />`,
-			wantHTML: []string{`data-helpin-cid="logo@example"`},
-			notHTML:  []string{`src="cid:`, `src=""`},
+			wantHTML: []string{`alt="logo"`},
+			notHTML:  []string{`src="cid:`},
 		},
 		{
 			name:     "data uri stripped by policy",
@@ -306,6 +306,52 @@ func TestProcess(t *testing.T) {
 			html:     `<p style="position: absolute; z-index: 9999">hi</p>`,
 			wantHTML: []string{"hi"},
 			notHTML:  []string{"position", "z-index"},
+		},
+		{
+			name:         "style block preserved in html but not markdown",
+			html:         `<style>.mb_work_text h1{font-size:18px}</style><p class="mb_work_text">Hi</p>`,
+			wantHTML:     []string{"<style>", ".mb_work_text h1", "font-size:18px", "</style>"},
+			wantMarkdown: []string{"Hi"},
+			notMarkdown:  []string{"font-size:18px", "mb_work_text"},
+		},
+		{
+			name:     "style @media rules preserved",
+			html:     `<style>@media (max-width: 480px) { .card { display: block; } }</style><div class="card">x</div>`,
+			wantHTML: []string{"@media", "max-width: 480px", ".card", "display: block"},
+		},
+		{
+			name:     "style @import rule stripped",
+			html:     `<style>@import url("https://evil.example.com/evil.css");.ok{color:red}</style><p>hi</p>`,
+			wantHTML: []string{"<style>", ".ok{color:red}", "</style>"},
+			notHTML:  []string{"@import", "evil.example.com"},
+		},
+		{
+			name:     "style remote url preserved for rendering fidelity",
+			html:     `<style>.hero{background-image:url(https://cdn.example.com/hero.jpg)}</style><p>hi</p>`,
+			wantHTML: []string{"<style>", ".hero", "url(https://cdn.example.com/hero.jpg)", "</style>"},
+		},
+		{
+			name:     "style relative url preserved",
+			html:     `<style>.local{background-image:url(/img/logo.png)}</style><p>hi</p>`,
+			wantHTML: []string{"url(/img/logo.png)"},
+		},
+		{
+			name:     "style position fixed collapsed to static",
+			html:     `<style>.overlay{position:fixed;top:0}</style><p>hi</p>`,
+			wantHTML: []string{"position:static"},
+			notHTML:  []string{"position:fixed"},
+		},
+		{
+			name:     "style position sticky collapsed to static",
+			html:     `<style>.bar{position: sticky; top: 0}</style><p>hi</p>`,
+			wantHTML: []string{"position:static"},
+			notHTML:  []string{"position: sticky", "position:sticky"},
+		},
+		{
+			name:     "script tag still stripped when alongside style",
+			html:     `<style>.x{color:red}</style><script>alert(1)</script><p>ok</p>`,
+			wantHTML: []string{"<style>", "color:red", "ok"},
+			notHTML:  []string{"<script", "alert(1)"},
 		},
 		{
 			name:      "empty html returns empty html and plain markdown fallback",

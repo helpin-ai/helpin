@@ -16,7 +16,9 @@
 package inboundhtml
 
 import (
+	"html"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/JohannesKaufmann/html-to-markdown/v2/converter"
@@ -75,7 +77,10 @@ var (
 	}
 
 	// trackingPixelSelectors remove zero-area images used for open-tracking
-	// before the content is rendered. Matches 1x1 and explicitly hidden.
+	// from the markdown variant. The HTML variant leaves them alone — email
+	// clients like Gmail and Crisp render them as-is (firing the "read"
+	// beacon) because stripping creates visual inconsistency with other
+	// clients the sender sees.
 	trackingPixelSelectors = []string{
 		"img[width='1']",
 		"img[height='1']",
@@ -92,6 +97,20 @@ var (
 	// data-helpin-* attributes) so signature layout and list/table formatting
 	// survive sanitization.
 	htmlPolicy = buildHTMLPolicy()
+
+	// styleBlockRe matches a <style>...</style> element so we can sanitize
+	// its CSS body after bluemonday (which treats it as opaque CDATA).
+	styleBlockRe = regexp.MustCompile(`(?is)(<style[^>]*>)([\s\S]*?)(</style>)`)
+
+	// cssImportRe matches @import rules. These pull remote CSS, which can
+	// fingerprint the reader's IP and import arbitrary styles we haven't
+	// vetted — cheaper to just strip them.
+	cssImportRe = regexp.MustCompile(`(?is)@import\b[^;]*;?`)
+
+	// cssPositionLockRe collapses position: fixed/sticky to position:static
+	// so email CSS can't overlay the host UI — iframes isolate painting,
+	// but belt-and-suspenders here is cheap.
+	cssPositionLockRe = regexp.MustCompile(`(?i)position\s*:\s*(fixed|sticky)`)
 
 	// markdownConverter renders sanitized HTML to markdown. The table plugin
 	// preserves grids; base+commonmark cover paragraphs, lists, anchors,
@@ -233,54 +252,92 @@ func buildCleanHTML(html string) string {
 		return truncate(strings.TrimSpace(htmlPolicy.Sanitize(html)), maxHTMLLen)
 	}
 
-	for _, sel := range trackingPixelSelectors {
-		doc.Find(sel).Remove()
-	}
-
 	// Mark (don't remove) quoted history so frontend can collapse it behind
 	// a toggle while keeping the thread auditable.
 	for _, sel := range quotedReplySelectors {
 		doc.Find(sel).SetAttr(QuotedAttr, "true")
 	}
 
-	rewriteRemoteImages(doc)
+	hoistHeadStylesIntoBody(doc)
 
 	body, err := bodyInnerHTML(doc)
 	if err != nil {
 		return ""
 	}
+
+	// Bluemonday hard-strips <style> element contents regardless of the
+	// policy allowlist (it's baked into the library's internal skip list).
+	// Swap style blocks out for text placeholders, sanitize the rest of
+	// the HTML, then swap them back. CSS itself is cleaned via sanitizeCSS
+	// during extraction.
+	body, styleBlocks := extractStyleBlocks(body)
 	safe := htmlPolicy.Sanitize(body)
+	safe = restoreStyleBlocks(safe, styleBlocks)
+
 	return truncate(strings.TrimSpace(safe), maxHTMLLen)
 }
 
-// rewriteRemoteImages moves http(s) image srcs into data-helpin-remote-src
-// and clears src so browsers don't auto-load external images. cid: references
-// (inline attachments) are stashed in data-helpin-cid for future rendering.
-func rewriteRemoteImages(doc *goquery.Document) {
-	doc.Find("img").Each(func(_ int, s *goquery.Selection) {
-		src, ok := s.Attr("src")
-		if !ok {
-			return
-		}
-		src = strings.TrimSpace(src)
-		if src == "" {
-			return
-		}
-
-		lower := strings.ToLower(src)
-		switch {
-		case strings.HasPrefix(lower, "cid:"):
-			s.SetAttr(CIDAttr, strings.TrimSpace(src[4:]))
-			s.RemoveAttr("src")
-		case strings.HasPrefix(lower, "http://"), strings.HasPrefix(lower, "https://"):
-			s.SetAttr(RemoteImageSrcAttr, src)
-			s.SetAttr(RemoteImageAttr, "true")
-			s.RemoveAttr("src")
-		default:
-			// data: URIs and unknown schemes are stripped by the sanitizer's
-			// URL allowlist; nothing to do here.
-		}
+// hoistHeadStylesIntoBody relocates every <style> element that the HTML
+// parser placed in <head> to the front of <body>. Email senders commonly
+// write `<style>...</style><table>...</table>` fragments, and golang.org/x/net/html
+// lifts the <style> into a synthetic <head> during parsing. Without this
+// hoist, bodyInnerHTML would drop those stylesheets entirely.
+func hoistHeadStylesIntoBody(doc *goquery.Document) {
+	body := doc.Find("body").First()
+	if body.Length() == 0 {
+		return
+	}
+	doc.Find("head style").Each(func(_ int, s *goquery.Selection) {
+		body.PrependSelection(s)
 	})
+}
+
+const (
+	stylePlaceholderPrefix = "__helpin_style_"
+	stylePlaceholderSuffix = "__"
+)
+
+// extractStyleBlocks pulls every <style>...</style> block out of the HTML,
+// sanitizes the CSS inside each, and replaces the block with a text
+// placeholder. bluemonday strips <style> content regardless of the policy
+// allowlist, so we need to hide them during HTML sanitization and splice
+// them back after.
+func extractStyleBlocks(html string) (string, []string) {
+	var blocks []string
+	out := styleBlockRe.ReplaceAllStringFunc(html, func(match string) string {
+		parts := styleBlockRe.FindStringSubmatch(match)
+		if len(parts) != 4 {
+			return match
+		}
+		idx := len(blocks)
+		blocks = append(blocks, parts[1]+sanitizeCSS(parts[2])+parts[3])
+		return stylePlaceholderPrefix + strconv.Itoa(idx) + stylePlaceholderSuffix
+	})
+	return out, blocks
+}
+
+// restoreStyleBlocks swaps the text placeholders produced by
+// extractStyleBlocks back into their sanitized <style> tags.
+func restoreStyleBlocks(html string, blocks []string) string {
+	for i, block := range blocks {
+		placeholder := stylePlaceholderPrefix + strconv.Itoa(i) + stylePlaceholderSuffix
+		html = strings.ReplaceAll(html, placeholder, block)
+	}
+	return html
+}
+
+// sanitizeCSS scrubs a handful of genuinely dangerous constructs from a
+// CSS body while preserving layout, typography, @media responsive rules,
+// and remote url() references. @import is stripped because it loads
+// arbitrary remote stylesheets that sidestep our HTML sanitizer's
+// allowlist, and position: fixed/sticky is collapsed to position:static
+// so author CSS can't escape the iframe's visual box. url(http(s)://...)
+// is deliberately left alone — we match Gmail/Crisp rendering fidelity
+// instead of gating remote resource loads.
+func sanitizeCSS(css string) string {
+	css = cssImportRe.ReplaceAllString(css, "")
+	css = cssPositionLockRe.ReplaceAllString(css, "position:static")
+	return css
 }
 
 // stripQuotedHistory removes quoted-reply wrappers and tracking pixels using
@@ -303,12 +360,35 @@ func stripQuotedHistory(html string) (string, error) {
 // bodyInnerHTML returns the inner HTML of the document's <body>, falling
 // back to the whole document when goquery didn't wrap in <body> (rare for
 // fragments). html-to-markdown and our sanitizer both expect fragments.
+//
+// Marketing emails often set layout-critical styles on <body> (e.g.
+// max-width:602px; margin:0 auto; bgcolor=#f6f7f9 to center the content
+// block). Since we render into our own iframe body, those would be lost.
+// This function transfers the original body's style and bgcolor onto a
+// wrapper <div> so the email renders like it would in Gmail or Postmark.
 func bodyInnerHTML(doc *goquery.Document) (string, error) {
 	body := doc.Find("body")
 	if body.Length() == 0 {
 		return doc.Html()
 	}
-	return body.Html()
+
+	inner, err := body.Html()
+	if err != nil {
+		return "", err
+	}
+
+	style := strings.TrimSpace(body.AttrOr("style", ""))
+	if bgcolor := strings.TrimSpace(body.AttrOr("bgcolor", "")); bgcolor != "" {
+		if style != "" && !strings.HasSuffix(style, ";") {
+			style += ";"
+		}
+		style += "background-color:" + bgcolor
+	}
+	if style == "" {
+		return inner, nil
+	}
+
+	return `<div style="` + html.EscapeString(style) + `">` + inner + `</div>`, nil
 }
 
 func truncate(s string, max int) string {

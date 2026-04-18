@@ -432,7 +432,7 @@ export const MessageBubble = memo(function MessageBubble({
 
         <div
           data-slot="support-message-bubble"
-          className={hasTableContent ? 'min-w-0 max-w-[min(78vw,46rem)] lg:max-w-[min(72vw,48rem)]' : 'min-w-0 max-w-[85%]'}
+          className={hasTableContent ? 'min-w-0 max-w-[min(92vw,48rem)] lg:max-w-[min(88vw,52rem)]' : 'min-w-0 max-w-[85%]'}
         >
           {showBubble && (
             <Tooltip>
