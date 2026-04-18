@@ -64,7 +64,16 @@ export function SidebarPopoverSelect<T extends string>({
           </button>
         </PopoverTrigger>
         <PopoverContent className={cn(width, 'p-0')} align="start">
-          <Command>
+          <Command
+            filter={(optionValue, search) => {
+              const needle = search.trim().toLowerCase();
+              if (!needle) return 1;
+              const haystack = optionValue.toLowerCase();
+              if (haystack.startsWith(needle)) return 2;
+              if (haystack.includes(needle)) return 1;
+              return 0;
+            }}
+          >
             <CommandInput placeholder={searchPlaceholder} className="h-8 text-xs" />
             <CommandList>
               <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No results</CommandEmpty>
