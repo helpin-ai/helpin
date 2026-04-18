@@ -1152,7 +1152,6 @@ function TaskDetailPanelBody({
                   onUploadStateChange={setDescriptionPendingUploads}
                   teams={mentionTeams}
                   members={assignableMembers}
-                  compact
                 />
                 <div className="mt-2 flex justify-end">
                   <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setEditingDescription(false)}>
