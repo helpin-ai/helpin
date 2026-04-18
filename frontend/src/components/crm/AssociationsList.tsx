@@ -13,7 +13,6 @@ import {
   UserGroupIcon,
 } from '@/lib/icons';
 import { toast } from 'sonner';
-import { Badge } from '@/components/ui/badge';
 import { Favicon } from '@/components/ui/favicon';
 import { Input } from '@/components/ui/input';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
@@ -30,7 +29,7 @@ import { supportService } from '@/lib/services/supportService';
 import type { CRMAssociationEnriched, CRMObjectType, CRMSearchResult } from '@/lib/crmTypes';
 import type { SupportConversation } from '@/lib/pmTypes';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
-import { cn } from '@/lib/utils';
+import { cn, truncateText } from '@/lib/utils';
 
 interface AssociationsListProps {
   workspaceId: string;
@@ -314,11 +313,11 @@ export function AssociationsList({
       })}
 
       <Dialog open={!!pickerSection} onOpenChange={(open) => { if (!open) setPickerSection(null); }}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle className="text-sm">Link {pickerConfig?.title?.replace(/s$/, '') ?? ''}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
+          <div className="space-y-2">
             <div className="relative">
               <Search01Icon className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
@@ -329,7 +328,7 @@ export function AssociationsList({
                 autoFocus
               />
             </div>
-            <div className="max-h-64 space-y-1 overflow-y-auto">
+            <div className="-mx-1 max-h-80 overflow-y-auto px-1">
               {searching && (
                 <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
                   <Loading01Icon className="h-4 w-4 animate-spin" /> Searching...
@@ -340,16 +339,13 @@ export function AssociationsList({
                 <button
                   key={c.id}
                   type="button"
-                  className="w-full rounded-md border px-3 py-2 text-left text-sm transition hover:bg-accent"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent"
                   onClick={() => handleAdd('support_conversation', c.id)}
                 >
-                  <div className="flex items-center gap-2">
-                    <Message01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span className="font-medium truncate">{c.subject}</span>
-                    <Badge variant="outline" className="h-5 shrink-0 px-1.5 text-[10px]">
-                      C-{c.display_id}
-                    </Badge>
-                  </div>
+                  <span className="min-w-0 flex-1">{truncateText(c.subject, 60)}</span>
+                  <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
+                    C-{c.display_id}
+                  </span>
                 </button>
               ))}
 
@@ -357,24 +353,22 @@ export function AssociationsList({
                 <button
                   key={`${r.type}-${r.id}`}
                   type="button"
-                  className="w-full rounded-md border px-3 py-2 text-left text-sm transition hover:bg-accent"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent"
                   onClick={() => handleAdd(r.type as CRMObjectType, r.id)}
                 >
-                  <div className="flex items-center gap-2">
-                    {r.type === 'company' ? (
-                      <Favicon
-                        src={'logo_url' in r.object ? r.object.logo_url : undefined}
-                        url={'domain' in r.object ? r.object.domain : undefined}
-                        name={r.name}
-                        size={16}
-                        className="h-3.5 w-3.5 rounded-sm border-none bg-transparent"
-                        fallbackClassName="text-[7px]"
-                      />
-                    ) : (
-                      <PickerIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    )}
-                    <span className="font-medium truncate">{r.name}</span>
-                  </div>
+                  {r.type === 'company' ? (
+                    <Favicon
+                      src={'logo_url' in r.object ? r.object.logo_url : undefined}
+                      url={'domain' in r.object ? r.object.domain : undefined}
+                      name={r.name}
+                      size={16}
+                      className="h-3.5 w-3.5 shrink-0 rounded-sm border-none bg-transparent"
+                      fallbackClassName="text-[7px]"
+                    />
+                  ) : (
+                    <PickerIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  )}
+                  <span className="min-w-0 flex-1">{truncateText(r.name, 60)}</span>
                 </button>
               ))}
 
@@ -382,18 +376,16 @@ export function AssociationsList({
                 <button
                   key={r.id}
                   type="button"
-                  className="w-full rounded-md border px-3 py-2 text-left text-sm transition hover:bg-accent"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent"
                   onClick={() => handleAdd(pickerSection, r.id)}
                 >
-                  <div className="flex items-center gap-2">
-                    <PickerIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span className="font-medium truncate">{r.name}</span>
-                    {r.display_id && (
-                      <Badge variant="outline" className="h-5 shrink-0 px-1.5 text-[10px]">
-                        {r.display_id}
-                      </Badge>
-                    )}
-                  </div>
+                  <PickerIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1">{truncateText(r.name, 60)}</span>
+                  {r.display_id && (
+                    <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
+                      {r.display_id}
+                    </span>
+                  )}
                 </button>
               ))}
 
