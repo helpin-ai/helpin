@@ -54,24 +54,32 @@ func renderMessageMarkdownToHTML(content string) string {
 	return rendered
 }
 
-// inboundPayloadContent picks the best content source from a Postmark inbound
-// payload. Preference order:
+// inboundPayloadBodies picks the best content source from a Postmark inbound
+// payload and returns both a markdown-friendly variant for plaintext display
+// and a sanitized HTML variant for rich rendering in a sandboxed iframe.
+//
+// Preference order for the markdown variant:
 //  1. HtmlBody converted to markdown — preserves anchor text so long tracking
 //     URLs don't render as plaintext walls.
 //  2. StrippedTextReply — Postmark-stripped plain-text reply (quoted history
 //     removed), used when HTML is absent or conversion yields nothing.
 //  3. TextBody — full plain-text body as final fallback.
 //
-// Returns an empty string when every source is empty.
-func inboundPayloadContent(payload model.PostmarkInboundPayload) string {
-	if md := inboundhtml.Convert(payload.HtmlBody, ""); md != "" {
-		return md
+// htmlBody is populated only when HtmlBody was present and processing
+// succeeded; callers should treat an empty string as "no rich body".
+func inboundPayloadBodies(payload model.PostmarkInboundPayload) (markdown, htmlBody string) {
+	processed := inboundhtml.Process(payload.HtmlBody, "")
+	markdown = processed.Markdown
+	htmlBody = processed.HTML
+	if markdown != "" {
+		return markdown, htmlBody
 	}
 	if stripped := strings.TrimSpace(payload.StrippedTextReply); stripped != "" {
-		return stripped
+		return stripped, htmlBody
 	}
-	return strings.TrimSpace(payload.TextBody)
+	return strings.TrimSpace(payload.TextBody), htmlBody
 }
+
 
 const (
 	emailFallbackOutboxKey     = "email_fallback_outbox"
@@ -350,7 +358,7 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		return nil
 	}
 
-	content := inboundPayloadContent(payload)
+	content, htmlBody := inboundPayloadBodies(payload)
 	if content == "" {
 		return nil
 	}
@@ -403,6 +411,7 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 			PostmarkMessageID: strPtr(strings.TrimSpace(payload.MessageID)),
 			RawBody:           rawPayload,
 			StrippedText:      content,
+			HTMLBody:          htmlBody,
 			Status:            "sent",
 		}
 		if route != nil {
@@ -1067,7 +1076,7 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		return nil
 	}
 
-	content := inboundPayloadContent(payload)
+	content, htmlBody := inboundPayloadBodies(payload)
 	if content == "" {
 		return nil
 	}
@@ -1182,6 +1191,7 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 			PostmarkMessageID: strPtr(strings.TrimSpace(payload.MessageID)),
 			RawBody:           rawPayload,
 			StrippedText:      content,
+			HTMLBody:          htmlBody,
 			Status:            "sent",
 		}
 		if logRow.PostmarkMessageID != nil && *logRow.PostmarkMessageID == "" {

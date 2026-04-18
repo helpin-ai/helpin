@@ -248,3 +248,116 @@ func TestConvertCollapsesBlankLines(t *testing.T) {
 		t.Errorf("Convert() did not collapse blank lines: %q", got)
 	}
 }
+
+func TestProcess(t *testing.T) {
+	tests := []struct {
+		name          string
+		html          string
+		plainText     string
+		wantHTML      []string
+		notHTML       []string
+		wantMarkdown  []string
+		notMarkdown   []string
+	}{
+		{
+			name:         "remote image src moved to data attribute",
+			html:         `<p>Hi</p><img src="https://cdn.example.com/pic.png" alt="pic" width="100" height="100" />`,
+			wantHTML:     []string{`data-helpin-remote-src="https://cdn.example.com/pic.png"`, `data-helpin-remote-image="true"`, `alt="pic"`},
+			notHTML:      []string{` src="https://cdn.example.com/pic.png"`, `<img src=`},
+			wantMarkdown: []string{"Hi", "cdn.example.com/pic.png"},
+		},
+		{
+			name:     "tracking pixel removed from html variant",
+			html:     `<p>Body</p><img src="https://track.example.com/x.gif" width="1" height="1" />`,
+			wantHTML: []string{"Body"},
+			notHTML:  []string{"track.example.com"},
+		},
+		{
+			name:         "gmail quoted reply marked not removed from html",
+			html:         `<div>Fresh reply</div><div class="gmail_quote"><blockquote>Old thread</blockquote></div>`,
+			wantHTML:     []string{"Fresh reply", `data-helpin-quote="true"`, "Old thread"},
+			wantMarkdown: []string{"Fresh reply"},
+			notMarkdown:  []string{"Old thread"},
+		},
+		{
+			name:     "cid inline image src stripped with cid stashed",
+			html:     `<img src="cid:logo@example" alt="logo" />`,
+			wantHTML: []string{`data-helpin-cid="logo@example"`},
+			notHTML:  []string{`src="cid:`, `src=""`},
+		},
+		{
+			name:     "data uri stripped by policy",
+			html:     `<img src="data:image/png;base64,AAAA" />`,
+			notHTML:  []string{"data:image/png", "AAAA"},
+		},
+		{
+			name:     "script and javascript href stripped",
+			html:     `<script>alert(1)</script><a href="javascript:alert(2)">x</a><p>ok</p>`,
+			wantHTML: []string{"ok"},
+			notHTML:  []string{"alert(1)", "javascript:"},
+		},
+		{
+			name:     "safe inline styles preserved",
+			html:     `<p style="color: red; font-weight: bold">hi</p>`,
+			wantHTML: []string{"color", "red", "font-weight"},
+		},
+		{
+			name:     "dangerous inline styles stripped",
+			html:     `<p style="position: absolute; z-index: 9999">hi</p>`,
+			wantHTML: []string{"hi"},
+			notHTML:  []string{"position", "z-index"},
+		},
+		{
+			name:      "empty html returns empty html and plain markdown fallback",
+			html:      "",
+			plainText: "fallback",
+			wantMarkdown: []string{"fallback"},
+		},
+		{
+			name:         "ordered list survives in both variants",
+			html:         `<ol><li>One</li><li>Two</li></ol>`,
+			wantHTML:     []string{"<ol", "<li", "One", "Two"},
+			wantMarkdown: []string{"1. One", "2. Two"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Process(tt.html, tt.plainText)
+			for _, w := range tt.wantHTML {
+				if !strings.Contains(got.HTML, w) {
+					t.Errorf("Process().HTML missing %q in:\n%s", w, got.HTML)
+				}
+			}
+			for _, b := range tt.notHTML {
+				if strings.Contains(got.HTML, b) {
+					t.Errorf("Process().HTML unexpectedly contains %q in:\n%s", b, got.HTML)
+				}
+			}
+			for _, w := range tt.wantMarkdown {
+				if !strings.Contains(got.Markdown, w) {
+					t.Errorf("Process().Markdown missing %q in:\n%s", w, got.Markdown)
+				}
+			}
+			for _, b := range tt.notMarkdown {
+				if strings.Contains(got.Markdown, b) {
+					t.Errorf("Process().Markdown unexpectedly contains %q in:\n%s", b, got.Markdown)
+				}
+			}
+		})
+	}
+}
+
+func TestProcessHTMLRespectsMaxLen(t *testing.T) {
+	var sb strings.Builder
+	sb.WriteString("<p>")
+	for range 300_000 {
+		sb.WriteByte('a')
+	}
+	sb.WriteString("</p>")
+
+	got := Process(sb.String(), "")
+	if len(got.HTML) > maxHTMLLen {
+		t.Fatalf("Process().HTML length = %d, want <= %d", len(got.HTML), maxHTMLLen)
+	}
+}

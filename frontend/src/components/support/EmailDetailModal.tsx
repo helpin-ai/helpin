@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { AttachmentIcon, Download04Icon, ArrowDown01Icon, ArrowUp01Icon, InformationCircleIcon } from '@/lib/icons';
 import { useMessageEmailDetail } from '@/hooks/queries/useSupport';
 import type { SupportMessage } from '@/lib/pmTypes';
+import { EmailBodyRenderer } from './EmailBodyRenderer';
 
 interface EmailDetailModalProps {
   workspaceId: string;
@@ -45,7 +46,8 @@ export function EmailDetailModal({ workspaceId, message, open, onOpenChange }: E
   const subject = data?.subject || '(no subject)';
   const from = parseAddress(data?.from_email ?? '');
   const to = parseAddress(data?.to_email ?? '');
-  const body = (data?.stripped_text && data.stripped_text.trim()) || message.content || '';
+  const htmlBody = (data?.html_body && data.html_body.trim()) || '';
+  const textBody = (data?.stripped_text && data.stripped_text.trim()) || message.content || '';
   const timestamp = data?.created_at ?? message.created_at;
 
   return (
@@ -110,9 +112,15 @@ export function EmailDetailModal({ workspaceId, message, open, onOpenChange }: E
               </dl>
 
               <div className="mt-6 border-t border-border/60 pt-6">
-                <div className="whitespace-pre-wrap text-[13.5px] leading-[1.7] text-foreground [overflow-wrap:anywhere]">
-                  {body || <span className="italic text-muted-foreground">No message body.</span>}
-                </div>
+                {htmlBody ? (
+                  <EmailBodyRenderer html={htmlBody} />
+                ) : textBody ? (
+                  <div className="whitespace-pre-wrap text-[13.5px] leading-[1.7] text-foreground [overflow-wrap:anywhere]">
+                    {textBody}
+                  </div>
+                ) : (
+                  <span className="italic text-muted-foreground">No message body.</span>
+                )}
               </div>
 
               {attachments.length > 0 && (

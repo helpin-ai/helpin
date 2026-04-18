@@ -828,6 +828,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			postmark_message_id TEXT UNIQUE,
 			raw_body TEXT,
 			stripped_text TEXT,
+			html_body TEXT,
 			status TEXT NOT NULL DEFAULT 'sent',
 			opened_at DATETIME,
 			error_message TEXT,
