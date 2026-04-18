@@ -255,6 +255,7 @@ var (
 // It is a separate path from the existing AgentRun system (manual-assist mode).
 type SupportAIService struct {
 	llmProvider            llm.Provider
+	taskDraftLLM           supportTaskDraftLLM
 	embeddingProvider      llm.EmbeddingProvider
 	embeddingModel         string
 	queryExpansionModel    string
@@ -381,6 +382,18 @@ func (s *SupportAIService) SetLinkPreviewService(linkPreviewService SupportMessa
 		return nil
 	}
 	s.linkPreviewService = linkPreviewService
+	return s
+}
+
+// SetTaskDraftLLM wires the preferred LLM backend for task draft generation.
+// When set, GenerateTaskDraftFromConversation uses this (schema-forced tool
+// calling via Eino) and only falls back to the plain ChatCompletion path on
+// error.
+func (s *SupportAIService) SetTaskDraftLLM(llm supportTaskDraftLLM) *SupportAIService {
+	if s == nil {
+		return nil
+	}
+	s.taskDraftLLM = llm
 	return s
 }
 
@@ -1247,11 +1260,11 @@ func (s *SupportAIService) GenerateTaskDraftFromConversation(
 	if s == nil {
 		return nil, fmt.Errorf("support AI service not initialized")
 	}
-	if s.llmProvider == nil {
-		return nil, fmt.Errorf("support chat LLM provider is not configured")
-	}
 	if conversation == nil {
 		return nil, fmt.Errorf("conversation is required")
+	}
+	if s.taskDraftLLM == nil && s.llmProvider == nil {
+		return nil, fmt.Errorf("support chat LLM provider is not configured")
 	}
 
 	sanitized := sanitizeConversationHistory(history, "")
@@ -1268,7 +1281,7 @@ func (s *SupportAIService) GenerateTaskDraftFromConversation(
 	messages = append(messages, llm.Message{
 		Role: "user",
 		Content: fmt.Sprintf(
-			"Create one internal PM task draft for this support conversation.\n\nConversation ID: %s\nConversation Number: %d\nSubject: %s\nCustomer Name: %s\nCustomer Email: %s\nCurrent Status: %s\nCurrent Priority: %s\n\nReturn the JSON only.",
+			"Create one internal PM task draft for this support conversation.\n\nConversation ID: %s\nConversation Number: %d\nSubject: %s\nCustomer Name: %s\nCustomer Email: %s\nCurrent Status: %s\nCurrent Priority: %s\n\nCall the write_support_task_draft tool with fully-populated fields.",
 			conversation.ID,
 			conversation.DisplayID,
 			strings.TrimSpace(conversation.Subject),
@@ -1278,6 +1291,41 @@ func (s *SupportAIService) GenerateTaskDraftFromConversation(
 			strings.TrimSpace(conversation.Priority),
 		),
 	})
+
+	// Preferred path: schema-forced tool calling via Eino. Claude cannot
+	// return off-schema JSON under this path — the tool definition constrains
+	// the output format at the API layer, not just in a system prompt.
+	if s.taskDraftLLM != nil {
+		draft, err := s.taskDraftLLM.GenerateTaskDraft(ctx, supportTaskDraftRequest{
+			WorkspaceID:    workspaceID,
+			ConversationID: conversation.ID,
+			SystemPrompt:   supportTaskDraftSystemPrompt,
+			Messages:       messages,
+			Model:          modelName,
+		})
+		if err == nil && draft != nil {
+			slog.InfoContext(ctx, "support task draft generated",
+				"workspace_id", workspaceID,
+				"conversation_id", conversation.ID,
+				"backend", "eino",
+				"provider", providerName,
+				"model", modelName,
+				"title_len", len(draft.Title),
+				"summary_len", len(draft.Summary),
+				"description_len", len(draft.Description),
+			)
+			return draft, nil
+		}
+		slog.WarnContext(ctx, "eino task draft generation failed; falling back to chat completion",
+			"workspace_id", workspaceID,
+			"conversation_id", conversation.ID,
+			"model", modelName,
+			"error", err,
+		)
+		if s.llmProvider == nil {
+			return nil, err
+		}
+	}
 
 	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
 		SystemPrompt: supportTaskDraftSystemPrompt,
@@ -1309,6 +1357,7 @@ func (s *SupportAIService) GenerateTaskDraftFromConversation(
 	slog.InfoContext(ctx, "support task draft generated",
 		"workspace_id", workspaceID,
 		"conversation_id", conversation.ID,
+		"backend", "chat_completion",
 		"provider", providerName,
 		"model", modelName,
 		"title_len", len(title),
