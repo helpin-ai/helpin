@@ -1303,10 +1303,25 @@ func (s *SupportAIService) GenerateTaskDraftFromConversation(
 		return nil, fmt.Errorf("parse support task draft: %w", err)
 	}
 
+	title := strings.TrimSpace(parsed.Title)
+	summary := strings.TrimSpace(parsed.Summary)
+	description := strings.TrimSpace(parsed.DescriptionMarkdown)
+	slog.InfoContext(ctx, "support task draft generated",
+		"workspace_id", workspaceID,
+		"conversation_id", conversation.ID,
+		"provider", providerName,
+		"model", modelName,
+		"title_len", len(title),
+		"summary_len", len(summary),
+		"description_len", len(description),
+		"input_tokens", resp.TokensUsed.InputTokens,
+		"output_tokens", resp.TokensUsed.OutputTokens,
+	)
+
 	return &supportConversationTaskDraft{
-		Title:       strings.TrimSpace(parsed.Title),
-		Summary:     strings.TrimSpace(parsed.Summary),
-		Description: strings.TrimSpace(parsed.DescriptionMarkdown),
+		Title:       title,
+		Summary:     summary,
+		Description: description,
 		TaskType:    strings.TrimSpace(parsed.TaskType),
 		Priority:    strings.TrimSpace(parsed.Priority),
 	}, nil

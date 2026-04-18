@@ -1634,6 +1634,17 @@ func (s *SupportInboxService) generateTaskDraftFromConversation(
 	if s.supportAIService != nil {
 		draft, err := s.supportAIService.GenerateTaskDraftFromConversation(ctx, workspaceID, conversation, messages)
 		if err == nil && draft != nil {
+			titleEmpty := strings.TrimSpace(draft.Title) == ""
+			descriptionEmpty := strings.TrimSpace(draft.Description) == ""
+			if titleEmpty || descriptionEmpty {
+				slog.WarnContext(ctx, "llm returned incomplete task draft; using deterministic fallback for missing fields",
+					"workspace_id", workspaceID,
+					"conversation_id", conversation.ID,
+					"title_empty", titleEmpty,
+					"description_empty", descriptionEmpty,
+					"summary_len", len(strings.TrimSpace(draft.Summary)),
+				)
+			}
 			normalized := *draft
 			normalized.Title = fallbackSupportTaskTitle(conversation, messages, normalized.Title)
 			normalized.Summary = strings.TrimSpace(normalized.Summary)
@@ -1749,20 +1760,40 @@ func fallbackSupportConversationTaskDraft(
 
 func fallbackSupportTaskTitle(conversation *model.SupportConversation, messages []model.SupportMessage, proposed string) string {
 	if candidate := cleanSupportTaskTitleCandidate(proposed); candidate != "" && !isWeakSupportTaskTitle(candidate) {
-		return candidate
+		return truncateSupportTaskTitle(candidate, supportTaskTitleMaxLen)
 	}
 	if conversation != nil {
 		if candidate := cleanSupportTaskTitleCandidate(conversation.Subject); candidate != "" && !isWeakSupportTaskTitle(candidate) {
-			return candidate
+			return truncateSupportTaskTitle(candidate, supportTaskTitleMaxLen)
 		}
 	}
 	if candidate := supportTaskTitleFromMessages(messages); candidate != "" {
-		return candidate
+		return truncateSupportTaskTitle(candidate, supportTaskTitleMaxLen)
 	}
 	if conversation != nil {
 		return fmt.Sprintf("Customer-reported issue in conversation #%d", conversation.DisplayID)
 	}
 	return "Customer-reported issue"
+}
+
+const supportTaskTitleMaxLen = 90
+
+// truncateSupportTaskTitle caps a title at maxLen characters, cutting at the
+// last word boundary and appending an ellipsis. Stack-trace-style subjects
+// like the full "SERP analysis failed: Token is not valid; SERP Knowledge..."
+// error chain are never useful as task names at full length.
+func truncateSupportTaskTitle(value string, maxLen int) string {
+	trimmed := strings.TrimSpace(value)
+	if maxLen <= 0 || len(trimmed) <= maxLen {
+		return trimmed
+	}
+	if cut := strings.IndexAny(trimmed[:maxLen], ";|"); cut >= 16 {
+		return strings.TrimRight(trimmed[:cut], " \t-:,;") + "..."
+	}
+	if space := strings.LastIndexAny(trimmed[:maxLen], " \t"); space >= maxLen/2 {
+		return strings.TrimRight(trimmed[:space], " \t-:,;") + "..."
+	}
+	return strings.TrimRight(trimmed[:maxLen], " \t-:,;") + "..."
 }
 
 func fallbackSupportTaskSummary(conversation *model.SupportConversation, messages []model.SupportMessage) string {
@@ -1801,9 +1832,11 @@ func fallbackSupportTaskDescription(
 		b.WriteString(impact)
 		b.WriteString("\n\n")
 	}
-	b.WriteString("## Requested Outcome\n")
-	b.WriteString(fallbackSupportRequestedOutcome(conversation))
-	b.WriteString("\n\n")
+	if outcome := specificSupportRequestedOutcome(conversation); outcome != "" {
+		b.WriteString("## Requested Outcome\n")
+		b.WriteString(outcome)
+		b.WriteString("\n\n")
+	}
 	if conversation != nil {
 		b.WriteString("## Customer Context\n")
 		b.WriteString(fmt.Sprintf("- Conversation: #%d\n", conversation.DisplayID))
@@ -1874,9 +1907,13 @@ func fallbackSupportTaskImpact(conversation *model.SupportConversation, messages
 	return fmt.Sprintf("Customer-facing issue reported in support conversation #%d.", conversation.DisplayID)
 }
 
-func fallbackSupportRequestedOutcome(conversation *model.SupportConversation) string {
+// specificSupportRequestedOutcome returns a subject-derived outcome sentence
+// only when the subject matches a known keyword. For generic conversations it
+// returns "" so the description builder can omit the section rather than
+// emit boilerplate filler.
+func specificSupportRequestedOutcome(conversation *model.SupportConversation) string {
 	if conversation == nil {
-		return "Determine the next internal action needed to resolve the customer request."
+		return ""
 	}
 	subject := strings.ToLower(strings.TrimSpace(conversation.Subject))
 	switch {
@@ -1885,7 +1922,7 @@ func fallbackSupportRequestedOutcome(conversation *model.SupportConversation) st
 	case strings.Contains(subject, "billing"), strings.Contains(subject, "invoice"), strings.Contains(subject, "payment"):
 		return "Identify the underlying issue and complete the internal follow-up needed to unblock the customer."
 	default:
-		return "Determine the next internal product or support action needed to resolve the customer issue."
+		return ""
 	}
 }
 
@@ -1896,12 +1933,43 @@ func cleanSupportTaskTitleCandidate(value string) string {
 	}
 	candidate = strings.Join(strings.Fields(candidate), " ")
 	candidate = trimSupportEmailPrefixes(candidate)
+	candidate = trimSupportDiagnosticPrefixes(candidate)
 	candidate = trimSupportTaskActionPrefixes(candidate)
 	candidate = strings.Trim(candidate, " \t\r\n-:;,.")
 	if candidate == "" {
 		return ""
 	}
 	return titleCaseSupportIssue(candidate)
+}
+
+// trimSupportDiagnosticPrefixes strips "Error:", "Exception:", "Warning:",
+// and bracketed tags like "[ApplicationError]" that customers often paste
+// in as the subject line. Without this the raw log prefix becomes the PM
+// task name.
+func trimSupportDiagnosticPrefixes(value string) string {
+	candidate := strings.TrimSpace(value)
+	for {
+		trimmed := false
+		for strings.HasPrefix(candidate, "[") {
+			if end := strings.IndexByte(candidate, ']'); end > 0 {
+				candidate = strings.TrimSpace(candidate[end+1:])
+				trimmed = true
+				continue
+			}
+			break
+		}
+		lower := strings.ToLower(candidate)
+		for _, prefix := range []string{"error:", "exception:", "warning:", "fatal:", "panic:"} {
+			if strings.HasPrefix(lower, prefix) {
+				candidate = strings.TrimSpace(candidate[len(prefix):])
+				trimmed = true
+				break
+			}
+		}
+		if !trimmed {
+			return candidate
+		}
+	}
 }
 
 func trimSupportEmailPrefixes(value string) string {
@@ -2056,28 +2124,89 @@ func validateSupportTaskDraft(
 }
 
 func supportPreferredContextExcerpt(messages []model.SupportMessage, maxLen int) string {
+	if candidate := pickSupportContextExcerpt(messages, maxLen, false); candidate != "" {
+		return candidate
+	}
+	// If every message is a pleasantry/sign-off, allow one as a last resort
+	// so we don't return empty when the customer genuinely sent nothing else.
+	return pickSupportContextExcerpt(messages, maxLen, true)
+}
+
+func pickSupportContextExcerpt(messages []model.SupportMessage, maxLen int, allowPleasantry bool) string {
 	for i := len(messages) - 1; i >= 0; i-- {
 		if messages[i].SenderType != "customer" {
 			continue
 		}
-		if isSubstantiveSupportContextText(messages[i].Content) {
-			return excerptSupportText(messages[i].Content, maxLen)
+		if !isSubstantiveSupportContextText(messages[i].Content) {
+			continue
 		}
+		if !allowPleasantry && looksLikeSupportPleasantry(messages[i].Content) {
+			continue
+		}
+		return excerptSupportText(messages[i].Content, maxLen)
 	}
 	for i := len(messages) - 1; i >= 0; i-- {
 		if !messages[i].IsInternal {
 			continue
 		}
-		if isSubstantiveSupportContextText(messages[i].Content) {
-			return excerptSupportText(messages[i].Content, maxLen)
+		if !isSubstantiveSupportContextText(messages[i].Content) {
+			continue
 		}
+		if !allowPleasantry && looksLikeSupportPleasantry(messages[i].Content) {
+			continue
+		}
+		return excerptSupportText(messages[i].Content, maxLen)
 	}
 	for i := len(messages) - 1; i >= 0; i-- {
-		if isSubstantiveSupportContextText(messages[i].Content) {
-			return excerptSupportText(messages[i].Content, maxLen)
+		if !isSubstantiveSupportContextText(messages[i].Content) {
+			continue
 		}
+		if !allowPleasantry && looksLikeSupportPleasantry(messages[i].Content) {
+			continue
+		}
+		return excerptSupportText(messages[i].Content, maxLen)
 	}
 	return ""
+}
+
+// looksLikeSupportPleasantry detects sign-offs ("thanks in advance", "kind
+// regards") and greetings that technically pass the substantive-text bar on
+// length alone but shouldn't be surfaced as the Problem/Impact excerpt.
+func looksLikeSupportPleasantry(value string) bool {
+	candidate := strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(value)), " "))
+	if candidate == "" {
+		return true
+	}
+	leadingPleasantries := []string{
+		"thanks in advance",
+		"thank you in advance",
+		"thank you so much",
+		"thank you for",
+		"thanks for",
+		"thanks,",
+		"thanks.",
+		"thank you",
+		"kind regards",
+		"best regards",
+		"warm regards",
+		"regards,",
+		"regards.",
+		"cheers,",
+		"cheers.",
+		"grazie in anticipo",
+		"grazie mille",
+		"grazie,",
+		"ciao,",
+		"hello there",
+		"hi there",
+		"please help",
+	}
+	for _, prefix := range leadingPleasantries {
+		if strings.HasPrefix(candidate, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func supportLastNonEmptyMessageExcerpt(messages []model.SupportMessage, maxLen int) string {
