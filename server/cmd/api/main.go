@@ -657,7 +657,6 @@ func main() {
 		}
 	}
 	emailFallbackService.SetSupportInboxService(supportInboxService)
-	emailFallbackService.SetLinkPreviewService(supportLinkPreviewService)
 	notificationService.SetSupportRoutingDependencies(supportInstallRepo, supportMailboxRepo, wsHub.Presence, supportTeammateStatusOverrideRepo)
 
 	// AI Support Agent — new repositories and service
