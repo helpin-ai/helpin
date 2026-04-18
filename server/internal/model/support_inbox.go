@@ -210,8 +210,15 @@ type SupportMessage struct {
 	CreatedAt         time.Time  `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt         time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 
-	// Virtual field — populated by service layer, not stored in DB.
+	// Virtual fields — populated by service layer, not stored in DB.
 	Attachments []SupportAttachmentPayload `json:"attachments,omitempty" gorm:"-"`
+	// HTMLBody is the sanitized HTML variant of an inbound email's body, loaded
+	// from the linked support_email_logs row. Only populated for messages
+	// where ViaChannel == "email" and an email log exists.
+	HTMLBody string `json:"html_body,omitempty" gorm:"-"`
+	// StrippedText is the markdown-friendly plaintext variant of an inbound
+	// email's body. Same population rules as HTMLBody.
+	StrippedText string `json:"stripped_text,omitempty" gorm:"-"`
 }
 
 func (SupportMessage) TableName() string { return "support_messages" }

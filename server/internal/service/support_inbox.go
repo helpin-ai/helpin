@@ -177,6 +177,7 @@ func (s *SupportInboxService) GetMessageEmailDetail(ctx context.Context, workspa
 		InReplyTo:        log.InReplyTo,
 		ReferencesHeader: log.ReferencesHeader,
 		StrippedText:     log.StrippedText,
+		HTMLBody:         log.HTMLBody,
 		Status:           log.Status,
 		OpenedAt:         log.OpenedAt,
 		CreatedAt:        log.CreatedAt,
@@ -1188,7 +1189,78 @@ func (s *SupportInboxService) ListConversationMessages(ctx context.Context, work
 			slog.ErrorContext(ctx, "hydrate support message attachments", "error", err, "conversation_id", ticketID)
 		}
 	}
+
+	// Hydrate inbound email bodies onto messages so the thread bubbles can
+	// render rich HTML without a per-message round-trip. Only email messages
+	// need this — widget/in-app chat messages have no email log.
+	hydrateEmailBodies(ctx, s.emailLogRepo, workspaceID, ticketID, messages)
+
 	return messages, nil
+}
+
+// hydrateEmailBodies attaches the sanitized HTML and markdown bodies from
+// support_email_logs onto any message whose ViaChannel is "email". One query
+// pulls every log for the conversation; the loop below joins them onto
+// messages by the message_ids array. Safe to call with a nil repo.
+func hydrateEmailBodies(
+	ctx context.Context,
+	repo supportEmailLogReader,
+	workspaceID, conversationID string,
+	messages []model.SupportMessage,
+) {
+	if repo == nil || len(messages) == 0 {
+		return
+	}
+	hasEmail := false
+	for i := range messages {
+		if messages[i].ViaChannel != nil && *messages[i].ViaChannel == "email" {
+			hasEmail = true
+			break
+		}
+	}
+	if !hasEmail {
+		return
+	}
+
+	logs, err := repo.ListByConversation(ctx, workspaceID, conversationID)
+	if err != nil {
+		slog.ErrorContext(ctx, "hydrate support email bodies",
+			"error", err, "conversation_id", conversationID)
+		return
+	}
+
+	byMessageID := make(map[string]*model.SupportEmailLog, len(logs))
+	for i := range logs {
+		for _, mid := range logs[i].MessageIDs {
+			if mid == "" {
+				continue
+			}
+			// Prefer the first log encountered per message_id. Messages are
+			// usually 1:1 with logs, but MessageIDs can list several.
+			if _, exists := byMessageID[mid]; !exists {
+				byMessageID[mid] = &logs[i]
+			}
+		}
+	}
+
+	for i := range messages {
+		if messages[i].ViaChannel == nil || *messages[i].ViaChannel != "email" {
+			continue
+		}
+		log := byMessageID[messages[i].ID]
+		if log == nil {
+			continue
+		}
+		messages[i].HTMLBody = log.HTMLBody
+		messages[i].StrippedText = log.StrippedText
+	}
+}
+
+// supportEmailLogReader is the subset of SupportEmailLogRepository needed
+// by hydrateEmailBodies. Defined at the consumer so the helper can be
+// unit-tested without a real repo.
+type supportEmailLogReader interface {
+	ListByConversation(ctx context.Context, workspaceID, conversationID string) ([]model.SupportEmailLog, error)
 }
 
 // CreateConversationMessage creates a message on a conversation.

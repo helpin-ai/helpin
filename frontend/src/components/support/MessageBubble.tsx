@@ -8,6 +8,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useAuthStore } from '@/stores/authStore';
 import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
 import type { AIMessageMetadata, SupportLinkPreview, SupportMessage, TicketSource } from '@/lib/pmTypes';
+import { EmailBodyRenderer } from './EmailBodyRenderer';
 import { formatTimestamp, getInitial, getAvatarColor, getEffectiveSenderType, HELPIN_AI_DISPLAY_NAME, parseAIMessageMetadata, parseSupportLinkPreviews } from './helpers';
 
 /** Splits text on @mention patterns and wraps them in highlight spans. */
@@ -443,14 +444,20 @@ export const MessageBubble = memo(function MessageBubble({
                       : `bg-blue-600 text-white dark:bg-blue-500 ${isLastInGroup ? 'rounded-br-sm' : ''}`
                   } ${hasTableContent ? 'overflow-hidden' : ''}`}
                 >
-                  {displayContent && (
-                    <div
-                      className="prose-chat"
-                      data-chat-tone={isCustomer ? 'customer' : 'agent'}
-                      data-has-table={hasTableContent ? 'true' : 'false'}
-                    >
-                      <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{displayContent}</Markdown>
+                  {message.via_channel === 'email' && message.html_body ? (
+                    <div className="-mx-1" data-chat-tone={isCustomer ? 'customer' : 'agent'}>
+                      <EmailBodyRenderer html={message.html_body} />
                     </div>
+                  ) : (
+                    displayContent && (
+                      <div
+                        className="prose-chat"
+                        data-chat-tone={isCustomer ? 'customer' : 'agent'}
+                        data-has-table={hasTableContent ? 'true' : 'false'}
+                      >
+                        <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{displayContent}</Markdown>
+                      </div>
+                    )
                   )}
                   {fileAttachments.length > 0 && (
                     <div className={`${displayContent ? 'mt-2' : ''} space-y-1.5`}>

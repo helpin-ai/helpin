@@ -20,6 +20,7 @@ type SupportEmailLog struct {
 	PostmarkMessageID *string         `json:"postmark_message_id,omitempty" gorm:"size:255"`
 	RawBody           string          `json:"-" gorm:"type:text"`
 	StrippedText      string          `json:"stripped_text,omitempty" gorm:"type:text"`
+	HTMLBody          string          `json:"html_body,omitempty" gorm:"type:text"`
 	Status            string          `json:"status" gorm:"size:20;not null;default:'sent'"`
 	OpenedAt          *time.Time      `json:"opened_at,omitempty"`
 	ErrorMessage      string          `json:"error_message,omitempty" gorm:"type:text"`
@@ -40,6 +41,7 @@ type SupportMessageEmailDetail struct {
 	InReplyTo        string     `json:"in_reply_to,omitempty"`
 	ReferencesHeader string     `json:"references_header,omitempty"`
 	StrippedText     string     `json:"stripped_text,omitempty"`
+	HTMLBody         string     `json:"html_body,omitempty"`
 	Status           string     `json:"status"`
 	OpenedAt         *time.Time `json:"opened_at,omitempty"`
 	CreatedAt        time.Time  `json:"created_at"`

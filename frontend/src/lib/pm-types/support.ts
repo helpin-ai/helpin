@@ -304,6 +304,10 @@ export interface SupportMessage {
   email_notified_at?: string;
   email_read_at?: string;
   attachments?: SupportAttachmentPayload[];
+  /** Sanitized HTML body — present only for inbound email messages (via_channel === 'email'). */
+  html_body?: string;
+  /** Markdown-friendly plaintext body — present only for inbound email messages. */
+  stripped_text?: string;
   created_at: string;
   updated_at: string;
 }
@@ -319,6 +323,7 @@ export interface SupportMessageEmailDetail {
   in_reply_to?: string;
   references_header?: string;
   stripped_text?: string;
+  html_body?: string;
   status: string;
   opened_at?: string;
   created_at: string;
