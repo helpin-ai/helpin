@@ -26,6 +26,8 @@ function playNotificationSound() {
 
 /** Debounce window (ms) for batching rapid websocket events into a single board refresh. */
 const DEBOUNCE_MS = 200
+/** Trailing-window (ms) for coalescing bursty agent_run invalidations into a single flush. */
+const AGENT_RUN_INVALIDATE_MS = 400
 /** Auto-clear typing indicator after this many ms without a refresh. */
 const TYPING_TIMEOUT_MS = 10_000
 const DOC_EDITING_TIMEOUT_MS = 20_000
@@ -34,6 +36,8 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
   const queryClient = useQueryClient()
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const typingTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  const agentRunInvalidateTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingAgentRunInvalidations = useRef<Map<string, readonly unknown[]>>(new Map())
   const selfIdRef = useRef<string | undefined>(useAuthStore.getState().user?.id)
   selfIdRef.current = useAuthStore.getState().user?.id
   const scheduleRefresh = useCallback(() => {
@@ -42,6 +46,22 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       usePMBoardStore.getState().refreshBoard()
     }, DEBOUNCE_MS)
   }, [])
+
+  // Queue an agent_run-related invalidation and flush all unique pending keys
+  // in a single pass at the end of the trailing window. A burst of events
+  // targeting the same keys collapses into one refetch instead of N.
+  const scheduleAgentRunInvalidation = useCallback((queryKey: readonly unknown[]) => {
+    pendingAgentRunInvalidations.current.set(JSON.stringify(queryKey), queryKey)
+    if (agentRunInvalidateTimer.current) return
+    agentRunInvalidateTimer.current = setTimeout(() => {
+      agentRunInvalidateTimer.current = null
+      const pending = pendingAgentRunInvalidations.current
+      pendingAgentRunInvalidations.current = new Map()
+      pending.forEach((key) => {
+        queryClient.invalidateQueries({ queryKey: key })
+      })
+    }, AGENT_RUN_INVALIDATE_MS)
+  }, [queryClient])
 
   const onEvent = useCallback((event: WSEvent) => {
     // Task-level events → incremental patch when possible, debounced full refresh as fallback
@@ -193,21 +213,19 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       queryClient.invalidateQueries({ queryKey: queryKeys.notifications.all(workspaceId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.notifications.unreadCount(workspaceId) })
     } else if (event.entity === 'agent_run') {
-      queryClient.invalidateQueries({ queryKey: ['agent_runs', workspaceId] })
-      queryClient.invalidateQueries({ queryKey: queryKeys.agents.all(workspaceId) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.automation.runsRoot(workspaceId) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.automation.agentsRoot(workspaceId) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.automation.activityRoot(workspaceId) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.automation.overview(workspaceId) })
-      if (typeof event.data?.agent_id === 'string' && event.data.agent_id) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.automation.agent(workspaceId, event.data.agent_id) })
-        queryClient.invalidateQueries({ queryKey: queryKeys.automation.agentUsage(workspaceId, event.data.agent_id) })
+      scheduleAgentRunInvalidation(queryKeys.automation.runsRoot(workspaceId))
+      scheduleAgentRunInvalidation(queryKeys.automation.activityRoot(workspaceId))
+      scheduleAgentRunInvalidation(queryKeys.automation.overview(workspaceId))
+      const eventAgentId = typeof event.data?.agent_id === 'string' ? event.data.agent_id : ''
+      if (eventAgentId) {
+        scheduleAgentRunInvalidation(queryKeys.automation.agent(workspaceId, eventAgentId))
+        scheduleAgentRunInvalidation(queryKeys.automation.agentUsage(workspaceId, eventAgentId))
+      } else {
+        scheduleAgentRunInvalidation(queryKeys.automation.agentsRoot(workspaceId))
       }
       if (event.parent_type === 'task' && event.parent_id) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.pm.task(workspaceId, event.parent_id) })
-        // Board/list caches carry latest_run_id/status on each card; refresh
-        // them so the agent badge reflects transitions into terminal states.
-        queryClient.invalidateQueries({ queryKey: ['pm', workspaceId, 'tasks'] })
+        scheduleAgentRunInvalidation(queryKeys.pm.task(workspaceId, event.parent_id))
+        scheduleAgentRunInvalidation(['pm', workspaceId, 'tasks'])
       }
     } else if (event.entity === 'crm_contact') {
       queryClient.invalidateQueries({ queryKey: queryKeys.crm.contacts(workspaceId) })
@@ -370,7 +388,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         })
       )
     }
-  }, [scheduleRefresh, workspaceId, queryClient])
+  }, [scheduleRefresh, scheduleAgentRunInvalidation, workspaceId, queryClient])
 
   const onPresenceSnapshot = useCallback((snapshot: PresenceSnapshot) => {
     const convId = snapshot.conversation_id
@@ -447,6 +465,8 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
   useEffect(() => {
     return () => {
       clearTimeout(debounceTimer.current ?? undefined)
+      clearTimeout(agentRunInvalidateTimer.current ?? undefined)
+      pendingAgentRunInvalidations.current.clear()
       typingTimers.current.forEach((t) => clearTimeout(t))
       typingTimers.current.clear()
     }

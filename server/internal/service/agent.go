@@ -3218,6 +3218,7 @@ func (s *AgentService) publishRunEvent(run *model.AgentRun, actorID string) {
 	}
 	status, pauseReason := model.NormalizeAgentRunStatus(run.Status, run.PauseReason, run.ApprovalState, run.ExecutionStage)
 	data, _ := json.Marshal(map[string]string{
+		"agent_id":     run.AgentID,
 		"status":       status,
 		"pause_reason": pauseReason,
 	})

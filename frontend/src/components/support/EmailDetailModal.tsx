@@ -50,7 +50,7 @@ export function EmailDetailModal({ workspaceId, message, open, onOpenChange }: E
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl gap-0 overflow-hidden p-0 sm:max-w-2xl">
+      <DialogContent className="max-w-3xl gap-0 overflow-hidden p-0 sm:max-w-3xl lg:max-w-4xl">
         <DialogTitle className="sr-only">{subject}</DialogTitle>
 
         <div className="max-h-[80vh] overflow-y-auto">
