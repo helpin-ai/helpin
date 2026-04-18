@@ -42,9 +42,26 @@
 }
 
 @layer base {
+  :root {
+    --speed-quick: 0.1s;
+    --speed-regular: 0.25s;
+    --speed-slow: 0.35s;
+    --ease-out-quad: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    --ease-out-cubic: cubic-bezier(0.215, 0.61, 0.355, 1);
+    --ease-out-quart: cubic-bezier(0.165, 0.84, 0.44, 1);
+    --ease-out-expo: cubic-bezier(0.19, 1, 0.22, 1);
+    --ease-in-out-cubic: cubic-bezier(0.645, 0.045, 0.355, 1);
+    --ease-in-out-quart: cubic-bezier(0.77, 0, 0.175, 1);
+  }
   * {
     @apply border-border;
     @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+    font-size: 93.75%;
+    letter-spacing: -0.011em;
+    -webkit-tap-highlight-color: transparent;
   }
   body {
     @apply bg-background text-foreground;
@@ -55,10 +72,32 @@
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
   }
-  html {
-    @apply font-sans;
-    font-size: 93.75%;
-    letter-spacing: -0.31px;
+  h1, h2, h3, h4, h5, h6 {
+    font-weight: 500;
+    line-height: 1.25;
+    margin-top: 0;
+    margin-bottom: 0;
+  }
+  strong, b {
+    font-weight: 600;
+  }
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+  .prose :where(p, ol, ul, pre, blockquote, dl):not(:where([class~="not-prose"] *, [class~="not-prose"])),
+  article :where(p, ol, ul, pre, blockquote, dl) {
+    margin-top: 0.8em;
+    margin-bottom: 1.2em;
+  }
+  .prose :where(h1, h2, h3, h4, h5, h6) + * {
+    margin-top: 0.8em !important;
+  }
+  @supports (font-size: round(up, 1rem, 1px)) {
+    @media not all and (min-resolution: 192dpi) {
+      :root {
+        --font-size-micro: round(up, 0.6875rem, 2px);
+      }
+    }
   }
 }
 
