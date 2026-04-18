@@ -365,7 +365,7 @@ export const MessageBubble = memo(function MessageBubble({
   if (isInternal) {
     return (
       <div className={`flex justify-end ${isConsecutive ? 'mt-1' : 'mt-5'}`}>
-        <div className="max-w-[75%]">
+        <div className="max-w-[85%]">
           <Tooltip>
             <TooltipTrigger asChild>
               <div className="rounded-lg border-r-[3px] border-r-amber-400 bg-amber-50 px-4 py-2.5 [overflow-wrap:anywhere] dark:bg-amber-950/20">
@@ -432,7 +432,7 @@ export const MessageBubble = memo(function MessageBubble({
 
         <div
           data-slot="support-message-bubble"
-          className={hasTableContent ? 'min-w-0 max-w-[min(78vw,46rem)] lg:max-w-[min(72vw,48rem)]' : 'min-w-0 max-w-[70%]'}
+          className={hasTableContent ? 'min-w-0 max-w-[min(78vw,46rem)] lg:max-w-[min(72vw,48rem)]' : 'min-w-0 max-w-[85%]'}
         >
           {showBubble && (
             <Tooltip>
