@@ -13,6 +13,7 @@ type CodingSession struct {
 	InvocationMode      string                       `json:"invocation_mode"`
 	Status              string                       `json:"status"`
 	PauseReason         string                       `json:"pause_reason"`
+	ErrorMessage        *string                      `json:"error_message,omitempty"`
 	Title               string                       `json:"title"`
 	Summary             *string                      `json:"summary,omitempty"`
 	Capabilities        CodingSessionCapabilities    `json:"capabilities"`
