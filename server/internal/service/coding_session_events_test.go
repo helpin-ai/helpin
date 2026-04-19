@@ -230,6 +230,53 @@ func TestGetCodingSessionIncludesLiveStreamSnapshotForActiveRuns(t *testing.T) {
 	}
 }
 
+func TestGetCodingSessionIncludesRunErrorMessage(t *testing.T) {
+	db := newInteractiveApprovalTestDB(t)
+
+	runRepo := repository.NewAgentRunRepository(db)
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	agentRepo := repository.NewAgentRepository(db)
+
+	now := time.Now().UTC()
+	errMsg := "agent reached max tool steps after 300 tool-call rounds; start another run to continue"
+	run := &model.AgentRun{
+		ID:             "run-session-error",
+		WorkspaceID:    "ws-1",
+		AgentID:        "agent-1",
+		TargetType:     "story",
+		TargetID:       "story-1",
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeInteractive,
+		ApprovalState:  "not_required",
+		PauseReason:    model.AgentRunPauseReasonNone,
+		Status:         model.AgentRunStatusFailed,
+		ErrorMessage:   &errMsg,
+		Input:          json.RawMessage(`{}`),
+		OutputSummary:  json.RawMessage(`{}`),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := runRepo.Create(context.Background(), run); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	svc := &AgentService{
+		runRepo:        runRepo,
+		runMessageRepo: runMessageRepo,
+		artifactRepo:   artifactRepo,
+		agentRepo:      agentRepo,
+	}
+
+	session, err := svc.GetCodingSession(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("GetCodingSession returned error: %v", err)
+	}
+	if session.ErrorMessage == nil || *session.ErrorMessage != errMsg {
+		t.Fatalf("expected coding session error_message %q, got %#v", errMsg, session.ErrorMessage)
+	}
+}
+
 func TestListCodingSessionEventsIncludesPersistedTurnSegmentsOnAssistantMessages(t *testing.T) {
 	db := newInteractiveApprovalTestDB(t)
 

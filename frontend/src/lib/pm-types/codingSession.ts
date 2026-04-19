@@ -78,6 +78,7 @@ export interface CodingSession {
   invocation_mode: AgentInvocationMode;
   status: AgentRunStatus;
   pause_reason: AgentRunPauseReason;
+  error_message?: string;
   title: string;
   summary?: string;
   capabilities: CodingSessionCapabilities;

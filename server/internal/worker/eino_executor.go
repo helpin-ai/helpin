@@ -347,7 +347,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 	}
 
 	if errors.Is(execErr, ErrMaxToolStepsReached) {
-		return ErrMaxToolStepsReached
+		return fmt.Errorf("%w after %d tool-call rounds; start another run to continue", ErrMaxToolStepsReached, config.MaxIterations)
 	}
 	return nil
 }

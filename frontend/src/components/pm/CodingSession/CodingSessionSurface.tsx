@@ -121,6 +121,9 @@ export function CodingSessionSurface({
         ...current,
         status: typeof detail.data?.status === 'string' ? detail.data.status as CodingSession['status'] : current.status,
         pause_reason: typeof detail.data?.pause_reason === 'string' ? detail.data.pause_reason as CodingSession['pause_reason'] : current.pause_reason,
+        error_message: typeof detail.data?.error_message === 'string'
+          ? detail.data.error_message || undefined
+          : current.error_message,
         updated_at: new Date().toISOString(),
       } : current);
       void loadSession();
@@ -256,6 +259,12 @@ export function CodingSessionSurface({
       {error ? (
         <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
           {error}
+        </div>
+      ) : null}
+
+      {!error && session?.error_message ? (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          {session.error_message}
         </div>
       ) : null}
 
