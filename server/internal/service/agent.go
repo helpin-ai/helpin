@@ -107,6 +107,29 @@ func buildAgentRunInputPayload(targetType, targetID string, trigger *model.Agent
 	return json.Marshal(payload)
 }
 
+func buildContinuationAdditionalContext(run *model.AgentRun, content string) string {
+	content = strings.TrimSpace(content)
+	if run == nil {
+		return content
+	}
+
+	sections := []string{
+		fmt.Sprintf("Continue from the previous run on the same %s. Reuse prior progress, artifacts, and transcript context instead of restarting from scratch unless necessary.", strings.TrimSpace(run.TargetType)),
+	}
+	if parentID := strings.TrimSpace(run.ID); parentID != "" {
+		sections = append(sections, fmt.Sprintf("Previous run ID: %s", parentID))
+	}
+	if reason := strings.TrimSpace(derefString(run.ErrorMessage)); reason != "" {
+		sections = append(sections, "Previous run failure reason:\n"+reason)
+	}
+	if content != "" {
+		sections = append(sections, "Human follow-up:\n"+content)
+	} else {
+		sections = append(sections, "Human follow-up:\nRetry the work and continue from the previous progress.")
+	}
+	return strings.TrimSpace(strings.Join(sections, "\n\n"))
+}
+
 // AgentService contains agent business logic.
 type AgentService struct {
 	agentRepo                  *repository.AgentRepository
@@ -1881,10 +1904,10 @@ func (s *AgentService) RunEpicAgent(ctx context.Context, workspaceID, epicID, ac
 
 // StartTargetRun starts a direct agent run for a supported target type.
 func (s *AgentService) StartTargetRun(ctx context.Context, workspaceID, targetType, targetID string, req model.StartAgentRunRequest, actorID string) (*model.AgentRun, error) {
-	return s.startTargetRun(ctx, workspaceID, targetType, targetID, req, strPtr(actorID), manualRunTriggerContext(), nil)
+	return s.startTargetRun(ctx, workspaceID, targetType, targetID, req, strPtr(actorID), manualRunTriggerContext(), nil, nil)
 }
 
-func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetType, targetID string, req model.StartAgentRunRequest, actorID *string, trigger *model.AgentRunTriggerContext, event *model.AgentRunEventContext) (*model.AgentRun, error) {
+func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetType, targetID string, req model.StartAgentRunRequest, actorID *string, trigger *model.AgentRunTriggerContext, event *model.AgentRunEventContext, parentRunID *string) (*model.AgentRun, error) {
 	agentID := strings.TrimSpace(req.AgentID)
 	if agentID == "" {
 		return nil, fmt.Errorf("agent_id is required")
@@ -1927,6 +1950,7 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 			agent:          agent,
 			targetType:     "task",
 			targetID:       task.ID,
+			parentRunID:    parentRunID,
 			taskID:         &task.ID,
 			actorID:        actorID,
 			input:          payload,
@@ -1972,6 +1996,7 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 			agent:          agent,
 			targetType:     "epic",
 			targetID:       epic.ID,
+			parentRunID:    parentRunID,
 			actorID:        actorID,
 			input:          payload,
 			trigger:        trigger,
@@ -2032,6 +2057,7 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 			agent:          agent,
 			targetType:     "repository",
 			targetID:       repo.ID,
+			parentRunID:    parentRunID,
 			actorID:        actorID,
 			input:          payload,
 			trigger:        trigger,
@@ -2047,6 +2073,46 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 
 		if s.activitySvc != nil {
 			_ = s.activitySvc.Log(ctx, workspaceID, "git_repository", repo.ID, actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), agentRunActivityMetadata(agent, run, "started"))
+		}
+		s.publishRunEvent(run, derefString(actorID))
+		return run, nil
+
+	case "support_conversation":
+		conversation, err := s.conversationRepo.GetByID(ctx, workspaceID, targetID, "", model.RoleOwner)
+		if err != nil {
+			return nil, fmt.Errorf("get conversation: %w", err)
+		}
+		if conversation == nil {
+			return nil, fmt.Errorf("conversation not found")
+		}
+
+		agent, err := s.requireRunnableAgent(ctx, workspaceID, agentID, "support_conversation")
+		if err != nil {
+			return nil, err
+		}
+		input, err := buildAgentRunInputPayload("support_conversation", conversation.ID, trigger, event, req.AdditionalContext)
+		if err != nil {
+			return nil, fmt.Errorf("build conversation run input: %w", err)
+		}
+
+		run, err := s.createRun(ctx, createRunParams{
+			workspaceID:    workspaceID,
+			agent:          agent,
+			targetType:     "support_conversation",
+			targetID:       conversation.ID,
+			parentRunID:    parentRunID,
+			conversationID: &conversation.ID,
+			actorID:        actorID,
+			input:          input,
+			trigger:        trigger,
+			invocationMode: resolveInvocationMode(agent),
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		if s.activitySvc != nil {
+			_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", conversation.ID, actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), agentRunActivityMetadata(agent, run, "started"))
 		}
 		s.publishRunEvent(run, derefString(actorID))
 		return run, nil
@@ -2227,6 +2293,41 @@ func (s *AgentService) SendRunMessage(ctx context.Context, workspaceID, runID, a
 		return nil, fmt.Errorf("resume did not create a run message")
 	}
 	return message, nil
+}
+
+// ContinueTerminalRun creates a new child run from a failed or cancelled run.
+func (s *AgentService) ContinueTerminalRun(ctx context.Context, workspaceID, runID, actorID string, req model.ContinueAgentRunRequest) (*model.AgentRun, error) {
+	run, err := s.GetAgentRun(ctx, workspaceID, runID)
+	if err != nil {
+		return nil, err
+	}
+	switch strings.TrimSpace(run.Status) {
+	case model.AgentRunStatusFailed, model.AgentRunStatusCancelled:
+	default:
+		return nil, fmt.Errorf("only failed or cancelled runs can be continued")
+	}
+
+	additionalContext := buildContinuationAdditionalContext(run, derefString(req.Content))
+	startReq := model.StartAgentRunRequest{
+		AgentID:           run.AgentID,
+		AdditionalContext: &additionalContext,
+		BaseBranch:        run.BaseBranch,
+		WorkingBranch:     run.WorkingBranch,
+	}
+	return s.startTargetRun(
+		ctx,
+		workspaceID,
+		run.TargetType,
+		run.TargetID,
+		startReq,
+		strPtr(actorID),
+		manualRunTriggerContext(),
+		&model.AgentRunEventContext{
+			RunID:  &run.ID,
+			Reason: strPtr("continued_from_terminal_run"),
+		},
+		&run.ID,
+	)
 }
 
 func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, runID, actorID string, req model.ResumeAgentRunRequest) (*model.AgentRun, *model.AgentRunMessage, error) {
@@ -3053,6 +3154,7 @@ type createRunParams struct {
 	agent          *model.Agent
 	targetType     string
 	targetID       string
+	parentRunID    *string
 	taskID         *string
 	conversationID *string
 	actorID        *string
@@ -3098,6 +3200,7 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		ConversationID:    params.conversationID,
 		TargetType:        params.targetType,
 		TargetID:          params.targetID,
+		ParentRunID:       params.parentRunID,
 		RuntimeKind:       params.agent.RuntimeKind,
 		InvocationMode:    defaultString(params.invocationMode, model.InvocationModeAutonomous),
 		ApprovalState:     approvalState,

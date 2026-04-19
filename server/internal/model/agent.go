@@ -512,6 +512,10 @@ type SendAgentRunMessageRequest struct {
 	Content string `json:"content"`
 }
 
+type ContinueAgentRunRequest struct {
+	Content *string `json:"content,omitempty"`
+}
+
 type SendAgentRunRequestChangesRequest struct {
 	Content string `json:"content"`
 }

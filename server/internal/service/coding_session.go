@@ -407,6 +407,7 @@ func (s *AgentService) buildCodingSession(ctx context.Context, run *model.AgentR
 	session := &model.CodingSession{
 		ID:                  run.ID,
 		RunID:               run.ID,
+		ParentRunID:         run.ParentRunID,
 		WorkspaceID:         run.WorkspaceID,
 		TargetType:          run.TargetType,
 		TargetID:            run.TargetID,
@@ -1030,6 +1031,7 @@ func (s *AgentService) publishCodingSessionUpdated(run *model.AgentRun, actorID 
 	}
 	status, pauseReason := model.NormalizeAgentRunStatus(run.Status, run.PauseReason, run.ApprovalState, run.ExecutionStage)
 	data, _ := json.Marshal(map[string]any{
+		"parent_run_id":   strings.TrimSpace(derefString(run.ParentRunID)),
 		"id":              run.ID,
 		"run_id":          run.ID,
 		"status":          status,

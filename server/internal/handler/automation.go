@@ -587,6 +587,26 @@ func (h *AutomationHandler) ResumeRun(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, run)
 }
 
+// ContinueRun handles POST /api/automation/runs/{id}/continue.
+func (h *AutomationHandler) ContinueRun(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	runID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+
+	var req model.ContinueAgentRunRequest
+	if err := decodeJSON(r, &req); err != nil && r.ContentLength > 0 {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	run, err := h.agentService.ContinueTerminalRun(r.Context(), workspaceID, runID, actorID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, run)
+}
+
 // ApproveRun handles POST /api/automation/runs/{id}/approve.
 func (h *AutomationHandler) ApproveRun(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)

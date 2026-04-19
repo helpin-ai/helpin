@@ -77,6 +77,11 @@ export function CodingSessionHeader({
                   {capitalize(session.pause_reason.replaceAll('_', ' '))}
                 </Badge>
               ) : null}
+              {session?.parent_run_id ? (
+                <Badge variant="outline" className="px-2 py-0.5 text-[11px]">
+                  Continued from {session.parent_run_id.slice(0, 8)}
+                </Badge>
+              ) : null}
             </div>
 
             <dl className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1.5 text-[11px] sm:grid-cols-[auto_minmax(0,1fr)_auto_auto]">

@@ -70,6 +70,7 @@ export interface CodingSessionDiff {
 export interface CodingSession {
   id: string;
   run_id: string;
+  parent_run_id?: string;
   workspace_id: string;
   target_type: string;
   target_id: string;

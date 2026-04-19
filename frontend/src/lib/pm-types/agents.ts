@@ -185,6 +185,10 @@ export interface SendAgentRunMessageRequest {
   content: string;
 }
 
+export interface ContinueAgentRunRequest {
+  content?: string;
+}
+
 export interface SendAgentRunRequestChangesRequest {
   content: string;
 }

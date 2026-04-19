@@ -5,6 +5,7 @@ import "time"
 type CodingSession struct {
 	ID                  string                       `json:"id"`
 	RunID               string                       `json:"run_id"`
+	ParentRunID         *string                      `json:"parent_run_id,omitempty"`
 	WorkspaceID         string                       `json:"workspace_id"`
 	TargetType          string                       `json:"target_type"`
 	TargetID            string                       `json:"target_id"`
