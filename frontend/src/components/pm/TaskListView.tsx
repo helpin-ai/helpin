@@ -224,6 +224,7 @@ interface TaskListViewProps {
   groupBy?: TaskListGroupByOption;
   onGroupByChange?: (groupBy: TaskListGroupByOption) => void;
   showToolbar?: boolean;
+  footer?: React.ReactNode;
 }
 
 // Column accessor ID used for each group-by option
@@ -263,6 +264,7 @@ export function TaskListView({
   groupBy: controlledGroupBy,
   onGroupByChange,
   showToolbar = true,
+  footer,
 }: TaskListViewProps) {
   const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.slug ?? null);
   const currentWorkspaceId = useWorkspaceStore((state) => state.currentWorkspace?.id ?? '');
@@ -1302,6 +1304,11 @@ export function TaskListView({
           )}
         </div>
       </div>
+      {footer ? (
+        <div className="border-t border-border/60 bg-card">
+          {footer}
+        </div>
+      ) : null}
     </div>
   );
 }
