@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { CheckmarkCircle02Icon, Clock01Icon, SecurityCheckIcon, CancelCircleIcon } from '@/lib/icons';
 import { UnicodeSpinner } from '@/components/pm/CodingSession/UnicodeSpinner';
 
@@ -6,6 +7,7 @@ import { CodingPlanPanel } from '@/components/pm/CodingSession/CodingPlanPanel';
 import { CodingPreviewPanels } from '@/components/pm/CodingSession/CodingPreviewPanels';
 import { CodingSessionHeader } from '@/components/pm/CodingSession/CodingSessionHeader';
 import { CodingTranscriptPane } from '@/components/pm/CodingSession/CodingTranscriptPane';
+import { NextAgentHint } from '@/components/agents/NextAgentHint';
 import { collectCodingSessionPreviews } from '@/components/pm/CodingSession/codingSessionPreviews';
 import { buildCodingSessionStreamState } from '@/components/pm/CodingSession/codingSessionStream';
 import {
@@ -15,7 +17,8 @@ import {
   maxPersistedCodingSessionSequence,
   upsertCodingSessionEvents,
 } from '@/components/pm/CodingSession/codingSessionUtils';
-import type { CodingSession, CodingSessionEvent, CodingSessionStreamSnapshot } from '@/lib/pmTypes';
+import type { Agent, CodingSession, CodingSessionEvent, CodingSessionStreamSnapshot } from '@/lib/pmTypes';
+import { agentService } from '@/lib/services/agentService';
 import { codingSessionService } from '@/lib/services/codingSessionService';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -50,6 +53,7 @@ export function CodingSessionSurface({
   const [error, setError] = useState<string | null>(null);
   const [acting, setActing] = useState<string | null>(null);
   const [sendingMessage, setSendingMessage] = useState(false);
+  const [handoffAgents, setHandoffAgents] = useState<Agent[] | null>(null);
   const sequenceRef = useRef(0);
   const seededSnapshotSessionRef = useRef<string | null>(null);
   const [streamSnapshotSeed, setStreamSnapshotSeed] = useState<CodingSessionStreamSnapshot | null>(null);
@@ -285,6 +289,42 @@ export function CodingSessionSurface({
     ? 'This run ended. Type instructions to continue from the previous progress… (⌘↵ to send)'
     : 'Reply to agent… (⌘↵ to send)';
 
+  const canSuggestHandoff = session !== null
+    && session.status === 'completed'
+    && session.target_type === 'task';
+
+  useEffect(() => {
+    if (!canSuggestHandoff || !workspaceId || handoffAgents !== null) return;
+    let cancelled = false;
+    void (async () => {
+      const res = await agentService.list(workspaceId);
+      if (cancelled) return;
+      setHandoffAgents(res.data ?? []);
+    })();
+    return () => { cancelled = true; };
+  }, [canSuggestHandoff, workspaceId, handoffAgents]);
+
+  const handoffCandidates = useMemo(
+    () => (handoffAgents ?? []).filter((agent) => agent.allowed_targets.includes('task')),
+    [handoffAgents],
+  );
+  const completedSessionAgent = useMemo(() => {
+    if (!session || !handoffAgents) return null;
+    return handoffAgents.find((agent) => agent.id === session.agent_id) ?? null;
+  }, [session, handoffAgents]);
+
+  const startHandoffRun = useCallback(async (agent: Agent) => {
+    if (!session) return;
+    const res = await agentService.runTask(workspaceId, session.target_id, { agent_id: agent.id });
+    if (res.error) {
+      toast.error(res.error);
+      return;
+    }
+    if (res.data?.id) {
+      setActiveSessionId(res.data.id);
+    }
+  }, [session, workspaceId]);
+
   return (
     <div className={cn(
       'flex flex-col gap-4',
@@ -301,6 +341,15 @@ export function CodingSessionSurface({
         acting={acting}
         onCancelRun={() => void runAction('cancel', () => codingSessionService.cancel(workspaceId, activeSessionId))}
       />
+
+      {canSuggestHandoff && completedSessionAgent ? (
+        <NextAgentHint
+          completedAgent={completedSessionAgent}
+          candidates={handoffCandidates}
+          onRun={startHandoffRun}
+          density="comfortable"
+        />
+      ) : null}
 
       {error ? (
         <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
