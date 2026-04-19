@@ -109,10 +109,10 @@ type WorkflowConfig struct {
 }
 
 const (
-	defaultWorkflowMaxIterations       = 50
-	plannerWorkflowMaxIterations       = 100
-	defaultWorkflowTimeoutMinutes      = 30
-	defaultWorkflowCommandTimeout      = 2 * time.Minute
+	defaultWorkflowMaxIterations  = 50
+	plannerWorkflowMaxIterations  = 300
+	defaultWorkflowTimeoutMinutes = 30
+	defaultWorkflowCommandTimeout = 2 * time.Minute
 )
 
 // DefaultWorkflowConfig returns sensible defaults.

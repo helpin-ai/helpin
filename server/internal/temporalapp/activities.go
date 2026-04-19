@@ -1175,6 +1175,17 @@ func (a *AgentRunActivities) loadRunArtifactContext(ctx context.Context, state *
 	}
 
 	artifactContext := &workerpkg.ArtifactContext{}
+	if parentRunID := strings.TrimSpace(derefString(state.run.ParentRunID)); parentRunID != "" && a.runRepo != nil {
+		parentRun, err := a.runRepo.GetByID(ctx, state.run.WorkspaceID, parentRunID)
+		if err != nil {
+			return nil, err
+		}
+		parentEntries, err := a.loadParentRunArtifactContext(ctx, parentRun)
+		if err != nil {
+			return nil, err
+		}
+		artifactContext.Entries = append(artifactContext.Entries, parentEntries...)
+	}
 	if a.artifactRepo != nil {
 		artifacts, err := a.artifactRepo.ListByRun(ctx, state.run.WorkspaceID, state.run.ID)
 		if err != nil {
@@ -1206,6 +1217,53 @@ func (a *AgentRunActivities) loadRunArtifactContext(ctx context.Context, state *
 		return nil, nil
 	}
 	return workerpkg.TrimArtifactContext(artifactContext), nil
+}
+
+func (a *AgentRunActivities) loadParentRunArtifactContext(ctx context.Context, parentRun *model.AgentRun) ([]workerpkg.ArtifactContextEntry, error) {
+	if parentRun == nil || a.artifactRepo == nil {
+		return nil, nil
+	}
+
+	artifacts, err := a.artifactRepo.ListByRun(ctx, parentRun.WorkspaceID, parentRun.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	entries := make([]workerpkg.ArtifactContextEntry, 0, 4)
+	if reason := strings.TrimSpace(derefString(parentRun.ErrorMessage)); reason != "" {
+		entries = append(entries, workerpkg.ArtifactContextEntry{
+			Label:        "Previous run failure reason",
+			Source:       "previous_run_error",
+			Status:       strings.TrimSpace(parentRun.Status),
+			Format:       "text",
+			Content:      reason,
+			PreserveFull: true,
+		})
+	}
+	if checkpoint, err := workerpkg.LatestTranscriptSummaryCheckpoint(artifacts); err != nil {
+		return nil, err
+	} else if checkpoint != nil && strings.TrimSpace(checkpoint.Summary) != "" {
+		entries = append(entries, workerpkg.ArtifactContextEntry{
+			Label:   "Previous run transcript summary",
+			Source:  workerpkg.TranscriptSummaryArtifactType,
+			Status:  strings.TrimSpace(parentRun.Status),
+			Format:  "text",
+			Content: strings.TrimSpace(checkpoint.Summary),
+		})
+	}
+
+	parentEntries, err := buildArtifactContextEntries(artifacts)
+	if err != nil {
+		return nil, err
+	}
+	for _, entry := range parentEntries {
+		entry.Label = "Previous run: " + entry.Label
+		if strings.TrimSpace(entry.Status) == "" {
+			entry.Status = strings.TrimSpace(parentRun.Status)
+		}
+		entries = append(entries, entry)
+	}
+	return entries, nil
 }
 
 func buildArtifactContextEntries(artifacts []model.AgentRunArtifact) ([]workerpkg.ArtifactContextEntry, error) {

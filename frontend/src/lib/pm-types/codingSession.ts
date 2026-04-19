@@ -70,6 +70,7 @@ export interface CodingSessionDiff {
 export interface CodingSession {
   id: string;
   run_id: string;
+  parent_run_id?: string;
   workspace_id: string;
   target_type: string;
   target_id: string;
@@ -78,6 +79,7 @@ export interface CodingSession {
   invocation_mode: AgentInvocationMode;
   status: AgentRunStatus;
   pause_reason: AgentRunPauseReason;
+  error_message?: string;
   title: string;
   summary?: string;
   capabilities: CodingSessionCapabilities;

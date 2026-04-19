@@ -7,6 +7,7 @@ import type {
   UpdateAgentRequest,
   AgentModelProviderOption,
   CodexAuthState,
+  ContinueAgentRunRequest,
   CreateWorkspaceAgentPresetVersionRequest,
   ApproveAgentRunRequest,
   HandoffAgentRunRequest,
@@ -59,6 +60,8 @@ export const agentService = {
     automationService.listRunMessages(workspaceId, runId) as ReturnType<typeof automationService.listRunMessages>,
   resumeRun: (workspaceId: string, runId: string, payload: ResumeAgentRunRequest) =>
     automationService.resumeRun(workspaceId, runId, payload) as ReturnType<typeof automationService.resumeRun>,
+  continueRun: (workspaceId: string, runId: string, payload?: ContinueAgentRunRequest) =>
+    automationService.continueRun(workspaceId, runId, payload) as ReturnType<typeof automationService.continueRun>,
   sendRunMessage: (workspaceId: string, runId: string, payload: SendAgentRunMessageRequest) =>
     automationService.sendRunMessage(workspaceId, runId, payload) as ReturnType<typeof automationService.sendRunMessage>,
   listRunArtifacts: (workspaceId: string, runId: string) =>
