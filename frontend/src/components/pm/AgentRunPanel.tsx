@@ -4,6 +4,7 @@ import { BotIcon, Loading01Icon, PlayIcon } from '@/lib/icons';
 import { toast } from 'sonner';
 
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
+import { NextAgentHint } from '@/components/agents/NextAgentHint';
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
 import { AgentRunTable } from '@/components/pm/AgentRunTable';
 import { Button } from '@/components/ui/button';
@@ -127,23 +128,33 @@ export function AgentRunPanel({ taskId, workspaceId, assignedAgentId }: Props) {
     };
   }, [fetchRuns, taskId]);
 
+  const startRun = useCallback(async (agentId: string) => {
+    const res = await agentService.runTask(workspaceId, taskId, { agent_id: agentId });
+    if (res.error) {
+      toast.error(res.error);
+      return;
+    }
+    await fetchRuns();
+    if (res.data?.id) {
+      setRunInUrl(res.data.id);
+    }
+  }, [fetchRuns, setRunInUrl, taskId, workspaceId]);
+
   const handleRunAgent = async () => {
     if (!selectedAgentId) return;
     setTriggering(true);
     try {
-      const res = await agentService.runTask(workspaceId, taskId, { agent_id: selectedAgentId });
-      if (res.error) {
-        toast.error(res.error);
-        return;
-      }
-      await fetchRuns();
-      if (res.data?.id) {
-        setRunInUrl(res.data.id);
-      }
+      await startRun(selectedAgentId);
     } finally {
       setTriggering(false);
     }
   };
+
+  const latestRun = runs[0];
+  const latestCompletedAgent = useMemo(() => {
+    if (!latestRun || latestRun.status !== 'completed') return null;
+    return agents.find((agent) => agent.id === latestRun.agent_id) ?? null;
+  }, [agents, latestRun]);
 
   if (taskRunnableAgents.length === 0 && runs.length === 0 && !loading && !loadingAgents) return null;
 
@@ -196,6 +207,14 @@ export function AgentRunPanel({ taskId, workspaceId, assignedAgentId }: Props) {
             Run
           </Button>
         </div>
+
+        {latestCompletedAgent ? (
+          <NextAgentHint
+            completedAgent={latestCompletedAgent}
+            candidates={taskRunnableAgents}
+            onRun={(agent) => startRun(agent.id)}
+          />
+        ) : null}
 
         <div className="border-t border-border/60">
           <AgentRunTable
