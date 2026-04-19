@@ -27,13 +27,14 @@ func NewEinoExecutor(
 	kind string,
 	modelFactory *EinoModelFactory,
 	webSearch WebSearchClient,
+	exaSearch *ExaSearchClient,
 	runRepo *repository.AgentRunRepository,
 	artifactRepo *repository.AgentRunArtifactRepository,
 ) *EinoExecutor {
 	return &EinoExecutor{
 		kind:         kind,
 		modelFactory: modelFactory,
-		tools:        NewToolRegistry(webSearch),
+		tools:        NewToolRegistry(webSearch, exaSearch),
 		runRepo:      runRepo,
 		artifactRepo: artifactRepo,
 	}
@@ -46,7 +47,7 @@ func (e *EinoExecutor) Kind() string {
 func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) error {
 	config := execCtx.Config
 	if config == nil {
-		config = DefaultWorkflowConfig()
+		config = DefaultWorkflowConfigForAgent(execCtx.Agent)
 	}
 
 	if len(execCtx.ResolvedProfile.Tools) == 0 {
@@ -186,6 +187,8 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 
 	totalTokens := result.Usage.InputTokens + result.Usage.OutputTokens
 	execCtx.LastExecutionResult = result
+	run.InputTokens = result.Usage.InputTokens
+	run.OutputTokens = result.Usage.OutputTokens
 	slog.InfoContext(execCtx.Context, "native runtime execution completed",
 		"workspace_id", execCtx.WorkspaceID,
 		"run_id", execCtx.RunID,
@@ -344,7 +347,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 	}
 
 	if errors.Is(execErr, ErrMaxToolStepsReached) {
-		return ErrMaxToolStepsReached
+		return fmt.Errorf("%w after %d tool-call rounds; start another run to continue", ErrMaxToolStepsReached, config.MaxIterations)
 	}
 	return nil
 }

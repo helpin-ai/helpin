@@ -4,7 +4,7 @@
 
 **Goal:** Build Docs Coverage Loop v1: turn failed support and self-service signals into rule-based docs gaps, article drafts/updates, recurrence measurement, and a weekly digest.
 
-**Architecture:** Add a generic support coverage substrate (`support_resolution_events`, `support_coverage_gaps`, evidence, suggestions, snapshots) while exposing a docs-focused v1 UI under Support. Event emitters are best-effort and must never block the existing support AI, widget, help center, or docs publish flows. Gap pages read from gap/evidence/suggestion/snapshot tables, not from raw event scans.
+**Architecture:** Add a shared lightweight support event ledger (`support_events`) plus Coverage-specific derived tables (`support_coverage_gaps`, evidence, suggestions, snapshots). Docs Coverage v1 is the first consumer of `support_events`; future Support Analytics should reuse the same ledger rather than adding duplicate instrumentation. Event emitters use a best-effort async recorder with a bounded in-process queue, so they must never block the existing support AI, widget, help center, or docs publish flows. Gap pages read from gap/evidence/suggestion/snapshot tables, not from raw event scans.
 
 **Tech Stack:** Go 1.24, Chi, GORM, PostgreSQL/Neon, dbmigrate SQL, React 19, TypeScript, TanStack Router, TanStack Query, shadcn/ui, TipTap JSON docs content.
 
@@ -14,7 +14,7 @@
 
 Ship these together:
 
-- Coverage event ledger
+- Shared lightweight support event ledger
 - Rule-based docs gap detection
 - Gap inbox and detail UI
 - Article draft generation
@@ -32,6 +32,29 @@ Do not ship in v1:
 - Cross-workspace intelligence
 - Autonomous actions
 - Executive heatmap/dashboard
+- Customer-facing Support Analytics UI
+- Cross-module analytics instrumentation
+
+## Shared Event Foundation
+
+Coverage should not own the raw event layer. V1 should create a reusable `support_events` ledger and treat Coverage as the first derived product built on it.
+
+The boundary is:
+
+- `support_events`: append-only raw support/docs/widget/AI lifecycle events in Postgres/Neon, analytics-compatible, not Coverage-specific.
+- Coverage tables: derived product state for gaps, evidence, suggestions, topics, snapshots, and digest delivery.
+- Future Support Analytics: later rollups from `support_events` for volume, AI resolution rate, handoff rate, time to resolution, assignment, and topic trends.
+
+Do not build analytics UI in this release. The only analytics work in v1 is making the event ledger broad enough that Support Analytics does not need a second instrumentation pass later.
+
+Use a two-lane event strategy:
+
+- Operational support intelligence: backend support/docs/widget/AI events go to Postgres `support_events`, then derive Coverage state in Postgres.
+- Product and visitor analytics: generic SDK/widget/browser/server analytics continue through the existing events pipeline (`events.helpin.ai` -> Kafka/sessionization -> ClickHouse).
+
+Do not send Coverage's primary operational events directly to ClickHouse in v1. Do not use Redis as the event source of truth. NATS/Temporal can remain execution primitives for support AI and CRM workflows, but v1 Coverage event persistence should be a bounded async recorder writing compact rows to Postgres.
+
+If local implementation work already introduced `support_resolution_events`, refactor it before applying the migration. If that migration has already been applied in a shared environment, do not edit it in place; add a follow-up dbmigrate SQL file that renames/generalizes the table and indexes to `support_events`.
 
 ## Cross-Checked Existing Integration Points
 
@@ -42,6 +65,10 @@ Do not ship in v1:
 - Public help center search is handled by `DocsHandler.PublicSearchArticles` in `server/internal/handler/docs.go`.
 - Public article feedback is handled by `DocsHandler.PublicSubmitFeedback` and `DocsHelpcenterService.SubmitFeedback*`.
 - Widget article views are served by `SupportInboxWidget.GetHelpArticle`.
+- Existing widget/product analytics already use the SDK/events-pipeline path (`events.helpin.ai`, Kafka/sessionization, ClickHouse). Coverage should not duplicate or replace that path.
+- Redis is currently used for WebSocket relay/presence, AI locks, and delayed email fallback. It should stay ephemeral.
+- NATS JetStream is currently used for support AI request processing. Coverage v1 does not need a new NATS stream before writing events.
+- CRM intelligence stores durable activities, email messages, buyer signals, and summaries in Postgres while using Temporal for async sync/detection/refresh workflows.
 - Docs drafts can be created with `DocsDocumentService.Create` and content saved with `DocsContentService.Save`.
 - Existing article updates must snapshot current content first with `DocsVersionService.CreateSnapshot`, then use `DocsContentService.Save`.
 - Protected support routes use `/api/support/*`, `middleware.RequireWorkspaceID`, support module access, and permissions from `authorization.PermSupportRead/Edit/Admin`.
@@ -52,18 +79,28 @@ Do not ship in v1:
 
 ### Backend Create
 
+- `server/internal/model/support_events.go`
+  - Shared support event model, event constants, and event DTOs.
 - `server/internal/model/support_coverage.go`
-  - Coverage models, constants, DTOs.
+  - Coverage-derived models, constants, DTOs.
+- `server/internal/repository/support_events.go`
+  - Append-only data access for the shared `support_events` ledger.
 - `server/internal/repository/support_coverage.go`
-  - GORM data access for events, topics, gaps, evidence, suggestions, snapshots, article relations.
+  - GORM data access for topics, gaps, evidence, suggestions, snapshots, article relations.
+- `server/internal/repository/support_events_test.go`
+  - Event ledger append-only and query-scope tests.
 - `server/internal/repository/support_coverage_test.go`
-  - Repository lifecycle and dedupe tests.
+  - Coverage repository lifecycle and dedupe tests.
+- `server/internal/service/support_events.go`
+  - Shared support event recording service and v1 dispatch to Coverage.
 - `server/internal/service/support_coverage.go`
-  - Main orchestration service and public methods for APIs/emitters.
+  - Main Coverage orchestration service and public methods for gaps/suggestions/status.
+- `server/internal/service/support_events_recorder.go`
+  - Bounded async best-effort support event recorder used by hot paths.
 - `server/internal/service/support_coverage_rules.go`
   - Deterministic v1 gap rules and dedupe keys.
 - `server/internal/service/support_coverage_drafts.go`
-  - Article draft/update generation and apply workflow.
+  - Article draft/update generation and apply workflow in a separate draft service.
 - `server/internal/service/support_coverage_digest.go`
   - Weekly digest summary and delivery.
 - `server/internal/service/support_coverage_test.go`
@@ -78,13 +115,13 @@ Do not ship in v1:
 ### Backend Modify
 
 - `server/cmd/api/main.go`
-  - AutoMigrate new models, instantiate repositories/services/handler, inject coverage recorder, start weekly digest ticker.
+  - AutoMigrate new models, instantiate repositories/services/handler, inject support event recorder, start weekly digest ticker.
 - `server/internal/router/router.go`
   - Add `SupportCoverage` handler to router aggregate and protected `/api/support/coverage` routes.
 - `server/internal/service/support_ai.go`
-  - Emit coverage events for AI attempt/retrieval/answer/handoff best-effort.
+  - Emit shared support events for AI attempt/retrieval/answer/handoff best-effort.
 - `server/internal/service/support_inbox.go`
-  - Emit conversation resolution events and support docs-issue feedback.
+  - Emit shared support events for conversation creation/status/replies/resolution and support docs-issue feedback.
 - `server/internal/service/support_inbox_widget.go`
   - Emit widget message and self-service article/open events where session context exists.
 - `server/internal/handler/docs.go`
@@ -126,6 +163,8 @@ Do not ship in v1:
   - Add conversation docs-issue feedback method if not kept in coverage service.
 - `frontend/src/hooks/queries/useSupport.ts`
   - Invalidate coverage queries after docs issue feedback and resolution.
+- `frontend/src/components/layout/sidebar/SupportRailNav.tsx`
+  - Add Coverage navigation entry under Support.
 - `frontend/src/components/support/MessageThread.tsx`
   - Add `DocsIssuePrompt` after resolved AI/handoff conversations.
 - `frontend/src/components/support/SupportInboxLayout.tsx`
@@ -140,28 +179,36 @@ Do not ship in v1:
 ## Task 1: Schema, Models, And Migration
 
 **Files:**
+- Create: `server/internal/model/support_events.go`
 - Create: `server/internal/model/support_coverage.go`
 - Create: `server/internal/dbmigrate/sql/202604150003_docs_coverage_loop_v1.sql`
 - Modify: `server/cmd/api/main.go`
+- Test: `server/internal/repository/support_events_test.go`
 - Test: `server/internal/repository/support_coverage_test.go`
 
 - [ ] **Step 1: Define model constants first**
 
-Add constants for event types, gap categories, v1 gap types, failure modes, source signals, statuses, and suggestion types.
+Add shared support event constants in `support_events.go`. Add Coverage-specific gap categories, v1 gap types, failure modes, source signals, statuses, and suggestion types in `support_coverage.go`.
+
+The DB string values must match the PRD taxonomy exactly. Go constant names may use the `SupportEvent...` prefix, but stored values should stay stable and lowercase snake_case because reports, migrations, and future event consumers will depend on them.
 
 Required v1 values:
 
 ```go
 const (
-	SupportCoverageEventCustomerMessageCreated = "customer_message_created"
-	SupportCoverageEventAIAttemptStarted      = "ai_attempt_started"
-	SupportCoverageEventAIRetrievalCompleted  = "ai_retrieval_completed"
-	SupportCoverageEventAIAnswerSent          = "ai_answer_sent"
-	SupportCoverageEventAIHandoffTriggered    = "ai_handoff_triggered"
-	SupportCoverageEventConversationResolved  = "conversation_resolved"
-	SupportCoverageEventWidgetSearchPerformed = "widget_search_performed"
-	SupportCoverageEventWidgetArticleOpened   = "widget_article_opened"
-	SupportCoverageEventArticleFeedback       = "article_feedback_submitted"
+	SupportEventConversationCreated       = "conversation_created"
+	SupportEventCustomerMessageCreated    = "customer_message_created"
+	SupportEventHumanReplySent            = "human_reply_sent"
+	SupportEventConversationStatusChanged = "conversation_status_changed"
+	SupportEventConversationAssigned      = "conversation_assigned"
+	SupportEventAIAttemptStarted          = "ai_attempt_started"
+	SupportEventAIRetrievalCompleted      = "ai_retrieval_completed"
+	SupportEventAIAnswerSent              = "ai_answer_sent"
+	SupportEventAIHandoffTriggered        = "ai_handoff_triggered"
+	SupportEventConversationResolved      = "conversation_resolved"
+	SupportEventWidgetSearchPerformed     = "widget_search_performed"
+	SupportEventWidgetArticleOpened       = "widget_article_opened"
+	SupportEventArticleFeedback           = "article_feedback_submitted"
 )
 
 const (
@@ -188,7 +235,7 @@ const (
 
 Create these models:
 
-- `SupportResolutionEvent`
+- `SupportEvent`
 - `SupportCoverageTopic`
 - `SupportCoverageGap`
 - `SupportGapEvidence`
@@ -202,7 +249,9 @@ Important model details:
 - Use UUID primary keys with `default:gen_random_uuid()`.
 - Use `jsonb` metadata fields as `json.RawMessage`.
 - Store `workspace_id` on every table.
-- Store `issue_key` on event, topic, and gap where available.
+- Store `issue_key` on support event, topic, and gap where available.
+- Store broad event fields on `SupportEvent`: `event_type`, `conversation_id`, `message_id`, `widget_session_id`, `anonymous_id`, `article_id`, `document_id`, `actor_type`, `channel`, `source`, `occurred_at`, and `metadata`.
+- `SupportEvent.TableName()` must be `support_events`. Do not create or keep a `support_resolution_events` model/table for v1.
 - Store `can_answer` and `can_resolve` as nullable strings (`yes`, `no`, `unknown`) or nullable bool-like string fields; do not use plain bool because unknown matters.
 - Store `v1_gap_type` separately from broad `gap_category`.
 - Store `dedupe_key` on gaps with a unique workspace-scoped index.
@@ -218,12 +267,44 @@ Use `CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`, and `CREATE UNIQ
 Minimum required constraints:
 
 ```sql
+CREATE TABLE IF NOT EXISTS support_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id UUID NOT NULL,
+  event_type TEXT NOT NULL,
+  conversation_id UUID,
+  message_id UUID,
+  widget_session_id UUID,
+  anonymous_id TEXT,
+  document_id UUID,
+  article_id UUID,
+  article_public_id TEXT,
+  actor_type TEXT NOT NULL DEFAULT '',
+  channel TEXT NOT NULL DEFAULT '',
+  source TEXT NOT NULL DEFAULT '',
+  issue_key TEXT NOT NULL DEFAULT '',
+  issue_summary TEXT NOT NULL DEFAULT '',
+  failure_mode TEXT NOT NULL DEFAULT '',
+  source_signal TEXT NOT NULL DEFAULT '',
+  can_answer TEXT,
+  can_resolve TEXT,
+  metadata JSONB NOT NULL DEFAULT '{}',
+  occurred_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_support_coverage_gaps_workspace_dedupe
   ON support_coverage_gaps (workspace_id, dedupe_key)
   WHERE status != 'merged';
 
-CREATE INDEX IF NOT EXISTS idx_support_resolution_events_workspace_time
-  ON support_resolution_events (workspace_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_support_events_workspace_time
+  ON support_events (workspace_id, occurred_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_support_events_workspace_type_time
+  ON support_events (workspace_id, event_type, occurred_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_support_events_conversation_time
+  ON support_events (conversation_id, occurred_at DESC)
+  WHERE conversation_id IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_support_coverage_gaps_workspace_status_seen
   ON support_coverage_gaps (workspace_id, status, last_seen_at DESC);
@@ -245,7 +326,7 @@ Do not add cascading deletes from conversations/docs to gaps. Gaps are historica
 Modify `server/cmd/api/main.go` AutoMigrate list near support models:
 
 ```go
-&model.SupportResolutionEvent{},
+&model.SupportEvent{},
 &model.SupportCoverageTopic{},
 &model.SupportCoverageGap{},
 &model.SupportGapEvidence{},
@@ -275,28 +356,31 @@ Expected: tests compile; new repository tests fail until repository is implement
 - [ ] **Step 7: Commit**
 
 ```bash
-git add server/internal/model/support_coverage.go server/internal/dbmigrate/sql/202604150003_docs_coverage_loop_v1.sql server/cmd/api/main.go server/internal/repository/support_coverage_test.go
+git add server/internal/model/support_events.go server/internal/model/support_coverage.go server/internal/dbmigrate/sql/202604150003_docs_coverage_loop_v1.sql server/cmd/api/main.go server/internal/repository/support_events_test.go server/internal/repository/support_coverage_test.go
 git commit -m "feat: add support coverage schema"
 ```
 
 ---
 
-## Task 2: Coverage Repository
+## Task 2: Support Event And Coverage Repositories
 
 **Files:**
+- Create: `server/internal/repository/support_events.go`
 - Create: `server/internal/repository/support_coverage.go`
+- Modify: `server/internal/repository/support_events_test.go`
 - Modify: `server/internal/repository/support_coverage_test.go`
 
 - [ ] **Step 1: Write failing repository tests**
 
 Test these behaviors:
 
-- `CreateEvent` stores append-only event metadata.
+- `SupportEventRepository.Create` stores append-only event metadata in `support_events`.
+- support event queries are always workspace-scoped.
 - `UpsertTopicByIssueKey` returns existing topic for same workspace + issue key.
 - `UpsertGapByDedupeKey` increments `evidence_count`, updates `last_seen_at`, preserves status.
 - `CreateEvidence` links a gap to a conversation/message/search/article event.
 - `CreateSuggestion` links a gap to a proposed fix.
-- `ListGaps` does not read `support_resolution_events`.
+- `ListGaps` does not read `support_events`.
 - `MergeGaps` marks source as `merged` and moves evidence/suggestions/articles to target.
 
 - [ ] **Step 2: Implement repository methods**
@@ -304,7 +388,8 @@ Test these behaviors:
 Required methods:
 
 ```go
-func (r *SupportCoverageRepository) CreateEvent(ctx context.Context, event *model.SupportResolutionEvent) error
+func (r *SupportEventRepository) Create(ctx context.Context, event *model.SupportEvent) error
+func (r *SupportEventRepository) List(ctx context.Context, workspaceID string, filter model.SupportEventFilter) ([]model.SupportEvent, error)
 func (r *SupportCoverageRepository) UpsertTopicByIssueKey(ctx context.Context, workspaceID, issueKey, title string) (*model.SupportCoverageTopic, error)
 func (r *SupportCoverageRepository) UpsertGapByDedupeKey(ctx context.Context, gap *model.SupportCoverageGap) (*model.SupportCoverageGap, bool, error)
 func (r *SupportCoverageRepository) CreateEvidence(ctx context.Context, evidence *model.SupportGapEvidence) error
@@ -324,11 +409,13 @@ func (r *SupportCoverageRepository) MergeGaps(ctx context.Context, workspaceID, 
 
 Every repository method must include `workspace_id` in WHERE clauses except direct internal updates where parent row was already loaded by workspace.
 
+The support event repository must remain generic. Do not add Coverage-specific filters or gap logic to `support_events.go`; Coverage consumes events through service-level rules.
+
 - [ ] **Step 4: Run repository tests**
 
 ```bash
 cd server
-go test ./internal/repository -run SupportCoverage -count=1
+go test ./internal/repository -run 'SupportEvent|SupportCoverage' -count=1
 ```
 
 Expected: PASS.
@@ -336,8 +423,8 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add server/internal/repository/support_coverage.go server/internal/repository/support_coverage_test.go
-git commit -m "feat: add support coverage repository"
+git add server/internal/repository/support_events.go server/internal/repository/support_events_test.go server/internal/repository/support_coverage.go server/internal/repository/support_coverage_test.go
+git commit -m "feat: add support event and coverage repositories"
 ```
 
 ---
@@ -345,6 +432,7 @@ git commit -m "feat: add support coverage repository"
 ## Task 3: Rule-Based Gap Engine
 
 **Files:**
+- Create: `server/internal/service/support_events.go`
 - Create: `server/internal/service/support_coverage.go`
 - Create: `server/internal/service/support_coverage_rules.go`
 - Create: `server/internal/service/support_coverage_test.go`
@@ -360,12 +448,12 @@ Test deterministic v1 rules:
 - Agent docs issue Yes creates/upserts `needs_review` unless retrieval metadata makes it missing/weak.
 - Unknown or missing issue key never creates a high-confidence missing article; use `needs_review`.
 
-- [ ] **Step 2: Define event input DTO**
+- [ ] **Step 2: Define shared support event input DTO**
 
 Add a service input like:
 
 ```go
-type CoverageEventInput struct {
+type SupportEventInput struct {
 	WorkspaceID      string
 	EventType        string
 	ConversationID  *string
@@ -387,9 +475,25 @@ type CoverageEventInput struct {
 }
 ```
 
-- [ ] **Step 3: Implement `RecordEvent` and `RecordEventBestEffort`**
+- [ ] **Step 3: Implement support event recording and Coverage consumption**
 
-`RecordEvent` returns errors for tests/API use. `RecordEventBestEffort` logs and swallows errors for hot paths.
+Implement `SupportEventService.RecordEvent(ctx, input)`:
+
+- validates shared event fields
+- writes one append-only `SupportEvent` row through `SupportEventRepository`
+- passes the persisted event to `SupportCoverageService.ProcessSupportEvent(ctx, event)` for v1 gap derivation
+- returns errors for tests/API use
+
+`RecordEventBestEffort` must enqueue work through `SupportEventAsyncRecorder`, not write directly to the DB from hot paths. Use a bounded channel buffer, default size 250. If the channel is full, drop the event and log a throttled warning with `workspace_id`, `event_type`, and `reason=support_event_queue_full`.
+
+Recorder behavior:
+
+- nil recorder is a no-op
+- nil support event service inside async recorder is a no-op
+- request handlers/services call only `RecordEventBestEffort`, never spawn their own goroutine
+- async worker writes with `context.WithTimeout(context.Background(), 3*time.Second)`
+- copy all needed request data into `SupportEventInput`; do not depend on request context values after enqueue
+- expose `Close(ctx)` or stop channel handling for clean API shutdown if the existing main shutdown path supports it
 
 Do not let coverage writes break:
 
@@ -434,7 +538,7 @@ Do not store entire conversation transcripts in evidence. Store message IDs plus
 
 ```bash
 cd server
-go test ./internal/service -run SupportCoverage -count=1
+go test ./internal/service -run 'SupportEvent|SupportCoverage' -count=1
 ```
 
 Expected: PASS.
@@ -442,40 +546,53 @@ Expected: PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add server/internal/service/support_coverage.go server/internal/service/support_coverage_rules.go server/internal/service/support_coverage_test.go
+git add server/internal/service/support_events.go server/internal/service/support_coverage.go server/internal/service/support_coverage_rules.go server/internal/service/support_coverage_test.go
 git commit -m "feat: add docs coverage gap engine"
 ```
 
 ---
 
-## Task 4: Emit Coverage Events From Existing Flows
+## Task 4: Emit Shared Support Events From Existing Flows
 
 **Files:**
+- Create: `server/internal/service/support_events_recorder.go`
 - Modify: `server/internal/service/support_ai.go`
 - Modify: `server/internal/service/support_inbox.go`
 - Modify: `server/internal/service/support_inbox_widget.go`
 - Modify: `server/internal/handler/docs.go`
 - Modify: `server/internal/service/docs_helpcenter.go`
+- Test: `server/internal/service/support_events_recorder_test.go`
 - Test: `server/internal/service/support_ai_coverage_test.go`
 - Test: `server/internal/service/support_inbox_coverage_test.go`
 - Test: `server/internal/handler/docs_coverage_test.go`
 
-- [ ] **Step 1: Add coverage recorder interfaces**
+- [ ] **Step 1: Add support event recorder interfaces**
 
 Avoid hard dependencies that make tests brittle:
 
 ```go
-type SupportCoverageRecorder interface {
-	RecordEventBestEffort(ctx context.Context, input CoverageEventInput)
+type SupportEventRecorder interface {
+	RecordEventBestEffort(ctx context.Context, input SupportEventInput)
 }
 ```
 
 Add setters:
 
-- `SupportAIService.SetCoverageRecorder(recorder SupportCoverageRecorder)`
-- `SupportInboxService.SetCoverageRecorder(recorder SupportCoverageRecorder)`
-- `DocsHelpcenterService.SetCoverageRecorder(recorder SupportCoverageRecorder)` if needed
+- `SupportAIService.SetSupportEventRecorder(recorder SupportEventRecorder)`
+- `SupportInboxService.SetSupportEventRecorder(recorder SupportEventRecorder)`
+- `DocsHelpcenterService.SetSupportEventRecorder(recorder SupportEventRecorder)` if needed
 - Docs handler may receive service through constructor only if handler-level search/feedback emits are cleaner.
+
+Add small private helpers at each hot-path service, e.g. `recordSupportEvent(ctx, input)`, so all nil checks live in one place:
+
+```go
+if s.supportEventRecorder == nil {
+	return
+}
+s.supportEventRecorder.RecordEventBestEffort(ctx, input)
+```
+
+Do not call the support event repository or coverage repository directly from these existing services.
 
 - [ ] **Step 2: Emit support AI events**
 
@@ -520,7 +637,7 @@ In `DocsHandler.PublicSearchArticles`, after results are loaded, emit `widget_se
 - result count
 - top document IDs/public IDs if available
 
-If no coverage service is available, do nothing.
+If no support event recorder is available, do nothing.
 
 - [ ] **Step 6: Emit article opened events**
 
@@ -534,7 +651,15 @@ In `DocsHandler.PublicSubmitFeedback` and authenticated `SubmitArticleFeedback`,
 
 - [ ] **Step 8: Test non-blocking behavior**
 
-Use fake recorder that returns errors and assert existing service methods still succeed.
+Use a fake recorder that records calls and assert existing service methods still succeed when the recorder is present. Test repository/write failures through `SupportEventAsyncRecorder` by injecting a fake event service whose `RecordEvent` returns an error.
+
+Test the async recorder directly:
+
+- nil recorder/service is no-op
+- full channel drops events rather than blocking
+- enqueue returns quickly when repository write is slow
+- worker calls `RecordEvent` with copied input data
+- write error is logged/swallowed and does not panic
 
 - [ ] **Step 9: Run tests**
 
@@ -548,8 +673,8 @@ Expected: PASS.
 - [ ] **Step 10: Commit**
 
 ```bash
-git add server/internal/service/support_ai.go server/internal/service/support_inbox.go server/internal/service/support_inbox_widget.go server/internal/handler/docs.go server/internal/service/docs_helpcenter.go server/internal/service/*coverage*_test.go server/internal/handler/docs_coverage_test.go
-git commit -m "feat: emit docs coverage events"
+git add server/internal/service/support_events_recorder.go server/internal/service/support_ai.go server/internal/service/support_inbox.go server/internal/service/support_inbox_widget.go server/internal/handler/docs.go server/internal/service/docs_helpcenter.go server/internal/service/*coverage*_test.go server/internal/handler/docs_coverage_test.go
+git commit -m "feat: emit shared support events for coverage"
 ```
 
 ---
@@ -623,24 +748,22 @@ r.Route("/coverage", func(r chi.Router) {
 
 Instantiate:
 
+- `supportEventRepo := repository.NewSupportEventRepository(db)`
 - `supportCoverageRepo := repository.NewSupportCoverageRepository(db)`
-- `supportCoverageService := service.NewSupportCoverageService(supportCoverageRepo, supportConversationRepo, supportMessageRepo, docsDocumentService, docsContentService, docsVersionService, docsSpaceRepo, docsCollectionRepo, docsHelpCenterRepo, llmProvider, emailClient, workspaceRepo, userRepo, appBaseURL)`
-- `handler.NewSupportCoverageHandler(supportCoverageService)`
+- `supportCoverageService := service.NewSupportCoverageService(supportCoverageRepo, supportConversationRepo, supportMessageRepo)`
+- `supportEventService := service.NewSupportEventService(supportEventRepo, supportCoverageService)`
+- `supportCoverageDraftService := service.NewSupportCoverageDraftService(supportCoverageRepo, docsDocumentService, docsContentService, docsVersionService, docsSpaceRepo, docsCollectionRepo, docsHelpCenterRepo, llmProvider)`
+- `supportCoverageDigestService := service.NewSupportCoverageDigestService(supportCoverageRepo, emailClient, workspaceRepo, userRepo, appBaseURL)`
+- `supportEventRecorder := service.NewSupportEventAsyncRecorder(supportEventService, 250)`
+- `handler.NewSupportCoverageHandler(supportCoverageService, supportCoverageDraftService)`
 
 Constructor dependencies should be explicit:
 
-- coverage repository
-- support conversation repository
-- support message repository
-- docs document service
-- docs content service
-- docs version service
-- docs space and collection repositories or services for target validation
-- docs help center repository for article IDs/PublicIDs
-- LLM provider for article draft/update writing
-- email client for digest delivery
-- workspace and user repositories for digest recipients
-- app base URL for digest links
+- event service: support event repository and Coverage service as v1 consumer
+- core coverage service: coverage repository, support conversation repository, support message repository
+- draft service: coverage repository, docs document service, docs content service, docs version service, docs space/collection repositories or services, docs help center repository, LLM provider
+- digest service: coverage repository, email client, workspace/user repositories, app base URL
+- async recorder: support event service plus bounded buffer size
 
 Inject recorder into support AI, support inbox, docs/help center.
 
@@ -680,9 +803,23 @@ git commit -m "feat: add support coverage api"
 - Modify: `server/cmd/api/main.go`
 - Test: `server/internal/service/support_coverage_drafts_test.go`
 
-- [ ] **Step 1: Define generation contract**
+- [ ] **Step 1: Define draft service and generation contract**
 
 Use LLM only for draft/update writing, not gap classification.
+
+Keep draft dependencies out of the core coverage service:
+
+```go
+type SupportCoverageDraftService struct {
+	coverageRepo *repository.SupportCoverageRepository
+	docsDocumentService *DocsDocumentService
+	docsContentService *DocsContentService
+	docsVersionService *DocsVersionService
+	llm llm.Provider
+}
+```
+
+The handler should call this service for draft/update generation and apply endpoints. The core coverage service should continue to own events, gap rules, gap state, and recurrence metadata.
 
 Input evidence:
 
@@ -708,6 +845,8 @@ type CoverageArticleDraft struct {
 - [ ] **Step 2: Generate safe TipTap JSON**
 
 Server should construct TipTap JSON from structured LLM output rather than trusting arbitrary JSON from the model.
+
+If no LLM provider/API key is configured, return a typed service error that the handler maps to 503 and the frontend displays as a retryable error. If an LLM call times out or fails, leave the gap and any existing suggestion unchanged; do not create a half-populated suggestion unless there is a complete preview payload. Use a short timeout so draft generation cannot pin request workers indefinitely.
 
 Request model output as sections:
 
@@ -772,6 +911,8 @@ Test with fake LLM:
 - apply creates draft document and content
 - update apply snapshots existing content before save
 - evidence snippets are included in suggestion metadata
+- missing LLM provider returns retryable 503 and does not mutate suggestions/docs
+- LLM timeout/failure does not create partial suggestions
 - no publish occurs
 
 - [ ] **Step 7: Run tests**
@@ -830,6 +971,8 @@ func (s *SupportCoverageService) RefreshAllWorkspaceSnapshots(ctx context.Contex
 
 Do not scan raw events for page loads. Use the snapshot table for summary metrics.
 
+Add retention cleanup during refresh: keep 90 days of snapshots per workspace and delete older rows after a successful new snapshot. If the retention delete fails, log and continue; snapshot refresh should still be considered successful if the new snapshot was written.
+
 - [ ] **Step 4: Wire periodic snapshot refresh**
 
 In `server/cmd/api/main.go`, add a low-frequency ticker, e.g. hourly, to refresh coverage snapshots for active workspaces.
@@ -843,6 +986,7 @@ Test before/after applied suggestion counts:
 - events before `applied_at` counted as before
 - events after `applied_at` counted as recurrence
 - page summary reads snapshot rows
+- snapshot refresh deletes rows older than the 90-day retention window
 
 - [ ] **Step 6: Run tests**
 
@@ -1026,6 +1170,7 @@ git commit -m "feat: add support coverage frontend api"
 - Create: `frontend/src/components/support/coverage/CreateCoverageDraftDialog.tsx`
 - Create: `frontend/src/components/support/coverage/ArticleUpdateDiff.tsx`
 - Create: `frontend/src/routes/_authenticated/w/$slug/support/coverage.tsx`
+- Modify: `frontend/src/components/layout/sidebar/SupportRailNav.tsx`
 - Test: `frontend/src/components/support/coverage/__tests__/GapInboxTable.test.tsx`
 
 - [ ] **Step 1: Build route**
@@ -1040,7 +1185,15 @@ export const Route = createFileRoute('/_authenticated/w/$slug/support/coverage')
 
 Use existing support parent module access from `/support`.
 
-- [ ] **Step 2: Build summary header**
+- [ ] **Step 2: Add Support sidebar navigation**
+
+Modify `frontend/src/components/layout/sidebar/SupportRailNav.tsx` to add a Coverage entry pointing to `/w/$slug/support/coverage`.
+
+Keep the label short: `Coverage`.
+
+Preserve existing support inbox navigation behavior and active-state handling.
+
+- [ ] **Step 3: Build summary header**
 
 Show:
 
@@ -1051,7 +1204,7 @@ Show:
 
 Use simple numbers and links. Do not build a coverage score.
 
-- [ ] **Step 3: Build gap inbox table**
+- [ ] **Step 4: Build gap inbox table**
 
 Columns:
 
@@ -1065,7 +1218,7 @@ Columns:
 
 Rows open detail panel.
 
-- [ ] **Step 4: Build detail panel**
+- [ ] **Step 5: Build detail panel**
 
 Sections:
 
@@ -1086,7 +1239,7 @@ Actions:
 - reclassify
 - merge
 
-- [ ] **Step 5: Build draft/update dialogs**
+- [ ] **Step 6: Build draft/update dialogs**
 
 Create draft dialog requires user to choose target docs space and optional collection.
 
@@ -1094,7 +1247,7 @@ Update dialog requires a related existing article/document.
 
 Never apply generated content without user clicking Apply.
 
-- [ ] **Step 6: UI tests**
+- [ ] **Step 7: UI tests**
 
 Test:
 
@@ -1103,8 +1256,9 @@ Test:
 - missing article gap shows Create draft
 - weak article gap shows Suggest update
 - ignored status disables draft/update actions
+- support sidebar shows Coverage and marks it active on `/support/coverage`
 
-- [ ] **Step 7: Run frontend checks**
+- [ ] **Step 8: Run frontend checks**
 
 ```bash
 cd frontend
@@ -1269,7 +1423,7 @@ Verify existing flows still work:
 
 Confirm:
 
-- gap list endpoint does not scan `support_resolution_events`
+- gap list endpoint does not scan `support_events`
 - event insert indexes are not overbroad
 - event emitters are best-effort and log only on failure
 - digest cannot send duplicate weekly emails
@@ -1290,7 +1444,7 @@ Only use this final commit if previous task commits were not made. Prefer the sm
 
 - Hide the `/support/coverage` route behind the support module and normal support permissions. No separate feature flag is required unless product wants a staged rollout.
 - If staging data volume is low, seed test gaps through the API or a one-off dev script. Do not add permanent seed data.
-- Keep all event recording best-effort in v1. The product should degrade to "no coverage analytics" rather than breaking support.
+- Keep all event recording best-effort in v1. The product should degrade to "missing coverage data" rather than breaking support.
 - Do not run raw event backfills until v1 is stable. Backfill can be a follow-up if needed.
 
 ## Verification Checklist Before Merge
@@ -1299,7 +1453,7 @@ Only use this final commit if previous task commits were not made. Prefer the sm
 - [ ] New models are included in AutoMigrate.
 - [ ] All new protected routes are workspace-scoped and permission-scoped.
 - [ ] No public endpoint leaks workspace/customer data in event responses.
-- [ ] Coverage event emitters do not return errors to existing support/docs flows.
+- [ ] Support event emitters do not return errors to existing support/docs flows.
 - [ ] Gap inbox reads from gap/evidence/suggestion tables, not raw events.
 - [ ] Article draft/update apply never auto-publishes.
 - [ ] Existing docs slug/PublicID behavior is untouched.

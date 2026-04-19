@@ -29,11 +29,14 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/observability"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/service"
+	"github.com/helpin-ai/helpin/server/internal/storage"
 	syncpkg "github.com/helpin-ai/helpin/server/internal/sync"
 	"github.com/helpin-ai/helpin/server/internal/temporalapp"
 	ws "github.com/helpin-ai/helpin/server/internal/websocket"
 	workerpkg "github.com/helpin-ai/helpin/server/internal/worker"
 )
+
+const temporalWorkerStopTimeout = 10 * time.Minute
 
 func main() {
 	_ = godotenv.Load()
@@ -57,6 +60,15 @@ func main() {
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: parseLogLevel(cfg.LogLevel)}))
 	slog.SetDefault(logger)
+
+	s3Client := storage.NewS3Client(
+		cfg.AWSAccessKeyID,
+		cfg.AWSSecretAccessKey,
+		cfg.AWSBucket,
+		cfg.AWSRegion,
+		cfg.AWSEndpointURL,
+		cfg.AWSPublicBaseURL,
+	)
 
 	db, err := gorm.Open(postgres.New(postgres.Config{
 		DSN:                  cfg.DatabaseURL,
@@ -101,6 +113,7 @@ func main() {
 	runMessageRepo := repository.NewAgentRunMessageRepository(db)
 	agentRepo := repository.NewAgentRepository(db)
 	workspacePresetVersionRepo := repository.NewWorkspaceAgentPresetVersionRepository(db)
+	workspaceSkillRepo := repository.NewWorkspaceSkillRepository(db)
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
 	interactionRepo := repository.NewAgentRunInteractionRepository(db)
 	sessionSnapshotRepo := repository.NewCodingSessionStateSnapshotRepository(db)
@@ -200,6 +213,7 @@ func main() {
 		cfg.OpenRouterAPIKey,
 		cfg.OpenRouterBaseURL,
 		cfg.BraveSearchAPIKey,
+		cfg.ExaSearchAPIKey,
 		runRepo,
 		artifactRepo,
 		codexWorkspaceAuthStore,
@@ -384,7 +398,7 @@ func main() {
 		pmStoryService,
 		pmActivityService,
 		wsPublisher,
-	).SetModelProviderConfig(
+	).SetWorkspaceSkillStore(workspaceSkillRepo, nil).SetModelProviderConfig(
 		cfg.AnthropicAPIKey,
 		cfg.OpenAIAPIKey,
 		cfg.OpenRouterAPIKey,
@@ -440,6 +454,8 @@ func main() {
 		runRepo,
 		runMessageRepo,
 		agentRepo,
+		workspaceSkillRepo,
+		s3Client,
 		artifactRepo,
 		interactionRepo,
 		sessionSnapshotRepo,
@@ -536,6 +552,7 @@ func parseLogLevel(value string) slog.Level {
 func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, activities *temporalapp.AgentRunActivities, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, summaryActivities *temporalapp.CRMSummaryActivities, dealMgmtActivities *temporalapp.DealManagementActivities, scheduleActivities *temporalapp.ScheduledAgentActivities, recurringActivities *service.PMRecurringTemplateActivities, sprintActivities *temporalapp.SprintAutomationActivities, docsEmbeddingActivities *temporalapp.DocsEmbeddingActivities, contentSourceSyncActivities *temporalapp.ContentSourceSyncActivities) tworker.Worker {
 	options := tworker.Options{
 		MaxConcurrentActivityExecutionSize: concurrency,
+		WorkerStopTimeout:                  temporalWorkerStopTimeout,
 	}
 	w := tworker.New(client, taskQueue, options)
 	w.RegisterWorkflow(temporalapp.AgentRunWorkflow)

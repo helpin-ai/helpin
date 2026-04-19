@@ -26,6 +26,7 @@ import { BuyerSignals } from '@/components/crm/BuyerSignals';
 import { EntitySummaryCard } from '@/components/crm/EntitySummaryCard';
 import { EmailTimeline } from '@/components/crm/EmailTimeline';
 import { AssociationsList } from '@/components/crm/AssociationsList';
+import { LinkedTasksPanel } from '@/components/crm/LinkedTasksPanel';
 import { useTitle } from '@/hooks/useTitle';
 import type { UpdateCRMDealRequest } from '@/lib/crmTypes';
 
@@ -222,6 +223,17 @@ export function DealDetailPage({ dealId }: { dealId: string }) {
             <div className="mt-3">
               <EntitySummaryCard workspaceId={wsId} dealId={dealId} />
             </div>
+          </div>
+
+          <Separator className="my-6" />
+
+          {/* Tasks */}
+          <div>
+            <LinkedTasksPanel
+              workspaceId={wsId}
+              workspaceSlug={wsSlug}
+              dealId={dealId}
+            />
           </div>
 
           <Separator className="my-6" />

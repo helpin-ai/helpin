@@ -231,6 +231,11 @@ func buildOpenCodeConfigContent(execCtx *ExecutionContext, modelID, systemPrompt
 	if len(providerConfig) > 0 {
 		config["provider"] = providerConfig
 	}
+	if stagedSkillRoot := strings.TrimSpace(execCtx.StagedRuntimeSkillRoot); stagedSkillRoot != "" {
+		config["skills"] = map[string]any{
+			"paths": []string{stagedSkillRoot},
+		}
+	}
 
 	payload, err := json.Marshal(config)
 	if err != nil {

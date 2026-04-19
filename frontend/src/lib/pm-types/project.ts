@@ -309,6 +309,8 @@ export interface Task {
   blocking_tasks?: TaskDependencyTask[];
   archived: boolean;
   assigned_agent_id?: string;
+  latest_run_id?: string | null;
+  latest_run_status?: string | null;
   template_id?: string;
   recurring_template_id?: string;
   recurring_run_id?: string;
@@ -321,6 +323,7 @@ export interface Task {
   // Enriched by board/list endpoints
   epic_name?: string;
   sprint_name?: string;
+  team_name?: string;
   owner_name?: string;
   state_name?: string;
   state_type?: StateType;
@@ -368,6 +371,8 @@ export interface AssociationObjectSummary {
   display_id?: string;
   task_key?: string;
   title: string;
+  inferred?: boolean;
+  context_label?: string;
   status?: string;
   workflow_state_id?: string;
   completed?: boolean;
@@ -1055,6 +1060,7 @@ export interface CreateCommentRequest {
 
 export interface UpdateCommentRequest {
   body: string;
+  attachment_ids?: string[];
 }
 
 // Task is now the canonical type, Story is an alias (defined above)

@@ -24,6 +24,7 @@ import type {
   ReorderDocsSpacesRequest,
   ReorderDocsCollectionsRequest,
   ReorderDocsDocumentsRequest,
+  ReorderDocsChildrenRequest,
 } from '@/lib/docsTypes'
 
 // ── Spaces ──────────────────────────────────────────────────────────────────
@@ -147,6 +148,22 @@ export function useUpdateDocsCollection(wsId: string) {
     onSuccess: (_, { spaceId }) => {
       invalidateDocsCollectionTree(qc, wsId, spaceId)
     },
+  })
+}
+
+export function useDocsCollectionDeleteImpact(wsId: string, collectionId?: string | null) {
+  return useQuery({
+    queryKey: queryKeys.docs.collectionDeleteImpact(wsId, collectionId ?? ''),
+    queryFn: async () => unwrap(await docsService.getCollectionDeleteImpact(wsId, collectionId ?? '')),
+    enabled: !!wsId && !!collectionId,
+  })
+}
+
+export function useDocsSpaceDeleteImpact(wsId: string, spaceId?: string | null) {
+  return useQuery({
+    queryKey: queryKeys.docs.spaceDeleteImpact(wsId, spaceId ?? ''),
+    queryFn: async () => unwrap(await docsService.getSpaceDeleteImpact(wsId, spaceId ?? '')),
+    enabled: !!wsId && !!spaceId,
   })
 }
 
@@ -821,6 +838,24 @@ export function useReorderDocsDocuments(wsId: string) {
     mutationFn: async ({ spaceId, data }: { spaceId: string; data: ReorderDocsDocumentsRequest }) =>
       unwrap(await docsService.reorderDocuments(wsId, spaceId, data)),
     onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.docs.documents(wsId) }) },
+  })
+}
+
+/**
+ * useReorderDocsChildren persists a cross-type reorder: articles and
+ * sub-collections sharing the same parent are assigned positions
+ * sequentially in one server transaction. This is what makes "drag an
+ * article between two sub-collections" actually stick.
+ */
+export function useReorderDocsChildren(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ spaceId, data }: { spaceId: string; data: ReorderDocsChildrenRequest }) =>
+      unwrap(await docsService.reorderChildren(wsId, spaceId, data)),
+    onSuccess: (_, { spaceId }) => {
+      invalidateDocsCollectionTree(qc, wsId, spaceId)
+      qc.invalidateQueries({ queryKey: queryKeys.docs.documents(wsId) })
+    },
   })
 }
 

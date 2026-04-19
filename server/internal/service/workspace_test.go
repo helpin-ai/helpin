@@ -28,7 +28,7 @@ func createDeleteStubTables(t *testing.T, db *gorm.DB) {
 		`CREATE TABLE IF NOT EXISTS story_git_links (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS git_integrations (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS agent_run_artifacts (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
-		`CREATE TABLE IF NOT EXISTS agent_runs (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS agent_runs (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0)`,
 		`CREATE TABLE IF NOT EXISTS agents (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS agent_handoffs (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS workspace_key_history (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
@@ -81,6 +81,7 @@ func newWorkspaceDefaultsTestHarness(t *testing.T) (*gorm.DB, *WorkspaceService,
 			model TEXT,
 			execution_config BLOB NOT NULL DEFAULT x'7b7d',
 			system_prompt TEXT,
+			instruction_template_version TEXT NOT NULL DEFAULT '',
 			planning_notes TEXT,
 			monthly_token_budget INTEGER,
 			tokens_used_this_month INTEGER NOT NULL DEFAULT 0,
@@ -267,8 +268,10 @@ func TestWorkspaceService_Create_SeedsSystemPresetAgents(t *testing.T) {
 	if planner.Name != defaultSystemEpicPlannerName {
 		t.Fatalf("name = %q, want %q", planner.Name, defaultSystemEpicPlannerName)
 	}
-	if planner.SystemPrompt == nil || *planner.SystemPrompt == "" {
-		t.Fatal("expected seeded planner to persist a system prompt")
+	// Managed system agents store SystemPrompt as nil; it's materialized on read via materializeAgentSystemPrompt.
+	// Verify the instruction template version is set, indicating the prompt is managed.
+	if planner.InstructionTemplateVersion == "" {
+		t.Fatal("expected seeded planner to have an instruction template version")
 	}
 	if planner.DefaultInvocationMode != model.InvocationModeInteractive {
 		t.Fatalf("default_invocation_mode = %q, want %q", planner.DefaultInvocationMode, model.InvocationModeInteractive)

@@ -12,16 +12,22 @@ type ToolRegistry struct {
 	tools     map[string]ToolFunc
 	defs      []ToolDefinition
 	webSearch WebSearchClient
+	exaSearch *ExaSearchClient
 }
 
 // ToolFunc is a function that executes a tool and returns its result.
 type ToolFunc func(ctx *ExecutionContext, input json.RawMessage) (string, error)
 
 // NewToolRegistry creates a registry with all built-in tools.
-func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
+func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *ToolRegistry {
+	var exaClient *ExaSearchClient
+	if len(exaSearch) > 0 {
+		exaClient = exaSearch[0]
+	}
 	r := &ToolRegistry{
 		tools:     make(map[string]ToolFunc),
 		webSearch: webSearch,
+		exaSearch: exaClient,
 	}
 
 	// Filesystem tools
@@ -256,32 +262,13 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 	}, toolRunCommand)
 
 	if webSearch != nil {
-		r.register("web_search_brave", "Search the public web with Brave Search. Use this for market context, standards, competitors, and external evidence. Returns normalized JSON results.", map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"query": map[string]interface{}{
-					"type":        "string",
-					"description": "Search query to run",
-				},
-				"count": map[string]interface{}{
-					"type":        "integer",
-					"description": "Maximum number of results to return (default 5, max 10)",
-				},
-				"freshness": map[string]interface{}{
-					"type":        "string",
-					"description": "Optional freshness hint such as pd, pw, pm, or py",
-				},
-				"domain_allowlist": map[string]interface{}{
-					"type":        "array",
-					"description": "Optional list of domains to prioritize",
-					"items": map[string]interface{}{
-						"type": "string",
-					},
-				},
-			},
-			"required": []string{"query"},
-		}, func(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+		r.register("web_search_brave", webSearchBraveToolDescription(), webSearchBraveToolSchema(), func(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 			return r.toolWebSearchBrave(ctx, input)
+		})
+	}
+	if r.exaSearch != nil {
+		r.register("web_search_exa", webSearchExaToolDescription(), webSearchExaToolSchema(), func(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+			return r.toolWebSearchExa(ctx, input)
 		})
 	}
 

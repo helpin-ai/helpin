@@ -4,12 +4,14 @@ import { Tick01Icon, ArrowUpDownIcon, PlusSignIcon } from '@/lib/icons';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useOrganizationStore } from '@/stores/organizationStore';
 import { useWorkspaces, useOrganizations } from '@/hooks/queries';
+import { useSupportUnreadByWorkspace } from '@/hooks/queries/useSupport';
 import type { Workspace } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { Favicon } from '@/components/ui/favicon';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 function workspaceRouteFromCurrentPath(pathname: string, slug: string): string {
   const match = pathname.match(/^\/w\/[^/]+\/?(.*)$/);
@@ -25,6 +27,22 @@ export function WorkspaceSwitcher() {
   const currentOrganization = useOrganizationStore((s) => s.currentOrganization);
   const { data: allWorkspaces = [] } = useWorkspaces(); // Fetch all workspaces across orgs
   const { data: organizations = [] } = useOrganizations();
+  const { data: supportUnread = [] } = useSupportUnreadByWorkspace();
+  const unreadByWorkspace = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const entry of supportUnread) {
+      map.set(entry.workspace_id, entry.unread_count);
+    }
+    return map;
+  }, [supportUnread]);
+  const otherWorkspaceUnread = useMemo(() => {
+    if (!currentWorkspace) return 0;
+    let total = 0;
+    for (const [wsId, count] of unreadByWorkspace.entries()) {
+      if (wsId !== currentWorkspace.id) total += count;
+    }
+    return total;
+  }, [unreadByWorkspace, currentWorkspace]);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
 
@@ -84,7 +102,22 @@ export function WorkspaceSwitcher() {
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-semibold">{currentWorkspace.name}</span>
               </div>
-              <ArrowUpDownIcon className="ml-auto h-3.5 w-3.5 text-muted-foreground" />
+              {otherWorkspaceUnread > 0 && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      className="ml-auto inline-flex h-[15px] min-w-[15px] items-center justify-center rounded-full bg-red-500 px-[3px] text-[9px] font-semibold leading-none text-white"
+                      aria-label={`${otherWorkspaceUnread} unread conversations in other workspaces`}
+                    >
+                      {otherWorkspaceUnread > 99 ? '99+' : otherWorkspaceUnread}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" className="text-xs">
+                    {otherWorkspaceUnread} unread conversation{otherWorkspaceUnread === 1 ? '' : 's'} in other workspaces
+                  </TooltipContent>
+                </Tooltip>
+              )}
+              <ArrowUpDownIcon className={`${otherWorkspaceUnread > 0 ? 'ml-1' : 'ml-auto'} h-3.5 w-3.5 text-muted-foreground`} />
             </SidebarMenuButton>
           </PopoverTrigger>
           <PopoverContent
@@ -114,6 +147,7 @@ export function WorkspaceSwitcher() {
                     )}
                     {group.workspaces.map((workspace) => {
                       const isActive = workspace.id === currentWorkspace.id;
+                      const unread = unreadByWorkspace.get(workspace.id) ?? 0;
                       return (
                         <button
                           key={workspace.id}
@@ -135,7 +169,24 @@ export function WorkspaceSwitcher() {
                             />
                             <span className="truncate">{workspace.name}</span>
                           </div>
-                          {isActive && <Tick01Icon className="h-4 w-4 text-green-500" />}
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            {unread > 0 && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span
+                                    className="inline-flex h-[15px] min-w-[15px] items-center justify-center rounded-full bg-red-500 px-[3px] text-[9px] font-semibold leading-none text-white"
+                                    aria-label={`${unread} unread conversations`}
+                                  >
+                                    {unread > 99 ? '99+' : unread}
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="text-xs">
+                                  {unread} unread conversation{unread === 1 ? '' : 's'}
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
+                            {isActive && <Tick01Icon className="h-4 w-4 text-green-500" />}
+                          </div>
                         </button>
                       );
                     })}

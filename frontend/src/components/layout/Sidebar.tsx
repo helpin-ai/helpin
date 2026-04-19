@@ -30,6 +30,7 @@ import { SidebarCreateBar } from './sidebar/SidebarCreateBar';
 import { SidebarRail } from './sidebar/SidebarRail';
 import { SettingsRailNav } from './sidebar/SettingsRailNav';
 import { StandardRailNav } from './sidebar/StandardRailNav';
+import { CrmRailNav } from './sidebar/CrmRailNav';
 import { SupportRailNav } from './sidebar/SupportRailNav';
 
 export function Sidebar() {
@@ -300,6 +301,14 @@ export function Sidebar() {
                 toggleGroup={toggleSettingsGroup}
                 onNavigate={(link) => handleNavigate(link)}
               />
+            ) : activeRail === 'crm' ? (
+              <CrmRailNav
+                groups={currentNavGroups}
+                isActive={isActive}
+                wsSlug={wsSlug}
+                onNavigate={(link) => handleNavigate(link)}
+                onNavigateTo={(to) => navigate({ to })}
+              />
             ) : (
               <StandardRailNav
                 groups={currentNavGroups}
@@ -316,9 +325,20 @@ export function Sidebar() {
                 selectedMailboxId={selectedMailboxId}
                 canManageSettings={canManageSettings}
                 wsSlug={wsSlug}
-                onNavFilterChange={setNavFilter}
-                onMailboxSelect={setSelectedMailboxId}
-                onCreateMailbox={() => setTeamInboxDialogOpen(true)}
+                pathname={location.pathname}
+                onNavFilterChange={(filter) => {
+                  setNavFilter(filter);
+                  if (!location.pathname.startsWith(`/w/${wsSlug}/support/inbox`)) {
+                    navigate({ to: `/w/${wsSlug}/support/inbox` });
+                  }
+                }}
+                onMailboxSelect={(id) => {
+                  setSelectedMailboxId(id);
+                  if (!location.pathname.startsWith(`/w/${wsSlug}/support/inbox`)) {
+                    navigate({ to: `/w/${wsSlug}/support/inbox` });
+                  }
+                }}
+                onCreateMailbox={() => { setEditMailboxId(null); setTeamInboxDialogOpen(true); }}
                 onEditMailbox={(id) => { setEditMailboxId(id); setTeamInboxDialogOpen(true); }}
                 onArchiveMailbox={(id) => archiveMailbox.mutate(id)}
                 onNavigate={(to) => navigate({ to })}

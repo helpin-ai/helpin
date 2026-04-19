@@ -22,10 +22,10 @@ const (
 // ─── V1 gap types (docs-focused, exposed in UI) ───────────────────────────
 
 const (
-	SupportCoverageV1GapMissingArticle              = "missing_article"
-	SupportCoverageV1GapWeakArticle                 = "weak_article"
+	SupportCoverageV1GapMissingArticle               = "missing_article"
+	SupportCoverageV1GapWeakArticle                  = "weak_article"
 	SupportCoverageV1GapOutdatedOrConflictingArticle = "outdated_or_conflicting_article"
-	SupportCoverageV1GapNeedsReview                 = "needs_review"
+	SupportCoverageV1GapNeedsReview                  = "needs_review"
 )
 
 // ─── Failure modes ─────────────────────────────────────────────────────────
@@ -45,12 +45,13 @@ const (
 // ─── Source signals ────────────────────────────────────────────────────────
 
 const (
-	SupportCoverageSourceAIHandoff       = "ai_handoff"
-	SupportCoverageSourceSelfService     = "self_service_search"
-	SupportCoverageSourceArticleFeedback = "article_feedback"
-	SupportCoverageSourceAgentFeedback   = "agent_feedback"
-	SupportCoverageSourceHumanReply      = "human_reply"
-	SupportCoverageSourceRecurrence      = "recurrence"
+	SupportCoverageSourceAIHandoff                   = "ai_handoff"
+	SupportCoverageSourceSelfService                 = "self_service_search"
+	SupportCoverageSourceArticleFeedback             = "article_feedback"
+	SupportCoverageSourceAgentFeedback               = "agent_feedback"
+	SupportCoverageSourceHumanReply                  = "human_reply"
+	SupportCoverageSourceRecurrence                  = "recurrence"
+	SupportCoverageSourceConversationResolvedByHuman = "conversation_resolved_by_human"
 )
 
 // ─── Gap statuses ──────────────────────────────────────────────────────────
@@ -106,26 +107,29 @@ func (SupportCoverageTopic) TableName() string { return "support_coverage_topics
 // SupportCoverageGap represents a durable blocker preventing
 // autonomous resolution. V1 exposes only docs-related gap types.
 type SupportCoverageGap struct {
-	ID            string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID   string          `json:"workspace_id" gorm:"type:uuid;not null;index:idx_support_coverage_gaps_workspace_status_seen,priority:1"`
-	TopicID       *string         `json:"topic_id" gorm:"type:uuid"`
-	DedupeKey     string          `json:"dedupe_key" gorm:"not null"`
-	GapCategory   string          `json:"gap_category" gorm:"not null;default:'unknown'"`
-	V1GapType     string          `json:"v1_gap_type" gorm:"not null;default:'needs_review'"`
-	Title         string          `json:"title" gorm:"not null;default:''"`
-	IssueKey      string          `json:"issue_key" gorm:"not null;default:''"`
-	Status        string          `json:"status" gorm:"not null;default:'open';index:idx_support_coverage_gaps_workspace_status_seen,priority:2"`
-	Confidence    float64         `json:"confidence" gorm:"not null;default:0"`
-	EvidenceCount int             `json:"evidence_count" gorm:"not null;default:0"`
-	FailureMode   string          `json:"failure_mode" gorm:"not null;default:''"`
-	SourceSignal  string          `json:"source_signal" gorm:"not null;default:''"`
-	CanAnswer     *string         `json:"can_answer"`
-	CanResolve    *string         `json:"can_resolve"`
-	Metadata      json.RawMessage `json:"metadata" gorm:"type:jsonb;not null;default:'{}'"`
-	FirstSeenAt   time.Time       `json:"first_seen_at" gorm:"not null"`
-	LastSeenAt    time.Time       `json:"last_seen_at" gorm:"not null;index:idx_support_coverage_gaps_workspace_status_seen,priority:3,sort:desc"`
-	CreatedAt     time.Time       `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt     time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
+	ID              string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID     string          `json:"workspace_id" gorm:"type:uuid;not null;index:idx_support_coverage_gaps_workspace_status_seen,priority:1"`
+	TopicID         *string         `json:"topic_id" gorm:"type:uuid"`
+	DedupeKey       string          `json:"dedupe_key" gorm:"not null"`
+	GapCategory     string          `json:"gap_category" gorm:"not null;default:'unknown'"`
+	V1GapType       string          `json:"v1_gap_type" gorm:"not null;default:'needs_review'"`
+	Title           string          `json:"title" gorm:"not null;default:''"`
+	IssueKey        string          `json:"issue_key" gorm:"not null;default:''"`
+	Status          string          `json:"status" gorm:"not null;default:'open';index:idx_support_coverage_gaps_workspace_status_seen,priority:2"`
+	Confidence      float64         `json:"confidence" gorm:"not null;default:0"`
+	EvidenceCount   int             `json:"evidence_count" gorm:"not null;default:0"`
+	FailureMode     string          `json:"failure_mode" gorm:"not null;default:''"`
+	SourceSignal    string          `json:"source_signal" gorm:"not null;default:''"`
+	CanAnswer       *string         `json:"can_answer"`
+	CanResolve      *string         `json:"can_resolve"`
+	Metadata        json.RawMessage `json:"metadata" gorm:"type:jsonb;not null;default:'{}'"`
+	FirstSeenAt     time.Time       `json:"first_seen_at" gorm:"not null"`
+	LastSeenAt      time.Time       `json:"last_seen_at" gorm:"not null;index:idx_support_coverage_gaps_workspace_status_seen,priority:3,sort:desc"`
+	StatusChangedBy *string         `json:"status_changed_by" gorm:"type:uuid"`
+	StatusChangedAt *time.Time      `json:"status_changed_at"`
+	IssueResolved   *bool           `json:"issue_resolved"`
+	CreatedAt       time.Time       `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt       time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (SupportCoverageGap) TableName() string { return "support_coverage_gaps" }
@@ -176,11 +180,12 @@ func (SupportGapSuggestion) TableName() string { return "support_gap_suggestions
 // SupportCoverageGapArticle links a gap to a related existing
 // docs article (N:N relationship).
 type SupportCoverageGapArticle struct {
-	ID          string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	GapID       string    `json:"gap_id" gorm:"type:uuid;not null"`
-	DocumentID  string    `json:"document_id" gorm:"type:uuid;not null"`
-	WorkspaceID string    `json:"workspace_id" gorm:"type:uuid;not null"`
-	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime"`
+	ID           string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	GapID        string    `json:"gap_id" gorm:"type:uuid;not null"`
+	DocumentID   string    `json:"document_id" gorm:"type:uuid;not null"`
+	WorkspaceID  string    `json:"workspace_id" gorm:"type:uuid;not null"`
+	ArticleTitle string    `json:"article_title" gorm:"-"`
+	CreatedAt    time.Time `json:"created_at" gorm:"autoCreateTime"`
 }
 
 func (SupportCoverageGapArticle) TableName() string { return "support_coverage_gap_articles" }
@@ -228,8 +233,8 @@ type SupportCoverageGapFilter struct {
 // SupportCoverageGapListItem is a row in the gap inbox table.
 type SupportCoverageGapListItem struct {
 	SupportCoverageGap
-	TopicTitle      string  `json:"topic_title"`
-	SuggestionCount int     `json:"suggestion_count"`
+	TopicTitle       string  `json:"topic_title"`
+	SuggestionCount  int     `json:"suggestion_count"`
 	RelatedArticleID *string `json:"related_article_id"`
 }
 
@@ -237,10 +242,11 @@ type SupportCoverageGapListItem struct {
 // and suggestions.
 type SupportCoverageGapDetail struct {
 	SupportCoverageGap
-	TopicTitle      string                      `json:"topic_title"`
-	Evidence        []SupportGapEvidence        `json:"evidence"`
-	Suggestions     []SupportGapSuggestion      `json:"suggestions"`
-	RelatedArticles []SupportCoverageGapArticle `json:"related_articles"`
+	TopicTitle          string                      `json:"topic_title"`
+	StatusChangedByName string                      `json:"status_changed_by_name"`
+	Evidence            []SupportGapEvidence        `json:"evidence"`
+	Suggestions         []SupportGapSuggestion      `json:"suggestions"`
+	RelatedArticles     []SupportCoverageGapArticle `json:"related_articles"`
 }
 
 // SupportConversationCoverageState tells the frontend whether

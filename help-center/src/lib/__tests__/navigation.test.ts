@@ -23,7 +23,8 @@ function makeNavItem(
     icon: null,
     parent_collection_id: parent,
     depth,
-    articles: articles.map((a) => ({ ...a, published_at: null })),
+    position: 0,
+    articles: articles.map((a, index) => ({ ...a, position: index, published_at: null })),
   }
 }
 

@@ -7,7 +7,6 @@ import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
 import { AgentRunTable } from '@/components/pm/AgentRunTable';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -15,7 +14,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
 import { agentService } from '@/lib/services/agentService';
 import type { Agent, AgentRun } from '@/lib/pmTypes';
 
@@ -151,19 +149,27 @@ export function AgentRunPanel({ taskId, workspaceId, assignedAgentId }: Props) {
 
   return (
     <div className="mt-6">
-      <div className="mb-3 space-y-2">
-        {runs.length > 0 && (
-          <div className="flex items-center gap-1.5">
-            <BotIcon className="h-3.5 w-3.5 text-muted-foreground" />
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Agent Runs</h3>
-          </div>
-        )}
+      <div className="overflow-hidden rounded-md border border-border/60 bg-card">
+        <div className="flex items-center gap-2 px-3 py-2">
+          <BotIcon className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Agent Runs
+          </span>
+          {runs.length > 0 && (
+            <span className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-border/60 bg-muted px-1.5 text-[11px] font-medium text-muted-foreground">
+              {runs.length}
+            </span>
+          )}
+        </div>
 
-        <div className="flex items-end gap-2">
-          <div className="min-w-0 flex-1 space-y-1">
-            <Label className="text-[11px] text-muted-foreground">Start with</Label>
-            <Select value={selectedAgentId || '__none__'} onValueChange={(value) => setSelectedAgentId(value === '__none__' ? '' : value)}>
-              <SelectTrigger className="h-7 text-xs">
+        <div className="flex items-center justify-between gap-2 border-t border-border/60 px-3 py-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="shrink-0 text-xs text-muted-foreground">Start with</span>
+            <Select
+              value={selectedAgentId || '__none__'}
+              onValueChange={(value) => setSelectedAgentId(value === '__none__' ? '' : value)}
+            >
+              <SelectTrigger size="sm" className="h-7 w-auto min-w-0 gap-1.5 text-xs">
                 <SelectValue placeholder={loadingAgents ? 'Loading agents...' : 'Select agent'} />
               </SelectTrigger>
               <SelectContent>
@@ -190,16 +196,16 @@ export function AgentRunPanel({ taskId, workspaceId, assignedAgentId }: Props) {
             Run
           </Button>
         </div>
-      </div>
 
-      <div className="overflow-hidden rounded-md border border-border/60">
-        <AgentRunTable
-          runs={runs}
-          agents={agents}
-          selectedRunId={selectedRunId}
-          onSelectRun={(run) => setRunInUrl(run.id)}
-          loading={loading}
-        />
+        <div className="border-t border-border/60">
+          <AgentRunTable
+            runs={runs}
+            agents={agents}
+            selectedRunId={selectedRunId}
+            onSelectRun={(run) => setRunInUrl(run.id)}
+            loading={loading}
+          />
+        </div>
       </div>
 
       <CodingSessionDrawer
@@ -210,8 +216,6 @@ export function AgentRunPanel({ taskId, workspaceId, assignedAgentId }: Props) {
         }}
         title="Task Agent Run"
       />
-
-      <Separator className="mt-4" />
     </div>
   );
 }

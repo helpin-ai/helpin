@@ -201,6 +201,11 @@ func (h *codexSessionHost) prepareSession(existing *codexSessionState) (*codexPr
 	if err := os.WriteFile(filepath.Join(codexHome, "config.toml"), []byte(configContent), 0o600); err != nil {
 		return nil, fmt.Errorf("write codex config.toml: %w", err)
 	}
+	if stagedRoot := strings.TrimSpace(h.execCtx.StagedRuntimeSkillRoot); stagedRoot != "" {
+		if err := SyncRuntimeSkillRoot(stagedRoot, filepath.Join(codexHome, "skills", "helpin")); err != nil {
+			return nil, fmt.Errorf("sync staged codex skills: %w", err)
+		}
+	}
 	if err := h.executor.restoreWorkspaceAuth(h.execCtx.Context, h.run.WorkspaceID, profile.Provider, profile.AuthMode, codexHome); err != nil {
 		return nil, err
 	}

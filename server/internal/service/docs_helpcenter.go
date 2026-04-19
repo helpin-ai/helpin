@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/helpin-ai/helpin/server/internal/cache"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/storage"
@@ -32,6 +33,7 @@ type DocsHelpcenterService struct {
 	s3Client        *storage.S3Client
 	translationSvc  *DocsHelpcenterTranslationService
 	wsPublisher     *websocket.Publisher
+	hcCache         cache.Cache
 }
 
 // NewDocsHelpcenterService creates a new DocsHelpcenterService.
@@ -161,6 +163,7 @@ func (s *DocsHelpcenterService) UpsertConfig(ctx context.Context, workspaceID st
 	config, err := s.hcRepo.UpsertConfig(ctx, workspaceID, updates)
 	if err == nil && config != nil {
 		publishWorkspaceEvent(s.wsPublisher, "updated", "docs_helpcenter_config", workspaceID, workspaceID, "")
+		s.InvalidateHelpcenterCacheForWorkspace(ctx, workspaceID)
 	}
 	return config, err
 }
@@ -264,6 +267,7 @@ func (s *DocsHelpcenterService) PublishExternally(ctx context.Context, documentI
 		}
 	}
 	publishWorkspaceEvent(s.wsPublisher, "updated", "docs_document", documentID, doc.WorkspaceID, "")
+	s.InvalidateHelpcenterCacheForWorkspace(ctx, doc.WorkspaceID)
 	return nil
 }
 
@@ -306,6 +310,7 @@ func (s *DocsHelpcenterService) UpdateArticleSlug(ctx context.Context, workspace
 		return err
 	}
 	publishWorkspaceEvent(s.wsPublisher, "updated", "docs_document", documentID, workspaceID, "")
+	s.InvalidateHelpcenterCacheForWorkspace(ctx, workspaceID)
 	return nil
 }
 
@@ -332,6 +337,7 @@ func (s *DocsHelpcenterService) UnpublishExternally(ctx context.Context, documen
 	}
 	if doc != nil {
 		publishWorkspaceEvent(s.wsPublisher, "updated", "docs_document", documentID, doc.WorkspaceID, "")
+		s.InvalidateHelpcenterCacheForWorkspace(ctx, doc.WorkspaceID)
 	}
 	return nil
 }
@@ -1289,8 +1295,10 @@ func (s *DocsHelpcenterService) ListPublicSpaces(ctx context.Context, workspaceI
 	return result, nil
 }
 
-// GetSpaceNavigation returns the sidebar navigation tree for a space.
-func (s *DocsHelpcenterService) GetSpaceNavigation(ctx context.Context, workspaceID, requestedLocale, spaceSlug string) ([]model.PublicNavCollection, error) {
+// getSpaceNavigationUncached is the uncached implementation of GetSpaceNavigation.
+// The exported GetSpaceNavigation in docs_helpcenter_cache.go wraps this with
+// a cache-aside layer when the service has been configured with a cache.
+func (s *DocsHelpcenterService) getSpaceNavigationUncached(ctx context.Context, workspaceID, requestedLocale, spaceSlug string) ([]model.PublicNavCollection, error) {
 	cfg, defaultLocale, err := s.getPublicLocaleConfig(ctx, workspaceID)
 	if err != nil {
 		return nil, err
@@ -1376,6 +1384,7 @@ func (s *DocsHelpcenterService) GetSpaceNavigation(ctx context.Context, workspac
 			Title:       translation.Title,
 			Slug:        stringValue(translation.Slug),
 			PublicID:    publicIDs[doc.ID],
+			Position:    doc.Position,
 			PublishedAt: formatPublicPublishedAt(translation.PublishedAt),
 		}
 		if doc.CollectionID == nil {
@@ -1446,6 +1455,7 @@ func (s *DocsHelpcenterService) GetSpaceNavigation(ctx context.Context, workspac
 			Icon:               collection.Icon,
 			ParentCollectionID: collection.ParentCollectionID,
 			Depth:              collection.Depth,
+			Position:           collection.Position,
 			Articles:           articles,
 		})
 	}

@@ -156,14 +156,25 @@ func (e *CodexExecutor) persistWorkspaceAuth(ctx context.Context, workspaceID, p
 func (e *CodexExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) error {
 	config := execCtx.Config
 	if config == nil {
-		config = DefaultWorkflowConfig()
+		config = DefaultWorkflowConfigForAgent(execCtx.Agent)
 	}
 	timeout := time.Duration(config.TimeoutMinutes) * time.Minute
 	ctx, cancel := context.WithTimeout(execCtx.Context, timeout)
 	defer cancel()
 	runExecCtx := cloneExecutionContext(execCtx, ctx)
 
-	systemPrompt := BuildSystemPrompt(execCtx.Agent, execCtx.Task, execCtx.Epic, execCtx.Conversation, execCtx.PlanningStage, execCtx.PlanningMethodology, config)
+	includeInlineSkills := strings.TrimSpace(execCtx.StagedRuntimeSkillRoot) == ""
+	systemPrompt := BuildRuntimeSystemPrompt(
+		execCtx.Agent,
+		execCtx.Task,
+		execCtx.Epic,
+		execCtx.Conversation,
+		execCtx.PlanningStage,
+		execCtx.PlanningMethodology,
+		config,
+		includeInlineSkills,
+		includeInlineSkills,
+	)
 	if execCtx.Conversation != nil {
 		systemPrompt += "\nFor support conversations, respond with valid JSON only in this shape: " +
 			`{"status":"open|waiting_on_customer|resolved|spam","draft_reply":{"content":"...","is_internal":false,"sender_display_name":"optional","approval_required":true}}.`
@@ -234,6 +245,8 @@ func (e *CodexExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) 
 		_ = execCtx.Heartbeat("codex_finished")
 	}
 
+	run.InputTokens = result.Usage.InputTokens
+	run.OutputTokens = result.Usage.OutputTokens
 	run.TokensUsed = result.Usage.InputTokens + result.Usage.OutputTokens
 
 	if result.CodexAuthState != nil {

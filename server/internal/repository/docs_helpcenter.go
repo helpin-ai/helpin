@@ -187,6 +187,32 @@ func (r *DocsHelpcenterRepository) GetArticle(ctx context.Context, documentID st
 	return &art, nil
 }
 
+// DeleteArticlesByDocumentIDs hard-deletes help center article extensions.
+func (r *DocsHelpcenterRepository) DeleteArticlesByDocumentIDs(ctx context.Context, documentIDs []string) error {
+	if len(documentIDs) == 0 {
+		return nil
+	}
+	if err := r.db.WithContext(ctx).Where("document_id IN ?", documentIDs).Delete(&model.DocsHelpcenterArticle{}).Error; err != nil {
+		return fmt.Errorf("delete helpcenter articles by documents: %w", err)
+	}
+	return nil
+}
+
+// CountPublicArticlesByDocumentIDs returns how many documents are live in the public help center.
+func (r *DocsHelpcenterRepository) CountPublicArticlesByDocumentIDs(ctx context.Context, documentIDs []string) (int, error) {
+	if len(documentIDs) == 0 {
+		return 0, nil
+	}
+	var count int64
+	if err := r.db.WithContext(ctx).
+		Model(&model.DocsHelpcenterArticle{}).
+		Where("document_id IN ? AND public_published_at IS NOT NULL", documentIDs).
+		Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count public helpcenter articles: %w", err)
+	}
+	return int(count), nil
+}
+
 // CreateArticle creates a help center article extension.
 func (r *DocsHelpcenterRepository) CreateArticle(ctx context.Context, art *model.DocsHelpcenterArticle) (*model.DocsHelpcenterArticle, error) {
 	if err := r.db.WithContext(ctx).Create(art).Error; err != nil {
@@ -743,11 +769,12 @@ func (r *DocsHelpcenterRepository) ListSpaceNavigation(ctx context.Context, spac
 		Title        string  `gorm:"column:title"`
 		Slug         string  `gorm:"column:slug"`
 		PublicID     string  `gorm:"column:public_id"`
+		Position     int     `gorm:"column:position"`
 		CollectionID *string `gorm:"column:collection_id"`
 	}
 	var articles []navArticleRow
 	if err := r.db.WithContext(ctx).Raw(`
-		SELECT d.id, d.title, ha.slug, ha.public_id, d.collection_id
+		SELECT d.id, d.title, ha.slug, ha.public_id, d.position, d.collection_id
 		FROM docs_documents d
 		JOIN docs_helpcenter_articles ha ON ha.document_id = d.id
 		WHERE d.space_id = ?
@@ -769,6 +796,7 @@ func (r *DocsHelpcenterRepository) ListSpaceNavigation(ctx context.Context, spac
 			Title:    a.Title,
 			Slug:     a.Slug,
 			PublicID: a.PublicID,
+			Position: a.Position,
 		}
 		if a.CollectionID != nil {
 			articlesByCollection[*a.CollectionID] = append(articlesByCollection[*a.CollectionID], na)
@@ -821,6 +849,7 @@ func (r *DocsHelpcenterRepository) ListSpaceNavigation(ctx context.Context, spac
 			Icon:               c.Icon,
 			ParentCollectionID: c.ParentCollectionID,
 			Depth:              c.Depth,
+			Position:           c.Position,
 			Articles:           articlesByCollection[c.ID],
 		})
 	}

@@ -46,7 +46,9 @@ func setupCoverageTestEnv(t *testing.T) (*SupportEventService, *SupportCoverageS
 			confidence REAL NOT NULL DEFAULT 0, evidence_count INTEGER NOT NULL DEFAULT 0,
 			failure_mode TEXT NOT NULL DEFAULT '', source_signal TEXT NOT NULL DEFAULT '',
 			can_answer TEXT, can_resolve TEXT, metadata TEXT NOT NULL DEFAULT '{}',
-			first_seen_at DATETIME, last_seen_at DATETIME, created_at DATETIME, updated_at DATETIME
+			first_seen_at DATETIME, last_seen_at DATETIME,
+			status_changed_by TEXT, status_changed_at DATETIME, issue_resolved BOOLEAN,
+			created_at DATETIME, updated_at DATETIME
 		)`,
 		`CREATE TABLE support_gap_evidence (
 			id TEXT PRIMARY KEY, gap_id TEXT NOT NULL, workspace_id TEXT NOT NULL,
@@ -283,6 +285,214 @@ func TestSupportCoverage_NoIssueKey_NoRetrieval_NeedsReview(t *testing.T) {
 	}
 	if gaps[0].V1GapType != model.SupportCoverageV1GapNeedsReview {
 		t.Errorf("expected needs_review without issue key, got %q", gaps[0].V1GapType)
+	}
+}
+
+func TestSupportCoverage_HumanReplyAfterAI_AttachesToExistingGap(t *testing.T) {
+	eventSvc, coverageSvc, db := setupCoverageTestEnv(t)
+	ctx := context.Background()
+	convID := "conv-hr-1"
+
+	// Step 1: AI handoff creates the initial gap with evidence for this conversation.
+	err := eventSvc.RecordEvent(ctx, SupportEventInput{
+		WorkspaceID:    "ws-1",
+		EventType:      model.SupportEventAIHandoffTriggered,
+		ConversationID: &convID,
+		IssueKey:       "login_issue",
+		IssueSummary:   "Cannot log in with SSO",
+		FailureMode:    model.SupportCoverageFailureNoRetrieval,
+		SourceSignal:   model.SupportCoverageSourceAIHandoff,
+	})
+	if err != nil {
+		t.Fatalf("RecordEvent (handoff): %v", err)
+	}
+
+	// Verify: 1 gap, 1 evidence row.
+	gaps, total, err := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	if err != nil {
+		t.Fatalf("ListGaps after handoff: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("expected 1 gap after handoff, got %d", total)
+	}
+	gapID := gaps[0].ID
+
+	// Step 2: Human reply on the same conversation should attach evidence,
+	// NOT create a second gap.
+	msgID := "msg-hr-1"
+	err = eventSvc.RecordEvent(ctx, SupportEventInput{
+		WorkspaceID:    "ws-1",
+		EventType:      model.SupportEventHumanReplyAfterAI,
+		ConversationID: &convID,
+		MessageID:      &msgID,
+		IssueKey:       "login_issue",
+		IssueSummary:   "Agent resolved: SSO cert was expired",
+		SourceSignal:   model.SupportCoverageSourceHumanReply,
+	})
+	if err != nil {
+		t.Fatalf("RecordEvent (human reply): %v", err)
+	}
+
+	// Verify: still 1 gap (not 2).
+	gaps, total, err = coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	if err != nil {
+		t.Fatalf("ListGaps after human reply: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("expected 1 gap after human reply (attached to existing), got %d", total)
+	}
+	if gaps[0].ID != gapID {
+		t.Errorf("gap ID changed: was %q, now %q", gapID, gaps[0].ID)
+	}
+
+	// Verify: 2 evidence rows on that gap.
+	var evidenceCount int64
+	db.Table("support_gap_evidence").Where("gap_id = ?", gapID).Count(&evidenceCount)
+	if evidenceCount != 2 {
+		t.Errorf("expected 2 evidence rows on gap %q, got %d", gapID, evidenceCount)
+	}
+
+	// Verify the second evidence row is the human reply type.
+	var humanEvidence model.SupportGapEvidence
+	db.Table("support_gap_evidence").
+		Where("gap_id = ? AND evidence_type = ?", gapID, model.SupportEventHumanReplyAfterAI).
+		First(&humanEvidence)
+	if humanEvidence.ID == "" {
+		t.Error("expected human_reply_after_ai evidence row, not found")
+	}
+	if humanEvidence.ConversationID == nil || *humanEvidence.ConversationID != convID {
+		t.Errorf("human reply evidence conversation_id mismatch")
+	}
+}
+
+func TestSupportCoverage_HumanReplyAfterAI_NoExistingGap_CreatesNew(t *testing.T) {
+	eventSvc, coverageSvc, _ := setupCoverageTestEnv(t)
+	ctx := context.Background()
+	convID := "conv-hr-orphan"
+
+	// Human reply with no prior gap for this conversation — should create a new gap.
+	err := eventSvc.RecordEvent(ctx, SupportEventInput{
+		WorkspaceID:    "ws-1",
+		EventType:      model.SupportEventHumanReplyAfterAI,
+		ConversationID: &convID,
+		IssueKey:       "orphan_topic",
+		IssueSummary:   "Agent helped with billing question",
+		SourceSignal:   model.SupportCoverageSourceHumanReply,
+	})
+	if err != nil {
+		t.Fatalf("RecordEvent: %v", err)
+	}
+
+	gaps, total, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	if total != 1 {
+		t.Fatalf("expected 1 new gap for orphan human reply, got %d", total)
+	}
+	if gaps[0].V1GapType != model.SupportCoverageV1GapNeedsReview {
+		t.Errorf("expected needs_review, got %q", gaps[0].V1GapType)
+	}
+}
+
+func TestSupportCoverage_ConversationResolvedByHuman_CreatesGap(t *testing.T) {
+	eventSvc, coverageSvc, _ := setupCoverageTestEnv(t)
+	ctx := context.Background()
+	convID := "conv-resolved-1"
+
+	err := eventSvc.RecordEvent(ctx, SupportEventInput{
+		WorkspaceID:    "ws-1",
+		EventType:      model.SupportEventConversationResolved,
+		ConversationID: &convID,
+		IssueSummary:   "I cannot reset my password — the link in the email is broken",
+		SourceSignal:   model.SupportCoverageSourceConversationResolvedByHuman,
+		ActorType:      model.SupportEventActorAgent,
+	})
+	if err != nil {
+		t.Fatalf("RecordEvent: %v", err)
+	}
+
+	gaps, total, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	if total != 1 {
+		t.Fatalf("expected 1 gap for human-resolved conversation, got %d", total)
+	}
+	gap := gaps[0]
+	if gap.V1GapType != model.SupportCoverageV1GapNeedsReview {
+		t.Errorf("expected needs_review, got %q", gap.V1GapType)
+	}
+	if gap.SourceSignal != model.SupportCoverageSourceConversationResolvedByHuman {
+		t.Errorf("expected source_signal %q, got %q",
+			model.SupportCoverageSourceConversationResolvedByHuman, gap.SourceSignal)
+	}
+}
+
+func TestSupportCoverage_ConversationResolved_WithoutSignal_NoGap(t *testing.T) {
+	// Bare conversation_resolved events (AI-resolved or human-only-no-AI)
+	// must not produce a gap. Only the explicit
+	// conversation_resolved_by_human source signal qualifies.
+	eventSvc, coverageSvc, _ := setupCoverageTestEnv(t)
+	ctx := context.Background()
+	convID := "conv-resolved-nosignal"
+
+	err := eventSvc.RecordEvent(ctx, SupportEventInput{
+		WorkspaceID:    "ws-1",
+		EventType:      model.SupportEventConversationResolved,
+		ConversationID: &convID,
+		ActorType:      model.SupportEventActorAgent,
+	})
+	if err != nil {
+		t.Fatalf("RecordEvent: %v", err)
+	}
+
+	_, total, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	if total != 0 {
+		t.Fatalf("expected no gap for untagged conversation_resolved event, got %d", total)
+	}
+}
+
+func TestSupportCoverage_ConversationResolvedByHuman_AttachesToExistingGap(t *testing.T) {
+	eventSvc, coverageSvc, db := setupCoverageTestEnv(t)
+	ctx := context.Background()
+	convID := "conv-resolved-merge"
+
+	// Seed: AI handoff created a gap earlier in the conversation lifetime.
+	err := eventSvc.RecordEvent(ctx, SupportEventInput{
+		WorkspaceID:    "ws-1",
+		EventType:      model.SupportEventAIHandoffTriggered,
+		ConversationID: &convID,
+		IssueKey:       "password_reset",
+		IssueSummary:   "Password reset link broken",
+		FailureMode:    model.SupportCoverageFailureNoRetrieval,
+		SourceSignal:   model.SupportCoverageSourceAIHandoff,
+	})
+	if err != nil {
+		t.Fatalf("RecordEvent (handoff): %v", err)
+	}
+	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	if len(gaps) != 1 {
+		t.Fatalf("setup: expected 1 gap after handoff, got %d", len(gaps))
+	}
+	gapID := gaps[0].ID
+
+	// Human resolves the same conversation — should attach evidence, not create a second gap.
+	err = eventSvc.RecordEvent(ctx, SupportEventInput{
+		WorkspaceID:    "ws-1",
+		EventType:      model.SupportEventConversationResolved,
+		ConversationID: &convID,
+		IssueSummary:   "Password reset link broken",
+		SourceSignal:   model.SupportCoverageSourceConversationResolvedByHuman,
+		ActorType:      model.SupportEventActorAgent,
+	})
+	if err != nil {
+		t.Fatalf("RecordEvent (resolved): %v", err)
+	}
+
+	_, total, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	if total != 1 {
+		t.Fatalf("expected 1 gap after human resolution (attached to existing), got %d", total)
+	}
+
+	var evidenceCount int64
+	db.Table("support_gap_evidence").Where("gap_id = ?", gapID).Count(&evidenceCount)
+	if evidenceCount != 2 {
+		t.Errorf("expected 2 evidence rows on gap %q, got %d", gapID, evidenceCount)
 	}
 }
 

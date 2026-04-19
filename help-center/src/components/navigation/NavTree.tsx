@@ -15,8 +15,36 @@ import {
   isMultilingualEnabled,
 } from '@/lib/locale'
 import { prefixBasepath } from '@/lib/pathUtils'
-import type { NavItem, NavTreeNode } from '@/lib/types'
+import type { NavArticle, NavItem, NavTreeNode } from '@/lib/types'
 import { cn } from '@/lib/utils'
+
+// Merge direct articles and sub-collections of a node into a single
+// position-sorted list so the rendered order matches the author's
+// intent (and matches the import order from Nextra _meta files).
+type MergedChild =
+  | { kind: 'article'; position: number; article: NavArticle }
+  | { kind: 'collection'; position: number; node: NavTreeNode }
+
+function buildMergedChildren(node: NavTreeNode): MergedChild[] {
+  const items: MergedChild[] = []
+  for (const article of node.item.articles) {
+    items.push({ kind: 'article', position: article.position, article })
+  }
+  for (const child of node.children) {
+    items.push({ kind: 'collection', position: child.item.position, node: child })
+  }
+  // Primary: position. Tie-break: collections before articles (stable for
+  // legacy imports where both types used independent 0..N sequences),
+  // then by id for full determinism.
+  items.sort((a, b) => {
+    if (a.position !== b.position) return a.position - b.position
+    if (a.kind !== b.kind) return a.kind === 'collection' ? -1 : 1
+    const aId = a.kind === 'article' ? a.article.id : a.node.item.id
+    const bId = b.kind === 'article' ? b.article.id : b.node.item.id
+    return aId.localeCompare(bId)
+  })
+  return items
+}
 
 interface NavTreeProps {
   locale: string
@@ -113,39 +141,22 @@ function CollectionGroup({
       </div>
 
       <div className="mt-0.5">
-        {node.item.articles.map((article) => (
-          <ArticleLink
-            key={article.id}
-            locale={locale}
-            articleSlug={article.slug}
-            publicId={article.public_id}
-            title={article.title}
-            multilingualEnabled={multilingualEnabled}
-            basepath={basepath}
-            pathname={pathname}
-            onArticleClick={onArticleClick}
-            level={level}
-          />
-        ))}
-
-        {node.children.length > 0 ? (
-          <NestedCollectionAccordion
-            locale={locale}
-            nodes={node.children}
-            multilingualEnabled={multilingualEnabled}
-            basepath={basepath}
-            pathname={pathname}
-            onArticleClick={onArticleClick}
-            level={level + 1}
-          />
-        ) : null}
+        <MergedChildren
+          children={buildMergedChildren(node)}
+          locale={locale}
+          multilingualEnabled={multilingualEnabled}
+          basepath={basepath}
+          pathname={pathname}
+          onArticleClick={onArticleClick}
+          level={level}
+        />
       </div>
     </div>
   )
 }
 
-function NestedCollectionAccordion({
-  nodes,
+function MergedChildren({
+  children,
   locale,
   multilingualEnabled,
   basepath,
@@ -153,7 +164,7 @@ function NestedCollectionAccordion({
   onArticleClick,
   level,
 }: {
-  nodes: NavTreeNode[]
+  children: MergedChild[]
   locale: string
   multilingualEnabled: boolean
   basepath: string
@@ -161,32 +172,54 @@ function NestedCollectionAccordion({
   onArticleClick?: () => void
   level: number
 }) {
-  const defaultValue = nodes
-    .filter((node) =>
-      nodeContainsActivePath(node, {
-        locale,
-        multilingualEnabled,
-        basepath,
-        pathname,
-      }),
+  // For each collection child, compute if it contains the active path
+  // so we can pre-expand it.
+  const defaultOpen = children
+    .filter(
+      (c) =>
+        c.kind === 'collection' &&
+        nodeContainsActivePath(c.node, {
+          locale,
+          multilingualEnabled,
+          basepath,
+          pathname,
+        }),
     )
-    .map((node) => node.item.id)
+    .map((c) => (c.kind === 'collection' ? c.node.item.id : ''))
 
   return (
-    <Accordion type="multiple" defaultValue={defaultValue} className="mt-1">
-      {nodes.map((node, idx) => (
-        <NestedCollectionItem
-          key={node.item.id}
-          locale={locale}
-          node={node}
-          multilingualEnabled={multilingualEnabled}
-          basepath={basepath}
-          pathname={pathname}
-          onArticleClick={onArticleClick}
-          isFirst={idx === 0}
-          level={level}
-        />
-      ))}
+    <Accordion type="multiple" defaultValue={defaultOpen} className="mt-1">
+      {children.map((child, idx) => {
+        if (child.kind === 'article') {
+          return (
+            <ArticleLink
+              key={child.article.id}
+              locale={locale}
+              articleSlug={child.article.slug}
+              publicId={child.article.public_id}
+              title={child.article.title}
+              multilingualEnabled={multilingualEnabled}
+              basepath={basepath}
+              pathname={pathname}
+              onArticleClick={onArticleClick}
+              level={level}
+            />
+          )
+        }
+        return (
+          <NestedCollectionItem
+            key={child.node.item.id}
+            locale={locale}
+            node={child.node}
+            multilingualEnabled={multilingualEnabled}
+            basepath={basepath}
+            pathname={pathname}
+            onArticleClick={onArticleClick}
+            isFirst={idx === 0}
+            level={level + 1}
+          />
+        )
+      })}
     </Accordion>
   )
 }
@@ -259,32 +292,15 @@ function NestedCollectionItem({
 
       <AccordionContent className="pb-0">
         <div className="mt-0.5">
-          {node.item.articles.map((article) => (
-            <ArticleLink
-              key={article.id}
-              locale={locale}
-              articleSlug={article.slug}
-              publicId={article.public_id}
-              title={article.title}
-              multilingualEnabled={multilingualEnabled}
-              basepath={basepath}
-              pathname={pathname}
-              onArticleClick={onArticleClick}
-              level={level}
-            />
-          ))}
-
-          {node.children.length > 0 ? (
-            <NestedCollectionAccordion
-              locale={locale}
-              nodes={node.children}
-              multilingualEnabled={multilingualEnabled}
-              basepath={basepath}
-              pathname={pathname}
-              onArticleClick={onArticleClick}
-              level={level + 1}
-            />
-          ) : null}
+          <MergedChildren
+            children={buildMergedChildren(node)}
+            locale={locale}
+            multilingualEnabled={multilingualEnabled}
+            basepath={basepath}
+            pathname={pathname}
+            onArticleClick={onArticleClick}
+            level={level}
+          />
         </div>
       </AccordionContent>
     </AccordionItem>

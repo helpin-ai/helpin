@@ -80,6 +80,27 @@ func (h *SupportInboxHandler) GetConversation(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, conversation)
 }
 
+// GetMessageEmailDetail handles GET /api/support/inbox/messages/{id}/email.
+func (h *SupportInboxHandler) GetMessageEmailDetail(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "message id is required")
+		return
+	}
+
+	detail, err := h.supportService.GetMessageEmailDetail(r.Context(), workspaceID, id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if detail == nil {
+		writeError(w, http.StatusNotFound, "email details not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, detail)
+}
+
 // CreateConversation handles POST /api/support/tickets.
 func (h *SupportInboxHandler) CreateConversation(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
@@ -238,6 +259,26 @@ func (h *SupportInboxHandler) AssignConversationUser(w http.ResponseWriter, r *h
 	writeJSON(w, http.StatusOK, map[string]bool{"assigned": true})
 }
 
+// UpdateConversationCRMContact handles PUT /api/support/inbox/conversations/{id}/crm-contact.
+func (h *SupportInboxHandler) UpdateConversationCRMContact(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	conversationID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+
+	var req model.UpdateConversationCRMContactRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	conversation, err := h.supportService.UpdateConversationCRMContact(r.Context(), workspaceID, conversationID, req.CRMContactID, actorID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, conversation)
+}
+
 // ListConversationAssignableUsers handles GET /api/support/inbox/conversations/{id}/assignees.
 func (h *SupportInboxHandler) ListConversationAssignableUsers(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
@@ -350,6 +391,23 @@ func (h *SupportInboxHandler) ListInboxScopes(w http.ResponseWriter, r *http.Req
 		return
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// ListWorkspaceUnread handles GET /api/support/workspace-unread.
+// Returns per-workspace unread counts across all workspaces the caller is a member of.
+// Used to render badges in the workspace switcher.
+func (h *SupportInboxHandler) ListWorkspaceUnread(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		writeError(w, http.StatusUnauthorized, "unauthenticated")
+		return
+	}
+	counts, err := h.supportService.ListUnreadByWorkspace(r.Context(), userID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, counts)
 }
 
 func (h *SupportInboxHandler) ListMailboxes(w http.ResponseWriter, r *http.Request) {

@@ -1,6 +1,8 @@
 package worker
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -53,7 +55,10 @@ func TestBuildUserPromptDirectEpicRunIsContextOnly(t *testing.T) {
 		"Run mode: interactive\nOperator notes:\nFocus on B2B admins first.",
 	)
 
-	if !strings.Contains(prompt, "Please work on epic: **Billing refresh**") {
+	if strings.Contains(prompt, "Please work on epic: **Billing refresh**") {
+		t.Fatalf("did not expect imperative epic framing\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "Epic: **Billing refresh**") {
 		t.Fatalf("expected epic context in prompt\n%s", prompt)
 	}
 	if !strings.Contains(prompt, "Context:") {
@@ -108,7 +113,7 @@ func TestBuildUserPromptIncludesArtifactContext(t *testing.T) {
 	}
 }
 
-func TestBuildUserPromptStoryPlannerUsesPlanningLanguage(t *testing.T) {
+func TestBuildUserPromptStoryPlannerUsesNeutralPlanningContext(t *testing.T) {
 	prompt := BuildUserPrompt(
 		nil,
 		&model.PMTask{Name: "Inbox triage automation"},
@@ -123,7 +128,8 @@ func TestBuildUserPromptStoryPlannerUsesPlanningLanguage(t *testing.T) {
 	)
 
 	for _, marker := range []string{
-		"Please draft or refine the canonical task planning document for task: **Inbox triage automation**",
+		"Task: **Inbox triage automation**",
+		"Planning stage: task_plan_doc",
 		"Operator notes:",
 	} {
 		if !strings.Contains(prompt, marker) {
@@ -143,7 +149,7 @@ func TestBuildUserPromptStoryPlannerUsesPlanningLanguage(t *testing.T) {
 	}
 }
 
-func TestBuildUserPromptReviewAgentUsesGenericTaskLanguage(t *testing.T) {
+func TestBuildUserPromptReviewAgentUsesNeutralTaskContext(t *testing.T) {
 	prompt := BuildUserPrompt(
 		&model.Agent{PresetKey: model.AgentPresetReviewAgent},
 		&model.PMTask{Name: "Inbox triage automation"},
@@ -157,8 +163,11 @@ func TestBuildUserPromptReviewAgentUsesGenericTaskLanguage(t *testing.T) {
 		"",
 	)
 
-	if !strings.Contains(prompt, "Please work on the task: **Inbox triage automation**") {
-		t.Fatalf("expected generic task prompt\n%s", prompt)
+	if strings.Contains(prompt, "Please work on the task: **Inbox triage automation**") {
+		t.Fatalf("did not expect imperative task framing\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "Task: **Inbox triage automation**") {
+		t.Fatalf("expected neutral task context\n%s", prompt)
 	}
 }
 
@@ -207,7 +216,7 @@ func TestBuildUserPromptPrependsSavedSystemPromptBeforeContext(t *testing.T) {
 	if !strings.HasPrefix(prompt, systemPrompt) {
 		t.Fatalf("expected prompt to start with saved system prompt\n%s", prompt)
 	}
-	if !strings.Contains(prompt, "\n\nContext:\nPlease work on the task: **Inbox triage automation**") {
+	if !strings.Contains(prompt, "\n\nContext:\nTask: **Inbox triage automation**") {
 		t.Fatalf("expected context section after saved system prompt\n%s", prompt)
 	}
 	if strings.Index(prompt, "Context:") < strings.Index(prompt, systemPrompt) {
@@ -376,5 +385,97 @@ func TestBuildSystemPromptSupportRunOmitsRepoEditingGuidance(t *testing.T) {
 		if strings.Contains(prompt, unexpected) {
 			t.Fatalf("did not expect support prompt to contain %q\n%s", unexpected, prompt)
 		}
+	}
+}
+
+func TestBuildSystemPromptIncludesResolvedSkillInstructions(t *testing.T) {
+	prompt := BuildSystemPrompt(
+		&model.Agent{
+			Name:                      "Custom Agent",
+			ResolvedSkillInstructions: "Use the approval protocol skill instructions.",
+		},
+		nil,
+		nil,
+		nil,
+		"",
+		"",
+		nil,
+	)
+
+	if !strings.Contains(prompt, "Use the approval protocol skill instructions.") {
+		t.Fatalf("expected prompt to include resolved skill instructions\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "You are Custom Agent, an AI coding agent.") {
+		t.Fatalf("expected prompt to keep generic agent preamble\n%s", prompt)
+	}
+}
+
+func TestBuildRuntimeSystemPromptSkipsBehaviorAndSkillTextWhenDisabled(t *testing.T) {
+	systemPrompt := "Preset behavior instructions."
+	prompt := BuildRuntimeSystemPrompt(
+		&model.Agent{
+			Name:                      "Custom Agent",
+			SystemPrompt:              &systemPrompt,
+			ResolvedSkillInstructions: "Resolved skill instructions.",
+		},
+		nil,
+		nil,
+		nil,
+		"",
+		"",
+		nil,
+		false,
+		false,
+	)
+
+	if strings.Contains(prompt, "Preset behavior instructions.") {
+		t.Fatalf("did not expect runtime prompt to include preset behavior instructions\n%s", prompt)
+	}
+	if strings.Contains(prompt, "Resolved skill instructions.") {
+		t.Fatalf("did not expect runtime prompt to include resolved skill instructions\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "You are Custom Agent, an AI coding agent.") {
+		t.Fatalf("expected runtime prompt to keep generic preamble\n%s", prompt)
+	}
+}
+
+func TestParseWorkflowConfigForAgent_UsesPlannerDefaultWhenFrontMatterOmitsMaxIterations(t *testing.T) {
+	dir := t.TempDir()
+	content := "---\ntimeout_minutes: 45\n---\nPlanner instructions"
+	if err := os.WriteFile(filepath.Join(dir, "WORKFLOW.md"), []byte(content), 0o644); err != nil {
+		t.Fatalf("write WORKFLOW.md: %v", err)
+	}
+
+	config := ParseWorkflowConfigForAgent(dir, &model.Agent{
+		PresetKey:   model.AgentPresetEpicPlanner,
+		RuntimeKind: "native_sdk",
+	})
+	if config == nil {
+		t.Fatal("expected config")
+	}
+	if config.MaxIterations != plannerWorkflowMaxIterations {
+		t.Fatalf("MaxIterations = %d, want %d", config.MaxIterations, plannerWorkflowMaxIterations)
+	}
+	if config.TimeoutMinutes != 45 {
+		t.Fatalf("TimeoutMinutes = %d, want 45", config.TimeoutMinutes)
+	}
+}
+
+func TestParseWorkflowConfigForAgent_RespectsExplicitMaxIterationsOverride(t *testing.T) {
+	dir := t.TempDir()
+	content := "---\nmax_iterations: 25\n---\nPlanner instructions"
+	if err := os.WriteFile(filepath.Join(dir, "WORKFLOW.md"), []byte(content), 0o644); err != nil {
+		t.Fatalf("write WORKFLOW.md: %v", err)
+	}
+
+	config := ParseWorkflowConfigForAgent(dir, &model.Agent{
+		PresetKey:   model.AgentPresetTaskPlanner,
+		RuntimeKind: "native_sdk",
+	})
+	if config == nil {
+		t.Fatal("expected config")
+	}
+	if config.MaxIterations != 25 {
+		t.Fatalf("MaxIterations = %d, want 25", config.MaxIterations)
 	}
 }

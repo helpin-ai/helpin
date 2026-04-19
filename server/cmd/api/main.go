@@ -24,6 +24,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/auth"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
+	"github.com/helpin-ai/helpin/server/internal/cache"
 	"github.com/helpin-ai/helpin/server/internal/config"
 	"github.com/helpin-ai/helpin/server/internal/crawler"
 	"github.com/helpin-ai/helpin/server/internal/crmemail"
@@ -188,6 +189,7 @@ func main() {
 			&model.PMTeamFieldVisibility{},
 			&model.Agent{},
 			&model.WorkspaceAgentPresetVersion{},
+			&model.WorkspaceSkill{},
 			&model.AgentRun{},
 			&model.AgentTriggerExecution{},
 			&model.AgentRunMessage{},
@@ -265,10 +267,6 @@ func main() {
 			&model.CRMDeal{},
 			&model.CRMAssociation{},
 			&model.CRMActivity{},
-			&model.CRMPropertyDefinition{},
-			&model.CRMPropertyGroup{},
-			&model.CRMList{},
-			&model.CRMListMember{},
 			&model.CRMImportJob{},
 			// CRM Phase 3: Email & Calendar
 			&model.CRMEmailAccount{},
@@ -282,9 +280,7 @@ func main() {
 			&model.CRMEntitySummary{},
 			&model.CRMDealHealthScore{},
 			&model.CRMSuggestion{},
-			// CRM Phase 5: Sequences & Writing
-			&model.CRMSequence{},
-			&model.CRMSequenceEnrollment{},
+			// CRM Phase 5: Writing
 			&model.CRMWritingProfile{},
 			// CRM Autonomy
 			&model.CRMAutonomySettings{},
@@ -380,12 +376,18 @@ func main() {
 	}
 	slog.Info("startup: all migrations complete")
 
-	// Initialize email client (nil if not configured).
-	emailClient := email.NewClient(cfg.PostmarkServerToken, cfg.PostmarkFromEmail)
-	if emailClient != nil {
-		slog.Info("Postmark email configured")
+	// Initialize email clients (nil if not configured).
+	appEmailClient := email.NewClient(cfg.PostmarkAppServerToken, cfg.PostmarkAppFromEmail)
+	replyEmailClient := email.NewClient(cfg.PostmarkReplyServerToken, cfg.PostmarkReplyFromEmail)
+	if appEmailClient != nil {
+		slog.Info("Postmark app email configured")
 	} else {
-		slog.Info("Postmark email not configured — invitation emails will be logged only")
+		slog.Info("Postmark app email not configured — product emails will be logged only")
+	}
+	if replyEmailClient != nil {
+		slog.Info("Postmark support reply email configured")
+	} else {
+		slog.Info("Postmark support reply email not configured — support reply emails will be logged only")
 	}
 
 	// Initialize S3 storage client (nil if not configured).
@@ -512,6 +514,7 @@ func main() {
 	invitationRepo := repository.NewInvitationRepository(db)
 	agentRepo := repository.NewAgentRepository(db)
 	workspacePresetVersionRepo := repository.NewWorkspaceAgentPresetVersionRepository(db)
+	workspaceSkillRepo := repository.NewWorkspaceSkillRepository(db)
 	agentRunRepo := repository.NewAgentRunRepository(db)
 	agentTriggerExecutionRepo := repository.NewAgentTriggerExecutionRepository(db)
 	agentRunMessageRepo := repository.NewAgentRunMessageRepository(db)
@@ -565,8 +568,6 @@ func main() {
 	crmDealRepo := repository.NewCRMDealRepository(db)
 	crmAssociationRepo := repository.NewCRMAssociationRepository(db)
 	crmActivityRepo := repository.NewCRMActivityRepository(db)
-	crmPropertyRepo := repository.NewCRMPropertyRepository(db)
-	crmListRepo := repository.NewCRMListRepository(db)
 	crmImportRepo := repository.NewCRMImportRepository(db)
 	crmEmailRepo := repository.NewCRMEmailRepository(db)
 	crmCalendarRepo := repository.NewCRMCalendarRepository(db)
@@ -574,7 +575,6 @@ func main() {
 	crmSignalRepo := repository.NewCRMSignalRepository(db)
 	crmSummaryRepo := repository.NewCRMSummaryRepository(db)
 	crmSuggestionRepo := repository.NewCRMSuggestionRepository(db)
-	crmSequenceRepo := repository.NewCRMSequenceRepository(db)
 	crmWritingProfileRepo := repository.NewCRMWritingProfileRepository(db)
 	crmEmailSyncSettingsRepo := repository.NewCRMEmailSyncSettingsRepository(db)
 	automationHealthRepo := repository.NewAutomationHealthRepository(db)
@@ -592,7 +592,7 @@ func main() {
 
 	// Initialize services.
 	passwordResetRepo := repository.NewPasswordResetTokenRepository(db)
-	authService := service.NewAuthService(userRepo, passwordResetRepo, orgRepo, jwtManager, s3Client, emailClient, cfg.AppBaseURL)
+	authService := service.NewAuthService(userRepo, passwordResetRepo, orgRepo, jwtManager, s3Client, appEmailClient, cfg.AppBaseURL)
 	pmActivityService := service.NewPMActivityService(pmActivityRepo)
 	pmLabelService := service.NewPMLabelService(pmLabelRepo, wsPublisher)
 	pmTaskTemplateService := service.NewPMTaskTemplateService(pmTaskTemplateRepo, wsPublisher)
@@ -601,7 +601,7 @@ func main() {
 	pmAutomationService := service.NewPMAutomationService(pmAutomationRepo, pmEpicRepo, pmTaskRepo, pmSprintRepo, pmWorkflowRepo, pmActivityService, wsPublisher, pmSprintCloseoutRepo)
 	automationHealthService := service.NewAutomationHealthService(automationHealthRepo)
 	pmAutomationService.SetHealthObserver(automationHealthService)
-	notificationService := service.NewNotificationService(notificationRepo, notificationPrefRepo, userNotifSettingsRepo, followerRepo, userRepo, workspaceRepo, wsPublisher, emailClient, cfg.AppBaseURL)
+	notificationService := service.NewNotificationService(notificationRepo, notificationPrefRepo, userNotifSettingsRepo, followerRepo, userRepo, workspaceRepo, wsPublisher, appEmailClient, cfg.AppBaseURL)
 	userNotifSettingsService := service.NewUserNotificationSettingsService(userNotifSettingsRepo)
 	followerService := service.NewFollowerService(followerRepo)
 	pmTaskService := service.NewPMTaskService(pmTaskRepo, workspaceRepo, pmWorkflowRepo, pmEpicRepo, pmSprintRepo, pmLabelRepo, pmChecklistItemRepo, pmExternalLinkRepo, pmAttachmentRepo, pmActivityService, wsPublisher, pmAutomationService, notificationService, followerService)
@@ -609,7 +609,7 @@ func main() {
 	pmEpicService := service.NewPMEpicService(pmEpicRepo, pmTaskRepo, pmLabelRepo, gitRepositoryRepo, pmAttachmentRepo, workspaceRepo, pmActivityService, wsPublisher, notificationService)
 	pmRoadmapService := service.NewPMRoadmapService(pmEpicService, pmRoadmapRepo)
 	pmSprintService := service.NewPMSprintService(pmSprintRepo, pmLabelRepo, pmAttachmentRepo, workspaceRepo, settingsRepo, pmActivityService, wsPublisher, notificationService, pmSprintCloseoutRepo)
-	pmCommentService := service.NewPMCommentService(pmCommentRepo, pmTaskRepo, pmAttachmentRepo, pmActivityService, wsPublisher, notificationService, workspaceRepo)
+	pmCommentService := service.NewPMCommentService(pmCommentRepo, pmTaskRepo, pmAttachmentRepo, pmActivityService, wsPublisher, notificationService, workspaceRepo, s3Client)
 	pmAttachmentService := service.NewPMAttachmentService(pmAttachmentRepo, s3Client, wsPublisher)
 	pmObjectiveService := service.NewPMObjectiveService(pmObjectiveRepo, pmKeyResultRepo, pmLabelRepo, pmAttachmentRepo, workspaceRepo, pmActivityService, wsPublisher, notificationService)
 	pmChecklistItemService := service.NewPMChecklistItemService(pmChecklistItemRepo, pmTaskRepo, wsPublisher, notificationService, workspaceRepo)
@@ -625,7 +625,7 @@ func main() {
 		redisClient,
 		wsHub,
 		wsPublisher,
-		emailClient,
+		replyEmailClient,
 		supportMessageRepo,
 		supportConversationRepo,
 		supportEmailLogRepo,
@@ -641,7 +641,9 @@ func main() {
 	supportInboxService.SetAttachmentService(supportAttachmentService)
 	supportInboxService.SetLinkPreviewService(supportLinkPreviewService)
 	supportInboxService.SetEmailFallbackService(emailFallbackService)
+	supportInboxService.SetRouteDomain(cfg.SupportEmailRouteDomain)
 	supportInboxService.SetEmailRouteRepository(supportEmailRouteRepo)
+	supportInboxService.SetEmailLogRepo(supportEmailLogRepo)
 	supportInboxService.SetWorkspaceRepo(workspaceRepo)
 	supportInboxService.SetTaskService(pmTaskService)
 	supportInboxService.SetPresenceProvider(wsHub.Presence)
@@ -655,7 +657,6 @@ func main() {
 		}
 	}
 	emailFallbackService.SetSupportInboxService(supportInboxService)
-	emailFallbackService.SetLinkPreviewService(supportLinkPreviewService)
 	notificationService.SetSupportRoutingDependencies(supportInstallRepo, supportMailboxRepo, wsHub.Presence, supportTeammateStatusOverrideRepo)
 
 	// AI Support Agent — new repositories and service
@@ -764,7 +765,7 @@ func main() {
 		cfg.CodexEnableChatGPTOAuth,
 		cfg.CodexChatGPTAccessToken,
 		cfg.CodexChatGPTAccountID,
-	).SetCodexAuthManager(codexAuthManager).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetUserRepository(userRepo)
+	).SetCodexAuthManager(codexAuthManager).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client)
 	supportInboxService.SetConversationAgentRunner(agentService.RunConversationAgentAuto)
 	supportInboxService.SetNotificationService(notificationService, workspaceRepo)
 	emailFallbackService.SetNotificationService(notificationService)
@@ -833,6 +834,29 @@ func main() {
 	docsVersionService := service.NewDocsVersionService(docsVersionRepo, docsContentRepo, docsDocumentRepo, wsPublisher)
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, pmTaskRepo, docsDocumentRepo, wsPublisher)
 	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsHelpcenterPublicationRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, docsRedirectRepo, s3Client, wsPublisher)
+
+	// Tiered cache for hot public help-center reads. L1 is an in-process LRU;
+	// L2 is Redis when available so cache entries survive pod restarts and
+	// invalidations fan out across pods via pub/sub.
+	hcL1 := cache.NewLRU(2048)
+	var hcCache cache.Cache = hcL1
+	if redisClient != nil {
+		hcL2 := cache.NewRedis(redisClient, "hc")
+		tiered := cache.NewTiered(cache.TieredConfig{
+			L1:      hcL1,
+			L2:      hcL2,
+			Redis:   redisClient,
+			Channel: "cache:hc:invalidate",
+			PodID:   podID,
+			L1TTL:   60 * time.Second,
+		})
+		tiered.StartInvalidationSubscriber(context.Background())
+		hcCache = tiered
+		slog.Info("help-center cache: tiered L1+L2 (Redis) enabled")
+	} else {
+		slog.Info("help-center cache: L1-only (no Redis) — single-pod consistency only")
+	}
+	docsHelpcenterService.SetHelpcenterCache(hcCache)
 	docsHelpcenterTranslationService := service.NewDocsHelpcenterTranslationService(docsHelpcenterTranslationRepo, docsHelpcenterRepo, docsHelpcenterPublicationRepo, docsRedirectRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, llmProvider)
 	docsSearchService := service.NewDocsSearchService(docsSearchRepo)
 	docsImportService := service.NewDocsImportService(docsImportRepo, docsSpaceService, docsCollectionService, docsDocumentService, docsContentService, docsHelpcenterService, docsRedirectRepo, s3Client)
@@ -842,6 +866,23 @@ func main() {
 	docsContentService.SetTranslationService(docsHelpcenterTranslationService)
 	docsHelpcenterService.SetTranslationService(docsHelpcenterTranslationService)
 	docsDocumentService.SetHelpcenterService(docsHelpcenterService)
+	docsDeletionDeps := service.DocsDocumentDeletionDependencies{
+		ContentRepo:     docsContentRepo,
+		VersionRepo:     docsVersionRepo,
+		LinkRepo:        docsLinkRepo,
+		ChunkRepo:       docsChunkRepo,
+		HelpcenterRepo:  docsHelpcenterRepo,
+		PublicationRepo: docsHelpcenterPublicationRepo,
+		TranslationRepo: docsHelpcenterTranslationRepo,
+	}
+	if s3Client != nil {
+		docsDeletionDeps.AssetStore = s3Client
+	}
+	docsDocumentService.SetDeletionDependencies(docsDeletionDeps)
+	docsCollectionService.SetPermanentDeleteDependencies(docsDocumentRepo, docsDocumentService, docsHelpcenterTranslationRepo)
+	docsCollectionService.SetHelpcenterRepository(docsHelpcenterRepo)
+	docsSpaceService.SetPermanentDeleteDependencies(docsCollectionRepo, docsDocumentRepo, docsDocumentService, docsHelpcenterTranslationRepo)
+	docsSpaceService.SetHelpcenterRepository(docsHelpcenterRepo)
 	contentCrawler := crawler.NewSmartCrawler(
 		cfg.CrawlerMode,
 		cfg.CloudflareAccountID,
@@ -890,10 +931,8 @@ func main() {
 	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo)
 	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo)
 	crmAssociationService := service.NewCRMAssociationService(crmAssociationRepo)
-	associationsService := service.NewAssociationsService(crmAssociationRepo, pmTaskLinkRepo, pmTaskRepo, supportConversationRepo, docsLinkRepo, docsDocumentRepo)
+	associationsService := service.NewAssociationsService(crmAssociationRepo, crmContactRepo, workspaceRepo, pmTaskLinkRepo, pmTaskRepo, supportConversationRepo, docsLinkRepo, docsDocumentRepo)
 	crmActivityService := service.NewCRMActivityService(crmActivityRepo)
-	crmPropertyService := service.NewCRMPropertyService(crmPropertyRepo)
-	crmListService := service.NewCRMListService(crmListRepo)
 	crmImportService := service.NewCRMImportService(crmImportRepo, crmContactRepo, crmCompanyRepo, crmDealRepo)
 
 	// Gmail OAuth + encryption setup.
@@ -919,7 +958,6 @@ func main() {
 	crmEnrichmentService := service.NewCRMEnrichmentService(crmEnrichmentRepo)
 	crmSignalService := service.NewCRMSignalService(crmSignalRepo, crmSummaryService)
 	crmSuggestionService := service.NewCRMSuggestionService(crmSuggestionRepo, crmDealRepo, crmAssociationRepo)
-	crmSequenceService := service.NewCRMSequenceService(crmSequenceRepo)
 	crmWritingProfileService := service.NewCRMWritingProfileService(crmWritingProfileRepo)
 	crmSearchService := service.NewCRMSearchService(crmContactRepo, crmCompanyRepo, crmDealRepo)
 	commandService := service.NewInternalCommandService(
@@ -953,6 +991,9 @@ func main() {
 	supportAIService.SetMailboxRepository(supportMailboxRepo)
 	supportAIService.SetTriageService(supportInboxTriageService)
 	supportAIService.SetLinkPreviewService(supportLinkPreviewService)
+	if strings.TrimSpace(cfg.AnthropicAPIKey) != "" {
+		supportAIService.SetTaskDraftLLM(service.NewEinoSupportTaskDraftLLM(cfg.AnthropicAPIKey, "claude-sonnet-4-6"))
+	}
 	supportInboxService.SetSupportAIService(supportAIService)
 
 	// Coverage telemetry: repos → services → async recorder → inject into hot-path services.
@@ -965,7 +1006,7 @@ func main() {
 	supportInboxService.SetSupportEventRecorder(supportEventRecorder)
 
 	supportCoverageDigestService := service.NewSupportCoverageDigestService(
-		supportCoverageRepo, workspaceRepo, emailClient, cfg.AppBaseURL,
+		supportCoverageRepo, workspaceRepo, appEmailClient, cfg.AppBaseURL,
 	)
 	_ = supportCoverageDigestService // wired to ticker in follow-up
 
@@ -979,7 +1020,7 @@ func main() {
 	if err := pmRecurringTemplateService.EnsureScheduler(context.Background()); err != nil {
 		slog.Error("failed to ensure PM recurring scheduler", "error", err)
 	}
-	inviteService := service.NewInviteService(invitationRepo, workspaceRepo, orgRepo, userRepo, settingsRepo, emailClient, cfg.AppBaseURL, jwtManager)
+	inviteService := service.NewInviteService(invitationRepo, workspaceRepo, orgRepo, userRepo, settingsRepo, appEmailClient, cfg.AppBaseURL, jwtManager)
 	// Initialize authorization service.
 	authzMemberRepo := authorization.NewGORMMemberRepository(db)
 	authzService := authorization.NewAuthzService(db, authzMemberRepo, moduleGrantRepo)
@@ -1037,7 +1078,8 @@ func main() {
 		SupportInboxWidget:  handler.NewSupportInboxWidgetHandler(supportInboxService),
 		SupportAI:           handler.NewSupportAIHandler(supportAIService, supportInboxService, agentKnowledgeSourceService, supportContentSourceService, agentContentSourceService),
 		SupportAttachment:   handler.NewSupportAttachmentHandler(supportAttachmentService, supportInboxService),
-		PostmarkInbound:     handler.NewPostmarkInboundHandler(emailFallbackService, cfg.PostmarkInboundWebhookSecret),
+		PostmarkInbound:     handler.NewPostmarkInboundHandler(emailFallbackService, cfg.PostmarkReplyInboundWebhookSecret, cfg.PostmarkRouteInboundWebhookSecret),
+		EmailImageProxy:     handler.NewEmailImageProxyHandler(),
 		AdminWebhookEvent:   handler.NewAdminWebhookEventHandler(supportEmailWebhookEventRepo),
 		AdminEmailQueue:     handler.NewAdminEmailQueueHandler(emailFallbackService),
 		Git:                 handler.NewGitHandler(gitService),
@@ -1049,8 +1091,6 @@ func main() {
 		CRMAssociation:      handler.NewCRMAssociationHandler(crmAssociationService),
 		Associations:        handler.NewAssociationsHandler(associationsService),
 		CRMActivity:         handler.NewCRMActivityHandler(crmActivityService),
-		CRMProperty:         handler.NewCRMPropertyHandler(crmPropertyService),
-		CRMList:             handler.NewCRMListHandler(crmListService),
 		CRMImport:           handler.NewCRMImportHandler(crmImportService),
 		CRMEmail:            handler.NewCRMEmailHandler(crmEmailService, cfg.AppBaseURL),
 		CRMCalendar:         handler.NewCRMCalendarHandler(crmCalendarService),
@@ -1058,7 +1098,6 @@ func main() {
 		CRMSignal:           handler.NewCRMSignalHandler(crmSignalService),
 		CRMSummary:          handler.NewCRMSummaryHandler(crmSummaryService),
 		CRMSuggestion:       handler.NewCRMSuggestionHandler(crmSuggestionService),
-		CRMSequence:         handler.NewCRMSequenceHandler(crmSequenceService),
 		CRMWritingProfile:   handler.NewCRMWritingProfileHandler(crmWritingProfileService),
 		CRMSearch:           handler.NewCRMSearchHandler(crmSearchService),
 		CRMDealAutomation:   handler.NewCRMDealAutomationHandler(dealAutomationService),
@@ -1168,7 +1207,7 @@ func main() {
 
 	// Start the email fallback poller only when both Redis and Postmark are available.
 	var emailFallbackCancel context.CancelFunc
-	if redisClient != nil && emailClient != nil {
+	if redisClient != nil && replyEmailClient != nil {
 		var emailFallbackCtx context.Context
 		emailFallbackCtx, emailFallbackCancel = context.WithCancel(context.Background())
 		go emailFallbackService.StartPoller(emailFallbackCtx)

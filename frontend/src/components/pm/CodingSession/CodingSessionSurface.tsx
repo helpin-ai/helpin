@@ -19,6 +19,7 @@ import type { CodingSession, CodingSessionEvent, CodingSessionStreamSnapshot } f
 import { codingSessionService } from '@/lib/services/codingSessionService';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { Button } from '@/components/ui/button';
 
 const STATUS_ICON = {
   queued: <Clock01Icon className="h-3.5 w-3.5" />,
@@ -41,31 +42,37 @@ export function CodingSessionSurface({
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const workspaceId = workspace?.id ?? '';
   const workspaceSlug = workspace?.slug ?? '';
+  const [activeSessionId, setActiveSessionId] = useState(sessionId);
 
   const [session, setSession] = useState<CodingSession | null>(null);
   const [events, setEvents] = useState<CodingSessionEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [acting, setActing] = useState<string | null>(null);
+  const [sendingMessage, setSendingMessage] = useState(false);
   const sequenceRef = useRef(0);
   const seededSnapshotSessionRef = useRef<string | null>(null);
   const [streamSnapshotSeed, setStreamSnapshotSeed] = useState<CodingSessionStreamSnapshot | null>(null);
 
+  useEffect(() => {
+    setActiveSessionId(sessionId);
+  }, [sessionId]);
+
   const loadSession = useCallback(async () => {
-    if (!workspaceId || !sessionId) return;
-    const sessionRes = await codingSessionService.get(workspaceId, sessionId);
+    if (!workspaceId || !activeSessionId) return;
+    const sessionRes = await codingSessionService.get(workspaceId, activeSessionId);
     if (sessionRes.error) throw new Error(sessionRes.error);
     const nextSession = sessionRes.data as CodingSession;
-    if (seededSnapshotSessionRef.current !== sessionId) {
-      seededSnapshotSessionRef.current = sessionId;
+    if (seededSnapshotSessionRef.current !== activeSessionId) {
+      seededSnapshotSessionRef.current = activeSessionId;
       setStreamSnapshotSeed(nextSession.stream_state_snapshot ?? null);
     }
     setSession(nextSession);
-  }, [workspaceId, sessionId]);
+  }, [workspaceId, activeSessionId]);
 
   const loadEvents = useCallback(async (after = 0) => {
-    if (!workspaceId || !sessionId) return;
-    const eventsRes = await codingSessionService.listEvents(workspaceId, sessionId, after);
+    if (!workspaceId || !activeSessionId) return;
+    const eventsRes = await codingSessionService.listEvents(workspaceId, activeSessionId, after);
     if (eventsRes.error) throw new Error(eventsRes.error);
     const nextEvents = eventsRes.data?.events ?? [];
     if (after > 0) {
@@ -78,10 +85,10 @@ export function CodingSessionSurface({
       setEvents(nextEvents);
       sequenceRef.current = maxPersistedCodingSessionSequence(nextEvents);
     }
-  }, [workspaceId, sessionId]);
+  }, [workspaceId, activeSessionId]);
 
   const load = useCallback(async () => {
-    if (!workspaceId || !sessionId) return;
+    if (!workspaceId || !activeSessionId) return;
     setLoading(true);
     setError(null);
     try {
@@ -91,43 +98,50 @@ export function CodingSessionSurface({
     } finally {
       setLoading(false);
     }
-  }, [workspaceId, sessionId, loadSession, loadEvents]);
+  }, [workspaceId, activeSessionId, loadSession, loadEvents]);
 
   useEffect(() => {
     seededSnapshotSessionRef.current = null;
     setStreamSnapshotSeed(null);
     sequenceRef.current = 0;
     setEvents([]);
-  }, [sessionId, workspaceId]);
+    setSession(null);
+  }, [activeSessionId, workspaceId]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   const reconcileEvents = useCallback(async () => {
-    if (!workspaceId || !sessionId) return;
+    if (!workspaceId || !activeSessionId) return;
     try {
       await loadEvents(sequenceRef.current);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to refresh session events');
     }
-  }, [workspaceId, sessionId, loadEvents]);
+  }, [workspaceId, activeSessionId, loadEvents]);
 
   useEffect(() => {
     const onSessionUpdated = (raw: Event) => {
       const detail = (raw as CustomEvent).detail as { entity_id?: string; data?: Record<string, unknown> } | undefined;
-      if (!detail || detail.entity_id !== sessionId) return;
+      if (!detail || detail.entity_id !== activeSessionId) return;
       setSession((current) => current ? {
         ...current,
+        parent_run_id: typeof detail.data?.parent_run_id === 'string'
+          ? detail.data.parent_run_id || undefined
+          : current.parent_run_id,
         status: typeof detail.data?.status === 'string' ? detail.data.status as CodingSession['status'] : current.status,
         pause_reason: typeof detail.data?.pause_reason === 'string' ? detail.data.pause_reason as CodingSession['pause_reason'] : current.pause_reason,
+        error_message: typeof detail.data?.error_message === 'string'
+          ? detail.data.error_message || undefined
+          : current.error_message,
         updated_at: new Date().toISOString(),
       } : current);
       void loadSession();
     };
     const onSessionEvent = (raw: Event) => {
       const detail = (raw as CustomEvent).detail as { parent_id?: string; data?: CodingSessionEvent } | undefined;
-      if (!detail || detail.parent_id !== sessionId || !detail.data) return;
+      if (!detail || detail.parent_id !== activeSessionId || !detail.data) return;
       const event = detail.data;
       if (
         isPersistedCodingSessionEvent(event)
@@ -159,7 +173,7 @@ export function CodingSessionSurface({
       window.removeEventListener('coding_session-updated', onSessionUpdated);
       window.removeEventListener('coding_session_event-created', onSessionEvent);
     };
-  }, [loadSession, reconcileEvents, sessionId]);
+  }, [activeSessionId, loadSession, reconcileEvents]);
 
   useEffect(() => {
     if (!session || session.status !== 'running') return;
@@ -213,28 +227,63 @@ export function CodingSessionSurface({
     if (interaction?.interaction_kind === 'review_checkpoint') {
       const decision = typeof responsePayload.decision === 'string' ? responsePayload.decision.trim() : '';
       if (decision === 'approve') {
-        await runAction('approve-review-checkpoint', () => codingSessionService.approve(workspaceId, sessionId, {
+        await runAction('approve-review-checkpoint', () => codingSessionService.approve(workspaceId, activeSessionId, {
           ...(followupMessage?.trim() ? { content: followupMessage.trim(), send_message: true } : {}),
         }));
         return;
       }
-      await runAction('request-review-changes', () => codingSessionService.requestChanges(workspaceId, sessionId, {
+      await runAction('request-review-changes', () => codingSessionService.requestChanges(workspaceId, activeSessionId, {
         content: followupMessage?.trim() || 'Please revise and continue.',
       }));
       return;
     }
-    await runAction('resolve-interaction', () => codingSessionService.resolveInteraction(workspaceId, sessionId, interactionId, {
+    await runAction('resolve-interaction', () => codingSessionService.resolveInteraction(workspaceId, activeSessionId, interactionId, {
       response_payload: responsePayload,
       ...(followupMessage?.trim() ? { followup_message: followupMessage.trim() } : {}),
     }));
-  }, [interactionsById, runAction, sessionId, workspaceId]);
+  }, [interactionsById, runAction, activeSessionId, workspaceId]);
+
+  const continueRun = useCallback(async (content?: string) => {
+    if (!workspaceId || !activeSessionId) return;
+    const result = await codingSessionService.continue(workspaceId, activeSessionId, content?.trim() ? { content: content.trim() } : {});
+    if (result.error) {
+      throw new Error(result.error);
+    }
+    const nextRunId = result.data?.id;
+    if (!nextRunId) {
+      throw new Error('Continuation did not return a new run');
+    }
+    setError(null);
+    setActiveSessionId(nextRunId);
+  }, [workspaceId, activeSessionId]);
 
   const sendMessage = useCallback(async (content: string) => {
-    const result = await codingSessionService.sendMessage(workspaceId, sessionId, { content });
-    if (result.error) setError(result.error);
-  }, [workspaceId, sessionId]);
+    if (!workspaceId || !activeSessionId || !session) return;
+    setSendingMessage(true);
+    try {
+      if (session.status === 'failed' || session.status === 'cancelled') {
+        await continueRun(content);
+        return;
+      }
+      const result = await codingSessionService.sendMessage(workspaceId, activeSessionId, { content });
+      if (result.error) throw new Error(result.error);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send message');
+    } finally {
+      setSendingMessage(false);
+    }
+  }, [workspaceId, activeSessionId, session, continueRun]);
 
-  const canSendMessage = session !== null && (session.status === 'running' || session.status === 'paused');
+  const canSendMessage = session !== null && (
+    session.status === 'running'
+    || session.status === 'paused'
+    || session.status === 'failed'
+    || session.status === 'cancelled'
+  );
+  const terminalContinuation = session !== null && (session.status === 'failed' || session.status === 'cancelled');
+  const messagePlaceholder = terminalContinuation
+    ? 'This run ended. Type instructions to continue from the previous progress… (⌘↵ to send)'
+    : 'Reply to agent… (⌘↵ to send)';
 
   return (
     <div className={cn(
@@ -250,12 +299,50 @@ export function CodingSessionSurface({
         onRefresh={() => void load()}
         refreshing={loading}
         acting={acting}
-        onCancelRun={() => void runAction('cancel', () => codingSessionService.cancel(workspaceId, sessionId))}
+        onCancelRun={() => void runAction('cancel', () => codingSessionService.cancel(workspaceId, activeSessionId))}
       />
 
       {error ? (
         <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
           {error}
+        </div>
+      ) : null}
+
+      {!error && session?.error_message ? (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="space-y-1">
+              <p className="font-medium">Run failed</p>
+              <p>{session.error_message}</p>
+              {terminalContinuation ? (
+                <p className="text-xs text-destructive/80">
+                  Type a follow-up below to continue from this run, or retry immediately.
+                </p>
+              ) : null}
+            </div>
+            {terminalContinuation ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                disabled={sendingMessage}
+                onClick={() => {
+                  void (async () => {
+                    setSendingMessage(true);
+                    try {
+                      await continueRun();
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : 'Failed to continue run');
+                    } finally {
+                      setSendingMessage(false);
+                    }
+                  })();
+                }}
+              >
+                Retry
+              </Button>
+            ) : null}
+          </div>
         </div>
       ) : null}
 
@@ -267,11 +354,13 @@ export function CodingSessionSurface({
           liveTurnSegments={streamState.live_turn_segments}
           loading={loading}
           onSendMessage={canSendMessage ? sendMessage : undefined}
+          sendingMessage={sendingMessage}
           session={session}
           activeInteraction={activeInteraction}
           acting={acting}
-          onAuthStart={() => void runAction('auth-start', () => codingSessionService.startDeviceCodeAuth(workspaceId, sessionId))}
-          onAuthCancel={() => void runAction('auth-cancel', () => codingSessionService.cancelDeviceCodeAuth(workspaceId, sessionId))}
+          messagePlaceholder={messagePlaceholder}
+          onAuthStart={() => void runAction('auth-start', () => codingSessionService.startDeviceCodeAuth(workspaceId, activeSessionId))}
+          onAuthCancel={() => void runAction('auth-cancel', () => codingSessionService.cancelDeviceCodeAuth(workspaceId, activeSessionId))}
           onResolveInteraction={(interactionId, responsePayload, followupMessage) => void resolveInteraction(interactionId, responsePayload, followupMessage)}
         />
 

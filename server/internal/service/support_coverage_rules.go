@@ -39,6 +39,9 @@ func classifyEvent(event *model.SupportEvent) *gapRule {
 	case model.SupportEventHumanReplyAfterAI:
 		return classifyHumanReplyAfterAI(event)
 
+	case model.SupportEventConversationResolved:
+		return classifyConversationResolvedByHuman(event)
+
 	default:
 		return nil
 	}
@@ -188,6 +191,43 @@ func classifyDocsIssueFeedback(event *model.SupportEvent) *gapRule {
 		V1GapType:   model.SupportCoverageV1GapNeedsReview,
 		Title:       "Agent flagged docs issue",
 		Confidence:  0.6,
+	}
+}
+
+// classifyConversationResolvedByHuman handles conversations a human marked
+// as resolved after AI had engaged but not fully resolved them. The event
+// must carry the explicit SupportCoverageSourceConversationResolvedByHuman
+// signal (set by the emitter only when flow_state=resolved_by_human AND
+// ai_turn_count>0) — a bare `conversation_resolved` event never produces a
+// gap on its own. Dedupes per conversation so one gap per conversation max.
+func classifyConversationResolvedByHuman(event *model.SupportEvent) *gapRule {
+	if event.SourceSignal != model.SupportCoverageSourceConversationResolvedByHuman {
+		return nil
+	}
+	convoID := coverageDeref(event.ConversationID)
+	if convoID == "" {
+		return nil
+	}
+	summary := event.IssueSummary
+	titleSuffix := coverageTruncate(summary, 80)
+	if titleSuffix == "" {
+		titleSuffix = "no summary"
+	}
+	if event.IssueKey != "" {
+		return &gapRule{
+			DedupeKey:   buildDedupeKey(event.WorkspaceID, model.SupportCoverageV1GapNeedsReview, event.IssueKey, convoID),
+			GapCategory: model.SupportCoverageGapCategoryUnknown,
+			V1GapType:   model.SupportCoverageV1GapNeedsReview,
+			Title:       titleFromIssueKey(event.IssueKey, "Human resolved after AI engagement"),
+			Confidence:  0.5,
+		}
+	}
+	return &gapRule{
+		DedupeKey:   buildDedupeKey(event.WorkspaceID, model.SupportCoverageV1GapNeedsReview, "", convoID),
+		GapCategory: model.SupportCoverageGapCategoryUnknown,
+		V1GapType:   model.SupportCoverageV1GapNeedsReview,
+		Title:       "Human resolved after AI engagement: " + titleSuffix,
+		Confidence:  0.4,
 	}
 }
 

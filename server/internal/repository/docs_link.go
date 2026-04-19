@@ -71,3 +71,14 @@ func (r *DocsLinkRepository) Delete(ctx context.Context, id string) error {
 	}
 	return nil
 }
+
+// DeleteByDocumentIDs hard-deletes links for the provided documents.
+func (r *DocsLinkRepository) DeleteByDocumentIDs(ctx context.Context, documentIDs []string) error {
+	if len(documentIDs) == 0 {
+		return nil
+	}
+	if err := r.db.WithContext(ctx).Where("document_id IN ?", documentIDs).Delete(&model.DocsLink{}).Error; err != nil {
+		return fmt.Errorf("delete docs links by documents: %w", err)
+	}
+	return nil
+}

@@ -23,6 +23,7 @@ import (
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/temporal"
 
+	"github.com/helpin-ai/helpin/server/internal/agentskills"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -85,6 +86,8 @@ type AgentRunActivities struct {
 	runRepo             *repository.AgentRunRepository
 	runMessageRepo      *repository.AgentRunMessageRepository
 	agentRepo           *repository.AgentRepository
+	workspaceSkillRepo  *repository.WorkspaceSkillRepository
+	skillPackageStore   agentskills.SkillPackageStore
 	artifactRepo        *repository.AgentRunArtifactRepository
 	interactionRepo     *repository.AgentRunInteractionRepository
 	sessionSnapshotRepo *repository.CodingSessionStateSnapshotRepository
@@ -123,6 +126,8 @@ func NewAgentRunActivities(
 	runRepo *repository.AgentRunRepository,
 	runMessageRepo *repository.AgentRunMessageRepository,
 	agentRepo *repository.AgentRepository,
+	workspaceSkillRepo *repository.WorkspaceSkillRepository,
+	skillPackageStore agentskills.SkillPackageStore,
 	artifactRepo *repository.AgentRunArtifactRepository,
 	interactionRepo *repository.AgentRunInteractionRepository,
 	sessionSnapshotRepo *repository.CodingSessionStateSnapshotRepository,
@@ -159,6 +164,8 @@ func NewAgentRunActivities(
 		runRepo:             runRepo,
 		runMessageRepo:      runMessageRepo,
 		agentRepo:           agentRepo,
+		workspaceSkillRepo:  workspaceSkillRepo,
+		skillPackageStore:   skillPackageStore,
 		artifactRepo:        artifactRepo,
 		interactionRepo:     interactionRepo,
 		sessionSnapshotRepo: sessionSnapshotRepo,
@@ -443,9 +450,9 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		}
 	}
 
-	config := workerpkg.ParseWorkflowConfig(workDir)
+	config := workerpkg.ParseWorkflowConfigForAgent(workDir, state.agent)
 	if config == nil {
-		config = workerpkg.DefaultWorkflowConfig()
+		config = workerpkg.DefaultWorkflowConfigForAgent(state.agent)
 	}
 
 	allowedTools := effectiveToolSet(state.resolved, planningInput.AllowedTools)
@@ -551,6 +558,36 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		"agent_id", state.run.AgentID,
 		"work_dir", workDir,
 	)
+	var repoSkillMask *workerpkg.RepoSkillMask
+	if runtimeKind == "codex" || runtimeKind == "opencode" {
+		repoSkillMask, err = workerpkg.MaskRepoSkillRoots(workDir, state.run.ID)
+		if err != nil {
+			if persistWorkspace {
+				_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
+			}
+			_ = a.failRun(ctx, state, err.Error())
+			return ExecuteRunResult{}, nonRetryableRunError(err)
+		}
+		if repoSkillMask != nil {
+			defer func() {
+				if restoreErr := repoSkillMask.Restore(); restoreErr != nil && !errors.Is(restoreErr, os.ErrNotExist) {
+					slog.WarnContext(ctx, "failed to restore masked repo skill roots",
+						"error", restoreErr,
+						"run_id", state.run.ID,
+						"runtime_kind", runtimeKind)
+				}
+			}()
+		}
+	}
+	if runtimeKind == "codex" || runtimeKind == "opencode" {
+		if err := a.stageRuntimeSkills(ctx, state, execCtx, runtimeKind); err != nil {
+			if persistWorkspace {
+				_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
+			}
+			_ = a.failRun(ctx, state, err.Error())
+			return ExecuteRunResult{}, nonRetryableRunError(err)
+		}
+	}
 
 	err = adapter.Execute(execCtx, state.run)
 	if err != nil {
@@ -713,6 +750,81 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		AwaitingAuth:      waitForAuth && !waitForApproval && !waitForInput,
 		ContinueExecution: continueExecution && !waitForApproval && !waitForInput && !waitForAuth,
 	}, nil
+}
+
+func (a *AgentRunActivities) stageRuntimeSkills(ctx context.Context, state *resolvedRunState, execCtx *workerpkg.ExecutionContext, runtimeKind string) error {
+	if a == nil || state == nil || state.run == nil || state.agent == nil || execCtx == nil {
+		return nil
+	}
+	if len(agentskills.EffectiveRuntimeRefs(state.agent)) == 0 {
+		return nil
+	}
+	stageRoot := workerpkg.RuntimeSkillRootPathForRun(state.run.ID, runtimeKind)
+	resolution, err := agentskills.StageInto(
+		ctx,
+		state.run.WorkspaceID,
+		state.agent,
+		state.resolved.Tools,
+		a.workspaceSkillRepo,
+		a.skillPackageStore,
+		stageRoot,
+	)
+	if err != nil {
+		return fmt.Errorf("stage runtime skills: %w", err)
+	}
+	execCtx.StagedRuntimeSkillRoot = stageRoot
+	a.persistRuntimeSkillManifest(ctx, state.run, runtimeKind, stageRoot, resolution)
+	return nil
+}
+
+func (a *AgentRunActivities) persistRuntimeSkillManifest(ctx context.Context, run *model.AgentRun, runtimeKind, stageRoot string, resolution agentskills.Resolution) {
+	if a == nil || a.artifactRepo == nil || run == nil {
+		return
+	}
+	type skillManifestEntry struct {
+		Key        string  `json:"key"`
+		SourceKind string  `json:"source_kind"`
+		VersionKey *string `json:"version_key,omitempty"`
+		SkillID    *string `json:"skill_id,omitempty"`
+	}
+	entries := make([]skillManifestEntry, 0, len(resolution.Refs))
+	for idx, ref := range resolution.Refs {
+		definition := resolution.Definitions[idx]
+		entries = append(entries, skillManifestEntry{
+			Key:        definition.Key,
+			SourceKind: definition.SourceKind,
+			VersionKey: ref.VersionKey,
+			SkillID:    ref.SkillID,
+		})
+	}
+	payload, err := json.Marshal(map[string]any{
+		"runtime_kind": runtimeKind,
+		"staged_root":  stageRoot,
+		"skills":       entries,
+	})
+	if err != nil {
+		slog.WarnContext(ctx, "failed to marshal runtime skill manifest", "error", err, "run_id", run.ID)
+		return
+	}
+	seqNo, err := a.artifactRepo.NextSequence(ctx, run.WorkspaceID, run.ID)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to allocate runtime skill manifest sequence", "error", err, "run_id", run.ID)
+		return
+	}
+	content := string(payload)
+	artifact := &model.AgentRunArtifact{
+		WorkspaceID:   run.WorkspaceID,
+		RunID:         run.ID,
+		ArtifactType:  "runtime_skill_manifest",
+		Format:        "json",
+		StorageMode:   "inline",
+		InlineContent: &content,
+		Metadata:      json.RawMessage("{}"),
+		SequenceNo:    seqNo,
+	}
+	if err := a.artifactRepo.Create(ctx, artifact); err != nil {
+		slog.WarnContext(ctx, "failed to persist runtime skill manifest", "error", err, "run_id", run.ID)
+	}
 }
 
 func resolveExecutionWaitState(run *model.AgentRun, humanInputRequest *workerpkg.UserInputRequest, approvalRequest *model.ApprovalRequest, authRequest *model.CodexAuthState) (waitForApproval bool, waitForInput bool, waitForAuth bool) {
@@ -1063,6 +1175,17 @@ func (a *AgentRunActivities) loadRunArtifactContext(ctx context.Context, state *
 	}
 
 	artifactContext := &workerpkg.ArtifactContext{}
+	if parentRunID := strings.TrimSpace(derefString(state.run.ParentRunID)); parentRunID != "" && a.runRepo != nil {
+		parentRun, err := a.runRepo.GetByID(ctx, state.run.WorkspaceID, parentRunID)
+		if err != nil {
+			return nil, err
+		}
+		parentEntries, err := a.loadParentRunArtifactContext(ctx, parentRun)
+		if err != nil {
+			return nil, err
+		}
+		artifactContext.Entries = append(artifactContext.Entries, parentEntries...)
+	}
 	if a.artifactRepo != nil {
 		artifacts, err := a.artifactRepo.ListByRun(ctx, state.run.WorkspaceID, state.run.ID)
 		if err != nil {
@@ -1094,6 +1217,53 @@ func (a *AgentRunActivities) loadRunArtifactContext(ctx context.Context, state *
 		return nil, nil
 	}
 	return workerpkg.TrimArtifactContext(artifactContext), nil
+}
+
+func (a *AgentRunActivities) loadParentRunArtifactContext(ctx context.Context, parentRun *model.AgentRun) ([]workerpkg.ArtifactContextEntry, error) {
+	if parentRun == nil || a.artifactRepo == nil {
+		return nil, nil
+	}
+
+	artifacts, err := a.artifactRepo.ListByRun(ctx, parentRun.WorkspaceID, parentRun.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	entries := make([]workerpkg.ArtifactContextEntry, 0, 4)
+	if reason := strings.TrimSpace(derefString(parentRun.ErrorMessage)); reason != "" {
+		entries = append(entries, workerpkg.ArtifactContextEntry{
+			Label:        "Previous run failure reason",
+			Source:       "previous_run_error",
+			Status:       strings.TrimSpace(parentRun.Status),
+			Format:       "text",
+			Content:      reason,
+			PreserveFull: true,
+		})
+	}
+	if checkpoint, err := workerpkg.LatestTranscriptSummaryCheckpoint(artifacts); err != nil {
+		return nil, err
+	} else if checkpoint != nil && strings.TrimSpace(checkpoint.Summary) != "" {
+		entries = append(entries, workerpkg.ArtifactContextEntry{
+			Label:   "Previous run transcript summary",
+			Source:  workerpkg.TranscriptSummaryArtifactType,
+			Status:  strings.TrimSpace(parentRun.Status),
+			Format:  "text",
+			Content: strings.TrimSpace(checkpoint.Summary),
+		})
+	}
+
+	parentEntries, err := buildArtifactContextEntries(artifacts)
+	if err != nil {
+		return nil, err
+	}
+	for _, entry := range parentEntries {
+		entry.Label = "Previous run: " + entry.Label
+		if strings.TrimSpace(entry.Status) == "" {
+			entry.Status = strings.TrimSpace(parentRun.Status)
+		}
+		entries = append(entries, entry)
+	}
+	return entries, nil
 }
 
 func buildArtifactContextEntries(artifacts []model.AgentRunArtifact) ([]workerpkg.ArtifactContextEntry, error) {
@@ -3260,6 +3430,15 @@ func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*r
 	}
 
 	resolved := workerpkg.ResolveAgentProfile(agent, run.InvocationMode)
+	skillResolution, err := agentskills.Resolve(ctx, run.WorkspaceID, agent.Skills, a.workspaceSkillRepo)
+	if err != nil {
+		return nil, err
+	}
+	agent.Skills = skillResolution.Refs
+	if err := agentskills.ValidateRuntimeAndTools(agent.RuntimeKind, resolved.Tools, skillResolution.Definitions); err != nil {
+		return nil, err
+	}
+	agent.ResolvedSkillInstructions = agentskills.CompileInstructions(skillResolution.Definitions)
 	state := &resolvedRunState{
 		run:      run,
 		agent:    agent,
@@ -4371,6 +4550,8 @@ func (a *AgentRunActivities) buildAgenticEpicPlannerInstructions(ctx context.Con
 	sections = append(sections, "Keep approvals soft and inline. When you need approval, call request_review_checkpoint with phase=\"prd\" or phase=\"tasks\" and stop after the request.")
 	sections = append(sections, "Treat request_review_checkpoint as the final action in that turn. Do not call more tools after it in the same turn. Do not append extra approval-choice prose after requesting the checkpoint.")
 	sections = append(sections, "After explicit PRD approval, continue automatically to task planning in the same run. Do not ask whether to proceed to tasks unless the human explicitly redirects scope.")
+	sections = append(sections, "After PRD approval is persisted, your next turn must continue into task planning. Either ask the next blocking questions with request_user_input or publish_task_plan. Do not complete the run immediately after PRD approval.")
+	sections = append(sections, "If the latest human reply requests changes to the PRD or task plan, revise the active artifact, republish the full replacement preview, and request_review_checkpoint again when ready. Do not end the run with prose-only acknowledgement after change feedback.")
 	sections = append(sections, "Use publish_prd_draft for PRD markdown previews and publish_task_plan for task plan JSON previews.")
 	sections = append(sections, "Before approval, keep drafts in chat-backed preview artifacts only. After approval, the platform applies the approved artifact; do not replay approved PRDs or task plans through mutation tools.")
 

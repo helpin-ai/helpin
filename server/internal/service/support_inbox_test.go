@@ -1131,6 +1131,83 @@ func TestAssignConversationUserAcceptsSupportAccessibleUserOutsideMailboxMembers
 	_ = ownerMember
 }
 
+func TestSupportInboxServiceUpdateConversationStatus_KeepsResolvedEventsInternal(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	workspaceID := "ws-status-events"
+	seedWorkspace(t, db, workspaceID, "Status Events", "status-events", "user-123")
+
+	convRepo := repository.NewSupportConversationRepository(db)
+	msgRepo := repository.NewSupportMessageRepository(db)
+	svc := NewSupportInboxService(
+		convRepo,
+		nil,
+		msgRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	conversation := &model.SupportConversation{
+		WorkspaceID: workspaceID,
+		Subject:     "Widget visibility",
+		Status:      model.SupportConversationStatusOpen,
+	}
+	if err := convRepo.Create(ctx, conversation); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	if _, err := svc.UpdateConversationStatus(ctx, workspaceID, conversation.ID, model.SupportConversationStatusResolved, ""); err != nil {
+		t.Fatalf("resolve conversation: %v", err)
+	}
+	if _, err := svc.UpdateConversationStatus(ctx, workspaceID, conversation.ID, model.SupportConversationStatusOpen, ""); err != nil {
+		t.Fatalf("reopen conversation: %v", err)
+	}
+
+	allMessages, err := msgRepo.ListByConversation(ctx, workspaceID, conversation.ID, true)
+	if err != nil {
+		t.Fatalf("list all messages: %v", err)
+	}
+	if len(allMessages) != 2 {
+		t.Fatalf("expected 2 system messages, got %d", len(allMessages))
+	}
+
+	wantEvents := []model.SupportSystemEventType{
+		model.SystemEventResolved,
+		model.SystemEventReopened,
+	}
+	for i, wantEvent := range wantEvents {
+		msg := allMessages[i]
+		if !msg.IsInternal {
+			t.Fatalf("message %d is public; want internal system event", i)
+		}
+		if msg.MessageType != "system" {
+			t.Fatalf("message %d type = %q, want system", i, msg.MessageType)
+		}
+		if msg.SystemEventType == nil || *msg.SystemEventType != wantEvent {
+			t.Fatalf("message %d system_event_type = %v, want %q", i, msg.SystemEventType, wantEvent)
+		}
+	}
+
+	publicMessages, err := msgRepo.ListByConversation(ctx, workspaceID, conversation.ID, false)
+	if err != nil {
+		t.Fatalf("list public messages: %v", err)
+	}
+	if len(publicMessages) != 0 {
+		t.Fatalf("expected no widget-visible messages, got %d", len(publicMessages))
+	}
+}
+
 func TestSupportInboxServiceCreateTaskFromConversation_CreatesLinkedTaskAndCopiesAssociations(t *testing.T) {
 	env := newTaskTestEnv(t)
 	ctx := context.Background()
@@ -1378,6 +1455,238 @@ func TestSupportInboxServiceCreateTaskFromConversation_NormalizesGenericActionTi
 	if !strings.Contains(*taskDetail.Task.Description, "Requested Outcome") {
 		t.Fatalf("task description = %q, want structured html", *taskDetail.Task.Description)
 	}
+}
+
+// Reproduces conversation CON-136 (ticket af8f06af-…) where the LLM returned
+// valid JSON but left `title` and `description_markdown` empty. Current code
+// silently overwrites both with the deterministic fallback, so the task ends
+// up with the raw error message as its name, "thanks in advance…" as its
+// Impact, and the canned Requested Outcome sentence. The LLM is working — the
+// service just swallows partial responses without logging. This test will
+// fail until the fallback/observability is fixed.
+func TestSupportInboxServiceCreateTaskFromConversation_DoesNotFallBackSilentlyWhenLLMReturnsEmptyFields(t *testing.T) {
+	env := newTaskTestEnv(t)
+	ctx := context.Background()
+
+	convRepo := repository.NewSupportConversationRepository(env.db)
+	messageRepo := repository.NewSupportMessageRepository(env.db)
+
+	svc := NewSupportInboxService(
+		convRepo,
+		nil,
+		messageRepo,
+		nil,
+		repository.NewCRMAssociationRepository(env.db),
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		repository.NewUserRepository(env.db),
+		nil,
+		nil,
+		nil,
+	)
+	svc.SetTaskService(env.svc)
+	// Simulate the production failure mode: LLM responds with schema-valid JSON
+	// but empty title + empty description_markdown.
+	svc.SetSupportAIService(&SupportAIService{
+		llmProvider: &scriptedSupportRewriteLLM{
+			response: llm.ChatResponse{
+				Content: `{"title":"","summary":"SERP Analyzer token is rejected during content generation.","description_markdown":"","task_type":"bug","priority":"medium"}`,
+			},
+		},
+	})
+
+	rawErrorSubject := "Error: Content generation failed: SERP analysis failed: SERP Analyzer failed: Token is not valid; SERP Knowledge failed: Token is not valid"
+	conversation := &model.SupportConversation{
+		WorkspaceID:   env.wsID,
+		Subject:       rawErrorSubject,
+		Status:        "open",
+		Priority:      model.PMTaskPriorityMedium,
+		CustomerName:  strPtr("Fiorenzo Minnelli"),
+		CustomerEmail: strPtr("minnellif@example.com"),
+	}
+	if err := convRepo.Create(ctx, conversation); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	customerName := "Fiorenzo Minnelli"
+	agentName := "Support Agent"
+	seedMessages := []model.SupportMessage{
+		{
+			WorkspaceID:       env.wsID,
+			ConversationID:    conversation.ID,
+			SenderType:        "customer",
+			MessageType:       "reply",
+			SenderDisplayName: &customerName,
+			Content:           rawErrorSubject + " I 'm facing for the second time with this error",
+		},
+		{
+			WorkspaceID:       env.wsID,
+			ConversationID:    conversation.ID,
+			SenderType:        "agent",
+			MessageType:       "reply",
+			SenderDisplayName: &agentName,
+			Content:           "Let me connect you with a team member who can help further.",
+		},
+		{
+			WorkspaceID:       env.wsID,
+			ConversationID:    conversation.ID,
+			SenderType:        "customer",
+			MessageType:       "reply",
+			SenderDisplayName: &customerName,
+			Content:           "thanks in advance i tried twice and same error",
+		},
+	}
+	for i := range seedMessages {
+		if err := messageRepo.Create(ctx, &seedMessages[i]); err != nil {
+			t.Fatalf("create message %d: %v", i, err)
+		}
+	}
+
+	resp, err := svc.CreateTaskFromConversation(ctx, env.wsID, conversation.ID, env.userID, model.CreateTaskFromConversationRequest{})
+	if err != nil {
+		t.Fatalf("CreateTaskFromConversation: %v", err)
+	}
+
+	// Title must not be the raw multi-line error string. An 80-char-plus
+	// stack-trace-like title is never a useful PM task name.
+	if resp.TaskName == rawErrorSubject {
+		t.Errorf("task_name fell back to raw error subject verbatim: %q", resp.TaskName)
+	}
+	if len(resp.TaskName) > 120 {
+		t.Errorf("task_name is %d chars, want <=120: %q", len(resp.TaskName), resp.TaskName)
+	}
+	if strings.Contains(resp.TaskName, "SERP Analyzer failed: Token is not valid; SERP Knowledge failed") {
+		t.Errorf("task_name still contains the full concatenated error chain: %q", resp.TaskName)
+	}
+
+	taskDetail, err := env.svc.GetByID(ctx, resp.TaskID)
+	if err != nil {
+		t.Fatalf("load task detail: %v", err)
+	}
+	if taskDetail == nil || taskDetail.Task.Description == nil {
+		t.Fatal("expected task description to be stored")
+	}
+	desc := *taskDetail.Task.Description
+
+	// Impact should not lift the customer's sign-off verbatim. The phrase
+	// may legitimately appear in the Conversation Notes transcript dump at
+	// the bottom, so scope the check to just the Impact section.
+	if impact := extractSupportDescriptionSection(desc, "impact"); strings.Contains(strings.ToLower(impact), "thanks in advance") {
+		t.Errorf("Impact section picked up the customer sign-off: %q", impact)
+	}
+
+	// Requested Outcome should not be the boilerplate default when the LLM
+	// gave us no real outcome. Either drop the section or derive something
+	// specific — never emit the canned filler sentence.
+	boilerplateOutcome := "Determine the next internal product or support action needed to resolve the customer issue."
+	if strings.Contains(desc, boilerplateOutcome) {
+		t.Errorf("description contains boilerplate Requested Outcome filler: %q", desc)
+	}
+}
+
+// Verifies the Eino-backed structured-output path: when a supportTaskDraftLLM
+// is injected, the service uses its schema-forced tool-call output and
+// bypasses the plain ChatCompletion path. Guards the wiring added in the
+// Eino migration.
+func TestSupportInboxServiceCreateTaskFromConversation_UsesInjectedTaskDraftLLM(t *testing.T) {
+	env := newTaskTestEnv(t)
+	ctx := context.Background()
+
+	convRepo := repository.NewSupportConversationRepository(env.db)
+	messageRepo := repository.NewSupportMessageRepository(env.db)
+
+	svc := NewSupportInboxService(
+		convRepo,
+		nil,
+		messageRepo,
+		nil,
+		repository.NewCRMAssociationRepository(env.db),
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		repository.NewUserRepository(env.db),
+		nil,
+		nil,
+		nil,
+	)
+	svc.SetTaskService(env.svc)
+
+	fake := &fakeSupportTaskDraftLLM{
+		draft: &supportConversationTaskDraft{
+			Title:       "SERP Analyzer token rejected during content generation",
+			Summary:     "The SERP Analyzer integration rejects the stored token, blocking content generation end-to-end.",
+			Description: "## Problem\nSERP token is rejected.\n\n## Impact\nCustomer cannot generate content.\n",
+			TaskType:    "bug",
+			Priority:    "high",
+		},
+	}
+	// No llmProvider is set — the legacy ChatCompletion path would fail.
+	// If the Eino path is wired correctly, the service must not touch it.
+	aiSvc := &SupportAIService{}
+	aiSvc.SetTaskDraftLLM(fake)
+	svc.SetSupportAIService(aiSvc)
+
+	conversation := &model.SupportConversation{
+		WorkspaceID:   env.wsID,
+		Subject:       "Error: SERP analysis failed",
+		Status:        "open",
+		Priority:      model.PMTaskPriorityMedium,
+		CustomerName:  strPtr("Fiorenzo Minnelli"),
+		CustomerEmail: strPtr("minnellif@example.com"),
+	}
+	if err := convRepo.Create(ctx, conversation); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+	customerName := "Fiorenzo Minnelli"
+	msg := model.SupportMessage{
+		WorkspaceID:       env.wsID,
+		ConversationID:    conversation.ID,
+		SenderType:        "customer",
+		MessageType:       "reply",
+		SenderDisplayName: &customerName,
+		Content:           "SERP Analyzer keeps returning Token is not valid on every generation attempt.",
+	}
+	if err := messageRepo.Create(ctx, &msg); err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+
+	resp, err := svc.CreateTaskFromConversation(ctx, env.wsID, conversation.ID, env.userID, model.CreateTaskFromConversationRequest{})
+	if err != nil {
+		t.Fatalf("CreateTaskFromConversation: %v", err)
+	}
+	if fake.calls != 1 {
+		t.Fatalf("expected taskDraftLLM to be called exactly once, got %d", fake.calls)
+	}
+	if fake.lastModel == "" {
+		t.Errorf("expected taskDraftLLM request to include a resolved model name")
+	}
+	if resp.TaskName != "SERP Analyzer token rejected during content generation" {
+		t.Errorf("task_name = %q, want the injected draft title", resp.TaskName)
+	}
+}
+
+type fakeSupportTaskDraftLLM struct {
+	draft     *supportConversationTaskDraft
+	err       error
+	calls     int
+	lastModel string
+}
+
+func (f *fakeSupportTaskDraftLLM) GenerateTaskDraft(_ context.Context, req supportTaskDraftRequest) (*supportConversationTaskDraft, error) {
+	f.calls++
+	f.lastModel = req.Model
+	if f.err != nil {
+		return nil, f.err
+	}
+	copy := *f.draft
+	return &copy, nil
 }
 
 func TestSupportInboxServiceCreateTaskFromConversation_FailsWhenContextIsTooWeak(t *testing.T) {
@@ -2014,4 +2323,23 @@ func TestGenerateSecureToken(t *testing.T) {
 			t.Error("expected unique tokens, got duplicates")
 		}
 	})
+}
+
+// extractSupportDescriptionSection pulls the body text out of a single
+// <h2 id="..."> section in the rendered task description HTML. Returns "" if
+// the section isn't present.
+func extractSupportDescriptionSection(html, sectionID string) string {
+	needle := `<h2 id="` + sectionID + `">`
+	start := strings.Index(html, needle)
+	if start < 0 {
+		return ""
+	}
+	start += len(needle)
+	if closeH2 := strings.Index(html[start:], "</h2>"); closeH2 >= 0 {
+		start += closeH2 + len("</h2>")
+	}
+	if end := strings.Index(html[start:], "<h2 "); end >= 0 {
+		return html[start : start+end]
+	}
+	return html[start:]
 }

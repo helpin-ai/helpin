@@ -21,6 +21,7 @@ import {
   FileUpIcon,
   Heading02Icon,
   Heading03Icon,
+  Heading04Icon,
   QuoteDownIcon,
   TextBoldIcon,
   TextItalicIcon,
@@ -419,12 +420,15 @@ function FloatingToolbar({ editor }: {
 
         <div className="mx-0.5 h-4 w-px bg-border" />
 
-        {/* H2, H3 */}
+        {/* H2, H3, H4 */}
         <ToolbarButton title="Heading 2" onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} active={editor.isActive('heading', { level: 2 })}>
           <Heading02Icon className="h-4 w-4" />
         </ToolbarButton>
         <ToolbarButton title="Heading 3" onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()} active={editor.isActive('heading', { level: 3 })}>
           <Heading03Icon className="h-4 w-4" />
+        </ToolbarButton>
+        <ToolbarButton title="Heading 4" onClick={() => editor.chain().focus().toggleHeading({ level: 4 }).run()} active={editor.isActive('heading', { level: 4 })}>
+          <Heading04Icon className="h-4 w-4" />
         </ToolbarButton>
 
         <div className="mx-0.5 h-4 w-px bg-border" />
@@ -979,7 +983,7 @@ export function DocsEditor({
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
-        heading: { levels: [1, 2, 3] },
+        heading: { levels: [1, 2, 3, 4, 5, 6] },
         codeBlock: false,
         link: {
           openOnClick: false,
@@ -1019,7 +1023,7 @@ export function DocsEditor({
     editable: !readOnly,
     editorProps: {
       attributes: {
-        class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[400px] px-6 py-4',
+        class: 'docs-editor-prose prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[400px] px-6 pt-3 pb-8',
       },
       handlePaste(_view, event) {
         const items = event.clipboardData?.items
@@ -1361,7 +1365,7 @@ img { max-width: 100%; }
             {/* Title (read-only in source view) */}
             {title !== undefined && (
               <div className="pb-3 shrink-0">
-                <h1 className="text-3xl font-bold text-left">{title || 'Untitled'}</h1>
+                <h1 className="text-3xl font-bold text-left break-words">{title || 'Untitled'}</h1>
               </div>
             )}
             <div className="flex items-center justify-between mb-3 shrink-0">
@@ -1411,21 +1415,36 @@ img { max-width: 100%; }
             )}
             {/* Title */}
             {title !== undefined && (
-              <div className="group/title px-6 pt-10 pb-1">
+              <div className="group/title px-6 pt-10 pb-2">
                 {slug && <SlugDisplay slug={slug} onSlugChange={onSlugChange} readOnly={readOnly} helperText={slugHelperText} />}
                 {onTitleChange && !readOnly ? (
-                  <input
+                  <textarea
                     value={title}
+                    ref={(el) => {
+                      if (el) {
+                        el.style.height = 'auto'
+                        el.style.height = `${el.scrollHeight}px`
+                      }
+                    }}
                     onChange={(e) => {
                       onTitleChange(e.target.value)
                       emitEditingPresence({ area: 'title', section: 'Title' })
+                      e.target.style.height = 'auto'
+                      e.target.style.height = `${e.target.scrollHeight}px`
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        editor?.commands.focus('start')
+                      }
                     }}
                     onBlur={() => scheduleClearEditingPresence()}
                     placeholder="Untitled"
-                    className="w-full bg-transparent text-3xl font-bold text-left outline-none placeholder:text-muted-foreground/40"
+                    rows={1}
+                    className="w-full bg-transparent text-3xl font-bold text-left outline-none placeholder:text-muted-foreground/40 resize-none overflow-hidden leading-tight break-words"
                   />
                 ) : (
-                  <h1 className="text-3xl font-bold text-left">{title || 'Untitled'}</h1>
+                  <h1 className="text-3xl font-bold text-left break-words">{title || 'Untitled'}</h1>
                 )}
               </div>
             )}

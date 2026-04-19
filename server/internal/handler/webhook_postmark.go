@@ -15,14 +15,20 @@ import (
 // PostmarkInboundHandler handles Postmark inbound webhooks.
 type PostmarkInboundHandler struct {
 	emailFallbackService *service.EmailFallbackService
-	webhookSecret        string
+	webhookSecrets       []string
 }
 
 // NewPostmarkInboundHandler creates a new PostmarkInboundHandler.
-func NewPostmarkInboundHandler(emailFallbackService *service.EmailFallbackService, webhookSecret string) *PostmarkInboundHandler {
+func NewPostmarkInboundHandler(emailFallbackService *service.EmailFallbackService, webhookSecrets ...string) *PostmarkInboundHandler {
+	normalizedSecrets := make([]string, 0, len(webhookSecrets))
+	for _, secret := range webhookSecrets {
+		if trimmed := strings.TrimSpace(secret); trimmed != "" {
+			normalizedSecrets = append(normalizedSecrets, trimmed)
+		}
+	}
 	return &PostmarkInboundHandler{
 		emailFallbackService: emailFallbackService,
-		webhookSecret:        strings.TrimSpace(webhookSecret),
+		webhookSecrets:       normalizedSecrets,
 	}
 }
 
@@ -108,12 +114,17 @@ func (h *PostmarkInboundHandler) PostmarkOpen(w http.ResponseWriter, r *http.Req
 }
 
 func (h *PostmarkInboundHandler) authorized(r *http.Request) bool {
-	if h == nil || h.webhookSecret == "" {
+	if h == nil || len(h.webhookSecrets) == 0 {
 		return false
 	}
 	_, password, ok := r.BasicAuth()
 	if !ok {
 		return false
 	}
-	return subtle.ConstantTimeCompare([]byte(password), []byte(h.webhookSecret)) == 1
+	for _, secret := range h.webhookSecrets {
+		if subtle.ConstantTimeCompare([]byte(password), []byte(secret)) == 1 {
+			return true
+		}
+	}
+	return false
 }

@@ -23,7 +23,8 @@ import {
 import type { DocsCollection, DocsDocument, DocStatus } from '@/lib/docsTypes'
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog'
 import { CreateCollectionDialog } from '@/components/docs/CreateCollectionDialog'
-import { TypedConfirmDialog } from '@/components/docs/TypedConfirmDialog'
+import { DeleteCollectionDialog } from '@/components/docs/DeleteCollectionDialog'
+import { DeleteSpaceDialog } from '@/components/docs/DeleteSpaceDialog'
 import { SpaceDialog } from '@/components/docs/SpaceDialog'
 import { MoveDocumentDialog } from '@/components/docs/MoveDocumentDialog'
 import { DocumentsTable, type DocumentsTableSortField } from '@/pages/docs/spaceDetail/DocumentsTable'
@@ -355,17 +356,29 @@ export function DocsSpaceDetail() {
           supports Names/Descriptions modes, bulk auto-translate, and
           optimistic updates. See commit history for the migration. */}
 
-      {/* Typed confirm delete dialog */}
-      <TypedConfirmDialog
-        open={confirmDelete !== null}
-        onOpenChange={(open) => { if (!open) setTimeout(() => setConfirmDelete(null), 150) }}
-        title={confirmDelete?.type === 'space' ? 'Delete space' : 'Delete collection'}
-        description={
+      {/* Space delete — shared impact-aware dialog */}
+      <DeleteSpaceDialog
+        wsId={wsId}
+        space={
           confirmDelete?.type === 'space'
-            ? 'This will permanently delete this space and all its documents. This action cannot be undone.'
-            : 'This will permanently delete this collection. Documents in this collection will become uncategorized.'
+            ? { id: confirmDelete.id, name: confirmDelete.name }
+            : null
         }
-        confirmText={confirmDelete?.name ?? ''}
+        open={confirmDelete?.type === 'space'}
+        onOpenChange={(open) => { if (!open) setTimeout(() => setConfirmDelete(null), 150) }}
+        onConfirm={handleConfirmDelete}
+      />
+
+      {/* Collection delete — shared impact-aware dialog */}
+      <DeleteCollectionDialog
+        wsId={wsId}
+        collection={
+          confirmDelete?.type === 'collection'
+            ? { id: confirmDelete.id, name: confirmDelete.name, space_id: spaceId }
+            : null
+        }
+        open={confirmDelete?.type === 'collection'}
+        onOpenChange={(open) => { if (!open) setTimeout(() => setConfirmDelete(null), 150) }}
         onConfirm={handleConfirmDelete}
       />
 

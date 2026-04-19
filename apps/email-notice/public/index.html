@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>About Helpin Emails</title>
+    <meta
+      name="description"
+      content="You received an email from a Helpin customer. Helpin is a unified platform for product, support, sales, and knowledge — used by teams to send customer communications."
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: oklch(0.98 0.003 75);
+        --fg: oklch(0.12 0.02 55);
+        --muted: oklch(0.44 0.02 55);
+        --border: oklch(0.91 0.008 75);
+        --card: #ffffff;
+        --accent: oklch(0.48 0.15 155);
+        --accent-soft: oklch(0.48 0.15 155 / 0.08);
+        --serif: 'Instrument Serif', Georgia, serif;
+        --sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      }
+
+      * { box-sizing: border-box; }
+
+      html, body {
+        margin: 0;
+        padding: 0;
+        font-family: var(--sans);
+        color: var(--fg);
+        background: var(--bg);
+        background-image: radial-gradient(circle, oklch(0.12 0.02 55 / 0.025) 1px, transparent 1px);
+        background-size: 24px 24px;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        min-height: 100vh;
+      }
+
+      .page {
+        max-width: 640px;
+        margin: 0 auto;
+        padding: 80px 24px 48px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 32px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 32px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+      }
+
+      .brand img {
+        height: 36px;
+        width: auto;
+      }
+
+      .divider {
+        width: 100%;
+        max-width: 480px;
+        height: 1px;
+        background: var(--border);
+        margin: 0;
+      }
+
+      .lede {
+        font-family: var(--serif);
+        font-size: 28px;
+        line-height: 1.25;
+        text-align: center;
+        margin: 0;
+        max-width: 520px;
+        font-weight: 400;
+      }
+
+      .lede em {
+        color: var(--accent);
+        font-style: italic;
+      }
+
+      .cta {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 22px;
+        border-radius: 10px;
+        background: var(--card);
+        border: 1px solid var(--border);
+        color: var(--accent);
+        font-weight: 600;
+        font-size: 15px;
+        text-decoration: none;
+        transition: border-color 150ms ease, transform 150ms ease;
+      }
+
+      .cta:hover {
+        border-color: var(--accent);
+        transform: translateY(-1px);
+      }
+
+      .cta svg {
+        width: 16px;
+        height: 16px;
+      }
+
+      .card {
+        width: 100%;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 32px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      .card h2 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 600;
+        line-height: 1.5;
+        color: var(--fg);
+      }
+
+      .card p {
+        margin: 0;
+        font-size: 14px;
+        line-height: 1.65;
+        color: var(--muted);
+      }
+
+      .card a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 500;
+      }
+
+      .card a:hover { text-decoration: underline; }
+
+      .footer {
+        margin-top: 24px;
+        font-size: 12px;
+        color: var(--muted);
+        display: flex;
+        gap: 16px;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+
+      .footer a {
+        color: var(--muted);
+        text-decoration: none;
+      }
+
+      .footer a:hover { color: var(--fg); }
+
+      @media (max-width: 520px) {
+        .page { padding: 56px 20px 40px; gap: 28px; }
+        .lede { font-size: 24px; }
+        .card { padding: 24px; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <a class="brand" href="https://helpin.ai" aria-label="Helpin">
+        <img src="/logo.svg" alt="Helpin" />
+      </a>
+
+      <hr class="divider" />
+
+      <p class="lede">
+        It looks like you just received an email sent through <em>Helpin</em>.
+      </p>
+
+      <a class="cta" href="https://helpin.ai" rel="noopener">
+        Learn what Helpin does
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M5 12h14M13 5l7 7-7 7" />
+        </svg>
+      </a>
+
+      <section class="card" aria-labelledby="about-heading">
+        <h2 id="about-heading">
+          Helpin is a unified platform for product, support, sales, and knowledge — used by teams to run customer-facing operations with the help of AI agents.
+        </h2>
+        <p>
+          You may have landed here because you opened the sending domain of an email in your browser.
+          Helpin does not send marketing emails on its own behalf — emails delivered through our
+          infrastructure are sent by our customers, on their own domains and subdomains.
+        </p>
+        <p>
+          If you'd like to opt out of an email, every message includes an unsubscribe option in its
+          footer. If you believe a Helpin customer is misusing your email address, please contact
+          them first using the reply-to address in the email.
+        </p>
+        <p>
+          If you don't get a response, or if you'd like to report abuse on our network, write to us
+          at <a href="mailto:abuse@helpin.email">abuse@helpin.email</a> and we'll investigate.
+        </p>
+      </section>
+
+      <nav class="footer" aria-label="Helpin links">
+        <a href="https://helpin.ai">helpin.ai</a>
+        <a href="https://helpin.ai/privacy">Privacy</a>
+        <a href="https://helpin.ai/terms">Terms</a>
+        <a href="mailto:abuse@helpin.email">abuse@helpin.email</a>
+      </nav>
+    </main>
+  </body>
+</html>

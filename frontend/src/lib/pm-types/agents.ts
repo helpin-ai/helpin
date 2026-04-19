@@ -1,4 +1,5 @@
 import type { SpecClarification } from './project';
+import type { AgentSkillRef } from './skills';
 
 // ── Agents ──────────────────────────────────────────────────────────
 
@@ -39,7 +40,7 @@ export interface Agent {
   role: string;
   status: AgentStatus;
   runtime_kind: AgentRuntimeKind;
-  skills: string[];
+  skills: AgentSkillRef[];
   trigger_mode: AgentTriggerMode;
   provider?: AgentModelProvider;
   model?: string;
@@ -134,6 +135,8 @@ export interface AgentRun {
   last_heartbeat_at?: string;
   input: Record<string, unknown>;
   output_summary: Record<string, unknown>;
+  input_tokens: number;
+  output_tokens: number;
   tokens_used: number;
   error_message?: string;
   started_at?: string;
@@ -180,6 +183,10 @@ export interface StartAgentRunRequest {
 
 export interface SendAgentRunMessageRequest {
   content: string;
+}
+
+export interface ContinueAgentRunRequest {
+  content?: string;
 }
 
 export interface SendAgentRunRequestChangesRequest {
@@ -297,7 +304,7 @@ export interface CreateAgentRequest {
   preset_version_key?: string;
   role?: string;
   runtime_kind?: AgentRuntimeKind;
-  skills?: string[];
+  skills?: AgentSkillRef[];
   trigger_mode?: AgentTriggerMode;
   provider?: AgentModelProvider;
   model?: string;
@@ -325,7 +332,7 @@ export interface UpdateAgentRequest {
   role?: string;
   status?: AgentStatus;
   runtime_kind?: AgentRuntimeKind;
-  skills?: string[];
+  skills?: AgentSkillRef[];
   trigger_mode?: AgentTriggerMode;
   provider?: AgentModelProvider;
   model?: string;
@@ -389,6 +396,9 @@ export interface AgentPresetDefinition {
   default_invocation_mode: AgentInvocationMode;
   supported_modes: AgentInvocationMode[];
   system_prompt?: string;
+  instruction_preamble?: string;
+  instruction_skills?: string[];
+  instruction_template_version?: string;
 }
 
 export interface CreateWorkspaceAgentPresetVersionRequest {
@@ -402,6 +412,8 @@ export interface CreateWorkspaceAgentPresetVersionRequest {
   model?: string;
   execution_config?: AgentExecutionConfig;
   system_prompt?: string;
+  instruction_preamble?: string;
+  instruction_skills?: string[];
   allowed_tools?: string[];
   supported_modes?: AgentInvocationMode[];
   approval_mode?: AgentApprovalMode;

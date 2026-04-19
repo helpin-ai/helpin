@@ -48,6 +48,7 @@ type Config struct {
 	CodexChatGPTPlanType    string
 	CodexAuthEncryptionKey  string
 	BraveSearchAPIKey       string
+	ExaSearchAPIKey         string
 	CloudflareAccountID     string
 	CloudflareAPIToken      string
 	CloudflareAPIBaseURL    string
@@ -63,11 +64,16 @@ type Config struct {
 	GitHubAppPrivateKey string
 
 	// Postmark email (optional — email sending disabled if not set)
-	PostmarkServerToken          string
-	PostmarkFromEmail            string
-	PostmarkInboundWebhookSecret string
-	SupportEmailReplyDomain      string
-	AppBaseURL                   string
+	PostmarkAppServerToken            string
+	PostmarkAppFromEmail              string
+	PostmarkReplyServerToken          string
+	PostmarkReplyFromEmail            string
+	PostmarkReplyInboundWebhookSecret string
+	SupportEmailReplyDomain           string
+	PostmarkRouteServerToken          string
+	PostmarkRouteInboundWebhookSecret string
+	SupportEmailRouteDomain           string
+	AppBaseURL                        string
 
 	// CRM encryption & Gmail OAuth (optional — Gmail sync disabled if not set)
 	CRMEncryptionKey      string
@@ -141,71 +147,77 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		DatabaseURL:                  dbURL,
-		JWTSecret:                    jwtSecret,
-		Port:                         port,
-		LogLevel:                     strings.TrimSpace(firstNonEmpty(os.Getenv("LOG_LEVEL"), "info")),
-		RunAutoMigrate:               parseBoolEnvDefaultTrue(os.Getenv("RUN_AUTO_MIGRATE")),
-		CORSOrigins:                  corsOrigins,
-		TemporalAddress:              temporalAddress,
-		TemporalNamespace:            temporalNamespace,
-		TemporalAPIKey:               temporalAPIKey,
-		TemporalTLSEnabled:           temporalTLSEnabled,
-		TemporalTLSServerName:        strings.TrimSpace(os.Getenv("TEMPORAL_TLS_SERVER_NAME")),
-		NatsURL:                      strings.TrimSpace(firstNonEmpty(os.Getenv("NATS_URL"), "nats://localhost:4222")),
-		AWSAccessKeyID:               os.Getenv("AWS_ACCESS_KEY_ID"),
-		AWSSecretAccessKey:           os.Getenv("AWS_SECRET_ACCESS_KEY"),
-		AWSBucket:                    os.Getenv("AWS_S3_BUCKET_NAME"),
-		AWSRegion:                    os.Getenv("AWS_REGION"),
-		AWSEndpointURL:               os.Getenv("AWS_S3_ENDPOINT_URL"),
-		AWSPublicBaseURL:             strings.TrimSpace(os.Getenv("AWS_S3_PUBLIC_BASE_URL")),
-		AnthropicAPIKey:              os.Getenv("ANTHROPIC_API_KEY"),
-		AnthropicBaseURL:             strings.TrimSpace(os.Getenv("ANTHROPIC_BASE_URL")),
-		OpenAIAPIKey:                 strings.TrimSpace(os.Getenv("OPENAI_API_KEY")),
-		OpenAIBaseURL:                strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")),
-		OpenAIEmbeddingModel:         strings.TrimSpace(os.Getenv("OPENAI_EMBEDDING_MODEL")),
-		OpenRouterAPIKey:             strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY")),
-		OpenRouterBaseURL:            strings.TrimSpace(os.Getenv("OPENROUTER_BASE_URL")),
-		OpenCodePath:                 strings.TrimSpace(firstNonEmpty(os.Getenv("OPENCODE_PATH"), "opencode")),
-		CodexPath:                    strings.TrimSpace(firstNonEmpty(os.Getenv("CODEX_PATH"), "codex")),
-		CodexModel:                   strings.TrimSpace(os.Getenv("CODEX_MODEL")),
-		CodexSandboxMode:             strings.TrimSpace(os.Getenv("CODEX_SANDBOX_MODE")),
-		CodexOpenAIAuthMode:          strings.TrimSpace(firstNonEmpty(os.Getenv("CODEX_OPENAI_AUTH_MODE"), "api_key")),
-		CodexEnableChatGPTOAuth:      parseBoolEnv(os.Getenv("CODEX_ENABLE_CHATGPT_OAUTH")),
-		CodexChatGPTAccessToken:      strings.TrimSpace(os.Getenv("CODEX_CHATGPT_ACCESS_TOKEN")),
-		CodexChatGPTAccountID:        strings.TrimSpace(os.Getenv("CODEX_CHATGPT_ACCOUNT_ID")),
-		CodexChatGPTPlanType:         strings.TrimSpace(os.Getenv("CODEX_CHATGPT_PLAN_TYPE")),
-		CodexAuthEncryptionKey:       strings.TrimSpace(os.Getenv("CODEX_AUTH_ENCRYPTION_KEY")),
-		BraveSearchAPIKey:            strings.TrimSpace(os.Getenv("BRAVE_SEARCH_API_KEY")),
-		CloudflareAccountID:          strings.TrimSpace(os.Getenv("CLOUDFLARE_ACCOUNT_ID")),
-		CloudflareAPIToken:           strings.TrimSpace(os.Getenv("CLOUDFLARE_API_TOKEN")),
-		CloudflareAPIBaseURL:         strings.TrimSpace(os.Getenv("CLOUDFLARE_API_BASE_URL")),
-		CrawlerMode:                  strings.TrimSpace(firstNonEmpty(os.Getenv("CRAWLER_MODE"), "cloudflare_with_fallback")),
-		CrawlerProxyURLs:             strings.TrimSpace(os.Getenv("CRAWLER_PROXY_URLS")),
-		GitHubAppID:                  os.Getenv("GITHUB_APP_ID"),
-		GitHubAppSlug:                os.Getenv("GITHUB_APP_SLUG"),
-		GitHubAppPrivateKey:          os.Getenv("GITHUB_APP_PRIVATE_KEY"),
-		PostmarkServerToken:          os.Getenv("POSTMARK_SERVER_TOKEN"),
-		PostmarkFromEmail:            os.Getenv("POSTMARK_FROM_EMAIL"),
-		PostmarkInboundWebhookSecret: strings.TrimSpace(os.Getenv("POSTMARK_INBOUND_WEBHOOK_SECRET")),
-		SupportEmailReplyDomain:      strings.TrimSpace(firstNonEmpty(os.Getenv("SUPPORT_EMAIL_REPLY_DOMAIN"), "replies.helpin.ai")),
-		AppBaseURL:                   appBaseURL,
-		CRMEncryptionKey:             os.Getenv("CRM_ENCRYPTION_KEY"),
-		GmailClientID:                os.Getenv("GMAIL_CLIENT_ID"),
-		GmailClientSecret:            os.Getenv("GMAIL_CLIENT_SECRET"),
-		GmailOAuthRedirectURL:        os.Getenv("GMAIL_OAUTH_REDIRECT_URL"),
-		CRMLLMProvider:               os.Getenv("CRM_LLM_PROVIDER"),
-		CRMLLMAPIKey:                 os.Getenv("CRM_LLM_API_KEY"),
-		CRMLLMBaseURL:                os.Getenv("CRM_LLM_BASE_URL"),
-		CRMLLMModel:                  os.Getenv("CRM_LLM_MODEL"),
-		QueryExpansionModel:          strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_MODEL"), "gpt-5.4-mini")),
-		QueryExpansionProvider:       strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_PROVIDER"), "openai")),
-		MaxMindAccountID:             strings.TrimSpace(os.Getenv("MAXMIND_ACCOUNT_ID")),
-		MaxMindDBPath:                strings.TrimSpace(os.Getenv("MAXMIND_DB_PATH")),
-		MaxMindDownloadURL:           strings.TrimSpace(os.Getenv("MAXMIND_DOWNLOAD_URL")),
-		MaxMindLicenseKey:            strings.TrimSpace(os.Getenv("MAXMIND_LICENSE_KEY")),
-		RedisURL:                     os.Getenv("REDIS_URL"),
-		AgentPreviewDebug:            parseBoolEnv(os.Getenv("AGENT_PREVIEW_DEBUG")),
+		DatabaseURL:                       dbURL,
+		JWTSecret:                         jwtSecret,
+		Port:                              port,
+		LogLevel:                          strings.TrimSpace(firstNonEmpty(os.Getenv("LOG_LEVEL"), "info")),
+		RunAutoMigrate:                    parseBoolEnvDefaultTrue(os.Getenv("RUN_AUTO_MIGRATE")),
+		CORSOrigins:                       corsOrigins,
+		TemporalAddress:                   temporalAddress,
+		TemporalNamespace:                 temporalNamespace,
+		TemporalAPIKey:                    temporalAPIKey,
+		TemporalTLSEnabled:                temporalTLSEnabled,
+		TemporalTLSServerName:             strings.TrimSpace(os.Getenv("TEMPORAL_TLS_SERVER_NAME")),
+		NatsURL:                           strings.TrimSpace(firstNonEmpty(os.Getenv("NATS_URL"), "nats://localhost:4222")),
+		AWSAccessKeyID:                    os.Getenv("AWS_ACCESS_KEY_ID"),
+		AWSSecretAccessKey:                os.Getenv("AWS_SECRET_ACCESS_KEY"),
+		AWSBucket:                         os.Getenv("AWS_S3_BUCKET_NAME"),
+		AWSRegion:                         os.Getenv("AWS_REGION"),
+		AWSEndpointURL:                    os.Getenv("AWS_S3_ENDPOINT_URL"),
+		AWSPublicBaseURL:                  strings.TrimSpace(os.Getenv("AWS_S3_PUBLIC_BASE_URL")),
+		AnthropicAPIKey:                   os.Getenv("ANTHROPIC_API_KEY"),
+		AnthropicBaseURL:                  strings.TrimSpace(os.Getenv("ANTHROPIC_BASE_URL")),
+		OpenAIAPIKey:                      strings.TrimSpace(os.Getenv("OPENAI_API_KEY")),
+		OpenAIBaseURL:                     strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")),
+		OpenAIEmbeddingModel:              strings.TrimSpace(os.Getenv("OPENAI_EMBEDDING_MODEL")),
+		OpenRouterAPIKey:                  strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY")),
+		OpenRouterBaseURL:                 strings.TrimSpace(os.Getenv("OPENROUTER_BASE_URL")),
+		OpenCodePath:                      strings.TrimSpace(firstNonEmpty(os.Getenv("OPENCODE_PATH"), "opencode")),
+		CodexPath:                         strings.TrimSpace(firstNonEmpty(os.Getenv("CODEX_PATH"), "codex")),
+		CodexModel:                        strings.TrimSpace(os.Getenv("CODEX_MODEL")),
+		CodexSandboxMode:                  strings.TrimSpace(os.Getenv("CODEX_SANDBOX_MODE")),
+		CodexOpenAIAuthMode:               strings.TrimSpace(firstNonEmpty(os.Getenv("CODEX_OPENAI_AUTH_MODE"), "api_key")),
+		CodexEnableChatGPTOAuth:           parseBoolEnv(os.Getenv("CODEX_ENABLE_CHATGPT_OAUTH")),
+		CodexChatGPTAccessToken:           strings.TrimSpace(os.Getenv("CODEX_CHATGPT_ACCESS_TOKEN")),
+		CodexChatGPTAccountID:             strings.TrimSpace(os.Getenv("CODEX_CHATGPT_ACCOUNT_ID")),
+		CodexChatGPTPlanType:              strings.TrimSpace(os.Getenv("CODEX_CHATGPT_PLAN_TYPE")),
+		CodexAuthEncryptionKey:            strings.TrimSpace(os.Getenv("CODEX_AUTH_ENCRYPTION_KEY")),
+		BraveSearchAPIKey:                 strings.TrimSpace(os.Getenv("BRAVE_SEARCH_API_KEY")),
+		ExaSearchAPIKey:                   strings.TrimSpace(os.Getenv("EXA_API_KEY")),
+		CloudflareAccountID:               strings.TrimSpace(os.Getenv("CLOUDFLARE_ACCOUNT_ID")),
+		CloudflareAPIToken:                strings.TrimSpace(os.Getenv("CLOUDFLARE_API_TOKEN")),
+		CloudflareAPIBaseURL:              strings.TrimSpace(os.Getenv("CLOUDFLARE_API_BASE_URL")),
+		CrawlerMode:                       strings.TrimSpace(firstNonEmpty(os.Getenv("CRAWLER_MODE"), "cloudflare_with_fallback")),
+		CrawlerProxyURLs:                  strings.TrimSpace(os.Getenv("CRAWLER_PROXY_URLS")),
+		GitHubAppID:                       os.Getenv("GITHUB_APP_ID"),
+		GitHubAppSlug:                     os.Getenv("GITHUB_APP_SLUG"),
+		GitHubAppPrivateKey:               os.Getenv("GITHUB_APP_PRIVATE_KEY"),
+		PostmarkAppServerToken:            strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_APP_SERVER_TOKEN"), os.Getenv("POSTMARK_SERVER_TOKEN"))),
+		PostmarkAppFromEmail:              strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_APP_FROM_EMAIL"), os.Getenv("POSTMARK_FROM_EMAIL"))),
+		PostmarkReplyServerToken:          strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_REPLY_SERVER_TOKEN"), os.Getenv("POSTMARK_SERVER_TOKEN"))),
+		PostmarkReplyFromEmail:            strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_REPLY_FROM_EMAIL"), os.Getenv("POSTMARK_FROM_EMAIL"))),
+		PostmarkReplyInboundWebhookSecret: strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_REPLY_INBOUND_WEBHOOK_SECRET"), os.Getenv("POSTMARK_INBOUND_WEBHOOK_SECRET"))),
+		SupportEmailReplyDomain:           strings.TrimSpace(firstNonEmpty(os.Getenv("SUPPORT_EMAIL_REPLY_DOMAIN"), "replies.helpin.email")),
+		PostmarkRouteServerToken:          strings.TrimSpace(os.Getenv("POSTMARK_ROUTE_SERVER_TOKEN")),
+		PostmarkRouteInboundWebhookSecret: strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_ROUTE_INBOUND_WEBHOOK_SECRET"), os.Getenv("POSTMARK_INBOUND_WEBHOOK_SECRET"))),
+		SupportEmailRouteDomain:           strings.TrimSpace(firstNonEmpty(os.Getenv("SUPPORT_EMAIL_ROUTE_DOMAIN"), os.Getenv("SUPPORT_EMAIL_REPLY_DOMAIN"), "on.helpin.email")),
+		AppBaseURL:                        appBaseURL,
+		CRMEncryptionKey:                  os.Getenv("CRM_ENCRYPTION_KEY"),
+		GmailClientID:                     os.Getenv("GMAIL_CLIENT_ID"),
+		GmailClientSecret:                 os.Getenv("GMAIL_CLIENT_SECRET"),
+		GmailOAuthRedirectURL:             os.Getenv("GMAIL_OAUTH_REDIRECT_URL"),
+		CRMLLMProvider:                    os.Getenv("CRM_LLM_PROVIDER"),
+		CRMLLMAPIKey:                      os.Getenv("CRM_LLM_API_KEY"),
+		CRMLLMBaseURL:                     os.Getenv("CRM_LLM_BASE_URL"),
+		CRMLLMModel:                       os.Getenv("CRM_LLM_MODEL"),
+		QueryExpansionModel:               strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_MODEL"), "gpt-5.4-mini")),
+		QueryExpansionProvider:            strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_PROVIDER"), "openai")),
+		MaxMindAccountID:                  strings.TrimSpace(os.Getenv("MAXMIND_ACCOUNT_ID")),
+		MaxMindDBPath:                     strings.TrimSpace(os.Getenv("MAXMIND_DB_PATH")),
+		MaxMindDownloadURL:                strings.TrimSpace(os.Getenv("MAXMIND_DOWNLOAD_URL")),
+		MaxMindLicenseKey:                 strings.TrimSpace(os.Getenv("MAXMIND_LICENSE_KEY")),
+		RedisURL:                          os.Getenv("REDIS_URL"),
+		AgentPreviewDebug:                 parseBoolEnv(os.Getenv("AGENT_PREVIEW_DEBUG")),
 	}, nil
 }
 

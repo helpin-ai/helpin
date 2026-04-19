@@ -6,6 +6,12 @@ metadata:
   labels:
     app: helpin-temporal-native-interactive
 spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  minReadySeconds: 10
   replicas: 1
   selector:
     matchLabels:
@@ -16,6 +22,7 @@ spec:
         app: helpin-temporal-native-interactive
         env: prod
     spec:
+      terminationGracePeriodSeconds: 660
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -30,7 +37,7 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.96
+          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.123
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
@@ -40,11 +47,11 @@ spec:
                 name: helpin-secrets
           resources:
             requests:
-              cpu: 250m
-              memory: 512Mi
+              cpu: 500m
+              memory: 2Gi
             limits:
-              cpu: "1"
-              memory: 1Gi
+              cpu: "2"
+              memory: 8Gi
           volumeMounts:
             - name: tmp
               mountPath: /tmp
@@ -63,6 +70,12 @@ metadata:
   labels:
     app: helpin-temporal-native-autonomous
 spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  minReadySeconds: 10
   replicas: 1
   selector:
     matchLabels:
@@ -73,6 +86,7 @@ spec:
         app: helpin-temporal-native-autonomous
         env: prod
     spec:
+      terminationGracePeriodSeconds: 660
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -87,7 +101,7 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.96
+          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.123
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
@@ -97,11 +111,11 @@ spec:
                 name: helpin-secrets
           resources:
             requests:
-              cpu: 250m
-              memory: 512Mi
+              cpu: 500m
+              memory: 2Gi
             limits:
-              cpu: "1"
-              memory: 1Gi
+              cpu: "2"
+              memory: 8Gi
           volumeMounts:
             - name: tmp
               mountPath: /tmp
@@ -120,6 +134,12 @@ metadata:
   labels:
     app: helpin-temporal-opencode-autonomous
 spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  minReadySeconds: 10
   replicas: 1
   selector:
     matchLabels:
@@ -130,6 +150,7 @@ spec:
         app: helpin-temporal-opencode-autonomous
         env: prod
     spec:
+      terminationGracePeriodSeconds: 660
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -146,7 +167,7 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.96
+          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.123
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
@@ -156,11 +177,11 @@ spec:
                 name: helpin-secrets
           resources:
             requests:
-              cpu: 250m
-              memory: 512Mi
+              cpu: 500m
+              memory: 2Gi
             limits:
-              cpu: "1"
-              memory: 1Gi
+              cpu: "2"
+              memory: 8Gi
           volumeMounts:
             - name: tmp
               mountPath: /tmp
@@ -181,6 +202,12 @@ metadata:
   labels:
     app: helpin-temporal-codex-autonomous
 spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  minReadySeconds: 10
   replicas: 1
   selector:
     matchLabels:
@@ -191,6 +218,7 @@ spec:
         app: helpin-temporal-codex-autonomous
         env: prod
     spec:
+      terminationGracePeriodSeconds: 660
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -207,7 +235,7 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.96
+          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.123
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
@@ -219,11 +247,11 @@ spec:
                 name: helpin-secrets
           resources:
             requests:
-              cpu: 250m
-              memory: 512Mi
+              cpu: 500m
+              memory: 2Gi
             limits:
-              cpu: "1"
-              memory: 1Gi
+              cpu: "2"
+              memory: 8Gi
           volumeMounts:
             - name: tmp
               mountPath: /tmp
@@ -244,6 +272,12 @@ metadata:
   labels:
     app: helpin-temporal-codex-interactive
 spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  minReadySeconds: 10
   replicas: 1
   selector:
     matchLabels:
@@ -254,6 +288,7 @@ spec:
         app: helpin-temporal-codex-interactive
         env: prod
     spec:
+      terminationGracePeriodSeconds: 660
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -270,7 +305,7 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.96
+          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.123
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
@@ -282,11 +317,11 @@ spec:
                 name: helpin-secrets
           resources:
             requests:
-              cpu: 250m
-              memory: 512Mi
+              cpu: 500m
+              memory: 2Gi
             limits:
-              cpu: "1"
-              memory: 1Gi
+              cpu: "2"
+              memory: 8Gi
           volumeMounts:
             - name: tmp
               mountPath: /tmp
@@ -307,6 +342,12 @@ metadata:
   labels:
     app: helpin-temporal-automation
 spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  minReadySeconds: 10
   replicas: 1
   selector:
     matchLabels:
@@ -317,6 +358,7 @@ spec:
         app: helpin-temporal-automation
         env: prod
     spec:
+      terminationGracePeriodSeconds: 660
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -331,7 +373,7 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.96
+          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.123
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
@@ -341,11 +383,11 @@ spec:
                 name: helpin-secrets
           resources:
             requests:
-              cpu: 250m
-              memory: 512Mi
-            limits:
-              cpu: "1"
+              cpu: 500m
               memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
           volumeMounts:
             - name: tmp
               mountPath: /tmp

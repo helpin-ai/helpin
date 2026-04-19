@@ -181,6 +181,25 @@ func (r *DocsDocumentRepository) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// HardDelete permanently removes a document row.
+func (r *DocsDocumentRepository) HardDelete(ctx context.Context, id string) error {
+	if err := r.db.WithContext(ctx).Where("id = ?", id).Delete(&model.DocsDocument{}).Error; err != nil {
+		return fmt.Errorf("hard delete docs document: %w", err)
+	}
+	return nil
+}
+
+// HardDeleteByIDs permanently removes document rows.
+func (r *DocsDocumentRepository) HardDeleteByIDs(ctx context.Context, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	if err := r.db.WithContext(ctx).Where("id IN ?", ids).Delete(&model.DocsDocument{}).Error; err != nil {
+		return fmt.Errorf("hard delete docs documents: %w", err)
+	}
+	return nil
+}
+
 // Restore un-deletes a document.
 func (r *DocsDocumentRepository) Restore(ctx context.Context, id string) (*model.DocsDocument, error) {
 	if err := r.db.WithContext(ctx).Exec("UPDATE docs_documents SET deleted_at = NULL WHERE id = ?", id).Error; err != nil {

@@ -41,12 +41,27 @@ const flushAsync = async () => {
 describe('WidgetManager', () => {
   let widget: WidgetManager;
   let fetchMock: ReturnType<typeof vi.fn>;
+  let hasFocusSpy: ReturnType<typeof vi.spyOn>;
+
+  const setDocumentVisibility = (state: 'visible' | 'hidden') => {
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: state,
+    });
+    Object.defineProperty(document, 'hidden', {
+      configurable: true,
+      value: state === 'hidden',
+    });
+  };
 
   beforeEach(() => {
     widget = new WidgetManager();
     document.body.innerHTML = '';
+    document.title = 'Original title';
+    setDocumentVisibility('visible');
     MockWebSocket.reset();
     localStorage.clear();
+    hasFocusSpy = vi.spyOn(document, 'hasFocus').mockReturnValue(true);
 
     (localStorage.getItem as any).mockReset();
     (localStorage.setItem as any).mockReset();
@@ -69,6 +84,7 @@ describe('WidgetManager', () => {
 
   afterEach(() => {
     widget.shutdown();
+    hasFocusSpy.mockRestore();
     vi.unstubAllGlobals();
   });
 
@@ -684,6 +700,200 @@ describe('WidgetManager', () => {
       expect(latestOptions?.conversations?.[0]?.unreadCount).toBe(1);
       expect(latestOptions?.unreadCount).toBe(1);
       expect(unreadSpy).toHaveBeenLastCalledWith(1);
+    });
+
+    it('updates the document title for hidden-tab inbound replies', async () => {
+      widget.boot({ key: 'test-key' });
+      await new Promise((r) => setTimeout(r, 100));
+
+      (widget as any).conversations = [{
+        id: 'conv-1',
+        subject: 'Question',
+        status: 'open',
+        lastMessage: 'Customer message',
+        lastMessageAt: new Date().toISOString(),
+        unreadCount: 0,
+      }];
+
+      hasFocusSpy.mockReturnValue(false);
+      setDocumentVisibility('hidden');
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      (widget as any).activeConversationId = 'conv-2';
+      (widget as any).handleWSMessage({
+        type: 'message:received',
+        data: {
+          id: 'msg-1',
+          conversation_id: 'conv-1',
+          sender_type: 'user',
+          content: 'Agent follow-up',
+          created_at: new Date().toISOString(),
+        },
+      });
+
+      expect(document.title).toBe('(1) New reply');
+    });
+
+    it('treats a hidden active conversation as unread until focus returns', async () => {
+      widget.boot({ key: 'test-key' });
+      await new Promise((r) => setTimeout(r, 100));
+
+      const sentFrames: string[] = [];
+      (widget as any).wsConnection = {
+        readyState: WebSocket.OPEN,
+        send: (payload: string) => sentFrames.push(payload),
+        close: vi.fn(),
+      };
+
+      (widget as any).isOpen = true;
+      (widget as any).currentView = 'conversation';
+      (widget as any).activeConversationId = 'conv-1';
+      (widget as any).conversations = [{
+        id: 'conv-1',
+        subject: 'Question',
+        status: 'open',
+        lastMessage: 'Customer message',
+        lastMessageAt: new Date().toISOString(),
+        unreadCount: 0,
+      }];
+
+      hasFocusSpy.mockReturnValue(false);
+      setDocumentVisibility('hidden');
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      (widget as any).handleWSMessage({
+        type: 'message:received',
+        data: {
+          id: 'msg-hidden-active',
+          conversation_id: 'conv-1',
+          sender_type: 'user',
+          content: 'Agent follow-up',
+          created_at: new Date().toISOString(),
+        },
+      });
+
+      expect(document.title).toBe('(1) New reply');
+      expect((widget as any).conversations[0].unreadCount).toBe(1);
+      expect(sentFrames).toEqual([]);
+
+      hasFocusSpy.mockReturnValue(true);
+      setDocumentVisibility('visible');
+      window.dispatchEvent(new Event('focus'));
+
+      expect(document.title).toBe('Original title');
+      expect((widget as any).conversations[0].unreadCount).toBe(0);
+      expect(sentFrames.map((frame) => JSON.parse(frame))).toContainEqual({
+        type: 'conversation:read',
+        data: { conversation_id: 'conv-1' },
+      });
+    });
+
+    it('does not update the document title for system messages', async () => {
+      widget.boot({ key: 'test-key' });
+      await new Promise((r) => setTimeout(r, 100));
+
+      (widget as any).conversations = [{
+        id: 'conv-1',
+        subject: 'Question',
+        status: 'open',
+        lastMessage: 'Customer message',
+        lastMessageAt: new Date().toISOString(),
+        unreadCount: 0,
+      }];
+
+      hasFocusSpy.mockReturnValue(false);
+      setDocumentVisibility('hidden');
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      (widget as any).activeConversationId = 'conv-2';
+      (widget as any).handleWSMessage({
+        type: 'message:received',
+        data: {
+          id: 'msg-2',
+          conversation_id: 'conv-1',
+          sender_type: 'user',
+          message_type: 'system',
+          system_event_type: 'teammate_joined',
+          content: 'Jarek joined the conversation',
+          created_at: new Date().toISOString(),
+        },
+      });
+
+      expect(document.title).toBe('Original title');
+    });
+
+    it('restores the original document title when the page regains focus', async () => {
+      widget.boot({ key: 'test-key' });
+      await new Promise((r) => setTimeout(r, 100));
+
+      (widget as any).conversations = [{
+        id: 'conv-1',
+        subject: 'Question',
+        status: 'open',
+        lastMessage: 'Customer message',
+        lastMessageAt: new Date().toISOString(),
+        unreadCount: 0,
+      }];
+
+      hasFocusSpy.mockReturnValue(false);
+      setDocumentVisibility('hidden');
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      (widget as any).activeConversationId = 'conv-2';
+      (widget as any).handleWSMessage({
+        type: 'message:received',
+        data: {
+          id: 'msg-3',
+          conversation_id: 'conv-1',
+          sender_type: 'user',
+          content: 'Agent follow-up',
+          created_at: new Date().toISOString(),
+        },
+      });
+
+      expect(document.title).toBe('(1) New reply');
+
+      hasFocusSpy.mockReturnValue(true);
+      setDocumentVisibility('visible');
+      window.dispatchEvent(new Event('focus'));
+
+      expect(document.title).toBe('Original title');
+    });
+
+    it('clears title notifications when the unread conversation is opened', async () => {
+      widget.boot({ key: 'test-key' });
+      await new Promise((r) => setTimeout(r, 100));
+
+      (widget as any).conversations = [{
+        id: 'conv-1',
+        subject: 'Question',
+        status: 'open',
+        lastMessage: 'Customer message',
+        lastMessageAt: new Date().toISOString(),
+        unreadCount: 0,
+      }];
+
+      hasFocusSpy.mockReturnValue(false);
+      setDocumentVisibility('hidden');
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      (widget as any).activeConversationId = 'conv-2';
+      (widget as any).handleWSMessage({
+        type: 'message:received',
+        data: {
+          id: 'msg-4',
+          conversation_id: 'conv-1',
+          sender_type: 'user',
+          content: 'Agent follow-up',
+          created_at: new Date().toISOString(),
+        },
+      });
+
+      expect(document.title).toBe('(1) New reply');
+
+      (widget as any).handleSelectConversation('conv-1');
+
+      expect(document.title).toBe('Original title');
     });
 
     it('maps via_channel and respects #helpin-conv deep links on session join', async () => {

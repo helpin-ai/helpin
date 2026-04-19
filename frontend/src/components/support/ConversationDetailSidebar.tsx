@@ -1,7 +1,8 @@
 import { memo, type JSX, type SVGProps } from 'react';
 import * as Flags from 'country-flag-icons/react/3x2';
 import { Link } from '@tanstack/react-router';
-import { ArrowDown01Icon, ArrowLeft01Icon, ArrowRight01Icon, Mail01Icon, UserIcon } from '@/lib/icons';
+import { ArrowDown01Icon, ArrowLeft01Icon, ArrowRight01Icon, Mail01Icon, Message01Icon, UserIcon } from '@/lib/icons';
+import { EmptyState } from './EmptyState';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { CollapsibleSection } from '@/components/ui/collapsible-section';
@@ -97,9 +98,11 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
       </div>
 
       {!conversation ? (
-        <div className="flex flex-1 items-center justify-center">
-          <p className="text-xs text-muted-foreground">No conversation selected</p>
-        </div>
+        <EmptyState
+          icon={Message01Icon}
+          title="No conversation selected"
+          subtitle="Select a conversation to see contact and context details here."
+        />
       ) : (
         <div className="flex-1 overflow-y-auto">
           {/* ── Contact Card ─────────────────────────────── */}

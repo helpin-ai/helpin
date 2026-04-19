@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useAuthStore } from '@/stores/authStore';
 import { authService } from '@/lib/services/authService';
@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Favicon } from '@/components/ui/favicon';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { UserAvatar } from '@/components/pm/UserAvatar';
+import { useSupportUnreadByWorkspace } from '@/hooks/queries/useSupport';
 import { StarIcon, UserGroupIcon } from '@/lib/icons';
 import { toast } from 'sonner';
 
@@ -23,6 +24,14 @@ export function WorkspaceSelector({ workspaces }: WorkspaceSelectorProps) {
   const { user } = useAuthStore();
   const defaultWsId = user?.default_workspace_id;
   const [membersMap, setMembersMap] = useState<Record<string, MemberWithUser[]>>({});
+  const { data: supportUnread = [] } = useSupportUnreadByWorkspace();
+  const unreadByWorkspace = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const entry of supportUnread) {
+      map.set(entry.workspace_id, entry.unread_count);
+    }
+    return map;
+  }, [supportUnread]);
 
   useEffect(() => {
     workspaces.forEach((ws) => {
@@ -56,6 +65,7 @@ export function WorkspaceSelector({ workspaces }: WorkspaceSelectorProps) {
           const members = membersMap[ws.id] ?? [];
           const visibleMembers = members.slice(0, MAX_VISIBLE_AVATARS);
           const overflowCount = members.length - MAX_VISIBLE_AVATARS;
+          const unread = unreadByWorkspace.get(ws.id) ?? 0;
 
           return (
             <Card
@@ -87,6 +97,21 @@ export function WorkspaceSelector({ workspaces }: WorkspaceSelectorProps) {
                       )}
                     </div>
                   </div>
+                  {unread > 0 && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span
+                          className="shrink-0 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white"
+                          aria-label={`${unread} unread conversations`}
+                        >
+                          {unread > 99 ? '99+' : unread}
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">
+                        {unread} unread conversation{unread === 1 ? '' : 's'}
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
                 </div>
               </CardHeader>
 

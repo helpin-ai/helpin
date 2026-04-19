@@ -31,6 +31,56 @@ func NewSupportCoverageHandler(
 	}
 }
 
+// RecordEvent handles POST /api/support/coverage/events.
+// Accepts a raw support event for gap detection. Useful for testing
+// and external integrations.
+func (h *SupportCoverageHandler) RecordEvent(w http.ResponseWriter, r *http.Request) {
+	wsID := middleware.GetWorkspaceID(r.Context())
+	var req struct {
+		EventType       string  `json:"event_type"`
+		ConversationID  *string `json:"conversation_id"`
+		MessageID       *string `json:"message_id"`
+		WidgetSessionID *string `json:"widget_session_id"`
+		DocumentID      *string `json:"document_id"`
+		ArticlePublicID *string `json:"article_public_id"`
+		IssueKey        string  `json:"issue_key"`
+		IssueSummary    string  `json:"issue_summary"`
+		FailureMode     string  `json:"failure_mode"`
+		SourceSignal    string  `json:"source_signal"`
+		CanAnswer       string  `json:"can_answer"`
+		CanResolve      string  `json:"can_resolve"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.EventType == "" {
+		writeError(w, http.StatusBadRequest, "event_type is required")
+		return
+	}
+
+	err := h.eventSvc.RecordEvent(r.Context(), service.SupportEventInput{
+		WorkspaceID:     wsID,
+		EventType:       req.EventType,
+		ConversationID:  req.ConversationID,
+		MessageID:       req.MessageID,
+		WidgetSessionID: req.WidgetSessionID,
+		DocumentID:      req.DocumentID,
+		ArticlePublicID: req.ArticlePublicID,
+		IssueKey:        req.IssueKey,
+		IssueSummary:    req.IssueSummary,
+		FailureMode:     req.FailureMode,
+		SourceSignal:    req.SourceSignal,
+		CanAnswer:       req.CanAnswer,
+		CanResolve:      req.CanResolve,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
 // GetSummary handles GET /api/support/coverage/summary.
 func (h *SupportCoverageHandler) GetSummary(w http.ResponseWriter, r *http.Request) {
 	wsID := middleware.GetWorkspaceID(r.Context())
@@ -82,8 +132,10 @@ func (h *SupportCoverageHandler) GetGap(w http.ResponseWriter, r *http.Request) 
 func (h *SupportCoverageHandler) UpdateGapStatus(w http.ResponseWriter, r *http.Request) {
 	wsID := middleware.GetWorkspaceID(r.Context())
 	gapID := chi.URLParam(r, "gapId")
+	userID := middleware.GetUserID(r.Context())
 	var req struct {
-		Status string `json:"status"`
+		Status        string `json:"status"`
+		IssueResolved *bool  `json:"issue_resolved"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -93,7 +145,7 @@ func (h *SupportCoverageHandler) UpdateGapStatus(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusBadRequest, "status is required")
 		return
 	}
-	if err := h.coverageSvc.UpdateGapStatus(r.Context(), wsID, gapID, req.Status); err != nil {
+	if err := h.coverageSvc.UpdateGapStatus(r.Context(), wsID, gapID, req.Status, userID, req.IssueResolved); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -210,6 +262,18 @@ func (h *SupportCoverageHandler) ApplySuggestion(w http.ResponseWriter, r *http.
 	userID := middleware.GetUserID(r.Context())
 	if err := h.draftSvc.ApplySuggestion(r.Context(), wsID, suggestionID, userID); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// DiscardSuggestion handles POST /api/support/coverage/suggestions/{suggestionId}/discard.
+// Rejects the suggestion and reverts the gap to open.
+func (h *SupportCoverageHandler) DiscardSuggestion(w http.ResponseWriter, r *http.Request) {
+	wsID := middleware.GetWorkspaceID(r.Context())
+	suggestionID := chi.URLParam(r, "suggestionId")
+	if err := h.coverageSvc.DiscardSuggestion(r.Context(), wsID, suggestionID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})

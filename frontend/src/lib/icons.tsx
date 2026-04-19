@@ -84,6 +84,7 @@ import {
   HashtagIcon as _HashtagIcon,
   Heading02Icon as _Heading02Icon,
   Heading03Icon as _Heading03Icon,
+  Heading04Icon as _Heading04Icon,
   HeadphonesIcon as _HeadphonesIcon,
   HelpCircleIcon as _HelpCircleIcon,
   HexagonIcon as _HexagonIcon,
@@ -157,6 +158,7 @@ import {
   SmilePlusIcon as _SmilePlusIcon,
   SourceCodeIcon as _SourceCodeIcon,
   SparklesIcon as _SparklesIcon,
+  AiMagicIcon as _AiMagicIcon,
   SquareUnlock01Icon as _SquareUnlock01Icon,
   StarIcon as _StarIcon,
   StickyNote01Icon as _StickyNote01Icon,
@@ -223,6 +225,7 @@ export const FolderKanbanIcon = hi(_FolderKanbanIcon);
 export const HashtagIcon = hi(_HashtagIcon);
 export const Heading02Icon = hi(_Heading02Icon);
 export const Heading03Icon = hi(_Heading03Icon);
+export const Heading04Icon = hi(_Heading04Icon);
 export const HeadphonesIcon = hi(_HeadphonesIcon);
 export const HexagonIcon = hi(_HexagonIcon);
 export const LanguageCircleIcon = hi(_LanguageCircleIcon);
@@ -403,6 +406,7 @@ export const SmileIcon = hi(_SmileIcon);
 export const SmilePlusIcon = hi(_SmilePlusIcon);
 export const SourceCodeIcon = hi(_SourceCodeIcon);
 export const SparklesIcon = hi(_SparklesIcon);
+export const AiMagicIcon = hi(_AiMagicIcon);
 export const StarIcon = hi(_StarIcon);
 export const StickyNote01Icon = hi(_StickyNote01Icon);
 export const Sun01Icon = hi(_Sun01Icon);

@@ -15,9 +15,14 @@ import (
 
 // DocsSpaceService handles business logic for docs spaces.
 type DocsSpaceService struct {
-	spaceRepo      *repository.DocsSpaceRepository
-	translationSvc *DocsHelpcenterTranslationService
-	wsPublisher    *websocket.Publisher
+	spaceRepo       *repository.DocsSpaceRepository
+	collectionRepo  *repository.DocsCollectionRepository
+	docRepo         *repository.DocsDocumentRepository
+	documentSvc     *DocsDocumentService
+	translationRepo *repository.DocsHelpcenterTranslationRepository
+	translationSvc  *DocsHelpcenterTranslationService
+	helpcenterRepo  *repository.DocsHelpcenterRepository
+	wsPublisher     *websocket.Publisher
 }
 
 // NewDocsSpaceService creates a new DocsSpaceService.
@@ -27,6 +32,80 @@ func NewDocsSpaceService(spaceRepo *repository.DocsSpaceRepository, wsPublisher 
 
 func (s *DocsSpaceService) SetTranslationService(translationSvc *DocsHelpcenterTranslationService) {
 	s.translationSvc = translationSvc
+}
+
+func (s *DocsSpaceService) SetPermanentDeleteDependencies(collectionRepo *repository.DocsCollectionRepository, docRepo *repository.DocsDocumentRepository, documentSvc *DocsDocumentService, translationRepo *repository.DocsHelpcenterTranslationRepository) {
+	s.collectionRepo = collectionRepo
+	s.docRepo = docRepo
+	s.documentSvc = documentSvc
+	s.translationRepo = translationRepo
+}
+
+// SetHelpcenterRepository wires the help center repo for computing
+// public document counts in GetDeleteImpact. Optional; when unset,
+// the public count defaults to zero.
+func (s *DocsSpaceService) SetHelpcenterRepository(helpcenterRepo *repository.DocsHelpcenterRepository) {
+	s.helpcenterRepo = helpcenterRepo
+}
+
+// GetDeleteImpact summarizes what permanent deletion of a space will
+// affect: total collections, documents (by status), and publicly
+// published help-center articles. Safe for both internal spaces
+// (public count is always 0) and external spaces.
+func (s *DocsSpaceService) GetDeleteImpact(ctx context.Context, workspaceID, id string) (*model.DocsSpaceDeleteImpact, error) {
+	space, err := s.spaceRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if space == nil {
+		return nil, ErrDocsSpaceNotFound
+	}
+	if workspaceID != "" && space.WorkspaceID != workspaceID {
+		return nil, ErrDocsCrossWorkspace
+	}
+
+	impact := &model.DocsSpaceDeleteImpact{
+		SpaceID:   space.ID,
+		SpaceName: space.Name,
+	}
+
+	if s.collectionRepo != nil {
+		collections, err := s.collectionRepo.ListBySpace(ctx, space.ID)
+		if err != nil {
+			return nil, err
+		}
+		impact.CollectionCount = len(collections)
+	}
+
+	if s.docRepo == nil {
+		return impact, nil
+	}
+
+	docs, err := s.docRepo.List(ctx, space.WorkspaceID, &space.ID, nil, nil, nil, "", true)
+	if err != nil {
+		return nil, err
+	}
+	documentIDs := make([]string, 0, len(docs))
+	for _, doc := range docs {
+		documentIDs = append(documentIDs, doc.ID)
+		impact.DocumentCount++
+		switch doc.Status {
+		case model.DocStatusArchived:
+			impact.ArchivedDocumentCount++
+		case model.DocStatusPublished:
+			impact.PublishedDocumentCount++
+		}
+	}
+
+	if s.helpcenterRepo != nil && len(documentIDs) > 0 {
+		publicCount, err := s.helpcenterRepo.CountPublicArticlesByDocumentIDs(ctx, documentIDs)
+		if err != nil {
+			return nil, err
+		}
+		impact.PublicDocumentCount = publicCount
+	}
+
+	return impact, nil
 }
 
 // withTeams enriches a space with its team IDs.
@@ -326,8 +405,9 @@ func (s *DocsSpaceService) Update(ctx context.Context, id string, req model.Upda
 	return s.withTeams(ctx, space)
 }
 
-// Delete soft-deletes a space.
-func (s *DocsSpaceService) Delete(ctx context.Context, id string) error {
+// Delete permanently deletes a space when permanent-delete dependencies are
+// wired. Without those dependencies it preserves the legacy soft-delete path.
+func (s *DocsSpaceService) Delete(ctx context.Context, workspaceID, id string) error {
 	space, err := s.spaceRepo.GetByID(ctx, id)
 	if err != nil {
 		return err
@@ -335,8 +415,50 @@ func (s *DocsSpaceService) Delete(ctx context.Context, id string) error {
 	if space == nil {
 		return fmt.Errorf("space not found")
 	}
+	if workspaceID != "" && space.WorkspaceID != workspaceID {
+		return ErrDocsCrossWorkspace
+	}
 	if space.IsSystem {
 		return fmt.Errorf("cannot delete a system space")
+	}
+	if s.documentSvc != nil && s.docRepo != nil && s.collectionRepo != nil {
+		docs, err := s.docRepo.List(ctx, space.WorkspaceID, &space.ID, nil, nil, nil, "", true)
+		if err != nil {
+			return err
+		}
+		// Batch-delete all docs in the space in one pass. Avoids the per-doc
+		// survivor scan that made full-space deletes take minutes.
+		documentIDs := make([]string, 0, len(docs))
+		for _, doc := range docs {
+			documentIDs = append(documentIDs, doc.ID)
+		}
+		if err := s.documentSvc.DeleteDocumentsPermanently(ctx, space.WorkspaceID, documentIDs); err != nil {
+			return err
+		}
+		collections, err := s.collectionRepo.ListBySpace(ctx, space.ID)
+		if err != nil {
+			return err
+		}
+		collectionIDs := make([]string, 0, len(collections))
+		for _, collection := range collections {
+			collectionIDs = append(collectionIDs, collection.ID)
+		}
+		if s.translationRepo != nil {
+			if err := s.translationRepo.DeleteCollectionTranslationsByCollectionIDs(ctx, collectionIDs); err != nil {
+				return err
+			}
+			if err := s.translationRepo.DeleteSpaceTranslations(ctx, id); err != nil {
+				return err
+			}
+		}
+		if err := s.collectionRepo.HardDeleteByIDs(ctx, collectionIDs); err != nil {
+			return err
+		}
+		if err := s.spaceRepo.HardDelete(ctx, id); err != nil {
+			return err
+		}
+		publishWorkspaceEvent(s.wsPublisher, "deleted", "docs_space", id, space.WorkspaceID, "")
+		return nil
 	}
 	// Mangle the slug before soft-deleting so the unique constraint (workspace_id, slug)
 	// is freed up and a new space with the same name can be created.

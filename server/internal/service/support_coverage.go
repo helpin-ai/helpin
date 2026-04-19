@@ -29,12 +29,44 @@ func NewSupportCoverageService(
 // ProcessSupportEvent evaluates a persisted event against v1 rules
 // and creates/upserts gaps with evidence.
 func (s *SupportCoverageService) ProcessSupportEvent(ctx context.Context, event *model.SupportEvent) error {
+	now := time.Now()
+
+	// For human_reply_after_ai and conversation_resolved_by_human, try to
+	// attach evidence to the existing gap for this conversation before
+	// creating a new one. This keeps the agent's answer (and the
+	// resolution marker) alongside the original AI failure evidence, so
+	// one conversation produces one gap regardless of how many gap-worthy
+	// signals fired during its lifetime.
+	isResolvedByHumanSignal := event.EventType == model.SupportEventConversationResolved &&
+		event.SourceSignal == model.SupportCoverageSourceConversationResolvedByHuman
+	if (event.EventType == model.SupportEventHumanReplyAfterAI || isResolvedByHumanSignal) && event.ConversationID != nil {
+		existing, err := s.coverageRepo.FindOpenGapByConversation(ctx, event.WorkspaceID, *event.ConversationID)
+		if err != nil {
+			s.logger.WarnContext(ctx, "find gap by conversation failed", "error", err)
+		}
+		if existing != nil {
+			evidence := &model.SupportGapEvidence{
+				GapID:          existing.ID,
+				WorkspaceID:    event.WorkspaceID,
+				EvidenceType:   event.EventType,
+				ConversationID: event.ConversationID,
+				MessageID:      event.MessageID,
+				SourceSignal:   event.SourceSignal,
+				Excerpt:        coverageTruncate(event.IssueSummary, 500),
+				CreatedAt:      now,
+			}
+			if err := s.coverageRepo.CreateEvidence(ctx, evidence); err != nil {
+				s.logger.WarnContext(ctx, "attach human reply evidence failed", "error", err)
+			}
+			return nil // Evidence attached to existing gap, no new gap needed.
+		}
+		// No existing gap for this conversation — fall through to normal rule processing.
+	}
+
 	rule := classifyEvent(event)
 	if rule == nil {
 		return nil // No gap-producing rule matched.
 	}
-
-	now := time.Now()
 
 	// Upsert topic if issue key is available.
 	var topicID *string
@@ -115,8 +147,8 @@ func (s *SupportCoverageService) GetGapDetail(ctx context.Context, workspaceID, 
 }
 
 // UpdateGapStatus sets the status of a gap.
-func (s *SupportCoverageService) UpdateGapStatus(ctx context.Context, workspaceID, gapID, status string) error {
-	return s.coverageRepo.UpdateGapStatus(ctx, workspaceID, gapID, status)
+func (s *SupportCoverageService) UpdateGapStatus(ctx context.Context, workspaceID, gapID, status, userID string, issueResolved *bool) error {
+	return s.coverageRepo.UpdateGapStatus(ctx, workspaceID, gapID, status, userID, issueResolved)
 }
 
 // ReclassifyGap changes the v1 gap type.
@@ -127,6 +159,11 @@ func (s *SupportCoverageService) ReclassifyGap(ctx context.Context, workspaceID,
 // MergeGaps merges source gap into target.
 func (s *SupportCoverageService) MergeGaps(ctx context.Context, workspaceID, sourceGapID, targetGapID string) error {
 	return s.coverageRepo.MergeGaps(ctx, workspaceID, sourceGapID, targetGapID)
+}
+
+// DiscardSuggestion rejects a suggestion and reverts the gap to open.
+func (s *SupportCoverageService) DiscardSuggestion(ctx context.Context, workspaceID, suggestionID string) error {
+	return s.coverageRepo.DiscardSuggestion(ctx, suggestionID, workspaceID)
 }
 
 // GetConversationCoverageState checks docs-issue feedback state.

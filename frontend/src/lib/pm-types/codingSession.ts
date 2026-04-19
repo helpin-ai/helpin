@@ -70,6 +70,7 @@ export interface CodingSessionDiff {
 export interface CodingSession {
   id: string;
   run_id: string;
+  parent_run_id?: string;
   workspace_id: string;
   target_type: string;
   target_id: string;
@@ -78,10 +79,14 @@ export interface CodingSession {
   invocation_mode: AgentInvocationMode;
   status: AgentRunStatus;
   pause_reason: AgentRunPauseReason;
+  error_message?: string;
   title: string;
   summary?: string;
   capabilities: CodingSessionCapabilities;
   repo: CodingSessionRepoState;
+  input_tokens: number;
+  output_tokens: number;
+  tokens_used: number;
   auth_state?: CodexAuthState;
   stream_state_snapshot?: CodingSessionStreamSnapshot;
   triggered_by_user?: CodingSessionActor;

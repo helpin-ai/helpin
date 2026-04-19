@@ -914,6 +914,112 @@ func TestSendRunMessageApprovalUsesApprovalArtifactWithoutToolInvocations(t *tes
 	}
 }
 
+func TestMaybePersistApprovedInteractivePreviewWithoutAssistantMessageRow(t *testing.T) {
+	db := newInteractiveApprovalTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	runRepo := repository.NewAgentRunRepository(db)
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+
+	now := time.Now().UTC()
+	mustExec(t, db, `INSERT INTO agents (
+		id, workspace_id, is_system, name, preset_key, role, status, runtime_kind,
+		skills, trigger_mode, allowed_tools, allowed_commands, allowed_targets, approval_mode,
+		max_concurrent_runs, default_invocation_mode, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"agent-1", "ws-1", false, "Epic Planner", model.AgentPresetEpicPlanner, "Planner", "idle", "native_sdk",
+		[]byte("[]"), "manual", []byte("[]"), []byte("[]"), []byte("[]"), "never", 1, model.InvocationModeInteractive, now, now,
+	)
+
+	run := &model.AgentRun{
+		ID:             "run-approval-artifact-tool-only",
+		WorkspaceID:    "ws-1",
+		AgentID:        "agent-1",
+		TargetType:     "epic",
+		TargetID:       "epic-1",
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeInteractive,
+		ApprovalState:  "not_required",
+		PauseReason:    model.AgentRunPauseReasonHumanInput,
+		Status:         model.AgentRunStatusPaused,
+		OutputSummary:  []byte(`{"status":"waiting"}`),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := runRepo.Create(context.Background(), run); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	runPreviewContent := `{"panel_key":"prd_draft","title":"PRD Draft","format":"markdown","content":"# Problem\n\nTool-only draft","replace":true}`
+	if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
+		ID:            "artifact-run-preview-tool-only",
+		WorkspaceID:   "ws-1",
+		RunID:         run.ID,
+		ArtifactType:  worker.RunPreviewArtifactType,
+		Format:        "json",
+		StorageMode:   "inline",
+		InlineContent: &runPreviewContent,
+		Metadata:      json.RawMessage(`{"assistant_message_sequence_no":11}`),
+		SequenceNo:    1,
+		CreatedAt:     now,
+	}); err != nil {
+		t.Fatalf("create run preview artifact: %v", err)
+	}
+
+	approvalContent := `{"phase":"prd","title":"Approve PRD","summary":"Review the current draft"}`
+	if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
+		ID:            "artifact-approval-tool-only",
+		WorkspaceID:   "ws-1",
+		RunID:         run.ID,
+		ArtifactType:  model.AgentRunArtifactTypeHumanApprovalRequest,
+		Format:        "json",
+		StorageMode:   "inline",
+		InlineContent: &approvalContent,
+		Metadata:      json.RawMessage(`{"assistant_message_sequence_no":11}`),
+		SequenceNo:    2,
+		CreatedAt:     now,
+	}); err != nil {
+		t.Fatalf("create approval artifact: %v", err)
+	}
+
+	svc := &AgentService{
+		agentRepo:      agentRepo,
+		runRepo:        runRepo,
+		runMessageRepo: runMessageRepo,
+		artifactRepo:   artifactRepo,
+		runEngine:      &temporalapp.RunEngine{},
+	}
+
+	if err := svc.maybePersistApprovedInteractivePreview(context.Background(), run, "user-1", "approve"); err != nil {
+		t.Fatalf("maybePersistApprovedInteractivePreview returned error: %v", err)
+	}
+
+	artifacts, err := artifactRepo.ListByRun(context.Background(), "ws-1", run.ID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	var approvedArtifact *model.AgentRunArtifact
+	for i := range artifacts {
+		if artifacts[i].ArtifactType == model.AgentRunArtifactTypeApprovedPreview {
+			approvedArtifact = &artifacts[i]
+			break
+		}
+	}
+	if approvedArtifact == nil {
+		t.Fatalf("expected approved preview artifact, got %#v", artifacts)
+	}
+	var approved model.ApprovedRunPreview
+	if err := json.Unmarshal([]byte(derefString(approvedArtifact.InlineContent)), &approved); err != nil {
+		t.Fatalf("unmarshal approved preview: %v", err)
+	}
+	if approved.SourceMessageID != "" {
+		t.Fatalf("expected empty source_message_id for tool-only approval turn, got %q", approved.SourceMessageID)
+	}
+	if approved.AssistantMessageSequenceNo != 11 {
+		t.Fatalf("expected assistant_message_sequence_no 11, got %d", approved.AssistantMessageSequenceNo)
+	}
+}
+
 func TestSendRunMessageKeepsInteractiveRunResumingOnFeedback(t *testing.T) {
 	db := newInteractiveApprovalTestDB(t)
 	agentRepo := repository.NewAgentRepository(db)
@@ -1864,6 +1970,7 @@ func newInteractiveApprovalTestDB(t *testing.T) *gorm.DB {
 			model TEXT,
 			execution_config BLOB NOT NULL DEFAULT x'7b7d',
 			system_prompt TEXT,
+			instruction_template_version TEXT NOT NULL DEFAULT '',
 			planning_notes TEXT,
 			tools BLOB NOT NULL DEFAULT (CAST('[]' AS BLOB)),
 			monthly_token_budget INTEGER,
@@ -1911,6 +2018,8 @@ func newInteractiveApprovalTestDB(t *testing.T) *gorm.DB {
 			last_heartbeat_at DATETIME,
 			input BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
 			output_summary BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
+			input_tokens INTEGER NOT NULL DEFAULT 0,
+			output_tokens INTEGER NOT NULL DEFAULT 0,
 			tokens_used INTEGER NOT NULL DEFAULT 0,
 			error_message TEXT,
 			started_at DATETIME,

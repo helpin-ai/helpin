@@ -72,12 +72,14 @@ const brandNavigationItem: NavItem = {
   icon: null,
   parent_collection_id: null,
   depth: 0,
+  position: 0,
   articles: [
     {
       id: 'article-brand-settings',
       title: 'Brand settings',
       slug: 'brand-settings',
       public_id: 'abc123ef',
+      position: 0,
       published_at: '2026-04-10T18:30:00Z',
     },
     {
@@ -85,6 +87,7 @@ const brandNavigationItem: NavItem = {
       title: 'Custom brand domains',
       slug: 'custom-brand-domains',
       public_id: 'def456ab',
+      position: 1,
       published_at: '2026-04-10T18:35:00Z',
     },
   ],

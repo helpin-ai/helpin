@@ -111,6 +111,17 @@ export function useInboxScopes(workspaceId: string, enabled = true) {
   });
 }
 
+export function useSupportUnreadByWorkspace(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.support.workspaceUnread(),
+    queryFn: async () => unwrap(await supportService.listWorkspaceUnread()),
+    enabled,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+  });
+}
+
 export function useSupportMailboxes(workspaceId: string) {
   return useQuery({
     queryKey: queryKeys.support.mailboxes(workspaceId),
@@ -286,6 +297,15 @@ export function useConversationMessages(workspaceId: string, conversationId: str
     queryFn: async () => unwrap(await supportService.listConversationMessages(workspaceId, conversationId!)),
     enabled: !!workspaceId && !!conversationId,
     staleTime: 5_000,
+  });
+}
+
+export function useMessageEmailDetail(workspaceId: string, messageId: string | null, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.support.messageEmail(workspaceId, messageId ?? ''),
+    queryFn: async () => unwrap(await supportService.getMessageEmailDetail(workspaceId, messageId!)),
+    enabled: enabled && !!workspaceId && !!messageId,
+    staleTime: 5 * 60_000,
   });
 }
 

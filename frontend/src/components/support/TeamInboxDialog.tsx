@@ -79,9 +79,15 @@ function FieldLabel({ htmlFor, children, tip }: { htmlFor?: string; children: Re
       <Label htmlFor={htmlFor}>{children}</Label>
       <Tooltip>
         <TooltipTrigger asChild>
-          <HelpCircleIcon className="h-3.5 w-3.5 cursor-help text-muted-foreground/60" />
+          <button
+            type="button"
+            aria-label="More info"
+            className="inline-flex cursor-help items-center justify-center rounded-full text-muted-foreground/60 outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <HelpCircleIcon className="h-3.5 w-3.5" />
+          </button>
         </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-56">
+        <TooltipContent side="top" className="max-w-64 text-xs leading-relaxed">
           {tip}
         </TooltipContent>
       </Tooltip>
@@ -322,7 +328,7 @@ export function TeamInboxDialog({
                 />
               </div>
 
-              <div className="rounded-xl border bg-muted/20 p-3">
+              <div className="space-y-3 rounded-xl border bg-muted/20 p-3">
                 <div className="flex items-end gap-3">
                   <div className="flex-1 space-y-1.5">
                     <FieldLabel tip="Connect this inbox to an existing workspace team. Current members of that team get inbox access automatically, and you can still add extra individual members in the next step.">
@@ -358,38 +364,31 @@ export function TeamInboxDialog({
                   </div>
                 </div>
 
-                <div className="space-y-3 rounded-md border border-dashed border-border/60 p-4">
-                  <FieldLabel tip="Override the workspace reply-time expectation for conversations in this inbox. Inherit to use the workspace default; set a preset here to give this team its own SLA.">
-                    Reply expectations
-                  </FieldLabel>
-                  <div className="flex items-center gap-4">
-                    <label className="flex items-center gap-2 text-xs">
-                      <input
-                        type="radio"
-                        checked={!form.replyTimeOverride}
-                        onChange={() => setForm((c) => ({ ...c, replyTimeOverride: false }))}
-                        className="h-3.5 w-3.5"
-                      />
-                      <span>Inherit workspace default</span>
-                    </label>
-                    <label className="flex items-center gap-2 text-xs">
-                      <input
-                        type="radio"
-                        checked={form.replyTimeOverride}
-                        onChange={() => setForm((c) => ({ ...c, replyTimeOverride: true }))}
-                        className="h-3.5 w-3.5"
-                      />
-                      <span>Override for this inbox</span>
-                    </label>
+                <div className="border-t border-border/60 pt-3">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="space-y-0.5">
+                      <FieldLabel tip="Override the workspace reply-time expectation for conversations in this inbox. Leave off to use the workspace default; turn on to give this inbox its own SLA.">
+                        Reply expectations
+                      </FieldLabel>
+                      <p className="text-xs text-muted-foreground">
+                        {form.replyTimeOverride
+                          ? 'Using a custom reply-time SLA for this inbox.'
+                          : 'Using the workspace default reply-time SLA.'}
+                      </p>
+                    </div>
+                    <Switch
+                      checked={form.replyTimeOverride}
+                      onCheckedChange={(checked) => setForm((c) => ({ ...c, replyTimeOverride: checked }))}
+                    />
                   </div>
+
                   {form.replyTimeOverride && (
-                    <div className="grid grid-cols-[120px_1fr] gap-3 items-center">
-                      <Label className="text-xs">Preset</Label>
+                    <div className="mt-3 flex items-center gap-2">
                       <Select
                         value={form.replyTimePreset}
                         onValueChange={(v) => setForm((c) => ({ ...c, replyTimePreset: v }))}
                       >
-                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectTrigger className={form.replyTimePreset === 'custom' ? 'w-44' : 'flex-1'}><SelectValue /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value="few_minutes">Usually a few minutes</SelectItem>
                           <SelectItem value="few_hours">Usually a few hours</SelectItem>
@@ -398,27 +397,24 @@ export function TeamInboxDialog({
                         </SelectContent>
                       </Select>
                       {form.replyTimePreset === 'custom' && (
-                        <>
-                          <Label className="text-xs">Custom time</Label>
-                          <div className="flex items-center gap-2">
-                            <Input
-                              type="number"
-                              min={1}
-                              max={10080}
-                              value={form.replyTimeCustomMinutes ?? ''}
-                              onChange={(e) => {
-                                const v = e.target.value;
-                                setForm((c) => ({
-                                  ...c,
-                                  replyTimeCustomMinutes: v === '' ? null : Number(v),
-                                }));
-                              }}
-                              className="w-24 h-8 text-sm"
-                              placeholder="30"
-                            />
-                            <span className="text-xs text-muted-foreground">minutes</span>
-                          </div>
-                        </>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <Input
+                            type="number"
+                            min={1}
+                            max={10080}
+                            value={form.replyTimeCustomMinutes ?? ''}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setForm((c) => ({
+                                ...c,
+                                replyTimeCustomMinutes: v === '' ? null : Number(v),
+                              }));
+                            }}
+                            className="h-9 w-16 text-sm"
+                            placeholder="30"
+                          />
+                          <span className="text-xs text-muted-foreground">minutes</span>
+                        </div>
                       )}
                     </div>
                   )}

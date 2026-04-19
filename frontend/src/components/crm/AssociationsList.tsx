@@ -1,20 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import {
+  ArrowRight01Icon,
   Building03Icon,
+  Delete01Icon,
   DollarCircleIcon,
   File01Icon,
   GitBranchIcon,
   Loading01Icon,
+  Message01Icon,
   Search01Icon,
   UserGroupIcon,
 } from '@/lib/icons';
 import { toast } from 'sonner';
-import { Badge } from '@/components/ui/badge';
 import { Favicon } from '@/components/ui/favicon';
 import { Input } from '@/components/ui/input';
-import { CollapsibleSection } from '@/components/ui/collapsible-section';
-import { CompactChip } from '@/components/ui/compact-chip';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import {
   Dialog,
@@ -29,6 +29,7 @@ import { supportService } from '@/lib/services/supportService';
 import type { CRMAssociationEnriched, CRMObjectType, CRMSearchResult } from '@/lib/crmTypes';
 import type { SupportConversation } from '@/lib/pmTypes';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
+import { cn, truncateText } from '@/lib/utils';
 
 interface AssociationsListProps {
   workspaceId: string;
@@ -41,15 +42,72 @@ interface AssociationsListProps {
 
 type SectionType = CRMObjectType;
 
-const sectionConfig: Record<string, { title: string; icon: React.ElementType }> = {
+const SECTION_PREVIEW_LIMIT = 3;
+
+const sectionConfig: Record<SectionType, { title: string; icon: React.ElementType }> = {
   contact: { title: 'Contacts', icon: UserGroupIcon },
   company: { title: 'Companies', icon: Building03Icon },
   deal: { title: 'Deals', icon: DollarCircleIcon },
   epic: { title: 'Epics', icon: File01Icon },
   task: { title: 'Tasks', icon: GitBranchIcon },
-
-  support_conversation: { title: 'Support', icon: File01Icon },
+  support_conversation: { title: 'Support', icon: Message01Icon },
 };
+
+const crmAssociationTypes: CRMObjectType[] = ['contact', 'company', 'deal'];
+
+function AssociationsRailSection({
+  title,
+  count,
+  expanded,
+  onToggle,
+  onAdd,
+  children,
+}: {
+  title: string;
+  count: number;
+  expanded: boolean;
+  onToggle: () => void;
+  onAdd: () => void;
+  children: React.ReactNode;
+}) {
+  const canToggle = count > SECTION_PREVIEW_LIMIT;
+  const hiddenCount = Math.max(count - SECTION_PREVIEW_LIMIT, 0);
+
+  return (
+    <>
+      <div className="flex items-center justify-between">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          {title}
+          {count > 0 && <span className="ml-1.5 font-normal">{count}</span>}
+        </h3>
+        <button
+          type="button"
+          className="rounded-md p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          onClick={onAdd}
+          aria-label={`Add ${title.toLowerCase()}`}
+        >
+          <span className="text-sm leading-none">+</span>
+        </button>
+      </div>
+
+      {count > 0 && (
+        <>
+          <div className="mt-2 space-y-1">{children}</div>
+          {canToggle && (
+            <button
+              type="button"
+              className="mt-1 inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+              onClick={onToggle}
+            >
+              <ArrowRight01Icon className={cn('h-3 w-3 transition-transform', expanded && 'rotate-90')} />
+              {expanded ? 'Show less' : `Show ${hiddenCount} more`}
+            </button>
+          )}
+        </>
+      )}
+    </>
+  );
+}
 
 export function AssociationsList({
   workspaceId,
@@ -70,14 +128,29 @@ export function AssociationsList({
   const [crmResults, setCRMResults] = useState<CRMSearchResult[]>([]);
   const [pmResults, setPMResults] = useState<SearchResult[]>([]);
   const [conversationResults, setConversationResults] = useState<SupportConversation[]>([]);
+  const [expandedSections, setExpandedSections] = useState<Record<SectionType, boolean>>({
+    contact: false,
+    company: false,
+    deal: false,
+    epic: false,
+    task: false,
+    support_conversation: false,
+  });
 
   const grouped = useMemo(() => {
-    const groups: Record<string, Array<CRMAssociationEnriched & { linkedType: CRMObjectType; linkedId: string }>> = {};
+    const groups: Record<SectionType, Array<CRMAssociationEnriched & { linkedType: CRMObjectType; linkedId: string }>> = {
+      contact: [],
+      company: [],
+      deal: [],
+      epic: [],
+      task: [],
+      support_conversation: [],
+    };
     for (const assoc of associations) {
       const isFrom = assoc.from_object_type === currentObjectType && assoc.from_object_id === currentObjectId;
       const linkedType = isFrom ? assoc.to_object_type : assoc.from_object_type;
       const linkedId = isFrom ? assoc.to_object_id : assoc.from_object_id;
-      (groups[linkedType] ??= []).push({ ...assoc, linkedType, linkedId });
+      groups[linkedType].push({ ...assoc, linkedType, linkedId });
     }
     return groups;
   }, [associations, currentObjectType, currentObjectId]);
@@ -110,7 +183,6 @@ export function AssociationsList({
     }
   };
 
-  // Search logic for the add picker
   useEffect(() => {
     if (!pickerSection) {
       setQuery('');
@@ -131,7 +203,7 @@ export function AssociationsList({
           items.filter((c) => {
             if (!normalized) return true;
             return c.subject.toLowerCase().includes(normalized) || c.display_id.toString().includes(normalized);
-          })
+          }),
         );
         setSearching(false);
         return;
@@ -167,60 +239,85 @@ export function AssociationsList({
       to_object_id: toId,
     });
     setPickerSection(null);
-    onAssociationRemoved?.(); // triggers refetch
+    onAssociationRemoved?.();
   };
 
   const sectionOrder: SectionType[] = ['contact', 'company', 'deal', 'epic', 'task', 'support_conversation'];
-  const visibleSections = sectionOrder.filter((type) => (grouped[type]?.length ?? 0) > 0);
-
+  const visibleSections = sectionOrder.filter((type) => type !== currentObjectType);
   const pickerConfig = pickerSection ? sectionConfig[pickerSection] : null;
   const pickerPlaceholder =
-    pickerSection === 'support_conversation' ? 'Filter conversations by subject or ID' :
-    pickerSection === 'epic' || pickerSection === 'task' ? `Search ${pickerSection}s by title or ID` :
-    `Search ${pickerSection ? pickerSection + 's' : ''}`;
-
+    pickerSection === 'support_conversation'
+      ? 'Filter conversations by subject or ID'
+      : pickerSection === 'epic' || pickerSection === 'task'
+        ? `Search ${pickerSection}s by title or ID`
+        : `Search ${pickerSection ? `${pickerSection}s` : ''}`;
   const pickerIcon = pickerConfig?.icon ?? File01Icon;
   const PickerIcon = pickerIcon;
 
   return (
-    <div>
-      {visibleSections.map((type) => {
-        const items = grouped[type]!;
+    <div className="py-4">
+      {visibleSections.map((type, index) => {
+        const items = grouped[type];
         const config = sectionConfig[type];
-        if (!config) return null;
+        const visibleItems = expandedSections[type] ? items : items.slice(0, SECTION_PREVIEW_LIMIT);
 
         return (
-          <CollapsibleSection
-            key={type}
-            title={config.title}
-            icon={config.icon}
-            count={items.length}
-            defaultOpen={items.length > 0}
-            onAdd={() => setPickerSection(type)}
-          >
-            {items.map((assoc) => (
-              <CompactChip
-                key={assoc.id}
-                title={assoc.linked_object_name || assoc.linkedType}
-                displayId={assoc.linked_object_display_id || undefined}
-                onClick={() => handleNavigate(assoc.linkedType, assoc.linkedId)}
-                onRemove={() => setRemoveId(assoc.id)}
-              />
-            ))}
-          </CollapsibleSection>
+          <div key={type}>
+            {index > 0 && <div className="my-4 h-px bg-border/60" />}
+            <AssociationsRailSection
+              title={config.title}
+              count={items.length}
+              expanded={expandedSections[type]}
+              onToggle={() => setExpandedSections((current) => ({ ...current, [type]: !current[type] }))}
+              onAdd={() => setPickerSection(type)}
+            >
+              {visibleItems.map((assoc) => {
+                const Icon = config.icon;
+                const isCRMRecord = crmAssociationTypes.includes(type);
+
+                return (
+                  <div
+                    key={assoc.id}
+                    className="group flex items-center gap-2 rounded-md px-1 py-1.5 text-xs transition-colors hover:bg-muted/40"
+                  >
+                    <button
+                      type="button"
+                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                      onClick={() => handleNavigate(assoc.linkedType, assoc.linkedId)}
+                    >
+                      <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      {!isCRMRecord && assoc.linked_object_display_id && (
+                        <span className="shrink-0 text-muted-foreground">{assoc.linked_object_display_id}</span>
+                      )}
+                      <span className="truncate font-medium">{assoc.linked_object_name || assoc.linkedType}</span>
+                      {isCRMRecord && assoc.linked_object_display_id && (
+                        <span className="ml-auto shrink-0 text-[10px] text-muted-foreground opacity-0 transition-opacity delay-0 group-hover:opacity-100 group-hover:delay-200">
+                          {assoc.linked_object_display_id}
+                        </span>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-all hover:bg-background hover:text-destructive group-hover:opacity-100"
+                      onClick={() => setRemoveId(assoc.id)}
+                      aria-label="Remove association"
+                    >
+                      <Delete01Icon className="h-3 w-3" />
+                    </button>
+                  </div>
+                );
+              })}
+            </AssociationsRailSection>
+          </div>
         );
       })}
 
-      {visibleSections.length === 0 && (
-        <p className="text-[11px] text-muted-foreground italic py-3 px-3">No associations</p>
-      )}
-
       <Dialog open={!!pickerSection} onOpenChange={(open) => { if (!open) setPickerSection(null); }}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle className="text-sm">Link {pickerConfig?.title?.replace(/s$/, '') ?? ''}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
+          <div className="space-y-2">
             <div className="relative">
               <Search01Icon className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
@@ -231,9 +328,9 @@ export function AssociationsList({
                 autoFocus
               />
             </div>
-            <div className="max-h-64 space-y-1 overflow-y-auto">
+            <div className="-mx-1 max-h-80 overflow-y-auto px-1">
               {searching && (
-                <div className="flex items-center gap-2 py-4 justify-center text-sm text-muted-foreground">
+                <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
                   <Loading01Icon className="h-4 w-4 animate-spin" /> Searching...
                 </div>
               )}
@@ -242,16 +339,13 @@ export function AssociationsList({
                 <button
                   key={c.id}
                   type="button"
-                  className="w-full rounded-md border px-3 py-2 text-left text-sm transition hover:bg-accent"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent"
                   onClick={() => handleAdd('support_conversation', c.id)}
                 >
-                  <div className="flex items-center gap-2">
-                    <File01Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <span className="font-medium truncate">{c.subject}</span>
-                    <Badge variant="outline" className="h-5 px-1.5 text-[10px] shrink-0">
-                      C-{c.display_id}
-                    </Badge>
-                  </div>
+                  <span className="min-w-0 flex-1">{truncateText(c.subject, 60)}</span>
+                  <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
+                    C-{c.display_id}
+                  </span>
                 </button>
               ))}
 
@@ -259,24 +353,22 @@ export function AssociationsList({
                 <button
                   key={`${r.type}-${r.id}`}
                   type="button"
-                  className="w-full rounded-md border px-3 py-2 text-left text-sm transition hover:bg-accent"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent"
                   onClick={() => handleAdd(r.type as CRMObjectType, r.id)}
                 >
-                  <div className="flex items-center gap-2">
-                    {r.type === 'company' ? (
-                      <Favicon
-                        src={'logo_url' in r.object ? r.object.logo_url : undefined}
-                        url={'domain' in r.object ? r.object.domain : undefined}
-                        name={r.name}
-                        size={16}
-                        className="h-3.5 w-3.5 rounded-sm border-none bg-transparent"
-                        fallbackClassName="text-[7px]"
-                      />
-                    ) : (
-                      <PickerIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    )}
-                    <span className="font-medium truncate">{r.name}</span>
-                  </div>
+                  {r.type === 'company' ? (
+                    <Favicon
+                      src={'logo_url' in r.object ? r.object.logo_url : undefined}
+                      url={'domain' in r.object ? r.object.domain : undefined}
+                      name={r.name}
+                      size={16}
+                      className="h-3.5 w-3.5 shrink-0 rounded-sm border-none bg-transparent"
+                      fallbackClassName="text-[7px]"
+                    />
+                  ) : (
+                    <PickerIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  )}
+                  <span className="min-w-0 flex-1">{truncateText(r.name, 60)}</span>
                 </button>
               ))}
 
@@ -284,31 +376,29 @@ export function AssociationsList({
                 <button
                   key={r.id}
                   type="button"
-                  className="w-full rounded-md border px-3 py-2 text-left text-sm transition hover:bg-accent"
-                  onClick={() => handleAdd(pickerSection!, r.id)}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent"
+                  onClick={() => handleAdd(pickerSection, r.id)}
                 >
-                  <div className="flex items-center gap-2">
-                    <PickerIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <span className="font-medium truncate">{r.name}</span>
-                    {r.display_id && (
-                      <Badge variant="outline" className="h-5 px-1.5 text-[10px] shrink-0">
-                        {r.display_id}
-                      </Badge>
-                    )}
-                  </div>
+                  <PickerIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1">{truncateText(r.name, 60)}</span>
+                  {r.display_id && (
+                    <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
+                      {r.display_id}
+                    </span>
+                  )}
                 </button>
               ))}
 
               {!searching && pickerSection === 'support_conversation' && conversationResults.length === 0 && (
-                <p className="py-4 text-sm text-muted-foreground text-center">No results found</p>
+                <p className="py-4 text-center text-sm text-muted-foreground">No results found</p>
               )}
               {!searching && pickerSection !== 'support_conversation' && query.trim().length >= 2 &&
-                ((pickerSection === 'contact' || pickerSection === 'company' || pickerSection === 'deal') && crmResults.length === 0 ||
-                 (pickerSection === 'epic' || pickerSection === 'task') && pmResults.length === 0) && (
-                <p className="py-4 text-sm text-muted-foreground text-center">No results found</p>
-              )}
+                (((pickerSection === 'contact' || pickerSection === 'company' || pickerSection === 'deal') && crmResults.length === 0) ||
+                  ((pickerSection === 'epic' || pickerSection === 'task') && pmResults.length === 0)) && (
+                  <p className="py-4 text-center text-sm text-muted-foreground">No results found</p>
+                )}
               {!searching && pickerSection !== 'support_conversation' && query.trim().length < 2 && (
-                <p className="py-4 text-sm text-muted-foreground text-center">Type at least 2 characters to search</p>
+                <p className="py-4 text-center text-sm text-muted-foreground">Type at least 2 characters to search</p>
               )}
             </div>
           </div>

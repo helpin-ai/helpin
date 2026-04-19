@@ -13,7 +13,6 @@ import {
   Mail01Icon,
   Message01Icon,
   PauseIcon,
-  PlayIcon,
   ArrowReloadHorizontalIcon,
   Setting07Icon,
   KanbanIcon,
@@ -31,6 +30,7 @@ import {
   OctagonXIcon,
   UserRemove01Icon,
   Wrench01Icon,
+  BookOpen01Icon,
 } from '@/lib/icons';
 import { buildSettingsRoutePath, getSettingsSidebarGroups } from '@/lib/settingsSections';
 import type { NavGroup, RailId, RailItem } from './types';
@@ -92,8 +92,6 @@ export function buildPanelNavGroups(wsSlug: string, canManageSettings: boolean, 
           { link: `/w/${wsSlug}/crm/contacts`, label: 'Contacts', icon: UserGroupIcon },
           { link: `/w/${wsSlug}/crm/companies`, label: 'Companies', icon: Building03Icon },
           { link: `/w/${wsSlug}/crm/deals`, label: 'Deals', icon: DollarCircleIcon },
-          { link: `/w/${wsSlug}/crm/lists`, label: 'Lists', icon: LayoutTable01Icon },
-          { link: `/w/${wsSlug}/crm/sequences`, label: 'Sequences', icon: PlayIcon },
           { link: `/w/${wsSlug}/crm/review`, label: 'Review', icon: ClipboardIcon },
           { link: `/w/${wsSlug}/crm/insights`, label: 'Insights', icon: BulbIcon },
         ],
@@ -119,6 +117,7 @@ export function buildPanelNavGroups(wsSlug: string, canManageSettings: boolean, 
         items: [
           { link: `/w/${wsSlug}/automation/library`, label: 'Trigger Catalog', icon: BotIcon },
           { link: `/w/${wsSlug}/automation/tools`, label: 'Tool Catalog', icon: Wrench01Icon },
+          { link: `/w/${wsSlug}/automation/skills`, label: 'Skill Catalog', icon: BookOpen01Icon },
         ],
       },
     ],
@@ -159,6 +158,6 @@ export const supportStatusOptions: readonly { value: string; label: string; icon
 ] as const;
 
 export const supportAiItems = [
-  { key: 'ai_active' as const, label: 'AI Active', icon: BotIcon },
-  { key: 'resolved_by_ai' as const, label: 'Resolved by AI', icon: CheckmarkCircle02Icon },
+  { key: 'ai_active' as const, label: 'AI Handling', icon: BotIcon },
+  { key: 'resolved_by_ai' as const, label: 'AI Resolved', icon: CheckmarkCircle02Icon },
 ];

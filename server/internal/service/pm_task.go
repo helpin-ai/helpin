@@ -1268,6 +1268,7 @@ func (s *PMTaskService) MoveToState(ctx context.Context, id string, req model.Mo
 				TeamID:  current.TeamID,
 				Reason:  strPtr("task_state_changed"),
 			},
+			nil,
 		); err != nil {
 			if !errors.Is(err, ErrTaskDeliveryTargetRequired) {
 				s.logger.WarnContext(ctx, "auto-start agent on state change failed",

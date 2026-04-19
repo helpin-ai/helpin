@@ -10,6 +10,7 @@ import type {
   LinkTaskRequest,
   AssignConversationAgentRequest,
   AssignConversationUserRequest,
+  UpdateConversationCRMContactRequest,
   AgentRun,
   ConversationStatus,
   SupportInstallationResponse,
@@ -21,6 +22,7 @@ import type {
   SupportAIRewriteDraftRequest,
   SupportAIRewriteDraftResponse,
   SupportInboxScopeListResponse,
+  SupportWorkspaceUnreadCount,
   SupportMailbox,
   CreateSupportMailboxRequest,
   UpdateSupportMailboxRequest,
@@ -31,6 +33,7 @@ import type {
   CreateSupportTriageRuleRequest,
   UpdateSupportTriageRuleRequest,
   SupportConversationTriage,
+  SupportMessageEmailDetail,
 } from '../pmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
@@ -48,6 +51,8 @@ export const supportService = {
   },
   listInboxScopes: (workspaceId: string) =>
     api.get<SupportInboxScopeListResponse>(`/support/inbox/mailboxes/scopes${qs(workspaceId)}`),
+  listWorkspaceUnread: () =>
+    api.get<SupportWorkspaceUnreadCount[]>(`/support/workspace-unread`),
   listMailboxes: (workspaceId: string) =>
     api.get<SupportMailbox[]>(`/support/inbox/mailboxes${qs(workspaceId)}`),
   createMailbox: (workspaceId: string, payload: CreateSupportMailboxRequest) =>
@@ -105,6 +110,8 @@ export const supportService = {
     api.post(`/support/inbox/conversations/${conversationId}/assign-agent${qs(workspaceId)}`, payload),
   assignConversationUser: (workspaceId: string, conversationId: string, payload: AssignConversationUserRequest) =>
     api.post(`/support/inbox/conversations/${conversationId}/assign-user${qs(workspaceId)}`, payload),
+  updateConversationCRMContact: (workspaceId: string, conversationId: string, payload: UpdateConversationCRMContactRequest) =>
+    api.put<SupportConversation>(`/support/inbox/conversations/${conversationId}/crm-contact${qs(workspaceId)}`, payload),
   runAgent: (workspaceId: string, conversationId: string) =>
     api.post<AgentRun>(`/support/inbox/conversations/${conversationId}/run-agent${qs(workspaceId)}`, {}),
 
@@ -154,4 +161,8 @@ export const supportService = {
    */
   sendViewingPresence: (workspaceId: string, conversationId: string, viewing: boolean) =>
     api.post(`/support/inbox/conversations/${conversationId}/viewing${qs(workspaceId)}`, { viewing }),
+
+  // Email details for an individual message (only when via_channel === 'email').
+  getMessageEmailDetail: (workspaceId: string, messageId: string) =>
+    api.get<SupportMessageEmailDetail>(`/support/inbox/messages/${messageId}/email${qs(workspaceId)}`),
 };

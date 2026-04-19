@@ -21,6 +21,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/email"
+	"github.com/helpin-ai/helpin/server/internal/email/inboundhtml"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
@@ -53,6 +54,33 @@ func renderMessageMarkdownToHTML(content string) string {
 	return rendered
 }
 
+// inboundPayloadBodies picks the best content source from a Postmark inbound
+// payload and returns both a markdown-friendly variant for plaintext display
+// and a sanitized HTML variant for rich rendering in a sandboxed iframe.
+//
+// Preference order for the markdown variant:
+//  1. HtmlBody converted to markdown — preserves anchor text so long tracking
+//     URLs don't render as plaintext walls.
+//  2. StrippedTextReply — Postmark-stripped plain-text reply (quoted history
+//     removed), used when HTML is absent or conversion yields nothing.
+//  3. TextBody — full plain-text body as final fallback.
+//
+// htmlBody is populated only when HtmlBody was present and processing
+// succeeded; callers should treat an empty string as "no rich body".
+func inboundPayloadBodies(payload model.PostmarkInboundPayload) (markdown, htmlBody string) {
+	processed := inboundhtml.Process(payload.HtmlBody, "")
+	markdown = processed.Markdown
+	htmlBody = processed.HTML
+	if markdown != "" {
+		return markdown, htmlBody
+	}
+	if stripped := strings.TrimSpace(payload.StrippedTextReply); stripped != "" {
+		return stripped, htmlBody
+	}
+	return strings.TrimSpace(payload.TextBody), htmlBody
+}
+
+
 const (
 	emailFallbackOutboxKey     = "email_fallback_outbox"
 	emailFallbackLockKey       = "email_fallback_lock"
@@ -74,7 +102,6 @@ type EmailFallbackService struct {
 	workspaceRepo       *repository.WorkspaceRepository
 	supportInboxService *SupportInboxService
 	notificationService *NotificationService
-	linkPreviewService  SupportMessageLinkPreviewer
 	replyDomain         string
 	appBaseURL          string
 	logger              *slog.Logger
@@ -94,15 +121,6 @@ func (s *EmailFallbackService) SetNotificationService(notificationService *Notif
 	return s
 }
 
-// SetLinkPreviewService injects the support message link preview enricher.
-func (s *EmailFallbackService) SetLinkPreviewService(linkPreviewService SupportMessageLinkPreviewer) *EmailFallbackService {
-	if s == nil {
-		return nil
-	}
-	s.linkPreviewService = linkPreviewService
-	return s
-}
-
 // SetSupportInboxService injects the support inbox service for mailbox-aware inbound email handling.
 func (s *EmailFallbackService) SetSupportInboxService(supportInboxService *SupportInboxService) *EmailFallbackService {
 	if s == nil {
@@ -115,7 +133,7 @@ func (s *EmailFallbackService) SetSupportInboxService(supportInboxService *Suppo
 // InboundDomain returns the domain used for reply and forwarding aliases.
 func (s *EmailFallbackService) InboundDomain() string {
 	if s == nil || strings.TrimSpace(s.replyDomain) == "" {
-		return "replies.helpin.ai"
+		return "replies.helpin.email"
 	}
 	return strings.TrimSpace(s.replyDomain)
 }
@@ -251,15 +269,6 @@ func (s *EmailFallbackService) ProcessInboundEmail(ctx context.Context, payload 
 	}
 	s.recordWebhookEvent(ctx, "inbound", strings.TrimSpace(payload.MessageID), strings.TrimSpace(payload.MessageStream), rawPayload, resolvedConversation, nil, parseInboundWebhookReceivedAt(payload))
 
-	mailboxHash := mailboxHashFromInboundPayload(payload)
-	if mailboxHash == "" {
-		s.logger.WarnContext(ctx, "postmark inbound missing mailbox hash",
-			"message_id", strings.TrimSpace(payload.MessageID),
-			"original_recipient", strings.TrimSpace(payload.OriginalRecipient),
-			"to", strings.TrimSpace(payload.To),
-		)
-		return fmt.Errorf("missing mailbox hash")
-	}
 	if existing, err := s.emailLogRepo.GetByPostmarkMessageID(ctx, strings.TrimSpace(payload.MessageID)); err != nil {
 		return err
 	} else if existing != nil {
@@ -271,6 +280,7 @@ func (s *EmailFallbackService) ProcessInboundEmail(ctx context.Context, payload 
 		return nil
 	}
 
+	mailboxHash := mailboxHashFromInboundPayload(payload)
 	if strings.HasPrefix(mailboxHash, "unsubscribe-") {
 		conversationID := strings.TrimSpace(strings.TrimPrefix(mailboxHash, "unsubscribe-"))
 		if _, err := uuid.Parse(conversationID); err != nil {
@@ -289,6 +299,20 @@ func (s *EmailFallbackService) ProcessInboundEmail(ctx context.Context, payload 
 
 	if strings.HasPrefix(mailboxHash, "route-") {
 		return s.processInboundRouteEmail(ctx, mailboxHash, payload, rawPayload)
+	}
+
+	if mailboxHash == "" {
+		if route, err := s.findInboundRouteByRecipient(ctx, inboundRecipientAddress(payload)); err != nil {
+			return err
+		} else if route != nil {
+			return s.processInboundRoute(ctx, route, payload, rawPayload)
+		}
+		s.logger.WarnContext(ctx, "postmark inbound missing mailbox hash",
+			"message_id", strings.TrimSpace(payload.MessageID),
+			"original_recipient", strings.TrimSpace(payload.OriginalRecipient),
+			"to", strings.TrimSpace(payload.To),
+		)
+		return fmt.Errorf("missing mailbox hash")
 	}
 
 	if !strings.HasPrefix(mailboxHash, "conv-") {
@@ -334,10 +358,7 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		return nil
 	}
 
-	content := strings.TrimSpace(payload.StrippedTextReply)
-	if content == "" {
-		content = strings.TrimSpace(payload.TextBody)
-	}
+	content, htmlBody := inboundPayloadBodies(payload)
 	if content == "" {
 		return nil
 	}
@@ -368,9 +389,6 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		MessageType:       "reply",
 		ViaChannel:        &viaEmail,
 	}
-	if s.linkPreviewService != nil {
-		s.linkPreviewService.EnrichMessage(ctx, msg)
-	}
 
 	var createdMsg *model.SupportMessage
 	txErr := s.convRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -393,6 +411,7 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 			PostmarkMessageID: strPtr(strings.TrimSpace(payload.MessageID)),
 			RawBody:           rawPayload,
 			StrippedText:      content,
+			HTMLBody:          htmlBody,
 			Status:            "sent",
 		}
 		if route != nil {
@@ -545,7 +564,8 @@ func (s *EmailFallbackService) fireEmail(ctx context.Context, conversationID str
 	if lastName := strings.TrimSpace(derefString(pending[len(pending)-1].SenderDisplayName)); lastName != "" {
 		agentName = lastName
 	}
-	from := fmt.Sprintf("%s - %s <%s>", agentName, workspaceName, s.emailClient.FromEmail())
+	fromAddress := s.resolveOutboundFromAddress(ctx, conv)
+	from := fmt.Sprintf("%s - %s <%s>", agentName, workspaceName, fromAddress)
 
 	logID := uuid.NewString()
 	rfcMessageID := fmt.Sprintf("<helpin-%s@%s>", logID, s.replyDomain)
@@ -952,9 +972,34 @@ func (s *EmailFallbackService) ListQueue(ctx context.Context) (*model.EmailQueue
 func (s *EmailFallbackService) unsubscribeAddress(conversationID string) string {
 	domain := strings.TrimSpace(s.replyDomain)
 	if domain == "" {
-		domain = "replies.helpin.ai"
+		domain = "replies.helpin.email"
 	}
 	return fmt.Sprintf("unsubscribe-%s@%s", conversationID, domain)
+}
+
+// resolveOutboundFromAddress returns the branded sender address for a
+// conversation's outbound email. It prefers the mailbox-aware route address
+// (<handle>@<slug>.<route_domain>) so replies land on the verified customer
+// domain, falling back to the legacy global Postmark sender when the slug or
+// route domain is unavailable.
+func (s *EmailFallbackService) resolveOutboundFromAddress(ctx context.Context, conv *model.SupportConversation) string {
+	fallback := s.emailClient.FromEmail()
+	if s.supportInboxService == nil || conv == nil {
+		return fallback
+	}
+	addr, err := s.supportInboxService.BuildOutboundFromAddress(ctx, conv.WorkspaceID, conv.MailboxID)
+	if err != nil {
+		s.logger.WarnContext(ctx, "mailbox-branded outbound from unavailable, using fallback sender",
+			"error", err,
+			"workspace_id", conv.WorkspaceID,
+			"conversation_id", conv.ID,
+		)
+		return fallback
+	}
+	if strings.TrimSpace(addr) == "" {
+		return fallback
+	}
+	return addr
 }
 
 func (s *EmailFallbackService) isVisitorOnline(ctx context.Context, workspaceID string, anonymousID *string) (bool, error) {
@@ -1005,6 +1050,13 @@ func (s *EmailFallbackService) processInboundRouteEmail(ctx context.Context, mai
 		return nil
 	}
 
+	return s.processInboundRoute(ctx, route, payload, rawPayload)
+}
+
+func (s *EmailFallbackService) processInboundRoute(ctx context.Context, route *model.SupportEmailRoute, payload model.PostmarkInboundPayload, rawPayload string) error {
+	if route == nil {
+		return nil
+	}
 	if threadedConversation, err := s.resolveInboundRouteConversation(ctx, route.WorkspaceID, payload); err != nil {
 		return err
 	} else if threadedConversation != nil {
@@ -1012,6 +1064,17 @@ func (s *EmailFallbackService) processInboundRouteEmail(ctx context.Context, mai
 	}
 
 	return s.createInboundConversationFromRoute(ctx, route, payload, rawPayload)
+}
+
+func (s *EmailFallbackService) findInboundRouteByRecipient(ctx context.Context, recipientAddress string) (*model.SupportEmailRoute, error) {
+	if s == nil || s.supportInboxService == nil || s.supportInboxService.emailRouteRepo == nil {
+		return nil, nil
+	}
+	recipientAddress = strings.TrimSpace(recipientAddress)
+	if recipientAddress == "" {
+		return nil, nil
+	}
+	return s.supportInboxService.emailRouteRepo.GetActiveByInboundAddress(ctx, recipientAddress)
 }
 
 func (s *EmailFallbackService) resolveInboundRouteConversation(ctx context.Context, workspaceID string, payload model.PostmarkInboundPayload) (*model.SupportConversation, error) {
@@ -1039,10 +1102,7 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		return nil
 	}
 
-	content := strings.TrimSpace(payload.StrippedTextReply)
-	if content == "" {
-		content = strings.TrimSpace(payload.TextBody)
-	}
+	content, htmlBody := inboundPayloadBodies(payload)
 	if content == "" {
 		return nil
 	}
@@ -1112,9 +1172,6 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		MessageType:       "reply",
 		ViaChannel:        &viaEmail,
 	}
-	if s.linkPreviewService != nil {
-		s.linkPreviewService.EnrichMessage(ctx, message)
-	}
 
 	rfcMessageID := inboundRFCMessageID(payload)
 	inReplyTo := normalizeRFCHeaderValue(inboundHeaderValue(payload.Headers, "In-Reply-To"))
@@ -1160,6 +1217,7 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 			PostmarkMessageID: strPtr(strings.TrimSpace(payload.MessageID)),
 			RawBody:           rawPayload,
 			StrippedText:      content,
+			HTMLBody:          htmlBody,
 			Status:            "sent",
 		}
 		if logRow.PostmarkMessageID != nil && *logRow.PostmarkMessageID == "" {

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -351,8 +352,8 @@ func (s *DocsImportService) executeNextraImportPlan(ctx context.Context, jobID, 
 	contentFiles := archive.ContentFiles()
 	publicFiles := archive.PublicFiles()
 
-	// Upload images to S3 and build old-path → public-URL map.
-	imageURLMap := map[string]string{} // original ref (e.g. "/assets/foo.png") → S3 public URL
+	// Upload images to S3 and build resolved archive path → public URL map.
+	imageURLMap := map[string]string{}
 	if s.s3Client != nil {
 		seen := map[string]bool{}
 		for _, asset := range plan.Assets {
@@ -381,6 +382,12 @@ func (s *DocsImportService) executeNextraImportPlan(ctx context.Context, jobID, 
 				continue
 			}
 			publicURL := s.s3Client.PublicURL(key)
+			if strings.TrimSpace(publicURL) == "" {
+				summary.AssetRewriteFailures++
+				s.logger.Error("nextra import: public asset URL is empty",
+					"job_id", jobID, "asset", asset.SourcePath)
+				continue
+			}
 			// Map both the content-relative path and the /assets/... absolute path.
 			imageURLMap[asset.SourcePath] = publicURL
 			// For public/ images referenced as /filename.png
@@ -403,6 +410,8 @@ func (s *DocsImportService) executeNextraImportPlan(ctx context.Context, jobID, 
 		collSourceID  string
 		title         string
 		hidden        bool
+		shouldPublish bool
+		sourceID      string
 	}
 	var created []createdArticle
 	routeToCanonical := map[string]string{} // source route → /articles/slug-publicID
@@ -437,7 +446,7 @@ func (s *DocsImportService) executeNextraImportPlan(ctx context.Context, jobID, 
 		}
 
 		// Save initial content (will be rewritten in phase 5).
-		contentJSON := tiptap.MarkdownToJSON(ia.RawContent)
+		contentJSON := nextraContentToTiptapJSON(ia.RawContent)
 		savedContent, err := s.contentSvc.Save(ctx, doc.ID, contentJSON, userID)
 		if err != nil {
 			failed++
@@ -465,14 +474,16 @@ func (s *DocsImportService) executeNextraImportPlan(ctx context.Context, jobID, 
 
 		// Collect for link rewriting.
 		ca := createdArticle{
-			docID:        doc.ID,
-			contentID:    savedContent.ID,
-			rawContent:   ia.RawContent,
-			sourceRoute:  ia.SourceRoute,
-			slug:         ia.Slug,
-			collSourceID: ia.CollectionSourceID,
-			title:        ia.Title,
-			hidden:       ia.Hidden,
+			docID:         doc.ID,
+			contentID:     savedContent.ID,
+			rawContent:    ia.RawContent,
+			sourceRoute:   ia.SourceRoute,
+			slug:          ia.Slug,
+			collSourceID:  ia.CollectionSourceID,
+			title:         ia.Title,
+			hidden:        ia.Hidden,
+			shouldPublish: config.ImportStatus == "published" && !ia.Hidden,
+			sourceID:      ia.SourceID,
 		}
 		if createdHC != nil {
 			ca.publicID = createdHC.PublicID
@@ -483,23 +494,6 @@ func (s *DocsImportService) executeNextraImportPlan(ctx context.Context, jobID, 
 			}
 		}
 		created = append(created, ca)
-
-		// Publish if requested: internal publish first, then external.
-		if config.ImportStatus == "published" && !ia.Hidden {
-			if _, err := s.documentSvc.Publish(ctx, doc.ID); err != nil {
-				s.logger.Error("nextra import: internal publish failed",
-					"job_id", jobID, "title", ia.Title, "error", err)
-				summary.ArticlesDrafted++
-			} else if err := s.helpcenterSvc.PublishExternally(ctx, doc.ID, ia.Slug); err != nil {
-				s.logger.Error("nextra import: external publish failed",
-					"job_id", jobID, "title", ia.Title, "error", err)
-				summary.ArticlesDrafted++
-			} else {
-				summary.ArticlesPublished++
-			}
-		} else {
-			summary.ArticlesDrafted++
-		}
 
 		// Create redirect.
 		if ia.SourceRoute != "" && createdHC != nil {
@@ -535,42 +529,53 @@ func (s *DocsImportService) executeNextraImportPlan(ctx context.Context, jobID, 
 		}
 	}
 
-	// 5. Rewrite content with correct image URLs and internal links.
-	if len(imageURLMap) > 0 || len(routeToCanonical) > 0 {
-		s.logger.Info("nextra import: rewriting content",
-			"job_id", jobID, "images", len(imageURLMap), "links", len(routeToCanonical))
+	// 5. Rewrite content with correct image URLs and internal links before publishing.
+	if len(created) > 0 {
+		rewriteFailed := map[string]bool{}
+		if len(imageURLMap) > 0 || len(routeToCanonical) > 0 {
+			s.logger.Info("nextra import: rewriting content",
+				"job_id", jobID, "images", len(imageURLMap), "links", len(routeToCanonical))
+		}
 
 		for _, ca := range created {
-			rewritten := ca.rawContent
-
-			// Rewrite image paths to S3 URLs.
-			// Images can appear as ![alt](/assets/foo.png) or ![alt](./img.png)
-			// or <img src="/assets/foo.png" />
-			for oldPath, newURL := range imageURLMap {
-				rewritten = strings.ReplaceAll(rewritten, "("+oldPath+")", "("+newURL+")")
-				rewritten = strings.ReplaceAll(rewritten, "\""+oldPath+"\"", "\""+newURL+"\"")
-				// Also match without leading ./ for relative paths.
-				if strings.HasPrefix(oldPath, "./") {
-					rewritten = strings.ReplaceAll(rewritten, "("+oldPath[2:]+")", "("+newURL+")")
-				}
+			rewritten := rewriteNextraImportedContent(ca.rawContent, imageURLMap, routeToCanonical)
+			if rewritten == ca.rawContent {
+				s.contentSvc.SetImportProvenance(ctx, ca.contentID, rewritten, "nextra", ca.sourceID)
+				continue
 			}
 
-			// Rewrite internal links to canonical Helpin paths.
-			// Links appear as [text](/route) or [text](/route#anchor).
-			// Sort routes longest-first to avoid partial matches.
-			rewritten = rewriteInternalLinks(rewritten, routeToCanonical)
+			contentJSON := nextraContentToTiptapJSON(rewritten)
+			savedContent, err := s.contentSvc.Save(ctx, ca.docID, contentJSON, userID)
+			if err != nil {
+				s.logger.Error("nextra import: rewrite content failed",
+					"job_id", jobID, "title", ca.title, "error", err)
+				rewriteFailed[ca.docID] = true
+				continue
+			}
+			s.contentSvc.SetImportProvenance(ctx, savedContent.ID, rewritten, "nextra", ca.sourceID)
+		}
 
-			if rewritten != ca.rawContent {
-				contentJSON := tiptap.MarkdownToJSON(rewritten)
-				if _, err := s.contentSvc.Save(ctx, ca.docID, contentJSON, userID); err != nil {
-					s.logger.Error("nextra import: rewrite content failed",
-						"job_id", jobID, "title", ca.title, "error", err)
-				}
+		// 6. Publish after rewrites so public snapshots contain final image URLs.
+		for _, ca := range created {
+			if !ca.shouldPublish || rewriteFailed[ca.docID] {
+				summary.ArticlesDrafted++
+				continue
+			}
+			if _, err := s.documentSvc.Publish(ctx, ca.docID); err != nil {
+				s.logger.Error("nextra import: internal publish failed",
+					"job_id", jobID, "title", ca.title, "error", err)
+				summary.ArticlesDrafted++
+			} else if err := s.helpcenterSvc.PublishExternally(ctx, ca.docID, ca.slug); err != nil {
+				s.logger.Error("nextra import: external publish failed",
+					"job_id", jobID, "title", ca.title, "error", err)
+				summary.ArticlesDrafted++
+			} else {
+				summary.ArticlesPublished++
 			}
 		}
 	}
 
-	// 4. Finalize.
+	// 7. Finalize.
 	summaryJSON, _ := json.Marshal(summary)
 	_ = s.importRepo.SetSummary(ctx, jobID, summaryJSON)
 
@@ -609,4 +614,52 @@ func rewriteInternalLinks(content string, routeToCanonical map[string]string) st
 		content = strings.ReplaceAll(content, "("+oldRoute+"#", "("+newPath+"#")
 	}
 	return content
+}
+
+func rewriteNextraImportedContent(content string, imageURLMap, routeToCanonical map[string]string) string {
+	rewritten := content
+	for oldPath, newURL := range imageURLMap {
+		if strings.TrimSpace(newURL) == "" {
+			continue
+		}
+		rewritten = strings.ReplaceAll(rewritten, "("+oldPath+")", "("+newURL+")")
+		rewritten = strings.ReplaceAll(rewritten, "\""+oldPath+"\"", "\""+newURL+"\"")
+		rewritten = strings.ReplaceAll(rewritten, "'"+oldPath+"'", "'"+newURL+"'")
+	}
+	return rewriteInternalLinks(rewritten, routeToCanonical)
+}
+
+func nextraContentToTiptapJSON(content string) json.RawMessage {
+	return tiptap.MarkdownToJSON(convertNextraHTMLImagesToMarkdown(content))
+}
+
+var nextraHTMLImageTagPattern = regexp.MustCompile(`(?i)<img\b[^>]*>`)
+
+func convertNextraHTMLImagesToMarkdown(content string) string {
+	return nextraHTMLImageTagPattern.ReplaceAllStringFunc(content, func(tag string) string {
+		src := htmlAttrValue(tag, "src")
+		if strings.TrimSpace(src) == "" {
+			return tag
+		}
+		alt := escapeMarkdownImageAlt(htmlAttrValue(tag, "alt"))
+		return "\n\n![" + alt + "](" + src + ")\n\n"
+	})
+}
+
+func htmlAttrValue(tag, attr string) string {
+	re := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(attr) + `\s*=\s*(?:"([^"]*)"|'([^']*)')`)
+	match := re.FindStringSubmatch(tag)
+	if len(match) == 0 {
+		return ""
+	}
+	if match[1] != "" {
+		return match[1]
+	}
+	return match[2]
+}
+
+func escapeMarkdownImageAlt(value string) string {
+	value = strings.ReplaceAll(value, `\`, `\\`)
+	value = strings.ReplaceAll(value, `]`, `\]`)
+	return value
 }

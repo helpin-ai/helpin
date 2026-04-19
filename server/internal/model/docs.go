@@ -459,6 +459,31 @@ type UpdateDocsCollectionRequest struct {
 	ParentCollectionID *string `json:"parent_collection_id"`
 }
 
+// DocsCollectionDeleteImpact summarizes what permanent collection deletion affects.
+type DocsCollectionDeleteImpact struct {
+	CollectionID           string `json:"collection_id"`
+	CollectionName         string `json:"collection_name"`
+	SpaceID                string `json:"space_id"`
+	CollectionCount        int    `json:"collection_count"`
+	DocumentCount          int    `json:"document_count"`
+	ArchivedDocumentCount  int    `json:"archived_document_count"`
+	PublishedDocumentCount int    `json:"published_document_count"`
+	PublicDocumentCount    int    `json:"public_document_count"`
+}
+
+// DocsSpaceDeleteImpact summarizes what permanent space deletion affects.
+// CollectionCount is the total number of collections in the space (no
+// self-counting; unlike collection impact, the space isn't a collection).
+type DocsSpaceDeleteImpact struct {
+	SpaceID                string `json:"space_id"`
+	SpaceName              string `json:"space_name"`
+	CollectionCount        int    `json:"collection_count"`
+	DocumentCount          int    `json:"document_count"`
+	ArchivedDocumentCount  int    `json:"archived_document_count"`
+	PublishedDocumentCount int    `json:"published_document_count"`
+	PublicDocumentCount    int    `json:"public_document_count"`
+}
+
 // CreateDocsDocumentRequest is the payload for creating a document.
 type CreateDocsDocumentRequest struct {
 	SpaceID      string   `json:"space_id"`
@@ -491,6 +516,22 @@ type ReorderDocsCollectionsRequest struct {
 type ReorderDocsDocumentsRequest struct {
 	CollectionID *string  `json:"collection_id"` // nil => uncategorized bucket
 	DocumentIDs  []string `json:"document_ids"`  // full ordered list for one bucket
+}
+
+// ReorderDocsChildItem is a single entry in a mixed-children reorder
+// payload. Kind must be "collection" or "article".
+type ReorderDocsChildItem struct {
+	Kind string `json:"kind"`
+	ID   string `json:"id"`
+}
+
+// ReorderDocsChildrenRequest reorders a mixed list of collections and
+// articles that share the same parent (or sit at the space root).
+// Positions are assigned sequentially across both types in one
+// transaction so cross-type drag-and-drop persists correctly.
+type ReorderDocsChildrenRequest struct {
+	ParentCollectionID *string                `json:"parent_collection_id"` // nil / "" => space root
+	Items              []ReorderDocsChildItem `json:"items"`
 }
 
 // UpdateDocsDocumentRequest is the payload for updating a document.
@@ -613,6 +654,7 @@ type PublicNavArticle struct {
 	Title       string  `json:"title"`
 	Slug        string  `json:"slug"`
 	PublicID    string  `json:"public_id"`
+	Position    int     `json:"position"`
 	PublishedAt *string `json:"published_at"`
 }
 
@@ -628,6 +670,7 @@ type PublicNavCollection struct {
 	Icon               *string            `json:"icon"`
 	ParentCollectionID *string            `json:"parent_collection_id"`
 	Depth              int                `json:"depth"`
+	Position           int                `json:"position"`
 	Articles           []PublicNavArticle `json:"articles"`
 }
 

@@ -120,6 +120,7 @@ func setupEmailFallbackTestEnvWithRedis(t *testing.T, settings model.SupportInbo
 	supportInboxService := NewSupportInboxService(convRepo, repository.NewSupportMailboxRepository(db), messageRepo, nil, nil, installRepo, sessionRepo, nil, nil, nil, repository.NewCRMContactRepository(db), nil, nil, nil, nil)
 	supportInboxService.SetEmailRouteRepository(routeRepo)
 	supportInboxService.SetWorkspaceRepo(workspaceRepo)
+	supportInboxService.SetRouteDomain("on.helpin.email")
 	service.SetSupportInboxService(supportInboxService)
 
 	return &emailFallbackTestEnv{
@@ -312,7 +313,7 @@ func TestEmailFallbackFireEmailMarksMessagesAndLogs(t *testing.T) {
 	if captured.ReplyTo != "conv-"+conversationID+"@replies.helpin.ai" {
 		t.Fatalf("unexpected reply-to: %q", captured.ReplyTo)
 	}
-	if !strings.Contains(captured.From, "Alex Agent - Acme Support <noreply@example.com>") {
+	if !strings.Contains(captured.From, "Alex Agent - Acme Support <inbox@acme.on.helpin.email>") {
 		t.Fatalf("unexpected from: %q", captured.From)
 	}
 	if !strings.Contains(captured.HtmlBody, "#helpin-conv="+conversationID) {
@@ -451,7 +452,6 @@ func TestEmailFallbackProcessInboundEmailCreatesMessageAndDedupes(t *testing.T) 
 	ctx := context.Background()
 	settings := model.DefaultSupportInboxSettings()
 	env := setupEmailFallbackInboundTestEnv(t, settings)
-	env.service.SetLinkPreviewService(stubSupportLinkPreviewer{})
 
 	workspaceID := "11111111-1111-1111-1111-111111111111"
 	conversationID := "88888888-8888-8888-8888-888888888888"
@@ -537,14 +537,13 @@ func TestEmailFallbackProcessInboundEmailRouteCreatesConversation(t *testing.T) 
 	ctx := context.Background()
 	settings := model.DefaultSupportInboxSettings()
 	env := setupEmailFallbackInboundTestEnv(t, settings)
-	env.service.SetLinkPreviewService(stubSupportLinkPreviewer{})
 
 	workspaceID := "11111111-1111-1111-1111-111111111111"
 	route := &model.SupportEmailRoute{
 		ID:             "a1111111-1111-1111-1111-111111111111",
 		WorkspaceID:    workspaceID,
 		RouteKey:       "route-shared123",
-		InboundAddress: "route-shared123@replies.helpin.ai",
+		InboundAddress: "inbox@acme.on.helpin.email",
 		ProviderType:   "forwarding",
 		Active:         true,
 		CreatedByID:    "22222222-2222-2222-2222-222222222222",
@@ -650,7 +649,7 @@ func TestEmailFallbackProcessInboundEmailRouteThreadsReply(t *testing.T) {
 		ID:             "c3333333-3333-3333-3333-333333333333",
 		WorkspaceID:    workspaceID,
 		RouteKey:       "route-thread123",
-		InboundAddress: "route-thread123@replies.helpin.ai",
+		InboundAddress: "billing@acme.on.helpin.email",
 		ProviderType:   "forwarding",
 		Active:         true,
 		CreatedByID:    "22222222-2222-2222-2222-222222222222",

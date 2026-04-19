@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -10,15 +10,17 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Input } from '@/components/ui/input'
+import { Loading01Icon } from '@/lib/icons'
 
 interface TypedConfirmDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   title: string
-  description: string
+  description: ReactNode
   confirmText: string
   onConfirm: () => void | Promise<void>
   destructive?: boolean
+  disabled?: boolean
 }
 
 export function TypedConfirmDialog({
@@ -29,19 +31,33 @@ export function TypedConfirmDialog({
   confirmText,
   onConfirm,
   destructive = true,
+  disabled = false,
 }: TypedConfirmDialogProps) {
   const [value, setValue] = useState('')
-  const matches = value === confirmText
+  const [pending, setPending] = useState(false)
+  const matches = value === confirmText && !disabled && !pending
 
   const handleConfirm = async () => {
     if (!matches) return
-    await onConfirm()
-    setValue('')
-    onOpenChange(false)
+    setPending(true)
+    try {
+      await onConfirm()
+      setValue('')
+      onOpenChange(false)
+    } finally {
+      setPending(false)
+    }
   }
 
   return (
-    <AlertDialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) setValue('') }}>
+    <AlertDialog
+      open={open}
+      onOpenChange={(v) => {
+        if (pending) return // prevent dismiss while operation in progress
+        onOpenChange(v)
+        if (!v) setValue('')
+      }}
+    >
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
@@ -57,16 +73,24 @@ export function TypedConfirmDialog({
             onKeyDown={(e) => { if (e.key === 'Enter' && matches) handleConfirm() }}
             placeholder={confirmText}
             autoFocus
+            disabled={pending}
           />
         </div>
         <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
           <AlertDialogAction
             variant={destructive ? 'destructive' : 'default'}
             disabled={!matches}
             onClick={(e) => { e.preventDefault(); handleConfirm() }}
           >
-            Delete
+            {pending ? (
+              <>
+                <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                Deleting...
+              </>
+            ) : (
+              'Delete'
+            )}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

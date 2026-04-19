@@ -1,14 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useEditor, EditorContent } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
-import { MentionHighlight } from '@/components/pm/mention-highlight';
-import { ArrowRight01Icon, Message01Icon, PencilEdit01Icon, ArrowTurnBackwardIcon, SmilePlusIcon, Delete01Icon } from '@/lib/icons';
-import { Button } from '@/components/ui/button';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ArrowRight01Icon, Message01Icon, PencilEdit01Icon, ArrowTurnBackwardIcon, SmilePlusIcon, Delete01Icon, Cancel01Icon } from '@/lib/icons';
 import { Separator } from '@/components/ui/separator';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { CommentEditor } from '@/components/pm/CommentEditor';
 import { CommentBody } from '@/components/pm/CommentBody';
+import { ImageLightbox } from '@/components/pm/ImageLightbox';
 import { extractInlineAttachmentIds } from '@/components/pm/editorImageAttachments';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { formatDistanceToNow, parseISO } from 'date-fns';
@@ -28,77 +25,6 @@ import audioIcon from '@/assets/attachment/audio-icon.png';
 import zipIcon from '@/assets/attachment/zip-icon.png';
 import defaultIcon from '@/assets/attachment/default-icon.png';
 
-/** Lightweight TipTap editor for editing existing comments (renders HTML properly). */
-function CommentEditEditor({
-  initialContent,
-  onChange,
-  onSave,
-  onCancel,
-}: {
-  initialContent: string;
-  onChange: (html: string) => void;
-  onSave: () => void;
-  onCancel: () => void;
-}) {
-  const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
-  const onSaveRef = useRef(onSave);
-  onSaveRef.current = onSave;
-  const onCancelRef = useRef(onCancel);
-  onCancelRef.current = onCancel;
-
-  const extensions = useMemo(() => [
-    StarterKit.configure({
-      heading: false,
-      blockquote: false,
-      codeBlock: false,
-      horizontalRule: false,
-      bulletList: false,
-      orderedList: false,
-      listItem: false,
-      link: {
-        openOnClick: false,
-        autolink: true,
-        HTMLAttributes: { class: 'text-blue-600 dark:text-blue-400 underline cursor-pointer', target: '_blank', rel: 'noopener noreferrer' },
-      },
-    }),
-    MentionHighlight,
-  ], []);
-
-  const editor = useEditor({
-    extensions,
-    content: initialContent,
-    editorProps: {
-      attributes: {
-        class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[40px] max-h-[120px] overflow-y-auto px-2 py-1.5 text-sm bg-transparent',
-      },
-      handleKeyDown: (_view, event) => {
-        if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-          event.preventDefault();
-          onSaveRef.current();
-          return true;
-        }
-        if (event.key === 'Escape') {
-          event.preventDefault();
-          onCancelRef.current();
-          return true;
-        }
-        return false;
-      },
-    },
-    onUpdate: ({ editor: e }) => {
-      onChangeRef.current(e.getHTML());
-    },
-  });
-
-  if (!editor) return null;
-
-  return (
-    <div className="rounded-md border border-border/60 focus-within:ring-1 focus-within:ring-primary">
-      <EditorContent editor={editor} />
-    </div>
-  );
-}
 
 function formatRelativeTime(dateStr: string): string {
   try {
@@ -213,10 +139,16 @@ function CommentReactions({
 function CommentAttachments({
   attachments,
   body,
+  editable = false,
+  onDelete,
 }: {
   attachments: AttachmentResponse[];
   body: string;
+  editable?: boolean;
+  onDelete?: (attachmentId: string) => void;
 }) {
+  const [lightbox, setLightbox] = useState<{ src: string; name: string } | null>(null);
+
   if (!attachments || attachments.length === 0) return null;
 
   const inlineAttachmentIds = new Set(extractInlineAttachmentIds(body));
@@ -231,40 +163,80 @@ function CommentAttachments({
   const resolveUrl = (a: AttachmentResponse) => a.public_url || a.url;
 
   return (
-    <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
-      {visibleAttachments.map((entry) => {
-        const ext = getFileExtension(entry.attachment.file_name);
-        const isImage = entry.attachment.content_type.startsWith('image/') && !entry.attachment.content_type.includes('svg');
-        const url = resolveUrl(entry);
+    <>
+      <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+        {visibleAttachments.map((entry) => {
+          const ext = getFileExtension(entry.attachment.file_name);
+          const isImage = entry.attachment.content_type.startsWith('image/') && !entry.attachment.content_type.includes('svg');
+          const url = resolveUrl(entry);
 
-        return (
-          <a
-            key={entry.attachment.id}
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="group block overflow-hidden rounded-lg border border-border/60 transition-colors hover:border-border"
-          >
-            {isImage ? (
-              <img
-                src={url}
-                alt={entry.attachment.file_name}
-                className="h-20 w-full object-cover transition-transform group-hover:scale-105"
-                loading="lazy"
-              />
-            ) : (
-              <div className="flex h-20 flex-col items-center justify-center gap-1.5 bg-muted/30">
-                <img src={getFileTypeIcon(ext)} alt={ext} className="h-8 w-8" />
-                <span className="text-[9px] font-medium uppercase text-muted-foreground tracking-wide">{ext || 'FILE'}</span>
-              </div>
-            )}
+          const inner = isImage ? (
+            <img
+              src={url}
+              alt={entry.attachment.file_name}
+              className="h-20 w-full object-cover transition-transform group-hover:scale-105"
+              loading="lazy"
+            />
+          ) : (
+            <div className="flex h-20 flex-col items-center justify-center gap-1.5 bg-muted/30">
+              <img src={getFileTypeIcon(ext)} alt={ext} className="h-8 w-8" />
+              <span className="text-[9px] font-medium uppercase text-muted-foreground tracking-wide">{ext || 'FILE'}</span>
+            </div>
+          );
+
+          const label = (
             <p className="truncate px-1.5 py-1 text-[10px] text-muted-foreground" title={entry.attachment.file_name}>
               {entry.attachment.file_name}
             </p>
-          </a>
-        );
-      })}
-    </div>
+          );
+
+          const tile = isImage && url ? (
+            <button
+              type="button"
+              onClick={() => setLightbox({ src: url, name: entry.attachment.file_name })}
+              className="group block w-full overflow-hidden rounded-lg border border-border/60 transition-colors hover:border-border cursor-pointer text-left"
+            >
+              {inner}
+              {label}
+            </button>
+          ) : (
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group block overflow-hidden rounded-lg border border-border/60 transition-colors hover:border-border"
+            >
+              {inner}
+              {label}
+            </a>
+          );
+
+          if (!editable || !onDelete) {
+            return <div key={entry.attachment.id}>{tile}</div>;
+          }
+
+          return (
+            <div key={entry.attachment.id} className="relative group/tile">
+              {tile}
+              <button
+                type="button"
+                aria-label="Remove attachment"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(entry.attachment.id);
+                }}
+                className="absolute top-1 right-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white opacity-0 group-hover/tile:opacity-100 hover:bg-black/80 transition-opacity cursor-pointer"
+              >
+                <Cancel01Icon className="h-3 w-3" />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      {lightbox && (
+        <ImageLightbox src={lightbox.src} alt={lightbox.name} onClose={() => setLightbox(null)} />
+      )}
+    </>
   );
 }
 
@@ -295,12 +267,14 @@ export function CommentThread({
   const [commentLoading, setCommentLoading] = useState(false);
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editingCommentBody, setEditingCommentBody] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
   const [replyLoading, setReplyLoading] = useState(false);
   const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set());
 
   type PendingFile = { id: string; name: string; url?: string };
-  // Uploaded attachment IDs for new comment and per-reply
+  // Uploaded attachment IDs for new comment, edit, and per-reply
   const [pendingAttachments, setPendingAttachments] = useState<PendingFile[]>([]);
+  const [editPendingAttachments, setEditPendingAttachments] = useState<PendingFile[]>([]);
   const [replyPendingAttachments, setReplyPendingAttachments] = useState<Map<string, PendingFile[]>>(new Map());
 
   // Member name map for reaction tooltips
@@ -404,6 +378,52 @@ export function CommentThread({
     }
   }, [workspaceId]);
 
+  const handleEditImageUpload = useCallback(async (files: File[]) => {
+    for (const file of files) {
+      const result = await uploadFileImmediately(file);
+      if (!result) continue;
+      setEditPendingAttachments((prev) => [...prev, result]);
+    }
+  }, [uploadFileImmediately]);
+
+  const handleEditFileUpload = useCallback(async () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.multiple = true;
+    input.onchange = async () => {
+      const files = input.files;
+      if (!files?.length) return;
+      for (const file of Array.from(files)) {
+        const result = await uploadFileImmediately(file);
+        if (!result) continue;
+        setEditPendingAttachments((prev) => [...prev, result]);
+      }
+    };
+    input.click();
+  }, [uploadFileImmediately]);
+
+  const removeEditPendingAttachment = useCallback(async (attachmentId: string) => {
+    await pmAttachmentService.remove(workspaceId, attachmentId);
+    setEditPendingAttachments((prev) => prev.filter((f) => f.id !== attachmentId));
+  }, [workspaceId]);
+
+  const deleteExistingAttachment = useCallback(async (commentId: string, attachmentId: string) => {
+    const { error } = await pmAttachmentService.remove(workspaceId, attachmentId);
+    if (error) return;
+    const stripAttachment = (list: CommentWithAuthor[]): CommentWithAuthor[] =>
+      list.map((c) =>
+        c.comment.id === commentId
+          ? { ...c, attachments: (c.attachments ?? []).filter((a) => a.attachment.id !== attachmentId) }
+          : c,
+      );
+    onCommentsChange(
+      stripAttachment(comments).map((c) => ({
+        ...c,
+        replies: c.replies ? stripAttachment(c.replies) : c.replies,
+      })),
+    );
+  }, [workspaceId, comments, onCommentsChange]);
+
   const addComment = async (body: string) => {
     if (!body.trim() && pendingAttachments.length === 0) return;
     setCommentLoading(true);
@@ -483,33 +503,44 @@ export function CommentThread({
   const startEditComment = (entry: CommentWithAuthor) => {
     setEditingCommentId(entry.comment.id);
     setEditingCommentBody(entry.comment.body);
+    setEditPendingAttachments([]);
   };
 
-  const cancelEditComment = () => {
+  const cancelEditComment = useCallback(async () => {
+    const orphanIds = editPendingAttachments.map((a) => a.id);
     setEditingCommentId(null);
     setEditingCommentBody('');
-  };
-
-  const saveEditComment = async () => {
-    if (!editingCommentId || !editingCommentBody.trim()) return;
-    const { error } = await pmCommentService.update(workspaceId, editingCommentId, {
-      body: editingCommentBody.trim(),
-    });
-    if (error) return;
-    const updateBody = (list: CommentWithAuthor[]) =>
-      list.map((c) =>
-        c.comment.id === editingCommentId
-          ? { ...c, comment: { ...c.comment, body: editingCommentBody.trim() } }
-          : c,
+    setEditPendingAttachments([]);
+    if (orphanIds.length > 0) {
+      await Promise.allSettled(
+        orphanIds.map((id) => pmAttachmentService.remove(workspaceId, id)),
       );
-    onCommentsChange(
-      updateBody(comments).map((c) => ({
-        ...c,
-        replies: c.replies ? updateBody(c.replies) : c.replies,
-      })),
-    );
+    }
+  }, [editPendingAttachments, workspaceId]);
+
+  const saveEditComment = async (bodyOverride?: string) => {
+    const body = (bodyOverride ?? editingCommentBody).trim();
+    if (!editingCommentId) return;
+    if (!body && editPendingAttachments.length === 0) return;
+    setEditSaving(true);
+    const attachmentIds = editPendingAttachments.map((a) => a.id);
+    const { error } = await pmCommentService.update(workspaceId, editingCommentId, {
+      body: body || '(attachment)',
+      attachment_ids: attachmentIds.length > 0 ? attachmentIds : undefined,
+    });
+    if (error) {
+      setEditSaving(false);
+      return;
+    }
+
+    // Always reload so attachment tiles (existing + newly linked) stay in sync.
+    const { data: refreshed } = await pmCommentService.list(workspaceId, entityType, entityId);
+    if (refreshed) onCommentsChange(refreshed);
+
     setEditingCommentId(null);
     setEditingCommentBody('');
+    setEditPendingAttachments([]);
+    setEditSaving(false);
   };
 
   const deleteComment = async (id: string) => {
@@ -568,19 +599,22 @@ export function CommentThread({
 
   const renderEditForm = (indent: string) => (
     <div className={`mt-1.5 ${indent}`}>
-      <CommentEditEditor
-        initialContent={editingCommentBody}
-        onChange={setEditingCommentBody}
-        onSave={saveEditComment}
-        onCancel={cancelEditComment}
-      />
-      <div className="mt-1 flex items-center gap-1.5">
-        <Button variant="default" size="sm" className="h-6 px-2 text-xs" onClick={saveEditComment}>
-          Save
-        </Button>
-        <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={cancelEditComment}>
-          Cancel
-        </Button>
+      <div className="rounded-lg border border-border/60">
+        <CommentEditor
+          key={editingCommentId ?? 'edit'}
+          onSubmit={(html) => { void saveEditComment(html); }}
+          loading={editSaving}
+          placeholder="Edit comment..."
+          teams={teams}
+          members={members}
+          onImageSelect={(files) => void handleEditImageUpload(files)}
+          onFileSelect={() => void handleEditFileUpload()}
+          uploadedFiles={editPendingAttachments}
+          onRemoveUploadedFile={(id) => void removeEditPendingAttachment(id)}
+          initialContent={editingCommentBody}
+          onCancel={() => void cancelEditComment()}
+          autoFocus
+        />
       </div>
     </div>
   );
@@ -671,7 +705,12 @@ export function CommentThread({
         {/* Attachments */}
         {entry.attachments && entry.attachments.length > 0 && (
           <div className={indent}>
-            <CommentAttachments attachments={entry.attachments} body={entry.comment.body} />
+            <CommentAttachments
+              attachments={entry.attachments}
+              body={entry.comment.body}
+              editable={isEditing}
+              onDelete={(attachmentId) => void deleteExistingAttachment(entry.comment.id, attachmentId)}
+            />
           </div>
         )}
         {/* Reactions */}

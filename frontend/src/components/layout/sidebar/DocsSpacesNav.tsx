@@ -9,8 +9,8 @@ import { buildCollectionTreeOptions } from '@/components/docs/CollectionTreePick
 import { useTruncationDetection } from '@/hooks/useTruncationDetection';
 import { SpaceDialog } from '@/components/docs/SpaceDialog';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
-import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
-import { TypedConfirmDialog } from '@/components/docs/TypedConfirmDialog';
+import { DeleteCollectionDialog } from '@/components/docs/DeleteCollectionDialog';
+import { DeleteSpaceDialog } from '@/components/docs/DeleteSpaceDialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -404,16 +404,15 @@ export function DocsSpacesNav({
         defaultType={createSpaceType}
       />
 
-      <TypedConfirmDialog
+      <DeleteSpaceDialog
+        wsId={wsId}
+        space={deletingSpace}
         open={deletingSpace !== null}
         onOpenChange={(open) => {
           if (!open) {
             setTimeout(() => setDeletingSpace(null), 150);
           }
         }}
-        title="Delete space"
-        description="This will permanently delete this space and all its documents. This action cannot be undone."
-        confirmText={deletingSpace?.name ?? ''}
         onConfirm={async () => {
           if (!deletingSpace) return;
           await deleteSpace.mutateAsync(deletingSpace.id);
@@ -433,27 +432,21 @@ export function DocsSpacesNav({
         collection={editingCollection}
       />
 
-      <ConfirmDialog
+      <DeleteCollectionDialog
+        wsId={wsId}
+        collection={deletingCollection}
         open={deletingCollection !== null}
         onOpenChange={(open) => {
           if (!open) {
             setTimeout(() => setDeletingCollection(null), 150);
           }
         }}
-        title="Delete collection"
-        description="This will permanently delete this collection. Documents in this collection will become uncategorized."
-        confirmLabel="Delete"
-        variant="destructive"
-        onConfirm={() => {
+        onConfirm={async () => {
           if (!deletingCollection) {
             return;
           }
-
-          deleteCollection.mutate({ id: deletingCollection.id, spaceId: deletingCollection.space_id }, {
-            onSuccess: () => {
-              setDeletingCollection(null);
-            },
-          });
+          await deleteCollection.mutateAsync({ id: deletingCollection.id, spaceId: deletingCollection.space_id });
+          setDeletingCollection(null);
         }}
       />
     </>

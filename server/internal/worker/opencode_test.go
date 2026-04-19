@@ -195,10 +195,66 @@ func TestBuildOpenCodeConfigContentAddsAnthropicBaseURL(t *testing.T) {
 	}
 }
 
+func TestBuildOpenCodeConfigContentIncludesStagedSkillPath(t *testing.T) {
+	execCtx := &ExecutionContext{
+		Agent:                  &model.Agent{},
+		StagedRuntimeSkillRoot: "/tmp/helpin-runtime-skills/run-123/opencode/helpin",
+	}
+
+	payload, err := buildOpenCodeConfigContent(execCtx, "anthropic/claude-sonnet-4-6", "system prompt", nil)
+	if err != nil {
+		t.Fatalf("build config: %v", err)
+	}
+
+	var decoded struct {
+		Skills struct {
+			Paths []string `json:"paths"`
+		} `json:"skills"`
+	}
+	if err := json.Unmarshal([]byte(payload), &decoded); err != nil {
+		t.Fatalf("unmarshal config: %v", err)
+	}
+	if len(decoded.Skills.Paths) != 1 || decoded.Skills.Paths[0] != execCtx.StagedRuntimeSkillRoot {
+		t.Fatalf("expected staged skill path in config, got %#v", decoded.Skills.Paths)
+	}
+}
+
+func TestOpenCodeBuildEnvUsesIsolatedHomeForRun(t *testing.T) {
+	executor := NewOpenCodeExecutor("opencode", "opencode", "", "", "", "", "", "", nil, nil)
+	execCtx := &ExecutionContext{
+		RunID: "run-123",
+		Agent: &model.Agent{},
+	}
+
+	env, err := executor.buildEnv(execCtx, "{}")
+	if err != nil {
+		t.Fatalf("build env: %v", err)
+	}
+
+	lookup := map[string]string{}
+	for _, entry := range env {
+		key, value, ok := strings.Cut(entry, "=")
+		if !ok {
+			continue
+		}
+		lookup[key] = value
+	}
+	expectedHome := filepath.Join(os.TempDir(), openCodeRuntimeRootDir, "run-123", "home")
+	if lookup["HOME"] != expectedHome {
+		t.Fatalf("expected isolated HOME %q, got %q", expectedHome, lookup["HOME"])
+	}
+	if lookup["XDG_CONFIG_HOME"] != filepath.Join(expectedHome, ".config") {
+		t.Fatalf("expected isolated XDG_CONFIG_HOME, got %q", lookup["XDG_CONFIG_HOME"])
+	}
+	if lookup["OPENCODE_HOME"] != filepath.Join(expectedHome, ".opencode") {
+		t.Fatalf("expected isolated OPENCODE_HOME, got %q", lookup["OPENCODE_HOME"])
+	}
+}
+
 func TestBuildOpenCodeUserPromptRequiresImplementationForEngineerStory(t *testing.T) {
 	result := buildOpenCodeUserPrompt(&ExecutionContext{
 		Agent: &model.Agent{AllowedTools: []byte(`["write_file"]`)},
-		Task: &model.PMTask{Name: "Story"},
+		Task:  &model.PMTask{Name: "Story"},
 	}, "Please implement the story.")
 
 	if result == "Please implement the story." {

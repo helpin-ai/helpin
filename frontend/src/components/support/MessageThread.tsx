@@ -30,6 +30,7 @@ import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { getDayLabel, getEffectiveSenderType, isSameDay, getInitial } from './helpers';
 import { MessageBubble } from './MessageBubble';
 import { ReplyComposer } from './ReplyComposer';
+import { EmptyState } from './EmptyState';
 import { AgentRunsCard } from './AgentRunsCard';
 import { ConversationActionsMenu } from './ConversationActionsMenu';
 
@@ -205,7 +206,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const separatorRefs = useRef(new Map<number, HTMLDivElement>());
-  const { data: conversation } = useConversation(workspaceId, conversationId);
+  const { data: conversation, isFetched: conversationFetched } = useConversation(workspaceId, conversationId);
   const { data: messages = [], isLoading } = useConversationMessages(workspaceId, conversationId);
   const { data: inboxScopes } = useInboxScopes(workspaceId);
   const { data: installation } = useChatSettings(workspaceId);
@@ -495,12 +496,18 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
     };
   }, [groupedMessages]);
 
-  if (!conversationId) {
+  // Treat a stale conversation id (e.g., previous selection that no longer
+  // matches the active filter, or a deleted conversation) the same as no
+  // selection. Wait until the fetch settled so we don't flash during load.
+  const noSelection = !conversationId || (conversationFetched && !conversation);
+  if (noSelection) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-muted/30 text-muted-foreground">
-        <Message01Icon className="h-12 w-12 opacity-20" />
-        <p className="text-sm">Select a conversation to view</p>
-      </div>
+      <EmptyState
+        icon={Message01Icon}
+        title="Select a conversation"
+        subtitle="Pick one from the list to view messages and reply."
+        background="muted"
+      />
     );
   }
 
@@ -669,10 +676,11 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
         <div className="px-4 pb-4 pt-2">
           {isLoading && <MessageSkeleton />}
           {!isLoading && messages.length === 0 && (
-            <div className="flex flex-col items-center justify-center gap-2 py-12 text-muted-foreground">
-              <Message01Icon className="h-8 w-8 opacity-30" />
-              <p className="text-sm">No messages yet. Start the conversation below.</p>
-            </div>
+            <EmptyState
+              icon={Message01Icon}
+              title="No messages yet"
+              subtitle="Start the conversation using the reply below."
+            />
           )}
           {groupedMessages.map((item, idx) => {
             if (item.type === 'separator') {
@@ -715,8 +723,11 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
         </div>
       </ScrollArea>
 
-      {/* Reply composer */}
-      {conversationId && (
+      {/* Reply composer — show during loading (cache may still populate) and
+          after a successful load. Only hide when the fetch settled AND the
+          conversation didn't load (stale/deleted id) to avoid offering a
+          reply for a conversation that doesn't exist. */}
+      {conversationId && (conversation || !conversationFetched) && (
         <ReplyComposer
           workspaceId={workspaceId}
           conversationId={conversationId}

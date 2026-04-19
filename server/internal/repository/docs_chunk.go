@@ -60,6 +60,15 @@ func (r *DocsChunkRepository) DeleteByDocumentID(ctx context.Context, documentID
 	return r.db.WithContext(ctx).Where("document_id = ?", documentID).Delete(&model.DocsChunk{}).Error
 }
 
+// DeleteByDocumentIDs bulk-deletes chunks for a set of documents in a single
+// query. Used by the batch document deletion path.
+func (r *DocsChunkRepository) DeleteByDocumentIDs(ctx context.Context, documentIDs []string) error {
+	if len(documentIDs) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Where("document_id IN ?", documentIDs).Delete(&model.DocsChunk{}).Error
+}
+
 // DeleteBySpaceExceptDocuments removes stale chunks for docs no longer eligible in a help-center space.
 func (r *DocsChunkRepository) DeleteBySpaceExceptDocuments(ctx context.Context, workspaceID, spaceID string, keepDocumentIDs []string) error {
 	query := r.db.WithContext(ctx).

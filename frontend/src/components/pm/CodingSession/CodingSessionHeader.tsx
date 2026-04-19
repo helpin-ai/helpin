@@ -5,6 +5,7 @@ import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
+import { formatSessionTokenUsage } from '@/lib/agentTokenUsage';
 import { buildAutomationRunsPath } from '@/lib/automationUi';
 import type { CodingSession } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
@@ -76,6 +77,11 @@ export function CodingSessionHeader({
                   {capitalize(session.pause_reason.replaceAll('_', ' '))}
                 </Badge>
               ) : null}
+              {session?.parent_run_id ? (
+                <Badge variant="outline" className="px-2 py-0.5 text-[11px]">
+                  Continued from {session.parent_run_id.slice(0, 8)}
+                </Badge>
+              ) : null}
             </div>
 
             <dl className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1.5 text-[11px] sm:grid-cols-[auto_minmax(0,1fr)_auto_auto]">
@@ -133,6 +139,15 @@ export function CodingSessionHeader({
                 <>
                   <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Updated</dt>
                   <dd className="text-muted-foreground">{formatCodingSessionRelative(session.updated_at)}</dd>
+                </>
+              ) : null}
+
+              {session?.tokens_used ? (
+                <>
+                  <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Tokens</dt>
+                  <dd className="font-medium text-foreground">
+                    {formatSessionTokenUsage(session, { includeUnit: true })}
+                  </dd>
                 </>
               ) : null}
             </dl>

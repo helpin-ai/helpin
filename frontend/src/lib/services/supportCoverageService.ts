@@ -21,8 +21,8 @@ export const supportCoverageService = {
   getGap: (wsId: string, gapId: string) =>
     api.get<SupportCoverageGapDetail>(`/support/coverage/gaps/${gapId}${qs(wsId)}`),
 
-  updateGapStatus: (wsId: string, gapId: string, status: string) =>
-    api.post(`/support/coverage/gaps/${gapId}/status${qs(wsId)}`, { status }),
+  updateGapStatus: (wsId: string, gapId: string, status: string, issueResolved?: boolean) =>
+    api.post(`/support/coverage/gaps/${gapId}/status${qs(wsId)}`, { status, issue_resolved: issueResolved }),
 
   reclassifyGap: (wsId: string, gapId: string, v1GapType: string) =>
     api.post(`/support/coverage/gaps/${gapId}/reclassify${qs(wsId)}`, { v1_gap_type: v1GapType }),
@@ -38,6 +38,9 @@ export const supportCoverageService = {
 
   applySuggestion: (wsId: string, suggestionId: string) =>
     api.post(`/support/coverage/suggestions/${suggestionId}/apply${qs(wsId)}`, {}),
+
+  discardSuggestion: (wsId: string, suggestionId: string) =>
+    api.post(`/support/coverage/suggestions/${suggestionId}/discard${qs(wsId)}`, {}),
 
   getConversationState: (wsId: string, conversationId: string) =>
     api.get<SupportConversationCoverageState>(`/support/coverage/conversations/${conversationId}/state${qs(wsId)}`),

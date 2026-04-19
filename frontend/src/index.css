@@ -42,19 +42,107 @@
 }
 
 @layer base {
+  :root {
+    --speed-quick: 0.1s;
+    --speed-regular: 0.25s;
+    --speed-slow: 0.35s;
+    --ease-out-quad: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    --ease-out-cubic: cubic-bezier(0.215, 0.61, 0.355, 1);
+    --ease-out-quart: cubic-bezier(0.165, 0.84, 0.44, 1);
+    --ease-out-expo: cubic-bezier(0.19, 1, 0.22, 1);
+    --ease-in-out-cubic: cubic-bezier(0.645, 0.045, 0.355, 1);
+    --ease-in-out-quart: cubic-bezier(0.77, 0, 0.175, 1);
+  }
   * {
     @apply border-border;
     @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+    font-size: 93.75%;
+    letter-spacing: -0.011em;
+    -webkit-tap-highlight-color: transparent;
   }
   body {
     @apply bg-background text-foreground;
     margin: 0;
     min-height: 100vh;
+    font-weight: 450;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
   }
-  html {
-    @apply font-sans;
-    font-size: 93.75%;
-    letter-spacing: -0.31px;
+  h1, h2, h3, h4, h5, h6 {
+    font-weight: 500;
+    line-height: 1.25;
+    margin-top: 0;
+    margin-bottom: 0;
+  }
+  strong, b {
+    font-weight: 600;
+  }
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+  .prose :where(h1, h2, h3, h4, h5, h6):not(:where([class~="not-prose"] *, [class~="not-prose"])),
+  article :where(h1, h2, h3, h4, h5, h6) {
+    margin-top: 1.2em;
+    margin-bottom: 0.4em;
+    font-weight: 600;
+  }
+  .prose :where(h1):not(:where([class~="not-prose"] *, [class~="not-prose"])),
+  article :where(h1) {
+    font-size: 1.6em;
+    line-height: 1.3;
+  }
+  .prose :where(h2):not(:where([class~="not-prose"] *, [class~="not-prose"])),
+  article :where(h2) {
+    font-size: 1.35em;
+    line-height: 1.3;
+  }
+  .prose :where(h3):not(:where([class~="not-prose"] *, [class~="not-prose"])),
+  article :where(h3) {
+    font-size: 1.2em;
+    line-height: 1.35;
+  }
+  .prose :where(h4):not(:where([class~="not-prose"] *, [class~="not-prose"])),
+  article :where(h4) {
+    font-size: 1.05em;
+    line-height: 1.4;
+  }
+  .prose :where(h5):not(:where([class~="not-prose"] *, [class~="not-prose"])),
+  article :where(h5) {
+    font-size: 0.95em;
+    line-height: 1.4;
+  }
+  .prose :where(h6):not(:where([class~="not-prose"] *, [class~="not-prose"])),
+  article :where(h6) {
+    font-size: 0.9em;
+    line-height: 1.4;
+  }
+  .prose :where(p, ol, ul, pre, blockquote, dl):not(:where([class~="not-prose"] *, [class~="not-prose"])),
+  article :where(p, ol, ul, pre, blockquote, dl) {
+    margin-top: 0;
+    margin-bottom: 0.8em;
+  }
+  .prose > :first-child,
+  .prose > :first-child > :first-child,
+  article > :first-child,
+  article > :first-child > :first-child {
+    margin-top: 0;
+  }
+  .prose > :last-child,
+  .prose > :last-child > :last-child,
+  article > :last-child,
+  article > :last-child > :last-child {
+    margin-bottom: 0;
+  }
+  @supports (font-size: round(up, 1rem, 1px)) {
+    @media not all and (min-resolution: 192dpi) {
+      :root {
+        --font-size-micro: round(up, 0.6875rem, 2px);
+      }
+    }
   }
 }
 
@@ -158,6 +246,10 @@
   --color-sidebar-ring: var(--sidebar-ring);
   --font-heading: var(--font-sans);
   --font-sans: 'Inter Variable', sans-serif;
+  --color-brand-300: var(--brand-300);
+  --color-brand-400: var(--brand-400);
+  --color-brand-500: var(--brand-500);
+  --color-brand-600: var(--brand-600);
 }
 
 :root {
@@ -179,7 +271,7 @@
   --destructive: oklch(0.577 0.245 27.325);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --ring: var(--brand-500);
   --chart-1: oklch(0.845 0.143 164.978);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.596 0.145 163.225);
@@ -193,6 +285,13 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  --brand-300: #8aabff;
+  --brand-400: #638cff;
+  --brand-500: #3e63dd;
+  --brand-600: #294adc;
+  --shadow-menu: 0 4px 12px rgba(16, 17, 29, 0.08), 0 1px 3px rgba(16, 17, 29, 0.06);
+  --shadow-menu-item: 0 1px 2px rgba(16, 17, 29, 0.05);
+  --shadow-menu-item-hover: 0 2px 6px rgba(16, 17, 29, 0.08);
 }
 
 /* Hide scrollbar but keep scroll functionality */
@@ -208,6 +307,14 @@
 * {
   scrollbar-color: oklch(0.7 0 0 / 0.35) transparent;
   scrollbar-width: thin;
+}
+
+/* Text selection highlight in brand color */
+::selection {
+  background: color-mix(in oklab, var(--brand-500) 28%, transparent);
+}
+.dark ::selection {
+  background: color-mix(in oklab, var(--brand-400) 35%, transparent);
 }
 
 /* Scrollbar hidden at rest, appears on hover — no layout shift */
@@ -243,19 +350,13 @@
   pointer-events: none;
   height: 0;
 }
-.tiptap h1 { font-size: 1.75rem; font-weight: 600; margin: 1.5rem 0 0.5rem; }
-.tiptap h2 { font-size: 1.375rem; font-weight: 600; margin: 1.25rem 0 0.375rem; }
-.tiptap h3 { font-size: 1.125rem; font-weight: 600; margin: 1rem 0 0.25rem; }
-.tiptap p { margin: 0 0 1rem; }
-.tiptap ul { list-style: disc; padding-left: 1.5rem; margin: 0 0 1rem; }
-.tiptap ol { list-style: decimal; padding-left: 1.5rem; margin: 0 0 1rem; }
-.tiptap li { margin: 0 0 0.375rem; }
+.tiptap ul { list-style: disc; padding-left: 1.5rem; }
+.tiptap ol { list-style: decimal; padding-left: 1.5rem; }
 .tiptap blockquote {
   border-left: 3px solid var(--border);
   padding: 0.25rem 0 0.25rem 1rem;
   color: var(--muted-foreground);
   font-style: italic;
-  margin: 0 0 1rem;
 }
 .tiptap blockquote > *:last-child {
   margin-bottom: 0;
@@ -268,18 +369,16 @@
   font-weight: 500;
 }
 .tiptap a {
-  color: #2563eb;
+  color: var(--brand-500);
   text-decoration: underline;
   text-underline-offset: 2px;
   cursor: pointer;
 }
 .tiptap a:hover {
-  color: #1d4ed8;
+  color: var(--brand-600);
 }
-@media (prefers-color-scheme: dark) {
-  .tiptap a { color: #60a5fa; }
-  .tiptap a:hover { color: #93bbfd; }
-}
+.dark .tiptap a { color: var(--brand-400); }
+.dark .tiptap a:hover { color: var(--brand-300); }
 .tiptap pre {
   background: var(--secondary);
   border: 1px solid var(--border);
@@ -296,8 +395,8 @@
 .tiptap hr {
   border: none;
   border-top: 1px solid var(--border);
-  margin: 1.5rem 0;
-  padding: 4px 0;
+  margin: 0.75rem 0;
+  padding: 2px 0;
   cursor: pointer;
   background-clip: content-box;
 }
@@ -368,6 +467,119 @@
 .tiptap .docs-callout {
   margin: 0.75rem 0;
 }
+
+/* Docs article rhythm: used by the docs editor and shared read-only documents. */
+.docs-editor-prose {
+  color: var(--foreground);
+  font-size: 1rem;
+  line-height: 1.7;
+}
+.docs-editor-prose > *:first-child {
+  margin-top: 0;
+}
+.docs-editor-prose > *:last-child {
+  margin-bottom: 0;
+}
+.docs-editor-prose h1 {
+  font-size: 2rem;
+  font-weight: 620;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  margin: 2.75rem 0 0.75rem;
+}
+.docs-editor-prose h2 {
+  font-size: 1.5rem;
+  font-weight: 620;
+  line-height: 1.3;
+  letter-spacing: -0.015em;
+  margin: 2.35rem 0 0.7rem;
+}
+.docs-editor-prose h3 {
+  font-size: 1.25rem;
+  font-weight: 620;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+  margin: 1.9rem 0 0.55rem;
+}
+.docs-editor-prose h4 {
+  font-size: 1.125rem;
+  font-weight: 620;
+  line-height: 1.5;
+  letter-spacing: -0.005em;
+  margin: 1.5rem 0 0.5rem;
+}
+.docs-editor-prose h5 {
+  font-size: 0.9375rem;
+  font-weight: 620;
+  line-height: 1.5;
+  letter-spacing: 0;
+  margin: 1.25rem 0 0.4rem;
+}
+.docs-editor-prose h6 {
+  font-size: 0.875rem;
+  font-weight: 620;
+  line-height: 1.5;
+  letter-spacing: 0;
+  margin: 1.1rem 0 0.35rem;
+}
+.docs-editor-prose h1 + h2,
+.docs-editor-prose h2 + h3,
+.docs-editor-prose h3 + h4 {
+  margin-top: 1rem;
+}
+.docs-editor-prose p {
+  margin: 0 0 1.05rem;
+  line-height: 1.7;
+}
+.docs-editor-prose ul,
+.docs-editor-prose ol {
+  margin: 0.5rem 0 1.25rem;
+  padding-left: 1.625rem;
+}
+.docs-editor-prose li {
+  margin: 0 0 0.45rem;
+  padding-left: 0.125rem;
+  line-height: 1.65;
+}
+.docs-editor-prose li > p {
+  margin: 0.15rem 0;
+}
+.docs-editor-prose li > p:first-child:last-child {
+  margin: 0;
+}
+.docs-editor-prose li > ul,
+.docs-editor-prose li > ol {
+  margin: 0.45rem 0 0.35rem;
+}
+.docs-editor-prose blockquote {
+  margin: 1.5rem 0;
+  padding: 0.35rem 0 0.35rem 1.125rem;
+}
+.docs-editor-prose blockquote > *:last-child {
+  margin-bottom: 0;
+}
+.docs-editor-prose pre {
+  margin: 1.5rem 0;
+  padding: 1rem 1.125rem;
+}
+.docs-editor-prose table {
+  margin: 1.5rem 0;
+}
+.docs-editor-prose hr {
+  margin: 2.25rem 0;
+}
+.docs-editor-prose .docs-callout,
+.docs-editor-prose .docs-image-block,
+.docs-editor-prose .docs-html-block,
+.docs-editor-prose .docs-video-embed {
+  margin-top: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.docs-editor-prose .docs-callout > *:last-child,
+.docs-editor-prose .docs-html-block > *:last-child {
+  margin-bottom: 0;
+}
+
 .tiptap ul[data-type="taskList"] {
   list-style: none;
   padding-left: 0;
@@ -395,18 +607,6 @@
   text-decoration: line-through;
   opacity: 0.6;
 }
-/* Compact tiptap: tighter spacing for read-only task descriptions */
-.tiptap-compact h1 { margin: 0.75rem 0 0.25rem; }
-.tiptap-compact h2 { margin: 0.625rem 0 0.25rem; }
-.tiptap-compact h3 { margin: 0.5rem 0 0.125rem; }
-.tiptap-compact p { margin: 0 0 0.25rem; }
-.tiptap-compact ul,
-.tiptap-compact ol { margin: 0.25rem 0 0.5rem; }
-.tiptap-compact li { margin: 0 0 0.125rem; }
-.tiptap-compact blockquote { margin: 0 0 0.375rem; }
-.tiptap-compact hr { margin: 0.5rem 0; padding: 2px 0; }
-.tiptap-compact ul[data-type="taskList"] { margin: 0.25rem 0 0.5rem; }
-
 .mention-highlight {
   color: oklch(0.45 0.2 260);
   font-weight: 500;
@@ -613,7 +813,7 @@
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --ring: var(--brand-400);
   --chart-1: oklch(0.845 0.143 164.978);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.596 0.145 163.225);
@@ -627,6 +827,13 @@
   --sidebar-accent-foreground: oklch(0.88 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+  --brand-300: #8aabff;
+  --brand-400: #638cff;
+  --brand-500: #3e63dd;
+  --brand-600: #294adc;
+  --shadow-menu: 0 4px 14px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.25);
+  --shadow-menu-item: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow-menu-item-hover: 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 
 /* ── Search & replace match highlights ──────────────────────────────────────── */

@@ -53,10 +53,12 @@ type SupportInboxService struct {
 	linkPreviewService      SupportMessageLinkPreviewer
 	presence                websocket.PresenceProvider
 	statusOverrideRepo      *repository.SupportTeammateStatusOverrideRepository
+	emailLogRepo            *repository.SupportEmailLogRepository
 	triageService           *SupportInboxTriageService
 	taskService             *PMTaskService
 	geoIPResolver           geoip.Resolver
 	supportEventRecorder    SupportEventRecorder
+	routeDomain             string
 }
 
 type supportConversationTaskDraft struct {
@@ -120,6 +122,68 @@ func supportActorFromContext(ctx context.Context, workspaceID string) *authoriza
 	return actor
 }
 
+func (s *SupportInboxService) SetRouteDomain(domain string) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.routeDomain = strings.TrimSpace(domain)
+	return s
+}
+
+// SetEmailLogRepo wires the email log repository used by GetMessageEmailDetail.
+func (s *SupportInboxService) SetEmailLogRepo(repo *repository.SupportEmailLogRepository) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.emailLogRepo = repo
+	return s
+}
+
+// GetMessageEmailDetail returns the email log tied to a support message,
+// scoped to the workspace. Returns ErrRecordNotFound-style nil when the
+// message does not exist, is not in this workspace, or has no email log.
+func (s *SupportInboxService) GetMessageEmailDetail(ctx context.Context, workspaceID, messageID string) (*model.SupportMessageEmailDetail, error) {
+	if s == nil || s.emailLogRepo == nil || s.messageRepo == nil {
+		return nil, fmt.Errorf("support inbox service not configured for email detail")
+	}
+	if workspaceID == "" || messageID == "" {
+		return nil, fmt.Errorf("workspace_id and message_id are required")
+	}
+
+	msg, err := s.messageRepo.GetByID(ctx, messageID)
+	if err != nil {
+		return nil, fmt.Errorf("get support message: %w", err)
+	}
+	if msg == nil || msg.WorkspaceID != workspaceID {
+		return nil, nil
+	}
+
+	log, err := s.emailLogRepo.GetByMessageID(ctx, workspaceID, messageID)
+	if err != nil {
+		return nil, err
+	}
+	if log == nil {
+		return nil, nil
+	}
+
+	return &model.SupportMessageEmailDetail{
+		ID:               log.ID,
+		MessageID:        messageID,
+		Direction:        log.Direction,
+		Subject:          log.Subject,
+		FromEmail:        log.FromEmail,
+		ToEmail:          log.ToEmail,
+		RFCMessageID:     log.RFCMessageID,
+		InReplyTo:        log.InReplyTo,
+		ReferencesHeader: log.ReferencesHeader,
+		StrippedText:     log.StrippedText,
+		HTMLBody:         log.HTMLBody,
+		Status:           log.Status,
+		OpenedAt:         log.OpenedAt,
+		CreatedAt:        log.CreatedAt,
+	}, nil
+}
+
 func (s *SupportInboxService) actorMailboxScope(ctx context.Context, workspaceID string) (workspaceMemberID, role string) {
 	actor := supportActorFromContext(ctx, workspaceID)
 	if actor == nil {
@@ -158,6 +222,34 @@ func (s *SupportInboxService) recordSupportEvent(input SupportEventInput) {
 		return
 	}
 	s.supportEventRecorder.RecordEventBestEffort(input)
+}
+
+// firstCustomerMessageExcerpt returns a short excerpt of the first
+// customer-authored message on a conversation, used as evidence for a
+// coverage gap. Returns "" when the message can't be loaded — callers
+// must handle an empty summary gracefully.
+func (s *SupportInboxService) firstCustomerMessageExcerpt(ctx context.Context, workspaceID, conversationID string) string {
+	if s.messageRepo == nil {
+		return ""
+	}
+	messages, err := s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
+	if err != nil {
+		return ""
+	}
+	for _, m := range messages {
+		if m.SenderType != "customer" || m.IsInternal {
+			continue
+		}
+		excerpt := strings.TrimSpace(m.Content)
+		if excerpt == "" {
+			continue
+		}
+		if len(excerpt) > 500 {
+			excerpt = excerpt[:500]
+		}
+		return excerpt
+	}
+	return ""
 }
 
 func (s *SupportInboxService) SetGeoIPResolver(resolver geoip.Resolver) {
@@ -996,20 +1088,32 @@ func (s *SupportInboxService) UpdateConversationStatus(ctx context.Context, work
 	}
 
 	if status == model.SupportConversationStatusResolved {
-		s.recordSupportEvent(SupportEventInput{
+		input := SupportEventInput{
 			WorkspaceID:    workspaceID,
 			EventType:      model.SupportEventConversationResolved,
 			ConversationID: &ticketID,
 			ActorType:      model.SupportEventActorAgent,
 			Channel:        "inbox",
-		})
+		}
+		// Tag as a coverage gap signal only when AI engaged but a human
+		// finished the conversation. This mirrors Intercom Fin's model:
+		// assumed/confirmed AI resolutions are not treated as gaps; only
+		// conversations a human had to step into are flagged for review.
+		if ticket.FlowState != nil &&
+			*ticket.FlowState == model.SupportConversationFlowStateResolvedByHuman &&
+			ticket.AITurnCount > 0 {
+			input.SourceSignal = model.SupportCoverageSourceConversationResolvedByHuman
+			input.IssueSummary = s.firstCustomerMessageExcerpt(ctx, workspaceID, ticketID)
+		}
+		s.recordSupportEvent(input)
 	}
 
 	if s.activitySvc != nil {
 		_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", ticketID, &actorID, "updated", strPtr("status"), &oldStatus, &status, nil)
 	}
 
-	// Insert a system message for status transitions visible in the thread.
+	// Insert a system message for admin status transitions. These stay internal
+	// so the widget does not surface resolved/reopened thread notices.
 	if oldStatus != status && (status == model.SupportConversationStatusResolved || (oldStatus == model.SupportConversationStatusResolved && status == model.SupportConversationStatusOpen)) {
 		label := "Resolved conversation"
 		if status == model.SupportConversationStatusOpen && oldStatus == model.SupportConversationStatusResolved {
@@ -1042,7 +1146,7 @@ func (s *SupportInboxService) UpdateConversationStatus(ctx context.Context, work
 			Content:           label,
 			MessageType:       "system",
 			SystemEventType:   model.SupportSystemEventTypeStrPtr(eventType),
-			IsInternal:        false,
+			IsInternal:        true,
 		}
 		if err := s.messageRepo.Create(ctx, sysMsg); err != nil {
 			slog.ErrorContext(ctx, "create system message for status change", "error", err, "conversation_id", ticketID)
@@ -1085,7 +1189,78 @@ func (s *SupportInboxService) ListConversationMessages(ctx context.Context, work
 			slog.ErrorContext(ctx, "hydrate support message attachments", "error", err, "conversation_id", ticketID)
 		}
 	}
+
+	// Hydrate inbound email bodies onto messages so the thread bubbles can
+	// render rich HTML without a per-message round-trip. Only email messages
+	// need this — widget/in-app chat messages have no email log.
+	hydrateEmailBodies(ctx, s.emailLogRepo, workspaceID, ticketID, messages)
+
 	return messages, nil
+}
+
+// hydrateEmailBodies attaches the sanitized HTML and markdown bodies from
+// support_email_logs onto any message whose ViaChannel is "email". One query
+// pulls every log for the conversation; the loop below joins them onto
+// messages by the message_ids array. Safe to call with a nil repo.
+func hydrateEmailBodies(
+	ctx context.Context,
+	repo supportEmailLogReader,
+	workspaceID, conversationID string,
+	messages []model.SupportMessage,
+) {
+	if repo == nil || len(messages) == 0 {
+		return
+	}
+	hasEmail := false
+	for i := range messages {
+		if messages[i].ViaChannel != nil && *messages[i].ViaChannel == "email" {
+			hasEmail = true
+			break
+		}
+	}
+	if !hasEmail {
+		return
+	}
+
+	logs, err := repo.ListByConversation(ctx, workspaceID, conversationID)
+	if err != nil {
+		slog.ErrorContext(ctx, "hydrate support email bodies",
+			"error", err, "conversation_id", conversationID)
+		return
+	}
+
+	byMessageID := make(map[string]*model.SupportEmailLog, len(logs))
+	for i := range logs {
+		for _, mid := range logs[i].MessageIDs {
+			if mid == "" {
+				continue
+			}
+			// Prefer the first log encountered per message_id. Messages are
+			// usually 1:1 with logs, but MessageIDs can list several.
+			if _, exists := byMessageID[mid]; !exists {
+				byMessageID[mid] = &logs[i]
+			}
+		}
+	}
+
+	for i := range messages {
+		if messages[i].ViaChannel == nil || *messages[i].ViaChannel != "email" {
+			continue
+		}
+		log := byMessageID[messages[i].ID]
+		if log == nil {
+			continue
+		}
+		messages[i].HTMLBody = log.HTMLBody
+		messages[i].StrippedText = log.StrippedText
+	}
+}
+
+// supportEmailLogReader is the subset of SupportEmailLogRepository needed
+// by hydrateEmailBodies. Defined at the consumer so the helper can be
+// unit-tested without a real repo.
+type supportEmailLogReader interface {
+	ListByConversation(ctx context.Context, workspaceID, conversationID string) ([]model.SupportEmailLog, error)
 }
 
 // CreateConversationMessage creates a message on a conversation.
@@ -1358,31 +1533,56 @@ func (s *SupportInboxService) CreateTaskFromConversation(
 	if err != nil {
 		return nil, err
 	}
-	if err := validateSupportTaskDraft(conversation, messages, draft); err != nil {
-		slog.WarnContext(ctx, "support task creation blocked due to weak draft context",
-			"workspace_id", workspaceID,
-			"conversation_id", conversationID,
-			"title", strings.TrimSpace(draft.Title),
-			"summary_preview", truncateLog(strings.TrimSpace(draft.Summary), 160),
-			"error", err,
-		)
-		return nil, err
+	if trimPtrValue(req.Name) == "" {
+		if err := validateSupportTaskDraft(conversation, messages, draft); err != nil {
+			slog.WarnContext(ctx, "support task creation blocked due to weak draft context",
+				"workspace_id", workspaceID,
+				"conversation_id", conversationID,
+				"title", strings.TrimSpace(draft.Title),
+				"summary_preview", truncateLog(strings.TrimSpace(draft.Summary), 160),
+				"error", err,
+			)
+			return nil, err
+		}
 	}
 
 	taskType := normalizeSupportTaskType(firstNonEmptyString(trimPtrValue(req.TaskType), draft.TaskType))
 	priority := normalizeSupportTaskPriority(firstNonEmptyString(trimPtrValue(req.Priority), draft.Priority))
-	description := supportTaskDescriptionToRichText(draft.Description)
+	description := trimRichTextPtr(req.Description)
+	if description == nil {
+		description = supportTaskDescriptionToRichText(draft.Description)
+	}
+	requesterMemberID := trimOptionalPtr(req.RequesterMemberID)
 	createReq := model.CreateTaskRequest{
 		WorkspaceID:       workspaceID,
-		Name:              draft.Title,
+		Name:              firstNonEmptyString(trimPtrValue(req.Name), draft.Title),
 		Description:       description,
 		TaskType:          taskType,
 		WorkflowID:        trimPtrValue(req.WorkflowID),
 		WorkflowStateID:   trimPtrValue(req.WorkflowStateID),
+		EpicID:            trimOptionalPtr(req.EpicID),
+		SprintID:          trimOptionalPtr(req.SprintID),
 		TeamID:            trimOptionalPtr(req.TeamID),
 		OwnerMemberID:     trimOptionalPtr(req.OwnerMemberID),
-		RequesterID:       strPtr(actorID),
-		RequesterMemberID: nil,
+		RequesterID:       nil,
+		RequesterMemberID: requesterMemberID,
+		Estimate:          req.Estimate,
+		Severity:          req.Severity,
+		Deadline:          req.Deadline,
+		Position:          req.Position,
+		Blocked:           req.Blocked,
+		Blocker:           trimOptionalPtr(req.Blocker),
+		TemplateID:        trimOptionalPtr(req.TemplateID),
+		ExternalID:        trimOptionalPtr(req.ExternalID),
+		OwnerIDs:          req.OwnerIDs,
+		FollowerIDs:       req.FollowerIDs,
+		LabelIDs:          req.LabelIDs,
+		AttachmentIDs:     req.AttachmentIDs,
+		ChecklistItems:    req.ChecklistItems,
+		ExternalLinks:     req.ExternalLinks,
+	}
+	if requesterMemberID == nil {
+		createReq.RequesterID = strPtr(actorID)
 	}
 	if priority != "" {
 		createReq.Priority = &priority
@@ -1415,6 +1615,7 @@ func (s *SupportInboxService) CreateTaskFromConversation(
 
 	return &model.CreateTaskFromConversationResponse{
 		TaskID:                    taskID,
+		DisplayID:                 detail.Task.DisplayID,
 		TaskKey:                   detail.Task.TaskKey,
 		TaskName:                  detail.Task.Name,
 		Summary:                   strings.TrimSpace(draft.Summary),
@@ -1433,6 +1634,17 @@ func (s *SupportInboxService) generateTaskDraftFromConversation(
 	if s.supportAIService != nil {
 		draft, err := s.supportAIService.GenerateTaskDraftFromConversation(ctx, workspaceID, conversation, messages)
 		if err == nil && draft != nil {
+			titleEmpty := strings.TrimSpace(draft.Title) == ""
+			descriptionEmpty := strings.TrimSpace(draft.Description) == ""
+			if titleEmpty || descriptionEmpty {
+				slog.WarnContext(ctx, "llm returned incomplete task draft; using deterministic fallback for missing fields",
+					"workspace_id", workspaceID,
+					"conversation_id", conversation.ID,
+					"title_empty", titleEmpty,
+					"description_empty", descriptionEmpty,
+					"summary_len", len(strings.TrimSpace(draft.Summary)),
+				)
+			}
 			normalized := *draft
 			normalized.Title = fallbackSupportTaskTitle(conversation, messages, normalized.Title)
 			normalized.Summary = strings.TrimSpace(normalized.Summary)
@@ -1548,20 +1760,40 @@ func fallbackSupportConversationTaskDraft(
 
 func fallbackSupportTaskTitle(conversation *model.SupportConversation, messages []model.SupportMessage, proposed string) string {
 	if candidate := cleanSupportTaskTitleCandidate(proposed); candidate != "" && !isWeakSupportTaskTitle(candidate) {
-		return candidate
+		return truncateSupportTaskTitle(candidate, supportTaskTitleMaxLen)
 	}
 	if conversation != nil {
 		if candidate := cleanSupportTaskTitleCandidate(conversation.Subject); candidate != "" && !isWeakSupportTaskTitle(candidate) {
-			return candidate
+			return truncateSupportTaskTitle(candidate, supportTaskTitleMaxLen)
 		}
 	}
 	if candidate := supportTaskTitleFromMessages(messages); candidate != "" {
-		return candidate
+		return truncateSupportTaskTitle(candidate, supportTaskTitleMaxLen)
 	}
 	if conversation != nil {
 		return fmt.Sprintf("Customer-reported issue in conversation #%d", conversation.DisplayID)
 	}
 	return "Customer-reported issue"
+}
+
+const supportTaskTitleMaxLen = 90
+
+// truncateSupportTaskTitle caps a title at maxLen characters, cutting at the
+// last word boundary and appending an ellipsis. Stack-trace-style subjects
+// like the full "SERP analysis failed: Token is not valid; SERP Knowledge..."
+// error chain are never useful as task names at full length.
+func truncateSupportTaskTitle(value string, maxLen int) string {
+	trimmed := strings.TrimSpace(value)
+	if maxLen <= 0 || len(trimmed) <= maxLen {
+		return trimmed
+	}
+	if cut := strings.IndexAny(trimmed[:maxLen], ";|"); cut >= 16 {
+		return strings.TrimRight(trimmed[:cut], " \t-:,;") + "..."
+	}
+	if space := strings.LastIndexAny(trimmed[:maxLen], " \t"); space >= maxLen/2 {
+		return strings.TrimRight(trimmed[:space], " \t-:,;") + "..."
+	}
+	return strings.TrimRight(trimmed[:maxLen], " \t-:,;") + "..."
 }
 
 func fallbackSupportTaskSummary(conversation *model.SupportConversation, messages []model.SupportMessage) string {
@@ -1600,9 +1832,11 @@ func fallbackSupportTaskDescription(
 		b.WriteString(impact)
 		b.WriteString("\n\n")
 	}
-	b.WriteString("## Requested Outcome\n")
-	b.WriteString(fallbackSupportRequestedOutcome(conversation))
-	b.WriteString("\n\n")
+	if outcome := specificSupportRequestedOutcome(conversation); outcome != "" {
+		b.WriteString("## Requested Outcome\n")
+		b.WriteString(outcome)
+		b.WriteString("\n\n")
+	}
 	if conversation != nil {
 		b.WriteString("## Customer Context\n")
 		b.WriteString(fmt.Sprintf("- Conversation: #%d\n", conversation.DisplayID))
@@ -1673,9 +1907,13 @@ func fallbackSupportTaskImpact(conversation *model.SupportConversation, messages
 	return fmt.Sprintf("Customer-facing issue reported in support conversation #%d.", conversation.DisplayID)
 }
 
-func fallbackSupportRequestedOutcome(conversation *model.SupportConversation) string {
+// specificSupportRequestedOutcome returns a subject-derived outcome sentence
+// only when the subject matches a known keyword. For generic conversations it
+// returns "" so the description builder can omit the section rather than
+// emit boilerplate filler.
+func specificSupportRequestedOutcome(conversation *model.SupportConversation) string {
 	if conversation == nil {
-		return "Determine the next internal action needed to resolve the customer request."
+		return ""
 	}
 	subject := strings.ToLower(strings.TrimSpace(conversation.Subject))
 	switch {
@@ -1684,7 +1922,7 @@ func fallbackSupportRequestedOutcome(conversation *model.SupportConversation) st
 	case strings.Contains(subject, "billing"), strings.Contains(subject, "invoice"), strings.Contains(subject, "payment"):
 		return "Identify the underlying issue and complete the internal follow-up needed to unblock the customer."
 	default:
-		return "Determine the next internal product or support action needed to resolve the customer issue."
+		return ""
 	}
 }
 
@@ -1695,12 +1933,43 @@ func cleanSupportTaskTitleCandidate(value string) string {
 	}
 	candidate = strings.Join(strings.Fields(candidate), " ")
 	candidate = trimSupportEmailPrefixes(candidate)
+	candidate = trimSupportDiagnosticPrefixes(candidate)
 	candidate = trimSupportTaskActionPrefixes(candidate)
 	candidate = strings.Trim(candidate, " \t\r\n-:;,.")
 	if candidate == "" {
 		return ""
 	}
 	return titleCaseSupportIssue(candidate)
+}
+
+// trimSupportDiagnosticPrefixes strips "Error:", "Exception:", "Warning:",
+// and bracketed tags like "[ApplicationError]" that customers often paste
+// in as the subject line. Without this the raw log prefix becomes the PM
+// task name.
+func trimSupportDiagnosticPrefixes(value string) string {
+	candidate := strings.TrimSpace(value)
+	for {
+		trimmed := false
+		for strings.HasPrefix(candidate, "[") {
+			if end := strings.IndexByte(candidate, ']'); end > 0 {
+				candidate = strings.TrimSpace(candidate[end+1:])
+				trimmed = true
+				continue
+			}
+			break
+		}
+		lower := strings.ToLower(candidate)
+		for _, prefix := range []string{"error:", "exception:", "warning:", "fatal:", "panic:"} {
+			if strings.HasPrefix(lower, prefix) {
+				candidate = strings.TrimSpace(candidate[len(prefix):])
+				trimmed = true
+				break
+			}
+		}
+		if !trimmed {
+			return candidate
+		}
+	}
 }
 
 func trimSupportEmailPrefixes(value string) string {
@@ -1855,28 +2124,89 @@ func validateSupportTaskDraft(
 }
 
 func supportPreferredContextExcerpt(messages []model.SupportMessage, maxLen int) string {
+	if candidate := pickSupportContextExcerpt(messages, maxLen, false); candidate != "" {
+		return candidate
+	}
+	// If every message is a pleasantry/sign-off, allow one as a last resort
+	// so we don't return empty when the customer genuinely sent nothing else.
+	return pickSupportContextExcerpt(messages, maxLen, true)
+}
+
+func pickSupportContextExcerpt(messages []model.SupportMessage, maxLen int, allowPleasantry bool) string {
 	for i := len(messages) - 1; i >= 0; i-- {
 		if messages[i].SenderType != "customer" {
 			continue
 		}
-		if isSubstantiveSupportContextText(messages[i].Content) {
-			return excerptSupportText(messages[i].Content, maxLen)
+		if !isSubstantiveSupportContextText(messages[i].Content) {
+			continue
 		}
+		if !allowPleasantry && looksLikeSupportPleasantry(messages[i].Content) {
+			continue
+		}
+		return excerptSupportText(messages[i].Content, maxLen)
 	}
 	for i := len(messages) - 1; i >= 0; i-- {
 		if !messages[i].IsInternal {
 			continue
 		}
-		if isSubstantiveSupportContextText(messages[i].Content) {
-			return excerptSupportText(messages[i].Content, maxLen)
+		if !isSubstantiveSupportContextText(messages[i].Content) {
+			continue
 		}
+		if !allowPleasantry && looksLikeSupportPleasantry(messages[i].Content) {
+			continue
+		}
+		return excerptSupportText(messages[i].Content, maxLen)
 	}
 	for i := len(messages) - 1; i >= 0; i-- {
-		if isSubstantiveSupportContextText(messages[i].Content) {
-			return excerptSupportText(messages[i].Content, maxLen)
+		if !isSubstantiveSupportContextText(messages[i].Content) {
+			continue
 		}
+		if !allowPleasantry && looksLikeSupportPleasantry(messages[i].Content) {
+			continue
+		}
+		return excerptSupportText(messages[i].Content, maxLen)
 	}
 	return ""
+}
+
+// looksLikeSupportPleasantry detects sign-offs ("thanks in advance", "kind
+// regards") and greetings that technically pass the substantive-text bar on
+// length alone but shouldn't be surfaced as the Problem/Impact excerpt.
+func looksLikeSupportPleasantry(value string) bool {
+	candidate := strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(value)), " "))
+	if candidate == "" {
+		return true
+	}
+	leadingPleasantries := []string{
+		"thanks in advance",
+		"thank you in advance",
+		"thank you so much",
+		"thank you for",
+		"thanks for",
+		"thanks,",
+		"thanks.",
+		"thank you",
+		"kind regards",
+		"best regards",
+		"warm regards",
+		"regards,",
+		"regards.",
+		"cheers,",
+		"cheers.",
+		"grazie in anticipo",
+		"grazie mille",
+		"grazie,",
+		"ciao,",
+		"hello there",
+		"hi there",
+		"please help",
+	}
+	for _, prefix := range leadingPleasantries {
+		if strings.HasPrefix(candidate, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func supportLastNonEmptyMessageExcerpt(messages []model.SupportMessage, maxLen int) string {
@@ -1963,6 +2293,17 @@ func supportTaskDescriptionToRichText(markdown string) *string {
 	return strPtr(strings.TrimSpace(rendered))
 }
 
+func trimRichTextPtr(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
+}
+
 func trimOptionalPtr(value *string) *string {
 	if value == nil {
 		return nil
@@ -2019,6 +2360,11 @@ func (s *SupportInboxService) AssignConversationAgent(ctx context.Context, works
 // AssignConversationUser assigns a teammate to a conversation, or clears the assignee when userID is empty.
 func (s *SupportInboxService) AssignConversationUser(ctx context.Context, workspaceID, ticketID string, userID *string, actorID string) error {
 	return s.assignConversationUser(ctx, workspaceID, ticketID, userID, &actorID)
+}
+
+// UpdateConversationCRMContact sets or clears the primary CRM contact link on a conversation.
+func (s *SupportInboxService) UpdateConversationCRMContact(ctx context.Context, workspaceID, conversationID string, contactID *string, actorID string) (*model.SupportConversation, error) {
+	return s.updateConversationCRMContact(ctx, workspaceID, conversationID, contactID, &actorID)
 }
 
 // ListContactConversations returns support conversations linked to a CRM contact.
@@ -2500,6 +2846,91 @@ func (s *SupportInboxService) assignConversationUser(ctx context.Context, worksp
 	})
 
 	return nil
+}
+
+func (s *SupportInboxService) updateConversationCRMContact(ctx context.Context, workspaceID, conversationID string, contactID *string, actorID *string) (*model.SupportConversation, error) {
+	ticket, err := s.loadConversationAccessible(ctx, workspaceID, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	if ticket == nil {
+		return nil, fmt.Errorf("ticket not found")
+	}
+
+	var normalizedContactID *string
+	if contactID != nil {
+		trimmed := strings.TrimSpace(*contactID)
+		if trimmed != "" {
+			contact, err := s.contactRepo.GetByID(ctx, trimmed)
+			if err != nil {
+				return nil, err
+			}
+			if contact == nil || contact.WorkspaceID != workspaceID {
+				return nil, fmt.Errorf("contact not found")
+			}
+			normalizedContactID = &trimmed
+		}
+	}
+
+	oldContactID := ticket.CRMContactID
+	if err := s.syncConversationContactAssociation(ctx, workspaceID, conversationID, normalizedContactID); err != nil {
+		return nil, err
+	}
+
+	fields := map[string]any{
+		"crm_contact_id": normalizedContactID,
+		"updated_at":     time.Now().UTC(),
+	}
+	if err := s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, fields); err != nil {
+		return nil, err
+	}
+	ticket.CRMContactID = normalizedContactID
+	ticket.UpdatedAt = time.Now().UTC()
+
+	if s.activitySvc != nil {
+		_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", conversationID, actorID, "updated", strPtr("crm_contact_id"), oldContactID, normalizedContactID, nil)
+	}
+
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      "updated",
+		Entity:      "support_conversation",
+		EntityID:    conversationID,
+		WorkspaceID: workspaceID,
+		ActorID:     derefString(actorID),
+	})
+
+	return ticket, nil
+}
+
+func (s *SupportInboxService) syncConversationContactAssociation(ctx context.Context, workspaceID, conversationID string, contactID *string) error {
+	assocs, err := s.assocRepo.ListByObject(ctx, workspaceID, model.CRMObjectSupportConversation, conversationID)
+	if err != nil {
+		return err
+	}
+	for _, assoc := range assocs {
+		otherType, otherID := otherAssociationSide(assoc, model.CRMObjectSupportConversation, conversationID)
+		if otherType != model.CRMObjectContact {
+			continue
+		}
+		if contactID != nil && otherID == *contactID {
+			continue
+		}
+		if err := s.assocRepo.Delete(ctx, assoc.ID); err != nil {
+			return err
+		}
+	}
+
+	if contactID == nil {
+		return nil
+	}
+
+	return s.assocRepo.Create(ctx, &model.CRMAssociation{
+		WorkspaceID:    workspaceID,
+		FromObjectType: model.CRMObjectSupportConversation,
+		FromObjectID:   conversationID,
+		ToObjectType:   model.CRMObjectContact,
+		ToObjectID:     *contactID,
+	})
 }
 
 // assignmentTargetKind describes the kind of assignee referenced in an

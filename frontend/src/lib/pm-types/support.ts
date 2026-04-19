@@ -90,6 +90,11 @@ export interface SupportInboxScopeListResponse {
   mailboxes: SupportInboxScope[];
 }
 
+export interface SupportWorkspaceUnreadCount {
+  workspace_id: string;
+  unread_count: number;
+}
+
 export interface SupportMailbox {
   id: string;
   workspace_id: string;
@@ -299,8 +304,29 @@ export interface SupportMessage {
   email_notified_at?: string;
   email_read_at?: string;
   attachments?: SupportAttachmentPayload[];
+  /** Sanitized HTML body — present only for inbound email messages (via_channel === 'email'). */
+  html_body?: string;
+  /** Markdown-friendly plaintext body — present only for inbound email messages. */
+  stripped_text?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface SupportMessageEmailDetail {
+  id: string;
+  message_id: string;
+  direction: 'inbound' | 'outbound' | string;
+  subject: string;
+  from_email: string;
+  to_email: string;
+  rfc_message_id?: string;
+  in_reply_to?: string;
+  references_header?: string;
+  stripped_text?: string;
+  html_body?: string;
+  status: string;
+  opened_at?: string;
+  created_at: string;
 }
 
 export interface SupportAIPreviewHistoryTurn {
@@ -537,17 +563,37 @@ export interface LinkTaskRequest {
 }
 
 export interface CreateTaskFromConversationRequest {
+  name?: string;
+  description?: string;
   task_type?: 'feature' | 'bug' | 'chore';
-  priority?: 'none' | 'low' | 'medium' | 'high' | 'urgent';
-  team_id?: string;
   workflow_id?: string;
   workflow_state_id?: string;
+  epic_id?: string;
+  sprint_id?: string;
+  team_id?: string;
   owner_member_id?: string;
+  requester_member_id?: string;
+  estimate?: number;
+  priority?: 'none' | 'low' | 'medium' | 'high' | 'urgent';
+  severity?: 'none' | 'minor' | 'major' | 'critical';
+  deadline?: string;
+  position?: number;
+  blocked?: boolean;
+  blocker?: string;
+  template_id?: string;
+  external_id?: string;
+  owner_ids?: string[];
+  follower_ids?: string[];
+  label_ids?: string[];
+  attachment_ids?: string[];
+  checklist_items?: { text: string; position?: number }[];
+  external_links?: { url: string; title?: string }[];
 }
 
 export interface CreateTaskFromConversationResponse {
   task_id: string;
-  task_key?: string;
+  display_id: number;
+  task_key: string;
   task_name: string;
   summary?: string;
   copied_contact_associations: number;
@@ -561,6 +607,10 @@ export interface AssignConversationAgentRequest {
 
 export interface AssignConversationUserRequest {
   user_id: string | null;
+}
+
+export interface UpdateConversationCRMContactRequest {
+  crm_contact_id: string | null;
 }
 
 // ── Support Installation Settings ───────────────────────────────────

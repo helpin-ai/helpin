@@ -120,6 +120,7 @@ function buildCollectionNodeTree(
       name: c.name,
       icon: c.icon,
       depth: c.depth,
+      position: c.position,
       documents: docsByCollection.get(c.id) ?? [],
       children: build(c.id),
     }))
@@ -142,8 +143,39 @@ interface CollectionNode {
   name: string
   icon?: string | null
   depth: number
+  position: number
   documents: DocsDocument[]
   children: CollectionNode[]
+}
+
+type MergedChild =
+  | { kind: 'collection'; position: number; node: CollectionNode }
+  | { kind: 'doc'; position: number; doc: DocsDocument }
+
+/**
+ * Merge a collection's direct documents with its sub-collections into a
+ * single list sorted by position, so the rendered order matches the
+ * author's intent (e.g., the Nextra _meta order when imported).
+ */
+function mergeChildren(node: CollectionNode): MergedChild[] {
+  const items: MergedChild[] = []
+  for (const child of node.children) {
+    items.push({ kind: 'collection', position: child.position, node: child })
+  }
+  for (const doc of node.documents) {
+    items.push({ kind: 'doc', position: doc.position, doc })
+  }
+  // Primary: position. Tie-break: collections before docs (deterministic
+  // for legacy data where articles/sub-collections had independent
+  // 0..N sequences), then by id for full determinism.
+  items.sort((a, b) => {
+    if (a.position !== b.position) return a.position - b.position
+    if (a.kind !== b.kind) return a.kind === 'collection' ? -1 : 1
+    const aId = a.kind === 'doc' ? a.doc.id : a.node.id
+    const bId = b.kind === 'doc' ? b.doc.id : b.node.id
+    return aId.localeCompare(bId)
+  })
+  return items
 }
 
 function CollectionSection({
@@ -155,8 +187,7 @@ function CollectionSection({
   wsSlug: string
   navigate: ReturnType<typeof useNavigate>
 }) {
-  const hasContent = node.documents.length > 0 || node.children.length > 0
-  const [open, setOpen] = useState(hasContent)
+  const [open, setOpen] = useState(false)
 
   return (
     <Collapsible.Root open={open} onOpenChange={setOpen}>
@@ -180,12 +211,13 @@ function CollectionSection({
       </Collapsible.Trigger>
       <Collapsible.Content>
         <div className="ml-[14px] border-l border-border/50 pl-3">
-          {node.children.map((child) => (
-            <CollectionSection key={child.id} node={child} wsSlug={wsSlug} navigate={navigate} />
-          ))}
-          {node.documents.map((doc) => (
-            <DocRow key={doc.id} doc={doc} wsSlug={wsSlug} navigate={navigate} />
-          ))}
+          {mergeChildren(node).map((item) =>
+            item.kind === 'collection' ? (
+              <CollectionSection key={item.node.id} node={item.node} wsSlug={wsSlug} navigate={navigate} />
+            ) : (
+              <DocRow key={item.doc.id} doc={item.doc} wsSlug={wsSlug} navigate={navigate} />
+            ),
+          )}
         </div>
       </Collapsible.Content>
     </Collapsible.Root>
@@ -291,7 +323,7 @@ function SpaceSection({
           {/* Uncategorized documents (no collection) */}
           {uncollected.length > 0 && (
             <CollectionSection
-              node={{ id: '__uncategorized', name: 'Uncategorized', depth: 0, documents: uncollected, children: [] }}
+              node={{ id: '__uncategorized', name: 'Uncategorized', position: 0, depth: 0, documents: uncollected, children: [] }}
               wsSlug={wsSlug}
               navigate={navigate}
             />
