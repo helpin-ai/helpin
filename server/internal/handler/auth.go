@@ -209,3 +209,106 @@ func (h *AuthHandler) RefreshToken(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, resp)
 }
+
+// Get2FAStatus handles GET /api/auth/2fa/status.
+func (h *AuthHandler) Get2FAStatus(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	resp, err := h.authService.Get2FAStatus(r.Context(), userID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// Setup2FA handles POST /api/auth/2fa/setup.
+func (h *AuthHandler) Setup2FA(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+
+	var req model.TwoFASetupRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	resp, err := h.authService.Setup2FA(r.Context(), userID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// Verify2FA handles POST /api/auth/2fa/verify.
+func (h *AuthHandler) Verify2FA(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+
+	var req model.TwoFAVerifyRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if err := h.authService.Verify2FASetup(r.Context(), userID, req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "two-factor authentication enabled"})
+}
+
+// Verify2FASignin handles POST /api/auth/2fa/verify-signin.
+func (h *AuthHandler) Verify2FASignin(w http.ResponseWriter, r *http.Request) {
+	var req model.TwoFASigninRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	resp, err := h.authService.Verify2FASignin(r.Context(), req)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// Disable2FA handles DELETE /api/auth/2fa.
+func (h *AuthHandler) Disable2FA(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+
+	var req model.TwoFADisableRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if err := h.authService.Disable2FA(r.Context(), userID, req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "two-factor authentication disabled"})
+}
+
+// RegenerateRecoveryCodes handles POST /api/auth/2fa/regenerate-recovery-codes.
+func (h *AuthHandler) RegenerateRecoveryCodes(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+
+	var req model.TwoFARegenerateRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	resp, err := h.authService.RegenerateRecoveryCodes(r.Context(), userID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}

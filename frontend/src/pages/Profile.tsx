@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import QRCode from 'qrcode';
 import { useTitle } from '@/hooks/useTitle';
 import { useAuthStore } from '@/stores/authStore';
 import { authService } from '@/lib/services/authService';
@@ -8,6 +9,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   TEAM_MEMBER_AVATAR_STYLES,
   TEAM_MEMBER_AVATAR_BACKGROUND_COLORS,
@@ -21,7 +30,16 @@ import {
   resolveTeamMemberAvatarSrc,
 } from '@/lib/teamMemberAvatar';
 import { getInitials } from '@/lib/utils';
-import { Camera01Icon, Loading01Icon, Mail01Icon } from '@/lib/icons';
+import {
+  ArrowReloadHorizontalIcon,
+  Camera01Icon,
+  Copy01Icon,
+  Loading01Icon,
+  LockKeyIcon,
+  Mail01Icon,
+  Shield02Icon,
+  SmartPhone01Icon,
+} from '@/lib/icons';
 import { toast } from 'sonner';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { EmailAccountConnect } from '@/components/crm/EmailAccountConnect';
@@ -29,11 +47,24 @@ import { AvatarCropDialog } from '@/components/profile/AvatarCropDialog';
 import { AvatarPickerDialog } from '@/components/profile/AvatarPickerDialog';
 import { queryClient } from '@/lib/queryClient';
 import { queryKeys } from '@/lib/queryKeys';
+import type { RecoveryCodesResponse, TwoFASetupResponse } from '@/lib/types';
 
 type PendingAvatarFile = {
   file: File;
   previewUrl: string;
 };
+
+function RecoveryCodeList({ codes }: { codes: string[] }) {
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {codes.map((code) => (
+        <div key={code} className="rounded-md border bg-muted/30 px-3 py-2 font-mono text-sm tracking-[0.18em]">
+          {code}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function Profile() {
   useTitle('Profile');
@@ -61,6 +92,22 @@ export default function Profile() {
   const [pendingAvatar, setPendingAvatar] = useState<PendingAvatarFile | null>(null);
   const [avatarDialogOpen, setAvatarDialogOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [twoFAEnabled, setTwoFAEnabled] = useState(user?.two_fa_enabled ?? false);
+  const [loadingTwoFAStatus, setLoadingTwoFAStatus] = useState(true);
+  const [setupDialogOpen, setSetupDialogOpen] = useState(false);
+  const [setupPassword, setSetupPassword] = useState('');
+  const [setupProvisioning, setSetupProvisioning] = useState<TwoFASetupResponse | null>(null);
+  const [setupQRCodeUrl, setSetupQRCodeUrl] = useState('');
+  const [setupVerificationCode, setSetupVerificationCode] = useState('');
+  const [setupSubmitting, setSetupSubmitting] = useState(false);
+  const [disableDialogOpen, setDisableDialogOpen] = useState(false);
+  const [disablePassword, setDisablePassword] = useState('');
+  const [disableSubmitting, setDisableSubmitting] = useState(false);
+  const [recoveryDialogOpen, setRecoveryDialogOpen] = useState(false);
+  const [recoveryPassword, setRecoveryPassword] = useState('');
+  const [recoveryVerificationCode, setRecoveryVerificationCode] = useState('');
+  const [regeneratedRecoveryCodes, setRegeneratedRecoveryCodes] = useState<RecoveryCodesResponse | null>(null);
+  const [recoverySubmitting, setRecoverySubmitting] = useState(false);
 
   const initials = getInitials(user?.full_name || user?.email);
   const profileAvatarSrc = resolveTeamMemberAvatarSrc({
@@ -106,6 +153,97 @@ export default function Profile() {
     setAvatarBackgroundMode(normalizeTeamMemberAvatarBackgroundMode(user?.avatar_background_mode));
     setAvatarBackgroundColor(normalizeTeamMemberAvatarBackgroundColor(user?.avatar_background_color) ?? TEAM_MEMBER_AVATAR_BACKGROUND_COLORS[0]);
   }, [defaultAvatarStyle, user?.avatar_background_color, user?.avatar_background_mode, user?.avatar_seed, user?.avatar_style, user?.full_name]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadTwoFAStatus = async () => {
+      setLoadingTwoFAStatus(true);
+      const { data, error } = await authService.get2FAStatus();
+      if (cancelled) return;
+
+      if (error || !data) {
+        setLoadingTwoFAStatus(false);
+        toast.error(error ?? 'Failed to load two-factor authentication status');
+        return;
+      }
+
+      setTwoFAEnabled(data.enabled);
+      setLoadingTwoFAStatus(false);
+    };
+
+    void loadTwoFAStatus();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const buildQRCode = async () => {
+      if (!setupProvisioning?.provisioning_uri) {
+        setSetupQRCodeUrl('');
+        return;
+      }
+
+      try {
+        const dataUrl = await QRCode.toDataURL(setupProvisioning.provisioning_uri, {
+          margin: 1,
+          width: 256,
+        });
+        if (!cancelled) {
+          setSetupQRCodeUrl(dataUrl);
+        }
+      } catch {
+        if (!cancelled) {
+          setSetupQRCodeUrl('');
+        }
+      }
+    };
+
+    void buildQRCode();
+    return () => {
+      cancelled = true;
+    };
+  }, [setupProvisioning?.provisioning_uri]);
+
+  const syncTwoFAState = (enabled: boolean) => {
+    setTwoFAEnabled(enabled);
+    const existingUser = useAuthStore.getState().user;
+    if (existingUser) {
+      useAuthStore.setState({
+        user: {
+          ...existingUser,
+          two_fa_enabled: enabled,
+        },
+      });
+    }
+  };
+
+  const copyRecoveryCodes = async (codes: string[]) => {
+    try {
+      await navigator.clipboard.writeText(codes.join('\n'));
+      toast.success('Recovery codes copied');
+    } catch {
+      toast.error('Failed to copy recovery codes');
+    }
+  };
+
+  const resetSetupDialog = () => {
+    setSetupDialogOpen(false);
+    setSetupPassword('');
+    setSetupProvisioning(null);
+    setSetupQRCodeUrl('');
+    setSetupVerificationCode('');
+  };
+
+  const resetRecoveryDialog = () => {
+    setRecoveryDialogOpen(false);
+    setRecoveryPassword('');
+    setRecoveryVerificationCode('');
+    setRegeneratedRecoveryCodes(null);
+  };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -193,6 +331,69 @@ export default function Profile() {
     setChangingPassword(false);
   };
 
+  const handleSetupTwoFA = async (e: FormEvent) => {
+    e.preventDefault();
+    setSetupSubmitting(true);
+    const { data, error } = await authService.setup2FA(setupPassword);
+    setSetupSubmitting(false);
+
+    if (error || !data) {
+      toast.error(error ?? 'Failed to start two-factor setup');
+      return;
+    }
+
+    setSetupProvisioning(data);
+    setSetupVerificationCode('');
+  };
+
+  const handleVerifyTwoFASetup = async (e: FormEvent) => {
+    e.preventDefault();
+    setSetupSubmitting(true);
+    const { error } = await authService.verify2FASetup(setupVerificationCode);
+    setSetupSubmitting(false);
+
+    if (error) {
+      toast.error(error);
+      return;
+    }
+
+    syncTwoFAState(true);
+    toast.success('Two-factor authentication enabled');
+    resetSetupDialog();
+  };
+
+  const handleDisableTwoFA = async (e: FormEvent) => {
+    e.preventDefault();
+    setDisableSubmitting(true);
+    const { error } = await authService.disable2FA(disablePassword);
+    setDisableSubmitting(false);
+
+    if (error) {
+      toast.error(error);
+      return;
+    }
+
+    syncTwoFAState(false);
+    toast.success('Two-factor authentication disabled');
+    setDisablePassword('');
+    setDisableDialogOpen(false);
+  };
+
+  const handleRegenerateRecoveryCodes = async (e: FormEvent) => {
+    e.preventDefault();
+    setRecoverySubmitting(true);
+    const { data, error } = await authService.regenerateRecoveryCodes(recoveryPassword, recoveryVerificationCode);
+    setRecoverySubmitting(false);
+
+    if (error || !data) {
+      toast.error(error ?? 'Failed to regenerate recovery codes');
+      return;
+    }
+
+    setRegeneratedRecoveryCodes(data);
+    toast.success('Recovery codes regenerated');
+  };
+
   return (
     <div className="space-y-4">
       <AvatarPickerDialog
@@ -262,6 +463,217 @@ export default function Profile() {
         onSave={handleAvatarSave}
         saving={uploadingAvatar}
       />
+      <Dialog
+        open={setupDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            resetSetupDialog();
+            return;
+          }
+          setSetupDialogOpen(open);
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Enable Two-Factor Authentication</DialogTitle>
+            <DialogDescription>
+              Protect your Helpin account with a time-based code from Google Authenticator, Authy, 1Password, or another compatible app.
+            </DialogDescription>
+          </DialogHeader>
+
+          {setupProvisioning ? (
+            <div className="space-y-6">
+              <div className="grid gap-6 md:grid-cols-[256px_1fr]">
+                <div className="flex items-center justify-center rounded-xl border bg-white p-4">
+                  {setupQRCodeUrl ? (
+                    <img src={setupQRCodeUrl} alt="Authenticator QR code" className="h-64 w-64" />
+                  ) : (
+                    <div className="flex h-64 w-64 items-center justify-center text-sm text-muted-foreground">
+                      Generating QR code...
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-4">
+                  <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
+                    1. Scan the QR code with your authenticator app.
+                    <br />
+                    2. Save the recovery codes below somewhere secure.
+                    <br />
+                    3. Enter the 6-digit code from your app to activate 2FA.
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label>Recovery Codes</Label>
+                      <Button type="button" variant="outline" size="sm" onClick={() => void copyRecoveryCodes(setupProvisioning.recovery_codes)}>
+                        <Copy01Icon className="mr-2 h-4 w-4" />
+                        Copy all
+                      </Button>
+                    </div>
+                    <RecoveryCodeList codes={setupProvisioning.recovery_codes} />
+                  </div>
+                </div>
+              </div>
+
+              <form onSubmit={handleVerifyTwoFASetup} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="setup-2fa-code">Authenticator Code</Label>
+                  <Input
+                    id="setup-2fa-code"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    placeholder="123456"
+                    value={setupVerificationCode}
+                    onChange={(e) => setSetupVerificationCode(e.target.value)}
+                    required
+                  />
+                </div>
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={resetSetupDialog}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={setupSubmitting}>
+                    {setupSubmitting ? 'Verifying...' : 'Enable 2FA'}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </div>
+          ) : (
+            <form onSubmit={handleSetupTwoFA} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="setup-2fa-password">Current Password</Label>
+                <Input
+                  id="setup-2fa-password"
+                  type="password"
+                  value={setupPassword}
+                  onChange={(e) => setSetupPassword(e.target.value)}
+                  placeholder="Confirm your password"
+                  required
+                />
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={resetSetupDialog}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={setupSubmitting}>
+                  {setupSubmitting ? 'Preparing...' : 'Generate QR Code'}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={disableDialogOpen}
+        onOpenChange={(open) => {
+          setDisableDialogOpen(open);
+          if (!open) {
+            setDisablePassword('');
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Disable Two-Factor Authentication</DialogTitle>
+            <DialogDescription>
+              Enter your current password to remove the authenticator requirement from future logins.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleDisableTwoFA} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="disable-2fa-password">Current Password</Label>
+              <Input
+                id="disable-2fa-password"
+                type="password"
+                value={disablePassword}
+                onChange={(e) => setDisablePassword(e.target.value)}
+                placeholder="Confirm your password"
+                required
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setDisableDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" variant="destructive" disabled={disableSubmitting}>
+                {disableSubmitting ? 'Disabling...' : 'Disable 2FA'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={recoveryDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            resetRecoveryDialog();
+            return;
+          }
+          setRecoveryDialogOpen(open);
+        }}
+      >
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Regenerate Recovery Codes</DialogTitle>
+            <DialogDescription>
+              Generate a new set of single-use recovery codes. Your previous codes will stop working immediately.
+            </DialogDescription>
+          </DialogHeader>
+
+          {regeneratedRecoveryCodes ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <Label>New Recovery Codes</Label>
+                <Button type="button" variant="outline" size="sm" onClick={() => void copyRecoveryCodes(regeneratedRecoveryCodes.recovery_codes)}>
+                  <Copy01Icon className="mr-2 h-4 w-4" />
+                  Copy all
+                </Button>
+              </div>
+              <RecoveryCodeList codes={regeneratedRecoveryCodes.recovery_codes} />
+              <DialogFooter>
+                <Button type="button" onClick={resetRecoveryDialog}>
+                  Done
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            <form onSubmit={handleRegenerateRecoveryCodes} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="recovery-password">Current Password</Label>
+                <Input
+                  id="recovery-password"
+                  type="password"
+                  value={recoveryPassword}
+                  onChange={(e) => setRecoveryPassword(e.target.value)}
+                  placeholder="Confirm your password"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="recovery-code-verify">Authenticator Code</Label>
+                <Input
+                  id="recovery-code-verify"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  value={recoveryVerificationCode}
+                  onChange={(e) => setRecoveryVerificationCode(e.target.value)}
+                  placeholder="123456"
+                  required
+                />
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={resetRecoveryDialog}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={recoverySubmitting}>
+                  {recoverySubmitting ? 'Regenerating...' : 'Regenerate Codes'}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <h2 className="text-xl font-semibold">Profile</h2>
 
@@ -372,6 +784,60 @@ export default function Profile() {
               </Button>
             </div>
           </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <CardTitle className="flex items-center gap-2">
+                <Shield02Icon className="h-5 w-5" />
+                Two-Factor Authentication
+              </CardTitle>
+              <CardDescription>
+                Add an authenticator app check to your Helpin sign-ins and keep recovery codes for backup access.
+              </CardDescription>
+            </div>
+            <div className={`rounded-full px-3 py-1 text-xs font-medium ${twoFAEnabled ? 'bg-emerald-100 text-emerald-800' : 'bg-muted text-muted-foreground'}`}>
+              {loadingTwoFAStatus ? 'Checking...' : twoFAEnabled ? 'Enabled' : 'Disabled'}
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {twoFAEnabled ? (
+            <>
+              <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
+                <div className="flex items-center gap-2 font-medium text-foreground">
+                  <SmartPhone01Icon className="h-4 w-4" />
+                  Authenticator app required at login
+                </div>
+                <p className="mt-2">
+                  Sign-ins now require your password plus a time-based one-time code. Recovery codes are single-use and should be stored offline.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <Button type="button" variant="outline" onClick={() => setRecoveryDialogOpen(true)}>
+                  <ArrowReloadHorizontalIcon className="mr-2 h-4 w-4" />
+                  Regenerate Recovery Codes
+                </Button>
+                <Button type="button" variant="destructive" onClick={() => setDisableDialogOpen(true)}>
+                  <LockKeyIcon className="mr-2 h-4 w-4" />
+                  Disable 2FA
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                Two-factor authentication is currently off. Enable it to require a code from your authenticator app whenever you sign in.
+              </div>
+              <Button type="button" onClick={() => setSetupDialogOpen(true)}>
+                <Shield02Icon className="mr-2 h-4 w-4" />
+                Enable 2FA
+              </Button>
+            </>
+          )}
         </CardContent>
       </Card>
 
