@@ -91,6 +91,7 @@ interface CreateTaskModalProps {
   workflow?: WorkflowWithStates;
   initialStateId?: string;
   initialTeamId?: string;
+  initialEpicId?: string;
   initialOwnerMemberId?: string;
   initialSprintId?: string;
   onCreate?: (payload: CreateTaskRequest) => Promise<CreatedTaskResult | void>;
@@ -254,6 +255,7 @@ export function CreateTaskModal({
   workflow,
   initialStateId,
   initialTeamId,
+  initialEpicId,
   initialOwnerMemberId,
   initialSprintId,
   onCreate,
@@ -350,6 +352,7 @@ export function CreateTaskModal({
         task_type: (initialTeam?.default_task_type as TaskType | undefined) ?? 'feature',
         requester_member_id: isTemplateMode ? '' : currentMemberId,
         team_id: effectiveTeamId,
+        epic_id: initialEpicId ?? '',
         owner_member_id: initialOwnerMemberId ?? '',
         sprint_id: initialSprintId ?? '',
       });
@@ -367,7 +370,7 @@ export function CreateTaskModal({
     setRecurringDraft(null);
     setRecurringDialogOpen(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `teams` excluded: only used to derive initial task type; including it causes form reset on background refetch
-  }, [open, initialStateId, initialTeamId, initialOwnerMemberId, initialSprintId, currentMemberId, isTemplateMode, editingTemplate]);
+  }, [open, initialStateId, initialTeamId, initialEpicId, initialOwnerMemberId, initialSprintId, currentMemberId, isTemplateMode, editingTemplate]);
 
   useEffect(() => {
     if (taskTypeDirty || (isTemplateMode && editingTemplate)) return;
@@ -688,6 +691,7 @@ export function CreateTaskModal({
             task_type: (resetTeam?.default_task_type as TaskType | undefined) ?? 'feature',
             requester_member_id: currentMemberId,
             team_id: initialTeamId ?? '',
+            epic_id: initialEpicId ?? '',
             owner_member_id: initialOwnerMemberId ?? '',
             sprint_id: initialSprintId ?? '',
           });
@@ -717,6 +721,7 @@ export function CreateTaskModal({
     initialStateId,
     currentMemberId,
     initialTeamId,
+    initialEpicId,
     initialOwnerMemberId,
     initialSprintId,
     isTemplateMode,
