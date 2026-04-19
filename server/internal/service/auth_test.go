@@ -400,6 +400,138 @@ func TestTwoFactorAuthenticationFlow(t *testing.T) {
 			t.Fatal("expected reused recovery code to fail")
 		}
 	})
+
+	t.Run("regenerating recovery codes invalidates prior codes", func(t *testing.T) {
+		svc, _ := newAuthService(t)
+		ctx := context.Background()
+
+		signupResp, err := svc.Signup(ctx, model.SignupRequest{
+			Email:    "rotate@example.com",
+			Password: "password123",
+			FullName: "Rotate Codes",
+		})
+		if err != nil {
+			t.Fatalf("signup failed: %v", err)
+		}
+
+		setupResp, err := svc.Setup2FA(ctx, signupResp.User.ID, model.TwoFASetupRequest{Password: "password123"})
+		if err != nil {
+			t.Fatalf("setup 2fa failed: %v", err)
+		}
+
+		parsed, err := url.Parse(setupResp.ProvisioningURI)
+		if err != nil {
+			t.Fatalf("parse provisioning uri: %v", err)
+		}
+		secret := parsed.Query().Get("secret")
+		code, err := apptotp.GenerateCode(secret, time.Now())
+		if err != nil {
+			t.Fatalf("generate setup code: %v", err)
+		}
+		if err := svc.Verify2FASetup(ctx, signupResp.User.ID, model.TwoFAVerifyRequest{TOTPCode: code}); err != nil {
+			t.Fatalf("verify 2fa setup failed: %v", err)
+		}
+
+		regenCode, err := apptotp.GenerateCode(secret, time.Now())
+		if err != nil {
+			t.Fatalf("generate regeneration code: %v", err)
+		}
+		regenerated, err := svc.RegenerateRecoveryCodes(ctx, signupResp.User.ID, model.TwoFARegenerateRequest{
+			Password: "password123",
+			TOTPCode: regenCode,
+		})
+		if err != nil {
+			t.Fatalf("regenerate recovery codes failed: %v", err)
+		}
+		if len(regenerated.RecoveryCodes) != recoveryCodeCount {
+			t.Fatalf("expected %d regenerated recovery codes, got %d", recoveryCodeCount, len(regenerated.RecoveryCodes))
+		}
+
+		signinResp, err := svc.Signin(ctx, model.SigninRequest{
+			Email:    "rotate@example.com",
+			Password: "password123",
+		})
+		if err != nil {
+			t.Fatalf("signin failed: %v", err)
+		}
+		if _, err := svc.Verify2FASignin(ctx, model.TwoFASigninRequest{
+			TwoFAToken:   signinResp.TwoFAToken,
+			RecoveryCode: setupResp.RecoveryCodes[0],
+		}); err == nil {
+			t.Fatal("expected original recovery code to fail after regeneration")
+		}
+
+		signinResp, err = svc.Signin(ctx, model.SigninRequest{
+			Email:    "rotate@example.com",
+			Password: "password123",
+		})
+		if err != nil {
+			t.Fatalf("second signin failed: %v", err)
+		}
+		if _, err := svc.Verify2FASignin(ctx, model.TwoFASigninRequest{
+			TwoFAToken:   signinResp.TwoFAToken,
+			RecoveryCode: regenerated.RecoveryCodes[0],
+		}); err != nil {
+			t.Fatalf("expected regenerated recovery code to succeed: %v", err)
+		}
+	})
+
+	t.Run("disabling 2fa restores password-only signin", func(t *testing.T) {
+		svc, _ := newAuthService(t)
+		ctx := context.Background()
+
+		signupResp, err := svc.Signup(ctx, model.SignupRequest{
+			Email:    "disable@example.com",
+			Password: "password123",
+			FullName: "Disable Two Factor",
+		})
+		if err != nil {
+			t.Fatalf("signup failed: %v", err)
+		}
+
+		setupResp, err := svc.Setup2FA(ctx, signupResp.User.ID, model.TwoFASetupRequest{Password: "password123"})
+		if err != nil {
+			t.Fatalf("setup 2fa failed: %v", err)
+		}
+
+		parsed, err := url.Parse(setupResp.ProvisioningURI)
+		if err != nil {
+			t.Fatalf("parse provisioning uri: %v", err)
+		}
+		code, err := apptotp.GenerateCode(parsed.Query().Get("secret"), time.Now())
+		if err != nil {
+			t.Fatalf("generate setup code: %v", err)
+		}
+		if err := svc.Verify2FASetup(ctx, signupResp.User.ID, model.TwoFAVerifyRequest{TOTPCode: code}); err != nil {
+			t.Fatalf("verify 2fa setup failed: %v", err)
+		}
+
+		if err := svc.Disable2FA(ctx, signupResp.User.ID, model.TwoFADisableRequest{Password: "password123"}); err != nil {
+			t.Fatalf("disable 2fa failed: %v", err)
+		}
+
+		status, err := svc.Get2FAStatus(ctx, signupResp.User.ID)
+		if err != nil {
+			t.Fatalf("get 2fa status failed: %v", err)
+		}
+		if status.Enabled {
+			t.Fatal("expected 2fa status to be disabled")
+		}
+
+		signinResp, err := svc.Signin(ctx, model.SigninRequest{
+			Email:    "disable@example.com",
+			Password: "password123",
+		})
+		if err != nil {
+			t.Fatalf("signin failed: %v", err)
+		}
+		if signinResp.Requires2FA {
+			t.Fatal("did not expect 2fa challenge after disabling 2fa")
+		}
+		if signinResp.AccessToken == "" || signinResp.RefreshToken == "" {
+			t.Fatal("expected direct auth tokens after disabling 2fa")
+		}
+	})
 }
 
 // ----- GetProfile Tests ----------------------------------------------------

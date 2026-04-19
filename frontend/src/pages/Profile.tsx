@@ -54,6 +54,12 @@ type PendingAvatarFile = {
   previewUrl: string;
 };
 
+type ManualSetupDetails = {
+  accountName: string;
+  issuer: string;
+  secret: string;
+};
+
 function RecoveryCodeList({ codes }: { codes: string[] }) {
   return (
     <div className="grid grid-cols-2 gap-2">
@@ -64,6 +70,31 @@ function RecoveryCodeList({ codes }: { codes: string[] }) {
       ))}
     </div>
   );
+}
+
+function parseManualSetupDetails(provisioningURI?: string | null): ManualSetupDetails | null {
+  if (!provisioningURI) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(provisioningURI);
+    const accountLabel = decodeURIComponent(parsed.pathname.replace(/^\/+/, ''));
+    const accountName = accountLabel.includes(':') ? accountLabel.slice(accountLabel.indexOf(':') + 1) : accountLabel;
+    const issuer = parsed.searchParams.get('issuer') ?? '';
+    const secret = parsed.searchParams.get('secret') ?? '';
+    if (!accountName || !issuer || !secret) {
+      return null;
+    }
+
+    return { accountName, issuer, secret };
+  } catch {
+    return null;
+  }
+}
+
+function formatManualSecret(secret: string) {
+  return secret.match(/.{1,4}/g)?.join(' ') ?? secret;
 }
 
 export default function Profile() {
@@ -108,6 +139,7 @@ export default function Profile() {
   const [recoveryVerificationCode, setRecoveryVerificationCode] = useState('');
   const [regeneratedRecoveryCodes, setRegeneratedRecoveryCodes] = useState<RecoveryCodesResponse | null>(null);
   const [recoverySubmitting, setRecoverySubmitting] = useState(false);
+  const manualSetupDetails = parseManualSetupDetails(setupProvisioning?.provisioning_uri);
 
   const initials = getInitials(user?.full_name || user?.email);
   const profileAvatarSrc = resolveTeamMemberAvatarSrc({
@@ -221,14 +253,16 @@ export default function Profile() {
     }
   };
 
-  const copyRecoveryCodes = async (codes: string[]) => {
+  const copyText = async (value: string, successMessage: string) => {
     try {
-      await navigator.clipboard.writeText(codes.join('\n'));
-      toast.success('Recovery codes copied');
+      await navigator.clipboard.writeText(value);
+      toast.success(successMessage);
     } catch {
-      toast.error('Failed to copy recovery codes');
+      toast.error('Failed to copy to clipboard');
     }
   };
+
+  const copyRecoveryCodes = async (codes: string[]) => copyText(codes.join('\n'), 'Recovery codes copied');
 
   const resetSetupDialog = () => {
     setSetupDialogOpen(false);
@@ -501,6 +535,52 @@ export default function Profile() {
                     <br />
                     3. Enter the 6-digit code from your app to activate 2FA.
                   </div>
+                  {manualSetupDetails && (
+                    <div className="space-y-3 rounded-lg border p-4">
+                      <div className="space-y-1">
+                        <Label>Can&apos;t scan the QR code?</Label>
+                        <p className="text-sm text-muted-foreground">
+                          Add a TOTP account manually with the setup key below.
+                        </p>
+                      </div>
+                      <div className="rounded-md border bg-muted/30 px-3 py-2">
+                        <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Setup Key</div>
+                        <div className="mt-1 break-all font-mono text-sm tracking-[0.18em]">
+                          {formatManualSecret(manualSetupDetails.secret)}
+                        </div>
+                      </div>
+                      <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
+                        <div className="rounded-md border bg-muted/30 px-3 py-2">
+                          <div className="text-xs uppercase tracking-[0.18em]">Account</div>
+                          <div className="mt-1 text-foreground">{manualSetupDetails.accountName}</div>
+                        </div>
+                        <div className="rounded-md border bg-muted/30 px-3 py-2">
+                          <div className="text-xs uppercase tracking-[0.18em]">Issuer</div>
+                          <div className="mt-1 text-foreground">{manualSetupDetails.issuer}</div>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void copyText(manualSetupDetails.secret, 'Setup key copied')}
+                        >
+                          <Copy01Icon className="mr-2 h-4 w-4" />
+                          Copy setup key
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void copyText(setupProvisioning.provisioning_uri, 'Provisioning link copied')}
+                        >
+                          <Copy01Icon className="mr-2 h-4 w-4" />
+                          Copy provisioning link
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <Label>Recovery Codes</Label>
