@@ -74,7 +74,7 @@ function TaskCardAgentBadge({
   const isWorking = agent?.status === 'working';
 
   return (
-    <span className="relative block h-6 w-6 shrink-0">
+    <span className="relative block h-7 w-7 shrink-0">
       <svg
         viewBox="0 0 100 100"
         aria-hidden="true"
@@ -310,18 +310,9 @@ function TaskCardComponent({
         <div className="w-0.5 shrink-0 self-stretch rounded-l-lg" style={{ backgroundColor: task.state_color }} />
       )}
       <div className="p-3 flex-1 min-w-0">
-      {/* Row 1: Task type + Epic + Team + Priority */}
+      {/* Row 1: State badge + Team */}
+      {((showStateBadge && task.state_name) || teamName) && (
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        {vis.task_type && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="shrink-0">
-              <TaskTypeIcon taskType={task.task_type} className="h-3.5 w-3.5" />
-            </span>
-          </TooltipTrigger>
-          <TooltipContent side="top">{taskTypeCfg.label}</TooltipContent>
-        </Tooltip>
-        )}
         {showStateBadge && task.state_name && (
           <span className={cn(pillBase, 'shrink-0 border-border bg-muted/50 text-muted-foreground')}>
             <StateTypeIcon stateType={(task.state_type as import('@/lib/pmTypes').StateType) ?? 'unstarted'} className="h-3 w-3" />
@@ -336,96 +327,41 @@ function TaskCardComponent({
                 {teamName}
               </span>
         )}
-
-        {/* Priority pill — clickable dropdown (hidden when 'none') */}
-        {vis.priority && task.priority !== 'none' && (workspaceId ? (
-          <Popover open={priorityOpen} onOpenChange={setPriorityOpen}>
-            <Tooltip open={priorityOpen ? false : undefined}>
-              <TooltipTrigger asChild>
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    className={cn(
-                      'flex h-5 shrink-0 items-center rounded-sm border-[0.5px] bg-muted/50 px-1 transition-colors hover:bg-muted',
-                      PRIORITY_BORDER_COLOR[task.priority],
-                    )}
-                    onClick={(e) => { e.stopPropagation(); setPriorityOpen(true); }}
-                  >
-                    <PriorityIcon priority={task.priority} className="h-3.5 w-3.5" />
-                  </button>
-                </PopoverTrigger>
-              </TooltipTrigger>
-              <TooltipContent side="top">Priority: {priorityCfg.label}</TooltipContent>
-            </Tooltip>
-            {priorityOpen && (
-              <PopoverContent
-                className="w-[180px] p-0"
-                align="end"
-                side="bottom"
-                onClick={(e) => e.stopPropagation()}
-                onKeyDown={(e) => e.stopPropagation()}
-              >
-                <Command>
-                  <CommandInput placeholder="Search..." className="h-8 text-xs" />
-                  <CommandList>
-                    <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No match</CommandEmpty>
-                    <CommandGroup>
-                      {ALL_PRIORITIES.map((p) => {
-                        const cfg = PRIORITY_CONFIG[p];
-                        return (
-                          <CommandItem
-                            key={p}
-                            value={cfg.label}
-                            onSelect={() => handleChangePriority(p)}
-                            className="flex items-center gap-2 text-xs"
-                          >
-                            <PriorityIcon priority={p} className="h-3.5 w-3.5" />
-                            <span>{cfg.label}</span>
-                            {task.priority === p && <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" />}
-                          </CommandItem>
-                        );
-                      })}
-                    </CommandGroup>
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            )}
-          </Popover>
-        ) : (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className={cn(
-                'flex h-5 shrink-0 items-center rounded-sm border-[0.5px] bg-muted/50 px-1',
-                PRIORITY_BORDER_COLOR[task.priority],
-              )}>
-                <PriorityIcon priority={task.priority} className="h-3.5 w-3.5" />
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="top">Priority: {priorityCfg.label}</TooltipContent>
-          </Tooltip>
-        ))}
       </div>
+      )}
 
-      {/* Row 2: Title */}
+      {/* Row 2: Title + Task-type icon (right) */}
       {task.recurring_template_id ? (
         <div className="mt-3">
           <RecurringTemplateBadge compact occurrenceNumber={task.recurring_occurrence_number} />
         </div>
       ) : null}
-      {titleIsLong ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <h4 className="mb-3.5 mt-2 line-clamp-2 text-sm font-medium leading-snug text-foreground">
-              {task.name}
-            </h4>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" className="max-w-[300px]">{task.name}</TooltipContent>
-        </Tooltip>
-      ) : (
-        <h4 className="mb-3.5 mt-2 line-clamp-2 text-sm font-medium leading-snug text-foreground">
-          {task.name}
-        </h4>
-      )}
+      <div className="mb-3.5 mt-2 flex items-start gap-2">
+        {titleIsLong ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <h4 className="m-0 flex-1 line-clamp-2 text-sm font-medium leading-snug text-foreground">
+                {task.name}
+              </h4>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-[300px]">{task.name}</TooltipContent>
+          </Tooltip>
+        ) : (
+          <h4 className="m-0 flex-1 line-clamp-2 text-sm font-medium leading-snug text-foreground">
+            {task.name}
+          </h4>
+        )}
+        {vis.task_type && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="shrink-0">
+                <TaskTypeIcon taskType={task.task_type} className="h-4 w-4" />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top">{taskTypeCfg.label}</TooltipContent>
+          </Tooltip>
+        )}
+      </div>
 
       {/* Epic row */}
       {vis.epic && task.epic_name && (
@@ -517,8 +453,75 @@ function TaskCardComponent({
         ))}
       </div>
 
-      {/* Row 4: Footer - due date, estimate + assignee */}
+      {/* Row 4: Footer - priority, due date, estimate + assignee */}
       <div className="mt-2 flex items-center gap-1.5">
+        {/* Priority pill — clickable dropdown (hidden when 'none') */}
+        {vis.priority && task.priority !== 'none' && (workspaceId ? (
+          <Popover open={priorityOpen} onOpenChange={setPriorityOpen}>
+            <Tooltip open={priorityOpen ? false : undefined}>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className={cn(
+                      'flex h-6 shrink-0 items-center rounded-sm border-[0.5px] bg-muted/50 px-1 transition-colors hover:bg-muted',
+                      PRIORITY_BORDER_COLOR[task.priority],
+                    )}
+                    onClick={(e) => { e.stopPropagation(); setPriorityOpen(true); }}
+                  >
+                    <PriorityIcon priority={task.priority} className="h-4 w-4" />
+                  </button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="top">Priority: {priorityCfg.label}</TooltipContent>
+            </Tooltip>
+            {priorityOpen && (
+              <PopoverContent
+                className="w-[180px] p-0"
+                align="start"
+                side="bottom"
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+              >
+                <Command>
+                  <CommandInput placeholder="Search..." className="h-8 text-xs" />
+                  <CommandList>
+                    <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No match</CommandEmpty>
+                    <CommandGroup>
+                      {ALL_PRIORITIES.map((p) => {
+                        const cfg = PRIORITY_CONFIG[p];
+                        return (
+                          <CommandItem
+                            key={p}
+                            value={cfg.label}
+                            onSelect={() => handleChangePriority(p)}
+                            className="flex items-center gap-2 text-xs"
+                          >
+                            <PriorityIcon priority={p} className="h-3.5 w-3.5" />
+                            <span>{cfg.label}</span>
+                            {task.priority === p && <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" />}
+                          </CommandItem>
+                        );
+                      })}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            )}
+          </Popover>
+        ) : (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className={cn(
+                'flex h-6 shrink-0 items-center rounded-sm border-[0.5px] bg-muted/50 px-1',
+                PRIORITY_BORDER_COLOR[task.priority],
+              )}>
+                <PriorityIcon priority={task.priority} className="h-4 w-4" />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top">Priority: {priorityCfg.label}</TooltipContent>
+          </Tooltip>
+        ))}
         {vis.due_date && due && (
           <Tooltip>
             <TooltipTrigger asChild>
