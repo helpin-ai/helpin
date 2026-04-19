@@ -476,6 +476,66 @@ func TestTwoFactorAuthenticationFlow(t *testing.T) {
 		}
 	})
 
+	t.Run("setup cannot replace already enabled 2fa", func(t *testing.T) {
+		svc, _ := newAuthService(t)
+		ctx := context.Background()
+
+		signupResp, err := svc.Signup(ctx, model.SignupRequest{
+			Email:    "preserve@example.com",
+			Password: "password123",
+			FullName: "Preserve Existing 2FA",
+		})
+		if err != nil {
+			t.Fatalf("signup failed: %v", err)
+		}
+
+		setupResp, err := svc.Setup2FA(ctx, signupResp.User.ID, model.TwoFASetupRequest{Password: "password123"})
+		if err != nil {
+			t.Fatalf("initial setup 2fa failed: %v", err)
+		}
+
+		parsed, err := url.Parse(setupResp.ProvisioningURI)
+		if err != nil {
+			t.Fatalf("parse provisioning uri: %v", err)
+		}
+		secret := parsed.Query().Get("secret")
+		code, err := apptotp.GenerateCode(secret, time.Now())
+		if err != nil {
+			t.Fatalf("generate setup code: %v", err)
+		}
+		if err := svc.Verify2FASetup(ctx, signupResp.User.ID, model.TwoFAVerifyRequest{TOTPCode: code}); err != nil {
+			t.Fatalf("verify 2fa setup failed: %v", err)
+		}
+
+		if _, err := svc.Setup2FA(ctx, signupResp.User.ID, model.TwoFASetupRequest{Password: "password123"}); err == nil {
+			t.Fatal("expected second setup attempt to fail once 2fa is enabled")
+		} else if !strings.Contains(err.Error(), "already enabled") {
+			t.Fatalf("expected already enabled error, got %v", err)
+		}
+
+		signinResp, err := svc.Signin(ctx, model.SigninRequest{
+			Email:    "preserve@example.com",
+			Password: "password123",
+		})
+		if err != nil {
+			t.Fatalf("signin failed: %v", err)
+		}
+		if !signinResp.Requires2FA {
+			t.Fatal("expected signin to still require 2fa")
+		}
+
+		signinCode, err := apptotp.GenerateCode(secret, time.Now())
+		if err != nil {
+			t.Fatalf("generate signin code: %v", err)
+		}
+		if _, err := svc.Verify2FASignin(ctx, model.TwoFASigninRequest{
+			TwoFAToken: signinResp.TwoFAToken,
+			TOTPCode:   signinCode,
+		}); err != nil {
+			t.Fatalf("expected existing 2fa secret to remain valid: %v", err)
+		}
+	})
+
 	t.Run("disabling 2fa restores password-only signin", func(t *testing.T) {
 		svc, _ := newAuthService(t)
 		ctx := context.Background()

@@ -247,6 +247,9 @@ func (s *AuthService) Setup2FA(ctx context.Context, userID string, req model.Two
 	if user == nil {
 		return nil, fmt.Errorf("user not found")
 	}
+	if user.TOTPVerified {
+		return nil, fmt.Errorf("two-factor authentication is already enabled")
+	}
 	if err := auth.CheckPassword(req.Password, user.PasswordHash); err != nil {
 		return nil, fmt.Errorf("current password is incorrect")
 	}

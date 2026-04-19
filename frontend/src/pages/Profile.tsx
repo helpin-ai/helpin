@@ -129,6 +129,7 @@ export default function Profile() {
   const [setupPassword, setSetupPassword] = useState('');
   const [setupProvisioning, setSetupProvisioning] = useState<TwoFASetupResponse | null>(null);
   const [setupQRCodeUrl, setSetupQRCodeUrl] = useState('');
+  const [setupQRCodeStatus, setSetupQRCodeStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [setupVerificationCode, setSetupVerificationCode] = useState('');
   const [setupSubmitting, setSetupSubmitting] = useState(false);
   const [disableDialogOpen, setDisableDialogOpen] = useState(false);
@@ -216,9 +217,11 @@ export default function Profile() {
     const buildQRCode = async () => {
       if (!setupProvisioning?.provisioning_uri) {
         setSetupQRCodeUrl('');
+        setSetupQRCodeStatus('idle');
         return;
       }
 
+      setSetupQRCodeStatus('loading');
       try {
         const dataUrl = await QRCode.toDataURL(setupProvisioning.provisioning_uri, {
           margin: 1,
@@ -226,10 +229,12 @@ export default function Profile() {
         });
         if (!cancelled) {
           setSetupQRCodeUrl(dataUrl);
+          setSetupQRCodeStatus('ready');
         }
       } catch {
         if (!cancelled) {
           setSetupQRCodeUrl('');
+          setSetupQRCodeStatus('error');
         }
       }
     };
@@ -269,6 +274,7 @@ export default function Profile() {
     setSetupPassword('');
     setSetupProvisioning(null);
     setSetupQRCodeUrl('');
+    setSetupQRCodeStatus('idle');
     setSetupVerificationCode('');
   };
 
@@ -519,8 +525,13 @@ export default function Profile() {
             <div className="space-y-6">
               <div className="grid gap-6 md:grid-cols-[256px_1fr]">
                 <div className="flex items-center justify-center rounded-xl border bg-white p-4">
-                  {setupQRCodeUrl ? (
+                  {setupQRCodeStatus === 'ready' && setupQRCodeUrl ? (
                     <img src={setupQRCodeUrl} alt="Authenticator QR code" className="h-64 w-64" />
+                  ) : setupQRCodeStatus === 'error' ? (
+                    <div className="flex h-64 w-64 flex-col items-center justify-center gap-2 px-6 text-center text-sm text-muted-foreground">
+                      <p>QR code unavailable.</p>
+                      <p>Use the manual setup key below or copy the provisioning link.</p>
+                    </div>
                   ) : (
                     <div className="flex h-64 w-64 items-center justify-center text-sm text-muted-foreground">
                       Generating QR code...
