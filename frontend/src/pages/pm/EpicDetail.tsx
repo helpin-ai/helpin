@@ -532,7 +532,25 @@ export function EpicDetailPage() {
     search: epic?.epic.team_id ? { team: epic.epic.team_id } : {},
   });
 
-  const renderInlineAddTaskButton = (className: string) => (
+  const renderTaskHeaderAddButton = () => (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+      onClick={() => void handleStartCreateTask()}
+      disabled={!canCreateTask || openingCreateTask}
+      title={createTaskDisabledReason ?? undefined}
+    >
+      {openingCreateTask ? (
+        <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <PlusSignIcon className="h-3.5 w-3.5" />
+      )}
+      Add task
+    </Button>
+  );
+
+  const renderGhostAddTaskRow = (className: string) => (
     <button
       type="button"
       className={className}
@@ -722,31 +740,19 @@ export function EpicDetailPage() {
 
           {/* Tasks */}
           <div>
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Tasks ({tasks.length})
               </h3>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 gap-1.5 text-xs"
-                onClick={() => void handleStartCreateTask()}
-                disabled={!canCreateTask || openingCreateTask}
-                title={createTaskDisabledReason ?? undefined}
-              >
-                {openingCreateTask ? (
-                  <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <PlusSignIcon className="h-3.5 w-3.5" />
-                )}
-                Add task
-              </Button>
+              {renderTaskHeaderAddButton()}
             </div>
             {tasks.length === 0 ? (
-              <div className="mt-3 space-y-3">
-                <p className="text-sm text-muted-foreground">No tasks linked yet.</p>
-                {renderInlineAddTaskButton(
-                  'inline-flex h-9 items-center gap-2 rounded-md border border-dashed border-border/60 px-3 text-sm text-muted-foreground transition-colors hover:border-border hover:bg-muted/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60',
+              <div className="mt-3 overflow-hidden rounded-lg border border-border/60 bg-card">
+                <div className="px-3 py-3">
+                  <p className="text-sm text-muted-foreground">No tasks linked yet.</p>
+                </div>
+                {renderGhostAddTaskRow(
+                  'flex h-9 w-full items-center gap-2 border-t border-dashed border-border/60 px-3 text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60',
                 )}
               </div>
             ) : workflow ? (
@@ -763,8 +769,8 @@ export function EpicDetailPage() {
                   epicId={epicId}
                   externalTasks={tasks}
                   onOpenTask={openTask}
-                  footer={renderInlineAddTaskButton(
-                    'flex h-9 w-full items-center gap-2 px-3 text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60',
+                  footer={renderGhostAddTaskRow(
+                    'flex h-9 w-full items-center gap-2 px-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60',
                   )}
                 />
               </div>
