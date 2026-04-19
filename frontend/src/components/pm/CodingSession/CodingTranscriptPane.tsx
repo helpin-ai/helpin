@@ -87,6 +87,7 @@ export function CodingTranscriptPane({
   loading = false,
   onSendMessage,
   sendingMessage = false,
+  messagePlaceholder = 'Reply to agent… (⌘↵ to send)',
   session,
   activeInteraction,
   acting,
@@ -101,6 +102,7 @@ export function CodingTranscriptPane({
   loading?: boolean;
   onSendMessage?: (content: string) => Promise<void>;
   sendingMessage?: boolean;
+  messagePlaceholder?: string;
   session?: CodingSession | null;
   activeInteraction?: CodingSessionInteraction | null;
   acting?: string | null;
@@ -328,7 +330,7 @@ export function CodingTranscriptPane({
       ) : null}
 
       {onSendMessage ? (
-        <MessageInput onSend={onSendMessage} sending={sendingMessage} />
+        <MessageInput onSend={onSendMessage} sending={sendingMessage} placeholder={messagePlaceholder} />
       ) : null}
     </section>
   );
@@ -426,7 +428,15 @@ function InterruptionOverlay({
   );
 }
 
-function MessageInput({ onSend, sending }: { onSend: (content: string) => Promise<void>; sending: boolean }) {
+function MessageInput({
+  onSend,
+  sending,
+  placeholder,
+}: {
+  onSend: (content: string) => Promise<void>;
+  sending: boolean;
+  placeholder: string;
+}) {
   const [value, setValue] = useState('');
 
   const handleSubmit = async () => {
@@ -448,7 +458,7 @@ function MessageInput({ onSend, sending }: { onSend: (content: string) => Promis
               void handleSubmit();
             }
           }}
-          placeholder="Reply to agent… (⌘↵ to send)"
+          placeholder={placeholder}
           className="min-h-[2.5rem] max-h-32 resize-none text-sm"
           disabled={sending}
           rows={1}

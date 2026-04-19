@@ -396,6 +396,26 @@ func (h *AgentHandler) SendCodingSessionMessage(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, message)
 }
 
+// ContinueCodingSession handles POST /api/pm/coding-sessions/{id}/continue.
+func (h *AgentHandler) ContinueCodingSession(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	sessionID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+
+	var req model.ContinueAgentRunRequest
+	if err := decodeJSON(r, &req); err != nil && r.ContentLength > 0 {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	run, err := h.agentService.ContinueTerminalRun(r.Context(), workspaceID, sessionID, actorID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, run)
+}
+
 // ResumeCodingSession handles POST /api/pm/coding-sessions/{id}/resume.
 func (h *AgentHandler) ResumeCodingSession(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
@@ -511,6 +531,26 @@ func (h *AgentHandler) ResumeRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	run, err := h.agentService.ResumeRun(r.Context(), workspaceID, runID, actorID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, run)
+}
+
+// ContinueRun handles POST /api/pm/agent-runs/{id}/continue.
+func (h *AgentHandler) ContinueRun(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	runID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+
+	var req model.ContinueAgentRunRequest
+	if err := decodeJSON(r, &req); err != nil && r.ContentLength > 0 {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	run, err := h.agentService.ContinueTerminalRun(r.Context(), workspaceID, runID, actorID, req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

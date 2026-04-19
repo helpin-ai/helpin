@@ -412,7 +412,7 @@ func (e *AutomationRuleEngine) executeStartAgentRun(ctx context.Context, rule *m
 		AdditionalContext: cfg.AdditionalContext,
 		BaseBranch:        nilIfEmpty(baseBranch),
 		WorkingBranch:     nilIfEmpty(workingBranch),
-	}, nil, trigger, eventContext); err != nil {
+	}, nil, trigger, eventContext, nil); err != nil {
 		return fmt.Errorf("start agent run: %w", err)
 	}
 

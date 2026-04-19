@@ -12,6 +12,7 @@ import type {
   AgentRunMessage,
   AgentTriggerUsageSummary,
   ApproveAgentRunRequest,
+  ContinueAgentRunRequest,
   AutomationRule,
   CreateAgentRequest,
   CreateAutomationRuleRequest,
@@ -152,6 +153,9 @@ export const automationService = {
 
   resumeRun: (workspaceId: string, runId: string, payload: ResumeAgentRunRequest) =>
     api.post<AgentRun>(`/automation/runs/${runId}/resume${qs(workspaceId)}`, payload),
+
+  continueRun: (workspaceId: string, runId: string, payload?: ContinueAgentRunRequest) =>
+    api.post<AgentRun>(`/automation/runs/${runId}/continue${qs(workspaceId)}`, payload ?? {}),
 
   cancelRun: (workspaceId: string, runId: string) =>
     api.post<AgentRun>(`/automation/runs/${runId}/cancel${qs(workspaceId)}`, {}),
