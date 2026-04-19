@@ -564,7 +564,8 @@ func (s *EmailFallbackService) fireEmail(ctx context.Context, conversationID str
 	if lastName := strings.TrimSpace(derefString(pending[len(pending)-1].SenderDisplayName)); lastName != "" {
 		agentName = lastName
 	}
-	from := fmt.Sprintf("%s - %s <%s>", agentName, workspaceName, s.emailClient.FromEmail())
+	fromAddress := s.resolveOutboundFromAddress(ctx, conv)
+	from := fmt.Sprintf("%s - %s <%s>", agentName, workspaceName, fromAddress)
 
 	logID := uuid.NewString()
 	rfcMessageID := fmt.Sprintf("<helpin-%s@%s>", logID, s.replyDomain)
@@ -974,6 +975,31 @@ func (s *EmailFallbackService) unsubscribeAddress(conversationID string) string 
 		domain = "replies.helpin.email"
 	}
 	return fmt.Sprintf("unsubscribe-%s@%s", conversationID, domain)
+}
+
+// resolveOutboundFromAddress returns the branded sender address for a
+// conversation's outbound email. It prefers the mailbox-aware route address
+// (<handle>@<slug>.<route_domain>) so replies land on the verified customer
+// domain, falling back to the legacy global Postmark sender when the slug or
+// route domain is unavailable.
+func (s *EmailFallbackService) resolveOutboundFromAddress(ctx context.Context, conv *model.SupportConversation) string {
+	fallback := s.emailClient.FromEmail()
+	if s.supportInboxService == nil || conv == nil {
+		return fallback
+	}
+	addr, err := s.supportInboxService.BuildOutboundFromAddress(ctx, conv.WorkspaceID, conv.MailboxID)
+	if err != nil {
+		s.logger.WarnContext(ctx, "mailbox-branded outbound from unavailable, using fallback sender",
+			"error", err,
+			"workspace_id", conv.WorkspaceID,
+			"conversation_id", conv.ID,
+		)
+		return fallback
+	}
+	if strings.TrimSpace(addr) == "" {
+		return fallback
+	}
+	return addr
 }
 
 func (s *EmailFallbackService) isVisitorOnline(ctx context.Context, workspaceID string, anonymousID *string) (bool, error) {

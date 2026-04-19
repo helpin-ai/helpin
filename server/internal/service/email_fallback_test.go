@@ -120,6 +120,7 @@ func setupEmailFallbackTestEnvWithRedis(t *testing.T, settings model.SupportInbo
 	supportInboxService := NewSupportInboxService(convRepo, repository.NewSupportMailboxRepository(db), messageRepo, nil, nil, installRepo, sessionRepo, nil, nil, nil, repository.NewCRMContactRepository(db), nil, nil, nil, nil)
 	supportInboxService.SetEmailRouteRepository(routeRepo)
 	supportInboxService.SetWorkspaceRepo(workspaceRepo)
+	supportInboxService.SetRouteDomain("on.helpin.email")
 	service.SetSupportInboxService(supportInboxService)
 
 	return &emailFallbackTestEnv{
@@ -312,7 +313,7 @@ func TestEmailFallbackFireEmailMarksMessagesAndLogs(t *testing.T) {
 	if captured.ReplyTo != "conv-"+conversationID+"@replies.helpin.ai" {
 		t.Fatalf("unexpected reply-to: %q", captured.ReplyTo)
 	}
-	if !strings.Contains(captured.From, "Alex Agent - Acme Support <noreply@example.com>") {
+	if !strings.Contains(captured.From, "Alex Agent - Acme Support <inbox@acme.on.helpin.email>") {
 		t.Fatalf("unexpected from: %q", captured.From)
 	}
 	if !strings.Contains(captured.HtmlBody, "#helpin-conv="+conversationID) {
