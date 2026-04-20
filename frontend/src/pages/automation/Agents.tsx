@@ -1399,9 +1399,9 @@ export function AgentsPage() {
     setCreatingVersion(false);
   };
 
-  const handleSaveWorkspaceVersion = async () => {
-    if (!workspaceId || !editingAgent?.is_system || !selectedPreset?.id) return;
-    setSaving(true);
+  const handleSaveWorkspaceVersion = async (options?: { silent?: boolean }) => {
+    if (!workspaceId || !editingAgent?.is_system || !selectedPreset?.id) return false;
+    if (!options?.silent) setSaving(true);
     const payload: UpdateWorkspaceAgentPresetVersionRequest = {
       label: selectedPreset.version_label,
       description: selectedPreset.description,
@@ -1418,12 +1418,25 @@ export function AgentsPage() {
     const res = await agentService.updatePresetVersion(workspaceId, selectedPreset.id, payload);
     if (res.error) {
       toast.error('Failed to save version', { description: res.error });
+      if (!options?.silent) setSaving(false);
+      return false;
+    }
+    await loadPresets();
+    if (!options?.silent) {
+      toast.success('Version saved');
+      setSaving(false);
+    }
+    return true;
+  };
+
+  const handleSaveAndPin = async () => {
+    setSaving(true);
+    const saved = await handleSaveWorkspaceVersion({ silent: true });
+    if (!saved) {
       setSaving(false);
       return;
     }
-    await loadPresets();
-    toast.success('Version saved');
-    setSaving(false);
+    await handleSave();
   };
 
   const handleDeleteWorkspaceVersion = async () => {
@@ -2572,11 +2585,13 @@ export function AgentsPage() {
             <div className="text-xs text-muted-foreground">
               {versionDraftOpen
                 ? 'Configure the new version, then create it.'
-                : isEditingWorkspaceVersion
-                  ? `Editing ${selectedPreset?.version_label}. Save changes to apply.`
-                  : hasPendingSystemVersionSelection
-                    ? `Pin ${selectedPreset?.version_label ?? 'this version'} to ${editingAgent?.name ?? 'this agent'}?`
-                    : 'No changes to save.'}
+                : isEditingWorkspaceVersion && hasPendingSystemVersionSelection
+                  ? `Save and pin ${selectedPreset?.version_label} to ${editingAgent?.name ?? 'this agent'}.`
+                  : isEditingWorkspaceVersion
+                    ? `Editing ${selectedPreset?.version_label}. Save changes to apply.`
+                    : hasPendingSystemVersionSelection
+                      ? `Pin ${selectedPreset?.version_label ?? 'this version'} to ${editingAgent?.name ?? 'this agent'}?`
+                      : 'No changes to save.'}
             </div>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={() => setSystemDrawerOpen(false)}>
@@ -2590,11 +2605,19 @@ export function AgentsPage() {
                 >
                   {creatingVersion ? 'Creating…' : 'Create version'}
                 </Button>
+              ) : isEditingWorkspaceVersion && hasPendingSystemVersionSelection ? (
+                <Button
+                  size="sm"
+                  disabled={saving}
+                  onClick={handleSaveAndPin}
+                >
+                  {saving ? 'Saving & pinning…' : 'Save & pin'}
+                </Button>
               ) : isEditingWorkspaceVersion ? (
                 <Button
                   size="sm"
                   disabled={saving}
-                  onClick={handleSaveWorkspaceVersion}
+                  onClick={() => handleSaveWorkspaceVersion()}
                 >
                   {saving ? 'Saving…' : 'Save version'}
                 </Button>
