@@ -15,6 +15,7 @@ import {
 import { toast } from 'sonner';
 import { Favicon } from '@/components/ui/favicon';
 import { Input } from '@/components/ui/input';
+import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import {
   Dialog,
@@ -27,7 +28,7 @@ import { crmSearchService } from '@/lib/services/crmService';
 import { searchService, type SearchResult } from '@/lib/services/searchService';
 import { supportService } from '@/lib/services/supportService';
 import type { CRMAssociationEnriched, CRMObjectType, CRMSearchResult } from '@/lib/crmTypes';
-import type { SupportConversation } from '@/lib/pmTypes';
+import type { ConversationStatus, SupportConversation } from '@/lib/pmTypes';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { cn, truncateText } from '@/lib/utils';
 
@@ -54,6 +55,33 @@ const sectionConfig: Record<SectionType, { title: string; icon: React.ElementTyp
 };
 
 const crmAssociationTypes: CRMObjectType[] = ['contact', 'company', 'deal'];
+const supportStatusDotClass: Record<ConversationStatus, string> = {
+  open: 'bg-blue-500',
+  waiting_on_customer: 'bg-purple-500',
+  resolved: 'bg-green-500',
+  spam: 'bg-red-500',
+};
+
+function getAssociationStatusDot(type: CRMObjectType, assoc: CRMAssociationEnriched) {
+  if (type === 'support_conversation' && assoc.linked_object_status) {
+    return supportStatusDotClass[assoc.linked_object_status as ConversationStatus] ?? 'bg-muted-foreground/40';
+  }
+  return null;
+}
+
+function humanizeStatusLabel(value: string) {
+  return value
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function getAssociationStatusLabel(type: CRMObjectType, assoc: CRMAssociationEnriched) {
+  if (!assoc.linked_object_status) return null;
+  if (type === 'support_conversation') {
+    return humanizeStatusLabel(assoc.linked_object_status);
+  }
+  return assoc.linked_object_status;
+}
 
 function AssociationsRailSection({
   title,
@@ -274,10 +302,11 @@ export function AssociationsList({
               {visibleItems.map((assoc) => {
                 const Icon = config.icon;
                 const isCRMRecord = crmAssociationTypes.includes(type);
+                const rowKey = assoc.id || `inferred-${assoc.linkedType}-${assoc.linkedId}-${assoc.context_label ?? 'association'}`;
 
                 return (
                   <div
-                    key={assoc.id}
+                    key={rowKey}
                     className="group flex items-center gap-2 rounded-md px-1 py-1.5 text-xs transition-colors hover:bg-muted/40"
                   >
                     <button
@@ -285,25 +314,52 @@ export function AssociationsList({
                       className="flex min-w-0 flex-1 items-center gap-2 text-left"
                       onClick={() => handleNavigate(assoc.linkedType, assoc.linkedId)}
                     >
-                      <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      {!isCRMRecord && assoc.linked_object_display_id && (
-                        <span className="shrink-0 text-muted-foreground">{assoc.linked_object_display_id}</span>
+                      {type === 'task' || type === 'support_conversation' ? (
+                        (() => {
+                          const statusLabel = getAssociationStatusLabel(type, assoc);
+                          const dot = (
+                            <span
+                              className={cn('h-2.5 w-2.5 shrink-0 rounded-full bg-muted-foreground/30', getAssociationStatusDot(type, assoc))}
+                              style={type === 'task' && assoc.linked_object_status_color ? { backgroundColor: assoc.linked_object_status_color } : undefined}
+                              aria-label={statusLabel ?? undefined}
+                            />
+                          );
+                          return statusLabel ? (
+                            <QuickTooltip label={statusLabel}>
+                              {dot}
+                            </QuickTooltip>
+                          ) : dot;
+                        })()
+                      ) : (
+                        <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                       )}
                       <span className="truncate font-medium">{assoc.linked_object_name || assoc.linkedType}</span>
-                      {isCRMRecord && assoc.linked_object_display_id && (
-                        <span className="ml-auto shrink-0 text-[10px] text-muted-foreground opacity-0 transition-opacity delay-0 group-hover:opacity-100 group-hover:delay-200">
-                          {assoc.linked_object_display_id}
+                      {(assoc.context_label || assoc.linked_object_display_id) && (
+                        <span className="ml-auto flex shrink-0 items-center gap-2">
+                          {assoc.context_label && (
+                            <span className="text-[10px] text-muted-foreground">{assoc.context_label}</span>
+                          )}
+                          {assoc.linked_object_display_id && (
+                            <span className={cn(
+                              'text-[10px] text-muted-foreground',
+                              isCRMRecord && 'opacity-0 transition-opacity delay-0 group-hover:opacity-100 group-hover:delay-200',
+                            )}>
+                              {assoc.linked_object_display_id}
+                            </span>
+                          )}
                         </span>
                       )}
                     </button>
-                    <button
-                      type="button"
-                      className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-all hover:bg-background hover:text-destructive group-hover:opacity-100"
-                      onClick={() => setRemoveId(assoc.id)}
-                      aria-label="Remove association"
-                    >
-                      <Delete01Icon className="h-3 w-3" />
-                    </button>
+                    {assoc.id ? (
+                      <button
+                        type="button"
+                        className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-all hover:bg-background hover:text-destructive group-hover:opacity-100"
+                        onClick={() => setRemoveId(assoc.id)}
+                        aria-label="Remove association"
+                      >
+                        <Delete01Icon className="h-3 w-3" />
+                      </button>
+                    ) : null}
                   </div>
                 );
               })}

@@ -36,6 +36,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
@@ -205,15 +206,27 @@ function SidebarPopoverSelect<T extends string>({
   );
 }
 
-// ── Status badge colors for support ──
+function supportStatusDotClass(status: string) {
+  if (status === 'open') return 'bg-blue-500';
+  if (status === 'waiting_on_customer') return 'bg-purple-500';
+  if (status === 'resolved') return 'bg-green-500';
+  if (status === 'spam') return 'bg-red-500';
+  return 'bg-muted-foreground/40';
+}
 
-function statusColor(status: string) {
+function supportStatusBadgeClass(status: string) {
   switch (status) {
     case 'open': return 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400';
     case 'waiting_on_customer': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400';
     case 'resolved': return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400';
     default: return 'bg-muted text-muted-foreground';
   }
+}
+
+function humanizeStatusLabel(value: string) {
+  return value
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 // ── Empty-state previews ──
@@ -1038,7 +1051,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="text-xs text-muted-foreground">#{conversation.display_id}</span>
-                          <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-medium', statusColor(conversation.status))}>
+                          <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-medium', supportStatusBadgeClass(conversation.status))}>
                             {conversation.status.replace(/_/g, ' ')}
                           </span>
                           <Badge variant="secondary" className="px-2 py-0 text-[10px]">
@@ -1332,11 +1345,23 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                             className="flex min-w-0 flex-1 items-center gap-2 text-left"
                             onClick={() => openTaskRoute(navigate as never, location as never, wsSlug, task.id)}
                           >
-                            <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground">{task.task_key}</span>
-                            <span className="truncate">{task.name}</span>
-                            {task.state_name && (
-                              <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">{task.state_name}</span>
+                            {task.state_name ? (
+                              <QuickTooltip label={task.state_name}>
+                                <span
+                                  className="h-2.5 w-2.5 shrink-0 rounded-full bg-muted-foreground/30"
+                                  style={task.state_color ? { backgroundColor: task.state_color } : undefined}
+                                  aria-label={task.state_name}
+                                />
+                              </QuickTooltip>
+                            ) : (
+                              <span
+                                className="h-2.5 w-2.5 shrink-0 rounded-full bg-muted-foreground/30"
+                                style={task.state_color ? { backgroundColor: task.state_color } : undefined}
+                                aria-hidden="true"
+                              />
                             )}
+                            <span className="truncate font-medium">{task.name}</span>
+                            <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">{task.task_key}</span>
                           </button>
                           {removableAssociationId ? (
                             <button
@@ -1382,10 +1407,16 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                           params={{ slug: wsSlug, conversationId: c.id }}
                           className="flex min-w-0 flex-1 items-center gap-2"
                         >
-                          <span className={cn('rounded-full px-1.5 py-0.5 text-[9px] font-medium leading-none', statusColor(c.status))}>
-                            {c.status.replace(/_/g, ' ')}
+                          <QuickTooltip label={humanizeStatusLabel(c.status)}>
+                            <span
+                              className={cn('h-2.5 w-2.5 shrink-0 rounded-full bg-muted-foreground/30', supportStatusDotClass(c.status))}
+                              aria-label={humanizeStatusLabel(c.status)}
+                            />
+                          </QuickTooltip>
+                          <span className="truncate font-medium">{c.subject}</span>
+                          <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
+                            C-{c.display_id}
                           </span>
-                          <span className="truncate">{c.subject}</span>
                         </Link>
                         <button
                           type="button"
