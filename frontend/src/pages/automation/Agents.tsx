@@ -1836,8 +1836,8 @@ export function AgentsPage() {
                         className={cn(
                           'group relative rounded-lg border transition-colors',
                           isSelected
-                            ? 'border-foreground/30 bg-background shadow-sm'
-                            : 'border-transparent hover:bg-background',
+                            ? 'border-primary/40 bg-background shadow-sm ring-1 ring-primary/20'
+                            : 'border-transparent hover:bg-background hover:shadow-sm',
                         )}
                       >
                         <button
@@ -1911,13 +1911,12 @@ export function AgentsPage() {
             {/* ──────── RIGHT: SELECTED VERSION DETAIL ──────── */}
             <div className="min-h-0 overflow-y-auto px-6 py-6">
               <div className="mx-auto w-full max-w-4xl space-y-6">
-                {/* ──────── CURRENT BEHAVIOUR ──────── */}
-                {/* Selected version header strip */}
-                <section className="space-y-2">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <div className="flex flex-wrap items-baseline gap-2">
-                        <h2 className="text-lg font-semibold">{selectedPreset?.version_label ?? 'Version'}</h2>
+                {/* Selected version: header + behaviour strip, visually grouped */}
+                <section className="overflow-hidden rounded-xl border border-border/60 bg-card">
+                  <div className="flex flex-wrap items-start justify-between gap-3 px-5 py-4">
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h2 className="text-lg font-semibold leading-none">{selectedPreset?.version_label ?? 'Version'}</h2>
                         {selectedPreset && (
                           <Badge variant={selectedPreset.scope === 'workspace' ? 'secondary' : 'outline'} className="text-[10px]">
                             {selectedPreset.scope === 'workspace' ? 'Workspace' : 'Product'}
@@ -1933,60 +1932,52 @@ export function AgentsPage() {
                         <p className="text-sm text-muted-foreground">{selectedPreset.description}</p>
                       )}
                     </div>
-                    <div className="flex shrink-0 gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          setVersionDraftOpen(true);
-                          setVersionLabelDraft(`${selectedPreset?.version_label ?? 'Version'} Copy`);
-                          setVersionDescriptionDraft(selectedPreset?.description ?? '');
-                        }}
-                      >
-                        Duplicate &amp; edit
-                      </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0"
+                      onClick={() => {
+                        setVersionDraftOpen(true);
+                        setVersionLabelDraft(`${selectedPreset?.version_label ?? 'Version'} Copy`);
+                        setVersionDescriptionDraft(selectedPreset?.description ?? '');
+                      }}
+                    >
+                      Duplicate &amp; edit
+                    </Button>
+                  </div>
+                  <dl className="grid grid-cols-2 divide-x divide-y divide-border/40 border-t border-border/40 bg-muted/20 sm:grid-cols-3 lg:grid-cols-6">
+                    <div className="space-y-1 p-3">
+                      <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Runtime</dt>
+                      <dd className="truncate text-sm font-medium">{AGENT_RUNTIME_LABELS[form.runtime_kind] ?? form.runtime_kind}</dd>
                     </div>
-                  </div>
-                </section>
-
-                {/* ──────── CURRENT BEHAVIOUR ──────── */}
-                <section className="space-y-3">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Current behaviour</h3>
-                  <div className="rounded-xl border border-border/60 bg-card">
-                    <dl className="grid grid-cols-2 divide-x divide-y divide-border/40 sm:grid-cols-3 lg:grid-cols-6">
-                      <div className="space-y-1 p-3">
-                        <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Runtime</dt>
-                        <dd className="truncate text-sm font-medium">{AGENT_RUNTIME_LABELS[form.runtime_kind] ?? form.runtime_kind}</dd>
-                      </div>
-                      <div className="space-y-1 p-3">
-                        <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Model</dt>
-                        <dd className="truncate text-sm font-medium" title={form.model}>{form.model || 'Auto'}</dd>
-                      </div>
-                      <div className="space-y-1 p-3">
-                        <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Mode</dt>
-                        <dd className="truncate text-sm font-medium">{INVOCATION_MODE_LABELS[form.default_invocation_mode]}</dd>
-                      </div>
-                      <div className="space-y-1 p-3">
-                        <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Tools · Skills</dt>
-                        <dd className="truncate text-sm font-medium">{form.allowed_tools.length} · {form.instruction_skills.length}</dd>
-                      </div>
-                      <div className="space-y-1 p-3">
-                        <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Targets</dt>
-                        <dd className="truncate text-sm font-medium" title={effectiveTargets.join(', ') || '—'}>
-                          {effectiveTargets.length > 0 ? effectiveTargets.join(', ') : '—'}
-                        </dd>
-                      </div>
-                      <div className="space-y-1 p-3">
-                        <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Last run</dt>
-                        <dd className="truncate text-sm font-medium" title={(editingAgent && runStats[editingAgent.id]?.lastRun?.created_at) || undefined}>
-                          {editingAgent && runStats[editingAgent.id]?.lastRun?.created_at
-                            ? formatDistanceToNow(new Date(runStats[editingAgent.id].lastRun!.created_at), { addSuffix: true })
-                            : 'Never'}
-                        </dd>
-                      </div>
-                    </dl>
-                  </div>
+                    <div className="space-y-1 p-3">
+                      <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Model</dt>
+                      <dd className="truncate text-sm font-medium" title={form.model}>{form.model || 'Auto'}</dd>
+                    </div>
+                    <div className="space-y-1 p-3">
+                      <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Mode</dt>
+                      <dd className="truncate text-sm font-medium">{INVOCATION_MODE_LABELS[form.default_invocation_mode]}</dd>
+                    </div>
+                    <div className="space-y-1 p-3">
+                      <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Tools · Skills</dt>
+                      <dd className="truncate text-sm font-medium">{form.allowed_tools.length} · {form.instruction_skills.length}</dd>
+                    </div>
+                    <div className="space-y-1 p-3">
+                      <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Targets</dt>
+                      <dd className="truncate text-sm font-medium" title={effectiveTargets.join(', ') || '—'}>
+                        {effectiveTargets.length > 0 ? effectiveTargets.join(', ') : '—'}
+                      </dd>
+                    </div>
+                    <div className="space-y-1 p-3">
+                      <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Last run</dt>
+                      <dd className="truncate text-sm font-medium" title={(editingAgent && runStats[editingAgent.id]?.lastRun?.created_at) || undefined}>
+                        {editingAgent && runStats[editingAgent.id]?.lastRun?.created_at
+                          ? formatDistanceToNow(new Date(runStats[editingAgent.id].lastRun!.created_at), { addSuffix: true })
+                          : 'Never'}
+                      </dd>
+                    </div>
+                  </dl>
                 </section>
 
                 {/* ──────── VERSION DETAILS ──────── */}
