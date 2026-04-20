@@ -1,0 +1,2 @@
+ALTER TABLE agent_runs
+    ADD COLUMN IF NOT EXISTS cached_input_tokens INTEGER NOT NULL DEFAULT 0;

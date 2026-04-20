@@ -68,8 +68,9 @@ func (m *codexEventMapper) HandleNotification(ctx context.Context, method string
 			return err
 		}
 		m.result.Usage = ExecutionUsage{
-			InputTokens:  int(payload.TokenUsage.Last.InputTokens),
-			OutputTokens: int(payload.TokenUsage.Last.OutputTokens),
+			CachedInputTokens: int(payload.TokenUsage.Last.CachedInputTokens),
+			InputTokens:       int(payload.TokenUsage.Last.InputTokens),
+			OutputTokens:      int(payload.TokenUsage.Last.OutputTokens),
 		}
 	case "turn/diff/updated":
 		var payload codexTurnDiffUpdatedNotification
@@ -371,9 +372,9 @@ func (m *codexEventMapper) handleItemCompleted(item codexThreadItem) {
 		Error:           errorText,
 	})
 
-		if strings.TrimSpace(item.Type) == "fileChange" && m.latestDiff == "" {
-			m.latestDiff = codexDiffFromFileChange(m.execCtx, item)
-		}
+	if strings.TrimSpace(item.Type) == "fileChange" && m.latestDiff == "" {
+		m.latestDiff = codexDiffFromFileChange(m.execCtx, item)
+	}
 	if summary := strings.TrimSpace(outputSummary); summary != "" {
 		m.result.Messages = append(m.result.Messages, ExecutionMessage{
 			Role:    "tool",

@@ -84,6 +84,7 @@ export interface CodingSession {
   summary?: string;
   capabilities: CodingSessionCapabilities;
   repo: CodingSessionRepoState;
+  cached_input_tokens: number;
   input_tokens: number;
   output_tokens: number;
   tokens_used: number;

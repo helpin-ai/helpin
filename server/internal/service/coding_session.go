@@ -423,6 +423,7 @@ func (s *AgentService) buildCodingSession(ctx context.Context, run *model.AgentR
 		Summary:             summary,
 		Capabilities:        codingSessionCapabilitiesForRun(run),
 		Repo:                repoState,
+		CachedInputTokens:   run.CachedInputTokens,
 		InputTokens:         run.InputTokens,
 		OutputTokens:        run.OutputTokens,
 		TokensUsed:          run.TokensUsed,

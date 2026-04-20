@@ -19,6 +19,7 @@ type CodingSession struct {
 	Summary             *string                      `json:"summary,omitempty"`
 	Capabilities        CodingSessionCapabilities    `json:"capabilities"`
 	Repo                CodingSessionRepoState       `json:"repo"`
+	CachedInputTokens   int                          `json:"cached_input_tokens"`
 	InputTokens         int                          `json:"input_tokens"`
 	OutputTokens        int                          `json:"output_tokens"`
 	TokensUsed          int                          `json:"tokens_used"`
