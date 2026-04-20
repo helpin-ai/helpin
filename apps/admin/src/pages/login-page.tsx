@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
@@ -19,11 +19,50 @@ export function LoginPage() {
   const [submitting, setSubmitting] = useState(false)
   const passkeySupported = passkeyService.isSupported()
 
+  useEffect(() => {
+    if (!passkeySupported) {
+      return
+    }
+
+    let cancelled = false
+
+    const beginPasskeyAutofill = async () => {
+      const autofillSupported = await passkeyService.isAutofillSupported()
+      if (cancelled || !autofillSupported) {
+        return
+      }
+
+      const result = await signInWithPasskey(undefined, rememberMe, { useAutofill: true })
+      if (cancelled || result.cancelled) {
+        return
+      }
+      if (result.error) {
+        toast.error('Passkey sign in failed', { description: result.error })
+        return
+      }
+
+      setSubmitting(true)
+      try {
+        await navigate({ to: '/chat-playground' })
+      } finally {
+        setSubmitting(false)
+      }
+    }
+
+    void beginPasskeyAutofill()
+
+    return () => {
+      cancelled = true
+      passkeyService.cancelPendingAuthentication()
+    }
+  }, [navigate, passkeySupported, rememberMe, signInWithPasskey])
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setSubmitting(true)
 
     try {
+      passkeyService.cancelPendingAuthentication()
       const { error } = await signIn(email, password, rememberMe)
       if (error) {
         toast.error('Sign in failed', { description: error })
@@ -71,7 +110,8 @@ export function LoginPage() {
               <Input
                 id="email"
                 type="email"
-                autoComplete="email"
+                name="email"
+                autoComplete="username webauthn"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 placeholder="name@company.com"
@@ -84,6 +124,7 @@ export function LoginPage() {
               <Input
                 id="password"
                 type="password"
+                name="password"
                 autoComplete="current-password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}

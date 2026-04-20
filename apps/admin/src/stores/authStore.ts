@@ -10,7 +10,11 @@ interface AuthState {
   serverUnreachable: boolean
   initialize: () => Promise<void>
   signIn: (email: string, password: string, rememberMe?: boolean) => Promise<{ error: string | null }>
-  signInWithPasskey: (emailHint?: string, rememberMe?: boolean) => Promise<{ error: string | null }>
+  signInWithPasskey: (
+    emailHint?: string,
+    rememberMe?: boolean,
+    options?: { useAutofill?: boolean },
+  ) => Promise<{ error: string | null; cancelled?: boolean }>
   signOut: () => void
 }
 
@@ -74,8 +78,11 @@ export const useAuthStore = create<AuthState>((set) => ({
     return { error: null }
   },
 
-  signInWithPasskey: async (emailHint?: string, rememberMe = false) => {
-    const { data, error } = await passkeyService.beginAuthentication(emailHint, rememberMe)
+  signInWithPasskey: async (emailHint?: string, rememberMe = false, options?: { useAutofill?: boolean }) => {
+    const { data, error, cancelled } = await passkeyService.beginAuthentication(emailHint, rememberMe, options)
+    if (cancelled) {
+      return { error: null, cancelled: true }
+    }
     if (error || !data) {
       return { error: error || 'Passkey sign in failed' }
     }

@@ -11,7 +11,11 @@ interface AuthState {
   serverUnreachable: boolean;
   initialize: () => Promise<void>;
   signIn: (email: string, password: string, rememberMe?: boolean) => Promise<{ error: string | null; requires2FA?: boolean; twoFAToken?: string }>;
-  signInWithPasskey: (emailHint?: string, rememberMe?: boolean) => Promise<{ error: string | null; requires2FA?: boolean; twoFAToken?: string }>;
+  signInWithPasskey: (
+    emailHint?: string,
+    rememberMe?: boolean,
+    options?: { useAutofill?: boolean },
+  ) => Promise<{ error: string | null; requires2FA?: boolean; twoFAToken?: string; cancelled?: boolean }>;
   verify2FASignIn: (twoFaToken: string, code: string, useRecoveryCode: boolean, rememberMe?: boolean) => Promise<{ error: string | null }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: string | null }>;
   signOut: () => void;
@@ -90,8 +94,9 @@ export const useAuthStore = create<AuthState>((set) => ({
     return { error: null };
   },
 
-  signInWithPasskey: async (emailHint?: string, rememberMe = false) => {
-    const { data, error } = await passkeyService.beginAuthentication(emailHint, rememberMe);
+  signInWithPasskey: async (emailHint?: string, rememberMe = false, options?: { useAutofill?: boolean }) => {
+    const { data, error, cancelled } = await passkeyService.beginAuthentication(emailHint, rememberMe, options);
+    if (cancelled) return { error: null, cancelled: true };
     if (error || !data) return { error: error || 'Passkey sign in failed' };
 
     if (data.requires_2fa && data.two_fa_token) {

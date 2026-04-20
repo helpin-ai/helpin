@@ -1,4 +1,10 @@
-import { browserSupportsWebAuthn, startAuthentication } from '@simplewebauthn/browser'
+import {
+  browserSupportsWebAuthn,
+  browserSupportsWebAuthnAutofill,
+  startAuthentication,
+  WebAuthnAbortService,
+  WebAuthnError,
+} from '@simplewebauthn/browser'
 import { API_BASE } from '@/lib/api'
 import type { PasskeyAuthenticationResponse, PasskeyOptionsResponse } from '@/lib/types'
 
@@ -6,27 +12,37 @@ type ApiResult<T> = {
   data: T | null
   error: string | null
   status?: number
+  cancelled?: boolean
 }
 
-function formatPasskeyError(error: unknown): string {
+function classifyPasskeyError(error: unknown, useAutofill = false): { message: string; cancelled: boolean } {
+  if (error instanceof WebAuthnError && error.code === 'ERROR_CEREMONY_ABORTED') {
+    return { message: 'The passkey request was cancelled.', cancelled: true }
+  }
+
   if (typeof error === 'object' && error !== null && 'name' in error) {
-    switch (String(error.name)) {
+    const name = String(error.name)
+    if (useAutofill && (name === 'AbortError' || name === 'NotAllowedError')) {
+      return { message: 'The passkey request was cancelled.', cancelled: true }
+    }
+
+    switch (name) {
       case 'NotAllowedError':
-        return 'No passkey found for this account or the request was cancelled.'
+        return { message: 'No passkey found for this account or the request was cancelled.', cancelled: false }
       case 'AbortError':
-        return 'The passkey request was cancelled.'
+        return { message: 'The passkey request was cancelled.', cancelled: false }
       case 'NotSupportedError':
-        return 'This browser does not support passkeys.'
+        return { message: 'This browser does not support passkeys.', cancelled: false }
       default:
         break
     }
   }
 
   if (error instanceof Error && error.message.trim()) {
-    return error.message
+    return { message: error.message, cancelled: false }
   }
 
-  return 'Passkey request failed'
+  return { message: 'Passkey request failed', cancelled: false }
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<ApiResult<T>> {
@@ -46,11 +62,16 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<ApiR
 
     return { data: await response.json(), error: null, status: response.status }
   } catch (error) {
-    return { data: null, error: formatPasskeyError(error) }
+    const failure = classifyPasskeyError(error)
+    return { data: null, error: failure.message, cancelled: failure.cancelled }
   }
 }
 
-async function beginAuthentication(emailHint?: string, rememberMe = false): Promise<ApiResult<PasskeyAuthenticationResponse>> {
+async function beginAuthentication(
+  emailHint?: string,
+  rememberMe = false,
+  options?: { useAutofill?: boolean },
+): Promise<ApiResult<PasskeyAuthenticationResponse>> {
   const optionsResult = await request<PasskeyOptionsResponse>('/auth/passkey/authentication-options', {
     method: 'POST',
     body: JSON.stringify(emailHint?.trim() ? { email_hint: emailHint.trim() } : {}),
@@ -62,6 +83,7 @@ async function beginAuthentication(emailHint?: string, rememberMe = false): Prom
   try {
     const credential = await startAuthentication({
       optionsJSON: optionsResult.data.options as unknown as Parameters<typeof startAuthentication>[0]['optionsJSON'],
+      ...(options?.useAutofill ? { useBrowserAutofill: true } : {}),
     })
 
     return await request<PasskeyAuthenticationResponse>('/auth/passkey/authenticate', {
@@ -73,11 +95,14 @@ async function beginAuthentication(emailHint?: string, rememberMe = false): Prom
       }),
     })
   } catch (error) {
-    return { data: null, error: formatPasskeyError(error) }
+    const failure = classifyPasskeyError(error, options?.useAutofill)
+    return { data: null, error: failure.cancelled ? null : failure.message, cancelled: failure.cancelled }
   }
 }
 
 export const passkeyService = {
   isSupported: () => browserSupportsWebAuthn(),
+  isAutofillSupported: async () => browserSupportsWebAuthnAutofill(),
+  cancelPendingAuthentication: () => WebAuthnAbortService.cancelCeremony(),
   beginAuthentication,
 }

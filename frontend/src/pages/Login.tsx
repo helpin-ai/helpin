@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
 import { useAuthStore } from '@/stores/authStore';
@@ -48,6 +48,72 @@ export default function Login() {
     }
   };
 
+  useEffect(() => {
+    if (twoFaToken || !passkeySupported) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const beginPasskeyAutofill = async () => {
+      const autofillSupported = await passkeyService.isAutofillSupported();
+      if (cancelled || !autofillSupported) {
+        return;
+      }
+
+      const result = await signInWithPasskey(undefined, rememberMe, { useAutofill: true });
+      if (cancelled || result.cancelled) {
+        return;
+      }
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      if (result.requires2FA && result.twoFAToken) {
+        setTwoFaToken(result.twoFAToken);
+        setTwoFactorCode('');
+        setUseRecoveryCode(false);
+        toast.success('Passkey accepted. Enter your authenticator code.');
+        return;
+      }
+
+      setLoading(true);
+      try {
+        const redirect = new URLSearchParams(window.location.search).get('redirect');
+        if (redirect && redirect.startsWith('/join/')) {
+          navigate({ to: redirect as string });
+          return;
+        }
+
+        const { data: workspaces } = await workspacesService.list();
+        if (cancelled) {
+          return;
+        }
+
+        if (workspaces && workspaces.length > 0) {
+          const user = useAuthStore.getState().user;
+          const defaultWs = user?.default_workspace_id
+            ? workspaces.find((workspace) => workspace.id === user.default_workspace_id)
+            : null;
+          const targetSlug = defaultWs ? defaultWs.slug : workspaces[0].slug;
+          navigate({ to: '/w/$slug/pm/my-work', params: { slug: targetSlug } });
+          return;
+        }
+
+        navigate({ to: '/workspaces' });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void beginPasskeyAutofill();
+
+    return () => {
+      cancelled = true;
+      passkeyService.cancelPendingAuthentication();
+    };
+  }, [navigate, passkeySupported, rememberMe, signInWithPasskey, twoFaToken]);
+
   const handlePasswordSubmit = async () => {
     const { error, requires2FA, twoFAToken } = await signIn(email, password, rememberMe);
     if (error) {
@@ -88,6 +154,7 @@ export default function Login() {
       if (twoFaToken) {
         await handleTwoFactorSubmit();
       } else {
+        passkeyService.cancelPendingAuthentication();
         await handlePasswordSubmit();
       }
     } finally {
@@ -176,14 +243,32 @@ export default function Login() {
               <>
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
-                  <Input id="email" type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} required />
+                  <Input
+                    id="email"
+                    name="email"
+                    type="email"
+                    autoComplete="username webauthn"
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    required
+                  />
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label htmlFor="password">Password</Label>
                     <Link to="/forgot-password" className="text-sm text-primary hover:underline">Forgot password?</Link>
                   </div>
-                  <Input id="password" type="password" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} required />
+                  <Input
+                    id="password"
+                    name="password"
+                    type="password"
+                    autoComplete="current-password"
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    required
+                  />
                 </div>
                 <div className="flex items-center gap-2">
                   <Checkbox id="remember-me" checked={rememberMe} onCheckedChange={(checked) => setRememberMe(checked === true)} />
