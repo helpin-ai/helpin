@@ -90,6 +90,7 @@ interface AgentAvatarProps {
   className?: string;
   svgClassName?: string;
   decorative?: boolean;
+  genericBare?: boolean;
 }
 
 export function AgentAvatar({
@@ -99,6 +100,7 @@ export function AgentAvatar({
   className,
   svgClassName,
   decorative = true,
+  genericBare = false,
 }: AgentAvatarProps) {
   const persona = resolveAgentPersonaKey({ agent, name, presetKey });
   const meta = PERSONA_META[persona];
@@ -111,16 +113,17 @@ export function AgentAvatar({
     <span
       className={cn(
         'inline-flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-border/70 bg-background/90 shadow-sm',
+        genericBare && persona === 'generic' && 'rounded-none border-0 bg-transparent shadow-none',
         className,
       )}
       {...accessibilityProps}
     >
-      <PersonaSvg persona={persona} className={cn('h-full w-full', svgClassName)} />
+      <PersonaSvg persona={persona} className={cn('h-full w-full', svgClassName)} genericBare={genericBare} />
     </span>
   );
 }
 
-function PersonaSvg({ persona, className }: { persona: AgentPersonaKey; className?: string }) {
+function PersonaSvg({ persona, className, genericBare = false }: { persona: AgentPersonaKey; className?: string; genericBare?: boolean }) {
   switch (persona) {
     case 'atlas':
       return (
@@ -229,8 +232,11 @@ function PersonaSvg({ persona, className }: { persona: AgentPersonaKey; classNam
       );
     default:
       return (
-        <div className="flex h-full w-full items-center justify-center bg-slate-100 text-slate-600 dark:bg-slate-900 dark:text-slate-300">
-          <BotIcon className="h-1/2 w-1/2" />
+        <div className={cn(
+          'flex h-full w-full items-center justify-center bg-slate-100 text-slate-600 dark:bg-slate-900 dark:text-slate-300',
+          genericBare && 'bg-transparent',
+        )}>
+          <BotIcon className={cn(className, genericBare ? '!h-[72%] !w-[72%]' : '!h-1/2 !w-1/2')} />
         </div>
       );
   }
