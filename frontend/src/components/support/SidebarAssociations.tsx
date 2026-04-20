@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { CollapsibleSection } from '@/components/ui/collapsible-section';
+import { DocumentPreviewDialog } from '@/components/docs/DocumentPreviewDialog';
 import {
   Dialog,
   DialogContent,
@@ -58,6 +59,7 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
   const location = useLocation();
   const queryClient = useQueryClient();
   const slug = useWorkspaceStore((s) => s.currentWorkspace?.slug ?? '');
+  const [previewDocId, setPreviewDocId] = useState<string | null>(null);
 
   const associationsQuery = useConversationAssociations(workspaceId, conversationId);
   const associationsData = associationsQuery.data as GroupedAssociations | undefined;
@@ -73,7 +75,7 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
   };
 
   const handleNavigateDoc = (docId: string) => {
-    navigate({ to: '/w/$slug/docs/documents/$docId', params: { slug, docId } } as any);
+    setPreviewDocId(docId);
   };
 
   const handleNavigateCRM = (objectType: CRMObjectType, objectId: string) => {
@@ -490,6 +492,16 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
           </div>
         </DialogContent>
       </Dialog>
+
+      <DocumentPreviewDialog
+        workspaceId={workspaceId}
+        slug={slug}
+        docId={previewDocId}
+        open={!!previewDocId}
+        onOpenChange={(open) => {
+          if (!open) setPreviewDocId(null);
+        }}
+      />
 
       {/* Create Task modal — creates and auto-links to this conversation */}
       {workflow && (
