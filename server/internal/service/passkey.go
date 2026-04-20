@@ -24,12 +24,23 @@ var (
 	ErrNoPasskeyForAccount  = errors.New("no passkey found for this account")
 )
 
+type passkeyWebAuthnClient interface {
+	Configured() bool
+	BeginRegistration(ctx context.Context, user gwebauthn.User, exclusions []protocol.CredentialDescriptor) (*protocol.CredentialCreation, string, error)
+	BeginAuthentication(ctx context.Context) (*protocol.CredentialAssertion, string, error)
+	BeginAuthenticationForUser(ctx context.Context, user gwebauthn.User) (*protocol.CredentialAssertion, string, error)
+	FinishRegistration(ctx context.Context, user gwebauthn.User, challenge string, payload []byte) (*gwebauthn.Credential, error)
+	FinishAuthentication(ctx context.Context, challenge string, payload []byte, handler gwebauthn.DiscoverableUserHandler) (gwebauthn.User, *gwebauthn.Credential, error)
+	FinishAuthenticationForUser(ctx context.Context, user gwebauthn.User, challenge string, payload []byte) (*gwebauthn.Credential, error)
+	SessionInfo(ctx context.Context, challenge string) (*appwebauthn.SessionInfo, error)
+}
+
 // PasskeyService handles passkey ceremonies and passkey CRUD operations.
 type PasskeyService struct {
 	userRepo       *repository.UserRepository
 	passkeyRepo    *repository.PasskeyRepository
 	jwtManager     *auth.JWTManager
-	webauthnClient *appwebauthn.Client
+	webauthnClient passkeyWebAuthnClient
 	encryptionKey  []byte
 	logger         *slog.Logger
 }
@@ -38,7 +49,7 @@ func NewPasskeyService(
 	userRepo *repository.UserRepository,
 	passkeyRepo *repository.PasskeyRepository,
 	jwtManager *auth.JWTManager,
-	webauthnClient *appwebauthn.Client,
+	webauthnClient passkeyWebAuthnClient,
 	encryptionKey []byte,
 ) *PasskeyService {
 	return &PasskeyService{
