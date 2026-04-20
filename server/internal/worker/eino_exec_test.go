@@ -412,3 +412,53 @@ func TestExtractReasoningFromAgenticMessageReadsReasoningBlocks(t *testing.T) {
 		t.Fatalf("expected reasoning signature, got %#v", reasoning)
 	}
 }
+
+func TestSchemaResponseUsageCarriesCachedInputTokens(t *testing.T) {
+	msg := &schema.Message{
+		ResponseMeta: &schema.ResponseMeta{
+			Usage: &schema.TokenUsage{
+				PromptTokens: 12,
+				PromptTokenDetails: schema.PromptTokenDetails{
+					CachedTokens: 5,
+				},
+				CompletionTokens: 7,
+			},
+		},
+	}
+
+	usage := ExecutionUsage{}
+	if msg.ResponseMeta != nil && msg.ResponseMeta.Usage != nil {
+		usage.CachedInputTokens = msg.ResponseMeta.Usage.PromptTokenDetails.CachedTokens
+		usage.InputTokens = msg.ResponseMeta.Usage.PromptTokens
+		usage.OutputTokens = msg.ResponseMeta.Usage.CompletionTokens
+	}
+
+	if usage.CachedInputTokens != 5 || usage.InputTokens != 12 || usage.OutputTokens != 7 {
+		t.Fatalf("unexpected usage %+v", usage)
+	}
+}
+
+func TestAgenticResponseUsageCarriesCachedInputTokens(t *testing.T) {
+	msg := &schema.AgenticMessage{
+		ResponseMeta: &schema.AgenticResponseMeta{
+			TokenUsage: &schema.TokenUsage{
+				PromptTokens: 18,
+				PromptTokenDetails: schema.PromptTokenDetails{
+					CachedTokens: 9,
+				},
+				CompletionTokens: 6,
+			},
+		},
+	}
+
+	usage := ExecutionUsage{}
+	if msg.ResponseMeta != nil && msg.ResponseMeta.TokenUsage != nil {
+		usage.CachedInputTokens = msg.ResponseMeta.TokenUsage.PromptTokenDetails.CachedTokens
+		usage.InputTokens = msg.ResponseMeta.TokenUsage.PromptTokens
+		usage.OutputTokens = msg.ResponseMeta.TokenUsage.CompletionTokens
+	}
+
+	if usage.CachedInputTokens != 9 || usage.InputTokens != 18 || usage.OutputTokens != 6 {
+		t.Fatalf("unexpected usage %+v", usage)
+	}
+}

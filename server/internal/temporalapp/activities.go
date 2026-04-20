@@ -1725,8 +1725,9 @@ func marshalToolInvocations(invocations []model.ToolInvocation) (json.RawMessage
 
 func marshalTokenUsage(usage workerpkg.ExecutionUsage) (json.RawMessage, error) {
 	return json.Marshal(map[string]int{
-		"input_tokens":  usage.InputTokens,
-		"output_tokens": usage.OutputTokens,
+		"cached_input_tokens": usage.CachedInputTokens,
+		"input_tokens":        usage.InputTokens,
+		"output_tokens":       usage.OutputTokens,
 	})
 }
 

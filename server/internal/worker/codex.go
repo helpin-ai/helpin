@@ -63,6 +63,16 @@ type codexResolvedRuntimeProfile struct {
 	ServiceTier       string
 }
 
+func applyExecutionUsageToRun(run *model.AgentRun, usage ExecutionUsage) {
+	if run == nil {
+		return
+	}
+	run.CachedInputTokens = usage.CachedInputTokens
+	run.InputTokens = usage.InputTokens
+	run.OutputTokens = usage.OutputTokens
+	run.TokensUsed = usage.InputTokens + usage.OutputTokens
+}
+
 type codexConfigArtifact struct {
 	Model                string                                  `toml:"model,omitempty"`
 	ModelReasoningEffort string                                  `toml:"model_reasoning_effort,omitempty"`
@@ -245,9 +255,7 @@ func (e *CodexExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) 
 		_ = execCtx.Heartbeat("codex_finished")
 	}
 
-	run.InputTokens = result.Usage.InputTokens
-	run.OutputTokens = result.Usage.OutputTokens
-	run.TokensUsed = result.Usage.InputTokens + result.Usage.OutputTokens
+	applyExecutionUsageToRun(run, result.Usage)
 
 	if result.CodexAuthState != nil {
 		return nil

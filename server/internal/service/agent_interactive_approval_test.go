@@ -2018,6 +2018,7 @@ func newInteractiveApprovalTestDB(t *testing.T) *gorm.DB {
 			last_heartbeat_at DATETIME,
 			input BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
 			output_summary BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
+			cached_input_tokens INTEGER NOT NULL DEFAULT 0,
 			input_tokens INTEGER NOT NULL DEFAULT 0,
 			output_tokens INTEGER NOT NULL DEFAULT 0,
 			tokens_used INTEGER NOT NULL DEFAULT 0,

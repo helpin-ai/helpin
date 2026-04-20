@@ -50,8 +50,11 @@ type ExecutionMessage struct {
 }
 
 type ExecutionUsage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
+	// CachedInputTokens is a provider-reported subset of InputTokens. Providers
+	// that do not expose prompt caching should leave this at zero.
+	CachedInputTokens int `json:"cached_input_tokens"`
+	InputTokens       int `json:"input_tokens"`
+	OutputTokens      int `json:"output_tokens"`
 }
 
 type ExecutionEvent struct {
@@ -561,6 +564,7 @@ func streamAssistantMessage(
 
 	usage := ExecutionUsage{}
 	if finalMsg.ResponseMeta != nil && finalMsg.ResponseMeta.Usage != nil {
+		usage.CachedInputTokens = finalMsg.ResponseMeta.Usage.PromptTokenDetails.CachedTokens
 		usage.InputTokens = finalMsg.ResponseMeta.Usage.PromptTokens
 		usage.OutputTokens = finalMsg.ResponseMeta.Usage.CompletionTokens
 	}
@@ -609,6 +613,7 @@ func generateAssistantAgenticMessage(
 
 	usage := ExecutionUsage{}
 	if finalMsg.ResponseMeta != nil && finalMsg.ResponseMeta.TokenUsage != nil {
+		usage.CachedInputTokens = finalMsg.ResponseMeta.TokenUsage.PromptTokenDetails.CachedTokens
 		usage.InputTokens = finalMsg.ResponseMeta.TokenUsage.PromptTokens
 		usage.OutputTokens = finalMsg.ResponseMeta.TokenUsage.CompletionTokens
 	}

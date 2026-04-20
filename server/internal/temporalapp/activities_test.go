@@ -908,6 +908,9 @@ func newPlannerApprovalTestDB(t *testing.T) *gorm.DB {
 			last_heartbeat_at DATETIME,
 			input BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
 			output_summary BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
+			cached_input_tokens INTEGER NOT NULL DEFAULT 0,
+			input_tokens INTEGER NOT NULL DEFAULT 0,
+			output_tokens INTEGER NOT NULL DEFAULT 0,
 			tokens_used INTEGER NOT NULL DEFAULT 0,
 			error_message TEXT,
 			started_at DATETIME,
@@ -1594,7 +1597,7 @@ func TestBuildPersistedAssistantRunMessageUsesCanonicalBlocksAndInvocations(t *t
 		ToolInvocations: []model.ToolInvocation{
 			{ToolName: "read_file", Input: json.RawMessage(`{"path":"a.go"}`), OutputSummary: "package main", DurationMs: 12},
 		},
-		Usage: workerpkg.ExecutionUsage{InputTokens: 11, OutputTokens: 7},
+		Usage: workerpkg.ExecutionUsage{CachedInputTokens: 3, InputTokens: 11, OutputTokens: 7},
 	}
 
 	message, err := buildPersistedAssistantRunMessage(result, &model.CodingSessionStreamSnapshot{
@@ -1633,6 +1636,9 @@ func TestBuildPersistedAssistantRunMessageUsesCanonicalBlocksAndInvocations(t *t
 	}
 	if len(message.ContentBlocks) == 0 || len(message.TurnSegments) == 0 || len(message.ToolInvocations) == 0 || len(message.TokenUsage) == 0 {
 		t.Fatalf("expected canonical persisted payloads, got %#v", message)
+	}
+	if string(message.TokenUsage) != `{"cached_input_tokens":3,"input_tokens":11,"output_tokens":7}` {
+		t.Fatalf("expected token usage payload, got %s", string(message.TokenUsage))
 	}
 }
 
@@ -1793,6 +1799,9 @@ func TestHandleLiveCodexInteractivePauseIgnoresOlderRepliesWhenNoAssistantMessag
 			last_heartbeat_at DATETIME,
 			input TEXT NOT NULL DEFAULT '{}',
 			output_summary TEXT NOT NULL DEFAULT '{}',
+			cached_input_tokens INTEGER NOT NULL DEFAULT 0,
+			input_tokens INTEGER NOT NULL DEFAULT 0,
+			output_tokens INTEGER NOT NULL DEFAULT 0,
 			tokens_used INTEGER NOT NULL DEFAULT 0,
 			error_message TEXT,
 			started_at DATETIME,
@@ -1967,6 +1976,9 @@ func TestWaitForLiveCodexResumeSignalPrefersResolvedInteractionPayload(t *testin
 			last_heartbeat_at DATETIME,
 			input TEXT NOT NULL DEFAULT '{}',
 			output_summary TEXT NOT NULL DEFAULT '{}',
+			cached_input_tokens INTEGER NOT NULL DEFAULT 0,
+			input_tokens INTEGER NOT NULL DEFAULT 0,
+			output_tokens INTEGER NOT NULL DEFAULT 0,
 			tokens_used INTEGER NOT NULL DEFAULT 0,
 			error_message TEXT,
 			started_at DATETIME,

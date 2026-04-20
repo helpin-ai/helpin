@@ -187,6 +187,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 
 	totalTokens := result.Usage.InputTokens + result.Usage.OutputTokens
 	execCtx.LastExecutionResult = result
+	run.CachedInputTokens = result.Usage.CachedInputTokens
 	run.InputTokens = result.Usage.InputTokens
 	run.OutputTokens = result.Usage.OutputTokens
 	slog.InfoContext(execCtx.Context, "native runtime execution completed",
@@ -197,6 +198,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		"model", modelName,
 		"tool_round_results", len(result.ToolInvocations),
 		"assistant_blocks", len(result.AssistantBlocks),
+		"cached_input_tokens", result.Usage.CachedInputTokens,
 		"input_tokens", result.Usage.InputTokens,
 		"output_tokens", result.Usage.OutputTokens,
 		"max_steps_reached", result.MaxStepsReached,

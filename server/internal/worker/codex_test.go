@@ -32,6 +32,56 @@ func TestExtractCodexAssistantTextFromAgentMessageItem(t *testing.T) {
 	}
 }
 
+func TestCodexEventMapperTracksCachedInputTokens(t *testing.T) {
+	mapper := newCodexEventMapper(&ExecutionContext{}, &model.AgentRun{}, nil)
+	payload, err := json.Marshal(codexThreadTokenUsageUpdatedNotification{
+		ThreadID: "thread-1",
+		TurnID:   "turn-1",
+		TokenUsage: codexThreadTokenUsage{
+			Last: codexTokenUsageBreakdown{
+				CachedInputTokens: 12,
+				InputTokens:       44,
+				OutputTokens:      9,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal token usage payload: %v", err)
+	}
+
+	if err := mapper.HandleNotification(context.Background(), "thread/tokenUsage/updated", payload); err != nil {
+		t.Fatalf("handle token usage notification: %v", err)
+	}
+
+	result := mapper.Result()
+	if result == nil {
+		t.Fatal("expected execution result")
+	}
+	if result.Usage.CachedInputTokens != 12 || result.Usage.InputTokens != 44 || result.Usage.OutputTokens != 9 {
+		t.Fatalf("unexpected usage %+v", result.Usage)
+	}
+}
+
+func TestApplyExecutionUsageToRunIncludesCachedInputTokens(t *testing.T) {
+	run := &model.AgentRun{}
+
+	applyExecutionUsageToRun(run, ExecutionUsage{
+		CachedInputTokens: 7,
+		InputTokens:       31,
+		OutputTokens:      5,
+	})
+
+	if run.CachedInputTokens != 7 {
+		t.Fatalf("expected cached input tokens to persist, got %d", run.CachedInputTokens)
+	}
+	if run.InputTokens != 31 || run.OutputTokens != 5 {
+		t.Fatalf("unexpected input/output usage on run: %+v", run)
+	}
+	if run.TokensUsed != 36 {
+		t.Fatalf("expected tokens_used to remain input+output, got %d", run.TokensUsed)
+	}
+}
+
 func TestExtractCodexAssistantTextIgnoresErrorEvents(t *testing.T) {
 	line := `{"type":"error","message":"Reconnecting..."}`
 	got := extractCodexAssistantText(line)
