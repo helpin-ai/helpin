@@ -405,6 +405,20 @@ func (r *PMTaskRepository) GetRawByID(ctx context.Context, id string) (*model.PM
 	return &task, nil
 }
 
+// ListOwnerUserIDs returns distinct task owner user IDs from the join table.
+func (r *PMTaskRepository) ListOwnerUserIDs(ctx context.Context, taskID string) ([]string, error) {
+	var userIDs []string
+	if err := r.db.WithContext(ctx).
+		Table("pm_task_owners").
+		Where("task_id = ?", taskID).
+		Distinct().
+		Order("user_id ASC").
+		Pluck("user_id", &userIDs).Error; err != nil {
+		return nil, fmt.Errorf("list task owner user ids: %w", err)
+	}
+	return userIDs, nil
+}
+
 // ListByIDs returns raw tasks by ID for a workspace.
 func (r *PMTaskRepository) ListByIDs(ctx context.Context, workspaceID string, ids []string) ([]model.PMTask, error) {
 	if len(ids) == 0 {

@@ -371,7 +371,7 @@ function TimelineEntry({ item, states = [] }: { item: TimelineItem; states?: Wor
       <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
         {actionLabel} agent run
         <span className="inline-flex items-center gap-1 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700 dark:text-indigo-300">
-          <AgentAvatar name={agentName} className="h-3 w-3" />
+          <AgentAvatar name={agentName} className="h-3 w-3 rounded-none border-0 bg-transparent shadow-none" genericBare />
           {agentName}
         </span>
       </span>

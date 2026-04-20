@@ -172,6 +172,7 @@ const (
 	NotifCategoryMentions        = "mentions"
 	NotifCategorySubscriptions   = "subscriptions"
 	NotifCategorySprints         = "sprints"
+	NotifCategoryAgentAttention  = "agent_attention"
 	NotifCategorySupportReplies  = "support_replies"
 	NotifCategorySupportMentions = "support_mentions"
 )
@@ -180,6 +181,7 @@ const (
 var EventTypeToCategory = map[string]string{
 	"task.created":       NotifCategorySubscriptions,
 	"task.assigned":      NotifCategoryAssignments,
+	"task.agent_attention_required": NotifCategoryAgentAttention,
 	"story.created":      NotifCategorySubscriptions,
 	"story.assigned":     NotifCategoryAssignments,
 	"objective.assigned": NotifCategoryAssignments,

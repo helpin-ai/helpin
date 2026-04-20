@@ -161,6 +161,7 @@ type AgentService struct {
 	taskService                *PMTaskService
 	workflowService            *PMWorkflowService
 	activitySvc                *PMActivityService
+	notificationService        *NotificationService
 	wsPublisher                *websocket.Publisher
 	ruleEngine                 *AutomationRuleEngine
 	codexAuthManager           *worker.CodexAuthManager
@@ -274,6 +275,11 @@ func (s *AgentService) SetRuleEngine(engine *AutomationRuleEngine) *AgentService
 
 func (s *AgentService) SetWorkflowService(workflowService *PMWorkflowService) *AgentService {
 	s.workflowService = workflowService
+	return s
+}
+
+func (s *AgentService) SetNotificationService(notificationService *NotificationService) *AgentService {
+	s.notificationService = notificationService
 	return s
 }
 
@@ -2515,7 +2521,11 @@ func (s *AgentService) resolveLatestPendingInteraction(ctx context.Context, run 
 	interaction.ResponseSchemaVersion = stringPtrIfNotEmpty(responseSchemaVersion)
 	interaction.ResolvedBy = stringPtrIfNotEmpty(actorID)
 	interaction.ResolvedAt = &now
-	return s.interactionRepo.Update(ctx, interaction)
+	if err := s.interactionRepo.Update(ctx, interaction); err != nil {
+		return err
+	}
+	s.clearAgentAttentionNotification(ctx, run)
+	return nil
 }
 
 func normalizeResolvedInteractionIntent(pauseReason, signalIntent string) string {

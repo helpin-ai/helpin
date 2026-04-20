@@ -81,6 +81,10 @@ type InternalCommandExecutor interface {
 	Execute(ctx context.Context, meta model.InternalCommandContext, name string, input json.RawMessage) (json.RawMessage, error)
 }
 
+type NotificationEmitter interface {
+	Emit(ctx context.Context, event model.NotificationEventInput) error
+}
+
 // AgentRunActivities contains the Temporal activities that execute an agent run.
 type AgentRunActivities struct {
 	runRepo             *repository.AgentRunRepository
@@ -115,6 +119,7 @@ type AgentRunActivities struct {
 	crmSignalRepo       *repository.CRMSignalRepository
 	crmActivityRepo     *repository.CRMActivityRepository
 	commandExecutor     InternalCommandExecutor
+	notificationEmitter NotificationEmitter
 	wsPublisher         websocket.EventPublisher
 	runtimes            *workerpkg.RuntimeRegistry
 	githubApp           *githubapp.Client
@@ -155,6 +160,7 @@ func NewAgentRunActivities(
 	crmSignalRepo *repository.CRMSignalRepository,
 	crmActivityRepo *repository.CRMActivityRepository,
 	commandExecutor InternalCommandExecutor,
+	notificationEmitter NotificationEmitter,
 	wsPublisher websocket.EventPublisher,
 	runtimes *workerpkg.RuntimeRegistry,
 	githubApp *githubapp.Client,
@@ -193,6 +199,7 @@ func NewAgentRunActivities(
 		crmSignalRepo:       crmSignalRepo,
 		crmActivityRepo:     crmActivityRepo,
 		commandExecutor:     commandExecutor,
+		notificationEmitter: notificationEmitter,
 		wsPublisher:         wsPublisher,
 		runtimes:            runtimes,
 		githubApp:           githubApp,
@@ -883,6 +890,7 @@ func (a *AgentRunActivities) maybeInjectReviewAgentFollowupInput(
 		return nil, err
 	}
 	if interaction != nil {
+		a.maybeNotifyAgentAttentionRequired(ctx, state, interaction)
 		a.publishCodingSessionInteractionEvent(state.run, interaction)
 	} else {
 		a.publishCodingSessionEvent(state.run, "input.requested", map[string]any{
@@ -1807,6 +1815,7 @@ func (a *AgentRunActivities) persistHumanInteractionArtifacts(ctx context.Contex
 			return err
 		}
 		if interaction != nil {
+			a.maybeNotifyAgentAttentionRequired(ctx, state, interaction)
 			a.publishCodingSessionInteractionEvent(state.run, interaction)
 		} else {
 			a.publishCodingSessionEvent(state.run, "input.requested", map[string]any{
@@ -1827,6 +1836,7 @@ func (a *AgentRunActivities) persistHumanInteractionArtifacts(ctx context.Contex
 			return err
 		}
 		if interaction != nil {
+			a.maybeNotifyAgentAttentionRequired(ctx, state, interaction)
 			a.publishCodingSessionInteractionEvent(state.run, interaction)
 		} else {
 			a.publishCodingSessionEvent(state.run, "approval.requested", map[string]any{
@@ -1860,6 +1870,160 @@ func (a *AgentRunActivities) persistHumanInteractionArtifacts(ctx context.Contex
 	}
 
 	return nil
+}
+
+func (a *AgentRunActivities) maybeNotifyAgentAttentionRequired(ctx context.Context, state *resolvedRunState, interaction *model.AgentRunInteraction) {
+	if a == nil || a.notificationEmitter == nil || state == nil || state.run == nil || interaction == nil {
+		return
+	}
+	if strings.TrimSpace(interaction.Status) != model.AgentRunInteractionStatusPending {
+		return
+	}
+	if strings.TrimSpace(state.run.TargetType) != "task" || strings.TrimSpace(state.run.TargetID) == "" {
+		return
+	}
+	task, recipients, err := a.loadTaskAgentAttentionNotificationTarget(ctx, state.run.TargetID)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to resolve task attention notification target",
+			"error", err,
+			"workspace_id", state.run.WorkspaceID,
+			"run_id", state.run.ID,
+			"task_id", state.run.TargetID,
+		)
+		return
+	}
+	if task == nil || len(recipients) == 0 {
+		return
+	}
+
+	attentionType := "input"
+	switch strings.TrimSpace(interaction.InteractionKind) {
+	case model.AgentRunInteractionKindCommandExecutionApproval,
+		model.AgentRunInteractionKindFileChangeApproval,
+		model.AgentRunInteractionKindPermissionsApproval,
+		model.AgentRunInteractionKindReviewCheckpoint:
+		attentionType = "approval"
+	}
+
+	title := fmt.Sprintf("%s is waiting for %s on %s", a.agentAttentionAgentName(state), attentionType, strings.TrimSpace(task.Name))
+	body := strings.TrimSpace(derefString(interaction.Summary))
+	if body == "" {
+		body = fmt.Sprintf("Open the task run to respond to the pending %s request.", attentionType)
+	}
+
+	teamID := ""
+	if task.TeamID != nil {
+		teamID = strings.TrimSpace(*task.TeamID)
+	}
+
+	if err := a.notificationEmitter.Emit(ctx, model.NotificationEventInput{
+		WorkspaceID: state.run.WorkspaceID,
+		EventType:   "task.agent_attention_required",
+		EntityType:  "agent_run",
+		EntityID:    state.run.ID,
+		Title:       title,
+		Body:        body,
+		Category:    model.NotifCategoryAgentAttention,
+		Priority:    "high",
+		TeamID:      teamID,
+		Metadata: model.JSONB{
+			"run_id":           state.run.ID,
+			"task_id":          task.ID,
+			"target_type":      state.run.TargetType,
+			"target_id":        state.run.TargetID,
+			"interaction_id":   interaction.ID,
+			"interaction_kind": interaction.InteractionKind,
+			"pause_reason":     agentAttentionPauseReason(interaction),
+			"agent_id":         strings.TrimSpace(state.run.AgentID),
+			"agent_name":       a.agentAttentionAgentName(state),
+		},
+		EntitySnapshot: model.JSONB{
+			"title":      task.Name,
+			"identifier": taskAttentionDisplayIdentifier(task),
+			"type":       "task",
+		},
+		ParentEntitySnapshot: model.JSONB{
+			"type":       "task",
+			"id":         task.ID,
+			"title":      task.Name,
+			"identifier": taskAttentionDisplayIdentifier(task),
+		},
+		ExplicitRecipients: recipients,
+		SkipFollowers:      true,
+		SkipEmailDelivery:  true,
+	}); err != nil {
+		slog.ErrorContext(ctx, "failed to emit task agent attention notification",
+			"error", err,
+			"workspace_id", state.run.WorkspaceID,
+			"run_id", state.run.ID,
+			"task_id", task.ID,
+			"recipient_count", len(recipients),
+		)
+	}
+}
+
+func (a *AgentRunActivities) loadTaskAgentAttentionNotificationTarget(ctx context.Context, taskID string) (*model.PMTask, []string, error) {
+	if a == nil || a.taskRepo == nil {
+		return nil, nil, nil
+	}
+	task, err := a.taskRepo.GetRawByID(ctx, taskID)
+	if err != nil || task == nil {
+		return task, nil, err
+	}
+
+	if ownerID := strings.TrimSpace(derefString(task.OwnerID)); ownerID != "" {
+		return task, []string{ownerID}, nil
+	}
+
+	ownerUserIDs, err := a.taskRepo.ListOwnerUserIDs(ctx, task.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(ownerUserIDs) > 0 {
+		return task, ownerUserIDs, nil
+	}
+
+	teamID := strings.TrimSpace(derefString(task.TeamID))
+	if teamID == "" || a.workspaceRepo == nil {
+		return task, nil, nil
+	}
+
+	teamUserIDs, err := a.workspaceRepo.ListActiveTeamUserIDs(ctx, task.WorkspaceID, teamID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return task, teamUserIDs, nil
+}
+
+func (a *AgentRunActivities) agentAttentionAgentName(state *resolvedRunState) string {
+	if state != nil && state.agent != nil {
+		if name := strings.TrimSpace(state.agent.Name); name != "" {
+			return name
+		}
+	}
+	return "Agent"
+}
+
+func agentAttentionPauseReason(interaction *model.AgentRunInteraction) string {
+	if interaction == nil {
+		return model.AgentRunPauseReasonHumanInput
+	}
+	switch strings.TrimSpace(interaction.InteractionKind) {
+	case model.AgentRunInteractionKindCommandExecutionApproval,
+		model.AgentRunInteractionKindFileChangeApproval,
+		model.AgentRunInteractionKindPermissionsApproval,
+		model.AgentRunInteractionKindReviewCheckpoint:
+		return model.AgentRunPauseReasonHumanApproval
+	default:
+		return model.AgentRunPauseReasonHumanInput
+	}
+}
+
+func taskAttentionDisplayIdentifier(task *model.PMTask) string {
+	if task == nil || task.DisplayID <= 0 {
+		return ""
+	}
+	return "#" + strconv.Itoa(task.DisplayID)
 }
 
 type interactionRuntimeMetadata struct {

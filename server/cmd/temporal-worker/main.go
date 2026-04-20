@@ -139,6 +139,10 @@ func main() {
 	supportTriageRuleRepo := repository.NewSupportTriageRuleRepository(db)
 	supportTeammateStatusOverrideRepo := repository.NewSupportTeammateStatusOverrideRepository(db)
 	userRepo := repository.NewUserRepository(db)
+	notificationRepo := repository.NewNotificationRepository(db)
+	notificationPrefRepo := repository.NewNotificationPreferenceRepository(db)
+	userNotifSettingsRepo := repository.NewUserNotificationSettingsRepository(db)
+	followerRepo := repository.NewFollowerRepository(db)
 	gitIntRepo := repository.NewGitIntegrationRepository(db)
 	gitRepo := repository.NewGitRepositoryRepository(db)
 	gitLinkRepo := repository.NewTaskGitLinkRepository(db)
@@ -223,6 +227,17 @@ func main() {
 		fatalWithSentry("failed to initialize github app client", err)
 	}
 	wsPublisher := ws.NewJetStreamPublisher(jetstream)
+	notificationService := service.NewNotificationService(
+		notificationRepo,
+		notificationPrefRepo,
+		userNotifSettingsRepo,
+		followerRepo,
+		userRepo,
+		workspaceRepo,
+		wsPublisher,
+		nil,
+		cfg.AppBaseURL,
+	)
 	var activities *temporalapp.AgentRunActivities
 
 	// Email sync activities (may be nil if Gmail not configured).
@@ -406,7 +421,7 @@ func main() {
 		cfg.CodexEnableChatGPTOAuth,
 		cfg.CodexChatGPTAccessToken,
 		cfg.CodexChatGPTAccountID,
-	).SetTriggerExecutionRepository(triggerExecutionRepo)
+	).SetTriggerExecutionRepository(triggerExecutionRepo).SetNotificationService(notificationService)
 	agentService.SetWorkflowService(pmWorkflowService)
 	docsContentService := service.NewDocsContentService(docsContentRepo, docsDocumentRepo, nil)
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, storyRepo, docsDocumentRepo, nil)
@@ -483,6 +498,7 @@ func main() {
 		crmSignalRepo,
 		crmActivityRepo,
 		commandService,
+		notificationService,
 		wsPublisher,
 		runtimes,
 		githubAppClient,

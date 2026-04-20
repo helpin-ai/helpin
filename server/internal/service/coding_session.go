@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -311,6 +312,7 @@ func (s *AgentService) ResolveCodingSessionInteraction(ctx context.Context, work
 				return nil, err
 			}
 		}
+		s.clearAgentAttentionNotification(ctx, run)
 		s.publishResolvedInteractionEvent(run, interaction, actorID)
 		return interaction, nil
 	}
@@ -459,6 +461,19 @@ func (s *AgentService) restorePendingInteraction(ctx context.Context, interactio
 	interaction.ResolvedBy = nil
 	interaction.ResolvedAt = nil
 	return s.interactionRepo.Update(ctx, interaction)
+}
+
+func (s *AgentService) clearAgentAttentionNotification(ctx context.Context, run *model.AgentRun) {
+	if s == nil || s.notificationService == nil || run == nil {
+		return
+	}
+	if err := s.notificationService.MarkAgentAttentionResolved(ctx, run.WorkspaceID, run.ID); err != nil {
+		slog.ErrorContext(ctx, "failed to clear agent attention notification",
+			"error", err,
+			"workspace_id", run.WorkspaceID,
+			"run_id", run.ID,
+		)
+	}
 }
 
 func (s *AgentService) publishResolvedInteractionEvent(run *model.AgentRun, interaction *model.AgentRunInteraction, actorID string) {

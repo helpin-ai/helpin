@@ -73,7 +73,7 @@ export function NextAgentHint({ completedAgent, candidates, onRun, className, de
     >
       <div className="flex min-w-0 items-center gap-2">
         <SparklesIcon className="h-3.5 w-3.5 shrink-0 text-primary/70" />
-        <AgentAvatar agent={nextAgent} className="h-4 w-4 shrink-0" />
+        <AgentAvatar agent={nextAgent} className="h-5 w-5 shrink-0 rounded-none border-0 bg-transparent shadow-none" genericBare />
         <span className="truncate text-muted-foreground">
           <span className="font-medium text-foreground">Next up · {nextAgent.name}.</span>
           <span className="ml-1">{copy.lead}</span>

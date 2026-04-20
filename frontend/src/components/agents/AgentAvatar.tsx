@@ -231,12 +231,12 @@ function PersonaSvg({ persona, className, genericBare = false }: { persona: Agen
         </svg>
       );
     default:
+      if (genericBare) {
+        return <BotIcon className={cn(className, '!h-[72%] !w-[72%] text-slate-600 dark:text-slate-300')} />;
+      }
       return (
-        <div className={cn(
-          'flex h-full w-full items-center justify-center bg-slate-100 text-slate-600 dark:bg-slate-900 dark:text-slate-300',
-          genericBare && 'bg-transparent',
-        )}>
-          <BotIcon className={cn(className, genericBare ? '!h-[72%] !w-[72%]' : '!h-1/2 !w-1/2')} />
+        <div className="flex h-full w-full items-center justify-center bg-slate-100 text-slate-600 dark:bg-slate-900 dark:text-slate-300">
+          <BotIcon className={cn(className, '!h-1/2 !w-1/2')} />
         </div>
       );
   }

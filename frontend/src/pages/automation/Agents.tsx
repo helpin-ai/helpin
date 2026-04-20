@@ -931,7 +931,7 @@ function AgentCard({
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2.5">
-            <AgentAvatar agent={agent} className="h-9 w-9" />
+            <AgentAvatar agent={agent} className="h-9 w-9 rounded-none border-0 bg-transparent shadow-none" genericBare />
             <div className="min-w-0">
               <span className="block truncate text-sm font-semibold">{agent.name}</span>
               <span className="block text-[11px] text-muted-foreground">
@@ -1049,7 +1049,7 @@ function AgentRow({
         <span
           className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[agent.status] ?? STATUS_DOT.paused}`}
         />
-        <AgentAvatar agent={agent} className="h-8 w-8" />
+        <AgentAvatar agent={agent} className="h-8 w-8 rounded-none border-0 bg-transparent shadow-none" genericBare />
         <div className="flex min-w-0 items-center gap-2">
           <span className="text-sm font-medium truncate">{agent.name}</span>
           {agent.is_system && (
@@ -1710,7 +1710,7 @@ export function AgentsPage() {
         <SheetContent side="right" className="w-full gap-0 p-0 data-[side=right]:w-[88vw] data-[side=right]:sm:max-w-[88vw] xl:data-[side=right]:w-[1280px] xl:data-[side=right]:max-w-[1280px]">
           <SheetHeader className="border-b border-border/60 bg-muted/20 px-6 py-5">
             <div className="flex items-start gap-4">
-              <AgentAvatar agent={editingAgent ?? undefined} className="h-14 w-14 shrink-0" />
+              <AgentAvatar agent={editingAgent ?? undefined} className="h-14 w-14 shrink-0 rounded-none border-0 bg-transparent shadow-none" genericBare />
               <div className="min-w-0 space-y-1">
                 <SheetTitle className="text-xl">{editingAgent?.name ?? 'Built-in Agent'}</SheetTitle>
                 <SheetDescription className="max-w-3xl">
