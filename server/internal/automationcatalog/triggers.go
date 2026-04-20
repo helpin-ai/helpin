@@ -94,8 +94,6 @@ func ResolveBindingForTrigger(source, triggerType, targetType string) (bindingID
 		switch triggerType {
 		case "support.auto":
 			return "support.widget_message", "support_widget", true
-		case "task.assigned_agent_state_change":
-			return "task.assigned_agent_state_change", "task_assignment", true
 		}
 	}
 
@@ -414,18 +412,6 @@ func triggerBindingDefinitions() []triggerBindingDefinition {
 			configSurface:    chatPath,
 			supportsAgentRun: true,
 			aliases:          []string{"support_widget_ai"},
-		},
-		{
-			catalogID:        "task.assigned_agent_state_change",
-			bindingKind:      "task_assignment",
-			category:         "pm",
-			triggerType:      "task.assigned_agent_state_change",
-			title:            "Assigned Agent On Task State Change",
-			description:      "When a task has an assigned agent, state changes auto-start that agent for the task.",
-			sourceSurface:    "Task workflow transitions",
-			configSurface:    agentsPath,
-			supportsAgentRun: true,
-			aliases:          []string{"task_assignment"},
 		},
 		{
 			catalogID:        "automation_rule.cron",

@@ -308,11 +308,6 @@ type AgentTriggerExecutionSummary struct {
 	ReferenceType *string    `json:"reference_type,omitempty"`
 }
 
-// AssignAgentRequest assigns an agent to a task.
-type AssignAgentRequest struct {
-	AgentID string `json:"agent_id"`
-}
-
 // ApproveAgentRunRequest approves a pending run outcome.
 type ApproveAgentRunRequest struct {
 	Content     string `json:"content,omitempty"`

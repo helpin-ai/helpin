@@ -354,10 +354,6 @@ export interface UpdateAgentRequest {
   default_invocation_mode?: AgentInvocationMode;
 }
 
-export interface AssignAgentRequest {
-  agent_id: string;
-}
-
 export interface ApproveAgentRunRequest {
   content?: string;
   send_message?: boolean;

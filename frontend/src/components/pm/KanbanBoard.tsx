@@ -19,7 +19,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { usePMBoardStore } from '@/stores/pmBoardStore';
-import type { Agent, CreateTaskRequest, Task, TaskMemberColumn, TaskStateColumn, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
+import type { CreateTaskRequest, Task, TaskMemberColumn, TaskStateColumn, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
 import { pmLabelService } from '@/lib/services/pmLabelService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
@@ -426,12 +426,10 @@ MemberColumn.displayName = 'MemberColumn';
 const DragOverlayCard = memo(function DragOverlayCard({
   manager,
   resolveTeamName,
-  agentById,
   groupBy,
 }: {
   manager: DragPreviewManager;
   resolveTeamName: (id?: string) => string | undefined;
-  agentById: Map<string, Agent>;
   groupBy: string;
 }) {
   const activeTask = useActiveTask(manager);
@@ -441,7 +439,6 @@ const DragOverlayCard = memo(function DragOverlayCard({
       task={activeTask}
       isOverlay
       teamName={resolveTeamName(activeTask.team_id)}
-      assignedAgent={activeTask.assigned_agent_id ? agentById.get(activeTask.assigned_agent_id) ?? null : null}
       showStateBadge={groupBy === 'members'}
     />
   );
@@ -1331,7 +1328,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
           </div>
 
           <DragOverlay>
-            <DragOverlayCard manager={dragManager} resolveTeamName={resolveTeamName} agentById={agentById} groupBy={groupBy} />
+            <DragOverlayCard manager={dragManager} resolveTeamName={resolveTeamName} groupBy={groupBy} />
           </DragOverlay>
         </DndContext>
         </DragPreviewContext.Provider>

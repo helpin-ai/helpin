@@ -635,9 +635,9 @@ export function TaskListView({
               </span>
             ) : null}
             <span className="min-w-0 truncate">{info.getValue()}</span>
-            {info.row.original.assigned_agent_id && (
+            {info.row.original.latest_run_agent_id && (
               <AgentAvatar
-                agent={agentById.get(info.row.original.assigned_agent_id) ?? null}
+                agent={agentById.get(info.row.original.latest_run_agent_id) ?? null}
                 className="h-4 w-4 border-violet-200/80 dark:border-violet-800"
               />
             )}

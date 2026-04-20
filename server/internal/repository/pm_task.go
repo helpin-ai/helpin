@@ -961,7 +961,7 @@ func (r *PMTaskRepository) ListColumnTasks(ctx context.Context, stateID string, 
 // collectAndEnrich collects related IDs from tasks, batch-loads names/labels, and returns enriched BoardTask slices.
 func (r *PMTaskRepository) collectAndEnrich(ctx context.Context, tasks []model.PMTask, options taskEnrichOptions) []model.BoardTask {
 	tasks = r.applyDependencySummaries(ctx, tasks)
-	tasks = r.applyLatestActiveRuns(ctx, tasks)
+	tasks = r.applyLatestRunMetadata(ctx, tasks)
 	epicIDs := map[string]struct{}{}
 	sprintIDs := map[string]struct{}{}
 	ownerMemberIDs := map[string]struct{}{}
@@ -1007,41 +1007,41 @@ type stateInfo struct {
 	Color     string
 }
 
-// latestActiveRunRow is a scan row for the latest non-terminal agent_run per task.
-type latestActiveRunRow struct {
-	TargetID string `gorm:"column:target_id"`
-	ID       string `gorm:"column:id"`
-	Status   string `gorm:"column:status"`
+// latestRunRow is a scan row for the most recent agent_run per task.
+type latestRunRow struct {
+	TargetID  string     `gorm:"column:target_id"`
+	ID        string     `gorm:"column:id"`
+	AgentID   string     `gorm:"column:agent_id"`
+	Status    string     `gorm:"column:status"`
+	StartedAt *time.Time `gorm:"column:started_at"`
+	CreatedAt time.Time  `gorm:"column:created_at"`
 }
 
-// applyLatestActiveRuns populates LatestRunID/LatestRunStatus on each task with
-// the most recent non-terminal agent_run targeting the task. Runs in terminal
-// states (completed/failed/cancelled) are ignored — only queued/running/paused
-// runs are surfaced, so card-level indicators reflect live work.
-func (r *PMTaskRepository) applyLatestActiveRuns(ctx context.Context, tasks []model.PMTask) []model.PMTask {
+// applyLatestRunMetadata populates latest task-targeted run metadata on each
+// task so the UI can show the most recent run agent without task assignment
+// state.
+func (r *PMTaskRepository) applyLatestRunMetadata(ctx context.Context, tasks []model.PMTask) []model.PMTask {
 	if len(tasks) == 0 {
+		return tasks
+	}
+	if r == nil || r.db == nil || !r.db.Migrator().HasTable("agent_runs") {
 		return tasks
 	}
 	ids := make([]string, len(tasks))
 	for i, t := range tasks {
 		ids[i] = t.ID
 	}
-	var rows []latestActiveRunRow
-	activeStatuses := []string{
-		model.AgentRunStatusQueued,
-		model.AgentRunStatusRunning,
-		model.AgentRunStatusPaused,
-	}
+	var rows []latestRunRow
 	if err := r.db.WithContext(ctx).
 		Table("agent_runs").
-		Select("target_id, id, status").
-		Where("target_type = ? AND target_id IN ? AND status IN ?", "task", ids, activeStatuses).
-		Order("target_id, COALESCE(started_at, created_at) DESC").
+		Select("target_id, id, agent_id, status, started_at, created_at").
+		Where("target_type = ? AND target_id IN ?", "task", ids).
+		Order("target_id, COALESCE(started_at, created_at) DESC, created_at DESC").
 		Find(&rows).Error; err != nil {
-		slog.WarnContext(ctx, "load latest active agent runs", "error", err)
+		slog.WarnContext(ctx, "load latest task agent runs", "error", err)
 		return tasks
 	}
-	latest := make(map[string]latestActiveRunRow, len(rows))
+	latest := make(map[string]latestRunRow, len(rows))
 	for _, row := range rows {
 		if _, ok := latest[row.TargetID]; !ok {
 			latest[row.TargetID] = row
@@ -1052,9 +1052,15 @@ func (r *PMTaskRepository) applyLatestActiveRuns(ctx context.Context, tasks []mo
 		if !ok {
 			continue
 		}
-		runID, runStatus := row.ID, row.Status
+		runAt := row.CreatedAt
+		if row.StartedAt != nil {
+			runAt = *row.StartedAt
+		}
+		runID, runAgentID, runStatus, latestRunAt := row.ID, row.AgentID, row.Status, runAt.UTC()
 		tasks[i].LatestRunID = &runID
+		tasks[i].LatestRunAgentID = &runAgentID
 		tasks[i].LatestRunStatus = &runStatus
+		tasks[i].LatestRunAt = &latestRunAt
 	}
 	return tasks
 }
@@ -1858,30 +1864,6 @@ func (r *PMTaskRepository) CountByWorkflowState(ctx context.Context, stateID str
 	return count, nil
 }
 
-// CountAssignedToAgent returns the number of tasks explicitly assigned to an agent.
-func (r *PMTaskRepository) CountAssignedToAgent(ctx context.Context, workspaceID, agentID string) (int64, error) {
-	var count int64
-	if err := r.db.WithContext(ctx).
-		Model(&model.PMTask{}).
-		Where("workspace_id = ? AND assigned_agent_id = ?", workspaceID, agentID).
-		Count(&count).Error; err != nil {
-		return 0, fmt.Errorf("count tasks assigned to agent: %w", err)
-	}
-	return count, nil
-}
-
-// CountAssignedTasks returns the number of tasks with any assigned agent.
-func (r *PMTaskRepository) CountAssignedTasks(ctx context.Context, workspaceID string) (int64, error) {
-	var count int64
-	if err := r.db.WithContext(ctx).
-		Model(&model.PMTask{}).
-		Where("workspace_id = ? AND assigned_agent_id IS NOT NULL", workspaceID).
-		Count(&count).Error; err != nil {
-		return 0, fmt.Errorf("count tasks assigned to any agent: %w", err)
-	}
-	return count, nil
-}
-
 // UpdateStartedCompleted computes and updates started/completed fields from state type.
 func (r *PMTaskRepository) UpdateStartedCompleted(ctx context.Context, taskID string) error {
 	var row struct {
@@ -1941,7 +1923,7 @@ func (r *PMTaskRepository) UpdateSprintID(ctx context.Context, taskID string, sp
 
 func (r *PMTaskRepository) buildTaskDetail(ctx context.Context, task model.PMTask) (*model.TaskDetail, error) {
 	task = r.applyDependencySummaries(ctx, []model.PMTask{task})[0]
-	task = r.applyLatestActiveRuns(ctx, []model.PMTask{task})[0]
+	task = r.applyLatestRunMetadata(ctx, []model.PMTask{task})[0]
 
 	var owners []model.User
 	if err := r.db.WithContext(ctx).
