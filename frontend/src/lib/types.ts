@@ -27,6 +27,25 @@ export interface SigninResponse {
   two_fa_token?: string;
 }
 
+export interface Passkey {
+  id: string;
+  name: string;
+  verified: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PasskeyOptionsResponse {
+  challenge: string;
+  options: Record<string, unknown>;
+}
+
+export interface PasskeyListResponse {
+  passkeys: Passkey[];
+}
+
+export type PasskeyAuthenticationResponse = SigninResponse;
+
 export interface TwoFAStatusResponse {
   enabled: boolean;
 }

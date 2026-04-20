@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -74,6 +75,8 @@ type Config struct {
 	PostmarkRouteInboundWebhookSecret string
 	SupportEmailRouteDomain           string
 	AppBaseURL                        string
+	WebAuthnRPID                      string
+	WebAuthnRPOrigins                 []string
 
 	// CRM encryption & Gmail OAuth (optional — Gmail sync disabled if not set)
 	TOTPEncryptionKey     string
@@ -129,6 +132,15 @@ func Load() (*Config, error) {
 	appBaseURL := os.Getenv("APP_BASE_URL")
 	if appBaseURL == "" {
 		appBaseURL = "http://localhost:5173"
+	}
+
+	webAuthnRPID := strings.TrimSpace(os.Getenv("WEBAUTHN_RP_ID"))
+	if webAuthnRPID == "" {
+		webAuthnRPID = originHost(appBaseURL)
+	}
+	webAuthnRPOrigins := parseOptionalOrigins(os.Getenv("WEBAUTHN_RP_ORIGIN"))
+	if len(webAuthnRPOrigins) == 0 {
+		webAuthnRPOrigins = []string{originOnly(appBaseURL)}
 	}
 
 	temporalAddress := os.Getenv("TEMPORAL_ADDRESS")
@@ -203,6 +215,8 @@ func Load() (*Config, error) {
 		PostmarkRouteInboundWebhookSecret: strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_ROUTE_INBOUND_WEBHOOK_SECRET"), os.Getenv("POSTMARK_INBOUND_WEBHOOK_SECRET"))),
 		SupportEmailRouteDomain:           strings.TrimSpace(firstNonEmpty(os.Getenv("SUPPORT_EMAIL_ROUTE_DOMAIN"), os.Getenv("SUPPORT_EMAIL_REPLY_DOMAIN"), "on.helpin.email")),
 		AppBaseURL:                        appBaseURL,
+		WebAuthnRPID:                      webAuthnRPID,
+		WebAuthnRPOrigins:                 webAuthnRPOrigins,
 		TOTPEncryptionKey:                 strings.TrimSpace(os.Getenv("TOTP_ENCRYPTION_KEY")),
 		CRMEncryptionKey:                  os.Getenv("CRM_ENCRYPTION_KEY"),
 		GmailClientID:                     os.Getenv("GMAIL_CLIENT_ID"),
@@ -247,6 +261,44 @@ func parseCORSOrigins(value string) []string {
 		return []string{"http://localhost:5173"}
 	}
 	return origins
+}
+
+func parseOptionalOrigins(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	var origins []string
+	for _, origin := range strings.Split(value, ",") {
+		if cleaned := originOnly(origin); cleaned != "" {
+			origins = append(origins, cleaned)
+		}
+	}
+	return origins
+}
+
+func originHost(value string) string {
+	cleaned := originOnly(value)
+	if cleaned == "" {
+		return ""
+	}
+	if parsed, err := url.Parse(cleaned); err == nil && parsed.Host != "" {
+		return parsed.Host
+	}
+	return cleaned
+}
+
+func originOnly(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	value = strings.TrimSuffix(value, "/")
+	if strings.Contains(value, "://") {
+		if parsed, err := url.Parse(value); err == nil && parsed.Scheme != "" && parsed.Host != "" {
+			return parsed.Scheme + "://" + parsed.Host
+		}
+	}
+	return value
 }
 
 func parseBoolEnv(value string) bool {

@@ -6,15 +6,18 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { passkeyService } from '@/lib/services/passkeyService'
 import { useAuthStore } from '@/stores/authStore'
 
 export function LoginPage() {
   const navigate = useNavigate()
   const signIn = useAuthStore((state) => state.signIn)
+  const signInWithPasskey = useAuthStore((state) => state.signInWithPasskey)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [rememberMe, setRememberMe] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const passkeySupported = passkeyService.isSupported()
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -24,6 +27,21 @@ export function LoginPage() {
       const { error } = await signIn(email, password, rememberMe)
       if (error) {
         toast.error('Sign in failed', { description: error })
+        return
+      }
+
+      await navigate({ to: '/chat-playground' })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handlePasskeySignIn = async () => {
+    setSubmitting(true)
+    try {
+      const { error } = await signInWithPasskey(undefined, rememberMe)
+      if (error) {
+        toast.error('Passkey sign in failed', { description: error })
         return
       }
 
@@ -86,6 +104,16 @@ export function LoginPage() {
             <Button type="submit" className="w-full" disabled={submitting}>
               {submitting ? 'Signing in...' : 'Sign in'}
             </Button>
+
+            <Button type="button" variant="outline" className="w-full" disabled={submitting || !passkeySupported} onClick={() => void handlePasskeySignIn()}>
+              Sign in with passkey
+            </Button>
+
+            {!passkeySupported && (
+              <p className="text-center text-xs text-muted-foreground">
+                This browser does not support passkeys.
+              </p>
+            )}
           </form>
         </CardContent>
       </Card>

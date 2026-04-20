@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { User } from '@/lib/types';
 import { authService } from '@/lib/services/authService';
+import { passkeyService } from '@/lib/services/passkeyService';
 import { stopTokenRefreshTimer } from '@/lib/api';
 import { queryClient } from '@/lib/queryClient';
 
@@ -10,6 +11,7 @@ interface AuthState {
   serverUnreachable: boolean;
   initialize: () => Promise<void>;
   signIn: (email: string, password: string, rememberMe?: boolean) => Promise<{ error: string | null; requires2FA?: boolean; twoFAToken?: string }>;
+  signInWithPasskey: (emailHint?: string, rememberMe?: boolean) => Promise<{ error: string | null; requires2FA?: boolean; twoFAToken?: string }>;
   verify2FASignIn: (twoFaToken: string, code: string, useRecoveryCode: boolean, rememberMe?: boolean) => Promise<{ error: string | null }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: string | null }>;
   signOut: () => void;
@@ -82,6 +84,21 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
     if (!data.user || !data.access_token || !data.refresh_token) {
       return { error: 'Sign in failed' };
+    }
+
+    persistAuthSession(data.user, data.access_token, data.refresh_token, rememberMe);
+    return { error: null };
+  },
+
+  signInWithPasskey: async (emailHint?: string, rememberMe = false) => {
+    const { data, error } = await passkeyService.beginAuthentication(emailHint, rememberMe);
+    if (error || !data) return { error: error || 'Passkey sign in failed' };
+
+    if (data.requires_2fa && data.two_fa_token) {
+      return { error: null, requires2FA: true, twoFAToken: data.two_fa_token };
+    }
+    if (!data.user || !data.access_token || !data.refresh_token) {
+      return { error: 'Passkey sign in failed' };
     }
 
     persistAuthSession(data.user, data.access_token, data.refresh_token, rememberMe);

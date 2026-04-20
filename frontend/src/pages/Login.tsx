@@ -3,6 +3,7 @@ import { Link, useNavigate } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
 import { useAuthStore } from '@/stores/authStore';
 import { workspacesService } from '@/lib/services/workspacesService';
+import { passkeyService } from '@/lib/services/passkeyService';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -20,8 +21,9 @@ export default function Login() {
   const [twoFactorCode, setTwoFactorCode] = useState('');
   const [useRecoveryCode, setUseRecoveryCode] = useState(false);
   const [loading, setLoading] = useState(false);
-  const { signIn, verify2FASignIn } = useAuthStore();
+  const { signIn, signInWithPasskey, verify2FASignIn } = useAuthStore();
   const navigate = useNavigate();
+  const passkeySupported = passkeyService.isSupported();
 
   const completeLoginRedirect = async () => {
     // Check for redirect (e.g. from invitation join page).
@@ -88,6 +90,27 @@ export default function Login() {
       } else {
         await handlePasswordSubmit();
       }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePasskeyLogin = async () => {
+    setLoading(true);
+    try {
+      const { error, requires2FA, twoFAToken } = await signInWithPasskey(undefined, rememberMe);
+      if (error) {
+        toast.error(error);
+        return;
+      }
+      if (requires2FA && twoFAToken) {
+        setTwoFaToken(twoFAToken);
+        setTwoFactorCode('');
+        setUseRecoveryCode(false);
+        toast.success('Passkey accepted. Enter your authenticator code.');
+        return;
+      }
+      await completeLoginRedirect();
     } finally {
       setLoading(false);
     }
@@ -173,6 +196,18 @@ export default function Login() {
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? (twoFaToken ? 'Verifying...' : 'Signing in...') : (twoFaToken ? 'Verify and continue' : 'Sign in')}
             </Button>
+            {!twoFaToken && (
+              <>
+                <Button type="button" variant="outline" className="w-full" disabled={loading || !passkeySupported} onClick={() => void handlePasskeyLogin()}>
+                  Sign in with passkey
+                </Button>
+                {!passkeySupported && (
+                  <p className="text-xs text-muted-foreground text-center">
+                    This browser does not support passkeys.
+                  </p>
+                )}
+              </>
+            )}
             {!twoFaToken && (
               <p className="text-sm text-muted-foreground">
                 Don't have an account? <Link to="/register" className="text-primary hover:underline">Sign up</Link>
