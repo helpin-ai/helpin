@@ -279,7 +279,7 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 				WorkspaceID:     workspaceID,
 				Name:            strings.TrimSpace(ps.Name),
 				Description:     strPtr(desc),
-				TaskType:       taskType,
+				TaskType:        taskType,
 				WorkflowID:      workflowID,
 				WorkflowStateID: workflowStateID,
 				EpicID:          &epicID,
@@ -313,18 +313,6 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 			}
 		}
 
-		if ps.AssignAgentID != nil && strings.TrimSpace(*ps.AssignAgentID) != "" && isValidUUID(*ps.AssignAgentID) {
-			if err := s.AssignAgentToTask(ctx, workspaceID, detail.Task.ID, *ps.AssignAgentID, actorID); err != nil {
-				slog.WarnContext(ctx, "skipping agent assignment for planned task",
-					"task", detail.Task.Name, "agent_id", *ps.AssignAgentID, "error", err)
-			} else {
-				detail, err = s.taskService.GetByID(ctx, detail.Task.ID)
-				if err != nil {
-					return nil, fmt.Errorf("reload task %q: %w", ps.Name, err)
-				}
-			}
-		}
-
 		created = append(created, detail.Task)
 		createdIDs = append(createdIDs, detail.Task.ID)
 		createdDetails = append(createdDetails, createdPlanningTask{
@@ -355,11 +343,11 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 				return nil, fmt.Errorf("task %q references unknown dependency ref %q in dependency_refs", strings.TrimSpace(ps.Name), depRef)
 			}
 			if err := s.taskLinkRepo.Create(ctx, &model.PMTaskLink{
-				WorkspaceID:   workspaceID,
+				WorkspaceID:  workspaceID,
 				SourceTaskID: sourceTask.ID,
 				TargetTaskID: targetTask.ID,
-				LinkType:      model.PMTaskLinkTypeBlocks,
-				CreatedBy:     actorID,
+				LinkType:     model.PMTaskLinkTypeBlocks,
+				CreatedBy:    actorID,
 			}); err != nil {
 				return nil, err
 			}
@@ -498,7 +486,7 @@ func (s *AgentService) createStoriesFromProposal(ctx context.Context, workspaceI
 				WorkspaceID:     workspaceID,
 				Name:            strings.TrimSpace(ps.Name),
 				Description:     strPtr(desc),
-				TaskType:       taskType,
+				TaskType:        taskType,
 				WorkflowID:      workflowID,
 				WorkflowStateID: workflowStateID,
 				EpicID:          &epicID,
@@ -530,18 +518,6 @@ func (s *AgentService) createStoriesFromProposal(ctx context.Context, workspaceI
 			}
 		}
 
-		if ps.AssignAgentID != nil && strings.TrimSpace(*ps.AssignAgentID) != "" && isValidUUID(*ps.AssignAgentID) {
-			if err := s.AssignAgentToTask(ctx, workspaceID, detail.Task.ID, *ps.AssignAgentID, actorID); err != nil {
-				slog.WarnContext(ctx, "skipping agent assignment for planned task",
-					"task", detail.Task.Name, "agent_id", *ps.AssignAgentID, "error", err)
-			} else {
-				detail, err = s.taskService.GetByID(ctx, detail.Task.ID)
-				if err != nil {
-					return nil, fmt.Errorf("reload task %q: %w", ps.Name, err)
-				}
-			}
-		}
-
 		created = append(created, detail.Task)
 		if strings.TrimSpace(ps.Ref) != "" {
 			refToTask[ps.Ref] = detail.Task
@@ -559,11 +535,11 @@ func (s *AgentService) createStoriesFromProposal(ctx context.Context, workspaceI
 				return nil, fmt.Errorf("task %q references unknown dependency ref %q in dependency_refs", strings.TrimSpace(ps.Name), depRef)
 			}
 			if err := s.taskLinkRepo.Create(ctx, &model.PMTaskLink{
-				WorkspaceID:   workspaceID,
+				WorkspaceID:  workspaceID,
 				SourceTaskID: sourceTask.ID,
 				TargetTaskID: targetTask.ID,
-				LinkType:      model.PMTaskLinkTypeBlocks,
-				CreatedBy:     actorID,
+				LinkType:     model.PMTaskLinkTypeBlocks,
+				CreatedBy:    actorID,
 			}); err != nil {
 				return nil, err
 			}

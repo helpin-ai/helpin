@@ -639,27 +639,6 @@ func (s *AgentService) GetAgentUsageSummary(ctx context.Context, workspaceID, id
 		}
 	}
 
-	if s.taskRepo != nil {
-		assignedCount, err := s.taskRepo.CountAssignedToAgent(ctx, workspaceID, agent.ID)
-		if err != nil {
-			return nil, fmt.Errorf("count tasks assigned to agent: %w", err)
-		}
-		if assignedCount > 0 {
-			triggerType := "task.assigned_agent_state_change"
-			managePath := "/w/$slug/pm/agents"
-			items = append(items, model.AgentTriggerUsage{
-				ID:              "task.assigned_agent_state_change",
-				Kind:            "task_assignment",
-				Title:           "Assigned task state changes",
-				Description:     fmt.Sprintf("This agent is assigned to %d task(s). When those tasks change state, the assigned agent auto-start path can run it.", assignedCount),
-				TriggerType:     &triggerType,
-				Enabled:         true,
-				ManagePath:      &managePath,
-				ExecutionSearch: automationcatalog.ExecutionSearchPresetForDefinitionID("task.assigned_agent_state_change", nil),
-			})
-		}
-	}
-
 	usageByID := make(map[string]*model.AgentTriggerUsage, len(items))
 	usageByReference := make(map[string]*model.AgentTriggerUsage)
 	for idx := range items {
@@ -1688,49 +1667,6 @@ func (s *AgentService) DeleteAgent(ctx context.Context, workspaceID, id, actorID
 	return nil
 }
 
-// AssignAgentToTask assigns an agent to a task.
-func (s *AgentService) AssignAgentToTask(ctx context.Context, workspaceID, taskID, agentID, actorID string) error {
-	agent, err := s.agentRepo.GetByID(ctx, workspaceID, agentID)
-	if err != nil {
-		return err
-	}
-	if agent == nil {
-		return fmt.Errorf("agent not found")
-	}
-	if err := validateAgentTarget(agent, "task"); err != nil {
-		return err
-	}
-
-	task, err := s.taskRepo.GetRawByID(ctx, taskID)
-	if err != nil {
-		return fmt.Errorf("get task: %w", err)
-	}
-	if task == nil {
-		return fmt.Errorf("task not found")
-	}
-	if err := validateAgentTeamScope(agent, "task", task.TeamID); err != nil {
-		return err
-	}
-
-	task.AssignedAgentID = &agentID
-	if err := s.taskRepo.Update(ctx, task); err != nil {
-		return fmt.Errorf("update task: %w", err)
-	}
-
-	_ = s.activitySvc.Log(ctx, workspaceID, "task", taskID, &actorID, "updated", strPtr("assigned_agent_id"), nil, &agent.Name, nil)
-
-	s.publishSimpleEvent("updated", "task", taskID, workspaceID, actorID)
-
-	if _, err := s.RunAgent(ctx, workspaceID, taskID, actorID); err != nil {
-		if errors.Is(err, ErrTaskDeliveryTargetRequired) {
-			return nil
-		}
-		return err
-	}
-
-	return nil
-}
-
 // ListAgentRuns returns runs for an agent.
 func (s *AgentService) ListAgentRuns(ctx context.Context, workspaceID, agentID string, pagination model.PMPagination) ([]model.AgentRun, int64, error) {
 	if workspaceID == "" {
@@ -1817,7 +1753,7 @@ func (s *AgentService) RunAgent(ctx context.Context, workspaceID, taskID, actorI
 	return s.RunTaskAgent(ctx, workspaceID, taskID, actorID, model.StartAgentRunRequest{})
 }
 
-// RunTaskAgent starts a task-targeted agent run using task assignment defaults.
+// RunTaskAgent starts a task-targeted agent run for an explicit agent.
 func (s *AgentService) RunTaskAgent(ctx context.Context, workspaceID, taskID, actorID string, req model.StartAgentRunRequest) (*model.AgentRun, error) {
 	task, err := s.taskRepo.GetRawByID(ctx, taskID)
 	if err != nil {
@@ -1828,16 +1764,8 @@ func (s *AgentService) RunTaskAgent(ctx context.Context, workspaceID, taskID, ac
 	}
 
 	agentID := strings.TrimSpace(req.AgentID)
-	if agentID == "" && task.AssignedAgentID != nil {
-		agentID = strings.TrimSpace(*task.AssignedAgentID)
-	}
 	if agentID == "" {
-		return nil, fmt.Errorf("no agent assigned to this task")
-	}
-	if task.AssignedAgentID == nil || *task.AssignedAgentID != agentID {
-		if err := s.AssignAgentToTask(ctx, workspaceID, task.ID, agentID, actorID); err != nil {
-			return nil, err
-		}
+		return nil, fmt.Errorf("agent_id is required")
 	}
 
 	req.AgentID = agentID

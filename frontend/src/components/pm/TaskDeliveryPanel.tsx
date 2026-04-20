@@ -1,9 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircleIcon, ArrowRight01Icon, GitBranchIcon, GitPullRequestIcon, Loading01Icon, PlayIcon, FloppyDiskIcon, UserAdd01Icon, LinkSquare01Icon } from '@/lib/icons';
+import { useEffect, useMemo, useState } from 'react';
+import { ArrowRight01Icon, GitBranchIcon, GitPullRequestIcon, Loading01Icon, FloppyDiskIcon, LinkSquare01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
-import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { RepositoryBranchPicker } from '@/components/git/RepositoryBranchPicker';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -14,12 +12,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { agentService } from '@/lib/services/agentService';
 import { repositoryDefaultBranchLabel, taskBranchOptionLabel } from '@/lib/branchLabels';
 import { gitService } from '@/lib/services/gitService';
-import { pmTaskService } from '@/lib/services/pmTaskService';
 import type {
-  Agent,
   GitRepository,
   TaskDeliveryTarget,
   TaskDetail,
@@ -50,42 +45,25 @@ interface Props {
 
 // ── Hook ──────────────────────────────────────────────────────────
 
-export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, onTaskUpdated: (task: TaskDetail) => void) {
-  const [agents, setAgents] = useState<Agent[]>([]);
+export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, _onTaskUpdated: (task: TaskDetail) => void) {
   const [repositories, setRepositories] = useState<GitRepository[]>([]);
   const [target, setTarget] = useState<TaskDeliveryTarget | null>(null);
-  const assignedAgentId = taskDetail.task.assigned_agent_id ?? '';
-  const [selectedAgentId, setSelectedAgentId] = useState(assignedAgentId);
   const [repositoryId, setRepositoryId] = useState('');
   const [baseBranch, setBaseBranch] = useState('');
   const [loading, setLoading] = useState(true);
-  const [savingAssignment, setSavingAssignment] = useState(false);
   const [savingTarget, setSavingTarget] = useState(false);
-  const [triggeringRun, setTriggeringRun] = useState(false);
-  const assignmentPromiseRef = useRef<Promise<boolean> | null>(null);
-
-  useEffect(() => {
-    setSelectedAgentId(assignedAgentId);
-  }, [assignedAgentId]);
 
   useEffect(() => {
     let mounted = true;
 
     const load = async () => {
       setLoading(true);
-      const [agentsRes, reposRes, targetRes] = await Promise.all([
-        agentService.list(workspaceId),
+      const [reposRes, targetRes] = await Promise.all([
         gitService.listRepositories(workspaceId),
         gitService.getTaskDeliveryTarget(workspaceId, taskDetail.task.id),
       ]);
       if (!mounted) {
         return;
-      }
-
-      if (agentsRes.error) {
-        toast.error(agentsRes.error);
-      } else {
-        setAgents((agentsRes.data ?? []).filter(isTaskDeliveryAgent));
       }
 
       if (reposRes.error) {
@@ -114,51 +92,17 @@ export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, onT
 
   const hidden = !loading && repositories.length === 0 && !target;
 
-  const selectedAgent = useMemo(
-    () => agents.find((agent) => agent.id === selectedAgentId),
-    [agents, selectedAgentId],
-  );
-
   const selectedRepository = useMemo(
     () => repositories.find((repository) => repository.id === repositoryId) ?? null,
     [repositories, repositoryId],
   );
 
   const resolvedBaseBranch = baseBranch.trim() || selectedRepository?.default_branch || 'main';
-  const requiresRepo = Boolean(selectedAgent && requiresRepoProfile(selectedAgent));
-  const hasDeliveryTarget = Boolean(repositoryId && resolvedBaseBranch);
   const branchPreview = target?.working_branch || buildBranchPreview(taskDetail.task.task_key, taskDetail.task.name);
-  const isConfigured = Boolean(assignedAgentId || target?.repository_id);
-  const agentSelectionSaved = selectedAgentId === assignedAgentId;
+  const isConfigured = Boolean(target?.repository_id);
   const deliveryTargetSaved =
     repositoryId === (target?.repository_id ?? '') &&
     (!repositoryId || resolvedBaseBranch === (target?.base_branch ?? ''));
-
-  const refreshTask = async () => {
-    const { data, error } = await pmTaskService.get(workspaceId, taskDetail.task.id);
-    if (error) {
-      toast.error(error);
-      return;
-    }
-    if (data) {
-      onTaskUpdated(data);
-    }
-  };
-
-  const refreshDeliveryTarget = async (syncInputs = false) => {
-    const targetRes = await gitService.getTaskDeliveryTarget(workspaceId, taskDetail.task.id);
-    if (targetRes.error) {
-      toast.error(targetRes.error);
-      return false;
-    }
-    const nextTarget = targetRes.data ?? null;
-    setTarget(nextTarget);
-    if (syncInputs) {
-      setRepositoryId(nextTarget?.repository_id ?? '');
-      setBaseBranch(nextTarget?.base_branch ?? '');
-    }
-    return true;
-  };
 
   const persistDeliveryTarget = async (showSuccessToast: boolean) => {
     if (!repositoryId) {
@@ -199,42 +143,6 @@ export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, onT
     return persistDeliveryTarget(showSuccessToast);
   };
 
-  const ensureAgentAssigned = async (showSuccessToast: boolean) => {
-    if (!selectedAgentId) {
-      toast.error('Choose an agent first');
-      return false;
-    }
-    if (agentSelectionSaved) {
-      return true;
-    }
-    if (assignmentPromiseRef.current) {
-      return assignmentPromiseRef.current;
-    }
-
-    const assignmentPromise = (async () => {
-      setSavingAssignment(true);
-      const { error } = await agentService.assignToTask(workspaceId, taskDetail.task.id, selectedAgentId);
-      setSavingAssignment(false);
-      if (error) {
-        toast.error(error);
-        return false;
-      }
-      if (showSuccessToast) {
-        toast.success('Agent assigned');
-      }
-      await refreshTask();
-      await refreshDeliveryTarget();
-      return true;
-    })();
-
-    assignmentPromiseRef.current = assignmentPromise;
-    try {
-      return await assignmentPromise;
-    } finally {
-      assignmentPromiseRef.current = null;
-    }
-  };
-
   const handleSaveDelivery = async () => {
     await ensureDeliveryTargetSaved(true);
   };
@@ -273,35 +181,6 @@ export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, onT
     return true;
   };
 
-  const handleAssignAgent = async () => {
-    await ensureAgentAssigned(true);
-  };
-
-  const handleAgentChange = async (agentId: string) => {
-    setSelectedAgentId(agentId);
-    // Auto-assign immediately
-    if (assignmentPromiseRef.current) return;
-    const assignmentPromise = (async () => {
-      setSavingAssignment(true);
-      const { error } = await agentService.assignToTask(workspaceId, taskDetail.task.id, agentId);
-      setSavingAssignment(false);
-      if (error) {
-        toast.error(error);
-        return false;
-      }
-      toast.success('Agent assigned');
-      await refreshTask();
-      await refreshDeliveryTarget(true);
-      return true;
-    })();
-    assignmentPromiseRef.current = assignmentPromise;
-    try {
-      await assignmentPromise;
-    } finally {
-      assignmentPromiseRef.current = null;
-    }
-  };
-
   const handleRepoChange = async (repoId: string) => {
     setRepositoryId(repoId);
     if (!repoId) return;
@@ -324,65 +203,30 @@ export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, onT
     toast.success('Delivery target updated');
   };
 
-  const handleRunNow = async () => {
-    if (requiresRepo) {
-      const savedDelivery = await ensureDeliveryTargetSaved(false);
-      if (!savedDelivery) {
-        return;
-      }
-    }
-    const assigned = await ensureAgentAssigned(false);
-    if (!assigned) {
-      return;
-    }
-
-    setTriggeringRun(true);
-    const { error } = await agentService.runTask(workspaceId, taskDetail.task.id);
-    setTriggeringRun(false);
-    if (error) {
-      toast.error(error);
-      return;
-    }
-    toast.success('Agent run started');
-  };
-
   const deliveryStateCfg = target?.delivery_state
     ? (DELIVERY_STATE_CONFIG[target.delivery_state] ?? { label: target.delivery_state.replace(/_/g, ' '), className: 'bg-muted text-muted-foreground' })
     : null;
 
   return {
-    agents,
     repositories,
     target,
-    selectedAgent,
-    selectedAgentId,
-    setSelectedAgentId,
     repositoryId,
     setRepositoryId,
     baseBranch,
     setBaseBranch,
     loading,
     hidden,
-    savingAssignment,
     savingTarget,
-    triggeringRun,
     resolvedBaseBranch,
-    requiresRepo,
-    hasDeliveryTarget,
     branchPreview,
     isConfigured,
-    agentSelectionSaved,
     deliveryTargetSaved,
     deliveryStateCfg,
     selectedRepository,
     handleSaveDelivery,
     handleBaseBranchChange,
-    handleAssignAgent,
-    handleAgentChange,
     handleRepoChange,
-    handleRunNow,
     ensureDeliveryTargetSaved,
-    ensureAgentAssigned,
   };
 }
 
@@ -435,49 +279,10 @@ export function TaskDeliveryPanel({ workspaceId, taskDetail, onTaskUpdated }: Pr
           {/* Form */}
           <div className="space-y-3 px-2 py-2">
             <p className="text-xs text-muted-foreground">
-              Pick the agent and repo for this task.
+              Configure the repository and base branch this task should use when code or review agents run.
             </p>
 
             <div className="space-y-2">
-              <div className="space-y-1">
-                <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Agent
-                </label>
-                <Select value={d.selectedAgentId || undefined} onValueChange={d.setSelectedAgentId}>
-                  <SelectTrigger className="h-8 text-sm">
-                    {d.selectedAgent ? (
-                      <div className="flex items-center gap-2">
-                        <AgentAvatar agent={d.selectedAgent} className="h-5 w-5" />
-                        <span>{d.selectedAgent.name}</span>
-                      </div>
-                    ) : (
-                      <SelectValue placeholder="Choose agent" />
-                    )}
-                  </SelectTrigger>
-                  <SelectContent>
-                    {d.agents.map((agent) => (
-                      <SelectItem key={agent.id} value={agent.id}>
-                        <div className="flex items-center gap-2">
-                          <AgentAvatar agent={agent} className="h-5 w-5" />
-                          <span>{agent.name}</span>
-                          <span className="text-muted-foreground">· {agentSummaryLabel(agent)}</span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {d.selectedAgent && (
-                  <p className="text-[11px] text-muted-foreground">
-                    Starts automatically after assignment.
-                  </p>
-                )}
-                {d.selectedAgentId && !d.agentSelectionSaved && (
-                  <p className="text-[11px] text-amber-700 dark:text-amber-400">
-                    This agent change is not saved yet. Assign or Run Now will persist it.
-                  </p>
-                )}
-              </div>
-
               <div className="space-y-1">
                 <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                   Repository
@@ -499,7 +304,7 @@ export function TaskDeliveryPanel({ workspaceId, taskDetail, onTaskUpdated }: Pr
                 </p>
                 {d.repositoryId && !d.deliveryTargetSaved && (
                   <p className="text-[11px] text-amber-700 dark:text-amber-400">
-                    Repository changes are not saved yet. Save or Run Now will persist them.
+                    Repository changes are not saved yet. Save will persist them.
                   </p>
                 )}
               </div>
@@ -533,16 +338,6 @@ export function TaskDeliveryPanel({ workspaceId, taskDetail, onTaskUpdated }: Pr
                 </div>
               </div>
             </div>
-
-            {d.selectedAgent && d.requiresRepo && !d.hasDeliveryTarget && (
-              <Alert variant="destructive" className="border-amber-500/30 bg-amber-50 text-amber-800 dark:bg-amber-900/10 dark:text-amber-400 [&>svg]:text-amber-600 dark:[&>svg]:text-amber-400">
-                <AlertCircleIcon className="h-4 w-4" />
-                <AlertTitle className="text-xs">Repository required</AlertTitle>
-                <AlertDescription className="text-[11px] text-amber-700 dark:text-amber-400/80">
-                  Choose a repository and base branch, then save.
-                </AlertDescription>
-              </Alert>
-            )}
           </div>
 
           {/* Actions */}
@@ -556,23 +351,6 @@ export function TaskDeliveryPanel({ workspaceId, taskDetail, onTaskUpdated }: Pr
             >
               {d.savingTarget ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <FloppyDiskIcon className="h-3 w-3" />}
               Save
-            </Button>
-            <Button
-              size="xs"
-              variant="outline"
-              onClick={d.handleAssignAgent}
-              disabled={d.savingAssignment || !d.selectedAgentId}
-            >
-              {d.savingAssignment ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <UserAdd01Icon className="h-3 w-3" />}
-              Assign
-            </Button>
-            <Button
-              size="xs"
-              onClick={d.handleRunNow}
-              disabled={d.triggeringRun || d.savingAssignment || d.savingTarget || (d.requiresRepo && !d.hasDeliveryTarget)}
-            >
-              {d.triggeringRun ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <PlayIcon className="h-3 w-3" />}
-              Run Now
             </Button>
           </div>
 
@@ -640,49 +418,6 @@ export function TaskDeliveryPanel({ workspaceId, taskDetail, onTaskUpdated }: Pr
         </>
       )}
     </div>
-  );
-}
-
-function isTaskDeliveryAgent(agent: { preset_key?: string; allowed_targets?: string[] }) {
-  return agent.preset_key === 'task_planner' ||
-    agent.preset_key === 'story_planner' ||
-    agent.preset_key === 'code_builder' ||
-    agent.preset_key === 'review_agent';
-}
-
-function agentSummaryLabel(agent: { preset_key?: string; runtime_kind?: string; role?: string }) {
-  if (agent.role) return agent.role;
-  switch (agent.preset_key) {
-    case 'code_builder':
-      return 'Code Builder';
-    case 'review_agent':
-      return 'Review Agent';
-    case 'task_planner':
-      return 'Task Planner';
-    case 'story_planner':
-      return 'Task Planner';
-    case 'epic_planner':
-      return 'Epic Planner';
-    case 'support_agent':
-      return 'Support Agent';
-    case 'crm_operator':
-      return 'CRM Operator';
-    default:
-      return agent.runtime_kind === 'native_sdk' ? 'Interactive Agent' : 'Autonomous Agent';
-  }
-}
-
-function requiresRepoProfile(agent: { runtime_kind?: string; allowed_tools?: string[] }) {
-  if (agent.runtime_kind === 'opencode' || agent.runtime_kind === 'codex') {
-    return true;
-  }
-  return Boolean(
-    agent.allowed_tools?.some((tool) =>
-      tool === 'write_file' ||
-      tool === 'create_branch' ||
-      tool === 'commit_and_push' ||
-      tool === 'open_pr',
-    ),
   );
 }
 

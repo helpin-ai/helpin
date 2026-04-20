@@ -308,9 +308,10 @@ export interface Task {
   blocked_by_tasks?: TaskDependencyTask[];
   blocking_tasks?: TaskDependencyTask[];
   archived: boolean;
-  assigned_agent_id?: string;
   latest_run_id?: string | null;
+  latest_run_agent_id?: string | null;
   latest_run_status?: string | null;
+  latest_run_at?: string | null;
   template_id?: string;
   recurring_template_id?: string;
   recurring_run_id?: string;

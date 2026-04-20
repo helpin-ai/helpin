@@ -161,6 +161,26 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
+		`CREATE TABLE agent_trigger_executions (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			agent_id TEXT NOT NULL,
+			binding_id TEXT NOT NULL,
+			binding_kind TEXT NOT NULL,
+			trigger_type TEXT,
+			reference_id TEXT,
+			reference_type TEXT,
+			target_type TEXT,
+			target_id TEXT,
+			run_id TEXT,
+			status TEXT NOT NULL,
+			error_message TEXT,
+			fired_at DATETIME NOT NULL,
+			started_at DATETIME,
+			completed_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
 		`CREATE TABLE automation_health_snapshots (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
@@ -255,6 +275,22 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("create cron automation rule: %v", err)
 	}
+	completedAt := now.Add(5 * time.Minute)
+	if err := db.Create(&model.AgentTriggerExecution{
+		ID:            "exec-rule-cron-1",
+		WorkspaceID:   workspaceID,
+		AgentID:       "agent-1",
+		BindingID:     "automation_rule.cron",
+		BindingKind:   "automation_rule",
+		TriggerType:   testStringPtr(model.TriggerCron),
+		ReferenceID:   testStringPtr("rule-cron-1"),
+		ReferenceType: testStringPtr("automation_rule"),
+		Status:        model.AgentTriggerExecutionStatusCompleted,
+		FiredAt:       now,
+		CompletedAt:   &completedAt,
+	}).Error; err != nil {
+		t.Fatalf("create automation trigger execution: %v", err)
+	}
 
 	svc := NewAutomationInventoryService(
 		repository.NewSettingsRepository(db),
@@ -323,6 +359,14 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 	sprintAutoCreate := itemsByCatalog["pm.sprint_auto_create"][0]
 	if sprintAutoCreate.ScopeType != model.AutomationScopeTeam || sprintAutoCreate.ScopeID != teamID {
 		t.Fatalf("expected sprint auto-create to be team-scoped for %s, got %s/%s", teamID, sprintAutoCreate.ScopeType, sprintAutoCreate.ScopeID)
+	}
+
+	if got := len(itemsByCatalog["automation_rule"]); got != 1 {
+		t.Fatalf("expected 1 automation_rule item, got %d", got)
+	}
+	ruleItem := itemsByCatalog["automation_rule"][0]
+	if ruleItem.Health.LastSuccessAt == nil || !ruleItem.Health.LastSuccessAt.Equal(completedAt) {
+		t.Fatalf("expected automation rule last_success_at %v, got %v", completedAt, ruleItem.Health.LastSuccessAt)
 	}
 
 	triggerCatalog, err := svc.triggerCatalogItems(ctx, workspaceID)

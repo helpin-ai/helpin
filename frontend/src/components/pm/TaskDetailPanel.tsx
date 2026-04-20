@@ -1315,7 +1315,7 @@ function TaskDetailPanelBody({
               <AgentRunPanel
                 taskId={taskDetail.task.id}
                 workspaceId={workspaceId}
-                assignedAgentId={taskDetail.task.assigned_agent_id}
+                latestRunAgentId={taskDetail.task.latest_run_agent_id}
               />
             </>
           )}
@@ -1672,40 +1672,6 @@ function TaskDetailPanelBody({
               <>
                 <div className="col-span-3 h-px bg-border/40 my-1" />
 
-                <MetadataRow icon={BotIcon} label="Agent">
-                  <SidebarPopoverSelect
-                    value={delivery.selectedAgentId || '__none__'}
-                    options={[
-                      { value: '__none__', label: 'No agent' },
-                      ...delivery.agents.map((a) => ({ value: a.id, label: `${a.name} · ${agentSummaryLabel(a)}` })),
-                    ]}
-                    onChange={(v) => {
-                      const val = v === '__none__' ? '' : v;
-                      if (val) {
-                        delivery.handleAgentChange(val);
-                      }
-                    }}
-                    renderTrigger={() => (
-                      <>
-                        {delivery.selectedAgent && <AgentAvatar agent={delivery.selectedAgent} className="h-5 w-5" />}
-                        <span>{delivery.selectedAgent?.name ?? 'No agent'}</span>
-                        {delivery.savingAssignment && <Loading01Icon className="h-3 w-3 animate-spin" />}
-                      </>
-                    )}
-                    renderOption={(v) => {
-                      if (v === '__none__') return <span className="truncate">No agent</span>;
-                      const a = delivery.agents.find((ag) => ag.id === v);
-                      if (!a) return null;
-                      return (
-                        <>
-                          <AgentAvatar agent={a} className="h-5 w-5" />
-                          <span className="truncate">{a.name}</span>
-                        </>
-                      );
-                    }}
-                  />
-                </MetadataRow>
-
                 <MetadataRow icon={GitBranchIcon} label="Repository">
                   <SidebarPopoverSelect
                     value={delivery.repositoryId || '__none__'}
@@ -1904,26 +1870,4 @@ export function TaskDetailPanel({
       </SheetContent>
     </Sheet>
   );
-}
-
-function agentSummaryLabel(agent: { preset_key?: string; runtime_kind?: string; role?: string }) {
-  if (agent.role) return agent.role;
-  switch (agent.preset_key) {
-    case 'code_builder':
-      return 'Code Builder';
-    case 'review_agent':
-      return 'Review Agent';
-    case 'task_planner':
-      return 'Task Planner';
-    case 'story_planner':
-      return 'Task Planner';
-    case 'epic_planner':
-      return 'Epic Planner';
-    case 'support_agent':
-      return 'Support Agent';
-    case 'crm_operator':
-      return 'CRM Operator';
-    default:
-      return agent.runtime_kind === 'native_sdk' ? 'Interactive Agent' : 'Autonomous Agent';
-  }
 }
