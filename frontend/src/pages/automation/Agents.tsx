@@ -1172,6 +1172,10 @@ export function AgentsPage() {
   const [creatingVersion, setCreatingVersion] = useState(false);
   const [workspaceVersionPendingDelete, setWorkspaceVersionPendingDelete] = useState<AgentPresetDefinition | null>(null);
   const [deletingVersion, setDeletingVersion] = useState(false);
+  const [workspaceVersionBeingRenamed, setWorkspaceVersionBeingRenamed] = useState<AgentPresetDefinition | null>(null);
+  const [renameLabelDraft, setRenameLabelDraft] = useState('');
+  const [renameDescriptionDraft, setRenameDescriptionDraft] = useState('');
+  const [renamingVersion, setRenamingVersion] = useState(false);
 
   const loadAgents = useCallback(async () => {
     if (!workspaceId) return;
@@ -1457,6 +1461,28 @@ export function AgentsPage() {
       setForm(buildSystemAgentForm(editingAgent, presets));
     }
     toast.success('Workspace version deleted');
+  };
+
+  const handleRenameWorkspaceVersion = async () => {
+    if (!workspaceId || !workspaceVersionBeingRenamed?.id) return;
+    const label = renameLabelDraft.trim();
+    if (!label) return;
+    setRenamingVersion(true);
+    const res = await agentService.updatePresetVersion(workspaceId, workspaceVersionBeingRenamed.id, {
+      label,
+      description: renameDescriptionDraft.trim(),
+    });
+    if (res.error) {
+      toast.error('Failed to rename version', { description: res.error });
+      setRenamingVersion(false);
+      return;
+    }
+    await loadPresets();
+    setWorkspaceVersionBeingRenamed(null);
+    setRenameLabelDraft('');
+    setRenameDescriptionDraft('');
+    setRenamingVersion(false);
+    toast.success('Version renamed');
   };
 
   const handleDelete = async () => {
@@ -1896,6 +1922,15 @@ export function AgentsPage() {
                             <DropdownMenuContent align="end" className="w-44">
                               <DropdownMenuItem
                                 onSelect={() => {
+                                  setWorkspaceVersionBeingRenamed(presetVersion);
+                                  setRenameLabelDraft(presetVersion.version_label);
+                                  setRenameDescriptionDraft(presetVersion.description ?? '');
+                                }}
+                              >
+                                Rename
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onSelect={() => {
                                   selectSystemPresetVersion(presetVersion.version_key);
                                   setVersionDraftOpen(true);
                                   setVersionLabelDraft(`${presetVersion.version_label} Copy`);
@@ -2019,7 +2054,7 @@ export function AgentsPage() {
                     <Collapsible.Content>
                       <div className="border-t border-border/60 p-4">
                         {systemVersionReadOnly ? (
-                          <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">{form.instruction_preamble || <span className="text-muted-foreground">No preamble.</span>}</p>
+                          <p className="whitespace-pre-wrap rounded-md border-l-2 border-border bg-muted/30 px-3 py-2 text-sm leading-relaxed text-foreground/90">{form.instruction_preamble || <span className="text-muted-foreground">No preamble.</span>}</p>
                         ) : (
                           <Textarea
                             value={form.instruction_preamble}
@@ -3386,6 +3421,68 @@ export function AgentsPage() {
         variant="destructive"
         onConfirm={handleDeleteWorkspaceVersion}
       />
+
+      <Dialog
+        open={workspaceVersionBeingRenamed !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setWorkspaceVersionBeingRenamed(null);
+            setRenameLabelDraft('');
+            setRenameDescriptionDraft('');
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>Rename workspace version</DialogTitle>
+            <DialogDescription>
+              Update the label or description for this workspace version. Changes apply immediately.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <FieldLabel htmlFor="rename-version-label">Label</FieldLabel>
+              <Input
+                id="rename-version-label"
+                value={renameLabelDraft}
+                onChange={(e) => setRenameLabelDraft(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="space-y-2">
+              <FieldLabel htmlFor="rename-version-description">Description</FieldLabel>
+              <Textarea
+                id="rename-version-description"
+                value={renameDescriptionDraft}
+                onChange={(e) => setRenameDescriptionDraft(e.target.value)}
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setWorkspaceVersionBeingRenamed(null);
+                setRenameLabelDraft('');
+                setRenameDescriptionDraft('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={renamingVersion || !renameLabelDraft.trim()}
+              onClick={handleRenameWorkspaceVersion}
+            >
+              {renamingVersion ? 'Saving…' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
