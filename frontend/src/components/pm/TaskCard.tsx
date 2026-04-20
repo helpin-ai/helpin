@@ -6,7 +6,7 @@ import {
   Layers01Icon,
 } from '@/lib/icons';
 import { Calendar03Icon, Tick01Icon, UserAdd01Icon } from '@/lib/pmIcons';
-import { AgentAvatar } from '@/components/agents/AgentAvatar';
+import { AgentAvatar, resolveAgentPersonaKey } from '@/components/agents/AgentAvatar';
 import { differenceInDays, format, formatDistanceToNow, isBefore, parseISO, startOfDay } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -68,43 +68,64 @@ const AGENT_OCTAGON_POINTS = '30,2 70,2 98,30 98,70 70,98 30,98 2,70 2,30';
 function TaskCardAgentBadge({
   agent,
   isWorking = false,
+  latestRunStatus,
 }: {
   agent?: Pick<Agent, 'id' | 'name' | 'preset_key' | 'status'> | null;
   isWorking?: boolean;
+  latestRunStatus?: string | null;
 }) {
+  const isGenericAgent = resolveAgentPersonaKey({ agent }) === 'generic';
+  const statusDotClassName = latestRunStatus === 'completed'
+    ? 'bg-emerald-500 dark:bg-emerald-400'
+    : latestRunStatus === 'failed'
+      ? 'bg-red-500 dark:bg-red-400'
+      : null;
+
   return (
     <span className="relative block h-7 w-7 shrink-0">
-      <svg
-        viewBox="0 0 100 100"
-        aria-hidden="true"
-        className={cn(
-          'absolute inset-0 h-full w-full overflow-visible',
-          isWorking && 'motion-safe:animate-spin motion-safe:[animation-duration:2.4s]',
-        )}
-      >
-        <polygon
-          points={AGENT_OCTAGON_POINTS}
-          fill="none"
-          className={cn(
-            isWorking
-              ? 'stroke-foreground/80'
-              : 'stroke-muted-foreground/45 dark:stroke-muted-foreground/70',
-          )}
-          strokeWidth={5}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeDasharray={isWorking ? undefined : '6 7'}
-        />
-      </svg>
-      <span
-        className="absolute inset-[2px] overflow-hidden bg-background/95"
-        style={{ clipPath: 'polygon(31% 4%, 69% 4%, 96% 31%, 96% 69%, 69% 96%, 31% 96%, 4% 69%, 4% 31%)' }}
-      >
+      {isWorking ? (
+        <>
+          <svg
+            viewBox="0 0 100 100"
+            aria-hidden="true"
+            className="absolute inset-0 h-full w-full overflow-visible motion-safe:animate-spin motion-safe:[animation-duration:2.4s]"
+          >
+            <polygon
+              points={AGENT_OCTAGON_POINTS}
+              fill="none"
+              className="stroke-foreground/80"
+              strokeWidth={4}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          <span
+            className="absolute inset-[2px] overflow-hidden bg-background/95"
+            style={{ clipPath: 'polygon(31% 4%, 69% 4%, 96% 31%, 96% 69%, 69% 96%, 31% 96%, 4% 69%, 4% 31%)' }}
+          >
+            <AgentAvatar
+              agent={agent}
+              className="h-full w-full rounded-none border-0 bg-transparent shadow-none"
+              genericBare={isGenericAgent}
+            />
+          </span>
+        </>
+      ) : (
         <AgentAvatar
           agent={agent}
-          className="h-full w-full rounded-none border-0 bg-transparent shadow-none"
+          className="h-7 w-7 rounded-none border-0 bg-transparent shadow-none"
+          genericBare={isGenericAgent}
         />
-      </span>
+      )}
+      {statusDotClassName ? (
+        <span
+          aria-hidden="true"
+          className={cn(
+            'absolute bottom-0 right-0 h-2 w-2 rounded-full ring-1 ring-background',
+            statusDotClassName,
+          )}
+        />
+      ) : null}
     </span>
   );
 }
@@ -577,7 +598,11 @@ function TaskCardComponent({
                 <TooltipTrigger asChild>
                   {isOverlay ? (
                     <span className="shrink-0">
-                      <TaskCardAgentBadge agent={latestRunAgent} isWorking={hasActiveRun} />
+                      <TaskCardAgentBadge
+                        agent={latestRunAgent}
+                        isWorking={hasActiveRun}
+                        latestRunStatus={task.latest_run_status}
+                      />
                     </span>
                   ) : (
                     <button
@@ -593,7 +618,11 @@ function TaskCardComponent({
                       className="shrink-0 rounded transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                       aria-label={tooltipLabel}
                     >
-                      <TaskCardAgentBadge agent={latestRunAgent} isWorking={hasActiveRun} />
+                      <TaskCardAgentBadge
+                        agent={latestRunAgent}
+                        isWorking={hasActiveRun}
+                        latestRunStatus={task.latest_run_status}
+                      />
                     </button>
                   )}
                 </TooltipTrigger>
