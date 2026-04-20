@@ -1873,7 +1873,7 @@ export function AgentsPage() {
                       <div
                         key={presetVersion.version_key}
                         className={cn(
-                          'group relative rounded-lg border transition-colors',
+                          'group relative rounded-lg border transition-colors focus-within:ring-2 focus-within:ring-primary/40',
                           isSelected
                             ? 'border-primary/40 bg-background shadow-sm ring-1 ring-primary/20'
                             : 'border-transparent hover:bg-background hover:shadow-sm',
@@ -2048,7 +2048,7 @@ export function AgentsPage() {
                       <button type="button" className="group flex w-full items-center gap-3 px-4 py-3 text-left">
                         <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
                         <span className="flex-1 text-sm font-medium">Agent identity</span>
-                        <span className="text-xs text-muted-foreground">Preamble</span>
+                        <span className="text-xs text-muted-foreground group-data-[state=open]:hidden">Preamble</span>
                       </button>
                     </Collapsible.Trigger>
                     <Collapsible.Content>
@@ -2076,7 +2076,7 @@ export function AgentsPage() {
                       <button type="button" className="group flex w-full items-center gap-3 px-4 py-3 text-left">
                         <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
                         <span className="flex-1 text-sm font-medium">Skills</span>
-                        <span className="text-xs text-muted-foreground">{form.instruction_skills.length} module{form.instruction_skills.length === 1 ? '' : 's'}</span>
+                        <span className="text-xs text-muted-foreground group-data-[state=open]:hidden">{form.instruction_skills.length} module{form.instruction_skills.length === 1 ? '' : 's'}</span>
                       </button>
                     </Collapsible.Trigger>
                     <Collapsible.Content>
@@ -2196,7 +2196,7 @@ export function AgentsPage() {
                       <button type="button" className="group flex w-full items-center gap-3 px-4 py-3 text-left">
                         <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
                         <span className="flex-1 text-sm font-medium">Run mode</span>
-                        <span className="text-xs text-muted-foreground">{INVOCATION_MODE_LABELS[form.default_invocation_mode]}</span>
+                        <span className="text-xs text-muted-foreground group-data-[state=open]:hidden">{INVOCATION_MODE_LABELS[form.default_invocation_mode]}</span>
                       </button>
                     </Collapsible.Trigger>
                     <Collapsible.Content>
@@ -2232,7 +2232,7 @@ export function AgentsPage() {
                       <button type="button" className="group flex w-full items-center gap-3 px-4 py-3 text-left">
                         <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
                         <span className="flex-1 text-sm font-medium">Execution</span>
-                        <span className="text-xs text-muted-foreground">{AGENT_RUNTIME_LABELS[form.runtime_kind] ?? form.runtime_kind} · {form.model || 'Auto'}</span>
+                        <span className="text-xs text-muted-foreground group-data-[state=open]:hidden">{AGENT_RUNTIME_LABELS[form.runtime_kind] ?? form.runtime_kind} · {form.model || 'Auto'}</span>
                       </button>
                     </Collapsible.Trigger>
                     <Collapsible.Content>
@@ -2399,7 +2399,7 @@ export function AgentsPage() {
                       <button type="button" className="group flex w-full items-center gap-3 px-4 py-3 text-left">
                         <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
                         <span className="flex-1 text-sm font-medium">Allowed tools</span>
-                        <span className="text-xs text-muted-foreground">{form.allowed_tools.length} enabled</span>
+                        <span className="text-xs text-muted-foreground group-data-[state=open]:hidden">{form.allowed_tools.length} enabled</span>
                       </button>
                     </Collapsible.Trigger>
                     <Collapsible.Content>
