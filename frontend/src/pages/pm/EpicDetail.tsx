@@ -10,6 +10,7 @@ import {
   FavouriteIcon,
   Loading01Icon,
   PencilEdit01Icon,
+  PlusSignIcon,
   Target01Icon,
   UserIcon,
   UserGroupIcon,
@@ -39,11 +40,12 @@ import { gitService } from '@/lib/services/gitService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
+import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { useWorkflows, useEpicStates, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
-import type { AttachmentResponse, EpicWithStats, EpicHealth, GitRepository, Objective, Task, SprintWithStats, UpdateEpicRequest, StateType } from '@/lib/pmTypes';
+import type { AttachmentResponse, CreateTaskRequest, EpicWithStats, EpicHealth, GitRepository, Objective, Task, SprintWithStats, UpdateEpicRequest, StateType, WorkflowWithStates } from '@/lib/pmTypes';
 import { getEpicDoneTaskCount, getEpicTaskCount } from '@/lib/pmTypes';
 import { STATE_TYPE_ICON_CONFIG } from '@/lib/pmConstants';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
@@ -58,6 +60,7 @@ import { ObjectivePicker, type ObjectivePickerSelection } from '@/components/pm/
 import { normalizeTeamType } from '@/lib/teamPresets';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
+import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/epics/$epicId');
 
@@ -170,6 +173,9 @@ export function EpicDetailPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
+  const [createTaskOpen, setCreateTaskOpen] = useState(false);
+  const [createTaskWorkflow, setCreateTaskWorkflow] = useState<WorkflowWithStates | null>(null);
+  const [openingCreateTask, setOpeningCreateTask] = useState(false);
   const [pendingTeamChange, setPendingTeamChange] = useState<{
     newTeamId: string;
     newTeamName: string;
@@ -365,6 +371,21 @@ export function EpicDetailPage() {
   }, [form?.planning_repository_id, repositories]);
 
   const workflow = workflows[0] ?? null;
+  const canCreateTask = canEdit && teams.length > 0;
+  const createTaskDisabledReason = !canEdit
+    ? 'You need PM edit access to add tasks.'
+    : teams.length === 0
+      ? 'Join a team to add tasks to this epic.'
+      : null;
+  const preferredCreateTaskTeamId = useMemo(() => {
+    if (epic?.epic.team_id && teams.some((team) => team.id === epic.epic.team_id)) {
+      return epic.epic.team_id;
+    }
+    if (form?.team_id && teams.some((team) => team.id === form.team_id)) {
+      return form.team_id;
+    }
+    return teams[0]?.id ?? '';
+  }, [epic?.epic.team_id, form?.team_id, teams]);
 
   // Resources: unique people from task owners + epic team members
   const resources = useMemo(() => {
@@ -401,6 +422,49 @@ export function EpicDetailPage() {
     },
     [location, navigate, slug],
   );
+
+  const handleStartCreateTask = useCallback(async () => {
+    if (!workspaceId || !canCreateTask) return;
+
+    const teamId = preferredCreateTaskTeamId;
+    if (!teamId) {
+      toast.error('No team available for task creation');
+      return;
+    }
+
+    setOpeningCreateTask(true);
+    try {
+      const resolved = await pmWorkflowService.resolveTeamWorkflow(workspaceId, teamId);
+      if (resolved.error || !resolved.data) {
+        throw new Error(resolved.error ?? 'Failed to open task creator');
+      }
+      setCreateTaskWorkflow(resolved.data);
+      setCreateTaskOpen(true);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to open task creator');
+    } finally {
+      setOpeningCreateTask(false);
+    }
+  }, [workspaceId, canCreateTask, preferredCreateTaskTeamId]);
+
+  const handleCreateTask = useCallback(async (payload: CreateTaskRequest) => {
+    const { data, error: err } = await pmTaskService.create(payload);
+    if (err || !data) {
+      throw new Error(err ?? 'Failed to create task');
+    }
+    await fetchData(false);
+    return data.task
+      ? {
+          id: data.task.id,
+          task: {
+            id: data.task.id,
+            name: data.task.name,
+            display_id: data.task.display_id,
+            task_key: data.task.task_key,
+          },
+        }
+      : undefined;
+  }, [fetchData]);
 
   const selectedObjectives = useMemo<ObjectivePickerSelection[]>(
     () => (epic?.objectives ?? []).map((objective) => ({
@@ -467,6 +531,41 @@ export function EpicDetailPage() {
     params: { slug },
     search: epic?.epic.team_id ? { team: epic.epic.team_id } : {},
   });
+
+  const renderTaskHeaderAddButton = () => (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+      onClick={() => void handleStartCreateTask()}
+      disabled={!canCreateTask || openingCreateTask}
+      title={createTaskDisabledReason ?? undefined}
+    >
+      {openingCreateTask ? (
+        <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <PlusSignIcon className="h-3.5 w-3.5" />
+      )}
+      Add task
+    </Button>
+  );
+
+  const renderGhostAddTaskRow = (className: string) => (
+    <button
+      type="button"
+      className={className}
+      onClick={() => void handleStartCreateTask()}
+      disabled={!canCreateTask || openingCreateTask}
+      title={createTaskDisabledReason ?? undefined}
+    >
+      {openingCreateTask ? (
+        <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <PlusSignIcon className="h-3.5 w-3.5" />
+      )}
+      <span>Add task</span>
+    </button>
+  );
 
   if (loading) {
     return (
@@ -641,11 +740,21 @@ export function EpicDetailPage() {
 
           {/* Tasks */}
           <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Tasks ({tasks.length})
-            </h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Tasks ({tasks.length})
+              </h3>
+              {renderTaskHeaderAddButton()}
+            </div>
             {tasks.length === 0 ? (
-              <p className="mt-3 text-sm text-muted-foreground">No tasks linked yet.</p>
+              <div className="mt-3 overflow-hidden rounded-lg border border-border/60 bg-card">
+                <div className="px-3 py-3">
+                  <p className="text-sm text-muted-foreground">No tasks linked yet.</p>
+                </div>
+                {renderGhostAddTaskRow(
+                  'flex h-9 w-full items-center gap-2 border-t border-dashed border-border/60 px-3 text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60',
+                )}
+              </div>
             ) : workflow ? (
               <div className="mt-3 -mx-3">
                 <TaskListView
@@ -660,6 +769,9 @@ export function EpicDetailPage() {
                   epicId={epicId}
                   externalTasks={tasks}
                   onOpenTask={openTask}
+                  footer={renderGhostAddTaskRow(
+                    'flex h-9 w-full items-center gap-2 px-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60',
+                  )}
                 />
               </div>
             ) : (
@@ -906,6 +1018,53 @@ export function EpicDetailPage() {
             </div>
           )}
 
+          <div className="mt-6">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Tasks
+                {tasks.length > 0 && <span className="ml-1.5 font-normal">{tasks.length}</span>}
+              </h4>
+              <button
+                type="button"
+                className="rounded-md p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={() => void handleStartCreateTask()}
+                disabled={!canCreateTask || openingCreateTask}
+                title={createTaskDisabledReason ?? undefined}
+                aria-label="Add task to epic"
+              >
+                {openingCreateTask ? (
+                  <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <span className="text-sm leading-none">+</span>
+                )}
+              </button>
+            </div>
+            {tasks.length === 0 ? (
+              <p className="mt-2 py-2 text-[11px] italic text-muted-foreground">No tasks in this epic</p>
+            ) : (
+              <div className="mt-2 space-y-1">
+                {tasks.slice(0, 3).map((task) => (
+                  <button
+                    key={task.id}
+                    type="button"
+                    className="group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted/40"
+                    onClick={() => openTask(task)}
+                  >
+                    <span className="min-w-0 flex-1 truncate font-medium">{task.name}</span>
+                    <span className="shrink-0 text-[10px] text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
+                      {task.task_key}
+                    </span>
+                  </button>
+                ))}
+                {tasks.length > 3 ? (
+                  <p className="px-2 pt-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+                    {tasks.length - 3} more in task list
+                  </p>
+                ) : null}
+              </div>
+            )}
+          </div>
+
           {workspaceId ? (
             <>
               <AssociationsPanel objectType="epic" objectId={epicId} workspaceId={workspaceId} className="-mx-4 mt-4 border-t border-border/60" />
@@ -988,6 +1147,24 @@ export function EpicDetailPage() {
           setSaving(false);
         }}
       />
+
+      {createTaskWorkflow ? (
+        <CreateTaskModal
+          open={createTaskOpen}
+          onOpenChange={setCreateTaskOpen}
+          workspaceId={workspaceId!}
+          workflow={createTaskWorkflow}
+          initialStateId={
+            createTaskWorkflow.workflow.default_state_id ??
+            createTaskWorkflow.states.find((state) => state.is_default)?.id ??
+            createTaskWorkflow.states[0]?.id ??
+            ''
+          }
+          initialTeamId={preferredCreateTaskTeamId || createTaskWorkflow.workflow.team_id}
+          initialEpicId={epic.epic.id}
+          onCreate={handleCreateTask}
+        />
+      ) : null}
     </div>
   );
 }

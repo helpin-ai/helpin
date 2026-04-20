@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
 import {
   Dialog,
@@ -31,9 +32,12 @@ import {
 } from '@/lib/teamMemberAvatar';
 import { getInitials } from '@/lib/utils';
 import {
+  ArrowLeft02Icon,
   ArrowReloadHorizontalIcon,
   Camera01Icon,
+  CheckmarkCircle02Icon,
   Copy01Icon,
+  Download04Icon,
   Loading01Icon,
   LockKeyIcon,
   Mail01Icon,
@@ -132,6 +136,8 @@ export default function Profile() {
   const [setupQRCodeStatus, setSetupQRCodeStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [setupVerificationCode, setSetupVerificationCode] = useState('');
   const [setupSubmitting, setSetupSubmitting] = useState(false);
+  const [setupStep, setSetupStep] = useState<'password' | 'recovery' | 'verify'>('password');
+  const [recoveryAcknowledged, setRecoveryAcknowledged] = useState(false);
   const [disableDialogOpen, setDisableDialogOpen] = useState(false);
   const [disablePassword, setDisablePassword] = useState('');
   const [disableSubmitting, setDisableSubmitting] = useState(false);
@@ -276,6 +282,21 @@ export default function Profile() {
     setSetupQRCodeUrl('');
     setSetupQRCodeStatus('idle');
     setSetupVerificationCode('');
+    setSetupStep('password');
+    setRecoveryAcknowledged(false);
+  };
+
+  const downloadRecoveryCodes = (codes: string[]) => {
+    const header = `Helpin recovery codes for ${user?.email ?? 'your account'}\nGenerated ${new Date().toLocaleString()}\n\nEach code can be used once to sign in if you lose access to your authenticator app.\nStore these somewhere safe — they will not be shown again.\n\n`;
+    const blob = new Blob([header + codes.join('\n') + '\n'], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'helpin-recovery-codes.txt';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const resetRecoveryDialog = () => {
@@ -384,6 +405,8 @@ export default function Profile() {
 
     setSetupProvisioning(data);
     setSetupVerificationCode('');
+    setRecoveryAcknowledged(false);
+    setSetupStep('recovery');
   };
 
   const handleVerifyTwoFASetup = async (e: FormEvent) => {
@@ -513,7 +536,7 @@ export default function Profile() {
           setSetupDialogOpen(open);
         }}
       >
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>Enable Two-Factor Authentication</DialogTitle>
             <DialogDescription>
@@ -521,8 +544,116 @@ export default function Profile() {
             </DialogDescription>
           </DialogHeader>
 
-          {setupProvisioning ? (
-            <div className="space-y-6">
+          {setupProvisioning && setupStep !== 'password' && (
+            <div className="flex items-center gap-3 rounded-lg border bg-muted/30 p-3 text-sm">
+              <div className={`flex items-center gap-2 ${setupStep === 'recovery' ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}>
+                {setupStep === 'verify' ? (
+                  <CheckmarkCircle02Icon className="h-5 w-5 text-emerald-600" />
+                ) : (
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">1</span>
+                )}
+                Save recovery codes
+              </div>
+              <div className="h-px flex-1 bg-border" />
+              <div className={`flex items-center gap-2 ${setupStep === 'verify' ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}>
+                <span className={`flex h-5 w-5 items-center justify-center rounded-full text-xs font-semibold ${setupStep === 'verify' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>2</span>
+                Connect authenticator
+              </div>
+            </div>
+          )}
+
+          {setupStep === 'password' && (
+            <form onSubmit={handleSetupTwoFA} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="setup-2fa-password">Current Password</Label>
+                <Input
+                  id="setup-2fa-password"
+                  type="password"
+                  value={setupPassword}
+                  onChange={(e) => setSetupPassword(e.target.value)}
+                  placeholder="Confirm your password"
+                  required
+                />
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={resetSetupDialog}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={setupSubmitting}>
+                  {setupSubmitting ? 'Preparing...' : 'Continue'}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+
+          {setupProvisioning && setupStep === 'recovery' && (
+            <div className="space-y-5">
+              <div className="space-y-1">
+                <h3 className="text-base font-semibold">Save your recovery codes</h3>
+                <p className="text-sm text-muted-foreground">
+                  These single-use codes let you sign in if you lose access to your authenticator app. Store them in a password manager or print them — they won&apos;t be shown again.
+                </p>
+              </div>
+              <div className="space-y-3 rounded-lg border p-4">
+                <div className="flex items-center justify-between">
+                  <Label>Recovery Codes</Label>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void copyRecoveryCodes(setupProvisioning.recovery_codes)}
+                    >
+                      <Copy01Icon className="mr-2 h-4 w-4" />
+                      Copy all
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => downloadRecoveryCodes(setupProvisioning.recovery_codes)}
+                    >
+                      <Download04Icon className="mr-2 h-4 w-4" />
+                      Download .txt
+                    </Button>
+                  </div>
+                </div>
+                <RecoveryCodeList codes={setupProvisioning.recovery_codes} />
+              </div>
+              <label className="flex items-start gap-3 rounded-lg border bg-muted/20 p-3 text-sm">
+                <Checkbox
+                  id="recovery-acknowledged"
+                  checked={recoveryAcknowledged}
+                  onCheckedChange={(checked) => setRecoveryAcknowledged(checked === true)}
+                  className="mt-0.5"
+                />
+                <span className="leading-snug">
+                  I&apos;ve saved my recovery codes somewhere safe. I understand they won&apos;t be shown again and I&apos;ll need them if I lose my authenticator.
+                </span>
+              </label>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={resetSetupDialog}>
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  disabled={!recoveryAcknowledged}
+                  onClick={() => setSetupStep('verify')}
+                >
+                  Continue
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+
+          {setupProvisioning && setupStep === 'verify' && (
+            <div className="space-y-5">
+              <div className="space-y-1">
+                <h3 className="text-base font-semibold">Connect your authenticator app</h3>
+                <p className="text-sm text-muted-foreground">
+                  Scan the QR code with Google Authenticator, Authy, 1Password, or any TOTP app, then enter the 6-digit code it shows.
+                </p>
+              </div>
               <div className="grid gap-6 md:grid-cols-[256px_1fr]">
                 <div className="flex items-center justify-center rounded-xl border bg-white p-4">
                   {setupQRCodeStatus === 'ready' && setupQRCodeUrl ? (
@@ -530,7 +661,7 @@ export default function Profile() {
                   ) : setupQRCodeStatus === 'error' ? (
                     <div className="flex h-64 w-64 flex-col items-center justify-center gap-2 px-6 text-center text-sm text-muted-foreground">
                       <p>QR code unavailable.</p>
-                      <p>Use the manual setup key below or copy the provisioning link.</p>
+                      <p>Use the manual setup key to the right.</p>
                     </div>
                   ) : (
                     <div className="flex h-64 w-64 items-center justify-center text-sm text-muted-foreground">
@@ -538,14 +669,7 @@ export default function Profile() {
                     </div>
                   )}
                 </div>
-                <div className="space-y-4">
-                  <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
-                    1. Scan the QR code with your authenticator app.
-                    <br />
-                    2. Save the recovery codes below somewhere secure.
-                    <br />
-                    3. Enter the 6-digit code from your app to activate 2FA.
-                  </div>
+                <div className="space-y-3">
                   {manualSetupDetails && (
                     <div className="space-y-3 rounded-lg border p-4">
                       <div className="space-y-1">
@@ -592,16 +716,6 @@ export default function Profile() {
                       </div>
                     </div>
                   )}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <Label>Recovery Codes</Label>
-                      <Button type="button" variant="outline" size="sm" onClick={() => void copyRecoveryCodes(setupProvisioning.recovery_codes)}>
-                        <Copy01Icon className="mr-2 h-4 w-4" />
-                        Copy all
-                      </Button>
-                    </div>
-                    <RecoveryCodeList codes={setupProvisioning.recovery_codes} />
-                  </div>
                 </div>
               </div>
 
@@ -619,6 +733,10 @@ export default function Profile() {
                   />
                 </div>
                 <DialogFooter>
+                  <Button type="button" variant="ghost" onClick={() => setSetupStep('recovery')}>
+                    <ArrowLeft02Icon className="mr-2 h-4 w-4" />
+                    Back
+                  </Button>
                   <Button type="button" variant="outline" onClick={resetSetupDialog}>
                     Cancel
                   </Button>
@@ -628,28 +746,6 @@ export default function Profile() {
                 </DialogFooter>
               </form>
             </div>
-          ) : (
-            <form onSubmit={handleSetupTwoFA} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="setup-2fa-password">Current Password</Label>
-                <Input
-                  id="setup-2fa-password"
-                  type="password"
-                  value={setupPassword}
-                  onChange={(e) => setSetupPassword(e.target.value)}
-                  placeholder="Confirm your password"
-                  required
-                />
-              </div>
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={resetSetupDialog}>
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={setupSubmitting}>
-                  {setupSubmitting ? 'Preparing...' : 'Generate QR Code'}
-                </Button>
-              </DialogFooter>
-            </form>
           )}
         </DialogContent>
       </Dialog>
