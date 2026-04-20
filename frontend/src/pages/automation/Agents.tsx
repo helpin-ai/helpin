@@ -2512,8 +2512,8 @@ export function AgentsPage() {
                         return (
                           <p className="text-[11px] text-muted-foreground">
                             {budget > 0
-                              ? `$${used.toLocaleString()} of $${budget.toLocaleString()} (${pct}%)`
-                              : `$${used.toLocaleString()} spent · no limit`}
+                              ? `$${used.toLocaleString()} of $${budget.toLocaleString()} this month (${pct}%)`
+                              : `$${used.toLocaleString()} spent this month · no limit set`}
                           </p>
                         );
                       })()}
