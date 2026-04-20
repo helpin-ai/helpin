@@ -25,6 +25,11 @@ const (
 	ExecutionBlockTypeText       = "text"
 	ExecutionBlockTypeToolCall   = "tool_call"
 	ExecutionBlockTypeToolResult = "tool_result"
+
+	modelVisibleToolOutputMaxRunes     = 4_500
+	modelVisibleToolOutputHeadRunes    = 3_200
+	modelVisibleToolOutputTailRunes    = 900
+	modelVisibleToolOutputMaxSmallTool = 8_000
 )
 
 var (
@@ -95,6 +100,15 @@ type ExecutionResult struct {
 	CodexAuthMetadata     json.RawMessage
 	RunPlanMetadata       json.RawMessage
 	MaxStepsReached       bool
+}
+
+type modelVisibleToolOutput struct {
+	Content       string
+	OriginalRunes int
+	VisibleRunes  int
+	OriginalLines int
+	VisibleLines  int
+	Compacted     bool
 }
 
 type executedToolCall struct {
@@ -351,7 +365,9 @@ func ExecuteWithEino(
 					IsError:    executed.IsError,
 				}},
 			})
-			messages = append(messages, schema.ToolMessage(executed.Output, executed.ToolCallID, schema.WithToolName(executed.ToolName)))
+			modelVisibleOutput := analyzeToolOutputForModel(executed.ToolName, executed.Output)
+			logNativeToolResultForModel(ctx, execCtx, executed, modelVisibleOutput)
+			messages = append(messages, schema.ToolMessage(modelVisibleOutput.Content, executed.ToolCallID, schema.WithToolName(executed.ToolName)))
 			if IsHumanInteractionTool(executed.ToolName) {
 				stopAfterToolRound = true
 			}
@@ -454,7 +470,9 @@ func executeWithEinoAgentic(
 					IsError:    executed.IsError,
 				}},
 			})
-			messages = append(messages, schema.FunctionToolResultAgenticMessage(executed.ToolCallID, executed.ToolName, executed.Output))
+			modelVisibleOutput := analyzeToolOutputForModel(executed.ToolName, executed.Output)
+			logNativeToolResultForModel(ctx, execCtx, executed, modelVisibleOutput)
+			messages = append(messages, schema.FunctionToolResultAgenticMessage(executed.ToolCallID, executed.ToolName, modelVisibleOutput.Content))
 			if IsHumanInteractionTool(executed.ToolName) {
 				stopAfterToolRound = true
 			}
@@ -668,7 +686,7 @@ func toSchemaMessages(systemPrompt string, history []ExecutionMessage) ([]*schem
 				if strings.TrimSpace(msg.Content) == "" {
 					continue
 				}
-				messages = append(messages, schema.ToolMessage(msg.Content, "", schema.WithToolName("")))
+				messages = append(messages, schema.ToolMessage(compactToolOutputForModel("", msg.Content), "", schema.WithToolName("")))
 				continue
 			}
 			for _, block := range msg.Blocks {
@@ -678,7 +696,7 @@ func toSchemaMessages(systemPrompt string, history []ExecutionMessage) ([]*schem
 				if strings.TrimSpace(block.Output) == "" {
 					continue
 				}
-				messages = append(messages, schema.ToolMessage(block.Output, block.ToolCallID, schema.WithToolName(block.ToolName)))
+				messages = append(messages, schema.ToolMessage(compactToolOutputForModel(block.ToolName, block.Output), block.ToolCallID, schema.WithToolName(block.ToolName)))
 			}
 		default:
 			return nil, fmt.Errorf("unsupported execution message role %q", msg.Role)
@@ -738,13 +756,122 @@ func toAgenticMessages(systemPrompt string, history []ExecutionMessage) ([]*sche
 				if strings.TrimSpace(block.Output) == "" {
 					continue
 				}
-				messages = append(messages, schema.FunctionToolResultAgenticMessage(block.ToolCallID, block.ToolName, block.Output))
+				messages = append(messages, schema.FunctionToolResultAgenticMessage(block.ToolCallID, block.ToolName, compactToolOutputForModel(block.ToolName, block.Output)))
 			}
 		default:
 			return nil, fmt.Errorf("unsupported execution message role %q", msg.Role)
 		}
 	}
 	return messages, nil
+}
+
+func compactToolOutputForModel(toolName, output string) string {
+	return analyzeToolOutputForModel(toolName, output).Content
+}
+
+func analyzeToolOutputForModel(toolName, output string) modelVisibleToolOutput {
+	if strings.TrimSpace(output) == "" {
+		return modelVisibleToolOutput{Content: output}
+	}
+
+	runes := []rune(output)
+	maxRunes := modelVisibleToolOutputMaxSmallTool
+	if isHighVolumeToolOutput(toolName) {
+		maxRunes = modelVisibleToolOutputMaxRunes
+	}
+	analysis := modelVisibleToolOutput{
+		Content:       output,
+		OriginalRunes: len(runes),
+		VisibleRunes:  len(runes),
+		OriginalLines: countToolOutputLines(output),
+		VisibleLines:  countToolOutputLines(output),
+		Compacted:     false,
+	}
+	if len(runes) <= maxRunes {
+		return analysis
+	}
+
+	headRunes := modelVisibleToolOutputHeadRunes
+	tailRunes := modelVisibleToolOutputTailRunes
+	if !isHighVolumeToolOutput(toolName) {
+		headRunes = maxRunes - 800
+		tailRunes = 400
+	}
+	if headRunes+tailRunes >= len(runes) {
+		return analysis
+	}
+
+	omittedRunes := len(runes) - headRunes - tailRunes
+	head := string(runes[:headRunes])
+	tail := string(runes[len(runes)-tailRunes:])
+	label := strings.TrimSpace(toolName)
+	if label == "" {
+		label = "tool"
+	}
+
+	compacted := head + fmt.Sprintf(
+		"\n\n[helpin truncated %d characters from previous %s output to reduce model token usage. Re-run the tool if you need the omitted section.]\n\n",
+		omittedRunes,
+		label,
+	) + tail
+	return modelVisibleToolOutput{
+		Content:       compacted,
+		OriginalRunes: len(runes),
+		VisibleRunes:  len([]rune(compacted)),
+		OriginalLines: countToolOutputLines(output),
+		VisibleLines:  countToolOutputLines(compacted),
+		Compacted:     true,
+	}
+}
+
+func isHighVolumeToolOutput(toolName string) bool {
+	switch strings.TrimSpace(toolName) {
+	case "read_file",
+		"read_files",
+		"read_file_range",
+		"list_directory",
+		"search_files",
+		"ripgrep",
+		"grep",
+		"list_symbols",
+		"run_command",
+		"read_document",
+		"search_documents",
+		"web_search_brave",
+		"web_search_exa":
+		return true
+	default:
+		return false
+	}
+}
+
+func countToolOutputLines(value string) int {
+	if value == "" {
+		return 0
+	}
+	return strings.Count(value, "\n") + 1
+}
+
+func logNativeToolResultForModel(
+	ctx context.Context,
+	execCtx *ExecutionContext,
+	executed executedToolCall,
+	modelVisible modelVisibleToolOutput,
+) {
+	slog.InfoContext(ctx, "native runtime tool result prepared for model",
+		"workspace_id", execCtx.WorkspaceID,
+		"run_id", execCtx.RunID,
+		"agent_id", execCtx.AgentID,
+		"tool_name", executed.ToolName,
+		"tool_call_id", executed.ToolCallID,
+		"duration_ms", executed.Duration.Milliseconds(),
+		"is_error", executed.IsError,
+		"output_chars", modelVisible.OriginalRunes,
+		"output_lines", modelVisible.OriginalLines,
+		"model_visible_chars", modelVisible.VisibleRunes,
+		"model_visible_lines", modelVisible.VisibleLines,
+		"compacted_for_model", modelVisible.Compacted,
+	)
 }
 
 func fromSchemaAssistantMessage(msg *schema.Message) []ExecutionBlock {

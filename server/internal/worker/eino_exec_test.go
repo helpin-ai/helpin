@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -108,6 +109,97 @@ func TestToAgenticMessagesIncludesToolResults(t *testing.T) {
 	}
 	if msgs[2].Role != schema.AgenticRoleTypeUser {
 		t.Fatalf("expected tool result to be encoded as a user-side agentic message, got role %q", msgs[2].Role)
+	}
+}
+
+func TestCompactToolOutputForModelCompactsLargeReadResults(t *testing.T) {
+	output := strings.Repeat("line of file contents\n", 500)
+
+	compacted := compactToolOutputForModel("read_file", output)
+
+	if compacted == output {
+		t.Fatal("expected large read_file output to be compacted")
+	}
+	if !strings.Contains(compacted, "truncated") {
+		t.Fatalf("expected compaction marker, got %q", compacted)
+	}
+	if len([]rune(compacted)) >= len([]rune(output)) {
+		t.Fatalf("expected compacted output to be shorter than original")
+	}
+}
+
+func TestAnalyzeToolOutputForModelTracksCompactionMetadata(t *testing.T) {
+	output := strings.Repeat("line of file contents\n", 500)
+
+	analysis := analyzeToolOutputForModel("read_file", output)
+
+	if !analysis.Compacted {
+		t.Fatal("expected large read_file output to be marked compacted")
+	}
+	if analysis.OriginalRunes <= analysis.VisibleRunes {
+		t.Fatalf("expected visible output to be smaller, got %#v", analysis)
+	}
+	if analysis.OriginalLines <= 0 || analysis.VisibleLines <= 0 {
+		t.Fatalf("expected positive line counts, got %#v", analysis)
+	}
+	if !strings.Contains(analysis.Content, "truncated") {
+		t.Fatalf("expected compaction marker in output, got %q", analysis.Content)
+	}
+}
+
+func TestToSchemaMessagesCompactsLargeToolResultsForModelHistory(t *testing.T) {
+	output := strings.Repeat("line of file contents\n", 500)
+	history := []ExecutionMessage{
+		{
+			Role: "tool",
+			Blocks: []ExecutionBlock{
+				{Type: ExecutionBlockTypeToolResult, ToolCallID: "call-1", ToolName: "read_file", Output: output},
+			},
+		},
+	}
+
+	msgs, err := toSchemaMessages("system prompt", history)
+	if err != nil {
+		t.Fatalf("toSchemaMessages returned error: %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected system plus one tool message, got %#v", msgs)
+	}
+	if !strings.Contains(msgs[1].Content, "truncated") {
+		t.Fatalf("expected compacted tool output marker, got %q", msgs[1].Content)
+	}
+	if msgs[1].Content == output {
+		t.Fatal("expected tool output to be compacted for model history")
+	}
+}
+
+func TestToAgenticMessagesCompactsLargeToolResultsForModelHistory(t *testing.T) {
+	output := strings.Repeat("line of file contents\n", 500)
+	history := []ExecutionMessage{
+		{
+			Role: "tool",
+			Blocks: []ExecutionBlock{
+				{Type: ExecutionBlockTypeToolResult, ToolCallID: "call-1", ToolName: "read_file", Output: output},
+			},
+		},
+	}
+
+	msgs, err := toAgenticMessages("system prompt", history)
+	if err != nil {
+		t.Fatalf("toAgenticMessages returned error: %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected system plus one tool result message, got %#v", msgs)
+	}
+	if len(msgs[1].ContentBlocks) != 1 || msgs[1].ContentBlocks[0].FunctionToolResult == nil {
+		t.Fatalf("expected function tool result block, got %#v", msgs[1])
+	}
+	result := msgs[1].ContentBlocks[0].FunctionToolResult.Result
+	if !strings.Contains(result, "truncated") {
+		t.Fatalf("expected compacted tool output marker, got %q", result)
+	}
+	if result == output {
+		t.Fatal("expected tool output to be compacted for agentic model history")
 	}
 }
 
