@@ -2577,7 +2577,7 @@ export function AgentsPage() {
             </div>
           </div>
 
-          <SheetFooter className="border-t border-border/60 bg-background px-6 py-4 sm:flex-row sm:justify-between">
+          <SheetFooter className="border-t border-border/60 bg-background py-4 pl-6 pr-20 sm:flex-row sm:justify-between">
             <div className="text-xs text-muted-foreground">
               {versionDraftOpen
                 ? 'Configure the new version, then create it.'
