@@ -165,6 +165,7 @@ export interface MemberWithUser {
   role: string;
   email: string;
   full_name: string;
+  two_fa_enabled?: boolean;
   avatar_url?: string;
   avatar_style?: string;
   avatar_seed?: string;

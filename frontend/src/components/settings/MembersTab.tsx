@@ -19,7 +19,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
-import { Copy01Icon, PlusSignIcon, ArrowReloadHorizontalIcon, Search01Icon, Delete01Icon, UserGroupIcon } from '@/lib/icons';
+import { Copy01Icon, PlusSignIcon, ArrowReloadHorizontalIcon, Search01Icon, Delete01Icon, UserGroupIcon, SecurityCheckIcon, Shield01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
@@ -318,6 +318,7 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
                   <TableHead className="w-[280px]">Name</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Teams</TableHead>
+                  <TableHead className="w-[88px] text-center">2FA</TableHead>
                   <TableHead className="w-[120px]">Role</TableHead>
                   {editable && <TableHead className="w-[72px] text-right">Actions</TableHead>}
                 </TableRow>
@@ -370,6 +371,21 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
                           <span className="text-sm text-muted-foreground">-</span>
                         )}
                       </TableCell>
+                      <TableCell className="text-center">
+                        {m.two_fa_enabled ? (
+                          <QuickTooltip label="Enabled">
+                            <span className="inline-flex items-center justify-center text-emerald-600">
+                              <SecurityCheckIcon className="h-4 w-4" />
+                            </span>
+                          </QuickTooltip>
+                        ) : (
+                          <QuickTooltip label="Not enabled">
+                            <span className="inline-flex items-center justify-center text-muted-foreground">
+                              <Shield01Icon className="h-4 w-4" />
+                            </span>
+                          </QuickTooltip>
+                        )}
+                      </TableCell>
                       <TableCell>
                         {canEditMemberRole(m) ? (
                           <Select
@@ -412,7 +428,7 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
                 })}
                 {filteredMembers.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={editable ? 5 : 4} className="py-8 text-center text-sm text-muted-foreground">
+                    <TableCell colSpan={editable ? 6 : 5} className="py-8 text-center text-sm text-muted-foreground">
                       No members match your search.
                     </TableCell>
                   </TableRow>

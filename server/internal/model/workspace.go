@@ -58,6 +58,7 @@ type MemberWithUser struct {
 	Role                  string  `json:"role"`
 	Email                 string  `json:"email"`
 	FullName              string  `json:"full_name"`
+	TwoFAEnabled          bool    `json:"two_fa_enabled"`
 	AvatarURL             *string `json:"avatar_url"`
 	AvatarStyle           *string `json:"avatar_style,omitempty"`
 	AvatarSeed            *string `json:"avatar_seed,omitempty"`

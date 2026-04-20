@@ -649,7 +649,7 @@ func (r *WorkspaceRepository) ListMembers(ctx context.Context, workspaceID strin
 	var results []model.MemberWithUser
 	err := r.db.WithContext(ctx).
 		Table("workspace_members wm").
-		Select("wm.id, wm.user_id, wm.role, wm.email, COALESCE(NULLIF(wm.display_name, ''), u.full_name) AS full_name, u.avatar_url, u.avatar_style, u.avatar_seed, u.avatar_background_mode, u.avatar_background_color").
+		Select("wm.id, wm.user_id, wm.role, wm.email, COALESCE(NULLIF(wm.display_name, ''), u.full_name) AS full_name, u.totp_verified AS two_fa_enabled, u.avatar_url, u.avatar_style, u.avatar_seed, u.avatar_background_mode, u.avatar_background_color").
 		Joins("JOIN users u ON u.id = wm.user_id").
 		Where("wm.workspace_id = ? AND wm.status = ?", workspaceID, model.WorkspaceMemberStatusActive).
 		Order("COALESCE(NULLIF(wm.display_name, ''), u.full_name) ASC").
