@@ -4,6 +4,7 @@ import { formatDistanceToNow } from 'date-fns'
 import { useLocation, useNavigate } from '@tanstack/react-router'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation'
+import { getNotificationTaskRunTarget } from '@/lib/notificationNavigation'
 import {
   useNotifications,
   useUnreadCount,
@@ -191,10 +192,11 @@ export function NotificationCenter() {
   const notifications = data?.pages.flatMap((p) => p.data) ?? []
 
   const handleNavigate = (notification: Notification) => {
-    if (notification.entity_type === 'task') {
+    const taskRunTarget = getNotificationTaskRunTarget(notification)
+    if (taskRunTarget) {
       if (!slug) return
       setOpen(false)
-      openTaskRoute(navigate as never, location as never, slug, notification.entity_id)
+      openTaskRoute(navigate as never, location as never, slug, taskRunTarget.taskId, { run: taskRunTarget.runId })
       return
     }
     const route = getEntityRoute(slug, notification.entity_type, notification.entity_id)

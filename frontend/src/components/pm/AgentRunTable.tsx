@@ -113,7 +113,7 @@ export function AgentRunTable({ runs, agents, selectedRunId, onSelectRun, loadin
             </div>
             <div className={`${TABLE_CELL} text-foreground`} style={{ width: 150 }}>
               <div className="flex min-w-0 items-center gap-1.5">
-                <AgentAvatar agent={agent} className="h-4 w-4" />
+                <AgentAvatar agent={agent} className="h-5 w-5 rounded-none border-0 bg-transparent shadow-none" genericBare />
                 <span className="truncate">{agentName}</span>
               </div>
             </div>
