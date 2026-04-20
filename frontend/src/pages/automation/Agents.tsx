@@ -1936,9 +1936,9 @@ export function AgentsPage() {
                           </Badge>
                         )}
                         {selectedPreset?.version_key === currentSystemVersionKey ? (
-                          <Badge variant="outline" className="bg-emerald-500/10 text-[10px] text-emerald-700 dark:text-emerald-400">Pinned</Badge>
+                          <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-[10px] text-emerald-700 dark:text-emerald-400">Pinned</Badge>
                         ) : hasPendingSystemVersionSelection ? (
-                          <Badge variant="secondary" className="text-[10px]">Previewing — not pinned</Badge>
+                          <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-[10px] text-amber-700 dark:text-amber-400">Previewing — not pinned</Badge>
                         ) : null}
                       </div>
                       {selectedPreset?.description && (
