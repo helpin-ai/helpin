@@ -38,6 +38,21 @@ func newTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
+		`CREATE TABLE user_passkeys (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			user_id TEXT NOT NULL,
+			credential_id BLOB NOT NULL UNIQUE,
+			public_key BLOB NOT NULL,
+			attestation_type TEXT NOT NULL,
+			transport BLOB NOT NULL DEFAULT '[]',
+			sign_count INTEGER NOT NULL DEFAULT 0,
+			name TEXT NOT NULL,
+			aaguid BLOB,
+			flags INTEGER NOT NULL DEFAULT 0,
+			verified BOOLEAN NOT NULL DEFAULT 0,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
 		`CREATE TABLE password_reset_tokens (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			user_id TEXT NOT NULL,
@@ -926,6 +941,14 @@ func seedWorkspaceMember(t *testing.T, db *gorm.DB, id, wsID, userID, email, dis
 	now := time.Now()
 	mustExec(t, db, `INSERT INTO workspace_members (id, workspace_id, user_id, email, display_name, role, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		id, wsID, userID, email, displayName, role, "active", now, now)
+}
+
+// seedPasskey inserts a passkey into the test DB.
+func seedPasskey(t *testing.T, db *gorm.DB, id, userID, name string, credentialID, publicKey []byte, flags int, verified bool, signCount int64) {
+	t.Helper()
+	now := time.Now()
+	mustExec(t, db, `INSERT INTO user_passkeys (id, user_id, credential_id, public_key, attestation_type, transport, sign_count, name, aaguid, flags, verified, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, userID, credentialID, publicKey, "none", []byte("[]"), signCount, name, nil, flags, verified, now, now)
 }
 
 // seedWorkflow inserts a workflow with a default state into the test DB.

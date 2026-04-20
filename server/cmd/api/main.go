@@ -43,6 +43,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/storage"
 	syncpkg "github.com/helpin-ai/helpin/server/internal/sync"
 	"github.com/helpin-ai/helpin/server/internal/temporalapp"
+	appwebauthn "github.com/helpin-ai/helpin/server/internal/webauthn"
 	ws "github.com/helpin-ai/helpin/server/internal/websocket"
 	workerpkg "github.com/helpin-ai/helpin/server/internal/worker"
 )
@@ -145,6 +146,7 @@ func main() {
 		slog.Info("startup: running AutoMigrate")
 		if err := db.AutoMigrate(
 			&model.User{},
+			&model.UserPasskey{},
 			&model.PasswordResetToken{},
 			&model.Organization{},
 			&model.OrganizationMember{},
@@ -487,6 +489,7 @@ func main() {
 
 	// Initialize repositories.
 	userRepo := repository.NewUserRepository(db)
+	passkeyRepo := repository.NewPasskeyRepository(db)
 	orgRepo := repository.NewOrganizationRepository(db)
 	workspaceRepo := repository.NewWorkspaceRepository(db)
 	settingsRepo := repository.NewSettingsRepository(db)
@@ -592,7 +595,13 @@ func main() {
 
 	// Initialize services.
 	passwordResetRepo := repository.NewPasswordResetTokenRepository(db)
+	passkeySessionCache := newPasskeySessionCache(redisClient, podID)
+	passkeyWebAuthnClient, err := appwebauthn.NewClient(cfg.WebAuthnRPID, cfg.WebAuthnRPOrigins, passkeySessionCache)
+	if err != nil {
+		fatalWithSentry("failed to initialize webauthn", err)
+	}
 	authService := service.NewAuthService(userRepo, passwordResetRepo, orgRepo, jwtManager, s3Client, appEmailClient, cfg.AppBaseURL, resolveTOTPEncryptionKey(cfg))
+	passkeyService := service.NewPasskeyService(userRepo, passkeyRepo, jwtManager, passkeyWebAuthnClient, resolveTOTPEncryptionKey(cfg))
 	pmActivityService := service.NewPMActivityService(pmActivityRepo)
 	pmLabelService := service.NewPMLabelService(pmLabelRepo, wsPublisher)
 	pmTaskTemplateService := service.NewPMTaskTemplateService(pmTaskTemplateRepo, wsPublisher)
@@ -1050,6 +1059,7 @@ func main() {
 	handlers := router.Handlers{
 		Health:              handler.NewHealthHandler(s3Client, geoIPResolver),
 		Auth:                handler.NewAuthHandler(authService),
+		Passkey:             handler.NewPasskeyHandler(passkeyService),
 		Organization:        handler.NewOrganizationHandler(orgService),
 		Workspace:           handler.NewWorkspaceHandler(workspaceService, authzService),
 		Settings:            handler.NewSettingsHandler(settingsService, automationInventoryService),
@@ -1388,6 +1398,27 @@ func resolveTOTPEncryptionKey(cfg *config.Config) []byte {
 		return key
 	}
 	return nil
+}
+
+func newPasskeySessionCache(redisClient *redis.Client, podID string) cache.Cache {
+	l1 := cache.NewLRU(2048)
+	if redisClient == nil {
+		slog.Info("passkey cache: L1-only (no Redis) — single-pod consistency only")
+		return l1
+	}
+
+	l2 := cache.NewRedis(redisClient, "passkey")
+	tiered := cache.NewTiered(cache.TieredConfig{
+		L1:      l1,
+		L2:      l2,
+		Redis:   redisClient,
+		Channel: "cache:passkey:invalidate",
+		PodID:   podID,
+		L1TTL:   5 * time.Minute,
+	})
+	tiered.StartInvalidationSubscriber(context.Background())
+	slog.Info("passkey cache: tiered L1+L2 (Redis) enabled")
+	return tiered
 }
 
 func decodeOptionalAES256HexKey(value string) ([]byte, error) {

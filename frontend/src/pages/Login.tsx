@@ -1,8 +1,9 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
 import { useAuthStore } from '@/stores/authStore';
 import { workspacesService } from '@/lib/services/workspacesService';
+import { passkeyService } from '@/lib/services/passkeyService';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -20,8 +21,9 @@ export default function Login() {
   const [twoFactorCode, setTwoFactorCode] = useState('');
   const [useRecoveryCode, setUseRecoveryCode] = useState(false);
   const [loading, setLoading] = useState(false);
-  const { signIn, verify2FASignIn } = useAuthStore();
+  const { signIn, signInWithPasskey, verify2FASignIn } = useAuthStore();
   const navigate = useNavigate();
+  const passkeySupported = passkeyService.isSupported();
 
   const completeLoginRedirect = async () => {
     // Check for redirect (e.g. from invitation join page).
@@ -45,6 +47,72 @@ export default function Login() {
       navigate({ to: '/workspaces' });
     }
   };
+
+  useEffect(() => {
+    if (twoFaToken || !passkeySupported) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const beginPasskeyAutofill = async () => {
+      const autofillSupported = await passkeyService.isAutofillSupported();
+      if (cancelled || !autofillSupported) {
+        return;
+      }
+
+      const result = await signInWithPasskey(undefined, rememberMe, { useAutofill: true });
+      if (cancelled || result.cancelled) {
+        return;
+      }
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      if (result.requires2FA && result.twoFAToken) {
+        setTwoFaToken(result.twoFAToken);
+        setTwoFactorCode('');
+        setUseRecoveryCode(false);
+        toast.success('Passkey accepted. Enter your authenticator code.');
+        return;
+      }
+
+      setLoading(true);
+      try {
+        const redirect = new URLSearchParams(window.location.search).get('redirect');
+        if (redirect && redirect.startsWith('/join/')) {
+          navigate({ to: redirect as string });
+          return;
+        }
+
+        const { data: workspaces } = await workspacesService.list();
+        if (cancelled) {
+          return;
+        }
+
+        if (workspaces && workspaces.length > 0) {
+          const user = useAuthStore.getState().user;
+          const defaultWs = user?.default_workspace_id
+            ? workspaces.find((workspace) => workspace.id === user.default_workspace_id)
+            : null;
+          const targetSlug = defaultWs ? defaultWs.slug : workspaces[0].slug;
+          navigate({ to: '/w/$slug/pm/my-work', params: { slug: targetSlug } });
+          return;
+        }
+
+        navigate({ to: '/workspaces' });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void beginPasskeyAutofill();
+
+    return () => {
+      cancelled = true;
+      passkeyService.cancelPendingAuthentication();
+    };
+  }, [navigate, passkeySupported, rememberMe, signInWithPasskey, twoFaToken]);
 
   const handlePasswordSubmit = async () => {
     const { error, requires2FA, twoFAToken } = await signIn(email, password, rememberMe);
@@ -86,8 +154,30 @@ export default function Login() {
       if (twoFaToken) {
         await handleTwoFactorSubmit();
       } else {
+        passkeyService.cancelPendingAuthentication();
         await handlePasswordSubmit();
       }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePasskeyLogin = async () => {
+    setLoading(true);
+    try {
+      const { error, requires2FA, twoFAToken } = await signInWithPasskey(undefined, rememberMe);
+      if (error) {
+        toast.error(error);
+        return;
+      }
+      if (requires2FA && twoFAToken) {
+        setTwoFaToken(twoFAToken);
+        setTwoFactorCode('');
+        setUseRecoveryCode(false);
+        toast.success('Passkey accepted. Enter your authenticator code.');
+        return;
+      }
+      await completeLoginRedirect();
     } finally {
       setLoading(false);
     }
@@ -153,14 +243,32 @@ export default function Login() {
               <>
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
-                  <Input id="email" type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} required />
+                  <Input
+                    id="email"
+                    name="email"
+                    type="email"
+                    autoComplete="username webauthn"
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    required
+                  />
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label htmlFor="password">Password</Label>
                     <Link to="/forgot-password" className="text-sm text-primary hover:underline">Forgot password?</Link>
                   </div>
-                  <Input id="password" type="password" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} required />
+                  <Input
+                    id="password"
+                    name="password"
+                    type="password"
+                    autoComplete="current-password"
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    required
+                  />
                 </div>
                 <div className="flex items-center gap-2">
                   <Checkbox id="remember-me" checked={rememberMe} onCheckedChange={(checked) => setRememberMe(checked === true)} />
@@ -173,6 +281,18 @@ export default function Login() {
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? (twoFaToken ? 'Verifying...' : 'Signing in...') : (twoFaToken ? 'Verify and continue' : 'Sign in')}
             </Button>
+            {!twoFaToken && (
+              <>
+                <Button type="button" variant="outline" className="w-full" disabled={loading || !passkeySupported} onClick={() => void handlePasskeyLogin()}>
+                  Sign in with passkey
+                </Button>
+                {!passkeySupported && (
+                  <p className="text-xs text-muted-foreground text-center">
+                    This browser does not support passkeys.
+                  </p>
+                )}
+              </>
+            )}
             {!twoFaToken && (
               <p className="text-sm text-muted-foreground">
                 Don't have an account? <Link to="/register" className="text-primary hover:underline">Sign up</Link>
