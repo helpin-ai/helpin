@@ -1913,7 +1913,7 @@ export function AgentsPage() {
                                 type="button"
                                 variant="ghost"
                                 size="icon"
-                                className="absolute right-1.5 top-1.5 h-6 w-6 opacity-0 transition-opacity group-hover:opacity-100 data-[state=open]:opacity-100"
+                                className="absolute right-1.5 top-1.5 h-6 w-6 text-muted-foreground opacity-50 transition-opacity hover:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
                                 aria-label={`Actions for ${presetVersion.version_label}`}
                               >
                                 <MoreHorizontalIcon className="h-3.5 w-3.5" />
