@@ -1171,7 +1171,7 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 		SourceVersionKey:           trimPtr(req.SourceVersionKey),
 		RuntimeKind:                runtimeKind,
 		Provider:                   trimPtr(req.Provider),
-		Model:                      trimPtr(req.Model),
+		Model:                      nil,
 		ExecutionConfig:            normalizeExecutionConfigJSON(req.ExecutionConfig),
 		SystemPrompt:               trimPtr(req.SystemPrompt),
 		InstructionSkills:          mustJSONStringSlice(nil),
@@ -1184,6 +1184,10 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 	}
 	if len(req.AllowedTools) > 0 {
 		version.AllowedTools = normalizeAllowedToolsJSON(normalizeJSONSlice(req.AllowedTools))
+	}
+	if req.Model != nil {
+		modelValue := strings.TrimSpace(*req.Model)
+		version.Model = &modelValue
 	}
 	// If preamble or skills are provided, compile system_prompt from them.
 	hasPreamble := req.InstructionPreamble != nil
@@ -1208,7 +1212,7 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 	if version.Provider == nil {
 		version.Provider = trimPtr(basePreset.Provider)
 	}
-	if version.Model == nil {
+	if req.Model == nil && version.Model == nil {
 		version.Model = trimPtr(basePreset.Model)
 	}
 	if string(version.ExecutionConfig) == "{}" {

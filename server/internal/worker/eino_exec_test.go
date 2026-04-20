@@ -147,9 +147,65 @@ func TestAnalyzeToolOutputForModelTracksCompactionMetadata(t *testing.T) {
 	}
 }
 
+func TestAnalyzeToolOutputForModelCompactsModerateReadFileOutputs(t *testing.T) {
+	output := strings.Repeat("0123456789abcdef\n", 210)
+
+	analysis := analyzeToolOutputForModel("read_file", output)
+
+	if !analysis.Compacted {
+		t.Fatalf("expected moderate read_file output to compact under the tighter threshold, got %#v", analysis)
+	}
+	if analysis.OriginalRunes <= analysis.VisibleRunes {
+		t.Fatalf("expected visible output to be smaller, got %#v", analysis)
+	}
+}
+
+func TestAnalyzeToolOutputForModelCompactsModerateReadFileRangeOutputs(t *testing.T) {
+	output := strings.Repeat("0123456789abcdef\n", 180)
+
+	analysis := analyzeToolOutputForModel("read_file_range", output)
+
+	if !analysis.Compacted {
+		t.Fatalf("expected moderate read_file_range output to compact under the tighter threshold, got %#v", analysis)
+	}
+	if analysis.OriginalRunes <= analysis.VisibleRunes {
+		t.Fatalf("expected visible output to be smaller, got %#v", analysis)
+	}
+}
+
+func TestAnalyzeToolOutputForModelCompactsLargeRipgrepOutputs(t *testing.T) {
+	output := strings.Repeat("path/file.rs:123: matched text here\n", 100)
+
+	analysis := analyzeToolOutputForModel("ripgrep", output)
+
+	if !analysis.Compacted {
+		t.Fatalf("expected 3k+ ripgrep output to compact, got %#v", analysis)
+	}
+	if analysis.OriginalRunes <= analysis.VisibleRunes {
+		t.Fatalf("expected visible output to be smaller, got %#v", analysis)
+	}
+}
+
+func TestPrepareToolResultForModelUsesPlaceholderForEmptyOutput(t *testing.T) {
+	analysis := prepareToolResultForModel("run_command", "", false)
+
+	if analysis.Content != toolResultNoOutputPlaceholder {
+		t.Fatalf("expected no-output placeholder, got %q", analysis.Content)
+	}
+	if analysis.VisibleRunes == 0 || analysis.VisibleLines == 0 {
+		t.Fatalf("expected visible metrics for placeholder, got %#v", analysis)
+	}
+}
+
 func TestToSchemaMessagesCompactsLargeToolResultsForModelHistory(t *testing.T) {
 	output := strings.Repeat("line of file contents\n", 500)
 	history := []ExecutionMessage{
+		{
+			Role: "assistant",
+			Blocks: []ExecutionBlock{
+				{Type: ExecutionBlockTypeToolCall, ToolCallID: "call-1", ToolName: "read_file", Input: json.RawMessage(`{"path":"a.go"}`)},
+			},
+		},
 		{
 			Role: "tool",
 			Blocks: []ExecutionBlock{
@@ -162,13 +218,13 @@ func TestToSchemaMessagesCompactsLargeToolResultsForModelHistory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("toSchemaMessages returned error: %v", err)
 	}
-	if len(msgs) != 2 {
-		t.Fatalf("expected system plus one tool message, got %#v", msgs)
+	if len(msgs) != 3 {
+		t.Fatalf("expected system plus assistant/tool replay messages, got %#v", msgs)
 	}
-	if !strings.Contains(msgs[1].Content, "truncated") {
-		t.Fatalf("expected compacted tool output marker, got %q", msgs[1].Content)
+	if !strings.Contains(msgs[2].Content, "truncated") {
+		t.Fatalf("expected compacted tool output marker, got %q", msgs[2].Content)
 	}
-	if msgs[1].Content == output {
+	if msgs[2].Content == output {
 		t.Fatal("expected tool output to be compacted for model history")
 	}
 }
@@ -176,6 +232,12 @@ func TestToSchemaMessagesCompactsLargeToolResultsForModelHistory(t *testing.T) {
 func TestToAgenticMessagesCompactsLargeToolResultsForModelHistory(t *testing.T) {
 	output := strings.Repeat("line of file contents\n", 500)
 	history := []ExecutionMessage{
+		{
+			Role: "assistant",
+			Blocks: []ExecutionBlock{
+				{Type: ExecutionBlockTypeToolCall, ToolCallID: "call-1", ToolName: "read_file", Input: json.RawMessage(`{"path":"a.go"}`)},
+			},
+		},
 		{
 			Role: "tool",
 			Blocks: []ExecutionBlock{
@@ -188,18 +250,46 @@ func TestToAgenticMessagesCompactsLargeToolResultsForModelHistory(t *testing.T) 
 	if err != nil {
 		t.Fatalf("toAgenticMessages returned error: %v", err)
 	}
-	if len(msgs) != 2 {
-		t.Fatalf("expected system plus one tool result message, got %#v", msgs)
+	if len(msgs) != 3 {
+		t.Fatalf("expected system plus assistant/tool replay messages, got %#v", msgs)
 	}
-	if len(msgs[1].ContentBlocks) != 1 || msgs[1].ContentBlocks[0].FunctionToolResult == nil {
-		t.Fatalf("expected function tool result block, got %#v", msgs[1])
+	if len(msgs[2].ContentBlocks) != 1 || msgs[2].ContentBlocks[0].FunctionToolResult == nil {
+		t.Fatalf("expected function tool result block, got %#v", msgs[2])
 	}
-	result := msgs[1].ContentBlocks[0].FunctionToolResult.Result
+	result := msgs[2].ContentBlocks[0].FunctionToolResult.Result
 	if !strings.Contains(result, "truncated") {
 		t.Fatalf("expected compacted tool output marker, got %q", result)
 	}
 	if result == output {
 		t.Fatal("expected tool output to be compacted for agentic model history")
+	}
+}
+
+func TestToSchemaMessagesPreservesEmptyToolResultsWithPlaceholder(t *testing.T) {
+	history := []ExecutionMessage{
+		{
+			Role: "assistant",
+			Blocks: []ExecutionBlock{
+				{Type: ExecutionBlockTypeToolCall, ToolCallID: "call-1", ToolName: "run_command", Input: json.RawMessage(`{"command":"mkdir -p tmp"}`)},
+			},
+		},
+		{
+			Role: "tool",
+			Blocks: []ExecutionBlock{
+				{Type: ExecutionBlockTypeToolResult, ToolCallID: "call-1", ToolName: "run_command", Output: ""},
+			},
+		},
+	}
+
+	msgs, err := toSchemaMessages("system prompt", history)
+	if err != nil {
+		t.Fatalf("toSchemaMessages returned error: %v", err)
+	}
+	if len(msgs) != 3 {
+		t.Fatalf("expected system plus assistant/tool replay messages, got %#v", msgs)
+	}
+	if msgs[2].Content != toolResultNoOutputPlaceholder {
+		t.Fatalf("expected placeholder tool content, got %#v", msgs[2])
 	}
 }
 
@@ -218,6 +308,87 @@ func TestToAgenticMessagesAllowsUserSummaryFirst(t *testing.T) {
 	}
 	if msgs[1].Role != schema.AgenticRoleTypeUser {
 		t.Fatalf("expected first non-system message to be user, got %q", msgs[1].Role)
+	}
+}
+
+func TestToSchemaMessagesDropsOrphanToolResultsFromReplayHistory(t *testing.T) {
+	history := []ExecutionMessage{
+		{Role: "user", Content: "Resume context from earlier turns:\nSummary"},
+		{
+			Role: "tool",
+			Blocks: []ExecutionBlock{
+				{Type: ExecutionBlockTypeToolResult, ToolCallID: "call-1", ToolName: "read_file", Output: "package main"},
+			},
+		},
+	}
+
+	msgs, err := toSchemaMessages("system prompt", history)
+	if err != nil {
+		t.Fatalf("toSchemaMessages returned error: %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected system plus summary user message after dropping orphan tool result, got %#v", msgs)
+	}
+}
+
+func TestToSchemaMessagesKeepsMatchedToolReplayPairs(t *testing.T) {
+	history := []ExecutionMessage{
+		{Role: "user", Content: "Resume context from earlier turns:\nSummary"},
+		{
+			Role: "assistant",
+			Blocks: []ExecutionBlock{
+				{Type: ExecutionBlockTypeText, Text: "Need a tool"},
+				{Type: ExecutionBlockTypeToolCall, ToolCallID: "call-1", ToolName: "read_file", Input: json.RawMessage(`{"path":"a.go"}`)},
+			},
+		},
+		{
+			Role: "tool",
+			Blocks: []ExecutionBlock{
+				{Type: ExecutionBlockTypeToolResult, ToolCallID: "call-1", ToolName: "read_file", Output: "package main"},
+			},
+		},
+	}
+
+	msgs, err := toSchemaMessages("system prompt", history)
+	if err != nil {
+		t.Fatalf("toSchemaMessages returned error: %v", err)
+	}
+	if len(msgs) != 4 {
+		t.Fatalf("expected system, summary, assistant, and tool result messages, got %#v", msgs)
+	}
+	if len(msgs[2].ToolCalls) != 1 || msgs[2].ToolCalls[0].ID != "call-1" {
+		t.Fatalf("expected matched tool call to remain, got %#v", msgs[2])
+	}
+}
+
+func TestSummarizeNativeToolPressureAggregatesLargeReads(t *testing.T) {
+	messages := []ExecutionMessage{
+		{
+			Role: "tool",
+			Blocks: []ExecutionBlock{
+				{Type: ExecutionBlockTypeToolResult, ToolCallID: "call-1", ToolName: "read_file", Output: strings.Repeat("abc\n", 1600)},
+			},
+		},
+		{
+			Role: "tool",
+			Blocks: []ExecutionBlock{
+				{Type: ExecutionBlockTypeToolResult, ToolCallID: "call-2", ToolName: "run_command", Output: "ok\n"},
+			},
+		},
+	}
+
+	summary := summarizeNativeToolPressure(messages)
+	if summary.ToolCalls != 2 {
+		t.Fatalf("expected 2 tool calls, got %#v", summary)
+	}
+	if summary.CompactedResults != 1 {
+		t.Fatalf("expected one compacted result, got %#v", summary)
+	}
+	if summary.OutputChars <= summary.ModelVisibleChars {
+		t.Fatalf("expected visible chars to be smaller after compaction, got %#v", summary)
+	}
+	if len(summary.TopToolsByPressure) == 0 || !strings.Contains(summary.TopToolsByPressure[0], "read_file") {
+		t.Fatalf("expected read_file to be the top noisy tool, got %#v", summary)
 	}
 }
 

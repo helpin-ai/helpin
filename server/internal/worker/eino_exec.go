@@ -26,10 +26,24 @@ const (
 	ExecutionBlockTypeToolCall   = "tool_call"
 	ExecutionBlockTypeToolResult = "tool_result"
 
-	modelVisibleToolOutputMaxRunes     = 4_500
-	modelVisibleToolOutputHeadRunes    = 3_200
-	modelVisibleToolOutputTailRunes    = 900
+	modelVisibleToolOutputMaxRunes     = 4_000
+	modelVisibleToolOutputHeadRunes    = 2_700
+	modelVisibleToolOutputTailRunes    = 800
 	modelVisibleToolOutputMaxSmallTool = 8_000
+
+	modelVisibleFileReadOutputMaxRunes  = 2_800
+	modelVisibleFileReadOutputHeadRunes = 1_800
+	modelVisibleFileReadOutputTailRunes = 600
+
+	modelVisibleReadRangeOutputMaxRunes  = 2_600
+	modelVisibleReadRangeOutputHeadRunes = 1_700
+	modelVisibleReadRangeOutputTailRunes = 500
+
+	modelVisibleRipgrepOutputMaxRunes  = 3_000
+	modelVisibleRipgrepOutputHeadRunes = 2_100
+	modelVisibleRipgrepOutputTailRunes = 500
+
+	toolResultNoOutputPlaceholder = "[tool returned no output]"
 )
 
 var (
@@ -365,7 +379,7 @@ func ExecuteWithEino(
 					IsError:    executed.IsError,
 				}},
 			})
-			modelVisibleOutput := analyzeToolOutputForModel(executed.ToolName, executed.Output)
+			modelVisibleOutput := prepareToolResultForModel(executed.ToolName, executed.Output, executed.IsError)
 			logNativeToolResultForModel(ctx, execCtx, executed, modelVisibleOutput)
 			messages = append(messages, schema.ToolMessage(modelVisibleOutput.Content, executed.ToolCallID, schema.WithToolName(executed.ToolName)))
 			if IsHumanInteractionTool(executed.ToolName) {
@@ -470,7 +484,7 @@ func executeWithEinoAgentic(
 					IsError:    executed.IsError,
 				}},
 			})
-			modelVisibleOutput := analyzeToolOutputForModel(executed.ToolName, executed.Output)
+			modelVisibleOutput := prepareToolResultForModel(executed.ToolName, executed.Output, executed.IsError)
 			logNativeToolResultForModel(ctx, execCtx, executed, modelVisibleOutput)
 			messages = append(messages, schema.FunctionToolResultAgenticMessage(executed.ToolCallID, executed.ToolName, modelVisibleOutput.Content))
 			if IsHumanInteractionTool(executed.ToolName) {
@@ -639,6 +653,7 @@ func generateAssistantAgenticMessage(
 }
 
 func toSchemaMessages(systemPrompt string, history []ExecutionMessage) ([]*schema.Message, error) {
+	history = sanitizeExecutionHistoryForReplay(history)
 	messages := make([]*schema.Message, 0, len(history)+1)
 	if strings.TrimSpace(systemPrompt) != "" {
 		messages = append(messages, schema.SystemMessage(systemPrompt))
@@ -683,20 +698,22 @@ func toSchemaMessages(systemPrompt string, history []ExecutionMessage) ([]*schem
 			messages = append(messages, assistant)
 		case "tool":
 			if len(msg.Blocks) == 0 {
-				if strings.TrimSpace(msg.Content) == "" {
+				modelVisibleOutput := prepareToolResultForModel("", msg.Content, false)
+				if strings.TrimSpace(modelVisibleOutput.Content) == "" {
 					continue
 				}
-				messages = append(messages, schema.ToolMessage(compactToolOutputForModel("", msg.Content), "", schema.WithToolName("")))
+				messages = append(messages, schema.ToolMessage(modelVisibleOutput.Content, "", schema.WithToolName("")))
 				continue
 			}
 			for _, block := range msg.Blocks {
 				if block.Type != ExecutionBlockTypeToolResult {
 					continue
 				}
-				if strings.TrimSpace(block.Output) == "" {
+				modelVisibleOutput := prepareToolResultForModel(block.ToolName, block.Output, block.IsError)
+				if strings.TrimSpace(modelVisibleOutput.Content) == "" {
 					continue
 				}
-				messages = append(messages, schema.ToolMessage(compactToolOutputForModel(block.ToolName, block.Output), block.ToolCallID, schema.WithToolName(block.ToolName)))
+				messages = append(messages, schema.ToolMessage(modelVisibleOutput.Content, block.ToolCallID, schema.WithToolName(block.ToolName)))
 			}
 		default:
 			return nil, fmt.Errorf("unsupported execution message role %q", msg.Role)
@@ -706,6 +723,7 @@ func toSchemaMessages(systemPrompt string, history []ExecutionMessage) ([]*schem
 }
 
 func toAgenticMessages(systemPrompt string, history []ExecutionMessage) ([]*schema.AgenticMessage, error) {
+	history = sanitizeExecutionHistoryForReplay(history)
 	messages := make([]*schema.AgenticMessage, 0, len(history)+1)
 	if strings.TrimSpace(systemPrompt) != "" {
 		messages = append(messages, schema.SystemAgenticMessage(systemPrompt))
@@ -753,10 +771,11 @@ func toAgenticMessages(systemPrompt string, history []ExecutionMessage) ([]*sche
 				if block.Type != ExecutionBlockTypeToolResult {
 					continue
 				}
-				if strings.TrimSpace(block.Output) == "" {
+				modelVisibleOutput := prepareToolResultForModel(block.ToolName, block.Output, block.IsError)
+				if strings.TrimSpace(modelVisibleOutput.Content) == "" {
 					continue
 				}
-				messages = append(messages, schema.FunctionToolResultAgenticMessage(block.ToolCallID, block.ToolName, compactToolOutputForModel(block.ToolName, block.Output)))
+				messages = append(messages, schema.FunctionToolResultAgenticMessage(block.ToolCallID, block.ToolName, modelVisibleOutput.Content))
 			}
 		default:
 			return nil, fmt.Errorf("unsupported execution message role %q", msg.Role)
@@ -769,16 +788,29 @@ func compactToolOutputForModel(toolName, output string) string {
 	return analyzeToolOutputForModel(toolName, output).Content
 }
 
+func prepareToolResultForModel(toolName, output string, isError bool) modelVisibleToolOutput {
+	analysis := analyzeToolOutputForModel(toolName, output)
+	if strings.TrimSpace(analysis.Content) != "" {
+		return analysis
+	}
+
+	placeholder := toolResultNoOutputPlaceholder
+	if isError {
+		placeholder = "[tool returned no output; tool reported an error]"
+	}
+	analysis.Content = placeholder
+	analysis.VisibleRunes = len([]rune(placeholder))
+	analysis.VisibleLines = countToolOutputLines(placeholder)
+	return analysis
+}
+
 func analyzeToolOutputForModel(toolName, output string) modelVisibleToolOutput {
 	if strings.TrimSpace(output) == "" {
 		return modelVisibleToolOutput{Content: output}
 	}
 
 	runes := []rune(output)
-	maxRunes := modelVisibleToolOutputMaxSmallTool
-	if isHighVolumeToolOutput(toolName) {
-		maxRunes = modelVisibleToolOutputMaxRunes
-	}
+	maxRunes, headRunes, tailRunes := toolOutputCompactionLimits(toolName)
 	analysis := modelVisibleToolOutput{
 		Content:       output,
 		OriginalRunes: len(runes),
@@ -791,12 +823,6 @@ func analyzeToolOutputForModel(toolName, output string) modelVisibleToolOutput {
 		return analysis
 	}
 
-	headRunes := modelVisibleToolOutputHeadRunes
-	tailRunes := modelVisibleToolOutputTailRunes
-	if !isHighVolumeToolOutput(toolName) {
-		headRunes = maxRunes - 800
-		tailRunes = 400
-	}
 	if headRunes+tailRunes >= len(runes) {
 		return analysis
 	}
@@ -821,6 +847,22 @@ func analyzeToolOutputForModel(toolName, output string) modelVisibleToolOutput {
 		OriginalLines: countToolOutputLines(output),
 		VisibleLines:  countToolOutputLines(compacted),
 		Compacted:     true,
+	}
+}
+
+func toolOutputCompactionLimits(toolName string) (maxRunes, headRunes, tailRunes int) {
+	switch strings.TrimSpace(toolName) {
+	case "read_file", "read_files":
+		return modelVisibleFileReadOutputMaxRunes, modelVisibleFileReadOutputHeadRunes, modelVisibleFileReadOutputTailRunes
+	case "read_file_range":
+		return modelVisibleReadRangeOutputMaxRunes, modelVisibleReadRangeOutputHeadRunes, modelVisibleReadRangeOutputTailRunes
+	case "ripgrep":
+		return modelVisibleRipgrepOutputMaxRunes, modelVisibleRipgrepOutputHeadRunes, modelVisibleRipgrepOutputTailRunes
+	default:
+		if isHighVolumeToolOutput(toolName) {
+			return modelVisibleToolOutputMaxRunes, modelVisibleToolOutputHeadRunes, modelVisibleToolOutputTailRunes
+		}
+		return modelVisibleToolOutputMaxSmallTool, modelVisibleToolOutputMaxSmallTool - 800, 400
 	}
 }
 
@@ -858,7 +900,7 @@ func logNativeToolResultForModel(
 	executed executedToolCall,
 	modelVisible modelVisibleToolOutput,
 ) {
-	slog.InfoContext(ctx, "native runtime tool result prepared for model",
+	slog.DebugContext(ctx, "native runtime tool result prepared for model",
 		"workspace_id", execCtx.WorkspaceID,
 		"run_id", execCtx.RunID,
 		"agent_id", execCtx.AgentID,
@@ -872,6 +914,144 @@ func logNativeToolResultForModel(
 		"model_visible_lines", modelVisible.VisibleLines,
 		"compacted_for_model", modelVisible.Compacted,
 	)
+}
+
+func sanitizeExecutionHistoryForReplay(history []ExecutionMessage) []ExecutionMessage {
+	if len(history) == 0 {
+		return nil
+	}
+
+	sanitized := make([]ExecutionMessage, 0, len(history))
+	for i := 0; i < len(history); i++ {
+		msg := history[i]
+		switch msg.Role {
+		case "assistant":
+			if !messageHasToolCalls(msg) {
+				sanitized = append(sanitized, msg)
+				continue
+			}
+
+			groupEnd := i + 1
+			for groupEnd < len(history) && history[groupEnd].Role == "tool" {
+				groupEnd++
+			}
+			if groupEnd == i+1 {
+				sanitized = append(sanitized, msg)
+				continue
+			}
+
+			matchedCalls := matchedAssistantToolCallIDs(msg, history[i+1:groupEnd])
+			sanitizedAssistant, keepAssistant := sanitizeAssistantReplayMessage(msg, matchedCalls)
+			if keepAssistant {
+				sanitized = append(sanitized, sanitizedAssistant)
+			}
+			for _, toolMsg := range history[i+1 : groupEnd] {
+				sanitizedTool, keepTool := sanitizeToolReplayMessage(toolMsg, matchedCalls)
+				if keepTool {
+					sanitized = append(sanitized, sanitizedTool)
+				}
+			}
+			i = groupEnd - 1
+		case "tool":
+			// Replay tool results only when they are paired with the immediately
+			// preceding assistant tool calls. Orphaned results break Anthropic.
+			continue
+		default:
+			sanitized = append(sanitized, msg)
+		}
+	}
+	return sanitized
+}
+
+func messageHasToolCalls(msg ExecutionMessage) bool {
+	for _, block := range msg.Blocks {
+		if block.Type == ExecutionBlockTypeToolCall && strings.TrimSpace(block.ToolCallID) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func matchedAssistantToolCallIDs(assistant ExecutionMessage, toolMessages []ExecutionMessage) map[string]bool {
+	allowed := make(map[string]bool)
+	for _, block := range assistant.Blocks {
+		if block.Type != ExecutionBlockTypeToolCall || strings.TrimSpace(block.ToolCallID) == "" {
+			continue
+		}
+		allowed[strings.TrimSpace(block.ToolCallID)] = false
+	}
+	for _, toolMsg := range toolMessages {
+		for _, block := range toolMsg.Blocks {
+			if block.Type != ExecutionBlockTypeToolResult {
+				continue
+			}
+			toolCallID := strings.TrimSpace(block.ToolCallID)
+			if toolCallID == "" {
+				continue
+			}
+			if _, ok := allowed[toolCallID]; ok {
+				allowed[toolCallID] = true
+			}
+		}
+	}
+
+	matched := make(map[string]bool)
+	for toolCallID, ok := range allowed {
+		if ok {
+			matched[toolCallID] = true
+		}
+	}
+	return matched
+}
+
+func sanitizeAssistantReplayMessage(msg ExecutionMessage, matchedCalls map[string]bool) (ExecutionMessage, bool) {
+	if len(matchedCalls) == 0 {
+		textOnly := msg
+		textOnly.Blocks = filterExecutionBlocksForReplay(msg.Blocks, nil)
+		if strings.TrimSpace(textOnly.Content) == "" && len(textOnly.Blocks) == 0 {
+			return ExecutionMessage{}, false
+		}
+		return textOnly, true
+	}
+
+	sanitized := msg
+	sanitized.Blocks = filterExecutionBlocksForReplay(msg.Blocks, matchedCalls)
+	if strings.TrimSpace(sanitized.Content) == "" && len(sanitized.Blocks) == 0 {
+		return ExecutionMessage{}, false
+	}
+	return sanitized, true
+}
+
+func sanitizeToolReplayMessage(msg ExecutionMessage, matchedCalls map[string]bool) (ExecutionMessage, bool) {
+	if len(matchedCalls) == 0 {
+		return ExecutionMessage{}, false
+	}
+
+	sanitized := msg
+	sanitized.Blocks = filterExecutionBlocksForReplay(msg.Blocks, matchedCalls)
+	if len(sanitized.Blocks) == 0 {
+		return ExecutionMessage{}, false
+	}
+	sanitized.Content = ExtractPersistedContentFromExecutionBlocks(sanitized.Blocks)
+	return sanitized, true
+}
+
+func filterExecutionBlocksForReplay(blocks []ExecutionBlock, matchedCalls map[string]bool) []ExecutionBlock {
+	if len(blocks) == 0 {
+		return nil
+	}
+	filtered := make([]ExecutionBlock, 0, len(blocks))
+	for _, block := range blocks {
+		switch block.Type {
+		case ExecutionBlockTypeText:
+			filtered = append(filtered, block)
+		case ExecutionBlockTypeToolCall, ExecutionBlockTypeToolResult:
+			if matchedCalls[strings.TrimSpace(block.ToolCallID)] {
+				filtered = append(filtered, block)
+			}
+		}
+	}
+	return filtered
 }
 
 func fromSchemaAssistantMessage(msg *schema.Message) []ExecutionBlock {

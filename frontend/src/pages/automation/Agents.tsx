@@ -556,7 +556,7 @@ function buildUpdatePayload(
     name: form.name.trim(),
     trigger_mode: 'manual',
     provider: provider || undefined,
-    model: form.model.trim() || undefined,
+    model: form.model.trim(),
     execution_config: buildExecutionConfigPayload(form),
     system_prompt: form.system_prompt.trim() || undefined,
     team_id: form.team_id,
@@ -609,7 +609,7 @@ function buildSystemAgentForm(agent: Agent, presets: AgentPresetDefinition[]): A
       agent.runtime_kind || runtimeKind,
       agent.provider ?? preset?.provider ?? PRESET_FALLBACKS[presetKey].provider ?? 'anthropic',
     ),
-    model: agent.model ?? preset?.model ?? PRESET_FALLBACKS[presetKey].model ?? '',
+    model: agent.model ?? preset?.model ?? '',
     ...deriveExecutionConfigFields(
       agent.runtime_kind || runtimeKind,
       normalizeProviderForRuntime(
@@ -1329,8 +1329,14 @@ export function AgentsPage() {
       const payload = buildUpdatePayload(form, advancedOpen, presets, editingAgent);
       const res = await automationService.updateAgent(workspaceId, editingAgent.id, payload);
       if (!res.error) {
+        if (res.data) {
+          setAgents((current) => current.map((agent) => (agent.id === res.data?.id ? res.data : agent)));
+        }
         setDialogOpen(false);
         setSystemDrawerOpen(false);
+        if (editingAgent.is_system) {
+          await loadPresets();
+        }
         await loadAgents();
       } else {
         toast.error(editingAgent.is_system ? 'Failed to save built-in agent' : 'Failed to save custom agent', {
@@ -1361,7 +1367,7 @@ export function AgentsPage() {
       source_version_key: form.preset_version_key,
       runtime_kind: form.runtime_kind,
       provider: form.provider,
-      model: form.model.trim() || undefined,
+      model: form.model.trim(),
       execution_config: buildExecutionConfigPayload(form),
       instruction_preamble: form.instruction_preamble.trim() || undefined,
       instruction_skills: form.instruction_skills.length > 0 ? form.instruction_skills : undefined,
@@ -1534,7 +1540,7 @@ export function AgentsPage() {
       runtime_kind: nextPreset.runtime_kind,
       supported_modes: nextPreset.supported_modes,
       provider: nextProvider,
-      model: nextPreset.model ?? PRESET_FALLBACKS[form.preset_key].model ?? '',
+      model: nextPreset.model ?? '',
       ...deriveExecutionConfigFields(nextPreset.runtime_kind, nextProvider, nextPreset.execution_config),
       system_prompt: nextPreset.system_prompt ?? '',
       instruction_preamble: nextPreset.instruction_preamble ?? '',
