@@ -363,7 +363,7 @@ function ExecutionRow({
               }}
             >
               {agent?.is_system ? (
-                <AgentAvatar agent={agent} className="h-6 w-6 rounded-xl border-border/60" />
+                <AgentAvatar agent={agent} className="h-6 w-6 rounded-none border-0 bg-transparent shadow-none" genericBare />
               ) : (
                 <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-muted/40 text-muted-foreground">
                   <BotIcon className="h-3.5 w-3.5" />
@@ -379,7 +379,7 @@ function ExecutionRow({
           ) : (
             <div className="flex items-center gap-2 px-1.5 py-1">
               {agent?.is_system ? (
-                <AgentAvatar agent={agent} className="h-6 w-6 rounded-xl border-border/60" />
+                <AgentAvatar agent={agent} className="h-6 w-6 rounded-none border-0 bg-transparent shadow-none" genericBare />
               ) : (
                 <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-muted/40 text-muted-foreground">
                   <BotIcon className="h-3.5 w-3.5" />

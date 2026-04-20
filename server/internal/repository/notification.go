@@ -263,6 +263,19 @@ func (r *NotificationRepository) MarkEntityCategoryAsRead(ctx context.Context, r
 		}).Error
 }
 
+// MarkEntityEventTypeAsReadForWorkspace marks unread notifications as read for
+// a specific entity+event pair across all recipients in a workspace.
+func (r *NotificationRepository) MarkEntityEventTypeAsReadForWorkspace(ctx context.Context, workspaceID, entityType, entityID, eventType string) error {
+	now := time.Now()
+	return r.db.WithContext(ctx).Model(&model.Notification{}).
+		Where("workspace_id = ? AND entity_type = ? AND entity_id = ? AND event_type = ? AND status = 'unread'",
+			workspaceID, entityType, entityID, eventType).
+		Updates(map[string]interface{}{
+			"status":  "read",
+			"read_at": now,
+		}).Error
+}
+
 // MarkAllAsRead marks all unread notifications as read for a user.
 func (r *NotificationRepository) MarkAllAsRead(ctx context.Context, recipientID, workspaceID string) error {
 	now := time.Now()

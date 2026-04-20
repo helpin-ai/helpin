@@ -188,7 +188,7 @@ export function AgentRunPanel({ taskId, workspaceId, latestRunAgentId }: Props) 
                 {taskRunnableAgents.map((agent) => (
                   <SelectItem key={agent.id} value={agent.id} className="text-xs">
                     <div className="flex items-center gap-1.5">
-                      <AgentAvatar agent={agent} className="h-4 w-4" />
+                      <AgentAvatar agent={agent} className="h-5 w-5 rounded-none border-0 bg-transparent shadow-none" genericBare />
                       <span>{agent.name}{agent.role ? ` · ${agent.role}` : ''}</span>
                     </div>
                   </SelectItem>

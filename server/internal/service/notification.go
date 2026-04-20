@@ -107,6 +107,7 @@ type digestNotificationItem struct {
 }
 
 const supportReplyEmailDelay = 3 * time.Minute
+const taskAgentAttentionRequiredEventType = "task.agent_attention_required"
 
 // Emit creates notifications for all recipients of an event.
 func (s *NotificationService) Emit(ctx context.Context, event model.NotificationEventInput) error {
@@ -335,6 +336,15 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 	}
 
 	return nil
+}
+
+// MarkAgentAttentionResolved clears unread in-app attention notifications for a
+// run once the pending interaction has been answered.
+func (s *NotificationService) MarkAgentAttentionResolved(ctx context.Context, workspaceID, runID string) error {
+	if s == nil || s.notifRepo == nil {
+		return nil
+	}
+	return s.notifRepo.MarkEntityEventTypeAsReadForWorkspace(ctx, workspaceID, "agent_run", runID, taskAgentAttentionRequiredEventType)
 }
 
 func (s *NotificationService) createEventAndDeliveries(
