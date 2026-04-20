@@ -624,7 +624,7 @@ export function TaskListView({
             }}
           >
             {fieldVis.task_type && displayProps.task_type ? (
-              <TaskListTaskTypeIcon taskType={info.row.original.task_type} className="h-4 w-4 shrink-0" />
+              <TaskListTaskTypeIcon taskType={info.row.original.task_type} className="h-[18px] w-[18px] shrink-0" />
             ) : null}
             {info.row.original.recurring_template_id ? (
               <span className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-1.5 py-0 text-[10px] text-sky-700 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-200">

@@ -68,11 +68,11 @@ const AGENT_OCTAGON_POINTS = '30,2 70,2 98,30 98,70 70,98 30,98 2,70 2,30';
 
 function TaskCardAgentBadge({
   agent,
+  isWorking = false,
 }: {
   agent?: Pick<Agent, 'id' | 'name' | 'preset_key' | 'status'> | null;
+  isWorking?: boolean;
 }) {
-  const isWorking = agent?.status === 'working';
-
   return (
     <span className="relative block h-7 w-7 shrink-0">
       <svg
@@ -355,7 +355,7 @@ function TaskCardComponent({
           <Tooltip>
             <TooltipTrigger asChild>
               <span className="shrink-0">
-                <TaskTypeIcon taskType={task.task_type} className="h-4 w-4" />
+                <TaskTypeIcon taskType={task.task_type} className="h-[18px] w-[18px]" />
               </span>
             </TooltipTrigger>
             <TooltipContent side="top">{taskTypeCfg.label}</TooltipContent>
@@ -576,7 +576,7 @@ function TaskCardComponent({
                 <TooltipTrigger asChild>
                   {isOverlay ? (
                     <span className="shrink-0">
-                      <TaskCardAgentBadge agent={assignedAgent} />
+                      <TaskCardAgentBadge agent={assignedAgent} isWorking={hasActiveRun} />
                     </span>
                   ) : (
                     <button
@@ -592,7 +592,7 @@ function TaskCardComponent({
                       className="shrink-0 rounded transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                       aria-label={tooltipLabel}
                     >
-                      <TaskCardAgentBadge agent={assignedAgent} />
+                      <TaskCardAgentBadge agent={assignedAgent} isWorking={hasActiveRun} />
                     </button>
                   )}
                 </TooltipTrigger>
