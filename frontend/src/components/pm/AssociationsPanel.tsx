@@ -27,10 +27,13 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { CRMSearchResult, CRMObjectType } from '@/lib/crmTypes';
 import type {
   AssociationObjectSummary,
+  ConversationStatus,
   GroupedAssociations,
   SupportConversation,
 } from '@/lib/pmTypes';
 import { Input } from '@/components/ui/input';
+import { QuickTooltip } from '@/components/ui/quick-tooltip';
+import { DocumentPreviewDialog } from '@/components/docs/DocumentPreviewDialog';
 import {
   Dialog,
   DialogContent,
@@ -47,6 +50,19 @@ const crmIconMap = {
   company: Building03Icon,
   deal: DollarCircleIcon,
 } as const;
+
+const supportStatusDotClass: Record<ConversationStatus, string> = {
+  open: 'bg-blue-500',
+  waiting_on_customer: 'bg-purple-500',
+  resolved: 'bg-green-500',
+  spam: 'bg-red-500',
+};
+
+function humanizeStatusLabel(value: string) {
+  return value
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
 
 function AssociationsRailSection({
   title,
@@ -122,6 +138,7 @@ export function AssociationsPanel({
 }: AssociationsPanelProps) {
   const navigate = useNavigate();
   const slug = useWorkspaceStore((s) => s.currentWorkspace?.slug ?? '');
+  const [previewDocId, setPreviewDocId] = useState<string | null>(null);
 
   const handleNavigate = (item: AssociationObjectSummary) => {
     const type = item.object_type;
@@ -135,7 +152,7 @@ export function AssociationsPanel({
     } else if (type === 'deal') {
       navigate({ to: '/w/$slug/crm/deals/$dealId', params: { slug, dealId: id } } as any);
     } else if (type === 'document') {
-      navigate({ to: '/w/$slug/docs/documents/$docId', params: { slug, docId: id } } as any);
+      setPreviewDocId(id);
     }
   };
 
@@ -298,11 +315,22 @@ export function AssociationsPanel({
               onClick={() => handleNavigate(item)}
             >
               {item.status && (
-                <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-medium leading-none text-muted-foreground">
-                  {item.status.replace(/_/g, ' ')}
-                </span>
+                <QuickTooltip label={humanizeStatusLabel(item.status)}>
+                  <span
+                    className={cn(
+                      'h-2.5 w-2.5 shrink-0 rounded-full bg-muted-foreground/40',
+                      supportStatusDotClass[item.status as ConversationStatus] ?? 'bg-muted-foreground/40',
+                    )}
+                    aria-label={humanizeStatusLabel(item.status)}
+                  />
+                </QuickTooltip>
               )}
               <span className="truncate font-medium">{item.title}</span>
+              {item.display_id && (
+                <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
+                  {item.display_id}
+                </span>
+              )}
             </button>
             {item.association_id ? (
               <button
@@ -490,6 +518,16 @@ export function AssociationsPanel({
           </div>
         </DialogContent>
       </Dialog>
+
+      <DocumentPreviewDialog
+        workspaceId={workspaceId}
+        slug={slug}
+        docId={previewDocId}
+        open={!!previewDocId}
+        onOpenChange={(open) => {
+          if (!open) setPreviewDocId(null);
+        }}
+      />
     </div>
   );
 }

@@ -115,12 +115,12 @@ func (s *CRMAssociationService) shouldPromoteCompanyAssociationToPrimary(ctx con
 		if otherType != model.CRMObjectCompany {
 			continue
 		}
-			if assoc.ID == associationID && isPrimaryCompanyAssociationLabel(assoc.AssociationLabel) {
-				hasCurrentPrimary = true
-			}
-			if assoc.ID != associationID && isPrimaryCompanyAssociationLabel(assoc.AssociationLabel) {
-				hasOtherPrimary = true
-			}
+		if assoc.ID == associationID && isPrimaryCompanyAssociationLabel(assoc.AssociationLabel) {
+			hasCurrentPrimary = true
+		}
+		if assoc.ID != associationID && isPrimaryCompanyAssociationLabel(assoc.AssociationLabel) {
+			hasOtherPrimary = true
+		}
 	}
 	if hasCurrentPrimary {
 		return true, nil
@@ -183,5 +183,76 @@ func (s *CRMAssociationService) ListByObjectEnriched(ctx context.Context, worksp
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
-	return s.assocRepo.ListByObjectEnriched(ctx, workspaceID, objectType, objectID)
+	assocs, err := s.assocRepo.ListByObjectEnriched(ctx, workspaceID, objectType, objectID)
+	if err != nil {
+		return nil, err
+	}
+	if objectType != model.CRMObjectCompany || objectID == "" {
+		return assocs, nil
+	}
+	return s.appendInferredCompanyContactAssociations(ctx, workspaceID, objectID, assocs)
+}
+
+func (s *CRMAssociationService) appendInferredCompanyContactAssociations(
+	ctx context.Context,
+	workspaceID, companyID string,
+	assocs []model.CRMAssociationEnriched,
+) ([]model.CRMAssociationEnriched, error) {
+	if len(assocs) == 0 {
+		return assocs, nil
+	}
+
+	seen := make(map[string]struct{}, len(assocs))
+	enriched := make([]model.CRMAssociationEnriched, 0, len(assocs))
+	enriched = append(enriched, assocs...)
+
+	for _, assoc := range assocs {
+		otherType, otherID := otherAssociationSide(assoc.CRMAssociation, model.CRMObjectCompany, companyID)
+		seen[otherType+":"+otherID] = struct{}{}
+		if otherType != model.CRMObjectContact {
+			continue
+		}
+
+		contactAssocs, err := s.assocRepo.ListByObjectEnriched(ctx, workspaceID, model.CRMObjectContact, otherID)
+		if err != nil {
+			return nil, err
+		}
+
+		contextName := strings.TrimSpace(assoc.LinkedObjectName)
+		if contextName == "" {
+			contextName = "contact"
+		}
+		contextLabel := "via " + contextName
+
+		for _, contactAssoc := range contactAssocs {
+			inferredType, inferredID := otherAssociationSide(contactAssoc.CRMAssociation, model.CRMObjectContact, otherID)
+			if inferredType == model.CRMObjectContact || (inferredType == model.CRMObjectCompany && inferredID == companyID) {
+				continue
+			}
+
+			key := inferredType + ":" + inferredID
+			if _, exists := seen[key]; exists {
+				continue
+			}
+
+			enriched = append(enriched, model.CRMAssociationEnriched{
+				CRMAssociation: model.CRMAssociation{
+					WorkspaceID:    workspaceID,
+					FromObjectType: model.CRMObjectCompany,
+					FromObjectID:   companyID,
+					ToObjectType:   inferredType,
+					ToObjectID:     inferredID,
+				},
+				LinkedObjectName:        contactAssoc.LinkedObjectName,
+				LinkedObjectDisplayID:   contactAssoc.LinkedObjectDisplayID,
+				LinkedObjectStatus:      contactAssoc.LinkedObjectStatus,
+				LinkedObjectStatusColor: contactAssoc.LinkedObjectStatusColor,
+				Inferred:                true,
+				ContextLabel:            &contextLabel,
+			})
+			seen[key] = struct{}{}
+		}
+	}
+
+	return enriched, nil
 }
