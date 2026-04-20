@@ -81,7 +81,7 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import { RecurringTemplateForm, type RecurringTemplateFormValue } from "@/components/pm/RecurringTemplateForm";
 import { formatRecurringRuleSummary } from "@/components/pm/recurringTemplateUtils";
 import { RecurringTemplateBadge } from "@/components/pm/RecurringTemplateBadge";
-import { showEntityCreatedToast, entityCreatedToastIcons } from "@/components/ui/entity-created-toast";
+import { showEntityCreatedToast } from "@/components/ui/entity-created-toast";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 
 interface CreateTaskModalProps {
@@ -671,7 +671,7 @@ export function CreateTaskModal({
               subtitle: recurringDraft ? 'Recurring schedule added.' : undefined,
               identifier: taskKey ? { label: 'Story ID', value: taskKey } : undefined,
               tone: 'pm',
-              icon: entityCreatedToastIcons.task,
+              icon: TASK_TYPE_CONFIG[form.task_type].icon,
               onOpen: currentWorkspace?.slug
                 ? () => navigate({ to: `/w/${currentWorkspace.slug}/pm/tasks/${result.id}` } as any)
                 : undefined,
@@ -1354,11 +1354,11 @@ export function CreateTaskModal({
                     }}
                     renderTrigger={() => (
                       <span className="inline-flex min-w-0 items-center gap-1.5">
-                        <TaskTypeIcon taskType={form.task_type} className="h-3.5 w-3.5 shrink-0" />
+                        <TaskTypeIcon taskType={form.task_type} className="h-4 w-4 shrink-0" />
                         <span className="truncate">{TASK_TYPE_CONFIG[form.task_type].label}</span>
                       </span>
                     )}
-                    renderOption={(v) => <><TaskTypeIcon taskType={v as TaskType} className="h-4 w-4 shrink-0" /><span>{TASK_TYPE_CONFIG[v as TaskType].label}</span></>}
+                    renderOption={(v) => <><TaskTypeIcon taskType={v as TaskType} className="h-[18px] w-[18px] shrink-0" /><span>{TASK_TYPE_CONFIG[v as TaskType].label}</span></>}
                   />
                 </MetadataRow>
                 )}
