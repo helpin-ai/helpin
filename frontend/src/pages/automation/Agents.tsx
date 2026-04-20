@@ -1769,7 +1769,7 @@ export function AgentsPage() {
         }}
       >
         <SheetContent side="right" className="w-full gap-0 p-0 data-[side=right]:w-[88vw] data-[side=right]:sm:max-w-[88vw] xl:data-[side=right]:w-[1280px] xl:data-[side=right]:max-w-[1280px]">
-          <SheetHeader className="border-b border-border/60 bg-muted/20 px-6 py-4">
+          <SheetHeader className="border-b border-border/60 bg-muted/20 py-4 pl-6 pr-14">
             <div className="flex items-center gap-4">
               <AgentAvatar agent={editingAgent ?? undefined} className="h-11 w-11 shrink-0 rounded-none border-0 bg-transparent shadow-none" genericBare />
               <div className="min-w-0 flex-1">
@@ -1851,7 +1851,7 @@ export function AgentsPage() {
                           )} />
                           <div className="min-w-0 flex-1 space-y-0.5">
                             <p className="truncate text-sm font-medium">{presetVersion.version_label}</p>
-                            <p className="line-clamp-2 text-[11px] leading-snug text-muted-foreground">
+                            <p className="line-clamp-1 text-[11px] leading-snug text-muted-foreground">
                               {presetVersion.description || 'No description'}
                             </p>
                             <div className="flex flex-wrap gap-1 pt-1">
@@ -1990,18 +1990,15 @@ export function AgentsPage() {
                 </section>
 
                 {/* ──────── VERSION DETAILS ──────── */}
-                <section className="space-y-4">
-                  <div className="flex items-baseline justify-between gap-3">
-                    <div>
-                      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Version details</h3>
-                      <p className="text-[11px] text-muted-foreground">Click a section to expand.</p>
-                    </div>
+                <section className="space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Version details</h3>
                     <Badge variant={systemVersionReadOnly ? 'outline' : 'secondary'} className="text-[10px]">
                       {versionDraftOpen
                         ? 'New draft'
                         : isEditingWorkspaceVersion
-                          ? 'Editable — workspace version'
-                          : 'Read-only — product version'}
+                          ? 'Editable'
+                          : 'Read-only'}
                     </Badge>
                   </div>
                   <div className="space-y-2">
@@ -2025,7 +2022,7 @@ export function AgentsPage() {
                             onChange={(e) => setForm((current) => ({ ...current, instruction_preamble: e.target.value }))}
                             placeholder="e.g. You are Epic Planner. You run the full PRD-to-tasks loop inside a single interactive run."
                             rows={3}
-                            className="border-0 bg-transparent p-0 shadow-none focus-visible:ring-0"
+                            className="resize-none border border-dashed border-border/60 bg-muted/30 px-3 py-2 text-sm shadow-none focus-visible:border-primary focus-visible:bg-background focus-visible:ring-1 focus-visible:ring-primary"
                           />
                         )}
                       </div>
