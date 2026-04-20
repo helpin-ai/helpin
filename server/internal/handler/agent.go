@@ -176,25 +176,6 @@ func (h *AgentHandler) DeleteAgent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"deleted": true})
 }
 
-// AssignAgentToTask handles POST /api/pm/tasks/{id}/assign-agent.
-func (h *AgentHandler) AssignAgentToTask(w http.ResponseWriter, r *http.Request) {
-	workspaceID := getWorkspaceID(r)
-	taskID := chi.URLParam(r, "id")
-	actorID := middleware.GetUserID(r.Context())
-
-	var req model.AssignAgentRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-
-	if err := h.agentService.AssignAgentToTask(r.Context(), workspaceID, taskID, req.AgentID, actorID); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]bool{"assigned": true})
-}
-
 // RunTaskAgent handles POST /api/pm/tasks/{id}/run-agent.
 func (h *AgentHandler) RunTaskAgent(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)

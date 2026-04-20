@@ -403,6 +403,42 @@ func (r *AgentTriggerExecutionRepository) ListByAgent(ctx context.Context, works
 	return executions, nil
 }
 
+// ListLatestAutomationRuleExecutions returns the most recent trigger execution
+// row for each automation rule reference in the workspace.
+func (r *AgentTriggerExecutionRepository) ListLatestAutomationRuleExecutions(ctx context.Context, workspaceID string, ruleIDs []string) ([]model.AgentTriggerExecution, error) {
+	if len(ruleIDs) == 0 {
+		return []model.AgentTriggerExecution{}, nil
+	}
+
+	var executions []model.AgentTriggerExecution
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND binding_kind = ? AND reference_type = ? AND reference_id IN ?", workspaceID, "automation_rule", "automation_rule", ruleIDs).
+		Order("reference_id ASC, COALESCE(completed_at, started_at, fired_at) DESC, fired_at DESC, created_at DESC").
+		Find(&executions).Error; err != nil {
+		return nil, fmt.Errorf("list latest automation rule executions: %w", err)
+	}
+
+	latest := make(map[string]model.AgentTriggerExecution, len(ruleIDs))
+	for _, execution := range executions {
+		if execution.ReferenceID == nil || strings.TrimSpace(*execution.ReferenceID) == "" {
+			continue
+		}
+		refID := strings.TrimSpace(*execution.ReferenceID)
+		if _, exists := latest[refID]; exists {
+			continue
+		}
+		latest[refID] = execution
+	}
+
+	result := make([]model.AgentTriggerExecution, 0, len(latest))
+	for _, ruleID := range ruleIDs {
+		if execution, ok := latest[strings.TrimSpace(ruleID)]; ok {
+			result = append(result, execution)
+		}
+	}
+	return result, nil
+}
+
 // ListByWorkspace returns recent trigger executions in a workspace with
 // optional filters and pagination.
 func (r *AgentTriggerExecutionRepository) ListByWorkspace(

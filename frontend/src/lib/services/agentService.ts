@@ -42,8 +42,6 @@ export const agentService = {
     api.get<AgentModelProviderOption[]>(`/pm/agent-model-providers${qs(workspaceId)}`),
   getRunnerHealth: (workspaceId: string) =>
     api.get<RunnerHealth>(`/pm/runner-health${qs(workspaceId)}`),
-  assignToTask: (workspaceId: string, taskId: string, agentId: string) =>
-    api.post(`/pm/tasks/${taskId}/assign-agent${qs(workspaceId)}`, { agent_id: agentId }),
   runTask: (workspaceId: string, taskId: string, payload?: StartAgentRunRequest) =>
     api.post<AgentRun>(`/pm/tasks/${taskId}/run-agent${qs(workspaceId)}`, payload ?? {}),
   runEpic: (workspaceId: string, epicId: string, payload: StartAgentRunRequest) =>

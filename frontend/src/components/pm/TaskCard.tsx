@@ -7,7 +7,7 @@ import {
 } from '@/lib/icons';
 import { Calendar03Icon, Tick01Icon, UserAdd01Icon } from '@/lib/pmIcons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
-import { differenceInDays, format, isBefore, parseISO, startOfDay } from 'date-fns';
+import { differenceInDays, format, formatDistanceToNow, isBefore, parseISO, startOfDay } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
@@ -61,7 +61,6 @@ interface TaskCardProps {
   /** @deprecated Use BoardCallbacksContext.onTaskPatched instead */
   onEstimateChanged?: (task: Task) => void;
   showStateBadge?: boolean;
-  assignedAgent?: Pick<Agent, 'id' | 'name' | 'preset_key' | 'status'> | null;
 }
 
 const AGENT_OCTAGON_POINTS = '30,2 70,2 98,30 98,70 70,98 30,98 2,70 2,30';
@@ -124,7 +123,6 @@ function TaskCardComponent({
   onSeverityChanged,
   onEstimateChanged,
   showStateBadge = false,
-  assignedAgent: assignedAgentProp,
 }: TaskCardProps) {
   // Consume board contexts (null when used outside KanbanBoard)
   const boardData = useContext(BoardDataContext);
@@ -135,7 +133,7 @@ function TaskCardComponent({
   const assignableMembers = boardData?.assignableMembers ?? assignableMembersProp;
   const ownerNameMap = boardData?.ownerNameMap ?? ownerNameMapProp;
   const agentById = boardData?.agentById;
-  const assignedAgent = assignedAgentProp ?? (agentById && task.assigned_agent_id ? agentById.get(task.assigned_agent_id) ?? null : null);
+  const latestRunAgent = agentById && task.latest_run_agent_id ? agentById.get(task.latest_run_agent_id) ?? null : null;
   const onOpen = callbacksRef?.current.onOpen ?? onOpenProp;
   const onOpenAgentRun = callbacksRef?.current.onOpenAgentRun ?? onOpenAgentRunProp ?? onOpen;
   const onTaskPatched = callbacksRef?.current.onTaskPatched;
@@ -558,14 +556,17 @@ function TaskCardComponent({
         ) : null)}
         <span className="flex-1" />
         <div className="flex items-center gap-1.5">
-          {vis.agent && task.assigned_agent_id && (() => {
+          {vis.agent && task.latest_run_agent_id && (() => {
             const hasActiveRun =
               !isOverlay
               && !!task.latest_run_id
               && !!task.latest_run_status
               && ACTIVE_RUN_STATUSES.has(task.latest_run_status);
-            const baseLabel = assignedAgent?.name ?? 'Agent assigned';
-            const tooltipLabel = hasActiveRun ? `${baseLabel} — Open run` : baseLabel;
+            const runTimeLabel = task.latest_run_at
+              ? `Last run ${formatDistanceToNow(new Date(task.latest_run_at), { addSuffix: true })}`
+              : 'Last run';
+            const baseLabel = latestRunAgent?.name ? `${runTimeLabel}: ${latestRunAgent.name}` : runTimeLabel;
+            const tooltipLabel = hasActiveRun ? `${baseLabel} · Open run` : baseLabel;
             const handleAgentClick = (e: React.MouseEvent | React.KeyboardEvent) => {
               e.stopPropagation();
               e.preventDefault();
@@ -576,7 +577,7 @@ function TaskCardComponent({
                 <TooltipTrigger asChild>
                   {isOverlay ? (
                     <span className="shrink-0">
-                      <TaskCardAgentBadge agent={assignedAgent} isWorking={hasActiveRun} />
+                      <TaskCardAgentBadge agent={latestRunAgent} isWorking={hasActiveRun} />
                     </span>
                   ) : (
                     <button
@@ -592,7 +593,7 @@ function TaskCardComponent({
                       className="shrink-0 rounded transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                       aria-label={tooltipLabel}
                     >
-                      <TaskCardAgentBadge agent={assignedAgent} isWorking={hasActiveRun} />
+                      <TaskCardAgentBadge agent={latestRunAgent} isWorking={hasActiveRun} />
                     </button>
                   )}
                 </TooltipTrigger>
@@ -664,12 +665,13 @@ export const TaskCard = memo(TaskCardComponent, (prev, next) => {
       prev.task.id !== next.task.id
       || prev.task.updated_at !== next.task.updated_at
       || prev.task.latest_run_id !== next.task.latest_run_id
+      || prev.task.latest_run_agent_id !== next.task.latest_run_agent_id
       || prev.task.latest_run_status !== next.task.latest_run_status
+      || prev.task.latest_run_at !== next.task.latest_run_at
     ) return false;
   }
   return prev.isOverlay === next.isOverlay
     && prev.teamName === next.teamName
-    && prev.showStateBadge === next.showStateBadge
-    && prev.assignedAgent === next.assignedAgent;
+    && prev.showStateBadge === next.showStateBadge;
 });
 TaskCard.displayName = 'TaskCard';
