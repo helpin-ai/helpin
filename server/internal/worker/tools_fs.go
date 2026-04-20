@@ -18,12 +18,12 @@ import (
 )
 
 const (
-	defaultReadFileLimitLines  = 200
-	maxReadFileLimitLines      = 400
-	defaultReadFilesLimitLines = 120
-	maxReadFilesPerCall        = 8
-	maxReadFilesLimitLines     = 250
-	maxReadFilesTotalLines     = 1_000
+	defaultReadFileLimitLines  = 120
+	maxReadFileLimitLines      = 240
+	defaultReadFilesLimitLines = 60
+	maxReadFilesPerCall        = 4
+	maxReadFilesLimitLines     = 120
+	maxReadFilesTotalLines     = 320
 )
 
 func requireRepositoryWorkspace(ctx *ExecutionContext, toolName string) error {
@@ -504,8 +504,8 @@ func toolReadFileRange(ctx *ExecutionContext, input json.RawMessage) (string, er
 	if params.EndLine < params.StartLine {
 		return "", fmt.Errorf("end_line must be >= start_line")
 	}
-	if params.EndLine-params.StartLine+1 > 500 {
-		return "", fmt.Errorf("range too large: max 500 lines per call (requested %d)", params.EndLine-params.StartLine+1)
+	if params.EndLine-params.StartLine+1 > 250 {
+		return "", fmt.Errorf("range too large: max 250 lines per call (requested %d)", params.EndLine-params.StartLine+1)
 	}
 
 	absPath, err := safePath(ctx.WorkDir, params.Path)
