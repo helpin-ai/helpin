@@ -21,6 +21,16 @@ type ApiResult<T> = {
   cancelled?: boolean;
 };
 
+function unwrapPublicKeyOptions<T>(options: unknown): T {
+  if (options && typeof options === 'object' && 'publicKey' in options) {
+    const publicKey = (options as { publicKey?: unknown }).publicKey;
+    if (publicKey && typeof publicKey === 'object') {
+      return publicKey as T;
+    }
+  }
+  return options as T;
+}
+
 async function request<T>(path: string, options: RequestInit = {}, withAuth = false): Promise<ApiResult<T>> {
   const token = withAuth ? localStorage.getItem('access_token') : null;
 
@@ -104,7 +114,9 @@ async function beginRegistration(name?: string): Promise<ApiResult<Passkey>> {
 
   try {
     const credential = await startRegistration({
-      optionsJSON: optionsResult.data.options as unknown as Parameters<typeof startRegistration>[0]['optionsJSON'],
+      optionsJSON: unwrapPublicKeyOptions<Parameters<typeof startRegistration>[0]['optionsJSON']>(
+        optionsResult.data.options,
+      ),
     });
 
     return await request<Passkey>(
@@ -140,7 +152,9 @@ async function beginAuthentication(
 
   try {
     const credential = await startAuthentication({
-      optionsJSON: optionsResult.data.options as unknown as Parameters<typeof startAuthentication>[0]['optionsJSON'],
+      optionsJSON: unwrapPublicKeyOptions<Parameters<typeof startAuthentication>[0]['optionsJSON']>(
+        optionsResult.data.options,
+      ),
       ...(options?.useAutofill ? { useBrowserAutofill: true } : {}),
     });
 

@@ -15,6 +15,16 @@ type ApiResult<T> = {
   cancelled?: boolean
 }
 
+function unwrapPublicKeyOptions<T>(options: unknown): T {
+  if (options && typeof options === 'object' && 'publicKey' in options) {
+    const publicKey = (options as { publicKey?: unknown }).publicKey
+    if (publicKey && typeof publicKey === 'object') {
+      return publicKey as T
+    }
+  }
+  return options as T
+}
+
 function classifyPasskeyError(error: unknown, useAutofill = false): { message: string; cancelled: boolean } {
   if (error instanceof WebAuthnError && error.code === 'ERROR_CEREMONY_ABORTED') {
     return { message: 'The passkey request was cancelled.', cancelled: true }
@@ -82,7 +92,9 @@ async function beginAuthentication(
 
   try {
     const credential = await startAuthentication({
-      optionsJSON: optionsResult.data.options as unknown as Parameters<typeof startAuthentication>[0]['optionsJSON'],
+      optionsJSON: unwrapPublicKeyOptions<Parameters<typeof startAuthentication>[0]['optionsJSON']>(
+        optionsResult.data.options,
+      ),
       ...(options?.useAutofill ? { useBrowserAutofill: true } : {}),
     })
 
