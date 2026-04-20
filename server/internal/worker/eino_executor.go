@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +22,16 @@ type EinoExecutor struct {
 	tools        *ToolRegistry
 	runRepo      *repository.AgentRunRepository
 	artifactRepo *repository.AgentRunArtifactRepository
+}
+
+type nativeToolPressureSummary struct {
+	ToolCalls          int
+	OutputChars        int
+	OutputLines        int
+	ModelVisibleChars  int
+	ModelVisibleLines  int
+	CompactedResults   int
+	TopToolsByPressure []string
 }
 
 func NewEinoExecutor(
@@ -190,6 +201,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 	run.CachedInputTokens = result.Usage.CachedInputTokens
 	run.InputTokens = result.Usage.InputTokens
 	run.OutputTokens = result.Usage.OutputTokens
+	toolPressure := summarizeNativeToolPressure(result.Messages[len(history):])
 	slog.InfoContext(execCtx.Context, "native runtime execution completed",
 		"workspace_id", execCtx.WorkspaceID,
 		"run_id", execCtx.RunID,
@@ -204,6 +216,22 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		"max_steps_reached", result.MaxStepsReached,
 		"continuation_present", result.ProviderContinuation != nil && strings.TrimSpace(result.ProviderContinuation.ResponseID) != "",
 	)
+	if toolPressure.ToolCalls > 0 {
+		slog.InfoContext(execCtx.Context, "native runtime tool pressure summary",
+			"workspace_id", execCtx.WorkspaceID,
+			"run_id", execCtx.RunID,
+			"agent_id", execCtx.AgentID,
+			"provider", provider,
+			"model", modelName,
+			"tool_calls", toolPressure.ToolCalls,
+			"tool_output_chars", toolPressure.OutputChars,
+			"tool_output_lines", toolPressure.OutputLines,
+			"model_visible_chars", toolPressure.ModelVisibleChars,
+			"model_visible_lines", toolPressure.ModelVisibleLines,
+			"compacted_results", toolPressure.CompactedResults,
+			"top_tools", toolPressure.TopToolsByPressure,
+		)
+	}
 	if execCtx.Agent.MonthlyTokenBudget != nil {
 		budget := *execCtx.Agent.MonthlyTokenBudget
 		if execCtx.Agent.TokensUsedThisMonth+totalTokens > budget {
@@ -381,4 +409,81 @@ func lenArtifactEntries(ctx *ArtifactContext) int {
 		return 0
 	}
 	return len(ctx.Entries)
+}
+
+func summarizeNativeToolPressure(messages []ExecutionMessage) nativeToolPressureSummary {
+	if len(messages) == 0 {
+		return nativeToolPressureSummary{}
+	}
+
+	type perTool struct {
+		OutputChars       int
+		ModelVisibleChars int
+		CompactedResults  int
+	}
+
+	summary := nativeToolPressureSummary{}
+	byTool := make(map[string]perTool)
+
+	for _, msg := range messages {
+		if msg.Role != "tool" {
+			continue
+		}
+		for _, block := range msg.Blocks {
+			if block.Type != ExecutionBlockTypeToolResult {
+				continue
+			}
+			toolName := strings.TrimSpace(block.ToolName)
+			analysis := analyzeToolOutputForModel(toolName, block.Output)
+			summary.ToolCalls++
+			summary.OutputChars += analysis.OriginalRunes
+			summary.OutputLines += analysis.OriginalLines
+			summary.ModelVisibleChars += analysis.VisibleRunes
+			summary.ModelVisibleLines += analysis.VisibleLines
+			if analysis.Compacted {
+				summary.CompactedResults++
+			}
+
+			current := byTool[toolName]
+			current.OutputChars += analysis.OriginalRunes
+			current.ModelVisibleChars += analysis.VisibleRunes
+			if analysis.Compacted {
+				current.CompactedResults++
+			}
+			byTool[toolName] = current
+		}
+	}
+
+	type namedTool struct {
+		Name             string
+		OutputChars      int
+		ModelVisible     int
+		CompactedResults int
+	}
+	named := make([]namedTool, 0, len(byTool))
+	for name, stats := range byTool {
+		named = append(named, namedTool{
+			Name:             name,
+			OutputChars:      stats.OutputChars,
+			ModelVisible:     stats.ModelVisibleChars,
+			CompactedResults: stats.CompactedResults,
+		})
+	}
+	sort.Slice(named, func(i, j int) bool {
+		if named[i].OutputChars == named[j].OutputChars {
+			return named[i].Name < named[j].Name
+		}
+		return named[i].OutputChars > named[j].OutputChars
+	})
+
+	limit := 3
+	if len(named) < limit {
+		limit = len(named)
+	}
+	summary.TopToolsByPressure = make([]string, 0, limit)
+	for i := 0; i < limit; i++ {
+		summary.TopToolsByPressure = append(summary.TopToolsByPressure, fmt.Sprintf("%s output=%d visible=%d compacted=%d", named[i].Name, named[i].OutputChars, named[i].ModelVisible, named[i].CompactedResults))
+	}
+
+	return summary
 }

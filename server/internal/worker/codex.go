@@ -163,6 +163,13 @@ func (e *CodexExecutor) persistWorkspaceAuth(ctx context.Context, workspaceID, p
 	return e.workspaceAuth.Promote(ctx, workspaceID, provider, authMode, codexHome)
 }
 
+func (e *CodexExecutor) clearWorkspaceAuth(ctx context.Context, workspaceID, provider, authMode string) error {
+	if e == nil || e.workspaceAuth == nil {
+		return nil
+	}
+	return e.workspaceAuth.Clear(ctx, workspaceID, provider, authMode)
+}
+
 func (e *CodexExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) error {
 	config := execCtx.Config
 	if config == nil {

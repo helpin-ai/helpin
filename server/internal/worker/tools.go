@@ -31,7 +31,7 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 	}
 
 	// Filesystem tools
-	r.register("read_file", "Read a bounded window of a text file at the given path (relative to the workspace root). Returns the first chunk by default; use offset_line and limit_lines to continue without dumping the whole file.", map[string]interface{}{
+	r.register("read_file", "Read a bounded window of a text file at the given path (relative to the workspace root). Use ripgrep/search_files/list_symbols first, then use read_file or read_file_range for the exact section you need.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"path": map[string]interface{}{
@@ -44,18 +44,18 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 			},
 			"limit_lines": map[string]interface{}{
 				"type":        "integer",
-				"description": "Optional maximum number of lines to return. Defaults to 200, max 400.",
+				"description": "Optional maximum number of lines to return. Defaults to 120, max 240.",
 			},
 		},
 		"required": []string{"path"},
 	}, toolReadFile)
 
-	r.register("read_files", "Read bounded windows from multiple text files in one call. Use this when you need to inspect several files without spending extra tool round-trips.", map[string]interface{}{
+	r.register("read_files", "Read small bounded windows from a few specific text files in one call. Prefer ripgrep/search_files plus read_file_range first; use this only when you already know the exact files and need small excerpts.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"files": map[string]interface{}{
 				"type":        "array",
-				"description": "Files to read. Max 8 files per call.",
+				"description": "Files to read. Max 4 files per call.",
 				"items": map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -69,7 +69,7 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 						},
 						"limit_lines": map[string]interface{}{
 							"type":        "integer",
-							"description": "Optional maximum number of lines to return for this file. Defaults to 120, max 250.",
+							"description": "Optional maximum number of lines to return for this file. Defaults to 60, max 120.",
 						},
 					},
 					"required": []string{"path"},
@@ -150,7 +150,7 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"required": []string{"pattern"},
 	}, toolSearchFiles)
 
-	r.register("read_file_range", "Read specific line range from a file. Much more token-efficient than read_file for large files.", map[string]interface{}{
+	r.register("read_file_range", "Read a specific line range from a file. Prefer this after search/ripgrep when you know the relevant span; it is much more token-efficient than broad file reads.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"path": map[string]interface{}{

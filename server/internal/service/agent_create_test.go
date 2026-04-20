@@ -550,6 +550,45 @@ func TestUpdateAgent_PreservesSelectedSystemPresetVersion(t *testing.T) {
 	}
 }
 
+func TestUpdateAgent_ClearsSystemModelWhenBlankStringProvided(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	activitySvc := NewPMActivityService(repository.NewPMActivityRepository(db))
+	svc := &AgentService{
+		agentRepo:   agentRepo,
+		activitySvc: activitySvc,
+		wsPublisher: nil,
+	}
+	svc.SetModelProviderConfig("", "test-openai-key", "", "", false, "", "")
+
+	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCodeBuilder)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+	if systemAgent.Model == nil || strings.TrimSpace(*systemAgent.Model) == "" {
+		t.Fatalf("expected seeded system agent model, got %+v", systemAgent.Model)
+	}
+
+	blankModel := ""
+	updated, err := svc.UpdateAgent(context.Background(), "ws-test", systemAgent.ID, model.UpdateAgentRequest{
+		Model: &blankModel,
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("UpdateAgent returned error: %v", err)
+	}
+	if updated.Model != nil {
+		t.Fatalf("expected cleared model, got %+v", updated.Model)
+	}
+
+	reloaded, err := svc.GetAgent(context.Background(), "ws-test", updated.ID)
+	if err != nil {
+		t.Fatalf("GetAgent returned error: %v", err)
+	}
+	if reloaded.Model != nil {
+		t.Fatalf("expected cleared model after reload, got %+v", reloaded.Model)
+	}
+}
+
 func TestEnsureBuiltInAgent_UpgradesLegacyCodeBuilderRuntimeToCodex(t *testing.T) {
 	db := newAgentServiceTestDB(t)
 	agentRepo := repository.NewAgentRepository(db)
@@ -727,6 +766,52 @@ func TestCreateWorkspacePresetVersion(t *testing.T) {
 	if version.ApprovalMode != "never" {
 		t.Fatalf("expected workspace preset version approval mode to be forced to never, got %q", version.ApprovalMode)
 	}
+}
+
+func TestCreateWorkspacePresetVersion_PreservesExplicitBlankModel(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	workspacePresetVersionRepo := repository.NewWorkspaceAgentPresetVersionRepository(db)
+	svc := &AgentService{
+		agentRepo:                  agentRepo,
+		workspacePresetVersionRepo: workspacePresetVersionRepo,
+	}
+
+	blankModel := ""
+	req := model.CreateWorkspaceAgentPresetVersionRequest{
+		WorkspaceID:      "ws-test",
+		FamilyKey:        model.AgentPresetCodeBuilder,
+		Label:            "Modelless Forge",
+		SourceVersionKey: agentTestStringPtr(defaultPresetVersionKeyForPresetKey(model.AgentPresetCodeBuilder)),
+		RuntimeKind:      agentTestStringPtr("codex"),
+		Provider:         agentTestStringPtr(model.AgentModelProviderOpenAI),
+		Model:            &blankModel,
+		AllowedTools:     mustJSONStringSlice([]string{"read_file", "run_command"}),
+		SupportedModes:   mustJSONStringSlice([]string{model.InvocationModeAutonomous}),
+	}
+
+	version, err := svc.CreateWorkspacePresetVersion(context.Background(), req, "user-1")
+	if err != nil {
+		t.Fatalf("CreateWorkspacePresetVersion returned error: %v", err)
+	}
+	if version.Model == nil {
+		t.Fatal("expected explicit blank model to be preserved")
+	}
+	if *version.Model != "" {
+		t.Fatalf("expected explicit blank model, got %q", *version.Model)
+	}
+
+	presets := svc.ListAgentPresets(context.Background(), "ws-test")
+	for _, preset := range presets {
+		if preset.VersionKey != version.VersionKey {
+			continue
+		}
+		if preset.Model == nil || *preset.Model != "" {
+			t.Fatalf("expected listed workspace preset to keep blank model, got %+v", preset.Model)
+		}
+		return
+	}
+	t.Fatalf("expected workspace preset version %q in preset list", version.VersionKey)
 }
 
 func TestEnsureBuiltInAgent_AppliesDefaultExecutionConfigForForgeAndLens(t *testing.T) {

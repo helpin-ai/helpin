@@ -148,7 +148,10 @@ func workspacePresetDefinition(base model.AgentPresetDefinition, version model.W
 	definition.WorkspaceID = &version.WorkspaceID
 	definition.SourceVersionKey = version.SourceVersionKey
 	definition.Provider = trimPtr(version.Provider)
-	definition.Model = trimPtr(version.Model)
+	if version.Model != nil {
+		modelValue := strings.TrimSpace(*version.Model)
+		definition.Model = &modelValue
+	}
 	definition.ExecutionConfig = normalizeExecutionConfigJSON(version.ExecutionConfig)
 	if prompt := trimPtr(version.SystemPrompt); prompt != nil {
 		definition.SystemPrompt = prompt
