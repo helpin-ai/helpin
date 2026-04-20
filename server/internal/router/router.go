@@ -203,6 +203,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		// ---- Public routes ----
 		r.Post("/auth/signup", h.Auth.Signup)
 		r.Post("/auth/signin", h.Auth.Signin)
+		r.Post("/auth/2fa/verify-signin", h.Auth.Verify2FASignin)
 		r.Post("/auth/forgot-password", h.Auth.ForgotPassword)
 		r.Post("/auth/reset-password", h.Auth.ResetPassword)
 		r.Post("/auth/refresh", h.Auth.RefreshToken)
@@ -337,6 +338,11 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Post("/auth/me/avatar", h.Auth.UploadAvatar)
 			r.Delete("/auth/me/avatar", h.Auth.DeleteAvatar)
 			r.Put("/auth/change-password", h.Auth.ChangePassword)
+			r.Get("/auth/2fa/status", h.Auth.Get2FAStatus)
+			r.Post("/auth/2fa/setup", h.Auth.Setup2FA)
+			r.Post("/auth/2fa/verify", h.Auth.Verify2FA)
+			r.Delete("/auth/2fa", h.Auth.Disable2FA)
+			r.Post("/auth/2fa/regenerate-recovery-codes", h.Auth.RegenerateRecoveryCodes)
 
 			// User notification settings (account-level, no workspace scope)
 			r.Get("/user/notification-settings", h.UserNotifSettings.Get)

@@ -32,6 +32,9 @@ func newTestDB(t *testing.T) *gorm.DB {
 			avatar_background_mode TEXT,
 			avatar_background_color TEXT,
 			default_workspace_id TEXT,
+			totp_secret_encrypted TEXT,
+			totp_verified BOOLEAN NOT NULL DEFAULT 0,
+			recovery_codes_encrypted TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

@@ -76,6 +76,7 @@ type Config struct {
 	AppBaseURL                        string
 
 	// CRM encryption & Gmail OAuth (optional — Gmail sync disabled if not set)
+	TOTPEncryptionKey     string
 	CRMEncryptionKey      string
 	GmailClientID         string
 	GmailClientSecret     string
@@ -202,6 +203,7 @@ func Load() (*Config, error) {
 		PostmarkRouteInboundWebhookSecret: strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_ROUTE_INBOUND_WEBHOOK_SECRET"), os.Getenv("POSTMARK_INBOUND_WEBHOOK_SECRET"))),
 		SupportEmailRouteDomain:           strings.TrimSpace(firstNonEmpty(os.Getenv("SUPPORT_EMAIL_ROUTE_DOMAIN"), os.Getenv("SUPPORT_EMAIL_REPLY_DOMAIN"), "on.helpin.email")),
 		AppBaseURL:                        appBaseURL,
+		TOTPEncryptionKey:                 strings.TrimSpace(os.Getenv("TOTP_ENCRYPTION_KEY")),
 		CRMEncryptionKey:                  os.Getenv("CRM_ENCRYPTION_KEY"),
 		GmailClientID:                     os.Getenv("GMAIL_CLIENT_ID"),
 		GmailClientSecret:                 os.Getenv("GMAIL_CLIENT_SECRET"),
