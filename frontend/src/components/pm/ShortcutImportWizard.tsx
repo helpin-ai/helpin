@@ -44,7 +44,8 @@ import {
   type ShortcutImportStatusResponse,
   type WorkflowStateMappingPayload,
 } from '@/lib/services/pmImportService';
-import type { WorkflowWithStates } from '@/lib/pmTypes';
+import { TASK_TYPE_CONFIG, TaskTypeIcon } from '@/lib/pmConstants';
+import type { TaskType, WorkflowWithStates } from '@/lib/pmTypes';
 import type { MemberWithUser } from '@/lib/types';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { inviteService } from '@/lib/services/inviteService';
@@ -677,12 +678,6 @@ function UploadStep({
   const storyTypes = Object.entries(s.tasks_by_type).sort(([, a], [, b]) => b - a);
   const totalTasks = storyTypes.reduce((sum, [, v]) => sum + v, 0) || 1;
 
-  const STORY_TYPE_COLORS: Record<string, string> = {
-    feature: 'bg-blue-500',
-    bug: 'bg-red-400',
-    chore: 'bg-amber-400',
-  };
-
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -712,7 +707,7 @@ function UploadStep({
           {storyTypes.map(([type, count]) => (
             <div
               key={type}
-              className={cn('h-full', STORY_TYPE_COLORS[type] || 'bg-gray-400')}
+              className={cn('h-full', TASK_TYPE_CONFIG[type as TaskType]?.swatch || 'bg-muted-foreground')}
               style={{ width: `${(count / totalTasks) * 100}%` }}
               title={`${type}: ${count.toLocaleString()}`}
             />
@@ -721,7 +716,11 @@ function UploadStep({
         <div className="flex gap-4">
           {storyTypes.map(([type, count]) => (
             <div key={type} className="flex items-center gap-1.5">
-              <div className={cn('h-2.5 w-2.5 rounded-full', STORY_TYPE_COLORS[type] || 'bg-gray-400')} />
+              {TASK_TYPE_CONFIG[type as TaskType] ? (
+                <TaskTypeIcon taskType={type as TaskType} className="h-4 w-4 shrink-0" />
+              ) : (
+                <div className="h-2.5 w-2.5 rounded-full bg-muted-foreground" />
+              )}
               <span className="text-xs text-muted-foreground">
                 {type} <span className="font-medium text-foreground">{count.toLocaleString()}</span>
               </span>

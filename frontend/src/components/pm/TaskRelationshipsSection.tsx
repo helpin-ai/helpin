@@ -578,7 +578,7 @@ export function TaskRelationshipsSection({
                 {(relatedTask.task_key || relatedTask.display_id) ? (
                   <Badge variant="outline" className="h-5 rounded-full px-1.5 text-[10px] font-medium gap-1">
                     {relatedTask.task_type ? (
-                      <TaskTypeIcon taskType={relatedTask.task_type} className="h-3 w-3" />
+                      <TaskTypeIcon taskType={relatedTask.task_type} className="h-3.5 w-3.5" />
                     ) : null}
                     {relatedTask.task_key ?? relatedTask.display_id}
                     {(relatedTask.completed || resolved) ? (

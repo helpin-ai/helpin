@@ -355,7 +355,7 @@ function TaskCardComponent({
           <Tooltip>
             <TooltipTrigger asChild>
               <span className="shrink-0">
-                <TaskTypeIcon taskType={task.task_type} className="h-4 w-4" />
+                <TaskTypeIcon taskType={task.task_type} className="h-[18px] w-[18px]" />
               </span>
             </TooltipTrigger>
             <TooltipContent side="top">{taskTypeCfg.label}</TooltipContent>
