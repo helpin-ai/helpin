@@ -4191,7 +4191,7 @@ func TestSynthesizeCompletionInteractionFallbackUsesStructuredReviewBlockForCode
 	}
 }
 
-func TestSynthesizeCompletionInteractionFallbackSkipsReviewCheckpointWhenUserInputIsAlsoRequired(t *testing.T) {
+func TestSynthesizeCompletionInteractionFallbackPrefersReviewCheckpointWhenUserInputIsAlsoRequired(t *testing.T) {
 	dbName := fmt.Sprintf("file:completion-fallback-review-followup-%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
 	if err != nil {
@@ -4320,18 +4320,27 @@ func TestSynthesizeCompletionInteractionFallbackSkipsReviewCheckpointWhenUserInp
 
 	approval, input, err := activities.synthesizeCompletionInteractionFallback(context.Background(), state, assistantMessage)
 	if err != nil {
-		t.Fatalf("expected no synthesized interaction, got %v", err)
+		t.Fatalf("expected synthesized review checkpoint, got %v", err)
 	}
-	if approval != nil || input != nil {
-		t.Fatalf("expected fallback to avoid guessing between checkpoint and user input, got approval=%#v input=%#v", approval, input)
+	if input != nil {
+		t.Fatalf("expected no synthesized input request, got %#v", input)
+	}
+	if approval == nil {
+		t.Fatal("expected synthesized approval request")
+	}
+	if approval.Title != "Lens review findings" || approval.Summary != "No issues found." {
+		t.Fatalf("unexpected synthesized approval request %#v", approval)
 	}
 
 	interactions, err := interactionRepo.ListByRun(context.Background(), state.run.WorkspaceID, state.run.ID)
 	if err != nil {
 		t.Fatalf("list interactions: %v", err)
 	}
-	if len(interactions) != 0 {
-		t.Fatalf("expected no synthesized interactions, got %#v", interactions)
+	if len(interactions) != 1 {
+		t.Fatalf("expected one synthesized interaction, got %#v", interactions)
+	}
+	if interactions[0].InteractionKind != model.AgentRunInteractionKindReviewCheckpoint {
+		t.Fatalf("expected synthesized review checkpoint, got %#v", interactions[0])
 	}
 }
 
