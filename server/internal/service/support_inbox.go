@@ -179,7 +179,10 @@ func (s *SupportInboxService) GetMessageEmailDetail(ctx context.Context, workspa
 		StrippedText:     log.StrippedText,
 		HTMLBody:         log.HTMLBody,
 		Status:           log.Status,
+		DeliveredAt:      log.DeliveredAt,
 		OpenedAt:         log.OpenedAt,
+		BouncedAt:        log.BouncedAt,
+		ErrorMessage:     log.ErrorMessage,
 		CreatedAt:        log.CreatedAt,
 	}, nil
 }

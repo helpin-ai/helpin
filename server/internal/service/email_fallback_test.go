@@ -448,6 +448,329 @@ func TestEmailFallbackProcessOpenEventMarksMessagesRead(t *testing.T) {
 	}
 }
 
+func TestEmailFallbackProcessDeliveryEventMarksDelivered(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	env := setupEmailFallbackInboundTestEnv(t, settings)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	conversationID := "99999999-9999-9999-9999-999999999998"
+	deliveredAt := time.Date(2026, 3, 20, 13, 15, 0, 0, time.UTC)
+	env.service.now = func() time.Time { return deliveredAt }
+
+	msg := &model.SupportMessage{
+		WorkspaceID:    workspaceID,
+		ConversationID: conversationID,
+		SenderType:     "user",
+		Content:        "Following up via email.",
+		MessageType:    "reply",
+	}
+	if err := env.messageRepo.Create(ctx, msg); err != nil {
+		t.Fatalf("create msg: %v", err)
+	}
+
+	if err := env.emailLogRepo.Create(ctx, &model.SupportEmailLog{
+		ID:                "aaaaaaa1-aaaa-aaaa-aaaa-aaaaaaaaaaa2",
+		WorkspaceID:       workspaceID,
+		ConversationID:    conversationID,
+		Direction:         "outbound",
+		MessageIDs:        model.DocsStringArray{msg.ID},
+		PostmarkMessageID: strPtr("pm-delivery-1"),
+		Status:            "sent",
+	}); err != nil {
+		t.Fatalf("seed email log: %v", err)
+	}
+
+	rawPayload := `{"RecordType":"Delivery","MessageID":"pm-delivery-1","DeliveredAt":"2026-03-20T13:15:00Z"}`
+	if err := env.service.ProcessDeliveryEvent(ctx, model.PostmarkDeliveryPayload{
+		RecordType:  "Delivery",
+		MessageID:   "pm-delivery-1",
+		DeliveredAt: "2026-03-20T13:15:00Z",
+	}, rawPayload); err != nil {
+		t.Fatalf("process delivery event: %v", err)
+	}
+	if err := env.service.ProcessDeliveryEvent(ctx, model.PostmarkDeliveryPayload{
+		RecordType:  "Delivery",
+		MessageID:   "pm-delivery-1",
+		DeliveredAt: "2026-03-20T13:15:00Z",
+	}, rawPayload); err != nil {
+		t.Fatalf("process duplicate delivery event: %v", err)
+	}
+
+	logRow, err := env.emailLogRepo.GetByPostmarkMessageID(ctx, "pm-delivery-1")
+	if err != nil {
+		t.Fatalf("reload email log: %v", err)
+	}
+	if logRow == nil || logRow.Status != "delivered" {
+		t.Fatalf("expected delivered email log, got %#v", logRow)
+	}
+	if logRow.DeliveredAt == nil || !logRow.DeliveredAt.Equal(deliveredAt) {
+		t.Fatalf("expected delivered_at=%v, got %#v", deliveredAt, logRow.DeliveredAt)
+	}
+
+	events, err := env.webhookRepo.ListByConversation(ctx, workspaceID, conversationID)
+	if err != nil {
+		t.Fatalf("list webhook events: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("expected two delivery webhook events, got %#v", events)
+	}
+	if events[0].EventType != "delivery" || events[1].EventType != "delivery" {
+		t.Fatalf("expected delivery events, got %#v", events)
+	}
+}
+
+func TestEmailFallbackProcessBounceEventMarksBounced(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	env := setupEmailFallbackInboundTestEnv(t, settings)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	conversationID := "99999999-9999-9999-9999-999999999997"
+	bouncedAt := time.Date(2026, 3, 20, 13, 25, 0, 0, time.UTC)
+	env.service.now = func() time.Time { return bouncedAt }
+
+	msg := &model.SupportMessage{
+		WorkspaceID:    workspaceID,
+		ConversationID: conversationID,
+		SenderType:     "user",
+		Content:        "Following up via email.",
+		MessageType:    "reply",
+	}
+	if err := env.messageRepo.Create(ctx, msg); err != nil {
+		t.Fatalf("create msg: %v", err)
+	}
+
+	if err := env.emailLogRepo.Create(ctx, &model.SupportEmailLog{
+		ID:                "aaaaaaa1-aaaa-aaaa-aaaa-aaaaaaaaaaa3",
+		WorkspaceID:       workspaceID,
+		ConversationID:    conversationID,
+		Direction:         "outbound",
+		MessageIDs:        model.DocsStringArray{msg.ID},
+		PostmarkMessageID: strPtr("pm-bounce-1"),
+		Status:            "sent",
+	}); err != nil {
+		t.Fatalf("seed email log: %v", err)
+	}
+
+	rawPayload := `{"RecordType":"Bounce","MessageID":"pm-bounce-1","BouncedAt":"2026-03-20T13:25:00Z","Description":"Hard bounce"}`
+	if err := env.service.ProcessBounceEvent(ctx, model.PostmarkBouncePayload{
+		RecordType:  "Bounce",
+		MessageID:   "pm-bounce-1",
+		BouncedAt:   "2026-03-20T13:25:00Z",
+		Description: "Hard bounce",
+	}, rawPayload); err != nil {
+		t.Fatalf("process bounce event: %v", err)
+	}
+	if err := env.service.ProcessBounceEvent(ctx, model.PostmarkBouncePayload{
+		RecordType:  "Bounce",
+		MessageID:   "pm-bounce-1",
+		BouncedAt:   "2026-03-20T13:25:00Z",
+		Description: "Hard bounce",
+	}, rawPayload); err != nil {
+		t.Fatalf("process duplicate bounce event: %v", err)
+	}
+
+	logRow, err := env.emailLogRepo.GetByPostmarkMessageID(ctx, "pm-bounce-1")
+	if err != nil {
+		t.Fatalf("reload email log: %v", err)
+	}
+	if logRow == nil || logRow.Status != "bounced" {
+		t.Fatalf("expected bounced email log, got %#v", logRow)
+	}
+	if logRow.BouncedAt == nil || !logRow.BouncedAt.Equal(bouncedAt) {
+		t.Fatalf("expected bounced_at=%v, got %#v", bouncedAt, logRow.BouncedAt)
+	}
+	if logRow.ErrorMessage != "Hard bounce" {
+		t.Fatalf("expected error_message=Hard bounce, got %q", logRow.ErrorMessage)
+	}
+
+	events, err := env.webhookRepo.ListByConversation(ctx, workspaceID, conversationID)
+	if err != nil {
+		t.Fatalf("list webhook events: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("expected two bounce webhook events, got %#v", events)
+	}
+	if events[0].EventType != "bounce" || events[1].EventType != "bounce" {
+		t.Fatalf("expected bounce events, got %#v", events)
+	}
+}
+
+func TestEmailFallbackProcessSpamComplaintEventMarksSpamComplaint(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	env := setupEmailFallbackInboundTestEnv(t, settings)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	conversationID := "99999999-9999-9999-9999-999999999996"
+	complaintAt := time.Date(2026, 3, 20, 13, 35, 0, 0, time.UTC)
+	env.service.now = func() time.Time { return complaintAt }
+
+	msg := &model.SupportMessage{
+		WorkspaceID:    workspaceID,
+		ConversationID: conversationID,
+		SenderType:     "user",
+		Content:        "Following up via email.",
+		MessageType:    "reply",
+	}
+	if err := env.messageRepo.Create(ctx, msg); err != nil {
+		t.Fatalf("create msg: %v", err)
+	}
+
+	if err := env.emailLogRepo.Create(ctx, &model.SupportEmailLog{
+		ID:                "aaaaaaa1-aaaa-aaaa-aaaa-aaaaaaaaaaa4",
+		WorkspaceID:       workspaceID,
+		ConversationID:    conversationID,
+		Direction:         "outbound",
+		MessageIDs:        model.DocsStringArray{msg.ID},
+		PostmarkMessageID: strPtr("pm-complaint-1"),
+		Status:            "delivered",
+	}); err != nil {
+		t.Fatalf("seed email log: %v", err)
+	}
+
+	rawPayload := `{"RecordType":"SpamComplaint","MessageID":"pm-complaint-1","BouncedAt":"2026-03-20T13:35:00Z","Description":"Marked as spam"}`
+	if err := env.service.ProcessSpamComplaintEvent(ctx, model.PostmarkSpamComplaintPayload{
+		RecordType:  "SpamComplaint",
+		MessageID:   "pm-complaint-1",
+		BouncedAt:   "2026-03-20T13:35:00Z",
+		Description: "Marked as spam",
+	}, rawPayload); err != nil {
+		t.Fatalf("process spam complaint event: %v", err)
+	}
+	if err := env.service.ProcessSpamComplaintEvent(ctx, model.PostmarkSpamComplaintPayload{
+		RecordType:  "SpamComplaint",
+		MessageID:   "pm-complaint-1",
+		BouncedAt:   "2026-03-20T13:35:00Z",
+		Description: "Marked as spam",
+	}, rawPayload); err != nil {
+		t.Fatalf("process duplicate spam complaint event: %v", err)
+	}
+
+	logRow, err := env.emailLogRepo.GetByPostmarkMessageID(ctx, "pm-complaint-1")
+	if err != nil {
+		t.Fatalf("reload email log: %v", err)
+	}
+	if logRow == nil || logRow.Status != "spam_complaint" {
+		t.Fatalf("expected spam complaint email log, got %#v", logRow)
+	}
+	if logRow.BouncedAt == nil || !logRow.BouncedAt.Equal(complaintAt) {
+		t.Fatalf("expected complaint timestamp=%v, got %#v", complaintAt, logRow.BouncedAt)
+	}
+	if logRow.ErrorMessage != "Marked as spam" {
+		t.Fatalf("expected error_message=Marked as spam, got %q", logRow.ErrorMessage)
+	}
+
+	events, err := env.webhookRepo.ListByConversation(ctx, workspaceID, conversationID)
+	if err != nil {
+		t.Fatalf("list webhook events: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("expected two spam complaint webhook events, got %#v", events)
+	}
+	if events[0].EventType != "spam_complaint" || events[1].EventType != "spam_complaint" {
+		t.Fatalf("expected spam complaint events, got %#v", events)
+	}
+}
+
+func TestEmailFallbackProcessPostmarkStatusEventsRecordAuditWithoutMatchingEmailLog(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name      string
+		eventType string
+		run       func(*emailFallbackTestEnv) error
+	}{
+		{
+			name:      "delivery missing message id",
+			eventType: "delivery",
+			run: func(env *emailFallbackTestEnv) error {
+				return env.service.ProcessDeliveryEvent(ctx, model.PostmarkDeliveryPayload{
+					RecordType:  "Delivery",
+					DeliveredAt: "2026-03-20T13:15:00Z",
+				}, "")
+			},
+		},
+		{
+			name:      "delivery without matching email log",
+			eventType: "delivery",
+			run: func(env *emailFallbackTestEnv) error {
+				return env.service.ProcessDeliveryEvent(ctx, model.PostmarkDeliveryPayload{
+					RecordType:  "Delivery",
+					MessageID:   "pm-delivery-missing",
+					DeliveredAt: "2026-03-20T13:15:00Z",
+				}, "")
+			},
+		},
+		{
+			name:      "bounce missing message id",
+			eventType: "bounce",
+			run: func(env *emailFallbackTestEnv) error {
+				return env.service.ProcessBounceEvent(ctx, model.PostmarkBouncePayload{
+					RecordType:  "Bounce",
+					BouncedAt:   "2026-03-20T13:25:00Z",
+					Description: "Mailbox unavailable",
+				}, "")
+			},
+		},
+		{
+			name:      "bounce without matching email log",
+			eventType: "bounce",
+			run: func(env *emailFallbackTestEnv) error {
+				return env.service.ProcessBounceEvent(ctx, model.PostmarkBouncePayload{
+					RecordType:  "Bounce",
+					MessageID:   "pm-bounce-missing",
+					BouncedAt:   "2026-03-20T13:25:00Z",
+					Description: "Mailbox unavailable",
+				}, "")
+			},
+		},
+		{
+			name:      "spam complaint missing message id",
+			eventType: "spam_complaint",
+			run: func(env *emailFallbackTestEnv) error {
+				return env.service.ProcessSpamComplaintEvent(ctx, model.PostmarkSpamComplaintPayload{
+					RecordType:  "SpamComplaint",
+					BouncedAt:   "2026-03-20T13:35:00Z",
+					Description: "Marked as spam",
+				}, "")
+			},
+		},
+		{
+			name:      "spam complaint without matching email log",
+			eventType: "spam_complaint",
+			run: func(env *emailFallbackTestEnv) error {
+				return env.service.ProcessSpamComplaintEvent(ctx, model.PostmarkSpamComplaintPayload{
+					RecordType:  "SpamComplaint",
+					MessageID:   "pm-complaint-missing",
+					BouncedAt:   "2026-03-20T13:35:00Z",
+					Description: "Marked as spam",
+				}, "")
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			settings := model.DefaultSupportInboxSettings()
+			env := setupEmailFallbackInboundTestEnv(t, settings)
+
+			if err := tc.run(env); err != nil {
+				t.Fatalf("run event: %v", err)
+			}
+
+			resp, err := env.webhookRepo.ListPaginated(ctx, 1, 10, tc.eventType, "postmark")
+			if err != nil {
+				t.Fatalf("list webhook events: %v", err)
+			}
+			if len(resp.Data) != 1 {
+				t.Fatalf("expected one %s webhook event, got %#v", tc.eventType, resp.Data)
+			}
+		})
+	}
+}
+
 func TestEmailFallbackProcessInboundEmailCreatesMessageAndDedupes(t *testing.T) {
 	ctx := context.Background()
 	settings := model.DefaultSupportInboxSettings()
