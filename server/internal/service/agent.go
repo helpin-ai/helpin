@@ -1219,7 +1219,7 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 		DefaultInvocationMode:      defaultInvocationMode,
 		CreatedBy:                  trimPtr(&actorID),
 	}
-	if len(req.AllowedTools) > 0 {
+	if req.AllowedTools != nil {
 		version.AllowedTools = normalizeAllowedToolsJSON(normalizeJSONSlice(req.AllowedTools))
 	}
 	if req.Model != nil {
@@ -1228,14 +1228,14 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 	}
 	// If preamble or skills are provided, compile system_prompt from them.
 	hasPreamble := req.InstructionPreamble != nil
-	hasSkills := len(req.InstructionSkills) > 0
+	hasSkills := req.InstructionSkills != nil
 	if hasPreamble || hasSkills {
 		preamble := strings.TrimSpace(stringOrDefault(req.InstructionPreamble, basePreset.InstructionPreamble))
 		skills := basePreset.InstructionSkills
 		if hasSkills {
 			skills = parseJSONStringSlice(req.InstructionSkills)
 		}
-		version.InstructionPreamble = trimPtr(&preamble)
+		version.InstructionPreamble = &preamble
 		version.InstructionSkills = mustJSONStringSlice(skills)
 		compiled := worker.CompilePresetInstructions(preamble, skills)
 		version.SystemPrompt = &compiled
@@ -1244,6 +1244,9 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 		version.SystemPrompt = trimPtr(basePreset.SystemPrompt)
 	} else {
 		// Raw system_prompt override — instruction decomposition no longer applies.
+		emptyPreamble := ""
+		version.InstructionPreamble = &emptyPreamble
+		version.InstructionSkills = mustJSONStringSlice(nil)
 		version.InstructionTemplateVersion = ""
 	}
 	if version.Provider == nil {
@@ -1515,7 +1518,7 @@ func (s *AgentService) UpdateWorkspacePresetVersion(ctx context.Context, workspa
 		} else {
 			version.ExecutionConfig = normalizeExecutionConfigJSON(currentPreset.ExecutionConfig)
 		}
-		if len(req.AllowedTools) > 0 {
+		if req.AllowedTools != nil {
 			version.AllowedTools = normalizeAllowedToolsJSON(normalizeJSONSlice(req.AllowedTools))
 		} else {
 			version.AllowedTools = normalizeAllowedToolsJSON(mustJSONStringSlice(currentPreset.AllowedTools))
@@ -1525,7 +1528,7 @@ func (s *AgentService) UpdateWorkspacePresetVersion(ctx context.Context, workspa
 		version.ApprovalMode = "never"
 
 		hasPreamble := req.InstructionPreamble != nil
-		hasSkills := len(req.InstructionSkills) > 0
+		hasSkills := req.InstructionSkills != nil
 		if hasPreamble || hasSkills {
 			preamble := currentPreset.InstructionPreamble
 			if req.InstructionPreamble != nil {
@@ -1535,7 +1538,7 @@ func (s *AgentService) UpdateWorkspacePresetVersion(ctx context.Context, workspa
 			if hasSkills {
 				skills = parseJSONStringSlice(req.InstructionSkills)
 			}
-			version.InstructionPreamble = trimPtr(&preamble)
+			version.InstructionPreamble = &preamble
 			version.InstructionSkills = mustJSONStringSlice(skills)
 			compiled := worker.CompilePresetInstructions(preamble, skills)
 			version.SystemPrompt = &compiled
@@ -1543,12 +1546,14 @@ func (s *AgentService) UpdateWorkspacePresetVersion(ctx context.Context, workspa
 		} else if req.SystemPrompt != nil {
 			version.SystemPrompt = trimPtr(req.SystemPrompt)
 			version.InstructionTemplateVersion = ""
-			version.InstructionPreamble = trimPtr(&currentPreset.InstructionPreamble)
-			version.InstructionSkills = mustJSONStringSlice(currentPreset.InstructionSkills)
+			emptyPreamble := ""
+			version.InstructionPreamble = &emptyPreamble
+			version.InstructionSkills = mustJSONStringSlice(nil)
 		} else {
 			version.SystemPrompt = trimPtr(currentPreset.SystemPrompt)
 			version.InstructionTemplateVersion = strings.TrimSpace(currentPreset.InstructionTemplateVersion)
-			version.InstructionPreamble = trimPtr(&currentPreset.InstructionPreamble)
+			preamble := currentPreset.InstructionPreamble
+			version.InstructionPreamble = &preamble
 			version.InstructionSkills = mustJSONStringSlice(currentPreset.InstructionSkills)
 		}
 

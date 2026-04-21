@@ -983,6 +983,74 @@ func TestUpdateWorkspacePresetVersion(t *testing.T) {
 	}
 }
 
+func TestUpdateWorkspacePresetVersion_PersistsPromptOnlyEditAndExplicitEmptyLists(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	workspacePresetVersionRepo := repository.NewWorkspaceAgentPresetVersionRepository(db)
+	svc := &AgentService{
+		agentRepo:                  agentRepo,
+		workspacePresetVersionRepo: workspacePresetVersionRepo,
+	}
+	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "", "", false, "", "")
+
+	created, err := svc.CreateWorkspacePresetVersion(context.Background(), model.CreateWorkspaceAgentPresetVersionRequest{
+		WorkspaceID:      "ws-test",
+		FamilyKey:        model.AgentPresetEpicPlanner,
+		Label:            "Workspace Atlas",
+		SourceVersionKey: agentTestStringPtr(defaultPresetVersionKeyForPresetKey(model.AgentPresetEpicPlanner)),
+		SystemPrompt:     agentTestStringPtr("Workspace atlas v1"),
+		AllowedTools:     mustJSONStringSlice([]string{worker.ToolUpdatePlan}),
+		SupportedModes:   mustJSONStringSlice([]string{model.InvocationModeInteractive}),
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("CreateWorkspacePresetVersion returned error: %v", err)
+	}
+	if created.ID == nil {
+		t.Fatal("expected workspace preset version id")
+	}
+
+	updatedPrompt := "Workspace atlas v2"
+	updated, err := svc.UpdateWorkspacePresetVersion(context.Background(), "ws-test", *created.ID, model.UpdateWorkspaceAgentPresetVersionRequest{
+		SystemPrompt: &updatedPrompt,
+	}, "user-2")
+	if err != nil {
+		t.Fatalf("UpdateWorkspacePresetVersion returned error: %v", err)
+	}
+	if updated.SystemPrompt == nil || *updated.SystemPrompt != updatedPrompt {
+		t.Fatalf("expected updated system prompt %q, got %+v", updatedPrompt, updated.SystemPrompt)
+	}
+
+	blankPreamble := ""
+	cleared, err := svc.UpdateWorkspacePresetVersion(context.Background(), "ws-test", *created.ID, model.UpdateWorkspaceAgentPresetVersionRequest{
+		InstructionPreamble: &blankPreamble,
+		InstructionSkills:   mustJSONStringSlice([]string{}),
+		AllowedTools:        mustJSONStringSlice([]string{}),
+	}, "user-2")
+	if err != nil {
+		t.Fatalf("UpdateWorkspacePresetVersion clear-lists returned error: %v", err)
+	}
+	if len(cleared.AllowedTools) != 0 {
+		t.Fatalf("expected empty allowed tools, got %v", cleared.AllowedTools)
+	}
+	if len(cleared.InstructionSkills) != 0 {
+		t.Fatalf("expected empty instruction skills, got %v", cleared.InstructionSkills)
+	}
+
+	stored, err := workspacePresetVersionRepo.GetByID(context.Background(), "ws-test", *created.ID)
+	if err != nil {
+		t.Fatalf("GetByID returned error: %v", err)
+	}
+	if stored == nil {
+		t.Fatal("expected stored workspace preset version")
+	}
+	if len(parseJSONStringSlice(stored.AllowedTools)) != 0 {
+		t.Fatalf("expected stored allowed tools to be empty, got %v", parseJSONStringSlice(stored.AllowedTools))
+	}
+	if len(parseJSONStringSlice(stored.InstructionSkills)) != 0 {
+		t.Fatalf("expected stored instruction skills to be empty, got %v", parseJSONStringSlice(stored.InstructionSkills))
+	}
+}
+
 func TestUpdateWorkspacePresetVersion_PropagatesToPinnedSystemAgent(t *testing.T) {
 	db := newAgentServiceTestDB(t)
 	agentRepo := repository.NewAgentRepository(db)
