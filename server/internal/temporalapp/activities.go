@@ -944,6 +944,9 @@ func (a *AgentRunActivities) enforceCompletionInteractionPolicy(ctx context.Cont
 	if allowsTerminalCleanImplementationReview(state, assistantMessage) {
 		return nil
 	}
+	if allowsPostApprovalImplementationCompletion(interactions, currentAssistantSequenceNo) {
+		return nil
+	}
 
 	kinds := sortedCompletionInteractionKinds(requiredKinds)
 	return fmt.Errorf("run cannot complete because active skills require one of [%s] before completion", strings.Join(kinds, ", "))
@@ -1013,6 +1016,15 @@ func (a *AgentRunActivities) synthesizeCompletionInteractionFallback(ctx context
 	}
 
 	if _, ok := requiredKinds[model.AgentRunInteractionKindReviewCheckpoint]; ok {
+		if a.interactionRepo != nil {
+			interactions, err := a.interactionRepo.ListByRun(ctx, state.run.WorkspaceID, state.run.ID)
+			if err != nil {
+				return nil, nil, err
+			}
+			if allowsPostApprovalImplementationCompletion(interactions, assistantMessage.SequenceNo) {
+				return nil, nil, nil
+			}
+		}
 		if terminalReview := terminalCleanImplementationReviewRequest(state, assistantMessage); terminalReview != nil {
 			metadata := buildAssistantSequenceArtifactMetadata(assistantMessage.SequenceNo)
 			if a.artifactRepo != nil {
@@ -1059,6 +1071,33 @@ func (a *AgentRunActivities) synthesizeCompletionInteractionFallback(ctx context
 
 func allowsTerminalCleanImplementationReview(state *resolvedRunState, assistantMessage *model.AgentRunMessage) bool {
 	return terminalCleanImplementationReviewRequest(state, assistantMessage) != nil
+}
+
+func allowsPostApprovalImplementationCompletion(interactions []model.AgentRunInteraction, currentAssistantSequenceNo int) bool {
+	if len(interactions) == 0 {
+		return false
+	}
+	for idx := len(interactions) - 1; idx >= 0; idx-- {
+		interaction := interactions[idx]
+		if strings.TrimSpace(interaction.Status) != model.AgentRunInteractionStatusResolved {
+			continue
+		}
+		if strings.TrimSpace(interaction.InteractionKind) != model.AgentRunInteractionKindReviewCheckpoint {
+			continue
+		}
+		var response model.ReviewCheckpointResponse
+		if err := json.Unmarshal(interaction.ResponsePayload, &response); err != nil {
+			return false
+		}
+		if strings.TrimSpace(response.Decision) != "approve" {
+			return false
+		}
+		if currentAssistantSequenceNo > 0 && interaction.AssistantMessageSequenceNo != nil && *interaction.AssistantMessageSequenceNo >= currentAssistantSequenceNo {
+			return false
+		}
+		return true
+	}
+	return false
 }
 
 func terminalCleanImplementationReviewRequest(state *resolvedRunState, assistantMessage *model.AgentRunMessage) *model.ApprovalRequest {

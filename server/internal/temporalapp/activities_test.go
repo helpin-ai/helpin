@@ -4537,6 +4537,154 @@ func TestSynthesizeCompletionInteractionFallbackAllowsTerminalCleanImplementatio
 	}
 }
 
+func TestPostApprovalImplementationTurnCanCompleteWithoutAnotherReviewCheckpoint(t *testing.T) {
+	dbName := fmt.Sprintf("file:post-approval-implementation-completion-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_artifacts (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			artifact_type TEXT NOT NULL,
+			format TEXT NOT NULL,
+			storage_mode TEXT NOT NULL,
+			inline_content TEXT,
+			object_key TEXT,
+			metadata TEXT NOT NULL,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+		`CREATE TABLE agent_run_interactions (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			runtime_kind TEXT NOT NULL,
+			interaction_kind TEXT NOT NULL,
+			status TEXT NOT NULL,
+			request_schema_version TEXT NOT NULL,
+			response_schema_version TEXT,
+			request_id TEXT,
+			thread_id TEXT,
+			turn_id TEXT,
+			item_id TEXT,
+			approval_id TEXT,
+			assistant_message_sequence_no INTEGER,
+			title TEXT,
+			summary TEXT,
+			request_payload TEXT NOT NULL,
+			response_payload TEXT,
+			runtime_metadata TEXT NOT NULL,
+			resolved_by TEXT,
+			resolved_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+	}
+
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	interactionRepo := repository.NewAgentRunInteractionRepository(db)
+
+	now := time.Now().UTC()
+	state := &resolvedRunState{
+		run: &model.AgentRun{
+			ID:             "run-post-approval-impl",
+			WorkspaceID:    "ws-1",
+			RuntimeKind:    "codex",
+			InvocationMode: model.InvocationModeInteractive,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+		agent: &model.Agent{
+			ID:                    "agent-1",
+			WorkspaceID:           "ws-1",
+			Name:                  "Lens",
+			PresetKey:             model.AgentPresetReviewAgent,
+			Role:                  "Reviewer",
+			Status:                "idle",
+			RuntimeKind:           "codex",
+			Skills:                model.AgentSkillRefs{},
+			TriggerMode:           "manual",
+			AllowedTools:          json.RawMessage(`[]`),
+			AllowedCommands:       json.RawMessage(`[]`),
+			AllowedTargets:        json.RawMessage(`[]`),
+			ApprovalMode:          "never",
+			MaxConcurrentRuns:     1,
+			DefaultInvocationMode: model.InvocationModeInteractive,
+			CreatedAt:             now,
+			UpdatedAt:             now,
+		},
+		skillPolicy: workerpkg.SkillPolicy{
+			CompletionRequiresInteractionKinds: []string{
+				model.AgentRunInteractionKindReviewCheckpoint,
+				model.AgentRunInteractionKindRequestUserInput,
+			},
+			InteractionContracts: []workerpkg.SkillInteractionContract{
+				{
+					Kind:   workerpkg.InteractionKindReviewCheckpoint,
+					Schema: "review_checkpoint_v1",
+					Transports: map[string]workerpkg.SkillInteractionTransport{
+						"codex": {Type: workerpkg.InteractionTransportTypeFencedJSON, BlockLabel: "helpin-review"},
+					},
+				},
+			},
+		},
+	}
+
+	assistantSequenceNo := 5
+	resolvedAt := now.Add(time.Second)
+	resolvedBy := "user-1"
+	responseSchemaVersion := model.AgentRunInteractionSchemaVersionHelpinV1
+	if err := interactionRepo.Create(context.Background(), &model.AgentRunInteraction{
+		ID:                         "interaction-approved-review-1",
+		WorkspaceID:                state.run.WorkspaceID,
+		RunID:                      state.run.ID,
+		RuntimeKind:                "codex",
+		InteractionKind:            model.AgentRunInteractionKindReviewCheckpoint,
+		Status:                     model.AgentRunInteractionStatusResolved,
+		RequestSchemaVersion:       model.AgentRunInteractionSchemaVersionHelpinV1,
+		ResponseSchemaVersion:      &responseSchemaVersion,
+		AssistantMessageSequenceNo: &assistantSequenceNo,
+		RequestPayload:             json.RawMessage(`{"phase":"review_findings","title":"Lens review findings","findings":[{"id":"finding_1","title":"Regression A"}]}`),
+		ResponsePayload:            json.RawMessage(`{"decision":"approve","selection_mode":"selected","selected_finding_ids":["finding_1"]}`),
+		RuntimeMetadata:            json.RawMessage(`{"runtime_kind":"codex"}`),
+		ResolvedBy:                 &resolvedBy,
+		ResolvedAt:                 &resolvedAt,
+		CreatedAt:                  now,
+		UpdatedAt:                  resolvedAt,
+	}); err != nil {
+		t.Fatalf("create interaction: %v", err)
+	}
+
+	activities := &AgentRunActivities{
+		artifactRepo:    artifactRepo,
+		interactionRepo: interactionRepo,
+	}
+	assistantMessage := &model.AgentRunMessage{
+		SequenceNo:  6,
+		Role:        "assistant",
+		MessageType: "assistant_turn",
+		Content:     "Implemented the approved fix, ran focused validation, and updated the branch summary.",
+	}
+
+	approval, input, err := activities.synthesizeCompletionInteractionFallback(context.Background(), state, assistantMessage)
+	if err != nil {
+		t.Fatalf("expected implementation follow-up to avoid another checkpoint, got %v", err)
+	}
+	if approval != nil || input != nil {
+		t.Fatalf("expected no synthesized interaction, got approval=%#v input=%#v", approval, input)
+	}
+	if err := activities.enforceCompletionInteractionPolicy(context.Background(), state, assistantMessage); err != nil {
+		t.Fatalf("expected approved implementation turn to satisfy completion policy, got %v", err)
+	}
+}
+
 func TestEnforceCompletionInteractionPolicyRequiresCurrentTurnInteraction(t *testing.T) {
 	dbName := fmt.Sprintf("file:completion-policy-current-turn-%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})

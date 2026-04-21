@@ -18,8 +18,20 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/migr
 # ---- Run stage ----
 FROM alpine:3.19
 
-RUN apk add --no-cache ca-certificates tzdata ripgrep nodejs npm git \
-    && npm i -g @openai/codex \
+RUN apk add --no-cache \
+        ca-certificates \
+        tzdata \
+        ripgrep \
+        git \
+        nodejs \
+        npm \
+        go \
+        python3 \
+        py3-pip \
+        rust \
+        cargo \
+    && ln -sf /usr/bin/python3 /usr/bin/python \
+    && npm i -g @openai/codex pnpm yarn \
     && addgroup -S app -g 10001 \
     && adduser -S app -u 10001 -G app
 
