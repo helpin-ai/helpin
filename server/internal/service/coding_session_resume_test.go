@@ -88,3 +88,28 @@ func TestReviewCheckpointResumeContentFallsBackToAllFindings(t *testing.T) {
 		t.Fatalf("expected all findings to be included by default, got %q", got)
 	}
 }
+
+func TestReviewCheckpointResumeContentDoesNotFallBackToAllWhenSelectedIDsAreMissing(t *testing.T) {
+	requestPayload, err := json.Marshal(model.ApprovalRequest{
+		Phase: "review",
+		Title: "Lens review findings",
+		Findings: []model.ReviewFinding{
+			{ID: "finding_1", Title: "Regression A", Body: "Breaks filter state.", Priority: "P1"},
+			{ID: "finding_2", Title: "Regression B", Body: "Drops sort order.", Priority: "P2"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal request payload: %v", err)
+	}
+
+	responsePayload := json.RawMessage(`{
+		"decision":"approve",
+		"selection_mode":"selected",
+		"selected_finding_ids":[]
+	}`)
+
+	got := reviewCheckpointResumeContent(requestPayload, responsePayload, model.AgentRunResumeIntentApprove)
+	if got != "" {
+		t.Fatalf("expected empty resume content when selected scope is empty, got %q", got)
+	}
+}

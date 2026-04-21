@@ -317,6 +317,47 @@ describe('buildCodingSessionStreamState', () => {
     expect(state.transcript_messages[0]?.content).toContain('Note: Fix this one first.');
   });
 
+  it('does not fall back to all findings when selected scope has no ids', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'interaction-review-resolved-empty-selected',
+        type: 'interaction.resolved',
+        sequence_no: 15,
+        payload: {
+          interaction_id: 'interaction-2',
+          interaction_kind: 'review_checkpoint',
+          status: 'resolved',
+          request_schema_version: 'helpin.v1',
+          request_payload: {
+            findings: [
+              {
+                id: 'finding_1',
+                title: 'Nil panic in retry path',
+                code_location: 'server/internal/service/foo.go:42',
+              },
+              {
+                id: 'finding_2',
+                title: 'Missing regression coverage',
+                code_location: 'server/internal/service/foo_test.go:10',
+              },
+            ],
+          },
+          response_payload: {
+            decision: 'approve',
+            selection_mode: 'selected',
+            selected_finding_ids: [],
+          },
+        },
+        runtime_metadata: { source: 'agent_run_interaction', interaction_kind: 'review_checkpoint' },
+      }),
+    ]);
+
+    expect(state.transcript_messages).toHaveLength(1);
+    expect(state.transcript_messages[0]?.content).toContain('Approved the review checkpoint.');
+    expect(state.transcript_messages[0]?.content).not.toContain('Nil panic in retry path');
+    expect(state.transcript_messages[0]?.content).not.toContain('Missing regression coverage');
+  });
+
   it('falls back to tool_input for persisted historical tool segments', () => {
     const state = buildCodingSessionStreamState([
       buildEvent({
