@@ -31,10 +31,11 @@ func (h *SupportInboxHandler) ListConversations(w http.ResponseWriter, r *http.R
 		return
 	}
 	userID := middleware.GetUserID(r.Context())
+	search := strings.TrimSpace(r.URL.Query().Get("search"))
 
 	// Mentions filter: return conversations where the user was @mentioned.
 	if r.URL.Query().Get("filter") == "mentions" {
-		resp, err := h.supportService.ListConversationsWithMentions(r.Context(), workspaceID, userID)
+		resp, err := h.supportService.ListConversationsWithMentions(r.Context(), workspaceID, userID, search)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -59,7 +60,7 @@ func (h *SupportInboxHandler) ListConversations(w http.ResponseWriter, r *http.R
 	}
 	pagination := queryPagination(r)
 
-	resp, err := h.supportService.ListConversationsWithMeta(r.Context(), workspaceID, userID, status, priority, pagination, mailboxID, flowState, aiState)
+	resp, err := h.supportService.ListConversationsWithMeta(r.Context(), workspaceID, userID, status, priority, pagination, mailboxID, flowState, search, aiState)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
