@@ -188,8 +188,8 @@ func TestEnsureBuiltInReviewAgentRefreshesPromptVersionAndTools(t *testing.T) {
 	if updated.PresetVersionKey != defaultPresetVersionKeyForPresetKey(model.AgentPresetReviewAgent) {
 		t.Fatalf("expected review preset version %q, got %q", defaultPresetVersionKeyForPresetKey(model.AgentPresetReviewAgent), updated.PresetVersionKey)
 	}
-	if updated.SystemPrompt == nil || !strings.Contains(*updated.SystemPrompt, "`request_user_input`") {
-		t.Fatalf("expected refreshed review prompt with request_user_input, got %+v", updated.SystemPrompt)
+	if updated.SystemPrompt == nil || !strings.Contains(*updated.SystemPrompt, "`request_user_input`") || !strings.Contains(*updated.SystemPrompt, "`request_review_checkpoint`") {
+		t.Fatalf("expected refreshed review prompt with interactive loop tools, got %+v", updated.SystemPrompt)
 	}
 	var tools []string
 	if err := json.Unmarshal(updated.AllowedTools, &tools); err != nil {
@@ -197,6 +197,9 @@ func TestEnsureBuiltInReviewAgentRefreshesPromptVersionAndTools(t *testing.T) {
 	}
 	if !slices.Contains(tools, worker.ToolRequestUserInput) {
 		t.Fatalf("expected review agent tools to include %q, got %v", worker.ToolRequestUserInput, tools)
+	}
+	if !slices.Contains(tools, worker.ToolRequestReviewCheckpoint) {
+		t.Fatalf("expected review agent tools to include %q, got %v", worker.ToolRequestReviewCheckpoint, tools)
 	}
 	if updated.DefaultInvocationMode != model.InvocationModeInteractive {
 		t.Fatalf("expected review agent default invocation mode interactive, got %q", updated.DefaultInvocationMode)

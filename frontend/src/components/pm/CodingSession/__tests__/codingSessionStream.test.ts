@@ -270,6 +270,53 @@ describe('buildCodingSessionStreamState', () => {
     });
   });
 
+  it('converts resolved review checkpoints into visible transcript entries with selected findings', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'interaction-review-resolved',
+        type: 'interaction.resolved',
+        sequence_no: 14,
+        payload: {
+          interaction_id: 'interaction-1',
+          interaction_kind: 'review_checkpoint',
+          status: 'resolved',
+          request_schema_version: 'helpin.v1',
+          request_payload: {
+            findings: [
+              {
+                id: 'finding_1',
+                title: 'Nil panic in retry path',
+                code_location: 'server/internal/service/foo.go:42',
+              },
+              {
+                id: 'finding_2',
+                title: 'Missing regression coverage',
+                code_location: 'server/internal/service/foo_test.go:10',
+              },
+            ],
+          },
+          response_payload: {
+            decision: 'approve',
+            selection_mode: 'selected',
+            selected_finding_ids: ['finding_2'],
+            message: 'Fix this one first.',
+          },
+        },
+        runtime_metadata: { source: 'agent_run_interaction', interaction_kind: 'review_checkpoint' },
+      }),
+    ]);
+
+    expect(state.transcript_messages).toHaveLength(1);
+    expect(state.transcript_messages[0]).toMatchObject({
+      role: 'user',
+      message_type: 'review_checkpoint_resolution',
+    });
+    expect(state.transcript_messages[0]?.content).toContain('Approved selected review findings for implementation');
+    expect(state.transcript_messages[0]?.content).toContain('Missing regression coverage');
+    expect(state.transcript_messages[0]?.content).toContain('`server/internal/service/foo_test.go:10`');
+    expect(state.transcript_messages[0]?.content).toContain('Note: Fix this one first.');
+  });
+
   it('falls back to tool_input for persisted historical tool segments', () => {
     const state = buildCodingSessionStreamState([
       buildEvent({

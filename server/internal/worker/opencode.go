@@ -295,7 +295,7 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 		return fmt.Errorf("opencode returned no response")
 	}
 	execCtx.CurrentAssistantText = responseText
-	execCtx.LastExecutionResult = &ExecutionResult{
+	result := &ExecutionResult{
 		AssistantText: responseText,
 		AssistantBlocks: []ExecutionBlock{{
 			Type: ExecutionBlockTypeText,
@@ -303,6 +303,14 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 		}},
 		ToolInvocations: streamCollector.ToolInvocations(),
 		Usage:           streamCollector.Usage(),
+	}
+	if run != nil && run.InvocationMode == model.InvocationModeInteractive {
+		appendInteractivePlainTextQuestionInputRequestForRuntime(execCtx, result, "opencode")
+	}
+	execCtx.LastExecutionResult = result
+
+	if ExtractLatestHumanApprovalRequest(result.ToolInvocations) != nil || ExtractLatestHumanInputRequest(result.ToolInvocations) != nil {
+		return nil
 	}
 
 	postRunCtx, cancelPostRun := context.WithTimeout(execCtx.Context, openCodePostRunTimeout)
@@ -531,12 +539,16 @@ func buildOpenCodeRuntimeInstructions(execCtx *ExecutionContext, run *model.Agen
 			parts = append(parts, "Conflicted files: "+strings.Join(execCtx.BranchSyncConflictFiles, ", ")+".")
 		}
 	}
+	reviewContractInstructions := reviewCheckpointRuntimeInstructions(execCtx.SkillPolicy, "opencode")
 
 	switch strings.TrimSpace(runInvocationMode(run, execCtx)) {
 	case model.InvocationModeInteractive:
 		parts = append(parts, "This is an interactive run. Continue from the latest human reply instead of restarting from scratch.")
 		parts = append(parts, "Make repository changes when they materially advance the task, but they are not required on every turn.")
 		parts = append(parts, "If you are blocked, ask for the next focused input or approval through the interactive run flow instead of ending with broad open questions.")
+		if len(reviewContractInstructions) > 0 {
+			parts = append(parts, reviewContractInstructions...)
+		}
 	default:
 		if allowsCleanReviewNoop(execCtx) {
 			parts = append(parts, "This is an autonomous run. Make durable progress on the assigned task before stopping.")
@@ -548,6 +560,9 @@ func buildOpenCodeRuntimeInstructions(execCtx *ExecutionContext, run *model.Agen
 		} else {
 			parts = append(parts, "This is an autonomous run. Make durable progress on the assigned task before stopping.")
 			parts = append(parts, "Inspect the relevant repository context before making changes, and validate any code changes you do make with practical checks when possible.")
+		}
+		if len(reviewContractInstructions) > 0 {
+			parts = append(parts, reviewContractInstructions...)
 		}
 	}
 
@@ -686,7 +701,7 @@ func isEngineerStoryRun(execCtx *ExecutionContext) bool {
 }
 
 func allowsCleanReviewNoop(execCtx *ExecutionContext) bool {
-	return execCtx != nil && strings.TrimSpace(execCtx.Agent.EffectivePresetKey()) == model.AgentPresetReviewAgent
+	return execCtx != nil && execCtx.Agent != nil && strings.TrimSpace(execCtx.Agent.EffectivePresetKey()) == model.AgentPresetReviewAgent
 }
 
 func isInteractiveRunInvocation(run *model.AgentRun) bool {

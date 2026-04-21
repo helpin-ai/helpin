@@ -429,23 +429,114 @@ function transcriptToolCallsFromPayload(payload: Record<string, unknown>, messag
 }
 
 function transcriptMessageFromEvent(event: CodingSessionEvent): CodingSessionTranscriptMessage | null {
-  if (!isTranscriptMessageEvent(event)) return null;
+  if (isTranscriptMessageEvent(event)) {
+    const payload = asRecord(event.payload) ?? {};
+    const role = event.type === 'user.message.completed' ? 'user' : 'assistant';
+
+    return {
+      event_id: event.id,
+      message_id: asString(payload.message_id),
+      role,
+      content: firstNonEmptyString(asString(payload.content), asString(payload.text)) ?? '',
+      message_type: asString(payload.message_type),
+      timestamp: event.timestamp,
+      sequence_no: event.sequence_no,
+      tool_calls: role === 'assistant'
+        ? transcriptToolCallsFromPayload(payload, asString(payload.message_id) ?? event.id)
+        : undefined,
+      turn_segments: role === 'assistant' ? parseLiveTurnSegments(payload.turn_segments) : undefined,
+    };
+  }
+  const interactionTranscript = transcriptInteractionResolutionMessageFromEvent(event);
+  if (interactionTranscript) return interactionTranscript;
+  return null;
+}
+
+function transcriptInteractionResolutionMessageFromEvent(event: CodingSessionEvent): CodingSessionTranscriptMessage | null {
+  if (event.type !== 'interaction.resolved') return null;
   const payload = asRecord(event.payload) ?? {};
-  const role = event.type === 'user.message.completed' ? 'user' : 'assistant';
+  if (asString(payload.interaction_kind) !== 'review_checkpoint') return null;
+
+  const content = reviewCheckpointResolutionTranscriptContent(
+    asRecord(payload.request_payload),
+    asRecord(payload.response_payload),
+  );
+  if (!content) return null;
 
   return {
     event_id: event.id,
-    message_id: asString(payload.message_id),
-    role,
-    content: firstNonEmptyString(asString(payload.content), asString(payload.text)) ?? '',
-    message_type: asString(payload.message_type),
+    message_id: asString(payload.interaction_id) ?? event.id,
+    role: 'user',
+    content,
+    message_type: 'review_checkpoint_resolution',
     timestamp: event.timestamp,
     sequence_no: event.sequence_no,
-    tool_calls: role === 'assistant'
-      ? transcriptToolCallsFromPayload(payload, asString(payload.message_id) ?? event.id)
-      : undefined,
-    turn_segments: role === 'assistant' ? parseLiveTurnSegments(payload.turn_segments) : undefined,
   };
+}
+
+function reviewCheckpointResolutionTranscriptContent(
+  requestPayload: Record<string, unknown> | null,
+  responsePayload: Record<string, unknown> | null,
+) {
+  if (!responsePayload) return '';
+  const decision = asString(responsePayload.decision);
+  if (!decision) return '';
+  const selectionMode = (asString(responsePayload.selection_mode) ?? '').toLowerCase();
+  const note = asString(responsePayload.message);
+  const findings = Array.isArray(requestPayload?.findings) ? requestPayload.findings : [];
+  const selectedFindingIDs = Array.isArray(responsePayload.selected_finding_ids)
+    ? responsePayload.selected_finding_ids.flatMap((value) => {
+      const id = asString(value);
+      return id ? [id] : [];
+    })
+    : [];
+
+  const normalizedFindings = findings.flatMap((rawFinding) => {
+    const finding = asRecord(rawFinding);
+    const id = asString(finding?.id);
+    const title = asString(finding?.title);
+    if (!id || !title) return [];
+    return [{
+      id,
+      title,
+      codeLocation: asString(finding?.code_location),
+    }];
+  });
+
+  const selectedFindings = selectionMode === 'selected' && selectedFindingIDs.length > 0
+    ? normalizedFindings.filter((finding) => selectedFindingIDs.includes(finding.id))
+    : normalizedFindings;
+
+  const lines: string[] = [];
+  if (decision === 'approve') {
+    if (selectedFindings.length > 0) {
+      lines.push(selectionMode === 'selected'
+        ? 'Approved selected review findings for implementation:'
+        : 'Approved all review findings for implementation:');
+      lines.push(...selectedFindings.map((finding) => (
+        finding.codeLocation ? `- ${finding.title} \`${finding.codeLocation}\`` : `- ${finding.title}`
+      )));
+    } else {
+      lines.push('Approved the review checkpoint.');
+    }
+  } else {
+    if (selectedFindings.length > 0) {
+      lines.push(selectionMode === 'selected'
+        ? 'Requested changes on selected review findings:'
+        : 'Requested changes on the review findings:');
+      lines.push(...selectedFindings.map((finding) => (
+        finding.codeLocation ? `- ${finding.title} \`${finding.codeLocation}\`` : `- ${finding.title}`
+      )));
+    } else {
+      lines.push('Requested changes on the review checkpoint.');
+    }
+  }
+
+  if (note) {
+    lines.push('');
+    lines.push(`Note: ${note}`);
+  }
+  return lines.join('\n');
 }
 
 function liveAssistantMatchesTranscript(

@@ -2934,6 +2934,9 @@ func (s *AgentService) resolveLatestPendingInteraction(ctx context.Context, run 
 	if err := s.interactionRepo.Update(ctx, interaction); err != nil {
 		return err
 	}
+	if err := s.persistResolvedInteractionArtifacts(ctx, run, interaction, actorID); err != nil {
+		return err
+	}
 	s.clearAgentAttentionNotification(ctx, run)
 	return nil
 }
@@ -3001,6 +3004,102 @@ func buildInteractionResponsePayload(interaction *model.AgentRunInteraction, res
 			"content": strings.TrimSpace(content),
 		})
 		return payload, model.AgentRunInteractionSchemaVersionHelpinV1, err
+	}
+}
+
+func (s *AgentService) persistResolvedInteractionArtifacts(ctx context.Context, run *model.AgentRun, interaction *model.AgentRunInteraction, actorID string) error {
+	if s == nil || run == nil || interaction == nil {
+		return nil
+	}
+	switch strings.TrimSpace(interaction.InteractionKind) {
+	case model.AgentRunInteractionKindReviewCheckpoint:
+		artifact := reviewDecisionArtifactFromInteraction(interaction, actorID)
+		if artifact == nil {
+			return nil
+		}
+		return s.saveJSONArtifact(ctx, run, model.AgentRunArtifactTypeReviewDecision, "json", artifact)
+	default:
+		return nil
+	}
+}
+
+func reviewDecisionArtifactFromInteraction(interaction *model.AgentRunInteraction, actorID string) *model.ReviewDecisionArtifact {
+	if interaction == nil || strings.TrimSpace(interaction.InteractionKind) != model.AgentRunInteractionKindReviewCheckpoint {
+		return nil
+	}
+
+	var request model.ApprovalRequest
+	if err := json.Unmarshal(interaction.RequestPayload, &request); err != nil {
+		return nil
+	}
+	if len(request.Findings) == 0 {
+		return nil
+	}
+
+	var response model.ReviewCheckpointResponse
+	if err := json.Unmarshal(interaction.ResponsePayload, &response); err != nil {
+		return nil
+	}
+	response.Decision = strings.TrimSpace(response.Decision)
+	if response.Decision == "" {
+		return nil
+	}
+	response.Message = strings.TrimSpace(response.Message)
+	response.SelectionMode = strings.ToLower(strings.TrimSpace(response.SelectionMode))
+
+	selectedIDs := make(map[string]struct{}, len(response.SelectedFindingIDs))
+	for _, id := range response.SelectedFindingIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		selectedIDs[id] = struct{}{}
+	}
+
+	statusForSelection := "requested_changes"
+	if response.Decision == "approve" {
+		statusForSelection = "approved"
+	}
+
+	findings := make([]model.ReviewDecisionFinding, 0, len(request.Findings))
+	for _, finding := range request.Findings {
+		findingID := strings.TrimSpace(finding.ID)
+		if findingID == "" {
+			continue
+		}
+		status := statusForSelection
+		if response.SelectionMode == "selected" && len(selectedIDs) > 0 {
+			if _, ok := selectedIDs[findingID]; !ok {
+				status = "unselected"
+			}
+		}
+		findings = append(findings, model.ReviewDecisionFinding{
+			ID:           findingID,
+			Title:        strings.TrimSpace(finding.Title),
+			CodeLocation: strings.TrimSpace(finding.CodeLocation),
+			Status:       status,
+		})
+	}
+	if len(findings) == 0 {
+		return nil
+	}
+
+	resolvedAt := time.Now().UTC()
+	if interaction.ResolvedAt != nil && !interaction.ResolvedAt.IsZero() {
+		resolvedAt = interaction.ResolvedAt.UTC()
+	}
+
+	return &model.ReviewDecisionArtifact{
+		Phase:                      strings.TrimSpace(request.Phase),
+		Title:                      strings.TrimSpace(request.Title),
+		Summary:                    strings.TrimSpace(request.Summary),
+		Decision:                   response.Decision,
+		Message:                    response.Message,
+		SelectionMode:              response.SelectionMode,
+		Findings:                   findings,
+		AssistantMessageSequenceNo: interactionAssistantSequenceNo(*interaction),
+		ResolvedBy:                 strings.TrimSpace(actorID),
+		ResolvedAt:                 resolvedAt,
 	}
 }
 

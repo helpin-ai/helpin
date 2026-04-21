@@ -40,6 +40,7 @@ type ExecutionContext struct {
 	PlanningSpecVersionID   string
 	Config                  *WorkflowConfig
 	ResolvedProfile         ResolvedProfile
+	SkillPolicy             SkillPolicy
 	AllowedTools            map[string]bool
 	Services                *ServiceBridge
 	PendingSupportDraft     *SupportDraftReply

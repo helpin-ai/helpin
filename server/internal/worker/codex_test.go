@@ -160,6 +160,17 @@ func TestBuildCodexRuntimeInstructionsAutonomousReviewStaysGeneric(t *testing.T)
 			PresetKey:    model.AgentPresetReviewAgent,
 			AllowedTools: []byte(`["write_file","run_command"]`),
 		},
+		SkillPolicy: SkillPolicy{
+			InteractionContracts: []SkillInteractionContract{
+				{
+					Kind:   InteractionKindReviewCheckpoint,
+					Schema: "review_checkpoint_v1",
+					Transports: map[string]SkillInteractionTransport{
+						"codex": {Type: InteractionTransportTypeFencedJSON, BlockLabel: "helpin-review"},
+					},
+				},
+			},
+		},
 		Task: &model.PMTask{Name: "Review metrics recorder"},
 	}, &model.AgentRun{InvocationMode: model.InvocationModeAutonomous})
 
@@ -172,6 +183,46 @@ func TestBuildCodexRuntimeInstructionsAutonomousReviewStaysGeneric(t *testing.T)
 	} {
 		if strings.Contains(instructions, unexpected) {
 			t.Fatalf("did not expect autonomous review instructions to contain %q, got:\n%s", unexpected, instructions)
+		}
+	}
+	for _, expected := range []string{
+		"fenced code block labeled `helpin-review`",
+		"`review_checkpoint_v1` schema",
+		"\"phase\":\"...\"",
+	} {
+		if !strings.Contains(instructions, expected) {
+			t.Fatalf("expected autonomous review instructions to contain %q, got:\n%s", expected, instructions)
+		}
+	}
+}
+
+func TestBuildCodexRuntimeInstructionsUsesInteractionContractForAnySkill(t *testing.T) {
+	instructions := buildCodexRuntimeInstructions(&ExecutionContext{
+		Agent: &model.Agent{
+			PresetKey:    model.AgentPresetCodeBuilder,
+			AllowedTools: []byte(`["write_file","run_command"]`),
+		},
+		SkillPolicy: SkillPolicy{
+			InteractionContracts: []SkillInteractionContract{
+				{
+					Kind:   InteractionKindReviewCheckpoint,
+					Schema: "review_checkpoint_v1",
+					Transports: map[string]SkillInteractionTransport{
+						"codex": {Type: InteractionTransportTypeFencedJSON, BlockLabel: "helpin-review"},
+					},
+				},
+			},
+		},
+		Task: &model.PMTask{Name: "Review metrics recorder"},
+	}, &model.AgentRun{InvocationMode: model.InvocationModeInteractive})
+
+	for _, expected := range []string{
+		"fenced code block labeled `helpin-review`",
+		"`review_checkpoint_v1` schema",
+		"\"phase\":\"...\"",
+	} {
+		if !strings.Contains(instructions, expected) {
+			t.Fatalf("expected Codex contract instructions to contain %q, got:\n%s", expected, instructions)
 		}
 	}
 }
@@ -744,7 +795,7 @@ func TestAppendInteractivePlainTextQuestionInputRequestCreatesStructuredPause(t 
 `),
 	}
 
-	appendInteractivePlainTextQuestionInputRequest(result)
+	appendInteractivePlainTextQuestionInputRequest(&ExecutionContext{}, result)
 
 	request := ExtractLatestHumanInputRequest(result.ToolInvocations)
 	if request == nil {
@@ -763,10 +814,37 @@ func TestAppendInteractivePlainTextQuestionInputRequestIgnoresNormalCompletionTe
 		AssistantText: "Implemented the auth changes and added tests. Anything else?",
 	}
 
-	appendInteractivePlainTextQuestionInputRequest(result)
+	appendInteractivePlainTextQuestionInputRequest(&ExecutionContext{}, result)
 
 	if request := ExtractLatestHumanInputRequest(result.ToolInvocations); request != nil {
 		t.Fatalf("did not expect a structured human-input request, got %#v", request)
+	}
+}
+
+func TestAppendInteractivePlainTextQuestionInputRequestHonorsContractTransport(t *testing.T) {
+	result := &ExecutionResult{
+		AssistantText: strings.TrimSpace(`
+1. Should the retry path keep exponential backoff?
+2. Do you want result labels on the auth duration metric?
+`),
+	}
+
+	appendInteractivePlainTextQuestionInputRequest(&ExecutionContext{
+		SkillPolicy: SkillPolicy{
+			InteractionContracts: []SkillInteractionContract{
+				{
+					Kind:   InteractionKindRequestUserInput,
+					Schema: "request_user_input_v1",
+					Transports: map[string]SkillInteractionTransport{
+						"codex": {Type: InteractionTransportTypeToolCall, ToolName: ToolRequestUserInput},
+					},
+				},
+			},
+		},
+	}, result)
+
+	if request := ExtractLatestHumanInputRequest(result.ToolInvocations); request != nil {
+		t.Fatalf("did not expect a structured human-input request when the codex contract is not a runtime bridge, got %#v", request)
 	}
 }
 

@@ -32,6 +32,7 @@ import type {
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { formatCodingSessionRelative } from './codingSessionUtils';
 import { ApplyPatchDiff } from './ApplyPatchDiff';
+import { AgentRunArtifactView } from '@/components/pm/AgentRunArtifactView';
 import { CodingInteractionCard } from './CodingInteractionCard';
 import { MarkdownContent } from './MarkdownContent';
 import { PublishedToolPreviewCard } from './PublishedToolPreviewCard';
@@ -81,6 +82,7 @@ function partitionTurnSegments(segments: CodingSessionLiveTurnSegment[]): Segmen
 
 export function CodingTranscriptPane({
   promptArtifact,
+  reviewArtifacts = [],
   transcriptMessages,
   liveAssistantMessage,
   liveReasoningMessage,
@@ -97,6 +99,10 @@ export function CodingTranscriptPane({
   onResolveInteraction,
 }: {
   promptArtifact?: AgentRunArtifact | null;
+  reviewArtifacts?: Array<{
+    artifact: AgentRunArtifact;
+    decisionArtifact?: AgentRunArtifact | null;
+  }>;
   transcriptMessages: CodingSessionTranscriptMessage[];
   liveAssistantMessage: CodingSessionLiveAssistantMessage | null;
   liveReasoningMessage: CodingSessionLiveReasoningMessage | null;
@@ -139,6 +145,7 @@ export function CodingTranscriptPane({
   // Build a flat list of all renderable items for the virtualizer.
   type VirtualItem =
     | { kind: 'transcript'; message: CodingSessionTranscriptMessage }
+    | { kind: 'review-artifact'; artifact: AgentRunArtifact; decisionArtifact?: AgentRunArtifact | null }
     | { kind: 'thinking'; reasoning: CodingSessionLiveReasoningMessage }
     | { kind: 'live-message'; segment: CodingSessionLiveTurnSegment }
     | { kind: 'live-tool'; segment: CodingSessionLiveTurnSegment; isLast: boolean }
@@ -152,6 +159,13 @@ export function CodingTranscriptPane({
     }
     for (const message of transcriptMessages) {
       list.push({ kind: 'transcript', message });
+    }
+    for (const reviewArtifact of reviewArtifacts) {
+      list.push({
+        kind: 'review-artifact',
+        artifact: reviewArtifact.artifact,
+        decisionArtifact: reviewArtifact.decisionArtifact,
+      });
     }
     if (liveReasoningMessage) {
       list.push({ kind: 'thinking', reasoning: liveReasoningMessage });
@@ -171,7 +185,7 @@ export function CodingTranscriptPane({
       list.push({ kind: 'empty' });
     }
     return list;
-  }, [developerPromptMessage, transcriptMessages, liveReasoningMessage, visibleLiveSegments, showLivePlaceholder, loading]);
+  }, [developerPromptMessage, transcriptMessages, reviewArtifacts, liveReasoningMessage, visibleLiveSegments, showLivePlaceholder, loading]);
 
   const virtualizer = useVirtualizer({
     count: items.length,
@@ -241,6 +255,8 @@ export function CodingTranscriptPane({
         return <TranscriptEntry message={item.message} actor={triggeredBy} />;
       case 'thinking':
         return <ThinkingStrip reasoning={item.reasoning} />;
+      case 'review-artifact':
+        return <ReviewArtifactEntry artifact={item.artifact} decisionArtifact={item.decisionArtifact} />;
       case 'live-message': {
         const seg = item.segment;
         if (seg.kind !== 'assistant_message') return null;
@@ -354,6 +370,28 @@ export function CodingTranscriptPane({
         <MessageInput onSend={onSendMessage} sending={sendingMessage} placeholder={messagePlaceholder} />
       ) : null}
     </section>
+  );
+}
+
+function ReviewArtifactEntry({
+  artifact,
+  decisionArtifact,
+}: {
+  artifact: AgentRunArtifact;
+  decisionArtifact?: AgentRunArtifact | null;
+}) {
+  return (
+    <div className="ml-auto w-full max-w-[90%] rounded-2xl border border-border bg-card px-4 py-3 shadow-sm">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          Review history
+        </div>
+        <div className="text-[11px] text-muted-foreground">
+          {formatCodingSessionRelative(artifact.created_at)}
+        </div>
+      </div>
+      <AgentRunArtifactView artifact={artifact} reviewDecisionArtifact={decisionArtifact} maxContentHeight="max-h-96" />
+    </div>
   );
 }
 
@@ -670,6 +708,10 @@ function TranscriptEntry({
     return <DeveloperPromptTranscriptCard content={message.content} timestamp={message.timestamp} />;
   }
 
+  if (message.message_type === 'review_checkpoint_resolution') {
+    return <ReviewDecisionTranscriptCard content={message.content} timestamp={message.timestamp} />;
+  }
+
   const actorLabel = actor?.full_name || actor?.email || 'User';
 
   return (
@@ -723,6 +765,29 @@ function DeveloperPromptTranscriptCard({
           {content}
         </pre>
       </details>
+    </div>
+  );
+}
+
+function ReviewDecisionTranscriptCard({
+  content,
+  timestamp,
+}: {
+  content: string;
+  timestamp: string;
+}) {
+  return (
+    <div className="ml-auto w-full max-w-[90%]">
+      <div className="mb-2 flex items-center justify-end gap-2 px-1 text-[11px] text-muted-foreground">
+        <span>{formatCodingSessionRelative(timestamp)}</span>
+        <span className="font-medium">Review decision</span>
+        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-[10px] text-white">
+          <UserIcon className="h-3 w-3" />
+        </span>
+      </div>
+      <div className="rounded-2xl rounded-br-sm bg-blue-600 px-3.5 py-2.5 text-sm leading-relaxed text-white shadow-sm dark:bg-blue-500">
+        <MarkdownContent content={content} className="text-inherit" />
+      </div>
     </div>
   );
 }

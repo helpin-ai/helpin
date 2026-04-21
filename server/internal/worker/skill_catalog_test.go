@@ -91,6 +91,48 @@ func TestListSkillCatalogReturnsBuiltInSkills(t *testing.T) {
 	}
 }
 
+func TestReviewAgentSkillDeclaresCompletionInteractionPolicy(t *testing.T) {
+	skill, ok := GetBuiltInSkill("review_agent")
+	if !ok {
+		t.Fatal("expected review_agent built-in skill")
+	}
+	if len(skill.RequiredTools) != 0 {
+		t.Fatalf("expected review_agent to avoid transport-specific required tools, got %v", skill.RequiredTools)
+	}
+	if !containsString(skill.Policy.CompletionRequiresInteractionKinds, model.AgentRunInteractionKindReviewCheckpoint) {
+		t.Fatalf("expected review checkpoint completion requirement, got %v", skill.Policy.CompletionRequiresInteractionKinds)
+	}
+	if !containsString(skill.Policy.CompletionRequiresInteractionKinds, ToolRequestUserInput) {
+		t.Fatalf("expected user input completion requirement, got %v", skill.Policy.CompletionRequiresInteractionKinds)
+	}
+	contract, ok := skill.Policy.InteractionContract(InteractionKindReviewCheckpoint)
+	if !ok {
+		t.Fatal("expected review_checkpoint interaction contract")
+	}
+	if contract.Schema != "review_checkpoint_v1" {
+		t.Fatalf("expected review checkpoint schema, got %q", contract.Schema)
+	}
+	if contract.Transports["native_sdk"].ToolName != ToolRequestReviewCheckpoint {
+		t.Fatalf("expected native_sdk review checkpoint tool transport, got %+v", contract.Transports["native_sdk"])
+	}
+	if contract.Transports["codex"].BlockLabel != "helpin-review" {
+		t.Fatalf("expected codex review checkpoint block label, got %+v", contract.Transports["codex"])
+	}
+	inputContract, ok := skill.Policy.InteractionContract(InteractionKindRequestUserInput)
+	if !ok {
+		t.Fatal("expected request_user_input interaction contract")
+	}
+	if inputContract.Schema != "request_user_input_v1" {
+		t.Fatalf("expected request user input schema, got %q", inputContract.Schema)
+	}
+	if inputContract.Transports["native_sdk"].ToolName != ToolRequestUserInput {
+		t.Fatalf("expected native_sdk request_user_input tool transport, got %+v", inputContract.Transports["native_sdk"])
+	}
+	if inputContract.Transports["codex"].Type != InteractionTransportTypeRuntimeBridge {
+		t.Fatalf("expected codex request_user_input runtime bridge transport, got %+v", inputContract.Transports["codex"])
+	}
+}
+
 func containsString(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {

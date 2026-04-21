@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -503,6 +504,7 @@ func TestResolveCodingSessionInteractionReviewCheckpointResumesEvenWhenLiveCodex
 	db := newInteractiveApprovalTestDB(t)
 	agentRepo := repository.NewAgentRepository(db)
 	runRepo := repository.NewAgentRunRepository(db)
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
 	interactionRepo := repository.NewAgentRunInteractionRepository(db)
 
@@ -542,7 +544,10 @@ func TestResolveCodingSessionInteractionReviewCheckpointResumesEvenWhenLiveCodex
 	requestPayload := json.RawMessage(`{
 		"phase":"prd",
 		"title":"PRD Review: Increase Kafka throughput",
-		"summary":"Review the current PRD draft."
+		"summary":"Review the current PRD draft.",
+		"findings":[
+			{"id":"finding_1","title":"Missing acceptance coverage","body":"The draft does not cover rollback behavior.","priority":"P1"}
+		]
 	}`)
 	if err := interactionRepo.Create(context.Background(), &model.AgentRunInteraction{
 		ID:                         "interaction-review-1",
@@ -567,6 +572,7 @@ func TestResolveCodingSessionInteractionReviewCheckpointResumesEvenWhenLiveCodex
 	svc := &AgentService{
 		agentRepo:       agentRepo,
 		runRepo:         runRepo,
+		runMessageRepo:  runMessageRepo,
 		artifactRepo:    artifactRepo,
 		interactionRepo: interactionRepo,
 		runEngine:       temporalapp.NewRunEngine(temporalClient, "test"),
@@ -584,6 +590,24 @@ func TestResolveCodingSessionInteractionReviewCheckpointResumesEvenWhenLiveCodex
 	}
 	if temporalClient.signalName != "" {
 		t.Fatalf("expected live codex path to avoid a workflow resume signal, got %q", temporalClient.signalName)
+	}
+
+	artifacts, err := artifactRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	foundDecisionArtifact := false
+	for _, artifact := range artifacts {
+		if artifact.ArtifactType != model.AgentRunArtifactTypeReviewDecision || artifact.InlineContent == nil {
+			continue
+		}
+		foundDecisionArtifact = true
+		if !strings.Contains(*artifact.InlineContent, `"decision":"approve"`) {
+			t.Fatalf("expected persisted review decision artifact to capture approval, got %s", *artifact.InlineContent)
+		}
+	}
+	if !foundDecisionArtifact {
+		t.Fatal("expected resolved review checkpoint to persist a review decision artifact")
 	}
 }
 

@@ -314,6 +314,37 @@ func TestBuildOpenCodeRuntimeInstructionsInteractiveDoesNotRequireFileChanges(t 
 	}
 }
 
+func TestBuildOpenCodeRuntimeInstructionsUsesInteractionContractForAnySkill(t *testing.T) {
+	instructions := buildOpenCodeRuntimeInstructions(&ExecutionContext{
+		Agent: &model.Agent{
+			PresetKey:    model.AgentPresetCodeBuilder,
+			AllowedTools: []byte(`["write_file","run_command"]`),
+		},
+		SkillPolicy: SkillPolicy{
+			InteractionContracts: []SkillInteractionContract{
+				{
+					Kind:   InteractionKindReviewCheckpoint,
+					Schema: "review_checkpoint_v1",
+					Transports: map[string]SkillInteractionTransport{
+						"opencode": {Type: InteractionTransportTypeFencedJSON, BlockLabel: "helpin-review"},
+					},
+				},
+			},
+		},
+		Task: &model.PMTask{Name: "Review metrics recorder"},
+	}, &model.AgentRun{InvocationMode: model.InvocationModeInteractive})
+
+	for _, expected := range []string{
+		"fenced code block labeled `helpin-review`",
+		"`review_checkpoint_v1` schema",
+		"\"phase\":\"...\"",
+	} {
+		if !strings.Contains(instructions, expected) {
+			t.Fatalf("expected OpenCode review instructions to contain %q, got:\n%s", expected, instructions)
+		}
+	}
+}
+
 func TestParseOpenCodeJSONEventTextAndTokens(t *testing.T) {
 	parsed, err := parseOpenCodeJSONEvent(`{"type":"text","part":{"id":"msg_1","text":"{\"status\":\"success\"}"}}`)
 	if err != nil {
@@ -589,6 +620,55 @@ func TestPersistEngineerWorkspaceCommitsAndPushesChanges(t *testing.T) {
 	status := strings.TrimSpace(runGitCmd(t, workDir, "git", "status", "--porcelain"))
 	if status != "" {
 		t.Fatalf("expected clean working tree after persistence, got %q", status)
+	}
+}
+
+func TestAppendInteractivePlainTextQuestionInputRequestForOpenCodeCreatesStructuredPause(t *testing.T) {
+	result := &ExecutionResult{
+		AssistantText: strings.TrimSpace(`
+1. Should producer alerts use a 5 minute or 10 minute idle threshold?
+2. Do you want the retry warning to key off absolute count or a ratio?
+`),
+	}
+
+	appendInteractivePlainTextQuestionInputRequestForRuntime(&ExecutionContext{}, result, "opencode")
+
+	request := ExtractLatestHumanInputRequest(result.ToolInvocations)
+	if request == nil {
+		t.Fatal("expected a structured human-input request")
+	}
+	if len(request.Questions) != 2 {
+		t.Fatalf("expected 2 questions, got %#v", request.Questions)
+	}
+	if request.Questions[0].Question != "Should producer alerts use a 5 minute or 10 minute idle threshold?" {
+		t.Fatalf("unexpected first question %#v", request.Questions[0])
+	}
+}
+
+func TestAppendInteractivePlainTextQuestionInputRequestForOpenCodeHonorsContractTransport(t *testing.T) {
+	result := &ExecutionResult{
+		AssistantText: strings.TrimSpace(`
+1. Should producer alerts use a 5 minute or 10 minute idle threshold?
+2. Do you want the retry warning to key off absolute count or a ratio?
+`),
+	}
+
+	appendInteractivePlainTextQuestionInputRequestForRuntime(&ExecutionContext{
+		SkillPolicy: SkillPolicy{
+			InteractionContracts: []SkillInteractionContract{
+				{
+					Kind:   InteractionKindRequestUserInput,
+					Schema: "request_user_input_v1",
+					Transports: map[string]SkillInteractionTransport{
+						"opencode": {Type: InteractionTransportTypeToolCall, ToolName: ToolRequestUserInput},
+					},
+				},
+			},
+		},
+	}, result, "opencode")
+
+	if request := ExtractLatestHumanInputRequest(result.ToolInvocations); request != nil {
+		t.Fatalf("did not expect a structured human-input request when the opencode contract is not a runtime bridge, got %#v", request)
 	}
 }
 

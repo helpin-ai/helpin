@@ -269,7 +269,7 @@ func (e *CodexExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) 
 	}
 
 	if run != nil && run.InvocationMode == model.InvocationModeInteractive {
-		appendInteractivePlainTextQuestionInputRequest(result)
+		appendInteractivePlainTextQuestionInputRequest(execCtx, result)
 	}
 
 	if ExtractLatestHumanApprovalRequest(result.ToolInvocations) != nil || ExtractLatestHumanInputRequest(result.ToolInvocations) != nil {
@@ -386,12 +386,16 @@ func buildCodexRuntimeInstructions(execCtx *ExecutionContext, run *model.AgentRu
 			parts = append(parts, "Conflicted files: "+strings.Join(execCtx.BranchSyncConflictFiles, ", ")+".")
 		}
 	}
+	reviewContractInstructions := reviewCheckpointRuntimeInstructions(execCtx.SkillPolicy, "codex")
 
 	switch strings.TrimSpace(runInvocationMode(run, execCtx)) {
 	case model.InvocationModeInteractive:
 		parts = append(parts, "This is an interactive run. Continue from the latest human reply instead of restarting from scratch.")
 		parts = append(parts, "Make repository changes when they materially advance the task, but they are not required on every turn.")
 		parts = append(parts, "If you are blocked, ask for the next focused input or approval through the interactive run flow instead of ending with broad open questions.")
+		if len(reviewContractInstructions) > 0 {
+			parts = append(parts, reviewContractInstructions...)
+		}
 	default:
 		if allowsCleanReviewNoop(execCtx) {
 			parts = append(parts, "This is an autonomous run. Make durable progress on the assigned task before stopping.")
@@ -403,6 +407,9 @@ func buildCodexRuntimeInstructions(execCtx *ExecutionContext, run *model.AgentRu
 		} else {
 			parts = append(parts, "This is an autonomous run. Make durable progress on the assigned task before stopping.")
 			parts = append(parts, "Inspect the relevant repository context before making changes, and validate any code changes you do make with practical checks when possible.")
+		}
+		if len(reviewContractInstructions) > 0 {
+			parts = append(parts, reviewContractInstructions...)
 		}
 	}
 
@@ -972,8 +979,15 @@ func appendInteractiveRepoFollowupInputRequest(result *ExecutionResult) {
 	}
 }
 
-func appendInteractivePlainTextQuestionInputRequest(result *ExecutionResult) {
+func appendInteractivePlainTextQuestionInputRequest(execCtx *ExecutionContext, result *ExecutionResult) {
+	appendInteractivePlainTextQuestionInputRequestForRuntime(execCtx, result, "codex")
+}
+
+func appendInteractivePlainTextQuestionInputRequestForRuntime(execCtx *ExecutionContext, result *ExecutionResult, runtimeKind string) {
 	if result == nil || ExtractLatestHumanInputRequest(result.ToolInvocations) != nil || ExtractLatestHumanApprovalRequest(result.ToolInvocations) != nil {
+		return
+	}
+	if execCtx != nil && !RequestUserInputUsesRuntimeBridge(execCtx.SkillPolicy, runtimeKind) {
 		return
 	}
 	questions := extractInteractivePlainTextQuestions(result.AssistantText)
