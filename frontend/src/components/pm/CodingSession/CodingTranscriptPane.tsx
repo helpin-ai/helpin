@@ -4,6 +4,7 @@ import { UnicodeSpinner } from '@/components/pm/CodingSession/UnicodeSpinner';
 import {
   BotIcon,
   SourceCodeIcon,
+  File01Icon,
   Loading01Icon,
   ArrowUp02Icon,
   TerminalIcon,
