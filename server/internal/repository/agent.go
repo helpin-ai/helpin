@@ -21,6 +21,19 @@ func NewAgentRepository(db *gorm.DB) *AgentRepository {
 	return &AgentRepository{db: db}
 }
 
+// DB returns the underlying *gorm.DB for transaction support.
+func (r *AgentRepository) DB() *gorm.DB {
+	return r.db
+}
+
+// WithTx returns a repository bound to the provided transaction.
+func (r *AgentRepository) WithTx(tx *gorm.DB) *AgentRepository {
+	if tx == nil {
+		return r
+	}
+	return &AgentRepository{db: tx}
+}
+
 // List returns all agents in a workspace.
 func (r *AgentRepository) List(ctx context.Context, workspaceID string) ([]model.Agent, error) {
 	var agents []model.Agent

@@ -117,8 +117,11 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 		includeInlineSkills,
 		includeInlineSkills,
 	)
-	if supplement := BuildExecutionSupplementPrompt(run, execCtx.RunFacts, execCtx.ArtifactContext); supplement != "" {
+	if supplement := BuildRuntimeExecutionSupplementPrompt(run, execCtx.RunFacts); supplement != "" {
 		systemPrompt = strings.TrimSpace(systemPrompt + "\n\n## Current Run State\n" + supplement)
+	}
+	if runtimeInstructions := buildOpenCodeRuntimeInstructions(execCtx, run); runtimeInstructions != "" {
+		systemPrompt = strings.TrimSpace(systemPrompt + "\n\n## OpenCode Runtime Instructions\n" + runtimeInstructions)
 	}
 	userPrompt := BuildUserPrompt(
 		execCtx.Agent,
@@ -137,7 +140,7 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 			`{"status":"open|waiting_on_customer|resolved|spam","draft_reply":{"content":"...","is_internal":false,"sender_display_name":"optional","approval_required":true}}.`
 	}
 
-	userPrompt = buildOpenCodeUserPrompt(execCtx, userPrompt)
+	userPrompt = buildOpenCodeUserPrompt(execCtx, run, userPrompt)
 	modelID := e.resolveModelID(execCtx.Agent)
 	providerConfig := buildOpenCodeProviderConfig(execCtx.Agent, e.anthropicBaseURL, e.openRouterBaseURL)
 	configContent, err := buildOpenCodeConfigContent(execCtx, modelID, systemPrompt, providerConfig)
@@ -184,6 +187,7 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 
 	artifactWriter := newOpenCodeArtifactWriter(e, run)
 	artifactWriter.Save(execCtx.Context, "opencode_config", "json", configContent, true)
+	artifactWriter.Save(execCtx.Context, "opencode_prompt", "markdown", buildOpenCodePromptArtifact(systemPrompt, userPrompt), false)
 
 	if execCtx.Heartbeat != nil {
 		_ = execCtx.Heartbeat("opencode_starting")
@@ -291,7 +295,7 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 		return fmt.Errorf("opencode returned no response")
 	}
 	execCtx.CurrentAssistantText = responseText
-	execCtx.LastExecutionResult = &ExecutionResult{
+	result := &ExecutionResult{
 		AssistantText: responseText,
 		AssistantBlocks: []ExecutionBlock{{
 			Type: ExecutionBlockTypeText,
@@ -299,6 +303,14 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 		}},
 		ToolInvocations: streamCollector.ToolInvocations(),
 		Usage:           streamCollector.Usage(),
+	}
+	if run != nil && run.InvocationMode == model.InvocationModeInteractive {
+		appendInteractivePlainTextQuestionInputRequestForRuntime(execCtx, result, "opencode")
+	}
+	execCtx.LastExecutionResult = result
+
+	if ExtractLatestHumanApprovalRequest(result.ToolInvocations) != nil || ExtractLatestHumanInputRequest(result.ToolInvocations) != nil {
+		return nil
 	}
 
 	postRunCtx, cancelPostRun := context.WithTimeout(execCtx.Context, openCodePostRunTimeout)
@@ -501,6 +513,62 @@ func (w *openCodeArtifactWriter) Save(ctx context.Context, artifactType, format,
 	}
 }
 
+func buildOpenCodePromptArtifact(systemPrompt, userPrompt string) string {
+	sections := make([]string, 0, 2)
+	if strings.TrimSpace(systemPrompt) != "" {
+		sections = append(sections, "Developer prompt:\n"+strings.TrimSpace(systemPrompt))
+	}
+	if strings.TrimSpace(userPrompt) != "" {
+		sections = append(sections, "User prompt:\n"+strings.TrimSpace(userPrompt))
+	}
+	return strings.TrimSpace(strings.Join(sections, "\n\n"))
+}
+
+func buildOpenCodeRuntimeInstructions(execCtx *ExecutionContext, run *model.AgentRun) string {
+	var parts []string
+
+	parts = append(parts, "You are running inside the OpenCode CLI runtime, not the Helpin native tool runtime.")
+	parts = append(parts, "Use the local shell and file-editing capabilities available in this workspace directly.")
+	parts = append(parts, "Do not rely on Helpin-specific tool wrappers or orchestration commands to inspect files, edit code, create branches, push changes, or open pull requests.")
+	parts = append(parts, "Do not push the branch or open a pull request from this runtime. If you complete implementation, finish with a local git commit only; the platform will handle remote delivery.")
+
+	if strings.TrimSpace(execCtx.BranchSyncStatus) == "conflicted" {
+		parts = append(parts, "Before continuing the task, resolve the current git merge conflict that came from syncing the base branch into the working branch.")
+		parts = append(parts, "Preserve the task's intended changes while incorporating the incoming base-branch changes. Remove all conflict markers, stage the resolved files, and complete the merge commit before doing additional implementation work.")
+		if len(execCtx.BranchSyncConflictFiles) > 0 {
+			parts = append(parts, "Conflicted files: "+strings.Join(execCtx.BranchSyncConflictFiles, ", ")+".")
+		}
+	}
+	reviewContractInstructions := reviewCheckpointRuntimeInstructions(execCtx.SkillPolicy, "opencode")
+
+	switch strings.TrimSpace(runInvocationMode(run, execCtx)) {
+	case model.InvocationModeInteractive:
+		parts = append(parts, "This is an interactive run. Continue from the latest human reply instead of restarting from scratch.")
+		parts = append(parts, "Make repository changes when they materially advance the task, but they are not required on every turn.")
+		parts = append(parts, "If you are blocked, ask for the next focused input or approval through the interactive run flow instead of ending with broad open questions.")
+		if len(reviewContractInstructions) > 0 {
+			parts = append(parts, reviewContractInstructions...)
+		}
+	default:
+		if allowsCleanReviewNoop(execCtx) {
+			parts = append(parts, "This is an autonomous run. Make durable progress on the assigned task before stopping.")
+			parts = append(parts, "Inspect the relevant repository context carefully and make code changes only when they materially improve the review outcome.")
+		} else if isEngineerStoryRun(execCtx) {
+			parts = append(parts, "This is an autonomous implementation run. You must make concrete repository changes in the working tree unless you can prove the task is already complete or blocked by a real external constraint.")
+			parts = append(parts, "Start by inspecting the repository with fast shell commands such as rg, ls, git status, and targeted file reads. Then edit the relevant files, run practical validation, and stop only after the repository reflects your implementation.")
+			parts = append(parts, "A text-only analysis with no file modifications is a failed outcome for this run.")
+		} else {
+			parts = append(parts, "This is an autonomous run. Make durable progress on the assigned task before stopping.")
+			parts = append(parts, "Inspect the relevant repository context before making changes, and validate any code changes you do make with practical checks when possible.")
+		}
+		if len(reviewContractInstructions) > 0 {
+			parts = append(parts, reviewContractInstructions...)
+		}
+	}
+
+	return strings.TrimSpace(strings.Join(parts, "\n"))
+}
+
 func (e *OpenCodeExecutor) persistEngineerWorkspace(execCtx *ExecutionContext, run *model.AgentRun, artifactWriter *openCodeArtifactWriter) error {
 	if !isEngineerStoryRun(execCtx) {
 		return nil
@@ -633,7 +701,7 @@ func isEngineerStoryRun(execCtx *ExecutionContext) bool {
 }
 
 func allowsCleanReviewNoop(execCtx *ExecutionContext) bool {
-	return execCtx != nil && strings.TrimSpace(execCtx.Agent.EffectivePresetKey()) == model.AgentPresetReviewAgent
+	return execCtx != nil && execCtx.Agent != nil && strings.TrimSpace(execCtx.Agent.EffectivePresetKey()) == model.AgentPresetReviewAgent
 }
 
 func isInteractiveRunInvocation(run *model.AgentRun) bool {

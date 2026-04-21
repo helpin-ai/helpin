@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -210,6 +211,7 @@ func NewAgentRunActivities(
 type resolvedRunState struct {
 	run            *model.AgentRun
 	agent          *model.Agent
+	skillPolicy    workerpkg.SkillPolicy
 	task           *model.PMTask
 	workspaceKey   string
 	epic           *model.PMEpic
@@ -493,6 +495,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		RunFacts:                buildDurableRunFacts(state, planningInput),
 		Config:                  config,
 		ResolvedProfile:         state.resolved,
+		SkillPolicy:             state.skillPolicy,
 		AllowedTools:            allowedTools,
 		Services:                bridge,
 		ArtifactContext:         artifactContext,
@@ -663,6 +666,22 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 	approvalRequest := latestExecutionApprovalRequest(execCtx)
 	humanInputRequest := latestExecutionHumanInputRequest(execCtx)
 	authRequest := latestExecutionCodexAuthState(execCtx)
+	if approvalRequest == nil && humanInputRequest == nil && authRequest == nil {
+		synthesizedApproval, synthesizedInput, err := a.synthesizeCompletionInteractionFallback(ctx, state, assistantMessage)
+		if err != nil {
+			if persistWorkspace {
+				_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
+			}
+			_ = a.failRun(ctx, state, err.Error())
+			return ExecuteRunResult{}, nonRetryableRunError(err)
+		}
+		if synthesizedApproval != nil {
+			approvalRequest = synthesizedApproval
+		}
+		if synthesizedInput != nil {
+			humanInputRequest = synthesizedInput
+		}
+	}
 	if err := a.finalizePlanningRun(ctx, state, planningInput); err != nil {
 		if persistWorkspace {
 			_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
@@ -685,18 +704,39 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		return ExecuteRunResult{}, err
 	}
 
-	humanInputRequest, err = a.maybeInjectReviewAgentFollowupInput(ctx, state, assistantMessage, humanInputRequest)
-	if err != nil {
-		if persistWorkspace {
-			_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
-		}
-		_ = a.failRun(ctx, state, err.Error())
-		return ExecuteRunResult{}, nonRetryableRunError(err)
-	}
-
 	waitForApproval, waitForInput, waitForAuth := resolveExecutionWaitState(state.run, humanInputRequest, approvalRequest, authRequest)
 	continueExecution := false
 	if state.run.InvocationMode == model.InvocationModeInteractive && humanInputRequest != nil {
+	}
+	if !waitForApproval && !waitForInput && !waitForAuth && !continueExecution {
+		if err := a.enforceCompletionInteractionPolicy(ctx, state, assistantMessage); err != nil {
+			retried, retryErr := a.retryInvalidCompletionTurn(ctx, state, err)
+			if retryErr != nil {
+				if persistWorkspace {
+					_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
+				}
+				_ = a.failRun(ctx, state, retryErr.Error())
+				return ExecuteRunResult{}, nonRetryableRunError(retryErr)
+			}
+			if retried {
+				now := time.Now()
+				state.run.Status = model.AgentRunStatusRunning
+				state.run.PauseReason = model.AgentRunPauseReasonNone
+				state.run.CompletedAt = nil
+				state.run.ExecutionStage = strPtr("continuing")
+				state.run.LastHeartbeatAt = &now
+				if err := a.runRepo.Update(ctx, state.run); err != nil {
+					return ExecuteRunResult{}, err
+				}
+				a.runRepo.Notify(ctx, state.run)
+				return ExecuteRunResult{ContinueExecution: true}, nil
+			}
+			if persistWorkspace {
+				_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
+			}
+			_ = a.failRun(ctx, state, err.Error())
+			return ExecuteRunResult{}, nonRetryableRunError(err)
+		}
 	}
 	completedAt := time.Now()
 	normalizeApprovalStateAfterExecution(state.run, waitForApproval)
@@ -856,134 +896,6 @@ func resolveExecutionWaitState(run *model.AgentRun, humanInputRequest *workerpkg
 	return waitForApproval, false, false
 }
 
-func (a *AgentRunActivities) maybeInjectReviewAgentFollowupInput(
-	ctx context.Context,
-	state *resolvedRunState,
-	assistantMessage *model.AgentRunMessage,
-	existing *workerpkg.UserInputRequest,
-) (*workerpkg.UserInputRequest, error) {
-	if existing != nil || state == nil || state.run == nil || state.agent == nil || assistantMessage == nil {
-		return existing, nil
-	}
-	if strings.TrimSpace(state.agent.PresetKey) != model.AgentPresetReviewAgent {
-		return existing, nil
-	}
-
-	latestReply, err := a.latestMeaningfulUserRunReply(ctx, state.run)
-	if err != nil {
-		return nil, err
-	}
-	if isExplicitReviewCloseoutReply(latestReply) {
-		return existing, nil
-	}
-
-	req := reviewAgentFollowupRequest()
-	metadata := buildAssistantSequenceArtifactMetadata(assistantMessage.SequenceNo)
-	artifactPayload := humanInputArtifactFromWorker(req)
-	if a.artifactRepo != nil {
-		if _, err := a.appendRunArtifactWithMetadata(ctx, state.run, model.AgentRunArtifactTypeHumanInputRequest, "json", artifactPayload, metadata); err != nil {
-			return nil, err
-		}
-	}
-	interaction, err := a.persistHumanInputInteraction(ctx, state, req, metadata, assistantMessage.SequenceNo)
-	if err != nil {
-		return nil, err
-	}
-	if interaction != nil {
-		a.maybeNotifyAgentAttentionRequired(ctx, state, interaction)
-		a.publishCodingSessionInteractionEvent(state.run, interaction)
-	} else {
-		a.publishCodingSessionEvent(state.run, "input.requested", map[string]any{
-			"content": artifactPayload,
-		})
-	}
-	return req, nil
-}
-
-func (a *AgentRunActivities) latestMeaningfulUserRunReply(ctx context.Context, run *model.AgentRun) (string, error) {
-	if a == nil || a.runMessageRepo == nil || run == nil {
-		return "", nil
-	}
-	messages, err := a.runMessageRepo.ListByRun(ctx, run.WorkspaceID, run.ID)
-	if err != nil {
-		return "", err
-	}
-	for i := len(messages) - 1; i >= 0; i-- {
-		message := messages[i]
-		if strings.TrimSpace(message.Role) != "user" {
-			continue
-		}
-		if strings.TrimSpace(message.MessageType) == "prompt" {
-			continue
-		}
-		content := strings.TrimSpace(message.Content)
-		if content == "" {
-			continue
-		}
-		return content, nil
-	}
-	return "", nil
-}
-
-func reviewAgentFollowupRequest() *workerpkg.UserInputRequest {
-	return &workerpkg.UserInputRequest{
-		Questions: []workerpkg.UserInputQuestion{
-			{
-				ID:       "next_step",
-				Header:   "Next step",
-				Question: "What should I do next with this review?",
-				IsOther:  true,
-				Options: []workerpkg.UserInputOption{
-					{
-						Label:       "Discuss a finding (Recommended)",
-						Description: "Ask a follow-up or request more detail about one of the findings.",
-					},
-					{
-						Label:       "Implement changes",
-						Description: "Apply the agreed fixes in this same branch and continue the review loop.",
-					},
-					{
-						Label:       "Re-review changes",
-						Description: "Review the code again after changes are made.",
-					},
-					{
-						Label:       "Done reviewing",
-						Description: "Close this review run.",
-					},
-				},
-			},
-		},
-	}
-}
-
-func isExplicitReviewCloseoutReply(reply string) bool {
-	normalized := strings.ToLower(strings.TrimSpace(reply))
-	if normalized == "" || strings.Contains(normalized, "?") {
-		return false
-	}
-
-	for _, marker := range []string{
-		"follow up", "follow-up", "clarify", "clarification", "question", "re-review", "review again",
-		"check again", "look again", "implement", "fix", "address", "change", "changes",
-		"revise", "revision", "another pass", "one more", "but ", "however",
-	} {
-		if strings.Contains(normalized, marker) {
-			return false
-		}
-	}
-
-	for _, marker := range []string{
-		"done", "done reviewing", "review complete", "review is complete", "finished",
-		"finished reviewing", "complete", "completed", "looks good", "all set",
-		"nothing else", "that's all", "thats all", "no more issues",
-	} {
-		if strings.Contains(normalized, marker) {
-			return true
-		}
-	}
-	return false
-}
-
 func normalizeApprovalStateAfterExecution(run *model.AgentRun, waitForApproval bool) {
 	if run == nil {
 		return
@@ -995,6 +907,280 @@ func normalizeApprovalStateAfterExecution(run *model.AgentRun, waitForApproval b
 	if run.ApprovalState != "approved" {
 		run.ApprovalState = "not_required"
 	}
+}
+
+func (a *AgentRunActivities) enforceCompletionInteractionPolicy(ctx context.Context, state *resolvedRunState, assistantMessage *model.AgentRunMessage) error {
+	if a == nil || state == nil || state.run == nil {
+		return nil
+	}
+
+	requiredKinds := completionRequiredInteractionKinds(state.skillPolicy)
+	if len(requiredKinds) == 0 {
+		return nil
+	}
+	if a.interactionRepo == nil {
+		kinds := sortedCompletionInteractionKinds(requiredKinds)
+		return fmt.Errorf("run cannot complete because active skills require one of [%s] before completion, but interaction storage is unavailable", strings.Join(kinds, ", "))
+	}
+
+	interactions, err := a.interactionRepo.ListByRun(ctx, state.run.WorkspaceID, state.run.ID)
+	if err != nil {
+		return fmt.Errorf("verify completion interaction requirements: %w", err)
+	}
+	currentAssistantSequenceNo := 0
+	if assistantMessage != nil {
+		currentAssistantSequenceNo = assistantMessage.SequenceNo
+	}
+	for _, interaction := range interactions {
+		if currentAssistantSequenceNo > 0 {
+			if interaction.AssistantMessageSequenceNo == nil || *interaction.AssistantMessageSequenceNo != currentAssistantSequenceNo {
+				continue
+			}
+		}
+		if _, ok := requiredKinds[strings.TrimSpace(interaction.InteractionKind)]; ok {
+			return nil
+		}
+	}
+
+	kinds := sortedCompletionInteractionKinds(requiredKinds)
+	return fmt.Errorf("run cannot complete because active skills require one of [%s] before completion", strings.Join(kinds, ", "))
+}
+
+func completionRequiredInteractionKinds(policy workerpkg.SkillPolicy) map[string]struct{} {
+	if len(policy.CompletionRequiresInteractionKinds) == 0 {
+		return nil
+	}
+
+	declaredContracts := make(map[string]struct{}, len(policy.InteractionContracts))
+	for _, contract := range workerpkg.NormalizeInteractionContracts(policy.InteractionContracts) {
+		if kind := strings.TrimSpace(contract.Kind); kind != "" {
+			declaredContracts[kind] = struct{}{}
+		}
+	}
+
+	out := make(map[string]struct{}, len(policy.CompletionRequiresInteractionKinds))
+	for _, value := range policy.CompletionRequiresInteractionKinds {
+		normalized := strings.TrimSpace(value)
+		switch normalized {
+		case model.AgentRunInteractionKindRequestUserInput:
+			out[model.AgentRunInteractionKindRequestUserInput] = struct{}{}
+		case model.AgentRunInteractionKindReviewCheckpoint:
+			out[model.AgentRunInteractionKindReviewCheckpoint] = struct{}{}
+		case model.AgentRunInteractionKindCommandExecutionApproval,
+			model.AgentRunInteractionKindFileChangeApproval,
+			model.AgentRunInteractionKindPermissionsApproval,
+			model.AgentRunInteractionKindAuthRequired:
+			out[normalized] = struct{}{}
+		default:
+			if _, ok := declaredContracts[normalized]; ok {
+				out[normalized] = struct{}{}
+			}
+		}
+	}
+	return out
+}
+
+func sortedCompletionInteractionKinds(values map[string]struct{}) []string {
+	kinds := make([]string, 0, len(values))
+	for kind := range values {
+		kinds = append(kinds, kind)
+	}
+	sort.Strings(kinds)
+	return kinds
+}
+
+func (a *AgentRunActivities) synthesizeCompletionInteractionFallback(ctx context.Context, state *resolvedRunState, assistantMessage *model.AgentRunMessage) (*model.ApprovalRequest, *workerpkg.UserInputRequest, error) {
+	if a == nil || state == nil || state.run == nil || assistantMessage == nil {
+		return nil, nil, nil
+	}
+	switch strings.TrimSpace(state.run.RuntimeKind) {
+	case "codex", "opencode":
+	default:
+		return nil, nil, nil
+	}
+
+	requiredKinds := completionRequiredInteractionKinds(state.skillPolicy)
+	if len(requiredKinds) == 0 {
+		return nil, nil, nil
+	}
+
+	content := strings.TrimSpace(assistantMessage.Content)
+	if content == "" {
+		return nil, nil, nil
+	}
+
+	// When multiple interaction handoffs are valid at completion, do not guess.
+	// Follow-up review turns often need request_user_input rather than a fresh
+	// review checkpoint, so let the completion policy trigger a retry instead.
+	if _, hasReviewCheckpoint := requiredKinds[model.AgentRunInteractionKindReviewCheckpoint]; hasReviewCheckpoint {
+		if _, hasUserInput := requiredKinds[model.AgentRunInteractionKindRequestUserInput]; hasUserInput {
+			return nil, nil, nil
+		}
+	}
+
+	if _, ok := requiredKinds[model.AgentRunInteractionKindReviewCheckpoint]; ok {
+		approvalRequest := synthesizedApprovalRequestFromAssistantMessage(state, assistantMessage)
+		if approvalRequest == nil {
+			return nil, nil, nil
+		}
+		metadata := buildAssistantSequenceArtifactMetadata(assistantMessage.SequenceNo)
+		if a.artifactRepo != nil {
+			if _, err := a.appendRunArtifactWithMetadata(ctx, state.run, model.AgentRunArtifactTypeHumanApprovalRequest, "json", approvalRequest, metadata); err != nil {
+				return nil, nil, err
+			}
+			if reviewFindings := reviewFindingsArtifactFromApprovalRequest(approvalRequest, assistantMessage.SequenceNo); reviewFindings != nil {
+				if _, err := a.appendRunArtifactWithMetadata(ctx, state.run, model.AgentRunArtifactTypeReviewFindings, "json", reviewFindings, metadata); err != nil {
+					return nil, nil, err
+				}
+			}
+		}
+		interaction, err := a.persistHumanApprovalInteraction(ctx, state, approvalRequest, metadata, assistantMessage.SequenceNo)
+		if err != nil {
+			return nil, nil, err
+		}
+		if interaction != nil {
+			a.maybeNotifyAgentAttentionRequired(ctx, state, interaction)
+			a.publishCodingSessionInteractionEvent(state.run, interaction)
+		} else {
+			a.publishCodingSessionEvent(state.run, "approval.requested", map[string]any{
+				"content": approvalRequest,
+			})
+		}
+		return approvalRequest, nil, nil
+	}
+
+	return nil, nil, nil
+}
+
+func synthesizedApprovalRequestFromAssistantMessage(state *resolvedRunState, assistantMessage *model.AgentRunMessage) *model.ApprovalRequest {
+	if assistantMessage == nil {
+		return nil
+	}
+	content := strings.TrimSpace(assistantMessage.Content)
+	if content == "" {
+		return nil
+	}
+
+	if structured, ok := parseStructuredReviewApprovalRequest(state.skillPolicy, strings.TrimSpace(state.run.RuntimeKind), content); ok {
+		if strings.TrimSpace(structured.Phase) == "" {
+			if state != nil && state.agent != nil && strings.TrimSpace(state.agent.EffectivePresetKey()) == model.AgentPresetReviewAgent {
+				structured.Phase = "review_findings"
+			} else {
+				structured.Phase = "review"
+			}
+		}
+		return structured
+	}
+
+	title := "Review findings"
+	phase := "review_findings"
+	if state != nil && state.agent != nil && strings.TrimSpace(state.agent.EffectivePresetKey()) != model.AgentPresetReviewAgent {
+		title = "Checkpoint review"
+		phase = "review"
+	}
+
+	lines := strings.Split(content, "\n")
+	if len(lines) > 0 {
+		first := strings.TrimSpace(lines[0])
+		if first != "" && len(first) <= 80 {
+			title = first
+		}
+	}
+
+	return &model.ApprovalRequest{
+		Phase:   phase,
+		Title:   title,
+		Summary: content,
+	}
+}
+
+func parseStructuredReviewApprovalRequest(policy workerpkg.SkillPolicy, runtimeKind, content string) (*model.ApprovalRequest, bool) {
+	payload, prose := extractStructuredReviewPayload(policy, runtimeKind, content)
+	if strings.TrimSpace(payload) == "" {
+		return nil, false
+	}
+
+	var req model.ApprovalRequest
+	if err := json.Unmarshal([]byte(payload), &req); err != nil {
+		return nil, false
+	}
+
+	req.Title = strings.TrimSpace(req.Title)
+	req.Summary = strings.TrimSpace(req.Summary)
+	req.Phase = strings.TrimSpace(req.Phase)
+	req.OverallCorrectness = strings.TrimSpace(req.OverallCorrectness)
+	req.OverallExplanation = strings.TrimSpace(req.OverallExplanation)
+	normalizeStructuredReviewFindings(req.Findings)
+	for idx := range req.Findings {
+		req.Findings[idx].Title = strings.TrimSpace(req.Findings[idx].Title)
+		req.Findings[idx].Body = strings.TrimSpace(req.Findings[idx].Body)
+		req.Findings[idx].Priority = strings.TrimSpace(req.Findings[idx].Priority)
+		req.Findings[idx].CodeLocation = strings.TrimSpace(req.Findings[idx].CodeLocation)
+	}
+
+	if req.Title == "" {
+		req.Title = "Review findings"
+	}
+	if req.Summary == "" {
+		req.Summary = prose
+	}
+	if req.Summary == "" && len(req.Findings) == 0 && req.OverallCorrectness == "" && req.OverallExplanation == "" {
+		return nil, false
+	}
+	return &req, true
+}
+
+func extractStructuredReviewPayload(policy workerpkg.SkillPolicy, runtimeKind, content string) (payload string, prose string) {
+	label := workerpkg.ReviewCheckpointFencedBlockLabel(policy, runtimeKind)
+	pattern := regexp.MustCompile(fmt.Sprintf("(?s)```%s\\s*\\n(.*?)\\n```", regexp.QuoteMeta(label)))
+	matches := pattern.FindAllStringSubmatchIndex(content, -1)
+	if len(matches) == 0 {
+		return "", strings.TrimSpace(content)
+	}
+	last := matches[len(matches)-1]
+	if len(last) < 4 {
+		return "", strings.TrimSpace(content)
+	}
+	payload = strings.TrimSpace(content[last[2]:last[3]])
+	prose = strings.TrimSpace(strings.TrimSpace(content[:last[0]]) + "\n" + strings.TrimSpace(content[last[1]:]))
+	return payload, prose
+}
+
+func normalizeStructuredReviewFindings(findings []model.ReviewFinding) {
+	for idx := range findings {
+		findings[idx].ID = strings.TrimSpace(findings[idx].ID)
+		if findings[idx].ID == "" {
+			findings[idx].ID = fmt.Sprintf("finding_%d", idx+1)
+		}
+	}
+}
+
+func (a *AgentRunActivities) retryInvalidCompletionTurn(ctx context.Context, state *resolvedRunState, cause error) (bool, error) {
+	if a == nil || state == nil || state.run == nil || a.runMessageRepo == nil {
+		return false, nil
+	}
+	if cause == nil || strings.TrimSpace(cause.Error()) == "" {
+		return false, nil
+	}
+
+	messages, err := a.runMessageRepo.ListByRun(ctx, state.run.WorkspaceID, state.run.ID)
+	if err != nil {
+		return false, err
+	}
+	for _, message := range messages {
+		if strings.TrimSpace(message.MessageType) == "policy_retry" {
+			return false, nil
+		}
+	}
+
+	instruction := "System correction: the previous turn ended without creating the required interaction. Continue from your last assistant message instead of restarting. Do not end with prose only. Before this run stops, emit one of the required interaction handoffs declared by the active skill policy."
+	if strings.TrimSpace(state.agent.EffectivePresetKey()) == model.AgentPresetReviewAgent {
+		instruction = "System correction: the previous review turn ended without the required interaction. Continue from your last assistant message instead of restarting. Do not end with prose only. In this next turn, emit a review_checkpoint handoff using the runtime-appropriate mechanism, or emit request_user_input only if the human explicitly closed the review or asked a blocking follow-up."
+	}
+	if _, err := a.createRunMessage(ctx, state.run, "user", "policy_retry", instruction, nil, nil, nil, nil); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (a *AgentRunActivities) finalizeSupportConversationRun(ctx context.Context, state *resolvedRunState) error {
@@ -1447,9 +1633,99 @@ func buildOtherArtifactContextEntry(artifact model.AgentRunArtifact) *workerpkg.
 			Content:      content,
 			PreserveFull: true,
 		}
+	case model.AgentRunArtifactTypeReviewFindings:
+		rendered := formatReviewFindingsArtifactContent(content)
+		if rendered == "" {
+			return nil
+		}
+		return &workerpkg.ArtifactContextEntry{
+			Label:        "Structured review findings artifact",
+			Source:       artifact.ArtifactType,
+			Status:       "active",
+			Format:       "text",
+			Content:      rendered,
+			PreserveFull: true,
+		}
+	case model.AgentRunArtifactTypeReviewDecision:
+		rendered := formatReviewDecisionArtifactContent(content)
+		if rendered == "" {
+			return nil
+		}
+		return &workerpkg.ArtifactContextEntry{
+			Label:        "Structured review decision artifact",
+			Source:       artifact.ArtifactType,
+			Status:       "active",
+			Format:       "text",
+			Content:      rendered,
+			PreserveFull: true,
+		}
 	default:
 		return nil
 	}
+}
+
+func formatReviewFindingsArtifactContent(content string) string {
+	var artifact model.ReviewFindingsArtifact
+	if err := json.Unmarshal([]byte(content), &artifact); err != nil {
+		return ""
+	}
+	lines := make([]string, 0, len(artifact.Findings)+4)
+	if title := strings.TrimSpace(artifact.Title); title != "" {
+		lines = append(lines, title)
+	}
+	if summary := strings.TrimSpace(artifact.Summary); summary != "" {
+		lines = append(lines, summary)
+	}
+	if overall := strings.TrimSpace(artifact.OverallCorrectness); overall != "" {
+		lines = append(lines, "Overall correctness: "+overall)
+	}
+	if explanation := strings.TrimSpace(artifact.OverallExplanation); explanation != "" {
+		lines = append(lines, "Overall explanation: "+explanation)
+	}
+	for _, finding := range artifact.Findings {
+		line := "- "
+		if priority := strings.TrimSpace(finding.Priority); priority != "" {
+			line += priority + " "
+		}
+		line += strings.TrimSpace(finding.Title)
+		if location := strings.TrimSpace(finding.CodeLocation); location != "" {
+			line += " (" + location + ")"
+		}
+		body := strings.TrimSpace(finding.Body)
+		if body != "" {
+			line += ": " + body
+		}
+		lines = append(lines, line)
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+func formatReviewDecisionArtifactContent(content string) string {
+	var artifact model.ReviewDecisionArtifact
+	if err := json.Unmarshal([]byte(content), &artifact); err != nil {
+		return ""
+	}
+	lines := make([]string, 0, len(artifact.Findings)+4)
+	if title := strings.TrimSpace(artifact.Title); title != "" {
+		lines = append(lines, title)
+	}
+	if decision := strings.TrimSpace(artifact.Decision); decision != "" {
+		lines = append(lines, "Decision: "+decision)
+	}
+	if message := strings.TrimSpace(artifact.Message); message != "" {
+		lines = append(lines, "Message: "+message)
+	}
+	for _, finding := range artifact.Findings {
+		line := "- " + strings.TrimSpace(finding.Title)
+		if status := strings.TrimSpace(finding.Status); status != "" {
+			line += " [" + status + "]"
+		}
+		if location := strings.TrimSpace(finding.CodeLocation); location != "" {
+			line += " (" + location + ")"
+		}
+		lines = append(lines, line)
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 
 func (a *AgentRunActivities) ensureTranscriptSummaryCheckpoint(ctx context.Context, state *resolvedRunState, messages []model.AgentRunMessage) (*workerpkg.TranscriptSummaryCheckpoint, error) {
@@ -1831,6 +2107,11 @@ func (a *AgentRunActivities) persistHumanInteractionArtifacts(ctx context.Contex
 			if _, err := a.appendRunArtifactWithMetadata(ctx, state.run, model.AgentRunArtifactTypeHumanApprovalRequest, "json", approvalRequest, approvalMetadata); err != nil {
 				return err
 			}
+			if reviewFindings := reviewFindingsArtifactFromApprovalRequest(approvalRequest, assistantMessage.SequenceNo); reviewFindings != nil {
+				if _, err := a.appendRunArtifactWithMetadata(ctx, state.run, model.AgentRunArtifactTypeReviewFindings, "json", reviewFindings, approvalMetadata); err != nil {
+					return err
+				}
+			}
 		}
 		interaction, err := a.persistHumanApprovalInteraction(ctx, state, approvalRequest, approvalMetadata, assistantMessage.SequenceNo)
 		if err != nil {
@@ -2198,6 +2479,26 @@ func latestHumanApprovalRequestFromResult(result *workerpkg.ExecutionResult) *mo
 		return nil
 	}
 	return workerpkg.ExtractLatestHumanApprovalRequest(result.ToolInvocations)
+}
+
+func reviewFindingsArtifactFromApprovalRequest(approvalRequest *model.ApprovalRequest, assistantSequenceNo int) *model.ReviewFindingsArtifact {
+	if approvalRequest == nil {
+		return nil
+	}
+	if len(approvalRequest.Findings) == 0 && strings.TrimSpace(approvalRequest.OverallCorrectness) == "" && strings.TrimSpace(approvalRequest.OverallExplanation) == "" && approvalRequest.OverallConfidenceScore == nil {
+		return nil
+	}
+	return &model.ReviewFindingsArtifact{
+		Phase:                      strings.TrimSpace(approvalRequest.Phase),
+		Title:                      strings.TrimSpace(approvalRequest.Title),
+		Summary:                    strings.TrimSpace(approvalRequest.Summary),
+		Findings:                   slices.Clone(approvalRequest.Findings),
+		OverallCorrectness:         strings.TrimSpace(approvalRequest.OverallCorrectness),
+		OverallExplanation:         strings.TrimSpace(approvalRequest.OverallExplanation),
+		OverallConfidenceScore:     approvalRequest.OverallConfidenceScore,
+		AssistantMessageSequenceNo: assistantSequenceNo,
+		RecordedAt:                 time.Now().UTC(),
+	}
 }
 
 func latestHumanInputRequestFromResult(result *workerpkg.ExecutionResult) *workerpkg.UserInputRequest {
@@ -3595,7 +3896,8 @@ func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*r
 	}
 
 	resolved := workerpkg.ResolveAgentProfile(agent, run.InvocationMode)
-	skillResolution, err := agentskills.Resolve(ctx, run.WorkspaceID, agent.Skills, a.workspaceSkillRepo)
+	skillRefs := agentskills.EffectiveRuntimeRefs(agent)
+	skillResolution, err := agentskills.Resolve(ctx, run.WorkspaceID, skillRefs, a.workspaceSkillRepo)
 	if err != nil {
 		return nil, err
 	}
@@ -3605,9 +3907,10 @@ func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*r
 	}
 	agent.ResolvedSkillInstructions = agentskills.CompileInstructions(skillResolution.Definitions)
 	state := &resolvedRunState{
-		run:      run,
-		agent:    agent,
-		resolved: resolved,
+		run:         run,
+		agent:       agent,
+		skillPolicy: agentskills.AggregatePolicy(skillResolution.Definitions),
+		resolved:    resolved,
 	}
 
 	if run.TargetType == "" {

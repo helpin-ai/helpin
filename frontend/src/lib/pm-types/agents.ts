@@ -369,6 +369,8 @@ export interface HandoffAgentRunRequest {
 }
 
 export interface AgentPresetDefinition {
+  /** Workspace preset versions expose the underlying row id; product versions omit it. */
+  id?: string;
   key: AgentPresetKey;
   family_key: AgentPresetKey;
   version_key: string;
@@ -414,6 +416,21 @@ export interface CreateWorkspaceAgentPresetVersionRequest {
   allowed_tools?: string[];
   supported_modes?: AgentInvocationMode[];
   approval_mode?: AgentApprovalMode;
+  default_invocation_mode?: AgentInvocationMode;
+}
+
+export interface UpdateWorkspaceAgentPresetVersionRequest {
+  label?: string;
+  description?: string;
+  runtime_kind?: AgentRuntimeKind;
+  provider?: AgentModelProvider;
+  model?: string;
+  execution_config?: AgentExecutionConfig;
+  system_prompt?: string;
+  instruction_preamble?: string;
+  instruction_skills?: string[];
+  allowed_tools?: string[];
+  supported_modes?: AgentInvocationMode[];
   default_invocation_mode?: AgentInvocationMode;
 }
 

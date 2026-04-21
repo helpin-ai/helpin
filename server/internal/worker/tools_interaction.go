@@ -39,9 +39,13 @@ type UserInputRequest struct {
 }
 
 type ReviewCheckpointRequest struct {
-	Phase   string `json:"phase,omitempty"`
-	Title   string `json:"title"`
-	Summary string `json:"summary,omitempty"`
+	Phase                  string                   `json:"phase,omitempty"`
+	Title                  string                   `json:"title"`
+	Summary                string                   `json:"summary,omitempty"`
+	Findings               []appmodel.ReviewFinding `json:"findings,omitempty"`
+	OverallCorrectness     string                   `json:"overall_correctness,omitempty"`
+	OverallExplanation     string                   `json:"overall_explanation,omitempty"`
+	OverallConfidenceScore *float64                 `json:"overall_confidence_score,omitempty"`
 }
 
 // HumanInput* types remain as a temporary decode alias for request_human_input.
@@ -269,8 +273,27 @@ func validateReviewCheckpointRequest(req *ReviewCheckpointRequest) error {
 	}
 	req.Title = strings.TrimSpace(req.Title)
 	req.Summary = strings.TrimSpace(req.Summary)
+	req.OverallCorrectness = strings.TrimSpace(req.OverallCorrectness)
+	req.OverallExplanation = strings.TrimSpace(req.OverallExplanation)
 	if req.Title == "" {
 		return fmt.Errorf("title is required")
+	}
+	for i := range req.Findings {
+		finding := &req.Findings[i]
+		finding.ID = strings.TrimSpace(finding.ID)
+		if finding.ID == "" {
+			finding.ID = fmt.Sprintf("finding_%d", i+1)
+		}
+		finding.Title = strings.TrimSpace(finding.Title)
+		finding.Body = strings.TrimSpace(finding.Body)
+		finding.Priority = strings.ToUpper(strings.TrimSpace(finding.Priority))
+		finding.CodeLocation = strings.TrimSpace(finding.CodeLocation)
+		if finding.Title == "" {
+			return fmt.Errorf("finding %d title is required", i+1)
+		}
+		if finding.Body == "" {
+			return fmt.Errorf("finding %d body is required", i+1)
+		}
 	}
 	return nil
 }
@@ -326,9 +349,13 @@ func ExtractLatestHumanApprovalRequest(toolInvocations []appmodel.ToolInvocation
 		}
 
 		return &appmodel.ApprovalRequest{
-			Phase:   req.Phase,
-			Title:   req.Title,
-			Summary: req.Summary,
+			Phase:                  req.Phase,
+			Title:                  req.Title,
+			Summary:                req.Summary,
+			Findings:               req.Findings,
+			OverallCorrectness:     req.OverallCorrectness,
+			OverallExplanation:     req.OverallExplanation,
+			OverallConfidenceScore: req.OverallConfidenceScore,
 		}
 	}
 

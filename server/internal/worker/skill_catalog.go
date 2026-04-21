@@ -37,11 +37,11 @@ var builtInPresetSkillBundles = map[string]PresetSkillBundle{
 		SkillKeys: []string{"support_agent"},
 	},
 	model.AgentPresetCodeBuilder: {
-		Preamble:  "You are Code Builder.",
+		Preamble:  "You are Code Builder. Use the relevant available engineering instructions and skills for the task, then make focused, reviewable progress in the repository.",
 		SkillKeys: []string{"code_builder"},
 	},
 	model.AgentPresetReviewAgent: {
-		Preamble:  "You are Review Agent.",
+		Preamble:  "You are Review Agent. Use the relevant available review instructions and skills for the task, and prioritize clear findings, risks, and verification gaps.",
 		SkillKeys: []string{"review_agent"},
 	},
 }

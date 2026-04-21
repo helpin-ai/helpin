@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -105,6 +106,51 @@ func (h *AgentHandler) CreateWorkspacePresetVersion(w http.ResponseWriter, r *ht
 		return
 	}
 	writeJSON(w, http.StatusCreated, preset)
+}
+
+// UpdateWorkspacePresetVersion handles PUT /api/pm/agent-preset-versions/{id}.
+func (h *AgentHandler) UpdateWorkspacePresetVersion(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	versionID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+
+	var req model.UpdateWorkspaceAgentPresetVersionRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	preset, err := h.agentService.UpdateWorkspacePresetVersion(r.Context(), workspaceID, versionID, req, actorID)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrWorkspacePresetVersionNotFound):
+			writeError(w, http.StatusNotFound, err.Error())
+		default:
+			writeError(w, http.StatusBadRequest, err.Error())
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, preset)
+}
+
+// DeleteWorkspacePresetVersion handles DELETE /api/pm/agent-preset-versions/{id}.
+func (h *AgentHandler) DeleteWorkspacePresetVersion(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	versionID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+
+	if err := h.agentService.DeleteWorkspacePresetVersion(r.Context(), workspaceID, versionID, actorID); err != nil {
+		switch {
+		case errors.Is(err, service.ErrWorkspacePresetVersionNotFound):
+			writeError(w, http.StatusNotFound, err.Error())
+		case errors.Is(err, service.ErrWorkspacePresetVersionPinned):
+			writeError(w, http.StatusConflict, err.Error())
+		default:
+			writeError(w, http.StatusBadRequest, err.Error())
+		}
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ListModelProviders handles GET /api/pm/agent-model-providers.

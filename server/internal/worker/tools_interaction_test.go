@@ -76,7 +76,17 @@ func TestExtractLatestHumanApprovalRequestPrefersToolInvocation(t *testing.T) {
 			Input: json.RawMessage(`{
 				"phase": "crm_review",
 				"title": "Approve the stage change",
-				"summary": "Move ACME to verbal commit."
+				"summary": "Move ACME to verbal commit.",
+				"findings": [
+					{
+						"title": "Stage progression is premature",
+						"body": "The latest note confirms pricing interest but not a verbal commitment.",
+						"priority": "P1",
+						"code_location": "crm/deal_stage.go:88"
+					}
+				],
+				"overall_correctness": "incorrect",
+				"overall_explanation": "Evidence does not support moving the deal to verbal commit."
 			}`),
 		},
 	})
@@ -85,6 +95,15 @@ func TestExtractLatestHumanApprovalRequestPrefersToolInvocation(t *testing.T) {
 	}
 	if approval.Phase != "crm_review" || approval.Title != "Approve the stage change" || approval.Summary != "Move ACME to verbal commit." {
 		t.Fatalf("unexpected approval request: %#v", approval)
+	}
+	if len(approval.Findings) != 1 || approval.Findings[0].Priority != "P1" {
+		t.Fatalf("expected structured findings to be preserved, got %#v", approval)
+	}
+	if approval.Findings[0].ID != "finding_1" {
+		t.Fatalf("expected missing finding id to be normalized, got %#v", approval.Findings[0])
+	}
+	if approval.OverallCorrectness != "incorrect" {
+		t.Fatalf("expected overall correctness to be preserved, got %#v", approval)
 	}
 }
 
@@ -351,7 +370,7 @@ func TestPublishStoryPlanDocToolReusesPreviewMarkdownContentOnMalformedRetry(t *
 		Context: context.Background(),
 		AllowedTools: map[string]bool{
 			ToolPublishTaskPlanDoc: true,
-			ToolPreviewMarkdown:     true,
+			ToolPreviewMarkdown:    true,
 		},
 	}
 

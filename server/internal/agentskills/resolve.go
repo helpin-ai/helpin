@@ -57,6 +57,36 @@ func CompileInstructions(definitions []worker.SkillDefinition) string {
 	return strings.TrimSpace(strings.Join(sections, "\n\n"))
 }
 
+func AggregatePolicy(definitions []worker.SkillDefinition) worker.SkillPolicy {
+	if len(definitions) == 0 {
+		return worker.SkillPolicy{}
+	}
+
+	var policy worker.SkillPolicy
+	var allowImplicit *bool
+	requiredInteractionKinds := make([]string, 0, len(definitions))
+	interactionContracts := make([]worker.SkillInteractionContract, 0, len(definitions))
+
+	for _, definition := range definitions {
+		if definition.Policy.AllowImplicitInvocation != nil {
+			value := *definition.Policy.AllowImplicitInvocation
+			switch {
+			case allowImplicit == nil:
+				allowImplicit = &value
+			case !value:
+				allowImplicit = &value
+			}
+		}
+		requiredInteractionKinds = append(requiredInteractionKinds, definition.Policy.CompletionRequiresInteractionKinds...)
+		interactionContracts = append(interactionContracts, definition.Policy.InteractionContracts...)
+	}
+
+	policy.AllowImplicitInvocation = allowImplicit
+	policy.CompletionRequiresInteractionKinds = worker.SortedUniqueStrings(requiredInteractionKinds)
+	policy.InteractionContracts = worker.NormalizeInteractionContracts(interactionContracts)
+	return policy
+}
+
 func ValidateRuntimeAndTools(runtimeKind string, allowedTools []string, definitions []worker.SkillDefinition) error {
 	runtimeKind = strings.TrimSpace(runtimeKind)
 	allowedSet := make(map[string]struct{}, len(allowedTools))

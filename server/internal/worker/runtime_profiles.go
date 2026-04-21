@@ -32,7 +32,7 @@ var runtimeProfiles = []model.RuntimeProfile{
 		Name:               model.AgentPresetReviewAgent,
 		RuntimeKind:        "opencode",
 		Description:        "Review-first validation agent that can discuss findings and apply agreed fixes in the same branch.",
-		AllowedTools:       []string{"read_file", "read_files", "read_file_range", "write_file", "edit_file", "apply_patch", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "run_command", "request_user_input", "add_task_comment", "list_task_checklist"},
+		AllowedTools:       []string{"read_file", "read_files", "read_file_range", "write_file", "edit_file", "apply_patch", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "run_command", "request_user_input", "request_review_checkpoint", "add_task_comment", "list_task_checklist"},
 		AllowedCommands:    []string{"go", "npm", "npx", "node", "make", "git", "ls", "cat", "grep", "find", "head", "tail", "wc", "diff", "echo", "pwd", "python", "cargo", "rg"},
 		AllowedTargetTypes: []string{"task", "repository"},
 		ApprovalRequired:   false,

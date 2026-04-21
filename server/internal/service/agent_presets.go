@@ -139,6 +139,7 @@ func applyBuiltInPresetInstructionMetadata(presets []model.AgentPresetDefinition
 
 func workspacePresetDefinition(base model.AgentPresetDefinition, version model.WorkspaceAgentPresetVersion) model.AgentPresetDefinition {
 	definition := base
+	definition.ID = &version.ID
 	definition.Key = normalizePresetKey(version.FamilyKey)
 	definition.FamilyKey = normalizePresetKey(version.FamilyKey)
 	definition.VersionKey = strings.TrimSpace(version.VersionKey)
@@ -158,13 +159,17 @@ func workspacePresetDefinition(base model.AgentPresetDefinition, version model.W
 	}
 	if versionValue := strings.TrimSpace(version.InstructionTemplateVersion); versionValue != "" {
 		definition.InstructionTemplateVersion = versionValue
+	} else if version.SystemPrompt != nil && version.InstructionPreamble != nil {
+		definition.InstructionTemplateVersion = ""
 	}
-	if preamble := trimPtr(version.InstructionPreamble); preamble != nil {
-		definition.InstructionPreamble = *preamble
+	if version.InstructionPreamble != nil {
+		definition.InstructionPreamble = strings.TrimSpace(*version.InstructionPreamble)
 	}
-	if len(version.InstructionSkills) > 0 {
-		if skills := parseJSONStringSlice(version.InstructionSkills); len(skills) > 0 {
+	if len(version.InstructionSkills) > 0 && string(version.InstructionSkills) != "null" {
+		if skills := parseJSONStringSlice(version.InstructionSkills); skills != nil {
 			definition.InstructionSkills = skills
+		} else {
+			definition.InstructionSkills = []string{}
 		}
 	}
 	if description := strings.TrimSpace(stringOrDefault(version.Description, "")); description != "" {

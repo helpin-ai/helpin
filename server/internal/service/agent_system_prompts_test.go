@@ -98,7 +98,9 @@ func TestReviewAgentSystemPromptIncludesInteractiveLoop(t *testing.T) {
 	for _, snippet := range []string{
 		"You are Review Agent.",
 		"`request_user_input`",
+		"`request_review_checkpoint`",
 		"Treat review as an interactive loop, not a one-shot report.",
+		"After the initial findings pass, call `request_review_checkpoint` and stop.",
 		"Do not finish immediately after posting findings unless the latest human reply clearly says the review is done",
 		"If the human asks you to implement changes based on the review",
 	} {
