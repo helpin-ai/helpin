@@ -53,6 +53,7 @@ type systemPromptOptions struct {
 	IncludeBehaviorInstructions bool
 	IncludeResolvedSkillText    bool
 	IncludeTargetContext        bool
+	UseNativeToolingRules       bool
 }
 
 func defaultSystemPromptOptions() systemPromptOptions {
@@ -60,6 +61,7 @@ func defaultSystemPromptOptions() systemPromptOptions {
 		IncludeBehaviorInstructions: true,
 		IncludeResolvedSkillText:    true,
 		IncludeTargetContext:        true,
+		UseNativeToolingRules:       true,
 	}
 }
 
@@ -73,6 +75,7 @@ func BuildRuntimeSystemPrompt(agent *model.Agent, story *model.PMTask, epic *mod
 		IncludeBehaviorInstructions: includeBehaviorInstructions,
 		IncludeResolvedSkillText:    includeResolvedSkillText,
 		IncludeTargetContext:        false,
+		UseNativeToolingRules:       false,
 	})
 }
 
@@ -140,29 +143,33 @@ func buildSystemPromptWithOptions(agent *model.Agent, story *model.PMTask, epic 
 
 	parts = append(parts, "\n## Rules")
 	parts = append(parts, "- Work within the cloned repository only.")
-	switch {
-	case hasRepoAccess && hasFileMutationTools:
-		parts = append(parts, "- Use the provided tools to read, write, and search files.")
-	case hasRepoAccess:
-		parts = append(parts, "- Use the provided tools to inspect the repository and search for relevant context. Keep repository interactions read-only.")
-	}
-	if (story != nil || epic != nil) && hasRepoAccess {
-		parts = append(parts, "- Start by locating the relevant code with list_directory, ripgrep, search_files, or list_symbols before reading large files.")
-		parts = append(parts, "- Prefer search-first, then narrow reads: use ripgrep/search_files/list_symbols to find exact files or symbols before any broad file read.")
-		parts = append(parts, "- read_file now returns a smaller bounded window by default; use offset_line to continue and use read_file_range for targeted spans.")
-		parts = append(parts, "- Prefer read_file_range once you know the relevant lines. Do not use read_files for broad repo exploration; reserve it for a few known files with small excerpts.")
-		if hasFileMutationTools {
-			parts = append(parts, "- Prefer edit_file for focused in-place changes and apply_patch for coordinated multi-file edits.")
-			parts = append(parts, "- Use write_file for new files or full rewrites only after you have read the current file state.")
-			parts = append(parts, "- If an edit tool reports that a file changed or was not read first, re-read the file and retry with fresh context.")
-		} else {
-			parts = append(parts, "- This run is planning-only and read-only. Do not change code, create files, or alter git state.")
+	if options.UseNativeToolingRules {
+		switch {
+		case hasRepoAccess && hasFileMutationTools:
+			parts = append(parts, "- Use the provided tools to read, write, and search files.")
+		case hasRepoAccess:
+			parts = append(parts, "- Use the provided tools to inspect the repository and search for relevant context. Keep repository interactions read-only.")
 		}
-		parts = append(parts, "- When available, keep a short working execution checklist with update_plan instead of repeating plan status in prose. Do not use update_plan as a substitute for publish_prd_draft, publish_task_plan, or publish_task_plan_doc.")
+		if (story != nil || epic != nil) && hasRepoAccess {
+			parts = append(parts, "- Start by locating the relevant code with list_directory, ripgrep, search_files, or list_symbols before reading large files.")
+			parts = append(parts, "- Prefer search-first, then narrow reads: use ripgrep/search_files/list_symbols to find exact files or symbols before any broad file read.")
+			parts = append(parts, "- read_file now returns a smaller bounded window by default; use offset_line to continue and use read_file_range for targeted spans.")
+			parts = append(parts, "- Prefer read_file_range once you know the relevant lines. Do not use read_files for broad repo exploration; reserve it for a few known files with small excerpts.")
+			if hasFileMutationTools {
+				parts = append(parts, "- Prefer edit_file for focused in-place changes and apply_patch for coordinated multi-file edits.")
+				parts = append(parts, "- Use write_file for new files or full rewrites only after you have read the current file state.")
+				parts = append(parts, "- If an edit tool reports that a file changed or was not read first, re-read the file and retry with fresh context.")
+			} else {
+				parts = append(parts, "- This run is planning-only and read-only. Do not change code, create files, or alter git state.")
+			}
+			parts = append(parts, "- When available, keep a short working execution checklist with update_plan instead of repeating plan status in prose. Do not use update_plan as a substitute for publish_prd_draft, publish_task_plan, or publish_task_plan_doc.")
+		}
 	}
 	if story != nil && strings.TrimSpace(planningStage) != model.PlanningStageStoryPlanDoc {
 		parts = append(parts, "- Run tests after making changes when possible.")
-		parts = append(parts, "- Commit and push your changes when the task is complete.")
+		if options.UseNativeToolingRules {
+			parts = append(parts, "- Commit and push your changes when the task is complete.")
+		}
 	}
 	if story != nil && strings.TrimSpace(planningStage) == model.PlanningStageStoryPlanDoc {
 		parts = append(parts, "- This is a planning-doc run, not an implementation run.")

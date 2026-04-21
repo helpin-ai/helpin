@@ -255,10 +255,62 @@ func TestBuildOpenCodeUserPromptRequiresImplementationForEngineerStory(t *testin
 	result := buildOpenCodeUserPrompt(&ExecutionContext{
 		Agent: &model.Agent{AllowedTools: []byte(`["write_file"]`)},
 		Task:  &model.PMTask{Name: "Story"},
-	}, "Please implement the story.")
+	}, &model.AgentRun{InvocationMode: model.InvocationModeAutonomous}, "Please implement the story.")
 
 	if result == "Please implement the story." {
 		t.Fatalf("expected engineer user prompt to include implementation guardrails")
+	}
+}
+
+func TestBuildOpenCodeUserPromptReviewAgentDoesNotForceImplementation(t *testing.T) {
+	result := buildOpenCodeUserPrompt(&ExecutionContext{
+		Agent: &model.Agent{
+			PresetKey:    model.AgentPresetReviewAgent,
+			AllowedTools: []byte(`["write_file","run_command"]`),
+		},
+		Task: &model.PMTask{Name: "Review metrics recorder"},
+	}, &model.AgentRun{InvocationMode: model.InvocationModeAutonomous}, "Review the task.")
+
+	if strings.Contains(result, "This is an implementation run, not an analysis-only pass.") {
+		t.Fatalf("did not expect review user prompt to force implementation:\n%s", result)
+	}
+}
+
+func TestBuildOpenCodeUserPromptInteractiveEngineerDoesNotForceImplementation(t *testing.T) {
+	result := buildOpenCodeUserPrompt(&ExecutionContext{
+		Agent: &model.Agent{AllowedTools: []byte(`["write_file"]`)},
+		Task:  &model.PMTask{Name: "Story"},
+	}, &model.AgentRun{InvocationMode: model.InvocationModeInteractive}, "Please continue.")
+
+	if strings.Contains(result, "This is an implementation run, not an analysis-only pass.") {
+		t.Fatalf("did not expect interactive user prompt to force implementation:\n%s", result)
+	}
+}
+
+func TestBuildOpenCodeRuntimeInstructionsInteractiveDoesNotRequireFileChanges(t *testing.T) {
+	instructions := buildOpenCodeRuntimeInstructions(&ExecutionContext{
+		Agent: &model.Agent{
+			PresetKey:    model.AgentPresetCodeBuilder,
+			AllowedTools: []byte(`["write_file","run_command"]`),
+		},
+		Task: &model.PMTask{Name: "Implement metrics"},
+	}, &model.AgentRun{InvocationMode: model.InvocationModeInteractive})
+
+	for _, expected := range []string{
+		"This is an interactive run. Continue from the latest human reply instead of restarting from scratch.",
+		"Make repository changes when they materially advance the task, but they are not required on every turn.",
+	} {
+		if !strings.Contains(instructions, expected) {
+			t.Fatalf("expected interactive OpenCode instructions to contain %q, got:\n%s", expected, instructions)
+		}
+	}
+	for _, unexpected := range []string{
+		"must make concrete repository changes",
+		"text-only analysis with no file modifications is a failed outcome",
+	} {
+		if strings.Contains(instructions, unexpected) {
+			t.Fatalf("did not expect interactive OpenCode instructions to contain %q, got:\n%s", unexpected, instructions)
+		}
 	}
 }
 

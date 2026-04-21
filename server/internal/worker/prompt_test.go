@@ -285,6 +285,27 @@ func TestBuildRuntimeSystemPromptWithStagedForgeSkillsKeepsPresetPreamble(t *tes
 	if strings.Contains(prompt, "## Current Task") {
 		t.Fatalf("did not expect staged Forge prompt to duplicate task context\n%s", prompt)
 	}
+	for _, unexpected := range []string{
+		"Use the provided tools to read, write, and search files.",
+		"list_directory, ripgrep, search_files, or list_symbols",
+		"Gather context incrementally before broad repository reads or edits.",
+		"Prefer targeted inspection of the relevant code before making broad changes.",
+		"Keep code changes focused and validate them with practical checks when possible.",
+		"Commit and push your changes when the task is complete.",
+	} {
+		if strings.Contains(prompt, unexpected) {
+			t.Fatalf("did not expect runtime prompt to contain native/tool-specific rule %q\n%s", unexpected, prompt)
+		}
+	}
+	for _, expected := range []string{
+		"- Work within the cloned repository only.",
+		"- Run tests after making changes when possible.",
+		"- Leave Helpin artifacts and summaries in a state a human can review.",
+	} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("expected runtime prompt to contain generic rule %q\n%s", expected, prompt)
+		}
+	}
 }
 
 func TestBuildRuntimeSystemPromptWithStagedLensSkillsKeepsPresetPreamble(t *testing.T) {

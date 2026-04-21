@@ -200,7 +200,7 @@ func (e *CodexExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) 
 		systemPrompt = strings.TrimSpace(systemPrompt + "\n\n## Current Run State\n" + supplement)
 	}
 	developerInstructions := strings.TrimSpace(systemPrompt)
-	if runtimeInstructions := buildCodexRuntimeInstructions(execCtx); runtimeInstructions != "" {
+	if runtimeInstructions := buildCodexRuntimeInstructions(execCtx, run); runtimeInstructions != "" {
 		developerInstructions = strings.TrimSpace(developerInstructions + "\n\n## Codex Runtime Instructions\n" + runtimeInstructions)
 	}
 	artifactWriter := newCodexArtifactWriter(e, run)
@@ -365,26 +365,20 @@ func buildCodexPrompt(execCtx *ExecutionContext, systemPrompt, userPrompt string
 	sections := []string{
 		"System instructions:\n" + strings.TrimSpace(systemPrompt),
 	}
-	if runtimeInstructions := buildCodexRuntimeInstructions(execCtx); runtimeInstructions != "" {
+	if runtimeInstructions := buildCodexRuntimeInstructions(execCtx, nil); runtimeInstructions != "" {
 		sections = append(sections, "Codex runtime instructions:\n"+runtimeInstructions)
 	}
-	sections = append(sections, "User task:\n"+strings.TrimSpace(buildOpenCodeUserPrompt(execCtx, userPrompt)))
+	sections = append(sections, "User task:\n"+strings.TrimSpace(buildOpenCodeUserPrompt(execCtx, nil, userPrompt)))
 	return strings.TrimSpace(strings.Join(sections, "\n\n"))
 }
 
-func buildCodexRuntimeInstructions(execCtx *ExecutionContext) string {
-	resolved := resolvedProfileFor(execCtx)
+func buildCodexRuntimeInstructions(execCtx *ExecutionContext, run *model.AgentRun) string {
 	var parts []string
 
 	parts = append(parts, "You are running inside the Codex CLI runtime, not the Helpin native tool runtime.")
-	parts = append(parts, "Do not wait for Helpin-native tool calls like read_file, write_file, run_command, create_branch, commit_and_push, or open_pr. In this runtime, use Codex's own shell/file-edit capabilities directly inside the workspace.")
-	parts = append(parts, "Do not push the branch or open a pull request from Codex. Finish with a local commit only; the backend will handle remote push and delivery after the run succeeds.")
-
-	if hasRepoMutationTools(resolved.Tools) {
-		parts = append(parts, "This is an autonomous implementation run. You must make concrete repository changes in the working tree unless you can prove the task is already complete or blocked by a real external constraint.")
-		parts = append(parts, "Start by inspecting the repository with fast shell commands such as rg, ls, git status, and targeted file reads. Then edit the relevant files, run practical validation, and stop only after the repository reflects your implementation.")
-		parts = append(parts, "A text-only analysis with no file modifications is a failed outcome for this run.")
-	}
+	parts = append(parts, "Use the local shell and file-editing capabilities available in this workspace directly.")
+	parts = append(parts, "Do not rely on Helpin-specific tool wrappers or orchestration commands to inspect files, edit code, create branches, push changes, or open pull requests.")
+	parts = append(parts, "Do not push the branch or open a pull request from this runtime. If you complete implementation, finish with a local git commit only; the platform will handle remote delivery.")
 	if strings.TrimSpace(execCtx.BranchSyncStatus) == "conflicted" {
 		parts = append(parts, "Before continuing the task, resolve the current git merge conflict that came from syncing the base branch into the working branch.")
 		parts = append(parts, "Preserve the task's intended changes while incorporating the incoming base-branch changes. Remove all conflict markers, stage the resolved files, and complete the merge commit before doing additional implementation work.")
@@ -393,11 +387,36 @@ func buildCodexRuntimeInstructions(execCtx *ExecutionContext) string {
 		}
 	}
 
-	if len(resolved.Commands) > 0 {
-		parts = append(parts, "Prefer these command families when they fit the task: "+strings.Join(resolved.Commands, ", ")+".")
+	switch strings.TrimSpace(runInvocationMode(run, execCtx)) {
+	case model.InvocationModeInteractive:
+		parts = append(parts, "This is an interactive run. Continue from the latest human reply instead of restarting from scratch.")
+		parts = append(parts, "Make repository changes when they materially advance the task, but they are not required on every turn.")
+		parts = append(parts, "If you are blocked, ask for the next focused input or approval through the interactive run flow instead of ending with broad open questions.")
+	default:
+		if allowsCleanReviewNoop(execCtx) {
+			parts = append(parts, "This is an autonomous run. Make durable progress on the assigned task before stopping.")
+			parts = append(parts, "Inspect the relevant repository context carefully and make code changes only when they materially improve the review outcome.")
+		} else if isEngineerStoryRun(execCtx) {
+			parts = append(parts, "This is an autonomous implementation run. You must make concrete repository changes in the working tree unless you can prove the task is already complete or blocked by a real external constraint.")
+			parts = append(parts, "Start by inspecting the repository with fast shell commands such as rg, ls, git status, and targeted file reads. Then edit the relevant files, run practical validation, and stop only after the repository reflects your implementation.")
+			parts = append(parts, "A text-only analysis with no file modifications is a failed outcome for this run.")
+		} else {
+			parts = append(parts, "This is an autonomous run. Make durable progress on the assigned task before stopping.")
+			parts = append(parts, "Inspect the relevant repository context before making changes, and validate any code changes you do make with practical checks when possible.")
+		}
 	}
 
 	return strings.TrimSpace(strings.Join(parts, "\n"))
+}
+
+func runInvocationMode(run *model.AgentRun, execCtx *ExecutionContext) string {
+	if run != nil && strings.TrimSpace(run.InvocationMode) != "" {
+		return strings.TrimSpace(run.InvocationMode)
+	}
+	if execCtx != nil && execCtx.Agent != nil && strings.TrimSpace(execCtx.Agent.DefaultInvocationMode) != "" {
+		return strings.TrimSpace(execCtx.Agent.DefaultInvocationMode)
+	}
+	return model.InvocationModeAutonomous
 }
 
 func syncPostRunExecutionState(execCtx, postRunExecCtx *ExecutionContext) {
