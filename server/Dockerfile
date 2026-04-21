@@ -31,6 +31,7 @@ RUN apk add --no-cache \
         rust \
         cargo \
     && ln -sf /usr/bin/python3 /usr/bin/python \
+    && pip3 install --no-cache-dir --break-system-packages pytest uv poetry \
     && npm i -g @openai/codex pnpm yarn \
     && addgroup -S app -g 10001 \
     && adduser -S app -u 10001 -G app
