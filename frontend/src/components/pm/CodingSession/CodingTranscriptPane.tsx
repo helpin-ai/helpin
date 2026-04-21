@@ -12,7 +12,6 @@ import {
   LockKeyIcon,
   RadioIcon,
   Wrench01Icon,
-  File01Icon,
 } from '@/lib/icons';
 
 import { Badge } from '@/components/ui/badge';
@@ -122,6 +121,20 @@ export function CodingTranscriptPane({
     return segment.tool_call.tool_name !== 'update_plan';
   });
   const showLivePlaceholder = visibleLiveSegments.length === 0 && liveAssistantMessage?.status === 'streaming';
+  const developerPromptMessage = useMemo<CodingSessionTranscriptMessage | null>(() => {
+    const sections = parsePromptArtifactSections(promptArtifact?.inline_content);
+    const developerPrompt = sections.find((section) => section.label === 'Developer prompt');
+    if (!developerPrompt) return null;
+    return {
+      event_id: `prompt:${promptArtifact?.id ?? 'developer'}`,
+      message_id: `prompt:${promptArtifact?.id ?? 'developer'}`,
+      role: 'user',
+      message_type: 'developer_prompt',
+      content: developerPrompt.content,
+      timestamp: promptArtifact?.created_at ?? new Date().toISOString(),
+      sequence_no: Number.MIN_SAFE_INTEGER,
+    };
+  }, [promptArtifact]);
 
   // Build a flat list of all renderable items for the virtualizer.
   type VirtualItem =
@@ -134,6 +147,9 @@ export function CodingTranscriptPane({
 
   const items = useMemo((): VirtualItem[] => {
     const list: VirtualItem[] = [];
+    if (developerPromptMessage) {
+      list.push({ kind: 'transcript', message: developerPromptMessage });
+    }
     for (const message of transcriptMessages) {
       list.push({ kind: 'transcript', message });
     }
@@ -155,7 +171,7 @@ export function CodingTranscriptPane({
       list.push({ kind: 'empty' });
     }
     return list;
-  }, [transcriptMessages, liveReasoningMessage, visibleLiveSegments, showLivePlaceholder, loading]);
+  }, [developerPromptMessage, transcriptMessages, liveReasoningMessage, visibleLiveSegments, showLivePlaceholder, loading]);
 
   const virtualizer = useVirtualizer({
     count: items.length,
@@ -285,13 +301,12 @@ export function CodingTranscriptPane({
           Transcript
         </div>
         <Badge variant="outline" className="text-[10px]">
-          {transcriptMessages.length + (visibleLiveSegments.length > 0 || showLivePlaceholder ? 1 : 0)} turns
+          {transcriptMessages.length + (developerPromptMessage ? 1 : 0) + (visibleLiveSegments.length > 0 || showLivePlaceholder ? 1 : 0)} turns
         </Badge>
       </div>
 
       <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-auto pt-3">
         <div className="mx-auto flex w-full max-w-4xl flex-col gap-3 px-4">
-          {promptArtifact ? <PromptArtifactCard artifact={promptArtifact} /> : null}
           <div
             className="relative w-full"
             style={{ height: virtualizer.getTotalSize() }}
@@ -339,32 +354,6 @@ export function CodingTranscriptPane({
         <MessageInput onSend={onSendMessage} sending={sendingMessage} placeholder={messagePlaceholder} />
       ) : null}
     </section>
-  );
-}
-
-function PromptArtifactCard({ artifact }: { artifact: AgentRunArtifact }) {
-  const sections = parsePromptArtifactSections(artifact.inline_content);
-  if (sections.length === 0) return null;
-
-  return (
-    <div className="rounded-xl border border-border/70 bg-muted/30 px-4 py-3">
-      <div className="mb-3 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        <File01Icon className="h-3.5 w-3.5" />
-        Runtime Prompt
-      </div>
-      <div className="space-y-3">
-        {sections.map((section) => (
-          <details key={section.label} className="group rounded-lg border border-border/60 bg-background/70 px-3 py-2" open={section.label === 'Developer prompt'}>
-            <summary className="cursor-pointer list-none text-xs font-medium text-foreground">
-              {section.label}
-            </summary>
-            <pre className="mt-2 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-5 text-muted-foreground">
-              {section.content}
-            </pre>
-          </details>
-        ))}
-      </div>
-    </div>
   );
 }
 
@@ -677,6 +666,10 @@ function TranscriptEntry({
     );
   }
 
+  if (message.message_type === 'developer_prompt') {
+    return <DeveloperPromptTranscriptCard content={message.content} timestamp={message.timestamp} />;
+  }
+
   const actorLabel = actor?.full_name || actor?.email || 'User';
 
   return (
@@ -705,6 +698,31 @@ function TranscriptEntry({
           placeholder={placeholder}
         />
       ) : null}
+    </div>
+  );
+}
+
+function DeveloperPromptTranscriptCard({
+  content,
+  timestamp,
+}: {
+  content: string;
+  timestamp: string;
+}) {
+  return (
+    <div className="w-full max-w-[90%]">
+      <div className="mb-2 flex items-center gap-2 px-1 text-[11px] text-muted-foreground">
+        <span>{formatCodingSessionRelative(timestamp)}</span>
+        <span className="font-medium">Developer prompt</span>
+      </div>
+      <details className="rounded-xl border border-border/70 bg-muted/30 px-4 py-3">
+        <summary className="cursor-pointer list-none text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Developer prompt
+        </summary>
+        <pre className="mt-3 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-5 text-foreground">
+          {content}
+        </pre>
+      </details>
     </div>
   );
 }
