@@ -197,7 +197,7 @@ func TestBuildUserPromptNormalizesRichTextDescriptionsToMarkdown(t *testing.T) {
 	}
 }
 
-func TestBuildUserPromptPrependsSavedSystemPromptBeforeContext(t *testing.T) {
+func TestBuildUserPromptOmitsSavedSystemPromptAndKeepsContext(t *testing.T) {
 	systemPrompt := "Use the repo conventions and keep changes incremental."
 
 	prompt := BuildUserPrompt(
@@ -213,14 +213,11 @@ func TestBuildUserPromptPrependsSavedSystemPromptBeforeContext(t *testing.T) {
 		"",
 	)
 
-	if !strings.HasPrefix(prompt, systemPrompt) {
-		t.Fatalf("expected prompt to start with saved system prompt\n%s", prompt)
+	if strings.Contains(prompt, systemPrompt) {
+		t.Fatalf("did not expect user prompt to repeat saved system prompt\n%s", prompt)
 	}
-	if !strings.Contains(prompt, "\n\nContext:\nTask: **Inbox triage automation**") {
-		t.Fatalf("expected context section after saved system prompt\n%s", prompt)
-	}
-	if strings.Index(prompt, "Context:") < strings.Index(prompt, systemPrompt) {
-		t.Fatalf("expected saved system prompt before context heading\n%s", prompt)
+	if !strings.HasPrefix(prompt, "Context:\nTask: **Inbox triage automation**") {
+		t.Fatalf("expected user prompt to start with context\n%s", prompt)
 	}
 }
 
@@ -285,8 +282,8 @@ func TestBuildRuntimeSystemPromptWithStagedForgeSkillsKeepsPresetPreamble(t *tes
 	if strings.Contains(prompt, "Implement the requested story directly in the repository.") {
 		t.Fatalf("expected staged Forge prompt to omit inline skill body\n%s", prompt)
 	}
-	if !strings.Contains(prompt, "## Current Task") {
-		t.Fatalf("expected task context in staged Forge prompt\n%s", prompt)
+	if strings.Contains(prompt, "## Current Task") {
+		t.Fatalf("did not expect staged Forge prompt to duplicate task context\n%s", prompt)
 	}
 }
 
@@ -369,6 +366,9 @@ func TestBuildRuntimeSystemPromptWithoutStagedSkillsStillInlinesResolvedSkillTex
 	}
 	if !strings.Contains(prompt, "Implement the requested story directly in the repository.") {
 		t.Fatalf("expected unstaged Forge prompt to inline skill body\n%s", prompt)
+	}
+	if strings.Contains(prompt, "## Current Task") {
+		t.Fatalf("did not expect runtime prompt to duplicate task context\n%s", prompt)
 	}
 }
 
@@ -547,6 +547,36 @@ func TestBuildRuntimeSystemPromptSkipsBehaviorAndSkillTextWhenDisabled(t *testin
 	}
 	if !strings.Contains(prompt, "Preset behavior instructions.") {
 		t.Fatalf("expected runtime prompt to preserve explicit system prompt identity\n%s", prompt)
+	}
+	if strings.Contains(prompt, "## Current Task") {
+		t.Fatalf("did not expect runtime prompt to include target context\n%s", prompt)
+	}
+}
+
+func TestBuildRuntimeExecutionSupplementPromptOmitsArtifactContext(t *testing.T) {
+	supplement := BuildRuntimeExecutionSupplementPrompt(
+		&model.AgentRun{InvocationMode: model.InvocationModeInteractive},
+		map[string]string{
+			"target_id": "deal-123",
+		},
+	)
+
+	for _, expected := range []string{
+		"This is an interactive transcript that may resume after a human reply.",
+		"Durable run facts:",
+		"- target_id=deal-123",
+	} {
+		if !strings.Contains(supplement, expected) {
+			t.Fatalf("expected runtime supplement to contain %q\n%s", expected, supplement)
+		}
+	}
+	for _, unexpected := range []string{
+		"Current persisted artifacts:",
+		"Use the latest persisted artifacts below as the current source of truth",
+	} {
+		if strings.Contains(supplement, unexpected) {
+			t.Fatalf("did not expect runtime supplement to contain %q\n%s", unexpected, supplement)
+		}
 	}
 }
 

@@ -52,12 +52,14 @@ func resolvedAgentIdentityPrompt(agent *model.Agent) string {
 type systemPromptOptions struct {
 	IncludeBehaviorInstructions bool
 	IncludeResolvedSkillText    bool
+	IncludeTargetContext        bool
 }
 
 func defaultSystemPromptOptions() systemPromptOptions {
 	return systemPromptOptions{
 		IncludeBehaviorInstructions: true,
 		IncludeResolvedSkillText:    true,
+		IncludeTargetContext:        true,
 	}
 }
 
@@ -70,6 +72,7 @@ func BuildRuntimeSystemPrompt(agent *model.Agent, story *model.PMTask, epic *mod
 	return buildSystemPromptWithOptions(agent, story, epic, ticket, planningStage, planningMethodology, config, systemPromptOptions{
 		IncludeBehaviorInstructions: includeBehaviorInstructions,
 		IncludeResolvedSkillText:    includeResolvedSkillText,
+		IncludeTargetContext:        false,
 	})
 }
 
@@ -100,30 +103,32 @@ func buildSystemPromptWithOptions(agent *model.Agent, story *model.PMTask, epic 
 		parts = append(parts, skillInstructions)
 	}
 
-	// Story context.
-	if story != nil {
-		parts = append(parts, "\n## Current Task")
-		parts = append(parts, fmt.Sprintf("**Story**: %s", story.Name))
-		if story.Description != nil {
-			if description := tiptap.RichTextToMarkdown(*story.Description); description != "" {
-				parts = append(parts, "**Description**:\n"+description)
+	if options.IncludeTargetContext {
+		// Story context.
+		if story != nil {
+			parts = append(parts, "\n## Current Task")
+			parts = append(parts, fmt.Sprintf("**Story**: %s", story.Name))
+			if story.Description != nil {
+				if description := tiptap.RichTextToMarkdown(*story.Description); description != "" {
+					parts = append(parts, "**Description**:\n"+description)
+				}
 			}
 		}
-	}
-	if epic != nil {
-		parts = append(parts, "\n## Current Epic")
-		parts = append(parts, fmt.Sprintf("**Epic**: %s", epic.Name))
-		if epic.Description != nil {
-			if description := tiptap.RichTextToMarkdown(*epic.Description); description != "" {
-				parts = append(parts, "**Description**:\n"+description)
+		if epic != nil {
+			parts = append(parts, "\n## Current Epic")
+			parts = append(parts, fmt.Sprintf("**Epic**: %s", epic.Name))
+			if epic.Description != nil {
+				if description := tiptap.RichTextToMarkdown(*epic.Description); description != "" {
+					parts = append(parts, "**Description**:\n"+description)
+				}
 			}
 		}
-	}
-	if ticket != nil {
-		parts = append(parts, "\n## Current Support Conversation")
-		parts = append(parts, fmt.Sprintf("**Subject**: %s", ticket.Subject))
-		if ticket.CustomerName != nil && *ticket.CustomerName != "" {
-			parts = append(parts, fmt.Sprintf("**Customer**: %s", *ticket.CustomerName))
+		if ticket != nil {
+			parts = append(parts, "\n## Current Support Conversation")
+			parts = append(parts, fmt.Sprintf("**Subject**: %s", ticket.Subject))
+			if ticket.CustomerName != nil && *ticket.CustomerName != "" {
+				parts = append(parts, fmt.Sprintf("**Customer**: %s", *ticket.CustomerName))
+			}
 		}
 	}
 
@@ -187,10 +192,6 @@ func BuildUserPrompt(
 ) string {
 	var sections []string
 	var contextParts []string
-
-	if agent != nil && agent.SystemPrompt != nil && strings.TrimSpace(*agent.SystemPrompt) != "" {
-		sections = append(sections, strings.TrimSpace(*agent.SystemPrompt))
-	}
 
 	if story != nil {
 		contextParts = append(contextParts, fmt.Sprintf("Task: **%s**", story.Name))
@@ -269,6 +270,14 @@ func BuildUserPrompt(
 }
 
 func BuildExecutionSupplementPrompt(run *model.AgentRun, runFacts map[string]string, artifactContext *ArtifactContext) string {
+	return buildExecutionSupplementPrompt(run, runFacts, artifactContext, true)
+}
+
+func BuildRuntimeExecutionSupplementPrompt(run *model.AgentRun, runFacts map[string]string) string {
+	return buildExecutionSupplementPrompt(run, runFacts, nil, false)
+}
+
+func buildExecutionSupplementPrompt(run *model.AgentRun, runFacts map[string]string, artifactContext *ArtifactContext, includeArtifactContext bool) string {
 	var parts []string
 
 	if run != nil && run.InvocationMode == model.InvocationModeInteractive {
@@ -284,9 +293,11 @@ func BuildExecutionSupplementPrompt(run *model.AgentRun, runFacts map[string]str
 		parts = append(parts, factsSection)
 	}
 
-	if artifactSection := formatArtifactContext(artifactContext); artifactSection != "" {
-		parts = append(parts, "Use the latest persisted artifacts below as the current source of truth when they conflict with older transcript content.")
-		parts = append(parts, strings.TrimSpace(artifactSection))
+	if includeArtifactContext {
+		if artifactSection := formatArtifactContext(artifactContext); artifactSection != "" {
+			parts = append(parts, "Use the latest persisted artifacts below as the current source of truth when they conflict with older transcript content.")
+			parts = append(parts, strings.TrimSpace(artifactSection))
+		}
 	}
 
 	return strings.Join(parts, "\n\n")

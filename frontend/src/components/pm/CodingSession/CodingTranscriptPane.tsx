@@ -354,7 +354,7 @@ function PromptArtifactCard({ artifact }: { artifact: AgentRunArtifact }) {
       </div>
       <div className="space-y-3">
         {sections.map((section) => (
-          <details key={section.label} className="group rounded-lg border border-border/60 bg-background/70 px-3 py-2" open={section.label === 'Developer instructions'}>
+          <details key={section.label} className="group rounded-lg border border-border/60 bg-background/70 px-3 py-2" open={section.label === 'Developer prompt'}>
             <summary className="cursor-pointer list-none text-xs font-medium text-foreground">
               {section.label}
             </summary>
@@ -376,6 +376,21 @@ function parsePromptArtifactSections(raw: string | null | undefined) {
   let currentLabel: string | null = null;
   let currentLines: string[] = [];
 
+  const normalizeLabel = (line: string) => {
+    switch (line) {
+      case 'Developer instructions:':
+      case 'Developer prompt:':
+        return 'Developer prompt';
+      case 'Turn input:':
+      case 'User prompt:':
+        return 'User prompt';
+      case 'Pending request replay:':
+        return 'Pending request replay';
+      default:
+        return line.slice(0, -1);
+    }
+  };
+
   const flush = () => {
     if (!currentLabel) return;
     const content = currentLines.join('\n').trim();
@@ -387,11 +402,13 @@ function parsePromptArtifactSections(raw: string | null | undefined) {
   for (const line of lines) {
     if (
       line === 'Developer instructions:'
+      || line === 'Developer prompt:'
       || line === 'Turn input:'
+      || line === 'User prompt:'
       || line === 'Pending request replay:'
     ) {
       flush();
-      currentLabel = line.slice(0, -1);
+      currentLabel = normalizeLabel(line);
       currentLines = [];
       continue;
     }

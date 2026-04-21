@@ -117,7 +117,7 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 		includeInlineSkills,
 		includeInlineSkills,
 	)
-	if supplement := BuildExecutionSupplementPrompt(run, execCtx.RunFacts, execCtx.ArtifactContext); supplement != "" {
+	if supplement := BuildRuntimeExecutionSupplementPrompt(run, execCtx.RunFacts); supplement != "" {
 		systemPrompt = strings.TrimSpace(systemPrompt + "\n\n## Current Run State\n" + supplement)
 	}
 	userPrompt := BuildUserPrompt(
@@ -505,10 +505,10 @@ func (w *openCodeArtifactWriter) Save(ctx context.Context, artifactType, format,
 func buildOpenCodePromptArtifact(systemPrompt, userPrompt string) string {
 	sections := make([]string, 0, 2)
 	if strings.TrimSpace(systemPrompt) != "" {
-		sections = append(sections, "Developer instructions:\n"+strings.TrimSpace(systemPrompt))
+		sections = append(sections, "Developer prompt:\n"+strings.TrimSpace(systemPrompt))
 	}
 	if strings.TrimSpace(userPrompt) != "" {
-		sections = append(sections, "Turn input:\n"+strings.TrimSpace(userPrompt))
+		sections = append(sections, "User prompt:\n"+strings.TrimSpace(userPrompt))
 	}
 	return strings.TrimSpace(strings.Join(sections, "\n\n"))
 }

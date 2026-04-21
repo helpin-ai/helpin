@@ -337,7 +337,7 @@ func (h *codexSessionHost) codexAuthRequiredState(ctx context.Context, state *co
 	codexClearRecoveredAuthState(ctx, h.executor, h.run.WorkspaceID, state, profile)
 	return &ExecutionResult{
 		CodexAuthState: codexBuildReauthRequiredState(profile, message),
-		AssistantText: "Sign in with ChatGPT to continue this Codex run.",
+		AssistantText:  "Sign in with ChatGPT to continue this Codex run.",
 	}
 }
 
@@ -853,10 +853,10 @@ func (h *codexSessionHost) persistWorkspaceAuth(ctx context.Context, state *code
 func buildCodexPromptArtifact(developerInstructions, input string, pending *codexPendingRequest) string {
 	sections := make([]string, 0, 3)
 	if strings.TrimSpace(developerInstructions) != "" {
-		sections = append(sections, "Developer instructions:\n"+strings.TrimSpace(developerInstructions))
+		sections = append(sections, "Developer prompt:\n"+strings.TrimSpace(developerInstructions))
 	}
 	if strings.TrimSpace(input) != "" {
-		sections = append(sections, "Turn input:\n"+strings.TrimSpace(input))
+		sections = append(sections, "User prompt:\n"+strings.TrimSpace(input))
 	}
 	if pending != nil {
 		sections = append(sections, fmt.Sprintf(
