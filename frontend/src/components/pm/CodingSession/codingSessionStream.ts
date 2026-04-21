@@ -503,7 +503,7 @@ function reviewCheckpointResolutionTranscriptContent(
     }];
   });
 
-  const selectedFindings = selectionMode === 'selected' && selectedFindingIDs.length > 0
+  const selectedFindings = selectionMode === 'selected'
     ? normalizedFindings.filter((finding) => selectedFindingIDs.includes(finding.id))
     : normalizedFindings;
 

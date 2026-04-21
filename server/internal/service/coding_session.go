@@ -796,8 +796,11 @@ func selectReviewFindings(findings []model.ReviewFinding, selectionMode string, 
 	if len(findings) == 0 {
 		return nil
 	}
-	if selectionMode == "" || selectionMode == "all" || len(selectedIDs) == 0 {
+	if selectionMode == "" || selectionMode == "all" {
 		return append([]model.ReviewFinding(nil), findings...)
+	}
+	if selectionMode == "selected" && len(selectedIDs) == 0 {
+		return nil
 	}
 	selectedSet := make(map[string]struct{}, len(selectedIDs))
 	for _, id := range selectedIDs {
@@ -808,7 +811,7 @@ func selectReviewFindings(findings []model.ReviewFinding, selectionMode string, 
 		selectedSet[id] = struct{}{}
 	}
 	if len(selectedSet) == 0 {
-		return append([]model.ReviewFinding(nil), findings...)
+		return nil
 	}
 	selected := make([]model.ReviewFinding, 0, len(selectedSet))
 	for _, finding := range findings {

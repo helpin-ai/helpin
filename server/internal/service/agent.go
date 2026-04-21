@@ -3064,17 +3064,16 @@ func reviewDecisionArtifactFromInteraction(interaction *model.AgentRunInteractio
 		if findingID == "" {
 			continue
 		}
-		status := statusForSelection
-		if response.SelectionMode == "selected" && len(selectedIDs) > 0 {
+		if response.SelectionMode == "selected" {
 			if _, ok := selectedIDs[findingID]; !ok {
-				status = "unselected"
+				continue
 			}
 		}
 		findings = append(findings, model.ReviewDecisionFinding{
 			ID:           findingID,
 			Title:        strings.TrimSpace(finding.Title),
 			CodeLocation: strings.TrimSpace(finding.CodeLocation),
-			Status:       status,
+			Status:       statusForSelection,
 		})
 	}
 

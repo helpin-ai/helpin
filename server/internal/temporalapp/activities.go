@@ -941,6 +941,9 @@ func (a *AgentRunActivities) enforceCompletionInteractionPolicy(ctx context.Cont
 			return nil
 		}
 	}
+	if allowsTerminalCleanImplementationReview(state, assistantMessage) {
+		return nil
+	}
 
 	kinds := sortedCompletionInteractionKinds(requiredKinds)
 	return fmt.Errorf("run cannot complete because active skills require one of [%s] before completion", strings.Join(kinds, ", "))
@@ -1010,6 +1013,17 @@ func (a *AgentRunActivities) synthesizeCompletionInteractionFallback(ctx context
 	}
 
 	if _, ok := requiredKinds[model.AgentRunInteractionKindReviewCheckpoint]; ok {
+		if terminalReview := terminalCleanImplementationReviewRequest(state, assistantMessage); terminalReview != nil {
+			metadata := buildAssistantSequenceArtifactMetadata(assistantMessage.SequenceNo)
+			if a.artifactRepo != nil {
+				if reviewFindings := reviewFindingsArtifactFromApprovalRequest(terminalReview, assistantMessage.SequenceNo); reviewFindings != nil {
+					if _, err := a.appendRunArtifactWithMetadata(ctx, state.run, model.AgentRunArtifactTypeReviewFindings, "json", reviewFindings, metadata); err != nil {
+						return nil, nil, err
+					}
+				}
+			}
+			return nil, nil, nil
+		}
 		approvalRequest := synthesizedApprovalRequestFromAssistantMessage(state, assistantMessage)
 		if approvalRequest == nil {
 			return nil, nil, nil
@@ -1041,6 +1055,33 @@ func (a *AgentRunActivities) synthesizeCompletionInteractionFallback(ctx context
 	}
 
 	return nil, nil, nil
+}
+
+func allowsTerminalCleanImplementationReview(state *resolvedRunState, assistantMessage *model.AgentRunMessage) bool {
+	return terminalCleanImplementationReviewRequest(state, assistantMessage) != nil
+}
+
+func terminalCleanImplementationReviewRequest(state *resolvedRunState, assistantMessage *model.AgentRunMessage) *model.ApprovalRequest {
+	if state == nil || state.agent == nil || assistantMessage == nil {
+		return nil
+	}
+	if strings.TrimSpace(state.agent.EffectivePresetKey()) != model.AgentPresetReviewAgent {
+		return nil
+	}
+	request := synthesizedApprovalRequestFromAssistantMessage(state, assistantMessage)
+	if request == nil {
+		return nil
+	}
+	if !strings.EqualFold(strings.TrimSpace(request.Phase), "implementation") {
+		return nil
+	}
+	if len(request.Findings) > 0 {
+		return nil
+	}
+	if !strings.EqualFold(strings.TrimSpace(request.OverallCorrectness), "correct") {
+		return nil
+	}
+	return request
 }
 
 func synthesizedApprovalRequestFromAssistantMessage(state *resolvedRunState, assistantMessage *model.AgentRunMessage) *model.ApprovalRequest {
