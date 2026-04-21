@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Notification02Icon, TickDouble01Icon, ArchiveIcon, Clock01Icon, Delete01Icon, ViewIcon, ViewOffIcon } from '@/lib/icons'
+import { AlertCircleIcon, Notification02Icon, TickDouble01Icon, ArchiveIcon, Clock01Icon, Delete01Icon, ViewIcon, ViewOffIcon } from '@/lib/icons'
 import { formatDistanceToNow } from 'date-fns'
 import { useLocation, useNavigate } from '@tanstack/react-router'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
@@ -72,12 +72,14 @@ function NotificationRow({
 }) {
   const isUnread = notification.status === 'unread'
   const identifier = notification.entity_snapshot?.identifier || ''
+  const isAgentAttention = notification.latest_event_category === 'agent_attention'
 
   return (
     <div
       className={cn(
         'group relative flex gap-3 px-4 py-3 transition-colors hover:bg-muted/50 cursor-pointer',
-        isUnread && 'bg-primary/[0.03]'
+        isUnread && 'bg-primary/[0.03]',
+        isAgentAttention && 'border-l-2 border-l-amber-500 bg-amber-50/40 dark:bg-amber-500/[0.06]'
       )}
       onClick={() => {
         if (isUnread) onRead(notification.id)
@@ -95,8 +97,14 @@ function NotificationRow({
 
       {/* Content */}
       <div className="min-w-0 flex-1">
-        <p className={cn('text-sm leading-snug', isUnread ? 'font-medium' : 'text-muted-foreground')}>
-          {notification.title}
+        <p className={cn('text-sm leading-snug flex items-center gap-1.5', isUnread ? 'font-medium' : 'text-muted-foreground')}>
+          {isAgentAttention && (
+            <AlertCircleIcon
+              className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400"
+              aria-hidden="true"
+            />
+          )}
+          <span className="min-w-0 truncate">{notification.title}</span>
         </p>
         {notification.body && (
           <p className="mt-0.5 text-xs text-muted-foreground line-clamp-1">
