@@ -139,6 +139,7 @@ func applyBuiltInPresetInstructionMetadata(presets []model.AgentPresetDefinition
 
 func workspacePresetDefinition(base model.AgentPresetDefinition, version model.WorkspaceAgentPresetVersion) model.AgentPresetDefinition {
 	definition := base
+	definition.ID = &version.ID
 	definition.Key = normalizePresetKey(version.FamilyKey)
 	definition.FamilyKey = normalizePresetKey(version.FamilyKey)
 	definition.VersionKey = strings.TrimSpace(version.VersionKey)

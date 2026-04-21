@@ -105,6 +105,9 @@ type WorkspaceAgentPresetVersion struct {
 	ApprovalMode               string          `json:"approval_mode" gorm:"not null;default:'preset_default'"`
 	DefaultInvocationMode      string          `json:"default_invocation_mode" gorm:"not null;default:'autonomous'"`
 	CreatedBy                  *string         `json:"created_by" gorm:"type:uuid"`
+	UpdatedBy                  *string         `json:"updated_by" gorm:"type:uuid"`
+	LastEditedAt               *time.Time      `json:"last_edited_at"`
+	DeletedAt                  *time.Time      `json:"deleted_at" gorm:"index"`
 	CreatedAt                  time.Time       `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt                  time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
 }
@@ -264,6 +267,22 @@ type CreateWorkspaceAgentPresetVersionRequest struct {
 	AllowedTools          json.RawMessage `json:"allowed_tools"`
 	SupportedModes        json.RawMessage `json:"supported_modes"`
 	ApprovalMode          *string         `json:"approval_mode"`
+	DefaultInvocationMode *string         `json:"default_invocation_mode"`
+}
+
+type UpdateWorkspaceAgentPresetVersionRequest struct {
+	// Label changes are regular edits. The backend does not maintain rename-specific history.
+	Label                 *string         `json:"label"`
+	Description           *string         `json:"description"`
+	RuntimeKind           *string         `json:"runtime_kind"`
+	Provider              *string         `json:"provider"`
+	Model                 *string         `json:"model"`
+	ExecutionConfig       json.RawMessage `json:"execution_config"`
+	SystemPrompt          *string         `json:"system_prompt"`
+	InstructionPreamble   *string         `json:"instruction_preamble"`
+	InstructionSkills     json.RawMessage `json:"instruction_skills"`
+	AllowedTools          json.RawMessage `json:"allowed_tools"`
+	SupportedModes        json.RawMessage `json:"supported_modes"`
 	DefaultInvocationMode *string         `json:"default_invocation_mode"`
 }
 
@@ -537,6 +556,7 @@ type RuntimeProfile struct {
 
 // AgentPresetDefinition describes a preset/template for a generic agent.
 type AgentPresetDefinition struct {
+	ID                         *string  `json:"id,omitempty"`
 	Key                        string   `json:"key"`
 	FamilyKey                  string   `json:"family_key"`
 	VersionKey                 string   `json:"version_key"`

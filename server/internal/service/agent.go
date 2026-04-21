@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/gorm"
+
 	"github.com/helpin-ai/helpin/server/internal/automationcatalog"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -37,6 +39,11 @@ const staleQueuedRunThreshold = 30 * time.Second
 const liveCodexPauseHeartbeatFreshThreshold = 2 * time.Minute
 const defaultSystemEpicPlannerName = "Atlas"
 const supportAutoTriggerType = "support.auto"
+
+var (
+	ErrWorkspacePresetVersionNotFound = errors.New("workspace preset version not found")
+	ErrWorkspacePresetVersionPinned   = errors.New("workspace preset version is pinned")
+)
 
 func defaultSystemAgentNameForPresetKey(presetKey string) string {
 	switch normalizePresetKey(presetKey) {
@@ -310,15 +317,45 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 	}
 
 	presetKey = normalizePresetKey(presetKey)
-	presetVersionKey := defaultPresetVersionKeyForPresetKey(presetKey)
-	preset, ok := s.resolvePresetDefinition(ctx, workspaceID, presetKey, presetVersionKey)
-	if !ok {
-		return nil, fmt.Errorf("unsupported built-in preset %q", presetKey)
-	}
+	productDefaultVersionKey := defaultPresetVersionKeyForPresetKey(presetKey)
 
 	existing, err := s.agentRepo.GetSystemByPreset(ctx, workspaceID, presetKey)
 	if err != nil {
 		return nil, err
+	}
+	presetVersionKey := productDefaultVersionKey
+	if existing != nil {
+		currentVersionKey := normalizePresetVersionKey(existing.PresetVersionKey)
+		if currentVersionKey != "" && currentVersionKey != productDefaultVersionKey {
+			workspaceVersionResolved := false
+			if s.workspacePresetVersionRepo != nil && strings.TrimSpace(workspaceID) != "" {
+				version, lookupErr := s.workspacePresetVersionRepo.GetByVersionKey(ctx, workspaceID, presetKey, currentVersionKey)
+				if lookupErr != nil {
+					slog.ErrorContext(ctx, "failed to resolve workspace preset version during reconcile",
+						"workspace_id", workspaceID,
+						"preset_key", presetKey,
+						"version_key", currentVersionKey,
+						"error", lookupErr,
+					)
+				} else if version != nil {
+					workspaceVersionResolved = true
+				}
+			}
+			if workspaceVersionResolved {
+				presetVersionKey = currentVersionKey
+			} else if _, resolved := agentPresetVersionDefinition(presetKey, currentVersionKey); !resolved {
+				slog.WarnContext(ctx, "falling back to product default preset version during reconcile",
+					"workspace_id", workspaceID,
+					"preset_key", presetKey,
+					"missing_version_key", currentVersionKey,
+					"fallback_version_key", productDefaultVersionKey,
+				)
+			}
+		}
+	}
+	preset, ok := s.resolvePresetDefinition(ctx, workspaceID, presetKey, presetVersionKey)
+	if !ok {
+		return nil, fmt.Errorf("unsupported built-in preset %q", presetKey)
 	}
 	if existing != nil {
 		changed := false
@@ -1234,7 +1271,369 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 		return nil, err
 	}
 	definition := workspacePresetDefinition(basePreset, *version)
+	slog.InfoContext(ctx, "workspace preset version created",
+		"workspace_id", workspaceID,
+		"family_key", familyKey,
+		"version_key", version.VersionKey,
+		"actor_id", strings.TrimSpace(actorID),
+	)
 	return &definition, nil
+}
+
+func workspacePresetBaseDefinition(familyKey string) (model.AgentPresetDefinition, error) {
+	base, ok := agentPresetVersionDefinition(familyKey, defaultPresetVersionKeyForPresetKey(familyKey))
+	if !ok {
+		return model.AgentPresetDefinition{}, fmt.Errorf("unsupported preset family %q", familyKey)
+	}
+	return base, nil
+}
+
+func workspacePresetCurrentDefinition(version *model.WorkspaceAgentPresetVersion) (model.AgentPresetDefinition, error) {
+	if version == nil {
+		return model.AgentPresetDefinition{}, fmt.Errorf("workspace preset version is required")
+	}
+	base, err := workspacePresetBaseDefinition(normalizePresetKey(version.FamilyKey))
+	if err != nil {
+		return model.AgentPresetDefinition{}, err
+	}
+	return workspacePresetDefinition(base, *version), nil
+}
+
+func (s *AgentService) cloneWithTx(tx *gorm.DB) *AgentService {
+	if tx == nil {
+		return s
+	}
+	clone := *s
+	if s.agentRepo != nil {
+		clone.agentRepo = s.agentRepo.WithTx(tx)
+	}
+	if s.workspacePresetVersionRepo != nil {
+		clone.workspacePresetVersionRepo = s.workspacePresetVersionRepo.WithTx(tx)
+	}
+	return &clone
+}
+
+func (s *AgentService) applyPresetToSystemAgent(agent *model.Agent, preset model.AgentPresetDefinition, presetVersionKey string) {
+	if agent == nil {
+		return
+	}
+	systemPresetKey := normalizePresetKey(agent.PresetKey)
+	if systemPresetKey == "" {
+		systemPresetKey = normalizePresetKey(preset.FamilyKey)
+	}
+	if systemPresetKey == "" {
+		systemPresetKey = model.AgentPresetEpicPlanner
+	}
+	presetVersionKey = normalizePresetVersionKey(presetVersionKey)
+	if presetVersionKey == "" {
+		presetVersionKey = defaultPresetVersionKeyForPresetKey(systemPresetKey)
+	}
+
+	agent.PresetKey = systemPresetKey
+	agent.PresetVersionKey = presetVersionKey
+	if strings.TrimSpace(preset.RuntimeKind) != "" {
+		agent.RuntimeKind = preset.RuntimeKind
+	} else {
+		agent.RuntimeKind = defaultRuntimeKindForPresetKey(systemPresetKey)
+	}
+	if strings.TrimSpace(preset.DefaultTriggerMode) != "" {
+		agent.TriggerMode = preset.DefaultTriggerMode
+	} else {
+		agent.TriggerMode = defaultTriggerModeForPresetKey(systemPresetKey)
+	}
+	agent.Provider = trimPtr(preset.Provider)
+	agent.Model = trimPtr(preset.Model)
+	agent.ExecutionConfig = normalizeExecutionConfigJSON(preset.ExecutionConfig)
+	agent.AllowedTools = normalizeAllowedToolsJSON(mustJSONStringSlice(preset.AllowedTools))
+	agent.AllowedCommands = mustJSONStringSlice(preset.AllowedCommands)
+	agent.AllowedTargets = mustJSONStringSlice(preset.AllowedTargetTypes)
+	agent.TeamID = nil
+	agent.Schedule = nil
+	agent.ApprovalMode = "never"
+	agent.DefaultInvocationMode = preset.DefaultInvocationMode
+	if preset.Scope == "workspace" {
+		agent.SystemPrompt = preset.SystemPrompt
+		agent.InstructionTemplateVersion = preset.InstructionTemplateVersion
+	} else {
+		agent.SystemPrompt, agent.InstructionTemplateVersion = syncManagedSystemPromptForPreset(systemPresetKey, agent.SystemPrompt, agent.PlanningNotes, agent.InstructionTemplateVersion)
+	}
+	agent.PlanningNotes = nil
+}
+
+func (s *AgentService) validateSystemAgentPresetState(ctx context.Context, agent *model.Agent, preset model.AgentPresetDefinition) error {
+	if agent == nil {
+		return nil
+	}
+	normalizeAgentRecord(agent)
+	if err := s.validateAndMaterializeAgentSkills(ctx, agent); err != nil {
+		return err
+	}
+	if err := validateAgentPresetKey(agent.PresetKey); err != nil {
+		return err
+	}
+	if err := validateRuntimeForAgentWithPreset(agent, &preset); err != nil {
+		return err
+	}
+	if err := validateTriggerModeForAgent(agent.TriggerMode, agent); err != nil {
+		return err
+	}
+	if err := s.validateModelRouting(agent); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *AgentService) propagateWorkspacePresetVersionToPinnedAgents(ctx context.Context, workspaceID string, version *model.WorkspaceAgentPresetVersion, preset model.AgentPresetDefinition) error {
+	if s.agentRepo == nil || version == nil {
+		return nil
+	}
+	agents, err := s.agentRepo.List(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+	for idx := range agents {
+		agent := &agents[idx]
+		if !agent.IsSystem {
+			continue
+		}
+		if normalizePresetKey(agent.PresetKey) != normalizePresetKey(version.FamilyKey) {
+			continue
+		}
+		if normalizePresetVersionKey(agent.PresetVersionKey) != normalizePresetVersionKey(version.VersionKey) {
+			continue
+		}
+		s.applyPresetToSystemAgent(agent, preset, version.VersionKey)
+		if err := s.validateSystemAgentPresetState(ctx, agent, preset); err != nil {
+			return err
+		}
+		if err := s.agentRepo.Update(ctx, agent); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// UpdateWorkspacePresetVersion applies ordinary edits to a workspace preset version.
+// Label changes are treated like any other edit and are tracked only via UpdatedBy/LastEditedAt.
+func (s *AgentService) UpdateWorkspacePresetVersion(ctx context.Context, workspaceID, versionID string, req model.UpdateWorkspaceAgentPresetVersionRequest, actorID string) (*model.AgentPresetDefinition, error) {
+	if s.workspacePresetVersionRepo == nil {
+		return nil, fmt.Errorf("workspace preset version repository is not configured")
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	versionID = strings.TrimSpace(versionID)
+	if workspaceID == "" || versionID == "" {
+		return nil, fmt.Errorf("workspace_id and version id are required")
+	}
+
+	var definition *model.AgentPresetDefinition
+	txDB := s.workspacePresetVersionRepo.DB()
+	if txDB == nil {
+		return nil, fmt.Errorf("workspace preset version repository db is not configured")
+	}
+	if err := txDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		txSvc := s.cloneWithTx(tx)
+
+		version, err := txSvc.workspacePresetVersionRepo.GetByID(ctx, workspaceID, versionID)
+		if err != nil {
+			return err
+		}
+		if version == nil {
+			return fmt.Errorf("%w: version %q not found", ErrWorkspacePresetVersionNotFound, versionID)
+		}
+
+		currentPreset, err := workspacePresetCurrentDefinition(version)
+		if err != nil {
+			return err
+		}
+		familyKey := normalizePresetKey(version.FamilyKey)
+
+		label := strings.TrimSpace(currentPreset.VersionLabel)
+		if req.Label != nil {
+			label = strings.TrimSpace(*req.Label)
+		}
+		if label == "" {
+			return fmt.Errorf("label is required")
+		}
+
+		runtimeKind := strings.TrimSpace(currentPreset.RuntimeKind)
+		if req.RuntimeKind != nil {
+			runtimeKind = strings.TrimSpace(*req.RuntimeKind)
+		}
+		if runtimeKind == "" {
+			runtimeKind = currentPreset.RuntimeKind
+		}
+		if err := validateRuntimeKind(runtimeKind); err != nil {
+			return err
+		}
+		if !runtimeAllowedForPreset(familyKey, runtimeKind) {
+			return fmt.Errorf("runtime_kind %q is not supported for family %q", runtimeKind, familyKey)
+		}
+
+		supportedModes := slices.Clone(currentPreset.SupportedModes)
+		if len(req.SupportedModes) > 0 {
+			supportedModes = parseJSONStringSlice(req.SupportedModes)
+		}
+		normalizedSupportedModes, err := validateSupportedModes(runtimeKind, supportedModes)
+		if err != nil {
+			return err
+		}
+
+		defaultInvocationMode := strings.TrimSpace(currentPreset.DefaultInvocationMode)
+		if req.DefaultInvocationMode != nil {
+			defaultInvocationMode = strings.TrimSpace(*req.DefaultInvocationMode)
+		}
+		if defaultInvocationMode == "" {
+			defaultInvocationMode = currentPreset.DefaultInvocationMode
+		}
+		if !slices.Contains(normalizedSupportedModes, defaultInvocationMode) {
+			return fmt.Errorf("default_invocation_mode %q must be included in supported_modes", defaultInvocationMode)
+		}
+
+		version.Label = label
+		if req.Description != nil {
+			version.Description = trimPtr(req.Description)
+		} else {
+			version.Description = trimPtr(&currentPreset.Description)
+		}
+		version.RuntimeKind = runtimeKind
+		if req.Provider != nil {
+			version.Provider = trimPtr(req.Provider)
+		} else {
+			version.Provider = trimPtr(currentPreset.Provider)
+		}
+		if req.Model != nil {
+			modelValue := strings.TrimSpace(*req.Model)
+			version.Model = &modelValue
+		} else if currentPreset.Model != nil {
+			modelValue := strings.TrimSpace(*currentPreset.Model)
+			version.Model = &modelValue
+		} else {
+			version.Model = nil
+		}
+		if req.ExecutionConfig != nil {
+			version.ExecutionConfig = normalizeExecutionConfigJSON(req.ExecutionConfig)
+		} else {
+			version.ExecutionConfig = normalizeExecutionConfigJSON(currentPreset.ExecutionConfig)
+		}
+		if len(req.AllowedTools) > 0 {
+			version.AllowedTools = normalizeAllowedToolsJSON(normalizeJSONSlice(req.AllowedTools))
+		} else {
+			version.AllowedTools = normalizeAllowedToolsJSON(mustJSONStringSlice(currentPreset.AllowedTools))
+		}
+		version.SupportedModes = mustJSONStringSlice(normalizedSupportedModes)
+		version.DefaultInvocationMode = defaultInvocationMode
+		version.ApprovalMode = "never"
+
+		hasPreamble := req.InstructionPreamble != nil
+		hasSkills := len(req.InstructionSkills) > 0
+		if hasPreamble || hasSkills {
+			preamble := currentPreset.InstructionPreamble
+			if req.InstructionPreamble != nil {
+				preamble = strings.TrimSpace(*req.InstructionPreamble)
+			}
+			skills := slices.Clone(currentPreset.InstructionSkills)
+			if hasSkills {
+				skills = parseJSONStringSlice(req.InstructionSkills)
+			}
+			version.InstructionPreamble = trimPtr(&preamble)
+			version.InstructionSkills = mustJSONStringSlice(skills)
+			compiled := worker.CompilePresetInstructions(preamble, skills)
+			version.SystemPrompt = &compiled
+			version.InstructionTemplateVersion = worker.InstructionTemplateVersionForPreset(preamble, skills)
+		} else if req.SystemPrompt != nil {
+			version.SystemPrompt = trimPtr(req.SystemPrompt)
+			version.InstructionTemplateVersion = ""
+			version.InstructionPreamble = trimPtr(&currentPreset.InstructionPreamble)
+			version.InstructionSkills = mustJSONStringSlice(currentPreset.InstructionSkills)
+		} else {
+			version.SystemPrompt = trimPtr(currentPreset.SystemPrompt)
+			version.InstructionTemplateVersion = strings.TrimSpace(currentPreset.InstructionTemplateVersion)
+			version.InstructionPreamble = trimPtr(&currentPreset.InstructionPreamble)
+			version.InstructionSkills = mustJSONStringSlice(currentPreset.InstructionSkills)
+		}
+
+		now := time.Now().UTC()
+		version.UpdatedBy = trimPtr(&actorID)
+		version.LastEditedAt = &now
+
+		currentDefinition, err := workspacePresetCurrentDefinition(version)
+		if err != nil {
+			return err
+		}
+		versionValidationAgent := &model.Agent{
+			IsSystem:  true,
+			PresetKey: familyKey,
+		}
+		txSvc.applyPresetToSystemAgent(versionValidationAgent, currentDefinition, version.VersionKey)
+		if err := txSvc.validateSystemAgentPresetState(ctx, versionValidationAgent, currentDefinition); err != nil {
+			return err
+		}
+		if err := txSvc.workspacePresetVersionRepo.Update(ctx, version); err != nil {
+			return err
+		}
+		if err := txSvc.propagateWorkspacePresetVersionToPinnedAgents(ctx, workspaceID, version, currentDefinition); err != nil {
+			return err
+		}
+		definition = &currentDefinition
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	slog.InfoContext(ctx, "workspace preset version updated",
+		"workspace_id", workspaceID,
+		"family_key", normalizePresetKey(definition.FamilyKey),
+		"version_key", definition.VersionKey,
+		"actor_id", strings.TrimSpace(actorID),
+	)
+	return definition, nil
+}
+
+func (s *AgentService) DeleteWorkspacePresetVersion(ctx context.Context, workspaceID, versionID, actorID string) error {
+	if s.workspacePresetVersionRepo == nil {
+		return fmt.Errorf("workspace preset version repository is not configured")
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	versionID = strings.TrimSpace(versionID)
+	if workspaceID == "" || versionID == "" {
+		return fmt.Errorf("workspace_id and version id are required")
+	}
+
+	version, err := s.workspacePresetVersionRepo.GetByID(ctx, workspaceID, versionID)
+	if err != nil {
+		return err
+	}
+	if version == nil {
+		return fmt.Errorf("%w: version %q not found", ErrWorkspacePresetVersionNotFound, versionID)
+	}
+
+	agents, err := s.agentRepo.List(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+	for _, agent := range agents {
+		if !agent.IsSystem {
+			continue
+		}
+		if normalizePresetKey(agent.PresetKey) != normalizePresetKey(version.FamilyKey) {
+			continue
+		}
+		if normalizePresetVersionKey(agent.PresetVersionKey) != strings.TrimSpace(version.VersionKey) {
+			continue
+		}
+		return fmt.Errorf("%w: cannot delete preset version while pinned to %s", ErrWorkspacePresetVersionPinned, strings.TrimSpace(agent.Name))
+	}
+
+	if err := s.workspacePresetVersionRepo.Delete(ctx, workspaceID, versionID); err != nil {
+		return err
+	}
+	slog.InfoContext(ctx, "workspace preset version deleted",
+		"workspace_id", workspaceID,
+		"family_key", normalizePresetKey(version.FamilyKey),
+		"version_key", strings.TrimSpace(version.VersionKey),
+		"actor_id", strings.TrimSpace(actorID),
+	)
+	return nil
 }
 
 // ListToolCatalog returns the tool catalog with categories and preset mappings.
@@ -1464,6 +1863,9 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 		resolvedPresetVersionKey = defaultPresetVersionKeyForPresetKey(resolvedPresetKey)
 	}
 	preset, hasPreset := s.resolvePresetDefinition(ctx, workspaceID, resolvedPresetKey, resolvedPresetVersionKey)
+	if agent.IsSystem && req.PresetVersionKey != nil && !hasPreset {
+		return nil, fmt.Errorf("%w: preset version %q no longer exists", ErrWorkspacePresetVersionNotFound, resolvedPresetVersionKey)
+	}
 	if agent.IsSystem && req.RuntimeKind != nil && strings.TrimSpace(*req.RuntimeKind) != "" {
 		expectedRuntimeKind := defaultRuntimeKindForPresetKey(resolvedPresetKey)
 		if hasPreset && strings.TrimSpace(preset.RuntimeKind) != "" {
@@ -1568,28 +1970,27 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 			systemPresetKey = model.AgentPresetEpicPlanner
 		}
 		agent.PresetKey = systemPresetKey
-		agent.PresetVersionKey = resolvedPresetVersionKey
-		if hasPreset && strings.TrimSpace(preset.RuntimeKind) != "" {
-			agent.RuntimeKind = preset.RuntimeKind
+		if hasPreset {
+			s.applyPresetToSystemAgent(agent, preset, resolvedPresetVersionKey)
+			if req.Provider != nil {
+				agent.Provider = trimPtr(req.Provider)
+			}
+			if req.Model != nil {
+				agent.Model = trimPtr(req.Model)
+			}
+			if req.ExecutionConfig != nil {
+				agent.ExecutionConfig = normalizeExecutionConfigJSON(req.ExecutionConfig)
+			}
 		} else {
+			agent.PresetVersionKey = resolvedPresetVersionKey
 			agent.RuntimeKind = defaultRuntimeKindForPresetKey(systemPresetKey)
-		}
-		if hasPreset && strings.TrimSpace(preset.DefaultTriggerMode) != "" {
-			agent.TriggerMode = preset.DefaultTriggerMode
-		} else {
 			agent.TriggerMode = defaultTriggerModeForPresetKey(systemPresetKey)
-		}
-		agent.TeamID = nil
-		agent.Schedule = nil
-		agent.ApprovalMode = "never"
-		if hasPreset && preset.Scope == "workspace" {
-			// Workspace version owns its own prompt — use it directly.
-			agent.SystemPrompt = preset.SystemPrompt
-			agent.InstructionTemplateVersion = preset.InstructionTemplateVersion
-		} else {
+			agent.TeamID = nil
+			agent.Schedule = nil
+			agent.ApprovalMode = "never"
 			agent.SystemPrompt, agent.InstructionTemplateVersion = syncManagedSystemPromptForPreset(systemPresetKey, agent.SystemPrompt, agent.PlanningNotes, agent.InstructionTemplateVersion)
+			agent.PlanningNotes = nil
 		}
-		agent.PlanningNotes = nil
 	} else {
 		agent.SourcePresetKey = ""
 		agent.SourcePresetVersionKey = ""
