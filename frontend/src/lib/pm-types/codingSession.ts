@@ -10,6 +10,33 @@ export type CodingSessionInteractionKind =
 
 export type CodingSessionInteractionStatus = 'pending' | 'resolved' | 'cancelled';
 
+export interface CodingSessionReviewFinding {
+  id: string;
+  title: string;
+  body: string;
+  priority?: string;
+  confidence?: string;
+  code_location?: string;
+}
+
+export interface CodingSessionReviewCheckpointRequestPayload {
+  phase?: string;
+  title?: string;
+  summary?: string;
+  findings?: CodingSessionReviewFinding[];
+  overall_correctness?: string;
+  overall_explanation?: string;
+  overall_confidence_score?: number;
+}
+
+export interface CodingSessionReviewCheckpointResponsePayload {
+  [key: string]: unknown;
+  decision: 'approve' | 'request_changes';
+  message?: string;
+  selection_mode?: 'all' | 'selected';
+  selected_finding_ids?: string[];
+}
+
 export interface CodingSessionInteraction {
   interaction_id: string;
   interaction_kind: CodingSessionInteractionKind;

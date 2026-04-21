@@ -219,7 +219,7 @@ func renderOpenAIConfig(def SkillDefinition) (string, bool, error) {
 	cfg := skillOpenAIConfig{}
 	cfg.Interface = def.Interface
 	cfg.Policy = def.Policy
-	if cfg.Interface == (SkillInterface{}) && cfg.Policy == (SkillPolicy{}) {
+	if cfg.Interface == (SkillInterface{}) && skillPolicyIsZero(cfg.Policy) {
 		return "", false, nil
 	}
 	payload, err := yaml.Marshal(cfg)
@@ -227,6 +227,12 @@ func renderOpenAIConfig(def SkillDefinition) (string, bool, error) {
 		return "", false, fmt.Errorf("marshal skill openai config: %w", err)
 	}
 	return string(payload), true, nil
+}
+
+func skillPolicyIsZero(policy SkillPolicy) bool {
+	return policy.AllowImplicitInvocation == nil &&
+		len(policy.CompletionRequiresInteractionKinds) == 0 &&
+		len(policy.InteractionContracts) == 0
 }
 
 func normalizeArchivePath(name string) (string, error) {

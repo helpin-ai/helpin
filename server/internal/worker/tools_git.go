@@ -6,10 +6,18 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
+)
+
+const (
+	gitCommandTimeout        = 60 * time.Second
+	staleGitIndexLockMinAge = gitCommandTimeout + 5*time.Second
 )
 
 func toolCreateBranch(ctx *ExecutionContext, input json.RawMessage) (string, error) {
@@ -167,7 +175,21 @@ func createGitHubPR(ctx *ExecutionContext, title, body, head, base string) (stri
 }
 
 func runGit(ctx *ExecutionContext, args ...string) (string, error) {
-	cmdCtx, cancel := context.WithTimeout(ctx.Context, 60*time.Second)
+	out, err := runGitOnce(ctx, args...)
+	if err == nil || !isGitIndexLockError(out, err) {
+		return out, err
+	}
+
+	recovered, recoveryErr := recoverStaleGitIndexLock(ctx)
+	if recoveryErr != nil || !recovered {
+		return out, err
+	}
+
+	return runGitOnce(ctx, args...)
+}
+
+func runGitOnce(ctx *ExecutionContext, args ...string) (string, error) {
+	cmdCtx, cancel := context.WithTimeout(ctx.Context, gitCommandTimeout)
 	defer cancel()
 
 	cmdArgs := append(gitAuthArgs(ctx), args...)
@@ -176,6 +198,76 @@ func runGit(ctx *ExecutionContext, args ...string) (string, error) {
 
 	out, err := cmd.CombinedOutput()
 	return string(out), err
+}
+
+func isGitIndexLockError(output string, err error) bool {
+	if err == nil {
+		return false
+	}
+	normalized := strings.ToLower(output)
+	return strings.Contains(normalized, "index.lock") &&
+		(strings.Contains(normalized, "another git process seems to be running") ||
+			strings.Contains(normalized, "unable to create"))
+}
+
+func recoverStaleGitIndexLock(ctx *ExecutionContext) (bool, error) {
+	gitDir, err := resolveGitDirPath(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	lockPath := filepath.Join(gitDir, "index.lock")
+	info, err := os.Stat(lockPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	if time.Since(info.ModTime()) < staleGitIndexLockMinAge {
+		return false, nil
+	}
+
+	if err := os.Remove(lockPath); err != nil {
+		return false, err
+	}
+
+	if ctx != nil {
+		slog.WarnContext(ctx.Context, "removed stale git index lock before retrying git command",
+			"work_dir", ctx.WorkDir,
+			"lock_path", lockPath,
+			"lock_age_seconds", time.Since(info.ModTime()).Seconds())
+	}
+
+	return true, nil
+}
+
+func resolveGitDirPath(ctx *ExecutionContext) (string, error) {
+	if ctx == nil || strings.TrimSpace(ctx.WorkDir) == "" {
+		return "", fmt.Errorf("workdir is required to resolve git directory")
+	}
+
+	cmdCtx, cancel := context.WithTimeout(ctx.Context, 10*time.Second)
+	defer cancel()
+
+	cmdArgs := append(gitAuthArgs(ctx), "rev-parse", "--git-dir")
+	cmd := exec.CommandContext(cmdCtx, "git", cmdArgs...)
+	cmd.Dir = ctx.WorkDir
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("resolve git dir: %s", strings.TrimSpace(firstNonEmptyText(string(out), err.Error())))
+	}
+
+	gitDir := strings.TrimSpace(string(out))
+	if gitDir == "" {
+		return "", fmt.Errorf("resolve git dir: git returned an empty path")
+	}
+	if !filepath.IsAbs(gitDir) {
+		gitDir = filepath.Join(ctx.WorkDir, gitDir)
+	}
+	return filepath.Clean(gitDir), nil
 }
 
 func gitAuthArgs(ctx *ExecutionContext) []string {

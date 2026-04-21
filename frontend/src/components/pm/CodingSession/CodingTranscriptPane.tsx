@@ -4,6 +4,7 @@ import { UnicodeSpinner } from '@/components/pm/CodingSession/UnicodeSpinner';
 import {
   BotIcon,
   SourceCodeIcon,
+  File01Icon,
   Loading01Icon,
   ArrowUp02Icon,
   TerminalIcon,
@@ -12,7 +13,6 @@ import {
   LockKeyIcon,
   RadioIcon,
   Wrench01Icon,
-  File01Icon,
 } from '@/lib/icons';
 
 import { Badge } from '@/components/ui/badge';
@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import type {
+  AgentRunArtifact,
   CodingSession,
   CodingSessionActor,
   CodingSessionInteraction,
@@ -32,6 +33,7 @@ import type {
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { formatCodingSessionRelative } from './codingSessionUtils';
 import { ApplyPatchDiff } from './ApplyPatchDiff';
+import { AgentRunArtifactView } from '@/components/pm/AgentRunArtifactView';
 import { CodingInteractionCard } from './CodingInteractionCard';
 import { MarkdownContent } from './MarkdownContent';
 import { PublishedToolPreviewCard } from './PublishedToolPreviewCard';
@@ -80,6 +82,8 @@ function partitionTurnSegments(segments: CodingSessionLiveTurnSegment[]): Segmen
 }
 
 export function CodingTranscriptPane({
+  promptArtifact,
+  reviewArtifacts = [],
   transcriptMessages,
   liveAssistantMessage,
   liveReasoningMessage,
@@ -95,6 +99,11 @@ export function CodingTranscriptPane({
   onAuthCancel,
   onResolveInteraction,
 }: {
+  promptArtifact?: AgentRunArtifact | null;
+  reviewArtifacts?: Array<{
+    artifact: AgentRunArtifact;
+    decisionArtifact?: AgentRunArtifact | null;
+  }>;
   transcriptMessages: CodingSessionTranscriptMessage[];
   liveAssistantMessage: CodingSessionLiveAssistantMessage | null;
   liveReasoningMessage: CodingSessionLiveReasoningMessage | null;
@@ -119,10 +128,25 @@ export function CodingTranscriptPane({
     return segment.tool_call.tool_name !== 'update_plan';
   });
   const showLivePlaceholder = visibleLiveSegments.length === 0 && liveAssistantMessage?.status === 'streaming';
+  const developerPromptMessage = useMemo<CodingSessionTranscriptMessage | null>(() => {
+    const sections = parsePromptArtifactSections(promptArtifact?.inline_content);
+    const developerPrompt = sections.find((section) => section.label === 'Developer prompt');
+    if (!developerPrompt) return null;
+    return {
+      event_id: `prompt:${promptArtifact?.id ?? 'developer'}`,
+      message_id: `prompt:${promptArtifact?.id ?? 'developer'}`,
+      role: 'user',
+      message_type: 'developer_prompt',
+      content: developerPrompt.content,
+      timestamp: promptArtifact?.created_at ?? new Date().toISOString(),
+      sequence_no: Number.MIN_SAFE_INTEGER,
+    };
+  }, [promptArtifact]);
 
   // Build a flat list of all renderable items for the virtualizer.
   type VirtualItem =
     | { kind: 'transcript'; message: CodingSessionTranscriptMessage }
+    | { kind: 'review-artifact'; artifact: AgentRunArtifact; decisionArtifact?: AgentRunArtifact | null }
     | { kind: 'thinking'; reasoning: CodingSessionLiveReasoningMessage }
     | { kind: 'live-message'; segment: CodingSessionLiveTurnSegment }
     | { kind: 'live-tool'; segment: CodingSessionLiveTurnSegment; isLast: boolean }
@@ -131,8 +155,18 @@ export function CodingTranscriptPane({
 
   const items = useMemo((): VirtualItem[] => {
     const list: VirtualItem[] = [];
+    if (developerPromptMessage) {
+      list.push({ kind: 'transcript', message: developerPromptMessage });
+    }
     for (const message of transcriptMessages) {
       list.push({ kind: 'transcript', message });
+    }
+    for (const reviewArtifact of reviewArtifacts) {
+      list.push({
+        kind: 'review-artifact',
+        artifact: reviewArtifact.artifact,
+        decisionArtifact: reviewArtifact.decisionArtifact,
+      });
     }
     if (liveReasoningMessage) {
       list.push({ kind: 'thinking', reasoning: liveReasoningMessage });
@@ -152,7 +186,7 @@ export function CodingTranscriptPane({
       list.push({ kind: 'empty' });
     }
     return list;
-  }, [transcriptMessages, liveReasoningMessage, visibleLiveSegments, showLivePlaceholder, loading]);
+  }, [developerPromptMessage, transcriptMessages, reviewArtifacts, liveReasoningMessage, visibleLiveSegments, showLivePlaceholder, loading]);
 
   const virtualizer = useVirtualizer({
     count: items.length,
@@ -222,6 +256,8 @@ export function CodingTranscriptPane({
         return <TranscriptEntry message={item.message} actor={triggeredBy} />;
       case 'thinking':
         return <ThinkingStrip reasoning={item.reasoning} />;
+      case 'review-artifact':
+        return <ReviewArtifactEntry artifact={item.artifact} decisionArtifact={item.decisionArtifact} />;
       case 'live-message': {
         const seg = item.segment;
         if (seg.kind !== 'assistant_message') return null;
@@ -282,15 +318,16 @@ export function CodingTranscriptPane({
           Transcript
         </div>
         <Badge variant="outline" className="text-[10px]">
-          {transcriptMessages.length + (visibleLiveSegments.length > 0 || showLivePlaceholder ? 1 : 0)} turns
+          {transcriptMessages.length + (developerPromptMessage ? 1 : 0) + (visibleLiveSegments.length > 0 || showLivePlaceholder ? 1 : 0)} turns
         </Badge>
       </div>
 
       <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-auto pt-3">
-        <div
-          className="relative mx-auto w-full max-w-4xl px-4"
-          style={{ height: virtualizer.getTotalSize() }}
-        >
+        <div className="mx-auto flex w-full max-w-4xl flex-col gap-3 px-4">
+          <div
+            className="relative w-full"
+            style={{ height: virtualizer.getTotalSize() }}
+          >
           {virtualizer.getVirtualItems().map((virtualRow) => {
             const item = items[virtualRow.index];
             return (
@@ -313,6 +350,7 @@ export function CodingTranscriptPane({
               </div>
             );
           })}
+          </div>
         </div>
       </div>
 
@@ -334,6 +372,78 @@ export function CodingTranscriptPane({
       ) : null}
     </section>
   );
+}
+
+function ReviewArtifactEntry({
+  artifact,
+  decisionArtifact,
+}: {
+  artifact: AgentRunArtifact;
+  decisionArtifact?: AgentRunArtifact | null;
+}) {
+  return (
+    <div className="ml-auto w-full max-w-[90%] rounded-2xl border border-border bg-card px-4 py-3 shadow-sm">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          Review history
+        </div>
+        <div className="text-[11px] text-muted-foreground">
+          {formatCodingSessionRelative(artifact.created_at)}
+        </div>
+      </div>
+      <AgentRunArtifactView artifact={artifact} reviewDecisionArtifact={decisionArtifact} maxContentHeight="max-h-96" />
+    </div>
+  );
+}
+
+function parsePromptArtifactSections(raw: string | null | undefined) {
+  if (!raw) return [] as Array<{ label: string; content: string }>;
+
+  const lines = raw.split('\n');
+  const sections: Array<{ label: string; content: string }> = [];
+  let currentLabel: string | null = null;
+  let currentLines: string[] = [];
+
+  const normalizeLabel = (line: string) => {
+    switch (line) {
+      case 'Developer instructions:':
+      case 'Developer prompt:':
+        return 'Developer prompt';
+      case 'Turn input:':
+      case 'User prompt:':
+        return 'User prompt';
+      case 'Pending request replay:':
+        return 'Pending request replay';
+      default:
+        return line.slice(0, -1);
+    }
+  };
+
+  const flush = () => {
+    if (!currentLabel) return;
+    const content = currentLines.join('\n').trim();
+    if (content) {
+      sections.push({ label: currentLabel, content });
+    }
+  };
+
+  for (const line of lines) {
+    if (
+      line === 'Developer instructions:'
+      || line === 'Developer prompt:'
+      || line === 'Turn input:'
+      || line === 'User prompt:'
+      || line === 'Pending request replay:'
+    ) {
+      flush();
+      currentLabel = normalizeLabel(line);
+      currentLines = [];
+      continue;
+    }
+    currentLines.push(line);
+  }
+  flush();
+  return sections;
 }
 
 function InterruptionOverlay({
@@ -595,6 +705,14 @@ function TranscriptEntry({
     );
   }
 
+  if (message.message_type === 'developer_prompt') {
+    return <DeveloperPromptTranscriptCard content={message.content} timestamp={message.timestamp} />;
+  }
+
+  if (message.message_type === 'review_checkpoint_resolution') {
+    return <ReviewDecisionTranscriptCard content={message.content} timestamp={message.timestamp} />;
+  }
+
   const actorLabel = actor?.full_name || actor?.email || 'User';
 
   return (
@@ -623,6 +741,54 @@ function TranscriptEntry({
           placeholder={placeholder}
         />
       ) : null}
+    </div>
+  );
+}
+
+function DeveloperPromptTranscriptCard({
+  content,
+  timestamp,
+}: {
+  content: string;
+  timestamp: string;
+}) {
+  return (
+    <div className="w-full max-w-[90%]">
+      <div className="mb-2 flex items-center gap-2 px-1 text-[11px] text-muted-foreground">
+        <span>{formatCodingSessionRelative(timestamp)}</span>
+        <span className="font-medium">Developer prompt</span>
+      </div>
+      <details className="rounded-xl border border-border/70 bg-muted/30 px-4 py-3">
+        <summary className="cursor-pointer list-none text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Developer prompt
+        </summary>
+        <pre className="mt-3 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-5 text-foreground">
+          {content}
+        </pre>
+      </details>
+    </div>
+  );
+}
+
+function ReviewDecisionTranscriptCard({
+  content,
+  timestamp,
+}: {
+  content: string;
+  timestamp: string;
+}) {
+  return (
+    <div className="ml-auto w-full max-w-[90%]">
+      <div className="mb-2 flex items-center justify-end gap-2 px-1 text-[11px] text-muted-foreground">
+        <span>{formatCodingSessionRelative(timestamp)}</span>
+        <span className="font-medium">Review decision</span>
+        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-[10px] text-white">
+          <UserIcon className="h-3 w-3" />
+        </span>
+      </div>
+      <div className="rounded-2xl rounded-br-sm bg-blue-600 px-3.5 py-2.5 text-sm leading-relaxed text-white shadow-sm dark:bg-blue-500">
+        <MarkdownContent content={content} className="text-inherit" />
+      </div>
     </div>
   );
 }
