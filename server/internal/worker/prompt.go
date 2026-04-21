@@ -26,6 +26,29 @@ func resolvedAgentSystemPrompt(agent *model.Agent) string {
 	return ""
 }
 
+func fallbackAgentIdentityPrompt(agent *model.Agent) string {
+	name := "Agent"
+	if agent != nil && strings.TrimSpace(agent.Name) != "" {
+		name = strings.TrimSpace(agent.Name)
+	}
+	return fmt.Sprintf("You are %s, an AI coding agent. You write clean, correct code and follow existing project conventions.", name)
+}
+
+func resolvedAgentIdentityPrompt(agent *model.Agent) string {
+	if agent == nil {
+		return fallbackAgentIdentityPrompt(nil)
+	}
+	if agent.SystemPrompt != nil && strings.TrimSpace(*agent.SystemPrompt) != "" {
+		return strings.TrimSpace(*agent.SystemPrompt)
+	}
+	if bundle, ok := BuiltInPresetSkillBundleForPreset(strings.TrimSpace(agent.EffectivePresetKey())); ok {
+		if strings.TrimSpace(bundle.Preamble) != "" {
+			return strings.TrimSpace(bundle.Preamble)
+		}
+	}
+	return fallbackAgentIdentityPrompt(agent)
+}
+
 type systemPromptOptions struct {
 	IncludeBehaviorInstructions bool
 	IncludeResolvedSkillText    bool
@@ -60,24 +83,21 @@ func buildSystemPromptWithOptions(agent *model.Agent, story *model.PMTask, epic 
 	hasRepoAccess := hasRepoTools(resolvedProfile.Tools)
 	hasFileMutationTools := toolSet["write_file"] || toolSet["edit_file"] || toolSet["apply_patch"]
 
-	basePrompt := ""
 	if options.IncludeBehaviorInstructions {
-		basePrompt = resolvedAgentSystemPrompt(agent)
+		basePrompt := resolvedAgentSystemPrompt(agent)
+		if basePrompt == "" {
+			basePrompt = fallbackAgentIdentityPrompt(agent)
+		}
+		parts = append(parts, basePrompt)
+	} else {
+		parts = append(parts, resolvedAgentIdentityPrompt(agent))
 	}
 	skillInstructions := ""
 	if options.IncludeResolvedSkillText {
 		skillInstructions = strings.TrimSpace(agent.ResolvedSkillInstructions)
 	}
-	if basePrompt != "" {
-		parts = append(parts, basePrompt)
-		if skillInstructions != "" {
-			parts = append(parts, skillInstructions)
-		}
-	} else if skillInstructions != "" {
-		parts = append(parts, fmt.Sprintf("You are %s, an AI coding agent. You write clean, correct code and follow existing project conventions.", agent.Name))
+	if skillInstructions != "" {
 		parts = append(parts, skillInstructions)
-	} else {
-		parts = append(parts, fmt.Sprintf("You are %s, an AI coding agent. You write clean, correct code and follow existing project conventions.", agent.Name))
 	}
 
 	// Story context.

@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import type {
+  AgentRunArtifact,
   CodingSession,
   CodingSessionActor,
   CodingSessionInteraction,
@@ -80,6 +81,7 @@ function partitionTurnSegments(segments: CodingSessionLiveTurnSegment[]): Segmen
 }
 
 export function CodingTranscriptPane({
+  promptArtifact,
   transcriptMessages,
   liveAssistantMessage,
   liveReasoningMessage,
@@ -95,6 +97,7 @@ export function CodingTranscriptPane({
   onAuthCancel,
   onResolveInteraction,
 }: {
+  promptArtifact?: AgentRunArtifact | null;
   transcriptMessages: CodingSessionTranscriptMessage[];
   liveAssistantMessage: CodingSessionLiveAssistantMessage | null;
   liveReasoningMessage: CodingSessionLiveReasoningMessage | null;
@@ -287,10 +290,12 @@ export function CodingTranscriptPane({
       </div>
 
       <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-auto pt-3">
-        <div
-          className="relative mx-auto w-full max-w-4xl px-4"
-          style={{ height: virtualizer.getTotalSize() }}
-        >
+        <div className="mx-auto flex w-full max-w-4xl flex-col gap-3 px-4">
+          {promptArtifact ? <PromptArtifactCard artifact={promptArtifact} /> : null}
+          <div
+            className="relative w-full"
+            style={{ height: virtualizer.getTotalSize() }}
+          >
           {virtualizer.getVirtualItems().map((virtualRow) => {
             const item = items[virtualRow.index];
             return (
@@ -313,6 +318,7 @@ export function CodingTranscriptPane({
               </div>
             );
           })}
+          </div>
         </div>
       </div>
 
@@ -334,6 +340,65 @@ export function CodingTranscriptPane({
       ) : null}
     </section>
   );
+}
+
+function PromptArtifactCard({ artifact }: { artifact: AgentRunArtifact }) {
+  const sections = parsePromptArtifactSections(artifact.inline_content);
+  if (sections.length === 0) return null;
+
+  return (
+    <div className="rounded-xl border border-border/70 bg-muted/30 px-4 py-3">
+      <div className="mb-3 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        <File01Icon className="h-3.5 w-3.5" />
+        Runtime Prompt
+      </div>
+      <div className="space-y-3">
+        {sections.map((section) => (
+          <details key={section.label} className="group rounded-lg border border-border/60 bg-background/70 px-3 py-2" open={section.label === 'Developer instructions'}>
+            <summary className="cursor-pointer list-none text-xs font-medium text-foreground">
+              {section.label}
+            </summary>
+            <pre className="mt-2 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-5 text-muted-foreground">
+              {section.content}
+            </pre>
+          </details>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function parsePromptArtifactSections(raw: string | null | undefined) {
+  if (!raw) return [] as Array<{ label: string; content: string }>;
+
+  const lines = raw.split('\n');
+  const sections: Array<{ label: string; content: string }> = [];
+  let currentLabel: string | null = null;
+  let currentLines: string[] = [];
+
+  const flush = () => {
+    if (!currentLabel) return;
+    const content = currentLines.join('\n').trim();
+    if (content) {
+      sections.push({ label: currentLabel, content });
+    }
+  };
+
+  for (const line of lines) {
+    if (
+      line === 'Developer instructions:'
+      || line === 'Turn input:'
+      || line === 'Pending request replay:'
+    ) {
+      flush();
+      currentLabel = line.slice(0, -1);
+      currentLines = [];
+      continue;
+    }
+    currentLines.push(line);
+  }
+  flush();
+  return sections;
 }
 
 function InterruptionOverlay({

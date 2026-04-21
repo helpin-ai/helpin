@@ -17,7 +17,7 @@ import {
   maxPersistedCodingSessionSequence,
   upsertCodingSessionEvents,
 } from '@/components/pm/CodingSession/codingSessionUtils';
-import type { Agent, CodingSession, CodingSessionEvent, CodingSessionStreamSnapshot } from '@/lib/pmTypes';
+import type { Agent, AgentRunArtifact, CodingSession, CodingSessionEvent, CodingSessionStreamSnapshot } from '@/lib/pmTypes';
 import { agentService } from '@/lib/services/agentService';
 import { codingSessionService } from '@/lib/services/codingSessionService';
 import { cn } from '@/lib/utils';
@@ -49,6 +49,7 @@ export function CodingSessionSurface({
 
   const [session, setSession] = useState<CodingSession | null>(null);
   const [events, setEvents] = useState<CodingSessionEvent[]>([]);
+  const [artifacts, setArtifacts] = useState<AgentRunArtifact[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [acting, setActing] = useState<string | null>(null);
@@ -91,24 +92,32 @@ export function CodingSessionSurface({
     }
   }, [workspaceId, activeSessionId]);
 
+  const loadArtifacts = useCallback(async () => {
+    if (!workspaceId || !activeSessionId) return;
+    const artifactsRes = await codingSessionService.listArtifacts(workspaceId, activeSessionId);
+    if (artifactsRes.error) throw new Error(artifactsRes.error);
+    setArtifacts(artifactsRes.data ?? []);
+  }, [workspaceId, activeSessionId]);
+
   const load = useCallback(async () => {
     if (!workspaceId || !activeSessionId) return;
     setLoading(true);
     setError(null);
     try {
-      await Promise.all([loadSession(), loadEvents(0)]);
+      await Promise.all([loadSession(), loadEvents(0), loadArtifacts()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load agent session');
     } finally {
       setLoading(false);
     }
-  }, [workspaceId, activeSessionId, loadSession, loadEvents]);
+  }, [workspaceId, activeSessionId, loadSession, loadEvents, loadArtifacts]);
 
   useEffect(() => {
     seededSnapshotSessionRef.current = null;
     setStreamSnapshotSeed(null);
     sequenceRef.current = 0;
     setEvents([]);
+    setArtifacts([]);
     setSession(null);
   }, [activeSessionId, workspaceId]);
 
@@ -119,11 +128,11 @@ export function CodingSessionSurface({
   const reconcileEvents = useCallback(async () => {
     if (!workspaceId || !activeSessionId) return;
     try {
-      await loadEvents(sequenceRef.current);
+      await Promise.all([loadEvents(sequenceRef.current), loadArtifacts()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to refresh session events');
     }
-  }, [workspaceId, activeSessionId, loadEvents]);
+  }, [workspaceId, activeSessionId, loadEvents, loadArtifacts]);
 
   useEffect(() => {
     const onSessionUpdated = (raw: Event) => {
@@ -142,6 +151,7 @@ export function CodingSessionSurface({
         updated_at: new Date().toISOString(),
       } : current);
       void loadSession();
+      void loadArtifacts();
     };
     const onSessionEvent = (raw: Event) => {
       const detail = (raw as CustomEvent).detail as { parent_id?: string; data?: CodingSessionEvent } | undefined;
@@ -208,6 +218,15 @@ export function CodingSessionSurface({
     () => collectCodingSessionPreviews(events, streamState.live_turn_segments),
     [events, streamState.live_turn_segments],
   );
+  const promptArtifact = useMemo(() => {
+    for (let index = artifacts.length - 1; index >= 0; index -= 1) {
+      const artifact = artifacts[index];
+      if (artifact?.artifact_type === 'codex_prompt' || artifact?.artifact_type === 'opencode_prompt') {
+        return artifact;
+      }
+    }
+    return null;
+  }, [artifacts]);
 
   const runAction = useCallback(async (name: string, fn: () => Promise<{ error: string | null }>) => {
     setActing(name);
@@ -397,6 +416,7 @@ export function CodingSessionSurface({
 
       <div className="grid min-h-0 flex-1 gap-4 xl:overflow-hidden xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.9fr)]">
         <CodingTranscriptPane
+          promptArtifact={promptArtifact}
           transcriptMessages={streamState.transcript_messages}
           liveAssistantMessage={streamState.live_assistant_message}
           liveReasoningMessage={streamState.live_reasoning_message}

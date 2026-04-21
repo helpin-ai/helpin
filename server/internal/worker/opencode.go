@@ -184,6 +184,7 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 
 	artifactWriter := newOpenCodeArtifactWriter(e, run)
 	artifactWriter.Save(execCtx.Context, "opencode_config", "json", configContent, true)
+	artifactWriter.Save(execCtx.Context, "opencode_prompt", "markdown", buildOpenCodePromptArtifact(systemPrompt, userPrompt), false)
 
 	if execCtx.Heartbeat != nil {
 		_ = execCtx.Heartbeat("opencode_starting")
@@ -499,6 +500,17 @@ func (w *openCodeArtifactWriter) Save(ctx context.Context, artifactType, format,
 	if notify {
 		w.executor.notifyRun(ctx, w.run)
 	}
+}
+
+func buildOpenCodePromptArtifact(systemPrompt, userPrompt string) string {
+	sections := make([]string, 0, 2)
+	if strings.TrimSpace(systemPrompt) != "" {
+		sections = append(sections, "Developer instructions:\n"+strings.TrimSpace(systemPrompt))
+	}
+	if strings.TrimSpace(userPrompt) != "" {
+		sections = append(sections, "Turn input:\n"+strings.TrimSpace(userPrompt))
+	}
+	return strings.TrimSpace(strings.Join(sections, "\n\n"))
 }
 
 func (e *OpenCodeExecutor) persistEngineerWorkspace(execCtx *ExecutionContext, run *model.AgentRun, artifactWriter *openCodeArtifactWriter) error {

@@ -12,6 +12,7 @@ const ARTIFACT_ICONS: Record<string, React.ReactNode> = {
   file_bundle: <FileCodeIcon className="h-3.5 w-3.5" />,
   handoff_note: <File01Icon className="h-3.5 w-3.5" />,
   opencode_config: <File01Icon className="h-3.5 w-3.5" />,
+  opencode_prompt: <File01Icon className="h-3.5 w-3.5" />,
   opencode_stdout: <File01Icon className="h-3.5 w-3.5" />,
   opencode_stderr: <File01Icon className="h-3.5 w-3.5" />,
   codex_config: <File01Icon className="h-3.5 w-3.5" />,
