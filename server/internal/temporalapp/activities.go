@@ -1009,6 +1009,15 @@ func (a *AgentRunActivities) synthesizeCompletionInteractionFallback(ctx context
 		return nil, nil, nil
 	}
 
+	// When multiple interaction handoffs are valid at completion, do not guess.
+	// Follow-up review turns often need request_user_input rather than a fresh
+	// review checkpoint, so let the completion policy trigger a retry instead.
+	if _, hasReviewCheckpoint := requiredKinds[model.AgentRunInteractionKindReviewCheckpoint]; hasReviewCheckpoint {
+		if _, hasUserInput := requiredKinds[model.AgentRunInteractionKindRequestUserInput]; hasUserInput {
+			return nil, nil, nil
+		}
+	}
+
 	if _, ok := requiredKinds[model.AgentRunInteractionKindReviewCheckpoint]; ok {
 		approvalRequest := synthesizedApprovalRequestFromAssistantMessage(state, assistantMessage)
 		if approvalRequest == nil {

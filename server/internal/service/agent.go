@@ -3032,9 +3032,6 @@ func reviewDecisionArtifactFromInteraction(interaction *model.AgentRunInteractio
 	if err := json.Unmarshal(interaction.RequestPayload, &request); err != nil {
 		return nil
 	}
-	if len(request.Findings) == 0 {
-		return nil
-	}
 
 	var response model.ReviewCheckpointResponse
 	if err := json.Unmarshal(interaction.ResponsePayload, &response); err != nil {
@@ -3079,9 +3076,6 @@ func reviewDecisionArtifactFromInteraction(interaction *model.AgentRunInteractio
 			CodeLocation: strings.TrimSpace(finding.CodeLocation),
 			Status:       status,
 		})
-	}
-	if len(findings) == 0 {
-		return nil
 	}
 
 	resolvedAt := time.Now().UTC()
