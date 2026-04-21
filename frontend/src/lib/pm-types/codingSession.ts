@@ -30,6 +30,7 @@ export interface CodingSessionReviewCheckpointRequestPayload {
 }
 
 export interface CodingSessionReviewCheckpointResponsePayload {
+  [key: string]: unknown;
   decision: 'approve' | 'request_changes';
   message?: string;
   selection_mode?: 'all' | 'selected';
