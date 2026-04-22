@@ -6365,26 +6365,7 @@ func (a *AgentRunActivities) buildTaskRunContextSections(ctx context.Context, st
 }
 
 func (a *AgentRunActivities) buildAgenticEpicPlannerInstructions(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
-	var sections []string
-
-	sections = append(sections, fmt.Sprintf("Run mode: %s", state.run.InvocationMode))
-	if state.run.InvocationMode == model.InvocationModeInteractive {
-		sections = append(sections, "The shared run drawer is available for live questions, draft previews, inline approvals, and change requests.")
-		sections = append(sections, "Treat this as one transcript-driven planning run. There is no hidden planner phase machine controlling the next step for you.")
-		sections = append(sections, "Humans approve and request changes with normal chat replies in this same transcript. Do not tell them to use a separate approval workflow, button, or UI gate.")
-		sections = append(sections, "Only a clear explicit approval counts as approval. Any requested change, concern, critique, follow-up question, or ambiguous reply means the current phase is not approved yet.")
-	}
-	sections = append(sections, "Choose the next step from the transcript, current epic state, linked docs, existing tasks, and tool results.")
-	sections = append(sections, "Use this sequence unless the human explicitly redirects you: clarify scope if needed, draft/refine the PRD, publish it with publish_prd_draft, wait for inline PRD approval, let the platform persist the approved PRD artifact to the canonical epic doc, propose the implementation task plan, publish it with publish_task_plan, wait for inline task approval, then let the platform apply the approved task plan artifact and create tasks.")
-	sections = append(sections, "Keep approvals soft and inline. When you need approval, call request_approval with phase=\"prd\" or phase=\"tasks\" and stop after the request.")
-	sections = append(sections, "Treat request_approval as the final action in that turn. Do not call more tools after it in the same turn. Do not append extra approval-choice prose after requesting approval.")
-	sections = append(sections, "After explicit PRD approval, continue automatically to task planning in the same run. Do not ask whether to proceed to tasks unless the human explicitly redirects scope.")
-	sections = append(sections, "After PRD approval is persisted, your next turn must continue into task planning. Either ask the next blocking questions with request_user_input or publish_task_plan. Do not complete the run immediately after PRD approval.")
-	sections = append(sections, "If the latest human reply requests changes to the PRD or task plan, revise the active artifact, republish the full replacement preview, and request_approval again when ready. Do not end the run with prose-only acknowledgement after change feedback.")
-	sections = append(sections, "Use publish_prd_draft for PRD markdown previews and publish_task_plan for task plan JSON previews.")
-	sections = append(sections, "publish_task_plan must receive one complete JSON object payload in that tool call. Do not send title-only payloads, raw string wrappers, partial JSON, or stringified blobs. Put the full plan under content with a non-empty summary and proposed_tasks array.")
-	sections = append(sections, "proposed_tasks must be an array of full task objects. Never send arrays of strings, refs, placeholders, key names, or partial fragments. If publish_task_plan fails validation, correct the payload and retry with one complete valid task-plan object before requesting approval.")
-	sections = append(sections, "Before approval, keep drafts in chat-backed preview artifacts only. After approval, the platform applies the approved artifact; do not replay approved PRDs or task plans through mutation tools.")
+	sections := buildLegacyEpicPlannerRuleSections(state.run)
 
 	contextSections, hasSpecContent, err := a.buildEpicPlannerContextSections(ctx, state, input)
 	if err != nil {
@@ -6467,6 +6448,38 @@ func (a *AgentRunActivities) buildEpicPlannerContextSections(ctx context.Context
 	return sections, hasSpecContent, nil
 }
 
+func buildLegacyEpicPlannerRuleSections(run *model.AgentRun) []string {
+	invocationMode := ""
+	if run != nil {
+		invocationMode = run.InvocationMode
+	}
+	sections := []string{
+		fmt.Sprintf("Run mode: %s", invocationMode),
+	}
+	if invocationMode == model.InvocationModeInteractive {
+		sections = append(sections,
+			"The shared run drawer is available for live questions, draft previews, inline approvals, and change requests.",
+			"Treat this as one transcript-driven planning run. There is no hidden planner phase machine controlling the next step for you.",
+			"Humans approve and request changes with normal chat replies in this same transcript. Do not tell them to use a separate approval workflow, button, or UI gate.",
+			"Only a clear explicit approval counts as approval. Any requested change, concern, critique, follow-up question, or ambiguous reply means the current phase is not approved yet.",
+		)
+	}
+	sections = append(sections,
+		"Choose the next step from the transcript, current epic state, linked docs, existing tasks, and tool results.",
+		"Use this sequence unless the human explicitly redirects you: clarify scope if needed, draft/refine the PRD, publish it with publish_prd_draft, wait for inline PRD approval, let the platform persist the approved PRD artifact to the canonical epic doc, propose the implementation task plan, publish it with publish_task_plan, wait for inline task approval, then let the platform apply the approved task plan artifact and create tasks.",
+		"Keep approvals soft and inline. When you need approval, call request_approval with phase=\"prd\" or phase=\"tasks\" and stop after the request.",
+		"Treat request_approval as the final action in that turn. Do not call more tools after it in the same turn. Do not append extra approval-choice prose after requesting approval.",
+		"After explicit PRD approval, continue automatically to task planning in the same run. Do not ask whether to proceed to tasks unless the human explicitly redirects scope.",
+		"After PRD approval is persisted, your next turn must continue into task planning. Either ask the next blocking questions with request_user_input or publish_task_plan. Do not complete the run immediately after PRD approval.",
+		"If the latest human reply requests changes to the PRD or task plan, revise the active artifact, republish the full replacement preview, and request_approval again when ready. Do not end the run with prose-only acknowledgement after change feedback.",
+		"Use publish_prd_draft for PRD markdown previews and publish_task_plan for task plan JSON previews.",
+		"publish_task_plan must receive one complete JSON object payload in that tool call. Do not send title-only payloads, raw string wrappers, partial JSON, or stringified blobs. Put the full plan under content with a non-empty summary and proposed_tasks array.",
+		"proposed_tasks must be an array of full task objects. Never send arrays of strings, refs, placeholders, key names, or partial fragments. If publish_task_plan fails validation, correct the payload and retry with one complete valid task-plan object before requesting approval.",
+		"Before approval, keep drafts in chat-backed preview artifacts only. After approval, the platform applies the approved artifact; do not replay approved PRDs or task plans through mutation tools.",
+	)
+	return sections
+}
+
 func nativeEpicPlannerNextStepGuidance(input planningRunInput, hasSpecContent bool, hasTasks bool) string {
 	hasApprovedSpec := input.SpecVersionID != ""
 	hasSpecDoc := input.SpecDocumentID != ""
@@ -6504,6 +6517,13 @@ func (a *AgentRunActivities) buildNativeEpicPlannerPhaseGuidance(ctx context.Con
 	}
 	hasTasks := len(state.epicTasks) > 0
 	phaseName := nativeEpicPlannerPhaseName(input, hasSpecContent, hasTasks)
+	sections := buildNativeEpicPlannerRuleSections(state.run, input, phaseName, hasSpecContent, hasTasks)
+	sections = append(sections, formatInteractivePlanningFacts(input, hasSpecContent, len(state.epicTasks)))
+	sections = append(sections, contextSections...)
+	return strings.Join(sections, "\n\n"), nil
+}
+
+func buildNativeEpicPlannerRuleSections(run *model.AgentRun, input planningRunInput, phaseName string, hasSpecContent bool, hasTasks bool) []string {
 	sections := []string{
 		fmt.Sprintf("Current planning phase: %s", phaseName),
 		"Phase objective: move the epic to the next durable planning checkpoint using the current transcript, approved artifacts, linked context, and repository evidence.",
@@ -6514,13 +6534,11 @@ func (a *AgentRunActivities) buildNativeEpicPlannerPhaseGuidance(ctx context.Con
 		"Post-approval rule: once PRD approval is persisted, continue directly into task planning unless the human explicitly redirects scope. Do not end the run immediately after PRD approval.",
 		"Revision rule: if the latest human reply asks for changes to the active PRD or task plan, revise the active artifact, republish the full replacement preview, and request approval again when ready.",
 	}
-	if state.run.InvocationMode == model.InvocationModeInteractive {
+	if run != nil && run.InvocationMode == model.InvocationModeInteractive {
 		sections = append(sections, "Interactive approval semantics: only explicit approval advances the phase. Change requests, critique, concerns, and ambiguous replies keep the current phase active.")
 	}
-	sections = append(sections, formatInteractivePlanningFacts(input, hasSpecContent, len(state.epicTasks)))
 	sections = append(sections, nativeEpicPlannerNextStepGuidance(input, hasSpecContent, hasTasks))
-	sections = append(sections, contextSections...)
-	return strings.Join(sections, "\n\n"), nil
+	return sections
 }
 
 func formatInteractivePlanningFacts(input planningRunInput, hasDraftSpec bool, taskCount int) string {

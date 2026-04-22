@@ -413,6 +413,27 @@ func TestBuildInitialInstructionsKeepsLegacyEpicPlannerInstructionsWhenSelective
 	}
 }
 
+func TestBuildLegacyEpicPlannerRuleSectionsPreservesCriticalRules(t *testing.T) {
+	sections := buildLegacyEpicPlannerRuleSections(&model.AgentRun{
+		InvocationMode: model.InvocationModeInteractive,
+	})
+	instructions := strings.Join(sections, "\n\n")
+	for _, snippet := range []string{
+		"Run mode: interactive",
+		"The shared run drawer is available for live questions, draft previews, inline approvals, and change requests.",
+		"Use this sequence unless the human explicitly redirects you:",
+		"Keep approvals soft and inline.",
+		"Treat request_approval as the final action in that turn.",
+		"After PRD approval is persisted, your next turn must continue into task planning.",
+		"Use publish_prd_draft for PRD markdown previews and publish_task_plan for task plan JSON previews.",
+		"publish_task_plan must receive one complete JSON object payload in that tool call.",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected legacy epic rule sections to contain %q\n%s", snippet, instructions)
+		}
+	}
+}
+
 func TestBuildInitialInstructionsUsesNativeSelectiveTaskPhaseGuidance(t *testing.T) {
 	activity := &AgentRunActivities{}
 	state := &resolvedRunState{
@@ -486,6 +507,28 @@ func TestBuildInitialInstructionsUsesNativeSelectiveEpicTaskPlanningGuidanceAfte
 	}
 	if strings.Contains(instructions, "Next-step guidance: no approved PRD exists yet.") {
 		t.Fatalf("did not expect pre-approval guidance after approved spec\n%s", instructions)
+	}
+}
+
+func TestBuildNativeEpicPlannerRuleSectionsPreservesCriticalRules(t *testing.T) {
+	sections := buildNativeEpicPlannerRuleSections(&model.AgentRun{
+		InvocationMode: model.InvocationModeInteractive,
+	}, planningRunInput{}, model.PlanningStageDraftSpec, false, false)
+	instructions := strings.Join(sections, "\n\n")
+	for _, snippet := range []string{
+		"Current planning phase: draft_spec",
+		"Phase objective: move the epic to the next durable planning checkpoint",
+		"Approval rule: use request_approval with phase=\"prd\" or phase=\"tasks\"",
+		"PRD contract reminder: use publish_prd_draft",
+		"Task-plan contract reminder: publish_task_plan must receive one complete JSON object",
+		"Post-approval rule: once PRD approval is persisted, continue directly into task planning",
+		"Revision rule: if the latest human reply asks for changes to the active PRD or task plan",
+		"Interactive approval semantics: only explicit approval advances the phase.",
+		"Next-step guidance: no approved PRD exists yet.",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected native epic rule sections to contain %q\n%s", snippet, instructions)
+		}
 	}
 }
 
