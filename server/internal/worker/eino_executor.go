@@ -47,6 +47,49 @@ func nativeContinuationMode(continuation *ProviderContinuation) string {
 	return "fresh"
 }
 
+func resolveNativeSupplementTransport(run *model.AgentRun, execCtx *ExecutionContext, systemPrompt string) (string, string) {
+	trimmedSystemPrompt := strings.TrimSpace(systemPrompt)
+	turnLocalInstructions := ""
+	if execCtx != nil {
+		turnLocalInstructions = strings.TrimSpace(execCtx.TurnLocalInstructions)
+	}
+
+	supplement := BuildExecutionSupplementPrompt(run, executionContextRunFacts(execCtx), executionContextArtifactContext(execCtx))
+	if execCtx != nil && execCtx.NativeSelectivePathEnabled {
+		return trimmedSystemPrompt, joinInstructionSections(turnLocalInstructions, supplement)
+	}
+	if supplement == "" {
+		return trimmedSystemPrompt, turnLocalInstructions
+	}
+	return strings.TrimSpace(trimmedSystemPrompt + "\n\n## Current Run State\n" + supplement), turnLocalInstructions
+}
+
+func joinInstructionSections(parts ...string) string {
+	sections := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		sections = append(sections, part)
+	}
+	return strings.Join(sections, "\n\n")
+}
+
+func executionContextRunFacts(execCtx *ExecutionContext) map[string]string {
+	if execCtx == nil {
+		return nil
+	}
+	return execCtx.RunFacts
+}
+
+func executionContextArtifactContext(execCtx *ExecutionContext) *ArtifactContext {
+	if execCtx == nil {
+		return nil
+	}
+	return execCtx.ArtifactContext
+}
+
 func NewEinoExecutor(
 	kind string,
 	modelFactory *EinoModelFactory,
@@ -125,9 +168,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 	)
 
 	history := append([]ExecutionMessage(nil), execCtx.ConversationHistory...)
-	if supplement := BuildExecutionSupplementPrompt(run, execCtx.RunFacts, execCtx.ArtifactContext); supplement != "" {
-		systemPrompt = strings.TrimSpace(systemPrompt + "\n\n## Current Run State\n" + supplement)
-	}
+	systemPrompt, turnLocalInstructions := resolveNativeSupplementTransport(run, execCtx, systemPrompt)
 	if len(history) == 0 {
 		history = []ExecutionMessage{{
 			Role:    "user",
@@ -136,7 +177,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 	}
 	provider, modelName := resolveProviderAndModel(execCtx.Agent)
 	toolDefs := e.tools.DefinitionsFor(execCtx.AllowedTools)
-	trimmedTurnLocalInstructions := strings.TrimSpace(execCtx.TurnLocalInstructions)
+	trimmedTurnLocalInstructions := strings.TrimSpace(turnLocalInstructions)
 	slog.InfoContext(execCtx.Context, "native runtime execution starting",
 		"workspace_id", execCtx.WorkspaceID,
 		"run_id", execCtx.RunID,
@@ -162,6 +203,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 
 	runCtx := *execCtx
 	runCtx.Context = ctx
+	runCtx.TurnLocalInstructions = turnLocalInstructions
 	if execCtx.Heartbeat != nil {
 		_ = execCtx.Heartbeat("native_sdk_starting")
 	}
@@ -202,7 +244,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		case "tool_call_started":
 			_ = execCtx.Heartbeat("tool_" + event.ToolName)
 		}
-	}, execCtx.TurnLocalInstructions)
+	}, turnLocalInstructions)
 	stopHeartbeat()
 	if execErr != nil && !errors.Is(execErr, ErrMaxToolStepsReached) {
 		slog.ErrorContext(execCtx.Context, "native runtime execution failed",
