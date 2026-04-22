@@ -12,58 +12,60 @@ import (
 
 // ExecutionContext holds all state for a single agent run execution.
 type ExecutionContext struct {
-	Context                 context.Context
-	WorkDir                 string // path to cloned repo on disk
-	WorkspaceID             string
-	AgentID                 string
-	RunID                   string
-	TargetType              string
-	TargetID                string
-	TaskID                  string
-	ConversationID          string
-	Agent                   *model.Agent
-	Task                    *model.PMTask
-	Epic                    *model.PMEpic
-	EpicTasks               []model.PMTask
-	Conversation            *model.SupportConversation
-	GitIntegration          *model.GitIntegration
-	GitAccessToken          string
-	Repo                    string // e.g. "owner/repo"
-	BaseBranch              string
-	WorkingBranch           string
-	BranchSyncStatus        string
-	BranchSyncConflictFiles []string
-	InitialInstructions     string
-	PlanningStage           string
-	PlanningMethodology     string
-	PlanningSpecDocumentID  string
-	PlanningSpecVersionID   string
-	Config                  *WorkflowConfig
-	ResolvedProfile         ResolvedProfile
-	SkillPolicy             SkillPolicy
-	AllowedTools            map[string]bool
-	Services                *ServiceBridge
-	PendingSupportDraft     *SupportDraftReply
-	LatestPRMetadata        *PRMetadata
-	LocalGitCommit          *GitCommitMetadata
-	Heartbeat               func(stage string) error
-	OnExecutionEvent        func(event ExecutionEvent)
-	OnGitPush               func(branch, sha string) error
-	OnPROpen                func(metadata PRMetadata, title string) error
-	HeartbeatStageProvider  func() string
-	HandleInteractivePause  func(result *ExecutionResult) (*LiveExecutionResumeSignal, error)
-	PlanningTurnKind        string
-	PlanningTurnAttempt     int
-	RunFacts                map[string]string
-	ArtifactContext         *ArtifactContext
-	ProviderContinuation    *ProviderContinuation
-	ConversationHistory     []ExecutionMessage
-	LastExecutionResult     *ExecutionResult
-	StagedRuntimeSkillRoot  string
-	ToolFileState           *ToolFileState
-	toolFileStateMu         sync.Mutex
-	PublishedPreviews       map[string]PublishedPreview
-	CurrentAssistantText    string
+	Context                    context.Context
+	WorkDir                    string // path to cloned repo on disk
+	WorkspaceID                string
+	AgentID                    string
+	RunID                      string
+	TargetType                 string
+	TargetID                   string
+	TaskID                     string
+	ConversationID             string
+	Agent                      *model.Agent
+	Task                       *model.PMTask
+	Epic                       *model.PMEpic
+	EpicTasks                  []model.PMTask
+	Conversation               *model.SupportConversation
+	GitIntegration             *model.GitIntegration
+	GitAccessToken             string
+	Repo                       string // e.g. "owner/repo"
+	BaseBranch                 string
+	WorkingBranch              string
+	BranchSyncStatus           string
+	BranchSyncConflictFiles    []string
+	InitialInstructions        string
+	PlanningStage              string
+	PlanningMethodology        string
+	PlanningSpecDocumentID     string
+	PlanningSpecVersionID      string
+	Config                     *WorkflowConfig
+	ResolvedProfile            ResolvedProfile
+	RuntimeSkillRefs           model.AgentSkillRefs
+	SkillPolicy                SkillPolicy
+	NativeSelectivePathEnabled bool
+	AllowedTools               map[string]bool
+	Services                   *ServiceBridge
+	PendingSupportDraft        *SupportDraftReply
+	LatestPRMetadata           *PRMetadata
+	LocalGitCommit             *GitCommitMetadata
+	Heartbeat                  func(stage string) error
+	OnExecutionEvent           func(event ExecutionEvent)
+	OnGitPush                  func(branch, sha string) error
+	OnPROpen                   func(metadata PRMetadata, title string) error
+	HeartbeatStageProvider     func() string
+	HandleInteractivePause     func(result *ExecutionResult) (*LiveExecutionResumeSignal, error)
+	PlanningTurnKind           string
+	PlanningTurnAttempt        int
+	RunFacts                   map[string]string
+	ArtifactContext            *ArtifactContext
+	ProviderContinuation       *ProviderContinuation
+	ConversationHistory        []ExecutionMessage
+	LastExecutionResult        *ExecutionResult
+	StagedRuntimeSkillRoot     string
+	ToolFileState              *ToolFileState
+	toolFileStateMu            sync.Mutex
+	PublishedPreviews          map[string]PublishedPreview
+	CurrentAssistantText       string
 }
 
 type LiveExecutionResumeSignal struct {

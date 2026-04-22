@@ -70,6 +70,110 @@ func TestShouldPersistExecutionWorkspace(t *testing.T) {
 	}
 }
 
+func TestResolveNativeSelectivePlannerPathEnabled(t *testing.T) {
+	testCases := []struct {
+		name  string
+		env   string
+		run   *model.AgentRun
+		agent *model.Agent
+		want  bool
+	}{
+		{
+			name: "system epic planner on native runtime is eligible",
+			env:  "true",
+			run: &model.AgentRun{
+				RuntimeKind: "native_sdk",
+				TargetType:  "epic",
+			},
+			agent: &model.Agent{
+				IsSystem:    true,
+				PresetKey:   model.AgentPresetEpicPlanner,
+				RuntimeKind: "native_sdk",
+			},
+			want: true,
+		},
+		{
+			name: "system task planner on native runtime is eligible",
+			env:  "true",
+			run: &model.AgentRun{
+				RuntimeKind: "native_sdk",
+				TargetType:  "task",
+			},
+			agent: &model.Agent{
+				IsSystem:    true,
+				PresetKey:   model.AgentPresetTaskPlanner,
+				RuntimeKind: "native_sdk",
+			},
+			want: true,
+		},
+		{
+			name: "rollout env disabled blocks path",
+			env:  "false",
+			run: &model.AgentRun{
+				RuntimeKind: "native_sdk",
+				TargetType:  "epic",
+			},
+			agent: &model.Agent{
+				IsSystem:    true,
+				PresetKey:   model.AgentPresetEpicPlanner,
+				RuntimeKind: "native_sdk",
+			},
+			want: false,
+		},
+		{
+			name: "custom agents stay off selective path",
+			env:  "true",
+			run: &model.AgentRun{
+				RuntimeKind: "native_sdk",
+				TargetType:  "epic",
+			},
+			agent: &model.Agent{
+				IsSystem:    false,
+				PresetKey:   model.AgentPresetEpicPlanner,
+				RuntimeKind: "native_sdk",
+			},
+			want: false,
+		},
+		{
+			name: "wrong target type is rejected",
+			env:  "true",
+			run: &model.AgentRun{
+				RuntimeKind: "native_sdk",
+				TargetType:  "task",
+			},
+			agent: &model.Agent{
+				IsSystem:    true,
+				PresetKey:   model.AgentPresetEpicPlanner,
+				RuntimeKind: "native_sdk",
+			},
+			want: false,
+		},
+		{
+			name: "non-native runtime is rejected",
+			env:  "true",
+			run: &model.AgentRun{
+				RuntimeKind: "codex",
+				TargetType:  "epic",
+			},
+			agent: &model.Agent{
+				IsSystem:    true,
+				PresetKey:   model.AgentPresetEpicPlanner,
+				RuntimeKind: "native_sdk",
+			},
+			want: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("AGENT_NATIVE_SELECTIVE_PLANNER_ENABLED", tc.env)
+			if got := resolveNativeSelectivePlannerPathEnabled(tc.run, tc.agent); got != tc.want {
+				t.Fatalf("resolveNativeSelectivePlannerPathEnabled() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestExecutionRuntimeKindPrefersRunOverride(t *testing.T) {
 	state := &resolvedRunState{
 		run:   &model.AgentRun{RuntimeKind: "codex"},
@@ -3934,6 +4038,8 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 }
 
 func TestExecuteRunActivityPausesNativePlannerForReviewCheckpoint(t *testing.T) {
+	t.Setenv("AGENT_NATIVE_SELECTIVE_PLANNER_ENABLED", "true")
+
 	db := newPlannerApprovalTestDB(t)
 	if err := db.Exec(`CREATE TABLE IF NOT EXISTS agent_run_messages (
 		id TEXT PRIMARY KEY,
@@ -3990,11 +4096,14 @@ func TestExecuteRunActivityPausesNativePlannerForReviewCheckpoint(t *testing.T) 
 	docsContentRepo := repository.NewDocsContentRepository(db)
 	docsLinkRepo := repository.NewDocsLinkRepository(db)
 	wsPublisher := &capturedEventPublisher{}
+	var capturedSelectivePathEnabled bool
+	var capturedRuntimeSkillRefs model.AgentSkillRefs
 
 	now := time.Now().UTC()
 	agent := &model.Agent{
 		ID:                    "agent-epic",
 		WorkspaceID:           "ws-1",
+		IsSystem:              true,
 		Name:                  "Epic Planner",
 		PresetKey:             model.AgentPresetEpicPlanner,
 		Role:                  "Planner",
@@ -4061,6 +4170,8 @@ func TestExecuteRunActivityPausesNativePlannerForReviewCheckpoint(t *testing.T) 
 		runtimes: workerpkg.NewRuntimeRegistry(stubRuntimeAdapter{
 			kind: "native_sdk",
 			executeFn: func(execCtx *workerpkg.ExecutionContext, run *model.AgentRun) error {
+				capturedSelectivePathEnabled = execCtx.NativeSelectivePathEnabled
+				capturedRuntimeSkillRefs = append(model.AgentSkillRefs(nil), execCtx.RuntimeSkillRefs...)
 				execCtx.LastExecutionResult = &workerpkg.ExecutionResult{
 					AssistantText: "PRD review checkpoint requested.",
 					ToolInvocations: []model.ToolInvocation{
@@ -4089,6 +4200,12 @@ func TestExecuteRunActivityPausesNativePlannerForReviewCheckpoint(t *testing.T) 
 	}
 	if result.AwaitingInput || result.AwaitingAuth || result.ContinueExecution {
 		t.Fatalf("unexpected execute result %#v", result)
+	}
+	if !capturedSelectivePathEnabled {
+		t.Fatal("expected native selective path flag to be threaded into execution context")
+	}
+	if len(capturedRuntimeSkillRefs) == 0 {
+		t.Fatal("expected runtime skill refs to be threaded into execution context")
 	}
 
 	updatedRun, err := runRepo.GetByIDAny(context.Background(), run.ID)

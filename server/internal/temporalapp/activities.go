@@ -36,8 +36,8 @@ import (
 )
 
 const (
-	productSpecsSpaceSlug = "product-specs"
-	productSpecsSpaceName = "Product Specs"
+	productSpecsSpaceSlug   = "product-specs"
+	productSpecsSpaceName   = "Product Specs"
 	githubAPIRequestTimeout = 30 * time.Second
 )
 
@@ -212,21 +212,23 @@ func NewAgentRunActivities(
 }
 
 type resolvedRunState struct {
-	run            *model.AgentRun
-	agent          *model.Agent
-	skillPolicy    workerpkg.SkillPolicy
-	task           *model.PMTask
-	workspaceKey   string
-	epic           *model.PMEpic
-	epicTasks      []model.PMTask
-	conversation   *model.SupportConversation
-	resolved       workerpkg.ResolvedProfile // merged class+agent overrides — use this for decisions
-	deliveryTarget *model.TaskDeliveryTarget
-	repository     *model.GitRepository
-	integration    *model.GitIntegration
-	teamDefault    *model.PMTeamRepoDefault
-	accessToken    string
-	branchSync     branchSyncState
+	run                        *model.AgentRun
+	agent                      *model.Agent
+	runtimeSkillRefs           model.AgentSkillRefs
+	skillPolicy                workerpkg.SkillPolicy
+	nativeSelectivePathEnabled bool
+	task                       *model.PMTask
+	workspaceKey               string
+	epic                       *model.PMEpic
+	epicTasks                  []model.PMTask
+	conversation               *model.SupportConversation
+	resolved                   workerpkg.ResolvedProfile // merged class+agent overrides — use this for decisions
+	deliveryTarget             *model.TaskDeliveryTarget
+	repository                 *model.GitRepository
+	integration                *model.GitIntegration
+	teamDefault                *model.PMTeamRepoDefault
+	accessToken                string
+	branchSync                 branchSyncState
 }
 
 type branchSyncState struct {
@@ -255,6 +257,54 @@ func shouldPersistExecutionWorkspace(run *model.AgentRun, runtimeKind string) bo
 		return false
 	}
 	return strings.TrimSpace(runtimeKind) == "codex" && strings.TrimSpace(run.InvocationMode) == model.InvocationModeInteractive
+}
+
+func nativeSelectivePlannerPathRolloutEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("AGENT_NATIVE_SELECTIVE_PLANNER_ENABLED"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func resolveNativeSelectivePlannerPathEnabled(run *model.AgentRun, agent *model.Agent) bool {
+	if run == nil || agent == nil {
+		return false
+	}
+	if !nativeSelectivePlannerPathRolloutEnabled() {
+		return false
+	}
+	if !agent.IsSystem {
+		return false
+	}
+	runtimeKind := firstNonEmptyString(strings.TrimSpace(run.RuntimeKind), strings.TrimSpace(agent.RuntimeKind))
+	if runtimeKind != "native_sdk" {
+		return false
+	}
+	switch strings.TrimSpace(agent.EffectivePresetKey()) {
+	case model.AgentPresetEpicPlanner:
+		return strings.TrimSpace(run.TargetType) == "epic"
+	case model.AgentPresetTaskPlanner:
+		return strings.TrimSpace(run.TargetType) == "task"
+	default:
+		return false
+	}
+}
+
+func runtimeSkillRefKeys(refs model.AgentSkillRefs) []string {
+	keys := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		key := strings.TrimSpace(ref.Key)
+		if key == "" && ref.SkillID != nil && strings.TrimSpace(*ref.SkillID) != "" {
+			key = "workspace:" + strings.TrimSpace(*ref.SkillID)
+		}
+		if key == "" {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	return keys
 }
 
 func recordActivityHeartbeatSafe(ctx context.Context, details ...interface{}) {
@@ -471,39 +521,41 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 
 	bridge := a.serviceBridge()
 	execCtx := &workerpkg.ExecutionContext{
-		Context:                 ctx,
-		WorkDir:                 workDir,
-		WorkspaceID:             state.run.WorkspaceID,
-		AgentID:                 state.run.AgentID,
-		RunID:                   state.run.ID,
-		TargetType:              state.run.TargetType,
-		TargetID:                state.run.TargetID,
-		Agent:                   state.agent,
-		Task:                    state.task,
-		Epic:                    state.epic,
-		EpicTasks:               state.epicTasks,
-		Conversation:            state.conversation,
-		GitIntegration:          state.integration,
-		GitAccessToken:          state.accessToken,
-		Repo:                    repoFullName(state),
-		BaseBranch:              derefString(state.run.BaseBranch),
-		WorkingBranch:           derefString(state.run.WorkingBranch),
-		BranchSyncStatus:        strings.TrimSpace(state.branchSync.Status),
-		BranchSyncConflictFiles: slices.Clone(state.branchSync.ConflictFiles),
-		InitialInstructions:     initialInstructions,
-		PlanningStage:           planningInput.Stage,
-		PlanningMethodology:     planningInput.PlanningMethodology,
-		PlanningSpecDocumentID:  planningInput.SpecDocumentID,
-		PlanningSpecVersionID:   planningInput.SpecVersionID,
-		RunFacts:                buildDurableRunFacts(state, planningInput),
-		Config:                  config,
-		ResolvedProfile:         state.resolved,
-		SkillPolicy:             state.skillPolicy,
-		AllowedTools:            allowedTools,
-		Services:                bridge,
-		ArtifactContext:         artifactContext,
-		ProviderContinuation:    providerContinuation,
-		ConversationHistory:     history,
+		Context:                    ctx,
+		WorkDir:                    workDir,
+		WorkspaceID:                state.run.WorkspaceID,
+		AgentID:                    state.run.AgentID,
+		RunID:                      state.run.ID,
+		TargetType:                 state.run.TargetType,
+		TargetID:                   state.run.TargetID,
+		Agent:                      state.agent,
+		Task:                       state.task,
+		Epic:                       state.epic,
+		EpicTasks:                  state.epicTasks,
+		Conversation:               state.conversation,
+		GitIntegration:             state.integration,
+		GitAccessToken:             state.accessToken,
+		Repo:                       repoFullName(state),
+		BaseBranch:                 derefString(state.run.BaseBranch),
+		WorkingBranch:              derefString(state.run.WorkingBranch),
+		BranchSyncStatus:           strings.TrimSpace(state.branchSync.Status),
+		BranchSyncConflictFiles:    slices.Clone(state.branchSync.ConflictFiles),
+		InitialInstructions:        initialInstructions,
+		PlanningStage:              planningInput.Stage,
+		PlanningMethodology:        planningInput.PlanningMethodology,
+		PlanningSpecDocumentID:     planningInput.SpecDocumentID,
+		PlanningSpecVersionID:      planningInput.SpecVersionID,
+		RunFacts:                   buildDurableRunFacts(state, planningInput),
+		Config:                     config,
+		ResolvedProfile:            state.resolved,
+		RuntimeSkillRefs:           state.runtimeSkillRefs,
+		SkillPolicy:                state.skillPolicy,
+		NativeSelectivePathEnabled: state.nativeSelectivePathEnabled,
+		AllowedTools:               allowedTools,
+		Services:                   bridge,
+		ArtifactContext:            artifactContext,
+		ProviderContinuation:       providerContinuation,
+		ConversationHistory:        history,
 		Heartbeat: func(stage string) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -570,6 +622,11 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		"runtime_kind", runtimeKind,
 		"agent_id", state.run.AgentID,
 		"work_dir", workDir,
+		"preset_key", strings.TrimSpace(state.agent.EffectivePresetKey()),
+		"target_type", strings.TrimSpace(state.run.TargetType),
+		"native_selective_path_enabled", state.nativeSelectivePathEnabled,
+		"provider_continuation_present", providerContinuation != nil && strings.TrimSpace(providerContinuation.ResponseID) != "",
+		"runtime_skill_refs", runtimeSkillRefKeys(state.runtimeSkillRefs),
 	)
 	var repoSkillMask *workerpkg.RepoSkillMask
 	if runtimeKind == "codex" || runtimeKind == "opencode" {
@@ -4128,12 +4185,6 @@ func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*r
 		return nil, err
 	}
 	agent.ResolvedSkillInstructions = agentskills.CompileInstructions(skillResolution.Definitions)
-	state := &resolvedRunState{
-		run:         run,
-		agent:       agent,
-		skillPolicy: agentskills.AggregatePolicy(skillResolution.Definitions),
-		resolved:    resolved,
-	}
 
 	if run.TargetType == "" {
 		switch {
@@ -4145,6 +4196,26 @@ func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*r
 			run.TargetID = *run.ConversationID
 		}
 	}
+
+	nativeSelectivePathEnabled := resolveNativeSelectivePlannerPathEnabled(run, agent)
+	state := &resolvedRunState{
+		run:                        run,
+		agent:                      agent,
+		runtimeSkillRefs:           skillResolution.Refs,
+		skillPolicy:                agentskills.AggregatePolicy(skillResolution.Definitions),
+		nativeSelectivePathEnabled: nativeSelectivePathEnabled,
+		resolved:                   resolved,
+	}
+	slog.InfoContext(ctx, "resolved run state",
+		"workspace_id", run.WorkspaceID,
+		"run_id", run.ID,
+		"agent_id", run.AgentID,
+		"runtime_kind", executionRuntimeKind(state),
+		"preset_key", strings.TrimSpace(agent.EffectivePresetKey()),
+		"target_type", strings.TrimSpace(run.TargetType),
+		"native_selective_path_enabled", nativeSelectivePathEnabled,
+		"runtime_skill_refs", runtimeSkillRefKeys(skillResolution.Refs),
+	)
 
 	if run.TaskID != nil {
 		task, err := a.taskRepo.GetRawByID(ctx, *run.TaskID)
