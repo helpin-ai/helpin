@@ -6185,19 +6185,11 @@ func (a *AgentRunActivities) buildTaskPlannerContextSections(ctx context.Context
 	}
 
 	var sections []string
-	if strings.TrimSpace(input.PlanDocumentID) != "" {
-		sections = append(sections, fmt.Sprintf("Canonical task planning document ID: %s", input.PlanDocumentID))
-		content, err := a.docsContentRepo.GetByDocumentID(ctx, input.PlanDocumentID)
-		if err != nil {
-			return nil, err
-		}
-		if content != nil && strings.TrimSpace(content.ContentText) != "" {
-			sections = append(sections, "Current task planning draft already in Docs:\n"+truncatePlanningText(content.ContentText, 12000))
-			sections = append(sections, "Resume from the existing planning doc draft instead of starting over unless the human explicitly wants a reset.")
-		}
-	} else {
-		sections = append(sections, "No canonical task planning doc exists yet. Keep the draft in chat-backed preview artifacts until approval; the platform will create, persist, and link the approved artifact.")
+	taskPlanSections, err := a.buildTaskPlanDocumentContextSections(ctx, input.PlanDocumentID)
+	if err != nil {
+		return nil, err
 	}
+	sections = append(sections, taskPlanSections...)
 
 	sections = appendOperatorNotesSection(sections, input.AdditionalContext)
 
@@ -6234,13 +6226,11 @@ func (a *AgentRunActivities) buildTaskPlannerContextSections(ctx context.Context
 		sections = append(sections, specSections...)
 	}
 
-	taskLinkedDocs, err := a.renderObjectLinkedDocsContext(ctx, state.run.WorkspaceID, model.LinkedObjectTask, state.task.ID, input.PlanDocumentID)
+	taskLinkedDocSections, err := a.buildTaskLinkedDocsSections(ctx, state.run.WorkspaceID, state.task.ID, input.PlanDocumentID, "Other docs linked directly to this task:")
 	if err != nil {
 		return nil, err
 	}
-	if taskLinkedDocs != "" {
-		sections = append(sections, "Other docs linked directly to this task:\n"+taskLinkedDocs)
-	}
+	sections = append(sections, taskLinkedDocSections...)
 
 	if state.epic != nil {
 		epicLinkedDocs, err := a.renderLinkedDocsContext(ctx, state.run.WorkspaceID, state.epic.ID, input.SpecDocumentID)
@@ -6320,9 +6310,7 @@ func (a *AgentRunActivities) buildTaskRunContextSections(ctx context.Context, st
 	if additionalContext == "" && state != nil && state.run != nil {
 		additionalContext = runInputAdditionalContext(state.run.Input)
 	}
-	if additionalContext != "" {
-		sections = append(sections, "Operator notes:\n"+additionalContext)
-	}
+	sections = appendOperatorNotesSection(sections, additionalContext)
 	baseBranch := strings.TrimSpace(derefString(state.run.BaseBranch))
 	workingBranch := strings.TrimSpace(derefString(state.run.WorkingBranch))
 	if baseBranch != "" || workingBranch != "" {
@@ -6336,38 +6324,17 @@ func (a *AgentRunActivities) buildTaskRunContextSections(ctx context.Context, st
 		}
 	}
 
-	planDocumentID := strings.TrimSpace(derefString(state.task.PlanDocumentID))
-	if planDocumentID != "" && a.docsContentRepo != nil {
-		title := ""
-		if a.docsDocRepo != nil {
-			doc, err := a.docsDocRepo.GetByID(ctx, planDocumentID)
-			if err != nil {
-				return nil, err
-			}
-			if doc != nil {
-				title = strings.TrimSpace(doc.Title)
-			}
-		}
-		content, err := a.docsContentRepo.GetByDocumentID(ctx, planDocumentID)
-		if err != nil {
-			return nil, err
-		}
-		if markdown := docsContentMarkdown(content); markdown != "" {
-			header := fmt.Sprintf("Canonical task planning document ID: %s", planDocumentID)
-			if title != "" {
-				header = fmt.Sprintf("Canonical task planning document: %s [%s]", title, planDocumentID)
-			}
-			sections = append(sections, header+"\n"+truncatePlanningText(markdown, 12000))
-		}
-	}
-
-	taskLinkedDocs, err := a.renderObjectLinkedDocsContext(ctx, state.run.WorkspaceID, model.LinkedObjectTask, state.task.ID, planDocumentID)
+	planDocumentSections, err := a.buildTaskRunPlanDocumentContextSections(ctx, strings.TrimSpace(derefString(state.task.PlanDocumentID)))
 	if err != nil {
 		return nil, err
 	}
-	if taskLinkedDocs != "" {
-		sections = append(sections, "Other docs linked directly to this task:\n"+taskLinkedDocs)
+	sections = append(sections, planDocumentSections...)
+
+	taskLinkedDocSections, err := a.buildTaskLinkedDocsSections(ctx, state.run.WorkspaceID, state.task.ID, strings.TrimSpace(derefString(state.task.PlanDocumentID)), "Other docs linked directly to this task:")
+	if err != nil {
+		return nil, err
 	}
+	sections = append(sections, taskLinkedDocSections...)
 
 	return sections, nil
 }
@@ -6465,6 +6432,66 @@ func appendOperatorNotesSection(sections []string, additionalContext string) []s
 		return sections
 	}
 	return append(sections, "Operator notes:\n"+additionalContext)
+}
+
+func (a *AgentRunActivities) buildTaskPlanDocumentContextSections(ctx context.Context, planDocumentID string) ([]string, error) {
+	planDocumentID = strings.TrimSpace(planDocumentID)
+	if planDocumentID == "" {
+		return []string{"No canonical task planning doc exists yet. Keep the draft in chat-backed preview artifacts until approval; the platform will create, persist, and link the approved artifact."}, nil
+	}
+	sections := []string{fmt.Sprintf("Canonical task planning document ID: %s", planDocumentID)}
+	if a.docsContentRepo == nil {
+		return sections, nil
+	}
+	content, err := a.docsContentRepo.GetByDocumentID(ctx, planDocumentID)
+	if err != nil {
+		return nil, err
+	}
+	if content != nil && strings.TrimSpace(content.ContentText) != "" {
+		sections = append(sections, "Current task planning draft already in Docs:\n"+truncatePlanningText(content.ContentText, 12000))
+		sections = append(sections, "Resume from the existing planning doc draft instead of starting over unless the human explicitly wants a reset.")
+	}
+	return sections, nil
+}
+
+func (a *AgentRunActivities) buildTaskRunPlanDocumentContextSections(ctx context.Context, planDocumentID string) ([]string, error) {
+	planDocumentID = strings.TrimSpace(planDocumentID)
+	if planDocumentID == "" || a.docsContentRepo == nil {
+		return nil, nil
+	}
+	title := ""
+	if a.docsDocRepo != nil {
+		doc, err := a.docsDocRepo.GetByID(ctx, planDocumentID)
+		if err != nil {
+			return nil, err
+		}
+		if doc != nil {
+			title = strings.TrimSpace(doc.Title)
+		}
+	}
+	content, err := a.docsContentRepo.GetByDocumentID(ctx, planDocumentID)
+	if err != nil {
+		return nil, err
+	}
+	if markdown := docsContentMarkdown(content); markdown != "" {
+		header := fmt.Sprintf("Canonical task planning document ID: %s", planDocumentID)
+		if title != "" {
+			header = fmt.Sprintf("Canonical task planning document: %s [%s]", title, planDocumentID)
+		}
+		return []string{header + "\n" + truncatePlanningText(markdown, 12000)}, nil
+	}
+	return nil, nil
+}
+
+func (a *AgentRunActivities) buildTaskLinkedDocsSections(ctx context.Context, workspaceID, taskID, excludeDocumentID, header string) ([]string, error) {
+	taskLinkedDocs, err := a.renderObjectLinkedDocsContext(ctx, workspaceID, model.LinkedObjectTask, taskID, excludeDocumentID)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(taskLinkedDocs) == "" {
+		return nil, nil
+	}
+	return []string{header + "\n" + taskLinkedDocs}, nil
 }
 
 func (a *AgentRunActivities) buildApprovedSpecVersionSections(ctx context.Context, specVersionID, idLabel, snapshotLabel string, maxChars int) ([]string, error) {

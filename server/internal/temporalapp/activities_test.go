@@ -628,6 +628,76 @@ func TestAppendPlannerRepositoryContextSectionSkipsWithoutRepositoryContext(t *t
 	}
 }
 
+func TestBuildTaskPlanDocumentContextSectionsHandlesMissingAndExistingDraft(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	if err := db.Exec(`INSERT INTO docs_contents (id, document_id, content_text, word_count) VALUES (?, ?, ?, ?)`, "content-1", "doc-1", "Task planning draft body", 4).Error; err != nil {
+		t.Fatalf("insert docs content: %v", err)
+	}
+
+	activity := &AgentRunActivities{
+		docsContentRepo: repository.NewDocsContentRepository(db),
+	}
+
+	missingSections, err := activity.buildTaskPlanDocumentContextSections(context.Background(), "")
+	if err != nil {
+		t.Fatalf("buildTaskPlanDocumentContextSections missing case returned error: %v", err)
+	}
+	if len(missingSections) != 1 || !strings.Contains(missingSections[0], "No canonical task planning doc exists yet.") {
+		t.Fatalf("unexpected missing doc sections %#v", missingSections)
+	}
+
+	sections, err := activity.buildTaskPlanDocumentContextSections(context.Background(), "doc-1")
+	if err != nil {
+		t.Fatalf("buildTaskPlanDocumentContextSections existing case returned error: %v", err)
+	}
+	instructions := strings.Join(sections, "\n\n")
+	for _, snippet := range []string{
+		"Canonical task planning document ID: doc-1",
+		"Current task planning draft already in Docs:\nTask planning draft body",
+		"Resume from the existing planning doc draft instead of starting over unless the human explicitly wants a reset.",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected task plan document helper output to contain %q\n%s", snippet, instructions)
+		}
+	}
+}
+
+func TestBuildTaskRunPlanDocumentContextSectionsIncludesDocumentTitle(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	if err := db.Exec(`INSERT INTO docs_documents (id, workspace_id, space_id, title, status, visibility, created_by, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"doc-1", "ws-1", "space-1", "Implementation Plan", model.DocStatusDraft, model.SpaceVisibilityWorkspaceWide, "user-1",
+	).Error; err != nil {
+		t.Fatalf("insert docs document: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_contents (id, document_id, content_text, word_count) VALUES (?, ?, ?, ?)`, "content-1", "doc-1", "Task execution draft body", 4).Error; err != nil {
+		t.Fatalf("insert docs content: %v", err)
+	}
+
+	activity := &AgentRunActivities{
+		docsDocRepo:     repository.NewDocsDocumentRepository(db),
+		docsContentRepo: repository.NewDocsContentRepository(db),
+	}
+	sections, err := activity.buildTaskRunPlanDocumentContextSections(context.Background(), "doc-1")
+	if err != nil {
+		t.Fatalf("buildTaskRunPlanDocumentContextSections returned error: %v", err)
+	}
+	if len(sections) != 1 || !strings.Contains(sections[0], "Canonical task planning document: Implementation Plan [doc-1]") || !strings.Contains(sections[0], "Task execution draft body") {
+		t.Fatalf("unexpected task run plan document sections %#v", sections)
+	}
+}
+
+func TestBuildTaskLinkedDocsSectionsSkipsWhenNoLinkedDocs(t *testing.T) {
+	activity := &AgentRunActivities{}
+	sections, err := activity.buildTaskLinkedDocsSections(context.Background(), "ws-1", "task-1", "", "Other docs linked directly to this task:")
+	if err != nil {
+		t.Fatalf("buildTaskLinkedDocsSections returned error: %v", err)
+	}
+	if len(sections) != 0 {
+		t.Fatalf("expected no linked-doc sections, got %#v", sections)
+	}
+}
+
 func TestBuildInitialInstructionsUsesNativeSelectiveEpicTaskPlanningGuidanceAfterPRDApproval(t *testing.T) {
 	activity := &AgentRunActivities{}
 	state := &resolvedRunState{
