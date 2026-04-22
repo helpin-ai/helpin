@@ -374,10 +374,12 @@ func effectiveExecutionSkillPolicy(state *resolvedRunState, selection agentskill
 	return agentskills.AggregatePolicy(selection.Definitions)
 }
 
-func latestNativeRepairGuidance(state *resolvedRunState, messages []model.AgentRunMessage) string {
-	if state == nil || !state.nativeSelectivePathEnabled {
-		return ""
-	}
+type nativeRepairInstruction struct {
+	Class        string
+	Instructions string
+}
+
+func latestUnresolvedPolicyRetryMessage(messages []model.AgentRunMessage) *model.AgentRunMessage {
 	sawLaterAssistant := false
 	for i := len(messages) - 1; i >= 0; i-- {
 		message := messages[i]
@@ -388,11 +390,77 @@ func latestNativeRepairGuidance(state *resolvedRunState, messages []model.AgentR
 			continue
 		}
 		if sawLaterAssistant {
-			return ""
+			return nil
 		}
-		return strings.TrimSpace(message.Content)
+		copied := message
+		return &copied
 	}
-	return ""
+	return nil
+}
+
+func classifyNativeRepairInstruction(state *resolvedRunState, message *model.AgentRunMessage) nativeRepairInstruction {
+	if state == nil || !state.nativeSelectivePathEnabled || message == nil {
+		return nativeRepairInstruction{}
+	}
+	content := strings.TrimSpace(message.Content)
+	if content == "" {
+		return nativeRepairInstruction{}
+	}
+
+	switch {
+	case strings.Contains(content, "same-turn preview") || strings.Contains(content, "preview_panel_key"):
+		return nativeRepairInstruction{
+			Class: "approval_preview_binding",
+			Instructions: strings.Join([]string{
+				"Continue from your last assistant turn instead of restarting the run.",
+				"If this turn requests approval or a review checkpoint, first publish the preview in the same turn before the approval handoff.",
+				"When multiple same-turn previews exist, include preview_panel_key so the approval request binds to the correct preview.",
+				"Treat request_approval or request_review_checkpoint as the final action in that turn.",
+			}, "\n"),
+		}
+	case strings.Contains(content, "review_checkpoint handoff"):
+		return nativeRepairInstruction{
+			Class: "review_checkpoint_handoff",
+			Instructions: strings.Join([]string{
+				"Continue from your last assistant turn instead of restarting the review.",
+				"Before the run stops, emit a review_checkpoint handoff using the runtime-appropriate mechanism.",
+				"Only emit request_user_input instead if the human explicitly closed the review or asked a blocking follow-up question.",
+				"Do not end the turn with prose only.",
+			}, "\n"),
+		}
+	default:
+		requiredKinds := sortedCompletionInteractionKinds(completionRequiredInteractionKinds(state.skillPolicy))
+		requiredKindsText := "the required interaction handoff"
+		if len(requiredKinds) > 0 {
+			requiredKindsText = fmt.Sprintf("one of the required interaction handoffs [%s]", strings.Join(requiredKinds, ", "))
+		}
+		return nativeRepairInstruction{
+			Class: "required_interaction_handoff",
+			Instructions: strings.Join([]string{
+				"Continue from your last assistant turn instead of restarting the run.",
+				fmt.Sprintf("Before the run stops, emit %s declared by the active skill policy.", requiredKindsText),
+				"Do not end the turn with prose only.",
+			}, "\n"),
+		}
+	}
+}
+
+func latestNativeRepairInstruction(state *resolvedRunState, messages []model.AgentRunMessage) nativeRepairInstruction {
+	if state == nil || !state.nativeSelectivePathEnabled {
+		return nativeRepairInstruction{}
+	}
+	message := latestUnresolvedPolicyRetryMessage(messages)
+	if message == nil {
+		return nativeRepairInstruction{}
+	}
+	instruction := classifyNativeRepairInstruction(state, message)
+	if strings.TrimSpace(instruction.Instructions) != "" {
+		return instruction
+	}
+	return nativeRepairInstruction{
+		Class:        "raw_policy_retry",
+		Instructions: strings.TrimSpace(message.Content),
+	}
 }
 
 func replayMessagesForExecution(state *resolvedRunState, messages []model.AgentRunMessage) []model.AgentRunMessage {
@@ -1594,7 +1662,7 @@ func (a *AgentRunActivities) ensureRunConversation(ctx context.Context, state *r
 	if err != nil {
 		return nil, nil, nil, "", err
 	}
-	repairGuidance := latestNativeRepairGuidance(state, messages)
+	repairInstruction := latestNativeRepairInstruction(state, messages)
 	replayMessages := replayMessagesForExecution(state, messages)
 	if !hasExecutionHistoryMessages(replayMessages) {
 		prompt, err := a.buildInitialRunUserPrompt(ctx, state, artifactContext, planningInput, initialInstructions)
@@ -1618,12 +1686,13 @@ func (a *AgentRunActivities) ensureRunConversation(ctx context.Context, state *r
 		"workspace_id", state.run.WorkspaceID,
 		"run_id", state.run.ID,
 		"native_selective_path_enabled", state.nativeSelectivePathEnabled,
-		"repair_guidance_present", strings.TrimSpace(repairGuidance) != "",
+		"repair_guidance_present", strings.TrimSpace(repairInstruction.Instructions) != "",
+		"repair_guidance_class", strings.TrimSpace(repairInstruction.Class),
 		"filtered_policy_retry_messages", len(messages)-len(replayMessages),
 		"history_messages", len(history),
 		"transcript_summary_present", transcriptSummary != nil && strings.TrimSpace(transcriptSummary.Summary) != "",
 	)
-	return history, artifactContext, providerContinuation, repairGuidance, nil
+	return history, artifactContext, providerContinuation, repairInstruction.Instructions, nil
 }
 
 func (a *AgentRunActivities) buildInitialRunUserPrompt(ctx context.Context, state *resolvedRunState, artifactContext *workerpkg.ArtifactContext, planningInput planningRunInput, initialInstructions string) (string, error) {

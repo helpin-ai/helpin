@@ -446,24 +446,87 @@ func TestNativeEpicPlannerNextStepGuidance(t *testing.T) {
 	}
 }
 
-func TestLatestNativeRepairGuidanceRequiresSelectivePath(t *testing.T) {
+func TestLatestNativeRepairInstructionRequiresSelectivePath(t *testing.T) {
 	messages := []model.AgentRunMessage{
 		{Role: "user", MessageType: "policy_retry", Content: "System correction: continue from your last assistant message."},
 	}
 
-	if got := latestNativeRepairGuidance(&resolvedRunState{nativeSelectivePathEnabled: false}, messages); got != "" {
-		t.Fatalf("expected no repair guidance without selective path, got %q", got)
+	got := latestNativeRepairInstruction(&resolvedRunState{nativeSelectivePathEnabled: false}, messages)
+	if got != (nativeRepairInstruction{}) {
+		t.Fatalf("expected no repair instruction without selective path, got %#v", got)
 	}
 }
 
-func TestLatestNativeRepairGuidanceIgnoresResolvedRetry(t *testing.T) {
+func TestLatestNativeRepairInstructionIgnoresResolvedRetry(t *testing.T) {
 	messages := []model.AgentRunMessage{
 		{Role: "user", MessageType: "policy_retry", Content: "System correction: continue from your last assistant message."},
 		{Role: "assistant", MessageType: "assistant_turn", Content: "Retrying with the correct handoff."},
 	}
 
-	if got := latestNativeRepairGuidance(&resolvedRunState{nativeSelectivePathEnabled: true}, messages); got != "" {
-		t.Fatalf("expected no repair guidance after a later assistant turn, got %q", got)
+	got := latestNativeRepairInstruction(&resolvedRunState{nativeSelectivePathEnabled: true}, messages)
+	if got != (nativeRepairInstruction{}) {
+		t.Fatalf("expected no repair instruction after a later assistant turn, got %#v", got)
+	}
+}
+
+func TestClassifyNativeRepairInstructionForApprovalPreviewBinding(t *testing.T) {
+	state := &resolvedRunState{nativeSelectivePathEnabled: true}
+	message := &model.AgentRunMessage{
+		Role:        "user",
+		MessageType: "policy_retry",
+		Content:     "System correction: the previous turn requested approval without binding it to a same-turn preview. Include preview_panel_key when needed.",
+	}
+
+	got := classifyNativeRepairInstruction(state, message)
+	if got.Class != "approval_preview_binding" {
+		t.Fatalf("expected approval preview binding class, got %#v", got)
+	}
+	for _, snippet := range []string{"same turn", "preview_panel_key", "final action"} {
+		if !strings.Contains(strings.ToLower(got.Instructions), snippet) {
+			t.Fatalf("expected approval preview repair guidance to contain %q, got %q", snippet, got.Instructions)
+		}
+	}
+}
+
+func TestClassifyNativeRepairInstructionForReviewCheckpointHandoff(t *testing.T) {
+	state := &resolvedRunState{nativeSelectivePathEnabled: true}
+	message := &model.AgentRunMessage{
+		Role:        "user",
+		MessageType: "policy_retry",
+		Content:     "System correction: emit a review_checkpoint handoff using the runtime-appropriate mechanism.",
+	}
+
+	got := classifyNativeRepairInstruction(state, message)
+	if got.Class != "review_checkpoint_handoff" {
+		t.Fatalf("expected review checkpoint class, got %#v", got)
+	}
+	if !strings.Contains(got.Instructions, "review_checkpoint handoff") {
+		t.Fatalf("expected review checkpoint repair guidance, got %q", got.Instructions)
+	}
+}
+
+func TestClassifyNativeRepairInstructionForRequiredInteractionHandoff(t *testing.T) {
+	state := &resolvedRunState{
+		nativeSelectivePathEnabled: true,
+		skillPolicy: workerpkg.SkillPolicy{
+			CompletionRequiresInteractionKinds: []string{
+				model.AgentRunInteractionKindApprovalRequest,
+				model.AgentRunInteractionKindRequestUserInput,
+			},
+		},
+	}
+	message := &model.AgentRunMessage{
+		Role:        "user",
+		MessageType: "policy_retry",
+		Content:     "System correction: the previous turn ended without creating the required interaction.",
+	}
+
+	got := classifyNativeRepairInstruction(state, message)
+	if got.Class != "required_interaction_handoff" {
+		t.Fatalf("expected required interaction class, got %#v", got)
+	}
+	if !strings.Contains(got.Instructions, model.AgentRunInteractionKindApprovalRequest) || !strings.Contains(got.Instructions, model.AgentRunInteractionKindRequestUserInput) {
+		t.Fatalf("expected required interaction repair guidance to list active policy kinds, got %q", got.Instructions)
 	}
 }
 
@@ -4971,7 +5034,7 @@ func TestExecuteRunActivityThreadsNativeRepairGuidanceWithoutReplayingPolicyRetr
 		runtimes: workerpkg.NewRuntimeRegistry(stubRuntimeAdapter{
 			kind: "native_sdk",
 			executeFn: func(execCtx *workerpkg.ExecutionContext, run *model.AgentRun) error {
-				if !strings.Contains(execCtx.RepairGuidance, "same-turn preview") {
+				if !strings.Contains(strings.ToLower(execCtx.RepairGuidance), "same turn") || !strings.Contains(execCtx.RepairGuidance, "preview_panel_key") {
 					t.Fatalf("expected repair guidance in execution context, got %q", execCtx.RepairGuidance)
 				}
 				for _, message := range execCtx.ConversationHistory {
