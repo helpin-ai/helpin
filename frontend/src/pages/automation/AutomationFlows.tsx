@@ -40,7 +40,7 @@ import { buildAutomationActivityPath } from '@/lib/automationUi';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 
-type AutomationFlowsSearch = {
+export type AutomationFlowsSearch = {
   workflow?: string;
   team?: string;
   template?: string;
@@ -56,7 +56,7 @@ type AutomationFlowsSearch = {
   base_branch?: string;
   tag_name?: string;
   conclusion?: string;
-  target_mode?: 'event' | 'task' | 'epic' | 'repository';
+  target_mode?: 'event' | 'task' | 'epic' | 'repository' | 'workspace';
   target_id?: string;
 };
 
@@ -68,7 +68,7 @@ type FlowDraft = {
   triggerStateId: string;
   actionType: 'start_agent_run' | 'move_to_state' | 'merge_branch';
   agentId: string;
-  targetMode: 'event' | 'task' | 'epic' | 'repository';
+  targetMode: 'event' | 'task' | 'epic' | 'repository' | 'workspace';
   targetId: string;
   targetStateId: string;
   targetBranch: string;
@@ -80,6 +80,12 @@ type FlowDraft = {
   tagName: string;
   conclusion: string;
   cronCategory: string;
+  cronMode: 'simple' | 'advanced';
+  scheduleFrequency: 'hourly' | 'daily' | 'weekly' | 'monthly';
+  scheduleMinute: string;
+  scheduleTime: string;
+  scheduleWeekdays: number[];
+  scheduleDayOfMonth: string;
 };
 
 const WORKFLOW_TRIGGER_TYPES = ['task.state_entered', 'agent_run.approved'] as const;
@@ -106,6 +112,7 @@ const TARGET_LABELS: Record<FlowDraft['targetMode'], string> = {
   task: 'a specific task',
   epic: 'a specific epic',
   repository: 'a specific repository',
+  workspace: 'this workspace',
 };
 
 const TARGET_SHORT_LABELS: Record<FlowDraft['targetMode'], string> = {
@@ -113,13 +120,226 @@ const TARGET_SHORT_LABELS: Record<FlowDraft['targetMode'], string> = {
   task: 'a specific task',
   epic: 'a specific epic',
   repository: 'a specific repository',
+  workspace: 'this workspace',
 };
 
-const CRON_CATEGORY_OPTIONS: { value: string; label: string; hint?: string }[] = [
-  { value: 'workspace_hourly', label: 'Every hour', hint: 'workspace_hourly' },
-  { value: 'workspace_daily', label: 'Every day', hint: 'workspace_daily' },
-  { value: 'workspace_weekly', label: 'Every week', hint: 'workspace_weekly' },
-];
+const SCHEDULE_PRESET_OPTIONS = [
+  { value: 'hourly', label: 'Every hour', schedule: '0 * * * *', hint: 'top of every hour (UTC)' },
+  { value: 'daily', label: 'Every day', schedule: '0 0 * * *', hint: 'midnight UTC' },
+  { value: 'weekly', label: 'Every week', schedule: '0 0 * * 1', hint: 'Mondays at midnight UTC' },
+] as const;
+
+const SCHEDULE_WEEKDAY_OPTIONS = [
+  { value: 1, label: 'Mon' },
+  { value: 2, label: 'Tue' },
+  { value: 3, label: 'Wed' },
+  { value: 4, label: 'Thu' },
+  { value: 5, label: 'Fri' },
+  { value: 6, label: 'Sat' },
+  { value: 0, label: 'Sun' },
+] as const;
+
+type ParsedSimpleSchedule = {
+  frequency: FlowDraft['scheduleFrequency'];
+  minute: string;
+  time: string;
+  weekdays: number[];
+  dayOfMonth: string;
+};
+
+const LEGACY_CRON_CATEGORY_TO_PRESET: Record<string, (typeof SCHEDULE_PRESET_OPTIONS)[number]['value']> = {
+  workspace_hourly: 'hourly',
+  workspace_daily: 'daily',
+  workspace_weekly: 'weekly',
+};
+
+function scheduleExpressionFromConfig(config: Record<string, unknown> | undefined) {
+  const schedule = stringValue(config?.schedule);
+  if (schedule.trim()) return schedule.trim();
+
+  const preset = stringValue(config?.preset);
+  if (preset.trim()) {
+    return SCHEDULE_PRESET_OPTIONS.find((option) => option.value === preset)?.schedule ?? '';
+  }
+
+  const category = stringValue(config?.category);
+  const legacyPreset = LEGACY_CRON_CATEGORY_TO_PRESET[category];
+  if (legacyPreset) {
+    return SCHEDULE_PRESET_OPTIONS.find((option) => option.value === legacyPreset)?.schedule ?? '';
+  }
+  if (category.includes(' ')) return category.trim();
+  return '';
+}
+
+function schedulePresetForExpression(expression: string) {
+  const trimmed = expression.trim();
+  return SCHEDULE_PRESET_OPTIONS.find((option) => option.schedule === trimmed) ?? null;
+}
+
+function clampScheduleNumber(value: string, min: number, max: number, fallback: number) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return String(fallback);
+  return String(Math.min(max, Math.max(min, parsed)));
+}
+
+function normalizeScheduleTime(value: string) {
+  if (!/^\d{2}:\d{2}$/.test(value)) return '09:00';
+  const [hourText, minuteText] = value.split(':');
+  const hour = Number.parseInt(hourText, 10);
+  const minute = Number.parseInt(minuteText, 10);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return '09:00';
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return '09:00';
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function normalizeScheduleWeekdays(weekdays: number[]) {
+  const normalized = Array.from(new Set(weekdays.filter((value) => Number.isInteger(value) && value >= 0 && value <= 6)));
+  if (normalized.length === 0) return [1];
+  return [...normalized].sort(
+    (left, right) =>
+      SCHEDULE_WEEKDAY_OPTIONS.findIndex((option) => option.value === left)
+      - SCHEDULE_WEEKDAY_OPTIONS.findIndex((option) => option.value === right),
+  );
+}
+
+function buildSimpleScheduleExpression(draft: Pick<
+  FlowDraft,
+  'scheduleFrequency' | 'scheduleMinute' | 'scheduleTime' | 'scheduleWeekdays' | 'scheduleDayOfMonth'
+>) {
+  const frequency = draft.scheduleFrequency;
+  if (frequency === 'hourly') {
+    const minute = clampScheduleNumber(draft.scheduleMinute, 0, 59, 0);
+    return `${minute} * * * *`;
+  }
+
+  const [hour, minute] = normalizeScheduleTime(draft.scheduleTime).split(':');
+  if (frequency === 'daily') {
+    return `${Number.parseInt(minute, 10)} ${Number.parseInt(hour, 10)} * * *`;
+  }
+  if (frequency === 'weekly') {
+    return `${Number.parseInt(minute, 10)} ${Number.parseInt(hour, 10)} * * ${normalizeScheduleWeekdays(draft.scheduleWeekdays).join(',')}`;
+  }
+  return `${Number.parseInt(minute, 10)} ${Number.parseInt(hour, 10)} ${clampScheduleNumber(draft.scheduleDayOfMonth, 1, 31, 1)} * *`;
+}
+
+function parseSimpleScheduleExpression(expression: string): ParsedSimpleSchedule | null {
+  const trimmed = expression.trim();
+  if (!trimmed) return null;
+  const parts = trimmed.split(/\s+/);
+  if (parts.length !== 5) return null;
+  const [minuteField, hourField, dayOfMonthField, monthField, dayOfWeekField] = parts;
+  if (monthField !== '*') return null;
+
+  if (
+    dayOfMonthField === '*'
+    && dayOfWeekField === '*'
+    && hourField === '*'
+    && /^\d{1,2}$/.test(minuteField)
+  ) {
+    return {
+      frequency: 'hourly',
+      minute: clampScheduleNumber(minuteField, 0, 59, 0),
+      time: '09:00',
+      weekdays: [1],
+      dayOfMonth: '1',
+    };
+  }
+
+  if (!/^\d{1,2}$/.test(minuteField) || !/^\d{1,2}$/.test(hourField)) return null;
+  const time = `${clampScheduleNumber(hourField, 0, 23, 9).padStart(2, '0')}:${clampScheduleNumber(minuteField, 0, 59, 0).padStart(2, '0')}`;
+
+  if (dayOfMonthField === '*' && dayOfWeekField === '*') {
+    return {
+      frequency: 'daily',
+      minute: clampScheduleNumber(minuteField, 0, 59, 0),
+      time,
+      weekdays: [1],
+      dayOfMonth: '1',
+    };
+  }
+
+  if (dayOfMonthField === '*' && /^[0-6](,[0-6])*$/.test(dayOfWeekField)) {
+    return {
+      frequency: 'weekly',
+      minute: clampScheduleNumber(minuteField, 0, 59, 0),
+      time,
+      weekdays: normalizeScheduleWeekdays(dayOfWeekField.split(',').map((value) => Number.parseInt(value, 10))),
+      dayOfMonth: '1',
+    };
+  }
+
+  if (/^\d{1,2}$/.test(dayOfMonthField) && dayOfWeekField === '*') {
+    return {
+      frequency: 'monthly',
+      minute: clampScheduleNumber(minuteField, 0, 59, 0),
+      time,
+      weekdays: [1],
+      dayOfMonth: clampScheduleNumber(dayOfMonthField, 1, 31, 1),
+    };
+  }
+
+  return null;
+}
+
+function applyScheduleExpressionToDraft(draft: FlowDraft, expression: string) {
+  const parsed = parseSimpleScheduleExpression(expression);
+  draft.cronCategory = expression || '0 * * * *';
+  if (parsed) {
+    draft.cronMode = 'simple';
+    draft.scheduleFrequency = parsed.frequency;
+    draft.scheduleMinute = parsed.minute;
+    draft.scheduleTime = parsed.time;
+    draft.scheduleWeekdays = parsed.weekdays;
+    draft.scheduleDayOfMonth = parsed.dayOfMonth;
+    return;
+  }
+  draft.cronMode = 'advanced';
+}
+
+function scheduleExpressionForDraft(draft: FlowDraft) {
+  if (draft.triggerType !== 'cron') return draft.cronCategory.trim();
+  if (draft.cronMode === 'advanced') return draft.cronCategory.trim();
+  return buildSimpleScheduleExpression(draft).trim();
+}
+
+function describeSimpleSchedule(schedule: ParsedSimpleSchedule) {
+  if (schedule.frequency === 'hourly') {
+    return `Every hour at :${schedule.minute.padStart(2, '0')} UTC`;
+  }
+  if (schedule.frequency === 'daily') {
+    return `Every day at ${schedule.time} UTC`;
+  }
+  if (schedule.frequency === 'weekly') {
+    const days = schedule.weekdays
+      .map((weekday) => SCHEDULE_WEEKDAY_OPTIONS.find((option) => option.value === weekday)?.label)
+      .filter(Boolean)
+      .join(', ');
+    return `Every week on ${days} at ${schedule.time} UTC`;
+  }
+  return `Every month on day ${schedule.dayOfMonth} at ${schedule.time} UTC`;
+}
+
+function describeScheduleExpression(expression: string) {
+  const parsed = parseSimpleScheduleExpression(expression);
+  if (parsed) {
+    return describeSimpleSchedule(parsed);
+  }
+  const preset = schedulePresetForExpression(expression);
+  if (preset) {
+    return `${preset.label} (${preset.hint})`;
+  }
+  return expression.trim();
+}
+
+function serializeScheduleConfig(expression: string) {
+  const schedule = expression.trim();
+  const preset = schedulePresetForExpression(schedule);
+  const config: Record<string, string> = { schedule };
+  if (preset) {
+    config.preset = preset.value;
+  }
+  return config;
+}
 
 type FlowTemplate = {
   id: string;
@@ -174,10 +394,10 @@ const FLOW_TEMPLATES: FlowTemplate[] = [
   {
     id: 'hourly-tick',
     title: 'Hourly digest',
-    description: 'On every hour, run an agent against a fixed task or repo.',
+    description: 'On every hour, run an agent across the workspace or against a fixed target.',
     icon: Clock03Icon,
     tone: 'slate',
-    apply: (base) => ({ ...base, name: 'Hourly digest', triggerType: 'cron', cronCategory: 'workspace_hourly', actionType: 'start_agent_run', targetMode: 'task' }),
+    apply: (base) => ({ ...base, name: 'Hourly digest', triggerType: 'cron', cronCategory: '0 * * * *', actionType: 'start_agent_run', targetMode: 'workspace' }),
   },
 ];
 
@@ -210,7 +430,13 @@ function defaultDraft(): FlowDraft {
     baseBranch: 'main',
     tagName: '',
     conclusion: '',
-    cronCategory: 'workspace_hourly',
+    cronCategory: '0 * * * *',
+    cronMode: 'simple',
+    scheduleFrequency: 'hourly',
+    scheduleMinute: '0',
+    scheduleTime: '09:00',
+    scheduleWeekdays: [1],
+    scheduleDayOfMonth: '1',
   };
 }
 
@@ -322,12 +548,12 @@ function draftFromRule(rule: AutomationRule, workflows: WorkflowWithStates[]): F
   draft.baseBranch = stringValue(rule.trigger_config?.base_branch) || 'main';
   draft.tagName = stringValue(rule.trigger_config?.tag_name);
   draft.conclusion = stringValue(rule.trigger_config?.conclusion);
-  draft.cronCategory = stringValue(rule.trigger_config?.category) || 'workspace_hourly';
+  applyScheduleExpressionToDraft(draft, scheduleExpressionFromConfig(rule.trigger_config) || '0 * * * *');
   applyTriggerDefaults(draft, workflows);
   return draft;
 }
 
-function serializeDraft(draft: FlowDraft) {
+function serializeDraft(draft: FlowDraft, workspaceId: string) {
   let triggerConfig: Record<string, string> = {};
   if (draft.triggerType === 'task.state_entered') {
     triggerConfig = { state_id: draft.triggerStateId };
@@ -346,13 +572,16 @@ function serializeDraft(draft: FlowDraft) {
   } else if (draft.triggerType === 'github.check_suite_completed') {
     triggerConfig = { repo_full_name: draft.repoFullName.trim(), branch: draft.branch.trim(), conclusion: draft.conclusion.trim() };
   } else if (draft.triggerType === 'cron') {
-    triggerConfig = { category: draft.cronCategory.trim() };
+    triggerConfig = serializeScheduleConfig(scheduleExpressionForDraft(draft));
   }
 
   let actionConfig: Record<string, unknown> = {};
   if (draft.actionType === 'start_agent_run') {
     actionConfig = { agent_id: draft.agentId };
-    if (draft.targetMode !== 'event' && draft.targetId) {
+    if (draft.targetMode === 'workspace') {
+      actionConfig.target_type = 'workspace';
+      actionConfig.target_id = workspaceId;
+    } else if (draft.targetMode !== 'event' && draft.targetId) {
       actionConfig.target_type = draft.targetMode;
       actionConfig.target_id = draft.targetId;
     }
@@ -403,15 +632,12 @@ function validateDraft(draft: FlowDraft) {
   if (draft.triggerType === 'github.check_suite_completed' && !draft.repoFullName.trim() && !draft.branch.trim() && !draft.conclusion.trim()) {
     return 'Add a repository, branch, or conclusion filter';
   }
-  if (draft.triggerType === 'cron' && !draft.cronCategory.trim()) {
-    return 'Add a schedule category';
+  if (draft.triggerType === 'cron' && !scheduleExpressionForDraft(draft)) {
+    return 'Add a cron schedule';
   }
   if (draft.actionType === 'start_agent_run') {
     if (!draft.agentId) return 'Choose an agent';
-    if (draft.triggerType === 'cron' && (draft.targetMode === 'event' || !draft.targetId)) {
-      return 'Scheduled flows need a fixed target';
-    }
-    if (draft.targetMode !== 'event' && !draft.targetId) {
+    if (draft.targetMode !== 'event' && draft.targetMode !== 'workspace' && !draft.targetId) {
       return 'Choose a target';
     }
   }
@@ -436,13 +662,13 @@ function describeFilters(rule: AutomationRule, statesById: Map<string, WorkflowS
   const baseBranch = stringValue(rule.trigger_config?.base_branch);
   const tagName = stringValue(rule.trigger_config?.tag_name);
   const conclusion = stringValue(rule.trigger_config?.conclusion);
-  const category = stringValue(rule.trigger_config?.category);
+  const schedule = scheduleExpressionFromConfig(rule.trigger_config);
   if (repoFullName) filters.push(`repo = ${repoFullName}`);
   if (branch) filters.push(`branch = ${branch}`);
   if (baseBranch) filters.push(`base branch = ${baseBranch}`);
   if (tagName) filters.push(`tag = ${tagName}`);
   if (conclusion) filters.push(`conclusion = ${conclusion}`);
-  if (category) filters.push(`category = ${category}`);
+  if (schedule) filters.push(`schedule = ${describeScheduleExpression(schedule)}`);
   return filters.length ? filters.join(' · ') : 'No additional filters';
 }
 
@@ -495,7 +721,7 @@ function draftSentence(draft: FlowDraft, workflows: WorkflowWithStates[], states
     if (draft.baseBranch.trim()) parts.push(`base branch = ${draft.baseBranch.trim()}`);
     if (draft.tagName.trim()) parts.push(`tag = ${draft.tagName.trim()}`);
     if (draft.conclusion.trim()) parts.push(`conclusion = ${draft.conclusion.trim()}`);
-    if (draft.cronCategory.trim() && draft.triggerType === 'cron') parts.push(`category = ${draft.cronCategory.trim()}`);
+    if (scheduleExpressionForDraft(draft) && draft.triggerType === 'cron') parts.push(`schedule = ${describeScheduleExpression(scheduleExpressionForDraft(draft))}`);
     return parts.join(' · ') || 'No additional filters';
   })();
   const then = draft.actionType === 'move_to_state'
@@ -828,12 +1054,24 @@ function FlowComposer({
   const targetRepositoryOptions = repositories.map((repo) => ({ value: repo.id, label: repo.full_name }));
   const selectedRepoId = repositories.find((repo) => repo.full_name === draft.repoFullName)?.id;
   const isCronTrigger = draft.triggerType === 'cron';
-  const cronCategoryIsPreset = CRON_CATEGORY_OPTIONS.some((option) => option.value === draft.cronCategory);
+  const resolvedScheduleExpression = scheduleExpressionForDraft(draft);
+  const simpleSchedulePreview = parseSimpleScheduleExpression(resolvedScheduleExpression);
   const validation = validateDraft(draft);
+
+  useEffect(() => {
+    if (draft.targetMode !== 'workspace' || draft.targetId === workspaceId) return;
+    onDraftChange((current) => current.targetMode === 'workspace'
+      ? { ...current, targetId: workspaceId }
+      : current);
+  }, [draft.targetId, draft.targetMode, onDraftChange, workspaceId]);
 
   const updateDraft = (mutate: (current: FlowDraft) => FlowDraft) => onDraftChange((current) => {
     const next = mutate(current);
     const normalized = { ...next };
+    normalized.scheduleMinute = clampScheduleNumber(normalized.scheduleMinute, 0, 59, 0);
+    normalized.scheduleTime = normalizeScheduleTime(normalized.scheduleTime);
+    normalized.scheduleWeekdays = normalizeScheduleWeekdays(normalized.scheduleWeekdays);
+    normalized.scheduleDayOfMonth = clampScheduleNumber(normalized.scheduleDayOfMonth, 1, 31, 1);
     applyTriggerDefaults(normalized, workflows);
     return normalized;
   });
@@ -1029,34 +1267,166 @@ function FlowComposer({
             )}
 
             {isCronTrigger && (
-              <SentenceRow connector="at">
-                <PillGlue>interval</PillGlue>
-                <Select
-                  value={cronCategoryIsPreset ? draft.cronCategory : '__custom__'}
-                  onValueChange={(value) => updateDraft((current) => ({
-                    ...current,
-                    cronCategory: value === '__custom__' ? (cronCategoryIsPreset ? '' : current.cronCategory) : value,
-                  }))}
-                >
-                  <SelectTrigger size="sm" className="min-w-[10rem]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CRON_CATEGORY_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                    ))}
-                    <SelectItem value="__custom__">Custom category…</SelectItem>
-                  </SelectContent>
-                </Select>
-                {!cronCategoryIsPreset && (
-                  <PillInput
-                    value={draft.cronCategory}
-                    onChange={(value) => updateDraft((current) => ({ ...current, cronCategory: value }))}
-                    placeholder="workspace_hourly"
-                    width="md"
-                  />
-                )}
-              </SentenceRow>
+              <>
+                <SentenceRow connector="at">
+                  <PillGlue>schedule</PillGlue>
+                </SentenceRow>
+                <div className="ml-12 space-y-3 rounded-xl border border-border/60 bg-background/80 p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      variant={draft.cronMode === 'simple' ? 'secondary' : 'ghost'}
+                      size="sm"
+                      onClick={() => updateDraft((current) => {
+                        const parsed = parseSimpleScheduleExpression(scheduleExpressionForDraft(current));
+                        return {
+                          ...current,
+                          cronMode: 'simple',
+                          scheduleFrequency: parsed?.frequency ?? current.scheduleFrequency,
+                          scheduleMinute: parsed?.minute ?? current.scheduleMinute,
+                          scheduleTime: parsed?.time ?? current.scheduleTime,
+                          scheduleWeekdays: parsed?.weekdays ?? current.scheduleWeekdays,
+                          scheduleDayOfMonth: parsed?.dayOfMonth ?? current.scheduleDayOfMonth,
+                        };
+                      })}
+                    >
+                      Simple builder
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={draft.cronMode === 'advanced' ? 'secondary' : 'ghost'}
+                      size="sm"
+                      onClick={() => updateDraft((current) => ({
+                        ...current,
+                        cronMode: 'advanced',
+                        cronCategory: scheduleExpressionForDraft(current),
+                      }))}
+                    >
+                      Advanced cron
+                    </Button>
+                    <span className="text-[11px] text-muted-foreground">
+                      Saved as cron under the hood.
+                    </span>
+                  </div>
+
+                  {draft.cronMode === 'simple' ? (
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <PillGlue>Runs</PillGlue>
+                        <Select
+                          value={draft.scheduleFrequency}
+                          onValueChange={(value: FlowDraft['scheduleFrequency']) => updateDraft((current) => ({
+                            ...current,
+                            scheduleFrequency: value,
+                          }))}
+                        >
+                          <SelectTrigger size="sm" className="min-w-[10rem]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="hourly">Every hour</SelectItem>
+                            <SelectItem value="daily">Every day</SelectItem>
+                            <SelectItem value="weekly">Every week</SelectItem>
+                            <SelectItem value="monthly">Every month</SelectItem>
+                          </SelectContent>
+                        </Select>
+
+                        {draft.scheduleFrequency === 'hourly' ? (
+                          <>
+                            <PillGlue>at minute</PillGlue>
+                            <Input
+                              type="number"
+                              min={0}
+                              max={59}
+                              value={draft.scheduleMinute}
+                              onChange={(event) => updateDraft((current) => ({ ...current, scheduleMinute: event.target.value }))}
+                              className="h-8 w-24"
+                            />
+                          </>
+                        ) : (
+                          <>
+                            <PillGlue>at</PillGlue>
+                            <Input
+                              type="time"
+                              value={draft.scheduleTime}
+                              onChange={(event) => updateDraft((current) => ({ ...current, scheduleTime: event.target.value }))}
+                              className="h-8 w-32"
+                            />
+                          </>
+                        )}
+
+                        {draft.scheduleFrequency === 'monthly' && (
+                          <>
+                            <PillGlue>on day</PillGlue>
+                            <Input
+                              type="number"
+                              min={1}
+                              max={31}
+                              value={draft.scheduleDayOfMonth}
+                              onChange={(event) => updateDraft((current) => ({ ...current, scheduleDayOfMonth: event.target.value }))}
+                              className="h-8 w-24"
+                            />
+                          </>
+                        )}
+                      </div>
+
+                      {draft.scheduleFrequency === 'weekly' && (
+                        <div className="space-y-1.5">
+                          <PillGlue>On days</PillGlue>
+                          <div className="flex flex-wrap gap-1.5">
+                            {SCHEDULE_WEEKDAY_OPTIONS.map((option) => {
+                              const selected = draft.scheduleWeekdays.includes(option.value);
+                              return (
+                                <button
+                                  key={option.value}
+                                  type="button"
+                                  className={cn(
+                                    'rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors',
+                                    selected
+                                      ? 'border-primary/40 bg-primary/10 text-primary'
+                                      : 'border-border text-muted-foreground hover:bg-accent hover:text-foreground',
+                                  )}
+                                  onClick={() => updateDraft((current) => ({
+                                    ...current,
+                                    scheduleWeekdays: selected
+                                      ? (current.scheduleWeekdays.length === 1
+                                        ? current.scheduleWeekdays
+                                        : current.scheduleWeekdays.filter((value) => value !== option.value))
+                                      : [...current.scheduleWeekdays, option.value],
+                                  }))}
+                                >
+                                  {option.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                        <div className="font-medium text-foreground/80">
+                          {simpleSchedulePreview ? describeSimpleSchedule(simpleSchedulePreview) : 'Choose a supported schedule'}
+                        </div>
+                        <div className="mt-1 font-mono text-[11px] text-muted-foreground/80">
+                          {resolvedScheduleExpression || '—'}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <Input
+                        value={draft.cronCategory}
+                        onChange={(event) => updateDraft((current) => ({ ...current, cronCategory: event.target.value }))}
+                        placeholder="0 * * * *"
+                        className="font-mono"
+                      />
+                      <p className="text-[11px] text-muted-foreground">
+                        Use standard 5-field cron. If it matches a simple hourly, daily, weekly, or monthly pattern, you can switch back to the builder.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </>
             )}
 
             <div className="my-1 h-px bg-border/40" />
@@ -1131,7 +1501,11 @@ function FlowComposer({
               <SentenceRow connector="on">
                 <Select
                   value={draft.targetMode}
-                  onValueChange={(value: FlowDraft['targetMode']) => updateDraft((current) => ({ ...current, targetMode: value, targetId: '' }))}
+                  onValueChange={(value: FlowDraft['targetMode']) => updateDraft((current) => ({
+                    ...current,
+                    targetMode: value,
+                    targetId: value === 'workspace' ? workspaceId : value === 'event' ? '' : '',
+                  }))}
                 >
                   <SelectTrigger size="sm" className="min-w-[14rem]">
                     <SelectValue />
@@ -1141,9 +1515,18 @@ function FlowComposer({
                     <SelectItem value="task">{TARGET_SHORT_LABELS.task}</SelectItem>
                     <SelectItem value="epic">{TARGET_SHORT_LABELS.epic}</SelectItem>
                     <SelectItem value="repository">{TARGET_SHORT_LABELS.repository}</SelectItem>
+                    <SelectItem value="workspace">{TARGET_SHORT_LABELS.workspace}</SelectItem>
                   </SelectContent>
                 </Select>
-                {draft.targetMode !== 'event' && (
+                {draft.targetMode === 'workspace' && (
+                  <>
+                    <PillGlue>—</PillGlue>
+                    <Badge variant="secondary" className="rounded-full px-3 py-1 text-xs font-normal">
+                      current workspace
+                    </Badge>
+                  </>
+                )}
+                {draft.targetMode !== 'event' && draft.targetMode !== 'workspace' && (
                   <>
                     <PillGlue>—</PillGlue>
                     <Select
@@ -1486,7 +1869,7 @@ export function AutomationFlowsPage({
       return;
     }
     setSaving(true);
-    const payload = serializeDraft(draft);
+    const payload = serializeDraft(draft, workspaceId);
     const res = editingRuleId
       ? await automationService.updateFlow(workspaceId, editingRuleId, payload)
       : await automationService.createFlow(workspaceId, { workspace_id: workspaceId, ...payload, position: authoredFlows.length });

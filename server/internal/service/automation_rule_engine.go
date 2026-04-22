@@ -55,7 +55,11 @@ type AutomationRuleEngine struct {
 	activitySvc     *PMActivityService
 	wsPublisher     *websocket.Publisher
 	healthObserver  AutomationHealthObserver
-	logger          *slog.Logger
+	runEngine       interface {
+		StartRuleSchedule(ctx context.Context, ruleID, workspaceID, schedule string) error
+		StopRuleSchedule(ctx context.Context, ruleID string) error
+	}
+	logger *slog.Logger
 }
 
 // NewAutomationRuleEngine creates a new AutomationRuleEngine.
@@ -108,6 +112,14 @@ func (e *AutomationRuleEngine) SetCommandService(svc *InternalCommandService) *A
 
 func (e *AutomationRuleEngine) SetTriggerExecutionRepository(repo *repository.AgentTriggerExecutionRepository) *AutomationRuleEngine {
 	e.triggerExecRepo = repo
+	return e
+}
+
+func (e *AutomationRuleEngine) SetRunEngine(runEngine interface {
+	StartRuleSchedule(ctx context.Context, ruleID, workspaceID, schedule string) error
+	StopRuleSchedule(ctx context.Context, ruleID string) error
+}) *AutomationRuleEngine {
+	e.runEngine = runEngine
 	return e
 }
 
@@ -773,6 +785,66 @@ func (e *AutomationRuleEngine) EvaluateCronRules(ctx context.Context, category s
 	}
 }
 
+// ExecuteScheduledRule runs a cron-triggered automation rule from its dedicated schedule.
+func (e *AutomationRuleEngine) ExecuteScheduledRule(ctx context.Context, workspaceID, ruleID string) error {
+	if e == nil {
+		return nil
+	}
+	rule, err := e.ruleRepo.GetByID(ctx, workspaceID, ruleID)
+	if err != nil {
+		return err
+	}
+	if rule == nil {
+		return fmt.Errorf("automation rule not found")
+	}
+	if !rule.Enabled {
+		return fmt.Errorf("automation rule is disabled")
+	}
+	if rule.TriggerType != model.TriggerCron {
+		return fmt.Errorf("automation rule is not scheduled")
+	}
+
+	var actionCfg model.ActionConfigRunAgent
+	if err := json.Unmarshal(rule.ActionConfig, &actionCfg); err != nil {
+		return fmt.Errorf("parse start_agent_run config: %w", err)
+	}
+
+	targetType := strings.TrimSpace(actionCfg.TargetType)
+	targetID := strings.TrimSpace(actionCfg.TargetID)
+	if targetType == "" && targetID == "" {
+		targetType = "workspace"
+		targetID = workspaceID
+	}
+	if targetType == "story" {
+		targetType = "task"
+	}
+
+	event := model.AutomationEvent{
+		WorkspaceID: workspaceID,
+		TriggerType: model.TriggerCron,
+		TargetType:  targetType,
+		TargetID:    targetID,
+	}
+	if rule.TeamID != nil {
+		event.TeamID = strings.TrimSpace(*rule.TeamID)
+	}
+
+	e.logger.InfoContext(ctx, "executing scheduled automation rule",
+		"rule_id", rule.ID,
+		"rule_name", rule.Name,
+		"workspace_id", workspaceID,
+		"target_type", targetType,
+		"target_id", targetID,
+	)
+
+	if err := e.executeAction(ctx, rule, event, nil, &model.RuleExecutionContext{MaxDepth: defaultMaxChainDepth}); err != nil {
+		e.observeFailure(ctx, workspaceID, rule.ID, err)
+		return err
+	}
+	e.observeSuccess(ctx, workspaceID, rule.ID)
+	return nil
+}
+
 // --- CRUD methods ---
 
 // CreateRule creates a new automation rule with validation.
@@ -803,6 +875,10 @@ func (e *AutomationRuleEngine) CreateRule(ctx context.Context, workspaceID strin
 	if err := e.ruleRepo.Create(ctx, rule); err != nil {
 		return nil, err
 	}
+	if err := e.syncRuleSchedule(ctx, rule, false); err != nil {
+		_ = e.ruleRepo.Delete(ctx, workspaceID, rule.ID)
+		return nil, err
+	}
 
 	e.logger.InfoContext(ctx, "automation rule created",
 		"rule_id", rule.ID,
@@ -826,6 +902,7 @@ func (e *AutomationRuleEngine) UpdateRule(ctx context.Context, workspaceID, rule
 	if rule == nil {
 		return nil, fmt.Errorf("automation rule not found")
 	}
+	wasScheduled := rule.TriggerType == model.TriggerCron && rule.Enabled
 
 	if req.Name != nil {
 		rule.Name = *req.Name
@@ -862,6 +939,9 @@ func (e *AutomationRuleEngine) UpdateRule(ctx context.Context, workspaceID, rule
 	if err := e.ruleRepo.Update(ctx, rule); err != nil {
 		return nil, err
 	}
+	if err := e.syncRuleSchedule(ctx, rule, wasScheduled); err != nil {
+		return nil, err
+	}
 	publishWorkspaceEventWithParent(e.wsPublisher, "updated", "automation_rule", rule.ID, workspaceID, "", "workflow", derefString(rule.WorkflowID), map[string]any{
 		"workflow_id": derefString(rule.WorkflowID),
 	})
@@ -876,6 +956,9 @@ func (e *AutomationRuleEngine) DeleteRule(ctx context.Context, workspaceID, rule
 	}
 	if rule == nil {
 		return fmt.Errorf("automation rule not found")
+	}
+	if rule.TriggerType == model.TriggerCron && e.runEngine != nil {
+		_ = e.runEngine.StopRuleSchedule(ctx, rule.ID)
 	}
 	if err := e.ruleRepo.Delete(ctx, workspaceID, ruleID); err != nil {
 		return err
@@ -899,6 +982,23 @@ func (e *AutomationRuleEngine) ListRules(ctx context.Context, workspaceID string
 // ListRulesByWorkflow returns automation rules for a specific workflow.
 func (e *AutomationRuleEngine) ListRulesByWorkflow(ctx context.Context, workspaceID, workflowID string) ([]model.AutomationRule, error) {
 	return e.ruleRepo.ListByWorkflow(ctx, workspaceID, workflowID)
+}
+
+// EnsureScheduledRules ensures Temporal cron workflows exist for all enabled scheduled rules.
+func (e *AutomationRuleEngine) EnsureScheduledRules(ctx context.Context) error {
+	if e == nil || e.runEngine == nil {
+		return nil
+	}
+	rules, err := e.ruleRepo.ListEnabledCronRules(ctx)
+	if err != nil {
+		return err
+	}
+	for idx := range rules {
+		if err := e.syncRuleSchedule(ctx, &rules[idx], false); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // --- Validation ---
@@ -974,8 +1074,8 @@ func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerCo
 		if err := json.Unmarshal(triggerConfig, &cfg); err != nil {
 			return fmt.Errorf("invalid trigger_config for %s: %w", triggerType, err)
 		}
-		if cfg.Category == "" {
-			return fmt.Errorf("category is required in trigger_config for %s", triggerType)
+		if _, _, err := resolveCronTriggerConfig(cfg); err != nil {
+			return fmt.Errorf("invalid trigger_config for %s: %w", triggerType, err)
 		}
 	default:
 		return fmt.Errorf("unsupported trigger_type: %s", triggerType)
@@ -996,9 +1096,6 @@ func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerCo
 		targetID := strings.TrimSpace(cfg.TargetID)
 		if (targetType == "") != (targetID == "") {
 			return fmt.Errorf("target_type and target_id must both be set in action_config for %s", actionType)
-		}
-		if triggerType == model.TriggerCron && (targetType == "" || targetID == "") {
-			return fmt.Errorf("target_type and target_id are required in action_config for %s when trigger_type is %s", actionType, triggerType)
 		}
 		if isGitHubAutomationTrigger(triggerType) && (targetType == "" || targetID == "") {
 			return fmt.Errorf("target_type and target_id are required in action_config for %s when trigger_type is %s", actionType, triggerType)
@@ -1048,6 +1145,66 @@ func isGitHubAutomationTrigger(triggerType string) bool {
 	default:
 		return false
 	}
+}
+
+func resolveCronTriggerConfig(cfg model.TriggerConfigCron) (schedule, preset string, err error) {
+	schedule = strings.TrimSpace(cfg.Schedule)
+	preset = strings.TrimSpace(cfg.Preset)
+	category := strings.TrimSpace(cfg.Category)
+
+	if preset == "" {
+		switch category {
+		case "workspace_hourly":
+			preset = "hourly"
+		case "workspace_daily":
+			preset = "daily"
+		case "workspace_weekly":
+			preset = "weekly"
+		}
+	}
+
+	if schedule == "" && preset != "" {
+		switch preset {
+		case "hourly":
+			schedule = "0 * * * *"
+		case "daily":
+			schedule = "0 0 * * *"
+		case "weekly":
+			schedule = "0 0 * * 1"
+		default:
+			return "", "", fmt.Errorf("unsupported preset %q", preset)
+		}
+	}
+
+	if schedule == "" && category != "" && strings.Contains(category, " ") {
+		schedule = category
+	}
+	if schedule == "" {
+		return "", "", fmt.Errorf("schedule or preset is required")
+	}
+	return schedule, preset, nil
+}
+
+func (e *AutomationRuleEngine) syncRuleSchedule(ctx context.Context, rule *model.AutomationRule, stopFirst bool) error {
+	if e == nil || e.runEngine == nil || rule == nil {
+		return nil
+	}
+	if stopFirst {
+		_ = e.runEngine.StopRuleSchedule(ctx, rule.ID)
+	}
+	if rule.TriggerType != model.TriggerCron || !rule.Enabled {
+		return nil
+	}
+
+	var cfg model.TriggerConfigCron
+	if err := json.Unmarshal(rule.TriggerConfig, &cfg); err != nil {
+		return fmt.Errorf("parse cron trigger config: %w", err)
+	}
+	schedule, _, err := resolveCronTriggerConfig(cfg)
+	if err != nil {
+		return err
+	}
+	return e.runEngine.StartRuleSchedule(ctx, rule.ID, rule.WorkspaceID, schedule)
 }
 
 func matchGitHubPushConfig(cfg model.TriggerConfigGitHubPush, event model.AutomationEvent) bool {

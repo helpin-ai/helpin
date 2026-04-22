@@ -24,7 +24,6 @@ const (
 
 	AgentRunTriggerSourceManual         = "manual"
 	AgentRunTriggerSourceAutomationRule = "automation_rule"
-	AgentRunTriggerSourceSchedule       = "schedule"
 	AgentRunTriggerSourceSystem         = "system"
 
 	AgentRunTriggerTypeManual = "manual"
@@ -58,7 +57,6 @@ type Agent struct {
 	AllowedTools               json.RawMessage `json:"allowed_tools" gorm:"type:jsonb;not null;default:'[]'"`
 	AllowedCommands            json.RawMessage `json:"allowed_commands" gorm:"type:jsonb;not null;default:'[]'"`
 	AllowedTargets             json.RawMessage `json:"allowed_targets" gorm:"type:jsonb;not null;default:'[]'"`
-	Schedule                   *string         `json:"schedule"`
 	ApprovalMode               string          `json:"approval_mode" gorm:"not null;default:'preset_default'"`
 	MaxConcurrentRuns          int             `json:"max_concurrent_runs" gorm:"not null;default:1"`
 	DefaultInvocationMode      string          `json:"default_invocation_mode" gorm:"not null;default:'autonomous'"`
@@ -218,7 +216,6 @@ type CreateAgentRequest struct {
 	AllowedTools          json.RawMessage `json:"allowed_tools"`
 	AllowedCommands       json.RawMessage `json:"allowed_commands"`
 	AllowedTargets        json.RawMessage `json:"allowed_targets"`
-	Schedule              *string         `json:"schedule"`
 	ApprovalMode          *string         `json:"approval_mode"`
 	MaxConcurrentRuns     *int            `json:"max_concurrent_runs"`
 	DefaultInvocationMode *string         `json:"default_invocation_mode"`
@@ -245,7 +242,6 @@ type UpdateAgentRequest struct {
 	AllowedTools          json.RawMessage `json:"allowed_tools"`
 	AllowedCommands       json.RawMessage `json:"allowed_commands"`
 	AllowedTargets        json.RawMessage `json:"allowed_targets"`
-	Schedule              *string         `json:"schedule"`
 	ApprovalMode          *string         `json:"approval_mode"`
 	MaxConcurrentRuns     *int            `json:"max_concurrent_runs"`
 	DefaultInvocationMode *string         `json:"default_invocation_mode"`

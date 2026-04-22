@@ -29,6 +29,28 @@ func TestProviderUsesAgenticResponses(t *testing.T) {
 	}
 }
 
+func TestResolveOpenAIResponsesBaseURLDefaultsToOpenAIAPI(t *testing.T) {
+	if got := resolveOpenAIResponsesBaseURL(""); got != defaultOpenAIResponsesBaseURL {
+		t.Fatalf("expected default openai responses base url %q, got %q", defaultOpenAIResponsesBaseURL, got)
+	}
+	if got := resolveOpenAIResponsesBaseURL("  "); got != defaultOpenAIResponsesBaseURL {
+		t.Fatalf("expected blank openai responses base url to fall back to %q, got %q", defaultOpenAIResponsesBaseURL, got)
+	}
+}
+
+func TestResolveOpenAIResponsesBaseURLPreservesExplicitValue(t *testing.T) {
+	want := "https://proxy.example/v1"
+	if got := resolveOpenAIResponsesBaseURL("  " + want + "  "); got != want {
+		t.Fatalf("expected explicit openai responses base url %q, got %q", want, got)
+	}
+}
+
+func TestResolveOpenRouterBaseURLDefaultsToOpenRouterAPI(t *testing.T) {
+	if got := resolveOpenRouterBaseURL(""); got != defaultOpenRouterBaseURL {
+		t.Fatalf("expected default openrouter base url %q, got %q", defaultOpenRouterBaseURL, got)
+	}
+}
+
 func TestProviderContinuationFromAgenticMessage(t *testing.T) {
 	msg := &schema.AgenticMessage{
 		Role: schema.AgenticRoleTypeAssistant,

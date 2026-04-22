@@ -6,6 +6,7 @@ import {
   Layers01Icon,
 } from '@/lib/icons';
 import { Calendar03Icon, Tick01Icon, UserAdd01Icon } from '@/lib/pmIcons';
+import { AlertCircleIcon } from '@/lib/icons';
 import { AgentAvatar, resolveAgentPersonaKey } from '@/components/agents/AgentAvatar';
 import { differenceInDays, format, formatDistanceToNow, isBefore, parseISO, startOfDay } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -64,6 +65,17 @@ interface TaskCardProps {
 }
 
 const AGENT_OCTAGON_POINTS = '30,2 70,2 98,30 98,70 70,98 30,98 2,70 2,30';
+
+const AWAITING_INPUT_LABELS: Record<string, string> = {
+  human_input: 'Awaiting your input',
+  human_approval: 'Awaiting approval',
+  authentication: 'Needs auth',
+};
+
+function getAwaitingLabel(pauseReason?: string | null): string | null {
+  if (!pauseReason || pauseReason === 'none') return null;
+  return AWAITING_INPUT_LABELS[pauseReason] ?? 'Awaiting your input';
+}
 
 function TaskCardAgentBadge({
   agent,
@@ -583,27 +595,48 @@ function TaskCardComponent({
               && !!task.latest_run_id
               && !!task.latest_run_status
               && ACTIVE_RUN_STATUSES.has(task.latest_run_status);
+            const awaitingLabel = task.latest_run_status === 'paused'
+              ? getAwaitingLabel(task.latest_run_pause_reason)
+              : null;
             const runTimeLabel = task.latest_run_at
               ? `Last run ${formatDistanceToNow(new Date(task.latest_run_at), { addSuffix: true })}`
               : 'Last run';
             const baseLabel = latestRunAgent?.name ? `${runTimeLabel}: ${latestRunAgent.name}` : runTimeLabel;
-            const tooltipLabel = hasActiveRun ? `${baseLabel} · Open run` : baseLabel;
+            const tooltipLabel = awaitingLabel
+              ? `${awaitingLabel}${latestRunAgent?.name ? ` · ${latestRunAgent.name}` : ''} · Open run`
+              : hasActiveRun ? `${baseLabel} · Open run` : baseLabel;
             const handleAgentClick = (e: React.MouseEvent | React.KeyboardEvent) => {
               e.stopPropagation();
               e.preventDefault();
               onOpenAgentRun?.(task);
             };
+            const awaitingPill = awaitingLabel ? (
+              <span
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px] font-medium',
+                  'border-amber-300 bg-amber-100 text-amber-900',
+                  'dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-200',
+                )}
+              >
+                <AlertCircleIcon className="h-3 w-3" aria-hidden="true" />
+                {awaitingLabel}
+              </span>
+            ) : null;
+            const badgeContent = (
+              <span className="inline-flex items-center gap-1.5">
+                {awaitingPill}
+                <TaskCardAgentBadge
+                  agent={latestRunAgent}
+                  isWorking={hasActiveRun}
+                  latestRunStatus={task.latest_run_status}
+                />
+              </span>
+            );
             return (
               <Tooltip>
                 <TooltipTrigger asChild>
                   {isOverlay ? (
-                    <span className="shrink-0">
-                      <TaskCardAgentBadge
-                        agent={latestRunAgent}
-                        isWorking={hasActiveRun}
-                        latestRunStatus={task.latest_run_status}
-                      />
-                    </span>
+                    <span className="shrink-0">{badgeContent}</span>
                   ) : (
                     <button
                       type="button"
@@ -618,11 +651,7 @@ function TaskCardComponent({
                       className="shrink-0 rounded transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                       aria-label={tooltipLabel}
                     >
-                      <TaskCardAgentBadge
-                        agent={latestRunAgent}
-                        isWorking={hasActiveRun}
-                        latestRunStatus={task.latest_run_status}
-                      />
+                      {badgeContent}
                     </button>
                   )}
                 </TooltipTrigger>

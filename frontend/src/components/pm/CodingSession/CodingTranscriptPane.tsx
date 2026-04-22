@@ -709,7 +709,7 @@ function TranscriptEntry({
     return <DeveloperPromptTranscriptCard content={message.content} timestamp={message.timestamp} />;
   }
 
-  if (message.message_type === 'review_checkpoint_resolution') {
+  if (message.message_type === 'review_checkpoint_resolution' || message.message_type === 'approval_request_resolution') {
     return <ReviewDecisionTranscriptCard content={message.content} timestamp={message.timestamp} />;
   }
 

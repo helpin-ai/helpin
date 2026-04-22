@@ -1023,12 +1023,13 @@ type stateInfo struct {
 
 // latestRunRow is a scan row for the most recent agent_run per task.
 type latestRunRow struct {
-	TargetID  string     `gorm:"column:target_id"`
-	ID        string     `gorm:"column:id"`
-	AgentID   string     `gorm:"column:agent_id"`
-	Status    string     `gorm:"column:status"`
-	StartedAt *time.Time `gorm:"column:started_at"`
-	CreatedAt time.Time  `gorm:"column:created_at"`
+	TargetID    string     `gorm:"column:target_id"`
+	ID          string     `gorm:"column:id"`
+	AgentID     string     `gorm:"column:agent_id"`
+	Status      string     `gorm:"column:status"`
+	PauseReason string     `gorm:"column:pause_reason"`
+	StartedAt   *time.Time `gorm:"column:started_at"`
+	CreatedAt   time.Time  `gorm:"column:created_at"`
 }
 
 // applyLatestRunMetadata populates latest task-targeted run metadata on each
@@ -1048,7 +1049,7 @@ func (r *PMTaskRepository) applyLatestRunMetadata(ctx context.Context, tasks []m
 	var rows []latestRunRow
 	if err := r.db.WithContext(ctx).
 		Table("agent_runs").
-		Select("target_id, id, agent_id, status, started_at, created_at").
+		Select("target_id, id, agent_id, status, pause_reason, started_at, created_at").
 		Where("target_type = ? AND target_id IN ?", "task", ids).
 		Order("target_id, COALESCE(started_at, created_at) DESC, created_at DESC").
 		Find(&rows).Error; err != nil {
@@ -1074,6 +1075,10 @@ func (r *PMTaskRepository) applyLatestRunMetadata(ctx context.Context, tasks []m
 		tasks[i].LatestRunID = &runID
 		tasks[i].LatestRunAgentID = &runAgentID
 		tasks[i].LatestRunStatus = &runStatus
+		if row.PauseReason != "" && row.PauseReason != "none" {
+			pauseReason := row.PauseReason
+			tasks[i].LatestRunPauseReason = &pauseReason
+		}
 		tasks[i].LatestRunAt = &latestRunAt
 	}
 	return tasks

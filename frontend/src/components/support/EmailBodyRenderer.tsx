@@ -14,12 +14,16 @@ const QUOTE_ATTR = 'data-helpin-quote';
 // Minimal iframe baseline. We want author stylesheets to win, so we only
 // set inherit-able defaults on the document root — email inline styles and
 // <style> blocks override for anything specific.
+// Email HTML is authored for light backgrounds. Force a white canvas inside
+// the iframe so author colors remain readable when the host app is in dark
+// mode (matches Gmail/Outlook behavior).
 const IFRAME_STYLES = `
   html, body {
     margin: 0;
     padding: 0;
-    background: transparent;
+    background: #ffffff;
     color: #111827;
+    color-scheme: light;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     font-size: 14px;
     line-height: 1.5;

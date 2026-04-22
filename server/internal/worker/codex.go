@@ -272,7 +272,7 @@ func (e *CodexExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) 
 		appendInteractivePlainTextQuestionInputRequest(execCtx, result)
 	}
 
-	if ExtractLatestHumanApprovalRequest(result.ToolInvocations) != nil || ExtractLatestHumanInputRequest(result.ToolInvocations) != nil {
+	if ExtractLatestApprovalRequest(result.ToolInvocations) != nil || ExtractLatestReviewCheckpointRequest(result.ToolInvocations) != nil || ExtractLatestHumanInputRequest(result.ToolInvocations) != nil {
 		return nil
 	}
 
@@ -984,7 +984,7 @@ func appendInteractivePlainTextQuestionInputRequest(execCtx *ExecutionContext, r
 }
 
 func appendInteractivePlainTextQuestionInputRequestForRuntime(execCtx *ExecutionContext, result *ExecutionResult, runtimeKind string) {
-	if result == nil || ExtractLatestHumanInputRequest(result.ToolInvocations) != nil || ExtractLatestHumanApprovalRequest(result.ToolInvocations) != nil {
+	if result == nil || ExtractLatestHumanInputRequest(result.ToolInvocations) != nil || ExtractLatestApprovalRequest(result.ToolInvocations) != nil || ExtractLatestReviewCheckpointRequest(result.ToolInvocations) != nil {
 		return
 	}
 	if execCtx != nil && !RequestUserInputUsesRuntimeBridge(execCtx.SkillPolicy, runtimeKind) {

@@ -492,7 +492,7 @@ func TestValidateRuleRequest_NewTypes(t *testing.T) {
 		{
 			name:          "valid cron + run_command",
 			triggerType:   model.TriggerCron,
-			triggerConfig: json.RawMessage(`{"category":"sprint_hourly"}`),
+			triggerConfig: json.RawMessage(`{"preset":"hourly"}`),
 			actionType:    model.ActionRunCommand,
 			actionConfig:  json.RawMessage(`{"command_name":"pm.sprint_auto_create"}`),
 			wantErr:       false,
@@ -652,7 +652,7 @@ func TestValidateRuleRequest_NewTypes(t *testing.T) {
 		{
 			name:          "valid cron start_agent_run with explicit target",
 			triggerType:   model.TriggerCron,
-			triggerConfig: json.RawMessage(`{"category":"sprint_hourly"}`),
+			triggerConfig: json.RawMessage(`{"preset":"hourly"}`),
 			actionType:    model.ActionStartAgentRun,
 			actionConfig:  json.RawMessage(`{"agent_id":"agent-1","target_type":"epic","target_id":"epic-1"}`),
 			wantErr:       false,
@@ -674,12 +674,12 @@ func TestValidateRuleRequest_NewTypes(t *testing.T) {
 			wantErr:       true,
 		},
 		{
-			name:          "cron start_agent_run missing explicit target is invalid",
+			name:          "cron start_agent_run without explicit target is valid",
 			triggerType:   model.TriggerCron,
-			triggerConfig: json.RawMessage(`{"category":"sprint_hourly"}`),
+			triggerConfig: json.RawMessage(`{"schedule":"0 * * * *"}`),
 			actionType:    model.ActionStartAgentRun,
 			actionConfig:  json.RawMessage(`{"agent_id":"agent-1"}`),
-			wantErr:       true,
+			wantErr:       false,
 		},
 		{
 			name:          "legacy start_flow rejected",
@@ -712,6 +712,65 @@ func TestValidateRuleRequest_NewTypes(t *testing.T) {
 			err := engine.validateRuleRequest(tt.triggerType, tt.triggerConfig, tt.actionType, tt.actionConfig)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("validateRuleRequest() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestResolveCronTriggerConfig(t *testing.T) {
+	tests := []struct {
+		name         string
+		cfg          model.TriggerConfigCron
+		wantSchedule string
+		wantPreset   string
+		wantErr      bool
+	}{
+		{
+			name:         "explicit schedule wins",
+			cfg:          model.TriggerConfigCron{Schedule: "15 * * * *"},
+			wantSchedule: "15 * * * *",
+		},
+		{
+			name:         "preset maps to cron",
+			cfg:          model.TriggerConfigCron{Preset: "hourly"},
+			wantSchedule: "0 * * * *",
+			wantPreset:   "hourly",
+		},
+		{
+			name:         "legacy category maps to preset",
+			cfg:          model.TriggerConfigCron{Category: "workspace_daily"},
+			wantSchedule: "0 0 * * *",
+			wantPreset:   "daily",
+		},
+		{
+			name:         "raw cron in legacy category is accepted",
+			cfg:          model.TriggerConfigCron{Category: "0 6 * * 1"},
+			wantSchedule: "0 6 * * 1",
+		},
+		{
+			name:    "empty config is rejected",
+			cfg:     model.TriggerConfigCron{},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotSchedule, gotPreset, err := resolveCronTriggerConfig(tt.cfg)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("resolveCronTriggerConfig() error = %v", err)
+			}
+			if gotSchedule != tt.wantSchedule {
+				t.Fatalf("schedule = %q, want %q", gotSchedule, tt.wantSchedule)
+			}
+			if gotPreset != tt.wantPreset {
+				t.Fatalf("preset = %q, want %q", gotPreset, tt.wantPreset)
 			}
 		})
 	}

@@ -2,6 +2,7 @@ package worker
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -118,5 +119,48 @@ func TestExtractJSONObjectFindsBalancedJSONInsideProse(t *testing.T) {
 	}
 	if payload["title"] != "Brace test" {
 		t.Fatalf("unexpected extracted title: %q", payload["title"])
+	}
+}
+
+func TestNormalizeTaskPlanPreviewContentRejectsStringTaskEntries(t *testing.T) {
+	_, err := NormalizeTaskPlanPreviewContent(json.RawMessage(`{
+		"summary":"Need to replace with correct structured payload.",
+		"proposed_tasks":["story_1"]
+	}`))
+	if err == nil {
+		t.Fatal("expected invalid task-plan preview content to be rejected")
+	}
+	if !strings.Contains(err.Error(), "task plan content proposed_tasks entries must be task objects") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestNormalizeTaskPlanPreviewContentCanonicalizesLegacyProposedStories(t *testing.T) {
+	normalized, err := NormalizeTaskPlanPreviewContent(json.RawMessage(`{
+		"summary":"Breakdown",
+		"proposed_stories":[
+			{
+				"ref":"story_1",
+				"name":"Story A",
+				"description":"Do A",
+				"story_type":"feature",
+				"acceptance_criteria":["works"],
+				"dependency_refs":[]
+			}
+		]
+	}`))
+	if err != nil {
+		t.Fatalf("NormalizeTaskPlanPreviewContent returned error: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(normalized, &payload); err != nil {
+		t.Fatalf("unmarshal normalized payload: %v", err)
+	}
+	if _, ok := payload["proposed_tasks"]; !ok {
+		t.Fatalf("expected canonical proposed_tasks key, got %#v", payload)
+	}
+	if _, ok := payload["proposed_stories"]; ok {
+		t.Fatalf("expected legacy proposed_stories key to be removed, got %#v", payload)
 	}
 }
