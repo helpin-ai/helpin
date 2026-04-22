@@ -607,6 +607,61 @@ func TestApprovalPreviewRetryInstructionForMultiplePreviews(t *testing.T) {
 	}
 }
 
+func TestLatestNativeRepairInstructionFromArtifactsUsesLatestAssistantSequence(t *testing.T) {
+	messages := []model.AgentRunMessage{
+		{SequenceNo: 1, Role: "user", MessageType: "prompt", Content: "Start"},
+		{SequenceNo: 2, Role: "assistant", MessageType: "assistant_turn", Content: "Drafted the task plan."},
+	}
+	payload, _ := json.Marshal(model.NativeRepairState{
+		Source:      "tool_failure",
+		RepairClass: "publish_task_plan_object_shape",
+		RepairHint:  "Retry publish_task_plan with one complete JSON object in content.",
+	})
+	artifacts := []model.AgentRunArtifact{
+		{
+			ArtifactType:  model.AgentRunArtifactTypeNativeRepairState,
+			InlineContent: strPtr(string(payload)),
+			Metadata:      buildAssistantSequenceArtifactMetadata(2),
+			SequenceNo:    1,
+		},
+	}
+
+	got := latestNativeRepairInstructionFromArtifacts(messages, artifacts)
+	if got.Class != "publish_task_plan_object_shape" {
+		t.Fatalf("expected repair artifact class, got %#v", got)
+	}
+	if !strings.Contains(got.Instructions, "complete JSON object") {
+		t.Fatalf("expected repair hint from artifact, got %q", got.Instructions)
+	}
+}
+
+func TestLatestNativeRepairInstructionFromArtifactsIgnoresStaleAssistantArtifact(t *testing.T) {
+	messages := []model.AgentRunMessage{
+		{SequenceNo: 1, Role: "user", MessageType: "prompt", Content: "Start"},
+		{SequenceNo: 2, Role: "assistant", MessageType: "assistant_turn", Content: "Old failing turn."},
+		{SequenceNo: 3, Role: "user", MessageType: "prompt", Content: "Continue"},
+		{SequenceNo: 4, Role: "assistant", MessageType: "assistant_turn", Content: "Newer turn."},
+	}
+	payload, _ := json.Marshal(model.NativeRepairState{
+		Source:      "tool_failure",
+		RepairClass: "publish_task_plan_object_shape",
+		RepairHint:  "Retry publish_task_plan with one complete JSON object in content.",
+	})
+	artifacts := []model.AgentRunArtifact{
+		{
+			ArtifactType:  model.AgentRunArtifactTypeNativeRepairState,
+			InlineContent: strPtr(string(payload)),
+			Metadata:      buildAssistantSequenceArtifactMetadata(2),
+			SequenceNo:    1,
+		},
+	}
+
+	got := latestNativeRepairInstructionFromArtifacts(messages, artifacts)
+	if got != (nativeRepairInstruction{}) {
+		t.Fatalf("expected stale repair artifact to be ignored, got %#v", got)
+	}
+}
+
 func TestClassifyPublishTaskPlanRepair(t *testing.T) {
 	testCases := []struct {
 		name        string
@@ -4161,6 +4216,131 @@ func TestPersistAssistantRunMessagePersistsNativeTurnDebugArtifact(t *testing.T)
 	}
 	if !found {
 		t.Fatal("expected native_turn_debug artifact to be persisted")
+	}
+}
+
+func TestPersistAssistantRunMessagePersistsNativeRepairStateArtifact(t *testing.T) {
+	dbName := fmt.Sprintf("file:native-repair-state-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_messages (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			role TEXT NOT NULL,
+			content TEXT,
+			message_type TEXT NOT NULL DEFAULT 'message',
+			content_blocks TEXT,
+			turn_segments TEXT,
+			tool_invocations TEXT,
+			token_usage TEXT,
+			sequence_no INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME
+		)`,
+		`CREATE TABLE agent_run_artifacts (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			artifact_type TEXT NOT NULL,
+			format TEXT NOT NULL,
+			storage_mode TEXT NOT NULL,
+			inline_content TEXT,
+			object_key TEXT,
+			metadata TEXT NOT NULL,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+	}
+
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	activities := &AgentRunActivities{runMessageRepo: runMessageRepo, artifactRepo: artifactRepo}
+
+	run := &model.AgentRun{ID: "native-repair-1", WorkspaceID: "ws-1"}
+	state := &resolvedRunState{
+		run:                        run,
+		agent:                      &model.Agent{RuntimeKind: "native_sdk"},
+		nativeSelectivePathEnabled: true,
+	}
+	execCtx := &workerpkg.ExecutionContext{
+		NativeSelectivePathEnabled: true,
+		LastExecutionResult: &workerpkg.ExecutionResult{
+			AssistantText: "Tried to publish the task plan.",
+			Messages: []workerpkg.ExecutionMessage{
+				{Role: "assistant", Content: "Tried to publish the task plan."},
+				{
+					Role:    "tool",
+					Content: "publish_task_plan content must be a JSON object with summary and proposed_tasks",
+					Blocks: []workerpkg.ExecutionBlock{
+						{
+							Type:     workerpkg.ExecutionBlockTypeToolResult,
+							ToolName: workerpkg.ToolPublishTaskPlan,
+							Output:   "publish_task_plan content must be a JSON object with summary and proposed_tasks",
+							IsError:  true,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	assistantMessage, err := activities.persistAssistantRunMessage(context.Background(), state, execCtx)
+	if err != nil {
+		t.Fatalf("persistAssistantRunMessage returned error: %v", err)
+	}
+	if assistantMessage == nil {
+		t.Fatal("expected assistant message to be persisted")
+	}
+
+	artifacts, err := artifactRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+
+	found := false
+	for _, artifact := range artifacts {
+		if artifact.ArtifactType != model.AgentRunArtifactTypeNativeRepairState || artifact.InlineContent == nil {
+			continue
+		}
+		found = true
+
+		var payload model.NativeRepairState
+		if err := json.Unmarshal([]byte(*artifact.InlineContent), &payload); err != nil {
+			t.Fatalf("unmarshal repair state payload: %v", err)
+		}
+		if payload.Source != "tool_failure" {
+			t.Fatalf("expected tool_failure source, got %#v", payload)
+		}
+		if payload.RepairClass != "publish_task_plan_object_shape" {
+			t.Fatalf("expected publish_task_plan repair class, got %#v", payload)
+		}
+		if payload.ToolName != workerpkg.ToolPublishTaskPlan {
+			t.Fatalf("expected publish_task_plan tool name, got %#v", payload)
+		}
+		if !strings.Contains(payload.RepairHint, "complete JSON object") {
+			t.Fatalf("expected repair hint in payload, got %#v", payload)
+		}
+		if !strings.Contains(payload.ErrorSummary, "summary and proposed_tasks") {
+			t.Fatalf("expected original error summary in payload, got %#v", payload)
+		}
+
+		var metadata map[string]any
+		if err := json.Unmarshal(artifact.Metadata, &metadata); err != nil {
+			t.Fatalf("unmarshal metadata: %v", err)
+		}
+		if got := metadata["assistant_message_sequence_no"]; got != float64(assistantMessage.SequenceNo) {
+			t.Fatalf("expected assistant sequence metadata, got %#v", metadata)
+		}
+	}
+	if !found {
+		t.Fatal("expected native_repair_state artifact to be persisted")
 	}
 }
 

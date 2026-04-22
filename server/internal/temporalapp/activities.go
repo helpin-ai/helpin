@@ -418,6 +418,21 @@ func latestUnresolvedNativeToolFailure(messages []model.AgentRunMessage) *worker
 	return nil
 }
 
+func latestExecutionToolFailure(messages []workerpkg.ExecutionMessage) *workerpkg.ExecutionBlock {
+	toolMessages := finalRoundToolMessages(messages)
+	for i := len(toolMessages) - 1; i >= 0; i-- {
+		for j := len(toolMessages[i].Blocks) - 1; j >= 0; j-- {
+			block := toolMessages[i].Blocks[j]
+			if block.Type != workerpkg.ExecutionBlockTypeToolResult || !block.IsError {
+				continue
+			}
+			copied := block
+			return &copied
+		}
+	}
+	return nil
+}
+
 func parsePersistedExecutionBlocks(raw json.RawMessage) []workerpkg.ExecutionBlock {
 	if len(raw) == 0 || string(raw) == "null" {
 		return nil
@@ -646,6 +661,45 @@ func latestNativeRepairInstruction(state *resolvedRunState, messages []model.Age
 		Class:        "raw_policy_retry",
 		Instructions: strings.TrimSpace(message.Content),
 	}
+}
+
+func latestNativeRepairInstructionFromArtifacts(messages []model.AgentRunMessage, artifacts []model.AgentRunArtifact) nativeRepairInstruction {
+	if len(messages) == 0 || len(artifacts) == 0 {
+		return nativeRepairInstruction{}
+	}
+	latestAssistantSeq := 0
+	for i := len(messages) - 1; i >= 0; i-- {
+		if strings.TrimSpace(messages[i].Role) != "assistant" {
+			continue
+		}
+		latestAssistantSeq = messages[i].SequenceNo
+		break
+	}
+	if latestAssistantSeq <= 0 {
+		return nativeRepairInstruction{}
+	}
+	for i := len(artifacts) - 1; i >= 0; i-- {
+		artifact := artifacts[i]
+		if strings.TrimSpace(artifact.ArtifactType) != model.AgentRunArtifactTypeNativeRepairState || artifact.InlineContent == nil {
+			continue
+		}
+		if artifactAssistantMessageSequenceNo(artifact) != latestAssistantSeq {
+			continue
+		}
+		var payload model.NativeRepairState
+		if err := json.Unmarshal([]byte(*artifact.InlineContent), &payload); err != nil {
+			continue
+		}
+		hint := strings.TrimSpace(payload.RepairHint)
+		if hint == "" {
+			continue
+		}
+		return nativeRepairInstruction{
+			Class:        strings.TrimSpace(payload.RepairClass),
+			Instructions: hint,
+		}
+	}
+	return nativeRepairInstruction{}
 }
 
 func replayMessagesForExecution(state *resolvedRunState, messages []model.AgentRunMessage) []model.AgentRunMessage {
@@ -1887,7 +1941,17 @@ func (a *AgentRunActivities) ensureRunConversation(ctx context.Context, state *r
 	if err != nil {
 		return nil, nil, nil, nativeRepairInstruction{}, err
 	}
-	repairInstruction := latestNativeRepairInstruction(state, messages)
+	repairInstruction := nativeRepairInstruction{}
+	if state.nativeSelectivePathEnabled && a.artifactRepo != nil {
+		artifacts, err := a.artifactRepo.ListByRun(ctx, state.run.WorkspaceID, state.run.ID)
+		if err != nil {
+			return nil, nil, nil, nativeRepairInstruction{}, err
+		}
+		repairInstruction = latestNativeRepairInstructionFromArtifacts(messages, artifacts)
+	}
+	if strings.TrimSpace(repairInstruction.Instructions) == "" {
+		repairInstruction = latestNativeRepairInstruction(state, messages)
+	}
 	replayMessages := replayMessagesForExecution(state, messages)
 	if !hasExecutionHistoryMessages(replayMessages) {
 		prompt, err := a.buildInitialRunUserPrompt(ctx, state, artifactContext, planningInput, initialInstructions)
@@ -2486,6 +2550,9 @@ func (a *AgentRunActivities) persistAssistantRunMessage(ctx context.Context, sta
 	if err := a.persistNativeTurnDebugArtifact(ctx, state, execCtx, assistantMessage); err != nil {
 		return nil, err
 	}
+	if err := a.persistNativeRepairStateArtifact(ctx, state, execCtx, assistantMessage); err != nil {
+		return nil, err
+	}
 
 	for _, toolMessage := range buildPersistedToolResultMessages(result.Messages) {
 		if _, err := a.createRunMessage(ctx, state.run, toolMessage.Role, toolMessage.MessageType, toolMessage.Content, toolMessage.ContentBlocks, nil, nil, nil); err != nil {
@@ -2521,6 +2588,40 @@ func (a *AgentRunActivities) persistNativeTurnDebugArtifact(ctx context.Context,
 		ctx,
 		state.run,
 		model.AgentRunArtifactTypeNativeTurnDebug,
+		"json",
+		payload,
+		buildAssistantSequenceArtifactMetadata(assistantMessage.SequenceNo),
+	)
+	return err
+}
+
+func (a *AgentRunActivities) persistNativeRepairStateArtifact(ctx context.Context, state *resolvedRunState, execCtx *workerpkg.ExecutionContext, assistantMessage *model.AgentRunMessage) error {
+	if a == nil || a.artifactRepo == nil || state == nil || state.run == nil || execCtx == nil || execCtx.LastExecutionResult == nil || assistantMessage == nil {
+		return nil
+	}
+	runtimeKind := executionRuntimeKind(state)
+	if !state.nativeSelectivePathEnabled || !execCtx.NativeSelectivePathEnabled || strings.TrimSpace(runtimeKind) != "native_sdk" {
+		return nil
+	}
+	failure := latestExecutionToolFailure(execCtx.LastExecutionResult.Messages)
+	if failure == nil {
+		return nil
+	}
+	repair := classifyNativeToolFailureRepair(state, failure)
+	if strings.TrimSpace(repair.Class) == "" || strings.TrimSpace(repair.Instructions) == "" {
+		return nil
+	}
+	payload := model.NativeRepairState{
+		Source:       "tool_failure",
+		RepairClass:  strings.TrimSpace(repair.Class),
+		ToolName:     strings.TrimSpace(failure.ToolName),
+		RepairHint:   strings.TrimSpace(repair.Instructions),
+		ErrorSummary: strings.TrimSpace(failure.Output),
+	}
+	_, err := a.appendRunArtifactWithMetadata(
+		ctx,
+		state.run,
+		model.AgentRunArtifactTypeNativeRepairState,
 		"json",
 		payload,
 		buildAssistantSequenceArtifactMetadata(assistantMessage.SequenceNo),
