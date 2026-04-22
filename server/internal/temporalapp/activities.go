@@ -622,21 +622,7 @@ func classifyNativeRepairInstruction(state *resolvedRunState, message *model.Age
 }
 
 func extractRequiredSameTurnPreviewKey(content string) string {
-	content = strings.TrimSpace(content)
-	if content == "" {
-		return ""
-	}
-	const marker = "required same-turn "
-	start := strings.Index(content, marker)
-	if start == -1 {
-		return ""
-	}
-	remaining := content[start+len(marker):]
-	end := strings.Index(remaining, " preview")
-	if end == -1 {
-		return ""
-	}
-	return normalizeApprovalPreviewPanelKey(strings.TrimSpace(remaining[:end]))
+	return extractPreviewKeyAfterMarker(content, "required same-turn ", " preview")
 }
 
 func latestNativeRepairInstruction(state *resolvedRunState, messages []model.AgentRunMessage) nativeRepairInstruction {
@@ -1797,17 +1783,20 @@ func approvalPreviewRetryInstruction(causeText string) string {
 }
 
 func extractRequiredPreviewKeyFromCause(causeText string) string {
-	causeText = strings.TrimSpace(causeText)
-	if causeText == "" {
+	return extractPreviewKeyAfterMarker(causeText, "requires a same-turn ", " preview before requesting approval")
+}
+
+func extractPreviewKeyAfterMarker(content, marker, terminator string) string {
+	content = strings.TrimSpace(content)
+	if content == "" || marker == "" || terminator == "" {
 		return ""
 	}
-	const marker = "requires a same-turn "
-	start := strings.Index(causeText, marker)
+	start := strings.Index(content, marker)
 	if start == -1 {
 		return ""
 	}
-	remaining := causeText[start+len(marker):]
-	end := strings.Index(remaining, " preview before requesting approval")
+	remaining := content[start+len(marker):]
+	end := strings.Index(remaining, terminator)
 	if end == -1 {
 		return ""
 	}
