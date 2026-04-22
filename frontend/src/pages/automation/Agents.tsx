@@ -7,11 +7,11 @@ import {
   BotIcon,
   ArrowDown01Icon,
   ArrowRight01Icon,
+  ArrowUpRight01Icon,
   Clock01Icon,
   HelpCircleIcon,
   LayoutGridIcon,
   LayoutTable01Icon,
-  PencilEdit01Icon,
   PlusSignIcon,
   UserGroupIcon,
   Cancel01Icon,
@@ -60,7 +60,6 @@ import type {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
 import {
   Sheet,
   SheetContent,
@@ -117,20 +116,6 @@ import {
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-
-const STATUS_DOT: Record<string, string> = {
-  idle: 'bg-green-500',
-  working: 'bg-amber-500',
-  error: 'bg-red-500',
-  paused: 'bg-gray-400',
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  idle: 'Ready',
-  working: 'Running',
-  error: 'Error',
-  paused: 'Paused',
-};
 
 const RUNTIME_KIND_OPTIONS: AgentRuntimeKind[] = ['opencode', 'codex', 'native_sdk'];
 const REASONING_EFFORT_OPTIONS: AgentReasoningEffort[] = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
@@ -317,6 +302,21 @@ const FALLBACK_PROVIDER_OPTIONS: AgentModelProviderOption[] = [
     supports_service_tier: false,
   },
 ];
+
+// Shared pill used in the fleet card + list row. An empty model resolves to
+// "Auto" at runtime — render that as a neutral value (not a red-flag state).
+function AgentModelPill({ provider, model }: { provider?: AgentModelProvider | null; model?: string | null }) {
+  const trimmed = model?.trim();
+  const effectiveProvider = provider ?? 'openai';
+  return (
+    <span className="inline-flex items-center gap-2 text-sm">
+      <ProviderIcon provider={effectiveProvider} className="h-4 w-4 shrink-0" />
+      <span className="font-mono text-xs text-foreground">
+        {trimmed || <span className="text-muted-foreground">Auto</span>}
+      </span>
+    </span>
+  );
+}
 
 function allowedRuntimeKindsForPreset(presetKey: AgentPresetKey): AgentRuntimeKind[] {
   switch (presetKey) {
@@ -865,159 +865,266 @@ function AgentTriggerPanel({
 // ---------------------------------------------------------------------------
 
 interface AgentRunStats {
-  total: number;
+  recentRuns: number;
+  recentCompleted: number;
+  recentFailed: number;
   lastRun?: AgentRun;
+  lastFiveStatuses: AgentRun['status'][];
 }
 
-interface AgentCollectionSection {
-  key: string;
-  title: string;
-  description: string;
-  agents: Agent[];
-  empty?: string;
+function trimSummaryText(value?: string, fallback = 'No description yet.') {
+  const normalized = value?.replace(/\s+/g, ' ').trim();
+  if (!normalized) return fallback;
+  const sentence = normalized.split(/(?<=[.!?])\s+/)[0] ?? normalized;
+  return sentence.length > 160 ? `${sentence.slice(0, 157)}...` : sentence;
 }
 
-function agentClassLabel(agent: Agent, presets: AgentPresetDefinition[]): string {
-  if (!agent.is_system) {
-    return 'Custom';
+function agentRoleLabel(agent: Agent, presets: AgentPresetDefinition[]) {
+  if (agent.is_system) {
+    return presetLabel(fallbackPresetKey(agent), presets);
   }
-  return presetLabel(fallbackPresetKey(agent), presets);
+  const role = agent.role?.trim();
+  return role || 'Custom agent';
 }
 
-function formatLastRun(run?: AgentRun): string {
+function agentPurpose(agent: Agent, presets: AgentPresetDefinition[]) {
+  if (agent.is_system) {
+    const preset = presetMetaForSelection(
+      fallbackPresetKey(agent),
+      agent.preset_version_key,
+      presets,
+    );
+    return trimSummaryText(
+      preset?.description ?? PRESET_FALLBACKS[fallbackPresetKey(agent)].description,
+      'Built-in workspace agent.',
+    );
+  }
+  return trimSummaryText(
+    agent.planning_notes || agent.system_prompt || agent.role,
+    'Custom agent for workspace-specific execution.',
+  );
+}
+
+// An empty model resolves to "Auto" (the runtime picks a default). That is a
+// valid configured state — do not flag it amber. Only custom agents that were
+// created but never saved with a model + provider would be truly unconfigured,
+// which the creation flow prevents today, so this is effectively always false.
+function needsModelConfiguration(_agent: Agent) {
+  return false;
+}
+
+function isUnusedAgent(stats?: AgentRunStats) {
+  return (stats?.recentRuns ?? 0) === 0;
+}
+
+function isFailingAgent(stats?: AgentRunStats) {
+  return Boolean(stats?.recentFailed) || stats?.lastRun?.status === 'failed';
+}
+
+function needsAttention(agent: Agent, stats?: AgentRunStats) {
+  return needsModelConfiguration(agent) || isUnusedAgent(stats) || isFailingAgent(stats);
+}
+
+function formatLastRunTime(run?: AgentRun) {
   if (!run) return 'Never';
   const date = run.completed_at || run.started_at || run.created_at;
   return formatDistanceToNow(new Date(date), { addSuffix: true });
 }
 
-function lastRunStatusColor(run?: AgentRun): string {
-  if (!run) return '';
+function lastRunStatusLabel(run?: AgentRun) {
+  if (!run) return 'Never run';
   switch (run.status) {
-    case 'completed': return 'text-green-600';
-    case 'failed': return 'text-red-500';
-    case 'running': return 'text-amber-500';
-    case 'cancelled': return 'text-muted-foreground';
-    default: return 'text-muted-foreground';
+    case 'completed':
+      return 'Completed';
+    case 'failed':
+      return 'Failed';
+    case 'paused':
+      return 'Paused';
+    case 'running':
+      return 'Running';
+    case 'queued':
+      return 'Queued';
+    case 'cancelled':
+      return 'Cancelled';
+    default:
+      return run.status;
   }
 }
 
-// ---------------------------------------------------------------------------
-// AgentCard
-// ---------------------------------------------------------------------------
+function lastRunStatusClass(run?: AgentRun) {
+  if (!run) return 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400';
+  switch (run.status) {
+    case 'completed':
+      return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400';
+    case 'failed':
+      return 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400';
+    case 'paused':
+      return 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400';
+    case 'running':
+      return 'border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400';
+    default:
+      return 'border-border/70 bg-muted/40 text-muted-foreground';
+  }
+}
+
+function attentionDotClass(agent: Agent, stats?: AgentRunStats) {
+  if (needsModelConfiguration(agent)) return 'bg-amber-500';
+  if (isFailingAgent(stats)) return 'bg-rose-500';
+  if (isUnusedAgent(stats)) return 'bg-amber-500';
+  return 'bg-emerald-500';
+}
+
+function FlowRefs({
+  usage,
+  workspaceSlug,
+}: {
+  usage?: AgentTriggerUsageSummary | null;
+  workspaceSlug?: string;
+}) {
+  const items = usage?.items ?? [];
+  if (items.length === 0) {
+    return <span className="text-xs text-muted-foreground">Not used by a flow yet</span>;
+  }
+
+  const [first, ...rest] = items;
+  const href = resolveManagePath(first.manage_path, workspaceSlug) ?? buildAutomationFlowsPath(workspaceSlug);
+
+  return (
+    <div className="min-w-0 text-xs text-muted-foreground">
+      <a
+        href={href}
+        className="inline-flex max-w-full items-center gap-1 truncate text-foreground underline decoration-border underline-offset-4 hover:text-primary"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <span className="truncate">{first.title}</span>
+        <ArrowUpRight01Icon className="h-3 w-3 shrink-0" />
+      </a>
+      {rest.length > 0 ? <span className="ml-1 text-muted-foreground">+{rest.length}</span> : null}
+    </div>
+  );
+}
+
+function RunBars5({ statuses }: { statuses: AgentRun['status'][] }) {
+  const values = statuses.length > 0 ? statuses : ['queued', 'queued', 'queued', 'queued', 'queued'];
+  return (
+    <div className="flex items-center gap-1">
+      {values.slice(0, 5).map((status, index) => (
+        <span
+          key={`${status}-${index}`}
+          className={cn(
+            'h-3 w-1.5 rounded-sm',
+            status === 'completed'
+              ? 'bg-emerald-500'
+              : status === 'failed'
+                ? 'bg-rose-500'
+                : status === 'paused'
+                  ? 'bg-amber-500'
+                  : 'bg-border',
+          )}
+        />
+      ))}
+    </div>
+  );
+}
 
 function AgentCard({
   agent,
-  presetLabel,
-  teamName,
   stats,
-  onEdit,
+  usage,
+  workspaceSlug,
+  presets,
+  onOpen,
   canEdit,
 }: {
   agent: Agent;
-  presetLabel: string;
-  teamName?: string;
   stats?: AgentRunStats;
-  onEdit: (agent: Agent) => void;
+  usage?: AgentTriggerUsageSummary | null;
+  workspaceSlug?: string;
+  presets: AgentPresetDefinition[];
+  onOpen: (agent: Agent) => void;
   canEdit: boolean;
 }) {
-  const budgetPct =
-    agent.monthly_token_budget
-      ? Math.min(
-          100,
-          Math.round((agent.tokens_used_this_month / agent.monthly_token_budget) * 100)
-        )
-      : null;
+  const role = agentRoleLabel(agent, presets);
+  const purpose = agentPurpose(agent, presets);
+  const attention = needsAttention(agent, stats);
 
   return (
-    <Card className="group cursor-pointer transition-shadow hover:shadow-md relative">
-      <CardHeader className="pb-2">
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <AgentAvatar agent={agent} className="h-9 w-9 rounded-none border-0 bg-transparent shadow-none" genericBare />
-            <div className="min-w-0">
-              <span className="block truncate text-sm font-semibold">{agent.name}</span>
-              <span className="block text-[11px] text-muted-foreground">
-                {presetLabel}
-              </span>
+    <Card
+      className={cn(
+        'group cursor-pointer border-border/70 transition-shadow hover:shadow-md',
+        attention && 'border-amber-500/30 shadow-amber-500/5',
+      )}
+      onClick={() => onOpen(agent)}
+    >
+      <CardHeader className="space-y-3 pb-3">
+        <div className="flex items-start gap-3">
+          <AgentAvatar agent={agent} className="h-10 w-10 rounded-none border-0 bg-transparent shadow-none" genericBare />
+          <div className="min-w-0 flex-1 space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={cn('h-2 w-2 rounded-full', attentionDotClass(agent, stats))} />
+              <h3 className="truncate text-sm font-semibold">{agent.name}</h3>
+              {agent.is_system ? <Badge variant="outline" className="text-[10px]">System</Badge> : null}
             </div>
+            <p className="text-xs text-muted-foreground">{role}</p>
+            <p className="line-clamp-2 text-sm text-muted-foreground">{purpose}</p>
           </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <span className="text-[11px] text-muted-foreground group-hover:hidden">{STATUS_LABEL[agent.status] ?? agent.status}</span>
-            <span
-              className={`h-2 w-2 rounded-full group-hover:hidden ${STATUS_DOT[agent.status] ?? STATUS_DOT.paused}`}
-            />
-            {canEdit && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    className="hidden group-hover:flex p-1 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                    onClick={(e) => { e.stopPropagation(); onEdit(agent); }}
-                  >
-                    <PencilEdit01Icon className="h-3.5 w-3.5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="left" className="text-xs">Edit agent</TooltipContent>
-              </Tooltip>
-            )}
-          </div>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {agent.is_system && (
-            <Badge variant="outline" className="text-[11px]">
-              System
-            </Badge>
-          )}
-          {teamName && (
-            <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-              <UserGroupIcon className="h-3 w-3" />
-              {teamName}
-            </span>
-          )}
         </div>
       </CardHeader>
-      <CardContent className="space-y-2 pt-0">
-        {(agent.provider || agent.model) && (
-          <p className="text-xs text-muted-foreground">
-            {[agent.provider, agent.model].filter(Boolean).join(' / ')}
-          </p>
-        )}
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1">
-            <BotIcon className="h-3 w-3" />
-            {INVOCATION_MODE_LABELS[agent.default_invocation_mode]}
-          </span>
-          {agent.schedule && (
-            <span className="flex items-center gap-1">
-              <Clock01Icon className="h-3 w-3" />
-              Scheduled
-            </span>
-          )}
-          {stats && (
-            <span className="flex items-center gap-1">
-              <ZapIcon className="h-3 w-3" />
-              {stats.total > 0 ? `${stats.total} ${stats.total === 1 ? 'run' : 'runs'}` : 'No runs'}
-            </span>
+      <CardContent className="space-y-4 pt-0">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1">
+            <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Model</p>
+            <AgentModelPill provider={agent.provider} model={agent.model} />
+          </div>
+          <div className="space-y-1">
+            <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Mode</p>
+            <p className="text-sm text-muted-foreground">{INVOCATION_MODE_LABELS[agent.default_invocation_mode]}</p>
+          </div>
+        </div>
+
+        <div className="space-y-2 rounded-xl border border-border/60 bg-muted/20 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <RunBars5 statuses={stats?.lastFiveStatuses ?? []} />
+              <span className="text-sm">
+                <span className="font-mono text-foreground">{stats?.recentRuns ?? 0}</span>
+                <span className="text-muted-foreground"> runs · 7d</span>
+              </span>
+            </div>
+            {stats?.lastRun ? (
+              <Badge variant="outline" className={cn('text-[11px]', lastRunStatusClass(stats.lastRun))}>
+                {lastRunStatusLabel(stats.lastRun)}
+              </Badge>
+            ) : null}
+          </div>
+          {stats?.lastRun ? (
+            <p className="font-mono text-[11px] text-muted-foreground">{formatLastRunTime(stats.lastRun)}</p>
+          ) : (
+            <p className="text-[11px] text-muted-foreground">No runs in the last 7 days.</p>
           )}
         </div>
-        {stats?.lastRun && (
-          <p className="text-[11px] text-muted-foreground">
-            Last run{' '}
-            <span className={lastRunStatusColor(stats.lastRun)}>
-              {stats.lastRun.status}
-            </span>{' '}
-            {formatLastRun(stats.lastRun)}
-          </p>
-        )}
-        {budgetPct !== null && (
-          <div className="space-y-1">
-            <div className="flex justify-between text-[11px] text-muted-foreground">
-              <span>Usage</span>
-              <span>{budgetPct}%</span>
-            </div>
-            <Progress value={budgetPct} className="h-1.5" />
+
+        <div className="space-y-1">
+          <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Used By</p>
+          <FlowRefs usage={usage} workspaceSlug={workspaceSlug} />
+        </div>
+
+        {canEdit ? (
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2.5 text-xs"
+              onClick={(event) => {
+                event.stopPropagation();
+                onOpen(agent);
+              }}
+            >
+              Open
+            </Button>
           </div>
-        )}
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -1029,93 +1136,85 @@ function AgentCard({
 
 function AgentRow({
   agent,
-  presetLabel,
-  teamName,
   stats,
-  onEdit,
-  canEdit,
+  usage,
+  workspaceSlug,
+  presets,
+  onOpen,
 }: {
   agent: Agent;
-  presetLabel: string;
-  teamName?: string;
   stats?: AgentRunStats;
-  onEdit: (agent: Agent) => void;
-  canEdit: boolean;
+  usage?: AgentTriggerUsageSummary | null;
+  workspaceSlug?: string;
+  presets: AgentPresetDefinition[];
+  onOpen: (agent: Agent) => void;
 }) {
+  const role = agentRoleLabel(agent, presets);
+  const purpose = agentPurpose(agent, presets);
+  const attention = needsAttention(agent, stats);
+
   return (
     <div
-      className="group flex items-center gap-3 px-4 py-3 border-b border-border/50 last:border-b-0 hover:bg-muted/40 transition-colors"
+      className={cn(
+        'grid cursor-pointer items-center gap-4 border-b border-border/60 px-4 py-3 transition-colors last:border-b-0 hover:bg-muted/30 lg:grid-cols-[minmax(0,3.2fr)_minmax(170px,0.95fr)_110px_120px_150px_170px_28px]',
+        attention && 'bg-amber-500/[0.03]',
+      )}
+      onClick={() => onOpen(agent)}
+      title={purpose}
     >
-      {/* Status dot + Name */}
-      <div className="flex items-center gap-2.5 flex-1 min-w-[120px]">
-        <span
-          className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[agent.status] ?? STATUS_DOT.paused}`}
-        />
-        <AgentAvatar agent={agent} className="h-8 w-8 rounded-none border-0 bg-transparent shadow-none" genericBare />
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="text-sm font-medium truncate">{agent.name}</span>
-          {agent.is_system && (
-            <Badge variant="outline" className="text-[10px]">
-              System
-            </Badge>
-          )}
+      <div className="min-w-0">
+        <div className="flex items-center gap-3">
+          <AgentAvatar agent={agent} className="h-8 w-8 rounded-none border-0 bg-transparent shadow-none" genericBare />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={cn('h-2 w-2 rounded-full', attentionDotClass(agent, stats))} />
+              <span className="truncate text-sm font-medium">{agent.name}</span>
+              {agent.is_system ? <Badge variant="outline" className="text-[10px]">System</Badge> : null}
+            </div>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">{role}</p>
+          </div>
         </div>
       </div>
 
-      {/* Class */}
-      <span className="text-xs text-muted-foreground w-20 shrink-0 truncate">
-        {presetLabel}
-      </span>
+      <div className="space-y-1">
+        <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:hidden">Model</p>
+        <AgentModelPill provider={agent.provider} model={agent.model} />
+      </div>
 
-      {/* Team */}
-      <span className="text-xs text-muted-foreground w-28 shrink-0 truncate hidden md:block">
-        {teamName ?? 'All teams'}
-      </span>
+      <div className="space-y-1">
+        <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:hidden">Mode</p>
+        <span className="text-sm text-muted-foreground">{INVOCATION_MODE_LABELS[agent.default_invocation_mode]}</span>
+      </div>
 
-      {/* Provider / Model */}
-      <span className="text-xs text-muted-foreground w-28 shrink-0 truncate hidden lg:block">
-        {[agent.provider, agent.model].filter(Boolean).join(' / ') || '—'}
-      </span>
+      <div className="space-y-1">
+        <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:hidden">Runs · 7d</p>
+        <div className="flex items-center gap-2">
+          <RunBars5 statuses={stats?.lastFiveStatuses ?? []} />
+          <span className="font-mono text-sm">{stats?.recentRuns ?? 0}</span>
+        </div>
+      </div>
 
-      {/* Default mode */}
-      <span className="text-xs text-muted-foreground w-24 shrink-0 truncate hidden lg:block">
-        {INVOCATION_MODE_LABELS[agent.default_invocation_mode]}
-      </span>
-
-      {/* Runs */}
-      <span className="text-xs text-muted-foreground w-12 shrink-0 hidden sm:block">
-        {stats ? (stats.total > 0 ? stats.total : '0') : '—'}
-      </span>
-
-      {/* Last run */}
-      <span className="text-xs text-muted-foreground w-28 shrink-0 truncate hidden sm:block">
+      <div className="space-y-1">
+        <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:hidden">Last Run</p>
         {stats?.lastRun ? (
-          <span>
-            <span className={lastRunStatusColor(stats.lastRun)}>{stats.lastRun.status}</span>
-            {' '}
-            {formatLastRun(stats.lastRun)}
-          </span>
+          <>
+            <Badge variant="outline" className={cn('text-[11px]', lastRunStatusClass(stats.lastRun))}>
+              {lastRunStatusLabel(stats.lastRun)}
+            </Badge>
+            <p className="font-mono text-[11px] text-muted-foreground">{formatLastRunTime(stats.lastRun)}</p>
+          </>
         ) : (
-          'Never'
+          <p className="text-xs text-muted-foreground">Never</p>
         )}
-      </span>
+      </div>
 
-      {/* Edit button on hover */}
-      <div className="w-8 shrink-0 flex justify-center">
-        {canEdit && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className="p-1.5 rounded-md opacity-0 group-hover:opacity-100 hover:bg-muted transition-all text-muted-foreground hover:text-foreground"
-                onClick={(e) => { e.stopPropagation(); onEdit(agent); }}
-              >
-                <PencilEdit01Icon className="h-3.5 w-3.5" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="left" className="text-xs">Edit agent</TooltipContent>
-          </Tooltip>
-        )}
+      <div className="space-y-1">
+        <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:hidden">Used By</p>
+        <FlowRefs usage={usage} workspaceSlug={workspaceSlug} />
+      </div>
+
+      <div className="hidden items-start justify-end text-muted-foreground lg:flex">
+        <ArrowRight01Icon className="mt-0.5 h-4 w-4" />
       </div>
     </div>
   );
@@ -1143,7 +1242,6 @@ export function AgentsPage() {
 
   const { data: settings } = useWorkspaceSettings(workspaceId ?? '');
   const teams = settings?.teams ?? [];
-  const teamMap = new Map(teams.map((t) => [t.id, t.name]));
   const accessibleTeamIds = useMemo(
     () => new Set(accessibleTeams.map((team) => team.id)),
     [accessibleTeams],
@@ -1152,6 +1250,7 @@ export function AgentsPage() {
 
   const [viewMode, setViewMode] = useState<'list' | 'cards'>('list');
   const [runStats, setRunStats] = useState<Record<string, AgentRunStats>>({});
+  const [agentUsageMap, setAgentUsageMap] = useState<Record<string, AgentTriggerUsageSummary | null>>({});
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [systemDrawerOpen, setSystemDrawerOpen] = useState(false);
@@ -1243,29 +1342,64 @@ export function AgentsPage() {
     loadSkillCatalog();
   }, [loadAgents, loadProviderOptions, loadPresets, loadToolCatalog, loadSkillCatalog]);
 
-  // Fetch run stats for all agents
+  // Fetch fleet-level run stats and trigger usage once, then derive agent rows from that shared data.
   useEffect(() => {
-    if (!workspaceId || agents.length === 0) return;
-    const fetchStats = async () => {
+    if (!workspaceId || agents.length === 0) {
+      setRunStats({});
+      setAgentUsageMap({});
+      return;
+    }
+
+    const fetchFleetData = async () => {
+      const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
       const results: Record<string, AgentRunStats> = {};
-      await Promise.all(
-        agents.map(async (agent) => {
-          const res = await agentService.listRuns(workspaceId, agent.id);
-          if (!res.error && res.data) {
-            // Handle both paginated { data, total } and plain array responses
-            const paginated = res.data;
-            const runs = Array.isArray(paginated) ? paginated : (paginated.data ?? []);
-            const total = Array.isArray(paginated) ? paginated.length : (paginated.total ?? 0);
-            results[agent.id] = {
-              total,
-              lastRun: runs[0],
-            };
-          }
-        })
-      );
+      for (const agent of agents) {
+        results[agent.id] = {
+          recentRuns: 0,
+          recentCompleted: 0,
+          recentFailed: 0,
+          lastRun: undefined,
+          lastFiveStatuses: [],
+        };
+      }
+
+      const [runsRes, usageEntries] = await Promise.all([
+        automationService.listWorkspaceRuns(workspaceId, 1, 500),
+        Promise.all(
+          agents.map(async (agent) => {
+            const res = await automationService.getAgentUsage(workspaceId, agent.id);
+            return [agent.id, res.error ? null : (res.data ?? null)] as const;
+          }),
+        ),
+      ]);
+
+      const runs = runsRes.error ? [] : (runsRes.data?.data ?? []);
+      for (const run of runs) {
+        const stats = results[run.agent_id];
+        if (!stats) continue;
+
+        if (!stats.lastRun) {
+          stats.lastRun = run;
+        }
+
+        if (stats.lastFiveStatuses.length < 5) {
+          stats.lastFiveStatuses.push(run.status);
+        }
+
+        const createdAt = new Date(run.created_at).getTime();
+        if (Number.isNaN(createdAt) || createdAt < sevenDaysAgo) continue;
+
+        stats.recentRuns += 1;
+        if (run.status === 'completed') stats.recentCompleted += 1;
+        if (run.status === 'failed') stats.recentFailed += 1;
+      }
+
       setRunStats(results);
+
+      setAgentUsageMap(Object.fromEntries(usageEntries));
     };
-    fetchStats();
+
+    void fetchFleetData();
   }, [workspaceId, agents]);
 
   const openCreateDialog = () => {
@@ -1508,37 +1642,12 @@ export function AgentsPage() {
     }
     return accessibleTeamIds.has(agent.team_id);
   });
-
-  const builtInAgents = (() => {
-    const byPreset = new Map<string, Agent>();
-    for (const agent of visibleAgents) {
-      if (!agent.is_system) {
-        continue;
-      }
-      const presetKey = fallbackPresetKey(agent);
-      if (!byPreset.has(presetKey)) {
-        byPreset.set(presetKey, agent);
-      }
-    }
-    return Array.from(byPreset.values());
-  })();
-  const customAgents = visibleAgents.filter((agent) => !agent.is_system);
-  const agentSections: AgentCollectionSection[] = [
-    {
-      key: 'built-in',
-      title: 'Built-in Presets',
-      description: 'Pre-configured agents for core workflows like planning, coding, review, and support.',
-      agents: builtInAgents,
-      empty: 'No built-in preset agents are provisioned in this workspace yet.',
-    },
-    {
-      key: 'custom',
-      title: 'Custom Agents',
-      description: 'Agents your team created with custom prompts, tools, and scheduling.',
-      agents: customAgents,
-      empty: 'No custom agents yet.',
-    },
-  ].filter((section) => section.agents.length > 0 || section.key === 'built-in');
+  const sortedAgents = [...visibleAgents].sort((left, right) => {
+    const leftAttention = needsAttention(left, runStats[left.id]) ? 1 : 0;
+    const rightAttention = needsAttention(right, runStats[right.id]) ? 1 : 0;
+    if (leftAttention !== rightAttention) return rightAttention - leftAttention;
+    return left.name.localeCompare(right.name);
+  });
 
   const advancedConfigured = hasConfiguredAdvancedFields(editingAgent, presets);
   const editingSystemAgent = Boolean(editingAgent?.is_system);
@@ -1652,10 +1761,15 @@ export function AgentsPage() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Agents</h1>
-        {visibleAgents.length > 0 && (
+    <div className="max-w-7xl mx-auto space-y-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-xl font-semibold">Agents</h1>
+          <p className="text-sm text-muted-foreground">
+            Your fleet of built-in and custom agents. See what each one does, whether it is configured, and which flows depend on it.
+          </p>
+        </div>
+        {sortedAgents.length > 0 && (
           <div className="flex items-center gap-2">
             <div className="flex items-center rounded-md border border-border">
               <button
@@ -1715,82 +1829,44 @@ export function AgentsPage() {
       )}
 
       {/* ---- Agent list / grid ---- */}
-      {visibleAgents.length > 0 && viewMode === 'list' && (
-        <div className="space-y-5">
-          {agentSections.map((section) => (
-            <div key={section.key} className="space-y-2">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-sm font-semibold">{section.title}</h2>
-                  <Badge variant="outline" className="text-[10px]">
-                    {section.agents.length}
-                  </Badge>
-                </div>
-                <p className="text-xs text-muted-foreground">{section.description}</p>
-              </div>
-              <div className="rounded-lg border border-border overflow-hidden">
-                <div className="flex items-center gap-3 px-4 py-2 border-b border-border bg-muted/40 text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
-                  <div className="flex-1 min-w-[120px]">Name</div>
-                  <div className="w-20 shrink-0">Preset</div>
-                  <div className="w-28 shrink-0 hidden md:block">Team</div>
-                  <div className="w-28 shrink-0 hidden lg:block">Provider</div>
-                  <div className="w-24 shrink-0 hidden lg:block">Mode</div>
-                  <div className="w-12 shrink-0 hidden sm:block">Runs</div>
-                  <div className="w-28 shrink-0 hidden sm:block">Last run</div>
-                  <div className="w-8 shrink-0" />
-                </div>
-                {section.agents.length > 0 ? section.agents.map((agent) => (
-                    <AgentRow
-                      key={agent.id}
-                      agent={agent}
-                      presetLabel={agentClassLabel(agent, presets)}
-                    teamName={agent.team_id ? teamMap.get(agent.team_id) : undefined}
-                    stats={runStats[agent.id]}
-                    onEdit={openEditDialog}
-                    canEdit={canEdit}
-                  />
-                )) : (
-                  <div className="px-4 py-6 text-sm text-muted-foreground">{section.empty}</div>
-                )}
-              </div>
-            </div>
+      {sortedAgents.length > 0 && viewMode === 'list' && (
+        <div className="rounded-xl border border-border/70 overflow-hidden">
+          <div className="hidden items-center gap-4 border-b border-border/70 bg-muted/30 px-4 py-2 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:grid lg:grid-cols-[minmax(0,3.2fr)_minmax(170px,0.95fr)_110px_120px_150px_170px_28px]">
+            <div>Agent · Role</div>
+            <div>Model</div>
+            <div>Mode</div>
+            <div>Runs · 7d</div>
+            <div>Last run</div>
+            <div>Used by</div>
+            <div />
+          </div>
+          {sortedAgents.map((agent) => (
+            <AgentRow
+              key={agent.id}
+              agent={agent}
+              stats={runStats[agent.id]}
+              usage={agentUsageMap[agent.id]}
+              workspaceSlug={workspace?.slug}
+              presets={presets}
+              onOpen={openEditDialog}
+            />
           ))}
         </div>
       )}
 
-      {visibleAgents.length > 0 && viewMode === 'cards' && (
-        <div className="space-y-5">
-          {agentSections.map((section) => (
-            <div key={section.key} className="space-y-2">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-sm font-semibold">{section.title}</h2>
-                  <Badge variant="outline" className="text-[10px]">
-                    {section.agents.length}
-                  </Badge>
-                </div>
-                <p className="text-xs text-muted-foreground">{section.description}</p>
-              </div>
-              {section.agents.length > 0 ? (
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {section.agents.map((agent) => (
-                    <AgentCard
-                      key={agent.id}
-                      agent={agent}
-                      presetLabel={agentClassLabel(agent, presets)}
-                      teamName={agent.team_id ? teamMap.get(agent.team_id) : undefined}
-                      stats={runStats[agent.id]}
-                      onEdit={openEditDialog}
-                      canEdit={canEdit}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-lg border border-dashed border-border/70 px-4 py-6 text-sm text-muted-foreground">
-                  {section.empty}
-                </div>
-              )}
-            </div>
+      {sortedAgents.length > 0 && viewMode === 'cards' && (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {sortedAgents.map((agent) => (
+            <AgentCard
+              key={agent.id}
+              agent={agent}
+              stats={runStats[agent.id]}
+              usage={agentUsageMap[agent.id]}
+              workspaceSlug={workspace?.slug}
+              presets={presets}
+              onOpen={openEditDialog}
+              canEdit={canEdit}
+            />
           ))}
         </div>
       )}
