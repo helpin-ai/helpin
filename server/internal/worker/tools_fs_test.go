@@ -180,16 +180,16 @@ func TestToolReadFileDefaultsToBoundedWindow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("toolReadFile returned error: %v", err)
 	}
-	if !strings.Contains(output, `<file path="large.txt" start_line="1" returned_lines="200">`) {
+	if !strings.Contains(output, `<file path="large.txt" start_line="1" returned_lines="120">`) {
 		t.Fatalf("expected bounded read metadata, got %q", output)
 	}
-	if !strings.Contains(output, "line 1") || !strings.Contains(output, "line 200") {
+	if !strings.Contains(output, "line 1") || !strings.Contains(output, "line 120") {
 		t.Fatalf("expected first window content, got %q", output)
 	}
-	if strings.Contains(output, "line 205") {
+	if strings.Contains(output, "line 125") {
 		t.Fatalf("did not expect lines past the default window, got %q", output)
 	}
-	if !strings.Contains(output, `"offset_line":201`) {
+	if !strings.Contains(output, `"offset_line":121`) {
 		t.Fatalf("expected continuation hint, got %q", output)
 	}
 }
@@ -282,7 +282,8 @@ func TestToolReadFileRejectsOversizedLimit(t *testing.T) {
 		WorkDir: workDir,
 	}
 
-	_, err := toolReadFile(ctx, json.RawMessage(`{"path":"sample.txt","limit_lines":401}`))
+	limit := strconv.Itoa(maxReadFileLimitLines + 1)
+	_, err := toolReadFile(ctx, json.RawMessage(`{"path":"sample.txt","limit_lines":`+limit+`}`))
 	if err == nil || !strings.Contains(err.Error(), "limit_lines too large") {
 		t.Fatalf("expected limit error, got %v", err)
 	}

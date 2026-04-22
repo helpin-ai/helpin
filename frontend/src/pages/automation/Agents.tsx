@@ -7,11 +7,10 @@ import {
   BotIcon,
   ArrowDown01Icon,
   ArrowRight01Icon,
-  Clock01Icon,
+  ArrowUpRight01Icon,
   HelpCircleIcon,
   LayoutGridIcon,
   LayoutTable01Icon,
-  PencilEdit01Icon,
   PlusSignIcon,
   UserGroupIcon,
   Cancel01Icon,
@@ -20,6 +19,7 @@ import {
   Loading01Icon,
   BookOpen01Icon,
   SourceCodeIcon,
+  MoreHorizontalIcon,
 } from '@/lib/icons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
@@ -50,6 +50,7 @@ import type {
   AgentTriggerUsageSummary,
   AgentTargetType,
   CreateWorkspaceAgentPresetVersionRequest,
+  UpdateWorkspaceAgentPresetVersionRequest,
   CreateAgentRequest,
   SkillCatalogResponse,
   ToolCatalogResponse,
@@ -58,7 +59,6 @@ import type {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
 import {
   Sheet,
   SheetContent,
@@ -97,24 +97,24 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-
-const STATUS_DOT: Record<string, string> = {
-  idle: 'bg-green-500',
-  working: 'bg-amber-500',
-  error: 'bg-red-500',
-  paused: 'bg-gray-400',
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  idle: 'Ready',
-  working: 'Running',
-  error: 'Error',
-  paused: 'Paused',
-};
 
 const RUNTIME_KIND_OPTIONS: AgentRuntimeKind[] = ['opencode', 'codex', 'native_sdk'];
 const REASONING_EFFORT_OPTIONS: AgentReasoningEffort[] = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
@@ -235,7 +235,6 @@ interface AgentFormData {
   allowed_targets: AgentTargetType[];
   allowed_tools: string[];
   skills: AgentSkillRef[];
-  schedule: string;
   approval_mode: AgentApprovalMode;
   max_concurrent_runs: string;
   default_invocation_mode: AgentInvocationMode;
@@ -245,6 +244,7 @@ const CUSTOM_AGENT_TARGET_OPTIONS: Array<{ value: AgentTargetType; label: string
   { value: 'task', label: 'Task', description: 'Run on tasks and task planning loops.' },
   { value: 'epic', label: 'Epic', description: 'Run on epics and planning loops.' },
   { value: 'repository', label: 'Repository', description: 'Run directly against a synced repository without requiring a linked task.' },
+  { value: 'workspace', label: 'Workspace', description: 'Run without a fixed entity target and gather context across the workspace.' },
   { value: 'crm_deal', label: 'CRM Deal', description: 'Run on CRM deal records.' },
   { value: 'document', label: 'Document', description: 'Run on documents and docs-backed context.' },
   { value: 'support_conversation', label: 'Support Conversation', description: 'Run on support inbox conversations.' },
@@ -301,6 +301,21 @@ const FALLBACK_PROVIDER_OPTIONS: AgentModelProviderOption[] = [
     supports_service_tier: false,
   },
 ];
+
+// Shared pill used in the fleet card + list row. An empty model resolves to
+// "Auto" at runtime — render that as a neutral value (not a red-flag state).
+function AgentModelPill({ provider, model }: { provider?: AgentModelProvider | null; model?: string | null }) {
+  const trimmed = model?.trim();
+  const effectiveProvider = provider ?? 'openai';
+  return (
+    <span className="inline-flex items-center gap-2 text-sm">
+      <ProviderIcon provider={effectiveProvider} className="h-4 w-4 shrink-0" />
+      <span className="font-mono text-xs text-foreground">
+        {trimmed || <span className="text-muted-foreground">Auto</span>}
+      </span>
+    </span>
+  );
+}
 
 function allowedRuntimeKindsForPreset(presetKey: AgentPresetKey): AgentRuntimeKind[] {
   switch (presetKey) {
@@ -437,7 +452,6 @@ function createEmptyCustomForm(): AgentFormData {
     allowed_targets: ['task'],
     allowed_tools: [],
     skills: [],
-    schedule: '',
     approval_mode: 'never',
     max_concurrent_runs: '1',
     default_invocation_mode: 'autonomous',
@@ -524,7 +538,6 @@ function buildCreatePayload(workspaceId: string, form: AgentFormData, advancedOp
     allowed_tools: normalizeToolList(form.allowed_tools),
     skills: form.skills.length > 0 ? form.skills : undefined,
     allowed_targets: normalizeTargetList(form.allowed_targets),
-    schedule: form.schedule.trim(),
     approval_mode: form.approval_mode,
     max_concurrent_runs: form.max_concurrent_runs ? Number.parseInt(form.max_concurrent_runs, 10) : 1,
     default_invocation_mode: form.default_invocation_mode,
@@ -556,12 +569,11 @@ function buildUpdatePayload(
     name: form.name.trim(),
     trigger_mode: 'manual',
     provider: provider || undefined,
-    model: form.model.trim() || undefined,
+    model: form.model.trim(),
     execution_config: buildExecutionConfigPayload(form),
     system_prompt: form.system_prompt.trim() || undefined,
     team_id: form.team_id,
     allowed_tools: normalizeToolList(form.allowed_tools),
-    schedule: form.schedule.trim(),
     approval_mode: form.approval_mode,
     max_concurrent_runs: form.max_concurrent_runs ? Number.parseInt(form.max_concurrent_runs, 10) : 1,
     default_invocation_mode: form.default_invocation_mode,
@@ -609,7 +621,7 @@ function buildSystemAgentForm(agent: Agent, presets: AgentPresetDefinition[]): A
       agent.runtime_kind || runtimeKind,
       agent.provider ?? preset?.provider ?? PRESET_FALLBACKS[presetKey].provider ?? 'anthropic',
     ),
-    model: agent.model ?? preset?.model ?? PRESET_FALLBACKS[presetKey].model ?? '',
+    model: agent.model ?? preset?.model ?? '',
     ...deriveExecutionConfigFields(
       agent.runtime_kind || runtimeKind,
       normalizeProviderForRuntime(
@@ -630,7 +642,6 @@ function buildSystemAgentForm(agent: Agent, presets: AgentPresetDefinition[]): A
     ),
     allowed_tools: normalizeToolList(agent.allowed_tools?.length ? agent.allowed_tools : (preset?.allowed_tools ?? [])),
     skills: agent.skills ?? [],
-    schedule: '',
     approval_mode: 'never',
     max_concurrent_runs: agent.max_concurrent_runs?.toString() ?? '1',
     default_invocation_mode: normalizeDefaultInvocationMode(
@@ -644,20 +655,6 @@ function buildSystemAgentForm(agent: Agent, presets: AgentPresetDefinition[]): A
 // ---------------------------------------------------------------------------
 // Inline helper: label + optional tooltip
 // ---------------------------------------------------------------------------
-
-function SectionHeader({ number, title, description }: { number: string; title: string; description?: string }) {
-  return (
-    <div className="flex items-baseline justify-between gap-4 border-b border-border/60 pb-2">
-      <div className="flex items-baseline gap-2">
-        <span className="text-xs font-medium text-primary/70">{number}</span>
-        <h3 className="text-sm font-semibold">{title}</h3>
-      </div>
-      {description && (
-        <p className="shrink-0 text-xs text-muted-foreground">{description}</p>
-      )}
-    </div>
-  );
-}
 
 function FieldLabel({ htmlFor, children, tooltip }: { htmlFor?: string; children: React.ReactNode; tooltip?: string }) {
   return (
@@ -737,7 +734,7 @@ function AgentTriggerPanel({
         )}
       </div>
       <p className="mt-1 text-[11px] text-muted-foreground">
-        Active triggers and schedules that can start this agent.
+        Active triggers that can start this agent.
       </p>
 
       <div className="mt-4 space-y-2">
@@ -863,159 +860,266 @@ function AgentTriggerPanel({
 // ---------------------------------------------------------------------------
 
 interface AgentRunStats {
-  total: number;
+  recentRuns: number;
+  recentCompleted: number;
+  recentFailed: number;
   lastRun?: AgentRun;
+  lastFiveStatuses: AgentRun['status'][];
 }
 
-interface AgentCollectionSection {
-  key: string;
-  title: string;
-  description: string;
-  agents: Agent[];
-  empty?: string;
+function trimSummaryText(value?: string, fallback = 'No description yet.') {
+  const normalized = value?.replace(/\s+/g, ' ').trim();
+  if (!normalized) return fallback;
+  const sentence = normalized.split(/(?<=[.!?])\s+/)[0] ?? normalized;
+  return sentence.length > 160 ? `${sentence.slice(0, 157)}...` : sentence;
 }
 
-function agentClassLabel(agent: Agent, presets: AgentPresetDefinition[]): string {
-  if (!agent.is_system) {
-    return 'Custom';
+function agentRoleLabel(agent: Agent, presets: AgentPresetDefinition[]) {
+  if (agent.is_system) {
+    return presetLabel(fallbackPresetKey(agent), presets);
   }
-  return presetLabel(fallbackPresetKey(agent), presets);
+  const role = agent.role?.trim();
+  return role || 'Custom agent';
 }
 
-function formatLastRun(run?: AgentRun): string {
+function agentPurpose(agent: Agent, presets: AgentPresetDefinition[]) {
+  if (agent.is_system) {
+    const preset = presetMetaForSelection(
+      fallbackPresetKey(agent),
+      agent.preset_version_key,
+      presets,
+    );
+    return trimSummaryText(
+      preset?.description ?? PRESET_FALLBACKS[fallbackPresetKey(agent)].description,
+      'Built-in workspace agent.',
+    );
+  }
+  return trimSummaryText(
+    agent.planning_notes || agent.system_prompt || agent.role,
+    'Custom agent for workspace-specific execution.',
+  );
+}
+
+// An empty model resolves to "Auto" (the runtime picks a default). That is a
+// valid configured state — do not flag it amber. Only custom agents that were
+// created but never saved with a model + provider would be truly unconfigured,
+// which the creation flow prevents today, so this is effectively always false.
+function needsModelConfiguration(_agent: Agent) {
+  return false;
+}
+
+function isUnusedAgent(stats?: AgentRunStats) {
+  return (stats?.recentRuns ?? 0) === 0;
+}
+
+function isFailingAgent(stats?: AgentRunStats) {
+  return Boolean(stats?.recentFailed) || stats?.lastRun?.status === 'failed';
+}
+
+function needsAttention(agent: Agent, stats?: AgentRunStats) {
+  return needsModelConfiguration(agent) || isUnusedAgent(stats) || isFailingAgent(stats);
+}
+
+function formatLastRunTime(run?: AgentRun) {
   if (!run) return 'Never';
   const date = run.completed_at || run.started_at || run.created_at;
   return formatDistanceToNow(new Date(date), { addSuffix: true });
 }
 
-function lastRunStatusColor(run?: AgentRun): string {
-  if (!run) return '';
+function lastRunStatusLabel(run?: AgentRun) {
+  if (!run) return 'Never run';
   switch (run.status) {
-    case 'completed': return 'text-green-600';
-    case 'failed': return 'text-red-500';
-    case 'running': return 'text-amber-500';
-    case 'cancelled': return 'text-muted-foreground';
-    default: return 'text-muted-foreground';
+    case 'completed':
+      return 'Completed';
+    case 'failed':
+      return 'Failed';
+    case 'paused':
+      return 'Paused';
+    case 'running':
+      return 'Running';
+    case 'queued':
+      return 'Queued';
+    case 'cancelled':
+      return 'Cancelled';
+    default:
+      return run.status;
   }
 }
 
-// ---------------------------------------------------------------------------
-// AgentCard
-// ---------------------------------------------------------------------------
+function lastRunStatusClass(run?: AgentRun) {
+  if (!run) return 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400';
+  switch (run.status) {
+    case 'completed':
+      return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400';
+    case 'failed':
+      return 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400';
+    case 'paused':
+      return 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400';
+    case 'running':
+      return 'border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400';
+    default:
+      return 'border-border/70 bg-muted/40 text-muted-foreground';
+  }
+}
+
+function attentionDotClass(agent: Agent, stats?: AgentRunStats) {
+  if (needsModelConfiguration(agent)) return 'bg-amber-500';
+  if (isFailingAgent(stats)) return 'bg-rose-500';
+  if (isUnusedAgent(stats)) return 'bg-amber-500';
+  return 'bg-emerald-500';
+}
+
+function FlowRefs({
+  usage,
+  workspaceSlug,
+}: {
+  usage?: AgentTriggerUsageSummary | null;
+  workspaceSlug?: string;
+}) {
+  const items = usage?.items ?? [];
+  if (items.length === 0) {
+    return <span className="text-xs text-muted-foreground">Not used by a flow yet</span>;
+  }
+
+  const [first, ...rest] = items;
+  const href = resolveManagePath(first.manage_path, workspaceSlug) ?? buildAutomationFlowsPath(workspaceSlug);
+
+  return (
+    <div className="min-w-0 text-xs text-muted-foreground">
+      <a
+        href={href}
+        className="inline-flex max-w-full items-center gap-1 truncate text-foreground underline decoration-border underline-offset-4 hover:text-primary"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <span className="truncate">{first.title}</span>
+        <ArrowUpRight01Icon className="h-3 w-3 shrink-0" />
+      </a>
+      {rest.length > 0 ? <span className="ml-1 text-muted-foreground">+{rest.length}</span> : null}
+    </div>
+  );
+}
+
+function RunBars5({ statuses }: { statuses: AgentRun['status'][] }) {
+  const values = statuses.length > 0 ? statuses : ['queued', 'queued', 'queued', 'queued', 'queued'];
+  return (
+    <div className="flex items-center gap-1">
+      {values.slice(0, 5).map((status, index) => (
+        <span
+          key={`${status}-${index}`}
+          className={cn(
+            'h-3 w-1.5 rounded-sm',
+            status === 'completed'
+              ? 'bg-emerald-500'
+              : status === 'failed'
+                ? 'bg-rose-500'
+                : status === 'paused'
+                  ? 'bg-amber-500'
+                  : 'bg-border',
+          )}
+        />
+      ))}
+    </div>
+  );
+}
 
 function AgentCard({
   agent,
-  presetLabel,
-  teamName,
   stats,
-  onEdit,
+  usage,
+  workspaceSlug,
+  presets,
+  onOpen,
   canEdit,
 }: {
   agent: Agent;
-  presetLabel: string;
-  teamName?: string;
   stats?: AgentRunStats;
-  onEdit: (agent: Agent) => void;
+  usage?: AgentTriggerUsageSummary | null;
+  workspaceSlug?: string;
+  presets: AgentPresetDefinition[];
+  onOpen: (agent: Agent) => void;
   canEdit: boolean;
 }) {
-  const budgetPct =
-    agent.monthly_token_budget
-      ? Math.min(
-          100,
-          Math.round((agent.tokens_used_this_month / agent.monthly_token_budget) * 100)
-        )
-      : null;
+  const role = agentRoleLabel(agent, presets);
+  const purpose = agentPurpose(agent, presets);
+  const attention = needsAttention(agent, stats);
 
   return (
-    <Card className="group cursor-pointer transition-shadow hover:shadow-md relative">
-      <CardHeader className="pb-2">
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <AgentAvatar agent={agent} className="h-9 w-9" />
-            <div className="min-w-0">
-              <span className="block truncate text-sm font-semibold">{agent.name}</span>
-              <span className="block text-[11px] text-muted-foreground">
-                {presetLabel}
-              </span>
+    <Card
+      className={cn(
+        'group cursor-pointer border-border/70 transition-shadow hover:shadow-md',
+        attention && 'border-amber-500/30 shadow-amber-500/5',
+      )}
+      onClick={() => onOpen(agent)}
+    >
+      <CardHeader className="space-y-3 pb-3">
+        <div className="flex items-start gap-3">
+          <AgentAvatar agent={agent} className="h-10 w-10 rounded-none border-0 bg-transparent shadow-none" genericBare />
+          <div className="min-w-0 flex-1 space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={cn('h-2 w-2 rounded-full', attentionDotClass(agent, stats))} />
+              <h3 className="truncate text-sm font-semibold">{agent.name}</h3>
+              {agent.is_system ? <Badge variant="outline" className="text-[10px]">System</Badge> : null}
             </div>
+            <p className="text-xs text-muted-foreground">{role}</p>
+            <p className="line-clamp-2 text-sm text-muted-foreground">{purpose}</p>
           </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <span className="text-[11px] text-muted-foreground group-hover:hidden">{STATUS_LABEL[agent.status] ?? agent.status}</span>
-            <span
-              className={`h-2 w-2 rounded-full group-hover:hidden ${STATUS_DOT[agent.status] ?? STATUS_DOT.paused}`}
-            />
-            {canEdit && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    className="hidden group-hover:flex p-1 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                    onClick={(e) => { e.stopPropagation(); onEdit(agent); }}
-                  >
-                    <PencilEdit01Icon className="h-3.5 w-3.5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="left" className="text-xs">Edit agent</TooltipContent>
-              </Tooltip>
-            )}
-          </div>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {agent.is_system && (
-            <Badge variant="outline" className="text-[11px]">
-              System
-            </Badge>
-          )}
-          {teamName && (
-            <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-              <UserGroupIcon className="h-3 w-3" />
-              {teamName}
-            </span>
-          )}
         </div>
       </CardHeader>
-      <CardContent className="space-y-2 pt-0">
-        {(agent.provider || agent.model) && (
-          <p className="text-xs text-muted-foreground">
-            {[agent.provider, agent.model].filter(Boolean).join(' / ')}
-          </p>
-        )}
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1">
-            <BotIcon className="h-3 w-3" />
-            {INVOCATION_MODE_LABELS[agent.default_invocation_mode]}
-          </span>
-          {agent.schedule && (
-            <span className="flex items-center gap-1">
-              <Clock01Icon className="h-3 w-3" />
-              Scheduled
-            </span>
-          )}
-          {stats && (
-            <span className="flex items-center gap-1">
-              <ZapIcon className="h-3 w-3" />
-              {stats.total > 0 ? `${stats.total} ${stats.total === 1 ? 'run' : 'runs'}` : 'No runs'}
-            </span>
+      <CardContent className="space-y-4 pt-0">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1">
+            <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Model</p>
+            <AgentModelPill provider={agent.provider} model={agent.model} />
+          </div>
+          <div className="space-y-1">
+            <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Mode</p>
+            <p className="text-sm text-muted-foreground">{INVOCATION_MODE_LABELS[agent.default_invocation_mode]}</p>
+          </div>
+        </div>
+
+        <div className="space-y-2 rounded-xl border border-border/60 bg-muted/20 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <RunBars5 statuses={stats?.lastFiveStatuses ?? []} />
+              <span className="text-sm">
+                <span className="font-mono text-foreground">{stats?.recentRuns ?? 0}</span>
+                <span className="text-muted-foreground"> runs · 7d</span>
+              </span>
+            </div>
+            {stats?.lastRun ? (
+              <Badge variant="outline" className={cn('text-[11px]', lastRunStatusClass(stats.lastRun))}>
+                {lastRunStatusLabel(stats.lastRun)}
+              </Badge>
+            ) : null}
+          </div>
+          {stats?.lastRun ? (
+            <p className="font-mono text-[11px] text-muted-foreground">{formatLastRunTime(stats.lastRun)}</p>
+          ) : (
+            <p className="text-[11px] text-muted-foreground">No runs in the last 7 days.</p>
           )}
         </div>
-        {stats?.lastRun && (
-          <p className="text-[11px] text-muted-foreground">
-            Last run{' '}
-            <span className={lastRunStatusColor(stats.lastRun)}>
-              {stats.lastRun.status}
-            </span>{' '}
-            {formatLastRun(stats.lastRun)}
-          </p>
-        )}
-        {budgetPct !== null && (
-          <div className="space-y-1">
-            <div className="flex justify-between text-[11px] text-muted-foreground">
-              <span>Usage</span>
-              <span>{budgetPct}%</span>
-            </div>
-            <Progress value={budgetPct} className="h-1.5" />
+
+        <div className="space-y-1">
+          <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Used By</p>
+          <FlowRefs usage={usage} workspaceSlug={workspaceSlug} />
+        </div>
+
+        {canEdit ? (
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2.5 text-xs"
+              onClick={(event) => {
+                event.stopPropagation();
+                onOpen(agent);
+              }}
+            >
+              Open
+            </Button>
           </div>
-        )}
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -1027,93 +1131,85 @@ function AgentCard({
 
 function AgentRow({
   agent,
-  presetLabel,
-  teamName,
   stats,
-  onEdit,
-  canEdit,
+  usage,
+  workspaceSlug,
+  presets,
+  onOpen,
 }: {
   agent: Agent;
-  presetLabel: string;
-  teamName?: string;
   stats?: AgentRunStats;
-  onEdit: (agent: Agent) => void;
-  canEdit: boolean;
+  usage?: AgentTriggerUsageSummary | null;
+  workspaceSlug?: string;
+  presets: AgentPresetDefinition[];
+  onOpen: (agent: Agent) => void;
 }) {
+  const role = agentRoleLabel(agent, presets);
+  const purpose = agentPurpose(agent, presets);
+  const attention = needsAttention(agent, stats);
+
   return (
     <div
-      className="group flex items-center gap-3 px-4 py-3 border-b border-border/50 last:border-b-0 hover:bg-muted/40 transition-colors"
+      className={cn(
+        'grid cursor-pointer items-center gap-4 border-b border-border/60 px-4 py-3 transition-colors last:border-b-0 hover:bg-muted/30 lg:grid-cols-[minmax(0,3.2fr)_minmax(170px,0.95fr)_110px_120px_150px_170px_28px]',
+        attention && 'bg-amber-500/[0.03]',
+      )}
+      onClick={() => onOpen(agent)}
+      title={purpose}
     >
-      {/* Status dot + Name */}
-      <div className="flex items-center gap-2.5 flex-1 min-w-[120px]">
-        <span
-          className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[agent.status] ?? STATUS_DOT.paused}`}
-        />
-        <AgentAvatar agent={agent} className="h-8 w-8" />
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="text-sm font-medium truncate">{agent.name}</span>
-          {agent.is_system && (
-            <Badge variant="outline" className="text-[10px]">
-              System
-            </Badge>
-          )}
+      <div className="min-w-0">
+        <div className="flex items-center gap-3">
+          <AgentAvatar agent={agent} className="h-8 w-8 rounded-none border-0 bg-transparent shadow-none" genericBare />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={cn('h-2 w-2 rounded-full', attentionDotClass(agent, stats))} />
+              <span className="truncate text-sm font-medium">{agent.name}</span>
+              {agent.is_system ? <Badge variant="outline" className="text-[10px]">System</Badge> : null}
+            </div>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">{role}</p>
+          </div>
         </div>
       </div>
 
-      {/* Class */}
-      <span className="text-xs text-muted-foreground w-20 shrink-0 truncate">
-        {presetLabel}
-      </span>
+      <div className="space-y-1">
+        <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:hidden">Model</p>
+        <AgentModelPill provider={agent.provider} model={agent.model} />
+      </div>
 
-      {/* Team */}
-      <span className="text-xs text-muted-foreground w-28 shrink-0 truncate hidden md:block">
-        {teamName ?? 'All teams'}
-      </span>
+      <div className="space-y-1">
+        <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:hidden">Mode</p>
+        <span className="text-sm text-muted-foreground">{INVOCATION_MODE_LABELS[agent.default_invocation_mode]}</span>
+      </div>
 
-      {/* Provider / Model */}
-      <span className="text-xs text-muted-foreground w-28 shrink-0 truncate hidden lg:block">
-        {[agent.provider, agent.model].filter(Boolean).join(' / ') || '—'}
-      </span>
+      <div className="space-y-1">
+        <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:hidden">Runs · 7d</p>
+        <div className="flex items-center gap-2">
+          <RunBars5 statuses={stats?.lastFiveStatuses ?? []} />
+          <span className="font-mono text-sm">{stats?.recentRuns ?? 0}</span>
+        </div>
+      </div>
 
-      {/* Default mode */}
-      <span className="text-xs text-muted-foreground w-24 shrink-0 truncate hidden lg:block">
-        {INVOCATION_MODE_LABELS[agent.default_invocation_mode]}
-      </span>
-
-      {/* Runs */}
-      <span className="text-xs text-muted-foreground w-12 shrink-0 hidden sm:block">
-        {stats ? (stats.total > 0 ? stats.total : '0') : '—'}
-      </span>
-
-      {/* Last run */}
-      <span className="text-xs text-muted-foreground w-28 shrink-0 truncate hidden sm:block">
+      <div className="space-y-1">
+        <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:hidden">Last Run</p>
         {stats?.lastRun ? (
-          <span>
-            <span className={lastRunStatusColor(stats.lastRun)}>{stats.lastRun.status}</span>
-            {' '}
-            {formatLastRun(stats.lastRun)}
-          </span>
+          <>
+            <Badge variant="outline" className={cn('text-[11px]', lastRunStatusClass(stats.lastRun))}>
+              {lastRunStatusLabel(stats.lastRun)}
+            </Badge>
+            <p className="font-mono text-[11px] text-muted-foreground">{formatLastRunTime(stats.lastRun)}</p>
+          </>
         ) : (
-          'Never'
+          <p className="text-xs text-muted-foreground">Never</p>
         )}
-      </span>
+      </div>
 
-      {/* Edit button on hover */}
-      <div className="w-8 shrink-0 flex justify-center">
-        {canEdit && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className="p-1.5 rounded-md opacity-0 group-hover:opacity-100 hover:bg-muted transition-all text-muted-foreground hover:text-foreground"
-                onClick={(e) => { e.stopPropagation(); onEdit(agent); }}
-              >
-                <PencilEdit01Icon className="h-3.5 w-3.5" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="left" className="text-xs">Edit agent</TooltipContent>
-          </Tooltip>
-        )}
+      <div className="space-y-1">
+        <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:hidden">Used By</p>
+        <FlowRefs usage={usage} workspaceSlug={workspaceSlug} />
+      </div>
+
+      <div className="hidden items-start justify-end text-muted-foreground lg:flex">
+        <ArrowRight01Icon className="mt-0.5 h-4 w-4" />
       </div>
     </div>
   );
@@ -1141,7 +1237,6 @@ export function AgentsPage() {
 
   const { data: settings } = useWorkspaceSettings(workspaceId ?? '');
   const teams = settings?.teams ?? [];
-  const teamMap = new Map(teams.map((t) => [t.id, t.name]));
   const accessibleTeamIds = useMemo(
     () => new Set(accessibleTeams.map((team) => team.id)),
     [accessibleTeams],
@@ -1150,6 +1245,7 @@ export function AgentsPage() {
 
   const [viewMode, setViewMode] = useState<'list' | 'cards'>('list');
   const [runStats, setRunStats] = useState<Record<string, AgentRunStats>>({});
+  const [agentUsageMap, setAgentUsageMap] = useState<Record<string, AgentTriggerUsageSummary | null>>({});
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [systemDrawerOpen, setSystemDrawerOpen] = useState(false);
@@ -1168,6 +1264,12 @@ export function AgentsPage() {
   const [versionLabelDraft, setVersionLabelDraft] = useState('');
   const [versionDescriptionDraft, setVersionDescriptionDraft] = useState('');
   const [creatingVersion, setCreatingVersion] = useState(false);
+  const [workspaceVersionPendingDelete, setWorkspaceVersionPendingDelete] = useState<AgentPresetDefinition | null>(null);
+  const [deletingVersion, setDeletingVersion] = useState(false);
+  const [workspaceVersionBeingRenamed, setWorkspaceVersionBeingRenamed] = useState<AgentPresetDefinition | null>(null);
+  const [renameLabelDraft, setRenameLabelDraft] = useState('');
+  const [renameDescriptionDraft, setRenameDescriptionDraft] = useState('');
+  const [renamingVersion, setRenamingVersion] = useState(false);
 
   const loadAgents = useCallback(async () => {
     if (!workspaceId) return;
@@ -1235,29 +1337,64 @@ export function AgentsPage() {
     loadSkillCatalog();
   }, [loadAgents, loadProviderOptions, loadPresets, loadToolCatalog, loadSkillCatalog]);
 
-  // Fetch run stats for all agents
+  // Fetch fleet-level run stats and trigger usage once, then derive agent rows from that shared data.
   useEffect(() => {
-    if (!workspaceId || agents.length === 0) return;
-    const fetchStats = async () => {
+    if (!workspaceId || agents.length === 0) {
+      setRunStats({});
+      setAgentUsageMap({});
+      return;
+    }
+
+    const fetchFleetData = async () => {
+      const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
       const results: Record<string, AgentRunStats> = {};
-      await Promise.all(
-        agents.map(async (agent) => {
-          const res = await agentService.listRuns(workspaceId, agent.id);
-          if (!res.error && res.data) {
-            // Handle both paginated { data, total } and plain array responses
-            const paginated = res.data;
-            const runs = Array.isArray(paginated) ? paginated : (paginated.data ?? []);
-            const total = Array.isArray(paginated) ? paginated.length : (paginated.total ?? 0);
-            results[agent.id] = {
-              total,
-              lastRun: runs[0],
-            };
-          }
-        })
-      );
+      for (const agent of agents) {
+        results[agent.id] = {
+          recentRuns: 0,
+          recentCompleted: 0,
+          recentFailed: 0,
+          lastRun: undefined,
+          lastFiveStatuses: [],
+        };
+      }
+
+      const [runsRes, usageEntries] = await Promise.all([
+        automationService.listWorkspaceRuns(workspaceId, 1, 500),
+        Promise.all(
+          agents.map(async (agent) => {
+            const res = await automationService.getAgentUsage(workspaceId, agent.id);
+            return [agent.id, res.error ? null : (res.data ?? null)] as const;
+          }),
+        ),
+      ]);
+
+      const runs = runsRes.error ? [] : (runsRes.data?.data ?? []);
+      for (const run of runs) {
+        const stats = results[run.agent_id];
+        if (!stats) continue;
+
+        if (!stats.lastRun) {
+          stats.lastRun = run;
+        }
+
+        if (stats.lastFiveStatuses.length < 5) {
+          stats.lastFiveStatuses.push(run.status);
+        }
+
+        const createdAt = new Date(run.created_at).getTime();
+        if (Number.isNaN(createdAt) || createdAt < sevenDaysAgo) continue;
+
+        stats.recentRuns += 1;
+        if (run.status === 'completed') stats.recentCompleted += 1;
+        if (run.status === 'failed') stats.recentFailed += 1;
+      }
+
       setRunStats(results);
+
+      setAgentUsageMap(Object.fromEntries(usageEntries));
     };
-    fetchStats();
+
+    void fetchFleetData();
   }, [workspaceId, agents]);
 
   const openCreateDialog = () => {
@@ -1279,7 +1416,7 @@ export function AgentsPage() {
     setAgentUsage(null);
     void loadAgentUsage(agent.id);
     setAdvancedOpen(hasConfiguredAdvancedFields(agent, presets));
-    setAutomationOpen(agent.is_system ? false : Boolean(agent.schedule || agent.approval_mode !== 'preset_default'));
+    setAutomationOpen(agent.is_system ? false : agent.approval_mode !== 'preset_default');
     setToolPickerOpen(false);
     setVersionDraftOpen(false);
     setVersionLabelDraft('');
@@ -1313,7 +1450,6 @@ export function AgentsPage() {
       allowed_targets: normalizeTargetList(agent.allowed_targets as AgentTargetType[]),
       allowed_tools: normalizeToolList(agent.allowed_tools),
       skills: agent.skills ?? [],
-      schedule: agent.schedule ?? '',
       approval_mode: agent.approval_mode ?? 'preset_default',
       max_concurrent_runs: agent.max_concurrent_runs?.toString() ?? '1',
       default_invocation_mode: normalizeDefaultInvocationMode(agent.default_invocation_mode, runtimeKind),
@@ -1329,8 +1465,14 @@ export function AgentsPage() {
       const payload = buildUpdatePayload(form, advancedOpen, presets, editingAgent);
       const res = await automationService.updateAgent(workspaceId, editingAgent.id, payload);
       if (!res.error) {
+        if (res.data) {
+          setAgents((current) => current.map((agent) => (agent.id === res.data?.id ? res.data : agent)));
+        }
         setDialogOpen(false);
         setSystemDrawerOpen(false);
+        if (editingAgent.is_system) {
+          await loadPresets();
+        }
         await loadAgents();
       } else {
         toast.error(editingAgent.is_system ? 'Failed to save built-in agent' : 'Failed to save custom agent', {
@@ -1361,10 +1503,11 @@ export function AgentsPage() {
       source_version_key: form.preset_version_key,
       runtime_kind: form.runtime_kind,
       provider: form.provider,
-      model: form.model.trim() || undefined,
+      model: form.model.trim(),
       execution_config: buildExecutionConfigPayload(form),
+      system_prompt: form.system_prompt.trim() || undefined,
       instruction_preamble: form.instruction_preamble.trim() || undefined,
-      instruction_skills: form.instruction_skills.length > 0 ? form.instruction_skills : undefined,
+      instruction_skills: form.instruction_skills,
       allowed_tools: normalizeToolList(form.allowed_tools),
       supported_modes: form.supported_modes,
       approval_mode: 'never',
@@ -1389,6 +1532,89 @@ export function AgentsPage() {
     setCreatingVersion(false);
   };
 
+  const handleSaveWorkspaceVersion = async (options?: { silent?: boolean }) => {
+    if (!workspaceId || !editingAgent?.is_system || !selectedPreset?.id) return false;
+    if (!options?.silent) setSaving(true);
+    const payload: UpdateWorkspaceAgentPresetVersionRequest = {
+      label: selectedPreset.version_label,
+      description: selectedPreset.description,
+      runtime_kind: form.runtime_kind,
+      provider: form.provider,
+      model: form.model.trim(),
+      execution_config: buildExecutionConfigPayload(form),
+      system_prompt: form.system_prompt.trim() || undefined,
+      instruction_preamble: form.instruction_preamble,
+      instruction_skills: form.instruction_skills,
+      allowed_tools: normalizeToolList(form.allowed_tools),
+      supported_modes: form.supported_modes,
+      default_invocation_mode: form.default_invocation_mode,
+    };
+    const res = await agentService.updatePresetVersion(workspaceId, selectedPreset.id, payload);
+    if (res.error) {
+      toast.error('Failed to save version', { description: res.error });
+      if (!options?.silent) setSaving(false);
+      return false;
+    }
+    await loadPresets();
+    if (!options?.silent) {
+      toast.success('Version saved');
+      setSaving(false);
+    }
+    return true;
+  };
+
+  const handleSaveAndPin = async () => {
+    setSaving(true);
+    const saved = await handleSaveWorkspaceVersion({ silent: true });
+    if (!saved) {
+      setSaving(false);
+      return;
+    }
+    await handleSave();
+  };
+
+  const handleDeleteWorkspaceVersion = async () => {
+    if (!workspaceId || !workspaceVersionPendingDelete?.id) return;
+    setDeletingVersion(true);
+    const res = await agentService.deletePresetVersion(workspaceId, workspaceVersionPendingDelete.id);
+    if (res.error) {
+      toast.error('Failed to delete version', { description: res.error });
+      setDeletingVersion(false);
+      return;
+    }
+    const deletedKey = workspaceVersionPendingDelete.version_key;
+    await loadPresets();
+    setWorkspaceVersionPendingDelete(null);
+    setDeletingVersion(false);
+    if (form.preset_version_key === deletedKey && editingAgent) {
+      // Selected row was just deleted — fall back to the agent's currently-pinned version or the product default.
+      setForm(buildSystemAgentForm(editingAgent, presets));
+    }
+    toast.success('Workspace version deleted');
+  };
+
+  const handleRenameWorkspaceVersion = async () => {
+    if (!workspaceId || !workspaceVersionBeingRenamed?.id) return;
+    const label = renameLabelDraft.trim();
+    if (!label) return;
+    setRenamingVersion(true);
+    const res = await agentService.updatePresetVersion(workspaceId, workspaceVersionBeingRenamed.id, {
+      label,
+      description: renameDescriptionDraft.trim(),
+    });
+    if (res.error) {
+      toast.error('Failed to rename version', { description: res.error });
+      setRenamingVersion(false);
+      return;
+    }
+    await loadPresets();
+    setWorkspaceVersionBeingRenamed(null);
+    setRenameLabelDraft('');
+    setRenameDescriptionDraft('');
+    setRenamingVersion(false);
+    toast.success('Version renamed');
+  };
+
   const handleDelete = async () => {
     if (!workspaceId || !editingAgent) return;
     setSaving(true);
@@ -1410,37 +1636,12 @@ export function AgentsPage() {
     }
     return accessibleTeamIds.has(agent.team_id);
   });
-
-  const builtInAgents = (() => {
-    const byPreset = new Map<string, Agent>();
-    for (const agent of visibleAgents) {
-      if (!agent.is_system) {
-        continue;
-      }
-      const presetKey = fallbackPresetKey(agent);
-      if (!byPreset.has(presetKey)) {
-        byPreset.set(presetKey, agent);
-      }
-    }
-    return Array.from(byPreset.values());
-  })();
-  const customAgents = visibleAgents.filter((agent) => !agent.is_system);
-  const agentSections: AgentCollectionSection[] = [
-    {
-      key: 'built-in',
-      title: 'Built-in Presets',
-      description: 'Pre-configured agents for core workflows like planning, coding, review, and support.',
-      agents: builtInAgents,
-      empty: 'No built-in preset agents are provisioned in this workspace yet.',
-    },
-    {
-      key: 'custom',
-      title: 'Custom Agents',
-      description: 'Agents your team created with custom prompts, tools, and scheduling.',
-      agents: customAgents,
-      empty: 'No custom agents yet.',
-    },
-  ].filter((section) => section.agents.length > 0 || section.key === 'built-in');
+  const sortedAgents = [...visibleAgents].sort((left, right) => {
+    const leftAttention = needsAttention(left, runStats[left.id]) ? 1 : 0;
+    const rightAttention = needsAttention(right, runStats[right.id]) ? 1 : 0;
+    if (leftAttention !== rightAttention) return rightAttention - leftAttention;
+    return left.name.localeCompare(right.name);
+  });
 
   const advancedConfigured = hasConfiguredAdvancedFields(editingAgent, presets);
   const editingSystemAgent = Boolean(editingAgent?.is_system);
@@ -1459,7 +1660,11 @@ export function AgentsPage() {
     && Boolean(selectedSystemVersionKey)
     && Boolean(currentSystemVersionKey)
     && selectedSystemVersionKey !== currentSystemVersionKey;
-  const systemVersionReadOnly = editingSystemAgent && !versionDraftOpen;
+  const isEditingWorkspaceVersion = editingSystemAgent
+    && !versionDraftOpen
+    && selectedPreset?.scope === 'workspace'
+    && Boolean(selectedPreset?.id);
+  const systemVersionReadOnly = editingSystemAgent && !versionDraftOpen && !isEditingWorkspaceVersion;
   const effectiveTargets =
     editingSystemAgent
       ? (selectedPreset?.allowed_target_types ?? form.allowed_targets)
@@ -1534,7 +1739,7 @@ export function AgentsPage() {
       runtime_kind: nextPreset.runtime_kind,
       supported_modes: nextPreset.supported_modes,
       provider: nextProvider,
-      model: nextPreset.model ?? PRESET_FALLBACKS[form.preset_key].model ?? '',
+      model: nextPreset.model ?? '',
       ...deriveExecutionConfigFields(nextPreset.runtime_kind, nextProvider, nextPreset.execution_config),
       system_prompt: nextPreset.system_prompt ?? '',
       instruction_preamble: nextPreset.instruction_preamble ?? '',
@@ -1550,10 +1755,15 @@ export function AgentsPage() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Agents</h1>
-        {visibleAgents.length > 0 && (
+    <div className="max-w-7xl mx-auto space-y-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-xl font-semibold">Agents</h1>
+          <p className="text-sm text-muted-foreground">
+            Your fleet of built-in and custom agents. See what each one does, whether it is configured, and which flows depend on it.
+          </p>
+        </div>
+        {sortedAgents.length > 0 && (
           <div className="flex items-center gap-2">
             <div className="flex items-center rounded-md border border-border">
               <button
@@ -1613,82 +1823,44 @@ export function AgentsPage() {
       )}
 
       {/* ---- Agent list / grid ---- */}
-      {visibleAgents.length > 0 && viewMode === 'list' && (
-        <div className="space-y-5">
-          {agentSections.map((section) => (
-            <div key={section.key} className="space-y-2">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-sm font-semibold">{section.title}</h2>
-                  <Badge variant="outline" className="text-[10px]">
-                    {section.agents.length}
-                  </Badge>
-                </div>
-                <p className="text-xs text-muted-foreground">{section.description}</p>
-              </div>
-              <div className="rounded-lg border border-border overflow-hidden">
-                <div className="flex items-center gap-3 px-4 py-2 border-b border-border bg-muted/40 text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
-                  <div className="flex-1 min-w-[120px]">Name</div>
-                  <div className="w-20 shrink-0">Preset</div>
-                  <div className="w-28 shrink-0 hidden md:block">Team</div>
-                  <div className="w-28 shrink-0 hidden lg:block">Provider</div>
-                  <div className="w-24 shrink-0 hidden lg:block">Mode</div>
-                  <div className="w-12 shrink-0 hidden sm:block">Runs</div>
-                  <div className="w-28 shrink-0 hidden sm:block">Last run</div>
-                  <div className="w-8 shrink-0" />
-                </div>
-                {section.agents.length > 0 ? section.agents.map((agent) => (
-                    <AgentRow
-                      key={agent.id}
-                      agent={agent}
-                      presetLabel={agentClassLabel(agent, presets)}
-                    teamName={agent.team_id ? teamMap.get(agent.team_id) : undefined}
-                    stats={runStats[agent.id]}
-                    onEdit={openEditDialog}
-                    canEdit={canEdit}
-                  />
-                )) : (
-                  <div className="px-4 py-6 text-sm text-muted-foreground">{section.empty}</div>
-                )}
-              </div>
-            </div>
+      {sortedAgents.length > 0 && viewMode === 'list' && (
+        <div className="rounded-xl border border-border/70 overflow-hidden">
+          <div className="hidden items-center gap-4 border-b border-border/70 bg-muted/30 px-4 py-2 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:grid lg:grid-cols-[minmax(0,3.2fr)_minmax(170px,0.95fr)_110px_120px_150px_170px_28px]">
+            <div>Agent · Role</div>
+            <div>Model</div>
+            <div>Mode</div>
+            <div>Runs · 7d</div>
+            <div>Last run</div>
+            <div>Used by</div>
+            <div />
+          </div>
+          {sortedAgents.map((agent) => (
+            <AgentRow
+              key={agent.id}
+              agent={agent}
+              stats={runStats[agent.id]}
+              usage={agentUsageMap[agent.id]}
+              workspaceSlug={workspace?.slug}
+              presets={presets}
+              onOpen={openEditDialog}
+            />
           ))}
         </div>
       )}
 
-      {visibleAgents.length > 0 && viewMode === 'cards' && (
-        <div className="space-y-5">
-          {agentSections.map((section) => (
-            <div key={section.key} className="space-y-2">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-sm font-semibold">{section.title}</h2>
-                  <Badge variant="outline" className="text-[10px]">
-                    {section.agents.length}
-                  </Badge>
-                </div>
-                <p className="text-xs text-muted-foreground">{section.description}</p>
-              </div>
-              {section.agents.length > 0 ? (
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {section.agents.map((agent) => (
-                    <AgentCard
-                      key={agent.id}
-                      agent={agent}
-                      presetLabel={agentClassLabel(agent, presets)}
-                      teamName={agent.team_id ? teamMap.get(agent.team_id) : undefined}
-                      stats={runStats[agent.id]}
-                      onEdit={openEditDialog}
-                      canEdit={canEdit}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-lg border border-dashed border-border/70 px-4 py-6 text-sm text-muted-foreground">
-                  {section.empty}
-                </div>
-              )}
-            </div>
+      {sortedAgents.length > 0 && viewMode === 'cards' && (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {sortedAgents.map((agent) => (
+            <AgentCard
+              key={agent.id}
+              agent={agent}
+              stats={runStats[agent.id]}
+              usage={agentUsageMap[agent.id]}
+              workspaceSlug={workspace?.slug}
+              presets={presets}
+              onOpen={openEditDialog}
+              canEdit={canEdit}
+            />
           ))}
         </div>
       )}
@@ -1708,316 +1880,373 @@ export function AgentsPage() {
         }}
       >
         <SheetContent side="right" className="w-full gap-0 p-0 data-[side=right]:w-[88vw] data-[side=right]:sm:max-w-[88vw] xl:data-[side=right]:w-[1280px] xl:data-[side=right]:max-w-[1280px]">
-          <SheetHeader className="border-b border-border/60 bg-muted/20 px-6 py-5">
-            <div className="flex items-start gap-4">
-              <AgentAvatar agent={editingAgent ?? undefined} className="h-14 w-14 shrink-0" />
-              <div className="min-w-0 space-y-1">
-                <SheetTitle className="text-xl">{editingAgent?.name ?? 'Built-in Agent'}</SheetTitle>
-                <SheetDescription className="max-w-3xl">
-                  Built-in agents stay pinned to a preset family. Browse every product and workspace version here, inspect the configuration, then pin the agent to the version you want.
+          <SheetHeader className="border-b border-border/60 bg-muted/20 py-4 pl-6 pr-14">
+            <div className="flex items-center gap-4">
+              <AgentAvatar agent={editingAgent ?? undefined} className="h-11 w-11 shrink-0 rounded-none border-0 bg-transparent shadow-none" genericBare />
+              <div className="min-w-0 flex-1">
+                <SheetTitle className="text-lg">{editingAgent?.name ?? 'Built-in Agent'}</SheetTitle>
+                <SheetDescription className="mt-0.5 text-xs">
+                  Built-in {selectedPreset ? presetLabel(form.preset_key, presets) : 'agent'}
+                  {currentSystemPreset && (
+                    <>
+                      {' · pinned to '}
+                      <span className="font-medium text-foreground">{currentSystemPreset.version_label}</span>
+                    </>
+                  )}
                 </SheetDescription>
-                {selectedPreset && (
-                  <div className="flex flex-wrap items-center gap-2 pt-1">
-                    <Badge variant="outline">{presetLabel(form.preset_key, presets)}</Badge>
-                    <Badge variant={selectedPreset.scope === 'workspace' ? 'secondary' : 'outline'}>
-                      {selectedPreset.scope === 'workspace' ? 'Workspace version' : 'Product version'}
-                    </Badge>
-                    {hasPendingSystemVersionSelection ? (
-                      <Badge variant="secondary">Draft selection</Badge>
-                    ) : selectedPreset.version_key === currentSystemVersionKey ? (
-                      <Badge variant="secondary">Current on agent</Badge>
-                    ) : null}
-                  </div>
-                )}
-                {selectedPreset && hasPendingSystemVersionSelection && (
-                  <p className="text-xs text-muted-foreground">
-                    Current on agent: <span className="font-medium text-foreground">{currentSystemPreset?.version_label ?? currentSystemVersionKey}</span>. Save changes to switch to <span className="font-medium text-foreground">{selectedPreset.version_label}</span>.
-                  </p>
-                )}
               </div>
+              {editingAgent && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="shrink-0"
+                  onClick={() => {
+                    window.open(resolveTriggerHistoryPath(workspace?.slug, editingAgent.id), '_blank');
+                  }}
+                >
+                  View runs
+                </Button>
+              )}
             </div>
           </SheetHeader>
 
-          <div className="grid min-h-0 flex-1 lg:grid-cols-[18rem_minmax(0,1fr)]">
-            <aside className="border-b border-border/60 bg-muted/20 lg:border-r lg:border-b-0">
-              <div className="border-b border-border/60 px-5 py-4">
-                <p className="text-sm font-semibold">Preset Versions</p>
-                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                  Product versions are shipped by Helpin. Workspace versions are copies you own locally.
-                </p>
+          <div className="grid min-h-0 flex-1 lg:grid-cols-[20rem_minmax(0,1fr)]">
+            {/* ──────── LEFT: VERSIONS PANE ──────── */}
+            <aside className="flex min-h-0 flex-col border-b border-border/60 bg-muted/20 lg:border-b-0 lg:border-r">
+              <div className="flex items-center justify-between gap-2 border-b border-border/60 px-4 py-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Versions</p>
+                  <p className="text-[10px] text-muted-foreground">{selectedPresetVersions.length} available</p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 gap-1 px-2 text-[11px]"
+                  onClick={() => {
+                    setVersionDraftOpen(true);
+                    setVersionLabelDraft(`${selectedPreset?.version_label ?? 'Version'} Copy`);
+                    setVersionDescriptionDraft(selectedPreset?.description ?? '');
+                  }}
+                >
+                  <PlusSignIcon className="h-3.5 w-3.5" />
+                  New
+                </Button>
               </div>
-              <div className="max-h-[28vh] overflow-y-auto px-3 py-3 lg:max-h-[calc(100vh-11rem)]">
-                <div className="space-y-2">
+              <div className="max-h-[30vh] overflow-y-auto px-2 py-2 lg:max-h-none lg:flex-1">
+                <div className="space-y-1">
                   {selectedPresetVersions.map((presetVersion) => {
                     const isSelected = presetVersion.version_key === form.preset_version_key;
                     const isCurrent = presetVersion.version_key === currentSystemVersionKey;
                     const isDraftSelection = isSelected && !isCurrent;
+                    const isWorkspace = presetVersion.scope === 'workspace';
                     return (
-                      <button
+                      <div
                         key={presetVersion.version_key}
-                        type="button"
-                        onClick={() => selectSystemPresetVersion(presetVersion.version_key)}
-                        className={`w-full rounded-2xl border px-4 py-3 text-left transition-colors ${
+                        className={cn(
+                          'group relative rounded-lg border transition-colors focus-within:ring-2 focus-within:ring-primary/40',
                           isSelected
-                            ? 'border-foreground/20 bg-background shadow-sm'
-                            : 'border-border/60 bg-background/60 hover:border-border hover:bg-background'
-                        }`}
+                            ? 'border-primary/40 bg-background shadow-sm ring-1 ring-primary/20'
+                            : 'border-transparent hover:bg-background hover:shadow-sm',
+                        )}
                       >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
+                        <button
+                          type="button"
+                          onClick={() => selectSystemPresetVersion(presetVersion.version_key)}
+                          className="flex w-full items-start gap-2 px-3 py-2 text-left"
+                        >
+                          <span className={cn(
+                            'mt-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full',
+                            isCurrent ? 'bg-emerald-500' : 'bg-transparent',
+                          )} />
+                          <div className="min-w-0 flex-1 space-y-0.5">
                             <p className="truncate text-sm font-medium">{presetVersion.version_label}</p>
-                            <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                            <p className="line-clamp-1 text-[11px] leading-snug text-muted-foreground">
                               {presetVersion.description || 'No description'}
                             </p>
-                          </div>
-                          <div className="flex shrink-0 flex-col items-end gap-1">
-                            <Badge variant={presetVersion.scope === 'workspace' ? 'secondary' : 'outline'} className="text-[10px]">
-                              {presetVersion.scope === 'workspace' ? 'Workspace' : 'Product'}
-                            </Badge>
-                            {isCurrent && (
-                              <Badge variant="outline" className="text-[10px]">
-                                Current
+                            <div className="flex flex-wrap gap-1 pt-1">
+                              <Badge variant={isWorkspace ? 'secondary' : 'outline'} className="text-[9px] px-1.5 py-0">
+                                {isWorkspace ? 'Workspace' : 'Product'}
                               </Badge>
-                            )}
-                            {isDraftSelection && (
-                              <Badge variant="secondary" className="text-[10px]">
-                                Draft
-                              </Badge>
-                            )}
+                              {isCurrent && (
+                                <Badge variant="outline" className="bg-emerald-500/10 text-[9px] px-1.5 py-0 text-emerald-700 dark:text-emerald-400">Pinned</Badge>
+                              )}
+                              {isDraftSelection && (
+                                <Badge variant="secondary" className="text-[9px] px-1.5 py-0">Preview</Badge>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      </button>
+                        </button>
+                        {isWorkspace && presetVersion.id && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="absolute right-1.5 top-1.5 h-6 w-6 text-muted-foreground opacity-50 transition-opacity hover:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
+                                aria-label={`Actions for ${presetVersion.version_label}`}
+                              >
+                                <MoreHorizontalIcon className="h-3.5 w-3.5" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-44">
+                              <DropdownMenuItem
+                                onSelect={() => {
+                                  setWorkspaceVersionBeingRenamed(presetVersion);
+                                  setRenameLabelDraft(presetVersion.version_label);
+                                  setRenameDescriptionDraft(presetVersion.description ?? '');
+                                }}
+                              >
+                                Rename
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onSelect={() => {
+                                  selectSystemPresetVersion(presetVersion.version_key);
+                                  setVersionDraftOpen(true);
+                                  setVersionLabelDraft(`${presetVersion.version_label} Copy`);
+                                  setVersionDescriptionDraft(presetVersion.description ?? '');
+                                }}
+                              >
+                                Duplicate
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                disabled={isCurrent}
+                                className="text-destructive focus:text-destructive"
+                                onSelect={() => setWorkspaceVersionPendingDelete(presetVersion)}
+                              >
+                                Delete version
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                      </div>
                     );
                   })}
                 </div>
               </div>
             </aside>
 
+            {/* ──────── RIGHT: SELECTED VERSION DETAIL ──────── */}
             <div className="min-h-0 overflow-y-auto px-6 py-6">
-              <div className="space-y-6">
-                <section className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 dark:bg-amber-900/10">
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="space-y-2">
+              <div className="mx-auto w-full max-w-4xl space-y-6">
+                {/* Selected version: header + behaviour strip, visually grouped */}
+                <section className="overflow-hidden rounded-xl border border-border/60 bg-card">
+                  <div className="flex flex-wrap items-start justify-between gap-3 px-5 py-4">
+                    <div className="min-w-0 flex-1 space-y-1.5">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-base font-semibold">{selectedPreset?.version_label ?? 'Version'}</h3>
+                        <h2 className="text-lg font-semibold leading-none">{selectedPreset?.version_label ?? 'Version'}</h2>
                         {selectedPreset && (
-                          <Badge variant={selectedPreset.scope === 'workspace' ? 'secondary' : 'outline'}>
-                            {selectedPreset.scope === 'workspace' ? 'Workspace-owned' : 'System-owned'}
+                          <Badge variant={selectedPreset.scope === 'workspace' ? 'secondary' : 'outline'} className="text-[10px]">
+                            {selectedPreset.scope === 'workspace' ? 'Workspace' : 'Product'}
                           </Badge>
                         )}
+                        {selectedPreset?.version_key === currentSystemVersionKey ? (
+                          <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-[10px] text-emerald-700 dark:text-emerald-400">Pinned</Badge>
+                        ) : hasPendingSystemVersionSelection ? (
+                          <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-[10px] text-amber-700 dark:text-amber-400">Previewing — not pinned</Badge>
+                        ) : null}
                       </div>
-                      <p className="text-sm text-muted-foreground">
-                        {selectedPreset?.description || 'This version has no description yet.'}
-                      </p>
-                      {selectedPreset?.source_version_key && (
-                        <p className="text-xs text-muted-foreground">
-                          Based on: <span className="font-mono">{selectedPreset.source_version_key}</span>
-                        </p>
+                      {selectedPreset?.description && (
+                        <p className="text-sm text-muted-foreground">{selectedPreset.description}</p>
                       )}
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          setVersionDraftOpen(true);
-                          setVersionLabelDraft(`${selectedPreset?.version_label ?? 'Version'} Copy`);
-                          setVersionDescriptionDraft(selectedPreset?.description ?? '');
-                        }}
-                      >
-                        Duplicate to workspace
-                      </Button>
-                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0"
+                      onClick={() => {
+                        setVersionDraftOpen(true);
+                        setVersionLabelDraft(`${selectedPreset?.version_label ?? 'Version'} Copy`);
+                        setVersionDescriptionDraft(selectedPreset?.description ?? '');
+                      }}
+                    >
+                      Duplicate &amp; edit
+                    </Button>
                   </div>
+                  <dl className="grid grid-cols-2 divide-x divide-y divide-border/40 border-t border-border/40 bg-muted/20 sm:grid-cols-3 lg:grid-cols-6">
+                    <div className="space-y-1 p-3">
+                      <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Runtime</dt>
+                      <dd className="truncate text-sm font-medium">{AGENT_RUNTIME_LABELS[form.runtime_kind] ?? form.runtime_kind}</dd>
+                    </div>
+                    <div className="space-y-1 p-3">
+                      <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Model</dt>
+                      <dd className="truncate text-sm font-medium" title={form.model}>{form.model || 'Auto'}</dd>
+                    </div>
+                    <div className="space-y-1 p-3">
+                      <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Mode</dt>
+                      <dd className="truncate text-sm font-medium">{INVOCATION_MODE_LABELS[form.default_invocation_mode]}</dd>
+                    </div>
+                    <div className="space-y-1 p-3">
+                      <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Tools · Skills</dt>
+                      <dd className="truncate text-sm font-medium">{form.allowed_tools.length} · {form.instruction_skills.length}</dd>
+                    </div>
+                    <div className="space-y-1 p-3">
+                      <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Targets</dt>
+                      <dd className="truncate text-sm font-medium" title={effectiveTargets.join(', ') || '—'}>
+                        {effectiveTargets.length > 0 ? effectiveTargets.join(', ') : '—'}
+                      </dd>
+                    </div>
+                    <div className="space-y-1 p-3">
+                      <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Last run</dt>
+                      <dd className="truncate text-sm font-medium" title={(editingAgent && runStats[editingAgent.id]?.lastRun?.created_at) || undefined}>
+                        {editingAgent && runStats[editingAgent.id]?.lastRun?.created_at
+                          ? formatDistanceToNow(new Date(runStats[editingAgent.id].lastRun!.created_at), { addSuffix: true })
+                          : 'Never'}
+                      </dd>
+                    </div>
+                  </dl>
                 </section>
 
-                {versionDraftOpen && (
-                  <section className="rounded-2xl border border-foreground/10 bg-card p-4 shadow-sm">
-                    <div className="space-y-4">
-                      <div>
-                        <h3 className="text-base font-semibold">New Workspace Version</h3>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          This creates a new immutable workspace version from the configuration below. Save the agent afterwards to pin it to the new version.
-                        </p>
-                      </div>
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <div className="space-y-2">
-                          <FieldLabel htmlFor="preset-version-label">Version Label</FieldLabel>
-                          <Input
-                            id="preset-version-label"
-                            value={versionLabelDraft}
-                            onChange={(e) => setVersionLabelDraft(e.target.value)}
-                            placeholder="e.g. Engineering tuned"
-                          />
-                        </div>
-                        <div className="space-y-2 md:col-span-2">
-                          <FieldLabel htmlFor="preset-version-description">Description</FieldLabel>
-                          <Textarea
-                            id="preset-version-description"
-                            value={versionDescriptionDraft}
-                            onChange={(e) => setVersionDescriptionDraft(e.target.value)}
-                            placeholder="What changed in this version?"
-                            rows={3}
-                          />
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          disabled={creatingVersion || !versionLabelDraft.trim()}
-                          onClick={handleCreatePresetVersion}
-                        >
-                          {creatingVersion ? 'Saving version...' : 'Save workspace version'}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setVersionDraftOpen(false);
-                            setVersionLabelDraft('');
-                            setVersionDescriptionDraft('');
-                            if (editingAgent) {
-                              setForm(buildSystemAgentForm(editingAgent, presets));
-                            }
-                          }}
-                        >
-                          Cancel draft
-                        </Button>
-                      </div>
-                    </div>
-                  </section>
-                )}
-
-                <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_18rem]">
-                  <div className="space-y-6">
-                    {/* 01A — Agent Identity (Preamble) */}
-                    {(form.instruction_preamble || !systemVersionReadOnly) && (
-                    <div className="space-y-3">
-                      <SectionHeader number="01" title="Agent Identity" description="Role definition and high-level objective" />
-                      <div className="rounded-xl border border-border/60 bg-card p-4">
+                {/* ──────── VERSION DETAILS ──────── */}
+                <section className="space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Version details</h3>
+                    <Badge variant={systemVersionReadOnly ? 'outline' : 'secondary'} className="text-[10px]">
+                      {versionDraftOpen
+                        ? 'New draft'
+                        : isEditingWorkspaceVersion
+                          ? 'Editable'
+                          : 'Read-only'}
+                    </Badge>
+                  </div>
+                  <div className="space-y-2">
+                  {/* 01A — Agent Identity (Preamble) */}
+                  {(form.instruction_preamble || !systemVersionReadOnly) && (
+                  <Collapsible.Root defaultOpen className="rounded-xl border border-border/60 bg-card">
+                    <Collapsible.Trigger asChild>
+                      <button type="button" className="group flex w-full items-center gap-3 px-4 py-3 text-left">
+                        <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
+                        <span className="flex-1 text-sm font-medium">Agent identity</span>
+                        <span className="text-xs text-muted-foreground group-data-[state=open]:hidden">Preamble</span>
+                      </button>
+                    </Collapsible.Trigger>
+                    <Collapsible.Content>
+                      <div className="border-t border-border/60 p-4">
                         {systemVersionReadOnly ? (
-                          <>
-                            <div className="mb-2 flex items-center justify-between">
-                              <p className="text-xs font-mono text-muted-foreground">preamble</p>
-                              <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">Read-only</span>
-                            </div>
-                            <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">{form.instruction_preamble}</p>
-                          </>
+                          <p className="whitespace-pre-wrap rounded-md border-l-2 border-border bg-muted/30 px-3 py-2 text-sm leading-relaxed text-foreground/90">{form.instruction_preamble || <span className="text-muted-foreground">No preamble.</span>}</p>
                         ) : (
-                          <>
-                            <Textarea
-                              value={form.instruction_preamble}
-                              onChange={(e) => setForm((current) => ({ ...current, instruction_preamble: e.target.value }))}
-                              placeholder="e.g. You are Epic Planner. You run the full PRD-to-tasks loop inside a single interactive run."
-                              rows={3}
-                              className="border-0 bg-transparent p-0 shadow-none focus-visible:ring-0"
-                            />
-                          </>
+                          <Textarea
+                            value={form.instruction_preamble}
+                            onChange={(e) => setForm((current) => ({ ...current, instruction_preamble: e.target.value }))}
+                            placeholder="e.g. You are Epic Planner. You run the full PRD-to-tasks loop inside a single interactive run."
+                            rows={3}
+                            className="resize-none border border-dashed border-border/60 bg-muted/30 px-3 py-2 text-sm shadow-none focus-visible:border-primary focus-visible:bg-background focus-visible:ring-1 focus-visible:ring-primary"
+                          />
                         )}
                       </div>
-                    </div>
-                    )}
+                    </Collapsible.Content>
+                  </Collapsible.Root>
+                  )}
 
-                    {/* 01B — Instruction Skills */}
-                    {(form.instruction_skills.length > 0 || !systemVersionReadOnly) && (
-                    <div className="space-y-3">
-                      <SectionHeader number="01" title="Skills" description="Ordered instruction modules attached to this preset" />
-                      <div className="space-y-2">
-                        {form.instruction_skills.map((skillKey, idx) => {
-                          const entry = skillCatalogEntries.find((s) => s.key === skillKey);
-                          return (
-                            <div key={skillKey} className="flex items-start gap-3 rounded-lg border border-border/50 bg-card px-3 py-2.5">
-                              <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded bg-muted text-[10px] font-semibold text-muted-foreground">{idx + 1}</span>
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-2">
-                                  <BookOpen01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                                  <span className="font-mono text-xs font-medium">{skillKey}</span>
+                  {/* 01B — Instruction Skills */}
+                  {(form.instruction_skills.length > 0 || !systemVersionReadOnly) && (
+                  <Collapsible.Root defaultOpen className="rounded-xl border border-border/60 bg-card">
+                    <Collapsible.Trigger asChild>
+                      <button type="button" className="group flex w-full items-center gap-3 px-4 py-3 text-left">
+                        <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
+                        <span className="flex-1 text-sm font-medium">Skills</span>
+                        <span className="text-xs text-muted-foreground group-data-[state=open]:hidden">{form.instruction_skills.length} module{form.instruction_skills.length === 1 ? '' : 's'}</span>
+                      </button>
+                    </Collapsible.Trigger>
+                    <Collapsible.Content>
+                      <div className="space-y-3 border-t border-border/60 p-4">
+                        <div className="space-y-2">
+                          {form.instruction_skills.map((skillKey, idx) => {
+                            const entry = skillCatalogEntries.find((s) => s.key === skillKey);
+                            return (
+                              <div key={skillKey} className="flex items-start gap-3 rounded-lg border border-border/50 bg-background px-3 py-2.5">
+                                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded bg-muted text-[10px] font-semibold text-muted-foreground">{idx + 1}</span>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <BookOpen01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                    <span className="font-mono text-xs font-medium">{skillKey}</span>
+                                    {entry && (
+                                      <Badge variant="outline" className="text-[9px] px-1.5 py-0">{entry.source_kind === 'built_in' ? 'built-in' : entry.source_kind}</Badge>
+                                    )}
+                                  </div>
                                   {entry && (
-                                    <Badge variant="outline" className="text-[9px] px-1.5 py-0">{entry.source_kind === 'built_in' ? 'built-in' : entry.source_kind}</Badge>
+                                    <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{entry.title !== skillKey ? `${entry.title} — ` : ''}{entry.description}</p>
                                   )}
                                 </div>
-                                {entry && (
-                                  <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{entry.title !== skillKey ? `${entry.title} — ` : ''}{entry.description}</p>
+                                {!systemVersionReadOnly && (
+                                  <button
+                                    type="button"
+                                    className="mt-0.5 shrink-0 rounded p-0.5 text-muted-foreground hover:text-destructive"
+                                    onClick={() => setForm((current) => ({
+                                      ...current,
+                                      instruction_skills: current.instruction_skills.filter((k) => k !== skillKey),
+                                    }))}
+                                  >
+                                    <Cancel01Icon className="h-3.5 w-3.5" />
+                                  </button>
                                 )}
                               </div>
-                              {!systemVersionReadOnly && (
-                                <button
-                                  type="button"
-                                  className="mt-0.5 shrink-0 rounded p-0.5 text-muted-foreground hover:text-destructive"
-                                  onClick={() => setForm((current) => ({
-                                    ...current,
-                                    instruction_skills: current.instruction_skills.filter((k) => k !== skillKey),
-                                  }))}
-                                >
-                                  <Cancel01Icon className="h-3.5 w-3.5" />
-                                </button>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                      {!systemVersionReadOnly && (
-                        <Popover open={skillPickerOpen} onOpenChange={setSkillPickerOpen}>
-                          <PopoverTrigger asChild>
-                            <Button variant="outline" size="sm" className="h-8 gap-1.5 px-2 text-[11px]">
-                              <PlusSignIcon className="h-3.5 w-3.5" />
-                              Add skill
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent align="start" className="w-[28rem] p-0">
-                            <Command>
-                              <CommandInput placeholder="Search skills..." />
-                              <CommandList className="max-h-72">
-                                <CommandEmpty>No more skills available.</CommandEmpty>
-                                <CommandGroup heading={`${skillCatalogEntries.filter((s) => !form.instruction_skills.includes(s.key)).length} available`}>
-                                  {skillCatalogEntries
-                                    .filter((s) => !form.instruction_skills.includes(s.key))
-                                    .map((skill) => (
-                                    <CommandItem
-                                      key={skill.key}
-                                      value={skill.key}
-                                      onSelect={() => {
-                                        setForm((current) => ({
-                                          ...current,
-                                          instruction_skills: [...current.instruction_skills, skill.key],
-                                        }));
-                                        setSkillPickerOpen(false);
-                                      }}
-                                    >
-                                      <div className="min-w-0 flex-1 space-y-0.5">
-                                        <div className="flex items-center gap-2">
-                                          <span className="font-mono text-xs">{skill.key}</span>
-                                          <Badge variant="outline" className="text-[9px] px-1.5 py-0">{skill.source_kind === 'built_in' ? 'built-in' : skill.source_kind}</Badge>
+                            );
+                          })}
+                        </div>
+                        {!systemVersionReadOnly && (
+                          <Popover open={skillPickerOpen} onOpenChange={setSkillPickerOpen}>
+                            <PopoverTrigger asChild>
+                              <Button variant="outline" size="sm" className="h-8 gap-1.5 px-2 text-[11px]">
+                                <PlusSignIcon className="h-3.5 w-3.5" />
+                                Add skill
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent align="start" className="w-[28rem] p-0">
+                              <Command>
+                                <CommandInput placeholder="Search skills..." />
+                                <CommandList className="max-h-72">
+                                  <CommandEmpty>No more skills available.</CommandEmpty>
+                                  <CommandGroup heading={`${skillCatalogEntries.filter((s) => !form.instruction_skills.includes(s.key)).length} available`}>
+                                    {skillCatalogEntries
+                                      .filter((s) => !form.instruction_skills.includes(s.key))
+                                      .map((skill) => (
+                                      <CommandItem
+                                        key={skill.key}
+                                        value={skill.key}
+                                        onSelect={() => {
+                                          setForm((current) => ({
+                                            ...current,
+                                            instruction_skills: [...current.instruction_skills, skill.key],
+                                          }));
+                                          setSkillPickerOpen(false);
+                                        }}
+                                      >
+                                        <div className="min-w-0 flex-1 space-y-0.5">
+                                          <div className="flex items-center gap-2">
+                                            <span className="font-mono text-xs">{skill.key}</span>
+                                            <Badge variant="outline" className="text-[9px] px-1.5 py-0">{skill.source_kind === 'built_in' ? 'built-in' : skill.source_kind}</Badge>
+                                          </div>
+                                          <p className="text-xs text-muted-foreground">{skill.description}</p>
                                         </div>
-                                        <p className="text-xs text-muted-foreground">{skill.description}</p>
-                                      </div>
-                                    </CommandItem>
-                                  ))}
-                                </CommandGroup>
-                              </CommandList>
-                            </Command>
-                          </PopoverContent>
-                        </Popover>
-                      )}
-                    </div>
-                    )}
+                                      </CommandItem>
+                                    ))}
+                                  </CommandGroup>
+                                </CommandList>
+                              </Command>
+                            </PopoverContent>
+                          </Popover>
+                        )}
+                      </div>
+                    </Collapsible.Content>
+                  </Collapsible.Root>
+                  )}
 
-                    {/* 01C — Compiled System Prompt (Preview) */}
-                    <div className="space-y-3">
-                      <Collapsible.Root open={compiledPromptOpen} onOpenChange={setCompiledPromptOpen}>
-                        <Collapsible.Trigger asChild>
-                          <button type="button" className="flex w-full items-center gap-2 text-left">
-                            {compiledPromptOpen ? <ArrowDown01Icon className="h-3.5 w-3.5 text-muted-foreground" /> : <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground" />}
-                            <SourceCodeIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                            <span className="text-xs font-medium text-muted-foreground">Compiled System Prompt</span>
-                            <Badge variant="outline" className="text-[9px] px-1.5 py-0">Preview</Badge>
-                          </button>
-                        </Collapsible.Trigger>
+                  {/* 01C — Compiled System Prompt (Preview) */}
+                  <Collapsible.Root open={compiledPromptOpen} onOpenChange={setCompiledPromptOpen} className="rounded-xl border border-border/60 bg-card">
+                    <Collapsible.Trigger asChild>
+                      <button type="button" className="group flex w-full items-center gap-3 px-4 py-3 text-left">
+                        <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
+                        <SourceCodeIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="flex-1 text-sm font-medium">Compiled system prompt</span>
+                        <Badge variant="outline" className="text-[9px] px-1.5 py-0">Preview</Badge>
+                      </button>
+                    </Collapsible.Trigger>
                         <Collapsible.Content>
-                          <div className="mt-2 rounded-xl border border-border/60 bg-card p-4">
+                          <div className="border-t border-border/60 p-4">
                             <Textarea
                               value={form.system_prompt}
                               disabled
@@ -2032,12 +2261,18 @@ export function AgentsPage() {
                           </div>
                         </Collapsible.Content>
                       </Collapsible.Root>
-                    </div>
 
-                    {/* 02 — Run Mode */}
-                    <div className="space-y-3">
-                      <SectionHeader number="02" title="Run Mode" />
-                      <div className="rounded-xl border border-border/60 bg-card px-4 py-3">
+                  {/* 02 — Run Mode */}
+                  <Collapsible.Root defaultOpen={false} className="rounded-xl border border-border/60 bg-card">
+                    <Collapsible.Trigger asChild>
+                      <button type="button" className="group flex w-full items-center gap-3 px-4 py-3 text-left">
+                        <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
+                        <span className="flex-1 text-sm font-medium">Run mode</span>
+                        <span className="text-xs text-muted-foreground group-data-[state=open]:hidden">{INVOCATION_MODE_LABELS[form.default_invocation_mode]}</span>
+                      </button>
+                    </Collapsible.Trigger>
+                    <Collapsible.Content>
+                      <div className="border-t border-border/60 px-4 py-3">
                         <label className="flex items-center justify-between gap-3">
                           <div>
                             <p className="text-sm font-medium">Interactive mode</p>
@@ -2060,17 +2295,20 @@ export function AgentsPage() {
                           />
                         </label>
                       </div>
-                    </div>
+                    </Collapsible.Content>
+                  </Collapsible.Root>
 
-                    {/* 03 — Execution */}
-                    <div className="space-y-3">
-                      <SectionHeader number="03" title="Execution" description="Runtime, model and inference settings" />
-                      {systemVersionReadOnly && (
-                        <p className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-700 dark:bg-amber-900/10 dark:text-amber-400">
-                          These settings are locked to this version. Duplicate to workspace to create an editable copy with a new version.
-                        </p>
-                      )}
-                      <div className="rounded-xl border border-border/60 bg-card p-5">
+                  {/* 03 — Execution */}
+                  <Collapsible.Root defaultOpen={false} className="rounded-xl border border-border/60 bg-card">
+                    <Collapsible.Trigger asChild>
+                      <button type="button" className="group flex w-full items-center gap-3 px-4 py-3 text-left">
+                        <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
+                        <span className="flex-1 text-sm font-medium">Execution</span>
+                        <span className="text-xs text-muted-foreground group-data-[state=open]:hidden">{AGENT_RUNTIME_LABELS[form.runtime_kind] ?? form.runtime_kind} · {form.model || 'Auto'}</span>
+                      </button>
+                    </Collapsible.Trigger>
+                    <Collapsible.Content>
+                      <div className="border-t border-border/60 p-4">
                         <div className="grid gap-5 md:grid-cols-2">
                           <div className="space-y-2">
                             <FieldLabel>Execution Engine</FieldLabel>
@@ -2224,28 +2462,34 @@ export function AgentsPage() {
                           )}
                         </div>
                       </div>
-                    </div>
+                    </Collapsible.Content>
+                  </Collapsible.Root>
 
-                    {/* 04 — Allowed Tools */}
-                    <div className="space-y-3">
-                      <SectionHeader number="04" title="Allowed Tools" description="Capabilities the agent may invoke during a run" />
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <span className="font-medium">{form.allowed_tools.length} enabled</span>
-                        </div>
-                        <Popover open={toolPickerOpen} onOpenChange={setToolPickerOpen}>
-                          <PopoverTrigger asChild>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-8 gap-1.5 px-2 text-[11px]"
-                              disabled={toolCatalogEntries.length === 0 || codexUsesPresetCapabilities || systemVersionReadOnly}
-                            >
-                              <PlusSignIcon className="h-3.5 w-3.5" />
-                              Add tool
-                            </Button>
-                          </PopoverTrigger>
+                  {/* 04 — Allowed Tools */}
+                  <Collapsible.Root defaultOpen={false} className="rounded-xl border border-border/60 bg-card">
+                    <Collapsible.Trigger asChild>
+                      <button type="button" className="group flex w-full items-center gap-3 px-4 py-3 text-left">
+                        <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
+                        <span className="flex-1 text-sm font-medium">Allowed tools</span>
+                        <span className="text-xs text-muted-foreground group-data-[state=open]:hidden">{form.allowed_tools.length} enabled</span>
+                      </button>
+                    </Collapsible.Trigger>
+                    <Collapsible.Content>
+                      <div className="space-y-3 border-t border-border/60 p-4">
+                        <div className="flex items-center justify-end gap-2">
+                          <Popover open={toolPickerOpen} onOpenChange={setToolPickerOpen}>
+                            <PopoverTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-8 gap-1.5 px-2 text-[11px]"
+                                disabled={toolCatalogEntries.length === 0 || codexUsesPresetCapabilities || systemVersionReadOnly}
+                              >
+                                <PlusSignIcon className="h-3.5 w-3.5" />
+                                Add tool
+                              </Button>
+                            </PopoverTrigger>
                           <PopoverContent align="end" className="w-[28rem] p-0">
                             <Command>
                               <CommandInput placeholder="Search tools..." />
@@ -2341,181 +2585,237 @@ export function AgentsPage() {
                             </div>
                           )}
                         </div>
-                      ) : (
-                        <p className="text-sm text-muted-foreground">No tools configured</p>
-                      )}
-                    </div>
-
-                  </div>
-
-                  <div className="space-y-4">
-                    <div className="rounded-2xl border border-border/60 bg-muted/20 p-5">
-                      <div className="flex items-center gap-2">
-                        <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
-                        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Effective Configuration</p>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">No tools configured</p>
+                        )}
                       </div>
-
-                      {/* Key-value table */}
-                      <div className="mt-4 space-y-2.5 text-sm">
-                        {([
-                          ['Runtime', AGENT_RUNTIME_LABELS[form.runtime_kind] ?? form.runtime_kind],
-                          ['Model', form.model || 'Auto'],
-                          ...(supportsReasoningEffort ? [['Reasoning', form.reasoning_effort || 'Default']] : []),
-                          ...(supportsServiceTier ? [['Tier', form.service_tier || 'Default']] : []),
-                          ['Tools', `${form.allowed_tools.length} enabled`],
-                        ] as [string, string][]).map(([label, value]) => (
-                          <div key={label} className="flex items-center justify-between">
-                            <span className="text-muted-foreground">{label}</span>
-                            <span className="font-medium">{value}</span>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Targets */}
-                      <div className="mt-5">
-                        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Targets</p>
-                        <div className="mt-2 flex flex-wrap gap-1.5">
-                          {effectiveTargets.length > 0 ? effectiveTargets.map((target) => (
-                            <Badge key={target} variant="outline" className="text-[11px]">
-                              {target}
-                            </Badge>
-                          )) : (
-                            <span className="text-xs text-muted-foreground">No targets</span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Supported Modes */}
-                      <div className="mt-4">
-                        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Supported Modes</p>
-                        <div className="mt-2 flex flex-wrap gap-1.5">
-                          {supportedModes.map((mode) => (
-                            <Badge key={mode} variant="outline" className="text-[11px]">
-                              {INVOCATION_MODE_LABELS[mode]}
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Monthly Usage Limit */}
-                    <div className="rounded-2xl border border-border/60 bg-muted/20 p-5">
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Monthly Usage Limit</p>
-
-                      {/* Preset quick-select */}
-                      <div className="mt-3 flex flex-wrap gap-1.5">
-                        {[
-                          { label: 'No Limit', value: '' },
-                          { label: '$50', value: '50' },
-                          { label: '$100', value: '100' },
-                          { label: '$250', value: '250' },
-                          { label: '$500', value: '500' },
-                          { label: '$1,000', value: '1000' },
-                        ].map((preset) => {
-                          const isActive = form.monthly_token_budget === preset.value;
-                          return (
-                            <button
-                              key={preset.value}
-                              type="button"
-                              onClick={() => setForm((current) => ({ ...current, monthly_token_budget: preset.value }))}
-                              className={cn(
-                                'rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors',
-                                isActive
-                                  ? 'border-primary bg-primary/10 text-primary'
-                                  : 'border-border/60 text-muted-foreground hover:border-border hover:text-foreground',
-                              )}
-                            >
-                              {preset.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      {/* Custom input */}
-                      <div className="mt-3">
-                        <Input
-                          id="agent-budget"
-                          type="number"
-                          value={form.monthly_token_budget}
-                          onChange={(e) => setForm((current) => ({ ...current, monthly_token_budget: e.target.value }))}
-                          placeholder="Custom amount..."
-                          className="h-8 text-xs"
-                        />
-                      </div>
-
-                      {/* Progress bar — usage vs limit */}
-                      {editingAgent && (
-                        <div className="mt-3">
-                          {(() => {
-                            const used = editingAgent.tokens_used_this_month ?? 0;
-                            const budget = form.monthly_token_budget ? Number.parseInt(form.monthly_token_budget, 10) : 0;
-                            const pct = budget > 0 ? Math.min(100, Math.round((used / budget) * 100)) : 0;
-                            return (
-                              <>
-                                {budget > 0 && (
-                                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                                    <div
-                                      className={cn(
-                                        'h-full rounded-full transition-all',
-                                        pct >= 90 ? 'bg-destructive' : pct >= 70 ? 'bg-amber-500' : 'bg-primary',
-                                      )}
-                                      style={{ width: `${pct}%` }}
-                                    />
-                                  </div>
-                                )}
-                                <p className="mt-1.5 text-[11px] text-muted-foreground">
-                                  {budget > 0
-                                    ? `$${used.toLocaleString()} of $${budget.toLocaleString()} used this cycle (${pct}%)`
-                                    : `$${used.toLocaleString()} spent this cycle. Applies to the built-in agent, not the preset version.`}
-                                </p>
-                              </>
-                            );
-                          })()}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Triggers */}
-                    {editingAgent && (
-                      <AgentTriggerPanel
-                        workspaceId={workspaceId}
-                        workspaceSlug={workspace?.slug}
-                        usage={agentUsage}
-                        loading={agentUsageLoading}
-                        onRefresh={async () => {
-                          await loadAgentUsage(editingAgent.id);
-                        }}
-                      />
-                    )}
+                    </Collapsible.Content>
+                  </Collapsible.Root>
                   </div>
                 </section>
+
+                {/* ──────── AGENT SETTINGS (agent-scoped) ──────── */}
+                <section className="space-y-3">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <div>
+                      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Agent settings</h3>
+                      <p className="text-[11px] text-muted-foreground">Applies to {editingAgent?.name ?? 'this agent'}, not the pinned version.</p>
+                    </div>
+                    {editingAgent && (
+                      <button
+                        type="button"
+                        className="text-[11px] font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                        onClick={() => {
+                          window.open(resolveTriggerHistoryPath(workspace?.slug, editingAgent.id), '_blank');
+                        }}
+                      >
+                        {agentUsage?.items?.length ?? 0} trigger{(agentUsage?.items?.length ?? 0) === 1 ? '' : 's'} · view runs →
+                      </button>
+                    )}
+                  </div>
+                  <div className="rounded-xl border border-border/60 bg-card p-4">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <p className="text-sm font-medium">Monthly usage limit</p>
+                      {editingAgent && (() => {
+                        const used = editingAgent.tokens_used_this_month ?? 0;
+                        const budget = form.monthly_token_budget ? Number.parseInt(form.monthly_token_budget, 10) : 0;
+                        const pct = budget > 0 ? Math.min(100, Math.round((used / budget) * 100)) : 0;
+                        return (
+                          <p className="text-[11px] text-muted-foreground">
+                            {budget > 0
+                              ? `$${used.toLocaleString()} of $${budget.toLocaleString()} this month (${pct}%)`
+                              : `$${used.toLocaleString()} spent this month · no limit set`}
+                          </p>
+                        );
+                      })()}
+                    </div>
+                    {editingAgent && (() => {
+                      const used = editingAgent.tokens_used_this_month ?? 0;
+                      const budget = form.monthly_token_budget ? Number.parseInt(form.monthly_token_budget, 10) : 0;
+                      const pct = budget > 0 ? Math.min(100, Math.round((used / budget) * 100)) : 0;
+                      if (budget <= 0) return null;
+                      return (
+                        <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-muted">
+                          <div
+                            className={cn(
+                              'h-full rounded-full transition-all',
+                              pct >= 90 ? 'bg-destructive' : pct >= 70 ? 'bg-amber-500' : 'bg-primary',
+                            )}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      );
+                    })()}
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {[
+                        { label: 'No limit', value: '' },
+                        { label: '$50', value: '50' },
+                        { label: '$100', value: '100' },
+                        { label: '$250', value: '250' },
+                        { label: '$500', value: '500' },
+                        { label: '$1,000', value: '1000' },
+                      ].map((preset) => {
+                        const isActive = form.monthly_token_budget === preset.value;
+                        return (
+                          <button
+                            key={preset.value}
+                            type="button"
+                            onClick={() => setForm((current) => ({ ...current, monthly_token_budget: preset.value }))}
+                            className={cn(
+                              'rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors',
+                              isActive
+                                ? 'border-primary bg-primary/10 text-primary'
+                                : 'border-border/60 text-muted-foreground hover:border-border hover:text-foreground',
+                            )}
+                          >
+                            {preset.label}
+                          </button>
+                        );
+                      })}
+                      <Input
+                        id="agent-budget"
+                        type="number"
+                        value={form.monthly_token_budget}
+                        onChange={(e) => setForm((current) => ({ ...current, monthly_token_budget: e.target.value }))}
+                        placeholder="Custom…"
+                        className="h-7 w-28 text-xs"
+                      />
+                    </div>
+                  </div>
+                </section>
+
               </div>
             </div>
           </div>
 
-          <SheetFooter className="border-t border-border/60 bg-background px-6 py-4 sm:flex-row sm:justify-between">
+          <SheetFooter className="border-t border-border/60 bg-background py-4 pl-6 pr-20 sm:flex-row sm:justify-between">
             <div className="text-xs text-muted-foreground">
               {versionDraftOpen
-                ? 'Save the workspace version first, then save the built-in agent to pin it.'
-                : selectedPreset?.version_key === currentSystemVersionKey
-                  ? 'This agent is already pinned to the selected version.'
-                  : 'Save the built-in agent to pin it to the selected version.'}
+                ? 'Configure the new version, then create it.'
+                : isEditingWorkspaceVersion && hasPendingSystemVersionSelection
+                  ? `Save and pin ${selectedPreset?.version_label} to ${editingAgent?.name ?? 'this agent'}.`
+                  : isEditingWorkspaceVersion
+                    ? `Editing ${selectedPreset?.version_label}. Save changes to apply.`
+                    : hasPendingSystemVersionSelection
+                      ? `Pin ${selectedPreset?.version_label ?? 'this version'} to ${editingAgent?.name ?? 'this agent'}?`
+                      : 'No changes to save.'}
             </div>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={() => setSystemDrawerOpen(false)}>
-                Close
+                {hasPendingSystemVersionSelection || versionDraftOpen || isEditingWorkspaceVersion ? 'Cancel' : 'Close'}
               </Button>
-              <Button
-                size="sm"
-                disabled={saving || versionDraftOpen}
-                onClick={handleSave}
-              >
-                {saving ? 'Saving...' : 'Save Built-in Agent'}
-              </Button>
+              {versionDraftOpen ? (
+                <Button
+                  size="sm"
+                  disabled={creatingVersion || !versionLabelDraft.trim()}
+                  onClick={handleCreatePresetVersion}
+                >
+                  {creatingVersion ? 'Creating…' : 'Create version'}
+                </Button>
+              ) : isEditingWorkspaceVersion && hasPendingSystemVersionSelection ? (
+                <Button
+                  size="sm"
+                  disabled={saving}
+                  onClick={handleSaveAndPin}
+                >
+                  {saving ? 'Saving & pinning…' : 'Save & pin'}
+                </Button>
+              ) : isEditingWorkspaceVersion ? (
+                <Button
+                  size="sm"
+                  disabled={saving}
+                  onClick={() => handleSaveWorkspaceVersion()}
+                >
+                  {saving ? 'Saving…' : 'Save version'}
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  disabled={saving || !hasPendingSystemVersionSelection}
+                  onClick={handleSave}
+                >
+                  {saving
+                    ? 'Pinning…'
+                    : hasPendingSystemVersionSelection
+                      ? `Pin ${selectedPreset?.version_label ?? 'version'}`
+                      : 'Pin to agent'}
+                </Button>
+              )}
             </div>
           </SheetFooter>
         </SheetContent>
       </Sheet>
+
+      {/* ---- New workspace version dialog ---- */}
+      <Dialog
+        open={versionDraftOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setVersionDraftOpen(false);
+            setVersionLabelDraft('');
+            setVersionDescriptionDraft('');
+            if (editingAgent) {
+              setForm(buildSystemAgentForm(editingAgent, presets));
+            }
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>New workspace version</DialogTitle>
+            <DialogDescription>
+              Creates a new workspace version from the current configuration. The built-in agent will be pinned to the new version automatically.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <FieldLabel htmlFor="preset-version-label">Version label</FieldLabel>
+              <Input
+                id="preset-version-label"
+                value={versionLabelDraft}
+                onChange={(e) => setVersionLabelDraft(e.target.value)}
+                placeholder="e.g. Engineering tuned"
+                autoFocus
+              />
+            </div>
+            <div className="space-y-2">
+              <FieldLabel htmlFor="preset-version-description">Description</FieldLabel>
+              <Textarea
+                id="preset-version-description"
+                value={versionDescriptionDraft}
+                onChange={(e) => setVersionDescriptionDraft(e.target.value)}
+                placeholder="What changed in this version?"
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setVersionDraftOpen(false);
+                setVersionLabelDraft('');
+                setVersionDescriptionDraft('');
+                if (editingAgent) {
+                  setForm(buildSystemAgentForm(editingAgent, presets));
+                }
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={creatingVersion || !versionLabelDraft.trim()}
+              onClick={handleCreatePresetVersion}
+            >
+              {creatingVersion ? 'Creating…' : 'Create version'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ---- Create / Edit drawer ---- */}
       <Sheet
@@ -2966,35 +3266,11 @@ export function AgentsPage() {
                 <Button type="button" variant="ghost" className="flex w-full items-center justify-between px-2">
                   <span className="flex items-center gap-2 text-sm">
                     {automationOpen ? <ArrowDown01Icon className="h-4 w-4" /> : <ArrowRight01Icon className="h-4 w-4" />}
-                    Scheduling & Approval
+                    Approval & Limits
                   </span>
-                  {form.schedule.trim() && !automationOpen && (
-                    <Badge variant="outline" className="text-[11px] gap-1">
-                      <Clock01Icon className="h-3 w-3" />
-                      Scheduled
-                    </Badge>
-                  )}
                 </Button>
               </Collapsible.Trigger>
               <Collapsible.Content className="space-y-4 rounded-md border bg-muted/30 p-3 mt-2">
-                <div className="space-y-2">
-                  <FieldLabel
-                    htmlFor="agent-schedule"
-                    tooltip="Use a cron expression to run this agent on a recurring schedule. For example: '0 9 * * 1-5' means weekdays at 9am UTC."
-                  >
-                    Recurring schedule
-                  </FieldLabel>
-                  <Input
-                    id="agent-schedule"
-                    value={form.schedule}
-                    onChange={(e) => setForm((current) => ({ ...current, schedule: e.target.value }))}
-                    placeholder="e.g. 0 9 * * 1-5 (weekdays at 9am)"
-                  />
-                  <p className="text-[11px] text-muted-foreground">
-                    Leave empty if you only want to run this agent manually or via triggers.
-                  </p>
-                </div>
-
                 <div className="space-y-2">
                   <FieldLabel tooltip="When set to 'always review first', a team member must approve each run before the agent starts working.">
                     Requires approval?
@@ -3174,11 +3450,87 @@ export function AgentsPage() {
         open={deleteConfirmOpen}
         onOpenChange={setDeleteConfirmOpen}
         title="Delete agent"
-        description="This will permanently remove this agent and all its configuration. Any scheduled runs will be stopped. This action cannot be undone."
+        description="This will permanently remove this agent and its direct configuration. This action cannot be undone."
         confirmLabel="Delete"
         variant="destructive"
         onConfirm={handleDelete}
       />
+
+      <ConfirmDialog
+        open={workspaceVersionPendingDelete !== null}
+        onOpenChange={(open) => !open && setWorkspaceVersionPendingDelete(null)}
+        title="Delete workspace version"
+        description={
+          workspaceVersionPendingDelete
+            ? `This will permanently delete "${workspaceVersionPendingDelete.version_label}". Agents pinned to this version will need to be re-pinned. This action cannot be undone.`
+            : ''
+        }
+        confirmLabel={deletingVersion ? 'Deleting…' : 'Delete version'}
+        variant="destructive"
+        onConfirm={handleDeleteWorkspaceVersion}
+      />
+
+      <Dialog
+        open={workspaceVersionBeingRenamed !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setWorkspaceVersionBeingRenamed(null);
+            setRenameLabelDraft('');
+            setRenameDescriptionDraft('');
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>Rename workspace version</DialogTitle>
+            <DialogDescription>
+              Update the label or description for this workspace version. Changes apply immediately.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <FieldLabel htmlFor="rename-version-label">Label</FieldLabel>
+              <Input
+                id="rename-version-label"
+                value={renameLabelDraft}
+                onChange={(e) => setRenameLabelDraft(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="space-y-2">
+              <FieldLabel htmlFor="rename-version-description">Description</FieldLabel>
+              <Textarea
+                id="rename-version-description"
+                value={renameDescriptionDraft}
+                onChange={(e) => setRenameDescriptionDraft(e.target.value)}
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setWorkspaceVersionBeingRenamed(null);
+                setRenameLabelDraft('');
+                setRenameDescriptionDraft('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={renamingVersion || !renameLabelDraft.trim()}
+              onClick={handleRenameWorkspaceVersion}
+            >
+              {renamingVersion ? 'Saving…' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

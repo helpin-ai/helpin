@@ -6,8 +6,9 @@ import {
   Layers01Icon,
 } from '@/lib/icons';
 import { Calendar03Icon, Tick01Icon, UserAdd01Icon } from '@/lib/pmIcons';
-import { AgentAvatar } from '@/components/agents/AgentAvatar';
-import { differenceInDays, format, isBefore, parseISO, startOfDay } from 'date-fns';
+import { AlertCircleIcon } from '@/lib/icons';
+import { AgentAvatar, resolveAgentPersonaKey } from '@/components/agents/AgentAvatar';
+import { differenceInDays, format, formatDistanceToNow, isBefore, parseISO, startOfDay } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
@@ -61,51 +62,82 @@ interface TaskCardProps {
   /** @deprecated Use BoardCallbacksContext.onTaskPatched instead */
   onEstimateChanged?: (task: Task) => void;
   showStateBadge?: boolean;
-  assignedAgent?: Pick<Agent, 'id' | 'name' | 'preset_key' | 'status'> | null;
 }
 
 const AGENT_OCTAGON_POINTS = '30,2 70,2 98,30 98,70 70,98 30,98 2,70 2,30';
 
+const AWAITING_INPUT_LABELS: Record<string, string> = {
+  human_input: 'Awaiting your input',
+  human_approval: 'Awaiting approval',
+  authentication: 'Needs auth',
+};
+
+function getAwaitingLabel(pauseReason?: string | null): string | null {
+  if (!pauseReason || pauseReason === 'none') return null;
+  return AWAITING_INPUT_LABELS[pauseReason] ?? 'Awaiting your input';
+}
+
 function TaskCardAgentBadge({
   agent,
+  isWorking = false,
+  latestRunStatus,
 }: {
   agent?: Pick<Agent, 'id' | 'name' | 'preset_key' | 'status'> | null;
+  isWorking?: boolean;
+  latestRunStatus?: string | null;
 }) {
-  const isWorking = agent?.status === 'working';
+  const isGenericAgent = resolveAgentPersonaKey({ agent }) === 'generic';
+  const statusDotClassName = latestRunStatus === 'completed'
+    ? 'bg-emerald-500 dark:bg-emerald-400'
+    : latestRunStatus === 'failed'
+      ? 'bg-red-500 dark:bg-red-400'
+      : null;
 
   return (
     <span className="relative block h-7 w-7 shrink-0">
-      <svg
-        viewBox="0 0 100 100"
-        aria-hidden="true"
-        className={cn(
-          'absolute inset-0 h-full w-full overflow-visible',
-          isWorking && 'motion-safe:animate-spin motion-safe:[animation-duration:2.4s]',
-        )}
-      >
-        <polygon
-          points={AGENT_OCTAGON_POINTS}
-          fill="none"
-          className={cn(
-            isWorking
-              ? 'stroke-foreground/80'
-              : 'stroke-muted-foreground/45 dark:stroke-muted-foreground/70',
-          )}
-          strokeWidth={5}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeDasharray={isWorking ? undefined : '6 7'}
-        />
-      </svg>
-      <span
-        className="absolute inset-[2px] overflow-hidden bg-background/95"
-        style={{ clipPath: 'polygon(31% 4%, 69% 4%, 96% 31%, 96% 69%, 69% 96%, 31% 96%, 4% 69%, 4% 31%)' }}
-      >
+      {isWorking ? (
+        <>
+          <svg
+            viewBox="0 0 100 100"
+            aria-hidden="true"
+            className="absolute inset-0 h-full w-full overflow-visible motion-safe:animate-spin motion-safe:[animation-duration:2.4s]"
+          >
+            <polygon
+              points={AGENT_OCTAGON_POINTS}
+              fill="none"
+              className="stroke-foreground/80"
+              strokeWidth={4}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          <span
+            className="absolute inset-[2px] overflow-hidden bg-background/95"
+            style={{ clipPath: 'polygon(31% 4%, 69% 4%, 96% 31%, 96% 69%, 69% 96%, 31% 96%, 4% 69%, 4% 31%)' }}
+          >
+            <AgentAvatar
+              agent={agent}
+              className="h-full w-full rounded-none border-0 bg-transparent shadow-none"
+              genericBare={isGenericAgent}
+            />
+          </span>
+        </>
+      ) : (
         <AgentAvatar
           agent={agent}
-          className="h-full w-full rounded-none border-0 bg-transparent shadow-none"
+          className="h-7 w-7 rounded-none border-0 bg-transparent shadow-none"
+          genericBare={isGenericAgent}
         />
-      </span>
+      )}
+      {statusDotClassName ? (
+        <span
+          aria-hidden="true"
+          className={cn(
+            'absolute bottom-0 right-0 h-2 w-2 rounded-full ring-1 ring-background',
+            statusDotClassName,
+          )}
+        />
+      ) : null}
     </span>
   );
 }
@@ -124,7 +156,6 @@ function TaskCardComponent({
   onSeverityChanged,
   onEstimateChanged,
   showStateBadge = false,
-  assignedAgent: assignedAgentProp,
 }: TaskCardProps) {
   // Consume board contexts (null when used outside KanbanBoard)
   const boardData = useContext(BoardDataContext);
@@ -135,7 +166,7 @@ function TaskCardComponent({
   const assignableMembers = boardData?.assignableMembers ?? assignableMembersProp;
   const ownerNameMap = boardData?.ownerNameMap ?? ownerNameMapProp;
   const agentById = boardData?.agentById;
-  const assignedAgent = assignedAgentProp ?? (agentById && task.assigned_agent_id ? agentById.get(task.assigned_agent_id) ?? null : null);
+  const latestRunAgent = agentById && task.latest_run_agent_id ? agentById.get(task.latest_run_agent_id) ?? null : null;
   const onOpen = callbacksRef?.current.onOpen ?? onOpenProp;
   const onOpenAgentRun = callbacksRef?.current.onOpenAgentRun ?? onOpenAgentRunProp ?? onOpen;
   const onTaskPatched = callbacksRef?.current.onTaskPatched;
@@ -355,7 +386,7 @@ function TaskCardComponent({
           <Tooltip>
             <TooltipTrigger asChild>
               <span className="shrink-0">
-                <TaskTypeIcon taskType={task.task_type} className="h-4 w-4" />
+                <TaskTypeIcon taskType={task.task_type} className="h-[18px] w-[18px]" />
               </span>
             </TooltipTrigger>
             <TooltipContent side="top">{taskTypeCfg.label}</TooltipContent>
@@ -558,26 +589,54 @@ function TaskCardComponent({
         ) : null)}
         <span className="flex-1" />
         <div className="flex items-center gap-1.5">
-          {vis.agent && task.assigned_agent_id && (() => {
+          {vis.agent && task.latest_run_agent_id && (() => {
             const hasActiveRun =
               !isOverlay
               && !!task.latest_run_id
               && !!task.latest_run_status
               && ACTIVE_RUN_STATUSES.has(task.latest_run_status);
-            const baseLabel = assignedAgent?.name ?? 'Agent assigned';
-            const tooltipLabel = hasActiveRun ? `${baseLabel} — Open run` : baseLabel;
+            const awaitingLabel = task.latest_run_status === 'paused'
+              ? getAwaitingLabel(task.latest_run_pause_reason)
+              : null;
+            const runTimeLabel = task.latest_run_at
+              ? `Last run ${formatDistanceToNow(new Date(task.latest_run_at), { addSuffix: true })}`
+              : 'Last run';
+            const baseLabel = latestRunAgent?.name ? `${runTimeLabel}: ${latestRunAgent.name}` : runTimeLabel;
+            const tooltipLabel = awaitingLabel
+              ? `${awaitingLabel}${latestRunAgent?.name ? ` · ${latestRunAgent.name}` : ''} · Open run`
+              : hasActiveRun ? `${baseLabel} · Open run` : baseLabel;
             const handleAgentClick = (e: React.MouseEvent | React.KeyboardEvent) => {
               e.stopPropagation();
               e.preventDefault();
               onOpenAgentRun?.(task);
             };
+            const awaitingPill = awaitingLabel ? (
+              <span
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px] font-medium',
+                  'border-amber-300 bg-amber-100 text-amber-900',
+                  'dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-200',
+                )}
+              >
+                <AlertCircleIcon className="h-3 w-3" aria-hidden="true" />
+                {awaitingLabel}
+              </span>
+            ) : null;
+            const badgeContent = (
+              <span className="inline-flex items-center gap-1.5">
+                {awaitingPill}
+                <TaskCardAgentBadge
+                  agent={latestRunAgent}
+                  isWorking={hasActiveRun}
+                  latestRunStatus={task.latest_run_status}
+                />
+              </span>
+            );
             return (
               <Tooltip>
                 <TooltipTrigger asChild>
                   {isOverlay ? (
-                    <span className="shrink-0">
-                      <TaskCardAgentBadge agent={assignedAgent} />
-                    </span>
+                    <span className="shrink-0">{badgeContent}</span>
                   ) : (
                     <button
                       type="button"
@@ -592,7 +651,7 @@ function TaskCardComponent({
                       className="shrink-0 rounded transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                       aria-label={tooltipLabel}
                     >
-                      <TaskCardAgentBadge agent={assignedAgent} />
+                      {badgeContent}
                     </button>
                   )}
                 </TooltipTrigger>
@@ -664,12 +723,13 @@ export const TaskCard = memo(TaskCardComponent, (prev, next) => {
       prev.task.id !== next.task.id
       || prev.task.updated_at !== next.task.updated_at
       || prev.task.latest_run_id !== next.task.latest_run_id
+      || prev.task.latest_run_agent_id !== next.task.latest_run_agent_id
       || prev.task.latest_run_status !== next.task.latest_run_status
+      || prev.task.latest_run_at !== next.task.latest_run_at
     ) return false;
   }
   return prev.isOverlay === next.isOverlay
     && prev.teamName === next.teamName
-    && prev.showStateBadge === next.showStateBadge
-    && prev.assignedAgent === next.assignedAgent;
+    && prev.showStateBadge === next.showStateBadge;
 });
 TaskCard.displayName = 'TaskCard';

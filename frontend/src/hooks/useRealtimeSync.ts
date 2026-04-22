@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { useWebSocket, type DocsPresenceSnapshot, type WSEvent, type WSSend, type PresenceSnapshot } from './useWebSocket'
 import { usePMBoardStore } from '@/stores/pmBoardStore'
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore'
 import { useDocsPresenceStore } from '@/stores/docsPresenceStore'
 import { useAuthStore } from '@/stores/authStore'
+import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { pmTaskService } from '@/lib/services/pmTaskService'
 import { queryKeys } from '@/lib/queryKeys'
 import { logPMDnD } from '@/lib/pmDnDDebug'
@@ -212,6 +214,32 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
     } else if (event.entity === 'notification') {
       queryClient.invalidateQueries({ queryKey: queryKeys.notifications.all(workspaceId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.notifications.unreadCount(workspaceId) })
+
+      if (event.action === 'created') {
+        const data = event.data ?? {}
+        const eventType = typeof data.event_type === 'string' ? data.event_type : ''
+        const recipientId = typeof data.recipient_id === 'string' ? data.recipient_id : ''
+        const parentTaskId = typeof data.parent_task_id === 'string' ? data.parent_task_id : ''
+        const selfId = selfIdRef.current
+        if (
+          eventType === 'task.agent_attention_required'
+          && !!selfId
+          && recipientId === selfId
+          && event.actor_id !== selfId
+        ) {
+          const slug = useWorkspaceStore.getState().currentWorkspace?.slug
+          toast('Agent needs your attention', {
+            description: 'An agent has paused and is waiting for your input.',
+            duration: 10_000,
+            action: slug && parentTaskId ? {
+              label: 'Open task',
+              onClick: () => {
+                window.location.href = `/w/${slug}/pm/tasks?task=${parentTaskId}`
+              },
+            } : undefined,
+          })
+        }
+      }
     } else if (event.entity === 'agent_run') {
       scheduleAgentRunInvalidation(queryKeys.automation.runsRoot(workspaceId))
       scheduleAgentRunInvalidation(queryKeys.automation.activityRoot(workspaceId))
@@ -396,13 +424,15 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
     const store = useSupportPresenceStore.getState()
     const selfId = selfIdRef.current
 
-    const nextViewers = snapshot.viewers
+    const viewersArr = Array.isArray(snapshot.viewers) ? snapshot.viewers : []
+    const nextViewers = viewersArr
       .map((viewer) => viewer.user_id)
       .filter((uid) => uid && uid !== selfId)
     store.replaceViewingAgents(convId, nextViewers)
 
+    const typersObj = snapshot.typers && typeof snapshot.typers === 'object' ? snapshot.typers : {}
     const nextTypers = Object.fromEntries(
-      Object.entries(snapshot.typers)
+      Object.entries(typersObj)
         .filter(([uid]) => uid !== selfId)
         .map(([uid, typing]) => [uid, {
           content: typing.content ?? '',
@@ -428,8 +458,9 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
     const docId = snapshot.document_id
     if (!docId) return
     const selfId = selfIdRef.current
+    const docViewersArr = Array.isArray(snapshot.viewers) ? snapshot.viewers : []
     const nextViewers = Object.fromEntries(
-      snapshot.viewers
+      docViewersArr
         .filter((viewer) => viewer.user_id && viewer.user_id !== selfId)
         .map((viewer) => [viewer.user_id, {
           name: viewer.name,

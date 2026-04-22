@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,6 +26,28 @@ func TestProviderUsesAgenticResponses(t *testing.T) {
 	}
 	if providerUsesAgenticResponses(model.AgentModelProviderAnthropic) {
 		t.Fatalf("did not expect anthropic to use agentic responses")
+	}
+}
+
+func TestResolveOpenAIResponsesBaseURLDefaultsToOpenAIAPI(t *testing.T) {
+	if got := resolveOpenAIResponsesBaseURL(""); got != defaultOpenAIResponsesBaseURL {
+		t.Fatalf("expected default openai responses base url %q, got %q", defaultOpenAIResponsesBaseURL, got)
+	}
+	if got := resolveOpenAIResponsesBaseURL("  "); got != defaultOpenAIResponsesBaseURL {
+		t.Fatalf("expected blank openai responses base url to fall back to %q, got %q", defaultOpenAIResponsesBaseURL, got)
+	}
+}
+
+func TestResolveOpenAIResponsesBaseURLPreservesExplicitValue(t *testing.T) {
+	want := "https://proxy.example/v1"
+	if got := resolveOpenAIResponsesBaseURL("  " + want + "  "); got != want {
+		t.Fatalf("expected explicit openai responses base url %q, got %q", want, got)
+	}
+}
+
+func TestResolveOpenRouterBaseURLDefaultsToOpenRouterAPI(t *testing.T) {
+	if got := resolveOpenRouterBaseURL(""); got != defaultOpenRouterBaseURL {
+		t.Fatalf("expected default openrouter base url %q, got %q", defaultOpenRouterBaseURL, got)
 	}
 }
 
@@ -111,6 +134,187 @@ func TestToAgenticMessagesIncludesToolResults(t *testing.T) {
 	}
 }
 
+func TestCompactToolOutputForModelCompactsLargeReadResults(t *testing.T) {
+	output := strings.Repeat("line of file contents\n", 500)
+
+	compacted := compactToolOutputForModel("read_file", output)
+
+	if compacted == output {
+		t.Fatal("expected large read_file output to be compacted")
+	}
+	if !strings.Contains(compacted, "truncated") {
+		t.Fatalf("expected compaction marker, got %q", compacted)
+	}
+	if len([]rune(compacted)) >= len([]rune(output)) {
+		t.Fatalf("expected compacted output to be shorter than original")
+	}
+}
+
+func TestAnalyzeToolOutputForModelTracksCompactionMetadata(t *testing.T) {
+	output := strings.Repeat("line of file contents\n", 500)
+
+	analysis := analyzeToolOutputForModel("read_file", output)
+
+	if !analysis.Compacted {
+		t.Fatal("expected large read_file output to be marked compacted")
+	}
+	if analysis.OriginalRunes <= analysis.VisibleRunes {
+		t.Fatalf("expected visible output to be smaller, got %#v", analysis)
+	}
+	if analysis.OriginalLines <= 0 || analysis.VisibleLines <= 0 {
+		t.Fatalf("expected positive line counts, got %#v", analysis)
+	}
+	if !strings.Contains(analysis.Content, "truncated") {
+		t.Fatalf("expected compaction marker in output, got %q", analysis.Content)
+	}
+}
+
+func TestAnalyzeToolOutputForModelCompactsModerateReadFileOutputs(t *testing.T) {
+	output := strings.Repeat("0123456789abcdef\n", 210)
+
+	analysis := analyzeToolOutputForModel("read_file", output)
+
+	if !analysis.Compacted {
+		t.Fatalf("expected moderate read_file output to compact under the tighter threshold, got %#v", analysis)
+	}
+	if analysis.OriginalRunes <= analysis.VisibleRunes {
+		t.Fatalf("expected visible output to be smaller, got %#v", analysis)
+	}
+}
+
+func TestAnalyzeToolOutputForModelCompactsModerateReadFileRangeOutputs(t *testing.T) {
+	output := strings.Repeat("0123456789abcdef\n", 180)
+
+	analysis := analyzeToolOutputForModel("read_file_range", output)
+
+	if !analysis.Compacted {
+		t.Fatalf("expected moderate read_file_range output to compact under the tighter threshold, got %#v", analysis)
+	}
+	if analysis.OriginalRunes <= analysis.VisibleRunes {
+		t.Fatalf("expected visible output to be smaller, got %#v", analysis)
+	}
+}
+
+func TestAnalyzeToolOutputForModelCompactsLargeRipgrepOutputs(t *testing.T) {
+	output := strings.Repeat("path/file.rs:123: matched text here\n", 100)
+
+	analysis := analyzeToolOutputForModel("ripgrep", output)
+
+	if !analysis.Compacted {
+		t.Fatalf("expected 3k+ ripgrep output to compact, got %#v", analysis)
+	}
+	if analysis.OriginalRunes <= analysis.VisibleRunes {
+		t.Fatalf("expected visible output to be smaller, got %#v", analysis)
+	}
+}
+
+func TestPrepareToolResultForModelUsesPlaceholderForEmptyOutput(t *testing.T) {
+	analysis := prepareToolResultForModel("run_command", "", false)
+
+	if analysis.Content != toolResultNoOutputPlaceholder {
+		t.Fatalf("expected no-output placeholder, got %q", analysis.Content)
+	}
+	if analysis.VisibleRunes == 0 || analysis.VisibleLines == 0 {
+		t.Fatalf("expected visible metrics for placeholder, got %#v", analysis)
+	}
+}
+
+func TestToSchemaMessagesCompactsLargeToolResultsForModelHistory(t *testing.T) {
+	output := strings.Repeat("line of file contents\n", 500)
+	history := []ExecutionMessage{
+		{
+			Role: "assistant",
+			Blocks: []ExecutionBlock{
+				{Type: ExecutionBlockTypeToolCall, ToolCallID: "call-1", ToolName: "read_file", Input: json.RawMessage(`{"path":"a.go"}`)},
+			},
+		},
+		{
+			Role: "tool",
+			Blocks: []ExecutionBlock{
+				{Type: ExecutionBlockTypeToolResult, ToolCallID: "call-1", ToolName: "read_file", Output: output},
+			},
+		},
+	}
+
+	msgs, err := toSchemaMessages("system prompt", history)
+	if err != nil {
+		t.Fatalf("toSchemaMessages returned error: %v", err)
+	}
+	if len(msgs) != 3 {
+		t.Fatalf("expected system plus assistant/tool replay messages, got %#v", msgs)
+	}
+	if !strings.Contains(msgs[2].Content, "truncated") {
+		t.Fatalf("expected compacted tool output marker, got %q", msgs[2].Content)
+	}
+	if msgs[2].Content == output {
+		t.Fatal("expected tool output to be compacted for model history")
+	}
+}
+
+func TestToAgenticMessagesCompactsLargeToolResultsForModelHistory(t *testing.T) {
+	output := strings.Repeat("line of file contents\n", 500)
+	history := []ExecutionMessage{
+		{
+			Role: "assistant",
+			Blocks: []ExecutionBlock{
+				{Type: ExecutionBlockTypeToolCall, ToolCallID: "call-1", ToolName: "read_file", Input: json.RawMessage(`{"path":"a.go"}`)},
+			},
+		},
+		{
+			Role: "tool",
+			Blocks: []ExecutionBlock{
+				{Type: ExecutionBlockTypeToolResult, ToolCallID: "call-1", ToolName: "read_file", Output: output},
+			},
+		},
+	}
+
+	msgs, err := toAgenticMessages("system prompt", history)
+	if err != nil {
+		t.Fatalf("toAgenticMessages returned error: %v", err)
+	}
+	if len(msgs) != 3 {
+		t.Fatalf("expected system plus assistant/tool replay messages, got %#v", msgs)
+	}
+	if len(msgs[2].ContentBlocks) != 1 || msgs[2].ContentBlocks[0].FunctionToolResult == nil {
+		t.Fatalf("expected function tool result block, got %#v", msgs[2])
+	}
+	result := msgs[2].ContentBlocks[0].FunctionToolResult.Result
+	if !strings.Contains(result, "truncated") {
+		t.Fatalf("expected compacted tool output marker, got %q", result)
+	}
+	if result == output {
+		t.Fatal("expected tool output to be compacted for agentic model history")
+	}
+}
+
+func TestToSchemaMessagesPreservesEmptyToolResultsWithPlaceholder(t *testing.T) {
+	history := []ExecutionMessage{
+		{
+			Role: "assistant",
+			Blocks: []ExecutionBlock{
+				{Type: ExecutionBlockTypeToolCall, ToolCallID: "call-1", ToolName: "run_command", Input: json.RawMessage(`{"command":"mkdir -p tmp"}`)},
+			},
+		},
+		{
+			Role: "tool",
+			Blocks: []ExecutionBlock{
+				{Type: ExecutionBlockTypeToolResult, ToolCallID: "call-1", ToolName: "run_command", Output: ""},
+			},
+		},
+	}
+
+	msgs, err := toSchemaMessages("system prompt", history)
+	if err != nil {
+		t.Fatalf("toSchemaMessages returned error: %v", err)
+	}
+	if len(msgs) != 3 {
+		t.Fatalf("expected system plus assistant/tool replay messages, got %#v", msgs)
+	}
+	if msgs[2].Content != toolResultNoOutputPlaceholder {
+		t.Fatalf("expected placeholder tool content, got %#v", msgs[2])
+	}
+}
+
 func TestToAgenticMessagesAllowsUserSummaryFirst(t *testing.T) {
 	history := []ExecutionMessage{
 		{Role: "user", Content: "Resume context from earlier turns:\nSummary"},
@@ -126,6 +330,87 @@ func TestToAgenticMessagesAllowsUserSummaryFirst(t *testing.T) {
 	}
 	if msgs[1].Role != schema.AgenticRoleTypeUser {
 		t.Fatalf("expected first non-system message to be user, got %q", msgs[1].Role)
+	}
+}
+
+func TestToSchemaMessagesDropsOrphanToolResultsFromReplayHistory(t *testing.T) {
+	history := []ExecutionMessage{
+		{Role: "user", Content: "Resume context from earlier turns:\nSummary"},
+		{
+			Role: "tool",
+			Blocks: []ExecutionBlock{
+				{Type: ExecutionBlockTypeToolResult, ToolCallID: "call-1", ToolName: "read_file", Output: "package main"},
+			},
+		},
+	}
+
+	msgs, err := toSchemaMessages("system prompt", history)
+	if err != nil {
+		t.Fatalf("toSchemaMessages returned error: %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected system plus summary user message after dropping orphan tool result, got %#v", msgs)
+	}
+}
+
+func TestToSchemaMessagesKeepsMatchedToolReplayPairs(t *testing.T) {
+	history := []ExecutionMessage{
+		{Role: "user", Content: "Resume context from earlier turns:\nSummary"},
+		{
+			Role: "assistant",
+			Blocks: []ExecutionBlock{
+				{Type: ExecutionBlockTypeText, Text: "Need a tool"},
+				{Type: ExecutionBlockTypeToolCall, ToolCallID: "call-1", ToolName: "read_file", Input: json.RawMessage(`{"path":"a.go"}`)},
+			},
+		},
+		{
+			Role: "tool",
+			Blocks: []ExecutionBlock{
+				{Type: ExecutionBlockTypeToolResult, ToolCallID: "call-1", ToolName: "read_file", Output: "package main"},
+			},
+		},
+	}
+
+	msgs, err := toSchemaMessages("system prompt", history)
+	if err != nil {
+		t.Fatalf("toSchemaMessages returned error: %v", err)
+	}
+	if len(msgs) != 4 {
+		t.Fatalf("expected system, summary, assistant, and tool result messages, got %#v", msgs)
+	}
+	if len(msgs[2].ToolCalls) != 1 || msgs[2].ToolCalls[0].ID != "call-1" {
+		t.Fatalf("expected matched tool call to remain, got %#v", msgs[2])
+	}
+}
+
+func TestSummarizeNativeToolPressureAggregatesLargeReads(t *testing.T) {
+	messages := []ExecutionMessage{
+		{
+			Role: "tool",
+			Blocks: []ExecutionBlock{
+				{Type: ExecutionBlockTypeToolResult, ToolCallID: "call-1", ToolName: "read_file", Output: strings.Repeat("abc\n", 1600)},
+			},
+		},
+		{
+			Role: "tool",
+			Blocks: []ExecutionBlock{
+				{Type: ExecutionBlockTypeToolResult, ToolCallID: "call-2", ToolName: "run_command", Output: "ok\n"},
+			},
+		},
+	}
+
+	summary := summarizeNativeToolPressure(messages)
+	if summary.ToolCalls != 2 {
+		t.Fatalf("expected 2 tool calls, got %#v", summary)
+	}
+	if summary.CompactedResults != 1 {
+		t.Fatalf("expected one compacted result, got %#v", summary)
+	}
+	if summary.OutputChars <= summary.ModelVisibleChars {
+		t.Fatalf("expected visible chars to be smaller after compaction, got %#v", summary)
+	}
+	if len(summary.TopToolsByPressure) == 0 || !strings.Contains(summary.TopToolsByPressure[0], "read_file") {
+		t.Fatalf("expected read_file to be the top noisy tool, got %#v", summary)
 	}
 }
 
@@ -410,5 +695,55 @@ func TestExtractReasoningFromAgenticMessageReadsReasoningBlocks(t *testing.T) {
 	}
 	if reasoning.EncryptedValue != "sig_a" {
 		t.Fatalf("expected reasoning signature, got %#v", reasoning)
+	}
+}
+
+func TestSchemaResponseUsageCarriesCachedInputTokens(t *testing.T) {
+	msg := &schema.Message{
+		ResponseMeta: &schema.ResponseMeta{
+			Usage: &schema.TokenUsage{
+				PromptTokens: 12,
+				PromptTokenDetails: schema.PromptTokenDetails{
+					CachedTokens: 5,
+				},
+				CompletionTokens: 7,
+			},
+		},
+	}
+
+	usage := ExecutionUsage{}
+	if msg.ResponseMeta != nil && msg.ResponseMeta.Usage != nil {
+		usage.CachedInputTokens = msg.ResponseMeta.Usage.PromptTokenDetails.CachedTokens
+		usage.InputTokens = msg.ResponseMeta.Usage.PromptTokens
+		usage.OutputTokens = msg.ResponseMeta.Usage.CompletionTokens
+	}
+
+	if usage.CachedInputTokens != 5 || usage.InputTokens != 12 || usage.OutputTokens != 7 {
+		t.Fatalf("unexpected usage %+v", usage)
+	}
+}
+
+func TestAgenticResponseUsageCarriesCachedInputTokens(t *testing.T) {
+	msg := &schema.AgenticMessage{
+		ResponseMeta: &schema.AgenticResponseMeta{
+			TokenUsage: &schema.TokenUsage{
+				PromptTokens: 18,
+				PromptTokenDetails: schema.PromptTokenDetails{
+					CachedTokens: 9,
+				},
+				CompletionTokens: 6,
+			},
+		},
+	}
+
+	usage := ExecutionUsage{}
+	if msg.ResponseMeta != nil && msg.ResponseMeta.TokenUsage != nil {
+		usage.CachedInputTokens = msg.ResponseMeta.TokenUsage.PromptTokenDetails.CachedTokens
+		usage.InputTokens = msg.ResponseMeta.TokenUsage.PromptTokens
+		usage.OutputTokens = msg.ResponseMeta.TokenUsage.CompletionTokens
+	}
+
+	if usage.CachedInputTokens != 9 || usage.InputTokens != 18 || usage.OutputTokens != 6 {
+		t.Fatalf("unexpected usage %+v", usage)
 	}
 }

@@ -18,6 +18,7 @@ import (
 type Handlers struct {
 	Health              *handler.HealthHandler
 	Auth                *handler.AuthHandler
+	Passkey             *handler.PasskeyHandler
 	Organization        *handler.OrganizationHandler
 	Workspace           *handler.WorkspaceHandler
 	Settings            *handler.SettingsHandler
@@ -203,6 +204,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		// ---- Public routes ----
 		r.Post("/auth/signup", h.Auth.Signup)
 		r.Post("/auth/signin", h.Auth.Signin)
+		r.Post("/auth/passkey/authentication-options", h.Passkey.AuthenticationOptions)
+		r.Post("/auth/passkey/authenticate", h.Passkey.Authenticate)
 		r.Post("/auth/2fa/verify-signin", h.Auth.Verify2FASignin)
 		r.Post("/auth/forgot-password", h.Auth.ForgotPassword)
 		r.Post("/auth/reset-password", h.Auth.ResetPassword)
@@ -338,6 +341,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Post("/auth/me/avatar", h.Auth.UploadAvatar)
 			r.Delete("/auth/me/avatar", h.Auth.DeleteAvatar)
 			r.Put("/auth/change-password", h.Auth.ChangePassword)
+			r.Post("/auth/passkey/registration-options", h.Passkey.RegistrationOptions)
+			r.Post("/auth/passkey/register", h.Passkey.Register)
+			r.Get("/auth/passkey/list", h.Passkey.List)
+			r.Delete("/auth/passkey/{id}", h.Passkey.Delete)
 			r.Get("/auth/2fa/status", h.Auth.Get2FAStatus)
 			r.Post("/auth/2fa/setup", h.Auth.Setup2FA)
 			r.Post("/auth/2fa/verify", h.Auth.Verify2FA)
@@ -826,6 +833,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/agents", h.Agent.CreateAgent)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-presets", h.Agent.ListAgentPresets)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-preset-versions", h.Agent.CreateWorkspacePresetVersion)
+				r.With(requirePerm(authorization.PermPMEdit)).Put("/agent-preset-versions/{id}", h.Agent.UpdateWorkspacePresetVersion)
+				r.With(requirePerm(authorization.PermPMEdit)).Delete("/agent-preset-versions/{id}", h.Agent.DeleteWorkspacePresetVersion)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-model-providers", h.Agent.ListModelProviders)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/runner-health", h.Agent.GetRunnerHealth)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tool-catalog", h.Agent.ListToolCatalog)
@@ -849,7 +858,6 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermPMRead)).Get("/content-sources/{contentSourceId}/pages/{pageId}", h.SupportAI.GetContentSourcePage)
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/content-sources/{contentSourceId}/reindex", h.SupportAI.ReindexContentSource)
 				}
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/assign-agent", h.Agent.AssignAgentToTask)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/run-agent", h.Agent.RunTaskAgent)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/epics/{id}/run-agent", h.Agent.RunEpicAgent)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs", h.Agent.StartTargetRun)

@@ -3,6 +3,7 @@ import type { AgentRun, AgentRuntimeKind, CodingSession } from './pmTypes';
 type TokenUsageShape = {
   runtime_kind: AgentRuntimeKind;
   tokens_used?: number;
+  cached_input_tokens?: number;
   input_tokens?: number;
   output_tokens?: number;
 };
@@ -32,11 +33,17 @@ export function formatAgentTokenUsage(
 ) {
   const emptyLabel = options?.emptyLabel ?? '-';
   const includeUnit = options?.includeUnit ?? false;
+  const cachedInputTokens = usage.cached_input_tokens ?? 0;
   const inputTokens = usage.input_tokens ?? 0;
   const outputTokens = usage.output_tokens ?? 0;
   const totalTokens = usage.tokens_used ?? 0;
+  const showsSplitUsage = (usage.runtime_kind === 'native_sdk' || usage.runtime_kind === 'codex')
+    && (inputTokens > 0 || outputTokens > 0);
 
-  if (usage.runtime_kind === 'native_sdk' && (inputTokens > 0 || outputTokens > 0)) {
+  if (showsSplitUsage) {
+    if (cachedInputTokens > 0) {
+      return `${formatCompactTokenCount(inputTokens)} input (${formatCompactTokenCount(cachedInputTokens)} cached) / ${formatCompactTokenCount(outputTokens)} output`;
+    }
     return `${formatCompactTokenCount(inputTokens)} input / ${formatCompactTokenCount(outputTokens)} output`;
   }
   if (totalTokens > 0) {
@@ -46,7 +53,7 @@ export function formatAgentTokenUsage(
   return emptyLabel;
 }
 
-export function formatRunTokenUsage(run: Pick<AgentRun, 'runtime_kind' | 'tokens_used' | 'input_tokens' | 'output_tokens'>, options?: {
+export function formatRunTokenUsage(run: Pick<AgentRun, 'runtime_kind' | 'tokens_used' | 'cached_input_tokens' | 'input_tokens' | 'output_tokens'>, options?: {
   emptyLabel?: string;
   includeUnit?: boolean;
 }) {
@@ -54,7 +61,7 @@ export function formatRunTokenUsage(run: Pick<AgentRun, 'runtime_kind' | 'tokens
 }
 
 export function formatSessionTokenUsage(
-  session: Pick<CodingSession, 'runtime_kind' | 'tokens_used' | 'input_tokens' | 'output_tokens'>,
+  session: Pick<CodingSession, 'runtime_kind' | 'tokens_used' | 'cached_input_tokens' | 'input_tokens' | 'output_tokens'>,
   options?: {
     emptyLabel?: string;
     includeUnit?: boolean;

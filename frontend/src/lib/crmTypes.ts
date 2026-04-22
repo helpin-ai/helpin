@@ -231,6 +231,10 @@ export interface CreateCRMAssociationRequest {
 export interface CRMAssociationEnriched extends CRMAssociation {
   linked_object_name: string;
   linked_object_display_id: string;
+  linked_object_status?: string;
+  linked_object_status_color?: string;
+  inferred?: boolean;
+  context_label?: string;
 }
 
 export interface CRMActivity {

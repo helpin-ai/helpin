@@ -1,27 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
-import { AutomationFlowsPage } from '@/pages/automation/AutomationFlows';
+import { AutomationFlowsPage, type AutomationFlowsSearch } from '@/pages/automation/AutomationFlows';
 
-type AutomationFlowsSearch = {
-  workflow?: string;
-  team?: string;
-  template?: string;
-  template_title?: string;
-  template_description?: string;
-  show_trigger?: string;
-  show_trigger_title?: string;
-  create_event_rule?: boolean;
-  trigger_type?: string;
-  agent_id?: string;
-  repo_full_name?: string;
-  branch?: string;
-  base_branch?: string;
-  tag_name?: string;
-  conclusion?: string;
-  target_mode?: 'event' | 'task' | 'epic' | 'repository';
-  target_id?: string;
-};
-
-const TARGET_MODES = new Set(['event', 'task', 'epic', 'repository']);
+const TARGET_MODES = new Set(['event', 'task', 'epic', 'repository', 'workspace']);
 
 export const Route = createFileRoute('/_authenticated/w/$slug/automation/flows')({
   component: AutomationFlowsRoute,

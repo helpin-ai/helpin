@@ -21,10 +21,10 @@ import type { Agent, AgentRun } from '@/lib/pmTypes';
 interface Props {
   taskId: string;
   workspaceId: string;
-  assignedAgentId?: string;
+  latestRunAgentId?: string | null;
 }
 
-export function AgentRunPanel({ taskId, workspaceId, assignedAgentId }: Props) {
+export function AgentRunPanel({ taskId, workspaceId, latestRunAgentId }: Props) {
   const navigate = useNavigate();
   const search = useSearch({ strict: false }) as { run?: string };
   const urlRunId = search.run ?? null;
@@ -80,7 +80,7 @@ export function AgentRunPanel({ taskId, workspaceId, assignedAgentId }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [assignedAgentId, taskId, workspaceId]);
+  }, [taskId, workspaceId]);
 
   useEffect(() => {
     void fetchAgents();
@@ -92,8 +92,8 @@ export function AgentRunPanel({ taskId, workspaceId, assignedAgentId }: Props) {
 
   const taskRunnableAgents = useMemo(() => agents.filter(isTaskRunnableAgent), [agents]);
   const preferredAgent = useMemo(() => {
-    if (assignedAgentId) {
-      return taskRunnableAgents.find((agent) => agent.id === assignedAgentId) ?? null;
+    if (latestRunAgentId) {
+      return taskRunnableAgents.find((agent) => agent.id === latestRunAgentId) ?? null;
     }
     return taskRunnableAgents.find((agent) => agent.preset_key === 'task_planner')
       ?? taskRunnableAgents.find((agent) => agent.preset_key === 'story_planner')
@@ -101,7 +101,7 @@ export function AgentRunPanel({ taskId, workspaceId, assignedAgentId }: Props) {
       ?? taskRunnableAgents.find((agent) => agent.preset_key === 'review_agent')
       ?? taskRunnableAgents[0]
       ?? null;
-  }, [assignedAgentId, taskRunnableAgents]);
+  }, [latestRunAgentId, taskRunnableAgents]);
 
   useEffect(() => {
     if (!selectedAgentId && preferredAgent) {
@@ -188,7 +188,7 @@ export function AgentRunPanel({ taskId, workspaceId, assignedAgentId }: Props) {
                 {taskRunnableAgents.map((agent) => (
                   <SelectItem key={agent.id} value={agent.id} className="text-xs">
                     <div className="flex items-center gap-1.5">
-                      <AgentAvatar agent={agent} className="h-4 w-4" />
+                      <AgentAvatar agent={agent} className="h-5 w-5 rounded-none border-0 bg-transparent shadow-none" genericBare />
                       <span>{agent.name}{agent.role ? ` · ${agent.role}` : ''}</span>
                     </div>
                   </SelectItem>

@@ -17,6 +17,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 	"go.temporal.io/api/serviceerror"
+	workflowservice "go.temporal.io/api/workflowservice/v1"
 	tclient "go.temporal.io/sdk/client"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -43,6 +44,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/storage"
 	syncpkg "github.com/helpin-ai/helpin/server/internal/sync"
 	"github.com/helpin-ai/helpin/server/internal/temporalapp"
+	appwebauthn "github.com/helpin-ai/helpin/server/internal/webauthn"
 	ws "github.com/helpin-ai/helpin/server/internal/websocket"
 	workerpkg "github.com/helpin-ai/helpin/server/internal/worker"
 )
@@ -145,6 +147,7 @@ func main() {
 		slog.Info("startup: running AutoMigrate")
 		if err := db.AutoMigrate(
 			&model.User{},
+			&model.UserPasskey{},
 			&model.PasswordResetToken{},
 			&model.Organization{},
 			&model.OrganizationMember{},
@@ -487,6 +490,7 @@ func main() {
 
 	// Initialize repositories.
 	userRepo := repository.NewUserRepository(db)
+	passkeyRepo := repository.NewPasskeyRepository(db)
 	orgRepo := repository.NewOrganizationRepository(db)
 	workspaceRepo := repository.NewWorkspaceRepository(db)
 	settingsRepo := repository.NewSettingsRepository(db)
@@ -592,7 +596,13 @@ func main() {
 
 	// Initialize services.
 	passwordResetRepo := repository.NewPasswordResetTokenRepository(db)
+	passkeySessionCache := newPasskeySessionCache(redisClient, podID)
+	passkeyWebAuthnClient, err := appwebauthn.NewClient(cfg.WebAuthnRPID, cfg.WebAuthnRPOrigins, passkeySessionCache)
+	if err != nil {
+		fatalWithSentry("failed to initialize webauthn", err)
+	}
 	authService := service.NewAuthService(userRepo, passwordResetRepo, orgRepo, jwtManager, s3Client, appEmailClient, cfg.AppBaseURL, resolveTOTPEncryptionKey(cfg))
+	passkeyService := service.NewPasskeyService(userRepo, passkeyRepo, jwtManager, passkeyWebAuthnClient, resolveTOTPEncryptionKey(cfg))
 	pmActivityService := service.NewPMActivityService(pmActivityRepo)
 	pmLabelService := service.NewPMLabelService(pmLabelRepo, wsPublisher)
 	pmTaskTemplateService := service.NewPMTaskTemplateService(pmTaskTemplateRepo, wsPublisher)
@@ -765,7 +775,7 @@ func main() {
 		cfg.CodexEnableChatGPTOAuth,
 		cfg.CodexChatGPTAccessToken,
 		cfg.CodexChatGPTAccountID,
-	).SetCodexAuthManager(codexAuthManager).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client)
+	).SetCodexAuthManager(codexAuthManager).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService)
 	supportInboxService.SetConversationAgentRunner(agentService.RunConversationAgentAuto)
 	supportInboxService.SetNotificationService(notificationService, workspaceRepo)
 	emailFallbackService.SetNotificationService(notificationService)
@@ -785,6 +795,7 @@ func main() {
 	ruleEngine.SetTaskService(pmTaskService)
 	ruleEngine.SetHealthObserver(automationHealthService)
 	ruleEngine.SetTriggerExecutionRepository(agentTriggerExecutionRepo)
+	ruleEngine.SetRunEngine(runEngine)
 	gitService.SetRuleEngine(ruleEngine)
 	pmTaskService.SetRuleEngine(ruleEngine)
 	pmTaskService.SetAgentService(agentService)
@@ -1050,6 +1061,7 @@ func main() {
 	handlers := router.Handlers{
 		Health:              handler.NewHealthHandler(s3Client, geoIPResolver),
 		Auth:                handler.NewAuthHandler(authService),
+		Passkey:             handler.NewPasskeyHandler(passkeyService),
 		Organization:        handler.NewOrganizationHandler(orgService),
 		Workspace:           handler.NewWorkspaceHandler(workspaceService, authzService),
 		Settings:            handler.NewSettingsHandler(settingsService, automationInventoryService),
@@ -1150,6 +1162,14 @@ func main() {
 
 	if err := crmSummaryService.EnsureDailyReconciliation(context.Background()); err != nil {
 		slog.Error("failed to ensure crm summary daily reconciliation workflow", "error", err)
+	}
+	if err := ruleEngine.EnsureScheduledRules(context.Background()); err != nil {
+		slog.Error("failed to ensure automation rule schedules", "error", err)
+	}
+	if terminated, err := removeLegacyAgentScheduleWorkflows(context.Background(), temporalClient); err != nil {
+		slog.Error("failed to remove legacy agent schedule workflows", "error", err)
+	} else if terminated > 0 {
+		slog.Info("removed legacy agent schedule workflows", "count", terminated)
 	}
 
 	// Start sprint automation cron workflow via Temporal (replaces local ticker).
@@ -1342,6 +1362,48 @@ func ensureSprintCronWorkflow(client tclient.Client) error {
 	return nil
 }
 
+func removeLegacyAgentScheduleWorkflows(ctx context.Context, client tclient.Client) (int, error) {
+	if client == nil {
+		return 0, nil
+	}
+
+	query := `WorkflowId STARTS_WITH "agent-schedule-" AND CloseTime IS NULL`
+	var (
+		terminated    int
+		nextPageToken []byte
+	)
+
+	for {
+		resp, err := client.ListWorkflow(ctx, &workflowservice.ListWorkflowExecutionsRequest{
+			Query:         query,
+			PageSize:      200,
+			NextPageToken: nextPageToken,
+		})
+		if err != nil {
+			return terminated, err
+		}
+		for _, execution := range resp.GetExecutions() {
+			workflowExec := execution.GetExecution()
+			if workflowExec == nil || strings.TrimSpace(workflowExec.GetWorkflowId()) == "" {
+				continue
+			}
+			if err := client.TerminateWorkflow(ctx, workflowExec.GetWorkflowId(), workflowExec.GetRunId(), "legacy agent schedule workflow removed"); err != nil {
+				var notFound *serviceerror.NotFound
+				if errors.As(err, &notFound) {
+					continue
+				}
+				return terminated, err
+			}
+			terminated++
+		}
+		nextPageToken = resp.GetNextPageToken()
+		if len(nextPageToken) == 0 {
+			break
+		}
+	}
+	return terminated, nil
+}
+
 func fatalWithSentry(message string, err error, attrs ...any) {
 	if err != nil {
 		observability.CaptureException(err)
@@ -1388,6 +1450,27 @@ func resolveTOTPEncryptionKey(cfg *config.Config) []byte {
 		return key
 	}
 	return nil
+}
+
+func newPasskeySessionCache(redisClient *redis.Client, podID string) cache.Cache {
+	l1 := cache.NewLRU(2048)
+	if redisClient == nil {
+		slog.Info("passkey cache: L1-only (no Redis) — single-pod consistency only")
+		return l1
+	}
+
+	l2 := cache.NewRedis(redisClient, "passkey")
+	tiered := cache.NewTiered(cache.TieredConfig{
+		L1:      l1,
+		L2:      l2,
+		Redis:   redisClient,
+		Channel: "cache:passkey:invalidate",
+		PodID:   podID,
+		L1TTL:   5 * time.Minute,
+	})
+	tiered.StartInvalidationSubscriber(context.Background())
+	slog.Info("passkey cache: tiered L1+L2 (Redis) enabled")
+	return tiered
 }
 
 func decodeOptionalAES256HexKey(value string) ([]byte, error) {

@@ -127,6 +127,7 @@ export interface NotificationCategory {
 
 export const WORKSPACE_NOTIFICATION_CATEGORIES: NotificationCategory[] = [
   { key: 'assignments', label: 'Assignments', description: 'Assignments and ownership changes' },
+  { key: 'agent_attention', label: 'Agent attention', description: 'Agents waiting for your input or approval on task runs' },
   { key: 'status_changes', label: 'Status changes', description: 'Changes to status, priority, and blocking' },
   { key: 'comments', label: 'Comments and replies', description: 'New comments on items you follow' },
   { key: 'mentions', label: 'Mentions', description: 'Mentions in comments, descriptions, or checklists' },

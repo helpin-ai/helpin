@@ -12,12 +12,11 @@ import { collectCodingSessionPreviews } from '@/components/pm/CodingSession/codi
 import { buildCodingSessionStreamState } from '@/components/pm/CodingSession/codingSessionStream';
 import {
   isPersistedCodingSessionEvent,
-  parseCodingSessionInteraction,
   latestPendingCodingSessionInteraction,
   maxPersistedCodingSessionSequence,
   upsertCodingSessionEvents,
 } from '@/components/pm/CodingSession/codingSessionUtils';
-import type { Agent, CodingSession, CodingSessionEvent, CodingSessionStreamSnapshot } from '@/lib/pmTypes';
+import type { Agent, AgentRunArtifact, CodingSession, CodingSessionEvent, CodingSessionInteraction, CodingSessionStreamSnapshot } from '@/lib/pmTypes';
 import { agentService } from '@/lib/services/agentService';
 import { codingSessionService } from '@/lib/services/codingSessionService';
 import { cn } from '@/lib/utils';
@@ -49,6 +48,7 @@ export function CodingSessionSurface({
 
   const [session, setSession] = useState<CodingSession | null>(null);
   const [events, setEvents] = useState<CodingSessionEvent[]>([]);
+  const [artifacts, setArtifacts] = useState<AgentRunArtifact[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [acting, setActing] = useState<string | null>(null);
@@ -91,24 +91,32 @@ export function CodingSessionSurface({
     }
   }, [workspaceId, activeSessionId]);
 
+  const loadArtifacts = useCallback(async () => {
+    if (!workspaceId || !activeSessionId) return;
+    const artifactsRes = await codingSessionService.listArtifacts(workspaceId, activeSessionId);
+    if (artifactsRes.error) throw new Error(artifactsRes.error);
+    setArtifacts(artifactsRes.data ?? []);
+  }, [workspaceId, activeSessionId]);
+
   const load = useCallback(async () => {
     if (!workspaceId || !activeSessionId) return;
     setLoading(true);
     setError(null);
     try {
-      await Promise.all([loadSession(), loadEvents(0)]);
+      await Promise.all([loadSession(), loadEvents(0), loadArtifacts()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load agent session');
     } finally {
       setLoading(false);
     }
-  }, [workspaceId, activeSessionId, loadSession, loadEvents]);
+  }, [workspaceId, activeSessionId, loadSession, loadEvents, loadArtifacts]);
 
   useEffect(() => {
     seededSnapshotSessionRef.current = null;
     setStreamSnapshotSeed(null);
     sequenceRef.current = 0;
     setEvents([]);
+    setArtifacts([]);
     setSession(null);
   }, [activeSessionId, workspaceId]);
 
@@ -119,11 +127,11 @@ export function CodingSessionSurface({
   const reconcileEvents = useCallback(async () => {
     if (!workspaceId || !activeSessionId) return;
     try {
-      await loadEvents(sequenceRef.current);
+      await Promise.all([loadEvents(sequenceRef.current), loadArtifacts()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to refresh session events');
     }
-  }, [workspaceId, activeSessionId, loadEvents]);
+  }, [workspaceId, activeSessionId, loadEvents, loadArtifacts]);
 
   useEffect(() => {
     const onSessionUpdated = (raw: Event) => {
@@ -142,6 +150,7 @@ export function CodingSessionSurface({
         updated_at: new Date().toISOString(),
       } : current);
       void loadSession();
+      void loadArtifacts();
     };
     const onSessionEvent = (raw: Event) => {
       const detail = (raw as CustomEvent).detail as { parent_id?: string; data?: CodingSessionEvent } | undefined;
@@ -196,17 +205,65 @@ export function CodingSessionSurface({
     () => latestPendingCodingSessionInteraction(events),
     [events],
   );
-  const interactionsById = useMemo(() => {
-    const next = new Map<string, NonNullable<ReturnType<typeof parseCodingSessionInteraction>>>();
-    for (const event of events) {
-      const interaction = parseCodingSessionInteraction(event);
-      if (interaction) next.set(interaction.interaction_id, interaction);
-    }
-    return next;
-  }, [events]);
   const previewsByKey = useMemo(
     () => collectCodingSessionPreviews(events, streamState.live_turn_segments),
     [events, streamState.live_turn_segments],
+  );
+  const attachedPreviewApprovalInteraction = useMemo<CodingSessionInteraction | null>(() => {
+    if (!activeInteraction || activeInteraction.interaction_kind !== 'approval_request') return null;
+    const previewPanelKey = typeof activeInteraction.request_payload?.preview_panel_key === 'string'
+      ? activeInteraction.request_payload.preview_panel_key.trim().toLowerCase()
+      : '';
+    if (!previewPanelKey || !previewsByKey.has(previewPanelKey)) return null;
+    return activeInteraction;
+  }, [activeInteraction, previewsByKey]);
+  const overlayInteraction = attachedPreviewApprovalInteraction
+    && activeInteraction?.interaction_id === attachedPreviewApprovalInteraction.interaction_id
+    ? null
+    : activeInteraction;
+  const promptArtifact = useMemo(() => {
+    for (let index = artifacts.length - 1; index >= 0; index -= 1) {
+      const artifact = artifacts[index];
+      if (artifact?.artifact_type === 'codex_prompt' || artifact?.artifact_type === 'opencode_prompt') {
+        return artifact;
+      }
+    }
+    return null;
+  }, [artifacts]);
+  const reviewArtifacts = useMemo(
+    () => {
+      const parseAssistantSequenceNo = (artifact: AgentRunArtifact) => {
+        if (!artifact.inline_content) return 0;
+        try {
+          const parsed = JSON.parse(artifact.inline_content) as Record<string, unknown>;
+          const value = parsed.assistant_message_sequence_no;
+          return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+        } catch {
+          return 0;
+        }
+      };
+
+      const decisionBySequence = new Map<number, AgentRunArtifact>();
+      for (const artifact of artifacts) {
+        if (artifact?.artifact_type !== 'review_decision') continue;
+        const seq = parseAssistantSequenceNo(artifact);
+        if (seq > 0) {
+          decisionBySequence.set(seq, artifact);
+        }
+      }
+
+      return artifacts
+        .filter((artifact) => artifact?.artifact_type === 'review_findings')
+        .sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0))
+        .map((artifact) => {
+          const seq = parseAssistantSequenceNo(artifact);
+          return {
+            artifact,
+            decisionArtifact: seq > 0 ? decisionBySequence.get(seq) ?? null : null,
+          };
+        });
+    },
+    [artifacts],
   );
 
   const runAction = useCallback(async (name: string, fn: () => Promise<{ error: string | null }>) => {
@@ -227,25 +284,11 @@ export function CodingSessionSurface({
     responsePayload: Record<string, unknown>,
     followupMessage?: string,
   ) => {
-    const interaction = interactionsById.get(interactionId);
-    if (interaction?.interaction_kind === 'review_checkpoint') {
-      const decision = typeof responsePayload.decision === 'string' ? responsePayload.decision.trim() : '';
-      if (decision === 'approve') {
-        await runAction('approve-review-checkpoint', () => codingSessionService.approve(workspaceId, activeSessionId, {
-          ...(followupMessage?.trim() ? { content: followupMessage.trim(), send_message: true } : {}),
-        }));
-        return;
-      }
-      await runAction('request-review-changes', () => codingSessionService.requestChanges(workspaceId, activeSessionId, {
-        content: followupMessage?.trim() || 'Please revise and continue.',
-      }));
-      return;
-    }
     await runAction('resolve-interaction', () => codingSessionService.resolveInteraction(workspaceId, activeSessionId, interactionId, {
       response_payload: responsePayload,
       ...(followupMessage?.trim() ? { followup_message: followupMessage.trim() } : {}),
     }));
-  }, [interactionsById, runAction, activeSessionId, workspaceId]);
+  }, [runAction, activeSessionId, workspaceId]);
 
   const continueRun = useCallback(async (content?: string) => {
     if (!workspaceId || !activeSessionId) return;
@@ -397,6 +440,8 @@ export function CodingSessionSurface({
 
       <div className="grid min-h-0 flex-1 gap-4 xl:overflow-hidden xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.9fr)]">
         <CodingTranscriptPane
+          promptArtifact={promptArtifact}
+          reviewArtifacts={reviewArtifacts}
           transcriptMessages={streamState.transcript_messages}
           liveAssistantMessage={streamState.live_assistant_message}
           liveReasoningMessage={streamState.live_reasoning_message}
@@ -405,7 +450,7 @@ export function CodingSessionSurface({
           onSendMessage={canSendMessage ? sendMessage : undefined}
           sendingMessage={sendingMessage}
           session={session}
-          activeInteraction={activeInteraction}
+          activeInteraction={overlayInteraction}
           acting={acting}
           messagePlaceholder={messagePlaceholder}
           onAuthStart={() => void runAction('auth-start', () => codingSessionService.startDeviceCodeAuth(workspaceId, activeSessionId))}
@@ -415,7 +460,12 @@ export function CodingSessionSurface({
 
         <div className="min-h-0 space-y-4 overflow-y-auto">
           <CodingPlanPanel plan={streamState.current_plan} runStatus={session?.status} />
-          <CodingPreviewPanels previewsByKey={previewsByKey} />
+          <CodingPreviewPanels
+            previewsByKey={previewsByKey}
+            attachedApprovalInteraction={attachedPreviewApprovalInteraction}
+            acting={acting}
+            onResolveInteraction={(interactionId, responsePayload, followupMessage) => void resolveInteraction(interactionId, responsePayload, followupMessage)}
+          />
         </div>
       </div>
     </div>

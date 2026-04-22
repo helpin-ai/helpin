@@ -158,6 +158,124 @@ func TestListCodingSessionEventsFallsBackToLegacyInteractionArtifactsWithoutInte
 	}
 }
 
+func TestListCodingSessionEventsIncludesStructuredReviewFindingsArtifact(t *testing.T) {
+	db := newInteractiveApprovalTestDB(t)
+
+	runRepo := repository.NewAgentRunRepository(db)
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+
+	now := time.Now().UTC()
+	run := &model.AgentRun{
+		ID:             "run-events-review-findings",
+		WorkspaceID:    "ws-1",
+		AgentID:        "agent-1",
+		TargetType:     "story",
+		TargetID:       "story-1",
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeInteractive,
+		ApprovalState:  "pending",
+		PauseReason:    model.AgentRunPauseReasonHumanApproval,
+		Status:         model.AgentRunStatusPaused,
+		Input:          json.RawMessage(`{}`),
+		OutputSummary:  json.RawMessage(`{}`),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := runRepo.Create(context.Background(), run); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	payload := `{"phase":"review_findings","title":"Lens review findings","findings":[{"title":"Regression","body":"The sprint picker loses state.","priority":"P1"}],"overall_correctness":"incorrect"}`
+	if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
+		ID:            "artifact-review-findings",
+		WorkspaceID:   run.WorkspaceID,
+		RunID:         run.ID,
+		ArtifactType:  model.AgentRunArtifactTypeReviewFindings,
+		Format:        "json",
+		StorageMode:   "inline",
+		InlineContent: &payload,
+		Metadata:      json.RawMessage(`{}`),
+		SequenceNo:    1,
+		CreatedAt:     now,
+	}); err != nil {
+		t.Fatalf("create artifact: %v", err)
+	}
+
+	svc := &AgentService{
+		runRepo:        runRepo,
+		runMessageRepo: runMessageRepo,
+		artifactRepo:   artifactRepo,
+	}
+
+	events, err := svc.ListCodingSessionEvents(context.Background(), run.WorkspaceID, run.ID, 0)
+	if err != nil {
+		t.Fatalf("ListCodingSessionEvents returned error: %v", err)
+	}
+	if codingSessionEventTypes(events.Events, "review.findings.updated") != 1 {
+		t.Fatalf("expected one review.findings.updated event, got %#v", events.Events)
+	}
+}
+
+func TestListCodingSessionEventsIncludesStructuredReviewDecisionArtifact(t *testing.T) {
+	db := newInteractiveApprovalTestDB(t)
+
+	runRepo := repository.NewAgentRunRepository(db)
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+
+	now := time.Now().UTC()
+	run := &model.AgentRun{
+		ID:             "run-events-review-decision",
+		WorkspaceID:    "ws-1",
+		AgentID:        "agent-1",
+		TargetType:     "story",
+		TargetID:       "story-1",
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeInteractive,
+		ApprovalState:  "approved",
+		PauseReason:    model.AgentRunPauseReasonNone,
+		Status:         model.AgentRunStatusRunning,
+		Input:          json.RawMessage(`{}`),
+		OutputSummary:  json.RawMessage(`{}`),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := runRepo.Create(context.Background(), run); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	payload := `{"title":"Lens review findings","decision":"approve","findings":[{"id":"finding_1","title":"Regression","status":"approved"}]}`
+	if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
+		ID:            "artifact-review-decision",
+		WorkspaceID:   run.WorkspaceID,
+		RunID:         run.ID,
+		ArtifactType:  model.AgentRunArtifactTypeReviewDecision,
+		Format:        "json",
+		StorageMode:   "inline",
+		InlineContent: &payload,
+		Metadata:      json.RawMessage(`{}`),
+		SequenceNo:    1,
+		CreatedAt:     now,
+	}); err != nil {
+		t.Fatalf("create artifact: %v", err)
+	}
+
+	svc := &AgentService{
+		runRepo:        runRepo,
+		runMessageRepo: runMessageRepo,
+		artifactRepo:   artifactRepo,
+	}
+
+	events, err := svc.ListCodingSessionEvents(context.Background(), run.WorkspaceID, run.ID, 0)
+	if err != nil {
+		t.Fatalf("ListCodingSessionEvents returned error: %v", err)
+	}
+	if codingSessionEventTypes(events.Events, "review.decision.recorded") != 1 {
+		t.Fatalf("expected one review.decision.recorded event, got %#v", events.Events)
+	}
+}
+
 func TestGetCodingSessionIncludesLiveStreamSnapshotForActiveRuns(t *testing.T) {
 	db := newInteractiveApprovalTestDB(t)
 

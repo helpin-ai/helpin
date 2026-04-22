@@ -9,6 +9,7 @@ import type {
   CodexAuthState,
   ContinueAgentRunRequest,
   CreateWorkspaceAgentPresetVersionRequest,
+  UpdateWorkspaceAgentPresetVersionRequest,
   ApproveAgentRunRequest,
   HandoffAgentRunRequest,
   ResumeAgentRunRequest,
@@ -38,12 +39,17 @@ export const agentService = {
     api.get<AgentPresetDefinition[]>(`/pm/agent-presets${qs(workspaceId)}`),
   createPresetVersion: (workspaceId: string, payload: CreateWorkspaceAgentPresetVersionRequest) =>
     api.post<AgentPresetDefinition>(`/pm/agent-preset-versions${qs(workspaceId)}`, payload),
+  updatePresetVersion: (
+    workspaceId: string,
+    versionId: string,
+    payload: UpdateWorkspaceAgentPresetVersionRequest,
+  ) => api.put<AgentPresetDefinition>(`/pm/agent-preset-versions/${versionId}${qs(workspaceId)}`, payload),
+  deletePresetVersion: (workspaceId: string, versionId: string) =>
+    api.del<void>(`/pm/agent-preset-versions/${versionId}${qs(workspaceId)}`),
   listModelProviders: (workspaceId: string) =>
     api.get<AgentModelProviderOption[]>(`/pm/agent-model-providers${qs(workspaceId)}`),
   getRunnerHealth: (workspaceId: string) =>
     api.get<RunnerHealth>(`/pm/runner-health${qs(workspaceId)}`),
-  assignToTask: (workspaceId: string, taskId: string, agentId: string) =>
-    api.post(`/pm/tasks/${taskId}/assign-agent${qs(workspaceId)}`, { agent_id: agentId }),
   runTask: (workspaceId: string, taskId: string, payload?: StartAgentRunRequest) =>
     api.post<AgentRun>(`/pm/tasks/${taskId}/run-agent${qs(workspaceId)}`, payload ?? {}),
   runEpic: (workspaceId: string, epicId: string, payload: StartAgentRunRequest) =>

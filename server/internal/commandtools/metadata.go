@@ -85,7 +85,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "pm.assign_task_agent",
 		Alias:       "assign_task_agent",
 		Category:    "PM / Tasks",
-		Description: "Assign or reassign an agent to an existing task.",
+		Description: "Deprecated. Task agent assignment was removed; use workflow automation rules or start a run explicitly with an agent.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

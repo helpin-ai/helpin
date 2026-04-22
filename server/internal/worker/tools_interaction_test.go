@@ -69,22 +69,90 @@ func TestLegacyRequestHumanInputAliasExecutesWhenCanonicalToolIsAllowed(t *testi
 	}
 }
 
-func TestExtractLatestHumanApprovalRequestPrefersToolInvocation(t *testing.T) {
-	approval := ExtractLatestHumanApprovalRequest([]appmodel.ToolInvocation{
+func TestExtractLatestApprovalRequestPrefersToolInvocation(t *testing.T) {
+	approval := ExtractLatestApprovalRequest([]appmodel.ToolInvocation{
 		{
-			ToolName: ToolRequestReviewCheckpoint,
+			ToolName: ToolRequestApproval,
 			Input: json.RawMessage(`{
-				"phase": "crm_review",
-				"title": "Approve the stage change",
-				"summary": "Move ACME to verbal commit."
+				"phase": "prd",
+				"preview_panel_key": "prd_draft",
+				"title": "Approve PRD",
+				"summary": "Review the latest draft."
 			}`),
 		},
 	})
 	if approval == nil {
 		t.Fatal("expected approval request")
 	}
-	if approval.Phase != "crm_review" || approval.Title != "Approve the stage change" || approval.Summary != "Move ACME to verbal commit." {
+	if approval.PreviewPanelKey != "prd_draft" {
+		t.Fatalf("expected preview panel key to round-trip, got %q", approval.PreviewPanelKey)
+	}
+	if approval.Phase != "prd" || approval.Title != "Approve PRD" || approval.Summary != "Review the latest draft." {
 		t.Fatalf("unexpected approval request: %#v", approval)
+	}
+}
+
+func TestExtractLatestReviewCheckpointRequestPrefersToolInvocation(t *testing.T) {
+	review := ExtractLatestReviewCheckpointRequest([]appmodel.ToolInvocation{
+		{
+			ToolName: ToolRequestReviewCheckpoint,
+			Input: json.RawMessage(`{
+				"phase": "crm_review",
+				"preview_panel_key": "deal_summary",
+				"title": "Approve the stage change",
+				"summary": "Move ACME to verbal commit.",
+				"findings": [
+					{
+						"title": "Stage progression is premature",
+						"body": "The latest note confirms pricing interest but not a verbal commitment.",
+						"priority": "P1",
+						"code_location": "crm/deal_stage.go:88"
+					}
+				],
+				"overall_correctness": "incorrect",
+				"overall_explanation": "Evidence does not support moving the deal to verbal commit."
+			}`),
+		},
+	})
+	if review == nil {
+		t.Fatal("expected review checkpoint request")
+	}
+	if review.PreviewPanelKey != "deal_summary" {
+		t.Fatalf("expected preview panel key to round-trip, got %q", review.PreviewPanelKey)
+	}
+	if review.Phase != "crm_review" || review.Title != "Approve the stage change" || review.Summary != "Move ACME to verbal commit." {
+		t.Fatalf("unexpected review checkpoint request: %#v", review)
+	}
+	if len(review.Findings) != 1 || review.Findings[0].Priority != "P1" {
+		t.Fatalf("expected structured findings to be preserved, got %#v", review)
+	}
+	if review.Findings[0].ID != "finding_1" {
+		t.Fatalf("expected missing finding id to be normalized, got %#v", review.Findings[0])
+	}
+	if review.OverallCorrectness != "incorrect" {
+		t.Fatalf("expected overall correctness to be preserved, got %#v", review)
+	}
+}
+
+func TestRequestApprovalToolReturnsAwaitingApprovalPayload(t *testing.T) {
+	registry := NewToolRegistry(nil)
+	ctx := &ExecutionContext{
+		Context: context.Background(),
+		AllowedTools: map[string]bool{
+			ToolRequestApproval: true,
+		},
+	}
+
+	output, err := registry.ExecuteAllowed(ctx, ToolRequestApproval, json.RawMessage(`{
+		"phase": "prd",
+		"title": "Approve PRD",
+		"summary": "Review the latest draft."
+	}`))
+	if err != nil {
+		t.Fatalf("ExecuteAllowed returned error: %v", err)
+	}
+	if !strings.Contains(output, `"status":"paused"`) || !strings.Contains(output, `"pause_reason":"human_approval"`) || !strings.Contains(output, `"phase":"prd"`) {
+		t.Fatalf("expected paused human_approval payload, got %s", output)
 	}
 }
 
@@ -169,7 +237,7 @@ func TestPreviewJSONToolPublishesSlot(t *testing.T) {
 	output, err := registry.ExecuteAllowed(ctx, ToolPreviewJSON, json.RawMessage(`{
 		"slot": "story_plan",
 		"title": "Story Plan",
-		"content": {"summary":"Slice plan","proposed_stories":[]}
+		"content": {"summary":"Slice plan","proposed_stories":[{"ref":"task_1","name":"Task A","description":"Do A","task_type":"feature","acceptance_criteria":["works"],"dependency_refs":[]}]}
 	}`))
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
@@ -213,7 +281,7 @@ func TestPublishStoryPlanToolPublishesCanonicalPreview(t *testing.T) {
 	}
 
 	output, err := registry.ExecuteAllowed(ctx, ToolPublishTaskPlan, json.RawMessage(`{
-		"content": {"summary":"Slice plan","proposed_stories":[]}
+		"content": {"summary":"Slice plan","proposed_stories":[{"ref":"task_1","name":"Task A","description":"Do A","task_type":"feature","acceptance_criteria":["works"],"dependency_refs":[]}]}
 	}`))
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
@@ -237,7 +305,7 @@ func TestPublishStoryPlanToolAcceptsNestedPreviewPayload(t *testing.T) {
 	output, err := registry.ExecuteAllowed(ctx, ToolPublishTaskPlan, json.RawMessage(`{
 		"preview": {
 			"title": "Story Plan",
-			"content": {"summary":"Slice plan","proposed_stories":[]}
+			"content": {"summary":"Slice plan","proposed_stories":[{"ref":"task_1","name":"Task A","description":"Do A","task_type":"feature","acceptance_criteria":["works"],"dependency_refs":[]}]}
 		}
 	}`))
 	if err != nil {
@@ -262,7 +330,7 @@ func TestPublishStoryPlanToolAcceptsRawPlanObject(t *testing.T) {
 	output, err := registry.ExecuteAllowed(ctx, ToolPublishTaskPlan, json.RawMessage(`{
 		"title": "Story Plan",
 		"summary":"Slice plan",
-		"proposed_stories":[]
+		"proposed_stories":[{"ref":"task_1","name":"Task A","description":"Do A","task_type":"feature","acceptance_criteria":["works"],"dependency_refs":[]}]
 	}`))
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
@@ -316,7 +384,7 @@ func TestPublishStoryPlanToolRejectsNonObjectJSONStringContent(t *testing.T) {
 	}
 }
 
-func TestPublishStoryPlanToolReusesLastPublishedContentOnMalformedRetry(t *testing.T) {
+func TestPublishStoryPlanToolRejectsStringTaskEntries(t *testing.T) {
 	registry := NewToolRegistry(nil)
 	ctx := &ExecutionContext{
 		Context: context.Background(),
@@ -326,22 +394,86 @@ func TestPublishStoryPlanToolReusesLastPublishedContentOnMalformedRetry(t *testi
 	}
 
 	_, err := registry.ExecuteAllowed(ctx, ToolPublishTaskPlan, json.RawMessage(`{
-		"content": {"summary":"Slice plan","proposed_stories":[]}
+		"title": "Task Plan",
+		"content": {
+			"summary": "Need to replace with correct structured payload.",
+			"proposed_tasks": ["story_1"]
+		}
+	}`))
+	if err == nil {
+		t.Fatal("expected publish_story_plan to reject string task entries")
+	}
+	if !strings.Contains(err.Error(), "publish_task_plan requires content.proposed_tasks to be an array of task objects") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestPublishStoryPlanToolRejectsRawToolArgumentWrapper(t *testing.T) {
+	registry := NewToolRegistry(nil)
+	ctx := &ExecutionContext{
+		Context: context.Background(),
+		AllowedTools: map[string]bool{
+			ToolPublishTaskPlan: true,
+		},
+	}
+
+	_, err := registry.ExecuteAllowed(ctx, ToolPublishTaskPlan, json.RawMessage(`{
+		"raw": "{\"title\":\"Task Plan: Increase Performance - Events Pipeline\""
+	}`))
+	if err == nil {
+		t.Fatal("expected publish_story_plan to reject raw tool argument wrapper")
+	}
+	if !strings.Contains(err.Error(), "publish_task_plan input must be a JSON object with structured fields; do not send a raw string wrapper") {
+		t.Fatalf("expected malformed raw wrapper error, got %v", err)
+	}
+}
+
+func TestPublishStoryPlanToolAcceptsWrappedRawJSONObject(t *testing.T) {
+	registry := NewToolRegistry(nil)
+	ctx := &ExecutionContext{
+		Context: context.Background(),
+		AllowedTools: map[string]bool{
+			ToolPublishTaskPlan: true,
+		},
+	}
+
+	output, err := registry.ExecuteAllowed(ctx, ToolPublishTaskPlan, json.RawMessage(`{
+		"raw": "{\"title\":\"Task Plan\",\"content\":{\"summary\":\"Slice plan\",\"proposed_tasks\":[{\"ref\":\"task_1\",\"name\":\"Task A\",\"description\":\"Do A\",\"task_type\":\"feature\",\"acceptance_criteria\":[\"works\"],\"dependency_refs\":[]}]}}"
+	}`))
+	if err != nil {
+		t.Fatalf("expected wrapped raw json object to be accepted, got %v", err)
+	}
+	for _, snippet := range []string{`"panel_key":"task_plan"`, `"title":"Task Plan"`, `"format":"json"`} {
+		if !strings.Contains(output, snippet) {
+			t.Fatalf("expected accepted wrapped payload to contain %q, got %s", snippet, output)
+		}
+	}
+}
+
+func TestPublishStoryPlanToolRejectsMalformedRetryWithoutReusingStaleContent(t *testing.T) {
+	registry := NewToolRegistry(nil)
+	ctx := &ExecutionContext{
+		Context: context.Background(),
+		AllowedTools: map[string]bool{
+			ToolPublishTaskPlan: true,
+		},
+	}
+
+	_, err := registry.ExecuteAllowed(ctx, ToolPublishTaskPlan, json.RawMessage(`{
+		"content": {"summary":"Slice plan","proposed_stories":[{"ref":"task_1","name":"Task A","description":"Do A","task_type":"feature","acceptance_criteria":["works"],"dependency_refs":[]}]}
 	}`))
 	if err != nil {
 		t.Fatalf("initial publish returned error: %v", err)
 	}
 
-	output, err := registry.ExecuteAllowed(ctx, ToolPublishTaskPlan, json.RawMessage(`{
+	_, err = registry.ExecuteAllowed(ctx, ToolPublishTaskPlan, json.RawMessage(`{
 		"title": "Story Plan"
 	}`))
-	if err != nil {
-		t.Fatalf("malformed retry should have reused cached content, got error: %v", err)
+	if err == nil {
+		t.Fatal("expected malformed retry to fail without reusing cached task-plan content")
 	}
-	for _, snippet := range []string{`"panel_key":"task_plan"`, `"format":"json"`} {
-		if !strings.Contains(output, snippet) {
-			t.Fatalf("expected cached story plan preview payload to contain %q, got %s", snippet, output)
-		}
+	if !strings.Contains(err.Error(), `publish_task_plan is missing content; include the task plan JSON object in "content"`) {
+		t.Fatalf("unexpected malformed retry error: %v", err)
 	}
 }
 
@@ -351,7 +483,7 @@ func TestPublishStoryPlanDocToolReusesPreviewMarkdownContentOnMalformedRetry(t *
 		Context: context.Background(),
 		AllowedTools: map[string]bool{
 			ToolPublishTaskPlanDoc: true,
-			ToolPreviewMarkdown:     true,
+			ToolPreviewMarkdown:    true,
 		},
 	}
 
@@ -520,7 +652,7 @@ func TestPublishPreviewToolAcceptsPanelKeyAlias(t *testing.T) {
 		"format": "json",
 		"content": {
 			"summary": "Slice plan",
-			"proposed_stories": []
+			"proposed_stories": [{"ref":"task_1","name":"Task A","description":"Do A","task_type":"feature","acceptance_criteria":["works"],"dependency_refs":[]}]
 		}
 	}`))
 	if err != nil {
@@ -570,7 +702,7 @@ func TestPublishPreviewToolInfersStoryPlanPanelKey(t *testing.T) {
 		"format": "json",
 		"content": {
 			"summary": "Slice plan",
-			"proposed_stories": []
+			"proposed_stories": [{"ref":"task_1","name":"Task A","description":"Do A","task_type":"feature","acceptance_criteria":["works"],"dependency_refs":[]}]
 		}
 	}`))
 	if err != nil {
@@ -593,7 +725,7 @@ func TestPublishPreviewToolInfersStoryPlanFormatAndTitle(t *testing.T) {
 	output, err := registry.ExecuteAllowed(ctx, ToolPublishPreview, json.RawMessage(`{
 		"content": {
 			"summary": "Slice plan",
-			"proposed_stories": []
+			"proposed_stories": [{"ref":"task_1","name":"Task A","description":"Do A","task_type":"feature","acceptance_criteria":["works"],"dependency_refs":[]}]
 		}
 	}`))
 	if err != nil {
@@ -624,7 +756,7 @@ func TestPublishPreviewToolUsesEpicPlannerContextForStoryPlan(t *testing.T) {
 		"format": "json",
 		"content": {
 			"summary": "Slice plan",
-			"proposed_stories": []
+			"proposed_stories": [{"ref":"task_1","name":"Task A","description":"Do A","task_type":"feature","acceptance_criteria":["works"],"dependency_refs":[]}]
 		}
 	}`))
 	if err != nil {
@@ -672,7 +804,7 @@ func TestExtractLatestPublishedPreviewPrefersToolInvocation(t *testing.T) {
 			Input: json.RawMessage(`{
 				"content": {
 					"summary": "Slice plan",
-					"proposed_stories": []
+					"proposed_stories": [{"ref":"task_1","name":"Task A","description":"Do A","task_type":"feature","acceptance_criteria":["works"],"dependency_refs":[]}]
 				}
 			}`),
 		},

@@ -1,8 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { format } from 'date-fns';
 import QRCode from 'qrcode';
 import { useTitle } from '@/hooks/useTitle';
 import { useAuthStore } from '@/stores/authStore';
 import { authService } from '@/lib/services/authService';
+import { passkeyService } from '@/lib/services/passkeyService';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -37,7 +39,10 @@ import {
   Camera01Icon,
   CheckmarkCircle02Icon,
   Copy01Icon,
+  Delete01Icon,
   Download04Icon,
+  Key01Icon,
+  LaptopIcon,
   Loading01Icon,
   LockKeyIcon,
   Mail01Icon,
@@ -51,7 +56,7 @@ import { AvatarCropDialog } from '@/components/profile/AvatarCropDialog';
 import { AvatarPickerDialog } from '@/components/profile/AvatarPickerDialog';
 import { queryClient } from '@/lib/queryClient';
 import { queryKeys } from '@/lib/queryKeys';
-import type { RecoveryCodesResponse, TwoFASetupResponse } from '@/lib/types';
+import type { Passkey, RecoveryCodesResponse, TwoFASetupResponse } from '@/lib/types';
 
 type PendingAvatarFile = {
   file: File;
@@ -146,7 +151,12 @@ export default function Profile() {
   const [recoveryVerificationCode, setRecoveryVerificationCode] = useState('');
   const [regeneratedRecoveryCodes, setRegeneratedRecoveryCodes] = useState<RecoveryCodesResponse | null>(null);
   const [recoverySubmitting, setRecoverySubmitting] = useState(false);
+  const [passkeys, setPasskeys] = useState<Passkey[]>([]);
+  const [loadingPasskeys, setLoadingPasskeys] = useState(true);
+  const [addingPasskey, setAddingPasskey] = useState(false);
+  const [deletingPasskeyId, setDeletingPasskeyId] = useState<string | null>(null);
   const manualSetupDetails = parseManualSetupDetails(setupProvisioning?.provisioning_uri);
+  const passkeySupported = passkeyService.isSupported();
 
   const initials = getInitials(user?.full_name || user?.email);
   const profileAvatarSrc = resolveTeamMemberAvatarSrc({
@@ -212,6 +222,30 @@ export default function Profile() {
     };
 
     void loadTwoFAStatus();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadPasskeys = async () => {
+      setLoadingPasskeys(true);
+      const { data, error } = await passkeyService.listPasskeys();
+      if (cancelled) return;
+
+      if (error || !data) {
+        setLoadingPasskeys(false);
+        toast.error(error ?? 'Failed to load passkeys');
+        return;
+      }
+
+      setPasskeys(data);
+      setLoadingPasskeys(false);
+    };
+
+    void loadPasskeys();
     return () => {
       cancelled = true;
     };
@@ -455,6 +489,34 @@ export default function Profile() {
 
     setRegeneratedRecoveryCodes(data);
     toast.success('Recovery codes regenerated');
+  };
+
+  const handleAddPasskey = async () => {
+    setAddingPasskey(true);
+    const { data, error } = await passkeyService.beginRegistration();
+    setAddingPasskey(false);
+
+    if (error || !data) {
+      toast.error(error ?? 'Failed to add passkey');
+      return;
+    }
+
+    setPasskeys((current) => [data, ...current.filter((passkey) => passkey.id !== data.id)]);
+    toast.success('Passkey added');
+  };
+
+  const handleDeletePasskey = async (id: string) => {
+    setDeletingPasskeyId(id);
+    const { error } = await passkeyService.deletePasskey(id);
+    setDeletingPasskeyId(null);
+
+    if (error) {
+      toast.error(error);
+      return;
+    }
+
+    setPasskeys((current) => current.filter((passkey) => passkey.id !== id));
+    toast.success('Passkey removed');
   };
 
   return (
@@ -1024,6 +1086,68 @@ export default function Profile() {
                 Enable 2FA
               </Button>
             </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <CardTitle className="flex items-center gap-2">
+                <Key01Icon className="h-5 w-5" />
+                Passkeys
+              </CardTitle>
+              <CardDescription>
+                Sign in with Face ID, Touch ID, Windows Hello, or another device-backed passkey. Verified passkeys satisfy 2FA.
+              </CardDescription>
+            </div>
+            <Button type="button" onClick={() => void handleAddPasskey()} disabled={addingPasskey || !passkeySupported}>
+              {addingPasskey ? 'Adding...' : 'Add a passkey'}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {!passkeySupported && (
+            <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+              This browser can manage your existing passkeys here, but it cannot create new passkeys.
+            </div>
+          )}
+          {loadingPasskeys ? (
+            <div className="rounded-lg border bg-muted/20 p-4 text-sm text-muted-foreground">
+              Loading passkeys...
+            </div>
+          ) : passkeys.length === 0 ? (
+            <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+              No passkeys added yet. Add one to sign in with a single click on supported devices.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {passkeys.map((passkey) => (
+                <div key={passkey.id} className="flex items-center justify-between gap-4 rounded-lg border p-4">
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                      <LaptopIcon className="h-4 w-4 text-muted-foreground" />
+                      <span className="truncate">{passkey.name}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Added {format(new Date(passkey.created_at), 'MMM d, yyyy')}
+                      {passkey.verified ? ' · User verified' : ''}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={deletingPasskeyId === passkey.id}
+                    onClick={() => void handleDeletePasskey(passkey.id)}
+                  >
+                    <Delete01Icon className="mr-2 h-4 w-4" />
+                    {deletingPasskeyId === passkey.id ? 'Removing...' : 'Delete'}
+                  </Button>
+                </div>
+              ))}
+            </div>
           )}
         </CardContent>
       </Card>

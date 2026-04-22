@@ -31,7 +31,7 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 	}
 
 	// Filesystem tools
-	r.register("read_file", "Read a bounded window of a text file at the given path (relative to the workspace root). Returns the first chunk by default; use offset_line and limit_lines to continue without dumping the whole file.", map[string]interface{}{
+	r.register("read_file", "Read a bounded window of a text file at the given path (relative to the workspace root). Use ripgrep/search_files/list_symbols first, then use read_file or read_file_range for the exact section you need.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"path": map[string]interface{}{
@@ -44,18 +44,18 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 			},
 			"limit_lines": map[string]interface{}{
 				"type":        "integer",
-				"description": "Optional maximum number of lines to return. Defaults to 200, max 400.",
+				"description": "Optional maximum number of lines to return. Defaults to 120, max 240.",
 			},
 		},
 		"required": []string{"path"},
 	}, toolReadFile)
 
-	r.register("read_files", "Read bounded windows from multiple text files in one call. Use this when you need to inspect several files without spending extra tool round-trips.", map[string]interface{}{
+	r.register("read_files", "Read small bounded windows from a few specific text files in one call. Prefer ripgrep/search_files plus read_file_range first; use this only when you already know the exact files and need small excerpts.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"files": map[string]interface{}{
 				"type":        "array",
-				"description": "Files to read. Max 8 files per call.",
+				"description": "Files to read. Max 4 files per call.",
 				"items": map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -69,7 +69,7 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 						},
 						"limit_lines": map[string]interface{}{
 							"type":        "integer",
-							"description": "Optional maximum number of lines to return for this file. Defaults to 120, max 250.",
+							"description": "Optional maximum number of lines to return for this file. Defaults to 60, max 120.",
 						},
 					},
 					"required": []string{"path"},
@@ -150,7 +150,7 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"required": []string{"pattern"},
 	}, toolSearchFiles)
 
-	r.register("read_file_range", "Read specific line range from a file. Much more token-efficient than read_file for large files.", map[string]interface{}{
+	r.register("read_file_range", "Read a specific line range from a file. Prefer this after search/ripgrep when you know the relevant span; it is much more token-efficient than broad file reads.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"path": map[string]interface{}{
@@ -386,23 +386,57 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"additionalProperties": false,
 	}, toolRequestHumanInput)
 
+	r.register(ToolRequestApproval, "Request inline approval or change feedback for a proposed artifact or plan in the interactive run drawer and wait for the human response.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"phase":             map[string]interface{}{"type": "string", "description": "Short workflow phase label such as prd, tasks, or task_doc."},
+			"preview_panel_key": map[string]interface{}{"type": "string", "description": "Optional preview panel key this approval request refers to."},
+			"title":             map[string]interface{}{"type": "string", "description": "User-facing title for the approval request."},
+			"summary":           map[string]interface{}{"type": "string", "description": "Optional short approval summary."},
+		},
+		"required":             []string{"title"},
+		"additionalProperties": false,
+	}, toolRequestApproval)
+
 	r.register(ToolRequestReviewCheckpoint, "Request an inline product review checkpoint in the interactive run drawer and wait for approval or change feedback.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"phase":   map[string]interface{}{"type": "string", "description": "Short product workflow phase label such as prd, stories, or story_doc."},
-			"title":   map[string]interface{}{"type": "string", "description": "User-facing title for the checkpoint."},
-			"summary": map[string]interface{}{"type": "string", "description": "Optional short review summary."},
+			"phase":             map[string]interface{}{"type": "string", "description": "Short product workflow phase label such as code_review or findings."},
+			"preview_panel_key": map[string]interface{}{"type": "string", "description": "Optional preview panel key this checkpoint refers to."},
+			"title":             map[string]interface{}{"type": "string", "description": "User-facing title for the checkpoint."},
+			"summary":           map[string]interface{}{"type": "string", "description": "Optional short review summary."},
+			"findings": map[string]interface{}{
+				"type":        "array",
+				"description": "Optional structured review findings to persist alongside the checkpoint.",
+				"items": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"id":            map[string]interface{}{"type": "string"},
+						"title":         map[string]interface{}{"type": "string"},
+						"body":          map[string]interface{}{"type": "string"},
+						"priority":      map[string]interface{}{"type": "string"},
+						"confidence":    map[string]interface{}{"type": "number"},
+						"code_location": map[string]interface{}{"type": "string"},
+					},
+					"required":             []string{"title", "body"},
+					"additionalProperties": false,
+				},
+			},
+			"overall_correctness":      map[string]interface{}{"type": "string"},
+			"overall_explanation":      map[string]interface{}{"type": "string"},
+			"overall_confidence_score": map[string]interface{}{"type": "number"},
 		},
 		"required":             []string{"title"},
 		"additionalProperties": false,
 	}, toolRequestReviewCheckpoint)
 
-	r.register(ToolRequestHumanApproval, "Legacy alias for request_review_checkpoint. Request an inline human approval or review checkpoint in the interactive run drawer and wait for approval or change feedback.", map[string]interface{}{
+	r.register(ToolRequestHumanApproval, "Legacy alias for request_approval. Request an inline human approval in the interactive run drawer and wait for approval or change feedback.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"phase":   map[string]interface{}{"type": "string"},
-			"title":   map[string]interface{}{"type": "string"},
-			"summary": map[string]interface{}{"type": "string"},
+			"phase":             map[string]interface{}{"type": "string"},
+			"preview_panel_key": map[string]interface{}{"type": "string"},
+			"title":             map[string]interface{}{"type": "string"},
+			"summary":           map[string]interface{}{"type": "string"},
 		},
 		"required":             []string{"title"},
 		"additionalProperties": false,
@@ -485,13 +519,86 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"properties": map[string]interface{}{
 			"title": map[string]interface{}{"type": "string"},
 			"content": map[string]interface{}{
-				"description": "Task plan JSON object with summary and proposed_stories. Pass structured JSON, not a stringified blob.",
+				"description": "Task plan JSON object with summary and proposed_tasks. Pass structured JSON, not a stringified blob.",
 				"type":        "object",
 				"properties": map[string]interface{}{
-					"summary":          map[string]interface{}{"type": "string"},
-					"proposed_stories": map[string]interface{}{"type": "array"},
+					"summary": map[string]interface{}{
+						"type": "string",
+					},
+					"proposed_tasks": map[string]interface{}{
+						"type":     "array",
+						"minItems": 1,
+						"items": map[string]interface{}{
+							"type": "object",
+							"properties": map[string]interface{}{
+								"ref":         map[string]interface{}{"type": "string"},
+								"name":        map[string]interface{}{"type": "string"},
+								"description": map[string]interface{}{"type": "string"},
+								"task_type":   map[string]interface{}{"type": "string"},
+								"acceptance_criteria": map[string]interface{}{
+									"type":     "array",
+									"minItems": 1,
+									"items":    map[string]interface{}{"type": "string"},
+								},
+								"dependency_refs": map[string]interface{}{
+									"type":  "array",
+									"items": map[string]interface{}{"type": "string"},
+								},
+								"slice_type": map[string]interface{}{"type": "string"},
+								"implementation_brief": map[string]interface{}{
+									"type": "object",
+									"properties": map[string]interface{}{
+										"approach": map[string]interface{}{"type": "string"},
+										"files_to_modify": map[string]interface{}{
+											"type": "array",
+											"items": map[string]interface{}{
+												"type": "object",
+												"properties": map[string]interface{}{
+													"path":        map[string]interface{}{"type": "string"},
+													"action":      map[string]interface{}{"type": "string"},
+													"description": map[string]interface{}{"type": "string"},
+												},
+												"required":             []string{"path", "action", "description"},
+												"additionalProperties": false,
+											},
+										},
+										"test_strategy": map[string]interface{}{
+											"oneOf": []map[string]interface{}{
+												{"type": "string"},
+												{
+													"type":  "array",
+													"items": map[string]interface{}{"type": "string"},
+												},
+											},
+										},
+										"vertical_layers": map[string]interface{}{
+											"type":  "array",
+											"items": map[string]interface{}{"type": "string"},
+										},
+										"depends_on_files": map[string]interface{}{
+											"type":  "array",
+											"items": map[string]interface{}{"type": "string"},
+										},
+									},
+									"required":             []string{"approach", "files_to_modify", "test_strategy"},
+									"additionalProperties": false,
+								},
+							},
+							"required":             []string{"name", "description", "task_type", "acceptance_criteria", "dependency_refs"},
+							"additionalProperties": false,
+						},
+					},
+					"open_questions": map[string]interface{}{
+						"type":  "array",
+						"items": map[string]interface{}{"type": "string"},
+					},
+					"risks": map[string]interface{}{
+						"type":  "array",
+						"items": map[string]interface{}{"type": "string"},
+					},
 				},
-				"required": []string{"summary", "proposed_stories"},
+				"required":             []string{"summary", "proposed_tasks"},
+				"additionalProperties": false,
 			},
 			"replace": map[string]interface{}{"type": "boolean"},
 		},

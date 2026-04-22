@@ -16,6 +16,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { CollapsibleSection } from '@/components/ui/collapsible-section';
+import { QuickTooltip } from '@/components/ui/quick-tooltip';
+import { DocumentPreviewDialog } from '@/components/docs/DocumentPreviewDialog';
 import {
   Dialog,
   DialogContent,
@@ -46,6 +48,7 @@ interface SidebarAssociationsProps {
 }
 
 type SectionKey = 'tasks' | 'crm' | 'docs';
+const SIDEBAR_PREVIEW_LIMIT = 3;
 
 const crmIconMap = {
   contact: UserGroupIcon,
@@ -58,6 +61,7 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
   const location = useLocation();
   const queryClient = useQueryClient();
   const slug = useWorkspaceStore((s) => s.currentWorkspace?.slug ?? '');
+  const [previewDocId, setPreviewDocId] = useState<string | null>(null);
 
   const associationsQuery = useConversationAssociations(workspaceId, conversationId);
   const associationsData = associationsQuery.data as GroupedAssociations | undefined;
@@ -73,7 +77,7 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
   };
 
   const handleNavigateDoc = (docId: string) => {
-    navigate({ to: '/w/$slug/docs/documents/$docId', params: { slug, docId } } as any);
+    setPreviewDocId(docId);
   };
 
   const handleNavigateCRM = (objectType: CRMObjectType, objectId: string) => {
@@ -92,9 +96,17 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
   const [results, setResults] = useState<SearchResult[]>([]);
   const [crmResults, setCRMResults] = useState<CRMSearchResult[]>([]);
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
+  const [tasksExpanded, setTasksExpanded] = useState(false);
 
   const { data: workflows = [] } = useWorkflows(workspaceId);
   const workflow = workflows[0] ?? null;
+  const workflowStateColorById = new Map(
+    workflows.flatMap((entry) =>
+      entry.states
+        .filter((state) => !!state.color)
+        .map((state) => [state.id, state.color!] as const),
+    ),
+  );
 
   const invalidateSupportAssociationViews = async () => {
     await Promise.all([
@@ -104,6 +116,10 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversationAssociations(workspaceId, conversationId) }),
     ]);
   };
+
+  useEffect(() => {
+    setTasksExpanded(false);
+  }, [conversationId]);
 
   useEffect(() => {
     if (!pickerSection) {
@@ -230,6 +246,7 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
   const tasks = associationsData?.tasks ?? [];
   const crmRecords = associationsData?.crm_records ?? [];
   const docs = associationsData?.docs ?? [];
+  const visibleTasks = tasksExpanded ? tasks : tasks.slice(0, SIDEBAR_PREVIEW_LIMIT);
 
   return (
     <div>
@@ -250,7 +267,7 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
           </button>
         ) : (
           <div className="space-y-0.5">
-            {tasks.map((item) => (
+            {visibleTasks.map((item) => (
               <div
                 key={`${item.object_type}-${item.object_id}`}
                 className="group flex items-center gap-2 rounded-md px-1 py-1.5 text-xs transition-colors hover:bg-muted/40"
@@ -260,12 +277,34 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
                   className="flex min-w-0 flex-1 items-center gap-2 text-left"
                   onClick={() => handleNavigateTask(item.object_id)}
                 >
-                  {item.display_id && (
-                    <span className="shrink-0 text-muted-foreground">{item.display_id}</span>
+                  {item.status ? (
+                    <QuickTooltip label={item.status}>
+                      <span
+                        className="h-2.5 w-2.5 shrink-0 rounded-full bg-muted-foreground/30"
+                        style={{
+                          backgroundColor:
+                            workflowStateColorById.get(item.workflow_state_id ?? '') ??
+                            (item.completed ? 'rgb(34 197 94)' : undefined),
+                        }}
+                        aria-label={item.status}
+                      />
+                    </QuickTooltip>
+                  ) : (
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-full bg-muted-foreground/30"
+                      style={{
+                        backgroundColor:
+                          workflowStateColorById.get(item.workflow_state_id ?? '') ??
+                          (item.completed ? 'rgb(34 197 94)' : undefined),
+                      }}
+                      aria-hidden="true"
+                    />
                   )}
-                  <span className="truncate">{item.title}</span>
-                  {item.status && (
-                    <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">{item.status}</span>
+                  <span className="truncate font-medium">{item.title}</span>
+                  {item.display_id && (
+                    <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
+                      {item.display_id}
+                    </span>
                   )}
                 </button>
                 {item.association_id ? (
@@ -280,6 +319,15 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
                 ) : null}
               </div>
             ))}
+            {tasks.length > SIDEBAR_PREVIEW_LIMIT && (
+              <button
+                type="button"
+                onClick={() => setTasksExpanded((current) => !current)}
+                className="px-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+              >
+                {tasksExpanded ? 'Show less' : `Show ${tasks.length - SIDEBAR_PREVIEW_LIMIT} more`}
+              </button>
+            )}
           </div>
         )}
       </CollapsibleSection>
@@ -490,6 +538,16 @@ export function SidebarAssociations({ workspaceId, conversationId }: SidebarAsso
           </div>
         </DialogContent>
       </Dialog>
+
+      <DocumentPreviewDialog
+        workspaceId={workspaceId}
+        slug={slug}
+        docId={previewDocId}
+        open={!!previewDocId}
+        onOpenChange={(open) => {
+          if (!open) setPreviewDocId(null);
+        }}
+      />
 
       {/* Create Task modal — creates and auto-links to this conversation */}
       {workflow && (

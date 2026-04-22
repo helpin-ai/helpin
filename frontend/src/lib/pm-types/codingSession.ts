@@ -2,6 +2,7 @@ import type { AgentInvocationMode, AgentRunPauseReason, AgentRunStatus, AgentRun
 
 export type CodingSessionInteractionKind =
   | 'request_user_input'
+  | 'approval_request'
   | 'command_execution_approval'
   | 'file_change_approval'
   | 'permissions_approval'
@@ -9,6 +10,46 @@ export type CodingSessionInteractionKind =
   | 'auth_required';
 
 export type CodingSessionInteractionStatus = 'pending' | 'resolved' | 'cancelled';
+
+export interface CodingSessionApprovalRequestPayload {
+  phase?: string;
+  preview_panel_key?: string;
+  title?: string;
+  summary?: string;
+}
+
+export interface CodingSessionApprovalResponsePayload {
+  [key: string]: unknown;
+  decision: 'approve' | 'request_changes';
+  message?: string;
+}
+
+export interface CodingSessionReviewFinding {
+  id: string;
+  title: string;
+  body: string;
+  priority?: string;
+  confidence?: string;
+  code_location?: string;
+}
+
+export interface CodingSessionReviewCheckpointRequestPayload {
+  phase?: string;
+  title?: string;
+  summary?: string;
+  findings?: CodingSessionReviewFinding[];
+  overall_correctness?: string;
+  overall_explanation?: string;
+  overall_confidence_score?: number;
+}
+
+export interface CodingSessionReviewCheckpointResponsePayload {
+  [key: string]: unknown;
+  decision: 'approve' | 'request_changes';
+  message?: string;
+  selection_mode?: 'all' | 'selected';
+  selected_finding_ids?: string[];
+}
 
 export interface CodingSessionInteraction {
   interaction_id: string;
@@ -84,6 +125,7 @@ export interface CodingSession {
   summary?: string;
   capabilities: CodingSessionCapabilities;
   repo: CodingSessionRepoState;
+  cached_input_tokens: number;
   input_tokens: number;
   output_tokens: number;
   tokens_used: number;

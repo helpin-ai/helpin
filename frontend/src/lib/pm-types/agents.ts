@@ -15,7 +15,7 @@ export type AgentStatus = 'idle' | 'working' | 'error' | 'paused';
 export type AgentRunStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 export type AgentRuntimeKind = 'opencode' | 'codex' | 'native_sdk';
 export type AgentTriggerMode = 'manual' | 'auto_on_assignment' | 'auto_on_event';
-export type AgentTargetType = 'task' | 'support_conversation' | 'epic' | 'document' | 'crm_deal' | 'repository';
+export type AgentTargetType = 'task' | 'support_conversation' | 'epic' | 'document' | 'crm_deal' | 'repository' | 'workspace';
 export type AgentApprovalState = 'not_required' | 'pending' | 'approved' | 'rejected';
 export type AgentApprovalMode = 'preset_default' | 'never' | 'always';
 export type AgentModelProvider = 'anthropic' | 'openai' | 'openrouter';
@@ -55,7 +55,6 @@ export interface Agent {
   allowed_tools: string[];
   allowed_commands: string[];
   allowed_targets: string[];
-  schedule?: string;
   target_selector?: Record<string, unknown>;
   trigger_events?: string[];
   approval_mode: AgentApprovalMode;
@@ -135,6 +134,7 @@ export interface AgentRun {
   last_heartbeat_at?: string;
   input: Record<string, unknown>;
   output_summary: Record<string, unknown>;
+  cached_input_tokens: number;
   input_tokens: number;
   output_tokens: number;
   tokens_used: number;
@@ -317,7 +317,6 @@ export interface CreateAgentRequest {
   allowed_tools?: string[];
   allowed_commands?: string[];
   allowed_targets?: string[];
-  schedule?: string;
   target_selector?: Record<string, unknown>;
   trigger_events?: string[];
   approval_mode?: AgentApprovalMode;
@@ -346,16 +345,11 @@ export interface UpdateAgentRequest {
   allowed_tools?: string[];
   allowed_commands?: string[];
   allowed_targets?: string[];
-  schedule?: string;
   target_selector?: Record<string, unknown>;
   trigger_events?: string[];
   approval_mode?: AgentApprovalMode;
   max_concurrent_runs?: number;
   default_invocation_mode?: AgentInvocationMode;
-}
-
-export interface AssignAgentRequest {
-  agent_id: string;
 }
 
 export interface ApproveAgentRunRequest {
@@ -372,6 +366,8 @@ export interface HandoffAgentRunRequest {
 }
 
 export interface AgentPresetDefinition {
+  /** Workspace preset versions expose the underlying row id; product versions omit it. */
+  id?: string;
   key: AgentPresetKey;
   family_key: AgentPresetKey;
   version_key: string;
@@ -417,6 +413,21 @@ export interface CreateWorkspaceAgentPresetVersionRequest {
   allowed_tools?: string[];
   supported_modes?: AgentInvocationMode[];
   approval_mode?: AgentApprovalMode;
+  default_invocation_mode?: AgentInvocationMode;
+}
+
+export interface UpdateWorkspaceAgentPresetVersionRequest {
+  label?: string;
+  description?: string;
+  runtime_kind?: AgentRuntimeKind;
+  provider?: AgentModelProvider;
+  model?: string;
+  execution_config?: AgentExecutionConfig;
+  system_prompt?: string;
+  instruction_preamble?: string;
+  instruction_skills?: string[];
+  allowed_tools?: string[];
+  supported_modes?: AgentInvocationMode[];
   default_invocation_mode?: AgentInvocationMode;
 }
 

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -83,46 +85,119 @@ func TestExecutionRuntimeKindPrefersRunOverride(t *testing.T) {
 	}
 }
 
-func TestIsExplicitReviewCloseoutReply(t *testing.T) {
-	cases := []struct {
-		reply string
-		want  bool
-	}{
-		{reply: "Looks good, done reviewing.", want: true},
-		{reply: "- Next step -> Done reviewing", want: true},
-		{reply: "All set, review complete.", want: true},
-		{reply: "Can you clarify finding 2?", want: false},
-		{reply: "Done with #1, but please re-review after changes.", want: false},
-		{reply: "Please review again once Forge lands the fixes.", want: false},
+func TestPersistHumanInteractionArtifactsStoresStructuredReviewFindings(t *testing.T) {
+	dbName := fmt.Sprintf("file:review-findings-artifact-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
 	}
-
-	for _, tc := range cases {
-		if got := isExplicitReviewCloseoutReply(tc.reply); got != tc.want {
-			t.Fatalf("isExplicitReviewCloseoutReply(%q) = %v, want %v", tc.reply, got, tc.want)
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_artifacts (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			artifact_type TEXT NOT NULL,
+			format TEXT NOT NULL,
+			storage_mode TEXT NOT NULL,
+			inline_content TEXT,
+			object_key TEXT,
+			metadata TEXT NOT NULL,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+		`CREATE TABLE agent_run_interactions (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			runtime_kind TEXT NOT NULL,
+			interaction_kind TEXT NOT NULL,
+			status TEXT NOT NULL,
+			request_schema_version TEXT NOT NULL,
+			response_schema_version TEXT,
+			request_id TEXT,
+			thread_id TEXT,
+			turn_id TEXT,
+			item_id TEXT,
+			approval_id TEXT,
+			assistant_message_sequence_no INTEGER,
+			title TEXT,
+			summary TEXT,
+			request_payload TEXT NOT NULL,
+			response_payload TEXT,
+			runtime_metadata TEXT NOT NULL,
+			resolved_by TEXT,
+			resolved_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create test table: %v", err)
 		}
 	}
-}
 
-func TestReviewAgentFollowupRequest(t *testing.T) {
-	req := reviewAgentFollowupRequest()
-	if req == nil || len(req.Questions) != 1 {
-		t.Fatalf("expected one follow-up question, got %#v", req)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	interactionRepo := repository.NewAgentRunInteractionRepository(db)
+	activities := &AgentRunActivities{artifactRepo: artifactRepo, interactionRepo: interactionRepo}
+
+	run := &model.AgentRun{ID: "run-1", WorkspaceID: "ws-1", RuntimeKind: "native_sdk"}
+	state := &resolvedRunState{
+		run:   run,
+		agent: &model.Agent{ID: "agent-1", WorkspaceID: "ws-1", RuntimeKind: "native_sdk"},
 	}
-	question := req.Questions[0]
-	if question.ID != "next_step" {
-		t.Fatalf("expected next_step question id, got %q", question.ID)
+	assistantMessage := &model.AgentRunMessage{SequenceNo: 7}
+
+	result := &workerpkg.ExecutionResult{
+		ToolInvocations: []model.ToolInvocation{{
+			ToolName: workerpkg.ToolRequestReviewCheckpoint,
+			Input: json.RawMessage(`{
+				"phase":"review_findings",
+				"title":"Lens review findings",
+				"summary":"Two actionable regressions found.",
+				"findings":[
+					{
+						"title":"Filter state is lost on refresh",
+						"body":"The query builder selection is not restored from the URL state.",
+						"priority":"p1",
+						"confidence":0.93,
+						"code_location":"frontend/src/pages/tasks.tsx:114"
+					}
+				],
+				"overall_correctness":"incorrect",
+				"overall_explanation":"The task behavior regresses saved filter restoration.",
+				"overall_confidence_score":0.91
+			}`),
+		}},
 	}
-	if !question.IsOther {
-		t.Fatal("expected follow-up question to allow freeform replies")
+
+	if err := activities.persistHumanInteractionArtifacts(context.Background(), state, result, assistantMessage); err != nil {
+		t.Fatalf("persistHumanInteractionArtifacts returned error: %v", err)
 	}
-	if len(question.Options) != 4 {
-		t.Fatalf("expected four follow-up options, got %#v", question.Options)
+
+	artifacts, err := artifactRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
 	}
-	if question.Options[1].Label != "Implement changes" {
-		t.Fatalf("expected implement option, got %#v", question.Options)
+	if len(artifacts) != 2 {
+		t.Fatalf("expected approval and review findings artifacts, got %#v", artifacts)
 	}
-	if question.Options[3].Label != "Done reviewing" {
-		t.Fatalf("expected done option, got %#v", question.Options)
+	types := make(map[string]model.AgentRunArtifact, len(artifacts))
+	for _, artifact := range artifacts {
+		types[artifact.ArtifactType] = artifact
+	}
+	findingsArtifact, ok := types[model.AgentRunArtifactTypeReviewFindings]
+	if !ok || findingsArtifact.InlineContent == nil {
+		t.Fatalf("expected structured review findings artifact, got %#v", artifacts)
+	}
+	var findings model.ReviewFindingsArtifact
+	if err := json.Unmarshal([]byte(*findingsArtifact.InlineContent), &findings); err != nil {
+		t.Fatalf("unmarshal review findings artifact: %v", err)
+	}
+	if findings.OverallCorrectness != "incorrect" || len(findings.Findings) != 1 {
+		t.Fatalf("unexpected review findings artifact %#v", findings)
+	}
+	if findings.Findings[0].Priority != "P1" {
+		t.Fatalf("expected normalized finding priority, got %#v", findings.Findings[0])
 	}
 }
 
@@ -823,6 +898,275 @@ func TestPushCodexLocalCommitPushesCommittedBranch(t *testing.T) {
 	}
 }
 
+func TestEnsureGitHubPullRequestReusesExistingOpenPR(t *testing.T) {
+	t.Parallel()
+
+	var postCalled bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v3/repos/acme/rust-capture/pulls":
+			if got := r.URL.Query().Get("head"); got != "acme:helpin/task-123" {
+				t.Fatalf("head query = %q, want acme:helpin/task-123", got)
+			}
+			if got := r.URL.Query().Get("base"); got != "develop" {
+				t.Fatalf("base query = %q, want develop", got)
+			}
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"number":   42,
+				"title":    "HLP-123: Improve delivery flow",
+				"html_url": "https://example.test/pr/42",
+				"head":     map[string]any{"ref": "helpin/task-123"},
+				"base":     map[string]any{"ref": "develop"},
+			}})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v3/repos/acme/rust-capture/pulls":
+			postCalled = true
+			t.Fatalf("did not expect PR creation request when an open PR already exists")
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	pr, err := ensureGitHubPullRequest(context.Background(), &model.GitIntegration{
+		Provider: "github",
+		BaseURL:  strPtr(server.URL),
+	}, "token-123", "acme/rust-capture", "helpin/task-123", "develop", "ignored", "ignored")
+	if err != nil {
+		t.Fatalf("ensureGitHubPullRequest returned error: %v", err)
+	}
+	if pr == nil {
+		t.Fatal("expected PR metadata")
+	}
+	if !pr.Existing {
+		t.Fatal("expected existing PR to be reused")
+	}
+	if pr.Metadata.Number != 42 {
+		t.Fatalf("pr number = %d, want 42", pr.Metadata.Number)
+	}
+	if pr.Title != "HLP-123: Improve delivery flow" {
+		t.Fatalf("title = %q", pr.Title)
+	}
+	if postCalled {
+		t.Fatal("did not expect create PR request")
+	}
+}
+
+func TestEnsureGitHubPullRequestCreatesPRWhenMissing(t *testing.T) {
+	t.Parallel()
+
+	var createPayload map[string]string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v3/repos/acme/rust-capture/pulls":
+			_ = json.NewEncoder(w).Encode([]map[string]any{})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v3/repos/acme/rust-capture/pulls":
+			if err := json.NewDecoder(r.Body).Decode(&createPayload); err != nil {
+				t.Fatalf("decode create payload: %v", err)
+			}
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"number":   77,
+				"title":    createPayload["title"],
+				"html_url": "https://example.test/pr/77",
+				"head":     map[string]any{"ref": createPayload["head"]},
+				"base":     map[string]any{"ref": createPayload["base"]},
+			})
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	pr, err := ensureGitHubPullRequest(context.Background(), &model.GitIntegration{
+		Provider: "github",
+		BaseURL:  strPtr(server.URL),
+	}, "token-123", "acme/rust-capture", "helpin/task-123", "release/2026.04", "HLP-123: Improve delivery flow", "body text")
+	if err != nil {
+		t.Fatalf("ensureGitHubPullRequest returned error: %v", err)
+	}
+	if pr == nil {
+		t.Fatal("expected created PR metadata")
+	}
+	if pr.Existing {
+		t.Fatal("expected a new PR to be created")
+	}
+	if pr.Metadata.Number != 77 {
+		t.Fatalf("pr number = %d, want 77", pr.Metadata.Number)
+	}
+	if createPayload["head"] != "helpin/task-123" {
+		t.Fatalf("head payload = %q, want helpin/task-123", createPayload["head"])
+	}
+	if createPayload["base"] != "release/2026.04" {
+		t.Fatalf("base payload = %q, want release/2026.04", createPayload["base"])
+	}
+	if createPayload["title"] != "HLP-123: Improve delivery flow" {
+		t.Fatalf("title payload = %q", createPayload["title"])
+	}
+}
+
+func TestRecordPushAndEnsureDeliveryPRMarksPRFailedWhenPROpenFails(t *testing.T) {
+	t.Parallel()
+
+	dbName := fmt.Sprintf("file:delivery-pr-failure-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agent_runs (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			agent_id TEXT NOT NULL,
+			task_id TEXT,
+			conversation_id TEXT,
+			target_type TEXT NOT NULL DEFAULT 'task',
+			target_id TEXT NOT NULL,
+			runtime_kind TEXT NOT NULL DEFAULT 'opencode',
+			invocation_mode TEXT NOT NULL DEFAULT 'autonomous',
+			parent_run_id TEXT,
+			handoff_state TEXT,
+			approval_state TEXT NOT NULL DEFAULT 'not_required',
+			pause_reason TEXT NOT NULL DEFAULT 'none',
+			triggered_by_user_id TEXT,
+			status TEXT NOT NULL DEFAULT 'queued',
+			workflow_id TEXT,
+			workflow_run_id TEXT,
+			task_queue TEXT,
+			runner_pool TEXT,
+			repository_id TEXT,
+			repo_full_name TEXT,
+			base_branch TEXT,
+			working_branch TEXT,
+			delivery_target_id TEXT,
+			execution_stage TEXT,
+			last_heartbeat_at DATETIME,
+			input BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
+			output_summary BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
+			cached_input_tokens INTEGER NOT NULL DEFAULT 0,
+			input_tokens INTEGER NOT NULL DEFAULT 0,
+			output_tokens INTEGER NOT NULL DEFAULT 0,
+			tokens_used INTEGER NOT NULL DEFAULT 0,
+			error_message TEXT,
+			started_at DATETIME,
+			completed_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE task_delivery_targets (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			task_id TEXT NOT NULL UNIQUE,
+			repository_id TEXT,
+			repo_full_name TEXT,
+			integration_id TEXT,
+			base_branch TEXT,
+			working_branch TEXT,
+			delivery_state TEXT NOT NULL DEFAULT 'unconfigured',
+			active_pr_number INTEGER,
+			active_pr_title TEXT,
+			active_pr_url TEXT,
+			active_pr_status TEXT,
+			last_commit_sha TEXT,
+			last_run_id TEXT,
+			last_synced_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE task_git_links (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			task_id TEXT NOT NULL,
+			integration_id TEXT NOT NULL,
+			repository_id TEXT,
+			run_id TEXT,
+			provider TEXT NOT NULL,
+			repo TEXT NOT NULL,
+			branch TEXT,
+			pr_number INTEGER,
+			pr_title TEXT,
+			pr_url TEXT,
+			pr_status TEXT,
+			commit_sha TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("exec schema: %v", err)
+		}
+	}
+
+	runRepo := repository.NewAgentRunRepository(db)
+	deliveryRepo := repository.NewTaskDeliveryTargetRepository(db)
+	gitLinkRepo := repository.NewTaskGitLinkRepository(db)
+
+	run := &model.AgentRun{
+		ID:          "run-1",
+		WorkspaceID: "ws-1",
+		AgentID:     "agent-1",
+		TaskID:      strPtr("task-1"),
+		TargetType:  "task",
+		TargetID:    "task-1",
+		BaseBranch:  strPtr("main"),
+	}
+	if err := db.Create(run).Error; err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	target := &model.TaskDeliveryTarget{
+		ID:            "delivery-1",
+		WorkspaceID:   "ws-1",
+		TaskID:        "task-1",
+		RepoFullName:  strPtr("acme/rust-capture"),
+		BaseBranch:    strPtr("main"),
+		WorkingBranch: strPtr("helpin/task-123"),
+		DeliveryState: "in_progress",
+	}
+	if err := db.Create(target).Error; err != nil {
+		t.Fatalf("create delivery target: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v3/repos/acme/rust-capture/pulls" {
+			t.Fatalf("unexpected request path %s", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]any{"message": "boom"})
+	}))
+	defer server.Close()
+
+	activities := &AgentRunActivities{
+		runRepo:      runRepo,
+		deliveryRepo: deliveryRepo,
+		gitLinkRepo:  gitLinkRepo,
+	}
+	state := &resolvedRunState{
+		run:            run,
+		task:           &model.PMTask{ID: "task-1", Name: "Improve delivery flow", DisplayID: 123},
+		repository:     &model.GitRepository{FullName: "acme/rust-capture", DefaultBranch: "main"},
+		integration:    &model.GitIntegration{Provider: "github", BaseURL: strPtr(server.URL)},
+		deliveryTarget: target,
+		accessToken:    "token-123",
+		workspaceKey:   "HLP",
+	}
+
+	err = activities.recordPushAndEnsureDeliveryPR(context.Background(), state, "helpin/task-123", "abc123")
+	if err != nil {
+		t.Fatalf("expected PR creation failure to be non-fatal, got %v", err)
+	}
+
+	updated, err := deliveryRepo.GetByTask(context.Background(), "ws-1", "task-1")
+	if err != nil {
+		t.Fatalf("reload delivery target: %v", err)
+	}
+	if updated == nil {
+		t.Fatal("expected delivery target after update")
+	}
+	if updated.DeliveryState != "pr_failed" {
+		t.Fatalf("delivery state = %q, want pr_failed", updated.DeliveryState)
+	}
+}
+
 func runGitCommand(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", args...)
@@ -908,6 +1252,9 @@ func newPlannerApprovalTestDB(t *testing.T) *gorm.DB {
 			last_heartbeat_at DATETIME,
 			input BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
 			output_summary BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
+			cached_input_tokens INTEGER NOT NULL DEFAULT 0,
+			input_tokens INTEGER NOT NULL DEFAULT 0,
+			output_tokens INTEGER NOT NULL DEFAULT 0,
 			tokens_used INTEGER NOT NULL DEFAULT 0,
 			error_message TEXT,
 			started_at DATETIME,
@@ -1471,14 +1818,14 @@ func TestResolveExecutionWaitState(t *testing.T) {
 		ApprovalState:  "not_required",
 	}
 
-	waitForApproval, waitForInput, waitForAuth := resolveExecutionWaitState(baseRun, nil, nil, nil)
+	waitForApproval, waitForInput, waitForAuth := resolveExecutionWaitState(baseRun, nil, nil, nil, nil)
 	if waitForApproval || waitForInput || waitForAuth {
 		t.Fatalf("expected no wait state without interaction tools, got approval=%v input=%v auth=%v", waitForApproval, waitForInput, waitForAuth)
 	}
 
 	waitForApproval, waitForInput, waitForAuth = resolveExecutionWaitState(baseRun, &workerpkg.UserInputRequest{
 		Questions: []workerpkg.UserInputQuestion{{ID: "q1", Question: "Who is this for?", Options: []workerpkg.UserInputOption{{Label: "A"}}}},
-	}, nil, nil)
+	}, nil, nil, nil)
 	if waitForApproval || !waitForInput || waitForAuth {
 		t.Fatalf("expected human input tool to pause for input, got approval=%v input=%v auth=%v", waitForApproval, waitForInput, waitForAuth)
 	}
@@ -1486,7 +1833,7 @@ func TestResolveExecutionWaitState(t *testing.T) {
 	waitForApproval, waitForInput, waitForAuth = resolveExecutionWaitState(baseRun, nil, &model.ApprovalRequest{
 		Phase: "prd",
 		Title: "Approve PRD",
-	}, nil)
+	}, nil, nil)
 	if !waitForApproval || waitForInput || waitForAuth {
 		t.Fatalf("expected inline approval tool to pause for approval, got approval=%v input=%v auth=%v", waitForApproval, waitForInput, waitForAuth)
 	}
@@ -1495,7 +1842,7 @@ func TestResolveExecutionWaitState(t *testing.T) {
 		InvocationMode: model.InvocationModeInteractive,
 		TargetType:     "epic",
 		ApprovalState:  "pending",
-	}, nil, nil, nil)
+	}, nil, nil, nil, nil)
 	if !waitForApproval || waitForInput || waitForAuth {
 		t.Fatalf("expected pending approval state to wait for approval, got approval=%v input=%v auth=%v", waitForApproval, waitForInput, waitForAuth)
 	}
@@ -1506,7 +1853,7 @@ func TestResolveExecutionWaitState(t *testing.T) {
 		ApprovalState:  "not_required",
 	}, &workerpkg.UserInputRequest{
 		Questions: []workerpkg.UserInputQuestion{{ID: "q1", Question: "Pick one", Options: []workerpkg.UserInputOption{{Label: "A"}}}},
-	}, nil, nil)
+	}, nil, nil, nil)
 	if waitForApproval || !waitForInput || waitForAuth {
 		t.Fatalf("expected autonomous human input tool to pause for input, got approval=%v input=%v auth=%v", waitForApproval, waitForInput, waitForAuth)
 	}
@@ -1518,12 +1865,12 @@ func TestResolveExecutionWaitState(t *testing.T) {
 	}, nil, &model.ApprovalRequest{
 		Phase: "command_execution",
 		Title: "Approve command",
-	}, nil)
+	}, nil, nil)
 	if !waitForApproval || waitForInput || waitForAuth {
 		t.Fatalf("expected autonomous approval tool to pause for approval, got approval=%v input=%v auth=%v", waitForApproval, waitForInput, waitForAuth)
 	}
 
-	waitForApproval, waitForInput, waitForAuth = resolveExecutionWaitState(baseRun, nil, nil, &model.CodexAuthState{
+	waitForApproval, waitForInput, waitForAuth = resolveExecutionWaitState(baseRun, nil, nil, nil, &model.CodexAuthState{
 		State: model.CodexAuthStateRequired,
 	})
 	if waitForApproval || waitForInput || !waitForAuth {
@@ -1594,7 +1941,7 @@ func TestBuildPersistedAssistantRunMessageUsesCanonicalBlocksAndInvocations(t *t
 		ToolInvocations: []model.ToolInvocation{
 			{ToolName: "read_file", Input: json.RawMessage(`{"path":"a.go"}`), OutputSummary: "package main", DurationMs: 12},
 		},
-		Usage: workerpkg.ExecutionUsage{InputTokens: 11, OutputTokens: 7},
+		Usage: workerpkg.ExecutionUsage{CachedInputTokens: 3, InputTokens: 11, OutputTokens: 7},
 	}
 
 	message, err := buildPersistedAssistantRunMessage(result, &model.CodingSessionStreamSnapshot{
@@ -1633,6 +1980,9 @@ func TestBuildPersistedAssistantRunMessageUsesCanonicalBlocksAndInvocations(t *t
 	}
 	if len(message.ContentBlocks) == 0 || len(message.TurnSegments) == 0 || len(message.ToolInvocations) == 0 || len(message.TokenUsage) == 0 {
 		t.Fatalf("expected canonical persisted payloads, got %#v", message)
+	}
+	if string(message.TokenUsage) != `{"cached_input_tokens":3,"input_tokens":11,"output_tokens":7}` {
+		t.Fatalf("expected token usage payload, got %s", string(message.TokenUsage))
 	}
 }
 
@@ -1793,6 +2143,9 @@ func TestHandleLiveCodexInteractivePauseIgnoresOlderRepliesWhenNoAssistantMessag
 			last_heartbeat_at DATETIME,
 			input TEXT NOT NULL DEFAULT '{}',
 			output_summary TEXT NOT NULL DEFAULT '{}',
+			cached_input_tokens INTEGER NOT NULL DEFAULT 0,
+			input_tokens INTEGER NOT NULL DEFAULT 0,
+			output_tokens INTEGER NOT NULL DEFAULT 0,
 			tokens_used INTEGER NOT NULL DEFAULT 0,
 			error_message TEXT,
 			started_at DATETIME,
@@ -1967,6 +2320,9 @@ func TestWaitForLiveCodexResumeSignalPrefersResolvedInteractionPayload(t *testin
 			last_heartbeat_at DATETIME,
 			input TEXT NOT NULL DEFAULT '{}',
 			output_summary TEXT NOT NULL DEFAULT '{}',
+			cached_input_tokens INTEGER NOT NULL DEFAULT 0,
+			input_tokens INTEGER NOT NULL DEFAULT 0,
+			output_tokens INTEGER NOT NULL DEFAULT 0,
 			tokens_used INTEGER NOT NULL DEFAULT 0,
 			error_message TEXT,
 			started_at DATETIME,
@@ -3761,6 +4117,1327 @@ func TestExecuteRunActivityPausesNativePlannerForReviewCheckpoint(t *testing.T) 
 	}
 	if interactions[0].InteractionKind != model.AgentRunInteractionKindReviewCheckpoint {
 		t.Fatalf("expected review checkpoint interaction, got %#v", interactions[0])
+	}
+}
+
+func TestExecuteRunActivityRetriesReviewAgentCompletionWithoutRequiredInteraction(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_messages (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			role TEXT NOT NULL,
+			content TEXT NOT NULL,
+			message_type TEXT NOT NULL,
+			content_blocks TEXT,
+			turn_segments TEXT,
+			tool_invocations TEXT,
+			token_usage TEXT,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+		`CREATE TABLE agent_run_interactions (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			runtime_kind TEXT NOT NULL,
+			interaction_kind TEXT NOT NULL,
+			status TEXT NOT NULL,
+			request_schema_version TEXT NOT NULL,
+			response_schema_version TEXT,
+			request_id TEXT,
+			thread_id TEXT,
+			turn_id TEXT,
+			item_id TEXT,
+			approval_id TEXT,
+			assistant_message_sequence_no INTEGER,
+			title TEXT,
+			summary TEXT,
+			request_payload TEXT NOT NULL,
+			response_payload TEXT,
+			runtime_metadata TEXT NOT NULL,
+			resolved_by TEXT,
+			resolved_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create test table: %v", err)
+		}
+	}
+
+	runRepo := repository.NewAgentRunRepository(db)
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	agentRepo := repository.NewAgentRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	interactionRepo := repository.NewAgentRunInteractionRepository(db)
+	epicRepo := repository.NewPMEpicRepository(db)
+
+	now := time.Now().UTC()
+	agent := &model.Agent{
+		ID:                    "agent-review",
+		WorkspaceID:           "ws-1",
+		IsSystem:              true,
+		Name:                  "Lens",
+		PresetKey:             model.AgentPresetReviewAgent,
+		Role:                  "Reviewer",
+		Status:                "idle",
+		RuntimeKind:           "native_sdk",
+		Skills:                model.AgentSkillRefs{},
+		TriggerMode:           "manual",
+		AllowedTools:          json.RawMessage(`[]`),
+		AllowedCommands:       json.RawMessage(`[]`),
+		AllowedTargets:        json.RawMessage(`[]`),
+		ApprovalMode:          "never",
+		MaxConcurrentRuns:     1,
+		DefaultInvocationMode: model.InvocationModeInteractive,
+		CreatedAt:             now,
+		UpdatedAt:             now,
+	}
+	if err := db.Create(agent).Error; err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+
+	epic := &model.PMEpic{
+		ID:                 "epic-review",
+		WorkspaceID:        "ws-1",
+		Name:               "Review epic",
+		PlanningState:      model.EpicPlanningStateNotStarted,
+		SpecClarifications: json.RawMessage(`[]`),
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}
+	if err := db.Create(epic).Error; err != nil {
+		t.Fatalf("create epic: %v", err)
+	}
+
+	run := &model.AgentRun{
+		ID:             "run-review-no-interaction",
+		WorkspaceID:    "ws-1",
+		AgentID:        agent.ID,
+		TargetType:     "epic",
+		TargetID:       epic.ID,
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeInteractive,
+		Status:         model.AgentRunStatusRunning,
+		PauseReason:    model.AgentRunPauseReasonNone,
+		ApprovalState:  "not_required",
+		Input:          json.RawMessage(`{}`),
+		OutputSummary:  json.RawMessage(`{}`),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := db.Create(run).Error; err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	activities := &AgentRunActivities{
+		runRepo:         runRepo,
+		runMessageRepo:  runMessageRepo,
+		agentRepo:       agentRepo,
+		artifactRepo:    artifactRepo,
+		interactionRepo: interactionRepo,
+		epicRepo:        epicRepo,
+		runtimes: workerpkg.NewRuntimeRegistry(stubRuntimeAdapter{
+			kind: "native_sdk",
+			executeFn: func(execCtx *workerpkg.ExecutionContext, run *model.AgentRun) error {
+				execCtx.LastExecutionResult = &workerpkg.ExecutionResult{
+					AssistantText: "Findings\n\nHigh: The required alert rules are missing.\nOverall correctness: incorrect.",
+				}
+				return nil
+			},
+		}),
+	}
+
+	result, err := activities.ExecuteRunActivity(context.Background(), run.ID)
+	if err != nil {
+		t.Fatalf("expected auto-retry instead of failure, got %v", err)
+	}
+	if !result.ContinueExecution || result.WaitForApproval || result.AwaitingInput || result.AwaitingAuth {
+		t.Fatalf("expected continue execution retry result, got %#v", result)
+	}
+
+	updatedRun, err := runRepo.GetByIDAny(context.Background(), run.ID)
+	if err != nil {
+		t.Fatalf("get updated run: %v", err)
+	}
+	if updatedRun == nil {
+		t.Fatal("expected updated run")
+	}
+	if updatedRun.Status != model.AgentRunStatusRunning {
+		t.Fatalf("expected run to remain running for retry, got %#v", updatedRun)
+	}
+	if updatedRun.ErrorMessage != nil && strings.TrimSpace(*updatedRun.ErrorMessage) != "" {
+		t.Fatalf("expected no terminal error on auto-retry, got %#v", updatedRun.ErrorMessage)
+	}
+
+	messages, err := runMessageRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("list run messages: %v", err)
+	}
+	foundAssistantTurn := false
+	foundRetryMessage := false
+	for _, message := range messages {
+		if message.Role == "assistant" && message.MessageType == "assistant_turn" && strings.Contains(message.Content, "Findings") {
+			foundAssistantTurn = true
+		}
+		if message.Role == "user" && message.MessageType == "policy_retry" && strings.Contains(message.Content, "review_checkpoint handoff") {
+			foundRetryMessage = true
+		}
+	}
+	if !foundAssistantTurn {
+		t.Fatalf("expected assistant findings message to persist before failure, got %#v", messages)
+	}
+	if !foundRetryMessage {
+		t.Fatalf("expected policy retry message to be appended, got %#v", messages)
+	}
+}
+
+func TestSynthesizeCompletionInteractionFallbackUsesStructuredReviewBlockForCodex(t *testing.T) {
+	dbName := fmt.Sprintf("file:review-fallback-codex-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_artifacts (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			artifact_type TEXT NOT NULL,
+			format TEXT NOT NULL,
+			storage_mode TEXT NOT NULL,
+			inline_content TEXT,
+			object_key TEXT,
+			metadata TEXT NOT NULL,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+		`CREATE TABLE agent_run_interactions (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			runtime_kind TEXT NOT NULL,
+			interaction_kind TEXT NOT NULL,
+			status TEXT NOT NULL,
+			request_schema_version TEXT NOT NULL,
+			response_schema_version TEXT,
+			request_id TEXT,
+			thread_id TEXT,
+			turn_id TEXT,
+			item_id TEXT,
+			approval_id TEXT,
+			assistant_message_sequence_no INTEGER,
+			title TEXT,
+			summary TEXT,
+			request_payload TEXT NOT NULL,
+			response_payload TEXT,
+			runtime_metadata TEXT NOT NULL,
+			resolved_by TEXT,
+			resolved_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create test table: %v", err)
+		}
+	}
+
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	interactionRepo := repository.NewAgentRunInteractionRepository(db)
+
+	now := time.Now().UTC()
+	state := &resolvedRunState{
+		run: &model.AgentRun{
+			ID:             "run-review-codex-no-interaction",
+			WorkspaceID:    "ws-1",
+			AgentID:        "agent-review-codex",
+			TargetType:     "epic",
+			TargetID:       "epic-review-codex",
+			RuntimeKind:    "codex",
+			InvocationMode: model.InvocationModeInteractive,
+			Status:         model.AgentRunStatusRunning,
+			PauseReason:    model.AgentRunPauseReasonNone,
+			ApprovalState:  "not_required",
+			Input:          json.RawMessage(`{}`),
+			OutputSummary:  json.RawMessage(`{}`),
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+		agent: &model.Agent{
+			ID:                    "agent-review-codex",
+			WorkspaceID:           "ws-1",
+			IsSystem:              true,
+			Name:                  "Lens",
+			PresetKey:             model.AgentPresetReviewAgent,
+			Role:                  "Reviewer",
+			Status:                "idle",
+			RuntimeKind:           "codex",
+			Skills:                model.AgentSkillRefs{},
+			TriggerMode:           "manual",
+			AllowedTools:          json.RawMessage(`[]`),
+			AllowedCommands:       json.RawMessage(`[]`),
+			AllowedTargets:        json.RawMessage(`[]`),
+			ApprovalMode:          "never",
+			MaxConcurrentRuns:     1,
+			DefaultInvocationMode: model.InvocationModeInteractive,
+			CreatedAt:             now,
+			UpdatedAt:             now,
+		},
+		skillPolicy: workerpkg.SkillPolicy{
+			CompletionRequiresInteractionKinds: []string{model.AgentRunInteractionKindReviewCheckpoint},
+			InteractionContracts: []workerpkg.SkillInteractionContract{
+				{
+					Kind:   workerpkg.InteractionKindReviewCheckpoint,
+					Schema: "review_checkpoint_v1",
+					Transports: map[string]workerpkg.SkillInteractionTransport{
+						"codex": {Type: workerpkg.InteractionTransportTypeFencedJSON, BlockLabel: "helpin-review"},
+					},
+				},
+			},
+		},
+	}
+
+	activities := &AgentRunActivities{
+		artifactRepo:    artifactRepo,
+		interactionRepo: interactionRepo,
+	}
+	assistantMessage := &model.AgentRunMessage{
+		SequenceNo:  3,
+		Role:        "assistant",
+		MessageType: "assistant_turn",
+		Content:     "Findings\n\nMedium: visitor_type misclassifies blank user IDs as identified.\n\n```helpin-review\n{\"title\":\"Lens review findings\",\"summary\":\"One concrete classification bug found.\",\"findings\":[{\"title\":\"Blank user IDs are treated as identified\",\"body\":\"The new visitor_type logic treats an empty user.id string as identified instead of anonymous.\",\"priority\":\"P1\",\"confidence\":0.94,\"code_location\":\"rust-capture/src/enrichment/handler.rs:284\"}],\"overall_correctness\":\"incorrect\",\"overall_explanation\":\"The new classification logic regresses visitor typing for blank IDs.\",\"overall_confidence_score\":0.92}\n```",
+	}
+
+	approval, input, err := activities.synthesizeCompletionInteractionFallback(context.Background(), state, assistantMessage)
+	if err != nil {
+		t.Fatalf("expected synthesized checkpoint instead of failure, got %v", err)
+	}
+	if input != nil {
+		t.Fatalf("expected no synthesized input request, got %#v", input)
+	}
+	if approval == nil {
+		t.Fatal("expected synthesized approval request")
+	}
+	if approval.Title != "Lens review findings" || approval.Summary != "One concrete classification bug found." {
+		t.Fatalf("expected structured synthesized approval request, got %#v", approval)
+	}
+	if approval.OverallCorrectness != "incorrect" || approval.OverallExplanation == "" || len(approval.Findings) != 1 {
+		t.Fatalf("expected structured review verdict, got %#v", approval)
+	}
+	if approval.Findings[0].ID != "finding_1" || approval.Findings[0].Title != "Blank user IDs are treated as identified" {
+		t.Fatalf("expected structured finding title, got %#v", approval.Findings[0])
+	}
+
+	interactions, err := interactionRepo.ListByRun(context.Background(), state.run.WorkspaceID, state.run.ID)
+	if err != nil {
+		t.Fatalf("list interactions: %v", err)
+	}
+	if len(interactions) != 1 {
+		t.Fatalf("expected one synthesized interaction, got %#v", interactions)
+	}
+	if interactions[0].InteractionKind != model.AgentRunInteractionKindReviewCheckpoint {
+		t.Fatalf("expected synthesized review checkpoint, got %#v", interactions[0])
+	}
+	if interactions[0].Title == nil || *interactions[0].Title != "Lens review findings" {
+		t.Fatalf("expected structured title, got %#v", interactions[0])
+	}
+	if interactions[0].Summary == nil || *interactions[0].Summary != "One concrete classification bug found." {
+		t.Fatalf("expected structured checkpoint summary, got %#v", interactions[0])
+	}
+
+	var request model.ReviewCheckpointRequest
+	if err := json.Unmarshal(interactions[0].RequestPayload, &request); err != nil {
+		t.Fatalf("unmarshal synthesized approval request: %v", err)
+	}
+	if request.OverallCorrectness != "incorrect" || request.OverallExplanation == "" || len(request.Findings) != 1 {
+		t.Fatalf("expected structured approval payload, got %#v", request)
+	}
+	if request.Findings[0].ID != "finding_1" || request.Findings[0].Title != "Blank user IDs are treated as identified" {
+		t.Fatalf("expected structured finding title, got %#v", request.Findings[0])
+	}
+}
+
+func TestSynthesizeCompletionInteractionFallbackPrefersReviewCheckpointWhenUserInputIsAlsoRequired(t *testing.T) {
+	dbName := fmt.Sprintf("file:completion-fallback-review-followup-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_artifacts (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			artifact_type TEXT NOT NULL,
+			format TEXT NOT NULL,
+			storage_mode TEXT NOT NULL,
+			inline_content TEXT,
+			object_key TEXT,
+			metadata TEXT NOT NULL,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+		`CREATE TABLE agent_run_interactions (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			runtime_kind TEXT NOT NULL,
+			interaction_kind TEXT NOT NULL,
+			status TEXT NOT NULL,
+			request_schema_version TEXT NOT NULL,
+			response_schema_version TEXT,
+			request_id TEXT,
+			thread_id TEXT,
+			turn_id TEXT,
+			item_id TEXT,
+			approval_id TEXT,
+			assistant_message_sequence_no INTEGER,
+			title TEXT,
+			summary TEXT,
+			request_payload BLOB NOT NULL,
+			response_payload BLOB,
+			runtime_metadata BLOB NOT NULL,
+			expires_at DATETIME,
+			resolved_by TEXT,
+			resolved_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+	}
+
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	interactionRepo := repository.NewAgentRunInteractionRepository(db)
+	now := time.Now().UTC()
+	state := &resolvedRunState{
+		run: &model.AgentRun{
+			ID:             "run-review-followup",
+			WorkspaceID:    "ws-1",
+			AgentID:        "agent-review-codex",
+			TargetType:     "epic",
+			TargetID:       "epic-review-codex",
+			RuntimeKind:    "codex",
+			InvocationMode: model.InvocationModeInteractive,
+			Status:         model.AgentRunStatusRunning,
+			PauseReason:    model.AgentRunPauseReasonNone,
+			ApprovalState:  "not_required",
+			Input:          json.RawMessage(`{}`),
+			OutputSummary:  json.RawMessage(`{}`),
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+		agent: &model.Agent{
+			ID:                    "agent-review-codex",
+			WorkspaceID:           "ws-1",
+			IsSystem:              true,
+			Name:                  "Lens",
+			PresetKey:             model.AgentPresetReviewAgent,
+			Role:                  "Reviewer",
+			Status:                "idle",
+			RuntimeKind:           "codex",
+			Skills:                model.AgentSkillRefs{},
+			TriggerMode:           "manual",
+			AllowedTools:          json.RawMessage(`[]`),
+			AllowedCommands:       json.RawMessage(`[]`),
+			AllowedTargets:        json.RawMessage(`[]`),
+			ApprovalMode:          "never",
+			MaxConcurrentRuns:     1,
+			DefaultInvocationMode: model.InvocationModeInteractive,
+			CreatedAt:             now,
+			UpdatedAt:             now,
+		},
+		skillPolicy: workerpkg.SkillPolicy{
+			CompletionRequiresInteractionKinds: []string{
+				model.AgentRunInteractionKindReviewCheckpoint,
+				model.AgentRunInteractionKindRequestUserInput,
+			},
+			InteractionContracts: []workerpkg.SkillInteractionContract{
+				{
+					Kind:   workerpkg.InteractionKindReviewCheckpoint,
+					Schema: "review_checkpoint_v1",
+					Transports: map[string]workerpkg.SkillInteractionTransport{
+						"codex": {Type: workerpkg.InteractionTransportTypeFencedJSON, BlockLabel: "helpin-review"},
+					},
+				},
+				{
+					Kind:   workerpkg.InteractionKindRequestUserInput,
+					Schema: "request_user_input_v1",
+					Transports: map[string]workerpkg.SkillInteractionTransport{
+						"codex": {Type: workerpkg.InteractionTransportTypeRuntimeBridge},
+					},
+				},
+			},
+		},
+	}
+
+	activities := &AgentRunActivities{
+		artifactRepo:    artifactRepo,
+		interactionRepo: interactionRepo,
+	}
+	assistantMessage := &model.AgentRunMessage{
+		SequenceNo:  4,
+		Role:        "assistant",
+		MessageType: "assistant_turn",
+		Content:     "The review is clean overall. I can explain the reasoning in more detail if helpful.\n\n```helpin-review\n{\"title\":\"Lens review findings\",\"summary\":\"No issues found.\",\"findings\":[],\"overall_correctness\":\"correct\",\"overall_explanation\":\"I did not find correctness issues in this pass.\",\"overall_confidence_score\":0.88}\n```",
+	}
+
+	approval, input, err := activities.synthesizeCompletionInteractionFallback(context.Background(), state, assistantMessage)
+	if err != nil {
+		t.Fatalf("expected synthesized review checkpoint, got %v", err)
+	}
+	if input != nil {
+		t.Fatalf("expected no synthesized input request, got %#v", input)
+	}
+	if approval == nil {
+		t.Fatal("expected synthesized approval request")
+	}
+	if approval.Title != "Lens review findings" || approval.Summary != "No issues found." {
+		t.Fatalf("unexpected synthesized approval request %#v", approval)
+	}
+
+	interactions, err := interactionRepo.ListByRun(context.Background(), state.run.WorkspaceID, state.run.ID)
+	if err != nil {
+		t.Fatalf("list interactions: %v", err)
+	}
+	if len(interactions) != 1 {
+		t.Fatalf("expected one synthesized interaction, got %#v", interactions)
+	}
+	if interactions[0].InteractionKind != model.AgentRunInteractionKindReviewCheckpoint {
+		t.Fatalf("expected synthesized review checkpoint, got %#v", interactions[0])
+	}
+}
+
+func TestParseStructuredReviewApprovalRequest(t *testing.T) {
+	request, ok := parseStructuredReviewApprovalRequest(workerpkg.SkillPolicy{
+		InteractionContracts: []workerpkg.SkillInteractionContract{
+			{
+				Kind:   workerpkg.InteractionKindReviewCheckpoint,
+				Schema: "review_checkpoint_v1",
+				Transports: map[string]workerpkg.SkillInteractionTransport{
+					"codex": {Type: workerpkg.InteractionTransportTypeFencedJSON, BlockLabel: "review-json"},
+				},
+			},
+		},
+	}, "codex", strings.TrimSpace(`
+Findings
+
+1. High: Something is wrong.
+
+`+"```review-json\n"+`{"title":"Review findings","summary":"Two issues found.","findings":[{"title":"Broken case","body":"Details","priority":"P2","code_location":"app.rs:10"}],"overall_correctness":"incorrect","overall_explanation":"The change regresses behavior.","overall_confidence_score":0.81}`+"\n```"))
+	if !ok || request == nil {
+		t.Fatal("expected structured review request to parse")
+	}
+	if request.Title != "Review findings" || request.Summary != "Two issues found." {
+		t.Fatalf("unexpected request header %#v", request)
+	}
+	if request.OverallCorrectness != "incorrect" || request.OverallExplanation != "The change regresses behavior." {
+		t.Fatalf("unexpected overall verdict %#v", request)
+	}
+	if len(request.Findings) != 1 || request.Findings[0].ID != "finding_1" || request.Findings[0].CodeLocation != "app.rs:10" {
+		t.Fatalf("unexpected findings %#v", request.Findings)
+	}
+}
+
+func TestParseStructuredReviewApprovalRequestDefaultsToLegacyBlockLabel(t *testing.T) {
+	content := strings.TrimSpace(`
+Findings
+
+1. High: Something is wrong.
+
+` + "```helpin-review\n" + `{"title":"Review findings","summary":"Two issues found.","findings":[{"title":"Broken case","body":"Details","priority":"P2","code_location":"app.rs:10"}],"overall_correctness":"incorrect","overall_explanation":"The change regresses behavior.","overall_confidence_score":0.81}` + "\n```")
+
+	request, ok := parseStructuredReviewApprovalRequest(workerpkg.SkillPolicy{}, "codex", content)
+	if !ok || request == nil {
+		t.Fatal("expected structured review request to parse")
+	}
+	if request.Title != "Review findings" || request.Summary != "Two issues found." {
+		t.Fatalf("unexpected request header %#v", request)
+	}
+	if request.OverallCorrectness != "incorrect" || request.OverallExplanation != "The change regresses behavior." {
+		t.Fatalf("unexpected overall verdict %#v", request)
+	}
+	if len(request.Findings) != 1 || request.Findings[0].ID != "finding_1" || request.Findings[0].CodeLocation != "app.rs:10" {
+		t.Fatalf("unexpected findings %#v", request.Findings)
+	}
+}
+
+func TestSynthesizeCompletionInteractionFallbackAllowsTerminalCleanImplementationReview(t *testing.T) {
+	dbName := fmt.Sprintf("file:terminal-clean-implementation-review-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_artifacts (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			artifact_type TEXT NOT NULL,
+			format TEXT NOT NULL,
+			storage_mode TEXT NOT NULL,
+			inline_content TEXT,
+			object_key TEXT,
+			metadata TEXT NOT NULL,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+		`CREATE TABLE agent_run_interactions (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			runtime_kind TEXT NOT NULL,
+			interaction_kind TEXT NOT NULL,
+			status TEXT NOT NULL,
+			request_schema_version TEXT NOT NULL,
+			response_schema_version TEXT,
+			request_id TEXT,
+			thread_id TEXT,
+			turn_id TEXT,
+			item_id TEXT,
+			approval_id TEXT,
+			assistant_message_sequence_no INTEGER,
+			title TEXT,
+			summary TEXT,
+			request_payload TEXT NOT NULL,
+			response_payload TEXT,
+			runtime_metadata TEXT NOT NULL,
+			resolved_by TEXT,
+			resolved_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+	}
+
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	interactionRepo := repository.NewAgentRunInteractionRepository(db)
+
+	now := time.Now().UTC()
+	state := &resolvedRunState{
+		run: &model.AgentRun{
+			ID:             "run-terminal-review",
+			WorkspaceID:    "ws-1",
+			RuntimeKind:    "codex",
+			InvocationMode: model.InvocationModeInteractive,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+		agent: &model.Agent{
+			ID:                    "agent-1",
+			WorkspaceID:           "ws-1",
+			Name:                  "Lens",
+			PresetKey:             model.AgentPresetReviewAgent,
+			Role:                  "Reviewer",
+			Status:                "idle",
+			RuntimeKind:           "codex",
+			Skills:                model.AgentSkillRefs{},
+			TriggerMode:           "manual",
+			AllowedTools:          json.RawMessage(`[]`),
+			AllowedCommands:       json.RawMessage(`[]`),
+			AllowedTargets:        json.RawMessage(`[]`),
+			ApprovalMode:          "never",
+			MaxConcurrentRuns:     1,
+			DefaultInvocationMode: model.InvocationModeInteractive,
+			CreatedAt:             now,
+			UpdatedAt:             now,
+		},
+		skillPolicy: workerpkg.SkillPolicy{
+			CompletionRequiresInteractionKinds: []string{
+				model.AgentRunInteractionKindReviewCheckpoint,
+				model.AgentRunInteractionKindRequestUserInput,
+			},
+			InteractionContracts: []workerpkg.SkillInteractionContract{
+				{
+					Kind:   workerpkg.InteractionKindReviewCheckpoint,
+					Schema: "review_checkpoint_v1",
+					Transports: map[string]workerpkg.SkillInteractionTransport{
+						"codex": {Type: workerpkg.InteractionTransportTypeFencedJSON, BlockLabel: "helpin-review"},
+					},
+				},
+			},
+		},
+	}
+
+	activities := &AgentRunActivities{
+		artifactRepo:    artifactRepo,
+		interactionRepo: interactionRepo,
+	}
+	assistantMessage := &model.AgentRunMessage{
+		SequenceNo:  8,
+		Role:        "assistant",
+		MessageType: "assistant_turn",
+		Content:     "Final verification complete.\n\n```helpin-review\n{\"phase\":\"implementation\",\"title\":\"Producer alert findings already implemented\",\"summary\":\"No new code changes were required in this turn.\",\"findings\":[],\"overall_correctness\":\"correct\",\"overall_explanation\":\"The branch already reflects the approved fixes and the clean re-review passed.\",\"overall_confidence_score\":0.96}\n```",
+	}
+
+	approval, input, err := activities.synthesizeCompletionInteractionFallback(context.Background(), state, assistantMessage)
+	if err != nil {
+		t.Fatalf("expected terminal implementation review to avoid checkpoint synthesis, got %v", err)
+	}
+	if approval != nil || input != nil {
+		t.Fatalf("expected no synthesized interaction, got approval=%#v input=%#v", approval, input)
+	}
+	if err := activities.enforceCompletionInteractionPolicy(context.Background(), state, assistantMessage); err != nil {
+		t.Fatalf("expected clean implementation review to satisfy completion policy, got %v", err)
+	}
+
+	interactions, err := interactionRepo.ListByRun(context.Background(), state.run.WorkspaceID, state.run.ID)
+	if err != nil {
+		t.Fatalf("list interactions: %v", err)
+	}
+	if len(interactions) != 0 {
+		t.Fatalf("expected no review interaction for terminal clean implementation review, got %#v", interactions)
+	}
+
+	artifacts, err := artifactRepo.ListByRun(context.Background(), state.run.WorkspaceID, state.run.ID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	if len(artifacts) != 1 || artifacts[0].ArtifactType != model.AgentRunArtifactTypeReviewFindings {
+		t.Fatalf("expected one persisted review findings artifact, got %#v", artifacts)
+	}
+}
+
+func TestPostApprovalImplementationTurnCanCompleteWithoutAnotherReviewCheckpoint(t *testing.T) {
+	dbName := fmt.Sprintf("file:post-approval-implementation-completion-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_artifacts (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			artifact_type TEXT NOT NULL,
+			format TEXT NOT NULL,
+			storage_mode TEXT NOT NULL,
+			inline_content TEXT,
+			object_key TEXT,
+			metadata TEXT NOT NULL,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+		`CREATE TABLE agent_run_interactions (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			runtime_kind TEXT NOT NULL,
+			interaction_kind TEXT NOT NULL,
+			status TEXT NOT NULL,
+			request_schema_version TEXT NOT NULL,
+			response_schema_version TEXT,
+			request_id TEXT,
+			thread_id TEXT,
+			turn_id TEXT,
+			item_id TEXT,
+			approval_id TEXT,
+			assistant_message_sequence_no INTEGER,
+			title TEXT,
+			summary TEXT,
+			request_payload TEXT NOT NULL,
+			response_payload TEXT,
+			runtime_metadata TEXT NOT NULL,
+			resolved_by TEXT,
+			resolved_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+	}
+
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	interactionRepo := repository.NewAgentRunInteractionRepository(db)
+
+	now := time.Now().UTC()
+	state := &resolvedRunState{
+		run: &model.AgentRun{
+			ID:             "run-post-approval-impl",
+			WorkspaceID:    "ws-1",
+			RuntimeKind:    "codex",
+			InvocationMode: model.InvocationModeInteractive,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+		agent: &model.Agent{
+			ID:                    "agent-1",
+			WorkspaceID:           "ws-1",
+			Name:                  "Lens",
+			PresetKey:             model.AgentPresetReviewAgent,
+			Role:                  "Reviewer",
+			Status:                "idle",
+			RuntimeKind:           "codex",
+			Skills:                model.AgentSkillRefs{},
+			TriggerMode:           "manual",
+			AllowedTools:          json.RawMessage(`[]`),
+			AllowedCommands:       json.RawMessage(`[]`),
+			AllowedTargets:        json.RawMessage(`[]`),
+			ApprovalMode:          "never",
+			MaxConcurrentRuns:     1,
+			DefaultInvocationMode: model.InvocationModeInteractive,
+			CreatedAt:             now,
+			UpdatedAt:             now,
+		},
+		skillPolicy: workerpkg.SkillPolicy{
+			CompletionRequiresInteractionKinds: []string{
+				model.AgentRunInteractionKindReviewCheckpoint,
+				model.AgentRunInteractionKindRequestUserInput,
+			},
+			InteractionContracts: []workerpkg.SkillInteractionContract{
+				{
+					Kind:   workerpkg.InteractionKindReviewCheckpoint,
+					Schema: "review_checkpoint_v1",
+					Transports: map[string]workerpkg.SkillInteractionTransport{
+						"codex": {Type: workerpkg.InteractionTransportTypeFencedJSON, BlockLabel: "helpin-review"},
+					},
+				},
+			},
+		},
+	}
+
+	assistantSequenceNo := 5
+	resolvedAt := now.Add(time.Second)
+	resolvedBy := "user-1"
+	responseSchemaVersion := model.AgentRunInteractionSchemaVersionHelpinV1
+	if err := interactionRepo.Create(context.Background(), &model.AgentRunInteraction{
+		ID:                         "interaction-approved-review-1",
+		WorkspaceID:                state.run.WorkspaceID,
+		RunID:                      state.run.ID,
+		RuntimeKind:                "codex",
+		InteractionKind:            model.AgentRunInteractionKindReviewCheckpoint,
+		Status:                     model.AgentRunInteractionStatusResolved,
+		RequestSchemaVersion:       model.AgentRunInteractionSchemaVersionHelpinV1,
+		ResponseSchemaVersion:      &responseSchemaVersion,
+		AssistantMessageSequenceNo: &assistantSequenceNo,
+		RequestPayload:             json.RawMessage(`{"phase":"review_findings","title":"Lens review findings","findings":[{"id":"finding_1","title":"Regression A"}]}`),
+		ResponsePayload:            json.RawMessage(`{"decision":"approve","selection_mode":"selected","selected_finding_ids":["finding_1"]}`),
+		RuntimeMetadata:            json.RawMessage(`{"runtime_kind":"codex"}`),
+		ResolvedBy:                 &resolvedBy,
+		ResolvedAt:                 &resolvedAt,
+		CreatedAt:                  now,
+		UpdatedAt:                  resolvedAt,
+	}); err != nil {
+		t.Fatalf("create interaction: %v", err)
+	}
+
+	activities := &AgentRunActivities{
+		artifactRepo:    artifactRepo,
+		interactionRepo: interactionRepo,
+	}
+	assistantMessage := &model.AgentRunMessage{
+		SequenceNo:  6,
+		Role:        "assistant",
+		MessageType: "assistant_turn",
+		Content:     "Implemented the approved fix, ran focused validation, and updated the branch summary.",
+	}
+
+	approval, input, err := activities.synthesizeCompletionInteractionFallback(context.Background(), state, assistantMessage)
+	if err != nil {
+		t.Fatalf("expected implementation follow-up to avoid another checkpoint, got %v", err)
+	}
+	if approval != nil || input != nil {
+		t.Fatalf("expected no synthesized interaction, got approval=%#v input=%#v", approval, input)
+	}
+	if err := activities.enforceCompletionInteractionPolicy(context.Background(), state, assistantMessage); err != nil {
+		t.Fatalf("expected approved implementation turn to satisfy completion policy, got %v", err)
+	}
+}
+
+func TestReviewCheckpointForPlanningPhaseRequiresMatchingCurrentTurnPreview(t *testing.T) {
+	dbName := fmt.Sprintf("file:review-checkpoint-preview-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_artifacts (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			artifact_type TEXT NOT NULL,
+			format TEXT NOT NULL,
+			storage_mode TEXT NOT NULL,
+			inline_content TEXT,
+			object_key TEXT,
+			metadata TEXT NOT NULL,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+		`CREATE TABLE agent_run_interactions (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			runtime_kind TEXT NOT NULL,
+			interaction_kind TEXT NOT NULL,
+			status TEXT NOT NULL,
+			request_schema_version TEXT NOT NULL,
+			response_schema_version TEXT,
+			request_id TEXT,
+			thread_id TEXT,
+			turn_id TEXT,
+			item_id TEXT,
+			approval_id TEXT,
+			assistant_message_sequence_no INTEGER,
+			title TEXT,
+			summary TEXT,
+			request_payload TEXT NOT NULL,
+			response_payload TEXT,
+			runtime_metadata TEXT NOT NULL,
+			resolved_by TEXT,
+			resolved_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+	}
+
+	now := time.Now().UTC()
+	interactionRepo := repository.NewAgentRunInteractionRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	activities := &AgentRunActivities{
+		artifactRepo:    artifactRepo,
+		interactionRepo: interactionRepo,
+	}
+	state := &resolvedRunState{
+		run: &model.AgentRun{
+			ID:          "run-planner-preview",
+			WorkspaceID: "ws-1",
+			RuntimeKind: "native_sdk",
+		},
+		agent: &model.Agent{
+			ID:          "agent-1",
+			WorkspaceID: "ws-1",
+			PresetKey:   model.AgentPresetReviewAgent,
+			RuntimeKind: "native_sdk",
+		},
+		skillPolicy: workerpkg.SkillPolicy{
+			CompletionRequiresInteractionKinds: []string{
+				model.AgentRunInteractionKindReviewCheckpoint,
+				model.AgentRunInteractionKindRequestUserInput,
+			},
+		},
+	}
+
+	assistantSequenceNo := 4
+	if err := interactionRepo.Create(context.Background(), &model.AgentRunInteraction{
+		ID:                         "interaction-1",
+		WorkspaceID:                state.run.WorkspaceID,
+		RunID:                      state.run.ID,
+		RuntimeKind:                "native_sdk",
+		InteractionKind:            model.AgentRunInteractionKindReviewCheckpoint,
+		Status:                     model.AgentRunInteractionStatusPending,
+		RequestSchemaVersion:       model.AgentRunInteractionSchemaVersionHelpinV1,
+		AssistantMessageSequenceNo: &assistantSequenceNo,
+		RequestPayload:             json.RawMessage(`{"phase":"tasks","title":"Approve task plan","summary":"Review the proposed tasks"}`),
+		RuntimeMetadata:            json.RawMessage(`{"runtime_kind":"native_sdk"}`),
+		CreatedAt:                  now,
+		UpdatedAt:                  now,
+	}); err != nil {
+		t.Fatalf("create interaction: %v", err)
+	}
+
+	err = activities.enforceCompletionInteractionPolicy(context.Background(), state, &model.AgentRunMessage{
+		SequenceNo:  assistantSequenceNo,
+		Role:        "assistant",
+		MessageType: "assistant_turn",
+		Content:     "Please review the task plan.",
+	})
+	if err == nil {
+		t.Fatal("expected missing preview validation error")
+	}
+	if !strings.Contains(err.Error(), "review_checkpoint requires a same-turn preview before requesting approval") {
+		t.Fatalf("expected planner preview validation error, got %v", err)
+	}
+}
+
+func TestReviewCheckpointWithExplicitPreviewPanelKeyRequiresMatchingCurrentTurnPreview(t *testing.T) {
+	dbName := fmt.Sprintf("file:review-checkpoint-explicit-preview-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_artifacts (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			artifact_type TEXT NOT NULL,
+			format TEXT NOT NULL,
+			storage_mode TEXT NOT NULL,
+			inline_content TEXT,
+			object_key TEXT,
+			metadata TEXT NOT NULL,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+		`CREATE TABLE agent_run_interactions (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			runtime_kind TEXT NOT NULL,
+			interaction_kind TEXT NOT NULL,
+			status TEXT NOT NULL,
+			request_schema_version TEXT NOT NULL,
+			response_schema_version TEXT,
+			request_id TEXT,
+			thread_id TEXT,
+			turn_id TEXT,
+			item_id TEXT,
+			approval_id TEXT,
+			assistant_message_sequence_no INTEGER,
+			title TEXT,
+			summary TEXT,
+			request_payload TEXT NOT NULL,
+			response_payload TEXT,
+			runtime_metadata TEXT NOT NULL,
+			resolved_by TEXT,
+			resolved_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+	}
+
+	now := time.Now().UTC()
+	interactionRepo := repository.NewAgentRunInteractionRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	activities := &AgentRunActivities{
+		artifactRepo:    artifactRepo,
+		interactionRepo: interactionRepo,
+	}
+	state := &resolvedRunState{
+		run: &model.AgentRun{
+			ID:          "run-explicit-preview",
+			WorkspaceID: "ws-1",
+			RuntimeKind: "native_sdk",
+		},
+		agent: &model.Agent{
+			ID:          "agent-1",
+			WorkspaceID: "ws-1",
+			RuntimeKind: "native_sdk",
+		},
+		skillPolicy: workerpkg.SkillPolicy{
+			CompletionRequiresInteractionKinds: []string{
+				model.AgentRunInteractionKindReviewCheckpoint,
+			},
+		},
+	}
+
+	assistantSequenceNo := 7
+	previewPayload, err := json.Marshal(workerpkg.PublishedPreview{
+		PanelKey: "task_plan",
+		Title:    "Task plan",
+		Format:   workerpkg.PreviewFormatJSON,
+		Content:  json.RawMessage(`{"summary":"ok","proposed_tasks":[]}`),
+	})
+	if err != nil {
+		t.Fatalf("marshal preview: %v", err)
+	}
+	if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
+		ID:            "artifact-preview",
+		WorkspaceID:   state.run.WorkspaceID,
+		RunID:         state.run.ID,
+		ArtifactType:  workerpkg.RunPreviewArtifactType,
+		Format:        "json",
+		StorageMode:   "inline",
+		InlineContent: strPtr(string(previewPayload)),
+		Metadata:      buildAssistantSequenceArtifactMetadata(assistantSequenceNo),
+		SequenceNo:    1,
+		CreatedAt:     now,
+	}); err != nil {
+		t.Fatalf("create preview artifact: %v", err)
+	}
+
+	if err := interactionRepo.Create(context.Background(), &model.AgentRunInteraction{
+		ID:                         "interaction-explicit",
+		WorkspaceID:                state.run.WorkspaceID,
+		RunID:                      state.run.ID,
+		RuntimeKind:                "native_sdk",
+		InteractionKind:            model.AgentRunInteractionKindReviewCheckpoint,
+		Status:                     model.AgentRunInteractionStatusPending,
+		RequestSchemaVersion:       model.AgentRunInteractionSchemaVersionHelpinV1,
+		AssistantMessageSequenceNo: &assistantSequenceNo,
+		RequestPayload:             json.RawMessage(`{"phase":"review","preview_panel_key":"prd_draft","title":"Approve draft","summary":"Review it"}`),
+		RuntimeMetadata:            json.RawMessage(`{"runtime_kind":"native_sdk"}`),
+		CreatedAt:                  now,
+		UpdatedAt:                  now,
+	}); err != nil {
+		t.Fatalf("create interaction: %v", err)
+	}
+
+	err = activities.enforceCompletionInteractionPolicy(context.Background(), state, &model.AgentRunMessage{
+		SequenceNo:  assistantSequenceNo,
+		Role:        "assistant",
+		MessageType: "assistant_turn",
+		Content:     "Please review the draft.",
+	})
+	if err == nil {
+		t.Fatal("expected explicit preview validation error")
+	}
+	if !strings.Contains(err.Error(), "review_checkpoint requires a same-turn prd_draft preview") {
+		t.Fatalf("expected explicit preview validation error, got %v", err)
+	}
+}
+
+func TestEnforceCompletionInteractionPolicyRequiresCurrentTurnInteraction(t *testing.T) {
+	dbName := fmt.Sprintf("file:completion-policy-current-turn-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE agent_run_interactions (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		run_id TEXT NOT NULL,
+		runtime_kind TEXT NOT NULL,
+		interaction_kind TEXT NOT NULL,
+		status TEXT NOT NULL,
+		request_schema_version TEXT NOT NULL,
+		response_schema_version TEXT,
+		request_id TEXT,
+		thread_id TEXT,
+		turn_id TEXT,
+		item_id TEXT,
+		approval_id TEXT,
+		assistant_message_sequence_no INTEGER,
+		title TEXT,
+		summary TEXT,
+		request_payload TEXT NOT NULL,
+		response_payload TEXT,
+		runtime_metadata TEXT NOT NULL,
+		resolved_by TEXT,
+		resolved_at DATETIME,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create interactions table: %v", err)
+	}
+
+	interactionRepo := repository.NewAgentRunInteractionRepository(db)
+	activities := &AgentRunActivities{interactionRepo: interactionRepo}
+	now := time.Now().UTC()
+	run := &model.AgentRun{ID: "run-1", WorkspaceID: "ws-1"}
+	state := &resolvedRunState{
+		run: run,
+		skillPolicy: workerpkg.SkillPolicy{
+			CompletionRequiresInteractionKinds: []string{model.AgentRunInteractionKindReviewCheckpoint},
+		},
+	}
+
+	previousAssistantSequenceNo := 1
+	if err := interactionRepo.Create(context.Background(), &model.AgentRunInteraction{
+		ID:                         "interaction-previous",
+		WorkspaceID:                run.WorkspaceID,
+		RunID:                      run.ID,
+		RuntimeKind:                "codex",
+		InteractionKind:            model.AgentRunInteractionKindReviewCheckpoint,
+		Status:                     model.AgentRunInteractionStatusPending,
+		RequestSchemaVersion:       model.AgentRunInteractionSchemaVersionHelpinV1,
+		RequestPayload:             json.RawMessage(`{"title":"Previous review checkpoint"}`),
+		RuntimeMetadata:            json.RawMessage(`{}`),
+		AssistantMessageSequenceNo: &previousAssistantSequenceNo,
+		CreatedAt:                  now,
+		UpdatedAt:                  now,
+	}); err != nil {
+		t.Fatalf("create previous interaction: %v", err)
+	}
+
+	currentAssistantMessage := &model.AgentRunMessage{SequenceNo: 2}
+	if err := activities.enforceCompletionInteractionPolicy(context.Background(), state, currentAssistantMessage); err == nil {
+		t.Fatal("expected completion policy to reject missing current-turn interaction")
+	}
+
+	currentAssistantSequenceNo := currentAssistantMessage.SequenceNo
+	if err := interactionRepo.Create(context.Background(), &model.AgentRunInteraction{
+		ID:                         "interaction-current",
+		WorkspaceID:                run.WorkspaceID,
+		RunID:                      run.ID,
+		RuntimeKind:                "codex",
+		InteractionKind:            model.AgentRunInteractionKindReviewCheckpoint,
+		Status:                     model.AgentRunInteractionStatusPending,
+		RequestSchemaVersion:       model.AgentRunInteractionSchemaVersionHelpinV1,
+		RequestPayload:             json.RawMessage(`{"title":"Current review checkpoint"}`),
+		RuntimeMetadata:            json.RawMessage(`{}`),
+		AssistantMessageSequenceNo: &currentAssistantSequenceNo,
+		CreatedAt:                  now.Add(time.Second),
+		UpdatedAt:                  now.Add(time.Second),
+	}); err != nil {
+		t.Fatalf("create current interaction: %v", err)
+	}
+
+	if err := activities.enforceCompletionInteractionPolicy(context.Background(), state, currentAssistantMessage); err != nil {
+		t.Fatalf("expected current-turn interaction to satisfy completion policy, got %v", err)
+	}
+}
+
+func TestExecuteRunActivityFailsAfterPolicyRetryStillMissesInteraction(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_messages (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			role TEXT NOT NULL,
+			content TEXT NOT NULL,
+			message_type TEXT NOT NULL,
+			content_blocks TEXT,
+			turn_segments TEXT,
+			tool_invocations TEXT,
+			token_usage TEXT,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+		`CREATE TABLE agent_run_interactions (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			runtime_kind TEXT NOT NULL,
+			interaction_kind TEXT NOT NULL,
+			status TEXT NOT NULL,
+			request_schema_version TEXT NOT NULL,
+			response_schema_version TEXT,
+			request_id TEXT,
+			thread_id TEXT,
+			turn_id TEXT,
+			item_id TEXT,
+			approval_id TEXT,
+			assistant_message_sequence_no INTEGER,
+			title TEXT,
+			summary TEXT,
+			request_payload TEXT NOT NULL,
+			response_payload TEXT,
+			runtime_metadata TEXT NOT NULL,
+			resolved_by TEXT,
+			resolved_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create test table: %v", err)
+		}
+	}
+
+	runRepo := repository.NewAgentRunRepository(db)
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	agentRepo := repository.NewAgentRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	interactionRepo := repository.NewAgentRunInteractionRepository(db)
+	epicRepo := repository.NewPMEpicRepository(db)
+
+	now := time.Now().UTC()
+	agent := &model.Agent{
+		ID:                    "agent-review-2",
+		WorkspaceID:           "ws-1",
+		IsSystem:              true,
+		Name:                  "Lens",
+		PresetKey:             model.AgentPresetReviewAgent,
+		Role:                  "Reviewer",
+		Status:                "idle",
+		RuntimeKind:           "native_sdk",
+		Skills:                model.AgentSkillRefs{},
+		TriggerMode:           "manual",
+		AllowedTools:          json.RawMessage(`[]`),
+		AllowedCommands:       json.RawMessage(`[]`),
+		AllowedTargets:        json.RawMessage(`[]`),
+		ApprovalMode:          "never",
+		MaxConcurrentRuns:     1,
+		DefaultInvocationMode: model.InvocationModeInteractive,
+		CreatedAt:             now,
+		UpdatedAt:             now,
+	}
+	if err := db.Create(agent).Error; err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+
+	epic := &model.PMEpic{
+		ID:                 "epic-review-2",
+		WorkspaceID:        "ws-1",
+		Name:               "Review epic",
+		PlanningState:      model.EpicPlanningStateNotStarted,
+		SpecClarifications: json.RawMessage(`[]`),
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}
+	if err := db.Create(epic).Error; err != nil {
+		t.Fatalf("create epic: %v", err)
+	}
+
+	run := &model.AgentRun{
+		ID:             "run-review-no-interaction-2",
+		WorkspaceID:    "ws-1",
+		AgentID:        agent.ID,
+		TargetType:     "epic",
+		TargetID:       epic.ID,
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeInteractive,
+		Status:         model.AgentRunStatusRunning,
+		PauseReason:    model.AgentRunPauseReasonNone,
+		ApprovalState:  "not_required",
+		Input:          json.RawMessage(`{}`),
+		OutputSummary:  json.RawMessage(`{}`),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := db.Create(run).Error; err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	activities := &AgentRunActivities{
+		runRepo:         runRepo,
+		runMessageRepo:  runMessageRepo,
+		agentRepo:       agentRepo,
+		artifactRepo:    artifactRepo,
+		interactionRepo: interactionRepo,
+		epicRepo:        epicRepo,
+		runtimes: workerpkg.NewRuntimeRegistry(stubRuntimeAdapter{
+			kind: "native_sdk",
+			executeFn: func(execCtx *workerpkg.ExecutionContext, run *model.AgentRun) error {
+				execCtx.LastExecutionResult = &workerpkg.ExecutionResult{
+					AssistantText: "Findings\n\nHigh: The required alert rules are missing.\nOverall correctness: incorrect.",
+				}
+				return nil
+			},
+		}),
+	}
+
+	first, err := activities.ExecuteRunActivity(context.Background(), run.ID)
+	if err != nil || !first.ContinueExecution {
+		t.Fatalf("expected first execution to trigger auto-retry, got result=%#v err=%v", first, err)
+	}
+
+	if _, err := activities.ExecuteRunActivity(context.Background(), run.ID); err == nil {
+		t.Fatal("expected second invalid completion to fail after retry")
+	} else if !strings.Contains(err.Error(), "require one of") {
+		t.Fatalf("expected completion policy error, got %v", err)
+	}
+
+	updatedRun, err := runRepo.GetByIDAny(context.Background(), run.ID)
+	if err != nil {
+		t.Fatalf("get updated run: %v", err)
+	}
+	if updatedRun == nil || updatedRun.Status != model.AgentRunStatusFailed {
+		t.Fatalf("expected failed run after retry exhaustion, got %#v", updatedRun)
 	}
 }
 

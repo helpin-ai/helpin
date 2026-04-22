@@ -24,15 +24,15 @@ type InternalCommandDefinition struct {
 
 type InternalCommandService struct {
 	agentService        *AgentService
-	taskService        *PMTaskService
+	taskService         *PMTaskService
 	crmDealService      *CRMDealService
 	crmActivityService  *CRMActivityService
 	docsContentService  *DocsContentService
 	docsLinkService     *DocsLinkService
 	pmAutomationService *PMAutomationService
 	gitService          *GitService
-	taskRepo           *repository.PMTaskRepository
-	taskLinkRepo       *repository.PMTaskLinkRepository
+	taskRepo            *repository.PMTaskRepository
+	taskLinkRepo        *repository.PMTaskLinkRepository
 	definitions         map[string]InternalCommandDefinition
 }
 
@@ -58,13 +58,13 @@ func NewInternalCommandService(
 ) *InternalCommandService {
 	svc := &InternalCommandService{
 		agentService:       agentService,
-		taskService:       taskService,
+		taskService:        taskService,
 		crmDealService:     crmDealService,
 		crmActivityService: crmActivityService,
 		docsContentService: docsContentService,
 		docsLinkService:    docsLinkService,
-		taskRepo:          taskRepo,
-		taskLinkRepo:      taskLinkRepo,
+		taskRepo:           taskRepo,
+		taskLinkRepo:       taskLinkRepo,
 		definitions:        make(map[string]InternalCommandDefinition),
 	}
 	svc.registerDefaults()
@@ -199,7 +199,7 @@ func (s *InternalCommandService) registerDefaults() {
 				Stories       []model.ProposedTask `json:"stories"`
 				Tasks         []model.ProposedTask `json:"tasks"`
 				ProposedTasks []model.ProposedTask `json:"proposed_tasks"`
-				RunID         string                `json:"run_id,omitempty"`
+				RunID         string               `json:"run_id,omitempty"`
 			}
 			if err := json.Unmarshal(input, &req); err != nil {
 				return nil, fmt.Errorf("parse task batch input: %w", err)
@@ -226,8 +226,8 @@ func (s *InternalCommandService) registerDefaults() {
 			var err error
 			if strings.TrimSpace(req.RunID) != "" {
 				legacy := model.ConfirmPlanningRequest{
-					RunID:          strings.TrimSpace(req.RunID),
-					ProposedTasks:  req.Stories,
+					RunID:         strings.TrimSpace(req.RunID),
+					ProposedTasks: req.Stories,
 				}
 				tasks, err = s.agentService.ConfirmEpicRun(ctx, meta.WorkspaceID, meta.TargetID, legacy.RunID, fallbackActor(meta), legacy)
 			} else {
@@ -292,11 +292,11 @@ func (s *InternalCommandService) registerDefaults() {
 					return nil, fmt.Errorf("tasks must belong to the current workspace")
 				}
 				if err := s.taskLinkRepo.Create(ctx, &model.PMTaskLink{
-					WorkspaceID:   meta.WorkspaceID,
+					WorkspaceID:  meta.WorkspaceID,
 					SourceTaskID: sourceID,
 					TargetTaskID: targetID,
-					LinkType:      model.PMTaskLinkTypeBlocks,
-					CreatedBy:     fallbackActor(meta),
+					LinkType:     model.PMTaskLinkTypeBlocks,
+					CreatedBy:    fallbackActor(meta),
 				}); err != nil {
 					return nil, err
 				}
@@ -320,22 +320,7 @@ func (s *InternalCommandService) registerDefaults() {
 		SupportedTargetTypes: []string{"epic", "task", "story"},
 		Tool:                 mustCommandToolMetadata("pm.assign_task_agent"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
-			var req struct {
-				StoryID string `json:"story_id"`
-				TaskID  string `json:"task_id"`
-				AgentID string `json:"agent_id"`
-			}
-			if err := json.Unmarshal(input, &req); err != nil {
-				return nil, fmt.Errorf("parse assign input: %w", err)
-			}
-			targetID := strings.TrimSpace(firstNonEmptyCommand(req.TaskID, req.StoryID, meta.TargetID))
-			if targetID == "" || strings.TrimSpace(req.AgentID) == "" {
-				return nil, fmt.Errorf("task_id and agent_id are required")
-			}
-			if err := s.agentService.AssignAgentToTask(ctx, meta.WorkspaceID, targetID, req.AgentID, fallbackActor(meta)); err != nil {
-				return nil, err
-			}
-			return mustJSON(map[string]any{"task_id": targetID, "story_id": targetID, "agent_id": req.AgentID}), nil
+			return nil, fmt.Errorf("task agent assignment was removed; use a workflow automation rule or start a run explicitly with an agent")
 		},
 	})
 	s.register(InternalCommandDefinition{
@@ -381,7 +366,7 @@ func (s *InternalCommandService) registerDefaults() {
 					WorkspaceID: meta.WorkspaceID,
 					Name:        title,
 					Description: stringPtrOrNil(description),
-					TaskType:   taskType,
+					TaskType:    taskType,
 					EpicID:      task.EpicID,
 					TeamID:      task.TeamID,
 					Priority:    followup.Priority,

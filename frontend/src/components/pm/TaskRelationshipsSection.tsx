@@ -16,6 +16,7 @@ import {
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { DocumentPreviewDialog } from '@/components/docs/DocumentPreviewDialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -247,6 +248,7 @@ export function TaskRelationshipsSection({
   const [searching, setSearching] = useState(false);
   const [taskResults, setTaskResults] = useState<SearchResult[]>([]);
   const [docResults, setDocResults] = useState<SearchResult[]>([]);
+  const [previewDocId, setPreviewDocId] = useState<string | null>(null);
 
   const associationsQuery = useTaskAssociations(workspaceId, taskId);
   const data = associationsQuery.data as GroupedAssociations | undefined;
@@ -578,7 +580,7 @@ export function TaskRelationshipsSection({
                 {(relatedTask.task_key || relatedTask.display_id) ? (
                   <Badge variant="outline" className="h-5 rounded-full px-1.5 text-[10px] font-medium gap-1">
                     {relatedTask.task_type ? (
-                      <TaskTypeIcon taskType={relatedTask.task_type} className="h-3 w-3" />
+                      <TaskTypeIcon taskType={relatedTask.task_type} className="h-3.5 w-3.5" />
                     ) : null}
                     {relatedTask.task_key ?? relatedTask.display_id}
                     {(relatedTask.completed || resolved) ? (
@@ -630,9 +632,15 @@ export function TaskRelationshipsSection({
             key={`doc-${doc.object_id}-${doc.association_id ?? 'f'}`}
             className="group flex items-center gap-1.5 rounded-md px-1.5 py-1 -mx-1.5 transition-colors hover:bg-accent/40"
           >
-            <File01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            <span className="shrink-0 rounded-md bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">Doc</span>
-            <span className="min-w-0 flex-1 truncate text-ui font-medium">{doc.title}</span>
+            <button
+              type="button"
+              className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+              onClick={() => setPreviewDocId(doc.object_id)}
+            >
+              <File01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <span className="shrink-0 rounded-md bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">Doc</span>
+              <span className="min-w-0 flex-1 truncate text-ui font-medium">{doc.title}</span>
+            </button>
             {doc.association_id ? (
               <div className="ml-auto flex shrink-0 items-center">
                 <DropdownMenu>
@@ -688,6 +696,16 @@ export function TaskRelationshipsSection({
       <FloatingPopover open={composerOpen} onOpenChange={onComposerOpenChange} anchorEl={anchorEl}>
         {popoverBody}
       </FloatingPopover>
+
+      <DocumentPreviewDialog
+        workspaceId={workspaceId}
+        slug={workspace?.slug ?? ''}
+        docId={previewDocId}
+        open={!!previewDocId}
+        onOpenChange={(open) => {
+          if (!open) setPreviewDocId(null);
+        }}
+      />
 
       {/* External blocker */}
       {externalBlocker || allRelationships.some((r) => r.link_type === 'is_blocked_by') ? (

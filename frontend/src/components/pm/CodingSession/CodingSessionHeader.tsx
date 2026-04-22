@@ -54,7 +54,7 @@ export function CodingSessionHeader({
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <AgentAvatar name={agentName} className="h-9 w-9 shrink-0" />
+          <AgentAvatar name={agentName} className="h-10 w-10 shrink-0 rounded-none border-0 bg-transparent shadow-none" genericBare />
 
           <div className="min-w-0">
             <div className="flex items-center gap-2">

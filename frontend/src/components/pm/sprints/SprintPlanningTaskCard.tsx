@@ -72,7 +72,7 @@ export const SprintPlanningTaskCard = memo(function SprintPlanningTaskCard({
             <Tooltip>
               <TooltipTrigger asChild>
                 <span className="shrink-0">
-                  <TaskTypeIcon taskType={(task as { task_type?: string }).task_type as import('@/lib/pmTypes').TaskType} className="h-3.5 w-3.5" />
+                  <TaskTypeIcon taskType={(task as { task_type?: string }).task_type as import('@/lib/pmTypes').TaskType} className="h-4 w-4" />
                 </span>
               </TooltipTrigger>
               <TooltipContent side="top">{taskTypeCfg.label}</TooltipContent>

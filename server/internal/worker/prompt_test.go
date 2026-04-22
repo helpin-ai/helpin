@@ -197,7 +197,7 @@ func TestBuildUserPromptNormalizesRichTextDescriptionsToMarkdown(t *testing.T) {
 	}
 }
 
-func TestBuildUserPromptPrependsSavedSystemPromptBeforeContext(t *testing.T) {
+func TestBuildUserPromptOmitsSavedSystemPromptAndKeepsContext(t *testing.T) {
 	systemPrompt := "Use the repo conventions and keep changes incremental."
 
 	prompt := BuildUserPrompt(
@@ -213,14 +213,11 @@ func TestBuildUserPromptPrependsSavedSystemPromptBeforeContext(t *testing.T) {
 		"",
 	)
 
-	if !strings.HasPrefix(prompt, systemPrompt) {
-		t.Fatalf("expected prompt to start with saved system prompt\n%s", prompt)
+	if strings.Contains(prompt, systemPrompt) {
+		t.Fatalf("did not expect user prompt to repeat saved system prompt\n%s", prompt)
 	}
-	if !strings.Contains(prompt, "\n\nContext:\nTask: **Inbox triage automation**") {
-		t.Fatalf("expected context section after saved system prompt\n%s", prompt)
-	}
-	if strings.Index(prompt, "Context:") < strings.Index(prompt, systemPrompt) {
-		t.Fatalf("expected saved system prompt before context heading\n%s", prompt)
+	if !strings.HasPrefix(prompt, "Context:\nTask: **Inbox triage automation**") {
+		t.Fatalf("expected user prompt to start with context\n%s", prompt)
 	}
 }
 
@@ -257,6 +254,142 @@ func TestBuildExecutionSupplementPromptIncludesResumeGuidanceAndArtifacts(t *tes
 		if !strings.Contains(supplement, marker) {
 			t.Fatalf("expected supplement to contain %q\n%s", marker, supplement)
 		}
+	}
+}
+
+func TestBuildRuntimeSystemPromptWithStagedForgeSkillsKeepsPresetPreamble(t *testing.T) {
+	agent := &model.Agent{
+		Name:                      "Forge",
+		PresetKey:                 model.AgentPresetCodeBuilder,
+		ResolvedSkillInstructions: "Implement the requested story directly in the repository.\nDo not push the branch.",
+	}
+
+	prompt := BuildRuntimeSystemPrompt(
+		agent,
+		&model.PMTask{Name: "Implement metrics"},
+		nil,
+		nil,
+		"",
+		"",
+		nil,
+		false,
+		false,
+	)
+
+	if !strings.Contains(prompt, "You are Code Builder.") {
+		t.Fatalf("expected staged Forge prompt to keep preset preamble\n%s", prompt)
+	}
+	if strings.Contains(prompt, "Implement the requested story directly in the repository.") {
+		t.Fatalf("expected staged Forge prompt to omit inline skill body\n%s", prompt)
+	}
+	if strings.Contains(prompt, "## Current Task") {
+		t.Fatalf("did not expect staged Forge prompt to duplicate task context\n%s", prompt)
+	}
+	for _, unexpected := range []string{
+		"Use the provided tools to read, write, and search files.",
+		"list_directory, ripgrep, search_files, or list_symbols",
+		"Gather context incrementally before broad repository reads or edits.",
+		"Prefer targeted inspection of the relevant code before making broad changes.",
+		"Keep code changes focused and validate them with practical checks when possible.",
+		"Commit and push your changes when the task is complete.",
+	} {
+		if strings.Contains(prompt, unexpected) {
+			t.Fatalf("did not expect runtime prompt to contain native/tool-specific rule %q\n%s", unexpected, prompt)
+		}
+	}
+	for _, expected := range []string{
+		"- Work within the cloned repository only.",
+		"- Run tests after making changes when possible.",
+		"- Leave Helpin artifacts and summaries in a state a human can review.",
+	} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("expected runtime prompt to contain generic rule %q\n%s", expected, prompt)
+		}
+	}
+}
+
+func TestBuildRuntimeSystemPromptWithStagedLensSkillsKeepsPresetPreamble(t *testing.T) {
+	agent := &model.Agent{
+		Name:                      "Lens",
+		PresetKey:                 model.AgentPresetReviewAgent,
+		ResolvedSkillInstructions: "Review the implementation and identify risks first.",
+	}
+
+	prompt := BuildRuntimeSystemPrompt(
+		agent,
+		&model.PMTask{Name: "Audit onboarding flow"},
+		nil,
+		nil,
+		"",
+		"",
+		nil,
+		false,
+		false,
+	)
+
+	if !strings.Contains(prompt, "You are Review Agent.") {
+		t.Fatalf("expected staged Lens prompt to keep preset preamble\n%s", prompt)
+	}
+	if strings.Contains(prompt, "Review the implementation and identify risks first.") {
+		t.Fatalf("expected staged Lens prompt to omit inline skill body\n%s", prompt)
+	}
+}
+
+func TestBuildRuntimeSystemPromptWithStagedCustomSkillsPreservesExplicitSystemPrompt(t *testing.T) {
+	systemPrompt := "You are a careful integration engineer. Favor minimal blast radius."
+	agent := &model.Agent{
+		Name:                      "Custom Builder",
+		SystemPrompt:              &systemPrompt,
+		ResolvedSkillInstructions: "Always inspect deployment manifests before editing app code.",
+	}
+
+	prompt := BuildRuntimeSystemPrompt(
+		agent,
+		&model.PMTask{Name: "Tune deployment config"},
+		nil,
+		nil,
+		"",
+		"",
+		nil,
+		false,
+		false,
+	)
+
+	if !strings.Contains(prompt, systemPrompt) {
+		t.Fatalf("expected staged custom prompt to preserve explicit system prompt\n%s", prompt)
+	}
+	if strings.Contains(prompt, "Always inspect deployment manifests before editing app code.") {
+		t.Fatalf("expected staged custom prompt to omit inline skill body\n%s", prompt)
+	}
+}
+
+func TestBuildRuntimeSystemPromptWithoutStagedSkillsStillInlinesResolvedSkillText(t *testing.T) {
+	agent := &model.Agent{
+		Name:                      "Forge",
+		PresetKey:                 model.AgentPresetCodeBuilder,
+		ResolvedSkillInstructions: "Implement the requested story directly in the repository.\nDo not push the branch.",
+	}
+
+	prompt := BuildRuntimeSystemPrompt(
+		agent,
+		&model.PMTask{Name: "Implement metrics"},
+		nil,
+		nil,
+		"",
+		"",
+		nil,
+		true,
+		true,
+	)
+
+	if !strings.Contains(prompt, "You are Code Builder.") {
+		t.Fatalf("expected unstaged Forge prompt to keep preset prompt\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "Implement the requested story directly in the repository.") {
+		t.Fatalf("expected unstaged Forge prompt to inline skill body\n%s", prompt)
+	}
+	if strings.Contains(prompt, "## Current Task") {
+		t.Fatalf("did not expect runtime prompt to duplicate task context\n%s", prompt)
 	}
 }
 
@@ -316,7 +449,9 @@ func TestBuildSystemPromptStoryIncludesSearchFirstAndGuardedEditGuidance(t *test
 
 	for _, expected := range []string{
 		"Start by locating the relevant code with list_directory, ripgrep, search_files, or list_symbols before reading large files.",
-		"read_file now returns a bounded window by default; use offset_line to continue and use read_file_range for targeted spans.",
+		"Prefer search-first, then narrow reads: use ripgrep/search_files/list_symbols to find exact files or symbols before any broad file read.",
+		"read_file now returns a smaller bounded window by default; use offset_line to continue and use read_file_range for targeted spans.",
+		"Prefer read_file_range once you know the relevant lines. Do not use read_files for broad repo exploration; reserve it for a few known files with small excerpts.",
 		"Prefer edit_file for focused in-place changes and apply_patch for coordinated multi-file edits.",
 		"Use write_file for new files or full rewrites only after you have read the current file state.",
 	} {
@@ -428,14 +563,43 @@ func TestBuildRuntimeSystemPromptSkipsBehaviorAndSkillTextWhenDisabled(t *testin
 		false,
 	)
 
-	if strings.Contains(prompt, "Preset behavior instructions.") {
-		t.Fatalf("did not expect runtime prompt to include preset behavior instructions\n%s", prompt)
-	}
 	if strings.Contains(prompt, "Resolved skill instructions.") {
 		t.Fatalf("did not expect runtime prompt to include resolved skill instructions\n%s", prompt)
 	}
-	if !strings.Contains(prompt, "You are Custom Agent, an AI coding agent.") {
-		t.Fatalf("expected runtime prompt to keep generic preamble\n%s", prompt)
+	if !strings.Contains(prompt, "Preset behavior instructions.") {
+		t.Fatalf("expected runtime prompt to preserve explicit system prompt identity\n%s", prompt)
+	}
+	if strings.Contains(prompt, "## Current Task") {
+		t.Fatalf("did not expect runtime prompt to include target context\n%s", prompt)
+	}
+}
+
+func TestBuildRuntimeExecutionSupplementPromptOmitsArtifactContext(t *testing.T) {
+	supplement := BuildRuntimeExecutionSupplementPrompt(
+		&model.AgentRun{InvocationMode: model.InvocationModeInteractive},
+		map[string]string{
+			"target_id": "deal-123",
+		},
+	)
+
+	for _, expected := range []string{
+		"This is an interactive transcript that may resume after a human reply.",
+		"emit a user-input handoff using the runtime-appropriate mechanism",
+		"emit an approval or review handoff using the runtime-appropriate mechanism",
+		"Durable run facts:",
+		"- target_id=deal-123",
+	} {
+		if !strings.Contains(supplement, expected) {
+			t.Fatalf("expected runtime supplement to contain %q\n%s", expected, supplement)
+		}
+	}
+	for _, unexpected := range []string{
+		"Current persisted artifacts:",
+		"Use the latest persisted artifacts below as the current source of truth",
+	} {
+		if strings.Contains(supplement, unexpected) {
+			t.Fatalf("did not expect runtime supplement to contain %q\n%s", unexpected, supplement)
+		}
 	}
 }
 

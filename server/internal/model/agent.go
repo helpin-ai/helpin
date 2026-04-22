@@ -24,7 +24,6 @@ const (
 
 	AgentRunTriggerSourceManual         = "manual"
 	AgentRunTriggerSourceAutomationRule = "automation_rule"
-	AgentRunTriggerSourceSchedule       = "schedule"
 	AgentRunTriggerSourceSystem         = "system"
 
 	AgentRunTriggerTypeManual = "manual"
@@ -58,7 +57,6 @@ type Agent struct {
 	AllowedTools               json.RawMessage `json:"allowed_tools" gorm:"type:jsonb;not null;default:'[]'"`
 	AllowedCommands            json.RawMessage `json:"allowed_commands" gorm:"type:jsonb;not null;default:'[]'"`
 	AllowedTargets             json.RawMessage `json:"allowed_targets" gorm:"type:jsonb;not null;default:'[]'"`
-	Schedule                   *string         `json:"schedule"`
 	ApprovalMode               string          `json:"approval_mode" gorm:"not null;default:'preset_default'"`
 	MaxConcurrentRuns          int             `json:"max_concurrent_runs" gorm:"not null;default:1"`
 	DefaultInvocationMode      string          `json:"default_invocation_mode" gorm:"not null;default:'autonomous'"`
@@ -105,6 +103,9 @@ type WorkspaceAgentPresetVersion struct {
 	ApprovalMode               string          `json:"approval_mode" gorm:"not null;default:'preset_default'"`
 	DefaultInvocationMode      string          `json:"default_invocation_mode" gorm:"not null;default:'autonomous'"`
 	CreatedBy                  *string         `json:"created_by" gorm:"type:uuid"`
+	UpdatedBy                  *string         `json:"updated_by" gorm:"type:uuid"`
+	LastEditedAt               *time.Time      `json:"last_edited_at"`
+	DeletedAt                  *time.Time      `json:"deleted_at" gorm:"index"`
 	CreatedAt                  time.Time       `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt                  time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
 }
@@ -141,6 +142,7 @@ type AgentRun struct {
 	LastHeartbeatAt   *time.Time      `json:"last_heartbeat_at"`
 	Input             json.RawMessage `json:"input" gorm:"type:jsonb;not null;default:'{}'"`
 	OutputSummary     json.RawMessage `json:"output_summary" gorm:"type:jsonb;not null;default:'{}'"`
+	CachedInputTokens int             `json:"cached_input_tokens" gorm:"not null;default:0"`
 	InputTokens       int             `json:"input_tokens" gorm:"not null;default:0"`
 	OutputTokens      int             `json:"output_tokens" gorm:"not null;default:0"`
 	TokensUsed        int             `json:"tokens_used" gorm:"not null;default:0"`
@@ -214,7 +216,6 @@ type CreateAgentRequest struct {
 	AllowedTools          json.RawMessage `json:"allowed_tools"`
 	AllowedCommands       json.RawMessage `json:"allowed_commands"`
 	AllowedTargets        json.RawMessage `json:"allowed_targets"`
-	Schedule              *string         `json:"schedule"`
 	ApprovalMode          *string         `json:"approval_mode"`
 	MaxConcurrentRuns     *int            `json:"max_concurrent_runs"`
 	DefaultInvocationMode *string         `json:"default_invocation_mode"`
@@ -241,7 +242,6 @@ type UpdateAgentRequest struct {
 	AllowedTools          json.RawMessage `json:"allowed_tools"`
 	AllowedCommands       json.RawMessage `json:"allowed_commands"`
 	AllowedTargets        json.RawMessage `json:"allowed_targets"`
-	Schedule              *string         `json:"schedule"`
 	ApprovalMode          *string         `json:"approval_mode"`
 	MaxConcurrentRuns     *int            `json:"max_concurrent_runs"`
 	DefaultInvocationMode *string         `json:"default_invocation_mode"`
@@ -263,6 +263,22 @@ type CreateWorkspaceAgentPresetVersionRequest struct {
 	AllowedTools          json.RawMessage `json:"allowed_tools"`
 	SupportedModes        json.RawMessage `json:"supported_modes"`
 	ApprovalMode          *string         `json:"approval_mode"`
+	DefaultInvocationMode *string         `json:"default_invocation_mode"`
+}
+
+type UpdateWorkspaceAgentPresetVersionRequest struct {
+	// Label changes are regular edits. The backend does not maintain rename-specific history.
+	Label                 *string         `json:"label"`
+	Description           *string         `json:"description"`
+	RuntimeKind           *string         `json:"runtime_kind"`
+	Provider              *string         `json:"provider"`
+	Model                 *string         `json:"model"`
+	ExecutionConfig       json.RawMessage `json:"execution_config"`
+	SystemPrompt          *string         `json:"system_prompt"`
+	InstructionPreamble   *string         `json:"instruction_preamble"`
+	InstructionSkills     json.RawMessage `json:"instruction_skills"`
+	AllowedTools          json.RawMessage `json:"allowed_tools"`
+	SupportedModes        json.RawMessage `json:"supported_modes"`
 	DefaultInvocationMode *string         `json:"default_invocation_mode"`
 }
 
@@ -306,11 +322,6 @@ type AgentTriggerExecutionSummary struct {
 	TriggerType   *string    `json:"trigger_type,omitempty"`
 	ReferenceID   *string    `json:"reference_id,omitempty"`
 	ReferenceType *string    `json:"reference_type,omitempty"`
-}
-
-// AssignAgentRequest assigns an agent to a task.
-type AssignAgentRequest struct {
-	AgentID string `json:"agent_id"`
 }
 
 // ApproveAgentRunRequest approves a pending run outcome.
@@ -541,6 +552,7 @@ type RuntimeProfile struct {
 
 // AgentPresetDefinition describes a preset/template for a generic agent.
 type AgentPresetDefinition struct {
+	ID                         *string  `json:"id,omitempty"`
 	Key                        string   `json:"key"`
 	FamilyKey                  string   `json:"family_key"`
 	VersionKey                 string   `json:"version_key"`

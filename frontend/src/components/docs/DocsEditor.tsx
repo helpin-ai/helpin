@@ -1318,7 +1318,7 @@ img { max-width: 100%; }
   if (!editor) return null
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {/* Floating toolbar — appears on text selection */}
       {!readOnly && !sourceView && (
         <FloatingToolbar
@@ -1329,7 +1329,7 @@ img { max-width: 100%; }
       )}
 
       {/* Editor content with title */}
-      <div className={`relative flex-1 docs-editor-wrapper ${sourceView ? 'flex flex-col min-h-0' : 'overflow-y-auto'}`}>
+      <div className={`relative min-h-0 flex-1 docs-editor-wrapper ${sourceView ? 'flex flex-col min-h-0' : 'overflow-y-auto'}`}>
         {generatingOverlay && (
           <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-background/80 backdrop-blur-[2px]">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground mb-3" />

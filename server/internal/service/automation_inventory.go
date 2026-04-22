@@ -258,12 +258,29 @@ func (s *AutomationInventoryService) automationRuleItems(ctx context.Context, wo
 		return nil, nil
 	}
 
+	healthByRuleID := map[string]model.AutomationHealthSummary{}
+	if s.triggerExecRepo != nil {
+		latestExecutions, err := s.triggerExecRepo.ListLatestAutomationRuleExecutions(ctx, workspaceID, collectRuleIDs(rules))
+		if err != nil {
+			return nil, fmt.Errorf("list automation rule executions for inventory: %w", err)
+		}
+		for _, execution := range latestExecutions {
+			if execution.ReferenceID == nil || strings.TrimSpace(*execution.ReferenceID) == "" {
+				continue
+			}
+			healthByRuleID[strings.TrimSpace(*execution.ReferenceID)] = summarizeRuleExecution(execution)
+		}
+	}
+
 	items := make([]model.AutomationInventoryItem, 0, len(rules))
 	for _, rule := range rules {
-		health := model.AutomationHealthSummary{
-			Status:    model.AutomationHealthHealthy,
-			Freshness: "active",
-			Metrics:   model.JSONB{"trigger_type": rule.TriggerType, "action_type": rule.ActionType},
+		health := healthByRuleID[rule.ID]
+		if health.Status == "" {
+			health = model.AutomationHealthSummary{
+				Status:    model.AutomationHealthHealthy,
+				Freshness: "active",
+				Metrics:   model.JSONB{"trigger_type": rule.TriggerType, "action_type": rule.ActionType},
+			}
 		}
 		if !rule.Enabled {
 			health = inactiveHealth("Disabled")
@@ -306,12 +323,6 @@ func (s *AutomationInventoryService) triggerCatalogItems(ctx context.Context, wo
 		}
 	}
 
-	for _, agent := range agents {
-		if strings.TrimSpace(derefString(agent.Schedule)) != "" {
-			bindingCounts["agent.schedule"]++
-		}
-	}
-
 	if s.installationRepo != nil {
 		inst, err := s.installationRepo.GetByWorkspace(ctx, workspaceID)
 		if err != nil {
@@ -323,14 +334,6 @@ func (s *AutomationInventoryService) triggerCatalogItems(ctx context.Context, wo
 				bindingCounts["support.widget_message"]++
 			}
 		}
-	}
-
-	if s.taskRepo != nil {
-		count, err := s.taskRepo.CountAssignedTasks(ctx, workspaceID)
-		if err != nil {
-			return nil, fmt.Errorf("count assigned tasks for trigger catalog: %w", err)
-		}
-		bindingCounts["task.assigned_agent_state_change"] = int(count)
 	}
 
 	entries := automationcatalog.TriggerCatalog()
@@ -611,4 +614,49 @@ func timePointer(value time.Time) *time.Time {
 	}
 	normalized := value.UTC()
 	return &normalized
+}
+
+func collectRuleIDs(rules []model.AutomationRule) []string {
+	ids := make([]string, 0, len(rules))
+	for _, rule := range rules {
+		if strings.TrimSpace(rule.ID) != "" {
+			ids = append(ids, rule.ID)
+		}
+	}
+	return ids
+}
+
+func summarizeRuleExecution(execution model.AgentTriggerExecution) model.AutomationHealthSummary {
+	lastSeenAt := timePointer(execution.FiredAt)
+	status := model.AutomationHealthHealthy
+	switch strings.TrimSpace(execution.Status) {
+	case model.AgentTriggerExecutionStatusFailed:
+		status = model.AutomationHealthError
+	case model.AgentTriggerExecutionStatusCancelled, model.AgentTriggerExecutionStatusSkipped:
+		status = model.AutomationHealthWarning
+	}
+
+	summary := model.AutomationHealthSummary{
+		Status:     status,
+		LastSeenAt: lastSeenAt,
+		Freshness:  summarizeFreshness(status, lastSeenAt),
+		Metrics:    model.JSONB{},
+	}
+	if execution.CompletedAt != nil && strings.TrimSpace(execution.Status) == model.AgentTriggerExecutionStatusCompleted {
+		completedAt := execution.CompletedAt.UTC()
+		summary.LastSuccessAt = &completedAt
+	}
+	if execution.ErrorMessage != nil && strings.TrimSpace(*execution.ErrorMessage) != "" {
+		msg := strings.TrimSpace(*execution.ErrorMessage)
+		summary.LastErrorMessage = &msg
+	}
+	if strings.TrimSpace(execution.Status) == model.AgentTriggerExecutionStatusFailed {
+		if execution.CompletedAt != nil {
+			failedAt := execution.CompletedAt.UTC()
+			summary.LastErrorAt = &failedAt
+		} else {
+			summary.LastErrorAt = lastSeenAt
+		}
+	}
+	return summary
 }

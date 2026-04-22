@@ -26,15 +26,42 @@ func resolvedAgentSystemPrompt(agent *model.Agent) string {
 	return ""
 }
 
+func fallbackAgentIdentityPrompt(agent *model.Agent) string {
+	name := "Agent"
+	if agent != nil && strings.TrimSpace(agent.Name) != "" {
+		name = strings.TrimSpace(agent.Name)
+	}
+	return fmt.Sprintf("You are %s, an AI coding agent. You write clean, correct code and follow existing project conventions.", name)
+}
+
+func resolvedAgentIdentityPrompt(agent *model.Agent) string {
+	if agent == nil {
+		return fallbackAgentIdentityPrompt(nil)
+	}
+	if agent.SystemPrompt != nil && strings.TrimSpace(*agent.SystemPrompt) != "" {
+		return strings.TrimSpace(*agent.SystemPrompt)
+	}
+	if bundle, ok := BuiltInPresetSkillBundleForPreset(strings.TrimSpace(agent.EffectivePresetKey())); ok {
+		if strings.TrimSpace(bundle.Preamble) != "" {
+			return strings.TrimSpace(bundle.Preamble)
+		}
+	}
+	return fallbackAgentIdentityPrompt(agent)
+}
+
 type systemPromptOptions struct {
 	IncludeBehaviorInstructions bool
 	IncludeResolvedSkillText    bool
+	IncludeTargetContext        bool
+	UseNativeToolingRules       bool
 }
 
 func defaultSystemPromptOptions() systemPromptOptions {
 	return systemPromptOptions{
 		IncludeBehaviorInstructions: true,
 		IncludeResolvedSkillText:    true,
+		IncludeTargetContext:        true,
+		UseNativeToolingRules:       true,
 	}
 }
 
@@ -47,6 +74,8 @@ func BuildRuntimeSystemPrompt(agent *model.Agent, story *model.PMTask, epic *mod
 	return buildSystemPromptWithOptions(agent, story, epic, ticket, planningStage, planningMethodology, config, systemPromptOptions{
 		IncludeBehaviorInstructions: includeBehaviorInstructions,
 		IncludeResolvedSkillText:    includeResolvedSkillText,
+		IncludeTargetContext:        false,
+		UseNativeToolingRules:       false,
 	})
 }
 
@@ -60,50 +89,49 @@ func buildSystemPromptWithOptions(agent *model.Agent, story *model.PMTask, epic 
 	hasRepoAccess := hasRepoTools(resolvedProfile.Tools)
 	hasFileMutationTools := toolSet["write_file"] || toolSet["edit_file"] || toolSet["apply_patch"]
 
-	basePrompt := ""
 	if options.IncludeBehaviorInstructions {
-		basePrompt = resolvedAgentSystemPrompt(agent)
+		basePrompt := resolvedAgentSystemPrompt(agent)
+		if basePrompt == "" {
+			basePrompt = fallbackAgentIdentityPrompt(agent)
+		}
+		parts = append(parts, basePrompt)
+	} else {
+		parts = append(parts, resolvedAgentIdentityPrompt(agent))
 	}
 	skillInstructions := ""
 	if options.IncludeResolvedSkillText {
 		skillInstructions = strings.TrimSpace(agent.ResolvedSkillInstructions)
 	}
-	if basePrompt != "" {
-		parts = append(parts, basePrompt)
-		if skillInstructions != "" {
-			parts = append(parts, skillInstructions)
-		}
-	} else if skillInstructions != "" {
-		parts = append(parts, fmt.Sprintf("You are %s, an AI coding agent. You write clean, correct code and follow existing project conventions.", agent.Name))
+	if skillInstructions != "" {
 		parts = append(parts, skillInstructions)
-	} else {
-		parts = append(parts, fmt.Sprintf("You are %s, an AI coding agent. You write clean, correct code and follow existing project conventions.", agent.Name))
 	}
 
-	// Story context.
-	if story != nil {
-		parts = append(parts, "\n## Current Task")
-		parts = append(parts, fmt.Sprintf("**Story**: %s", story.Name))
-		if story.Description != nil {
-			if description := tiptap.RichTextToMarkdown(*story.Description); description != "" {
-				parts = append(parts, "**Description**:\n"+description)
+	if options.IncludeTargetContext {
+		// Story context.
+		if story != nil {
+			parts = append(parts, "\n## Current Task")
+			parts = append(parts, fmt.Sprintf("**Story**: %s", story.Name))
+			if story.Description != nil {
+				if description := tiptap.RichTextToMarkdown(*story.Description); description != "" {
+					parts = append(parts, "**Description**:\n"+description)
+				}
 			}
 		}
-	}
-	if epic != nil {
-		parts = append(parts, "\n## Current Epic")
-		parts = append(parts, fmt.Sprintf("**Epic**: %s", epic.Name))
-		if epic.Description != nil {
-			if description := tiptap.RichTextToMarkdown(*epic.Description); description != "" {
-				parts = append(parts, "**Description**:\n"+description)
+		if epic != nil {
+			parts = append(parts, "\n## Current Epic")
+			parts = append(parts, fmt.Sprintf("**Epic**: %s", epic.Name))
+			if epic.Description != nil {
+				if description := tiptap.RichTextToMarkdown(*epic.Description); description != "" {
+					parts = append(parts, "**Description**:\n"+description)
+				}
 			}
 		}
-	}
-	if ticket != nil {
-		parts = append(parts, "\n## Current Support Conversation")
-		parts = append(parts, fmt.Sprintf("**Subject**: %s", ticket.Subject))
-		if ticket.CustomerName != nil && *ticket.CustomerName != "" {
-			parts = append(parts, fmt.Sprintf("**Customer**: %s", *ticket.CustomerName))
+		if ticket != nil {
+			parts = append(parts, "\n## Current Support Conversation")
+			parts = append(parts, fmt.Sprintf("**Subject**: %s", ticket.Subject))
+			if ticket.CustomerName != nil && *ticket.CustomerName != "" {
+				parts = append(parts, fmt.Sprintf("**Customer**: %s", *ticket.CustomerName))
+			}
 		}
 	}
 
@@ -115,27 +143,33 @@ func buildSystemPromptWithOptions(agent *model.Agent, story *model.PMTask, epic 
 
 	parts = append(parts, "\n## Rules")
 	parts = append(parts, "- Work within the cloned repository only.")
-	switch {
-	case hasRepoAccess && hasFileMutationTools:
-		parts = append(parts, "- Use the provided tools to read, write, and search files.")
-	case hasRepoAccess:
-		parts = append(parts, "- Use the provided tools to inspect the repository and search for relevant context. Keep repository interactions read-only.")
-	}
-	if (story != nil || epic != nil) && hasRepoAccess {
-		parts = append(parts, "- Start by locating the relevant code with list_directory, ripgrep, search_files, or list_symbols before reading large files.")
-		parts = append(parts, "- read_file now returns a bounded window by default; use offset_line to continue and use read_file_range for targeted spans.")
-		if hasFileMutationTools {
-			parts = append(parts, "- Prefer edit_file for focused in-place changes and apply_patch for coordinated multi-file edits.")
-			parts = append(parts, "- Use write_file for new files or full rewrites only after you have read the current file state.")
-			parts = append(parts, "- If an edit tool reports that a file changed or was not read first, re-read the file and retry with fresh context.")
-		} else {
-			parts = append(parts, "- This run is planning-only and read-only. Do not change code, create files, or alter git state.")
+	if options.UseNativeToolingRules {
+		switch {
+		case hasRepoAccess && hasFileMutationTools:
+			parts = append(parts, "- Use the provided tools to read, write, and search files.")
+		case hasRepoAccess:
+			parts = append(parts, "- Use the provided tools to inspect the repository and search for relevant context. Keep repository interactions read-only.")
 		}
-		parts = append(parts, "- When available, keep a short working execution checklist with update_plan instead of repeating plan status in prose. Do not use update_plan as a substitute for publish_prd_draft, publish_task_plan, or publish_task_plan_doc.")
+		if (story != nil || epic != nil) && hasRepoAccess {
+			parts = append(parts, "- Start by locating the relevant code with list_directory, ripgrep, search_files, or list_symbols before reading large files.")
+			parts = append(parts, "- Prefer search-first, then narrow reads: use ripgrep/search_files/list_symbols to find exact files or symbols before any broad file read.")
+			parts = append(parts, "- read_file now returns a smaller bounded window by default; use offset_line to continue and use read_file_range for targeted spans.")
+			parts = append(parts, "- Prefer read_file_range once you know the relevant lines. Do not use read_files for broad repo exploration; reserve it for a few known files with small excerpts.")
+			if hasFileMutationTools {
+				parts = append(parts, "- Prefer edit_file for focused in-place changes and apply_patch for coordinated multi-file edits.")
+				parts = append(parts, "- Use write_file for new files or full rewrites only after you have read the current file state.")
+				parts = append(parts, "- If an edit tool reports that a file changed or was not read first, re-read the file and retry with fresh context.")
+			} else {
+				parts = append(parts, "- This run is planning-only and read-only. Do not change code, create files, or alter git state.")
+			}
+			parts = append(parts, "- When available, keep a short working execution checklist with update_plan instead of repeating plan status in prose. Do not use update_plan as a substitute for publish_prd_draft, publish_task_plan, or publish_task_plan_doc.")
+		}
 	}
 	if story != nil && strings.TrimSpace(planningStage) != model.PlanningStageStoryPlanDoc {
 		parts = append(parts, "- Run tests after making changes when possible.")
-		parts = append(parts, "- Commit and push your changes when the task is complete.")
+		if options.UseNativeToolingRules {
+			parts = append(parts, "- Commit and push your changes when the task is complete.")
+		}
 	}
 	if story != nil && strings.TrimSpace(planningStage) == model.PlanningStageStoryPlanDoc {
 		parts = append(parts, "- This is a planning-doc run, not an implementation run.")
@@ -165,10 +199,6 @@ func BuildUserPrompt(
 ) string {
 	var sections []string
 	var contextParts []string
-
-	if agent != nil && agent.SystemPrompt != nil && strings.TrimSpace(*agent.SystemPrompt) != "" {
-		sections = append(sections, strings.TrimSpace(*agent.SystemPrompt))
-	}
 
 	if story != nil {
 		contextParts = append(contextParts, fmt.Sprintf("Task: **%s**", story.Name))
@@ -247,14 +277,22 @@ func BuildUserPrompt(
 }
 
 func BuildExecutionSupplementPrompt(run *model.AgentRun, runFacts map[string]string, artifactContext *ArtifactContext) string {
+	return buildExecutionSupplementPrompt(run, runFacts, artifactContext, true)
+}
+
+func BuildRuntimeExecutionSupplementPrompt(run *model.AgentRun, runFacts map[string]string) string {
+	return buildExecutionSupplementPrompt(run, runFacts, nil, false)
+}
+
+func buildExecutionSupplementPrompt(run *model.AgentRun, runFacts map[string]string, artifactContext *ArtifactContext, includeArtifactContext bool) string {
 	var parts []string
 
 	if run != nil && run.InvocationMode == model.InvocationModeInteractive {
 		parts = append(parts, "This is an interactive transcript that may resume after a human reply.")
 		parts = append(parts, "If the latest human message answers a question, gives feedback, or requests changes, continue the work from that reply.")
-		parts = append(parts, "Do not treat a human reply as the end of the run by default. Either continue the task, ask another focused question with request_user_input, request a product review checkpoint with request_review_checkpoint, or reach a durable final outcome.")
-		parts = append(parts, "If you need more information from the human, do not end the turn with prose questions or an open-questions list. Call request_user_input with the blocking questions and stop so the session stays interactive.")
-		parts = append(parts, "If an approval is denied or the human requests changes, continue from that feedback. If you are blocked afterward, ask the next blocking questions with request_user_input instead of finishing the run.")
+		parts = append(parts, "Do not treat a human reply as the end of the run by default. Either continue the task, emit a user-input handoff using the runtime-appropriate mechanism, emit an approval or review handoff using the runtime-appropriate mechanism, or reach a durable final outcome.")
+		parts = append(parts, "If you need more information from the human, do not end the turn with prose questions or an open-questions list. Emit a user-input handoff with the blocking questions using the runtime-appropriate mechanism and stop so the session stays interactive.")
+		parts = append(parts, "If an approval is denied or the human requests changes, continue from that feedback. If you are blocked afterward, emit the next user-input handoff using the runtime-appropriate mechanism instead of finishing the run.")
 	}
 
 	if factsSection := formatRunFacts(runFacts); factsSection != "" {
@@ -262,9 +300,11 @@ func BuildExecutionSupplementPrompt(run *model.AgentRun, runFacts map[string]str
 		parts = append(parts, factsSection)
 	}
 
-	if artifactSection := formatArtifactContext(artifactContext); artifactSection != "" {
-		parts = append(parts, "Use the latest persisted artifacts below as the current source of truth when they conflict with older transcript content.")
-		parts = append(parts, strings.TrimSpace(artifactSection))
+	if includeArtifactContext {
+		if artifactSection := formatArtifactContext(artifactContext); artifactSection != "" {
+			parts = append(parts, "Use the latest persisted artifacts below as the current source of truth when they conflict with older transcript content.")
+			parts = append(parts, strings.TrimSpace(artifactSection))
+		}
 	}
 
 	return strings.Join(parts, "\n\n")

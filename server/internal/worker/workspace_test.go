@@ -187,6 +187,22 @@ func TestMaskRepoSkillRootsIgnoresNonDirectoryCodexPath(t *testing.T) {
 	}
 }
 
+func TestCloneURLForGitHubStripsAPIPathFromBaseURL(t *testing.T) {
+	t.Parallel()
+
+	baseURL := "https://github.acme.com/api/v3"
+	got, err := cloneURLFor(&model.GitIntegration{
+		Provider: "github",
+		BaseURL:  &baseURL,
+	}, "org/repo")
+	if err != nil {
+		t.Fatalf("cloneURLFor returned error: %v", err)
+	}
+	if got != "https://github.acme.com/org/repo.git" {
+		t.Fatalf("cloneURLFor() = %q, want %q", got, "https://github.acme.com/org/repo.git")
+	}
+}
+
 func configureWorkspaceGitIdentity(t *testing.T, dir string) {
 	t.Helper()
 	runGitWorkspaceCmd(t, dir, "git", "config", "user.email", "test@example.com")

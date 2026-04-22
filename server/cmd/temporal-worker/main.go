@@ -139,11 +139,16 @@ func main() {
 	supportTriageRuleRepo := repository.NewSupportTriageRuleRepository(db)
 	supportTeammateStatusOverrideRepo := repository.NewSupportTeammateStatusOverrideRepository(db)
 	userRepo := repository.NewUserRepository(db)
+	notificationRepo := repository.NewNotificationRepository(db)
+	notificationPrefRepo := repository.NewNotificationPreferenceRepository(db)
+	userNotifSettingsRepo := repository.NewUserNotificationSettingsRepository(db)
+	followerRepo := repository.NewFollowerRepository(db)
 	gitIntRepo := repository.NewGitIntegrationRepository(db)
 	gitRepo := repository.NewGitRepositoryRepository(db)
 	gitLinkRepo := repository.NewTaskGitLinkRepository(db)
 	deliveryRepo := repository.NewTaskDeliveryTargetRepository(db)
 	settingsRepo := repository.NewSettingsRepository(db)
+	automationRuleRepo := repository.NewAutomationRuleRepository(db)
 	handoffRepo := repository.NewAgentHandoffRepository(db)
 	docsSpaceRepo := repository.NewDocsSpaceRepository(db)
 	docsDocumentRepo := repository.NewDocsDocumentRepository(db)
@@ -223,6 +228,17 @@ func main() {
 		fatalWithSentry("failed to initialize github app client", err)
 	}
 	wsPublisher := ws.NewJetStreamPublisher(jetstream)
+	notificationService := service.NewNotificationService(
+		notificationRepo,
+		notificationPrefRepo,
+		userNotifSettingsRepo,
+		followerRepo,
+		userRepo,
+		workspaceRepo,
+		wsPublisher,
+		nil,
+		cfg.AppBaseURL,
+	)
 	var activities *temporalapp.AgentRunActivities
 
 	// Email sync activities (may be nil if Gmail not configured).
@@ -385,7 +401,7 @@ func main() {
 		conversationRepo,
 		supportMessageRepo,
 		handoffRepo,
-		nil,
+		automationRuleRepo,
 		nil,
 		settingsRepo,
 		docsSpaceRepo,
@@ -406,7 +422,7 @@ func main() {
 		cfg.CodexEnableChatGPTOAuth,
 		cfg.CodexChatGPTAccessToken,
 		cfg.CodexChatGPTAccountID,
-	).SetTriggerExecutionRepository(triggerExecutionRepo)
+	).SetTriggerExecutionRepository(triggerExecutionRepo).SetNotificationService(notificationService)
 	agentService.SetWorkflowService(pmWorkflowService)
 	docsContentService := service.NewDocsContentService(docsContentRepo, docsDocumentRepo, nil)
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, storyRepo, docsDocumentRepo, nil)
@@ -483,12 +499,27 @@ func main() {
 		crmSignalRepo,
 		crmActivityRepo,
 		commandService,
+		notificationService,
 		wsPublisher,
 		runtimes,
 		githubAppClient,
 		runEngine,
 	)
 	automationHealthService := service.NewAutomationHealthService(automationHealthRepo)
+	ruleEngine := service.NewAutomationRuleEngine(
+		automationRuleRepo,
+		storyRepo,
+		workflowRepo,
+		deliveryRepo,
+		gitService,
+		notificationService,
+		pmActivityService,
+		wsPublisher,
+	)
+	ruleEngine.SetAgentService(agentService)
+	ruleEngine.SetTaskService(pmStoryService)
+	ruleEngine.SetHealthObserver(automationHealthService)
+	ruleEngine.SetTriggerExecutionRepository(triggerExecutionRepo)
 	signalActivities := temporalapp.NewSignalDetectionActivities(signalDetectionService, wsPublisher).SetHealthObserver(automationHealthService)
 	summaryActivities := temporalapp.NewCRMSummaryActivities(crmSummaryService).SetHealthObserver(automationHealthService)
 
@@ -500,7 +531,7 @@ func main() {
 
 	_ = crmCompanyRepo // available for future enrichment activities
 
-	scheduleActivities := temporalapp.NewScheduledAgentActivities(agentRepo, runRepo).SetTriggerExecutionRepository(triggerExecutionRepo)
+	scheduledRuleActivities := temporalapp.NewScheduledRuleActivities(ruleEngine)
 	recurringActivities := service.NewPMRecurringTemplateActivities(pmRecurringTemplateService)
 
 	// Sprint automation activities.
@@ -511,7 +542,7 @@ func main() {
 	queueConfigs := selectedQueues()
 	workers := make([]tworker.Worker, 0, len(queueConfigs))
 	for _, queue := range queueConfigs {
-		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, activities, emailSyncActivities, signalActivities, summaryActivities, dealMgmtActivities, scheduleActivities, recurringActivities, sprintAutomationActivities, docsEmbeddingActivities, contentSourceSyncActivities))
+		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, activities, emailSyncActivities, signalActivities, summaryActivities, dealMgmtActivities, scheduledRuleActivities, recurringActivities, sprintAutomationActivities, docsEmbeddingActivities, contentSourceSyncActivities))
 	}
 
 	for _, sharedWorker := range workers {
@@ -549,7 +580,7 @@ func parseLogLevel(value string) slog.Level {
 	}
 }
 
-func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, activities *temporalapp.AgentRunActivities, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, summaryActivities *temporalapp.CRMSummaryActivities, dealMgmtActivities *temporalapp.DealManagementActivities, scheduleActivities *temporalapp.ScheduledAgentActivities, recurringActivities *service.PMRecurringTemplateActivities, sprintActivities *temporalapp.SprintAutomationActivities, docsEmbeddingActivities *temporalapp.DocsEmbeddingActivities, contentSourceSyncActivities *temporalapp.ContentSourceSyncActivities) tworker.Worker {
+func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, activities *temporalapp.AgentRunActivities, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, summaryActivities *temporalapp.CRMSummaryActivities, dealMgmtActivities *temporalapp.DealManagementActivities, scheduledRuleActivities *temporalapp.ScheduledRuleActivities, recurringActivities *service.PMRecurringTemplateActivities, sprintActivities *temporalapp.SprintAutomationActivities, docsEmbeddingActivities *temporalapp.DocsEmbeddingActivities, contentSourceSyncActivities *temporalapp.ContentSourceSyncActivities) tworker.Worker {
 	options := tworker.Options{
 		MaxConcurrentActivityExecutionSize: concurrency,
 		WorkerStopTimeout:                  temporalWorkerStopTimeout,
@@ -608,11 +639,10 @@ func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int,
 		})
 	}
 
-	// Register scheduled agent workflow and activities.
-	w.RegisterWorkflow(temporalapp.ScheduledAgentWorkflow)
-	if scheduleActivities != nil {
-		w.RegisterActivityWithOptions(scheduleActivities.CreateScheduledRun, activity.RegisterOptions{
-			Name: "ScheduledAgentActivities.CreateScheduledRun",
+	w.RegisterWorkflow(temporalapp.ScheduledRuleWorkflow)
+	if scheduledRuleActivities != nil {
+		w.RegisterActivityWithOptions(scheduledRuleActivities.ExecuteScheduledRule, activity.RegisterOptions{
+			Name: "ScheduledRuleActivities.ExecuteScheduledRule",
 		})
 	}
 
