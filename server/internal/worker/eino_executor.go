@@ -47,24 +47,50 @@ func nativeContinuationMode(continuation *ProviderContinuation) string {
 	return "fresh"
 }
 
+func resolveNativeSystemPrompt(execCtx *ExecutionContext, config *WorkflowConfig) string {
+	if execCtx == nil {
+		return BuildSystemPrompt(nil, nil, nil, nil, "", "", config)
+	}
+	options := defaultSystemPromptOptions()
+	if execCtx.NativeSelectivePathEnabled {
+		options.IncludeResolvedSkillText = false
+	}
+	return buildSystemPromptWithOptions(execCtx.Agent, execCtx.Task, execCtx.Epic, execCtx.Conversation, execCtx.PlanningStage, execCtx.PlanningMethodology, config, options)
+}
+
 func resolveNativeSupplementTransport(run *model.AgentRun, execCtx *ExecutionContext, systemPrompt string) (string, string, string) {
 	trimmedSystemPrompt := strings.TrimSpace(systemPrompt)
 	turnLocalInstructions := ""
 	if execCtx != nil {
 		turnLocalInstructions = strings.TrimSpace(execCtx.TurnLocalInstructions)
 	}
+	activeSkillInstructions := ""
+	if execCtx != nil {
+		activeSkillInstructions = buildActiveSkillInstructionSection(execCtx.ActiveSkillInstructions)
+	}
 
 	supplement := BuildExecutionSupplementPrompt(run, executionContextRunFacts(execCtx), executionContextArtifactContext(execCtx))
 	if execCtx != nil && execCtx.NativeSelectivePathEnabled {
 		if strings.TrimSpace(supplement) == "" {
-			return trimmedSystemPrompt, turnLocalInstructions, "none"
+			if strings.TrimSpace(activeSkillInstructions) == "" {
+				return trimmedSystemPrompt, turnLocalInstructions, "none"
+			}
+			return trimmedSystemPrompt, joinInstructionSections(turnLocalInstructions, activeSkillInstructions), "turn_local"
 		}
-		return trimmedSystemPrompt, joinInstructionSections(turnLocalInstructions, supplement), "turn_local"
+		return trimmedSystemPrompt, joinInstructionSections(turnLocalInstructions, activeSkillInstructions, supplement), "turn_local"
 	}
 	if supplement == "" {
 		return trimmedSystemPrompt, turnLocalInstructions, "none"
 	}
 	return strings.TrimSpace(trimmedSystemPrompt + "\n\n## Current Run State\n" + supplement), turnLocalInstructions, "system"
+}
+
+func buildActiveSkillInstructionSection(activeSkillInstructions string) string {
+	activeSkillInstructions = strings.TrimSpace(activeSkillInstructions)
+	if activeSkillInstructions == "" {
+		return ""
+	}
+	return "Active skill instructions for this turn:\n" + activeSkillInstructions
 }
 
 func joinInstructionSections(parts ...string) string {
@@ -127,7 +153,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		execCtx.AllowedTools = allowedToolSet(execCtx.ResolvedProfile)
 	}
 
-	systemPrompt := BuildSystemPrompt(execCtx.Agent, execCtx.Task, execCtx.Epic, execCtx.Conversation, execCtx.PlanningStage, execCtx.PlanningMethodology, config)
+	systemPrompt := resolveNativeSystemPrompt(execCtx, config)
 
 	var checklist []model.PMChecklistItem
 	if execCtx.TaskID != "" && execCtx.Services != nil {
