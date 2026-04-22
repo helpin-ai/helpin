@@ -1049,6 +1049,108 @@ func TestMarkConversationRead_MarksSupportReplyNotificationsRead(t *testing.T) {
 	}
 }
 
+func TestCreateConversationMessage_PublicMentionsNotifyWorkspaceMembers(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	workspaceID := "ws-support-mentions"
+	senderUserID := "user-sender"
+	mentionedUserID := "user-mentioned"
+
+	seedUser(t, db, senderUserID, "sender@example.com", "Sender User", "hash")
+	seedUser(t, db, mentionedUserID, "mentioned@example.com", "Teammate Mentioned", "hash")
+	seedWorkspace(t, db, workspaceID, "Support Mentions", "support-mentions", senderUserID)
+	seedWorkspaceMember(t, db, "wm-sender", workspaceID, senderUserID, "sender@example.com", "Sender User", model.RoleAdmin)
+	seedWorkspaceMember(t, db, "wm-mentioned", workspaceID, mentionedUserID, "mentioned@example.com", "Teammate Mentioned", model.RoleMember)
+	for _, userID := range []string{senderUserID, mentionedUserID} {
+		mustExec(t, db, `INSERT INTO user_notification_settings (id, user_id, email_enabled, email_digest_frequency, email_digest_time, email_digest_day, do_not_disturb, badge_mode, timezone, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			"settings-"+userID, userID, false, "daily", "09:00", 1, false, "all", "UTC", now, now)
+	}
+
+	convRepo := repository.NewSupportConversationRepository(db)
+	messageRepo := repository.NewSupportMessageRepository(db)
+	workspaceRepo := repository.NewWorkspaceRepository(db)
+	notificationService := NewNotificationService(
+		repository.NewNotificationRepository(db),
+		repository.NewNotificationPreferenceRepository(db),
+		repository.NewUserNotificationSettingsRepository(db),
+		repository.NewFollowerRepository(db),
+		repository.NewUserRepository(db),
+		workspaceRepo,
+		nil,
+		nil,
+		"",
+	)
+
+	conv := &model.SupportConversation{
+		WorkspaceID:    workspaceID,
+		Subject:        "Public mention",
+		Status:         model.SupportConversationStatusOpen,
+		OpenedByUserID: &senderUserID,
+	}
+	if err := convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	svc := NewSupportInboxService(
+		convRepo,
+		repository.NewSupportMailboxRepository(db),
+		messageRepo,
+		repository.NewAgentRepository(db),
+		repository.NewCRMAssociationRepository(db),
+		repository.NewSupportInboxInstallationRepository(db),
+		repository.NewSupportInboxSessionRepository(db),
+		repository.NewSupportCannedResponseRepository(db),
+		nil,
+		nil,
+		repository.NewCRMContactRepository(db),
+		repository.NewUserRepository(db),
+		repository.NewDocsSpaceRepository(db),
+		repository.NewDocsCollectionRepository(db),
+		repository.NewDocsHelpcenterRepository(db),
+	).SetNotificationService(notificationService, workspaceRepo)
+
+	msg, err := svc.CreateConversationMessage(
+		ctx,
+		workspaceID,
+		conv.ID,
+		model.CreateMessageRequest{Content: "@teammate.mentioned can you take this one?", MessageType: "reply"},
+		"user",
+		&senderUserID,
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("CreateConversationMessage: %v", err)
+	}
+
+	if !strings.Contains(msg.Metadata, mentionedUserID) {
+		t.Fatalf("message metadata = %q, want mentioned user id %q", msg.Metadata, mentionedUserID)
+	}
+
+	var notifications []model.Notification
+	if err := db.WithContext(ctx).
+		Where("workspace_id = ? AND entity_type = ? AND entity_id = ?", workspaceID, "support_conversation", conv.ID).
+		Order("recipient_id ASC").
+		Find(&notifications).Error; err != nil {
+		t.Fatalf("load notifications: %v", err)
+	}
+	if len(notifications) != 1 {
+		t.Fatalf("notification count = %d, want 1", len(notifications))
+	}
+	if notifications[0].RecipientID != mentionedUserID {
+		t.Fatalf("recipient_id = %q, want %q", notifications[0].RecipientID, mentionedUserID)
+	}
+	if notifications[0].EventType != "support_conversation.mentioned" {
+		t.Fatalf("event_type = %q, want support_conversation.mentioned", notifications[0].EventType)
+	}
+	if notifications[0].LatestEventCategory != model.NotifCategorySupportMentions {
+		t.Fatalf("latest_event_category = %q, want %q", notifications[0].LatestEventCategory, model.NotifCategorySupportMentions)
+	}
+}
+
 func TestAssignConversationUserAcceptsSupportAccessibleUserOutsideMailboxMembership(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()

@@ -1293,9 +1293,9 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		}
 	}
 
-	// Pre-resolve @mentions for internal notes.
+	// Pre-resolve teammate @mentions for support messages.
 	var mentionedUserIDs []string
-	if req.IsInternal && s.notificationService != nil && s.workspaceRepo != nil {
+	if senderType == "user" && s.notificationService != nil && s.workspaceRepo != nil {
 		ids, err := resolveMentionRecipients(ctx, s.workspaceRepo, workspaceID, strings.TrimSpace(req.Content), derefString(senderUserID), nil)
 		if err != nil {
 			slog.ErrorContext(ctx, "resolve support mentions", "error", err, "conversation_id", ticketID)

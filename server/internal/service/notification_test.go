@@ -51,7 +51,12 @@ func TestExtractMentions(t *testing.T) {
 		{
 			name:     "email should not fully match",
 			body:     "Send to user@example.com",
-			expected: []string{"example.com"},
+			expected: nil,
+		},
+		{
+			name:     "html attributes do not count as mentions",
+			body:     `<p><a href="mailto:user@example.com">Email teammate</a></p>`,
+			expected: nil,
 		},
 		{
 			name:     "empty body",
