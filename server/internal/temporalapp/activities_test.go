@@ -726,6 +726,29 @@ func TestLatestNativeRepairInstructionFromArtifactsIgnoresStaleAssistantArtifact
 	}
 }
 
+func TestLatestNativeRepairInstructionFromArtifactsDefaultsSourceWhenMissing(t *testing.T) {
+	messages := []model.AgentRunMessage{
+		{SequenceNo: 1, Role: "assistant", MessageType: "assistant_turn", Content: "Drafted the task plan."},
+	}
+	payload, _ := json.Marshal(model.NativeRepairState{
+		RepairClass: "publish_task_plan_object_shape",
+		RepairHint:  "Retry publish_task_plan with one complete JSON object in content.",
+	})
+	artifacts := []model.AgentRunArtifact{
+		{
+			ArtifactType:  model.AgentRunArtifactTypeNativeRepairState,
+			InlineContent: strPtr(string(payload)),
+			Metadata:      buildAssistantSequenceArtifactMetadata(1),
+			SequenceNo:    1,
+		},
+	}
+
+	got := latestNativeRepairInstructionFromArtifacts(messages, artifacts)
+	if got.Source != "native_repair_state" {
+		t.Fatalf("expected default artifact source, got %#v", got)
+	}
+}
+
 func TestResolveLatestNativeRepairInstructionPrefersArtifactOverHistory(t *testing.T) {
 	state := &resolvedRunState{nativeSelectivePathEnabled: true}
 	blocks, _ := json.Marshal([]workerpkg.ExecutionBlock{

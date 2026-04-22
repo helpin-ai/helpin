@@ -709,12 +709,20 @@ func latestNativeRepairInstructionFromArtifacts(messages []model.AgentRunMessage
 			continue
 		}
 		return nativeRepairInstruction{
-			Source:       "native_repair_state:" + strings.TrimSpace(payload.Source),
+			Source:       nativeRepairArtifactSource(payload.Source),
 			Class:        strings.TrimSpace(payload.RepairClass),
 			Instructions: hint,
 		}
 	}
 	return nativeRepairInstruction{}
+}
+
+func nativeRepairArtifactSource(source string) string {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		return "native_repair_state"
+	}
+	return "native_repair_state:" + source
 }
 
 func resolveLatestNativeRepairInstruction(state *resolvedRunState, messages []model.AgentRunMessage, artifacts []model.AgentRunArtifact) nativeRepairInstruction {
