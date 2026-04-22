@@ -63,11 +63,15 @@ func resolveNativeInitialInstructionTransport(execCtx *ExecutionContext) (string
 		return "", "", "none"
 	}
 	initialInstructions := strings.TrimSpace(execCtx.InitialInstructions)
-	if initialInstructions == "" {
+	phaseGuidance := strings.TrimSpace(execCtx.PhaseGuidance)
+	if initialInstructions == "" && phaseGuidance == "" {
 		return "", "", "none"
 	}
 	if execCtx.NativeSelectivePathEnabled {
-		return "", "Current phase guidance for this turn:\n" + initialInstructions, "turn_local"
+		if phaseGuidance == "" {
+			return "", "", "none"
+		}
+		return "", "Current phase guidance for this turn:\n" + phaseGuidance, "turn_local"
 	}
 	return initialInstructions, "", "user_prompt"
 }
@@ -225,6 +229,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 	trimmedTurnLocalInstructions := strings.TrimSpace(turnLocalInstructions)
 	trimmedActiveSkillInstructions := strings.TrimSpace(execCtx.ActiveSkillInstructions)
 	trimmedInitialInstructions := strings.TrimSpace(execCtx.InitialInstructions)
+	trimmedPhaseGuidance := strings.TrimSpace(execCtx.PhaseGuidance)
 	slog.InfoContext(execCtx.Context, "native runtime execution starting",
 		"workspace_id", execCtx.WorkspaceID,
 		"run_id", execCtx.RunID,
@@ -238,6 +243,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		"system_prompt_includes_resolved_skill_text", includesResolvedSkillText,
 		"initial_instruction_transport", initialInstructionTransport,
 		"initial_instruction_chars", len([]rune(trimmedInitialInstructions)),
+		"phase_guidance_chars", len([]rune(trimmedPhaseGuidance)),
 		"runtime_skill_ref_count", len(execCtx.RuntimeSkillRefs),
 		"active_skill_ref_count", len(execCtx.ActiveRuntimeSkillRefs),
 		"active_skill_instruction_chars", len([]rune(trimmedActiveSkillInstructions)),

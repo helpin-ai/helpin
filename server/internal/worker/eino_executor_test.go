@@ -51,7 +51,7 @@ func TestResolveNativeSystemPromptKeepsResolvedSkillTextForLegacyPath(t *testing
 
 func TestResolveNativeInitialInstructionTransportMovesPlannerInstructionsToTurnLocalForSelectivePath(t *testing.T) {
 	userPromptInitialInstructions, turnLocalInstructions, transport := resolveNativeInitialInstructionTransport(&ExecutionContext{
-		InitialInstructions:        "Run mode: interactive\nDraft the PRD first.",
+		PhaseGuidance:              "Run mode: interactive\nDraft the PRD first.",
 		NativeSelectivePathEnabled: true,
 	})
 
@@ -82,6 +82,17 @@ func TestResolveNativeInitialInstructionTransportKeepsLegacyUserPromptBehavior(t
 	}
 	if transport != "user_prompt" {
 		t.Fatalf("expected user_prompt initial-instruction transport, got %q", transport)
+	}
+}
+
+func TestResolveNativeInitialInstructionTransportIgnoresLegacyFieldOnSelectivePath(t *testing.T) {
+	userPromptInitialInstructions, turnLocalInstructions, transport := resolveNativeInitialInstructionTransport(&ExecutionContext{
+		InitialInstructions:        "legacy planner blob",
+		NativeSelectivePathEnabled: true,
+	})
+
+	if strings.TrimSpace(userPromptInitialInstructions) != "" || strings.TrimSpace(turnLocalInstructions) != "" || transport != "none" {
+		t.Fatalf("expected selective path to ignore legacy initial instructions without phase guidance, got user=%q turn_local=%q transport=%q", userPromptInitialInstructions, turnLocalInstructions, transport)
 	}
 }
 

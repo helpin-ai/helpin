@@ -215,6 +215,32 @@ func TestSelectNativeActiveSkillsRequiresSelectivePathGate(t *testing.T) {
 	}
 }
 
+func TestSplitNativePhaseGuidanceMovesLegacyInstructionsOffInitialPrompt(t *testing.T) {
+	legacyInitialInstructions, phaseGuidance := splitNativePhaseGuidance("native_sdk", &resolvedRunState{
+		nativeSelectivePathEnabled: true,
+	}, "Run mode: interactive\nDraft the PRD first.")
+
+	if strings.TrimSpace(legacyInitialInstructions) != "" {
+		t.Fatalf("expected selective native path to suppress legacy initial instructions, got %q", legacyInitialInstructions)
+	}
+	if !strings.Contains(phaseGuidance, "Draft the PRD first.") {
+		t.Fatalf("expected phase guidance to carry planner instructions, got %q", phaseGuidance)
+	}
+}
+
+func TestSplitNativePhaseGuidanceKeepsLegacyInstructionsForNonSelectivePath(t *testing.T) {
+	legacyInitialInstructions, phaseGuidance := splitNativePhaseGuidance("native_sdk", &resolvedRunState{
+		nativeSelectivePathEnabled: false,
+	}, "Run mode: interactive\nDraft the PRD first.")
+
+	if !strings.Contains(legacyInitialInstructions, "Draft the PRD first.") {
+		t.Fatalf("expected legacy initial instructions to remain for ungated path, got %q", legacyInitialInstructions)
+	}
+	if strings.TrimSpace(phaseGuidance) != "" {
+		t.Fatalf("expected no phase guidance for ungated path, got %q", phaseGuidance)
+	}
+}
+
 func TestEffectiveExecutionSkillPolicyUsesActiveSelectionForSelectivePath(t *testing.T) {
 	state := &resolvedRunState{
 		nativeSelectivePathEnabled: true,
@@ -4205,6 +4231,8 @@ func TestExecuteRunActivityPausesNativePlannerForReviewCheckpoint(t *testing.T) 
 	var capturedActiveRuntimeSkillRefs model.AgentSkillRefs
 	var capturedActiveSkillInstructions string
 	var capturedSkillPolicy workerpkg.SkillPolicy
+	var capturedInitialInstructions string
+	var capturedPhaseGuidance string
 
 	now := time.Now().UTC()
 	agent := &model.Agent{
@@ -4282,6 +4310,8 @@ func TestExecuteRunActivityPausesNativePlannerForReviewCheckpoint(t *testing.T) 
 				capturedActiveRuntimeSkillRefs = append(model.AgentSkillRefs(nil), execCtx.ActiveRuntimeSkillRefs...)
 				capturedActiveSkillInstructions = execCtx.ActiveSkillInstructions
 				capturedSkillPolicy = execCtx.SkillPolicy
+				capturedInitialInstructions = execCtx.InitialInstructions
+				capturedPhaseGuidance = execCtx.PhaseGuidance
 				execCtx.LastExecutionResult = &workerpkg.ExecutionResult{
 					AssistantText: "PRD review checkpoint requested.",
 					ToolInvocations: []model.ToolInvocation{
@@ -4322,6 +4352,12 @@ func TestExecuteRunActivityPausesNativePlannerForReviewCheckpoint(t *testing.T) 
 	}
 	if strings.TrimSpace(capturedActiveSkillInstructions) == "" {
 		t.Fatalf("expected active skill instructions to be threaded into execution context, got %q", capturedActiveSkillInstructions)
+	}
+	if strings.TrimSpace(capturedInitialInstructions) != "" {
+		t.Fatalf("expected gated native path to suppress legacy initial instructions, got %q", capturedInitialInstructions)
+	}
+	if strings.TrimSpace(capturedPhaseGuidance) == "" {
+		t.Fatalf("expected gated native path to populate phase guidance, got %q", capturedPhaseGuidance)
 	}
 	if got := completionRequiredInteractionKinds(capturedSkillPolicy); len(got) != 2 {
 		t.Fatalf("unexpected active skill policy %#v", got)

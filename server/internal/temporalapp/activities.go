@@ -374,6 +374,17 @@ func effectiveExecutionSkillPolicy(state *resolvedRunState, selection agentskill
 	return agentskills.AggregatePolicy(selection.Definitions)
 }
 
+func splitNativePhaseGuidance(runtimeKind string, state *resolvedRunState, initialInstructions string) (string, string) {
+	initialInstructions = strings.TrimSpace(initialInstructions)
+	if initialInstructions == "" {
+		return "", ""
+	}
+	if state != nil && state.nativeSelectivePathEnabled && strings.TrimSpace(runtimeKind) == "native_sdk" {
+		return "", initialInstructions
+	}
+	return initialInstructions, ""
+}
+
 func providerContinuationMode(continuation *workerpkg.ProviderContinuation) string {
 	if continuation == nil {
 		return "fresh"
@@ -494,11 +505,13 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		_ = a.failRun(ctx, state, err.Error())
 		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
+	runtimeKind := executionRuntimeKind(state)
 	initialInstructions, err := a.buildInitialInstructions(ctx, state, planningInput)
 	if err != nil {
 		_ = a.failRun(ctx, state, err.Error())
 		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
+	legacyInitialInstructions, phaseGuidance := splitNativePhaseGuidance(runtimeKind, state, initialInstructions)
 
 	now := time.Now()
 	state.run.Status = "running"
@@ -520,7 +533,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		"target_type", state.run.TargetType,
 		"runtime_kind", state.run.RuntimeKind,
 	)
-	history, artifactContext, providerContinuation, err := a.ensureRunConversation(ctx, state, initialInstructions, planningInput)
+	history, artifactContext, providerContinuation, err := a.ensureRunConversation(ctx, state, legacyInitialInstructions, planningInput)
 	if err != nil {
 		_ = a.failRun(ctx, state, err.Error())
 		return ExecuteRunResult{}, nonRetryableRunError(err)
@@ -531,7 +544,6 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		"run_id", state.run.ID,
 		"repo", repoFullName(state),
 	)
-	runtimeKind := executionRuntimeKind(state)
 	persistWorkspace := shouldPersistExecutionWorkspace(state.run, runtimeKind)
 	var (
 		workDir       string
@@ -622,7 +634,8 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		WorkingBranch:              derefString(state.run.WorkingBranch),
 		BranchSyncStatus:           strings.TrimSpace(state.branchSync.Status),
 		BranchSyncConflictFiles:    slices.Clone(state.branchSync.ConflictFiles),
-		InitialInstructions:        initialInstructions,
+		InitialInstructions:        legacyInitialInstructions,
+		PhaseGuidance:              phaseGuidance,
 		PlanningStage:              planningInput.Stage,
 		PlanningMethodology:        planningInput.PlanningMethodology,
 		PlanningSpecDocumentID:     planningInput.SpecDocumentID,
