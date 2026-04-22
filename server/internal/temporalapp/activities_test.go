@@ -698,6 +698,47 @@ func TestBuildTaskLinkedDocsSectionsSkipsWhenNoLinkedDocs(t *testing.T) {
 	}
 }
 
+func TestAppendEpicTeamSectionsHandlesAssignedAndMissingTeam(t *testing.T) {
+	teamID := "team-1"
+	withTeam := appendEpicTeamSections(nil, &model.PMEpic{TeamID: &teamID})
+	if len(withTeam) != 1 || withTeam[0] != "Epic team ID: team-1" {
+		t.Fatalf("unexpected team-assigned sections %#v", withTeam)
+	}
+
+	withoutTeam := appendEpicTeamSections(nil, &model.PMEpic{})
+	if len(withoutTeam) != 1 || !strings.Contains(withoutTeam[0], "This epic does not currently have a team.") {
+		t.Fatalf("unexpected no-team sections %#v", withoutTeam)
+	}
+}
+
+func TestAppendEpicLinkedTicketsSectionSkipsBlankAndWrapsContent(t *testing.T) {
+	sections := appendEpicLinkedTicketsSection(nil, "   ")
+	if len(sections) != 0 {
+		t.Fatalf("expected blank linked-ticket content to be skipped, got %#v", sections)
+	}
+
+	sections = appendEpicLinkedTicketsSection(nil, "- Ticket #12: Launch blocker")
+	if len(sections) != 1 || sections[0] != "Support and customer context already linked to this epic:\n- Ticket #12: Launch blocker" {
+		t.Fatalf("unexpected linked-ticket sections %#v", sections)
+	}
+}
+
+func TestAppendExistingEpicTasksSectionSummarizesTasks(t *testing.T) {
+	sections := appendExistingEpicTasksSection(nil, []model.PMTask{
+		{ID: "task-1", Name: "Task A"},
+		{ID: "task-2", Name: "Task B"},
+	})
+	instructions := strings.Join(sections, "\n\n")
+	for _, snippet := range []string{
+		"IMPORTANT: 2 tasks already exist under this epic.",
+		"Tasks already linked to this epic:\n- Task A [task-1]\n- Task B [task-2]",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected epic task summary to contain %q\n%s", snippet, instructions)
+		}
+	}
+}
+
 func TestBuildInitialInstructionsUsesNativeSelectiveEpicTaskPlanningGuidanceAfterPRDApproval(t *testing.T) {
 	activity := &AgentRunActivities{}
 	state := &resolvedRunState{

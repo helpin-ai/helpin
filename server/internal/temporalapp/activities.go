@@ -6380,11 +6380,7 @@ func (a *AgentRunActivities) buildEpicPlannerContextSections(ctx context.Context
 		sections = append(sections, "IMPORTANT: A previously approved spec already exists. The PRD is LOCKED. Do not redraft, rewrite, or re-approve it. Use it as the read-only source of truth for task planning. If the human asks to revise the PRD, explain the spec is approved and suggest creating a follow-up epic instead, unless they insist.")
 		sections = append(sections, "If the current facts show the PRD is already approved, treat persistence as complete and continue from that state. Do not replay the PRD through mutation tools.")
 	}
-	if state.epic != nil && state.epic.TeamID != nil && strings.TrimSpace(*state.epic.TeamID) != "" {
-		sections = append(sections, fmt.Sprintf("Epic team ID: %s", strings.TrimSpace(*state.epic.TeamID)))
-	} else {
-		sections = append(sections, "This epic does not currently have a team. Before creating tasks, call list_workspace_teams and ask the human to choose the correct team inline in chat.")
-	}
+	sections = appendEpicTeamSections(sections, state.epic)
 	sections = appendOperatorNotesSection(sections, input.AdditionalContext)
 
 	linkedDocs, err := a.renderLinkedDocsContext(ctx, state.run.WorkspaceID, state.epic.ID, input.SpecDocumentID)
@@ -6399,9 +6395,7 @@ func (a *AgentRunActivities) buildEpicPlannerContextSections(ctx context.Context
 	if err != nil {
 		return nil, false, err
 	}
-	if linkedTickets != "" {
-		sections = append(sections, "Support and customer context already linked to this epic:\n"+linkedTickets)
-	}
+	sections = appendEpicLinkedTicketsSection(sections, linkedTickets)
 
 	sections, err = a.appendPlannerRepositoryContextSection(ctx, sections, state, "Current implementation context from the planning repository:", []string{
 		state.epic.Name,
@@ -6414,14 +6408,7 @@ func (a *AgentRunActivities) buildEpicPlannerContextSections(ctx context.Context
 		return nil, false, err
 	}
 
-	if len(state.epicTasks) > 0 {
-		lines := make([]string, 0, len(state.epicTasks))
-		for _, task := range state.epicTasks {
-			lines = append(lines, fmt.Sprintf("- %s [%s]", task.Name, task.ID))
-		}
-		sections = append(sections, fmt.Sprintf("IMPORTANT: %d tasks already exist under this epic. Do NOT recreate them. Only create new tasks if the human explicitly requests additions.", len(state.epicTasks)))
-		sections = append(sections, "Tasks already linked to this epic:\n"+strings.Join(lines, "\n"))
-	}
+	sections = appendExistingEpicTasksSection(sections, state.epicTasks)
 
 	return sections, hasSpecContent, nil
 }
@@ -6432,6 +6419,34 @@ func appendOperatorNotesSection(sections []string, additionalContext string) []s
 		return sections
 	}
 	return append(sections, "Operator notes:\n"+additionalContext)
+}
+
+func appendEpicTeamSections(sections []string, epic *model.PMEpic) []string {
+	if epic != nil && epic.TeamID != nil && strings.TrimSpace(*epic.TeamID) != "" {
+		return append(sections, fmt.Sprintf("Epic team ID: %s", strings.TrimSpace(*epic.TeamID)))
+	}
+	return append(sections, "This epic does not currently have a team. Before creating tasks, call list_workspace_teams and ask the human to choose the correct team inline in chat.")
+}
+
+func appendEpicLinkedTicketsSection(sections []string, linkedTickets string) []string {
+	linkedTickets = strings.TrimSpace(linkedTickets)
+	if linkedTickets == "" {
+		return sections
+	}
+	return append(sections, "Support and customer context already linked to this epic:\n"+linkedTickets)
+}
+
+func appendExistingEpicTasksSection(sections []string, tasks []model.PMTask) []string {
+	if len(tasks) == 0 {
+		return sections
+	}
+	lines := make([]string, 0, len(tasks))
+	for _, task := range tasks {
+		lines = append(lines, fmt.Sprintf("- %s [%s]", task.Name, task.ID))
+	}
+	sections = append(sections, fmt.Sprintf("IMPORTANT: %d tasks already exist under this epic. Do NOT recreate them. Only create new tasks if the human explicitly requests additions.", len(tasks)))
+	sections = append(sections, "Tasks already linked to this epic:\n"+strings.Join(lines, "\n"))
+	return sections
 }
 
 func (a *AgentRunActivities) buildTaskPlanDocumentContextSections(ctx context.Context, planDocumentID string) ([]string, error) {
