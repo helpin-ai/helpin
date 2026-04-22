@@ -13,6 +13,15 @@ export function isSupportConversationListQueryKey(
   );
 }
 
+export function extractConversationListConversations(
+  cached: ReadonlyArray<[readonly unknown[], ConversationListResponse | undefined]>,
+  workspaceId: string,
+): SupportConversation[] {
+  return cached.flatMap(([queryKey, data]) =>
+    isSupportConversationListQueryKey(queryKey, workspaceId) ? (data?.data ?? []) : [],
+  );
+}
+
 export function updateConversationListUnreadCount(
   current: ConversationListResponse | undefined,
   conversationId: string,

@@ -7,6 +7,7 @@ import { agentService } from '@/lib/services/agentService';
 import { workspacesService } from '@/lib/services/workspacesService';
 import { unwrap } from '@/lib/queryUtils';
 import {
+  extractConversationListConversations,
   isSupportConversationListQueryKey,
   updateConversationListUnreadCount,
   updateConversationUnreadCount,
@@ -399,9 +400,7 @@ export function useUpdateConversationStatus(workspaceId: string) {
           const cached = queryClient.getQueriesData<ConversationListResponse>({
             queryKey: queryKeys.support.conversations(workspaceId),
           });
-          const conversations: SupportConversation[] = cached.flatMap(([queryKey, data]) =>
-            isSupportConversationListQueryKey(queryKey, workspaceId) ? (data?.data ?? []) : []
-          );
+          const conversations = extractConversationListConversations(cached, workspaceId);
           const currentIdx = conversations.findIndex((c) => c.id === conversationId);
           // Pick the next one below, or the one above, or clear selection
           const next = conversations[currentIdx + 1] ?? conversations[currentIdx - 1];
