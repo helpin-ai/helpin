@@ -625,6 +625,45 @@ func TestLatestNativeRepairInstructionPrefersPublishTaskPlanToolFailure(t *testi
 	}
 }
 
+func TestLatestUnresolvedNativeToolFailureIgnoresOlderToolFailureAfterLaterAssistant(t *testing.T) {
+	oldBlocks, err := json.Marshal([]workerpkg.ExecutionBlock{
+		{
+			Type:     workerpkg.ExecutionBlockTypeToolResult,
+			ToolName: workerpkg.ToolPublishTaskPlan,
+			Output:   "publish_task_plan content must be a JSON object with summary and proposed_tasks",
+			IsError:  true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal old blocks: %v", err)
+	}
+	newBlocks, err := json.Marshal([]workerpkg.ExecutionBlock{
+		{
+			Type:     workerpkg.ExecutionBlockTypeToolResult,
+			ToolName: workerpkg.ToolPublishTaskPlan,
+			Output:   "publish_task_plan requires content.proposed_tasks to be an array of task objects",
+			IsError:  true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal new blocks: %v", err)
+	}
+	messages := []model.AgentRunMessage{
+		{Role: "assistant", MessageType: "assistant_turn", Content: "Earlier publish attempt."},
+		{Role: "tool", MessageType: "tool_result", Content: "publish_task_plan content must be a JSON object with summary and proposed_tasks", ContentBlocks: oldBlocks},
+		{Role: "assistant", MessageType: "assistant_turn", Content: "Retried with a better payload."},
+		{Role: "tool", MessageType: "tool_result", Content: "publish_task_plan requires content.proposed_tasks to be an array of task objects", ContentBlocks: newBlocks},
+	}
+
+	got := latestUnresolvedNativeToolFailure(messages)
+	if got == nil {
+		t.Fatal("expected latest unresolved tool failure")
+	}
+	if got.Output != "publish_task_plan requires content.proposed_tasks to be an array of task objects" {
+		t.Fatalf("expected latest tool failure output, got %#v", got)
+	}
+}
+
 func TestReplayMessagesForExecutionStripsPolicyRetryForSelectivePath(t *testing.T) {
 	messages := []model.AgentRunMessage{
 		{Role: "user", MessageType: "prompt", Content: "Initial request"},
