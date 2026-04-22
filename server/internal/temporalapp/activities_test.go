@@ -189,6 +189,31 @@ func TestExecutionRuntimeKindPrefersRunOverride(t *testing.T) {
 	}
 }
 
+func TestSelectNativeActiveSkillsRequiresSelectivePathGate(t *testing.T) {
+	state := &resolvedRunState{
+		run: &model.AgentRun{TargetType: "epic"},
+		agent: &model.Agent{
+			PresetKey: model.AgentPresetEpicPlanner,
+		},
+		runtimeSkillRefs: model.AgentSkillRefs{
+			{Key: "approval_protocol"},
+			{Key: "prd_authorship"},
+			{Key: "task_decomposition"},
+		},
+		runtimeSkillDefinitions: []workerpkg.SkillDefinition{
+			{Key: "approval_protocol", SourceKind: "built_in", Instructions: "approval"},
+			{Key: "prd_authorship", SourceKind: "built_in", Instructions: "prd"},
+			{Key: "task_decomposition", SourceKind: "built_in", Instructions: "tasks"},
+		},
+		nativeSelectivePathEnabled: false,
+	}
+
+	selection := selectNativeActiveSkills(state, model.PlanningStageDraftSpec)
+	if got := testAgentSkillRefKeys(selection.Refs); len(got) != 3 || got[0] != "approval_protocol" || got[1] != "prd_authorship" || got[2] != "task_decomposition" {
+		t.Fatalf("expected full skill set when selective path is disabled, got %#v", got)
+	}
+}
+
 func TestPersistHumanInteractionArtifactsStoresStructuredReviewFindings(t *testing.T) {
 	dbName := fmt.Sprintf("file:review-findings-artifact-%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})

@@ -312,6 +312,13 @@ func selectNativeActiveSkills(state *resolvedRunState, planningStage string) age
 	if state == nil {
 		return agentskills.NativeActiveSelection{}
 	}
+	if !state.nativeSelectivePathEnabled {
+		return agentskills.NativeActiveSelection{
+			Refs:         append(model.AgentSkillRefs(nil), state.runtimeSkillRefs...),
+			Definitions:  append([]workerpkg.SkillDefinition(nil), state.runtimeSkillDefinitions...),
+			Instructions: agentskills.CompileInstructions(state.runtimeSkillDefinitions),
+		}
+	}
 	planningStage = nativeActiveSkillPlanningStage(state, planningStage)
 	return agentskills.SelectNativeActiveSkills(state.runtimeSkillRefs, state.runtimeSkillDefinitions, agentskills.NativeActiveSelectionContext{
 		PresetKey:     strings.TrimSpace(state.agent.EffectivePresetKey()),
