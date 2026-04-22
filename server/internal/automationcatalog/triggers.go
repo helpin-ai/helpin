@@ -81,8 +81,6 @@ func ResolveBindingForTrigger(source, triggerType, targetType string) (bindingID
 		case "support_conversation":
 			return "manual.support_run", "manual", true
 		}
-	case model.AgentRunTriggerSourceSchedule:
-		return "agent.schedule", "schedule", true
 	case model.AgentRunTriggerSourceAutomationRule:
 		if triggerType == model.TriggerCron {
 			return "automation_rule.cron", "automation_rule", true
@@ -168,10 +166,6 @@ func executionSearchPresetForDefinition(def triggerBindingDefinition, referenceI
 			BindingID: strPtr(def.catalogID),
 			Source:    strPtr(def.bindingKind),
 		}
-	case "schedule":
-		return &model.TriggerExecutionSearchPreset{
-			Source: strPtr(def.bindingKind),
-		}
 	case "automation_rule":
 		preset := &model.TriggerExecutionSearchPreset{
 			Source:      strPtr(def.bindingKind),
@@ -198,7 +192,6 @@ func triggerBindingDefinitions() []triggerBindingDefinition {
 	workflowsPath := strPtr("/w/$slug/automation/flows")
 	chatPath := strPtr("/w/$slug/settings/chat-general")
 	agentsPath := strPtr("/w/$slug/automation/agents")
-
 	return []triggerBindingDefinition{
 		{
 			catalogID:        "manual.task_run",
@@ -390,18 +383,6 @@ func triggerBindingDefinitions() []triggerBindingDefinition {
 			},
 		},
 		{
-			catalogID:        "agent.schedule",
-			bindingKind:      "schedule",
-			category:         "agent",
-			triggerType:      model.TriggerCron,
-			title:            "Agent Schedule",
-			description:      "Runs an agent directly from its own cron schedule.",
-			sourceSurface:    "Agent configuration",
-			configSurface:    agentsPath,
-			supportsAgentRun: true,
-			aliases:          []string{"agent_schedule"},
-		},
-		{
 			catalogID:        "support.widget_message",
 			bindingKind:      "support_widget",
 			category:         "support",
@@ -419,7 +400,7 @@ func triggerBindingDefinitions() []triggerBindingDefinition {
 			category:         "automation_rule",
 			triggerType:      model.TriggerCron,
 			title:            "Automation Rule Cron",
-			description:      "Runs a start-agent-run automation rule on a backend cron category. The engine supports it, but Flows does not yet surface cron authoring.",
+			description:      "Runs a start-agent-run automation rule on a recurring schedule managed from Flows.",
 			sourceSurface:    "Rule engine backend",
 			configSurface:    workflowsPath,
 			supportsAgentRun: true,

@@ -33,6 +33,7 @@ var toolCategory = map[string]string{
 	"open_pr":         "Git",
 
 	// PM / Tasks
+	"request_approval":          "Interaction",
 	"request_user_input":        "Interaction",
 	"request_review_checkpoint": "Interaction",
 	"request_human_input":       "Interaction",

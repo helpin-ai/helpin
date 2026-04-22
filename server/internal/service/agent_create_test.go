@@ -119,7 +119,7 @@ func TestEnsureSystemProductPlannerAgentRefreshesLegacyPrompt(t *testing.T) {
 	if strings.Contains(*updated.SystemPrompt, "awaiting_prd_approval") || strings.Contains(*updated.SystemPrompt, "awaiting_story_approval") {
 		t.Fatalf("expected refreshed prompt to remove legacy approval phases, got %q", *updated.SystemPrompt)
 	}
-	if !strings.Contains(*updated.SystemPrompt, "Approval checkpoints happen inline in the same chat.") {
+	if !strings.Contains(*updated.SystemPrompt, "Approval requests happen inline in the same chat.") {
 		t.Fatalf("expected refreshed prompt to include inline approval guidance, got %q", *updated.SystemPrompt)
 	}
 	if updated.Name != defaultSystemEpicPlannerName {

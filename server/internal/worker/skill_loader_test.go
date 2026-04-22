@@ -19,4 +19,10 @@ func TestGetBuiltInSkillLoadsPackagedSkill(t *testing.T) {
 	if skill.Instructions == "" {
 		t.Fatal("expected non-empty skill instructions")
 	}
+	if !containsString(skill.Policy.CompletionRequiresInteractionKinds, InteractionKindApprovalRequest) {
+		t.Fatalf("expected approval request completion requirement, got %v", skill.Policy.CompletionRequiresInteractionKinds)
+	}
+	if !containsString(skill.Policy.CompletionRequiresInteractionKinds, InteractionKindRequestUserInput) {
+		t.Fatalf("expected user input completion requirement, got %v", skill.Policy.CompletionRequiresInteractionKinds)
+	}
 }

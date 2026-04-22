@@ -323,12 +323,6 @@ func (s *AutomationInventoryService) triggerCatalogItems(ctx context.Context, wo
 		}
 	}
 
-	for _, agent := range agents {
-		if strings.TrimSpace(derefString(agent.Schedule)) != "" {
-			bindingCounts["agent.schedule"]++
-		}
-	}
-
 	if s.installationRepo != nil {
 		inst, err := s.installationRepo.GetByWorkspace(ctx, workspaceID)
 		if err != nil {

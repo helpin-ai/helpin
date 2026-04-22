@@ -309,7 +309,7 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 	}
 	execCtx.LastExecutionResult = result
 
-	if ExtractLatestHumanApprovalRequest(result.ToolInvocations) != nil || ExtractLatestHumanInputRequest(result.ToolInvocations) != nil {
+	if ExtractLatestApprovalRequest(result.ToolInvocations) != nil || ExtractLatestReviewCheckpointRequest(result.ToolInvocations) != nil || ExtractLatestHumanInputRequest(result.ToolInvocations) != nil {
 		return nil
 	}
 

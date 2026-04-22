@@ -7,6 +7,7 @@ import (
 
 const (
 	InteractionKindRequestUserInput = "request_user_input"
+	InteractionKindApprovalRequest  = "approval_request"
 	InteractionKindReviewCheckpoint = "review_checkpoint"
 
 	InteractionTransportTypeToolCall      = "tool_call"
@@ -14,6 +15,7 @@ const (
 	InteractionTransportTypeRuntimeBridge = "runtime_bridge"
 
 	requestUserInputSchemaV1 = "request_user_input_v1"
+	approvalRequestSchemaV1  = "approval_request_v1"
 	reviewCheckpointSchemaV1 = "review_checkpoint_v1"
 )
 

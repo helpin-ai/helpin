@@ -664,10 +664,11 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 	}
 
 	approvalRequest := latestExecutionApprovalRequest(execCtx)
+	reviewRequest := latestExecutionReviewCheckpointRequest(execCtx)
 	humanInputRequest := latestExecutionHumanInputRequest(execCtx)
 	authRequest := latestExecutionCodexAuthState(execCtx)
-	if approvalRequest == nil && humanInputRequest == nil && authRequest == nil {
-		synthesizedApproval, synthesizedInput, err := a.synthesizeCompletionInteractionFallback(ctx, state, assistantMessage)
+	if approvalRequest == nil && reviewRequest == nil && humanInputRequest == nil && authRequest == nil {
+		synthesizedReview, synthesizedInput, err := a.synthesizeCompletionInteractionFallback(ctx, state, assistantMessage)
 		if err != nil {
 			if persistWorkspace {
 				_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
@@ -675,8 +676,8 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 			_ = a.failRun(ctx, state, err.Error())
 			return ExecuteRunResult{}, nonRetryableRunError(err)
 		}
-		if synthesizedApproval != nil {
-			approvalRequest = synthesizedApproval
+		if synthesizedReview != nil {
+			reviewRequest = synthesizedReview
 		}
 		if synthesizedInput != nil {
 			humanInputRequest = synthesizedInput
@@ -704,7 +705,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		return ExecuteRunResult{}, err
 	}
 
-	waitForApproval, waitForInput, waitForAuth := resolveExecutionWaitState(state.run, humanInputRequest, approvalRequest, authRequest)
+	waitForApproval, waitForInput, waitForAuth := resolveExecutionWaitState(state.run, humanInputRequest, approvalRequest, reviewRequest, authRequest)
 	continueExecution := false
 	if state.run.InvocationMode == model.InvocationModeInteractive && humanInputRequest != nil {
 	}
@@ -874,12 +875,12 @@ func (a *AgentRunActivities) persistRuntimeSkillManifest(ctx context.Context, ru
 	}
 }
 
-func resolveExecutionWaitState(run *model.AgentRun, humanInputRequest *workerpkg.UserInputRequest, approvalRequest *model.ApprovalRequest, authRequest *model.CodexAuthState) (waitForApproval bool, waitForInput bool, waitForAuth bool) {
+func resolveExecutionWaitState(run *model.AgentRun, humanInputRequest *workerpkg.UserInputRequest, approvalRequest *model.ApprovalRequest, reviewRequest *model.ReviewCheckpointRequest, authRequest *model.CodexAuthState) (waitForApproval bool, waitForInput bool, waitForAuth bool) {
 	if run == nil {
 		return false, false, false
 	}
 
-	if approvalRequest != nil {
+	if approvalRequest != nil || reviewRequest != nil {
 		return true, false, false
 	}
 	if humanInputRequest != nil {
@@ -938,6 +939,9 @@ func (a *AgentRunActivities) enforceCompletionInteractionPolicy(ctx context.Cont
 			}
 		}
 		if _, ok := requiredKinds[strings.TrimSpace(interaction.InteractionKind)]; ok {
+			if err := a.validateApprovalInteractionPreviewContract(ctx, state, interaction, currentAssistantSequenceNo); err != nil {
+				return err
+			}
 			return nil
 		}
 	}
@@ -950,6 +954,58 @@ func (a *AgentRunActivities) enforceCompletionInteractionPolicy(ctx context.Cont
 
 	kinds := sortedCompletionInteractionKinds(requiredKinds)
 	return fmt.Errorf("run cannot complete because active skills require one of [%s] before completion", strings.Join(kinds, ", "))
+}
+
+func (a *AgentRunActivities) validateApprovalInteractionPreviewContract(ctx context.Context, state *resolvedRunState, interaction model.AgentRunInteraction, currentAssistantSequenceNo int) error {
+	if a == nil || state == nil || state.run == nil || a.artifactRepo == nil {
+		return nil
+	}
+	interactionKind := strings.TrimSpace(interaction.InteractionKind)
+	if interactionKind != model.AgentRunInteractionKindReviewCheckpoint && interactionKind != model.AgentRunInteractionKindApprovalRequest {
+		return nil
+	}
+
+	var approval model.ApprovalRequest
+	if err := json.Unmarshal(interaction.RequestPayload, &approval); err != nil {
+		return fmt.Errorf("parse approval payload: %w", err)
+	}
+	approval.PreviewPanelKey = normalizeApprovalPreviewPanelKey(approval.PreviewPanelKey)
+
+	artifacts, err := a.artifactRepo.ListByRun(ctx, state.run.WorkspaceID, state.run.ID)
+	if err != nil {
+		return fmt.Errorf("verify approval preview artifacts: %w", err)
+	}
+	matchCount := 0
+	for i := len(artifacts) - 1; i >= 0; i-- {
+		artifact := artifacts[i]
+		if strings.TrimSpace(artifact.ArtifactType) != workerpkg.RunPreviewArtifactType || artifact.InlineContent == nil {
+			continue
+		}
+		if currentAssistantSequenceNo > 0 && artifactAssistantMessageSequenceNo(artifact) != currentAssistantSequenceNo {
+			continue
+		}
+		var preview workerpkg.PublishedPreview
+		if err := json.Unmarshal([]byte(*artifact.InlineContent), &preview); err != nil {
+			return fmt.Errorf("parse approval preview artifact: %w", err)
+		}
+		if approval.PreviewPanelKey != "" && normalizeApprovalPreviewPanelKey(preview.PanelKey) != approval.PreviewPanelKey {
+			continue
+		}
+		matchCount++
+		if approval.PreviewPanelKey != "" {
+			return nil
+		}
+	}
+	if approval.PreviewPanelKey != "" {
+		return fmt.Errorf("%s requires a same-turn %s preview before requesting approval", interactionKind, approval.PreviewPanelKey)
+	}
+	if matchCount == 1 {
+		return nil
+	}
+	if matchCount > 1 {
+		return fmt.Errorf("%s requires preview_panel_key when multiple same-turn previews exist", interactionKind)
+	}
+	return fmt.Errorf("%s requires a same-turn preview before requesting approval", interactionKind)
 }
 
 func completionRequiredInteractionKinds(policy workerpkg.SkillPolicy) map[string]struct{} {
@@ -970,6 +1026,8 @@ func completionRequiredInteractionKinds(policy workerpkg.SkillPolicy) map[string
 		switch normalized {
 		case model.AgentRunInteractionKindRequestUserInput:
 			out[model.AgentRunInteractionKindRequestUserInput] = struct{}{}
+		case model.AgentRunInteractionKindApprovalRequest:
+			out[model.AgentRunInteractionKindApprovalRequest] = struct{}{}
 		case model.AgentRunInteractionKindReviewCheckpoint:
 			out[model.AgentRunInteractionKindReviewCheckpoint] = struct{}{}
 		case model.AgentRunInteractionKindCommandExecutionApproval,
@@ -995,7 +1053,7 @@ func sortedCompletionInteractionKinds(values map[string]struct{}) []string {
 	return kinds
 }
 
-func (a *AgentRunActivities) synthesizeCompletionInteractionFallback(ctx context.Context, state *resolvedRunState, assistantMessage *model.AgentRunMessage) (*model.ApprovalRequest, *workerpkg.UserInputRequest, error) {
+func (a *AgentRunActivities) synthesizeCompletionInteractionFallback(ctx context.Context, state *resolvedRunState, assistantMessage *model.AgentRunMessage) (*model.ReviewCheckpointRequest, *workerpkg.UserInputRequest, error) {
 	if a == nil || state == nil || state.run == nil || assistantMessage == nil {
 		return nil, nil, nil
 	}
@@ -1028,7 +1086,7 @@ func (a *AgentRunActivities) synthesizeCompletionInteractionFallback(ctx context
 		if terminalReview := terminalCleanImplementationReviewRequest(state, assistantMessage); terminalReview != nil {
 			metadata := buildAssistantSequenceArtifactMetadata(assistantMessage.SequenceNo)
 			if a.artifactRepo != nil {
-				if reviewFindings := reviewFindingsArtifactFromApprovalRequest(terminalReview, assistantMessage.SequenceNo); reviewFindings != nil {
+				if reviewFindings := reviewFindingsArtifactFromReviewCheckpointRequest(terminalReview, assistantMessage.SequenceNo); reviewFindings != nil {
 					if _, err := a.appendRunArtifactWithMetadata(ctx, state.run, model.AgentRunArtifactTypeReviewFindings, "json", reviewFindings, metadata); err != nil {
 						return nil, nil, err
 					}
@@ -1036,22 +1094,22 @@ func (a *AgentRunActivities) synthesizeCompletionInteractionFallback(ctx context
 			}
 			return nil, nil, nil
 		}
-		approvalRequest := synthesizedApprovalRequestFromAssistantMessage(state, assistantMessage)
-		if approvalRequest == nil {
+		reviewRequest := synthesizedReviewCheckpointFromAssistantMessage(state, assistantMessage)
+		if reviewRequest == nil {
 			return nil, nil, nil
 		}
 		metadata := buildAssistantSequenceArtifactMetadata(assistantMessage.SequenceNo)
 		if a.artifactRepo != nil {
-			if _, err := a.appendRunArtifactWithMetadata(ctx, state.run, model.AgentRunArtifactTypeHumanApprovalRequest, "json", approvalRequest, metadata); err != nil {
+			if _, err := a.appendRunArtifactWithMetadata(ctx, state.run, model.AgentRunArtifactTypeHumanApprovalRequest, "json", reviewRequest, metadata); err != nil {
 				return nil, nil, err
 			}
-			if reviewFindings := reviewFindingsArtifactFromApprovalRequest(approvalRequest, assistantMessage.SequenceNo); reviewFindings != nil {
+			if reviewFindings := reviewFindingsArtifactFromReviewCheckpointRequest(reviewRequest, assistantMessage.SequenceNo); reviewFindings != nil {
 				if _, err := a.appendRunArtifactWithMetadata(ctx, state.run, model.AgentRunArtifactTypeReviewFindings, "json", reviewFindings, metadata); err != nil {
 					return nil, nil, err
 				}
 			}
 		}
-		interaction, err := a.persistHumanApprovalInteraction(ctx, state, approvalRequest, metadata, assistantMessage.SequenceNo)
+		interaction, err := a.persistHumanApprovalInteraction(ctx, state, model.AgentRunInteractionKindReviewCheckpoint, reviewRequest.Title, reviewRequest.Summary, reviewRequest, metadata, assistantMessage.SequenceNo)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1060,10 +1118,10 @@ func (a *AgentRunActivities) synthesizeCompletionInteractionFallback(ctx context
 			a.publishCodingSessionInteractionEvent(state.run, interaction)
 		} else {
 			a.publishCodingSessionEvent(state.run, "approval.requested", map[string]any{
-				"content": approvalRequest,
+				"content": reviewRequest,
 			})
 		}
-		return approvalRequest, nil, nil
+		return reviewRequest, nil, nil
 	}
 
 	return nil, nil, nil
@@ -1100,14 +1158,14 @@ func allowsPostApprovalImplementationCompletion(interactions []model.AgentRunInt
 	return false
 }
 
-func terminalCleanImplementationReviewRequest(state *resolvedRunState, assistantMessage *model.AgentRunMessage) *model.ApprovalRequest {
+func terminalCleanImplementationReviewRequest(state *resolvedRunState, assistantMessage *model.AgentRunMessage) *model.ReviewCheckpointRequest {
 	if state == nil || state.agent == nil || assistantMessage == nil {
 		return nil
 	}
 	if strings.TrimSpace(state.agent.EffectivePresetKey()) != model.AgentPresetReviewAgent {
 		return nil
 	}
-	request := synthesizedApprovalRequestFromAssistantMessage(state, assistantMessage)
+	request := synthesizedReviewCheckpointFromAssistantMessage(state, assistantMessage)
 	if request == nil {
 		return nil
 	}
@@ -1123,7 +1181,7 @@ func terminalCleanImplementationReviewRequest(state *resolvedRunState, assistant
 	return request
 }
 
-func synthesizedApprovalRequestFromAssistantMessage(state *resolvedRunState, assistantMessage *model.AgentRunMessage) *model.ApprovalRequest {
+func synthesizedReviewCheckpointFromAssistantMessage(state *resolvedRunState, assistantMessage *model.AgentRunMessage) *model.ReviewCheckpointRequest {
 	if assistantMessage == nil {
 		return nil
 	}
@@ -1158,20 +1216,20 @@ func synthesizedApprovalRequestFromAssistantMessage(state *resolvedRunState, ass
 		}
 	}
 
-	return &model.ApprovalRequest{
+	return &model.ReviewCheckpointRequest{
 		Phase:   phase,
 		Title:   title,
 		Summary: content,
 	}
 }
 
-func parseStructuredReviewApprovalRequest(policy workerpkg.SkillPolicy, runtimeKind, content string) (*model.ApprovalRequest, bool) {
+func parseStructuredReviewApprovalRequest(policy workerpkg.SkillPolicy, runtimeKind, content string) (*model.ReviewCheckpointRequest, bool) {
 	payload, prose := extractStructuredReviewPayload(policy, runtimeKind, content)
 	if strings.TrimSpace(payload) == "" {
 		return nil, false
 	}
 
-	var req model.ApprovalRequest
+	var req model.ReviewCheckpointRequest
 	if err := json.Unmarshal([]byte(payload), &req); err != nil {
 		return nil, false
 	}
@@ -1179,6 +1237,7 @@ func parseStructuredReviewApprovalRequest(policy workerpkg.SkillPolicy, runtimeK
 	req.Title = strings.TrimSpace(req.Title)
 	req.Summary = strings.TrimSpace(req.Summary)
 	req.Phase = strings.TrimSpace(req.Phase)
+	req.PreviewPanelKey = normalizeApprovalPreviewPanelKey(req.PreviewPanelKey)
 	req.OverallCorrectness = strings.TrimSpace(req.OverallCorrectness)
 	req.OverallExplanation = strings.TrimSpace(req.OverallExplanation)
 	normalizeStructuredReviewFindings(req.Findings)
@@ -1247,6 +1306,8 @@ func (a *AgentRunActivities) retryInvalidCompletionTurn(ctx context.Context, sta
 	instruction := "System correction: the previous turn ended without creating the required interaction. Continue from your last assistant message instead of restarting. Do not end with prose only. Before this run stops, emit one of the required interaction handoffs declared by the active skill policy."
 	if strings.TrimSpace(state.agent.EffectivePresetKey()) == model.AgentPresetReviewAgent {
 		instruction = "System correction: the previous review turn ended without the required interaction. Continue from your last assistant message instead of restarting. Do not end with prose only. In this next turn, emit a review_checkpoint handoff using the runtime-appropriate mechanism, or emit request_user_input only if the human explicitly closed the review or asked a blocking follow-up."
+	} else if strings.Contains(strings.TrimSpace(cause.Error()), "same-turn") || strings.Contains(strings.TrimSpace(cause.Error()), "preview_panel_key") {
+		instruction = "System correction: the previous turn requested approval without binding it to a same-turn preview. Continue from your last assistant message instead of restarting. Do not end with prose only. If you emit request_approval or request_review_checkpoint, first publish the preview in the same turn. When multiple previews exist in that turn, include preview_panel_key so it binds to the correct preview."
 	}
 	if _, err := a.createRunMessage(ctx, state.run, "user", "policy_retry", instruction, nil, nil, nil, nil); err != nil {
 		return false, err
@@ -2005,6 +2066,23 @@ func buildAssistantSequenceArtifactMetadata(sequenceNo int) json.RawMessage {
 	return payload
 }
 
+func artifactAssistantMessageSequenceNo(artifact model.AgentRunArtifact) int {
+	if len(artifact.Metadata) == 0 || string(artifact.Metadata) == "null" {
+		return 0
+	}
+	var metadata struct {
+		AssistantMessageSequenceNo int `json:"assistant_message_sequence_no"`
+	}
+	if err := json.Unmarshal(artifact.Metadata, &metadata); err != nil {
+		return 0
+	}
+	return metadata.AssistantMessageSequenceNo
+}
+
+func normalizeApprovalPreviewPanelKey(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
 func mergeArtifactMetadata(parts ...json.RawMessage) json.RawMessage {
 	merged := map[string]any{}
 	for _, part := range parts {
@@ -2172,19 +2250,40 @@ func (a *AgentRunActivities) persistHumanInteractionArtifacts(ctx context.Contex
 		}
 	}
 
+	if reviewRequest := latestHumanReviewCheckpointRequestFromResult(result); reviewRequest != nil {
+		approvalMetadata := mergeArtifactMetadata(metadata, result.HumanApprovalMetadata)
+		if a.artifactRepo != nil {
+			if _, err := a.appendRunArtifactWithMetadata(ctx, state.run, model.AgentRunArtifactTypeHumanApprovalRequest, "json", reviewRequest, approvalMetadata); err != nil {
+				return err
+			}
+			if reviewFindings := reviewFindingsArtifactFromReviewCheckpointRequest(reviewRequest, assistantMessage.SequenceNo); reviewFindings != nil {
+				if _, err := a.appendRunArtifactWithMetadata(ctx, state.run, model.AgentRunArtifactTypeReviewFindings, "json", reviewFindings, approvalMetadata); err != nil {
+					return err
+				}
+			}
+		}
+		interaction, err := a.persistHumanApprovalInteraction(ctx, state, model.AgentRunInteractionKindReviewCheckpoint, reviewRequest.Title, reviewRequest.Summary, reviewRequest, approvalMetadata, assistantMessage.SequenceNo)
+		if err != nil {
+			return err
+		}
+		if interaction != nil {
+			a.maybeNotifyAgentAttentionRequired(ctx, state, interaction)
+			a.publishCodingSessionInteractionEvent(state.run, interaction)
+		} else {
+			a.publishCodingSessionEvent(state.run, "approval.requested", map[string]any{
+				"content": reviewRequest,
+			})
+		}
+	}
+
 	if approvalRequest := latestHumanApprovalRequestFromResult(result); approvalRequest != nil {
 		approvalMetadata := mergeArtifactMetadata(metadata, result.HumanApprovalMetadata)
 		if a.artifactRepo != nil {
 			if _, err := a.appendRunArtifactWithMetadata(ctx, state.run, model.AgentRunArtifactTypeHumanApprovalRequest, "json", approvalRequest, approvalMetadata); err != nil {
 				return err
 			}
-			if reviewFindings := reviewFindingsArtifactFromApprovalRequest(approvalRequest, assistantMessage.SequenceNo); reviewFindings != nil {
-				if _, err := a.appendRunArtifactWithMetadata(ctx, state.run, model.AgentRunArtifactTypeReviewFindings, "json", reviewFindings, approvalMetadata); err != nil {
-					return err
-				}
-			}
 		}
-		interaction, err := a.persistHumanApprovalInteraction(ctx, state, approvalRequest, approvalMetadata, assistantMessage.SequenceNo)
+		interaction, err := a.persistHumanApprovalInteraction(ctx, state, model.AgentRunInteractionKindApprovalRequest, approvalRequest.Title, approvalRequest.Summary, approvalRequest, approvalMetadata, assistantMessage.SequenceNo)
 		if err != nil {
 			return err
 		}
@@ -2427,8 +2526,8 @@ func (a *AgentRunActivities) persistHumanInputInteraction(ctx context.Context, s
 	return interaction, nil
 }
 
-func (a *AgentRunActivities) persistHumanApprovalInteraction(ctx context.Context, state *resolvedRunState, approvalRequest *model.ApprovalRequest, metadata json.RawMessage, assistantSequenceNo int) (*model.AgentRunInteraction, error) {
-	if a.interactionRepo == nil || state == nil || state.run == nil || approvalRequest == nil {
+func (a *AgentRunActivities) persistHumanApprovalInteraction(ctx context.Context, state *resolvedRunState, interactionKind, title, summary string, requestPayload any, metadata json.RawMessage, assistantSequenceNo int) (*model.AgentRunInteraction, error) {
+	if a.interactionRepo == nil || state == nil || state.run == nil || requestPayload == nil {
 		return nil, nil
 	}
 
@@ -2437,14 +2536,14 @@ func (a *AgentRunActivities) persistHumanApprovalInteraction(ctx context.Context
 		WorkspaceID:                state.run.WorkspaceID,
 		RunID:                      state.run.ID,
 		RuntimeKind:                firstNonEmptyString(strings.TrimSpace(runtimeMetadata.RuntimeKind), executionRuntimeKind(state), strings.TrimSpace(state.run.RuntimeKind)),
-		InteractionKind:            model.AgentRunInteractionKindReviewCheckpoint,
+		InteractionKind:            strings.TrimSpace(interactionKind),
 		Status:                     model.AgentRunInteractionStatusPending,
 		RequestSchemaVersion:       model.AgentRunInteractionSchemaVersionHelpinV1,
-		RequestPayload:             mustMarshalJSON(approvalRequest),
+		RequestPayload:             mustMarshalJSON(requestPayload),
 		RuntimeMetadata:            defaultInteractionRuntimeMetadata(metadata),
 		AssistantMessageSequenceNo: intPtrIfPositive(firstPositiveInt(runtimeMetadata.AssistantMessageSequenceNo, assistantSequenceNo)),
-		Title:                      strPtrIfNotEmpty(strings.TrimSpace(approvalRequest.Title)),
-		Summary:                    strPtrIfNotEmpty(strings.TrimSpace(approvalRequest.Summary)),
+		Title:                      strPtrIfNotEmpty(strings.TrimSpace(title)),
+		Summary:                    strPtrIfNotEmpty(strings.TrimSpace(summary)),
 	}
 
 	if interaction.RuntimeKind == "codex" && len(runtimeMetadata.CodexRequestPayload) > 0 {
@@ -2549,24 +2648,31 @@ func latestHumanApprovalRequestFromResult(result *workerpkg.ExecutionResult) *mo
 	if result == nil {
 		return nil
 	}
-	return workerpkg.ExtractLatestHumanApprovalRequest(result.ToolInvocations)
+	return workerpkg.ExtractLatestApprovalRequest(result.ToolInvocations)
 }
 
-func reviewFindingsArtifactFromApprovalRequest(approvalRequest *model.ApprovalRequest, assistantSequenceNo int) *model.ReviewFindingsArtifact {
-	if approvalRequest == nil {
+func latestHumanReviewCheckpointRequestFromResult(result *workerpkg.ExecutionResult) *model.ReviewCheckpointRequest {
+	if result == nil {
 		return nil
 	}
-	if len(approvalRequest.Findings) == 0 && strings.TrimSpace(approvalRequest.OverallCorrectness) == "" && strings.TrimSpace(approvalRequest.OverallExplanation) == "" && approvalRequest.OverallConfidenceScore == nil {
+	return workerpkg.ExtractLatestReviewCheckpointRequest(result.ToolInvocations)
+}
+
+func reviewFindingsArtifactFromReviewCheckpointRequest(reviewRequest *model.ReviewCheckpointRequest, assistantSequenceNo int) *model.ReviewFindingsArtifact {
+	if reviewRequest == nil {
+		return nil
+	}
+	if len(reviewRequest.Findings) == 0 && strings.TrimSpace(reviewRequest.OverallCorrectness) == "" && strings.TrimSpace(reviewRequest.OverallExplanation) == "" && reviewRequest.OverallConfidenceScore == nil {
 		return nil
 	}
 	return &model.ReviewFindingsArtifact{
-		Phase:                      strings.TrimSpace(approvalRequest.Phase),
-		Title:                      strings.TrimSpace(approvalRequest.Title),
-		Summary:                    strings.TrimSpace(approvalRequest.Summary),
-		Findings:                   slices.Clone(approvalRequest.Findings),
-		OverallCorrectness:         strings.TrimSpace(approvalRequest.OverallCorrectness),
-		OverallExplanation:         strings.TrimSpace(approvalRequest.OverallExplanation),
-		OverallConfidenceScore:     approvalRequest.OverallConfidenceScore,
+		Phase:                      strings.TrimSpace(reviewRequest.Phase),
+		Title:                      strings.TrimSpace(reviewRequest.Title),
+		Summary:                    strings.TrimSpace(reviewRequest.Summary),
+		Findings:                   slices.Clone(reviewRequest.Findings),
+		OverallCorrectness:         strings.TrimSpace(reviewRequest.OverallCorrectness),
+		OverallExplanation:         strings.TrimSpace(reviewRequest.OverallExplanation),
+		OverallConfidenceScore:     reviewRequest.OverallConfidenceScore,
 		AssistantMessageSequenceNo: assistantSequenceNo,
 		RecordedAt:                 time.Now().UTC(),
 	}
@@ -2951,7 +3057,14 @@ func latestExecutionApprovalRequest(execCtx *workerpkg.ExecutionContext) *model.
 	if execCtx == nil || execCtx.LastExecutionResult == nil {
 		return nil
 	}
-	return workerpkg.ExtractLatestHumanApprovalRequest(execCtx.LastExecutionResult.ToolInvocations)
+	return workerpkg.ExtractLatestApprovalRequest(execCtx.LastExecutionResult.ToolInvocations)
+}
+
+func latestExecutionReviewCheckpointRequest(execCtx *workerpkg.ExecutionContext) *model.ReviewCheckpointRequest {
+	if execCtx == nil || execCtx.LastExecutionResult == nil {
+		return nil
+	}
+	return workerpkg.ExtractLatestReviewCheckpointRequest(execCtx.LastExecutionResult.ToolInvocations)
 }
 
 func latestExecutionHumanInputRequest(execCtx *workerpkg.ExecutionContext) *workerpkg.UserInputRequest {
@@ -3068,6 +3181,13 @@ func (a *AgentRunActivities) currentRunMessageSequence(ctx context.Context, run 
 }
 
 func liveCodexPauseState(result *workerpkg.ExecutionResult) (pauseReason, stage string, err error) {
+	if reviewRequest := latestHumanReviewCheckpointRequestFromResult(result); reviewRequest != nil {
+		stage = "awaiting_review"
+		if strings.TrimSpace(reviewRequest.Phase) != "" {
+			stage = strings.TrimSpace(reviewRequest.Phase)
+		}
+		return model.AgentRunPauseReasonHumanApproval, stage, nil
+	}
 	if approvalRequest := latestHumanApprovalRequestFromResult(result); approvalRequest != nil {
 		stage = "awaiting_approval"
 		if strings.TrimSpace(approvalRequest.Phase) != "" {
@@ -3404,19 +3524,19 @@ func nextUnappliedApprovedPreview(artifacts []model.AgentRunArtifact) (*model.Ag
 
 func decodeApprovedTaskPlanPreviewContent(raw json.RawMessage) (model.OrchestrationProposal, error) {
 	var proposal model.OrchestrationProposal
+	var payload map[string]json.RawMessage
 	normalized, err := workerpkg.NormalizeTaskPlanPreviewContent(raw)
 	if err != nil {
-		if approvedPreviewDebugEnabled() {
-			slog.Error("approved task plan preview normalization failed during apply",
-				"raw_preview", previewDebugSnippet(raw, 1600),
-				"error", err,
-			)
+		if !decodeLooseApprovedTaskPlanPayload(raw, &payload) {
+			if approvedPreviewDebugEnabled() {
+				slog.Error("approved task plan preview normalization failed during apply",
+					"raw_preview", previewDebugSnippet(raw, 1600),
+					"error", err,
+				)
+			}
+			return proposal, fmt.Errorf("approved task plan preview content must be valid JSON matching the canonical task-plan shape {summary, proposed_tasks}; legacy proposed_stories is still accepted")
 		}
-		return proposal, fmt.Errorf("approved task plan preview content must be valid JSON matching the canonical task-plan shape {summary, proposed_tasks}; legacy proposed_stories is still accepted")
-	}
-
-	var payload map[string]json.RawMessage
-	if err := json.Unmarshal(normalized, &payload); err != nil {
+	} else if err := json.Unmarshal(normalized, &payload); err != nil {
 		if approvedPreviewDebugEnabled() {
 			slog.Error("approved task plan preview payload unmarshal failed during apply",
 				"normalized_preview", previewDebugSnippet(normalized, 1600),
@@ -3468,6 +3588,34 @@ func decodeApprovedTaskPlanPreviewContent(raw json.RawMessage) (model.Orchestrat
 		)
 	}
 	return proposal, nil
+}
+
+func decodeLooseApprovedTaskPlanPayload(raw json.RawMessage, payload *map[string]json.RawMessage) bool {
+	if payload == nil {
+		return false
+	}
+	if err := json.Unmarshal(raw, payload); err == nil {
+		_, hasSummary := (*payload)["summary"]
+		_, hasTasks := (*payload)["proposed_tasks"]
+		_, hasLegacyTasks := (*payload)["proposed_stories"]
+		return hasSummary && (hasTasks || hasLegacyTasks)
+	}
+
+	var encoded string
+	if err := json.Unmarshal(raw, &encoded); err != nil {
+		return false
+	}
+	encoded = strings.TrimSpace(encoded)
+	if encoded == "" || !json.Valid([]byte(encoded)) {
+		return false
+	}
+	if err := json.Unmarshal([]byte(encoded), payload); err != nil {
+		return false
+	}
+	_, hasSummary := (*payload)["summary"]
+	_, hasTasks := (*payload)["proposed_tasks"]
+	_, hasLegacyTasks := (*payload)["proposed_stories"]
+	return hasSummary && (hasTasks || hasLegacyTasks)
 }
 
 func decodeLooseApprovedProposedTask(raw json.RawMessage) (model.ProposedTask, bool) {
@@ -4899,8 +5047,8 @@ func (a *AgentRunActivities) buildTaskPlannerInstructions(ctx context.Context, s
 	}
 	sections = append(sections, "Choose the next step from the transcript, task details, parent epic context, linked docs, comments, code context, and tool results.")
 	sections = append(sections, "Use this sequence unless the human explicitly redirects you: clarify scope if needed, draft or refine the task planning doc, publish it with publish_task_plan_doc, wait for inline approval, then stop. The platform will persist and link the approved preview to the canonical task planning doc automatically.")
-	sections = append(sections, "Keep approvals soft and inline. When you need approval, call request_review_checkpoint with phase=\"task_doc\" and stop after the request.")
-	sections = append(sections, "Treat request_review_checkpoint as the final action in that turn. Do not call more tools after it, and do not append extra approval-choice prose after requesting the checkpoint.")
+	sections = append(sections, "Keep approvals soft and inline. When you need approval, call request_approval with phase=\"task_doc\" and stop after the request.")
+	sections = append(sections, "Treat request_approval as the final action in that turn. Do not call more tools after it, and do not append extra approval-choice prose after requesting approval.")
 	sections = append(sections, "Use publish_task_plan_doc for reviewable right-pane task planning documents.")
 	sections = append(sections, "publish_task_plan_doc must receive a JSON object where content is the full markdown planning draft under review. Do not send title-only payloads or empty content.")
 	sections = append(sections, "Treat parent epic details, the epic PRD, and epic-linked docs as background context only. Use them to understand constraints, inherited requirements, and non-goals, but do not copy them wholesale into the task planning document unless they directly affect this task's implementation.")
@@ -5086,12 +5234,14 @@ func (a *AgentRunActivities) buildAgenticEpicPlannerInstructions(ctx context.Con
 	}
 	sections = append(sections, "Choose the next step from the transcript, current epic state, linked docs, existing tasks, and tool results.")
 	sections = append(sections, "Use this sequence unless the human explicitly redirects you: clarify scope if needed, draft/refine the PRD, publish it with publish_prd_draft, wait for inline PRD approval, let the platform persist the approved PRD artifact to the canonical epic doc, propose the implementation task plan, publish it with publish_task_plan, wait for inline task approval, then let the platform apply the approved task plan artifact and create tasks.")
-	sections = append(sections, "Keep approvals soft and inline. When you need approval, call request_review_checkpoint with phase=\"prd\" or phase=\"tasks\" and stop after the request.")
-	sections = append(sections, "Treat request_review_checkpoint as the final action in that turn. Do not call more tools after it in the same turn. Do not append extra approval-choice prose after requesting the checkpoint.")
+	sections = append(sections, "Keep approvals soft and inline. When you need approval, call request_approval with phase=\"prd\" or phase=\"tasks\" and stop after the request.")
+	sections = append(sections, "Treat request_approval as the final action in that turn. Do not call more tools after it in the same turn. Do not append extra approval-choice prose after requesting approval.")
 	sections = append(sections, "After explicit PRD approval, continue automatically to task planning in the same run. Do not ask whether to proceed to tasks unless the human explicitly redirects scope.")
 	sections = append(sections, "After PRD approval is persisted, your next turn must continue into task planning. Either ask the next blocking questions with request_user_input or publish_task_plan. Do not complete the run immediately after PRD approval.")
-	sections = append(sections, "If the latest human reply requests changes to the PRD or task plan, revise the active artifact, republish the full replacement preview, and request_review_checkpoint again when ready. Do not end the run with prose-only acknowledgement after change feedback.")
+	sections = append(sections, "If the latest human reply requests changes to the PRD or task plan, revise the active artifact, republish the full replacement preview, and request_approval again when ready. Do not end the run with prose-only acknowledgement after change feedback.")
 	sections = append(sections, "Use publish_prd_draft for PRD markdown previews and publish_task_plan for task plan JSON previews.")
+	sections = append(sections, "publish_task_plan must receive one complete JSON object payload in that tool call. Do not send title-only payloads, raw string wrappers, partial JSON, or stringified blobs. Put the full plan under content with a non-empty summary and proposed_tasks array.")
+	sections = append(sections, "proposed_tasks must be an array of full task objects. Never send arrays of strings, refs, placeholders, key names, or partial fragments. If publish_task_plan fails validation, correct the payload and retry with one complete valid task-plan object before requesting approval.")
 	sections = append(sections, "Before approval, keep drafts in chat-backed preview artifacts only. After approval, the platform applies the approved artifact; do not replay approved PRDs or task plans through mutation tools.")
 
 	var hasSpecContent bool

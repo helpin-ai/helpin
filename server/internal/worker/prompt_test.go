@@ -585,7 +585,7 @@ func TestBuildRuntimeExecutionSupplementPromptOmitsArtifactContext(t *testing.T)
 	for _, expected := range []string{
 		"This is an interactive transcript that may resume after a human reply.",
 		"emit a user-input handoff using the runtime-appropriate mechanism",
-		"emit a review checkpoint handoff using the runtime-appropriate mechanism",
+		"emit an approval or review handoff using the runtime-appropriate mechanism",
 		"Durable run facts:",
 		"- target_id=deal-123",
 	} {

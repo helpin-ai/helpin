@@ -2,6 +2,7 @@ import type { AgentInvocationMode, AgentRunPauseReason, AgentRunStatus, AgentRun
 
 export type CodingSessionInteractionKind =
   | 'request_user_input'
+  | 'approval_request'
   | 'command_execution_approval'
   | 'file_change_approval'
   | 'permissions_approval'
@@ -9,6 +10,19 @@ export type CodingSessionInteractionKind =
   | 'auth_required';
 
 export type CodingSessionInteractionStatus = 'pending' | 'resolved' | 'cancelled';
+
+export interface CodingSessionApprovalRequestPayload {
+  phase?: string;
+  preview_panel_key?: string;
+  title?: string;
+  summary?: string;
+}
+
+export interface CodingSessionApprovalResponsePayload {
+  [key: string]: unknown;
+  decision: 'approve' | 'request_changes';
+  message?: string;
+}
 
 export interface CodingSessionReviewFinding {
   id: string;
