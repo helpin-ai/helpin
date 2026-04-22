@@ -351,6 +351,101 @@ func TestBuildInitialInstructionsUsesNativeSelectiveTaskPhaseGuidance(t *testing
 	}
 }
 
+func TestNativeEpicPlannerPhaseName(t *testing.T) {
+	testCases := []struct {
+		name           string
+		input          planningRunInput
+		hasSpecContent bool
+		hasTasks       bool
+		want           string
+	}{
+		{
+			name: "approved spec with no tasks moves to task planning",
+			input: planningRunInput{
+				SpecVersionID: "spec-v1",
+			},
+			want: model.PlanningStagePlanTasks,
+		},
+		{
+			name: "approved spec with tasks enters extension mode",
+			input: planningRunInput{
+				SpecVersionID: "spec-v1",
+			},
+			hasTasks: true,
+			want:     "task_extension",
+		},
+		{
+			name: "draft spec doc stays in prd revision",
+			input: planningRunInput{
+				SpecDocumentID: "doc-1",
+			},
+			hasSpecContent: true,
+			want:           "prd_revision",
+		},
+		{
+			name:  "no prior spec starts in draft spec",
+			input: planningRunInput{},
+			want:  model.PlanningStageDraftSpec,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := nativeEpicPlannerPhaseName(tc.input, tc.hasSpecContent, tc.hasTasks); got != tc.want {
+				t.Fatalf("expected phase %q, got %q", tc.want, got)
+			}
+		})
+	}
+}
+
+func TestNativeEpicPlannerNextStepGuidance(t *testing.T) {
+	testCases := []struct {
+		name           string
+		input          planningRunInput
+		hasSpecContent bool
+		hasTasks       bool
+		wantSnippet    string
+	}{
+		{
+			name: "approved spec with no tasks skips prd drafting",
+			input: planningRunInput{
+				SpecVersionID: "spec-v1",
+			},
+			wantSnippet: "Skip PRD drafting entirely and proceed directly to task planning",
+		},
+		{
+			name: "approved spec with tasks avoids recreation",
+			input: planningRunInput{
+				SpecVersionID: "spec-v1",
+			},
+			hasTasks:    true,
+			wantSnippet: "Do not redraft the PRD or recreate existing tasks",
+		},
+		{
+			name: "draft spec resumes current draft",
+			input: planningRunInput{
+				SpecDocumentID: "doc-1",
+			},
+			hasSpecContent: true,
+			wantSnippet:    "Resume from the current draft",
+		},
+		{
+			name:        "no prior spec follows full loop",
+			input:       planningRunInput{},
+			wantSnippet: "Follow the full loop from clarification through PRD drafting",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := nativeEpicPlannerNextStepGuidance(tc.input, tc.hasSpecContent, tc.hasTasks)
+			if !strings.Contains(got, tc.wantSnippet) {
+				t.Fatalf("expected guidance to contain %q, got %q", tc.wantSnippet, got)
+			}
+		})
+	}
+}
+
 func TestLatestNativeRepairGuidanceRequiresSelectivePath(t *testing.T) {
 	messages := []model.AgentRunMessage{
 		{Role: "user", MessageType: "policy_retry", Content: "System correction: continue from your last assistant message."},
