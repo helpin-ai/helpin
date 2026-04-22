@@ -140,6 +140,7 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
     () => [inboxScopes?.shared_inbox, ...(inboxScopes?.mailboxes ?? [])].filter(Boolean) as SupportInboxScope[],
     [inboxScopes]
   );
+  const shouldShowEmptyState = !isLoading && filteredConversations.length === 0 && !error && !hasNextPage;
 
   useEffect(() => {
     if (!wsSend || !wsConnected || filteredConversations.length === 0) return;
@@ -258,7 +259,7 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
         {error && (
           <p className="p-4 text-sm text-destructive">{String(error)}</p>
         )}
-        {!isLoading && filteredConversations.length === 0 && !error && (
+        {shouldShowEmptyState && (
           <EmptyState
             icon={Message01Icon}
             title={emptyCopyForNavFilter(navFilter, searchQuery).title}
@@ -274,7 +275,7 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
             onSelectConversation={handleSelect}
           />
         ))}
-        {filteredConversations.length > 0 && hasNextPage && (
+        {hasNextPage && (
           <div className="flex justify-center px-3 py-3">
             <Button
               variant="ghost"
