@@ -343,9 +343,8 @@ func nativeActiveSkillPlanningStage(state *resolvedRunState, planningStage strin
 		}
 		switch strings.TrimSpace(state.epic.PlanningState) {
 		case model.EpicPlanningStateReadyForTaskPlanning,
-			model.EpicPlanningStateReadyForStoryPlanning,
 			model.EpicPlanningStateAwaitingPlanApproval,
-			model.EpicPlanningStateStoriesCreated,
+			model.EpicPlanningStateTasksCreated,
 			model.EpicPlanningStateExecutionStarted,
 			model.EpicPlanningStateReadyForExecution:
 			return model.PlanningStagePlanTasks
@@ -4190,7 +4189,7 @@ func (a *AgentRunActivities) applyApprovedInteractivePreview(ctx context.Context
 			return "", err
 		}
 		appliedAction = "persist_prd"
-	case "task_doc", "story_doc":
+	case "task_doc":
 		if state.task == nil {
 			return "", fmt.Errorf("approved task planning doc preview requires a task target")
 		}
@@ -4198,7 +4197,7 @@ func (a *AgentRunActivities) applyApprovedInteractivePreview(ctx context.Context
 			return "", err
 		}
 		appliedAction = "persist_task_doc"
-	case "tasks", "stories":
+	case "tasks":
 		if state.epic == nil || state.run.TargetType != "epic" {
 			return "", fmt.Errorf("approved task plan preview requires an epic target")
 		}
@@ -4277,7 +4276,7 @@ func decodeApprovedTaskPlanPreviewContent(raw json.RawMessage) (model.Orchestrat
 					"error", err,
 				)
 			}
-			return proposal, fmt.Errorf("approved task plan preview content must be valid JSON matching the canonical task-plan shape {summary, proposed_tasks}; legacy proposed_stories is still accepted")
+			return proposal, fmt.Errorf("approved task plan preview content must be valid JSON matching the canonical task-plan shape {summary, proposed_tasks}")
 		}
 	} else if err := json.Unmarshal(normalized, &payload); err != nil {
 		if approvedPreviewDebugEnabled() {
@@ -4286,7 +4285,7 @@ func decodeApprovedTaskPlanPreviewContent(raw json.RawMessage) (model.Orchestrat
 				"error", err,
 			)
 		}
-		return proposal, fmt.Errorf("approved task plan preview content must be valid JSON matching the canonical task-plan shape {summary, proposed_tasks}; legacy proposed_stories is still accepted")
+		return proposal, fmt.Errorf("approved task plan preview content must be valid JSON matching the canonical task-plan shape {summary, proposed_tasks}")
 	}
 
 	proposal.EpicID = decodeLooseJSONString(payload["epic_id"])
@@ -4299,16 +4298,14 @@ func decodeApprovedTaskPlanPreviewContent(raw json.RawMessage) (model.Orchestrat
 	}
 
 	var taskItems []json.RawMessage
-	if err := json.Unmarshal(payload["proposed_stories"], &taskItems); err != nil {
-		if err := json.Unmarshal(payload["proposed_tasks"], &taskItems); err != nil {
-			if approvedPreviewDebugEnabled() {
-				slog.Error("approved task plan preview proposed_tasks decode failed during apply",
-					"normalized_preview", previewDebugSnippet(normalized, 1600),
-					"error", err,
-				)
-			}
-			return proposal, fmt.Errorf("approved task plan preview content must be valid JSON matching the canonical task-plan shape {summary, proposed_tasks}; legacy proposed_stories is still accepted")
+	if err := json.Unmarshal(payload["proposed_tasks"], &taskItems); err != nil {
+		if approvedPreviewDebugEnabled() {
+			slog.Error("approved task plan preview proposed_tasks decode failed during apply",
+				"normalized_preview", previewDebugSnippet(normalized, 1600),
+				"error", err,
+			)
 		}
+		return proposal, fmt.Errorf("approved task plan preview content must be valid JSON matching the canonical task-plan shape {summary, proposed_tasks}")
 	}
 	proposal.ProposedTasks = make([]model.ProposedTask, 0, len(taskItems))
 	for index, item := range taskItems {
@@ -4320,7 +4317,7 @@ func decodeApprovedTaskPlanPreviewContent(raw json.RawMessage) (model.Orchestrat
 					"task_preview", previewDebugSnippet(item, 1200),
 				)
 			}
-			return proposal, fmt.Errorf("approved task plan preview content must be valid JSON matching the canonical task-plan shape {summary, proposed_tasks}; legacy proposed_stories is still accepted")
+			return proposal, fmt.Errorf("approved task plan preview content must be valid JSON matching the canonical task-plan shape {summary, proposed_tasks}")
 		}
 		proposal.ProposedTasks = append(proposal.ProposedTasks, task)
 	}
@@ -4340,8 +4337,7 @@ func decodeLooseApprovedTaskPlanPayload(raw json.RawMessage, payload *map[string
 	if err := json.Unmarshal(raw, payload); err == nil {
 		_, hasSummary := (*payload)["summary"]
 		_, hasTasks := (*payload)["proposed_tasks"]
-		_, hasLegacyTasks := (*payload)["proposed_stories"]
-		return hasSummary && (hasTasks || hasLegacyTasks)
+		return hasSummary && hasTasks
 	}
 
 	var encoded string
@@ -4357,8 +4353,7 @@ func decodeLooseApprovedTaskPlanPayload(raw json.RawMessage, payload *map[string
 	}
 	_, hasSummary := (*payload)["summary"]
 	_, hasTasks := (*payload)["proposed_tasks"]
-	_, hasLegacyTasks := (*payload)["proposed_stories"]
-	return hasSummary && (hasTasks || hasLegacyTasks)
+	return hasSummary && hasTasks
 }
 
 func decodeLooseApprovedProposedTask(raw json.RawMessage) (model.ProposedTask, bool) {
@@ -4371,7 +4366,7 @@ func decodeLooseApprovedProposedTask(raw json.RawMessage) (model.ProposedTask, b
 		Ref:                decodeLooseJSONString(payload["ref"]),
 		Name:               firstNonEmptyString(decodeLooseJSONString(payload["name"]), decodeLooseJSONString(payload["title"])),
 		Description:        decodeLooseJSONString(payload["description"]),
-		TaskType:           firstNonEmptyString(decodeLooseJSONString(payload["task_type"]), decodeLooseJSONString(payload["story_type"]), decodeLooseJSONString(payload["type"])),
+		TaskType:           firstNonEmptyString(decodeLooseJSONString(payload["task_type"]), decodeLooseJSONString(payload["type"])),
 		SliceType:          decodeLooseJSONString(payload["slice_type"]),
 		AcceptanceCriteria: decodeLooseJSONStringArray(payload["acceptance_criteria"]),
 		DependencyRefs:     decodeLooseJSONStringArray(payload["dependency_refs"]),
@@ -4816,7 +4811,7 @@ func (a *AgentRunActivities) applyApprovedTaskDocPreview(ctx context.Context, st
 	input.PlanDocumentID = doc.ID
 
 	state.run.OutputSummary, _ = json.Marshal(planningRunSummary{
-		Stage:          model.PlanningStageStoryPlanDoc,
+		Stage:          model.PlanningStageTaskPlanDoc,
 		PlanDocumentID: doc.ID,
 		Summary:        strings.TrimSpace(preview.ApprovalSummary),
 	})
@@ -6079,7 +6074,7 @@ func (a *AgentRunActivities) buildFlowOutputInstructions(ctx context.Context, st
 
 func (a *AgentRunActivities) buildTaskCompletionInstructions(state *resolvedRunState, input planningRunInput) string {
 	var sections []string
-	sections = append(sections, "Review this completed task and return JSON only with the shape {\"summary\":\"...\",\"followups\":[{\"title\":\"...\",\"description\":\"...\",\"task_type\":\"chore\",\"priority\":\"medium\"}]}. Legacy story_type is still accepted.")
+	sections = append(sections, "Review this completed task and return JSON only with the shape {\"summary\":\"...\",\"followups\":[{\"title\":\"...\",\"description\":\"...\",\"task_type\":\"chore\",\"priority\":\"medium\"}]}.")
 	sections = append(sections, "Only propose internal PM/docs/support follow-up work. Do not publish customer-facing docs or website changes directly.")
 	if state.task != nil {
 		sections = append(sections, fmt.Sprintf("Task: %s", state.task.Name))

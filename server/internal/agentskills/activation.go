@@ -85,7 +85,7 @@ func activeBuiltInSkillSet(ctx NativeActiveSelectionContext) (map[string]bool, b
 			return nil, false
 		}
 		switch planningStage {
-		case model.PlanningStageTaskPlanDoc, model.PlanningStageStoryPlanDoc:
+		case model.PlanningStageTaskPlanDoc:
 			return map[string]bool{
 				"approval_protocol":    true,
 				"task_planner_context": true,

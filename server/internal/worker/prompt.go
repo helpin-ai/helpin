@@ -165,13 +165,13 @@ func buildSystemPromptWithOptions(agent *model.Agent, story *model.PMTask, epic 
 			parts = append(parts, "- When available, keep a short working execution checklist with update_plan instead of repeating plan status in prose. Do not use update_plan as a substitute for publish_prd_draft, publish_task_plan, or publish_task_plan_doc.")
 		}
 	}
-	if story != nil && strings.TrimSpace(planningStage) != model.PlanningStageStoryPlanDoc {
+	if story != nil && strings.TrimSpace(planningStage) != model.PlanningStageTaskPlanDoc {
 		parts = append(parts, "- Run tests after making changes when possible.")
 		if options.UseNativeToolingRules {
 			parts = append(parts, "- Commit and push your changes when the task is complete.")
 		}
 	}
-	if story != nil && strings.TrimSpace(planningStage) == model.PlanningStageStoryPlanDoc {
+	if story != nil && strings.TrimSpace(planningStage) == model.PlanningStageTaskPlanDoc {
 		parts = append(parts, "- This is a planning-doc run, not an implementation run.")
 		parts = append(parts, "- Draft or refine the canonical task planning document in chat first, then request approval.")
 		parts = append(parts, "- After approval, stop. The platform will persist and link the approved task planning document.")
@@ -202,7 +202,7 @@ func BuildUserPrompt(
 
 	if story != nil {
 		contextParts = append(contextParts, fmt.Sprintf("Task: **%s**", story.Name))
-		if strings.TrimSpace(planningStage) == model.PlanningStageStoryPlanDoc {
+		if strings.TrimSpace(planningStage) == model.PlanningStageTaskPlanDoc {
 			contextParts = append(contextParts, "Planning stage: task_plan_doc")
 		}
 		if story.Description != nil {

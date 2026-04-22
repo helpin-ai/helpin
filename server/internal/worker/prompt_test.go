@@ -123,7 +123,7 @@ func TestBuildUserPromptStoryPlannerUsesNeutralPlanningContext(t *testing.T) {
 		nil,
 		nil,
 		nil,
-		model.PlanningStageStoryPlanDoc,
+		model.PlanningStageTaskPlanDoc,
 		"Operator notes:\nFocus on approval UX.",
 	)
 
@@ -473,7 +473,7 @@ func TestBuildSystemPromptPlannerRunUsesReadOnlyRepoGuidance(t *testing.T) {
 		&model.PMTask{Name: "Plan inbox automation"},
 		nil,
 		nil,
-		model.PlanningStageStoryPlanDoc,
+		model.PlanningStageTaskPlanDoc,
 		"",
 		nil,
 	)

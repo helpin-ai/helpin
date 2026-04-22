@@ -235,9 +235,9 @@ func TestPreviewJSONToolPublishesSlot(t *testing.T) {
 	}
 
 	output, err := registry.ExecuteAllowed(ctx, ToolPreviewJSON, json.RawMessage(`{
-		"slot": "story_plan",
-		"title": "Story Plan",
-		"content": {"summary":"Slice plan","proposed_stories":[{"ref":"task_1","name":"Task A","description":"Do A","task_type":"feature","acceptance_criteria":["works"],"dependency_refs":[]}]}
+		"slot": "task_plan",
+		"title": "Task Plan",
+		"content": {"summary":"Slice plan","proposed_tasks":[{"ref":"task_1","name":"Task A","description":"Do A","task_type":"feature","acceptance_criteria":["works"],"dependency_refs":[]}]}
 	}`))
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
@@ -281,7 +281,7 @@ func TestPublishStoryPlanToolPublishesCanonicalPreview(t *testing.T) {
 	}
 
 	output, err := registry.ExecuteAllowed(ctx, ToolPublishTaskPlan, json.RawMessage(`{
-		"content": {"summary":"Slice plan","proposed_stories":[{"ref":"task_1","name":"Task A","description":"Do A","task_type":"feature","acceptance_criteria":["works"],"dependency_refs":[]}]}
+		"content": {"summary":"Slice plan","proposed_tasks":[{"ref":"task_1","name":"Task A","description":"Do A","task_type":"feature","acceptance_criteria":["works"],"dependency_refs":[]}]}
 	}`))
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
@@ -304,8 +304,8 @@ func TestPublishStoryPlanToolAcceptsNestedPreviewPayload(t *testing.T) {
 
 	output, err := registry.ExecuteAllowed(ctx, ToolPublishTaskPlan, json.RawMessage(`{
 		"preview": {
-			"title": "Story Plan",
-			"content": {"summary":"Slice plan","proposed_stories":[{"ref":"task_1","name":"Task A","description":"Do A","task_type":"feature","acceptance_criteria":["works"],"dependency_refs":[]}]}
+			"title": "Task Plan",
+			"content": {"summary":"Slice plan","proposed_tasks":[{"ref":"task_1","name":"Task A","description":"Do A","task_type":"feature","acceptance_criteria":["works"],"dependency_refs":[]}]}
 		}
 	}`))
 	if err != nil {
@@ -328,9 +328,9 @@ func TestPublishStoryPlanToolAcceptsRawPlanObject(t *testing.T) {
 	}
 
 	output, err := registry.ExecuteAllowed(ctx, ToolPublishTaskPlan, json.RawMessage(`{
-		"title": "Story Plan",
+		"title": "Task Plan",
 		"summary":"Slice plan",
-		"proposed_stories":[{"ref":"task_1","name":"Task A","description":"Do A","task_type":"feature","acceptance_criteria":["works"],"dependency_refs":[]}]
+		"proposed_tasks":[{"ref":"task_1","name":"Task A","description":"Do A","task_type":"feature","acceptance_criteria":["works"],"dependency_refs":[]}]
 	}`))
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
@@ -776,7 +776,7 @@ func TestPublishPreviewToolUsesStoryPlannerContextForPlanningDoc(t *testing.T) {
 		Agent: &appmodel.Agent{
 			PresetKey: appmodel.AgentPresetTaskPlanner,
 		},
-		PlanningStage: appmodel.PlanningStageStoryPlanDoc,
+		PlanningStage: appmodel.PlanningStageTaskPlanDoc,
 		TargetType:    "story",
 		AllowedTools: map[string]bool{
 			ToolPublishPreview: true,

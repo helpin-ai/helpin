@@ -239,7 +239,7 @@ func TestNativeActiveSkillPlanningStageTransitionsEpicByDurableState(t *testing.
 		{
 			name: "compat story-planning alias advances to task planning",
 			epic: &model.PMEpic{
-				PlanningState: model.EpicPlanningStateReadyForStoryPlanning,
+				PlanningState: model.EpicPlanningStateReadyForTaskPlanning,
 			},
 			want: model.PlanningStagePlanTasks,
 		},
@@ -1480,7 +1480,7 @@ func TestApplyApprovedInteractivePreviewCreatesTasksFromApprovedTaskPlan(t *test
 		ID:                 "epic-1",
 		WorkspaceID:        "ws-1",
 		Name:               "Epic",
-		PlanningState:      model.EpicPlanningStateReadyForStoryPlanning,
+		PlanningState:      model.EpicPlanningStateReadyForTaskPlanning,
 		SpecClarifications: json.RawMessage(`[]`),
 	}
 	if err := db.Create(epic).Error; err != nil {
@@ -2808,7 +2808,7 @@ func TestMarkdownToDocsJSONPreservesHeadingsAndBullets(t *testing.T) {
 }
 
 func TestDecodeApprovedStoryPlanPreviewContentAcceptsStringifiedJSON(t *testing.T) {
-	raw := json.RawMessage(`"{\"summary\":\"Breakdown\",\"proposed_stories\":[{\"ref\":\"story_1\",\"name\":\"Story A\",\"description\":\"Do A\",\"story_type\":\"feature\",\"acceptance_criteria\":[\"works\"]}]}"`)
+	raw := json.RawMessage(`"{\"summary\":\"Breakdown\",\"proposed_tasks\":[{\"ref\":\"task_1\",\"name\":\"Task A\",\"description\":\"Do A\",\"task_type\":\"feature\",\"acceptance_criteria\":[\"works\"]}]}"`)
 
 	proposal, err := decodeApprovedTaskPlanPreviewContent(raw)
 	if err != nil {
@@ -2817,13 +2817,13 @@ func TestDecodeApprovedStoryPlanPreviewContentAcceptsStringifiedJSON(t *testing.
 	if proposal.Summary != "Breakdown" {
 		t.Fatalf("expected summary Breakdown, got %q", proposal.Summary)
 	}
-	if len(proposal.ProposedTasks) != 1 || proposal.ProposedTasks[0].Ref != "story_1" {
-		t.Fatalf("unexpected proposal stories: %#v", proposal.ProposedTasks)
+	if len(proposal.ProposedTasks) != 1 || proposal.ProposedTasks[0].Ref != "task_1" {
+		t.Fatalf("unexpected proposal tasks: %#v", proposal.ProposedTasks)
 	}
 }
 
 func TestDecodeApprovedStoryPlanPreviewContentAcceptsFencedJSONString(t *testing.T) {
-	raw := json.RawMessage("\"Here is the plan in the required format:\\n```json\\n{\\\"summary\\\":\\\"Breakdown\\\",\\\"proposed_stories\\\":[{\\\"ref\\\":\\\"story_1\\\",\\\"name\\\":\\\"Story A\\\",\\\"description\\\":\\\"Do A\\\",\\\"story_type\\\":\\\"feature\\\",\\\"acceptance_criteria\\\":[\\\"works\\\"]}]}\\n```\"")
+	raw := json.RawMessage("\"Here is the plan in the required format:\\n```json\\n{\\\"summary\\\":\\\"Breakdown\\\",\\\"proposed_tasks\\\":[{\\\"ref\\\":\\\"task_1\\\",\\\"name\\\":\\\"Task A\\\",\\\"description\\\":\\\"Do A\\\",\\\"task_type\\\":\\\"feature\\\",\\\"acceptance_criteria\\\":[\\\"works\\\"]}]}\\n```\"")
 
 	proposal, err := decodeApprovedTaskPlanPreviewContent(raw)
 	if err != nil {
@@ -2832,19 +2832,19 @@ func TestDecodeApprovedStoryPlanPreviewContentAcceptsFencedJSONString(t *testing
 	if proposal.Summary != "Breakdown" {
 		t.Fatalf("expected summary Breakdown, got %q", proposal.Summary)
 	}
-	if len(proposal.ProposedTasks) != 1 || proposal.ProposedTasks[0].Name != "Story A" {
-		t.Fatalf("unexpected proposal stories: %#v", proposal.ProposedTasks)
+	if len(proposal.ProposedTasks) != 1 || proposal.ProposedTasks[0].Name != "Task A" {
+		t.Fatalf("unexpected proposal tasks: %#v", proposal.ProposedTasks)
 	}
 }
 
 func TestDecodeApprovedStoryPlanPreviewContentAcceptsArrayTestStrategy(t *testing.T) {
 	raw := json.RawMessage(`{
 		"summary":"Breakdown",
-		"proposed_stories":[{
-			"ref":"story_1",
-			"name":"Story A",
+		"proposed_tasks":[{
+			"ref":"task_1",
+			"name":"Task A",
 			"description":"Do A",
-			"story_type":"feature",
+			"task_type":"feature",
 			"acceptance_criteria":["works"],
 			"implementation_brief":{
 				"approach":"Add the metric helper",
@@ -2871,8 +2871,8 @@ func TestDecodeApprovedStoryPlanPreviewContentAcceptsArrayTestStrategy(t *testin
 func TestDecodeApprovedStoryPlanPreviewContentAcceptsTitleAndTypeAliases(t *testing.T) {
 	raw := json.RawMessage(`{
 		"summary":"Breakdown",
-		"proposed_stories":[{
-			"ref":"story_1",
+		"proposed_tasks":[{
+			"ref":"task_1",
 			"title":"Add 4xx error metrics tracking infrastructure",
 			"description":"Do A",
 			"type":"feature",
@@ -2885,7 +2885,7 @@ func TestDecodeApprovedStoryPlanPreviewContentAcceptsTitleAndTypeAliases(t *test
 		t.Fatalf("decodeApprovedTaskPlanPreviewContent returned error: %v", err)
 	}
 	if len(proposal.ProposedTasks) != 1 {
-		t.Fatalf("expected one proposed story, got %#v", proposal.ProposedTasks)
+		t.Fatalf("expected one proposed task, got %#v", proposal.ProposedTasks)
 	}
 	if proposal.ProposedTasks[0].Name != "Add 4xx error metrics tracking infrastructure" {
 		t.Fatalf("expected title alias to populate Name, got %#v", proposal.ProposedTasks[0])
@@ -2897,19 +2897,19 @@ func TestDecodeApprovedStoryPlanPreviewContentAcceptsTitleAndTypeAliases(t *test
 
 func TestNextUnappliedApprovedPreviewPrefersNewestArtifact(t *testing.T) {
 	olderPreviewJSON, err := json.Marshal(model.ApprovedRunPreview{
-		Phase:    "stories",
+		Phase:    "tasks",
 		Format:   workerpkg.PreviewFormatJSON,
-		PanelKey: "story_plan",
-		Content:  json.RawMessage(`{"summary":"older","proposed_stories":[]}`),
+		PanelKey: "task_plan",
+		Content:  json.RawMessage(`{"summary":"older","proposed_tasks":[]}`),
 	})
 	if err != nil {
 		t.Fatalf("marshal older preview: %v", err)
 	}
 	newerPreviewJSON, err := json.Marshal(model.ApprovedRunPreview{
-		Phase:    "stories",
+		Phase:    "tasks",
 		Format:   workerpkg.PreviewFormatJSON,
-		PanelKey: "story_plan",
-		Content:  json.RawMessage(`{"summary":"newer","proposed_stories":[]}`),
+		PanelKey: "task_plan",
+		Content:  json.RawMessage(`{"summary":"newer","proposed_tasks":[]}`),
 	})
 	if err != nil {
 		t.Fatalf("marshal newer preview: %v", err)
@@ -2952,11 +2952,11 @@ func TestNextUnappliedApprovedPreviewPrefersNewestArtifact(t *testing.T) {
 func TestDecodeApprovedStoryPlanPreviewContentToleratesOptionalFieldTypeMismatches(t *testing.T) {
 	raw := json.RawMessage(`{
 		"summary":"Breakdown",
-		"proposed_stories":[{
-			"ref":"story_1",
-			"name":"Story A",
+		"proposed_tasks":[{
+			"ref":"task_1",
+			"name":"Task A",
 			"description":"Do A",
-			"story_type":"feature",
+			"task_type":"feature",
 			"estimate":"3",
 			"acceptance_criteria":["works"],
 			"implementation_brief":{
@@ -2972,7 +2972,7 @@ func TestDecodeApprovedStoryPlanPreviewContentToleratesOptionalFieldTypeMismatch
 		t.Fatalf("decodeApprovedTaskPlanPreviewContent returned error: %v", err)
 	}
 	if len(proposal.ProposedTasks) != 1 {
-		t.Fatalf("expected one proposed story, got %#v", proposal.ProposedTasks)
+		t.Fatalf("expected one proposed task, got %#v", proposal.ProposedTasks)
 	}
 	if proposal.ProposedTasks[0].Estimate == nil || *proposal.ProposedTasks[0].Estimate != 3 {
 		t.Fatalf("expected string estimate to decode to 3, got %#v", proposal.ProposedTasks[0].Estimate)
@@ -4279,7 +4279,7 @@ func TestCaptureTranscriptPlanningArtifactsPersistsStoryPlannerPreview(t *testin
 		},
 	}
 
-	if err := activities.captureTranscriptPlanningArtifacts(context.Background(), state, execCtx, &model.AgentRunMessage{SequenceNo: 11}, planningRunInput{Stage: model.PlanningStageStoryPlanDoc}); err != nil {
+	if err := activities.captureTranscriptPlanningArtifacts(context.Background(), state, execCtx, &model.AgentRunMessage{SequenceNo: 11}, planningRunInput{Stage: model.PlanningStageTaskPlanDoc}); err != nil {
 		t.Fatalf("captureTranscriptPlanningArtifacts returned error: %v", err)
 	}
 
@@ -5473,7 +5473,7 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 		ID:                    "epic-1",
 		WorkspaceID:           "ws-1",
 		Name:                  "Epic",
-		PlanningState:         model.EpicPlanningStateReadyForStoryPlanning,
+		PlanningState:         model.EpicPlanningStateReadyForTaskPlanning,
 		SpecClarifications:    json.RawMessage(`[]`),
 		ApprovedSpecVersionID: strPtr("spec-v1"),
 	}
@@ -5486,22 +5486,22 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 
 	previewPayload, err := json.Marshal(map[string]any{
 		"summary": "Breakdown",
-		"proposed_stories": []map[string]any{
+		"proposed_tasks": []map[string]any{
 			{
-				"ref":                 "story_1",
+				"ref":                 "task_1",
 				"name":                "Add tracking helper",
 				"description":         "Create shared metric helper",
-				"story_type":          "chore",
+				"task_type":           "chore",
 				"acceptance_criteria": []string{"works"},
 				"dependency_refs":     []string{},
 			},
 			{
-				"ref":                 "story_2",
+				"ref":                 "task_2",
 				"name":                "Wire tracking into capture errors",
 				"description":         "Use the helper in capture",
-				"story_type":          "feature",
+				"task_type":           "feature",
 				"acceptance_criteria": []string{"works"},
-				"dependency_refs":     []string{"story_1"},
+				"dependency_refs":     []string{"task_1"},
 			},
 		},
 	})
@@ -5509,8 +5509,8 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 		t.Fatalf("marshal preview payload: %v", err)
 	}
 	preview := model.ApprovedRunPreview{
-		Phase:    "stories",
-		PanelKey: "story_plan",
+		Phase:    "tasks",
+		PanelKey: "task_plan",
 		Format:   workerpkg.PreviewFormatJSON,
 		Content:  previewPayload,
 	}
@@ -5519,7 +5519,7 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 		t.Fatalf("marshal approved preview: %v", err)
 	}
 	if err := db.Create(&model.AgentRunArtifact{
-		ID:            "approved-stories-1",
+		ID:            "approved-tasks-1",
 		WorkspaceID:   run.WorkspaceID,
 		RunID:         run.ID,
 		ArtifactType:  model.AgentRunArtifactTypeApprovedPreview,
@@ -5563,8 +5563,8 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 			}
 			return mustJSON(workerpkg.CreateTaskBatchResult{
 				Tasks: []workerpkg.CreateTaskBatchTaskResult{
-					{Ref: "story_1", TaskID: "db-story_1", Name: "Add tracking helper"},
-					{Ref: "story_2", TaskID: "db-story_2", Name: "Wire tracking into capture errors"},
+					{Ref: "task_1", TaskID: "db-task_1", Name: "Add tracking helper"},
+					{Ref: "task_2", TaskID: "db-task_2", Name: "Wire tracking into capture errors"},
 				},
 			}), nil
 		},
@@ -5583,7 +5583,7 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 		run:  run,
 		epic: epic,
 	}
-	input := planningRunInput{Stage: model.PlanningStageStoryPlanDoc}
+	input := planningRunInput{Stage: model.PlanningStageTaskPlanDoc}
 
 	action, err := activity.applyApprovedInteractivePreview(context.Background(), state, &input)
 	if err != nil {
@@ -5645,6 +5645,16 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 	}
 	if len(appliedMarkers) != 1 {
 		t.Fatalf("expected 1 approved preview applied marker, got %d", len(appliedMarkers))
+	}
+	if appliedMarkers[0].InlineContent == nil {
+		t.Fatalf("expected applied preview marker payload, got %#v", appliedMarkers[0])
+	}
+	var applied model.AppliedApprovedRunPreview
+	if err := json.Unmarshal([]byte(*appliedMarkers[0].InlineContent), &applied); err != nil {
+		t.Fatalf("unmarshal applied preview marker: %v", err)
+	}
+	if applied.ApprovedArtifactID != "approved-tasks-1" || applied.Phase != "tasks" || applied.Action != "create_tasks" {
+		t.Fatalf("unexpected applied preview marker payload %#v", applied)
 	}
 
 	messages, err := runMessageRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
@@ -7577,7 +7587,7 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 		run:  run,
 		task: story,
 	}
-	input := planningRunInput{Stage: model.PlanningStageStoryPlanDoc}
+	input := planningRunInput{Stage: model.PlanningStageTaskPlanDoc}
 
 	action, err := activity.applyApprovedInteractivePreview(context.Background(), state, &input)
 	if err != nil {

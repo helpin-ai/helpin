@@ -7,18 +7,16 @@ import (
 )
 
 const (
-	PlanningStageDraftSpec    = "draft_spec"
-	PlanningStagePlanTasks    = "plan_stories"
-	PlanningStageStoryPlanDoc = "story_plan_doc" // compat alias
-	PlanningStageTaskPlanDoc  = "task_plan_doc"
+	PlanningStageDraftSpec   = "draft_spec"
+	PlanningStagePlanTasks   = "plan_tasks"
+	PlanningStageTaskPlanDoc = "task_plan_doc"
 
-	EpicPlanningStateNotStarted          = "not_started"
+	EpicPlanningStateNotStarted            = "not_started"
 	EpicPlanningStateAwaitingClarification = "awaiting_spec_clarification"
 	EpicPlanningStateAwaitingSpecApproval  = "awaiting_spec_approval"
 	EpicPlanningStateReadyForTaskPlanning  = "ready_for_task_planning"
-	EpicPlanningStateReadyForStoryPlanning = "ready_for_story_planning" // compat alias
 	EpicPlanningStateAwaitingPlanApproval  = "awaiting_plan_approval"
-	EpicPlanningStateStoriesCreated        = "stories_created"
+	EpicPlanningStateTasksCreated          = "tasks_created"
 	EpicPlanningStateExecutionStarted      = "execution_started"
 	EpicPlanningStateReadyForExecution     = "ready_for_execution"
 
@@ -66,7 +64,6 @@ func (p *ProposedTask) UnmarshalJSON(data []byte) error {
 		Title               string                   `json:"title"`
 		Description         string                   `json:"description"`
 		TaskType            string                   `json:"task_type"`
-		LegacyTaskType      string                   `json:"story_type"`
 		Type                string                   `json:"type"`
 		Estimate            *int                     `json:"estimate"`
 		Priority            *string                  `json:"priority,omitempty"`
@@ -86,7 +83,7 @@ func (p *ProposedTask) UnmarshalJSON(data []byte) error {
 	p.Ref = strings.TrimSpace(raw.Ref)
 	p.Name = strings.TrimSpace(firstNonEmpty(raw.Name, raw.Title))
 	p.Description = strings.TrimSpace(raw.Description)
-	p.TaskType = strings.TrimSpace(firstNonEmpty(raw.TaskType, raw.LegacyTaskType, raw.Type))
+	p.TaskType = strings.TrimSpace(firstNonEmpty(raw.TaskType, raw.Type))
 	p.Estimate = raw.Estimate
 	p.Priority = raw.Priority
 	p.AcceptanceCriteria = raw.AcceptanceCriteria
@@ -289,7 +286,7 @@ func NormalizeProposedTasks(tasks []ProposedTask) error {
 // VerticalCoverageEntry maps a user-facing behavior to the tasks that deliver it.
 type VerticalCoverageEntry struct {
 	Behavior  string   `json:"behavior"`
-	TaskRefs []string `json:"task_refs"`
+	TaskRefs  []string `json:"task_refs"`
 	FullSlice bool     `json:"full_slice"`
 }
 
@@ -312,7 +309,7 @@ type PlanningResearchSource struct {
 
 // ConfirmPlanningRequest confirms a task plan and optionally edits proposed tasks first.
 type ConfirmPlanningRequest struct {
-	RunID          string         `json:"run_id"`
+	RunID         string         `json:"run_id"`
 	ProposedTasks []ProposedTask `json:"proposed_tasks"`
 }
 
