@@ -4015,6 +4015,7 @@ func TestPersistAssistantRunMessagePersistsNativeTurnDebugArtifact(t *testing.T)
 	}
 	execCtx := &workerpkg.ExecutionContext{
 		NativeSelectivePathEnabled: true,
+		PlanningStage:              model.PlanningStagePlanTasks,
 		ProviderContinuation: &workerpkg.ProviderContinuation{
 			ResponseID: "resp_123",
 		},
@@ -4069,6 +4070,9 @@ func TestPersistAssistantRunMessagePersistsNativeTurnDebugArtifact(t *testing.T)
 		}
 		if !payload.NativeSelectivePathEnabled {
 			t.Fatal("expected native selective path enabled in payload")
+		}
+		if payload.PlanningStage != model.PlanningStagePlanTasks {
+			t.Fatalf("expected planning stage %q, got %q", model.PlanningStagePlanTasks, payload.PlanningStage)
 		}
 		if payload.ContinuationMode != "response_id" {
 			t.Fatalf("expected continuation mode response_id, got %q", payload.ContinuationMode)

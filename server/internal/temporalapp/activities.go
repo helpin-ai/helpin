@@ -382,6 +382,7 @@ type nativeRepairInstruction struct {
 type nativeTurnDebugArtifact struct {
 	RuntimeKind                string   `json:"runtime_kind"`
 	NativeSelectivePathEnabled bool     `json:"native_selective_path_enabled"`
+	PlanningStage              string   `json:"planning_stage,omitempty"`
 	ContinuationMode           string   `json:"continuation_mode"`
 	RuntimeSkillRefs           []string `json:"runtime_skill_refs,omitempty"`
 	ActiveSkillRefs            []string `json:"active_skill_refs,omitempty"`
@@ -2436,6 +2437,7 @@ func (a *AgentRunActivities) persistNativeTurnDebugArtifact(ctx context.Context,
 	payload := nativeTurnDebugArtifact{
 		RuntimeKind:                runtimeKind,
 		NativeSelectivePathEnabled: execCtx.NativeSelectivePathEnabled,
+		PlanningStage:              strings.TrimSpace(execCtx.PlanningStage),
 		ContinuationMode:           providerContinuationMode(execCtx.ProviderContinuation),
 		RuntimeSkillRefs:           runtimeSkillRefKeys(execCtx.RuntimeSkillRefs),
 		ActiveSkillRefs:            runtimeSkillRefKeys(execCtx.ActiveRuntimeSkillRefs),
