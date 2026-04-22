@@ -61,7 +61,9 @@ type TriggerConfigStateEntered struct {
 
 // TriggerConfigCron holds config for cron triggers.
 type TriggerConfigCron struct {
-	Category string `json:"category"` // e.g. "sprint_hourly"
+	Category string `json:"category,omitempty"` // legacy category, e.g. "workspace_hourly"
+	Preset   string `json:"preset,omitempty"`   // e.g. "hourly", "daily", "weekly"
+	Schedule string `json:"schedule,omitempty"` // cron expression
 }
 
 // ActionConfigRunCommand holds config for run_command actions.
@@ -117,12 +119,13 @@ type TriggerConfigGitHubCheckSuiteCompleted struct {
 
 // ActionConfigRunAgent holds config for start_agent_run actions.
 type ActionConfigRunAgent struct {
-	TargetType        string  `json:"target_type,omitempty"`
-	TargetID          string  `json:"target_id,omitempty"`
-	AgentID           string  `json:"agent_id"`
-	AdditionalContext *string `json:"additional_context,omitempty"`
-	BaseBranch        string  `json:"base_branch,omitempty"`
-	WorkingBranch     string  `json:"working_branch,omitempty"`
+	TargetType            string  `json:"target_type,omitempty"`
+	TargetID              string  `json:"target_id,omitempty"`
+	AgentID               string  `json:"agent_id"`
+	LegacyScheduleAgentID string  `json:"legacy_schedule_agent_id,omitempty"`
+	AdditionalContext     *string `json:"additional_context,omitempty"`
+	BaseBranch            string  `json:"base_branch,omitempty"`
+	WorkingBranch         string  `json:"working_branch,omitempty"`
 }
 
 // ActionConfigMoveToState holds config for move_to_state actions.

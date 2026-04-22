@@ -19,10 +19,10 @@ For the task plan preview, use `publish_task_plan`:
     "summary": "...",
     "proposed_tasks": [
       {
-        "ref": "story_1",
+        "ref": "task_1",
         "name": "Add tracking helper",
         "description": "...",
-        "story_type": "chore",
+        "task_type": "chore",
         "acceptance_criteria": ["..."],
         "dependency_refs": [],
         "slice_type": "enabler",
@@ -39,12 +39,12 @@ For the task plan preview, use `publish_task_plan`:
         }
       },
       {
-        "ref": "story_2",
+        "ref": "task_2",
         "name": "Wire tracking into capture errors",
         "description": "...",
-        "story_type": "feature",
+        "task_type": "feature",
         "acceptance_criteria": ["..."],
-        "dependency_refs": ["story_1"],
+        "dependency_refs": ["task_1"],
         "slice_type": "vertical",
         "implementation_brief": {
           "approach": "...",
@@ -66,9 +66,46 @@ For the task plan preview, use `publish_task_plan`:
 ```
 
 The value of `content` must be a JSON object. Do not stringify the JSON object into a string.
+Call `publish_task_plan` only when you have the full structured payload ready in a single tool call. Do not send title-only payloads. Do not send a raw string wrapper. Do not send partial JSON. Do not put the plan in prose and expect the tool to extract it.
+The minimum valid payload is:
 
-Inside `proposed_tasks`, use the canonical field names `name` and `task_type`. Legacy `proposed_stories` and `story_type` are still accepted for compatibility.
-Use `dependency_refs` only for refs that appear elsewhere in the same `proposed_tasks` array. Example: `"dependency_refs": ["story_1"]` means the current task depends on the task whose ref is `story_1`.
+```json
+{
+  "content": {
+    "summary": "...",
+    "proposed_tasks": [
+      {
+        "name": "Add event classification helper",
+        "description": "...",
+        "task_type": "feature",
+        "acceptance_criteria": ["GIVEN ... WHEN ... THEN ..."],
+        "dependency_refs": []
+      }
+    ]
+  }
+}
+```
+
+Inside `proposed_tasks`, use the canonical field names `name` and `task_type`.
+Each entry in `proposed_tasks` must be a JSON object. Never send arrays of strings, refs, placeholders, partial fragments, or key names.
+Use `dependency_refs` only for refs that appear elsewhere in the same `proposed_tasks` array. Example: `"dependency_refs": ["task_1"]` means the current task depends on the task whose ref is `task_1`.
+
+Invalid examples:
+
+```json
+{
+  "content": {
+    "summary": "placeholder",
+    "proposed_tasks": ["task_1"]
+  }
+}
+```
+
+```json
+{
+  "title": "Task Plan"
+}
+```
 
 ## Task Planning
 
@@ -108,5 +145,5 @@ When you have enough information, call `publish_task_plan` with the full current
 
 - Treat the approved `publish_task_plan` artifact as the source of truth.
 - The platform will apply that approved artifact and create the tasks.
-- After approval, do not replay the same plan through story-creation or document-mutation tools.
+- After approval, do not replay the same plan through task-creation or document-mutation tools.
 - Do not write the PRD again.

@@ -140,7 +140,6 @@ func normalizeAgentRecord(agent *model.Agent) {
 	}
 	if agent.IsSystem {
 		agent.ApprovalMode = "never"
-		agent.Schedule = nil
 	}
 	if strings.TrimSpace(agent.Role) == "" {
 		if hasPreset && preset.DefaultRole != "" {
@@ -302,7 +301,7 @@ func sanitizePlannerAgentTools(raw json.RawMessage, presetKey string) json.RawMe
 	case model.AgentPresetEpicPlanner:
 		policy.requiredTools = []string{
 			worker.ToolUpdatePlan,
-			worker.ToolRequestReviewCheckpoint,
+			worker.ToolRequestApproval,
 			worker.ToolPublishPRDDraft,
 			worker.ToolPublishTaskPlan,
 		}
@@ -326,7 +325,7 @@ func sanitizePlannerAgentTools(raw json.RawMessage, presetKey string) json.RawMe
 	case model.AgentPresetTaskPlanner:
 		policy.requiredTools = []string{
 			worker.ToolUpdatePlan,
-			worker.ToolRequestReviewCheckpoint,
+			worker.ToolRequestApproval,
 			worker.ToolPublishTaskPlanDoc,
 		}
 		policy.disallowedExtraTools = []string{

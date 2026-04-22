@@ -71,10 +71,11 @@ func NormalizeTaskPlanPreviewContent(raw json.RawMessage) (json.RawMessage, erro
 
 	var payload map[string]any
 	if err := json.Unmarshal(raw, &payload); err == nil {
-		if err := validateCanonicalTaskPlanPreviewPayload(payload); err != nil {
+		normalizedPayload, err := normalizeCanonicalTaskPlanPreviewPayload(payload)
+		if err != nil {
 			return nil, err
 		}
-		normalized, _ := json.Marshal(payload)
+		normalized, _ := json.Marshal(normalizedPayload)
 		return normalized, nil
 	}
 
@@ -90,31 +91,55 @@ func NormalizeTaskPlanPreviewContent(raw json.RawMessage) (json.RawMessage, erro
 	if err := unmarshalLatestJSON(encoded, &payload); err != nil {
 		return nil, fmt.Errorf("task plan content must be a JSON object with summary and proposed_tasks")
 	}
-	if err := validateCanonicalTaskPlanPreviewPayload(payload); err != nil {
+	normalizedPayload, err := normalizeCanonicalTaskPlanPreviewPayload(payload)
+	if err != nil {
 		return nil, err
 	}
 
-	normalized, _ := json.Marshal(payload)
+	normalized, _ := json.Marshal(normalizedPayload)
 	return normalized, nil
 }
 
-func validateCanonicalTaskPlanPreviewPayload(payload map[string]any) error {
+func normalizeCanonicalTaskPlanPreviewPayload(payload map[string]any) (map[string]any, error) {
 	if len(payload) == 0 {
-		return fmt.Errorf("task plan content must be a JSON object with summary and proposed_tasks")
+		return nil, fmt.Errorf("task plan content must be a JSON object with summary and proposed_tasks")
 	}
 
 	summary, ok := payload["summary"].(string)
 	if !ok || strings.TrimSpace(summary) == "" {
-		return fmt.Errorf("task plan content must include a non-empty summary")
+		return nil, fmt.Errorf("task plan content must include a non-empty summary")
 	}
+	summary = strings.TrimSpace(summary)
 
-	if _, ok := payload["proposed_tasks"].([]any); !ok {
-		if _, legacyOK := payload["proposed_stories"].([]any); !legacyOK {
-			return fmt.Errorf("task plan content must include proposed_tasks as an array")
+	taskEntries, ok := payload["proposed_tasks"].([]any)
+	if !ok {
+		var legacyOK bool
+		taskEntries, legacyOK = payload["proposed_stories"].([]any)
+		if !legacyOK {
+			return nil, fmt.Errorf("task plan content must include proposed_tasks as an array")
 		}
 	}
 
-	return nil
+	rawTasks, err := json.Marshal(taskEntries)
+	if err != nil {
+		return nil, fmt.Errorf("task plan content proposed_tasks entries must be task objects with fields like name, description, task_type, acceptance_criteria, and dependency_refs")
+	}
+
+	var tasks []model.ProposedTask
+	if err := json.Unmarshal(rawTasks, &tasks); err != nil {
+		return nil, fmt.Errorf("task plan content proposed_tasks entries must be task objects with fields like name, description, task_type, acceptance_criteria, and dependency_refs")
+	}
+	if len(tasks) == 0 {
+		return nil, fmt.Errorf("task plan content must include at least one proposed task")
+	}
+	if err := model.NormalizeProposedTasks(tasks); err != nil {
+		return nil, fmt.Errorf("task plan proposed_tasks are invalid: %w", err)
+	}
+
+	payload["summary"] = summary
+	payload["proposed_tasks"] = tasks
+	delete(payload, "proposed_stories")
+	return payload, nil
 }
 
 func extractOrchestrationProposal(messages []Message, epicID string, tokensUsed int) (*model.OrchestrationProposal, error) {

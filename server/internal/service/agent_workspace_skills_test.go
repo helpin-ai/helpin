@@ -51,7 +51,7 @@ func TestCreateWorkspaceSkillStoresArchiveAndMetadata(t *testing.T) {
 		Title:             stringPtr("Repository Planner"),
 		Description:       "Use when planning implementation work inside a repository.",
 		Instructions:      "Follow the planning workflow and stop at approval checkpoints.",
-		RequiredTools:     []string{"publish_task_plan", "request_review_checkpoint", "publish_task_plan"},
+		RequiredTools:     []string{"publish_task_plan", "request_approval", "publish_task_plan"},
 		SupportedRuntimes: []string{"native_sdk", "codex", "native_sdk"},
 		SourceRuntime:     stringPtr("codex"),
 	}
@@ -84,7 +84,7 @@ func TestCreateWorkspaceSkillStoresArchiveAndMetadata(t *testing.T) {
 	if loaded.Title != "Repository Planner" {
 		t.Fatalf("expected stored title %q, got %q", "Repository Planner", loaded.Title)
 	}
-	if !containsString(loaded.RequiredTools, "publish_task_plan") || !containsString(loaded.RequiredTools, "request_review_checkpoint") {
+	if !containsString(loaded.RequiredTools, "publish_task_plan") || !containsString(loaded.RequiredTools, "request_approval") {
 		t.Fatalf("expected required tools in stored archive, got %v", loaded.RequiredTools)
 	}
 
@@ -98,7 +98,7 @@ func TestCreateWorkspaceSkillStoresArchiveAndMetadata(t *testing.T) {
 	if row.PackageObjectKey == "" || row.PackageFileName == "" || row.PackageChecksum == "" {
 		t.Fatalf("expected package metadata to be populated, got %+v", row)
 	}
-	if got := parseJSONStringSlice(json.RawMessage(row.RequiredTools)); len(got) != 2 || got[0] != "publish_task_plan" || got[1] != "request_review_checkpoint" {
+	if got := parseJSONStringSlice(json.RawMessage(row.RequiredTools)); len(got) != 2 || got[0] != "publish_task_plan" || got[1] != "request_approval" {
 		t.Fatalf("expected sorted unique required tools, got %v", got)
 	}
 }

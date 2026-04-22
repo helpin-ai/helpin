@@ -8,7 +8,6 @@ import {
   ArrowDown01Icon,
   ArrowRight01Icon,
   ArrowUpRight01Icon,
-  Clock01Icon,
   HelpCircleIcon,
   LayoutGridIcon,
   LayoutTable01Icon,
@@ -236,7 +235,6 @@ interface AgentFormData {
   allowed_targets: AgentTargetType[];
   allowed_tools: string[];
   skills: AgentSkillRef[];
-  schedule: string;
   approval_mode: AgentApprovalMode;
   max_concurrent_runs: string;
   default_invocation_mode: AgentInvocationMode;
@@ -246,6 +244,7 @@ const CUSTOM_AGENT_TARGET_OPTIONS: Array<{ value: AgentTargetType; label: string
   { value: 'task', label: 'Task', description: 'Run on tasks and task planning loops.' },
   { value: 'epic', label: 'Epic', description: 'Run on epics and planning loops.' },
   { value: 'repository', label: 'Repository', description: 'Run directly against a synced repository without requiring a linked task.' },
+  { value: 'workspace', label: 'Workspace', description: 'Run without a fixed entity target and gather context across the workspace.' },
   { value: 'crm_deal', label: 'CRM Deal', description: 'Run on CRM deal records.' },
   { value: 'document', label: 'Document', description: 'Run on documents and docs-backed context.' },
   { value: 'support_conversation', label: 'Support Conversation', description: 'Run on support inbox conversations.' },
@@ -453,7 +452,6 @@ function createEmptyCustomForm(): AgentFormData {
     allowed_targets: ['task'],
     allowed_tools: [],
     skills: [],
-    schedule: '',
     approval_mode: 'never',
     max_concurrent_runs: '1',
     default_invocation_mode: 'autonomous',
@@ -540,7 +538,6 @@ function buildCreatePayload(workspaceId: string, form: AgentFormData, advancedOp
     allowed_tools: normalizeToolList(form.allowed_tools),
     skills: form.skills.length > 0 ? form.skills : undefined,
     allowed_targets: normalizeTargetList(form.allowed_targets),
-    schedule: form.schedule.trim(),
     approval_mode: form.approval_mode,
     max_concurrent_runs: form.max_concurrent_runs ? Number.parseInt(form.max_concurrent_runs, 10) : 1,
     default_invocation_mode: form.default_invocation_mode,
@@ -577,7 +574,6 @@ function buildUpdatePayload(
     system_prompt: form.system_prompt.trim() || undefined,
     team_id: form.team_id,
     allowed_tools: normalizeToolList(form.allowed_tools),
-    schedule: form.schedule.trim(),
     approval_mode: form.approval_mode,
     max_concurrent_runs: form.max_concurrent_runs ? Number.parseInt(form.max_concurrent_runs, 10) : 1,
     default_invocation_mode: form.default_invocation_mode,
@@ -646,7 +642,6 @@ function buildSystemAgentForm(agent: Agent, presets: AgentPresetDefinition[]): A
     ),
     allowed_tools: normalizeToolList(agent.allowed_tools?.length ? agent.allowed_tools : (preset?.allowed_tools ?? [])),
     skills: agent.skills ?? [],
-    schedule: '',
     approval_mode: 'never',
     max_concurrent_runs: agent.max_concurrent_runs?.toString() ?? '1',
     default_invocation_mode: normalizeDefaultInvocationMode(
@@ -739,7 +734,7 @@ function AgentTriggerPanel({
         )}
       </div>
       <p className="mt-1 text-[11px] text-muted-foreground">
-        Active triggers and schedules that can start this agent.
+        Active triggers that can start this agent.
       </p>
 
       <div className="mt-4 space-y-2">
@@ -1421,7 +1416,7 @@ export function AgentsPage() {
     setAgentUsage(null);
     void loadAgentUsage(agent.id);
     setAdvancedOpen(hasConfiguredAdvancedFields(agent, presets));
-    setAutomationOpen(agent.is_system ? false : Boolean(agent.schedule || agent.approval_mode !== 'preset_default'));
+    setAutomationOpen(agent.is_system ? false : agent.approval_mode !== 'preset_default');
     setToolPickerOpen(false);
     setVersionDraftOpen(false);
     setVersionLabelDraft('');
@@ -1455,7 +1450,6 @@ export function AgentsPage() {
       allowed_targets: normalizeTargetList(agent.allowed_targets as AgentTargetType[]),
       allowed_tools: normalizeToolList(agent.allowed_tools),
       skills: agent.skills ?? [],
-      schedule: agent.schedule ?? '',
       approval_mode: agent.approval_mode ?? 'preset_default',
       max_concurrent_runs: agent.max_concurrent_runs?.toString() ?? '1',
       default_invocation_mode: normalizeDefaultInvocationMode(agent.default_invocation_mode, runtimeKind),
@@ -3272,35 +3266,11 @@ export function AgentsPage() {
                 <Button type="button" variant="ghost" className="flex w-full items-center justify-between px-2">
                   <span className="flex items-center gap-2 text-sm">
                     {automationOpen ? <ArrowDown01Icon className="h-4 w-4" /> : <ArrowRight01Icon className="h-4 w-4" />}
-                    Scheduling & Approval
+                    Approval & Limits
                   </span>
-                  {form.schedule.trim() && !automationOpen && (
-                    <Badge variant="outline" className="text-[11px] gap-1">
-                      <Clock01Icon className="h-3 w-3" />
-                      Scheduled
-                    </Badge>
-                  )}
                 </Button>
               </Collapsible.Trigger>
               <Collapsible.Content className="space-y-4 rounded-md border bg-muted/30 p-3 mt-2">
-                <div className="space-y-2">
-                  <FieldLabel
-                    htmlFor="agent-schedule"
-                    tooltip="Use a cron expression to run this agent on a recurring schedule. For example: '0 9 * * 1-5' means weekdays at 9am UTC."
-                  >
-                    Recurring schedule
-                  </FieldLabel>
-                  <Input
-                    id="agent-schedule"
-                    value={form.schedule}
-                    onChange={(e) => setForm((current) => ({ ...current, schedule: e.target.value }))}
-                    placeholder="e.g. 0 9 * * 1-5 (weekdays at 9am)"
-                  />
-                  <p className="text-[11px] text-muted-foreground">
-                    Leave empty if you only want to run this agent manually or via triggers.
-                  </p>
-                </div>
-
                 <div className="space-y-2">
                   <FieldLabel tooltip="When set to 'always review first', a team member must approve each run before the agent starts working.">
                     Requires approval?
@@ -3480,7 +3450,7 @@ export function AgentsPage() {
         open={deleteConfirmOpen}
         onOpenChange={setDeleteConfirmOpen}
         title="Delete agent"
-        description="This will permanently remove this agent and all its configuration. Any scheduled runs will be stopped. This action cannot be undone."
+        description="This will permanently remove this agent and its direct configuration. This action cannot be undone."
         confirmLabel="Delete"
         variant="destructive"
         onConfirm={handleDelete}

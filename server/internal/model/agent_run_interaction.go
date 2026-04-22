@@ -7,6 +7,7 @@ import (
 
 const (
 	AgentRunInteractionKindRequestUserInput         = "request_user_input"
+	AgentRunInteractionKindApprovalRequest          = "approval_request"
 	AgentRunInteractionKindCommandExecutionApproval = "command_execution_approval"
 	AgentRunInteractionKindFileChangeApproval       = "file_change_approval"
 	AgentRunInteractionKindPermissionsApproval      = "permissions_approval"

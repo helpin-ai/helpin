@@ -86,7 +86,7 @@ func executePreviewToolRequest(ctx *ExecutionContext, toolName string, req Publi
 	if err != nil {
 		return "", wrapPreviewToolError(toolName, err)
 	}
-	req = applyPreviewContentFallback(ctx, req)
+	req = applyPreviewContentFallback(ctx, toolName, req)
 	preview, err := normalizePublishedPreviewRequest(&req)
 	if err != nil {
 		return "", wrapPreviewToolError(toolName, err)
@@ -123,6 +123,8 @@ func wrapPreviewToolError(toolName string, err error) error {
 		}
 	case message == "title is required":
 		return fmt.Errorf("%s is missing title; include \"title\"", toolName)
+	case message == "raw tool arguments wrapper is not supported":
+		return fmt.Errorf("%s input must be a JSON object with structured fields; do not send a raw string wrapper", toolName)
 	case message == "content is required", message == "markdown content is required":
 		return fmt.Errorf("%s is missing content; %s", toolName, previewToolContentHint(toolName))
 	case message == "markdown content must be a string":
@@ -137,6 +139,12 @@ func wrapPreviewToolError(toolName string, err error) error {
 		return fmt.Errorf("%s content must include a non-empty summary", toolName)
 	case message == "task plan content must include proposed_tasks as an array":
 		return fmt.Errorf("%s content must include proposed_tasks as an array", toolName)
+	case message == "task plan content must include at least one proposed task":
+		return fmt.Errorf("%s content must include at least one proposed task", toolName)
+	case message == "task plan content proposed_tasks entries must be task objects with fields like name, description, task_type, acceptance_criteria, and dependency_refs":
+		return fmt.Errorf("%s requires content.proposed_tasks to be an array of task objects, for example [{\"name\":\"...\",\"description\":\"...\",\"task_type\":\"feature\",\"acceptance_criteria\":[\"...\"],\"dependency_refs\":[]}]", toolName)
+	case strings.HasPrefix(message, "task plan proposed_tasks are invalid:"):
+		return fmt.Errorf("%s %s", toolName, strings.TrimSpace(strings.TrimPrefix(message, "task plan")))
 	case strings.HasPrefix(message, "format must be"):
 		return fmt.Errorf("%s format must be %q or %q", toolName, PreviewFormatMarkdown, PreviewFormatJSON)
 	default:
@@ -159,7 +167,10 @@ func previewToolContentHint(toolName string) string {
 	}
 }
 
-func applyPreviewContentFallback(ctx *ExecutionContext, req PublishedPreviewRequest) PublishedPreviewRequest {
+func applyPreviewContentFallback(ctx *ExecutionContext, toolName string, req PublishedPreviewRequest) PublishedPreviewRequest {
+	if !previewToolAllowsContentFallback(toolName) {
+		return req
+	}
 	if len(req.Content) != 0 && string(req.Content) != "null" {
 		return req
 	}
@@ -205,6 +216,15 @@ func applyPreviewContentFallback(ctx *ExecutionContext, req PublishedPreviewRequ
 		}
 	}
 	return req
+}
+
+func previewToolAllowsContentFallback(toolName string) bool {
+	switch strings.TrimSpace(toolName) {
+	case ToolPublishTaskPlan, ToolPublishStoryPlan:
+		return false
+	default:
+		return true
+	}
 }
 
 func latestTaskPlanDocumentMarkdown(ctx *ExecutionContext, panelKey string) (string, bool) {
@@ -432,6 +452,10 @@ type fixedPreviewRequest struct {
 }
 
 func buildSlotPreviewRequest(input json.RawMessage, format string) (PublishedPreviewRequest, error) {
+	input, err := unwrapRawToolArguments(input)
+	if err != nil {
+		return PublishedPreviewRequest{}, err
+	}
 	var req slotPreviewRequest
 	if err := json.Unmarshal(input, &req); err != nil {
 		return PublishedPreviewRequest{}, fmt.Errorf("parse input: %w", err)
@@ -476,6 +500,10 @@ func buildSlotPreviewRequest(input json.RawMessage, format string) (PublishedPre
 }
 
 func buildFixedPreviewRequest(input json.RawMessage, panelKey, format string) (PublishedPreviewRequest, error) {
+	input, err := unwrapRawToolArguments(input)
+	if err != nil {
+		return PublishedPreviewRequest{}, err
+	}
 	var req fixedPreviewRequest
 	if err := json.Unmarshal(input, &req); err != nil {
 		return PublishedPreviewRequest{}, fmt.Errorf("parse input: %w", err)
@@ -564,6 +592,7 @@ func stripPreviewMetaFields(raw map[string]json.RawMessage) json.RawMessage {
 		"body":           true,
 		"markdown":       true,
 		"text":           true,
+		"raw":            true,
 		"preview":        true,
 		"payload":        true,
 	}
@@ -579,6 +608,37 @@ func stripPreviewMetaFields(raw map[string]json.RawMessage) json.RawMessage {
 	}
 	normalized, _ := json.Marshal(filtered)
 	return normalized
+}
+
+func isRawToolArgumentsWrapper(raw map[string]json.RawMessage) bool {
+	if len(raw) != 1 {
+		return false
+	}
+	value, ok := raw["raw"]
+	if !ok || len(value) == 0 || string(value) == "null" {
+		return false
+	}
+	var text string
+	return json.Unmarshal(value, &text) == nil && strings.TrimSpace(text) != ""
+}
+
+func unwrapRawToolArguments(input json.RawMessage) (json.RawMessage, error) {
+	raw := previewObjectMap(input)
+	if !isRawToolArgumentsWrapper(raw) {
+		return input, nil
+	}
+	var wrapped string
+	if err := json.Unmarshal(raw["raw"], &wrapped); err != nil {
+		return nil, fmt.Errorf("raw tool arguments wrapper is not supported")
+	}
+	wrapped = strings.TrimSpace(wrapped)
+	if wrapped == "" || !json.Valid([]byte(wrapped)) {
+		return nil, fmt.Errorf("raw tool arguments wrapper is not supported")
+	}
+	if wrapped[0] != '{' {
+		return nil, fmt.Errorf("raw tool arguments wrapper is not supported")
+	}
+	return json.RawMessage(wrapped), nil
 }
 
 func normalizePreviewPanelKey(value string) string {

@@ -519,6 +519,21 @@ func resumeRequestForResolvedInteraction(interaction *model.AgentRunInteraction,
 			Content:         content,
 			ResponsePayload: append(json.RawMessage(nil), responsePayload...),
 		}, nil
+	case model.AgentRunInteractionKindApprovalRequest:
+		content := firstNonEmptyString(followupMessage, approvalRequestResumeContent(interaction.RequestPayload, responsePayload, intent))
+		req := model.ResumeAgentRunRequest{
+			Intent:          intent,
+			ResponsePayload: append(json.RawMessage(nil), responsePayload...),
+		}
+		if intent == model.AgentRunResumeIntentApprove {
+			if content != "" {
+				req.Content = content
+				req.SendMessage = true
+			}
+			return req, nil
+		}
+		req.Content = firstNonEmptyString(content, "Please revise and continue.")
+		return req, nil
 	case model.AgentRunInteractionKindReviewCheckpoint:
 		content := firstNonEmptyString(followupMessage, reviewCheckpointResumeContent(interaction.RequestPayload, responsePayload, intent))
 		req := model.ResumeAgentRunRequest{
@@ -615,6 +630,14 @@ func resolveIntentForInteraction(interaction *model.AgentRunInteraction, respons
 	switch strings.TrimSpace(interaction.InteractionKind) {
 	case model.AgentRunInteractionKindRequestUserInput:
 		return model.AgentRunResumeIntentReply
+	case model.AgentRunInteractionKindApprovalRequest:
+		var payload struct {
+			Decision string `json:"decision"`
+		}
+		if err := json.Unmarshal(responsePayload, &payload); err == nil && strings.TrimSpace(payload.Decision) == "approve" {
+			return model.AgentRunResumeIntentApprove
+		}
+		return model.AgentRunResumeIntentRequestChanges
 	case model.AgentRunInteractionKindReviewCheckpoint:
 		var payload struct {
 			Decision string `json:"decision"`
@@ -687,7 +710,7 @@ func reviewCheckpointResumeContent(requestPayload, responsePayload json.RawMessa
 		response.SelectedFindingIDs[i] = strings.TrimSpace(response.SelectedFindingIDs[i])
 	}
 
-	var request model.ApprovalRequest
+	var request model.ReviewCheckpointRequest
 	if err := json.Unmarshal(requestPayload, &request); err != nil {
 		return response.Message
 	}
@@ -718,6 +741,34 @@ func reviewCheckpointResumeContent(requestPayload, responsePayload json.RawMessa
 	default:
 		return response.Message
 	}
+}
+
+func approvalRequestResumeContent(requestPayload, responsePayload json.RawMessage, intent string) string {
+	var response model.ApprovalResponse
+	if err := json.Unmarshal(responsePayload, &response); err != nil {
+		return ""
+	}
+	response.Message = strings.TrimSpace(response.Message)
+	if strings.TrimSpace(intent) == model.AgentRunResumeIntentApprove {
+		if response.Message != "" {
+			return response.Message
+		}
+		var request model.ApprovalRequest
+		if err := json.Unmarshal(requestPayload, &request); err != nil {
+			return "Approved. Continue."
+		}
+		switch strings.ToLower(strings.TrimSpace(request.Phase)) {
+		case "prd":
+			return "Approved PRD. Continue to task planning."
+		case "tasks", "stories":
+			return "Approved task plan. Apply it and create tasks."
+		case "task_doc", "story_doc":
+			return "Approved task planning document. Persist it and finish."
+		default:
+			return "Approved. Continue."
+		}
+	}
+	return response.Message
 }
 
 func codexUserInputResumeContent(requestPayload, responsePayload json.RawMessage) string {
@@ -1088,7 +1139,13 @@ func artifactInteractionKind(artifact model.AgentRunArtifact) string {
 				return model.AgentRunInteractionKindPermissionsApproval
 			}
 		}
-		return model.AgentRunInteractionKindReviewCheckpoint
+		var review model.ReviewCheckpointRequest
+		if artifact.InlineContent != nil && json.Unmarshal([]byte(*artifact.InlineContent), &review) == nil {
+			if len(review.Findings) > 0 || strings.TrimSpace(review.OverallCorrectness) != "" || strings.TrimSpace(review.OverallExplanation) != "" || review.OverallConfidenceScore != nil {
+				return model.AgentRunInteractionKindReviewCheckpoint
+			}
+		}
+		return model.AgentRunInteractionKindApprovalRequest
 	default:
 		return ""
 	}

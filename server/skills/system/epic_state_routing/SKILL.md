@@ -42,7 +42,7 @@ If no approved spec exists but a draft PRD already exists:
 - Resume review or revision from the current draft instead of starting over.
 - Read the existing draft using `read_document` when needed.
 - Present the current draft with `publish_prd_draft`.
-- Request PRD approval with `request_review_checkpoint` using `phase="prd"`.
+- Request PRD approval with `request_approval` using `phase="prd"`.
 - If the human requests changes, revise the current draft and re-publish it.
 - Do not proceed to task planning until the spec is approved.
 

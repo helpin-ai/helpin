@@ -51,6 +51,11 @@ var (
 	ErrInitialResponseTimeout = errors.New("initial_response_timeout")
 )
 
+const (
+	defaultOpenAIResponsesBaseURL = "https://api.openai.com/v1"
+	defaultOpenRouterBaseURL      = "https://openrouter.ai/api/v1"
+)
+
 type ExecutionBlock struct {
 	Type       string          `json:"type"`
 	Text       string          `json:"text,omitempty"`
@@ -210,25 +215,37 @@ func (f *EinoModelFactory) resolveAgenticBaseModel(ctx context.Context, provider
 		}
 		return agenticopenai.New(ctx, &agenticopenai.Config{
 			APIKey:  f.OpenAIAPIKey,
-			BaseURL: strings.TrimSpace(f.OpenAIBaseURL),
+			BaseURL: resolveOpenAIResponsesBaseURL(f.OpenAIBaseURL),
 			Model:   modelName,
 		})
 	case appmodel.AgentModelProviderOpenRouter, appmodel.AgentModelProviderOpenRouterResponses:
 		if strings.TrimSpace(f.OpenRouterKey) == "" {
 			return nil, fmt.Errorf("openrouter API key is not configured")
 		}
-		baseURL := strings.TrimSpace(f.OpenRouterURL)
-		if baseURL == "" {
-			baseURL = "https://openrouter.ai/api/v1"
-		}
 		return agenticopenai.New(ctx, &agenticopenai.Config{
 			APIKey:  f.OpenRouterKey,
-			BaseURL: baseURL,
+			BaseURL: resolveOpenRouterBaseURL(f.OpenRouterURL),
 			Model:   modelName,
 		})
 	default:
 		return nil, fmt.Errorf("provider %q does not support the Responses-based agentic model path", provider)
 	}
+}
+
+func resolveOpenAIResponsesBaseURL(baseURL string) string {
+	baseURL = strings.TrimSpace(baseURL)
+	if baseURL == "" {
+		return defaultOpenAIResponsesBaseURL
+	}
+	return baseURL
+}
+
+func resolveOpenRouterBaseURL(baseURL string) string {
+	baseURL = strings.TrimSpace(baseURL)
+	if baseURL == "" {
+		return defaultOpenRouterBaseURL
+	}
+	return baseURL
 }
 
 func resolveProviderAndModel(agent *appmodel.Agent) (string, string) {

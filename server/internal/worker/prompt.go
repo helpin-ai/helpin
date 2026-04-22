@@ -290,7 +290,7 @@ func buildExecutionSupplementPrompt(run *model.AgentRun, runFacts map[string]str
 	if run != nil && run.InvocationMode == model.InvocationModeInteractive {
 		parts = append(parts, "This is an interactive transcript that may resume after a human reply.")
 		parts = append(parts, "If the latest human message answers a question, gives feedback, or requests changes, continue the work from that reply.")
-		parts = append(parts, "Do not treat a human reply as the end of the run by default. Either continue the task, emit a user-input handoff using the runtime-appropriate mechanism, emit a review checkpoint handoff using the runtime-appropriate mechanism, or reach a durable final outcome.")
+		parts = append(parts, "Do not treat a human reply as the end of the run by default. Either continue the task, emit a user-input handoff using the runtime-appropriate mechanism, emit an approval or review handoff using the runtime-appropriate mechanism, or reach a durable final outcome.")
 		parts = append(parts, "If you need more information from the human, do not end the turn with prose questions or an open-questions list. Emit a user-input handoff with the blocking questions using the runtime-appropriate mechanism and stop so the session stays interactive.")
 		parts = append(parts, "If an approval is denied or the human requests changes, continue from that feedback. If you are blocked afterward, emit the next user-input handoff using the runtime-appropriate mechanism instead of finishing the run.")
 	}

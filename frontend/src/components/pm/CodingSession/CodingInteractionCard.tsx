@@ -7,6 +7,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import type {
+  CodingSessionApprovalRequestPayload,
+  CodingSessionApprovalResponsePayload,
   CodingSessionInteraction,
   CodingSessionReviewCheckpointRequestPayload,
   CodingSessionReviewCheckpointResponsePayload,
@@ -431,6 +433,58 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
     );
   }
 
+  if (interaction.interaction_kind === 'approval_request') {
+    const approval = parseApprovalRequest(requestPayload);
+    const buildApprovalResponse = (
+      decision: CodingSessionApprovalResponsePayload['decision'],
+    ): CodingSessionApprovalResponsePayload => ({
+      decision,
+      ...(followupMessage.trim() ? { message: followupMessage.trim() } : {}),
+    });
+
+    return (
+      <InteractionShell compact={compact}
+        icon={<SecurityCheckIcon className="h-4 w-4" />}
+        eyebrow={approval?.phase ? `${approval.phase} approval` : 'Approval required'}
+        title={interaction.title ?? approval?.title ?? 'Approval required'}
+        summary={interaction.summary ?? approval?.summary}
+      >
+        <Textarea
+          value={followupMessage}
+          onChange={(event) => setFollowupMessage(event.target.value)}
+          placeholder="Optional note for the agent"
+          className="min-h-[76px]"
+          disabled={isBusy}
+        />
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            disabled={isBusy}
+            onClick={() => onResolve(
+              interaction.interaction_id,
+              buildApprovalResponse('approve'),
+              followupMessage.trim() || undefined,
+            )}
+          >
+            Approve
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={isBusy}
+            onClick={() => onResolve(
+              interaction.interaction_id,
+              buildApprovalResponse('request_changes'),
+              followupMessage.trim() || undefined,
+            )}
+          >
+            Request changes
+          </Button>
+        </div>
+      </InteractionShell>
+    );
+  }
+
   if (interaction.interaction_kind === 'permissions_approval') {
     const permissions = parsePermissionsRequest(requestPayload);
     const requestedPermissions = permissions?.permissions ?? {};
@@ -709,6 +763,16 @@ function parseReviewCheckpointRequest(payload: Record<string, unknown>) {
     overallExplanation?: string;
     overallConfidenceScore?: number;
   };
+}
+
+function parseApprovalRequest(payload: Record<string, unknown>) {
+  if (!payload || typeof payload !== 'object') return null;
+  return {
+    phase: typeof payload.phase === 'string' ? payload.phase : undefined,
+    preview_panel_key: typeof payload.preview_panel_key === 'string' ? payload.preview_panel_key : undefined,
+    title: typeof payload.title === 'string' ? payload.title : undefined,
+    summary: typeof payload.summary === 'string' ? payload.summary : undefined,
+  } satisfies CodingSessionApprovalRequestPayload;
 }
 
 function parseReviewFinding(rawFinding: unknown, index: number): CodingSessionReviewFinding[] {

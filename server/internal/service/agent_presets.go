@@ -285,13 +285,13 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 		worker.ToolPublishPRDDraft,
 		worker.ToolPublishTaskPlan,
 		worker.ToolRequestUserInput,
-		worker.ToolRequestReviewCheckpoint,
+		worker.ToolRequestApproval,
 	)
 	taskPlannerTools := filterPresetTools(productPlannerProfile.AllowedTools,
 		worker.ToolUpdatePlan,
 		worker.ToolPublishTaskPlanDoc,
 		worker.ToolRequestUserInput,
-		worker.ToolRequestReviewCheckpoint,
+		worker.ToolRequestApproval,
 	)
 	taskPlannerTools = slices.DeleteFunc(taskPlannerTools, func(toolName string) bool {
 		return toolName == "list_epic_tasks"
@@ -332,7 +332,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          taskPlannerTools,
 			AllowedCommands:       slices.Clone(productPlannerProfile.AllowedCommands),
-			AllowedTargetTypes:    []string{"task", "epic"},
+			AllowedTargetTypes:    []string{"task", "epic", "workspace"},
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeInteractive,
 			SupportedModes:        supportedModesForRuntime(productPlannerProfile.RuntimeKind),
@@ -352,7 +352,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          []string{"list_deals", "update_deal_stage", "add_deal_note", "list_contacts", "list_buyer_signals", "list_documents", "read_document", "search_documents"},
 			AllowedCommands:       []string{},
-			AllowedTargetTypes:    []string{"crm_deal", "support_conversation", "document"},
+			AllowedTargetTypes:    []string{"crm_deal", "support_conversation", "document", "workspace"},
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeInteractive,
 			SupportedModes:        supportedModesForRuntime(productPlannerProfile.RuntimeKind),

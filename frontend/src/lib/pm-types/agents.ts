@@ -15,7 +15,7 @@ export type AgentStatus = 'idle' | 'working' | 'error' | 'paused';
 export type AgentRunStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 export type AgentRuntimeKind = 'opencode' | 'codex' | 'native_sdk';
 export type AgentTriggerMode = 'manual' | 'auto_on_assignment' | 'auto_on_event';
-export type AgentTargetType = 'task' | 'support_conversation' | 'epic' | 'document' | 'crm_deal' | 'repository';
+export type AgentTargetType = 'task' | 'support_conversation' | 'epic' | 'document' | 'crm_deal' | 'repository' | 'workspace';
 export type AgentApprovalState = 'not_required' | 'pending' | 'approved' | 'rejected';
 export type AgentApprovalMode = 'preset_default' | 'never' | 'always';
 export type AgentModelProvider = 'anthropic' | 'openai' | 'openrouter';
@@ -55,7 +55,6 @@ export interface Agent {
   allowed_tools: string[];
   allowed_commands: string[];
   allowed_targets: string[];
-  schedule?: string;
   target_selector?: Record<string, unknown>;
   trigger_events?: string[];
   approval_mode: AgentApprovalMode;
@@ -318,7 +317,6 @@ export interface CreateAgentRequest {
   allowed_tools?: string[];
   allowed_commands?: string[];
   allowed_targets?: string[];
-  schedule?: string;
   target_selector?: Record<string, unknown>;
   trigger_events?: string[];
   approval_mode?: AgentApprovalMode;
@@ -347,7 +345,6 @@ export interface UpdateAgentRequest {
   allowed_tools?: string[];
   allowed_commands?: string[];
   allowed_targets?: string[];
-  schedule?: string;
   target_selector?: Record<string, unknown>;
   trigger_events?: string[];
   approval_mode?: AgentApprovalMode;
