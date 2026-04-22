@@ -4394,6 +4394,17 @@ func TestExecuteRunActivityPausesNativePlannerForReviewCheckpoint(t *testing.T) 
 	if interactions[0].InteractionKind != model.AgentRunInteractionKindReviewCheckpoint {
 		t.Fatalf("expected review checkpoint interaction, got %#v", interactions[0])
 	}
+
+	messages, err := runMessageRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("list run messages: %v", err)
+	}
+	if len(messages) == 0 {
+		t.Fatal("expected persisted run messages")
+	}
+	if strings.Contains(messages[0].Content, "Run mode: interactive") {
+		t.Fatalf("did not expect gated native first user prompt to persist phase guidance, got %q", messages[0].Content)
+	}
 }
 
 func testAgentSkillRefKeys(refs model.AgentSkillRefs) []string {
