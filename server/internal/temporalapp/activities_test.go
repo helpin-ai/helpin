@@ -4098,6 +4098,8 @@ func TestExecuteRunActivityPausesNativePlannerForReviewCheckpoint(t *testing.T) 
 	wsPublisher := &capturedEventPublisher{}
 	var capturedSelectivePathEnabled bool
 	var capturedRuntimeSkillRefs model.AgentSkillRefs
+	var capturedActiveRuntimeSkillRefs model.AgentSkillRefs
+	var capturedActiveSkillInstructions string
 
 	now := time.Now().UTC()
 	agent := &model.Agent{
@@ -4172,6 +4174,8 @@ func TestExecuteRunActivityPausesNativePlannerForReviewCheckpoint(t *testing.T) 
 			executeFn: func(execCtx *workerpkg.ExecutionContext, run *model.AgentRun) error {
 				capturedSelectivePathEnabled = execCtx.NativeSelectivePathEnabled
 				capturedRuntimeSkillRefs = append(model.AgentSkillRefs(nil), execCtx.RuntimeSkillRefs...)
+				capturedActiveRuntimeSkillRefs = append(model.AgentSkillRefs(nil), execCtx.ActiveRuntimeSkillRefs...)
+				capturedActiveSkillInstructions = execCtx.ActiveSkillInstructions
 				execCtx.LastExecutionResult = &workerpkg.ExecutionResult{
 					AssistantText: "PRD review checkpoint requested.",
 					ToolInvocations: []model.ToolInvocation{
@@ -4207,6 +4211,12 @@ func TestExecuteRunActivityPausesNativePlannerForReviewCheckpoint(t *testing.T) 
 	if len(capturedRuntimeSkillRefs) == 0 {
 		t.Fatal("expected runtime skill refs to be threaded into execution context")
 	}
+	if got := testAgentSkillRefKeys(capturedActiveRuntimeSkillRefs); len(got) != 4 || got[0] != "approval_protocol" || got[1] != "prd_authorship" || got[2] != "epic_state_routing" || got[3] != "general_agent_behavior" {
+		t.Fatalf("unexpected active runtime skill refs %#v", got)
+	}
+	if strings.TrimSpace(capturedActiveSkillInstructions) == "" {
+		t.Fatalf("expected active skill instructions to be threaded into execution context, got %q", capturedActiveSkillInstructions)
+	}
 
 	updatedRun, err := runRepo.GetByIDAny(context.Background(), run.ID)
 	if err != nil {
@@ -4235,6 +4245,14 @@ func TestExecuteRunActivityPausesNativePlannerForReviewCheckpoint(t *testing.T) 
 	if interactions[0].InteractionKind != model.AgentRunInteractionKindReviewCheckpoint {
 		t.Fatalf("expected review checkpoint interaction, got %#v", interactions[0])
 	}
+}
+
+func testAgentSkillRefKeys(refs model.AgentSkillRefs) []string {
+	keys := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		keys = append(keys, ref.Key)
+	}
+	return keys
 }
 
 func TestExecuteRunActivityRetriesReviewAgentCompletionWithoutRequiredInteraction(t *testing.T) {

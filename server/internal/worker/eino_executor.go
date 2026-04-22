@@ -181,6 +181,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 	provider, modelName := resolveProviderAndModel(execCtx.Agent)
 	toolDefs := e.tools.DefinitionsFor(execCtx.AllowedTools)
 	trimmedTurnLocalInstructions := strings.TrimSpace(turnLocalInstructions)
+	trimmedActiveSkillInstructions := strings.TrimSpace(execCtx.ActiveSkillInstructions)
 	slog.InfoContext(execCtx.Context, "native runtime execution starting",
 		"workspace_id", execCtx.WorkspaceID,
 		"run_id", execCtx.RunID,
@@ -192,6 +193,8 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		"target_type", strings.TrimSpace(execCtx.TargetType),
 		"native_selective_path_enabled", execCtx.NativeSelectivePathEnabled,
 		"runtime_skill_ref_count", len(execCtx.RuntimeSkillRefs),
+		"active_skill_ref_count", len(execCtx.ActiveRuntimeSkillRefs),
+		"active_skill_instruction_chars", len([]rune(trimmedActiveSkillInstructions)),
 		"supplement_transport", supplementTransport,
 		"turn_local_instructions_present", trimmedTurnLocalInstructions != "",
 		"turn_local_instruction_chars", len([]rune(trimmedTurnLocalInstructions)),

@@ -41,6 +41,8 @@ type ExecutionContext struct {
 	Config                     *WorkflowConfig
 	ResolvedProfile            ResolvedProfile
 	RuntimeSkillRefs           model.AgentSkillRefs
+	ActiveRuntimeSkillRefs     model.AgentSkillRefs
+	ActiveSkillInstructions    string
 	SkillPolicy                SkillPolicy
 	NativeSelectivePathEnabled bool
 	AllowedTools               map[string]bool

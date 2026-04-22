@@ -215,6 +215,7 @@ type resolvedRunState struct {
 	run                        *model.AgentRun
 	agent                      *model.Agent
 	runtimeSkillRefs           model.AgentSkillRefs
+	runtimeSkillDefinitions    []workerpkg.SkillDefinition
 	skillPolicy                workerpkg.SkillPolicy
 	nativeSelectivePathEnabled bool
 	task                       *model.PMTask
@@ -305,6 +306,52 @@ func runtimeSkillRefKeys(refs model.AgentSkillRefs) []string {
 		keys = append(keys, key)
 	}
 	return keys
+}
+
+func selectNativeActiveSkills(state *resolvedRunState, planningStage string) agentskills.NativeActiveSelection {
+	if state == nil {
+		return agentskills.NativeActiveSelection{}
+	}
+	planningStage = nativeActiveSkillPlanningStage(state, planningStage)
+	return agentskills.SelectNativeActiveSkills(state.runtimeSkillRefs, state.runtimeSkillDefinitions, agentskills.NativeActiveSelectionContext{
+		PresetKey:     strings.TrimSpace(state.agent.EffectivePresetKey()),
+		TargetType:    strings.TrimSpace(state.run.TargetType),
+		PlanningStage: strings.TrimSpace(planningStage),
+	})
+}
+
+func nativeActiveSkillPlanningStage(state *resolvedRunState, planningStage string) string {
+	planningStage = strings.TrimSpace(planningStage)
+	if planningStage != "" || state == nil || state.run == nil {
+		return planningStage
+	}
+
+	switch strings.TrimSpace(state.run.TargetType) {
+	case "epic":
+		if state.epic == nil {
+			return planningStage
+		}
+		if strings.TrimSpace(derefString(state.epic.ApprovedSpecVersionID)) != "" {
+			return model.PlanningStagePlanTasks
+		}
+		switch strings.TrimSpace(state.epic.PlanningState) {
+		case model.EpicPlanningStateReadyForTaskPlanning,
+			model.EpicPlanningStateReadyForStoryPlanning,
+			model.EpicPlanningStateAwaitingPlanApproval,
+			model.EpicPlanningStateStoriesCreated,
+			model.EpicPlanningStateExecutionStarted,
+			model.EpicPlanningStateReadyForExecution:
+			return model.PlanningStagePlanTasks
+		default:
+			return model.PlanningStageDraftSpec
+		}
+	case "task":
+		if state.task != nil && strings.TrimSpace(state.agent.EffectivePresetKey()) == model.AgentPresetTaskPlanner {
+			return model.PlanningStageTaskPlanDoc
+		}
+	}
+
+	return planningStage
 }
 
 func providerContinuationMode(continuation *workerpkg.ProviderContinuation) string {
@@ -531,6 +578,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 	}
 
 	allowedTools := effectiveToolSet(state.resolved, planningInput.AllowedTools)
+	activeSkillSelection := selectNativeActiveSkills(state, planningInput.Stage)
 
 	bridge := a.serviceBridge()
 	execCtx := &workerpkg.ExecutionContext{
@@ -562,6 +610,8 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		Config:                     config,
 		ResolvedProfile:            state.resolved,
 		RuntimeSkillRefs:           state.runtimeSkillRefs,
+		ActiveRuntimeSkillRefs:     activeSkillSelection.Refs,
+		ActiveSkillInstructions:    activeSkillSelection.Instructions,
 		SkillPolicy:                state.skillPolicy,
 		NativeSelectivePathEnabled: state.nativeSelectivePathEnabled,
 		AllowedTools:               allowedTools,
@@ -640,6 +690,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		"native_selective_path_enabled", state.nativeSelectivePathEnabled,
 		"continuation_mode", providerContinuationMode(providerContinuation),
 		"runtime_skill_refs", runtimeSkillRefKeys(state.runtimeSkillRefs),
+		"active_skill_refs", runtimeSkillRefKeys(activeSkillSelection.Refs),
 	)
 	var repoSkillMask *workerpkg.RepoSkillMask
 	if runtimeKind == "codex" || runtimeKind == "opencode" {
@@ -4215,6 +4266,7 @@ func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*r
 		run:                        run,
 		agent:                      agent,
 		runtimeSkillRefs:           skillResolution.Refs,
+		runtimeSkillDefinitions:    skillResolution.Definitions,
 		skillPolicy:                agentskills.AggregatePolicy(skillResolution.Definitions),
 		nativeSelectivePathEnabled: nativeSelectivePathEnabled,
 		resolved:                   resolved,
