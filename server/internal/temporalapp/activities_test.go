@@ -735,6 +735,37 @@ func TestAppendTitledPlanningContextSectionSkipsBlankAndWrapsContent(t *testing.
 	}
 }
 
+func TestAppendTaskPlannerTaskSummarySectionsSummarizesTask(t *testing.T) {
+	description := "Investigate the approval mismatch"
+	teamID := "team-1"
+	sections := appendTaskPlannerTaskSummarySections(nil, &model.PMTask{
+		Name:        "Harden approval preview binding",
+		Description: &description,
+		TeamID:      &teamID,
+	})
+	if got, want := strings.Join(sections, "\n\n"), strings.Join([]string{
+		"Task: Harden approval preview binding",
+		"Task description:\nInvestigate the approval mismatch",
+		"Task team ID: team-1",
+	}, "\n\n"); got != want {
+		t.Fatalf("unexpected task summary sections\nwant:\n%s\n\ngot:\n%s", want, got)
+	}
+}
+
+func TestAppendTaskPlannerParentEpicSummarySectionsSummarizesEpic(t *testing.T) {
+	description := "Improve native planner reliability"
+	sections := appendTaskPlannerParentEpicSummarySections(nil, &model.PMEpic{
+		Name:        "Dynamic native skills",
+		Description: &description,
+	})
+	if got, want := strings.Join(sections, "\n\n"), strings.Join([]string{
+		"Parent epic: Dynamic native skills",
+		"Parent epic description:\nImprove native planner reliability",
+	}, "\n\n"); got != want {
+		t.Fatalf("unexpected parent epic summary sections\nwant:\n%s\n\ngot:\n%s", want, got)
+	}
+}
+
 func TestAppendExistingEpicTasksSectionSummarizesTasks(t *testing.T) {
 	sections := appendExistingEpicTasksSection(nil, []model.PMTask{
 		{ID: "task-1", Name: "Task A"},

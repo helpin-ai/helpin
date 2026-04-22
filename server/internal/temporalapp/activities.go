@@ -6193,23 +6193,10 @@ func (a *AgentRunActivities) buildTaskPlannerContextSections(ctx context.Context
 
 	sections = appendOperatorNotesSection(sections, input.AdditionalContext)
 
-	sections = append(sections, fmt.Sprintf("Task: %s", state.task.Name))
-	if state.task.Description != nil {
-		if description := tiptap.RichTextToMarkdown(*state.task.Description); description != "" {
-			sections = append(sections, "Task description:\n"+truncatePlanningText(description, 8000))
-		}
-	}
-	if state.task.TeamID != nil && strings.TrimSpace(*state.task.TeamID) != "" {
-		sections = append(sections, fmt.Sprintf("Task team ID: %s", strings.TrimSpace(*state.task.TeamID)))
-	}
+	sections = appendTaskPlannerTaskSummarySections(sections, state.task)
 
 	if state.epic != nil {
-		sections = append(sections, fmt.Sprintf("Parent epic: %s", state.epic.Name))
-		if state.epic.Description != nil {
-			if description := tiptap.RichTextToMarkdown(*state.epic.Description); description != "" {
-				sections = append(sections, "Parent epic description:\n"+truncatePlanningText(description, 8000))
-			}
-		}
+		sections = appendTaskPlannerParentEpicSummarySections(sections, state.epic)
 	}
 
 	if input.SpecVersionID != "" {
@@ -6436,6 +6423,35 @@ func appendTitledPlanningContextSection(sections []string, title, body string) [
 		return sections
 	}
 	return append(sections, title+"\n"+body)
+}
+
+func appendTaskPlannerTaskSummarySections(sections []string, task *model.PMTask) []string {
+	if task == nil {
+		return sections
+	}
+	sections = append(sections, fmt.Sprintf("Task: %s", task.Name))
+	if task.Description != nil {
+		if description := tiptap.RichTextToMarkdown(*task.Description); description != "" {
+			sections = append(sections, "Task description:\n"+truncatePlanningText(description, 8000))
+		}
+	}
+	if task.TeamID != nil && strings.TrimSpace(*task.TeamID) != "" {
+		sections = append(sections, fmt.Sprintf("Task team ID: %s", strings.TrimSpace(*task.TeamID)))
+	}
+	return sections
+}
+
+func appendTaskPlannerParentEpicSummarySections(sections []string, epic *model.PMEpic) []string {
+	if epic == nil {
+		return sections
+	}
+	sections = append(sections, fmt.Sprintf("Parent epic: %s", epic.Name))
+	if epic.Description != nil {
+		if description := tiptap.RichTextToMarkdown(*epic.Description); description != "" {
+			sections = append(sections, "Parent epic description:\n"+truncatePlanningText(description, 8000))
+		}
+	}
+	return sections
 }
 
 func appendExistingEpicTasksSection(sections []string, tasks []model.PMTask) []string {
