@@ -16,6 +16,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"github.com/helpin-ai/helpin/server/internal/agentskills"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/tiptap"
@@ -211,6 +212,52 @@ func TestSelectNativeActiveSkillsRequiresSelectivePathGate(t *testing.T) {
 	selection := selectNativeActiveSkills(state, model.PlanningStageDraftSpec)
 	if got := testAgentSkillRefKeys(selection.Refs); len(got) != 3 || got[0] != "approval_protocol" || got[1] != "prd_authorship" || got[2] != "task_decomposition" {
 		t.Fatalf("expected full skill set when selective path is disabled, got %#v", got)
+	}
+}
+
+func TestEffectiveExecutionSkillPolicyUsesActiveSelectionForSelectivePath(t *testing.T) {
+	state := &resolvedRunState{
+		nativeSelectivePathEnabled: true,
+		skillPolicy: workerpkg.SkillPolicy{
+			CompletionRequiresInteractionKinds: []string{
+				model.AgentRunInteractionKindApprovalRequest,
+				model.AgentRunInteractionKindReviewCheckpoint,
+			},
+		},
+		runtimeSkillDefinitions: []workerpkg.SkillDefinition{
+			{
+				Key:        "approval_protocol",
+				SourceKind: "built_in",
+				Policy: workerpkg.SkillPolicy{
+					CompletionRequiresInteractionKinds: []string{model.AgentRunInteractionKindApprovalRequest},
+				},
+			},
+			{
+				Key:        "task_decomposition",
+				SourceKind: "built_in",
+				Policy: workerpkg.SkillPolicy{
+					CompletionRequiresInteractionKinds: []string{model.AgentRunInteractionKindReviewCheckpoint},
+				},
+			},
+		},
+	}
+
+	policy := effectiveExecutionSkillPolicy(state, agentskills.NativeActiveSelection{
+		Definitions: []workerpkg.SkillDefinition{
+			{
+				Key:        "approval_protocol",
+				SourceKind: "built_in",
+				Policy: workerpkg.SkillPolicy{
+					CompletionRequiresInteractionKinds: []string{model.AgentRunInteractionKindApprovalRequest},
+				},
+			},
+		},
+	})
+
+	if got := completionRequiredInteractionKinds(policy); len(got) != 1 {
+		t.Fatalf("expected one active required interaction, got %#v", got)
+	} else if _, ok := got[model.AgentRunInteractionKindApprovalRequest]; !ok {
+		t.Fatalf("expected active policy to replace full policy for selective path, got %#v", got)
 	}
 }
 
@@ -4125,6 +4172,7 @@ func TestExecuteRunActivityPausesNativePlannerForReviewCheckpoint(t *testing.T) 
 	var capturedRuntimeSkillRefs model.AgentSkillRefs
 	var capturedActiveRuntimeSkillRefs model.AgentSkillRefs
 	var capturedActiveSkillInstructions string
+	var capturedSkillPolicy workerpkg.SkillPolicy
 
 	now := time.Now().UTC()
 	agent := &model.Agent{
@@ -4201,6 +4249,7 @@ func TestExecuteRunActivityPausesNativePlannerForReviewCheckpoint(t *testing.T) 
 				capturedRuntimeSkillRefs = append(model.AgentSkillRefs(nil), execCtx.RuntimeSkillRefs...)
 				capturedActiveRuntimeSkillRefs = append(model.AgentSkillRefs(nil), execCtx.ActiveRuntimeSkillRefs...)
 				capturedActiveSkillInstructions = execCtx.ActiveSkillInstructions
+				capturedSkillPolicy = execCtx.SkillPolicy
 				execCtx.LastExecutionResult = &workerpkg.ExecutionResult{
 					AssistantText: "PRD review checkpoint requested.",
 					ToolInvocations: []model.ToolInvocation{
@@ -4241,6 +4290,13 @@ func TestExecuteRunActivityPausesNativePlannerForReviewCheckpoint(t *testing.T) 
 	}
 	if strings.TrimSpace(capturedActiveSkillInstructions) == "" {
 		t.Fatalf("expected active skill instructions to be threaded into execution context, got %q", capturedActiveSkillInstructions)
+	}
+	if got := completionRequiredInteractionKinds(capturedSkillPolicy); len(got) != 2 {
+		t.Fatalf("unexpected active skill policy %#v", got)
+	} else if _, ok := got[model.AgentRunInteractionKindApprovalRequest]; !ok {
+		t.Fatalf("expected approval_request in active skill policy, got %#v", got)
+	} else if _, ok := got[model.AgentRunInteractionKindRequestUserInput]; !ok {
+		t.Fatalf("unexpected active skill policy %#v", got)
 	}
 
 	updatedRun, err := runRepo.GetByIDAny(context.Background(), run.ID)

@@ -222,6 +222,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		"runtime_skill_ref_count", len(execCtx.RuntimeSkillRefs),
 		"active_skill_ref_count", len(execCtx.ActiveRuntimeSkillRefs),
 		"active_skill_instruction_chars", len([]rune(trimmedActiveSkillInstructions)),
+		"active_policy_required_interactions", SortedUniqueStrings(execCtx.SkillPolicy.CompletionRequiresInteractionKinds),
 		"supplement_transport", supplementTransport,
 		"turn_local_instructions_present", trimmedTurnLocalInstructions != "",
 		"turn_local_instruction_chars", len([]rune(trimmedTurnLocalInstructions)),

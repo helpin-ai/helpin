@@ -361,6 +361,19 @@ func nativeActiveSkillPlanningStage(state *resolvedRunState, planningStage strin
 	return planningStage
 }
 
+func effectiveExecutionSkillPolicy(state *resolvedRunState, selection agentskills.NativeActiveSelection) workerpkg.SkillPolicy {
+	if state == nil || !state.nativeSelectivePathEnabled {
+		if state == nil {
+			return workerpkg.SkillPolicy{}
+		}
+		return state.skillPolicy
+	}
+	if len(selection.Definitions) == 0 && len(state.runtimeSkillDefinitions) > 0 {
+		return state.skillPolicy
+	}
+	return agentskills.AggregatePolicy(selection.Definitions)
+}
+
 func providerContinuationMode(continuation *workerpkg.ProviderContinuation) string {
 	if continuation == nil {
 		return "fresh"
@@ -586,6 +599,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 
 	allowedTools := effectiveToolSet(state.resolved, planningInput.AllowedTools)
 	activeSkillSelection := selectNativeActiveSkills(state, planningInput.Stage)
+	state.skillPolicy = effectiveExecutionSkillPolicy(state, activeSkillSelection)
 
 	bridge := a.serviceBridge()
 	execCtx := &workerpkg.ExecutionContext{
@@ -698,6 +712,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		"continuation_mode", providerContinuationMode(providerContinuation),
 		"runtime_skill_refs", runtimeSkillRefKeys(state.runtimeSkillRefs),
 		"active_skill_refs", runtimeSkillRefKeys(activeSkillSelection.Refs),
+		"active_policy_required_interactions", completionRequiredInteractionKinds(state.skillPolicy),
 	)
 	var repoSkillMask *workerpkg.RepoSkillMask
 	if runtimeKind == "codex" || runtimeKind == "opencode" {
