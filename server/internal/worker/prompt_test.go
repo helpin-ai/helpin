@@ -113,7 +113,7 @@ func TestBuildUserPromptIncludesArtifactContext(t *testing.T) {
 	}
 }
 
-func TestBuildUserPromptStoryPlannerUsesNeutralPlanningContext(t *testing.T) {
+func TestBuildUserPromptTaskPlannerUsesNeutralPlanningContext(t *testing.T) {
 	prompt := BuildUserPrompt(
 		nil,
 		&model.PMTask{Name: "Inbox triage automation"},
@@ -141,11 +141,11 @@ func TestBuildUserPromptStoryPlannerUsesNeutralPlanningContext(t *testing.T) {
 		"open questions",
 	} {
 		if strings.Contains(prompt, snippet) {
-			t.Fatalf("did not expect duplicated story-plan guidance %q\n%s", snippet, prompt)
+			t.Fatalf("did not expect duplicated task-plan guidance %q\n%s", snippet, prompt)
 		}
 	}
 	if strings.Contains(prompt, "Please complete this task. Start by reading the relevant files to understand the codebase, then implement the changes.") {
-		t.Fatalf("did not expect implementation-oriented story prompt\n%s", prompt)
+		t.Fatalf("did not expect implementation-oriented task prompt\n%s", prompt)
 	}
 }
 

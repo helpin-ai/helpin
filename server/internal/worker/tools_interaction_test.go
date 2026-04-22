@@ -271,7 +271,7 @@ func TestPublishPRDDraftToolPublishesCanonicalPreview(t *testing.T) {
 	}
 }
 
-func TestPublishStoryPlanToolPublishesCanonicalPreview(t *testing.T) {
+func TestPublishTaskPlanToolPublishesCanonicalPreview(t *testing.T) {
 	registry := NewToolRegistry(nil)
 	ctx := &ExecutionContext{
 		Context: context.Background(),
@@ -293,7 +293,7 @@ func TestPublishStoryPlanToolPublishesCanonicalPreview(t *testing.T) {
 	}
 }
 
-func TestPublishStoryPlanToolAcceptsNestedPreviewPayload(t *testing.T) {
+func TestPublishTaskPlanToolAcceptsNestedPreviewPayload(t *testing.T) {
 	registry := NewToolRegistry(nil)
 	ctx := &ExecutionContext{
 		Context: context.Background(),
@@ -318,7 +318,7 @@ func TestPublishStoryPlanToolAcceptsNestedPreviewPayload(t *testing.T) {
 	}
 }
 
-func TestPublishStoryPlanToolAcceptsRawPlanObject(t *testing.T) {
+func TestPublishTaskPlanToolAcceptsRawPlanObject(t *testing.T) {
 	registry := NewToolRegistry(nil)
 	ctx := &ExecutionContext{
 		Context: context.Background(),
@@ -342,7 +342,7 @@ func TestPublishStoryPlanToolAcceptsRawPlanObject(t *testing.T) {
 	}
 }
 
-func TestPublishStoryPlanToolRejectsJSONStringContent(t *testing.T) {
+func TestPublishTaskPlanToolRejectsJSONStringContent(t *testing.T) {
 	registry := NewToolRegistry(nil)
 	ctx := &ExecutionContext{
 		Context: context.Background(),
@@ -363,7 +363,7 @@ func TestPublishStoryPlanToolRejectsJSONStringContent(t *testing.T) {
 	}
 }
 
-func TestPublishStoryPlanToolRejectsNonObjectJSONStringContent(t *testing.T) {
+func TestPublishTaskPlanToolRejectsNonObjectJSONStringContent(t *testing.T) {
 	registry := NewToolRegistry(nil)
 	ctx := &ExecutionContext{
 		Context: context.Background(),
@@ -374,7 +374,7 @@ func TestPublishStoryPlanToolRejectsNonObjectJSONStringContent(t *testing.T) {
 
 	_, err := registry.ExecuteAllowed(ctx, ToolPublishTaskPlan, json.RawMessage(`{
 		"title": "Task Plan",
-		"content": "STORY PLAN: do the work"
+		"content": "TASK PLAN: do the work"
 	}`))
 	if err == nil {
 		t.Fatal("expected publish_task_plan to reject non-object string content")
@@ -384,7 +384,7 @@ func TestPublishStoryPlanToolRejectsNonObjectJSONStringContent(t *testing.T) {
 	}
 }
 
-func TestPublishStoryPlanToolRejectsStringTaskEntries(t *testing.T) {
+func TestPublishTaskPlanToolRejectsStringTaskEntries(t *testing.T) {
 	registry := NewToolRegistry(nil)
 	ctx := &ExecutionContext{
 		Context: context.Background(),
@@ -408,7 +408,7 @@ func TestPublishStoryPlanToolRejectsStringTaskEntries(t *testing.T) {
 	}
 }
 
-func TestPublishStoryPlanToolRejectsRawToolArgumentWrapper(t *testing.T) {
+func TestPublishTaskPlanToolRejectsRawToolArgumentWrapper(t *testing.T) {
 	registry := NewToolRegistry(nil)
 	ctx := &ExecutionContext{
 		Context: context.Background(),
@@ -428,7 +428,7 @@ func TestPublishStoryPlanToolRejectsRawToolArgumentWrapper(t *testing.T) {
 	}
 }
 
-func TestPublishStoryPlanToolAcceptsWrappedRawJSONObject(t *testing.T) {
+func TestPublishTaskPlanToolAcceptsWrappedRawJSONObject(t *testing.T) {
 	registry := NewToolRegistry(nil)
 	ctx := &ExecutionContext{
 		Context: context.Background(),
@@ -450,7 +450,7 @@ func TestPublishStoryPlanToolAcceptsWrappedRawJSONObject(t *testing.T) {
 	}
 }
 
-func TestPublishStoryPlanToolRejectsMalformedRetryWithoutReusingStaleContent(t *testing.T) {
+func TestPublishTaskPlanToolRejectsMalformedRetryWithoutReusingStaleContent(t *testing.T) {
 	registry := NewToolRegistry(nil)
 	ctx := &ExecutionContext{
 		Context: context.Background(),
@@ -477,7 +477,7 @@ func TestPublishStoryPlanToolRejectsMalformedRetryWithoutReusingStaleContent(t *
 	}
 }
 
-func TestPublishStoryPlanDocToolReusesPreviewMarkdownContentOnMalformedRetry(t *testing.T) {
+func TestPublishTaskPlanDocToolReusesPreviewMarkdownContentOnMalformedRetry(t *testing.T) {
 	registry := NewToolRegistry(nil)
 	ctx := &ExecutionContext{
 		Context: context.Background(),
@@ -509,7 +509,7 @@ func TestPublishStoryPlanDocToolReusesPreviewMarkdownContentOnMalformedRetry(t *
 	}
 }
 
-func TestPublishStoryPlanDocToolUsesCurrentAssistantDraftOnFirstMalformedCall(t *testing.T) {
+func TestPublishTaskPlanDocToolUsesCurrentAssistantDraftOnFirstMalformedCall(t *testing.T) {
 	registry := NewToolRegistry(nil)
 	ctx := &ExecutionContext{
 		Context:              context.Background(),
@@ -532,7 +532,7 @@ func TestPublishStoryPlanDocToolUsesCurrentAssistantDraftOnFirstMalformedCall(t 
 	}
 }
 
-func TestPublishStoryPlanDocToolFallsBackToExistingTaskPlanDocument(t *testing.T) {
+func TestPublishTaskPlanDocToolFallsBackToExistingTaskPlanDocument(t *testing.T) {
 	registry := NewToolRegistry(nil)
 	documentID := "doc-task-plan-1"
 	ctx := &ExecutionContext{
@@ -575,7 +575,7 @@ func TestPublishStoryPlanDocToolFallsBackToExistingTaskPlanDocument(t *testing.T
 	}
 }
 
-func TestPublishStoryPlanDocToolPublishesCanonicalPreview(t *testing.T) {
+func TestPublishTaskPlanDocToolPublishesCanonicalPreview(t *testing.T) {
 	registry := NewToolRegistry(nil)
 	ctx := &ExecutionContext{
 		Context: context.Background(),
@@ -597,7 +597,7 @@ func TestPublishStoryPlanDocToolPublishesCanonicalPreview(t *testing.T) {
 	}
 }
 
-func TestPublishStoryPlanDocToolReturnsRepairOrientedMissingContentError(t *testing.T) {
+func TestPublishTaskPlanDocToolReturnsRepairOrientedMissingContentError(t *testing.T) {
 	registry := NewToolRegistry(nil)
 	ctx := &ExecutionContext{
 		Context: context.Background(),
@@ -769,7 +769,7 @@ func TestPublishPreviewToolUsesEpicPlannerContextForTaskPlan(t *testing.T) {
 	}
 }
 
-func TestPublishPreviewToolUsesStoryPlannerContextForPlanningDoc(t *testing.T) {
+func TestPublishPreviewToolUsesTaskPlannerContextForPlanningDoc(t *testing.T) {
 	registry := NewToolRegistry(nil)
 	ctx := &ExecutionContext{
 		Context: context.Background(),
