@@ -6296,17 +6296,11 @@ func (a *AgentRunActivities) buildTaskRunContextSections(ctx context.Context, st
 	sections = appendOperatorNotesSection(sections, additionalContext)
 	sections = appendTaskRunRepositoryBranchSections(sections, state.run)
 
-	planDocumentSections, err := a.buildTaskRunPlanDocumentContextSections(ctx, strings.TrimSpace(derefString(state.task.PlanDocumentID)))
+	taskDocumentSections, err := a.buildTaskRunDocumentContextSections(ctx, state.run.WorkspaceID, state.task)
 	if err != nil {
 		return nil, err
 	}
-	sections = append(sections, planDocumentSections...)
-
-	taskLinkedDocSections, err := a.buildTaskLinkedDocsSections(ctx, state.run.WorkspaceID, state.task.ID, strings.TrimSpace(derefString(state.task.PlanDocumentID)), "Other docs linked directly to this task:")
-	if err != nil {
-		return nil, err
-	}
-	sections = append(sections, taskLinkedDocSections...)
+	sections = append(sections, taskDocumentSections...)
 
 	return sections, nil
 }
@@ -6460,6 +6454,22 @@ func appendTaskRunRepositoryBranchSections(sections []string, run *model.AgentRu
 	default:
 		return append(sections, fmt.Sprintf("Repository base branch: `%s`.", baseBranch))
 	}
+}
+
+func (a *AgentRunActivities) buildTaskRunDocumentContextSections(ctx context.Context, workspaceID string, task *model.PMTask) ([]string, error) {
+	if task == nil {
+		return nil, nil
+	}
+	planDocumentID := strings.TrimSpace(derefString(task.PlanDocumentID))
+	planDocumentSections, err := a.buildTaskRunPlanDocumentContextSections(ctx, planDocumentID)
+	if err != nil {
+		return nil, err
+	}
+	taskLinkedDocSections, err := a.buildTaskLinkedDocsSections(ctx, workspaceID, task.ID, planDocumentID, "Other docs linked directly to this task:")
+	if err != nil {
+		return nil, err
+	}
+	return append(planDocumentSections, taskLinkedDocSections...), nil
 }
 
 func appendExistingEpicTasksSection(sections []string, tasks []model.PMTask) []string {

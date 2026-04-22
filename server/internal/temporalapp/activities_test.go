@@ -698,6 +698,60 @@ func TestBuildTaskLinkedDocsSectionsSkipsWhenNoLinkedDocs(t *testing.T) {
 	}
 }
 
+func TestBuildTaskRunDocumentContextSectionsIncludesPlanDocumentThenLinkedDocs(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	if err := db.Exec(`INSERT INTO docs_documents (id, workspace_id, space_id, title, status, visibility, created_by, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"doc-1", "ws-1", "space-1", "Implementation Plan", model.DocStatusDraft, model.SpaceVisibilityWorkspaceWide, "user-1",
+	).Error; err != nil {
+		t.Fatalf("insert plan document: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_contents (id, document_id, content_text, word_count) VALUES (?, ?, ?, ?)`,
+		"content-1", "doc-1", "Task execution draft body", 4,
+	).Error; err != nil {
+		t.Fatalf("insert plan document content: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_documents (id, workspace_id, space_id, title, status, visibility, created_by, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"doc-2", "ws-1", "space-1", "Error Payload Notes", model.DocStatusDraft, model.SpaceVisibilityWorkspaceWide, "user-1",
+	).Error; err != nil {
+		t.Fatalf("insert linked document: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_contents (id, document_id, content_text, word_count) VALUES (?, ?, ?, ?)`,
+		"content-2", "doc-2", "Capture the upstream error payload fields.", 6,
+	).Error; err != nil {
+		t.Fatalf("insert linked document content: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_links (id, workspace_id, document_id, linked_object_type, linked_object_id, link_context, created_by, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+		"link-1", "ws-1", "doc-2", model.LinkedObjectTask, "task-1", "reference", "user-1",
+	).Error; err != nil {
+		t.Fatalf("insert docs link: %v", err)
+	}
+
+	activity := &AgentRunActivities{
+		docsDocRepo:     repository.NewDocsDocumentRepository(db),
+		docsContentRepo: repository.NewDocsContentRepository(db),
+		docsLinkRepo:    repository.NewDocsLinkRepository(db),
+	}
+	sections, err := activity.buildTaskRunDocumentContextSections(context.Background(), "ws-1", &model.PMTask{
+		ID:             "task-1",
+		PlanDocumentID: strPtr("doc-1"),
+	})
+	if err != nil {
+		t.Fatalf("buildTaskRunDocumentContextSections returned error: %v", err)
+	}
+	if len(sections) != 2 {
+		t.Fatalf("expected plan document plus linked-doc sections, got %#v", sections)
+	}
+	if !strings.Contains(sections[0], "Canonical task planning document: Implementation Plan [doc-1]") || !strings.Contains(sections[0], "Task execution draft body") {
+		t.Fatalf("unexpected plan document section %#v", sections[0])
+	}
+	if !strings.Contains(sections[1], "Other docs linked directly to this task:") || !strings.Contains(sections[1], "Error Payload Notes [doc-2]") {
+		t.Fatalf("unexpected linked-doc section %#v", sections[1])
+	}
+}
+
 func TestAppendEpicTeamSectionsHandlesAssignedAndMissingTeam(t *testing.T) {
 	teamID := "team-1"
 	withTeam := appendEpicTeamSections(nil, &model.PMEpic{TeamID: &teamID})
