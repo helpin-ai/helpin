@@ -662,6 +662,71 @@ func TestLatestNativeRepairInstructionFromArtifactsIgnoresStaleAssistantArtifact
 	}
 }
 
+func TestResolveLatestNativeRepairInstructionPrefersArtifactOverHistory(t *testing.T) {
+	state := &resolvedRunState{nativeSelectivePathEnabled: true}
+	blocks, _ := json.Marshal([]workerpkg.ExecutionBlock{
+		{
+			Type:     workerpkg.ExecutionBlockTypeToolResult,
+			ToolName: workerpkg.ToolPublishTaskPlan,
+			Output:   "publish_task_plan requires content.proposed_tasks to be an array of task objects",
+			IsError:  true,
+		},
+	})
+	messages := []model.AgentRunMessage{
+		{SequenceNo: 1, Role: "user", MessageType: "prompt", Content: "Start"},
+		{SequenceNo: 2, Role: "assistant", MessageType: "assistant_turn", Content: "Drafted the task plan."},
+		{SequenceNo: 3, Role: "tool", MessageType: "tool_result", Content: "publish_task_plan requires content.proposed_tasks to be an array of task objects", ContentBlocks: blocks},
+	}
+	payload, _ := json.Marshal(model.NativeRepairState{
+		Source:      "tool_failure",
+		RepairClass: "publish_task_plan_object_shape",
+		RepairHint:  "Retry publish_task_plan with one complete JSON object in content.",
+	})
+	artifacts := []model.AgentRunArtifact{
+		{
+			ArtifactType:  model.AgentRunArtifactTypeNativeRepairState,
+			InlineContent: strPtr(string(payload)),
+			Metadata:      buildAssistantSequenceArtifactMetadata(2),
+			SequenceNo:    1,
+		},
+	}
+
+	got := resolveLatestNativeRepairInstruction(state, messages, artifacts)
+	if got.Class != "publish_task_plan_object_shape" {
+		t.Fatalf("expected artifact-backed repair class to win, got %#v", got)
+	}
+}
+
+func TestResolveLatestNativeRepairInstructionFallsBackToHistory(t *testing.T) {
+	state := &resolvedRunState{nativeSelectivePathEnabled: true}
+	blocks, _ := json.Marshal([]workerpkg.ExecutionBlock{
+		{
+			Type:     workerpkg.ExecutionBlockTypeToolResult,
+			ToolName: workerpkg.ToolPublishTaskPlan,
+			Output:   "publish_task_plan requires content.proposed_tasks to be an array of task objects",
+			IsError:  true,
+		},
+	})
+	messages := []model.AgentRunMessage{
+		{SequenceNo: 1, Role: "user", MessageType: "prompt", Content: "Start"},
+		{SequenceNo: 2, Role: "assistant", MessageType: "assistant_turn", Content: "Drafted the task plan."},
+		{SequenceNo: 3, Role: "tool", MessageType: "tool_result", Content: "publish_task_plan requires content.proposed_tasks to be an array of task objects", ContentBlocks: blocks},
+	}
+	artifacts := []model.AgentRunArtifact{
+		{
+			ArtifactType:  model.AgentRunArtifactTypeNativeRepairState,
+			InlineContent: strPtr(`{"source":"tool_failure","repair_class":"publish_task_plan_object_shape"}`),
+			Metadata:      buildAssistantSequenceArtifactMetadata(2),
+			SequenceNo:    1,
+		},
+	}
+
+	got := resolveLatestNativeRepairInstruction(state, messages, artifacts)
+	if got.Class != "publish_task_plan_task_array_shape" {
+		t.Fatalf("expected history fallback repair class, got %#v", got)
+	}
+}
+
 func TestClassifyPublishTaskPlanRepair(t *testing.T) {
 	testCases := []struct {
 		name        string

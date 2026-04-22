@@ -702,6 +702,13 @@ func latestNativeRepairInstructionFromArtifacts(messages []model.AgentRunMessage
 	return nativeRepairInstruction{}
 }
 
+func resolveLatestNativeRepairInstruction(state *resolvedRunState, messages []model.AgentRunMessage, artifacts []model.AgentRunArtifact) nativeRepairInstruction {
+	if instruction := latestNativeRepairInstructionFromArtifacts(messages, artifacts); strings.TrimSpace(instruction.Instructions) != "" {
+		return instruction
+	}
+	return latestNativeRepairInstruction(state, messages)
+}
+
 func replayMessagesForExecution(state *resolvedRunState, messages []model.AgentRunMessage) []model.AgentRunMessage {
 	if state == nil || !state.nativeSelectivePathEnabled {
 		return messages
@@ -1941,17 +1948,14 @@ func (a *AgentRunActivities) ensureRunConversation(ctx context.Context, state *r
 	if err != nil {
 		return nil, nil, nil, nativeRepairInstruction{}, err
 	}
-	repairInstruction := nativeRepairInstruction{}
+	var artifacts []model.AgentRunArtifact
 	if state.nativeSelectivePathEnabled && a.artifactRepo != nil {
-		artifacts, err := a.artifactRepo.ListByRun(ctx, state.run.WorkspaceID, state.run.ID)
+		artifacts, err = a.artifactRepo.ListByRun(ctx, state.run.WorkspaceID, state.run.ID)
 		if err != nil {
 			return nil, nil, nil, nativeRepairInstruction{}, err
 		}
-		repairInstruction = latestNativeRepairInstructionFromArtifacts(messages, artifacts)
 	}
-	if strings.TrimSpace(repairInstruction.Instructions) == "" {
-		repairInstruction = latestNativeRepairInstruction(state, messages)
-	}
+	repairInstruction := resolveLatestNativeRepairInstruction(state, messages, artifacts)
 	replayMessages := replayMessagesForExecution(state, messages)
 	if !hasExecutionHistoryMessages(replayMessages) {
 		prompt, err := a.buildInitialRunUserPrompt(ctx, state, artifactContext, planningInput, initialInstructions)
