@@ -6237,18 +6237,14 @@ func (a *AgentRunActivities) buildTaskPlannerContextSections(ctx context.Context
 		if err != nil {
 			return nil, err
 		}
-		if epicLinkedDocs != "" {
-			sections = append(sections, "Other docs linked to the parent epic:\n"+epicLinkedDocs)
-		}
+		sections = appendTitledPlanningContextSection(sections, "Other docs linked to the parent epic:", epicLinkedDocs)
 	}
 
 	commentsContext, err := a.renderTaskCommentsContext(ctx, state.task.ID)
 	if err != nil {
 		return nil, err
 	}
-	if commentsContext != "" {
-		sections = append(sections, "Task comments:\n"+commentsContext)
-	}
+	sections = appendTitledPlanningContextSection(sections, "Task comments:", commentsContext)
 
 	sections, err = a.appendPlannerRepositoryContextSection(ctx, sections, state, "Current implementation context from the live repository:", []string{
 		state.task.Name,
@@ -6387,9 +6383,7 @@ func (a *AgentRunActivities) buildEpicPlannerContextSections(ctx context.Context
 	if err != nil {
 		return nil, false, err
 	}
-	if linkedDocs != "" {
-		sections = append(sections, "Other docs linked to this epic:\n"+linkedDocs)
-	}
+	sections = appendTitledPlanningContextSection(sections, "Other docs linked to this epic:", linkedDocs)
 
 	linkedTickets, err := a.renderLinkedTicketsContext(ctx, state)
 	if err != nil {
@@ -6434,6 +6428,14 @@ func appendEpicLinkedTicketsSection(sections []string, linkedTickets string) []s
 		return sections
 	}
 	return append(sections, "Support and customer context already linked to this epic:\n"+linkedTickets)
+}
+
+func appendTitledPlanningContextSection(sections []string, title, body string) []string {
+	body = strings.TrimSpace(body)
+	if body == "" {
+		return sections
+	}
+	return append(sections, title+"\n"+body)
 }
 
 func appendExistingEpicTasksSection(sections []string, tasks []model.PMTask) []string {

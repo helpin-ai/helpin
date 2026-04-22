@@ -723,6 +723,18 @@ func TestAppendEpicLinkedTicketsSectionSkipsBlankAndWrapsContent(t *testing.T) {
 	}
 }
 
+func TestAppendTitledPlanningContextSectionSkipsBlankAndWrapsContent(t *testing.T) {
+	sections := appendTitledPlanningContextSection(nil, "Task comments:", "   ")
+	if len(sections) != 0 {
+		t.Fatalf("expected blank titled context to be skipped, got %#v", sections)
+	}
+
+	sections = appendTitledPlanningContextSection(nil, "Task comments:", "- Alice: Ready")
+	if len(sections) != 1 || sections[0] != "Task comments:\n- Alice: Ready" {
+		t.Fatalf("unexpected titled planning sections %#v", sections)
+	}
+}
+
 func TestAppendExistingEpicTasksSectionSummarizesTasks(t *testing.T) {
 	sections := appendExistingEpicTasksSection(nil, []model.PMTask{
 		{ID: "task-1", Name: "Task A"},
