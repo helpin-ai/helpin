@@ -488,6 +488,44 @@ func TestClassifyNativeRepairInstructionForApprovalPreviewBinding(t *testing.T) 
 	}
 }
 
+func TestClassifyNativeRepairInstructionForApprovalPreviewPanelKeyRequired(t *testing.T) {
+	state := &resolvedRunState{nativeSelectivePathEnabled: true}
+	message := &model.AgentRunMessage{
+		Role:        "user",
+		MessageType: "policy_retry",
+		Content:     "System correction: the previous turn requested approval after publishing multiple same-turn previews but did not include preview_panel_key.",
+	}
+
+	got := classifyNativeRepairInstruction(state, message)
+	if got.Class != "approval_preview_panel_key_required" {
+		t.Fatalf("expected preview_panel_key-specific class, got %#v", got)
+	}
+	for _, snippet := range []string{"multiple previews", "preview_panel_key", "final action"} {
+		if !strings.Contains(strings.ToLower(got.Instructions), snippet) {
+			t.Fatalf("expected preview_panel_key repair guidance to contain %q, got %q", snippet, got.Instructions)
+		}
+	}
+}
+
+func TestClassifyNativeRepairInstructionForApprovalSpecificPreviewRequired(t *testing.T) {
+	state := &resolvedRunState{nativeSelectivePathEnabled: true}
+	message := &model.AgentRunMessage{
+		Role:        "user",
+		MessageType: "policy_retry",
+		Content:     `System correction: the previous turn requested approval without binding it to the required same-turn prd_draft preview. Set preview_panel_key="prd_draft" on the approval handoff.`,
+	}
+
+	got := classifyNativeRepairInstruction(state, message)
+	if got.Class != "approval_specific_preview_required" {
+		t.Fatalf("expected specific-preview class, got %#v", got)
+	}
+	for _, snippet := range []string{"prd_draft", "preview_panel_key", "final action"} {
+		if !strings.Contains(strings.ToLower(got.Instructions), snippet) {
+			t.Fatalf("expected specific-preview repair guidance to contain %q, got %q", snippet, got.Instructions)
+		}
+	}
+}
+
 func TestClassifyNativeRepairInstructionForReviewCheckpointHandoff(t *testing.T) {
 	state := &resolvedRunState{nativeSelectivePathEnabled: true}
 	message := &model.AgentRunMessage{
@@ -546,6 +584,26 @@ func TestLatestNativeRepairInstructionFallsBackToGenericRequiredHandoff(t *testi
 	}
 	if !strings.Contains(got.Instructions, "Continue from your last assistant turn") {
 		t.Fatalf("expected fallback repair guidance to remain usable, got %q", got.Instructions)
+	}
+}
+
+func TestApprovalPreviewRetryInstructionForSpecificPreview(t *testing.T) {
+	got := approvalPreviewRetryInstruction("approval_request requires a same-turn prd_draft preview before requesting approval")
+	if !strings.Contains(got, "required same-turn prd_draft preview") {
+		t.Fatalf("expected retry instruction to preserve required preview key, got %q", got)
+	}
+	if !strings.Contains(got, `preview_panel_key="prd_draft"`) {
+		t.Fatalf("expected retry instruction to preserve preview_panel_key binding, got %q", got)
+	}
+}
+
+func TestApprovalPreviewRetryInstructionForMultiplePreviews(t *testing.T) {
+	got := approvalPreviewRetryInstruction("approval_request requires preview_panel_key when multiple same-turn previews exist")
+	if !strings.Contains(got, "multiple same-turn previews") {
+		t.Fatalf("expected retry instruction to mention multiple previews, got %q", got)
+	}
+	if !strings.Contains(got, "preview_panel_key") {
+		t.Fatalf("expected retry instruction to mention preview_panel_key, got %q", got)
 	}
 }
 

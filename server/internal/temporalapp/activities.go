@@ -556,6 +556,34 @@ func classifyNativeRepairInstruction(state *resolvedRunState, message *model.Age
 	}
 
 	switch {
+	case strings.Contains(content, "multiple same-turn previews") && strings.Contains(content, "preview_panel_key"):
+		return nativeRepairInstruction{
+			Class: "approval_preview_panel_key_required",
+			Instructions: strings.Join([]string{
+				"Continue from your last assistant turn instead of restarting the run.",
+				"If this turn requests approval or a review checkpoint after publishing multiple previews, include preview_panel_key so the handoff binds to the intended preview.",
+				"Publish the target preview in the same turn before the approval handoff, then treat request_approval or request_review_checkpoint as the final action in that turn.",
+			}, "\n"),
+		}
+	case strings.Contains(content, "required same-turn ") && strings.Contains(content, " preview"):
+		requiredPreviewKey := extractRequiredSameTurnPreviewKey(content)
+		lines := []string{
+			"Continue from your last assistant turn instead of restarting the run.",
+			"If this turn requests approval or a review checkpoint, first publish the required preview in the same turn before the handoff.",
+		}
+		if requiredPreviewKey != "" {
+			lines = append(lines,
+				fmt.Sprintf("Use preview_panel_key=%q so the approval request binds to the %s preview.", requiredPreviewKey, requiredPreviewKey),
+				fmt.Sprintf("If that %s preview is missing or stale, republish it in the same turn before requesting approval.", requiredPreviewKey),
+			)
+		} else {
+			lines = append(lines, "Include preview_panel_key when needed so the approval request binds to the intended preview.")
+		}
+		lines = append(lines, "Treat request_approval or request_review_checkpoint as the final action in that turn.")
+		return nativeRepairInstruction{
+			Class:        "approval_specific_preview_required",
+			Instructions: strings.Join(lines, "\n"),
+		}
 	case strings.Contains(content, "same-turn preview") || strings.Contains(content, "preview_panel_key"):
 		return nativeRepairInstruction{
 			Class: "approval_preview_binding",
@@ -591,6 +619,24 @@ func classifyNativeRepairInstruction(state *resolvedRunState, message *model.Age
 			}, "\n"),
 		}
 	}
+}
+
+func extractRequiredSameTurnPreviewKey(content string) string {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return ""
+	}
+	const marker = "required same-turn "
+	start := strings.Index(content, marker)
+	if start == -1 {
+		return ""
+	}
+	remaining := content[start+len(marker):]
+	end := strings.Index(remaining, " preview")
+	if end == -1 {
+		return ""
+	}
+	return normalizeApprovalPreviewPanelKey(strings.TrimSpace(remaining[:end]))
 }
 
 func latestNativeRepairInstruction(state *resolvedRunState, messages []model.AgentRunMessage) nativeRepairInstruction {
@@ -1723,6 +1769,8 @@ func (a *AgentRunActivities) retryInvalidCompletionTurn(ctx context.Context, sta
 	instruction := "System correction: the previous turn ended without creating the required interaction. Continue from your last assistant message instead of restarting. Do not end with prose only. Before this run stops, emit one of the required interaction handoffs declared by the active skill policy."
 	if strings.TrimSpace(state.agent.EffectivePresetKey()) == model.AgentPresetReviewAgent {
 		instruction = "System correction: the previous review turn ended without the required interaction. Continue from your last assistant message instead of restarting. Do not end with prose only. In this next turn, emit a review_checkpoint handoff using the runtime-appropriate mechanism, or emit request_user_input only if the human explicitly closed the review or asked a blocking follow-up."
+	} else if approvalInstruction := approvalPreviewRetryInstruction(strings.TrimSpace(cause.Error())); approvalInstruction != "" {
+		instruction = approvalInstruction
 	} else if strings.Contains(strings.TrimSpace(cause.Error()), "same-turn") || strings.Contains(strings.TrimSpace(cause.Error()), "preview_panel_key") {
 		instruction = "System correction: the previous turn requested approval without binding it to a same-turn preview. Continue from your last assistant message instead of restarting. Do not end with prose only. If you emit request_approval or request_review_checkpoint, first publish the preview in the same turn. When multiple previews exist in that turn, include preview_panel_key so it binds to the correct preview."
 	}
@@ -1730,6 +1778,40 @@ func (a *AgentRunActivities) retryInvalidCompletionTurn(ctx context.Context, sta
 		return false, err
 	}
 	return true, nil
+}
+
+func approvalPreviewRetryInstruction(causeText string) string {
+	causeText = strings.TrimSpace(causeText)
+	switch {
+	case strings.Contains(causeText, "requires preview_panel_key when multiple same-turn previews exist"):
+		return "System correction: the previous turn requested approval after publishing multiple same-turn previews but did not include preview_panel_key. Continue from your last assistant message instead of restarting. Do not end with prose only. If you emit request_approval or request_review_checkpoint, publish the intended preview in the same turn and include preview_panel_key so the handoff binds to the correct preview."
+	case strings.Contains(causeText, "requires a same-turn ") && strings.Contains(causeText, " preview before requesting approval"):
+		requiredPreviewKey := extractRequiredPreviewKeyFromCause(causeText)
+		if requiredPreviewKey == "" {
+			return "System correction: the previous turn requested approval without binding it to the required same-turn preview. Continue from your last assistant message instead of restarting. Do not end with prose only. Publish the intended preview in the same turn before the approval handoff, and include preview_panel_key when needed so it binds to the correct preview."
+		}
+		return fmt.Sprintf("System correction: the previous turn requested approval without binding it to the required same-turn %s preview. Continue from your last assistant message instead of restarting. Do not end with prose only. Publish the %s preview in the same turn before the approval handoff, and set preview_panel_key=%q on request_approval or request_review_checkpoint so it binds to the correct preview.", requiredPreviewKey, requiredPreviewKey, requiredPreviewKey)
+	default:
+		return ""
+	}
+}
+
+func extractRequiredPreviewKeyFromCause(causeText string) string {
+	causeText = strings.TrimSpace(causeText)
+	if causeText == "" {
+		return ""
+	}
+	const marker = "requires a same-turn "
+	start := strings.Index(causeText, marker)
+	if start == -1 {
+		return ""
+	}
+	remaining := causeText[start+len(marker):]
+	end := strings.Index(remaining, " preview before requesting approval")
+	if end == -1 {
+		return ""
+	}
+	return normalizeApprovalPreviewPanelKey(strings.TrimSpace(remaining[:end]))
 }
 
 func (a *AgentRunActivities) finalizeSupportConversationRun(ctx context.Context, state *resolvedRunState) error {
