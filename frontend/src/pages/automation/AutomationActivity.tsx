@@ -309,8 +309,17 @@ function buildSmartFilterValue(search: AutomationActivitySearch, agents: Agent[]
 }
 
 function SparkBars({ values, tone = 'neutral' }: { values: number[]; tone?: 'neutral' | 'good' | 'warn' | 'bad' }) {
-  const bars = values.length > 0 ? values : [1, 2, 1, 3, 2, 1, 2];
-  const max = Math.max(...bars, 1);
+  const hasData = values.length > 0 && values.some((value) => value > 0);
+  if (!hasData) {
+    return (
+      <div className="flex h-8 items-center">
+        <span className="h-[2px] w-14 rounded-full bg-muted-foreground/20" aria-hidden />
+        <span className="sr-only">No activity yet</span>
+      </div>
+    );
+  }
+
+  const max = Math.max(...values, 1);
   const color = tone === 'good'
     ? 'bg-emerald-500'
     : tone === 'warn'
@@ -321,7 +330,7 @@ function SparkBars({ values, tone = 'neutral' }: { values: number[]; tone?: 'neu
 
   return (
     <div className="flex h-8 items-end gap-1">
-      {bars.map((value, index) => (
+      {values.map((value, index) => (
         <span
           key={`${tone}-${index}`}
           className={cn('w-1.5 rounded-sm opacity-80', color)}
@@ -343,7 +352,7 @@ function SummaryCard({
   value: string;
   sublabel: string;
   tone?: 'neutral' | 'good' | 'warn' | 'bad';
-  spark: number[];
+  spark?: number[];
 }) {
   const valueClass = tone === 'good'
     ? 'text-emerald-600 dark:text-emerald-400'
@@ -361,7 +370,7 @@ function SummaryCard({
           <p className={cn('text-2xl font-semibold tracking-tight', valueClass)}>{value}</p>
           <p className="text-xs text-muted-foreground">{sublabel}</p>
         </div>
-        <SparkBars values={spark} tone={tone} />
+        {spark && <SparkBars values={spark} tone={tone} />}
       </CardContent>
     </Card>
   );
@@ -406,36 +415,46 @@ function SmartFilterInput({
   disabled?: boolean;
 }) {
   return (
-    <div className="flex flex-col gap-2 rounded-xl border border-border/70 bg-card/80 p-3">
-      <div className="flex flex-col gap-2 md:flex-row md:items-center">
-        <div className="relative flex-1">
-          <Search01Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={value}
-            onChange={(event) => onChange(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                onApply();
-              }
-            }}
-            placeholder="agent:Lens status:failed last:24h"
-            className="pl-9 font-mono text-xs"
-            disabled={disabled}
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          <Button type="button" size="sm" variant="outline" onClick={onClear} disabled={disabled}>
-            Clear
-          </Button>
-          <Button type="button" size="sm" onClick={onApply} disabled={disabled}>
-            Apply
-          </Button>
-        </div>
+    <div className="flex flex-col gap-2 md:flex-row md:items-center">
+      <div className="relative flex-1">
+        <Search01Icon className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              onApply();
+            }
+          }}
+          placeholder="agent:Lens status:failed last:24h"
+          className="h-8 pl-8 font-mono text-xs"
+          disabled={disabled}
+        />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              tabIndex={-1}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-mono text-muted-foreground/60 hover:text-muted-foreground"
+              aria-label="Filter syntax help"
+            >
+              ?
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top" align="end" className="max-w-xs font-mono text-[11px]">
+            Supports <code>agent:</code>, <code>status:</code>, <code>source:</code>, <code>last:24h|7d|30d</code>.
+          </TooltipContent>
+        </Tooltip>
       </div>
-      <p className="text-[11px] text-muted-foreground">
-        One input for engineering-style filters. Supports `agent:`, `status:`, `source:` and `last:24h|7d|30d`.
-      </p>
+      <div className="flex items-center gap-2">
+        <Button type="button" size="sm" variant="ghost" onClick={onClear} disabled={disabled} className="h-8 px-2 text-xs text-muted-foreground">
+          Clear
+        </Button>
+        <Button type="button" size="sm" onClick={onApply} disabled={disabled} className="h-8 px-3 text-xs">
+          Apply
+        </Button>
+      </div>
     </div>
   );
 }
@@ -639,7 +658,16 @@ export function AutomationActivityPage({
   const executionsQuery = useAutomationActivity(workspaceId, executionFilters, permissions.canManageSettings);
   const runsQuery = useQuery({
     queryKey: queryKeys.automation.runs(workspaceId, 1, 100),
-    queryFn: async () => unwrap(await automationService.listWorkspaceRuns(workspaceId, 1, 100)),
+    queryFn: async () => {
+      const payload = unwrap(await automationService.listWorkspaceRuns(workspaceId, 1, 100));
+      return {
+        data: Array.isArray(payload?.data) ? payload.data : [],
+        total: payload?.total ?? 0,
+        page: payload?.page ?? 1,
+        per_page: payload?.per_page ?? 100,
+        total_pages: payload?.total_pages ?? 0,
+      };
+    },
     enabled: !!workspaceId && permissions.canManageSettings,
     staleTime: 15_000,
     refetchInterval: 30_000,
@@ -696,10 +724,15 @@ export function AutomationActivityPage({
   }, [workspaceRuns]);
 
   const healthSummary = useMemo(() => {
+    // Only count items the backend explicitly marked with each status.
+    // Items that are `inactive` (disabled) or `unknown` (never ran) should not
+    // be counted as healthy — that was the old bug that made an empty
+    // workspace look like "11 healthy".
     const errorCount = items.filter((item) => item.health.status === 'error').length;
     const warningCount = items.filter((item) => item.health.status === 'warning').length;
-    const healthyCount = Math.max(items.length - errorCount - warningCount, 0);
-    return { errorCount, warningCount, healthyCount };
+    const healthyCount = items.filter((item) => item.health.status === 'healthy').length;
+    const idleCount = items.length - errorCount - warningCount - healthyCount;
+    return { errorCount, warningCount, healthyCount, idleCount, totalCount: items.length };
   }, [items]);
 
   const recentStatusBars = useMemo(
@@ -718,13 +751,12 @@ export function AutomationActivityPage({
     return Array.from(perDay.values()).slice(-7);
   }, [recent24hRuns]);
 
-  const needsYouBars = useMemo(() => {
-    const values = pausedRuns.slice(0, 7).reverse().map((run) => {
-      const status = getAgentRunDisplayStatus(run);
-      return status === 'awaiting_approval' ? 4 : 2;
-    });
-    return values.length > 0 ? values : [0, 1, 0, 2, 1, 0, 1];
-  }, [pausedRuns]);
+  const needsYouBars = useMemo(
+    () => pausedRuns.slice(0, 7).reverse().map((run) => (
+      getAgentRunDisplayStatus(run) === 'awaiting_approval' ? 4 : 2
+    )),
+    [pausedRuns],
+  );
 
   const oldestBlocked = useMemo(() => {
     if (pausedRuns.length === 0) return null;
@@ -803,7 +835,7 @@ export function AutomationActivityPage({
             label="Needs You"
             value={String(pausedRuns.length)}
             sublabel={pausedRuns.length > 0 ? `Oldest blocked ${oldestBlocked ?? '\u2014'}` : 'No paused runs waiting on a human'}
-            tone={pausedRuns.length > 0 ? 'warn' : 'good'}
+            tone={pausedRuns.length > 0 ? 'warn' : 'neutral'}
             spark={needsYouBars}
           />
           <SummaryCard
@@ -817,15 +849,40 @@ export function AutomationActivityPage({
             label="Failed · 24h"
             value={String(recent24hRuns.filter((run) => run.status === 'failed').length)}
             sublabel={recent24hRuns.filter((run) => run.status === 'failed').length > 0 ? 'Investigate repeated failures and flaky flows' : 'No recent failures'}
-            tone={recent24hRuns.some((run) => run.status === 'failed') ? 'bad' : 'good'}
+            tone={recent24hRuns.some((run) => run.status === 'failed') ? 'bad' : 'neutral'}
             spark={recentFailureBars}
           />
           <SummaryCard
             label="Fleet Health"
-            value={`${healthSummary.errorCount} errors`}
-            sublabel={`${healthSummary.healthyCount} healthy${healthSummary.warningCount > 0 ? ` · ${healthSummary.warningCount} warning${healthSummary.warningCount === 1 ? '' : 's'}` : ''}`}
-            tone={healthSummary.errorCount > 0 ? 'warn' : 'good'}
-            spark={[healthSummary.errorCount, healthSummary.warningCount, healthSummary.healthyCount]}
+            value={String(
+              healthSummary.errorCount > 0
+                ? healthSummary.errorCount
+                : healthSummary.warningCount > 0
+                  ? healthSummary.warningCount
+                  : healthSummary.healthyCount > 0
+                    ? healthSummary.healthyCount
+                    : healthSummary.idleCount,
+            )}
+            sublabel={
+              healthSummary.errorCount > 0
+                ? `${healthSummary.errorCount === 1 ? 'error' : 'errors'} reported`
+                : healthSummary.warningCount > 0
+                  ? `${healthSummary.warningCount === 1 ? 'warning' : 'warnings'} to review`
+                  : healthSummary.healthyCount > 0
+                    ? `${healthSummary.healthyCount === 1 ? 'automation' : 'automations'} healthy`
+                    : healthSummary.idleCount > 0
+                      ? `${healthSummary.idleCount === 1 ? 'automation' : 'automations'} idle — no runs yet`
+                      : 'No automations configured'
+            }
+            tone={
+              healthSummary.errorCount > 0
+                ? 'bad'
+                : healthSummary.warningCount > 0
+                  ? 'warn'
+                  : healthSummary.healthyCount > 0
+                    ? 'good'
+                    : 'neutral'
+            }
           />
         </div>
 
