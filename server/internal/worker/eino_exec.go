@@ -307,6 +307,7 @@ func ExecuteWithEino(
 	registry *ToolRegistry,
 	maxSteps int,
 	onEvent func(ExecutionEvent),
+	turnLocalInstructions string,
 ) (*ExecutionResult, error) {
 	if factory == nil {
 		return nil, fmt.Errorf("eino model factory is not configured")
@@ -326,7 +327,7 @@ func ExecuteWithEino(
 		"tool_count", len(tools),
 	)
 	if providerUsesAgenticResponses(provider) {
-		return executeWithEinoAgentic(ctx, factory, agent, systemPrompt, history, tools, execCtx, registry, maxSteps, onEvent)
+		return executeWithEinoAgentic(ctx, factory, agent, systemPrompt, history, tools, execCtx, registry, maxSteps, onEvent, turnLocalInstructions)
 	}
 
 	modelWithTools, _, err := factory.Resolve(ctx, agent, tools)
@@ -334,7 +335,7 @@ func ExecuteWithEino(
 		return nil, err
 	}
 
-	messages, err := toSchemaMessages(systemPrompt, history)
+	messages, err := toSchemaMessagesWithTurnLocalInstructions(systemPrompt, history, turnLocalInstructions)
 	if err != nil {
 		return nil, err
 	}
@@ -423,6 +424,7 @@ func executeWithEinoAgentic(
 	registry *ToolRegistry,
 	maxSteps int,
 	onEvent func(ExecutionEvent),
+	turnLocalInstructions string,
 ) (*ExecutionResult, error) {
 	modelWithTools, _, err := factory.ResolveAgentic(ctx, agent, tools)
 	if err != nil {
@@ -447,7 +449,7 @@ func executeWithEinoAgentic(
 		)
 	}
 
-	messages, err := toAgenticMessages(effectiveSystemPrompt, effectiveHistory)
+	messages, err := toAgenticMessagesWithTurnLocalInstructions(effectiveSystemPrompt, effectiveHistory, turnLocalInstructions)
 	if err != nil {
 		return nil, err
 	}
@@ -670,10 +672,17 @@ func generateAssistantAgenticMessage(
 }
 
 func toSchemaMessages(systemPrompt string, history []ExecutionMessage) ([]*schema.Message, error) {
+	return toSchemaMessagesWithTurnLocalInstructions(systemPrompt, history, "")
+}
+
+func toSchemaMessagesWithTurnLocalInstructions(systemPrompt string, history []ExecutionMessage, turnLocalInstructions string) ([]*schema.Message, error) {
 	history = sanitizeExecutionHistoryForReplay(history)
-	messages := make([]*schema.Message, 0, len(history)+1)
+	messages := make([]*schema.Message, 0, len(history)+2)
 	if strings.TrimSpace(systemPrompt) != "" {
 		messages = append(messages, schema.SystemMessage(systemPrompt))
+	}
+	if instructionMessage := buildTurnLocalInstructionMessage(turnLocalInstructions); instructionMessage != "" {
+		messages = append(messages, schema.UserMessage(instructionMessage))
 	}
 	for _, msg := range history {
 		switch msg.Role {
@@ -740,10 +749,17 @@ func toSchemaMessages(systemPrompt string, history []ExecutionMessage) ([]*schem
 }
 
 func toAgenticMessages(systemPrompt string, history []ExecutionMessage) ([]*schema.AgenticMessage, error) {
+	return toAgenticMessagesWithTurnLocalInstructions(systemPrompt, history, "")
+}
+
+func toAgenticMessagesWithTurnLocalInstructions(systemPrompt string, history []ExecutionMessage, turnLocalInstructions string) ([]*schema.AgenticMessage, error) {
 	history = sanitizeExecutionHistoryForReplay(history)
-	messages := make([]*schema.AgenticMessage, 0, len(history)+1)
+	messages := make([]*schema.AgenticMessage, 0, len(history)+2)
 	if strings.TrimSpace(systemPrompt) != "" {
 		messages = append(messages, schema.SystemAgenticMessage(systemPrompt))
+	}
+	if instructionMessage := buildTurnLocalInstructionMessage(turnLocalInstructions); instructionMessage != "" {
+		messages = append(messages, schema.UserAgenticMessage(instructionMessage))
 	}
 	for _, msg := range history {
 		switch msg.Role {
@@ -799,6 +815,14 @@ func toAgenticMessages(systemPrompt string, history []ExecutionMessage) ([]*sche
 		}
 	}
 	return messages, nil
+}
+
+func buildTurnLocalInstructionMessage(turnLocalInstructions string) string {
+	turnLocalInstructions = strings.TrimSpace(turnLocalInstructions)
+	if turnLocalInstructions == "" {
+		return ""
+	}
+	return "Execution-local instructions for this turn only:\n" + turnLocalInstructions
 }
 
 func compactToolOutputForModel(toolName, output string) string {

@@ -134,6 +134,66 @@ func TestToAgenticMessagesIncludesToolResults(t *testing.T) {
 	}
 }
 
+func TestToSchemaMessagesIncludesTurnLocalInstructionsWithoutMutatingHistory(t *testing.T) {
+	history := []ExecutionMessage{
+		{Role: "user", Content: "human reply"},
+	}
+
+	msgs, err := toSchemaMessagesWithTurnLocalInstructions("system prompt", history, "use the active contract only")
+	if err != nil {
+		t.Fatalf("toSchemaMessagesWithTurnLocalInstructions returned error: %v", err)
+	}
+	if len(msgs) != 3 {
+		t.Fatalf("expected system prompt, execution-local message, and history message, got %#v", msgs)
+	}
+	if msgs[1].Role != schema.User || !strings.Contains(msgs[1].Content, "Execution-local instructions for this turn only") {
+		t.Fatalf("expected execution-local user message, got %#v", msgs[1])
+	}
+	if msgs[2].Role != schema.User || msgs[2].Content != "human reply" {
+		t.Fatalf("expected original history message to remain after execution-local instructions, got %#v", msgs[2])
+	}
+	if len(history) != 1 || history[0].Content != "human reply" {
+		t.Fatalf("expected original history slice to remain unchanged, got %#v", history)
+	}
+}
+
+func TestToAgenticMessagesIncludesTurnLocalInstructionsWithoutMutatingHistory(t *testing.T) {
+	history := []ExecutionMessage{
+		{Role: "user", Content: "human reply"},
+	}
+
+	msgs, err := toAgenticMessagesWithTurnLocalInstructions("system prompt", history, "repair the failed contract and continue")
+	if err != nil {
+		t.Fatalf("toAgenticMessagesWithTurnLocalInstructions returned error: %v", err)
+	}
+	if len(msgs) != 3 {
+		t.Fatalf("expected system prompt, execution-local message, and history message, got %#v", msgs)
+	}
+	if msgs[1].Role != schema.AgenticRoleTypeUser {
+		t.Fatalf("expected execution-local user agentic message, got %#v", msgs[1])
+	}
+	executionLocalJSON, err := json.Marshal(msgs[1])
+	if err != nil {
+		t.Fatalf("marshal execution-local agentic message: %v", err)
+	}
+	if !strings.Contains(string(executionLocalJSON), "Execution-local instructions for this turn only") {
+		t.Fatalf("expected execution-local instruction marker, got %s", string(executionLocalJSON))
+	}
+	if msgs[2].Role != schema.AgenticRoleTypeUser {
+		t.Fatalf("expected original history message to remain after execution-local instructions, got %#v", msgs[2])
+	}
+	historyJSON, err := json.Marshal(msgs[2])
+	if err != nil {
+		t.Fatalf("marshal history agentic message: %v", err)
+	}
+	if !strings.Contains(string(historyJSON), "human reply") {
+		t.Fatalf("expected original history text to remain after execution-local instructions, got %s", string(historyJSON))
+	}
+	if len(history) != 1 || history[0].Content != "human reply" {
+		t.Fatalf("expected original history slice to remain unchanged, got %#v", history)
+	}
+}
+
 func TestCompactToolOutputForModelCompactsLargeReadResults(t *testing.T) {
 	output := strings.Repeat("line of file contents\n", 500)
 

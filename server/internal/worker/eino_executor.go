@@ -199,7 +199,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		case "tool_call_started":
 			_ = execCtx.Heartbeat("tool_" + event.ToolName)
 		}
-	})
+	}, execCtx.TurnLocalInstructions)
 	stopHeartbeat()
 	if execErr != nil && !errors.Is(execErr, ErrMaxToolStepsReached) {
 		slog.ErrorContext(execCtx.Context, "native runtime execution failed",

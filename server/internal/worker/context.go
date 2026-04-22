@@ -56,6 +56,7 @@ type ExecutionContext struct {
 	HandleInteractivePause     func(result *ExecutionResult) (*LiveExecutionResumeSignal, error)
 	PlanningTurnKind           string
 	PlanningTurnAttempt        int
+	TurnLocalInstructions      string
 	RunFacts                   map[string]string
 	ArtifactContext            *ArtifactContext
 	ProviderContinuation       *ProviderContinuation
