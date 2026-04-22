@@ -341,6 +341,28 @@ function serializeScheduleConfig(expression: string) {
   return config;
 }
 
+const FLOW_EMPTY_STATE_CARDS: Array<{
+  icon: typeof PlayIcon;
+  title: string;
+  desc: string;
+}> = [
+  {
+    icon: ZapIcon,
+    title: 'Event-driven',
+    desc: 'Fires when a task changes state, a PR is merged, a tag ships, or on a schedule.',
+  },
+  {
+    icon: SparklesIcon,
+    title: 'Runs an agent',
+    desc: 'Pair a trigger with any agent — Lens reviews, Forge builds, Scribe drafts, etc.',
+  },
+  {
+    icon: Clock03Icon,
+    title: 'Safe by default',
+    desc: 'Flows start in review-first mode; flip them to autonomous once you trust the output.',
+  },
+];
+
 type FlowTemplate = {
   id: string;
   title: string;
@@ -793,6 +815,76 @@ function flowHasError(rule: AutomationRule, agentNames: Map<string, string>) {
   return !agentId || !agentNames.has(agentId);
 }
 
+type FlowState = 'running' | 'paused' | 'error' | 'draft';
+
+function deriveFlowState(rule: AutomationRule, healthItem?: AutomationInventoryItem): FlowState {
+  if (!rule.enabled) return 'paused';
+  if (healthItem?.health.last_error_at) return 'error';
+  if (healthItem?.health.last_success_at || healthItem?.health.last_seen_at) return 'running';
+  return 'draft';
+}
+
+const FLOW_STATE_STYLES: Record<FlowState, { pill: string; dot: string; label: string; live?: boolean }> = {
+  running: {
+    pill: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+    dot: 'bg-emerald-500',
+    label: 'Running',
+    live: true,
+  },
+  paused: {
+    pill: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400',
+    dot: 'bg-amber-500',
+    label: 'Paused',
+  },
+  error: {
+    pill: 'border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400',
+    dot: 'bg-rose-500',
+    label: 'Error',
+  },
+  draft: {
+    pill: 'border-border/60 bg-muted/40 text-muted-foreground',
+    dot: 'bg-muted-foreground/40',
+    label: 'Draft',
+  },
+};
+
+function FlowStatePill({ state }: { state: FlowState }) {
+  const style = FLOW_STATE_STYLES[state];
+  return (
+    <span className={cn('inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium', style.pill)}>
+      <span className="relative h-1.5 w-1.5">
+        {style.live && (
+          <span className={cn('absolute inset-0 animate-ping rounded-full opacity-60', style.dot)} />
+        )}
+        <span className={cn('absolute inset-0 rounded-full', style.dot)} />
+      </span>
+      {style.label}
+    </span>
+  );
+}
+
+function readMetricNumber(metrics: Record<string, unknown> | undefined, keys: string[]): number | undefined {
+  if (!metrics) return undefined;
+  for (const key of keys) {
+    const value = metrics[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && value.trim() && !Number.isNaN(Number(value))) return Number(value);
+  }
+  return undefined;
+}
+
+function FlowStat({ value, label, sub, tone = 'neutral' }: { value: number | undefined; label: string; sub?: string; tone?: 'neutral' | 'warn' }) {
+  return (
+    <div>
+      <div className={cn('text-xl font-semibold leading-none tracking-tight', tone === 'warn' && value ? 'text-amber-600 dark:text-amber-400' : 'text-foreground')}>
+        {value === undefined ? <span className="text-muted-foreground">—</span> : value}
+      </div>
+      <div className="mt-1.5 text-[11px] text-muted-foreground">{label}</div>
+      {sub && <div className="font-mono text-[10px] text-muted-foreground/70">{sub}</div>}
+    </div>
+  );
+}
+
 function FlowRow({
   rule,
   statesById,
@@ -817,8 +909,6 @@ function FlowRow({
   onDelete: (rule: AutomationRule) => void;
 }) {
   const hasError = flowHasError(rule, agentNames);
-  const hasHealthError = Boolean(healthItem?.health.last_error_at);
-  const hasSuccess = Boolean(healthItem?.health.last_success_at);
   const title = describeFlowTitle(rule, statesById, agentNames);
   const filters = describeFilters(rule, statesById);
   const hasFilters = filters !== 'No additional filters';
@@ -832,40 +922,62 @@ function FlowRow({
     return 'Never run';
   })();
 
+  const flowState = deriveFlowState(rule, healthItem);
+  const metrics = (healthItem?.health.metrics ?? undefined) as Record<string, unknown> | undefined;
+  const handled = readMetricNumber(metrics, ['handled_week', 'runs_week', 'runs_7d', 'handled', 'handled_count']);
+  const flagged = readMetricNumber(metrics, ['flagged_week', 'flagged', 'needs_review', 'flagged_count']);
+  const lastErrorMessage = healthItem?.health.last_error_message?.trim();
+
   return (
     <div
       className={cn(
-        'rounded-lg border bg-card px-4 py-3 transition-colors',
-        hasError
-          ? 'border-destructive/50 bg-destructive/5'
+        'rounded-lg border bg-card transition-colors',
+        hasError || flowState === 'error'
+          ? 'border-destructive/40 bg-destructive/[0.03]'
           : 'border-border/60 hover:border-border',
       )}
     >
-      <div className="flex items-start justify-between gap-3">
+      <div className="grid gap-4 px-4 py-3 md:grid-cols-[minmax(0,1fr)_280px]">
+        {/* LEFT — title / trigger sentence */}
         <div className="min-w-0 space-y-2">
-          {/* Title row */}
           <div className="flex items-center gap-2">
-            <span
-              className={cn(
-                'mt-0.5 h-2 w-2 shrink-0 rounded-full',
-                hasError || hasHealthError
-                  ? 'bg-destructive'
-                  : hasSuccess
-                    ? 'bg-emerald-500'
-                    : 'bg-muted-foreground/30',
-              )}
-            />
-            <p className="text-sm font-medium text-foreground/90">{title}</p>
+            <FlowStatePill state={flowState} />
+            <p className="truncate text-sm font-medium text-foreground/90">{title}</p>
             {agentMissing && (
-              <>
-                <Badge variant="destructive" className="text-xs">Missing agent</Badge>
-                <Badge variant="destructive" className="text-xs">Unknown agent</Badge>
-              </>
+              <Badge variant="destructive" className="text-xs">Missing agent</Badge>
+            )}
+            <span className="flex-1" />
+            {canEdit && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                    <MoreHorizontalIcon className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => onEdit(rule)}>Edit</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onToggle(rule)}>
+                    {rule.enabled ? 'Disable' : 'Enable'}
+                  </DropdownMenuItem>
+                  {workspaceSlug && (
+                    <DropdownMenuItem asChild>
+                      <a href={buildAutomationActivityPath(workspaceSlug, { page: 1, source: 'automation_rule', reference_id: rule.id }, 'trigger-executions')}>
+                        Activity
+                      </a>
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={() => onDelete(rule)}
+                  >
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
           </div>
 
-          {/* Badges row */}
-          <div className="flex flex-wrap items-center gap-1.5 pl-4">
+          <div className="flex flex-wrap items-center gap-1.5">
             <Badge variant="secondary" className="text-xs font-normal">
               {rule.trigger_type.replace('github.', '').replaceAll('_', '.')}
               {hasFilters && (
@@ -894,39 +1006,22 @@ function FlowRow({
               <Badge variant="outline" className="text-xs font-normal">{teamName}</Badge>
             )}
           </div>
+
+          {flowState === 'error' && lastErrorMessage && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-1.5 font-mono text-[11px] text-destructive">
+              ⚠ {lastErrorMessage}
+            </div>
+          )}
         </div>
 
-        {/* Right side: last run + menu */}
-        <div className="flex shrink-0 items-center gap-2 pt-0.5">
-          <span className="whitespace-nowrap text-xs text-muted-foreground">{lastRunLabel}</span>
-          {canEdit && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
-                  <MoreHorizontalIcon className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => onEdit(rule)}>Edit</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => onToggle(rule)}>
-                  {rule.enabled ? 'Disable' : 'Enable'}
-                </DropdownMenuItem>
-                {workspaceSlug && (
-                  <DropdownMenuItem asChild>
-                    <a href={buildAutomationActivityPath(workspaceSlug, { page: 1, source: 'automation_rule', reference_id: rule.id }, 'trigger-executions')}>
-                      Activity
-                    </a>
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
-                  onClick={() => onDelete(rule)}
-                >
-                  Delete
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+        {/* RIGHT — outcome strip */}
+        <div className="grid grid-cols-2 gap-3 border-t border-border/60 pt-3 md:border-l md:border-t-0 md:pl-4 md:pt-0">
+          <FlowStat value={handled} label="Handled" sub="last 7 days" />
+          <FlowStat value={flagged} label="Flagged" sub="for review" tone="warn" />
+          <div className="col-span-2 flex items-center justify-between border-t border-border/60 pt-2 text-[11px] text-muted-foreground">
+            <span className="uppercase tracking-[0.1em]">Last run</span>
+            <span className="font-mono text-foreground/80">{lastRunLabel.replace('Last run ', '')}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -1942,6 +2037,35 @@ export function AutomationFlowsPage({
           <Skeleton className="h-20 w-full rounded-lg" />
           <Skeleton className="h-20 w-full rounded-lg" />
           <Skeleton className="h-20 w-full rounded-lg" />
+        </div>
+      ) : authoredFlows.length === 0 ? (
+        <div className="flex flex-col items-center justify-center px-4 py-16">
+          <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-violet-500/10">
+            <ZapIcon className="h-7 w-7 text-violet-500" />
+          </div>
+          <h3 className="mb-1.5 text-lg font-semibold">Put an agent on autopilot</h3>
+          <p className="mb-6 max-w-md text-center text-sm text-muted-foreground">
+            Flows are event-driven automations — they watch for a trigger (a task changing state, a PR
+            merging, a tag shipping, a schedule) and run an agent to act on it.
+          </p>
+          {permissions.canManageSettings && (
+            <Button className="mb-8 gap-2" onClick={openCreateComposer}>
+              <PlusSignIcon className="h-4 w-4" />
+              New flow
+            </Button>
+          )}
+          <div className="grid w-full max-w-4xl grid-cols-1 gap-4 sm:grid-cols-3">
+            {FLOW_EMPTY_STATE_CARDS.map((card) => (
+              <div
+                key={card.title}
+                className="flex flex-col items-center rounded-lg border border-border/50 bg-muted/30 p-6 text-center"
+              >
+                <card.icon className="mb-3 h-5 w-5 text-muted-foreground" />
+                <p className="mb-1 text-sm font-medium">{card.title}</p>
+                <p className="text-sm leading-relaxed text-muted-foreground">{card.desc}</p>
+              </div>
+            ))}
+          </div>
         </div>
       ) : (
         <>
