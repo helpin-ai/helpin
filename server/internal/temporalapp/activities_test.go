@@ -766,6 +766,46 @@ func TestAppendTaskPlannerParentEpicSummarySectionsSummarizesEpic(t *testing.T) 
 	}
 }
 
+func TestAppendTaskRunRepositoryBranchSectionsFormatsAvailableBranches(t *testing.T) {
+	base := "main"
+	working := "feature/task-plan"
+	testCases := []struct {
+		name string
+		run  *model.AgentRun
+		want []string
+	}{
+		{
+			name: "both",
+			run:  &model.AgentRun{BaseBranch: &base, WorkingBranch: &working},
+			want: []string{"Repository branches: base `main`, working `feature/task-plan`."},
+		},
+		{
+			name: "working only",
+			run:  &model.AgentRun{WorkingBranch: &working},
+			want: []string{"Repository working branch: `feature/task-plan`."},
+		},
+		{
+			name: "base only",
+			run:  &model.AgentRun{BaseBranch: &base},
+			want: []string{"Repository base branch: `main`."},
+		},
+		{
+			name: "none",
+			run:  &model.AgentRun{},
+			want: nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			sections := appendTaskRunRepositoryBranchSections(nil, tc.run)
+			if got, want := strings.Join(sections, "\n\n"), strings.Join(tc.want, "\n\n"); got != want {
+				t.Fatalf("unexpected branch sections\nwant:\n%s\n\ngot:\n%s", want, got)
+			}
+		})
+	}
+}
+
 func TestAppendExistingEpicTasksSectionSummarizesTasks(t *testing.T) {
 	sections := appendExistingEpicTasksSection(nil, []model.PMTask{
 		{ID: "task-1", Name: "Task A"},

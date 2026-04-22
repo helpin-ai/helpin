@@ -6294,18 +6294,7 @@ func (a *AgentRunActivities) buildTaskRunContextSections(ctx context.Context, st
 		additionalContext = runInputAdditionalContext(state.run.Input)
 	}
 	sections = appendOperatorNotesSection(sections, additionalContext)
-	baseBranch := strings.TrimSpace(derefString(state.run.BaseBranch))
-	workingBranch := strings.TrimSpace(derefString(state.run.WorkingBranch))
-	if baseBranch != "" || workingBranch != "" {
-		switch {
-		case baseBranch != "" && workingBranch != "":
-			sections = append(sections, fmt.Sprintf("Repository branches: base `%s`, working `%s`.", baseBranch, workingBranch))
-		case workingBranch != "":
-			sections = append(sections, fmt.Sprintf("Repository working branch: `%s`.", workingBranch))
-		case baseBranch != "":
-			sections = append(sections, fmt.Sprintf("Repository base branch: `%s`.", baseBranch))
-		}
-	}
+	sections = appendTaskRunRepositoryBranchSections(sections, state.run)
 
 	planDocumentSections, err := a.buildTaskRunPlanDocumentContextSections(ctx, strings.TrimSpace(derefString(state.task.PlanDocumentID)))
 	if err != nil {
@@ -6452,6 +6441,25 @@ func appendTaskPlannerParentEpicSummarySections(sections []string, epic *model.P
 		}
 	}
 	return sections
+}
+
+func appendTaskRunRepositoryBranchSections(sections []string, run *model.AgentRun) []string {
+	if run == nil {
+		return sections
+	}
+	baseBranch := strings.TrimSpace(derefString(run.BaseBranch))
+	workingBranch := strings.TrimSpace(derefString(run.WorkingBranch))
+	if baseBranch == "" && workingBranch == "" {
+		return sections
+	}
+	switch {
+	case baseBranch != "" && workingBranch != "":
+		return append(sections, fmt.Sprintf("Repository branches: base `%s`, working `%s`.", baseBranch, workingBranch))
+	case workingBranch != "":
+		return append(sections, fmt.Sprintf("Repository working branch: `%s`.", workingBranch))
+	default:
+		return append(sections, fmt.Sprintf("Repository base branch: `%s`.", baseBranch))
+	}
 }
 
 func appendExistingEpicTasksSection(sections []string, tasks []model.PMTask) []string {
