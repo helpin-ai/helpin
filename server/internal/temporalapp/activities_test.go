@@ -5410,11 +5410,29 @@ func TestApplyApprovedInteractivePreviewReturnsPersistPRDAction(t *testing.T) {
 
 func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *testing.T) {
 	db := newPlannerApprovalTestDB(t)
+	if err := db.Exec(`CREATE TABLE agent_run_messages (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		run_id TEXT NOT NULL,
+		role TEXT NOT NULL,
+		content TEXT NOT NULL,
+		message_type TEXT NOT NULL,
+		content_blocks BLOB,
+		turn_segments BLOB,
+		tool_invocations BLOB,
+		token_usage BLOB,
+		sequence_no INTEGER NOT NULL,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create agent_run_messages table: %v", err)
+	}
 
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
 	epicRepo := repository.NewPMEpicRepository(db)
 	taskRepo := repository.NewPMTaskRepository(db)
 	runRepo := repository.NewAgentRunRepository(db)
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
 	agentRepo := repository.NewAgentRepository(db)
 
 	agent := &model.Agent{
@@ -5452,11 +5470,12 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 	}
 
 	epic := &model.PMEpic{
-		ID:                 "epic-1",
-		WorkspaceID:        "ws-1",
-		Name:               "Epic",
-		PlanningState:      model.EpicPlanningStateReadyForStoryPlanning,
-		SpecClarifications: json.RawMessage(`[]`),
+		ID:                    "epic-1",
+		WorkspaceID:           "ws-1",
+		Name:                  "Epic",
+		PlanningState:         model.EpicPlanningStateReadyForStoryPlanning,
+		SpecClarifications:    json.RawMessage(`[]`),
+		ApprovedSpecVersionID: strPtr("spec-v1"),
 	}
 	if err := db.Create(epic).Error; err != nil {
 		t.Fatalf("create epic: %v", err)
@@ -5553,6 +5572,7 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 
 	activity := &AgentRunActivities{
 		runRepo:         runRepo,
+		runMessageRepo:  runMessageRepo,
 		artifactRepo:    artifactRepo,
 		epicRepo:        epicRepo,
 		taskRepo:        taskRepo,
@@ -5575,6 +5595,12 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 	if len(executed) != 1 || executed[0] != "pm.create_task_batch" {
 		t.Fatalf("expected task batch command, got %#v", executed)
 	}
+	if len(state.epicTasks) != 2 {
+		t.Fatalf("expected in-memory epic tasks to refresh after apply, got %#v", state.epicTasks)
+	}
+	if state.epic == nil || state.epic.LastPlanningRunID == nil || *state.epic.LastPlanningRunID != run.ID {
+		t.Fatalf("expected state epic to record last planning run, got %#v", state.epic)
+	}
 
 	var createdStories []model.PMTask
 	if err := db.Where("epic_id = ?", epic.ID).Find(&createdStories).Error; err != nil {
@@ -5591,6 +5617,19 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 	if updatedRun == nil || updatedRun.Status != model.AgentRunStatusCompleted {
 		t.Fatalf("expected run to complete, got %#v", updatedRun)
 	}
+	var summary planningRunSummary
+	if err := json.Unmarshal(updatedRun.OutputSummary, &summary); err != nil {
+		t.Fatalf("unmarshal output summary: %v", err)
+	}
+	if summary.Stage != model.PlanningStagePlanTasks {
+		t.Fatalf("expected plan_tasks summary stage, got %#v", summary)
+	}
+	if summary.SpecVersionID != "spec-v1" {
+		t.Fatalf("expected approved spec version to carry into summary, got %#v", summary)
+	}
+	if summary.Proposal == nil || len(summary.Proposal.ProposedTasks) != 2 {
+		t.Fatalf("expected proposal with created tasks in summary, got %#v", summary)
+	}
 
 	updatedAgent, err := agentRepo.GetByID(context.Background(), agent.WorkspaceID, agent.ID)
 	if err != nil {
@@ -5606,6 +5645,21 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 	}
 	if len(appliedMarkers) != 1 {
 		t.Fatalf("expected 1 approved preview applied marker, got %d", len(appliedMarkers))
+	}
+
+	messages, err := runMessageRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("list run messages: %v", err)
+	}
+	foundCompletionMessage := false
+	for _, message := range messages {
+		if message.Role == "assistant" && message.MessageType == "assistant_turn" && strings.Contains(message.Content, "Applied the approved task plan and created 2 tasks.") {
+			foundCompletionMessage = true
+			break
+		}
+	}
+	if !foundCompletionMessage {
+		t.Fatalf("expected completion assistant message after task-plan apply, got %#v", messages)
 	}
 }
 
