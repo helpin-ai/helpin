@@ -5495,6 +5495,9 @@ func (a *AgentRunActivities) normalizeEpicSpecState(ctx context.Context, state *
 }
 
 func (a *AgentRunActivities) buildInitialInstructions(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
+	if state != nil && state.nativeSelectivePathEnabled {
+		return a.buildNativeSelectivePhaseGuidance(ctx, state, input)
+	}
 	tools := effectiveToolSet(state.resolved, input.AllowedTools)
 	if strings.TrimSpace(input.FlowOutputKind) != "" {
 		return a.buildFlowOutputInstructions(ctx, state, input)
@@ -5512,6 +5515,19 @@ func (a *AgentRunActivities) buildInitialInstructions(ctx context.Context, state
 		return runInputAdditionalContext(state.run.Input), nil
 	}
 	return a.buildAgenticEpicPlannerInstructions(ctx, state, input)
+}
+
+func (a *AgentRunActivities) buildNativeSelectivePhaseGuidance(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
+	if state == nil || state.run == nil {
+		return "", nil
+	}
+	if state.task != nil {
+		return a.buildNativeTaskPlannerPhaseGuidance(ctx, state, input)
+	}
+	if state.run.TargetType == "epic" && state.epic != nil {
+		return a.buildNativeEpicPlannerPhaseGuidance(ctx, state, input)
+	}
+	return runInputAdditionalContext(state.run.Input), nil
 }
 
 func (a *AgentRunActivities) buildFlowOutputInstructions(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
@@ -5609,11 +5625,26 @@ func (a *AgentRunActivities) buildTaskPlannerInstructions(ctx context.Context, s
 	sections = append(sections, "Treat parent epic details, the epic PRD, and epic-linked docs as background context only. Use them to understand constraints, inherited requirements, and non-goals, but do not copy them wholesale into the task planning document unless they directly affect this task's implementation.")
 	sections = append(sections, "Ground the planning document primarily in the task description, task comments, task-linked docs, and the current codebase context. Keep the output focused on this task's implementation plan.")
 
+	contextSections, err := a.buildTaskPlannerContextSections(ctx, state, input)
+	if err != nil {
+		return "", err
+	}
+	sections = append(sections, contextSections...)
+
+	return strings.Join(sections, "\n\n"), nil
+}
+
+func (a *AgentRunActivities) buildTaskPlannerContextSections(ctx context.Context, state *resolvedRunState, input planningRunInput) ([]string, error) {
+	if state.task == nil {
+		return nil, fmt.Errorf("task planner requires a task target")
+	}
+
+	var sections []string
 	if strings.TrimSpace(input.PlanDocumentID) != "" {
 		sections = append(sections, fmt.Sprintf("Canonical task planning document ID: %s", input.PlanDocumentID))
 		content, err := a.docsContentRepo.GetByDocumentID(ctx, input.PlanDocumentID)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		if content != nil && strings.TrimSpace(content.ContentText) != "" {
 			sections = append(sections, "Current task planning draft already in Docs:\n"+truncatePlanningText(content.ContentText, 12000))
@@ -5649,7 +5680,7 @@ func (a *AgentRunActivities) buildTaskPlannerInstructions(ctx context.Context, s
 	if input.SpecVersionID != "" {
 		version, err := a.docsVersionRepo.GetByID(ctx, input.SpecVersionID)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		if version != nil && strings.TrimSpace(version.ContentText) != "" {
 			sections = append(sections, fmt.Sprintf("Approved epic PRD version ID: %s", version.ID))
@@ -5658,7 +5689,7 @@ func (a *AgentRunActivities) buildTaskPlannerInstructions(ctx context.Context, s
 	} else if input.SpecDocumentID != "" {
 		content, err := a.docsContentRepo.GetByDocumentID(ctx, input.SpecDocumentID)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		if content != nil && strings.TrimSpace(content.ContentText) != "" {
 			sections = append(sections, fmt.Sprintf("Parent epic PRD document ID: %s", input.SpecDocumentID))
@@ -5668,7 +5699,7 @@ func (a *AgentRunActivities) buildTaskPlannerInstructions(ctx context.Context, s
 
 	taskLinkedDocs, err := a.renderObjectLinkedDocsContext(ctx, state.run.WorkspaceID, model.LinkedObjectTask, state.task.ID, input.PlanDocumentID)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if taskLinkedDocs != "" {
 		sections = append(sections, "Other docs linked directly to this task:\n"+taskLinkedDocs)
@@ -5677,7 +5708,7 @@ func (a *AgentRunActivities) buildTaskPlannerInstructions(ctx context.Context, s
 	if state.epic != nil {
 		epicLinkedDocs, err := a.renderLinkedDocsContext(ctx, state.run.WorkspaceID, state.epic.ID, input.SpecDocumentID)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		if epicLinkedDocs != "" {
 			sections = append(sections, "Other docs linked to the parent epic:\n"+epicLinkedDocs)
@@ -5686,7 +5717,7 @@ func (a *AgentRunActivities) buildTaskPlannerInstructions(ctx context.Context, s
 
 	commentsContext, err := a.renderTaskCommentsContext(ctx, state.task.ID)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if commentsContext != "" {
 		sections = append(sections, "Task comments:\n"+commentsContext)
@@ -5698,12 +5729,37 @@ func (a *AgentRunActivities) buildTaskPlannerInstructions(ctx context.Context, s
 		input.AdditionalContext,
 	}, "\n\n"))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if repoContext != "" {
 		sections = append(sections, "Current implementation context from the live repository:\n"+repoContext)
 	}
 
+	return sections, nil
+}
+
+func (a *AgentRunActivities) buildNativeTaskPlannerPhaseGuidance(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
+	phaseName := strings.TrimSpace(nativeActiveSkillPlanningStage(state, input.Stage))
+	if phaseName == "" {
+		phaseName = model.PlanningStageTaskPlanDoc
+	}
+	sections := []string{
+		fmt.Sprintf("Current planning phase: %s", phaseName),
+		"Phase objective: refine a task-scoped implementation planning document, publish it with publish_task_plan_doc, and stop at inline approval.",
+		"Treat this as a transcript-driven task planning run. Continue from the latest human reply, active draft, linked task context, and repository evidence rather than restarting the plan from scratch.",
+		"Next-step rule: clarify scope only when blocked, otherwise update the active task planning draft, publish the full replacement preview, and request inline approval when the document is ready.",
+		"Approval rule: use request_approval with phase=\"task_doc\" only after publish_task_plan_doc in the same turn. Treat request_approval as the final action in that turn.",
+		"Contract reminder: publish_task_plan_doc must receive one JSON object whose content field contains the full markdown draft under review.",
+		"Focus rule: keep the planning document grounded in the task description, task comments, task-linked docs, parent-epic constraints that matter to this task, and the current codebase context.",
+	}
+	if state.run.InvocationMode == model.InvocationModeInteractive {
+		sections = append(sections, "Interactive approval semantics: explicit approval advances the run; change requests, critique, concerns, and ambiguous replies mean the draft is still unapproved and must be revised in the same transcript.")
+	}
+	contextSections, err := a.buildTaskPlannerContextSections(ctx, state, input)
+	if err != nil {
+		return "", err
+	}
+	sections = append(sections, contextSections...)
 	return strings.Join(sections, "\n\n"), nil
 }
 
@@ -5799,6 +5855,18 @@ func (a *AgentRunActivities) buildAgenticEpicPlannerInstructions(ctx context.Con
 	sections = append(sections, "proposed_tasks must be an array of full task objects. Never send arrays of strings, refs, placeholders, key names, or partial fragments. If publish_task_plan fails validation, correct the payload and retry with one complete valid task-plan object before requesting approval.")
 	sections = append(sections, "Before approval, keep drafts in chat-backed preview artifacts only. After approval, the platform applies the approved artifact; do not replay approved PRDs or task plans through mutation tools.")
 
+	contextSections, hasSpecContent, err := a.buildEpicPlannerContextSections(ctx, state, input)
+	if err != nil {
+		return "", err
+	}
+	sections = append(sections, contextSections...)
+	sections = append(sections, formatInteractivePlanningFacts(input, hasSpecContent, len(state.epicTasks)))
+	sections = append(sections, nativeEpicPlannerNextStepGuidance(input, hasSpecContent, len(state.epicTasks) > 0))
+	return strings.Join(sections, "\n\n"), nil
+}
+
+func (a *AgentRunActivities) buildEpicPlannerContextSections(ctx context.Context, state *resolvedRunState, input planningRunInput) ([]string, bool, error) {
+	var sections []string
 	var hasSpecContent bool
 	if input.SpecDocumentID != "" {
 		sections = append(sections, fmt.Sprintf("Existing canonical spec document ID: %s", input.SpecDocumentID))
@@ -5828,7 +5896,7 @@ func (a *AgentRunActivities) buildAgenticEpicPlannerInstructions(ctx context.Con
 
 	linkedDocs, err := a.renderLinkedDocsContext(ctx, state.run.WorkspaceID, state.epic.ID, input.SpecDocumentID)
 	if err != nil {
-		return "", err
+		return nil, false, err
 	}
 	if linkedDocs != "" {
 		sections = append(sections, "Other docs linked to this epic:\n"+linkedDocs)
@@ -5836,7 +5904,7 @@ func (a *AgentRunActivities) buildAgenticEpicPlannerInstructions(ctx context.Con
 
 	linkedTickets, err := a.renderLinkedTicketsContext(ctx, state)
 	if err != nil {
-		return "", err
+		return nil, false, err
 	}
 	if linkedTickets != "" {
 		sections = append(sections, "Support and customer context already linked to this epic:\n"+linkedTickets)
@@ -5850,7 +5918,7 @@ func (a *AgentRunActivities) buildAgenticEpicPlannerInstructions(ctx context.Con
 		input.AdditionalContext,
 	}, "\n\n"))
 	if err != nil {
-		return "", err
+		return nil, false, err
 	}
 	if repoContext != "" {
 		sections = append(sections, "Current implementation context from the planning repository:\n"+repoContext)
@@ -5865,21 +5933,62 @@ func (a *AgentRunActivities) buildAgenticEpicPlannerInstructions(ctx context.Con
 		sections = append(sections, "Tasks already linked to this epic:\n"+strings.Join(lines, "\n"))
 	}
 
+	return sections, hasSpecContent, nil
+}
+
+func nativeEpicPlannerNextStepGuidance(input planningRunInput, hasSpecContent bool, hasTasks bool) string {
 	hasApprovedSpec := input.SpecVersionID != ""
 	hasSpecDoc := input.SpecDocumentID != ""
-	hasTasks := len(state.epicTasks) > 0
-	sections = append(sections, formatInteractivePlanningFacts(input, hasSpecContent, len(state.epicTasks)))
 	switch {
 	case hasApprovedSpec && hasTasks:
-		sections = append(sections, "Next-step guidance: the PRD is approved and tasks already exist. Do not redraft the PRD or recreate existing tasks. Enter clarification or extension mode, inspect current tasks if needed, and only add new tasks if the human explicitly asks for them.")
+		return "Next-step guidance: the PRD is approved and tasks already exist. Do not redraft the PRD or recreate existing tasks. Enter clarification or extension mode, inspect current tasks if needed, and only add new tasks if the human explicitly asks for them."
 	case hasApprovedSpec && !hasTasks:
-		sections = append(sections, "Next-step guidance: the PRD is approved and no tasks exist yet. Skip PRD drafting entirely and proceed directly to task planning from the approved spec and current codebase context.")
+		return "Next-step guidance: the PRD is approved and no tasks exist yet. Skip PRD drafting entirely and proceed directly to task planning from the approved spec and current codebase context."
 	case hasSpecDoc && hasSpecContent:
-		sections = append(sections, "Next-step guidance: a draft PRD exists but it is not approved yet. Resume from the current draft, present or revise it, and request PRD approval before any task planning.")
+		return "Next-step guidance: a draft PRD exists but it is not approved yet. Resume from the current draft, present or revise it, and request PRD approval before any task planning."
 	default:
-		sections = append(sections, "Next-step guidance: no approved PRD exists yet. Follow the full loop from clarification through PRD drafting, preview, revision if needed, and approval.")
+		return "Next-step guidance: no approved PRD exists yet. Follow the full loop from clarification through PRD drafting, preview, revision if needed, and approval."
 	}
+}
 
+func nativeEpicPlannerPhaseName(input planningRunInput, hasSpecContent bool, hasTasks bool) string {
+	hasApprovedSpec := input.SpecVersionID != ""
+	hasSpecDoc := input.SpecDocumentID != ""
+	switch {
+	case hasApprovedSpec && hasTasks:
+		return "task_extension"
+	case hasApprovedSpec && !hasTasks:
+		return model.PlanningStagePlanTasks
+	case hasSpecDoc && hasSpecContent:
+		return "prd_revision"
+	default:
+		return model.PlanningStageDraftSpec
+	}
+}
+
+func (a *AgentRunActivities) buildNativeEpicPlannerPhaseGuidance(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
+	contextSections, hasSpecContent, err := a.buildEpicPlannerContextSections(ctx, state, input)
+	if err != nil {
+		return "", err
+	}
+	hasTasks := len(state.epicTasks) > 0
+	phaseName := nativeEpicPlannerPhaseName(input, hasSpecContent, hasTasks)
+	sections := []string{
+		fmt.Sprintf("Current planning phase: %s", phaseName),
+		"Phase objective: move the epic to the next durable planning checkpoint using the current transcript, approved artifacts, linked context, and repository evidence.",
+		"Transcript rule: continue from the latest human reply and current planning state rather than restarting the PRD or task plan from scratch.",
+		"Approval rule: use request_approval with phase=\"prd\" or phase=\"tasks\" only after publishing the same-turn preview artifact that is being reviewed. Treat request_approval as the final action in that turn.",
+		"PRD contract reminder: use publish_prd_draft for markdown previews that the human will review inline.",
+		"Task-plan contract reminder: publish_task_plan must receive one complete JSON object with non-empty summary and proposed_tasks fields before task-plan approval is requested.",
+		"Post-approval rule: once PRD approval is persisted, continue directly into task planning unless the human explicitly redirects scope. Do not end the run immediately after PRD approval.",
+		"Revision rule: if the latest human reply asks for changes to the active PRD or task plan, revise the active artifact, republish the full replacement preview, and request approval again when ready.",
+	}
+	if state.run.InvocationMode == model.InvocationModeInteractive {
+		sections = append(sections, "Interactive approval semantics: only explicit approval advances the phase. Change requests, critique, concerns, and ambiguous replies keep the current phase active.")
+	}
+	sections = append(sections, formatInteractivePlanningFacts(input, hasSpecContent, len(state.epicTasks)))
+	sections = append(sections, nativeEpicPlannerNextStepGuidance(input, hasSpecContent, hasTasks))
+	sections = append(sections, contextSections...)
 	return strings.Join(sections, "\n\n"), nil
 }
 

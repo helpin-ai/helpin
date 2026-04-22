@@ -241,6 +241,116 @@ func TestSplitNativePhaseGuidanceKeepsLegacyInstructionsForNonSelectivePath(t *t
 	}
 }
 
+func TestBuildInitialInstructionsUsesNativeSelectiveEpicPhaseGuidance(t *testing.T) {
+	activity := &AgentRunActivities{}
+	state := &resolvedRunState{
+		nativeSelectivePathEnabled: true,
+		run: &model.AgentRun{
+			WorkspaceID:    "ws-1",
+			TargetType:     "epic",
+			InvocationMode: model.InvocationModeInteractive,
+			Input:          json.RawMessage(`{"additional_context":"Focus on launch blockers."}`),
+		},
+		epic: &model.PMEpic{
+			ID:          "epic-1",
+			WorkspaceID: "ws-1",
+			Name:        "Launch readiness",
+		},
+	}
+
+	instructions, err := activity.buildInitialInstructions(context.Background(), state, planningRunInput{
+		AdditionalContext: "Focus on launch blockers.",
+	})
+	if err != nil {
+		t.Fatalf("buildInitialInstructions returned error: %v", err)
+	}
+	for _, snippet := range []string{
+		"Current planning phase: draft_spec",
+		"Phase objective: move the epic to the next durable planning checkpoint",
+		"Interactive approval semantics:",
+		"Next-step guidance: no approved PRD exists yet.",
+		"Operator notes:\nFocus on launch blockers.",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected native selective epic guidance to contain %q\n%s", snippet, instructions)
+		}
+	}
+	if strings.Contains(instructions, "Use this sequence unless the human explicitly redirects you:") {
+		t.Fatalf("did not expect legacy epic planner boilerplate in native selective guidance\n%s", instructions)
+	}
+}
+
+func TestBuildInitialInstructionsKeepsLegacyEpicPlannerInstructionsWhenSelectivePathDisabled(t *testing.T) {
+	activity := &AgentRunActivities{}
+	state := &resolvedRunState{
+		nativeSelectivePathEnabled: false,
+		run: &model.AgentRun{
+			WorkspaceID:    "ws-1",
+			TargetType:     "epic",
+			InvocationMode: model.InvocationModeInteractive,
+			Input:          json.RawMessage(`{"additional_context":"Focus on launch blockers."}`),
+		},
+		epic: &model.PMEpic{
+			ID:          "epic-1",
+			WorkspaceID: "ws-1",
+			Name:        "Launch readiness",
+		},
+	}
+
+	instructions, err := activity.buildInitialInstructions(context.Background(), state, planningRunInput{
+		AdditionalContext: "Focus on launch blockers.",
+		AllowedTools:      []string{workerpkg.ToolPublishPRDDraft, workerpkg.ToolPublishTaskPlan},
+	})
+	if err != nil {
+		t.Fatalf("buildInitialInstructions returned error: %v", err)
+	}
+	if !strings.Contains(instructions, "Use this sequence unless the human explicitly redirects you:") {
+		t.Fatalf("expected legacy epic planner wording to remain when selective path is disabled\n%s", instructions)
+	}
+	if strings.Contains(instructions, "Current planning phase: draft_spec") {
+		t.Fatalf("did not expect native selective phase header in legacy instructions\n%s", instructions)
+	}
+}
+
+func TestBuildInitialInstructionsUsesNativeSelectiveTaskPhaseGuidance(t *testing.T) {
+	activity := &AgentRunActivities{}
+	state := &resolvedRunState{
+		nativeSelectivePathEnabled: true,
+		run: &model.AgentRun{
+			WorkspaceID:    "ws-1",
+			TargetType:     "task",
+			InvocationMode: model.InvocationModeInteractive,
+			Input:          json.RawMessage(`{"additional_context":"Focus on regression risk."}`),
+		},
+		task: &model.PMTask{
+			ID:          "task-1",
+			WorkspaceID: "ws-1",
+			Name:        "Harden approval preview binding",
+		},
+	}
+
+	instructions, err := activity.buildInitialInstructions(context.Background(), state, planningRunInput{
+		AdditionalContext: "Focus on regression risk.",
+	})
+	if err != nil {
+		t.Fatalf("buildInitialInstructions returned error: %v", err)
+	}
+	for _, snippet := range []string{
+		"Current planning phase: task_plan_doc",
+		"Phase objective: refine a task-scoped implementation planning document",
+		"Approval rule: use request_approval with phase=\"task_doc\"",
+		"Operator notes:\nFocus on regression risk.",
+		"Task: Harden approval preview binding",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected native selective task guidance to contain %q\n%s", snippet, instructions)
+		}
+	}
+	if strings.Contains(instructions, "Use this sequence unless the human explicitly redirects you:") {
+		t.Fatalf("did not expect legacy task planner boilerplate in native selective guidance\n%s", instructions)
+	}
+}
+
 func TestLatestNativeRepairGuidanceRequiresSelectivePath(t *testing.T) {
 	messages := []model.AgentRunMessage{
 		{Role: "user", MessageType: "policy_retry", Content: "System correction: continue from your last assistant message."},
@@ -4397,6 +4507,12 @@ func TestExecuteRunActivityPausesNativePlannerForReviewCheckpoint(t *testing.T) 
 	}
 	if strings.TrimSpace(capturedPhaseGuidance) == "" {
 		t.Fatalf("expected gated native path to populate phase guidance, got %q", capturedPhaseGuidance)
+	}
+	if !strings.Contains(capturedPhaseGuidance, "Current planning phase:") {
+		t.Fatalf("expected gated native phase guidance to use explicit phase header, got %q", capturedPhaseGuidance)
+	}
+	if strings.Contains(capturedPhaseGuidance, "Use this sequence unless the human explicitly redirects you:") {
+		t.Fatalf("did not expect legacy monolithic planner guidance in gated native phase guidance, got %q", capturedPhaseGuidance)
 	}
 	if got := completionRequiredInteractionKinds(capturedSkillPolicy); len(got) != 2 {
 		t.Fatalf("unexpected active skill policy %#v", got)
