@@ -261,6 +261,38 @@ func TestEffectiveExecutionSkillPolicyUsesActiveSelectionForSelectivePath(t *tes
 	}
 }
 
+func TestEffectiveExecutionSkillPolicyKeepsFullPolicyWhenSelectivePathDisabled(t *testing.T) {
+	state := &resolvedRunState{
+		nativeSelectivePathEnabled: false,
+		skillPolicy: workerpkg.SkillPolicy{
+			CompletionRequiresInteractionKinds: []string{
+				model.AgentRunInteractionKindApprovalRequest,
+				model.AgentRunInteractionKindReviewCheckpoint,
+			},
+		},
+	}
+
+	policy := effectiveExecutionSkillPolicy(state, agentskills.NativeActiveSelection{
+		Definitions: []workerpkg.SkillDefinition{
+			{
+				Key:        "approval_protocol",
+				SourceKind: "built_in",
+				Policy: workerpkg.SkillPolicy{
+					CompletionRequiresInteractionKinds: []string{model.AgentRunInteractionKindApprovalRequest},
+				},
+			},
+		},
+	})
+
+	if got := completionRequiredInteractionKinds(policy); len(got) != 2 {
+		t.Fatalf("expected full policy to remain active when selective path is disabled, got %#v", got)
+	} else if _, ok := got[model.AgentRunInteractionKindApprovalRequest]; !ok {
+		t.Fatalf("expected approval_request in full policy, got %#v", got)
+	} else if _, ok := got[model.AgentRunInteractionKindReviewCheckpoint]; !ok {
+		t.Fatalf("expected review_checkpoint in full policy, got %#v", got)
+	}
+}
+
 func TestPersistHumanInteractionArtifactsStoresStructuredReviewFindings(t *testing.T) {
 	dbName := fmt.Sprintf("file:review-findings-artifact-%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
