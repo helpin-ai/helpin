@@ -152,7 +152,7 @@ func TestLegacyPromptIsManaged(t *testing.T) {
 		{
 			name:      "epic planner legacy prompt",
 			presetKey: model.AgentPresetEpicPlanner,
-			prompt:    "1. `prd_draft`\n2. `awaiting_prd_approval`\n3. `persist_prd`\n5. `awaiting_story_approval`",
+			prompt:    "1. `prd_draft`\n2. `awaiting_prd_approval`\n3. `persist_prd`\n4. `task_plan`\n5. `awaiting_task_approval`\n6. `create_tasks`",
 			want:      true,
 		},
 		{
@@ -210,7 +210,7 @@ func TestSyncManagedSystemPromptForPresetPreservesCustomPrompt(t *testing.T) {
 }
 
 func TestSyncManagedSystemPromptForPresetMigratesLegacyManagedPrompt(t *testing.T) {
-	legacyPrompt := "1. `prd_draft`\n2. `awaiting_prd_approval`\n3. `persist_prd`\n5. `awaiting_story_approval`"
+	legacyPrompt := "1. `prd_draft`\n2. `awaiting_prd_approval`\n3. `persist_prd`\n4. `task_plan`\n5. `awaiting_task_approval`\n6. `create_tasks`"
 	prompt, version := syncManagedSystemPromptForPreset(model.AgentPresetEpicPlanner, &legacyPrompt, nil, "")
 	if prompt != nil {
 		t.Fatalf("expected managed prompt to be stored as nil, got %+v", prompt)

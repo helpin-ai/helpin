@@ -577,7 +577,7 @@ func TestNormalizeAgentRecordMigratesLegacyPreviewToolsForPlannerPreset(t *testi
 	}
 }
 
-func TestNormalizeAgentRecordStripsGenericPreviewToolsFromStoryPlanner(t *testing.T) {
+func TestNormalizeAgentRecordStripsGenericPreviewToolsFromTaskPlanner(t *testing.T) {
 	agent := &model.Agent{
 		IsSystem:       true,
 		PresetKey:      model.AgentPresetTaskPlanner,
@@ -616,7 +616,7 @@ func TestNormalizeAgentRecordStripsGenericPreviewToolsFromStoryPlanner(t *testin
 	}
 }
 
-func TestNormalizeAgentRecordStripsStoryPreviewToolFromEpicPlanner(t *testing.T) {
+func TestNormalizeAgentRecordStripsTaskPlannerPreviewToolsFromEpicPlanner(t *testing.T) {
 	agent := &model.Agent{
 		IsSystem:       true,
 		PresetKey:      model.AgentPresetEpicPlanner,

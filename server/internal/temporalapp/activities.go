@@ -2425,7 +2425,7 @@ func buildOtherArtifactContextEntry(artifact model.AgentRunArtifact) *workerpkg.
 			Content:      content,
 			PreserveFull: true,
 		}
-	case "story_plan_proposal":
+	case "task_plan_proposal":
 		return &workerpkg.ArtifactContextEntry{
 			Label:        "Structured task plan proposal artifact",
 			Source:       artifact.ArtifactType,
@@ -6042,7 +6042,7 @@ func (a *AgentRunActivities) buildInitialInstructions(ctx context.Context, state
 	if state.run.TargetType != "epic" || state.epic == nil {
 		return runInputAdditionalContext(state.run.Input), nil
 	}
-	if !tools[workerpkg.ToolPublishPRDDraft] || (!tools[workerpkg.ToolPublishTaskPlan] && !tools[workerpkg.ToolPublishStoryPlan]) {
+	if !tools[workerpkg.ToolPublishPRDDraft] || !tools[workerpkg.ToolPublishTaskPlan] {
 		return runInputAdditionalContext(state.run.Input), nil
 	}
 	return a.buildAgenticEpicPlannerInstructions(ctx, state, input)

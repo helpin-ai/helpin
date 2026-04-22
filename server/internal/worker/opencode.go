@@ -346,7 +346,7 @@ func (e *OpenCodeExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRu
 			if err != nil {
 				return normalizeOpenCodePostRunError(postRunCtx, err)
 			}
-			if err := e.saveOutputSummary(postRunCtx, run, artifactWriter, "story_plan_proposal", proposal); err != nil {
+			if err := e.saveOutputSummary(postRunCtx, run, artifactWriter, "task_plan_proposal", proposal); err != nil {
 				return err
 			}
 		default:

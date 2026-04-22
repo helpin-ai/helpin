@@ -4269,9 +4269,9 @@ func TestCaptureTranscriptPlanningArtifactsPersistsStoryPlannerPreview(t *testin
 		LastExecutionResult: &workerpkg.ExecutionResult{
 			ToolInvocations: []model.ToolInvocation{
 				{
-					ToolName: workerpkg.ToolPublishStoryPlanDoc,
+					ToolName: workerpkg.ToolPublishTaskPlanDoc,
 					Input: json.RawMessage(`{
-						"title":"Story Planning Document",
+						"title":"Task Planning Document",
 						"content":"# Outcome\n\nImplement Kafka health monitoring."
 					}`),
 				},
@@ -4299,7 +4299,7 @@ func TestCaptureTranscriptPlanningArtifactsPersistsStoryPlannerPreview(t *testin
 		t.Fatalf("unmarshal preview artifact: %v", err)
 	}
 	if preview.PanelKey != "task_plan_doc" || preview.Format != workerpkg.PreviewFormatMarkdown {
-		t.Fatalf("unexpected persisted story preview %#v", preview)
+		t.Fatalf("unexpected persisted task preview %#v", preview)
 	}
 
 	var metadata map[string]any
@@ -7478,7 +7478,7 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 	agent := &model.Agent{
 		ID:                    "agent-story",
 		WorkspaceID:           "ws-1",
-		Name:                  "Story Planner",
+		Name:                  "Task Planner",
 		Status:                "running",
 		RuntimeKind:           "native_sdk",
 		Skills:                model.AgentSkillRefs{},

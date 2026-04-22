@@ -474,7 +474,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 			_ = e.runRepo.Update(ctx, run)
 
 			seqNo++
-			e.saveArtifact(ctx, run, "story_plan_proposal", "json", string(payload), seqNo)
+			e.saveArtifact(ctx, run, "task_plan_proposal", "json", string(payload), seqNo)
 			seqNo++
 			e.saveArtifact(ctx, run, "orchestration_proposal", "json", string(payload), seqNo)
 		case "":

@@ -97,7 +97,7 @@ func TestEnsureSystemProductPlannerAgentRefreshesLegacyPrompt(t *testing.T) {
 	svc := &AgentService{agentRepo: agentRepo}
 
 	now := time.Now().UTC()
-	legacyPrompt := "1. `prd_draft`\n2. `awaiting_prd_approval`\n3. `persist_prd`\n4. `story_plan`\n5. `awaiting_story_approval`\n6. `create_stories`"
+	legacyPrompt := "1. `prd_draft`\n2. `awaiting_prd_approval`\n3. `persist_prd`\n4. `task_plan`\n5. `awaiting_task_approval`\n6. `create_tasks`"
 	if err := db.Exec(`INSERT INTO agents (
 		id, workspace_id, is_system, name, preset_key, role, status, runtime_kind,
 		skills, trigger_mode, system_prompt, allowed_tools, allowed_commands, allowed_targets,
@@ -116,7 +116,7 @@ func TestEnsureSystemProductPlannerAgentRefreshesLegacyPrompt(t *testing.T) {
 	if updated.SystemPrompt == nil || *updated.SystemPrompt == "" {
 		t.Fatal("expected refreshed system prompt")
 	}
-	if strings.Contains(*updated.SystemPrompt, "awaiting_prd_approval") || strings.Contains(*updated.SystemPrompt, "awaiting_story_approval") {
+	if strings.Contains(*updated.SystemPrompt, "awaiting_prd_approval") || strings.Contains(*updated.SystemPrompt, "awaiting_task_approval") {
 		t.Fatalf("expected refreshed prompt to remove legacy approval phases, got %q", *updated.SystemPrompt)
 	}
 	if !strings.Contains(*updated.SystemPrompt, "Approval requests happen inline in the same chat.") {
