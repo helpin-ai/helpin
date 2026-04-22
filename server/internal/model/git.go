@@ -3,6 +3,7 @@ package model
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -54,6 +55,83 @@ func (GitRepository) TableName() string { return "git_repositories" }
 type GitBranch struct {
 	Name      string `json:"name"`
 	IsDefault bool   `json:"is_default"`
+}
+
+func ResolveGitHubAPIBaseURL(baseURL *string) string {
+	raw := strings.TrimSpace(derefStringPtr(baseURL))
+	if raw == "" {
+		return "https://api.github.com"
+	}
+
+	parsed, err := url.Parse(raw)
+	if err != nil || strings.TrimSpace(parsed.Host) == "" {
+		return strings.TrimRight(raw, "/")
+	}
+
+	scheme := strings.TrimSpace(parsed.Scheme)
+	if scheme == "" {
+		scheme = "https"
+	}
+
+	host := strings.ToLower(strings.TrimSpace(parsed.Host))
+	switch host {
+	case "github.com", "api.github.com":
+		return strings.TrimRight(fmt.Sprintf("%s://api.github.com", scheme), "/")
+	default:
+		path := strings.TrimRight(strings.TrimSpace(parsed.Path), "/")
+		if path == "" {
+			path = "/api/v3"
+		} else if !strings.HasSuffix(path, "/api/v3") {
+			path += "/api/v3"
+		}
+		parsed.Scheme = scheme
+		parsed.Path = path
+		parsed.RawPath = ""
+		parsed.RawQuery = ""
+		parsed.Fragment = ""
+		return strings.TrimRight(parsed.String(), "/")
+	}
+}
+
+func ResolveGitHubWebBaseURL(baseURL *string) string {
+	raw := strings.TrimSpace(derefStringPtr(baseURL))
+	if raw == "" {
+		return "https://github.com"
+	}
+
+	parsed, err := url.Parse(raw)
+	if err != nil || strings.TrimSpace(parsed.Host) == "" {
+		return strings.TrimRight(strings.TrimSuffix(raw, "/api/v3"), "/")
+	}
+
+	scheme := strings.TrimSpace(parsed.Scheme)
+	if scheme == "" {
+		scheme = "https"
+	}
+
+	host := strings.ToLower(strings.TrimSpace(parsed.Host))
+	switch host {
+	case "api.github.com":
+		return strings.TrimRight(fmt.Sprintf("%s://github.com", scheme), "/")
+	default:
+		path := strings.TrimRight(strings.TrimSpace(parsed.Path), "/")
+		if strings.HasSuffix(path, "/api/v3") {
+			path = strings.TrimSuffix(path, "/api/v3")
+		}
+		parsed.Scheme = scheme
+		parsed.Path = path
+		parsed.RawPath = ""
+		parsed.RawQuery = ""
+		parsed.Fragment = ""
+		return strings.TrimRight(parsed.String(), "/")
+	}
+}
+
+func derefStringPtr(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func BuildTaskWorkingBranch(task *PMTask, teamDefault *PMTeamRepoDefault, workspaceKey string) string {
