@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,6 +38,7 @@ import (
 const (
 	productSpecsSpaceSlug = "product-specs"
 	productSpecsSpaceName = "Product Specs"
+	githubAPIRequestTimeout = 30 * time.Second
 )
 
 var codexLivePausePollEvery = time.Second
@@ -519,7 +522,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 			a.publishRunStreamEvent(state.run, event)
 		},
 		OnGitPush: func(branch, sha string) error {
-			return a.recordPush(ctx, state, branch, sha)
+			return a.recordPushAndEnsureDeliveryPR(ctx, state, branch, sha)
 		},
 		OnPROpen: func(metadata workerpkg.PRMetadata, title string) error {
 			return a.recordPR(ctx, state, metadata, title)
@@ -4704,7 +4707,7 @@ func (a *AgentRunActivities) recordPush(ctx context.Context, state *resolvedRunS
 	state.deliveryTarget.WorkingBranch = &branch
 	state.deliveryTarget.LastCommitSHA = &sha
 	state.deliveryTarget.LastRunID = &state.run.ID
-	state.deliveryTarget.DeliveryState = "in_progress"
+	state.deliveryTarget.DeliveryState = "pushed"
 	now := time.Now()
 	state.deliveryTarget.LastSyncedAt = &now
 	state.run.WorkingBranch = &branch
@@ -4716,6 +4719,82 @@ func (a *AgentRunActivities) recordPush(ctx context.Context, state *resolvedRunS
 		return err
 	}
 	return a.upsertGitLink(ctx, state, sha, nil)
+}
+
+func (a *AgentRunActivities) recordPushAndEnsureDeliveryPR(ctx context.Context, state *resolvedRunState, branch, sha string) error {
+	if err := a.recordPush(ctx, state, branch, sha); err != nil {
+		return err
+	}
+	pr, err := a.ensureDeliveryPullRequest(ctx, state, branch)
+	if err != nil {
+		baseBranch := ""
+		if state != nil && state.run != nil {
+			baseBranch = strings.TrimSpace(derefString(state.run.BaseBranch))
+		}
+		if baseBranch == "" && state != nil && state.deliveryTarget != nil {
+			baseBranch = strings.TrimSpace(derefString(state.deliveryTarget.BaseBranch))
+		}
+		slog.WarnContext(ctx, "failed to ensure delivery pull request after push",
+			"workspace_id", safeRunWorkspaceID(state),
+			"run_id", safeRunID(state),
+			"branch", branch,
+			"base_branch", baseBranch,
+			"error", err,
+		)
+		if a.artifactRepo != nil && state != nil && state.run != nil {
+			_, _ = a.appendRunArtifact(ctx, state.run, "git_delivery_result", "json", map[string]any{
+				"delivery":    "pr_failed",
+				"branch":      branch,
+				"base_branch": baseBranch,
+				"error":       err.Error(),
+			})
+		}
+		if state != nil && state.deliveryTarget != nil {
+			now := time.Now()
+			state.deliveryTarget.DeliveryState = "pr_failed"
+			state.deliveryTarget.LastRunID = &state.run.ID
+			state.deliveryTarget.LastSyncedAt = &now
+			if saveErr := a.deliveryRepo.Save(ctx, state.deliveryTarget); saveErr != nil {
+				slog.WarnContext(ctx, "failed to persist pr_failed delivery state after pull request error",
+					"workspace_id", safeRunWorkspaceID(state),
+					"run_id", safeRunID(state),
+					"branch", branch,
+					"error", saveErr,
+				)
+			}
+		}
+		return nil
+	}
+	if pr == nil {
+		return nil
+	}
+	if err := a.recordPR(ctx, state, pr.Metadata, pr.Title); err != nil {
+		if a.artifactRepo != nil && state != nil && state.run != nil {
+			_, _ = a.appendRunArtifact(ctx, state.run, "git_delivery_result", "json", map[string]any{
+				"delivery":    "pr_persistence_failed",
+				"created":     !pr.Existing,
+				"branch":      branch,
+				"base_branch": strings.TrimSpace(pr.Metadata.Base),
+				"number":      pr.Metadata.Number,
+				"url":         pr.Metadata.URL,
+				"title":       pr.Title,
+				"error":       err.Error(),
+			})
+		}
+		return fmt.Errorf("persist delivery pull request after upstream create/reuse: %w", err)
+	}
+	if a.artifactRepo != nil && state != nil && state.run != nil {
+		_, _ = a.appendRunArtifact(ctx, state.run, "git_delivery_result", "json", map[string]any{
+			"delivery":    "pr_open",
+			"created":     !pr.Existing,
+			"branch":      branch,
+			"base_branch": strings.TrimSpace(pr.Metadata.Base),
+			"number":      pr.Metadata.Number,
+			"url":         pr.Metadata.URL,
+			"title":       pr.Title,
+		})
+	}
+	return nil
 }
 
 func (a *AgentRunActivities) pushCodexLocalCommit(ctx context.Context, workDir string, state *resolvedRunState, execCtx *workerpkg.ExecutionContext) error {
@@ -4746,7 +4825,7 @@ func (a *AgentRunActivities) pushCodexLocalCommit(ctx context.Context, workDir s
 	if _, err := a.runGitInDir(ctx, workDir, state.integration, state.accessToken, "push", "-u", "origin", branch); err != nil {
 		return fmt.Errorf("push repository changes: %w", err)
 	}
-	if err := a.recordPush(ctx, state, branch, sha); err != nil {
+	if err := a.recordPushAndEnsureDeliveryPR(ctx, state, branch, sha); err != nil {
 		return fmt.Errorf("record pushed branch: %w", err)
 	}
 
@@ -4768,6 +4847,263 @@ func (a *AgentRunActivities) pushCodexLocalCommit(ctx context.Context, workDir s
 	}
 
 	return nil
+}
+
+func (a *AgentRunActivities) ensureDeliveryPullRequest(ctx context.Context, state *resolvedRunState, workingBranch string) (*ensuredDeliveryPR, error) {
+	if state == nil || state.run == nil || state.task == nil || state.repository == nil || state.integration == nil || state.deliveryTarget == nil {
+		return nil, nil
+	}
+	if strings.TrimSpace(state.integration.Provider) != "github" {
+		return nil, nil
+	}
+
+	repoFullName := strings.TrimSpace(state.repository.FullName)
+	if repoFullName == "" {
+		repoFullName = strings.TrimSpace(derefString(state.deliveryTarget.RepoFullName))
+	}
+	workingBranch = strings.TrimSpace(workingBranch)
+	if workingBranch == "" {
+		workingBranch = strings.TrimSpace(derefString(state.deliveryTarget.WorkingBranch))
+	}
+	if workingBranch == "" {
+		workingBranch = strings.TrimSpace(derefString(state.run.WorkingBranch))
+	}
+	baseBranch := strings.TrimSpace(derefString(state.run.BaseBranch))
+	if baseBranch == "" {
+		baseBranch = strings.TrimSpace(derefString(state.deliveryTarget.BaseBranch))
+	}
+	if baseBranch == "" {
+		baseBranch = defaultString(state.repository.DefaultBranch, "main")
+	}
+	if repoFullName == "" || workingBranch == "" || baseBranch == "" || workingBranch == baseBranch {
+		return nil, nil
+	}
+	if strings.TrimSpace(state.accessToken) == "" {
+		return nil, fmt.Errorf("repository access token is not available for pull request creation")
+	}
+
+	title, body := buildDeliveryPullRequestContent(state, baseBranch, workingBranch)
+	pr, err := ensureGitHubPullRequest(ctx, state.integration, state.accessToken, repoFullName, workingBranch, baseBranch, title, body)
+	if err != nil {
+		return nil, err
+	}
+	return pr, nil
+}
+
+type ensuredDeliveryPR struct {
+	Metadata workerpkg.PRMetadata
+	Title    string
+	Existing bool
+}
+
+func ensureGitHubPullRequest(
+	ctx context.Context,
+	integration *model.GitIntegration,
+	accessToken, repoFullName, workingBranch, baseBranch, title, body string,
+) (*ensuredDeliveryPR, error) {
+	if integration == nil || strings.TrimSpace(integration.Provider) != "github" {
+		return nil, nil
+	}
+	repoFullName = strings.TrimSpace(repoFullName)
+	workingBranch = strings.TrimSpace(workingBranch)
+	baseBranch = strings.TrimSpace(baseBranch)
+	accessToken = strings.TrimSpace(accessToken)
+	if repoFullName == "" || workingBranch == "" || baseBranch == "" {
+		return nil, nil
+	}
+	if accessToken == "" {
+		return nil, fmt.Errorf("github access token is required")
+	}
+
+	owner, repo, err := splitRepoFullName(repoFullName)
+	if err != nil {
+		return nil, err
+	}
+	apiBase := model.ResolveGitHubAPIBaseURL(integration.BaseURL)
+
+	query := url.Values{}
+	query.Set("state", "open")
+	query.Set("head", owner+":"+workingBranch)
+	query.Set("base", baseBranch)
+	query.Set("per_page", "1")
+
+	var existingPayload []struct {
+		Number  int    `json:"number"`
+		Title   string `json:"title"`
+		HTMLURL string `json:"html_url"`
+		Head    struct {
+			Ref string `json:"ref"`
+		} `json:"head"`
+		Base struct {
+			Ref string `json:"ref"`
+		} `json:"base"`
+	}
+	if err := doGitHubAPIRequest(ctx, accessToken, http.MethodGet, fmt.Sprintf("%s/repos/%s/%s/pulls?%s", apiBase, owner, repo, query.Encode()), nil, &existingPayload); err != nil {
+		return nil, err
+	}
+	if len(existingPayload) > 0 {
+		existing := existingPayload[0]
+		return &ensuredDeliveryPR{
+			Metadata: workerpkg.PRMetadata{
+				Provider: "github",
+				URL:      strings.TrimSpace(existing.HTMLURL),
+				Number:   existing.Number,
+				Head:     strings.TrimSpace(existing.Head.Ref),
+				Base:     strings.TrimSpace(existing.Base.Ref),
+			},
+			Title:    strings.TrimSpace(existing.Title),
+			Existing: true,
+		}, nil
+	}
+
+	var createdPayload struct {
+		Number  int    `json:"number"`
+		Title   string `json:"title"`
+		HTMLURL string `json:"html_url"`
+		Head    struct {
+			Ref string `json:"ref"`
+		} `json:"head"`
+		Base struct {
+			Ref string `json:"ref"`
+		} `json:"base"`
+	}
+	if err := doGitHubAPIRequest(ctx, accessToken, http.MethodPost, fmt.Sprintf("%s/repos/%s/%s/pulls", apiBase, owner, repo), map[string]string{
+		"title": title,
+		"body":  body,
+		"head":  workingBranch,
+		"base":  baseBranch,
+	}, &createdPayload); err != nil {
+		return nil, err
+	}
+	return &ensuredDeliveryPR{
+		Metadata: workerpkg.PRMetadata{
+			Provider: "github",
+			URL:      strings.TrimSpace(createdPayload.HTMLURL),
+			Number:   createdPayload.Number,
+			Head:     strings.TrimSpace(createdPayload.Head.Ref),
+			Base:     strings.TrimSpace(createdPayload.Base.Ref),
+		},
+		Title:    strings.TrimSpace(createdPayload.Title),
+		Existing: false,
+	}, nil
+}
+
+func doGitHubAPIRequest(ctx context.Context, accessToken, method, requestURL string, payload any, out any) error {
+	var requestBody []byte
+	if payload != nil {
+		data, err := json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("marshal github request payload: %w", err)
+		}
+		requestBody = data
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, githubAPIRequestTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(reqCtx, method, requestURL, bytes.NewReader(requestBody))
+	if err != nil {
+		return fmt.Errorf("build github request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(accessToken))
+	req.Header.Set("Accept", "application/vnd.github+json")
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request github api: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		var errorPayload struct {
+			Message string `json:"message"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&errorPayload)
+		return fmt.Errorf("github api failed (%d): %s", resp.StatusCode, strings.TrimSpace(errorPayload.Message))
+	}
+	if out == nil {
+		return nil
+	}
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return fmt.Errorf("decode github response: %w", err)
+	}
+	return nil
+}
+
+func buildDeliveryPullRequestContent(state *resolvedRunState, baseBranch, workingBranch string) (string, string) {
+	taskName := ""
+	taskKey := ""
+	if state != nil && state.task != nil {
+		taskName = strings.TrimSpace(state.task.Name)
+		if state.workspaceKey != "" && state.task.DisplayID > 0 {
+			taskKey = strings.TrimSpace(model.FormatTaskKey(state.workspaceKey, state.task.DisplayID))
+		}
+	}
+
+	title := strings.TrimSpace(taskName)
+	switch {
+	case taskKey != "" && title != "":
+		title = fmt.Sprintf("%s: %s", taskKey, title)
+	case taskKey != "":
+		title = taskKey
+	case title == "":
+		title = fmt.Sprintf("Automated changes from %s", workingBranch)
+	}
+
+	lines := []string{
+		"Automated pull request opened by Helpin.",
+		"",
+		"## Context",
+	}
+	if taskKey != "" || taskName != "" {
+		taskLine := "- Task: "
+		switch {
+		case taskKey != "" && taskName != "":
+			taskLine += fmt.Sprintf("%s — %s", taskKey, taskName)
+		case taskKey != "":
+			taskLine += taskKey
+		default:
+			taskLine += taskName
+		}
+		lines = append(lines, taskLine)
+	}
+	if state != nil && state.agent != nil && strings.TrimSpace(state.agent.Name) != "" {
+		lines = append(lines, "- Agent: "+strings.TrimSpace(state.agent.Name))
+	}
+	if strings.TrimSpace(workingBranch) != "" {
+		lines = append(lines, "- Branch: `"+strings.TrimSpace(workingBranch)+"`")
+	}
+	if strings.TrimSpace(baseBranch) != "" {
+		lines = append(lines, "- Base branch: `"+strings.TrimSpace(baseBranch)+"`")
+	}
+	if state != nil && state.run != nil && strings.TrimSpace(state.run.ID) != "" {
+		lines = append(lines, "- Run ID: `"+state.run.ID+"`")
+	}
+	return title, strings.Join(lines, "\n")
+}
+
+func splitRepoFullName(repoFullName string) (string, string, error) {
+	parts := strings.SplitN(strings.TrimSpace(repoFullName), "/", 2)
+	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+		return "", "", fmt.Errorf("invalid repository full name %q", repoFullName)
+	}
+	return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]), nil
+}
+
+func safeRunWorkspaceID(state *resolvedRunState) string {
+	if state == nil || state.run == nil {
+		return ""
+	}
+	return state.run.WorkspaceID
+}
+
+func safeRunID(state *resolvedRunState) string {
+	if state == nil || state.run == nil {
+		return ""
+	}
+	return state.run.ID
 }
 
 func (a *AgentRunActivities) recordPR(ctx context.Context, state *resolvedRunState, metadata workerpkg.PRMetadata, title string) error {

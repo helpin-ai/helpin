@@ -13,10 +13,12 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 const (
-	gitCommandTimeout        = 60 * time.Second
+	gitCommandTimeout       = 60 * time.Second
 	staleGitIndexLockMinAge = gitCommandTimeout + 5*time.Second
 )
 
@@ -116,10 +118,7 @@ func toolOpenPR(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 }
 
 func createGitHubPR(ctx *ExecutionContext, title, body, head, base string) (string, error) {
-	apiBase := "https://api.github.com"
-	if ctx.GitIntegration.BaseURL != nil && *ctx.GitIntegration.BaseURL != "" {
-		apiBase = *ctx.GitIntegration.BaseURL
-	}
+	apiBase := model.ResolveGitHubAPIBaseURL(ctx.GitIntegration.BaseURL)
 
 	url := fmt.Sprintf("%s/repos/%s/pulls", apiBase, ctx.Repo)
 

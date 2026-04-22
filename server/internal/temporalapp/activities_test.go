@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -893,6 +895,275 @@ func TestPushCodexLocalCommitPushesCommittedBranch(t *testing.T) {
 	remoteSHA := strings.TrimSpace(runGitCommand(t, "", "--git-dir", remoteDir, "rev-parse", "refs/heads/tp-123-implement"))
 	if remoteSHA != localSHA {
 		t.Fatalf("remote sha = %q, want %q", remoteSHA, localSHA)
+	}
+}
+
+func TestEnsureGitHubPullRequestReusesExistingOpenPR(t *testing.T) {
+	t.Parallel()
+
+	var postCalled bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v3/repos/acme/rust-capture/pulls":
+			if got := r.URL.Query().Get("head"); got != "acme:helpin/task-123" {
+				t.Fatalf("head query = %q, want acme:helpin/task-123", got)
+			}
+			if got := r.URL.Query().Get("base"); got != "develop" {
+				t.Fatalf("base query = %q, want develop", got)
+			}
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"number":   42,
+				"title":    "HLP-123: Improve delivery flow",
+				"html_url": "https://example.test/pr/42",
+				"head":     map[string]any{"ref": "helpin/task-123"},
+				"base":     map[string]any{"ref": "develop"},
+			}})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v3/repos/acme/rust-capture/pulls":
+			postCalled = true
+			t.Fatalf("did not expect PR creation request when an open PR already exists")
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	pr, err := ensureGitHubPullRequest(context.Background(), &model.GitIntegration{
+		Provider: "github",
+		BaseURL:  strPtr(server.URL),
+	}, "token-123", "acme/rust-capture", "helpin/task-123", "develop", "ignored", "ignored")
+	if err != nil {
+		t.Fatalf("ensureGitHubPullRequest returned error: %v", err)
+	}
+	if pr == nil {
+		t.Fatal("expected PR metadata")
+	}
+	if !pr.Existing {
+		t.Fatal("expected existing PR to be reused")
+	}
+	if pr.Metadata.Number != 42 {
+		t.Fatalf("pr number = %d, want 42", pr.Metadata.Number)
+	}
+	if pr.Title != "HLP-123: Improve delivery flow" {
+		t.Fatalf("title = %q", pr.Title)
+	}
+	if postCalled {
+		t.Fatal("did not expect create PR request")
+	}
+}
+
+func TestEnsureGitHubPullRequestCreatesPRWhenMissing(t *testing.T) {
+	t.Parallel()
+
+	var createPayload map[string]string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v3/repos/acme/rust-capture/pulls":
+			_ = json.NewEncoder(w).Encode([]map[string]any{})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v3/repos/acme/rust-capture/pulls":
+			if err := json.NewDecoder(r.Body).Decode(&createPayload); err != nil {
+				t.Fatalf("decode create payload: %v", err)
+			}
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"number":   77,
+				"title":    createPayload["title"],
+				"html_url": "https://example.test/pr/77",
+				"head":     map[string]any{"ref": createPayload["head"]},
+				"base":     map[string]any{"ref": createPayload["base"]},
+			})
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	pr, err := ensureGitHubPullRequest(context.Background(), &model.GitIntegration{
+		Provider: "github",
+		BaseURL:  strPtr(server.URL),
+	}, "token-123", "acme/rust-capture", "helpin/task-123", "release/2026.04", "HLP-123: Improve delivery flow", "body text")
+	if err != nil {
+		t.Fatalf("ensureGitHubPullRequest returned error: %v", err)
+	}
+	if pr == nil {
+		t.Fatal("expected created PR metadata")
+	}
+	if pr.Existing {
+		t.Fatal("expected a new PR to be created")
+	}
+	if pr.Metadata.Number != 77 {
+		t.Fatalf("pr number = %d, want 77", pr.Metadata.Number)
+	}
+	if createPayload["head"] != "helpin/task-123" {
+		t.Fatalf("head payload = %q, want helpin/task-123", createPayload["head"])
+	}
+	if createPayload["base"] != "release/2026.04" {
+		t.Fatalf("base payload = %q, want release/2026.04", createPayload["base"])
+	}
+	if createPayload["title"] != "HLP-123: Improve delivery flow" {
+		t.Fatalf("title payload = %q", createPayload["title"])
+	}
+}
+
+func TestRecordPushAndEnsureDeliveryPRMarksPRFailedWhenPROpenFails(t *testing.T) {
+	t.Parallel()
+
+	dbName := fmt.Sprintf("file:delivery-pr-failure-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agent_runs (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			agent_id TEXT NOT NULL,
+			task_id TEXT,
+			conversation_id TEXT,
+			target_type TEXT NOT NULL DEFAULT 'task',
+			target_id TEXT NOT NULL,
+			runtime_kind TEXT NOT NULL DEFAULT 'opencode',
+			invocation_mode TEXT NOT NULL DEFAULT 'autonomous',
+			parent_run_id TEXT,
+			handoff_state TEXT,
+			approval_state TEXT NOT NULL DEFAULT 'not_required',
+			pause_reason TEXT NOT NULL DEFAULT 'none',
+			triggered_by_user_id TEXT,
+			status TEXT NOT NULL DEFAULT 'queued',
+			workflow_id TEXT,
+			workflow_run_id TEXT,
+			task_queue TEXT,
+			runner_pool TEXT,
+			repository_id TEXT,
+			repo_full_name TEXT,
+			base_branch TEXT,
+			working_branch TEXT,
+			delivery_target_id TEXT,
+			execution_stage TEXT,
+			last_heartbeat_at DATETIME,
+			input BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
+			output_summary BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
+			cached_input_tokens INTEGER NOT NULL DEFAULT 0,
+			input_tokens INTEGER NOT NULL DEFAULT 0,
+			output_tokens INTEGER NOT NULL DEFAULT 0,
+			tokens_used INTEGER NOT NULL DEFAULT 0,
+			error_message TEXT,
+			started_at DATETIME,
+			completed_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE task_delivery_targets (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			task_id TEXT NOT NULL UNIQUE,
+			repository_id TEXT,
+			repo_full_name TEXT,
+			integration_id TEXT,
+			base_branch TEXT,
+			working_branch TEXT,
+			delivery_state TEXT NOT NULL DEFAULT 'unconfigured',
+			active_pr_number INTEGER,
+			active_pr_title TEXT,
+			active_pr_url TEXT,
+			active_pr_status TEXT,
+			last_commit_sha TEXT,
+			last_run_id TEXT,
+			last_synced_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE task_git_links (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			task_id TEXT NOT NULL,
+			integration_id TEXT NOT NULL,
+			repository_id TEXT,
+			run_id TEXT,
+			provider TEXT NOT NULL,
+			repo TEXT NOT NULL,
+			branch TEXT,
+			pr_number INTEGER,
+			pr_title TEXT,
+			pr_url TEXT,
+			pr_status TEXT,
+			commit_sha TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("exec schema: %v", err)
+		}
+	}
+
+	runRepo := repository.NewAgentRunRepository(db)
+	deliveryRepo := repository.NewTaskDeliveryTargetRepository(db)
+	gitLinkRepo := repository.NewTaskGitLinkRepository(db)
+
+	run := &model.AgentRun{
+		ID:          "run-1",
+		WorkspaceID: "ws-1",
+		AgentID:     "agent-1",
+		TaskID:      strPtr("task-1"),
+		TargetType:  "task",
+		TargetID:    "task-1",
+		BaseBranch:  strPtr("main"),
+	}
+	if err := db.Create(run).Error; err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	target := &model.TaskDeliveryTarget{
+		ID:            "delivery-1",
+		WorkspaceID:   "ws-1",
+		TaskID:        "task-1",
+		RepoFullName:  strPtr("acme/rust-capture"),
+		BaseBranch:    strPtr("main"),
+		WorkingBranch: strPtr("helpin/task-123"),
+		DeliveryState: "in_progress",
+	}
+	if err := db.Create(target).Error; err != nil {
+		t.Fatalf("create delivery target: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v3/repos/acme/rust-capture/pulls" {
+			t.Fatalf("unexpected request path %s", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]any{"message": "boom"})
+	}))
+	defer server.Close()
+
+	activities := &AgentRunActivities{
+		runRepo:      runRepo,
+		deliveryRepo: deliveryRepo,
+		gitLinkRepo:  gitLinkRepo,
+	}
+	state := &resolvedRunState{
+		run:            run,
+		task:           &model.PMTask{ID: "task-1", Name: "Improve delivery flow", DisplayID: 123},
+		repository:     &model.GitRepository{FullName: "acme/rust-capture", DefaultBranch: "main"},
+		integration:    &model.GitIntegration{Provider: "github", BaseURL: strPtr(server.URL)},
+		deliveryTarget: target,
+		accessToken:    "token-123",
+		workspaceKey:   "HLP",
+	}
+
+	err = activities.recordPushAndEnsureDeliveryPR(context.Background(), state, "helpin/task-123", "abc123")
+	if err != nil {
+		t.Fatalf("expected PR creation failure to be non-fatal, got %v", err)
+	}
+
+	updated, err := deliveryRepo.GetByTask(context.Background(), "ws-1", "task-1")
+	if err != nil {
+		t.Fatalf("reload delivery target: %v", err)
+	}
+	if updated == nil {
+		t.Fatal("expected delivery target after update")
+	}
+	if updated.DeliveryState != "pr_failed" {
+		t.Fatalf("delivery state = %q, want pr_failed", updated.DeliveryState)
 	}
 }
 

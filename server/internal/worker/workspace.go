@@ -319,7 +319,12 @@ func cloneURLFor(gitIntegration *model.GitIntegration, repo string) (string, err
 		return "", fmt.Errorf("unsupported git provider %q", gitIntegration.Provider)
 	}
 	if gitIntegration.BaseURL != nil && *gitIntegration.BaseURL != "" {
-		baseURL = *gitIntegration.BaseURL
+		switch gitIntegration.Provider {
+		case "github":
+			baseURL = model.ResolveGitHubWebBaseURL(gitIntegration.BaseURL)
+		default:
+			baseURL = *gitIntegration.BaseURL
+		}
 	}
 	return fmt.Sprintf("%s/%s.git", baseURL, repo), nil
 }
