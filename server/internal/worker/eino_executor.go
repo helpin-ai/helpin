@@ -34,6 +34,19 @@ type nativeToolPressureSummary struct {
 	TopToolsByPressure []string
 }
 
+func nativeContinuationMode(continuation *ProviderContinuation) string {
+	if continuation == nil {
+		return "fresh"
+	}
+	if strings.TrimSpace(continuation.ResponseID) != "" {
+		return "response_id"
+	}
+	if strings.TrimSpace(continuation.PreviousResponseID) != "" {
+		return "previous_response_id"
+	}
+	return "fresh"
+}
+
 func NewEinoExecutor(
 	kind string,
 	modelFactory *EinoModelFactory,
@@ -137,7 +150,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		"history_messages", len(history),
 		"artifact_entries", lenArtifactEntries(execCtx.ArtifactContext),
 		"tool_count", len(toolDefs),
-		"continuation_present", execCtx.ProviderContinuation != nil && strings.TrimSpace(execCtx.ProviderContinuation.ResponseID) != "",
+		"continuation_mode", nativeContinuationMode(execCtx.ProviderContinuation),
 	)
 
 	timeout := time.Duration(config.TimeoutMinutes) * time.Minute

@@ -307,6 +307,19 @@ func runtimeSkillRefKeys(refs model.AgentSkillRefs) []string {
 	return keys
 }
 
+func providerContinuationMode(continuation *workerpkg.ProviderContinuation) string {
+	if continuation == nil {
+		return "fresh"
+	}
+	if strings.TrimSpace(continuation.ResponseID) != "" {
+		return "response_id"
+	}
+	if strings.TrimSpace(continuation.PreviousResponseID) != "" {
+		return "previous_response_id"
+	}
+	return "fresh"
+}
+
 func recordActivityHeartbeatSafe(ctx context.Context, details ...interface{}) {
 	defer func() {
 		if recover() != nil {
@@ -625,7 +638,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		"preset_key", strings.TrimSpace(state.agent.EffectivePresetKey()),
 		"target_type", strings.TrimSpace(state.run.TargetType),
 		"native_selective_path_enabled", state.nativeSelectivePathEnabled,
-		"provider_continuation_present", providerContinuation != nil && strings.TrimSpace(providerContinuation.ResponseID) != "",
+		"continuation_mode", providerContinuationMode(providerContinuation),
 		"runtime_skill_refs", runtimeSkillRefKeys(state.runtimeSkillRefs),
 	)
 	var repoSkillMask *workerpkg.RepoSkillMask
