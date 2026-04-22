@@ -473,6 +473,49 @@ func TestBuildInitialInstructionsUsesNativeSelectiveTaskPhaseGuidance(t *testing
 	}
 }
 
+func TestBuildLegacyTaskPlannerRuleSectionsPreservesCriticalRules(t *testing.T) {
+	sections := buildLegacyTaskPlannerRuleSections(&model.AgentRun{
+		InvocationMode: model.InvocationModeInteractive,
+	})
+	instructions := strings.Join(sections, "\n\n")
+	for _, snippet := range []string{
+		"Run mode: interactive",
+		"The shared run drawer is available for live questions, draft previews, inline approvals, and change requests.",
+		"Treat this as one transcript-driven planning run.",
+		"Use this sequence unless the human explicitly redirects you: clarify scope if needed, draft or refine the task planning doc",
+		"Keep approvals soft and inline.",
+		"Treat request_approval as the final action in that turn.",
+		"Use publish_task_plan_doc for reviewable right-pane task planning documents.",
+		"publish_task_plan_doc must receive a JSON object where content is the full markdown planning draft under review.",
+		"Ground the planning document primarily in the task description, task comments, task-linked docs, and the current codebase context.",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected legacy task planner rule sections to contain %q\n%s", snippet, instructions)
+		}
+	}
+}
+
+func TestBuildNativeTaskPlannerRuleSectionsPreservesCriticalRules(t *testing.T) {
+	sections := buildNativeTaskPlannerRuleSections(&model.AgentRun{
+		InvocationMode: model.InvocationModeInteractive,
+	}, model.PlanningStageTaskPlanDoc)
+	instructions := strings.Join(sections, "\n\n")
+	for _, snippet := range []string{
+		"Current planning phase: task_plan_doc",
+		"Phase objective: refine a task-scoped implementation planning document, publish it with publish_task_plan_doc, and stop at inline approval.",
+		"Treat this as a transcript-driven task planning run.",
+		"Next-step rule: clarify scope only when blocked",
+		"Approval rule: use request_approval with phase=\"task_doc\" only after publish_task_plan_doc in the same turn.",
+		"Contract reminder: publish_task_plan_doc must receive one JSON object whose content field contains the full markdown draft under review.",
+		"Focus rule: keep the planning document grounded in the task description, task comments, task-linked docs, parent-epic constraints that matter to this task, and the current codebase context.",
+		"Interactive approval semantics: explicit approval advances the run; change requests, critique, concerns, and ambiguous replies mean the draft is still unapproved and must be revised in the same transcript.",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected native task planner rule sections to contain %q\n%s", snippet, instructions)
+		}
+	}
+}
+
 func TestBuildInitialInstructionsUsesNativeSelectiveEpicTaskPlanningGuidanceAfterPRDApproval(t *testing.T) {
 	activity := &AgentRunActivities{}
 	state := &resolvedRunState{

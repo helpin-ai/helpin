@@ -6140,21 +6140,7 @@ func (a *AgentRunActivities) buildTaskPlannerInstructions(ctx context.Context, s
 		return "", fmt.Errorf("task planner requires a task target")
 	}
 
-	var sections []string
-	sections = append(sections, fmt.Sprintf("Run mode: %s", state.run.InvocationMode))
-	if state.run.InvocationMode == model.InvocationModeInteractive {
-		sections = append(sections, "The shared run drawer is available for live questions, draft previews, inline approvals, and change requests.")
-		sections = append(sections, "Treat this as one transcript-driven planning run. Humans approve and request changes with normal chat replies in this same transcript.")
-		sections = append(sections, "Only a clear explicit approval counts as approval. Requested changes, critique, concerns, or ambiguous replies mean the draft is not approved yet.")
-	}
-	sections = append(sections, "Choose the next step from the transcript, task details, parent epic context, linked docs, comments, code context, and tool results.")
-	sections = append(sections, "Use this sequence unless the human explicitly redirects you: clarify scope if needed, draft or refine the task planning doc, publish it with publish_task_plan_doc, wait for inline approval, then stop. The platform will persist and link the approved preview to the canonical task planning doc automatically.")
-	sections = append(sections, "Keep approvals soft and inline. When you need approval, call request_approval with phase=\"task_doc\" and stop after the request.")
-	sections = append(sections, "Treat request_approval as the final action in that turn. Do not call more tools after it, and do not append extra approval-choice prose after requesting approval.")
-	sections = append(sections, "Use publish_task_plan_doc for reviewable right-pane task planning documents.")
-	sections = append(sections, "publish_task_plan_doc must receive a JSON object where content is the full markdown planning draft under review. Do not send title-only payloads or empty content.")
-	sections = append(sections, "Treat parent epic details, the epic PRD, and epic-linked docs as background context only. Use them to understand constraints, inherited requirements, and non-goals, but do not copy them wholesale into the task planning document unless they directly affect this task's implementation.")
-	sections = append(sections, "Ground the planning document primarily in the task description, task comments, task-linked docs, and the current codebase context. Keep the output focused on this task's implementation plan.")
+	sections := buildLegacyTaskPlannerRuleSections(state.run)
 
 	contextSections, err := a.buildTaskPlannerContextSections(ctx, state, input)
 	if err != nil {
@@ -6163,6 +6149,34 @@ func (a *AgentRunActivities) buildTaskPlannerInstructions(ctx context.Context, s
 	sections = append(sections, contextSections...)
 
 	return strings.Join(sections, "\n\n"), nil
+}
+
+func buildLegacyTaskPlannerRuleSections(run *model.AgentRun) []string {
+	invocationMode := ""
+	if run != nil {
+		invocationMode = run.InvocationMode
+	}
+	sections := []string{
+		fmt.Sprintf("Run mode: %s", invocationMode),
+	}
+	if invocationMode == model.InvocationModeInteractive {
+		sections = append(sections,
+			"The shared run drawer is available for live questions, draft previews, inline approvals, and change requests.",
+			"Treat this as one transcript-driven planning run. Humans approve and request changes with normal chat replies in this same transcript.",
+			"Only a clear explicit approval counts as approval. Requested changes, critique, concerns, or ambiguous replies mean the draft is not approved yet.",
+		)
+	}
+	sections = append(sections,
+		"Choose the next step from the transcript, task details, parent epic context, linked docs, comments, code context, and tool results.",
+		"Use this sequence unless the human explicitly redirects you: clarify scope if needed, draft or refine the task planning doc, publish it with publish_task_plan_doc, wait for inline approval, then stop. The platform will persist and link the approved preview to the canonical task planning doc automatically.",
+		"Keep approvals soft and inline. When you need approval, call request_approval with phase=\"task_doc\" and stop after the request.",
+		"Treat request_approval as the final action in that turn. Do not call more tools after it, and do not append extra approval-choice prose after requesting approval.",
+		"Use publish_task_plan_doc for reviewable right-pane task planning documents.",
+		"publish_task_plan_doc must receive a JSON object where content is the full markdown planning draft under review. Do not send title-only payloads or empty content.",
+		"Treat parent epic details, the epic PRD, and epic-linked docs as background context only. Use them to understand constraints, inherited requirements, and non-goals, but do not copy them wholesale into the task planning document unless they directly affect this task's implementation.",
+		"Ground the planning document primarily in the task description, task comments, task-linked docs, and the current codebase context. Keep the output focused on this task's implementation plan.",
+	)
+	return sections
 }
 
 func (a *AgentRunActivities) buildTaskPlannerContextSections(ctx context.Context, state *resolvedRunState, input planningRunInput) ([]string, error) {
@@ -6274,6 +6288,16 @@ func (a *AgentRunActivities) buildNativeTaskPlannerPhaseGuidance(ctx context.Con
 	if phaseName == "" {
 		phaseName = model.PlanningStageTaskPlanDoc
 	}
+	sections := buildNativeTaskPlannerRuleSections(state.run, phaseName)
+	contextSections, err := a.buildTaskPlannerContextSections(ctx, state, input)
+	if err != nil {
+		return "", err
+	}
+	sections = append(sections, contextSections...)
+	return strings.Join(sections, "\n\n"), nil
+}
+
+func buildNativeTaskPlannerRuleSections(run *model.AgentRun, phaseName string) []string {
 	sections := []string{
 		fmt.Sprintf("Current planning phase: %s", phaseName),
 		"Phase objective: refine a task-scoped implementation planning document, publish it with publish_task_plan_doc, and stop at inline approval.",
@@ -6283,15 +6307,10 @@ func (a *AgentRunActivities) buildNativeTaskPlannerPhaseGuidance(ctx context.Con
 		"Contract reminder: publish_task_plan_doc must receive one JSON object whose content field contains the full markdown draft under review.",
 		"Focus rule: keep the planning document grounded in the task description, task comments, task-linked docs, parent-epic constraints that matter to this task, and the current codebase context.",
 	}
-	if state.run.InvocationMode == model.InvocationModeInteractive {
+	if run != nil && run.InvocationMode == model.InvocationModeInteractive {
 		sections = append(sections, "Interactive approval semantics: explicit approval advances the run; change requests, critique, concerns, and ambiguous replies mean the draft is still unapproved and must be revised in the same transcript.")
 	}
-	contextSections, err := a.buildTaskPlannerContextSections(ctx, state, input)
-	if err != nil {
-		return "", err
-	}
-	sections = append(sections, contextSections...)
-	return strings.Join(sections, "\n\n"), nil
+	return sections
 }
 
 func (a *AgentRunActivities) buildTaskExecutionInstructions(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
