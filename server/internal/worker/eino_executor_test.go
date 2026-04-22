@@ -49,6 +49,42 @@ func TestResolveNativeSystemPromptKeepsResolvedSkillTextForLegacyPath(t *testing
 	}
 }
 
+func TestResolveNativeInitialInstructionTransportMovesPlannerInstructionsToTurnLocalForSelectivePath(t *testing.T) {
+	userPromptInitialInstructions, turnLocalInstructions, transport := resolveNativeInitialInstructionTransport(&ExecutionContext{
+		InitialInstructions:        "Run mode: interactive\nDraft the PRD first.",
+		NativeSelectivePathEnabled: true,
+	})
+
+	if strings.TrimSpace(userPromptInitialInstructions) != "" {
+		t.Fatalf("expected selective path to suppress persisted user-prompt initial instructions, got %q", userPromptInitialInstructions)
+	}
+	if transport != "turn_local" {
+		t.Fatalf("expected turn_local initial-instruction transport, got %q", transport)
+	}
+	if !strings.Contains(turnLocalInstructions, "Current phase guidance for this turn:") {
+		t.Fatalf("expected turn-local initial-instruction heading, got %q", turnLocalInstructions)
+	}
+	if !strings.Contains(turnLocalInstructions, "Draft the PRD first.") {
+		t.Fatalf("expected planner instructions to move into turn-local transport, got %q", turnLocalInstructions)
+	}
+}
+
+func TestResolveNativeInitialInstructionTransportKeepsLegacyUserPromptBehavior(t *testing.T) {
+	userPromptInitialInstructions, turnLocalInstructions, transport := resolveNativeInitialInstructionTransport(&ExecutionContext{
+		InitialInstructions: "Run mode: interactive\nDraft the PRD first.",
+	})
+
+	if !strings.Contains(userPromptInitialInstructions, "Draft the PRD first.") {
+		t.Fatalf("expected legacy path to keep initial instructions in the user prompt, got %q", userPromptInitialInstructions)
+	}
+	if strings.TrimSpace(turnLocalInstructions) != "" {
+		t.Fatalf("expected no turn-local initial instructions for legacy path, got %q", turnLocalInstructions)
+	}
+	if transport != "user_prompt" {
+		t.Fatalf("expected user_prompt initial-instruction transport, got %q", transport)
+	}
+}
+
 func TestResolveNativeSupplementTransportMovesSupplementToTurnLocalForSelectivePath(t *testing.T) {
 	systemPrompt, turnLocalInstructions, transport := resolveNativeSupplementTransport(
 		&model.AgentRun{InvocationMode: model.InvocationModeInteractive},

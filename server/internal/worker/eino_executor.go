@@ -58,6 +58,20 @@ func resolveNativeSystemPrompt(execCtx *ExecutionContext, config *WorkflowConfig
 	return buildSystemPromptWithOptions(execCtx.Agent, execCtx.Task, execCtx.Epic, execCtx.Conversation, execCtx.PlanningStage, execCtx.PlanningMethodology, config, options), options.IncludeResolvedSkillText
 }
 
+func resolveNativeInitialInstructionTransport(execCtx *ExecutionContext) (string, string, string) {
+	if execCtx == nil {
+		return "", "", "none"
+	}
+	initialInstructions := strings.TrimSpace(execCtx.InitialInstructions)
+	if initialInstructions == "" {
+		return "", "", "none"
+	}
+	if execCtx.NativeSelectivePathEnabled {
+		return "", "Current phase guidance for this turn:\n" + initialInstructions, "turn_local"
+	}
+	return initialInstructions, "", "user_prompt"
+}
+
 func resolveNativeSupplementTransport(run *model.AgentRun, execCtx *ExecutionContext, systemPrompt string) (string, string, string) {
 	trimmedSystemPrompt := strings.TrimSpace(systemPrompt)
 	turnLocalInstructions := ""
@@ -183,6 +197,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		}
 	}
 
+	userPromptInitialInstructions, initialTurnLocalInstructions, initialInstructionTransport := resolveNativeInitialInstructionTransport(execCtx)
 	userPrompt := BuildUserPrompt(
 		execCtx.Agent,
 		execCtx.Task,
@@ -193,11 +208,12 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		checklist,
 		execCtx.ArtifactContext,
 		execCtx.PlanningStage,
-		execCtx.InitialInstructions,
+		userPromptInitialInstructions,
 	)
 
 	history := append([]ExecutionMessage(nil), execCtx.ConversationHistory...)
 	systemPrompt, turnLocalInstructions, supplementTransport := resolveNativeSupplementTransport(run, execCtx, systemPrompt)
+	turnLocalInstructions = joinInstructionSections(initialTurnLocalInstructions, turnLocalInstructions)
 	if len(history) == 0 {
 		history = []ExecutionMessage{{
 			Role:    "user",
@@ -219,6 +235,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		"target_type", strings.TrimSpace(execCtx.TargetType),
 		"native_selective_path_enabled", execCtx.NativeSelectivePathEnabled,
 		"system_prompt_includes_resolved_skill_text", includesResolvedSkillText,
+		"initial_instruction_transport", initialInstructionTransport,
 		"runtime_skill_ref_count", len(execCtx.RuntimeSkillRefs),
 		"active_skill_ref_count", len(execCtx.ActiveRuntimeSkillRefs),
 		"active_skill_instruction_chars", len([]rune(trimmedActiveSkillInstructions)),
