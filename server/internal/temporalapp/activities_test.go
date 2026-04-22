@@ -530,6 +530,25 @@ func TestClassifyNativeRepairInstructionForRequiredInteractionHandoff(t *testing
 	}
 }
 
+func TestLatestNativeRepairInstructionFallsBackToGenericRequiredHandoff(t *testing.T) {
+	state := &resolvedRunState{nativeSelectivePathEnabled: true}
+	messages := []model.AgentRunMessage{
+		{
+			Role:        "user",
+			MessageType: "policy_retry",
+			Content:     "System correction: use the exact contract from the last error.",
+		},
+	}
+
+	got := latestNativeRepairInstruction(state, messages)
+	if got.Class != "required_interaction_handoff" {
+		t.Fatalf("expected generic fallback class, got %#v", got)
+	}
+	if !strings.Contains(got.Instructions, "Continue from your last assistant turn") {
+		t.Fatalf("expected fallback repair guidance to remain usable, got %q", got.Instructions)
+	}
+}
+
 func TestReplayMessagesForExecutionStripsPolicyRetryForSelectivePath(t *testing.T) {
 	messages := []model.AgentRunMessage{
 		{Role: "user", MessageType: "prompt", Content: "Initial request"},
