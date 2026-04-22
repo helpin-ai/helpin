@@ -1614,6 +1614,15 @@ func (a *AgentRunActivities) ensureRunConversation(ctx context.Context, state *r
 		return nil, nil, nil, "", err
 	}
 	history := workerpkg.BuildExecutionHistory(replayMessages, transcriptSummary)
+	slog.InfoContext(ctx, "agent run prepared execution history",
+		"workspace_id", state.run.WorkspaceID,
+		"run_id", state.run.ID,
+		"native_selective_path_enabled", state.nativeSelectivePathEnabled,
+		"repair_guidance_present", strings.TrimSpace(repairGuidance) != "",
+		"filtered_policy_retry_messages", len(messages)-len(replayMessages),
+		"history_messages", len(history),
+		"transcript_summary_present", transcriptSummary != nil && strings.TrimSpace(transcriptSummary.Summary) != "",
+	)
 	return history, artifactContext, providerContinuation, repairGuidance, nil
 }
 
