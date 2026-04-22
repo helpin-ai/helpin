@@ -516,6 +516,95 @@ func TestBuildNativeTaskPlannerRuleSectionsPreservesCriticalRules(t *testing.T) 
 	}
 }
 
+func TestBuildApprovedSpecVersionSectionsIncludesSnapshot(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	if err := db.Exec(`INSERT INTO docs_versions (id, document_id, content_text, version_type, created_by, created_at)
+		VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`, "ver-1", "doc-1", "Approved spec body", "manual", "user-1").Error; err != nil {
+		t.Fatalf("insert docs version: %v", err)
+	}
+
+	activity := &AgentRunActivities{
+		docsVersionRepo: repository.NewDocsVersionRepository(db),
+	}
+	sections, err := activity.buildApprovedSpecVersionSections(context.Background(), "ver-1", "Approved spec version ID", "Approved spec snapshot", 12000)
+	if err != nil {
+		t.Fatalf("buildApprovedSpecVersionSections returned error: %v", err)
+	}
+	instructions := strings.Join(sections, "\n\n")
+	for _, snippet := range []string{
+		"Approved spec version ID: ver-1",
+		"Approved spec snapshot:\nApproved spec body",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected approved spec helper output to contain %q\n%s", snippet, instructions)
+		}
+	}
+}
+
+func TestBuildSpecDocumentDraftSectionsIncludesDraft(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	if err := db.Exec(`INSERT INTO docs_contents (id, document_id, content_text, word_count) VALUES (?, ?, ?, ?)`, "content-1", "doc-1", "Draft spec body", 3).Error; err != nil {
+		t.Fatalf("insert docs content: %v", err)
+	}
+
+	activity := &AgentRunActivities{
+		docsContentRepo: repository.NewDocsContentRepository(db),
+	}
+	sections, found, err := activity.buildSpecDocumentDraftSections(context.Background(), "doc-1", "Spec document ID", "Current spec draft", 12000)
+	if err != nil {
+		t.Fatalf("buildSpecDocumentDraftSections returned error: %v", err)
+	}
+	if !found {
+		t.Fatal("expected draft content to be found")
+	}
+	instructions := strings.Join(sections, "\n\n")
+	for _, snippet := range []string{
+		"Spec document ID: doc-1",
+		"Current spec draft:\nDraft spec body",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected draft spec helper output to contain %q\n%s", snippet, instructions)
+		}
+	}
+}
+
+func TestBuildTaskPlannerContextSectionsIncludesApprovedEpicSpecSnapshot(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	if err := db.Exec(`INSERT INTO docs_versions (id, document_id, content_text, version_type, created_by, created_at)
+		VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`, "ver-1", "doc-1", "Approved epic spec body", "manual", "user-1").Error; err != nil {
+		t.Fatalf("insert docs version: %v", err)
+	}
+
+	activity := &AgentRunActivities{
+		docsVersionRepo: repository.NewDocsVersionRepository(db),
+	}
+	state := &resolvedRunState{
+		run: &model.AgentRun{
+			WorkspaceID: "ws-1",
+		},
+		task: &model.PMTask{
+			ID:          "task-1",
+			WorkspaceID: "ws-1",
+			Name:        "Implement approvals",
+		},
+	}
+	sections, err := activity.buildTaskPlannerContextSections(context.Background(), state, planningRunInput{
+		SpecVersionID: "ver-1",
+	})
+	if err != nil {
+		t.Fatalf("buildTaskPlannerContextSections returned error: %v", err)
+	}
+	instructions := strings.Join(sections, "\n\n")
+	for _, snippet := range []string{
+		"Approved epic PRD version ID: ver-1",
+		"Approved epic PRD snapshot:\nApproved epic spec body",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected task planner context to contain %q\n%s", snippet, instructions)
+		}
+	}
+}
+
 func TestBuildInitialInstructionsUsesNativeSelectiveEpicTaskPlanningGuidanceAfterPRDApproval(t *testing.T) {
 	activity := &AgentRunActivities{}
 	state := &resolvedRunState{
