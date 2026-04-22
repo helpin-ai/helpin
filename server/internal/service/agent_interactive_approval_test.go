@@ -1922,7 +1922,7 @@ func TestApproveRunPersistsProvidedApprovalContent(t *testing.T) {
 	}
 
 	updated, err := svc.ApproveRun(context.Background(), "ws-1", run.ID, "user-1", model.ApproveAgentRunRequest{
-		Content:     "PRD approved. Continue to stories.",
+		Content:     "PRD approved. Continue to tasks.",
 		SendMessage: true,
 	})
 	if err != nil {
@@ -1939,7 +1939,7 @@ func TestApproveRunPersistsProvidedApprovalContent(t *testing.T) {
 	if len(messages) != 1 {
 		t.Fatalf("expected 1 approval message, got %d", len(messages))
 	}
-	if messages[0].MessageType != "approval" || messages[0].Content != "PRD approved. Continue to stories." {
+	if messages[0].MessageType != "approval" || messages[0].Content != "PRD approved. Continue to tasks." {
 		t.Fatalf("unexpected approval message: %#v", messages[0])
 	}
 }

@@ -151,7 +151,7 @@ func TestPresetDefinitionForAgentFallsBackToFamilyDefaultVersion(t *testing.T) {
 		t.Fatal("expected preset resolution for invalid version")
 	}
 	if preset.Key != model.AgentPresetTaskPlanner {
-		t.Fatalf("expected story planner preset, got %q", preset.Key)
+		t.Fatalf("expected task planner preset, got %q", preset.Key)
 	}
 	if preset.VersionKey != defaultPresetVersionKeyForPresetKey(model.AgentPresetTaskPlanner) {
 		t.Fatalf("expected fallback version %q, got %q", defaultPresetVersionKeyForPresetKey(model.AgentPresetTaskPlanner), preset.VersionKey)

@@ -219,13 +219,13 @@ func BuildUserPrompt(
 			}
 		}
 		if len(epicStories) > 0 {
-			contextParts = append(contextParts, "\nExisting stories already linked to this epic:")
-			for _, story := range epicStories {
-				storyType := story.TaskType
-				if storyType == "" {
-					storyType = "feature"
+			contextParts = append(contextParts, "\nExisting tasks already linked to this epic:")
+			for _, task := range epicStories {
+				taskType := task.TaskType
+				if taskType == "" {
+					taskType = "feature"
 				}
-				contextParts = append(contextParts, fmt.Sprintf("- %s (type=%s)", story.Name, storyType))
+				contextParts = append(contextParts, fmt.Sprintf("- %s (type=%s)", task.Name, taskType))
 			}
 		}
 	}

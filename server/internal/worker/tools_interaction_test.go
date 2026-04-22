@@ -288,7 +288,7 @@ func TestPublishStoryPlanToolPublishesCanonicalPreview(t *testing.T) {
 	}
 	for _, snippet := range []string{`"panel_key":"task_plan"`, `"title":"Task Plan"`, `"format":"json"`} {
 		if !strings.Contains(output, snippet) {
-			t.Fatalf("expected story plan preview payload to contain %q, got %s", snippet, output)
+			t.Fatalf("expected task plan preview payload to contain %q, got %s", snippet, output)
 		}
 	}
 }
@@ -313,7 +313,7 @@ func TestPublishStoryPlanToolAcceptsNestedPreviewPayload(t *testing.T) {
 	}
 	for _, snippet := range []string{`"panel_key":"task_plan"`, `"format":"json"`} {
 		if !strings.Contains(output, snippet) {
-			t.Fatalf("expected nested story plan preview payload to contain %q, got %s", snippet, output)
+			t.Fatalf("expected nested task plan preview payload to contain %q, got %s", snippet, output)
 		}
 	}
 }
@@ -337,7 +337,7 @@ func TestPublishStoryPlanToolAcceptsRawPlanObject(t *testing.T) {
 	}
 	for _, snippet := range []string{`"panel_key":"task_plan"`, `"format":"json"`} {
 		if !strings.Contains(output, snippet) {
-			t.Fatalf("expected raw story plan object preview payload to contain %q, got %s", snippet, output)
+			t.Fatalf("expected raw task plan object preview payload to contain %q, got %s", snippet, output)
 		}
 	}
 }
@@ -359,7 +359,7 @@ func TestPublishStoryPlanToolRejectsJSONStringContent(t *testing.T) {
 		t.Fatal("expected publish_task_plan to reject stringified JSON content")
 	}
 	if !strings.Contains(err.Error(), "publish_task_plan content must be a JSON object with summary and proposed_tasks") {
-		t.Fatalf("expected structured story plan error, got %v", err)
+		t.Fatalf("expected structured task plan error, got %v", err)
 	}
 }
 
@@ -380,7 +380,7 @@ func TestPublishStoryPlanToolRejectsNonObjectJSONStringContent(t *testing.T) {
 		t.Fatal("expected publish_task_plan to reject non-object string content")
 	}
 	if !strings.Contains(err.Error(), "publish_task_plan content must be a JSON object with summary and proposed_tasks") {
-		t.Fatalf("expected repair-oriented story plan error, got %v", err)
+		t.Fatalf("expected repair-oriented task plan error, got %v", err)
 	}
 }
 
@@ -397,7 +397,7 @@ func TestPublishStoryPlanToolRejectsStringTaskEntries(t *testing.T) {
 		"title": "Task Plan",
 		"content": {
 			"summary": "Need to replace with correct structured payload.",
-			"proposed_tasks": ["story_1"]
+			"proposed_tasks": ["task_1"]
 		}
 	}`))
 	if err == nil {
