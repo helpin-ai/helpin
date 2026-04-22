@@ -706,6 +706,36 @@ func TestLatestNativeRepairInstructionPrefersPublishTaskPlanDocToolFailure(t *te
 	}
 }
 
+func TestLatestNativeRepairInstructionPrefersPublishPRDDraftToolFailure(t *testing.T) {
+	state := &resolvedRunState{
+		nativeSelectivePathEnabled: true,
+	}
+	blocks, err := json.Marshal([]workerpkg.ExecutionBlock{
+		{
+			Type:     workerpkg.ExecutionBlockTypeToolResult,
+			ToolName: workerpkg.ToolPublishPRDDraft,
+			Output:   `publish_prd_draft content must be a markdown string in "content"`,
+			IsError:  true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal blocks: %v", err)
+	}
+	messages := []model.AgentRunMessage{
+		{Role: "assistant", MessageType: "assistant_turn", Content: "Trying to publish the PRD draft."},
+		{Role: "tool", MessageType: "tool_result", Content: `publish_prd_draft content must be a markdown string in "content"`, ContentBlocks: blocks},
+		{Role: "user", MessageType: "policy_retry", Content: "System correction: continue from your last assistant turn."},
+	}
+
+	got := latestNativeRepairInstruction(state, messages)
+	if got.Class != "publish_prd_draft_markdown_type" {
+		t.Fatalf("expected publish_prd_draft repair class, got %#v", got)
+	}
+	if !strings.Contains(got.Instructions, "full PRD markdown draft") {
+		t.Fatalf("expected publish_prd_draft repair guidance, got %q", got.Instructions)
+	}
+}
+
 func TestLatestUnresolvedNativeToolFailureIgnoresOlderToolFailureAfterLaterAssistant(t *testing.T) {
 	oldBlocks, err := json.Marshal([]workerpkg.ExecutionBlock{
 		{
