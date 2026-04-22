@@ -658,6 +658,16 @@ func TestNormalizedCompletionRetryInstructionForReviewAgent(t *testing.T) {
 	}
 }
 
+func TestNormalizedCompletionRetryInstructionHandlesNilState(t *testing.T) {
+	got := normalizedCompletionRetryInstruction(nil, fmt.Errorf("completion interaction missing"))
+	if got.Class != "required_interaction_handoff" {
+		t.Fatalf("expected generic required-interaction class, got %#v", got)
+	}
+	if !strings.Contains(got.Instructions, "required interaction handoffs") {
+		t.Fatalf("expected generic retry instruction, got %q", got.Instructions)
+	}
+}
+
 func TestLatestNativeRepairInstructionFromArtifactsUsesLatestAssistantSequence(t *testing.T) {
 	messages := []model.AgentRunMessage{
 		{SequenceNo: 1, Role: "user", MessageType: "prompt", Content: "Start"},

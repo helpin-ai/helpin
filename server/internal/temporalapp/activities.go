@@ -737,7 +737,11 @@ func normalizedCompletionRetryInstruction(state *resolvedRunState, cause error) 
 			Instructions: "System correction: the previous turn requested approval without binding it to a same-turn preview. Continue from your last assistant message instead of restarting. Do not end with prose only. If you emit request_approval or request_review_checkpoint, first publish the preview in the same turn. When multiple previews exist in that turn, include preview_panel_key so it binds to the correct preview.",
 		}
 	default:
-		requiredKinds := sortedCompletionInteractionKinds(completionRequiredInteractionKinds(state.skillPolicy))
+		policy := workerpkg.SkillPolicy{}
+		if state != nil {
+			policy = state.skillPolicy
+		}
+		requiredKinds := sortedCompletionInteractionKinds(completionRequiredInteractionKinds(policy))
 		instruction := "System correction: the previous turn ended without creating the required interaction. Continue from your last assistant message instead of restarting. Do not end with prose only. Before this run stops, emit one of the required interaction handoffs declared by the active skill policy."
 		if len(requiredKinds) > 0 {
 			instruction = instruction + " Required interaction kinds for this turn: " + strings.Join(requiredKinds, ", ") + "."
