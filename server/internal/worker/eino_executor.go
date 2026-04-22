@@ -47,7 +47,7 @@ func nativeContinuationMode(continuation *ProviderContinuation) string {
 	return "fresh"
 }
 
-func resolveNativeSupplementTransport(run *model.AgentRun, execCtx *ExecutionContext, systemPrompt string) (string, string) {
+func resolveNativeSupplementTransport(run *model.AgentRun, execCtx *ExecutionContext, systemPrompt string) (string, string, string) {
 	trimmedSystemPrompt := strings.TrimSpace(systemPrompt)
 	turnLocalInstructions := ""
 	if execCtx != nil {
@@ -56,12 +56,15 @@ func resolveNativeSupplementTransport(run *model.AgentRun, execCtx *ExecutionCon
 
 	supplement := BuildExecutionSupplementPrompt(run, executionContextRunFacts(execCtx), executionContextArtifactContext(execCtx))
 	if execCtx != nil && execCtx.NativeSelectivePathEnabled {
-		return trimmedSystemPrompt, joinInstructionSections(turnLocalInstructions, supplement)
+		if strings.TrimSpace(supplement) == "" {
+			return trimmedSystemPrompt, turnLocalInstructions, "none"
+		}
+		return trimmedSystemPrompt, joinInstructionSections(turnLocalInstructions, supplement), "turn_local"
 	}
 	if supplement == "" {
-		return trimmedSystemPrompt, turnLocalInstructions
+		return trimmedSystemPrompt, turnLocalInstructions, "none"
 	}
-	return strings.TrimSpace(trimmedSystemPrompt + "\n\n## Current Run State\n" + supplement), turnLocalInstructions
+	return strings.TrimSpace(trimmedSystemPrompt + "\n\n## Current Run State\n" + supplement), turnLocalInstructions, "system"
 }
 
 func joinInstructionSections(parts ...string) string {
@@ -168,7 +171,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 	)
 
 	history := append([]ExecutionMessage(nil), execCtx.ConversationHistory...)
-	systemPrompt, turnLocalInstructions := resolveNativeSupplementTransport(run, execCtx, systemPrompt)
+	systemPrompt, turnLocalInstructions, supplementTransport := resolveNativeSupplementTransport(run, execCtx, systemPrompt)
 	if len(history) == 0 {
 		history = []ExecutionMessage{{
 			Role:    "user",
@@ -189,6 +192,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		"target_type", strings.TrimSpace(execCtx.TargetType),
 		"native_selective_path_enabled", execCtx.NativeSelectivePathEnabled,
 		"runtime_skill_ref_count", len(execCtx.RuntimeSkillRefs),
+		"supplement_transport", supplementTransport,
 		"turn_local_instructions_present", trimmedTurnLocalInstructions != "",
 		"turn_local_instruction_chars", len([]rune(trimmedTurnLocalInstructions)),
 		"history_messages", len(history),

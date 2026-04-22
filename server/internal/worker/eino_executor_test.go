@@ -8,7 +8,7 @@ import (
 )
 
 func TestResolveNativeSupplementTransportMovesSupplementToTurnLocalForSelectivePath(t *testing.T) {
-	systemPrompt, turnLocalInstructions := resolveNativeSupplementTransport(
+	systemPrompt, turnLocalInstructions, transport := resolveNativeSupplementTransport(
 		&model.AgentRun{InvocationMode: model.InvocationModeInteractive},
 		&ExecutionContext{
 			NativeSelectivePathEnabled: true,
@@ -34,6 +34,9 @@ func TestResolveNativeSupplementTransportMovesSupplementToTurnLocalForSelectiveP
 	if systemPrompt != "Base system prompt" {
 		t.Fatalf("expected selective path to leave system prompt unchanged, got %q", systemPrompt)
 	}
+	if transport != "turn_local" {
+		t.Fatalf("expected turn_local supplement transport, got %q", transport)
+	}
 	if !strings.Contains(turnLocalInstructions, "Existing turn-local contract.") {
 		t.Fatalf("expected existing turn-local instructions to be preserved, got %q", turnLocalInstructions)
 	}
@@ -46,7 +49,7 @@ func TestResolveNativeSupplementTransportMovesSupplementToTurnLocalForSelectiveP
 }
 
 func TestResolveNativeSupplementTransportKeepsSupplementInSystemPromptForLegacyPath(t *testing.T) {
-	systemPrompt, turnLocalInstructions := resolveNativeSupplementTransport(
+	systemPrompt, turnLocalInstructions, transport := resolveNativeSupplementTransport(
 		&model.AgentRun{InvocationMode: model.InvocationModeInteractive},
 		&ExecutionContext{
 			RunFacts: map[string]string{
@@ -58,6 +61,9 @@ func TestResolveNativeSupplementTransportKeepsSupplementInSystemPromptForLegacyP
 
 	if !strings.Contains(systemPrompt, "## Current Run State") {
 		t.Fatalf("expected legacy path to append supplement into system prompt, got %q", systemPrompt)
+	}
+	if transport != "system" {
+		t.Fatalf("expected system supplement transport, got %q", transport)
 	}
 	if !strings.Contains(systemPrompt, "target_id=epic-123") {
 		t.Fatalf("expected durable run facts in legacy system prompt supplement, got %q", systemPrompt)
