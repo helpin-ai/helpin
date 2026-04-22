@@ -688,6 +688,9 @@ func TestLatestNativeRepairInstructionFromArtifactsUsesLatestAssistantSequence(t
 	}
 
 	got := latestNativeRepairInstructionFromArtifacts(messages, artifacts)
+	if got.Source != "native_repair_state:tool_failure" {
+		t.Fatalf("expected repair artifact source, got %#v", got)
+	}
 	if got.Class != "publish_task_plan_object_shape" {
 		t.Fatalf("expected repair artifact class, got %#v", got)
 	}
@@ -4273,8 +4276,9 @@ func TestPersistAssistantRunMessagePersistsNativeTurnDebugArtifact(t *testing.T)
 				model.AgentRunInteractionKindReviewCheckpoint,
 			},
 		},
-		RepairGuidance:      "Retry with a same-turn preview binding.",
-		RepairGuidanceClass: "approval_preview_binding",
+		RepairGuidance:       "Retry with a same-turn preview binding.",
+		RepairGuidanceSource: "completion_retry",
+		RepairGuidanceClass:  "approval_preview_binding",
 		LastExecutionResult: &workerpkg.ExecutionResult{
 			AssistantText: "Need to retry the approval handoff.",
 		},
@@ -4327,6 +4331,9 @@ func TestPersistAssistantRunMessagePersistsNativeTurnDebugArtifact(t *testing.T)
 		}
 		if !payload.RepairGuidancePresent {
 			t.Fatal("expected repair guidance to be marked present")
+		}
+		if payload.RepairGuidanceSource != "completion_retry" {
+			t.Fatalf("expected repair guidance source to be preserved, got %q", payload.RepairGuidanceSource)
 		}
 		if payload.RepairGuidanceClass != "approval_preview_binding" {
 			t.Fatalf("expected repair guidance class to be preserved, got %q", payload.RepairGuidanceClass)
@@ -5883,10 +5890,12 @@ func TestExecuteRunActivityThreadsNativeRepairGuidanceWithoutReplayingPolicyRetr
 	runMessageRepo := repository.NewAgentRunMessageRepository(db)
 	interactionRepo := repository.NewAgentRunInteractionRepository(db)
 	agentRepo := repository.NewAgentRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
 	epicRepo := repository.NewPMEpicRepository(db)
 	docsDocRepo := repository.NewDocsDocumentRepository(db)
 	docsContentRepo := repository.NewDocsContentRepository(db)
 	docsLinkRepo := repository.NewDocsLinkRepository(db)
+	var capturedRepairGuidanceSource string
 
 	now := time.Now().UTC()
 	agent := &model.Agent{
@@ -5951,6 +5960,7 @@ func TestExecuteRunActivityThreadsNativeRepairGuidanceWithoutReplayingPolicyRetr
 		runMessageRepo:  runMessageRepo,
 		interactionRepo: interactionRepo,
 		agentRepo:       agentRepo,
+		artifactRepo:    artifactRepo,
 		epicRepo:        epicRepo,
 		docsDocRepo:     docsDocRepo,
 		docsContentRepo: docsContentRepo,
@@ -5961,6 +5971,7 @@ func TestExecuteRunActivityThreadsNativeRepairGuidanceWithoutReplayingPolicyRetr
 				if !strings.Contains(strings.ToLower(execCtx.RepairGuidance), "same turn") || !strings.Contains(execCtx.RepairGuidance, "preview_panel_key") {
 					t.Fatalf("expected repair guidance in execution context, got %q", execCtx.RepairGuidance)
 				}
+				capturedRepairGuidanceSource = execCtx.RepairGuidanceSource
 				for _, message := range execCtx.ConversationHistory {
 					if strings.Contains(message.Content, "System correction:") {
 						t.Fatalf("expected policy_retry to stay out of replay history, got %#v", execCtx.ConversationHistory)
@@ -5995,12 +6006,20 @@ func TestExecuteRunActivityThreadsNativeRepairGuidanceWithoutReplayingPolicyRetr
 	if _, err := activities.createRunMessage(context.Background(), run, "user", "prompt", "Initial prompt", nil, nil, nil, nil); err != nil {
 		t.Fatalf("create prompt message: %v", err)
 	}
-	if _, err := activities.createRunMessage(context.Background(), run, "assistant", "assistant_turn", "Drafted the PRD.", nil, nil, nil, nil); err != nil {
+	assistantMessage, err := activities.createRunMessage(context.Background(), run, "assistant", "assistant_turn", "Drafted the PRD.", nil, nil, nil, nil)
+	if err != nil {
 		t.Fatalf("create assistant message: %v", err)
 	}
-	retryContent := "System correction: the previous turn requested approval without binding it to a same-turn preview."
+	retryContent := "System correction: continue from your last assistant message."
 	if _, err := activities.createRunMessage(context.Background(), run, "user", "policy_retry", retryContent, nil, nil, nil, nil); err != nil {
 		t.Fatalf("create policy retry message: %v", err)
+	}
+	if _, err := activities.appendRunArtifactWithMetadata(context.Background(), run, model.AgentRunArtifactTypeNativeRepairState, "json", model.NativeRepairState{
+		Source:      "completion_retry",
+		RepairClass: "approval_specific_preview_required",
+		RepairHint:  `System correction: the previous turn requested approval without binding it to the required same-turn prd_draft preview. Continue from your last assistant message instead of restarting. Do not end with prose only. Publish the prd_draft preview in the same turn before the approval handoff, and set preview_panel_key="prd_draft" on request_approval or request_review_checkpoint so it binds to the correct preview.`,
+	}, buildAssistantSequenceArtifactMetadata(assistantMessage.SequenceNo)); err != nil {
+		t.Fatalf("create repair artifact: %v", err)
 	}
 
 	result, err := activities.ExecuteRunActivity(context.Background(), run.ID)
@@ -6010,6 +6029,9 @@ func TestExecuteRunActivityThreadsNativeRepairGuidanceWithoutReplayingPolicyRetr
 	if !result.AwaitingInput {
 		t.Fatalf("expected AwaitingInput, got %#v", result)
 	}
+	if capturedRepairGuidanceSource != "native_repair_state:completion_retry" {
+		t.Fatalf("expected repair guidance source from normalized artifact, got %q", capturedRepairGuidanceSource)
+	}
 
 	messages, err := runMessageRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
 	if err != nil {
@@ -6017,7 +6039,7 @@ func TestExecuteRunActivityThreadsNativeRepairGuidanceWithoutReplayingPolicyRetr
 	}
 	foundPolicyRetry := false
 	for _, message := range messages {
-		if strings.TrimSpace(message.MessageType) == "policy_retry" && strings.Contains(message.Content, "same-turn preview") {
+		if strings.TrimSpace(message.MessageType) == "policy_retry" && strings.Contains(message.Content, "continue from your last assistant message") {
 			foundPolicyRetry = true
 			break
 		}

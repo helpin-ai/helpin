@@ -375,6 +375,7 @@ func effectiveExecutionSkillPolicy(state *resolvedRunState, selection agentskill
 }
 
 type nativeRepairInstruction struct {
+	Source       string
 	Class        string
 	Instructions string
 }
@@ -388,6 +389,7 @@ type nativeTurnDebugArtifact struct {
 	ActiveSkillRefs            []string `json:"active_skill_refs,omitempty"`
 	RequiredInteractions       []string `json:"required_interactions,omitempty"`
 	RepairGuidancePresent      bool     `json:"repair_guidance_present"`
+	RepairGuidanceSource       string   `json:"repair_guidance_source,omitempty"`
 	RepairGuidanceClass        string   `json:"repair_guidance_class,omitempty"`
 }
 
@@ -573,7 +575,8 @@ func classifyNativeRepairInstruction(state *resolvedRunState, message *model.Age
 	switch {
 	case strings.Contains(content, "multiple same-turn previews") && strings.Contains(content, "preview_panel_key"):
 		return nativeRepairInstruction{
-			Class: "approval_preview_panel_key_required",
+			Source: "policy_retry",
+			Class:  "approval_preview_panel_key_required",
 			Instructions: strings.Join([]string{
 				"Continue from your last assistant turn instead of restarting the run.",
 				"If this turn requests approval or a review checkpoint after publishing multiple previews, include preview_panel_key so the handoff binds to the intended preview.",
@@ -596,12 +599,14 @@ func classifyNativeRepairInstruction(state *resolvedRunState, message *model.Age
 		}
 		lines = append(lines, "Treat request_approval or request_review_checkpoint as the final action in that turn.")
 		return nativeRepairInstruction{
+			Source:       "policy_retry",
 			Class:        "approval_specific_preview_required",
 			Instructions: strings.Join(lines, "\n"),
 		}
 	case strings.Contains(content, "same-turn preview") || strings.Contains(content, "preview_panel_key"):
 		return nativeRepairInstruction{
-			Class: "approval_preview_binding",
+			Source: "policy_retry",
+			Class:  "approval_preview_binding",
 			Instructions: strings.Join([]string{
 				"Continue from your last assistant turn instead of restarting the run.",
 				"If this turn requests approval or a review checkpoint, first publish the preview in the same turn before the approval handoff.",
@@ -611,7 +616,8 @@ func classifyNativeRepairInstruction(state *resolvedRunState, message *model.Age
 		}
 	case strings.Contains(content, "review_checkpoint handoff"):
 		return nativeRepairInstruction{
-			Class: "review_checkpoint_handoff",
+			Source: "policy_retry",
+			Class:  "review_checkpoint_handoff",
 			Instructions: strings.Join([]string{
 				"Continue from your last assistant turn instead of restarting the review.",
 				"Before the run stops, emit a review_checkpoint handoff using the runtime-appropriate mechanism.",
@@ -626,7 +632,8 @@ func classifyNativeRepairInstruction(state *resolvedRunState, message *model.Age
 			requiredKindsText = fmt.Sprintf("one of the required interaction handoffs [%s]", strings.Join(requiredKinds, ", "))
 		}
 		return nativeRepairInstruction{
-			Class: "required_interaction_handoff",
+			Source: "policy_retry",
+			Class:  "required_interaction_handoff",
 			Instructions: strings.Join([]string{
 				"Continue from your last assistant turn instead of restarting the run.",
 				fmt.Sprintf("Before the run stops, emit %s declared by the active skill policy.", requiredKindsText),
@@ -646,6 +653,9 @@ func latestNativeRepairInstruction(state *resolvedRunState, messages []model.Age
 	}
 	if failure := latestUnresolvedNativeToolFailure(messages); failure != nil {
 		if instruction := classifyNativeToolFailureRepair(state, failure); strings.TrimSpace(instruction.Instructions) != "" {
+			if strings.TrimSpace(instruction.Source) == "" {
+				instruction.Source = "tool_result_history"
+			}
 			return instruction
 		}
 	}
@@ -655,9 +665,13 @@ func latestNativeRepairInstruction(state *resolvedRunState, messages []model.Age
 	}
 	instruction := classifyNativeRepairInstruction(state, message)
 	if strings.TrimSpace(instruction.Instructions) != "" {
+		if strings.TrimSpace(instruction.Source) == "" {
+			instruction.Source = "policy_retry"
+		}
 		return instruction
 	}
 	return nativeRepairInstruction{
+		Source:       "policy_retry",
 		Class:        "raw_policy_retry",
 		Instructions: strings.TrimSpace(message.Content),
 	}
@@ -695,6 +709,7 @@ func latestNativeRepairInstructionFromArtifacts(messages []model.AgentRunMessage
 			continue
 		}
 		return nativeRepairInstruction{
+			Source:       "native_repair_state:" + strings.TrimSpace(payload.Source),
 			Class:        strings.TrimSpace(payload.RepairClass),
 			Instructions: hint,
 		}
@@ -716,6 +731,7 @@ func normalizedCompletionRetryInstruction(state *resolvedRunState, cause error) 
 	causeText := strings.TrimSpace(cause.Error())
 	if state != nil && state.agent != nil && strings.TrimSpace(state.agent.EffectivePresetKey()) == model.AgentPresetReviewAgent {
 		return nativeRepairInstruction{
+			Source:       "completion_retry",
 			Class:        "review_checkpoint_handoff",
 			Instructions: "System correction: the previous review turn ended without the required interaction. Continue from your last assistant message instead of restarting. Do not end with prose only. In this next turn, emit a review_checkpoint handoff using the runtime-appropriate mechanism, or emit request_user_input only if the human explicitly closed the review or asked a blocking follow-up.",
 		}
@@ -723,16 +739,19 @@ func normalizedCompletionRetryInstruction(state *resolvedRunState, cause error) 
 	switch {
 	case strings.Contains(causeText, "requires preview_panel_key when multiple same-turn previews exist"):
 		return nativeRepairInstruction{
+			Source:       "completion_retry",
 			Class:        "approval_preview_panel_key_required",
 			Instructions: approvalPreviewRetryInstruction(causeText),
 		}
 	case strings.Contains(causeText, "requires a same-turn ") && strings.Contains(causeText, " preview before requesting approval"):
 		return nativeRepairInstruction{
+			Source:       "completion_retry",
 			Class:        "approval_specific_preview_required",
 			Instructions: approvalPreviewRetryInstruction(causeText),
 		}
 	case strings.Contains(causeText, "same-turn") || strings.Contains(causeText, "preview_panel_key"):
 		return nativeRepairInstruction{
+			Source:       "completion_retry",
 			Class:        "approval_preview_binding",
 			Instructions: "System correction: the previous turn requested approval without binding it to a same-turn preview. Continue from your last assistant message instead of restarting. Do not end with prose only. If you emit request_approval or request_review_checkpoint, first publish the preview in the same turn. When multiple previews exist in that turn, include preview_panel_key so it binds to the correct preview.",
 		}
@@ -747,6 +766,7 @@ func normalizedCompletionRetryInstruction(state *resolvedRunState, cause error) 
 			instruction = instruction + " Required interaction kinds for this turn: " + strings.Join(requiredKinds, ", ") + "."
 		}
 		return nativeRepairInstruction{
+			Source:       "completion_retry",
 			Class:        "required_interaction_handoff",
 			Instructions: instruction,
 		}
@@ -1030,6 +1050,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		InitialInstructions:        legacyInitialInstructions,
 		PhaseGuidance:              phaseGuidance,
 		RepairGuidance:             repairInstruction.Instructions,
+		RepairGuidanceSource:       repairInstruction.Source,
 		RepairGuidanceClass:        repairInstruction.Class,
 		PlanningStage:              planningInput.Stage,
 		PlanningMethodology:        planningInput.PlanningMethodology,
@@ -2657,6 +2678,7 @@ func (a *AgentRunActivities) persistNativeTurnDebugArtifact(ctx context.Context,
 		ActiveSkillRefs:            runtimeSkillRefKeys(execCtx.ActiveRuntimeSkillRefs),
 		RequiredInteractions:       sortedCompletionInteractionKinds(completionRequiredInteractionKinds(execCtx.SkillPolicy)),
 		RepairGuidancePresent:      strings.TrimSpace(execCtx.RepairGuidance) != "",
+		RepairGuidanceSource:       strings.TrimSpace(execCtx.RepairGuidanceSource),
 		RepairGuidanceClass:        strings.TrimSpace(execCtx.RepairGuidanceClass),
 	}
 
