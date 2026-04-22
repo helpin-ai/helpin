@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"html"
 	"log/slog"
@@ -15,6 +16,35 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	ws "github.com/helpin-ai/helpin/server/internal/websocket"
 )
+
+// notificationWSData is the payload attached to notification WebSocket events so
+// clients can filter (e.g. toast only for agent-attention events) without making
+// a follow-up fetch.
+type notificationWSData struct {
+	EventType    string `json:"event_type,omitempty"`
+	Category     string `json:"category,omitempty"`
+	Priority     string `json:"priority,omitempty"`
+	RecipientID  string `json:"recipient_id,omitempty"`
+	EntityType   string `json:"entity_type,omitempty"`
+	ParentTaskID string `json:"parent_task_id,omitempty"`
+}
+
+func buildNotificationWSData(recipientID string, event model.NotificationEventInput, priority string) json.RawMessage {
+	parentTaskID, _ := event.Metadata["task_id"].(string)
+	payload := notificationWSData{
+		EventType:    event.EventType,
+		Category:     event.Category,
+		Priority:     priority,
+		RecipientID:  recipientID,
+		EntityType:   event.EntityType,
+		ParentTaskID: parentTaskID,
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return nil
+	}
+	return raw
+}
 
 // emailMentionPattern matches @mentions in email body text for styling.
 var emailMentionPattern = regexp.MustCompile(`(@[A-Za-z0-9._-]+)`)
@@ -286,6 +316,7 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 				EntityID:    existing.ID,
 				WorkspaceID: event.WorkspaceID,
 				ActorID:     event.ActorID,
+				Data:        buildNotificationWSData(recipientID, event, priority),
 			})
 		} else {
 			// Create new notification
@@ -331,6 +362,7 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 				EntityID:    notif.ID,
 				WorkspaceID: event.WorkspaceID,
 				ActorID:     event.ActorID,
+				Data:        buildNotificationWSData(recipientID, event, priority),
 			})
 		}
 	}
