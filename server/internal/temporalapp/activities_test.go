@@ -237,6 +237,20 @@ func TestNativeActiveSkillPlanningStageTransitionsEpicByDurableState(t *testing.
 			want: model.PlanningStagePlanTasks,
 		},
 		{
+			name: "compat story-planning alias advances to task planning",
+			epic: &model.PMEpic{
+				PlanningState: model.EpicPlanningStateReadyForStoryPlanning,
+			},
+			want: model.PlanningStagePlanTasks,
+		},
+		{
+			name: "awaiting plan approval stays in task planning mode",
+			epic: &model.PMEpic{
+				PlanningState: model.EpicPlanningStateAwaitingPlanApproval,
+			},
+			want: model.PlanningStagePlanTasks,
+		},
+		{
 			name: "awaiting spec approval stays in prd drafting",
 			epic: &model.PMEpic{
 				PlanningState: model.EpicPlanningStateAwaitingSpecApproval,
