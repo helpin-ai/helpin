@@ -215,6 +215,93 @@ func TestSelectNativeActiveSkillsRequiresSelectivePathGate(t *testing.T) {
 	}
 }
 
+func TestNativeActiveSkillPlanningStageTransitionsEpicByDurableState(t *testing.T) {
+	testCases := []struct {
+		name string
+		epic *model.PMEpic
+		want string
+	}{
+		{
+			name: "approved spec version advances to task planning",
+			epic: &model.PMEpic{
+				ApprovedSpecVersionID: strPtr("spec-v1"),
+				PlanningState:         model.EpicPlanningStateAwaitingSpecApproval,
+			},
+			want: model.PlanningStagePlanTasks,
+		},
+		{
+			name: "ready for task planning state advances to task planning",
+			epic: &model.PMEpic{
+				PlanningState: model.EpicPlanningStateReadyForTaskPlanning,
+			},
+			want: model.PlanningStagePlanTasks,
+		},
+		{
+			name: "awaiting spec approval stays in prd drafting",
+			epic: &model.PMEpic{
+				PlanningState: model.EpicPlanningStateAwaitingSpecApproval,
+			},
+			want: model.PlanningStageDraftSpec,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			state := &resolvedRunState{
+				run:  &model.AgentRun{TargetType: "epic"},
+				epic: tc.epic,
+			}
+			if got := nativeActiveSkillPlanningStage(state, ""); got != tc.want {
+				t.Fatalf("expected planning stage %q, got %q", tc.want, got)
+			}
+		})
+	}
+}
+
+func TestSelectNativeActiveSkillsTransitionsEpicFromPRDToTaskPlanning(t *testing.T) {
+	baseState := resolvedRunState{
+		run: &model.AgentRun{TargetType: "epic"},
+		agent: &model.Agent{
+			PresetKey: model.AgentPresetEpicPlanner,
+		},
+		runtimeSkillRefs: model.AgentSkillRefs{
+			{Key: "approval_protocol"},
+			{Key: "prd_authorship"},
+			{Key: "task_decomposition"},
+			{Key: "epic_state_routing"},
+			{Key: "general_agent_behavior"},
+		},
+		runtimeSkillDefinitions: []workerpkg.SkillDefinition{
+			{Key: "approval_protocol", SourceKind: "built_in", Instructions: "approval"},
+			{Key: "prd_authorship", SourceKind: "built_in", Instructions: "prd"},
+			{Key: "task_decomposition", SourceKind: "built_in", Instructions: "tasks"},
+			{Key: "epic_state_routing", SourceKind: "built_in", Instructions: "routing"},
+			{Key: "general_agent_behavior", SourceKind: "built_in", Instructions: "general"},
+		},
+		nativeSelectivePathEnabled: true,
+	}
+
+	t.Run("before approval keeps prd authorship active", func(t *testing.T) {
+		state := baseState
+		state.epic = &model.PMEpic{PlanningState: model.EpicPlanningStateAwaitingSpecApproval}
+
+		selection := selectNativeActiveSkills(&state, "")
+		if got := testAgentSkillRefKeys(selection.Refs); len(got) != 4 || got[0] != "approval_protocol" || got[1] != "prd_authorship" || got[2] != "epic_state_routing" || got[3] != "general_agent_behavior" {
+			t.Fatalf("unexpected active refs before approval %#v", got)
+		}
+	})
+
+	t.Run("after approval activates task decomposition", func(t *testing.T) {
+		state := baseState
+		state.epic = &model.PMEpic{ApprovedSpecVersionID: strPtr("spec-v1")}
+
+		selection := selectNativeActiveSkills(&state, "")
+		if got := testAgentSkillRefKeys(selection.Refs); len(got) != 4 || got[0] != "approval_protocol" || got[1] != "task_decomposition" || got[2] != "epic_state_routing" || got[3] != "general_agent_behavior" {
+			t.Fatalf("unexpected active refs after approval %#v", got)
+		}
+	})
+}
+
 func TestSplitNativePhaseGuidanceMovesLegacyInstructionsOffInitialPrompt(t *testing.T) {
 	legacyInitialInstructions, phaseGuidance := splitNativePhaseGuidance("native_sdk", &resolvedRunState{
 		nativeSelectivePathEnabled: true,
@@ -348,6 +435,86 @@ func TestBuildInitialInstructionsUsesNativeSelectiveTaskPhaseGuidance(t *testing
 	}
 	if strings.Contains(instructions, "Use this sequence unless the human explicitly redirects you:") {
 		t.Fatalf("did not expect legacy task planner boilerplate in native selective guidance\n%s", instructions)
+	}
+}
+
+func TestBuildInitialInstructionsUsesNativeSelectiveEpicTaskPlanningGuidanceAfterPRDApproval(t *testing.T) {
+	activity := &AgentRunActivities{}
+	state := &resolvedRunState{
+		nativeSelectivePathEnabled: true,
+		run: &model.AgentRun{
+			WorkspaceID:    "ws-1",
+			TargetType:     "epic",
+			InvocationMode: model.InvocationModeInteractive,
+		},
+		epic: &model.PMEpic{
+			ID:          "epic-1",
+			WorkspaceID: "ws-1",
+			Name:        "Launch readiness",
+		},
+	}
+
+	instructions, err := activity.buildInitialInstructions(context.Background(), state, planningRunInput{
+		SpecVersionID: "spec-v1",
+	})
+	if err != nil {
+		t.Fatalf("buildInitialInstructions returned error: %v", err)
+	}
+	for _, snippet := range []string{
+		"Current planning phase: " + model.PlanningStagePlanTasks,
+		"Approved spec version ID: spec-v1",
+		"Skip PRD drafting entirely and proceed directly to task planning",
+		"Post-approval rule: once PRD approval is persisted, continue directly into task planning",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected approved-spec native guidance to contain %q\n%s", snippet, instructions)
+		}
+	}
+	if strings.Contains(instructions, "Next-step guidance: no approved PRD exists yet.") {
+		t.Fatalf("did not expect pre-approval guidance after approved spec\n%s", instructions)
+	}
+}
+
+func TestBuildInitialInstructionsUsesNativeSelectiveEpicPRDRevisionGuidanceForUnapprovedDraft(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	if err := db.Exec(`INSERT INTO docs_contents (id, document_id, content_text, word_count) VALUES (?, ?, ?, ?)`, "content-1", "doc-1", "Existing PRD draft for revision.", 5).Error; err != nil {
+		t.Fatalf("insert docs content: %v", err)
+	}
+
+	activity := &AgentRunActivities{
+		docsContentRepo: repository.NewDocsContentRepository(db),
+	}
+	state := &resolvedRunState{
+		nativeSelectivePathEnabled: true,
+		run: &model.AgentRun{
+			WorkspaceID:    "ws-1",
+			TargetType:     "epic",
+			InvocationMode: model.InvocationModeInteractive,
+		},
+		epic: &model.PMEpic{
+			ID:          "epic-1",
+			WorkspaceID: "ws-1",
+			Name:        "Launch readiness",
+		},
+	}
+
+	instructions, err := activity.buildInitialInstructions(context.Background(), state, planningRunInput{
+		SpecDocumentID: "doc-1",
+	})
+	if err != nil {
+		t.Fatalf("buildInitialInstructions returned error: %v", err)
+	}
+	for _, snippet := range []string{
+		"Current planning phase: prd_revision",
+		"Resume from the current draft",
+		"Current spec draft:",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected unapproved-draft native guidance to contain %q\n%s", snippet, instructions)
+		}
+	}
+	if strings.Contains(instructions, "Current planning phase: plan_tasks") {
+		t.Fatalf("did not expect task-planning guidance for unapproved draft\n%s", instructions)
 	}
 }
 
