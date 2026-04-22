@@ -607,6 +607,57 @@ func TestApprovalPreviewRetryInstructionForMultiplePreviews(t *testing.T) {
 	}
 }
 
+func TestNormalizedCompletionRetryInstructionForSpecificPreview(t *testing.T) {
+	state := &resolvedRunState{}
+	got := normalizedCompletionRetryInstruction(state, fmt.Errorf("approval_request requires a same-turn prd_draft preview before requesting approval"))
+	if got.Class != "approval_specific_preview_required" {
+		t.Fatalf("expected specific-preview class, got %#v", got)
+	}
+	if !strings.Contains(got.Instructions, `preview_panel_key="prd_draft"`) {
+		t.Fatalf("expected specific-preview retry instruction, got %q", got.Instructions)
+	}
+}
+
+func TestNormalizedCompletionRetryInstructionForMultiplePreviews(t *testing.T) {
+	state := &resolvedRunState{}
+	got := normalizedCompletionRetryInstruction(state, fmt.Errorf("approval_request requires preview_panel_key when multiple same-turn previews exist"))
+	if got.Class != "approval_preview_panel_key_required" {
+		t.Fatalf("expected preview-panel-key class, got %#v", got)
+	}
+	if !strings.Contains(got.Instructions, "multiple same-turn previews") {
+		t.Fatalf("expected multiple-preview retry instruction, got %q", got.Instructions)
+	}
+}
+
+func TestNormalizedCompletionRetryInstructionForRequiredInteractionFallback(t *testing.T) {
+	state := &resolvedRunState{
+		skillPolicy: workerpkg.SkillPolicy{
+			CompletionRequiresInteractionKinds: []string{
+				model.AgentRunInteractionKindApprovalRequest,
+				model.AgentRunInteractionKindRequestUserInput,
+			},
+		},
+	}
+	got := normalizedCompletionRetryInstruction(state, fmt.Errorf("completion interaction missing"))
+	if got.Class != "required_interaction_handoff" {
+		t.Fatalf("expected required-interaction class, got %#v", got)
+	}
+	if !strings.Contains(got.Instructions, model.AgentRunInteractionKindApprovalRequest) || !strings.Contains(got.Instructions, model.AgentRunInteractionKindRequestUserInput) {
+		t.Fatalf("expected required interaction kinds in retry instruction, got %q", got.Instructions)
+	}
+}
+
+func TestNormalizedCompletionRetryInstructionForReviewAgent(t *testing.T) {
+	state := &resolvedRunState{agent: &model.Agent{PresetKey: model.AgentPresetReviewAgent}}
+	got := normalizedCompletionRetryInstruction(state, fmt.Errorf("completion interaction missing"))
+	if got.Class != "review_checkpoint_handoff" {
+		t.Fatalf("expected review checkpoint class, got %#v", got)
+	}
+	if !strings.Contains(got.Instructions, "review_checkpoint handoff") {
+		t.Fatalf("expected review retry instruction, got %q", got.Instructions)
+	}
+}
+
 func TestLatestNativeRepairInstructionFromArtifactsUsesLatestAssistantSequence(t *testing.T) {
 	messages := []model.AgentRunMessage{
 		{SequenceNo: 1, Role: "user", MessageType: "prompt", Content: "Start"},
@@ -4406,6 +4457,111 @@ func TestPersistAssistantRunMessagePersistsNativeRepairStateArtifact(t *testing.
 	}
 	if !found {
 		t.Fatal("expected native_repair_state artifact to be persisted")
+	}
+}
+
+func TestRetryInvalidCompletionTurnPersistsNativeCompletionRepairState(t *testing.T) {
+	dbName := fmt.Sprintf("file:native-completion-repair-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_messages (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			role TEXT NOT NULL,
+			content TEXT NOT NULL,
+			message_type TEXT NOT NULL,
+			content_blocks BLOB,
+			turn_segments BLOB,
+			tool_invocations BLOB,
+			token_usage BLOB,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE agent_run_artifacts (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			artifact_type TEXT NOT NULL,
+			format TEXT NOT NULL,
+			storage_mode TEXT NOT NULL,
+			inline_content TEXT,
+			object_key TEXT,
+			metadata TEXT NOT NULL,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+	}
+
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	activities := &AgentRunActivities{runMessageRepo: runMessageRepo, artifactRepo: artifactRepo}
+
+	run := &model.AgentRun{ID: "run-native-completion-repair", WorkspaceID: "ws-1"}
+	state := &resolvedRunState{
+		run:                        run,
+		agent:                      &model.Agent{RuntimeKind: "native_sdk"},
+		nativeSelectivePathEnabled: true,
+	}
+	assistantMessage, err := activities.createRunMessage(context.Background(), run, "assistant", "assistant_turn", "Need approval.", nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("create assistant message: %v", err)
+	}
+
+	retried, err := activities.retryInvalidCompletionTurn(context.Background(), state, assistantMessage, fmt.Errorf("approval_request requires a same-turn prd_draft preview before requesting approval"))
+	if err != nil {
+		t.Fatalf("retryInvalidCompletionTurn returned error: %v", err)
+	}
+	if !retried {
+		t.Fatal("expected retryInvalidCompletionTurn to request a retry")
+	}
+
+	artifacts, err := artifactRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	found := false
+	for _, artifact := range artifacts {
+		if artifact.ArtifactType != model.AgentRunArtifactTypeNativeRepairState || artifact.InlineContent == nil {
+			continue
+		}
+		found = true
+
+		var payload model.NativeRepairState
+		if err := json.Unmarshal([]byte(*artifact.InlineContent), &payload); err != nil {
+			t.Fatalf("unmarshal repair state payload: %v", err)
+		}
+		if payload.Source != "completion_retry" {
+			t.Fatalf("expected completion_retry source, got %#v", payload)
+		}
+		if payload.RepairClass != "approval_specific_preview_required" {
+			t.Fatalf("expected specific preview repair class, got %#v", payload)
+		}
+		if !strings.Contains(payload.RepairHint, `preview_panel_key="prd_draft"`) {
+			t.Fatalf("expected completion retry hint to preserve preview binding, got %#v", payload)
+		}
+		if !strings.Contains(payload.ErrorSummary, "same-turn prd_draft preview") {
+			t.Fatalf("expected original completion error summary, got %#v", payload)
+		}
+
+		var metadata map[string]any
+		if err := json.Unmarshal(artifact.Metadata, &metadata); err != nil {
+			t.Fatalf("unmarshal metadata: %v", err)
+		}
+		if got := metadata["assistant_message_sequence_no"]; got != float64(assistantMessage.SequenceNo) {
+			t.Fatalf("expected assistant sequence metadata, got %#v", metadata)
+		}
+	}
+	if !found {
+		t.Fatal("expected completion retry repair artifact to be persisted")
 	}
 }
 

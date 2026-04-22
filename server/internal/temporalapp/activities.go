@@ -709,6 +709,46 @@ func resolveLatestNativeRepairInstruction(state *resolvedRunState, messages []mo
 	return latestNativeRepairInstruction(state, messages)
 }
 
+func normalizedCompletionRetryInstruction(state *resolvedRunState, cause error) nativeRepairInstruction {
+	if cause == nil || strings.TrimSpace(cause.Error()) == "" {
+		return nativeRepairInstruction{}
+	}
+	causeText := strings.TrimSpace(cause.Error())
+	if state != nil && state.agent != nil && strings.TrimSpace(state.agent.EffectivePresetKey()) == model.AgentPresetReviewAgent {
+		return nativeRepairInstruction{
+			Class:        "review_checkpoint_handoff",
+			Instructions: "System correction: the previous review turn ended without the required interaction. Continue from your last assistant message instead of restarting. Do not end with prose only. In this next turn, emit a review_checkpoint handoff using the runtime-appropriate mechanism, or emit request_user_input only if the human explicitly closed the review or asked a blocking follow-up.",
+		}
+	}
+	switch {
+	case strings.Contains(causeText, "requires preview_panel_key when multiple same-turn previews exist"):
+		return nativeRepairInstruction{
+			Class:        "approval_preview_panel_key_required",
+			Instructions: approvalPreviewRetryInstruction(causeText),
+		}
+	case strings.Contains(causeText, "requires a same-turn ") && strings.Contains(causeText, " preview before requesting approval"):
+		return nativeRepairInstruction{
+			Class:        "approval_specific_preview_required",
+			Instructions: approvalPreviewRetryInstruction(causeText),
+		}
+	case strings.Contains(causeText, "same-turn") || strings.Contains(causeText, "preview_panel_key"):
+		return nativeRepairInstruction{
+			Class:        "approval_preview_binding",
+			Instructions: "System correction: the previous turn requested approval without binding it to a same-turn preview. Continue from your last assistant message instead of restarting. Do not end with prose only. If you emit request_approval or request_review_checkpoint, first publish the preview in the same turn. When multiple previews exist in that turn, include preview_panel_key so it binds to the correct preview.",
+		}
+	default:
+		requiredKinds := sortedCompletionInteractionKinds(completionRequiredInteractionKinds(state.skillPolicy))
+		instruction := "System correction: the previous turn ended without creating the required interaction. Continue from your last assistant message instead of restarting. Do not end with prose only. Before this run stops, emit one of the required interaction handoffs declared by the active skill policy."
+		if len(requiredKinds) > 0 {
+			instruction = instruction + " Required interaction kinds for this turn: " + strings.Join(requiredKinds, ", ") + "."
+		}
+		return nativeRepairInstruction{
+			Class:        "required_interaction_handoff",
+			Instructions: instruction,
+		}
+	}
+}
+
 func replayMessagesForExecution(state *resolvedRunState, messages []model.AgentRunMessage) []model.AgentRunMessage {
 	if state == nil || !state.nativeSelectivePathEnabled {
 		return messages
@@ -1221,7 +1261,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 	}
 	if !waitForApproval && !waitForInput && !waitForAuth && !continueExecution {
 		if err := a.enforceCompletionInteractionPolicy(ctx, state, assistantMessage); err != nil {
-			retried, retryErr := a.retryInvalidCompletionTurn(ctx, state, err)
+			retried, retryErr := a.retryInvalidCompletionTurn(ctx, state, assistantMessage, err)
 			if retryErr != nil {
 				if persistWorkspace {
 					_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
@@ -1795,7 +1835,7 @@ func normalizeStructuredReviewFindings(findings []model.ReviewFinding) {
 	}
 }
 
-func (a *AgentRunActivities) retryInvalidCompletionTurn(ctx context.Context, state *resolvedRunState, cause error) (bool, error) {
+func (a *AgentRunActivities) retryInvalidCompletionTurn(ctx context.Context, state *resolvedRunState, assistantMessage *model.AgentRunMessage, cause error) (bool, error) {
 	if a == nil || state == nil || state.run == nil || a.runMessageRepo == nil {
 		return false, nil
 	}
@@ -1813,18 +1853,46 @@ func (a *AgentRunActivities) retryInvalidCompletionTurn(ctx context.Context, sta
 		}
 	}
 
-	instruction := "System correction: the previous turn ended without creating the required interaction. Continue from your last assistant message instead of restarting. Do not end with prose only. Before this run stops, emit one of the required interaction handoffs declared by the active skill policy."
-	if strings.TrimSpace(state.agent.EffectivePresetKey()) == model.AgentPresetReviewAgent {
-		instruction = "System correction: the previous review turn ended without the required interaction. Continue from your last assistant message instead of restarting. Do not end with prose only. In this next turn, emit a review_checkpoint handoff using the runtime-appropriate mechanism, or emit request_user_input only if the human explicitly closed the review or asked a blocking follow-up."
-	} else if approvalInstruction := approvalPreviewRetryInstruction(strings.TrimSpace(cause.Error())); approvalInstruction != "" {
-		instruction = approvalInstruction
-	} else if strings.Contains(strings.TrimSpace(cause.Error()), "same-turn") || strings.Contains(strings.TrimSpace(cause.Error()), "preview_panel_key") {
-		instruction = "System correction: the previous turn requested approval without binding it to a same-turn preview. Continue from your last assistant message instead of restarting. Do not end with prose only. If you emit request_approval or request_review_checkpoint, first publish the preview in the same turn. When multiple previews exist in that turn, include preview_panel_key so it binds to the correct preview."
+	retryInstruction := normalizedCompletionRetryInstruction(state, cause)
+	instruction := strings.TrimSpace(retryInstruction.Instructions)
+	if instruction == "" {
+		return false, nil
 	}
 	if _, err := a.createRunMessage(ctx, state.run, "user", "policy_retry", instruction, nil, nil, nil, nil); err != nil {
 		return false, err
 	}
+	if err := a.persistNativeCompletionRetryRepairState(ctx, state, assistantMessage, cause, retryInstruction); err != nil {
+		return false, err
+	}
 	return true, nil
+}
+
+func (a *AgentRunActivities) persistNativeCompletionRetryRepairState(ctx context.Context, state *resolvedRunState, assistantMessage *model.AgentRunMessage, cause error, repairInstruction nativeRepairInstruction) error {
+	if a == nil || a.artifactRepo == nil || state == nil || state.run == nil || assistantMessage == nil || cause == nil {
+		return nil
+	}
+	runtimeKind := executionRuntimeKind(state)
+	if !state.nativeSelectivePathEnabled || strings.TrimSpace(runtimeKind) != "native_sdk" {
+		return nil
+	}
+	if strings.TrimSpace(repairInstruction.Class) == "" || strings.TrimSpace(repairInstruction.Instructions) == "" {
+		return nil
+	}
+	payload := model.NativeRepairState{
+		Source:       "completion_retry",
+		RepairClass:  strings.TrimSpace(repairInstruction.Class),
+		RepairHint:   strings.TrimSpace(repairInstruction.Instructions),
+		ErrorSummary: strings.TrimSpace(cause.Error()),
+	}
+	_, err := a.appendRunArtifactWithMetadata(
+		ctx,
+		state.run,
+		model.AgentRunArtifactTypeNativeRepairState,
+		"json",
+		payload,
+		buildAssistantSequenceArtifactMetadata(assistantMessage.SequenceNo),
+	)
+	return err
 }
 
 func approvalPreviewRetryInstruction(causeText string) string {
