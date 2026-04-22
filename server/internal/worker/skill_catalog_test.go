@@ -39,7 +39,7 @@ func TestCompilePresetInstructionsIncludesPreambleAndSkills(t *testing.T) {
 	compiled := CompilePresetInstructions(bundle.Preamble, bundle.SkillKeys)
 	for _, snippet := range []string{
 		"You are Epic Planner.",
-		"Approval checkpoints happen inline in the same chat.",
+		"Approval requests happen inline in the same chat.",
 		"## PRD Work",
 		"## Current Facts And Next-Step Rules",
 		"## General Rules",
@@ -65,6 +65,19 @@ func TestInstructionTemplateVersionForPresetIsDeterministic(t *testing.T) {
 	}
 }
 
+func TestTaskPlannerBundleUsesTaskPlanDocSkillStack(t *testing.T) {
+	bundle, ok := BuiltInPresetSkillBundleForPreset(model.AgentPresetTaskPlanner)
+	if !ok {
+		t.Fatal("expected task planner bundle")
+	}
+	if !containsString(bundle.SkillKeys, "task_planner_context") {
+		t.Fatalf("expected task planner context skill, got %v", bundle.SkillKeys)
+	}
+	if containsString(bundle.SkillKeys, "task_decomposition") {
+		t.Fatalf("did not expect epic task-plan skill in task planner bundle, got %v", bundle.SkillKeys)
+	}
+}
+
 func TestListSkillCatalogReturnsBuiltInSkills(t *testing.T) {
 	catalog := ListSkillCatalog()
 	if len(catalog.Skills) == 0 {
@@ -79,8 +92,8 @@ func TestListSkillCatalogReturnsBuiltInSkills(t *testing.T) {
 		if skill.SourceKind != "built_in" {
 			t.Fatalf("expected built_in source kind, got %q", skill.SourceKind)
 		}
-		if !containsString(skill.RequiredTools, ToolRequestReviewCheckpoint) {
-			t.Fatalf("expected request review checkpoint requirement, got %v", skill.RequiredTools)
+		if !containsString(skill.RequiredTools, ToolRequestApproval) {
+			t.Fatalf("expected request approval requirement, got %v", skill.RequiredTools)
 		}
 		if !containsString(skill.Presets, model.AgentPresetEpicPlanner) || !containsString(skill.Presets, model.AgentPresetTaskPlanner) {
 			t.Fatalf("expected planner preset mappings, got %v", skill.Presets)
@@ -130,6 +143,33 @@ func TestReviewAgentSkillDeclaresCompletionInteractionPolicy(t *testing.T) {
 	}
 	if inputContract.Transports["codex"].Type != InteractionTransportTypeRuntimeBridge {
 		t.Fatalf("expected codex request_user_input runtime bridge transport, got %+v", inputContract.Transports["codex"])
+	}
+}
+
+func TestApprovalProtocolSkillDeclaresPlannerCompletionInteractionPolicy(t *testing.T) {
+	skill, ok := GetBuiltInSkill("approval_protocol")
+	if !ok {
+		t.Fatal("expected approval_protocol built-in skill")
+	}
+	if !containsString(skill.Policy.CompletionRequiresInteractionKinds, InteractionKindApprovalRequest) {
+		t.Fatalf("expected approval request completion requirement, got %v", skill.Policy.CompletionRequiresInteractionKinds)
+	}
+	if !containsString(skill.Policy.CompletionRequiresInteractionKinds, InteractionKindRequestUserInput) {
+		t.Fatalf("expected user input completion requirement, got %v", skill.Policy.CompletionRequiresInteractionKinds)
+	}
+	contract, ok := skill.Policy.InteractionContract(InteractionKindApprovalRequest)
+	if !ok {
+		t.Fatal("expected approval_request interaction contract")
+	}
+	if contract.Transports["native_sdk"].ToolName != ToolRequestApproval {
+		t.Fatalf("expected native_sdk approval request tool transport, got %+v", contract.Transports["native_sdk"])
+	}
+	inputContract, ok := skill.Policy.InteractionContract(InteractionKindRequestUserInput)
+	if !ok {
+		t.Fatal("expected request_user_input interaction contract")
+	}
+	if inputContract.Transports["native_sdk"].ToolName != ToolRequestUserInput {
+		t.Fatalf("expected native_sdk request_user_input tool transport, got %+v", inputContract.Transports["native_sdk"])
 	}
 }
 

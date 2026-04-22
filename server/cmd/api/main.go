@@ -17,6 +17,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 	"go.temporal.io/api/serviceerror"
+	workflowservice "go.temporal.io/api/workflowservice/v1"
 	tclient "go.temporal.io/sdk/client"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -794,6 +795,7 @@ func main() {
 	ruleEngine.SetTaskService(pmTaskService)
 	ruleEngine.SetHealthObserver(automationHealthService)
 	ruleEngine.SetTriggerExecutionRepository(agentTriggerExecutionRepo)
+	ruleEngine.SetRunEngine(runEngine)
 	gitService.SetRuleEngine(ruleEngine)
 	pmTaskService.SetRuleEngine(ruleEngine)
 	pmTaskService.SetAgentService(agentService)
@@ -1161,6 +1163,14 @@ func main() {
 	if err := crmSummaryService.EnsureDailyReconciliation(context.Background()); err != nil {
 		slog.Error("failed to ensure crm summary daily reconciliation workflow", "error", err)
 	}
+	if err := ruleEngine.EnsureScheduledRules(context.Background()); err != nil {
+		slog.Error("failed to ensure automation rule schedules", "error", err)
+	}
+	if terminated, err := removeLegacyAgentScheduleWorkflows(context.Background(), temporalClient); err != nil {
+		slog.Error("failed to remove legacy agent schedule workflows", "error", err)
+	} else if terminated > 0 {
+		slog.Info("removed legacy agent schedule workflows", "count", terminated)
+	}
 
 	// Start sprint automation cron workflow via Temporal (replaces local ticker).
 	if temporalClient != nil {
@@ -1350,6 +1360,48 @@ func ensureSprintCronWorkflow(client tclient.Client) error {
 	}
 	slog.Info("sprint automation cron workflow started")
 	return nil
+}
+
+func removeLegacyAgentScheduleWorkflows(ctx context.Context, client tclient.Client) (int, error) {
+	if client == nil {
+		return 0, nil
+	}
+
+	query := `WorkflowId STARTS_WITH "agent-schedule-" AND CloseTime IS NULL`
+	var (
+		terminated    int
+		nextPageToken []byte
+	)
+
+	for {
+		resp, err := client.ListWorkflow(ctx, &workflowservice.ListWorkflowExecutionsRequest{
+			Query:         query,
+			PageSize:      200,
+			NextPageToken: nextPageToken,
+		})
+		if err != nil {
+			return terminated, err
+		}
+		for _, execution := range resp.GetExecutions() {
+			workflowExec := execution.GetExecution()
+			if workflowExec == nil || strings.TrimSpace(workflowExec.GetWorkflowId()) == "" {
+				continue
+			}
+			if err := client.TerminateWorkflow(ctx, workflowExec.GetWorkflowId(), workflowExec.GetRunId(), "legacy agent schedule workflow removed"); err != nil {
+				var notFound *serviceerror.NotFound
+				if errors.As(err, &notFound) {
+					continue
+				}
+				return terminated, err
+			}
+			terminated++
+		}
+		nextPageToken = resp.GetNextPageToken()
+		if len(nextPageToken) == 0 {
+			break
+		}
+	}
+	return terminated, nil
 }
 
 func fatalWithSentry(message string, err error, attrs ...any) {

@@ -602,21 +602,6 @@ func (s *AgentService) GetAgentUsageSummary(ctx context.Context, workspaceID, id
 
 	items := make([]model.AgentTriggerUsage, 0, 8)
 
-	if agent.Schedule != nil && strings.TrimSpace(*agent.Schedule) != "" {
-		triggerType := model.TriggerCron
-		managePath := "/w/$slug/pm/agents"
-		items = append(items, model.AgentTriggerUsage{
-			ID:              "agent.schedule",
-			Kind:            "schedule",
-			Title:           "Recurring schedule",
-			Description:     fmt.Sprintf("Runs this agent on cron schedule `%s`.", strings.TrimSpace(*agent.Schedule)),
-			TriggerType:     &triggerType,
-			Enabled:         true,
-			ManagePath:      &managePath,
-			ExecutionSearch: automationcatalog.ExecutionSearchPresetForDefinitionID("agent.schedule", nil),
-		})
-	}
-
 	if s.automationRuleRepo != nil {
 		rules, err := s.automationRuleRepo.ListByWorkspace(ctx, workspaceID)
 		if err != nil {
@@ -948,8 +933,6 @@ func usageBindingIDForRun(run model.AgentRun) (string, time.Time) {
 	}
 
 	switch strings.TrimSpace(input.Trigger.Source) {
-	case model.AgentRunTriggerSourceSchedule:
-		return "agent.schedule", triggeredAt
 	case model.AgentRunTriggerSourceAutomationRule:
 		if bindingID, _, ok := automationcatalog.ResolveBindingForTrigger(input.Trigger.Source, input.Trigger.TriggerType, targetTypeFromRun(run)); ok {
 			return bindingID, triggeredAt
@@ -1351,7 +1334,6 @@ func (s *AgentService) applyPresetToSystemAgent(agent *model.Agent, preset model
 	agent.AllowedCommands = mustJSONStringSlice(preset.AllowedCommands)
 	agent.AllowedTargets = mustJSONStringSlice(preset.AllowedTargetTypes)
 	agent.TeamID = nil
-	agent.Schedule = nil
 	agent.ApprovalMode = "never"
 	agent.DefaultInvocationMode = preset.DefaultInvocationMode
 	if preset.Scope == "workspace" {
@@ -1763,7 +1745,6 @@ func (s *AgentService) CreateAgent(ctx context.Context, req model.CreateAgentReq
 		AllowedTools:               normalizeAllowedToolsJSON(normalizeJSONSlice(req.AllowedTools)),
 		AllowedCommands:            normalizeJSONSlice(req.AllowedCommands),
 		AllowedTargets:             sliceOrPresetJSON(req.AllowedTargets, []string{"task"}),
-		Schedule:                   trimPtr(req.Schedule),
 		ApprovalMode:               approvalMode,
 		MaxConcurrentRuns:          maxConcurrentRuns,
 		DefaultInvocationMode:      stringOrDefault(req.DefaultInvocationMode, model.InvocationModeAutonomous),
@@ -1791,13 +1772,6 @@ func (s *AgentService) CreateAgent(ctx context.Context, req model.CreateAgentReq
 
 	s.publishSimpleEvent("created", "agent", agent.ID, agent.WorkspaceID, actorID)
 
-	// Start cron schedule if configured.
-	if s.runEngine != nil && agent.Schedule != nil && *agent.Schedule != "" {
-		if err := s.runEngine.StartSchedule(ctx, agent.ID, agent.WorkspaceID, *agent.Schedule); err != nil {
-			slog.ErrorContext(ctx, "failed to start agent schedule", "agent_id", agent.ID, "error", err)
-		}
-	}
-
 	materializeAgentSystemPrompt(agent)
 	return agent, nil
 }
@@ -1810,10 +1784,6 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 	}
 	if agent == nil {
 		return nil, fmt.Errorf("agent not found")
-	}
-	previousSchedule := ""
-	if agent.Schedule != nil {
-		previousSchedule = *agent.Schedule
 	}
 	if agent.IsSystem {
 		systemPresetKey := normalizePresetKey(agent.PresetKey)
@@ -1946,9 +1916,6 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 	} else if presetChanged && hasPreset {
 		agent.AllowedTargets = mustJSONStringSlice(preset.AllowedTargetTypes)
 	}
-	if req.Schedule != nil {
-		agent.Schedule = trimPtr(req.Schedule)
-	}
 	if req.ApprovalMode != nil && *req.ApprovalMode != "" {
 		agent.ApprovalMode = *req.ApprovalMode
 	} else if presetChanged && hasPreset && preset.ApprovalMode != "" {
@@ -1991,7 +1958,6 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 			agent.RuntimeKind = defaultRuntimeKindForPresetKey(systemPresetKey)
 			agent.TriggerMode = defaultTriggerModeForPresetKey(systemPresetKey)
 			agent.TeamID = nil
-			agent.Schedule = nil
 			agent.ApprovalMode = "never"
 			agent.SystemPrompt, agent.InstructionTemplateVersion = syncManagedSystemPromptForPreset(systemPresetKey, agent.SystemPrompt, agent.PlanningNotes, agent.InstructionTemplateVersion)
 			agent.PlanningNotes = nil
@@ -2034,22 +2000,6 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 	_ = s.activitySvc.Log(ctx, agent.WorkspaceID, "agent", agent.ID, &actorID, "updated", nil, nil, nil, nil)
 
 	s.publishSimpleEvent("updated", "agent", agent.ID, agent.WorkspaceID, actorID)
-
-	// Sync cron schedule if it changed.
-	finalSchedule := ""
-	if agent.Schedule != nil {
-		finalSchedule = *agent.Schedule
-	}
-	scheduleChanged := previousSchedule != finalSchedule
-	if scheduleChanged && s.runEngine != nil {
-		_ = s.runEngine.StopSchedule(ctx, agent.ID)
-		if agent.Schedule != nil && *agent.Schedule != "" {
-			if err := s.runEngine.StartSchedule(ctx, agent.ID, agent.WorkspaceID, *agent.Schedule); err != nil {
-				slog.ErrorContext(ctx, "failed to start agent schedule", "agent_id", agent.ID, "error", err)
-			}
-		}
-	}
-
 	materializeAgentSystemPrompt(agent)
 	return agent, nil
 }
@@ -2065,11 +2015,6 @@ func (s *AgentService) DeleteAgent(ctx context.Context, workspaceID, id, actorID
 	}
 	if agent.IsSystem {
 		return fmt.Errorf("system agents cannot be deleted")
-	}
-
-	// Stop any active cron schedule.
-	if s.runEngine != nil {
-		_ = s.runEngine.StopSchedule(ctx, id)
 	}
 
 	if err := s.agentRepo.Delete(ctx, workspaceID, id); err != nil {
@@ -2457,6 +2402,44 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 
 		if s.activitySvc != nil {
 			_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", conversation.ID, actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), agentRunActivityMetadata(agent, run, "started"))
+		}
+		s.publishRunEvent(run, derefString(actorID))
+		return run, nil
+
+	case "workspace":
+		if strings.TrimSpace(targetID) != workspaceID {
+			return nil, fmt.Errorf("workspace target must match workspace id")
+		}
+
+		agent, err := s.requireRunnableAgent(ctx, workspaceID, agentID, "workspace")
+		if err != nil {
+			return nil, err
+		}
+		if err := validateAgentTeamScope(agent, "workspace", nil); err != nil {
+			return nil, err
+		}
+		input, err := buildAgentRunInputPayload("workspace", workspaceID, trigger, event, req.AdditionalContext)
+		if err != nil {
+			return nil, fmt.Errorf("build workspace run input: %w", err)
+		}
+
+		run, err := s.createRun(ctx, createRunParams{
+			workspaceID:    workspaceID,
+			agent:          agent,
+			targetType:     "workspace",
+			targetID:       workspaceID,
+			parentRunID:    parentRunID,
+			actorID:        actorID,
+			input:          input,
+			trigger:        trigger,
+			invocationMode: resolveInvocationMode(agent),
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		if s.activitySvc != nil {
+			_ = s.activitySvc.Log(ctx, workspaceID, "workspace", workspaceID, actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), agentRunActivityMetadata(agent, run, "started"))
 		}
 		s.publishRunEvent(run, derefString(actorID))
 		return run, nil
@@ -2985,6 +2968,19 @@ func buildInteractionResponsePayload(interaction *model.AgentRunInteraction, res
 			"content": strings.TrimSpace(content),
 		})
 		return payload, model.AgentRunInteractionSchemaVersionHelpinV1, err
+	case model.AgentRunInteractionKindApprovalRequest:
+		payload := map[string]any{}
+		switch resolvedIntent {
+		case model.AgentRunResumeIntentApprove:
+			payload["decision"] = "approve"
+		default:
+			payload["decision"] = "request_changes"
+			if trimmed := strings.TrimSpace(content); trimmed != "" {
+				payload["message"] = trimmed
+			}
+		}
+		raw, err := json.Marshal(payload)
+		return raw, model.AgentRunInteractionSchemaVersionHelpinV1, err
 	case model.AgentRunInteractionKindReviewCheckpoint:
 		payload := map[string]any{}
 		switch resolvedIntent {
@@ -3028,7 +3024,7 @@ func reviewDecisionArtifactFromInteraction(interaction *model.AgentRunInteractio
 		return nil
 	}
 
-	var request model.ApprovalRequest
+	var request model.ReviewCheckpointRequest
 	if err := json.Unmarshal(interaction.RequestPayload, &request); err != nil {
 		return nil
 	}
@@ -3282,7 +3278,7 @@ func (s *AgentService) maybePersistApprovedInteractivePreview(ctx context.Contex
 		}
 	}
 	if preview == nil {
-		preview, err = latestRunPreviewArtifact(existingArtifacts, previewPanelKeyForApprovalPhase(approval.Phase))
+		preview, err = latestRunPreviewArtifactForApproval(existingArtifacts, assistantSequenceNo, approval)
 		if err != nil {
 			return err
 		}
@@ -3354,6 +3350,7 @@ func latestApprovalCheckpointFromArtifacts(messages []model.AgentRunMessage, art
 		if err := json.Unmarshal([]byte(*artifact.InlineContent), &approval); err != nil {
 			return nil, 0, nil, nil, fmt.Errorf("parse approval request artifact: %w", err)
 		}
+		approval.PreviewPanelKey = normalizeApprovalPreviewPanelKey(approval.PreviewPanelKey)
 		if strings.TrimSpace(approval.Title) == "" {
 			continue
 		}
@@ -3364,36 +3361,42 @@ func latestApprovalCheckpointFromArtifacts(messages []model.AgentRunMessage, art
 		}
 		sourceMessage := findAssistantMessageBySequence(messages, assistantSequenceNo)
 
-		preview, err := latestRunPreviewArtifactForAssistantSequence(artifacts, assistantSequenceNo, previewPanelKeyForApprovalPhase(approval.Phase))
+		preview, err := latestRunPreviewArtifactForApproval(artifacts, assistantSequenceNo, &approval)
 		if err != nil {
 			return nil, 0, nil, nil, err
-		}
-		if preview == nil {
-			preview, err = latestRunPreviewArtifact(artifacts, previewPanelKeyForApprovalPhase(approval.Phase))
-			if err != nil {
-				return nil, 0, nil, nil, err
-			}
 		}
 		return sourceMessage, assistantSequenceNo, &approval, preview, nil
 	}
 	return nil, 0, nil, nil, nil
 }
 
-func previewPanelKeyForApprovalPhase(phase string) string {
-	switch strings.ToLower(strings.TrimSpace(phase)) {
-	case "prd":
-		return "prd_draft"
-	case "task_doc", "story_doc":
-		return "task_plan_doc"
-	case "tasks", "stories":
-		return "task_plan"
-	default:
-		return ""
+func normalizeApprovalPreviewPanelKey(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func latestRunPreviewArtifactForApproval(artifacts []model.AgentRunArtifact, assistantSequenceNo int, approval *model.ApprovalRequest) (*worker.PublishedPreview, error) {
+	panelKey := ""
+	if approval != nil {
+		panelKey = normalizeApprovalPreviewPanelKey(approval.PreviewPanelKey)
 	}
+	preview, count, err := latestRunPreviewArtifactForAssistantSequence(artifacts, assistantSequenceNo, panelKey)
+	if err != nil {
+		return nil, err
+	}
+	if preview != nil {
+		return preview, nil
+	}
+	if panelKey != "" {
+		return latestRunPreviewArtifact(artifacts, panelKey)
+	}
+	if count > 1 {
+		return nil, nil
+	}
+	return latestRunPreviewArtifact(artifacts, "")
 }
 
 func latestRunPreviewArtifact(artifacts []model.AgentRunArtifact, panelKey string) (*worker.PublishedPreview, error) {
-	targetKey := strings.ToLower(strings.TrimSpace(panelKey))
+	targetKey := normalizeApprovalPreviewPanelKey(panelKey)
 	for i := len(artifacts) - 1; i >= 0; i-- {
 		artifact := artifacts[i]
 		if strings.TrimSpace(artifact.ArtifactType) != worker.RunPreviewArtifactType || artifact.InlineContent == nil {
@@ -3404,7 +3407,7 @@ func latestRunPreviewArtifact(artifacts []model.AgentRunArtifact, panelKey strin
 		if err := json.Unmarshal([]byte(*artifact.InlineContent), &payload); err != nil {
 			return nil, fmt.Errorf("parse run preview artifact: %w", err)
 		}
-		if targetKey != "" && strings.ToLower(strings.TrimSpace(payload.PanelKey)) != targetKey {
+		if targetKey != "" && normalizeApprovalPreviewPanelKey(payload.PanelKey) != targetKey {
 			continue
 		}
 		return &payload, nil
@@ -3412,11 +3415,13 @@ func latestRunPreviewArtifact(artifacts []model.AgentRunArtifact, panelKey strin
 	return nil, nil
 }
 
-func latestRunPreviewArtifactForAssistantSequence(artifacts []model.AgentRunArtifact, assistantSequenceNo int, panelKey string) (*worker.PublishedPreview, error) {
+func latestRunPreviewArtifactForAssistantSequence(artifacts []model.AgentRunArtifact, assistantSequenceNo int, panelKey string) (*worker.PublishedPreview, int, error) {
 	if assistantSequenceNo <= 0 {
-		return nil, nil
+		return nil, 0, nil
 	}
-	targetKey := strings.ToLower(strings.TrimSpace(panelKey))
+	targetKey := normalizeApprovalPreviewPanelKey(panelKey)
+	matchCount := 0
+	var firstMatch *worker.PublishedPreview
 	for i := len(artifacts) - 1; i >= 0; i-- {
 		artifact := artifacts[i]
 		if strings.TrimSpace(artifact.ArtifactType) != worker.RunPreviewArtifactType || artifact.InlineContent == nil {
@@ -3427,14 +3432,24 @@ func latestRunPreviewArtifactForAssistantSequence(artifacts []model.AgentRunArti
 		}
 		var payload worker.PublishedPreview
 		if err := json.Unmarshal([]byte(*artifact.InlineContent), &payload); err != nil {
-			return nil, fmt.Errorf("parse run preview artifact: %w", err)
+			return nil, 0, fmt.Errorf("parse run preview artifact: %w", err)
 		}
-		if targetKey != "" && strings.ToLower(strings.TrimSpace(payload.PanelKey)) != targetKey {
+		if targetKey != "" && normalizeApprovalPreviewPanelKey(payload.PanelKey) != targetKey {
 			continue
 		}
-		return &payload, nil
+		matchCount++
+		if targetKey != "" {
+			return &payload, matchCount, nil
+		}
+		if firstMatch == nil {
+			previewCopy := payload
+			firstMatch = &previewCopy
+		}
 	}
-	return nil, nil
+	if targetKey == "" && matchCount == 1 {
+		return firstMatch, matchCount, nil
+	}
+	return nil, matchCount, nil
 }
 
 func artifactAssistantMessageSequenceNo(artifact model.AgentRunArtifact) int {

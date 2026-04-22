@@ -38,7 +38,7 @@ func TestRequestUserInputResumeContentUsesGenericQuestionAnswerFormatting(t *tes
 }
 
 func TestReviewCheckpointResumeContentUsesSelectedFindingsForApprove(t *testing.T) {
-	requestPayload, err := json.Marshal(model.ApprovalRequest{
+	requestPayload, err := json.Marshal(model.ReviewCheckpointRequest{
 		Phase: "review",
 		Title: "Lens review findings",
 		Findings: []model.ReviewFinding{
@@ -70,7 +70,7 @@ func TestReviewCheckpointResumeContentUsesSelectedFindingsForApprove(t *testing.
 }
 
 func TestReviewCheckpointResumeContentFallsBackToAllFindings(t *testing.T) {
-	requestPayload, err := json.Marshal(model.ApprovalRequest{
+	requestPayload, err := json.Marshal(model.ReviewCheckpointRequest{
 		Phase: "review",
 		Title: "Lens review findings",
 		Findings: []model.ReviewFinding{
@@ -90,7 +90,7 @@ func TestReviewCheckpointResumeContentFallsBackToAllFindings(t *testing.T) {
 }
 
 func TestReviewCheckpointResumeContentDoesNotFallBackToAllWhenSelectedIDsAreMissing(t *testing.T) {
-	requestPayload, err := json.Marshal(model.ApprovalRequest{
+	requestPayload, err := json.Marshal(model.ReviewCheckpointRequest{
 		Phase: "review",
 		Title: "Lens review findings",
 		Findings: []model.ReviewFinding{
@@ -111,5 +111,50 @@ func TestReviewCheckpointResumeContentDoesNotFallBackToAllWhenSelectedIDsAreMiss
 	got := reviewCheckpointResumeContent(requestPayload, responsePayload, model.AgentRunResumeIntentApprove)
 	if got != "" {
 		t.Fatalf("expected empty resume content when selected scope is empty, got %q", got)
+	}
+}
+
+func TestApprovalRequestResumeContentSynthesizesPRDContinuation(t *testing.T) {
+	requestPayload, err := json.Marshal(model.ApprovalRequest{
+		Phase: "prd",
+		Title: "Approve PRD",
+	})
+	if err != nil {
+		t.Fatalf("marshal request payload: %v", err)
+	}
+
+	got := approvalRequestResumeContent(requestPayload, json.RawMessage(`{"decision":"approve"}`), model.AgentRunResumeIntentApprove)
+	if got != "Approved PRD. Continue to task planning." {
+		t.Fatalf("unexpected synthesized PRD resume content: %q", got)
+	}
+}
+
+func TestApprovalRequestResumeContentSynthesizesTaskPlanContinuation(t *testing.T) {
+	requestPayload, err := json.Marshal(model.ApprovalRequest{
+		Phase: "tasks",
+		Title: "Approve Task Plan",
+	})
+	if err != nil {
+		t.Fatalf("marshal request payload: %v", err)
+	}
+
+	got := approvalRequestResumeContent(requestPayload, json.RawMessage(`{"decision":"approve"}`), model.AgentRunResumeIntentApprove)
+	if got != "Approved task plan. Apply it and create tasks." {
+		t.Fatalf("unexpected synthesized task-plan resume content: %q", got)
+	}
+}
+
+func TestApprovalRequestResumeContentPreservesExplicitApproveMessage(t *testing.T) {
+	requestPayload, err := json.Marshal(model.ApprovalRequest{
+		Phase: "prd",
+		Title: "Approve PRD",
+	})
+	if err != nil {
+		t.Fatalf("marshal request payload: %v", err)
+	}
+
+	got := approvalRequestResumeContent(requestPayload, json.RawMessage(`{"decision":"approve","message":"Looks good. Proceed."}`), model.AgentRunResumeIntentApprove)
+	if got != "Looks good. Proceed." {
+		t.Fatalf("expected explicit approval message to win, got %q", got)
 	}
 }

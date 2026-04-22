@@ -22,19 +22,19 @@ Use it when changing:
 }
 ```
 
-### `publish_story_plan`
+### `publish_task_plan`
 
 ```json
 {
-  "title": "Story Plan",
+  "title": "Task Plan",
   "content": {
     "summary": "...",
-    "proposed_stories": [
+    "proposed_tasks": [
       {
-        "ref": "story_1",
+        "ref": "task_1",
         "name": "Add tracking helper",
         "description": "...",
-        "story_type": "chore",
+        "task_type": "chore",
         "acceptance_criteria": ["..."],
         "dependency_refs": [],
         "slice_type": "enabler",
@@ -51,12 +51,12 @@ Use it when changing:
         }
       },
       {
-        "ref": "story_2",
+        "ref": "task_2",
         "name": "Wire tracking into capture errors",
         "description": "...",
-        "story_type": "feature",
+        "task_type": "feature",
         "acceptance_criteria": ["..."],
-        "dependency_refs": ["story_1"],
+        "dependency_refs": ["task_1"],
         "slice_type": "vertical",
         "implementation_brief": {
           "approach": "...",
@@ -77,11 +77,11 @@ Use it when changing:
 }
 ```
 
-### `publish_story_plan_doc`
+### `publish_task_plan_doc`
 
 ```json
 {
-  "title": "Story Planning Document",
+  "title": "Task Planning Document",
   "content": "# Outcome\n..."
 }
 ```
@@ -92,24 +92,32 @@ Rules:
 - `content` must be the full markdown draft being reviewed
 - `title` is optional metadata only and must not be sent by itself
 
-### `request_human_approval`
+### `request_review_checkpoint`
 
 ```json
 {
-  "phase": "prd|stories|story_doc",
+  "phase": "prd|tasks|task_doc",
   "title": "...",
   "summary": "..."
 }
 ```
 
-## Canonical Story Plan Fields
+For planner approval phases:
 
-Inside `proposed_stories`, use:
+- `phase="prd"` requires a same-turn `publish_prd_draft`
+- `phase="tasks"` requires a same-turn `publish_task_plan`
+- `phase="task_doc"` requires a same-turn `publish_task_plan_doc`
+
+Do not emit `request_review_checkpoint` for a planner phase before publishing the corresponding preview in that same turn.
+
+## Canonical Task Plan Fields
+
+Inside `proposed_tasks`, use:
 
 - `ref`
 - `name`
 - `description`
-- `story_type`
+- `task_type`
 - `acceptance_criteria`
 - `dependency_refs`
 - `slice_type`
@@ -118,14 +126,15 @@ Inside `proposed_stories`, use:
 Do not use:
 
 - `title` instead of `name`
-- `type` instead of `story_type`
+- `type` instead of `task_type`
 
 ## Compatibility Aliases
 
 These are accepted during decode for backward compatibility:
 
 - `title` -> `name`
-- `type` -> `story_type`
+- `type` -> `task_type`
+- `story_type` -> `task_type`
 - `test_strategy` as either:
   - string
   - array of strings
@@ -137,18 +146,18 @@ No other planner payload aliases should be added casually.
 
 ## `dependency_refs`
 
-`dependency_refs` must point to refs that exist elsewhere in the same `proposed_stories` array.
+`dependency_refs` must point to refs that exist elsewhere in the same `proposed_tasks` array.
 
 Example:
 
 ```json
 {
-  "ref": "story_2",
-  "dependency_refs": ["story_1"]
+  "ref": "task_2",
+  "dependency_refs": ["task_1"]
 }
 ```
 
-That means `story_2` depends on the story whose ref is `story_1`.
+That means `task_2` depends on the task whose ref is `task_1`.
 
 Rules:
 

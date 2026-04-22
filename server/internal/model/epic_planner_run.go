@@ -1,7 +1,20 @@
 package model
 
 type ApprovalRequest struct {
-	Phase                  string          `json:"phase"`
+	Phase           string `json:"phase,omitempty"`
+	PreviewPanelKey string `json:"preview_panel_key,omitempty"`
+	Title           string `json:"title"`
+	Summary         string `json:"summary"`
+}
+
+type ApprovalResponse struct {
+	Decision string `json:"decision,omitempty"`
+	Message  string `json:"message,omitempty"`
+}
+
+type ReviewCheckpointRequest struct {
+	Phase                  string          `json:"phase,omitempty"`
+	PreviewPanelKey        string          `json:"preview_panel_key,omitempty"`
 	Title                  string          `json:"title"`
 	Summary                string          `json:"summary"`
 	Findings               []ReviewFinding `json:"findings,omitempty"`

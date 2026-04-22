@@ -557,7 +557,7 @@ func TestNormalizeAgentRecordMigratesLegacyPreviewToolsForPlannerPreset(t *testi
 	tools := parseJSONStringSlice(agent.AllowedTools)
 	for _, required := range []string{
 		worker.ToolUpdatePlan,
-		worker.ToolRequestReviewCheckpoint,
+		worker.ToolRequestApproval,
 		worker.ToolPublishPRDDraft,
 		worker.ToolPublishTaskPlan,
 	} {
@@ -596,8 +596,8 @@ func TestNormalizeAgentRecordStripsGenericPreviewToolsFromStoryPlanner(t *testin
 	if !slices.Contains(tools, worker.ToolUpdatePlan) {
 		t.Fatalf("expected sanitized tool list to keep %q, got %v", worker.ToolUpdatePlan, tools)
 	}
-	if !slices.Contains(tools, worker.ToolRequestReviewCheckpoint) {
-		t.Fatalf("expected sanitized tool list to keep %q, got %v", worker.ToolRequestReviewCheckpoint, tools)
+	if !slices.Contains(tools, worker.ToolRequestApproval) {
+		t.Fatalf("expected sanitized tool list to keep %q, got %v", worker.ToolRequestApproval, tools)
 	}
 	for _, unexpected := range []string{
 		worker.ToolPreviewMarkdown,
@@ -631,7 +631,7 @@ func TestNormalizeAgentRecordStripsStoryPreviewToolFromEpicPlanner(t *testing.T)
 	tools := parseJSONStringSlice(agent.AllowedTools)
 	for _, required := range []string{
 		worker.ToolUpdatePlan,
-		worker.ToolRequestReviewCheckpoint,
+		worker.ToolRequestApproval,
 		worker.ToolPublishPRDDraft,
 		worker.ToolPublishTaskPlan,
 	} {
@@ -672,7 +672,7 @@ func TestNormalizeAgentRecordStripsRepositoryEditToolsFromPlannerPresets(t *test
 					t.Fatalf("expected sanitized tool list to exclude %q, got %v", unexpected, tools)
 				}
 			}
-			for _, required := range []string{"read_file", "search_documents", worker.ToolUpdatePlan, worker.ToolRequestReviewCheckpoint} {
+			for _, required := range []string{"read_file", "search_documents", worker.ToolUpdatePlan, worker.ToolRequestApproval} {
 				if !slices.Contains(tools, required) {
 					t.Fatalf("expected sanitized tool list to keep %q, got %v", required, tools)
 				}
@@ -697,7 +697,7 @@ func TestNormalizeAgentRecordStripsListEpicTasksFromTaskPlanner(t *testing.T) {
 	if slices.Contains(tools, "list_epic_tasks") {
 		t.Fatalf("expected sanitized task planner tool list to exclude list_epic_tasks, got %v", tools)
 	}
-	for _, required := range []string{"read_file", "search_documents", worker.ToolUpdatePlan, worker.ToolRequestReviewCheckpoint, worker.ToolPublishTaskPlanDoc} {
+	for _, required := range []string{"read_file", "search_documents", worker.ToolUpdatePlan, worker.ToolRequestApproval, worker.ToolPublishTaskPlanDoc} {
 		if !slices.Contains(tools, required) {
 			t.Fatalf("expected sanitized tool list to keep %q, got %v", required, tools)
 		}

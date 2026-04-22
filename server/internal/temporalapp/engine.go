@@ -195,35 +195,38 @@ func (e *RunEngine) Health() RunnerHealth {
 	}
 }
 
-// StartSchedule starts a cron-scheduled workflow for an agent.
-func (e *RunEngine) StartSchedule(ctx context.Context, agentID, workspaceID, schedule string) error {
+// StartRuleSchedule starts a cron-scheduled workflow for an automation rule.
+func (e *RunEngine) StartRuleSchedule(ctx context.Context, ruleID, workspaceID, schedule string) error {
 	if e == nil || e.client == nil {
 		return fmt.Errorf("temporal run engine is not configured")
 	}
-	workflowID := WorkflowIDForSchedule(agentID)
+	workflowID := WorkflowIDForRuleSchedule(ruleID)
 	options := tclient.StartWorkflowOptions{
 		ID:           workflowID,
 		TaskQueue:    QueueAutomation,
 		CronSchedule: schedule,
 	}
-	_, err := e.client.ExecuteWorkflow(ctx, options, ScheduledAgentWorkflow, ScheduledAgentInput{
-		AgentID:     agentID,
+	_, err := e.client.ExecuteWorkflow(ctx, options, ScheduledRuleWorkflow, ScheduledRuleInput{
+		RuleID:      ruleID,
 		WorkspaceID: workspaceID,
 	})
 	if err != nil {
-		return fmt.Errorf("start schedule workflow: %w", err)
+		var alreadyStarted *serviceerror.WorkflowExecutionAlreadyStarted
+		if errors.As(err, &alreadyStarted) {
+			return nil
+		}
+		return fmt.Errorf("start rule schedule workflow: %w", err)
 	}
 	return nil
 }
 
-// StopSchedule terminates a cron-scheduled workflow for an agent.
-// Silently ignores errors if no schedule workflow exists.
-func (e *RunEngine) StopSchedule(ctx context.Context, agentID string) error {
+// StopRuleSchedule terminates a cron-scheduled workflow for an automation rule.
+func (e *RunEngine) StopRuleSchedule(ctx context.Context, ruleID string) error {
 	if e == nil || e.client == nil {
 		return nil
 	}
-	workflowID := WorkflowIDForSchedule(agentID)
-	_ = e.client.TerminateWorkflow(ctx, workflowID, "", "schedule removed")
+	workflowID := WorkflowIDForRuleSchedule(ruleID)
+	_ = e.client.TerminateWorkflow(ctx, workflowID, "", "rule schedule removed")
 	return nil
 }
 

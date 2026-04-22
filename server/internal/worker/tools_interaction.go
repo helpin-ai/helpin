@@ -11,6 +11,7 @@ import (
 
 const (
 	ToolRequestUserInput        = "request_user_input"
+	ToolRequestApproval         = "request_approval"
 	ToolRequestReviewCheckpoint = "request_review_checkpoint"
 	ToolRequestHumanInput       = "request_human_input"
 	ToolRequestHumanApproval    = "request_human_approval"
@@ -38,15 +39,8 @@ type UserInputRequest struct {
 	Questions []UserInputQuestion `json:"questions"`
 }
 
-type ReviewCheckpointRequest struct {
-	Phase                  string                   `json:"phase,omitempty"`
-	Title                  string                   `json:"title"`
-	Summary                string                   `json:"summary,omitempty"`
-	Findings               []appmodel.ReviewFinding `json:"findings,omitempty"`
-	OverallCorrectness     string                   `json:"overall_correctness,omitempty"`
-	OverallExplanation     string                   `json:"overall_explanation,omitempty"`
-	OverallConfidenceScore *float64                 `json:"overall_confidence_score,omitempty"`
-}
+type ApprovalRequest = appmodel.ApprovalRequest
+type ReviewCheckpointRequest = appmodel.ReviewCheckpointRequest
 
 // HumanInput* types remain as a temporary decode alias for request_human_input.
 type HumanInputOption struct {
@@ -67,14 +61,14 @@ type HumanInputRequest struct {
 }
 
 // HumanApprovalRequest remains as a temporary decode alias for request_human_approval.
-type HumanApprovalRequest = ReviewCheckpointRequest
+type HumanApprovalRequest = ApprovalRequest
 
 func CanonicalToolName(name string) string {
 	switch strings.TrimSpace(name) {
 	case ToolRequestHumanInput:
 		return ToolRequestUserInput
 	case ToolRequestHumanApproval:
-		return ToolRequestReviewCheckpoint
+		return ToolRequestApproval
 	case "publish_story_plan":
 		return "publish_task_plan"
 	case "publish_story_plan_doc":
@@ -152,6 +146,24 @@ func toolRequestHumanInput(ctx *ExecutionContext, input json.RawMessage) (string
 	return toolRequestUserInput(ctx, normalized)
 }
 
+func toolRequestApproval(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	var req ApprovalRequest
+	if err := json.Unmarshal(input, &req); err != nil {
+		return "", fmt.Errorf("parse input: %w", err)
+	}
+	if err := validateApprovalRequest(&req); err != nil {
+		return "", err
+	}
+
+	return toCompactJSONString(map[string]any{
+		"status":       appmodel.AgentRunStatusPaused,
+		"pause_reason": appmodel.AgentRunPauseReasonHumanApproval,
+		"phase":        req.Phase,
+		"title":        req.Title,
+		"summary":      req.Summary,
+	}), nil
+}
+
 func toolRequestReviewCheckpoint(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	var req ReviewCheckpointRequest
 	if err := json.Unmarshal(input, &req); err != nil {
@@ -175,14 +187,14 @@ func toolRequestHumanApproval(ctx *ExecutionContext, input json.RawMessage) (str
 	if err := json.Unmarshal(input, &legacy); err != nil {
 		return "", fmt.Errorf("parse input: %w", err)
 	}
-	if err := validateReviewCheckpointRequest(&legacy); err != nil {
+	if err := validateApprovalRequest(&legacy); err != nil {
 		return "", err
 	}
 	normalized, err := json.Marshal(legacy)
 	if err != nil {
 		return "", fmt.Errorf("marshal input: %w", err)
 	}
-	return toolRequestReviewCheckpoint(ctx, normalized)
+	return toolRequestApproval(ctx, normalized)
 }
 
 func validateUserInputRequest(req *UserInputRequest) error {
@@ -263,21 +275,30 @@ func validateLegacyHumanInputRequest(req *HumanInputRequest) error {
 	return nil
 }
 
+func validateApprovalRequest(req *ApprovalRequest) error {
+	if req == nil {
+		return fmt.Errorf("title is required")
+	}
+	normalizeApprovalRequestFields(&req.Phase, &req.PreviewPanelKey, &req.Title, &req.Summary)
+	if req.Title == "" {
+		return fmt.Errorf("title is required")
+	}
+	return nil
+}
+
 func validateReviewCheckpointRequest(req *ReviewCheckpointRequest) error {
 	if req == nil {
 		return fmt.Errorf("title is required")
 	}
-	req.Phase = strings.ToLower(strings.TrimSpace(req.Phase))
-	if req.Phase == "" {
-		req.Phase = "review"
-	}
-	req.Title = strings.TrimSpace(req.Title)
-	req.Summary = strings.TrimSpace(req.Summary)
-	req.OverallCorrectness = strings.TrimSpace(req.OverallCorrectness)
-	req.OverallExplanation = strings.TrimSpace(req.OverallExplanation)
+	normalizeApprovalRequestFields(&req.Phase, &req.PreviewPanelKey, &req.Title, &req.Summary)
 	if req.Title == "" {
 		return fmt.Errorf("title is required")
 	}
+	if req.Phase == "" {
+		req.Phase = "review"
+	}
+	req.OverallCorrectness = strings.TrimSpace(req.OverallCorrectness)
+	req.OverallExplanation = strings.TrimSpace(req.OverallExplanation)
 	for i := range req.Findings {
 		finding := &req.Findings[i]
 		finding.ID = strings.TrimSpace(finding.ID)
@@ -296,6 +317,21 @@ func validateReviewCheckpointRequest(req *ReviewCheckpointRequest) error {
 		}
 	}
 	return nil
+}
+
+func normalizeApprovalRequestFields(phase, previewPanelKey, title, summary *string) {
+	if phase != nil {
+		*phase = strings.ToLower(strings.TrimSpace(*phase))
+	}
+	if previewPanelKey != nil {
+		*previewPanelKey = strings.ToLower(strings.TrimSpace(*previewPanelKey))
+	}
+	if title != nil {
+		*title = strings.TrimSpace(*title)
+	}
+	if summary != nil {
+		*summary = strings.TrimSpace(*summary)
+	}
 }
 
 func convertLegacyHumanInputRequest(req *HumanInputRequest) UserInputRequest {
@@ -324,19 +360,45 @@ func convertLegacyHumanInputRequest(req *HumanInputRequest) UserInputRequest {
 
 func IsHumanInteractionTool(name string) bool {
 	switch strings.TrimSpace(name) {
-	case ToolRequestUserInput, ToolRequestReviewCheckpoint, ToolRequestHumanInput, ToolRequestHumanApproval:
+	case ToolRequestUserInput, ToolRequestApproval, ToolRequestReviewCheckpoint, ToolRequestHumanInput, ToolRequestHumanApproval:
 		return true
 	default:
 		return false
 	}
 }
 
-func ExtractLatestHumanApprovalRequest(toolInvocations []appmodel.ToolInvocation) *appmodel.ApprovalRequest {
+func ExtractLatestApprovalRequest(toolInvocations []appmodel.ToolInvocation) *appmodel.ApprovalRequest {
 	for i := len(toolInvocations) - 1; i >= 0; i-- {
 		invocation := toolInvocations[i]
 		switch strings.TrimSpace(invocation.ToolName) {
-		case ToolRequestReviewCheckpoint, ToolRequestHumanApproval:
+		case ToolRequestApproval, ToolRequestHumanApproval:
 		default:
+			continue
+		}
+
+		var req ApprovalRequest
+		if err := json.Unmarshal(invocation.Input, &req); err != nil {
+			continue
+		}
+		if err := validateApprovalRequest(&req); err != nil {
+			continue
+		}
+
+		return &appmodel.ApprovalRequest{
+			Phase:           req.Phase,
+			PreviewPanelKey: req.PreviewPanelKey,
+			Title:           req.Title,
+			Summary:         req.Summary,
+		}
+	}
+
+	return nil
+}
+
+func ExtractLatestReviewCheckpointRequest(toolInvocations []appmodel.ToolInvocation) *appmodel.ReviewCheckpointRequest {
+	for i := len(toolInvocations) - 1; i >= 0; i-- {
+		invocation := toolInvocations[i]
+		if strings.TrimSpace(invocation.ToolName) != ToolRequestReviewCheckpoint {
 			continue
 		}
 
@@ -348,8 +410,9 @@ func ExtractLatestHumanApprovalRequest(toolInvocations []appmodel.ToolInvocation
 			continue
 		}
 
-		return &appmodel.ApprovalRequest{
+		return &appmodel.ReviewCheckpointRequest{
 			Phase:                  req.Phase,
+			PreviewPanelKey:        req.PreviewPanelKey,
 			Title:                  req.Title,
 			Summary:                req.Summary,
 			Findings:               req.Findings,

@@ -455,12 +455,15 @@ function transcriptMessageFromEvent(event: CodingSessionEvent): CodingSessionTra
 function transcriptInteractionResolutionMessageFromEvent(event: CodingSessionEvent): CodingSessionTranscriptMessage | null {
   if (event.type !== 'interaction.resolved') return null;
   const payload = asRecord(event.payload) ?? {};
-  if (asString(payload.interaction_kind) !== 'review_checkpoint') return null;
+  const interactionKind = asString(payload.interaction_kind);
+  if (interactionKind !== 'review_checkpoint' && interactionKind !== 'approval_request') return null;
 
-  const content = reviewCheckpointResolutionTranscriptContent(
-    asRecord(payload.request_payload),
-    asRecord(payload.response_payload),
-  );
+  const content = interactionKind === 'approval_request'
+    ? approvalRequestResolutionTranscriptContent(asRecord(payload.request_payload), asRecord(payload.response_payload))
+    : reviewCheckpointResolutionTranscriptContent(
+      asRecord(payload.request_payload),
+      asRecord(payload.response_payload),
+    );
   if (!content) return null;
 
   return {
@@ -468,10 +471,29 @@ function transcriptInteractionResolutionMessageFromEvent(event: CodingSessionEve
     message_id: asString(payload.interaction_id) ?? event.id,
     role: 'user',
     content,
-    message_type: 'review_checkpoint_resolution',
+    message_type: interactionKind === 'approval_request' ? 'approval_request_resolution' : 'review_checkpoint_resolution',
     timestamp: event.timestamp,
     sequence_no: event.sequence_no,
   };
+}
+
+function approvalRequestResolutionTranscriptContent(
+  requestPayload: Record<string, unknown> | null,
+  responsePayload: Record<string, unknown> | null,
+) {
+  if (!responsePayload) return '';
+  const decision = asString(responsePayload.decision);
+  if (!decision) return '';
+  const title = asString(requestPayload?.title) ?? 'approval request';
+  const note = asString(responsePayload.message);
+  const lines: string[] = [
+    decision === 'approve' ? `Approved ${title}.` : `Requested changes on ${title}.`,
+  ];
+  if (note) {
+    lines.push('');
+    lines.push(`Note: ${note}`);
+  }
+  return lines.join('\n');
 }
 
 function reviewCheckpointResolutionTranscriptContent(
@@ -564,7 +586,7 @@ function parsePlanArtifact(argsText: string): RunPlanArtifact | null {
 }
 
 const TASK_PLAN_DOC_PUBLISH_TOOLS = new Set(['publish_task_plan_doc', 'publish_story_plan_doc']);
-const REVIEW_CHECKPOINT_TOOLS = new Set(['request_review_checkpoint', 'request_human_approval']);
+const APPROVAL_TOOLS = new Set(['request_approval', 'request_review_checkpoint', 'request_human_approval']);
 
 function parsePlanArtifactValue(value: unknown): RunPlanArtifact | null {
   if (typeof value === 'string') return parsePlanArtifact(value);
@@ -620,12 +642,13 @@ function isReviewStep(stepText: string) {
   return stepText.includes('publish') || stepText.includes('request') || stepText.includes('checkpoint') || stepText.includes('wait');
 }
 
-function hasReviewCheckpointEvent(events: CodingSessionEvent[]) {
+function hasApprovalEvent(events: CodingSessionEvent[]) {
   return events.some((event) => {
     if (event.type === 'approval.requested') return true;
     if (!event.type.startsWith('interaction.')) return false;
     const payload = asRecord(event.payload);
-    return asString(payload?.interaction_kind) === 'review_checkpoint';
+    const interactionKind = asString(payload?.interaction_kind);
+    return interactionKind === 'review_checkpoint' || interactionKind === 'approval_request';
   });
 }
 
@@ -643,10 +666,10 @@ function reconcileObservedPlanState(
   );
 
   const publishedTaskPlanDoc = [...TASK_PLAN_DOC_PUBLISH_TOOLS].some((toolName) => completedToolNames.has(toolName));
-  const requestedReviewCheckpoint = [...REVIEW_CHECKPOINT_TOOLS].some((toolName) => completedToolNames.has(toolName))
-    || hasReviewCheckpointEvent(events);
+  const requestedApproval = [...APPROVAL_TOOLS].some((toolName) => completedToolNames.has(toolName))
+    || hasApprovalEvent(events);
 
-  if (!publishedTaskPlanDoc && !requestedReviewCheckpoint) return plan;
+  if (!publishedTaskPlanDoc && !requestedApproval) return plan;
 
   let changed = false;
   const nextPlan: RunPlanArtifact = {
@@ -657,7 +680,7 @@ function reconcileObservedPlanState(
         changed = true;
         return { ...step, status: 'completed' };
       }
-      if (requestedReviewCheckpoint && step.status !== 'completed' && isReviewStep(normalizedStep)) {
+      if (requestedApproval && step.status !== 'completed' && isReviewStep(normalizedStep)) {
         changed = true;
         return { ...step, status: 'completed' };
       }

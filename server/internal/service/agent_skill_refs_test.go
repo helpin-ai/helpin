@@ -20,7 +20,7 @@ func TestCreateAgentResolvesBuiltInSkillRefs(t *testing.T) {
 
 	req := modelCreateAgentRequest(nil)
 	req.Skills = model.AgentSkillRefs{{Key: "approval_protocol"}}
-	req.AllowedTools = mustJSONStringSlice([]string{worker.ToolRequestReviewCheckpoint, worker.ToolPublishPRDDraft, worker.ToolPublishTaskPlan})
+	req.AllowedTools = mustJSONStringSlice([]string{worker.ToolRequestApproval, worker.ToolPublishPRDDraft, worker.ToolPublishTaskPlan})
 
 	created, err := svc.CreateAgent(context.Background(), req, "user-1")
 	if err != nil {

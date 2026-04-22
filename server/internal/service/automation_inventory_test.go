@@ -252,7 +252,6 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("create automation health snapshot: %v", err)
 	}
-	schedule := "0 * * * *"
 	if err := db.Create(&model.Agent{
 		ID:          "agent-1",
 		WorkspaceID: workspaceID,
@@ -260,7 +259,6 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 		Status:      "idle",
 		RuntimeKind: "opencode",
 		TriggerMode: "manual",
-		Schedule:    &schedule,
 	}).Error; err != nil {
 		t.Fatalf("create scheduled agent: %v", err)
 	}
@@ -380,9 +378,6 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 		triggerCounts[entry.ID] = entry.BindingCount
 	}
 
-	if got := triggerCounts["agent.schedule"]; got != 1 {
-		t.Fatalf("expected agent.schedule count 1, got %d", got)
-	}
 	if got := triggerCounts["automation_rule.cron"]; got != 1 {
 		t.Fatalf("expected automation_rule.cron count 1, got %d", got)
 	}

@@ -26,7 +26,7 @@ var builtInPresetSkillBundles = map[string]PresetSkillBundle{
 	},
 	model.AgentPresetTaskPlanner: {
 		Preamble:  "You are Task Planner. Run a single interactive planning conversation for one task.",
-		SkillKeys: []string{"task_planner_context", "approval_protocol", "task_decomposition", "general_agent_behavior"},
+		SkillKeys: []string{"task_planner_context", "approval_protocol", "general_agent_behavior"},
 	},
 	model.AgentPresetCRMOperator: {
 		Preamble:  "You are CRM Operator.",
