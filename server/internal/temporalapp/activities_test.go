@@ -605,6 +605,29 @@ func TestBuildTaskPlannerContextSectionsIncludesApprovedEpicSpecSnapshot(t *test
 	}
 }
 
+func TestAppendOperatorNotesSectionTrimsAndSkipsBlank(t *testing.T) {
+	sections := appendOperatorNotesSection(nil, "   ")
+	if len(sections) != 0 {
+		t.Fatalf("expected blank operator notes to be skipped, got %#v", sections)
+	}
+
+	sections = appendOperatorNotesSection(nil, "  Focus on launch blockers.  ")
+	if len(sections) != 1 || sections[0] != "Operator notes:\nFocus on launch blockers." {
+		t.Fatalf("unexpected operator notes sections %#v", sections)
+	}
+}
+
+func TestAppendPlannerRepositoryContextSectionSkipsWithoutRepositoryContext(t *testing.T) {
+	activity := &AgentRunActivities{}
+	sections, err := activity.appendPlannerRepositoryContextSection(context.Background(), []string{"Existing"}, &resolvedRunState{}, "Current implementation context from the repository:", []string{"seed"})
+	if err != nil {
+		t.Fatalf("appendPlannerRepositoryContextSection returned error: %v", err)
+	}
+	if len(sections) != 1 || sections[0] != "Existing" {
+		t.Fatalf("expected sections to remain unchanged without repository context, got %#v", sections)
+	}
+}
+
 func TestBuildInitialInstructionsUsesNativeSelectiveEpicTaskPlanningGuidanceAfterPRDApproval(t *testing.T) {
 	activity := &AgentRunActivities{}
 	state := &resolvedRunState{

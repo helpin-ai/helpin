@@ -6199,9 +6199,7 @@ func (a *AgentRunActivities) buildTaskPlannerContextSections(ctx context.Context
 		sections = append(sections, "No canonical task planning doc exists yet. Keep the draft in chat-backed preview artifacts until approval; the platform will create, persist, and link the approved artifact.")
 	}
 
-	if input.AdditionalContext != "" {
-		sections = append(sections, "Operator notes:\n"+input.AdditionalContext)
-	}
+	sections = appendOperatorNotesSection(sections, input.AdditionalContext)
 
 	sections = append(sections, fmt.Sprintf("Task: %s", state.task.Name))
 	if state.task.Description != nil {
@@ -6262,16 +6260,13 @@ func (a *AgentRunActivities) buildTaskPlannerContextSections(ctx context.Context
 		sections = append(sections, "Task comments:\n"+commentsContext)
 	}
 
-	repoContext, err := a.buildDraftSpecCodeContext(ctx, state, strings.Join([]string{
+	sections, err = a.appendPlannerRepositoryContextSection(ctx, sections, state, "Current implementation context from the live repository:", []string{
 		state.task.Name,
 		tiptap.RichTextToMarkdown(derefString(state.task.Description)),
 		input.AdditionalContext,
-	}, "\n\n"))
+	})
 	if err != nil {
 		return nil, err
-	}
-	if repoContext != "" {
-		sections = append(sections, "Current implementation context from the live repository:\n"+repoContext)
 	}
 
 	return sections, nil
@@ -6423,9 +6418,7 @@ func (a *AgentRunActivities) buildEpicPlannerContextSections(ctx context.Context
 	} else {
 		sections = append(sections, "This epic does not currently have a team. Before creating tasks, call list_workspace_teams and ask the human to choose the correct team inline in chat.")
 	}
-	if input.AdditionalContext != "" {
-		sections = append(sections, "Operator notes:\n"+input.AdditionalContext)
-	}
+	sections = appendOperatorNotesSection(sections, input.AdditionalContext)
 
 	linkedDocs, err := a.renderLinkedDocsContext(ctx, state.run.WorkspaceID, state.epic.ID, input.SpecDocumentID)
 	if err != nil {
@@ -6443,18 +6436,15 @@ func (a *AgentRunActivities) buildEpicPlannerContextSections(ctx context.Context
 		sections = append(sections, "Support and customer context already linked to this epic:\n"+linkedTickets)
 	}
 
-	repoContext, err := a.buildDraftSpecCodeContext(ctx, state, strings.Join([]string{
+	sections, err = a.appendPlannerRepositoryContextSection(ctx, sections, state, "Current implementation context from the planning repository:", []string{
 		state.epic.Name,
 		tiptap.RichTextToMarkdown(derefString(state.epic.Description)),
 		linkedDocs,
 		linkedTickets,
 		input.AdditionalContext,
-	}, "\n\n"))
+	})
 	if err != nil {
 		return nil, false, err
-	}
-	if repoContext != "" {
-		sections = append(sections, "Current implementation context from the planning repository:\n"+repoContext)
 	}
 
 	if len(state.epicTasks) > 0 {
@@ -6467,6 +6457,14 @@ func (a *AgentRunActivities) buildEpicPlannerContextSections(ctx context.Context
 	}
 
 	return sections, hasSpecContent, nil
+}
+
+func appendOperatorNotesSection(sections []string, additionalContext string) []string {
+	additionalContext = strings.TrimSpace(additionalContext)
+	if additionalContext == "" {
+		return sections
+	}
+	return append(sections, "Operator notes:\n"+additionalContext)
 }
 
 func (a *AgentRunActivities) buildApprovedSpecVersionSections(ctx context.Context, specVersionID, idLabel, snapshotLabel string, maxChars int) ([]string, error) {
@@ -6507,6 +6505,17 @@ func (a *AgentRunActivities) buildSpecDocumentDraftSections(ctx context.Context,
 	}
 	sections = append(sections, draftLabel+":\n"+truncatePlanningText(content.ContentText, maxChars))
 	return sections, true, nil
+}
+
+func (a *AgentRunActivities) appendPlannerRepositoryContextSection(ctx context.Context, sections []string, state *resolvedRunState, header string, seedParts []string) ([]string, error) {
+	repoContext, err := a.buildDraftSpecCodeContext(ctx, state, strings.Join(seedParts, "\n\n"))
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(repoContext) == "" {
+		return sections, nil
+	}
+	return append(sections, header+"\n"+repoContext), nil
 }
 
 func buildLegacyEpicPlannerRuleSections(run *model.AgentRun) []string {
