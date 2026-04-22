@@ -36,6 +36,7 @@ type ExecutionContext struct {
 	InitialInstructions        string
 	PhaseGuidance              string
 	RepairGuidance             string
+	RepairGuidanceClass        string
 	PlanningStage              string
 	PlanningMethodology        string
 	PlanningSpecDocumentID     string

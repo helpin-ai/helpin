@@ -379,6 +379,17 @@ type nativeRepairInstruction struct {
 	Instructions string
 }
 
+type nativeTurnDebugArtifact struct {
+	RuntimeKind                string   `json:"runtime_kind"`
+	NativeSelectivePathEnabled bool     `json:"native_selective_path_enabled"`
+	ContinuationMode           string   `json:"continuation_mode"`
+	RuntimeSkillRefs           []string `json:"runtime_skill_refs,omitempty"`
+	ActiveSkillRefs            []string `json:"active_skill_refs,omitempty"`
+	RequiredInteractions       []string `json:"required_interactions,omitempty"`
+	RepairGuidancePresent      bool     `json:"repair_guidance_present"`
+	RepairGuidanceClass        string   `json:"repair_guidance_class,omitempty"`
+}
+
 func latestUnresolvedNativeToolFailure(messages []model.AgentRunMessage) *workerpkg.ExecutionBlock {
 	if len(messages) == 0 {
 		return nil
@@ -777,7 +788,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		"target_type", state.run.TargetType,
 		"runtime_kind", state.run.RuntimeKind,
 	)
-	history, artifactContext, providerContinuation, repairGuidance, err := a.ensureRunConversation(ctx, state, legacyInitialInstructions, planningInput)
+	history, artifactContext, providerContinuation, repairInstruction, err := a.ensureRunConversation(ctx, state, legacyInitialInstructions, planningInput)
 	if err != nil {
 		_ = a.failRun(ctx, state, err.Error())
 		return ExecuteRunResult{}, nonRetryableRunError(err)
@@ -880,7 +891,8 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		BranchSyncConflictFiles:    slices.Clone(state.branchSync.ConflictFiles),
 		InitialInstructions:        legacyInitialInstructions,
 		PhaseGuidance:              phaseGuidance,
-		RepairGuidance:             repairGuidance,
+		RepairGuidance:             repairInstruction.Instructions,
+		RepairGuidanceClass:        repairInstruction.Class,
 		PlanningStage:              planningInput.Stage,
 		PlanningMethodology:        planningInput.PlanningMethodology,
 		PlanningSpecDocumentID:     planningInput.SpecDocumentID,
@@ -1786,33 +1798,33 @@ func (a *AgentRunActivities) finalizeSupportConversationRun(ctx context.Context,
 	return nil
 }
 
-func (a *AgentRunActivities) ensureRunConversation(ctx context.Context, state *resolvedRunState, initialInstructions string, planningInput planningRunInput) ([]workerpkg.ExecutionMessage, *workerpkg.ArtifactContext, *workerpkg.ProviderContinuation, string, error) {
+func (a *AgentRunActivities) ensureRunConversation(ctx context.Context, state *resolvedRunState, initialInstructions string, planningInput planningRunInput) ([]workerpkg.ExecutionMessage, *workerpkg.ArtifactContext, *workerpkg.ProviderContinuation, nativeRepairInstruction, error) {
 	artifactContext, err := a.loadRunArtifactContext(ctx, state)
 	if err != nil {
-		return nil, nil, nil, "", err
+		return nil, nil, nil, nativeRepairInstruction{}, err
 	}
 	providerContinuation, err := a.loadProviderContinuation(ctx, state)
 	if err != nil {
-		return nil, nil, nil, "", err
+		return nil, nil, nil, nativeRepairInstruction{}, err
 	}
 	if a.runMessageRepo == nil {
-		return nil, artifactContext, providerContinuation, "", nil
+		return nil, artifactContext, providerContinuation, nativeRepairInstruction{}, nil
 	}
 
 	messages, err := a.runMessageRepo.ListByRun(ctx, state.run.WorkspaceID, state.run.ID)
 	if err != nil {
-		return nil, nil, nil, "", err
+		return nil, nil, nil, nativeRepairInstruction{}, err
 	}
 	repairInstruction := latestNativeRepairInstruction(state, messages)
 	replayMessages := replayMessagesForExecution(state, messages)
 	if !hasExecutionHistoryMessages(replayMessages) {
 		prompt, err := a.buildInitialRunUserPrompt(ctx, state, artifactContext, planningInput, initialInstructions)
 		if err != nil {
-			return nil, nil, nil, "", err
+			return nil, nil, nil, nativeRepairInstruction{}, err
 		}
 		created, err := a.createRunMessage(ctx, state.run, "user", "prompt", prompt, nil, nil, nil, nil)
 		if err != nil {
-			return nil, nil, nil, "", err
+			return nil, nil, nil, nativeRepairInstruction{}, err
 		}
 		messages = append(messages, *created)
 		replayMessages = append(replayMessages, *created)
@@ -1820,7 +1832,7 @@ func (a *AgentRunActivities) ensureRunConversation(ctx context.Context, state *r
 
 	transcriptSummary, err := a.ensureTranscriptSummaryCheckpoint(ctx, state, replayMessages)
 	if err != nil {
-		return nil, nil, nil, "", err
+		return nil, nil, nil, nativeRepairInstruction{}, err
 	}
 	history := workerpkg.BuildExecutionHistory(replayMessages, transcriptSummary)
 	slog.InfoContext(ctx, "agent run prepared execution history",
@@ -1833,7 +1845,7 @@ func (a *AgentRunActivities) ensureRunConversation(ctx context.Context, state *r
 		"history_messages", len(history),
 		"transcript_summary_present", transcriptSummary != nil && strings.TrimSpace(transcriptSummary.Summary) != "",
 	)
-	return history, artifactContext, providerContinuation, repairInstruction.Instructions, nil
+	return history, artifactContext, providerContinuation, repairInstruction, nil
 }
 
 func (a *AgentRunActivities) buildInitialRunUserPrompt(ctx context.Context, state *resolvedRunState, artifactContext *workerpkg.ArtifactContext, planningInput planningRunInput, initialInstructions string) (string, error) {
@@ -2399,6 +2411,9 @@ func (a *AgentRunActivities) persistAssistantRunMessage(ctx context.Context, sta
 	if err := a.persistHumanInteractionArtifacts(ctx, state, result, assistantMessage); err != nil {
 		return nil, err
 	}
+	if err := a.persistNativeTurnDebugArtifact(ctx, state, execCtx, assistantMessage); err != nil {
+		return nil, err
+	}
 
 	for _, toolMessage := range buildPersistedToolResultMessages(result.Messages) {
 		if _, err := a.createRunMessage(ctx, state.run, toolMessage.Role, toolMessage.MessageType, toolMessage.Content, toolMessage.ContentBlocks, nil, nil, nil); err != nil {
@@ -2407,6 +2422,37 @@ func (a *AgentRunActivities) persistAssistantRunMessage(ctx context.Context, sta
 	}
 
 	return assistantMessage, nil
+}
+
+func (a *AgentRunActivities) persistNativeTurnDebugArtifact(ctx context.Context, state *resolvedRunState, execCtx *workerpkg.ExecutionContext, assistantMessage *model.AgentRunMessage) error {
+	if a == nil || a.artifactRepo == nil || state == nil || state.run == nil || execCtx == nil || assistantMessage == nil {
+		return nil
+	}
+	runtimeKind := executionRuntimeKind(state)
+	if !state.nativeSelectivePathEnabled || !execCtx.NativeSelectivePathEnabled || strings.TrimSpace(runtimeKind) != "native_sdk" {
+		return nil
+	}
+
+	payload := nativeTurnDebugArtifact{
+		RuntimeKind:                runtimeKind,
+		NativeSelectivePathEnabled: execCtx.NativeSelectivePathEnabled,
+		ContinuationMode:           providerContinuationMode(execCtx.ProviderContinuation),
+		RuntimeSkillRefs:           runtimeSkillRefKeys(execCtx.RuntimeSkillRefs),
+		ActiveSkillRefs:            runtimeSkillRefKeys(execCtx.ActiveRuntimeSkillRefs),
+		RequiredInteractions:       sortedCompletionInteractionKinds(completionRequiredInteractionKinds(execCtx.SkillPolicy)),
+		RepairGuidancePresent:      strings.TrimSpace(execCtx.RepairGuidance) != "",
+		RepairGuidanceClass:        strings.TrimSpace(execCtx.RepairGuidanceClass),
+	}
+
+	_, err := a.appendRunArtifactWithMetadata(
+		ctx,
+		state.run,
+		model.AgentRunArtifactTypeNativeTurnDebug,
+		"json",
+		payload,
+		buildAssistantSequenceArtifactMetadata(assistantMessage.SequenceNo),
+	)
+	return err
 }
 
 type persistedRunMessageInput struct {

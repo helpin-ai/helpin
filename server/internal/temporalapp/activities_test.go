@@ -3963,6 +3963,212 @@ func TestPersistAssistantRunMessagePersistsRunPlanArtifact(t *testing.T) {
 	}
 }
 
+func TestPersistAssistantRunMessagePersistsNativeTurnDebugArtifact(t *testing.T) {
+	dbName := fmt.Sprintf("file:native-turn-debug-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_messages (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			role TEXT NOT NULL,
+			content TEXT,
+			message_type TEXT NOT NULL DEFAULT 'message',
+			content_blocks TEXT,
+			turn_segments TEXT,
+			tool_invocations TEXT,
+			token_usage TEXT,
+			sequence_no INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME
+		)`,
+		`CREATE TABLE agent_run_artifacts (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			artifact_type TEXT NOT NULL,
+			format TEXT NOT NULL,
+			storage_mode TEXT NOT NULL,
+			inline_content TEXT,
+			object_key TEXT,
+			metadata TEXT NOT NULL,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+	}
+
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	activities := &AgentRunActivities{runMessageRepo: runMessageRepo, artifactRepo: artifactRepo}
+
+	run := &model.AgentRun{ID: "native-debug-1", WorkspaceID: "ws-1"}
+	state := &resolvedRunState{
+		run:                        run,
+		agent:                      &model.Agent{RuntimeKind: "native_sdk"},
+		nativeSelectivePathEnabled: true,
+	}
+	execCtx := &workerpkg.ExecutionContext{
+		NativeSelectivePathEnabled: true,
+		ProviderContinuation: &workerpkg.ProviderContinuation{
+			ResponseID: "resp_123",
+		},
+		RuntimeSkillRefs: model.AgentSkillRefs{
+			{Key: "general_agent_behavior"},
+			{Key: "approval_protocol"},
+			{SkillID: strPtr("workspace-skill-1")},
+		},
+		ActiveRuntimeSkillRefs: model.AgentSkillRefs{
+			{Key: "approval_protocol"},
+			{SkillID: strPtr("workspace-skill-1")},
+		},
+		SkillPolicy: workerpkg.SkillPolicy{
+			CompletionRequiresInteractionKinds: []string{
+				model.AgentRunInteractionKindApprovalRequest,
+				model.AgentRunInteractionKindReviewCheckpoint,
+			},
+		},
+		RepairGuidance:      "Retry with a same-turn preview binding.",
+		RepairGuidanceClass: "approval_preview_binding",
+		LastExecutionResult: &workerpkg.ExecutionResult{
+			AssistantText: "Need to retry the approval handoff.",
+		},
+	}
+
+	assistantMessage, err := activities.persistAssistantRunMessage(context.Background(), state, execCtx)
+	if err != nil {
+		t.Fatalf("persistAssistantRunMessage returned error: %v", err)
+	}
+	if assistantMessage == nil {
+		t.Fatal("expected assistant message to be persisted")
+	}
+
+	artifacts, err := artifactRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+
+	found := false
+	for _, artifact := range artifacts {
+		if artifact.ArtifactType != model.AgentRunArtifactTypeNativeTurnDebug || artifact.InlineContent == nil {
+			continue
+		}
+		found = true
+
+		var payload nativeTurnDebugArtifact
+		if err := json.Unmarshal([]byte(*artifact.InlineContent), &payload); err != nil {
+			t.Fatalf("unmarshal debug payload: %v", err)
+		}
+		if payload.RuntimeKind != "native_sdk" {
+			t.Fatalf("expected runtime_kind native_sdk, got %q", payload.RuntimeKind)
+		}
+		if !payload.NativeSelectivePathEnabled {
+			t.Fatal("expected native selective path enabled in payload")
+		}
+		if payload.ContinuationMode != "response_id" {
+			t.Fatalf("expected continuation mode response_id, got %q", payload.ContinuationMode)
+		}
+		if got := strings.Join(payload.RuntimeSkillRefs, ","); got != "general_agent_behavior,approval_protocol,workspace:workspace-skill-1" {
+			t.Fatalf("unexpected runtime skill refs: %v", payload.RuntimeSkillRefs)
+		}
+		if got := strings.Join(payload.ActiveSkillRefs, ","); got != "approval_protocol,workspace:workspace-skill-1" {
+			t.Fatalf("unexpected active skill refs: %v", payload.ActiveSkillRefs)
+		}
+		if got := strings.Join(payload.RequiredInteractions, ","); got != model.AgentRunInteractionKindApprovalRequest+","+model.AgentRunInteractionKindReviewCheckpoint {
+			t.Fatalf("unexpected required interactions: %v", payload.RequiredInteractions)
+		}
+		if !payload.RepairGuidancePresent {
+			t.Fatal("expected repair guidance to be marked present")
+		}
+		if payload.RepairGuidanceClass != "approval_preview_binding" {
+			t.Fatalf("expected repair guidance class to be preserved, got %q", payload.RepairGuidanceClass)
+		}
+
+		var metadata map[string]any
+		if err := json.Unmarshal(artifact.Metadata, &metadata); err != nil {
+			t.Fatalf("unmarshal metadata: %v", err)
+		}
+		if got := metadata["assistant_message_sequence_no"]; got != float64(assistantMessage.SequenceNo) {
+			t.Fatalf("expected assistant sequence metadata, got %#v", metadata)
+		}
+	}
+	if !found {
+		t.Fatal("expected native_turn_debug artifact to be persisted")
+	}
+}
+
+func TestPersistAssistantRunMessageSkipsNativeTurnDebugArtifactOutsideSelectivePath(t *testing.T) {
+	dbName := fmt.Sprintf("file:native-turn-debug-off-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_messages (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			role TEXT NOT NULL,
+			content TEXT,
+			message_type TEXT NOT NULL DEFAULT 'message',
+			content_blocks TEXT,
+			turn_segments TEXT,
+			tool_invocations TEXT,
+			token_usage TEXT,
+			sequence_no INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME
+		)`,
+		`CREATE TABLE agent_run_artifacts (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			artifact_type TEXT NOT NULL,
+			format TEXT NOT NULL,
+			storage_mode TEXT NOT NULL,
+			inline_content TEXT,
+			object_key TEXT,
+			metadata TEXT NOT NULL,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+	}
+
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	activities := &AgentRunActivities{runMessageRepo: runMessageRepo, artifactRepo: artifactRepo}
+
+	run := &model.AgentRun{ID: "native-debug-2", WorkspaceID: "ws-1", RuntimeKind: "native_sdk"}
+	state := &resolvedRunState{run: run, nativeSelectivePathEnabled: false}
+	execCtx := &workerpkg.ExecutionContext{
+		LastExecutionResult: &workerpkg.ExecutionResult{
+			AssistantText: "Legacy path message.",
+		},
+	}
+
+	if _, err := activities.persistAssistantRunMessage(context.Background(), state, execCtx); err != nil {
+		t.Fatalf("persistAssistantRunMessage returned error: %v", err)
+	}
+
+	artifacts, err := artifactRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	for _, artifact := range artifacts {
+		if artifact.ArtifactType == model.AgentRunArtifactTypeNativeTurnDebug {
+			t.Fatalf("did not expect native_turn_debug artifact outside selective path: %#v", artifact)
+		}
+	}
+}
+
 func TestBuildArtifactContextEntriesIncludesLatestRunPlan(t *testing.T) {
 	runPlanOld, _ := json.Marshal(workerpkg.RunPlanArtifact{
 		Plan: []workerpkg.RunPlanStep{{Step: "Old", Status: workerpkg.PlanStepInProgress}},
