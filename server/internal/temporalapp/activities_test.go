@@ -595,6 +595,57 @@ func TestClassifyPublishTaskPlanRepair(t *testing.T) {
 	}
 }
 
+func TestClassifyMarkdownPreviewRepair(t *testing.T) {
+	testCases := []struct {
+		name        string
+		toolName    string
+		output      string
+		wantClass   string
+		wantSnippet string
+	}{
+		{
+			name:        "task plan doc missing content",
+			toolName:    workerpkg.ToolPublishTaskPlanDoc,
+			output:      `publish_task_plan_doc is missing content; include markdown in "content"`,
+			wantClass:   "publish_task_plan_doc_missing_content",
+			wantSnippet: "title-only payloads",
+		},
+		{
+			name:        "task plan doc markdown type",
+			toolName:    workerpkg.ToolPublishTaskPlanDoc,
+			output:      `publish_task_plan_doc content must be a markdown string in "content"`,
+			wantClass:   "publish_task_plan_doc_markdown_type",
+			wantSnippet: "plain markdown string",
+		},
+		{
+			name:        "prd draft missing content",
+			toolName:    workerpkg.ToolPublishPRDDraft,
+			output:      `publish_prd_draft is missing content; include markdown in "content"`,
+			wantClass:   "publish_prd_draft_missing_content",
+			wantSnippet: "full PRD markdown draft",
+		},
+		{
+			name:        "prd draft markdown type",
+			toolName:    workerpkg.ToolPublishPRDDraft,
+			output:      `publish_prd_draft content must be a markdown string in "content"`,
+			wantClass:   "publish_prd_draft_markdown_type",
+			wantSnippet: "non-string content",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := classifyMarkdownPreviewRepair(tc.toolName, tc.output)
+			if got.Class != tc.wantClass {
+				t.Fatalf("expected class %q, got %#v", tc.wantClass, got)
+			}
+			if !strings.Contains(got.Instructions, tc.wantSnippet) {
+				t.Fatalf("expected instructions to contain %q, got %q", tc.wantSnippet, got.Instructions)
+			}
+		})
+	}
+}
+
 func TestLatestNativeRepairInstructionPrefersPublishTaskPlanToolFailure(t *testing.T) {
 	state := &resolvedRunState{
 		nativeSelectivePathEnabled: true,
@@ -622,6 +673,36 @@ func TestLatestNativeRepairInstructionPrefersPublishTaskPlanToolFailure(t *testi
 	}
 	if !strings.Contains(got.Instructions, `"summary"`) || !strings.Contains(got.Instructions, `"proposed_tasks"`) {
 		t.Fatalf("expected publish_task_plan repair guidance, got %q", got.Instructions)
+	}
+}
+
+func TestLatestNativeRepairInstructionPrefersPublishTaskPlanDocToolFailure(t *testing.T) {
+	state := &resolvedRunState{
+		nativeSelectivePathEnabled: true,
+	}
+	blocks, err := json.Marshal([]workerpkg.ExecutionBlock{
+		{
+			Type:     workerpkg.ExecutionBlockTypeToolResult,
+			ToolName: workerpkg.ToolPublishTaskPlanDoc,
+			Output:   `publish_task_plan_doc is missing content; include markdown in "content"`,
+			IsError:  true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal blocks: %v", err)
+	}
+	messages := []model.AgentRunMessage{
+		{Role: "assistant", MessageType: "assistant_turn", Content: "Trying to publish the planning doc."},
+		{Role: "tool", MessageType: "tool_result", Content: `publish_task_plan_doc is missing content; include markdown in "content"`, ContentBlocks: blocks},
+		{Role: "user", MessageType: "policy_retry", Content: "System correction: continue from your last assistant turn."},
+	}
+
+	got := latestNativeRepairInstruction(state, messages)
+	if got.Class != "publish_task_plan_doc_missing_content" {
+		t.Fatalf("expected publish_task_plan_doc repair class, got %#v", got)
+	}
+	if !strings.Contains(got.Instructions, "full task planning markdown draft") {
+		t.Fatalf("expected publish_task_plan_doc repair guidance, got %q", got.Instructions)
 	}
 }
 

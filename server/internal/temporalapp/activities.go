@@ -430,6 +430,8 @@ func classifyNativeToolFailureRepair(state *resolvedRunState, failure *workerpkg
 	switch toolName {
 	case workerpkg.ToolPublishTaskPlan:
 		return classifyPublishTaskPlanRepair(output)
+	case workerpkg.ToolPublishTaskPlanDoc, workerpkg.ToolPublishPRDDraft:
+		return classifyMarkdownPreviewRepair(toolName, output)
 	default:
 		return nativeRepairInstruction{}
 	}
@@ -472,6 +474,40 @@ func classifyPublishTaskPlanRepair(output string) nativeRepairInstruction {
 				"Your previous publish_task_plan call failed validation because the tool input was wrapped as raw text instead of structured fields.",
 				"Retry publish_task_plan with a normal JSON object input, not a raw wrapper string.",
 				`Put the task plan under the structured "content" object with summary and proposed_tasks.`,
+			}, "\n"),
+		}
+	default:
+		return nativeRepairInstruction{}
+	}
+}
+
+func classifyMarkdownPreviewRepair(toolName, output string) nativeRepairInstruction {
+	toolName = strings.TrimSpace(toolName)
+	contentLabel := "full markdown draft"
+	switch toolName {
+	case workerpkg.ToolPublishPRDDraft:
+		contentLabel = "full PRD markdown draft"
+	case workerpkg.ToolPublishTaskPlanDoc:
+		contentLabel = "full task planning markdown draft"
+	}
+
+	switch {
+	case strings.Contains(output, fmt.Sprintf(`%s is missing content; include markdown in "content"`, toolName)):
+		return nativeRepairInstruction{
+			Class: toolName + "_missing_content",
+			Instructions: strings.Join([]string{
+				fmt.Sprintf("Your previous %s call failed validation because the content field was missing.", toolName),
+				fmt.Sprintf(`Retry %s with the %s under "content".`, toolName, contentLabel),
+				"Do not send title-only payloads when publishing a markdown preview for review.",
+			}, "\n"),
+		}
+	case strings.Contains(output, fmt.Sprintf(`%s content must be a markdown string in "content"`, toolName)):
+		return nativeRepairInstruction{
+			Class: toolName + "_markdown_type",
+			Instructions: strings.Join([]string{
+				fmt.Sprintf("Your previous %s call failed validation because content was not a markdown string.", toolName),
+				fmt.Sprintf(`Retry %s with the %s as a plain markdown string in "content".`, toolName, contentLabel),
+				"Do not send JSON objects, arrays, or other non-string content to markdown preview tools.",
 			}, "\n"),
 		}
 	default:
