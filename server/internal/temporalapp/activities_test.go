@@ -241,6 +241,45 @@ func TestSplitNativePhaseGuidanceKeepsLegacyInstructionsForNonSelectivePath(t *t
 	}
 }
 
+func TestLatestNativeRepairGuidanceRequiresSelectivePath(t *testing.T) {
+	messages := []model.AgentRunMessage{
+		{Role: "user", MessageType: "policy_retry", Content: "System correction: continue from your last assistant message."},
+	}
+
+	if got := latestNativeRepairGuidance(&resolvedRunState{nativeSelectivePathEnabled: false}, messages); got != "" {
+		t.Fatalf("expected no repair guidance without selective path, got %q", got)
+	}
+}
+
+func TestLatestNativeRepairGuidanceIgnoresResolvedRetry(t *testing.T) {
+	messages := []model.AgentRunMessage{
+		{Role: "user", MessageType: "policy_retry", Content: "System correction: continue from your last assistant message."},
+		{Role: "assistant", MessageType: "assistant_turn", Content: "Retrying with the correct handoff."},
+	}
+
+	if got := latestNativeRepairGuidance(&resolvedRunState{nativeSelectivePathEnabled: true}, messages); got != "" {
+		t.Fatalf("expected no repair guidance after a later assistant turn, got %q", got)
+	}
+}
+
+func TestReplayMessagesForExecutionStripsPolicyRetryForSelectivePath(t *testing.T) {
+	messages := []model.AgentRunMessage{
+		{Role: "user", MessageType: "prompt", Content: "Initial request"},
+		{Role: "assistant", MessageType: "assistant_turn", Content: "Assistant reply"},
+		{Role: "user", MessageType: "policy_retry", Content: "System correction"},
+	}
+
+	filtered := replayMessagesForExecution(&resolvedRunState{nativeSelectivePathEnabled: true}, messages)
+	if len(filtered) != 2 {
+		t.Fatalf("expected policy_retry to be stripped from selective replay, got %#v", filtered)
+	}
+	for _, message := range filtered {
+		if strings.TrimSpace(message.MessageType) == "policy_retry" {
+			t.Fatalf("expected selective replay to remove policy_retry messages, got %#v", filtered)
+		}
+	}
+}
+
 func TestEffectiveExecutionSkillPolicyUsesActiveSelectionForSelectivePath(t *testing.T) {
 	state := &resolvedRunState{
 		nativeSelectivePathEnabled: true,
@@ -2952,7 +2991,7 @@ func TestEnsureRunConversationCreatesPromptWhenOnlyStatusMessageExists(t *testin
 		t.Fatalf("create status message: %v", err)
 	}
 
-	history, _, _, err := activities.ensureRunConversation(context.Background(), state, "Operator notes:\nFocus on setup.", planningRunInput{})
+	history, _, _, _, err := activities.ensureRunConversation(context.Background(), state, "Operator notes:\nFocus on setup.", planningRunInput{})
 	if err != nil {
 		t.Fatalf("ensureRunConversation returned error: %v", err)
 	}
@@ -3121,7 +3160,7 @@ func TestEnsureRunConversationBuildsTranscriptSummaryCheckpoint(t *testing.T) {
 		}
 	}
 
-	history, _, _, err := activities.ensureRunConversation(context.Background(), state, "", planningRunInput{})
+	history, _, _, _, err := activities.ensureRunConversation(context.Background(), state, "", planningRunInput{})
 	if err != nil {
 		t.Fatalf("ensureRunConversation returned error: %v", err)
 	}
@@ -4218,9 +4257,9 @@ func TestExecuteRunActivityPausesNativePlannerForReviewCheckpoint(t *testing.T) 
 
 	runRepo := repository.NewAgentRunRepository(db)
 	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	interactionRepo := repository.NewAgentRunInteractionRepository(db)
 	agentRepo := repository.NewAgentRepository(db)
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
-	interactionRepo := repository.NewAgentRunInteractionRepository(db)
 	epicRepo := repository.NewPMEpicRepository(db)
 	docsDocRepo := repository.NewDocsDocumentRepository(db)
 	docsContentRepo := repository.NewDocsContentRepository(db)
@@ -4295,9 +4334,9 @@ func TestExecuteRunActivityPausesNativePlannerForReviewCheckpoint(t *testing.T) 
 	activities := &AgentRunActivities{
 		runRepo:         runRepo,
 		runMessageRepo:  runMessageRepo,
+		interactionRepo: interactionRepo,
 		agentRepo:       agentRepo,
 		artifactRepo:    artifactRepo,
-		interactionRepo: interactionRepo,
 		epicRepo:        epicRepo,
 		docsDocRepo:     docsDocRepo,
 		docsContentRepo: docsContentRepo,
@@ -4466,9 +4505,9 @@ func TestExecuteRunActivityRetriesReviewAgentCompletionWithoutRequiredInteractio
 
 	runRepo := repository.NewAgentRunRepository(db)
 	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	interactionRepo := repository.NewAgentRunInteractionRepository(db)
 	agentRepo := repository.NewAgentRepository(db)
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
-	interactionRepo := repository.NewAgentRunInteractionRepository(db)
 	epicRepo := repository.NewPMEpicRepository(db)
 
 	now := time.Now().UTC()
@@ -4532,9 +4571,9 @@ func TestExecuteRunActivityRetriesReviewAgentCompletionWithoutRequiredInteractio
 	activities := &AgentRunActivities{
 		runRepo:         runRepo,
 		runMessageRepo:  runMessageRepo,
+		interactionRepo: interactionRepo,
 		agentRepo:       agentRepo,
 		artifactRepo:    artifactRepo,
-		interactionRepo: interactionRepo,
 		epicRepo:        epicRepo,
 		runtimes: workerpkg.NewRuntimeRegistry(stubRuntimeAdapter{
 			kind: "native_sdk",
@@ -4588,6 +4627,205 @@ func TestExecuteRunActivityRetriesReviewAgentCompletionWithoutRequiredInteractio
 	}
 	if !foundRetryMessage {
 		t.Fatalf("expected policy retry message to be appended, got %#v", messages)
+	}
+}
+
+func TestExecuteRunActivityThreadsNativeRepairGuidanceWithoutReplayingPolicyRetry(t *testing.T) {
+	t.Setenv("AGENT_NATIVE_SELECTIVE_PLANNER_ENABLED", "true")
+
+	db := newPlannerApprovalTestDB(t)
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_messages (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			role TEXT NOT NULL,
+			message_type TEXT NOT NULL,
+			content TEXT NOT NULL,
+			content_blocks BLOB,
+			turn_segments BLOB,
+			tool_invocations BLOB,
+			token_usage BLOB,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE agent_run_interactions (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			runtime_kind TEXT NOT NULL,
+			interaction_kind TEXT NOT NULL,
+			status TEXT NOT NULL,
+			request_schema_version TEXT NOT NULL,
+			response_schema_version TEXT,
+			request_id TEXT,
+			thread_id TEXT,
+			turn_id TEXT,
+			item_id TEXT,
+			approval_id TEXT,
+			assistant_message_sequence_no INTEGER,
+			title TEXT,
+			summary TEXT,
+			request_payload TEXT NOT NULL,
+			response_payload TEXT,
+			runtime_metadata TEXT NOT NULL,
+			resolved_by TEXT,
+			resolved_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+	}
+
+	runRepo := repository.NewAgentRunRepository(db)
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	interactionRepo := repository.NewAgentRunInteractionRepository(db)
+	agentRepo := repository.NewAgentRepository(db)
+	epicRepo := repository.NewPMEpicRepository(db)
+	docsDocRepo := repository.NewDocsDocumentRepository(db)
+	docsContentRepo := repository.NewDocsContentRepository(db)
+	docsLinkRepo := repository.NewDocsLinkRepository(db)
+
+	now := time.Now().UTC()
+	agent := &model.Agent{
+		ID:                    "agent-native-repair",
+		WorkspaceID:           "ws-1",
+		IsSystem:              true,
+		Name:                  "Epic Planner",
+		PresetKey:             model.AgentPresetEpicPlanner,
+		Role:                  "Planner",
+		Status:                "idle",
+		RuntimeKind:           "native_sdk",
+		Skills:                model.AgentSkillRefs{},
+		TriggerMode:           "manual",
+		AllowedTools:          json.RawMessage(`[]`),
+		AllowedCommands:       json.RawMessage(`[]`),
+		AllowedTargets:        json.RawMessage(`[]`),
+		ApprovalMode:          "never",
+		MaxConcurrentRuns:     1,
+		DefaultInvocationMode: model.InvocationModeInteractive,
+		CreatedAt:             now,
+		UpdatedAt:             now,
+	}
+	if err := db.Create(agent).Error; err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+
+	epic := &model.PMEpic{
+		ID:                 "epic-native-repair",
+		WorkspaceID:        "ws-1",
+		Name:               "Selective repair guidance",
+		PlanningState:      model.EpicPlanningStateAwaitingSpecApproval,
+		SpecClarifications: json.RawMessage(`[]`),
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}
+	if err := db.Create(epic).Error; err != nil {
+		t.Fatalf("create epic: %v", err)
+	}
+
+	run := &model.AgentRun{
+		ID:             "run-native-repair",
+		WorkspaceID:    "ws-1",
+		AgentID:        agent.ID,
+		TargetType:     "epic",
+		TargetID:       epic.ID,
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeInteractive,
+		Status:         model.AgentRunStatusRunning,
+		PauseReason:    model.AgentRunPauseReasonNone,
+		ApprovalState:  "not_required",
+		Input:          json.RawMessage(`{}`),
+		OutputSummary:  json.RawMessage(`{}`),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := db.Create(run).Error; err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	activities := &AgentRunActivities{
+		runRepo:         runRepo,
+		runMessageRepo:  runMessageRepo,
+		interactionRepo: interactionRepo,
+		agentRepo:       agentRepo,
+		epicRepo:        epicRepo,
+		docsDocRepo:     docsDocRepo,
+		docsContentRepo: docsContentRepo,
+		docsLinkRepo:    docsLinkRepo,
+		runtimes: workerpkg.NewRuntimeRegistry(stubRuntimeAdapter{
+			kind: "native_sdk",
+			executeFn: func(execCtx *workerpkg.ExecutionContext, run *model.AgentRun) error {
+				if !strings.Contains(execCtx.RepairGuidance, "same-turn preview") {
+					t.Fatalf("expected repair guidance in execution context, got %q", execCtx.RepairGuidance)
+				}
+				for _, message := range execCtx.ConversationHistory {
+					if strings.Contains(message.Content, "System correction:") {
+						t.Fatalf("expected policy_retry to stay out of replay history, got %#v", execCtx.ConversationHistory)
+					}
+				}
+				execCtx.LastExecutionResult = &workerpkg.ExecutionResult{
+					AssistantText: "Need clarification before continuing.",
+					ToolInvocations: []model.ToolInvocation{
+						{
+							ToolName: workerpkg.ToolRequestUserInput,
+							Input: json.RawMessage(`{
+								"questions": [
+									{
+										"id": "repair-q1",
+										"header": "Priority",
+										"question": "Which edge case should be prioritized first?",
+										"options": [
+											{ "label": "Preview binding" },
+											{ "label": "Approval handoff" }
+										]
+									}
+								]
+							}`),
+						},
+					},
+				}
+				return nil
+			},
+		}),
+	}
+
+	if _, err := activities.createRunMessage(context.Background(), run, "user", "prompt", "Initial prompt", nil, nil, nil, nil); err != nil {
+		t.Fatalf("create prompt message: %v", err)
+	}
+	if _, err := activities.createRunMessage(context.Background(), run, "assistant", "assistant_turn", "Drafted the PRD.", nil, nil, nil, nil); err != nil {
+		t.Fatalf("create assistant message: %v", err)
+	}
+	retryContent := "System correction: the previous turn requested approval without binding it to a same-turn preview."
+	if _, err := activities.createRunMessage(context.Background(), run, "user", "policy_retry", retryContent, nil, nil, nil, nil); err != nil {
+		t.Fatalf("create policy retry message: %v", err)
+	}
+
+	result, err := activities.ExecuteRunActivity(context.Background(), run.ID)
+	if err != nil {
+		t.Fatalf("ExecuteRunActivity returned error: %v", err)
+	}
+	if !result.AwaitingInput {
+		t.Fatalf("expected AwaitingInput, got %#v", result)
+	}
+
+	messages, err := runMessageRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("list run messages: %v", err)
+	}
+	foundPolicyRetry := false
+	for _, message := range messages {
+		if strings.TrimSpace(message.MessageType) == "policy_retry" && strings.Contains(message.Content, "same-turn preview") {
+			foundPolicyRetry = true
+			break
+		}
+	}
+	if !foundPolicyRetry {
+		t.Fatalf("expected persisted policy_retry marker to remain present, got %#v", messages)
 	}
 }
 

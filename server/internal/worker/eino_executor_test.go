@@ -168,3 +168,33 @@ func TestResolveNativeSupplementTransportKeepsSupplementInSystemPromptForLegacyP
 		t.Fatalf("expected legacy path to leave turn-local instructions empty, got %q", turnLocalInstructions)
 	}
 }
+
+func TestResolveNativeRepairGuidanceTransportMovesRepairToTurnLocalForSelectivePath(t *testing.T) {
+	turnLocalInstructions, transport := resolveNativeRepairGuidanceTransport(&ExecutionContext{
+		RepairGuidance:             "Continue from your last assistant message and bind approval to a same-turn preview.",
+		NativeSelectivePathEnabled: true,
+	})
+
+	if transport != "turn_local" {
+		t.Fatalf("expected turn_local repair transport, got %q", transport)
+	}
+	if !strings.Contains(turnLocalInstructions, "Repair guidance for this turn:") {
+		t.Fatalf("expected repair guidance heading, got %q", turnLocalInstructions)
+	}
+	if !strings.Contains(turnLocalInstructions, "same-turn preview") {
+		t.Fatalf("expected repair guidance content in turn-local transport, got %q", turnLocalInstructions)
+	}
+}
+
+func TestResolveNativeRepairGuidanceTransportKeepsLegacyPathUnchanged(t *testing.T) {
+	turnLocalInstructions, transport := resolveNativeRepairGuidanceTransport(&ExecutionContext{
+		RepairGuidance: "Continue from your last assistant message.",
+	})
+
+	if strings.TrimSpace(turnLocalInstructions) != "" {
+		t.Fatalf("expected legacy path to leave repair guidance empty, got %q", turnLocalInstructions)
+	}
+	if transport != "none" {
+		t.Fatalf("expected no repair transport for legacy path, got %q", transport)
+	}
+}

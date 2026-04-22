@@ -374,6 +374,41 @@ func effectiveExecutionSkillPolicy(state *resolvedRunState, selection agentskill
 	return agentskills.AggregatePolicy(selection.Definitions)
 }
 
+func latestNativeRepairGuidance(state *resolvedRunState, messages []model.AgentRunMessage) string {
+	if state == nil || !state.nativeSelectivePathEnabled {
+		return ""
+	}
+	sawLaterAssistant := false
+	for i := len(messages) - 1; i >= 0; i-- {
+		message := messages[i]
+		if strings.TrimSpace(message.Role) == "assistant" && shouldIncludeRunMessageInExecutionHistory(message) {
+			sawLaterAssistant = true
+		}
+		if strings.TrimSpace(message.MessageType) != "policy_retry" {
+			continue
+		}
+		if sawLaterAssistant {
+			return ""
+		}
+		return strings.TrimSpace(message.Content)
+	}
+	return ""
+}
+
+func replayMessagesForExecution(state *resolvedRunState, messages []model.AgentRunMessage) []model.AgentRunMessage {
+	if state == nil || !state.nativeSelectivePathEnabled {
+		return messages
+	}
+	filtered := make([]model.AgentRunMessage, 0, len(messages))
+	for _, message := range messages {
+		if strings.TrimSpace(message.MessageType) == "policy_retry" {
+			continue
+		}
+		filtered = append(filtered, message)
+	}
+	return filtered
+}
+
 func splitNativePhaseGuidance(runtimeKind string, state *resolvedRunState, initialInstructions string) (string, string) {
 	initialInstructions = strings.TrimSpace(initialInstructions)
 	if initialInstructions == "" {
@@ -533,7 +568,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		"target_type", state.run.TargetType,
 		"runtime_kind", state.run.RuntimeKind,
 	)
-	history, artifactContext, providerContinuation, err := a.ensureRunConversation(ctx, state, legacyInitialInstructions, planningInput)
+	history, artifactContext, providerContinuation, repairGuidance, err := a.ensureRunConversation(ctx, state, legacyInitialInstructions, planningInput)
 	if err != nil {
 		_ = a.failRun(ctx, state, err.Error())
 		return ExecuteRunResult{}, nonRetryableRunError(err)
@@ -636,6 +671,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		BranchSyncConflictFiles:    slices.Clone(state.branchSync.ConflictFiles),
 		InitialInstructions:        legacyInitialInstructions,
 		PhaseGuidance:              phaseGuidance,
+		RepairGuidance:             repairGuidance,
 		PlanningStage:              planningInput.Stage,
 		PlanningMethodology:        planningInput.PlanningMethodology,
 		PlanningSpecDocumentID:     planningInput.SpecDocumentID,
@@ -1541,41 +1577,44 @@ func (a *AgentRunActivities) finalizeSupportConversationRun(ctx context.Context,
 	return nil
 }
 
-func (a *AgentRunActivities) ensureRunConversation(ctx context.Context, state *resolvedRunState, initialInstructions string, planningInput planningRunInput) ([]workerpkg.ExecutionMessage, *workerpkg.ArtifactContext, *workerpkg.ProviderContinuation, error) {
+func (a *AgentRunActivities) ensureRunConversation(ctx context.Context, state *resolvedRunState, initialInstructions string, planningInput planningRunInput) ([]workerpkg.ExecutionMessage, *workerpkg.ArtifactContext, *workerpkg.ProviderContinuation, string, error) {
 	artifactContext, err := a.loadRunArtifactContext(ctx, state)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, "", err
 	}
 	providerContinuation, err := a.loadProviderContinuation(ctx, state)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, "", err
 	}
 	if a.runMessageRepo == nil {
-		return nil, artifactContext, providerContinuation, nil
+		return nil, artifactContext, providerContinuation, "", nil
 	}
 
 	messages, err := a.runMessageRepo.ListByRun(ctx, state.run.WorkspaceID, state.run.ID)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, "", err
 	}
-	if !hasExecutionHistoryMessages(messages) {
+	repairGuidance := latestNativeRepairGuidance(state, messages)
+	replayMessages := replayMessagesForExecution(state, messages)
+	if !hasExecutionHistoryMessages(replayMessages) {
 		prompt, err := a.buildInitialRunUserPrompt(ctx, state, artifactContext, planningInput, initialInstructions)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, "", err
 		}
 		created, err := a.createRunMessage(ctx, state.run, "user", "prompt", prompt, nil, nil, nil, nil)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, "", err
 		}
 		messages = append(messages, *created)
+		replayMessages = append(replayMessages, *created)
 	}
 
-	transcriptSummary, err := a.ensureTranscriptSummaryCheckpoint(ctx, state, messages)
+	transcriptSummary, err := a.ensureTranscriptSummaryCheckpoint(ctx, state, replayMessages)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, "", err
 	}
-	history := workerpkg.BuildExecutionHistory(messages, transcriptSummary)
-	return history, artifactContext, providerContinuation, nil
+	history := workerpkg.BuildExecutionHistory(replayMessages, transcriptSummary)
+	return history, artifactContext, providerContinuation, repairGuidance, nil
 }
 
 func (a *AgentRunActivities) buildInitialRunUserPrompt(ctx context.Context, state *resolvedRunState, artifactContext *workerpkg.ArtifactContext, planningInput planningRunInput, initialInstructions string) (string, error) {

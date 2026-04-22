@@ -76,6 +76,17 @@ func resolveNativeInitialInstructionTransport(execCtx *ExecutionContext) (string
 	return initialInstructions, "", "user_prompt"
 }
 
+func resolveNativeRepairGuidanceTransport(execCtx *ExecutionContext) (string, string) {
+	if execCtx == nil || !execCtx.NativeSelectivePathEnabled {
+		return "", "none"
+	}
+	repairGuidance := strings.TrimSpace(execCtx.RepairGuidance)
+	if repairGuidance == "" {
+		return "", "none"
+	}
+	return "Repair guidance for this turn:\n" + repairGuidance, "turn_local"
+}
+
 func resolveNativeSupplementTransport(run *model.AgentRun, execCtx *ExecutionContext, systemPrompt string) (string, string, string) {
 	trimmedSystemPrompt := strings.TrimSpace(systemPrompt)
 	turnLocalInstructions := ""
@@ -216,8 +227,9 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 	)
 
 	history := append([]ExecutionMessage(nil), execCtx.ConversationHistory...)
+	repairTurnLocalInstructions, repairTransport := resolveNativeRepairGuidanceTransport(execCtx)
 	systemPrompt, turnLocalInstructions, supplementTransport := resolveNativeSupplementTransport(run, execCtx, systemPrompt)
-	turnLocalInstructions = joinInstructionSections(initialTurnLocalInstructions, turnLocalInstructions)
+	turnLocalInstructions = joinInstructionSections(initialTurnLocalInstructions, repairTurnLocalInstructions, turnLocalInstructions)
 	if len(history) == 0 {
 		history = []ExecutionMessage{{
 			Role:    "user",
@@ -230,6 +242,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 	trimmedActiveSkillInstructions := strings.TrimSpace(execCtx.ActiveSkillInstructions)
 	trimmedInitialInstructions := strings.TrimSpace(execCtx.InitialInstructions)
 	trimmedPhaseGuidance := strings.TrimSpace(execCtx.PhaseGuidance)
+	trimmedRepairGuidance := strings.TrimSpace(execCtx.RepairGuidance)
 	slog.InfoContext(execCtx.Context, "native runtime execution starting",
 		"workspace_id", execCtx.WorkspaceID,
 		"run_id", execCtx.RunID,
@@ -244,6 +257,8 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		"initial_instruction_transport", initialInstructionTransport,
 		"initial_instruction_chars", len([]rune(trimmedInitialInstructions)),
 		"phase_guidance_chars", len([]rune(trimmedPhaseGuidance)),
+		"repair_transport", repairTransport,
+		"repair_guidance_chars", len([]rune(trimmedRepairGuidance)),
 		"runtime_skill_ref_count", len(execCtx.RuntimeSkillRefs),
 		"active_skill_ref_count", len(execCtx.ActiveRuntimeSkillRefs),
 		"active_skill_instruction_chars", len([]rune(trimmedActiveSkillInstructions)),

@@ -35,6 +35,7 @@ type ExecutionContext struct {
 	BranchSyncConflictFiles    []string
 	InitialInstructions        string
 	PhaseGuidance              string
+	RepairGuidance             string
 	PlanningStage              string
 	PlanningMethodology        string
 	PlanningSpecDocumentID     string
