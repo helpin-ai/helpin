@@ -8,7 +8,7 @@ import (
 )
 
 func TestResolveNativeSystemPromptSuppressesResolvedSkillTextForSelectivePath(t *testing.T) {
-	systemPrompt := resolveNativeSystemPrompt(&ExecutionContext{
+	systemPrompt, includesResolvedSkillText := resolveNativeSystemPrompt(&ExecutionContext{
 		Agent: &model.Agent{
 			Name:                      "Planner",
 			PresetKey:                 model.AgentPresetEpicPlanner,
@@ -18,6 +18,9 @@ func TestResolveNativeSystemPromptSuppressesResolvedSkillTextForSelectivePath(t 
 		NativeSelectivePathEnabled: true,
 	}, nil)
 
+	if includesResolvedSkillText {
+		t.Fatal("did not expect selective native system prompt to include resolved skill text")
+	}
 	if strings.Contains(systemPrompt, "Full aggregated skill blob.") {
 		t.Fatalf("did not expect selective native system prompt to inline full resolved skill instructions\n%s", systemPrompt)
 	}
@@ -30,7 +33,7 @@ func TestResolveNativeSystemPromptSuppressesResolvedSkillTextForSelectivePath(t 
 }
 
 func TestResolveNativeSystemPromptKeepsResolvedSkillTextForLegacyPath(t *testing.T) {
-	systemPrompt := resolveNativeSystemPrompt(&ExecutionContext{
+	systemPrompt, includesResolvedSkillText := resolveNativeSystemPrompt(&ExecutionContext{
 		Agent: &model.Agent{
 			Name:                      "Planner",
 			PresetKey:                 model.AgentPresetEpicPlanner,
@@ -38,6 +41,9 @@ func TestResolveNativeSystemPromptKeepsResolvedSkillTextForLegacyPath(t *testing
 		},
 	}, nil)
 
+	if !includesResolvedSkillText {
+		t.Fatal("expected legacy native system prompt to include resolved skill text")
+	}
 	if !strings.Contains(systemPrompt, "Full aggregated skill blob.") {
 		t.Fatalf("expected legacy native system prompt to keep resolved skill instructions\n%s", systemPrompt)
 	}

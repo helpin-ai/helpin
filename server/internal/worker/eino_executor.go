@@ -47,15 +47,15 @@ func nativeContinuationMode(continuation *ProviderContinuation) string {
 	return "fresh"
 }
 
-func resolveNativeSystemPrompt(execCtx *ExecutionContext, config *WorkflowConfig) string {
+func resolveNativeSystemPrompt(execCtx *ExecutionContext, config *WorkflowConfig) (string, bool) {
 	if execCtx == nil {
-		return BuildSystemPrompt(nil, nil, nil, nil, "", "", config)
+		return BuildSystemPrompt(nil, nil, nil, nil, "", "", config), true
 	}
 	options := defaultSystemPromptOptions()
 	if execCtx.NativeSelectivePathEnabled {
 		options.IncludeResolvedSkillText = false
 	}
-	return buildSystemPromptWithOptions(execCtx.Agent, execCtx.Task, execCtx.Epic, execCtx.Conversation, execCtx.PlanningStage, execCtx.PlanningMethodology, config, options)
+	return buildSystemPromptWithOptions(execCtx.Agent, execCtx.Task, execCtx.Epic, execCtx.Conversation, execCtx.PlanningStage, execCtx.PlanningMethodology, config, options), options.IncludeResolvedSkillText
 }
 
 func resolveNativeSupplementTransport(run *model.AgentRun, execCtx *ExecutionContext, systemPrompt string) (string, string, string) {
@@ -153,7 +153,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		execCtx.AllowedTools = allowedToolSet(execCtx.ResolvedProfile)
 	}
 
-	systemPrompt := resolveNativeSystemPrompt(execCtx, config)
+	systemPrompt, includesResolvedSkillText := resolveNativeSystemPrompt(execCtx, config)
 
 	var checklist []model.PMChecklistItem
 	if execCtx.TaskID != "" && execCtx.Services != nil {
@@ -218,6 +218,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		"preset_key", strings.TrimSpace(execCtx.Agent.EffectivePresetKey()),
 		"target_type", strings.TrimSpace(execCtx.TargetType),
 		"native_selective_path_enabled", execCtx.NativeSelectivePathEnabled,
+		"system_prompt_includes_resolved_skill_text", includesResolvedSkillText,
 		"runtime_skill_ref_count", len(execCtx.RuntimeSkillRefs),
 		"active_skill_ref_count", len(execCtx.ActiveRuntimeSkillRefs),
 		"active_skill_instruction_chars", len([]rune(trimmedActiveSkillInstructions)),
