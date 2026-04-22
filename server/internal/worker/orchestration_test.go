@@ -135,15 +135,15 @@ func TestNormalizeTaskPlanPreviewContentRejectsStringTaskEntries(t *testing.T) {
 	}
 }
 
-func TestNormalizeTaskPlanPreviewContentCanonicalizesLegacyProposedStories(t *testing.T) {
+func TestNormalizeTaskPlanPreviewContentPreservesCanonicalProposedTasks(t *testing.T) {
 	normalized, err := NormalizeTaskPlanPreviewContent(json.RawMessage(`{
 		"summary":"Breakdown",
-		"proposed_stories":[
+		"proposed_tasks":[
 			{
-				"ref":"story_1",
-				"name":"Story A",
+				"ref":"task_1",
+				"name":"Task A",
 				"description":"Do A",
-				"story_type":"feature",
+				"task_type":"feature",
 				"acceptance_criteria":["works"],
 				"dependency_refs":[]
 			}
@@ -160,7 +160,7 @@ func TestNormalizeTaskPlanPreviewContentCanonicalizesLegacyProposedStories(t *te
 	if _, ok := payload["proposed_tasks"]; !ok {
 		t.Fatalf("expected canonical proposed_tasks key, got %#v", payload)
 	}
-	if _, ok := payload["proposed_stories"]; ok {
-		t.Fatalf("expected legacy proposed_stories key to be removed, got %#v", payload)
+	if tasks, ok := payload["proposed_tasks"].([]any); !ok || len(tasks) != 1 {
+		t.Fatalf("expected normalized proposed_tasks array, got %#v", payload)
 	}
 }

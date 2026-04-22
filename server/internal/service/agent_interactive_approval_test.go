@@ -1983,12 +1983,12 @@ func TestSendRunMessageApprovalNormalizesApprovedStoryPlanPreviewContent(t *test
 		WorkspaceID: "ws-1",
 		RunID:       run.ID,
 		Role:        "assistant",
-		Content:     "Please review the latest story plan.",
+		Content:     "Please review the latest task plan.",
 		MessageType: "assistant_turn",
 		ToolInvocations: mustMarshalTestJSON(t, []model.ToolInvocation{
 			{
 				ToolName: worker.ToolRequestHumanApproval,
-				Input:    json.RawMessage(`{"phase":"stories","title":"Approve story plan","summary":"Review the current breakdown"}`),
+				Input:    json.RawMessage(`{"phase":"tasks","title":"Approve task plan","summary":"Review the current breakdown"}`),
 			},
 		}),
 		SequenceNo: 2,
@@ -1998,9 +1998,9 @@ func TestSendRunMessageApprovalNormalizesApprovedStoryPlanPreviewContent(t *test
 
 	runPreviewContent := "{\n" +
 		"  \"panel_key\": \"task_plan\",\n" +
-		"  \"title\": \"Story Plan\",\n" +
+		"  \"title\": \"Task Plan\",\n" +
 		"  \"format\": \"json\",\n" +
-		"  \"content\": \"Here is the plan in the required format:\\n```json\\n{\\\"summary\\\":\\\"Breakdown\\\",\\\"proposed_stories\\\":[{\\\"ref\\\":\\\"story_1\\\",\\\"name\\\":\\\"Story A\\\",\\\"description\\\":\\\"Do A\\\",\\\"story_type\\\":\\\"feature\\\",\\\"acceptance_criteria\\\":[\\\"works\\\"]}]}\\n```\",\n" +
+		"  \"content\": \"Here is the plan in the required format:\\n```json\\n{\\\"summary\\\":\\\"Breakdown\\\",\\\"proposed_tasks\\\":[{\\\"ref\\\":\\\"task_1\\\",\\\"name\\\":\\\"Task A\\\",\\\"description\\\":\\\"Do A\\\",\\\"task_type\\\":\\\"feature\\\",\\\"acceptance_criteria\\\":[\\\"works\\\"]}]}\\n```\",\n" +
 		"  \"replace\": true\n" +
 		"}"
 	if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
@@ -2017,7 +2017,7 @@ func TestSendRunMessageApprovalNormalizesApprovedStoryPlanPreviewContent(t *test
 	}); err != nil {
 		t.Fatalf("create run preview artifact: %v", err)
 	}
-	approvalContent := `{"phase":"stories","title":"Approve story plan","summary":"Review the current breakdown"}`
+	approvalContent := `{"phase":"tasks","title":"Approve task plan","summary":"Review the current breakdown"}`
 	if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
 		ID:            "artifact-approval-story-plan",
 		WorkspaceID:   "ws-1",
@@ -2072,8 +2072,8 @@ func TestSendRunMessageApprovalNormalizesApprovedStoryPlanPreviewContent(t *test
 	if got, _ := approvedContent["summary"].(string); got != "Breakdown" {
 		t.Fatalf("expected normalized summary, got %#v", approvedContent)
 	}
-	if _, ok := approvedContent["proposed_stories"].([]any); !ok {
-		t.Fatalf("expected normalized proposed_stories array, got %#v", approvedContent)
+	if _, ok := approvedContent["proposed_tasks"].([]any); !ok {
+		t.Fatalf("expected normalized proposed_tasks array, got %#v", approvedContent)
 	}
 }
 

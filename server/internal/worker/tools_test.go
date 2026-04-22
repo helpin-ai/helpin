@@ -6,7 +6,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/commandtools"
 )
 
-func TestCreateStoryBatchToolSchemaRequiresStructuredImplementationBrief(t *testing.T) {
+func TestCreateTaskBatchToolSchemaRequiresStructuredImplementationBrief(t *testing.T) {
 	registry := NewToolRegistry(nil)
 
 	var schema map[string]interface{}
@@ -25,10 +25,10 @@ func TestCreateStoryBatchToolSchemaRequiresStructuredImplementationBrief(t *test
 	}
 
 	properties := schema["properties"].(map[string]interface{})
-	stories := properties["stories"].(map[string]interface{})
-	storyItems := stories["items"].(map[string]interface{})
-	storyProperties := storyItems["properties"].(map[string]interface{})
-	brief := storyProperties["implementation_brief"].(map[string]interface{})
+	tasks := properties["tasks"].(map[string]interface{})
+	taskItems := tasks["items"].(map[string]interface{})
+	taskProperties := taskItems["properties"].(map[string]interface{})
+	brief := taskProperties["implementation_brief"].(map[string]interface{})
 	briefProperties := brief["properties"].(map[string]interface{})
 	filesToModify := briefProperties["files_to_modify"].(map[string]interface{})
 	fileItems := filesToModify["items"].(map[string]interface{})
@@ -46,7 +46,7 @@ func TestCreateStoryBatchToolSchemaRequiresStructuredImplementationBrief(t *test
 	}
 }
 
-func TestCreateStoryBatchToolSchemaAllowsArrayTestStrategy(t *testing.T) {
+func TestCreateTaskBatchToolSchemaAllowsArrayTestStrategy(t *testing.T) {
 	registry := NewToolRegistry(nil)
 
 	var schema map[string]interface{}
@@ -65,10 +65,10 @@ func TestCreateStoryBatchToolSchemaAllowsArrayTestStrategy(t *testing.T) {
 	}
 
 	properties := schema["properties"].(map[string]interface{})
-	stories := properties["stories"].(map[string]interface{})
-	storyItems := stories["items"].(map[string]interface{})
-	storyProperties := storyItems["properties"].(map[string]interface{})
-	brief := storyProperties["implementation_brief"].(map[string]interface{})
+	tasks := properties["tasks"].(map[string]interface{})
+	taskItems := tasks["items"].(map[string]interface{})
+	taskProperties := taskItems["properties"].(map[string]interface{})
+	brief := taskProperties["implementation_brief"].(map[string]interface{})
 	briefProperties := brief["properties"].(map[string]interface{})
 	testStrategy := briefProperties["test_strategy"].(map[string]interface{})
 	anyOf := testStrategy["anyOf"].([]map[string]interface{})

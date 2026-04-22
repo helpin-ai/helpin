@@ -548,7 +548,7 @@ func TestNormalizeAgentRecordMigratesLegacyPreviewToolsForPlannerPreset(t *testi
 		PresetKey:      model.AgentPresetEpicPlanner,
 		TriggerMode:    "manual",
 		RuntimeKind:    "native_sdk",
-		AllowedTools:   json.RawMessage(`["request_human_approval","publish_preview","create_story_batch"]`),
+		AllowedTools:   json.RawMessage(`["request_human_approval","publish_preview","create_task_batch"]`),
 		AllowedTargets: json.RawMessage(`["epic"]`),
 	}
 
@@ -583,7 +583,7 @@ func TestNormalizeAgentRecordStripsGenericPreviewToolsFromStoryPlanner(t *testin
 		PresetKey:      model.AgentPresetTaskPlanner,
 		TriggerMode:    "manual",
 		RuntimeKind:    "native_sdk",
-		AllowedTools:   json.RawMessage(`["request_human_approval","preview_md","publish_story_plan_doc","write_document_content","search_documents"]`),
+		AllowedTools:   json.RawMessage(`["request_human_approval","preview_md","publish_task_plan_doc","write_document_content","search_documents"]`),
 		AllowedTargets: json.RawMessage(`["story"]`),
 	}
 
@@ -622,7 +622,7 @@ func TestNormalizeAgentRecordStripsStoryPreviewToolFromEpicPlanner(t *testing.T)
 		PresetKey:      model.AgentPresetEpicPlanner,
 		TriggerMode:    "manual",
 		RuntimeKind:    "native_sdk",
-		AllowedTools:   json.RawMessage(`["request_human_approval","preview_md","publish_story_plan_doc","publish_story_plan","publish_prd_draft","create_story_batch"]`),
+		AllowedTools:   json.RawMessage(`["request_human_approval","preview_md","publish_task_plan_doc","publish_task_plan","publish_prd_draft","create_task_batch"]`),
 		AllowedTargets: json.RawMessage(`["epic"]`),
 	}
 
@@ -644,7 +644,7 @@ func TestNormalizeAgentRecordStripsStoryPreviewToolFromEpicPlanner(t *testing.T)
 		worker.ToolPreviewJSON,
 		worker.ToolPublishPreview,
 		worker.ToolPublishTaskPlanDoc,
-		"create_story_batch",
+		"create_task_batch",
 	} {
 		if slices.Contains(tools, unexpected) {
 			t.Fatalf("expected sanitized tool list to exclude %q, got %v", unexpected, tools)

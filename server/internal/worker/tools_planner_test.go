@@ -64,7 +64,7 @@ func TestEnsureTaskPlanDocToolReturnsDocumentMetadata(t *testing.T) {
 				}
 				return &model.DocsDocument{
 					ID:     "doc-story-1",
-					Title:  "Story Plan",
+					Title:  "Task Plan",
 					Status: model.DocStatusDraft,
 				}, nil
 			},
@@ -88,7 +88,7 @@ func TestEnsureTaskPlanDocToolReturnsDocumentMetadata(t *testing.T) {
 	}
 }
 
-func TestCreateStoryBatchToolAcceptsProposedStoriesAlias(t *testing.T) {
+func TestCreateTaskBatchToolAcceptsProposedTasks(t *testing.T) {
 	registry := NewToolRegistry(nil)
 	versionID := "ver-1"
 	ctx := &ExecutionContext{
@@ -105,34 +105,34 @@ func TestCreateStoryBatchToolAcceptsProposedStoriesAlias(t *testing.T) {
 			"create_task_batch": true,
 		},
 		Services: &ServiceBridge{
-			CreateTaskBatch: func(ctx context.Context, workspaceID, epicID, actorID string, stories []model.ProposedTask) (CreateTaskBatchResult, error) {
+			CreateTaskBatch: func(ctx context.Context, workspaceID, epicID, actorID string, tasks []model.ProposedTask) (CreateTaskBatchResult, error) {
 				if workspaceID != "ws-1" || epicID != "epic-1" || actorID != "agent-1" {
 					t.Fatalf("unexpected tool context: workspace=%q epic=%q actor=%q", workspaceID, epicID, actorID)
 				}
-				if len(stories) != 1 || stories[0].Name != "Story A" {
-					t.Fatalf("unexpected stories payload %#v", stories)
+				if len(tasks) != 1 || tasks[0].Name != "Task A" {
+					t.Fatalf("unexpected tasks payload %#v", tasks)
 				}
 				return CreateTaskBatchResult{
-					Tasks: []CreateTaskBatchTaskResult{{Ref: "story_1", TaskID: "story-db-1", Name: "Story A"}},
+					Tasks: []CreateTaskBatchTaskResult{{Ref: "task_1", TaskID: "task-db-1", Name: "Task A"}},
 				}, nil
 			},
 		},
 	}
 
 	output, err := registry.ExecuteAllowed(ctx, "create_task_batch", json.RawMessage(`{
-		"proposed_stories": [
-			{"ref":"story_1","name":"Story A","description":"Do A","story_type":"feature","acceptance_criteria":["works"]}
+		"proposed_tasks": [
+			{"ref":"task_1","name":"Task A","description":"Do A","task_type":"feature","acceptance_criteria":["works"]}
 		]
 	}`))
 	if err != nil {
 		t.Fatalf("ExecuteAllowed returned error: %v", err)
 	}
-	if !strings.Contains(output, `"task_id":"story-db-1"`) {
-		t.Fatalf("expected created story batch result, got %s", output)
+	if !strings.Contains(output, `"task_id":"task-db-1"`) {
+		t.Fatalf("expected created task batch result, got %s", output)
 	}
 }
 
-func TestCreateStoryBatchToolReturnsRepairOrientedParseError(t *testing.T) {
+func TestCreateTaskBatchToolReturnsRepairOrientedParseError(t *testing.T) {
 	registry := NewToolRegistry(nil)
 	versionID := "ver-1"
 	ctx := &ExecutionContext{
@@ -149,13 +149,13 @@ func TestCreateStoryBatchToolReturnsRepairOrientedParseError(t *testing.T) {
 			"create_task_batch": true,
 		},
 		Services: &ServiceBridge{
-			CreateTaskBatch: func(ctx context.Context, workspaceID, epicID, actorID string, stories []model.ProposedTask) (CreateTaskBatchResult, error) {
+			CreateTaskBatch: func(ctx context.Context, workspaceID, epicID, actorID string, tasks []model.ProposedTask) (CreateTaskBatchResult, error) {
 				return CreateTaskBatchResult{}, nil
 			},
 		},
 	}
 
-	_, err := registry.ExecuteAllowed(ctx, "create_task_batch", json.RawMessage(`{"stories":`))
+	_, err := registry.ExecuteAllowed(ctx, "create_task_batch", json.RawMessage(`{"tasks":`))
 	if err == nil {
 		t.Fatal("expected parse error")
 	}
@@ -164,7 +164,7 @@ func TestCreateStoryBatchToolReturnsRepairOrientedParseError(t *testing.T) {
 	}
 }
 
-func TestCreateStoryBatchToolReturnsRepairOrientedStoryValidationError(t *testing.T) {
+func TestCreateTaskBatchToolReturnsRepairOrientedTaskValidationError(t *testing.T) {
 	registry := NewToolRegistry(nil)
 	versionID := "ver-1"
 	ctx := &ExecutionContext{
@@ -181,26 +181,26 @@ func TestCreateStoryBatchToolReturnsRepairOrientedStoryValidationError(t *testin
 			"create_task_batch": true,
 		},
 		Services: &ServiceBridge{
-			CreateTaskBatch: func(ctx context.Context, workspaceID, epicID, actorID string, stories []model.ProposedTask) (CreateTaskBatchResult, error) {
+			CreateTaskBatch: func(ctx context.Context, workspaceID, epicID, actorID string, tasks []model.ProposedTask) (CreateTaskBatchResult, error) {
 				return CreateTaskBatchResult{}, nil
 			},
 		},
 	}
 
 	_, err := registry.ExecuteAllowed(ctx, "create_task_batch", json.RawMessage(`{
-		"stories": [
-			{"description":"Do A","story_type":"feature","acceptance_criteria":["works"]}
+		"tasks": [
+			{"description":"Do A","task_type":"feature","acceptance_criteria":["works"]}
 		]
 	}`))
 	if err == nil {
 		t.Fatal("expected validation error")
 	}
-	if !strings.Contains(err.Error(), `create_task_batch stories are invalid: task 1 is missing name; use field "name"`) {
+	if !strings.Contains(err.Error(), `create_task_batch tasks are invalid: task 1 is missing name; use field "name"`) {
 		t.Fatalf("expected repair-oriented validation error, got %v", err)
 	}
 }
 
-func TestCreateStoryBatchToolUsesInternalCommandExecutorWhenAvailable(t *testing.T) {
+func TestCreateTaskBatchToolUsesInternalCommandExecutorWhenAvailable(t *testing.T) {
 	registry := NewToolRegistry(nil)
 	versionID := "ver-1"
 	called := false
@@ -227,14 +227,14 @@ func TestCreateStoryBatchToolUsesInternalCommandExecutorWhenAvailable(t *testing
 				if meta.WorkspaceID != "ws-1" || meta.TargetType != "epic" || meta.TargetID != "epic-1" || meta.AgentID != "agent-1" || meta.RunID != "run-1" {
 					t.Fatalf("unexpected command meta %#v", meta)
 				}
-				return json.RawMessage(`{"stories":[{"ref":"story_1","story_id":"story-db-1","name":"Story A"}]}`), nil
+				return json.RawMessage(`{"tasks":[{"ref":"task_1","task_id":"task-db-1","name":"Task A"}]}`), nil
 			},
 		},
 	}
 
 	output, err := registry.ExecuteAllowed(ctx, "create_task_batch", json.RawMessage(`{
-		"stories": [
-			{"ref":"story_1","name":"Story A","description":"Do A","story_type":"feature","acceptance_criteria":["works"]}
+		"tasks": [
+			{"ref":"task_1","name":"Task A","description":"Do A","task_type":"feature","acceptance_criteria":["works"]}
 		]
 	}`))
 	if err != nil {
@@ -243,7 +243,7 @@ func TestCreateStoryBatchToolUsesInternalCommandExecutorWhenAvailable(t *testing
 	if !called {
 		t.Fatal("expected internal command executor to be used")
 	}
-	if output != `{"stories":[{"ref":"story_1","story_id":"story-db-1","name":"Story A"}]}` {
+	if output != `{"tasks":[{"ref":"task_1","task_id":"task-db-1","name":"Task A"}]}` {
 		t.Fatalf("unexpected output %q", output)
 	}
 }

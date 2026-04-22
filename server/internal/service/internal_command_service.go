@@ -160,15 +160,6 @@ func (s *InternalCommandService) registerDefaults() {
 		},
 	})
 	s.register(InternalCommandDefinition{
-		Name:                 "docs.ensure_story_plan_doc",
-		Module:               "docs",
-		Mutating:             true,
-		SupportedTargetTypes: []string{"task", "story"},
-		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
-			return s.Execute(ctx, meta, "docs.ensure_task_plan_doc", input)
-		},
-	})
-	s.register(InternalCommandDefinition{
 		Name:                 "pm.approve_epic_spec",
 		Module:               "pm",
 		Mutating:             true,
@@ -196,7 +187,6 @@ func (s *InternalCommandService) registerDefaults() {
 		Tool:                 mustCommandToolMetadata("pm.create_task_batch"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req struct {
-				Stories       []model.ProposedTask `json:"stories"`
 				Tasks         []model.ProposedTask `json:"tasks"`
 				ProposedTasks []model.ProposedTask `json:"proposed_tasks"`
 				RunID         string               `json:"run_id,omitempty"`
@@ -204,21 +194,18 @@ func (s *InternalCommandService) registerDefaults() {
 			if err := json.Unmarshal(input, &req); err != nil {
 				return nil, fmt.Errorf("parse task batch input: %w", err)
 			}
-			if len(req.Stories) == 0 {
-				req.Stories = req.Tasks
+			if len(req.Tasks) == 0 {
+				req.Tasks = req.ProposedTasks
 			}
-			if len(req.Stories) == 0 {
-				req.Stories = req.ProposedTasks
-			}
-			if len(req.Stories) == 0 {
+			if len(req.Tasks) == 0 {
 				var legacy model.ConfirmPlanningRequest
 				if err := json.Unmarshal(input, &legacy); err != nil {
 					return nil, fmt.Errorf("tasks is required")
 				}
-				req.Stories = legacy.ProposedTasks
+				req.Tasks = legacy.ProposedTasks
 				req.RunID = legacy.RunID
 			}
-			if len(req.Stories) == 0 {
+			if len(req.Tasks) == 0 {
 				return nil, fmt.Errorf("tasks is required")
 			}
 
@@ -227,35 +214,25 @@ func (s *InternalCommandService) registerDefaults() {
 			if strings.TrimSpace(req.RunID) != "" {
 				legacy := model.ConfirmPlanningRequest{
 					RunID:         strings.TrimSpace(req.RunID),
-					ProposedTasks: req.Stories,
+					ProposedTasks: req.Tasks,
 				}
 				tasks, err = s.agentService.ConfirmEpicRun(ctx, meta.WorkspaceID, meta.TargetID, legacy.RunID, fallbackActor(meta), legacy)
 			} else {
-				tasks, err = s.agentService.CreateEpicTaskBatch(ctx, meta.WorkspaceID, meta.TargetID, fallbackActor(meta), req.Stories)
+				tasks, err = s.agentService.CreateEpicTaskBatch(ctx, meta.WorkspaceID, meta.TargetID, fallbackActor(meta), req.Tasks)
 			}
 			if err != nil {
 				return nil, err
 			}
 			results := make([]map[string]any, 0, len(tasks))
 			for idx, task := range tasks {
-				ref := strings.TrimSpace(req.Stories[idx].Ref)
+				ref := strings.TrimSpace(req.Tasks[idx].Ref)
 				results = append(results, map[string]any{
-					"ref":      ref,
-					"task_id":  task.ID,
-					"story_id": task.ID,
-					"name":     task.Name,
+					"ref":     ref,
+					"task_id": task.ID,
+					"name":    task.Name,
 				})
 			}
-			return mustJSON(map[string]any{"tasks": results, "stories": results}), nil
-		},
-	})
-	s.register(InternalCommandDefinition{
-		Name:                 "pm.create_story_batch",
-		Module:               "pm",
-		Mutating:             true,
-		SupportedTargetTypes: []string{"epic"},
-		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
-			return s.Execute(ctx, meta, "pm.create_task_batch", input)
+			return mustJSON(map[string]any{"tasks": results}), nil
 		},
 	})
 	s.register(InternalCommandDefinition{
@@ -305,15 +282,6 @@ func (s *InternalCommandService) registerDefaults() {
 		},
 	})
 	s.register(InternalCommandDefinition{
-		Name:                 "pm.set_story_dependencies",
-		Module:               "pm",
-		Mutating:             true,
-		SupportedTargetTypes: []string{"epic", "task", "story"},
-		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
-			return s.Execute(ctx, meta, "pm.set_task_dependencies", input)
-		},
-	})
-	s.register(InternalCommandDefinition{
 		Name:                 "pm.assign_task_agent",
 		Module:               "pm",
 		Mutating:             true,
@@ -321,15 +289,6 @@ func (s *InternalCommandService) registerDefaults() {
 		Tool:                 mustCommandToolMetadata("pm.assign_task_agent"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			return nil, fmt.Errorf("task agent assignment was removed; use a workflow automation rule or start a run explicitly with an agent")
-		},
-	})
-	s.register(InternalCommandDefinition{
-		Name:                 "pm.assign_story_agent",
-		Module:               "pm",
-		Mutating:             true,
-		SupportedTargetTypes: []string{"epic", "task", "story"},
-		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
-			return s.Execute(ctx, meta, "pm.assign_task_agent", input)
 		},
 	})
 	s.register(InternalCommandDefinition{

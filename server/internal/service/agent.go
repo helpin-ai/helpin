@@ -3288,7 +3288,7 @@ func (s *AgentService) maybePersistApprovedInteractivePreview(ctx context.Contex
 	}
 
 	content := append(json.RawMessage(nil), preview.Content...)
-	if (strings.EqualFold(strings.TrimSpace(approval.Phase), "tasks") || strings.EqualFold(strings.TrimSpace(approval.Phase), "stories")) && strings.EqualFold(strings.TrimSpace(preview.Format), worker.PreviewFormatJSON) {
+	if strings.EqualFold(strings.TrimSpace(approval.Phase), "tasks") && strings.EqualFold(strings.TrimSpace(preview.Format), worker.PreviewFormatJSON) {
 		normalizedContent, err := worker.NormalizeTaskPlanPreviewContent(content)
 		if err != nil {
 			if approvedPreviewDebugEnabled() {

@@ -276,7 +276,8 @@ func normalizeAllowedToolsJSON(raw json.RawMessage) json.RawMessage {
 	if len(tools) == 0 {
 		return raw
 	}
-	normalized := worker.NormalizeToolNames(tools)
+	normalized := normalizePlannerToolAliases(tools)
+	normalized = worker.NormalizeToolNames(normalized)
 	if len(normalized) == 0 {
 		return json.RawMessage("[]")
 	}
@@ -310,6 +311,13 @@ func sanitizePlannerAgentTools(raw json.RawMessage, presetKey string) json.RawMe
 			worker.ToolPreviewJSON,
 			worker.ToolPublishPreview,
 			worker.ToolPublishTaskPlanDoc,
+			"publish_story_plan",
+			"publish_story_plan_doc",
+			"create_story_batch",
+			"assign_story_agent",
+			"set_story_dependencies",
+			"list_epic_stories",
+			"ensure_story_plan_doc",
 			"ensure_epic_spec_doc",
 			"ensure_task_plan_doc",
 			"write_document_content",
@@ -334,6 +342,13 @@ func sanitizePlannerAgentTools(raw json.RawMessage, presetKey string) json.RawMe
 			worker.ToolPublishPreview,
 			worker.ToolPublishPRDDraft,
 			worker.ToolPublishTaskPlan,
+			"publish_story_plan",
+			"publish_story_plan_doc",
+			"create_story_batch",
+			"assign_story_agent",
+			"set_story_dependencies",
+			"list_epic_stories",
+			"ensure_story_plan_doc",
 			"ensure_epic_spec_doc",
 			"ensure_task_plan_doc",
 			"write_document_content",
@@ -374,6 +389,34 @@ func sanitizePlannerAgentTools(raw json.RawMessage, presetKey string) json.RawMe
 		}
 	}
 	return mustJSONStringSlice(filtered)
+}
+
+func normalizePlannerToolAliases(tools []string) []string {
+	if len(tools) == 0 {
+		return nil
+	}
+	normalized := make([]string, 0, len(tools))
+	for _, toolName := range tools {
+		switch strings.TrimSpace(toolName) {
+		case "publish_story_plan":
+			normalized = append(normalized, worker.ToolPublishTaskPlan)
+		case "publish_story_plan_doc":
+			normalized = append(normalized, worker.ToolPublishTaskPlanDoc)
+		case "ensure_story_plan_doc":
+			normalized = append(normalized, "ensure_task_plan_doc")
+		case "create_story_batch":
+			normalized = append(normalized, "create_task_batch")
+		case "assign_story_agent":
+			normalized = append(normalized, "assign_task_agent")
+		case "set_story_dependencies":
+			normalized = append(normalized, "set_task_dependencies")
+		case "list_epic_stories":
+			normalized = append(normalized, "list_epic_tasks")
+		default:
+			normalized = append(normalized, toolName)
+		}
+	}
+	return normalized
 }
 
 func normalizeDefaultInvocationMode(value string, agent *model.Agent) string {
