@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { queryKeys } from '@/lib/queryKeys';
 import { supportService } from '@/lib/services/supportService';
@@ -7,7 +7,9 @@ import { agentService } from '@/lib/services/agentService';
 import { workspacesService } from '@/lib/services/workspacesService';
 import { unwrap } from '@/lib/queryUtils';
 import {
+  getConversationListUnreadCount,
   isSupportConversationListQueryKey,
+  type SupportConversationListCache,
   updateConversationListUnreadCount,
   updateConversationUnreadCount,
 } from '@/lib/supportQueryCache';
@@ -32,6 +34,39 @@ import type {
   CreateSupportTriageRuleRequest,
   UpdateSupportTriageRuleRequest,
 } from '@/lib/pmTypes';
+
+const SUPPORT_CONVERSATIONS_PER_PAGE = 50;
+
+type SupportConversationFilters = {
+  status?: string;
+  priority?: string;
+  filter?: string;
+  mailbox_id?: string | null;
+  ai_state?: string;
+  flow_state?: string;
+  search?: string;
+};
+
+async function loadConversationListPage(
+  workspaceId: string,
+  filters?: SupportConversationFilters & { page?: number; per_page?: number },
+): Promise<ConversationListResponse> {
+  const res = await supportService.listConversations(workspaceId, filters);
+  if (res.error) throw new Error(res.error);
+  const data = res.data;
+  if (data && 'data' in data && Array.isArray(data.data)) {
+    return data as ConversationListResponse;
+  }
+  const arr = Array.isArray(data) ? data : [];
+  return {
+    data: arr,
+    total: arr.length,
+    page: filters?.page ?? 1,
+    per_page: filters?.per_page ?? SUPPORT_CONVERSATIONS_PER_PAGE,
+    total_pages: 1,
+    meta: { unread: { total: 0, my_inbox: 0, unassigned: 0, ai_active: 0 } },
+  } satisfies ConversationListResponse;
+}
 
 // ── Installation settings ───────────────────────────────────────────
 
@@ -73,20 +108,30 @@ export function useRegenerateWidgetKey(workspaceId: string) {
 
 // ── Conversations ───────────────────────────────────────────────────
 
-export function useConversations(workspaceId: string, filters?: { status?: string; priority?: string; filter?: string; mailbox_id?: string | null; ai_state?: string; flow_state?: string }) {
+export function useConversations(workspaceId: string, filters?: SupportConversationFilters) {
   return useQuery({
     queryKey: [...queryKeys.support.conversations(workspaceId), filters] as const,
-    queryFn: async (): Promise<ConversationListResponse> => {
-      const res = await supportService.listConversations(workspaceId, filters);
-      if (res.error) throw new Error(res.error);
-      const data = res.data;
-      // Handle both new ConversationListResponse and legacy array formats
-      if (data && 'data' in data && Array.isArray(data.data)) {
-        return data as ConversationListResponse;
+    queryFn: async (): Promise<ConversationListResponse> => loadConversationListPage(workspaceId, filters),
+    enabled: !!workspaceId,
+    staleTime: 15_000,
+  });
+}
+
+export function useInfiniteConversations(workspaceId: string, filters?: SupportConversationFilters) {
+  return useInfiniteQuery({
+    queryKey: [...queryKeys.support.conversations(workspaceId), 'infinite', filters] as const,
+    queryFn: async ({ pageParam }): Promise<ConversationListResponse> =>
+      loadConversationListPage(workspaceId, {
+        ...filters,
+        page: pageParam as number,
+        per_page: SUPPORT_CONVERSATIONS_PER_PAGE,
+      }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => {
+      if (lastPage.page >= lastPage.total_pages) {
+        return undefined;
       }
-      // Legacy fallback
-      const arr = Array.isArray(data) ? data : [];
-      return { data: arr, total: arr.length, page: 1, per_page: 50, total_pages: 1, meta: { unread: { total: 0, my_inbox: 0, unassigned: 0, ai_active: 0 } } } as ConversationListResponse;
+      return lastPage.page + 1;
     },
     enabled: !!workspaceId,
     staleTime: 15_000,
@@ -396,11 +441,11 @@ export function useUpdateConversationStatus(workspaceId: string) {
         const { selectedConversationId, selectConversation } = useSupportInboxStore.getState();
         if (selectedConversationId === conversationId) {
           // Find the next conversation from the cached list (before invalidation)
-          const cached = queryClient.getQueriesData<ConversationListResponse>({
+          const cached = queryClient.getQueriesData<SupportConversationListCache>({
             queryKey: queryKeys.support.conversations(workspaceId),
           });
           const conversations: SupportConversation[] = cached.flatMap(([queryKey, data]) =>
-            isSupportConversationListQueryKey(queryKey, workspaceId) ? (data?.data ?? []) : []
+            isSupportConversationListQueryKey(queryKey, workspaceId) ? extractConversationListConversations(data) : []
           );
           const currentIdx = conversations.findIndex((c) => c.id === conversationId);
           // Pick the next one below, or the one above, or clear selection
@@ -515,15 +560,13 @@ export function useMarkConversationUnread(workspaceId: string) {
     mutationFn: (conversationId: string) =>
       supportService.markConversationUnread(workspaceId, conversationId),
     onSuccess: (_data, conversationId) => {
-      queryClient.setQueriesData<ConversationListResponse>(
+      queryClient.setQueriesData<SupportConversationListCache>(
         {
           queryKey: queryKeys.support.conversations(workspaceId),
           predicate: (query) => isSupportConversationListQueryKey(query.queryKey, workspaceId),
         },
         (current) => {
-          const currentUnreadCount = Array.isArray(current?.data)
-            ? current.data.find((conversation) => conversation.id === conversationId)?.unread_count ?? 0
-            : 0;
+          const currentUnreadCount = getConversationListUnreadCount(current, conversationId);
           return updateConversationListUnreadCount(
             current,
             conversationId,
@@ -550,7 +593,7 @@ export function useMarkConversationRead(workspaceId: string) {
     mutationFn: (conversationId: string) =>
       supportService.markConversationRead(workspaceId, conversationId),
     onSuccess: (_data, conversationId) => {
-      queryClient.setQueriesData<ConversationListResponse>(
+      queryClient.setQueriesData<SupportConversationListCache>(
         {
           queryKey: queryKeys.support.conversations(workspaceId),
           predicate: (query) => isSupportConversationListQueryKey(query.queryKey, workspaceId),

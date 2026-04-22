@@ -71,14 +71,21 @@ export function Sidebar() {
     queryKey: queryKeys.automation.runs(workspaceId ?? '', 1, 100),
     queryFn: async () => {
       const res = await automationService.listWorkspaceRuns(workspaceId!, 1, 100);
-      return res.data?.data ?? [];
+      return {
+        data: Array.isArray(res.data?.data) ? res.data.data : [],
+        total: res.data?.total ?? 0,
+        page: res.data?.page ?? 1,
+        per_page: res.data?.per_page ?? 100,
+        total_pages: res.data?.total_pages ?? 0,
+      };
     },
     enabled: !!workspaceId,
     staleTime: 30_000,
   });
+  const agentRuns = Array.isArray(agentRunsData?.data) ? agentRunsData.data : [];
   const agentAttentionCount = useMemo(
-    () => (agentRunsData ?? []).filter((r) => r.status === 'paused' || r.approval_state === 'pending').length,
-    [agentRunsData],
+    () => agentRuns.filter((run) => run.status === 'paused' || run.approval_state === 'pending').length,
+    [agentRuns],
   );
 
   const { data: teammatePresence = [] } = useSupportTeammatePresence(workspaceId ?? '', hasSupportModule);

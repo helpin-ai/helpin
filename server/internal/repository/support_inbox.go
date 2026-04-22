@@ -469,11 +469,12 @@ func applyConversationFlowState(query *gorm.DB, alias, flowState string) *gorm.D
 }
 
 // List returns conversations with optional filters and pagination.
-func (r *SupportConversationRepository) List(ctx context.Context, workspaceID string, status string, priority string, pagination model.PMPagination, workspaceMemberID, role string, mailboxID *string, flowState string, aiState ...string) ([]model.SupportConversation, int64, error) {
+func (r *SupportConversationRepository) List(ctx context.Context, workspaceID string, status string, priority string, pagination model.PMPagination, workspaceMemberID, role string, mailboxID *string, flowState, search string, aiState ...string) ([]model.SupportConversation, int64, error) {
 	base := r.db.WithContext(ctx).Model(&model.SupportConversation{}).Where("support_conversations.workspace_id = ?", workspaceID)
 	base = r.applyMailboxAccess(base, workspaceMemberID, role)
 	base = r.applyMailboxScope(base, mailboxID)
 	base = applyConversationFlowState(base, "support_conversations", flowState)
+	base = r.applyConversationSearch(base, strings.TrimSpace(search))
 
 	if status != "" {
 		base = base.Where("status = ?", status)
@@ -510,6 +511,7 @@ func (r *SupportConversationRepository) List(ctx context.Context, workspaceID st
 	fetch = r.applyMailboxAccess(fetch, workspaceMemberID, role)
 	fetch = r.applyMailboxScope(fetch, mailboxID)
 	fetch = applyConversationFlowState(fetch, "support_conversations", flowState)
+	fetch = r.applyConversationSearch(fetch, strings.TrimSpace(search))
 	if status != "" {
 		fetch = fetch.Where("support_conversations.status = ?", status)
 	}
@@ -556,6 +558,20 @@ func (r *SupportConversationRepository) List(ctx context.Context, workspaceID st
 		return nil, 0, fmt.Errorf("list conversations: %w", err)
 	}
 	return conversations, total, nil
+}
+
+func (r *SupportConversationRepository) applyConversationSearch(query *gorm.DB, search string) *gorm.DB {
+	if search == "" {
+		return query
+	}
+	escaped := escapeLike(search)
+	pattern := "%" + escaped + "%"
+	return query.Where(`(
+		support_conversations.subject ILIKE ? ESCAPE '\'
+		OR COALESCE(support_conversations.customer_name, '') ILIKE ? ESCAPE '\'
+		OR COALESCE(support_conversations.customer_email, '') ILIKE ? ESCAPE '\'
+		OR CAST(support_conversations.display_id AS TEXT) LIKE ? ESCAPE '\'
+	)`, pattern, pattern, pattern, pattern)
 }
 
 // GetByID returns a single conversation.
