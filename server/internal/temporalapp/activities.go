@@ -379,6 +379,106 @@ type nativeRepairInstruction struct {
 	Instructions string
 }
 
+func latestUnresolvedNativeToolFailure(messages []model.AgentRunMessage) *workerpkg.ExecutionBlock {
+	if len(messages) == 0 {
+		return nil
+	}
+
+	for i := len(messages) - 1; i >= 0; i-- {
+		message := messages[i]
+		if strings.TrimSpace(message.Role) == "assistant" && shouldIncludeRunMessageInExecutionHistory(message) {
+			break
+		}
+		if strings.TrimSpace(message.Role) != "tool" || strings.TrimSpace(message.MessageType) != "tool_result" {
+			continue
+		}
+		for _, block := range parsePersistedExecutionBlocks(message.ContentBlocks) {
+			if block.Type != workerpkg.ExecutionBlockTypeToolResult || !block.IsError || strings.TrimSpace(block.ToolName) == "" {
+				continue
+			}
+			copied := block
+			if strings.TrimSpace(copied.Output) == "" {
+				copied.Output = strings.TrimSpace(message.Content)
+			}
+			return &copied
+		}
+	}
+	return nil
+}
+
+func parsePersistedExecutionBlocks(raw json.RawMessage) []workerpkg.ExecutionBlock {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	var blocks []workerpkg.ExecutionBlock
+	if err := json.Unmarshal(raw, &blocks); err != nil {
+		return nil
+	}
+	return workerpkg.NormalizeExecutionBlocks(blocks)
+}
+
+func classifyNativeToolFailureRepair(state *resolvedRunState, failure *workerpkg.ExecutionBlock) nativeRepairInstruction {
+	if state == nil || !state.nativeSelectivePathEnabled || failure == nil {
+		return nativeRepairInstruction{}
+	}
+	toolName := strings.TrimSpace(failure.ToolName)
+	output := strings.TrimSpace(failure.Output)
+	if toolName == "" || output == "" {
+		return nativeRepairInstruction{}
+	}
+
+	switch toolName {
+	case workerpkg.ToolPublishTaskPlan:
+		return classifyPublishTaskPlanRepair(output)
+	default:
+		return nativeRepairInstruction{}
+	}
+}
+
+func classifyPublishTaskPlanRepair(output string) nativeRepairInstruction {
+	switch {
+	case strings.Contains(output, "publish_task_plan content must be a JSON object with summary and proposed_tasks"):
+		return nativeRepairInstruction{
+			Class: "publish_task_plan_object_shape",
+			Instructions: strings.Join([]string{
+				"Your previous publish_task_plan call failed validation because content was not a structured JSON object.",
+				"Retry publish_task_plan with one complete JSON object in content.",
+				`The content object must include a non-empty "summary" string and a "proposed_tasks" array of task objects.`,
+				"Do not send markdown, prose wrappers, or stringified JSON blobs inside content.",
+			}, "\n"),
+		}
+	case strings.Contains(output, "publish_task_plan requires content.proposed_tasks to be an array of task objects"):
+		return nativeRepairInstruction{
+			Class: "publish_task_plan_task_array_shape",
+			Instructions: strings.Join([]string{
+				"Your previous publish_task_plan call failed validation because proposed_tasks was not an array of task objects.",
+				`Retry publish_task_plan with content.proposed_tasks as an array of full task objects, not strings, refs, placeholders, or partial fragments.`,
+				"Each task entry should include the normal structured task fields expected by the task-plan contract.",
+			}, "\n"),
+		}
+	case strings.Contains(output, `publish_task_plan is missing content; include the task plan JSON object in "content"`):
+		return nativeRepairInstruction{
+			Class: "publish_task_plan_missing_content",
+			Instructions: strings.Join([]string{
+				"Your previous publish_task_plan call failed validation because the content field was missing.",
+				`Retry publish_task_plan with the full task-plan JSON object under "content".`,
+				`Do not send title-only payloads; include content.summary and content.proposed_tasks in the same tool call.`,
+			}, "\n"),
+		}
+	case strings.Contains(output, "publish_task_plan input must be a JSON object with structured fields; do not send a raw string wrapper"):
+		return nativeRepairInstruction{
+			Class: "publish_task_plan_raw_wrapper",
+			Instructions: strings.Join([]string{
+				"Your previous publish_task_plan call failed validation because the tool input was wrapped as raw text instead of structured fields.",
+				"Retry publish_task_plan with a normal JSON object input, not a raw wrapper string.",
+				`Put the task plan under the structured "content" object with summary and proposed_tasks.`,
+			}, "\n"),
+		}
+	default:
+		return nativeRepairInstruction{}
+	}
+}
+
 func latestUnresolvedPolicyRetryMessage(messages []model.AgentRunMessage) *model.AgentRunMessage {
 	sawLaterAssistant := false
 	for i := len(messages) - 1; i >= 0; i-- {
@@ -448,6 +548,11 @@ func classifyNativeRepairInstruction(state *resolvedRunState, message *model.Age
 func latestNativeRepairInstruction(state *resolvedRunState, messages []model.AgentRunMessage) nativeRepairInstruction {
 	if state == nil || !state.nativeSelectivePathEnabled {
 		return nativeRepairInstruction{}
+	}
+	if failure := latestUnresolvedNativeToolFailure(messages); failure != nil {
+		if instruction := classifyNativeToolFailureRepair(state, failure); strings.TrimSpace(instruction.Instructions) != "" {
+			return instruction
+		}
 	}
 	message := latestUnresolvedPolicyRetryMessage(messages)
 	if message == nil {

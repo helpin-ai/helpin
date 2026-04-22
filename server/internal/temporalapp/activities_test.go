@@ -549,6 +549,82 @@ func TestLatestNativeRepairInstructionFallsBackToGenericRequiredHandoff(t *testi
 	}
 }
 
+func TestClassifyPublishTaskPlanRepair(t *testing.T) {
+	testCases := []struct {
+		name        string
+		output      string
+		wantClass   string
+		wantSnippet string
+	}{
+		{
+			name:        "object shape",
+			output:      "publish_task_plan content must be a JSON object with summary and proposed_tasks",
+			wantClass:   "publish_task_plan_object_shape",
+			wantSnippet: "stringified JSON blobs",
+		},
+		{
+			name:        "task array shape",
+			output:      "publish_task_plan requires content.proposed_tasks to be an array of task objects",
+			wantClass:   "publish_task_plan_task_array_shape",
+			wantSnippet: "array of full task objects",
+		},
+		{
+			name:        "missing content",
+			output:      `publish_task_plan is missing content; include the task plan JSON object in "content"`,
+			wantClass:   "publish_task_plan_missing_content",
+			wantSnippet: `full task-plan JSON object under "content"`,
+		},
+		{
+			name:        "raw wrapper",
+			output:      "publish_task_plan input must be a JSON object with structured fields; do not send a raw string wrapper",
+			wantClass:   "publish_task_plan_raw_wrapper",
+			wantSnippet: "not a raw wrapper string",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := classifyPublishTaskPlanRepair(tc.output)
+			if got.Class != tc.wantClass {
+				t.Fatalf("expected class %q, got %#v", tc.wantClass, got)
+			}
+			if !strings.Contains(got.Instructions, tc.wantSnippet) {
+				t.Fatalf("expected instructions to contain %q, got %q", tc.wantSnippet, got.Instructions)
+			}
+		})
+	}
+}
+
+func TestLatestNativeRepairInstructionPrefersPublishTaskPlanToolFailure(t *testing.T) {
+	state := &resolvedRunState{
+		nativeSelectivePathEnabled: true,
+	}
+	blocks, err := json.Marshal([]workerpkg.ExecutionBlock{
+		{
+			Type:     workerpkg.ExecutionBlockTypeToolResult,
+			ToolName: workerpkg.ToolPublishTaskPlan,
+			Output:   "publish_task_plan content must be a JSON object with summary and proposed_tasks",
+			IsError:  true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal blocks: %v", err)
+	}
+	messages := []model.AgentRunMessage{
+		{Role: "assistant", MessageType: "assistant_turn", Content: "Trying to publish the plan."},
+		{Role: "tool", MessageType: "tool_result", Content: "publish_task_plan content must be a JSON object with summary and proposed_tasks", ContentBlocks: blocks},
+		{Role: "user", MessageType: "policy_retry", Content: "System correction: continue from your last assistant turn."},
+	}
+
+	got := latestNativeRepairInstruction(state, messages)
+	if got.Class != "publish_task_plan_object_shape" {
+		t.Fatalf("expected publish_task_plan repair class, got %#v", got)
+	}
+	if !strings.Contains(got.Instructions, `"summary"`) || !strings.Contains(got.Instructions, `"proposed_tasks"`) {
+		t.Fatalf("expected publish_task_plan repair guidance, got %q", got.Instructions)
+	}
+}
+
 func TestReplayMessagesForExecutionStripsPolicyRetryForSelectivePath(t *testing.T) {
 	messages := []model.AgentRunMessage{
 		{Role: "user", MessageType: "prompt", Content: "Initial request"},
