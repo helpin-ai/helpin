@@ -329,6 +329,43 @@ func TestSelectNativeActiveSkillsTransitionsEpicFromPRDToTaskPlanning(t *testing
 	})
 }
 
+func TestSelectNativeActiveSkillsMatchesExplicitAndInferredPlannerStage(t *testing.T) {
+	state := &resolvedRunState{
+		run: &model.AgentRun{TargetType: "epic"},
+		agent: &model.Agent{
+			PresetKey: model.AgentPresetEpicPlanner,
+		},
+		epic: &model.PMEpic{
+			ApprovedSpecVersionID: strPtr("spec-v1"),
+		},
+		runtimeSkillRefs: model.AgentSkillRefs{
+			{Key: "approval_protocol"},
+			{Key: "prd_authorship"},
+			{Key: "task_decomposition"},
+			{Key: "epic_state_routing"},
+			{Key: "general_agent_behavior"},
+		},
+		runtimeSkillDefinitions: []workerpkg.SkillDefinition{
+			{Key: "approval_protocol", SourceKind: "built_in", Instructions: "approval"},
+			{Key: "prd_authorship", SourceKind: "built_in", Instructions: "prd"},
+			{Key: "task_decomposition", SourceKind: "built_in", Instructions: "tasks"},
+			{Key: "epic_state_routing", SourceKind: "built_in", Instructions: "routing"},
+			{Key: "general_agent_behavior", SourceKind: "built_in", Instructions: "general"},
+		},
+		nativeSelectivePathEnabled: true,
+	}
+
+	explicit := selectNativeActiveSkills(state, model.PlanningStagePlanTasks)
+	inferred := selectNativeActiveSkills(state, "")
+
+	if got, want := testAgentSkillRefKeys(inferred.Refs), testAgentSkillRefKeys(explicit.Refs); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("expected inferred and explicit stage selections to match, explicit=%v inferred=%v", want, got)
+	}
+	if inferred.Instructions != explicit.Instructions {
+		t.Fatalf("expected inferred and explicit stage instructions to match, explicit=%q inferred=%q", explicit.Instructions, inferred.Instructions)
+	}
+}
+
 func TestSplitNativePhaseGuidanceMovesLegacyInstructionsOffInitialPrompt(t *testing.T) {
 	legacyInitialInstructions, phaseGuidance := splitNativePhaseGuidance("native_sdk", &resolvedRunState{
 		nativeSelectivePathEnabled: true,
