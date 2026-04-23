@@ -25,6 +25,7 @@ type rolloutRunRow struct {
 	TargetType  string
 	CreatedAt   time.Time
 	CompletedAt *time.Time
+	IsSystem    bool
 	Provider    *string
 	Model       *string
 	PresetKey   string
@@ -60,19 +61,23 @@ type rolloutSummary struct {
 }
 
 type rolloutProviderReport struct {
-	Provider                     string         `json:"provider"`
-	Model                        string         `json:"model,omitempty"`
-	PresetKey                    string         `json:"preset_key"`
-	RunCount                     int            `json:"run_count"`
-	CompletedRuns                int            `json:"completed_runs"`
-	FailedRuns                   int            `json:"failed_runs"`
-	PausedRuns                   int            `json:"paused_runs"`
-	RunningRuns                  int            `json:"running_runs"`
-	AverageNativeDebugTurns      float64        `json:"average_native_debug_turns"`
-	RunsWithNativeDebugArtifacts int            `json:"runs_with_native_debug_artifacts"`
-	RunsWithRepairGuidance       int            `json:"runs_with_repair_guidance"`
-	ContinuationModes            map[string]int `json:"continuation_modes,omitempty"`
-	AppliedActions               map[string]int `json:"applied_actions,omitempty"`
+	Provider                      string         `json:"provider"`
+	Model                         string         `json:"model,omitempty"`
+	PresetKey                     string         `json:"preset_key"`
+	RunCount                      int            `json:"run_count"`
+	CompletedRuns                 int            `json:"completed_runs"`
+	FailedRuns                    int            `json:"failed_runs"`
+	PausedRuns                    int            `json:"paused_runs"`
+	RunningRuns                   int            `json:"running_runs"`
+	CancelledRuns                 int            `json:"cancelled_runs"`
+	SelectiveEligibleRuns         int            `json:"selective_eligible_runs"`
+	SelectiveEligibleMissingDebug int            `json:"selective_eligible_missing_debug"`
+	SelectiveValidationStatus     string         `json:"selective_validation_status"`
+	AverageNativeDebugTurns       float64        `json:"average_native_debug_turns"`
+	RunsWithNativeDebugArtifacts  int            `json:"runs_with_native_debug_artifacts"`
+	RunsWithRepairGuidance        int            `json:"runs_with_repair_guidance"`
+	ContinuationModes             map[string]int `json:"continuation_modes,omitempty"`
+	AppliedActions                map[string]int `json:"applied_actions,omitempty"`
 }
 
 type rolloutFilters struct {
@@ -90,22 +95,26 @@ type providerAggregateKey struct {
 }
 
 type providerAggregate struct {
-	key                          providerAggregateKey
-	runCount                     int
-	completedRuns                int
-	failedRuns                   int
-	pausedRuns                   int
-	runningRuns                  int
-	totalNativeDebugTurns        int
-	runsWithNativeDebugArtifacts int
-	runsWithRepairGuidance       int
-	continuationModes            map[string]int
-	appliedActions               map[string]int
+	key                           providerAggregateKey
+	runCount                      int
+	completedRuns                 int
+	failedRuns                    int
+	pausedRuns                    int
+	runningRuns                   int
+	cancelledRuns                 int
+	selectiveEligibleRuns         int
+	selectiveEligibleMissingDebug int
+	totalNativeDebugTurns         int
+	runsWithNativeDebugArtifacts  int
+	runsWithRepairGuidance        int
+	continuationModes             map[string]int
+	appliedActions                map[string]int
 }
 
 type runAggregate struct {
 	key               providerAggregateKey
 	status            string
+	selectiveEligible bool
 	nativeDebugTurns  int
 	hasNativeDebug    bool
 	hasRepairGuidance bool
@@ -160,7 +169,7 @@ func main() {
 func loadRolloutRows(ctx context.Context, db *gorm.DB, filters rolloutFilters) ([]rolloutRunRow, []rolloutArtifactRow, error) {
 	query := db.WithContext(ctx).
 		Table("agent_runs").
-		Select("agent_runs.id AS run_id, agent_runs.workspace_id, agent_runs.status, agent_runs.target_type, agent_runs.created_at, agent_runs.completed_at, agents.provider, agents.model, agents.preset_key").
+		Select("agent_runs.id AS run_id, agent_runs.workspace_id, agent_runs.status, agent_runs.target_type, agent_runs.created_at, agent_runs.completed_at, agents.is_system, agents.provider, agents.model, agents.preset_key").
 		Joins("JOIN agents ON agents.id = agent_runs.agent_id AND agents.workspace_id = agent_runs.workspace_id").
 		Where("agent_runs.runtime_kind = ?", "native_sdk").
 		Where("agents.preset_key IN ?", []string{model.AgentPresetEpicPlanner, model.AgentPresetTaskPlanner})
@@ -230,6 +239,7 @@ func buildRolloutSummary(filters rolloutFilters, runs []rolloutRunRow, artifacts
 		runState[run.RunID] = &runAggregate{
 			key:               key,
 			status:            strings.TrimSpace(run.Status),
+			selectiveEligible: rolloutRunWouldBeSelectiveEligible(run),
 			continuationModes: make(map[string]int),
 			appliedActions:    make(map[string]int),
 		}
@@ -294,6 +304,14 @@ func buildRolloutSummary(filters rolloutFilters, runs []rolloutRunRow, artifacts
 			group.pausedRuns++
 		case model.AgentRunStatusRunning:
 			group.runningRuns++
+		case model.AgentRunStatusCancelled:
+			group.cancelledRuns++
+		}
+		if state.selectiveEligible {
+			group.selectiveEligibleRuns++
+			if !state.hasNativeDebug {
+				group.selectiveEligibleMissingDebug++
+			}
 		}
 		if state.hasNativeDebug {
 			group.runsWithNativeDebugArtifacts++
@@ -317,19 +335,23 @@ func buildRolloutSummary(filters rolloutFilters, runs []rolloutRunRow, artifacts
 			continue
 		}
 		report := rolloutProviderReport{
-			Provider:                     key.Provider,
-			Model:                        key.Model,
-			PresetKey:                    key.PresetKey,
-			RunCount:                     group.runCount,
-			CompletedRuns:                group.completedRuns,
-			FailedRuns:                   group.failedRuns,
-			PausedRuns:                   group.pausedRuns,
-			RunningRuns:                  group.runningRuns,
-			AverageNativeDebugTurns:      float64(group.totalNativeDebugTurns) / float64(group.runCount),
-			RunsWithNativeDebugArtifacts: group.runsWithNativeDebugArtifacts,
-			RunsWithRepairGuidance:       group.runsWithRepairGuidance,
-			ContinuationModes:            sortedIntMap(group.continuationModes),
-			AppliedActions:               sortedIntMap(group.appliedActions),
+			Provider:                      key.Provider,
+			Model:                         key.Model,
+			PresetKey:                     key.PresetKey,
+			RunCount:                      group.runCount,
+			CompletedRuns:                 group.completedRuns,
+			FailedRuns:                    group.failedRuns,
+			PausedRuns:                    group.pausedRuns,
+			RunningRuns:                   group.runningRuns,
+			CancelledRuns:                 group.cancelledRuns,
+			SelectiveEligibleRuns:         group.selectiveEligibleRuns,
+			SelectiveEligibleMissingDebug: group.selectiveEligibleMissingDebug,
+			SelectiveValidationStatus:     selectiveValidationStatus(group),
+			AverageNativeDebugTurns:       float64(group.totalNativeDebugTurns) / float64(group.runCount),
+			RunsWithNativeDebugArtifacts:  group.runsWithNativeDebugArtifacts,
+			RunsWithRepairGuidance:        group.runsWithRepairGuidance,
+			ContinuationModes:             sortedIntMap(group.continuationModes),
+			AppliedActions:                sortedIntMap(group.appliedActions),
 		}
 		reportGroups = append(reportGroups, report)
 	}
@@ -339,6 +361,33 @@ func buildRolloutSummary(filters rolloutFilters, runs []rolloutRunRow, artifacts
 		Filters:     filters,
 		Groups:      reportGroups,
 	}
+}
+
+func rolloutRunWouldBeSelectiveEligible(run rolloutRunRow) bool {
+	if !run.IsSystem {
+		return false
+	}
+	switch strings.TrimSpace(run.PresetKey) {
+	case model.AgentPresetEpicPlanner:
+		return strings.TrimSpace(run.TargetType) == "epic"
+	case model.AgentPresetTaskPlanner:
+		return strings.TrimSpace(run.TargetType) == "task"
+	default:
+		return false
+	}
+}
+
+func selectiveValidationStatus(group *providerAggregate) string {
+	if group == nil || group.selectiveEligibleRuns == 0 {
+		return "not_applicable"
+	}
+	if group.runsWithNativeDebugArtifacts == 0 {
+		return "not_validated_no_native_debug"
+	}
+	if group.selectiveEligibleMissingDebug > 0 {
+		return "partial_missing_native_debug"
+	}
+	return "validated"
 }
 
 func normalizedProvider(provider *string) string {
@@ -392,8 +441,10 @@ func printRolloutSummary(summary rolloutSummary) {
 			fmt.Printf(" model=%s", group.Model)
 		}
 		fmt.Printf(" preset=%s\n", group.PresetKey)
-		fmt.Printf("  runs: total=%d completed=%d failed=%d paused=%d running=%d\n",
-			group.RunCount, group.CompletedRuns, group.FailedRuns, group.PausedRuns, group.RunningRuns)
+		fmt.Printf("  runs: total=%d completed=%d failed=%d paused=%d running=%d cancelled=%d\n",
+			group.RunCount, group.CompletedRuns, group.FailedRuns, group.PausedRuns, group.RunningRuns, group.CancelledRuns)
+		fmt.Printf("  selective_path: eligible=%d missing_debug=%d status=%s\n",
+			group.SelectiveEligibleRuns, group.SelectiveEligibleMissingDebug, group.SelectiveValidationStatus)
 		fmt.Printf("  native_turn_debug: runs=%d avg_turns=%.2f repair_runs=%d\n",
 			group.RunsWithNativeDebugArtifacts, group.AverageNativeDebugTurns, group.RunsWithRepairGuidance)
 		fmt.Printf("  continuation_modes: %s\n", formatIntMap(group.ContinuationModes))

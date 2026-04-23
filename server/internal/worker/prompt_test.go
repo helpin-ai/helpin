@@ -149,6 +149,38 @@ func TestBuildUserPromptTaskPlannerUsesNeutralPlanningContext(t *testing.T) {
 	}
 }
 
+func TestBuildUserPromptTaskPlannerLabelsParentEpicAsBackground(t *testing.T) {
+	taskDescription := "<p>Instrument producer send operations.</p>"
+	epicDescription := "<p>Observability PRD details.</p>"
+	prompt := BuildUserPrompt(
+		nil,
+		&model.PMTask{Name: "Instrument Kafka producer send operations with metrics", Description: &taskDescription},
+		&model.PMEpic{Name: "Kafka observability", Description: &epicDescription},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		model.PlanningStageTaskPlanDoc,
+		"",
+	)
+
+	for _, marker := range []string{
+		"Target task: **Instrument Kafka producer send operations with metrics**",
+		"This run is scoped to the target task. Parent epic/PRD context below is background only.",
+		"Target task description:",
+		"Parent epic background: **Kafka observability**",
+		"Parent epic description:",
+	} {
+		if !strings.Contains(prompt, marker) {
+			t.Fatalf("expected prompt to contain %q\n%s", marker, prompt)
+		}
+	}
+	if strings.Contains(prompt, "\nEpic: **Kafka observability**") {
+		t.Fatalf("expected parent epic to be labeled as background\n%s", prompt)
+	}
+}
+
 func TestBuildUserPromptReviewAgentUsesNeutralTaskContext(t *testing.T) {
 	prompt := BuildUserPrompt(
 		&model.Agent{PresetKey: model.AgentPresetReviewAgent},

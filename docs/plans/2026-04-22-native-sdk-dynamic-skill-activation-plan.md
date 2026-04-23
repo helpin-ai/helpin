@@ -8,7 +8,7 @@ The core selective native planner path has been implemented. Remaining work is n
 
 - reducing planner-specific Temporal instruction ownership further
 - broadening regression and invariant coverage
-- validating provider reliability and non-regression using live run data
+- validating provider reliability and non-regression using live selective-path run data
 - cleaning up stale plan sections and documenting final rollout state
 
 ### Implemented
@@ -28,8 +28,15 @@ The core selective native planner path has been implemented. Remaining work is n
 - normalized native repair-state capture and persistence
 - repair-instruction reinjection for completion-policy retries and planner tool failures
 - native debug/observability artifacts for phase, skills, policy, continuation mode, and repair state
-- rollout-report tooling for comparing native planner run outcomes, continuation modes, repair frequency, and applied actions across providers/presets
+- rollout-report tooling for comparing native planner run outcomes, selective-path coverage, continuation modes, repair frequency, and applied actions across providers/presets
 - substantial Phase 5 extraction of planner rule/context assembly into smaller Temporal helpers
+- native planner phase-guidance composition extracted into a dedicated Temporal file
+- planner context assembly extracted into a dedicated Temporal file
+- approved-preview selection/recovery/application commands extracted into a dedicated Temporal file
+- completion-interaction policy enforcement and retry/repair handling extracted into a dedicated Temporal file
+- native repair classification and replay selection extracted into a dedicated Temporal file
+- native selective-path gating, active-skill selection, and active-policy derivation extracted into a dedicated Temporal file
+- native observability artifact persistence extracted into a dedicated Temporal file
 - explicit regression coverage for:
   - PRD request-changes keeping PRD-focused active skills
   - task-extension guidance after approved plans have already created tasks
@@ -40,16 +47,57 @@ The core selective native planner path has been implemented. Remaining work is n
 ### Partially implemented
 
 - base-prompt simplification is complete for selective native planner runs, but broader prompt cleanup is still incomplete
-- planner guidance extraction is well underway, but Temporal still owns a meaningful amount of planner-specific assembly
+- planner guidance extraction is well underway, with native phase-guidance, planner context assembly, approved-preview application, completion-policy enforcement/retry handling, native repair selection, native selective activation, and observability persistence split out; Temporal still owns backend orchestration paths
 - transition coverage is improved, but not yet exhaustive across every apply/resume edge
-- regression coverage is materially broader now, but invariant-protection and provider-comparison execution remain incomplete
-- provider-validation tooling exists, but live OpenAI/OpenRouter vs Anthropic rollout validation has not yet been run
+- regression coverage is materially broader now, but final Phase 5 cleanup can still add more invariant-protection coverage
+- live selective-path validation has enough small-sample evidence to close Phase 4
+- sampled eligible runs emitted `native_turn_debug` artifacts
+- Atlas/OpenRouter epic-planner validation completed successfully on a small sample
+- Scribe/OpenAI task-planner validation completed successfully on the post-fix sample
+- earlier sampled Scribe failures were traced to approval preview-panel binding edge cases and fixed
 
 ### Not yet complete
 
 - final Phase 5-style reduction of Temporal into thin planner orchestration wrappers
-- broader rollout validation across providers using real run data, especially explicit Anthropic non-regression checks
 - final cleanup of remaining stale phase text and acceptance tracking in this document
+
+### Latest Live Validation Snapshot
+
+Snapshot time: 2026-04-23 09:24 UTC.
+
+Command:
+
+```bash
+cd server && go run ./cmd/native-planner-rollout-report --since 2026-04-23T08:40:00Z
+```
+
+Observed selective-path data:
+
+- Atlas / `openrouter` / `moonshotai/kimi-k2.6` / `epic_planner`: 3 eligible runs, 0 missing `native_turn_debug`, 2 completed, 1 cancelled, 0 failed; applied actions were `persist_prd=2` and `create_tasks=2`.
+- Scribe / `anthropic` / `task_planner`: 6 eligible runs, 0 missing `native_turn_debug`, 2 completed, 1 cancelled, 3 failed; the 2 post-fix completions each produced `approved_preview=1` and `approved_preview_applied=1` with `persist_task_doc`.
+- The 3 Scribe failures occurred before the approval panel-key alias fix and had no `approved_preview` artifacts; they matched the fixed bug where `preview_panel_key="publish_task_plan_doc"` did not bind to the canonical `task_plan_doc` preview.
+
+Interpretation:
+
+- selective-path observability is working for sampled eligible runs
+- Atlas/OpenRouter is validated on a small sample
+- Scribe/Anthropic is validated post-fix on a small sample
+- Scribe/OpenAI is validated post-fix on a small sample
+- broader provider reliability conclusions should continue to be monitored after rollout, but Phase 4 has enough evidence to proceed
+
+Additional OpenAI Scribe validation:
+
+Command:
+
+```bash
+cd server && go run ./cmd/native-planner-rollout-report --since 2026-04-23T09:20:00Z --provider openai --preset task_planner
+```
+
+Observed data:
+
+- `openai` / `task_planner`: 5 eligible runs, 0 missing `native_turn_debug`, 4 completed, 1 failed, 0 cancelled; applied actions were `persist_task_doc=4`.
+- The single failed run was the pre-fix approval-binding failure where an unknown UUID-style `preview_panel_key` did not bind to the unique same-turn `task_plan_doc` preview.
+- The latest successful OpenAI Scribe run completed with `approved_preview=1`, `approved_preview_applied=1`, and no repeated final prose loop.
 
 ## Direction
 
@@ -912,6 +960,8 @@ Requirements:
 - use the native planner rollout-report tool to summarize native planner runs by provider/model/preset from persisted run and `native_turn_debug` artifacts
 - compare Anthropic vs OpenAI/OpenRouter planner reliability on long interactive runs
 - confirm Anthropic planner behavior does not regress under the selective native path
+- ensure `AGENT_NATIVE_SELECTIVE_PLANNER_ENABLED=true` is set in both API and Temporal worker environments before collecting validation runs
+- treat groups with `selective_validation_status=not_validated_no_native_debug` as baseline native planner runs, not selective-path validation
 
 Rollout-report command:
 
@@ -924,11 +974,20 @@ Rollout-report command:
   - `--until <RFC3339>`
   - `--json`
 
-This phase is only complete after the report has been run against live rollout data and the results have been reviewed.
+Status: complete for this rollout on small-sample live data. Continue monitoring provider reliability as normal rollout work.
+
+This phase is complete after the report has been run against live rollout data where eligible runs emit `native_turn_debug` artifacts and the results have been reviewed.
 
 ### Phase 5
 
 - reduce planner-specific Temporal instruction builders to thin orchestration wrappers
+- extract native phase-guidance composition out of the main Temporal activities file
+- extract planner context assembly out of the main Temporal activities file
+- extract approved-preview selection/recovery/application commands out of the main Temporal activities file
+- extract completion-interaction policy enforcement and retry/repair handling out of the main Temporal activities file
+- extract native repair classification/replay selection out of the main Temporal activities file
+- extract native selective-path gating, active-skill selection, and active-policy derivation out of the main Temporal activities file
+- extract native observability artifact persistence out of the main Temporal activities file
 - keep Temporal responsible for:
   - loading durable state
   - selecting active skills and phase guidance
@@ -984,12 +1043,12 @@ Do not:
 
 ## Acceptance Criteria
 
-- Native planner runs no longer depend on one giant turn-0 skill blob.
-- After PRD approval, the next turn is re-anchored on task-decomposition rules.
-- After a `publish_task_plan` validation error, the next turn receives only the relevant task-plan repair contract.
-- OpenAI/OpenRouter planner reliability improves on long interactive runs.
-- Anthropic planner behavior does not regress.
-- Codex/OpenCode staged skill behavior remains unchanged.
+- Native planner runs no longer depend on one giant turn-0 skill blob. Status: implemented for selective native planner runs.
+- After PRD approval, the next turn is re-anchored on task-decomposition rules. Status: implemented and covered by focused tests.
+- After a `publish_task_plan` validation error, the next turn receives only the relevant task-plan repair contract. Status: implemented and covered by focused tests.
+- OpenAI/OpenRouter planner reliability improves on long interactive runs. Status: validated enough for rollout continuation on small-sample Atlas/OpenRouter and Scribe/OpenAI runs; keep monitoring after rollout.
+- Anthropic planner behavior does not regress. Status: validated enough for rollout continuation on sampled Scribe/Anthropic runs; keep monitoring after rollout.
+- Codex/OpenCode staged skill behavior remains unchanged. Status: implementation keeps the native selective path gated away from Codex/OpenCode; continue relying on regression coverage during final cleanup.
 
 ## Recommendation
 

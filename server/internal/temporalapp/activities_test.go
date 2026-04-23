@@ -8689,6 +8689,401 @@ func TestReviewCheckpointWithExplicitPreviewPanelKeyRequiresMatchingCurrentTurnP
 	}
 }
 
+func TestApprovalRequestWithPublishToolPreviewPanelKeyMatchesCanonicalPreview(t *testing.T) {
+	dbName := fmt.Sprintf("file:approval-tool-key-preview-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_artifacts (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			artifact_type TEXT NOT NULL,
+			format TEXT NOT NULL,
+			storage_mode TEXT NOT NULL,
+			inline_content TEXT,
+			object_key TEXT,
+			metadata TEXT NOT NULL,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+		`CREATE TABLE agent_run_interactions (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			runtime_kind TEXT NOT NULL,
+			interaction_kind TEXT NOT NULL,
+			status TEXT NOT NULL,
+			request_schema_version TEXT NOT NULL,
+			response_schema_version TEXT,
+			request_id TEXT,
+			thread_id TEXT,
+			turn_id TEXT,
+			item_id TEXT,
+			approval_id TEXT,
+			assistant_message_sequence_no INTEGER,
+			title TEXT,
+			summary TEXT,
+			request_payload TEXT NOT NULL,
+			response_payload TEXT,
+			runtime_metadata TEXT NOT NULL,
+			resolved_by TEXT,
+			resolved_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+	}
+
+	now := time.Now().UTC()
+	interactionRepo := repository.NewAgentRunInteractionRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	activities := &AgentRunActivities{
+		artifactRepo:    artifactRepo,
+		interactionRepo: interactionRepo,
+	}
+	state := &resolvedRunState{
+		run: &model.AgentRun{
+			ID:          "run-tool-key-preview",
+			WorkspaceID: "ws-1",
+			RuntimeKind: "native_sdk",
+		},
+		agent: &model.Agent{
+			ID:          "agent-1",
+			WorkspaceID: "ws-1",
+			RuntimeKind: "native_sdk",
+		},
+		skillPolicy: workerpkg.SkillPolicy{
+			CompletionRequiresInteractionKinds: []string{
+				model.AgentRunInteractionKindApprovalRequest,
+			},
+		},
+	}
+
+	assistantSequenceNo := 7
+	previewPayload, err := json.Marshal(workerpkg.PublishedPreview{
+		PanelKey: "task_plan_doc",
+		Title:    "Task Planning Document",
+		Format:   workerpkg.PreviewFormatMarkdown,
+		Content:  json.RawMessage(`"# Plan\n\nInstrument Kafka producer metrics."`),
+	})
+	if err != nil {
+		t.Fatalf("marshal preview: %v", err)
+	}
+	if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
+		ID:            "artifact-tool-key-preview",
+		WorkspaceID:   state.run.WorkspaceID,
+		RunID:         state.run.ID,
+		ArtifactType:  workerpkg.RunPreviewArtifactType,
+		Format:        "json",
+		StorageMode:   "inline",
+		InlineContent: strPtr(string(previewPayload)),
+		Metadata:      buildAssistantSequenceArtifactMetadata(assistantSequenceNo),
+		SequenceNo:    1,
+		CreatedAt:     now,
+	}); err != nil {
+		t.Fatalf("create preview artifact: %v", err)
+	}
+
+	if err := interactionRepo.Create(context.Background(), &model.AgentRunInteraction{
+		ID:                         "interaction-tool-key",
+		WorkspaceID:                state.run.WorkspaceID,
+		RunID:                      state.run.ID,
+		RuntimeKind:                "native_sdk",
+		InteractionKind:            model.AgentRunInteractionKindApprovalRequest,
+		Status:                     model.AgentRunInteractionStatusPending,
+		RequestSchemaVersion:       model.AgentRunInteractionSchemaVersionHelpinV1,
+		AssistantMessageSequenceNo: &assistantSequenceNo,
+		RequestPayload:             json.RawMessage(`{"phase":"task_doc","preview_panel_key":"publish_task_plan_doc","title":"Approve task planning document","summary":"Review it"}`),
+		RuntimeMetadata:            json.RawMessage(`{"runtime_kind":"native_sdk"}`),
+		CreatedAt:                  now,
+		UpdatedAt:                  now,
+	}); err != nil {
+		t.Fatalf("create interaction: %v", err)
+	}
+
+	if err := activities.enforceCompletionInteractionPolicy(context.Background(), state, &model.AgentRunMessage{
+		SequenceNo:  assistantSequenceNo,
+		Role:        "assistant",
+		MessageType: "assistant_turn",
+		Content:     "Please review the task planning document.",
+	}); err != nil {
+		t.Fatalf("expected publish tool preview_panel_key to match canonical preview, got %v", err)
+	}
+}
+
+func TestApprovalRequestWithUnknownPreviewPanelKeyAllowsSingleCurrentTurnPreview(t *testing.T) {
+	dbName := fmt.Sprintf("file:approval-unknown-key-preview-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_artifacts (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			artifact_type TEXT NOT NULL,
+			format TEXT NOT NULL,
+			storage_mode TEXT NOT NULL,
+			inline_content TEXT,
+			object_key TEXT,
+			metadata TEXT NOT NULL,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+		`CREATE TABLE agent_run_interactions (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			runtime_kind TEXT NOT NULL,
+			interaction_kind TEXT NOT NULL,
+			status TEXT NOT NULL,
+			request_schema_version TEXT NOT NULL,
+			response_schema_version TEXT,
+			request_id TEXT,
+			thread_id TEXT,
+			turn_id TEXT,
+			item_id TEXT,
+			approval_id TEXT,
+			assistant_message_sequence_no INTEGER,
+			title TEXT,
+			summary TEXT,
+			request_payload TEXT NOT NULL,
+			response_payload TEXT,
+			runtime_metadata TEXT NOT NULL,
+			resolved_by TEXT,
+			resolved_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+	}
+
+	now := time.Now().UTC()
+	interactionRepo := repository.NewAgentRunInteractionRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	activities := &AgentRunActivities{
+		artifactRepo:    artifactRepo,
+		interactionRepo: interactionRepo,
+	}
+	state := &resolvedRunState{
+		run: &model.AgentRun{
+			ID:          "run-unknown-key-preview",
+			WorkspaceID: "ws-1",
+			RuntimeKind: "native_sdk",
+		},
+		agent: &model.Agent{
+			ID:          "agent-1",
+			WorkspaceID: "ws-1",
+			RuntimeKind: "native_sdk",
+		},
+		skillPolicy: workerpkg.SkillPolicy{
+			CompletionRequiresInteractionKinds: []string{
+				model.AgentRunInteractionKindApprovalRequest,
+			},
+		},
+	}
+
+	assistantSequenceNo := 7
+	previewPayload, err := json.Marshal(workerpkg.PublishedPreview{
+		PanelKey: "task_plan_doc",
+		Title:    "Task Planning Document",
+		Format:   workerpkg.PreviewFormatMarkdown,
+		Content:  json.RawMessage(`"# Plan\n\nRegister histogram buckets."`),
+	})
+	if err != nil {
+		t.Fatalf("marshal preview: %v", err)
+	}
+	if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
+		ID:            "artifact-unknown-key-preview",
+		WorkspaceID:   state.run.WorkspaceID,
+		RunID:         state.run.ID,
+		ArtifactType:  workerpkg.RunPreviewArtifactType,
+		Format:        "json",
+		StorageMode:   "inline",
+		InlineContent: strPtr(string(previewPayload)),
+		Metadata:      buildAssistantSequenceArtifactMetadata(assistantSequenceNo),
+		SequenceNo:    1,
+		CreatedAt:     now,
+	}); err != nil {
+		t.Fatalf("create preview artifact: %v", err)
+	}
+
+	if err := interactionRepo.Create(context.Background(), &model.AgentRunInteraction{
+		ID:                         "interaction-unknown-key",
+		WorkspaceID:                state.run.WorkspaceID,
+		RunID:                      state.run.ID,
+		RuntimeKind:                "native_sdk",
+		InteractionKind:            model.AgentRunInteractionKindApprovalRequest,
+		Status:                     model.AgentRunInteractionStatusPending,
+		RequestSchemaVersion:       model.AgentRunInteractionSchemaVersionHelpinV1,
+		AssistantMessageSequenceNo: &assistantSequenceNo,
+		RequestPayload:             json.RawMessage(`{"phase":"task_doc","preview_panel_key":"db1e88e9-2538-426a-a787-12a17f108bcd","title":"Approve task planning document","summary":"Review it"}`),
+		RuntimeMetadata:            json.RawMessage(`{"runtime_kind":"native_sdk"}`),
+		CreatedAt:                  now,
+		UpdatedAt:                  now,
+	}); err != nil {
+		t.Fatalf("create interaction: %v", err)
+	}
+
+	if err := activities.enforceCompletionInteractionPolicy(context.Background(), state, &model.AgentRunMessage{
+		SequenceNo:  assistantSequenceNo,
+		Role:        "assistant",
+		MessageType: "assistant_turn",
+		Content:     "Please review the task planning document.",
+	}); err != nil {
+		t.Fatalf("expected unknown preview_panel_key to bind to unique same-turn preview, got %v", err)
+	}
+}
+
+func TestEnsureApprovedPreviewFromResolvedInteractionUsesUniquePreviewForUnknownPanelKey(t *testing.T) {
+	dbName := fmt.Sprintf("file:resolved-approval-unknown-key-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_artifacts (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			artifact_type TEXT NOT NULL,
+			format TEXT NOT NULL,
+			storage_mode TEXT NOT NULL,
+			inline_content TEXT,
+			object_key TEXT,
+			metadata TEXT NOT NULL,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+		`CREATE TABLE agent_run_interactions (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			runtime_kind TEXT NOT NULL,
+			interaction_kind TEXT NOT NULL,
+			status TEXT NOT NULL,
+			request_schema_version TEXT NOT NULL,
+			response_schema_version TEXT,
+			request_id TEXT,
+			thread_id TEXT,
+			turn_id TEXT,
+			item_id TEXT,
+			approval_id TEXT,
+			assistant_message_sequence_no INTEGER,
+			title TEXT,
+			summary TEXT,
+			request_payload TEXT NOT NULL,
+			response_payload TEXT,
+			runtime_metadata TEXT NOT NULL,
+			resolved_by TEXT,
+			resolved_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+	}
+
+	now := time.Now().UTC()
+	assistantSequenceNo := 3
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	interactionRepo := repository.NewAgentRunInteractionRepository(db)
+	activities := &AgentRunActivities{
+		artifactRepo:    artifactRepo,
+		interactionRepo: interactionRepo,
+	}
+	run := &model.AgentRun{
+		ID:             "run-resolved-approval",
+		WorkspaceID:    "ws-1",
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeInteractive,
+	}
+	state := &resolvedRunState{run: run}
+
+	previewPayload, err := json.Marshal(workerpkg.PublishedPreview{
+		PanelKey: "task_plan_doc",
+		Title:    "Task Planning Document",
+		Format:   workerpkg.PreviewFormatMarkdown,
+		Content:  json.RawMessage(`"# Plan\n\nRegister histogram buckets."`),
+	})
+	if err != nil {
+		t.Fatalf("marshal preview: %v", err)
+	}
+	if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
+		ID:            "artifact-run-preview",
+		WorkspaceID:   run.WorkspaceID,
+		RunID:         run.ID,
+		ArtifactType:  workerpkg.RunPreviewArtifactType,
+		Format:        "json",
+		StorageMode:   "inline",
+		InlineContent: strPtr(string(previewPayload)),
+		Metadata:      buildAssistantSequenceArtifactMetadata(assistantSequenceNo),
+		SequenceNo:    1,
+		CreatedAt:     now,
+	}); err != nil {
+		t.Fatalf("create preview artifact: %v", err)
+	}
+	resolvedBy := "user-1"
+	if err := interactionRepo.Create(context.Background(), &model.AgentRunInteraction{
+		ID:                         "interaction-resolved",
+		WorkspaceID:                run.WorkspaceID,
+		RunID:                      run.ID,
+		RuntimeKind:                "native_sdk",
+		InteractionKind:            model.AgentRunInteractionKindApprovalRequest,
+		Status:                     model.AgentRunInteractionStatusResolved,
+		RequestSchemaVersion:       model.AgentRunInteractionSchemaVersionHelpinV1,
+		AssistantMessageSequenceNo: &assistantSequenceNo,
+		RequestPayload:             json.RawMessage(`{"phase":"task_doc","preview_panel_key":"db1e88e9-2538-426a-a787-12a17f108bcd","title":"Approve task planning document","summary":"Review it"}`),
+		ResponsePayload:            json.RawMessage(`{"decision":"approve"}`),
+		RuntimeMetadata:            json.RawMessage(`{"runtime_kind":"native_sdk"}`),
+		ResolvedBy:                 &resolvedBy,
+		ResolvedAt:                 &now,
+		CreatedAt:                  now,
+		UpdatedAt:                  now,
+	}); err != nil {
+		t.Fatalf("create interaction: %v", err)
+	}
+
+	artifacts, err := artifactRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	artifacts, err = activities.ensureApprovedPreviewFromResolvedInteraction(context.Background(), state, artifacts)
+	if err != nil {
+		t.Fatalf("ensureApprovedPreviewFromResolvedInteraction returned error: %v", err)
+	}
+	if len(artifacts) != 2 {
+		t.Fatalf("expected recovered approved preview artifact, got %#v", artifacts)
+	}
+
+	var approvedArtifacts []model.AgentRunArtifact
+	if err := db.Where("run_id = ? AND artifact_type = ?", run.ID, model.AgentRunArtifactTypeApprovedPreview).Find(&approvedArtifacts).Error; err != nil {
+		t.Fatalf("list approved artifacts: %v", err)
+	}
+	if len(approvedArtifacts) != 1 || approvedArtifacts[0].InlineContent == nil {
+		t.Fatalf("expected one approved preview artifact, got %#v", approvedArtifacts)
+	}
+	var approved model.ApprovedRunPreview
+	if err := json.Unmarshal([]byte(*approvedArtifacts[0].InlineContent), &approved); err != nil {
+		t.Fatalf("unmarshal approved preview: %v", err)
+	}
+	if approved.PanelKey != "task_plan_doc" || approved.Phase != "task_doc" || approved.ApprovedBy != resolvedBy {
+		t.Fatalf("unexpected approved preview: %#v", approved)
+	}
+}
+
 func TestEnforceCompletionInteractionPolicyRequiresCurrentTurnInteraction(t *testing.T) {
 	dbName := fmt.Sprintf("file:completion-policy-current-turn-%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
@@ -8777,6 +9172,113 @@ func TestEnforceCompletionInteractionPolicyRequiresCurrentTurnInteraction(t *tes
 
 	if err := activities.enforceCompletionInteractionPolicy(context.Background(), state, currentAssistantMessage); err != nil {
 		t.Fatalf("expected current-turn interaction to satisfy completion policy, got %v", err)
+	}
+}
+
+func TestEnforceCompletionInteractionPolicyAllowsAppliedTaskDocApprovalCompletion(t *testing.T) {
+	dbName := fmt.Sprintf("file:completion-policy-applied-task-doc-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_artifacts (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			artifact_type TEXT NOT NULL,
+			format TEXT NOT NULL,
+			storage_mode TEXT NOT NULL,
+			inline_content TEXT,
+			object_key TEXT,
+			metadata TEXT NOT NULL,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+		`CREATE TABLE agent_run_interactions (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			runtime_kind TEXT NOT NULL,
+			interaction_kind TEXT NOT NULL,
+			status TEXT NOT NULL,
+			request_schema_version TEXT NOT NULL,
+			response_schema_version TEXT,
+			request_id TEXT,
+			thread_id TEXT,
+			turn_id TEXT,
+			item_id TEXT,
+			approval_id TEXT,
+			assistant_message_sequence_no INTEGER,
+			title TEXT,
+			summary TEXT,
+			request_payload TEXT NOT NULL,
+			response_payload TEXT,
+			runtime_metadata TEXT NOT NULL,
+			resolved_by TEXT,
+			resolved_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+	}
+
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	interactionRepo := repository.NewAgentRunInteractionRepository(db)
+	activities := &AgentRunActivities{
+		artifactRepo:    artifactRepo,
+		interactionRepo: interactionRepo,
+	}
+	run := &model.AgentRun{
+		ID:             "run-task-doc-applied",
+		WorkspaceID:    "ws-1",
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeInteractive,
+		TargetType:     "task",
+	}
+	state := &resolvedRunState{
+		run: run,
+		agent: &model.Agent{
+			ID:        "agent-task-planner",
+			PresetKey: model.AgentPresetTaskPlanner,
+		},
+		skillPolicy: workerpkg.SkillPolicy{
+			CompletionRequiresInteractionKinds: []string{
+				model.AgentRunInteractionKindApprovalRequest,
+				model.AgentRunInteractionKindRequestUserInput,
+			},
+		},
+	}
+
+	appliedJSON, err := json.Marshal(model.AppliedApprovedRunPreview{
+		ApprovedArtifactID: "approved-task-doc-1",
+		Phase:              "task_doc",
+		Action:             "persist_task_doc",
+		AppliedAt:          time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("marshal applied marker: %v", err)
+	}
+	if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
+		ID:            "applied-task-doc-1",
+		WorkspaceID:   run.WorkspaceID,
+		RunID:         run.ID,
+		ArtifactType:  model.AgentRunArtifactTypeApprovedPreviewApplied,
+		Format:        "json",
+		StorageMode:   "inline",
+		InlineContent: strPtr(string(appliedJSON)),
+		Metadata:      json.RawMessage(`{}`),
+		SequenceNo:    1,
+		CreatedAt:     time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("create applied marker: %v", err)
+	}
+
+	if err := activities.enforceCompletionInteractionPolicy(context.Background(), state, &model.AgentRunMessage{SequenceNo: 5}); err != nil {
+		t.Fatalf("expected applied task-doc approval to satisfy completion policy, got %v", err)
 	}
 }
 

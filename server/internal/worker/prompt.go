@@ -201,21 +201,38 @@ func BuildUserPrompt(
 	var contextParts []string
 
 	if story != nil {
-		contextParts = append(contextParts, fmt.Sprintf("Task: **%s**", story.Name))
+		if epic != nil && strings.TrimSpace(epic.Name) != "" {
+			contextParts = append(contextParts, fmt.Sprintf("Target task: **%s**", story.Name))
+			contextParts = append(contextParts, "This run is scoped to the target task. Parent epic/PRD context below is background only.")
+		} else {
+			contextParts = append(contextParts, fmt.Sprintf("Task: **%s**", story.Name))
+		}
 		if strings.TrimSpace(planningStage) == model.PlanningStageTaskPlanDoc {
 			contextParts = append(contextParts, "Planning stage: task_plan_doc")
 		}
 		if story.Description != nil {
 			if description := tiptap.RichTextToMarkdown(*story.Description); description != "" {
-				contextParts = append(contextParts, "\nDescription:\n"+description)
+				if epic != nil && strings.TrimSpace(epic.Name) != "" {
+					contextParts = append(contextParts, "\nTarget task description:\n"+description)
+				} else {
+					contextParts = append(contextParts, "\nDescription:\n"+description)
+				}
 			}
 		}
 	}
 	if epic != nil {
-		contextParts = append(contextParts, fmt.Sprintf("Epic: **%s**", epic.Name))
+		if story != nil {
+			contextParts = append(contextParts, fmt.Sprintf("Parent epic background: **%s**", epic.Name))
+		} else {
+			contextParts = append(contextParts, fmt.Sprintf("Epic: **%s**", epic.Name))
+		}
 		if epic.Description != nil {
 			if description := tiptap.RichTextToMarkdown(*epic.Description); description != "" {
-				contextParts = append(contextParts, "\nDescription:\n"+description)
+				if story != nil {
+					contextParts = append(contextParts, "\nParent epic description:\n"+description)
+				} else {
+					contextParts = append(contextParts, "\nDescription:\n"+description)
+				}
 			}
 		}
 		if len(epicStories) > 0 {

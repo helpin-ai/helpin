@@ -38,25 +38,31 @@ func TestBuildRolloutSummaryAggregatesByProviderModelAndPreset(t *testing.T) {
 
 	summary := buildRolloutSummary(rolloutFilters{}, []rolloutRunRow{
 		{
-			RunID:     "run-1",
-			Status:    model.AgentRunStatusCompleted,
-			Provider:  &openai,
-			Model:     &openaiModel,
-			PresetKey: model.AgentPresetEpicPlanner,
+			RunID:      "run-1",
+			Status:     model.AgentRunStatusCompleted,
+			TargetType: "epic",
+			IsSystem:   true,
+			Provider:   &openai,
+			Model:      &openaiModel,
+			PresetKey:  model.AgentPresetEpicPlanner,
 		},
 		{
-			RunID:     "run-2",
-			Status:    model.AgentRunStatusFailed,
-			Provider:  &openai,
-			Model:     &openaiModel,
-			PresetKey: model.AgentPresetEpicPlanner,
+			RunID:      "run-2",
+			Status:     model.AgentRunStatusCancelled,
+			TargetType: "epic",
+			IsSystem:   true,
+			Provider:   &openai,
+			Model:      &openaiModel,
+			PresetKey:  model.AgentPresetEpicPlanner,
 		},
 		{
-			RunID:     "run-3",
-			Status:    model.AgentRunStatusCompleted,
-			Provider:  &anthropic,
-			Model:     &anthropicModel,
-			PresetKey: model.AgentPresetTaskPlanner,
+			RunID:      "run-3",
+			Status:     model.AgentRunStatusCompleted,
+			TargetType: "task",
+			IsSystem:   true,
+			Provider:   &anthropic,
+			Model:      &anthropicModel,
+			PresetKey:  model.AgentPresetTaskPlanner,
 		},
 	}, []rolloutArtifactRow{
 		{RunID: "run-1", ArtifactType: model.AgentRunArtifactTypeNativeTurnDebug, InlineContent: strPtr(string(debug1))},
@@ -74,8 +80,11 @@ func TestBuildRolloutSummaryAggregatesByProviderModelAndPreset(t *testing.T) {
 	if first.Provider != "openai" || first.Model != "gpt-5.4" || first.PresetKey != model.AgentPresetEpicPlanner {
 		t.Fatalf("unexpected first summary group %#v", first)
 	}
-	if first.RunCount != 2 || first.CompletedRuns != 1 || first.FailedRuns != 1 {
+	if first.RunCount != 2 || first.CompletedRuns != 1 || first.FailedRuns != 0 || first.CancelledRuns != 1 {
 		t.Fatalf("unexpected openai run counts %#v", first)
+	}
+	if first.SelectiveEligibleRuns != 2 || first.SelectiveEligibleMissingDebug != 1 || first.SelectiveValidationStatus != "partial_missing_native_debug" {
+		t.Fatalf("unexpected openai selective validation counts %#v", first)
 	}
 	if first.RunsWithNativeDebugArtifacts != 1 || first.RunsWithRepairGuidance != 1 {
 		t.Fatalf("unexpected openai debug counts %#v", first)
@@ -100,6 +109,9 @@ func TestBuildRolloutSummaryAggregatesByProviderModelAndPreset(t *testing.T) {
 	if second.RunCount != 1 || second.CompletedRuns != 1 || second.FailedRuns != 0 {
 		t.Fatalf("unexpected anthropic run counts %#v", second)
 	}
+	if second.SelectiveEligibleRuns != 1 || second.SelectiveEligibleMissingDebug != 0 || second.SelectiveValidationStatus != "validated" {
+		t.Fatalf("unexpected anthropic selective validation counts %#v", second)
+	}
 	if got := second.ContinuationModes["full_prompt"]; got != 1 {
 		t.Fatalf("expected full_prompt continuation count, got %#v", second.ContinuationModes)
 	}
@@ -108,9 +120,11 @@ func TestBuildRolloutSummaryAggregatesByProviderModelAndPreset(t *testing.T) {
 func TestBuildRolloutSummaryDefaultsUnknownProviderAndIgnoresMalformedArtifacts(t *testing.T) {
 	summary := buildRolloutSummary(rolloutFilters{}, []rolloutRunRow{
 		{
-			RunID:     "run-1",
-			Status:    model.AgentRunStatusPaused,
-			PresetKey: model.AgentPresetTaskPlanner,
+			RunID:      "run-1",
+			Status:     model.AgentRunStatusPaused,
+			TargetType: "task",
+			IsSystem:   true,
+			PresetKey:  model.AgentPresetTaskPlanner,
 		},
 	}, []rolloutArtifactRow{
 		{RunID: "run-1", ArtifactType: model.AgentRunArtifactTypeNativeTurnDebug, InlineContent: strPtr(`not-json`)},
@@ -129,6 +143,32 @@ func TestBuildRolloutSummaryDefaultsUnknownProviderAndIgnoresMalformedArtifacts(
 	}
 	if group.RunsWithNativeDebugArtifacts != 0 || group.RunsWithRepairGuidance != 0 {
 		t.Fatalf("expected malformed artifacts to be ignored, got %#v", group)
+	}
+	if group.SelectiveValidationStatus != "not_validated_no_native_debug" {
+		t.Fatalf("expected missing native debug status, got %#v", group)
+	}
+}
+
+func TestBuildRolloutSummaryMarksNonSystemRunsNotApplicable(t *testing.T) {
+	summary := buildRolloutSummary(rolloutFilters{}, []rolloutRunRow{
+		{
+			RunID:      "run-1",
+			Status:     model.AgentRunStatusCompleted,
+			TargetType: "task",
+			IsSystem:   false,
+			PresetKey:  model.AgentPresetTaskPlanner,
+		},
+	}, nil)
+
+	if len(summary.Groups) != 1 {
+		t.Fatalf("expected one summary group, got %#v", summary.Groups)
+	}
+	group := summary.Groups[0]
+	if group.SelectiveEligibleRuns != 0 || group.SelectiveEligibleMissingDebug != 0 {
+		t.Fatalf("expected non-system run not to count as selective eligible, got %#v", group)
+	}
+	if group.SelectiveValidationStatus != "not_applicable" {
+		t.Fatalf("expected not_applicable status, got %#v", group)
 	}
 }
 
