@@ -79,6 +79,8 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
 
     (async () => {
       const res = await pmTaskService.getByDisplayId(workspaceId, displayId!);
+      const currentTask = new URLSearchParams(window.location.search).get('task');
+      if (currentTask !== maybeTask) return;
       if (res.data && workspaceSlug) {
         openTaskRoute(navigateRef.current as never, { pathname: window.location.pathname } as never, workspaceSlug, res.data.task.id);
       }

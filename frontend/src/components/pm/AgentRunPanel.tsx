@@ -42,7 +42,11 @@ export function AgentRunPanel({ taskId, workspaceId, latestRunAgentId }: Props) 
     (runId: string | null) => {
       navigate({
         to: '.',
-        search: (prev) => ({ ...prev, run: runId ?? undefined }),
+        search: (prev) => {
+          const next = { ...(prev as Record<string, unknown>) };
+          delete next.task;
+          return { ...next, run: runId ?? undefined };
+        },
         replace: true,
       });
     },
