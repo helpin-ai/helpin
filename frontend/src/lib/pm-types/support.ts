@@ -308,6 +308,10 @@ export interface SupportMessage {
   html_body?: string;
   /** Markdown-friendly plaintext body — present only for inbound email messages. */
   stripped_text?: string;
+  /** Delivery status of the outbound email for this message. Only set when the message was sent via email. */
+  email_delivery_status?: 'sent' | 'delivered' | 'opened' | 'bounced' | 'spam_complaint' | string;
+  /** Human-readable bounce or complaint description. Empty unless delivery failed. */
+  email_delivery_error?: string;
   created_at: string;
   updated_at: string;
 }
@@ -325,7 +329,10 @@ export interface SupportMessageEmailDetail {
   stripped_text?: string;
   html_body?: string;
   status: string;
+  delivered_at?: string;
   opened_at?: string;
+  bounced_at?: string;
+  error_message?: string;
   created_at: string;
 }
 

@@ -1201,10 +1201,11 @@ func (s *SupportInboxService) ListConversationMessages(ctx context.Context, work
 	return messages, nil
 }
 
-// hydrateEmailBodies attaches the sanitized HTML and markdown bodies from
-// support_email_logs onto any message whose ViaChannel is "email". One query
-// pulls every log for the conversation; the loop below joins them onto
-// messages by the message_ids array. Safe to call with a nil repo.
+// hydrateEmailBodies joins support_email_logs onto messages by message_ids.
+// For inbound email messages (ViaChannel == "email") it populates HTMLBody +
+// StrippedText. For outbound messages (agent replies sent via the email
+// fallback), it surfaces EmailDeliveryStatus + EmailDeliveryError so the UI
+// can render delivery/bounce indicators. Safe to call with a nil repo.
 func hydrateEmailBodies(
 	ctx context.Context,
 	repo supportEmailLogReader,
@@ -1214,21 +1215,14 @@ func hydrateEmailBodies(
 	if repo == nil || len(messages) == 0 {
 		return
 	}
-	hasEmail := false
-	for i := range messages {
-		if messages[i].ViaChannel != nil && *messages[i].ViaChannel == "email" {
-			hasEmail = true
-			break
-		}
-	}
-	if !hasEmail {
-		return
-	}
 
 	logs, err := repo.ListByConversation(ctx, workspaceID, conversationID)
 	if err != nil {
 		slog.ErrorContext(ctx, "hydrate support email bodies",
 			"error", err, "conversation_id", conversationID)
+		return
+	}
+	if len(logs) == 0 {
 		return
 	}
 
@@ -1247,15 +1241,18 @@ func hydrateEmailBodies(
 	}
 
 	for i := range messages {
-		if messages[i].ViaChannel == nil || *messages[i].ViaChannel != "email" {
-			continue
-		}
 		log := byMessageID[messages[i].ID]
 		if log == nil {
 			continue
 		}
-		messages[i].HTMLBody = log.HTMLBody
-		messages[i].StrippedText = log.StrippedText
+		if messages[i].ViaChannel != nil && *messages[i].ViaChannel == "email" {
+			messages[i].HTMLBody = log.HTMLBody
+			messages[i].StrippedText = log.StrippedText
+		}
+		if log.Direction == "outbound" {
+			messages[i].EmailDeliveryStatus = log.Status
+			messages[i].EmailDeliveryError = log.ErrorMessage
+		}
 	}
 }
 

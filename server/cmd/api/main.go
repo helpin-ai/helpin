@@ -647,6 +647,7 @@ func main() {
 		cfg.AppBaseURL,
 		podID,
 	)
+	emailFallbackService.SetCRMContactRepository(crmContactRepo)
 	supportAttachmentService := service.NewSupportAttachmentService(supportAttachmentRepo, s3Client)
 	supportInboxService.SetAttachmentService(supportAttachmentService)
 	supportInboxService.SetLinkPreviewService(supportLinkPreviewService)
