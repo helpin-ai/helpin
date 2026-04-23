@@ -70,19 +70,26 @@ func nativeEpicPlannerPhaseName(input planningRunInput, hasSpecContent bool, has
 	}
 }
 
-func nativeEpicPlannerNextStepGuidance(input planningRunInput, hasSpecContent bool, hasTasks bool) string {
+func nativeEpicPlannerDerivedStateFacts(input planningRunInput, hasSpecContent bool, hasTasks bool) string {
 	hasApprovedSpec := input.SpecVersionID != ""
 	hasSpecDoc := input.SpecDocumentID != ""
+	lines := []string{
+		"Derived epic planning state facts:",
+		fmt.Sprintf("- approved_spec_exists=%t", hasApprovedSpec),
+		fmt.Sprintf("- draft_spec_exists=%t", hasSpecDoc && hasSpecContent),
+		fmt.Sprintf("- existing_tasks_exist=%t", hasTasks),
+	}
 	switch {
 	case hasApprovedSpec && hasTasks:
-		return "Next-step guidance: the PRD is approved and tasks already exist. Do not redraft the PRD or recreate existing tasks. Enter clarification or extension mode, inspect current tasks if needed, and only add new tasks if the human explicitly asks for them."
+		lines = append(lines, "- derived_state=approved_spec_with_existing_tasks")
 	case hasApprovedSpec && !hasTasks:
-		return "Next-step guidance: the PRD is approved and no tasks exist yet. Skip PRD drafting entirely and proceed directly to task planning from the approved spec and current codebase context."
+		lines = append(lines, "- derived_state=approved_spec_without_tasks")
 	case hasSpecDoc && hasSpecContent:
-		return "Next-step guidance: a draft PRD exists but it is not approved yet. Resume from the current draft, present or revise it, and request PRD approval before any task planning."
+		lines = append(lines, "- derived_state=unapproved_draft_spec_exists")
 	default:
-		return "Next-step guidance: no approved PRD exists yet. Follow the full loop from clarification through PRD drafting, preview, revision if needed, and approval."
+		lines = append(lines, "- derived_state=no_approved_or_draft_spec")
 	}
+	return strings.Join(lines, "\n")
 }
 
 func formatInteractivePlanningFacts(input planningRunInput, hasDraftSpec bool, taskCount int) string {
@@ -110,19 +117,18 @@ func (a *AgentRunActivities) buildNativeEpicPlannerPhaseGuidance(ctx context.Con
 
 func buildNativeEpicPlannerRuleSections(run *model.AgentRun, input planningRunInput, phaseName string, hasSpecContent bool, hasTasks bool) []string {
 	sections := []string{
-		fmt.Sprintf("Current planning phase: %s", phaseName),
+		fmt.Sprintf("Planning selector tag (not an instruction): %s", phaseName),
 		"Phase objective: move the epic to the next durable planning checkpoint using the current transcript, approved artifacts, linked context, and repository evidence.",
 		"Transcript rule: continue from the latest human reply and current planning state rather than restarting the PRD or task plan from scratch.",
 		"Approval rule: use request_approval with phase=\"prd\" or phase=\"tasks\" only after publishing the same-turn preview artifact that is being reviewed. Treat request_approval as the final action in that turn.",
 		"Approval binding rule: use preview_panel_key=\"prd_draft\" for PRD approval and preview_panel_key=\"task_plan\" for task-plan approval.",
 		"PRD contract reminder: use publish_prd_draft for markdown previews that the human will review inline.",
 		"Task-plan contract reminder: publish_task_plan must receive one complete JSON object with non-empty summary and proposed_tasks fields before task-plan approval is requested.",
-		"Post-approval rule: once PRD approval is persisted, continue directly into task planning unless the human explicitly redirects scope. Do not end the run immediately after PRD approval.",
 		"Revision rule: if the latest human reply asks for changes to the active PRD or task plan, revise the active artifact, republish the full replacement preview, and request approval again when ready.",
 	}
 	if run != nil && run.InvocationMode == model.InvocationModeInteractive {
 		sections = append(sections, "Interactive approval semantics: only explicit approval advances the phase. Change requests, critique, concerns, and ambiguous replies keep the current phase active.")
 	}
-	sections = append(sections, nativeEpicPlannerNextStepGuidance(input, hasSpecContent, hasTasks))
+	sections = append(sections, nativeEpicPlannerDerivedStateFacts(input, hasSpecContent, hasTasks))
 	return sections
 }

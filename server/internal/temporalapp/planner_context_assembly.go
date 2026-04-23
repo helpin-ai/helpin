@@ -115,7 +115,7 @@ func (a *AgentRunActivities) buildLegacyEpicPlannerFallbackSections(ctx context.
 	sections := buildLegacyEpicPlannerFallbackRuleSections(state.run)
 	sections = append(sections, assemblyState.contextSections...)
 	sections = append(sections, formatInteractivePlanningFacts(input, assemblyState.hasSpecContent, assemblyState.taskCount))
-	sections = append(sections, nativeEpicPlannerNextStepGuidance(input, assemblyState.hasSpecContent, assemblyState.hasTasks))
+	sections = append(sections, nativeEpicPlannerDerivedStateFacts(input, assemblyState.hasSpecContent, assemblyState.hasTasks))
 	return sections, nil
 }
 

@@ -418,10 +418,11 @@ func TestBuildInitialInstructionsUsesNativeSelectiveEpicPhaseGuidance(t *testing
 		t.Fatalf("buildInitialInstructions returned error: %v", err)
 	}
 	for _, snippet := range []string{
-		"Current planning phase: draft_spec",
+		"Planning selector tag (not an instruction): draft_spec",
 		"Phase objective: move the epic to the next durable planning checkpoint",
 		"Interactive approval semantics:",
-		"Next-step guidance: no approved PRD exists yet.",
+		"Derived epic planning state facts:",
+		"- derived_state=no_approved_or_draft_spec",
 		"Operator notes:\nFocus on launch blockers.",
 	} {
 		if !strings.Contains(instructions, snippet) {
@@ -516,12 +517,12 @@ func TestBuildLegacyEpicPlannerFallbackSectionsPreservesCompositionOrder(t *test
 	runModeIndex := strings.Index(instructions, "Run mode: interactive")
 	operatorNotesIndex := strings.Index(instructions, "Operator notes:\nFocus on launch blockers.")
 	factsIndex := strings.Index(instructions, "Current durable planning facts:")
-	nextStepIndex := strings.Index(instructions, "Next-step guidance: no approved PRD exists yet.")
-	if runModeIndex == -1 || operatorNotesIndex == -1 || factsIndex == -1 || nextStepIndex == -1 {
+	stateFactsIndex := strings.Index(instructions, "Derived epic planning state facts:")
+	if runModeIndex == -1 || operatorNotesIndex == -1 || factsIndex == -1 || stateFactsIndex == -1 {
 		t.Fatalf("expected composed legacy epic guidance sections to be present\n%s", instructions)
 	}
-	if !(runModeIndex < operatorNotesIndex && operatorNotesIndex < factsIndex && factsIndex < nextStepIndex) {
-		t.Fatalf("expected legacy epic composition order rules -> context -> facts -> next step\n%s", instructions)
+	if !(runModeIndex < operatorNotesIndex && operatorNotesIndex < factsIndex && factsIndex < stateFactsIndex) {
+		t.Fatalf("expected legacy epic composition order rules -> context -> facts -> derived state facts\n%s", instructions)
 	}
 }
 
@@ -1526,17 +1527,23 @@ func TestBuildInitialInstructionsUsesNativeSelectiveEpicTaskPlanningGuidanceAfte
 		t.Fatalf("buildInitialInstructions returned error: %v", err)
 	}
 	for _, snippet := range []string{
-		"Current planning phase: " + model.PlanningStagePlanTasks,
+		"Planning selector tag (not an instruction): " + model.PlanningStagePlanTasks,
 		"Approved spec version ID: spec-v1",
-		"Skip PRD drafting entirely and proceed directly to task planning",
-		"Post-approval rule: once PRD approval is persisted, continue directly into task planning",
+		"Derived epic planning state facts:",
+		"- derived_state=approved_spec_without_tasks",
 	} {
 		if !strings.Contains(instructions, snippet) {
 			t.Fatalf("expected approved-spec native guidance to contain %q\n%s", snippet, instructions)
 		}
 	}
-	if strings.Contains(instructions, "Next-step guidance: no approved PRD exists yet.") {
-		t.Fatalf("did not expect pre-approval guidance after approved spec\n%s", instructions)
+	for _, unexpected := range []string{
+		"Next-step guidance: no approved PRD exists yet.",
+		"Skip PRD drafting entirely and proceed directly to task planning",
+		"Post-approval rule: once PRD approval is persisted, continue directly into task planning",
+	} {
+		if strings.Contains(instructions, unexpected) {
+			t.Fatalf("did not expect Temporal-authored next-step guidance %q after approved spec\n%s", unexpected, instructions)
+		}
 	}
 }
 
@@ -1546,15 +1553,15 @@ func TestBuildNativeEpicPlannerRuleSectionsPreservesCriticalRules(t *testing.T) 
 	}, planningRunInput{}, model.PlanningStageDraftSpec, false, false)
 	instructions := strings.Join(sections, "\n\n")
 	for _, snippet := range []string{
-		"Current planning phase: draft_spec",
+		"Planning selector tag (not an instruction): draft_spec",
 		"Phase objective: move the epic to the next durable planning checkpoint",
 		"Approval rule: use request_approval with phase=\"prd\" or phase=\"tasks\"",
 		"PRD contract reminder: use publish_prd_draft",
 		"Task-plan contract reminder: publish_task_plan must receive one complete JSON object",
-		"Post-approval rule: once PRD approval is persisted, continue directly into task planning",
 		"Revision rule: if the latest human reply asks for changes to the active PRD or task plan",
 		"Interactive approval semantics: only explicit approval advances the phase.",
-		"Next-step guidance: no approved PRD exists yet.",
+		"Derived epic planning state facts:",
+		"- derived_state=no_approved_or_draft_spec",
 	} {
 		if !strings.Contains(instructions, snippet) {
 			t.Fatalf("expected native epic rule sections to contain %q\n%s", snippet, instructions)
@@ -1582,7 +1589,7 @@ func TestBuildNativeEpicPlannerSectionsPreservesCompositionOrder(t *testing.T) {
 		t.Fatalf("buildNativeEpicPlannerSections returned error: %v", err)
 	}
 	instructions := strings.Join(sections, "\n\n")
-	phaseIndex := strings.Index(instructions, "Current planning phase: draft_spec")
+	phaseIndex := strings.Index(instructions, "Planning selector tag (not an instruction): draft_spec")
 	factsIndex := strings.Index(instructions, "Current durable planning facts:")
 	operatorNotesIndex := strings.Index(instructions, "Operator notes:\nFocus on launch blockers.")
 	if phaseIndex == -1 || factsIndex == -1 || operatorNotesIndex == -1 {
@@ -1623,7 +1630,8 @@ func TestBuildInitialInstructionsUsesNativeSelectiveEpicPRDRevisionGuidanceForUn
 		t.Fatalf("buildInitialInstructions returned error: %v", err)
 	}
 	for _, snippet := range []string{
-		"Current planning phase: prd_revision",
+		"Planning selector tag (not an instruction): prd_revision",
+		"- derived_state=unapproved_draft_spec_exists",
 		"Resume from the current draft",
 		"Current spec draft:",
 	} {
@@ -1631,7 +1639,7 @@ func TestBuildInitialInstructionsUsesNativeSelectiveEpicPRDRevisionGuidanceForUn
 			t.Fatalf("expected unapproved-draft native guidance to contain %q\n%s", snippet, instructions)
 		}
 	}
-	if strings.Contains(instructions, "Current planning phase: plan_tasks") {
+	if strings.Contains(instructions, "Planning selector tag (not an instruction): plan_tasks") {
 		t.Fatalf("did not expect task-planning guidance for unapproved draft\n%s", instructions)
 	}
 }
@@ -1674,8 +1682,8 @@ func TestBuildInitialInstructionsUsesNativeSelectiveEpicTaskExtensionGuidanceWhe
 		t.Fatalf("buildInitialInstructions returned error: %v", err)
 	}
 	for _, snippet := range []string{
-		"Current planning phase: task_extension",
-		"Do not redraft the PRD or recreate existing tasks",
+		"Planning selector tag (not an instruction): task_extension",
+		"- derived_state=approved_spec_with_existing_tasks",
 		"IMPORTANT: 1 tasks already exist under this epic.",
 	} {
 		if !strings.Contains(instructions, snippet) {
@@ -1734,7 +1742,7 @@ func TestNativeEpicPlannerPhaseName(t *testing.T) {
 	}
 }
 
-func TestNativeEpicPlannerNextStepGuidance(t *testing.T) {
+func TestNativeEpicPlannerDerivedStateFacts(t *testing.T) {
 	testCases := []struct {
 		name           string
 		input          planningRunInput
@@ -1743,38 +1751,38 @@ func TestNativeEpicPlannerNextStepGuidance(t *testing.T) {
 		wantSnippet    string
 	}{
 		{
-			name: "approved spec with no tasks skips prd drafting",
+			name: "approved spec with no tasks derives task planning state",
 			input: planningRunInput{
 				SpecVersionID: "spec-v1",
 			},
-			wantSnippet: "Skip PRD drafting entirely and proceed directly to task planning",
+			wantSnippet: "- derived_state=approved_spec_without_tasks",
 		},
 		{
-			name: "approved spec with tasks avoids recreation",
+			name: "approved spec with tasks derives extension state",
 			input: planningRunInput{
 				SpecVersionID: "spec-v1",
 			},
 			hasTasks:    true,
-			wantSnippet: "Do not redraft the PRD or recreate existing tasks",
+			wantSnippet: "- derived_state=approved_spec_with_existing_tasks",
 		},
 		{
-			name: "draft spec resumes current draft",
+			name: "draft spec derives unapproved draft state",
 			input: planningRunInput{
 				SpecDocumentID: "doc-1",
 			},
 			hasSpecContent: true,
-			wantSnippet:    "Resume from the current draft",
+			wantSnippet:    "- derived_state=unapproved_draft_spec_exists",
 		},
 		{
 			name:        "no prior spec follows full loop",
 			input:       planningRunInput{},
-			wantSnippet: "Follow the full loop from clarification through PRD drafting",
+			wantSnippet: "- derived_state=no_approved_or_draft_spec",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := nativeEpicPlannerNextStepGuidance(tc.input, tc.hasSpecContent, tc.hasTasks)
+			got := nativeEpicPlannerDerivedStateFacts(tc.input, tc.hasSpecContent, tc.hasTasks)
 			if !strings.Contains(got, tc.wantSnippet) {
 				t.Fatalf("expected guidance to contain %q, got %q", tc.wantSnippet, got)
 			}
@@ -7635,8 +7643,8 @@ func TestExecuteRunActivityPausesNativePlannerForReviewCheckpoint(t *testing.T) 
 	if strings.TrimSpace(capturedPhaseGuidance) == "" {
 		t.Fatalf("expected gated native path to populate phase guidance, got %q", capturedPhaseGuidance)
 	}
-	if !strings.Contains(capturedPhaseGuidance, "Current planning phase:") {
-		t.Fatalf("expected gated native phase guidance to use explicit phase header, got %q", capturedPhaseGuidance)
+	if !strings.Contains(capturedPhaseGuidance, "Current planning phase:") && !strings.Contains(capturedPhaseGuidance, "Planning selector tag (not an instruction):") {
+		t.Fatalf("expected gated native phase guidance to include a phase/selector marker, got %q", capturedPhaseGuidance)
 	}
 	if strings.Contains(capturedPhaseGuidance, "Use this sequence unless the human explicitly redirects you:") {
 		t.Fatalf("did not expect legacy monolithic planner guidance in gated native phase guidance, got %q", capturedPhaseGuidance)
