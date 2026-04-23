@@ -372,8 +372,9 @@ func (s *GitService) UpdateRepositorySelection(ctx context.Context, workspaceID,
 	return repo, nil
 }
 
-// GetGitHubInstallURL returns the install or repo-picker action for the configured GitHub App.
-func (s *GitService) GetGitHubInstallURL(ctx context.Context, workspaceID, actorID string) (string, string, *string, error) {
+// GetGitHubInstallURL returns either a fresh install URL or the repo-picker action
+// for an existing installation visible to this organization.
+func (s *GitService) GetGitHubInstallURL(ctx context.Context, workspaceID, actorID string, forceInstall bool) (string, string, *string, error) {
 	if workspaceID == "" {
 		return "", "", nil, fmt.Errorf("workspace_id is required")
 	}
@@ -393,12 +394,15 @@ func (s *GitService) GetGitHubInstallURL(ctx context.Context, workspaceID, actor
 	if workspace.OrganizationID == nil || strings.TrimSpace(*workspace.OrganizationID) == "" {
 		return "", "", nil, fmt.Errorf("workspace organization is required")
 	}
-	integration, err := s.integrationRepo.GetActiveByOrganization(ctx, strings.TrimSpace(*workspace.OrganizationID), "github")
-	if err != nil {
-		return "", "", nil, err
-	}
-	if integration != nil {
-		return "", "pick_repos", &integration.ID, nil
+	if !forceInstall {
+		integration, err := s.integrationRepo.GetActiveByOrganization(ctx, strings.TrimSpace(*workspace.OrganizationID), "github")
+		if err != nil {
+			return "", "", nil, err
+		}
+		if integration != nil {
+			manageURL := s.githubInstallationManageURL(integration)
+			return manageURL, "pick_repos", &integration.ID, nil
+		}
 	}
 
 	state, err := s.signGitHubInstallState(workspaceID, actorID)
@@ -415,6 +419,20 @@ func (s *GitService) GetGitHubInstallURL(ctx context.Context, workspaceID, actor
 	query.Set("state", state)
 	installURL.RawQuery = query.Encode()
 	return installURL.String(), "install", nil, nil
+}
+
+func (s *GitService) githubInstallationManageURL(integration *model.GitIntegration) string {
+	if integration == nil || integration.InstallationID == nil {
+		return ""
+	}
+	installationID := strings.TrimSpace(*integration.InstallationID)
+	if installationID == "" {
+		return ""
+	}
+	if integration.AccountLogin != nil && strings.TrimSpace(*integration.AccountLogin) != "" {
+		return fmt.Sprintf("https://github.com/organizations/%s/settings/installations/%s", url.PathEscape(strings.TrimSpace(*integration.AccountLogin)), url.PathEscape(installationID))
+	}
+	return fmt.Sprintf("https://github.com/settings/installations/%s", url.PathEscape(installationID))
 }
 
 // CompleteGitHubInstall creates or reuses the org integration after GitHub redirects back.
