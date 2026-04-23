@@ -848,7 +848,9 @@ func newTestDB(t *testing.T) *gorm.DB {
 			stripped_text TEXT,
 			html_body TEXT,
 			status TEXT NOT NULL DEFAULT 'sent',
+			delivered_at DATETIME,
 			opened_at DATETIME,
+			bounced_at DATETIME,
 			error_message TEXT,
 			created_at DATETIME
 		)`,
