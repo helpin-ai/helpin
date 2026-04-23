@@ -273,7 +273,13 @@ func providerUsesAgenticResponses(provider string) bool {
 }
 
 func ProviderSupportsResponseContinuation(provider string) bool {
-	return strings.TrimSpace(provider) == appmodel.AgentModelProviderOpenAI
+	// OpenAI Responses continuation is stricter than OpenRouter-compatible
+	// replay: when previous_response_id is used, Eino can preserve provider
+	// output item IDs on self-generated blocks, and OpenAI rejects those as
+	// duplicate input items on resumed/tool-followup turns. Keep OpenAI on full
+	// sanitized transcript replay until the adapter exposes a clean delta-only
+	// continuation transport.
+	return false
 }
 
 func defaultModelForProvider(provider string) string {
@@ -434,22 +440,20 @@ func executeWithEinoAgentic(
 	provider, _ := resolveProviderAndModel(agent)
 	effectiveSystemPrompt := systemPrompt
 	effectiveHistory := history
-	agenticOpts := make([]einomodel.Option, 0, 1)
+	continuationResponseID := ""
 	if continuation := execCtx.ProviderContinuation; continuation != nil && strings.TrimSpace(continuation.ResponseID) != "" && ProviderSupportsResponseContinuation(provider) {
 		effectiveSystemPrompt = ""
 		effectiveHistory = filterExecutionHistoryAfterSequence(history, continuation.AfterSequenceNo)
-		agenticOpts = append(agenticOpts, agenticopenai.WithExtraFields(map[string]any{
-			"previous_response_id": strings.TrimSpace(continuation.ResponseID),
-		}))
+		continuationResponseID = strings.TrimSpace(continuation.ResponseID)
 		slog.InfoContext(ctx, "native runtime using provider continuation",
 			"provider", provider,
-			"response_id", strings.TrimSpace(continuation.ResponseID),
+			"response_id", continuationResponseID,
 			"after_sequence_no", continuation.AfterSequenceNo,
 			"effective_history_messages", len(effectiveHistory),
 		)
 	}
 
-	messages, err := toAgenticMessagesWithTurnLocalInstructions(effectiveSystemPrompt, effectiveHistory, turnLocalInstructions)
+	messages, err := buildAgenticReplayMessages(provider, effectiveSystemPrompt, effectiveHistory, turnLocalInstructions, continuationResponseID != "")
 	if err != nil {
 		return nil, err
 	}
@@ -459,7 +463,7 @@ func executeWithEinoAgentic(
 	}
 
 	for step := 0; step < maxSteps; step++ {
-		assistantMsg, assistantBlocks, usage, continuation, assistantMessageID, err := generateAssistantAgenticMessage(ctx, modelWithTools, messages, onEvent, agenticOpts...)
+		assistantMsg, assistantBlocks, usage, continuation, assistantMessageID, err := generateAssistantAgenticMessage(ctx, modelWithTools, messages, onEvent, continuationAgenticOptions(continuationResponseID)...)
 		if err != nil {
 			return nil, err
 		}
@@ -474,7 +478,6 @@ func executeWithEinoAgentic(
 			Content: result.AssistantText,
 			Blocks:  assistantBlocks,
 		})
-		messages = append(messages, assistantMsg)
 
 		toolCalls := executionToolCalls(assistantBlocks)
 		if len(toolCalls) == 0 {
@@ -482,6 +485,7 @@ func executeWithEinoAgentic(
 		}
 
 		stopAfterToolRound := false
+		toolResultMessages := make([]*schema.AgenticMessage, 0, len(toolCalls))
 		for _, executed := range executeToolCallsForRound(execCtx, registry, toolCalls, assistantMessageID, onEvent) {
 			summary := truncate(executed.Output, 500)
 			result.ToolInvocations = append(result.ToolInvocations, appmodel.ToolInvocation{
@@ -505,11 +509,12 @@ func executeWithEinoAgentic(
 			})
 			modelVisibleOutput := prepareToolResultForModel(executed.ToolName, executed.Output, executed.IsError)
 			logNativeToolResultForModel(ctx, execCtx, executed, modelVisibleOutput)
-			messages = append(messages, schema.FunctionToolResultAgenticMessage(executed.ToolCallID, executed.ToolName, modelVisibleOutput.Content))
+			toolResultMessages = append(toolResultMessages, schema.FunctionToolResultAgenticMessage(executed.ToolCallID, executed.ToolName, modelVisibleOutput.Content))
 			if IsHumanInteractionTool(executed.ToolName) {
 				stopAfterToolRound = true
 			}
 		}
+		continuationResponseID, messages = nextAgenticStepState(messages, assistantMsg, toolResultMessages, continuationResponseID, continuation)
 		if stopAfterToolRound {
 			return result, nil
 		}
@@ -517,6 +522,38 @@ func executeWithEinoAgentic(
 
 	result.MaxStepsReached = true
 	return result, ErrMaxToolStepsReached
+}
+
+func continuationAgenticOptions(responseID string) []einomodel.Option {
+	responseID = strings.TrimSpace(responseID)
+	if responseID == "" {
+		return nil
+	}
+	return []einomodel.Option{
+		agenticopenai.WithExtraFields(map[string]any{
+			"previous_response_id": responseID,
+		}),
+	}
+}
+
+func nextAgenticStepState(
+	currentMessages []*schema.AgenticMessage,
+	assistantMsg *schema.AgenticMessage,
+	toolResultMessages []*schema.AgenticMessage,
+	currentContinuationResponseID string,
+	continuation *ProviderContinuation,
+) (string, []*schema.AgenticMessage) {
+	if strings.TrimSpace(currentContinuationResponseID) == "" {
+		nextMessages := append(currentMessages, assistantMsg)
+		nextMessages = append(nextMessages, toolResultMessages...)
+		return "", nextMessages
+	}
+
+	nextResponseID := strings.TrimSpace(currentContinuationResponseID)
+	if continuation != nil && strings.TrimSpace(continuation.ResponseID) != "" {
+		nextResponseID = strings.TrimSpace(continuation.ResponseID)
+	}
+	return nextResponseID, append([]*schema.AgenticMessage(nil), toolResultMessages...)
 }
 
 func streamAssistantMessage(
@@ -671,6 +708,19 @@ func generateAssistantAgenticMessage(
 	return finalMsg, blocks, usage, providerContinuationFromAgenticMessage(finalMsg), assistantMessageID, nil
 }
 
+func buildAgenticReplayMessages(
+	provider string,
+	systemPrompt string,
+	history []ExecutionMessage,
+	turnLocalInstructions string,
+	continuationMode bool,
+) ([]*schema.AgenticMessage, error) {
+	if continuationMode && strings.TrimSpace(provider) == appmodel.AgentModelProviderOpenAI {
+		return toOpenAIContinuationAgenticMessages(history, turnLocalInstructions)
+	}
+	return toAgenticMessagesWithTurnLocalInstructions(systemPrompt, history, turnLocalInstructions)
+}
+
 func toSchemaMessages(systemPrompt string, history []ExecutionMessage) ([]*schema.Message, error) {
 	return toSchemaMessagesWithTurnLocalInstructions(systemPrompt, history, "")
 }
@@ -750,6 +800,45 @@ func toSchemaMessagesWithTurnLocalInstructions(systemPrompt string, history []Ex
 
 func toAgenticMessages(systemPrompt string, history []ExecutionMessage) ([]*schema.AgenticMessage, error) {
 	return toAgenticMessagesWithTurnLocalInstructions(systemPrompt, history, "")
+}
+
+func toOpenAIContinuationAgenticMessages(history []ExecutionMessage, turnLocalInstructions string) ([]*schema.AgenticMessage, error) {
+	messages := make([]*schema.AgenticMessage, 0, len(history)+1)
+	if instructionMessage := buildTurnLocalInstructionMessage(turnLocalInstructions); instructionMessage != "" {
+		messages = append(messages, schema.UserAgenticMessage(instructionMessage))
+	}
+	for _, msg := range history {
+		switch msg.Role {
+		case "user":
+			content := nonEmptyText(msg.Content, extractTextFromExecutionBlocks(msg.Blocks))
+			if strings.TrimSpace(content) == "" {
+				continue
+			}
+			messages = append(messages, schema.UserAgenticMessage(content))
+		case "tool":
+			if len(msg.Blocks) == 0 {
+				continue
+			}
+			for _, block := range msg.Blocks {
+				if block.Type != ExecutionBlockTypeToolResult {
+					continue
+				}
+				modelVisibleOutput := prepareToolResultForModel(block.ToolName, block.Output, block.IsError)
+				if strings.TrimSpace(modelVisibleOutput.Content) == "" {
+					continue
+				}
+				messages = append(messages, schema.FunctionToolResultAgenticMessage(block.ToolCallID, block.ToolName, modelVisibleOutput.Content))
+			}
+		case "assistant":
+			// With previous_response_id, OpenAI already has prior assistant output in
+			// the referenced response chain. Replaying assistant tool-call items here
+			// can duplicate provider-owned function_call items.
+			continue
+		default:
+			return nil, fmt.Errorf("unsupported execution message role %q", msg.Role)
+		}
+	}
+	return messages, nil
 }
 
 func toAgenticMessagesWithTurnLocalInstructions(systemPrompt string, history []ExecutionMessage, turnLocalInstructions string) ([]*schema.AgenticMessage, error) {

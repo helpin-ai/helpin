@@ -4656,7 +4656,7 @@ func TestWaitForLiveCodexResumeSignalPrefersResolvedInteractionPayload(t *testin
 	}
 }
 
-func TestLoadAndPersistProviderContinuationCheckpoint(t *testing.T) {
+func TestPersistProviderContinuationCheckpointButSkipsUnsupportedProviderLoad(t *testing.T) {
 	dbName := fmt.Sprintf("file:provider-checkpoint-%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
 	if err != nil {
@@ -4708,11 +4708,8 @@ func TestLoadAndPersistProviderContinuationCheckpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadProviderContinuation returned error: %v", err)
 	}
-	if loaded == nil {
-		t.Fatal("expected loaded continuation")
-	}
-	if loaded.Provider != model.AgentModelProviderOpenAI || loaded.ResponseID != "resp_123" || loaded.PreviousResponseID != "resp_122" || loaded.AfterSequenceNo != 7 {
-		t.Fatalf("unexpected loaded continuation %#v", loaded)
+	if loaded != nil {
+		t.Fatalf("expected unsupported provider continuation load to be skipped, got %#v", loaded)
 	}
 
 	artifacts, err := artifactRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)

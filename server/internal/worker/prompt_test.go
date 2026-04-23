@@ -394,10 +394,8 @@ func TestBuildRuntimeSystemPromptWithoutStagedSkillsStillInlinesResolvedSkillTex
 }
 
 func TestProviderSupportsResponseContinuation(t *testing.T) {
-	if !ProviderSupportsResponseContinuation(model.AgentModelProviderOpenAI) {
-		t.Fatal("expected openai to support response continuation")
-	}
 	for _, provider := range []string{
+		model.AgentModelProviderOpenAI,
 		model.AgentModelProviderOpenRouter,
 		model.AgentModelProviderOpenRouterResponses,
 		model.AgentModelProviderAnthropic,

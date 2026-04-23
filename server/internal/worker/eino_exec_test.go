@@ -99,6 +99,93 @@ func TestFilterExecutionHistoryAfterSequence(t *testing.T) {
 	}
 }
 
+func TestContinuationAgenticOptionsEmptyWithoutResponseID(t *testing.T) {
+	if opts := continuationAgenticOptions(""); len(opts) != 0 {
+		t.Fatalf("expected no continuation options without response id, got %#v", opts)
+	}
+}
+
+func TestNextAgenticStepStateUsesIncrementalToolResultsForContinuation(t *testing.T) {
+	currentMessages := []*schema.AgenticMessage{
+		schema.UserAgenticMessage("latest human reply"),
+	}
+	assistantMsg := &schema.AgenticMessage{Role: schema.AgenticRoleTypeAssistant}
+	toolResultMessages := []*schema.AgenticMessage{
+		schema.FunctionToolResultAgenticMessage("call-1", "list_documents", "{\"ok\":true}"),
+	}
+
+	nextResponseID, nextMessages := nextAgenticStepState(
+		currentMessages,
+		assistantMsg,
+		toolResultMessages,
+		"resp_old",
+		&ProviderContinuation{ResponseID: "resp_new"},
+	)
+
+	if nextResponseID != "resp_new" {
+		t.Fatalf("expected continuation response id to advance, got %q", nextResponseID)
+	}
+	if len(nextMessages) != 1 {
+		t.Fatalf("expected only incremental tool-result messages, got %#v", nextMessages)
+	}
+	if nextMessages[0].Role != schema.AgenticRoleTypeUser {
+		t.Fatalf("expected tool result message role, got %#v", nextMessages[0])
+	}
+}
+
+func TestNextAgenticStepStateAppendsAssistantAndToolsWithoutContinuation(t *testing.T) {
+	currentMessages := []*schema.AgenticMessage{
+		schema.UserAgenticMessage("latest human reply"),
+	}
+	assistantMsg := &schema.AgenticMessage{Role: schema.AgenticRoleTypeAssistant}
+	toolResultMessages := []*schema.AgenticMessage{
+		schema.FunctionToolResultAgenticMessage("call-1", "list_documents", "{\"ok\":true}"),
+	}
+
+	nextResponseID, nextMessages := nextAgenticStepState(
+		currentMessages,
+		assistantMsg,
+		toolResultMessages,
+		"",
+		nil,
+	)
+
+	if nextResponseID != "" {
+		t.Fatalf("expected no continuation response id, got %q", nextResponseID)
+	}
+	if len(nextMessages) != 3 {
+		t.Fatalf("expected transcript-style append behavior, got %#v", nextMessages)
+	}
+}
+
+func TestNextAgenticStepStateDoesNotDuplicateAssistantWithoutContinuation(t *testing.T) {
+	currentMessages := []*schema.AgenticMessage{
+		schema.UserAgenticMessage("latest human reply"),
+	}
+	assistantMsg := &schema.AgenticMessage{Role: schema.AgenticRoleTypeAssistant}
+	toolResultMessages := []*schema.AgenticMessage{
+		schema.FunctionToolResultAgenticMessage("call-1", "list_documents", "{\"ok\":true}"),
+	}
+
+	_, nextMessages := nextAgenticStepState(
+		currentMessages,
+		assistantMsg,
+		toolResultMessages,
+		"",
+		nil,
+	)
+
+	assistantCount := 0
+	for _, msg := range nextMessages {
+		if msg.Role == schema.AgenticRoleTypeAssistant {
+			assistantCount++
+		}
+	}
+	if assistantCount != 1 {
+		t.Fatalf("expected exactly one assistant message, got %d in %#v", assistantCount, nextMessages)
+	}
+}
+
 func TestToAgenticMessagesIncludesToolResults(t *testing.T) {
 	history := []ExecutionMessage{
 		{
@@ -131,6 +218,74 @@ func TestToAgenticMessagesIncludesToolResults(t *testing.T) {
 	}
 	if msgs[2].Role != schema.AgenticRoleTypeUser {
 		t.Fatalf("expected tool result to be encoded as a user-side agentic message, got role %q", msgs[2].Role)
+	}
+}
+
+func TestBuildAgenticReplayMessagesUsesOpenAIContinuationDeltaOnly(t *testing.T) {
+	history := []ExecutionMessage{
+		{
+			Role: "assistant",
+			Blocks: []ExecutionBlock{
+				{Type: ExecutionBlockTypeText, Text: "Need a tool"},
+				{Type: ExecutionBlockTypeToolCall, ToolCallID: "call-1", ToolName: "read_file", Input: json.RawMessage(`{"path":"a.go"}`)},
+			},
+		},
+		{
+			Role: "tool",
+			Blocks: []ExecutionBlock{
+				{Type: ExecutionBlockTypeToolResult, ToolCallID: "call-1", ToolName: "read_file", Output: "package main"},
+			},
+		},
+		{Role: "user", Content: "continue with the implementation"},
+	}
+
+	msgs, err := buildAgenticReplayMessages(model.AgentModelProviderOpenAI, "", history, "repair and continue", true)
+	if err != nil {
+		t.Fatalf("buildAgenticReplayMessages returned error: %v", err)
+	}
+	if len(msgs) != 3 {
+		t.Fatalf("expected turn-local message plus tool result and user delta, got %#v", msgs)
+	}
+	if msgs[0].Role != schema.AgenticRoleTypeUser {
+		t.Fatalf("expected turn-local instructions as user message, got %#v", msgs[0])
+	}
+	if msgs[1].Role != schema.AgenticRoleTypeUser || len(msgs[1].ContentBlocks) != 1 || msgs[1].ContentBlocks[0].FunctionToolResult == nil {
+		t.Fatalf("expected tool result delta message, got %#v", msgs[1])
+	}
+	if msgs[2].Role != schema.AgenticRoleTypeUser {
+		t.Fatalf("expected latest human reply to remain, got %#v", msgs[2])
+	}
+}
+
+func TestBuildAgenticReplayMessagesKeepsGenericReplayForOpenRouter(t *testing.T) {
+	history := []ExecutionMessage{
+		{
+			Role: "assistant",
+			Blocks: []ExecutionBlock{
+				{Type: ExecutionBlockTypeText, Text: "Need a tool"},
+				{Type: ExecutionBlockTypeToolCall, ToolCallID: "call-1", ToolName: "read_file", Input: json.RawMessage(`{"path":"a.go"}`)},
+			},
+		},
+		{
+			Role: "tool",
+			Blocks: []ExecutionBlock{
+				{Type: ExecutionBlockTypeToolResult, ToolCallID: "call-1", ToolName: "read_file", Output: "package main"},
+			},
+		},
+	}
+
+	msgs, err := buildAgenticReplayMessages(model.AgentModelProviderOpenRouter, "", history, "", true)
+	if err != nil {
+		t.Fatalf("buildAgenticReplayMessages returned error: %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected assistant/tool replay pair for non-OpenAI continuation path, got %#v", msgs)
+	}
+	if msgs[0].Role != schema.AgenticRoleTypeAssistant {
+		t.Fatalf("expected assistant replay message, got %#v", msgs[0])
+	}
+	if msgs[1].Role != schema.AgenticRoleTypeUser || len(msgs[1].ContentBlocks) != 1 || msgs[1].ContentBlocks[0].FunctionToolResult == nil {
+		t.Fatalf("expected tool result replay message, got %#v", msgs[1])
 	}
 }
 
