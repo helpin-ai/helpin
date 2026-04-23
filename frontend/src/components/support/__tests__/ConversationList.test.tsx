@@ -6,12 +6,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useSupportInboxStore } from '@/stores/supportInboxStore'
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore'
 
-const mockUseConversations = vi.fn()
+const mockUseInfiniteConversations = vi.fn()
 const mockUseMarkConversationRead = vi.fn()
 const mockUseInboxScopes = vi.fn()
 
 vi.mock('@/hooks/queries/useSupport', () => ({
-  useConversations: (...args: unknown[]) => mockUseConversations(...args),
+  useInfiniteConversations: (...args: unknown[]) => mockUseInfiniteConversations(...args),
   useMarkConversationRead: (...args: unknown[]) => mockUseMarkConversationRead(...args),
   useInboxScopes: (...args: unknown[]) => mockUseInboxScopes(...args),
 }))
@@ -42,14 +42,21 @@ describe('ConversationList presence resync', () => {
       wsSend: null,
       wsConnected: false,
     })
-    mockUseConversations.mockReturnValue({
+    mockUseInfiniteConversations.mockReturnValue({
       data: {
-        data: [
-          { id: 'conv-1', updated_at: '2026-03-27T20:00:00Z' },
-          { id: 'conv-2', updated_at: '2026-03-27T20:01:00Z' },
+        pages: [
+          {
+            data: [
+              { id: 'conv-1', updated_at: '2026-03-27T20:00:00Z' },
+              { id: 'conv-2', updated_at: '2026-03-27T20:01:00Z' },
+            ],
+          },
         ],
       },
       isLoading: false,
+      isFetchingNextPage: false,
+      hasNextPage: false,
+      fetchNextPage: vi.fn(),
       error: null,
     })
     mockUseMarkConversationRead.mockReturnValue({
@@ -82,6 +89,47 @@ describe('ConversationList presence resync', () => {
     expect(wsSend).toHaveBeenCalledWith('support:presence:sync', {
       conversation_ids: expect.arrayContaining(['conv-1', 'conv-2']),
     })
+
+    act(() => root.unmount())
+  })
+
+  it('fetches the next page when the list is scrolled near the bottom', () => {
+    const fetchNextPage = vi.fn()
+    mockUseInfiniteConversations.mockReturnValue({
+      data: {
+        pages: [
+          {
+            data: [
+              { id: 'conv-1', updated_at: '2026-03-27T20:00:00Z' },
+            ],
+          },
+        ],
+      },
+      isLoading: false,
+      isFetchingNextPage: false,
+      hasNextPage: true,
+      fetchNextPage,
+      error: null,
+    })
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<ConversationList workspaceId="ws-1" userId="user-1" />)
+    })
+
+    const scrollEl = container.querySelector('[data-support-conversation-scroll]') as HTMLDivElement
+    Object.defineProperty(scrollEl, 'scrollHeight', { configurable: true, value: 600 })
+    Object.defineProperty(scrollEl, 'clientHeight', { configurable: true, value: 300 })
+    Object.defineProperty(scrollEl, 'scrollTop', { configurable: true, value: 240 })
+
+    act(() => {
+      scrollEl.dispatchEvent(new Event('scroll', { bubbles: true }))
+    })
+
+    expect(fetchNextPage).toHaveBeenCalledTimes(1)
 
     act(() => root.unmount())
   })

@@ -699,17 +699,17 @@ func (s *SupportInboxService) DismissConversationTriage(ctx context.Context, wor
 }
 
 // ListConversations returns conversations with optional filters.
-func (s *SupportInboxService) ListConversations(ctx context.Context, workspaceID, status, priority string, pagination model.PMPagination) ([]model.SupportConversation, int64, error) {
+func (s *SupportInboxService) ListConversations(ctx context.Context, workspaceID, status, priority string, pagination model.PMPagination, search string) ([]model.SupportConversation, int64, error) {
 	if workspaceID == "" {
 		return nil, 0, fmt.Errorf("workspace_id is required")
 	}
 	status = model.NormalizeSupportConversationStatus(status)
 	workspaceMemberID, role := s.actorMailboxScope(ctx, workspaceID)
-	return s.conversationRepo.List(ctx, workspaceID, status, priority, pagination, workspaceMemberID, role, nil, "")
+	return s.conversationRepo.List(ctx, workspaceID, status, priority, pagination, workspaceMemberID, role, nil, "", search)
 }
 
 // ListConversationsWithMeta returns conversations plus aggregate unread stats.
-func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, workspaceID, userID, status, priority string, pagination model.PMPagination, mailboxID *string, flowState string, aiState ...string) (*model.ConversationListResponse, error) {
+func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, workspaceID, userID, status, priority string, pagination model.PMPagination, mailboxID *string, flowState, search string, aiState ...string) (*model.ConversationListResponse, error) {
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
@@ -718,7 +718,7 @@ func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, wor
 		return nil, err
 	}
 	workspaceMemberID, role := s.actorMailboxScope(ctx, workspaceID)
-	conversations, total, err := s.conversationRepo.List(ctx, workspaceID, status, priority, pagination, workspaceMemberID, role, mailboxID, flowState, aiState...)
+	conversations, total, err := s.conversationRepo.List(ctx, workspaceID, status, priority, pagination, workspaceMemberID, role, mailboxID, flowState, search, aiState...)
 	if err != nil {
 		return nil, err
 	}
@@ -1293,9 +1293,9 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		}
 	}
 
-	// Pre-resolve @mentions for internal notes.
+	// Pre-resolve teammate @mentions for support messages.
 	var mentionedUserIDs []string
-	if req.IsInternal && s.notificationService != nil && s.workspaceRepo != nil {
+	if senderType == "user" && s.notificationService != nil && s.workspaceRepo != nil {
 		ids, err := resolveMentionRecipients(ctx, s.workspaceRepo, workspaceID, strings.TrimSpace(req.Content), derefString(senderUserID), nil)
 		if err != nil {
 			slog.ErrorContext(ctx, "resolve support mentions", "error", err, "conversation_id", ticketID)
@@ -1303,7 +1303,10 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		if len(ids) > 0 {
 			filtered := make([]string, 0, len(ids))
 			for _, mentionedID := range ids {
-				if s.userCanAccessMailbox(ctx, workspaceID, conv.MailboxID, mentionedID) {
+				// Mailbox membership does not imply support module access — legacy mailboxes
+				// may include users (e.g. marketing team) who should not get support notifications.
+				if s.userCanAccessMailbox(ctx, workspaceID, conv.MailboxID, mentionedID) &&
+					s.userHasSupportModuleAccess(ctx, workspaceID, mentionedID) {
 					filtered = append(filtered, mentionedID)
 				}
 			}
@@ -2707,7 +2710,7 @@ func truncate(s string, maxLen int) string {
 }
 
 // ListConversationsWithMentions returns conversations where the given user was mentioned.
-func (s *SupportInboxService) ListConversationsWithMentions(ctx context.Context, workspaceID, userID string) (*model.ConversationListResponse, error) {
+func (s *SupportInboxService) ListConversationsWithMentions(ctx context.Context, workspaceID, userID, search string) (*model.ConversationListResponse, error) {
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
@@ -2728,6 +2731,15 @@ func (s *SupportInboxService) ListConversationsWithMentions(ctx context.Context,
 	if conversations == nil {
 		conversations = []model.SupportConversation{}
 	}
+	if trimmedSearch := strings.TrimSpace(search); trimmedSearch != "" {
+		filtered := conversations[:0]
+		for _, conversation := range conversations {
+			if supportConversationMatchesSearch(conversation, trimmedSearch) {
+				filtered = append(filtered, conversation)
+			}
+		}
+		conversations = filtered
+	}
 	if s.triageService != nil {
 		if err := s.triageService.HydrateConversations(ctx, conversations); err != nil {
 			slog.ErrorContext(ctx, "hydrate support mention conversation triage", "error", err, "workspace_id", workspaceID)
@@ -2741,6 +2753,26 @@ func (s *SupportInboxService) ListConversationsWithMentions(ctx context.Context,
 		TotalPages: 1,
 		Meta:       model.ConversationListMeta{},
 	}, nil
+}
+
+func supportConversationMatchesSearch(conversation model.SupportConversation, search string) bool {
+	query := strings.ToLower(strings.TrimSpace(search))
+	if query == "" {
+		return true
+	}
+	if strings.Contains(strings.ToLower(conversation.Subject), query) {
+		return true
+	}
+	if strings.Contains(fmt.Sprintf("%d", conversation.DisplayID), query) {
+		return true
+	}
+	if conversation.CustomerName != nil && strings.Contains(strings.ToLower(*conversation.CustomerName), query) {
+		return true
+	}
+	if conversation.CustomerEmail != nil && strings.Contains(strings.ToLower(*conversation.CustomerEmail), query) {
+		return true
+	}
+	return false
 }
 
 func (s *SupportInboxService) assignConversationAgent(ctx context.Context, workspaceID, conversationID, agentID string, actorID *string) error {

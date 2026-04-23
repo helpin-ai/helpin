@@ -424,13 +424,15 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
     const store = useSupportPresenceStore.getState()
     const selfId = selfIdRef.current
 
-    const nextViewers = snapshot.viewers
+    const viewersArr = Array.isArray(snapshot.viewers) ? snapshot.viewers : []
+    const nextViewers = viewersArr
       .map((viewer) => viewer.user_id)
       .filter((uid) => uid && uid !== selfId)
     store.replaceViewingAgents(convId, nextViewers)
 
+    const typersObj = snapshot.typers && typeof snapshot.typers === 'object' ? snapshot.typers : {}
     const nextTypers = Object.fromEntries(
-      Object.entries(snapshot.typers)
+      Object.entries(typersObj)
         .filter(([uid]) => uid !== selfId)
         .map(([uid, typing]) => [uid, {
           content: typing.content ?? '',
@@ -456,8 +458,9 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
     const docId = snapshot.document_id
     if (!docId) return
     const selfId = selfIdRef.current
+    const docViewersArr = Array.isArray(snapshot.viewers) ? snapshot.viewers : []
     const nextViewers = Object.fromEntries(
-      snapshot.viewers
+      docViewersArr
         .filter((viewer) => viewer.user_id && viewer.user_id !== selfId)
         .map((viewer) => [viewer.user_id, {
           name: viewer.name,

@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useState, memo, useEffect } from 'react';
+import { useMemo, useCallback, useState, memo, useEffect, type UIEvent } from 'react';
 import { Message01Icon, Search01Icon, Cancel01Icon, ArrowDown01Icon } from '@/lib/icons';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -8,8 +8,7 @@ import {
   DropdownMenuContent,
   DropdownMenuCheckboxItem,
 } from '@/components/ui/dropdown-menu';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { useConversations, useInboxScopes, useMarkConversationRead } from '@/hooks/queries/useSupport';
+import { useInfiniteConversations, useInboxScopes, useMarkConversationRead } from '@/hooks/queries/useSupport';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { ConversationRow } from './ConversationRow';
@@ -35,7 +34,13 @@ const SkeletonRow = memo(function SkeletonRow() {
 
 // Context-aware empty copy — same harmonious layout, different words per
 // nav filter so the user knows why the list is empty.
-function emptyCopyForNavFilter(navFilter: string): { title: string; subtitle: string } {
+function emptyCopyForNavFilter(navFilter: string, searchQuery: string): { title: string; subtitle: string } {
+  if (searchQuery.trim()) {
+    return {
+      title: 'No conversations found',
+      subtitle: 'Try a different subject, customer name, or email address.',
+    };
+  }
   switch (navFilter) {
     case 'my_inbox':
       return {
@@ -106,10 +111,21 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
     if (navFilter === 'mentions') f.filter = 'mentions';
     if (navFilter === 'ai_active') f.flow_state = 'ai_handling';
     if (navFilter === 'resolved_by_ai') f.flow_state = 'resolved_by_ai';
+    if (searchQuery.trim()) f.search = searchQuery.trim();
     return Object.keys(f).length > 0 ? f : undefined;
-  }, [statusFilter, navFilter, selectedMailboxId]);
-  const { data: response, isLoading, error } = useConversations(workspaceId, filters);
-  const conversations = response?.data ?? [];
+  }, [statusFilter, navFilter, searchQuery, selectedMailboxId]);
+  const {
+    data: response,
+    isLoading,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+    error,
+  } = useInfiniteConversations(workspaceId, filters);
+  const conversations = useMemo(
+    () => response?.pages.flatMap((page) => page.data ?? []) ?? [],
+    [response],
+  );
 
   const filteredConversations = useMemo(() => {
     return filterSupportConversations(conversations, {
@@ -117,13 +133,14 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
       mailboxScope: selectedMailboxId,
       statusFilter,
       userId,
-      searchQuery,
+      searchQuery: navFilter === 'mentions' ? searchQuery : '',
     });
   }, [conversations, navFilter, selectedMailboxId, statusFilter, userId, searchQuery]);
   const mailboxMoveOptions = useMemo(
     () => [inboxScopes?.shared_inbox, ...(inboxScopes?.mailboxes ?? [])].filter(Boolean) as SupportInboxScope[],
     [inboxScopes]
   );
+  const shouldShowEmptyState = !isLoading && filteredConversations.length === 0 && !error && !hasNextPage;
 
   useEffect(() => {
     if (!wsSend || !wsConnected || filteredConversations.length === 0) return;
@@ -131,6 +148,17 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
       conversation_ids: filteredConversations.map((conversation) => conversation.id),
     });
   }, [filteredConversations, wsConnected, wsSend]);
+
+  const handleListScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
+    if (!hasNextPage || isFetchingNextPage) {
+      return;
+    }
+    const target = event.currentTarget;
+    const distanceFromBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
+    if (distanceFromBottom <= 80) {
+      fetchNextPage();
+    }
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
   return (
     <div className="flex h-full w-[300px] flex-col border-r bg-background dark:border-sidebar-border dark:bg-sidebar">
@@ -214,7 +242,11 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
       </div>
 
       {/* Conversation list */}
-      <ScrollArea className="flex-1 min-h-0">
+      <div
+        className="flex-1 min-h-0 overflow-y-auto"
+        data-support-conversation-scroll
+        onScroll={handleListScroll}
+      >
         {isLoading && (
           <div>
             <SkeletonRow />
@@ -227,11 +259,11 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
         {error && (
           <p className="p-4 text-sm text-destructive">{String(error)}</p>
         )}
-        {!isLoading && filteredConversations.length === 0 && !error && (
+        {shouldShowEmptyState && (
           <EmptyState
             icon={Message01Icon}
-            title={emptyCopyForNavFilter(navFilter).title}
-            subtitle={emptyCopyForNavFilter(navFilter).subtitle}
+            title={emptyCopyForNavFilter(navFilter, searchQuery).title}
+            subtitle={emptyCopyForNavFilter(navFilter, searchQuery).subtitle}
           />
         )}
         {filteredConversations.map((conversation) => (
@@ -243,7 +275,20 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
             onSelectConversation={handleSelect}
           />
         ))}
-      </ScrollArea>
+        {hasNextPage && (
+          <div className="flex justify-center px-3 py-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs"
+              onClick={() => fetchNextPage()}
+              disabled={isFetchingNextPage}
+            >
+              {isFetchingNextPage ? 'Loading...' : 'Load more'}
+            </Button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
