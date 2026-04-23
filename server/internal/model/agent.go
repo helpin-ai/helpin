@@ -151,6 +151,18 @@ type AgentRun struct {
 	CompletedAt       *time.Time      `json:"completed_at"`
 	CreatedAt         time.Time       `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt         time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
+	TargetInfo        *AgentRunTarget `json:"target_info,omitempty" gorm:"-"`
+}
+
+// AgentRunTarget is a computed sidecar with resolved display info for the
+// run's target entity (e.g. the PM task title and task_key). It is not
+// persisted and is populated by the service layer on read paths so UI can
+// surface a human label instead of a raw UUID.
+type AgentRunTarget struct {
+	TargetType string `json:"target_type"`
+	TargetID   string `json:"target_id"`
+	Title      string `json:"title,omitempty"`
+	TaskKey    string `json:"task_key,omitempty"`
 }
 
 func (AgentRun) TableName() string { return "agent_runs" }

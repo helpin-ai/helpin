@@ -209,6 +209,8 @@ function buildExecutionTargetLabel(item: AutomationTriggerExecutionListItem) {
 }
 
 function runTargetLabel(run: AgentRun) {
+  const resolved = run.target_info?.title?.trim();
+  if (resolved) return resolved;
   const input = asRecord(run.input);
   const target = asRecord(input?.target);
   const title =
@@ -217,6 +219,10 @@ function runTargetLabel(run: AgentRun) {
     asNonEmptyString(input?.title);
   if (title) return title;
   return `${run.target_type.replace(/_/g, ' ')} · ${truncateMiddle(run.target_id, 8, 4)}`;
+}
+
+function runTargetKey(run: AgentRun) {
+  return run.target_info?.task_key?.trim() || '';
 }
 
 function runBlockingLabel(run: AgentRun) {
@@ -476,6 +482,8 @@ function NeedActionCard({
   const waitTime = formatDuration(run.created_at, new Date().toISOString());
   const needsApproval = displayStatus === 'awaiting_approval';
   const subtitle = runBlockingCopy(run, agent);
+  const targetTitle = runTargetLabel(run);
+  const targetKey = runTargetKey(run);
 
   return (
     <div className="grid gap-4 rounded-2xl border border-amber-500/30 bg-card/90 p-4 shadow-sm shadow-amber-500/5 md:grid-cols-[1fr_auto] md:items-center">
@@ -486,12 +494,14 @@ function NeedActionCard({
           </Badge>
           <span className="font-mono text-[11px] text-muted-foreground">blocked for {waitTime}</span>
         </div>
-        <p className="text-sm font-medium">{subtitle}</p>
+        <p className="truncate text-sm font-medium">
+          {targetKey ? <span className="mr-2 font-mono text-muted-foreground">{targetKey}</span> : null}
+          {targetTitle}
+        </p>
+        <p className="text-xs text-muted-foreground">{subtitle}</p>
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           {agent ? <AgentAvatar agent={agent} className="h-6 w-6 rounded-none border-0 bg-transparent shadow-none" genericBare /> : null}
           <span>{agent?.name ?? 'Agent'}</span>
-          <span className="text-muted-foreground/60">·</span>
-          <span className="text-foreground">{runTargetLabel(run)}</span>
           <span className="text-muted-foreground/60">·</span>
           <span className="font-mono">{formatShortDate(run.created_at)}</span>
         </div>

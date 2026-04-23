@@ -143,6 +143,14 @@ export interface AgentRun {
   completed_at?: string;
   created_at: string;
   updated_at: string;
+  target_info?: AgentRunTarget;
+}
+
+export interface AgentRunTarget {
+  target_type: string;
+  target_id: string;
+  title?: string;
+  task_key?: string;
 }
 
 export interface AgentRunMessage {
