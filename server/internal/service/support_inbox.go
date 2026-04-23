@@ -1303,7 +1303,10 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		if len(ids) > 0 {
 			filtered := make([]string, 0, len(ids))
 			for _, mentionedID := range ids {
-				if s.userCanAccessMailbox(ctx, workspaceID, conv.MailboxID, mentionedID) {
+				// Mailbox membership does not imply support module access — legacy mailboxes
+				// may include users (e.g. marketing team) who should not get support notifications.
+				if s.userCanAccessMailbox(ctx, workspaceID, conv.MailboxID, mentionedID) &&
+					s.userHasSupportModuleAccess(ctx, workspaceID, mentionedID) {
 					filtered = append(filtered, mentionedID)
 				}
 			}

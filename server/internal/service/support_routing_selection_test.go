@@ -16,6 +16,7 @@ func TestCreateConversationMessage_CustomerReplyFallsBackToWorkspaceRecipient(t 
 	db := newTestDB(t)
 	ctx := context.Background()
 	now := time.Now()
+	ensureSupportModuleGrantsTable(t, db)
 
 	workspaceID := "ws-support-fallback"
 	userA := "user-a"
@@ -110,6 +111,7 @@ func TestCreateConversationMessage_CustomerReplyFallsBackToWorkspaceRecipient(t 
 func TestSupportAIServiceEscalateToHumanAssignsAvailableTeamRecipient(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
+	ensureSupportModuleGrantsTable(t, db)
 
 	workspaceID := "ws-escalate-team"
 	ownerID := "user-owner"
@@ -125,6 +127,7 @@ func TestSupportAIServiceEscalateToHumanAssignsAvailableTeamRecipient(t *testing
 		teamID, workspaceID, "Support", "support", time.Now(), time.Now())
 	mustExec(t, db, `INSERT INTO team_workspace_memberships (id, team_id, workspace_member_id, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
 		"twm-team", teamID, "wm-team", "member", time.Now(), time.Now())
+	seedSupportModuleGrant(t, db, "grant-team-support", workspaceID, model.ModuleGrantSubjectTeam, teamID)
 
 	convRepo := repository.NewSupportConversationRepository(db)
 	messageRepo := repository.NewSupportMessageRepository(db)
