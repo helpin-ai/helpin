@@ -6136,18 +6136,10 @@ func (a *AgentRunActivities) buildCRMDealReviewInstructions(ctx context.Context,
 }
 
 func (a *AgentRunActivities) buildTaskPlannerInstructions(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
-	if state.task == nil {
-		return "", fmt.Errorf("task planner requires a task target")
-	}
-
-	sections := buildLegacyTaskPlannerRuleSections(state.run)
-
-	contextSections, err := a.buildTaskPlannerContextSections(ctx, state, input)
+	sections, err := a.buildLegacyTaskPlannerSections(ctx, state, input)
 	if err != nil {
 		return "", err
 	}
-	sections = append(sections, contextSections...)
-
 	return strings.Join(sections, "\n\n"), nil
 }
 
@@ -6223,17 +6215,54 @@ func (a *AgentRunActivities) buildTaskPlannerContextSections(ctx context.Context
 	return sections, nil
 }
 
-func (a *AgentRunActivities) buildNativeTaskPlannerPhaseGuidance(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
+type taskPlannerAssemblyState struct {
+	contextSections []string
+	phaseName       string
+}
+
+func (a *AgentRunActivities) buildTaskPlannerAssemblyState(ctx context.Context, state *resolvedRunState, input planningRunInput) (taskPlannerAssemblyState, error) {
+	contextSections, err := a.buildTaskPlannerContextSections(ctx, state, input)
+	if err != nil {
+		return taskPlannerAssemblyState{}, err
+	}
 	phaseName := strings.TrimSpace(nativeActiveSkillPlanningStage(state, input.Stage))
 	if phaseName == "" {
 		phaseName = model.PlanningStageTaskPlanDoc
 	}
-	sections := buildNativeTaskPlannerRuleSections(state.run, phaseName)
-	contextSections, err := a.buildTaskPlannerContextSections(ctx, state, input)
+	return taskPlannerAssemblyState{
+		contextSections: contextSections,
+		phaseName:       phaseName,
+	}, nil
+}
+
+func (a *AgentRunActivities) buildLegacyTaskPlannerSections(ctx context.Context, state *resolvedRunState, input planningRunInput) ([]string, error) {
+	if state.task == nil {
+		return nil, fmt.Errorf("task planner requires a task target")
+	}
+	assemblyState, err := a.buildTaskPlannerAssemblyState(ctx, state, input)
+	if err != nil {
+		return nil, err
+	}
+	sections := buildLegacyTaskPlannerRuleSections(state.run)
+	sections = append(sections, assemblyState.contextSections...)
+	return sections, nil
+}
+
+func (a *AgentRunActivities) buildNativeTaskPlannerSections(ctx context.Context, state *resolvedRunState, input planningRunInput) ([]string, error) {
+	assemblyState, err := a.buildTaskPlannerAssemblyState(ctx, state, input)
+	if err != nil {
+		return nil, err
+	}
+	sections := buildNativeTaskPlannerRuleSections(state.run, assemblyState.phaseName)
+	sections = append(sections, assemblyState.contextSections...)
+	return sections, nil
+}
+
+func (a *AgentRunActivities) buildNativeTaskPlannerPhaseGuidance(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
+	sections, err := a.buildNativeTaskPlannerSections(ctx, state, input)
 	if err != nil {
 		return "", err
 	}
-	sections = append(sections, contextSections...)
 	return strings.Join(sections, "\n\n"), nil
 }
 

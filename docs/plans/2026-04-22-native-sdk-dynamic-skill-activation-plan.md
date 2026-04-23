@@ -8,7 +8,7 @@ The core selective native planner path has been implemented. Remaining work is n
 
 - reducing planner-specific Temporal instruction ownership further
 - broadening regression and invariant coverage
-- validating provider reliability and non-regression
+- validating provider reliability and non-regression using live run data
 - cleaning up stale plan sections and documenting final rollout state
 
 ### Implemented
@@ -28,6 +28,7 @@ The core selective native planner path has been implemented. Remaining work is n
 - normalized native repair-state capture and persistence
 - repair-instruction reinjection for completion-policy retries and planner tool failures
 - native debug/observability artifacts for phase, skills, policy, continuation mode, and repair state
+- rollout-report tooling for comparing native planner run outcomes, continuation modes, repair frequency, and applied actions across providers/presets
 - substantial Phase 5 extraction of planner rule/context assembly into smaller Temporal helpers
 - explicit regression coverage for:
   - PRD request-changes keeping PRD-focused active skills
@@ -41,12 +42,13 @@ The core selective native planner path has been implemented. Remaining work is n
 - base-prompt simplification is complete for selective native planner runs, but broader prompt cleanup is still incomplete
 - planner guidance extraction is well underway, but Temporal still owns a meaningful amount of planner-specific assembly
 - transition coverage is improved, but not yet exhaustive across every apply/resume edge
-- regression coverage is materially broader now, but invariant-protection and provider-comparison work remain incomplete
+- regression coverage is materially broader now, but invariant-protection and provider-comparison execution remain incomplete
+- provider-validation tooling exists, but live OpenAI/OpenRouter vs Anthropic rollout validation has not yet been run
 
 ### Not yet complete
 
 - final Phase 5-style reduction of Temporal into thin planner orchestration wrappers
-- broader rollout validation across providers, especially explicit Anthropic non-regression checks
+- broader rollout validation across providers using real run data, especially explicit Anthropic non-regression checks
 - final cleanup of remaining stale phase text and acceptance tracking in this document
 
 ## Direction
@@ -907,8 +909,22 @@ Requirements:
 
 ### Phase 4
 
+- use the native planner rollout-report tool to summarize native planner runs by provider/model/preset from persisted run and `native_turn_debug` artifacts
 - compare Anthropic vs OpenAI/OpenRouter planner reliability on long interactive runs
 - confirm Anthropic planner behavior does not regress under the selective native path
+
+Rollout-report command:
+
+- `cd server && go run ./cmd/native-planner-rollout-report`
+- optional filters:
+  - `--workspace <workspace-id>`
+  - `--provider anthropic|openai|openrouter`
+  - `--preset epic_planner|task_planner`
+  - `--since <RFC3339>`
+  - `--until <RFC3339>`
+  - `--json`
+
+This phase is only complete after the report has been run against live rollout data and the results have been reviewed.
 
 ### Phase 5
 

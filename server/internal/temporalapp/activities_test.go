@@ -577,6 +577,37 @@ func TestBuildLegacyTaskPlannerRuleSectionsPreservesCriticalRules(t *testing.T) 
 	}
 }
 
+func TestBuildLegacyTaskPlannerSectionsPreservesCompositionOrder(t *testing.T) {
+	activity := &AgentRunActivities{}
+	sections, err := activity.buildLegacyTaskPlannerSections(context.Background(), &resolvedRunState{
+		run: &model.AgentRun{
+			WorkspaceID:    "ws-1",
+			TargetType:     "task",
+			InvocationMode: model.InvocationModeInteractive,
+		},
+		task: &model.PMTask{
+			ID:          "task-1",
+			WorkspaceID: "ws-1",
+			Name:        "Harden approval preview binding",
+		},
+	}, planningRunInput{
+		AdditionalContext: "Focus on regression risk.",
+	})
+	if err != nil {
+		t.Fatalf("buildLegacyTaskPlannerSections returned error: %v", err)
+	}
+	instructions := strings.Join(sections, "\n\n")
+	runModeIndex := strings.Index(instructions, "Run mode: interactive")
+	operatorNotesIndex := strings.Index(instructions, "Operator notes:\nFocus on regression risk.")
+	taskIndex := strings.Index(instructions, "Task: Harden approval preview binding")
+	if runModeIndex == -1 || operatorNotesIndex == -1 || taskIndex == -1 {
+		t.Fatalf("expected composed legacy task guidance sections to be present\n%s", instructions)
+	}
+	if !(runModeIndex < operatorNotesIndex && operatorNotesIndex < taskIndex) {
+		t.Fatalf("expected legacy task composition order rules -> operator notes -> task context\n%s", instructions)
+	}
+}
+
 func TestBuildNativeTaskPlannerRuleSectionsPreservesCriticalRules(t *testing.T) {
 	sections := buildNativeTaskPlannerRuleSections(&model.AgentRun{
 		InvocationMode: model.InvocationModeInteractive,
@@ -595,6 +626,37 @@ func TestBuildNativeTaskPlannerRuleSectionsPreservesCriticalRules(t *testing.T) 
 		if !strings.Contains(instructions, snippet) {
 			t.Fatalf("expected native task planner rule sections to contain %q\n%s", snippet, instructions)
 		}
+	}
+}
+
+func TestBuildNativeTaskPlannerSectionsPreservesCompositionOrder(t *testing.T) {
+	activity := &AgentRunActivities{}
+	sections, err := activity.buildNativeTaskPlannerSections(context.Background(), &resolvedRunState{
+		run: &model.AgentRun{
+			WorkspaceID:    "ws-1",
+			TargetType:     "task",
+			InvocationMode: model.InvocationModeInteractive,
+		},
+		task: &model.PMTask{
+			ID:          "task-1",
+			WorkspaceID: "ws-1",
+			Name:        "Harden approval preview binding",
+		},
+	}, planningRunInput{
+		AdditionalContext: "Focus on regression risk.",
+	})
+	if err != nil {
+		t.Fatalf("buildNativeTaskPlannerSections returned error: %v", err)
+	}
+	instructions := strings.Join(sections, "\n\n")
+	phaseIndex := strings.Index(instructions, "Current planning phase: task_plan_doc")
+	operatorNotesIndex := strings.Index(instructions, "Operator notes:\nFocus on regression risk.")
+	taskIndex := strings.Index(instructions, "Task: Harden approval preview binding")
+	if phaseIndex == -1 || operatorNotesIndex == -1 || taskIndex == -1 {
+		t.Fatalf("expected composed native task guidance sections to be present\n%s", instructions)
+	}
+	if !(phaseIndex < operatorNotesIndex && operatorNotesIndex < taskIndex) {
+		t.Fatalf("expected native task composition order rules -> operator notes -> task context\n%s", instructions)
 	}
 }
 
