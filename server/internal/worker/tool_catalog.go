@@ -62,6 +62,7 @@ var toolCategory = map[string]string{
 
 	// Docs
 	"list_documents":   "Docs",
+	"list_collections": "Docs",
 	"read_document":    "Docs",
 	"search_documents": "Docs",
 	"create_document":  "Docs",

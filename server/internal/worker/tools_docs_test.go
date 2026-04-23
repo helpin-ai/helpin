@@ -9,6 +9,89 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
+func TestToolListCollections(t *testing.T) {
+	parentID := "coll-parent"
+	var requestedWorkspaceID string
+	var requestedSpaceID *string
+
+	ctx := &ExecutionContext{
+		Context:     context.Background(),
+		WorkspaceID: "ws-1",
+		Services: &ServiceBridge{
+			ListCollections: func(ctx context.Context, workspaceID string, spaceID *string) ([]model.DocsCollection, error) {
+				requestedWorkspaceID = workspaceID
+				requestedSpaceID = spaceID
+				return []model.DocsCollection{
+					{
+						ID:                 "coll-1",
+						Name:               "Product",
+						Slug:               "product",
+						SpaceID:            "space-1",
+						ParentCollectionID: &parentID,
+					},
+					{
+						ID:      "coll-2",
+						Name:    "Support",
+						Slug:    "support",
+						SpaceID: "space-1",
+					},
+				}, nil
+			},
+		},
+	}
+
+	output, err := toolListCollections(ctx, json.RawMessage(`{"space_id":"space-1"}`))
+	if err != nil {
+		t.Fatalf("toolListCollections returned error: %v", err)
+	}
+	if requestedWorkspaceID != "ws-1" {
+		t.Fatalf("expected workspace ws-1, got %q", requestedWorkspaceID)
+	}
+	if requestedSpaceID == nil || *requestedSpaceID != "space-1" {
+		t.Fatalf("expected space_id space-1, got %#v", requestedSpaceID)
+	}
+
+	var response []struct {
+		ID                 string  `json:"id"`
+		Name               string  `json:"name"`
+		Slug               string  `json:"slug"`
+		SpaceID            string  `json:"space_id"`
+		ParentCollectionID *string `json:"parent_collection_id,omitempty"`
+	}
+	if err := json.Unmarshal([]byte(output), &response); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if len(response) != 2 {
+		t.Fatalf("expected two collections, got %#v", response)
+	}
+	if response[0].ID != "coll-1" || response[0].Name != "Product" || response[0].Slug != "product" || response[0].SpaceID != "space-1" || response[0].ParentCollectionID == nil || *response[0].ParentCollectionID != parentID {
+		t.Fatalf("unexpected first collection summary %#v", response[0])
+	}
+	if response[1].ID != "coll-2" || response[1].ParentCollectionID != nil {
+		t.Fatalf("unexpected second collection summary %#v", response[1])
+	}
+}
+
+func TestToolListCollectionsEmpty(t *testing.T) {
+	ctx := &ExecutionContext{
+		Context:     context.Background(),
+		WorkspaceID: "ws-1",
+		Services: &ServiceBridge{
+			ListCollections: func(ctx context.Context, workspaceID string, spaceID *string) ([]model.DocsCollection, error) {
+				return nil, nil
+			},
+		},
+	}
+
+	output, err := toolListCollections(ctx, json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("toolListCollections returned error: %v", err)
+	}
+	if output != "No collections found." {
+		t.Fatalf("unexpected output %q", output)
+	}
+}
+
 func TestToolCreateDocumentWithMarkdownContent(t *testing.T) {
 	var (
 		createdReq     model.CreateDocsDocumentRequest
