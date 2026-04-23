@@ -143,26 +143,12 @@ func resolveSupportTeammatePresenceStatuses(
 		return []model.SupportTeammatePresenceStatus{}, nil
 	}
 
-	members, err := workspaceRepo.ListMembers(ctx, workspaceID)
-	if err != nil {
-		return nil, err
-	}
-	if len(members) == 0 {
-		return []model.SupportTeammatePresenceStatus{}, nil
-	}
-
 	supportUserIDs, err := workspaceRepo.ListSupportAccessibleUserIDs(ctx, workspaceID)
 	if err != nil {
 		return nil, err
 	}
 	if len(supportUserIDs) == 0 {
 		return []model.SupportTeammatePresenceStatus{}, nil
-	}
-	supportUserIDSet := make(map[string]struct{}, len(supportUserIDs))
-	for _, userID := range supportUserIDs {
-		if trimmed := strings.TrimSpace(userID); trimmed != "" {
-			supportUserIDSet[trimmed] = struct{}{}
-		}
 	}
 
 	onlineSet := make(map[string]struct{})
@@ -192,13 +178,10 @@ func resolveSupportTeammatePresenceStatuses(
 	}
 
 	now = now.UTC()
-	statuses := make([]model.SupportTeammatePresenceStatus, 0, len(members))
-	for _, member := range members {
-		userID := strings.TrimSpace(member.UserID)
+	statuses := make([]model.SupportTeammatePresenceStatus, 0, len(supportUserIDs))
+	for _, rawUserID := range supportUserIDs {
+		userID := strings.TrimSpace(rawUserID)
 		if userID == "" {
-			continue
-		}
-		if _, ok := supportUserIDSet[userID]; !ok {
 			continue
 		}
 		entry := model.SupportTeammatePresenceStatus{
