@@ -2169,6 +2169,71 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 			}
 			return hits, nil
 		},
+		CreateDocument: func(ctx context.Context, workspaceID, userID string, req model.CreateDocsDocumentRequest, content json.RawMessage) (*model.DocsDocument, error) {
+			if strings.TrimSpace(req.SpaceID) == "" {
+				return nil, fmt.Errorf("space_id is required")
+			}
+			if strings.TrimSpace(req.Title) == "" {
+				return nil, fmt.Errorf("title is required")
+			}
+			space, err := a.docsSpaceRepo.GetByID(ctx, req.SpaceID)
+			if err != nil {
+				return nil, err
+			}
+			if space == nil {
+				return nil, fmt.Errorf("space not found")
+			}
+			if space.WorkspaceID != workspaceID {
+				return nil, fmt.Errorf("space does not belong to this workspace")
+			}
+			collectionID := req.CollectionID
+			if collectionID != nil && strings.TrimSpace(*collectionID) == "" {
+				collectionID = nil
+			}
+			teamID := space.TeamID
+			if teamID != nil && strings.TrimSpace(*teamID) == "" {
+				teamID = nil
+			}
+			nextPos, err := a.docsDocRepo.NextPosition(ctx, req.SpaceID, collectionID)
+			if err != nil {
+				return nil, err
+			}
+			doc, err := a.docsDocRepo.Create(ctx, &model.DocsDocument{
+				WorkspaceID:  workspaceID,
+				SpaceID:      req.SpaceID,
+				CollectionID: collectionID,
+				Title:        req.Title,
+				Status:       model.DocStatusDraft,
+				Visibility:   model.SpaceVisibilityWorkspaceWide,
+				OwnerID:      req.OwnerID,
+				TeamID:       teamID,
+				TemplateKey:  req.TemplateKey,
+				Icon:         req.Icon,
+				Tags:         model.DocsStringArray(req.Tags),
+				Position:     nextPos,
+				CreatedBy:    userID,
+			})
+			if err != nil {
+				return nil, err
+			}
+			if len(strings.TrimSpace(string(content))) > 0 && strings.TrimSpace(string(content)) != "null" {
+				if _, err := a.docsContentRepo.Upsert(ctx, doc.ID, content); err != nil {
+					return nil, err
+				}
+			}
+			if a.wsPublisher != nil {
+				a.wsPublisher.Publish(websocket.Event{
+					Action:      "created",
+					Entity:      "docs_document",
+					EntityID:    doc.ID,
+					WorkspaceID: workspaceID,
+					ActorID:     userID,
+					ParentType:  "docs_space",
+					ParentID:    doc.SpaceID,
+				})
+			}
+			return doc, nil
+		},
 		EnsureEpicSpecDoc: func(ctx context.Context, workspaceID, epicID, actorID string) (*model.DocsDocument, error) {
 			if a.commandExecutor == nil {
 				return nil, fmt.Errorf("document commands are not available")

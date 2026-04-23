@@ -2037,7 +2037,9 @@ func (s *AgentService) ListAgentRuns(ctx context.Context, workspaceID, agentID s
 	if err != nil {
 		return nil, 0, err
 	}
-	return s.normalizeRunCollection(s.reconcileStuckRuns(ctx, runs)), total, nil
+	normalized := s.normalizeRunCollection(s.reconcileStuckRuns(ctx, runs))
+	s.enrichRunTargets(ctx, workspaceID, normalized)
+	return normalized, total, nil
 }
 
 // ListWorkspaceRuns returns runs across the entire workspace.
@@ -2049,7 +2051,9 @@ func (s *AgentService) ListWorkspaceRuns(ctx context.Context, workspaceID string
 	if err != nil {
 		return nil, 0, err
 	}
-	return s.normalizeRunCollection(s.reconcileStuckRuns(ctx, runs)), total, nil
+	normalized := s.normalizeRunCollection(s.reconcileStuckRuns(ctx, runs))
+	s.enrichRunTargets(ctx, workspaceID, normalized)
+	return normalized, total, nil
 }
 
 // GetAgentRun returns a single run.
@@ -2065,6 +2069,9 @@ func (s *AgentService) GetAgentRun(ctx context.Context, workspaceID, runID strin
 		run = updated
 	}
 	model.NormalizeAgentRunPauseState(run)
+	single := []model.AgentRun{*run}
+	s.enrichRunTargets(ctx, workspaceID, single)
+	run.TargetInfo = single[0].TargetInfo
 	return run, nil
 }
 
@@ -2106,7 +2113,9 @@ func (s *AgentService) ListTargetRuns(ctx context.Context, workspaceID, targetTy
 	if err != nil {
 		return nil, err
 	}
-	return s.normalizeRunCollection(s.reconcileStuckRuns(ctx, runs)), nil
+	normalized := s.normalizeRunCollection(s.reconcileStuckRuns(ctx, runs))
+	s.enrichRunTargets(ctx, workspaceID, normalized)
+	return normalized, nil
 }
 
 // RunAgent creates a new task-targeted agent run and starts its Temporal workflow.
@@ -4194,6 +4203,69 @@ func (s *AgentService) normalizeRunCollection(runs []model.AgentRun) []model.Age
 		model.NormalizeAgentRunPauseState(&runs[idx])
 	}
 	return runs
+}
+
+// enrichRunTargets populates AgentRun.TargetInfo with a human-readable title
+// and (for pm_task) a task_key so UI can surface real identifiers instead of
+// raw UUIDs. Unknown target types leave TargetInfo empty; the frontend keeps
+// its existing fallback logic.
+func (s *AgentService) enrichRunTargets(ctx context.Context, workspaceID string, runs []model.AgentRun) {
+	if len(runs) == 0 || workspaceID == "" {
+		return
+	}
+
+	taskIDs := make([]string, 0, len(runs))
+	seen := make(map[string]struct{}, len(runs))
+	for _, run := range runs {
+		if run.TargetType != "pm_task" || run.TargetID == "" {
+			continue
+		}
+		if _, ok := seen[run.TargetID]; ok {
+			continue
+		}
+		seen[run.TargetID] = struct{}{}
+		taskIDs = append(taskIDs, run.TargetID)
+	}
+
+	if len(taskIDs) == 0 || s.taskRepo == nil {
+		return
+	}
+
+	tasks, err := s.taskRepo.ListByIDs(ctx, workspaceID, taskIDs)
+	if err != nil {
+		slog.WarnContext(ctx, "enrich run targets: list tasks failed", "error", err, "workspace_id", workspaceID)
+		return
+	}
+
+	byID := make(map[string]model.PMTask, len(tasks))
+	for _, task := range tasks {
+		byID[task.ID] = task
+	}
+
+	var workspaceKey string
+	if s.taskService != nil && len(byID) > 0 {
+		workspaceKey = s.taskService.GetWorkspaceKey(ctx, workspaceID)
+	}
+
+	for idx := range runs {
+		run := &runs[idx]
+		if run.TargetType != "pm_task" {
+			continue
+		}
+		task, ok := byID[run.TargetID]
+		if !ok {
+			continue
+		}
+		info := &model.AgentRunTarget{
+			TargetType: run.TargetType,
+			TargetID:   run.TargetID,
+			Title:      task.Name,
+		}
+		if workspaceKey != "" {
+			info.TaskKey = model.FormatTaskKey(workspaceKey, task.DisplayID)
+		}
+		run.TargetInfo = info
+	}
 }
 
 func validateRuntimeKind(runtimeKind string) error {

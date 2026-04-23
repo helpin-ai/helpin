@@ -783,6 +783,7 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"update_task_state":       toolUpdateTaskState,
 		"update_deal_stage":       toolUpdateDealStage,
 		"add_deal_note":           toolAddDealNote,
+		"create_document":         toolCreateDocument,
 		"write_document_content":  toolWriteDocumentContent,
 		"link_document_to_object": toolLinkDocumentToObject,
 		"ensure_epic_spec_doc":    toolEnsureEpicSpecDoc,

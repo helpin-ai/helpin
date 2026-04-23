@@ -27,7 +27,9 @@ type InternalCommandService struct {
 	taskService         *PMTaskService
 	crmDealService      *CRMDealService
 	crmActivityService  *CRMActivityService
+	docsDocumentService *DocsDocumentService
 	docsContentService  *DocsContentService
+	docsContentRepo     *repository.DocsContentRepository
 	docsLinkService     *DocsLinkService
 	pmAutomationService *PMAutomationService
 	gitService          *GitService
@@ -44,6 +46,16 @@ func (s *InternalCommandService) SetPMAutomationService(svc *PMAutomationService
 // SetGitService sets the git service for delivery commands.
 func (s *InternalCommandService) SetGitService(svc *GitService) {
 	s.gitService = svc
+}
+
+// SetDocsCreateDependencies wires document creation dependencies after service
+// construction so callers can avoid circular startup ordering.
+func (s *InternalCommandService) SetDocsCreateDependencies(documentSvc *DocsDocumentService, contentRepo *repository.DocsContentRepository) {
+	if s == nil {
+		return
+	}
+	s.docsDocumentService = documentSvc
+	s.docsContentRepo = contentRepo
 }
 
 func NewInternalCommandService(
@@ -430,6 +442,65 @@ func (s *InternalCommandService) registerDefaults() {
 		},
 	})
 	s.register(InternalCommandDefinition{
+		Name:                 "docs.create_document",
+		Module:               "docs",
+		Mutating:             true,
+		SupportedTargetTypes: []string{"epic", "task", "story", "crm_deal", "workspace"},
+		Tool:                 mustCommandToolMetadata("docs.create_document"),
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			var req struct {
+				SpaceID      string          `json:"space_id"`
+				Title        string          `json:"title"`
+				CollectionID *string         `json:"collection_id,omitempty"`
+				Content      json.RawMessage `json:"content,omitempty"`
+				Icon         *string         `json:"icon,omitempty"`
+				Tags         []string        `json:"tags,omitempty"`
+			}
+			if err := json.Unmarshal(input, &req); err != nil {
+				return nil, fmt.Errorf("parse create document input: %w", err)
+			}
+			req.SpaceID = strings.TrimSpace(req.SpaceID)
+			req.Title = strings.TrimSpace(req.Title)
+			if req.SpaceID == "" {
+				return nil, fmt.Errorf("space_id is required")
+			}
+			if req.Title == "" {
+				return nil, fmt.Errorf("title is required")
+			}
+			if s.docsDocumentService == nil {
+				return nil, fmt.Errorf("docs document service is not available")
+			}
+
+			doc, err := s.docsDocumentService.Create(ctx, meta.WorkspaceID, model.CreateDocsDocumentRequest{
+				SpaceID:      req.SpaceID,
+				CollectionID: req.CollectionID,
+				Title:        req.Title,
+				Icon:         req.Icon,
+				Tags:         req.Tags,
+			}, fallbackActor(meta))
+			if err != nil {
+				return nil, err
+			}
+
+			docContent := normalizeInternalCommandDocumentContent(req.Content)
+			if !documentContentIsEffectivelyEmpty(docContent) {
+				if s.docsContentRepo == nil {
+					return nil, fmt.Errorf("docs content repository is not available")
+				}
+				if _, err := s.docsContentRepo.Upsert(ctx, doc.ID, docContent); err != nil {
+					return nil, err
+				}
+			}
+
+			return mustJSON(map[string]any{
+				"id":       doc.ID,
+				"title":    doc.Title,
+				"status":   doc.Status,
+				"space_id": doc.SpaceID,
+			}), nil
+		},
+	})
+	s.register(InternalCommandDefinition{
 		Name:                 "docs.link_document_to_object",
 		Module:               "docs",
 		Mutating:             true,
@@ -732,6 +803,24 @@ func documentContentIsEffectivelyEmpty(raw json.RawMessage) bool {
 	default:
 		return false
 	}
+}
+
+func normalizeInternalCommandDocumentContent(raw json.RawMessage) json.RawMessage {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return nil
+	}
+	content := json.RawMessage(trimmed)
+	if len(content) > 0 && content[0] == '"' {
+		var markdown string
+		if err := json.Unmarshal(content, &markdown); err == nil {
+			if strings.TrimSpace(markdown) == "" {
+				return nil
+			}
+			return tiptap.MarkdownToJSON(markdown)
+		}
+	}
+	return content
 }
 
 func documentNodeHasText(node map[string]any) bool {
