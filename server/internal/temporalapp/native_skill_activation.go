@@ -11,10 +11,10 @@ import (
 
 func nativeSelectivePlannerPathRolloutEnabled() bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("AGENT_NATIVE_SELECTIVE_PLANNER_ENABLED"))) {
-	case "1", "true", "yes", "on":
-		return true
-	default:
+	case "0", "false", "no", "off":
 		return false
+	default:
+		return true
 	}
 }
 

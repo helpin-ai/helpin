@@ -74,14 +74,13 @@ func TestShouldPersistExecutionWorkspace(t *testing.T) {
 func TestResolveNativeSelectivePlannerPathEnabled(t *testing.T) {
 	testCases := []struct {
 		name  string
-		env   string
+		env   *string
 		run   *model.AgentRun
 		agent *model.Agent
 		want  bool
 	}{
 		{
-			name: "system epic planner on native runtime is eligible",
-			env:  "true",
+			name: "unset rollout env enables eligible system epic planner by default",
 			run: &model.AgentRun{
 				RuntimeKind: "native_sdk",
 				TargetType:  "epic",
@@ -94,8 +93,8 @@ func TestResolveNativeSelectivePlannerPathEnabled(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "system task planner on native runtime is eligible",
-			env:  "true",
+			name: "system task planner on native runtime is eligible when env is true",
+			env:  strPtr("true"),
 			run: &model.AgentRun{
 				RuntimeKind: "native_sdk",
 				TargetType:  "task",
@@ -108,8 +107,8 @@ func TestResolveNativeSelectivePlannerPathEnabled(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "rollout env disabled blocks path",
-			env:  "false",
+			name: "explicit false rollout env disables path",
+			env:  strPtr("false"),
 			run: &model.AgentRun{
 				RuntimeKind: "native_sdk",
 				TargetType:  "epic",
@@ -123,7 +122,7 @@ func TestResolveNativeSelectivePlannerPathEnabled(t *testing.T) {
 		},
 		{
 			name: "custom agents stay off selective path",
-			env:  "true",
+			env:  strPtr("true"),
 			run: &model.AgentRun{
 				RuntimeKind: "native_sdk",
 				TargetType:  "epic",
@@ -137,7 +136,7 @@ func TestResolveNativeSelectivePlannerPathEnabled(t *testing.T) {
 		},
 		{
 			name: "wrong target type is rejected",
-			env:  "true",
+			env:  strPtr("true"),
 			run: &model.AgentRun{
 				RuntimeKind: "native_sdk",
 				TargetType:  "task",
@@ -151,7 +150,7 @@ func TestResolveNativeSelectivePlannerPathEnabled(t *testing.T) {
 		},
 		{
 			name: "non-native runtime is rejected",
-			env:  "true",
+			env:  strPtr("true"),
 			run: &model.AgentRun{
 				RuntimeKind: "codex",
 				TargetType:  "epic",
@@ -167,7 +166,9 @@ func TestResolveNativeSelectivePlannerPathEnabled(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("AGENT_NATIVE_SELECTIVE_PLANNER_ENABLED", tc.env)
+			if tc.env != nil {
+				t.Setenv("AGENT_NATIVE_SELECTIVE_PLANNER_ENABLED", *tc.env)
+			}
 			if got := resolveNativeSelectivePlannerPathEnabled(tc.run, tc.agent); got != tc.want {
 				t.Fatalf("resolveNativeSelectivePlannerPathEnabled() = %v, want %v", got, tc.want)
 			}

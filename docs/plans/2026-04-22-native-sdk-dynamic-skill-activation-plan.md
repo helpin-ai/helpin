@@ -853,7 +853,7 @@ Requirements:
 - use the native planner rollout-report tool to summarize native planner runs by provider/model/preset from persisted run and `native_turn_debug` artifacts
 - compare Anthropic vs OpenAI/OpenRouter planner reliability on long interactive runs
 - confirm Anthropic planner behavior does not regress under the selective native path
-- ensure `AGENT_NATIVE_SELECTIVE_PLANNER_ENABLED=true` is set in both API and Temporal worker environments before collecting validation runs
+- selective native planner activation is enabled by default for eligible native system planner runs; set `AGENT_NATIVE_SELECTIVE_PLANNER_ENABLED=false` in the Temporal worker environment only as a temporary rollback
 - treat groups with `selective_validation_status=not_validated_no_native_debug` as baseline native planner runs, not selective-path validation
 
 Rollout-report command:
