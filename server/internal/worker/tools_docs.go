@@ -39,6 +39,43 @@ func toolListDocuments(ctx *ExecutionContext, input json.RawMessage) (string, er
 	return toCompactJSONString(summaries), nil
 }
 
+func toolListCollections(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	if ctx.Services == nil || ctx.Services.ListCollections == nil {
+		return "", fmt.Errorf("docs access is not available for this agent")
+	}
+	var params struct {
+		SpaceID *string `json:"space_id"`
+	}
+	_ = json.Unmarshal(input, &params)
+
+	collections, err := ctx.Services.ListCollections(ctx.Context, ctx.WorkspaceID, params.SpaceID)
+	if err != nil {
+		return "", fmt.Errorf("list collections: %w", err)
+	}
+	if len(collections) == 0 {
+		return "No collections found.", nil
+	}
+
+	type collectionSummary struct {
+		ID                 string  `json:"id"`
+		Name               string  `json:"name"`
+		Slug               string  `json:"slug"`
+		SpaceID            string  `json:"space_id"`
+		ParentCollectionID *string `json:"parent_collection_id,omitempty"`
+	}
+	summaries := make([]collectionSummary, 0, len(collections))
+	for _, c := range collections {
+		summaries = append(summaries, collectionSummary{
+			ID:                 c.ID,
+			Name:               c.Name,
+			Slug:               c.Slug,
+			SpaceID:            c.SpaceID,
+			ParentCollectionID: c.ParentCollectionID,
+		})
+	}
+	return toCompactJSONString(summaries), nil
+}
+
 func toolReadDocument(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	if ctx.Services == nil || ctx.Services.GetDocument == nil {
 		return "", fmt.Errorf("docs access is not available for this agent")
