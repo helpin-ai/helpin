@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   closeTaskRoute,
   getActiveTaskRoute,
@@ -24,6 +24,7 @@ function installTestWindow(path = '/') {
 
 describe('taskRouteNavigation', () => {
   beforeEach(() => {
+    vi.useRealTimers();
     installTestWindow();
     useTaskPanelStore.setState({
       taskId: null,
@@ -31,6 +32,10 @@ describe('taskRouteNavigation', () => {
       lastClosedTaskId: null,
       lastClosedAt: 0,
     });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('matches canonical task routes', () => {
@@ -177,6 +182,33 @@ describe('taskRouteNavigation', () => {
       },
       'test-docs',
     );
+
+    openTaskRoute(
+      navigate,
+      {
+        pathname: '/w/test-docs/pm/sprints',
+      },
+      'test-docs',
+      'task-123',
+    );
+
+    expect(useTaskPanelStore.getState().taskId).toBeNull();
+  });
+
+  it('suppresses the same contextual task after a delayed URL-param lookup', () => {
+    vi.useFakeTimers();
+    const navigate = vi.fn();
+    useTaskPanelStore.setState({ taskId: 'task-123', requestKey: 1 });
+
+    closeTaskRoute(
+      navigate,
+      {
+        pathname: '/w/test-docs/pm/sprints',
+      },
+      'test-docs',
+    );
+
+    vi.advanceTimersByTime(500);
 
     openTaskRoute(
       navigate,
