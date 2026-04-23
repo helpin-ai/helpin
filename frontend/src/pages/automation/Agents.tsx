@@ -171,7 +171,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     default_invocation_mode: 'autonomous',
     supported_modes: ['autonomous', 'interactive'],
     provider: 'openai',
-    model: 'gpt-5.4',
+    model: 'gpt-5.5',
   },
   review_agent: {
     label: 'Review Agent',
@@ -180,7 +180,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     default_invocation_mode: 'autonomous',
     supported_modes: ['autonomous', 'interactive'],
     provider: 'openai',
-    model: 'gpt-5.4',
+    model: 'gpt-5.5',
   },
 };
 
@@ -286,7 +286,7 @@ const FALLBACK_PROVIDER_OPTIONS: AgentModelProviderOption[] = [
   {
     value: 'openai',
     label: 'OpenAI',
-    model_placeholder: 'gpt-5.4',
+    model_placeholder: 'gpt-5.5',
     supports_reasoning_effort: true,
     supported_reasoning_efforts: REASONING_EFFORT_OPTIONS,
     supports_service_tier: true,
@@ -295,7 +295,7 @@ const FALLBACK_PROVIDER_OPTIONS: AgentModelProviderOption[] = [
   {
     value: 'openrouter',
     label: 'OpenRouter',
-    model_placeholder: 'openai/gpt-5.4',
+    model_placeholder: 'openai/gpt-5.5',
     supports_reasoning_effort: true,
     supported_reasoning_efforts: REASONING_EFFORT_OPTIONS,
     supports_service_tier: false,

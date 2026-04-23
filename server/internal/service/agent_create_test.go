@@ -364,8 +364,8 @@ func TestSeedWorkspaceDefaults_CreatesMissingSystemAgentsWithoutPromotingCustomA
 	if forge.Provider == nil || *forge.Provider != model.AgentModelProviderOpenAI {
 		t.Fatalf("expected forge provider openai, got %+v", forge.Provider)
 	}
-	if forge.Model == nil || *forge.Model != "gpt-5.4" {
-		t.Fatalf("expected forge model gpt-5.4, got %+v", forge.Model)
+	if forge.Model == nil || *forge.Model != "gpt-5.5" {
+		t.Fatalf("expected forge model gpt-5.5, got %+v", forge.Model)
 	}
 	lens, err := agentRepo.GetSystemByPreset(context.Background(), "ws-test", model.AgentPresetReviewAgent)
 	if err != nil {
@@ -380,8 +380,8 @@ func TestSeedWorkspaceDefaults_CreatesMissingSystemAgentsWithoutPromotingCustomA
 	if lens.Provider == nil || *lens.Provider != model.AgentModelProviderOpenAI {
 		t.Fatalf("expected lens provider openai, got %+v", lens.Provider)
 	}
-	if lens.Model == nil || *lens.Model != "gpt-5.4" {
-		t.Fatalf("expected lens model gpt-5.4, got %+v", lens.Model)
+	if lens.Model == nil || *lens.Model != "gpt-5.5" {
+		t.Fatalf("expected lens model gpt-5.5, got %+v", lens.Model)
 	}
 
 	custom, err := agentRepo.GetByID(context.Background(), "ws-test", "agent-custom-code-builder")
@@ -843,7 +843,7 @@ func TestEnsureBuiltInAgent_PreservesWorkspacePresetVersionDuringReconcile(t *te
 		Label:                 "Workspace Checks",
 		RuntimeKind:           "codex",
 		Provider:              agentTestStringPtr(model.AgentModelProviderOpenAI),
-		Model:                 agentTestStringPtr("gpt-5.4"),
+		Model:                 agentTestStringPtr("gpt-5.5"),
 		SystemPrompt:          agentTestStringPtr("Run extra workspace review checks."),
 		InstructionSkills:     mustJSONStringSlice(nil),
 		AllowedTools:          mustJSONStringSlice([]string{"read_file", "run_command"}),
@@ -894,7 +894,7 @@ func TestEnsureBuiltInAgent_FallsBackWhenWorkspacePresetVersionDeleted(t *testin
 		Label:                 "Workspace Tuned",
 		RuntimeKind:           "codex",
 		Provider:              agentTestStringPtr(model.AgentModelProviderOpenAI),
-		Model:                 agentTestStringPtr("gpt-5.4"),
+		Model:                 agentTestStringPtr("gpt-5.5"),
 		SystemPrompt:          agentTestStringPtr("Workspace tuned code builder."),
 		InstructionSkills:     mustJSONStringSlice(nil),
 		AllowedTools:          mustJSONStringSlice([]string{"read_file", "run_command"}),
@@ -943,7 +943,7 @@ func TestUpdateWorkspacePresetVersion(t *testing.T) {
 		SourceVersionKey: agentTestStringPtr(defaultPresetVersionKeyForPresetKey(model.AgentPresetCodeBuilder)),
 		RuntimeKind:      agentTestStringPtr("codex"),
 		Provider:         agentTestStringPtr(model.AgentModelProviderOpenAI),
-		Model:            agentTestStringPtr("gpt-5.4"),
+		Model:            agentTestStringPtr("gpt-5.5"),
 		AllowedTools:     mustJSONStringSlice([]string{"read_file", "run_command"}),
 		SupportedModes:   mustJSONStringSlice([]string{model.InvocationModeAutonomous}),
 	}, "user-1")
@@ -1079,7 +1079,7 @@ func TestUpdateWorkspacePresetVersion_PropagatesToPinnedSystemAgent(t *testing.T
 		SourceVersionKey: agentTestStringPtr(defaultPresetVersionKeyForPresetKey(model.AgentPresetCodeBuilder)),
 		RuntimeKind:      agentTestStringPtr("codex"),
 		Provider:         agentTestStringPtr(model.AgentModelProviderOpenAI),
-		Model:            agentTestStringPtr("gpt-5.4"),
+		Model:            agentTestStringPtr("gpt-5.5"),
 		ExecutionConfig:  json.RawMessage(`{"reasoning_effort":"low","service_tier":"flex"}`),
 		SystemPrompt:     agentTestStringPtr("Workspace forge v1"),
 		AllowedTools:     mustJSONStringSlice([]string{"read_file", "run_command"}),
@@ -1156,7 +1156,7 @@ func TestUpdateWorkspacePresetVersion_RejectsInvalidRouting(t *testing.T) {
 		SourceVersionKey: agentTestStringPtr(defaultPresetVersionKeyForPresetKey(model.AgentPresetCodeBuilder)),
 		RuntimeKind:      agentTestStringPtr("codex"),
 		Provider:         agentTestStringPtr(model.AgentModelProviderOpenAI),
-		Model:            agentTestStringPtr("gpt-5.4"),
+		Model:            agentTestStringPtr("gpt-5.5"),
 		AllowedTools:     mustJSONStringSlice([]string{"read_file"}),
 		SupportedModes:   mustJSONStringSlice([]string{model.InvocationModeAutonomous}),
 	}, "user-1")
