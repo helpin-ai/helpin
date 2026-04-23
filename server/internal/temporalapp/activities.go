@@ -6304,30 +6304,11 @@ func (a *AgentRunActivities) buildEpicPlannerContextSections(ctx context.Context
 	sections = appendEpicTeamSections(sections, state.epic)
 	sections = appendOperatorNotesSection(sections, input.AdditionalContext)
 
-	linkedDocs, err := a.renderLinkedDocsContext(ctx, state.run.WorkspaceID, state.epic.ID, input.SpecDocumentID)
+	supportingSections, err := a.buildEpicPlannerSupportingContextSections(ctx, state, input)
 	if err != nil {
 		return nil, false, err
 	}
-	sections = appendTitledPlanningContextSection(sections, "Other docs linked to this epic:", linkedDocs)
-
-	linkedTickets, err := a.renderLinkedTicketsContext(ctx, state)
-	if err != nil {
-		return nil, false, err
-	}
-	sections = appendEpicLinkedTicketsSection(sections, linkedTickets)
-
-	sections, err = a.appendPlannerRepositoryContextSection(ctx, sections, state, "Current implementation context from the planning repository:", []string{
-		state.epic.Name,
-		tiptap.RichTextToMarkdown(derefString(state.epic.Description)),
-		linkedDocs,
-		linkedTickets,
-		input.AdditionalContext,
-	})
-	if err != nil {
-		return nil, false, err
-	}
-
-	sections = appendExistingEpicTasksSection(sections, state.epicTasks)
+	sections = append(sections, supportingSections...)
 
 	return sections, hasSpecContent, nil
 }
@@ -6449,6 +6430,40 @@ func (a *AgentRunActivities) buildTaskPlannerSupportingContextSections(ctx conte
 	}
 	sections = append(sections, taskCommentSections...)
 
+	return sections, nil
+}
+
+func (a *AgentRunActivities) buildEpicPlannerSupportingContextSections(ctx context.Context, state *resolvedRunState, input planningRunInput) ([]string, error) {
+	if state == nil || state.run == nil || state.epic == nil {
+		return nil, nil
+	}
+
+	var sections []string
+
+	linkedDocs, err := a.renderLinkedDocsContext(ctx, state.run.WorkspaceID, state.epic.ID, input.SpecDocumentID)
+	if err != nil {
+		return nil, err
+	}
+	sections = appendTitledPlanningContextSection(sections, "Other docs linked to this epic:", linkedDocs)
+
+	linkedTickets, err := a.renderLinkedTicketsContext(ctx, state)
+	if err != nil {
+		return nil, err
+	}
+	sections = appendEpicLinkedTicketsSection(sections, linkedTickets)
+
+	sections, err = a.appendPlannerRepositoryContextSection(ctx, sections, state, "Current implementation context from the planning repository:", []string{
+		state.epic.Name,
+		tiptap.RichTextToMarkdown(derefString(state.epic.Description)),
+		linkedDocs,
+		linkedTickets,
+		input.AdditionalContext,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	sections = appendExistingEpicTasksSection(sections, state.epicTasks)
 	return sections, nil
 }
 

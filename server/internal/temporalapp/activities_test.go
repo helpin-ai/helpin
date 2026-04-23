@@ -1045,6 +1045,66 @@ func TestBuildTaskPlannerSupportingContextSectionsKeepsTaskThenEpicDocOrder(t *t
 	}
 }
 
+func TestBuildEpicPlannerSupportingContextSectionsKeepsEpicDocsBeforeExistingTasks(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	if err := db.Exec(`CREATE TABLE support_conversations (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		linked_task_id TEXT,
+		updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create support conversations table: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_documents (id, workspace_id, space_id, title, status, visibility, created_by, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"doc-epic", "ws-1", "space-1", "Epic Notes", model.DocStatusDraft, model.SpaceVisibilityWorkspaceWide, "user-1",
+	).Error; err != nil {
+		t.Fatalf("insert docs document: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_contents (id, document_id, content_text, word_count) VALUES (?, ?, ?, ?)`,
+		"content-epic", "doc-epic", "Epic-scoped notes", 2,
+	).Error; err != nil {
+		t.Fatalf("insert docs content: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_links (id, workspace_id, document_id, linked_object_type, linked_object_id, link_context, created_by, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+		"link-epic", "ws-1", "doc-epic", model.LinkedObjectEpic, "epic-1", "reference", "user-1",
+	).Error; err != nil {
+		t.Fatalf("insert docs link: %v", err)
+	}
+
+	activity := &AgentRunActivities{
+		conversationRepo: repository.NewSupportConversationRepository(db),
+		docsDocRepo:      repository.NewDocsDocumentRepository(db),
+		docsContentRepo:  repository.NewDocsContentRepository(db),
+		docsLinkRepo:     repository.NewDocsLinkRepository(db),
+	}
+	sections, err := activity.buildEpicPlannerSupportingContextSections(context.Background(), &resolvedRunState{
+		run: &model.AgentRun{WorkspaceID: "ws-1"},
+		epic: &model.PMEpic{
+			ID:          "epic-1",
+			Name:        "Launch readiness",
+			WorkspaceID: "ws-1",
+		},
+		epicTasks: []model.PMTask{{ID: "task-1", Name: "Task A"}},
+	}, planningRunInput{})
+	if err != nil {
+		t.Fatalf("buildEpicPlannerSupportingContextSections returned error: %v", err)
+	}
+	if len(sections) != 3 {
+		t.Fatalf("expected epic-doc plus existing-task summary sections, got %#v", sections)
+	}
+	if !strings.Contains(sections[0], "Other docs linked to this epic:") || !strings.Contains(sections[0], "Epic Notes [doc-epic]") {
+		t.Fatalf("unexpected epic linked-doc section %#v", sections[0])
+	}
+	if !strings.Contains(sections[1], "IMPORTANT: 1 tasks already exist under this epic.") {
+		t.Fatalf("unexpected existing-task warning section %#v", sections[1])
+	}
+	if !strings.Contains(sections[2], "Tasks already linked to this epic:\n- Task A [task-1]") {
+		t.Fatalf("unexpected existing-task listing section %#v", sections[2])
+	}
+}
+
 func TestAppendEpicTeamSectionsHandlesAssignedAndMissingTeam(t *testing.T) {
 	teamID := "team-1"
 	withTeam := appendEpicTeamSections(nil, &model.PMEpic{TeamID: &teamID})
