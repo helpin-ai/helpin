@@ -113,166 +113,37 @@ The key idea to copy is:
 
 For `native_sdk`, do this through dynamic prompt assembly. Do not depend on runtime filesystem skill loading.
 
-## Verified Constraints From Current Code
+## Implementation Constraints And Outcomes
 
-### 1. Native planner instructions are still flattened into the system prompt today
+These constraints drove the implementation. They are no longer open design questions for the selective native planner path.
 
-`agent.ResolvedSkillInstructions` is compiled from all resolved skill definitions and injected wholesale by the native system prompt builder.
+### 1. Native planner instructions must not depend on full skill flattening
 
-Implication:
+Before this work, `agent.ResolvedSkillInstructions` compiled all resolved skills into the native system prompt. Selective native planner runs now suppress that full blob and use turn-local active phase guidance plus active skills instead.
 
-- phase-specific planner guidance is currently always-on instead of selectively activated
+### 2. Native turn-local instructions must survive continuation
 
-### 2. Native runs do rebuild prompt state on resumed executions
+OpenAI/OpenRouter continuation can omit the system prompt when using `previous_response_id`. The implementation uses execution-local turn instructions so phase guidance, active skill contracts, and repair guidance are available on both first and resumed turns without persisting synthetic user messages.
 
-The `native_sdk` executor rebuilds prompt input each execution call, including resumed interactive turns.
+### 3. Planner routing must reuse durable state, not create a second state engine
 
-Implication:
+Epic/task planner routing continues to derive from existing durable state such as approved spec presence, existing tasks, task plan documents, approved-preview application markers, and latest interactions. That routing now feeds native phase guidance and active skill selection.
 
-- dynamic per-turn skill activation is mechanically feasible
+### 4. Repair guidance must be normalized enough to reinject safely
 
-### 3. OpenAI/OpenRouter continuation can skip resending the system prompt
+Planner tool failures and completion-policy failures now produce normalized native repair-state artifacts or execution-local repair instructions. The next native turn receives targeted repair guidance rather than relying on turn-0 prompt memory.
 
-When provider continuation is active, the Responses-based native path clears the system prompt and sends only incremental history with `previous_response_id`.
+### 5. Backend-owned domain application remains authoritative
 
-Implication:
+Approved PRD, task-plan, and task-doc previews are still applied by backend commands and repositories. Skills guide the model, but canonical document writes, spec approval, task creation, idempotence, and replay protection remain backend-enforced.
 
-- active skill reinjection must not rely only on mutating the system prompt
-- the safest place for phase and repair instructions is a fresh turn-local execution supplement or equivalent injected user/context message
+### 6. Active skills must drive both prompt and policy
 
-Required implementation consequence:
+Selective activation now starts from resolved runtime refs, selects the active subset for the turn, and aggregates the active policy from that same subset. Completion gating, approval-preview validation, runtime interaction behavior, and review parsing use the active turn policy.
 
-- the native path needs one explicit continuation-safe transport for turn-local instructions
-- do not leave this as an abstract "supplement" concept
+### 7. Workspace/custom skills are preserved conservatively
 
-### 4. Planner phase routing already exists, but it is hardcoded
-
-Epic-planner and task-planner guidance already use current state such as approved spec presence, existing tasks, and planning document state.
-
-Implication:
-
-- do not build a second planner-state engine
-- extract and reuse the existing routing logic as the source of truth for active skill selection
-
-### 5. Tool failures are repair-oriented, but not yet normalized as reusable repair state
-
-Planner tools already emit good repair-oriented validation errors. However, persisted `ToolInvocation` records keep only:
-
-- `tool_name`
-- `input`
-- `output_summary`
-- `duration_ms`
-
-They do not persist a first-class error type or repair contract object.
-
-Implication:
-
-- targeted repair reinjection should not depend on brittle scraping alone
-- add explicit normalized repair metadata for the latest relevant planner tool failure
-
-### 6. The current planner path is already split across three layers
-
-Today the planner flow is not one monolithic thing. It is already divided into:
-
-- Temporal-side instruction and context assembly
-- generic preview and interaction tools in the worker runtime
-- backend-owned mutation and approval-application logic
-
-Implication:
-
-- we should not collapse all planner behavior into prompt text
-- we should reduce Temporal's planner-specific prompt ownership while preserving backend-owned domain transitions
-
-### 7. Generic runtime primitives already exist
-
-The worker runtime already has generic building blocks for:
-
-- preview publication
-- human input requests
-- approval requests
-- review checkpoints
-- interaction persistence
-- internal-command execution
-
-Implication:
-
-- the refactor should build on those generic primitives rather than inventing new planner-only ones
-
-### 8. Approved preview application is a product invariant, not just model guidance
-
-Applying an approved preview already performs real state transitions such as:
-
-- writing the approved PRD into the canonical epic spec document
-- approving the epic spec
-- creating tasks from an approved task plan
-- writing the approved task planning document to Docs
-- marking approved previews as applied so they are not replayed
-
-Implication:
-
-- those operations must remain backend-owned and idempotent
-- they should not move into prompt-only or skill-only enforcement
-
-### 9. Skill activation today affects runtime policy, not just prompt text
-
-The current runtime does not treat skills as prompt-only modules. Aggregated skill policy is already used for:
-
-- completion gating
-- approval-preview validation
-- runtime-bridge behavior
-- structured review parsing
-
-Implication:
-
-- native selective activation cannot change prompt text only
-- it must also produce an active per-turn policy subset used by runtime enforcement
-
-### 10. First-turn planner behavior currently comes from Temporal-injected initial instructions
-
-Today, large planner-specific guidance is injected into `initialInstructions`, which becomes part of the first user prompt.
-
-Implication:
-
-- a new native selective-injection path must explicitly replace or subsume that first-turn path
-- otherwise turn 1 and resumed turns will use different planner instruction models
-
-### 11. Persisted synthetic user messages would pollute transcript replay and summarization
-
-Current transcript replay and transcript summaries include all non-status messages, including synthetic user messages like policy-retry corrections.
-
-Implication:
-
-- active-turn supplements for native skill activation must not be persisted as normal run messages
-- they should be execution-local input assembled at runtime, not durable transcript content
-
-### 12. Activation must start from resolved runtime refs, not a hardcoded built-in planner map
-
-The runtime ref set currently comes from effective runtime refs, which can include:
-
-- preset-provided built-in skills for system agents
-- workspace skill refs for custom and future planner configurations
-
-Implication:
-
-- native active selection must begin from the resolved runtime ref set
-- phase filtering must select a subset of that resolved set, not replace it with a planner-only hardcoded list
-
-### 13. Workspace-added skills currently have no phase/applicability metadata
-
-Current skill definitions expose:
-
-- instructions
-- required tools
-- supported runtimes
-- interface
-- policy
-
-They do not expose phase/applicability metadata for selective activation.
-
-Implication:
-
-- the selector needs an explicit default rule for unknown/custom skills
-- otherwise implementation will either silently drop workspace skills or force ad hoc hardcoded behavior
+Because skill definitions do not yet expose applicability metadata, unknown workspace/custom skills remain phase-agnostic and active whenever their resolved ref is present. This prevents silent policy or instruction loss until explicit applicability metadata exists.
 
 ## Target Architecture
 
@@ -471,9 +342,9 @@ So the practical end state is:
 12. Start activation from resolved runtime refs and preserve workspace-added skills and policy contracts.
 13. Use an explicit conservative default for workspace/custom skills that lack applicability metadata.
 
-## New Native Concept
+## Implemented Native Concept
 
-Introduce an `ActiveInstructionSet` for `native_sdk`:
+The native selective planner path now uses the equivalent of an `ActiveInstructionSet` for each execution turn:
 
 - `base`
 - `phase_guidance`
@@ -481,7 +352,7 @@ Introduce an `ActiveInstructionSet` for `native_sdk`:
 - `repair_instructions`
 - `active_policy`
 
-Inputs:
+Inputs include:
 
 - target type
 - preset key
@@ -490,7 +361,7 @@ Inputs:
 - latest pending or approved interaction
 - latest normalized planner repair state
 
-Output:
+Outputs are:
 
 - a compact instruction fragment for the current turn
 - the active per-turn skill definitions and aggregated policy subset for that turn
@@ -509,34 +380,31 @@ Recommendation:
 Do not make correctness depend on updating the system prompt only, because provider continuation may omit it.
 Do not inject the supplement by creating a synthetic durable `user` message in run history.
 
-### Explicit transport decision for native turn-local instructions
+### Execution-local transport for native turn-local instructions
 
-For this plan, use a dedicated execution-local instruction transport in the native executor.
+Implemented with dedicated execution-local instruction fields on the native execution context.
 
-Implementation direction:
+Behavior:
 
-- add an explicit executor input for turn-local instructions
-- pass that input separately from the durable system prompt and durable run-message history
-- include it in the current execution request only
-- do not persist it as a run message
+- turn-local instructions are passed separately from the durable system prompt and durable run-message history
+- they are included in the current execution request only
+- they are not persisted as run messages
+- continuation mode still receives them even when the provider omits the system prompt
 
-Practical options:
-
-- preferred: add a dedicated executor parameter such as `TurnLocalInstructions` or equivalent on `ExecutionContext`
-- acceptable fallback: append one ephemeral synthetic message to the in-memory model input for that execution only, without persisting it through `runMessageRepo`
-
-Requirements for the chosen transport:
+Requirements preserved by this transport:
 
 - it must survive provider-continuation mode where the system prompt is omitted
 - it must not be written into durable transcript history
 - it must not be summarized as if it were human context
 - it must be available on both first-turn and resumed-turn native planner executions
 
-## Concrete Plan
+## Concrete Plan Status
 
-### 1. Introduce native-only instruction assembly
+The core rollout plan below is implemented for selective native planner runs unless a subsection explicitly says it remains future work.
 
-Add builders along these lines:
+### 1. Native-only instruction assembly
+
+Implemented through native phase-guidance, active skill selection, repair instruction, and execution-local transport helpers rather than one exported builder API. The effective pieces are:
 
 - `BuildNativeBasePrompt(...)`
 - `BuildNativePhaseGuidance(...)`
@@ -544,20 +412,20 @@ Add builders along these lines:
 - `BuildNativeRepairInstructions(...)`
 - `BuildNativeTurnInstructions(...)`
 
-This should live near:
+Implemented across:
 
 - `server/internal/worker/prompt.go`
 - planner instruction builders in `server/internal/temporalapp/activities.go`
 
-This new assembly layer should absorb most of the behavior currently expressed in large planner-specific instruction builders, while preserving the same durable facts and product semantics.
+This assembly layer has absorbed the selective native planner path. Legacy monolithic planner builders are now fallback-only and covered by tests proving selective native planners bypass them.
 It must feed both:
 
 - the turn-local instruction text sent to the model
 - the active per-turn `SkillPolicy` used by runtime enforcement
 
-### 2. Keep `ResolvedSkillInstructions` as compatibility fallback
+### 2. `ResolvedSkillInstructions` compatibility fallback
 
-Do not remove the existing compiled skill blob globally in phase 1.
+The compiled skill blob remains available for compatibility and non-selective paths.
 
 Instead:
 
@@ -698,21 +566,25 @@ Specifically:
 
 The goal is to remove large prompt blobs from Temporal over time, not to delete the planner state model.
 
-### 7. Add normalized repair-state capture
+### 7. Normalized repair-state capture
 
-When a planner tool fails validation, capture a normalized repair object for the next turn.
+Status: implemented for planner tool failures and completion-policy retries.
 
-Suggested fields:
+When a planner tool fails validation, the runtime captures a normalized repair object for the next turn.
+
+Current fields:
 
 - `tool_name`
-- `error_class`
+- `repair_class`
 - `repair_hint`
-- `canonical_contract_key`
-- `failed_input_excerpt`
+- `source`
+- `error_summary`
 
-Store this as lightweight run metadata or a small run artifact.
+Stored as a lightweight run artifact.
 
-### 8. Add failure-aware repair reinjection
+### 8. Failure-aware repair reinjection
+
+Status: implemented for known planner preview/tool validation failures and completion-policy failures.
 
 On the next turn after a planner tool failure, inject only the relevant repair contract.
 
@@ -727,7 +599,9 @@ Examples:
 - failed `request_approval`:
   - inject approval binding rule only
 
-### 9. Add transition-aware reinjection
+### 9. Transition-aware reinjection
+
+Status: implemented for the core epic/task planner transitions; additional edge-case coverage remains useful.
 
 When run state changes, switch the active guidance on the next turn.
 
@@ -740,9 +614,11 @@ Important transitions:
 
 This should work from persisted state and approved-preview application markers, not from prompt memory.
 
-### 10. Keep the base prompt lean
+### 10. Lean base prompt
 
-Refactor the native base prompt so it carries only durable instructions.
+Status: implemented for selective native planner runs; broader non-planner prompt cleanup is outside this rollout.
+
+The selective native planner path keeps planner-heavy details out of the base prompt and injects them through dynamic phase guidance, active skills, and repair instructions.
 
 Move planner-heavy details out of:
 

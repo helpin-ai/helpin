@@ -9300,6 +9300,153 @@ func TestEnforceCompletionInteractionPolicyAllowsAppliedTaskDocApprovalCompletio
 	}
 }
 
+func TestEnforceCompletionInteractionPolicyRejectsMismatchedAppliedPreviewCompletion(t *testing.T) {
+	testCases := []struct {
+		name       string
+		presetKey  string
+		targetType string
+		action     string
+	}{
+		{
+			name:       "task planner cannot complete from create tasks marker",
+			presetKey:  model.AgentPresetTaskPlanner,
+			targetType: "task",
+			action:     "create_tasks",
+		},
+		{
+			name:       "epic planner cannot complete from task doc marker",
+			presetKey:  model.AgentPresetEpicPlanner,
+			targetType: "epic",
+			action:     "persist_task_doc",
+		},
+		{
+			name:       "task doc marker requires task target",
+			presetKey:  model.AgentPresetTaskPlanner,
+			targetType: "epic",
+			action:     "persist_task_doc",
+		},
+		{
+			name:       "create tasks marker requires epic planner",
+			presetKey:  model.AgentPresetTaskPlanner,
+			targetType: "epic",
+			action:     "create_tasks",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			dbName := fmt.Sprintf("file:completion-policy-mismatched-applied-%d?mode=memory&cache=shared", time.Now().UnixNano())
+			db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+			if err != nil {
+				t.Fatalf("open sqlite db: %v", err)
+			}
+			for _, stmt := range []string{
+				`CREATE TABLE agent_run_artifacts (
+					id TEXT PRIMARY KEY,
+					workspace_id TEXT NOT NULL,
+					run_id TEXT NOT NULL,
+					artifact_type TEXT NOT NULL,
+					format TEXT NOT NULL,
+					storage_mode TEXT NOT NULL,
+					inline_content TEXT,
+					object_key TEXT,
+					metadata TEXT NOT NULL,
+					sequence_no INTEGER NOT NULL,
+					created_at DATETIME
+				)`,
+				`CREATE TABLE agent_run_interactions (
+					id TEXT PRIMARY KEY,
+					workspace_id TEXT NOT NULL,
+					run_id TEXT NOT NULL,
+					runtime_kind TEXT NOT NULL,
+					interaction_kind TEXT NOT NULL,
+					status TEXT NOT NULL,
+					request_schema_version TEXT NOT NULL,
+					response_schema_version TEXT,
+					request_id TEXT,
+					thread_id TEXT,
+					turn_id TEXT,
+					item_id TEXT,
+					approval_id TEXT,
+					assistant_message_sequence_no INTEGER,
+					title TEXT,
+					summary TEXT,
+					request_payload TEXT NOT NULL,
+					response_payload TEXT,
+					runtime_metadata TEXT NOT NULL,
+					resolved_by TEXT,
+					resolved_at DATETIME,
+					created_at DATETIME,
+					updated_at DATETIME
+				)`,
+			} {
+				if err := db.Exec(stmt).Error; err != nil {
+					t.Fatalf("create table: %v", err)
+				}
+			}
+
+			artifactRepo := repository.NewAgentRunArtifactRepository(db)
+			interactionRepo := repository.NewAgentRunInteractionRepository(db)
+			activities := &AgentRunActivities{
+				artifactRepo:    artifactRepo,
+				interactionRepo: interactionRepo,
+			}
+			run := &model.AgentRun{
+				ID:             "run-mismatched-applied",
+				WorkspaceID:    "ws-1",
+				RuntimeKind:    "native_sdk",
+				InvocationMode: model.InvocationModeInteractive,
+				TargetType:     tc.targetType,
+			}
+			state := &resolvedRunState{
+				run: run,
+				agent: &model.Agent{
+					ID:        "agent-planner",
+					PresetKey: tc.presetKey,
+				},
+				skillPolicy: workerpkg.SkillPolicy{
+					CompletionRequiresInteractionKinds: []string{
+						model.AgentRunInteractionKindApprovalRequest,
+						model.AgentRunInteractionKindRequestUserInput,
+					},
+				},
+			}
+
+			appliedJSON, err := json.Marshal(model.AppliedApprovedRunPreview{
+				ApprovedArtifactID: "approved-preview-1",
+				Phase:              "task_doc",
+				Action:             tc.action,
+				AppliedAt:          time.Now().UTC(),
+			})
+			if err != nil {
+				t.Fatalf("marshal applied marker: %v", err)
+			}
+			if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
+				ID:            "applied-preview-1",
+				WorkspaceID:   run.WorkspaceID,
+				RunID:         run.ID,
+				ArtifactType:  model.AgentRunArtifactTypeApprovedPreviewApplied,
+				Format:        "json",
+				StorageMode:   "inline",
+				InlineContent: strPtr(string(appliedJSON)),
+				Metadata:      json.RawMessage(`{}`),
+				SequenceNo:    1,
+				CreatedAt:     time.Now().UTC(),
+			}); err != nil {
+				t.Fatalf("create applied marker: %v", err)
+			}
+
+			err = activities.enforceCompletionInteractionPolicy(context.Background(), state, &model.AgentRunMessage{SequenceNo: 5})
+			if err == nil {
+				t.Fatal("expected mismatched applied marker not to satisfy completion policy")
+			}
+			if !strings.Contains(err.Error(), "run cannot complete because active skills require one of") {
+				t.Fatalf("expected completion policy error, got %v", err)
+			}
+		})
+	}
+}
+
 func TestExecuteRunActivityFailsAfterPolicyRetryStillMissesInteraction(t *testing.T) {
 	db := newPlannerApprovalTestDB(t)
 
