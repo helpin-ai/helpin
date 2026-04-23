@@ -429,6 +429,7 @@ func main() {
 		cfg.CodexChatGPTAccountID,
 	).SetTriggerExecutionRepository(triggerExecutionRepo).SetNotificationService(notificationService)
 	agentService.SetWorkflowService(pmWorkflowService)
+	docsDocumentService := service.NewDocsDocumentService(docsDocumentRepo, docsSpaceRepo, wsPublisher)
 	docsContentService := service.NewDocsContentService(docsContentRepo, docsDocumentRepo, nil)
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, storyRepo, docsDocumentRepo, nil)
 	contentCrawler := crawler.NewSmartCrawler(
@@ -471,6 +472,7 @@ func main() {
 		storyRepo,
 		taskLinkRepo,
 	)
+	commandService.SetDocsCreateDependencies(docsDocumentService, docsContentRepo)
 	activities = temporalapp.NewAgentRunActivities(
 		runRepo,
 		runMessageRepo,

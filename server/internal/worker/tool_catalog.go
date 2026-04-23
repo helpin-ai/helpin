@@ -64,6 +64,7 @@ var toolCategory = map[string]string{
 	"list_documents":   "Docs",
 	"read_document":    "Docs",
 	"search_documents": "Docs",
+	"create_document":  "Docs",
 }
 
 var categoryOrder = []string{
