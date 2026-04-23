@@ -7,6 +7,7 @@ import { agentService } from '@/lib/services/agentService';
 import { workspacesService } from '@/lib/services/workspacesService';
 import { unwrap } from '@/lib/queryUtils';
 import {
+  extractConversationListConversations,
   getConversationListUnreadCount,
   isSupportConversationListQueryKey,
   type SupportConversationListCache,

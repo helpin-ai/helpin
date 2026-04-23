@@ -1,8 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import {
-  ArrowDown01Icon,
   ArrowRight01Icon,
-  BookOpen01Icon,
   Search01Icon,
   Tick01Icon,
   PlusSignIcon,
@@ -11,8 +9,8 @@ import {
   PencilEdit02Icon,
 } from '@/lib/icons';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { MarkdownContent } from '@/components/pm/CodingSession/MarkdownContent';
 import {
   Dialog,
   DialogClose,
@@ -44,26 +42,11 @@ import { toast } from 'sonner';
 // Constants
 // ---------------------------------------------------------------------------
 
-const SOURCE_KIND_LABELS: Record<string, { label: string; className: string }> = {
-  built_in: {
-    label: 'Built-in',
-    className: 'bg-sky-500/10 text-sky-700 dark:text-sky-400 border-sky-500/20',
-  },
-  workspace: {
-    label: 'Workspace',
-    className: 'bg-teal-500/10 text-teal-700 dark:text-teal-400 border-teal-500/20',
-  },
-  imported: {
-    label: 'Imported',
-    className: 'bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-500/20',
-  },
-};
-
-const SOURCE_GROUP_ORDER = ['built_in', 'workspace', 'imported'] as const;
+const SOURCE_GROUP_ORDER = ['workspace', 'built_in', 'imported'] as const;
 
 const SOURCE_GROUP_LABELS: Record<string, string> = {
   built_in: 'Built-in',
-  workspace: 'Workspace',
+  workspace: 'Your skills',
   imported: 'Imported',
 };
 
@@ -71,107 +54,92 @@ const SOURCE_GROUP_LABELS: Record<string, string> = {
 // Sub-components
 // ---------------------------------------------------------------------------
 
-function SourceBadge({ sourceKind }: { sourceKind: string }) {
-  const style = SOURCE_KIND_LABELS[sourceKind];
-  if (!style) return null;
-  return (
-    <span className={cn('inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium', style.className)}>
-      {style.label}
-    </span>
-  );
+function presetLabel(preset: string): string {
+  return PRESET_STYLES[preset as AgentPresetKey]?.label ?? preset;
 }
 
-function PresetBadge({ preset }: { preset: AgentPresetKey }) {
-  const style = PRESET_STYLES[preset];
-  if (!style) return null;
-  return (
-    <span className={cn('inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium', style.className)}>
-      {style.label}
-    </span>
-  );
+function skillMetaLine(skill: SkillCatalogEntry): string | null {
+  const presets = skill.presets ?? [];
+  if (presets.length > 0) {
+    return presets.map(presetLabel).join(', ');
+  }
+  if (skill.source_kind === 'built_in') return 'All agents';
+  if (skill.source_kind === 'workspace') return 'Custom';
+  if (skill.source_kind === 'imported') return 'Imported';
+  return null;
 }
 
 function SkillCard({
   skill,
   onEdit,
   onDelete,
+  onPreview,
 }: {
   skill: SkillCatalogEntry;
   onEdit?: () => void;
   onDelete?: () => void;
+  onPreview?: () => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const isEditable = skill.source_kind === 'workspace';
   const isDeletable = skill.source_kind === 'workspace' || skill.source_kind === 'imported';
   const hasInstructions = !!skill.instructions?.trim();
+  const meta = skillMetaLine(skill);
+  const toolCount = (skill.required_tools ?? []).length;
 
   return (
-    <div className="rounded-lg border border-border/60 bg-card/80 transition-colors hover:border-border">
-      <div className="px-4 py-3">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0 flex-1 space-y-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <code className="text-sm font-semibold">{skill.key}</code>
-              <SourceBadge sourceKind={skill.source_kind} />
-              {(skill.presets ?? []).map((preset) => (
-                <PresetBadge key={preset} preset={preset as AgentPresetKey} />
-              ))}
-            </div>
-            {skill.title && skill.title !== skill.key && (
-              <p className="text-xs font-medium text-foreground/80">{skill.title}</p>
-            )}
-            <p className="text-xs text-muted-foreground leading-relaxed">{skill.description}</p>
-            {(skill.required_tools ?? []).length > 0 && (
-              <div className="flex flex-wrap items-center gap-1 pt-0.5">
-                <span className="text-[10px] text-muted-foreground/70">Requires:</span>
-                {skill.required_tools!.map((tool) => (
-                  <Badge key={tool} variant="outline" className="px-1.5 py-0 text-[10px] font-mono">
-                    {tool}
-                  </Badge>
-                ))}
-              </div>
-            )}
-            {hasInstructions && (
+    <div className="group relative flex flex-col rounded-lg border border-border/70 bg-card px-4 py-3.5 transition-all hover:border-border hover:shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <code className="truncate font-mono text-sm font-medium tracking-tight text-foreground">
+          {skill.key}
+        </code>
+        {(isEditable || isDeletable) && (
+          <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+            {isEditable && onEdit && (
               <button
                 type="button"
-                className="flex items-center gap-1 pt-1 text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
-                onClick={() => setExpanded(!expanded)}
+                className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                onClick={onEdit}
+                title="Edit skill"
               >
-                {expanded ? <ArrowDown01Icon className="h-3 w-3" /> : <ArrowRight01Icon className="h-3 w-3" />}
-                {expanded ? 'Hide instructions' : 'View instructions'}
+                <PencilEdit02Icon className="h-3.5 w-3.5" />
+              </button>
+            )}
+            {isDeletable && onDelete && (
+              <button
+                type="button"
+                className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                onClick={onDelete}
+                title="Delete skill"
+              >
+                <Delete01Icon className="h-3.5 w-3.5" />
               </button>
             )}
           </div>
-
-          {(isEditable || isDeletable) && (
-            <div className="flex shrink-0 items-center gap-1">
-              {isEditable && onEdit && (
-                <button
-                  type="button"
-                  className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                  onClick={onEdit}
-                  title="Edit skill"
-                >
-                  <PencilEdit02Icon className="h-3.5 w-3.5" />
-                </button>
-              )}
-              {isDeletable && onDelete && (
-                <button
-                  type="button"
-                  className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-                  onClick={onDelete}
-                  title="Delete skill"
-                >
-                  <Delete01Icon className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
-          )}
-        </div>
+        )}
       </div>
-      {expanded && hasInstructions && (
-        <div className="border-t border-border/50 px-4 py-3">
-          <pre className="whitespace-pre-wrap text-xs leading-relaxed text-foreground/80 font-mono">{skill.instructions}</pre>
+      <p className="mt-1.5 text-[13px] leading-snug text-muted-foreground line-clamp-2">
+        {skill.description}
+      </p>
+      {(meta || toolCount > 0 || hasInstructions) && (
+        <div className="mt-3 flex items-center gap-1.5 text-[11px] text-muted-foreground/80">
+          {meta && <span>{meta}</span>}
+          {meta && toolCount > 0 && <span aria-hidden>·</span>}
+          {toolCount > 0 && (
+            <span>{toolCount} {toolCount === 1 ? 'tool' : 'tools'}</span>
+          )}
+          {hasInstructions && onPreview && (
+            <>
+              {(meta || toolCount > 0) && <span aria-hidden>·</span>}
+              <button
+                type="button"
+                className="inline-flex items-center gap-0.5 rounded-sm text-muted-foreground/80 transition-colors hover:text-foreground"
+                onClick={onPreview}
+              >
+                <ArrowRight01Icon className="h-3 w-3" />
+                View instructions
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -181,47 +149,127 @@ function SkillCard({
 function SourceSection({
   sourceKind,
   skills,
-  defaultOpen,
   onEdit,
   onDelete,
+  onPreview,
 }: {
   sourceKind: string;
   skills: SkillCatalogEntry[];
-  defaultOpen: boolean;
   onEdit: (skill: SkillCatalogEntry) => void;
   onDelete: (skill: SkillCatalogEntry) => void;
+  onPreview: (skill: SkillCatalogEntry) => void;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
   const label = SOURCE_GROUP_LABELS[sourceKind] ?? sourceKind;
 
   return (
-    <div>
-      <button
-        type="button"
-        className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-accent/40"
-        onClick={() => setOpen(!open)}
-      >
-        {open ? <ArrowDown01Icon className="h-4 w-4 text-muted-foreground" /> : <ArrowRight01Icon className="h-4 w-4 text-muted-foreground" />}
-        <BookOpen01Icon className="h-4 w-4 text-muted-foreground" />
-        <span className="text-sm font-medium">{label}</span>
-        <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-[10px]">
-          {skills.length}
-        </Badge>
-      </button>
+    <section>
+      <div className="mb-2.5 flex items-baseline gap-1.5 px-0.5 text-[10.5px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">
+        <span>{label}</span>
+        <span aria-hidden className="text-muted-foreground/40">·</span>
+        <span className="tabular-nums text-muted-foreground/60">{skills.length}</span>
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {skills.map((skill) => (
+          <SkillCard
+            key={skill.id ?? skill.key}
+            skill={skill}
+            onEdit={() => onEdit(skill)}
+            onDelete={() => onDelete(skill)}
+            onPreview={() => onPreview(skill)}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
 
-      {open && (
-        <div className="mt-1 ml-8 space-y-2">
-          {skills.map((skill) => (
-            <SkillCard
-              key={skill.id ?? skill.key}
-              skill={skill}
-              onEdit={() => onEdit(skill)}
-              onDelete={() => onDelete(skill)}
-            />
-          ))}
+// ---------------------------------------------------------------------------
+// Preview Skill Dialog
+// ---------------------------------------------------------------------------
+
+function PreviewSkillDialog({
+  skill,
+  open,
+  onOpenChange,
+}: {
+  skill: SkillCatalogEntry | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  if (!skill) return null;
+  const instructions = skill.instructions?.trim() ?? '';
+  const meta = skillMetaLine(skill);
+  const tools = skill.required_tools ?? [];
+  const normalize = (v: string) => v.trim().toLowerCase().replace(/[\s_-]+/g, '_');
+  const hasTitle = !!skill.title && normalize(skill.title) !== normalize(skill.key);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-4xl gap-0 p-0 sm:max-w-4xl">
+        <DialogHeader className="space-y-2 border-b border-border/60 px-6 py-4">
+          {hasTitle ? (
+            <>
+              <div className="flex items-baseline gap-1.5 text-[11px] text-muted-foreground/80">
+                <code className="font-mono text-foreground/70">{skill.key}</code>
+                {meta && (
+                  <>
+                    <span aria-hidden>·</span>
+                    <span>{meta}</span>
+                  </>
+                )}
+              </div>
+              <DialogTitle className="text-base font-semibold">{skill.title}</DialogTitle>
+            </>
+          ) : (
+            <div className="flex flex-wrap items-baseline gap-2">
+              <DialogTitle asChild>
+                <code className="font-mono text-base font-semibold tracking-tight text-foreground">
+                  {skill.key}
+                </code>
+              </DialogTitle>
+              {meta && (
+                <span className="text-[11px] text-muted-foreground/80">
+                  <span aria-hidden className="mr-1.5">·</span>
+                  {meta}
+                </span>
+              )}
+            </div>
+          )}
+          <DialogDescription className="text-[13px] leading-snug">
+            {skill.description}
+          </DialogDescription>
+          {tools.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+              <span className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-muted-foreground/70">
+                Requires
+              </span>
+              {tools.map((tool) => (
+                <code
+                  key={tool}
+                  className="rounded border border-border/70 bg-muted/50 px-1.5 py-0.5 font-mono text-[11px] text-foreground/80"
+                >
+                  {tool}
+                </code>
+              ))}
+            </div>
+          )}
+        </DialogHeader>
+        <div className="max-h-[60vh] overflow-y-auto px-6 py-5">
+          {instructions ? (
+            <MarkdownContent content={instructions} />
+          ) : (
+            <p className="text-sm text-muted-foreground">No instructions defined.</p>
+          )}
         </div>
-      )}
-    </div>
+        <DialogFooter className="border-t border-border/60 px-6 py-3">
+          <DialogClose asChild>
+            <Button variant="outline" size="sm">
+              Close
+            </Button>
+          </DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -579,6 +627,7 @@ export function SkillCatalogContent({
   const [importOpen, setImportOpen] = useState(false);
   const [editSkill, setEditSkill] = useState<SkillCatalogEntry | null>(null);
   const [deleteSkill, setDeleteSkill] = useState<SkillCatalogEntry | null>(null);
+  const [previewSkill, setPreviewSkill] = useState<SkillCatalogEntry | null>(null);
   const { data: catalog, isLoading: loading } = useAutomationSkillCatalog(workspaceId);
 
   const filtered = useMemo(() => {
@@ -624,21 +673,32 @@ export function SkillCatalogContent({
   }
 
   return (
-    <div className={cn('space-y-4', !embedded && 'mx-auto max-w-3xl')}>
+    <div className={cn('space-y-5', !embedded && 'mx-auto max-w-5xl')}>
       {!embedded && (
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-semibold">Skill Catalog</h1>
-            <p className="text-xs text-muted-foreground">Behavioral instruction modules available to agents</p>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-1">
+            <h1 className="text-[22px] font-semibold tracking-tight">Skill Catalog</h1>
+            <p className="text-[13px] text-muted-foreground">
+              Reusable prompt fragments agents compose at runtime.
+            </p>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setImportOpen(true)}>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 text-xs"
+              onClick={() => setImportOpen(true)}
+            >
               <Upload01Icon className="h-3.5 w-3.5" />
               Import
             </Button>
-            <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setCreateOpen(true)}>
+            <Button
+              size="sm"
+              className="h-8 gap-1.5 text-xs"
+              onClick={() => setCreateOpen(true)}
+            >
               <PlusSignIcon className="h-3.5 w-3.5" />
-              Create
+              New skill
             </Button>
           </div>
         </div>
@@ -646,10 +706,10 @@ export function SkillCatalogContent({
 
       {/* Search */}
       <div className="relative">
-        <Search01Icon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Search01Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70" />
         <Input
           placeholder="Search skills..."
-          className="h-9 pl-9 text-sm"
+          className="h-10 border-border/70 bg-muted/30 pl-9 text-[13px] placeholder:text-muted-foreground/70 focus-visible:bg-background"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -657,19 +717,19 @@ export function SkillCatalogContent({
 
       {/* Skill list */}
       {grouped.length === 0 ? (
-        <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
+        <div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-border/60 text-sm text-muted-foreground">
           No skills match your search.
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-7">
           {grouped.map(({ sourceKind, skills }) => (
             <SourceSection
               key={sourceKind}
               sourceKind={sourceKind}
               skills={skills}
-              defaultOpen={grouped.length === 1}
               onEdit={(skill) => setEditSkill(skill)}
               onDelete={(skill) => setDeleteSkill(skill)}
+              onPreview={(skill) => setPreviewSkill(skill)}
             />
           ))}
         </div>
@@ -690,6 +750,11 @@ export function SkillCatalogContent({
         skill={deleteSkill}
         open={!!deleteSkill}
         onOpenChange={(v) => { if (!v) setDeleteSkill(null); }}
+      />
+      <PreviewSkillDialog
+        skill={previewSkill}
+        open={!!previewSkill}
+        onOpenChange={(v) => { if (!v) setPreviewSkill(null); }}
       />
     </div>
   );
