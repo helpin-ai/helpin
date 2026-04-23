@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { LinkSquare01Icon, GitBranchIcon, GitPullRequestIcon, Loading01Icon } from '@/lib/icons';
 import { Badge } from '@/components/ui/badge';
 import { CollapsibleSection } from '@/components/ui/collapsible-section';
 import { gitService } from '@/lib/services/gitService';
-import type { TaskGitLink } from '@/lib/pmTypes';
+import { queryKeys } from '@/lib/queryKeys';
 
 const PR_STATUS_COLORS: Record<string, string> = {
   open: 'bg-green-100 text-green-700 border-green-500/30 dark:bg-green-900/30 dark:text-green-400',
@@ -18,20 +18,15 @@ export function TaskGitPanel({
   taskId: string;
   workspaceId: string;
 }) {
-  const [links, setLinks] = useState<TaskGitLink[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: links = [], isPending } = useQuery({
+    queryKey: queryKeys.git.taskLinks(workspaceId, taskId),
+    queryFn: async () => {
+      const res = await gitService.getTaskGitLinks(workspaceId, taskId);
+      return res.data ?? [];
+    },
+  });
 
-  const loadLinks = useCallback(async () => {
-    const res = await gitService.getTaskGitLinks(workspaceId, taskId);
-    setLinks(res.data ?? []);
-    setLoading(false);
-  }, [workspaceId, taskId]);
-
-  useEffect(() => {
-    loadLinks();
-  }, [loadLinks]);
-
-  if (loading) {
+  if (isPending) {
     return (
       <div className="mt-6 flex items-center gap-2 py-4 text-xs text-muted-foreground">
         <Loading01Icon className="h-3.5 w-3.5 animate-spin" />

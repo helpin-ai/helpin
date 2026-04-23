@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { usePMBoardStore } from '@/stores/pmBoardStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore'
+import { queryKeys } from '@/lib/queryKeys'
 
 const captured = {
   onEvent: null as ((event: unknown) => void) | null,
@@ -218,6 +219,50 @@ describe('useRealtimeSync task ordering events', () => {
     )
     expect(refreshBoard).not.toHaveBeenCalled()
 
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  it('invalidates git links and dispatches a task child event for task_git_link updates', async () => {
+    const childUpdated = vi.fn()
+    window.addEventListener('task-child-updated', childUpdated)
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const invalidateQueries = vi.spyOn(client, 'invalidateQueries')
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <Harness workspaceId="ws-1" />
+        </QueryClientProvider>,
+      )
+    })
+
+    await act(async () => {
+      captured.onEvent?.({
+        action: 'updated',
+        entity: 'task_git_link',
+        entity_id: 'link-1',
+        workspace_id: 'ws-1',
+        actor_id: 'user-2',
+        parent_type: 'task',
+        parent_id: 'task-1',
+      })
+      await Promise.resolve()
+    })
+
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: queryKeys.git.taskLinks('ws-1', 'task-1') })
+    expect(childUpdated).toHaveBeenCalledTimes(1)
+    expect((childUpdated.mock.calls[0]?.[0] as CustomEvent).detail).toEqual(expect.objectContaining({
+      entity: 'task_git_link',
+      parent_type: 'task',
+      parent_id: 'task-1',
+    }))
+
+    window.removeEventListener('task-child-updated', childUpdated)
     act(() => root.unmount())
     container.remove()
   })
