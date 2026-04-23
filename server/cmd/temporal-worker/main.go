@@ -151,6 +151,7 @@ func main() {
 	automationRuleRepo := repository.NewAutomationRuleRepository(db)
 	handoffRepo := repository.NewAgentHandoffRepository(db)
 	docsSpaceRepo := repository.NewDocsSpaceRepository(db)
+	docsCollectionRepo := repository.NewDocsCollectionRepository(db)
 	docsDocumentRepo := repository.NewDocsDocumentRepository(db)
 	docsContentRepo := repository.NewDocsContentRepository(db)
 	docsVersionRepo := repository.NewDocsVersionRepository(db)
@@ -496,6 +497,7 @@ func main() {
 		settingsRepo,
 		workspaceRepo,
 		docsSpaceRepo,
+		docsCollectionRepo,
 		docsDocumentRepo,
 		docsContentRepo,
 		docsVersionRepo,

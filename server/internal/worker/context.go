@@ -185,6 +185,7 @@ type ServiceBridge struct {
 
 	// Docs
 	GetDocument          func(ctx context.Context, id string) (*model.DocsDocument, error)
+	ListCollections      func(ctx context.Context, workspaceID string, spaceID *string) ([]model.DocsCollection, error)
 	ListDocuments        func(ctx context.Context, workspaceID string, spaceID *string) ([]model.DocsDocument, error)
 	SearchDocuments      func(ctx context.Context, workspaceID, query string, limit int) ([]DocsSearchHit, error)
 	CreateDocument       func(ctx context.Context, workspaceID, userID string, req model.CreateDocsDocumentRequest, content json.RawMessage) (*model.DocsDocument, error)

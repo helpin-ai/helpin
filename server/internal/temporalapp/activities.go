@@ -99,6 +99,7 @@ type AgentRunActivities struct {
 	settingsRepo        *repository.SettingsRepository
 	workspaceRepo       *repository.WorkspaceRepository
 	docsSpaceRepo       *repository.DocsSpaceRepository
+	docsCollectionRepo  *repository.DocsCollectionRepository
 	docsDocRepo         *repository.DocsDocumentRepository
 	docsContentRepo     *repository.DocsContentRepository
 	docsVersionRepo     *repository.DocsVersionRepository
@@ -140,6 +141,7 @@ func NewAgentRunActivities(
 	settingsRepo *repository.SettingsRepository,
 	workspaceRepo *repository.WorkspaceRepository,
 	docsSpaceRepo *repository.DocsSpaceRepository,
+	docsCollectionRepo *repository.DocsCollectionRepository,
 	docsDocRepo *repository.DocsDocumentRepository,
 	docsContentRepo *repository.DocsContentRepository,
 	docsVersionRepo *repository.DocsVersionRepository,
@@ -179,6 +181,7 @@ func NewAgentRunActivities(
 		settingsRepo:        settingsRepo,
 		workspaceRepo:       workspaceRepo,
 		docsSpaceRepo:       docsSpaceRepo,
+		docsCollectionRepo:  docsCollectionRepo,
 		docsDocRepo:         docsDocRepo,
 		docsContentRepo:     docsContentRepo,
 		docsVersionRepo:     docsVersionRepo,
@@ -2150,6 +2153,12 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 		// Docs
 		GetDocument: func(ctx context.Context, id string) (*model.DocsDocument, error) {
 			return a.docsDocRepo.GetByID(ctx, id)
+		},
+		ListCollections: func(ctx context.Context, workspaceID string, spaceID *string) ([]model.DocsCollection, error) {
+			if spaceID != nil && strings.TrimSpace(*spaceID) != "" {
+				return a.docsCollectionRepo.ListByWorkspaceAndSpace(ctx, workspaceID, strings.TrimSpace(*spaceID))
+			}
+			return a.docsCollectionRepo.ListByWorkspace(ctx, workspaceID)
 		},
 		ListDocuments: func(ctx context.Context, workspaceID string, spaceID *string) ([]model.DocsDocument, error) {
 			published := "published"
