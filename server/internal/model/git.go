@@ -15,6 +15,7 @@ var branchTokenSanitizer = regexp.MustCompile(`[^a-z0-9]+`)
 type GitIntegration struct {
 	ID             string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID    string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	OrganizationID *string    `json:"organization_id" gorm:"type:uuid;index"`
 	Provider       string     `json:"provider" gorm:"not null"` // github, gitlab
 	DisplayName    string     `json:"display_name" gorm:"not null"`
 	CredentialMode string     `json:"credential_mode" gorm:"not null;default:'github_app'"`
@@ -25,6 +26,7 @@ type GitIntegration struct {
 	WebhookSecret  *string    `json:"-" gorm:"column:webhook_secret"`
 	AccessToken    string     `json:"-" gorm:"not null"` // deprecated PAT field retained for migration compatibility
 	Active         bool       `json:"active" gorm:"not null;default:true"`
+	DeletedAt      *time.Time `json:"deleted_at"`
 	LastSyncedAt   *time.Time `json:"last_synced_at"`
 	LastSyncError  *string    `json:"last_sync_error"`
 	CreatedAt      time.Time  `json:"created_at" gorm:"autoCreateTime"`
@@ -36,16 +38,18 @@ func (GitIntegration) TableName() string { return "git_integrations" }
 // GitRepository represents a workspace-accessible repository synced from a git provider install.
 type GitRepository struct {
 	ID            string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID   string          `json:"workspace_id" gorm:"type:uuid;not null;index;uniqueIndex:idx_git_repo_external,priority:1"`
-	IntegrationID string          `json:"integration_id" gorm:"type:uuid;not null;index;uniqueIndex:idx_git_repo_external,priority:2"`
+	WorkspaceID   string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	IntegrationID string          `json:"integration_id" gorm:"type:uuid;not null;index"`
 	Provider      string          `json:"provider" gorm:"not null"`
-	ExternalID    string          `json:"external_id" gorm:"not null;uniqueIndex:idx_git_repo_external,priority:3"`
+	ExternalID    string          `json:"external_id" gorm:"not null;index"`
 	FullName      string          `json:"full_name" gorm:"not null;index"`
 	DefaultBranch string          `json:"default_branch" gorm:"not null;default:'main'"`
 	Permissions   json.RawMessage `json:"permissions" gorm:"type:jsonb;not null;default:'{}'"`
 	Private       bool            `json:"private" gorm:"not null;default:true"`
 	Archived      bool            `json:"archived" gorm:"not null;default:false"`
 	Selected      bool            `json:"selected" gorm:"not null;default:true"`
+	Active        bool            `json:"active" gorm:"not null;default:true"`
+	DeletedAt     *time.Time      `json:"deleted_at"`
 	CreatedAt     time.Time       `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt     time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
 }
@@ -264,8 +268,55 @@ type UpdateGitRepositoryRequest struct {
 
 // GitHubInstallURLResponse returns the install URL for the configured GitHub App.
 type GitHubInstallURLResponse struct {
-	InstallURL string `json:"install_url"`
-	Action     string `json:"action"`
+	InstallURL    string  `json:"install_url"`
+	Action        string  `json:"action"`
+	IntegrationID *string `json:"integration_id,omitempty"`
+}
+
+type GitAvailableRepoClaim struct {
+	WorkspaceID   string `json:"workspace_id"`
+	WorkspaceName string `json:"workspace_name"`
+	RepoID        string `json:"repo_id"`
+}
+
+type GitAvailableRepo struct {
+	ExternalID    string                 `json:"external_id"`
+	FullName      string                 `json:"full_name"`
+	DefaultBranch string                 `json:"default_branch"`
+	Private       bool                   `json:"private"`
+	Archived      bool                   `json:"archived"`
+	Permissions   map[string]bool        `json:"permissions,omitempty"`
+	ClaimedBy     *GitAvailableRepoClaim `json:"claimed_by,omitempty"`
+}
+
+type WireGitRepositoriesRequest struct {
+	WorkspaceID string   `json:"workspace_id"`
+	RepoIDs     []string `json:"repo_ids"`
+}
+
+type WireGitRepositoriesConflict struct {
+	ExternalID            string `json:"external_id"`
+	ClaimedByWorkspaceID  string `json:"claimed_by_workspace_id"`
+	ClaimedByWorkspaceName string `json:"claimed_by_workspace_name,omitempty"`
+}
+
+type WireGitRepositoriesResponse struct {
+	Repositories []GitRepository `json:"repositories"`
+}
+
+type WireGitRepositoriesConflictResponse struct {
+	Conflicts []WireGitRepositoriesConflict `json:"conflicts"`
+}
+
+type GitIntegrationWorkspaceUsage struct {
+	WorkspaceID   string `json:"workspace_id"`
+	WorkspaceName string `json:"workspace_name"`
+	RepoCount     int64  `json:"repo_count"`
+}
+
+type GitIntegrationDetail struct {
+	Integration       GitIntegration                 `json:"integration"`
+	AffectedWorkspaces []GitIntegrationWorkspaceUsage `json:"affected_workspaces"`
 }
 
 // CreateBranchRequest is the payload for creating a branch from a task.
