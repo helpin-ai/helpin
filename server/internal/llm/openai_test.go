@@ -8,7 +8,7 @@ import (
 func TestOpenAIProviderBuildChatCompletionBodyUsesMaxCompletionTokensForGPT5(t *testing.T) {
 	provider := NewOpenAIProvider("test-key", "https://api.openai.com/v1", "")
 	body := provider.buildChatCompletionBody(
-		"gpt-5.4-mini",
+		"gpt-5.5",
 		[]map[string]any{{"role": "user", "content": "hello"}},
 		123,
 		0.1,

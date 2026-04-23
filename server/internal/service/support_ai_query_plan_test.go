@@ -75,7 +75,7 @@ func TestPlanSupportQueryResolvesFollowUpFromContext(t *testing.T) {
 	}
 	svc := &SupportAIService{
 		llmProvider:            provider,
-		queryExpansionModel:    "gpt-5.4-mini",
+		queryExpansionModel:    "gpt-5.5",
 		queryExpansionProvider: "openai",
 	}
 
@@ -135,7 +135,7 @@ func TestPlanSupportQueryUsesClarifyInsteadOfHandoffForAmbiguousFollowUp(t *test
 	}
 	svc := &SupportAIService{
 		llmProvider:            provider,
-		queryExpansionModel:    "gpt-5.4-mini",
+		queryExpansionModel:    "gpt-5.5",
 		queryExpansionProvider: "openai",
 	}
 
@@ -171,7 +171,7 @@ func TestPlanSupportQueryIncludesImageContentParts(t *testing.T) {
 	}
 	svc := &SupportAIService{
 		llmProvider:            provider,
-		queryExpansionModel:    "gpt-5.4-mini",
+		queryExpansionModel:    "gpt-5.5",
 		queryExpansionProvider: "openai",
 	}
 
