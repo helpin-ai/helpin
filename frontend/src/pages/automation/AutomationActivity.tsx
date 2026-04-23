@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -354,12 +355,14 @@ function SummaryCard({
   sublabel,
   tone = 'neutral',
   spark,
+  onClick,
 }: {
   label: string;
   value: string;
   sublabel: string;
   tone?: 'neutral' | 'good' | 'warn' | 'bad';
   spark?: number[];
+  onClick?: () => void;
 }) {
   const valueClass = tone === 'good'
     ? 'text-emerald-600 dark:text-emerald-400'
@@ -369,9 +372,33 @@ function SummaryCard({
         ? 'text-rose-600 dark:text-rose-400'
         : 'text-foreground';
 
+  const interactive = Boolean(onClick);
   return (
-    <Card className="border-border/70 bg-card/80">
-      <CardContent className="flex items-end justify-between gap-4 p-4">
+    <Card
+      className={cn(
+        'border-border/70 bg-card/80 transition',
+        interactive && 'cursor-pointer hover:border-border hover:bg-card focus-within:ring-2 focus-within:ring-ring/60',
+      )}
+    >
+      <CardContent
+        className={cn(
+          'flex items-end justify-between gap-4 p-4',
+          interactive && 'outline-none',
+        )}
+        role={interactive ? 'button' : undefined}
+        tabIndex={interactive ? 0 : undefined}
+        onClick={onClick}
+        onKeyDown={
+          interactive
+            ? (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  onClick?.();
+                }
+              }
+            : undefined
+        }
+      >
         <div className="space-y-1">
           <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
           <p className={cn('text-2xl font-semibold tracking-tight', valueClass)}>{value}</p>
@@ -630,6 +657,7 @@ export function AutomationActivityPage({
   useTitle('Automation Activity');
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const workspaceId = workspace?.id ?? '';
+  const navigate = useNavigate();
   const { data: access } = useWorkspaceAccess(workspaceId);
   const permissions = usePermissions(access);
 
@@ -862,6 +890,16 @@ export function AutomationActivityPage({
             sublabel={recent24hRuns.filter((run) => run.status === 'failed').length > 0 ? 'Investigate repeated failures and flaky flows' : 'No recent failures'}
             tone={recent24hRuns.some((run) => run.status === 'failed') ? 'bad' : 'neutral'}
             spark={recentFailureBars}
+            onClick={
+              recent24hRuns.some((run) => run.status === 'failed')
+                ? () =>
+                    onSearchChange({
+                      status: 'failed',
+                      fired_after: getTimeFilterDate('24h'),
+                      page: 1,
+                    })
+                : undefined
+            }
           />
           <SummaryCard
             label="Fleet Health"
@@ -893,6 +931,11 @@ export function AutomationActivityPage({
                   : healthSummary.healthyCount > 0
                     ? 'good'
                     : 'neutral'
+            }
+            onClick={
+              workspace?.slug
+                ? () => void navigate({ to: buildAutomationFlowsPath(workspace.slug) })
+                : undefined
             }
           />
         </div>
