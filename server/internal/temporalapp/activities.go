@@ -6284,16 +6284,56 @@ func (a *AgentRunActivities) buildTaskRunContextSections(ctx context.Context, st
 }
 
 func (a *AgentRunActivities) buildAgenticEpicPlannerInstructions(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
-	sections := buildLegacyEpicPlannerRuleSections(state.run)
-
-	contextSections, hasSpecContent, err := a.buildEpicPlannerContextSections(ctx, state, input)
+	sections, err := a.buildLegacyEpicPlannerSections(ctx, state, input)
 	if err != nil {
 		return "", err
 	}
-	sections = append(sections, contextSections...)
-	sections = append(sections, formatInteractivePlanningFacts(input, hasSpecContent, len(state.epicTasks)))
-	sections = append(sections, nativeEpicPlannerNextStepGuidance(input, hasSpecContent, len(state.epicTasks) > 0))
 	return strings.Join(sections, "\n\n"), nil
+}
+
+type epicPlannerAssemblyState struct {
+	contextSections []string
+	hasSpecContent  bool
+	hasTasks        bool
+	taskCount       int
+}
+
+func (a *AgentRunActivities) buildEpicPlannerAssemblyState(ctx context.Context, state *resolvedRunState, input planningRunInput) (epicPlannerAssemblyState, error) {
+	contextSections, hasSpecContent, err := a.buildEpicPlannerContextSections(ctx, state, input)
+	if err != nil {
+		return epicPlannerAssemblyState{}, err
+	}
+	taskCount := len(state.epicTasks)
+	return epicPlannerAssemblyState{
+		contextSections: contextSections,
+		hasSpecContent:  hasSpecContent,
+		hasTasks:        taskCount > 0,
+		taskCount:       taskCount,
+	}, nil
+}
+
+func (a *AgentRunActivities) buildLegacyEpicPlannerSections(ctx context.Context, state *resolvedRunState, input planningRunInput) ([]string, error) {
+	assemblyState, err := a.buildEpicPlannerAssemblyState(ctx, state, input)
+	if err != nil {
+		return nil, err
+	}
+	sections := buildLegacyEpicPlannerRuleSections(state.run)
+	sections = append(sections, assemblyState.contextSections...)
+	sections = append(sections, formatInteractivePlanningFacts(input, assemblyState.hasSpecContent, assemblyState.taskCount))
+	sections = append(sections, nativeEpicPlannerNextStepGuidance(input, assemblyState.hasSpecContent, assemblyState.hasTasks))
+	return sections, nil
+}
+
+func (a *AgentRunActivities) buildNativeEpicPlannerSections(ctx context.Context, state *resolvedRunState, input planningRunInput) ([]string, error) {
+	assemblyState, err := a.buildEpicPlannerAssemblyState(ctx, state, input)
+	if err != nil {
+		return nil, err
+	}
+	phaseName := nativeEpicPlannerPhaseName(input, assemblyState.hasSpecContent, assemblyState.hasTasks)
+	sections := buildNativeEpicPlannerRuleSections(state.run, input, phaseName, assemblyState.hasSpecContent, assemblyState.hasTasks)
+	sections = append(sections, formatInteractivePlanningFacts(input, assemblyState.hasSpecContent, assemblyState.taskCount))
+	sections = append(sections, assemblyState.contextSections...)
+	return sections, nil
 }
 
 func (a *AgentRunActivities) buildEpicPlannerContextSections(ctx context.Context, state *resolvedRunState, input planningRunInput) ([]string, bool, error) {
@@ -6719,15 +6759,10 @@ func nativeEpicPlannerPhaseName(input planningRunInput, hasSpecContent bool, has
 }
 
 func (a *AgentRunActivities) buildNativeEpicPlannerPhaseGuidance(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
-	contextSections, hasSpecContent, err := a.buildEpicPlannerContextSections(ctx, state, input)
+	sections, err := a.buildNativeEpicPlannerSections(ctx, state, input)
 	if err != nil {
 		return "", err
 	}
-	hasTasks := len(state.epicTasks) > 0
-	phaseName := nativeEpicPlannerPhaseName(input, hasSpecContent, hasTasks)
-	sections := buildNativeEpicPlannerRuleSections(state.run, input, phaseName, hasSpecContent, hasTasks)
-	sections = append(sections, formatInteractivePlanningFacts(input, hasSpecContent, len(state.epicTasks)))
-	sections = append(sections, contextSections...)
 	return strings.Join(sections, "\n\n"), nil
 }
 

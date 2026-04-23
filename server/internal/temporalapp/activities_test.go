@@ -484,6 +484,38 @@ func TestBuildLegacyEpicPlannerRuleSectionsPreservesCriticalRules(t *testing.T) 
 	}
 }
 
+func TestBuildLegacyEpicPlannerSectionsPreservesCompositionOrder(t *testing.T) {
+	activity := &AgentRunActivities{}
+	sections, err := activity.buildLegacyEpicPlannerSections(context.Background(), &resolvedRunState{
+		run: &model.AgentRun{
+			WorkspaceID:    "ws-1",
+			TargetType:     "epic",
+			InvocationMode: model.InvocationModeInteractive,
+		},
+		epic: &model.PMEpic{
+			ID:          "epic-1",
+			WorkspaceID: "ws-1",
+			Name:        "Launch readiness",
+		},
+	}, planningRunInput{
+		AdditionalContext: "Focus on launch blockers.",
+	})
+	if err != nil {
+		t.Fatalf("buildLegacyEpicPlannerSections returned error: %v", err)
+	}
+	instructions := strings.Join(sections, "\n\n")
+	runModeIndex := strings.Index(instructions, "Run mode: interactive")
+	operatorNotesIndex := strings.Index(instructions, "Operator notes:\nFocus on launch blockers.")
+	factsIndex := strings.Index(instructions, "Current durable planning facts:")
+	nextStepIndex := strings.Index(instructions, "Next-step guidance: no approved PRD exists yet.")
+	if runModeIndex == -1 || operatorNotesIndex == -1 || factsIndex == -1 || nextStepIndex == -1 {
+		t.Fatalf("expected composed legacy epic guidance sections to be present\n%s", instructions)
+	}
+	if !(runModeIndex < operatorNotesIndex && operatorNotesIndex < factsIndex && factsIndex < nextStepIndex) {
+		t.Fatalf("expected legacy epic composition order rules -> context -> facts -> next step\n%s", instructions)
+	}
+}
+
 func TestBuildInitialInstructionsUsesNativeSelectiveTaskPhaseGuidance(t *testing.T) {
 	activity := &AgentRunActivities{}
 	state := &resolvedRunState{
@@ -1285,6 +1317,37 @@ func TestBuildNativeEpicPlannerRuleSectionsPreservesCriticalRules(t *testing.T) 
 		if !strings.Contains(instructions, snippet) {
 			t.Fatalf("expected native epic rule sections to contain %q\n%s", snippet, instructions)
 		}
+	}
+}
+
+func TestBuildNativeEpicPlannerSectionsPreservesCompositionOrder(t *testing.T) {
+	activity := &AgentRunActivities{}
+	sections, err := activity.buildNativeEpicPlannerSections(context.Background(), &resolvedRunState{
+		run: &model.AgentRun{
+			WorkspaceID:    "ws-1",
+			TargetType:     "epic",
+			InvocationMode: model.InvocationModeInteractive,
+		},
+		epic: &model.PMEpic{
+			ID:          "epic-1",
+			WorkspaceID: "ws-1",
+			Name:        "Launch readiness",
+		},
+	}, planningRunInput{
+		AdditionalContext: "Focus on launch blockers.",
+	})
+	if err != nil {
+		t.Fatalf("buildNativeEpicPlannerSections returned error: %v", err)
+	}
+	instructions := strings.Join(sections, "\n\n")
+	phaseIndex := strings.Index(instructions, "Current planning phase: draft_spec")
+	factsIndex := strings.Index(instructions, "Current durable planning facts:")
+	operatorNotesIndex := strings.Index(instructions, "Operator notes:\nFocus on launch blockers.")
+	if phaseIndex == -1 || factsIndex == -1 || operatorNotesIndex == -1 {
+		t.Fatalf("expected composed native epic guidance sections to be present\n%s", instructions)
+	}
+	if !(phaseIndex < factsIndex && factsIndex < operatorNotesIndex) {
+		t.Fatalf("expected native epic composition order rules -> facts -> context\n%s", instructions)
 	}
 }
 
