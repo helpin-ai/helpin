@@ -1,33 +1,87 @@
+import type { InfiniteData } from '@tanstack/react-query';
 import type { ConversationListResponse, SupportConversation } from './pmTypes';
+
+export type SupportConversationListCache =
+  | ConversationListResponse
+  | InfiniteData<ConversationListResponse>;
 
 export function isSupportConversationListQueryKey(
   queryKey: readonly unknown[],
   workspaceId: string,
 ): boolean {
+  const qualifier = queryKey[3];
   return (
     Array.isArray(queryKey) &&
     queryKey[0] === 'support' &&
     queryKey[1] === workspaceId &&
     queryKey[2] === 'conversations' &&
-    (queryKey.length === 3 || typeof queryKey[3] !== 'string')
+    (queryKey.length === 3 || qualifier === 'infinite' || typeof qualifier !== 'string')
   );
+}
+
+function isConversationListResponse(value: unknown): value is ConversationListResponse {
+  return !!value && typeof value === 'object' && Array.isArray((value as ConversationListResponse).data);
+}
+
+function isInfiniteConversationListResponse(
+  value: SupportConversationListCache | undefined,
+): value is InfiniteData<ConversationListResponse> {
+  return !!value && typeof value === 'object' && Array.isArray((value as InfiniteData<ConversationListResponse>).pages);
 }
 
 export function extractConversationListConversations(
-  cached: ReadonlyArray<[readonly unknown[], ConversationListResponse | undefined]>,
-  workspaceId: string,
+  current: SupportConversationListCache | undefined,
 ): SupportConversation[] {
-  return cached.flatMap(([queryKey, data]) =>
-    isSupportConversationListQueryKey(queryKey, workspaceId) ? (data?.data ?? []) : [],
-  );
+  if (!current) {
+    return [];
+  }
+  if (isInfiniteConversationListResponse(current)) {
+    return current.pages.flatMap((page) => page.data ?? []);
+  }
+  if (isConversationListResponse(current)) {
+    return current.data;
+  }
+  return [];
+}
+
+export function getConversationListUnreadCount(
+  current: SupportConversationListCache | undefined,
+  conversationId: string,
+): number {
+  return extractConversationListConversations(current).find((conversation) => conversation.id === conversationId)?.unread_count ?? 0;
 }
 
 export function updateConversationListUnreadCount(
-  current: ConversationListResponse | undefined,
+  current: SupportConversationListCache | undefined,
   conversationId: string,
   unreadCount: number,
-): ConversationListResponse | undefined {
-  if (!current || !Array.isArray(current.data)) {
+): SupportConversationListCache | undefined {
+  if (!current) {
+    return current;
+  }
+
+  if (isInfiniteConversationListResponse(current)) {
+    let changed = false;
+    const nextPages = current.pages.map((page) => {
+      if (!Array.isArray(page.data)) {
+        return page;
+      }
+      const nextData = page.data.map((conversation) => {
+        if (conversation.id !== conversationId) {
+          return conversation;
+        }
+        if ((conversation.unread_count ?? 0) === unreadCount) {
+          return conversation;
+        }
+        changed = true;
+        return { ...conversation, unread_count: unreadCount };
+      });
+      return changed ? { ...page, data: nextData } : page;
+    });
+    return changed ? { ...current, pages: nextPages } : current;
+  }
+
+  if (!isConversationListResponse(current)) {
     return current;
   }
 
@@ -43,14 +97,7 @@ export function updateConversationListUnreadCount(
     return { ...conversation, unread_count: unreadCount };
   });
 
-  if (!changed) {
-    return current;
-  }
-
-  return {
-    ...current,
-    data: nextData,
-  };
+  return changed ? { ...current, data: nextData } : current;
 }
 
 export function updateConversationUnreadCount(
