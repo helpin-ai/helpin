@@ -6688,6 +6688,402 @@ func TestApplyApprovedInteractivePreviewCreatesTasksFromApprovedTaskPlan(t *test
 	}
 }
 
+func TestApplyApprovedInteractivePreviewAdvancesFromAppliedPRDToTaskCreation(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	if err := db.Exec(`CREATE TABLE agent_run_messages (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		run_id TEXT NOT NULL,
+		role TEXT NOT NULL,
+		content TEXT NOT NULL,
+		message_type TEXT NOT NULL,
+		content_blocks BLOB,
+		turn_segments BLOB,
+		tool_invocations BLOB,
+		token_usage BLOB,
+		sequence_no INTEGER NOT NULL,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create agent_run_messages table: %v", err)
+	}
+
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	epicRepo := repository.NewPMEpicRepository(db)
+	taskRepo := repository.NewPMTaskRepository(db)
+	runRepo := repository.NewAgentRunRepository(db)
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	agentRepo := repository.NewAgentRepository(db)
+
+	agent := &model.Agent{
+		ID:                    "agent-epic-progress",
+		WorkspaceID:           "ws-1",
+		Name:                  "Epic Planner",
+		Status:                "running",
+		RuntimeKind:           "native_sdk",
+		Skills:                model.AgentSkillRefs{},
+		TriggerMode:           "manual",
+		AllowedTools:          json.RawMessage(`[]`),
+		AllowedCommands:       json.RawMessage(`[]`),
+		AllowedTargets:        json.RawMessage(`[]`),
+		ApprovalMode:          "preset_default",
+		MaxConcurrentRuns:     1,
+		DefaultInvocationMode: model.InvocationModeInteractive,
+	}
+	if err := db.Create(agent).Error; err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+
+	run := &model.AgentRun{
+		ID:             "run-epic-progress",
+		WorkspaceID:    "ws-1",
+		AgentID:        agent.ID,
+		TargetType:     "epic",
+		TargetID:       "epic-1",
+		InvocationMode: model.InvocationModeInteractive,
+		Status:         model.AgentRunStatusRunning,
+		Input:          json.RawMessage(`{}`),
+		OutputSummary:  json.RawMessage(`{}`),
+	}
+	if err := db.Create(run).Error; err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	epic := &model.PMEpic{
+		ID:                    "epic-1",
+		WorkspaceID:           "ws-1",
+		Name:                  "Epic",
+		PlanningState:         model.EpicPlanningStateReadyForTaskPlanning,
+		SpecDocumentID:        strPtr("doc-1"),
+		SpecClarifications:    json.RawMessage(`[]`),
+		ApprovedSpecVersionID: strPtr("spec-v1"),
+	}
+	if err := db.Create(epic).Error; err != nil {
+		t.Fatalf("create epic: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO pm_workflow_states (id, state_type) VALUES (?, ?)`, "state-1", model.PMStateTypeUnstarted).Error; err != nil {
+		t.Fatalf("create workflow state: %v", err)
+	}
+
+	prdPreviewJSON, err := json.Marshal(model.ApprovedRunPreview{
+		Phase:    "prd",
+		PanelKey: "prd_draft",
+		Format:   workerpkg.PreviewFormatMarkdown,
+		Content:  mustJSON("# Approved PRD"),
+	})
+	if err != nil {
+		t.Fatalf("marshal approved prd preview: %v", err)
+	}
+	taskPlanPreviewJSON, err := json.Marshal(model.ApprovedRunPreview{
+		Phase:    "tasks",
+		PanelKey: "task_plan",
+		Format:   workerpkg.PreviewFormatJSON,
+		Content: mustJSON(map[string]any{
+			"summary": "Approved implementation plan",
+			"proposed_tasks": []map[string]any{
+				{
+					"ref":                 "task_1",
+					"name":                "Create shared helper",
+					"description":         "Add the helper",
+					"task_type":           "chore",
+					"acceptance_criteria": []string{"helper added"},
+					"dependency_refs":     []string{},
+				},
+				{
+					"ref":                 "task_2",
+					"name":                "Wire helper into capture",
+					"description":         "Use the helper",
+					"task_type":           "feature",
+					"acceptance_criteria": []string{"capture uses helper"},
+					"dependency_refs":     []string{"task_1"},
+				},
+			},
+		}),
+	})
+	if err != nil {
+		t.Fatalf("marshal approved task plan preview: %v", err)
+	}
+	appliedPRDJSON, err := json.Marshal(model.AppliedApprovedRunPreview{
+		ApprovedArtifactID: "approved-prd-1",
+		Phase:              "prd",
+		Action:             "persist_prd",
+		AppliedAt:          time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("marshal applied prd marker: %v", err)
+	}
+
+	for _, artifact := range []model.AgentRunArtifact{
+		{
+			ID:            "approved-prd-1",
+			WorkspaceID:   run.WorkspaceID,
+			RunID:         run.ID,
+			ArtifactType:  model.AgentRunArtifactTypeApprovedPreview,
+			Format:        "json",
+			StorageMode:   "inline",
+			InlineContent: strPtr(string(prdPreviewJSON)),
+			Metadata:      json.RawMessage(`{}`),
+			SequenceNo:    1,
+		},
+		{
+			ID:            "applied-prd-1",
+			WorkspaceID:   run.WorkspaceID,
+			RunID:         run.ID,
+			ArtifactType:  model.AgentRunArtifactTypeApprovedPreviewApplied,
+			Format:        "json",
+			StorageMode:   "inline",
+			InlineContent: strPtr(string(appliedPRDJSON)),
+			Metadata:      json.RawMessage(`{}`),
+			SequenceNo:    2,
+		},
+		{
+			ID:            "approved-tasks-1",
+			WorkspaceID:   run.WorkspaceID,
+			RunID:         run.ID,
+			ArtifactType:  model.AgentRunArtifactTypeApprovedPreview,
+			Format:        "json",
+			StorageMode:   "inline",
+			InlineContent: strPtr(string(taskPlanPreviewJSON)),
+			Metadata:      json.RawMessage(`{}`),
+			SequenceNo:    3,
+		},
+	} {
+		if err := db.Create(&artifact).Error; err != nil {
+			t.Fatalf("create artifact %s: %v", artifact.ID, err)
+		}
+	}
+
+	var executed []string
+	commandExecutor := stubInternalCommandExecutor{
+		executeFn: func(ctx context.Context, meta model.InternalCommandContext, name string, input json.RawMessage) (json.RawMessage, error) {
+			executed = append(executed, name)
+			if name != "pm.create_task_batch" {
+				return json.RawMessage(`{}`), nil
+			}
+			var payload struct {
+				Tasks []model.ProposedTask `json:"tasks"`
+			}
+			if err := json.Unmarshal(input, &payload); err != nil {
+				return nil, err
+			}
+			for _, planned := range payload.Tasks {
+				task := &model.PMTask{
+					ID:              "db-" + planned.Ref,
+					WorkspaceID:     run.WorkspaceID,
+					Name:            planned.Name,
+					TaskType:        planned.TaskType,
+					WorkflowID:      "wf-1",
+					WorkflowStateID: "state-1",
+					EpicID:          &epic.ID,
+					Priority:        model.PMTaskPriorityNone,
+					Severity:        model.PMTaskSeverityNone,
+				}
+				if err := taskRepo.Create(ctx, task); err != nil {
+					return nil, err
+				}
+			}
+			return mustJSON(workerpkg.CreateTaskBatchResult{
+				Tasks: []workerpkg.CreateTaskBatchTaskResult{
+					{Ref: "task_1", TaskID: "db-task_1", Name: "Create shared helper"},
+					{Ref: "task_2", TaskID: "db-task_2", Name: "Wire helper into capture"},
+				},
+			}), nil
+		},
+	}
+
+	activity := &AgentRunActivities{
+		runRepo:         runRepo,
+		runMessageRepo:  runMessageRepo,
+		artifactRepo:    artifactRepo,
+		epicRepo:        epicRepo,
+		taskRepo:        taskRepo,
+		agentRepo:       agentRepo,
+		commandExecutor: commandExecutor,
+	}
+	state := &resolvedRunState{
+		run:  run,
+		epic: epic,
+	}
+	input := planningRunInput{
+		Stage:          model.PlanningStagePlanTasks,
+		SpecDocumentID: "doc-1",
+		SpecVersionID:  "spec-v1",
+	}
+
+	action, err := activity.applyApprovedInteractivePreview(context.Background(), state, &input)
+	if err != nil {
+		t.Fatalf("applyApprovedInteractivePreview returned error: %v", err)
+	}
+	if action != "create_tasks" {
+		t.Fatalf("expected create_tasks action, got %q", action)
+	}
+	if len(executed) != 1 || executed[0] != "pm.create_task_batch" {
+		t.Fatalf("expected task creation command only, got %#v", executed)
+	}
+
+	updatedRun, err := runRepo.GetByIDAny(context.Background(), run.ID)
+	if err != nil {
+		t.Fatalf("get updated run: %v", err)
+	}
+	if updatedRun == nil || updatedRun.Status != model.AgentRunStatusCompleted {
+		t.Fatalf("expected run to complete after task creation, got %#v", updatedRun)
+	}
+	var summary planningRunSummary
+	if err := json.Unmarshal(updatedRun.OutputSummary, &summary); err != nil {
+		t.Fatalf("unmarshal output summary: %v", err)
+	}
+	if summary.Stage != model.PlanningStagePlanTasks || summary.SpecVersionID != "spec-v1" {
+		t.Fatalf("expected task-planning summary to retain approved spec progression, got %#v", summary)
+	}
+
+	var appliedMarkers []model.AgentRunArtifact
+	if err := db.Where("run_id = ? AND artifact_type = ?", run.ID, model.AgentRunArtifactTypeApprovedPreviewApplied).Find(&appliedMarkers).Error; err != nil {
+		t.Fatalf("list applied markers: %v", err)
+	}
+	if len(appliedMarkers) != 2 {
+		t.Fatalf("expected original PRD marker plus new task marker, got %d", len(appliedMarkers))
+	}
+	actionsByArtifactID := make(map[string]string, len(appliedMarkers))
+	for _, marker := range appliedMarkers {
+		if marker.InlineContent == nil {
+			t.Fatalf("expected applied marker payload, got %#v", marker)
+		}
+		var applied model.AppliedApprovedRunPreview
+		if err := json.Unmarshal([]byte(*marker.InlineContent), &applied); err != nil {
+			t.Fatalf("unmarshal applied marker: %v", err)
+		}
+		actionsByArtifactID[applied.ApprovedArtifactID] = applied.Action
+	}
+	if got := actionsByArtifactID["approved-prd-1"]; got != "persist_prd" {
+		t.Fatalf("expected prd marker to remain persist_prd, got %#v", actionsByArtifactID)
+	}
+	if got := actionsByArtifactID["approved-tasks-1"]; got != "create_tasks" {
+		t.Fatalf("expected task marker to be create_tasks, got %#v", actionsByArtifactID)
+	}
+}
+
+func TestApplyApprovedInteractivePreviewRejectsMismatchedPhaseTargetWithoutMarker(t *testing.T) {
+	testCases := []struct {
+		name    string
+		run     *model.AgentRun
+		state   *resolvedRunState
+		preview model.ApprovedRunPreview
+		wantErr string
+		input   planningRunInput
+	}{
+		{
+			name: "prd requires epic target",
+			run: &model.AgentRun{
+				ID:             "run-prd-task",
+				WorkspaceID:    "ws-1",
+				TargetType:     "task",
+				TargetID:       "task-1",
+				InvocationMode: model.InvocationModeInteractive,
+				Status:         model.AgentRunStatusRunning,
+			},
+			state: &resolvedRunState{
+				task: &model.PMTask{ID: "task-1", WorkspaceID: "ws-1", Name: "Task"},
+			},
+			preview: model.ApprovedRunPreview{
+				Phase:    "prd",
+				PanelKey: "prd_draft",
+				Format:   workerpkg.PreviewFormatMarkdown,
+				Content:  mustJSON("# Approved PRD"),
+			},
+			wantErr: "approved PRD preview requires an epic target",
+		},
+		{
+			name: "tasks requires epic target",
+			run: &model.AgentRun{
+				ID:             "run-tasks-task",
+				WorkspaceID:    "ws-1",
+				TargetType:     "task",
+				TargetID:       "task-1",
+				InvocationMode: model.InvocationModeInteractive,
+				Status:         model.AgentRunStatusRunning,
+			},
+			state: &resolvedRunState{
+				task: &model.PMTask{ID: "task-1", WorkspaceID: "ws-1", Name: "Task"},
+			},
+			preview: model.ApprovedRunPreview{
+				Phase:    "tasks",
+				PanelKey: "task_plan",
+				Format:   workerpkg.PreviewFormatJSON,
+				Content:  mustJSON(map[string]any{"summary": "Plan", "proposed_tasks": []any{}}),
+			},
+			wantErr: "approved task plan preview requires an epic target",
+		},
+		{
+			name: "task_doc requires task target",
+			run: &model.AgentRun{
+				ID:             "run-task-doc-epic",
+				WorkspaceID:    "ws-1",
+				TargetType:     "epic",
+				TargetID:       "epic-1",
+				InvocationMode: model.InvocationModeInteractive,
+				Status:         model.AgentRunStatusRunning,
+			},
+			state: &resolvedRunState{
+				epic: &model.PMEpic{ID: "epic-1", WorkspaceID: "ws-1", Name: "Epic"},
+			},
+			preview: model.ApprovedRunPreview{
+				Phase:    "task_doc",
+				PanelKey: "task_plan_doc",
+				Format:   workerpkg.PreviewFormatMarkdown,
+				Content:  mustJSON("# Approved task doc"),
+			},
+			wantErr: "approved task planning doc preview requires a task target",
+			input:   planningRunInput{Stage: model.PlanningStageTaskPlanDoc},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newPlannerApprovalTestDB(t)
+			artifactRepo := repository.NewAgentRunArtifactRepository(db)
+
+			state := &resolvedRunState{
+				run:  tc.run,
+				task: tc.state.task,
+				epic: tc.state.epic,
+			}
+
+			previewJSON, err := json.Marshal(tc.preview)
+			if err != nil {
+				t.Fatalf("marshal approved preview: %v", err)
+			}
+			if err := db.Create(&model.AgentRunArtifact{
+				ID:            "approved-preview-1",
+				WorkspaceID:   tc.run.WorkspaceID,
+				RunID:         tc.run.ID,
+				ArtifactType:  model.AgentRunArtifactTypeApprovedPreview,
+				Format:        "json",
+				StorageMode:   "inline",
+				InlineContent: strPtr(string(previewJSON)),
+				Metadata:      json.RawMessage(`{}`),
+				SequenceNo:    1,
+			}).Error; err != nil {
+				t.Fatalf("create approved preview artifact: %v", err)
+			}
+
+			activity := &AgentRunActivities{artifactRepo: artifactRepo}
+			input := tc.input
+			action, err := activity.applyApprovedInteractivePreview(context.Background(), state, &input)
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("expected error containing %q, got action=%q err=%v", tc.wantErr, action, err)
+			}
+
+			var appliedMarkers []model.AgentRunArtifact
+			if err := db.Where("run_id = ? AND artifact_type = ?", tc.run.ID, model.AgentRunArtifactTypeApprovedPreviewApplied).Find(&appliedMarkers).Error; err != nil {
+				t.Fatalf("list applied markers: %v", err)
+			}
+			if len(appliedMarkers) != 0 {
+				t.Fatalf("expected no applied marker on mismatched phase/target, got %#v", appliedMarkers)
+			}
+		})
+	}
+}
+
 func TestExecuteRunActivityPausesNativePlannerForReviewCheckpoint(t *testing.T) {
 	t.Setenv("AGENT_NATIVE_SELECTIVE_PLANNER_ENABLED", "true")
 
