@@ -92,11 +92,12 @@ Rules:
 - `content` must be the full markdown draft being reviewed
 - `title` is optional metadata only and must not be sent by itself
 
-### `request_review_checkpoint`
+### `request_approval`
 
 ```json
 {
   "phase": "prd|tasks|task_doc",
+  "preview_panel_key": "prd_draft|task_plan|task_plan_doc",
   "title": "...",
   "summary": "..."
 }
@@ -104,11 +105,17 @@ Rules:
 
 For planner approval phases:
 
-- `phase="prd"` requires a same-turn `publish_prd_draft`
-- `phase="tasks"` requires a same-turn `publish_task_plan`
-- `phase="task_doc"` requires a same-turn `publish_task_plan_doc`
+- `phase="prd"` requires a same-turn `publish_prd_draft` and `preview_panel_key="prd_draft"`
+- `phase="tasks"` requires a same-turn `publish_task_plan` and `preview_panel_key="task_plan"`
+- `phase="task_doc"` requires a same-turn `publish_task_plan_doc` and `preview_panel_key="task_plan_doc"`
 
-Do not emit `request_review_checkpoint` for a planner phase before publishing the corresponding preview in that same turn.
+Treat `request_approval` as the final action in that turn. Do not call additional tools or append approval-choice prose after it.
+
+Do not emit `request_approval` for a planner phase before publishing the corresponding preview in that same turn.
+
+### `request_review_checkpoint`
+
+`request_review_checkpoint` is for review-agent checkpoints, not epic/task planner approval. Planner approval flows should use `request_approval`.
 
 ## Canonical Task Plan Fields
 
@@ -130,17 +137,18 @@ Do not use:
 
 ## Compatibility Aliases
 
-These are accepted during decode for backward compatibility:
+These are accepted during decode for backward compatibility only. Do not use them in new prompt examples or skill instructions.
 
 - `title` -> `name`
 - `type` -> `task_type`
-- `story_type` -> `task_type`
 - `test_strategy` as either:
   - string
   - array of strings
 - preview `content` as:
   - structured JSON object
   - stringified JSON
+
+Legacy story-era aliases should not be added to prompts. If one still exists in decoder code, treat it as temporary compatibility, not as part of the model-facing contract.
 
 No other planner payload aliases should be added casually.
 
@@ -199,8 +207,8 @@ Planner validation errors returned to the model should be:
 
 Good:
 
-- `story 1 is missing name; use field "name" for the story title`
-- `story 2 references unknown dependency ref "story_7" in dependency_refs`
+- `task 1 is missing name; use field "name" for the task title`
+- `task 2 references unknown dependency ref "task_7" in dependency_refs`
 - `implementation_brief.test_strategy must be a string or array of strings`
 
 Avoid:
@@ -212,8 +220,9 @@ Avoid:
 
 Changes to planner contracts should update:
 
-- `server/internal/service/agent_system_prompts_test.go`
 - `server/internal/worker/tools_test.go`
+- `server/internal/worker/tools_interaction_test.go`
+- `server/internal/worker/tools_planner_test.go`
 - `server/internal/model/agent_planning_test.go`
 - `server/internal/temporalapp/activities_test.go`
 
