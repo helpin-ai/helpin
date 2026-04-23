@@ -985,6 +985,7 @@ func main() {
 	)
 	commandService.SetPMAutomationService(pmAutomationService)
 	commandService.SetGitService(gitService)
+	commandService.SetDocsCreateDependencies(docsDocumentService, docsContentRepo)
 	ruleEngine.SetCommandService(commandService)
 
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)

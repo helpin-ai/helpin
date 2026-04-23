@@ -8,8 +8,23 @@ import {
 } from '../taskRouteNavigation';
 import { useTaskPanelStore } from '@/stores/taskPanelStore';
 
+function installTestWindow(path = '/') {
+  let currentUrl = new URL(path, 'http://localhost:5173');
+  vi.stubGlobal('window', {
+    get location() {
+      return currentUrl;
+    },
+    history: {
+      replaceState: vi.fn((_state: unknown, _title: string, nextUrl: string) => {
+        currentUrl = new URL(nextUrl, currentUrl);
+      }),
+    },
+  });
+}
+
 describe('taskRouteNavigation', () => {
   beforeEach(() => {
+    installTestWindow();
     useTaskPanelStore.setState({
       taskId: null,
       requestKey: 0,
@@ -110,7 +125,29 @@ describe('taskRouteNavigation', () => {
     expect(navigate).toHaveBeenCalledWith({
       to: '/w/$slug/pm/tasks/',
       params: { slug: 'test-docs' },
+      search: expect.any(Function),
     });
+  });
+
+  it('removes stale task and run search params when closing a direct route entry', () => {
+    const navigate = vi.fn();
+    window.history.replaceState(
+      {},
+      '',
+      '/w/test-docs/pm/tasks/task-123?task=HLP-123&run=run-1&team=team-1',
+    );
+
+    closeTaskRoute(
+      navigate,
+      {
+        pathname: '/w/test-docs/pm/tasks/task-123',
+      },
+      'test-docs',
+    );
+
+    expect(window.location.search).toBe('?run=run-1&team=team-1');
+    const search = navigate.mock.calls[0]?.[0]?.search as (prev: Record<string, unknown>) => Record<string, unknown>;
+    expect(search({ task: 'HLP-123', run: 'run-1', team: 'team-1' })).toEqual({ team: 'team-1' });
   });
 
   it('closes contextual overlays through the overlay store', () => {

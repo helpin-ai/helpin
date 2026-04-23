@@ -3,7 +3,7 @@ import { useNavigate, useSearch } from '@tanstack/react-router';
 import { BotIcon, Loading01Icon, PlayIcon } from '@/lib/icons';
 import { toast } from 'sonner';
 
-import { AgentAvatar } from '@/components/agents/AgentAvatar';
+import { AgentAvatar, resolveAgentPersonaKey, type AgentPersonaKey } from '@/components/agents/AgentAvatar';
 import { NextAgentHint } from '@/components/agents/NextAgentHint';
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
 import { AgentRunTable } from '@/components/pm/AgentRunTable';
@@ -42,7 +42,11 @@ export function AgentRunPanel({ taskId, workspaceId, latestRunAgentId }: Props) 
     (runId: string | null) => {
       navigate({
         to: '.',
-        search: (prev) => ({ ...prev, run: runId ?? undefined }),
+        search: (prev) => {
+          const next = { ...(prev as Record<string, unknown>) };
+          delete next.task;
+          return { ...next, run: runId ?? undefined };
+        },
         replace: true,
       });
     },
@@ -155,6 +159,17 @@ export function AgentRunPanel({ taskId, workspaceId, latestRunAgentId }: Props) 
     if (!latestRun || latestRun.status !== 'completed') return null;
     return agents.find((agent) => agent.id === latestRun.agent_id) ?? null;
   }, [agents, latestRun]);
+  const completedPersonaKeys = useMemo(() => {
+    const agentById = new Map(agents.map((agent) => [agent.id, agent]));
+    const keys = new Set<AgentPersonaKey>();
+    for (const run of runs) {
+      const agent = agentById.get(run.agent_id);
+      if (agent) {
+        keys.add(resolveAgentPersonaKey({ agent }));
+      }
+    }
+    return keys;
+  }, [agents, runs]);
 
   if (taskRunnableAgents.length === 0 && runs.length === 0 && !loading && !loadingAgents) return null;
 
@@ -212,6 +227,7 @@ export function AgentRunPanel({ taskId, workspaceId, latestRunAgentId }: Props) 
           <NextAgentHint
             completedAgent={latestCompletedAgent}
             candidates={taskRunnableAgents}
+            completedPersonaKeys={completedPersonaKeys}
             onRun={(agent) => startRun(agent.id)}
           />
         ) : null}

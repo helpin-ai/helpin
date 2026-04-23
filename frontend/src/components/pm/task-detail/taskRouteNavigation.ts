@@ -1,4 +1,4 @@
-import { useTaskPanelStore } from '@/stores/taskPanelStore';
+import { clearTaskSearchParam, useTaskPanelStore } from '@/stores/taskPanelStore';
 
 export interface TaskOverlayLocationLike {
   pathname: string;
@@ -97,8 +97,15 @@ export function closeTaskRoute(
     return undefined;
   }
 
+  clearTaskSearchParam();
   return navigate({
     to: behavior.to,
     params: behavior.params,
+    search: (prev: Record<string, unknown>) => {
+      const next = { ...prev };
+      delete next.task;
+      delete next.run;
+      return next;
+    },
   });
 }

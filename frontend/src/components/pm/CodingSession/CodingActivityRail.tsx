@@ -11,6 +11,7 @@ import {
   CancelCircleIcon,
   Wrench01Icon,
   File01Icon,
+  Globe02Icon,
 } from '@/lib/icons';
 
 import { Badge } from '@/components/ui/badge';
@@ -287,6 +288,12 @@ function toolChrome(toolName: string, isFailed: boolean): { icon: ReactNode; ico
     };
   }
   const name = toolName.toLowerCase();
+  if (name.includes('web_search')) {
+    return {
+      icon: <Globe02Icon className="h-3.5 w-3.5" />,
+      iconClass: 'bg-sky-50 border-sky-200 dark:bg-sky-950/20 dark:border-sky-900/50 text-sky-600 dark:text-sky-400',
+    };
+  }
   if (name === 'run_command' || name === 'bash' || name.includes('shell') || name.includes('exec')) {
     return {
       icon: <TerminalIcon className="h-3.5 w-3.5" />,

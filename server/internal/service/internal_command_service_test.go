@@ -61,6 +61,27 @@ func TestCommandToolMetadataUsesExplicitAliasInsteadOfBoolean(t *testing.T) {
 	}
 }
 
+func TestCreateDocumentCommandMetadataAndTargets(t *testing.T) {
+	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+
+	def, ok := svc.Definition("docs.create_document")
+	if !ok {
+		t.Fatal("expected docs.create_document definition")
+	}
+	if !def.ExposesTool() {
+		t.Fatal("expected docs.create_document to expose a runtime tool")
+	}
+	if def.Tool == nil || def.Tool.Alias != "create_document" || def.Tool.Category != "Docs" {
+		t.Fatalf("unexpected tool metadata %#v", def.Tool)
+	}
+	for _, targetType := range def.SupportedTargetTypes {
+		if targetType == "workspace" {
+			return
+		}
+	}
+	t.Fatalf("expected docs.create_document to support workspace target, got %#v", def.SupportedTargetTypes)
+}
+
 func TestCreateFollowupTasksCommandIsBackendOnlyUntilToolExists(t *testing.T) {
 	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
 
