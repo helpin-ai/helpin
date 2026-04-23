@@ -4,12 +4,11 @@
 
 In progress.
 
-The core selective native planner path has been implemented. Remaining work is now primarily:
+The core selective native planner path and planned Phase 5 extraction cleanup have been implemented. Remaining work is now primarily:
 
-- reducing planner-specific Temporal instruction ownership further
-- broadening regression and invariant coverage
 - validating provider reliability and non-regression using live selective-path run data
-- cleaning up stale plan sections and documenting final rollout state
+- deciding whether to broaden selective activation beyond system epic/task planners in a future project
+- optionally moving backend mutation/application paths behind more reusable command services
 
 ### Implemented
 
@@ -42,6 +41,12 @@ The core selective native planner path has been implemented. Remaining work is n
 - legacy planner fallback instruction wrappers/rule sections extracted out of the main Temporal activities file
 - durable run fact assembly extracted out of the main Temporal activities file
 - initial instruction and first-turn conversation assembly extracted out of the main Temporal activities file
+- artifact-context loading, provider-continuation loading, transcript-summary checkpointing, and execution-history filtering extracted out of the main Temporal activities file
+- assistant message, tool-result message, provider checkpoint, human interaction, approval interaction, and coding-session persistence helpers extracted out of the main Temporal activities file
+- canonical planning document creation/linking, linked-doc context rendering, task-comment context rendering, and linked-ticket context rendering extracted out of the main Temporal activities file
+- planning repository/code-context discovery helpers extracted out of the main Temporal activities file
+- task delivery, git branch sync, push recording, pull-request creation/reuse, and task git-link persistence extracted out of the main Temporal activities file
+- runtime execution-context assembly, heartbeat callbacks, stream callbacks, git callbacks, and live Codex pause wiring extracted out of `ExecuteRunActivity`
 - explicit regression coverage for:
   - PRD request-changes keeping PRD-focused active skills
   - task-extension guidance after approved plans have already created tasks
@@ -58,7 +63,7 @@ The core selective native planner path has been implemented. Remaining work is n
 ### Partially implemented
 
 - base-prompt simplification is complete for selective native planner runs, but broader prompt cleanup is still incomplete
-- planner guidance and adjacent instruction extraction is well underway, with native phase-guidance, planner context assembly, approved-preview application, completion-policy enforcement/retry handling, native repair selection, native selective activation, observability persistence, legacy fallback scoping, flow-output instruction assembly, task-execution context assembly, durable run fact assembly, and first-turn instruction/conversation assembly split out; Temporal still owns backend orchestration paths
+- planner guidance and adjacent instruction extraction is now substantially complete for this rollout; Temporal still owns backend orchestration paths and authoritative mutation sequencing
 - transition coverage now covers the core apply/resume edges; additional provider/live-run monitoring remains useful
 - regression coverage is materially broader now, but final Phase 5 cleanup can still add targeted tests as new edge cases are found
 - live selective-path validation has enough small-sample evidence to close Phase 4
@@ -69,8 +74,9 @@ The core selective native planner path has been implemented. Remaining work is n
 
 ### Not yet complete
 
-- final Phase 5-style reduction of Temporal into thin planner orchestration wrappers
-- final cleanup of remaining stale phase text and acceptance tracking in this document
+- optional future expansion of the selective activation path beyond system epic/task planner runs
+- optional deeper service extraction for backend mutation/application paths if those commands need reuse outside Temporal
+- broader live provider reliability monitoring after rollout
 
 ### Latest Live Validation Snapshot
 
@@ -425,7 +431,7 @@ Implemented through native phase-guidance, active skill selection, repair instru
 Implemented across:
 
 - `server/internal/worker/prompt.go`
-- planner instruction builders in `server/internal/temporalapp/activities.go`
+- focused Temporal helpers under `server/internal/temporalapp/`, including native phase guidance, planner context assembly, repair instructions, selective activation, observability, first-turn conversation assembly, and runtime execution-context assembly
 
 This assembly layer has absorbed the selective native planner path. Legacy monolithic planner builders are now fallback-only and covered by tests proving selective native planners bypass them.
 It must feed both:
@@ -867,7 +873,7 @@ This phase is complete after the report has been run against live rollout data w
 
 ### Phase 5
 
-- reduce planner-specific Temporal instruction builders to thin orchestration wrappers
+- reduce planner-specific Temporal instruction builders to smaller orchestration wrappers
 - extract native phase-guidance composition out of the main Temporal activities file
 - extract planner context assembly out of the main Temporal activities file
 - extract approved-preview selection/recovery/application commands out of the main Temporal activities file
@@ -875,6 +881,12 @@ This phase is complete after the report has been run against live rollout data w
 - extract native repair classification/replay selection out of the main Temporal activities file
 - extract native selective-path gating, active-skill selection, and active-policy derivation out of the main Temporal activities file
 - extract native observability artifact persistence out of the main Temporal activities file
+- extract artifact/transcript context loading and replay helpers out of the main Temporal activities file
+- extract run-message, human-interaction, approval-interaction, and coding-session persistence helpers out of the main Temporal activities file
+- extract canonical planning document and linked-context helpers out of the main Temporal activities file
+- extract planning repository/code-context helpers out of the main Temporal activities file
+- extract task delivery, git branch sync, pull-request, and git-link helpers out of the main Temporal activities file
+- extract runtime execution-context assembly out of `ExecuteRunActivity`
 - scope legacy monolithic planner builders as fallback-only and keep them unreachable for selective native planner runs
 - keep Temporal responsible for:
   - loading durable state
@@ -882,6 +894,8 @@ This phase is complete after the report has been run against live rollout data w
   - running the generic runtime
   - applying approved artifacts through backend commands
 - avoid leaving a second planner brain inside Temporal
+
+Status: complete for this rollout. Temporal still owns run lifecycle and authoritative backend mutation sequencing, but the model-facing instruction assembly, replay/context loading, persistence helpers, approved-preview handling, repair/policy handling, delivery helpers, and execution-context assembly are now split into focused files instead of remaining inside one monolithic `activities.go`.
 
 ## File-Level Areas To Change
 
@@ -938,14 +952,14 @@ Do not:
 - Anthropic planner behavior does not regress. Status: validated enough for rollout continuation on sampled Scribe/Anthropic runs; keep monitoring after rollout.
 - Codex/OpenCode staged skill behavior remains unchanged. Status: implementation keeps the native selective path gated away from Codex/OpenCode; continue relying on regression coverage during final cleanup.
 
-## Recommendation
+## Completed Implementation Order
 
-Implement this in this order:
+This rollout was implemented in this order:
 
 1. native-only active skill selection
 2. planner-only rollout
 3. normalized repair-state capture and repair reinjection
 4. reduce full-skill injection from the native planner base prompt
-5. collapse Temporal planner builders into thin generic orchestration over active skills and backend application paths
+5. reduce Temporal planner builders into focused orchestration helpers over active skills and backend application paths
 
-That is the cleanest path from the current full-flattening model toward a Codex-like modular runtime without copying Codex filesystem mechanics.
+That was the cleanest path from the previous full-flattening model toward a Codex-like modular runtime without copying Codex filesystem mechanics.
