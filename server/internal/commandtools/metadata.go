@@ -167,6 +167,44 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		},
 	},
 	{
+		CommandName: "docs.create_document",
+		Alias:       "create_document",
+		Category:    "Docs",
+		Description: "Create a new document in Helpin Docs. Accepts optional markdown content that will be auto-converted to rich text.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"space_id": map[string]any{
+					"type":        "string",
+					"description": "The space ID where the document will be created",
+				},
+				"title": map[string]any{
+					"type":        "string",
+					"description": "The document title",
+				},
+				"collection_id": map[string]any{
+					"type":        "string",
+					"description": "Optional collection ID to place the document in",
+				},
+				"content": map[string]any{
+					"type":        "string",
+					"description": "Optional initial document content as a markdown string. Will be auto-converted to rich text.",
+				},
+				"icon": map[string]any{
+					"type":        "string",
+					"description": "Optional icon for the document",
+				},
+				"tags": map[string]any{
+					"type":        "array",
+					"items":       map[string]any{"type": "string"},
+					"description": "Optional tags for the document",
+				},
+			},
+			"required":             []string{"space_id", "title"},
+			"additionalProperties": false,
+		},
+	},
+	{
 		CommandName: "docs.link_document_to_object",
 		Alias:       "link_document_to_object",
 		Category:    "Docs",
