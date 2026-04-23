@@ -2578,8 +2578,23 @@ func TestApplyApprovedInteractivePreviewCreatesTasksFromApprovedTaskPlanAndCompl
 		commandExecutor: commandExecutor,
 	}
 	state := &resolvedRunState{
-		run:  run,
-		epic: epic,
+		run:                        run,
+		agent:                      &model.Agent{PresetKey: model.AgentPresetEpicPlanner, RuntimeKind: "native_sdk"},
+		epic:                       epic,
+		nativeSelectivePathEnabled: true,
+		runtimeSkillRefs: model.AgentSkillRefs{
+			{Key: "approval_protocol"},
+			{Key: "prd_authorship"},
+			{Key: "task_decomposition"},
+			{Key: "epic_state_routing"},
+		},
+		runtimeSkillDefinitions: []workerpkg.SkillDefinition{
+			{Key: "approval_protocol", SourceKind: "built_in", Instructions: "approval"},
+			{Key: "prd_authorship", SourceKind: "built_in", Instructions: "prd"},
+			{Key: "task_decomposition", SourceKind: "built_in", Instructions: "tasks"},
+			{Key: "epic_state_routing", SourceKind: "built_in", Instructions: "routing"},
+		},
+		skillPolicy: workerpkg.SkillPolicy{},
 	}
 	input := planningRunInput{Stage: model.PlanningStagePlanTasks}
 
@@ -6358,8 +6373,22 @@ func TestApplyApprovedInteractivePreviewReturnsPersistPRDAction(t *testing.T) {
 		commandExecutor: commandExecutor,
 	}
 	state := &resolvedRunState{
-		run:  run,
-		epic: epic,
+		run:                        run,
+		agent:                      &model.Agent{PresetKey: model.AgentPresetEpicPlanner, RuntimeKind: "native_sdk"},
+		epic:                       epic,
+		nativeSelectivePathEnabled: true,
+		runtimeSkillRefs: model.AgentSkillRefs{
+			{Key: "approval_protocol"},
+			{Key: "prd_authorship"},
+			{Key: "task_decomposition"},
+			{Key: "epic_state_routing"},
+		},
+		runtimeSkillDefinitions: []workerpkg.SkillDefinition{
+			{Key: "approval_protocol", SourceKind: "built_in", Instructions: "approval"},
+			{Key: "prd_authorship", SourceKind: "built_in", Instructions: "prd"},
+			{Key: "task_decomposition", SourceKind: "built_in", Instructions: "tasks"},
+			{Key: "epic_state_routing", SourceKind: "built_in", Instructions: "routing"},
+		},
 	}
 	input := planningRunInput{}
 
@@ -6395,6 +6424,11 @@ func TestApplyApprovedInteractivePreviewReturnsPersistPRDAction(t *testing.T) {
 
 	if updatedEpic.Epic.ApprovedSpecVersionID == nil || *updatedEpic.Epic.ApprovedSpecVersionID != "ver-1" {
 		t.Fatalf("expected approved spec version to be updated, got %#v", updatedEpic.Epic.ApprovedSpecVersionID)
+	}
+
+	selection := selectNativeActiveSkills(state, "")
+	if got := testAgentSkillRefKeys(selection.Refs); len(got) != 3 || got[0] != "approval_protocol" || got[1] != "task_decomposition" || got[2] != "epic_state_routing" {
+		t.Fatalf("expected approved PRD application to re-anchor next turn on task decomposition, got %#v", got)
 	}
 }
 
@@ -7036,6 +7070,24 @@ func TestApplyApprovedInteractivePreviewAdvancesFromAppliedPRDToTaskCreation(t *
 	}
 	if got := actionsByArtifactID["approved-tasks-1"]; got != "create_tasks" {
 		t.Fatalf("expected task marker to be create_tasks, got %#v", actionsByArtifactID)
+	}
+
+	action, err = activity.applyApprovedInteractivePreview(context.Background(), state, &input)
+	if err != nil {
+		t.Fatalf("second applyApprovedInteractivePreview returned error: %v", err)
+	}
+	if action != "" {
+		t.Fatalf("expected second task-plan apply to skip already-applied preview, got %q", action)
+	}
+	if len(executed) != 1 {
+		t.Fatalf("expected second task-plan apply not to recreate tasks, executed %#v", executed)
+	}
+	appliedMarkers = nil
+	if err := db.Where("run_id = ? AND artifact_type = ?", run.ID, model.AgentRunArtifactTypeApprovedPreviewApplied).Find(&appliedMarkers).Error; err != nil {
+		t.Fatalf("list applied markers after second apply: %v", err)
+	}
+	if len(appliedMarkers) != 2 {
+		t.Fatalf("expected no duplicate applied marker on second task-plan apply, got %d", len(appliedMarkers))
 	}
 }
 
@@ -9778,6 +9830,24 @@ func TestApplyApprovedInteractivePreviewPersistsTaskDocAndLinksIt(t *testing.T) 
 	}
 	if len(appliedMarkers) != 1 {
 		t.Fatalf("expected 1 approved preview applied marker, got %d", len(appliedMarkers))
+	}
+
+	action, err = activity.applyApprovedInteractivePreview(context.Background(), state, &input)
+	if err != nil {
+		t.Fatalf("second applyApprovedInteractivePreview returned error: %v", err)
+	}
+	if action != "" {
+		t.Fatalf("expected second task-doc apply to skip already-applied preview, got %q", action)
+	}
+	if len(executed) != 1 {
+		t.Fatalf("expected second task-doc apply not to persist again, executed %#v", executed)
+	}
+	appliedMarkers = nil
+	if err := db.Where("run_id = ? AND artifact_type = ?", run.ID, model.AgentRunArtifactTypeApprovedPreviewApplied).Find(&appliedMarkers).Error; err != nil {
+		t.Fatalf("list applied markers after second apply: %v", err)
+	}
+	if len(appliedMarkers) != 1 {
+		t.Fatalf("expected no duplicate applied marker on second task-doc apply, got %d", len(appliedMarkers))
 	}
 }
 

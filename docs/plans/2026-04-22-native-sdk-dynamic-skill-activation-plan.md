@@ -42,6 +42,10 @@ The core selective native planner path has been implemented. Remaining work is n
   - PRD request-changes keeping PRD-focused active skills
   - task-extension guidance after approved plans have already created tasks
   - task-planner and epic-planner spec-context helper behavior
+  - PRD approval re-anchoring to task decomposition after backend application
+  - duplicate task-plan application prevention on resume
+  - duplicate task-doc persistence prevention on resume
+  - mismatched applied-preview marker rejection in completion gating
   - review/support preset bundles excluding planner skills
 - preservation of existing Codex/OpenCode staged-skill behavior
 
@@ -49,8 +53,8 @@ The core selective native planner path has been implemented. Remaining work is n
 
 - base-prompt simplification is complete for selective native planner runs, but broader prompt cleanup is still incomplete
 - planner guidance extraction is well underway, with native phase-guidance, planner context assembly, approved-preview application, completion-policy enforcement/retry handling, native repair selection, native selective activation, observability persistence, and legacy fallback scoping split out; Temporal still owns backend orchestration paths
-- transition coverage is improved, but not yet exhaustive across every apply/resume edge
-- regression coverage is materially broader now, but final Phase 5 cleanup can still add more invariant-protection coverage
+- transition coverage now covers the core apply/resume edges; additional provider/live-run monitoring remains useful
+- regression coverage is materially broader now, but final Phase 5 cleanup can still add targeted tests as new edge cases are found
 - live selective-path validation has enough small-sample evidence to close Phase 4
 - sampled eligible runs emitted `native_turn_debug` artifacts
 - Atlas/OpenRouter epic-planner validation completed successfully on a small sample
