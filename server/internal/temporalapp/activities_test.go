@@ -314,6 +314,19 @@ func TestSelectNativeActiveSkillsTransitionsEpicFromPRDToTaskPlanning(t *testing
 			t.Fatalf("unexpected active refs after approval %#v", got)
 		}
 	})
+
+	t.Run("request changes keeps prd-focused skills active", func(t *testing.T) {
+		state := baseState
+		state.epic = &model.PMEpic{
+			PlanningState:  model.EpicPlanningStateAwaitingSpecApproval,
+			SpecDocumentID: strPtr("doc-1"),
+		}
+
+		selection := selectNativeActiveSkills(&state, "")
+		if got := testAgentSkillRefKeys(selection.Refs); len(got) != 4 || got[0] != "approval_protocol" || got[1] != "prd_authorship" || got[2] != "epic_state_routing" || got[3] != "general_agent_behavior" {
+			t.Fatalf("unexpected active refs after request changes %#v", got)
+		}
+	})
 }
 
 func TestSplitNativePhaseGuidanceMovesLegacyInstructionsOffInitialPrompt(t *testing.T) {
@@ -605,6 +618,148 @@ func TestBuildTaskPlannerContextSectionsIncludesApprovedEpicSpecSnapshot(t *test
 	}
 }
 
+func TestBuildTaskPlannerSpecContextSectionsPrefersApprovedVersion(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	if err := db.Exec(`INSERT INTO docs_versions (id, document_id, content_text, version_type, created_by, created_at)
+		VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`, "ver-1", "doc-1", "Approved epic spec body", "manual", "user-1").Error; err != nil {
+		t.Fatalf("insert docs version: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_documents (id, workspace_id, space_id, title, status, visibility, created_by, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"doc-1", "ws-1", "space-1", "Epic PRD", model.DocStatusDraft, model.SpaceVisibilityWorkspaceWide, "user-1",
+	).Error; err != nil {
+		t.Fatalf("insert docs document: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_contents (id, document_id, content_text, word_count) VALUES (?, ?, ?, ?)`,
+		"content-1", "doc-1", "Draft epic spec body", 4,
+	).Error; err != nil {
+		t.Fatalf("insert docs content: %v", err)
+	}
+
+	activity := &AgentRunActivities{
+		docsVersionRepo: repository.NewDocsVersionRepository(db),
+		docsDocRepo:     repository.NewDocsDocumentRepository(db),
+		docsContentRepo: repository.NewDocsContentRepository(db),
+	}
+	sections, err := activity.buildTaskPlannerSpecContextSections(context.Background(), planningRunInput{
+		SpecVersionID:  "ver-1",
+		SpecDocumentID: "doc-1",
+	})
+	if err != nil {
+		t.Fatalf("buildTaskPlannerSpecContextSections returned error: %v", err)
+	}
+	instructions := strings.Join(sections, "\n\n")
+	if !strings.Contains(instructions, "Approved epic PRD version ID: ver-1") || !strings.Contains(instructions, "Approved epic PRD snapshot:\nApproved epic spec body") {
+		t.Fatalf("expected approved spec content in helper output\n%s", instructions)
+	}
+	if strings.Contains(instructions, "Parent epic PRD document ID: doc-1") {
+		t.Fatalf("expected approved version to suppress draft content\n%s", instructions)
+	}
+}
+
+func TestBuildTaskPlannerSpecContextSectionsFallsBackToDraft(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	if err := db.Exec(`INSERT INTO docs_documents (id, workspace_id, space_id, title, status, visibility, created_by, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"doc-1", "ws-1", "space-1", "Epic PRD", model.DocStatusDraft, model.SpaceVisibilityWorkspaceWide, "user-1",
+	).Error; err != nil {
+		t.Fatalf("insert docs document: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_contents (id, document_id, content_text, word_count) VALUES (?, ?, ?, ?)`,
+		"content-1", "doc-1", "Draft epic spec body", 4,
+	).Error; err != nil {
+		t.Fatalf("insert docs content: %v", err)
+	}
+
+	activity := &AgentRunActivities{
+		docsDocRepo:     repository.NewDocsDocumentRepository(db),
+		docsContentRepo: repository.NewDocsContentRepository(db),
+	}
+	sections, err := activity.buildTaskPlannerSpecContextSections(context.Background(), planningRunInput{
+		SpecDocumentID: "doc-1",
+	})
+	if err != nil {
+		t.Fatalf("buildTaskPlannerSpecContextSections returned error: %v", err)
+	}
+	instructions := strings.Join(sections, "\n\n")
+	for _, snippet := range []string{
+		"Parent epic PRD document ID: doc-1",
+		"Current epic PRD draft:\nDraft epic spec body",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected draft spec content in helper output %q\n%s", snippet, instructions)
+		}
+	}
+}
+
+func TestBuildEpicPlannerSpecContextSectionsResumesFromDraft(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	if err := db.Exec(`INSERT INTO docs_contents (id, document_id, content_text, word_count) VALUES (?, ?, ?, ?)`,
+		"content-1", "doc-1", "Draft epic PRD body", 4,
+	).Error; err != nil {
+		t.Fatalf("insert docs content: %v", err)
+	}
+
+	activity := &AgentRunActivities{
+		docsContentRepo: repository.NewDocsContentRepository(db),
+	}
+	sections, hasSpecContent, err := activity.buildEpicPlannerSpecContextSections(context.Background(), planningRunInput{
+		SpecDocumentID: "doc-1",
+	})
+	if err != nil {
+		t.Fatalf("buildEpicPlannerSpecContextSections returned error: %v", err)
+	}
+	if !hasSpecContent {
+		t.Fatal("expected draft spec content to be flagged as present")
+	}
+	instructions := strings.Join(sections, "\n\n")
+	for _, snippet := range []string{
+		"IMPORTANT: A PRD draft already exists in the spec document but was never formally approved.",
+		"Existing canonical spec document ID: doc-1",
+		"Current spec draft:\nDraft epic PRD body",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected draft resume content %q\n%s", snippet, instructions)
+		}
+	}
+}
+
+func TestBuildEpicPlannerSpecContextSectionsLocksApprovedSpec(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	if err := db.Exec(`INSERT INTO docs_versions (id, document_id, content_text, version_type, created_by, created_at)
+		VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+		"ver-1", "doc-1", "Approved epic PRD body", "manual", "user-1",
+	).Error; err != nil {
+		t.Fatalf("insert docs version: %v", err)
+	}
+
+	activity := &AgentRunActivities{
+		docsVersionRepo: repository.NewDocsVersionRepository(db),
+	}
+	sections, hasSpecContent, err := activity.buildEpicPlannerSpecContextSections(context.Background(), planningRunInput{
+		SpecVersionID: "ver-1",
+	})
+	if err != nil {
+		t.Fatalf("buildEpicPlannerSpecContextSections returned error: %v", err)
+	}
+	if hasSpecContent {
+		t.Fatal("did not expect approved spec path to mark draft spec content as present")
+	}
+	instructions := strings.Join(sections, "\n\n")
+	for _, snippet := range []string{
+		"Approved spec version ID: ver-1",
+		"IMPORTANT: A previously approved spec already exists. The PRD is LOCKED.",
+		"Do not replay the PRD through mutation tools.",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected approved lock content %q\n%s", snippet, instructions)
+		}
+	}
+	if strings.Contains(instructions, "Current spec draft:") {
+		t.Fatalf("did not expect draft spec content on approved path\n%s", instructions)
+	}
+}
+
 func TestAppendOperatorNotesSectionTrimsAndSkipsBlank(t *testing.T) {
 	sections := appendOperatorNotesSection(nil, "   ")
 	if len(sections) != 0 {
@@ -749,6 +904,54 @@ func TestBuildTaskRunDocumentContextSectionsIncludesPlanDocumentThenLinkedDocs(t
 	}
 	if !strings.Contains(sections[1], "Other docs linked directly to this task:") || !strings.Contains(sections[1], "Error Payload Notes [doc-2]") {
 		t.Fatalf("unexpected linked-doc section %#v", sections[1])
+	}
+}
+
+func TestBuildTaskPlannerParentEpicLinkedDocSectionsWrapsLinkedDocs(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	if err := db.Exec(`INSERT INTO docs_documents (id, workspace_id, space_id, title, status, visibility, created_by, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"doc-2", "ws-1", "space-1", "Epic Notes", model.DocStatusDraft, model.SpaceVisibilityWorkspaceWide, "user-1",
+	).Error; err != nil {
+		t.Fatalf("insert linked document: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_contents (id, document_id, content_text, word_count) VALUES (?, ?, ?, ?)`,
+		"content-2", "doc-2", "Shared rollout notes", 3,
+	).Error; err != nil {
+		t.Fatalf("insert linked document content: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_links (id, workspace_id, document_id, linked_object_type, linked_object_id, link_context, created_by, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+		"link-2", "ws-1", "doc-2", model.LinkedObjectEpic, "epic-1", "reference", "user-1",
+	).Error; err != nil {
+		t.Fatalf("insert docs link: %v", err)
+	}
+
+	activity := &AgentRunActivities{
+		docsDocRepo:     repository.NewDocsDocumentRepository(db),
+		docsContentRepo: repository.NewDocsContentRepository(db),
+		docsLinkRepo:    repository.NewDocsLinkRepository(db),
+	}
+	sections, err := activity.buildTaskPlannerParentEpicLinkedDocSections(context.Background(), "ws-1", "epic-1", "")
+	if err != nil {
+		t.Fatalf("buildTaskPlannerParentEpicLinkedDocSections returned error: %v", err)
+	}
+	if len(sections) != 1 {
+		t.Fatalf("expected one parent-epic linked-doc section, got %#v", sections)
+	}
+	if !strings.Contains(sections[0], "Other docs linked to the parent epic:") || !strings.Contains(sections[0], "Epic Notes [doc-2]") {
+		t.Fatalf("unexpected parent-epic linked-doc section %#v", sections[0])
+	}
+}
+
+func TestBuildTaskPlannerCommentSectionsSkipsWhenNoCommentsAvailable(t *testing.T) {
+	activity := &AgentRunActivities{}
+	sections, err := activity.buildTaskPlannerCommentSections(context.Background(), "task-1")
+	if err != nil {
+		t.Fatalf("buildTaskPlannerCommentSections returned error: %v", err)
+	}
+	if len(sections) != 0 {
+		t.Fatalf("expected no task-comment sections, got %#v", sections)
 	}
 }
 
@@ -975,6 +1178,57 @@ func TestBuildInitialInstructionsUsesNativeSelectiveEpicPRDRevisionGuidanceForUn
 	}
 	if strings.Contains(instructions, "Current planning phase: plan_tasks") {
 		t.Fatalf("did not expect task-planning guidance for unapproved draft\n%s", instructions)
+	}
+}
+
+func TestBuildInitialInstructionsUsesNativeSelectiveEpicTaskExtensionGuidanceWhenTasksAlreadyExist(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	if err := db.Exec(`CREATE TABLE support_conversations (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		linked_task_id TEXT,
+		updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create support conversations table: %v", err)
+	}
+	activity := &AgentRunActivities{
+		conversationRepo: repository.NewSupportConversationRepository(db),
+		messageRepo:      repository.NewSupportMessageRepository(db),
+	}
+	state := &resolvedRunState{
+		nativeSelectivePathEnabled: true,
+		run: &model.AgentRun{
+			WorkspaceID:    "ws-1",
+			TargetType:     "epic",
+			InvocationMode: model.InvocationModeInteractive,
+		},
+		epic: &model.PMEpic{
+			ID:          "epic-1",
+			WorkspaceID: "ws-1",
+			Name:        "Launch readiness",
+		},
+		epicTasks: []model.PMTask{
+			{ID: "task-1", Name: "Task A"},
+		},
+	}
+
+	instructions, err := activity.buildInitialInstructions(context.Background(), state, planningRunInput{
+		SpecVersionID: "spec-v1",
+	})
+	if err != nil {
+		t.Fatalf("buildInitialInstructions returned error: %v", err)
+	}
+	for _, snippet := range []string{
+		"Current planning phase: task_extension",
+		"Do not redraft the PRD or recreate existing tasks",
+		"IMPORTANT: 1 tasks already exist under this epic.",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected task-extension native guidance to contain %q\n%s", snippet, instructions)
+		}
+	}
+	if strings.Contains(instructions, "Skip PRD drafting entirely and proceed directly to task planning") {
+		t.Fatalf("did not expect first-pass task-planning guidance once tasks already exist\n%s", instructions)
 	}
 }
 
@@ -5851,6 +6105,108 @@ func TestApplyApprovedInteractivePreviewReturnsPersistPRDAction(t *testing.T) {
 
 	if updatedEpic.Epic.ApprovedSpecVersionID == nil || *updatedEpic.Epic.ApprovedSpecVersionID != "ver-1" {
 		t.Fatalf("expected approved spec version to be updated, got %#v", updatedEpic.Epic.ApprovedSpecVersionID)
+	}
+}
+
+func TestApplyApprovedInteractivePreviewSkipsAlreadyAppliedPreview(t *testing.T) {
+	dbName := fmt.Sprintf("file:approved-preview-skip-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE agent_run_artifacts (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		run_id TEXT NOT NULL,
+		artifact_type TEXT NOT NULL,
+		format TEXT NOT NULL,
+		storage_mode TEXT NOT NULL,
+		inline_content TEXT,
+		object_key TEXT,
+		metadata TEXT NOT NULL,
+		sequence_no INTEGER NOT NULL,
+		created_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create agent_run_artifacts table: %v", err)
+	}
+
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	run := &model.AgentRun{
+		ID:             "run-skip-approved",
+		WorkspaceID:    "ws-1",
+		InvocationMode: model.InvocationModeInteractive,
+		Status:         model.AgentRunStatusRunning,
+	}
+	previewJSON, err := json.Marshal(model.ApprovedRunPreview{
+		Phase:    "tasks",
+		PanelKey: "task_plan",
+		Format:   workerpkg.PreviewFormatJSON,
+		Content:  json.RawMessage(`{"summary":"already applied","proposed_tasks":[]}`),
+	})
+	if err != nil {
+		t.Fatalf("marshal approved preview: %v", err)
+	}
+	appliedJSON, err := json.Marshal(model.AppliedApprovedRunPreview{
+		ApprovedArtifactID: "approved-tasks-1",
+		Phase:              "tasks",
+		Action:             "create_tasks",
+		AppliedAt:          time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("marshal applied marker: %v", err)
+	}
+	for _, artifact := range []model.AgentRunArtifact{
+		{
+			ID:            "approved-tasks-1",
+			WorkspaceID:   run.WorkspaceID,
+			RunID:         run.ID,
+			ArtifactType:  model.AgentRunArtifactTypeApprovedPreview,
+			Format:        "json",
+			StorageMode:   "inline",
+			InlineContent: strPtr(string(previewJSON)),
+			Metadata:      json.RawMessage(`{}`),
+			SequenceNo:    1,
+		},
+		{
+			ID:            "applied-tasks-1",
+			WorkspaceID:   run.WorkspaceID,
+			RunID:         run.ID,
+			ArtifactType:  model.AgentRunArtifactTypeApprovedPreviewApplied,
+			Format:        "json",
+			StorageMode:   "inline",
+			InlineContent: strPtr(string(appliedJSON)),
+			Metadata:      json.RawMessage(`{}`),
+			SequenceNo:    2,
+		},
+	} {
+		if err := db.Create(&artifact).Error; err != nil {
+			t.Fatalf("create artifact %s: %v", artifact.ID, err)
+		}
+	}
+
+	activity := &AgentRunActivities{
+		artifactRepo: artifactRepo,
+	}
+	state := &resolvedRunState{
+		run:  run,
+		epic: &model.PMEpic{ID: "epic-1", WorkspaceID: "ws-1"},
+	}
+	input := planningRunInput{Stage: model.PlanningStagePlanTasks}
+
+	action, err := activity.applyApprovedInteractivePreview(context.Background(), state, &input)
+	if err != nil {
+		t.Fatalf("applyApprovedInteractivePreview returned error: %v", err)
+	}
+	if action != "" {
+		t.Fatalf("expected already-applied preview to be skipped, got action %q", action)
+	}
+
+	var appliedMarkers []model.AgentRunArtifact
+	if err := db.Where("run_id = ? AND artifact_type = ?", run.ID, model.AgentRunArtifactTypeApprovedPreviewApplied).Find(&appliedMarkers).Error; err != nil {
+		t.Fatalf("list applied markers: %v", err)
+	}
+	if len(appliedMarkers) != 1 {
+		t.Fatalf("expected no new applied marker, got %d", len(appliedMarkers))
 	}
 }
 

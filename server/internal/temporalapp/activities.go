@@ -6199,19 +6199,11 @@ func (a *AgentRunActivities) buildTaskPlannerContextSections(ctx context.Context
 		sections = appendTaskPlannerParentEpicSummarySections(sections, state.epic)
 	}
 
-	if input.SpecVersionID != "" {
-		specSections, err := a.buildApprovedSpecVersionSections(ctx, input.SpecVersionID, "Approved epic PRD version ID", "Approved epic PRD snapshot", 16000)
-		if err != nil {
-			return nil, err
-		}
-		sections = append(sections, specSections...)
-	} else if input.SpecDocumentID != "" {
-		specSections, _, err := a.buildSpecDocumentDraftSections(ctx, input.SpecDocumentID, "Parent epic PRD document ID", "Current epic PRD draft", 12000)
-		if err != nil {
-			return nil, err
-		}
-		sections = append(sections, specSections...)
+	specSections, err := a.buildTaskPlannerSpecContextSections(ctx, input)
+	if err != nil {
+		return nil, err
 	}
+	sections = append(sections, specSections...)
 
 	taskLinkedDocSections, err := a.buildTaskLinkedDocsSections(ctx, state.run.WorkspaceID, state.task.ID, input.PlanDocumentID, "Other docs linked directly to this task:")
 	if err != nil {
@@ -6220,18 +6212,18 @@ func (a *AgentRunActivities) buildTaskPlannerContextSections(ctx context.Context
 	sections = append(sections, taskLinkedDocSections...)
 
 	if state.epic != nil {
-		epicLinkedDocs, err := a.renderLinkedDocsContext(ctx, state.run.WorkspaceID, state.epic.ID, input.SpecDocumentID)
+		parentEpicLinkedDocSections, err := a.buildTaskPlannerParentEpicLinkedDocSections(ctx, state.run.WorkspaceID, state.epic.ID, input.SpecDocumentID)
 		if err != nil {
 			return nil, err
 		}
-		sections = appendTitledPlanningContextSection(sections, "Other docs linked to the parent epic:", epicLinkedDocs)
+		sections = append(sections, parentEpicLinkedDocSections...)
 	}
 
-	commentsContext, err := a.renderTaskCommentsContext(ctx, state.task.ID)
+	taskCommentSections, err := a.buildTaskPlannerCommentSections(ctx, state.task.ID)
 	if err != nil {
 		return nil, err
 	}
-	sections = appendTitledPlanningContextSection(sections, "Task comments:", commentsContext)
+	sections = append(sections, taskCommentSections...)
 
 	sections, err = a.appendPlannerRepositoryContextSection(ctx, sections, state, "Current implementation context from the live repository:", []string{
 		state.task.Name,
@@ -6319,32 +6311,9 @@ func (a *AgentRunActivities) buildAgenticEpicPlannerInstructions(ctx context.Con
 }
 
 func (a *AgentRunActivities) buildEpicPlannerContextSections(ctx context.Context, state *resolvedRunState, input planningRunInput) ([]string, bool, error) {
-	var sections []string
-	var hasSpecContent bool
-	if input.SpecDocumentID != "" {
-		specSections, draftFound, err := a.buildSpecDocumentDraftSections(ctx, input.SpecDocumentID, "Existing canonical spec document ID", "Current spec draft", 12000)
-		if err != nil {
-			return nil, false, err
-		}
-		sections = append(sections, specSections...)
-
-		// Inject durable draft content when a spec doc exists but is not approved.
-		if input.SpecVersionID == "" && draftFound {
-			hasSpecContent = true
-			sections = append(sections[:1], append([]string{"IMPORTANT: A PRD draft already exists in the spec document but was never formally approved. Resume from the current draft instead of starting over. Present the draft, revise it if needed, and request PRD approval before any task planning."}, sections[1:]...)...)
-		} else if input.SpecVersionID == "" {
-			hasSpecContent = false
-		}
-	}
-	if input.SpecVersionID != "" {
-		sections = append(sections, fmt.Sprintf("Approved spec version ID: %s", input.SpecVersionID))
-		specSections, err := a.buildApprovedSpecVersionSections(ctx, input.SpecVersionID, "", "", 0)
-		if err != nil {
-			return nil, false, err
-		}
-		sections = append(sections, specSections...)
-		sections = append(sections, "IMPORTANT: A previously approved spec already exists. The PRD is LOCKED. Do not redraft, rewrite, or re-approve it. Use it as the read-only source of truth for task planning. If the human asks to revise the PRD, explain the spec is approved and suggest creating a follow-up epic instead, unless they insist.")
-		sections = append(sections, "If the current facts show the PRD is already approved, treat persistence as complete and continue from that state. Do not replay the PRD through mutation tools.")
+	sections, hasSpecContent, err := a.buildEpicPlannerSpecContextSections(ctx, input)
+	if err != nil {
+		return nil, false, err
 	}
 	sections = appendEpicTeamSections(sections, state.epic)
 	sections = appendOperatorNotesSection(sections, input.AdditionalContext)
@@ -6435,6 +6404,66 @@ func appendTaskPlannerParentEpicSummarySections(sections []string, epic *model.P
 		}
 	}
 	return sections
+}
+
+func (a *AgentRunActivities) buildTaskPlannerSpecContextSections(ctx context.Context, input planningRunInput) ([]string, error) {
+	if input.SpecVersionID != "" {
+		return a.buildApprovedSpecVersionSections(ctx, input.SpecVersionID, "Approved epic PRD version ID", "Approved epic PRD snapshot", 16000)
+	}
+	if input.SpecDocumentID != "" {
+		specSections, _, err := a.buildSpecDocumentDraftSections(ctx, input.SpecDocumentID, "Parent epic PRD document ID", "Current epic PRD draft", 12000)
+		if err != nil {
+			return nil, err
+		}
+		return specSections, nil
+	}
+	return nil, nil
+}
+
+func (a *AgentRunActivities) buildTaskPlannerParentEpicLinkedDocSections(ctx context.Context, workspaceID, epicID, excludeDocumentID string) ([]string, error) {
+	epicLinkedDocs, err := a.renderLinkedDocsContext(ctx, workspaceID, epicID, excludeDocumentID)
+	if err != nil {
+		return nil, err
+	}
+	return appendTitledPlanningContextSection(nil, "Other docs linked to the parent epic:", epicLinkedDocs), nil
+}
+
+func (a *AgentRunActivities) buildTaskPlannerCommentSections(ctx context.Context, taskID string) ([]string, error) {
+	commentsContext, err := a.renderTaskCommentsContext(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	return appendTitledPlanningContextSection(nil, "Task comments:", commentsContext), nil
+}
+
+func (a *AgentRunActivities) buildEpicPlannerSpecContextSections(ctx context.Context, input planningRunInput) ([]string, bool, error) {
+	var sections []string
+	var hasSpecContent bool
+	if input.SpecDocumentID != "" {
+		specSections, draftFound, err := a.buildSpecDocumentDraftSections(ctx, input.SpecDocumentID, "Existing canonical spec document ID", "Current spec draft", 12000)
+		if err != nil {
+			return nil, false, err
+		}
+		sections = append(sections, specSections...)
+
+		if input.SpecVersionID == "" && draftFound {
+			hasSpecContent = true
+			sections = append(sections[:1], append([]string{"IMPORTANT: A PRD draft already exists in the spec document but was never formally approved. Resume from the current draft instead of starting over. Present the draft, revise it if needed, and request PRD approval before any task planning."}, sections[1:]...)...)
+		} else if input.SpecVersionID == "" {
+			hasSpecContent = false
+		}
+	}
+	if input.SpecVersionID != "" {
+		sections = append(sections, fmt.Sprintf("Approved spec version ID: %s", input.SpecVersionID))
+		specSections, err := a.buildApprovedSpecVersionSections(ctx, input.SpecVersionID, "", "", 0)
+		if err != nil {
+			return nil, false, err
+		}
+		sections = append(sections, specSections...)
+		sections = append(sections, "IMPORTANT: A previously approved spec already exists. The PRD is LOCKED. Do not redraft, rewrite, or re-approve it. Use it as the read-only source of truth for task planning. If the human asks to revise the PRD, explain the spec is approved and suggest creating a follow-up epic instead, unless they insist.")
+		sections = append(sections, "If the current facts show the PRD is already approved, treat persistence as complete and continue from that state. Do not replay the PRD through mutation tools.")
+	}
+	return sections, hasSpecContent, nil
 }
 
 func appendTaskRunRepositoryBranchSections(sections []string, run *model.AgentRun) []string {

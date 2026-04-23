@@ -2,7 +2,52 @@
 
 ## Status
 
-Draft plan for improving `native_sdk` planner reliability by moving from full skill flattening toward dynamic per-turn instruction assembly.
+In progress.
+
+The core selective native planner path has been implemented. Remaining work is now primarily:
+
+- reducing planner-specific Temporal instruction ownership further
+- broadening regression and invariant coverage
+- validating provider reliability and non-regression
+- cleaning up stale plan sections and documenting final rollout state
+
+### Implemented
+
+- native selective-path enablement predicate and execution-state threading
+- execution-local turn-local instruction transport for native runs
+- continuation-safe native turn-local instruction injection
+- first-turn and resumed-turn alignment on the same selective native path
+- active skill selection from resolved runtime refs
+- conservative default activation for workspace/custom skills without applicability metadata
+- active per-turn policy derived from the same active skill subset
+- Temporal/runtime enforcement aligned to active per-turn policy
+- suppression of legacy full `ResolvedSkillInstructions` for selective native planner runs
+- suppression/replacement of legacy planner `initialInstructions` for selective native planner runs
+- dedicated native phase-guidance assembly
+- transition-aware guidance/skill switching coverage for key planner state changes
+- normalized native repair-state capture and persistence
+- repair-instruction reinjection for completion-policy retries and planner tool failures
+- native debug/observability artifacts for phase, skills, policy, continuation mode, and repair state
+- substantial Phase 5 extraction of planner rule/context assembly into smaller Temporal helpers
+- explicit regression coverage for:
+  - PRD request-changes keeping PRD-focused active skills
+  - task-extension guidance after approved plans have already created tasks
+  - task-planner and epic-planner spec-context helper behavior
+  - review/support preset bundles excluding planner skills
+- preservation of existing Codex/OpenCode staged-skill behavior
+
+### Partially implemented
+
+- base-prompt simplification is complete for selective native planner runs, but broader prompt cleanup is still incomplete
+- planner guidance extraction is well underway, but Temporal still owns a meaningful amount of planner-specific assembly
+- transition coverage is improved, but not yet exhaustive across every apply/resume edge
+- regression coverage is materially broader now, but invariant-protection and provider-comparison work remain incomplete
+
+### Not yet complete
+
+- final Phase 5-style reduction of Temporal into thin planner orchestration wrappers
+- broader rollout validation across providers, especially explicit Anthropic non-regression checks
+- final cleanup of remaining stale phase text and acceptance tracking in this document
 
 ## Direction
 
@@ -709,6 +754,16 @@ For each native planner turn, log or persist:
 
 This should be lightweight debug metadata for diagnosis.
 
+Observability is required from the first rollout phase, not as a later polish item. This migration changes both prompt assembly and policy enforcement, so day-one diagnosis depends on being able to inspect:
+
+- whether the selective native path was enabled
+- the resolved runtime ref set
+- the active skill subset
+- the active aggregated policy
+- whether legacy planner injection was suppressed
+- whether provider continuation was active
+- which repair instructions were injected
+
 ### 15. Make active policy authoritative for Temporal-side enforcement
 
 Per-turn active policy must not stop at executor input.
@@ -787,6 +842,9 @@ Invariant protection:
 
 ### Phase 1
 
+- define one explicit enablement predicate for the selective native planner path
+- resolve that predicate once at run start
+- thread that resolved flag through run state, prompt assembly, executor input, and Temporal-side validators
 - add native-only active skill selection
 - keep existing `ResolvedSkillInstructions` as fallback
 - planner-only rollout first
@@ -795,6 +853,46 @@ Invariant protection:
 - replace the first-turn planner instruction path for native planner runs
 - add a concrete execution-local transport for turn-local instructions
 - when selective path is enabled, suppress legacy full-skill injection and legacy planner `initialInstructions`
+- add observability from day one
+
+Internal execution split for Phase 1:
+
+#### Phase 1a: dark-launch plumbing
+
+- build the new native instruction assembly layer
+- build the active selector and active policy aggregation
+- add executor transport for execution-local turn instructions
+- compute and thread the enablement predicate
+- add observability
+- keep the legacy planner behavior as the serving path while verifying parity
+
+#### Phase 1b: planner cutover
+
+- flip eligible native planner runs onto the selective path
+- apply legacy suppression for those runs
+- keep non-eligible runs fully on legacy behavior
+
+### Selective path enablement predicate
+
+Do not use a fuzzy description like "planner-style runs."
+
+Use one explicit predicate, computed once at run start, based on a concrete combination such as:
+
+- `runtime_kind == "native_sdk"`
+- preset is an explicitly supported planner preset
+- target type matches the supported planner target
+- rollout flag/config is enabled
+
+Requirements:
+
+- compute once
+- persist or thread through execution state
+- do not re-derive independently in multiple layers
+- use the same predicate for:
+  - turn-local native assembly
+  - legacy-injection suppression
+  - active policy threading
+  - observability
 
 ### Phase 2
 
@@ -804,13 +902,13 @@ Invariant protection:
 
 ### Phase 3
 
-- reduce or remove full-skill injection from the native planner base prompt
+- reduce or remove remaining full-skill injection from the native planner base prompt
 - keep Codex/OpenCode unchanged
 
 ### Phase 4
 
-- add observability
 - compare Anthropic vs OpenAI/OpenRouter planner reliability on long interactive runs
+- confirm Anthropic planner behavior does not regress under the selective native path
 
 ### Phase 5
 
