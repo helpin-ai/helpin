@@ -59,6 +59,11 @@ func TestExtractMentions(t *testing.T) {
 			expected: nil,
 		},
 		{
+			name:     "adjacent rich text block mentions",
+			body:     `<p>@alice</p><p>@bob</p>`,
+			expected: []string{"alice", "bob"},
+		},
+		{
 			name:     "empty body",
 			body:     "",
 			expected: nil,

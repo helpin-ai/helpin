@@ -16,12 +16,14 @@ import (
 // mentionPattern matches @username patterns that are not embedded inside emails or other handles.
 var mentionPattern = regexp.MustCompile(`(^|[^a-zA-Z0-9._-])@([a-zA-Z0-9][a-zA-Z0-9._-]*)`)
 
+var mentionHTMLBoundaryPattern = regexp.MustCompile(`(?i)</?(address|article|aside|blockquote|br|dd|details|div|dl|dt|figcaption|figure|footer|h[1-6]|header|hr|li|main|nav|ol|p|pre|section|summary|table|tbody|td|tfoot|th|thead|tr|ul)\b[^>]*>`)
+
 // extractMentions returns deduplicated @mention usernames from the given body text.
 func extractMentions(body string) []string {
 	if body == "" {
 		return nil
 	}
-	plainText := tiptap.StripHTML(body)
+	plainText := stripHTMLForMentions(body)
 	matches := mentionPattern.FindAllStringSubmatch(plainText, -1)
 	if len(matches) == 0 {
 		return nil
@@ -36,6 +38,10 @@ func extractMentions(body string) []string {
 		}
 	}
 	return result
+}
+
+func stripHTMLForMentions(body string) string {
+	return tiptap.StripHTML(mentionHTMLBoundaryPattern.ReplaceAllString(body, " "))
 }
 
 func normalizeMentionHandle(value string) string {
