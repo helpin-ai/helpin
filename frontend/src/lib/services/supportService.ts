@@ -39,14 +39,30 @@ import type {
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
 
 export const supportService = {
-  listConversations: (workspaceId: string, filters?: { status?: string; priority?: string; filter?: string; mailbox_id?: string | null; ai_state?: string; flow_state?: string }) => {
+  listConversations: (
+    workspaceId: string,
+    filters?: {
+      status?: string;
+      priority?: string;
+      filter?: string;
+      mailbox_id?: string | null;
+      ai_state?: string;
+      flow_state?: string;
+      search?: string;
+      page?: number;
+      per_page?: number;
+    },
+  ) => {
     let path = `/support/inbox/conversations${qs(workspaceId)}`;
-    if (filters?.status) path += `&status=${filters.status}`;
-    if (filters?.priority) path += `&priority=${filters.priority}`;
-    if (filters?.filter) path += `&filter=${filters.filter}`;
+    if (filters?.status) path += `&status=${encodeURIComponent(filters.status)}`;
+    if (filters?.priority) path += `&priority=${encodeURIComponent(filters.priority)}`;
+    if (filters?.filter) path += `&filter=${encodeURIComponent(filters.filter)}`;
     if (filters?.mailbox_id && filters.mailbox_id !== 'all') path += `&mailbox_id=${encodeURIComponent(filters.mailbox_id)}`;
     if (filters?.ai_state) path += `&ai_state=${encodeURIComponent(filters.ai_state)}`;
     if (filters?.flow_state) path += `&flow_state=${encodeURIComponent(filters.flow_state)}`;
+    if (filters?.search?.trim()) path += `&search=${encodeURIComponent(filters.search.trim())}`;
+    if (filters?.page) path += `&page=${encodeURIComponent(String(filters.page))}`;
+    if (filters?.per_page) path += `&per_page=${encodeURIComponent(String(filters.per_page))}`;
     return api.get<ConversationListResponse>(path);
   },
   listInboxScopes: (workspaceId: string) =>

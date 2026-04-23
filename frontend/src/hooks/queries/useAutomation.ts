@@ -14,10 +14,32 @@ import type {
   UpdateAutomationRuleRequest,
 } from '@/lib/pmTypes';
 
+// The backend sometimes emits JSON `null` for empty slices (Go `nil` slice →
+// `null` when encoded without explicit `if x == nil { x = []T{} }`). Coerce
+// every list field here so every consumer sees arrays, not null/undefined.
+function sanitizeOverview(payload: AutomationInventoryResponse | null | undefined): AutomationInventoryResponse {
+  return {
+    groups: Array.isArray(payload?.groups) ? payload!.groups : [],
+    items: Array.isArray(payload?.items) ? payload!.items : [],
+    trigger_catalog: Array.isArray(payload?.trigger_catalog) ? payload!.trigger_catalog : [],
+    generated_at: payload?.generated_at ?? '',
+  };
+}
+
+function sanitizeActivity(payload: AutomationTriggerExecutionListResponse | null | undefined): AutomationTriggerExecutionListResponse {
+  return {
+    data: Array.isArray(payload?.data) ? payload!.data : [],
+    total: payload?.total ?? 0,
+    page: payload?.page ?? 1,
+    per_page: payload?.per_page ?? 0,
+    total_pages: payload?.total_pages ?? 0,
+  };
+}
+
 export function useAutomationOverview(wsId: string, enabled = true) {
   return useQuery<AutomationInventoryResponse>({
     queryKey: queryKeys.automation.overview(wsId),
-    queryFn: async () => unwrap(await automationService.getOverview(wsId)),
+    queryFn: async () => sanitizeOverview(unwrap(await automationService.getOverview(wsId))),
     enabled: !!wsId && enabled,
     staleTime: 60_000,
   });
@@ -26,7 +48,7 @@ export function useAutomationOverview(wsId: string, enabled = true) {
 export function useAutomationActivity(wsId: string, filters: AutomationTriggerExecutionFilters, enabled = true) {
   return useQuery<AutomationTriggerExecutionListResponse>({
     queryKey: queryKeys.automation.activity(wsId, filters as Record<string, unknown>),
-    queryFn: async () => unwrap(await automationService.listActivity(wsId, filters)),
+    queryFn: async () => sanitizeActivity(unwrap(await automationService.listActivity(wsId, filters))),
     enabled: !!wsId && enabled,
     staleTime: 30_000,
   });
