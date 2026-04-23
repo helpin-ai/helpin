@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -191,6 +192,34 @@ func (r *CRMContactRepository) Update(ctx context.Context, contact *model.CRMCon
 func (r *CRMContactRepository) Delete(ctx context.Context, id string) error {
 	if err := r.db.WithContext(ctx).Where("id = ?", id).Delete(&model.CRMContact{}).Error; err != nil {
 		return fmt.Errorf("delete contact: %w", err)
+	}
+	return nil
+}
+
+// MarkEmailInvalid flags every contact in a workspace whose email matches
+// (case-insensitive) as having an undeliverable email. No-op when the email
+// is empty or no matching contact exists. Idempotent — already-invalid rows
+// are updated only if the reason changed.
+func (r *CRMContactRepository) MarkEmailInvalid(ctx context.Context, workspaceID, email, reason string) error {
+	email = strings.TrimSpace(strings.ToLower(email))
+	if workspaceID == "" || email == "" {
+		return nil
+	}
+	reason = strings.TrimSpace(reason)
+	now := time.Now().UTC()
+	updates := map[string]any{
+		"email_status":            model.CRMContactEmailStatusInvalid,
+		"email_status_reason":     reason,
+		"email_status_updated_at": now,
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.CRMContact{}).
+		Where(
+			"workspace_id = ? AND email IS NOT NULL AND LOWER(email) = ? AND (email_status <> ? OR COALESCE(email_status_reason, '') <> ?)",
+			workspaceID, email, model.CRMContactEmailStatusInvalid, reason,
+		).
+		Updates(updates).Error; err != nil {
+		return fmt.Errorf("mark contact email invalid: %w", err)
 	}
 	return nil
 }
