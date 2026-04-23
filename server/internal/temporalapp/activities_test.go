@@ -16,6 +16,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"github.com/helpin-ai/helpin/server/internal/agentskills"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/tiptap"
@@ -70,6 +71,111 @@ func TestShouldPersistExecutionWorkspace(t *testing.T) {
 	}
 }
 
+func TestResolveNativeSelectivePlannerPathEnabled(t *testing.T) {
+	testCases := []struct {
+		name  string
+		env   *string
+		run   *model.AgentRun
+		agent *model.Agent
+		want  bool
+	}{
+		{
+			name: "unset rollout env enables eligible system epic planner by default",
+			run: &model.AgentRun{
+				RuntimeKind: "native_sdk",
+				TargetType:  "epic",
+			},
+			agent: &model.Agent{
+				IsSystem:    true,
+				PresetKey:   model.AgentPresetEpicPlanner,
+				RuntimeKind: "native_sdk",
+			},
+			want: true,
+		},
+		{
+			name: "system task planner on native runtime is eligible when env is true",
+			env:  strPtr("true"),
+			run: &model.AgentRun{
+				RuntimeKind: "native_sdk",
+				TargetType:  "task",
+			},
+			agent: &model.Agent{
+				IsSystem:    true,
+				PresetKey:   model.AgentPresetTaskPlanner,
+				RuntimeKind: "native_sdk",
+			},
+			want: true,
+		},
+		{
+			name: "explicit false rollout env disables path",
+			env:  strPtr("false"),
+			run: &model.AgentRun{
+				RuntimeKind: "native_sdk",
+				TargetType:  "epic",
+			},
+			agent: &model.Agent{
+				IsSystem:    true,
+				PresetKey:   model.AgentPresetEpicPlanner,
+				RuntimeKind: "native_sdk",
+			},
+			want: false,
+		},
+		{
+			name: "custom agents stay off selective path",
+			env:  strPtr("true"),
+			run: &model.AgentRun{
+				RuntimeKind: "native_sdk",
+				TargetType:  "epic",
+			},
+			agent: &model.Agent{
+				IsSystem:    false,
+				PresetKey:   model.AgentPresetEpicPlanner,
+				RuntimeKind: "native_sdk",
+			},
+			want: false,
+		},
+		{
+			name: "wrong target type is rejected",
+			env:  strPtr("true"),
+			run: &model.AgentRun{
+				RuntimeKind: "native_sdk",
+				TargetType:  "task",
+			},
+			agent: &model.Agent{
+				IsSystem:    true,
+				PresetKey:   model.AgentPresetEpicPlanner,
+				RuntimeKind: "native_sdk",
+			},
+			want: false,
+		},
+		{
+			name: "non-native runtime is rejected",
+			env:  strPtr("true"),
+			run: &model.AgentRun{
+				RuntimeKind: "codex",
+				TargetType:  "epic",
+			},
+			agent: &model.Agent{
+				IsSystem:    true,
+				PresetKey:   model.AgentPresetEpicPlanner,
+				RuntimeKind: "native_sdk",
+			},
+			want: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.env != nil {
+				t.Setenv("AGENT_NATIVE_SELECTIVE_PLANNER_ENABLED", *tc.env)
+			}
+			if got := resolveNativeSelectivePlannerPathEnabled(tc.run, tc.agent); got != tc.want {
+				t.Fatalf("resolveNativeSelectivePlannerPathEnabled() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestExecutionRuntimeKindPrefersRunOverride(t *testing.T) {
 	state := &resolvedRunState{
 		run:   &model.AgentRun{RuntimeKind: "codex"},
@@ -82,6 +188,2296 @@ func TestExecutionRuntimeKindPrefersRunOverride(t *testing.T) {
 	state.run.RuntimeKind = ""
 	if got := executionRuntimeKind(state); got != "opencode" {
 		t.Fatalf("expected agent runtime kind fallback, got %q", got)
+	}
+}
+
+func TestSelectNativeActiveSkillsRequiresSelectivePathGate(t *testing.T) {
+	state := &resolvedRunState{
+		run: &model.AgentRun{TargetType: "epic"},
+		agent: &model.Agent{
+			PresetKey: model.AgentPresetEpicPlanner,
+		},
+		runtimeSkillRefs: model.AgentSkillRefs{
+			{Key: "approval_protocol"},
+			{Key: "prd_authorship"},
+			{Key: "task_decomposition"},
+		},
+		runtimeSkillDefinitions: []workerpkg.SkillDefinition{
+			{Key: "approval_protocol", SourceKind: "built_in", Instructions: "approval"},
+			{Key: "prd_authorship", SourceKind: "built_in", Instructions: "prd"},
+			{Key: "task_decomposition", SourceKind: "built_in", Instructions: "tasks"},
+		},
+		nativeSelectivePathEnabled: false,
+	}
+
+	selection := selectNativeActiveSkills(state, model.PlanningStageDraftSpec)
+	if got := testAgentSkillRefKeys(selection.Refs); len(got) != 3 || got[0] != "approval_protocol" || got[1] != "prd_authorship" || got[2] != "task_decomposition" {
+		t.Fatalf("expected full skill set when selective path is disabled, got %#v", got)
+	}
+}
+
+func TestNativeActiveSkillPlanningStageTransitionsEpicByDurableState(t *testing.T) {
+	testCases := []struct {
+		name string
+		epic *model.PMEpic
+		want string
+	}{
+		{
+			name: "approved spec version advances to task planning",
+			epic: &model.PMEpic{
+				ApprovedSpecVersionID: strPtr("spec-v1"),
+				PlanningState:         model.EpicPlanningStateAwaitingSpecApproval,
+			},
+			want: model.PlanningStagePlanTasks,
+		},
+		{
+			name: "ready for task planning state advances to task planning",
+			epic: &model.PMEpic{
+				PlanningState: model.EpicPlanningStateReadyForTaskPlanning,
+			},
+			want: model.PlanningStagePlanTasks,
+		},
+		{
+			name: "compat story-planning alias advances to task planning",
+			epic: &model.PMEpic{
+				PlanningState: model.EpicPlanningStateReadyForTaskPlanning,
+			},
+			want: model.PlanningStagePlanTasks,
+		},
+		{
+			name: "awaiting plan approval stays in task planning mode",
+			epic: &model.PMEpic{
+				PlanningState: model.EpicPlanningStateAwaitingPlanApproval,
+			},
+			want: model.PlanningStagePlanTasks,
+		},
+		{
+			name: "awaiting spec approval stays in prd drafting",
+			epic: &model.PMEpic{
+				PlanningState: model.EpicPlanningStateAwaitingSpecApproval,
+			},
+			want: model.PlanningStageDraftSpec,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			state := &resolvedRunState{
+				run:  &model.AgentRun{TargetType: "epic"},
+				epic: tc.epic,
+			}
+			if got := nativeActiveSkillPlanningStage(state, ""); got != tc.want {
+				t.Fatalf("expected planning stage %q, got %q", tc.want, got)
+			}
+		})
+	}
+}
+
+func TestSelectNativeActiveSkillsTransitionsEpicFromPRDToTaskPlanning(t *testing.T) {
+	baseState := resolvedRunState{
+		run: &model.AgentRun{TargetType: "epic"},
+		agent: &model.Agent{
+			PresetKey: model.AgentPresetEpicPlanner,
+		},
+		runtimeSkillRefs: model.AgentSkillRefs{
+			{Key: "approval_protocol"},
+			{Key: "prd_authorship"},
+			{Key: "task_decomposition"},
+			{Key: "epic_state_routing"},
+			{Key: "general_agent_behavior"},
+		},
+		runtimeSkillDefinitions: []workerpkg.SkillDefinition{
+			{Key: "approval_protocol", SourceKind: "built_in", Instructions: "approval"},
+			{Key: "prd_authorship", SourceKind: "built_in", Instructions: "prd"},
+			{Key: "task_decomposition", SourceKind: "built_in", Instructions: "tasks"},
+			{Key: "epic_state_routing", SourceKind: "built_in", Instructions: "routing"},
+			{Key: "general_agent_behavior", SourceKind: "built_in", Instructions: "general"},
+		},
+		nativeSelectivePathEnabled: true,
+	}
+
+	t.Run("before approval keeps prd authorship active", func(t *testing.T) {
+		state := baseState
+		state.epic = &model.PMEpic{PlanningState: model.EpicPlanningStateAwaitingSpecApproval}
+
+		selection := selectNativeActiveSkills(&state, "")
+		if got := testAgentSkillRefKeys(selection.Refs); len(got) != 4 || got[0] != "approval_protocol" || got[1] != "prd_authorship" || got[2] != "epic_state_routing" || got[3] != "general_agent_behavior" {
+			t.Fatalf("unexpected active refs before approval %#v", got)
+		}
+	})
+
+	t.Run("after approval activates task decomposition", func(t *testing.T) {
+		state := baseState
+		state.epic = &model.PMEpic{ApprovedSpecVersionID: strPtr("spec-v1")}
+
+		selection := selectNativeActiveSkills(&state, "")
+		if got := testAgentSkillRefKeys(selection.Refs); len(got) != 4 || got[0] != "approval_protocol" || got[1] != "task_decomposition" || got[2] != "epic_state_routing" || got[3] != "general_agent_behavior" {
+			t.Fatalf("unexpected active refs after approval %#v", got)
+		}
+	})
+
+	t.Run("request changes keeps prd-focused skills active", func(t *testing.T) {
+		state := baseState
+		state.epic = &model.PMEpic{
+			PlanningState:  model.EpicPlanningStateAwaitingSpecApproval,
+			SpecDocumentID: strPtr("doc-1"),
+		}
+
+		selection := selectNativeActiveSkills(&state, "")
+		if got := testAgentSkillRefKeys(selection.Refs); len(got) != 4 || got[0] != "approval_protocol" || got[1] != "prd_authorship" || got[2] != "epic_state_routing" || got[3] != "general_agent_behavior" {
+			t.Fatalf("unexpected active refs after request changes %#v", got)
+		}
+	})
+}
+
+func TestSelectNativeActiveSkillsMatchesExplicitAndInferredPlannerStage(t *testing.T) {
+	state := &resolvedRunState{
+		run: &model.AgentRun{TargetType: "epic"},
+		agent: &model.Agent{
+			PresetKey: model.AgentPresetEpicPlanner,
+		},
+		epic: &model.PMEpic{
+			ApprovedSpecVersionID: strPtr("spec-v1"),
+		},
+		runtimeSkillRefs: model.AgentSkillRefs{
+			{Key: "approval_protocol"},
+			{Key: "prd_authorship"},
+			{Key: "task_decomposition"},
+			{Key: "epic_state_routing"},
+			{Key: "general_agent_behavior"},
+		},
+		runtimeSkillDefinitions: []workerpkg.SkillDefinition{
+			{Key: "approval_protocol", SourceKind: "built_in", Instructions: "approval"},
+			{Key: "prd_authorship", SourceKind: "built_in", Instructions: "prd"},
+			{Key: "task_decomposition", SourceKind: "built_in", Instructions: "tasks"},
+			{Key: "epic_state_routing", SourceKind: "built_in", Instructions: "routing"},
+			{Key: "general_agent_behavior", SourceKind: "built_in", Instructions: "general"},
+		},
+		nativeSelectivePathEnabled: true,
+	}
+
+	explicit := selectNativeActiveSkills(state, model.PlanningStagePlanTasks)
+	inferred := selectNativeActiveSkills(state, "")
+
+	if got, want := testAgentSkillRefKeys(inferred.Refs), testAgentSkillRefKeys(explicit.Refs); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("expected inferred and explicit stage selections to match, explicit=%v inferred=%v", want, got)
+	}
+	if inferred.Instructions != explicit.Instructions {
+		t.Fatalf("expected inferred and explicit stage instructions to match, explicit=%q inferred=%q", explicit.Instructions, inferred.Instructions)
+	}
+}
+
+func TestSplitNativePhaseGuidanceMovesLegacyInstructionsOffInitialPrompt(t *testing.T) {
+	legacyInitialInstructions, phaseGuidance := splitNativePhaseGuidance("native_sdk", &resolvedRunState{
+		nativeSelectivePathEnabled: true,
+	}, "Run mode: interactive\nDraft the PRD first.")
+
+	if strings.TrimSpace(legacyInitialInstructions) != "" {
+		t.Fatalf("expected selective native path to suppress legacy initial instructions, got %q", legacyInitialInstructions)
+	}
+	if !strings.Contains(phaseGuidance, "Draft the PRD first.") {
+		t.Fatalf("expected phase guidance to carry planner instructions, got %q", phaseGuidance)
+	}
+}
+
+func TestSplitNativePhaseGuidanceKeepsLegacyInstructionsForNonSelectivePath(t *testing.T) {
+	legacyInitialInstructions, phaseGuidance := splitNativePhaseGuidance("native_sdk", &resolvedRunState{
+		nativeSelectivePathEnabled: false,
+	}, "Run mode: interactive\nDraft the PRD first.")
+
+	if !strings.Contains(legacyInitialInstructions, "Draft the PRD first.") {
+		t.Fatalf("expected legacy initial instructions to remain for ungated path, got %q", legacyInitialInstructions)
+	}
+	if strings.TrimSpace(phaseGuidance) != "" {
+		t.Fatalf("expected no phase guidance for ungated path, got %q", phaseGuidance)
+	}
+}
+
+func TestBuildInitialInstructionsUsesNativeSelectiveEpicPhaseGuidance(t *testing.T) {
+	activity := &AgentRunActivities{}
+	state := &resolvedRunState{
+		nativeSelectivePathEnabled: true,
+		run: &model.AgentRun{
+			WorkspaceID:    "ws-1",
+			TargetType:     "epic",
+			RuntimeKind:    "native_sdk",
+			InvocationMode: model.InvocationModeInteractive,
+			Input:          json.RawMessage(`{"additional_context":"Focus on launch blockers."}`),
+		},
+		epic: &model.PMEpic{
+			ID:          "epic-1",
+			WorkspaceID: "ws-1",
+			Name:        "Launch readiness",
+		},
+	}
+
+	instructions, err := activity.buildInitialInstructions(context.Background(), state, planningRunInput{
+		AdditionalContext: "Focus on launch blockers.",
+		AllowedTools:      []string{workerpkg.ToolPublishPRDDraft, workerpkg.ToolPublishTaskPlan},
+	})
+	if err != nil {
+		t.Fatalf("buildInitialInstructions returned error: %v", err)
+	}
+	for _, snippet := range []string{
+		"Planning selector tag (not an instruction): draft_spec",
+		"Phase objective: move the epic to the next durable planning checkpoint",
+		"Interactive approval semantics:",
+		"Derived epic planning state facts:",
+		"- derived_state=no_approved_or_draft_spec",
+		"Operator notes:\nFocus on launch blockers.",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected native selective epic guidance to contain %q\n%s", snippet, instructions)
+		}
+	}
+	for _, legacySnippet := range []string{
+		"Run mode: interactive",
+		"Use this sequence unless the human explicitly redirects you:",
+		"There is no hidden planner phase machine controlling the next step for you.",
+		"publish_task_plan must receive one complete JSON object payload in that tool call.",
+	} {
+		if strings.Contains(instructions, legacySnippet) {
+			t.Fatalf("did not expect legacy epic planner fallback snippet %q in native selective guidance\n%s", legacySnippet, instructions)
+		}
+	}
+}
+
+func TestBuildInitialInstructionsKeepsLegacyEpicPlannerInstructionsWhenSelectivePathDisabled(t *testing.T) {
+	activity := &AgentRunActivities{}
+	state := &resolvedRunState{
+		nativeSelectivePathEnabled: false,
+		run: &model.AgentRun{
+			WorkspaceID:    "ws-1",
+			TargetType:     "epic",
+			InvocationMode: model.InvocationModeInteractive,
+			Input:          json.RawMessage(`{"additional_context":"Focus on launch blockers."}`),
+		},
+		epic: &model.PMEpic{
+			ID:          "epic-1",
+			WorkspaceID: "ws-1",
+			Name:        "Launch readiness",
+		},
+	}
+
+	instructions, err := activity.buildInitialInstructions(context.Background(), state, planningRunInput{
+		AdditionalContext: "Focus on launch blockers.",
+		AllowedTools:      []string{workerpkg.ToolPublishPRDDraft, workerpkg.ToolPublishTaskPlan},
+	})
+	if err != nil {
+		t.Fatalf("buildInitialInstructions returned error: %v", err)
+	}
+	if !strings.Contains(instructions, "Use this sequence unless the human explicitly redirects you:") {
+		t.Fatalf("expected legacy epic planner wording to remain when selective path is disabled\n%s", instructions)
+	}
+	if strings.Contains(instructions, "Current planning phase: draft_spec") {
+		t.Fatalf("did not expect native selective phase header in legacy instructions\n%s", instructions)
+	}
+}
+
+func TestBuildLegacyEpicPlannerFallbackRuleSectionsPreservesCriticalRules(t *testing.T) {
+	sections := buildLegacyEpicPlannerFallbackRuleSections(&model.AgentRun{
+		InvocationMode: model.InvocationModeInteractive,
+	})
+	instructions := strings.Join(sections, "\n\n")
+	for _, snippet := range []string{
+		"Run mode: interactive",
+		"The shared run drawer is available for live questions, draft previews, inline approvals, and change requests.",
+		"Use this sequence unless the human explicitly redirects you:",
+		"Keep approvals soft and inline.",
+		"Treat request_approval as the final action in that turn.",
+		"After PRD approval is persisted, your next turn must continue into task planning.",
+		"Use publish_prd_draft for PRD markdown previews and publish_task_plan for task plan JSON previews.",
+		"publish_task_plan must receive one complete JSON object payload in that tool call.",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected legacy epic rule sections to contain %q\n%s", snippet, instructions)
+		}
+	}
+}
+
+func TestBuildLegacyEpicPlannerFallbackSectionsPreservesCompositionOrder(t *testing.T) {
+	activity := &AgentRunActivities{}
+	sections, err := activity.buildLegacyEpicPlannerFallbackSections(context.Background(), &resolvedRunState{
+		run: &model.AgentRun{
+			WorkspaceID:    "ws-1",
+			TargetType:     "epic",
+			InvocationMode: model.InvocationModeInteractive,
+		},
+		epic: &model.PMEpic{
+			ID:          "epic-1",
+			WorkspaceID: "ws-1",
+			Name:        "Launch readiness",
+		},
+	}, planningRunInput{
+		AdditionalContext: "Focus on launch blockers.",
+	})
+	if err != nil {
+		t.Fatalf("buildLegacyEpicPlannerFallbackSections returned error: %v", err)
+	}
+	instructions := strings.Join(sections, "\n\n")
+	runModeIndex := strings.Index(instructions, "Run mode: interactive")
+	operatorNotesIndex := strings.Index(instructions, "Operator notes:\nFocus on launch blockers.")
+	factsIndex := strings.Index(instructions, "Current durable planning facts:")
+	stateFactsIndex := strings.Index(instructions, "Derived epic planning state facts:")
+	if runModeIndex == -1 || operatorNotesIndex == -1 || factsIndex == -1 || stateFactsIndex == -1 {
+		t.Fatalf("expected composed legacy epic guidance sections to be present\n%s", instructions)
+	}
+	if !(runModeIndex < operatorNotesIndex && operatorNotesIndex < factsIndex && factsIndex < stateFactsIndex) {
+		t.Fatalf("expected legacy epic composition order rules -> context -> facts -> derived state facts\n%s", instructions)
+	}
+}
+
+func TestBuildInitialInstructionsUsesNativeSelectiveTaskPhaseGuidance(t *testing.T) {
+	activity := &AgentRunActivities{}
+	state := &resolvedRunState{
+		nativeSelectivePathEnabled: true,
+		run: &model.AgentRun{
+			WorkspaceID:    "ws-1",
+			TargetType:     "task",
+			RuntimeKind:    "native_sdk",
+			InvocationMode: model.InvocationModeInteractive,
+			Input:          json.RawMessage(`{"additional_context":"Focus on regression risk."}`),
+		},
+		task: &model.PMTask{
+			ID:          "task-1",
+			WorkspaceID: "ws-1",
+			Name:        "Harden approval preview binding",
+		},
+	}
+
+	instructions, err := activity.buildInitialInstructions(context.Background(), state, planningRunInput{
+		AdditionalContext: "Focus on regression risk.",
+		AllowedTools:      []string{workerpkg.ToolPublishTaskPlanDoc},
+	})
+	if err != nil {
+		t.Fatalf("buildInitialInstructions returned error: %v", err)
+	}
+	for _, snippet := range []string{
+		"Current planning phase: task_plan_doc",
+		"Phase objective: refine a task-scoped implementation planning document",
+		"Approval rule: use request_approval with phase=\"task_doc\"",
+		"Operator notes:\nFocus on regression risk.",
+		"Task: Harden approval preview binding",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected native selective task guidance to contain %q\n%s", snippet, instructions)
+		}
+	}
+	for _, legacySnippet := range []string{
+		"Run mode: interactive",
+		"Use this sequence unless the human explicitly redirects you:",
+		"publish_task_plan_doc must receive a JSON object where content is the full markdown planning draft under review.",
+		"Ground the planning document primarily in the task description, task comments, task-linked docs, and the current codebase context.",
+	} {
+		if strings.Contains(instructions, legacySnippet) {
+			t.Fatalf("did not expect legacy task planner fallback snippet %q in native selective guidance\n%s", legacySnippet, instructions)
+		}
+	}
+}
+
+func TestBuildLegacyTaskPlannerFallbackRuleSectionsPreservesCriticalRules(t *testing.T) {
+	sections := buildLegacyTaskPlannerFallbackRuleSections(&model.AgentRun{
+		InvocationMode: model.InvocationModeInteractive,
+	})
+	instructions := strings.Join(sections, "\n\n")
+	for _, snippet := range []string{
+		"Run mode: interactive",
+		"The shared run drawer is available for live questions, draft previews, inline approvals, and change requests.",
+		"Treat this as one transcript-driven planning run.",
+		"Use this sequence unless the human explicitly redirects you: clarify scope if needed, draft or refine the task planning doc",
+		"Keep approvals soft and inline.",
+		"Treat request_approval as the final action in that turn.",
+		"Use publish_task_plan_doc for reviewable right-pane task planning documents.",
+		"publish_task_plan_doc must receive a JSON object where content is the full markdown planning draft under review.",
+		"Ground the planning document primarily in the task description, task comments, task-linked docs, and the current codebase context.",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected legacy task planner rule sections to contain %q\n%s", snippet, instructions)
+		}
+	}
+}
+
+func TestBuildLegacyTaskPlannerFallbackSectionsPreservesCompositionOrder(t *testing.T) {
+	activity := &AgentRunActivities{}
+	sections, err := activity.buildLegacyTaskPlannerFallbackSections(context.Background(), &resolvedRunState{
+		run: &model.AgentRun{
+			WorkspaceID:    "ws-1",
+			TargetType:     "task",
+			InvocationMode: model.InvocationModeInteractive,
+		},
+		task: &model.PMTask{
+			ID:          "task-1",
+			WorkspaceID: "ws-1",
+			Name:        "Harden approval preview binding",
+		},
+	}, planningRunInput{
+		AdditionalContext: "Focus on regression risk.",
+	})
+	if err != nil {
+		t.Fatalf("buildLegacyTaskPlannerFallbackSections returned error: %v", err)
+	}
+	instructions := strings.Join(sections, "\n\n")
+	runModeIndex := strings.Index(instructions, "Run mode: interactive")
+	operatorNotesIndex := strings.Index(instructions, "Operator notes:\nFocus on regression risk.")
+	taskIndex := strings.Index(instructions, "Task: Harden approval preview binding")
+	if runModeIndex == -1 || operatorNotesIndex == -1 || taskIndex == -1 {
+		t.Fatalf("expected composed legacy task guidance sections to be present\n%s", instructions)
+	}
+	if !(runModeIndex < operatorNotesIndex && operatorNotesIndex < taskIndex) {
+		t.Fatalf("expected legacy task composition order rules -> operator notes -> task context\n%s", instructions)
+	}
+}
+
+func TestBuildNativeTaskPlannerRuleSectionsPreservesCriticalRules(t *testing.T) {
+	sections := buildNativeTaskPlannerRuleSections(&model.AgentRun{
+		InvocationMode: model.InvocationModeInteractive,
+	}, model.PlanningStageTaskPlanDoc)
+	instructions := strings.Join(sections, "\n\n")
+	for _, snippet := range []string{
+		"Current planning phase: task_plan_doc",
+		"Phase objective: refine a task-scoped implementation planning document, publish it with publish_task_plan_doc, and stop at inline approval.",
+		"Treat this as a transcript-driven task planning run.",
+		"Next-step rule: clarify scope only when blocked",
+		"Approval rule: use request_approval with phase=\"task_doc\" only after publish_task_plan_doc in the same turn.",
+		"Contract reminder: publish_task_plan_doc must receive one JSON object whose content field contains the full markdown draft under review.",
+		"Focus rule: keep the planning document grounded in the task description, task comments, task-linked docs, parent-epic constraints that matter to this task, and the current codebase context.",
+		"Interactive approval semantics: explicit approval advances the run; change requests, critique, concerns, and ambiguous replies mean the draft is still unapproved and must be revised in the same transcript.",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected native task planner rule sections to contain %q\n%s", snippet, instructions)
+		}
+	}
+}
+
+func TestBuildNativeTaskPlannerSectionsPreservesCompositionOrder(t *testing.T) {
+	activity := &AgentRunActivities{}
+	sections, err := activity.buildNativeTaskPlannerSections(context.Background(), &resolvedRunState{
+		run: &model.AgentRun{
+			WorkspaceID:    "ws-1",
+			TargetType:     "task",
+			InvocationMode: model.InvocationModeInteractive,
+		},
+		task: &model.PMTask{
+			ID:          "task-1",
+			WorkspaceID: "ws-1",
+			Name:        "Harden approval preview binding",
+		},
+	}, planningRunInput{
+		AdditionalContext: "Focus on regression risk.",
+	})
+	if err != nil {
+		t.Fatalf("buildNativeTaskPlannerSections returned error: %v", err)
+	}
+	instructions := strings.Join(sections, "\n\n")
+	phaseIndex := strings.Index(instructions, "Current planning phase: task_plan_doc")
+	operatorNotesIndex := strings.Index(instructions, "Operator notes:\nFocus on regression risk.")
+	taskIndex := strings.Index(instructions, "Task: Harden approval preview binding")
+	if phaseIndex == -1 || operatorNotesIndex == -1 || taskIndex == -1 {
+		t.Fatalf("expected composed native task guidance sections to be present\n%s", instructions)
+	}
+	if !(phaseIndex < operatorNotesIndex && operatorNotesIndex < taskIndex) {
+		t.Fatalf("expected native task composition order rules -> operator notes -> task context\n%s", instructions)
+	}
+}
+
+func TestBuildApprovedSpecVersionSectionsIncludesSnapshot(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	if err := db.Exec(`INSERT INTO docs_versions (id, document_id, content_text, version_type, created_by, created_at)
+		VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`, "ver-1", "doc-1", "Approved spec body", "manual", "user-1").Error; err != nil {
+		t.Fatalf("insert docs version: %v", err)
+	}
+
+	activity := &AgentRunActivities{
+		docsVersionRepo: repository.NewDocsVersionRepository(db),
+	}
+	sections, err := activity.buildApprovedSpecVersionSections(context.Background(), "ver-1", "Approved spec version ID", "Approved spec snapshot", 12000)
+	if err != nil {
+		t.Fatalf("buildApprovedSpecVersionSections returned error: %v", err)
+	}
+	instructions := strings.Join(sections, "\n\n")
+	for _, snippet := range []string{
+		"Approved spec version ID: ver-1",
+		"Approved spec snapshot:\nApproved spec body",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected approved spec helper output to contain %q\n%s", snippet, instructions)
+		}
+	}
+}
+
+func TestBuildSpecDocumentDraftSectionsIncludesDraft(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	if err := db.Exec(`INSERT INTO docs_contents (id, document_id, content_text, word_count) VALUES (?, ?, ?, ?)`, "content-1", "doc-1", "Draft spec body", 3).Error; err != nil {
+		t.Fatalf("insert docs content: %v", err)
+	}
+
+	activity := &AgentRunActivities{
+		docsContentRepo: repository.NewDocsContentRepository(db),
+	}
+	sections, found, err := activity.buildSpecDocumentDraftSections(context.Background(), "doc-1", "Spec document ID", "Current spec draft", 12000)
+	if err != nil {
+		t.Fatalf("buildSpecDocumentDraftSections returned error: %v", err)
+	}
+	if !found {
+		t.Fatal("expected draft content to be found")
+	}
+	instructions := strings.Join(sections, "\n\n")
+	for _, snippet := range []string{
+		"Spec document ID: doc-1",
+		"Current spec draft:\nDraft spec body",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected draft spec helper output to contain %q\n%s", snippet, instructions)
+		}
+	}
+}
+
+func TestBuildTaskPlannerContextSectionsIncludesApprovedEpicSpecSnapshot(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	if err := db.Exec(`INSERT INTO docs_versions (id, document_id, content_text, version_type, created_by, created_at)
+		VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`, "ver-1", "doc-1", "Approved epic spec body", "manual", "user-1").Error; err != nil {
+		t.Fatalf("insert docs version: %v", err)
+	}
+
+	activity := &AgentRunActivities{
+		docsVersionRepo: repository.NewDocsVersionRepository(db),
+	}
+	state := &resolvedRunState{
+		run: &model.AgentRun{
+			WorkspaceID: "ws-1",
+		},
+		task: &model.PMTask{
+			ID:          "task-1",
+			WorkspaceID: "ws-1",
+			Name:        "Implement approvals",
+		},
+	}
+	sections, err := activity.buildTaskPlannerContextSections(context.Background(), state, planningRunInput{
+		SpecVersionID: "ver-1",
+	})
+	if err != nil {
+		t.Fatalf("buildTaskPlannerContextSections returned error: %v", err)
+	}
+	instructions := strings.Join(sections, "\n\n")
+	for _, snippet := range []string{
+		"Approved epic PRD version ID: ver-1",
+		"Approved epic PRD snapshot:\nApproved epic spec body",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected task planner context to contain %q\n%s", snippet, instructions)
+		}
+	}
+}
+
+func TestBuildTaskPlannerSpecContextSectionsPrefersApprovedVersion(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	if err := db.Exec(`INSERT INTO docs_versions (id, document_id, content_text, version_type, created_by, created_at)
+		VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`, "ver-1", "doc-1", "Approved epic spec body", "manual", "user-1").Error; err != nil {
+		t.Fatalf("insert docs version: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_documents (id, workspace_id, space_id, title, status, visibility, created_by, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"doc-1", "ws-1", "space-1", "Epic PRD", model.DocStatusDraft, model.SpaceVisibilityWorkspaceWide, "user-1",
+	).Error; err != nil {
+		t.Fatalf("insert docs document: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_contents (id, document_id, content_text, word_count) VALUES (?, ?, ?, ?)`,
+		"content-1", "doc-1", "Draft epic spec body", 4,
+	).Error; err != nil {
+		t.Fatalf("insert docs content: %v", err)
+	}
+
+	activity := &AgentRunActivities{
+		docsVersionRepo: repository.NewDocsVersionRepository(db),
+		docsDocRepo:     repository.NewDocsDocumentRepository(db),
+		docsContentRepo: repository.NewDocsContentRepository(db),
+	}
+	sections, err := activity.buildTaskPlannerSpecContextSections(context.Background(), planningRunInput{
+		SpecVersionID:  "ver-1",
+		SpecDocumentID: "doc-1",
+	})
+	if err != nil {
+		t.Fatalf("buildTaskPlannerSpecContextSections returned error: %v", err)
+	}
+	instructions := strings.Join(sections, "\n\n")
+	if !strings.Contains(instructions, "Approved epic PRD version ID: ver-1") || !strings.Contains(instructions, "Approved epic PRD snapshot:\nApproved epic spec body") {
+		t.Fatalf("expected approved spec content in helper output\n%s", instructions)
+	}
+	if strings.Contains(instructions, "Parent epic PRD document ID: doc-1") {
+		t.Fatalf("expected approved version to suppress draft content\n%s", instructions)
+	}
+}
+
+func TestBuildTaskPlannerSpecContextSectionsFallsBackToDraft(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	if err := db.Exec(`INSERT INTO docs_documents (id, workspace_id, space_id, title, status, visibility, created_by, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"doc-1", "ws-1", "space-1", "Epic PRD", model.DocStatusDraft, model.SpaceVisibilityWorkspaceWide, "user-1",
+	).Error; err != nil {
+		t.Fatalf("insert docs document: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_contents (id, document_id, content_text, word_count) VALUES (?, ?, ?, ?)`,
+		"content-1", "doc-1", "Draft epic spec body", 4,
+	).Error; err != nil {
+		t.Fatalf("insert docs content: %v", err)
+	}
+
+	activity := &AgentRunActivities{
+		docsDocRepo:     repository.NewDocsDocumentRepository(db),
+		docsContentRepo: repository.NewDocsContentRepository(db),
+	}
+	sections, err := activity.buildTaskPlannerSpecContextSections(context.Background(), planningRunInput{
+		SpecDocumentID: "doc-1",
+	})
+	if err != nil {
+		t.Fatalf("buildTaskPlannerSpecContextSections returned error: %v", err)
+	}
+	instructions := strings.Join(sections, "\n\n")
+	for _, snippet := range []string{
+		"Parent epic PRD document ID: doc-1",
+		"Current epic PRD draft:\nDraft epic spec body",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected draft spec content in helper output %q\n%s", snippet, instructions)
+		}
+	}
+}
+
+func TestBuildEpicPlannerSpecContextSectionsResumesFromDraft(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	if err := db.Exec(`INSERT INTO docs_contents (id, document_id, content_text, word_count) VALUES (?, ?, ?, ?)`,
+		"content-1", "doc-1", "Draft epic PRD body", 4,
+	).Error; err != nil {
+		t.Fatalf("insert docs content: %v", err)
+	}
+
+	activity := &AgentRunActivities{
+		docsContentRepo: repository.NewDocsContentRepository(db),
+	}
+	sections, hasSpecContent, err := activity.buildEpicPlannerSpecContextSections(context.Background(), planningRunInput{
+		SpecDocumentID: "doc-1",
+	})
+	if err != nil {
+		t.Fatalf("buildEpicPlannerSpecContextSections returned error: %v", err)
+	}
+	if !hasSpecContent {
+		t.Fatal("expected draft spec content to be flagged as present")
+	}
+	instructions := strings.Join(sections, "\n\n")
+	for _, snippet := range []string{
+		"IMPORTANT: A PRD draft already exists in the spec document but was never formally approved.",
+		"Existing canonical spec document ID: doc-1",
+		"Current spec draft:\nDraft epic PRD body",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected draft resume content %q\n%s", snippet, instructions)
+		}
+	}
+}
+
+func TestBuildEpicPlannerSpecContextSectionsLocksApprovedSpec(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	if err := db.Exec(`INSERT INTO docs_versions (id, document_id, content_text, version_type, created_by, created_at)
+		VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+		"ver-1", "doc-1", "Approved epic PRD body", "manual", "user-1",
+	).Error; err != nil {
+		t.Fatalf("insert docs version: %v", err)
+	}
+
+	activity := &AgentRunActivities{
+		docsVersionRepo: repository.NewDocsVersionRepository(db),
+	}
+	sections, hasSpecContent, err := activity.buildEpicPlannerSpecContextSections(context.Background(), planningRunInput{
+		SpecVersionID: "ver-1",
+	})
+	if err != nil {
+		t.Fatalf("buildEpicPlannerSpecContextSections returned error: %v", err)
+	}
+	if hasSpecContent {
+		t.Fatal("did not expect approved spec path to mark draft spec content as present")
+	}
+	instructions := strings.Join(sections, "\n\n")
+	for _, snippet := range []string{
+		"Approved spec version ID: ver-1",
+		"IMPORTANT: A previously approved spec already exists. The PRD is LOCKED.",
+		"Do not replay the PRD through mutation tools.",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected approved lock content %q\n%s", snippet, instructions)
+		}
+	}
+	if strings.Contains(instructions, "Current spec draft:") {
+		t.Fatalf("did not expect draft spec content on approved path\n%s", instructions)
+	}
+}
+
+func TestAppendOperatorNotesSectionTrimsAndSkipsBlank(t *testing.T) {
+	sections := appendOperatorNotesSection(nil, "   ")
+	if len(sections) != 0 {
+		t.Fatalf("expected blank operator notes to be skipped, got %#v", sections)
+	}
+
+	sections = appendOperatorNotesSection(nil, "  Focus on launch blockers.  ")
+	if len(sections) != 1 || sections[0] != "Operator notes:\nFocus on launch blockers." {
+		t.Fatalf("unexpected operator notes sections %#v", sections)
+	}
+}
+
+func TestAppendPlannerRepositoryContextSectionSkipsWithoutRepositoryContext(t *testing.T) {
+	activity := &AgentRunActivities{}
+	sections, err := activity.appendPlannerRepositoryContextSection(context.Background(), []string{"Existing"}, &resolvedRunState{}, "Current implementation context from the repository:", []string{"seed"})
+	if err != nil {
+		t.Fatalf("appendPlannerRepositoryContextSection returned error: %v", err)
+	}
+	if len(sections) != 1 || sections[0] != "Existing" {
+		t.Fatalf("expected sections to remain unchanged without repository context, got %#v", sections)
+	}
+}
+
+func TestBuildTaskPlanDocumentContextSectionsHandlesMissingAndExistingDraft(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	if err := db.Exec(`INSERT INTO docs_contents (id, document_id, content_text, word_count) VALUES (?, ?, ?, ?)`, "content-1", "doc-1", "Task planning draft body", 4).Error; err != nil {
+		t.Fatalf("insert docs content: %v", err)
+	}
+
+	activity := &AgentRunActivities{
+		docsContentRepo: repository.NewDocsContentRepository(db),
+	}
+
+	missingSections, err := activity.buildTaskPlanDocumentContextSections(context.Background(), "")
+	if err != nil {
+		t.Fatalf("buildTaskPlanDocumentContextSections missing case returned error: %v", err)
+	}
+	if len(missingSections) != 1 || !strings.Contains(missingSections[0], "No canonical task planning doc exists yet.") {
+		t.Fatalf("unexpected missing doc sections %#v", missingSections)
+	}
+
+	sections, err := activity.buildTaskPlanDocumentContextSections(context.Background(), "doc-1")
+	if err != nil {
+		t.Fatalf("buildTaskPlanDocumentContextSections existing case returned error: %v", err)
+	}
+	instructions := strings.Join(sections, "\n\n")
+	for _, snippet := range []string{
+		"Canonical task planning document ID: doc-1",
+		"Current task planning draft already in Docs:\nTask planning draft body",
+		"Resume from the existing planning doc draft instead of starting over unless the human explicitly wants a reset.",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected task plan document helper output to contain %q\n%s", snippet, instructions)
+		}
+	}
+}
+
+func TestBuildTaskRunPlanDocumentContextSectionsIncludesDocumentTitle(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	if err := db.Exec(`INSERT INTO docs_documents (id, workspace_id, space_id, title, status, visibility, created_by, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"doc-1", "ws-1", "space-1", "Implementation Plan", model.DocStatusDraft, model.SpaceVisibilityWorkspaceWide, "user-1",
+	).Error; err != nil {
+		t.Fatalf("insert docs document: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_contents (id, document_id, content_text, word_count) VALUES (?, ?, ?, ?)`, "content-1", "doc-1", "Task execution draft body", 4).Error; err != nil {
+		t.Fatalf("insert docs content: %v", err)
+	}
+
+	activity := &AgentRunActivities{
+		docsDocRepo:     repository.NewDocsDocumentRepository(db),
+		docsContentRepo: repository.NewDocsContentRepository(db),
+	}
+	sections, err := activity.buildTaskRunPlanDocumentContextSections(context.Background(), "doc-1")
+	if err != nil {
+		t.Fatalf("buildTaskRunPlanDocumentContextSections returned error: %v", err)
+	}
+	if len(sections) != 1 || !strings.Contains(sections[0], "Canonical task planning document: Implementation Plan [doc-1]") || !strings.Contains(sections[0], "Task execution draft body") {
+		t.Fatalf("unexpected task run plan document sections %#v", sections)
+	}
+}
+
+func TestBuildTaskLinkedDocsSectionsSkipsWhenNoLinkedDocs(t *testing.T) {
+	activity := &AgentRunActivities{}
+	sections, err := activity.buildTaskLinkedDocsSections(context.Background(), "ws-1", "task-1", "", "Other docs linked directly to this task:")
+	if err != nil {
+		t.Fatalf("buildTaskLinkedDocsSections returned error: %v", err)
+	}
+	if len(sections) != 0 {
+		t.Fatalf("expected no linked-doc sections, got %#v", sections)
+	}
+}
+
+func TestBuildTaskRunDocumentContextSectionsIncludesPlanDocumentThenLinkedDocs(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	if err := db.Exec(`INSERT INTO docs_documents (id, workspace_id, space_id, title, status, visibility, created_by, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"doc-1", "ws-1", "space-1", "Implementation Plan", model.DocStatusDraft, model.SpaceVisibilityWorkspaceWide, "user-1",
+	).Error; err != nil {
+		t.Fatalf("insert plan document: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_contents (id, document_id, content_text, word_count) VALUES (?, ?, ?, ?)`,
+		"content-1", "doc-1", "Task execution draft body", 4,
+	).Error; err != nil {
+		t.Fatalf("insert plan document content: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_documents (id, workspace_id, space_id, title, status, visibility, created_by, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"doc-2", "ws-1", "space-1", "Error Payload Notes", model.DocStatusDraft, model.SpaceVisibilityWorkspaceWide, "user-1",
+	).Error; err != nil {
+		t.Fatalf("insert linked document: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_contents (id, document_id, content_text, word_count) VALUES (?, ?, ?, ?)`,
+		"content-2", "doc-2", "Capture the upstream error payload fields.", 6,
+	).Error; err != nil {
+		t.Fatalf("insert linked document content: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_links (id, workspace_id, document_id, linked_object_type, linked_object_id, link_context, created_by, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+		"link-1", "ws-1", "doc-2", model.LinkedObjectTask, "task-1", "reference", "user-1",
+	).Error; err != nil {
+		t.Fatalf("insert docs link: %v", err)
+	}
+
+	activity := &AgentRunActivities{
+		docsDocRepo:     repository.NewDocsDocumentRepository(db),
+		docsContentRepo: repository.NewDocsContentRepository(db),
+		docsLinkRepo:    repository.NewDocsLinkRepository(db),
+	}
+	sections, err := activity.buildTaskRunDocumentContextSections(context.Background(), "ws-1", &model.PMTask{
+		ID:             "task-1",
+		PlanDocumentID: strPtr("doc-1"),
+	})
+	if err != nil {
+		t.Fatalf("buildTaskRunDocumentContextSections returned error: %v", err)
+	}
+	if len(sections) != 2 {
+		t.Fatalf("expected plan document plus linked-doc sections, got %#v", sections)
+	}
+	if !strings.Contains(sections[0], "Canonical task planning document: Implementation Plan [doc-1]") || !strings.Contains(sections[0], "Task execution draft body") {
+		t.Fatalf("unexpected plan document section %#v", sections[0])
+	}
+	if !strings.Contains(sections[1], "Other docs linked directly to this task:") || !strings.Contains(sections[1], "Error Payload Notes [doc-2]") {
+		t.Fatalf("unexpected linked-doc section %#v", sections[1])
+	}
+}
+
+func TestBuildTaskExecutionInstructionsIncludesRunContextDocsAndBranches(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	for _, args := range [][]any{
+		{"doc-plan", "ws-1", "space-1", "Implementation Plan", model.DocStatusDraft, model.SpaceVisibilityWorkspaceWide, "user-1"},
+		{"doc-linked", "ws-1", "space-1", "Kafka Metrics Notes", model.DocStatusDraft, model.SpaceVisibilityWorkspaceWide, "user-1"},
+	} {
+		if err := db.Exec(`INSERT INTO docs_documents (id, workspace_id, space_id, title, status, visibility, created_by, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, args...).Error; err != nil {
+			t.Fatalf("insert docs document: %v", err)
+		}
+	}
+	for _, args := range [][]any{
+		{"content-plan", "doc-plan", "Implement the histogram registration path.", 5},
+		{"content-linked", "doc-linked", "Use the existing Prometheus builder conventions.", 6},
+	} {
+		if err := db.Exec(`INSERT INTO docs_contents (id, document_id, content_text, word_count) VALUES (?, ?, ?, ?)`, args...).Error; err != nil {
+			t.Fatalf("insert docs content: %v", err)
+		}
+	}
+	if err := db.Exec(`INSERT INTO docs_links (id, workspace_id, document_id, linked_object_type, linked_object_id, link_context, created_by, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+		"link-1", "ws-1", "doc-linked", model.LinkedObjectTask, "task-1", "reference", "user-1",
+	).Error; err != nil {
+		t.Fatalf("insert docs link: %v", err)
+	}
+
+	baseBranch := "main"
+	workingBranch := "task/kafka-metrics"
+	activity := &AgentRunActivities{
+		docsDocRepo:     repository.NewDocsDocumentRepository(db),
+		docsContentRepo: repository.NewDocsContentRepository(db),
+		docsLinkRepo:    repository.NewDocsLinkRepository(db),
+	}
+	instructions, err := activity.buildTaskExecutionInstructions(context.Background(), &resolvedRunState{
+		run: &model.AgentRun{
+			WorkspaceID:    "ws-1",
+			BaseBranch:     &baseBranch,
+			WorkingBranch:  &workingBranch,
+			Input:          json.RawMessage(`{"additional_context":"Fallback notes should not win."}`),
+			InvocationMode: model.InvocationModeAutonomous,
+		},
+		task: &model.PMTask{
+			ID:             "task-1",
+			WorkspaceID:    "ws-1",
+			PlanDocumentID: strPtr("doc-plan"),
+		},
+	}, planningRunInput{
+		AdditionalContext: "Use the approved implementation plan first.",
+	})
+	if err != nil {
+		t.Fatalf("buildTaskExecutionInstructions returned error: %v", err)
+	}
+	for _, snippet := range []string{
+		"Operator notes:\nUse the approved implementation plan first.",
+		"Repository branches: base `main`, working `task/kafka-metrics`.",
+		"Canonical task planning document: Implementation Plan [doc-plan]\nImplement the histogram registration path.",
+		"Other docs linked directly to this task:\n- Kafka Metrics Notes [doc-linked]\nUse the existing Prometheus builder conventions.",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected task execution instructions to contain %q\n%s", snippet, instructions)
+		}
+	}
+	if strings.Contains(instructions, "Fallback notes should not win.") {
+		t.Fatalf("expected explicit input additional context to override run input notes\n%s", instructions)
+	}
+}
+
+func TestBuildTaskCompletionInstructionsIncludesTaskContext(t *testing.T) {
+	descriptionJSON := string(tiptap.MarkdownToJSON("Ship the metric and document the follow-up checks."))
+	activity := &AgentRunActivities{}
+	instructions := activity.buildTaskCompletionInstructions(&resolvedRunState{
+		task: &model.PMTask{
+			Name:        "Instrument Kafka producer metrics",
+			Description: &descriptionJSON,
+			EpicID:      strPtr("epic-1"),
+		},
+	}, planningRunInput{
+		AdditionalContext: "Only propose internal cleanup work.",
+	})
+
+	for _, snippet := range []string{
+		`return JSON only with the shape {"summary":"...","followups":[{"title":"...","description":"...","task_type":"chore","priority":"medium"}]}`,
+		"Only propose internal PM/docs/support follow-up work.",
+		"Task: Instrument Kafka producer metrics",
+		"Task description:\nShip the metric and document the follow-up checks.",
+		"Epic ID: epic-1",
+		"Operator notes:\nOnly propose internal cleanup work.",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected task completion instructions to contain %q\n%s", snippet, instructions)
+		}
+	}
+}
+
+func TestBuildCRMDealReviewInstructionsIncludesDealStagesAndSignals(t *testing.T) {
+	db := newCRMDealReviewInstructionTestDB(t)
+	now := time.Now().UTC()
+	for _, stmt := range []struct {
+		query string
+		args  []any
+	}{
+		{
+			query: `INSERT INTO crm_pipelines (id, workspace_id, name, is_default, position, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+			args: []any{"pipeline-1", "ws-1", "Sales Pipeline", true, 1},
+		},
+		{
+			query: `INSERT INTO crm_pipeline_stages (id, pipeline_id, name, stage_type, position, probability, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+			args: []any{"stage-1", "pipeline-1", "Qualified", model.CRMStageTypeOpen, 1, 25},
+		},
+		{
+			query: `INSERT INTO crm_pipeline_stages (id, pipeline_id, name, stage_type, position, probability, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+			args: []any{"stage-2", "pipeline-1", "Proposal", model.CRMStageTypeOpen, 2, 60},
+		},
+		{
+			query: `INSERT INTO crm_deals (id, workspace_id, display_id, name, pipeline_id, stage_id, currency, custom_properties, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, CAST(? AS BLOB), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+			args: []any{"deal-1", "ws-1", "DEAL-1", "Acme expansion", "pipeline-1", "stage-1", "USD", "{}"},
+		},
+		{
+			query: `INSERT INTO crm_buyer_signals (id, workspace_id, deal_id, signal_type, source_type, summary, metadata, confidence, detected_at, created_at)
+				VALUES (?, ?, ?, ?, ?, ?, CAST(? AS BLOB), ?, ?, CURRENT_TIMESTAMP)`,
+			args: []any{"signal-1", "ws-1", "deal-1", model.CRMSignalBuyingIntent, model.CRMSignalSourceEmail, "Asked for implementation timing", "{}", 0.87, now},
+		},
+	} {
+		if err := db.Exec(stmt.query, stmt.args...).Error; err != nil {
+			t.Fatalf("seed CRM instruction context: %v", err)
+		}
+	}
+
+	activity := &AgentRunActivities{
+		crmDealRepo:   repository.NewCRMDealRepository(db),
+		crmSignalRepo: repository.NewCRMSignalRepository(db),
+	}
+	instructions, err := activity.buildCRMDealReviewInstructions(context.Background(), &resolvedRunState{
+		run: &model.AgentRun{
+			WorkspaceID: "ws-1",
+			TargetID:    "deal-1",
+		},
+	}, planningRunInput{
+		AdditionalContext: "Prioritize stage hygiene.",
+	})
+	if err != nil {
+		t.Fatalf("buildCRMDealReviewInstructions returned error: %v", err)
+	}
+	for _, snippet := range []string{
+		`return JSON only with the shape {"summary":"...","recommended_stage_id":"optional-stage-id","note":"optional internal note"}`,
+		"Do not propose outbound messaging, contact creation, or sequence enrollment in this run.",
+		"Deal: Acme expansion",
+		"Current stage: Qualified (stage-1)",
+		"Available stages:\n- Qualified (stage-1)\n- Proposal (stage-2)",
+		"Recent buyer signals:\n- buying_intent: Asked for implementation timing (confidence 0.87)",
+		"Operator notes:\nPrioritize stage hygiene.",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected CRM deal review instructions to contain %q\n%s", snippet, instructions)
+		}
+	}
+}
+
+func TestBuildTaskPlannerParentEpicLinkedDocSectionsWrapsLinkedDocs(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	if err := db.Exec(`INSERT INTO docs_documents (id, workspace_id, space_id, title, status, visibility, created_by, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"doc-2", "ws-1", "space-1", "Epic Notes", model.DocStatusDraft, model.SpaceVisibilityWorkspaceWide, "user-1",
+	).Error; err != nil {
+		t.Fatalf("insert linked document: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_contents (id, document_id, content_text, word_count) VALUES (?, ?, ?, ?)`,
+		"content-2", "doc-2", "Shared rollout notes", 3,
+	).Error; err != nil {
+		t.Fatalf("insert linked document content: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_links (id, workspace_id, document_id, linked_object_type, linked_object_id, link_context, created_by, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+		"link-2", "ws-1", "doc-2", model.LinkedObjectEpic, "epic-1", "reference", "user-1",
+	).Error; err != nil {
+		t.Fatalf("insert docs link: %v", err)
+	}
+
+	activity := &AgentRunActivities{
+		docsDocRepo:     repository.NewDocsDocumentRepository(db),
+		docsContentRepo: repository.NewDocsContentRepository(db),
+		docsLinkRepo:    repository.NewDocsLinkRepository(db),
+	}
+	sections, err := activity.buildTaskPlannerParentEpicLinkedDocSections(context.Background(), "ws-1", "epic-1", "")
+	if err != nil {
+		t.Fatalf("buildTaskPlannerParentEpicLinkedDocSections returned error: %v", err)
+	}
+	if len(sections) != 1 {
+		t.Fatalf("expected one parent-epic linked-doc section, got %#v", sections)
+	}
+	if !strings.Contains(sections[0], "Other docs linked to the parent epic:") || !strings.Contains(sections[0], "Epic Notes [doc-2]") {
+		t.Fatalf("unexpected parent-epic linked-doc section %#v", sections[0])
+	}
+}
+
+func TestBuildTaskPlannerCommentSectionsSkipsWhenNoCommentsAvailable(t *testing.T) {
+	activity := &AgentRunActivities{}
+	sections, err := activity.buildTaskPlannerCommentSections(context.Background(), "task-1")
+	if err != nil {
+		t.Fatalf("buildTaskPlannerCommentSections returned error: %v", err)
+	}
+	if len(sections) != 0 {
+		t.Fatalf("expected no task-comment sections, got %#v", sections)
+	}
+}
+
+func TestBuildTaskPlannerSupportingContextSectionsKeepsTaskThenEpicDocOrder(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	for _, args := range [][]any{
+		{"doc-task", "ws-1", "space-1", "Task Notes", model.DocStatusDraft, model.SpaceVisibilityWorkspaceWide, "user-1"},
+		{"doc-epic", "ws-1", "space-1", "Epic Notes", model.DocStatusDraft, model.SpaceVisibilityWorkspaceWide, "user-1"},
+	} {
+		if err := db.Exec(`INSERT INTO docs_documents (id, workspace_id, space_id, title, status, visibility, created_by, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, args...).Error; err != nil {
+			t.Fatalf("insert docs document: %v", err)
+		}
+	}
+	for _, args := range [][]any{
+		{"content-task", "doc-task", "Task-scoped notes", 2},
+		{"content-epic", "doc-epic", "Epic-scoped notes", 2},
+	} {
+		if err := db.Exec(`INSERT INTO docs_contents (id, document_id, content_text, word_count) VALUES (?, ?, ?, ?)`, args...).Error; err != nil {
+			t.Fatalf("insert docs content: %v", err)
+		}
+	}
+	for _, args := range [][]any{
+		{"link-task", "ws-1", "doc-task", model.LinkedObjectTask, "task-1", "reference", "user-1"},
+		{"link-epic", "ws-1", "doc-epic", model.LinkedObjectEpic, "epic-1", "reference", "user-1"},
+	} {
+		if err := db.Exec(`INSERT INTO docs_links (id, workspace_id, document_id, linked_object_type, linked_object_id, link_context, created_by, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`, args...).Error; err != nil {
+			t.Fatalf("insert docs link: %v", err)
+		}
+	}
+
+	activity := &AgentRunActivities{
+		docsDocRepo:     repository.NewDocsDocumentRepository(db),
+		docsContentRepo: repository.NewDocsContentRepository(db),
+		docsLinkRepo:    repository.NewDocsLinkRepository(db),
+	}
+	sections, err := activity.buildTaskPlannerSupportingContextSections(context.Background(), &resolvedRunState{
+		run:  &model.AgentRun{WorkspaceID: "ws-1"},
+		task: &model.PMTask{ID: "task-1"},
+		epic: &model.PMEpic{ID: "epic-1"},
+	}, planningRunInput{})
+	if err != nil {
+		t.Fatalf("buildTaskPlannerSupportingContextSections returned error: %v", err)
+	}
+	if len(sections) != 2 {
+		t.Fatalf("expected task and epic linked-doc sections, got %#v", sections)
+	}
+	if !strings.Contains(sections[0], "Other docs linked directly to this task:") || !strings.Contains(sections[0], "Task Notes [doc-task]") {
+		t.Fatalf("unexpected task linked-doc section %#v", sections[0])
+	}
+	if !strings.Contains(sections[1], "Other docs linked to the parent epic:") || !strings.Contains(sections[1], "Epic Notes [doc-epic]") {
+		t.Fatalf("unexpected parent-epic linked-doc section %#v", sections[1])
+	}
+}
+
+func TestBuildEpicPlannerSupportingContextSectionsKeepsEpicDocsBeforeExistingTasks(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	if err := db.Exec(`CREATE TABLE support_conversations (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		linked_task_id TEXT,
+		updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create support conversations table: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_documents (id, workspace_id, space_id, title, status, visibility, created_by, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"doc-epic", "ws-1", "space-1", "Epic Notes", model.DocStatusDraft, model.SpaceVisibilityWorkspaceWide, "user-1",
+	).Error; err != nil {
+		t.Fatalf("insert docs document: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_contents (id, document_id, content_text, word_count) VALUES (?, ?, ?, ?)`,
+		"content-epic", "doc-epic", "Epic-scoped notes", 2,
+	).Error; err != nil {
+		t.Fatalf("insert docs content: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_links (id, workspace_id, document_id, linked_object_type, linked_object_id, link_context, created_by, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+		"link-epic", "ws-1", "doc-epic", model.LinkedObjectEpic, "epic-1", "reference", "user-1",
+	).Error; err != nil {
+		t.Fatalf("insert docs link: %v", err)
+	}
+
+	activity := &AgentRunActivities{
+		conversationRepo: repository.NewSupportConversationRepository(db),
+		docsDocRepo:      repository.NewDocsDocumentRepository(db),
+		docsContentRepo:  repository.NewDocsContentRepository(db),
+		docsLinkRepo:     repository.NewDocsLinkRepository(db),
+	}
+	sections, err := activity.buildEpicPlannerSupportingContextSections(context.Background(), &resolvedRunState{
+		run: &model.AgentRun{WorkspaceID: "ws-1"},
+		epic: &model.PMEpic{
+			ID:          "epic-1",
+			Name:        "Launch readiness",
+			WorkspaceID: "ws-1",
+		},
+		epicTasks: []model.PMTask{{ID: "task-1", Name: "Task A"}},
+	}, planningRunInput{})
+	if err != nil {
+		t.Fatalf("buildEpicPlannerSupportingContextSections returned error: %v", err)
+	}
+	if len(sections) != 3 {
+		t.Fatalf("expected epic-doc plus existing-task summary sections, got %#v", sections)
+	}
+	if !strings.Contains(sections[0], "Other docs linked to this epic:") || !strings.Contains(sections[0], "Epic Notes [doc-epic]") {
+		t.Fatalf("unexpected epic linked-doc section %#v", sections[0])
+	}
+	if !strings.Contains(sections[1], "IMPORTANT: 1 tasks already exist under this epic.") {
+		t.Fatalf("unexpected existing-task warning section %#v", sections[1])
+	}
+	if !strings.Contains(sections[2], "Tasks already linked to this epic:\n- Task A [task-1]") {
+		t.Fatalf("unexpected existing-task listing section %#v", sections[2])
+	}
+}
+
+func TestAppendEpicTeamSectionsHandlesAssignedAndMissingTeam(t *testing.T) {
+	teamID := "team-1"
+	withTeam := appendEpicTeamSections(nil, &model.PMEpic{TeamID: &teamID})
+	if len(withTeam) != 1 || withTeam[0] != "Epic team ID: team-1" {
+		t.Fatalf("unexpected team-assigned sections %#v", withTeam)
+	}
+
+	withoutTeam := appendEpicTeamSections(nil, &model.PMEpic{})
+	if len(withoutTeam) != 1 || !strings.Contains(withoutTeam[0], "This epic does not currently have a team.") {
+		t.Fatalf("unexpected no-team sections %#v", withoutTeam)
+	}
+}
+
+func TestAppendEpicLinkedTicketsSectionSkipsBlankAndWrapsContent(t *testing.T) {
+	sections := appendEpicLinkedTicketsSection(nil, "   ")
+	if len(sections) != 0 {
+		t.Fatalf("expected blank linked-ticket content to be skipped, got %#v", sections)
+	}
+
+	sections = appendEpicLinkedTicketsSection(nil, "- Ticket #12: Launch blocker")
+	if len(sections) != 1 || sections[0] != "Support and customer context already linked to this epic:\n- Ticket #12: Launch blocker" {
+		t.Fatalf("unexpected linked-ticket sections %#v", sections)
+	}
+}
+
+func TestAppendTitledPlanningContextSectionSkipsBlankAndWrapsContent(t *testing.T) {
+	sections := appendTitledPlanningContextSection(nil, "Task comments:", "   ")
+	if len(sections) != 0 {
+		t.Fatalf("expected blank titled context to be skipped, got %#v", sections)
+	}
+
+	sections = appendTitledPlanningContextSection(nil, "Task comments:", "- Alice: Ready")
+	if len(sections) != 1 || sections[0] != "Task comments:\n- Alice: Ready" {
+		t.Fatalf("unexpected titled planning sections %#v", sections)
+	}
+}
+
+func TestAppendTaskPlannerTaskSummarySectionsSummarizesTask(t *testing.T) {
+	description := "Investigate the approval mismatch"
+	teamID := "team-1"
+	sections := appendTaskPlannerTaskSummarySections(nil, &model.PMTask{
+		Name:        "Harden approval preview binding",
+		Description: &description,
+		TeamID:      &teamID,
+	})
+	if got, want := strings.Join(sections, "\n\n"), strings.Join([]string{
+		"Task: Harden approval preview binding",
+		"Task description:\nInvestigate the approval mismatch",
+		"Task team ID: team-1",
+	}, "\n\n"); got != want {
+		t.Fatalf("unexpected task summary sections\nwant:\n%s\n\ngot:\n%s", want, got)
+	}
+}
+
+func TestAppendTaskPlannerParentEpicSummarySectionsSummarizesEpic(t *testing.T) {
+	description := "Improve native planner reliability"
+	sections := appendTaskPlannerParentEpicSummarySections(nil, &model.PMEpic{
+		Name:        "Dynamic native skills",
+		Description: &description,
+	})
+	if got, want := strings.Join(sections, "\n\n"), strings.Join([]string{
+		"Parent epic: Dynamic native skills",
+		"Parent epic description:\nImprove native planner reliability",
+	}, "\n\n"); got != want {
+		t.Fatalf("unexpected parent epic summary sections\nwant:\n%s\n\ngot:\n%s", want, got)
+	}
+}
+
+func TestAppendTaskRunRepositoryBranchSectionsFormatsAvailableBranches(t *testing.T) {
+	base := "main"
+	working := "feature/task-plan"
+	testCases := []struct {
+		name string
+		run  *model.AgentRun
+		want []string
+	}{
+		{
+			name: "both",
+			run:  &model.AgentRun{BaseBranch: &base, WorkingBranch: &working},
+			want: []string{"Repository branches: base `main`, working `feature/task-plan`."},
+		},
+		{
+			name: "working only",
+			run:  &model.AgentRun{WorkingBranch: &working},
+			want: []string{"Repository working branch: `feature/task-plan`."},
+		},
+		{
+			name: "base only",
+			run:  &model.AgentRun{BaseBranch: &base},
+			want: []string{"Repository base branch: `main`."},
+		},
+		{
+			name: "none",
+			run:  &model.AgentRun{},
+			want: nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			sections := appendTaskRunRepositoryBranchSections(nil, tc.run)
+			if got, want := strings.Join(sections, "\n\n"), strings.Join(tc.want, "\n\n"); got != want {
+				t.Fatalf("unexpected branch sections\nwant:\n%s\n\ngot:\n%s", want, got)
+			}
+		})
+	}
+}
+
+func TestAppendExistingEpicTasksSectionSummarizesTasks(t *testing.T) {
+	sections := appendExistingEpicTasksSection(nil, []model.PMTask{
+		{ID: "task-1", Name: "Task A"},
+		{ID: "task-2", Name: "Task B"},
+	})
+	instructions := strings.Join(sections, "\n\n")
+	for _, snippet := range []string{
+		"IMPORTANT: 2 tasks already exist under this epic.",
+		"Tasks already linked to this epic:\n- Task A [task-1]\n- Task B [task-2]",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected epic task summary to contain %q\n%s", snippet, instructions)
+		}
+	}
+}
+
+func TestBuildInitialInstructionsUsesNativeSelectiveEpicTaskPlanningGuidanceAfterPRDApproval(t *testing.T) {
+	activity := &AgentRunActivities{}
+	state := &resolvedRunState{
+		nativeSelectivePathEnabled: true,
+		run: &model.AgentRun{
+			WorkspaceID:    "ws-1",
+			TargetType:     "epic",
+			InvocationMode: model.InvocationModeInteractive,
+		},
+		epic: &model.PMEpic{
+			ID:          "epic-1",
+			WorkspaceID: "ws-1",
+			Name:        "Launch readiness",
+		},
+	}
+
+	instructions, err := activity.buildInitialInstructions(context.Background(), state, planningRunInput{
+		SpecVersionID: "spec-v1",
+	})
+	if err != nil {
+		t.Fatalf("buildInitialInstructions returned error: %v", err)
+	}
+	for _, snippet := range []string{
+		"Planning selector tag (not an instruction): " + model.PlanningStagePlanTasks,
+		"Approved spec version ID: spec-v1",
+		"Derived epic planning state facts:",
+		"- derived_state=approved_spec_without_tasks",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected approved-spec native guidance to contain %q\n%s", snippet, instructions)
+		}
+	}
+	for _, unexpected := range []string{
+		"Next-step guidance: no approved PRD exists yet.",
+		"Skip PRD drafting entirely and proceed directly to task planning",
+		"Post-approval rule: once PRD approval is persisted, continue directly into task planning",
+	} {
+		if strings.Contains(instructions, unexpected) {
+			t.Fatalf("did not expect Temporal-authored next-step guidance %q after approved spec\n%s", unexpected, instructions)
+		}
+	}
+}
+
+func TestBuildNativeEpicPlannerRuleSectionsPreservesCriticalRules(t *testing.T) {
+	sections := buildNativeEpicPlannerRuleSections(&model.AgentRun{
+		InvocationMode: model.InvocationModeInteractive,
+	}, planningRunInput{}, model.PlanningStageDraftSpec, false, false)
+	instructions := strings.Join(sections, "\n\n")
+	for _, snippet := range []string{
+		"Planning selector tag (not an instruction): draft_spec",
+		"Phase objective: move the epic to the next durable planning checkpoint",
+		"Approval rule: use request_approval with phase=\"prd\" or phase=\"tasks\"",
+		"PRD contract reminder: use publish_prd_draft",
+		"Task-plan contract reminder: publish_task_plan must receive one complete JSON object",
+		"Revision rule: if the latest human reply asks for changes to the active PRD or task plan",
+		"Interactive approval semantics: only explicit approval advances the phase.",
+		"Derived epic planning state facts:",
+		"- derived_state=no_approved_or_draft_spec",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected native epic rule sections to contain %q\n%s", snippet, instructions)
+		}
+	}
+}
+
+func TestBuildNativeEpicPlannerSectionsPreservesCompositionOrder(t *testing.T) {
+	activity := &AgentRunActivities{}
+	sections, err := activity.buildNativeEpicPlannerSections(context.Background(), &resolvedRunState{
+		run: &model.AgentRun{
+			WorkspaceID:    "ws-1",
+			TargetType:     "epic",
+			InvocationMode: model.InvocationModeInteractive,
+		},
+		epic: &model.PMEpic{
+			ID:          "epic-1",
+			WorkspaceID: "ws-1",
+			Name:        "Launch readiness",
+		},
+	}, planningRunInput{
+		AdditionalContext: "Focus on launch blockers.",
+	})
+	if err != nil {
+		t.Fatalf("buildNativeEpicPlannerSections returned error: %v", err)
+	}
+	instructions := strings.Join(sections, "\n\n")
+	phaseIndex := strings.Index(instructions, "Planning selector tag (not an instruction): draft_spec")
+	factsIndex := strings.Index(instructions, "Current durable planning facts:")
+	operatorNotesIndex := strings.Index(instructions, "Operator notes:\nFocus on launch blockers.")
+	if phaseIndex == -1 || factsIndex == -1 || operatorNotesIndex == -1 {
+		t.Fatalf("expected composed native epic guidance sections to be present\n%s", instructions)
+	}
+	if !(phaseIndex < factsIndex && factsIndex < operatorNotesIndex) {
+		t.Fatalf("expected native epic composition order rules -> facts -> context\n%s", instructions)
+	}
+}
+
+func TestBuildInitialInstructionsUsesNativeSelectiveEpicPRDRevisionGuidanceForUnapprovedDraft(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	if err := db.Exec(`INSERT INTO docs_contents (id, document_id, content_text, word_count) VALUES (?, ?, ?, ?)`, "content-1", "doc-1", "Existing PRD draft for revision.", 5).Error; err != nil {
+		t.Fatalf("insert docs content: %v", err)
+	}
+
+	activity := &AgentRunActivities{
+		docsContentRepo: repository.NewDocsContentRepository(db),
+	}
+	state := &resolvedRunState{
+		nativeSelectivePathEnabled: true,
+		run: &model.AgentRun{
+			WorkspaceID:    "ws-1",
+			TargetType:     "epic",
+			InvocationMode: model.InvocationModeInteractive,
+		},
+		epic: &model.PMEpic{
+			ID:          "epic-1",
+			WorkspaceID: "ws-1",
+			Name:        "Launch readiness",
+		},
+	}
+
+	instructions, err := activity.buildInitialInstructions(context.Background(), state, planningRunInput{
+		SpecDocumentID: "doc-1",
+	})
+	if err != nil {
+		t.Fatalf("buildInitialInstructions returned error: %v", err)
+	}
+	for _, snippet := range []string{
+		"Planning selector tag (not an instruction): prd_revision",
+		"- derived_state=unapproved_draft_spec_exists",
+		"Resume from the current draft",
+		"Current spec draft:",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected unapproved-draft native guidance to contain %q\n%s", snippet, instructions)
+		}
+	}
+	if strings.Contains(instructions, "Planning selector tag (not an instruction): plan_tasks") {
+		t.Fatalf("did not expect task-planning guidance for unapproved draft\n%s", instructions)
+	}
+}
+
+func TestBuildInitialInstructionsUsesNativeSelectiveEpicTaskExtensionGuidanceWhenTasksAlreadyExist(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	if err := db.Exec(`CREATE TABLE support_conversations (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		linked_task_id TEXT,
+		updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create support conversations table: %v", err)
+	}
+	activity := &AgentRunActivities{
+		conversationRepo: repository.NewSupportConversationRepository(db),
+		messageRepo:      repository.NewSupportMessageRepository(db),
+	}
+	state := &resolvedRunState{
+		nativeSelectivePathEnabled: true,
+		run: &model.AgentRun{
+			WorkspaceID:    "ws-1",
+			TargetType:     "epic",
+			InvocationMode: model.InvocationModeInteractive,
+		},
+		epic: &model.PMEpic{
+			ID:          "epic-1",
+			WorkspaceID: "ws-1",
+			Name:        "Launch readiness",
+		},
+		epicTasks: []model.PMTask{
+			{ID: "task-1", Name: "Task A"},
+		},
+	}
+
+	instructions, err := activity.buildInitialInstructions(context.Background(), state, planningRunInput{
+		SpecVersionID: "spec-v1",
+	})
+	if err != nil {
+		t.Fatalf("buildInitialInstructions returned error: %v", err)
+	}
+	for _, snippet := range []string{
+		"Planning selector tag (not an instruction): task_extension",
+		"- derived_state=approved_spec_with_existing_tasks",
+		"IMPORTANT: 1 tasks already exist under this epic.",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected task-extension native guidance to contain %q\n%s", snippet, instructions)
+		}
+	}
+	if strings.Contains(instructions, "Skip PRD drafting entirely and proceed directly to task planning") {
+		t.Fatalf("did not expect first-pass task-planning guidance once tasks already exist\n%s", instructions)
+	}
+}
+
+func TestNativeEpicPlannerPhaseName(t *testing.T) {
+	testCases := []struct {
+		name           string
+		input          planningRunInput
+		hasSpecContent bool
+		hasTasks       bool
+		want           string
+	}{
+		{
+			name: "approved spec with no tasks moves to task planning",
+			input: planningRunInput{
+				SpecVersionID: "spec-v1",
+			},
+			want: model.PlanningStagePlanTasks,
+		},
+		{
+			name: "approved spec with tasks enters extension mode",
+			input: planningRunInput{
+				SpecVersionID: "spec-v1",
+			},
+			hasTasks: true,
+			want:     "task_extension",
+		},
+		{
+			name: "draft spec doc stays in prd revision",
+			input: planningRunInput{
+				SpecDocumentID: "doc-1",
+			},
+			hasSpecContent: true,
+			want:           "prd_revision",
+		},
+		{
+			name:  "no prior spec starts in draft spec",
+			input: planningRunInput{},
+			want:  model.PlanningStageDraftSpec,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := nativeEpicPlannerPhaseName(tc.input, tc.hasSpecContent, tc.hasTasks); got != tc.want {
+				t.Fatalf("expected phase %q, got %q", tc.want, got)
+			}
+		})
+	}
+}
+
+func TestNativeEpicPlannerDerivedStateFacts(t *testing.T) {
+	testCases := []struct {
+		name           string
+		input          planningRunInput
+		hasSpecContent bool
+		hasTasks       bool
+		wantSnippet    string
+	}{
+		{
+			name: "approved spec with no tasks derives task planning state",
+			input: planningRunInput{
+				SpecVersionID: "spec-v1",
+			},
+			wantSnippet: "- derived_state=approved_spec_without_tasks",
+		},
+		{
+			name: "approved spec with tasks derives extension state",
+			input: planningRunInput{
+				SpecVersionID: "spec-v1",
+			},
+			hasTasks:    true,
+			wantSnippet: "- derived_state=approved_spec_with_existing_tasks",
+		},
+		{
+			name: "draft spec derives unapproved draft state",
+			input: planningRunInput{
+				SpecDocumentID: "doc-1",
+			},
+			hasSpecContent: true,
+			wantSnippet:    "- derived_state=unapproved_draft_spec_exists",
+		},
+		{
+			name:        "no prior spec follows full loop",
+			input:       planningRunInput{},
+			wantSnippet: "- derived_state=no_approved_or_draft_spec",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := nativeEpicPlannerDerivedStateFacts(tc.input, tc.hasSpecContent, tc.hasTasks)
+			if !strings.Contains(got, tc.wantSnippet) {
+				t.Fatalf("expected guidance to contain %q, got %q", tc.wantSnippet, got)
+			}
+		})
+	}
+}
+
+func TestLatestNativeRepairInstructionRequiresSelectivePath(t *testing.T) {
+	messages := []model.AgentRunMessage{
+		{Role: "user", MessageType: "policy_retry", Content: "System correction: continue from your last assistant message."},
+	}
+
+	got := latestNativeRepairInstruction(&resolvedRunState{nativeSelectivePathEnabled: false}, messages)
+	if got != (nativeRepairInstruction{}) {
+		t.Fatalf("expected no repair instruction without selective path, got %#v", got)
+	}
+}
+
+func TestLatestNativeRepairInstructionIgnoresResolvedRetry(t *testing.T) {
+	messages := []model.AgentRunMessage{
+		{Role: "user", MessageType: "policy_retry", Content: "System correction: continue from your last assistant message."},
+		{Role: "assistant", MessageType: "assistant_turn", Content: "Retrying with the correct handoff."},
+	}
+
+	got := latestNativeRepairInstruction(&resolvedRunState{nativeSelectivePathEnabled: true}, messages)
+	if got != (nativeRepairInstruction{}) {
+		t.Fatalf("expected no repair instruction after a later assistant turn, got %#v", got)
+	}
+}
+
+func TestClassifyNativeRepairInstructionForApprovalPreviewBinding(t *testing.T) {
+	state := &resolvedRunState{nativeSelectivePathEnabled: true}
+	message := &model.AgentRunMessage{
+		Role:        "user",
+		MessageType: "policy_retry",
+		Content:     "System correction: the previous turn requested approval without binding it to a same-turn preview. Include preview_panel_key when needed.",
+	}
+
+	got := classifyNativeRepairInstruction(state, message)
+	if got.Class != "approval_preview_binding" {
+		t.Fatalf("expected approval preview binding class, got %#v", got)
+	}
+	for _, snippet := range []string{"same turn", "preview_panel_key", "final action"} {
+		if !strings.Contains(strings.ToLower(got.Instructions), snippet) {
+			t.Fatalf("expected approval preview repair guidance to contain %q, got %q", snippet, got.Instructions)
+		}
+	}
+}
+
+func TestClassifyNativeRepairInstructionForApprovalPreviewPanelKeyRequired(t *testing.T) {
+	state := &resolvedRunState{nativeSelectivePathEnabled: true}
+	message := &model.AgentRunMessage{
+		Role:        "user",
+		MessageType: "policy_retry",
+		Content:     "System correction: the previous turn requested approval after publishing multiple same-turn previews but did not include preview_panel_key.",
+	}
+
+	got := classifyNativeRepairInstruction(state, message)
+	if got.Class != "approval_preview_panel_key_required" {
+		t.Fatalf("expected preview_panel_key-specific class, got %#v", got)
+	}
+	for _, snippet := range []string{"multiple previews", "preview_panel_key", "final action"} {
+		if !strings.Contains(strings.ToLower(got.Instructions), snippet) {
+			t.Fatalf("expected preview_panel_key repair guidance to contain %q, got %q", snippet, got.Instructions)
+		}
+	}
+}
+
+func TestClassifyNativeRepairInstructionForApprovalSpecificPreviewRequired(t *testing.T) {
+	state := &resolvedRunState{nativeSelectivePathEnabled: true}
+	message := &model.AgentRunMessage{
+		Role:        "user",
+		MessageType: "policy_retry",
+		Content:     `System correction: the previous turn requested approval without binding it to the required same-turn prd_draft preview. Set preview_panel_key="prd_draft" on the approval handoff.`,
+	}
+
+	got := classifyNativeRepairInstruction(state, message)
+	if got.Class != "approval_specific_preview_required" {
+		t.Fatalf("expected specific-preview class, got %#v", got)
+	}
+	for _, snippet := range []string{"prd_draft", "preview_panel_key", "final action"} {
+		if !strings.Contains(strings.ToLower(got.Instructions), snippet) {
+			t.Fatalf("expected specific-preview repair guidance to contain %q, got %q", snippet, got.Instructions)
+		}
+	}
+}
+
+func TestClassifyNativeRepairInstructionForReviewCheckpointHandoff(t *testing.T) {
+	state := &resolvedRunState{nativeSelectivePathEnabled: true}
+	message := &model.AgentRunMessage{
+		Role:        "user",
+		MessageType: "policy_retry",
+		Content:     "System correction: emit a review_checkpoint handoff using the runtime-appropriate mechanism.",
+	}
+
+	got := classifyNativeRepairInstruction(state, message)
+	if got.Class != "review_checkpoint_handoff" {
+		t.Fatalf("expected review checkpoint class, got %#v", got)
+	}
+	if !strings.Contains(got.Instructions, "review_checkpoint handoff") {
+		t.Fatalf("expected review checkpoint repair guidance, got %q", got.Instructions)
+	}
+}
+
+func TestClassifyNativeRepairInstructionForRequiredInteractionHandoff(t *testing.T) {
+	state := &resolvedRunState{
+		nativeSelectivePathEnabled: true,
+		skillPolicy: workerpkg.SkillPolicy{
+			CompletionRequiresInteractionKinds: []string{
+				model.AgentRunInteractionKindApprovalRequest,
+				model.AgentRunInteractionKindRequestUserInput,
+			},
+		},
+	}
+	message := &model.AgentRunMessage{
+		Role:        "user",
+		MessageType: "policy_retry",
+		Content:     "System correction: the previous turn ended without creating the required interaction.",
+	}
+
+	got := classifyNativeRepairInstruction(state, message)
+	if got.Class != "required_interaction_handoff" {
+		t.Fatalf("expected required interaction class, got %#v", got)
+	}
+	if !strings.Contains(got.Instructions, model.AgentRunInteractionKindApprovalRequest) || !strings.Contains(got.Instructions, model.AgentRunInteractionKindRequestUserInput) {
+		t.Fatalf("expected required interaction repair guidance to list active policy kinds, got %q", got.Instructions)
+	}
+}
+
+func TestLatestNativeRepairInstructionFallsBackToGenericRequiredHandoff(t *testing.T) {
+	state := &resolvedRunState{nativeSelectivePathEnabled: true}
+	messages := []model.AgentRunMessage{
+		{
+			Role:        "user",
+			MessageType: "policy_retry",
+			Content:     "System correction: use the exact contract from the last error.",
+		},
+	}
+
+	got := latestNativeRepairInstruction(state, messages)
+	if got.Class != "required_interaction_handoff" {
+		t.Fatalf("expected generic fallback class, got %#v", got)
+	}
+	if !strings.Contains(got.Instructions, "Continue from your last assistant turn") {
+		t.Fatalf("expected fallback repair guidance to remain usable, got %q", got.Instructions)
+	}
+}
+
+func TestApprovalPreviewRetryInstructionForSpecificPreview(t *testing.T) {
+	got := approvalPreviewRetryInstruction("approval_request requires a same-turn prd_draft preview before requesting approval")
+	if !strings.Contains(got, "required same-turn prd_draft preview") {
+		t.Fatalf("expected retry instruction to preserve required preview key, got %q", got)
+	}
+	if !strings.Contains(got, `preview_panel_key="prd_draft"`) {
+		t.Fatalf("expected retry instruction to preserve preview_panel_key binding, got %q", got)
+	}
+}
+
+func TestApprovalPreviewRetryInstructionForMultiplePreviews(t *testing.T) {
+	got := approvalPreviewRetryInstruction("approval_request requires preview_panel_key when multiple same-turn previews exist")
+	if !strings.Contains(got, "multiple same-turn previews") {
+		t.Fatalf("expected retry instruction to mention multiple previews, got %q", got)
+	}
+	if !strings.Contains(got, "preview_panel_key") {
+		t.Fatalf("expected retry instruction to mention preview_panel_key, got %q", got)
+	}
+}
+
+func TestNormalizedCompletionRetryInstructionForSpecificPreview(t *testing.T) {
+	state := &resolvedRunState{}
+	got := normalizedCompletionRetryInstruction(state, fmt.Errorf("approval_request requires a same-turn prd_draft preview before requesting approval"))
+	if got.Class != "approval_specific_preview_required" {
+		t.Fatalf("expected specific-preview class, got %#v", got)
+	}
+	if !strings.Contains(got.Instructions, `preview_panel_key="prd_draft"`) {
+		t.Fatalf("expected specific-preview retry instruction, got %q", got.Instructions)
+	}
+}
+
+func TestNormalizedCompletionRetryInstructionForMultiplePreviews(t *testing.T) {
+	state := &resolvedRunState{}
+	got := normalizedCompletionRetryInstruction(state, fmt.Errorf("approval_request requires preview_panel_key when multiple same-turn previews exist"))
+	if got.Class != "approval_preview_panel_key_required" {
+		t.Fatalf("expected preview-panel-key class, got %#v", got)
+	}
+	if !strings.Contains(got.Instructions, "multiple same-turn previews") {
+		t.Fatalf("expected multiple-preview retry instruction, got %q", got.Instructions)
+	}
+}
+
+func TestNormalizedCompletionRetryInstructionForRequiredInteractionFallback(t *testing.T) {
+	state := &resolvedRunState{
+		skillPolicy: workerpkg.SkillPolicy{
+			CompletionRequiresInteractionKinds: []string{
+				model.AgentRunInteractionKindApprovalRequest,
+				model.AgentRunInteractionKindRequestUserInput,
+			},
+		},
+	}
+	got := normalizedCompletionRetryInstruction(state, fmt.Errorf("completion interaction missing"))
+	if got.Class != "required_interaction_handoff" {
+		t.Fatalf("expected required-interaction class, got %#v", got)
+	}
+	if !strings.Contains(got.Instructions, model.AgentRunInteractionKindApprovalRequest) || !strings.Contains(got.Instructions, model.AgentRunInteractionKindRequestUserInput) {
+		t.Fatalf("expected required interaction kinds in retry instruction, got %q", got.Instructions)
+	}
+}
+
+func TestNormalizedCompletionRetryInstructionForReviewAgent(t *testing.T) {
+	state := &resolvedRunState{agent: &model.Agent{PresetKey: model.AgentPresetReviewAgent}}
+	got := normalizedCompletionRetryInstruction(state, fmt.Errorf("completion interaction missing"))
+	if got.Class != "review_checkpoint_handoff" {
+		t.Fatalf("expected review checkpoint class, got %#v", got)
+	}
+	if !strings.Contains(got.Instructions, "review_checkpoint handoff") {
+		t.Fatalf("expected review retry instruction, got %q", got.Instructions)
+	}
+}
+
+func TestNormalizedCompletionRetryInstructionHandlesNilState(t *testing.T) {
+	got := normalizedCompletionRetryInstruction(nil, fmt.Errorf("completion interaction missing"))
+	if got.Class != "required_interaction_handoff" {
+		t.Fatalf("expected generic required-interaction class, got %#v", got)
+	}
+	if !strings.Contains(got.Instructions, "required interaction handoffs") {
+		t.Fatalf("expected generic retry instruction, got %q", got.Instructions)
+	}
+}
+
+func TestLatestNativeRepairInstructionFromArtifactsUsesLatestAssistantSequence(t *testing.T) {
+	messages := []model.AgentRunMessage{
+		{SequenceNo: 1, Role: "user", MessageType: "prompt", Content: "Start"},
+		{SequenceNo: 2, Role: "assistant", MessageType: "assistant_turn", Content: "Drafted the task plan."},
+	}
+	payload, _ := json.Marshal(model.NativeRepairState{
+		Source:      "tool_failure",
+		RepairClass: "publish_task_plan_object_shape",
+		RepairHint:  "Retry publish_task_plan with one complete JSON object in content.",
+	})
+	artifacts := []model.AgentRunArtifact{
+		{
+			ArtifactType:  model.AgentRunArtifactTypeNativeRepairState,
+			InlineContent: strPtr(string(payload)),
+			Metadata:      buildAssistantSequenceArtifactMetadata(2),
+			SequenceNo:    1,
+		},
+	}
+
+	got := latestNativeRepairInstructionFromArtifacts(messages, artifacts)
+	if got.Source != "native_repair_state:tool_failure" {
+		t.Fatalf("expected repair artifact source, got %#v", got)
+	}
+	if got.Class != "publish_task_plan_object_shape" {
+		t.Fatalf("expected repair artifact class, got %#v", got)
+	}
+	if !strings.Contains(got.Instructions, "complete JSON object") {
+		t.Fatalf("expected repair hint from artifact, got %q", got.Instructions)
+	}
+}
+
+func TestLatestNativeRepairInstructionFromArtifactsIgnoresStaleAssistantArtifact(t *testing.T) {
+	messages := []model.AgentRunMessage{
+		{SequenceNo: 1, Role: "user", MessageType: "prompt", Content: "Start"},
+		{SequenceNo: 2, Role: "assistant", MessageType: "assistant_turn", Content: "Old failing turn."},
+		{SequenceNo: 3, Role: "user", MessageType: "prompt", Content: "Continue"},
+		{SequenceNo: 4, Role: "assistant", MessageType: "assistant_turn", Content: "Newer turn."},
+	}
+	payload, _ := json.Marshal(model.NativeRepairState{
+		Source:      "tool_failure",
+		RepairClass: "publish_task_plan_object_shape",
+		RepairHint:  "Retry publish_task_plan with one complete JSON object in content.",
+	})
+	artifacts := []model.AgentRunArtifact{
+		{
+			ArtifactType:  model.AgentRunArtifactTypeNativeRepairState,
+			InlineContent: strPtr(string(payload)),
+			Metadata:      buildAssistantSequenceArtifactMetadata(2),
+			SequenceNo:    1,
+		},
+	}
+
+	got := latestNativeRepairInstructionFromArtifacts(messages, artifacts)
+	if got != (nativeRepairInstruction{}) {
+		t.Fatalf("expected stale repair artifact to be ignored, got %#v", got)
+	}
+}
+
+func TestLatestNativeRepairInstructionFromArtifactsDefaultsSourceWhenMissing(t *testing.T) {
+	messages := []model.AgentRunMessage{
+		{SequenceNo: 1, Role: "assistant", MessageType: "assistant_turn", Content: "Drafted the task plan."},
+	}
+	payload, _ := json.Marshal(model.NativeRepairState{
+		RepairClass: "publish_task_plan_object_shape",
+		RepairHint:  "Retry publish_task_plan with one complete JSON object in content.",
+	})
+	artifacts := []model.AgentRunArtifact{
+		{
+			ArtifactType:  model.AgentRunArtifactTypeNativeRepairState,
+			InlineContent: strPtr(string(payload)),
+			Metadata:      buildAssistantSequenceArtifactMetadata(1),
+			SequenceNo:    1,
+		},
+	}
+
+	got := latestNativeRepairInstructionFromArtifacts(messages, artifacts)
+	if got.Source != "native_repair_state" {
+		t.Fatalf("expected default artifact source, got %#v", got)
+	}
+}
+
+func TestResolveLatestNativeRepairInstructionPrefersArtifactOverHistory(t *testing.T) {
+	state := &resolvedRunState{nativeSelectivePathEnabled: true}
+	blocks, _ := json.Marshal([]workerpkg.ExecutionBlock{
+		{
+			Type:     workerpkg.ExecutionBlockTypeToolResult,
+			ToolName: workerpkg.ToolPublishTaskPlan,
+			Output:   "publish_task_plan requires content.proposed_tasks to be an array of task objects",
+			IsError:  true,
+		},
+	})
+	messages := []model.AgentRunMessage{
+		{SequenceNo: 1, Role: "user", MessageType: "prompt", Content: "Start"},
+		{SequenceNo: 2, Role: "assistant", MessageType: "assistant_turn", Content: "Drafted the task plan."},
+		{SequenceNo: 3, Role: "tool", MessageType: "tool_result", Content: "publish_task_plan requires content.proposed_tasks to be an array of task objects", ContentBlocks: blocks},
+	}
+	payload, _ := json.Marshal(model.NativeRepairState{
+		Source:      "tool_failure",
+		RepairClass: "publish_task_plan_object_shape",
+		RepairHint:  "Retry publish_task_plan with one complete JSON object in content.",
+	})
+	artifacts := []model.AgentRunArtifact{
+		{
+			ArtifactType:  model.AgentRunArtifactTypeNativeRepairState,
+			InlineContent: strPtr(string(payload)),
+			Metadata:      buildAssistantSequenceArtifactMetadata(2),
+			SequenceNo:    1,
+		},
+	}
+
+	got := resolveLatestNativeRepairInstruction(state, messages, artifacts)
+	if got.Class != "publish_task_plan_object_shape" {
+		t.Fatalf("expected artifact-backed repair class to win, got %#v", got)
+	}
+}
+
+func TestResolveLatestNativeRepairInstructionFallsBackToHistory(t *testing.T) {
+	state := &resolvedRunState{nativeSelectivePathEnabled: true}
+	blocks, _ := json.Marshal([]workerpkg.ExecutionBlock{
+		{
+			Type:     workerpkg.ExecutionBlockTypeToolResult,
+			ToolName: workerpkg.ToolPublishTaskPlan,
+			Output:   "publish_task_plan requires content.proposed_tasks to be an array of task objects",
+			IsError:  true,
+		},
+	})
+	messages := []model.AgentRunMessage{
+		{SequenceNo: 1, Role: "user", MessageType: "prompt", Content: "Start"},
+		{SequenceNo: 2, Role: "assistant", MessageType: "assistant_turn", Content: "Drafted the task plan."},
+		{SequenceNo: 3, Role: "tool", MessageType: "tool_result", Content: "publish_task_plan requires content.proposed_tasks to be an array of task objects", ContentBlocks: blocks},
+	}
+	artifacts := []model.AgentRunArtifact{
+		{
+			ArtifactType:  model.AgentRunArtifactTypeNativeRepairState,
+			InlineContent: strPtr(`{"source":"tool_failure","repair_class":"publish_task_plan_object_shape"}`),
+			Metadata:      buildAssistantSequenceArtifactMetadata(2),
+			SequenceNo:    1,
+		},
+	}
+
+	got := resolveLatestNativeRepairInstruction(state, messages, artifacts)
+	if got.Class != "publish_task_plan_task_array_shape" {
+		t.Fatalf("expected history fallback repair class, got %#v", got)
+	}
+}
+
+func TestClassifyPublishTaskPlanRepair(t *testing.T) {
+	testCases := []struct {
+		name        string
+		output      string
+		wantClass   string
+		wantSnippet string
+	}{
+		{
+			name:        "object shape",
+			output:      "publish_task_plan content must be a JSON object with summary and proposed_tasks",
+			wantClass:   "publish_task_plan_object_shape",
+			wantSnippet: "stringified JSON blobs",
+		},
+		{
+			name:        "task array shape",
+			output:      "publish_task_plan requires content.proposed_tasks to be an array of task objects",
+			wantClass:   "publish_task_plan_task_array_shape",
+			wantSnippet: "array of full task objects",
+		},
+		{
+			name:        "missing content",
+			output:      `publish_task_plan is missing content; include the task plan JSON object in "content"`,
+			wantClass:   "publish_task_plan_missing_content",
+			wantSnippet: `full task-plan JSON object under "content"`,
+		},
+		{
+			name:        "raw wrapper",
+			output:      "publish_task_plan input must be a JSON object with structured fields; do not send a raw string wrapper",
+			wantClass:   "publish_task_plan_raw_wrapper",
+			wantSnippet: "not a raw wrapper string",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := classifyPublishTaskPlanRepair(tc.output)
+			if got.Class != tc.wantClass {
+				t.Fatalf("expected class %q, got %#v", tc.wantClass, got)
+			}
+			if !strings.Contains(got.Instructions, tc.wantSnippet) {
+				t.Fatalf("expected instructions to contain %q, got %q", tc.wantSnippet, got.Instructions)
+			}
+		})
+	}
+}
+
+func TestClassifyMarkdownPreviewRepair(t *testing.T) {
+	testCases := []struct {
+		name        string
+		toolName    string
+		output      string
+		wantClass   string
+		wantSnippet string
+	}{
+		{
+			name:        "task plan doc missing content",
+			toolName:    workerpkg.ToolPublishTaskPlanDoc,
+			output:      `publish_task_plan_doc is missing content; include markdown in "content"`,
+			wantClass:   "publish_task_plan_doc_missing_content",
+			wantSnippet: "title-only payloads",
+		},
+		{
+			name:        "task plan doc markdown type",
+			toolName:    workerpkg.ToolPublishTaskPlanDoc,
+			output:      `publish_task_plan_doc content must be a markdown string in "content"`,
+			wantClass:   "publish_task_plan_doc_markdown_type",
+			wantSnippet: "plain markdown string",
+		},
+		{
+			name:        "prd draft missing content",
+			toolName:    workerpkg.ToolPublishPRDDraft,
+			output:      `publish_prd_draft is missing content; include markdown in "content"`,
+			wantClass:   "publish_prd_draft_missing_content",
+			wantSnippet: "full PRD markdown draft",
+		},
+		{
+			name:        "prd draft markdown type",
+			toolName:    workerpkg.ToolPublishPRDDraft,
+			output:      `publish_prd_draft content must be a markdown string in "content"`,
+			wantClass:   "publish_prd_draft_markdown_type",
+			wantSnippet: "non-string content",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := classifyMarkdownPreviewRepair(tc.toolName, tc.output)
+			if got.Class != tc.wantClass {
+				t.Fatalf("expected class %q, got %#v", tc.wantClass, got)
+			}
+			if !strings.Contains(got.Instructions, tc.wantSnippet) {
+				t.Fatalf("expected instructions to contain %q, got %q", tc.wantSnippet, got.Instructions)
+			}
+		})
+	}
+}
+
+func TestLatestNativeRepairInstructionPrefersPublishTaskPlanToolFailure(t *testing.T) {
+	state := &resolvedRunState{
+		nativeSelectivePathEnabled: true,
+	}
+	blocks, err := json.Marshal([]workerpkg.ExecutionBlock{
+		{
+			Type:     workerpkg.ExecutionBlockTypeToolResult,
+			ToolName: workerpkg.ToolPublishTaskPlan,
+			Output:   "publish_task_plan content must be a JSON object with summary and proposed_tasks",
+			IsError:  true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal blocks: %v", err)
+	}
+	messages := []model.AgentRunMessage{
+		{Role: "assistant", MessageType: "assistant_turn", Content: "Trying to publish the plan."},
+		{Role: "tool", MessageType: "tool_result", Content: "publish_task_plan content must be a JSON object with summary and proposed_tasks", ContentBlocks: blocks},
+		{Role: "user", MessageType: "policy_retry", Content: "System correction: continue from your last assistant turn."},
+	}
+
+	got := latestNativeRepairInstruction(state, messages)
+	if got.Class != "publish_task_plan_object_shape" {
+		t.Fatalf("expected publish_task_plan repair class, got %#v", got)
+	}
+	if !strings.Contains(got.Instructions, `"summary"`) || !strings.Contains(got.Instructions, `"proposed_tasks"`) {
+		t.Fatalf("expected publish_task_plan repair guidance, got %q", got.Instructions)
+	}
+}
+
+func TestLatestNativeRepairInstructionPrefersPublishTaskPlanDocToolFailure(t *testing.T) {
+	state := &resolvedRunState{
+		nativeSelectivePathEnabled: true,
+	}
+	blocks, err := json.Marshal([]workerpkg.ExecutionBlock{
+		{
+			Type:     workerpkg.ExecutionBlockTypeToolResult,
+			ToolName: workerpkg.ToolPublishTaskPlanDoc,
+			Output:   `publish_task_plan_doc is missing content; include markdown in "content"`,
+			IsError:  true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal blocks: %v", err)
+	}
+	messages := []model.AgentRunMessage{
+		{Role: "assistant", MessageType: "assistant_turn", Content: "Trying to publish the planning doc."},
+		{Role: "tool", MessageType: "tool_result", Content: `publish_task_plan_doc is missing content; include markdown in "content"`, ContentBlocks: blocks},
+		{Role: "user", MessageType: "policy_retry", Content: "System correction: continue from your last assistant turn."},
+	}
+
+	got := latestNativeRepairInstruction(state, messages)
+	if got.Class != "publish_task_plan_doc_missing_content" {
+		t.Fatalf("expected publish_task_plan_doc repair class, got %#v", got)
+	}
+	if !strings.Contains(got.Instructions, "full task planning markdown draft") {
+		t.Fatalf("expected publish_task_plan_doc repair guidance, got %q", got.Instructions)
+	}
+}
+
+func TestLatestNativeRepairInstructionPrefersPublishPRDDraftToolFailure(t *testing.T) {
+	state := &resolvedRunState{
+		nativeSelectivePathEnabled: true,
+	}
+	blocks, err := json.Marshal([]workerpkg.ExecutionBlock{
+		{
+			Type:     workerpkg.ExecutionBlockTypeToolResult,
+			ToolName: workerpkg.ToolPublishPRDDraft,
+			Output:   `publish_prd_draft content must be a markdown string in "content"`,
+			IsError:  true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal blocks: %v", err)
+	}
+	messages := []model.AgentRunMessage{
+		{Role: "assistant", MessageType: "assistant_turn", Content: "Trying to publish the PRD draft."},
+		{Role: "tool", MessageType: "tool_result", Content: `publish_prd_draft content must be a markdown string in "content"`, ContentBlocks: blocks},
+		{Role: "user", MessageType: "policy_retry", Content: "System correction: continue from your last assistant turn."},
+	}
+
+	got := latestNativeRepairInstruction(state, messages)
+	if got.Class != "publish_prd_draft_markdown_type" {
+		t.Fatalf("expected publish_prd_draft repair class, got %#v", got)
+	}
+	if !strings.Contains(got.Instructions, "full PRD markdown draft") {
+		t.Fatalf("expected publish_prd_draft repair guidance, got %q", got.Instructions)
+	}
+}
+
+func TestLatestUnresolvedNativeToolFailureIgnoresOlderToolFailureAfterLaterAssistant(t *testing.T) {
+	oldBlocks, err := json.Marshal([]workerpkg.ExecutionBlock{
+		{
+			Type:     workerpkg.ExecutionBlockTypeToolResult,
+			ToolName: workerpkg.ToolPublishTaskPlan,
+			Output:   "publish_task_plan content must be a JSON object with summary and proposed_tasks",
+			IsError:  true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal old blocks: %v", err)
+	}
+	newBlocks, err := json.Marshal([]workerpkg.ExecutionBlock{
+		{
+			Type:     workerpkg.ExecutionBlockTypeToolResult,
+			ToolName: workerpkg.ToolPublishTaskPlan,
+			Output:   "publish_task_plan requires content.proposed_tasks to be an array of task objects",
+			IsError:  true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal new blocks: %v", err)
+	}
+	messages := []model.AgentRunMessage{
+		{Role: "assistant", MessageType: "assistant_turn", Content: "Earlier publish attempt."},
+		{Role: "tool", MessageType: "tool_result", Content: "publish_task_plan content must be a JSON object with summary and proposed_tasks", ContentBlocks: oldBlocks},
+		{Role: "assistant", MessageType: "assistant_turn", Content: "Retried with a better payload."},
+		{Role: "tool", MessageType: "tool_result", Content: "publish_task_plan requires content.proposed_tasks to be an array of task objects", ContentBlocks: newBlocks},
+	}
+
+	got := latestUnresolvedNativeToolFailure(messages)
+	if got == nil {
+		t.Fatal("expected latest unresolved tool failure")
+	}
+	if got.Output != "publish_task_plan requires content.proposed_tasks to be an array of task objects" {
+		t.Fatalf("expected latest tool failure output, got %#v", got)
+	}
+}
+
+func TestReplayMessagesForExecutionStripsPolicyRetryForSelectivePath(t *testing.T) {
+	messages := []model.AgentRunMessage{
+		{Role: "user", MessageType: "prompt", Content: "Initial request"},
+		{Role: "assistant", MessageType: "assistant_turn", Content: "Assistant reply"},
+		{Role: "user", MessageType: "policy_retry", Content: "System correction"},
+	}
+
+	filtered := replayMessagesForExecution(&resolvedRunState{nativeSelectivePathEnabled: true}, messages)
+	if len(filtered) != 2 {
+		t.Fatalf("expected policy_retry to be stripped from selective replay, got %#v", filtered)
+	}
+	for _, message := range filtered {
+		if strings.TrimSpace(message.MessageType) == "policy_retry" {
+			t.Fatalf("expected selective replay to remove policy_retry messages, got %#v", filtered)
+		}
+	}
+}
+
+func TestEffectiveExecutionSkillPolicyUsesActiveSelectionForSelectivePath(t *testing.T) {
+	state := &resolvedRunState{
+		nativeSelectivePathEnabled: true,
+		skillPolicy: workerpkg.SkillPolicy{
+			CompletionRequiresInteractionKinds: []string{
+				model.AgentRunInteractionKindApprovalRequest,
+				model.AgentRunInteractionKindReviewCheckpoint,
+			},
+		},
+		runtimeSkillDefinitions: []workerpkg.SkillDefinition{
+			{
+				Key:        "approval_protocol",
+				SourceKind: "built_in",
+				Policy: workerpkg.SkillPolicy{
+					CompletionRequiresInteractionKinds: []string{model.AgentRunInteractionKindApprovalRequest},
+				},
+			},
+			{
+				Key:        "task_decomposition",
+				SourceKind: "built_in",
+				Policy: workerpkg.SkillPolicy{
+					CompletionRequiresInteractionKinds: []string{model.AgentRunInteractionKindReviewCheckpoint},
+				},
+			},
+		},
+	}
+
+	policy := effectiveExecutionSkillPolicy(state, agentskills.NativeActiveSelection{
+		Definitions: []workerpkg.SkillDefinition{
+			{
+				Key:        "approval_protocol",
+				SourceKind: "built_in",
+				Policy: workerpkg.SkillPolicy{
+					CompletionRequiresInteractionKinds: []string{model.AgentRunInteractionKindApprovalRequest},
+				},
+			},
+		},
+	})
+
+	if got := completionRequiredInteractionKinds(policy); len(got) != 1 {
+		t.Fatalf("expected one active required interaction, got %#v", got)
+	} else if _, ok := got[model.AgentRunInteractionKindApprovalRequest]; !ok {
+		t.Fatalf("expected active policy to replace full policy for selective path, got %#v", got)
+	}
+}
+
+func TestEffectiveExecutionSkillPolicyKeepsFullPolicyWhenSelectivePathDisabled(t *testing.T) {
+	state := &resolvedRunState{
+		nativeSelectivePathEnabled: false,
+		skillPolicy: workerpkg.SkillPolicy{
+			CompletionRequiresInteractionKinds: []string{
+				model.AgentRunInteractionKindApprovalRequest,
+				model.AgentRunInteractionKindReviewCheckpoint,
+			},
+		},
+	}
+
+	policy := effectiveExecutionSkillPolicy(state, agentskills.NativeActiveSelection{
+		Definitions: []workerpkg.SkillDefinition{
+			{
+				Key:        "approval_protocol",
+				SourceKind: "built_in",
+				Policy: workerpkg.SkillPolicy{
+					CompletionRequiresInteractionKinds: []string{model.AgentRunInteractionKindApprovalRequest},
+				},
+			},
+		},
+	})
+
+	if got := completionRequiredInteractionKinds(policy); len(got) != 2 {
+		t.Fatalf("expected full policy to remain active when selective path is disabled, got %#v", got)
+	} else if _, ok := got[model.AgentRunInteractionKindApprovalRequest]; !ok {
+		t.Fatalf("expected approval_request in full policy, got %#v", got)
+	} else if _, ok := got[model.AgentRunInteractionKindReviewCheckpoint]; !ok {
+		t.Fatalf("expected review_checkpoint in full policy, got %#v", got)
 	}
 }
 
@@ -201,7 +2597,7 @@ func TestPersistHumanInteractionArtifactsStoresStructuredReviewFindings(t *testi
 	}
 }
 
-func TestApplyApprovedInteractivePreviewCreatesTasksFromApprovedTaskPlan(t *testing.T) {
+func TestApplyApprovedInteractivePreviewCreatesTasksFromApprovedTaskPlanAndCompletesRun(t *testing.T) {
 	db := newPlannerApprovalTestDB(t)
 
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
@@ -248,7 +2644,7 @@ func TestApplyApprovedInteractivePreviewCreatesTasksFromApprovedTaskPlan(t *test
 		ID:                 "epic-1",
 		WorkspaceID:        "ws-1",
 		Name:               "Epic",
-		PlanningState:      model.EpicPlanningStateReadyForStoryPlanning,
+		PlanningState:      model.EpicPlanningStateReadyForTaskPlanning,
 		SpecClarifications: json.RawMessage(`[]`),
 	}
 	if err := db.Create(epic).Error; err != nil {
@@ -353,8 +2749,23 @@ func TestApplyApprovedInteractivePreviewCreatesTasksFromApprovedTaskPlan(t *test
 		commandExecutor: commandExecutor,
 	}
 	state := &resolvedRunState{
-		run:  run,
-		epic: epic,
+		run:                        run,
+		agent:                      &model.Agent{PresetKey: model.AgentPresetEpicPlanner, RuntimeKind: "native_sdk"},
+		epic:                       epic,
+		nativeSelectivePathEnabled: true,
+		runtimeSkillRefs: model.AgentSkillRefs{
+			{Key: "approval_protocol"},
+			{Key: "prd_authorship"},
+			{Key: "task_decomposition"},
+			{Key: "epic_state_routing"},
+		},
+		runtimeSkillDefinitions: []workerpkg.SkillDefinition{
+			{Key: "approval_protocol", SourceKind: "built_in", Instructions: "approval"},
+			{Key: "prd_authorship", SourceKind: "built_in", Instructions: "prd"},
+			{Key: "task_decomposition", SourceKind: "built_in", Instructions: "tasks"},
+			{Key: "epic_state_routing", SourceKind: "built_in", Instructions: "routing"},
+		},
+		skillPolicy: workerpkg.SkillPolicy{},
 	}
 	input := planningRunInput{Stage: model.PlanningStagePlanTasks}
 
@@ -1459,13 +3870,81 @@ func newPlannerApprovalTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-func TestValidatePlanningProposalStoriesRejectsCycle(t *testing.T) {
-	stories := []model.ProposedTask{
+func newCRMDealReviewInstructionTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+
+	dbName := fmt.Sprintf("file:crm-deal-review-instructions-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE crm_pipelines (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			is_default BOOLEAN NOT NULL DEFAULT 0,
+			position INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE crm_pipeline_stages (
+			id TEXT PRIMARY KEY,
+			pipeline_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			stage_type TEXT NOT NULL DEFAULT 'open',
+			position INTEGER NOT NULL DEFAULT 0,
+			probability INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE crm_deals (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			display_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			pipeline_id TEXT NOT NULL,
+			stage_id TEXT NOT NULL,
+			amount REAL,
+			currency TEXT NOT NULL DEFAULT 'USD',
+			close_date DATETIME,
+			owner_member_id TEXT,
+			probability INTEGER,
+			custom_properties BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE crm_buyer_signals (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			contact_id TEXT,
+			deal_id TEXT,
+			signal_type TEXT NOT NULL,
+			source_type TEXT NOT NULL DEFAULT 'manual',
+			source_id TEXT,
+			source_thread_id TEXT,
+			summary TEXT NOT NULL,
+			evidence_excerpt TEXT,
+			metadata BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
+			confidence REAL NOT NULL DEFAULT 0,
+			detected_at DATETIME NOT NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create CRM instruction test table: %v", err)
+		}
+	}
+	return db
+}
+
+func TestValidatePlanningProposalTasksRejectsCycle(t *testing.T) {
+	tasks := []model.ProposedTask{
 		{Ref: "story_a", Name: "Story A", AcceptanceCriteria: []string{"A works"}, DependencyRefs: []string{"story_b"}},
 		{Ref: "story_b", Name: "Story B", AcceptanceCriteria: []string{"B works"}, DependencyRefs: []string{"story_a"}},
 	}
 
-	err := validatePlanningProposalTasks(stories)
+	err := validatePlanningProposalTasks(tasks)
 	if err == nil {
 		t.Fatal("expected circular dependency error")
 	}
@@ -1575,8 +4054,8 @@ func TestMarkdownToDocsJSONPreservesHeadingsAndBullets(t *testing.T) {
 	}
 }
 
-func TestDecodeApprovedStoryPlanPreviewContentAcceptsStringifiedJSON(t *testing.T) {
-	raw := json.RawMessage(`"{\"summary\":\"Breakdown\",\"proposed_stories\":[{\"ref\":\"story_1\",\"name\":\"Story A\",\"description\":\"Do A\",\"story_type\":\"feature\",\"acceptance_criteria\":[\"works\"]}]}"`)
+func TestDecodeApprovedTaskPlanPreviewContentAcceptsStringifiedJSON(t *testing.T) {
+	raw := json.RawMessage(`"{\"summary\":\"Breakdown\",\"proposed_tasks\":[{\"ref\":\"task_1\",\"name\":\"Task A\",\"description\":\"Do A\",\"task_type\":\"feature\",\"acceptance_criteria\":[\"works\"]}]}"`)
 
 	proposal, err := decodeApprovedTaskPlanPreviewContent(raw)
 	if err != nil {
@@ -1585,13 +4064,13 @@ func TestDecodeApprovedStoryPlanPreviewContentAcceptsStringifiedJSON(t *testing.
 	if proposal.Summary != "Breakdown" {
 		t.Fatalf("expected summary Breakdown, got %q", proposal.Summary)
 	}
-	if len(proposal.ProposedTasks) != 1 || proposal.ProposedTasks[0].Ref != "story_1" {
-		t.Fatalf("unexpected proposal stories: %#v", proposal.ProposedTasks)
+	if len(proposal.ProposedTasks) != 1 || proposal.ProposedTasks[0].Ref != "task_1" {
+		t.Fatalf("unexpected proposal tasks: %#v", proposal.ProposedTasks)
 	}
 }
 
-func TestDecodeApprovedStoryPlanPreviewContentAcceptsFencedJSONString(t *testing.T) {
-	raw := json.RawMessage("\"Here is the plan in the required format:\\n```json\\n{\\\"summary\\\":\\\"Breakdown\\\",\\\"proposed_stories\\\":[{\\\"ref\\\":\\\"story_1\\\",\\\"name\\\":\\\"Story A\\\",\\\"description\\\":\\\"Do A\\\",\\\"story_type\\\":\\\"feature\\\",\\\"acceptance_criteria\\\":[\\\"works\\\"]}]}\\n```\"")
+func TestDecodeApprovedTaskPlanPreviewContentAcceptsFencedJSONString(t *testing.T) {
+	raw := json.RawMessage("\"Here is the plan in the required format:\\n```json\\n{\\\"summary\\\":\\\"Breakdown\\\",\\\"proposed_tasks\\\":[{\\\"ref\\\":\\\"task_1\\\",\\\"name\\\":\\\"Task A\\\",\\\"description\\\":\\\"Do A\\\",\\\"task_type\\\":\\\"feature\\\",\\\"acceptance_criteria\\\":[\\\"works\\\"]}]}\\n```\"")
 
 	proposal, err := decodeApprovedTaskPlanPreviewContent(raw)
 	if err != nil {
@@ -1600,19 +4079,19 @@ func TestDecodeApprovedStoryPlanPreviewContentAcceptsFencedJSONString(t *testing
 	if proposal.Summary != "Breakdown" {
 		t.Fatalf("expected summary Breakdown, got %q", proposal.Summary)
 	}
-	if len(proposal.ProposedTasks) != 1 || proposal.ProposedTasks[0].Name != "Story A" {
-		t.Fatalf("unexpected proposal stories: %#v", proposal.ProposedTasks)
+	if len(proposal.ProposedTasks) != 1 || proposal.ProposedTasks[0].Name != "Task A" {
+		t.Fatalf("unexpected proposal tasks: %#v", proposal.ProposedTasks)
 	}
 }
 
-func TestDecodeApprovedStoryPlanPreviewContentAcceptsArrayTestStrategy(t *testing.T) {
+func TestDecodeApprovedTaskPlanPreviewContentAcceptsArrayTestStrategy(t *testing.T) {
 	raw := json.RawMessage(`{
 		"summary":"Breakdown",
-		"proposed_stories":[{
-			"ref":"story_1",
-			"name":"Story A",
+		"proposed_tasks":[{
+			"ref":"task_1",
+			"name":"Task A",
 			"description":"Do A",
-			"story_type":"feature",
+			"task_type":"feature",
 			"acceptance_criteria":["works"],
 			"implementation_brief":{
 				"approach":"Add the metric helper",
@@ -1636,11 +4115,11 @@ func TestDecodeApprovedStoryPlanPreviewContentAcceptsArrayTestStrategy(t *testin
 	}
 }
 
-func TestDecodeApprovedStoryPlanPreviewContentAcceptsTitleAndTypeAliases(t *testing.T) {
+func TestDecodeApprovedTaskPlanPreviewContentAcceptsTitleAndTypeAliases(t *testing.T) {
 	raw := json.RawMessage(`{
 		"summary":"Breakdown",
-		"proposed_stories":[{
-			"ref":"story_1",
+		"proposed_tasks":[{
+			"ref":"task_1",
 			"title":"Add 4xx error metrics tracking infrastructure",
 			"description":"Do A",
 			"type":"feature",
@@ -1653,7 +4132,7 @@ func TestDecodeApprovedStoryPlanPreviewContentAcceptsTitleAndTypeAliases(t *test
 		t.Fatalf("decodeApprovedTaskPlanPreviewContent returned error: %v", err)
 	}
 	if len(proposal.ProposedTasks) != 1 {
-		t.Fatalf("expected one proposed story, got %#v", proposal.ProposedTasks)
+		t.Fatalf("expected one proposed task, got %#v", proposal.ProposedTasks)
 	}
 	if proposal.ProposedTasks[0].Name != "Add 4xx error metrics tracking infrastructure" {
 		t.Fatalf("expected title alias to populate Name, got %#v", proposal.ProposedTasks[0])
@@ -1665,19 +4144,19 @@ func TestDecodeApprovedStoryPlanPreviewContentAcceptsTitleAndTypeAliases(t *test
 
 func TestNextUnappliedApprovedPreviewPrefersNewestArtifact(t *testing.T) {
 	olderPreviewJSON, err := json.Marshal(model.ApprovedRunPreview{
-		Phase:    "stories",
+		Phase:    "tasks",
 		Format:   workerpkg.PreviewFormatJSON,
-		PanelKey: "story_plan",
-		Content:  json.RawMessage(`{"summary":"older","proposed_stories":[]}`),
+		PanelKey: "task_plan",
+		Content:  json.RawMessage(`{"summary":"older","proposed_tasks":[]}`),
 	})
 	if err != nil {
 		t.Fatalf("marshal older preview: %v", err)
 	}
 	newerPreviewJSON, err := json.Marshal(model.ApprovedRunPreview{
-		Phase:    "stories",
+		Phase:    "tasks",
 		Format:   workerpkg.PreviewFormatJSON,
-		PanelKey: "story_plan",
-		Content:  json.RawMessage(`{"summary":"newer","proposed_stories":[]}`),
+		PanelKey: "task_plan",
+		Content:  json.RawMessage(`{"summary":"newer","proposed_tasks":[]}`),
 	})
 	if err != nil {
 		t.Fatalf("marshal newer preview: %v", err)
@@ -1717,14 +4196,14 @@ func TestNextUnappliedApprovedPreviewPrefersNewestArtifact(t *testing.T) {
 	}
 }
 
-func TestDecodeApprovedStoryPlanPreviewContentToleratesOptionalFieldTypeMismatches(t *testing.T) {
+func TestDecodeApprovedTaskPlanPreviewContentToleratesOptionalFieldTypeMismatches(t *testing.T) {
 	raw := json.RawMessage(`{
 		"summary":"Breakdown",
-		"proposed_stories":[{
-			"ref":"story_1",
-			"name":"Story A",
+		"proposed_tasks":[{
+			"ref":"task_1",
+			"name":"Task A",
 			"description":"Do A",
-			"story_type":"feature",
+			"task_type":"feature",
 			"estimate":"3",
 			"acceptance_criteria":["works"],
 			"implementation_brief":{
@@ -1740,7 +4219,7 @@ func TestDecodeApprovedStoryPlanPreviewContentToleratesOptionalFieldTypeMismatch
 		t.Fatalf("decodeApprovedTaskPlanPreviewContent returned error: %v", err)
 	}
 	if len(proposal.ProposedTasks) != 1 {
-		t.Fatalf("expected one proposed story, got %#v", proposal.ProposedTasks)
+		t.Fatalf("expected one proposed task, got %#v", proposal.ProposedTasks)
 	}
 	if proposal.ProposedTasks[0].Estimate == nil || *proposal.ProposedTasks[0].Estimate != 3 {
 		t.Fatalf("expected string estimate to decode to 3, got %#v", proposal.ProposedTasks[0].Estimate)
@@ -1754,7 +4233,7 @@ func TestDecodeApprovedStoryPlanPreviewContentToleratesOptionalFieldTypeMismatch
 	}
 }
 
-func TestDecodeApprovedStoryPlanPreviewContentReturnsCanonicalShapeError(t *testing.T) {
+func TestDecodeApprovedTaskPlanPreviewContentReturnsCanonicalShapeError(t *testing.T) {
 	raw := json.RawMessage(`{"summary":"Breakdown"}`)
 
 	_, err := decodeApprovedTaskPlanPreviewContent(raw)
@@ -1767,11 +4246,11 @@ func TestDecodeApprovedStoryPlanPreviewContentReturnsCanonicalShapeError(t *test
 }
 
 func TestDecodeApprovedMarkdownPreviewContentReturnsRepairOrientedError(t *testing.T) {
-	_, err := decodeApprovedMarkdownPreviewContent(json.RawMessage(`{"content":"not-a-string"}`), "approved story planning document preview")
+	_, err := decodeApprovedMarkdownPreviewContent(json.RawMessage(`{"content":"not-a-string"}`), "approved task planning document preview")
 	if err == nil {
 		t.Fatal("expected markdown decode error")
 	}
-	if !strings.Contains(err.Error(), "approved story planning document preview content must be a markdown string") {
+	if !strings.Contains(err.Error(), "approved task planning document preview content must be a markdown string") {
 		t.Fatalf("expected repair-oriented markdown error, got %v", err)
 	}
 }
@@ -2449,7 +4928,7 @@ func TestWaitForLiveCodexResumeSignalPrefersResolvedInteractionPayload(t *testin
 	}
 }
 
-func TestLoadAndPersistProviderContinuationCheckpoint(t *testing.T) {
+func TestPersistProviderContinuationCheckpointButSkipsUnsupportedProviderLoad(t *testing.T) {
 	dbName := fmt.Sprintf("file:provider-checkpoint-%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
 	if err != nil {
@@ -2501,11 +4980,8 @@ func TestLoadAndPersistProviderContinuationCheckpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadProviderContinuation returned error: %v", err)
 	}
-	if loaded == nil {
-		t.Fatal("expected loaded continuation")
-	}
-	if loaded.Provider != model.AgentModelProviderOpenAI || loaded.ResponseID != "resp_123" || loaded.PreviousResponseID != "resp_122" || loaded.AfterSequenceNo != 7 {
-		t.Fatalf("unexpected loaded continuation %#v", loaded)
+	if loaded != nil {
+		t.Fatalf("expected unsupported provider continuation load to be skipped, got %#v", loaded)
 	}
 
 	artifacts, err := artifactRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
@@ -2718,7 +5194,7 @@ func TestEnsureRunConversationCreatesPromptWhenOnlyStatusMessageExists(t *testin
 		t.Fatalf("create status message: %v", err)
 	}
 
-	history, _, _, err := activities.ensureRunConversation(context.Background(), state, "Operator notes:\nFocus on setup.", planningRunInput{})
+	history, _, _, _, err := activities.ensureRunConversation(context.Background(), state, "Operator notes:\nFocus on setup.", planningRunInput{})
 	if err != nil {
 		t.Fatalf("ensureRunConversation returned error: %v", err)
 	}
@@ -2887,7 +5363,7 @@ func TestEnsureRunConversationBuildsTranscriptSummaryCheckpoint(t *testing.T) {
 		}
 	}
 
-	history, _, _, err := activities.ensureRunConversation(context.Background(), state, "", planningRunInput{})
+	history, _, _, _, err := activities.ensureRunConversation(context.Background(), state, "", planningRunInput{})
 	if err != nil {
 		t.Fatalf("ensureRunConversation returned error: %v", err)
 	}
@@ -3000,8 +5476,8 @@ func TestCaptureTranscriptPlanningArtifactsLinksPreviewToAssistantTurn(t *testin
 	}
 }
 
-func TestCaptureTranscriptPlanningArtifactsPersistsStoryPlannerPreview(t *testing.T) {
-	dbName := fmt.Sprintf("file:story-preview-linkage-%d?mode=memory&cache=shared", time.Now().UnixNano())
+func TestCaptureTranscriptPlanningArtifactsPersistsTaskPlannerPreview(t *testing.T) {
+	dbName := fmt.Sprintf("file:task-preview-linkage-%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite db: %v", err)
@@ -3037,9 +5513,9 @@ func TestCaptureTranscriptPlanningArtifactsPersistsStoryPlannerPreview(t *testin
 		LastExecutionResult: &workerpkg.ExecutionResult{
 			ToolInvocations: []model.ToolInvocation{
 				{
-					ToolName: workerpkg.ToolPublishStoryPlanDoc,
+					ToolName: workerpkg.ToolPublishTaskPlanDoc,
 					Input: json.RawMessage(`{
-						"title":"Story Planning Document",
+						"title":"Task Planning Document",
 						"content":"# Outcome\n\nImplement Kafka health monitoring."
 					}`),
 				},
@@ -3047,7 +5523,7 @@ func TestCaptureTranscriptPlanningArtifactsPersistsStoryPlannerPreview(t *testin
 		},
 	}
 
-	if err := activities.captureTranscriptPlanningArtifacts(context.Background(), state, execCtx, &model.AgentRunMessage{SequenceNo: 11}, planningRunInput{Stage: model.PlanningStageStoryPlanDoc}); err != nil {
+	if err := activities.captureTranscriptPlanningArtifacts(context.Background(), state, execCtx, &model.AgentRunMessage{SequenceNo: 11}, planningRunInput{Stage: model.PlanningStageTaskPlanDoc}); err != nil {
 		t.Fatalf("captureTranscriptPlanningArtifacts returned error: %v", err)
 	}
 
@@ -3067,7 +5543,7 @@ func TestCaptureTranscriptPlanningArtifactsPersistsStoryPlannerPreview(t *testin
 		t.Fatalf("unmarshal preview artifact: %v", err)
 	}
 	if preview.PanelKey != "task_plan_doc" || preview.Format != workerpkg.PreviewFormatMarkdown {
-		t.Fatalf("unexpected persisted story preview %#v", preview)
+		t.Fatalf("unexpected persisted task preview %#v", preview)
 	}
 
 	var metadata map[string]any
@@ -3174,6 +5650,450 @@ func TestPersistAssistantRunMessagePersistsRunPlanArtifact(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("expected run_plan artifact to be persisted")
+	}
+}
+
+func TestPersistAssistantRunMessagePersistsNativeTurnDebugArtifact(t *testing.T) {
+	dbName := fmt.Sprintf("file:native-turn-debug-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_messages (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			role TEXT NOT NULL,
+			content TEXT,
+			message_type TEXT NOT NULL DEFAULT 'message',
+			content_blocks TEXT,
+			turn_segments TEXT,
+			tool_invocations TEXT,
+			token_usage TEXT,
+			sequence_no INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME
+		)`,
+		`CREATE TABLE agent_run_artifacts (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			artifact_type TEXT NOT NULL,
+			format TEXT NOT NULL,
+			storage_mode TEXT NOT NULL,
+			inline_content TEXT,
+			object_key TEXT,
+			metadata TEXT NOT NULL,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+	}
+
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	activities := &AgentRunActivities{runMessageRepo: runMessageRepo, artifactRepo: artifactRepo}
+
+	run := &model.AgentRun{ID: "native-debug-1", WorkspaceID: "ws-1"}
+	state := &resolvedRunState{
+		run:                        run,
+		agent:                      &model.Agent{RuntimeKind: "native_sdk"},
+		nativeSelectivePathEnabled: true,
+	}
+	execCtx := &workerpkg.ExecutionContext{
+		NativeSelectivePathEnabled: true,
+		PlanningStage:              model.PlanningStagePlanTasks,
+		ProviderContinuation: &workerpkg.ProviderContinuation{
+			ResponseID: "resp_123",
+		},
+		RuntimeSkillRefs: model.AgentSkillRefs{
+			{Key: "general_agent_behavior"},
+			{Key: "approval_protocol"},
+			{SkillID: strPtr("workspace-skill-1")},
+		},
+		ActiveRuntimeSkillRefs: model.AgentSkillRefs{
+			{Key: "approval_protocol"},
+			{SkillID: strPtr("workspace-skill-1")},
+		},
+		SkillPolicy: workerpkg.SkillPolicy{
+			CompletionRequiresInteractionKinds: []string{
+				model.AgentRunInteractionKindApprovalRequest,
+				model.AgentRunInteractionKindReviewCheckpoint,
+			},
+		},
+		RepairGuidance:       "Retry with a same-turn preview binding.",
+		RepairGuidanceSource: "completion_retry",
+		RepairGuidanceClass:  "approval_preview_binding",
+		LastExecutionResult: &workerpkg.ExecutionResult{
+			AssistantText: "Need to retry the approval handoff.",
+		},
+	}
+
+	assistantMessage, err := activities.persistAssistantRunMessage(context.Background(), state, execCtx)
+	if err != nil {
+		t.Fatalf("persistAssistantRunMessage returned error: %v", err)
+	}
+	if assistantMessage == nil {
+		t.Fatal("expected assistant message to be persisted")
+	}
+
+	artifacts, err := artifactRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+
+	found := false
+	for _, artifact := range artifacts {
+		if artifact.ArtifactType != model.AgentRunArtifactTypeNativeTurnDebug || artifact.InlineContent == nil {
+			continue
+		}
+		found = true
+
+		var payload nativeTurnDebugArtifact
+		if err := json.Unmarshal([]byte(*artifact.InlineContent), &payload); err != nil {
+			t.Fatalf("unmarshal debug payload: %v", err)
+		}
+		if payload.RuntimeKind != "native_sdk" {
+			t.Fatalf("expected runtime_kind native_sdk, got %q", payload.RuntimeKind)
+		}
+		if !payload.NativeSelectivePathEnabled {
+			t.Fatal("expected native selective path enabled in payload")
+		}
+		if payload.PlanningStage != model.PlanningStagePlanTasks {
+			t.Fatalf("expected planning stage %q, got %q", model.PlanningStagePlanTasks, payload.PlanningStage)
+		}
+		if payload.ContinuationMode != "response_id" {
+			t.Fatalf("expected continuation mode response_id, got %q", payload.ContinuationMode)
+		}
+		if got := strings.Join(payload.RuntimeSkillRefs, ","); got != "general_agent_behavior,approval_protocol,workspace:workspace-skill-1" {
+			t.Fatalf("unexpected runtime skill refs: %v", payload.RuntimeSkillRefs)
+		}
+		if got := strings.Join(payload.ActiveSkillRefs, ","); got != "approval_protocol,workspace:workspace-skill-1" {
+			t.Fatalf("unexpected active skill refs: %v", payload.ActiveSkillRefs)
+		}
+		if got := strings.Join(payload.RequiredInteractions, ","); got != model.AgentRunInteractionKindApprovalRequest+","+model.AgentRunInteractionKindReviewCheckpoint {
+			t.Fatalf("unexpected required interactions: %v", payload.RequiredInteractions)
+		}
+		if !payload.RepairGuidancePresent {
+			t.Fatal("expected repair guidance to be marked present")
+		}
+		if payload.RepairGuidanceSource != "completion_retry" {
+			t.Fatalf("expected repair guidance source to be preserved, got %q", payload.RepairGuidanceSource)
+		}
+		if payload.RepairGuidanceClass != "approval_preview_binding" {
+			t.Fatalf("expected repair guidance class to be preserved, got %q", payload.RepairGuidanceClass)
+		}
+
+		var metadata map[string]any
+		if err := json.Unmarshal(artifact.Metadata, &metadata); err != nil {
+			t.Fatalf("unmarshal metadata: %v", err)
+		}
+		if got := metadata["assistant_message_sequence_no"]; got != float64(assistantMessage.SequenceNo) {
+			t.Fatalf("expected assistant sequence metadata, got %#v", metadata)
+		}
+	}
+	if !found {
+		t.Fatal("expected native_turn_debug artifact to be persisted")
+	}
+}
+
+func TestPersistAssistantRunMessagePersistsNativeRepairStateArtifact(t *testing.T) {
+	dbName := fmt.Sprintf("file:native-repair-state-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_messages (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			role TEXT NOT NULL,
+			content TEXT,
+			message_type TEXT NOT NULL DEFAULT 'message',
+			content_blocks TEXT,
+			turn_segments TEXT,
+			tool_invocations TEXT,
+			token_usage TEXT,
+			sequence_no INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME
+		)`,
+		`CREATE TABLE agent_run_artifacts (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			artifact_type TEXT NOT NULL,
+			format TEXT NOT NULL,
+			storage_mode TEXT NOT NULL,
+			inline_content TEXT,
+			object_key TEXT,
+			metadata TEXT NOT NULL,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+	}
+
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	activities := &AgentRunActivities{runMessageRepo: runMessageRepo, artifactRepo: artifactRepo}
+
+	run := &model.AgentRun{ID: "native-repair-1", WorkspaceID: "ws-1"}
+	state := &resolvedRunState{
+		run:                        run,
+		agent:                      &model.Agent{RuntimeKind: "native_sdk"},
+		nativeSelectivePathEnabled: true,
+	}
+	execCtx := &workerpkg.ExecutionContext{
+		NativeSelectivePathEnabled: true,
+		LastExecutionResult: &workerpkg.ExecutionResult{
+			AssistantText: "Tried to publish the task plan.",
+			Messages: []workerpkg.ExecutionMessage{
+				{Role: "assistant", Content: "Tried to publish the task plan."},
+				{
+					Role:    "tool",
+					Content: "publish_task_plan content must be a JSON object with summary and proposed_tasks",
+					Blocks: []workerpkg.ExecutionBlock{
+						{
+							Type:     workerpkg.ExecutionBlockTypeToolResult,
+							ToolName: workerpkg.ToolPublishTaskPlan,
+							Output:   "publish_task_plan content must be a JSON object with summary and proposed_tasks",
+							IsError:  true,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	assistantMessage, err := activities.persistAssistantRunMessage(context.Background(), state, execCtx)
+	if err != nil {
+		t.Fatalf("persistAssistantRunMessage returned error: %v", err)
+	}
+	if assistantMessage == nil {
+		t.Fatal("expected assistant message to be persisted")
+	}
+
+	artifacts, err := artifactRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+
+	found := false
+	for _, artifact := range artifacts {
+		if artifact.ArtifactType != model.AgentRunArtifactTypeNativeRepairState || artifact.InlineContent == nil {
+			continue
+		}
+		found = true
+
+		var payload model.NativeRepairState
+		if err := json.Unmarshal([]byte(*artifact.InlineContent), &payload); err != nil {
+			t.Fatalf("unmarshal repair state payload: %v", err)
+		}
+		if payload.Source != "tool_failure" {
+			t.Fatalf("expected tool_failure source, got %#v", payload)
+		}
+		if payload.RepairClass != "publish_task_plan_object_shape" {
+			t.Fatalf("expected publish_task_plan repair class, got %#v", payload)
+		}
+		if payload.ToolName != workerpkg.ToolPublishTaskPlan {
+			t.Fatalf("expected publish_task_plan tool name, got %#v", payload)
+		}
+		if !strings.Contains(payload.RepairHint, "complete JSON object") {
+			t.Fatalf("expected repair hint in payload, got %#v", payload)
+		}
+		if !strings.Contains(payload.ErrorSummary, "summary and proposed_tasks") {
+			t.Fatalf("expected original error summary in payload, got %#v", payload)
+		}
+
+		var metadata map[string]any
+		if err := json.Unmarshal(artifact.Metadata, &metadata); err != nil {
+			t.Fatalf("unmarshal metadata: %v", err)
+		}
+		if got := metadata["assistant_message_sequence_no"]; got != float64(assistantMessage.SequenceNo) {
+			t.Fatalf("expected assistant sequence metadata, got %#v", metadata)
+		}
+	}
+	if !found {
+		t.Fatal("expected native_repair_state artifact to be persisted")
+	}
+}
+
+func TestRetryInvalidCompletionTurnPersistsNativeCompletionRepairState(t *testing.T) {
+	dbName := fmt.Sprintf("file:native-completion-repair-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_messages (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			role TEXT NOT NULL,
+			content TEXT NOT NULL,
+			message_type TEXT NOT NULL,
+			content_blocks BLOB,
+			turn_segments BLOB,
+			tool_invocations BLOB,
+			token_usage BLOB,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE agent_run_artifacts (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			artifact_type TEXT NOT NULL,
+			format TEXT NOT NULL,
+			storage_mode TEXT NOT NULL,
+			inline_content TEXT,
+			object_key TEXT,
+			metadata TEXT NOT NULL,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+	}
+
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	activities := &AgentRunActivities{runMessageRepo: runMessageRepo, artifactRepo: artifactRepo}
+
+	run := &model.AgentRun{ID: "run-native-completion-repair", WorkspaceID: "ws-1"}
+	state := &resolvedRunState{
+		run:                        run,
+		agent:                      &model.Agent{RuntimeKind: "native_sdk"},
+		nativeSelectivePathEnabled: true,
+	}
+	assistantMessage, err := activities.createRunMessage(context.Background(), run, "assistant", "assistant_turn", "Need approval.", nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("create assistant message: %v", err)
+	}
+
+	retried, err := activities.retryInvalidCompletionTurn(context.Background(), state, assistantMessage, fmt.Errorf("approval_request requires a same-turn prd_draft preview before requesting approval"))
+	if err != nil {
+		t.Fatalf("retryInvalidCompletionTurn returned error: %v", err)
+	}
+	if !retried {
+		t.Fatal("expected retryInvalidCompletionTurn to request a retry")
+	}
+
+	artifacts, err := artifactRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	found := false
+	for _, artifact := range artifacts {
+		if artifact.ArtifactType != model.AgentRunArtifactTypeNativeRepairState || artifact.InlineContent == nil {
+			continue
+		}
+		found = true
+
+		var payload model.NativeRepairState
+		if err := json.Unmarshal([]byte(*artifact.InlineContent), &payload); err != nil {
+			t.Fatalf("unmarshal repair state payload: %v", err)
+		}
+		if payload.Source != "completion_retry" {
+			t.Fatalf("expected completion_retry source, got %#v", payload)
+		}
+		if payload.RepairClass != "approval_specific_preview_required" {
+			t.Fatalf("expected specific preview repair class, got %#v", payload)
+		}
+		if !strings.Contains(payload.RepairHint, `preview_panel_key="prd_draft"`) {
+			t.Fatalf("expected completion retry hint to preserve preview binding, got %#v", payload)
+		}
+		if !strings.Contains(payload.ErrorSummary, "same-turn prd_draft preview") {
+			t.Fatalf("expected original completion error summary, got %#v", payload)
+		}
+
+		var metadata map[string]any
+		if err := json.Unmarshal(artifact.Metadata, &metadata); err != nil {
+			t.Fatalf("unmarshal metadata: %v", err)
+		}
+		if got := metadata["assistant_message_sequence_no"]; got != float64(assistantMessage.SequenceNo) {
+			t.Fatalf("expected assistant sequence metadata, got %#v", metadata)
+		}
+	}
+	if !found {
+		t.Fatal("expected completion retry repair artifact to be persisted")
+	}
+}
+
+func TestPersistAssistantRunMessageSkipsNativeTurnDebugArtifactOutsideSelectivePath(t *testing.T) {
+	dbName := fmt.Sprintf("file:native-turn-debug-off-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_messages (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			role TEXT NOT NULL,
+			content TEXT,
+			message_type TEXT NOT NULL DEFAULT 'message',
+			content_blocks TEXT,
+			turn_segments TEXT,
+			tool_invocations TEXT,
+			token_usage TEXT,
+			sequence_no INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME
+		)`,
+		`CREATE TABLE agent_run_artifacts (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			artifact_type TEXT NOT NULL,
+			format TEXT NOT NULL,
+			storage_mode TEXT NOT NULL,
+			inline_content TEXT,
+			object_key TEXT,
+			metadata TEXT NOT NULL,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+	}
+
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	activities := &AgentRunActivities{runMessageRepo: runMessageRepo, artifactRepo: artifactRepo}
+
+	run := &model.AgentRun{ID: "native-debug-2", WorkspaceID: "ws-1", RuntimeKind: "native_sdk"}
+	state := &resolvedRunState{run: run, nativeSelectivePathEnabled: false}
+	execCtx := &workerpkg.ExecutionContext{
+		LastExecutionResult: &workerpkg.ExecutionResult{
+			AssistantText: "Legacy path message.",
+		},
+	}
+
+	if _, err := activities.persistAssistantRunMessage(context.Background(), state, execCtx); err != nil {
+		t.Fatalf("persistAssistantRunMessage returned error: %v", err)
+	}
+
+	artifacts, err := artifactRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	for _, artifact := range artifacts {
+		if artifact.ArtifactType == model.AgentRunArtifactTypeNativeTurnDebug {
+			t.Fatalf("did not expect native_turn_debug artifact outside selective path: %#v", artifact)
+		}
 	}
 }
 
@@ -3692,8 +6612,22 @@ func TestApplyApprovedInteractivePreviewReturnsPersistPRDAction(t *testing.T) {
 		commandExecutor: commandExecutor,
 	}
 	state := &resolvedRunState{
-		run:  run,
-		epic: epic,
+		run:                        run,
+		agent:                      &model.Agent{PresetKey: model.AgentPresetEpicPlanner, RuntimeKind: "native_sdk"},
+		epic:                       epic,
+		nativeSelectivePathEnabled: true,
+		runtimeSkillRefs: model.AgentSkillRefs{
+			{Key: "approval_protocol"},
+			{Key: "prd_authorship"},
+			{Key: "task_decomposition"},
+			{Key: "epic_state_routing"},
+		},
+		runtimeSkillDefinitions: []workerpkg.SkillDefinition{
+			{Key: "approval_protocol", SourceKind: "built_in", Instructions: "approval"},
+			{Key: "prd_authorship", SourceKind: "built_in", Instructions: "prd"},
+			{Key: "task_decomposition", SourceKind: "built_in", Instructions: "tasks"},
+			{Key: "epic_state_routing", SourceKind: "built_in", Instructions: "routing"},
+		},
 	}
 	input := planningRunInput{}
 
@@ -3730,15 +6664,140 @@ func TestApplyApprovedInteractivePreviewReturnsPersistPRDAction(t *testing.T) {
 	if updatedEpic.Epic.ApprovedSpecVersionID == nil || *updatedEpic.Epic.ApprovedSpecVersionID != "ver-1" {
 		t.Fatalf("expected approved spec version to be updated, got %#v", updatedEpic.Epic.ApprovedSpecVersionID)
 	}
+
+	selection := selectNativeActiveSkills(state, "")
+	if got := testAgentSkillRefKeys(selection.Refs); len(got) != 3 || got[0] != "approval_protocol" || got[1] != "task_decomposition" || got[2] != "epic_state_routing" {
+		t.Fatalf("expected approved PRD application to re-anchor next turn on task decomposition, got %#v", got)
+	}
 }
 
-func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *testing.T) {
+func TestApplyApprovedInteractivePreviewSkipsAlreadyAppliedPreview(t *testing.T) {
+	dbName := fmt.Sprintf("file:approved-preview-skip-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE agent_run_artifacts (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		run_id TEXT NOT NULL,
+		artifact_type TEXT NOT NULL,
+		format TEXT NOT NULL,
+		storage_mode TEXT NOT NULL,
+		inline_content TEXT,
+		object_key TEXT,
+		metadata TEXT NOT NULL,
+		sequence_no INTEGER NOT NULL,
+		created_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create agent_run_artifacts table: %v", err)
+	}
+
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	run := &model.AgentRun{
+		ID:             "run-skip-approved",
+		WorkspaceID:    "ws-1",
+		InvocationMode: model.InvocationModeInteractive,
+		Status:         model.AgentRunStatusRunning,
+	}
+	previewJSON, err := json.Marshal(model.ApprovedRunPreview{
+		Phase:    "tasks",
+		PanelKey: "task_plan",
+		Format:   workerpkg.PreviewFormatJSON,
+		Content:  json.RawMessage(`{"summary":"already applied","proposed_tasks":[]}`),
+	})
+	if err != nil {
+		t.Fatalf("marshal approved preview: %v", err)
+	}
+	appliedJSON, err := json.Marshal(model.AppliedApprovedRunPreview{
+		ApprovedArtifactID: "approved-tasks-1",
+		Phase:              "tasks",
+		Action:             "create_tasks",
+		AppliedAt:          time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("marshal applied marker: %v", err)
+	}
+	for _, artifact := range []model.AgentRunArtifact{
+		{
+			ID:            "approved-tasks-1",
+			WorkspaceID:   run.WorkspaceID,
+			RunID:         run.ID,
+			ArtifactType:  model.AgentRunArtifactTypeApprovedPreview,
+			Format:        "json",
+			StorageMode:   "inline",
+			InlineContent: strPtr(string(previewJSON)),
+			Metadata:      json.RawMessage(`{}`),
+			SequenceNo:    1,
+		},
+		{
+			ID:            "applied-tasks-1",
+			WorkspaceID:   run.WorkspaceID,
+			RunID:         run.ID,
+			ArtifactType:  model.AgentRunArtifactTypeApprovedPreviewApplied,
+			Format:        "json",
+			StorageMode:   "inline",
+			InlineContent: strPtr(string(appliedJSON)),
+			Metadata:      json.RawMessage(`{}`),
+			SequenceNo:    2,
+		},
+	} {
+		if err := db.Create(&artifact).Error; err != nil {
+			t.Fatalf("create artifact %s: %v", artifact.ID, err)
+		}
+	}
+
+	activity := &AgentRunActivities{
+		artifactRepo: artifactRepo,
+	}
+	state := &resolvedRunState{
+		run:  run,
+		epic: &model.PMEpic{ID: "epic-1", WorkspaceID: "ws-1"},
+	}
+	input := planningRunInput{Stage: model.PlanningStagePlanTasks}
+
+	action, err := activity.applyApprovedInteractivePreview(context.Background(), state, &input)
+	if err != nil {
+		t.Fatalf("applyApprovedInteractivePreview returned error: %v", err)
+	}
+	if action != "" {
+		t.Fatalf("expected already-applied preview to be skipped, got action %q", action)
+	}
+
+	var appliedMarkers []model.AgentRunArtifact
+	if err := db.Where("run_id = ? AND artifact_type = ?", run.ID, model.AgentRunArtifactTypeApprovedPreviewApplied).Find(&appliedMarkers).Error; err != nil {
+		t.Fatalf("list applied markers: %v", err)
+	}
+	if len(appliedMarkers) != 1 {
+		t.Fatalf("expected no new applied marker, got %d", len(appliedMarkers))
+	}
+}
+
+func TestApplyApprovedInteractivePreviewCreatesTasksFromApprovedTaskPlan(t *testing.T) {
 	db := newPlannerApprovalTestDB(t)
+	if err := db.Exec(`CREATE TABLE agent_run_messages (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		run_id TEXT NOT NULL,
+		role TEXT NOT NULL,
+		content TEXT NOT NULL,
+		message_type TEXT NOT NULL,
+		content_blocks BLOB,
+		turn_segments BLOB,
+		tool_invocations BLOB,
+		token_usage BLOB,
+		sequence_no INTEGER NOT NULL,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create agent_run_messages table: %v", err)
+	}
 
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
 	epicRepo := repository.NewPMEpicRepository(db)
 	taskRepo := repository.NewPMTaskRepository(db)
 	runRepo := repository.NewAgentRunRepository(db)
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
 	agentRepo := repository.NewAgentRepository(db)
 
 	agent := &model.Agent{
@@ -3776,11 +6835,12 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 	}
 
 	epic := &model.PMEpic{
-		ID:                 "epic-1",
-		WorkspaceID:        "ws-1",
-		Name:               "Epic",
-		PlanningState:      model.EpicPlanningStateReadyForStoryPlanning,
-		SpecClarifications: json.RawMessage(`[]`),
+		ID:                    "epic-1",
+		WorkspaceID:           "ws-1",
+		Name:                  "Epic",
+		PlanningState:         model.EpicPlanningStateReadyForTaskPlanning,
+		SpecClarifications:    json.RawMessage(`[]`),
+		ApprovedSpecVersionID: strPtr("spec-v1"),
 	}
 	if err := db.Create(epic).Error; err != nil {
 		t.Fatalf("create epic: %v", err)
@@ -3791,22 +6851,22 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 
 	previewPayload, err := json.Marshal(map[string]any{
 		"summary": "Breakdown",
-		"proposed_stories": []map[string]any{
+		"proposed_tasks": []map[string]any{
 			{
-				"ref":                 "story_1",
+				"ref":                 "task_1",
 				"name":                "Add tracking helper",
 				"description":         "Create shared metric helper",
-				"story_type":          "chore",
+				"task_type":           "chore",
 				"acceptance_criteria": []string{"works"},
 				"dependency_refs":     []string{},
 			},
 			{
-				"ref":                 "story_2",
+				"ref":                 "task_2",
 				"name":                "Wire tracking into capture errors",
 				"description":         "Use the helper in capture",
-				"story_type":          "feature",
+				"task_type":           "feature",
 				"acceptance_criteria": []string{"works"},
-				"dependency_refs":     []string{"story_1"},
+				"dependency_refs":     []string{"task_1"},
 			},
 		},
 	})
@@ -3814,8 +6874,8 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 		t.Fatalf("marshal preview payload: %v", err)
 	}
 	preview := model.ApprovedRunPreview{
-		Phase:    "stories",
-		PanelKey: "story_plan",
+		Phase:    "tasks",
+		PanelKey: "task_plan",
 		Format:   workerpkg.PreviewFormatJSON,
 		Content:  previewPayload,
 	}
@@ -3824,7 +6884,7 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 		t.Fatalf("marshal approved preview: %v", err)
 	}
 	if err := db.Create(&model.AgentRunArtifact{
-		ID:            "approved-stories-1",
+		ID:            "approved-tasks-1",
 		WorkspaceID:   run.WorkspaceID,
 		RunID:         run.ID,
 		ArtifactType:  model.AgentRunArtifactTypeApprovedPreview,
@@ -3851,7 +6911,7 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 				return nil, err
 			}
 			for _, planned := range payload.Tasks {
-				story := &model.PMTask{
+				task := &model.PMTask{
 					ID:              "db-" + planned.Ref,
 					WorkspaceID:     run.WorkspaceID,
 					Name:            planned.Name,
@@ -3862,14 +6922,14 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 					Priority:        model.PMTaskPriorityNone,
 					Severity:        model.PMTaskSeverityNone,
 				}
-				if err := taskRepo.Create(ctx, story); err != nil {
+				if err := taskRepo.Create(ctx, task); err != nil {
 					return nil, err
 				}
 			}
 			return mustJSON(workerpkg.CreateTaskBatchResult{
 				Tasks: []workerpkg.CreateTaskBatchTaskResult{
-					{Ref: "story_1", TaskID: "db-story_1", Name: "Add tracking helper"},
-					{Ref: "story_2", TaskID: "db-story_2", Name: "Wire tracking into capture errors"},
+					{Ref: "task_1", TaskID: "db-task_1", Name: "Add tracking helper"},
+					{Ref: "task_2", TaskID: "db-task_2", Name: "Wire tracking into capture errors"},
 				},
 			}), nil
 		},
@@ -3877,6 +6937,7 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 
 	activity := &AgentRunActivities{
 		runRepo:         runRepo,
+		runMessageRepo:  runMessageRepo,
 		artifactRepo:    artifactRepo,
 		epicRepo:        epicRepo,
 		taskRepo:        taskRepo,
@@ -3887,7 +6948,7 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 		run:  run,
 		epic: epic,
 	}
-	input := planningRunInput{Stage: model.PlanningStageStoryPlanDoc}
+	input := planningRunInput{Stage: model.PlanningStageTaskPlanDoc}
 
 	action, err := activity.applyApprovedInteractivePreview(context.Background(), state, &input)
 	if err != nil {
@@ -3899,13 +6960,19 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 	if len(executed) != 1 || executed[0] != "pm.create_task_batch" {
 		t.Fatalf("expected task batch command, got %#v", executed)
 	}
-
-	var createdStories []model.PMTask
-	if err := db.Where("epic_id = ?", epic.ID).Find(&createdStories).Error; err != nil {
-		t.Fatalf("list created stories: %v", err)
+	if len(state.epicTasks) != 2 {
+		t.Fatalf("expected in-memory epic tasks to refresh after apply, got %#v", state.epicTasks)
 	}
-	if len(createdStories) != 2 {
-		t.Fatalf("expected 2 created stories, got %d", len(createdStories))
+	if state.epic == nil || state.epic.LastPlanningRunID == nil || *state.epic.LastPlanningRunID != run.ID {
+		t.Fatalf("expected state epic to record last planning run, got %#v", state.epic)
+	}
+
+	var createdTasks []model.PMTask
+	if err := db.Where("epic_id = ?", epic.ID).Find(&createdTasks).Error; err != nil {
+		t.Fatalf("list created tasks: %v", err)
+	}
+	if len(createdTasks) != 2 {
+		t.Fatalf("expected 2 created tasks, got %d", len(createdTasks))
 	}
 
 	updatedRun, err := runRepo.GetByIDAny(context.Background(), run.ID)
@@ -3914,6 +6981,19 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 	}
 	if updatedRun == nil || updatedRun.Status != model.AgentRunStatusCompleted {
 		t.Fatalf("expected run to complete, got %#v", updatedRun)
+	}
+	var summary planningRunSummary
+	if err := json.Unmarshal(updatedRun.OutputSummary, &summary); err != nil {
+		t.Fatalf("unmarshal output summary: %v", err)
+	}
+	if summary.Stage != model.PlanningStagePlanTasks {
+		t.Fatalf("expected plan_tasks summary stage, got %#v", summary)
+	}
+	if summary.SpecVersionID != "spec-v1" {
+		t.Fatalf("expected approved spec version to carry into summary, got %#v", summary)
+	}
+	if summary.Proposal == nil || len(summary.Proposal.ProposedTasks) != 2 {
+		t.Fatalf("expected proposal with created tasks in summary, got %#v", summary)
 	}
 
 	updatedAgent, err := agentRepo.GetByID(context.Background(), agent.WorkspaceID, agent.ID)
@@ -3931,9 +7011,450 @@ func TestApplyApprovedInteractivePreviewCreatesStoriesFromApprovedStoryPlan(t *t
 	if len(appliedMarkers) != 1 {
 		t.Fatalf("expected 1 approved preview applied marker, got %d", len(appliedMarkers))
 	}
+	if appliedMarkers[0].InlineContent == nil {
+		t.Fatalf("expected applied preview marker payload, got %#v", appliedMarkers[0])
+	}
+	var applied model.AppliedApprovedRunPreview
+	if err := json.Unmarshal([]byte(*appliedMarkers[0].InlineContent), &applied); err != nil {
+		t.Fatalf("unmarshal applied preview marker: %v", err)
+	}
+	if applied.ApprovedArtifactID != "approved-tasks-1" || applied.Phase != "tasks" || applied.Action != "create_tasks" {
+		t.Fatalf("unexpected applied preview marker payload %#v", applied)
+	}
+
+	messages, err := runMessageRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("list run messages: %v", err)
+	}
+	foundCompletionMessage := false
+	for _, message := range messages {
+		if message.Role == "assistant" && message.MessageType == "assistant_turn" && strings.Contains(message.Content, "Applied the approved task plan and created 2 tasks.") {
+			foundCompletionMessage = true
+			break
+		}
+	}
+	if !foundCompletionMessage {
+		t.Fatalf("expected completion assistant message after task-plan apply, got %#v", messages)
+	}
+}
+
+func TestApplyApprovedInteractivePreviewAdvancesFromAppliedPRDToTaskCreation(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	if err := db.Exec(`CREATE TABLE agent_run_messages (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		run_id TEXT NOT NULL,
+		role TEXT NOT NULL,
+		content TEXT NOT NULL,
+		message_type TEXT NOT NULL,
+		content_blocks BLOB,
+		turn_segments BLOB,
+		tool_invocations BLOB,
+		token_usage BLOB,
+		sequence_no INTEGER NOT NULL,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create agent_run_messages table: %v", err)
+	}
+
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	epicRepo := repository.NewPMEpicRepository(db)
+	taskRepo := repository.NewPMTaskRepository(db)
+	runRepo := repository.NewAgentRunRepository(db)
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	agentRepo := repository.NewAgentRepository(db)
+
+	agent := &model.Agent{
+		ID:                    "agent-epic-progress",
+		WorkspaceID:           "ws-1",
+		Name:                  "Epic Planner",
+		Status:                "running",
+		RuntimeKind:           "native_sdk",
+		Skills:                model.AgentSkillRefs{},
+		TriggerMode:           "manual",
+		AllowedTools:          json.RawMessage(`[]`),
+		AllowedCommands:       json.RawMessage(`[]`),
+		AllowedTargets:        json.RawMessage(`[]`),
+		ApprovalMode:          "preset_default",
+		MaxConcurrentRuns:     1,
+		DefaultInvocationMode: model.InvocationModeInteractive,
+	}
+	if err := db.Create(agent).Error; err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+
+	run := &model.AgentRun{
+		ID:             "run-epic-progress",
+		WorkspaceID:    "ws-1",
+		AgentID:        agent.ID,
+		TargetType:     "epic",
+		TargetID:       "epic-1",
+		InvocationMode: model.InvocationModeInteractive,
+		Status:         model.AgentRunStatusRunning,
+		Input:          json.RawMessage(`{}`),
+		OutputSummary:  json.RawMessage(`{}`),
+	}
+	if err := db.Create(run).Error; err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	epic := &model.PMEpic{
+		ID:                    "epic-1",
+		WorkspaceID:           "ws-1",
+		Name:                  "Epic",
+		PlanningState:         model.EpicPlanningStateReadyForTaskPlanning,
+		SpecDocumentID:        strPtr("doc-1"),
+		SpecClarifications:    json.RawMessage(`[]`),
+		ApprovedSpecVersionID: strPtr("spec-v1"),
+	}
+	if err := db.Create(epic).Error; err != nil {
+		t.Fatalf("create epic: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO pm_workflow_states (id, state_type) VALUES (?, ?)`, "state-1", model.PMStateTypeUnstarted).Error; err != nil {
+		t.Fatalf("create workflow state: %v", err)
+	}
+
+	prdPreviewJSON, err := json.Marshal(model.ApprovedRunPreview{
+		Phase:    "prd",
+		PanelKey: "prd_draft",
+		Format:   workerpkg.PreviewFormatMarkdown,
+		Content:  mustJSON("# Approved PRD"),
+	})
+	if err != nil {
+		t.Fatalf("marshal approved prd preview: %v", err)
+	}
+	taskPlanPreviewJSON, err := json.Marshal(model.ApprovedRunPreview{
+		Phase:    "tasks",
+		PanelKey: "task_plan",
+		Format:   workerpkg.PreviewFormatJSON,
+		Content: mustJSON(map[string]any{
+			"summary": "Approved implementation plan",
+			"proposed_tasks": []map[string]any{
+				{
+					"ref":                 "task_1",
+					"name":                "Create shared helper",
+					"description":         "Add the helper",
+					"task_type":           "chore",
+					"acceptance_criteria": []string{"helper added"},
+					"dependency_refs":     []string{},
+				},
+				{
+					"ref":                 "task_2",
+					"name":                "Wire helper into capture",
+					"description":         "Use the helper",
+					"task_type":           "feature",
+					"acceptance_criteria": []string{"capture uses helper"},
+					"dependency_refs":     []string{"task_1"},
+				},
+			},
+		}),
+	})
+	if err != nil {
+		t.Fatalf("marshal approved task plan preview: %v", err)
+	}
+	appliedPRDJSON, err := json.Marshal(model.AppliedApprovedRunPreview{
+		ApprovedArtifactID: "approved-prd-1",
+		Phase:              "prd",
+		Action:             "persist_prd",
+		AppliedAt:          time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("marshal applied prd marker: %v", err)
+	}
+
+	for _, artifact := range []model.AgentRunArtifact{
+		{
+			ID:            "approved-prd-1",
+			WorkspaceID:   run.WorkspaceID,
+			RunID:         run.ID,
+			ArtifactType:  model.AgentRunArtifactTypeApprovedPreview,
+			Format:        "json",
+			StorageMode:   "inline",
+			InlineContent: strPtr(string(prdPreviewJSON)),
+			Metadata:      json.RawMessage(`{}`),
+			SequenceNo:    1,
+		},
+		{
+			ID:            "applied-prd-1",
+			WorkspaceID:   run.WorkspaceID,
+			RunID:         run.ID,
+			ArtifactType:  model.AgentRunArtifactTypeApprovedPreviewApplied,
+			Format:        "json",
+			StorageMode:   "inline",
+			InlineContent: strPtr(string(appliedPRDJSON)),
+			Metadata:      json.RawMessage(`{}`),
+			SequenceNo:    2,
+		},
+		{
+			ID:            "approved-tasks-1",
+			WorkspaceID:   run.WorkspaceID,
+			RunID:         run.ID,
+			ArtifactType:  model.AgentRunArtifactTypeApprovedPreview,
+			Format:        "json",
+			StorageMode:   "inline",
+			InlineContent: strPtr(string(taskPlanPreviewJSON)),
+			Metadata:      json.RawMessage(`{}`),
+			SequenceNo:    3,
+		},
+	} {
+		if err := db.Create(&artifact).Error; err != nil {
+			t.Fatalf("create artifact %s: %v", artifact.ID, err)
+		}
+	}
+
+	var executed []string
+	commandExecutor := stubInternalCommandExecutor{
+		executeFn: func(ctx context.Context, meta model.InternalCommandContext, name string, input json.RawMessage) (json.RawMessage, error) {
+			executed = append(executed, name)
+			if name != "pm.create_task_batch" {
+				return json.RawMessage(`{}`), nil
+			}
+			var payload struct {
+				Tasks []model.ProposedTask `json:"tasks"`
+			}
+			if err := json.Unmarshal(input, &payload); err != nil {
+				return nil, err
+			}
+			for _, planned := range payload.Tasks {
+				task := &model.PMTask{
+					ID:              "db-" + planned.Ref,
+					WorkspaceID:     run.WorkspaceID,
+					Name:            planned.Name,
+					TaskType:        planned.TaskType,
+					WorkflowID:      "wf-1",
+					WorkflowStateID: "state-1",
+					EpicID:          &epic.ID,
+					Priority:        model.PMTaskPriorityNone,
+					Severity:        model.PMTaskSeverityNone,
+				}
+				if err := taskRepo.Create(ctx, task); err != nil {
+					return nil, err
+				}
+			}
+			return mustJSON(workerpkg.CreateTaskBatchResult{
+				Tasks: []workerpkg.CreateTaskBatchTaskResult{
+					{Ref: "task_1", TaskID: "db-task_1", Name: "Create shared helper"},
+					{Ref: "task_2", TaskID: "db-task_2", Name: "Wire helper into capture"},
+				},
+			}), nil
+		},
+	}
+
+	activity := &AgentRunActivities{
+		runRepo:         runRepo,
+		runMessageRepo:  runMessageRepo,
+		artifactRepo:    artifactRepo,
+		epicRepo:        epicRepo,
+		taskRepo:        taskRepo,
+		agentRepo:       agentRepo,
+		commandExecutor: commandExecutor,
+	}
+	state := &resolvedRunState{
+		run:  run,
+		epic: epic,
+	}
+	input := planningRunInput{
+		Stage:          model.PlanningStagePlanTasks,
+		SpecDocumentID: "doc-1",
+		SpecVersionID:  "spec-v1",
+	}
+
+	action, err := activity.applyApprovedInteractivePreview(context.Background(), state, &input)
+	if err != nil {
+		t.Fatalf("applyApprovedInteractivePreview returned error: %v", err)
+	}
+	if action != "create_tasks" {
+		t.Fatalf("expected create_tasks action, got %q", action)
+	}
+	if len(executed) != 1 || executed[0] != "pm.create_task_batch" {
+		t.Fatalf("expected task creation command only, got %#v", executed)
+	}
+
+	updatedRun, err := runRepo.GetByIDAny(context.Background(), run.ID)
+	if err != nil {
+		t.Fatalf("get updated run: %v", err)
+	}
+	if updatedRun == nil || updatedRun.Status != model.AgentRunStatusCompleted {
+		t.Fatalf("expected run to complete after task creation, got %#v", updatedRun)
+	}
+	var summary planningRunSummary
+	if err := json.Unmarshal(updatedRun.OutputSummary, &summary); err != nil {
+		t.Fatalf("unmarshal output summary: %v", err)
+	}
+	if summary.Stage != model.PlanningStagePlanTasks || summary.SpecVersionID != "spec-v1" {
+		t.Fatalf("expected task-planning summary to retain approved spec progression, got %#v", summary)
+	}
+
+	var appliedMarkers []model.AgentRunArtifact
+	if err := db.Where("run_id = ? AND artifact_type = ?", run.ID, model.AgentRunArtifactTypeApprovedPreviewApplied).Find(&appliedMarkers).Error; err != nil {
+		t.Fatalf("list applied markers: %v", err)
+	}
+	if len(appliedMarkers) != 2 {
+		t.Fatalf("expected original PRD marker plus new task marker, got %d", len(appliedMarkers))
+	}
+	actionsByArtifactID := make(map[string]string, len(appliedMarkers))
+	for _, marker := range appliedMarkers {
+		if marker.InlineContent == nil {
+			t.Fatalf("expected applied marker payload, got %#v", marker)
+		}
+		var applied model.AppliedApprovedRunPreview
+		if err := json.Unmarshal([]byte(*marker.InlineContent), &applied); err != nil {
+			t.Fatalf("unmarshal applied marker: %v", err)
+		}
+		actionsByArtifactID[applied.ApprovedArtifactID] = applied.Action
+	}
+	if got := actionsByArtifactID["approved-prd-1"]; got != "persist_prd" {
+		t.Fatalf("expected prd marker to remain persist_prd, got %#v", actionsByArtifactID)
+	}
+	if got := actionsByArtifactID["approved-tasks-1"]; got != "create_tasks" {
+		t.Fatalf("expected task marker to be create_tasks, got %#v", actionsByArtifactID)
+	}
+
+	action, err = activity.applyApprovedInteractivePreview(context.Background(), state, &input)
+	if err != nil {
+		t.Fatalf("second applyApprovedInteractivePreview returned error: %v", err)
+	}
+	if action != "" {
+		t.Fatalf("expected second task-plan apply to skip already-applied preview, got %q", action)
+	}
+	if len(executed) != 1 {
+		t.Fatalf("expected second task-plan apply not to recreate tasks, executed %#v", executed)
+	}
+	appliedMarkers = nil
+	if err := db.Where("run_id = ? AND artifact_type = ?", run.ID, model.AgentRunArtifactTypeApprovedPreviewApplied).Find(&appliedMarkers).Error; err != nil {
+		t.Fatalf("list applied markers after second apply: %v", err)
+	}
+	if len(appliedMarkers) != 2 {
+		t.Fatalf("expected no duplicate applied marker on second task-plan apply, got %d", len(appliedMarkers))
+	}
+}
+
+func TestApplyApprovedInteractivePreviewRejectsMismatchedPhaseTargetWithoutMarker(t *testing.T) {
+	testCases := []struct {
+		name    string
+		run     *model.AgentRun
+		state   *resolvedRunState
+		preview model.ApprovedRunPreview
+		wantErr string
+		input   planningRunInput
+	}{
+		{
+			name: "prd requires epic target",
+			run: &model.AgentRun{
+				ID:             "run-prd-task",
+				WorkspaceID:    "ws-1",
+				TargetType:     "task",
+				TargetID:       "task-1",
+				InvocationMode: model.InvocationModeInteractive,
+				Status:         model.AgentRunStatusRunning,
+			},
+			state: &resolvedRunState{
+				task: &model.PMTask{ID: "task-1", WorkspaceID: "ws-1", Name: "Task"},
+			},
+			preview: model.ApprovedRunPreview{
+				Phase:    "prd",
+				PanelKey: "prd_draft",
+				Format:   workerpkg.PreviewFormatMarkdown,
+				Content:  mustJSON("# Approved PRD"),
+			},
+			wantErr: "approved PRD preview requires an epic target",
+		},
+		{
+			name: "tasks requires epic target",
+			run: &model.AgentRun{
+				ID:             "run-tasks-task",
+				WorkspaceID:    "ws-1",
+				TargetType:     "task",
+				TargetID:       "task-1",
+				InvocationMode: model.InvocationModeInteractive,
+				Status:         model.AgentRunStatusRunning,
+			},
+			state: &resolvedRunState{
+				task: &model.PMTask{ID: "task-1", WorkspaceID: "ws-1", Name: "Task"},
+			},
+			preview: model.ApprovedRunPreview{
+				Phase:    "tasks",
+				PanelKey: "task_plan",
+				Format:   workerpkg.PreviewFormatJSON,
+				Content:  mustJSON(map[string]any{"summary": "Plan", "proposed_tasks": []any{}}),
+			},
+			wantErr: "approved task plan preview requires an epic target",
+		},
+		{
+			name: "task_doc requires task target",
+			run: &model.AgentRun{
+				ID:             "run-task-doc-epic",
+				WorkspaceID:    "ws-1",
+				TargetType:     "epic",
+				TargetID:       "epic-1",
+				InvocationMode: model.InvocationModeInteractive,
+				Status:         model.AgentRunStatusRunning,
+			},
+			state: &resolvedRunState{
+				epic: &model.PMEpic{ID: "epic-1", WorkspaceID: "ws-1", Name: "Epic"},
+			},
+			preview: model.ApprovedRunPreview{
+				Phase:    "task_doc",
+				PanelKey: "task_plan_doc",
+				Format:   workerpkg.PreviewFormatMarkdown,
+				Content:  mustJSON("# Approved task doc"),
+			},
+			wantErr: "approved task planning doc preview requires a task target",
+			input:   planningRunInput{Stage: model.PlanningStageTaskPlanDoc},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newPlannerApprovalTestDB(t)
+			artifactRepo := repository.NewAgentRunArtifactRepository(db)
+
+			state := &resolvedRunState{
+				run:  tc.run,
+				task: tc.state.task,
+				epic: tc.state.epic,
+			}
+
+			previewJSON, err := json.Marshal(tc.preview)
+			if err != nil {
+				t.Fatalf("marshal approved preview: %v", err)
+			}
+			if err := db.Create(&model.AgentRunArtifact{
+				ID:            "approved-preview-1",
+				WorkspaceID:   tc.run.WorkspaceID,
+				RunID:         tc.run.ID,
+				ArtifactType:  model.AgentRunArtifactTypeApprovedPreview,
+				Format:        "json",
+				StorageMode:   "inline",
+				InlineContent: strPtr(string(previewJSON)),
+				Metadata:      json.RawMessage(`{}`),
+				SequenceNo:    1,
+			}).Error; err != nil {
+				t.Fatalf("create approved preview artifact: %v", err)
+			}
+
+			activity := &AgentRunActivities{artifactRepo: artifactRepo}
+			input := tc.input
+			action, err := activity.applyApprovedInteractivePreview(context.Background(), state, &input)
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("expected error containing %q, got action=%q err=%v", tc.wantErr, action, err)
+			}
+
+			var appliedMarkers []model.AgentRunArtifact
+			if err := db.Where("run_id = ? AND artifact_type = ?", tc.run.ID, model.AgentRunArtifactTypeApprovedPreviewApplied).Find(&appliedMarkers).Error; err != nil {
+				t.Fatalf("list applied markers: %v", err)
+			}
+			if len(appliedMarkers) != 0 {
+				t.Fatalf("expected no applied marker on mismatched phase/target, got %#v", appliedMarkers)
+			}
+		})
+	}
 }
 
 func TestExecuteRunActivityPausesNativePlannerForReviewCheckpoint(t *testing.T) {
+	t.Setenv("AGENT_NATIVE_SELECTIVE_PLANNER_ENABLED", "true")
+
 	db := newPlannerApprovalTestDB(t)
 	if err := db.Exec(`CREATE TABLE IF NOT EXISTS agent_run_messages (
 		id TEXT PRIMARY KEY,
@@ -3982,19 +7503,27 @@ func TestExecuteRunActivityPausesNativePlannerForReviewCheckpoint(t *testing.T) 
 
 	runRepo := repository.NewAgentRunRepository(db)
 	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	interactionRepo := repository.NewAgentRunInteractionRepository(db)
 	agentRepo := repository.NewAgentRepository(db)
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
-	interactionRepo := repository.NewAgentRunInteractionRepository(db)
 	epicRepo := repository.NewPMEpicRepository(db)
 	docsDocRepo := repository.NewDocsDocumentRepository(db)
 	docsContentRepo := repository.NewDocsContentRepository(db)
 	docsLinkRepo := repository.NewDocsLinkRepository(db)
 	wsPublisher := &capturedEventPublisher{}
+	var capturedSelectivePathEnabled bool
+	var capturedRuntimeSkillRefs model.AgentSkillRefs
+	var capturedActiveRuntimeSkillRefs model.AgentSkillRefs
+	var capturedActiveSkillInstructions string
+	var capturedSkillPolicy workerpkg.SkillPolicy
+	var capturedInitialInstructions string
+	var capturedPhaseGuidance string
 
 	now := time.Now().UTC()
 	agent := &model.Agent{
 		ID:                    "agent-epic",
 		WorkspaceID:           "ws-1",
+		IsSystem:              true,
 		Name:                  "Epic Planner",
 		PresetKey:             model.AgentPresetEpicPlanner,
 		Role:                  "Planner",
@@ -4051,9 +7580,9 @@ func TestExecuteRunActivityPausesNativePlannerForReviewCheckpoint(t *testing.T) 
 	activities := &AgentRunActivities{
 		runRepo:         runRepo,
 		runMessageRepo:  runMessageRepo,
+		interactionRepo: interactionRepo,
 		agentRepo:       agentRepo,
 		artifactRepo:    artifactRepo,
-		interactionRepo: interactionRepo,
 		epicRepo:        epicRepo,
 		docsDocRepo:     docsDocRepo,
 		docsContentRepo: docsContentRepo,
@@ -4061,6 +7590,13 @@ func TestExecuteRunActivityPausesNativePlannerForReviewCheckpoint(t *testing.T) 
 		runtimes: workerpkg.NewRuntimeRegistry(stubRuntimeAdapter{
 			kind: "native_sdk",
 			executeFn: func(execCtx *workerpkg.ExecutionContext, run *model.AgentRun) error {
+				capturedSelectivePathEnabled = execCtx.NativeSelectivePathEnabled
+				capturedRuntimeSkillRefs = append(model.AgentSkillRefs(nil), execCtx.RuntimeSkillRefs...)
+				capturedActiveRuntimeSkillRefs = append(model.AgentSkillRefs(nil), execCtx.ActiveRuntimeSkillRefs...)
+				capturedActiveSkillInstructions = execCtx.ActiveSkillInstructions
+				capturedSkillPolicy = execCtx.SkillPolicy
+				capturedInitialInstructions = execCtx.InitialInstructions
+				capturedPhaseGuidance = execCtx.PhaseGuidance
 				execCtx.LastExecutionResult = &workerpkg.ExecutionResult{
 					AssistantText: "PRD review checkpoint requested.",
 					ToolInvocations: []model.ToolInvocation{
@@ -4090,6 +7626,37 @@ func TestExecuteRunActivityPausesNativePlannerForReviewCheckpoint(t *testing.T) 
 	if result.AwaitingInput || result.AwaitingAuth || result.ContinueExecution {
 		t.Fatalf("unexpected execute result %#v", result)
 	}
+	if !capturedSelectivePathEnabled {
+		t.Fatal("expected native selective path flag to be threaded into execution context")
+	}
+	if len(capturedRuntimeSkillRefs) == 0 {
+		t.Fatal("expected runtime skill refs to be threaded into execution context")
+	}
+	if got := testAgentSkillRefKeys(capturedActiveRuntimeSkillRefs); len(got) != 4 || got[0] != "approval_protocol" || got[1] != "prd_authorship" || got[2] != "epic_state_routing" || got[3] != "general_agent_behavior" {
+		t.Fatalf("unexpected active runtime skill refs %#v", got)
+	}
+	if strings.TrimSpace(capturedActiveSkillInstructions) == "" {
+		t.Fatalf("expected active skill instructions to be threaded into execution context, got %q", capturedActiveSkillInstructions)
+	}
+	if strings.TrimSpace(capturedInitialInstructions) != "" {
+		t.Fatalf("expected gated native path to suppress legacy initial instructions, got %q", capturedInitialInstructions)
+	}
+	if strings.TrimSpace(capturedPhaseGuidance) == "" {
+		t.Fatalf("expected gated native path to populate phase guidance, got %q", capturedPhaseGuidance)
+	}
+	if !strings.Contains(capturedPhaseGuidance, "Current planning phase:") && !strings.Contains(capturedPhaseGuidance, "Planning selector tag (not an instruction):") {
+		t.Fatalf("expected gated native phase guidance to include a phase/selector marker, got %q", capturedPhaseGuidance)
+	}
+	if strings.Contains(capturedPhaseGuidance, "Use this sequence unless the human explicitly redirects you:") {
+		t.Fatalf("did not expect legacy monolithic planner guidance in gated native phase guidance, got %q", capturedPhaseGuidance)
+	}
+	if got := completionRequiredInteractionKinds(capturedSkillPolicy); len(got) != 2 {
+		t.Fatalf("unexpected active skill policy %#v", got)
+	} else if _, ok := got[model.AgentRunInteractionKindApprovalRequest]; !ok {
+		t.Fatalf("expected approval_request in active skill policy, got %#v", got)
+	} else if _, ok := got[model.AgentRunInteractionKindRequestUserInput]; !ok {
+		t.Fatalf("unexpected active skill policy %#v", got)
+	}
 
 	updatedRun, err := runRepo.GetByIDAny(context.Background(), run.ID)
 	if err != nil {
@@ -4118,6 +7685,25 @@ func TestExecuteRunActivityPausesNativePlannerForReviewCheckpoint(t *testing.T) 
 	if interactions[0].InteractionKind != model.AgentRunInteractionKindReviewCheckpoint {
 		t.Fatalf("expected review checkpoint interaction, got %#v", interactions[0])
 	}
+
+	messages, err := runMessageRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("list run messages: %v", err)
+	}
+	if len(messages) == 0 {
+		t.Fatal("expected persisted run messages")
+	}
+	if strings.Contains(messages[0].Content, "Run mode: interactive") {
+		t.Fatalf("did not expect gated native first user prompt to persist phase guidance, got %q", messages[0].Content)
+	}
+}
+
+func testAgentSkillRefKeys(refs model.AgentSkillRefs) []string {
+	keys := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		keys = append(keys, ref.Key)
+	}
+	return keys
 }
 
 func TestExecuteRunActivityRetriesReviewAgentCompletionWithoutRequiredInteraction(t *testing.T) {
@@ -4171,9 +7757,9 @@ func TestExecuteRunActivityRetriesReviewAgentCompletionWithoutRequiredInteractio
 
 	runRepo := repository.NewAgentRunRepository(db)
 	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	interactionRepo := repository.NewAgentRunInteractionRepository(db)
 	agentRepo := repository.NewAgentRepository(db)
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
-	interactionRepo := repository.NewAgentRunInteractionRepository(db)
 	epicRepo := repository.NewPMEpicRepository(db)
 
 	now := time.Now().UTC()
@@ -4237,9 +7823,9 @@ func TestExecuteRunActivityRetriesReviewAgentCompletionWithoutRequiredInteractio
 	activities := &AgentRunActivities{
 		runRepo:         runRepo,
 		runMessageRepo:  runMessageRepo,
+		interactionRepo: interactionRepo,
 		agentRepo:       agentRepo,
 		artifactRepo:    artifactRepo,
-		interactionRepo: interactionRepo,
 		epicRepo:        epicRepo,
 		runtimes: workerpkg.NewRuntimeRegistry(stubRuntimeAdapter{
 			kind: "native_sdk",
@@ -4293,6 +7879,220 @@ func TestExecuteRunActivityRetriesReviewAgentCompletionWithoutRequiredInteractio
 	}
 	if !foundRetryMessage {
 		t.Fatalf("expected policy retry message to be appended, got %#v", messages)
+	}
+}
+
+func TestExecuteRunActivityThreadsNativeRepairGuidanceWithoutReplayingPolicyRetry(t *testing.T) {
+	t.Setenv("AGENT_NATIVE_SELECTIVE_PLANNER_ENABLED", "true")
+
+	db := newPlannerApprovalTestDB(t)
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_messages (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			role TEXT NOT NULL,
+			message_type TEXT NOT NULL,
+			content TEXT NOT NULL,
+			content_blocks BLOB,
+			turn_segments BLOB,
+			tool_invocations BLOB,
+			token_usage BLOB,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE agent_run_interactions (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			runtime_kind TEXT NOT NULL,
+			interaction_kind TEXT NOT NULL,
+			status TEXT NOT NULL,
+			request_schema_version TEXT NOT NULL,
+			response_schema_version TEXT,
+			request_id TEXT,
+			thread_id TEXT,
+			turn_id TEXT,
+			item_id TEXT,
+			approval_id TEXT,
+			assistant_message_sequence_no INTEGER,
+			title TEXT,
+			summary TEXT,
+			request_payload TEXT NOT NULL,
+			response_payload TEXT,
+			runtime_metadata TEXT NOT NULL,
+			resolved_by TEXT,
+			resolved_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+	}
+
+	runRepo := repository.NewAgentRunRepository(db)
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	interactionRepo := repository.NewAgentRunInteractionRepository(db)
+	agentRepo := repository.NewAgentRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	epicRepo := repository.NewPMEpicRepository(db)
+	docsDocRepo := repository.NewDocsDocumentRepository(db)
+	docsContentRepo := repository.NewDocsContentRepository(db)
+	docsLinkRepo := repository.NewDocsLinkRepository(db)
+	var capturedRepairGuidanceSource string
+
+	now := time.Now().UTC()
+	agent := &model.Agent{
+		ID:                    "agent-native-repair",
+		WorkspaceID:           "ws-1",
+		IsSystem:              true,
+		Name:                  "Epic Planner",
+		PresetKey:             model.AgentPresetEpicPlanner,
+		Role:                  "Planner",
+		Status:                "idle",
+		RuntimeKind:           "native_sdk",
+		Skills:                model.AgentSkillRefs{},
+		TriggerMode:           "manual",
+		AllowedTools:          json.RawMessage(`[]`),
+		AllowedCommands:       json.RawMessage(`[]`),
+		AllowedTargets:        json.RawMessage(`[]`),
+		ApprovalMode:          "never",
+		MaxConcurrentRuns:     1,
+		DefaultInvocationMode: model.InvocationModeInteractive,
+		CreatedAt:             now,
+		UpdatedAt:             now,
+	}
+	if err := db.Create(agent).Error; err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+
+	epic := &model.PMEpic{
+		ID:                 "epic-native-repair",
+		WorkspaceID:        "ws-1",
+		Name:               "Selective repair guidance",
+		PlanningState:      model.EpicPlanningStateAwaitingSpecApproval,
+		SpecClarifications: json.RawMessage(`[]`),
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}
+	if err := db.Create(epic).Error; err != nil {
+		t.Fatalf("create epic: %v", err)
+	}
+
+	run := &model.AgentRun{
+		ID:             "run-native-repair",
+		WorkspaceID:    "ws-1",
+		AgentID:        agent.ID,
+		TargetType:     "epic",
+		TargetID:       epic.ID,
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeInteractive,
+		Status:         model.AgentRunStatusRunning,
+		PauseReason:    model.AgentRunPauseReasonNone,
+		ApprovalState:  "not_required",
+		Input:          json.RawMessage(`{}`),
+		OutputSummary:  json.RawMessage(`{}`),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := db.Create(run).Error; err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	activities := &AgentRunActivities{
+		runRepo:         runRepo,
+		runMessageRepo:  runMessageRepo,
+		interactionRepo: interactionRepo,
+		agentRepo:       agentRepo,
+		artifactRepo:    artifactRepo,
+		epicRepo:        epicRepo,
+		docsDocRepo:     docsDocRepo,
+		docsContentRepo: docsContentRepo,
+		docsLinkRepo:    docsLinkRepo,
+		runtimes: workerpkg.NewRuntimeRegistry(stubRuntimeAdapter{
+			kind: "native_sdk",
+			executeFn: func(execCtx *workerpkg.ExecutionContext, run *model.AgentRun) error {
+				if !strings.Contains(strings.ToLower(execCtx.RepairGuidance), "same turn") || !strings.Contains(execCtx.RepairGuidance, "preview_panel_key") {
+					t.Fatalf("expected repair guidance in execution context, got %q", execCtx.RepairGuidance)
+				}
+				capturedRepairGuidanceSource = execCtx.RepairGuidanceSource
+				for _, message := range execCtx.ConversationHistory {
+					if strings.Contains(message.Content, "System correction:") {
+						t.Fatalf("expected policy_retry to stay out of replay history, got %#v", execCtx.ConversationHistory)
+					}
+				}
+				execCtx.LastExecutionResult = &workerpkg.ExecutionResult{
+					AssistantText: "Need clarification before continuing.",
+					ToolInvocations: []model.ToolInvocation{
+						{
+							ToolName: workerpkg.ToolRequestUserInput,
+							Input: json.RawMessage(`{
+								"questions": [
+									{
+										"id": "repair-q1",
+										"header": "Priority",
+										"question": "Which edge case should be prioritized first?",
+										"options": [
+											{ "label": "Preview binding" },
+											{ "label": "Approval handoff" }
+										]
+									}
+								]
+							}`),
+						},
+					},
+				}
+				return nil
+			},
+		}),
+	}
+
+	if _, err := activities.createRunMessage(context.Background(), run, "user", "prompt", "Initial prompt", nil, nil, nil, nil); err != nil {
+		t.Fatalf("create prompt message: %v", err)
+	}
+	assistantMessage, err := activities.createRunMessage(context.Background(), run, "assistant", "assistant_turn", "Drafted the PRD.", nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("create assistant message: %v", err)
+	}
+	retryContent := "System correction: continue from your last assistant message."
+	if _, err := activities.createRunMessage(context.Background(), run, "user", "policy_retry", retryContent, nil, nil, nil, nil); err != nil {
+		t.Fatalf("create policy retry message: %v", err)
+	}
+	if _, err := activities.appendRunArtifactWithMetadata(context.Background(), run, model.AgentRunArtifactTypeNativeRepairState, "json", model.NativeRepairState{
+		Source:      "completion_retry",
+		RepairClass: "approval_specific_preview_required",
+		RepairHint:  `System correction: the previous turn requested approval without binding it to the required same-turn prd_draft preview. Continue from your last assistant message instead of restarting. Do not end with prose only. Publish the prd_draft preview in the same turn before the approval handoff, and set preview_panel_key="prd_draft" on request_approval or request_review_checkpoint so it binds to the correct preview.`,
+	}, buildAssistantSequenceArtifactMetadata(assistantMessage.SequenceNo)); err != nil {
+		t.Fatalf("create repair artifact: %v", err)
+	}
+
+	result, err := activities.ExecuteRunActivity(context.Background(), run.ID)
+	if err != nil {
+		t.Fatalf("ExecuteRunActivity returned error: %v", err)
+	}
+	if !result.AwaitingInput {
+		t.Fatalf("expected AwaitingInput, got %#v", result)
+	}
+	if capturedRepairGuidanceSource != "native_repair_state:completion_retry" {
+		t.Fatalf("expected repair guidance source from normalized artifact, got %q", capturedRepairGuidanceSource)
+	}
+
+	messages, err := runMessageRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("list run messages: %v", err)
+	}
+	foundPolicyRetry := false
+	for _, message := range messages {
+		if strings.TrimSpace(message.MessageType) == "policy_retry" && strings.Contains(message.Content, "continue from your last assistant message") {
+			foundPolicyRetry = true
+			break
+		}
+	}
+	if !foundPolicyRetry {
+		t.Fatalf("expected persisted policy_retry marker to remain present, got %#v", messages)
 	}
 }
 
@@ -5198,6 +8998,401 @@ func TestReviewCheckpointWithExplicitPreviewPanelKeyRequiresMatchingCurrentTurnP
 	}
 }
 
+func TestApprovalRequestWithPublishToolPreviewPanelKeyMatchesCanonicalPreview(t *testing.T) {
+	dbName := fmt.Sprintf("file:approval-tool-key-preview-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_artifacts (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			artifact_type TEXT NOT NULL,
+			format TEXT NOT NULL,
+			storage_mode TEXT NOT NULL,
+			inline_content TEXT,
+			object_key TEXT,
+			metadata TEXT NOT NULL,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+		`CREATE TABLE agent_run_interactions (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			runtime_kind TEXT NOT NULL,
+			interaction_kind TEXT NOT NULL,
+			status TEXT NOT NULL,
+			request_schema_version TEXT NOT NULL,
+			response_schema_version TEXT,
+			request_id TEXT,
+			thread_id TEXT,
+			turn_id TEXT,
+			item_id TEXT,
+			approval_id TEXT,
+			assistant_message_sequence_no INTEGER,
+			title TEXT,
+			summary TEXT,
+			request_payload TEXT NOT NULL,
+			response_payload TEXT,
+			runtime_metadata TEXT NOT NULL,
+			resolved_by TEXT,
+			resolved_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+	}
+
+	now := time.Now().UTC()
+	interactionRepo := repository.NewAgentRunInteractionRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	activities := &AgentRunActivities{
+		artifactRepo:    artifactRepo,
+		interactionRepo: interactionRepo,
+	}
+	state := &resolvedRunState{
+		run: &model.AgentRun{
+			ID:          "run-tool-key-preview",
+			WorkspaceID: "ws-1",
+			RuntimeKind: "native_sdk",
+		},
+		agent: &model.Agent{
+			ID:          "agent-1",
+			WorkspaceID: "ws-1",
+			RuntimeKind: "native_sdk",
+		},
+		skillPolicy: workerpkg.SkillPolicy{
+			CompletionRequiresInteractionKinds: []string{
+				model.AgentRunInteractionKindApprovalRequest,
+			},
+		},
+	}
+
+	assistantSequenceNo := 7
+	previewPayload, err := json.Marshal(workerpkg.PublishedPreview{
+		PanelKey: "task_plan_doc",
+		Title:    "Task Planning Document",
+		Format:   workerpkg.PreviewFormatMarkdown,
+		Content:  json.RawMessage(`"# Plan\n\nInstrument Kafka producer metrics."`),
+	})
+	if err != nil {
+		t.Fatalf("marshal preview: %v", err)
+	}
+	if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
+		ID:            "artifact-tool-key-preview",
+		WorkspaceID:   state.run.WorkspaceID,
+		RunID:         state.run.ID,
+		ArtifactType:  workerpkg.RunPreviewArtifactType,
+		Format:        "json",
+		StorageMode:   "inline",
+		InlineContent: strPtr(string(previewPayload)),
+		Metadata:      buildAssistantSequenceArtifactMetadata(assistantSequenceNo),
+		SequenceNo:    1,
+		CreatedAt:     now,
+	}); err != nil {
+		t.Fatalf("create preview artifact: %v", err)
+	}
+
+	if err := interactionRepo.Create(context.Background(), &model.AgentRunInteraction{
+		ID:                         "interaction-tool-key",
+		WorkspaceID:                state.run.WorkspaceID,
+		RunID:                      state.run.ID,
+		RuntimeKind:                "native_sdk",
+		InteractionKind:            model.AgentRunInteractionKindApprovalRequest,
+		Status:                     model.AgentRunInteractionStatusPending,
+		RequestSchemaVersion:       model.AgentRunInteractionSchemaVersionHelpinV1,
+		AssistantMessageSequenceNo: &assistantSequenceNo,
+		RequestPayload:             json.RawMessage(`{"phase":"task_doc","preview_panel_key":"publish_task_plan_doc","title":"Approve task planning document","summary":"Review it"}`),
+		RuntimeMetadata:            json.RawMessage(`{"runtime_kind":"native_sdk"}`),
+		CreatedAt:                  now,
+		UpdatedAt:                  now,
+	}); err != nil {
+		t.Fatalf("create interaction: %v", err)
+	}
+
+	if err := activities.enforceCompletionInteractionPolicy(context.Background(), state, &model.AgentRunMessage{
+		SequenceNo:  assistantSequenceNo,
+		Role:        "assistant",
+		MessageType: "assistant_turn",
+		Content:     "Please review the task planning document.",
+	}); err != nil {
+		t.Fatalf("expected publish tool preview_panel_key to match canonical preview, got %v", err)
+	}
+}
+
+func TestApprovalRequestWithUnknownPreviewPanelKeyAllowsSingleCurrentTurnPreview(t *testing.T) {
+	dbName := fmt.Sprintf("file:approval-unknown-key-preview-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_artifacts (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			artifact_type TEXT NOT NULL,
+			format TEXT NOT NULL,
+			storage_mode TEXT NOT NULL,
+			inline_content TEXT,
+			object_key TEXT,
+			metadata TEXT NOT NULL,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+		`CREATE TABLE agent_run_interactions (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			runtime_kind TEXT NOT NULL,
+			interaction_kind TEXT NOT NULL,
+			status TEXT NOT NULL,
+			request_schema_version TEXT NOT NULL,
+			response_schema_version TEXT,
+			request_id TEXT,
+			thread_id TEXT,
+			turn_id TEXT,
+			item_id TEXT,
+			approval_id TEXT,
+			assistant_message_sequence_no INTEGER,
+			title TEXT,
+			summary TEXT,
+			request_payload TEXT NOT NULL,
+			response_payload TEXT,
+			runtime_metadata TEXT NOT NULL,
+			resolved_by TEXT,
+			resolved_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+	}
+
+	now := time.Now().UTC()
+	interactionRepo := repository.NewAgentRunInteractionRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	activities := &AgentRunActivities{
+		artifactRepo:    artifactRepo,
+		interactionRepo: interactionRepo,
+	}
+	state := &resolvedRunState{
+		run: &model.AgentRun{
+			ID:          "run-unknown-key-preview",
+			WorkspaceID: "ws-1",
+			RuntimeKind: "native_sdk",
+		},
+		agent: &model.Agent{
+			ID:          "agent-1",
+			WorkspaceID: "ws-1",
+			RuntimeKind: "native_sdk",
+		},
+		skillPolicy: workerpkg.SkillPolicy{
+			CompletionRequiresInteractionKinds: []string{
+				model.AgentRunInteractionKindApprovalRequest,
+			},
+		},
+	}
+
+	assistantSequenceNo := 7
+	previewPayload, err := json.Marshal(workerpkg.PublishedPreview{
+		PanelKey: "task_plan_doc",
+		Title:    "Task Planning Document",
+		Format:   workerpkg.PreviewFormatMarkdown,
+		Content:  json.RawMessage(`"# Plan\n\nRegister histogram buckets."`),
+	})
+	if err != nil {
+		t.Fatalf("marshal preview: %v", err)
+	}
+	if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
+		ID:            "artifact-unknown-key-preview",
+		WorkspaceID:   state.run.WorkspaceID,
+		RunID:         state.run.ID,
+		ArtifactType:  workerpkg.RunPreviewArtifactType,
+		Format:        "json",
+		StorageMode:   "inline",
+		InlineContent: strPtr(string(previewPayload)),
+		Metadata:      buildAssistantSequenceArtifactMetadata(assistantSequenceNo),
+		SequenceNo:    1,
+		CreatedAt:     now,
+	}); err != nil {
+		t.Fatalf("create preview artifact: %v", err)
+	}
+
+	if err := interactionRepo.Create(context.Background(), &model.AgentRunInteraction{
+		ID:                         "interaction-unknown-key",
+		WorkspaceID:                state.run.WorkspaceID,
+		RunID:                      state.run.ID,
+		RuntimeKind:                "native_sdk",
+		InteractionKind:            model.AgentRunInteractionKindApprovalRequest,
+		Status:                     model.AgentRunInteractionStatusPending,
+		RequestSchemaVersion:       model.AgentRunInteractionSchemaVersionHelpinV1,
+		AssistantMessageSequenceNo: &assistantSequenceNo,
+		RequestPayload:             json.RawMessage(`{"phase":"task_doc","preview_panel_key":"db1e88e9-2538-426a-a787-12a17f108bcd","title":"Approve task planning document","summary":"Review it"}`),
+		RuntimeMetadata:            json.RawMessage(`{"runtime_kind":"native_sdk"}`),
+		CreatedAt:                  now,
+		UpdatedAt:                  now,
+	}); err != nil {
+		t.Fatalf("create interaction: %v", err)
+	}
+
+	if err := activities.enforceCompletionInteractionPolicy(context.Background(), state, &model.AgentRunMessage{
+		SequenceNo:  assistantSequenceNo,
+		Role:        "assistant",
+		MessageType: "assistant_turn",
+		Content:     "Please review the task planning document.",
+	}); err != nil {
+		t.Fatalf("expected unknown preview_panel_key to bind to unique same-turn preview, got %v", err)
+	}
+}
+
+func TestEnsureApprovedPreviewFromResolvedInteractionUsesUniquePreviewForUnknownPanelKey(t *testing.T) {
+	dbName := fmt.Sprintf("file:resolved-approval-unknown-key-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_artifacts (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			artifact_type TEXT NOT NULL,
+			format TEXT NOT NULL,
+			storage_mode TEXT NOT NULL,
+			inline_content TEXT,
+			object_key TEXT,
+			metadata TEXT NOT NULL,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+		`CREATE TABLE agent_run_interactions (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			runtime_kind TEXT NOT NULL,
+			interaction_kind TEXT NOT NULL,
+			status TEXT NOT NULL,
+			request_schema_version TEXT NOT NULL,
+			response_schema_version TEXT,
+			request_id TEXT,
+			thread_id TEXT,
+			turn_id TEXT,
+			item_id TEXT,
+			approval_id TEXT,
+			assistant_message_sequence_no INTEGER,
+			title TEXT,
+			summary TEXT,
+			request_payload TEXT NOT NULL,
+			response_payload TEXT,
+			runtime_metadata TEXT NOT NULL,
+			resolved_by TEXT,
+			resolved_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+	}
+
+	now := time.Now().UTC()
+	assistantSequenceNo := 3
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	interactionRepo := repository.NewAgentRunInteractionRepository(db)
+	activities := &AgentRunActivities{
+		artifactRepo:    artifactRepo,
+		interactionRepo: interactionRepo,
+	}
+	run := &model.AgentRun{
+		ID:             "run-resolved-approval",
+		WorkspaceID:    "ws-1",
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeInteractive,
+	}
+	state := &resolvedRunState{run: run}
+
+	previewPayload, err := json.Marshal(workerpkg.PublishedPreview{
+		PanelKey: "task_plan_doc",
+		Title:    "Task Planning Document",
+		Format:   workerpkg.PreviewFormatMarkdown,
+		Content:  json.RawMessage(`"# Plan\n\nRegister histogram buckets."`),
+	})
+	if err != nil {
+		t.Fatalf("marshal preview: %v", err)
+	}
+	if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
+		ID:            "artifact-run-preview",
+		WorkspaceID:   run.WorkspaceID,
+		RunID:         run.ID,
+		ArtifactType:  workerpkg.RunPreviewArtifactType,
+		Format:        "json",
+		StorageMode:   "inline",
+		InlineContent: strPtr(string(previewPayload)),
+		Metadata:      buildAssistantSequenceArtifactMetadata(assistantSequenceNo),
+		SequenceNo:    1,
+		CreatedAt:     now,
+	}); err != nil {
+		t.Fatalf("create preview artifact: %v", err)
+	}
+	resolvedBy := "user-1"
+	if err := interactionRepo.Create(context.Background(), &model.AgentRunInteraction{
+		ID:                         "interaction-resolved",
+		WorkspaceID:                run.WorkspaceID,
+		RunID:                      run.ID,
+		RuntimeKind:                "native_sdk",
+		InteractionKind:            model.AgentRunInteractionKindApprovalRequest,
+		Status:                     model.AgentRunInteractionStatusResolved,
+		RequestSchemaVersion:       model.AgentRunInteractionSchemaVersionHelpinV1,
+		AssistantMessageSequenceNo: &assistantSequenceNo,
+		RequestPayload:             json.RawMessage(`{"phase":"task_doc","preview_panel_key":"db1e88e9-2538-426a-a787-12a17f108bcd","title":"Approve task planning document","summary":"Review it"}`),
+		ResponsePayload:            json.RawMessage(`{"decision":"approve"}`),
+		RuntimeMetadata:            json.RawMessage(`{"runtime_kind":"native_sdk"}`),
+		ResolvedBy:                 &resolvedBy,
+		ResolvedAt:                 &now,
+		CreatedAt:                  now,
+		UpdatedAt:                  now,
+	}); err != nil {
+		t.Fatalf("create interaction: %v", err)
+	}
+
+	artifacts, err := artifactRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	artifacts, err = activities.ensureApprovedPreviewFromResolvedInteraction(context.Background(), state, artifacts)
+	if err != nil {
+		t.Fatalf("ensureApprovedPreviewFromResolvedInteraction returned error: %v", err)
+	}
+	if len(artifacts) != 2 {
+		t.Fatalf("expected recovered approved preview artifact, got %#v", artifacts)
+	}
+
+	var approvedArtifacts []model.AgentRunArtifact
+	if err := db.Where("run_id = ? AND artifact_type = ?", run.ID, model.AgentRunArtifactTypeApprovedPreview).Find(&approvedArtifacts).Error; err != nil {
+		t.Fatalf("list approved artifacts: %v", err)
+	}
+	if len(approvedArtifacts) != 1 || approvedArtifacts[0].InlineContent == nil {
+		t.Fatalf("expected one approved preview artifact, got %#v", approvedArtifacts)
+	}
+	var approved model.ApprovedRunPreview
+	if err := json.Unmarshal([]byte(*approvedArtifacts[0].InlineContent), &approved); err != nil {
+		t.Fatalf("unmarshal approved preview: %v", err)
+	}
+	if approved.PanelKey != "task_plan_doc" || approved.Phase != "task_doc" || approved.ApprovedBy != resolvedBy {
+		t.Fatalf("unexpected approved preview: %#v", approved)
+	}
+}
+
 func TestEnforceCompletionInteractionPolicyRequiresCurrentTurnInteraction(t *testing.T) {
 	dbName := fmt.Sprintf("file:completion-policy-current-turn-%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
@@ -5286,6 +9481,260 @@ func TestEnforceCompletionInteractionPolicyRequiresCurrentTurnInteraction(t *tes
 
 	if err := activities.enforceCompletionInteractionPolicy(context.Background(), state, currentAssistantMessage); err != nil {
 		t.Fatalf("expected current-turn interaction to satisfy completion policy, got %v", err)
+	}
+}
+
+func TestEnforceCompletionInteractionPolicyAllowsAppliedTaskDocApprovalCompletion(t *testing.T) {
+	dbName := fmt.Sprintf("file:completion-policy-applied-task-doc-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agent_run_artifacts (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			artifact_type TEXT NOT NULL,
+			format TEXT NOT NULL,
+			storage_mode TEXT NOT NULL,
+			inline_content TEXT,
+			object_key TEXT,
+			metadata TEXT NOT NULL,
+			sequence_no INTEGER NOT NULL,
+			created_at DATETIME
+		)`,
+		`CREATE TABLE agent_run_interactions (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			runtime_kind TEXT NOT NULL,
+			interaction_kind TEXT NOT NULL,
+			status TEXT NOT NULL,
+			request_schema_version TEXT NOT NULL,
+			response_schema_version TEXT,
+			request_id TEXT,
+			thread_id TEXT,
+			turn_id TEXT,
+			item_id TEXT,
+			approval_id TEXT,
+			assistant_message_sequence_no INTEGER,
+			title TEXT,
+			summary TEXT,
+			request_payload TEXT NOT NULL,
+			response_payload TEXT,
+			runtime_metadata TEXT NOT NULL,
+			resolved_by TEXT,
+			resolved_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+	}
+
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	interactionRepo := repository.NewAgentRunInteractionRepository(db)
+	activities := &AgentRunActivities{
+		artifactRepo:    artifactRepo,
+		interactionRepo: interactionRepo,
+	}
+	run := &model.AgentRun{
+		ID:             "run-task-doc-applied",
+		WorkspaceID:    "ws-1",
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeInteractive,
+		TargetType:     "task",
+	}
+	state := &resolvedRunState{
+		run: run,
+		agent: &model.Agent{
+			ID:        "agent-task-planner",
+			PresetKey: model.AgentPresetTaskPlanner,
+		},
+		skillPolicy: workerpkg.SkillPolicy{
+			CompletionRequiresInteractionKinds: []string{
+				model.AgentRunInteractionKindApprovalRequest,
+				model.AgentRunInteractionKindRequestUserInput,
+			},
+		},
+	}
+
+	appliedJSON, err := json.Marshal(model.AppliedApprovedRunPreview{
+		ApprovedArtifactID: "approved-task-doc-1",
+		Phase:              "task_doc",
+		Action:             "persist_task_doc",
+		AppliedAt:          time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("marshal applied marker: %v", err)
+	}
+	if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
+		ID:            "applied-task-doc-1",
+		WorkspaceID:   run.WorkspaceID,
+		RunID:         run.ID,
+		ArtifactType:  model.AgentRunArtifactTypeApprovedPreviewApplied,
+		Format:        "json",
+		StorageMode:   "inline",
+		InlineContent: strPtr(string(appliedJSON)),
+		Metadata:      json.RawMessage(`{}`),
+		SequenceNo:    1,
+		CreatedAt:     time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("create applied marker: %v", err)
+	}
+
+	if err := activities.enforceCompletionInteractionPolicy(context.Background(), state, &model.AgentRunMessage{SequenceNo: 5}); err != nil {
+		t.Fatalf("expected applied task-doc approval to satisfy completion policy, got %v", err)
+	}
+}
+
+func TestEnforceCompletionInteractionPolicyRejectsMismatchedAppliedPreviewCompletion(t *testing.T) {
+	testCases := []struct {
+		name       string
+		presetKey  string
+		targetType string
+		action     string
+	}{
+		{
+			name:       "task planner cannot complete from create tasks marker",
+			presetKey:  model.AgentPresetTaskPlanner,
+			targetType: "task",
+			action:     "create_tasks",
+		},
+		{
+			name:       "epic planner cannot complete from task doc marker",
+			presetKey:  model.AgentPresetEpicPlanner,
+			targetType: "epic",
+			action:     "persist_task_doc",
+		},
+		{
+			name:       "task doc marker requires task target",
+			presetKey:  model.AgentPresetTaskPlanner,
+			targetType: "epic",
+			action:     "persist_task_doc",
+		},
+		{
+			name:       "create tasks marker requires epic planner",
+			presetKey:  model.AgentPresetTaskPlanner,
+			targetType: "epic",
+			action:     "create_tasks",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			dbName := fmt.Sprintf("file:completion-policy-mismatched-applied-%d?mode=memory&cache=shared", time.Now().UnixNano())
+			db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+			if err != nil {
+				t.Fatalf("open sqlite db: %v", err)
+			}
+			for _, stmt := range []string{
+				`CREATE TABLE agent_run_artifacts (
+					id TEXT PRIMARY KEY,
+					workspace_id TEXT NOT NULL,
+					run_id TEXT NOT NULL,
+					artifact_type TEXT NOT NULL,
+					format TEXT NOT NULL,
+					storage_mode TEXT NOT NULL,
+					inline_content TEXT,
+					object_key TEXT,
+					metadata TEXT NOT NULL,
+					sequence_no INTEGER NOT NULL,
+					created_at DATETIME
+				)`,
+				`CREATE TABLE agent_run_interactions (
+					id TEXT PRIMARY KEY,
+					workspace_id TEXT NOT NULL,
+					run_id TEXT NOT NULL,
+					runtime_kind TEXT NOT NULL,
+					interaction_kind TEXT NOT NULL,
+					status TEXT NOT NULL,
+					request_schema_version TEXT NOT NULL,
+					response_schema_version TEXT,
+					request_id TEXT,
+					thread_id TEXT,
+					turn_id TEXT,
+					item_id TEXT,
+					approval_id TEXT,
+					assistant_message_sequence_no INTEGER,
+					title TEXT,
+					summary TEXT,
+					request_payload TEXT NOT NULL,
+					response_payload TEXT,
+					runtime_metadata TEXT NOT NULL,
+					resolved_by TEXT,
+					resolved_at DATETIME,
+					created_at DATETIME,
+					updated_at DATETIME
+				)`,
+			} {
+				if err := db.Exec(stmt).Error; err != nil {
+					t.Fatalf("create table: %v", err)
+				}
+			}
+
+			artifactRepo := repository.NewAgentRunArtifactRepository(db)
+			interactionRepo := repository.NewAgentRunInteractionRepository(db)
+			activities := &AgentRunActivities{
+				artifactRepo:    artifactRepo,
+				interactionRepo: interactionRepo,
+			}
+			run := &model.AgentRun{
+				ID:             "run-mismatched-applied",
+				WorkspaceID:    "ws-1",
+				RuntimeKind:    "native_sdk",
+				InvocationMode: model.InvocationModeInteractive,
+				TargetType:     tc.targetType,
+			}
+			state := &resolvedRunState{
+				run: run,
+				agent: &model.Agent{
+					ID:        "agent-planner",
+					PresetKey: tc.presetKey,
+				},
+				skillPolicy: workerpkg.SkillPolicy{
+					CompletionRequiresInteractionKinds: []string{
+						model.AgentRunInteractionKindApprovalRequest,
+						model.AgentRunInteractionKindRequestUserInput,
+					},
+				},
+			}
+
+			appliedJSON, err := json.Marshal(model.AppliedApprovedRunPreview{
+				ApprovedArtifactID: "approved-preview-1",
+				Phase:              "task_doc",
+				Action:             tc.action,
+				AppliedAt:          time.Now().UTC(),
+			})
+			if err != nil {
+				t.Fatalf("marshal applied marker: %v", err)
+			}
+			if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
+				ID:            "applied-preview-1",
+				WorkspaceID:   run.WorkspaceID,
+				RunID:         run.ID,
+				ArtifactType:  model.AgentRunArtifactTypeApprovedPreviewApplied,
+				Format:        "json",
+				StorageMode:   "inline",
+				InlineContent: strPtr(string(appliedJSON)),
+				Metadata:      json.RawMessage(`{}`),
+				SequenceNo:    1,
+				CreatedAt:     time.Now().UTC(),
+			}); err != nil {
+				t.Fatalf("create applied marker: %v", err)
+			}
+
+			err = activities.enforceCompletionInteractionPolicy(context.Background(), state, &model.AgentRunMessage{SequenceNo: 5})
+			if err == nil {
+				t.Fatal("expected mismatched applied marker not to satisfy completion policy")
+			}
+			if !strings.Contains(err.Error(), "run cannot complete because active skills require one of") {
+				t.Fatalf("expected completion policy error, got %v", err)
+			}
+		})
 	}
 }
 
@@ -5441,7 +9890,7 @@ func TestExecuteRunActivityFailsAfterPolicyRetryStillMissesInteraction(t *testin
 	}
 }
 
-func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T) {
+func TestApplyApprovedInteractivePreviewPersistsTaskDocAndLinksIt(t *testing.T) {
 	db := newPlannerApprovalTestDB(t)
 
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
@@ -5457,7 +9906,7 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 	agent := &model.Agent{
 		ID:                    "agent-story",
 		WorkspaceID:           "ws-1",
-		Name:                  "Story Planner",
+		Name:                  "Task Planner",
 		Status:                "running",
 		RuntimeKind:           "native_sdk",
 		Skills:                model.AgentSkillRefs{},
@@ -5473,7 +9922,7 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 		t.Fatalf("create agent: %v", err)
 	}
 
-	docID := "doc-story-plan-1"
+	docID := "doc-task-plan-1"
 	if err := db.Exec(`INSERT INTO docs_documents (id, workspace_id, space_id, title, status, visibility, created_by, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
 		docID, "ws-1", "space-1", "Track 4xx errors Plan", model.DocStatusDraft, model.SpaceVisibilityWorkspaceWide, agent.ID,
@@ -5481,7 +9930,7 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 		t.Fatalf("create docs document: %v", err)
 	}
 
-	story := &model.PMTask{
+	task := &model.PMTask{
 		ID:              "story-1",
 		WorkspaceID:     "ws-1",
 		Name:            "Track 4xx errors",
@@ -5493,17 +9942,17 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 		Severity:        model.PMTaskSeverityNone,
 		PlanDocumentID:  &docID,
 	}
-	if err := db.Create(story).Error; err != nil {
-		t.Fatalf("create story: %v", err)
+	if err := db.Create(task).Error; err != nil {
+		t.Fatalf("create task: %v", err)
 	}
 
 	run := &model.AgentRun{
 		ID:             "run-story-doc",
 		WorkspaceID:    "ws-1",
 		AgentID:        agent.ID,
-		TaskID:         &story.ID,
+		TaskID:         &task.ID,
 		TargetType:     "story",
-		TargetID:       story.ID,
+		TargetID:       task.ID,
 		InvocationMode: model.InvocationModeInteractive,
 		Status:         model.AgentRunStatusRunning,
 		Input:          json.RawMessage(`{}`),
@@ -5518,18 +9967,18 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 		t.Fatalf("marshal markdown: %v", err)
 	}
 	preview := model.ApprovedRunPreview{
-		Phase:           "story_doc",
+		Phase:           "task_doc",
 		PanelKey:        "task_plan_doc",
 		Format:          workerpkg.PreviewFormatMarkdown,
 		Content:         markdownJSON,
-		ApprovalSummary: "Approved story plan",
+		ApprovalSummary: "Approved task plan",
 	}
 	previewJSON, err := json.Marshal(preview)
 	if err != nil {
 		t.Fatalf("marshal approved preview: %v", err)
 	}
 	if err := db.Create(&model.AgentRunArtifact{
-		ID:            "approved-story-doc-1",
+		ID:            "approved-task-doc-1",
 		WorkspaceID:   run.WorkspaceID,
 		RunID:         run.ID,
 		ArtifactType:  model.AgentRunArtifactTypeApprovedPreview,
@@ -5564,9 +10013,9 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 	}
 	state := &resolvedRunState{
 		run:  run,
-		task: story,
+		task: task,
 	}
-	input := planningRunInput{Stage: model.PlanningStageStoryPlanDoc}
+	input := planningRunInput{Stage: model.PlanningStageTaskPlanDoc}
 
 	action, err := activity.applyApprovedInteractivePreview(context.Background(), state, &input)
 	if err != nil {
@@ -5579,7 +10028,7 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 		t.Fatalf("expected only docs.write_document_content to execute, got %#v", executed)
 	}
 
-	updatedTask, err := taskRepo.GetRawByID(context.Background(), story.ID)
+	updatedTask, err := taskRepo.GetRawByID(context.Background(), task.ID)
 	if err != nil {
 		t.Fatalf("get updated task: %v", err)
 	}
@@ -5590,12 +10039,12 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 		t.Fatalf("expected planning input plan_document_id to be set, got %#v", input)
 	}
 
-	links, err := docsLinkRepo.ListByObject(context.Background(), run.WorkspaceID, model.LinkedObjectTask, story.ID)
+	links, err := docsLinkRepo.ListByObject(context.Background(), run.WorkspaceID, model.LinkedObjectTask, task.ID)
 	if err != nil {
 		t.Fatalf("list docs links: %v", err)
 	}
 	if len(links) != 1 {
-		t.Fatalf("expected 1 story plan doc link, got %d", len(links))
+		t.Fatalf("expected 1 task plan doc link, got %d", len(links))
 	}
 
 	updatedRun, err := runRepo.GetByIDAny(context.Background(), run.ID)
@@ -5620,6 +10069,24 @@ func TestApplyApprovedInteractivePreviewPersistsStoryDocAndLinksIt(t *testing.T)
 	}
 	if len(appliedMarkers) != 1 {
 		t.Fatalf("expected 1 approved preview applied marker, got %d", len(appliedMarkers))
+	}
+
+	action, err = activity.applyApprovedInteractivePreview(context.Background(), state, &input)
+	if err != nil {
+		t.Fatalf("second applyApprovedInteractivePreview returned error: %v", err)
+	}
+	if action != "" {
+		t.Fatalf("expected second task-doc apply to skip already-applied preview, got %q", action)
+	}
+	if len(executed) != 1 {
+		t.Fatalf("expected second task-doc apply not to persist again, executed %#v", executed)
+	}
+	appliedMarkers = nil
+	if err := db.Where("run_id = ? AND artifact_type = ?", run.ID, model.AgentRunArtifactTypeApprovedPreviewApplied).Find(&appliedMarkers).Error; err != nil {
+		t.Fatalf("list applied markers after second apply: %v", err)
+	}
+	if len(appliedMarkers) != 1 {
+		t.Fatalf("expected no duplicate applied marker on second task-doc apply, got %d", len(appliedMarkers))
 	}
 }
 

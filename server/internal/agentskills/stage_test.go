@@ -39,7 +39,7 @@ func TestStageIntoStagesBuiltInSkillPackage(t *testing.T) {
 	}
 	destRoot := filepath.Join(t.TempDir(), "skills")
 
-	resolution, err := StageInto(context.Background(), "ws_123", agent, []string{worker.ToolRequestReviewCheckpoint}, nil, nil, destRoot)
+	resolution, err := StageInto(context.Background(), "ws_123", agent, []string{worker.ToolRequestApproval, worker.ToolRequestReviewCheckpoint}, nil, nil, destRoot)
 	if err != nil {
 		t.Fatalf("stage skills: %v", err)
 	}

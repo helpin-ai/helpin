@@ -325,7 +325,7 @@ func (e *CodexExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) 
 			if err != nil {
 				return normalizeCodexPostRunError(postRunCtx, err)
 			}
-			if err := e.saveOutputSummary(postRunCtx, run, artifactWriter, "story_plan_proposal", proposal); err != nil {
+			if err := e.saveOutputSummary(postRunCtx, run, artifactWriter, "task_plan_proposal", proposal); err != nil {
 				return err
 			}
 		default:

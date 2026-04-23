@@ -9,14 +9,12 @@ import (
 )
 
 const (
-	ToolPublishPreview      = "publish_preview"
-	ToolPreviewMarkdown     = "preview_md"
-	ToolPreviewJSON         = "preview_json"
-	ToolPublishPRDDraft     = "publish_prd_draft"
-	ToolPublishTaskPlan     = "publish_task_plan"
-	ToolPublishTaskPlanDoc  = "publish_task_plan_doc"
-	ToolPublishStoryPlan    = "publish_story_plan"
-	ToolPublishStoryPlanDoc = "publish_story_plan_doc"
+	ToolPublishPreview     = "publish_preview"
+	ToolPreviewMarkdown    = "preview_md"
+	ToolPreviewJSON        = "preview_json"
+	ToolPublishPRDDraft    = "publish_prd_draft"
+	ToolPublishTaskPlan    = "publish_task_plan"
+	ToolPublishTaskPlanDoc = "publish_task_plan_doc"
 
 	PreviewFormatMarkdown = "markdown"
 	PreviewFormatJSON     = "json"
@@ -69,17 +67,9 @@ func toolPublishTaskPlan(ctx *ExecutionContext, input json.RawMessage) (string, 
 	return executePreviewToolRequest(ctx, ToolPublishTaskPlan, req, err)
 }
 
-func toolPublishStoryPlan(ctx *ExecutionContext, input json.RawMessage) (string, error) {
-	return toolPublishTaskPlan(ctx, input)
-}
-
 func toolPublishTaskPlanDoc(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	req, err := buildFixedPreviewRequest(input, "task_plan_doc", PreviewFormatMarkdown)
 	return executePreviewToolRequest(ctx, ToolPublishTaskPlanDoc, req, err)
-}
-
-func toolPublishStoryPlanDoc(ctx *ExecutionContext, input json.RawMessage) (string, error) {
-	return toolPublishTaskPlanDoc(ctx, input)
 }
 
 func executePreviewToolRequest(ctx *ExecutionContext, toolName string, req PublishedPreviewRequest, err error) (string, error) {
@@ -154,11 +144,11 @@ func wrapPreviewToolError(toolName string, err error) error {
 
 func previewToolContentHint(toolName string) string {
 	switch toolName {
-	case ToolPreviewMarkdown, ToolPublishPRDDraft, ToolPublishTaskPlanDoc, ToolPublishStoryPlanDoc:
+	case ToolPreviewMarkdown, ToolPublishPRDDraft, ToolPublishTaskPlanDoc:
 		return "include markdown in \"content\""
 	case ToolPreviewJSON:
 		return "include a JSON value in \"content\""
-	case ToolPublishTaskPlan, ToolPublishStoryPlan:
+	case ToolPublishTaskPlan:
 		return "include the task plan JSON object in \"content\""
 	case ToolPublishPreview:
 		return "include markdown or JSON in \"content\""
@@ -220,7 +210,7 @@ func applyPreviewContentFallback(ctx *ExecutionContext, toolName string, req Pub
 
 func previewToolAllowsContentFallback(toolName string) bool {
 	switch strings.TrimSpace(toolName) {
-	case ToolPublishTaskPlan, ToolPublishStoryPlan:
+	case ToolPublishTaskPlan:
 		return false
 	default:
 		return true
@@ -309,7 +299,7 @@ func ExtractPublishedPreviews(toolInvocations []appmodel.ToolInvocation) []Publi
 
 func isPreviewToolName(toolName string) bool {
 	switch strings.TrimSpace(toolName) {
-	case ToolPublishPreview, ToolPreviewMarkdown, ToolPreviewJSON, ToolPublishPRDDraft, ToolPublishTaskPlan, ToolPublishTaskPlanDoc, ToolPublishStoryPlan, ToolPublishStoryPlanDoc:
+	case ToolPublishPreview, ToolPreviewMarkdown, ToolPreviewJSON, ToolPublishPRDDraft, ToolPublishTaskPlan, ToolPublishTaskPlanDoc:
 		return true
 	default:
 		return false
@@ -336,13 +326,13 @@ func previewFromToolInvocation(invocation appmodel.ToolInvocation) (*PublishedPr
 			return nil, err
 		}
 		return normalizePublishedPreviewRequest(&req)
-	case ToolPublishTaskPlan, ToolPublishStoryPlan:
+	case ToolPublishTaskPlan:
 		req, err := buildFixedPreviewRequest(invocation.Input, "task_plan", PreviewFormatJSON)
 		if err != nil {
 			return nil, err
 		}
 		return normalizePublishedPreviewRequest(&req)
-	case ToolPublishTaskPlanDoc, ToolPublishStoryPlanDoc:
+	case ToolPublishTaskPlanDoc:
 		req, err := buildFixedPreviewRequest(invocation.Input, "task_plan_doc", PreviewFormatMarkdown)
 		if err != nil {
 			return nil, err
@@ -643,10 +633,6 @@ func unwrapRawToolArguments(input json.RawMessage) (json.RawMessage, error) {
 
 func normalizePreviewPanelKey(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "story_plan":
-		return "task_plan"
-	case "story_plan_doc":
-		return "task_plan_doc"
 	default:
 		return strings.ToLower(strings.TrimSpace(value))
 	}
@@ -680,12 +666,12 @@ func inferPreviewPanelKeyFromContext(ctx *ExecutionContext, req *PublishedPrevie
 	}
 
 	switch {
-	case strings.TrimSpace(ctx.PlanningStage) == appmodel.PlanningStageStoryPlanDoc:
-		if format == PreviewFormatMarkdown || strings.Contains(title, "task plan") || strings.Contains(title, "story plan") || strings.Contains(title, "planning doc") || strings.Contains(title, "planning document") {
+	case strings.TrimSpace(ctx.PlanningStage) == appmodel.PlanningStageTaskPlanDoc:
+		if format == PreviewFormatMarkdown || strings.Contains(title, "task plan") || strings.Contains(title, "planning doc") || strings.Contains(title, "planning document") {
 			return "task_plan_doc"
 		}
 	case presetKey == appmodel.AgentPresetTaskPlanner:
-		if format == PreviewFormatMarkdown || strings.Contains(title, "task plan") || strings.Contains(title, "story plan") || strings.Contains(title, "planning doc") || strings.Contains(title, "planning document") {
+		if format == PreviewFormatMarkdown || strings.Contains(title, "task plan") || strings.Contains(title, "planning doc") || strings.Contains(title, "planning document") {
 			return "task_plan_doc"
 		}
 	case presetKey == appmodel.AgentPresetEpicPlanner || ctx.Epic != nil || strings.TrimSpace(ctx.TargetType) == "epic":
@@ -698,7 +684,7 @@ func inferPreviewPanelKeyFromContext(ctx *ExecutionContext, req *PublishedPrevie
 		switch {
 		case strings.Contains(title, "prd"):
 			return "prd_draft"
-		case strings.Contains(title, "task plan"), strings.Contains(title, "story plan"):
+		case strings.Contains(title, "task plan"):
 			return "task_plan"
 		}
 	}
@@ -803,31 +789,31 @@ func inferPreviewPanelKey(req *PublishedPreviewRequest) string {
 	switch format {
 	case PreviewFormatJSON:
 		if hasJSONContent {
-			if _, ok := content["proposed_stories"]; ok {
+			if _, ok := content["proposed_tasks"]; ok {
 				return "task_plan"
 			}
 		}
-		if strings.Contains(title, "task plan") || strings.Contains(title, "story plan") {
+		if strings.Contains(title, "task plan") {
 			return "task_plan"
 		}
 	case PreviewFormatMarkdown:
 		switch {
 		case strings.Contains(title, "prd"):
 			return "prd_draft"
-		case strings.Contains(title, "task plan"), strings.Contains(title, "story plan"):
+		case strings.Contains(title, "task plan"):
 			return "task_plan_doc"
 		}
 	}
 
 	if hasJSONContent {
-		if _, ok := content["proposed_stories"]; ok {
+		if _, ok := content["proposed_tasks"]; ok {
 			return "task_plan"
 		}
 	}
 	switch {
 	case strings.Contains(title, "prd"):
 		return "prd_draft"
-	case strings.Contains(title, "task plan"), strings.Contains(title, "story plan"):
+	case strings.Contains(title, "task plan"):
 		return "task_plan_doc"
 	}
 

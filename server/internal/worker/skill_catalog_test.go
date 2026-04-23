@@ -78,6 +78,30 @@ func TestTaskPlannerBundleUsesTaskPlanDocSkillStack(t *testing.T) {
 	}
 }
 
+func TestReviewAgentBundleDoesNotIncludePlannerSkills(t *testing.T) {
+	bundle, ok := BuiltInPresetSkillBundleForPreset(model.AgentPresetReviewAgent)
+	if !ok {
+		t.Fatal("expected review bundle")
+	}
+	for _, forbidden := range []string{"prd_authorship", "task_decomposition", "epic_state_routing", "task_planner_context"} {
+		if containsString(bundle.SkillKeys, forbidden) {
+			t.Fatalf("did not expect planner skill %q in review bundle: %v", forbidden, bundle.SkillKeys)
+		}
+	}
+}
+
+func TestSupportAgentBundleDoesNotIncludePlannerSkills(t *testing.T) {
+	bundle, ok := BuiltInPresetSkillBundleForPreset(model.AgentPresetSupportAgent)
+	if !ok {
+		t.Fatal("expected support bundle")
+	}
+	for _, forbidden := range []string{"prd_authorship", "task_decomposition", "epic_state_routing", "task_planner_context"} {
+		if containsString(bundle.SkillKeys, forbidden) {
+			t.Fatalf("did not expect planner skill %q in support bundle: %v", forbidden, bundle.SkillKeys)
+		}
+	}
+}
+
 func TestListSkillCatalogReturnsBuiltInSkills(t *testing.T) {
 	catalog := ListSkillCatalog()
 	if len(catalog.Skills) == 0 {

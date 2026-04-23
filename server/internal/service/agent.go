@@ -3288,7 +3288,7 @@ func (s *AgentService) maybePersistApprovedInteractivePreview(ctx context.Contex
 	}
 
 	content := append(json.RawMessage(nil), preview.Content...)
-	if (strings.EqualFold(strings.TrimSpace(approval.Phase), "tasks") || strings.EqualFold(strings.TrimSpace(approval.Phase), "stories")) && strings.EqualFold(strings.TrimSpace(preview.Format), worker.PreviewFormatJSON) {
+	if strings.EqualFold(strings.TrimSpace(approval.Phase), "tasks") && strings.EqualFold(strings.TrimSpace(preview.Format), worker.PreviewFormatJSON) {
 		normalizedContent, err := worker.NormalizeTaskPlanPreviewContent(content)
 		if err != nil {
 			if approvedPreviewDebugEnabled() {
@@ -3371,7 +3371,26 @@ func latestApprovalCheckpointFromArtifacts(messages []model.AgentRunMessage, art
 }
 
 func normalizeApprovalPreviewPanelKey(value string) string {
-	return strings.ToLower(strings.TrimSpace(value))
+	key := strings.ToLower(strings.TrimSpace(value))
+	switch key {
+	case worker.ToolPublishPRDDraft:
+		return "prd_draft"
+	case worker.ToolPublishTaskPlan:
+		return "task_plan"
+	case worker.ToolPublishTaskPlanDoc:
+		return "task_plan_doc"
+	default:
+		return key
+	}
+}
+
+func isCanonicalApprovalPreviewPanelKey(value string) bool {
+	switch normalizeApprovalPreviewPanelKey(value) {
+	case "prd_draft", "task_plan", "task_plan_doc":
+		return true
+	default:
+		return false
+	}
 }
 
 func latestRunPreviewArtifactForApproval(artifacts []model.AgentRunArtifact, assistantSequenceNo int, approval *model.ApprovalRequest) (*worker.PublishedPreview, error) {
@@ -3387,6 +3406,15 @@ func latestRunPreviewArtifactForApproval(artifacts []model.AgentRunArtifact, ass
 		return preview, nil
 	}
 	if panelKey != "" {
+		if !isCanonicalApprovalPreviewPanelKey(panelKey) {
+			fallbackPreview, fallbackCount, err := latestRunPreviewArtifactForAssistantSequence(artifacts, assistantSequenceNo, "")
+			if err != nil {
+				return nil, err
+			}
+			if fallbackCount == 1 {
+				return fallbackPreview, nil
+			}
+		}
 		return latestRunPreviewArtifact(artifacts, panelKey)
 	}
 	if count > 1 {

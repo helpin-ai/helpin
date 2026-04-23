@@ -442,9 +442,7 @@ func filterPresetTools(base []string, required ...string) []string {
 			worker.ToolPublishPreview,
 			worker.ToolPublishPRDDraft,
 			worker.ToolPublishTaskPlan,
-			worker.ToolPublishTaskPlanDoc,
-			worker.ToolPublishStoryPlan,
-			worker.ToolPublishStoryPlanDoc:
+			worker.ToolPublishTaskPlanDoc:
 			if !requiredSet[toolName] {
 				continue
 			}

@@ -2,7 +2,119 @@
 
 ## Status
 
-Draft plan for improving `native_sdk` planner reliability by moving from full skill flattening toward dynamic per-turn instruction assembly.
+In progress.
+
+The core selective native planner path and planned Phase 5 extraction cleanup have been implemented. Remaining work is now primarily:
+
+- validating provider reliability and non-regression using live selective-path run data
+- deciding whether to broaden selective activation beyond system epic/task planners in a future project
+- optionally moving backend mutation/application paths behind more reusable command services
+
+### Implemented
+
+- native selective-path enablement predicate and execution-state threading
+- execution-local turn-local instruction transport for native runs
+- continuation-safe native turn-local instruction injection
+- first-turn and resumed-turn alignment on the same selective native path
+- active skill selection from resolved runtime refs
+- conservative default activation for workspace/custom skills without applicability metadata
+- active per-turn policy derived from the same active skill subset
+- Temporal/runtime enforcement aligned to active per-turn policy
+- suppression of legacy full `ResolvedSkillInstructions` for selective native planner runs
+- suppression/replacement of legacy planner `initialInstructions` for selective native planner runs
+- dedicated native phase-guidance assembly
+- transition-aware guidance/skill switching coverage for key planner state changes
+- normalized native repair-state capture and persistence
+- repair-instruction reinjection for completion-policy retries and planner tool failures
+- native debug/observability artifacts for phase, skills, policy, continuation mode, and repair state
+- rollout-report tooling for comparing native planner run outcomes, selective-path coverage, continuation modes, repair frequency, and applied actions across providers/presets
+- substantial Phase 5 extraction of planner rule/context assembly into smaller Temporal helpers
+- native planner phase-guidance composition extracted into a dedicated Temporal file
+- planner context assembly extracted into a dedicated Temporal file
+- approved-preview selection/recovery/application commands extracted into a dedicated Temporal file
+- completion-interaction policy enforcement and retry/repair handling extracted into a dedicated Temporal file
+- native repair classification and replay selection extracted into a dedicated Temporal file
+- native selective-path gating, active-skill selection, and active-policy derivation extracted into a dedicated Temporal file
+- native observability artifact persistence extracted into a dedicated Temporal file
+- legacy monolithic planner builders are explicitly scoped as fallback-only and covered by tests proving selective native planners bypass them
+- flow-output and task-execution instruction builders extracted out of the main Temporal activities file
+- legacy planner fallback instruction wrappers/rule sections extracted out of the main Temporal activities file
+- durable run fact assembly extracted out of the main Temporal activities file
+- initial instruction and first-turn conversation assembly extracted out of the main Temporal activities file
+- artifact-context loading, provider-continuation loading, transcript-summary checkpointing, and execution-history filtering extracted out of the main Temporal activities file
+- assistant message, tool-result message, provider checkpoint, human interaction, approval interaction, and coding-session persistence helpers extracted out of the main Temporal activities file
+- canonical planning document creation/linking, linked-doc context rendering, task-comment context rendering, and linked-ticket context rendering extracted out of the main Temporal activities file
+- planning repository/code-context discovery helpers extracted out of the main Temporal activities file
+- task delivery, git branch sync, push recording, pull-request creation/reuse, and task git-link persistence extracted out of the main Temporal activities file
+- runtime execution-context assembly, heartbeat callbacks, stream callbacks, git callbacks, and live Codex pause wiring extracted out of `ExecuteRunActivity`
+- explicit regression coverage for:
+  - PRD request-changes keeping PRD-focused active skills
+  - task-extension guidance after approved plans have already created tasks
+  - task-planner and epic-planner spec-context helper behavior
+  - task execution context assembly including operator notes, branches, canonical planning docs, and linked docs
+  - flow-output instruction assembly for task-completion and CRM deal-review runs
+  - PRD approval re-anchoring to task decomposition after backend application
+  - duplicate task-plan application prevention on resume
+  - duplicate task-doc persistence prevention on resume
+  - mismatched applied-preview marker rejection in completion gating
+  - review/support preset bundles excluding planner skills
+- preservation of existing Codex/OpenCode staged-skill behavior
+
+### Partially implemented
+
+- base-prompt simplification is complete for selective native planner runs, but broader prompt cleanup is still incomplete
+- planner guidance and adjacent instruction extraction is now substantially complete for this rollout; Temporal still owns backend orchestration paths and authoritative mutation sequencing
+- transition coverage now covers the core apply/resume edges; additional provider/live-run monitoring remains useful
+- regression coverage is materially broader now, but final Phase 5 cleanup can still add targeted tests as new edge cases are found
+- live selective-path validation has enough small-sample evidence to close Phase 4
+- sampled eligible runs emitted `native_turn_debug` artifacts
+- Atlas/OpenRouter epic-planner validation completed successfully on a small sample
+- Scribe/OpenAI task-planner validation completed successfully on the post-fix sample
+- earlier sampled Scribe failures were traced to approval preview-panel binding edge cases and fixed
+
+### Not yet complete
+
+- optional future expansion of the selective activation path beyond system epic/task planner runs
+- optional deeper service extraction for backend mutation/application paths if those commands need reuse outside Temporal
+- broader live provider reliability monitoring after rollout
+
+### Latest Live Validation Snapshot
+
+Snapshot time: 2026-04-23 09:24 UTC.
+
+Command:
+
+```bash
+cd server && go run ./cmd/native-planner-rollout-report --since 2026-04-23T08:40:00Z
+```
+
+Observed selective-path data:
+
+- Atlas / `openrouter` / `moonshotai/kimi-k2.6` / `epic_planner`: 3 eligible runs, 0 missing `native_turn_debug`, 2 completed, 1 cancelled, 0 failed; applied actions were `persist_prd=2` and `create_tasks=2`.
+- Scribe / `anthropic` / `task_planner`: 6 eligible runs, 0 missing `native_turn_debug`, 2 completed, 1 cancelled, 3 failed; the 2 post-fix completions each produced `approved_preview=1` and `approved_preview_applied=1` with `persist_task_doc`.
+- The 3 Scribe failures occurred before the approval panel-key alias fix and had no `approved_preview` artifacts; they matched the fixed bug where `preview_panel_key="publish_task_plan_doc"` did not bind to the canonical `task_plan_doc` preview.
+
+Interpretation:
+
+- selective-path observability is working for sampled eligible runs
+- Atlas/OpenRouter is validated on a small sample
+- Scribe/Anthropic is validated post-fix on a small sample
+- Scribe/OpenAI is validated post-fix on a small sample
+- broader provider reliability conclusions should continue to be monitored after rollout, but Phase 4 has enough evidence to proceed
+
+Additional OpenAI Scribe validation:
+
+Command:
+
+```bash
+cd server && go run ./cmd/native-planner-rollout-report --since 2026-04-23T09:20:00Z --provider openai --preset task_planner
+```
+
+Observed data:
+
+- `openai` / `task_planner`: 5 eligible runs, 0 missing `native_turn_debug`, 4 completed, 1 failed, 0 cancelled; applied actions were `persist_task_doc=4`.
+- The single failed run was the pre-fix approval-binding failure where an unknown UUID-style `preview_panel_key` did not bind to the unique same-turn `task_plan_doc` preview.
+- The latest successful OpenAI Scribe run completed with `approved_preview=1`, `approved_preview_applied=1`, and no repeated final prose loop.
 
 ## Direction
 
@@ -17,166 +129,37 @@ The key idea to copy is:
 
 For `native_sdk`, do this through dynamic prompt assembly. Do not depend on runtime filesystem skill loading.
 
-## Verified Constraints From Current Code
+## Implementation Constraints And Outcomes
 
-### 1. Native planner instructions are still flattened into the system prompt today
+These constraints drove the implementation. They are no longer open design questions for the selective native planner path.
 
-`agent.ResolvedSkillInstructions` is compiled from all resolved skill definitions and injected wholesale by the native system prompt builder.
+### 1. Native planner instructions must not depend on full skill flattening
 
-Implication:
+Before this work, `agent.ResolvedSkillInstructions` compiled all resolved skills into the native system prompt. Selective native planner runs now suppress that full blob and use turn-local active phase guidance plus active skills instead.
 
-- phase-specific planner guidance is currently always-on instead of selectively activated
+### 2. Native turn-local instructions must survive continuation
 
-### 2. Native runs do rebuild prompt state on resumed executions
+OpenAI/OpenRouter continuation can omit the system prompt when using `previous_response_id`. The implementation uses execution-local turn instructions so phase guidance, active skill contracts, and repair guidance are available on both first and resumed turns without persisting synthetic user messages.
 
-The `native_sdk` executor rebuilds prompt input each execution call, including resumed interactive turns.
+### 3. Planner routing must reuse durable state, not create a second state engine
 
-Implication:
+Epic/task planner routing continues to derive from existing durable state such as approved spec presence, existing tasks, task plan documents, approved-preview application markers, and latest interactions. That routing now feeds native phase guidance and active skill selection.
 
-- dynamic per-turn skill activation is mechanically feasible
+### 4. Repair guidance must be normalized enough to reinject safely
 
-### 3. OpenAI/OpenRouter continuation can skip resending the system prompt
+Planner tool failures and completion-policy failures now produce normalized native repair-state artifacts or execution-local repair instructions. The next native turn receives targeted repair guidance rather than relying on turn-0 prompt memory.
 
-When provider continuation is active, the Responses-based native path clears the system prompt and sends only incremental history with `previous_response_id`.
+### 5. Backend-owned domain application remains authoritative
 
-Implication:
+Approved PRD, task-plan, and task-doc previews are still applied by backend commands and repositories. Skills guide the model, but canonical document writes, spec approval, task creation, idempotence, and replay protection remain backend-enforced.
 
-- active skill reinjection must not rely only on mutating the system prompt
-- the safest place for phase and repair instructions is a fresh turn-local execution supplement or equivalent injected user/context message
+### 6. Active skills must drive both prompt and policy
 
-Required implementation consequence:
+Selective activation now starts from resolved runtime refs, selects the active subset for the turn, and aggregates the active policy from that same subset. Completion gating, approval-preview validation, runtime interaction behavior, and review parsing use the active turn policy.
 
-- the native path needs one explicit continuation-safe transport for turn-local instructions
-- do not leave this as an abstract "supplement" concept
+### 7. Workspace/custom skills are preserved conservatively
 
-### 4. Planner phase routing already exists, but it is hardcoded
-
-Epic-planner and task-planner guidance already use current state such as approved spec presence, existing tasks, and planning document state.
-
-Implication:
-
-- do not build a second planner-state engine
-- extract and reuse the existing routing logic as the source of truth for active skill selection
-
-### 5. Tool failures are repair-oriented, but not yet normalized as reusable repair state
-
-Planner tools already emit good repair-oriented validation errors. However, persisted `ToolInvocation` records keep only:
-
-- `tool_name`
-- `input`
-- `output_summary`
-- `duration_ms`
-
-They do not persist a first-class error type or repair contract object.
-
-Implication:
-
-- targeted repair reinjection should not depend on brittle scraping alone
-- add explicit normalized repair metadata for the latest relevant planner tool failure
-
-### 6. The current planner path is already split across three layers
-
-Today the planner flow is not one monolithic thing. It is already divided into:
-
-- Temporal-side instruction and context assembly
-- generic preview and interaction tools in the worker runtime
-- backend-owned mutation and approval-application logic
-
-Implication:
-
-- we should not collapse all planner behavior into prompt text
-- we should reduce Temporal's planner-specific prompt ownership while preserving backend-owned domain transitions
-
-### 7. Generic runtime primitives already exist
-
-The worker runtime already has generic building blocks for:
-
-- preview publication
-- human input requests
-- approval requests
-- review checkpoints
-- interaction persistence
-- internal-command execution
-
-Implication:
-
-- the refactor should build on those generic primitives rather than inventing new planner-only ones
-
-### 8. Approved preview application is a product invariant, not just model guidance
-
-Applying an approved preview already performs real state transitions such as:
-
-- writing the approved PRD into the canonical epic spec document
-- approving the epic spec
-- creating tasks from an approved task plan
-- writing the approved task planning document to Docs
-- marking approved previews as applied so they are not replayed
-
-Implication:
-
-- those operations must remain backend-owned and idempotent
-- they should not move into prompt-only or skill-only enforcement
-
-### 9. Skill activation today affects runtime policy, not just prompt text
-
-The current runtime does not treat skills as prompt-only modules. Aggregated skill policy is already used for:
-
-- completion gating
-- approval-preview validation
-- runtime-bridge behavior
-- structured review parsing
-
-Implication:
-
-- native selective activation cannot change prompt text only
-- it must also produce an active per-turn policy subset used by runtime enforcement
-
-### 10. First-turn planner behavior currently comes from Temporal-injected initial instructions
-
-Today, large planner-specific guidance is injected into `initialInstructions`, which becomes part of the first user prompt.
-
-Implication:
-
-- a new native selective-injection path must explicitly replace or subsume that first-turn path
-- otherwise turn 1 and resumed turns will use different planner instruction models
-
-### 11. Persisted synthetic user messages would pollute transcript replay and summarization
-
-Current transcript replay and transcript summaries include all non-status messages, including synthetic user messages like policy-retry corrections.
-
-Implication:
-
-- active-turn supplements for native skill activation must not be persisted as normal run messages
-- they should be execution-local input assembled at runtime, not durable transcript content
-
-### 12. Activation must start from resolved runtime refs, not a hardcoded built-in planner map
-
-The runtime ref set currently comes from effective runtime refs, which can include:
-
-- preset-provided built-in skills for system agents
-- workspace skill refs for custom and future planner configurations
-
-Implication:
-
-- native active selection must begin from the resolved runtime ref set
-- phase filtering must select a subset of that resolved set, not replace it with a planner-only hardcoded list
-
-### 13. Workspace-added skills currently have no phase/applicability metadata
-
-Current skill definitions expose:
-
-- instructions
-- required tools
-- supported runtimes
-- interface
-- policy
-
-They do not expose phase/applicability metadata for selective activation.
-
-Implication:
-
-- the selector needs an explicit default rule for unknown/custom skills
-- otherwise implementation will either silently drop workspace skills or force ad hoc hardcoded behavior
+Because skill definitions do not yet expose applicability metadata, unknown workspace/custom skills remain phase-agnostic and active whenever their resolved ref is present. This prevents silent policy or instruction loss until explicit applicability metadata exists.
 
 ## Target Architecture
 
@@ -375,9 +358,9 @@ So the practical end state is:
 12. Start activation from resolved runtime refs and preserve workspace-added skills and policy contracts.
 13. Use an explicit conservative default for workspace/custom skills that lack applicability metadata.
 
-## New Native Concept
+## Implemented Native Concept
 
-Introduce an `ActiveInstructionSet` for `native_sdk`:
+The native selective planner path now uses the equivalent of an `ActiveInstructionSet` for each execution turn:
 
 - `base`
 - `phase_guidance`
@@ -385,7 +368,7 @@ Introduce an `ActiveInstructionSet` for `native_sdk`:
 - `repair_instructions`
 - `active_policy`
 
-Inputs:
+Inputs include:
 
 - target type
 - preset key
@@ -394,7 +377,7 @@ Inputs:
 - latest pending or approved interaction
 - latest normalized planner repair state
 
-Output:
+Outputs are:
 
 - a compact instruction fragment for the current turn
 - the active per-turn skill definitions and aggregated policy subset for that turn
@@ -413,34 +396,31 @@ Recommendation:
 Do not make correctness depend on updating the system prompt only, because provider continuation may omit it.
 Do not inject the supplement by creating a synthetic durable `user` message in run history.
 
-### Explicit transport decision for native turn-local instructions
+### Execution-local transport for native turn-local instructions
 
-For this plan, use a dedicated execution-local instruction transport in the native executor.
+Implemented with dedicated execution-local instruction fields on the native execution context.
 
-Implementation direction:
+Behavior:
 
-- add an explicit executor input for turn-local instructions
-- pass that input separately from the durable system prompt and durable run-message history
-- include it in the current execution request only
-- do not persist it as a run message
+- turn-local instructions are passed separately from the durable system prompt and durable run-message history
+- they are included in the current execution request only
+- they are not persisted as run messages
+- continuation mode still receives them even when the provider omits the system prompt
 
-Practical options:
-
-- preferred: add a dedicated executor parameter such as `TurnLocalInstructions` or equivalent on `ExecutionContext`
-- acceptable fallback: append one ephemeral synthetic message to the in-memory model input for that execution only, without persisting it through `runMessageRepo`
-
-Requirements for the chosen transport:
+Requirements preserved by this transport:
 
 - it must survive provider-continuation mode where the system prompt is omitted
 - it must not be written into durable transcript history
 - it must not be summarized as if it were human context
 - it must be available on both first-turn and resumed-turn native planner executions
 
-## Concrete Plan
+## Concrete Plan Status
 
-### 1. Introduce native-only instruction assembly
+The core rollout plan below is implemented for selective native planner runs unless a subsection explicitly says it remains future work.
 
-Add builders along these lines:
+### 1. Native-only instruction assembly
+
+Implemented through native phase-guidance, active skill selection, repair instruction, and execution-local transport helpers rather than one exported builder API. The effective pieces are:
 
 - `BuildNativeBasePrompt(...)`
 - `BuildNativePhaseGuidance(...)`
@@ -448,20 +428,20 @@ Add builders along these lines:
 - `BuildNativeRepairInstructions(...)`
 - `BuildNativeTurnInstructions(...)`
 
-This should live near:
+Implemented across:
 
 - `server/internal/worker/prompt.go`
-- planner instruction builders in `server/internal/temporalapp/activities.go`
+- focused Temporal helpers under `server/internal/temporalapp/`, including native phase guidance, planner context assembly, repair instructions, selective activation, observability, first-turn conversation assembly, and runtime execution-context assembly
 
-This new assembly layer should absorb most of the behavior currently expressed in large planner-specific instruction builders, while preserving the same durable facts and product semantics.
+This assembly layer has absorbed the selective native planner path. Legacy monolithic planner builders are now fallback-only and covered by tests proving selective native planners bypass them.
 It must feed both:
 
 - the turn-local instruction text sent to the model
 - the active per-turn `SkillPolicy` used by runtime enforcement
 
-### 2. Keep `ResolvedSkillInstructions` as compatibility fallback
+### 2. `ResolvedSkillInstructions` compatibility fallback
 
-Do not remove the existing compiled skill blob globally in phase 1.
+The compiled skill blob remains available for compatibility and non-selective paths.
 
 Instead:
 
@@ -602,21 +582,25 @@ Specifically:
 
 The goal is to remove large prompt blobs from Temporal over time, not to delete the planner state model.
 
-### 7. Add normalized repair-state capture
+### 7. Normalized repair-state capture
 
-When a planner tool fails validation, capture a normalized repair object for the next turn.
+Status: implemented for planner tool failures and completion-policy retries.
 
-Suggested fields:
+When a planner tool fails validation, the runtime captures a normalized repair object for the next turn.
+
+Current fields:
 
 - `tool_name`
-- `error_class`
+- `repair_class`
 - `repair_hint`
-- `canonical_contract_key`
-- `failed_input_excerpt`
+- `source`
+- `error_summary`
 
-Store this as lightweight run metadata or a small run artifact.
+Stored as a lightweight run artifact.
 
-### 8. Add failure-aware repair reinjection
+### 8. Failure-aware repair reinjection
+
+Status: implemented for known planner preview/tool validation failures and completion-policy failures.
 
 On the next turn after a planner tool failure, inject only the relevant repair contract.
 
@@ -631,7 +615,9 @@ Examples:
 - failed `request_approval`:
   - inject approval binding rule only
 
-### 9. Add transition-aware reinjection
+### 9. Transition-aware reinjection
+
+Status: implemented for the core epic/task planner transitions; additional edge-case coverage remains useful.
 
 When run state changes, switch the active guidance on the next turn.
 
@@ -644,9 +630,11 @@ Important transitions:
 
 This should work from persisted state and approved-preview application markers, not from prompt memory.
 
-### 10. Keep the base prompt lean
+### 10. Lean base prompt
 
-Refactor the native base prompt so it carries only durable instructions.
+Status: implemented for selective native planner runs; broader non-planner prompt cleanup is outside this rollout.
+
+The selective native planner path keeps planner-heavy details out of the base prompt and injects them through dynamic phase guidance, active skills, and repair instructions.
 
 Move planner-heavy details out of:
 
@@ -708,6 +696,16 @@ For each native planner turn, log or persist:
 - whether provider continuation was active
 
 This should be lightweight debug metadata for diagnosis.
+
+Observability is required from the first rollout phase, not as a later polish item. This migration changes both prompt assembly and policy enforcement, so day-one diagnosis depends on being able to inspect:
+
+- whether the selective native path was enabled
+- the resolved runtime ref set
+- the active skill subset
+- the active aggregated policy
+- whether legacy planner injection was suppressed
+- whether provider continuation was active
+- which repair instructions were injected
 
 ### 15. Make active policy authoritative for Temporal-side enforcement
 
@@ -787,6 +785,9 @@ Invariant protection:
 
 ### Phase 1
 
+- define one explicit enablement predicate for the selective native planner path
+- resolve that predicate once at run start
+- thread that resolved flag through run state, prompt assembly, executor input, and Temporal-side validators
 - add native-only active skill selection
 - keep existing `ResolvedSkillInstructions` as fallback
 - planner-only rollout first
@@ -795,6 +796,46 @@ Invariant protection:
 - replace the first-turn planner instruction path for native planner runs
 - add a concrete execution-local transport for turn-local instructions
 - when selective path is enabled, suppress legacy full-skill injection and legacy planner `initialInstructions`
+- add observability from day one
+
+Internal execution split for Phase 1:
+
+#### Phase 1a: dark-launch plumbing
+
+- build the new native instruction assembly layer
+- build the active selector and active policy aggregation
+- add executor transport for execution-local turn instructions
+- compute and thread the enablement predicate
+- add observability
+- keep the legacy planner behavior as the serving path while verifying parity
+
+#### Phase 1b: planner cutover
+
+- flip eligible native planner runs onto the selective path
+- apply legacy suppression for those runs
+- keep non-eligible runs fully on legacy behavior
+
+### Selective path enablement predicate
+
+Do not use a fuzzy description like "planner-style runs."
+
+Use one explicit predicate, computed once at run start, based on a concrete combination such as:
+
+- `runtime_kind == "native_sdk"`
+- preset is an explicitly supported planner preset
+- target type matches the supported planner target
+- rollout flag/config is enabled
+
+Requirements:
+
+- compute once
+- persist or thread through execution state
+- do not re-derive independently in multiple layers
+- use the same predicate for:
+  - turn-local native assembly
+  - legacy-injection suppression
+  - active policy threading
+  - observability
 
 ### Phase 2
 
@@ -804,23 +845,57 @@ Invariant protection:
 
 ### Phase 3
 
-- reduce or remove full-skill injection from the native planner base prompt
+- reduce or remove remaining full-skill injection from the native planner base prompt
 - keep Codex/OpenCode unchanged
 
 ### Phase 4
 
-- add observability
+- use the native planner rollout-report tool to summarize native planner runs by provider/model/preset from persisted run and `native_turn_debug` artifacts
 - compare Anthropic vs OpenAI/OpenRouter planner reliability on long interactive runs
+- confirm Anthropic planner behavior does not regress under the selective native path
+- selective native planner activation is enabled by default for eligible native system planner runs; set `AGENT_NATIVE_SELECTIVE_PLANNER_ENABLED=false` in the Temporal worker environment only as a temporary rollback
+- treat groups with `selective_validation_status=not_validated_no_native_debug` as baseline native planner runs, not selective-path validation
+
+Rollout-report command:
+
+- `cd server && go run ./cmd/native-planner-rollout-report`
+- optional filters:
+  - `--workspace <workspace-id>`
+  - `--provider anthropic|openai|openrouter`
+  - `--preset epic_planner|task_planner`
+  - `--since <RFC3339>`
+  - `--until <RFC3339>`
+  - `--json`
+
+Status: complete for this rollout on small-sample live data. Continue monitoring provider reliability as normal rollout work.
+
+This phase is complete after the report has been run against live rollout data where eligible runs emit `native_turn_debug` artifacts and the results have been reviewed.
 
 ### Phase 5
 
-- reduce planner-specific Temporal instruction builders to thin orchestration wrappers
+- reduce planner-specific Temporal instruction builders to smaller orchestration wrappers
+- extract native phase-guidance composition out of the main Temporal activities file
+- extract planner context assembly out of the main Temporal activities file
+- extract approved-preview selection/recovery/application commands out of the main Temporal activities file
+- extract completion-interaction policy enforcement and retry/repair handling out of the main Temporal activities file
+- extract native repair classification/replay selection out of the main Temporal activities file
+- extract native selective-path gating, active-skill selection, and active-policy derivation out of the main Temporal activities file
+- extract native observability artifact persistence out of the main Temporal activities file
+- extract artifact/transcript context loading and replay helpers out of the main Temporal activities file
+- extract run-message, human-interaction, approval-interaction, and coding-session persistence helpers out of the main Temporal activities file
+- extract canonical planning document and linked-context helpers out of the main Temporal activities file
+- extract planning repository/code-context helpers out of the main Temporal activities file
+- extract task delivery, git branch sync, pull-request, and git-link helpers out of the main Temporal activities file
+- extract runtime execution-context assembly out of `ExecuteRunActivity`
+- scope legacy monolithic planner builders as fallback-only and keep them unreachable for selective native planner runs
 - keep Temporal responsible for:
   - loading durable state
   - selecting active skills and phase guidance
   - running the generic runtime
   - applying approved artifacts through backend commands
 - avoid leaving a second planner brain inside Temporal
+
+Status: complete for this rollout. Temporal still owns run lifecycle and authoritative backend mutation sequencing, but the model-facing instruction assembly, replay/context loading, persistence helpers, approved-preview handling, repair/policy handling, delivery helpers, and execution-context assembly are now split into focused files instead of remaining inside one monolithic `activities.go`.
 
 ## File-Level Areas To Change
 
@@ -870,21 +945,21 @@ Do not:
 
 ## Acceptance Criteria
 
-- Native planner runs no longer depend on one giant turn-0 skill blob.
-- After PRD approval, the next turn is re-anchored on task-decomposition rules.
-- After a `publish_task_plan` validation error, the next turn receives only the relevant task-plan repair contract.
-- OpenAI/OpenRouter planner reliability improves on long interactive runs.
-- Anthropic planner behavior does not regress.
-- Codex/OpenCode staged skill behavior remains unchanged.
+- Native planner runs no longer depend on one giant turn-0 skill blob. Status: implemented for selective native planner runs.
+- After PRD approval, the next turn is re-anchored on task-decomposition rules. Status: implemented and covered by focused tests.
+- After a `publish_task_plan` validation error, the next turn receives only the relevant task-plan repair contract. Status: implemented and covered by focused tests.
+- OpenAI/OpenRouter planner reliability improves on long interactive runs. Status: validated enough for rollout continuation on small-sample Atlas/OpenRouter and Scribe/OpenAI runs; keep monitoring after rollout.
+- Anthropic planner behavior does not regress. Status: validated enough for rollout continuation on sampled Scribe/Anthropic runs; keep monitoring after rollout.
+- Codex/OpenCode staged skill behavior remains unchanged. Status: implementation keeps the native selective path gated away from Codex/OpenCode; continue relying on regression coverage during final cleanup.
 
-## Recommendation
+## Completed Implementation Order
 
-Implement this in this order:
+This rollout was implemented in this order:
 
 1. native-only active skill selection
 2. planner-only rollout
 3. normalized repair-state capture and repair reinjection
 4. reduce full-skill injection from the native planner base prompt
-5. collapse Temporal planner builders into thin generic orchestration over active skills and backend application paths
+5. reduce Temporal planner builders into focused orchestration helpers over active skills and backend application paths
 
-That is the cleanest path from the current full-flattening model toward a Codex-like modular runtime without copying Codex filesystem mechanics.
+That was the cleanest path from the previous full-flattening model toward a Codex-like modular runtime without copying Codex filesystem mechanics.

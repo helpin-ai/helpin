@@ -760,9 +760,9 @@ func approvalRequestResumeContent(requestPayload, responsePayload json.RawMessag
 		switch strings.ToLower(strings.TrimSpace(request.Phase)) {
 		case "prd":
 			return "Approved PRD. Continue to task planning."
-		case "tasks", "stories":
+		case "tasks":
 			return "Approved task plan. Apply it and create tasks."
-		case "task_doc", "story_doc":
+		case "task_doc":
 			return "Approved task planning document. Persist it and finish."
 		default:
 			return "Approved. Continue."

@@ -165,13 +165,13 @@ func buildSystemPromptWithOptions(agent *model.Agent, story *model.PMTask, epic 
 			parts = append(parts, "- When available, keep a short working execution checklist with update_plan instead of repeating plan status in prose. Do not use update_plan as a substitute for publish_prd_draft, publish_task_plan, or publish_task_plan_doc.")
 		}
 	}
-	if story != nil && strings.TrimSpace(planningStage) != model.PlanningStageStoryPlanDoc {
+	if story != nil && strings.TrimSpace(planningStage) != model.PlanningStageTaskPlanDoc {
 		parts = append(parts, "- Run tests after making changes when possible.")
 		if options.UseNativeToolingRules {
 			parts = append(parts, "- Commit and push your changes when the task is complete.")
 		}
 	}
-	if story != nil && strings.TrimSpace(planningStage) == model.PlanningStageStoryPlanDoc {
+	if story != nil && strings.TrimSpace(planningStage) == model.PlanningStageTaskPlanDoc {
 		parts = append(parts, "- This is a planning-doc run, not an implementation run.")
 		parts = append(parts, "- Draft or refine the canonical task planning document in chat first, then request approval.")
 		parts = append(parts, "- After approval, stop. The platform will persist and link the approved task planning document.")
@@ -201,31 +201,48 @@ func BuildUserPrompt(
 	var contextParts []string
 
 	if story != nil {
-		contextParts = append(contextParts, fmt.Sprintf("Task: **%s**", story.Name))
-		if strings.TrimSpace(planningStage) == model.PlanningStageStoryPlanDoc {
+		if epic != nil && strings.TrimSpace(epic.Name) != "" {
+			contextParts = append(contextParts, fmt.Sprintf("Target task: **%s**", story.Name))
+			contextParts = append(contextParts, "This run is scoped to the target task. Parent epic/PRD context below is background only.")
+		} else {
+			contextParts = append(contextParts, fmt.Sprintf("Task: **%s**", story.Name))
+		}
+		if strings.TrimSpace(planningStage) == model.PlanningStageTaskPlanDoc {
 			contextParts = append(contextParts, "Planning stage: task_plan_doc")
 		}
 		if story.Description != nil {
 			if description := tiptap.RichTextToMarkdown(*story.Description); description != "" {
-				contextParts = append(contextParts, "\nDescription:\n"+description)
+				if epic != nil && strings.TrimSpace(epic.Name) != "" {
+					contextParts = append(contextParts, "\nTarget task description:\n"+description)
+				} else {
+					contextParts = append(contextParts, "\nDescription:\n"+description)
+				}
 			}
 		}
 	}
 	if epic != nil {
-		contextParts = append(contextParts, fmt.Sprintf("Epic: **%s**", epic.Name))
+		if story != nil {
+			contextParts = append(contextParts, fmt.Sprintf("Parent epic background: **%s**", epic.Name))
+		} else {
+			contextParts = append(contextParts, fmt.Sprintf("Epic: **%s**", epic.Name))
+		}
 		if epic.Description != nil {
 			if description := tiptap.RichTextToMarkdown(*epic.Description); description != "" {
-				contextParts = append(contextParts, "\nDescription:\n"+description)
+				if story != nil {
+					contextParts = append(contextParts, "\nParent epic description:\n"+description)
+				} else {
+					contextParts = append(contextParts, "\nDescription:\n"+description)
+				}
 			}
 		}
 		if len(epicStories) > 0 {
-			contextParts = append(contextParts, "\nExisting stories already linked to this epic:")
-			for _, story := range epicStories {
-				storyType := story.TaskType
-				if storyType == "" {
-					storyType = "feature"
+			contextParts = append(contextParts, "\nExisting tasks already linked to this epic:")
+			for _, task := range epicStories {
+				taskType := task.TaskType
+				if taskType == "" {
+					taskType = "feature"
 				}
-				contextParts = append(contextParts, fmt.Sprintf("- %s (type=%s)", story.Name, storyType))
+				contextParts = append(contextParts, fmt.Sprintf("- %s (type=%s)", task.Name, taskType))
 			}
 		}
 	}

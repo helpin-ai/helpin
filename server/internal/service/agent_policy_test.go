@@ -151,7 +151,7 @@ func TestPresetDefinitionForAgentFallsBackToFamilyDefaultVersion(t *testing.T) {
 		t.Fatal("expected preset resolution for invalid version")
 	}
 	if preset.Key != model.AgentPresetTaskPlanner {
-		t.Fatalf("expected story planner preset, got %q", preset.Key)
+		t.Fatalf("expected task planner preset, got %q", preset.Key)
 	}
 	if preset.VersionKey != defaultPresetVersionKeyForPresetKey(model.AgentPresetTaskPlanner) {
 		t.Fatalf("expected fallback version %q, got %q", defaultPresetVersionKeyForPresetKey(model.AgentPresetTaskPlanner), preset.VersionKey)
@@ -548,7 +548,7 @@ func TestNormalizeAgentRecordMigratesLegacyPreviewToolsForPlannerPreset(t *testi
 		PresetKey:      model.AgentPresetEpicPlanner,
 		TriggerMode:    "manual",
 		RuntimeKind:    "native_sdk",
-		AllowedTools:   json.RawMessage(`["request_human_approval","publish_preview","create_story_batch"]`),
+		AllowedTools:   json.RawMessage(`["request_human_approval","publish_preview","create_task_batch"]`),
 		AllowedTargets: json.RawMessage(`["epic"]`),
 	}
 
@@ -577,13 +577,13 @@ func TestNormalizeAgentRecordMigratesLegacyPreviewToolsForPlannerPreset(t *testi
 	}
 }
 
-func TestNormalizeAgentRecordStripsGenericPreviewToolsFromStoryPlanner(t *testing.T) {
+func TestNormalizeAgentRecordStripsGenericPreviewToolsFromTaskPlanner(t *testing.T) {
 	agent := &model.Agent{
 		IsSystem:       true,
 		PresetKey:      model.AgentPresetTaskPlanner,
 		TriggerMode:    "manual",
 		RuntimeKind:    "native_sdk",
-		AllowedTools:   json.RawMessage(`["request_human_approval","preview_md","publish_story_plan_doc","write_document_content","search_documents"]`),
+		AllowedTools:   json.RawMessage(`["request_human_approval","preview_md","publish_task_plan_doc","write_document_content","search_documents"]`),
 		AllowedTargets: json.RawMessage(`["story"]`),
 	}
 
@@ -616,13 +616,13 @@ func TestNormalizeAgentRecordStripsGenericPreviewToolsFromStoryPlanner(t *testin
 	}
 }
 
-func TestNormalizeAgentRecordStripsStoryPreviewToolFromEpicPlanner(t *testing.T) {
+func TestNormalizeAgentRecordStripsTaskPlannerPreviewToolsFromEpicPlanner(t *testing.T) {
 	agent := &model.Agent{
 		IsSystem:       true,
 		PresetKey:      model.AgentPresetEpicPlanner,
 		TriggerMode:    "manual",
 		RuntimeKind:    "native_sdk",
-		AllowedTools:   json.RawMessage(`["request_human_approval","preview_md","publish_story_plan_doc","publish_story_plan","publish_prd_draft","create_story_batch"]`),
+		AllowedTools:   json.RawMessage(`["request_human_approval","preview_md","publish_task_plan_doc","publish_task_plan","publish_prd_draft","create_task_batch"]`),
 		AllowedTargets: json.RawMessage(`["epic"]`),
 	}
 
@@ -644,7 +644,7 @@ func TestNormalizeAgentRecordStripsStoryPreviewToolFromEpicPlanner(t *testing.T)
 		worker.ToolPreviewJSON,
 		worker.ToolPublishPreview,
 		worker.ToolPublishTaskPlanDoc,
-		"create_story_batch",
+		"create_task_batch",
 	} {
 		if slices.Contains(tools, unexpected) {
 			t.Fatalf("expected sanitized tool list to exclude %q, got %v", unexpected, tools)
