@@ -79,7 +79,7 @@ func TestWithGitHubInstallStatus(t *testing.T) {
 
 func TestGetGitHubInstallURLReturnsInstallActionWithoutExistingIntegration(t *testing.T) {
 	db := newTestDB(t)
-	if err := db.Exec(`CREATE TABLE git_integrations (
+	if err := db.Exec(`CREATE TABLE IF NOT EXISTS git_integrations (
 		id TEXT PRIMARY KEY,
 		workspace_id TEXT NOT NULL,
 		organization_id TEXT NOT NULL,
@@ -137,7 +137,7 @@ func TestGetGitHubInstallURLReturnsInstallActionWithoutExistingIntegration(t *te
 		stateSecret:     "test-secret",
 	}
 
-	installURL, action, integrationID, err := svc.GetGitHubInstallURL(context.Background(), "ws-123", "user-456")
+	installURL, action, integrationID, err := svc.GetGitHubInstallURL(context.Background(), "ws-123", "user-456", false)
 	if err != nil {
 		t.Fatalf("GetGitHubInstallURL returned error: %v", err)
 	}
@@ -213,6 +213,10 @@ func TestGetGitHubInstallURLReturnsPickReposForExistingOrgIntegration(t *testing
 		Provider:       "github",
 		DisplayName:    "GitHub Demo",
 		CredentialMode: "github_app",
+		AccountLogin: func() *string {
+			value := "demo-org"
+			return &value
+		}(),
 		InstallationID: func() *string {
 			value := "12345"
 			return &value
@@ -236,18 +240,229 @@ func TestGetGitHubInstallURLReturnsPickReposForExistingOrgIntegration(t *testing
 		stateSecret:     "test-secret",
 	}
 
-	installURL, action, integrationID, err := svc.GetGitHubInstallURL(context.Background(), "ws-123", "user-456")
+	installURL, action, integrationID, err := svc.GetGitHubInstallURL(context.Background(), "ws-123", "user-456", false)
 	if err != nil {
 		t.Fatalf("GetGitHubInstallURL returned error: %v", err)
 	}
-	if installURL != "" {
-		t.Fatalf("expected empty install url, got %q", installURL)
+	if installURL != "https://github.com/organizations/demo-org/settings/installations/12345" {
+		t.Fatalf("expected manage install url, got %q", installURL)
 	}
 	if action != "pick_repos" {
 		t.Fatalf("expected pick_repos action, got %q", action)
 	}
 	if integrationID == nil || *integrationID != "gi-123" {
 		t.Fatalf("expected integration id gi-123, got %v", integrationID)
+	}
+}
+
+func TestGetGitHubInstallURLForceInstallBypassesExistingOrgIntegration(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.Exec(`CREATE TABLE git_integrations (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		organization_id TEXT NOT NULL,
+		provider TEXT NOT NULL,
+		display_name TEXT NOT NULL,
+		credential_mode TEXT NOT NULL DEFAULT 'github_app',
+		account_login TEXT,
+		base_url TEXT,
+		installation_id TEXT,
+		app_id TEXT,
+		webhook_secret TEXT,
+		access_token TEXT NOT NULL DEFAULT '',
+		active BOOLEAN NOT NULL DEFAULT 1,
+		deleted_at DATETIME,
+		last_synced_at DATETIME,
+		last_sync_error TEXT,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create git_integrations table: %v", err)
+	}
+
+	orgID := "org-123"
+	if err := db.Create(&model.Organization{
+		ID:      orgID,
+		Name:    "Demo Org",
+		Slug:    "demo-org",
+		OwnerID: "user-456",
+	}).Error; err != nil {
+		t.Fatalf("create organization: %v", err)
+	}
+	if err := db.Create(&model.Workspace{
+		ID:             "ws-123",
+		Name:           "Demo Workspace",
+		Slug:           "demo",
+		OwnerID:        "user-456",
+		OrganizationID: &orgID,
+	}).Error; err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+	if err := db.Create(&model.GitIntegration{
+		ID:             "gi-123",
+		WorkspaceID:    "ws-123",
+		OrganizationID: &orgID,
+		Provider:       "github",
+		DisplayName:    "GitHub Demo",
+		CredentialMode: "github_app",
+		InstallationID: func() *string {
+			value := "12345"
+			return &value
+		}(),
+		Active: true,
+	}).Error; err != nil {
+		t.Fatalf("create integration: %v", err)
+	}
+
+	appClient, err := githubapp.NewClient("12345", generateTestPrivateKeyPEM(t))
+	if err != nil {
+		t.Fatalf("create github app client: %v", err)
+	}
+
+	svc := &GitService{
+		integrationRepo: repository.NewGitIntegrationRepository(db),
+		workspaceRepo:   repository.NewWorkspaceRepository(db),
+		githubApp:       appClient,
+		githubAppSlug:   "helpin-test",
+		stateSecret:     "test-secret",
+	}
+
+	installURL, action, integrationID, err := svc.GetGitHubInstallURL(context.Background(), "ws-123", "user-456", true)
+	if err != nil {
+		t.Fatalf("GetGitHubInstallURL returned error: %v", err)
+	}
+	if action != "install" {
+		t.Fatalf("expected install action, got %q", action)
+	}
+	if integrationID != nil {
+		t.Fatalf("expected nil integration id, got %v", integrationID)
+	}
+	parsed, err := url.Parse(installURL)
+	if err != nil {
+		t.Fatalf("parse install url: %v", err)
+	}
+	if parsed.Path != "/apps/helpin-test/installations/new" {
+		t.Fatalf("unexpected install path %q", parsed.Path)
+	}
+	if parsed.Query().Get("state") == "" {
+		t.Fatal("expected state query param to be set")
+	}
+}
+
+func TestListIntegrationsReturnsOrgVisibleIntegrations(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.Exec(`CREATE TABLE git_integrations (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		organization_id TEXT,
+		provider TEXT NOT NULL,
+		display_name TEXT NOT NULL,
+		credential_mode TEXT NOT NULL DEFAULT 'github_app',
+		account_login TEXT,
+		base_url TEXT,
+		installation_id TEXT,
+		app_id TEXT,
+		webhook_secret TEXT,
+		access_token TEXT NOT NULL DEFAULT '',
+		active BOOLEAN NOT NULL DEFAULT 1,
+		deleted_at DATETIME,
+		last_synced_at DATETIME,
+		last_sync_error TEXT,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create git_integrations table: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE IF NOT EXISTS git_repositories (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		integration_id TEXT NOT NULL,
+		provider TEXT NOT NULL,
+		external_id TEXT NOT NULL,
+		full_name TEXT NOT NULL,
+		default_branch TEXT NOT NULL,
+		permissions TEXT,
+		private BOOLEAN NOT NULL DEFAULT 0,
+		archived BOOLEAN NOT NULL DEFAULT 0,
+		selected BOOLEAN NOT NULL DEFAULT 1,
+		active BOOLEAN NOT NULL DEFAULT 1,
+		deleted_at DATETIME,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create git_repositories table: %v", err)
+	}
+
+	mustExec := func(query string, args ...interface{}) {
+		t.Helper()
+		if err := db.Exec(query, args...).Error; err != nil {
+			t.Fatalf("exec %q: %v", query, err)
+		}
+	}
+
+	if err := db.Create(&model.Organization{
+		ID:      "org-1",
+		Name:    "Demo Org",
+		Slug:    "demo-org",
+		OwnerID: "user-1",
+	}).Error; err != nil {
+		t.Fatalf("create organization: %v", err)
+	}
+	if err := db.Create(&model.Workspace{
+		ID:             "ws-1",
+		Name:           "Workspace One",
+		Slug:           "workspace-one",
+		OwnerID:        "user-1",
+		OrganizationID: func() *string { value := "org-1"; return &value }(),
+	}).Error; err != nil {
+		t.Fatalf("create workspace one: %v", err)
+	}
+	if err := db.Create(&model.Workspace{
+		ID:             "ws-2",
+		Name:           "Workspace Two",
+		Slug:           "workspace-two",
+		OwnerID:        "user-1",
+		OrganizationID: func() *string { value := "org-1"; return &value }(),
+	}).Error; err != nil {
+		t.Fatalf("create workspace two: %v", err)
+	}
+
+	mustExec(`INSERT INTO git_integrations (
+		id, workspace_id, organization_id, provider, display_name, credential_mode, active, created_at, updated_at
+	) VALUES
+		('gi-self', 'ws-1', 'org-1', 'github', 'Workspace One', 'github_app', 1, datetime('now'), datetime('now')),
+		('gi-shared', 'ws-2', 'org-1', 'github', 'Shared Org Install', 'github_app', 1, datetime('now'), datetime('now')),
+		('gi-other', 'ws-2', 'org-1', 'github', 'Sibling Only', 'github_app', 1, datetime('now'), datetime('now'))`)
+	mustExec(`INSERT INTO git_repositories (
+		id, workspace_id, integration_id, provider, external_id, full_name, default_branch, active, created_at, updated_at
+	) VALUES
+		('repo-1', 'ws-1', 'gi-shared', 'github', '100', 'acme/shared', 'main', 1, datetime('now'), datetime('now')),
+		('repo-2', 'ws-2', 'gi-other', 'github', '200', 'acme/other', 'main', 1, datetime('now'), datetime('now'))`)
+
+	svc := &GitService{
+		integrationRepo: repository.NewGitIntegrationRepository(db),
+	}
+
+	integrations, err := svc.ListIntegrations(context.Background(), "ws-1")
+	if err != nil {
+		t.Fatalf("ListIntegrations returned error: %v", err)
+	}
+	if len(integrations) != 3 {
+		t.Fatalf("expected 3 integrations, got %d", len(integrations))
+	}
+
+	gotIDs := map[string]bool{}
+	for _, integration := range integrations {
+		gotIDs[integration.ID] = true
+	}
+	if !gotIDs["gi-self"] {
+		t.Fatal("expected workspace-owned integration to be listed")
+	}
+	if !gotIDs["gi-shared"] {
+		t.Fatal("expected shared integration with workspace repo claims to be listed")
+	}
+	if !gotIDs["gi-other"] {
+		t.Fatal("expected sibling org integration to be listed")
 	}
 }
 

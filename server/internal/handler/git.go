@@ -28,8 +28,9 @@ func NewGitHandler(gitService *service.GitService) *GitHandler {
 func (h *GitHandler) GetGitHubInstallURL(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	actorID := middleware.GetUserID(r.Context())
+	forceInstall := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("force_install")), "true")
 
-	installURL, action, integrationID, err := h.gitService.GetGitHubInstallURL(r.Context(), workspaceID, actorID)
+	installURL, action, integrationID, err := h.gitService.GetGitHubInstallURL(r.Context(), workspaceID, actorID, forceInstall)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

@@ -53,8 +53,8 @@ async function gitRawRequest<T>(path: string, options: RequestInit = {}) {
 }
 
 export const gitService = {
-  getGitHubInstallURL: (workspaceId: string) =>
-    api.get<GitHubInstallURLResponse>(`/git/github/install-url${qs(workspaceId)}`),
+  getGitHubInstallURL: (workspaceId: string, options?: { forceInstall?: boolean }) =>
+    api.get<GitHubInstallURLResponse>(`/git/github/install-url${qs(workspaceId)}${options?.forceInstall ? '&force_install=true' : ''}`),
   listIntegrations: (workspaceId: string) =>
     api.get<GitIntegration[]>(`/git/integrations${qs(workspaceId)}`),
   getIntegration: (workspaceId: string, integrationId: string) =>
