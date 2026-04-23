@@ -73,7 +73,7 @@ func (a *AgentRunActivities) buildTaskPlannerAssemblyState(ctx context.Context, 
 	}, nil
 }
 
-func (a *AgentRunActivities) buildLegacyTaskPlannerSections(ctx context.Context, state *resolvedRunState, input planningRunInput) ([]string, error) {
+func (a *AgentRunActivities) buildLegacyTaskPlannerFallbackSections(ctx context.Context, state *resolvedRunState, input planningRunInput) ([]string, error) {
 	if state.task == nil {
 		return nil, fmt.Errorf("task planner requires a task target")
 	}
@@ -81,7 +81,7 @@ func (a *AgentRunActivities) buildLegacyTaskPlannerSections(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	sections := buildLegacyTaskPlannerRuleSections(state.run)
+	sections := buildLegacyTaskPlannerFallbackRuleSections(state.run)
 	sections = append(sections, assemblyState.contextSections...)
 	return sections, nil
 }
@@ -107,12 +107,12 @@ func (a *AgentRunActivities) buildEpicPlannerAssemblyState(ctx context.Context, 
 	}, nil
 }
 
-func (a *AgentRunActivities) buildLegacyEpicPlannerSections(ctx context.Context, state *resolvedRunState, input planningRunInput) ([]string, error) {
+func (a *AgentRunActivities) buildLegacyEpicPlannerFallbackSections(ctx context.Context, state *resolvedRunState, input planningRunInput) ([]string, error) {
 	assemblyState, err := a.buildEpicPlannerAssemblyState(ctx, state, input)
 	if err != nil {
 		return nil, err
 	}
-	sections := buildLegacyEpicPlannerRuleSections(state.run)
+	sections := buildLegacyEpicPlannerFallbackRuleSections(state.run)
 	sections = append(sections, assemblyState.contextSections...)
 	sections = append(sections, formatInteractivePlanningFacts(input, assemblyState.hasSpecContent, assemblyState.taskCount))
 	sections = append(sections, nativeEpicPlannerNextStepGuidance(input, assemblyState.hasSpecContent, assemblyState.hasTasks))

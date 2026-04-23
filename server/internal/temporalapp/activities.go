@@ -4310,7 +4310,7 @@ func (a *AgentRunActivities) normalizeEpicSpecState(ctx context.Context, state *
 }
 
 func (a *AgentRunActivities) buildInitialInstructions(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
-	if state != nil && state.nativeSelectivePathEnabled {
+	if shouldUseNativeSelectivePlannerGuidance(state) {
 		return a.buildNativeSelectivePhaseGuidance(ctx, state, input)
 	}
 	tools := effectiveToolSet(state.resolved, input.AllowedTools)
@@ -4319,7 +4319,7 @@ func (a *AgentRunActivities) buildInitialInstructions(ctx context.Context, state
 	}
 	if state.task != nil {
 		if tools[workerpkg.ToolPublishTaskPlanDoc] {
-			return a.buildTaskPlannerInstructions(ctx, state, input)
+			return a.buildLegacyTaskPlannerFallbackInstructions(ctx, state, input)
 		}
 		return a.buildTaskExecutionInstructions(ctx, state, input)
 	}
@@ -4329,7 +4329,15 @@ func (a *AgentRunActivities) buildInitialInstructions(ctx context.Context, state
 	if !tools[workerpkg.ToolPublishPRDDraft] || !tools[workerpkg.ToolPublishTaskPlan] {
 		return runInputAdditionalContext(state.run.Input), nil
 	}
-	return a.buildAgenticEpicPlannerInstructions(ctx, state, input)
+	return a.buildLegacyEpicPlannerFallbackInstructions(ctx, state, input)
+}
+
+func shouldUseNativeSelectivePlannerGuidance(state *resolvedRunState) bool {
+	if state == nil || !state.nativeSelectivePathEnabled {
+		return false
+	}
+	runtimeKind := strings.TrimSpace(executionRuntimeKind(state))
+	return runtimeKind == "" || runtimeKind == "native_sdk"
 }
 
 func (a *AgentRunActivities) buildNativeSelectivePhaseGuidance(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
@@ -4419,15 +4427,15 @@ func (a *AgentRunActivities) buildCRMDealReviewInstructions(ctx context.Context,
 	return strings.Join(sections, "\n\n"), nil
 }
 
-func (a *AgentRunActivities) buildTaskPlannerInstructions(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
-	sections, err := a.buildLegacyTaskPlannerSections(ctx, state, input)
+func (a *AgentRunActivities) buildLegacyTaskPlannerFallbackInstructions(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
+	sections, err := a.buildLegacyTaskPlannerFallbackSections(ctx, state, input)
 	if err != nil {
 		return "", err
 	}
 	return strings.Join(sections, "\n\n"), nil
 }
 
-func buildLegacyTaskPlannerRuleSections(run *model.AgentRun) []string {
+func buildLegacyTaskPlannerFallbackRuleSections(run *model.AgentRun) []string {
 	invocationMode := ""
 	if run != nil {
 		invocationMode = run.InvocationMode
@@ -4485,8 +4493,8 @@ func (a *AgentRunActivities) buildTaskRunContextSections(ctx context.Context, st
 	return sections, nil
 }
 
-func (a *AgentRunActivities) buildAgenticEpicPlannerInstructions(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
-	sections, err := a.buildLegacyEpicPlannerSections(ctx, state, input)
+func (a *AgentRunActivities) buildLegacyEpicPlannerFallbackInstructions(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
+	sections, err := a.buildLegacyEpicPlannerFallbackSections(ctx, state, input)
 	if err != nil {
 		return "", err
 	}
@@ -4557,7 +4565,7 @@ func (a *AgentRunActivities) buildTaskRunPlanDocumentContextSections(ctx context
 	return nil, nil
 }
 
-func buildLegacyEpicPlannerRuleSections(run *model.AgentRun) []string {
+func buildLegacyEpicPlannerFallbackRuleSections(run *model.AgentRun) []string {
 	invocationMode := ""
 	if run != nil {
 		invocationMode = run.InvocationMode

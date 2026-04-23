@@ -37,6 +37,7 @@ The core selective native planner path has been implemented. Remaining work is n
 - native repair classification and replay selection extracted into a dedicated Temporal file
 - native selective-path gating, active-skill selection, and active-policy derivation extracted into a dedicated Temporal file
 - native observability artifact persistence extracted into a dedicated Temporal file
+- legacy monolithic planner builders are explicitly scoped as fallback-only and covered by tests proving selective native planners bypass them
 - explicit regression coverage for:
   - PRD request-changes keeping PRD-focused active skills
   - task-extension guidance after approved plans have already created tasks
@@ -47,7 +48,7 @@ The core selective native planner path has been implemented. Remaining work is n
 ### Partially implemented
 
 - base-prompt simplification is complete for selective native planner runs, but broader prompt cleanup is still incomplete
-- planner guidance extraction is well underway, with native phase-guidance, planner context assembly, approved-preview application, completion-policy enforcement/retry handling, native repair selection, native selective activation, and observability persistence split out; Temporal still owns backend orchestration paths
+- planner guidance extraction is well underway, with native phase-guidance, planner context assembly, approved-preview application, completion-policy enforcement/retry handling, native repair selection, native selective activation, observability persistence, and legacy fallback scoping split out; Temporal still owns backend orchestration paths
 - transition coverage is improved, but not yet exhaustive across every apply/resume edge
 - regression coverage is materially broader now, but final Phase 5 cleanup can still add more invariant-protection coverage
 - live selective-path validation has enough small-sample evidence to close Phase 4
@@ -988,6 +989,7 @@ This phase is complete after the report has been run against live rollout data w
 - extract native repair classification/replay selection out of the main Temporal activities file
 - extract native selective-path gating, active-skill selection, and active-policy derivation out of the main Temporal activities file
 - extract native observability artifact persistence out of the main Temporal activities file
+- scope legacy monolithic planner builders as fallback-only and keep them unreachable for selective native planner runs
 - keep Temporal responsible for:
   - loading durable state
   - selecting active skills and phase guidance

@@ -399,6 +399,7 @@ func TestBuildInitialInstructionsUsesNativeSelectiveEpicPhaseGuidance(t *testing
 		run: &model.AgentRun{
 			WorkspaceID:    "ws-1",
 			TargetType:     "epic",
+			RuntimeKind:    "native_sdk",
 			InvocationMode: model.InvocationModeInteractive,
 			Input:          json.RawMessage(`{"additional_context":"Focus on launch blockers."}`),
 		},
@@ -411,6 +412,7 @@ func TestBuildInitialInstructionsUsesNativeSelectiveEpicPhaseGuidance(t *testing
 
 	instructions, err := activity.buildInitialInstructions(context.Background(), state, planningRunInput{
 		AdditionalContext: "Focus on launch blockers.",
+		AllowedTools:      []string{workerpkg.ToolPublishPRDDraft, workerpkg.ToolPublishTaskPlan},
 	})
 	if err != nil {
 		t.Fatalf("buildInitialInstructions returned error: %v", err)
@@ -426,8 +428,15 @@ func TestBuildInitialInstructionsUsesNativeSelectiveEpicPhaseGuidance(t *testing
 			t.Fatalf("expected native selective epic guidance to contain %q\n%s", snippet, instructions)
 		}
 	}
-	if strings.Contains(instructions, "Use this sequence unless the human explicitly redirects you:") {
-		t.Fatalf("did not expect legacy epic planner boilerplate in native selective guidance\n%s", instructions)
+	for _, legacySnippet := range []string{
+		"Run mode: interactive",
+		"Use this sequence unless the human explicitly redirects you:",
+		"There is no hidden planner phase machine controlling the next step for you.",
+		"publish_task_plan must receive one complete JSON object payload in that tool call.",
+	} {
+		if strings.Contains(instructions, legacySnippet) {
+			t.Fatalf("did not expect legacy epic planner fallback snippet %q in native selective guidance\n%s", legacySnippet, instructions)
+		}
 	}
 }
 
@@ -463,8 +472,8 @@ func TestBuildInitialInstructionsKeepsLegacyEpicPlannerInstructionsWhenSelective
 	}
 }
 
-func TestBuildLegacyEpicPlannerRuleSectionsPreservesCriticalRules(t *testing.T) {
-	sections := buildLegacyEpicPlannerRuleSections(&model.AgentRun{
+func TestBuildLegacyEpicPlannerFallbackRuleSectionsPreservesCriticalRules(t *testing.T) {
+	sections := buildLegacyEpicPlannerFallbackRuleSections(&model.AgentRun{
 		InvocationMode: model.InvocationModeInteractive,
 	})
 	instructions := strings.Join(sections, "\n\n")
@@ -484,9 +493,9 @@ func TestBuildLegacyEpicPlannerRuleSectionsPreservesCriticalRules(t *testing.T) 
 	}
 }
 
-func TestBuildLegacyEpicPlannerSectionsPreservesCompositionOrder(t *testing.T) {
+func TestBuildLegacyEpicPlannerFallbackSectionsPreservesCompositionOrder(t *testing.T) {
 	activity := &AgentRunActivities{}
-	sections, err := activity.buildLegacyEpicPlannerSections(context.Background(), &resolvedRunState{
+	sections, err := activity.buildLegacyEpicPlannerFallbackSections(context.Background(), &resolvedRunState{
 		run: &model.AgentRun{
 			WorkspaceID:    "ws-1",
 			TargetType:     "epic",
@@ -501,7 +510,7 @@ func TestBuildLegacyEpicPlannerSectionsPreservesCompositionOrder(t *testing.T) {
 		AdditionalContext: "Focus on launch blockers.",
 	})
 	if err != nil {
-		t.Fatalf("buildLegacyEpicPlannerSections returned error: %v", err)
+		t.Fatalf("buildLegacyEpicPlannerFallbackSections returned error: %v", err)
 	}
 	instructions := strings.Join(sections, "\n\n")
 	runModeIndex := strings.Index(instructions, "Run mode: interactive")
@@ -523,6 +532,7 @@ func TestBuildInitialInstructionsUsesNativeSelectiveTaskPhaseGuidance(t *testing
 		run: &model.AgentRun{
 			WorkspaceID:    "ws-1",
 			TargetType:     "task",
+			RuntimeKind:    "native_sdk",
 			InvocationMode: model.InvocationModeInteractive,
 			Input:          json.RawMessage(`{"additional_context":"Focus on regression risk."}`),
 		},
@@ -535,6 +545,7 @@ func TestBuildInitialInstructionsUsesNativeSelectiveTaskPhaseGuidance(t *testing
 
 	instructions, err := activity.buildInitialInstructions(context.Background(), state, planningRunInput{
 		AdditionalContext: "Focus on regression risk.",
+		AllowedTools:      []string{workerpkg.ToolPublishTaskPlanDoc},
 	})
 	if err != nil {
 		t.Fatalf("buildInitialInstructions returned error: %v", err)
@@ -550,13 +561,20 @@ func TestBuildInitialInstructionsUsesNativeSelectiveTaskPhaseGuidance(t *testing
 			t.Fatalf("expected native selective task guidance to contain %q\n%s", snippet, instructions)
 		}
 	}
-	if strings.Contains(instructions, "Use this sequence unless the human explicitly redirects you:") {
-		t.Fatalf("did not expect legacy task planner boilerplate in native selective guidance\n%s", instructions)
+	for _, legacySnippet := range []string{
+		"Run mode: interactive",
+		"Use this sequence unless the human explicitly redirects you:",
+		"publish_task_plan_doc must receive a JSON object where content is the full markdown planning draft under review.",
+		"Ground the planning document primarily in the task description, task comments, task-linked docs, and the current codebase context.",
+	} {
+		if strings.Contains(instructions, legacySnippet) {
+			t.Fatalf("did not expect legacy task planner fallback snippet %q in native selective guidance\n%s", legacySnippet, instructions)
+		}
 	}
 }
 
-func TestBuildLegacyTaskPlannerRuleSectionsPreservesCriticalRules(t *testing.T) {
-	sections := buildLegacyTaskPlannerRuleSections(&model.AgentRun{
+func TestBuildLegacyTaskPlannerFallbackRuleSectionsPreservesCriticalRules(t *testing.T) {
+	sections := buildLegacyTaskPlannerFallbackRuleSections(&model.AgentRun{
 		InvocationMode: model.InvocationModeInteractive,
 	})
 	instructions := strings.Join(sections, "\n\n")
@@ -577,9 +595,9 @@ func TestBuildLegacyTaskPlannerRuleSectionsPreservesCriticalRules(t *testing.T) 
 	}
 }
 
-func TestBuildLegacyTaskPlannerSectionsPreservesCompositionOrder(t *testing.T) {
+func TestBuildLegacyTaskPlannerFallbackSectionsPreservesCompositionOrder(t *testing.T) {
 	activity := &AgentRunActivities{}
-	sections, err := activity.buildLegacyTaskPlannerSections(context.Background(), &resolvedRunState{
+	sections, err := activity.buildLegacyTaskPlannerFallbackSections(context.Background(), &resolvedRunState{
 		run: &model.AgentRun{
 			WorkspaceID:    "ws-1",
 			TargetType:     "task",
@@ -594,7 +612,7 @@ func TestBuildLegacyTaskPlannerSectionsPreservesCompositionOrder(t *testing.T) {
 		AdditionalContext: "Focus on regression risk.",
 	})
 	if err != nil {
-		t.Fatalf("buildLegacyTaskPlannerSections returned error: %v", err)
+		t.Fatalf("buildLegacyTaskPlannerFallbackSections returned error: %v", err)
 	}
 	instructions := strings.Join(sections, "\n\n")
 	runModeIndex := strings.Index(instructions, "Run mode: interactive")
