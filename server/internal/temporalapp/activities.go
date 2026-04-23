@@ -2156,7 +2156,7 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 		},
 		ListCollections: func(ctx context.Context, workspaceID string, spaceID *string) ([]model.DocsCollection, error) {
 			if spaceID != nil && strings.TrimSpace(*spaceID) != "" {
-				return a.docsCollectionRepo.ListBySpace(ctx, strings.TrimSpace(*spaceID))
+				return a.docsCollectionRepo.ListByWorkspaceAndSpace(ctx, workspaceID, strings.TrimSpace(*spaceID))
 			}
 			return a.docsCollectionRepo.ListByWorkspace(ctx, workspaceID)
 		},
