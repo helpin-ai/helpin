@@ -89,10 +89,6 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"story_id": map[string]any{
-					"type":        "string",
-					"description": "Legacy alias for the task ID to assign",
-				},
 				"task_id": map[string]any{
 					"type":        "string",
 					"description": "The task ID to assign",
@@ -118,10 +114,8 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 					"items": map[string]any{
 						"type": "object",
 						"properties": map[string]any{
-							"source_story_id": map[string]any{"type": "string"},
-							"target_story_id": map[string]any{"type": "string"},
-							"source_task_id":  map[string]any{"type": "string"},
-							"target_task_id":  map[string]any{"type": "string"},
+							"source_task_id": map[string]any{"type": "string"},
+							"target_task_id": map[string]any{"type": "string"},
 						},
 					},
 				},
@@ -314,18 +308,8 @@ func createTaskBatchSchema() map[string]any {
 	return map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"stories": map[string]any{
-				"description": "Legacy compatibility field. The list of tasks to create.",
-				"type":        "array",
-				"items":       taskSchema,
-			},
-			"proposed_stories": map[string]any{
-				"description": "Legacy compatibility alias for older task-plan payloads. If present, it is treated the same as tasks.",
-				"type":        "array",
-				"items":       taskSchema,
-			},
 			"tasks": map[string]any{
-				"description": "Preferred field. The list of tasks to create.",
+				"description": "The list of tasks to create.",
 				"type":        "array",
 				"items":       taskSchema,
 			},

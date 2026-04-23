@@ -69,26 +69,12 @@ func CanonicalToolName(name string) string {
 		return ToolRequestUserInput
 	case ToolRequestHumanApproval:
 		return ToolRequestApproval
-	case "publish_story_plan":
-		return "publish_task_plan"
-	case "publish_story_plan_doc":
-		return "publish_task_plan_doc"
 	case "add_story_comment":
 		return "add_task_comment"
 	case "list_story_checklist":
 		return "list_task_checklist"
-	case "list_epic_stories":
-		return "list_epic_tasks"
 	case "update_story_state":
 		return "update_task_state"
-	case "ensure_story_plan_doc":
-		return "ensure_task_plan_doc"
-	case "create_story_batch":
-		return "create_task_batch"
-	case "assign_story_agent":
-		return "assign_task_agent"
-	case "set_story_dependencies":
-		return "set_task_dependencies"
 	default:
 		return strings.TrimSpace(name)
 	}

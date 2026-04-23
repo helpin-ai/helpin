@@ -113,11 +113,7 @@ func normalizeCanonicalTaskPlanPreviewPayload(payload map[string]any) (map[strin
 
 	taskEntries, ok := payload["proposed_tasks"].([]any)
 	if !ok {
-		var legacyOK bool
-		taskEntries, legacyOK = payload["proposed_stories"].([]any)
-		if !legacyOK {
-			return nil, fmt.Errorf("task plan content must include proposed_tasks as an array")
-		}
+		return nil, fmt.Errorf("task plan content must include proposed_tasks as an array")
 	}
 
 	rawTasks, err := json.Marshal(taskEntries)
@@ -138,7 +134,6 @@ func normalizeCanonicalTaskPlanPreviewPayload(payload map[string]any) (map[strin
 
 	payload["summary"] = summary
 	payload["proposed_tasks"] = tasks
-	delete(payload, "proposed_stories")
 	return payload, nil
 }
 

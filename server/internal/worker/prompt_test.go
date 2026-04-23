@@ -113,7 +113,7 @@ func TestBuildUserPromptIncludesArtifactContext(t *testing.T) {
 	}
 }
 
-func TestBuildUserPromptStoryPlannerUsesNeutralPlanningContext(t *testing.T) {
+func TestBuildUserPromptTaskPlannerUsesNeutralPlanningContext(t *testing.T) {
 	prompt := BuildUserPrompt(
 		nil,
 		&model.PMTask{Name: "Inbox triage automation"},
@@ -123,7 +123,7 @@ func TestBuildUserPromptStoryPlannerUsesNeutralPlanningContext(t *testing.T) {
 		nil,
 		nil,
 		nil,
-		model.PlanningStageStoryPlanDoc,
+		model.PlanningStageTaskPlanDoc,
 		"Operator notes:\nFocus on approval UX.",
 	)
 
@@ -141,11 +141,43 @@ func TestBuildUserPromptStoryPlannerUsesNeutralPlanningContext(t *testing.T) {
 		"open questions",
 	} {
 		if strings.Contains(prompt, snippet) {
-			t.Fatalf("did not expect duplicated story-plan guidance %q\n%s", snippet, prompt)
+			t.Fatalf("did not expect duplicated task-plan guidance %q\n%s", snippet, prompt)
 		}
 	}
 	if strings.Contains(prompt, "Please complete this task. Start by reading the relevant files to understand the codebase, then implement the changes.") {
-		t.Fatalf("did not expect implementation-oriented story prompt\n%s", prompt)
+		t.Fatalf("did not expect implementation-oriented task prompt\n%s", prompt)
+	}
+}
+
+func TestBuildUserPromptTaskPlannerLabelsParentEpicAsBackground(t *testing.T) {
+	taskDescription := "<p>Instrument producer send operations.</p>"
+	epicDescription := "<p>Observability PRD details.</p>"
+	prompt := BuildUserPrompt(
+		nil,
+		&model.PMTask{Name: "Instrument Kafka producer send operations with metrics", Description: &taskDescription},
+		&model.PMEpic{Name: "Kafka observability", Description: &epicDescription},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		model.PlanningStageTaskPlanDoc,
+		"",
+	)
+
+	for _, marker := range []string{
+		"Target task: **Instrument Kafka producer send operations with metrics**",
+		"This run is scoped to the target task. Parent epic/PRD context below is background only.",
+		"Target task description:",
+		"Parent epic background: **Kafka observability**",
+		"Parent epic description:",
+	} {
+		if !strings.Contains(prompt, marker) {
+			t.Fatalf("expected prompt to contain %q\n%s", marker, prompt)
+		}
+	}
+	if strings.Contains(prompt, "\nEpic: **Kafka observability**") {
+		t.Fatalf("expected parent epic to be labeled as background\n%s", prompt)
 	}
 }
 
@@ -394,10 +426,8 @@ func TestBuildRuntimeSystemPromptWithoutStagedSkillsStillInlinesResolvedSkillTex
 }
 
 func TestProviderSupportsResponseContinuation(t *testing.T) {
-	if !ProviderSupportsResponseContinuation(model.AgentModelProviderOpenAI) {
-		t.Fatal("expected openai to support response continuation")
-	}
 	for _, provider := range []string{
+		model.AgentModelProviderOpenAI,
 		model.AgentModelProviderOpenRouter,
 		model.AgentModelProviderOpenRouterResponses,
 		model.AgentModelProviderAnthropic,
@@ -473,7 +503,7 @@ func TestBuildSystemPromptPlannerRunUsesReadOnlyRepoGuidance(t *testing.T) {
 		&model.PMTask{Name: "Plan inbox automation"},
 		nil,
 		nil,
-		model.PlanningStageStoryPlanDoc,
+		model.PlanningStageTaskPlanDoc,
 		"",
 		nil,
 	)

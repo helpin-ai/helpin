@@ -31,8 +31,8 @@ func TestDefaultProductPlannerSystemPromptIncludesInlineInteractiveLoop(t *testi
 		"Use `isOther: true` instead of adding an explicit Other option.",
 		"`files_to_modify` must be an array of objects",
 		"\"name\": \"Add tracking helper\"",
-		"\"dependency_refs\": [\"story_1\"]",
-		"\"story_type\": \"feature\"",
+		"\"dependency_refs\": [\"task_1\"]",
+		"\"task_type\": \"feature\"",
 		"\"test_strategy\": [\"...\"]",
 		"The value of `content` must be a JSON object.",
 		"Inside `proposed_tasks`, use the canonical field names `name` and `task_type`.",
@@ -60,7 +60,7 @@ func TestDefaultProductPlannerSystemPromptIncludesInlineInteractiveLoop(t *testi
 	}
 }
 
-func TestStoryPlannerSystemPromptIncludesDocApprovalLoop(t *testing.T) {
+func TestTaskPlannerSystemPromptIncludesDocApprovalLoop(t *testing.T) {
 	prompt := defaultSystemPromptForPreset(model.AgentPresetTaskPlanner)
 	if prompt == nil {
 		t.Fatal("expected task planner prompt")
@@ -152,13 +152,13 @@ func TestLegacyPromptIsManaged(t *testing.T) {
 		{
 			name:      "epic planner legacy prompt",
 			presetKey: model.AgentPresetEpicPlanner,
-			prompt:    "1. `prd_draft`\n2. `awaiting_prd_approval`\n3. `persist_prd`\n5. `awaiting_story_approval`",
+			prompt:    "1. `prd_draft`\n2. `awaiting_prd_approval`\n3. `persist_prd`\n4. `task_plan`\n5. `awaiting_task_approval`\n6. `create_tasks`",
 			want:      true,
 		},
 		{
 			name:      "task planner legacy prompt",
 			presetKey: model.AgentPresetTaskPlanner,
-			prompt:    "You are Story Planner for Helpin. Use `publish_preview` and `request_human_approval`.",
+			prompt:    "You are Task Planner for Helpin. Use `publish_preview` and `request_human_approval`.",
 			want:      true,
 		},
 		{
@@ -210,7 +210,7 @@ func TestSyncManagedSystemPromptForPresetPreservesCustomPrompt(t *testing.T) {
 }
 
 func TestSyncManagedSystemPromptForPresetMigratesLegacyManagedPrompt(t *testing.T) {
-	legacyPrompt := "1. `prd_draft`\n2. `awaiting_prd_approval`\n3. `persist_prd`\n5. `awaiting_story_approval`"
+	legacyPrompt := "1. `prd_draft`\n2. `awaiting_prd_approval`\n3. `persist_prd`\n4. `task_plan`\n5. `awaiting_task_approval`\n6. `create_tasks`"
 	prompt, version := syncManagedSystemPromptForPreset(model.AgentPresetEpicPlanner, &legacyPrompt, nil, "")
 	if prompt != nil {
 		t.Fatalf("expected managed prompt to be stored as nil, got %+v", prompt)
