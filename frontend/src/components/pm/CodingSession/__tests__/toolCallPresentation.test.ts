@@ -66,4 +66,92 @@ describe('describeToolCall', () => {
       chips: ['frontend/src'],
     });
   });
+
+  describe('web search tools', () => {
+    it('formats web_search_exa with only query', () => {
+      const presentation = describeToolCall(buildToolCall({
+        tool_name: 'web_search_exa',
+        args_text: JSON.stringify({
+          query: 'latest Vite release notes',
+        }),
+      }));
+
+      expect(presentation).toEqual({
+        primaryLabel: 'Search "latest Vite release notes"',
+        secondaryLabel: 'Web Search Exa',
+        chips: [],
+      });
+    });
+
+    it('formats web_search_exa with category, include_domains, and num_results chips', () => {
+      const presentation = describeToolCall(buildToolCall({
+        tool_name: 'web_search_exa',
+        args_text: JSON.stringify({
+          query: 'React 19 compiler docs',
+          category: 'news',
+          include_domains: ['github.com', 'react.dev', 'vite.dev'],
+          num_results: 5,
+        }),
+      }));
+
+      expect(presentation).toEqual({
+        primaryLabel: 'Search "React 19 compiler docs"',
+        secondaryLabel: 'Web Search Exa',
+        chips: ['news', 'github.com +2', '5 results'],
+      });
+    });
+
+    it('truncates long web_search_exa queries', () => {
+      const query = 'a'.repeat(90);
+      const presentation = describeToolCall(buildToolCall({
+        tool_name: 'web_search_exa',
+        args_text: JSON.stringify({ query }),
+      }));
+
+      expect(presentation).toEqual({
+        primaryLabel: `Search "${'a'.repeat(79)}…"`,
+        secondaryLabel: 'Web Search Exa',
+        chips: [],
+      });
+    });
+
+    it('falls back for web_search_exa with missing or unparseable args', () => {
+      const missingQuery = describeToolCall(buildToolCall({
+        tool_name: 'web_search_exa',
+        args_text: JSON.stringify({ category: 'news' }),
+      }));
+      const unparseableArgs = describeToolCall(buildToolCall({
+        tool_name: 'web_search_exa',
+        args_text: '{not json',
+      }));
+
+      expect(missingQuery).toEqual({
+        primaryLabel: 'Web Search Exa',
+        secondaryLabel: 'Web Search Exa',
+        chips: [],
+      });
+      expect(unparseableArgs).toEqual({
+        primaryLabel: 'Web Search Exa',
+        secondaryLabel: 'Web Search Exa',
+        chips: [],
+      });
+    });
+
+    it('formats web_search_brave with freshness and domain_allowlist chips', () => {
+      const presentation = describeToolCall(buildToolCall({
+        tool_name: 'web_search_brave',
+        args_text: JSON.stringify({
+          query: 'PostgreSQL 18 release',
+          freshness: 'pw',
+          domain_allowlist: ['postgresql.org', 'github.com'],
+        }),
+      }));
+
+      expect(presentation).toEqual({
+        primaryLabel: 'Search "PostgreSQL 18 release"',
+        secondaryLabel: 'Web Search Brave',
+        chips: ['pw', 'postgresql.org +1'],
+      });
+    });
+  });
 });
