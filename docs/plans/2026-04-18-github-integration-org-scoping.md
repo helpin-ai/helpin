@@ -92,7 +92,7 @@ The migration **preserves every existing row in place** — same `id`, same `wor
 | `workspace_id` | uuid | NOT NULL, kept |
 | `integration_id` | uuid | NOT NULL, kept |
 | `provider` | text | NOT NULL, kept |
-| `external_id` | text | NOT NULL — GitHub's repo id as string; **this is the field, not `external_id`** |
+| `external_id` | text | NOT NULL — GitHub's repo id stored as a string. **This is the column; earlier PRD drafts called it `github_id`, which does not exist.** |
 | `full_name` | text | NOT NULL, `"owner/repo"` |
 | `default_branch` | text | NOT NULL default `'main'` |
 | `permissions` | jsonb | NOT NULL default `'{}'` |
@@ -244,7 +244,7 @@ All endpoints are workspace-scoped (`/api/workspaces/{ws}/...`) except where not
 | `GET /api/git/integrations` | workspace member | Scoped by `organization_id` (derived from workspace) — returns integrations available to this workspace's org. Includes only `active = true` rows. |
 | `GET /api/git/integrations/{id}/available-repos` | `integrations.enumerate_repos` (org admin **or** any admin/member of a workspace in that org — see below) | **New** — lists GitHub-visible repos for the installation, each annotated with `claimed_by` (`null`, or `{ workspace_id, workspace_name, repo_id }`) so UI can disable rows already wired elsewhere |
 | `POST /api/git/integrations/{id}/repositories` | `integrations.link_repo` on the target workspace | **New** — wires selected repos to the target workspace. Transactional: inserts rows with `ON CONFLICT (integration_id, external_id) WHERE deleted_at IS NULL DO NOTHING`. If any requested repo is already claimed by another workspace in the org, returns `409 Conflict` with `{ conflicts: [{ external_id, claimed_by_workspace_id }] }` and no partial inserts. |
-| `DELETE /api/git/integrations/{id}/repositories/{repo_id}` | `integrations.link_repo` on the owning workspace | **New** — soft-deletes the `git_repositories` row (`active = false, deleted_at = now()`). Does not uninstall. Repo becomes claimable again after grace (§6.8). |
+| `DELETE /api/git/integrations/{id}/repositories/{repo_id}` | `integrations.link_repo` on the owning workspace | **New** — soft-deletes the `git_repositories` row (`active = false, deleted_at = now()`). Does not uninstall. Repo becomes claimable **immediately** because the live uniqueness index only covers rows where `deleted_at IS NULL`; the 30-day grace only preserves the tombstone for reactivation/history (§6.8). |
 | `DELETE /api/git/integrations/{id}` | `integrations.uninstall` (owner of the org) | Soft-deletes the integration and all its repos org-wide (§6.8). Response body lists affected workspaces so UI can confirm. |
 
 **Authorization for `available-repos`**: the GitHub installation repo inventory is *shared* across the org, so the permission is org-scoped but permissive — any org member who holds `integrations.link_repo` on **any** workspace in that org may enumerate, since they can already claim repos there. Org owners always can. Non-org members cannot, even if they have a workspace role elsewhere.
@@ -275,7 +275,13 @@ Integration lifecycle must be decoupled from workspace lifecycle. Today `reposit
 
 **Workspace delete** (`WorkspaceRepository.Delete`, inside the existing transaction):
 
-**Rule (single, explicit): workspace delete HARD-deletes that workspace's `git_repositories` rows and NEVER touches `git_integrations`.** No soft-delete step, no grace window. Workspace deletion is itself terminal (not undoable today), and all dependents (`pm_team_repo_defaults`, `task_delivery_targets`, `task_git_links`) for that workspace are already removed earlier in the same transaction, so hard-deleting here cannot dangle.
+**Rule (single, explicit):**
+
+- Always HARD-delete the deleting workspace's `git_repositories` rows. No soft-delete step, no grace window for repo rows.
+- Do **not** touch `git_integrations` when at least one other workspace remains in the same org.
+- If this delete removes the **last remaining workspace in the org**, immediately soft-delete the org's `git_integrations` rows (`active = false, deleted_at = now()`). This prevents an `active = true` integration from pointing at a deleted workspace during Phase 1/Phase 2 fallback behavior. A future install from a newly created workspace in the same org reactivates that integration in place via §6.2 case 4.
+
+Workspace deletion is terminal (not undoable today), and all dependents (`pm_team_repo_defaults`, `task_delivery_targets`, `task_git_links`) for that workspace are already removed earlier in the same transaction, so hard-deleting the workspace's repo rows cannot dangle.
 
 Replace the two current statements:
 
@@ -284,20 +290,35 @@ DELETE FROM git_repositories WHERE workspace_id = ?
 DELETE FROM git_integrations WHERE workspace_id = ?
 ```
 
-with the single statement:
+with:
 
 ```sql
 -- workspace_id is a direct column on git_repositories (kept forever).
 -- Dependent tables above were already deleted earlier in this tx.
--- git_integrations is org-scoped and is NEVER deleted here.
+-- Step 1: always release this workspace's repo claims immediately.
 DELETE FROM git_repositories WHERE workspace_id = ?;
+
+-- Step 2: only if this was the org's last workspace, deactivate the
+-- org-scoped integrations so no active row points at a deleted workspace.
+UPDATE git_integrations
+   SET active = false,
+       deleted_at = COALESCE(deleted_at, now()),
+       updated_at = now()
+ WHERE organization_id = ?
+   AND NOT EXISTS (
+         SELECT 1
+           FROM workspaces
+          WHERE organization_id = ?
+            AND id <> ?
+       );
 ```
 
-This is deliberately different from uninstall (below), which *does* soft-delete with a 30-day grace window. The asymmetry is intentional:
+This is deliberately different from uninstall (below), which soft-deletes the integration and repos org-wide with a 30-day grace window. The asymmetry is intentional:
 
 | Action | `git_repositories` | `git_integrations` | Why |
 |---|---|---|---|
-| Workspace delete | Hard-delete (this workspace only) | Untouched | Terminal operation; no recovery model; org's other workspaces must keep working |
+| Workspace delete, other workspaces remain | Hard-delete (this workspace only) | Untouched | Terminal operation; sibling workspaces must keep working |
+| Workspace delete, last workspace in org | Hard-delete (this workspace only) | Soft-delete org integration(s) | Prevent active integrations from pointing at a deleted workspace during staged rollout/fallback |
 | Uninstall (API or `installation.deleted`) | Soft-delete (org-wide), 30-day grace | Soft-delete, 30-day grace | Reinstall is a common recovery path; grace enables transparent reattach |
 
 **Uninstall (operator-driven via `DELETE /api/git/integrations/{id}` or webhook `installation.deleted`)**:
@@ -420,7 +441,7 @@ Three-phase to de-risk the data cutover:
 - Deploy migrations 1–5.
 - Deploy service code that can read from both `workspace_id` (legacy) and `organization_id` (new).
 - Install flow still workspace-scoped; new repo picker exists but is dark-launched.
-- **Rewrite `WorkspaceRepository.Delete`** in this phase (§6.8) — swap the two git DELETE statements for the soft-delete-then-scope-limited-hard-delete pair. This is safe under both old and new routing because the old routing still keys on `workspace_id` inside `git_integrations`, which is untouched. Add a unit test that deletes one workspace in a two-workspace org and asserts the integration row is still live.
+- **Rewrite `WorkspaceRepository.Delete`** in this phase (§6.8) — replace the old per-workspace git cleanup with: (1) `DELETE FROM git_repositories WHERE workspace_id = ?`; (2) if the org has no remaining workspaces after this delete, soft-delete that org's `git_integrations` rows (`active = false, deleted_at = now()`). This keeps sibling-workspace scenarios working while preventing Phase-1/Phase-2 fallback from resolving to a deleted workspace in the single-workspace-org case. Add unit tests for both branches: multi-workspace org leaves the integration live; last-workspace delete deactivates the integration in place.
 
 **Phase 2 — cutover:**
 - Flip the install uniqueness check to org level.
@@ -439,7 +460,8 @@ Three-phase to de-risk the data cutover:
 
 | Risk | Mitigation |
 |---|---|
-| Workspace delete wipes the shared org integration | §6.8 rewrite of `WorkspaceRepository.Delete`; Phase-1 test asserts integration survives workspace delete in a multi-workspace org |
+| Workspace delete wipes the shared org integration for sibling workspaces | §6.8 rewrite of `WorkspaceRepository.Delete`; Phase-1 test asserts integration survives workspace delete in a multi-workspace org |
+| Last-workspace delete leaves an active integration pointing at a deleted workspace during staged fallback | §6.8 special-case: if the org has zero remaining workspaces, soft-delete the org integration(s) in place |
 | Migration 3 accidentally re-keys `git_repositories.id`, breaking team defaults / delivery targets / task links | Migration is purely additive (`ADD COLUMN IF NOT EXISTS` only), no backfill from `pm_tasks`. Pre-migration assertion counts live rows; post-migration re-asserts same count and same id set |
 | Reinstall within grace window fails to reattach | `installation.created` callback + `installation_repositories.added` webhook both call reactivation-by-`(integration_id, external_id)`; integration test covers uninstall → reinstall cycle |
 | Reinstall after grace window leaves dangling delivery targets | `task_delivery_targets.repository_id ON DELETE SET NULL` (migration 5) — target surfaces as "unconfigured" and prompts re-pick. `pm_team_repo_defaults` is RESTRICT: hard delete blocks until team admin picks a new default |
@@ -462,7 +484,7 @@ Three-phase to de-risk the data cutover:
 - Webhook routing tests: single-workspace, multi-workspace same-install, orphaned repo (counter increments + drop), `installation.suspend` (rejects subsequent repo events), `installation.deleted` (soft-deletes repos), `installation_repositories.added` reactivates tombstoned row, `installation_repositories.removed` soft-deletes.
 - **Workspace delete tests** (new — covers finding #2; uses the single rule from §6.8):
   - Two-workspace org, both wire repos from the same integration; delete workspace A; assert integration row still `active = true`, workspace-B repos still live (unchanged), workspace-A `git_repositories` rows are **hard-deleted** (`SELECT COUNT(*) ... WHERE workspace_id = A = 0`), and workspace-A's `task_delivery_targets` / `task_git_links` / `pm_team_repo_defaults` are all gone via the existing per-workspace cascade.
-  - Single-workspace org; delete workspace; assert `git_integrations` row still exists and stays `active = true` (the user may reinstall into a new workspace under the same org).
+  - Single-workspace org; delete workspace; assert `git_repositories` rows are hard-deleted and the org's `git_integrations` row is retained **but soft-deactivated** (`active = false`, `deleted_at IS NOT NULL`). Creating a new workspace in the same org and reinstalling/reactivating should reuse the same integration row (§6.2 case 4).
   - After workspace-A delete, assert workspace B can immediately claim one of the repos A previously held — partial unique index must not block because the losing row is hard-deleted, not tombstoned.
 - **Migration tests** (new — covers finding #1):
   - Snapshot `git_repositories.id` set and `(integration_id, external_id)` set before migration 3, assert identical sets after.
@@ -490,7 +512,7 @@ Three-phase to de-risk the data cutover:
 1. ~~Should uninstall from GitHub (webhook `installation.deleted`) soft-delete or hard-delete?~~ **Resolved in §6.8**: soft-delete integration + repos, 30-day grace, cron hard-delete. Reinstall within grace reactivates in place (§6.2 case 4 + §6.4 `installation_repositories.added`).
 2. If Org A invites a user who was already an admin of Org B's integration, should we surface that? Out of scope for this PRD; track separately if needed.
 3. Do we expose "which workspace is consuming this repo" in a read-only org admin view? The `available-repos` endpoint already returns `claimed_by.workspace_name` for admins who can wire repos; a dedicated read-only org-admin view is a nice-to-have and is not in scope for this PRD.
-4. ~~Should deleting a workspace with wired repos prompt the user to re-claim those repos in another workspace before hard-deleting?~~ **Resolved in §6.8**: workspace delete HARD-deletes only this workspace's `git_repositories` rows (no grace window, no soft-delete) and NEVER touches `git_integrations`. The repo becomes immediately claimable from any other workspace in the same org. An optional pre-delete UX prompt ("you're about to release N repos — continue?") is nice-to-have and can be added later without a data-model change.
+4. ~~Should deleting a workspace with wired repos prompt the user to re-claim those repos in another workspace before hard-deleting?~~ **Resolved in §6.8**: workspace delete HARD-deletes only this workspace's `git_repositories` rows (no grace window, no soft-delete for repo rows). If sibling workspaces remain, `git_integrations` is untouched; if this was the last workspace in the org, `git_integrations` is soft-deactivated to avoid stale fallback resolution. Released repos become immediately claimable from any other workspace in the same org. An optional pre-delete UX prompt ("you're about to release N repos — continue?") is nice-to-have and can be added later without a data-model change.
 
 ---
 
@@ -498,8 +520,8 @@ Three-phase to de-risk the data cutover:
 
 **Backend:**
 - `server/internal/model/git.go` — add `OrganizationID`, `DeletedAt` to `GitIntegration`; add `Active`, `DeletedAt` to existing `GitRepository` struct. Existing `ExternalID`, `FullName`, `IntegrationID`, `Selected`, `Archived`, `Permissions` fields are kept as-is — **do not rename** (these are live in production and referenced across the repository, service, and handler layers). The PRD's "repo id" is `external_id` throughout.
-- `server/internal/repository/git.go` — org-scoped `GetByInstallationID` (includes inactive rows), `CreateRepository` idempotent upsert, `SoftDeleteRepositoriesByWorkspace`, `SoftDeleteRepositoriesByIntegration`, `ReactivateRepositoryByGitHubID`, `ListRepositoriesByWorkspace`, `GetRepositoryByGitHubID`, `GetClaimedByByGitHubID` (for `available-repos` annotation)
-- `server/internal/repository/workspace.go` — **rewrite `Delete`**: replace the two `git_integrations` / `git_repositories` DELETEs with the §6.8 soft-delete + scoped hard-delete pair. Integration row is never touched.
+- `server/internal/repository/git.go` — org-scoped `GetByInstallationID` (includes inactive rows for the reactivation path in §6.2), `UpsertRepository` (idempotent on `(integration_id, external_id) WHERE deleted_at IS NULL`), `HardDeleteRepositoriesByWorkspace` (used by workspace teardown per §6.8), `SoftDeleteRepositoriesByIntegration` (used by uninstall / `installation.deleted`), `SoftDeleteIntegrationsByOrganizationIfNoWorkspacesRemain` (used by last-workspace teardown per §6.8), `ReactivateRepositoryByExternalID` (used by callback and `installation_repositories.added`), `ListRepositoriesByWorkspace`, `GetRepositoryByExternalID`, `GetClaimedByByExternalID` (for `available-repos` `claimed_by` annotation)
+- `server/internal/repository/workspace.go` — **rewrite `Delete`** per §6.8: replace the old `DELETE FROM git_repositories WHERE workspace_id = ?` / `DELETE FROM git_integrations WHERE workspace_id = ?` pair with (1) `DELETE FROM git_repositories WHERE workspace_id = ?`; (2) conditional soft-deactivation of `git_integrations` when this delete removes the org's last workspace. Multi-workspace teardowns leave the integration untouched; last-workspace teardowns set `active = false`, `deleted_at = now()`.
 - `server/internal/service/git.go` — rewrite `upsertGitHubIntegration` (§6.2, including inactive reactivation path); add `ResolveForAgentRun`, `WireRepositoryToWorkspace` (transactional, 409-aware), `UnwireRepository`, `UninstallIntegration`, `ListAvailableRepos` (GitHub API + claim annotation), `HandleInstallationLifecycleEvent`
 - `server/internal/handler/git.go` — `install-url` action switching, new repo-wiring endpoints, new `available-repos` endpoint, lifecycle webhook branches (currently ignored at `handler/git.go:306`)
 - `server/internal/router/router.go` — register routes with `integrations.connect`, `integrations.enumerate_repos`, `integrations.link_repo`, `integrations.uninstall`
