@@ -6205,25 +6205,11 @@ func (a *AgentRunActivities) buildTaskPlannerContextSections(ctx context.Context
 	}
 	sections = append(sections, specSections...)
 
-	taskLinkedDocSections, err := a.buildTaskLinkedDocsSections(ctx, state.run.WorkspaceID, state.task.ID, input.PlanDocumentID, "Other docs linked directly to this task:")
+	supportingSections, err := a.buildTaskPlannerSupportingContextSections(ctx, state, input)
 	if err != nil {
 		return nil, err
 	}
-	sections = append(sections, taskLinkedDocSections...)
-
-	if state.epic != nil {
-		parentEpicLinkedDocSections, err := a.buildTaskPlannerParentEpicLinkedDocSections(ctx, state.run.WorkspaceID, state.epic.ID, input.SpecDocumentID)
-		if err != nil {
-			return nil, err
-		}
-		sections = append(sections, parentEpicLinkedDocSections...)
-	}
-
-	taskCommentSections, err := a.buildTaskPlannerCommentSections(ctx, state.task.ID)
-	if err != nil {
-		return nil, err
-	}
-	sections = append(sections, taskCommentSections...)
+	sections = append(sections, supportingSections...)
 
 	sections, err = a.appendPlannerRepositoryContextSection(ctx, sections, state, "Current implementation context from the live repository:", []string{
 		state.task.Name,
@@ -6434,6 +6420,36 @@ func (a *AgentRunActivities) buildTaskPlannerCommentSections(ctx context.Context
 		return nil, err
 	}
 	return appendTitledPlanningContextSection(nil, "Task comments:", commentsContext), nil
+}
+
+func (a *AgentRunActivities) buildTaskPlannerSupportingContextSections(ctx context.Context, state *resolvedRunState, input planningRunInput) ([]string, error) {
+	if state == nil || state.run == nil || state.task == nil {
+		return nil, nil
+	}
+
+	var sections []string
+
+	taskLinkedDocSections, err := a.buildTaskLinkedDocsSections(ctx, state.run.WorkspaceID, state.task.ID, input.PlanDocumentID, "Other docs linked directly to this task:")
+	if err != nil {
+		return nil, err
+	}
+	sections = append(sections, taskLinkedDocSections...)
+
+	if state.epic != nil {
+		parentEpicLinkedDocSections, err := a.buildTaskPlannerParentEpicLinkedDocSections(ctx, state.run.WorkspaceID, state.epic.ID, input.SpecDocumentID)
+		if err != nil {
+			return nil, err
+		}
+		sections = append(sections, parentEpicLinkedDocSections...)
+	}
+
+	taskCommentSections, err := a.buildTaskPlannerCommentSections(ctx, state.task.ID)
+	if err != nil {
+		return nil, err
+	}
+	sections = append(sections, taskCommentSections...)
+
+	return sections, nil
 }
 
 func (a *AgentRunActivities) buildEpicPlannerSpecContextSections(ctx context.Context, input planningRunInput) ([]string, bool, error) {

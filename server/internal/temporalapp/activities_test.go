@@ -992,6 +992,59 @@ func TestBuildTaskPlannerCommentSectionsSkipsWhenNoCommentsAvailable(t *testing.
 	}
 }
 
+func TestBuildTaskPlannerSupportingContextSectionsKeepsTaskThenEpicDocOrder(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	for _, args := range [][]any{
+		{"doc-task", "ws-1", "space-1", "Task Notes", model.DocStatusDraft, model.SpaceVisibilityWorkspaceWide, "user-1"},
+		{"doc-epic", "ws-1", "space-1", "Epic Notes", model.DocStatusDraft, model.SpaceVisibilityWorkspaceWide, "user-1"},
+	} {
+		if err := db.Exec(`INSERT INTO docs_documents (id, workspace_id, space_id, title, status, visibility, created_by, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, args...).Error; err != nil {
+			t.Fatalf("insert docs document: %v", err)
+		}
+	}
+	for _, args := range [][]any{
+		{"content-task", "doc-task", "Task-scoped notes", 2},
+		{"content-epic", "doc-epic", "Epic-scoped notes", 2},
+	} {
+		if err := db.Exec(`INSERT INTO docs_contents (id, document_id, content_text, word_count) VALUES (?, ?, ?, ?)`, args...).Error; err != nil {
+			t.Fatalf("insert docs content: %v", err)
+		}
+	}
+	for _, args := range [][]any{
+		{"link-task", "ws-1", "doc-task", model.LinkedObjectTask, "task-1", "reference", "user-1"},
+		{"link-epic", "ws-1", "doc-epic", model.LinkedObjectEpic, "epic-1", "reference", "user-1"},
+	} {
+		if err := db.Exec(`INSERT INTO docs_links (id, workspace_id, document_id, linked_object_type, linked_object_id, link_context, created_by, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`, args...).Error; err != nil {
+			t.Fatalf("insert docs link: %v", err)
+		}
+	}
+
+	activity := &AgentRunActivities{
+		docsDocRepo:     repository.NewDocsDocumentRepository(db),
+		docsContentRepo: repository.NewDocsContentRepository(db),
+		docsLinkRepo:    repository.NewDocsLinkRepository(db),
+	}
+	sections, err := activity.buildTaskPlannerSupportingContextSections(context.Background(), &resolvedRunState{
+		run:  &model.AgentRun{WorkspaceID: "ws-1"},
+		task: &model.PMTask{ID: "task-1"},
+		epic: &model.PMEpic{ID: "epic-1"},
+	}, planningRunInput{})
+	if err != nil {
+		t.Fatalf("buildTaskPlannerSupportingContextSections returned error: %v", err)
+	}
+	if len(sections) != 2 {
+		t.Fatalf("expected task and epic linked-doc sections, got %#v", sections)
+	}
+	if !strings.Contains(sections[0], "Other docs linked directly to this task:") || !strings.Contains(sections[0], "Task Notes [doc-task]") {
+		t.Fatalf("unexpected task linked-doc section %#v", sections[0])
+	}
+	if !strings.Contains(sections[1], "Other docs linked to the parent epic:") || !strings.Contains(sections[1], "Epic Notes [doc-epic]") {
+		t.Fatalf("unexpected parent-epic linked-doc section %#v", sections[1])
+	}
+}
+
 func TestAppendEpicTeamSectionsHandlesAssignedAndMissingTeam(t *testing.T) {
 	teamID := "team-1"
 	withTeam := appendEpicTeamSections(nil, &model.PMEpic{TeamID: &teamID})
