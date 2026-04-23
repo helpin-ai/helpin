@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAgents, useAutomationActivity, useAutomationOverview, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useTitle } from '@/hooks/useTitle';
@@ -936,6 +937,20 @@ export function AutomationActivityPage({
                 />
               </div>
             </div>
+
+            <Tabs
+              value={search.status ?? 'all'}
+              onValueChange={(value) =>
+                onSearchChange({ status: value === 'all' ? undefined : value, page: 1 })
+              }
+            >
+              <TabsList>
+                <TabsTrigger value="all">All</TabsTrigger>
+                <TabsTrigger value="running">Running</TabsTrigger>
+                <TabsTrigger value="completed">Completed</TabsTrigger>
+                <TabsTrigger value="failed">Failed</TabsTrigger>
+              </TabsList>
+            </Tabs>
 
             {executionsQuery.isLoading ? (
               <div className="space-y-3">
