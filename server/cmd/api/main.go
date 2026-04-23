@@ -647,6 +647,7 @@ func main() {
 		cfg.AppBaseURL,
 		podID,
 	)
+	emailFallbackService.SetCRMContactRepository(crmContactRepo)
 	supportAttachmentService := service.NewSupportAttachmentService(supportAttachmentRepo, s3Client)
 	supportInboxService.SetAttachmentService(supportAttachmentService)
 	supportInboxService.SetLinkPreviewService(supportLinkPreviewService)
@@ -732,6 +733,7 @@ func main() {
 		taskDeliveryTargetRepo,
 		settingsRepo,
 		workspaceRepo,
+		orgRepo,
 		pmTaskRepo,
 		pmActivityService,
 		wsPublisher,
@@ -983,6 +985,7 @@ func main() {
 	)
 	commandService.SetPMAutomationService(pmAutomationService)
 	commandService.SetGitService(gitService)
+	commandService.SetDocsCreateDependencies(docsDocumentService, docsContentRepo)
 	ruleEngine.SetCommandService(commandService)
 
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)

@@ -151,6 +151,7 @@ func main() {
 	automationRuleRepo := repository.NewAutomationRuleRepository(db)
 	handoffRepo := repository.NewAgentHandoffRepository(db)
 	docsSpaceRepo := repository.NewDocsSpaceRepository(db)
+	docsCollectionRepo := repository.NewDocsCollectionRepository(db)
 	docsDocumentRepo := repository.NewDocsDocumentRepository(db)
 	docsContentRepo := repository.NewDocsContentRepository(db)
 	docsVersionRepo := repository.NewDocsVersionRepository(db)
@@ -326,6 +327,10 @@ func main() {
 	}()
 	_ = aiConsumerCancel // used at shutdown
 
+	gitGraceCleanupCtx, gitGraceCleanupCancel := context.WithCancel(context.Background())
+	go workerpkg.NewGitGraceCleanup(gitIntRepo, gitRepo).Start(gitGraceCleanupCtx)
+	_ = gitGraceCleanupCancel // used at shutdown
+
 	crmSummaryService := service.NewCRMSummaryService(crmSummaryRepo, crmContactRepo, crmCompanyRepo, crmDealRepo, crmAssociationRepo, crmSignalRepo, crmEmailRepo, llmProvider, temporalClient)
 	emailSyncActivities := temporalapp.NewEmailSyncActivities(gmailSyncClient, crmEmailRepo, crmContactRepo, crmCalendarRepo, crmEmailSyncSettingsRepo, temporalClient, crmSummaryService)
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
@@ -379,6 +384,7 @@ func main() {
 		deliveryRepo,
 		settingsRepo,
 		workspaceRepo,
+		repository.NewOrganizationRepository(db),
 		storyRepo,
 		pmActivityService,
 		wsPublisher,
@@ -424,6 +430,7 @@ func main() {
 		cfg.CodexChatGPTAccountID,
 	).SetTriggerExecutionRepository(triggerExecutionRepo).SetNotificationService(notificationService)
 	agentService.SetWorkflowService(pmWorkflowService)
+	docsDocumentService := service.NewDocsDocumentService(docsDocumentRepo, docsSpaceRepo, wsPublisher)
 	docsContentService := service.NewDocsContentService(docsContentRepo, docsDocumentRepo, nil)
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, storyRepo, docsDocumentRepo, nil)
 	contentCrawler := crawler.NewSmartCrawler(
@@ -466,6 +473,7 @@ func main() {
 		storyRepo,
 		taskLinkRepo,
 	)
+	commandService.SetDocsCreateDependencies(docsDocumentService, docsContentRepo)
 	activities = temporalapp.NewAgentRunActivities(
 		runRepo,
 		runMessageRepo,
@@ -489,6 +497,7 @@ func main() {
 		settingsRepo,
 		workspaceRepo,
 		docsSpaceRepo,
+		docsCollectionRepo,
 		docsDocumentRepo,
 		docsContentRepo,
 		docsVersionRepo,
@@ -558,6 +567,7 @@ func main() {
 
 	log.Println("shutting down temporal workers")
 	aiConsumerCancel() // stop AI support consumer
+	gitGraceCleanupCancel()
 	for _, sharedWorker := range workers {
 		sharedWorker.Stop()
 	}

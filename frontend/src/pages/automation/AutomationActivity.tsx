@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -6,6 +7,7 @@ import {
   ArrowUpRight01Icon,
   BotIcon,
   Calendar03Icon,
+  Cancel01Icon,
   Loading01Icon,
   Search01Icon,
   ZapIcon,
@@ -20,6 +22,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAgents, useAutomationActivity, useAutomationOverview, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useTitle } from '@/hooks/useTitle';
@@ -209,6 +212,8 @@ function buildExecutionTargetLabel(item: AutomationTriggerExecutionListItem) {
 }
 
 function runTargetLabel(run: AgentRun) {
+  const resolved = run.target_info?.title?.trim();
+  if (resolved) return resolved;
   const input = asRecord(run.input);
   const target = asRecord(input?.target);
   const title =
@@ -217,6 +222,10 @@ function runTargetLabel(run: AgentRun) {
     asNonEmptyString(input?.title);
   if (title) return title;
   return `${run.target_type.replace(/_/g, ' ')} · ${truncateMiddle(run.target_id, 8, 4)}`;
+}
+
+function runTargetKey(run: AgentRun) {
+  return run.target_info?.task_key?.trim() || '';
 }
 
 function runBlockingLabel(run: AgentRun) {
@@ -347,12 +356,14 @@ function SummaryCard({
   sublabel,
   tone = 'neutral',
   spark,
+  onClick,
 }: {
   label: string;
   value: string;
   sublabel: string;
   tone?: 'neutral' | 'good' | 'warn' | 'bad';
   spark?: number[];
+  onClick?: () => void;
 }) {
   const valueClass = tone === 'good'
     ? 'text-emerald-600 dark:text-emerald-400'
@@ -362,9 +373,33 @@ function SummaryCard({
         ? 'text-rose-600 dark:text-rose-400'
         : 'text-foreground';
 
+  const interactive = Boolean(onClick);
   return (
-    <Card className="border-border/70 bg-card/80">
-      <CardContent className="flex items-end justify-between gap-4 p-4">
+    <Card
+      className={cn(
+        'border-border/70 bg-card/80 transition',
+        interactive && 'cursor-pointer hover:border-border hover:bg-card focus-within:ring-2 focus-within:ring-ring/60',
+      )}
+    >
+      <CardContent
+        className={cn(
+          'flex items-end justify-between gap-4 p-4',
+          interactive && 'outline-none',
+        )}
+        role={interactive ? 'button' : undefined}
+        tabIndex={interactive ? 0 : undefined}
+        onClick={onClick}
+        onKeyDown={
+          interactive
+            ? (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  onClick?.();
+                }
+              }
+            : undefined
+        }
+      >
         <div className="space-y-1">
           <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
           <p className={cn('text-2xl font-semibold tracking-tight', valueClass)}>{value}</p>
@@ -407,12 +442,14 @@ function SmartFilterInput({
   onApply,
   onClear,
   disabled,
+  autoFocus,
 }: {
   value: string;
   onChange: (value: string) => void;
   onApply: () => void;
   onClear: () => void;
   disabled?: boolean;
+  autoFocus?: boolean;
 }) {
   return (
     <div className="flex flex-col gap-2 md:flex-row md:items-center">
@@ -430,6 +467,7 @@ function SmartFilterInput({
           placeholder="agent:Lens status:failed last:24h"
           className="h-8 pl-8 font-mono text-xs"
           disabled={disabled}
+          autoFocus={autoFocus}
         />
         <Tooltip>
           <TooltipTrigger asChild>
@@ -476,6 +514,8 @@ function NeedActionCard({
   const waitTime = formatDuration(run.created_at, new Date().toISOString());
   const needsApproval = displayStatus === 'awaiting_approval';
   const subtitle = runBlockingCopy(run, agent);
+  const targetTitle = runTargetLabel(run);
+  const targetKey = runTargetKey(run);
 
   return (
     <div className="grid gap-4 rounded-2xl border border-amber-500/30 bg-card/90 p-4 shadow-sm shadow-amber-500/5 md:grid-cols-[1fr_auto] md:items-center">
@@ -486,12 +526,14 @@ function NeedActionCard({
           </Badge>
           <span className="font-mono text-[11px] text-muted-foreground">blocked for {waitTime}</span>
         </div>
-        <p className="text-sm font-medium">{subtitle}</p>
+        <p className="truncate text-sm font-medium">
+          {targetKey ? <span className="mr-2 font-mono text-muted-foreground">{targetKey}</span> : null}
+          {targetTitle}
+        </p>
+        <p className="text-xs text-muted-foreground">{subtitle}</p>
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           {agent ? <AgentAvatar agent={agent} className="h-6 w-6 rounded-none border-0 bg-transparent shadow-none" genericBare /> : null}
           <span>{agent?.name ?? 'Agent'}</span>
-          <span className="text-muted-foreground/60">·</span>
-          <span className="text-foreground">{runTargetLabel(run)}</span>
           <span className="text-muted-foreground/60">·</span>
           <span className="font-mono">{formatShortDate(run.created_at)}</span>
         </div>
@@ -619,6 +661,7 @@ export function AutomationActivityPage({
   useTitle('Automation Activity');
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const workspaceId = workspace?.id ?? '';
+  const navigate = useNavigate();
   const { data: access } = useWorkspaceAccess(workspaceId);
   const permissions = usePermissions(access);
 
@@ -626,6 +669,18 @@ export function AutomationActivityPage({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [approvingRunId, setApprovingRunId] = useState<string | null>(null);
   const [smartFilter, setSmartFilter] = useState('');
+  const [searchExpanded, setSearchExpanded] = useState(false);
+  const hasActiveFilter = Boolean(
+    search.agent_id
+      || search.binding_id
+      || search.trigger_type
+      || search.status
+      || search.source
+      || search.reference_id
+      || search.fired_after
+      || search.fired_before,
+  );
+  const showSearchInput = searchExpanded || hasActiveFilter;
 
   const openRun = useCallback((runId: string) => {
     setSelectedRunId(runId);
@@ -851,6 +906,16 @@ export function AutomationActivityPage({
             sublabel={recent24hRuns.filter((run) => run.status === 'failed').length > 0 ? 'Investigate repeated failures and flaky flows' : 'No recent failures'}
             tone={recent24hRuns.some((run) => run.status === 'failed') ? 'bad' : 'neutral'}
             spark={recentFailureBars}
+            onClick={
+              recent24hRuns.some((run) => run.status === 'failed')
+                ? () =>
+                    onSearchChange({
+                      status: 'failed',
+                      fired_after: getTimeFilterDate('24h'),
+                      page: 1,
+                    })
+                : undefined
+            }
           />
           <SummaryCard
             label="Fleet Health"
@@ -882,6 +947,11 @@ export function AutomationActivityPage({
                   : healthSummary.healthyCount > 0
                     ? 'good'
                     : 'neutral'
+            }
+            onClick={
+              workspace?.slug
+                ? () => void navigate({ to: buildAutomationFlowsPath(workspace.slug) })
+                : undefined
             }
           />
         </div>
@@ -916,16 +986,64 @@ export function AutomationActivityPage({
                   Grouped by day so clusters of failures and pauses are visible without reading raw trigger prose.
                 </p>
               </div>
-              <div className="lg:max-w-xl lg:flex-1">
-                <SmartFilterInput
-                  value={smartFilter}
-                  onChange={setSmartFilter}
-                  onApply={handleApplySmartFilter}
-                  onClear={handleClearSmartFilter}
-                  disabled={executionsQuery.isLoading}
-                />
-              </div>
+              {showSearchInput ? (
+                <div className="flex items-start gap-2 lg:max-w-xl lg:flex-1">
+                  <div className="min-w-0 flex-1">
+                    <SmartFilterInput
+                      value={smartFilter}
+                      onChange={setSmartFilter}
+                      onApply={handleApplySmartFilter}
+                      onClear={handleClearSmartFilter}
+                      disabled={executionsQuery.isLoading}
+                      autoFocus
+                    />
+                  </div>
+                  {!hasActiveFilter && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0 text-muted-foreground"
+                      aria-label="Close search"
+                      onClick={() => {
+                        setSmartFilter('');
+                        setSearchExpanded(false);
+                      }}
+                    >
+                      <Cancel01Icon className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <div className="flex lg:justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5 px-2.5 text-xs"
+                    aria-label="Open search"
+                    onClick={() => setSearchExpanded(true)}
+                  >
+                    <Search01Icon className="h-3.5 w-3.5" />
+                    Search
+                  </Button>
+                </div>
+              )}
             </div>
+
+            <Tabs
+              value={search.status ?? 'all'}
+              onValueChange={(value) =>
+                onSearchChange({ status: value === 'all' ? undefined : value, page: 1 })
+              }
+            >
+              <TabsList>
+                <TabsTrigger value="all">All</TabsTrigger>
+                <TabsTrigger value="running">Running</TabsTrigger>
+                <TabsTrigger value="completed">Completed</TabsTrigger>
+                <TabsTrigger value="failed">Failed</TabsTrigger>
+              </TabsList>
+            </Tabs>
 
             {executionsQuery.isLoading ? (
               <div className="space-y-3">

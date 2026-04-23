@@ -748,6 +748,16 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		},
 	}, toolListDocuments)
 
+	r.register("list_collections", "List doc collections in the workspace, optionally filtered by space. Returns collection ID, name, slug, space ID, and parent collection ID.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"space_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional space ID to filter collections",
+			},
+		},
+	}, toolListCollections)
+
 	r.register("read_document", "Read the metadata of a specific document by ID.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
@@ -783,6 +793,7 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"update_task_state":       toolUpdateTaskState,
 		"update_deal_stage":       toolUpdateDealStage,
 		"add_deal_note":           toolAddDealNote,
+		"create_document":         toolCreateDocument,
 		"write_document_content":  toolWriteDocumentContent,
 		"link_document_to_object": toolLinkDocumentToObject,
 		"ensure_epic_spec_doc":    toolEnsureEpicSpecDoc,

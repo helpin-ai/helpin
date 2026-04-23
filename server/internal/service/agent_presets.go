@@ -264,9 +264,9 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	reviewerProfile := worker.GetRuntimeProfile(model.AgentPresetReviewAgent)
 	supportProfile := worker.GetRuntimeProfile(model.AgentPresetSupportAgent)
 	codeBuilderProvider := model.AgentModelProviderOpenAI
-	codeBuilderModel := "gpt-5.4"
+	codeBuilderModel := "gpt-5.5"
 	reviewAgentProvider := model.AgentModelProviderOpenAI
-	reviewAgentModel := "gpt-5.4"
+	reviewAgentModel := "gpt-5.5"
 	highReasoning := "high"
 	fastServiceTier := "fast"
 	codexOpenAIDefaultExecutionConfig := model.MarshalAgentExecutionConfig(model.AgentExecutionConfig{
@@ -350,7 +350,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			RuntimeKind:           productPlannerProfile.RuntimeKind,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
-			AllowedTools:          []string{"list_deals", "update_deal_stage", "add_deal_note", "list_contacts", "list_buyer_signals", "list_documents", "read_document", "search_documents"},
+			AllowedTools:          []string{"list_deals", "update_deal_stage", "add_deal_note", "list_contacts", "list_buyer_signals", "list_documents", "list_collections", "read_document", "search_documents"},
 			AllowedCommands:       []string{},
 			AllowedTargetTypes:    []string{"crm_deal", "support_conversation", "document", "workspace"},
 			ApprovalMode:          "never",

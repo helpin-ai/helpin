@@ -99,6 +99,7 @@ type AgentRunActivities struct {
 	settingsRepo        *repository.SettingsRepository
 	workspaceRepo       *repository.WorkspaceRepository
 	docsSpaceRepo       *repository.DocsSpaceRepository
+	docsCollectionRepo  *repository.DocsCollectionRepository
 	docsDocRepo         *repository.DocsDocumentRepository
 	docsContentRepo     *repository.DocsContentRepository
 	docsVersionRepo     *repository.DocsVersionRepository
@@ -140,6 +141,7 @@ func NewAgentRunActivities(
 	settingsRepo *repository.SettingsRepository,
 	workspaceRepo *repository.WorkspaceRepository,
 	docsSpaceRepo *repository.DocsSpaceRepository,
+	docsCollectionRepo *repository.DocsCollectionRepository,
 	docsDocRepo *repository.DocsDocumentRepository,
 	docsContentRepo *repository.DocsContentRepository,
 	docsVersionRepo *repository.DocsVersionRepository,
@@ -179,6 +181,7 @@ func NewAgentRunActivities(
 		settingsRepo:        settingsRepo,
 		workspaceRepo:       workspaceRepo,
 		docsSpaceRepo:       docsSpaceRepo,
+		docsCollectionRepo:  docsCollectionRepo,
 		docsDocRepo:         docsDocRepo,
 		docsContentRepo:     docsContentRepo,
 		docsVersionRepo:     docsVersionRepo,
@@ -1380,16 +1383,27 @@ func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*r
 		state.teamDefault = teamDefault
 
 		if target != nil && target.RepositoryID != nil && *target.RepositoryID != "" {
-			repo, err := a.gitRepo.GetByID(ctx, run.WorkspaceID, *target.RepositoryID)
+			repo, err := a.gitRepo.GetByIDAny(ctx, *target.RepositoryID)
 			if err != nil {
 				return nil, err
+			}
+			if repo != nil {
+				if repo.WorkspaceID != run.WorkspaceID {
+					return nil, fmt.Errorf("delivery target repository does not belong to this workspace")
+				}
+				if repo.DeletedAt != nil || !repo.Active {
+					return nil, fmt.Errorf("delivery target repository is inactive")
+				}
 			}
 			state.repository = repo
 		}
 		if target != nil && target.IntegrationID != nil && *target.IntegrationID != "" {
-			integration, err := a.gitIntRepo.GetByID(ctx, run.WorkspaceID, *target.IntegrationID)
+			integration, err := a.gitIntRepo.GetByIDAny(ctx, *target.IntegrationID)
 			if err != nil {
 				return nil, err
+			}
+			if integration != nil && !integration.Active {
+				return nil, fmt.Errorf("delivery target integration is inactive")
 			}
 			state.integration = integration
 		}
@@ -1588,22 +1602,25 @@ func (a *AgentRunActivities) preparePlanningRepository(ctx context.Context, stat
 		return nil
 	}
 
-	repo, err := a.gitRepo.GetByID(ctx, state.run.WorkspaceID, *state.epic.PlanningRepositoryID)
+	repo, err := a.gitRepo.GetByIDAny(ctx, *state.epic.PlanningRepositoryID)
 	if err != nil {
 		return err
 	}
 	if repo == nil {
 		return fmt.Errorf("planning repository not found")
 	}
-	if repo.Archived || !repo.Selected {
+	if repo.WorkspaceID != state.run.WorkspaceID {
+		return fmt.Errorf("planning repository does not belong to this workspace")
+	}
+	if repo.DeletedAt != nil || !repo.Active || repo.Archived || !repo.Selected {
 		return fmt.Errorf("planning repository is not available")
 	}
 
-	integration, err := a.gitIntRepo.GetByID(ctx, state.run.WorkspaceID, repo.IntegrationID)
+	integration, err := a.gitIntRepo.GetByIDAny(ctx, repo.IntegrationID)
 	if err != nil {
 		return err
 	}
-	if integration == nil {
+	if integration == nil || !integration.Active {
 		return fmt.Errorf("planning repository integration not found")
 	}
 
@@ -2137,6 +2154,12 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 		GetDocument: func(ctx context.Context, id string) (*model.DocsDocument, error) {
 			return a.docsDocRepo.GetByID(ctx, id)
 		},
+		ListCollections: func(ctx context.Context, workspaceID string, spaceID *string) ([]model.DocsCollection, error) {
+			if spaceID != nil && strings.TrimSpace(*spaceID) != "" {
+				return a.docsCollectionRepo.ListByWorkspaceAndSpace(ctx, workspaceID, strings.TrimSpace(*spaceID))
+			}
+			return a.docsCollectionRepo.ListByWorkspace(ctx, workspaceID)
+		},
 		ListDocuments: func(ctx context.Context, workspaceID string, spaceID *string) ([]model.DocsDocument, error) {
 			published := "published"
 			return a.docsDocRepo.List(ctx, workspaceID, spaceID, nil, &published, nil, "", false)
@@ -2154,6 +2177,71 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 				}
 			}
 			return hits, nil
+		},
+		CreateDocument: func(ctx context.Context, workspaceID, userID string, req model.CreateDocsDocumentRequest, content json.RawMessage) (*model.DocsDocument, error) {
+			if strings.TrimSpace(req.SpaceID) == "" {
+				return nil, fmt.Errorf("space_id is required")
+			}
+			if strings.TrimSpace(req.Title) == "" {
+				return nil, fmt.Errorf("title is required")
+			}
+			space, err := a.docsSpaceRepo.GetByID(ctx, req.SpaceID)
+			if err != nil {
+				return nil, err
+			}
+			if space == nil {
+				return nil, fmt.Errorf("space not found")
+			}
+			if space.WorkspaceID != workspaceID {
+				return nil, fmt.Errorf("space does not belong to this workspace")
+			}
+			collectionID := req.CollectionID
+			if collectionID != nil && strings.TrimSpace(*collectionID) == "" {
+				collectionID = nil
+			}
+			teamID := space.TeamID
+			if teamID != nil && strings.TrimSpace(*teamID) == "" {
+				teamID = nil
+			}
+			nextPos, err := a.docsDocRepo.NextPosition(ctx, req.SpaceID, collectionID)
+			if err != nil {
+				return nil, err
+			}
+			doc, err := a.docsDocRepo.Create(ctx, &model.DocsDocument{
+				WorkspaceID:  workspaceID,
+				SpaceID:      req.SpaceID,
+				CollectionID: collectionID,
+				Title:        req.Title,
+				Status:       model.DocStatusDraft,
+				Visibility:   model.SpaceVisibilityWorkspaceWide,
+				OwnerID:      req.OwnerID,
+				TeamID:       teamID,
+				TemplateKey:  req.TemplateKey,
+				Icon:         req.Icon,
+				Tags:         model.DocsStringArray(req.Tags),
+				Position:     nextPos,
+				CreatedBy:    userID,
+			})
+			if err != nil {
+				return nil, err
+			}
+			if len(strings.TrimSpace(string(content))) > 0 && strings.TrimSpace(string(content)) != "null" {
+				if _, err := a.docsContentRepo.Upsert(ctx, doc.ID, content); err != nil {
+					return nil, err
+				}
+			}
+			if a.wsPublisher != nil {
+				a.wsPublisher.Publish(websocket.Event{
+					Action:      "created",
+					Entity:      "docs_document",
+					EntityID:    doc.ID,
+					WorkspaceID: workspaceID,
+					ActorID:     userID,
+					ParentType:  "docs_space",
+					ParentID:    doc.SpaceID,
+				})
+			}
+			return doc, nil
 		},
 		EnsureEpicSpecDoc: func(ctx context.Context, workspaceID, epicID, actorID string) (*model.DocsDocument, error) {
 			if a.commandExecutor == nil {

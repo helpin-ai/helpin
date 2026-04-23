@@ -3,6 +3,7 @@
 export interface GitIntegration {
   id: string;
   workspace_id: string;
+  organization_id?: string;
   provider: string;
   display_name: string;
   credential_mode?: string;
@@ -13,6 +14,7 @@ export interface GitIntegration {
   last_synced_at?: string;
   last_sync_error?: string;
   active: boolean;
+  deleted_at?: string;
   created_at: string;
   updated_at: string;
 }
@@ -29,8 +31,57 @@ export interface GitRepository {
   private: boolean;
   archived: boolean;
   selected: boolean;
+  active: boolean;
+  deleted_at?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface GitAvailableRepoClaim {
+  workspace_id: string;
+  workspace_name: string;
+  repo_id: string;
+}
+
+export interface GitAvailableRepo {
+  external_id: string;
+  full_name: string;
+  default_branch: string;
+  permissions: Record<string, unknown>;
+  private: boolean;
+  archived: boolean;
+  claimed_by?: GitAvailableRepoClaim | null;
+}
+
+export interface GitIntegrationWorkspaceUsage {
+  workspace_id: string;
+  workspace_name: string;
+  repo_count: number;
+}
+
+export interface GitIntegrationDetail {
+  integration: GitIntegration;
+  affected_workspaces: GitIntegrationWorkspaceUsage[];
+}
+
+export interface WireGitRepositoriesRequest {
+  workspace_id?: string;
+  repo_ids: string[];
+}
+
+export interface WireGitRepositoriesConflict {
+  external_id: string;
+  claimed_by_workspace_id: string;
+  claimed_by_workspace_name?: string;
+}
+
+export interface WireGitRepositoriesConflictResponse {
+  error?: string;
+  conflicts: WireGitRepositoriesConflict[];
+}
+
+export interface WireGitRepositoriesResponse {
+  repositories: GitRepository[];
 }
 
 export interface GitBranch {
@@ -98,7 +149,8 @@ export interface CreateGitIntegrationRequest {
 
 export interface GitHubInstallURLResponse {
   install_url: string;
-  action: 'install' | 'manage';
+  action: 'install' | 'pick_repos';
+  integration_id?: string;
 }
 
 export interface UpdateGitRepositoryRequest {

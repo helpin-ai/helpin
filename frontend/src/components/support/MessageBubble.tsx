@@ -2,7 +2,7 @@ import { memo, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode 
 import { createPortal } from 'react-dom';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { TickDouble01Icon, CheckmarkCircle02Icon, ArrowDown01Icon, ArrowUp01Icon, Download04Icon, LinkSquare01Icon, File01Icon, AttachmentIcon, RotateLeft01Icon, StickyNote01Icon, Cancel01Icon, CancelCircleIcon, Mail01Icon } from '@/lib/icons';
+import { TickDouble01Icon, CheckmarkCircle02Icon, ArrowDown01Icon, ArrowUp01Icon, Download04Icon, LinkSquare01Icon, File01Icon, AttachmentIcon, RotateLeft01Icon, StickyNote01Icon, Cancel01Icon, CancelCircleIcon, Mail01Icon, AlertCircleIcon } from '@/lib/icons';
 import { EmailDetailModal } from './EmailDetailModal';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
@@ -577,8 +577,16 @@ export const MessageBubble = memo(function MessageBubble({
             </div>
           )}
 
-          {/* Read receipt indicator */}
-          {receiptStatus && (
+          {/* Delivery failure indicator — supersedes the read receipt when the outbound email bounced or was marked spam. */}
+          {(message.email_delivery_status === 'bounced' || message.email_delivery_status === 'spam_complaint') ? (
+            <div className={`flex items-center gap-1 ${isCustomer ? '' : 'justify-end'}`}>
+              <AlertCircleIcon className="h-3.5 w-3.5 text-red-500" />
+              <span className="text-[11px] text-red-600 dark:text-red-400">
+                {message.email_delivery_status === 'spam_complaint' ? 'Marked as spam' : 'Delivery failed'}
+                {message.email_delivery_error ? ` · ${message.email_delivery_error}` : ''}
+              </span>
+            </div>
+          ) : receiptStatus && (
             <div className={`flex items-center gap-1 ${isCustomer ? '' : 'justify-end'}`}>
               {receiptStatus === 'read' ? (
                 <>

@@ -261,6 +261,15 @@ func (r *WorkspaceRepository) Update(ctx context.Context, id string, name, descr
 // Delete removes a workspace and all associated data via cascade deletion.
 func (r *WorkspaceRepository) Delete(ctx context.Context, id string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var workspace model.Workspace
+		if err := tx.Where("id = ?", id).First(&workspace).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return fmt.Errorf("load workspace %s: %w", id, err)
+		}
+		orgID := strings.TrimSpace(workspaceOrgID(workspace.OrganizationID))
+
 		// Helper subqueries for indirect children.
 		storyQ := "SELECT id FROM pm_tasks WHERE workspace_id = ?"
 		epicQ := "SELECT id FROM pm_epics WHERE workspace_id = ?"
@@ -332,10 +341,9 @@ func (r *WorkspaceRepository) Delete(ctx context.Context, id string) error {
 			"DELETE FROM pm_import_jobs WHERE workspace_id = ?",
 
 			// Git module
-			"DELETE FROM story_delivery_targets WHERE workspace_id = ?",
-			"DELETE FROM story_git_links WHERE workspace_id = ?",
+			"DELETE FROM task_delivery_targets WHERE workspace_id = ?",
+			"DELETE FROM task_git_links WHERE workspace_id = ?",
 			"DELETE FROM git_repositories WHERE workspace_id = ?",
-			"DELETE FROM git_integrations WHERE workspace_id = ?",
 
 			// Agent module
 			"DELETE FROM agent_run_artifacts WHERE workspace_id = ?",
@@ -378,8 +386,33 @@ func (r *WorkspaceRepository) Delete(ctx context.Context, id string) error {
 			}
 		}
 
+		if orgID != "" {
+			if err := tx.Exec(`
+				UPDATE git_integrations
+				   SET active = false,
+				       deleted_at = COALESCE(deleted_at, CURRENT_TIMESTAMP),
+				       updated_at = CURRENT_TIMESTAMP
+				 WHERE organization_id = ?
+				   AND NOT EXISTS (
+				         SELECT 1
+				           FROM workspaces
+				          WHERE organization_id = ?
+				            AND id <> ?
+				       )
+			`, orgID, orgID, id).Error; err != nil {
+				return fmt.Errorf("deactivate org git integrations for workspace %s: %w", id, err)
+			}
+		}
+
 		return nil
 	})
+}
+
+func workspaceOrgID(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 // AddMember adds or activates a user as a workspace member.

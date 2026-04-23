@@ -1596,7 +1596,7 @@ func isParallelSafeTool(name string) bool {
 		"web_search_brave", "web_search_exa",
 		"list_task_checklist", "list_workspace_teams", "list_conversation_messages",
 		"list_deals", "list_contacts", "list_buyer_signals",
-		"list_documents", "read_document", "search_documents", "list_epic_tasks":
+		"list_documents", "list_collections", "read_document", "search_documents", "list_epic_tasks":
 		return true
 	default:
 		return false

@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/tiptap"
 )
 
 func toolListDocuments(ctx *ExecutionContext, input json.RawMessage) (string, error) {
@@ -32,6 +35,43 @@ func toolListDocuments(ctx *ExecutionContext, input json.RawMessage) (string, er
 	summaries := make([]docSummary, 0, len(docs))
 	for _, d := range docs {
 		summaries = append(summaries, docSummary{ID: d.ID, Title: d.Title, Status: d.Status, TeamID: d.TeamID})
+	}
+	return toCompactJSONString(summaries), nil
+}
+
+func toolListCollections(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	if ctx.Services == nil || ctx.Services.ListCollections == nil {
+		return "", fmt.Errorf("docs access is not available for this agent")
+	}
+	var params struct {
+		SpaceID *string `json:"space_id"`
+	}
+	_ = json.Unmarshal(input, &params)
+
+	collections, err := ctx.Services.ListCollections(ctx.Context, ctx.WorkspaceID, params.SpaceID)
+	if err != nil {
+		return "", fmt.Errorf("list collections: %w", err)
+	}
+	if len(collections) == 0 {
+		return "No collections found.", nil
+	}
+
+	type collectionSummary struct {
+		ID                 string  `json:"id"`
+		Name               string  `json:"name"`
+		Slug               string  `json:"slug"`
+		SpaceID            string  `json:"space_id"`
+		ParentCollectionID *string `json:"parent_collection_id,omitempty"`
+	}
+	summaries := make([]collectionSummary, 0, len(collections))
+	for _, c := range collections {
+		summaries = append(summaries, collectionSummary{
+			ID:                 c.ID,
+			Name:               c.Name,
+			Slug:               c.Slug,
+			SpaceID:            c.SpaceID,
+			ParentCollectionID: c.ParentCollectionID,
+		})
 	}
 	return toCompactJSONString(summaries), nil
 }
@@ -105,6 +145,64 @@ func toolSearchDocuments(ctx *ExecutionContext, input json.RawMessage) (string, 
 	return toCompactJSONString(hits), nil
 }
 
+func toolCreateDocument(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	var params struct {
+		SpaceID      string          `json:"space_id"`
+		Title        string          `json:"title"`
+		CollectionID *string         `json:"collection_id"`
+		Content      json.RawMessage `json:"content"`
+		Icon         *string         `json:"icon"`
+		Tags         []string        `json:"tags"`
+	}
+	if err := json.Unmarshal(input, &params); err != nil {
+		return "", fmt.Errorf("parse input: %w", err)
+	}
+	params.SpaceID = strings.TrimSpace(params.SpaceID)
+	params.Title = strings.TrimSpace(params.Title)
+	if params.SpaceID == "" {
+		return "", fmt.Errorf("space_id is required")
+	}
+	if params.Title == "" {
+		return "", fmt.Errorf("title is required")
+	}
+
+	content := normalizeDocumentToolContent(params.Content)
+	commandInput, _ := json.Marshal(map[string]any{
+		"space_id":      params.SpaceID,
+		"title":         params.Title,
+		"collection_id": params.CollectionID,
+		"content":       content,
+		"icon":          params.Icon,
+		"tags":          params.Tags,
+	})
+	if output, ok, err := executeInternalCommand(ctx, "workspace", ctx.WorkspaceID, "docs.create_document", commandInput); ok {
+		if err != nil {
+			return "", fmt.Errorf("create document: %w", err)
+		}
+		return string(output), nil
+	}
+
+	if ctx.Services == nil || ctx.Services.CreateDocument == nil {
+		return "", fmt.Errorf("docs creation is not available for this agent")
+	}
+	doc, err := ctx.Services.CreateDocument(ctx.Context, ctx.WorkspaceID, ctx.AgentID, model.CreateDocsDocumentRequest{
+		SpaceID:      params.SpaceID,
+		CollectionID: params.CollectionID,
+		Title:        params.Title,
+		Icon:         params.Icon,
+		Tags:         params.Tags,
+	}, content)
+	if err != nil {
+		return "", fmt.Errorf("create document: %w", err)
+	}
+	return toCompactJSONString(map[string]any{
+		"id":       doc.ID,
+		"title":    doc.Title,
+		"status":   doc.Status,
+		"space_id": doc.SpaceID,
+	}), nil
+}
+
 func toolWriteDocumentContent(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	var params struct {
 		DocumentID string          `json:"document_id"`
@@ -140,6 +238,24 @@ func toolWriteDocumentContent(ctx *ExecutionContext, input json.RawMessage) (str
 		return "", fmt.Errorf("write document content: %w", err)
 	}
 	return fmt.Sprintf("Document %s updated.", params.DocumentID), nil
+}
+
+func normalizeDocumentToolContent(raw json.RawMessage) json.RawMessage {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return nil
+	}
+	content := json.RawMessage(trimmed)
+	if len(content) > 0 && content[0] == '"' {
+		var markdown string
+		if err := json.Unmarshal(content, &markdown); err == nil {
+			if strings.TrimSpace(markdown) == "" {
+				return nil
+			}
+			return tiptap.MarkdownToJSON(markdown)
+		}
+	}
+	return content
 }
 
 func latestApprovedMarkdownArtifactContent(ctx *ExecutionContext) (json.RawMessage, bool) {

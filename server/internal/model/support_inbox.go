@@ -219,6 +219,13 @@ type SupportMessage struct {
 	// StrippedText is the markdown-friendly plaintext variant of an inbound
 	// email's body. Same population rules as HTMLBody.
 	StrippedText string `json:"stripped_text,omitempty" gorm:"-"`
+	// EmailDeliveryStatus mirrors the linked outbound support_email_log's status
+	// ("sent", "delivered", "opened", "bounced", "spam_complaint"). Only set
+	// when an email log exists for the message.
+	EmailDeliveryStatus string `json:"email_delivery_status,omitempty" gorm:"-"`
+	// EmailDeliveryError surfaces the bounce/complaint description when the
+	// email's delivery failed. Empty otherwise.
+	EmailDeliveryError string `json:"email_delivery_error,omitempty" gorm:"-"`
 }
 
 func (SupportMessage) TableName() string { return "support_messages" }

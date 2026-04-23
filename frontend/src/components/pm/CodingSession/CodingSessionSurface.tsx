@@ -8,6 +8,7 @@ import { CodingPreviewPanels } from '@/components/pm/CodingSession/CodingPreview
 import { CodingSessionHeader } from '@/components/pm/CodingSession/CodingSessionHeader';
 import { CodingTranscriptPane } from '@/components/pm/CodingSession/CodingTranscriptPane';
 import { NextAgentHint } from '@/components/agents/NextAgentHint';
+import { resolveAgentPersonaKey, type AgentPersonaKey } from '@/components/agents/AgentAvatar';
 import { collectCodingSessionPreviews } from '@/components/pm/CodingSession/codingSessionPreviews';
 import { buildCodingSessionStreamState } from '@/components/pm/CodingSession/codingSessionStream';
 import {
@@ -16,7 +17,7 @@ import {
   maxPersistedCodingSessionSequence,
   upsertCodingSessionEvents,
 } from '@/components/pm/CodingSession/codingSessionUtils';
-import type { Agent, AgentRunArtifact, CodingSession, CodingSessionEvent, CodingSessionInteraction, CodingSessionStreamSnapshot } from '@/lib/pmTypes';
+import type { Agent, AgentRun, AgentRunArtifact, CodingSession, CodingSessionEvent, CodingSessionInteraction, CodingSessionStreamSnapshot } from '@/lib/pmTypes';
 import { agentService } from '@/lib/services/agentService';
 import { codingSessionService } from '@/lib/services/codingSessionService';
 import { cn } from '@/lib/utils';
@@ -54,6 +55,8 @@ export function CodingSessionSurface({
   const [acting, setActing] = useState<string | null>(null);
   const [sendingMessage, setSendingMessage] = useState(false);
   const [handoffAgents, setHandoffAgents] = useState<Agent[] | null>(null);
+  const [handoffRuns, setHandoffRuns] = useState<AgentRun[] | null>(null);
+  const [handoffRunsTargetId, setHandoffRunsTargetId] = useState<string | null>(null);
   const sequenceRef = useRef(0);
   const seededSnapshotSessionRef = useRef<string | null>(null);
   const [streamSnapshotSeed, setStreamSnapshotSeed] = useState<CodingSessionStreamSnapshot | null>(null);
@@ -347,6 +350,36 @@ export function CodingSessionSurface({
     return () => { cancelled = true; };
   }, [canSuggestHandoff, workspaceId, handoffAgents]);
 
+  useEffect(() => {
+    if (!canSuggestHandoff || !workspaceId || !session?.target_id) return;
+    if (handoffRuns !== null && handoffRunsTargetId === session.target_id) return;
+    let cancelled = false;
+    void (async () => {
+      const res = await agentService.listTargetRuns(workspaceId, 'task', session.target_id);
+      if (cancelled) return;
+      setHandoffRuns(res.data ?? []);
+      setHandoffRunsTargetId(session.target_id);
+    })();
+    return () => { cancelled = true; };
+  }, [canSuggestHandoff, workspaceId, session?.target_id, handoffRuns, handoffRunsTargetId]);
+
+  useEffect(() => {
+    if (!session?.target_id || session.target_type !== 'task') return;
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent).detail as { parent_type?: string; parent_id?: string } | undefined;
+      if (detail?.parent_type === 'task' && detail.parent_id === session.target_id) {
+        setHandoffRuns(null);
+        setHandoffRunsTargetId(null);
+      }
+    };
+    window.addEventListener('agent_run-updated', handler);
+    window.addEventListener('agent_run-created', handler);
+    return () => {
+      window.removeEventListener('agent_run-updated', handler);
+      window.removeEventListener('agent_run-created', handler);
+    };
+  }, [session?.target_id, session?.target_type]);
+
   const handoffCandidates = useMemo(
     () => (handoffAgents ?? []).filter((agent) => agent.allowed_targets.includes('task')),
     [handoffAgents],
@@ -355,6 +388,19 @@ export function CodingSessionSurface({
     if (!session || !handoffAgents) return null;
     return handoffAgents.find((agent) => agent.id === session.agent_id) ?? null;
   }, [session, handoffAgents]);
+  const completedPersonaKeys = useMemo(() => {
+    if (!handoffAgents || !handoffRuns) return undefined;
+    if (handoffRunsTargetId !== session?.target_id) return undefined;
+    const agentById = new Map(handoffAgents.map((agent) => [agent.id, agent]));
+    const keys = new Set<AgentPersonaKey>();
+    for (const run of handoffRuns) {
+      const agent = agentById.get(run.agent_id);
+      if (agent) {
+        keys.add(resolveAgentPersonaKey({ agent }));
+      }
+    }
+    return keys;
+  }, [handoffAgents, handoffRuns, handoffRunsTargetId, session?.target_id]);
 
   const startHandoffRun = useCallback(async (agent: Agent) => {
     if (!session) return;
@@ -385,10 +431,11 @@ export function CodingSessionSurface({
         onCancelRun={() => void runAction('cancel', () => codingSessionService.cancel(workspaceId, activeSessionId))}
       />
 
-      {canSuggestHandoff && completedSessionAgent ? (
+      {canSuggestHandoff && completedSessionAgent && completedPersonaKeys ? (
         <NextAgentHint
           completedAgent={completedSessionAgent}
           candidates={handoffCandidates}
+          completedPersonaKeys={completedPersonaKeys}
           onRun={startHandoffRun}
           density="comfortable"
         />

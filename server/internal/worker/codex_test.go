@@ -647,9 +647,9 @@ func TestBuildCodexConfigArtifactUsesExplicitSandboxOverride(t *testing.T) {
 
 func TestBuildCodexConfigArtifactIncludesOpenAIExecutionConfig(t *testing.T) {
 	provider := model.AgentModelProviderOpenAI
-	modelName := "gpt-5.4"
+	modelName := "gpt-5.5"
 	executor := NewCodexExecutor("codex", CodexRuntimeConfig{
-		DefaultModel:   "gpt-5.4",
+		DefaultModel:   "gpt-5.5",
 		OpenAIAPIKey:   "openai-secret",
 		OpenAIAuthMode: codexOpenAIAuthModeAPIKey,
 	}, nil, nil, nil)
@@ -675,7 +675,7 @@ func TestBuildCodexConfigArtifactIncludesOpenAIExecutionConfig(t *testing.T) {
 	if err := toml.Unmarshal([]byte(payload), &decoded); err != nil {
 		t.Fatalf("unmarshal config artifact: %v", err)
 	}
-	if decoded.Model != "gpt-5.4" {
+	if decoded.Model != "gpt-5.5" {
 		t.Fatalf("expected model to be preserved, got %q", decoded.Model)
 	}
 	if decoded.ModelReasoningEffort != "high" {

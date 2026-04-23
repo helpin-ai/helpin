@@ -108,6 +108,18 @@ func (r *DocsCollectionRepository) ListBySpace(ctx context.Context, spaceID stri
 	return colls, nil
 }
 
+// ListByWorkspaceAndSpace returns all collections in a workspace space, ordered by position.
+func (r *DocsCollectionRepository) ListByWorkspaceAndSpace(ctx context.Context, workspaceID, spaceID string) ([]model.DocsCollection, error) {
+	var colls []model.DocsCollection
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND space_id = ? AND deleted_at IS NULL", workspaceID, spaceID).
+		Order("position ASC, created_at ASC").
+		Find(&colls).Error; err != nil {
+		return nil, fmt.Errorf("list docs collections by workspace and space: %w", err)
+	}
+	return colls, nil
+}
+
 // ListByWorkspace returns all collections across all spaces in a workspace.
 func (r *DocsCollectionRepository) ListByWorkspace(ctx context.Context, workspaceID string) ([]model.DocsCollection, error) {
 	var colls []model.DocsCollection

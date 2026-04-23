@@ -22,7 +22,9 @@ type SupportEmailLog struct {
 	StrippedText      string          `json:"stripped_text,omitempty" gorm:"type:text"`
 	HTMLBody          string          `json:"html_body,omitempty" gorm:"type:text"`
 	Status            string          `json:"status" gorm:"size:20;not null;default:'sent'"`
+	DeliveredAt       *time.Time      `json:"delivered_at,omitempty" gorm:"index"`
 	OpenedAt          *time.Time      `json:"opened_at,omitempty"`
+	BouncedAt         *time.Time      `json:"bounced_at,omitempty"`
 	ErrorMessage      string          `json:"error_message,omitempty" gorm:"type:text"`
 	CreatedAt         time.Time       `json:"created_at" gorm:"autoCreateTime"`
 }
@@ -43,6 +45,9 @@ type SupportMessageEmailDetail struct {
 	StrippedText     string     `json:"stripped_text,omitempty"`
 	HTMLBody         string     `json:"html_body,omitempty"`
 	Status           string     `json:"status"`
+	DeliveredAt      *time.Time `json:"delivered_at,omitempty"`
 	OpenedAt         *time.Time `json:"opened_at,omitempty"`
+	BouncedAt        *time.Time `json:"bounced_at,omitempty"`
+	ErrorMessage     string     `json:"error_message,omitempty"`
 	CreatedAt        time.Time  `json:"created_at"`
 }
