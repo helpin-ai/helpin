@@ -343,6 +343,18 @@ func (r *GitRepositoryRepository) ListActiveByIntegration(ctx context.Context, i
 	return repos, nil
 }
 
+// CountActiveByIntegration returns the number of live repo claims for an integration.
+func (r *GitRepositoryRepository) CountActiveByIntegration(ctx context.Context, integrationID string) (int64, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).
+		Model(&model.GitRepository{}).
+		Where("integration_id = ? AND deleted_at IS NULL AND active = ?", integrationID, true).
+		Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count active git repositories by integration: %w", err)
+	}
+	return count, nil
+}
+
 // GetByExternalID returns the newest repo row for an installation repo id.
 func (r *GitRepositoryRepository) GetByExternalID(ctx context.Context, integrationID, externalID string) (*model.GitRepository, error) {
 	var repo model.GitRepository

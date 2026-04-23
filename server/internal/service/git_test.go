@@ -377,6 +377,38 @@ func TestListAvailableReposAllowsAdminOnSiblingWorkspaceInOrg(t *testing.T) {
 	}
 }
 
+func TestIntegrationHasWebhookClaimsUsesIntegrationScope(t *testing.T) {
+	db := newTestDB(t)
+
+	if err := db.Exec(`INSERT INTO git_repositories (
+		id, workspace_id, integration_id, provider, external_id, full_name, default_branch,
+		permissions, private, archived, selected, active, created_at, updated_at
+	) VALUES (?, ?, ?, 'github', '101', 'acme/repo', 'main', '{}', 1, 0, 1, 1, datetime('now'), datetime('now'))`,
+		"repo-1", "ws-1", "gi-1").Error; err != nil {
+		t.Fatalf("insert repository: %v", err)
+	}
+
+	svc := &GitService{
+		repoRepo: repository.NewGitRepositoryRepository(db),
+	}
+
+	hasClaims, err := svc.IntegrationHasWebhookClaims(context.Background(), "gi-1")
+	if err != nil {
+		t.Fatalf("IntegrationHasWebhookClaims returned error: %v", err)
+	}
+	if !hasClaims {
+		t.Fatal("expected webhook claims for integration gi-1")
+	}
+
+	hasClaims, err = svc.IntegrationHasWebhookClaims(context.Background(), "gi-2")
+	if err != nil {
+		t.Fatalf("IntegrationHasWebhookClaims returned error: %v", err)
+	}
+	if hasClaims {
+		t.Fatal("expected no webhook claims for integration gi-2")
+	}
+}
+
 func generateTestPrivateKeyPEM(t *testing.T) string {
 	t.Helper()
 

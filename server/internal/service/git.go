@@ -706,6 +706,17 @@ func (s *GitService) ResolveWebhookRepository(ctx context.Context, integrationID
 	return s.repoRepo.GetActiveByExternalID(ctx, integrationID, externalID)
 }
 
+func (s *GitService) IntegrationHasWebhookClaims(ctx context.Context, integrationID string) (bool, error) {
+	if strings.TrimSpace(integrationID) == "" {
+		return false, fmt.Errorf("integration_id is required")
+	}
+	count, err := s.repoRepo.CountActiveByIntegration(ctx, integrationID)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 func (s *GitService) HandleInstallationLifecycleEvent(ctx context.Context, integration *model.GitIntegration, event, action string, externalIDs []string) error {
 	if integration == nil {
 		return fmt.Errorf("integration is required")

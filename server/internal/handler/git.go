@@ -457,8 +457,11 @@ func (h *GitHandler) resolveWebhookWorkspaceID(r *http.Request, integration *mod
 		return "", false, err
 	}
 	if repo == nil {
-		repos, listErr := h.gitService.ListRepositoryCatalog(r.Context(), integration.WorkspaceID)
-		if listErr == nil && len(repos) == 0 && strings.TrimSpace(integration.WorkspaceID) != "" {
+		hasClaims, claimsErr := h.gitService.IntegrationHasWebhookClaims(r.Context(), integration.ID)
+		if claimsErr != nil {
+			return "", false, claimsErr
+		}
+		if !hasClaims && strings.TrimSpace(integration.WorkspaceID) != "" {
 			return integration.WorkspaceID, true, nil
 		}
 		return "", false, nil
