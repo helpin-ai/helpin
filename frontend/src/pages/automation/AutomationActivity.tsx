@@ -7,6 +7,7 @@ import {
   ArrowUpRight01Icon,
   BotIcon,
   Calendar03Icon,
+  Cancel01Icon,
   Loading01Icon,
   Search01Icon,
   ZapIcon,
@@ -441,12 +442,14 @@ function SmartFilterInput({
   onApply,
   onClear,
   disabled,
+  autoFocus,
 }: {
   value: string;
   onChange: (value: string) => void;
   onApply: () => void;
   onClear: () => void;
   disabled?: boolean;
+  autoFocus?: boolean;
 }) {
   return (
     <div className="flex flex-col gap-2 md:flex-row md:items-center">
@@ -464,6 +467,7 @@ function SmartFilterInput({
           placeholder="agent:Lens status:failed last:24h"
           className="h-8 pl-8 font-mono text-xs"
           disabled={disabled}
+          autoFocus={autoFocus}
         />
         <Tooltip>
           <TooltipTrigger asChild>
@@ -665,6 +669,18 @@ export function AutomationActivityPage({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [approvingRunId, setApprovingRunId] = useState<string | null>(null);
   const [smartFilter, setSmartFilter] = useState('');
+  const [searchExpanded, setSearchExpanded] = useState(false);
+  const hasActiveFilter = Boolean(
+    search.agent_id
+      || search.binding_id
+      || search.trigger_type
+      || search.status
+      || search.source
+      || search.reference_id
+      || search.fired_after
+      || search.fired_before,
+  );
+  const showSearchInput = searchExpanded || hasActiveFilter;
 
   const openRun = useCallback((runId: string) => {
     setSelectedRunId(runId);
@@ -970,15 +986,49 @@ export function AutomationActivityPage({
                   Grouped by day so clusters of failures and pauses are visible without reading raw trigger prose.
                 </p>
               </div>
-              <div className="lg:max-w-xl lg:flex-1">
-                <SmartFilterInput
-                  value={smartFilter}
-                  onChange={setSmartFilter}
-                  onApply={handleApplySmartFilter}
-                  onClear={handleClearSmartFilter}
-                  disabled={executionsQuery.isLoading}
-                />
-              </div>
+              {showSearchInput ? (
+                <div className="flex items-start gap-2 lg:max-w-xl lg:flex-1">
+                  <div className="min-w-0 flex-1">
+                    <SmartFilterInput
+                      value={smartFilter}
+                      onChange={setSmartFilter}
+                      onApply={handleApplySmartFilter}
+                      onClear={handleClearSmartFilter}
+                      disabled={executionsQuery.isLoading}
+                      autoFocus
+                    />
+                  </div>
+                  {!hasActiveFilter && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0 text-muted-foreground"
+                      aria-label="Close search"
+                      onClick={() => {
+                        setSmartFilter('');
+                        setSearchExpanded(false);
+                      }}
+                    >
+                      <Cancel01Icon className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <div className="flex lg:justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5 px-2.5 text-xs"
+                    aria-label="Open search"
+                    onClick={() => setSearchExpanded(true)}
+                  >
+                    <Search01Icon className="h-3.5 w-3.5" />
+                    Search
+                  </Button>
+                </div>
+              )}
             </div>
 
             <Tabs
