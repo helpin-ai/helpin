@@ -39,3 +39,39 @@ type PostmarkOpenPayload struct {
 	FirstOpen     bool   `json:"FirstOpen"`
 	ReceivedAt    string `json:"ReceivedAt"`
 }
+
+// PostmarkDeliveryPayload is the payload sent by Postmark delivery webhooks.
+type PostmarkDeliveryPayload struct {
+	RecordType    string `json:"RecordType"`
+	MessageID     string `json:"MessageID"`
+	MessageStream string `json:"MessageStream"`
+	Recipient     string `json:"Recipient"`
+	DeliveredAt   string `json:"DeliveredAt"`
+	Details       string `json:"Details"`
+}
+
+// PostmarkBouncePayload is the payload sent by Postmark bounce webhooks.
+type PostmarkBouncePayload struct {
+	RecordType    string `json:"RecordType"`
+	MessageID     string `json:"MessageID"`
+	MessageStream string `json:"MessageStream"`
+	Recipient     string `json:"Recipient"`
+	BouncedAt     string `json:"BouncedAt"`
+	Type          string `json:"Type"`
+	TypeCode      int    `json:"TypeCode"`
+	Description   string `json:"Description"`
+	Details       string `json:"Details"`
+}
+
+// PostmarkSpamComplaintPayload is the payload sent by Postmark spam complaint webhooks.
+type PostmarkSpamComplaintPayload struct {
+	RecordType    string `json:"RecordType"`
+	MessageID     string `json:"MessageID"`
+	MessageStream string `json:"MessageStream"`
+	Recipient     string `json:"Recipient"`
+	BouncedAt     string `json:"BouncedAt"`
+	Type          string `json:"Type"`
+	TypeCode      int    `json:"TypeCode"`
+	Description   string `json:"Description"`
+	Details       string `json:"Details"`
+}

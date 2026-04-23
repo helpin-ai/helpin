@@ -22,6 +22,7 @@ type Repository struct {
 	FullName      string
 	DefaultBranch string
 	Private       bool
+	Archived      bool
 	Permissions   map[string]bool
 }
 
@@ -132,6 +133,7 @@ func (c *Client) ListInstallationRepositories(ctx context.Context, installationI
 			FullName      string          `json:"full_name"`
 			DefaultBranch string          `json:"default_branch"`
 			Private       bool            `json:"private"`
+			Archived      bool            `json:"archived"`
 			Permissions   map[string]bool `json:"permissions"`
 		} `json:"repositories"`
 		Message string `json:"message"`
@@ -150,6 +152,7 @@ func (c *Client) ListInstallationRepositories(ctx context.Context, installationI
 			FullName:      repo.FullName,
 			DefaultBranch: repo.DefaultBranch,
 			Private:       repo.Private,
+			Archived:      repo.Archived,
 			Permissions:   repo.Permissions,
 		})
 	}

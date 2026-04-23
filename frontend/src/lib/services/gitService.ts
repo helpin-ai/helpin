@@ -1,8 +1,10 @@
-import { api } from '../api';
+import { API_BASE, api } from '../api';
 import type {
   GitIntegration,
+  GitIntegrationDetail,
   GitHubInstallURLResponse,
   GitBranch,
+  GitAvailableRepo,
   GitRepository,
   TaskDeliveryTarget,
   TaskGitLink,
@@ -10,21 +12,68 @@ import type {
   CreateBranchRequest,
   UpdateGitRepositoryRequest,
   UpdateTaskDeliveryTargetRequest,
+  WireGitRepositoriesConflictResponse,
+  WireGitRepositoriesRequest,
+  WireGitRepositoriesResponse,
 } from '../pmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
+
+async function gitRawRequest<T>(path: string, options: RequestInit = {}) {
+  const token = localStorage.getItem('access_token');
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...options.headers,
+      },
+    });
+
+    if (res.status === 204) {
+      return { data: null as T, error: null, status: res.status };
+    }
+    const json = await res.json().catch(() => null);
+    if (!res.ok) {
+      return {
+        data: json as T | null,
+        error: (json as { error?: string } | null)?.error || res.statusText,
+        status: res.status,
+      };
+    }
+    return { data: json as T, error: null, status: res.status };
+  } catch (error) {
+    return {
+      data: null as T | null,
+      error: error instanceof Error ? error.message : 'Network error',
+      status: 0,
+    };
+  }
+}
 
 export const gitService = {
   getGitHubInstallURL: (workspaceId: string) =>
     api.get<GitHubInstallURLResponse>(`/git/github/install-url${qs(workspaceId)}`),
   listIntegrations: (workspaceId: string) =>
     api.get<GitIntegration[]>(`/git/integrations${qs(workspaceId)}`),
+  getIntegration: (workspaceId: string, integrationId: string) =>
+    api.get<GitIntegrationDetail>(`/git/integrations/${integrationId}${qs(workspaceId)}`),
   createIntegration: (workspaceId: string, payload: CreateGitIntegrationRequest) =>
     api.post<GitIntegration>(`/git/integrations${qs(workspaceId)}`, payload),
   deleteIntegration: (workspaceId: string, integrationId: string) =>
     api.del<{ status: string }>(`/git/integrations/${integrationId}${qs(workspaceId)}`),
   syncRepositories: (workspaceId: string, integrationId: string) =>
     api.post<GitRepository[]>(`/git/integrations/${integrationId}/sync${qs(workspaceId)}`, {}),
+  listAvailableRepos: (workspaceId: string, integrationId: string) =>
+    api.get<GitAvailableRepo[]>(`/git/integrations/${integrationId}/available-repos${qs(workspaceId)}`),
+  wireRepositories: (workspaceId: string, integrationId: string, payload: WireGitRepositoriesRequest) =>
+    gitRawRequest<WireGitRepositoriesResponse | WireGitRepositoriesConflictResponse>(
+      `/git/integrations/${integrationId}/repositories${qs(workspaceId)}`,
+      { method: 'POST', body: JSON.stringify(payload) },
+    ),
+  unwireRepository: (workspaceId: string, integrationId: string, repoId: string) =>
+    api.del<{ status: string }>(`/git/integrations/${integrationId}/repositories/${repoId}${qs(workspaceId)}`),
   listRepositories: (workspaceId: string, options?: { all?: boolean }) =>
     api.get<GitRepository[]>(`/git/repositories${qs(workspaceId)}${options?.all ? '&all=true' : ''}`),
   listRepositoryBranches: (workspaceId: string, repoId: string) =>

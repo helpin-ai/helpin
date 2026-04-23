@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -31,6 +32,7 @@ type GitService struct {
 	deliveryRepo    *repository.TaskDeliveryTargetRepository
 	settingsRepo    *repository.SettingsRepository
 	workspaceRepo   *repository.WorkspaceRepository
+	orgRepo         *repository.OrganizationRepository
 	taskRepo        *repository.PMTaskRepository
 	activitySvc     *PMActivityService
 	wsPublisher     *websocket.Publisher
@@ -49,6 +51,7 @@ func NewGitService(
 	deliveryRepo *repository.TaskDeliveryTargetRepository,
 	settingsRepo *repository.SettingsRepository,
 	workspaceRepo *repository.WorkspaceRepository,
+	orgRepo *repository.OrganizationRepository,
 	taskRepo *repository.PMTaskRepository,
 	activitySvc *PMActivityService,
 	wsPublisher *websocket.Publisher,
@@ -64,6 +67,7 @@ func NewGitService(
 		deliveryRepo:    deliveryRepo,
 		settingsRepo:    settingsRepo,
 		workspaceRepo:   workspaceRepo,
+		orgRepo:         orgRepo,
 		taskRepo:        taskRepo,
 		activitySvc:     activitySvc,
 		wsPublisher:     wsPublisher,
@@ -88,11 +92,43 @@ func (s *GitService) ListIntegrations(ctx context.Context, workspaceID string) (
 	return s.integrationRepo.List(ctx, workspaceID)
 }
 
-// DeleteIntegration removes a git integration and its synced repositories.
+func (s *GitService) GetIntegrationDetail(ctx context.Context, workspaceID, integrationID string) (*model.GitIntegrationDetail, error) {
+	if workspaceID == "" || integrationID == "" {
+		return nil, fmt.Errorf("workspace_id and integration_id are required")
+	}
+	integration, err := s.integrationRepo.GetByID(ctx, workspaceID, integrationID)
+	if err != nil {
+		return nil, fmt.Errorf("get integration: %w", err)
+	}
+	if integration == nil {
+		return nil, fmt.Errorf("integration not found")
+	}
+	affected, err := s.repoRepo.ListAffectedWorkspacesByIntegration(ctx, integration.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &model.GitIntegrationDetail{
+		Integration:        *integration,
+		AffectedWorkspaces: affected,
+	}, nil
+}
+
+// DeleteIntegration soft-deletes an org-scoped git integration and its repo claims.
 func (s *GitService) DeleteIntegration(ctx context.Context, workspaceID, integrationID, actorID string) error {
 	if workspaceID == "" || integrationID == "" {
 		return fmt.Errorf("workspace_id and integration_id are required")
 	}
+	workspace, err := s.workspaceRepo.GetByID(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+	if workspace == nil || workspace.OrganizationID == nil || strings.TrimSpace(*workspace.OrganizationID) == "" {
+		return fmt.Errorf("workspace organization is required")
+	}
+	if !s.isOrgOwner(ctx, strings.TrimSpace(*workspace.OrganizationID), actorID) {
+		return fmt.Errorf("only organization owners can uninstall git integrations")
+	}
+
 	existing, err := s.integrationRepo.GetByID(ctx, workspaceID, integrationID)
 	if err != nil {
 		return fmt.Errorf("get integration: %w", err)
@@ -100,10 +136,10 @@ func (s *GitService) DeleteIntegration(ctx context.Context, workspaceID, integra
 	if existing == nil {
 		return fmt.Errorf("integration not found")
 	}
-	if err := s.repoRepo.DeleteByIntegration(ctx, workspaceID, integrationID); err != nil {
+	if err := s.repoRepo.SoftDeleteByIntegration(ctx, integrationID); err != nil {
 		return fmt.Errorf("delete integration repositories: %w", err)
 	}
-	if err := s.integrationRepo.Delete(ctx, workspaceID, integrationID); err != nil {
+	if err := s.integrationRepo.SoftDeleteByID(ctx, integrationID); err != nil {
 		return err
 	}
 	if s.activitySvc != nil && actorID != "" {
@@ -120,6 +156,13 @@ func (s *GitService) CreateIntegration(ctx context.Context, req model.CreateGitI
 	}
 	if req.Provider != "github" && req.Provider != "gitlab" {
 		return nil, fmt.Errorf("provider must be 'github' or 'gitlab'")
+	}
+	workspace, err := s.workspaceRepo.GetByID(ctx, req.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if workspace == nil {
+		return nil, fmt.Errorf("workspace not found")
 	}
 
 	credentialMode := "github_app"
@@ -138,6 +181,7 @@ func (s *GitService) CreateIntegration(ctx context.Context, req model.CreateGitI
 
 	integration := &model.GitIntegration{
 		WorkspaceID:    req.WorkspaceID,
+		OrganizationID: workspace.OrganizationID,
 		Provider:       req.Provider,
 		DisplayName:    strings.TrimSpace(req.DisplayName),
 		CredentialMode: credentialMode,
@@ -154,20 +198,14 @@ func (s *GitService) CreateIntegration(ctx context.Context, req model.CreateGitI
 		return nil, err
 	}
 
-	_ = s.activitySvc.Log(ctx, integration.WorkspaceID, "git_integration", integration.ID, &actorID, "created", nil, nil, &integration.DisplayName, nil)
-	s.publishSimpleEvent("created", "git_integration", integration.ID, integration.WorkspaceID, actorID)
-
-	if integration.Provider == "github" && integration.InstallationID != nil && s.githubApp != nil {
-		if _, err := s.SyncRepositories(ctx, integration.WorkspaceID, integration.ID, actorID); err != nil {
-			integration.LastSyncError = strPtr(err.Error())
-			_ = s.integrationRepo.Update(ctx, integration)
-		}
+	if s.activitySvc != nil && actorID != "" {
+		_ = s.activitySvc.Log(ctx, integration.WorkspaceID, "git_integration", integration.ID, &actorID, "created", nil, nil, &integration.DisplayName, nil)
 	}
-
+	s.publishSimpleEvent("created", "git_integration", integration.ID, integration.WorkspaceID, actorID)
 	return integration, nil
 }
 
-// SyncRepositories refreshes the workspace repo catalog from a git provider installation.
+// SyncRepositories refreshes metadata for repo claims already wired to this workspace.
 func (s *GitService) SyncRepositories(ctx context.Context, workspaceID, integrationID, actorID string) ([]model.GitRepository, error) {
 	integration, err := s.integrationRepo.GetByID(ctx, workspaceID, integrationID)
 	if err != nil {
@@ -178,6 +216,9 @@ func (s *GitService) SyncRepositories(ctx context.Context, workspaceID, integrat
 	}
 	if integration.Provider != "github" {
 		return nil, fmt.Errorf("repository sync is only implemented for github")
+	}
+	if !integration.Active {
+		return nil, fmt.Errorf("git integration is inactive")
 	}
 	if integration.InstallationID == nil || *integration.InstallationID == "" {
 		return nil, fmt.Errorf("integration has no installation_id")
@@ -193,25 +234,35 @@ func (s *GitService) SyncRepositories(ctx context.Context, workspaceID, integrat
 		return nil, err
 	}
 
-	now := time.Now()
-	upserts := make([]model.GitRepository, 0, len(repos))
+	now := time.Now().UTC()
+	remoteByExternalID := make(map[string]githubapp.Repository, len(repos))
 	for _, repo := range repos {
-		permissions, _ := json.Marshal(repo.Permissions)
-		upserts = append(upserts, model.GitRepository{
-			WorkspaceID:   workspaceID,
-			IntegrationID: integrationID,
-			Provider:      integration.Provider,
-			ExternalID:    githubapp.InstallationIDString(repo.ID),
-			FullName:      repo.FullName,
-			DefaultBranch: defaultBranch(repo.DefaultBranch),
-			Permissions:   permissions,
-			Private:       repo.Private,
-			Selected:      true,
-		})
+		remoteByExternalID[githubapp.InstallationIDString(repo.ID)] = repo
 	}
-
-	if err := s.repoRepo.UpsertMany(ctx, workspaceID, integrationID, upserts); err != nil {
+	claims, err := s.repoRepo.ListByWorkspaceAndIntegration(ctx, workspaceID, integrationID)
+	if err != nil {
 		return nil, err
+	}
+	for i := range claims {
+		remote, ok := remoteByExternalID[claims[i].ExternalID]
+		if !ok {
+			if err := s.repoRepo.SoftDeleteByID(ctx, claims[i].ID); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		permissions, _ := json.Marshal(remote.Permissions)
+		claims[i].FullName = remote.FullName
+		claims[i].DefaultBranch = defaultBranch(remote.DefaultBranch)
+		claims[i].Permissions = permissions
+		claims[i].Private = remote.Private
+		claims[i].Archived = remote.Archived
+		claims[i].Active = true
+		claims[i].DeletedAt = nil
+		claims[i].UpdatedAt = now
+		if err := s.repoRepo.Update(ctx, &claims[i]); err != nil {
+			return nil, err
+		}
 	}
 
 	integration.LastSyncedAt = &now
@@ -321,43 +372,38 @@ func (s *GitService) UpdateRepositorySelection(ctx context.Context, workspaceID,
 	return repo, nil
 }
 
-// GetGitHubInstallURL returns the install or manage URL for the configured GitHub App.
-func (s *GitService) GetGitHubInstallURL(ctx context.Context, workspaceID, actorID string) (string, string, error) {
+// GetGitHubInstallURL returns the install or repo-picker action for the configured GitHub App.
+func (s *GitService) GetGitHubInstallURL(ctx context.Context, workspaceID, actorID string) (string, string, *string, error) {
 	if workspaceID == "" {
-		return "", "", fmt.Errorf("workspace_id is required")
+		return "", "", nil, fmt.Errorf("workspace_id is required")
 	}
 	if s.githubApp == nil || s.githubAppSlug == "" {
-		return "", "", fmt.Errorf("github app onboarding is not configured")
+		return "", "", nil, fmt.Errorf("github app onboarding is not configured")
 	}
 	if s.workspaceRepo == nil {
-		return "", "", fmt.Errorf("workspace repository is not configured")
+		return "", "", nil, fmt.Errorf("workspace repository is not configured")
 	}
 	workspace, err := s.workspaceRepo.GetByID(ctx, workspaceID)
 	if err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
 	if workspace == nil {
-		return "", "", fmt.Errorf("workspace not found")
+		return "", "", nil, fmt.Errorf("workspace not found")
 	}
-
-	integrations, err := s.integrationRepo.List(ctx, workspaceID)
+	if workspace.OrganizationID == nil || strings.TrimSpace(*workspace.OrganizationID) == "" {
+		return "", "", nil, fmt.Errorf("workspace organization is required")
+	}
+	integration, err := s.integrationRepo.GetActiveByOrganization(ctx, strings.TrimSpace(*workspace.OrganizationID), "github")
 	if err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
-	for _, integration := range integrations {
-		if integration.Provider != "github" || integration.InstallationID == nil || strings.TrimSpace(*integration.InstallationID) == "" {
-			continue
-		}
-
-		installation, installErr := s.githubApp.GetInstallation(ctx, *integration.InstallationID)
-		if installErr == nil && strings.TrimSpace(installation.HTMLURL) != "" {
-			return installation.HTMLURL, "manage", nil
-		}
+	if integration != nil {
+		return "", "pick_repos", &integration.ID, nil
 	}
 
 	state, err := s.signGitHubInstallState(workspaceID, actorID)
 	if err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
 
 	installURL := url.URL{
@@ -368,10 +414,10 @@ func (s *GitService) GetGitHubInstallURL(ctx context.Context, workspaceID, actor
 	query := installURL.Query()
 	query.Set("state", state)
 	installURL.RawQuery = query.Encode()
-	return installURL.String(), "install", nil
+	return installURL.String(), "install", nil, nil
 }
 
-// CompleteGitHubInstall creates or updates the workspace integration after GitHub redirects back.
+// CompleteGitHubInstall creates or reuses the org integration after GitHub redirects back.
 func (s *GitService) CompleteGitHubInstall(ctx context.Context, stateToken, installationID string) (string, error) {
 	state, workspace, redirectURL, err := s.resolveGitHubInstallState(ctx, stateToken)
 	if err != nil {
@@ -389,44 +435,350 @@ func (s *GitService) CompleteGitHubInstall(ctx context.Context, stateToken, inst
 		return withGitHubInstallStatus(redirectURL, "error", err.Error(), nil), nil
 	}
 
-	integration, err := s.upsertGitHubIntegration(ctx, workspace.ID, installationID, installation, state.ActorID)
+	integration, err := s.upsertGitHubIntegration(ctx, workspace, installationID, installation, state.ActorID)
 	if err != nil {
 		return withGitHubInstallStatus(redirectURL, "error", err.Error(), nil), nil
 	}
 
-	repos, syncErr := s.SyncRepositories(ctx, workspace.ID, integration.ID, state.ActorID)
 	params := map[string]string{
 		"integration_id": integration.ID,
-	}
-	if len(repos) > 0 {
-		params["repo_count"] = fmt.Sprintf("%d", len(repos))
-	}
-	if syncErr != nil {
-		return withGitHubInstallStatus(redirectURL, "connected", "GitHub App connected, but repository sync failed. Open the integration card for details.", params), nil
 	}
 	return withGitHubInstallStatus(redirectURL, "connected", fmt.Sprintf("GitHub App connected to %s.", defaultAccountLogin(integration.AccountLogin)), params), nil
 }
 
-// ResolveGitHubWebhookWorkspace verifies the webhook signature and resolves the target workspace by installation.
-func (s *GitService) ResolveGitHubWebhookWorkspace(ctx context.Context, installationID string, body []byte, signature string) (string, error) {
+// ResolveGitHubWebhookIntegration verifies the webhook signature and resolves the installation.
+func (s *GitService) ResolveGitHubWebhookIntegration(ctx context.Context, installationID string, body []byte, signature string) (*model.GitIntegration, error) {
 	if strings.TrimSpace(installationID) == "" {
-		return "", fmt.Errorf("installation_id is required")
+		return nil, fmt.Errorf("installation_id is required")
 	}
 
 	integration, err := s.integrationRepo.GetByInstallationID(ctx, "github", installationID)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if integration == nil {
-		return "", fmt.Errorf("no workspace matches github installation %s", installationID)
+		return nil, fmt.Errorf("no workspace matches github installation %s", installationID)
 	}
 	if integration.WebhookSecret != nil && *integration.WebhookSecret != "" {
 		expected := signGitHubWebhook(*integration.WebhookSecret, body)
 		if !hmac.Equal([]byte(expected), []byte(signature)) {
-			return "", fmt.Errorf("invalid github webhook signature")
+			return nil, fmt.Errorf("invalid github webhook signature")
 		}
 	}
-	return integration.WorkspaceID, nil
+	return integration, nil
+}
+
+func (s *GitService) ListAvailableRepos(ctx context.Context, workspaceID, integrationID, actorID string) ([]model.GitAvailableRepo, error) {
+	if err := s.assertCanEnumerateAvailableRepos(ctx, workspaceID, actorID); err != nil {
+		return nil, err
+	}
+	integration, err := s.integrationRepo.GetByID(ctx, workspaceID, integrationID)
+	if err != nil {
+		return nil, err
+	}
+	if integration == nil {
+		return nil, fmt.Errorf("integration not found")
+	}
+	if !integration.Active {
+		return nil, fmt.Errorf("integration is inactive")
+	}
+	if integration.Provider != "github" {
+		return nil, fmt.Errorf("available repos are only supported for github")
+	}
+	if integration.InstallationID == nil || strings.TrimSpace(*integration.InstallationID) == "" {
+		return nil, fmt.Errorf("integration has no installation_id")
+	}
+	if s.githubApp == nil {
+		return nil, fmt.Errorf("github app credentials are not configured")
+	}
+
+	repos, err := s.githubApp.ListInstallationRepositories(ctx, *integration.InstallationID)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]model.GitAvailableRepo, 0, len(repos))
+	for _, repo := range repos {
+		externalID := githubapp.InstallationIDString(repo.ID)
+		claimedBy, err := s.repoRepo.GetClaimedByByExternalID(ctx, integration.ID, externalID)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, model.GitAvailableRepo{
+			ExternalID:    externalID,
+			FullName:      repo.FullName,
+			DefaultBranch: defaultBranch(repo.DefaultBranch),
+			Private:       repo.Private,
+			Archived:      repo.Archived,
+			Permissions:   repo.Permissions,
+			ClaimedBy:     claimedBy,
+		})
+	}
+	sort.Slice(items, func(i, j int) bool {
+		return strings.ToLower(items[i].FullName) < strings.ToLower(items[j].FullName)
+	})
+	return items, nil
+}
+
+func (s *GitService) WireRepositories(ctx context.Context, currentWorkspaceID, integrationID string, req model.WireGitRepositoriesRequest, actorID string) ([]model.GitRepository, *model.WireGitRepositoriesConflictResponse, error) {
+	targetWorkspaceID := strings.TrimSpace(req.WorkspaceID)
+	if targetWorkspaceID == "" {
+		targetWorkspaceID = currentWorkspaceID
+	}
+	if targetWorkspaceID != currentWorkspaceID {
+		return nil, nil, fmt.Errorf("workspace_id must match the current workspace")
+	}
+	if len(req.RepoIDs) == 0 {
+		return nil, nil, fmt.Errorf("repo_ids are required")
+	}
+
+	integration, err := s.integrationRepo.GetByID(ctx, currentWorkspaceID, integrationID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if integration == nil {
+		return nil, nil, fmt.Errorf("integration not found")
+	}
+	if !integration.Active {
+		return nil, nil, fmt.Errorf("integration is inactive")
+	}
+	if integration.Provider != "github" {
+		return nil, nil, fmt.Errorf("repo wiring is only supported for github")
+	}
+	if integration.InstallationID == nil || strings.TrimSpace(*integration.InstallationID) == "" {
+		return nil, nil, fmt.Errorf("integration has no installation_id")
+	}
+	if s.githubApp == nil {
+		return nil, nil, fmt.Errorf("github app credentials are not configured")
+	}
+
+	available, err := s.githubApp.ListInstallationRepositories(ctx, *integration.InstallationID)
+	if err != nil {
+		return nil, nil, err
+	}
+	availableByID := make(map[string]githubapp.Repository, len(available))
+	for _, repo := range available {
+		availableByID[githubapp.InstallationIDString(repo.ID)] = repo
+	}
+
+	seen := make(map[string]struct{}, len(req.RepoIDs))
+	requestedRepoIDs := make([]string, 0, len(req.RepoIDs))
+	for _, repoID := range req.RepoIDs {
+		repoID = strings.TrimSpace(repoID)
+		if repoID == "" {
+			continue
+		}
+		if _, ok := seen[repoID]; ok {
+			continue
+		}
+		seen[repoID] = struct{}{}
+		requestedRepoIDs = append(requestedRepoIDs, repoID)
+	}
+	if len(requestedRepoIDs) == 0 {
+		return nil, nil, fmt.Errorf("repo_ids are required")
+	}
+
+	conflicts := make([]model.WireGitRepositoriesConflict, 0)
+	for _, repoID := range requestedRepoIDs {
+		repoID = strings.TrimSpace(repoID)
+		if _, ok := availableByID[repoID]; !ok {
+			return nil, nil, fmt.Errorf("repository %s is not available to this installation", repoID)
+		}
+
+		claimedBy, err := s.repoRepo.GetClaimedByByExternalID(ctx, integration.ID, repoID)
+		if err != nil {
+			return nil, nil, err
+		}
+		if claimedBy != nil && claimedBy.WorkspaceID != currentWorkspaceID {
+			conflicts = append(conflicts, model.WireGitRepositoriesConflict{
+				ExternalID:             repoID,
+				ClaimedByWorkspaceID:   claimedBy.WorkspaceID,
+				ClaimedByWorkspaceName: claimedBy.WorkspaceName,
+			})
+		}
+	}
+
+	if len(conflicts) > 0 {
+		return nil, &model.WireGitRepositoriesConflictResponse{Conflicts: conflicts}, nil
+	}
+
+	upserted := make([]model.GitRepository, 0, len(requestedRepoIDs))
+	for _, repoID := range requestedRepoIDs {
+		remote := availableByID[repoID]
+		permissions, _ := json.Marshal(remote.Permissions)
+		repo := model.GitRepository{
+			WorkspaceID:   currentWorkspaceID,
+			IntegrationID: integration.ID,
+			Provider:      integration.Provider,
+			ExternalID:    repoID,
+			FullName:      remote.FullName,
+			DefaultBranch: defaultBranch(remote.DefaultBranch),
+			Permissions:   permissions,
+			Private:       remote.Private,
+			Archived:      remote.Archived,
+			Selected:      true,
+			Active:        true,
+			DeletedAt:     nil,
+		}
+		if err := s.repoRepo.UpsertRepository(ctx, &repo); err != nil {
+			if strings.Contains(strings.ToLower(err.Error()), "already claimed by workspace") {
+				claimedBy, claimErr := s.repoRepo.GetClaimedByByExternalID(ctx, integration.ID, repoID)
+				if claimErr == nil && claimedBy != nil {
+					return nil, &model.WireGitRepositoriesConflictResponse{
+						Conflicts: []model.WireGitRepositoriesConflict{{
+							ExternalID:             repoID,
+							ClaimedByWorkspaceID:   claimedBy.WorkspaceID,
+							ClaimedByWorkspaceName: claimedBy.WorkspaceName,
+						}},
+					}, nil
+				}
+			}
+			return nil, nil, err
+		}
+		upserted = append(upserted, repo)
+	}
+
+	if s.activitySvc != nil && actorID != "" {
+		for i := range upserted {
+			value := upserted[i].FullName
+			_ = s.activitySvc.Log(ctx, currentWorkspaceID, "git_repository", upserted[i].ID, &actorID, "created", nil, nil, &value, nil)
+		}
+	}
+	return upserted, nil, nil
+}
+
+func (s *GitService) UnwireRepository(ctx context.Context, workspaceID, integrationID, repoID, actorID string) error {
+	integration, err := s.integrationRepo.GetByID(ctx, workspaceID, integrationID)
+	if err != nil {
+		return err
+	}
+	if integration == nil {
+		return fmt.Errorf("integration not found")
+	}
+	repo, err := s.repoRepo.GetByID(ctx, workspaceID, repoID)
+	if err != nil {
+		return err
+	}
+	if repo == nil || repo.IntegrationID != integration.ID {
+		return fmt.Errorf("repository not found")
+	}
+	if err := s.repoRepo.SoftDeleteByID(ctx, repo.ID); err != nil {
+		return err
+	}
+	if s.activitySvc != nil && actorID != "" {
+		value := repo.FullName
+		_ = s.activitySvc.Log(ctx, workspaceID, "git_repository", repo.ID, &actorID, "deleted", nil, nil, &value, nil)
+	}
+	s.publishSimpleEvent("deleted", "git_repository", repo.ID, workspaceID, actorID)
+	return nil
+}
+
+func (s *GitService) ResolveForAgentRun(ctx context.Context, workspaceID, repoID string) (*model.GitIntegration, *model.GitRepository, error) {
+	repo, err := s.repoRepo.GetByIDAny(ctx, repoID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if repo == nil {
+		return nil, nil, fmt.Errorf("repository not found")
+	}
+	if repo.WorkspaceID != workspaceID {
+		return nil, nil, fmt.Errorf("repository does not belong to this workspace")
+	}
+	if repo.DeletedAt != nil || !repo.Active {
+		return nil, nil, fmt.Errorf("repository is inactive")
+	}
+	integration, err := s.integrationRepo.GetByID(ctx, workspaceID, repo.IntegrationID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if integration == nil {
+		return nil, nil, fmt.Errorf("integration not found")
+	}
+	if !integration.Active {
+		return nil, nil, fmt.Errorf("integration is inactive")
+	}
+	return integration, repo, nil
+}
+
+func (s *GitService) ResolveWebhookRepository(ctx context.Context, integrationID, externalID string) (*model.GitRepository, error) {
+	if strings.TrimSpace(integrationID) == "" || strings.TrimSpace(externalID) == "" {
+		return nil, fmt.Errorf("integration_id and external_id are required")
+	}
+	return s.repoRepo.GetActiveByExternalID(ctx, integrationID, externalID)
+}
+
+func (s *GitService) IntegrationHasWebhookClaims(ctx context.Context, integrationID string) (bool, error) {
+	if strings.TrimSpace(integrationID) == "" {
+		return false, fmt.Errorf("integration_id is required")
+	}
+	count, err := s.repoRepo.CountActiveByIntegration(ctx, integrationID)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func (s *GitService) HandleInstallationLifecycleEvent(ctx context.Context, integration *model.GitIntegration, event, action string, externalIDs []string) error {
+	if integration == nil {
+		return fmt.Errorf("integration is required")
+	}
+	now := time.Now().UTC()
+	switch event {
+	case "installation":
+		switch strings.TrimSpace(action) {
+		case "deleted":
+			integration.Active = false
+			integration.DeletedAt = &now
+			if err := s.integrationRepo.Update(ctx, integration); err != nil {
+				return err
+			}
+			return s.repoRepo.SoftDeleteByIntegration(ctx, integration.ID)
+		case "suspend":
+			integration.Active = false
+			if err := s.integrationRepo.Update(ctx, integration); err != nil {
+				return err
+			}
+		case "unsuspend":
+			if integration.DeletedAt == nil {
+				integration.Active = true
+				if err := s.integrationRepo.Update(ctx, integration); err != nil {
+					return err
+				}
+			}
+		}
+	case "installation_repositories":
+		switch strings.TrimSpace(action) {
+		case "removed":
+			for _, externalID := range externalIDs {
+				repo, err := s.repoRepo.GetActiveByExternalID(ctx, integration.ID, externalID)
+				if err != nil {
+					return err
+				}
+				if repo == nil {
+					continue
+				}
+				if err := s.repoRepo.SoftDeleteByID(ctx, repo.ID); err != nil {
+					return err
+				}
+			}
+		case "added":
+			for _, externalID := range externalIDs {
+				repo, err := s.repoRepo.GetByExternalID(ctx, integration.ID, externalID)
+				if err != nil {
+					return err
+				}
+				if repo == nil || repo.DeletedAt == nil {
+					continue
+				}
+				repo.Active = true
+				repo.DeletedAt = nil
+				repo.UpdatedAt = now
+				if err := s.repoRepo.Update(ctx, repo); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // GetTaskGitLinks returns git links for a story.
@@ -530,16 +882,20 @@ func (s *GitService) UpdateTaskDeliveryTarget(ctx context.Context, workspaceID, 
 		return nil, err
 	}
 
-	_ = s.activitySvc.Log(ctx, workspaceID, "task", storyID, &actorID, "updated", strPtr("delivery_target"), nil, target.RepoFullName, nil)
-	s.wsPublisher.Publish(websocket.Event{
-		Action:      "updated",
-		Entity:      "task_delivery_target",
-		EntityID:    target.ID,
-		WorkspaceID: workspaceID,
-		ParentType:  "task",
-		ParentID:    storyID,
-		ActorID:     actorID,
-	})
+	if s.activitySvc != nil && actorID != "" {
+		_ = s.activitySvc.Log(ctx, workspaceID, "task", storyID, &actorID, "updated", strPtr("delivery_target"), nil, target.RepoFullName, nil)
+	}
+	if s.wsPublisher != nil {
+		s.wsPublisher.Publish(websocket.Event{
+			Action:      "updated",
+			Entity:      "task_delivery_target",
+			EntityID:    target.ID,
+			WorkspaceID: workspaceID,
+			ParentType:  "task",
+			ParentID:    storyID,
+			ActorID:     actorID,
+		})
+	}
 	return target, nil
 }
 
@@ -981,29 +1337,37 @@ func (s *GitService) resolveGitHubInstallState(ctx context.Context, stateToken s
 
 func (s *GitService) upsertGitHubIntegration(
 	ctx context.Context,
-	workspaceID string,
+	workspace *model.Workspace,
 	installationID string,
 	installation *githubapp.Installation,
 	actorID string,
 ) (*model.GitIntegration, error) {
+	if workspace == nil {
+		return nil, fmt.Errorf("workspace is required")
+	}
+	if workspace.OrganizationID == nil || strings.TrimSpace(*workspace.OrganizationID) == "" {
+		return nil, fmt.Errorf("workspace organization is required")
+	}
 	accountLogin := strings.TrimSpace(installation.AccountLogin)
 	appID := githubapp.InstallationIDString(installation.AppID)
 	displayName := "GitHub App"
 	if accountLogin != "" {
 		displayName = "GitHub " + accountLogin
 	}
+	orgID := strings.TrimSpace(*workspace.OrganizationID)
 
 	existing, err := s.integrationRepo.GetByInstallationID(ctx, "github", installationID)
 	if err != nil {
 		return nil, err
 	}
-	if existing != nil && existing.WorkspaceID != workspaceID {
-		return nil, fmt.Errorf("github installation %s is already connected to another workspace", installationID)
+	if existing != nil && existing.OrganizationID != nil && strings.TrimSpace(*existing.OrganizationID) != orgID {
+		return nil, fmt.Errorf("github installation %s is already connected to another organization", installationID)
 	}
 	if existing == nil {
 		secret := generateWebhookSecret()
 		integration := &model.GitIntegration{
-			WorkspaceID:    workspaceID,
+			WorkspaceID:    workspace.ID,
+			OrganizationID: workspace.OrganizationID,
 			Provider:       "github",
 			DisplayName:    displayName,
 			CredentialMode: "github_app",
@@ -1017,18 +1381,23 @@ func (s *GitService) upsertGitHubIntegration(
 			return nil, err
 		}
 		if s.activitySvc != nil && actorID != "" {
-			_ = s.activitySvc.Log(ctx, workspaceID, "git_integration", integration.ID, &actorID, "created", nil, nil, &integration.DisplayName, nil)
+			_ = s.activitySvc.Log(ctx, workspace.ID, "git_integration", integration.ID, &actorID, "created", nil, nil, &integration.DisplayName, nil)
 		}
-		s.publishSimpleEvent("created", "git_integration", integration.ID, workspaceID, actorID)
+		s.publishSimpleEvent("created", "git_integration", integration.ID, workspace.ID, actorID)
 		return integration, nil
 	}
 
 	existing.DisplayName = displayName
+	if existing.WorkspaceID == "" {
+		existing.WorkspaceID = workspace.ID
+	}
+	existing.OrganizationID = workspace.OrganizationID
 	existing.CredentialMode = "github_app"
 	existing.AccountLogin = trimPtr(&accountLogin)
 	existing.InstallationID = strPtr(installationID)
 	existing.AppID = trimPtr(&appID)
 	existing.Active = true
+	existing.DeletedAt = nil
 	if existing.WebhookSecret == nil || strings.TrimSpace(*existing.WebhookSecret) == "" {
 		secret := generateWebhookSecret()
 		existing.WebhookSecret = &secret
@@ -1037,10 +1406,54 @@ func (s *GitService) upsertGitHubIntegration(
 		return nil, err
 	}
 	if s.activitySvc != nil && actorID != "" {
-		_ = s.activitySvc.Log(ctx, workspaceID, "git_integration", existing.ID, &actorID, "updated", nil, nil, &existing.DisplayName, nil)
+		_ = s.activitySvc.Log(ctx, workspace.ID, "git_integration", existing.ID, &actorID, "updated", nil, nil, &existing.DisplayName, nil)
 	}
-	s.publishSimpleEvent("updated", "git_integration", existing.ID, workspaceID, actorID)
+	s.publishSimpleEvent("updated", "git_integration", existing.ID, workspace.ID, actorID)
 	return existing, nil
+}
+
+func (s *GitService) isOrgOwner(ctx context.Context, organizationID, userID string) bool {
+	if s.orgRepo == nil || strings.TrimSpace(organizationID) == "" || strings.TrimSpace(userID) == "" {
+		return false
+	}
+	role, err := s.orgRepo.GetMemberRole(ctx, organizationID, userID)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(role), "owner")
+}
+
+func (s *GitService) assertCanEnumerateAvailableRepos(ctx context.Context, workspaceID, actorID string) error {
+	if s.workspaceRepo == nil {
+		return fmt.Errorf("workspace repository is not configured")
+	}
+	workspace, err := s.workspaceRepo.GetByID(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+	if workspace == nil {
+		return fmt.Errorf("workspace not found")
+	}
+	if workspace.OrganizationID == nil || strings.TrimSpace(*workspace.OrganizationID) == "" {
+		return fmt.Errorf("workspace organization is required")
+	}
+
+	orgID := strings.TrimSpace(*workspace.OrganizationID)
+	if s.isOrgOwner(ctx, orgID, actorID) {
+		return nil
+	}
+
+	visibleWorkspaces, err := s.workspaceRepo.List(ctx, actorID, orgID)
+	if err != nil {
+		return err
+	}
+	for _, candidate := range visibleWorkspaces {
+		role := strings.ToLower(strings.TrimSpace(candidate.Role))
+		if role == model.RoleOwner || role == model.RoleAdmin {
+			return nil
+		}
+	}
+	return fmt.Errorf("forbidden")
 }
 
 func (s *GitService) workspaceSettingsURL(workspaceSlug string) string {

@@ -732,6 +732,7 @@ func main() {
 		taskDeliveryTargetRepo,
 		settingsRepo,
 		workspaceRepo,
+		orgRepo,
 		pmTaskRepo,
 		pmActivityService,
 		wsPublisher,

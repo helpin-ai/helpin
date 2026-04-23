@@ -80,7 +80,6 @@ func inboundPayloadBodies(payload model.PostmarkInboundPayload) (markdown, htmlB
 	return strings.TrimSpace(payload.TextBody), htmlBody
 }
 
-
 const (
 	emailFallbackOutboxKey     = "email_fallback_outbox"
 	emailFallbackLockKey       = "email_fallback_lock"
@@ -697,6 +696,216 @@ func (s *EmailFallbackService) ProcessOpenEvent(ctx context.Context, payload mod
 		"message_count", len(logRow.MessageIDs),
 	)
 	s.publishMessageUpdated(logRow.WorkspaceID, logRow.ConversationID, lastString([]string(logRow.MessageIDs)), "postmark:open")
+	return nil
+}
+
+// ProcessDeliveryEvent records an outbound email delivery and mirrors it onto the related support conversation.
+func (s *EmailFallbackService) ProcessDeliveryEvent(ctx context.Context, payload model.PostmarkDeliveryPayload, rawPayload string) error {
+	if s == nil || s.emailLogRepo == nil {
+		return nil
+	}
+	if strings.TrimSpace(rawPayload) == "" {
+		rawPayloadBytes, err := json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("marshal delivery payload: %w", err)
+		}
+		rawPayload = string(rawPayloadBytes)
+	}
+
+	postmarkMessageID := strings.TrimSpace(payload.MessageID)
+	receivedAt := parsePostmarkTimestamp(payload.DeliveredAt)
+	if postmarkMessageID == "" {
+		s.recordWebhookEvent(ctx, "delivery", "", strings.TrimSpace(payload.MessageStream), rawPayload, nil, nil, receivedAt)
+		s.logger.InfoContext(ctx, "postmark delivery ignored without message id")
+		return nil
+	}
+
+	logRow, err := s.emailLogRepo.GetByPostmarkMessageID(ctx, postmarkMessageID)
+	if err != nil {
+		return err
+	}
+	var conv *model.SupportConversation
+	if logRow != nil && strings.TrimSpace(logRow.ConversationID) != "" {
+		conv, _ = s.findConversationByID(ctx, logRow.ConversationID)
+	}
+	s.recordWebhookEvent(ctx, "delivery", postmarkMessageID, strings.TrimSpace(payload.MessageStream), rawPayload, conv, logRow, receivedAt)
+	if logRow == nil || logRow.Direction != "outbound" || len(logRow.MessageIDs) == 0 {
+		s.logger.InfoContext(ctx, "postmark delivery ignored without matching outbound email",
+			"message_id", postmarkMessageID,
+		)
+		return nil
+	}
+	if logRow.DeliveredAt != nil {
+		s.logger.InfoContext(ctx, "postmark delivery duplicate ignored",
+			"message_id", postmarkMessageID,
+			"conversation_id", logRow.ConversationID,
+		)
+		return nil
+	}
+	if logRow.Status == "bounced" || logRow.Status == "spam_complaint" {
+		s.logger.InfoContext(ctx, "postmark delivery ignored after terminal delivery failure",
+			"message_id", postmarkMessageID,
+			"conversation_id", logRow.ConversationID,
+			"status", logRow.Status,
+		)
+		return nil
+	}
+
+	deliveredAt := s.now()
+	if receivedAt != nil {
+		deliveredAt = *receivedAt
+	}
+	if err := s.emailLogRepo.MarkDelivered(ctx, logRow.ID, deliveredAt); err != nil {
+		return err
+	}
+
+	s.logger.InfoContext(ctx, "postmark delivery marked support email delivered",
+		"message_id", postmarkMessageID,
+		"conversation_id", logRow.ConversationID,
+	)
+	s.publishMessageUpdated(logRow.WorkspaceID, logRow.ConversationID, lastString([]string(logRow.MessageIDs)), "postmark:delivery")
+	return nil
+}
+
+// ProcessBounceEvent records an outbound email bounce and mirrors it onto the related support conversation.
+func (s *EmailFallbackService) ProcessBounceEvent(ctx context.Context, payload model.PostmarkBouncePayload, rawPayload string) error {
+	if s == nil || s.emailLogRepo == nil {
+		return nil
+	}
+	if strings.TrimSpace(rawPayload) == "" {
+		rawPayloadBytes, err := json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("marshal bounce payload: %w", err)
+		}
+		rawPayload = string(rawPayloadBytes)
+	}
+
+	postmarkMessageID := strings.TrimSpace(payload.MessageID)
+	receivedAt := parsePostmarkTimestamp(payload.BouncedAt)
+	if postmarkMessageID == "" {
+		s.recordWebhookEvent(ctx, "bounce", "", strings.TrimSpace(payload.MessageStream), rawPayload, nil, nil, receivedAt)
+		s.logger.InfoContext(ctx, "postmark bounce ignored without message id")
+		return nil
+	}
+
+	logRow, err := s.emailLogRepo.GetByPostmarkMessageID(ctx, postmarkMessageID)
+	if err != nil {
+		return err
+	}
+	var conv *model.SupportConversation
+	if logRow != nil && strings.TrimSpace(logRow.ConversationID) != "" {
+		conv, _ = s.findConversationByID(ctx, logRow.ConversationID)
+	}
+	s.recordWebhookEvent(ctx, "bounce", postmarkMessageID, strings.TrimSpace(payload.MessageStream), rawPayload, conv, logRow, receivedAt)
+	if logRow == nil || logRow.Direction != "outbound" || len(logRow.MessageIDs) == 0 {
+		s.logger.InfoContext(ctx, "postmark bounce ignored without matching outbound email",
+			"message_id", postmarkMessageID,
+		)
+		return nil
+	}
+	if logRow.Status == "spam_complaint" {
+		s.logger.InfoContext(ctx, "postmark bounce ignored after spam complaint",
+			"message_id", postmarkMessageID,
+			"conversation_id", logRow.ConversationID,
+		)
+		return nil
+	}
+	if logRow.BouncedAt != nil && logRow.Status == "bounced" {
+		s.logger.InfoContext(ctx, "postmark bounce duplicate ignored",
+			"message_id", postmarkMessageID,
+			"conversation_id", logRow.ConversationID,
+		)
+		return nil
+	}
+	if logRow.Status == "opened" {
+		s.logger.InfoContext(ctx, "postmark bounce ignored after open",
+			"message_id", postmarkMessageID,
+			"conversation_id", logRow.ConversationID,
+		)
+		return nil
+	}
+
+	bouncedAt := s.now()
+	if receivedAt != nil {
+		bouncedAt = *receivedAt
+	}
+	description := strings.TrimSpace(payload.Description)
+	if description == "" {
+		description = strings.TrimSpace(payload.Details)
+	}
+	if err := s.emailLogRepo.MarkBounced(ctx, logRow.ID, "bounced", bouncedAt, description); err != nil {
+		return err
+	}
+
+	s.logger.InfoContext(ctx, "postmark bounce marked support email bounced",
+		"message_id", postmarkMessageID,
+		"conversation_id", logRow.ConversationID,
+	)
+	s.publishMessageUpdated(logRow.WorkspaceID, logRow.ConversationID, lastString([]string(logRow.MessageIDs)), "postmark:bounce")
+	return nil
+}
+
+// ProcessSpamComplaintEvent records an outbound email spam complaint and mirrors it onto the related support conversation.
+func (s *EmailFallbackService) ProcessSpamComplaintEvent(ctx context.Context, payload model.PostmarkSpamComplaintPayload, rawPayload string) error {
+	if s == nil || s.emailLogRepo == nil {
+		return nil
+	}
+	if strings.TrimSpace(rawPayload) == "" {
+		rawPayloadBytes, err := json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("marshal spam complaint payload: %w", err)
+		}
+		rawPayload = string(rawPayloadBytes)
+	}
+
+	postmarkMessageID := strings.TrimSpace(payload.MessageID)
+	receivedAt := parsePostmarkTimestamp(payload.BouncedAt)
+	if postmarkMessageID == "" {
+		s.recordWebhookEvent(ctx, "spam_complaint", "", strings.TrimSpace(payload.MessageStream), rawPayload, nil, nil, receivedAt)
+		s.logger.InfoContext(ctx, "postmark spam complaint ignored without message id")
+		return nil
+	}
+
+	logRow, err := s.emailLogRepo.GetByPostmarkMessageID(ctx, postmarkMessageID)
+	if err != nil {
+		return err
+	}
+	var conv *model.SupportConversation
+	if logRow != nil && strings.TrimSpace(logRow.ConversationID) != "" {
+		conv, _ = s.findConversationByID(ctx, logRow.ConversationID)
+	}
+	s.recordWebhookEvent(ctx, "spam_complaint", postmarkMessageID, strings.TrimSpace(payload.MessageStream), rawPayload, conv, logRow, receivedAt)
+	if logRow == nil || logRow.Direction != "outbound" || len(logRow.MessageIDs) == 0 {
+		s.logger.InfoContext(ctx, "postmark spam complaint ignored without matching outbound email",
+			"message_id", postmarkMessageID,
+		)
+		return nil
+	}
+	if logRow.BouncedAt != nil && logRow.Status == "spam_complaint" {
+		s.logger.InfoContext(ctx, "postmark spam complaint duplicate ignored",
+			"message_id", postmarkMessageID,
+			"conversation_id", logRow.ConversationID,
+		)
+		return nil
+	}
+
+	complaintAt := s.now()
+	if receivedAt != nil {
+		complaintAt = *receivedAt
+	}
+	description := strings.TrimSpace(payload.Description)
+	if description == "" {
+		description = strings.TrimSpace(payload.Details)
+	}
+	if err := s.emailLogRepo.MarkBounced(ctx, logRow.ID, "spam_complaint", complaintAt, description); err != nil {
+		return err
+	}
+
+	s.logger.InfoContext(ctx, "postmark spam complaint marked support email complained",
+		"message_id", postmarkMessageID,
+		"conversation_id", logRow.ConversationID,
+	)
+	s.publishMessageUpdated(logRow.WorkspaceID, logRow.ConversationID, lastString([]string(logRow.MessageIDs)), "postmark:spam_complaint")
 	return nil
 }
 

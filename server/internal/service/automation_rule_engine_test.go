@@ -113,6 +113,8 @@ func setupRuleEngineTestDB(t *testing.T) *gorm.DB {
 			private BOOLEAN NOT NULL DEFAULT 1,
 			archived BOOLEAN NOT NULL DEFAULT 0,
 			selected BOOLEAN NOT NULL DEFAULT 1,
+			active BOOLEAN NOT NULL DEFAULT 1,
+			deleted_at DATETIME,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -253,6 +255,7 @@ func TestResolveRunBranchOverrides_UsesEffectiveTaskDeliveryBranches(t *testing.
 		repository.NewTaskDeliveryTargetRepository(db),
 		repository.NewSettingsRepository(db),
 		repository.NewWorkspaceRepository(db),
+		repository.NewOrganizationRepository(db),
 		repository.NewPMTaskRepository(db),
 		nil,
 		nil,

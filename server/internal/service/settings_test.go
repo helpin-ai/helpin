@@ -775,9 +775,11 @@ func TestUpdateTeamRepoDefault_TrimsBranch(t *testing.T) {
 	}
 
 	// Insert a fake repository row so the FK doesn't block (SQLite doesn't enforce FK by default).
-	mustExec(t, db, `INSERT INTO git_repositories (id, workspace_id, git_integration_id, repo_full_name, repo_name, repo_owner, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
-		"repo1", "ws1", "gi1", "org/repo", "repo", "org")
+	mustExec(t, db, `INSERT INTO git_repositories (
+			id, workspace_id, integration_id, provider, external_id, full_name, default_branch,
+			permissions, private, archived, selected, active, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+		"repo1", "ws1", "gi1", "github", "123", "org/repo", "main", "{}", 1, 0, 1, 1)
 
 	branch := "  develop  "
 	tmpl := "  feat-{display_id}  "

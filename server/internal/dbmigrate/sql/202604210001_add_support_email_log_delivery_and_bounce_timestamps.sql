@@ -1,0 +1,3 @@
+ALTER TABLE support_email_logs
+    ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS bounced_at TIMESTAMPTZ;

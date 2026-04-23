@@ -4171,16 +4171,27 @@ func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*r
 		state.teamDefault = teamDefault
 
 		if target != nil && target.RepositoryID != nil && *target.RepositoryID != "" {
-			repo, err := a.gitRepo.GetByID(ctx, run.WorkspaceID, *target.RepositoryID)
+			repo, err := a.gitRepo.GetByIDAny(ctx, *target.RepositoryID)
 			if err != nil {
 				return nil, err
+			}
+			if repo != nil {
+				if repo.WorkspaceID != run.WorkspaceID {
+					return nil, fmt.Errorf("delivery target repository does not belong to this workspace")
+				}
+				if repo.DeletedAt != nil || !repo.Active {
+					return nil, fmt.Errorf("delivery target repository is inactive")
+				}
 			}
 			state.repository = repo
 		}
 		if target != nil && target.IntegrationID != nil && *target.IntegrationID != "" {
-			integration, err := a.gitIntRepo.GetByID(ctx, run.WorkspaceID, *target.IntegrationID)
+			integration, err := a.gitIntRepo.GetByIDAny(ctx, *target.IntegrationID)
 			if err != nil {
 				return nil, err
+			}
+			if integration != nil && !integration.Active {
+				return nil, fmt.Errorf("delivery target integration is inactive")
 			}
 			state.integration = integration
 		}
@@ -5687,22 +5698,25 @@ func (a *AgentRunActivities) preparePlanningRepository(ctx context.Context, stat
 		return nil
 	}
 
-	repo, err := a.gitRepo.GetByID(ctx, state.run.WorkspaceID, *state.epic.PlanningRepositoryID)
+	repo, err := a.gitRepo.GetByIDAny(ctx, *state.epic.PlanningRepositoryID)
 	if err != nil {
 		return err
 	}
 	if repo == nil {
 		return fmt.Errorf("planning repository not found")
 	}
-	if repo.Archived || !repo.Selected {
+	if repo.WorkspaceID != state.run.WorkspaceID {
+		return fmt.Errorf("planning repository does not belong to this workspace")
+	}
+	if repo.DeletedAt != nil || !repo.Active || repo.Archived || !repo.Selected {
 		return fmt.Errorf("planning repository is not available")
 	}
 
-	integration, err := a.gitIntRepo.GetByID(ctx, state.run.WorkspaceID, repo.IntegrationID)
+	integration, err := a.gitIntRepo.GetByIDAny(ctx, repo.IntegrationID)
 	if err != nil {
 		return err
 	}
-	if integration == nil {
+	if integration == nil || !integration.Active {
 		return fmt.Errorf("planning repository integration not found")
 	}
 
