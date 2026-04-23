@@ -38,6 +38,13 @@ export function nextCompletedRunNotificationId(
   return latestRun.id;
 }
 
+export function shouldReloadEpicPlannerRuns(
+  detail: { parent_type?: string; parent_id?: string; data?: { status?: string } } | undefined,
+  epicId: string,
+) {
+  return detail?.parent_type === 'epic' && detail.parent_id === epicId;
+}
+
 export function EpicPlannerPanel({
   workspaceId,
   epicId,
@@ -101,12 +108,7 @@ export function EpicPlannerPanel({
         parent_id?: string;
         data?: { status?: string };
       } | undefined;
-      if (detail?.parent_type !== 'epic' || detail.parent_id !== epicId) return;
-
-      const eventStatus = detail.data?.status;
-      // While the run is actively executing, no need to reload the run list —
-      // the list only changes on status transitions (completed, failed, awaiting_*).
-      if (eventStatus === 'running' || eventStatus === 'queued') return;
+      if (!shouldReloadEpicPlannerRuns(detail, epicId)) return;
 
       void loadRuns();
     };

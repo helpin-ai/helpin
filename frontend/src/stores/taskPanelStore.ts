@@ -11,7 +11,7 @@ interface TaskPanelState {
   shouldSuppressOpen: (taskId: string) => boolean;
 }
 
-const RECENTLY_CLOSED_TASK_SUPPRESSION_MS = 250;
+const RECENTLY_CLOSED_TASK_SUPPRESSION_MS = 2_000;
 
 export function clearTaskSearchParam() {
   if (typeof window === 'undefined') return;
