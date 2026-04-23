@@ -264,9 +264,9 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	reviewerProfile := worker.GetRuntimeProfile(model.AgentPresetReviewAgent)
 	supportProfile := worker.GetRuntimeProfile(model.AgentPresetSupportAgent)
 	codeBuilderProvider := model.AgentModelProviderOpenAI
-	codeBuilderModel := "gpt-5.4"
+	codeBuilderModel := "gpt-5.5"
 	reviewAgentProvider := model.AgentModelProviderOpenAI
-	reviewAgentModel := "gpt-5.4"
+	reviewAgentModel := "gpt-5.5"
 	highReasoning := "high"
 	fastServiceTier := "fast"
 	codexOpenAIDefaultExecutionConfig := model.MarshalAgentExecutionConfig(model.AgentExecutionConfig{

@@ -10,7 +10,7 @@ import (
 
 func TestBuildRolloutSummaryAggregatesByProviderModelAndPreset(t *testing.T) {
 	openai := "openai"
-	openaiModel := "gpt-5.4"
+	openaiModel := "gpt-5.5"
 	anthropic := "anthropic"
 	anthropicModel := "claude-4"
 
@@ -77,7 +77,7 @@ func TestBuildRolloutSummaryAggregatesByProviderModelAndPreset(t *testing.T) {
 	}
 
 	first := summary.Groups[0]
-	if first.Provider != "openai" || first.Model != "gpt-5.4" || first.PresetKey != model.AgentPresetEpicPlanner {
+	if first.Provider != "openai" || first.Model != "gpt-5.5" || first.PresetKey != model.AgentPresetEpicPlanner {
 		t.Fatalf("unexpected first summary group %#v", first)
 	}
 	if first.RunCount != 2 || first.CompletedRuns != 1 || first.FailedRuns != 0 || first.CancelledRuns != 1 {

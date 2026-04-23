@@ -91,7 +91,7 @@ type Config struct {
 	CRMLLMBaseURL  string
 	CRMLLMModel    string
 
-	// Query expansion for support AI RAG pipeline (optional — defaults to openai/gpt-5.4-mini)
+	// Query expansion for support AI RAG pipeline (optional — defaults to openai/gpt-5.5)
 	QueryExpansionModel    string
 	QueryExpansionProvider string
 
@@ -226,7 +226,7 @@ func Load() (*Config, error) {
 		CRMLLMAPIKey:                      os.Getenv("CRM_LLM_API_KEY"),
 		CRMLLMBaseURL:                     os.Getenv("CRM_LLM_BASE_URL"),
 		CRMLLMModel:                       os.Getenv("CRM_LLM_MODEL"),
-		QueryExpansionModel:               strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_MODEL"), "gpt-5.4-mini")),
+		QueryExpansionModel:               strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_MODEL"), "gpt-5.5")),
 		QueryExpansionProvider:            strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_PROVIDER"), "openai")),
 		MaxMindAccountID:                  strings.TrimSpace(os.Getenv("MAXMIND_ACCOUNT_ID")),
 		MaxMindDBPath:                     strings.TrimSpace(os.Getenv("MAXMIND_DB_PATH")),
