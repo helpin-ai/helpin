@@ -1056,6 +1056,168 @@ func TestBuildTaskRunDocumentContextSectionsIncludesPlanDocumentThenLinkedDocs(t
 	}
 }
 
+func TestBuildTaskExecutionInstructionsIncludesRunContextDocsAndBranches(t *testing.T) {
+	db := newPlannerApprovalTestDB(t)
+	for _, args := range [][]any{
+		{"doc-plan", "ws-1", "space-1", "Implementation Plan", model.DocStatusDraft, model.SpaceVisibilityWorkspaceWide, "user-1"},
+		{"doc-linked", "ws-1", "space-1", "Kafka Metrics Notes", model.DocStatusDraft, model.SpaceVisibilityWorkspaceWide, "user-1"},
+	} {
+		if err := db.Exec(`INSERT INTO docs_documents (id, workspace_id, space_id, title, status, visibility, created_by, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, args...).Error; err != nil {
+			t.Fatalf("insert docs document: %v", err)
+		}
+	}
+	for _, args := range [][]any{
+		{"content-plan", "doc-plan", "Implement the histogram registration path.", 5},
+		{"content-linked", "doc-linked", "Use the existing Prometheus builder conventions.", 6},
+	} {
+		if err := db.Exec(`INSERT INTO docs_contents (id, document_id, content_text, word_count) VALUES (?, ?, ?, ?)`, args...).Error; err != nil {
+			t.Fatalf("insert docs content: %v", err)
+		}
+	}
+	if err := db.Exec(`INSERT INTO docs_links (id, workspace_id, document_id, linked_object_type, linked_object_id, link_context, created_by, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+		"link-1", "ws-1", "doc-linked", model.LinkedObjectTask, "task-1", "reference", "user-1",
+	).Error; err != nil {
+		t.Fatalf("insert docs link: %v", err)
+	}
+
+	baseBranch := "main"
+	workingBranch := "task/kafka-metrics"
+	activity := &AgentRunActivities{
+		docsDocRepo:     repository.NewDocsDocumentRepository(db),
+		docsContentRepo: repository.NewDocsContentRepository(db),
+		docsLinkRepo:    repository.NewDocsLinkRepository(db),
+	}
+	instructions, err := activity.buildTaskExecutionInstructions(context.Background(), &resolvedRunState{
+		run: &model.AgentRun{
+			WorkspaceID:    "ws-1",
+			BaseBranch:     &baseBranch,
+			WorkingBranch:  &workingBranch,
+			Input:          json.RawMessage(`{"additional_context":"Fallback notes should not win."}`),
+			InvocationMode: model.InvocationModeAutonomous,
+		},
+		task: &model.PMTask{
+			ID:             "task-1",
+			WorkspaceID:    "ws-1",
+			PlanDocumentID: strPtr("doc-plan"),
+		},
+	}, planningRunInput{
+		AdditionalContext: "Use the approved implementation plan first.",
+	})
+	if err != nil {
+		t.Fatalf("buildTaskExecutionInstructions returned error: %v", err)
+	}
+	for _, snippet := range []string{
+		"Operator notes:\nUse the approved implementation plan first.",
+		"Repository branches: base `main`, working `task/kafka-metrics`.",
+		"Canonical task planning document: Implementation Plan [doc-plan]\nImplement the histogram registration path.",
+		"Other docs linked directly to this task:\n- Kafka Metrics Notes [doc-linked]\nUse the existing Prometheus builder conventions.",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected task execution instructions to contain %q\n%s", snippet, instructions)
+		}
+	}
+	if strings.Contains(instructions, "Fallback notes should not win.") {
+		t.Fatalf("expected explicit input additional context to override run input notes\n%s", instructions)
+	}
+}
+
+func TestBuildTaskCompletionInstructionsIncludesTaskContext(t *testing.T) {
+	descriptionJSON := string(tiptap.MarkdownToJSON("Ship the metric and document the follow-up checks."))
+	activity := &AgentRunActivities{}
+	instructions := activity.buildTaskCompletionInstructions(&resolvedRunState{
+		task: &model.PMTask{
+			Name:        "Instrument Kafka producer metrics",
+			Description: &descriptionJSON,
+			EpicID:      strPtr("epic-1"),
+		},
+	}, planningRunInput{
+		AdditionalContext: "Only propose internal cleanup work.",
+	})
+
+	for _, snippet := range []string{
+		`return JSON only with the shape {"summary":"...","followups":[{"title":"...","description":"...","task_type":"chore","priority":"medium"}]}`,
+		"Only propose internal PM/docs/support follow-up work.",
+		"Task: Instrument Kafka producer metrics",
+		"Task description:\nShip the metric and document the follow-up checks.",
+		"Epic ID: epic-1",
+		"Operator notes:\nOnly propose internal cleanup work.",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected task completion instructions to contain %q\n%s", snippet, instructions)
+		}
+	}
+}
+
+func TestBuildCRMDealReviewInstructionsIncludesDealStagesAndSignals(t *testing.T) {
+	db := newCRMDealReviewInstructionTestDB(t)
+	now := time.Now().UTC()
+	for _, stmt := range []struct {
+		query string
+		args  []any
+	}{
+		{
+			query: `INSERT INTO crm_pipelines (id, workspace_id, name, is_default, position, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+			args: []any{"pipeline-1", "ws-1", "Sales Pipeline", true, 1},
+		},
+		{
+			query: `INSERT INTO crm_pipeline_stages (id, pipeline_id, name, stage_type, position, probability, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+			args: []any{"stage-1", "pipeline-1", "Qualified", model.CRMStageTypeOpen, 1, 25},
+		},
+		{
+			query: `INSERT INTO crm_pipeline_stages (id, pipeline_id, name, stage_type, position, probability, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+			args: []any{"stage-2", "pipeline-1", "Proposal", model.CRMStageTypeOpen, 2, 60},
+		},
+		{
+			query: `INSERT INTO crm_deals (id, workspace_id, display_id, name, pipeline_id, stage_id, currency, custom_properties, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, CAST(? AS BLOB), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+			args: []any{"deal-1", "ws-1", "DEAL-1", "Acme expansion", "pipeline-1", "stage-1", "USD", "{}"},
+		},
+		{
+			query: `INSERT INTO crm_buyer_signals (id, workspace_id, deal_id, signal_type, source_type, summary, metadata, confidence, detected_at, created_at)
+				VALUES (?, ?, ?, ?, ?, ?, CAST(? AS BLOB), ?, ?, CURRENT_TIMESTAMP)`,
+			args: []any{"signal-1", "ws-1", "deal-1", model.CRMSignalBuyingIntent, model.CRMSignalSourceEmail, "Asked for implementation timing", "{}", 0.87, now},
+		},
+	} {
+		if err := db.Exec(stmt.query, stmt.args...).Error; err != nil {
+			t.Fatalf("seed CRM instruction context: %v", err)
+		}
+	}
+
+	activity := &AgentRunActivities{
+		crmDealRepo:   repository.NewCRMDealRepository(db),
+		crmSignalRepo: repository.NewCRMSignalRepository(db),
+	}
+	instructions, err := activity.buildCRMDealReviewInstructions(context.Background(), &resolvedRunState{
+		run: &model.AgentRun{
+			WorkspaceID: "ws-1",
+			TargetID:    "deal-1",
+		},
+	}, planningRunInput{
+		AdditionalContext: "Prioritize stage hygiene.",
+	})
+	if err != nil {
+		t.Fatalf("buildCRMDealReviewInstructions returned error: %v", err)
+	}
+	for _, snippet := range []string{
+		`return JSON only with the shape {"summary":"...","recommended_stage_id":"optional-stage-id","note":"optional internal note"}`,
+		"Do not propose outbound messaging, contact creation, or sequence enrollment in this run.",
+		"Deal: Acme expansion",
+		"Current stage: Qualified (stage-1)",
+		"Available stages:\n- Qualified (stage-1)\n- Proposal (stage-2)",
+		"Recent buyer signals:\n- buying_intent: Asked for implementation timing (confidence 0.87)",
+		"Operator notes:\nPrioritize stage hygiene.",
+	} {
+		if !strings.Contains(instructions, snippet) {
+			t.Fatalf("expected CRM deal review instructions to contain %q\n%s", snippet, instructions)
+		}
+	}
+}
+
 func TestBuildTaskPlannerParentEpicLinkedDocSectionsWrapsLinkedDocs(t *testing.T) {
 	db := newPlannerApprovalTestDB(t)
 	if err := db.Exec(`INSERT INTO docs_documents (id, workspace_id, space_id, title, status, visibility, created_by, created_at, updated_at)
@@ -3694,6 +3856,74 @@ func newPlannerApprovalTestDB(t *testing.T) *gorm.DB {
 	} {
 		if err := db.Exec(stmt).Error; err != nil {
 			t.Fatalf("create test table: %v", err)
+		}
+	}
+	return db
+}
+
+func newCRMDealReviewInstructionTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+
+	dbName := fmt.Sprintf("file:crm-deal-review-instructions-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE crm_pipelines (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			is_default BOOLEAN NOT NULL DEFAULT 0,
+			position INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE crm_pipeline_stages (
+			id TEXT PRIMARY KEY,
+			pipeline_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			stage_type TEXT NOT NULL DEFAULT 'open',
+			position INTEGER NOT NULL DEFAULT 0,
+			probability INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE crm_deals (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			display_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			pipeline_id TEXT NOT NULL,
+			stage_id TEXT NOT NULL,
+			amount REAL,
+			currency TEXT NOT NULL DEFAULT 'USD',
+			close_date DATETIME,
+			owner_member_id TEXT,
+			probability INTEGER,
+			custom_properties BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE crm_buyer_signals (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			contact_id TEXT,
+			deal_id TEXT,
+			signal_type TEXT NOT NULL,
+			source_type TEXT NOT NULL DEFAULT 'manual',
+			source_id TEXT,
+			source_thread_id TEXT,
+			summary TEXT NOT NULL,
+			evidence_excerpt TEXT,
+			metadata BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
+			confidence REAL NOT NULL DEFAULT 0,
+			detected_at DATETIME NOT NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create CRM instruction test table: %v", err)
 		}
 	}
 	return db

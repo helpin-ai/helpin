@@ -38,10 +38,16 @@ The core selective native planner path has been implemented. Remaining work is n
 - native selective-path gating, active-skill selection, and active-policy derivation extracted into a dedicated Temporal file
 - native observability artifact persistence extracted into a dedicated Temporal file
 - legacy monolithic planner builders are explicitly scoped as fallback-only and covered by tests proving selective native planners bypass them
+- flow-output and task-execution instruction builders extracted out of the main Temporal activities file
+- legacy planner fallback instruction wrappers/rule sections extracted out of the main Temporal activities file
+- durable run fact assembly extracted out of the main Temporal activities file
+- initial instruction and first-turn conversation assembly extracted out of the main Temporal activities file
 - explicit regression coverage for:
   - PRD request-changes keeping PRD-focused active skills
   - task-extension guidance after approved plans have already created tasks
   - task-planner and epic-planner spec-context helper behavior
+  - task execution context assembly including operator notes, branches, canonical planning docs, and linked docs
+  - flow-output instruction assembly for task-completion and CRM deal-review runs
   - PRD approval re-anchoring to task decomposition after backend application
   - duplicate task-plan application prevention on resume
   - duplicate task-doc persistence prevention on resume
@@ -52,7 +58,7 @@ The core selective native planner path has been implemented. Remaining work is n
 ### Partially implemented
 
 - base-prompt simplification is complete for selective native planner runs, but broader prompt cleanup is still incomplete
-- planner guidance extraction is well underway, with native phase-guidance, planner context assembly, approved-preview application, completion-policy enforcement/retry handling, native repair selection, native selective activation, observability persistence, and legacy fallback scoping split out; Temporal still owns backend orchestration paths
+- planner guidance and adjacent instruction extraction is well underway, with native phase-guidance, planner context assembly, approved-preview application, completion-policy enforcement/retry handling, native repair selection, native selective activation, observability persistence, legacy fallback scoping, flow-output instruction assembly, task-execution context assembly, durable run fact assembly, and first-turn instruction/conversation assembly split out; Temporal still owns backend orchestration paths
 - transition coverage now covers the core apply/resume edges; additional provider/live-run monitoring remains useful
 - regression coverage is materially broader now, but final Phase 5 cleanup can still add targeted tests as new edge cases are found
 - live selective-path validation has enough small-sample evidence to close Phase 4

@@ -70,6 +70,36 @@ func nativeEpicPlannerPhaseName(input planningRunInput, hasSpecContent bool, has
 	}
 }
 
+func nativeEpicPlannerNextStepGuidance(input planningRunInput, hasSpecContent bool, hasTasks bool) string {
+	hasApprovedSpec := input.SpecVersionID != ""
+	hasSpecDoc := input.SpecDocumentID != ""
+	switch {
+	case hasApprovedSpec && hasTasks:
+		return "Next-step guidance: the PRD is approved and tasks already exist. Do not redraft the PRD or recreate existing tasks. Enter clarification or extension mode, inspect current tasks if needed, and only add new tasks if the human explicitly asks for them."
+	case hasApprovedSpec && !hasTasks:
+		return "Next-step guidance: the PRD is approved and no tasks exist yet. Skip PRD drafting entirely and proceed directly to task planning from the approved spec and current codebase context."
+	case hasSpecDoc && hasSpecContent:
+		return "Next-step guidance: a draft PRD exists but it is not approved yet. Resume from the current draft, present or revise it, and request PRD approval before any task planning."
+	default:
+		return "Next-step guidance: no approved PRD exists yet. Follow the full loop from clarification through PRD drafting, preview, revision if needed, and approval."
+	}
+}
+
+func formatInteractivePlanningFacts(input planningRunInput, hasDraftSpec bool, taskCount int) string {
+	facts := []string{
+		fmt.Sprintf("- approved_spec_exists=%t", strings.TrimSpace(input.SpecVersionID) != ""),
+		fmt.Sprintf("- draft_spec_exists=%t", hasDraftSpec),
+		fmt.Sprintf("- existing_task_count=%d", taskCount),
+	}
+	if strings.TrimSpace(input.SpecDocumentID) != "" {
+		facts = append(facts, fmt.Sprintf("- spec_document_id=%s", strings.TrimSpace(input.SpecDocumentID)))
+	}
+	if strings.TrimSpace(input.SpecVersionID) != "" {
+		facts = append(facts, fmt.Sprintf("- approved_spec_version_id=%s", strings.TrimSpace(input.SpecVersionID)))
+	}
+	return "Current durable planning facts:\n" + strings.Join(facts, "\n")
+}
+
 func (a *AgentRunActivities) buildNativeEpicPlannerPhaseGuidance(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {
 	sections, err := a.buildNativeEpicPlannerSections(ctx, state, input)
 	if err != nil {
