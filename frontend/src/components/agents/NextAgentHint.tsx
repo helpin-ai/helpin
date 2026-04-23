@@ -24,12 +24,20 @@ const HINT_COPY: Partial<Record<AgentPersonaKey, { lead: string; cta: string }>>
 interface Props {
   completedAgent: Pick<Agent, 'name' | 'preset_key'> | null | undefined;
   candidates: Agent[];
+  completedPersonaKeys?: ReadonlySet<AgentPersonaKey>;
   onRun: (agent: Agent) => Promise<void> | void;
   className?: string;
   density?: 'compact' | 'comfortable';
 }
 
-export function NextAgentHint({ completedAgent, candidates, onRun, className, density = 'compact' }: Props) {
+export function NextAgentHint({
+  completedAgent,
+  candidates,
+  completedPersonaKeys,
+  onRun,
+  className,
+  density = 'compact',
+}: Props) {
   const [running, setRunning] = useState(false);
 
   const nextAgent = useMemo(() => {
@@ -37,11 +45,12 @@ export function NextAgentHint({ completedAgent, candidates, onRun, className, de
     const fromPersona = resolveAgentPersonaKey({ agent: completedAgent });
     const targetPersona = NEXT_PERSONA[fromPersona];
     if (!targetPersona) return null;
+    if (completedPersonaKeys?.has(targetPersona)) return null;
     return (
       candidates.find((agent) => resolveAgentPersonaKey({ agent }) === targetPersona)
       ?? null
     );
-  }, [completedAgent, candidates]);
+  }, [completedAgent, candidates, completedPersonaKeys]);
 
   if (!nextAgent) return null;
 
