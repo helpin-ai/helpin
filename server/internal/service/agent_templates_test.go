@@ -99,6 +99,40 @@ func TestListAgentTemplatesSeedsSystemTemplates(t *testing.T) {
 	if !ok || len(fields) == 0 {
 		t.Fatalf("expected competitive starter flow fields, got %+v", competitiveFlows[0]["fields"])
 	}
+
+	var dependencyAuditor *model.AgentTemplate
+	for idx := range templates {
+		if templates[idx].Key == model.AgentTemplateTypeDependencyAuditor {
+			dependencyAuditor = &templates[idx]
+			break
+		}
+	}
+	if dependencyAuditor == nil {
+		t.Fatalf("expected %q template, got %+v", model.AgentTemplateTypeDependencyAuditor, templates)
+	}
+	if dependencyAuditor.Name != "Dependency Auditor" {
+		t.Fatalf("expected Dependency Auditor template name, got %q", dependencyAuditor.Name)
+	}
+	if len(dependencyAuditor.Skills) != 1 || dependencyAuditor.Skills[0].Key != model.AgentTemplateTypeDependencyAuditor {
+		t.Fatalf("expected dependency_auditor skill ref, got %+v", dependencyAuditor.Skills)
+	}
+	if dependencyAuditor.SystemPrompt == nil || !strings.Contains(*dependencyAuditor.SystemPrompt, "{{ecosystems}}") || !strings.Contains(*dependencyAuditor.SystemPrompt, "{{raw_configuration_json}}") {
+		t.Fatalf("expected dependency template prompt placeholders, got %+v", dependencyAuditor.SystemPrompt)
+	}
+	var dependencyTargets []string
+	if err := json.Unmarshal(dependencyAuditor.AllowedTargets, &dependencyTargets); err != nil {
+		t.Fatalf("unmarshal dependency allowed targets: %v", err)
+	}
+	if len(dependencyTargets) != 1 || dependencyTargets[0] != "repository" {
+		t.Fatalf("expected repository target, got %v", dependencyTargets)
+	}
+	var dependencyFlows []map[string]any
+	if err := json.Unmarshal(dependencyAuditor.StarterFlows, &dependencyFlows); err != nil {
+		t.Fatalf("unmarshal dependency starter_flows: %v", err)
+	}
+	if len(dependencyFlows) != 1 || dependencyFlows[0]["trigger_type"] != model.TriggerCron {
+		t.Fatalf("expected cron starter flow, got %+v", dependencyFlows)
+	}
 }
 
 func TestCreateAgentFromTemplateCreatesCustomAgentAndStarterFlow(t *testing.T) {
@@ -334,6 +368,149 @@ func TestCreateAgentFromCompetitiveIntelTemplateValidatesFlowInput(t *testing.T)
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := competitiveIntelInputFromTemplateFlow(&model.CreateAgentFromTemplateFlow{
 				FlowKey:   "competitive_intel_scheduled",
+				FlowInput: tt.flowInput,
+			})
+			if err == nil || err.Error() != tt.wantError {
+				t.Fatalf("expected error %q, got %v", tt.wantError, err)
+			}
+		})
+	}
+}
+
+func TestCreateAgentFromDependencyAuditorTemplateCreatesCronRepositoryStarterFlow(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	addAgentTemplateTable(t, db)
+	addAutomationRuleTable(t, db)
+
+	agentRepo := repository.NewAgentRepository(db)
+	activitySvc := NewPMActivityService(repository.NewPMActivityRepository(db))
+	svc := (&AgentService{
+		agentRepo:   agentRepo,
+		activitySvc: activitySvc,
+	}).SetAgentTemplateRepository(repository.NewAgentTemplateRepository(db))
+	ruleEngine := NewAutomationRuleEngine(
+		repository.NewAutomationRuleRepository(db),
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	svc.SetRuleEngine(ruleEngine)
+
+	if err := svc.EnsureSystemTemplates(context.Background()); err != nil {
+		t.Fatalf("EnsureSystemTemplates returned error: %v", err)
+	}
+	template, err := svc.agentTemplateRepo.GetByKey(context.Background(), nil, model.AgentTemplateTypeDependencyAuditor)
+	if err != nil {
+		t.Fatalf("GetByKey returned error: %v", err)
+	}
+	if template == nil {
+		t.Fatal("expected seeded dependency auditor template")
+	}
+
+	flowInput := model.JSONBlob(`{
+		"ecosystems": ["go", "rust", "python", "node", "java"],
+		"include_indirect": false,
+		"schedule_preset": "weekly",
+		"destination_team_id": "team-platform",
+		"destination_state_id": "state-todo",
+		"max_tasks": 20
+	}`)
+	result, err := svc.CreateAgentFromTemplate(context.Background(), "ws-test", template.ID, model.CreateAgentFromTemplateRequest{
+		CreateFlow: true,
+		Flow: &model.CreateAgentFromTemplateFlow{
+			FlowKey:      "dependency_audit_cron",
+			FlowInput:    flowInput,
+			RepositoryID: "repo-1",
+			RepoFullName: "acme/api",
+		},
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("CreateAgentFromTemplate returned error: %v", err)
+	}
+	if result.Agent == nil {
+		t.Fatal("expected created agent")
+	}
+	if result.Agent.SourceTemplateKey != model.AgentTemplateTypeDependencyAuditor {
+		t.Fatalf("expected source_template_key %q, got %q", model.AgentTemplateTypeDependencyAuditor, result.Agent.SourceTemplateKey)
+	}
+	if result.Agent.SystemPrompt == nil || !strings.Contains(*result.Agent.SystemPrompt, "You are an autonomous dependency auditor for the selected repository") || !strings.Contains(*result.Agent.SystemPrompt, `- ecosystems: go, rust, python, node, java`) || !strings.Contains(*result.Agent.SystemPrompt, `- destination_team_id: team-platform`) || !strings.Contains(*result.Agent.SystemPrompt, `"max_tasks": 20`) || strings.Contains(*result.Agent.SystemPrompt, "{{ecosystems}}") {
+		t.Fatalf("expected configured system prompt, got %+v", result.Agent.SystemPrompt)
+	}
+	var allowedTargets []string
+	if err := json.Unmarshal(result.Agent.AllowedTargets, &allowedTargets); err != nil {
+		t.Fatalf("unmarshal allowed targets: %v", err)
+	}
+	if len(allowedTargets) != 1 || allowedTargets[0] != "repository" {
+		t.Fatalf("expected repository target, got %v", allowedTargets)
+	}
+	if result.Flow == nil {
+		t.Fatal("expected starter flow")
+	}
+	if result.Flow.TriggerType != model.TriggerCron {
+		t.Fatalf("expected cron trigger, got %q", result.Flow.TriggerType)
+	}
+
+	var triggerCfg model.TriggerConfigCron
+	if err := json.Unmarshal(result.Flow.TriggerConfig, &triggerCfg); err != nil {
+		t.Fatalf("unmarshal trigger config: %v", err)
+	}
+	if triggerCfg.Preset != "weekly" {
+		t.Fatalf("expected weekly preset, got %+v", triggerCfg)
+	}
+
+	var actionCfg model.ActionConfigRunAgent
+	if err := json.Unmarshal(result.Flow.ActionConfig, &actionCfg); err != nil {
+		t.Fatalf("unmarshal action config: %v", err)
+	}
+	if actionCfg.AgentID != result.Agent.ID {
+		t.Fatalf("expected flow agent_id %q, got %q", result.Agent.ID, actionCfg.AgentID)
+	}
+	if actionCfg.TargetType != "repository" || actionCfg.TargetID != "repo-1" {
+		t.Fatalf("expected repository target repo-1, got %q/%q", actionCfg.TargetType, actionCfg.TargetID)
+	}
+}
+
+func TestCreateAgentFromDependencyAuditorTemplateValidatesFlowInput(t *testing.T) {
+	tests := []struct {
+		name      string
+		flowInput model.JSONBlob
+		wantError string
+	}{
+		{
+			name:      "missing ecosystems",
+			flowInput: model.JSONBlob(`{"destination_team_id":"team-1","schedule_preset":"weekly","max_tasks":20}`),
+			wantError: "flow.flow_input.ecosystems requires at least one of go, rust, python, node, or java",
+		},
+		{
+			name:      "invalid ecosystem",
+			flowInput: model.JSONBlob(`{"ecosystems":["php"],"destination_team_id":"team-1","schedule_preset":"weekly","max_tasks":20}`),
+			wantError: "flow.flow_input.ecosystems must only include go, rust, python, node, or java",
+		},
+		{
+			name:      "missing destination team",
+			flowInput: model.JSONBlob(`{"ecosystems":["go"],"schedule_preset":"weekly","max_tasks":20}`),
+			wantError: "flow.flow_input.destination_team_id is required",
+		},
+		{
+			name:      "invalid schedule preset",
+			flowInput: model.JSONBlob(`{"ecosystems":["go"],"destination_team_id":"team-1","schedule_preset":"monthly","max_tasks":20}`),
+			wantError: "flow.flow_input.schedule_preset must be daily or weekly",
+		},
+		{
+			name:      "invalid max tasks",
+			flowInput: model.JSONBlob(`{"ecosystems":["go"],"destination_team_id":"team-1","schedule_preset":"weekly","max_tasks":200}`),
+			wantError: "flow.flow_input.max_tasks must be between 1 and 100",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := dependencyAuditorInputFromTemplateFlow(&model.CreateAgentFromTemplateFlow{
+				FlowKey:   "dependency_audit_cron",
 				FlowInput: tt.flowInput,
 			})
 			if err == nil || err.Error() != tt.wantError {

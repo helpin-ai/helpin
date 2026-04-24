@@ -3,9 +3,10 @@ package model
 import "time"
 
 const (
-	AgentTemplateRuntimeKindNativeSDK = "native_sdk"
-	AgentTemplateTypeReleaseNotes     = "release_notes_writer"
-	AgentTemplateTypeCompetitiveIntel = "competitive_intelligence_digest"
+	AgentTemplateRuntimeKindNativeSDK  = "native_sdk"
+	AgentTemplateTypeReleaseNotes      = "release_notes_writer"
+	AgentTemplateTypeCompetitiveIntel  = "competitive_intelligence_digest"
+	AgentTemplateTypeDependencyAuditor = "dependency_auditor"
 )
 
 type AgentTemplate struct {
