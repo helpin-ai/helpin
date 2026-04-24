@@ -124,6 +124,7 @@ export class WidgetManager {
   private typingAgentName: string | undefined;
   private typingAgentAvatar: string | undefined;
   private activeTeammate: WidgetActiveTeammate | undefined;
+  private escalationRequestsInFlight = new Set<string>();
   private currentEmail: string | null = null;
   private isConversationExpanded = false;
   private originalDocumentTitle: string | null = null;
@@ -1257,12 +1258,18 @@ export class WidgetManager {
     if (!this.activeConversationId) return;
 
     const conversation = this.conversations.find((c) => c.id === this.activeConversationId);
-    if (conversation?.aiState === 'escalated') {
+    if (conversation?.aiState === 'escalated' || this.escalationRequestsInFlight.has(this.activeConversationId)) {
       return;
     }
 
     if (this.wsConnection?.readyState === WebSocket.OPEN) {
-      this.wsSend('conversation:escalate', {});
+      this.escalationRequestsInFlight.add(this.activeConversationId);
+      try {
+        this.wsSend('conversation:escalate', {});
+      } catch (error) {
+        this.escalationRequestsInFlight.delete(this.activeConversationId);
+        throw error;
+      }
     } else {
       console.error('Failed to escalate to human: WebSocket not connected');
     }
@@ -1705,6 +1712,9 @@ export class WidgetManager {
         if (Array.isArray(convs)) {
           this.conversations = convs.map((c: any) => {
             const conversation = this.mapConversation(c);
+            if (conversation.aiState === 'escalated') {
+              this.escalationRequestsInFlight.delete(conversation.id);
+            }
             return {
               ...conversation,
               unreadCount: (this.isOpen && this.currentView === 'conversation' && this.activeConversationId === c.id)
@@ -1738,6 +1748,7 @@ export class WidgetManager {
           ? data.data.conversation_id
           : this.activeConversationId;
         if (conversationId) {
+          this.escalationRequestsInFlight.delete(conversationId);
           this.conversations = this.conversations.map((conversation) => {
             if (conversation.id !== conversationId) return conversation;
             return {

@@ -1247,6 +1247,32 @@ describe('WidgetManager', () => {
       expect(sent).toEqual([]);
     });
 
+    it('only sends one human escalation request while one is in flight', () => {
+      const sent: string[] = [];
+      (widget as any).activeConversationId = 'conv-1';
+      (widget as any).conversations = [
+        {
+          id: 'conv-1',
+          subject: 'Support',
+          status: 'open',
+          aiState: 'pending',
+        },
+      ];
+      (widget as any).wsConnection = {
+        readyState: WebSocket.OPEN,
+        send: (payload: string) => sent.push(payload),
+        close: vi.fn(),
+        onclose: null,
+      };
+
+      (widget as any).handleEscalateToHuman();
+      (widget as any).handleEscalateToHuman();
+
+      expect(sent.map((frame) => JSON.parse(frame))).toEqual([
+        { type: 'conversation:escalate', data: {} },
+      ]);
+    });
+
     it('refreshes conversation list when the rendered widget switches to messages view', async () => {
       const sent: string[] = [];
       (widget as any).widgetConfig = {

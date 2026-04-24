@@ -946,7 +946,7 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 			"error", historyErr,
 		)
 	} else {
-		escalationAlreadyMessaged = hasEscalationSystemEventInHistory(history)
+		escalationAlreadyMessaged = hasEscalationMessageInHistory(history)
 	}
 
 	// 1. Create system message — use customizable escalation message from settings
