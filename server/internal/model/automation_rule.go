@@ -104,8 +104,11 @@ type TriggerConfigGitHubPullRequest struct {
 
 // TriggerConfigGitHubReleasePublished holds config for github.release_published triggers.
 type TriggerConfigGitHubReleasePublished struct {
-	RepoFullName string `json:"repo_full_name,omitempty"`
-	TagName      string `json:"tag_name,omitempty"`
+	RepoFullName      string   `json:"repo_full_name,omitempty"`
+	TagName           string   `json:"tag_name,omitempty"`
+	TagPattern        string   `json:"tag_pattern,omitempty"`
+	ReleaseKinds      []string `json:"release_kinds,omitempty"`
+	IncludePrerelease bool     `json:"include_prerelease,omitempty"`
 }
 
 // TriggerConfigGitHubCheckSuiteCompleted holds config for github.check_suite_completed triggers.
@@ -117,15 +120,23 @@ type TriggerConfigGitHubCheckSuiteCompleted struct {
 
 // Action config shapes (deserialized from JSONB).
 
+type ActionConfigRunAgentOutput struct {
+	Type           string  `json:"type,omitempty"`
+	SpaceID        string  `json:"space_id,omitempty"`
+	CollectionID   *string `json:"collection_id,omitempty"`
+	IdempotencyKey string  `json:"idempotency_key,omitempty"`
+}
+
 // ActionConfigRunAgent holds config for start_agent_run actions.
 type ActionConfigRunAgent struct {
-	TargetType            string  `json:"target_type,omitempty"`
-	TargetID              string  `json:"target_id,omitempty"`
-	AgentID               string  `json:"agent_id"`
-	LegacyScheduleAgentID string  `json:"legacy_schedule_agent_id,omitempty"`
-	AdditionalContext     *string `json:"additional_context,omitempty"`
-	BaseBranch            string  `json:"base_branch,omitempty"`
-	WorkingBranch         string  `json:"working_branch,omitempty"`
+	TargetType            string                      `json:"target_type,omitempty"`
+	TargetID              string                      `json:"target_id,omitempty"`
+	AgentID               string                      `json:"agent_id"`
+	LegacyScheduleAgentID string                      `json:"legacy_schedule_agent_id,omitempty"`
+	AdditionalContext     *string                     `json:"additional_context,omitempty"`
+	BaseBranch            string                      `json:"base_branch,omitempty"`
+	WorkingBranch         string                      `json:"working_branch,omitempty"`
+	Output                *ActionConfigRunAgentOutput `json:"output,omitempty"`
 }
 
 // ActionConfigMoveToState holds config for move_to_state actions.
@@ -181,10 +192,17 @@ type AutomationEvent struct {
 	TargetID          string // entity UUID
 	TeamID            string // for scope matching without a task
 	RepoFullName      string
+	RepositoryID      string
 	Branch            string
 	BaseBranch        string
 	PullRequestNumber int
 	TagName           string
+	TargetCommitish   string
+	ReleaseName       string
+	ReleaseURL        string
+	PublishedAt       *time.Time
+	IsPrerelease      bool
+	ReleaseKind       string
 	Conclusion        string
 }
 

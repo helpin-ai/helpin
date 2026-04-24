@@ -2284,16 +2284,7 @@ func normalizeSupportTaskPriority(value string) string {
 }
 
 func supportTaskDescriptionToRichText(markdown string) *string {
-	trimmed := strings.TrimSpace(markdown)
-	if trimmed == "" {
-		return nil
-	}
-	rendered, err := tiptap.RenderHTML(tiptap.MarkdownToJSON(trimmed))
-	if err != nil {
-		slog.Warn("failed to render support task markdown to html", "error", err)
-		return strPtr(trimmed)
-	}
-	return strPtr(strings.TrimSpace(rendered))
+	return normalizeTaskDescriptionRichText(strPtr(markdown))
 }
 
 func trimRichTextPtr(value *string) *string {

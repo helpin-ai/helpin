@@ -9,6 +9,8 @@ import (
 	workerpkg "github.com/helpin-ai/helpin/server/internal/worker"
 )
 
+const defaultInitialRunUserPrompt = "Start this agent run. Follow the configured system prompt and use the available tools to complete the requested work."
+
 func splitNativePhaseGuidance(runtimeKind string, state *resolvedRunState, initialInstructions string) (string, string) {
 	initialInstructions = strings.TrimSpace(initialInstructions)
 	if initialInstructions == "" {
@@ -96,7 +98,7 @@ func (a *AgentRunActivities) buildInitialRunUserPrompt(ctx context.Context, stat
 		ticketMessages = messages
 	}
 
-	return workerpkg.BuildUserPrompt(
+	prompt := workerpkg.BuildUserPrompt(
 		state.agent,
 		state.task,
 		state.epic,
@@ -107,7 +109,11 @@ func (a *AgentRunActivities) buildInitialRunUserPrompt(ctx context.Context, stat
 		artifactContext,
 		planningInput.Stage,
 		initialInstructions,
-	), nil
+	)
+	if strings.TrimSpace(prompt) == "" {
+		return defaultInitialRunUserPrompt, nil
+	}
+	return prompt, nil
 }
 
 func (a *AgentRunActivities) buildInitialInstructions(ctx context.Context, state *resolvedRunState, input planningRunInput) (string, error) {

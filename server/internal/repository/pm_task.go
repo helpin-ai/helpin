@@ -434,6 +434,21 @@ func (r *PMTaskRepository) ListByIDs(ctx context.Context, workspaceID string, id
 	return tasks, nil
 }
 
+// ListByDisplayIDs returns raw tasks by display ID for a workspace.
+func (r *PMTaskRepository) ListByDisplayIDs(ctx context.Context, workspaceID string, displayIDs []int) ([]model.PMTask, error) {
+	if len(displayIDs) == 0 {
+		return []model.PMTask{}, nil
+	}
+
+	var tasks []model.PMTask
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND display_id IN ?", workspaceID, displayIDs).
+		Find(&tasks).Error; err != nil {
+		return nil, fmt.Errorf("list tasks by display ids: %w", err)
+	}
+	return tasks, nil
+}
+
 func (r *PMTaskRepository) ListStateNamesByIDs(ctx context.Context, ids []string) (map[string]string, error) {
 	if len(ids) == 0 {
 		return map[string]string{}, nil

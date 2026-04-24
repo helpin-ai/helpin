@@ -102,10 +102,11 @@ func agentRunActivityMetadata(agent *model.Agent, run *model.AgentRun, action st
 	return md
 }
 
-func buildAgentRunInputPayload(targetType, targetID string, trigger *model.AgentRunTriggerContext, event *model.AgentRunEventContext, additionalContext *string) ([]byte, error) {
+func buildAgentRunInputPayload(targetType, targetID string, trigger *model.AgentRunTriggerContext, event *model.AgentRunEventContext, output *model.AgentRunOutputContext, additionalContext *string) ([]byte, error) {
 	payload := model.AgentRunInputPayload{
 		Trigger: trigger,
 		Event:   event,
+		Output:  output,
 	}
 	payload.SetTarget(targetType, targetID)
 	if additionalContext != nil {
@@ -140,6 +141,7 @@ func buildContinuationAdditionalContext(run *model.AgentRun, content string) str
 // AgentService contains agent business logic.
 type AgentService struct {
 	agentRepo                  *repository.AgentRepository
+	agentTemplateRepo          *repository.AgentTemplateRepository
 	workspacePresetVersionRepo *repository.WorkspaceAgentPresetVersionRepository
 	runRepo                    *repository.AgentRunRepository
 	triggerExecutionRepo       *repository.AgentTriggerExecutionRepository
@@ -265,6 +267,11 @@ func (s *AgentService) SetCodexAuthManager(manager *worker.CodexAuthManager) *Ag
 
 func (s *AgentService) SetTriggerExecutionRepository(repo *repository.AgentTriggerExecutionRepository) *AgentService {
 	s.triggerExecutionRepo = repo
+	return s
+}
+
+func (s *AgentService) SetAgentTemplateRepository(repo *repository.AgentTemplateRepository) *AgentService {
+	s.agentTemplateRepo = repo
 	return s
 }
 
@@ -1682,6 +1689,10 @@ func (s *AgentService) ListModelProviders() []model.AgentModelProviderOption {
 
 // CreateAgent creates a new agent.
 func (s *AgentService) CreateAgent(ctx context.Context, req model.CreateAgentRequest, actorID string) (*model.Agent, error) {
+	return s.createCustomAgent(ctx, req, actorID, nil)
+}
+
+func (s *AgentService) createCustomAgent(ctx context.Context, req model.CreateAgentRequest, actorID string, sourceTemplate *model.AgentTemplate) (*model.Agent, error) {
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("workspace_id and name are required")
 	}
@@ -1748,6 +1759,10 @@ func (s *AgentService) CreateAgent(ctx context.Context, req model.CreateAgentReq
 		ApprovalMode:               approvalMode,
 		MaxConcurrentRuns:          maxConcurrentRuns,
 		DefaultInvocationMode:      stringOrDefault(req.DefaultInvocationMode, model.InvocationModeAutonomous),
+	}
+	if sourceTemplate != nil {
+		agent.SourceTemplateID = &sourceTemplate.ID
+		agent.SourceTemplateKey = strings.TrimSpace(sourceTemplate.Key)
 	}
 	normalizeAgentRecord(agent)
 	if err := s.validateAndMaterializeAgentSkills(ctx, agent); err != nil {
@@ -2238,7 +2253,7 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 			}
 		}
 
-		payload, err := buildAgentRunInputPayload("task", task.ID, trigger, event, req.AdditionalContext)
+		payload, err := buildAgentRunInputPayload("task", task.ID, trigger, event, req.Output, req.AdditionalContext)
 		if err != nil {
 			return nil, fmt.Errorf("build task run input: %w", err)
 		}
@@ -2284,7 +2299,7 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 		if err := validateAgentTeamScope(agent, "epic", epic.TeamID); err != nil {
 			return nil, err
 		}
-		payload, err := buildAgentRunInputPayload("epic", epic.ID, trigger, event, req.AdditionalContext)
+		payload, err := buildAgentRunInputPayload("epic", epic.ID, trigger, event, req.Output, req.AdditionalContext)
 		if err != nil {
 			return nil, fmt.Errorf("build epic run input: %w", err)
 		}
@@ -2334,7 +2349,7 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 		if err := validateAgentTeamScope(agent, "repository", nil); err != nil {
 			return nil, err
 		}
-		payload, err := buildAgentRunInputPayload("repository", repo.ID, trigger, event, req.AdditionalContext)
+		payload, err := buildAgentRunInputPayload("repository", repo.ID, trigger, event, req.Output, req.AdditionalContext)
 		if err != nil {
 			return nil, fmt.Errorf("build repository run input: %w", err)
 		}
@@ -2388,7 +2403,7 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 		if err != nil {
 			return nil, err
 		}
-		input, err := buildAgentRunInputPayload("support_conversation", conversation.ID, trigger, event, req.AdditionalContext)
+		input, err := buildAgentRunInputPayload("support_conversation", conversation.ID, trigger, event, req.Output, req.AdditionalContext)
 		if err != nil {
 			return nil, fmt.Errorf("build conversation run input: %w", err)
 		}
@@ -2427,7 +2442,7 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 		if err := validateAgentTeamScope(agent, "workspace", nil); err != nil {
 			return nil, err
 		}
-		input, err := buildAgentRunInputPayload("workspace", workspaceID, trigger, event, req.AdditionalContext)
+		input, err := buildAgentRunInputPayload("workspace", workspaceID, trigger, event, req.Output, req.AdditionalContext)
 		if err != nil {
 			return nil, fmt.Errorf("build workspace run input: %w", err)
 		}
@@ -2488,7 +2503,7 @@ func (s *AgentService) runConversationAgent(ctx context.Context, workspaceID, co
 	if actorID == nil || strings.TrimSpace(*actorID) == "" {
 		trigger = systemRunTriggerContext(supportAutoTriggerType)
 	}
-	input, err := buildAgentRunInputPayload("support_conversation", conversationID, trigger, nil, nil)
+	input, err := buildAgentRunInputPayload("support_conversation", conversationID, trigger, nil, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build conversation run input: %w", err)
 	}
@@ -2644,11 +2659,14 @@ func (s *AgentService) ContinueTerminalRun(ctx context.Context, workspaceID, run
 	}
 
 	additionalContext := buildContinuationAdditionalContext(run, derefString(req.Content))
+	var previousInput model.AgentRunInputPayload
+	_ = json.Unmarshal(run.Input, &previousInput)
 	startReq := model.StartAgentRunRequest{
 		AgentID:           run.AgentID,
 		AdditionalContext: &additionalContext,
 		BaseBranch:        run.BaseBranch,
 		WorkingBranch:     run.WorkingBranch,
+		Output:            previousInput.Output,
 	}
 	return s.startTargetRun(
 		ctx,

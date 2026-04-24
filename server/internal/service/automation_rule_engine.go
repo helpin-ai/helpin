@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"path"
 	"strings"
 	"time"
 
@@ -288,6 +289,19 @@ func (e *AutomationRuleEngine) matchesTriggerConfig(ctx context.Context, rule mo
 		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err != nil {
 			return false
 		}
+		if len(cfg.ReleaseKinds) > 0 && strings.TrimSpace(event.ReleaseKind) == "" && e.gitService != nil && strings.TrimSpace(event.WorkspaceID) != "" && strings.TrimSpace(event.RepoFullName) != "" && strings.TrimSpace(event.TagName) != "" {
+			releaseKind, err := e.gitService.ResolveReleaseKind(ctx, event.WorkspaceID, event.RepoFullName, event.TagName)
+			if err != nil {
+				e.logger.WarnContext(ctx, "failed to classify github release event for automation matching",
+					"workspace_id", event.WorkspaceID,
+					"repo_full_name", event.RepoFullName,
+					"tag_name", event.TagName,
+					"error", err,
+				)
+				return false
+			}
+			event.ReleaseKind = releaseKind
+		}
 		return matchGitHubReleaseConfig(cfg, event)
 
 	case model.TriggerGitHubCheckSuite:
@@ -415,6 +429,28 @@ func (e *AutomationRuleEngine) executeStartAgentRun(ctx context.Context, rule *m
 		RunID:   nilIfEmpty(event.RunID),
 		Reason:  strPtr(fmt.Sprintf("automation rule %q", rule.Name)),
 	}
+	if strings.HasPrefix(strings.TrimSpace(event.TriggerType), "github.") {
+		eventContext.GitHub = &model.AgentRunGitHubEventContext{
+			EventType:    strings.TrimPrefix(strings.TrimSpace(event.TriggerType), "github."),
+			RepoFullName: strings.TrimSpace(event.RepoFullName),
+			RepositoryID: strings.TrimSpace(event.RepositoryID),
+		}
+		if event.TriggerType == model.TriggerGitHubReleasePub {
+			eventContext.GitHub.EventType = "release_published"
+			eventContext.GitHub.Release = &model.AgentRunGitHubReleaseEventContext{
+				TagName:         strings.TrimSpace(event.TagName),
+				TargetCommitish: strings.TrimSpace(event.TargetCommitish),
+				ReleaseName:     strings.TrimSpace(event.ReleaseName),
+				ReleaseURL:      strings.TrimSpace(event.ReleaseURL),
+				PublishedAt:     event.PublishedAt,
+				IsPrerelease:    event.IsPrerelease,
+			}
+		}
+	}
+	outputContext, err := deriveRunOutputContext(event, cfg.Output)
+	if err != nil {
+		return err
+	}
 	baseBranch, workingBranch, err := e.resolveRunBranchOverrides(ctx, event, story, cfg)
 	if err != nil {
 		return fmt.Errorf("resolve branch overrides: %w", err)
@@ -424,6 +460,7 @@ func (e *AutomationRuleEngine) executeStartAgentRun(ctx context.Context, rule *m
 		AdditionalContext: cfg.AdditionalContext,
 		BaseBranch:        nilIfEmpty(baseBranch),
 		WorkingBranch:     nilIfEmpty(workingBranch),
+		Output:            outputContext,
 	}, nil, trigger, eventContext, nil); err != nil {
 		return fmt.Errorf("start agent run: %w", err)
 	}
@@ -1065,8 +1102,8 @@ func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerCo
 		if err := json.Unmarshal(triggerConfig, &cfg); err != nil {
 			return fmt.Errorf("invalid trigger_config for %s: %w", triggerType, err)
 		}
-		if strings.TrimSpace(cfg.TagName) == "" && strings.TrimSpace(cfg.RepoFullName) == "" {
-			return fmt.Errorf("tag_name or repo_full_name is required in trigger_config for %s", triggerType)
+		if strings.TrimSpace(cfg.TagName) == "" && strings.TrimSpace(cfg.RepoFullName) == "" && strings.TrimSpace(cfg.TagPattern) == "" && len(cfg.ReleaseKinds) == 0 {
+			return fmt.Errorf("repo_full_name, tag_name, tag_pattern, or release_kinds is required in trigger_config for %s", triggerType)
 		}
 	case model.TriggerGitHubCheckSuite:
 		var cfg model.TriggerConfigGitHubCheckSuiteCompleted
@@ -1104,8 +1141,11 @@ func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerCo
 		if (targetType == "") != (targetID == "") {
 			return fmt.Errorf("target_type and target_id must both be set in action_config for %s", actionType)
 		}
-		if isGitHubAutomationTrigger(triggerType) && (targetType == "" || targetID == "") {
+		if isGitHubAutomationTrigger(triggerType) && triggerType != model.TriggerGitHubReleasePub && (targetType == "" || targetID == "") {
 			return fmt.Errorf("target_type and target_id are required in action_config for %s when trigger_type is %s", actionType, triggerType)
+		}
+		if cfg.Output != nil && strings.EqualFold(strings.TrimSpace(cfg.Output.Type), "docs_document") && strings.TrimSpace(cfg.Output.SpaceID) == "" {
+			return fmt.Errorf("output.space_id is required when output.type is docs_document")
 		}
 	case model.ActionMoveToState:
 		var cfg model.ActionConfigMoveToState
@@ -1238,10 +1278,51 @@ func matchGitHubReleaseConfig(cfg model.TriggerConfigGitHubReleasePublished, eve
 	if strings.TrimSpace(cfg.TagName) != "" && strings.TrimSpace(cfg.TagName) != strings.TrimSpace(event.TagName) {
 		return false
 	}
+	if strings.TrimSpace(cfg.TagPattern) != "" {
+		matched, err := path.Match(strings.TrimSpace(cfg.TagPattern), strings.TrimSpace(event.TagName))
+		if err != nil || !matched {
+			return false
+		}
+	}
 	if strings.TrimSpace(cfg.RepoFullName) != "" && !strings.EqualFold(strings.TrimSpace(cfg.RepoFullName), strings.TrimSpace(event.RepoFullName)) {
 		return false
 	}
+	if event.IsPrerelease && !cfg.IncludePrerelease && !containsReleaseKind(cfg.ReleaseKinds, "prerelease") {
+		return false
+	}
+	if len(cfg.ReleaseKinds) > 0 && !containsReleaseKind(cfg.ReleaseKinds, event.ReleaseKind) {
+		return false
+	}
 	return strings.TrimSpace(event.TagName) != "" || strings.TrimSpace(event.RepoFullName) != ""
+}
+
+func containsReleaseKind(kinds []string, candidate string) bool {
+	candidate = strings.TrimSpace(candidate)
+	for _, kind := range kinds {
+		if strings.EqualFold(strings.TrimSpace(kind), candidate) {
+			return true
+		}
+	}
+	return false
+}
+
+func deriveRunOutputContext(event model.AutomationEvent, cfg *model.ActionConfigRunAgentOutput) (*model.AgentRunOutputContext, error) {
+	if cfg == nil {
+		return nil, nil
+	}
+	output := &model.AgentRunOutputContext{
+		Type:           strings.TrimSpace(cfg.Type),
+		SpaceID:        strings.TrimSpace(cfg.SpaceID),
+		CollectionID:   cfg.CollectionID,
+		IdempotencyKey: strings.TrimSpace(cfg.IdempotencyKey),
+	}
+	if strings.EqualFold(output.Type, "docs_document") && output.SpaceID == "" {
+		return nil, fmt.Errorf("output.space_id is required when output.type is docs_document")
+	}
+	if output.IdempotencyKey == "" && event.TriggerType == model.TriggerGitHubReleasePub && strings.TrimSpace(event.RepositoryID) != "" && strings.TrimSpace(event.TagName) != "" {
+		output.IdempotencyKey = fmt.Sprintf("release_notes:%s:%s", strings.TrimSpace(event.RepositoryID), strings.TrimSpace(event.TagName))
+	}
+	return output, nil
 }
 
 func matchGitHubCheckSuiteConfig(cfg model.TriggerConfigGitHubCheckSuiteCompleted, event model.AutomationEvent) bool {

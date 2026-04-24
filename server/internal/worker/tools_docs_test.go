@@ -202,6 +202,105 @@ func TestToolCreateDocumentRequiresDocsService(t *testing.T) {
 	}
 }
 
+func TestToolCreateDocumentReusesExistingOutputDocument(t *testing.T) {
+	createCalled := false
+	documentID := "doc-existing"
+	ctx := &ExecutionContext{
+		Context:     context.Background(),
+		WorkspaceID: "ws-1",
+		RunInput: &model.AgentRunInputPayload{
+			Output: &model.AgentRunOutputContext{
+				Type:           "docs_document",
+				SpaceID:        "space-1",
+				IdempotencyKey: "release_notes:repo-1:v1.4.0",
+			},
+		},
+		Services: &ServiceBridge{
+			GetDocumentKey: func(ctx context.Context, workspaceID, keyType, key string) (*model.DocsDocumentKey, error) {
+				if workspaceID != "ws-1" || keyType != model.DocsDocumentKeyTypeReleaseNotes || key != "release_notes:repo-1:v1.4.0" {
+					t.Fatalf("unexpected key lookup %q %q %q", workspaceID, keyType, key)
+				}
+				return &model.DocsDocumentKey{
+					WorkspaceID: "ws-1",
+					KeyType:     model.DocsDocumentKeyTypeReleaseNotes,
+					Key:         key,
+					DocumentID:  &documentID,
+				}, nil
+			},
+			GetDocument: func(ctx context.Context, id string) (*model.DocsDocument, error) {
+				if id != "doc-existing" {
+					t.Fatalf("unexpected document lookup %q", id)
+				}
+				return &model.DocsDocument{
+					ID:      "doc-existing",
+					Title:   "Release Notes v1.4.0",
+					Status:  model.DocStatusDraft,
+					SpaceID: "space-1",
+				}, nil
+			},
+			CreateDocument: func(ctx context.Context, workspaceID, userID string, req model.CreateDocsDocumentRequest, content json.RawMessage) (*model.DocsDocument, error) {
+				createCalled = true
+				return nil, nil
+			},
+		},
+	}
+
+	output, err := toolCreateDocument(ctx, json.RawMessage(`{"space_id":"space-1","title":"Release Notes v1.4.0"}`))
+	if err != nil {
+		t.Fatalf("toolCreateDocument returned error: %v", err)
+	}
+	if createCalled {
+		t.Fatal("expected existing document to be reused")
+	}
+	if !strings.Contains(output, `"id":"doc-existing"`) || !strings.Contains(output, `"title":"Release Notes v1.4.0"`) {
+		t.Fatalf("unexpected output %q", output)
+	}
+}
+
+func TestToolCreateDocumentPersistsOutputDocumentKey(t *testing.T) {
+	var persisted *model.DocsDocumentKey
+	ctx := &ExecutionContext{
+		Context:     context.Background(),
+		WorkspaceID: "ws-1",
+		AgentID:     "agent-1",
+		RunInput: &model.AgentRunInputPayload{
+			Output: &model.AgentRunOutputContext{
+				Type:           "docs_document",
+				SpaceID:        "space-1",
+				IdempotencyKey: "release_notes:repo-1:v1.4.0",
+			},
+		},
+		Services: &ServiceBridge{
+			GetDocumentKey: func(ctx context.Context, workspaceID, keyType, key string) (*model.DocsDocumentKey, error) {
+				return nil, nil
+			},
+			CreateDocument: func(ctx context.Context, workspaceID, userID string, req model.CreateDocsDocumentRequest, content json.RawMessage) (*model.DocsDocument, error) {
+				return &model.DocsDocument{
+					ID:      "doc-created",
+					Title:   req.Title,
+					Status:  model.DocStatusDraft,
+					SpaceID: req.SpaceID,
+				}, nil
+			},
+			UpsertDocumentKey: func(ctx context.Context, record *model.DocsDocumentKey) error {
+				copied := *record
+				persisted = &copied
+				return nil
+			},
+		},
+	}
+
+	if _, err := toolCreateDocument(ctx, json.RawMessage(`{"space_id":"space-1","title":"Release Notes v1.4.0"}`)); err != nil {
+		t.Fatalf("toolCreateDocument returned error: %v", err)
+	}
+	if persisted == nil {
+		t.Fatal("expected document key to be persisted")
+	}
+	if persisted.KeyType != model.DocsDocumentKeyTypeReleaseNotes || persisted.Key != "release_notes:repo-1:v1.4.0" || persisted.DocumentID == nil || *persisted.DocumentID != "doc-created" {
+		t.Fatalf("unexpected persisted key %#v", persisted)
+	}
+}
+
 func TestToolCreateDocumentUsesInternalCommandWithConvertedMarkdown(t *testing.T) {
 	var called bool
 

@@ -400,6 +400,78 @@ func TestGetCodingSessionIncludesRunErrorMessage(t *testing.T) {
 	}
 }
 
+func TestGetCodingSessionIncludesAgentSystemPrompt(t *testing.T) {
+	db := newInteractiveApprovalTestDB(t)
+
+	runRepo := repository.NewAgentRunRepository(db)
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	agentRepo := repository.NewAgentRepository(db)
+
+	now := time.Now().UTC()
+	systemPrompt := "Research configured competitors and file the marketing digest task."
+	agent := &model.Agent{
+		ID:                    "agent-session-prompt",
+		WorkspaceID:           "ws-1",
+		Name:                  "Competitive digest",
+		Status:                "idle",
+		RuntimeKind:           "native_sdk",
+		Skills:                model.AgentSkillRefs{},
+		TriggerMode:           "manual",
+		ExecutionConfig:       model.JSONBlob(`{}`),
+		SystemPrompt:          &systemPrompt,
+		AllowedTools:          json.RawMessage(`[]`),
+		AllowedCommands:       json.RawMessage(`[]`),
+		AllowedTargets:        json.RawMessage(`[]`),
+		ApprovalMode:          "never",
+		MaxConcurrentRuns:     1,
+		DefaultInvocationMode: model.InvocationModeAutonomous,
+		CreatedAt:             now,
+		UpdatedAt:             now,
+	}
+	if err := agentRepo.Create(context.Background(), agent); err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+
+	run := &model.AgentRun{
+		ID:             "run-session-system-prompt",
+		WorkspaceID:    agent.WorkspaceID,
+		AgentID:        agent.ID,
+		TargetType:     "workspace",
+		TargetID:       agent.WorkspaceID,
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeInteractive,
+		ApprovalState:  "not_required",
+		PauseReason:    model.AgentRunPauseReasonNone,
+		Status:         model.AgentRunStatusRunning,
+		Input:          json.RawMessage(`{}`),
+		OutputSummary:  json.RawMessage(`{}`),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := runRepo.Create(context.Background(), run); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	svc := &AgentService{
+		runRepo:        runRepo,
+		runMessageRepo: runMessageRepo,
+		artifactRepo:   artifactRepo,
+		agentRepo:      agentRepo,
+	}
+
+	session, err := svc.GetCodingSession(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("GetCodingSession returned error: %v", err)
+	}
+	if session.SystemPrompt == nil || *session.SystemPrompt != systemPrompt {
+		t.Fatalf("expected coding session system_prompt %q, got %#v", systemPrompt, session.SystemPrompt)
+	}
+	if session.Title != agent.Name {
+		t.Fatalf("expected coding session title %q, got %q", agent.Name, session.Title)
+	}
+}
+
 func TestBuildContinuationAdditionalContextIncludesFailureReasonAndHumanFollowup(t *testing.T) {
 	errMsg := "agent reached max tool steps after 300 tool-call rounds; start another run to continue"
 	run := &model.AgentRun{

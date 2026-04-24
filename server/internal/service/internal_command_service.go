@@ -294,6 +294,98 @@ func (s *InternalCommandService) registerDefaults() {
 		},
 	})
 	s.register(InternalCommandDefinition{
+		Name:                 "pm.create_task",
+		Module:               "pm",
+		Mutating:             true,
+		SupportedTargetTypes: []string{"workspace", "epic"},
+		Tool:                 mustCommandToolMetadata("pm.create_task"),
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			var req struct {
+				Name          string   `json:"name"`
+				Description   *string  `json:"description"`
+				TaskType      string   `json:"task_type"`
+				Estimate      *int     `json:"estimate"`
+				Priority      *string  `json:"priority"`
+				EpicID        *string  `json:"epic_id"`
+				TeamID        string   `json:"team_id"`
+				WorkflowID    *string  `json:"workflow_id"`
+				StateID       *string  `json:"state_id"`
+				OwnerMemberID *string  `json:"owner_member_id"`
+				LabelIDs      []string `json:"label_ids"`
+				Deadline      *string  `json:"deadline"`
+			}
+			if err := json.Unmarshal(input, &req); err != nil {
+				return nil, fmt.Errorf("parse create task input: %w", err)
+			}
+
+			req.Name = strings.TrimSpace(req.Name)
+			req.TeamID = strings.TrimSpace(req.TeamID)
+			if req.Name == "" || req.TeamID == "" {
+				return nil, fmt.Errorf("name and team_id are required")
+			}
+
+			if req.EpicID == nil && strings.TrimSpace(meta.TargetType) == "epic" && strings.TrimSpace(meta.TargetID) != "" {
+				req.EpicID = stringPtrOrNil(meta.TargetID)
+			}
+			req.TaskType = strings.TrimSpace(req.TaskType)
+			req.Description = normalizeTaskDescriptionRichText(stringPtrOrNil(commandDerefString(req.Description)))
+			req.Priority = stringPtrOrNil(commandDerefString(req.Priority))
+			req.WorkflowID = stringPtrOrNil(commandDerefString(req.WorkflowID))
+			req.StateID = stringPtrOrNil(commandDerefString(req.StateID))
+			req.OwnerMemberID = stringPtrOrNil(commandDerefString(req.OwnerMemberID))
+
+			var deadline *time.Time
+			if req.Deadline != nil {
+				parsed, err := parseInternalCommandTaskDeadline(*req.Deadline)
+				if err != nil {
+					return nil, err
+				}
+				deadline = parsed
+			}
+
+			workflowID, stateID, err := s.resolveTaskCreationWorkflow(ctx, meta.WorkspaceID, req.TeamID, req.WorkflowID, req.StateID)
+			if err != nil {
+				return nil, err
+			}
+
+			createReq := model.CreateTaskRequest{
+				WorkspaceID:     meta.WorkspaceID,
+				Name:            req.Name,
+				Description:     req.Description,
+				TaskType:        req.TaskType,
+				WorkflowID:      workflowID,
+				WorkflowStateID: stateID,
+				EpicID:          req.EpicID,
+				TeamID:          stringPtrOrNil(req.TeamID),
+				OwnerMemberID:   req.OwnerMemberID,
+				Estimate:        req.Estimate,
+				Priority:        req.Priority,
+				Deadline:        deadline,
+				LabelIDs:        req.LabelIDs,
+			}
+			detail, err := s.taskService.Create(ctx, createReq, fallbackActor(meta))
+			if err != nil {
+				return nil, err
+			}
+			stateName := ""
+			if detail.State != nil {
+				stateName = strings.TrimSpace(detail.State.Name)
+			}
+			return mustJSON(map[string]any{
+				"task_id":      detail.Task.ID,
+				"display_id":   detail.Task.DisplayID,
+				"task_key":     detail.Task.TaskKey,
+				"name":         detail.Task.Name,
+				"team_id":      detail.Task.TeamID,
+				"workflow_id":  detail.Task.WorkflowID,
+				"state_id":     detail.Task.WorkflowStateID,
+				"state_name":   stateName,
+				"workspace_id": detail.Task.WorkspaceID,
+				"epic_id":      detail.Task.EpicID,
+			}), nil
+		},
+	})
+	s.register(InternalCommandDefinition{
 		Name:                 "pm.assign_task_agent",
 		Module:               "pm",
 		Mutating:             true,
@@ -332,11 +424,11 @@ func (s *InternalCommandService) registerDefaults() {
 				if taskType == "" {
 					taskType = model.PMTaskTypeChore
 				}
-				description := strings.TrimSpace(followup.Description)
+				description := normalizeTaskDescriptionRichText(stringPtrOrNil(strings.TrimSpace(followup.Description)))
 				createReq := model.CreateTaskRequest{
 					WorkspaceID: meta.WorkspaceID,
 					Name:        title,
-					Description: stringPtrOrNil(description),
+					Description: description,
 					TaskType:    taskType,
 					EpicID:      task.EpicID,
 					TeamID:      task.TeamID,
@@ -862,4 +954,109 @@ func firstNonEmptyCommand(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func (s *InternalCommandService) resolveTaskCreationWorkflow(ctx context.Context, workspaceID, teamID string, requestedWorkflowID, requestedStateID *string) (string, string, error) {
+	if s == nil || s.taskService == nil || s.taskService.workflowRepo == nil {
+		return "", "", fmt.Errorf("workflow service is not configured")
+	}
+	teamID = strings.TrimSpace(teamID)
+	if workspaceID == "" || teamID == "" {
+		return "", "", fmt.Errorf("workspace_id and team_id are required")
+	}
+
+	workflowID := commandDerefString(requestedWorkflowID)
+	stateID := commandDerefString(requestedStateID)
+
+	var workflow *model.WorkflowWithStates
+	if workflowID != "" {
+		loaded, err := s.taskService.workflowRepo.GetByID(ctx, workflowID)
+		if err != nil {
+			return "", "", fmt.Errorf("get workflow: %w", err)
+		}
+		if loaded == nil || loaded.Workflow.WorkspaceID != workspaceID {
+			return "", "", fmt.Errorf("workflow not found")
+		}
+		if loaded.Workflow.TeamID != nil && strings.TrimSpace(*loaded.Workflow.TeamID) != "" && strings.TrimSpace(*loaded.Workflow.TeamID) != teamID {
+			return "", "", fmt.Errorf("workflow_id does not belong to team_id")
+		}
+		workflow = loaded
+	} else {
+		resolved, err := s.taskService.workflowRepo.GetByTeamID(ctx, workspaceID, teamID)
+		if err != nil {
+			return "", "", fmt.Errorf("resolve team workflow: %w", err)
+		}
+		if resolved == nil {
+			resolved, err = s.taskService.workflowRepo.GetDefaultWorkflow(ctx, workspaceID)
+			if err != nil {
+				return "", "", fmt.Errorf("resolve default workflow: %w", err)
+			}
+			if resolved == nil {
+				resolved, err = s.taskService.workflowRepo.SeedDefaultWorkflow(ctx, workspaceID)
+				if err != nil {
+					return "", "", fmt.Errorf("seed default workflow: %w", err)
+				}
+			}
+		}
+		workflow = resolved
+	}
+	if workflow == nil {
+		return "", "", fmt.Errorf("workflow not found")
+	}
+
+	if workflowID == "" {
+		workflowID = strings.TrimSpace(workflow.Workflow.ID)
+	}
+	if workflowID == "" {
+		return "", "", fmt.Errorf("workflow_id could not be resolved")
+	}
+	if stateID == "" && workflow.Workflow.DefaultStateID != nil {
+		stateID = strings.TrimSpace(*workflow.Workflow.DefaultStateID)
+	}
+	if stateID == "" {
+		for _, state := range workflow.States {
+			if state.IsDefault {
+				stateID = strings.TrimSpace(state.ID)
+				break
+			}
+		}
+	}
+	if stateID == "" && len(workflow.States) > 0 {
+		stateID = strings.TrimSpace(workflow.States[0].ID)
+	}
+	if stateID == "" {
+		return "", "", fmt.Errorf("workflow has no usable default state")
+	}
+	var matchedState *model.PMWorkflowState
+	for idx := range workflow.States {
+		if strings.TrimSpace(workflow.States[idx].ID) == stateID {
+			matchedState = &workflow.States[idx]
+			break
+		}
+	}
+	if matchedState == nil {
+		return "", "", fmt.Errorf("state_id does not belong to workflow_id")
+	}
+	return workflowID, stateID, nil
+}
+
+func parseInternalCommandTaskDeadline(value string) (*time.Time, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, nil
+	}
+	for _, layout := range []string{"2006-01-02", time.RFC3339, time.RFC3339Nano} {
+		parsed, err := time.Parse(layout, value)
+		if err == nil {
+			return &parsed, nil
+		}
+	}
+	return nil, fmt.Errorf("deadline must be YYYY-MM-DD or RFC3339")
+}
+
+func commandDerefString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(*value)
 }

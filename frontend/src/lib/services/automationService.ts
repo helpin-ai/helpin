@@ -7,6 +7,7 @@ import type {
 } from '../types';
 import type {
   Agent,
+  AgentTemplate,
   AgentRun,
   AgentRunArtifact,
   AgentRunMessage,
@@ -15,6 +16,8 @@ import type {
   ContinueAgentRunRequest,
   AutomationRule,
   CreateAgentRequest,
+  CreateAgentFromTemplateRequest,
+  CreateAgentFromTemplateResponse,
   CreateAutomationRuleRequest,
   CreateWorkspaceSkillRequest,
   HandoffAgentRunRequest,
@@ -115,6 +118,12 @@ export const automationService = {
   listAgents: (workspaceId: string) =>
     api.get<Agent[]>(`/automation/agents${qs(workspaceId)}`),
 
+  listAgentTemplates: (workspaceId: string) =>
+    api.get<AgentTemplate[]>(`/automation/agent-templates${qs(workspaceId)}`),
+
+  getAgentTemplate: (workspaceId: string, id: string) =>
+    api.get<AgentTemplate>(`/automation/agent-templates/${id}${qs(workspaceId)}`),
+
   getAgent: (workspaceId: string, id: string) =>
     api.get<Agent>(`/automation/agents/${id}${qs(workspaceId)}`),
 
@@ -123,6 +132,9 @@ export const automationService = {
 
   createAgent: (workspaceId: string, payload: CreateAgentRequest) =>
     api.post<Agent>(`/automation/agents${qs(workspaceId)}`, payload),
+
+  createAgentFromTemplate: (workspaceId: string, templateId: string, payload: CreateAgentFromTemplateRequest) =>
+    api.post<CreateAgentFromTemplateResponse>(`/automation/agent-templates/${templateId}/create-agent${qs(workspaceId)}`, payload),
 
   updateAgent: (workspaceId: string, id: string, payload: UpdateAgentRequest) =>
     api.put<Agent>(`/automation/agents/${id}${qs(workspaceId)}`, payload),

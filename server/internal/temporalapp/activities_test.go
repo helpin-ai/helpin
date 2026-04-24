@@ -3609,6 +3609,8 @@ func newPlannerApprovalTestDB(t *testing.T) *gorm.DB {
 			preset_version_key TEXT,
 			source_preset_key TEXT,
 			source_preset_version_key TEXT,
+			source_template_id TEXT,
+			source_template_key TEXT NOT NULL DEFAULT '',
 			role TEXT,
 			status TEXT NOT NULL DEFAULT 'idle',
 			runtime_kind TEXT NOT NULL DEFAULT 'opencode',
@@ -5214,6 +5216,63 @@ func TestEnsureRunConversationCreatesPromptWhenOnlyStatusMessageExists(t *testin
 	}
 	if messages[0].MessageType != "status" || messages[1].MessageType != "prompt" {
 		t.Fatalf("unexpected message types %#v", messages)
+	}
+}
+
+func TestEnsureRunConversationCreatesFallbackPromptWhenNoTargetContext(t *testing.T) {
+	dbName := fmt.Sprintf("file:run-conversation-fallback-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE agent_run_messages (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		run_id TEXT NOT NULL,
+		role TEXT NOT NULL,
+		content TEXT NOT NULL,
+		message_type TEXT NOT NULL,
+		content_blocks BLOB,
+		turn_segments BLOB,
+		tool_invocations BLOB,
+		token_usage BLOB,
+		sequence_no INTEGER NOT NULL,
+		created_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create message table: %v", err)
+	}
+
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	activities := &AgentRunActivities{runMessageRepo: runMessageRepo}
+	run := &model.AgentRun{ID: "run-1", WorkspaceID: "ws-1", TargetType: "workspace", TargetID: "ws-1"}
+	state := &resolvedRunState{
+		run: run,
+		agent: &model.Agent{
+			ID:           "agent-1",
+			WorkspaceID:  "ws-1",
+			Name:         "Competitive digest",
+			RuntimeKind:  "native_sdk",
+			SystemPrompt: strPtr("Research competitors and create the configured digest task."),
+		},
+	}
+
+	history, _, _, _, err := activities.ensureRunConversation(context.Background(), state, "", planningRunInput{})
+	if err != nil {
+		t.Fatalf("ensureRunConversation returned error: %v", err)
+	}
+	if len(history) != 1 {
+		t.Fatalf("expected fallback prompt history entry, got %#v", history)
+	}
+	if history[0].Role != "user" || history[0].Content != defaultInitialRunUserPrompt {
+		t.Fatalf("unexpected fallback execution history %#v", history[0])
+	}
+
+	messages, err := runMessageRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if len(messages) != 1 || messages[0].MessageType != "prompt" || messages[0].Content != defaultInitialRunUserPrompt {
+		t.Fatalf("expected persisted non-empty fallback prompt, got %#v", messages)
 	}
 }
 

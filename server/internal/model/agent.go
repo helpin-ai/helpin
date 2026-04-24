@@ -39,6 +39,8 @@ type Agent struct {
 	PresetVersionKey           string          `json:"preset_version_key"`
 	SourcePresetKey            string          `json:"source_preset_key"`
 	SourcePresetVersionKey     string          `json:"source_preset_version_key"`
+	SourceTemplateID           *string         `json:"source_template_id" gorm:"type:uuid;index"`
+	SourceTemplateKey          string          `json:"source_template_key"`
 	Role                       string          `json:"role"`
 	Status                     string          `json:"status" gorm:"not null;default:'idle'"`
 	RuntimeKind                string          `json:"runtime_kind" gorm:"not null;default:'opencode'"`
@@ -452,10 +454,11 @@ type HandoffAgentRunRequest struct {
 }
 
 type StartAgentRunRequest struct {
-	AgentID           string  `json:"agent_id,omitempty"`
-	AdditionalContext *string `json:"additional_context,omitempty"`
-	BaseBranch        *string `json:"base_branch,omitempty"`
-	WorkingBranch     *string `json:"working_branch,omitempty"`
+	AgentID           string                 `json:"agent_id,omitempty"`
+	AdditionalContext *string                `json:"additional_context,omitempty"`
+	BaseBranch        *string                `json:"base_branch,omitempty"`
+	WorkingBranch     *string                `json:"working_branch,omitempty"`
+	Output            *AgentRunOutputContext `json:"output,omitempty"`
 }
 
 type StartTargetAgentRunRequest struct {
@@ -479,11 +482,52 @@ type AgentRunTargetContext struct {
 	TargetID   string `json:"target_id,omitempty"`
 }
 
+type AgentRunGitHubReleaseEventContext struct {
+	TagName         string     `json:"tag_name,omitempty"`
+	TargetCommitish string     `json:"target_commitish,omitempty"`
+	ReleaseName     string     `json:"release_name,omitempty"`
+	ReleaseURL      string     `json:"release_url,omitempty"`
+	PublishedAt     *time.Time `json:"published_at,omitempty"`
+	IsPrerelease    bool       `json:"is_prerelease,omitempty"`
+}
+
+type AgentRunGitHubPullRequestEventContext struct {
+	Number     int    `json:"number,omitempty"`
+	BaseBranch string `json:"base_branch,omitempty"`
+	HeadBranch string `json:"head_branch,omitempty"`
+	URL        string `json:"url,omitempty"`
+	State      string `json:"state,omitempty"`
+	Title      string `json:"title,omitempty"`
+}
+
+type AgentRunGitHubCheckSuiteEventContext struct {
+	Branch     string `json:"branch,omitempty"`
+	Conclusion string `json:"conclusion,omitempty"`
+	URL        string `json:"url,omitempty"`
+}
+
+type AgentRunGitHubEventContext struct {
+	EventType    string                                 `json:"event_type,omitempty"`
+	RepoFullName string                                 `json:"repo_full_name,omitempty"`
+	RepositoryID string                                 `json:"repository_id,omitempty"`
+	Release      *AgentRunGitHubReleaseEventContext     `json:"release,omitempty"`
+	PullRequest  *AgentRunGitHubPullRequestEventContext `json:"pull_request,omitempty"`
+	CheckSuite   *AgentRunGitHubCheckSuiteEventContext  `json:"check_suite,omitempty"`
+}
+
 type AgentRunEventContext struct {
-	StateID *string `json:"state_id,omitempty"`
-	TeamID  *string `json:"team_id,omitempty"`
-	RunID   *string `json:"run_id,omitempty"`
-	Reason  *string `json:"reason,omitempty"`
+	StateID *string                     `json:"state_id,omitempty"`
+	TeamID  *string                     `json:"team_id,omitempty"`
+	RunID   *string                     `json:"run_id,omitempty"`
+	Reason  *string                     `json:"reason,omitempty"`
+	GitHub  *AgentRunGitHubEventContext `json:"github,omitempty"`
+}
+
+type AgentRunOutputContext struct {
+	Type           string  `json:"type,omitempty"`
+	SpaceID        string  `json:"space_id,omitempty"`
+	CollectionID   *string `json:"collection_id,omitempty"`
+	IdempotencyKey string  `json:"idempotency_key,omitempty"`
 }
 
 // AgentRunInputPayload is the shared input contract for all agent runs.
@@ -493,6 +537,7 @@ type AgentRunInputPayload struct {
 	Trigger             *AgentRunTriggerContext `json:"trigger,omitempty"`
 	Target              *AgentRunTargetContext  `json:"target,omitempty"`
 	Event               *AgentRunEventContext   `json:"event,omitempty"`
+	Output              *AgentRunOutputContext  `json:"output,omitempty"`
 	StoryID             string                  `json:"story_id,omitempty"`
 	EpicID              string                  `json:"epic_id,omitempty"`
 	ConversationID      string                  `json:"conversation_id,omitempty"`
