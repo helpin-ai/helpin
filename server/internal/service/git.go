@@ -48,6 +48,8 @@ type gitHubAppClient interface {
 	ListInstallationRepositories(ctx context.Context, installationID string) ([]githubapp.Repository, error)
 	ListRepositoryBranches(ctx context.Context, installationID, owner, repo string) ([]githubapp.Branch, error)
 	GetInstallation(ctx context.Context, installationID string) (*githubapp.Installation, error)
+	GetReleaseByTag(ctx context.Context, installationID, owner, repo, tag string) (*githubapp.Release, error)
+	ListReleases(ctx context.Context, installationID, owner, repo string, opts githubapp.ListReleasesOptions) ([]githubapp.Release, error)
 	MergeBranch(ctx context.Context, installationID, owner, repo, base, head, commitMessage string) error
 }
 
