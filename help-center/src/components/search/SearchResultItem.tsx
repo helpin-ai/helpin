@@ -1,5 +1,6 @@
 import { FileText, ArrowRight } from 'lucide-react'
 import { DocsLink } from '@/components/DocsLink'
+import { useDocsContext } from '@/contexts/DocsContext'
 import {
   buildCanonicalArticlePath,
 } from '@/lib/locale'
@@ -17,9 +18,12 @@ export function SearchResultItem({
   locale,
   result,
   variant = 'full',
-  multilingualEnabled = true,
+  multilingualEnabled: multilingualEnabledProp,
   onClick,
 }: SearchResultItemProps) {
+  const { multilingualEnabled: contextMultilingualEnabled } = useDocsContext()
+  const multilingualEnabled =
+    multilingualEnabledProp ?? contextMultilingualEnabled
   const isCompact = variant === 'compact'
   const targetLocale = result.locale || locale
   const collectionSlug = result.collection_slug
