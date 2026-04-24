@@ -12,17 +12,20 @@ import {
   buildCanonicalHomePath,
   buildCanonicalSearchPath,
 } from '@/lib/locale'
-import { prefixBasepath } from '@/lib/pathUtils'
+import { absolutePublicUrl } from '@/lib/publicUrl'
 
 function absoluteUrl(rootData: RootRouteData, path: string) {
-  return new URL(prefixBasepath(rootData.basepath, path), rootData.origin).toString()
+  return absolutePublicUrl(rootData, path)
 }
 
 function absoluteAssetUrl(rootData: RootRouteData, value?: string | null) {
   const trimmed = value?.trim()
   if (!trimmed) return null
   try {
-    return new URL(trimmed, rootData.origin).toString()
+    if (/^[a-z]+:/i.test(trimmed) || trimmed.startsWith('//')) {
+      return new URL(trimmed, rootData.origin).toString()
+    }
+    return absolutePublicUrl(rootData, trimmed)
   } catch {
     return null
   }

@@ -9,6 +9,12 @@ import {
   resolvePublicRedirect,
   shouldAttemptRedirectResolution,
 } from './serverRedirects.mjs'
+import {
+  collectSitemapEntries,
+  renderRobotsTxt,
+  renderSitemapXml,
+  resolvePublicUrlParts,
+} from './serverSeo.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const CLIENT_DIR = path.join(__dirname, 'dist', 'client')
@@ -415,23 +421,25 @@ const requestContextStorage = new AsyncLocalStorage()
 globalThis.__hcGetRequestContext__ = () => requestContextStorage.getStore() ?? null
 
 
-function xmlEscape(value) {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&apos;')
+async function fetchHelpCenterConfig(apiBase, subdomain) {
+  if (!apiBase || !subdomain) return null
+  const configRes = await fetch(`${apiBase}/hc/${subdomain}/config`)
+  if (!configRes.ok) throw new Error(`config fetch failed: ${configRes.status}`)
+  return configRes.json()
 }
 
 async function handleRobotsTxt(_request, response, hcContext) {
-  const { origin, basepath } = hcContext
-  const body = [
-    'User-agent: *',
-    'Disallow: /preview/',
-    'Crawl-delay: 1',
-    `Sitemap: ${origin}${basepath || ''}/sitemap.xml`,
-  ].join('\n')
+  const apiBase = process.env.INTERNAL_API_URL
+  let publicUrl = { origin: hcContext.origin, basepath: hcContext.basepath }
+  try {
+    const config = await fetchHelpCenterConfig(apiBase, hcContext.subdomain)
+    if (config) {
+      publicUrl = resolvePublicUrlParts(hcContext, config)
+    }
+  } catch (error) {
+    console.error('failed to resolve robots public URL', error)
+  }
+  const body = renderRobotsTxt(publicUrl)
   response.statusCode = 200
   response.setHeader('Cache-Control', 'public, max-age=3600')
   response.setHeader('Content-Type', 'text/plain; charset=utf-8')
@@ -440,7 +448,7 @@ async function handleRobotsTxt(_request, response, hcContext) {
 
 async function handleSitemapXml(_request, response, hcContext) {
   try {
-    const { origin, basepath, subdomain } = hcContext
+    const { subdomain } = hcContext
     const apiBase = process.env.INTERNAL_API_URL
     if (!apiBase) {
       response.statusCode = 503
@@ -454,16 +462,13 @@ async function handleSitemapXml(_request, response, hcContext) {
       response.end('Sitemap unavailable')
       return
     }
-    const configRes = await fetch(`${apiBase}/hc/${subdomain}/config`)
-    if (!configRes.ok) throw new Error(`config fetch failed: ${configRes.status}`)
-    const config = await configRes.json()
+    const config = await fetchHelpCenterConfig(apiBase, subdomain)
     const locales = config.enabled_locales?.length > 1
       ? config.enabled_locales
       : [config.default_locale || 'en']
     const multilingual = config.enabled_locales?.length > 1
-    const baseUrl = `${origin}${basepath || ''}`
-    const urls = new Map()
-    urls.set(`${baseUrl}${multilingual ? `/${config.default_locale}` : '/'}`, null)
+    const publicUrl = resolvePublicUrlParts(hcContext, config)
+    const navigationByLocale = new Map()
 
     for (const locale of locales) {
       const spacesPath = multilingual
@@ -481,29 +486,15 @@ async function handleSitemapXml(_request, response, hcContext) {
         if (!navRes.ok) continue
         const navigation = await navRes.json()
 
-        for (const coll of navigation) {
-          const collPath = multilingual
-            ? `/${locale}/${coll.slug}`
-            : `/${coll.slug}`
-          urls.set(`${baseUrl}${collPath}`, null)
-
-          for (const article of coll.articles || []) {
-            const artPath = multilingual
-              ? `/${locale}/${coll.slug}/${article.slug}`
-              : `/${coll.slug}/${article.slug}`
-            urls.set(`${baseUrl}${artPath}`, article.published_at || null)
-          }
-        }
+        navigationByLocale.set(locale, [
+          ...(navigationByLocale.get(locale) || []),
+          ...navigation,
+        ])
       }
     }
 
-    const entries = Array.from(urls.entries())
-      .map(([loc, lastmod]) => {
-        const lastmodTag = lastmod ? `<lastmod>${xmlEscape(new Date(lastmod).toISOString())}</lastmod>` : ''
-        return `  <url><loc>${xmlEscape(loc)}</loc>${lastmodTag}</url>`
-      })
-      .join('\n')
-    const body = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${entries}\n</urlset>`
+    const entries = collectSitemapEntries({ publicUrl, config, navigationByLocale })
+    const body = renderSitemapXml(entries)
 
     response.statusCode = 200
     response.setHeader('Cache-Control', 'public, max-age=3600')

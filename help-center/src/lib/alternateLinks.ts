@@ -9,7 +9,7 @@ import {
   resolveLocaleSwitchPath,
   type LocaleRouteState,
 } from '@/lib/locale'
-import { prefixBasepath } from '@/lib/pathUtils'
+import { absolutePublicUrl } from '@/lib/publicUrl'
 import type { NavItem, Space } from '@/lib/types'
 
 export interface AlternateLink {
@@ -19,7 +19,7 @@ export interface AlternateLink {
 }
 
 function absoluteUrl(rootData: RootRouteData, path: string) {
-  return new URL(prefixBasepath(rootData.basepath, path), rootData.origin).toString()
+  return absolutePublicUrl(rootData, path)
 }
 
 async function loadSpacesForLocale(

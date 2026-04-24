@@ -29,6 +29,13 @@ const (
 	SpaceVisibilityTeamOnly      = "team_only"
 )
 
+// Help center public URL modes.
+const (
+	HelpcenterPublicURLModeHostedSubdomain = "hosted_subdomain"
+	HelpcenterPublicURLModeCustomDomain    = "custom_domain"
+	HelpcenterPublicURLModeReverseProxy    = "reverse_proxy"
+)
+
 // Version type values.
 const (
 	VersionTypeManual  = "manual"
@@ -315,6 +322,9 @@ type DocsHelpcenterConfig struct {
 	WorkspaceID             string          `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex"`
 	Subdomain               string          `json:"subdomain" gorm:"not null"`
 	CustomDomain            *string         `json:"custom_domain"`
+	PublicURLMode           string          `json:"public_url_mode" gorm:"not null;default:'hosted_subdomain'"`
+	ReverseProxyHost        *string         `json:"reverse_proxy_host"`
+	ReverseProxyBasePath    *string         `json:"reverse_proxy_base_path"`
 	BrandName               string          `json:"brand_name" gorm:"not null"`
 	BrandLogoURL            *string         `json:"brand_logo_url"`
 	BrandLogoDarkURL        *string         `json:"brand_logo_dark_url"`
@@ -604,6 +614,9 @@ type CreateDocsLinkRequest struct {
 type UpdateDocsHelpcenterConfigRequest struct {
 	Subdomain               *string         `json:"subdomain"`
 	CustomDomain            *string         `json:"custom_domain"`
+	PublicURLMode           *string         `json:"public_url_mode"`
+	ReverseProxyHost        *string         `json:"reverse_proxy_host"`
+	ReverseProxyBasePath    *string         `json:"reverse_proxy_base_path"`
 	BrandName               *string         `json:"brand_name"`
 	BrandLogoURL            *string         `json:"brand_logo_url"`
 	BrandLogoDarkURL        *string         `json:"brand_logo_dark_url"`
