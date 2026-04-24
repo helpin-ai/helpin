@@ -112,7 +112,7 @@ func TestDocsRedirectRepository_ListNormalizesMalformedStoredPaths(t *testing.T)
 	}
 }
 
-func TestDocsRedirectRepository_GetBySourcePathFindsLegacyDoubleSlashRows(t *testing.T) {
+func TestDocsRedirectRepository_GetBySourcePathDoesNotRepairLegacyDoubleSlashRows(t *testing.T) {
 	db := setupDocsRedirectTestDB(t)
 	repo := NewDocsRedirectRepository(db)
 	ctx := context.Background()
@@ -133,11 +133,19 @@ func TestDocsRedirectRepository_GetBySourcePathFindsLegacyDoubleSlashRows(t *tes
 	if err != nil {
 		t.Fatalf("get by source path: %v", err)
 	}
-	if found == nil {
-		t.Fatalf("expected redirect to be found after normalization")
+	if found != nil {
+		t.Fatalf("expected hot-path lookup to avoid read-time repair, got %#v", found)
 	}
-	if found.SourcePath != "/legacy-article" {
-		t.Fatalf("expected normalized source_path, got %q", found.SourcePath)
+
+	if err := MigrateDocsRedirectPaths(db); err != nil {
+		t.Fatalf("migrate redirect paths: %v", err)
+	}
+	found, err = repo.GetBySourcePath(ctx, "ws-1", "/legacy-article")
+	if err != nil {
+		t.Fatalf("get by source path after migration: %v", err)
+	}
+	if found == nil || found.SourcePath != "/legacy-article" {
+		t.Fatalf("expected migration-normalized redirect, got %#v", found)
 	}
 }
 
