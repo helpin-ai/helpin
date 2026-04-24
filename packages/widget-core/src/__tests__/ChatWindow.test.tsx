@@ -350,13 +350,12 @@ describe('ChatWindow', () => {
       />,
     );
 
-    expect(queryByText("I'm handing this over to a human teammate now.")).toBeNull();
+    expect(queryByText('We typically reply in a few minutes')).toBeNull();
 
     fireEvent.click(getByText('Talk to a human'));
 
-    expect(getByText("I'm handing this over to a human teammate now.")).toBeTruthy();
     expect(getByText('We typically reply in a few minutes')).toBeTruthy();
-    expect(getByText('Online now')).toBeTruthy();
+    expect(queryByText('Talk to a human')).toBeNull();
   });
 
   it('shows waiting for teammate after an escalated system handoff message', () => {
@@ -398,7 +397,7 @@ describe('ChatWindow', () => {
     );
 
     expect(getByText('Let me connect you with a team member who can help further.')).toBeTruthy();
-    expect(getByText('Waiting for a teammate')).toBeTruthy();
+    expect(getByText('A team member will reply soon')).toBeTruthy();
     expect(container.querySelectorAll('.helpin-waiting-teammate-avatar').length).toBe(2);
   });
 

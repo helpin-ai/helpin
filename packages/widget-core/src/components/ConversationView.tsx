@@ -105,11 +105,13 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
       conversation?.flowState === 'assigned_to_human' ||
       conversation?.flowState === 'resolved_by_human',
   );
+  const showHumanHandoffState = showHumanAvailability && !hasHumanReply;
   const showTalkToHumanButton = Boolean(
     config.features?.showTalkToHuman &&
       onEscalateToHuman &&
       messages.length > 0 &&
       !hasHumanHandoffAlready &&
+      !showHumanHandoffState &&
       !isAIThinking &&
       !isTyping,
   );
@@ -148,7 +150,6 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   const introRole = aiFirst ? 'ai' as const : 'agent' as const;
   const introName = aiFirst ? 'Helpin AI' : workspaceName;
   const introAvatar = aiFirst ? undefined : (logoUrl || undefined);
-  const showHumanHandoffState = showHumanAvailability && !hasHumanReply;
   const showActiveAgentHeader = Boolean(activeAgent?.name) && !showHumanHandoffState;
   const teammateStatus = activeTeammate?.status || 'online';
 
