@@ -11,6 +11,8 @@ import type { AIMessageMetadata, SupportLinkPreview, SupportMessage, TicketSourc
 import { EmailBodyRenderer } from './EmailBodyRenderer';
 import { formatTimestamp, getInitial, getAvatarColor, getEffectiveSenderType, HELPIN_AI_DISPLAY_NAME, parseAIMessageMetadata, parseSupportLinkPreviews } from './helpers';
 
+const MARKDOWN_REMARK_PLUGINS = [remarkGfm];
+
 /** Splits text on @mention patterns and wraps them in highlight spans. */
 function renderMentionHighlights(content: string): ReactNode[] | null {
   const regex = /@([a-zA-Z0-9][a-zA-Z0-9._-]*)/g;
@@ -380,7 +382,7 @@ export const MessageBubble = memo(function MessageBubble({
                   {mentionParts ? (
                     <p className="whitespace-pre-wrap">{mentionParts}</p>
                   ) : (
-                    <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{displayContent}</Markdown>
+                    <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{displayContent}</Markdown>
                   )}
                 </div>
               </div>
@@ -455,7 +457,7 @@ export const MessageBubble = memo(function MessageBubble({
                         data-chat-tone={isCustomer ? 'customer' : 'agent'}
                         data-has-table={hasTableContent ? 'true' : 'false'}
                       >
-                        <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{displayContent}</Markdown>
+                        <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{displayContent}</Markdown>
                       </div>
                     )
                   )}

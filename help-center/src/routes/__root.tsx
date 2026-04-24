@@ -73,7 +73,9 @@ function RootLayout() {
     activeLocale,
     basepath,
     config,
+    host,
     multilingualEnabled,
+    origin,
     spaces,
     subdomain,
   } = Route.useLoaderData() as RootRouteData
@@ -102,7 +104,16 @@ function RootLayout() {
   }
 
   return (
-    <RootDocument lang={activeLocale || config.default_locale || 'en'} brandColor={config?.brand_color}>
+    <RootDocument
+      lang={activeLocale || config.default_locale || 'en'}
+      brandColor={config?.brand_color}
+      clientContext={{
+        basepath,
+        host,
+        protocol: new URL(origin).protocol.replace(/:$/, ''),
+        subdomain,
+      }}
+    >
       <DocsProvider
         basepath={basepath}
         subdomain={subdomain}
@@ -132,17 +143,39 @@ function RootLayout() {
 
 const THEME_INIT_SCRIPT = `(function(){try{var t=localStorage.getItem('hc-theme');if(t==='dark'||(t!=='light'&&matchMedia('(prefers-color-scheme:dark)').matches))document.documentElement.classList.add('dark')}catch(e){}})()`
 
+interface ClientContextScriptData {
+  basepath: string
+  host: string
+  protocol: string
+  subdomain: string
+}
+
+function buildClientContextScript(data?: ClientContextScriptData) {
+  if (!data) return ''
+  return `window.__HELPIN_HC_CONTEXT__=${JSON.stringify(data).replace(/</g, '\\u003c')}`
+}
+
 function RootDocument({
   children,
   lang = 'en',
   brandColor,
-}: Readonly<{ children: ReactNode; lang?: string; brandColor?: string | null }>) {
+  clientContext,
+}: Readonly<{
+  children: ReactNode
+  lang?: string
+  brandColor?: string | null
+  clientContext?: ClientContextScriptData
+}>) {
   const brandStyle = buildBrandColorStyle(brandColor)
+  const clientContextScript = buildClientContextScript(clientContext)
 
   return (
     <html lang={lang}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+        {clientContextScript && (
+          <script dangerouslySetInnerHTML={{ __html: clientContextScript }} />
+        )}
         {brandStyle && (
           <style id="brand-color-override" dangerouslySetInnerHTML={{ __html: brandStyle }} />
         )}

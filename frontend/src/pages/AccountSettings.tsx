@@ -27,7 +27,7 @@ const ROLE_COLORS: Record<string, string> = {
 };
 
 export default function AccountSettings() {
-  useTitle('Account Settings');
+  useTitle('Organization Settings');
   const { currentOrganization, setCurrentOrganization } = useOrganizationStore();
   const [name, setName] = useState('');
   const [saving, setSaving] = useState(false);
@@ -128,7 +128,7 @@ export default function AccountSettings() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-xl font-semibold">Account Settings</h2>
+        <h2 className="text-xl font-semibold">Organization</h2>
       </div>
 
       {/* Organization & Default Workspace */}

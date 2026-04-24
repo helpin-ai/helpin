@@ -35,7 +35,8 @@ import { SortableFooterLinkRow, SortableHeaderLinkRow } from '@/components/setti
 import {
   PlusSignIcon, InformationCircleIcon, ArrowDown01Icon, Cancel01Icon,
   GlobeIcon, PaintBoardIcon, LayoutGridIcon, Link01Icon, Image01Icon,
-  LanguageCircleIcon, DragDropVerticalIcon,
+  LanguageCircleIcon, DragDropVerticalIcon, CodeIcon, Copy01Icon,
+  ArrowRight02Icon, ArrowUpRight01Icon, Tick01Icon,
 } from '@/lib/icons';
 import { cn } from '@/lib/utils';
 import { IconPicker, StoredIcon } from '@/components/ui/icon-picker';
@@ -274,6 +275,176 @@ const DEFAULT_LOCALES_CONFIG: DocsHelpcenterLocalesConfig = {
   show_language_switcher: true,
   fallback_to_default_locale: true,
 };
+
+const DEFAULT_REVERSE_PROXY_BASE_PATH = '/docs';
+
+function normalizeReverseProxyBasePath(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === '/') return DEFAULT_REVERSE_PROXY_BASE_PATH;
+
+  const withSlash = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+  const withoutTrailingSlash = withSlash.replace(/\/+$/, '');
+  if (
+    !withoutTrailingSlash ||
+    withoutTrailingSlash === '/' ||
+    withoutTrailingSlash.includes('//') ||
+    withoutTrailingSlash.includes('\\')
+  ) {
+    return DEFAULT_REVERSE_PROXY_BASE_PATH;
+  }
+
+  const segments = withoutTrailingSlash.split('/').filter(Boolean);
+  if (segments.some((segment) => segment === '.' || segment === '..')) {
+    return DEFAULT_REVERSE_PROXY_BASE_PATH;
+  }
+
+  return withoutTrailingSlash;
+}
+
+function normalizeDomainForDisplay(value: string): string {
+  return value
+    .trim()
+    .replace(/^https?:\/\//i, '')
+    .replace(/\/.*$/, '')
+    .toLowerCase();
+}
+
+function buildReverseProxyOrigin(subdomain: string, brandName: string, workspaceName: string): string {
+  const fallback = slugifyBrand(brandName || workspaceName) || 'yourcompany';
+  return `https://${subdomain || fallback}.helpin.center`;
+}
+
+function buildCloudflareWorkerSnippet(originUrl: string, tenant: string, publicHost: string, basePath: string): string {
+  const originHost = normalizeDomainForDisplay(originUrl);
+  const safeTenant = tenant || 'yourcompany';
+  const safePublicHost = publicHost || 'yourdomain.com';
+
+  return `export default {
+  async fetch(request) {
+    const url = new URL(request.url)
+
+    const HELPIN_BASE_PATH = '${basePath}'
+
+    if (url.pathname === HELPIN_BASE_PATH) {
+      url.pathname = '/'
+    } else if (url.pathname.startsWith(\`\${HELPIN_BASE_PATH}/\`)) {
+      url.pathname = url.pathname.slice(HELPIN_BASE_PATH.length)
+    } else {
+      return fetch(request)
+    }
+
+    url.hostname = '${originHost}'
+
+    const headers = new Headers(request.headers)
+    headers.set('X-Helpin-HC-Tenant', '${safeTenant}')
+    headers.set('X-Helpin-HC-Basepath', HELPIN_BASE_PATH)
+    headers.set('X-Forwarded-Host', '${safePublicHost}')
+    headers.set('X-Forwarded-Proto', 'https')
+
+    const init = {
+      method: request.method,
+      headers,
+      redirect: 'manual',
+    }
+
+    if (request.method !== 'GET' && request.method !== 'HEAD') {
+      init.body = request.body
+    }
+
+    return fetch(url.toString(), init)
+  },
+}`;
+}
+
+function buildVercelRewriteSnippet(originUrl: string, tenant: string, basePath: string): string {
+  const safeTenant = tenant || 'yourcompany';
+
+  return `const DOCS_ORIGIN =
+  process.env.DOCS_WEBSITE_URL || '${originUrl}'
+const DOCS_TENANT = process.env.DOCS_HELPIN_TENANT || '${safeTenant}'
+const DOCS_BASE_PATH =
+  process.env.DOCS_HELPIN_BASE_PATH || '${basePath}'
+
+export default {
+  async rewrites() {
+    const proxyContext =
+      \`helpin_tenant=\${DOCS_TENANT}&helpin_basepath=\${encodeURIComponent(DOCS_BASE_PATH)}\`
+
+    return [
+      { source: DOCS_BASE_PATH, destination: \`\${DOCS_ORIGIN}/?\${proxyContext}\` },
+      { source: \`\${DOCS_BASE_PATH}/:path*\`, destination: \`\${DOCS_ORIGIN}/:path*?\${proxyContext}\` },
+    ]
+  },
+}`;
+}
+
+function buildAwsProxySnippet(originUrl: string, tenant: string, publicHost: string, basePath: string): string {
+  const originHost = normalizeDomainForDisplay(originUrl);
+  const safeTenant = tenant || 'yourcompany';
+  const safePublicHost = publicHost || 'yourdomain.com';
+
+  return `Origin domain: ${originHost}
+Path behavior: ${basePath}/*
+Forward headers:
+  X-Helpin-HC-Tenant: ${safeTenant}
+  X-Helpin-HC-Basepath: ${basePath}
+  X-Forwarded-Host: ${safePublicHost}
+  X-Forwarded-Proto: https`;
+}
+
+function CodeSnippet({
+  code,
+  onCopy,
+}: {
+  code: string;
+  onCopy: (value: string, label: string) => void;
+}) {
+  return (
+    <div className="relative overflow-hidden rounded-lg border border-border/70 bg-zinc-950 text-zinc-100">
+      <button
+        type="button"
+        onClick={() => onCopy(code, 'Snippet')}
+        className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-md border border-white/10 bg-white/5 text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
+        aria-label="Copy reverse proxy snippet"
+      >
+        <Copy01Icon className="h-4 w-4" />
+      </button>
+      <pre className="max-h-[360px] overflow-auto p-4 pr-14 text-[12px] leading-6">
+        <code>{code}</code>
+      </pre>
+    </div>
+  );
+}
+
+function ReverseProxyGuideCard({
+  title,
+  description,
+  badge,
+  code,
+  onCopy,
+}: {
+  title: string;
+  description: string;
+  badge: string;
+  code: string;
+  onCopy: (value: string, label: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-4 rounded-lg border border-border/60 bg-muted/30 p-4 sm:flex-row sm:items-center">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border bg-background text-xs font-semibold text-foreground">
+        {badge}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium">{title}</p>
+        <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{description}</p>
+      </div>
+      <Button type="button" variant="outline" size="sm" onClick={() => onCopy(code, `${title} guide`)}>
+        <Copy01Icon className="mr-1.5 h-3.5 w-3.5" />
+        Copy guide
+      </Button>
+    </div>
+  );
+}
 
 // Derive a URL-safe slug from a brand name.
 function slugifyBrand(name: string): string {
@@ -667,6 +838,19 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingLogoDark, setUploadingLogoDark] = useState(false);
   const [uploadingFavicon, setUploadingFavicon] = useState(false);
+  const [copiedGuideLabel, setCopiedGuideLabel] = useState('');
+  const [reverseProxyBasePathInput, setReverseProxyBasePathInput] = useState(DEFAULT_REVERSE_PROXY_BASE_PATH);
+
+  const copyGuideText = useCallback(async (value: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedGuideLabel(label);
+      toast.success(`${label} copied`);
+      window.setTimeout(() => setCopiedGuideLabel(''), 1800);
+    } catch {
+      toast.error('Could not copy to clipboard');
+    }
+  }, []);
 
   const handleAssetUpload = async (
     e: ChangeEvent<HTMLInputElement>,
@@ -727,6 +911,34 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
       ),
     )
     .map((collection) => collection.id);
+  const reverseProxyOrigin = buildReverseProxyOrigin(
+    config.subdomain,
+    config.brand_name,
+    workspaceName,
+  );
+  const reverseProxyTenant = normalizeDomainForDisplay(reverseProxyOrigin)
+    .replace(/\.helpin\.center$/, '');
+  const reverseProxyPublicHost =
+    normalizeDomainForDisplay(config.custom_domain) || 'yourdomain.com';
+  const reverseProxyBasePath = normalizeReverseProxyBasePath(reverseProxyBasePathInput);
+  const reverseProxyPublicUrl = `https://${reverseProxyPublicHost}${reverseProxyBasePath}`;
+  const cloudflareWorkerSnippet = buildCloudflareWorkerSnippet(
+    reverseProxyOrigin,
+    reverseProxyTenant,
+    reverseProxyPublicHost,
+    reverseProxyBasePath,
+  );
+  const vercelRewriteSnippet = buildVercelRewriteSnippet(
+    reverseProxyOrigin,
+    reverseProxyTenant,
+    reverseProxyBasePath,
+  );
+  const awsProxySnippet = buildAwsProxySnippet(
+    reverseProxyOrigin,
+    reverseProxyTenant,
+    reverseProxyPublicHost,
+    reverseProxyBasePath,
+  );
 
   return (
     <form onSubmit={handleSave} className="space-y-5">
@@ -1025,6 +1237,157 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
               <p className="text-[11px] text-muted-foreground">{config.seo_description.length}/160 characters</p>
             </div>
           </div>
+          </div>
+          <div className="rounded-lg border border-border/60 bg-muted/20 p-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-background text-muted-foreground">
+                  <CodeIcon className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-medium">Host this help center on your website at {reverseProxyBasePath}</p>
+                    <Badge variant="outline" className="h-5 rounded-md px-1.5 text-[10px] font-medium">
+                      Reverse proxy
+                    </Badge>
+                  </div>
+                  <p className="mt-1 max-w-3xl text-xs leading-relaxed text-muted-foreground">
+                    Use this when a customer wants Helpin docs inside an existing site instead of a separate docs subdomain.
+                    The website owns <span className="font-mono text-foreground">{reverseProxyPublicUrl}</span>, while Helpin stays available at the raw origin below.
+                  </p>
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full sm:w-auto"
+                onClick={() => copyGuideText(cloudflareWorkerSnippet, 'Cloudflare Worker')}
+              >
+                {copiedGuideLabel === 'Cloudflare Worker' ? (
+                  <Tick01Icon className="mr-1.5 h-3.5 w-3.5" />
+                ) : (
+                  <Copy01Icon className="mr-1.5 h-3.5 w-3.5" />
+                )}
+                {copiedGuideLabel === 'Cloudflare Worker' ? 'Copied' : 'Copy Worker'}
+              </Button>
+            </div>
+
+            <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(220px,320px)_1fr] lg:items-end">
+              <div className="space-y-2">
+                <Label htmlFor="hc-reverse-proxy-base-path">Public base path</Label>
+                <Input
+                  id="hc-reverse-proxy-base-path"
+                  value={reverseProxyBasePathInput}
+                  onChange={(e) => setReverseProxyBasePathInput(e.target.value)}
+                  onBlur={() => setReverseProxyBasePathInput(reverseProxyBasePath)}
+                  placeholder="/docs"
+                  className="font-mono"
+                />
+              </div>
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                Use any single website path such as <span className="font-mono text-foreground">/docs</span>,{' '}
+                <span className="font-mono text-foreground">/help</span>, or{' '}
+                <span className="font-mono text-foreground">/help-center</span>. Helpin will emit assets, API calls, sitemap,
+                and internal links under this same path.
+              </p>
+            </div>
+
+            <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_auto_1fr_auto_1fr] lg:items-center">
+              <div className="min-w-0 rounded-lg border bg-background p-3">
+                <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">Public URL</p>
+                <div className="mt-2 flex min-w-0 items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate font-mono text-xs text-foreground">{reverseProxyPublicUrl}</span>
+                  <button
+                    type="button"
+                    onClick={() => copyGuideText(reverseProxyPublicUrl, 'Public URL')}
+                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    aria-label="Copy public docs URL"
+                  >
+                    {copiedGuideLabel === 'Public URL' ? <Tick01Icon className="h-3.5 w-3.5" /> : <Copy01Icon className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
+              </div>
+              <ArrowRight02Icon className="hidden h-4 w-4 text-muted-foreground lg:block" />
+              <div className="min-w-0 rounded-lg border bg-background p-3">
+                <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">Website proxy</p>
+                <p className="mt-2 truncate font-mono text-xs text-foreground">{reverseProxyBasePath}/*</p>
+              </div>
+              <ArrowRight02Icon className="hidden h-4 w-4 text-muted-foreground lg:block" />
+              <div className="min-w-0 rounded-lg border bg-background p-3">
+                <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">Helpin origin</p>
+                <div className="mt-2 flex min-w-0 items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate font-mono text-xs text-foreground">{reverseProxyOrigin}</span>
+                  <button
+                    type="button"
+                    onClick={() => copyGuideText(reverseProxyOrigin, 'Proxy origin')}
+                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    aria-label="Copy proxy origin"
+                  >
+                    {copiedGuideLabel === 'Proxy origin' ? <Tick01Icon className="h-3.5 w-3.5" /> : <Copy01Icon className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(340px,0.75fr)]">
+              <div className="space-y-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <p className="text-sm font-medium">Cloudflare Worker configuration</p>
+                    <p className="text-xs text-muted-foreground">Proxy only {reverseProxyBasePath} requests. Assets and API calls stay under {reverseProxyBasePath} when the Helpin base path is forwarded.</p>
+                  </div>
+                </div>
+                <CodeSnippet code={cloudflareWorkerSnippet} onCopy={copyGuideText} />
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <p className="text-sm font-medium">Required headers</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">Send these from proxies that support upstream request headers. Vercel rewrites use the query fallback in the snippet below.</p>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+                  {[
+                    ['X-Helpin-HC-Tenant', reverseProxyTenant],
+                    ['X-Helpin-HC-Basepath', reverseProxyBasePath],
+                    ['X-Forwarded-Host', reverseProxyPublicHost],
+                    ['X-Forwarded-Proto', 'https'],
+                  ].map(([header, value]) => (
+                    <div key={header} className="rounded-md border bg-background px-3 py-2">
+                      <p className="font-mono text-[11px] text-muted-foreground">{header}</p>
+                      <p className="mt-1 truncate font-mono text-xs text-foreground">{value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="space-y-2 pt-1">
+                  <p className="text-sm font-medium">Additional setup guides</p>
+                  <ReverseProxyGuideCard
+                    title="AWS CloudFront"
+                    description={`Create a ${reverseProxyBasePath}/* behavior that forwards requests to the raw Helpin origin with the required tenant and base-path headers.`}
+                    badge="aws"
+                    code={awsProxySnippet}
+                    onCopy={copyGuideText}
+                  />
+                  <ReverseProxyGuideCard
+                    title="Vercel"
+                    description={`Add rewrites for ${reverseProxyBasePath} and ${reverseProxyBasePath}/:path* and pass Helpin tenant/base-path context through the rewrite destination.`}
+                    badge="▲"
+                    code={vercelRewriteSnippet}
+                    onCopy={copyGuideText}
+                  />
+                  <a
+                    href="https://developers.cloudflare.com/workers/"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    Cloudflare Workers documentation
+                    <ArrowUpRight01Icon className="h-3.5 w-3.5" />
+                  </a>
+                </div>
+              </div>
+            </div>
           </div>
           </div>
           </div>

@@ -73,6 +73,44 @@ function normalizeHeaderValue(value) {
   return Array.isArray(value) ? value.join(', ') : value ?? ''
 }
 
+function firstHeaderValue(value) {
+  return normalizeHeaderValue(value).split(',')[0].trim()
+}
+
+function normalizeIdentifier(value) {
+  const normalized = firstHeaderValue(value).toLowerCase()
+  if (!normalized || /^[a-z]+:\/\//i.test(normalized)) return ''
+  if (normalized.includes('/') || normalized.includes('\\')) return ''
+  return normalized
+}
+
+function normalizeBasepath(value) {
+  const raw = firstHeaderValue(value)
+  if (!raw || raw === '/') return ''
+
+  let decoded = raw
+  try {
+    decoded = decodeURIComponent(raw)
+  } catch {
+    return ''
+  }
+
+  if (!decoded.startsWith('/')) {
+    decoded = `/${decoded}`
+  }
+
+  decoded = decoded.replace(/\/+$/, '')
+  if (!decoded || decoded === '/') return ''
+  if (decoded.includes('//') || decoded.includes('\\')) return ''
+
+  const segments = decoded.split('/').filter(Boolean)
+  if (segments.some((segment) => segment === '.' || segment === '..')) {
+    return ''
+  }
+
+  return decoded
+}
+
 function shouldReadBody(method) {
   return !['GET', 'HEAD'].includes(method.toUpperCase())
 }
@@ -98,13 +136,20 @@ function isHtmlRequest(request, url) {
   return accept.includes('text/html') || accept.includes('*/*') || accept === ''
 }
 
-function getCacheKey(url, request) {
+function getCacheKey(url, request, hcContext) {
   const host =
-    normalizeHeaderValue(request.headers['x-forwarded-host']) ||
-    normalizeHeaderValue(request.headers.host) ||
+    firstHeaderValue(request.headers['x-forwarded-host']) ||
+    firstHeaderValue(request.headers.host) ||
     url.host
 
-  return `${request.method}:${host}${url.pathname}${url.search}`
+  return [
+    request.method,
+    host,
+    hcContext?.subdomain || '',
+    hcContext?.basepath || '',
+    url.pathname,
+    url.search,
+  ].join(':')
 }
 
 function getCachedResponse(key) {
@@ -136,7 +181,13 @@ function setCachedResponse(key, response) {
 }
 
 function getRedirectCacheKey(hcContext, url) {
-  return `${hcContext.host}:${url.pathname}${url.search}`
+  return [
+    hcContext.host,
+    hcContext.subdomain,
+    hcContext.basepath,
+    url.pathname,
+    url.search,
+  ].join(':')
 }
 
 function getCachedRedirect(key) {
@@ -262,17 +313,18 @@ async function writeFetchResponse(nodeResponse, response, url) {
 }
 
 function resolveHostInfo(request) {
-  const forwardedHost = normalizeHeaderValue(request.headers['x-forwarded-host'])
-  const host = forwardedHost || normalizeHeaderValue(request.headers.host) || 'localhost'
-  const forwardedProto = normalizeHeaderValue(request.headers['x-forwarded-proto'])
+  const forwardedHost = firstHeaderValue(request.headers['x-forwarded-host'])
+  const rawHost = firstHeaderValue(request.headers.host) || 'localhost'
+  const host = forwardedHost || rawHost
+  const forwardedProto = firstHeaderValue(request.headers['x-forwarded-proto'])
   const protocol = forwardedProto || 'http'
-  return { host, protocol, origin: `${protocol}://${host}` }
+  return { host, rawHost, protocol, origin: `${protocol}://${host}` }
 }
 
 const HOSTED_HELP_CENTER_ROOTS = ['stage.helpin.center', 'helpin.center']
 
 function normalizeHostname(host) {
-  return host.split(':')[0].trim().toLowerCase()
+  return firstHeaderValue(host).split(':')[0].trim().toLowerCase()
 }
 
 function resolveHostedSubdomain(host) {
@@ -295,32 +347,65 @@ function resolveHostedSubdomain(host) {
   return ''
 }
 
+function isLocalHostname(hostname) {
+  return (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)
+  )
+}
+
+function canUseExplicitTenant(tenant, rawHostname) {
+  if (!tenant) return false
+  if (isLocalHostname(rawHostname)) return true
+
+  const hostedSubdomain = resolveHostedSubdomain(rawHostname)
+  return hostedSubdomain === tenant
+}
+
 /**
  * Mirrors `resolveHelpCenterContext` in src/lib/utils.ts but adapted for the
  * Node entrypoint. Keep these in sync.
  */
-function resolveHelpCenterContext(host, pathname, search = '') {
+function resolveHelpCenterContext(host, pathname, search = '', proxy = {}) {
   const hostname = normalizeHostname(host)
-  const overrideParam = new URLSearchParams(search).get('subdomain')
+  const rawHostname = normalizeHostname(proxy.rawHost || host)
+  const searchParams = new URLSearchParams(search)
+  const queryTenant = normalizeIdentifier(
+    searchParams.get('helpin_tenant') || searchParams.get('subdomain'),
+  )
+  const headerTenant = normalizeIdentifier(proxy.tenant)
+  const explicitTenant = canUseExplicitTenant(headerTenant, rawHostname)
+    ? headerTenant
+    : canUseExplicitTenant(queryTenant, rawHostname)
+      ? queryTenant
+      : ''
+  const basepath = normalizeBasepath(
+    proxy.basepath ||
+      proxy.forwardedPrefix ||
+      searchParams.get('helpin_basepath'),
+  )
+
+  if (explicitTenant) {
+    return { subdomain: explicitTenant, basepath }
+  }
 
   const hostedSubdomain = resolveHostedSubdomain(hostname)
   if (hostedSubdomain) {
-    return { subdomain: overrideParam || hostedSubdomain, basepath: '' }
+    const overrideParam = queryTenant === hostedSubdomain ? queryTenant : ''
+    return { subdomain: overrideParam || hostedSubdomain, basepath }
   }
 
-  if (
-    hostname === 'localhost' ||
-    hostname === '127.0.0.1' ||
-    /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)
-  ) {
+  if (isLocalHostname(hostname)) {
     return {
-      subdomain: overrideParam || process.env.VITE_HC_SUBDOMAIN || 'demo',
-      basepath: '',
+      subdomain:
+        queryTenant || normalizeIdentifier(process.env.VITE_HC_SUBDOMAIN) || 'demo',
+      basepath,
     }
   }
 
   // Custom domain — pass hostname through; backend resolves it.
-  return { subdomain: overrideParam || hostname, basepath: '' }
+  return { subdomain: hostname, basepath }
 }
 
 const requestContextStorage = new AsyncLocalStorage()
@@ -504,11 +589,17 @@ async function handleRequest(request, response) {
     return
   }
 
-  const { host, protocol, origin } = resolveHostInfo(request)
+  const { host, rawHost, protocol, origin } = resolveHostInfo(request)
   const url = new URL(request.url || '/', `${protocol}://${host}`)
-  const resolved = resolveHelpCenterContext(host, url.pathname, url.search)
+  const resolved = resolveHelpCenterContext(host, url.pathname, url.search, {
+    rawHost,
+    tenant: request.headers['x-helpin-hc-tenant'],
+    basepath: request.headers['x-helpin-hc-basepath'],
+    forwardedPrefix: request.headers['x-forwarded-prefix'],
+  })
   const hcContext = {
     host: normalizeHostname(host),
+    rawHost: normalizeHostname(rawHost),
     protocol,
     origin,
     pathname: url.pathname,
@@ -549,7 +640,7 @@ async function handleRequest(request, response) {
       return
     }
 
-    const cacheKey = getCacheKey(url, request)
+    const cacheKey = getCacheKey(url, request, hcContext)
 
     if (isHtmlRequest(request, routeUrl)) {
       const cached = getCachedResponse(cacheKey)

@@ -26,6 +26,7 @@ function ChunkErrorHandler({ error }: { error: Error }) {
 }
 
 interface ServerRequestSnapshot {
+  host?: string
   hostname?: string
   pathname?: string
   basepath?: string
@@ -63,8 +64,9 @@ function resolveBasepath(): string | undefined {
   if (!snapshot) return undefined
 
   if (snapshot.basepath) return snapshot.basepath
-  if (snapshot.hostname && snapshot.pathname) {
-    const ctx = resolveHelpCenterContext(snapshot.hostname, snapshot.pathname)
+  const hostname = snapshot.hostname || snapshot.host
+  if (hostname && snapshot.pathname) {
+    const ctx = resolveHelpCenterContext(hostname, snapshot.pathname)
     return ctx.basepath || undefined
   }
   return undefined

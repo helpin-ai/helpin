@@ -212,6 +212,7 @@ export const ConversationRow = memo(function ConversationRow({
   const unreadCount = conversation.unread_count ?? 0;
   const isUnread = unreadCount > 0;
   const [actionsOpen, setActionsOpen] = useState(false);
+  const [actionsMounted, setActionsMounted] = useState(false);
   const typingState = useSupportPresenceStore((s) => s.typingIndicators[conversation.id]);
   const isCustomerTyping = typeof typingState === 'string';
   const agentTypingMap = useSupportPresenceStore((s) => s.agentTyping[conversation.id]);
@@ -242,12 +243,52 @@ export const ConversationRow = memo(function ConversationRow({
     }
   };
 
+  const handleActionsOpenChange = (open: boolean) => {
+    setActionsOpen(open);
+    setActionsMounted(open);
+  };
+
+  const showActionsMenu = actionsMounted || actionsOpen;
+  const actionButton = (
+    <button
+      type="button"
+      aria-label={`Open actions for ${displayName}`}
+      aria-haspopup="menu"
+      aria-expanded={actionsOpen}
+      className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+      onClick={(event) => {
+        event.stopPropagation();
+        if (!showActionsMenu) {
+          setActionsMounted(true);
+          setActionsOpen(true);
+        }
+      }}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+      }}
+    >
+      <MoreHorizontalIcon className="h-3.5 w-3.5" />
+    </button>
+  );
+
   return (
     <div
       role="button"
       tabIndex={0}
       onClick={() => onSelectConversation(conversation.id, unreadCount)}
       onKeyDown={handleRowKeyDown}
+      onMouseEnter={() => setActionsMounted(true)}
+      onMouseLeave={() => {
+        if (!actionsOpen) {
+          setActionsMounted(false);
+        }
+      }}
+      onFocusCapture={() => setActionsMounted(true)}
+      onBlurCapture={(event) => {
+        if (!actionsOpen && !event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setActionsMounted(false);
+        }
+      }}
       className={`group relative w-full cursor-pointer px-3 py-2.5 text-left transition-all duration-200 hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
         isSelected
           ? 'bg-muted'
@@ -309,29 +350,17 @@ export const ConversationRow = memo(function ConversationRow({
                     : 'pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100'
                 }`}
               >
-                <ConversationActionsMenu
-                  workspaceId={workspaceId}
-                  conversation={conversation}
-                  moveOptions={availableMoveOptions}
-                  open={actionsOpen}
-                  onOpenChange={setActionsOpen}
-                  align="end"
-                  trigger={(
-                    <button
-                      type="button"
-                      aria-label={`Open actions for ${displayName}`}
-                      className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                      }}
-                      onKeyDown={(event) => {
-                        event.stopPropagation();
-                      }}
-                    >
-                      <MoreHorizontalIcon className="h-3.5 w-3.5" />
-                    </button>
-                  )}
-                />
+                {showActionsMenu ? (
+                  <ConversationActionsMenu
+                    workspaceId={workspaceId}
+                    conversation={conversation}
+                    moveOptions={availableMoveOptions}
+                    open={actionsOpen}
+                    onOpenChange={handleActionsOpenChange}
+                    align="end"
+                    trigger={actionButton}
+                  />
+                ) : actionButton}
               </div>
             </div>
           </div>

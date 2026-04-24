@@ -6,6 +6,11 @@ import { DocsProvider } from '@/contexts/DocsContext'
 import type { HelpCenterConfig, Space } from '@/lib/types'
 
 vi.mock('@tanstack/react-router', () => ({
+  Link: ({ to, children, ...props }: { to: string; children: ReactNode }) => (
+    <a href={to} {...props}>
+      {children}
+    </a>
+  ),
   useNavigate: () => vi.fn(),
 }))
 
