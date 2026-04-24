@@ -489,6 +489,7 @@ func main() {
 		conversationRepo,
 		commentRepo,
 		checklistRepo,
+		workflowRepo,
 		supportMessageRepo,
 		gitIntRepo,
 		gitRepo,

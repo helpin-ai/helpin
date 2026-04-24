@@ -169,7 +169,9 @@ type ServiceBridge struct {
 	SetTaskDependencies func(ctx context.Context, workspaceID, actorID string, dependencies []TaskDependencyLink) error
 	ListEpicTasks       func(ctx context.Context, workspaceID, epicID string) ([]EpicTaskSummary, error)
 	ListWorkspaceTeams  func(ctx context.Context, workspaceID string) ([]WorkspaceTeamSummary, error)
+	ListTeamWorkflows   func(ctx context.Context, workspaceID string, teamID *string) ([]TeamWorkflowSummary, error)
 	ApproveEpicSpec     func(ctx context.Context, workspaceID, epicID, actorID string, versionID *string) (*model.ApprovedSpecSummary, error)
+	CreateTask          func(ctx context.Context, workspaceID, actorID string, req CreateTaskToolRequest) (*CreateTaskToolResult, error)
 
 	// Support
 	ListConversationMessages func(ctx context.Context, workspaceID, conversationID string) ([]model.SupportMessage, error)
@@ -235,6 +237,52 @@ type WorkspaceTeamSummary struct {
 	Handle          *string `json:"handle,omitempty"`
 	TeamType        string  `json:"team_type,omitempty"`
 	DefaultTaskType string  `json:"default_task_type,omitempty"`
+}
+
+type WorkflowStageSummary struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	StateType string `json:"state_type"`
+	Position  int    `json:"position"`
+	IsDefault bool   `json:"is_default"`
+}
+
+type TeamWorkflowSummary struct {
+	TeamID           string                 `json:"team_id"`
+	TeamName         string                 `json:"team_name"`
+	WorkflowID       string                 `json:"workflow_id"`
+	WorkflowName     string                 `json:"workflow_name"`
+	DefaultStateID   *string                `json:"default_state_id,omitempty"`
+	UsesTeamWorkflow bool                   `json:"uses_team_workflow"`
+	Stages           []WorkflowStageSummary `json:"stages"`
+}
+
+type CreateTaskToolRequest struct {
+	Name          string     `json:"name"`
+	Description   *string    `json:"description,omitempty"`
+	TaskType      string     `json:"task_type,omitempty"`
+	Estimate      *int       `json:"estimate,omitempty"`
+	Priority      *string    `json:"priority,omitempty"`
+	EpicID        *string    `json:"epic_id,omitempty"`
+	TeamID        string     `json:"team_id"`
+	WorkflowID    *string    `json:"workflow_id,omitempty"`
+	StateID       *string    `json:"state_id,omitempty"`
+	OwnerMemberID *string    `json:"owner_member_id,omitempty"`
+	LabelIDs      []string   `json:"label_ids,omitempty"`
+	Deadline      *time.Time `json:"deadline,omitempty"`
+}
+
+type CreateTaskToolResult struct {
+	TaskID      string  `json:"task_id"`
+	DisplayID   int     `json:"display_id,omitempty"`
+	TaskKey     string  `json:"task_key,omitempty"`
+	Name        string  `json:"name"`
+	TeamID      *string `json:"team_id,omitempty"`
+	WorkflowID  string  `json:"workflow_id"`
+	StateID     string  `json:"state_id"`
+	StateName   string  `json:"state_name,omitempty"`
+	WorkspaceID string  `json:"workspace_id,omitempty"`
+	EpicID      *string `json:"epic_id,omitempty"`
 }
 
 // ChecklistItem is a simplified checklist item for tool responses.

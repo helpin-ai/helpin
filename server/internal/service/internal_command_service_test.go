@@ -82,6 +82,35 @@ func TestCreateDocumentCommandMetadataAndTargets(t *testing.T) {
 	t.Fatalf("expected docs.create_document to support workspace target, got %#v", def.SupportedTargetTypes)
 }
 
+func TestCreateTaskCommandMetadataAndTargets(t *testing.T) {
+	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+
+	def, ok := svc.Definition("pm.create_task")
+	if !ok {
+		t.Fatal("expected pm.create_task definition")
+	}
+	if !def.ExposesTool() {
+		t.Fatal("expected pm.create_task to expose a runtime tool")
+	}
+	if def.Tool == nil || def.Tool.Alias != "create_task" || def.Tool.Category != "PM / Tasks" {
+		t.Fatalf("unexpected tool metadata %#v", def.Tool)
+	}
+
+	var supportsWorkspace bool
+	var supportsEpic bool
+	for _, targetType := range def.SupportedTargetTypes {
+		if targetType == "workspace" {
+			supportsWorkspace = true
+		}
+		if targetType == "epic" {
+			supportsEpic = true
+		}
+	}
+	if !supportsWorkspace || !supportsEpic {
+		t.Fatalf("expected pm.create_task to support workspace and epic targets, got %#v", def.SupportedTargetTypes)
+	}
+}
+
 func TestCreateFollowupTasksCommandIsBackendOnlyUntilToolExists(t *testing.T) {
 	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
 

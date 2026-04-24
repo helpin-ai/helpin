@@ -82,6 +82,13 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		InputSchema: createTaskBatchSchema(),
 	},
 	{
+		CommandName: "pm.create_task",
+		Alias:       "create_task",
+		Category:    "PM / Tasks",
+		Description: "Create a single task for a team, optionally targeting a specific workflow and stage. If workflow_id or state_id are omitted, they are resolved from the team workflow defaults.",
+		InputSchema: createTaskSchema(),
+	},
+	{
 		CommandName: "pm.assign_task_agent",
 		Alias:       "assign_task_agent",
 		Category:    "PM / Tasks",
@@ -357,5 +364,64 @@ func createTaskBatchSchema() map[string]any {
 				"items":       taskSchema,
 			},
 		},
+	}
+}
+
+func createTaskSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"name": map[string]any{
+				"type":        "string",
+				"description": "Task title",
+			},
+			"description": map[string]any{
+				"type":        "string",
+				"description": "Optional task description",
+			},
+			"task_type": map[string]any{
+				"type":        "string",
+				"description": "Optional task type such as feature, bug, or chore",
+			},
+			"estimate": map[string]any{
+				"type":        "integer",
+				"description": "Optional estimate value",
+			},
+			"priority": map[string]any{
+				"type":        "string",
+				"description": "Optional priority such as low, medium, high, or urgent",
+			},
+			"epic_id": map[string]any{
+				"type":        "string",
+				"description": "Optional epic ID to link the task to",
+			},
+			"team_id": map[string]any{
+				"type":        "string",
+				"description": "Team ID that owns the task",
+			},
+			"workflow_id": map[string]any{
+				"type":        "string",
+				"description": "Optional workflow ID override. Defaults to the resolved team workflow.",
+			},
+			"state_id": map[string]any{
+				"type":        "string",
+				"description": "Optional workflow state ID override. Defaults to the resolved workflow default state.",
+			},
+			"owner_member_id": map[string]any{
+				"type":        "string",
+				"description": "Optional workspace member ID to assign as owner",
+			},
+			"label_ids": map[string]any{
+				"type":        "array",
+				"description": "Optional label IDs to attach to the task",
+				"items":       map[string]any{"type": "string"},
+			},
+			"deadline": map[string]any{
+				"type":        "string",
+				"description": "Optional deadline as YYYY-MM-DD or RFC3339",
+			},
+		},
+		"required":             []string{"name", "team_id"},
+		"additionalProperties": false,
 	}
 }

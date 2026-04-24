@@ -667,6 +667,16 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"properties": map[string]interface{}{},
 	}, toolListWorkspaceTeams)
 
+	r.register("list_team_workflows_with_stages", "List the resolved workflow and ordered stages for one team or all workspace teams. Use this to choose a valid workflow stage before creating a task.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"team_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional team ID. Omit to return workflow summaries for all workspace teams.",
+			},
+		},
+	}, toolListTeamWorkflowsWithStages)
+
 	r.register("list_conversation_messages", "List the current support conversation messages.", map[string]interface{}{
 		"type":       "object",
 		"properties": map[string]interface{}{},
@@ -794,6 +804,7 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"update_deal_stage":       toolUpdateDealStage,
 		"add_deal_note":           toolAddDealNote,
 		"create_document":         toolCreateDocument,
+		"create_task":             toolCreateTask,
 		"write_document_content":  toolWriteDocumentContent,
 		"link_document_to_object": toolLinkDocumentToObject,
 		"ensure_epic_spec_doc":    toolEnsureEpicSpecDoc,
