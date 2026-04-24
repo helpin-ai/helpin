@@ -683,6 +683,7 @@ type WidgetIdentityPayload struct {
 	FirstName string `json:"first_name,omitempty"`
 	LastName  string `json:"last_name,omitempty"`
 	Source    string `json:"source"` // "widget_prechat", "sdk_identify", or "sdk_lead"
+	Company   JSONB  `json:"company,omitempty"`
 }
 
 func (p WidgetIdentityPayload) DisplayName() string {

@@ -10,7 +10,9 @@ import (
 	"html"
 	"log/slog"
 	"net/netip"
+	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -2475,6 +2477,316 @@ func (s *SupportInboxService) matchOrCreateCRMContactIdentityTx(ctx context.Cont
 	slog.InfoContext(ctx, "auto-created CRM lead from widget",
 		"contact_id", contact.ID, "workspace_id", workspaceID, "source", contactSource)
 	return &contact.ID
+}
+
+type resolvedWidgetCompany struct {
+	externalID       string
+	name             string
+	domain           string
+	industry         *string
+	employeeCount    *int
+	annualRevenue    *float64
+	description      *string
+	logoURL          *string
+	customProperties model.JSONB
+}
+
+func (s *SupportInboxService) matchOrCreateCRMCompanyIdentityTx(ctx context.Context, companyRepo *repository.CRMCompanyRepository, workspaceID string, identity model.WidgetIdentityPayload) (*string, error) {
+	resolved := resolveWidgetCompanyPayload(identity.Company)
+	if resolved == nil {
+		return nil, nil
+	}
+
+	var company *model.CRMCompany
+	var err error
+	if resolved.externalID != "" {
+		company, err = companyRepo.GetByExternalID(ctx, workspaceID, resolved.externalID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if company == nil && resolved.domain != "" {
+		company, err = companyRepo.GetByDomain(ctx, workspaceID, resolved.domain)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if company == nil && resolved.name != "" {
+		company, err = companyRepo.GetByName(ctx, workspaceID, resolved.name)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if company != nil {
+		if syncCRMCompanyIdentity(company, *resolved) {
+			if err := companyRepo.Update(ctx, company); err != nil {
+				return nil, err
+			}
+		}
+		return &company.ID, nil
+	}
+
+	if resolved.name == "" {
+		return nil, nil
+	}
+
+	displayID, err := companyRepo.GetNextDisplayID(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	company = &model.CRMCompany{
+		WorkspaceID:      workspaceID,
+		DisplayID:        displayID,
+		ExternalID:       stringPtrOrNil(resolved.externalID),
+		Name:             resolved.name,
+		Domain:           stringPtrOrNil(resolved.domain),
+		Industry:         resolved.industry,
+		EmployeeCount:    resolved.employeeCount,
+		AnnualRevenue:    resolved.annualRevenue,
+		Description:      resolved.description,
+		LogoURL:          resolved.logoURL,
+		CustomProperties: resolved.customProperties,
+	}
+	if company.CustomProperties == nil {
+		company.CustomProperties = model.JSONB{}
+	}
+	if err := companyRepo.Create(ctx, company); err != nil {
+		return nil, err
+	}
+
+	slog.InfoContext(ctx, "auto-created CRM company from widget identity",
+		"company_id", company.ID, "workspace_id", workspaceID, "external_id", resolved.externalID)
+	return &company.ID, nil
+}
+
+func syncCRMCompanyIdentity(company *model.CRMCompany, identity resolvedWidgetCompany) bool {
+	updated := false
+	if identity.externalID != "" && strings.TrimSpace(derefString(company.ExternalID)) == "" {
+		company.ExternalID = &identity.externalID
+		updated = true
+	}
+	if identity.name != "" && strings.TrimSpace(company.Name) != identity.name {
+		company.Name = identity.name
+		updated = true
+	}
+	if identity.domain != "" && strings.TrimSpace(derefString(company.Domain)) != identity.domain {
+		company.Domain = &identity.domain
+		updated = true
+	}
+	if identity.industry != nil && strings.TrimSpace(derefString(company.Industry)) != *identity.industry {
+		company.Industry = identity.industry
+		updated = true
+	}
+	if identity.employeeCount != nil && (company.EmployeeCount == nil || *company.EmployeeCount != *identity.employeeCount) {
+		company.EmployeeCount = identity.employeeCount
+		updated = true
+	}
+	if identity.annualRevenue != nil && (company.AnnualRevenue == nil || *company.AnnualRevenue != *identity.annualRevenue) {
+		company.AnnualRevenue = identity.annualRevenue
+		updated = true
+	}
+	if identity.description != nil && strings.TrimSpace(derefString(company.Description)) != *identity.description {
+		company.Description = identity.description
+		updated = true
+	}
+	if identity.logoURL != nil && strings.TrimSpace(derefString(company.LogoURL)) != *identity.logoURL {
+		company.LogoURL = identity.logoURL
+		updated = true
+	}
+
+	merged := mergeCRMCustomProperties(company.CustomProperties, identity.customProperties)
+	if len(merged) != len(company.CustomProperties) {
+		company.CustomProperties = merged
+		return true
+	}
+	for key, value := range merged {
+		if !reflect.DeepEqual(company.CustomProperties[key], value) {
+			company.CustomProperties = merged
+			return true
+		}
+	}
+	return updated
+}
+
+func (s *SupportInboxService) ensurePrimaryContactCompanyAssociationTx(ctx context.Context, assocRepo *repository.CRMAssociationRepository, workspaceID, contactID, companyID string) error {
+	assoc := &model.CRMAssociation{
+		WorkspaceID:      workspaceID,
+		FromObjectType:   model.CRMObjectContact,
+		FromObjectID:     contactID,
+		ToObjectType:     model.CRMObjectCompany,
+		ToObjectID:       companyID,
+		AssociationLabel: crmAssociationStringPtr(primaryCompanyAssociationLabel),
+	}
+	if err := assocRepo.Create(ctx, assoc); err != nil {
+		return err
+	}
+
+	assocs, err := assocRepo.ListByObject(ctx, workspaceID, model.CRMObjectContact, contactID)
+	if err != nil {
+		return err
+	}
+	for _, existing := range assocs {
+		otherType, otherID := otherAssociationSide(existing, model.CRMObjectContact, contactID)
+		if otherType != model.CRMObjectCompany {
+			continue
+		}
+		if existing.ID == assoc.ID || otherID == companyID {
+			if !isPrimaryCompanyAssociationLabel(existing.AssociationLabel) {
+				if err := assocRepo.UpdateLabel(ctx, existing.ID, crmAssociationStringPtr(primaryCompanyAssociationLabel)); err != nil {
+					return err
+				}
+			}
+			continue
+		}
+		if isPrimaryCompanyAssociationLabel(existing.AssociationLabel) {
+			if err := assocRepo.UpdateLabel(ctx, existing.ID, nil); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func resolveWidgetCompanyPayload(payload model.JSONB) *resolvedWidgetCompany {
+	if len(payload) == 0 {
+		return nil
+	}
+
+	company := &resolvedWidgetCompany{
+		externalID:       widgetPayloadString(payload, "id"),
+		name:             widgetPayloadString(payload, "name"),
+		domain:           normalizeWidgetCompanyDomain(widgetPayloadString(payload, "domain")),
+		industry:         stringPtrOrNil(widgetPayloadString(payload, "industry")),
+		description:      stringPtrOrNil(widgetPayloadString(payload, "description")),
+		logoURL:          stringPtrOrNil(widgetPayloadString(payload, "logo_url")),
+		employeeCount:    widgetPayloadInt(payload, "employee_count"),
+		annualRevenue:    widgetPayloadFloat(payload, "annual_revenue"),
+		customProperties: model.JSONB{},
+	}
+	if company.name == "" && company.domain != "" {
+		company.name = company.domain
+	}
+	if company.name == "" && company.externalID != "" {
+		company.name = company.externalID
+	}
+
+	if company.externalID != "" {
+		company.customProperties["sdk_company_id"] = company.externalID
+	}
+	if createdAt := widgetPayloadString(payload, "created_at"); createdAt != "" {
+		company.customProperties["sdk_created_at"] = createdAt
+	}
+
+	for _, key := range []string{"custom", "custom_properties", "properties"} {
+		switch nested := payload[key].(type) {
+		case map[string]interface{}:
+			for nestedKey, value := range nested {
+				company.customProperties[nestedKey] = value
+			}
+		case model.JSONB:
+			for nestedKey, value := range nested {
+				company.customProperties[nestedKey] = value
+			}
+		}
+	}
+	for key, value := range payload {
+		switch key {
+		case "id", "name", "domain", "created_at", "custom", "custom_properties", "properties", "industry", "description", "logo_url", "employee_count", "annual_revenue":
+			continue
+		default:
+			company.customProperties[key] = value
+		}
+	}
+
+	if company.name == "" && company.externalID == "" && company.domain == "" {
+		return nil
+	}
+	return company
+}
+
+func mergeCRMCustomProperties(existing, incoming model.JSONB) model.JSONB {
+	merged := model.JSONB{}
+	for key, value := range existing {
+		merged[key] = value
+	}
+	for key, value := range incoming {
+		merged[key] = value
+	}
+	return merged
+}
+
+func widgetPayloadString(payload model.JSONB, key string) string {
+	value, ok := payload[key]
+	if !ok || value == nil {
+		return ""
+	}
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	default:
+		return strings.TrimSpace(fmt.Sprint(typed))
+	}
+}
+
+func widgetPayloadInt(payload model.JSONB, key string) *int {
+	value, ok := payload[key]
+	if !ok || value == nil {
+		return nil
+	}
+	switch typed := value.(type) {
+	case int:
+		return &typed
+	case int64:
+		converted := int(typed)
+		return &converted
+	case float64:
+		converted := int(typed)
+		return &converted
+	case string:
+		parsed, err := strconv.Atoi(strings.TrimSpace(typed))
+		if err == nil {
+			return &parsed
+		}
+	}
+	return nil
+}
+
+func widgetPayloadFloat(payload model.JSONB, key string) *float64 {
+	value, ok := payload[key]
+	if !ok || value == nil {
+		return nil
+	}
+	switch typed := value.(type) {
+	case float64:
+		return &typed
+	case float32:
+		converted := float64(typed)
+		return &converted
+	case int:
+		converted := float64(typed)
+		return &converted
+	case int64:
+		converted := float64(typed)
+		return &converted
+	case string:
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(typed), 64)
+		if err == nil {
+			return &parsed
+		}
+	}
+	return nil
+}
+
+func normalizeWidgetCompanyDomain(domain string) string {
+	domain = strings.TrimSpace(strings.ToLower(domain))
+	domain = strings.TrimPrefix(domain, "https://")
+	domain = strings.TrimPrefix(domain, "http://")
+	domain = strings.TrimPrefix(domain, "www.")
+	if idx := strings.Index(domain, "/"); idx >= 0 {
+		domain = domain[:idx]
+	}
+	return strings.TrimSpace(domain)
 }
 
 func (s *SupportInboxService) syncCRMContactIdentity(contact *model.CRMContact, identity resolvedWidgetIdentity) bool {
