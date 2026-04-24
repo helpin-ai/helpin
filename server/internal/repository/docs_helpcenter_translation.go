@@ -98,6 +98,10 @@ func (r *DocsHelpcenterTranslationRepository) UpsertArticleTranslation(ctx conte
 				"content_text",
 				"seo_title",
 				"seo_description",
+				"og_title",
+				"og_description",
+				"og_image_url",
+				"og_image_alt",
 				"status",
 				"source_updated_at",
 				"source_synced",
@@ -447,6 +451,10 @@ func (r *DocsHelpcenterTranslationRepository) BackfillDefaultLocaleMirrors(ctx c
 		Slug              string
 		SEOTitle          *string
 		SEODescription    *string
+		OGTitle           *string
+		OGDescription     *string
+		OGImageURL        *string
+		OGImageAlt        *string
 		HelpfulCount      int
 		NotHelpfulCount   int
 		ViewCount         int
@@ -468,6 +476,10 @@ func (r *DocsHelpcenterTranslationRepository) BackfillDefaultLocaleMirrors(ctx c
 			ha.slug,
 			ha.seo_title,
 			ha.seo_description,
+			ha.og_title,
+			ha.og_description,
+			ha.og_image_url,
+			ha.og_image_alt,
 			ha.helpful_count,
 			ha.not_helpful_count,
 			ha.view_count,
@@ -504,6 +516,10 @@ func (r *DocsHelpcenterTranslationRepository) BackfillDefaultLocaleMirrors(ctx c
 			ContentText:     article.ContentText,
 			SEOTitle:        article.SEOTitle,
 			SEODescription:  article.SEODescription,
+			OGTitle:         article.OGTitle,
+			OGDescription:   article.OGDescription,
+			OGImageURL:      article.OGImageURL,
+			OGImageAlt:      article.OGImageAlt,
 			Status:          status,
 			SourceUpdatedAt: &article.UpdatedAt,
 			SourceSynced:    true,

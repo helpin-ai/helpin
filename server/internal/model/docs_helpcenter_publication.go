@@ -21,6 +21,10 @@ type DocsHelpcenterArticlePublication struct {
 	ContentText    string          `json:"content_text" gorm:"type:text"`
 	SEOTitle       *string         `json:"seo_title"`
 	SEODescription *string         `json:"seo_description"`
+	OGTitle        *string         `json:"og_title"`
+	OGDescription  *string         `json:"og_description"`
+	OGImageURL     *string         `json:"og_image_url"`
+	OGImageAlt     *string         `json:"og_image_alt"`
 	PublishedAt    time.Time       `json:"published_at" gorm:"not null;index"`
 	CreatedAt      time.Time       `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt      time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
