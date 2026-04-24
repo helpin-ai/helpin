@@ -44,6 +44,26 @@ Use a system/internal command when:
 
 Do not expose an internal command directly to the model. If the model needs it, wrap it as an agent-facing runtime tool with a stable tool name, schema, validation, allowlist entry, and tests.
 
+Boundary:
+
+- reusable product mutations should usually be command-backed
+- product reads and queries should usually stay runtime-tool-only unless multiple backend surfaces need the exact same shared contract
+- runtime-local or external capabilities should stay runtime-tool-only
+
+Decision table:
+
+| Capability type | Default shape | Why |
+| --- | --- | --- |
+| Product mutation | Command-backed runtime tool | Shared invariants and consistent behavior matter across agents, automations, and backend workflows |
+| Product read/query | Agent-facing runtime tool | The model needs a contract, but backend command reuse is often unnecessary for read paths |
+| Runtime-local or external capability | Agent-facing runtime tool | These are execution-time capabilities, not durable product commands |
+
+Examples:
+
+- `create_document`: product mutation, so command-backed is appropriate
+- `list_collections`: product read/query, so runtime-tool-only is appropriate unless a broader shared backend contract emerges
+- `web_search_exa`: external search capability, so runtime-tool-only is appropriate
+
 ### Agent-Facing Runtime Tools
 
 Agent-facing runtime tools are the contracts the model sees and calls. These are registered in `ToolRegistry`, filtered by the active allowed-tool set, serialized into provider tool definitions, executed through `ExecuteAllowed`, and shown in tool catalog surfaces.
@@ -82,6 +102,8 @@ The main tool families in the app are:
 - PM, Docs, CRM, Workspace, and Support tools
 
 Some mutation tools use shared internal-command backing for consistency. That should continue for new reusable business mutations, but it does not change the tool contract itself.
+
+Do not interpret "business tool" to mean "must be command-backed". The key question is whether the tool is a reusable mutation with product invariants, not whether it merely touches product data or reads from product tables.
 
 ## Tool Types And Relationships
 
