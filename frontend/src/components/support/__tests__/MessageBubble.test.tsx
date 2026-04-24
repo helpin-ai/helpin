@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { useAuthStore } from '@/stores/authStore'
@@ -61,12 +62,15 @@ describe('MessageBubble', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
     const root = createRoot(container)
+    const queryClient = new QueryClient()
 
     act(() => {
       root.render(
-        <TooltipProvider>
-          <MessageBubble message={message} />
-        </TooltipProvider>,
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider>
+            <MessageBubble message={message} />
+          </TooltipProvider>
+        </QueryClientProvider>,
       )
     })
 
@@ -83,5 +87,54 @@ describe('MessageBubble', () => {
       root.unmount()
     })
     container.remove()
+    queryClient.clear()
+  })
+
+  it('constrains email iframe content to the message bubble width', () => {
+    const message: SupportMessage = {
+      id: 'msg-email-1',
+      workspace_id: 'ws-1',
+      conversation_id: 'conv-1',
+      sender_type: 'customer',
+      sender_display_name: 'Customer',
+      content: 'Email body',
+      html_body: '<div style="white-space: nowrap">Hello from a long email body that should not push into the details sidebar.</div>',
+      message_type: 'reply',
+      is_internal: false,
+      via_channel: 'email',
+      created_at: '2026-04-24T12:18:09.000Z',
+      updated_at: '2026-04-24T12:18:09.000Z',
+    }
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const queryClient = new QueryClient()
+
+    act(() => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider>
+            <MessageBubble message={message} />
+          </TooltipProvider>
+        </QueryClientProvider>,
+      )
+    })
+
+    const bubble = container.querySelector('[data-slot="support-message-bubble"]')
+    expect(bubble?.className).toContain('max-w-[min(85%,46rem)]')
+
+    const iframe = container.querySelector('iframe[title="Email body"]') as HTMLIFrameElement | null
+    expect(iframe).toBeTruthy()
+    expect(iframe?.style.maxWidth).toBe('100%')
+    expect(iframe?.style.minWidth).toBe('0px')
+    expect(iframe?.style.minWidth).not.toBe('602px')
+    expect(iframe?.getAttribute('srcdoc')).toContain('overflow-wrap: anywhere !important')
+
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+    queryClient.clear()
   })
 })

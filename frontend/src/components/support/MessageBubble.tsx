@@ -236,6 +236,7 @@ export const MessageBubble = memo(function MessageBubble({
   const imageAttachments = message.attachments?.filter(a => a.file_type.startsWith('image/')) ?? [];
   const fileAttachments = message.attachments?.filter(a => !a.file_type.startsWith('image/')) ?? [];
   const showBubble = !!displayContent || fileAttachments.length > 0 || linkPreviews.length > 0;
+  const hasEmailBody = message.via_channel === 'email' && !!message.html_body;
 
   const tooltipContent = (
     <div className="space-y-0.5 text-xs">
@@ -434,7 +435,7 @@ export const MessageBubble = memo(function MessageBubble({
 
         <div
           data-slot="support-message-bubble"
-          className={hasTableContent ? 'min-w-0 max-w-[min(78vw,46rem)] lg:max-w-[min(72vw,48rem)]' : 'min-w-0 max-w-[85%]'}
+          className={hasTableContent || hasEmailBody ? 'min-w-0 max-w-[min(85%,46rem)] lg:max-w-[min(85%,48rem)]' : 'min-w-0 max-w-[85%]'}
         >
           {showBubble && (
             <Tooltip>
@@ -444,11 +445,11 @@ export const MessageBubble = memo(function MessageBubble({
                     isCustomer
                       ? `bg-muted text-foreground ${isLastInGroup ? 'rounded-bl-sm' : ''}`
                       : `bg-blue-600 text-white dark:bg-blue-500 ${isLastInGroup ? 'rounded-br-sm' : ''}`
-                  } ${hasTableContent ? 'overflow-hidden' : ''}`}
+                  } ${hasTableContent || hasEmailBody ? 'overflow-hidden' : ''}`}
                 >
-                  {message.via_channel === 'email' && message.html_body ? (
+                  {hasEmailBody ? (
                     <div className="-mx-1" data-chat-tone={isCustomer ? 'customer' : 'agent'}>
-                      <EmailBodyRenderer html={message.html_body} />
+                      <EmailBodyRenderer html={message.html_body ?? ''} />
                     </div>
                   ) : (
                     displayContent && (

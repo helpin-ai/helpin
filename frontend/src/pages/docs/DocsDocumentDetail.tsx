@@ -82,6 +82,12 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { DocsEditor, type DocsEditingPresenceSignal } from '@/components/docs/DocsEditor'
+import {
+  buildCollectionTree,
+  collectionAncestorChain,
+  findCollectionNode,
+  type CollectionTreeNode,
+} from '@/components/docs/docsCollectionTree'
 import { VersionHistoryPanel, VersionTypeBadge, AuthorDisplay } from '@/components/docs/VersionHistoryPanel'
 import { DocumentLinksPanel } from '@/components/docs/DocumentLinksPanel'
 import { MoveDocumentDialog } from '@/components/docs/MoveDocumentDialog'
@@ -228,6 +234,14 @@ export function DocsDocumentDetail() {
 
   const toggleShare = useToggleDocShare(wsId)
   const toggleLock = useToggleDocLock(wsId)
+
+  const collectionBreadcrumbNodes = useMemo<CollectionTreeNode[]>(() => {
+    if (!doc?.space_id || !doc.collection_id || collections.length === 0) return []
+    const tree = buildCollectionTree(doc.space_id, collections, [])
+    const current = findCollectionNode(tree.topLevel, doc.collection_id)
+    if (!current) return []
+    return [...collectionAncestorChain(tree.topLevel, doc.collection_id), current]
+  }, [collections, doc?.collection_id, doc?.space_id])
 
   const activeDocViewers = useMemo(() => {
     return Object.entries(remoteViewers).map(([userId, viewer]) => {
@@ -787,17 +801,25 @@ export function DocsDocumentDetail() {
               </span>
             </button>
           )}
-          {doc.collection_id && (() => {
-            const col = collections.find((c) => c.id === doc.collection_id)
-            if (!col) return null
-            return (
-              <>
-                <ArrowRight01Icon className="h-3 w-3 shrink-0" />
-                <DocCollectionIcon name={col.icon} />
-                <span className="truncate">{col.name}</span>
-              </>
-            )
-          })()}
+          {collectionBreadcrumbNodes.map((node) => (
+            <div key={node.collection.id} className="flex min-w-0 items-center gap-1">
+              <ArrowRight01Icon className="h-3 w-3 shrink-0" />
+              <button
+                type="button"
+                onClick={() =>
+                  navigate({
+                    to: '/w/$slug/docs/spaces/$spaceId',
+                    params: { slug: wsSlug, spaceId: node.collection.space_id },
+                    search: { collection: node.collection.id },
+                  })
+                }
+                className="inline-flex min-w-0 items-center gap-1 truncate hover:text-foreground transition-colors"
+              >
+                <DocCollectionIcon name={node.collection.icon} />
+                <span className="truncate">{node.collection.name}</span>
+              </button>
+            </div>
+          ))}
         </nav>
 
         {!showLocalePills && !(isPublished && hasUnpublishedChanges) && (
