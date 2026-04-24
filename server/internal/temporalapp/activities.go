@@ -1467,7 +1467,85 @@ func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*r
 		state.epicTasks = epicTasks
 	}
 
+	if err := a.hydrateRunRepositoryTarget(ctx, state); err != nil {
+		return nil, err
+	}
+
 	return state, nil
+}
+
+func (a *AgentRunActivities) hydrateRunRepositoryTarget(ctx context.Context, state *resolvedRunState) error {
+	if a == nil || state == nil || state.run == nil {
+		return nil
+	}
+	if state.repository != nil && state.integration != nil && strings.TrimSpace(state.accessToken) != "" {
+		return nil
+	}
+
+	targetType := strings.TrimSpace(state.run.TargetType)
+	repoID := strings.TrimSpace(derefString(state.run.RepositoryID))
+	if targetType == "repository" && repoID == "" {
+		repoID = strings.TrimSpace(state.run.TargetID)
+	}
+	if targetType != "repository" {
+		switch targetType {
+		case "task", "story", "epic":
+			return nil
+		}
+		if repoID == "" || state.repository != nil {
+			return nil
+		}
+	}
+	if repoID == "" {
+		return fmt.Errorf("repository target id is required")
+	}
+	if a.gitRepo == nil {
+		return fmt.Errorf("git repository repository is not configured")
+	}
+	if a.gitIntRepo == nil {
+		return fmt.Errorf("git integration repository is not configured")
+	}
+
+	repo, err := a.gitRepo.GetByIDAny(ctx, repoID)
+	if err != nil {
+		return err
+	}
+	if repo == nil {
+		return fmt.Errorf("repository target not found")
+	}
+	if repo.WorkspaceID != state.run.WorkspaceID {
+		return fmt.Errorf("repository target does not belong to this workspace")
+	}
+	if repo.DeletedAt != nil || !repo.Active || repo.Archived || !repo.Selected {
+		return fmt.Errorf("repository target is not available")
+	}
+
+	integration, err := a.gitIntRepo.GetByIDAny(ctx, repo.IntegrationID)
+	if err != nil {
+		return err
+	}
+	if integration == nil || !integration.Active {
+		return fmt.Errorf("repository target integration not found")
+	}
+
+	token, err := a.mintAccessToken(ctx, integration)
+	if err != nil {
+		return fmt.Errorf("repository target access token: %w", err)
+	}
+
+	state.repository = repo
+	state.integration = integration
+	state.accessToken = token
+	state.run.RepositoryID = &repo.ID
+	state.run.RepoFullName = &repo.FullName
+	if strings.TrimSpace(derefString(state.run.BaseBranch)) == "" {
+		baseBranch := strings.TrimSpace(repo.DefaultBranch)
+		if baseBranch == "" {
+			baseBranch = "main"
+		}
+		state.run.BaseBranch = &baseBranch
+	}
+	return nil
 }
 
 func (a *AgentRunActivities) resolveDeliveryTarget(ctx context.Context, workspaceID string, task *model.PMTask) (*model.TaskDeliveryTarget, *model.PMTeamRepoDefault, error) {
