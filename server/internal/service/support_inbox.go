@@ -1081,7 +1081,11 @@ func (s *SupportInboxService) UpdateConversationStatus(ctx context.Context, work
 			ticket.FlowState = strPtr(model.SupportConversationFlowStateResolvedByHuman)
 		}
 	case model.SupportConversationStatusOpen:
-		ticket.FlowState = strPtr(defaultConversationFlowState(ticket.OpenedByUserID, ticket.AssignedUserID, ticket.AssignedAgentID))
+		if ticket.HumanTakeover != nil && *ticket.HumanTakeover {
+			ticket.FlowState = strPtr(model.SupportConversationFlowStateAssignedToHuman)
+		} else {
+			ticket.FlowState = strPtr(defaultConversationFlowState(ticket.OpenedByUserID, ticket.AssignedUserID, ticket.AssignedAgentID))
+		}
 	case model.SupportConversationStatusSpam:
 		ticket.ClosedAt = &now
 	}
@@ -1376,7 +1380,11 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		ProcessSupportCustomerReplyNotification(ctx, s.notificationService, conv, msg.Content, senderName)
 		if conv.Status == model.SupportConversationStatusWaitingOnCustomer || conv.Status == model.SupportConversationStatusResolved {
 			conv.Status = model.SupportConversationStatusOpen
-			conv.FlowState = strPtr(defaultConversationFlowState(conv.OpenedByUserID, conv.AssignedUserID, conv.AssignedAgentID))
+			if conv.HumanTakeover != nil && *conv.HumanTakeover {
+				conv.FlowState = strPtr(model.SupportConversationFlowStateAssignedToHuman)
+			} else {
+				conv.FlowState = strPtr(defaultConversationFlowState(conv.OpenedByUserID, conv.AssignedUserID, conv.AssignedAgentID))
+			}
 			conv.ClosedAt = nil
 			if err := s.conversationRepo.UpdateFields(ctx, workspaceID, ticketID, map[string]any{
 				"status":      conv.Status,
@@ -1401,6 +1409,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		if conv.OpenedByUserID == nil || *conv.OpenedByUserID != *senderUserID {
 			conv.OpenedByUserID = senderUserID
 			conv.FlowState = strPtr(model.SupportConversationFlowStateAssignedToHuman)
+			conv.HumanTakeover = boolPtr(true)
 			if err := s.conversationRepo.Update(ctx, conv); err != nil {
 				slog.ErrorContext(ctx, "failed to set support conversation owner", "error", err, "conversation_id", ticketID)
 			}
@@ -1409,9 +1418,11 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 
 	if !msg.IsInternal && msg.MessageType == "reply" && msg.SenderType != "customer" && conv != nil {
 		conv.FlowState = strPtr(model.SupportConversationFlowStateAssignedToHuman)
+		conv.HumanTakeover = boolPtr(true)
 		if err := s.conversationRepo.UpdateFields(ctx, workspaceID, ticketID, map[string]any{
 			"flow_state":        model.SupportConversationFlowStateAssignedToHuman,
 			"opened_by_user_id": conv.OpenedByUserID,
+			"human_takeover":    true,
 		}); err != nil {
 			slog.ErrorContext(ctx, "failed to update support conversation flow state after teammate reply", "error", err, "conversation_id", ticketID)
 		}
@@ -2789,6 +2800,20 @@ func (s *SupportInboxService) assignConversationAgent(ctx context.Context, works
 	previousAgentID := derefString(ticket.AssignedAgentID)
 	ticket.AssignedAgentID = &agentID
 	ticket.FlowState = strPtr(model.SupportConversationFlowStateAssignedToHuman)
+	if s.installationRepo != nil {
+		inst, _ := s.installationRepo.GetByWorkspace(ctx, workspaceID)
+		if inst != nil {
+			settings := parseSettings(inst.Settings)
+			if settings.AIAgentID != nil && strings.TrimSpace(*settings.AIAgentID) == agentID {
+				pending := "pending"
+				ticket.HumanTakeover = boolPtr(false)
+				ticket.AIState = &pending
+				ticket.AIResolvedAt = nil
+				ticket.AIResolutionType = nil
+				ticket.FlowState = strPtr(model.SupportConversationFlowStateAIHandling)
+			}
+		}
+	}
 	if err := s.conversationRepo.Update(ctx, ticket); err != nil {
 		return err
 	}
@@ -2837,6 +2862,9 @@ func (s *SupportInboxService) assignConversationUser(ctx context.Context, worksp
 
 	previousAssignedUserID := derefString(ticket.AssignedUserID)
 	ticket.AssignedUserID = normalizedUserID
+	if normalizedUserID != nil {
+		ticket.HumanTakeover = boolPtr(true)
+	}
 	ticket.FlowState = strPtr(defaultConversationFlowState(ticket.OpenedByUserID, ticket.AssignedUserID, ticket.AssignedAgentID))
 	if err := s.conversationRepo.Update(ctx, ticket); err != nil {
 		return err

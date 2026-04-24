@@ -10,7 +10,7 @@ const BADGE_TONE_CLASSNAMES = {
 } as const;
 
 interface ConversationStateBadgesProps {
-  conversation: Pick<SupportConversation, 'flow_state' | 'ai_state' | 'customer_requested_human_at'>;
+  conversation: Pick<SupportConversation, 'flow_state' | 'ai_state' | 'customer_requested_human_at' | 'human_takeover'>;
   className?: string;
   limit?: number;
 }

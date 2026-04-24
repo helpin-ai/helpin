@@ -19,6 +19,10 @@ func defaultConversationFlowState(openedByUserID, assignedUserID, assignedAgentI
 	return model.SupportConversationFlowStateWaitingForHuman
 }
 
+func boolPtr(value bool) *bool {
+	return &value
+}
+
 func escalatedConversationFlowState(settings model.SupportInboxSettings, now time.Time) string {
 	if !resolveSupportAvailability(settings, now).IsWithinOfficeHours {
 		return model.SupportConversationFlowStateAfterHoursQueue

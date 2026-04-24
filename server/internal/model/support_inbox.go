@@ -42,6 +42,7 @@ type SupportConversation struct {
 	AIResolutionType         *string    `json:"ai_resolution_type"` // "confirmed", "assumed", null
 	AITurnCount              int        `json:"ai_turn_count" gorm:"not null;default:0"`
 	CustomerRequestedHumanAt *time.Time `json:"customer_requested_human_at" gorm:"type:timestamptz"`
+	HumanTakeover            *bool      `json:"human_takeover" gorm:"default:false;index"`
 
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
@@ -297,27 +298,27 @@ type SupportWidgetSession struct {
 func (SupportWidgetSession) TableName() string { return "support_widget_sessions" }
 
 type SupportMailbox struct {
-	ID             string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID    string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	Name           string    `json:"name" gorm:"not null"`
-	Handle         string    `json:"handle" gorm:"not null"`
-	Icon           string    `json:"icon" gorm:"not null;default:'inbox'"`
-	Description    *string   `json:"description"`
-	RoutingPrompt  *string   `json:"routing_prompt"`
-	TriageEligible bool      `json:"triage_eligible" gorm:"not null;default:true"`
-	LinkedTeamID   *string   `json:"linked_team_id" gorm:"type:uuid"`
-	VisibilityMode string    `json:"visibility_mode" gorm:"not null;default:'members_only'"`
-	AssignmentMode string    `json:"assignment_mode" gorm:"not null;default:'manual'"`
+	ID             string  `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID    string  `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	Name           string  `json:"name" gorm:"not null"`
+	Handle         string  `json:"handle" gorm:"not null"`
+	Icon           string  `json:"icon" gorm:"not null;default:'inbox'"`
+	Description    *string `json:"description"`
+	RoutingPrompt  *string `json:"routing_prompt"`
+	TriageEligible bool    `json:"triage_eligible" gorm:"not null;default:true"`
+	LinkedTeamID   *string `json:"linked_team_id" gorm:"type:uuid"`
+	VisibilityMode string  `json:"visibility_mode" gorm:"not null;default:'members_only'"`
+	AssignmentMode string  `json:"assignment_mode" gorm:"not null;default:'manual'"`
 	// ReplyTimePreset / ReplyTimeCustomMinutes override the workspace-wide
 	// reply-time expectation for conversations routed into this mailbox.
 	// Nil preset means "inherit workspace default".
-	ReplyTimePreset        *string `json:"reply_time_preset,omitempty" gorm:"size:20;default:null"`
-	ReplyTimeCustomMinutes *int    `json:"reply_time_custom_minutes,omitempty" gorm:"default:null"`
-	Position       int       `json:"position" gorm:"not null;default:0"`
-	Active         bool      `json:"active" gorm:"not null;default:true"`
-	CreatedByID    string    `json:"created_by_id" gorm:"type:uuid;not null"`
-	CreatedAt      time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt      time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ReplyTimePreset        *string   `json:"reply_time_preset,omitempty" gorm:"size:20;default:null"`
+	ReplyTimeCustomMinutes *int      `json:"reply_time_custom_minutes,omitempty" gorm:"default:null"`
+	Position               int       `json:"position" gorm:"not null;default:0"`
+	Active                 bool      `json:"active" gorm:"not null;default:true"`
+	CreatedByID            string    `json:"created_by_id" gorm:"type:uuid;not null"`
+	CreatedAt              time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt              time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 
 	LinkedTeamName *string `json:"linked_team_name,omitempty" gorm:"->"`
 	MemberCount    int     `json:"member_count,omitempty" gorm:"->"`
@@ -558,31 +559,31 @@ type LinkStoryRequest struct {
 
 // CreateTaskFromConversationRequest creates a PM task from the current support conversation.
 type CreateTaskFromConversationRequest struct {
-	Name              *string                     `json:"name,omitempty"`
-	Description       *string                     `json:"description,omitempty"`
-	TaskType          *string                     `json:"task_type,omitempty"`
-	WorkflowID        *string                     `json:"workflow_id,omitempty"`
-	WorkflowStateID   *string                     `json:"workflow_state_id,omitempty"`
-	EpicID            *string                     `json:"epic_id,omitempty"`
-	SprintID          *string                     `json:"sprint_id,omitempty"`
-	TeamID            *string                     `json:"team_id,omitempty"`
-	OwnerMemberID     *string                     `json:"owner_member_id,omitempty"`
-	RequesterMemberID *string                     `json:"requester_member_id,omitempty"`
-	Estimate          *int                        `json:"estimate,omitempty"`
-	Priority          *string                     `json:"priority,omitempty"`
-	Severity          *string                     `json:"severity,omitempty"`
-	Deadline          *time.Time                  `json:"deadline,omitempty"`
-	Position          *int                        `json:"position,omitempty"`
-	Blocked           *bool                       `json:"blocked,omitempty"`
-	Blocker           *string                     `json:"blocker,omitempty"`
-	TemplateID        *string                     `json:"template_id,omitempty"`
-	ExternalID        *string                     `json:"external_id,omitempty"`
-	OwnerIDs          []string                    `json:"owner_ids,omitempty"`
-	FollowerIDs       []string                    `json:"follower_ids,omitempty"`
-	LabelIDs          []string                    `json:"label_ids,omitempty"`
-	AttachmentIDs     []string                    `json:"attachment_ids,omitempty"`
+	Name              *string                      `json:"name,omitempty"`
+	Description       *string                      `json:"description,omitempty"`
+	TaskType          *string                      `json:"task_type,omitempty"`
+	WorkflowID        *string                      `json:"workflow_id,omitempty"`
+	WorkflowStateID   *string                      `json:"workflow_state_id,omitempty"`
+	EpicID            *string                      `json:"epic_id,omitempty"`
+	SprintID          *string                      `json:"sprint_id,omitempty"`
+	TeamID            *string                      `json:"team_id,omitempty"`
+	OwnerMemberID     *string                      `json:"owner_member_id,omitempty"`
+	RequesterMemberID *string                      `json:"requester_member_id,omitempty"`
+	Estimate          *int                         `json:"estimate,omitempty"`
+	Priority          *string                      `json:"priority,omitempty"`
+	Severity          *string                      `json:"severity,omitempty"`
+	Deadline          *time.Time                   `json:"deadline,omitempty"`
+	Position          *int                         `json:"position,omitempty"`
+	Blocked           *bool                        `json:"blocked,omitempty"`
+	Blocker           *string                      `json:"blocker,omitempty"`
+	TemplateID        *string                      `json:"template_id,omitempty"`
+	ExternalID        *string                      `json:"external_id,omitempty"`
+	OwnerIDs          []string                     `json:"owner_ids,omitempty"`
+	FollowerIDs       []string                     `json:"follower_ids,omitempty"`
+	LabelIDs          []string                     `json:"label_ids,omitempty"`
+	AttachmentIDs     []string                     `json:"attachment_ids,omitempty"`
 	ChecklistItems    []CreateChecklistItemRequest `json:"checklist_items,omitempty"`
-	ExternalLinks     []CreateExternalLinkRequest `json:"external_links,omitempty"`
+	ExternalLinks     []CreateExternalLinkRequest  `json:"external_links,omitempty"`
 }
 
 // CreateTaskFromConversationResponse summarizes the created PM task and copied associations.
