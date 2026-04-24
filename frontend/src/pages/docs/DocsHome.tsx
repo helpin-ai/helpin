@@ -5,6 +5,7 @@ import { COLLECTION_ROW_CLASS, ARTICLE_ROW_CLASS, DOC_ICON_CLASS, STATUS_BADGE_C
 import {
   ArrowUpDownIcon,
   BookOpen01Icon,
+  Cancel01Icon,
   Tick01Icon,
   ArrowRight01Icon,
   HelpCircleIcon,
@@ -12,6 +13,7 @@ import {
   Folder01Icon,
   GlobeIcon,
   Loading01Icon,
+  PencilEdit02Icon,
   PlusSignIcon,
   Search01Icon,
 } from '@/lib/icons'
@@ -25,6 +27,7 @@ import {
   useAllDocsCollections,
   useDocsDocuments,
   useCreateDocsSpace,
+  useUpdateDocsDocument,
   useWorkspaceAccess,
   usePermissions,
 } from '@/hooks/queries'
@@ -65,33 +68,135 @@ const SPACE_TEMPLATES: SpaceTemplate[] = [
 
 function DocRow({
   doc,
+  wsId,
   wsSlug,
   navigate,
+  canEdit,
 }: {
   doc: DocsDocument
+  wsId: string
   wsSlug: string
   navigate: ReturnType<typeof useNavigate>
+  canEdit: boolean
 }) {
+  const updateDoc = useUpdateDocsDocument(wsId)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(doc.title)
+  const canRename = canEdit && doc.status !== 'archived' && !doc.is_locked
+
+  const startEditing = () => {
+    if (!canRename) return
+    setDraft(doc.title)
+    setEditing(true)
+  }
+
+  const cancelEditing = () => {
+    setDraft(doc.title)
+    setEditing(false)
+  }
+
+  const saveTitle = async () => {
+    const nextTitle = draft.trim()
+    if (!nextTitle) {
+      toast.error('Document title is required')
+      return
+    }
+    if (nextTitle === doc.title) {
+      setEditing(false)
+      return
+    }
+    try {
+      await updateDoc.mutateAsync({ id: doc.id, title: nextTitle })
+      toast.success('Document title updated')
+      setEditing(false)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update title')
+    }
+  }
+
+  if (editing) {
+    return (
+      <div className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm">
+        <File01Icon className={DOC_ICON_CLASS} />
+        <input
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              void saveTitle()
+            } else if (event.key === 'Escape') {
+              event.preventDefault()
+              cancelEditing()
+            }
+          }}
+          onBlur={() => {
+            if (!updateDoc.isPending) void saveTitle()
+          }}
+          autoFocus
+          className="min-w-0 flex-1 rounded-md border border-border/60 bg-background px-2 py-1 text-sm outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20"
+        />
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 shrink-0"
+          disabled={updateDoc.isPending}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => void saveTitle()}
+        >
+          <Tick01Icon className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 shrink-0"
+          disabled={updateDoc.isPending}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={cancelEditing}
+        >
+          <Cancel01Icon className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    )
+  }
+
   return (
-    <button
-      type="button"
-      onClick={() =>
-        navigate({
-          to: '/w/$slug/docs/documents/$docId',
-          params: { slug: wsSlug, docId: doc.id },
-        })
-      }
-      className="group flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-muted/60"
-    >
-      <File01Icon className={DOC_ICON_CLASS} />
-      <span className={`min-w-0 flex-1 truncate ${ARTICLE_ROW_CLASS}`}>{doc.title}</span>
-      <span className={`${STATUS_BADGE_CLASS} ${statusColor(doc.status)}`}>
-        {DOC_STATUS_LABELS[doc.status] ?? doc.status}
-      </span>
-      <span className={UPDATED_TEXT_CLASS}>
-        Updated: {timeAgo(doc.updated_at)}
-      </span>
-    </button>
+    <div className="group/doc-row flex w-full items-center rounded-md transition-colors hover:bg-muted/60">
+      <button
+        type="button"
+        onClick={() =>
+          navigate({
+            to: '/w/$slug/docs/documents/$docId',
+            params: { slug: wsSlug, docId: doc.id },
+          })
+        }
+        className="flex min-w-0 flex-1 items-center gap-2.5 px-3 py-2 text-left text-sm"
+      >
+        <File01Icon className={DOC_ICON_CLASS} />
+        <span className={`min-w-0 flex-1 truncate ${ARTICLE_ROW_CLASS}`}>{doc.title}</span>
+        <span className={`${STATUS_BADGE_CLASS} ${statusColor(doc.status)}`}>
+          {DOC_STATUS_LABELS[doc.status] ?? doc.status}
+        </span>
+        <span className={UPDATED_TEXT_CLASS}>
+          Updated: {timeAgo(doc.updated_at)}
+        </span>
+      </button>
+      {canRename && (
+        <QuickTooltip label="Rename document">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="mr-1 h-7 w-7 shrink-0 opacity-0 transition-opacity group-hover/doc-row:opacity-100 focus:opacity-100"
+            onClick={startEditing}
+          >
+            <PencilEdit02Icon className="h-3.5 w-3.5" />
+          </Button>
+        </QuickTooltip>
+      )}
+    </div>
   )
 }
 
@@ -180,12 +285,16 @@ function mergeChildren(node: CollectionNode): MergedChild[] {
 
 function CollectionSection({
   node,
+  wsId,
   wsSlug,
   navigate,
+  canEdit,
 }: {
   node: CollectionNode
+  wsId: string
   wsSlug: string
   navigate: ReturnType<typeof useNavigate>
+  canEdit: boolean
 }) {
   const [open, setOpen] = useState(false)
 
@@ -213,9 +322,16 @@ function CollectionSection({
         <div className="ml-[14px] border-l border-border/50 pl-3">
           {mergeChildren(node).map((item) =>
             item.kind === 'collection' ? (
-              <CollectionSection key={item.node.id} node={item.node} wsSlug={wsSlug} navigate={navigate} />
+              <CollectionSection
+                key={item.node.id}
+                node={item.node}
+                wsId={wsId}
+                wsSlug={wsSlug}
+                navigate={navigate}
+                canEdit={canEdit}
+              />
             ) : (
-              <DocRow key={item.doc.id} doc={item.doc} wsSlug={wsSlug} navigate={navigate} />
+              <DocRow key={item.doc.id} doc={item.doc} wsId={wsId} wsSlug={wsSlug} navigate={navigate} canEdit={canEdit} />
             ),
           )}
         </div>
@@ -230,16 +346,20 @@ function SpaceSection({
   space,
   collections,
   documents,
+  wsId,
   wsSlug,
   navigate,
   teamNames,
+  canEdit,
 }: {
   space: DocsSpace
   collections: DocsCollection[]
   documents: DocsDocument[]
+  wsId: string
   wsSlug: string
   navigate: ReturnType<typeof useNavigate>
   teamNames: string
+  canEdit: boolean
 }) {
   const [expanded, setExpanded] = useState(false)
 
@@ -317,15 +437,17 @@ function SpaceSection({
         <div className="ml-5 border-l border-border/50 pb-2 pl-2">
           {/* Collections — rendered as recursive tree */}
           {collectionTree.map((node) => (
-            <CollectionSection key={node.id} node={node} wsSlug={wsSlug} navigate={navigate} />
+            <CollectionSection key={node.id} node={node} wsId={wsId} wsSlug={wsSlug} navigate={navigate} canEdit={canEdit} />
           ))}
 
           {/* Uncategorized documents (no collection) */}
           {uncollected.length > 0 && (
             <CollectionSection
               node={{ id: '__uncategorized', name: 'Uncategorized', position: 0, depth: 0, documents: uncollected, children: [] }}
+              wsId={wsId}
               wsSlug={wsSlug}
               navigate={navigate}
+              canEdit={canEdit}
             />
           )}
 
@@ -651,9 +773,11 @@ export function DocsHome() {
                       space={space}
                       collections={collectionsBySpace.get(space.id) ?? []}
                       documents={documentsBySpace.get(space.id) ?? []}
+                      wsId={wsId}
                       wsSlug={wsSlug}
                       navigate={navigate}
                       teamNames={getTeamNames(space)}
+                      canEdit={canEditDocs}
                     />
                   ))}
                 </div>
@@ -676,9 +800,11 @@ export function DocsHome() {
                       space={space}
                       collections={collectionsBySpace.get(space.id) ?? []}
                       documents={documentsBySpace.get(space.id) ?? []}
+                      wsId={wsId}
                       wsSlug={wsSlug}
                       navigate={navigate}
                       teamNames={getTeamNames(space)}
+                      canEdit={canEditDocs}
                     />
                   ))}
                 </div>
