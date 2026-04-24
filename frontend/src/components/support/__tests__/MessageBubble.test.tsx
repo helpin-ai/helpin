@@ -122,7 +122,8 @@ describe('MessageBubble', () => {
     })
 
     const bubble = container.querySelector('[data-slot="support-message-bubble"]')
-    expect(bubble?.className).toContain('max-w-[min(85%,46rem)]')
+    expect(bubble?.className).toContain('w-[min(92%,64rem)]')
+    expect(bubble?.className).toContain('max-w-[calc(100%-2.25rem)]')
 
     const iframe = container.querySelector('iframe[title="Email body"]') as HTMLIFrameElement | null
     expect(iframe).toBeTruthy()
