@@ -93,12 +93,53 @@ func (s *DocsHelpcenterService) GetConfig(ctx context.Context, workspaceID strin
 
 // UpsertConfig creates or updates the help center config.
 func (s *DocsHelpcenterService) UpsertConfig(ctx context.Context, workspaceID string, req model.UpdateDocsHelpcenterConfigRequest) (*model.DocsHelpcenterConfig, error) {
+	existing, err := s.hcRepo.GetConfig(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	mode := model.HelpcenterPublicURLModeHostedSubdomain
+	var customDomain, reverseProxyHost, reverseProxyBasePath *string
+	if existing != nil {
+		mode = strings.TrimSpace(existing.PublicURLMode)
+		customDomain = existing.CustomDomain
+		reverseProxyHost = existing.ReverseProxyHost
+		reverseProxyBasePath = existing.ReverseProxyBasePath
+		if mode == "" {
+			mode = model.HelpcenterPublicURLModeHostedSubdomain
+		}
+	}
+
 	updates := map[string]interface{}{}
 	if req.Subdomain != nil {
 		updates["subdomain"] = *req.Subdomain
 	}
 	if req.CustomDomain != nil {
-		updates["custom_domain"] = req.CustomDomain
+		normalized, err := normalizeHelpcenterPublicHost(req.CustomDomain, "custom domain")
+		if err != nil {
+			return nil, err
+		}
+		customDomain = normalized
+		updates["custom_domain"] = normalized
+	}
+	if req.PublicURLMode != nil {
+		mode = strings.TrimSpace(*req.PublicURLMode)
+		updates["public_url_mode"] = mode
+	}
+	if req.ReverseProxyHost != nil {
+		normalized, err := normalizeHelpcenterPublicHost(req.ReverseProxyHost, "reverse proxy host")
+		if err != nil {
+			return nil, err
+		}
+		reverseProxyHost = normalized
+		updates["reverse_proxy_host"] = normalized
+	}
+	if req.ReverseProxyBasePath != nil {
+		normalized, err := normalizeHelpcenterBasePath(req.ReverseProxyBasePath)
+		if err != nil {
+			return nil, err
+		}
+		reverseProxyBasePath = normalized
+		updates["reverse_proxy_base_path"] = normalized
 	}
 	if req.BrandName != nil {
 		updates["brand_name"] = *req.BrandName
@@ -171,6 +212,16 @@ func (s *DocsHelpcenterService) UpsertConfig(ctx context.Context, workspaceID st
 	}
 	if req.FallbackToDefaultLocale != nil {
 		updates["fallback_to_default_locale"] = *req.FallbackToDefaultLocale
+	}
+	if req.PublicURLMode == nil && existing == nil && mode == model.HelpcenterPublicURLModeHostedSubdomain && stringPtrTrimmed(customDomain) != "" {
+		mode = model.HelpcenterPublicURLModeCustomDomain
+		updates["public_url_mode"] = mode
+	}
+	if err := validateHelpcenterPublicURLConfig(mode, customDomain, reverseProxyHost, reverseProxyBasePath); err != nil {
+		return nil, err
+	}
+	if _, ok := updates["public_url_mode"]; !ok && existing == nil {
+		updates["public_url_mode"] = mode
 	}
 	config, err := s.hcRepo.UpsertConfig(ctx, workspaceID, updates)
 	if err == nil && config != nil {
@@ -722,6 +773,69 @@ func stringPtrTrimmed(value *string) string {
 		return ""
 	}
 	return strings.TrimSpace(*value)
+}
+
+func normalizeHelpcenterPublicHost(value *string, label string) (*string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil, nil
+	}
+	lower := strings.ToLower(trimmed)
+	if strings.Contains(lower, "://") || strings.ContainsAny(lower, `/\`) || strings.ContainsAny(lower, " \t\r\n") {
+		return nil, fmt.Errorf("%s must be a hostname without scheme or path", label)
+	}
+	return &lower, nil
+}
+
+func normalizeHelpcenterBasePath(value *string) (*string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" || trimmed == "/" {
+		return nil, nil
+	}
+	if !strings.HasPrefix(trimmed, "/") {
+		trimmed = "/" + trimmed
+	}
+	trimmed = strings.TrimRight(trimmed, "/")
+	if trimmed == "" || trimmed == "/" {
+		return nil, nil
+	}
+	if strings.Contains(trimmed, "//") || strings.Contains(trimmed, `\`) {
+		return nil, fmt.Errorf("reverse proxy base path is invalid")
+	}
+	for _, segment := range strings.Split(trimmed, "/") {
+		if segment == "." || segment == ".." {
+			return nil, fmt.Errorf("reverse proxy base path is invalid")
+		}
+	}
+	return &trimmed, nil
+}
+
+func validateHelpcenterPublicURLConfig(mode string, customDomain, reverseProxyHost, reverseProxyBasePath *string) error {
+	switch mode {
+	case "", model.HelpcenterPublicURLModeHostedSubdomain:
+		return nil
+	case model.HelpcenterPublicURLModeCustomDomain:
+		if stringPtrTrimmed(customDomain) == "" {
+			return fmt.Errorf("custom domain public URL mode requires a custom domain")
+		}
+		return nil
+	case model.HelpcenterPublicURLModeReverseProxy:
+		if stringPtrTrimmed(reverseProxyHost) == "" {
+			return fmt.Errorf("reverse proxy public URL mode requires a public host")
+		}
+		if stringPtrTrimmed(reverseProxyBasePath) == "" {
+			return fmt.Errorf("reverse proxy public URL mode requires a public base path")
+		}
+		return nil
+	default:
+		return fmt.Errorf("invalid public URL mode %q", mode)
+	}
 }
 
 func nullableTrimmedString(value *string) interface{} {

@@ -127,6 +127,7 @@ export interface DocsLink {
 }
 
 export type HelpcenterThemeMode = 'light' | 'dark' | 'system';
+export type HelpcenterPublicUrlMode = 'hosted_subdomain' | 'custom_domain' | 'reverse_proxy';
 
 export type HelpcenterHeaderLinkStyle = 'text' | 'button';
 
@@ -175,6 +176,9 @@ export interface DocsHelpcenterConfig {
   workspace_id: string;
   subdomain: string;
   custom_domain?: string;
+  public_url_mode: HelpcenterPublicUrlMode;
+  reverse_proxy_host?: string;
+  reverse_proxy_base_path?: string;
   brand_name: string;
   brand_logo_url?: string;
   brand_logo_dark_url?: string;
@@ -524,6 +528,9 @@ export interface CreateDocsLinkRequest {
 export interface UpdateDocsHelpcenterConfigRequest {
   subdomain?: string;
   custom_domain?: string;
+  public_url_mode?: HelpcenterPublicUrlMode;
+  reverse_proxy_host?: string;
+  reverse_proxy_base_path?: string;
   brand_name?: string;
   brand_logo_url?: string;
   brand_logo_dark_url?: string;

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -34,6 +35,13 @@ func normalizeDocsHelpcenterConfig(cfg *model.DocsHelpcenterConfig) {
 	}
 	if cfg.ProtectedTerms == nil {
 		cfg.ProtectedTerms = model.DocsStringArray{}
+	}
+	if cfg.PublicURLMode == "" {
+		if cfg.CustomDomain != nil && strings.TrimSpace(*cfg.CustomDomain) != "" {
+			cfg.PublicURLMode = model.HelpcenterPublicURLModeCustomDomain
+		} else {
+			cfg.PublicURLMode = model.HelpcenterPublicURLModeHostedSubdomain
+		}
 	}
 }
 
@@ -103,6 +111,15 @@ func (r *DocsHelpcenterRepository) UpsertConfig(ctx context.Context, workspaceID
 	}
 	if v, ok := updates["custom_domain"].(*string); ok {
 		cfg.CustomDomain = v
+	}
+	if v, ok := updates["public_url_mode"].(string); ok {
+		cfg.PublicURLMode = v
+	}
+	if v, ok := updates["reverse_proxy_host"].(*string); ok {
+		cfg.ReverseProxyHost = v
+	}
+	if v, ok := updates["reverse_proxy_base_path"].(*string); ok {
+		cfg.ReverseProxyBasePath = v
 	}
 	if v, ok := updates["brand_logo_url"].(*string); ok {
 		cfg.BrandLogoURL = v

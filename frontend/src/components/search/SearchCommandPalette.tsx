@@ -151,6 +151,7 @@ export function SearchCommandPalette({
       onOpenChange={onOpenChange}
       title="Search"
       description={`Search across ${workspace?.name ?? 'workspace'}`}
+      className="self-start justify-self-center border-border/70 shadow-xl sm:mt-[12vh] sm:max-w-2xl"
       showCloseButton={false}
     >
       <CommandInput
