@@ -33,11 +33,18 @@ import { ReplyComposer } from './ReplyComposer';
 import { EmptyState } from './EmptyState';
 import { AgentRunsCard } from './AgentRunsCard';
 import { ConversationActionsMenu } from './ConversationActionsMenu';
+import { SupportInboxOnboarding } from './SupportInboxOnboarding';
 
 interface MessageThreadProps {
   workspaceId: string;
   conversationId: string | null;
+  showInboxOnboarding?: boolean;
+  onWidgetSettingsClick?: () => void;
+  onCreateConversationClick?: () => void;
 }
+
+const INITIAL_THREAD_ITEM_COUNT = 60;
+const THREAD_HISTORY_HYDRATION_DELAY_MS = 120;
 
 function TypingIndicatorBar({ conversationId }: { conversationId: string | null }) {
   const typingState = useSupportPresenceStore(
@@ -199,7 +206,13 @@ const MessageSkeleton = memo(function MessageSkeleton() {
   );
 });
 
-export function MessageThread({ workspaceId, conversationId }: MessageThreadProps) {
+export function MessageThread({
+  workspaceId,
+  conversationId,
+  showInboxOnboarding,
+  onWidgetSettingsClick,
+  onCreateConversationClick,
+}: MessageThreadProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const workspaceSlug = useWorkspaceStore((s) => s.currentWorkspace?.slug ?? '');
@@ -222,6 +235,8 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
 
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
   const [activeStickySeparator, setActiveStickySeparator] = useState<number | null>(null);
+  const [composerReady, setComposerReady] = useState(false);
+  const [historyHydrated, setHistoryHydrated] = useState(true);
   const assignedAgentId = conversation?.assigned_agent_id ?? null;
   const memberAvatarByUserId = useMemo(() => {
     const map = new Map<string, string>();
@@ -370,7 +385,29 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
   }, [conversationId, wsSend, wsConnected]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (!conversationId) {
+      setComposerReady(false);
+      return;
+    }
+
+    setComposerReady(false);
+    let timeout = 0;
+    const frame = window.requestAnimationFrame(() => {
+      timeout = window.setTimeout(() => setComposerReady(true), 0);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      if (timeout) window.clearTimeout(timeout);
+    };
+  }, [conversationId]);
+
+  useEffect(() => {
+    if (messages.length === 0) return;
+    const frame = window.requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({ block: 'end' });
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [messages]);
 
   const handleApproveRun = async (runId: string) => {
@@ -460,6 +497,46 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
   }, [messages]);
 
   useEffect(() => {
+    if (!conversationId || groupedMessages.length <= INITIAL_THREAD_ITEM_COUNT) {
+      setHistoryHydrated(true);
+      return;
+    }
+
+    setHistoryHydrated(false);
+    let timeout = 0;
+    const frame = window.requestAnimationFrame(() => {
+      timeout = window.setTimeout(() => setHistoryHydrated(true), THREAD_HISTORY_HYDRATION_DELAY_MS);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      if (timeout) window.clearTimeout(timeout);
+    };
+  }, [conversationId, groupedMessages.length]);
+
+  const visibleGroupedMessages = useMemo(() => {
+    if (historyHydrated || groupedMessages.length <= INITIAL_THREAD_ITEM_COUNT) {
+      return groupedMessages;
+    }
+
+    const start = Math.max(0, groupedMessages.length - INITIAL_THREAD_ITEM_COUNT);
+    let firstSeparatorBeforeWindow: (typeof groupedMessages)[number] | undefined;
+    for (let i = start - 1; i >= 0; i -= 1) {
+      if (groupedMessages[i]?.type === 'separator') {
+        firstSeparatorBeforeWindow = groupedMessages[i];
+        break;
+      }
+    }
+    const visibleItems = groupedMessages.slice(start);
+
+    if (firstSeparatorBeforeWindow && visibleItems[0]?.type !== 'separator') {
+      return [firstSeparatorBeforeWindow, ...visibleItems];
+    }
+
+    return visibleItems;
+  }, [groupedMessages, historyHydrated]);
+
+  useEffect(() => {
     const viewport = scrollAreaRef.current?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLDivElement | null;
     if (!viewport) return;
 
@@ -494,13 +571,22 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
         window.cancelAnimationFrame(frame);
       }
     };
-  }, [groupedMessages]);
+  }, [visibleGroupedMessages]);
 
   // Treat a stale conversation id (e.g., previous selection that no longer
   // matches the active filter, or a deleted conversation) the same as no
   // selection. Wait until the fetch settled so we don't flash during load.
   const noSelection = !conversationId || (conversationFetched && !conversation);
   if (noSelection) {
+    if (showInboxOnboarding && onWidgetSettingsClick && onCreateConversationClick) {
+      return (
+        <SupportInboxOnboarding
+          onWidgetSettingsClick={onWidgetSettingsClick}
+          onCreateConversationClick={onCreateConversationClick}
+        />
+      );
+    }
+
     return (
       <EmptyState
         icon={Message01Icon}
@@ -586,6 +672,10 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
               align="end"
               onConversationMoved={(option) => {
                 setSelectedMailboxId(option.id);
+              }}
+              onConversationDeleted={() => {
+                if (!workspaceSlug) return;
+                void navigate({ to: '/w/$slug/support', params: { slug: workspaceSlug }, replace: true });
               }}
               trigger={(
                 <Button variant="ghost" size="sm" className="h-7 w-7 p-0" aria-label="Open conversation actions">
@@ -682,7 +772,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
               subtitle="Start the conversation using the reply below."
             />
           )}
-          {groupedMessages.map((item, idx) => {
+          {visibleGroupedMessages.map((item, idx) => {
             if (item.type === 'separator') {
               return (
                 <DaySeparator
@@ -700,21 +790,25 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
               );
             }
             return (
-              <MessageBubble
+              <div
                 key={item.message.id}
-                message={item.message}
-                isConsecutive={item.isConsecutive}
-                isLastInGroup={item.isLastInGroup}
-                source={conversation?.source}
-                receiptStatus={item.message.id === receiptMessageId ? receiptStatus : undefined}
-                customerDisplayName={conversation?.customer_name || conversation?.customer_email}
-                fallbackAvatarUrl={
-                  (item.message.sender_user_id ? memberAvatarByUserId.get(item.message.sender_user_id) : undefined)
-                  ?? ((item.message.sender_display_name === currentUser?.full_name || item.message.sender_display_name === currentUser?.email)
-                    ? currentUser?.avatar_url
-                    : undefined)
-                }
-              />
+                className="support-thread-message"
+              >
+                <MessageBubble
+                  message={item.message}
+                  isConsecutive={item.isConsecutive}
+                  isLastInGroup={item.isLastInGroup}
+                  source={conversation?.source}
+                  receiptStatus={item.message.id === receiptMessageId ? receiptStatus : undefined}
+                  customerDisplayName={conversation?.customer_name || conversation?.customer_email}
+                  fallbackAvatarUrl={
+                    (item.message.sender_user_id ? memberAvatarByUserId.get(item.message.sender_user_id) : undefined)
+                    ?? ((item.message.sender_display_name === currentUser?.full_name || item.message.sender_display_name === currentUser?.email)
+                      ? currentUser?.avatar_url
+                      : undefined)
+                  }
+                />
+              </div>
             );
           })}
           <TypingIndicatorBar conversationId={conversationId} />
@@ -727,7 +821,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
           after a successful load. Only hide when the fetch settled AND the
           conversation didn't load (stale/deleted id) to avoid offering a
           reply for a conversation that doesn't exist. */}
-      {conversationId && (conversation || !conversationFetched) && (
+      {composerReady && conversationId && (conversation || !conversationFetched) && (
         <ReplyComposer
           workspaceId={workspaceId}
           conversationId={conversationId}

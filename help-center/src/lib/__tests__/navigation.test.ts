@@ -14,6 +14,7 @@ function makeNavItem(
   name = id,
   slug = id,
   articles: { id: string; title: string; slug: string; public_id: string }[] = [],
+  position = 0,
 ): NavItem {
   return {
     id,
@@ -23,7 +24,7 @@ function makeNavItem(
     icon: null,
     parent_collection_id: parent,
     depth,
-    position: 0,
+    position,
     articles: articles.map((a, index) => ({ ...a, position: index, published_at: null })),
   }
 }
@@ -96,7 +97,7 @@ describe('getArticlePager', () => {
     ]),
     makeNavItem('child', 'root', 1, 'Child', 'child', [
       { id: 'c1', title: 'C1', slug: 'c1', public_id: 'ccc333cc' },
-    ]),
+    ], 2),
   ]
 
   it('advances from a parent-level article into the first child-level article', () => {

@@ -424,7 +424,6 @@ export function DocsHome() {
   }
 
   const selectAll = () => setSelected(new Set(SPACE_TEMPLATES.map((t) => t.slug)))
-  const selectNone = () => setSelected(new Set())
 
   const handleCreateSelected = async () => {
     const toCreate = SPACE_TEMPLATES.filter((t) => selected.has(t.slug))
@@ -539,27 +538,22 @@ export function DocsHome() {
           ))}
         </div>
       ) : !spaces || spaces.length === 0 ? (
-        <div className="py-8 px-4">
-          <div className="text-center mb-8">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-500/10 mb-4 mx-auto">
-              <BookOpen01Icon className="h-7 w-7 text-blue-500" />
+        <div className="rounded-lg border border-border/60 bg-card p-6 sm:p-8">
+          <div className="mx-auto max-w-2xl text-center">
+            <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-muted text-muted-foreground">
+              <BookOpen01Icon className="h-5 w-5" />
             </div>
-            <h3 className="text-lg font-semibold mb-1.5">Get started with Documentation</h3>
-            <p className="text-sm text-muted-foreground max-w-lg mx-auto">
-              Select the spaces you need and create them all at once — you can always add more later.
+            <h3 className="mt-4 text-lg font-semibold">No docs spaces yet</h3>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              Create a space for internal docs, team knowledge, or public help articles. You can add collections and articles after.
             </p>
           </div>
-
-          {canEditDocs && (
-            <>
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-medium">{selected.size} of {SPACE_TEMPLATES.length} selected</span>
-                  <button type="button" onClick={selectAll} className="text-xs text-primary hover:underline">Select all</button>
-                  <button type="button" onClick={selectNone} className="text-xs text-muted-foreground hover:underline">Clear</button>
-                </div>
+          {canEditDocs ? (
+            <div className="mt-6">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm font-medium">Starter spaces</p>
                 <Button
-                  className="gap-2"
+                  size="sm"
                   onClick={handleCreateSelected}
                   disabled={selected.size === 0 || creating}
                 >
@@ -571,13 +565,13 @@ export function DocsHome() {
                   ) : (
                     <>
                       <PlusSignIcon className="h-4 w-4" />
-                      Create {selected.size} Space{selected.size !== 1 ? 's' : ''}
+                      Create selected
                     </>
                   )}
                 </Button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {SPACE_TEMPLATES.map((t) => {
                   const isSelected = selected.has(t.slug)
                   return (
@@ -585,56 +579,61 @@ export function DocsHome() {
                       key={t.slug}
                       type="button"
                       onClick={() => toggleTemplate(t.slug)}
-                      className={`relative flex items-start gap-3 rounded-lg border p-4 text-left transition-all cursor-pointer ${
+                      className={`relative flex min-h-[88px] items-start gap-3 rounded-md border p-3 text-left transition-all ${
                         isSelected
-                          ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
-                          : 'border-border/60 bg-card hover:border-border hover:bg-muted/30'
+                          ? 'border-primary/45 bg-primary/5 ring-1 ring-primary/15'
+                          : 'border-border/60 bg-background hover:border-border hover:bg-muted/30'
                       }`}
                     >
-                      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted/80 shrink-0 text-lg">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border bg-muted/60 text-base">
                         {t.icon}
                       </div>
-                      <div className="min-w-0 flex-1">
+                      <div className="min-w-0 flex-1 pr-5">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-semibold truncate">{t.name}</span>
+                          <span className="truncate text-sm font-semibold">{t.name}</span>
                           {t.type === 'external_capable' && (
-                            <QuickTooltip label="External">
-                              <GlobeIcon className="h-3 w-3 shrink-0 text-blue-500" />
+                            <QuickTooltip label="Can publish to the public help center">
+                              <GlobeIcon className="h-3 w-3 shrink-0 text-primary" />
                             </QuickTooltip>
                           )}
                         </div>
-                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{t.description}</p>
+                        <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{t.description}</p>
                       </div>
                       <div
-                        className={`absolute top-2 right-2 flex h-5 w-5 items-center justify-center rounded-full border transition-colors ${
+                        className={`absolute right-3 top-3 flex h-4 w-4 items-center justify-center rounded-full border transition-colors ${
                           isSelected
                             ? 'border-primary bg-primary text-primary-foreground'
                             : 'border-border bg-background'
                         }`}
                       >
-                        {isSelected && <Tick01Icon className="h-3 w-3" />}
+                        {isSelected && <Tick01Icon className="h-2.5 w-2.5" />}
                       </div>
                     </button>
                   )
                 })}
               </div>
 
-              <div className="mt-4 text-center">
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
+                <button type="button" onClick={selectAll} className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
+                  Select all
+                </button>
                 <button
                   type="button"
                   onClick={() => setCreateSpaceOpen(true)}
-                  className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
                 >
-                  Or create a custom space instead
+                  Create a custom space
+                  <ArrowRight01Icon className="h-3.5 w-3.5" />
                 </button>
               </div>
-            </>
-          )}
-
-          {!canEditDocs && (
-            <p className="text-center text-sm text-muted-foreground">
-              No documentation spaces have been created yet. Ask a workspace member to set them up.
-            </p>
+            </div>
+          ) : (
+            <div className="border-t border-border/60 p-5 text-center">
+              <p className="text-sm font-medium">No knowledge spaces yet</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Ask a workspace admin or docs editor to create the first space.
+              </p>
+            </div>
           )}
         </div>
       ) : arrangeMode ? (

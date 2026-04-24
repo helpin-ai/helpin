@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Notification02Icon, NotificationOff02Icon, ArrowRight01Icon, GlobeIcon, Mail01Icon, Search01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
 
@@ -16,13 +16,13 @@ import {
   type UpdateUserNotificationSettingsRequest,
 } from '@/lib/notificationTypes';
 import { cn } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 
@@ -53,6 +53,59 @@ const WEEKDAY_OPTIONS = [
 ];
 
 const DEFAULT_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+
+function StatusBadge({ active, children }: { active: boolean; children: string }) {
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        'h-6 rounded-md px-2 font-medium',
+        active
+          ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/70 dark:bg-emerald-950/30 dark:text-emerald-300'
+          : 'border-muted-foreground/20 bg-muted/40 text-muted-foreground',
+      )}
+    >
+      {children}
+    </Badge>
+  );
+}
+
+function PreferenceRow({
+  title,
+  description,
+  children,
+  className,
+}: {
+  title: string;
+  description: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn('flex flex-col gap-4 rounded-md border bg-background p-4 sm:flex-row sm:items-center sm:justify-between', className)}>
+      <div className="min-w-0">
+        <p className="text-sm font-medium">{title}</p>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
+      </div>
+      <div className="shrink-0">{children}</div>
+    </div>
+  );
+}
+
+function digestLabel(value: string) {
+  switch (value) {
+    case 'immediate':
+      return 'Immediate';
+    case 'daily':
+      return 'Daily digest';
+    case 'weekly':
+      return 'Weekly digest';
+    case 'never':
+      return 'Never';
+    default:
+      return value;
+  }
+}
 
 function isActiveDnd(doNotDisturb?: boolean, dndUntil?: string | null) {
   if (dndUntil) {
@@ -181,50 +234,52 @@ export function AccountNotificationPreferences({ cardClassName }: CardClassNameP
   const usesDigestSchedule = digestFrequency === 'daily' || digestFrequency === 'weekly';
 
   if (isLoading) {
-    return <Skeleton className="h-96 w-full" />;
+    return <Skeleton className="h-[420px] w-full" />;
   }
 
   return (
-    <div className="space-y-4">
-      <Card className={cardClassName}>
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-sm font-medium">Pause all notifications</p>
-              <p className="text-xs text-muted-foreground">Stop new inbox and email notifications across every workspace on your account until you turn this back off.</p>
-            </div>
-            <Switch
-              checked={dndActive}
-              disabled={updateSettings.isPending}
-              onCheckedChange={handleDndToggle}
-            />
+    <Card className={cardClassName}>
+      <CardHeader className="space-y-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Mail01Icon className="h-4 w-4" />
+              Delivery rules
+            </CardTitle>
+            <CardDescription className="mt-1">
+              Account-level settings decide whether notifications can reach you outside the app.
+            </CardDescription>
           </div>
-        </CardContent>
-      </Card>
+          <div className="flex flex-wrap gap-2">
+            <StatusBadge active={!dndActive}>{dndActive ? 'Paused' : 'Active'}</StatusBadge>
+            <StatusBadge active={emailEnabled}>{emailEnabled ? digestLabel(digestFrequency) : 'Email off'}</StatusBadge>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <PreferenceRow
+          title="Pause notifications"
+          description="Stop new in-app and email notifications across every workspace until you turn this off."
+        >
+          <Switch
+            checked={dndActive}
+            disabled={updateSettings.isPending}
+            onCheckedChange={handleDndToggle}
+          />
+        </PreferenceRow>
 
-      <Card className={cardClassName}>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Mail01Icon className="h-4 w-4" />
-            Email Notifications
-          </CardTitle>
-          <CardDescription>
-            Account-level email delivery rules apply everywhere. Workspace email toggles only decide which activity is eligible inside each workspace.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-sm font-medium">Enable email notifications</p>
-              <p className="text-xs text-muted-foreground">Turn this off to stop all notification emails across all workspaces.</p>
-            </div>
-            <Switch
-              checked={emailEnabled}
-              disabled={updateSettings.isPending}
-              onCheckedChange={(value) => handleToggle('email_enabled', value)}
-            />
-          </div>
-          <Separator />
+        <PreferenceRow
+          title="Email notifications"
+          description="Allow Helpin to send notification emails. Category-specific email choices are set per workspace below."
+        >
+          <Switch
+            checked={emailEnabled}
+            disabled={updateSettings.isPending}
+            onCheckedChange={(value) => handleToggle('email_enabled', value)}
+          />
+        </PreferenceRow>
+
+        <div className="rounded-md border bg-background p-4">
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <Label>Email delivery</Label>
@@ -244,7 +299,7 @@ export function AccountNotificationPreferences({ cardClassName }: CardClassNameP
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                High-priority notifications still send right away. Daily and weekly modes batch normal activity into digests.
+                Daily and weekly options batch normal activity into one digest.
               </p>
             </div>
 
@@ -269,8 +324,7 @@ export function AccountNotificationPreferences({ cardClassName }: CardClassNameP
           </div>
 
           {usesDigestSchedule ? (
-            <>
-              <Separator />
+            <div className="mt-4 space-y-4 border-t pt-4">
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="digest-time">Digest time</Label>
@@ -315,11 +369,11 @@ export function AccountNotificationPreferences({ cardClassName }: CardClassNameP
                 />
                 <p className="text-xs text-muted-foreground">Scheduled digests and DND resume times use this timezone.</p>
               </div>
-            </>
+            </div>
           ) : null}
-        </CardContent>
-      </Card>
-    </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -347,27 +401,33 @@ export function WorkspaceMuteNotificationsCard({
 
   return (
     <Card className={cardClassName}>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <NotificationOff02Icon className="h-4 w-4" />
-          Workspace Notifications
-        </CardTitle>
-        <CardDescription>This personal workspace override sits on top of the notification types below.</CardDescription>
+      <CardHeader className="space-y-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <NotificationOff02Icon className="h-4 w-4" />
+              Workspace mute
+            </CardTitle>
+            <CardDescription className="mt-1">
+              A single personal override for all notifications from this workspace.
+            </CardDescription>
+          </div>
+          <StatusBadge active={!(prefs?.mute_workspace ?? false)}>
+            {prefs?.mute_workspace ? 'Muted' : 'Delivering'}
+          </StatusBadge>
+        </div>
       </CardHeader>
       <CardContent>
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-sm font-medium">Mute notifications from this workspace</p>
-            <p className="text-xs text-muted-foreground">
-              When muted, you won&apos;t receive inbox or email notifications from {workspaceName ?? 'this workspace'}, even if the notification types below stay enabled.
-            </p>
-          </div>
+        <PreferenceRow
+          title={`Mute ${workspaceName ?? 'this workspace'}`}
+          description="Keep the category settings below saved, but stop delivery until mute is turned off."
+        >
           <Switch
             checked={prefs?.mute_workspace ?? false}
             disabled={updatePrefs.isPending}
             onCheckedChange={handleMuteToggle}
           />
-        </div>
+        </PreferenceRow>
       </CardContent>
     </Card>
   );
@@ -421,68 +481,86 @@ function NotificationCategoriesCard({
     return <Skeleton className="h-80 w-full" />;
   }
 
+  const workspaceMuted = prefs?.mute_workspace ?? false;
+  const emailEnabled = accountSettings?.email_enabled ?? true;
+  const enabledInAppCount = categories.filter((category) => isChannelEnabled(prefs, category.key, 'in_app')).length;
+  const enabledEmailCount = categories.filter((category) => category.supportsEmail !== false && isChannelEnabled(prefs, category.key, 'email')).length;
+
   return (
     <Card className={cardClassName}>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Notification02Icon className="h-4 w-4" />
-          {title}
-        </CardTitle>
-        <CardDescription>{description}</CardDescription>
+      <CardHeader className="space-y-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Notification02Icon className="h-4 w-4" />
+              {title}
+            </CardTitle>
+            <CardDescription className="mt-1">{description}</CardDescription>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <StatusBadge active={!workspaceMuted}>{workspaceMuted ? 'Muted' : `${enabledInAppCount} in-app`}</StatusBadge>
+            <StatusBadge active={emailEnabled && enabledEmailCount > 0}>
+              {!emailEnabled ? 'Email off' : `${enabledEmailCount} email`}
+            </StatusBadge>
+          </div>
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {prefs?.mute_workspace ? (
-          <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+        {workspaceMuted ? (
+          <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs leading-5 text-muted-foreground">
             {mutedWorkspaceMessage}
           </div>
         ) : null}
 
-        {accountSettings && !accountSettings.email_enabled ? (
-          <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+        {accountSettings && !emailEnabled ? (
+          <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs leading-5 text-muted-foreground">
             {emailDisabledMessage}
           </div>
         ) : null}
 
         {extraNote ? (
-          <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs leading-5 text-muted-foreground">
             {extraNote}
           </div>
         ) : null}
 
-        <div className="grid grid-cols-[minmax(0,1fr)_88px_88px] items-center gap-4 text-xs font-medium text-muted-foreground">
-          <span>Activity</span>
-          <span className="text-center">In-app</span>
-          <span className="text-center">Email</span>
-        </div>
-        {categories.map((category, index) => (
-          <div key={category.key}>
-            {index > 0 ? <Separator className="mb-4" /> : null}
-            <div className="grid grid-cols-[minmax(0,1fr)_88px_88px] items-center gap-4">
-              <div className="min-w-0">
-                <p className="text-sm font-medium">{category.label}</p>
-                <p className="text-xs text-muted-foreground">{category.description}</p>
-              </div>
-              <div className="flex justify-center">
-                <Switch
-                  checked={isChannelEnabled(prefs, category.key, 'in_app')}
-                  disabled={updatePrefs.isPending}
-                  onCheckedChange={(value) => handleToggle(category.key, 'in_app', value)}
-                />
-              </div>
-              <div className="flex justify-center">
-                {category.supportsEmail === false ? (
-                  <span className="text-xs text-muted-foreground">Later</span>
-                ) : (
-                  <Switch
-                    checked={isChannelEnabled(prefs, category.key, 'email')}
-                    disabled={updatePrefs.isPending}
-                    onCheckedChange={(value) => handleToggle(category.key, 'email', value)}
-                  />
-                )}
-              </div>
-            </div>
+        <div className="overflow-hidden rounded-md border">
+          <div className="hidden grid-cols-[minmax(0,1fr)_96px_96px] items-center gap-4 border-b bg-muted/30 px-4 py-2 text-xs font-medium text-muted-foreground md:grid">
+            <span>Activity type</span>
+            <span className="text-center">In-app</span>
+            <span className="text-center">Email</span>
           </div>
-        ))}
+          <div className="divide-y">
+            {categories.map((category) => (
+              <div key={category.key} className="grid gap-3 bg-background p-4 md:grid-cols-[minmax(0,1fr)_96px_96px] md:items-center md:gap-4">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">{category.label}</p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">{category.description}</p>
+                </div>
+                <div className="flex items-center justify-between gap-3 md:justify-center">
+                  <span className="text-xs font-medium text-muted-foreground md:hidden">In-app</span>
+                  <Switch
+                    checked={isChannelEnabled(prefs, category.key, 'in_app')}
+                    disabled={updatePrefs.isPending}
+                    onCheckedChange={(value) => handleToggle(category.key, 'in_app', value)}
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-3 md:justify-center">
+                  <span className="text-xs font-medium text-muted-foreground md:hidden">Email</span>
+                  {category.supportsEmail === false ? (
+                    <span className="text-xs text-muted-foreground">Not available</span>
+                  ) : (
+                    <Switch
+                      checked={isChannelEnabled(prefs, category.key, 'email')}
+                      disabled={updatePrefs.isPending}
+                      onCheckedChange={(value) => handleToggle(category.key, 'email', value)}
+                    />
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </CardContent>
     </Card>
   );
@@ -496,11 +574,11 @@ export function WorkspaceNotificationCategoriesCard({
     <NotificationCategoriesCard
       workspaceId={workspaceId}
       cardClassName={cardClassName}
-      title="Workspace Activity"
-      description="Choose which general workspace activity appears in-app and which activity may also send email when your account email settings allow it."
+      title="Workspace activity"
+      description="Choose which project updates appear in-app and which can also send email."
       categories={WORKSPACE_NOTIFICATION_CATEGORIES}
-      mutedWorkspaceMessage="This workspace is muted, so the notification types below are saved as preferences but won't deliver until workspace mute is turned off."
-      emailDisabledMessage="Account email notifications are off. The email column below sets your workspace preferences, but no emails will send until email is re-enabled in account Notifications."
+      mutedWorkspaceMessage="Workspace mute is on. These preferences are saved, but nothing from this workspace will deliver until mute is off."
+      emailDisabledMessage="Account email is off. Email preferences are saved here, but no emails will send until account email is on."
     />
   );
 }
@@ -513,12 +591,12 @@ export function SupportNotificationCategoriesCard({
     <NotificationCategoriesCard
       workspaceId={workspaceId}
       cardClassName={cardClassName}
-      title="Support Notifications"
-      description="Control how support inbox activity reaches you for this workspace."
+      title="Support inbox"
+      description="Choose how customer replies and teammate mentions reach you."
       categories={SUPPORT_NOTIFICATION_CATEGORIES}
-      mutedWorkspaceMessage="This workspace is muted, so support inbox alerts below are saved as preferences but won't deliver until workspace mute is turned off."
-      emailDisabledMessage="Account email notifications are off. Support email preferences are saved here, but no emails will send until email is re-enabled in account Notifications."
-      extraNote="Customer reply emails are delayed fallback alerts. They only send if the conversation is still unread and unanswered after 3 minutes."
+      mutedWorkspaceMessage="Workspace mute is on. Support preferences are saved, but inbox alerts will not deliver until mute is off."
+      emailDisabledMessage="Account email is off. Support email preferences are saved here, but no emails will send until account email is on."
+      extraNote="Customer reply emails are fallback alerts. They send only if the conversation is still unread and unanswered after 3 minutes."
     />
   );
 }
