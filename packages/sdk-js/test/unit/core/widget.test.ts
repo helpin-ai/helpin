@@ -1182,6 +1182,71 @@ describe('WidgetManager', () => {
       expect(latestOptions?.activeConversation?.flowState).toBe('waiting_for_human');
     });
 
+    it('marks the active conversation escalated when an escalation event arrives', () => {
+      (widget as any).widgetConfig = {
+        workspaceId: 'ws_test',
+        branding: { primaryColor: '#6366f1' },
+        features: {},
+      };
+      (widget as any).mountContainer = document.createElement('div');
+      (widget as any).activeConversationId = 'conv-1';
+      (widget as any).conversations = [
+        {
+          id: 'conv-1',
+          subject: 'Support',
+          status: 'open',
+          aiState: 'pending',
+          flowState: 'ai_handling',
+          unreadCount: 0,
+        },
+      ];
+
+      (widget as any).handleWSMessage({
+        type: 'conversation:escalated',
+        data: {
+          conversation_id: 'conv-1',
+          flow_state: 'waiting_for_human',
+          active_teammate: {
+            user_id: 'user-1',
+            name: 'Agent One',
+            status: 'online',
+          },
+        },
+      });
+
+      const latestOptions = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+      expect(latestOptions?.activeConversation?.aiState).toBe('escalated');
+      expect(latestOptions?.activeConversation?.flowState).toBe('waiting_for_human');
+      expect(latestOptions?.activeConversation?.activeTeammate).toMatchObject({
+        userId: 'user-1',
+        name: 'Agent One',
+        status: 'online',
+      });
+    });
+
+    it('does not request human escalation when the active conversation is already escalated', () => {
+      const sent: string[] = [];
+      (widget as any).activeConversationId = 'conv-1';
+      (widget as any).conversations = [
+        {
+          id: 'conv-1',
+          subject: 'Support',
+          status: 'open',
+          aiState: 'escalated',
+        },
+      ];
+      (widget as any).wsConnection = {
+        readyState: WebSocket.OPEN,
+        send: (payload: string) => sent.push(payload),
+        close: vi.fn(),
+        onclose: null,
+      };
+
+      (widget as any).handleEscalateToHuman();
+
+      expect(sent).toEqual([]);
+    });
+
     it('refreshes conversation list when the rendered widget switches to messages view', async () => {
       const sent: string[] = [];
       (widget as any).widgetConfig = {

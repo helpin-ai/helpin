@@ -1256,6 +1256,11 @@ export class WidgetManager {
   private handleEscalateToHuman(): void {
     if (!this.activeConversationId) return;
 
+    const conversation = this.conversations.find((c) => c.id === this.activeConversationId);
+    if (conversation?.aiState === 'escalated') {
+      return;
+    }
+
     if (this.wsConnection?.readyState === WebSocket.OPEN) {
       this.wsSend('conversation:escalate', {});
     } else {
@@ -1729,6 +1734,20 @@ export class WidgetManager {
 
       case 'conversation:escalated': {
         this.activeTeammate = this.mapActiveTeammate(data.data?.active_teammate) || this.activeTeammate;
+        const conversationId = typeof data.data?.conversation_id === 'string'
+          ? data.data.conversation_id
+          : this.activeConversationId;
+        if (conversationId) {
+          this.conversations = this.conversations.map((conversation) => {
+            if (conversation.id !== conversationId) return conversation;
+            return {
+              ...conversation,
+              aiState: 'escalated',
+              flowState: data.data?.flow_state || conversation.flowState,
+              activeTeammate: this.activeTeammate || conversation.activeTeammate,
+            };
+          });
+        }
         this.render();
         break;
       }

@@ -738,6 +738,24 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 	// 16. Record token usage atomically
 	s.recordTokenUsage(ctx, agent.ID, totalTokens)
 
+	// If the model tries to repeat handoff language after the customer has
+	// already seen it in this conversation, suppress the duplicate reply.
+	if hasEscalationMessageInHistory(history) && containsHandoffLanguage(response.Content) {
+		slog.InfoContext(ctx, "support AI handoff response suppressed because escalation was already communicated",
+			"workspace_id", workspaceID,
+			"conversation_id", conversationID,
+			"message_id", msg.ID,
+			"response_preview", safeLogPreview(response.Content, 160),
+		)
+		if conv.AIState == nil || *conv.AIState != "escalated" {
+			if err := s.EscalateToHumanForMessage(ctx, workspaceID, conversationID, msg.ID, "redundant_handoff_response"); err != nil {
+				return err
+			}
+		}
+		_ = s.processingRepo.MarkCompleted(ctx, processing.ID, nil, totalTokens)
+		return nil
+	}
+
 	// 17. Multi-signal confidence evaluation
 	confidence := evaluateConfidence(searchResults, response)
 	slog.InfoContext(ctx, "support AI response evaluated",
@@ -879,6 +897,17 @@ func (s *SupportAIService) EscalateToHumanForMessageWithIssue(ctx context.Contex
 }
 
 func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, conversationID, messageID, reason, issueKey, issueSummary string) error {
+	escalationLockKey := "support:ai:escalation-lock:" + conversationID
+	if !s.acquireLock(ctx, escalationLockKey) {
+		slog.InfoContext(ctx, "support escalation skipped — escalation already in progress",
+			"workspace_id", workspaceID,
+			"conversation_id", conversationID,
+			"reason", reason,
+		)
+		return nil
+	}
+	defer s.releaseLock(ctx, escalationLockKey)
+
 	conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
 	if err != nil {
 		return fmt.Errorf("get conversation for escalation: %w", err)
@@ -907,23 +936,44 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		availability = resolveSupportAvailability(settings, now)
 	}
 
-	// 1. Create system message — use customizable escalation message from settings
-	escalationContent := "Let me connect you with a team member who can help further."
-	if strings.TrimSpace(settings.EscalationMessage) != "" {
-		escalationContent = settings.EscalationMessage
+	var systemMsg *model.SupportMessage
+	escalationAlreadyMessaged := false
+	history, historyErr := s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
+	if historyErr != nil {
+		slog.WarnContext(ctx, "load conversation history for escalation dedupe failed",
+			"workspace_id", workspaceID,
+			"conversation_id", conversationID,
+			"error", historyErr,
+		)
+	} else {
+		escalationAlreadyMessaged = hasEscalationSystemEventInHistory(history)
 	}
 
-	systemMsg := &model.SupportMessage{
-		WorkspaceID:       workspaceID,
-		ConversationID:    conversationID,
-		SenderType:        "agent",
-		MessageType:       "system",
-		SystemEventType:   model.SupportSystemEventTypeStrPtr(model.SystemEventAIEscalated),
-		SenderDisplayName: strPtr(helpinAIDisplayName),
-		Content:           escalationContent,
-	}
-	if err := s.messageRepo.Create(ctx, systemMsg); err != nil {
-		return fmt.Errorf("create escalation system message: %w", err)
+	// 1. Create system message — use customizable escalation message from settings
+	if !escalationAlreadyMessaged {
+		escalationContent := "Let me connect you with a team member who can help further."
+		if strings.TrimSpace(settings.EscalationMessage) != "" {
+			escalationContent = settings.EscalationMessage
+		}
+
+		systemMsg = &model.SupportMessage{
+			WorkspaceID:       workspaceID,
+			ConversationID:    conversationID,
+			SenderType:        "agent",
+			MessageType:       "system",
+			SystemEventType:   model.SupportSystemEventTypeStrPtr(model.SystemEventAIEscalated),
+			SenderDisplayName: strPtr(helpinAIDisplayName),
+			Content:           escalationContent,
+		}
+		if err := s.messageRepo.Create(ctx, systemMsg); err != nil {
+			return fmt.Errorf("create escalation system message: %w", err)
+		}
+	} else {
+		slog.InfoContext(ctx, "support escalation system message skipped — already present",
+			"workspace_id", workspaceID,
+			"conversation_id", conversationID,
+			"reason", reason,
+		)
 	}
 
 	handoffMailboxID, mailboxSelectionSource := s.resolveEscalationMailbox(ctx, workspaceID, conversationID, messageID, conv, settings)
@@ -1025,7 +1075,9 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 	s.recordSupportEvent(handoffEvent)
 
 	// 4. Broadcast events
-	s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, systemMsg, "ai:escalation"))
+	if systemMsg != nil {
+		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, systemMsg, "ai:escalation"))
+	}
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "escalated",
 		Entity:      "support_conversation",
@@ -1641,6 +1693,58 @@ func sanitizeConversationHistory(history []model.SupportMessage, currentMessageI
 	return sanitized
 }
 
+func hasEscalationMessageInHistory(history []model.SupportMessage) bool {
+	for _, msg := range history {
+		if isEscalationSystemEvent(msg) {
+			return true
+		}
+		if (msg.SenderType == "ai" || (msg.SenderType == "agent" && msg.MessageType == "system")) && containsHandoffLanguage(msg.Content) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasEscalationSystemEventInHistory(history []model.SupportMessage) bool {
+	for _, msg := range history {
+		if isEscalationSystemEvent(msg) {
+			return true
+		}
+	}
+	return false
+}
+
+func isEscalationSystemEvent(msg model.SupportMessage) bool {
+	return msg.SystemEventType != nil && *msg.SystemEventType == model.SystemEventAIEscalated
+}
+
+func containsHandoffLanguage(content string) bool {
+	lower := strings.ToLower(strings.TrimSpace(content))
+	if lower == "" {
+		return false
+	}
+	handoffPhrases := []string{
+		"connect you with a team member",
+		"connect you to a team member",
+		"connect you with our team",
+		"connect you to our team",
+		"let me connect you",
+		"hand you over",
+		"handover to",
+		"hand off to",
+		"transfer you",
+		"pass you to",
+		"real person",
+		"human agent",
+	}
+	for _, phrase := range handoffPhrases {
+		if strings.Contains(lower, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
 func buildConversationMessages(history []model.SupportMessage) []llm.Message {
 	if len(history) == 0 {
 		return nil
@@ -2040,6 +2144,7 @@ func buildAISystemPrompt(agent *model.Agent, knowledgeContext string) string {
 - Only set can_answer=false when the knowledge chunks contain absolutely nothing relevant to the question — not even a partial answer or a useful pointer.
 - Never use general knowledge to invent product behavior, workflows, integrations, pricing, policies, or troubleshooting steps.
 - Ask a human to take over whenever the customer needs account-specific actions (billing changes, password resets, accessing their data) or when the knowledge contains nothing relevant at all.
+- If you have already told the customer you will connect them with a team member, do not repeat that message. Acknowledge their follow-up briefly, for example: "A team member will be with you shortly."
 - Be concise, friendly, and helpful. Use markdown for formatting.
 - Only include document IDs from the provided knowledge chunks in source_doc_ids.
 - NEVER include customer email addresses, phone numbers, account IDs, or payment details in your response.
