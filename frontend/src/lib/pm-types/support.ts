@@ -52,6 +52,7 @@ export interface SupportConversation {
   ai_resolution_type?: 'confirmed' | 'assumed' | null;
   ai_turn_count?: number;
   customer_requested_human_at?: string;
+  human_takeover?: boolean | null;
   last_message?: string;
   unread_count?: number;
   mailbox_name?: string | null;

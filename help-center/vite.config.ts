@@ -10,7 +10,11 @@ export default defineConfig({
     port: 5175,
   },
   plugins: [
-    tanstackStart(),
+    tanstackStart({
+      client: {
+        entry: 'client',
+      },
+    }),
     react(),
     tailwindcss(),
   ],

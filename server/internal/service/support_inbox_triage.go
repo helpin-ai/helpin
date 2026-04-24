@@ -205,6 +205,10 @@ func (s *SupportInboxTriageService) EvaluateAndRoute(ctx context.Context, worksp
 	if err != nil || conversation == nil {
 		return nil, err
 	}
+	if supportConversationHumanOwned(conversation) {
+		slog.InfoContext(ctx, "support triage skipped: conversation is human-owned", "workspace_id", workspaceID, "conversation_id", conversationID)
+		return nil, nil
+	}
 
 	inst, err := s.installRepo.GetByWorkspace(ctx, workspaceID)
 	if err != nil {
@@ -1012,6 +1016,9 @@ func (s *SupportInboxTriageService) shouldAutoMove(settings model.SupportInboxSe
 		return false
 	}
 	if sameMailboxID(conversation.MailboxID, triage.SuggestedMailboxID) {
+		return false
+	}
+	if supportConversationHumanOwned(conversation) {
 		return false
 	}
 	if !mailboxIsSharedOrDefault(conversation.MailboxID, settings.DefaultMailboxID) {
