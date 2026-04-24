@@ -43,6 +43,10 @@ export interface HelpCenterConfig {
   is_published: boolean
   seo_title: string | null
   seo_description: string | null
+  og_title?: string | null
+  og_description?: string | null
+  og_image_url?: string | null
+  og_image_alt?: string | null
   support_email: string | null
   header_links?: HeaderLink[]
   footer_config?: FooterConfig
@@ -114,6 +118,10 @@ export interface Article {
   published_at: string | null
   seo_title: string | null
   seo_description: string | null
+  og_title?: string | null
+  og_description?: string | null
+  og_image_url?: string | null
+  og_image_alt?: string | null
   helpful_count: number
   not_helpful_count: number
   view_count: number

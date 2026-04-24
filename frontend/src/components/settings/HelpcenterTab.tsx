@@ -243,6 +243,10 @@ interface ConfigState {
   is_published: boolean;
   seo_title: string;
   seo_description: string;
+  og_title: string;
+  og_description: string;
+  og_image_url: string;
+  og_image_alt: string;
   support_email: string;
 }
 
@@ -266,6 +270,10 @@ const DEFAULT_CONFIG: ConfigState = {
   is_published: false,
   seo_title: '',
   seo_description: '',
+  og_title: '',
+  og_description: '',
+  og_image_url: '',
+  og_image_alt: '',
   support_email: '',
 };
 
@@ -532,6 +540,10 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
           is_published: d.is_published ?? false,
           seo_title: d.seo_title ?? '',
           seo_description: d.seo_description ?? '',
+          og_title: d.og_title ?? '',
+          og_description: d.og_description ?? '',
+          og_image_url: d.og_image_url ?? '',
+          og_image_alt: d.og_image_alt ?? '',
           support_email: d.support_email ?? '',
         };
         // Auto-fill brand name from workspace name if not yet set, then derive defaults
@@ -614,6 +626,10 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
       is_published: config.is_published,
       seo_title: config.seo_title || undefined,
       seo_description: config.seo_description || undefined,
+      og_title: config.og_title,
+      og_description: config.og_description,
+      og_image_url: config.og_image_url,
+      og_image_alt: config.og_image_alt,
       support_email: config.support_email || undefined,
     });
     // Sync icon changes back to collections
@@ -835,9 +851,11 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
   const logoInputRef = useRef<HTMLInputElement>(null);
   const logoDarkInputRef = useRef<HTMLInputElement>(null);
   const faviconInputRef = useRef<HTMLInputElement>(null);
+  const ogImageInputRef = useRef<HTMLInputElement>(null);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingLogoDark, setUploadingLogoDark] = useState(false);
   const [uploadingFavicon, setUploadingFavicon] = useState(false);
+  const [uploadingOGImage, setUploadingOGImage] = useState(false);
   const [copiedGuideLabel, setCopiedGuideLabel] = useState('');
   const [reverseProxyBasePathInput, setReverseProxyBasePathInput] = useState(DEFAULT_REVERSE_PROXY_BASE_PATH);
 
@@ -854,9 +872,9 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
 
   const handleAssetUpload = async (
     e: ChangeEvent<HTMLInputElement>,
-    assetType: 'logo' | 'logo_dark' | 'favicon',
+    assetType: 'logo' | 'logo_dark' | 'favicon' | 'og_image',
     setUploading: (v: boolean) => void,
-    field: 'brand_logo_url' | 'brand_logo_dark_url' | 'favicon_url',
+    field: 'brand_logo_url' | 'brand_logo_dark_url' | 'favicon_url' | 'og_image_url',
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -878,7 +896,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
       return;
     }
     setConfig((prev) => ({ ...prev, [field]: res.data!.url }));
-    toast.success(`${assetType === 'favicon' ? 'Favicon' : 'Logo'} uploaded`);
+    toast.success(`${assetType === 'favicon' ? 'Favicon' : assetType === 'og_image' ? 'Social image' : 'Logo'} uploaded`);
   };
 
   if (loading) {
@@ -1235,6 +1253,69 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
                 rows={3}
               />
               <p className="text-[11px] text-muted-foreground">{config.seo_description.length}/160 characters</p>
+            </div>
+            <div className="grid gap-4 rounded-lg border border-border/60 bg-muted/20 p-4">
+              <div className="space-y-1">
+                <p className="text-sm font-medium">Social sharing</p>
+                <p className="text-xs text-muted-foreground">Default Open Graph tags for the help center home and article pages without their own override.</p>
+              </div>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="hc-og-title">Social Title</Label>
+                  <Input
+                    id="hc-og-title"
+                    value={config.og_title}
+                    onChange={(e) => setConfig({ ...config, og_title: e.target.value })}
+                    placeholder="Falls back to meta title"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="hc-og-image-alt">Image Alt Text</Label>
+                  <Input
+                    id="hc-og-image-alt"
+                    value={config.og_image_alt}
+                    onChange={(e) => setConfig({ ...config, og_image_alt: e.target.value })}
+                    placeholder={`${config.brand_name || 'Help center'} preview image`}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="hc-og-desc">Social Description</Label>
+                <Textarea
+                  id="hc-og-desc"
+                  value={config.og_description}
+                  onChange={(e) => setConfig({ ...config, og_description: e.target.value })}
+                  placeholder="Falls back to meta description"
+                  rows={2}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Social Image</Label>
+                {config.og_image_url ? (
+                  <div className="group relative aspect-[1200/630] max-w-md overflow-hidden rounded-lg border bg-muted">
+                    <img src={config.og_image_url} alt={config.og_image_alt || 'Social preview'} className="h-full w-full object-cover" />
+                    <div className="absolute inset-0 flex items-center justify-center gap-2 bg-background/80 opacity-0 transition-opacity group-hover:opacity-100">
+                      <Button type="button" variant="outline" size="sm" disabled={uploadingOGImage} onClick={() => ogImageInputRef.current?.click()}>
+                        {uploadingOGImage ? 'Uploading...' : 'Replace'}
+                      </Button>
+                      <Button type="button" variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => setConfig({ ...config, og_image_url: '' })}>
+                        Remove
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={uploadingOGImage}
+                    onClick={() => ogImageInputRef.current?.click()}
+                    className="flex aspect-[1200/630] max-w-md flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed bg-background text-muted-foreground transition-colors hover:border-primary/30 hover:bg-muted/40 hover:text-foreground"
+                  >
+                    <Image01Icon className="h-6 w-6" />
+                    <span className="text-xs">{uploadingOGImage ? 'Uploading...' : '1200 x 630 px · PNG, JPEG, or WebP'}</span>
+                  </button>
+                )}
+                <input ref={ogImageInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => handleAssetUpload(e, 'og_image', setUploadingOGImage, 'og_image_url')} />
+              </div>
             </div>
           </div>
           </div>

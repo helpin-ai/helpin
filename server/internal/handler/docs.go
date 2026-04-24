@@ -977,13 +977,29 @@ func (h *DocsHandler) UpdateHelpcenterConfig(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, cfg)
 }
 
-// UploadHelpcenterAsset handles POST /docs/helpcenter/upload?type={logo|logo_dark|favicon}.
+func (h *DocsHandler) UpdateHelpcenterArticleMetadata(w http.ResponseWriter, r *http.Request) {
+	wsID := middleware.GetWorkspaceID(r.Context())
+	docID := chi.URLParam(r, "docId")
+	var req model.UpdateDocsHelpcenterArticleMetadataRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	article, err := h.helpcenterSvc.UpdateArticleMetadata(r.Context(), wsID, docID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, article)
+}
+
+// UploadHelpcenterAsset handles POST /docs/helpcenter/upload?type={logo|logo_dark|favicon|og_image}.
 func (h *DocsHandler) UploadHelpcenterAsset(w http.ResponseWriter, r *http.Request) {
 	wsID := middleware.GetWorkspaceID(r.Context())
 
 	assetType := r.URL.Query().Get("type")
-	if assetType != "logo" && assetType != "logo_dark" && assetType != "favicon" {
-		writeError(w, http.StatusBadRequest, "type must be 'logo', 'logo_dark', or 'favicon'")
+	if assetType != "logo" && assetType != "logo_dark" && assetType != "favicon" && assetType != "og_image" {
+		writeError(w, http.StatusBadRequest, "type must be 'logo', 'logo_dark', 'favicon', or 'og_image'")
 		return
 	}
 
