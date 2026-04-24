@@ -296,6 +296,40 @@ func TestResolveRunBranchOverrides_UsesEffectiveTaskDeliveryBranches(t *testing.
 	}
 }
 
+func TestExecuteMergeBranchUpdatesDeliveryStatusAfterSuccessfulMerge(t *testing.T) {
+	db := newTestDB(t)
+	seedGitDeliveryStatusFixture(t, db)
+	app := &fakeGitHubAppClient{}
+	gitSvc := newGitDeliveryStatusService(db, app)
+	engine := NewAutomationRuleEngine(
+		nil,
+		nil,
+		nil,
+		repository.NewTaskDeliveryTargetRepository(db),
+		gitSvc,
+		nil,
+		NewPMActivityService(repository.NewPMActivityRepository(db)),
+		nil,
+	)
+
+	err := engine.executeMergeBranch(context.Background(),
+		&model.AutomationRule{ID: "rule-1", Name: "Merge reviewed branch"},
+		model.AutomationEvent{WorkspaceID: "ws-1", StoryID: "task-1", TaskID: "task-1"},
+		nil,
+		model.ActionConfigMergeBranch{TargetBranch: "{base_branch}"},
+	)
+	if err != nil {
+		t.Fatalf("executeMergeBranch returned error: %v", err)
+	}
+	if len(app.mergeCalls) != 1 {
+		t.Fatalf("merge calls = %d (%s), want 1", len(app.mergeCalls), formatMergeCalls(app.mergeCalls))
+	}
+	if app.mergeCalls[0].Base != "main" || app.mergeCalls[0].Head != "hel-31-fix-merge-status" {
+		t.Fatalf("unexpected merge call: %#v", app.mergeCalls[0])
+	}
+	assertMergedDeliveryStatus(t, db)
+}
+
 func TestMatchesTriggerConfig_StateType(t *testing.T) {
 	db := setupRuleEngineTestDB(t)
 	ruleRepo := repository.NewAutomationRuleRepository(db)
@@ -403,6 +437,24 @@ func TestMatchesTriggerConfig_StateType(t *testing.T) {
 			},
 			event:     model.AutomationEvent{TagName: "v1.2.3", RepoFullName: "acme/api"},
 			wantMatch: true,
+		},
+		{
+			name: "github release matches tag pattern and kind",
+			rule: model.AutomationRule{
+				TriggerType:   model.TriggerGitHubReleasePub,
+				TriggerConfig: json.RawMessage(`{"tag_pattern":"v1.*","release_kinds":["minor"]}`),
+			},
+			event:     model.AutomationEvent{TagName: "v1.4.0", RepoFullName: "acme/api", ReleaseKind: "minor"},
+			wantMatch: true,
+		},
+		{
+			name: "github release blocks prerelease by default",
+			rule: model.AutomationRule{
+				TriggerType:   model.TriggerGitHubReleasePub,
+				TriggerConfig: json.RawMessage(`{"repo_full_name":"acme/api"}`),
+			},
+			event:     model.AutomationEvent{TagName: "v1.4.0-rc1", RepoFullName: "acme/api", IsPrerelease: true, ReleaseKind: "prerelease"},
+			wantMatch: false,
 		},
 		{
 			name: "github check suite conclusion mismatch",
@@ -605,14 +657,6 @@ func TestValidateRuleRequest_NewTypes(t *testing.T) {
 			wantErr:       true,
 		},
 		{
-			name:          "github release published requires explicit target",
-			triggerType:   model.TriggerGitHubReleasePub,
-			triggerConfig: json.RawMessage(`{"tag_name":"v1.2.3"}`),
-			actionType:    model.ActionStartAgentRun,
-			actionConfig:  json.RawMessage(`{"agent_id":"agent-1"}`),
-			wantErr:       true,
-		},
-		{
 			name:          "valid github release published with explicit target",
 			triggerType:   model.TriggerGitHubReleasePub,
 			triggerConfig: json.RawMessage(`{"tag_name":"v1.2.3"}`),
@@ -621,11 +665,35 @@ func TestValidateRuleRequest_NewTypes(t *testing.T) {
 			wantErr:       false,
 		},
 		{
+			name:          "github release published can rely on event target",
+			triggerType:   model.TriggerGitHubReleasePub,
+			triggerConfig: json.RawMessage(`{"tag_name":"v1.2.3"}`),
+			actionType:    model.ActionStartAgentRun,
+			actionConfig:  json.RawMessage(`{"agent_id":"agent-1"}`),
+			wantErr:       false,
+		},
+		{
 			name:          "github release published requires a filter",
 			triggerType:   model.TriggerGitHubReleasePub,
 			triggerConfig: json.RawMessage(`{}`),
 			actionType:    model.ActionStartAgentRun,
 			actionConfig:  json.RawMessage(`{"agent_id":"agent-1"}`),
+			wantErr:       true,
+		},
+		{
+			name:          "github release published supports release kind filter only",
+			triggerType:   model.TriggerGitHubReleasePub,
+			triggerConfig: json.RawMessage(`{"release_kinds":["minor"]}`),
+			actionType:    model.ActionStartAgentRun,
+			actionConfig:  json.RawMessage(`{"agent_id":"agent-1"}`),
+			wantErr:       false,
+		},
+		{
+			name:          "release docs output requires space id",
+			triggerType:   model.TriggerGitHubReleasePub,
+			triggerConfig: json.RawMessage(`{"repo_full_name":"acme/api"}`),
+			actionType:    model.ActionStartAgentRun,
+			actionConfig:  json.RawMessage(`{"agent_id":"agent-1","output":{"type":"docs_document"}}`),
 			wantErr:       true,
 		},
 		{

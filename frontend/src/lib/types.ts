@@ -475,6 +475,8 @@ export interface AutomationTriggerExecutionSearchPreset {
 export interface WorkflowRuleSearchPreset {
   show_trigger?: string;
   show_trigger_title?: string;
+  show_rule?: string;
+  show_rule_title?: string;
   template?: string;
   template_title?: string;
   template_description?: string;

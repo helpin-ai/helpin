@@ -315,7 +315,7 @@ Product-owned, preset-backed agents.
 Examples:
 
 - `epic_planner`
-- `story_planner`
+- `task_planner`
 - `crm_operator`
 - `support_agent`
 - `code_builder`
@@ -328,6 +328,13 @@ Characteristics:
 - backend-owned defaults and guardrails
 - may still have some product-specific launch or context-loading behavior
 
+Native system planner behavior:
+
+- `epic_planner` on epic targets and `task_planner` on task targets use selective native skill activation by default when running on `native_sdk`
+- planner phase guidance, active skill contracts, repair instructions, and active skill policy are assembled per execution turn from durable run state
+- canonical mutations such as approved PRD persistence, task creation, task-plan-doc persistence, and replay protection remain backend-owned
+- Codex/OpenCode staged-skill behavior is unchanged by native planner selective activation
+
 ### Custom agents
 
 Workspace-created agents.
@@ -337,12 +344,14 @@ Current truth:
 - `is_system = false`
 - not preset-backed
 - generic executor model
+- not on the system-planner selective activation path
 
 Direction:
 
 - keep custom execution generic
 - prefer minimal trigger payloads
 - let agents gather additional context through tools instead of bespoke backend orchestration
+- if custom agents later need selective skill activation, add explicit skill applicability metadata instead of reusing planner-specific routing rules
 
 ## Runtime kinds
 

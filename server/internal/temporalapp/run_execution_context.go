@@ -2,6 +2,7 @@ package temporalapp
 
 import (
 	"context"
+	"encoding/json"
 	"slices"
 	"strings"
 	"sync"
@@ -28,6 +29,10 @@ type runtimeExecutionContextInput struct {
 }
 
 func (a *AgentRunActivities) buildRuntimeExecutionContext(ctx context.Context, state *resolvedRunState, input runtimeExecutionContextInput) *workerpkg.ExecutionContext {
+	var runInput model.AgentRunInputPayload
+	if len(state.run.Input) > 0 {
+		_ = json.Unmarshal(state.run.Input, &runInput)
+	}
 	execCtx := &workerpkg.ExecutionContext{
 		Context:                    ctx,
 		WorkDir:                    input.workDir,
@@ -57,6 +62,7 @@ func (a *AgentRunActivities) buildRuntimeExecutionContext(ctx context.Context, s
 		PlanningMethodology:        input.planningInput.PlanningMethodology,
 		PlanningSpecDocumentID:     input.planningInput.SpecDocumentID,
 		PlanningSpecVersionID:      input.planningInput.SpecVersionID,
+		RunInput:                   &runInput,
 		RunFacts:                   buildDurableRunFacts(state, input.planningInput),
 		Config:                     input.config,
 		ResolvedProfile:            state.resolved,

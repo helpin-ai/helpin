@@ -376,8 +376,12 @@ func (s *AgentService) buildCodingSession(ctx context.Context, run *model.AgentR
 	}
 
 	var title string
-	if agent, err := s.agentRepo.GetByID(ctx, run.WorkspaceID, run.AgentID); err == nil && agent != nil && strings.TrimSpace(agent.Name) != "" {
-		title = strings.TrimSpace(agent.Name)
+	var systemPrompt *string
+	if agent, err := s.agentRepo.GetByID(ctx, run.WorkspaceID, run.AgentID); err == nil && agent != nil {
+		if strings.TrimSpace(agent.Name) != "" {
+			title = strings.TrimSpace(agent.Name)
+		}
+		systemPrompt = trimPtr(agent.SystemPrompt)
 	}
 	if title == "" {
 		title = "Coding Session"
@@ -439,6 +443,7 @@ func (s *AgentService) buildCodingSession(ctx context.Context, run *model.AgentR
 		ErrorMessage:        run.ErrorMessage,
 		Title:               title,
 		Summary:             summary,
+		SystemPrompt:        systemPrompt,
 		Capabilities:        codingSessionCapabilitiesForRun(run),
 		Repo:                repoState,
 		CachedInputTokens:   run.CachedInputTokens,

@@ -667,6 +667,16 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"properties": map[string]interface{}{},
 	}, toolListWorkspaceTeams)
 
+	r.register("list_team_workflows_with_stages", "List the resolved workflow and ordered stages for one team or all workspace teams. Use this to choose a valid workflow stage before creating a task.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"team_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional team ID. Omit to return workflow summaries for all workspace teams.",
+			},
+		},
+	}, toolListTeamWorkflowsWithStages)
+
 	r.register("list_conversation_messages", "List the current support conversation messages.", map[string]interface{}{
 		"type":       "object",
 		"properties": map[string]interface{}{},
@@ -748,6 +758,16 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		},
 	}, toolListDocuments)
 
+	r.register("list_collections", "List doc collections in the workspace, optionally filtered by space. Returns collection ID, name, slug, space ID, and parent collection ID.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"space_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional space ID to filter collections",
+			},
+		},
+	}, toolListCollections)
+
 	r.register("read_document", "Read the metadata of a specific document by ID.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
@@ -774,6 +794,101 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"required": []string{"query"},
 	}, toolSearchDocuments)
 
+	r.register("get_release_context", "Load release metadata, compare commits/files against the previous published release, and resolve related tasks. Defaults from the current repository-targeted run and GitHub release event when available.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"repository_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional repository ID. Defaults from the current repository target when omitted.",
+			},
+			"repo_full_name": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional repository full name like owner/repo. Defaults from the current GitHub event when omitted.",
+			},
+			"tag_name": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional release tag name. Defaults from the current GitHub release event when omitted.",
+			},
+			"include_changed_files": map[string]interface{}{
+				"type":        "boolean",
+				"description": "Whether to include changed files from the release comparison.",
+			},
+			"max_commits": map[string]interface{}{
+				"type":        "integer",
+				"description": "Maximum number of commits to return. Default 100, max 200.",
+			},
+			"max_files": map[string]interface{}{
+				"type":        "integer",
+				"description": "Maximum number of changed files to return when include_changed_files is true. Default 200, max 500.",
+			},
+		},
+		"additionalProperties": false,
+	}, toolGetReleaseContext)
+
+	r.register("find_tasks_for_git_changes", "Resolve tasks related to PRs, branches, commits, and text references for a repository. Returns evidence and confidence for each match.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"repository_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional repository ID. Defaults from the current repository target when omitted.",
+			},
+			"repo_full_name": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional repository full name like owner/repo. Defaults from the current GitHub event when omitted.",
+			},
+			"pr_numbers": map[string]interface{}{
+				"type":        "array",
+				"description": "Pull request numbers to resolve. Max 50.",
+				"items":       map[string]interface{}{"type": "integer"},
+			},
+			"commit_shas": map[string]interface{}{
+				"type":        "array",
+				"description": "Commit SHAs to resolve. Max 200.",
+				"items":       map[string]interface{}{"type": "string"},
+			},
+			"branches": map[string]interface{}{
+				"type":        "array",
+				"description": "Branch names to resolve. Max 50.",
+				"items":       map[string]interface{}{"type": "string"},
+			},
+			"texts": map[string]interface{}{
+				"type":        "array",
+				"description": "Free text to scan for task keys. Max 100.",
+				"items":       map[string]interface{}{"type": "string"},
+			},
+		},
+		"additionalProperties": false,
+	}, toolFindTasksForGitChanges)
+
+	r.register("get_task_context", "Load compact task context with optional linked docs, document content, comments, and git links for specific task IDs.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"task_ids": map[string]interface{}{
+				"type":        "array",
+				"description": "Task IDs to load. Max 50.",
+				"items":       map[string]interface{}{"type": "string"},
+			},
+			"include_linked_docs": map[string]interface{}{
+				"type":        "boolean",
+				"description": "Whether to include linked document metadata.",
+			},
+			"include_document_content": map[string]interface{}{
+				"type":        "boolean",
+				"description": "Whether to include linked document content text. Only used when include_linked_docs is true.",
+			},
+			"include_comments": map[string]interface{}{
+				"type":        "boolean",
+				"description": "Whether to include task comments.",
+			},
+			"include_git_links": map[string]interface{}{
+				"type":        "boolean",
+				"description": "Whether to include git links for each task.",
+			},
+		},
+		"required":             []string{"task_ids"},
+		"additionalProperties": false,
+	}, toolGetTaskContext)
+
 	r.register("list_epic_tasks", "List all non-archived tasks linked to the current epic with name, type, status, estimate, priority, and agent assignment.", map[string]interface{}{
 		"type":       "object",
 		"properties": map[string]interface{}{},
@@ -784,6 +899,7 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"update_deal_stage":       toolUpdateDealStage,
 		"add_deal_note":           toolAddDealNote,
 		"create_document":         toolCreateDocument,
+		"create_task":             toolCreateTask,
 		"write_document_content":  toolWriteDocumentContent,
 		"link_document_to_object": toolLinkDocumentToObject,
 		"ensure_epic_spec_doc":    toolEnsureEpicSpecDoc,

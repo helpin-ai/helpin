@@ -1,5 +1,6 @@
 import type { SpecClarification } from './project';
 import type { AgentSkillRef } from './skills';
+import type { AutomationRule } from './automations';
 
 // ── Agents ──────────────────────────────────────────────────────────
 
@@ -37,6 +38,8 @@ export interface Agent {
   name: string;
   preset_key?: AgentPresetKey;
   preset_version_key?: string;
+  source_template_id?: string;
+  source_template_key?: string;
   role: string;
   status: AgentStatus;
   runtime_kind: AgentRuntimeKind;
@@ -330,6 +333,99 @@ export interface CreateAgentRequest {
   approval_mode?: AgentApprovalMode;
   max_concurrent_runs?: number;
   default_invocation_mode?: AgentInvocationMode;
+}
+
+export interface AgentTemplate {
+  id: string;
+  workspace_id?: string;
+  key: string;
+  name: string;
+  description?: string;
+  runtime_kind: AgentRuntimeKind;
+  default_role: string;
+  execution_config?: AgentExecutionConfig;
+  system_prompt?: string;
+  planning_notes?: string;
+  skills: AgentSkillRef[];
+  allowed_tools: string[];
+  allowed_commands: string[];
+  allowed_targets: AgentTargetType[];
+  required_context: string[];
+  starter_flows: AgentTemplateStarterFlow[];
+  approval_mode: AgentApprovalMode;
+  default_invocation_mode: AgentInvocationMode;
+  monthly_token_budget?: number;
+  is_enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentTemplateStarterFlow {
+  key: string;
+  label: string;
+  description?: string;
+  trigger_type: string;
+  default_enabled: boolean;
+  config_schema_key?: string;
+  output_type?: string;
+  fields?: AgentTemplateStarterFlowField[];
+}
+
+export interface AgentTemplateStarterFlowField {
+  key: string;
+  label: string;
+  type: 'text' | 'number' | 'string_list' | 'team_select' | 'workflow_state_select' | string;
+  required?: boolean;
+  placeholder?: string;
+  help_text?: string;
+  default?: string | number | boolean | string[];
+  min?: number;
+  max?: number;
+  depends_on?: string;
+  options?: Array<{ value: string; label: string }>;
+}
+
+export interface CreateAgentFromTemplateOverrides {
+  role?: string;
+  runtime_kind?: AgentRuntimeKind;
+  skills?: AgentSkillRef[];
+  provider?: AgentModelProvider;
+  model?: string;
+  monthly_token_budget?: number;
+  execution_config?: AgentExecutionConfig;
+  system_prompt?: string;
+  planning_notes?: string;
+  allowed_tools?: string[];
+  allowed_commands?: string[];
+  allowed_targets?: AgentTargetType[];
+  approval_mode?: AgentApprovalMode;
+  max_concurrent_runs?: number;
+  default_invocation_mode?: AgentInvocationMode;
+}
+
+export interface CreateAgentFromTemplateFlow {
+  flow_key?: string;
+  flow_input?: Record<string, unknown>;
+  repository_id?: string;
+  repo_full_name?: string;
+  release_kinds?: string[];
+  include_prerelease?: boolean;
+  tag_pattern?: string;
+  space_id?: string;
+  collection_id?: string;
+}
+
+export interface CreateAgentFromTemplateRequest {
+  name?: string;
+  team_id?: string | null;
+  overrides?: CreateAgentFromTemplateOverrides;
+  create_flow?: boolean;
+  flow?: CreateAgentFromTemplateFlow;
+}
+
+export interface CreateAgentFromTemplateResponse {
+  agent: Agent;
+  flow?: AutomationRule;
 }
 
 export interface UpdateAgentRequest {

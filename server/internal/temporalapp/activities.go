@@ -75,6 +75,12 @@ type NotificationEmitter interface {
 	Emit(ctx context.Context, event model.NotificationEventInput) error
 }
 
+type ReleaseFactsProvider interface {
+	GetReleaseContext(ctx context.Context, workspaceID string, req model.GetReleaseContextRequest) (*model.ReleaseContextResult, error)
+	FindTasksForGitChanges(ctx context.Context, workspaceID string, req model.FindTasksForGitChangesRequest) (*model.FindTasksForGitChangesResult, error)
+	GetTaskContext(ctx context.Context, workspaceID string, req model.GetTaskContextRequest) (*model.GetTaskContextResult, error)
+}
+
 // AgentRunActivities contains the Temporal activities that execute an agent run.
 type AgentRunActivities struct {
 	runRepo             *repository.AgentRunRepository
@@ -91,6 +97,7 @@ type AgentRunActivities struct {
 	conversationRepo    *repository.SupportConversationRepository
 	commentRepo         *repository.PMCommentRepository
 	checklistRepo       *repository.PMChecklistItemRepository
+	workflowRepo        *repository.PMWorkflowRepository
 	messageRepo         *repository.SupportMessageRepository
 	gitIntRepo          *repository.GitIntegrationRepository
 	gitRepo             *repository.GitRepositoryRepository
@@ -99,7 +106,9 @@ type AgentRunActivities struct {
 	settingsRepo        *repository.SettingsRepository
 	workspaceRepo       *repository.WorkspaceRepository
 	docsSpaceRepo       *repository.DocsSpaceRepository
+	docsCollectionRepo  *repository.DocsCollectionRepository
 	docsDocRepo         *repository.DocsDocumentRepository
+	docsDocumentKeyRepo *repository.DocsDocumentKeyRepository
 	docsContentRepo     *repository.DocsContentRepository
 	docsVersionRepo     *repository.DocsVersionRepository
 	docsLinkRepo        *repository.DocsLinkRepository
@@ -110,6 +119,7 @@ type AgentRunActivities struct {
 	crmActivityRepo     *repository.CRMActivityRepository
 	commandExecutor     InternalCommandExecutor
 	notificationEmitter NotificationEmitter
+	releaseFacts        ReleaseFactsProvider
 	wsPublisher         websocket.EventPublisher
 	runtimes            *workerpkg.RuntimeRegistry
 	githubApp           *githubapp.Client
@@ -132,6 +142,7 @@ func NewAgentRunActivities(
 	conversationRepo *repository.SupportConversationRepository,
 	commentRepo *repository.PMCommentRepository,
 	checklistRepo *repository.PMChecklistItemRepository,
+	workflowRepo *repository.PMWorkflowRepository,
 	messageRepo *repository.SupportMessageRepository,
 	gitIntRepo *repository.GitIntegrationRepository,
 	gitRepo *repository.GitRepositoryRepository,
@@ -140,7 +151,9 @@ func NewAgentRunActivities(
 	settingsRepo *repository.SettingsRepository,
 	workspaceRepo *repository.WorkspaceRepository,
 	docsSpaceRepo *repository.DocsSpaceRepository,
+	docsCollectionRepo *repository.DocsCollectionRepository,
 	docsDocRepo *repository.DocsDocumentRepository,
+	docsDocumentKeyRepo *repository.DocsDocumentKeyRepository,
 	docsContentRepo *repository.DocsContentRepository,
 	docsVersionRepo *repository.DocsVersionRepository,
 	docsLinkRepo *repository.DocsLinkRepository,
@@ -151,6 +164,7 @@ func NewAgentRunActivities(
 	crmActivityRepo *repository.CRMActivityRepository,
 	commandExecutor InternalCommandExecutor,
 	notificationEmitter NotificationEmitter,
+	releaseFacts ReleaseFactsProvider,
 	wsPublisher websocket.EventPublisher,
 	runtimes *workerpkg.RuntimeRegistry,
 	githubApp *githubapp.Client,
@@ -171,6 +185,7 @@ func NewAgentRunActivities(
 		conversationRepo:    conversationRepo,
 		commentRepo:         commentRepo,
 		checklistRepo:       checklistRepo,
+		workflowRepo:        workflowRepo,
 		messageRepo:         messageRepo,
 		gitIntRepo:          gitIntRepo,
 		gitRepo:             gitRepo,
@@ -179,7 +194,9 @@ func NewAgentRunActivities(
 		settingsRepo:        settingsRepo,
 		workspaceRepo:       workspaceRepo,
 		docsSpaceRepo:       docsSpaceRepo,
+		docsCollectionRepo:  docsCollectionRepo,
 		docsDocRepo:         docsDocRepo,
+		docsDocumentKeyRepo: docsDocumentKeyRepo,
 		docsContentRepo:     docsContentRepo,
 		docsVersionRepo:     docsVersionRepo,
 		docsLinkRepo:        docsLinkRepo,
@@ -190,6 +207,7 @@ func NewAgentRunActivities(
 		crmActivityRepo:     crmActivityRepo,
 		commandExecutor:     commandExecutor,
 		notificationEmitter: notificationEmitter,
+		releaseFacts:        releaseFacts,
 		wsPublisher:         wsPublisher,
 		runtimes:            runtimes,
 		githubApp:           githubApp,
@@ -2034,6 +2052,78 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 			}
 			return result, nil
 		},
+		ListTeamWorkflows: func(ctx context.Context, workspaceID string, teamID *string) ([]workerpkg.TeamWorkflowSummary, error) {
+			if a.settingsRepo == nil || a.workflowRepo == nil {
+				return nil, fmt.Errorf("team workflows are not available")
+			}
+			teams, err := a.settingsRepo.ListTeams(ctx, workspaceID)
+			if err != nil {
+				return nil, err
+			}
+
+			type teamRecord struct {
+				ID   string
+				Name string
+			}
+			selected := make([]teamRecord, 0, len(teams))
+			if teamID != nil && strings.TrimSpace(*teamID) != "" {
+				needle := strings.TrimSpace(*teamID)
+				for _, team := range teams {
+					if strings.TrimSpace(team.ID) == needle {
+						selected = append(selected, teamRecord{ID: team.ID, Name: team.Name})
+						break
+					}
+				}
+				if len(selected) == 0 {
+					return nil, fmt.Errorf("team not found")
+				}
+			} else {
+				for _, team := range teams {
+					selected = append(selected, teamRecord{ID: team.ID, Name: team.Name})
+				}
+			}
+
+			defaultWorkflow, err := a.workflowRepo.GetDefaultWorkflow(ctx, workspaceID)
+			if err != nil {
+				return nil, err
+			}
+
+			result := make([]workerpkg.TeamWorkflowSummary, 0, len(selected))
+			for _, team := range selected {
+				workflow, err := a.workflowRepo.GetByTeamID(ctx, workspaceID, team.ID)
+				if err != nil {
+					return nil, err
+				}
+				usesTeamWorkflow := true
+				if workflow == nil {
+					workflow = defaultWorkflow
+					usesTeamWorkflow = false
+				}
+				if workflow == nil {
+					continue
+				}
+				stages := make([]workerpkg.WorkflowStageSummary, 0, len(workflow.States))
+				for _, state := range workflow.States {
+					stages = append(stages, workerpkg.WorkflowStageSummary{
+						ID:        state.ID,
+						Name:      state.Name,
+						StateType: state.StateType,
+						Position:  state.Position,
+						IsDefault: state.IsDefault || (workflow.Workflow.DefaultStateID != nil && *workflow.Workflow.DefaultStateID == state.ID),
+					})
+				}
+				result = append(result, workerpkg.TeamWorkflowSummary{
+					TeamID:           team.ID,
+					TeamName:         team.Name,
+					WorkflowID:       workflow.Workflow.ID,
+					WorkflowName:     workflow.Workflow.Name,
+					DefaultStateID:   workflow.Workflow.DefaultStateID,
+					UsesTeamWorkflow: usesTeamWorkflow,
+					Stages:           stages,
+				})
+			}
+			return result, nil
+		},
 		ApproveEpicSpec: func(ctx context.Context, workspaceID, epicID, actorID string, versionID *string) (*model.ApprovedSpecSummary, error) {
 			if a.commandExecutor == nil {
 				return nil, fmt.Errorf("planner commands are not available")
@@ -2151,6 +2241,18 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 		GetDocument: func(ctx context.Context, id string) (*model.DocsDocument, error) {
 			return a.docsDocRepo.GetByID(ctx, id)
 		},
+		GetDocumentKey: func(ctx context.Context, workspaceID, keyType, key string) (*model.DocsDocumentKey, error) {
+			if a.docsDocumentKeyRepo == nil {
+				return nil, fmt.Errorf("docs document key repository is not available")
+			}
+			return a.docsDocumentKeyRepo.GetByKey(ctx, workspaceID, keyType, key)
+		},
+		ListCollections: func(ctx context.Context, workspaceID string, spaceID *string) ([]model.DocsCollection, error) {
+			if spaceID != nil && strings.TrimSpace(*spaceID) != "" {
+				return a.docsCollectionRepo.ListByWorkspaceAndSpace(ctx, workspaceID, strings.TrimSpace(*spaceID))
+			}
+			return a.docsCollectionRepo.ListByWorkspace(ctx, workspaceID)
+		},
 		ListDocuments: func(ctx context.Context, workspaceID string, spaceID *string) ([]model.DocsDocument, error) {
 			published := "published"
 			return a.docsDocRepo.List(ctx, workspaceID, spaceID, nil, &published, nil, "", false)
@@ -2233,6 +2335,38 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 				})
 			}
 			return doc, nil
+		},
+		CreateTask: func(ctx context.Context, workspaceID, actorID string, req workerpkg.CreateTaskToolRequest) (*workerpkg.CreateTaskToolResult, error) {
+			if a.commandExecutor == nil {
+				return nil, fmt.Errorf("task creation is not available")
+			}
+			payload, err := a.commandExecutor.Execute(ctx, model.InternalCommandContext{
+				WorkspaceID: workspaceID,
+				ActorID:     actorID,
+				TargetType:  "workspace",
+				TargetID:    workspaceID,
+			}, "pm.create_task", mustJSON(map[string]any{
+				"name":            req.Name,
+				"description":     req.Description,
+				"task_type":       req.TaskType,
+				"estimate":        req.Estimate,
+				"priority":        req.Priority,
+				"epic_id":         req.EpicID,
+				"team_id":         req.TeamID,
+				"workflow_id":     req.WorkflowID,
+				"state_id":        req.StateID,
+				"owner_member_id": req.OwnerMemberID,
+				"label_ids":       req.LabelIDs,
+				"deadline":        req.Deadline,
+			}))
+			if err != nil {
+				return nil, err
+			}
+			var result workerpkg.CreateTaskToolResult
+			if err := json.Unmarshal(payload, &result); err != nil {
+				return nil, err
+			}
+			return &result, nil
 		},
 		EnsureEpicSpecDoc: func(ctx context.Context, workspaceID, epicID, actorID string) (*model.DocsDocument, error) {
 			if a.commandExecutor == nil {
@@ -2322,6 +2456,32 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 				"link_context":       linkContext,
 			}))
 			return err
+		},
+		UpsertDocumentKey: func(ctx context.Context, record *model.DocsDocumentKey) error {
+			if a.docsDocumentKeyRepo == nil {
+				return fmt.Errorf("docs document key repository is not available")
+			}
+			return a.docsDocumentKeyRepo.Upsert(ctx, record)
+		},
+
+		// Release facts
+		GetReleaseContext: func(ctx context.Context, workspaceID string, req model.GetReleaseContextRequest) (*model.ReleaseContextResult, error) {
+			if a.releaseFacts == nil {
+				return nil, fmt.Errorf("release facts are not available")
+			}
+			return a.releaseFacts.GetReleaseContext(ctx, workspaceID, req)
+		},
+		FindTasksForGitChanges: func(ctx context.Context, workspaceID string, req model.FindTasksForGitChangesRequest) (*model.FindTasksForGitChangesResult, error) {
+			if a.releaseFacts == nil {
+				return nil, fmt.Errorf("release facts are not available")
+			}
+			return a.releaseFacts.FindTasksForGitChanges(ctx, workspaceID, req)
+		},
+		GetTaskContext: func(ctx context.Context, workspaceID string, req model.GetTaskContextRequest) (*model.GetTaskContextResult, error) {
+			if a.releaseFacts == nil {
+				return nil, fmt.Errorf("release facts are not available")
+			}
+			return a.releaseFacts.GetTaskContext(ctx, workspaceID, req)
 		},
 	}
 }

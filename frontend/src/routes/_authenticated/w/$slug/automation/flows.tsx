@@ -13,6 +13,8 @@ export const Route = createFileRoute('/_authenticated/w/$slug/automation/flows')
     template_description: typeof search.template_description === 'string' ? search.template_description : undefined,
     show_trigger: typeof search.show_trigger === 'string' ? search.show_trigger : undefined,
     show_trigger_title: typeof search.show_trigger_title === 'string' ? search.show_trigger_title : undefined,
+    show_rule: typeof search.show_rule === 'string' ? search.show_rule : undefined,
+    show_rule_title: typeof search.show_rule_title === 'string' ? search.show_rule_title : undefined,
     create_event_rule:
       search.create_event_rule === true
       || search.create_event_rule === 'true'

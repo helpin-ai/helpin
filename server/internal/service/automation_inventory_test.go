@@ -81,6 +81,8 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 			preset_version_key TEXT,
 			source_preset_key TEXT,
 			source_preset_version_key TEXT,
+			source_template_id TEXT,
+			source_template_key TEXT NOT NULL DEFAULT '',
 			role TEXT,
 			status TEXT NOT NULL,
 			runtime_kind TEXT,

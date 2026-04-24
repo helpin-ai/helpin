@@ -39,6 +39,43 @@ func toolListDocuments(ctx *ExecutionContext, input json.RawMessage) (string, er
 	return toCompactJSONString(summaries), nil
 }
 
+func toolListCollections(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	if ctx.Services == nil || ctx.Services.ListCollections == nil {
+		return "", fmt.Errorf("docs access is not available for this agent")
+	}
+	var params struct {
+		SpaceID *string `json:"space_id"`
+	}
+	_ = json.Unmarshal(input, &params)
+
+	collections, err := ctx.Services.ListCollections(ctx.Context, ctx.WorkspaceID, params.SpaceID)
+	if err != nil {
+		return "", fmt.Errorf("list collections: %w", err)
+	}
+	if len(collections) == 0 {
+		return "No collections found.", nil
+	}
+
+	type collectionSummary struct {
+		ID                 string  `json:"id"`
+		Name               string  `json:"name"`
+		Slug               string  `json:"slug"`
+		SpaceID            string  `json:"space_id"`
+		ParentCollectionID *string `json:"parent_collection_id,omitempty"`
+	}
+	summaries := make([]collectionSummary, 0, len(collections))
+	for _, c := range collections {
+		summaries = append(summaries, collectionSummary{
+			ID:                 c.ID,
+			Name:               c.Name,
+			Slug:               c.Slug,
+			SpaceID:            c.SpaceID,
+			ParentCollectionID: c.ParentCollectionID,
+		})
+	}
+	return toCompactJSONString(summaries), nil
+}
+
 func toolReadDocument(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	if ctx.Services == nil || ctx.Services.GetDocument == nil {
 		return "", fmt.Errorf("docs access is not available for this agent")
@@ -128,6 +165,11 @@ func toolCreateDocument(ctx *ExecutionContext, input json.RawMessage) (string, e
 	if params.Title == "" {
 		return "", fmt.Errorf("title is required")
 	}
+	if existing, ok, err := existingOutputDocument(ctx, params.SpaceID, params.CollectionID); err != nil {
+		return "", err
+	} else if ok {
+		return existing, nil
+	}
 
 	content := normalizeDocumentToolContent(params.Content)
 	commandInput, _ := json.Marshal(map[string]any{
@@ -141,6 +183,9 @@ func toolCreateDocument(ctx *ExecutionContext, input json.RawMessage) (string, e
 	if output, ok, err := executeInternalCommand(ctx, "workspace", ctx.WorkspaceID, "docs.create_document", commandInput); ok {
 		if err != nil {
 			return "", fmt.Errorf("create document: %w", err)
+		}
+		if err := persistOutputDocumentKey(ctx, output); err != nil {
+			return "", err
 		}
 		return string(output), nil
 	}
@@ -158,12 +203,78 @@ func toolCreateDocument(ctx *ExecutionContext, input json.RawMessage) (string, e
 	if err != nil {
 		return "", fmt.Errorf("create document: %w", err)
 	}
+	output := toCompactJSONString(map[string]any{
+		"id":       doc.ID,
+		"title":    doc.Title,
+		"status":   doc.Status,
+		"space_id": doc.SpaceID,
+	})
+	if err := persistOutputDocumentKey(ctx, json.RawMessage(output)); err != nil {
+		return "", err
+	}
+	return output, nil
+}
+
+func existingOutputDocument(ctx *ExecutionContext, spaceID string, collectionID *string) (string, bool, error) {
+	if ctx == nil || ctx.RunInput == nil || ctx.RunInput.Output == nil || ctx.Services == nil || ctx.Services.GetDocumentKey == nil || ctx.Services.GetDocument == nil {
+		return "", false, nil
+	}
+	output := ctx.RunInput.Output
+	if !strings.EqualFold(strings.TrimSpace(output.Type), "docs_document") || strings.TrimSpace(output.IdempotencyKey) == "" {
+		return "", false, nil
+	}
+	if strings.TrimSpace(output.SpaceID) != "" && strings.TrimSpace(output.SpaceID) != strings.TrimSpace(spaceID) {
+		return "", false, nil
+	}
+	if output.CollectionID != nil && collectionID != nil && strings.TrimSpace(*output.CollectionID) != strings.TrimSpace(*collectionID) {
+		return "", false, nil
+	}
+	record, err := ctx.Services.GetDocumentKey(ctx.Context, ctx.WorkspaceID, model.DocsDocumentKeyTypeReleaseNotes, output.IdempotencyKey)
+	if err != nil {
+		return "", false, fmt.Errorf("get existing output document: %w", err)
+	}
+	if record == nil || record.DocumentID == nil || strings.TrimSpace(*record.DocumentID) == "" {
+		return "", false, nil
+	}
+	doc, err := ctx.Services.GetDocument(ctx.Context, strings.TrimSpace(*record.DocumentID))
+	if err != nil {
+		return "", false, fmt.Errorf("load existing output document: %w", err)
+	}
+	if doc == nil {
+		return "", false, nil
+	}
 	return toCompactJSONString(map[string]any{
 		"id":       doc.ID,
 		"title":    doc.Title,
 		"status":   doc.Status,
 		"space_id": doc.SpaceID,
-	}), nil
+	}), true, nil
+}
+
+func persistOutputDocumentKey(ctx *ExecutionContext, raw json.RawMessage) error {
+	if ctx == nil || ctx.RunInput == nil || ctx.RunInput.Output == nil || ctx.Services == nil || ctx.Services.UpsertDocumentKey == nil {
+		return nil
+	}
+	output := ctx.RunInput.Output
+	if !strings.EqualFold(strings.TrimSpace(output.Type), "docs_document") || strings.TrimSpace(output.IdempotencyKey) == "" {
+		return nil
+	}
+	var payload struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return fmt.Errorf("parse created document output: %w", err)
+	}
+	if strings.TrimSpace(payload.ID) == "" {
+		return fmt.Errorf("created document output did not include id")
+	}
+	documentID := strings.TrimSpace(payload.ID)
+	return ctx.Services.UpsertDocumentKey(ctx.Context, &model.DocsDocumentKey{
+		WorkspaceID: ctx.WorkspaceID,
+		KeyType:     model.DocsDocumentKeyTypeReleaseNotes,
+		Key:         strings.TrimSpace(output.IdempotencyKey),
+		DocumentID:  &documentID,
+	})
 }
 
 func toolWriteDocumentContent(ctx *ExecutionContext, input json.RawMessage) (string, error) {

@@ -65,6 +65,7 @@ There are three important runtime families in the backend:
 - `native_sdk`
   - tool-driven backend runtime
   - used by planners and other non-repo system agents
+  - system epic/task planners use per-turn selective skill activation and dynamic phase guidance; this document does not cover that planner-only flow
 - `codex`
   - Codex CLI / app-server runtime
   - used by Forge / Code Builder system agents

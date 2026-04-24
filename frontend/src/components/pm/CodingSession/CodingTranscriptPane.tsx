@@ -129,20 +129,33 @@ export function CodingTranscriptPane({
     return segment.tool_call.tool_name !== 'update_plan';
   });
   const showLivePlaceholder = visibleLiveSegments.length === 0 && liveAssistantMessage?.status === 'streaming';
-  const developerPromptMessage = useMemo<CodingSessionTranscriptMessage | null>(() => {
+  const promptMessage = useMemo<CodingSessionTranscriptMessage | null>(() => {
     const sections = parsePromptArtifactSections(promptArtifact?.inline_content);
     const developerPrompt = sections.find((section) => section.label === 'Developer prompt');
-    if (!developerPrompt) return null;
+    if (developerPrompt) {
+      return {
+        event_id: `prompt:${promptArtifact?.id ?? 'developer'}`,
+        message_id: `prompt:${promptArtifact?.id ?? 'developer'}`,
+        role: 'user',
+        message_type: 'developer_prompt',
+        content: developerPrompt.content,
+        timestamp: promptArtifact?.created_at ?? new Date().toISOString(),
+        sequence_no: Number.MIN_SAFE_INTEGER,
+      };
+    }
+
+    const systemPrompt = session?.system_prompt?.trim();
+    if (!systemPrompt) return null;
     return {
-      event_id: `prompt:${promptArtifact?.id ?? 'developer'}`,
-      message_id: `prompt:${promptArtifact?.id ?? 'developer'}`,
+      event_id: `prompt:${session?.run_id ?? 'system'}`,
+      message_id: `prompt:${session?.run_id ?? 'system'}`,
       role: 'user',
-      message_type: 'developer_prompt',
-      content: developerPrompt.content,
-      timestamp: promptArtifact?.created_at ?? new Date().toISOString(),
+      message_type: 'system_prompt',
+      content: systemPrompt,
+      timestamp: session?.created_at ?? new Date().toISOString(),
       sequence_no: Number.MIN_SAFE_INTEGER,
     };
-  }, [promptArtifact]);
+  }, [promptArtifact, session?.created_at, session?.run_id, session?.system_prompt]);
 
   // Build a flat list of all renderable items for the virtualizer.
   type VirtualItem =
@@ -156,8 +169,8 @@ export function CodingTranscriptPane({
 
   const items = useMemo((): VirtualItem[] => {
     const list: VirtualItem[] = [];
-    if (developerPromptMessage) {
-      list.push({ kind: 'transcript', message: developerPromptMessage });
+    if (promptMessage) {
+      list.push({ kind: 'transcript', message: promptMessage });
     }
     for (const message of transcriptMessages) {
       list.push({ kind: 'transcript', message });
@@ -187,7 +200,7 @@ export function CodingTranscriptPane({
       list.push({ kind: 'empty' });
     }
     return list;
-  }, [developerPromptMessage, transcriptMessages, reviewArtifacts, liveReasoningMessage, visibleLiveSegments, showLivePlaceholder, loading]);
+  }, [promptMessage, transcriptMessages, reviewArtifacts, liveReasoningMessage, visibleLiveSegments, showLivePlaceholder, loading]);
 
   const virtualizer = useVirtualizer({
     count: items.length,
@@ -319,7 +332,7 @@ export function CodingTranscriptPane({
           Transcript
         </div>
         <Badge variant="outline" className="text-[10px]">
-          {transcriptMessages.length + (developerPromptMessage ? 1 : 0) + (visibleLiveSegments.length > 0 || showLivePlaceholder ? 1 : 0)} turns
+          {transcriptMessages.length + (promptMessage ? 1 : 0) + (visibleLiveSegments.length > 0 || showLivePlaceholder ? 1 : 0)} turns
         </Badge>
       </div>
 
@@ -706,8 +719,14 @@ function TranscriptEntry({
     );
   }
 
-  if (message.message_type === 'developer_prompt') {
-    return <DeveloperPromptTranscriptCard content={message.content} timestamp={message.timestamp} />;
+  if (message.message_type === 'developer_prompt' || message.message_type === 'system_prompt') {
+    return (
+      <PromptTranscriptCard
+        content={message.content}
+        timestamp={message.timestamp}
+        label={message.message_type === 'system_prompt' ? 'System prompt' : 'Developer prompt'}
+      />
+    );
   }
 
   if (message.message_type === 'review_checkpoint_resolution' || message.message_type === 'approval_request_resolution') {
@@ -746,22 +765,24 @@ function TranscriptEntry({
   );
 }
 
-function DeveloperPromptTranscriptCard({
+function PromptTranscriptCard({
   content,
   timestamp,
+  label,
 }: {
   content: string;
   timestamp: string;
+  label: string;
 }) {
   return (
     <div className="w-full max-w-[90%]">
       <div className="mb-2 flex items-center gap-2 px-1 text-[11px] text-muted-foreground">
         <span>{formatCodingSessionRelative(timestamp)}</span>
-        <span className="font-medium">Developer prompt</span>
+        <span className="font-medium">{label}</span>
       </div>
       <details className="rounded-xl border border-border/70 bg-muted/30 px-4 py-3">
         <summary className="cursor-pointer list-none text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Developer prompt
+          {label}
         </summary>
         <pre className="mt-3 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-5 text-foreground">
           {content}

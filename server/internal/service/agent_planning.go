@@ -1022,13 +1022,7 @@ func renderPlannedTaskDescription(proposed model.ProposedTask) string {
 	if len(sections) == 0 {
 		return ""
 	}
-	markdown := strings.Join(sections, "\n\n")
-	rendered, err := tiptap.RenderHTML(tiptap.MarkdownToJSON(markdown))
-	if err != nil {
-		slog.Warn("failed to render planned task markdown to html", "error", err)
-		return markdown
-	}
-	return strings.TrimSpace(rendered)
+	return renderTaskDescriptionRichText(strings.Join(sections, "\n\n"))
 }
 
 func validateSpecClarifications(updated, current []model.SpecClarificationItem) ([]model.SpecClarificationItem, int, error) {
