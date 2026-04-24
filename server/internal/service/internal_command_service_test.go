@@ -4,8 +4,10 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
 func TestWriteDocumentContentCommandSupportsDocumentTarget(t *testing.T) {
@@ -108,6 +110,43 @@ func TestCreateTaskCommandMetadataAndTargets(t *testing.T) {
 	}
 	if !supportsWorkspace || !supportsEpic {
 		t.Fatalf("expected pm.create_task to support workspace and epic targets, got %#v", def.SupportedTargetTypes)
+	}
+}
+
+func TestResolveTaskCreationWorkflowValidatesExplicitWorkflowTeamScope(t *testing.T) {
+	db := newTestDB(t)
+	workflowRepo := repository.NewPMWorkflowRepository(db)
+	taskService := &PMTaskService{workflowRepo: workflowRepo}
+	svc := NewInternalCommandService(nil, taskService, nil, nil, nil, nil, nil, nil)
+
+	now := time.Now()
+	mustExec(t, db, `INSERT INTO pm_workflows (id, workspace_id, name, team_id, default_state_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"wf-team-a", "ws-1", "Team A Workflow", "team-a", "state-team-a", now, now)
+	mustExec(t, db, `INSERT INTO pm_workflow_states (id, workflow_id, name, state_type, position, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		"state-team-a", "wf-team-a", "To Do", model.PMStateTypeUnstarted, 0, true, now, now)
+	mustExec(t, db, `INSERT INTO pm_workflows (id, workspace_id, name, team_id, default_state_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"wf-team-b", "ws-1", "Team B Workflow", "team-b", "state-team-b", now, now)
+	mustExec(t, db, `INSERT INTO pm_workflow_states (id, workflow_id, name, state_type, position, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		"state-team-b", "wf-team-b", "To Do", model.PMStateTypeUnstarted, 0, true, now, now)
+
+	workflowID := "wf-team-b"
+	stateID := "state-team-b"
+	_, _, err := svc.resolveTaskCreationWorkflow(context.Background(), "ws-1", "team-a", &workflowID, &stateID)
+	if err == nil {
+		t.Fatal("expected explicit workflow/state pair from another team to be rejected")
+	}
+	if !strings.Contains(err.Error(), "workflow_id does not belong to team_id") {
+		t.Fatalf("expected team scope error, got %v", err)
+	}
+
+	workflowID = "wf-team-a"
+	stateID = "state-team-a"
+	resolvedWorkflowID, resolvedStateID, err := svc.resolveTaskCreationWorkflow(context.Background(), "ws-1", "team-a", &workflowID, &stateID)
+	if err != nil {
+		t.Fatalf("expected matching explicit workflow/state pair to resolve: %v", err)
+	}
+	if resolvedWorkflowID != "wf-team-a" || resolvedStateID != "state-team-a" {
+		t.Fatalf("unexpected workflow/state resolution: %q %q", resolvedWorkflowID, resolvedStateID)
 	}
 }
 

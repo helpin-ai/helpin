@@ -964,9 +964,6 @@ func (s *InternalCommandService) resolveTaskCreationWorkflow(ctx context.Context
 
 	workflowID := commandDerefString(requestedWorkflowID)
 	stateID := commandDerefString(requestedStateID)
-	if workflowID != "" && stateID != "" {
-		return workflowID, stateID, nil
-	}
 
 	var workflow *model.WorkflowWithStates
 	if workflowID != "" {
