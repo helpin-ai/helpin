@@ -649,6 +649,14 @@ func (f *fakeGitHubAppClient) ListRepositoryBranches(context.Context, string, st
 	return nil, nil
 }
 
+func (f *fakeGitHubAppClient) GetReleaseByTag(context.Context, string, string, string, string) (*githubapp.Release, error) {
+	return nil, nil
+}
+
+func (f *fakeGitHubAppClient) ListReleases(context.Context, string, string, string, githubapp.ListReleasesOptions) ([]githubapp.Release, error) {
+	return nil, nil
+}
+
 func (f *fakeGitHubAppClient) GetInstallation(context.Context, string) (*githubapp.Installation, error) {
 	return nil, nil
 }

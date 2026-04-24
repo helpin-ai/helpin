@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -34,6 +35,13 @@ func normalizeDocsHelpcenterConfig(cfg *model.DocsHelpcenterConfig) {
 	}
 	if cfg.ProtectedTerms == nil {
 		cfg.ProtectedTerms = model.DocsStringArray{}
+	}
+	if cfg.PublicURLMode == "" {
+		if cfg.CustomDomain != nil && strings.TrimSpace(*cfg.CustomDomain) != "" {
+			cfg.PublicURLMode = model.HelpcenterPublicURLModeCustomDomain
+		} else {
+			cfg.PublicURLMode = model.HelpcenterPublicURLModeHostedSubdomain
+		}
 	}
 }
 
@@ -104,6 +112,15 @@ func (r *DocsHelpcenterRepository) UpsertConfig(ctx context.Context, workspaceID
 	if v, ok := updates["custom_domain"].(*string); ok {
 		cfg.CustomDomain = v
 	}
+	if v, ok := updates["public_url_mode"].(string); ok {
+		cfg.PublicURLMode = v
+	}
+	if v, ok := updates["reverse_proxy_host"].(*string); ok {
+		cfg.ReverseProxyHost = v
+	}
+	if v, ok := updates["reverse_proxy_base_path"].(*string); ok {
+		cfg.ReverseProxyBasePath = v
+	}
 	if v, ok := updates["brand_logo_url"].(*string); ok {
 		cfg.BrandLogoURL = v
 	}
@@ -118,6 +135,18 @@ func (r *DocsHelpcenterRepository) UpsertConfig(ctx context.Context, workspaceID
 	}
 	if v, ok := updates["seo_description"].(*string); ok {
 		cfg.SEODescription = v
+	}
+	if v, ok := updates["og_title"].(string); ok {
+		cfg.OGTitle = &v
+	}
+	if v, ok := updates["og_description"].(string); ok {
+		cfg.OGDescription = &v
+	}
+	if v, ok := updates["og_image_url"].(string); ok {
+		cfg.OGImageURL = &v
+	}
+	if v, ok := updates["og_image_alt"].(string); ok {
+		cfg.OGImageAlt = &v
 	}
 	if v, ok := updates["support_email"].(*string); ok {
 		cfg.SupportEmail = v
@@ -219,6 +248,16 @@ func (r *DocsHelpcenterRepository) CreateArticle(ctx context.Context, art *model
 		return nil, fmt.Errorf("create helpcenter article: %w", err)
 	}
 	return art, nil
+}
+
+func (r *DocsHelpcenterRepository) UpdateArticleMetadata(ctx context.Context, documentID string, updates map[string]interface{}) (*model.DocsHelpcenterArticle, error) {
+	if err := r.db.WithContext(ctx).
+		Model(&model.DocsHelpcenterArticle{}).
+		Where("document_id = ?", documentID).
+		Updates(updates).Error; err != nil {
+		return nil, fmt.Errorf("update helpcenter article metadata: %w", err)
+	}
+	return r.GetArticle(ctx, documentID)
 }
 
 func (r *DocsHelpcenterRepository) PublicIDExists(ctx context.Context, publicID, excludeDocumentID string) (bool, error) {
@@ -720,6 +759,10 @@ type sourceArticleRow struct {
 	PublicationExcerpt  *string         `gorm:"column:publication_excerpt"`
 	PublicationSEOTitle *string         `gorm:"column:publication_seo_title"`
 	PublicationSEODesc  *string         `gorm:"column:publication_seo_description"`
+	PublicationOGTitle  *string         `gorm:"column:publication_og_title"`
+	PublicationOGDesc   *string         `gorm:"column:publication_og_description"`
+	PublicationOGImage  *string         `gorm:"column:publication_og_image_url"`
+	PublicationOGAlt    *string         `gorm:"column:publication_og_image_alt"`
 	PublicPublishedAt   *time.Time      `gorm:"column:public_published_at"`
 	HelpfulCount        int             `gorm:"column:helpful_count"`
 	NotHelpfulCount     int             `gorm:"column:not_helpful_count"`
@@ -737,6 +780,10 @@ func sourceArticleRowToModels(row sourceArticleRow) (*model.DocsDocument, *model
 		Slug:              row.HelpcenterSlug,
 		SEOTitle:          row.PublicationSEOTitle,
 		SEODescription:    row.PublicationSEODesc,
+		OGTitle:           row.PublicationOGTitle,
+		OGDescription:     row.PublicationOGDesc,
+		OGImageURL:        row.PublicationOGImage,
+		OGImageAlt:        row.PublicationOGAlt,
 		HelpfulCount:      row.HelpfulCount,
 		NotHelpfulCount:   row.NotHelpfulCount,
 		ViewCount:         row.ViewCount,
@@ -1174,6 +1221,10 @@ func (r *DocsHelpcenterRepository) GetPublicArticleBySlug(ctx context.Context, s
 			p.excerpt AS publication_excerpt,
 			p.seo_title AS publication_seo_title,
 			p.seo_description AS publication_seo_description,
+			p.og_title AS publication_og_title,
+			p.og_description AS publication_og_description,
+			p.og_image_url AS publication_og_image_url,
+			p.og_image_alt AS publication_og_image_alt,
 			ha.public_published_at,
 			ha.helpful_count,
 			ha.not_helpful_count,
@@ -1220,6 +1271,10 @@ func (r *DocsHelpcenterRepository) GetPublicArticleByDocumentIDInSpaces(ctx cont
 			p.excerpt AS publication_excerpt,
 			p.seo_title AS publication_seo_title,
 			p.seo_description AS publication_seo_description,
+			p.og_title AS publication_og_title,
+			p.og_description AS publication_og_description,
+			p.og_image_url AS publication_og_image_url,
+			p.og_image_alt AS publication_og_image_alt,
 			ha.public_published_at,
 			ha.helpful_count,
 			ha.not_helpful_count,
@@ -1266,6 +1321,10 @@ func (r *DocsHelpcenterRepository) GetPublicArticleByPublicIDInSpaces(ctx contex
 			p.excerpt AS publication_excerpt,
 			p.seo_title AS publication_seo_title,
 			p.seo_description AS publication_seo_description,
+			p.og_title AS publication_og_title,
+			p.og_description AS publication_og_description,
+			p.og_image_url AS publication_og_image_url,
+			p.og_image_alt AS publication_og_image_alt,
 			ha.public_published_at,
 			ha.helpful_count,
 			ha.not_helpful_count,
@@ -1306,6 +1365,10 @@ func (r *DocsHelpcenterRepository) GetPublicArticleByPublicID(ctx context.Contex
 			p.excerpt AS publication_excerpt,
 			p.seo_title AS publication_seo_title,
 			p.seo_description AS publication_seo_description,
+			p.og_title AS publication_og_title,
+			p.og_description AS publication_og_description,
+			p.og_image_url AS publication_og_image_url,
+			p.og_image_alt AS publication_og_image_alt,
 			ha.public_published_at,
 			ha.helpful_count,
 			ha.not_helpful_count,
@@ -1347,6 +1410,10 @@ func (r *DocsHelpcenterRepository) GetPublicArticleByCollectionSlug(ctx context.
 			p.excerpt AS publication_excerpt,
 			p.seo_title AS publication_seo_title,
 			p.seo_description AS publication_seo_description,
+			p.og_title AS publication_og_title,
+			p.og_description AS publication_og_description,
+			p.og_image_url AS publication_og_image_url,
+			p.og_image_alt AS publication_og_image_alt,
 			ha.public_published_at,
 			ha.helpful_count,
 			ha.not_helpful_count,
@@ -1382,6 +1449,10 @@ func (r *DocsHelpcenterRepository) GetPublicArticleByCollectionIDAndSlug(ctx con
 			p.excerpt AS publication_excerpt,
 			p.seo_title AS publication_seo_title,
 			p.seo_description AS publication_seo_description,
+			p.og_title AS publication_og_title,
+			p.og_description AS publication_og_description,
+			p.og_image_url AS publication_og_image_url,
+			p.og_image_alt AS publication_og_image_alt,
 			ha.public_published_at,
 			ha.helpful_count,
 			ha.not_helpful_count,

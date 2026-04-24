@@ -72,7 +72,10 @@ import { timeAgo } from '@/lib/utils'
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover'
 import { formatAssignableMemberName } from '@/lib/assignableMembers'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
   SelectContent,
@@ -133,6 +136,13 @@ interface ArticleTranslationDraftState {
   slug: string
   excerpt: string
   content: JSONContent | null
+}
+
+interface SourceSocialDraftState {
+  og_title: string
+  og_description: string
+  og_image_url: string
+  og_image_alt: string
 }
 
 function emptyTranslationDraft(locale: string): ArticleTranslationDraftState {
@@ -335,6 +345,15 @@ export function DocsDocumentDetail() {
   const titleTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const [selectedLocaleState, setSelectedLocaleState] = useState<{ docId: string; locale: string } | null>(null)
   const [translationDrafts, setTranslationDrafts] = useState<Record<string, ArticleTranslationDraftState>>({})
+  const [sourceSocialDraft, setSourceSocialDraft] = useState<SourceSocialDraftState>({
+    og_title: '',
+    og_description: '',
+    og_image_url: '',
+    og_image_alt: '',
+  })
+  const [savingSourceSocial, setSavingSourceSocial] = useState(false)
+  const [uploadingSourceOGImage, setUploadingSourceOGImage] = useState(false)
+  const sourceOGImageInputRef = useRef<HTMLInputElement>(null)
   const translationSaveTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   const patchDoc = useCallback(
@@ -366,6 +385,49 @@ export function DocsDocumentDetail() {
   useEffect(() => () => {
     if (titleTimerRef.current) clearTimeout(titleTimerRef.current)
   }, [])
+
+  useEffect(() => {
+    setSourceSocialDraft({
+      og_title: doc?.hc_og_title ?? '',
+      og_description: doc?.hc_og_description ?? '',
+      og_image_url: doc?.hc_og_image_url ?? '',
+      og_image_alt: doc?.hc_og_image_alt ?? '',
+    })
+  }, [doc?.id, doc?.hc_og_title, doc?.hc_og_description, doc?.hc_og_image_url, doc?.hc_og_image_alt])
+
+  const handleSaveSourceSocial = useCallback(async () => {
+    setSavingSourceSocial(true)
+    try {
+      const res = await docsService.updateHelpcenterArticleMetadata(wsId, docId, sourceSocialDraft)
+      if (res.error) throw new Error(res.error)
+      toast.success('Social metadata saved')
+      queryClient.invalidateQueries({ queryKey: queryKeys.docs.document(wsId, docId) })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save social metadata')
+    } finally {
+      setSavingSourceSocial(false)
+    }
+  }, [docId, queryClient, sourceSocialDraft, wsId])
+
+  const handleUploadSourceOGImage = useCallback(async (file?: File | null) => {
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file')
+      return
+    }
+    setUploadingSourceOGImage(true)
+    try {
+      const res = await docsService.uploadHelpcenterAsset(wsId, 'og_image', file)
+      if (res.error || !res.data) throw new Error(res.error ?? 'Upload failed')
+      setSourceSocialDraft((prev) => ({ ...prev, og_image_url: res.data!.url }))
+      toast.success('Social image uploaded')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Upload failed')
+    } finally {
+      setUploadingSourceOGImage(false)
+      if (sourceOGImageInputRef.current) sourceOGImageInputRef.current.value = ''
+    }
+  }, [wsId])
 
   useEffect(() => {
     if (!docId || !wsSendRaw) return
@@ -553,8 +615,12 @@ export function DocsDocumentDetail() {
       content: (draft.content as JSONContent | null) ?? { type: 'doc', content: [] },
       seo_title: title,
       seo_description: draft.excerpt.trim() || undefined,
+      og_title: activeTranslation?.og_title ?? undefined,
+      og_description: activeTranslation?.og_description ?? undefined,
+      og_image_url: activeTranslation?.og_image_url ?? undefined,
+      og_image_alt: activeTranslation?.og_image_alt ?? undefined,
     }
-  }, [])
+  }, [activeTranslation?.og_description, activeTranslation?.og_image_alt, activeTranslation?.og_image_url, activeTranslation?.og_title])
 
   const persistTranslationDraft = useCallback(async (draft: ArticleTranslationDraftState) => {
     const payload = buildTranslationPayload(draft)
@@ -718,6 +784,10 @@ export function DocsDocumentDetail() {
           content_text: '',
           seo_title: undefined,
           seo_description: undefined,
+          og_title: undefined,
+          og_description: undefined,
+          og_image_url: undefined,
+          og_image_alt: undefined,
           status: 'draft' as const,
           source_updated_at: undefined,
           source_synced: true,
@@ -733,6 +803,10 @@ export function DocsDocumentDetail() {
         excerpt: activeTranslationDraft.excerpt || undefined,
         seo_title: activeTranslationDraft.title || undefined,
         seo_description: activeTranslationDraft.excerpt || undefined,
+        og_title: activeTranslation?.og_title,
+        og_description: activeTranslation?.og_description,
+        og_image_url: activeTranslation?.og_image_url,
+        og_image_alt: activeTranslation?.og_image_alt,
         content: activeTranslationDraft.content,
       }
     : articleTranslationsByLocale.get(editingTranslationLocale ?? '') ?? null
@@ -1178,6 +1252,75 @@ export function DocsDocumentDetail() {
                   }`}>
                     {activeTranslationStatus === 'published' ? 'Published' : activeTranslationStatus === 'needs_review' ? 'Needs review' : 'Draft'}
                   </span>
+                </div>
+                <Separator className="my-4" />
+              </>
+            )}
+
+            {/* ── Social metadata (source locale only) ── */}
+            {isExternalHelpCenter && isSourceLocaleActive && canEditDocs && (
+              <>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-1.5">
+                    <GlobeIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="text-xs font-medium text-muted-foreground">Social preview</span>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="doc-og-title" className="text-[11px] text-muted-foreground">Title</Label>
+                    <Input
+                      id="doc-og-title"
+                      value={sourceSocialDraft.og_title}
+                      onChange={(event) => setSourceSocialDraft((prev) => ({ ...prev, og_title: event.target.value }))}
+                      placeholder={titleDraft || 'Article title'}
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="doc-og-description" className="text-[11px] text-muted-foreground">Description</Label>
+                    <Textarea
+                      id="doc-og-description"
+                      value={sourceSocialDraft.og_description}
+                      onChange={(event) => setSourceSocialDraft((prev) => ({ ...prev, og_description: event.target.value }))}
+                      placeholder={doc.excerpt || 'Article summary'}
+                      rows={3}
+                      className="min-h-20 text-xs"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="doc-og-image" className="text-[11px] text-muted-foreground">Image URL</Label>
+                    <div className="flex gap-1.5">
+                      <Input
+                        id="doc-og-image"
+                        value={sourceSocialDraft.og_image_url}
+                        onChange={(event) => setSourceSocialDraft((prev) => ({ ...prev, og_image_url: event.target.value }))}
+                        placeholder="https://..."
+                        className="h-8 text-xs"
+                      />
+                      <Button type="button" variant="outline" size="sm" className="h-8 px-2 text-xs" disabled={uploadingSourceOGImage} onClick={() => sourceOGImageInputRef.current?.click()}>
+                        {uploadingSourceOGImage ? '...' : 'Upload'}
+                      </Button>
+                      <input
+                        ref={sourceOGImageInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        className="hidden"
+                        onChange={(event) => void handleUploadSourceOGImage(event.target.files?.[0])}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="doc-og-image-alt" className="text-[11px] text-muted-foreground">Image Alt</Label>
+                    <Input
+                      id="doc-og-image-alt"
+                      value={sourceSocialDraft.og_image_alt}
+                      onChange={(event) => setSourceSocialDraft((prev) => ({ ...prev, og_image_alt: event.target.value }))}
+                      placeholder={titleDraft || 'Article preview image'}
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <Button type="button" size="sm" className="h-8 w-full text-xs" disabled={savingSourceSocial || doc.is_locked} onClick={() => void handleSaveSourceSocial()}>
+                    {savingSourceSocial ? 'Saving...' : 'Save social preview'}
+                  </Button>
                 </div>
                 <Separator className="my-4" />
               </>
