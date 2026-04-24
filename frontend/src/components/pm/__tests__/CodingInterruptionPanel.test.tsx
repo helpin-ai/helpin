@@ -120,6 +120,28 @@ function buildReviewArtifact(overrides: Partial<AgentRunArtifact> = {}): AgentRu
   };
 }
 
+function buildPromptArtifact(overrides: Partial<AgentRunArtifact> = {}): AgentRunArtifact {
+  return {
+    id: 'artifact-prompt-1',
+    workspace_id: 'ws-1',
+    run_id: 'run-1',
+    artifact_type: 'codex_prompt',
+    format: 'markdown',
+    storage_mode: 'inline',
+    inline_content: [
+      'Developer prompt:',
+      'Use the repository conventions and keep changes incremental.',
+      '',
+      'User prompt:',
+      'Implement the requested change.',
+    ].join('\n'),
+    metadata: {},
+    sequence_no: 0,
+    created_at: '2026-03-31T09:59:00Z',
+    ...overrides,
+  };
+}
+
 function buildReviewDecisionArtifact(overrides: Partial<AgentRunArtifact> = {}): AgentRunArtifact {
   return {
     id: 'artifact-decision-1',
@@ -433,6 +455,68 @@ describe('CodingInterruptionPanel', () => {
 
     expect(container.querySelector('strong')?.textContent).toBe('Approved');
     expect(container.querySelector('ul li')?.textContent).toBe('keep current scope');
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it('renders a system prompt card when no prompt artifact exists', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <CodingTranscriptPane
+          transcriptMessages={[]}
+          liveAssistantMessage={null}
+          liveReasoningMessage={null}
+          liveTurnSegments={[]}
+          session={buildSession({
+            status: 'completed',
+            pause_reason: 'none',
+            auth_state: undefined,
+            system_prompt: 'Research configured competitors and file the marketing digest task.',
+          })}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('System prompt');
+    expect(container.textContent).toContain('Research configured competitors');
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it('prefers developer prompt artifacts over the session system prompt', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <CodingTranscriptPane
+          promptArtifact={buildPromptArtifact()}
+          transcriptMessages={[]}
+          liveAssistantMessage={null}
+          liveReasoningMessage={null}
+          liveTurnSegments={[]}
+          session={buildSession({
+            status: 'completed',
+            pause_reason: 'none',
+            auth_state: undefined,
+            system_prompt: 'Fallback native agent system prompt.',
+          })}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('Developer prompt');
+    expect(container.textContent).toContain('Use the repository conventions');
+    expect(container.textContent).not.toContain('Fallback native agent system prompt');
 
     act(() => {
       root.unmount();

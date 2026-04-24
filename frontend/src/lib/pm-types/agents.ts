@@ -350,12 +350,39 @@ export interface AgentTemplate {
   allowed_tools: string[];
   allowed_commands: string[];
   allowed_targets: AgentTargetType[];
+  required_context: string[];
+  starter_flows: AgentTemplateStarterFlow[];
   approval_mode: AgentApprovalMode;
   default_invocation_mode: AgentInvocationMode;
   monthly_token_budget?: number;
   is_enabled: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface AgentTemplateStarterFlow {
+  key: string;
+  label: string;
+  description?: string;
+  trigger_type: string;
+  default_enabled: boolean;
+  config_schema_key?: string;
+  output_type?: string;
+  fields?: AgentTemplateStarterFlowField[];
+}
+
+export interface AgentTemplateStarterFlowField {
+  key: string;
+  label: string;
+  type: 'text' | 'number' | 'string_list' | 'team_select' | 'workflow_state_select' | string;
+  required?: boolean;
+  placeholder?: string;
+  help_text?: string;
+  default?: string | number | boolean | string[];
+  min?: number;
+  max?: number;
+  depends_on?: string;
+  options?: Array<{ value: string; label: string }>;
 }
 
 export interface CreateAgentFromTemplateOverrides {
@@ -377,6 +404,8 @@ export interface CreateAgentFromTemplateOverrides {
 }
 
 export interface CreateAgentFromTemplateFlow {
+  flow_key?: string;
+  flow_input?: Record<string, unknown>;
   repository_id?: string;
   repo_full_name?: string;
   release_kinds?: string[];

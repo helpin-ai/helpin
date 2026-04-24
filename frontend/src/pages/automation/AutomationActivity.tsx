@@ -78,6 +78,19 @@ const STATUS_STYLES: Record<string, string> = {
   skipped: 'border-border/70 bg-muted/40 text-muted-foreground',
 };
 
+const STATUS_DOT_STYLES: Record<string, string> = {
+  completed: 'text-emerald-700 dark:text-emerald-400',
+  failed: 'text-rose-700 dark:text-rose-400',
+  running: 'text-sky-700 dark:text-sky-400',
+  queued: 'text-muted-foreground',
+  paused: 'text-amber-700 dark:text-amber-400',
+  awaiting_approval: 'text-amber-700 dark:text-amber-400',
+  awaiting_input: 'text-amber-700 dark:text-amber-400',
+  awaiting_auth: 'text-amber-700 dark:text-amber-400',
+  cancelled: 'text-muted-foreground',
+  skipped: 'text-muted-foreground',
+};
+
 function relativeTime(isoString?: string): string {
   if (!isoString) return '';
   const diff = Date.now() - new Date(isoString).getTime();
@@ -209,6 +222,20 @@ function buildExecutionTargetLabel(item: AutomationTriggerExecutionListItem) {
   if (item.target_type && item.target_id) return `${item.target_type.replace(/_/g, ' ')} · ${truncateMiddle(item.target_id, 8, 4)}`;
   if (item.reference_type && item.reference_id) return `${item.reference_type.replace(/_/g, ' ')} · ${truncateMiddle(item.reference_id, 8, 4)}`;
   return 'Workspace event';
+}
+
+function buildExecutionFlowHref(item: AutomationTriggerExecutionListItem, workspaceSlug?: string) {
+  if (item.reference_type === 'automation_rule' && item.reference_id) {
+    return buildAutomationFlowsPath(workspaceSlug, {
+      show_rule: item.reference_id,
+      show_rule_title: item.reference_title || item.binding_title || item.trigger_title || 'Flow',
+    });
+  }
+  if (item.manage_path) return item.manage_path;
+  if (item.reference_id) {
+    return buildAutomationFlowsPath(workspaceSlug, { target_id: item.reference_id });
+  }
+  return undefined;
 }
 
 function runTargetLabel(run: AgentRun) {
@@ -413,8 +440,7 @@ function SummaryCard({
 
 function StatusBadge({ status }: { status: string }) {
   return (
-    <Badge variant="outline" className={cn('gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-medium', STATUS_STYLES[status] ?? STATUS_STYLES.queued)}>
-      <span className="h-1.5 w-1.5 rounded-full bg-current" />
+    <Badge variant="outline" className={cn('rounded-full px-2.5 py-0.5 text-[11px] font-medium', STATUS_STYLES[status] ?? STATUS_STYLES.queued)}>
       {SHORT_STATUS_LABELS[status] ?? status}
     </Badge>
   );
@@ -562,28 +588,27 @@ function TimelineRow({
   agent,
   workspaceSlug,
   onOpenRun,
+  onOpenFlow,
 }: {
   item: AutomationTriggerExecutionListItem;
   agent?: Agent;
   workspaceSlug?: string;
   onOpenRun: (runId: string) => void;
+  onOpenFlow: (href: string) => void;
 }) {
   const duration = formatDuration(item.started_at, item.completed_at);
   const targetLabel = buildExecutionTargetLabel(item);
   const triggerLabel = buildExecutionTriggerLabel(item);
-  const flowHref = item.manage_path || (item.reference_id ? buildAutomationFlowsPath(workspaceSlug, { target_id: item.reference_id }) : undefined);
+  const flowHref = buildExecutionFlowHref(item, workspaceSlug);
   const canOpenRun = Boolean(item.run_id);
 
   return (
     <div className="grid grid-cols-[1.25rem_minmax(0,1fr)_auto] gap-3 px-4 py-3">
       <div className="relative flex justify-center">
         <span className={cn(
-          'mt-1 h-2.5 w-2.5 rounded-full ring-4 ring-background',
-          item.status === 'completed'
-            ? 'bg-emerald-500'
-            : item.status === 'failed'
-              ? 'bg-rose-500'
-              : 'bg-amber-500',
+          'mt-1 h-2.5 w-2.5 rounded-full bg-current ring-4 ring-background',
+          STATUS_DOT_STYLES[item.status] ?? STATUS_DOT_STYLES.queued,
+          item.status === 'running' && 'animate-pulse',
         )} />
       </div>
 
@@ -600,13 +625,14 @@ function TimelineRow({
             <>
               <span className="text-muted-foreground/60">via</span>
               {flowHref ? (
-                <a
-                  href={flowHref}
+                <button
+                  type="button"
+                  onClick={() => onOpenFlow(flowHref)}
                   className="inline-flex items-center gap-1 text-foreground underline decoration-border underline-offset-4 hover:text-primary"
                 >
                   {item.binding_title}
                   <ArrowUpRight01Icon className="h-3 w-3" />
-                </a>
+                </button>
               ) : (
                 <span className="text-foreground">{item.binding_title}</span>
               )}
@@ -686,6 +712,10 @@ export function AutomationActivityPage({
     setSelectedRunId(runId);
     setDrawerOpen(true);
   }, []);
+
+  const openFlow = useCallback((href: string) => {
+    void navigate({ to: href });
+  }, [navigate]);
 
   const { data: agents = [] } = useAgents(workspaceId);
   const overviewQuery = useAutomationOverview(workspaceId, true);
@@ -1073,6 +1103,7 @@ export function AutomationActivityPage({
                               agent={agentById.get(item.agent_id)}
                               workspaceSlug={workspace?.slug}
                               onOpenRun={openRun}
+                              onOpenFlow={openFlow}
                             />
                           ))}
                         </div>

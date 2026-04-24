@@ -5,6 +5,7 @@ import "time"
 const (
 	AgentTemplateRuntimeKindNativeSDK = "native_sdk"
 	AgentTemplateTypeReleaseNotes     = "release_notes_writer"
+	AgentTemplateTypeCompetitiveIntel = "competitive_intelligence_digest"
 )
 
 type AgentTemplate struct {
@@ -22,6 +23,8 @@ type AgentTemplate struct {
 	AllowedTools          JSONBlob       `json:"allowed_tools" gorm:"type:jsonb;not null;default:'[]'"`
 	AllowedCommands       JSONBlob       `json:"allowed_commands" gorm:"type:jsonb;not null;default:'[]'"`
 	AllowedTargets        JSONBlob       `json:"allowed_targets" gorm:"type:jsonb;not null;default:'[]'"`
+	RequiredContext       JSONBlob       `json:"required_context" gorm:"type:jsonb;not null;default:'[]'"`
+	StarterFlows          JSONBlob       `json:"starter_flows" gorm:"type:jsonb;not null;default:'[]'"`
 	ApprovalMode          string         `json:"approval_mode" gorm:"not null;default:'preset_default'"`
 	DefaultInvocationMode string         `json:"default_invocation_mode" gorm:"not null;default:'autonomous'"`
 	MonthlyTokenBudget    *int           `json:"monthly_token_budget,omitempty"`
@@ -54,6 +57,8 @@ type CreateAgentFromTemplateOverrides struct {
 }
 
 type CreateAgentFromTemplateFlow struct {
+	FlowKey           string   `json:"flow_key,omitempty"`
+	FlowInput         JSONBlob `json:"flow_input,omitempty"`
 	RepositoryID      string   `json:"repository_id,omitempty"`
 	RepoFullName      string   `json:"repo_full_name,omitempty"`
 	ReleaseKinds      []string `json:"release_kinds,omitempty"`

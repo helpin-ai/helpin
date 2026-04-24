@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   ArrowRight01Icon,
   Clock03Icon,
+  FilterIcon,
   GitBranchIcon,
   GitPullRequestIcon,
   MoreHorizontalIcon,
@@ -48,6 +49,8 @@ export type AutomationFlowsSearch = {
   template_description?: string;
   show_trigger?: string;
   show_trigger_title?: string;
+  show_rule?: string;
+  show_rule_title?: string;
   create_event_rule?: boolean;
   trigger_type?: string;
   agent_id?: string;
@@ -824,12 +827,11 @@ function deriveFlowState(rule: AutomationRule, healthItem?: AutomationInventoryI
   return 'draft';
 }
 
-const FLOW_STATE_STYLES: Record<FlowState, { pill: string; dot: string; label: string; live?: boolean }> = {
+const FLOW_STATE_STYLES: Record<FlowState, { pill: string; dot: string; label: string }> = {
   running: {
-    pill: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-    dot: 'bg-emerald-500',
+    pill: 'border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400',
+    dot: 'bg-current',
     label: 'Running',
-    live: true,
   },
   paused: {
     pill: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400',
@@ -851,15 +853,10 @@ const FLOW_STATE_STYLES: Record<FlowState, { pill: string; dot: string; label: s
 function FlowStatePill({ state }: { state: FlowState }) {
   const style = FLOW_STATE_STYLES[state];
   return (
-    <span className={cn('inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium', style.pill)}>
-      <span className="relative h-1.5 w-1.5">
-        {style.live && (
-          <span className={cn('absolute inset-0 animate-ping rounded-full opacity-60', style.dot)} />
-        )}
-        <span className={cn('absolute inset-0 rounded-full', style.dot)} />
-      </span>
+    <Badge variant="outline" className={cn('gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-medium', style.pill)}>
+      <span className={cn('h-1.5 w-1.5 rounded-full', style.dot)} />
       {style.label}
-    </span>
+    </Badge>
   );
 }
 
@@ -881,6 +878,37 @@ function FlowStat({ value, label, sub, tone = 'neutral' }: { value: number | und
       </div>
       <div className="mt-1.5 text-[11px] text-muted-foreground">{label}</div>
       {sub && <div className="font-mono text-[10px] text-muted-foreground/70">{sub}</div>}
+    </div>
+  );
+}
+
+function FlowFilterBar({
+  value,
+  count,
+  onClear,
+}: {
+  value: string;
+  count: number;
+  onClear: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-border/70 bg-muted/30 px-3 py-3 sm:flex-row sm:items-center">
+      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+        <FilterIcon className="h-3.5 w-3.5" />
+        Flow filter
+      </div>
+      <Input
+        value={value}
+        readOnly
+        className="h-8 flex-1 bg-background text-xs"
+        aria-label="Active flow filter"
+      />
+      <span className="text-xs text-muted-foreground">
+        {count} {count === 1 ? 'match' : 'matches'}
+      </span>
+      <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={onClear}>
+        Clear
+      </Button>
     </div>
   );
 }
@@ -1838,8 +1866,12 @@ export function AutomationFlowsPage({
     return map;
   }, [inventoryQuery.data?.items]);
   const highlightedFlows = useMemo(
-    () => search.show_trigger ? authoredFlows.filter((rule) => rule.trigger_type === search.show_trigger) : authoredFlows,
-    [authoredFlows, search.show_trigger],
+    () => {
+      if (search.show_rule) return authoredFlows.filter((rule) => rule.id === search.show_rule);
+      if (search.show_trigger) return authoredFlows.filter((rule) => rule.trigger_type === search.show_trigger);
+      return authoredFlows;
+    },
+    [authoredFlows, search.show_rule, search.show_trigger],
   );
   const teamNamesById = useMemo(() => new Map(teams.map((t) => [t.id, t.name])), [teams]);
   const [activeTab, setActiveTab] = useState<string>('all');
@@ -1868,6 +1900,18 @@ export function AutomationFlowsPage({
     if (activeTab === '__uncategorized__') return highlightedFlows.filter((r) => !r.team_id || !teamNamesById.has(r.team_id));
     return highlightedFlows.filter((r) => r.team_id === activeTab);
   }, [activeTab, highlightedFlows, teamNamesById]);
+  const activeFlowFilterLabel = useMemo(() => {
+    if (search.show_rule) {
+      return search.show_rule_title
+        || authoredFlows.find((rule) => rule.id === search.show_rule)?.name
+        || search.show_rule;
+    }
+    if (search.show_trigger) {
+      return search.show_trigger_title || triggerLabel(search.show_trigger);
+    }
+    return '';
+  }, [authoredFlows, search.show_rule, search.show_rule_title, search.show_trigger, search.show_trigger_title]);
+  const hasFlowFilter = Boolean(search.show_rule || search.show_trigger);
 
   const loading = settingsQuery.isLoading || inventoryQuery.isLoading || rulesQuery.isLoading || tasksQuery.isLoading || epicsQuery.isLoading || repositoriesQuery.isLoading;
 
@@ -1879,7 +1923,7 @@ export function AutomationFlowsPage({
   }, [inventoryQuery, rulesQuery]);
 
   const resetComposerSearch = useCallback(() => {
-    if (search.template || search.trigger_type || search.create_event_rule || search.workflow || search.show_trigger || search.show_trigger_title || search.template_title || search.template_description || search.agent_id || search.repo_full_name || search.branch || search.base_branch || search.tag_name || search.conclusion || search.target_mode || search.target_id) {
+    if (search.template || search.trigger_type || search.create_event_rule || search.workflow || search.show_trigger || search.show_trigger_title || search.show_rule || search.show_rule_title || search.template_title || search.template_description || search.agent_id || search.repo_full_name || search.branch || search.base_branch || search.tag_name || search.conclusion || search.target_mode || search.target_id) {
       onSearchChange({
         workflow: undefined,
         template: undefined,
@@ -1887,6 +1931,8 @@ export function AutomationFlowsPage({
         template_description: undefined,
         show_trigger: search.show_trigger,
         show_trigger_title: search.show_trigger_title,
+        show_rule: search.show_rule,
+        show_rule_title: search.show_rule_title,
         create_event_rule: undefined,
         trigger_type: undefined,
         agent_id: undefined,
@@ -1900,6 +1946,15 @@ export function AutomationFlowsPage({
       });
     }
   }, [onSearchChange, search]);
+
+  const clearFlowFilter = useCallback(() => {
+    onSearchChange({
+      show_rule: undefined,
+      show_rule_title: undefined,
+      show_trigger: undefined,
+      show_trigger_title: undefined,
+    });
+  }, [onSearchChange]);
 
   useEffect(() => {
     if (loading || appliedSearchSignature === searchSignature) return;
@@ -2069,6 +2124,14 @@ export function AutomationFlowsPage({
         </div>
       ) : (
         <>
+          {hasFlowFilter && (
+            <FlowFilterBar
+              value={activeFlowFilterLabel}
+              count={highlightedFlows.length}
+              onClear={clearFlowFilter}
+            />
+          )}
+
           {/* Category tabs */}
           <div className="flex items-center gap-1">
             <button
@@ -2119,9 +2182,11 @@ export function AutomationFlowsPage({
             )) : (
               <div className="rounded-lg border border-dashed border-border/70 px-6 py-12 text-center">
                 <PlayIcon className="mx-auto mb-3 h-6 w-6 text-muted-foreground" />
-                <p className="text-sm font-medium">No automation flows yet</p>
+                <p className="text-sm font-medium">{hasFlowFilter ? 'No flows match this filter' : 'No automation flows yet'}</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Create a flow to connect events to agents and workflow actions.
+                  {hasFlowFilter
+                    ? 'Clear the filter to return to all automation flows.'
+                    : 'Create a flow to connect events to agents and workflow actions.'}
                 </p>
               </div>
             )}

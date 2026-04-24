@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -10,7 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestListAgentTemplatesSeedsReleaseNotesWriter(t *testing.T) {
+func TestListAgentTemplatesSeedsSystemTemplates(t *testing.T) {
 	db := newAgentServiceTestDB(t)
 	addAgentTemplateTable(t, db)
 
@@ -45,6 +46,58 @@ func TestListAgentTemplatesSeedsReleaseNotesWriter(t *testing.T) {
 	}
 	if len(releaseNotes.Skills) != 1 || releaseNotes.Skills[0].Key != model.AgentTemplateTypeReleaseNotes {
 		t.Fatalf("expected release_notes_writer skill ref, got %+v", releaseNotes.Skills)
+	}
+	var requiredContext []string
+	if err := json.Unmarshal(releaseNotes.RequiredContext, &requiredContext); err != nil {
+		t.Fatalf("unmarshal required_context: %v", err)
+	}
+	if len(requiredContext) != 2 || requiredContext[0] != "event.github.release.tag_name" || requiredContext[1] != "event.github.release.repo_full_name" {
+		t.Fatalf("expected release required context, got %v", requiredContext)
+	}
+	var starterFlows []map[string]any
+	if err := json.Unmarshal(releaseNotes.StarterFlows, &starterFlows); err != nil {
+		t.Fatalf("unmarshal starter_flows: %v", err)
+	}
+	if len(starterFlows) != 1 || starterFlows[0]["trigger_type"] != model.TriggerGitHubReleasePub {
+		t.Fatalf("expected github release starter flow, got %+v", starterFlows)
+	}
+
+	var competitiveIntel *model.AgentTemplate
+	for idx := range templates {
+		if templates[idx].Key == model.AgentTemplateTypeCompetitiveIntel {
+			competitiveIntel = &templates[idx]
+			break
+		}
+	}
+	if competitiveIntel == nil {
+		t.Fatalf("expected %q template, got %+v", model.AgentTemplateTypeCompetitiveIntel, templates)
+	}
+	if competitiveIntel.Name != "Competitive Intelligence Digest" {
+		t.Fatalf("expected Competitive Intelligence Digest template name, got %q", competitiveIntel.Name)
+	}
+	if len(competitiveIntel.Skills) != 1 || competitiveIntel.Skills[0].Key != model.AgentTemplateTypeCompetitiveIntel {
+		t.Fatalf("expected competitive_intelligence_digest skill ref, got %+v", competitiveIntel.Skills)
+	}
+	if competitiveIntel.SystemPrompt == nil || !strings.Contains(*competitiveIntel.SystemPrompt, "{{target_company}}") || !strings.Contains(*competitiveIntel.SystemPrompt, "{{raw_configuration_json}}") {
+		t.Fatalf("expected competitive template prompt placeholders, got %+v", competitiveIntel.SystemPrompt)
+	}
+	var competitiveTargets []string
+	if err := json.Unmarshal(competitiveIntel.AllowedTargets, &competitiveTargets); err != nil {
+		t.Fatalf("unmarshal competitive allowed targets: %v", err)
+	}
+	if len(competitiveTargets) != 1 || competitiveTargets[0] != "workspace" {
+		t.Fatalf("expected workspace target, got %v", competitiveTargets)
+	}
+	var competitiveFlows []map[string]any
+	if err := json.Unmarshal(competitiveIntel.StarterFlows, &competitiveFlows); err != nil {
+		t.Fatalf("unmarshal competitive starter_flows: %v", err)
+	}
+	if len(competitiveFlows) != 1 || competitiveFlows[0]["trigger_type"] != model.TriggerCron {
+		t.Fatalf("expected cron starter flow, got %+v", competitiveFlows)
+	}
+	fields, ok := competitiveFlows[0]["fields"].([]any)
+	if !ok || len(fields) == 0 {
+		t.Fatalf("expected competitive starter flow fields, got %+v", competitiveFlows[0]["fields"])
 	}
 }
 
@@ -150,6 +203,146 @@ func TestCreateAgentFromTemplateCreatesCustomAgentAndStarterFlow(t *testing.T) {
 	}
 }
 
+func TestCreateAgentFromCompetitiveIntelTemplateCreatesCronStarterFlow(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	addAgentTemplateTable(t, db)
+	addAutomationRuleTable(t, db)
+
+	agentRepo := repository.NewAgentRepository(db)
+	activitySvc := NewPMActivityService(repository.NewPMActivityRepository(db))
+	svc := (&AgentService{
+		agentRepo:   agentRepo,
+		activitySvc: activitySvc,
+	}).SetAgentTemplateRepository(repository.NewAgentTemplateRepository(db))
+	ruleEngine := NewAutomationRuleEngine(
+		repository.NewAutomationRuleRepository(db),
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	svc.SetRuleEngine(ruleEngine)
+
+	if err := svc.EnsureSystemTemplates(context.Background()); err != nil {
+		t.Fatalf("EnsureSystemTemplates returned error: %v", err)
+	}
+	template, err := svc.agentTemplateRepo.GetByKey(context.Background(), nil, model.AgentTemplateTypeCompetitiveIntel)
+	if err != nil {
+		t.Fatalf("GetByKey returned error: %v", err)
+	}
+	if template == nil {
+		t.Fatal("expected seeded competitive intel template")
+	}
+
+	flowInput := model.JSONBlob(`{
+		"target_company": "Usermaven",
+		"target_domain": "usermaven.com",
+		"competitors": ["jasper.ai", "writesonic.ai"],
+		"schedule_preset": "daily",
+		"lookback_days": 7,
+		"destination_team_id": "team-marketing",
+		"destination_state_id": "state-todo"
+	}`)
+	result, err := svc.CreateAgentFromTemplate(context.Background(), "ws-test", template.ID, model.CreateAgentFromTemplateRequest{
+		CreateFlow: true,
+		Flow: &model.CreateAgentFromTemplateFlow{
+			FlowKey:   "competitive_intel_scheduled",
+			FlowInput: flowInput,
+		},
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("CreateAgentFromTemplate returned error: %v", err)
+	}
+	if result.Agent == nil {
+		t.Fatal("expected created agent")
+	}
+	if result.Agent.SourceTemplateKey != model.AgentTemplateTypeCompetitiveIntel {
+		t.Fatalf("expected source_template_key %q, got %q", model.AgentTemplateTypeCompetitiveIntel, result.Agent.SourceTemplateKey)
+	}
+	if result.Agent.SystemPrompt == nil || !strings.Contains(*result.Agent.SystemPrompt, "You are a competitive intelligence agent for Usermaven") || !strings.Contains(*result.Agent.SystemPrompt, "Do not plan or perform discovery of configuration variables") || !strings.Contains(*result.Agent.SystemPrompt, `- competitors: jasper.ai, writesonic.ai`) || !strings.Contains(*result.Agent.SystemPrompt, `"target_company": "Usermaven"`) || !strings.Contains(*result.Agent.SystemPrompt, `"schedule_preset": "daily"`) || !strings.Contains(*result.Agent.SystemPrompt, `"destination_team_id": "team-marketing"`) || strings.Contains(*result.Agent.SystemPrompt, "{{target_company}}") {
+		t.Fatalf("expected configured system prompt, got %+v", result.Agent.SystemPrompt)
+	}
+	var allowedTargets []string
+	if err := json.Unmarshal(result.Agent.AllowedTargets, &allowedTargets); err != nil {
+		t.Fatalf("unmarshal allowed targets: %v", err)
+	}
+	if len(allowedTargets) != 1 || allowedTargets[0] != "workspace" {
+		t.Fatalf("expected workspace target, got %v", allowedTargets)
+	}
+	if result.Flow == nil {
+		t.Fatal("expected starter flow")
+	}
+	if result.Flow.TriggerType != model.TriggerCron {
+		t.Fatalf("expected cron trigger, got %q", result.Flow.TriggerType)
+	}
+
+	var triggerCfg model.TriggerConfigCron
+	if err := json.Unmarshal(result.Flow.TriggerConfig, &triggerCfg); err != nil {
+		t.Fatalf("unmarshal trigger config: %v", err)
+	}
+	if triggerCfg.Preset != "daily" {
+		t.Fatalf("expected daily preset, got %+v", triggerCfg)
+	}
+
+	var actionCfg model.ActionConfigRunAgent
+	if err := json.Unmarshal(result.Flow.ActionConfig, &actionCfg); err != nil {
+		t.Fatalf("unmarshal action config: %v", err)
+	}
+	if actionCfg.AgentID != result.Agent.ID {
+		t.Fatalf("expected flow agent_id %q, got %q", result.Agent.ID, actionCfg.AgentID)
+	}
+	if actionCfg.TargetType != "workspace" || actionCfg.TargetID != "ws-test" {
+		t.Fatalf("expected workspace target ws-test, got %q/%q", actionCfg.TargetType, actionCfg.TargetID)
+	}
+	if actionCfg.AdditionalContext != nil && strings.TrimSpace(*actionCfg.AdditionalContext) != "" {
+		t.Fatalf("expected no starter-flow additional context, got %+v", actionCfg.AdditionalContext)
+	}
+}
+
+func TestCreateAgentFromCompetitiveIntelTemplateValidatesFlowInput(t *testing.T) {
+	tests := []struct {
+		name      string
+		flowInput model.JSONBlob
+		wantError string
+	}{
+		{
+			name:      "missing target company",
+			flowInput: model.JSONBlob(`{"destination_team_id":"team-1"}`),
+			wantError: "flow.flow_input.target_company is required",
+		},
+		{
+			name:      "missing destination team",
+			flowInput: model.JSONBlob(`{"target_company":"Usermaven"}`),
+			wantError: "flow.flow_input.destination_team_id is required",
+		},
+		{
+			name:      "invalid lookback",
+			flowInput: model.JSONBlob(`{"target_company":"Usermaven","destination_team_id":"team-1","schedule_preset":"weekly","lookback_days":60}`),
+			wantError: "flow.flow_input.lookback_days must be between 1 and 30",
+		},
+		{
+			name:      "invalid schedule preset",
+			flowInput: model.JSONBlob(`{"target_company":"Usermaven","destination_team_id":"team-1","schedule_preset":"monthly"}`),
+			wantError: "flow.flow_input.schedule_preset must be daily or weekly",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := competitiveIntelInputFromTemplateFlow(&model.CreateAgentFromTemplateFlow{
+				FlowKey:   "competitive_intel_scheduled",
+				FlowInput: tt.flowInput,
+			})
+			if err == nil || err.Error() != tt.wantError {
+				t.Fatalf("expected error %q, got %v", tt.wantError, err)
+			}
+		})
+	}
+}
+
 func TestCreateAgentFromTemplateAppliesDrawerOverrides(t *testing.T) {
 	db := newAgentServiceTestDB(t)
 	addAgentTemplateTable(t, db)
@@ -246,6 +439,8 @@ func addAgentTemplateTable(t *testing.T, db *gorm.DB) {
 		allowed_tools BLOB NOT NULL DEFAULT '[]',
 		allowed_commands BLOB NOT NULL DEFAULT '[]',
 		allowed_targets BLOB NOT NULL DEFAULT '[]',
+		required_context BLOB NOT NULL DEFAULT '[]',
+		starter_flows BLOB NOT NULL DEFAULT '[]',
 		approval_mode TEXT NOT NULL DEFAULT 'preset_default',
 		default_invocation_mode TEXT NOT NULL DEFAULT 'autonomous',
 		monthly_token_budget INTEGER,

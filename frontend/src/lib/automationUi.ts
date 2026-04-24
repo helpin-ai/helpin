@@ -14,6 +14,8 @@ export type AutomationFlowsSearch = {
   template_description?: string;
   show_trigger?: string;
   show_trigger_title?: string;
+  show_rule?: string;
+  show_rule_title?: string;
   create_event_rule?: boolean;
   trigger_type?: string;
   agent_id?: string;

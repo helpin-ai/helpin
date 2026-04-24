@@ -32,6 +32,7 @@ import { automationService } from '@/lib/services/automationService';
 import { agentService } from '@/lib/services/agentService';
 import { gitService } from '@/lib/services/gitService';
 import { docsService } from '@/lib/services/docsService';
+import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
 import { buildAutomationActivityPath, buildAutomationFlowsPath } from '@/lib/automationUi';
 import type {
@@ -60,6 +61,7 @@ import type {
   SkillCatalogResponse,
   ToolCatalogResponse,
   UpdateAgentRequest,
+  WorkflowWithStates,
 } from '@/lib/pmTypes';
 import type { DocsCollection, DocsSpace } from '@/lib/docsTypes';
 import { Button } from '@/components/ui/button';
@@ -228,6 +230,31 @@ const TEMPLATE_RELEASE_KIND_OPTIONS = [
 ] as const;
 
 const NONE_OPTION_VALUE = '__none__';
+const COMPETITIVE_INTEL_TEMPLATE_KEY = 'competitive_intelligence_digest';
+const COMPETITIVE_INTEL_FLOW_KEY = 'competitive_intel_scheduled';
+const COMPETITIVE_INTEL_SYSTEM_PROMPT_TEMPLATE = `You are a competitive intelligence agent for {{target_company}}.
+
+Configured digest:
+- target_company: {{target_company}}
+- target_domain: {{target_domain}}
+- competitors: {{competitors}}
+- lookback_days: {{lookback_days}}
+- destination_team_id: {{destination_team_id}}
+- destination_state_id: {{destination_state_id}}
+- schedule_preset: {{schedule_preset}}
+
+Treat these configured values as already resolved and authoritative. Do not plan or perform discovery of configuration variables, workspace context, teams, stages, cadence, or lookback settings.
+
+Use the configured competitor list when it is not empty. If no competitors are configured, discover competitors with web search and cite sources.
+
+Create exactly one marketing digest task with create_task. Pass destination_team_id directly as team_id. Pass destination_state_id directly as state_id only when it is configured; otherwise let the team default stage apply.
+
+Raw configuration:
+{{raw_configuration_json}}`;
+const COMPETITIVE_INTEL_SCHEDULE_OPTIONS = [
+  { value: 'daily', label: 'Daily' },
+  { value: 'weekly', label: 'Weekly' },
+] as const;
 
 // ---------------------------------------------------------------------------
 // Form helpers
@@ -263,6 +290,16 @@ interface ReleaseNotesTemplateFormData {
   tag_pattern: string;
   space_id: string;
   collection_id: string;
+}
+
+interface CompetitiveIntelTemplateFormData {
+  target_company: string;
+  target_domain: string;
+  competitors_text: string;
+  schedule_preset: 'daily' | 'weekly';
+  lookback_days: string;
+  destination_team_id: string;
+  destination_state_id: string;
 }
 
 interface TemplateDraft {
@@ -708,6 +745,72 @@ function buildTemplateAgentForm(template: AgentTemplate): AgentFormData {
   };
 }
 
+function competitiveIntelCompetitorsFromText(value: string) {
+  return value
+    .split(/\r?\n|,/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function renderCompetitiveIntelSystemPrompt(templatePrompt: string | undefined, form: CompetitiveIntelTemplateFormData) {
+  const competitors = competitiveIntelCompetitorsFromText(form.competitors_text);
+  const targetDomain = form.target_domain.trim() || 'not configured';
+  const competitorsLabel = competitors.length > 0 ? competitors.join(', ') : 'none configured; discover competitors during this run';
+  const destinationState = form.destination_state_id === NONE_OPTION_VALUE || !form.destination_state_id
+    ? "not configured; use the team's default stage"
+    : form.destination_state_id;
+  const rawConfig = {
+    target_company: form.target_company.trim(),
+    target_domain: form.target_domain.trim() || undefined,
+    competitors,
+    schedule_preset: form.schedule_preset,
+    lookback_days: Number.parseInt(form.lookback_days, 10),
+    destination_team_id: form.destination_team_id,
+    destination_state_id: form.destination_state_id === NONE_OPTION_VALUE ? undefined : form.destination_state_id,
+  };
+  const replacements: Record<string, string> = {
+    target_company: form.target_company.trim(),
+    target_domain: targetDomain,
+    competitors: competitorsLabel,
+    lookback_days: form.lookback_days,
+    destination_team_id: form.destination_team_id,
+    destination_state_id: destinationState,
+    schedule_preset: form.schedule_preset,
+    raw_configuration_json: `\`\`\`json\n${JSON.stringify(rawConfig, null, 2)}\n\`\`\``,
+  };
+  let rendered = (templatePrompt?.trim() || COMPETITIVE_INTEL_SYSTEM_PROMPT_TEMPLATE).trim();
+  for (const [key, value] of Object.entries(replacements)) {
+    rendered = rendered.split(`{{${key}}}`).join(value);
+  }
+  return rendered;
+}
+
+function templateTargetLabel(target: string) {
+  switch (target) {
+    case 'repository':
+      return 'Repository';
+    case 'task':
+      return 'Task';
+    case 'epic':
+      return 'Epic';
+    case 'workspace':
+      return 'Workspace';
+    default:
+      return target.replace(/_/g, ' ');
+  }
+}
+
+function templateTriggerLabel(triggerType: string) {
+  switch (triggerType) {
+    case 'github.release_published':
+      return 'GitHub release';
+    case 'cron':
+      return 'Schedule';
+    default:
+      return triggerType.replace(/_/g, ' ');
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Inline helper: label + optional tooltip
 // ---------------------------------------------------------------------------
@@ -727,6 +830,40 @@ function FieldLabel({ htmlFor, children, tooltip }: { htmlFor?: string; children
         </Tooltip>
       )}
     </div>
+  );
+}
+
+function DrawerConfigSection({
+  title,
+  description,
+  children,
+  defaultOpen = true,
+}: {
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+}) {
+  return (
+    <Collapsible.Root defaultOpen={defaultOpen} className="rounded-xl border border-border/60 bg-card">
+      <Collapsible.Trigger asChild>
+        <button type="button" className="group flex w-full items-center gap-3 px-4 py-3 text-left">
+          <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
+          <span className="flex-1 text-sm font-medium">{title}</span>
+          {description && (
+            <span className="hidden max-w-[20rem] truncate text-xs text-muted-foreground group-data-[state=open]:hidden sm:block">
+              {description}
+            </span>
+          )}
+        </button>
+      </Collapsible.Trigger>
+      <Collapsible.Content>
+        <div className="space-y-4 border-t border-border/60 p-4">
+          {description && <p className="text-xs leading-relaxed text-muted-foreground sm:hidden">{description}</p>}
+          {children}
+        </div>
+      </Collapsible.Content>
+    </Collapsible.Root>
   );
 }
 
@@ -1309,11 +1446,13 @@ export function AgentsPage() {
   const [agentUsageMap, setAgentUsageMap] = useState<Record<string, AgentTriggerUsageSummary | null>>({});
   const [agentTemplates, setAgentTemplates] = useState<AgentTemplate[]>([]);
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
+  const [templateSetupDialogOpen, setTemplateSetupDialogOpen] = useState(false);
   const [templateDraft, setTemplateDraft] = useState<TemplateDraft | null>(null);
   const [templateResourcesLoading, setTemplateResourcesLoading] = useState(false);
   const [repositories, setRepositories] = useState<GitRepository[]>([]);
   const [docsSpaces, setDocsSpaces] = useState<DocsSpace[]>([]);
   const [docsCollections, setDocsCollections] = useState<DocsCollection[]>([]);
+  const [competitiveTeamWorkflow, setCompetitiveTeamWorkflow] = useState<WorkflowWithStates | null>(null);
   const [templateForm, setTemplateForm] = useState<ReleaseNotesTemplateFormData>({
     repository_id: '',
     release_kind: 'minor',
@@ -1321,6 +1460,15 @@ export function AgentsPage() {
     tag_pattern: '',
     space_id: '',
     collection_id: NONE_OPTION_VALUE,
+  });
+  const [competitiveTemplateForm, setCompetitiveTemplateForm] = useState<CompetitiveIntelTemplateFormData>({
+    target_company: '',
+    target_domain: '',
+    competitors_text: '',
+    schedule_preset: 'weekly',
+    lookback_days: '7',
+    destination_team_id: '',
+    destination_state_id: NONE_OPTION_VALUE,
   });
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -1434,6 +1582,20 @@ export function AgentsPage() {
     setDocsCollections(res.data ?? []);
   }, [workspaceId]);
 
+  const loadCompetitiveTeamWorkflow = useCallback(async (teamId: string) => {
+    if (!workspaceId || !teamId) {
+      setCompetitiveTeamWorkflow(null);
+      return;
+    }
+    const res = await pmWorkflowService.resolveTeamWorkflow(workspaceId, teamId);
+    if (res.error) {
+      toast.error('Failed to load team stages', { description: res.error });
+      setCompetitiveTeamWorkflow(null);
+      return;
+    }
+    setCompetitiveTeamWorkflow(res.data ?? null);
+  }, [workspaceId]);
+
   const loadAgentUsage = useCallback(async (agentId: string) => {
     if (!workspaceId) return;
     setAgentUsageLoading(true);
@@ -1527,6 +1689,7 @@ export function AgentsPage() {
     setVersionDraftOpen(false);
     setVersionLabelDraft('');
     setVersionDescriptionDraft('');
+    setTemplateSetupDialogOpen(false);
     setForm(createEmptyCustomForm());
     setDialogOpen(true);
   };
@@ -1540,7 +1703,8 @@ export function AgentsPage() {
 
   const openCreateFromTemplateDrawer = async (template: AgentTemplate) => {
     setEditingAgent(null);
-    setTemplateDraft({ template, createStarterFlow: template.key === 'release_notes_writer' });
+    const defaultStarterFlowEnabled = template.starter_flows?.some((flow) => flow.default_enabled) ?? false;
+    setTemplateDraft({ template, createStarterFlow: defaultStarterFlowEnabled });
     setAgentUsage(null);
     setAdvancedOpen(false);
     setAutomationOpen(false);
@@ -1559,11 +1723,78 @@ export function AgentsPage() {
       space_id: '',
       collection_id: NONE_OPTION_VALUE,
     });
+    const defaultMarketingTeam = visibleTeams.find((team) => (
+      team.team_type === 'marketing'
+      || team.handle?.toLowerCase() === 'marketing'
+      || team.name.toLowerCase() === 'marketing'
+    ));
+    setCompetitiveTemplateForm({
+      target_company: '',
+      target_domain: '',
+      competitors_text: '',
+      schedule_preset: 'weekly',
+      lookback_days: '7',
+      destination_team_id: defaultMarketingTeam?.id ?? '',
+      destination_state_id: NONE_OPTION_VALUE,
+    });
+    setCompetitiveTeamWorkflow(null);
     setDocsCollections([]);
-    setDialogOpen(true);
+    if (template.starter_flows?.length) {
+      setTemplateSetupDialogOpen(true);
+    } else {
+      setDialogOpen(true);
+    }
     if (template.key === 'release_notes_writer' && (repositories.length === 0 || docsSpaces.length === 0)) {
       await loadTemplateResources();
     }
+    if (template.key === COMPETITIVE_INTEL_TEMPLATE_KEY && defaultMarketingTeam?.id) {
+      await loadCompetitiveTeamWorkflow(defaultMarketingTeam.id);
+    }
+  };
+
+  const cancelTemplateSetup = () => {
+    setTemplateSetupDialogOpen(false);
+    setTemplateDraft(null);
+    setDocsCollections([]);
+    setCompetitiveTeamWorkflow(null);
+  };
+
+  const handleTemplateSetupContinue = () => {
+    if (!templateDraft) return;
+    if (templateDraft.createStarterFlow && templateDraft.template.key === 'release_notes_writer') {
+      if (!templateForm.repository_id) {
+        toast.error('Select a repository');
+        return;
+      }
+      if (!templateForm.space_id) {
+        toast.error('Select a docs space');
+        return;
+      }
+    }
+    if (templateDraft.createStarterFlow && templateDraft.template.key === COMPETITIVE_INTEL_TEMPLATE_KEY) {
+      if (!competitiveTemplateForm.target_company.trim()) {
+        toast.error('Enter a target company');
+        return;
+      }
+      if (!competitiveTemplateForm.destination_team_id) {
+        toast.error('Select a task team');
+        return;
+      }
+      const lookbackDays = Number.parseInt(competitiveTemplateForm.lookback_days, 10);
+      if (!Number.isFinite(lookbackDays) || lookbackDays < 1 || lookbackDays > 30) {
+        toast.error('Lookback window must be between 1 and 30 days');
+        return;
+      }
+    }
+    if (templateDraft.createStarterFlow && templateDraft.template.key === COMPETITIVE_INTEL_TEMPLATE_KEY) {
+      const renderedPrompt = renderCompetitiveIntelSystemPrompt(templateDraft.template.system_prompt ?? form.system_prompt, competitiveTemplateForm);
+      setForm((current) => ({
+        ...current,
+        system_prompt: renderedPrompt,
+      }));
+    }
+    setTemplateSetupDialogOpen(false);
+    setDialogOpen(true);
   };
 
   const openEditDialog = (agent: Agent) => {
@@ -1649,8 +1880,55 @@ export function AgentsPage() {
             return;
           }
         }
+        if (templateDraft.createStarterFlow && templateDraft.template.key === COMPETITIVE_INTEL_TEMPLATE_KEY) {
+          if (!competitiveTemplateForm.target_company.trim()) {
+            toast.error('Enter a target company');
+            setSaving(false);
+            return;
+          }
+          if (!competitiveTemplateForm.destination_team_id) {
+            toast.error('Select a task team');
+            setSaving(false);
+            return;
+          }
+          const lookbackDays = Number.parseInt(competitiveTemplateForm.lookback_days, 10);
+          if (!Number.isFinite(lookbackDays) || lookbackDays < 1 || lookbackDays > 30) {
+            toast.error('Lookback window must be between 1 and 30 days');
+            setSaving(false);
+            return;
+          }
+        }
 
         const selectedRepo = repositories.find((repo) => repo.id === templateForm.repository_id);
+        const competitors = competitiveIntelCompetitorsFromText(competitiveTemplateForm.competitors_text);
+        const templateFlow = templateDraft.createStarterFlow
+          ? templateDraft.template.key === 'release_notes_writer'
+            ? {
+                repository_id: templateForm.repository_id,
+                repo_full_name: selectedRepo?.full_name,
+                release_kinds: templateForm.release_kind === 'any' ? undefined : [templateForm.release_kind],
+                include_prerelease: templateForm.include_prerelease,
+                tag_pattern: templateForm.tag_pattern.trim() || undefined,
+                space_id: templateForm.space_id,
+                collection_id: templateForm.collection_id === NONE_OPTION_VALUE ? undefined : templateForm.collection_id,
+              }
+            : templateDraft.template.key === COMPETITIVE_INTEL_TEMPLATE_KEY
+              ? {
+                  flow_key: COMPETITIVE_INTEL_FLOW_KEY,
+                  flow_input: {
+                    target_company: competitiveTemplateForm.target_company.trim(),
+                    target_domain: competitiveTemplateForm.target_domain.trim() || undefined,
+                    competitors,
+                    schedule_preset: competitiveTemplateForm.schedule_preset,
+                    lookback_days: Number.parseInt(competitiveTemplateForm.lookback_days, 10),
+                    destination_team_id: competitiveTemplateForm.destination_team_id,
+                    destination_state_id: competitiveTemplateForm.destination_state_id === NONE_OPTION_VALUE
+                      ? undefined
+                      : competitiveTemplateForm.destination_state_id,
+                  },
+                }
+              : undefined
+          : undefined;
         const payload = {
           name: form.name.trim(),
           team_id: form.team_id || undefined,
@@ -1672,17 +1950,7 @@ export function AgentsPage() {
             default_invocation_mode: form.default_invocation_mode,
           },
           create_flow: templateDraft.createStarterFlow,
-          flow: templateDraft.createStarterFlow
-            ? {
-                repository_id: templateForm.repository_id,
-                repo_full_name: selectedRepo?.full_name,
-                release_kinds: templateForm.release_kind === 'any' ? undefined : [templateForm.release_kind],
-                include_prerelease: templateForm.include_prerelease,
-                tag_pattern: templateForm.tag_pattern.trim() || undefined,
-                space_id: templateForm.space_id,
-                collection_id: templateForm.collection_id === NONE_OPTION_VALUE ? undefined : templateForm.collection_id,
-              }
-            : undefined,
+          flow: templateFlow,
         } satisfies CreateAgentFromTemplateRequest;
         const res = await automationService.createAgentFromTemplate(workspaceId, templateDraft.template.id, payload);
         if (!res.error) {
@@ -1889,9 +2157,60 @@ export function AgentsPage() {
   const availableRuntimeKinds = editingSystemAgent ? allowedRuntimeKindsForPreset(form.preset_key) : (['opencode', 'native_sdk'] as AgentRuntimeKind[]);
   const visibleProviderOptions = availableProvidersForRuntime(form.runtime_kind, providerOptions);
   const selectedProviderOption = visibleProviderOptions.find((option) => option.value === form.provider);
+  const templateStarterFlow = templateDraft?.template.starter_flows?.find((flow) => flow.key === 'github_release_notes')
+    ?? templateDraft?.template.starter_flows?.[0];
   const supportsReasoningEffort = form.runtime_kind === 'codex' && Boolean(selectedProviderOption?.supports_reasoning_effort);
   const supportsServiceTier = form.runtime_kind === 'codex' && Boolean(selectedProviderOption?.supports_service_tier);
   const codexUsesPresetCapabilities = form.runtime_kind === 'codex';
+  const isTemplateCreate = Boolean(templateDraft && !editingAgent);
+  const createDrawerTitle = editingAgent
+    ? 'Edit Custom Agent'
+    : templateDraft
+      ? `Create ${templateDraft.template.name}`
+      : 'Create Custom Agent';
+  const createDrawerSubtitle = editingAgent
+    ? 'Tune this custom agent directly. It is not pinned to a product preset.'
+    : templateDraft
+      ? 'Start from a packaged template, review the defaults, and create the agent with an optional automation flow.'
+      : 'Define a reusable agent with its own instructions, runtime, tools, targets, and limits.';
+  const selectedTeamName = visibleTeams.find((team) => team.id === form.team_id)?.name ?? 'Workspace-wide';
+  const starterFlowEnabled = Boolean(templateDraft?.createStarterFlow);
+  const createDrawerMissingRequirements = (() => {
+    const missing: string[] = [];
+    if (!form.name.trim()) {
+      missing.push('agent name');
+    }
+    if (starterFlowEnabled && templateDraft?.template.key === 'release_notes_writer') {
+      if (!templateForm.repository_id) missing.push('repository');
+      if (!templateForm.space_id) missing.push('docs space');
+    }
+    if (starterFlowEnabled && templateDraft?.template.key === COMPETITIVE_INTEL_TEMPLATE_KEY) {
+      if (!competitiveTemplateForm.target_company.trim()) missing.push('target company');
+      if (!competitiveTemplateForm.destination_team_id) missing.push('task team');
+      const lookbackDays = Number.parseInt(competitiveTemplateForm.lookback_days, 10);
+      if (!Number.isFinite(lookbackDays) || lookbackDays < 1 || lookbackDays > 30) {
+        missing.push('valid lookback window');
+      }
+    }
+    return missing;
+  })();
+  const createDrawerReady = createDrawerMissingRequirements.length === 0;
+  const createDrawerStatus = createDrawerReady
+    ? editingAgent
+      ? 'Ready to save'
+      : starterFlowEnabled
+        ? 'Ready to create agent and automation flow'
+        : 'Ready to create agent'
+    : `${createDrawerMissingRequirements.length} required ${createDrawerMissingRequirements.length === 1 ? 'field' : 'fields'} remaining: ${createDrawerMissingRequirements.join(', ')}`;
+  const createDrawerPrimaryLabel = saving
+    ? 'Saving...'
+    : editingAgent
+      ? 'Save Changes'
+      : starterFlowEnabled
+        ? 'Create Agent + Flow'
+        : isTemplateCreate
+          ? 'Create Agent'
+          : 'Create Custom Agent';
   const toolCatalogEntries = toolCatalog?.tools ?? [];
   const availableToolEntries = toolCatalogEntries.filter((tool) => !form.allowed_tools.includes(tool.name));
   const addTool = (toolName: string) => {
@@ -3053,6 +3372,336 @@ export function AgentsPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        open={templateSetupDialogOpen && Boolean(templateDraft)}
+        onOpenChange={(open) => {
+          if (!open) {
+            cancelTemplateSetup();
+          } else {
+            setTemplateSetupDialogOpen(true);
+          }
+        }}
+      >
+        <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-[820px]">
+          <DialogHeader>
+            <DialogTitle>{templateDraft ? `Set up ${templateDraft.template.name}` : 'Set up template'}</DialogTitle>
+            <DialogDescription>
+              Configure the template-specific values first. The next drawer is the normal custom agent editor.
+            </DialogDescription>
+          </DialogHeader>
+
+          {templateDraft?.template.key === 'release_notes_writer' && (
+            <div className="space-y-5 rounded-xl border border-border/60 bg-card p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold">{templateStarterFlow?.label ?? 'Starter flow'}</p>
+                  <p className="text-[11px] leading-relaxed text-muted-foreground">
+                    {templateStarterFlow?.description ?? 'Create a starter automation flow when this agent is created.'}
+                  </p>
+                </div>
+                <label className="flex shrink-0 items-center gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
+                  <span className="text-xs font-medium">Create recommended automation flow</span>
+                  <Switch
+                    checked={templateDraft.createStarterFlow}
+                    onCheckedChange={(checked) => setTemplateDraft((current) => (
+                      current ? { ...current, createStarterFlow: checked } : current
+                    ))}
+                  />
+                </label>
+              </div>
+
+              {templateDraft.createStarterFlow && (
+                <div className="space-y-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="grid gap-2">
+                      <FieldLabel htmlFor="template-setup-repository">Repository</FieldLabel>
+                      <Select
+                        value={templateForm.repository_id || undefined}
+                        onValueChange={(value) => setTemplateForm((current) => ({ ...current, repository_id: value }))}
+                      >
+                        <SelectTrigger id="template-setup-repository">
+                          <SelectValue placeholder={templateResourcesLoading ? 'Loading repositories...' : 'Select a repository'} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {repositories.map((repo) => (
+                            <SelectItem key={repo.id} value={repo.id}>
+                              {repo.full_name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="grid gap-2">
+                      <FieldLabel htmlFor="template-setup-release-kind">Release type</FieldLabel>
+                      <Select
+                        value={templateForm.release_kind}
+                        onValueChange={(value: ReleaseNotesTemplateFormData['release_kind']) => {
+                          setTemplateForm((current) => ({ ...current, release_kind: value }));
+                        }}
+                      >
+                        <SelectTrigger id="template-setup-release-kind">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {TEMPLATE_RELEASE_KIND_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                    <div className="grid gap-2">
+                      <FieldLabel htmlFor="template-setup-tag-pattern">Tag pattern</FieldLabel>
+                      <Input
+                        id="template-setup-tag-pattern"
+                        value={templateForm.tag_pattern}
+                        onChange={(event) => setTemplateForm((current) => ({ ...current, tag_pattern: event.target.value }))}
+                        placeholder="Optional, e.g. v*"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5">
+                      <div className="space-y-0.5">
+                        <p className="text-sm font-medium">Prereleases</p>
+                        <p className="text-[11px] text-muted-foreground">Include beta and rc tags</p>
+                      </div>
+                      <Switch
+                        checked={templateForm.include_prerelease}
+                        onCheckedChange={(checked) => setTemplateForm((current) => ({ ...current, include_prerelease: checked }))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="grid gap-2">
+                      <FieldLabel htmlFor="template-setup-space">Docs space</FieldLabel>
+                      <Select
+                        value={templateForm.space_id || undefined}
+                        onValueChange={(value) => {
+                          setTemplateForm((current) => ({
+                            ...current,
+                            space_id: value,
+                            collection_id: NONE_OPTION_VALUE,
+                          }));
+                          void loadCollectionsForSpace(value);
+                        }}
+                      >
+                        <SelectTrigger id="template-setup-space">
+                          <SelectValue placeholder={templateResourcesLoading ? 'Loading spaces...' : 'Select a docs space'} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {docsSpaces.map((space) => (
+                            <SelectItem key={space.id} value={space.id}>
+                              {space.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="grid gap-2">
+                      <FieldLabel htmlFor="template-setup-collection">Collection</FieldLabel>
+                      <Select
+                        value={templateForm.collection_id}
+                        onValueChange={(value) => setTemplateForm((current) => ({ ...current, collection_id: value }))}
+                        disabled={!templateForm.space_id}
+                      >
+                        <SelectTrigger id="template-setup-collection">
+                          <SelectValue placeholder={templateForm.space_id ? 'Optional collection' : 'Select a docs space first'} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={NONE_OPTION_VALUE}>Space root</SelectItem>
+                          {docsCollections.map((collection) => (
+                            <SelectItem key={collection.id} value={collection.id}>
+                              {collection.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {templateDraft?.template.key === COMPETITIVE_INTEL_TEMPLATE_KEY && (
+            <div className="space-y-5 rounded-xl border border-border/60 bg-card p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold">{templateStarterFlow?.label ?? 'Starter flow'}</p>
+                  <p className="text-[11px] leading-relaxed text-muted-foreground">
+                    {templateStarterFlow?.description ?? 'Create a starter automation flow when this agent is created.'}
+                  </p>
+                </div>
+                <label className="flex shrink-0 items-center gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
+                  <span className="text-xs font-medium">Create recommended automation flow</span>
+                  <Switch
+                    checked={templateDraft.createStarterFlow}
+                    onCheckedChange={(checked) => setTemplateDraft((current) => (
+                      current ? { ...current, createStarterFlow: checked } : current
+                    ))}
+                  />
+                </label>
+              </div>
+
+              {templateDraft.createStarterFlow && (
+                <div className="space-y-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="grid gap-2">
+                      <FieldLabel htmlFor="competitive-setup-target-company">Target company</FieldLabel>
+                      <Input
+                        id="competitive-setup-target-company"
+                        value={competitiveTemplateForm.target_company}
+                        onChange={(event) => setCompetitiveTemplateForm((current) => ({
+                          ...current,
+                          target_company: event.target.value,
+                        }))}
+                        placeholder="Usermaven"
+                      />
+                    </div>
+
+                    <div className="grid gap-2">
+                      <FieldLabel htmlFor="competitive-setup-target-domain">Target domain</FieldLabel>
+                      <Input
+                        id="competitive-setup-target-domain"
+                        value={competitiveTemplateForm.target_domain}
+                        onChange={(event) => setCompetitiveTemplateForm((current) => ({
+                          ...current,
+                          target_domain: event.target.value,
+                        }))}
+                        placeholder="usermaven.com"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <FieldLabel htmlFor="competitive-setup-competitors">Known competitors</FieldLabel>
+                    <Textarea
+                      id="competitive-setup-competitors"
+                      value={competitiveTemplateForm.competitors_text}
+                      onChange={(event) => setCompetitiveTemplateForm((current) => ({
+                        ...current,
+                        competitors_text: event.target.value,
+                      }))}
+                      placeholder={'jasper.ai\nwritesonic.ai'}
+                      className="min-h-[92px]"
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      Optional. Use one domain or company per line; if empty, the agent discovers competitors during each run.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-4">
+                    <div className="grid gap-2">
+                      <FieldLabel htmlFor="competitive-setup-cadence">Run cadence</FieldLabel>
+                      <Select
+                        value={competitiveTemplateForm.schedule_preset}
+                        onValueChange={(value) => {
+                          setCompetitiveTemplateForm((current) => ({
+                            ...current,
+                            schedule_preset: value === 'daily' ? 'daily' : 'weekly',
+                          }));
+                        }}
+                      >
+                        <SelectTrigger id="competitive-setup-cadence">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {COMPETITIVE_INTEL_SCHEDULE_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="grid gap-2">
+                      <FieldLabel htmlFor="competitive-setup-lookback">Lookback days</FieldLabel>
+                      <Input
+                        id="competitive-setup-lookback"
+                        type="number"
+                        min={1}
+                        max={30}
+                        value={competitiveTemplateForm.lookback_days}
+                        onChange={(event) => setCompetitiveTemplateForm((current) => ({
+                          ...current,
+                          lookback_days: event.target.value,
+                        }))}
+                      />
+                    </div>
+
+                    <div className="grid gap-2">
+                      <FieldLabel htmlFor="competitive-setup-team">Task team</FieldLabel>
+                      <Select
+                        value={competitiveTemplateForm.destination_team_id || undefined}
+                        onValueChange={(value) => {
+                          setCompetitiveTemplateForm((current) => ({
+                            ...current,
+                            destination_team_id: value,
+                            destination_state_id: NONE_OPTION_VALUE,
+                          }));
+                          void loadCompetitiveTeamWorkflow(value);
+                        }}
+                      >
+                        <SelectTrigger id="competitive-setup-team">
+                          <SelectValue placeholder="Select a team" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {visibleTeams.map((team) => (
+                            <SelectItem key={team.id} value={team.id}>
+                              {team.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="grid gap-2">
+                      <FieldLabel htmlFor="competitive-setup-state">Task stage</FieldLabel>
+                      <Select
+                        value={competitiveTemplateForm.destination_state_id}
+                        onValueChange={(value) => setCompetitiveTemplateForm((current) => ({
+                          ...current,
+                          destination_state_id: value,
+                        }))}
+                        disabled={!competitiveTemplateForm.destination_team_id}
+                      >
+                        <SelectTrigger id="competitive-setup-state">
+                          <SelectValue placeholder={competitiveTemplateForm.destination_team_id ? 'Default stage' : 'Select a team first'} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={NONE_OPTION_VALUE}>Team default</SelectItem>
+                          {(competitiveTeamWorkflow?.states ?? []).map((state) => (
+                            <SelectItem key={state.id} value={state.id}>
+                              {state.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={cancelTemplateSetup}>
+              Back
+            </Button>
+            <Button type="button" onClick={handleTemplateSetupContinue}>
+              Continue to agent settings
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* ---- Create / Edit drawer ---- */}
       <Sheet
         open={dialogOpen}
@@ -3061,134 +3710,247 @@ export function AgentsPage() {
           if (!open) {
             setToolPickerOpen(false);
             setSkillPickerOpen(false);
+            setTemplateSetupDialogOpen(false);
             setTemplateDraft(null);
             setDocsCollections([]);
           }
         }}
       >
-        <SheetContent side="right" className="w-full gap-0 p-0 data-[side=right]:w-[88vw] data-[side=right]:sm:max-w-[88vw] xl:data-[side=right]:w-[1100px] xl:data-[side=right]:max-w-[1100px]">
-          <SheetHeader className="border-b border-border/60 bg-muted/20 px-6 py-5">
-            <SheetTitle>{editingAgent ? 'Edit Custom Agent' : templateDraft ? 'New Agent From Template' : 'New Custom Agent'}</SheetTitle>
-            <SheetDescription className="max-w-3xl">
-              {templateDraft
-                ? 'Review the generated defaults, adjust anything you need, then create the agent.'
-                : 'Custom agents own their prompt, runtime, tools, targets, and automation settings directly. They do not inherit from or stay pinned to any preset family.'}
-            </SheetDescription>
+        <SheetContent side="right" className="w-full gap-0 p-0 data-[side=right]:w-[88vw] data-[side=right]:sm:max-w-[88vw] xl:data-[side=right]:w-[1280px] xl:data-[side=right]:max-w-[1280px]">
+          <SheetHeader className="border-b border-border/60 bg-muted/20 py-4 pl-6 pr-14">
+            <div className="flex items-center gap-4">
+              <AgentAvatar agent={editingAgent ?? undefined} className="h-11 w-11 shrink-0 rounded-none border-0 bg-transparent shadow-none" genericBare />
+              <div className="min-w-0 flex-1">
+                <SheetTitle className="text-lg">{createDrawerTitle}</SheetTitle>
+                <SheetDescription className="mt-0.5 max-w-3xl text-xs">
+                  {createDrawerSubtitle}
+                </SheetDescription>
+              </div>
+              {templateDraft && (
+                <Badge variant="secondary" className="shrink-0 text-[10px]">
+                  Template
+                </Badge>
+              )}
+            </div>
           </SheetHeader>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
-            <div className="space-y-4">
-              <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2">
-                <p className="text-sm font-medium">{templateDraft ? templateDraft.template.name : 'Custom agent'}</p>
-                <p className="text-xs text-muted-foreground">
-                  {templateDraft
-                    ? `${templateDraft.template.allowed_tools.length} tools, ${templateDraft.template.skills.length} skills, ${AGENT_RUNTIME_LABELS[templateDraft.template.runtime_kind] ?? templateDraft.template.runtime_kind} runtime. You can edit these defaults before creating.`
-                    : 'This is a fully custom agent. It does not inherit or track any preset family or preset version.'}
-                </p>
-              </div>
-
-            {/* ---- Basics ---- */}
-            <div className="space-y-2">
-              <FieldLabel htmlFor="agent-name">Name</FieldLabel>
-              <Input
-                id="agent-name"
-                value={form.name}
-                onChange={(e) => setForm((current) => ({ ...current, name: e.target.value }))}
-                placeholder="e.g. Code Reviewer, Sales Assistant"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <FieldLabel
-                htmlFor="agent-system-prompt"
-                tooltip="Instructions stored on the agent itself. For planners, keep the planning behavior here rather than in a separate planner-only field."
-              >
-                System instructions
-              </FieldLabel>
-              <Textarea
-                id="agent-system-prompt"
-                value={form.system_prompt}
-                onChange={(e) => setForm((current) => ({ ...current, system_prompt: e.target.value }))}
-                placeholder="Agent instructions"
-                rows={4}
-              />
-            </div>
-
-            {/* Team selector */}
-            {visibleTeams.length > 0 && (
-              <div className="space-y-2">
-                <FieldLabel tooltip="Assign this agent to a team so it only works on that team's tasks. Leave unassigned for workspace-wide access.">
-                  Team
-                </FieldLabel>
-                <Select
-                  value={form.team_id || '_none'}
-                  onValueChange={(value) => setForm((current) => ({ ...current, team_id: value === '_none' ? '' : value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="All teams (workspace-wide)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="_none">All teams (workspace-wide)</SelectItem>
-                    {visibleTeams.map((team) => (
-                      <SelectItem key={team.id} value={team.id}>
-                        {team.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <FieldLabel tooltip="Choose which target types this custom agent is allowed to run against.">
-                Allowed targets
-              </FieldLabel>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {CUSTOM_AGENT_TARGET_OPTIONS.map((target) => {
-                  const active = form.allowed_targets.includes(target.value);
-                  return (
-                    <button
-                      key={target.value}
-                      type="button"
-                      onClick={() => toggleTarget(target.value)}
-                      className={`rounded-lg border px-3 py-2 text-left transition-colors ${
-                        active
-                          ? 'border-primary bg-primary/10 text-foreground'
-                          : 'border-border bg-background hover:bg-muted/40'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-medium">{target.label}</span>
-                        {active ? <Badge variant="secondary" className="text-[10px]">Enabled</Badge> : null}
-                      </div>
-                      <p className="mt-1 text-[11px] text-muted-foreground">{target.description}</p>
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="text-[11px] text-muted-foreground">
-                Task and epic are the normal choices for planning agents. Add other targets only if the prompt and toolset are designed for them.
-              </p>
-            </div>
-
-            {templateDraft?.template.key === 'release_notes_writer' && (
-              <div className="rounded-xl border border-border/60 bg-card p-5">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="space-y-1">
-                    <p className="text-sm font-semibold">Starter flow</p>
-                    <p className="text-[11px] leading-relaxed text-muted-foreground">
-                      Create a GitHub release trigger and write release notes to Docs when this agent is created.
+            <div className="mx-auto w-full max-w-5xl space-y-4">
+              <section className="overflow-hidden rounded-xl border border-border/60 bg-card">
+                <div className="flex flex-wrap items-start justify-between gap-3 px-5 py-4">
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="text-lg font-semibold leading-none">{templateDraft ? templateDraft.template.name : form.name || 'Custom agent'}</h2>
+                      <Badge variant={templateDraft ? 'secondary' : 'outline'} className="text-[10px]">
+                        {templateDraft ? 'Template-based' : editingAgent ? 'Custom agent' : 'New custom'}
+                      </Badge>
+                      {starterFlowEnabled && (
+                        <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-[10px] text-emerald-700 dark:text-emerald-400">
+                          Automation flow
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {templateDraft?.template.description
+                        || 'A direct custom agent configuration owned by this workspace.'}
                     </p>
                   </div>
-                  <Switch
-                    checked={templateDraft.createStarterFlow}
-                    onCheckedChange={(checked) => setTemplateDraft((current) => (
-                      current ? { ...current, createStarterFlow: checked } : current
-                    ))}
+                  <div className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-right">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Status</p>
+                    <p className={cn('text-xs font-medium', createDrawerReady ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400')}>
+                      {createDrawerReady ? 'Ready' : `${createDrawerMissingRequirements.length} missing`}
+                    </p>
+                  </div>
+                </div>
+                <dl className="grid grid-cols-2 divide-x divide-y divide-border/40 border-t border-border/40 bg-muted/20 sm:grid-cols-3 lg:grid-cols-6">
+                  <div className="space-y-1 p-3">
+                    <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Runtime</dt>
+                    <dd className="truncate text-sm font-medium">{AGENT_RUNTIME_LABELS[form.runtime_kind] ?? form.runtime_kind}</dd>
+                  </div>
+                  <div className="space-y-1 p-3">
+                    <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Model</dt>
+                    <dd className="truncate text-sm font-medium" title={form.model}>{form.model || 'Auto'}</dd>
+                  </div>
+                  <div className="space-y-1 p-3">
+                    <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Mode</dt>
+                    <dd className="truncate text-sm font-medium">{INVOCATION_MODE_LABELS[form.default_invocation_mode]}</dd>
+                  </div>
+                  <div className="space-y-1 p-3">
+                    <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Tools · Skills</dt>
+                    <dd className="truncate text-sm font-medium">{form.allowed_tools.length} · {form.skills.length}</dd>
+                  </div>
+                  <div className="space-y-1 p-3">
+                    <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Targets</dt>
+                    <dd className="truncate text-sm font-medium" title={effectiveTargets.join(', ') || '—'}>
+                      {effectiveTargets.length > 0 ? effectiveTargets.map(templateTargetLabel).join(', ') : '—'}
+                    </dd>
+                  </div>
+                  <div className="space-y-1 p-3">
+                    <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Team</dt>
+                    <dd className="truncate text-sm font-medium" title={selectedTeamName}>{selectedTeamName}</dd>
+                  </div>
+                </dl>
+              </section>
+
+              <DrawerConfigSection title="Identity" description="Name, team, and operating scope">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <FieldLabel htmlFor="agent-name">Name</FieldLabel>
+                    <Input
+                      id="agent-name"
+                      value={form.name}
+                      onChange={(e) => setForm((current) => ({ ...current, name: e.target.value }))}
+                      placeholder="e.g. Code Reviewer, Sales Assistant"
+                    />
+                  </div>
+
+                  {visibleTeams.length > 0 && (
+                    <div className="space-y-2">
+                      <FieldLabel tooltip="Assign this agent to a team so it only works on that team's tasks. Leave unassigned for workspace-wide access.">
+                        Team
+                      </FieldLabel>
+                      <Select
+                        value={form.team_id || '_none'}
+                        onValueChange={(value) => setForm((current) => ({ ...current, team_id: value === '_none' ? '' : value }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="All teams (workspace-wide)" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="_none">All teams (workspace-wide)</SelectItem>
+                          {visibleTeams.map((team) => (
+                            <SelectItem key={team.id} value={team.id}>
+                              {team.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </div>
+              </DrawerConfigSection>
+
+              <DrawerConfigSection title="Behavior" description="Instructions and reusable skills">
+                <div className="space-y-2">
+                  <FieldLabel
+                    htmlFor="agent-system-prompt"
+                    tooltip="Instructions stored on the agent itself. For planners, keep the planning behavior here rather than in a separate planner-only field."
+                  >
+                    System instructions
+                  </FieldLabel>
+                  <Textarea
+                    id="agent-system-prompt"
+                    value={form.system_prompt}
+                    onChange={(e) => setForm((current) => ({ ...current, system_prompt: e.target.value }))}
+                    placeholder="Agent instructions"
+                    rows={5}
+                    className="resize-none"
                   />
                 </div>
 
-                {templateDraft.createStarterFlow && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-medium">Skills</p>
+                      <p className="text-[11px] text-muted-foreground">Behavioral instruction modules attached at runtime.</p>
+                    </div>
+                    <Popover open={skillPickerOpen} onOpenChange={setSkillPickerOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 gap-1.5 px-2 text-[11px]"
+                          disabled={availableSkillEntries.length === 0}
+                        >
+                          <PlusSignIcon className="h-3.5 w-3.5" />
+                          Add skill
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent
+                        align="end"
+                        className="w-[28rem] overflow-hidden p-0"
+                        onWheelCapture={(event) => event.stopPropagation()}
+                      >
+                        <Command>
+                          <CommandInput placeholder="Search skills..." />
+                          <CommandList className="max-h-72 overscroll-contain">
+                            <CommandEmpty>No more skills available.</CommandEmpty>
+                            <CommandGroup heading={`${availableSkillEntries.length} available`}>
+                              {availableSkillEntries.map((skill) => (
+                                <CommandItem
+                                  key={skill.key}
+                                  value={`${skill.key} ${skill.title} ${skill.description}`}
+                                  onSelect={() => addSkill(skill)}
+                                  className="cursor-pointer items-start py-2"
+                                >
+                                  <div className="min-w-0 flex-1 space-y-0.5">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-mono text-xs text-foreground">{skill.key}</span>
+                                      <Badge variant="outline" className="text-[10px]">
+                                        {skill.source_kind === 'built_in' ? 'built-in' : skill.source_kind}
+                                      </Badge>
+                                    </div>
+                                    <p className="text-xs leading-relaxed text-muted-foreground">{skill.description}</p>
+                                  </div>
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                  {form.skills.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {form.skills.map((ref) => {
+                        const entry = skillCatalogEntries.find((s) => s.key === ref.key);
+                        return (
+                          <Badge key={ref.key} variant="secondary" className="gap-1.5 pr-1 font-mono text-[11px]">
+                            <BookOpen01Icon className="h-3 w-3 text-muted-foreground" />
+                            <span>{ref.key}</span>
+                            {entry?.source_kind && (
+                              <span className="text-[9px] text-muted-foreground/70">{entry.source_kind === 'built_in' ? 'built-in' : entry.source_kind}</span>
+                            )}
+                            <button
+                              type="button"
+                              className="rounded-sm p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                              onClick={() => removeSkill(ref.key)}
+                              aria-label={`Remove ${ref.key}`}
+                            >
+                              <Cancel01Icon className="h-3 w-3" />
+                            </button>
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">No skills attached. Skills provide behavioral instructions to the agent at runtime.</p>
+                  )}
+                </div>
+              </DrawerConfigSection>
+
+            {false && templateDraft?.template.key === 'release_notes_writer' && (
+              <div className="rounded-xl border border-border/60 bg-card p-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold">{templateStarterFlow?.label ?? 'Starter flow'}</p>
+                    <p className="text-[11px] leading-relaxed text-muted-foreground">
+                      {templateStarterFlow?.description ?? 'Create a starter automation flow when this agent is created.'}
+                    </p>
+                  </div>
+                  <label className="flex shrink-0 items-center gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
+                    <span className="text-xs font-medium">Create recommended automation flow</span>
+                    <Switch
+                      checked={Boolean(templateDraft?.createStarterFlow)}
+                      onCheckedChange={(checked) => setTemplateDraft((current) => (
+                        current ? { ...current, createStarterFlow: checked } : current
+                      ))}
+                    />
+                  </label>
+                </div>
+
+                {templateDraft?.createStarterFlow && (
                   <div className="mt-5 space-y-4">
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div className="grid gap-2">
@@ -3296,6 +4058,168 @@ export function AgentsPage() {
                             {docsCollections.map((collection) => (
                               <SelectItem key={collection.id} value={collection.id}>
                                 {collection.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {false && templateDraft?.template.key === COMPETITIVE_INTEL_TEMPLATE_KEY && (
+              <div className="rounded-xl border border-border/60 bg-card p-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold">{templateStarterFlow?.label ?? 'Starter flow'}</p>
+                    <p className="text-[11px] leading-relaxed text-muted-foreground">
+                      {templateStarterFlow?.description ?? 'Create a starter automation flow when this agent is created.'}
+                    </p>
+                  </div>
+                  <label className="flex shrink-0 items-center gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
+                    <span className="text-xs font-medium">Create recommended automation flow</span>
+                    <Switch
+                      checked={Boolean(templateDraft?.createStarterFlow)}
+                      onCheckedChange={(checked) => setTemplateDraft((current) => (
+                        current ? { ...current, createStarterFlow: checked } : current
+                      ))}
+                    />
+                  </label>
+                </div>
+
+                {templateDraft?.createStarterFlow && (
+                  <div className="mt-5 space-y-4">
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="grid gap-2">
+                        <FieldLabel htmlFor="competitive-target-company">Target company</FieldLabel>
+                        <Input
+                          id="competitive-target-company"
+                          value={competitiveTemplateForm.target_company}
+                          onChange={(event) => setCompetitiveTemplateForm((current) => ({
+                            ...current,
+                            target_company: event.target.value,
+                          }))}
+                          placeholder="Usermaven"
+                        />
+                      </div>
+
+                      <div className="grid gap-2">
+                        <FieldLabel htmlFor="competitive-target-domain">Target domain</FieldLabel>
+                        <Input
+                          id="competitive-target-domain"
+                          value={competitiveTemplateForm.target_domain}
+                          onChange={(event) => setCompetitiveTemplateForm((current) => ({
+                            ...current,
+                            target_domain: event.target.value,
+                          }))}
+                          placeholder="usermaven.com"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid gap-2">
+                      <FieldLabel htmlFor="competitive-competitors">Known competitors</FieldLabel>
+                      <Textarea
+                        id="competitive-competitors"
+                        value={competitiveTemplateForm.competitors_text}
+                        onChange={(event) => setCompetitiveTemplateForm((current) => ({
+                          ...current,
+                          competitors_text: event.target.value,
+                        }))}
+                        placeholder={'jasper.ai\nwritesonic.ai'}
+                        className="min-h-[92px]"
+                      />
+                      <p className="text-[11px] text-muted-foreground">
+                        Optional. Use one domain or company per line; if empty, the agent discovers competitors during each run.
+                      </p>
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-4">
+                      <div className="grid gap-2">
+                        <FieldLabel htmlFor="competitive-cadence">Run cadence</FieldLabel>
+                        <Select
+                          value={competitiveTemplateForm.schedule_preset}
+                          onValueChange={(value) => {
+                            setCompetitiveTemplateForm((current) => ({
+                              ...current,
+                              schedule_preset: value === 'daily' ? 'daily' : 'weekly',
+                            }));
+                          }}
+                        >
+                          <SelectTrigger id="competitive-cadence">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {COMPETITIVE_INTEL_SCHEDULE_OPTIONS.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="grid gap-2">
+                        <FieldLabel htmlFor="competitive-lookback">Lookback days</FieldLabel>
+                        <Input
+                          id="competitive-lookback"
+                          type="number"
+                          min={1}
+                          max={30}
+                          value={competitiveTemplateForm.lookback_days}
+                          onChange={(event) => setCompetitiveTemplateForm((current) => ({
+                            ...current,
+                            lookback_days: event.target.value,
+                          }))}
+                        />
+                      </div>
+
+                      <div className="grid gap-2">
+                        <FieldLabel htmlFor="competitive-team">Task team</FieldLabel>
+                        <Select
+                          value={competitiveTemplateForm.destination_team_id || undefined}
+                          onValueChange={(value) => {
+                            setCompetitiveTemplateForm((current) => ({
+                              ...current,
+                              destination_team_id: value,
+                              destination_state_id: NONE_OPTION_VALUE,
+                            }));
+                            void loadCompetitiveTeamWorkflow(value);
+                          }}
+                        >
+                          <SelectTrigger id="competitive-team">
+                            <SelectValue placeholder="Select a team" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {visibleTeams.map((team) => (
+                              <SelectItem key={team.id} value={team.id}>
+                                {team.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="grid gap-2">
+                        <FieldLabel htmlFor="competitive-state">Task stage</FieldLabel>
+                        <Select
+                          value={competitiveTemplateForm.destination_state_id}
+                          onValueChange={(value) => setCompetitiveTemplateForm((current) => ({
+                            ...current,
+                            destination_state_id: value,
+                          }))}
+                          disabled={!competitiveTemplateForm.destination_team_id}
+                        >
+                          <SelectTrigger id="competitive-state">
+                            <SelectValue placeholder={competitiveTemplateForm.destination_team_id ? 'Default stage' : 'Select a team first'} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={NONE_OPTION_VALUE}>Team default</SelectItem>
+                            {(competitiveTeamWorkflow?.states ?? []).map((state) => (
+                              <SelectItem key={state.id} value={state.id}>
+                                {state.name}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -3441,211 +4365,131 @@ export function AgentsPage() {
               </div>
             </div>
 
-            <div className="rounded-xl border border-border/60 bg-muted/30 p-5">
-              <div className="space-y-1 mb-5">
-                <p className="text-sm font-semibold">Effective capabilities</p>
-                <p className="text-[11px] leading-relaxed text-muted-foreground">
-                  These are the effective defaults produced by this agent&apos;s runtime, mode, and policy settings.
-                </p>
-              </div>
+            <DrawerConfigSection title="Capabilities" description="Targets, tools, and supported modes" defaultOpen={false}>
+              <div className="grid gap-5 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <FieldLabel tooltip="Choose which target types this custom agent is allowed to run against.">
+                    Allowed targets
+                  </FieldLabel>
+                  <div className="grid gap-2">
+                    {CUSTOM_AGENT_TARGET_OPTIONS.map((target) => {
+                      const active = form.allowed_targets.includes(target.value);
+                      return (
+                        <button
+                          key={target.value}
+                          type="button"
+                          onClick={() => toggleTarget(target.value)}
+                          className={cn(
+                            'rounded-lg border px-3 py-2 text-left transition-colors',
+                            active
+                              ? 'border-primary bg-primary/10 text-foreground'
+                              : 'border-border bg-background hover:bg-muted/40',
+                          )}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-sm font-medium">{target.label}</span>
+                            {active ? <Badge variant="secondary" className="text-[10px]">Enabled</Badge> : null}
+                          </div>
+                          <p className="mt-1 text-[11px] text-muted-foreground">{target.description}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
 
-              <div className="grid gap-5 sm:grid-cols-3">
-                <div className="space-y-1.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Runtime</p>
-                  <p className="text-sm font-medium">{AGENT_RUNTIME_LABELS[form.runtime_kind] ?? form.runtime_kind}</p>
-                </div>
-                <div className="space-y-1.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Default mode</p>
-                  <p className="text-sm font-medium">{INVOCATION_MODE_LABELS[form.default_invocation_mode]}</p>
-                </div>
-                <div className="space-y-1.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Targets</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {effectiveTargets.length > 0 ? effectiveTargets.map((target) => (
-                      <Badge key={target} variant="outline" className="text-[11px]">
-                        {target}
-                      </Badge>
-                    )) : (
-                      <span className="text-sm text-muted-foreground">No targets</span>
-                    )}
+                <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Supported modes</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {supportedModes.map((mode) => (
+                        <Badge key={mode} variant="outline" className="text-[11px]">
+                          {INVOCATION_MODE_LABELS[mode]}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Available tools</p>
+                      <Popover open={toolPickerOpen} onOpenChange={setToolPickerOpen}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 gap-1.5 px-2 text-[11px]"
+                            disabled={toolCatalogEntries.length === 0 || codexUsesPresetCapabilities}
+                          >
+                            <PlusSignIcon className="h-3.5 w-3.5" />
+                            Add tool
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent
+                          align="end"
+                          className="w-[28rem] overflow-hidden p-0"
+                          onWheelCapture={(event) => event.stopPropagation()}
+                        >
+                          <Command>
+                            <CommandInput placeholder="Search tools..." />
+                            <CommandList className="max-h-72 overscroll-contain">
+                              <CommandEmpty>
+                                {toolCatalogEntries.length === 0 ? 'Tool catalog unavailable.' : 'No more tools available.'}
+                              </CommandEmpty>
+                              <CommandGroup heading={`${availableToolEntries.length} available`}>
+                                {availableToolEntries.map((tool) => (
+                                  <CommandItem
+                                    key={tool.name}
+                                    value={`${tool.name} ${tool.category} ${tool.description}`}
+                                    onSelect={() => addTool(tool.name)}
+                                    className="cursor-pointer items-start py-2"
+                                  >
+                                    <div className="min-w-0 flex-1 space-y-0.5">
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-mono text-xs text-foreground">{tool.name}</span>
+                                        <Badge variant="outline" className="text-[10px]">
+                                          {tool.category}
+                                        </Badge>
+                                      </div>
+                                      <p className="text-xs leading-relaxed text-muted-foreground">{tool.description}</p>
+                                    </div>
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                    <p className="text-[11px] leading-relaxed text-muted-foreground">
+                      {codexUsesPresetCapabilities
+                        ? 'Codex currently uses the preset capability set as-is. Custom tool overrides are disabled for this runtime.'
+                        : 'Choose from the workspace tool catalog. Selected tools become this agent&apos;s allowed tool list.'}
+                    </p>
+                    <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto rounded-lg border border-border/50 bg-muted/20 p-2.5">
+                      {form.allowed_tools.length > 0 ? form.allowed_tools.map((tool) => (
+                        <Badge key={tool} variant="secondary" className="gap-1 pr-1 font-mono text-[11px]">
+                          <span>{tool}</span>
+                          <button
+                            type="button"
+                            className="rounded-sm p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                            onClick={() => removeTool(tool)}
+                            disabled={codexUsesPresetCapabilities}
+                            aria-label={`Remove ${tool}`}
+                          >
+                            <Cancel01Icon className="h-3 w-3" />
+                          </button>
+                        </Badge>
+                      )) : (
+                        <span className="text-sm text-muted-foreground">No tools configured</span>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
-
-              <Separator className="my-5" />
-
-              <div className="space-y-1.5">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Supported modes</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {supportedModes.map((mode) => (
-                    <Badge key={mode} variant="outline" className="text-[11px]">
-                      {INVOCATION_MODE_LABELS[mode]}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-
-              <Separator className="my-5" />
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Available tools</p>
-                  <Popover open={toolPickerOpen} onOpenChange={setToolPickerOpen}>
-                    <PopoverTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-8 gap-1.5 px-2 text-[11px]"
-                        disabled={toolCatalogEntries.length === 0 || codexUsesPresetCapabilities}
-                      >
-                        <PlusSignIcon className="h-3.5 w-3.5" />
-                        Add tool
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent
-                      align="end"
-                      className="w-[28rem] overflow-hidden p-0"
-                      onWheelCapture={(event) => event.stopPropagation()}
-                    >
-                      <Command>
-                        <CommandInput placeholder="Search tools..." />
-                        <CommandList className="max-h-72 overscroll-contain">
-                          <CommandEmpty>
-                            {toolCatalogEntries.length === 0 ? 'Tool catalog unavailable.' : 'No more tools available.'}
-                          </CommandEmpty>
-                          <CommandGroup heading={`${availableToolEntries.length} available`}>
-                            {availableToolEntries.map((tool) => (
-                              <CommandItem
-                                key={tool.name}
-                                value={`${tool.name} ${tool.category} ${tool.description}`}
-                                onSelect={() => addTool(tool.name)}
-                                className="cursor-pointer items-start py-2"
-                              >
-                                <div className="min-w-0 flex-1 space-y-0.5">
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-mono text-xs text-foreground">{tool.name}</span>
-                                    <Badge variant="outline" className="text-[10px]">
-                                      {tool.category}
-                                    </Badge>
-                                  </div>
-                                  <p className="text-xs leading-relaxed text-muted-foreground">{tool.description}</p>
-                                </div>
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
-                </div>
-                <p className="text-[11px] leading-relaxed text-muted-foreground">
-                  {codexUsesPresetCapabilities
-                    ? 'Codex currently uses the preset capability set as-is. Custom tool overrides are disabled for this runtime.'
-                    : 'Choose from the workspace tool catalog. Selected tools become this agent&apos;s allowed tool list.'}
-                </p>
-                <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto rounded-lg border border-border/50 bg-card/70 p-2.5">
-                  {form.allowed_tools.length > 0 ? form.allowed_tools.map((tool) => (
-                    <Badge key={tool} variant="secondary" className="gap-1 pr-1 font-mono text-[11px]">
-                      <span>{tool}</span>
-                      <button
-                        type="button"
-                        className="rounded-sm p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
-                        onClick={() => removeTool(tool)}
-                        disabled={codexUsesPresetCapabilities}
-                        aria-label={`Remove ${tool}`}
-                      >
-                        <Cancel01Icon className="h-3 w-3" />
-                      </button>
-                    </Badge>
-                  )) : (
-                    <span className="text-sm text-muted-foreground">No tools configured</span>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* ---- Skills ---- */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <p className="text-sm font-semibold">Skills</p>
-                  <p className="text-[11px] text-muted-foreground">Behavioral instruction modules attached to this agent</p>
-                </div>
-                <Popover open={skillPickerOpen} onOpenChange={setSkillPickerOpen}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-8 gap-1.5 px-2 text-[11px]"
-                      disabled={availableSkillEntries.length === 0}
-                    >
-                      <PlusSignIcon className="h-3.5 w-3.5" />
-                      Add skill
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent
-                    align="end"
-                    className="w-[28rem] overflow-hidden p-0"
-                    onWheelCapture={(event) => event.stopPropagation()}
-                  >
-                    <Command>
-                      <CommandInput placeholder="Search skills..." />
-                      <CommandList className="max-h-72 overscroll-contain">
-                        <CommandEmpty>No more skills available.</CommandEmpty>
-                        <CommandGroup heading={`${availableSkillEntries.length} available`}>
-                          {availableSkillEntries.map((skill) => (
-                            <CommandItem
-                              key={skill.key}
-                              value={`${skill.key} ${skill.title} ${skill.description}`}
-                              onSelect={() => addSkill(skill)}
-                              className="cursor-pointer items-start py-2"
-                            >
-                              <div className="min-w-0 flex-1 space-y-0.5">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-mono text-xs text-foreground">{skill.key}</span>
-                                  <Badge variant="outline" className="text-[10px]">
-                                    {skill.source_kind === 'built_in' ? 'built-in' : skill.source_kind}
-                                  </Badge>
-                                </div>
-                                <p className="text-xs leading-relaxed text-muted-foreground">{skill.description}</p>
-                              </div>
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
-              </div>
-              {form.skills.length > 0 ? (
-                <div className="flex flex-wrap gap-1.5">
-                  {form.skills.map((ref) => {
-                    const entry = skillCatalogEntries.find((s) => s.key === ref.key);
-                    return (
-                      <Badge key={ref.key} variant="secondary" className="gap-1.5 pr-1 font-mono text-[11px]">
-                        <BookOpen01Icon className="h-3 w-3 text-muted-foreground" />
-                        <span>{ref.key}</span>
-                        {entry?.source_kind && (
-                          <span className="text-[9px] text-muted-foreground/70">{entry.source_kind === 'built_in' ? 'built-in' : entry.source_kind}</span>
-                        )}
-                        <button
-                          type="button"
-                          className="rounded-sm p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
-                          onClick={() => removeSkill(ref.key)}
-                          aria-label={`Remove ${ref.key}`}
-                        >
-                          <Cancel01Icon className="h-3 w-3" />
-                        </button>
-                      </Badge>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-xs text-muted-foreground">No skills attached. Skills provide behavioral instructions to the agent at runtime.</p>
-              )}
-            </div>
+            </DrawerConfigSection>
 
             <Collapsible.Root open={automationOpen} onOpenChange={setAutomationOpen}>
               <Collapsible.Trigger asChild>
@@ -3803,8 +4647,8 @@ export function AgentsPage() {
           </div>
 
           {/* ---- Footer ---- */}
-          <SheetFooter className="border-t border-border/60 bg-background px-6 py-4 sm:flex-row sm:justify-between">
-            <div>
+          <SheetFooter className="border-t border-border/60 bg-background py-4 pl-6 pr-20 sm:flex-row sm:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
               {editingAgent && (
                 <Button
                   variant="destructive"
@@ -3815,6 +4659,9 @@ export function AgentsPage() {
                   Delete
                 </Button>
               )}
+              <p className={cn('truncate text-xs', createDrawerReady ? 'text-muted-foreground' : 'text-amber-700 dark:text-amber-400')}>
+                {createDrawerStatus}
+              </p>
             </div>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={() => setDialogOpen(false)}>
@@ -3822,10 +4669,10 @@ export function AgentsPage() {
               </Button>
               <Button
                 size="sm"
-                disabled={saving || !form.name.trim()}
+                disabled={saving || !createDrawerReady}
                 onClick={handleSave}
               >
-                {saving ? 'Saving...' : editingAgent ? 'Save Changes' : templateDraft ? 'Create Agent' : 'Create Custom Agent'}
+                {createDrawerPrimaryLabel}
               </Button>
             </div>
           </SheetFooter>
@@ -3862,7 +4709,7 @@ export function AgentsPage() {
           setTemplateDialogOpen(open);
         }}
       >
-        <DialogContent className="sm:max-w-[720px]">
+        <DialogContent className="sm:max-w-[820px]">
           <DialogHeader>
             <DialogTitle>Agent Templates</DialogTitle>
             <DialogDescription>
@@ -3870,27 +4717,65 @@ export function AgentsPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 sm:grid-cols-2">
-            {agentTemplates.map((template) => (
-              <button
-                key={template.id}
-                type="button"
-                className="rounded-xl border border-border/60 p-4 text-left transition-colors hover:bg-muted/30"
-                onClick={() => void openCreateFromTemplateDrawer(template)}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold">{template.name}</span>
-                      <Badge variant="secondary" className="text-[10px]">
-                        Template
-                      </Badge>
+            {agentTemplates.map((template) => {
+              const starterFlow = template.starter_flows?.[0];
+              return (
+                <button
+                  key={template.id}
+                  type="button"
+                  className="rounded-xl border border-border/60 p-4 text-left transition-colors hover:bg-muted/30"
+                  onClick={() => void openCreateFromTemplateDrawer(template)}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-sm font-semibold">{template.name}</span>
+                        <Badge variant="secondary" className="text-[10px]">
+                          Template
+                        </Badge>
+                      </div>
+                      <p className="line-clamp-2 text-xs text-muted-foreground">{template.description || 'No description provided.'}</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(template.allowed_targets ?? []).slice(0, 2).map((target) => (
+                          <Badge key={target} variant="outline" className="text-[10px]">
+                            {templateTargetLabel(target)}
+                          </Badge>
+                        ))}
+                        {starterFlow && (
+                          <Badge variant="outline" className="text-[10px]">
+                            {templateTriggerLabel(starterFlow.trigger_type)}
+                          </Badge>
+                        )}
+                        {starterFlow?.output_type === 'docs_document' && (
+                          <Badge variant="outline" className="text-[10px]">
+                            Creates docs
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="space-y-2 border-t border-border/50 pt-3">
+                        <div className="space-y-0.5">
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                            Recommended trigger
+                          </p>
+                          {starterFlow ? (
+                            <div className="min-w-0">
+                              <p className="truncate text-xs font-medium text-foreground">{starterFlow.label}</p>
+                              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                                {templateTriggerLabel(starterFlow.trigger_type)}
+                                {starterFlow.default_enabled ? ' · created by default' : ''}
+                              </p>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">Manual runs</p>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                    <p className="text-xs text-muted-foreground">{template.description || 'No description provided.'}</p>
+                    <ArrowRight01Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                   </div>
-                  <ArrowRight01Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                </div>
-              </button>
-            ))}
+                </button>
+              );
+            })}
             {agentTemplates.length === 0 && (
               <div className="rounded-xl border border-dashed border-border/60 p-5 text-sm text-muted-foreground">
                 No agent templates are available in this workspace yet.

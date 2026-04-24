@@ -123,6 +123,7 @@ export interface CodingSession {
   error_message?: string;
   title: string;
   summary?: string;
+  system_prompt?: string;
   capabilities: CodingSessionCapabilities;
   repo: CodingSessionRepoState;
   cached_input_tokens: number;
