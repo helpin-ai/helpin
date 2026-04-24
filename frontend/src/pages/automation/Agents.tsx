@@ -2195,10 +2195,14 @@ export function AgentsPage() {
                                 Add skill
                               </Button>
                             </PopoverTrigger>
-                            <PopoverContent align="start" className="w-[28rem] p-0">
+                            <PopoverContent
+                              align="start"
+                              className="w-[28rem] overflow-hidden p-0"
+                              onWheelCapture={(event) => event.stopPropagation()}
+                            >
                               <Command>
                                 <CommandInput placeholder="Search skills..." />
-                                <CommandList className="max-h-72">
+                                <CommandList className="max-h-72 overscroll-contain">
                                   <CommandEmpty>No more skills available.</CommandEmpty>
                                   <CommandGroup heading={`${skillCatalogEntries.filter((s) => !form.instruction_skills.includes(s.key)).length} available`}>
                                     {skillCatalogEntries
@@ -2490,10 +2494,14 @@ export function AgentsPage() {
                                 Add tool
                               </Button>
                             </PopoverTrigger>
-                          <PopoverContent align="end" className="w-[28rem] p-0">
+                          <PopoverContent
+                            align="end"
+                            className="w-[28rem] overflow-hidden p-0"
+                            onWheelCapture={(event) => event.stopPropagation()}
+                          >
                             <Command>
                               <CommandInput placeholder="Search tools..." />
-                              <CommandList className="max-h-72">
+                              <CommandList className="max-h-72 overscroll-contain">
                                 <CommandEmpty>
                                   {toolCatalogEntries.length === 0 ? 'Tool catalog unavailable.' : 'No more tools available.'}
                                 </CommandEmpty>
@@ -3125,10 +3133,14 @@ export function AgentsPage() {
                         Add tool
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent align="end" className="w-[28rem] p-0">
+                    <PopoverContent
+                      align="end"
+                      className="w-[28rem] overflow-hidden p-0"
+                      onWheelCapture={(event) => event.stopPropagation()}
+                    >
                       <Command>
                         <CommandInput placeholder="Search tools..." />
-                        <CommandList className="max-h-72">
+                        <CommandList className="max-h-72 overscroll-contain">
                           <CommandEmpty>
                             {toolCatalogEntries.length === 0 ? 'Tool catalog unavailable.' : 'No more tools available.'}
                           </CommandEmpty>
@@ -3203,10 +3215,14 @@ export function AgentsPage() {
                       Add skill
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent align="end" className="w-[28rem] p-0">
+                  <PopoverContent
+                    align="end"
+                    className="w-[28rem] overflow-hidden p-0"
+                    onWheelCapture={(event) => event.stopPropagation()}
+                  >
                     <Command>
                       <CommandInput placeholder="Search skills..." />
-                      <CommandList className="max-h-72">
+                      <CommandList className="max-h-72 overscroll-contain">
                         <CommandEmpty>No more skills available.</CommandEmpty>
                         <CommandGroup heading={`${availableSkillEntries.length} available`}>
                           {availableSkillEntries.map((skill) => (
