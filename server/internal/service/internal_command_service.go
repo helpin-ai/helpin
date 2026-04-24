@@ -328,7 +328,7 @@ func (s *InternalCommandService) registerDefaults() {
 				req.EpicID = stringPtrOrNil(meta.TargetID)
 			}
 			req.TaskType = strings.TrimSpace(req.TaskType)
-			req.Description = stringPtrOrNil(commandDerefString(req.Description))
+			req.Description = normalizeTaskDescriptionRichText(stringPtrOrNil(commandDerefString(req.Description)))
 			req.Priority = stringPtrOrNil(commandDerefString(req.Priority))
 			req.WorkflowID = stringPtrOrNil(commandDerefString(req.WorkflowID))
 			req.StateID = stringPtrOrNil(commandDerefString(req.StateID))
@@ -424,11 +424,11 @@ func (s *InternalCommandService) registerDefaults() {
 				if taskType == "" {
 					taskType = model.PMTaskTypeChore
 				}
-				description := strings.TrimSpace(followup.Description)
+				description := normalizeTaskDescriptionRichText(stringPtrOrNil(strings.TrimSpace(followup.Description)))
 				createReq := model.CreateTaskRequest{
 					WorkspaceID: meta.WorkspaceID,
 					Name:        title,
-					Description: stringPtrOrNil(description),
+					Description: description,
 					TaskType:    taskType,
 					EpicID:      task.EpicID,
 					TeamID:      task.TeamID,

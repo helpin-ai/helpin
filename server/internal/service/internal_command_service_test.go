@@ -113,6 +113,30 @@ func TestCreateTaskCommandMetadataAndTargets(t *testing.T) {
 	}
 }
 
+func TestNormalizeTaskDescriptionRichTextConvertsMarkdownToHTML(t *testing.T) {
+	input := "## Summary\n\n- first\n- second"
+
+	got := normalizeTaskDescriptionRichText(&input)
+	if got == nil {
+		t.Fatal("expected converted description")
+	}
+	if !strings.Contains(*got, "<h2") || !strings.Contains(*got, "<ul>") {
+		t.Fatalf("expected markdown to be rendered as html, got %q", *got)
+	}
+}
+
+func TestNormalizeTaskDescriptionRichTextPreservesHTML(t *testing.T) {
+	input := "  <p><strong>Hello</strong> world</p>  "
+
+	got := normalizeTaskDescriptionRichText(&input)
+	if got == nil {
+		t.Fatal("expected normalized description")
+	}
+	if *got != "<p><strong>Hello</strong> world</p>" {
+		t.Fatalf("expected html to be preserved, got %q", *got)
+	}
+}
+
 func TestResolveTaskCreationWorkflowValidatesExplicitWorkflowTeamScope(t *testing.T) {
 	db := newTestDB(t)
 	workflowRepo := repository.NewPMWorkflowRepository(db)
