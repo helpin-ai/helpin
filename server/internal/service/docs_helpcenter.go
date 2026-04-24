@@ -121,6 +121,18 @@ func (s *DocsHelpcenterService) UpsertConfig(ctx context.Context, workspaceID st
 	if req.SEODescription != nil {
 		updates["seo_description"] = req.SEODescription
 	}
+	if req.OGTitle != nil {
+		updates["og_title"] = nullableTrimmedString(req.OGTitle)
+	}
+	if req.OGDescription != nil {
+		updates["og_description"] = nullableTrimmedString(req.OGDescription)
+	}
+	if req.OGImageURL != nil {
+		updates["og_image_url"] = nullableTrimmedString(req.OGImageURL)
+	}
+	if req.OGImageAlt != nil {
+		updates["og_image_alt"] = nullableTrimmedString(req.OGImageAlt)
+	}
 	if req.SupportEmail != nil {
 		updates["support_email"] = req.SupportEmail
 	}
@@ -370,6 +382,59 @@ func (s *DocsHelpcenterService) GetArticle(ctx context.Context, documentID strin
 	return s.hcRepo.GetArticle(ctx, documentID)
 }
 
+func (s *DocsHelpcenterService) UpdateArticleMetadata(ctx context.Context, workspaceID, documentID string, req model.UpdateDocsHelpcenterArticleMetadataRequest) (*model.DocsHelpcenterArticle, error) {
+	doc, err := s.docRepo.GetByID(ctx, documentID)
+	if err != nil {
+		return nil, err
+	}
+	if doc == nil || doc.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("document not found")
+	}
+
+	art, err := s.hcRepo.GetArticle(ctx, documentID)
+	if err != nil {
+		return nil, err
+	}
+	if art == nil {
+		publicID, err := s.ensureUniqueHelpcenterPublicID(ctx, documentID)
+		if err != nil {
+			return nil, err
+		}
+		art = &model.DocsHelpcenterArticle{
+			DocumentID: documentID,
+			PublicID:   publicID,
+		}
+		if _, err := s.hcRepo.CreateArticle(ctx, art); err != nil {
+			return nil, err
+		}
+	}
+
+	updates := map[string]interface{}{}
+	if req.OGTitle != nil {
+		updates["og_title"] = nullableTrimmedString(req.OGTitle)
+	}
+	if req.OGDescription != nil {
+		updates["og_description"] = nullableTrimmedString(req.OGDescription)
+	}
+	if req.OGImageURL != nil {
+		updates["og_image_url"] = nullableTrimmedString(req.OGImageURL)
+	}
+	if req.OGImageAlt != nil {
+		updates["og_image_alt"] = nullableTrimmedString(req.OGImageAlt)
+	}
+	if len(updates) == 0 {
+		return art, nil
+	}
+
+	updated, err := s.hcRepo.UpdateArticleMetadata(ctx, documentID, updates)
+	if err != nil {
+		return nil, err
+	}
+	publishWorkspaceEvent(s.wsPublisher, "updated", "docs_document", documentID, workspaceID, "")
+	s.InvalidateHelpcenterCacheForWorkspace(ctx, workspaceID)
+	return updated, nil
+}
+
 func (s *DocsHelpcenterService) EnrichDocumentPublishState(ctx context.Context, doc *model.DocsDocument) error {
 	if doc == nil {
 		return nil
@@ -380,6 +445,12 @@ func (s *DocsHelpcenterService) EnrichDocumentPublishState(ctx context.Context, 
 	}
 	if art != nil && art.Slug != "" {
 		doc.HCSlug = art.Slug
+	}
+	if art != nil {
+		doc.HCOGTitle = art.OGTitle
+		doc.HCOGDescription = art.OGDescription
+		doc.HCOGImageURL = art.OGImageURL
+		doc.HCOGImageAlt = art.OGImageAlt
 	}
 	if art == nil || art.PublicPublishedAt == nil {
 		doc.HasUnpublishedChanges = false
@@ -653,6 +724,17 @@ func stringPtrTrimmed(value *string) string {
 	return strings.TrimSpace(*value)
 }
 
+func nullableTrimmedString(value *string) interface{} {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return trimmed
+}
+
 func derivedSEOTitle(title string, override *string) *string {
 	trimmed := stringPtrTrimmed(override)
 	if trimmed != "" {
@@ -697,6 +779,10 @@ func (s *DocsHelpcenterService) buildSourceArticlePublication(ctx context.Contex
 		Excerpt:        doc.Excerpt,
 		SEOTitle:       derivedSEOTitle(doc.Title, art.SEOTitle),
 		SEODescription: derivedSEODescription(doc.Excerpt, art.SEODescription),
+		OGTitle:        art.OGTitle,
+		OGDescription:  art.OGDescription,
+		OGImageURL:     art.OGImageURL,
+		OGImageAlt:     art.OGImageAlt,
 		PublishedAt:    time.Now().UTC(),
 	}
 	if content != nil {
@@ -725,6 +811,18 @@ func (s *DocsHelpcenterService) sourceArticleHasUnpublishedChanges(ctx context.C
 		return true, nil
 	}
 	if stringPtrTrimmed(derivedSEODescription(doc.Excerpt, art.SEODescription)) != stringPtrTrimmed(publication.SEODescription) {
+		return true, nil
+	}
+	if stringPtrTrimmed(art.OGTitle) != stringPtrTrimmed(publication.OGTitle) {
+		return true, nil
+	}
+	if stringPtrTrimmed(art.OGDescription) != stringPtrTrimmed(publication.OGDescription) {
+		return true, nil
+	}
+	if stringPtrTrimmed(art.OGImageURL) != stringPtrTrimmed(publication.OGImageURL) {
+		return true, nil
+	}
+	if stringPtrTrimmed(art.OGImageAlt) != stringPtrTrimmed(publication.OGImageAlt) {
 		return true, nil
 	}
 
@@ -1568,6 +1666,10 @@ func (s *DocsHelpcenterService) GetPublicArticle(ctx context.Context, workspaceI
 		PublishedAt:        publishedAt,
 		SEOTitle:           translation.SEOTitle,
 		SEODescription:     translation.SEODescription,
+		OGTitle:            translation.OGTitle,
+		OGDescription:      translation.OGDescription,
+		OGImageURL:         translation.OGImageURL,
+		OGImageAlt:         translation.OGImageAlt,
 		HelpfulCount:       translation.HelpfulCount,
 		NotHelpfulCount:    translation.NotHelpfulCount,
 		ViewCount:          translation.ViewCount,
@@ -1874,6 +1976,10 @@ func (s *DocsHelpcenterService) GetPublicArticleByLocalizedCanonicalPath(ctx con
 		PublishedAt:        publishedAt,
 		SEOTitle:           translation.SEOTitle,
 		SEODescription:     translation.SEODescription,
+		OGTitle:            translation.OGTitle,
+		OGDescription:      translation.OGDescription,
+		OGImageURL:         translation.OGImageURL,
+		OGImageAlt:         translation.OGImageAlt,
 		HelpfulCount:       translation.HelpfulCount,
 		NotHelpfulCount:    translation.NotHelpfulCount,
 		ViewCount:          translation.ViewCount,
@@ -2007,6 +2113,10 @@ func (s *DocsHelpcenterService) GetPublicArticleByLocalizedCanonicalKey(ctx cont
 		PublishedAt:        publishedAt,
 		SEOTitle:           translation.SEOTitle,
 		SEODescription:     translation.SEODescription,
+		OGTitle:            translation.OGTitle,
+		OGDescription:      translation.OGDescription,
+		OGImageURL:         translation.OGImageURL,
+		OGImageAlt:         translation.OGImageAlt,
 		HelpfulCount:       translation.HelpfulCount,
 		NotHelpfulCount:    translation.NotHelpfulCount,
 		ViewCount:          translation.ViewCount,
@@ -2098,6 +2208,10 @@ func (s *DocsHelpcenterService) GetPublicArticleByCanonicalPath(ctx context.Cont
 		PublishedAt:        publishedAt,
 		SEOTitle:           ha.SEOTitle,
 		SEODescription:     ha.SEODescription,
+		OGTitle:            ha.OGTitle,
+		OGDescription:      ha.OGDescription,
+		OGImageURL:         ha.OGImageURL,
+		OGImageAlt:         ha.OGImageAlt,
 		HelpfulCount:       ha.HelpfulCount,
 		NotHelpfulCount:    ha.NotHelpfulCount,
 		ViewCount:          ha.ViewCount,
@@ -2176,6 +2290,10 @@ func (s *DocsHelpcenterService) GetPublicArticleByCanonicalKey(ctx context.Conte
 		PublishedAt:        publishedAt,
 		SEOTitle:           ha.SEOTitle,
 		SEODescription:     ha.SEODescription,
+		OGTitle:            ha.OGTitle,
+		OGDescription:      ha.OGDescription,
+		OGImageURL:         ha.OGImageURL,
+		OGImageAlt:         ha.OGImageAlt,
 		HelpfulCount:       ha.HelpfulCount,
 		NotHelpfulCount:    ha.NotHelpfulCount,
 		ViewCount:          ha.ViewCount,
