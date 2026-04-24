@@ -561,6 +561,11 @@ func (s *SupportInboxService) runWidgetPostMessageAutomation(ctx context.Context
 	}
 
 	if settings.AIEnabled && settings.AIResponseMode == "ai_first" && settings.AIAgentID != nil && s.supportAIService != nil {
+		conv, convErr := s.conversationRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
+		if convErr == nil && conv != nil && conv.HumanTakeover != nil && *conv.HumanTakeover {
+			return
+		}
+
 		if pubErr := s.supportAIService.PublishAIRequest(ctx, workspaceID, conversationID, messageID, content); pubErr != nil {
 			slog.ErrorContext(ctx, "failed to publish AI request event",
 				"workspace_id", workspaceID,

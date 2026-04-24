@@ -113,7 +113,10 @@ export type ConversationStateBadge = {
   tone: 'blue' | 'emerald' | 'amber' | 'slate';
 };
 
-export function getEffectiveFlowState(conversation: Pick<SupportConversation, 'flow_state' | 'ai_state'>): EffectiveSupportFlowState {
+export function getEffectiveFlowState(conversation: Pick<SupportConversation, 'flow_state' | 'ai_state' | 'human_takeover'>): EffectiveSupportFlowState {
+  if (conversation.human_takeover) {
+    return 'assigned_to_human';
+  }
   if (conversation.flow_state === 'queued_for_human') {
     return 'waiting_for_human';
   }
@@ -129,20 +132,20 @@ export function getEffectiveFlowState(conversation: Pick<SupportConversation, 'f
   return null;
 }
 
-export function isAIActiveConversation(conversation: Pick<SupportConversation, 'flow_state' | 'ai_state'>): boolean {
+export function isAIActiveConversation(conversation: Pick<SupportConversation, 'flow_state' | 'ai_state' | 'human_takeover'>): boolean {
   return getEffectiveFlowState(conversation) === 'ai_handling';
 }
 
-export function isResolvedByAIConversation(conversation: Pick<SupportConversation, 'flow_state' | 'ai_state'>): boolean {
+export function isResolvedByAIConversation(conversation: Pick<SupportConversation, 'flow_state' | 'ai_state' | 'human_takeover'>): boolean {
   return getEffectiveFlowState(conversation) === 'resolved_by_ai';
 }
 
-export function isHumanQueueConversation(conversation: Pick<SupportConversation, 'flow_state' | 'ai_state'>): boolean {
+export function isHumanQueueConversation(conversation: Pick<SupportConversation, 'flow_state' | 'ai_state' | 'human_takeover'>): boolean {
   return !isAIActiveConversation(conversation) && !isResolvedByAIConversation(conversation);
 }
 
 export function getConversationStateBadges(
-  conversation: Pick<SupportConversation, 'flow_state' | 'ai_state' | 'customer_requested_human_at'>,
+  conversation: Pick<SupportConversation, 'flow_state' | 'ai_state' | 'customer_requested_human_at' | 'human_takeover'>,
 ): ConversationStateBadge[] {
   const badges: ConversationStateBadge[] = [];
   const flowState = getEffectiveFlowState(conversation);

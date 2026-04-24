@@ -424,7 +424,8 @@ func (r *SupportConversationRepository) maybeAcquireWorkspaceDisplayIDLock(tx *g
 }
 
 func conversationAIActiveCondition(alias string) string {
-	return fmt.Sprintf("(COALESCE(%s.flow_state, '') = '%s' OR (COALESCE(%s.flow_state, '') = '' AND COALESCE(%s.ai_state, '') = 'pending'))",
+	return fmt.Sprintf("(COALESCE(%s.human_takeover, false) = false AND (COALESCE(%s.flow_state, '') = '%s' OR (COALESCE(%s.flow_state, '') = '' AND COALESCE(%s.ai_state, '') = 'pending')))",
+		alias,
 		alias,
 		model.SupportConversationFlowStateAIHandling,
 		alias,
@@ -433,7 +434,8 @@ func conversationAIActiveCondition(alias string) string {
 }
 
 func conversationResolvedByAICondition(alias string) string {
-	return fmt.Sprintf("(COALESCE(%s.flow_state, '') = '%s' OR (COALESCE(%s.flow_state, '') = '' AND COALESCE(%s.ai_state, '') = 'resolved'))",
+	return fmt.Sprintf("(COALESCE(%s.human_takeover, false) = false AND (COALESCE(%s.flow_state, '') = '%s' OR (COALESCE(%s.flow_state, '') = '' AND COALESCE(%s.ai_state, '') = 'resolved')))",
+		alias,
 		alias,
 		model.SupportConversationFlowStateResolvedByAI,
 		alias,

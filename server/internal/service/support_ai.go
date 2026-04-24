@@ -445,6 +445,18 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 	if err != nil || conv == nil {
 		return fmt.Errorf("get conversation: %w", err)
 	}
+	if conv.HumanTakeover != nil && *conv.HumanTakeover {
+		if conv.AIState != nil && *conv.AIState == "resolved" {
+			pending := "pending"
+			_ = s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, map[string]any{
+				"ai_state":           &pending,
+				"ai_resolved_at":     nil,
+				"ai_resolution_type": nil,
+				"flow_state":         model.SupportConversationFlowStateAssignedToHuman,
+			})
+		}
+		return nil // human already handling
+	}
 	if conv.OpenedByUserID != nil {
 		return nil // human already handling
 	}
