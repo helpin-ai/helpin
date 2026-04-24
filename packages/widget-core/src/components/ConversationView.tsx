@@ -85,6 +85,15 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   const hasTeamReply = messages.some((message) => message.role !== 'customer');
   const hasHumanReply = messages.some((message) => message.role === 'agent');
   const hasCustomerMessage = messages.some((message) => message.role === 'customer');
+  const escalationMessageCopy = (config.features?.escalationMessage || 'Let me connect you with a team member who can help further.').trim();
+  const hasEscalationNotice = messages.some((message) =>
+    message.role === 'system' &&
+    (
+      message.systemEventType === 'ai_escalated' ||
+      message.content.trim() === escalationMessageCopy ||
+      message.content.trim() === 'Let me connect you with a team member who can help further.'
+    ),
+  );
   const fileUploadsEnabled = Boolean(config.features?.fileUploads && onUploadAttachment);
   const composeDisabled = connectionStatus === 'connecting' || connectionStatus === 'disconnected' || connectionStatus === 'failed';
   const composePlaceholder = connectionStatus === 'failed'
@@ -96,6 +105,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
         : 'Ask a question...';
   const hasHumanHandoffAlready = Boolean(
     hasHumanReply ||
+      hasEscalationNotice ||
       conversation?.aiState === 'escalated' ||
       conversation?.status === 'resolved' ||
       conversation?.status === 'closed' ||
@@ -116,7 +126,8 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
       !isTyping,
   );
   const isWaitingForTeammate = Boolean(
-    (conversation?.aiState === 'escalated' ||
+    (hasEscalationNotice ||
+      conversation?.aiState === 'escalated' ||
       conversation?.flowState === 'waiting_for_human' ||
       conversation?.flowState === 'queued_for_human' ||
       conversation?.flowState === 'after_hours_queue' ||

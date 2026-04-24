@@ -401,6 +401,50 @@ describe('ChatWindow', () => {
     expect(container.querySelectorAll('.helpin-waiting-teammate-avatar').length).toBe(2);
   });
 
+  it('hides talk to human once an escalation message is already in the thread', () => {
+    const { getByText, queryByText } = render(
+      <ChatWindow
+        config={{
+          ...baseConfig,
+          features: {
+            ...baseConfig.features,
+            showTalkToHuman: true,
+            escalationMessage: 'A teammate will join shortly.',
+          },
+        }}
+        messages={[
+          sampleMessage,
+          {
+            id: 'msg-2',
+            conversationId: 'conv-1',
+            role: 'system' as const,
+            content: 'A teammate will join shortly.',
+            systemEventType: 'ai_escalated' as const,
+            isInternal: false,
+            createdAt: new Date().toISOString(),
+          },
+        ]}
+        activeConversation={{
+          id: 'conv-1',
+          subject: 'Need help',
+          status: 'open',
+        }}
+        isOpen={true}
+        onClose={() => {}}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={false}
+        onPreChatSubmit={() => {}}
+        onEscalateToHuman={() => {}}
+        initialView="conversation"
+      />,
+    );
+
+    expect(getByText('A teammate will join shortly.')).toBeTruthy();
+    expect(getByText('A team member will reply soon')).toBeTruthy();
+    expect(queryByText('Talk to a human')).toBeNull();
+  });
+
   it('groups consecutive Helpin AI handoff and reply messages under one sender label', () => {
     const { container } = render(
       <ChatWindow
