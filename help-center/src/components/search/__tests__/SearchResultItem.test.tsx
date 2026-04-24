@@ -49,15 +49,21 @@ const mockSpaces: Space[] = [
   },
 ]
 
-function renderWithDocsContext(ui: ReactNode) {
+function renderWithDocsContext(
+  ui: ReactNode,
+  options: { enabledLocales?: string[]; multilingualEnabled?: boolean } = {},
+) {
+  const enabledLocales = options.enabledLocales ?? ['en', 'fr']
+  const multilingualEnabled = options.multilingualEnabled ?? true
+
   return render(
     <DocsProvider
       basepath=""
       subdomain="replug"
       locale="fr"
       defaultLocale="en"
-      enabledLocales={['en', 'fr']}
-      multilingualEnabled
+      enabledLocales={enabledLocales}
+      multilingualEnabled={multilingualEnabled}
       config={mockConfig}
       spaces={mockSpaces}
     >
@@ -90,5 +96,30 @@ describe('SearchResultItem', () => {
     const link = screen.getByText('Bonjour').closest('a')
     expect(link).not.toBeNull()
     expect(link?.getAttribute('href')).toBe('/fr/articles/bonjour-abc123ef')
+  })
+
+  it('defaults to context-aware non-localized paths for single-locale help centers', () => {
+    renderWithDocsContext(
+      <SearchResultItem
+        locale="en"
+        result={{
+          id: 'article-1',
+          title: 'Start here',
+          slug: 'start-here',
+          public_id: 'abc123ef',
+          locale: 'en',
+          excerpt: 'Intro',
+          collection_name: 'Basics',
+          collection_slug: 'basics',
+          space_slug: 'docs',
+          space_name: 'Docs',
+        }}
+      />,
+      { enabledLocales: ['en'], multilingualEnabled: false },
+    )
+
+    const link = screen.getByText('Start here').closest('a')
+    expect(link).not.toBeNull()
+    expect(link?.getAttribute('href')).toBe('/articles/start-here-abc123ef')
   })
 })
