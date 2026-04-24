@@ -1,9 +1,8 @@
 import { StrictMode, startTransition } from 'react'
 import { hydrateRoot } from 'react-dom/client'
-import { Await, RouterProvider } from '@tanstack/react-router'
-import { hydrate } from '@tanstack/router-core/ssr/client'
+import { Await, RouterProvider, type AnyRouter } from '@tanstack/react-router'
+import { hydrate } from '@tanstack/react-router/ssr/client'
 import { getRouter } from './router'
-import type { AnyRouter } from '@tanstack/router-core'
 
 declare global {
   interface Window {
