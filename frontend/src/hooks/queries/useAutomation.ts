@@ -8,6 +8,7 @@ import type {
   AutomationTriggerExecutionListResponse,
 } from '@/lib/types';
 import type {
+  CreateAgentFromTemplateRequest,
   CreateAgentRequest,
   CreateAutomationRuleRequest,
   UpdateAgentRequest,
@@ -133,6 +134,15 @@ export function useAutomationAgents(wsId: string, enabled = true) {
   });
 }
 
+export function useAutomationAgentTemplates(wsId: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.automation.agentTemplates(wsId),
+    queryFn: async () => unwrap(await automationService.listAgentTemplates(wsId)),
+    enabled: !!wsId && enabled,
+    staleTime: 60_000,
+  });
+}
+
 export function useAutomationAgentUsage(wsId: string, agentId: string | undefined | null, enabled = true) {
   return useQuery({
     queryKey: queryKeys.automation.agentUsage(wsId, agentId ?? ''),
@@ -148,6 +158,19 @@ export function useCreateAutomationAgent(wsId: string) {
     mutationFn: async (payload: CreateAgentRequest) => unwrap(await automationService.createAgent(wsId, payload)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.automation.agents(wsId) });
+    },
+  });
+}
+
+export function useCreateAutomationAgentFromTemplate(wsId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ templateId, payload }: { templateId: string; payload: CreateAgentFromTemplateRequest }) =>
+      unwrap(await automationService.createAgentFromTemplate(wsId, templateId, payload)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.automation.agents(wsId) });
+      qc.invalidateQueries({ queryKey: queryKeys.automation.flows(wsId) });
+      qc.invalidateQueries({ queryKey: queryKeys.automation.overview(wsId) });
     },
   });
 }

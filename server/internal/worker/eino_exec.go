@@ -1008,7 +1008,10 @@ func isHighVolumeToolOutput(toolName string) bool {
 		"list_symbols",
 		"run_command",
 		"read_document",
+		"get_release_context",
+		"get_task_context",
 		"search_documents",
+		"find_tasks_for_git_changes",
 		"web_search_brave",
 		"web_search_exa":
 		return true
@@ -1596,7 +1599,8 @@ func isParallelSafeTool(name string) bool {
 		"web_search_brave", "web_search_exa",
 		"list_task_checklist", "list_workspace_teams", "list_team_workflows_with_stages", "list_conversation_messages",
 		"list_deals", "list_contacts", "list_buyer_signals",
-		"list_documents", "list_collections", "read_document", "search_documents", "list_epic_tasks":
+		"list_documents", "list_collections", "read_document", "search_documents", "list_epic_tasks",
+		"get_release_context", "find_tasks_for_git_changes", "get_task_context":
 		return true
 	default:
 		return false

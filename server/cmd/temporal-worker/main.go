@@ -153,6 +153,7 @@ func main() {
 	docsSpaceRepo := repository.NewDocsSpaceRepository(db)
 	docsCollectionRepo := repository.NewDocsCollectionRepository(db)
 	docsDocumentRepo := repository.NewDocsDocumentRepository(db)
+	docsDocumentKeyRepo := repository.NewDocsDocumentKeyRepository(db)
 	docsContentRepo := repository.NewDocsContentRepository(db)
 	docsVersionRepo := repository.NewDocsVersionRepository(db)
 	docsLinkRepo := repository.NewDocsLinkRepository(db)
@@ -433,6 +434,18 @@ func main() {
 	docsDocumentService := service.NewDocsDocumentService(docsDocumentRepo, docsSpaceRepo, wsPublisher)
 	docsContentService := service.NewDocsContentService(docsContentRepo, docsDocumentRepo, nil)
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, storyRepo, docsDocumentRepo, nil)
+	releaseFactsService := service.NewReleaseFactsService(
+		gitIntRepo,
+		gitRepo,
+		storyRepo,
+		gitLinkRepo,
+		commentRepo,
+		docsLinkRepo,
+		docsDocumentRepo,
+		docsContentRepo,
+		workspaceRepo,
+		githubAppClient,
+	)
 	contentCrawler := crawler.NewSmartCrawler(
 		cfg.CrawlerMode,
 		cfg.CloudflareAccountID,
@@ -500,6 +513,7 @@ func main() {
 		docsSpaceRepo,
 		docsCollectionRepo,
 		docsDocumentRepo,
+		docsDocumentKeyRepo,
 		docsContentRepo,
 		docsVersionRepo,
 		docsLinkRepo,
@@ -510,6 +524,7 @@ func main() {
 		crmActivityRepo,
 		commandService,
 		notificationService,
+		releaseFactsService,
 		wsPublisher,
 		runtimes,
 		githubAppClient,

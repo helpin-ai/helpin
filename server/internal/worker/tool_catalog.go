@@ -28,9 +28,11 @@ var toolCategory = map[string]string{
 	"web_search_exa":   "Web Search",
 
 	// Git
-	"create_branch":   "Git",
-	"commit_and_push": "Git",
-	"open_pr":         "Git",
+	"create_branch":              "Git",
+	"commit_and_push":            "Git",
+	"open_pr":                    "Git",
+	"get_release_context":        "Git",
+	"find_tasks_for_git_changes": "Git",
 
 	// PM / Tasks
 	"request_approval":                "Interaction",
@@ -48,6 +50,7 @@ var toolCategory = map[string]string{
 	"add_task_comment":                "PM / Tasks",
 	"list_task_checklist":             "PM / Tasks",
 	"list_epic_tasks":                 "PM / Tasks",
+	"get_task_context":                "PM / Tasks",
 	"list_team_workflows_with_stages": "PM / Tasks",
 	"list_workspace_teams":            "Workspace",
 

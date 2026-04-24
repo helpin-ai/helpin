@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -300,6 +301,68 @@ func (s *GitService) GetRepositoryByID(ctx context.Context, workspaceID, repoID 
 		return nil, fmt.Errorf("repository_id is required")
 	}
 	return s.repoRepo.GetByID(ctx, workspaceID, repoID)
+}
+
+// GetRepositoryByFullName returns a synced repository record for a workspace.
+func (s *GitService) GetRepositoryByFullName(ctx context.Context, workspaceID, repoFullName string) (*model.GitRepository, error) {
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	if strings.TrimSpace(repoFullName) == "" {
+		return nil, fmt.Errorf("repo_full_name is required")
+	}
+	return s.repoRepo.GetByFullName(ctx, workspaceID, repoFullName)
+}
+
+// ResolveReleaseKind classifies a release relative to the previous published release.
+func (s *GitService) ResolveReleaseKind(ctx context.Context, workspaceID, repoFullName, tagName string) (string, error) {
+	if s == nil {
+		return "unknown", fmt.Errorf("git service is not configured")
+	}
+	repo, err := s.GetRepositoryByFullName(ctx, workspaceID, repoFullName)
+	if err != nil {
+		return "unknown", err
+	}
+	if repo == nil {
+		return "unknown", fmt.Errorf("repository not found")
+	}
+	integration, err := s.integrationRepo.GetByID(ctx, workspaceID, repo.IntegrationID)
+	if err != nil {
+		return "unknown", err
+	}
+	if integration == nil {
+		return "unknown", fmt.Errorf("git integration not found")
+	}
+	if integration.Provider != "github" {
+		return "unknown", fmt.Errorf("release facts are not implemented for %s", integration.Provider)
+	}
+	if integration.InstallationID == nil || strings.TrimSpace(*integration.InstallationID) == "" {
+		return "unknown", fmt.Errorf("integration has no installation_id")
+	}
+	if s.githubApp == nil {
+		return "unknown", fmt.Errorf("github app is not configured")
+	}
+	owner, repoName, err := splitRepositoryFullName(repo.FullName)
+	if err != nil {
+		return "unknown", err
+	}
+	current, err := s.githubApp.GetReleaseByTag(ctx, strings.TrimSpace(*integration.InstallationID), owner, repoName, tagName)
+	if err != nil {
+		return "unknown", err
+	}
+	if current == nil {
+		return "unknown", nil
+	}
+	releases, err := s.githubApp.ListReleases(ctx, strings.TrimSpace(*integration.InstallationID), owner, repoName, githubapp.ListReleasesOptions{
+		IncludeDrafts:      false,
+		IncludePrereleases: true,
+		PerPage:            100,
+		MaxPages:           5,
+	})
+	if err != nil {
+		return "unknown", err
+	}
+	return classifyReleaseKind(current, selectPreviousRelease(releases, current)), nil
 }
 
 // ListRepositoryBranches returns available branches for a synced repository.
@@ -1226,18 +1289,72 @@ func (s *GitService) ProcessWebhookPR(ctx context.Context, workspaceID, repo, ac
 	return nil
 }
 
+func classifyWebhookReleaseKind(tagName string, isPrerelease bool) string {
+	if isPrerelease {
+		return "prerelease"
+	}
+	version := strings.TrimSpace(tagName)
+	version = strings.TrimPrefix(version, "v")
+	version = strings.TrimPrefix(version, "V")
+	if version == "" {
+		return "unknown"
+	}
+	if idx := strings.Index(version, "+"); idx >= 0 {
+		version = version[:idx]
+	}
+	if idx := strings.Index(version, "-"); idx >= 0 {
+		return "prerelease"
+	}
+	parts := strings.Split(version, ".")
+	if len(parts) != 3 {
+		return "unknown"
+	}
+	major, errMajor := strconv.Atoi(parts[0])
+	minor, errMinor := strconv.Atoi(parts[1])
+	patch, errPatch := strconv.Atoi(parts[2])
+	if errMajor != nil || errMinor != nil || errPatch != nil {
+		return "unknown"
+	}
+	switch {
+	case patch > 0:
+		return "patch"
+	case minor > 0:
+		return "minor"
+	case major > 0:
+		return "major"
+	default:
+		return "unknown"
+	}
+}
+
 // ProcessWebhookRelease handles a release event from GitHub.
-func (s *GitService) ProcessWebhookRelease(ctx context.Context, workspaceID, repo, action, tagName, targetCommitish string) error {
+func (s *GitService) ProcessWebhookRelease(ctx context.Context, workspaceID, repo, action, tagName, targetCommitish, releaseName, releaseURL string, publishedAt *time.Time, isPrerelease bool) error {
 	if strings.TrimSpace(action) != "published" || s.ruleEngine == nil {
 		return nil
 	}
 
+	repository, err := s.repoRepo.GetByFullName(ctx, workspaceID, repo)
+	if err != nil {
+		return err
+	}
+
 	event := model.AutomationEvent{
-		WorkspaceID:  workspaceID,
-		TriggerType:  model.TriggerGitHubReleasePub,
-		RepoFullName: repo,
-		Branch:       targetCommitish,
-		TagName:      tagName,
+		WorkspaceID:     workspaceID,
+		TriggerType:     model.TriggerGitHubReleasePub,
+		RepoFullName:    repo,
+		Branch:          targetCommitish,
+		TagName:         tagName,
+		TargetCommitish: targetCommitish,
+		ReleaseName:     releaseName,
+		ReleaseURL:      releaseURL,
+		PublishedAt:     publishedAt,
+		IsPrerelease:    isPrerelease,
+		ReleaseKind:     classifyWebhookReleaseKind(tagName, isPrerelease),
+	}
+	if repository != nil {
+		event.RepositoryID = repository.ID
+		event.TargetType = "repository"
+		event.TargetID = repository.ID
 	}
 	if strings.TrimSpace(targetCommitish) != "" {
 		link, err := s.linkRepo.GetByBranch(ctx, workspaceID, repo, targetCommitish)
@@ -1245,8 +1362,6 @@ func (s *GitService) ProcessWebhookRelease(ctx context.Context, workspaceID, rep
 			return err
 		}
 		if link != nil {
-			event.TargetType = "task"
-			event.TargetID = link.TaskID
 			event.TaskID = link.TaskID
 			event.StoryID = link.TaskID
 			if task, taskErr := s.taskRepo.GetRawByID(ctx, link.TaskID); taskErr == nil && task != nil {

@@ -1024,6 +1024,16 @@ func (s *InternalCommandService) resolveTaskCreationWorkflow(ctx context.Context
 	if stateID == "" {
 		return "", "", fmt.Errorf("workflow has no usable default state")
 	}
+	var matchedState *model.PMWorkflowState
+	for idx := range workflow.States {
+		if strings.TrimSpace(workflow.States[idx].ID) == stateID {
+			matchedState = &workflow.States[idx]
+			break
+		}
+	}
+	if matchedState == nil {
+		return "", "", fmt.Errorf("state_id does not belong to workflow_id")
+	}
 	return workflowID, stateID, nil
 }
 

@@ -42,6 +42,7 @@ type ExecutionContext struct {
 	PlanningMethodology        string
 	PlanningSpecDocumentID     string
 	PlanningSpecVersionID      string
+	RunInput                   *model.AgentRunInputPayload
 	Config                     *WorkflowConfig
 	ResolvedProfile            ResolvedProfile
 	RuntimeSkillRefs           model.AgentSkillRefs
@@ -187,6 +188,7 @@ type ServiceBridge struct {
 
 	// Docs
 	GetDocument          func(ctx context.Context, id string) (*model.DocsDocument, error)
+	GetDocumentKey       func(ctx context.Context, workspaceID, keyType, key string) (*model.DocsDocumentKey, error)
 	ListCollections      func(ctx context.Context, workspaceID string, spaceID *string) ([]model.DocsCollection, error)
 	ListDocuments        func(ctx context.Context, workspaceID string, spaceID *string) ([]model.DocsDocument, error)
 	SearchDocuments      func(ctx context.Context, workspaceID, query string, limit int) ([]DocsSearchHit, error)
@@ -196,6 +198,12 @@ type ServiceBridge struct {
 	GetDocumentContent   func(ctx context.Context, documentID string) (string, error)
 	WriteDocumentContent func(ctx context.Context, workspaceID, documentID string, content json.RawMessage) error
 	LinkDocumentToObject func(ctx context.Context, workspaceID, documentID, linkedObjectType, linkedObjectID, linkContext, actorID string) error
+	UpsertDocumentKey    func(ctx context.Context, record *model.DocsDocumentKey) error
+
+	// Release facts
+	GetReleaseContext      func(ctx context.Context, workspaceID string, req model.GetReleaseContextRequest) (*model.ReleaseContextResult, error)
+	FindTasksForGitChanges func(ctx context.Context, workspaceID string, req model.FindTasksForGitChangesRequest) (*model.FindTasksForGitChangesResult, error)
+	GetTaskContext         func(ctx context.Context, workspaceID string, req model.GetTaskContextRequest) (*model.GetTaskContextResult, error)
 }
 
 // DocsSearchHit is a simplified search result for tool responses.

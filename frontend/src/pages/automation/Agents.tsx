@@ -30,6 +30,8 @@ import { useWorkspaceAccess, usePermissions } from '@/hooks/queries/useSession';
 import { useWorkspaceSettings } from '@/hooks/queries/useSettings';
 import { automationService } from '@/lib/services/automationService';
 import { agentService } from '@/lib/services/agentService';
+import { gitService } from '@/lib/services/gitService';
+import { docsService } from '@/lib/services/docsService';
 import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
 import { buildAutomationActivityPath, buildAutomationFlowsPath } from '@/lib/automationUi';
 import type {
@@ -41,6 +43,7 @@ import type {
   AgentInvocationMode,
   AgentModelProvider,
   AgentModelProviderOption,
+  AgentTemplate,
   AgentReasoningEffort,
   AgentRun,
   AgentRuntimeKind,
@@ -49,13 +52,16 @@ import type {
   AgentTriggerUsage,
   AgentTriggerUsageSummary,
   AgentTargetType,
+  CreateAgentFromTemplateRequest,
   CreateWorkspaceAgentPresetVersionRequest,
+  GitRepository,
   UpdateWorkspaceAgentPresetVersionRequest,
   CreateAgentRequest,
   SkillCatalogResponse,
   ToolCatalogResponse,
   UpdateAgentRequest,
 } from '@/lib/pmTypes';
+import type { DocsCollection, DocsSpace } from '@/lib/docsTypes';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -213,6 +219,16 @@ const EMPTY_STATE_CARDS = [
   },
 ];
 
+const TEMPLATE_RELEASE_KIND_OPTIONS = [
+  { value: 'minor', label: 'Minor releases' },
+  { value: 'major', label: 'Major releases' },
+  { value: 'patch', label: 'Patch releases' },
+  { value: 'prerelease', label: 'Prereleases' },
+  { value: 'any', label: 'Any release' },
+] as const;
+
+const NONE_OPTION_VALUE = '__none__';
+
 // ---------------------------------------------------------------------------
 // Form helpers
 // ---------------------------------------------------------------------------
@@ -238,6 +254,20 @@ interface AgentFormData {
   approval_mode: AgentApprovalMode;
   max_concurrent_runs: string;
   default_invocation_mode: AgentInvocationMode;
+}
+
+interface ReleaseNotesTemplateFormData {
+  repository_id: string;
+  release_kind: 'minor' | 'major' | 'patch' | 'prerelease' | 'any';
+  include_prerelease: boolean;
+  tag_pattern: string;
+  space_id: string;
+  collection_id: string;
+}
+
+interface TemplateDraft {
+  template: AgentTemplate;
+  createStarterFlow: boolean;
 }
 
 const CUSTOM_AGENT_TARGET_OPTIONS: Array<{ value: AgentTargetType; label: string; description: string }> = [
@@ -652,6 +682,32 @@ function buildSystemAgentForm(agent: Agent, presets: AgentPresetDefinition[]): A
   };
 }
 
+function buildTemplateAgentForm(template: AgentTemplate): AgentFormData {
+  const runtimeKind = template.runtime_kind || 'native_sdk';
+  const provider = normalizeProviderForRuntime(runtimeKind, 'anthropic');
+  return {
+    name: template.name,
+    preset_key: DEFAULT_SYSTEM_PRESET_KEY,
+    preset_version_key: fallbackPresetVersionKey(DEFAULT_SYSTEM_PRESET_KEY),
+    runtime_kind: runtimeKind,
+    supported_modes: supportedModesForForm(runtimeKind),
+    provider,
+    model: '',
+    ...deriveExecutionConfigFields(runtimeKind, provider, template.execution_config),
+    system_prompt: template.system_prompt ?? '',
+    instruction_preamble: '',
+    instruction_skills: [],
+    monthly_token_budget: template.monthly_token_budget?.toString() ?? '',
+    team_id: '',
+    allowed_targets: normalizeTargetList(template.allowed_targets ?? ['task']),
+    allowed_tools: normalizeToolList(template.allowed_tools ?? []),
+    skills: template.skills ?? [],
+    approval_mode: template.approval_mode ?? 'never',
+    max_concurrent_runs: '1',
+    default_invocation_mode: normalizeDefaultInvocationMode(template.default_invocation_mode, runtimeKind, 'autonomous'),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Inline helper: label + optional tooltip
 // ---------------------------------------------------------------------------
@@ -878,6 +934,9 @@ function agentRoleLabel(agent: Agent, presets: AgentPresetDefinition[]) {
   if (agent.is_system) {
     return presetLabel(fallbackPresetKey(agent), presets);
   }
+  if (agent.source_template_key === 'release_notes_writer') {
+    return 'Release Notes Writer';
+  }
   const role = agent.role?.trim();
   return role || 'Custom agent';
 }
@@ -1059,6 +1118,7 @@ function AgentCard({
               <span className={cn('h-2 w-2 rounded-full', attentionDotClass(agent, stats))} />
               <h3 className="truncate text-sm font-semibold">{agent.name}</h3>
               {agent.is_system ? <Badge variant="outline" className="text-[10px]">System</Badge> : null}
+              {agent.source_template_key ? <Badge variant="secondary" className="text-[10px]">Template</Badge> : null}
             </div>
             <p className="text-xs text-muted-foreground">{role}</p>
             <p className="line-clamp-2 text-sm text-muted-foreground">{purpose}</p>
@@ -1165,6 +1225,7 @@ function AgentRow({
               <span className={cn('h-2 w-2 rounded-full', attentionDotClass(agent, stats))} />
               <span className="truncate text-sm font-medium">{agent.name}</span>
               {agent.is_system ? <Badge variant="outline" className="text-[10px]">System</Badge> : null}
+              {agent.source_template_key ? <Badge variant="secondary" className="text-[10px]">Template</Badge> : null}
             </div>
             <p className="mt-0.5 truncate text-xs text-muted-foreground">{role}</p>
           </div>
@@ -1246,6 +1307,21 @@ export function AgentsPage() {
   const [viewMode, setViewMode] = useState<'list' | 'cards'>('list');
   const [runStats, setRunStats] = useState<Record<string, AgentRunStats>>({});
   const [agentUsageMap, setAgentUsageMap] = useState<Record<string, AgentTriggerUsageSummary | null>>({});
+  const [agentTemplates, setAgentTemplates] = useState<AgentTemplate[]>([]);
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
+  const [templateDraft, setTemplateDraft] = useState<TemplateDraft | null>(null);
+  const [templateResourcesLoading, setTemplateResourcesLoading] = useState(false);
+  const [repositories, setRepositories] = useState<GitRepository[]>([]);
+  const [docsSpaces, setDocsSpaces] = useState<DocsSpace[]>([]);
+  const [docsCollections, setDocsCollections] = useState<DocsCollection[]>([]);
+  const [templateForm, setTemplateForm] = useState<ReleaseNotesTemplateFormData>({
+    repository_id: '',
+    release_kind: 'minor',
+    include_prerelease: false,
+    tag_pattern: '',
+    space_id: '',
+    collection_id: NONE_OPTION_VALUE,
+  });
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [systemDrawerOpen, setSystemDrawerOpen] = useState(false);
@@ -1316,6 +1392,48 @@ export function AgentsPage() {
     }
   }, [workspaceId]);
 
+  const loadAgentTemplates = useCallback(async () => {
+    if (!workspaceId) return;
+    const res = await automationService.listAgentTemplates(workspaceId);
+    if (!res.error) {
+      setAgentTemplates(res.data ?? []);
+    }
+  }, [workspaceId]);
+
+  const loadTemplateResources = useCallback(async () => {
+    if (!workspaceId) return;
+    setTemplateResourcesLoading(true);
+    const [reposRes, spacesRes] = await Promise.all([
+      gitService.listRepositories(workspaceId),
+      docsService.listSpaces(workspaceId),
+    ]);
+    if (reposRes.error) {
+      toast.error('Failed to load repositories', { description: reposRes.error });
+    } else {
+      setRepositories(reposRes.data ?? []);
+    }
+    if (spacesRes.error) {
+      toast.error('Failed to load docs spaces', { description: spacesRes.error });
+    } else {
+      setDocsSpaces(spacesRes.data ?? []);
+    }
+    setTemplateResourcesLoading(false);
+  }, [workspaceId]);
+
+  const loadCollectionsForSpace = useCallback(async (spaceId: string) => {
+    if (!workspaceId || !spaceId) {
+      setDocsCollections([]);
+      return;
+    }
+    const res = await docsService.listCollections(workspaceId, spaceId);
+    if (res.error) {
+      toast.error('Failed to load collections', { description: res.error });
+      setDocsCollections([]);
+      return;
+    }
+    setDocsCollections(res.data ?? []);
+  }, [workspaceId]);
+
   const loadAgentUsage = useCallback(async (agentId: string) => {
     if (!workspaceId) return;
     setAgentUsageLoading(true);
@@ -1335,7 +1453,8 @@ export function AgentsPage() {
     loadPresets();
     loadToolCatalog();
     loadSkillCatalog();
-  }, [loadAgents, loadProviderOptions, loadPresets, loadToolCatalog, loadSkillCatalog]);
+    loadAgentTemplates();
+  }, [loadAgents, loadProviderOptions, loadPresets, loadToolCatalog, loadSkillCatalog, loadAgentTemplates]);
 
   // Fetch fleet-level run stats and trigger usage once, then derive agent rows from that shared data.
   useEffect(() => {
@@ -1399,6 +1518,7 @@ export function AgentsPage() {
 
   const openCreateDialog = () => {
     setEditingAgent(null);
+    setTemplateDraft(null);
     setAgentUsage(null);
     setAdvancedOpen(false);
     setAutomationOpen(false);
@@ -1411,8 +1531,44 @@ export function AgentsPage() {
     setDialogOpen(true);
   };
 
+  const openTemplateLibrary = async () => {
+    setTemplateDialogOpen(true);
+    if (agentTemplates.length === 0) {
+      await loadAgentTemplates();
+    }
+  };
+
+  const openCreateFromTemplateDrawer = async (template: AgentTemplate) => {
+    setEditingAgent(null);
+    setTemplateDraft({ template, createStarterFlow: template.key === 'release_notes_writer' });
+    setAgentUsage(null);
+    setAdvancedOpen(false);
+    setAutomationOpen(false);
+    setToolPickerOpen(false);
+    setSystemDrawerOpen(false);
+    setVersionDraftOpen(false);
+    setVersionLabelDraft('');
+    setVersionDescriptionDraft('');
+    setForm(buildTemplateAgentForm(template));
+    setTemplateDialogOpen(false);
+    setTemplateForm({
+      repository_id: '',
+      release_kind: 'minor',
+      include_prerelease: false,
+      tag_pattern: '',
+      space_id: '',
+      collection_id: NONE_OPTION_VALUE,
+    });
+    setDocsCollections([]);
+    setDialogOpen(true);
+    if (template.key === 'release_notes_writer' && (repositories.length === 0 || docsSpaces.length === 0)) {
+      await loadTemplateResources();
+    }
+  };
+
   const openEditDialog = (agent: Agent) => {
     setEditingAgent(agent);
+    setTemplateDraft(null);
     setAgentUsage(null);
     void loadAgentUsage(agent.id);
     setAdvancedOpen(hasConfiguredAdvancedFields(agent, presets));
@@ -1480,13 +1636,73 @@ export function AgentsPage() {
         });
       }
     } else {
-      const payload = buildCreatePayload(workspaceId, form, advancedOpen);
-      const res = await automationService.createAgent(workspaceId, payload);
-      if (!res.error) {
-        setDialogOpen(false);
-        await loadAgents();
+      if (templateDraft) {
+        if (templateDraft.createStarterFlow && templateDraft.template.key === 'release_notes_writer') {
+          if (!templateForm.repository_id) {
+            toast.error('Select a repository');
+            setSaving(false);
+            return;
+          }
+          if (!templateForm.space_id) {
+            toast.error('Select a docs space');
+            setSaving(false);
+            return;
+          }
+        }
+
+        const selectedRepo = repositories.find((repo) => repo.id === templateForm.repository_id);
+        const payload = {
+          name: form.name.trim(),
+          team_id: form.team_id || undefined,
+          overrides: {
+            role: templateDraft.template.default_role,
+            runtime_kind: form.runtime_kind,
+            skills: form.skills,
+            provider: form.provider,
+            model: form.model.trim(),
+            monthly_token_budget: form.monthly_token_budget.trim()
+              ? Number.parseInt(form.monthly_token_budget, 10)
+              : 0,
+            execution_config: buildExecutionConfigPayload(form),
+            system_prompt: form.system_prompt,
+            allowed_tools: normalizeToolList(form.allowed_tools),
+            allowed_targets: normalizeTargetList(form.allowed_targets),
+            approval_mode: form.approval_mode,
+            max_concurrent_runs: form.max_concurrent_runs ? Number.parseInt(form.max_concurrent_runs, 10) : 1,
+            default_invocation_mode: form.default_invocation_mode,
+          },
+          create_flow: templateDraft.createStarterFlow,
+          flow: templateDraft.createStarterFlow
+            ? {
+                repository_id: templateForm.repository_id,
+                repo_full_name: selectedRepo?.full_name,
+                release_kinds: templateForm.release_kind === 'any' ? undefined : [templateForm.release_kind],
+                include_prerelease: templateForm.include_prerelease,
+                tag_pattern: templateForm.tag_pattern.trim() || undefined,
+                space_id: templateForm.space_id,
+                collection_id: templateForm.collection_id === NONE_OPTION_VALUE ? undefined : templateForm.collection_id,
+              }
+            : undefined,
+        } satisfies CreateAgentFromTemplateRequest;
+        const res = await automationService.createAgentFromTemplate(workspaceId, templateDraft.template.id, payload);
+        if (!res.error) {
+          setDialogOpen(false);
+          setTemplateDraft(null);
+          await loadAgents();
+          toast.success(res.data?.flow ? 'Agent and starter flow created' : 'Agent created');
+        } else {
+          toast.error('Failed to create agent from template', { description: res.error });
+        }
       } else {
-        toast.error('Failed to create agent', { description: res.error });
+        const payload = buildCreatePayload(workspaceId, form, advancedOpen);
+        const res = await automationService.createAgent(workspaceId, payload);
+        if (!res.error) {
+          setDialogOpen(false);
+          await loadAgents();
+          toast.success('Agent created');
+        } else {
+          toast.error('Failed to create agent', { description: res.error });
+        }
       }
     }
     setSaving(false);
@@ -1782,10 +1998,16 @@ export function AgentsPage() {
               </button>
             </div>
             {canEdit && (
-              <Button size="sm" onClick={openCreateDialog}>
-                <PlusSignIcon className="mr-1.5 h-4 w-4" />
-                New Custom Agent
-              </Button>
+              <>
+                <Button size="sm" variant="outline" onClick={() => void openTemplateLibrary()}>
+                  <BookOpen01Icon className="mr-1.5 h-4 w-4" />
+                  Use Template
+                </Button>
+                <Button size="sm" onClick={openCreateDialog}>
+                  <PlusSignIcon className="mr-1.5 h-4 w-4" />
+                  New Custom Agent
+                </Button>
+              </>
             )}
           </div>
         )}
@@ -1805,10 +2027,16 @@ export function AgentsPage() {
             AI-powered teammates that plan features, write code, review work, update docs, reply to customers, and manage deals — automatically or on demand.
           </p>
           {canEdit && (
-            <Button className="gap-2 mb-8" onClick={openCreateDialog}>
-              <PlusSignIcon className="h-4 w-4" />
-              New Custom Agent
-            </Button>
+            <div className="mb-8 flex flex-wrap items-center justify-center gap-2">
+              <Button variant="outline" className="gap-2" onClick={() => void openTemplateLibrary()}>
+                <BookOpen01Icon className="h-4 w-4" />
+                Use Template
+              </Button>
+              <Button className="gap-2" onClick={openCreateDialog}>
+                <PlusSignIcon className="h-4 w-4" />
+                New Custom Agent
+              </Button>
+            </div>
           )}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-4xl">
             {EMPTY_STATE_CARDS.map((card) => (
@@ -2833,23 +3061,29 @@ export function AgentsPage() {
           if (!open) {
             setToolPickerOpen(false);
             setSkillPickerOpen(false);
+            setTemplateDraft(null);
+            setDocsCollections([]);
           }
         }}
       >
         <SheetContent side="right" className="w-full gap-0 p-0 data-[side=right]:w-[88vw] data-[side=right]:sm:max-w-[88vw] xl:data-[side=right]:w-[1100px] xl:data-[side=right]:max-w-[1100px]">
           <SheetHeader className="border-b border-border/60 bg-muted/20 px-6 py-5">
-            <SheetTitle>{editingAgent ? 'Edit Custom Agent' : 'New Custom Agent'}</SheetTitle>
+            <SheetTitle>{editingAgent ? 'Edit Custom Agent' : templateDraft ? 'New Agent From Template' : 'New Custom Agent'}</SheetTitle>
             <SheetDescription className="max-w-3xl">
-              Custom agents own their prompt, runtime, tools, targets, and automation settings directly. They do not inherit from or stay pinned to any preset family.
+              {templateDraft
+                ? 'Review the generated defaults, adjust anything you need, then create the agent.'
+                : 'Custom agents own their prompt, runtime, tools, targets, and automation settings directly. They do not inherit from or stay pinned to any preset family.'}
             </SheetDescription>
           </SheetHeader>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
             <div className="space-y-4">
               <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2">
-                <p className="text-sm font-medium">Custom agent</p>
+                <p className="text-sm font-medium">{templateDraft ? templateDraft.template.name : 'Custom agent'}</p>
                 <p className="text-xs text-muted-foreground">
-                  This is a fully custom agent. It does not inherit or track any preset family or preset version.
+                  {templateDraft
+                    ? `${templateDraft.template.allowed_tools.length} tools, ${templateDraft.template.skills.length} skills, ${AGENT_RUNTIME_LABELS[templateDraft.template.runtime_kind] ?? templateDraft.template.runtime_kind} runtime. You can edit these defaults before creating.`
+                    : 'This is a fully custom agent. It does not inherit or track any preset family or preset version.'}
                 </p>
               </div>
 
@@ -2936,6 +3170,142 @@ export function AgentsPage() {
                 Task and epic are the normal choices for planning agents. Add other targets only if the prompt and toolset are designed for them.
               </p>
             </div>
+
+            {templateDraft?.template.key === 'release_notes_writer' && (
+              <div className="rounded-xl border border-border/60 bg-card p-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold">Starter flow</p>
+                    <p className="text-[11px] leading-relaxed text-muted-foreground">
+                      Create a GitHub release trigger and write release notes to Docs when this agent is created.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={templateDraft.createStarterFlow}
+                    onCheckedChange={(checked) => setTemplateDraft((current) => (
+                      current ? { ...current, createStarterFlow: checked } : current
+                    ))}
+                  />
+                </div>
+
+                {templateDraft.createStarterFlow && (
+                  <div className="mt-5 space-y-4">
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="grid gap-2">
+                        <FieldLabel htmlFor="template-repository">Repository</FieldLabel>
+                        <Select
+                          value={templateForm.repository_id || undefined}
+                          onValueChange={(value) => setTemplateForm((current) => ({ ...current, repository_id: value }))}
+                        >
+                          <SelectTrigger id="template-repository">
+                            <SelectValue placeholder={templateResourcesLoading ? 'Loading repositories...' : 'Select a repository'} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {repositories.map((repo) => (
+                              <SelectItem key={repo.id} value={repo.id}>
+                                {repo.full_name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="grid gap-2">
+                        <FieldLabel htmlFor="template-release-kind">Release type</FieldLabel>
+                        <Select
+                          value={templateForm.release_kind}
+                          onValueChange={(value: ReleaseNotesTemplateFormData['release_kind']) => {
+                            setTemplateForm((current) => ({ ...current, release_kind: value }));
+                          }}
+                        >
+                          <SelectTrigger id="template-release-kind">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {TEMPLATE_RELEASE_KIND_OPTIONS.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                      <div className="grid gap-2">
+                        <FieldLabel htmlFor="template-tag-pattern">Tag pattern</FieldLabel>
+                        <Input
+                          id="template-tag-pattern"
+                          value={templateForm.tag_pattern}
+                          onChange={(event) => setTemplateForm((current) => ({ ...current, tag_pattern: event.target.value }))}
+                          placeholder="Optional, e.g. v*"
+                        />
+                      </div>
+                      <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5">
+                        <div className="space-y-0.5">
+                          <p className="text-sm font-medium">Prereleases</p>
+                          <p className="text-[11px] text-muted-foreground">Include beta and rc tags</p>
+                        </div>
+                        <Switch
+                          checked={templateForm.include_prerelease}
+                          onCheckedChange={(checked) => setTemplateForm((current) => ({ ...current, include_prerelease: checked }))}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="grid gap-2">
+                        <FieldLabel htmlFor="template-space">Docs space</FieldLabel>
+                        <Select
+                          value={templateForm.space_id || undefined}
+                          onValueChange={(value) => {
+                            setTemplateForm((current) => ({
+                              ...current,
+                              space_id: value,
+                              collection_id: NONE_OPTION_VALUE,
+                            }));
+                            void loadCollectionsForSpace(value);
+                          }}
+                        >
+                          <SelectTrigger id="template-space">
+                            <SelectValue placeholder={templateResourcesLoading ? 'Loading spaces...' : 'Select a docs space'} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {docsSpaces.map((space) => (
+                              <SelectItem key={space.id} value={space.id}>
+                                {space.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="grid gap-2">
+                        <FieldLabel htmlFor="template-collection">Collection</FieldLabel>
+                        <Select
+                          value={templateForm.collection_id}
+                          onValueChange={(value) => setTemplateForm((current) => ({ ...current, collection_id: value }))}
+                          disabled={!templateForm.space_id}
+                        >
+                          <SelectTrigger id="template-collection">
+                            <SelectValue placeholder={templateForm.space_id ? 'Optional collection' : 'Select a docs space first'} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={NONE_OPTION_VALUE}>Space root</SelectItem>
+                            {docsCollections.map((collection) => (
+                              <SelectItem key={collection.id} value={collection.id}>
+                                {collection.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="rounded-xl border border-border/60 bg-card p-5">
               <div className="grid gap-5 sm:grid-cols-2">
@@ -3455,7 +3825,7 @@ export function AgentsPage() {
                 disabled={saving || !form.name.trim()}
                 onClick={handleSave}
               >
-                {saving ? 'Saving...' : editingAgent ? 'Save Changes' : 'Create Custom Agent'}
+                {saving ? 'Saving...' : editingAgent ? 'Save Changes' : templateDraft ? 'Create Agent' : 'Create Custom Agent'}
               </Button>
             </div>
           </SheetFooter>
@@ -3485,6 +3855,55 @@ export function AgentsPage() {
         variant="destructive"
         onConfirm={handleDeleteWorkspaceVersion}
       />
+
+      <Dialog
+        open={templateDialogOpen}
+        onOpenChange={(open) => {
+          setTemplateDialogOpen(open);
+        }}
+      >
+        <DialogContent className="sm:max-w-[720px]">
+          <DialogHeader>
+            <DialogTitle>Agent Templates</DialogTitle>
+            <DialogDescription>
+              Start from a prebuilt agent and optionally create its starter automation flow.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {agentTemplates.map((template) => (
+              <button
+                key={template.id}
+                type="button"
+                className="rounded-xl border border-border/60 p-4 text-left transition-colors hover:bg-muted/30"
+                onClick={() => void openCreateFromTemplateDrawer(template)}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold">{template.name}</span>
+                      <Badge variant="secondary" className="text-[10px]">
+                        Template
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{template.description || 'No description provided.'}</p>
+                  </div>
+                  <ArrowRight01Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                </div>
+              </button>
+            ))}
+            {agentTemplates.length === 0 && (
+              <div className="rounded-xl border border-dashed border-border/60 p-5 text-sm text-muted-foreground">
+                No agent templates are available in this workspace yet.
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTemplateDialogOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={workspaceVersionBeingRenamed !== null}

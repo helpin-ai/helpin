@@ -191,6 +191,7 @@ func main() {
 			&model.PMTeamEstimateSettings{},
 			&model.PMTeamFieldVisibility{},
 			&model.Agent{},
+			&model.AgentTemplate{},
 			&model.WorkspaceAgentPresetVersion{},
 			&model.WorkspaceSkill{},
 			&model.AgentRun{},
@@ -240,6 +241,7 @@ func main() {
 			&model.DocsSpaceTeam{},
 			&model.DocsCollection{},
 			&model.DocsDocument{},
+			&model.DocsDocumentKey{},
 			&model.DocsContent{},
 			&model.DocsVersion{},
 			&model.DocsLink{},
@@ -518,6 +520,7 @@ func main() {
 	invitationRepo := repository.NewInvitationRepository(db)
 	agentRepo := repository.NewAgentRepository(db)
 	workspacePresetVersionRepo := repository.NewWorkspaceAgentPresetVersionRepository(db)
+	agentTemplateRepo := repository.NewAgentTemplateRepository(db)
 	workspaceSkillRepo := repository.NewWorkspaceSkillRepository(db)
 	agentRunRepo := repository.NewAgentRunRepository(db)
 	agentTriggerExecutionRepo := repository.NewAgentTriggerExecutionRepository(db)
@@ -777,7 +780,7 @@ func main() {
 		cfg.CodexEnableChatGPTOAuth,
 		cfg.CodexChatGPTAccessToken,
 		cfg.CodexChatGPTAccountID,
-	).SetCodexAuthManager(codexAuthManager).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService)
+	).SetCodexAuthManager(codexAuthManager).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo)
 	supportInboxService.SetConversationAgentRunner(agentService.RunConversationAgentAuto)
 	supportInboxService.SetNotificationService(notificationService, workspaceRepo)
 	emailFallbackService.SetNotificationService(notificationService)
@@ -808,6 +811,9 @@ func main() {
 	pmRecurringTemplateService.SetTemporalClient(temporalClient)
 
 	slog.Info("startup: backfilling built-in agents for existing workspaces")
+	if err := agentService.EnsureSystemTemplates(context.Background()); err != nil {
+		fatalWithSentry("failed to seed system agent templates", err)
+	}
 	workspaceIDs, err := workspaceRepo.ListIDs(context.Background())
 	if err != nil {
 		fatalWithSentry("failed to list workspaces for built-in agent backfill", err)

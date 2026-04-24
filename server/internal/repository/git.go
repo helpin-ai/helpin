@@ -225,6 +225,20 @@ func (r *GitRepositoryRepository) GetByID(ctx context.Context, workspaceID, id s
 	return &repo, nil
 }
 
+// GetByFullName loads a repository by workspace-scoped full name.
+func (r *GitRepositoryRepository) GetByFullName(ctx context.Context, workspaceID, fullName string) (*model.GitRepository, error) {
+	var repo model.GitRepository
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND lower(full_name) = lower(?) AND deleted_at IS NULL AND active = ?", workspaceID, fullName, true).
+		First(&repo).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get git repository by full name: %w", err)
+	}
+	return &repo, nil
+}
+
 // GetByIDAny loads a repository by ID regardless of workspace or lifecycle state.
 func (r *GitRepositoryRepository) GetByIDAny(ctx context.Context, id string) (*model.GitRepository, error) {
 	var repo model.GitRepository
@@ -578,6 +592,48 @@ func (r *TaskGitLinkRepository) GetByPR(ctx context.Context, workspaceID, repo s
 		return nil, fmt.Errorf("get story git link by PR: %w", err)
 	}
 	return &link, nil
+}
+
+// ListByRepoAndPRs returns links by repo+PR numbers.
+func (r *TaskGitLinkRepository) ListByRepoAndPRs(ctx context.Context, workspaceID, repo string, prNumbers []int) ([]model.TaskGitLink, error) {
+	if len(prNumbers) == 0 {
+		return []model.TaskGitLink{}, nil
+	}
+	var links []model.TaskGitLink
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND repo = ? AND pr_number IN ?", workspaceID, repo, prNumbers).
+		Find(&links).Error; err != nil {
+		return nil, fmt.Errorf("list story git links by PRs: %w", err)
+	}
+	return links, nil
+}
+
+// ListByRepoAndBranches returns links by repo+branch names.
+func (r *TaskGitLinkRepository) ListByRepoAndBranches(ctx context.Context, workspaceID, repo string, branches []string) ([]model.TaskGitLink, error) {
+	if len(branches) == 0 {
+		return []model.TaskGitLink{}, nil
+	}
+	var links []model.TaskGitLink
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND repo = ? AND branch IN ?", workspaceID, repo, branches).
+		Find(&links).Error; err != nil {
+		return nil, fmt.Errorf("list story git links by branches: %w", err)
+	}
+	return links, nil
+}
+
+// ListByRepoAndCommitSHAs returns links by repo+commit SHA.
+func (r *TaskGitLinkRepository) ListByRepoAndCommitSHAs(ctx context.Context, workspaceID, repo string, commitSHAs []string) ([]model.TaskGitLink, error) {
+	if len(commitSHAs) == 0 {
+		return []model.TaskGitLink{}, nil
+	}
+	var links []model.TaskGitLink
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND repo = ? AND commit_sha IN ?", workspaceID, repo, commitSHAs).
+		Find(&links).Error; err != nil {
+		return nil, fmt.Errorf("list story git links by commit shas: %w", err)
+	}
+	return links, nil
 }
 
 // Create creates a new link.

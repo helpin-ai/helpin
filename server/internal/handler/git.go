@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -567,6 +568,15 @@ func (h *GitHandler) handleGitHubRelease(r *http.Request, w http.ResponseWriter,
 
 	tagName, _ := release["tag_name"].(string)
 	targetCommitish, _ := release["target_commitish"].(string)
+	releaseName, _ := release["name"].(string)
+	releaseURL, _ := release["html_url"].(string)
+	isPrerelease, _ := release["prerelease"].(bool)
+	var publishedAt *time.Time
+	if rawPublishedAt, _ := release["published_at"].(string); strings.TrimSpace(rawPublishedAt) != "" {
+		if parsed, err := time.Parse(time.RFC3339, rawPublishedAt); err == nil {
+			publishedAt = &parsed
+		}
+	}
 	workspaceID, routed, err := h.resolveWebhookWorkspaceID(r, integration, payload)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -577,7 +587,7 @@ func (h *GitHandler) handleGitHubRelease(r *http.Request, w http.ResponseWriter,
 		return
 	}
 
-	if err := h.gitService.ProcessWebhookRelease(r.Context(), workspaceID, repo, action, tagName, targetCommitish); err != nil {
+	if err := h.gitService.ProcessWebhookRelease(r.Context(), workspaceID, repo, action, tagName, targetCommitish, releaseName, releaseURL, publishedAt, isPrerelease); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
