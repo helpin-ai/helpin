@@ -82,15 +82,28 @@ export async function loadAlternateLinks(
     current,
   )
 
-  for (const locale of rootData.config.enabled_locales) {
-    const targetSpaces = await loadSpacesForLocale(queryClient, rootData, locale)
-    const targetNavigation = await loadNavigationForLocale(
-      queryClient,
-      rootData,
-      locale,
-      targetSpaces,
-      current,
-    )
+  const localeEntries = await Promise.all(
+    rootData.config.enabled_locales.map(async (locale) => {
+      const targetSpaces =
+        locale === defaultLocale
+          ? defaultSpaces
+          : await loadSpacesForLocale(queryClient, rootData, locale)
+      const targetNavigation =
+        locale === defaultLocale
+          ? defaultNavigation
+          : await loadNavigationForLocale(
+              queryClient,
+              rootData,
+              locale,
+              targetSpaces,
+              current,
+            )
+
+      return { locale, targetSpaces, targetNavigation }
+    }),
+  )
+
+  for (const { locale, targetSpaces, targetNavigation } of localeEntries) {
     const href = resolveExactLocalePath({
       multilingualEnabled: rootData.multilingualEnabled,
       targetLocale: locale,
