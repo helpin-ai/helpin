@@ -66,4 +66,22 @@ describe('getHelpCenterRequestContext', () => {
       basepath: '',
     })
   })
+
+  it('preserves reverse-proxy public host and base path from the SSR snapshot', async () => {
+    ;(globalThis as { __hcGetRequestContext__?: () => unknown }).__hcGetRequestContext__ = () => ({
+      host: 'usermaven.com',
+      protocol: 'https',
+      pathname: '/docs/articles/installing-helpin',
+      search: '',
+      subdomain: 'usermaven',
+      basepath: '/docs',
+    })
+
+    await expect(getHelpCenterRequestContext()).resolves.toEqual({
+      host: 'usermaven.com',
+      protocol: 'https',
+      subdomain: 'usermaven',
+      basepath: '/docs',
+    })
+  })
 })

@@ -1,4 +1,4 @@
-import { ArrowReloadHorizontalIcon } from '@/lib/icons';
+import { ArrowReloadHorizontalIcon, BookOpen01Icon, PlusSignIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
@@ -24,6 +24,7 @@ export function SupportKnowledgeSourcesField({
   onReindex,
   reindexingSpaceId,
   disabled = false,
+  onOpenDocs,
 }: {
   agentId?: string;
   spaces: DocsSpace[];
@@ -32,12 +33,25 @@ export function SupportKnowledgeSourcesField({
   onReindex: (spaceId: string) => void;
   reindexingSpaceId?: string;
   disabled?: boolean;
+  onOpenDocs?: () => void;
 }) {
   if (spaces.length === 0) {
     return (
-      <p className="text-xs text-muted-foreground italic">
-        No help center spaces found. Create a public docs space first.
-      </p>
+      <div className="rounded-xl border border-dashed border-border/80 bg-muted/20 px-4 py-8 text-center">
+        <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
+          <BookOpen01Icon className="h-5 w-5" />
+        </div>
+        <p className="text-sm font-medium">No public docs spaces yet</p>
+        <p className="mx-auto mt-1 max-w-lg text-sm leading-6 text-muted-foreground">
+          Create a Help Center docs space, publish articles, then return here to make them searchable by AI.
+        </p>
+        {onOpenDocs ? (
+          <Button type="button" variant="outline" size="sm" className="mt-4" onClick={onOpenDocs}>
+            <PlusSignIcon className="h-4 w-4" />
+            Open docs
+          </Button>
+        ) : null}
+      </div>
     );
   }
 

@@ -164,6 +164,7 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     },
     setSelectedMailboxId: (mailboxId) => {
       set({
+        navFilter: 'all',
         selectedMailboxId: mailboxId,
         selectedConversationId: null,
         activePanel: 'list',

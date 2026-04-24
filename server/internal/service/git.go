@@ -38,10 +38,17 @@ type GitService struct {
 	activitySvc     *PMActivityService
 	wsPublisher     *websocket.Publisher
 	ruleEngine      *AutomationRuleEngine
-	githubApp       *githubapp.Client
+	githubApp       gitHubAppClient
 	appBaseURL      string
 	githubAppSlug   string
 	stateSecret     string
+}
+
+type gitHubAppClient interface {
+	ListInstallationRepositories(ctx context.Context, installationID string) ([]githubapp.Repository, error)
+	ListRepositoryBranches(ctx context.Context, installationID, owner, repo string) ([]githubapp.Branch, error)
+	GetInstallation(ctx context.Context, installationID string) (*githubapp.Installation, error)
+	MergeBranch(ctx context.Context, installationID, owner, repo, base, head, commitMessage string) error
 }
 
 // NewGitService creates a new GitService.
@@ -61,6 +68,10 @@ func NewGitService(
 	githubAppSlug string,
 	stateSecret string,
 ) *GitService {
+	var app gitHubAppClient
+	if githubApp != nil {
+		app = githubApp
+	}
 	return &GitService{
 		integrationRepo: integrationRepo,
 		repoRepo:        repoRepo,
@@ -72,7 +83,7 @@ func NewGitService(
 		taskRepo:        taskRepo,
 		activitySvc:     activitySvc,
 		wsPublisher:     wsPublisher,
-		githubApp:       githubApp,
+		githubApp:       app,
 		appBaseURL:      strings.TrimRight(strings.TrimSpace(appBaseURL), "/"),
 		githubAppSlug:   strings.TrimSpace(githubAppSlug),
 		stateSecret:     strings.TrimSpace(stateSecret),
@@ -1114,6 +1125,148 @@ func (s *GitService) MergeBranch(ctx context.Context, workspaceID, storyID, targ
 	return s.githubApp.MergeBranch(ctx, *integration.InstallationID, owner, repo, targetBranch, *target.WorkingBranch, commitMsg)
 }
 
+type deliveryStatusMetadata struct {
+	LinkID   string
+	PRNumber *int
+	PRTitle  *string
+	PRURL    *string
+}
+
+// UpdateDeliveryStatusAfterMerge reconciles task delivery state after a direct
+// merge path succeeds, without waiting for a GitHub webhook.
+func (s *GitService) UpdateDeliveryStatusAfterMerge(ctx context.Context, workspaceID, taskID, prStatus string) error {
+	return s.updateDeliveryStatusForPR(ctx, workspaceID, taskID, prStatus, nil)
+}
+
+func (s *GitService) updateDeliveryStatusForPR(ctx context.Context, workspaceID, taskID, prStatus string, meta *deliveryStatusMetadata) error {
+	prStatus = strings.TrimSpace(prStatus)
+	if workspaceID == "" || taskID == "" || prStatus == "" {
+		return fmt.Errorf("workspace_id, task_id, and pr_status are required")
+	}
+	if s.deliveryRepo == nil || s.linkRepo == nil {
+		return fmt.Errorf("git delivery repositories are not configured")
+	}
+
+	target, err := s.deliveryRepo.GetByTask(ctx, workspaceID, taskID)
+	if err != nil {
+		return fmt.Errorf("load delivery target: %w", err)
+	}
+
+	now := time.Now()
+	if target != nil {
+		target.ActivePRStatus = &prStatus
+		target.LastSyncedAt = &now
+		if meta != nil {
+			if meta.PRNumber != nil {
+				target.ActivePRNumber = meta.PRNumber
+			}
+			if meta.PRTitle != nil {
+				target.ActivePRTitle = meta.PRTitle
+			}
+			if meta.PRURL != nil {
+				target.ActivePRURL = meta.PRURL
+			}
+		}
+		if deliveryState := deliveryStateForPRStatus(prStatus); deliveryState != "" {
+			target.DeliveryState = deliveryState
+		}
+		if err := s.deliveryRepo.Save(ctx, target); err != nil {
+			return fmt.Errorf("save delivery target: %w", err)
+		}
+	}
+
+	links, err := s.linkRepo.ListByTask(ctx, workspaceID, taskID)
+	if err != nil {
+		return fmt.Errorf("list task git links: %w", err)
+	}
+	for i := range links {
+		updateLink := shouldUpdateGitLinkForDeliveryStatus(links[i], target)
+		if meta != nil && meta.LinkID != "" && links[i].ID == meta.LinkID {
+			updateLink = true
+		}
+		if !updateLink {
+			continue
+		}
+		links[i].PRStatus = &prStatus
+		if meta != nil {
+			if meta.PRNumber != nil {
+				links[i].PRNumber = meta.PRNumber
+			}
+			if meta.PRTitle != nil {
+				links[i].PRTitle = meta.PRTitle
+			}
+			if meta.PRURL != nil {
+				links[i].PRURL = meta.PRURL
+			}
+		}
+		if err := s.linkRepo.Update(ctx, &links[i]); err != nil {
+			return fmt.Errorf("update task git link: %w", err)
+		}
+		s.publishTaskGitLinkUpdated(workspaceID, links[i].ID, taskID)
+	}
+
+	if prStatus == "merged" && s.taskRepo != nil && s.settingsRepo != nil {
+		story, err := s.taskRepo.GetRawByID(ctx, taskID)
+		if err != nil {
+			return fmt.Errorf("load task: %w", err)
+		}
+		if story != nil && story.TeamID != nil && *story.TeamID != "" {
+			teamDefault, cfgErr := s.settingsRepo.GetTeamRepoDefault(ctx, *story.TeamID)
+			if cfgErr != nil {
+				return fmt.Errorf("load team repo default: %w", cfgErr)
+			}
+			if teamDefault != nil && teamDefault.AutoSyncStates && teamDefault.DoneStateID != nil {
+				story.WorkflowStateID = *teamDefault.DoneStateID
+				if err := s.taskRepo.Update(ctx, story); err != nil {
+					return fmt.Errorf("update task workflow state: %w", err)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func deliveryStateForPRStatus(prStatus string) string {
+	switch prStatus {
+	case "open":
+		return "pr_open"
+	case "merged":
+		return "merged"
+	case "closed":
+		return "closed"
+	default:
+		return ""
+	}
+}
+
+func shouldUpdateGitLinkForDeliveryStatus(link model.TaskGitLink, target *model.TaskDeliveryTarget) bool {
+	if target == nil {
+		return true
+	}
+	if target.RepoFullName != nil && *target.RepoFullName != "" && link.Repo != *target.RepoFullName {
+		return false
+	}
+	if target.WorkingBranch != nil && *target.WorkingBranch != "" {
+		return link.Branch != nil && *link.Branch == *target.WorkingBranch
+	}
+	return true
+}
+
+func (s *GitService) publishTaskGitLinkUpdated(workspaceID, linkID, taskID string) {
+	if s.wsPublisher == nil || linkID == "" {
+		return
+	}
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      "updated",
+		Entity:      "task_git_link",
+		EntityID:    linkID,
+		WorkspaceID: workspaceID,
+		ParentType:  "task",
+		ParentID:    taskID,
+	})
+}
+
 // ProcessWebhookPush handles a push event from a git provider.
 func (s *GitService) ProcessWebhookPush(ctx context.Context, workspaceID, repo, branch, commitSHA string) error {
 	link, err := s.linkRepo.GetByBranch(ctx, workspaceID, repo, branch)
@@ -1194,51 +1347,23 @@ func (s *GitService) ProcessWebhookPR(ctx context.Context, workspaceID, repo, ac
 	}
 	var story *model.PMTask
 	if link != nil {
-		link.PRNumber = &prNumber
-		link.PRTitle = &prTitle
-		link.PRURL = &prURL
-		link.PRStatus = &prStatus
-		if err := s.linkRepo.Update(ctx, link); err != nil {
+		err = s.updateDeliveryStatusForPR(ctx, workspaceID, link.TaskID, prStatus, &deliveryStatusMetadata{
+			LinkID:   link.ID,
+			PRNumber: &prNumber,
+			PRTitle:  &prTitle,
+			PRURL:    &prURL,
+		})
+		if err != nil {
 			return err
 		}
-
-		target, err := s.deliveryRepo.GetByTask(ctx, workspaceID, link.TaskID)
-		if err == nil && target != nil {
-			target.ActivePRNumber = &prNumber
-			target.ActivePRTitle = &prTitle
-			target.ActivePRURL = &prURL
-			target.ActivePRStatus = &prStatus
-			now := time.Now()
-			target.LastSyncedAt = &now
-			switch prStatus {
-			case "open":
-				target.DeliveryState = "pr_open"
-			case "merged":
-				target.DeliveryState = "merged"
-			case "closed":
-				target.DeliveryState = "closed"
-			}
-			_ = s.deliveryRepo.Save(ctx, target)
-		}
-
 		story, err = s.taskRepo.GetRawByID(ctx, link.TaskID)
 		if err != nil {
 			story = nil
 		}
-		if story != nil && story.TeamID != nil && *story.TeamID != "" {
-			if teamDefault, cfgErr := s.settingsRepo.GetTeamRepoDefault(ctx, *story.TeamID); cfgErr == nil && teamDefault != nil && teamDefault.AutoSyncStates {
-				switch prStatus {
-				case "open":
-					if teamDefault.ReviewStateID != nil {
-						story.WorkflowStateID = *teamDefault.ReviewStateID
-						_ = s.taskRepo.Update(ctx, story)
-					}
-				case "merged":
-					if teamDefault.DoneStateID != nil {
-						story.WorkflowStateID = *teamDefault.DoneStateID
-						_ = s.taskRepo.Update(ctx, story)
-					}
-				}
+		if prStatus == "open" && story != nil && story.TeamID != nil && *story.TeamID != "" {
+			if teamDefault, cfgErr := s.settingsRepo.GetTeamRepoDefault(ctx, *story.TeamID); cfgErr == nil && teamDefault != nil && teamDefault.AutoSyncStates && teamDefault.ReviewStateID != nil {
+				story.WorkflowStateID = *teamDefault.ReviewStateID
+				_ = s.taskRepo.Update(ctx, story)
 			}
 		}
 	}
@@ -1276,16 +1401,6 @@ func (s *GitService) ProcessWebhookPR(ctx context.Context, workspaceID, repo, ac
 		}
 	}
 
-	if link != nil {
-		s.wsPublisher.Publish(websocket.Event{
-			Action:      "updated",
-			Entity:      "task_git_link",
-			EntityID:    link.ID,
-			WorkspaceID: workspaceID,
-			ParentType:  "task",
-			ParentID:    link.TaskID,
-		})
-	}
 	return nil
 }
 

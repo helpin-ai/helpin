@@ -15,6 +15,7 @@ import { queryKeys } from '@/lib/queryKeys';
 import { crmContactService } from '@/lib/services/crmService';
 import { ContactsTable } from '@/components/crm/ContactsTable';
 import { ContactsFilterBar } from '@/components/crm/ContactsFilterBar';
+import { CRMDataEmptyState } from '@/components/crm/CRMDataEmptyState';
 import { useTitle } from '@/hooks/useTitle';
 import { toast } from 'sonner';
 
@@ -73,6 +74,12 @@ export function ContactsPage() {
     () => buildAssignableMemberNameMap(assignableMembers),
     [assignableMembers],
   );
+  const showContactsEmptyState = !isLoading && !hasActiveFilters && deferredContacts.length === 0 && totalCount === 0;
+
+  const handleImportClick = () => {
+    if (!wsSlug) return;
+    void navigate({ to: '/w/$slug/settings/import', params: { slug: wsSlug } });
+  };
 
   const handleSeedContacts = async () => {
     if (!wsId || isSeeding) return;
@@ -158,23 +165,31 @@ export function ContactsPage() {
 
       {/* Content */}
       <div className="min-h-0 flex-1 overflow-hidden p-3">
-        <ContactsTable
-          contacts={deferredContacts}
-          totalCount={totalCount}
-          workspaceId={wsId}
-          assignableMembers={assignableMembers}
-          ownerNameMap={ownerNameMap}
-          isLoading={isLoading}
-          hasActiveFilters={hasActiveFilters}
-          hasNextPage={!!hasNextPage}
-          isFetchingNextPage={isFetchingNextPage}
-          onFetchNextPage={fetchNextPage}
-          onRowClick={(id) => navigate({ to: '/w/$slug/crm/contacts/$contactId', params: { slug: wsSlug, contactId: id } })}
-          onCreateClick={() => openGlobalCreate('crm_contact')}
-          onClearFilters={clearFilters}
-          onContactUpdated={() => refetch()}
-          onContactDeleted={() => refetch()}
-        />
+        {showContactsEmptyState ? (
+          <CRMDataEmptyState
+            kind="contacts"
+            onCreateClick={() => openGlobalCreate('crm_contact')}
+            onImportClick={handleImportClick}
+          />
+        ) : (
+          <ContactsTable
+            contacts={deferredContacts}
+            totalCount={totalCount}
+            workspaceId={wsId}
+            assignableMembers={assignableMembers}
+            ownerNameMap={ownerNameMap}
+            isLoading={isLoading}
+            hasActiveFilters={hasActiveFilters}
+            hasNextPage={!!hasNextPage}
+            isFetchingNextPage={isFetchingNextPage}
+            onFetchNextPage={fetchNextPage}
+            onRowClick={(id) => navigate({ to: '/w/$slug/crm/contacts/$contactId', params: { slug: wsSlug, contactId: id } })}
+            onCreateClick={() => openGlobalCreate('crm_contact')}
+            onClearFilters={clearFilters}
+            onContactUpdated={() => refetch()}
+            onContactDeleted={() => refetch()}
+          />
+        )}
       </div>
 
       <ConfirmDialog

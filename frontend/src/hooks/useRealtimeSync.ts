@@ -13,7 +13,7 @@ import { logPMDnD } from '@/lib/pmDnDDebug'
 import type { Task, TaskMemberColumn, TaskStateColumn } from '@/lib/pmTypes'
 
 const BOARD_ENTITIES = new Set(['task'])
-const CHILD_ENTITIES = new Set(['comment', 'checklist_item', 'attachment', 'external_link'])
+const CHILD_ENTITIES = new Set(['comment', 'checklist_item', 'attachment', 'external_link', 'task_git_link'])
 
 let notificationAudio: HTMLAudioElement | null = null
 function playNotificationSound() {
@@ -515,6 +515,8 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         queryClient.invalidateQueries({ queryKey: queryKeys.pm.attachments(workspaceId, event.parent_id) })
       } else if (event.entity === 'external_link') {
         queryClient.invalidateQueries({ queryKey: queryKeys.pm.externalLinks(workspaceId, event.parent_id) })
+      } else if (event.entity === 'task_git_link') {
+        queryClient.invalidateQueries({ queryKey: queryKeys.git.taskLinks(workspaceId, event.parent_id) })
       }
     }
 

@@ -203,45 +203,47 @@ export function ConversationActionsMenu({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <Dialog open={subjectDialogOpen} onOpenChange={setSubjectDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Set conversation subject</DialogTitle>
-            <DialogDescription>
-              Update the conversation title shown in the inbox and thread header.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <label htmlFor={`conversation-subject-${conversation.id}`} className="text-sm font-medium">
-              Subject
-            </label>
-            <Input
-              id={`conversation-subject-${conversation.id}`}
-              value={subjectDraft}
-              onChange={(event) => setSubjectDraft(event.target.value)}
-              placeholder="Enter a conversation subject"
-              autoFocus
-            />
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setSubjectDialogOpen(false);
-                setSubjectDraft(conversation.subject);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSaveSubject}
-              disabled={updateSubject.isPending || subjectDraft.trim().length === 0}
-            >
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {subjectDialogOpen && (
+        <Dialog open={subjectDialogOpen} onOpenChange={setSubjectDialogOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Set conversation subject</DialogTitle>
+              <DialogDescription>
+                Update the conversation title shown in the inbox and thread header.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              <label htmlFor={`conversation-subject-${conversation.id}`} className="text-sm font-medium">
+                Subject
+              </label>
+              <Input
+                id={`conversation-subject-${conversation.id}`}
+                value={subjectDraft}
+                onChange={(event) => setSubjectDraft(event.target.value)}
+                placeholder="Enter a conversation subject"
+                autoFocus
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setSubjectDialogOpen(false);
+                  setSubjectDraft(conversation.subject);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSaveSubject}
+                disabled={updateSubject.isPending || subjectDraft.trim().length === 0}
+              >
+                Save
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </>
   );
 }

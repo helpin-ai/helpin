@@ -50,7 +50,7 @@ export function CollectionRouteView({
   const collection = collectionData?.collection
   const directArticles = collectionData?.articles ?? []
   const collectionSpaceSlug = collectionData?.space_slug ?? ''
-  const { data: collectionNavigation = [], isLoading: collectionNavigationLoading } =
+  const { data: collectionNavigation = [] } =
     useSpaceNavigation(
       subdomain,
       locale,
@@ -185,10 +185,6 @@ export function CollectionRouteView({
         statusCode={404}
       />
     )
-  }
-
-  if (collectionNavigationLoading && collectionSpaceSlug) {
-    return <LoadingState message="Loading collection..." />
   }
 
   const childNodes = activeNode?.children ?? []

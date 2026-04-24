@@ -35,7 +35,7 @@ export function ArticleRouteView({
     multilingualEnabled,
   )
   const resolvedSpaceSlug = article?.space_slug ?? ''
-  const { data: navigation = [], isLoading: navigationLoading } =
+  const { data: navigation = [] } =
     useSpaceNavigation(
       subdomain,
       locale,
@@ -65,10 +65,6 @@ export function ArticleRouteView({
         statusCode={404}
       />
     )
-  }
-
-  if (navigationLoading && resolvedSpaceSlug) {
-    return <LoadingState />
   }
 
   return (

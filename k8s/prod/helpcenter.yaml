@@ -27,7 +27,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: helpcenter
-          image: ghcr.io/helpin-ai/helpin/helpcenter:helpcenter-v0.95.58
+          image: ghcr.io/helpin-ai/helpin/helpcenter:helpcenter-v0.95.60
           env:
             - name: INTERNAL_API_URL
               value: http://helpin-server-svc:8080/api
@@ -43,11 +43,11 @@ spec:
                 - ALL
           resources:
             requests:
-              cpu: 100m
-              memory: 128Mi
-            limits:
-              cpu: 300m
+              cpu: 250m
               memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
           livenessProbe:
             httpGet:
               path: /healthz

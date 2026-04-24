@@ -34,6 +34,18 @@ export function shouldAttemptRedirectResolution(method, pathname) {
     return false
   }
 
+  const segments = (pathname || '/').split('/').filter(Boolean)
+  const contentIndex = segments.length > 0 && /^[a-z]{2}(?:-[a-z0-9]+)?$/i.test(segments[0])
+    ? 1
+    : 0
+  const firstContentSegment = segments[contentIndex]
+  const contentKey = segments[contentIndex + 1] || ''
+  const hasPublicId = /(?:^|-[0-9a-f]{8})$/i.test(contentKey)
+
+  if ((firstContentSegment === 'articles' || firstContentSegment === 'c') && hasPublicId) {
+    return false
+  }
+
   return !(
     pathname === '/api' ||
     pathname.startsWith('/api/') ||

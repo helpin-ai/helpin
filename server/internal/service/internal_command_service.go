@@ -798,6 +798,9 @@ func (s *InternalCommandService) registerDefaults() {
 			if err := s.gitService.MergeBranch(ctx, meta.WorkspaceID, storyID, req.TargetBranch); err != nil {
 				return nil, err
 			}
+			if err := s.gitService.UpdateDeliveryStatusAfterMerge(ctx, meta.WorkspaceID, storyID, "merged"); err != nil {
+				return nil, err
+			}
 			return mustJSON(map[string]any{"task_id": storyID, "story_id": storyID, "target_branch": req.TargetBranch}), nil
 		},
 	})

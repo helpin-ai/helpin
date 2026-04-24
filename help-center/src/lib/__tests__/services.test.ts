@@ -1,7 +1,22 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+// @vitest-environment jsdom
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { helpCenterService } from '@/lib/services'
 
+declare global {
+  interface Window {
+    __HELPIN_HC_CONTEXT__?: {
+      subdomain?: string
+      basepath?: string
+    }
+  }
+}
+
 describe('helpCenterService', () => {
+  beforeEach(() => {
+    delete window.__HELPIN_HC_CONTEXT__
+  })
+
   afterEach(() => {
     vi.unstubAllGlobals()
   })
@@ -74,6 +89,30 @@ describe('helpCenterService', () => {
     )
     expect(fetchMock.mock.calls[3]?.[0]).toMatch(
       /\/api\/hc\/docs\.contentpen\.ai\/articles\/start-here-abc123ef\/feedback$/,
+    )
+  })
+
+  it('prefixes browser API calls with the reverse-proxy base path', async () => {
+    window.__HELPIN_HC_CONTEXT__ = {
+      subdomain: 'usermaven',
+      basepath: '/docs',
+    }
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ status: 'ok' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    await helpCenterService.getConfig('usermaven')
+
+    expect(fetchMock.mock.calls[0]?.[0]).toMatch(
+      /\/docs\/api\/hc\/usermaven\/config$/,
     )
   })
 })

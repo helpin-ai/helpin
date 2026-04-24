@@ -16,6 +16,14 @@ describe('serverRedirects', () => {
     expect(shouldAttemptRedirectResolution('GET', '/preview/123')).toBe(false)
   })
 
+  it('skips canonical public-id routes but still checks legacy slugs', () => {
+    expect(shouldAttemptRedirectResolution('GET', '/articles/start-here-a1b2c3d4')).toBe(false)
+    expect(shouldAttemptRedirectResolution('GET', '/fr/articles/start-here-a1b2c3d4')).toBe(false)
+    expect(shouldAttemptRedirectResolution('GET', '/c/getting-started-a1b2c3d4')).toBe(false)
+    expect(shouldAttemptRedirectResolution('GET', '/articles/start-here')).toBe(true)
+    expect(shouldAttemptRedirectResolution('GET', '/c/getting-started')).toBe(true)
+  })
+
   it('builds redirect locations with basepaths and query preservation', () => {
     expect(
       buildRedirectLocation('/brands/replug-links', {
