@@ -14,7 +14,6 @@ import {
   buildCanonicalCollectionPath,
   isMultilingualEnabled,
 } from '@/lib/locale'
-import { prefixBasepath } from '@/lib/pathUtils'
 import type { NavArticle, NavItem, NavTreeNode } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
@@ -57,7 +56,7 @@ export function NavTree({
   navigation,
   onArticleClick,
 }: NavTreeProps) {
-  const { enabledLocales, basepath } = useDocsContext()
+  const { enabledLocales } = useDocsContext()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const multilingualEnabled = isMultilingualEnabled(enabledLocales)
   const tree = buildNavTree(navigation)
@@ -70,7 +69,6 @@ export function NavTree({
           locale={locale}
           node={node}
           multilingualEnabled={multilingualEnabled}
-          basepath={basepath}
           pathname={pathname}
           onArticleClick={onArticleClick}
           isFirst={idx === 0}
@@ -85,7 +83,6 @@ function CollectionGroup({
   node,
   locale,
   multilingualEnabled,
-  basepath,
   pathname,
   onArticleClick,
   isFirst,
@@ -94,7 +91,6 @@ function CollectionGroup({
   node: NavTreeNode
   locale: string
   multilingualEnabled: boolean
-  basepath: string
   pathname: string
   onArticleClick?: () => void
   isFirst: boolean
@@ -111,8 +107,7 @@ function CollectionGroup({
     node.item.slug,
     node.item.public_id,
   )
-  const isActiveCollection =
-    pathname === prefixBasepath(basepath, collectionHref)
+  const isActiveCollection = pathname === collectionHref
 
   return (
     <div className={cn(spacing)}>
@@ -145,7 +140,6 @@ function CollectionGroup({
           children={buildMergedChildren(node)}
           locale={locale}
           multilingualEnabled={multilingualEnabled}
-          basepath={basepath}
           pathname={pathname}
           onArticleClick={onArticleClick}
           level={level}
@@ -159,7 +153,6 @@ function MergedChildren({
   children,
   locale,
   multilingualEnabled,
-  basepath,
   pathname,
   onArticleClick,
   level,
@@ -167,7 +160,6 @@ function MergedChildren({
   children: MergedChild[]
   locale: string
   multilingualEnabled: boolean
-  basepath: string
   pathname: string
   onArticleClick?: () => void
   level: number
@@ -181,7 +173,6 @@ function MergedChildren({
         nodeContainsActivePath(c.node, {
           locale,
           multilingualEnabled,
-          basepath,
           pathname,
         }),
     )
@@ -199,7 +190,6 @@ function MergedChildren({
               publicId={child.article.public_id}
               title={child.article.title}
               multilingualEnabled={multilingualEnabled}
-              basepath={basepath}
               pathname={pathname}
               onArticleClick={onArticleClick}
               level={level}
@@ -212,7 +202,6 @@ function MergedChildren({
             locale={locale}
             node={child.node}
             multilingualEnabled={multilingualEnabled}
-            basepath={basepath}
             pathname={pathname}
             onArticleClick={onArticleClick}
             isFirst={idx === 0}
@@ -228,7 +217,6 @@ function NestedCollectionItem({
   node,
   locale,
   multilingualEnabled,
-  basepath,
   pathname,
   onArticleClick,
   isFirst,
@@ -237,7 +225,6 @@ function NestedCollectionItem({
   node: NavTreeNode
   locale: string
   multilingualEnabled: boolean
-  basepath: string
   pathname: string
   onArticleClick?: () => void
   isFirst: boolean
@@ -254,8 +241,7 @@ function NestedCollectionItem({
     node.item.slug,
     node.item.public_id,
   )
-  const isActiveCollection =
-    pathname === prefixBasepath(basepath, collectionHref)
+  const isActiveCollection = pathname === collectionHref
 
   if (!hasExpandableContent) {
     return (
@@ -296,7 +282,6 @@ function NestedCollectionItem({
             children={buildMergedChildren(node)}
             locale={locale}
             multilingualEnabled={multilingualEnabled}
-            basepath={basepath}
             pathname={pathname}
             onArticleClick={onArticleClick}
             level={level}
@@ -313,7 +298,6 @@ function ArticleLink({
   publicId,
   title,
   multilingualEnabled,
-  basepath,
   pathname,
   onArticleClick,
   level,
@@ -323,7 +307,6 @@ function ArticleLink({
   publicId: string
   title: string
   multilingualEnabled: boolean
-  basepath: string
   pathname: string
   onArticleClick?: () => void
   level: number
@@ -334,7 +317,7 @@ function ArticleLink({
     articleSlug,
     publicId,
   )
-  const isActive = pathname === prefixBasepath(basepath, href)
+  const isActive = pathname === href
   const indent = articleIndent(level)
 
   return (
@@ -375,36 +358,28 @@ function nodeContainsActivePath(
   {
     locale,
     multilingualEnabled,
-    basepath,
     pathname,
   }: {
     locale: string
     multilingualEnabled: boolean
-    basepath: string
     pathname: string
   },
 ): boolean {
-  const collectionPath = prefixBasepath(
-    basepath,
-    buildCanonicalCollectionPath(
-      multilingualEnabled,
-      locale,
-      node.item.slug,
-      node.item.public_id,
-    ),
+  const collectionPath = buildCanonicalCollectionPath(
+    multilingualEnabled,
+    locale,
+    node.item.slug,
+    node.item.public_id,
   )
 
   if (pathname === collectionPath) return true
 
   for (const article of node.item.articles) {
-    const articlePath = prefixBasepath(
-      basepath,
-      buildCanonicalArticlePath(
-        multilingualEnabled,
-        locale,
-        article.slug,
-        article.public_id,
-      ),
+    const articlePath = buildCanonicalArticlePath(
+      multilingualEnabled,
+      locale,
+      article.slug,
+      article.public_id,
     )
     if (pathname === articlePath) return true
   }
@@ -413,7 +388,6 @@ function nodeContainsActivePath(
     nodeContainsActivePath(child, {
       locale,
       multilingualEnabled,
-      basepath,
       pathname,
     }),
   )
