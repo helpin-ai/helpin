@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -92,4 +93,29 @@ func TestCreateFollowupTasksCommandIsBackendOnlyUntilToolExists(t *testing.T) {
 	if def.ExposesTool() {
 		t.Fatalf("expected pm.create_followup_tasks to remain backend-only, got %#v", def.Tool)
 	}
+}
+
+func TestDeliveryMergeBranchCommandUpdatesDeliveryStatusAfterSuccessfulMerge(t *testing.T) {
+	db := newTestDB(t)
+	seedGitDeliveryStatusFixture(t, db)
+	app := &fakeGitHubAppClient{}
+	gitSvc := newGitDeliveryStatusService(db, app)
+	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	svc.SetGitService(gitSvc)
+
+	_, err := svc.Execute(context.Background(), model.InternalCommandContext{
+		WorkspaceID: "ws-1",
+		TargetType:  "task",
+		TargetID:    "task-1",
+	}, "delivery.merge_branch", json.RawMessage(`{"target_branch":"main"}`))
+	if err != nil {
+		t.Fatalf("delivery.merge_branch returned error: %v", err)
+	}
+	if len(app.mergeCalls) != 1 {
+		t.Fatalf("merge calls = %d, want 1", len(app.mergeCalls))
+	}
+	if app.mergeCalls[0].Base != "main" || app.mergeCalls[0].Head != "hel-31-fix-merge-status" {
+		t.Fatalf("unexpected merge call: %#v", app.mergeCalls[0])
+	}
+	assertMergedDeliveryStatus(t, db)
 }

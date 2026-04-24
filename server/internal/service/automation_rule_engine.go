@@ -666,6 +666,13 @@ func (e *AutomationRuleEngine) executeMergeBranch(ctx context.Context, rule *mod
 		// Don't halt the pipeline for merge failures — log and continue
 		return nil
 	}
+	if err := e.gitService.UpdateDeliveryStatusAfterMerge(ctx, event.WorkspaceID, event.StoryID, "merged"); err != nil {
+		e.logger.WarnContext(ctx, "failed to update delivery status after merge_branch",
+			"error", err,
+			"rule_id", rule.ID,
+			"task_id", event.StoryID,
+		)
+	}
 
 	_ = e.activitySvc.Log(ctx, event.WorkspaceID, "task", event.StoryID, nil,
 		fmt.Sprintf("automation rule '%s' merged %s into %s", rule.Name, *target.WorkingBranch, resolvedBranch),
