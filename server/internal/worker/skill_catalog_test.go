@@ -24,9 +24,30 @@ func TestListBuiltInSkillsContainsExpectedKeys(t *testing.T) {
 		"review_agent",
 		"crm_operator",
 		"support_agent",
+		"dependency_auditor",
 	} {
 		if !containsString(keys, key) {
 			t.Fatalf("expected built-in skill %q in registry, got %v", key, keys)
+		}
+	}
+}
+
+func TestDependencyAuditorSkillReferencesExecutionDocs(t *testing.T) {
+	skill, ok := GetBuiltInSkill("dependency_auditor")
+	if !ok {
+		t.Fatal("expected dependency_auditor built-in skill")
+	}
+	for _, snippet := range []string{
+		"ecosystems/go.md",
+		"ecosystems/rust.md",
+		"ecosystems/python.md",
+		"ecosystems/node.md",
+		"ecosystems/java.md",
+		"verification.md",
+		"Compare against direct manifest declarations",
+	} {
+		if !strings.Contains(skill.Instructions, snippet) {
+			t.Fatalf("expected dependency auditor instructions to contain %q\n%s", snippet, skill.Instructions)
 		}
 	}
 }
