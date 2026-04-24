@@ -19,6 +19,19 @@ func defaultConversationFlowState(openedByUserID, assignedUserID, assignedAgentI
 	return model.SupportConversationFlowStateWaitingForHuman
 }
 
+func supportConversationHumanOwned(conversation *model.SupportConversation) bool {
+	if conversation == nil {
+		return false
+	}
+	if conversation.HumanTakeover != nil && *conversation.HumanTakeover {
+		return true
+	}
+	if conversation.AssignedUserID != nil && *conversation.AssignedUserID != "" {
+		return true
+	}
+	return conversation.OpenedByUserID != nil && *conversation.OpenedByUserID != ""
+}
+
 func boolPtr(value bool) *bool {
 	return &value
 }

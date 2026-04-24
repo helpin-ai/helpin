@@ -1396,7 +1396,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 				slog.ErrorContext(ctx, "failed to reopen support conversation after customer reply", "error", err, "conversation_id", ticketID)
 			}
 		}
-		if s.triageService != nil {
+		if s.triageService != nil && !supportConversationHumanOwned(conv) {
 			go func(workspaceID, conversationID, messageID string) {
 				if _, triageErr := s.triageService.EvaluateAndRoute(context.WithoutCancel(ctx), workspaceID, conversationID, messageID); triageErr != nil {
 					slog.ErrorContext(ctx, "support triage failed after customer reply", "workspace_id", workspaceID, "conversation_id", conversationID, "message_id", messageID, "error", triageErr)
