@@ -606,7 +606,7 @@ function TimelineRow({
     <div className="grid grid-cols-[1.25rem_minmax(0,1fr)_auto] gap-3 px-4 py-3">
       <div className="relative flex justify-center">
         <span className={cn(
-          'mt-1 h-2.5 w-2.5 rounded-full bg-current ring-4 ring-background',
+          'relative z-10 mt-1 block h-[10px] w-[10px] min-w-[10px] shrink-0 rounded-full bg-current leading-none ring-4 ring-background',
           STATUS_DOT_STYLES[item.status] ?? STATUS_DOT_STYLES.queued,
           item.status === 'running' && 'animate-pulse',
         )} />

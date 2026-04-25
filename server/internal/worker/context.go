@@ -132,10 +132,10 @@ func DefaultWorkflowConfig() *WorkflowConfig {
 }
 
 // DefaultWorkflowConfigForAgent returns runtime defaults, including higher
-// native planner tool budgets for Atlas and Scribe.
+// tool budgets for custom agents and native planners.
 func DefaultWorkflowConfigForAgent(agent *model.Agent) *WorkflowConfig {
 	maxIterations := defaultWorkflowMaxIterations
-	if isHighToolBudgetNativePlanner(agent) {
+	if isHighToolBudgetAgent(agent) {
 		maxIterations = plannerWorkflowMaxIterations
 	}
 	return &WorkflowConfig{
@@ -143,6 +143,16 @@ func DefaultWorkflowConfigForAgent(agent *model.Agent) *WorkflowConfig {
 		TimeoutMinutes: defaultWorkflowTimeoutMinutes,
 		CommandTimeout: defaultWorkflowCommandTimeout,
 	}
+}
+
+func isHighToolBudgetAgent(agent *model.Agent) bool {
+	if agent == nil {
+		return false
+	}
+	if !agent.IsSystem {
+		return true
+	}
+	return isHighToolBudgetNativePlanner(agent)
 }
 
 func isHighToolBudgetNativePlanner(agent *model.Agent) bool {

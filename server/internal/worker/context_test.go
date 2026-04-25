@@ -6,15 +6,40 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
-func TestDefaultWorkflowConfigForAgent_UsesHigherLimitForNativePlanners(t *testing.T) {
+func TestDefaultWorkflowConfigForAgent_UsesHigherLimitForCustomAgentsAndNativePlanners(t *testing.T) {
 	tests := []struct {
 		name  string
 		agent *model.Agent
 		want  int
 	}{
 		{
+			name: "custom native agent",
+			agent: &model.Agent{
+				IsSystem:    false,
+				RuntimeKind: "native_sdk",
+			},
+			want: plannerWorkflowMaxIterations,
+		},
+		{
+			name: "custom codex agent",
+			agent: &model.Agent{
+				IsSystem:    false,
+				RuntimeKind: "codex",
+			},
+			want: plannerWorkflowMaxIterations,
+		},
+		{
+			name: "custom opencode agent",
+			agent: &model.Agent{
+				IsSystem:    false,
+				RuntimeKind: "opencode",
+			},
+			want: plannerWorkflowMaxIterations,
+		},
+		{
 			name: "atlas epic planner",
 			agent: &model.Agent{
+				IsSystem:    true,
 				PresetKey:   model.AgentPresetEpicPlanner,
 				RuntimeKind: "native_sdk",
 			},
@@ -23,6 +48,7 @@ func TestDefaultWorkflowConfigForAgent_UsesHigherLimitForNativePlanners(t *testi
 		{
 			name: "scribe task planner",
 			agent: &model.Agent{
+				IsSystem:    true,
 				PresetKey:   model.AgentPresetTaskPlanner,
 				RuntimeKind: "native_sdk",
 			},
@@ -31,6 +57,7 @@ func TestDefaultWorkflowConfigForAgent_UsesHigherLimitForNativePlanners(t *testi
 		{
 			name: "support agent unchanged",
 			agent: &model.Agent{
+				IsSystem:    true,
 				PresetKey:   model.AgentPresetSupportAgent,
 				RuntimeKind: "native_sdk",
 			},
@@ -39,6 +66,7 @@ func TestDefaultWorkflowConfigForAgent_UsesHigherLimitForNativePlanners(t *testi
 		{
 			name: "planner on non native runtime unchanged",
 			agent: &model.Agent{
+				IsSystem:    true,
 				PresetKey:   model.AgentPresetEpicPlanner,
 				RuntimeKind: "codex",
 			},

@@ -59,6 +59,7 @@ import type {
   UpdateWorkspaceAgentPresetVersionRequest,
   CreateAgentRequest,
   SkillCatalogResponse,
+  ToolCatalogEntry,
   ToolCatalogResponse,
   UpdateAgentRequest,
   WorkflowWithStates,
@@ -255,6 +256,37 @@ const COMPETITIVE_INTEL_SCHEDULE_OPTIONS = [
   { value: 'daily', label: 'Daily' },
   { value: 'weekly', label: 'Weekly' },
 ] as const;
+const DEPENDENCY_AUDITOR_TEMPLATE_KEY = 'dependency_auditor';
+const DEPENDENCY_AUDITOR_FLOW_KEY = 'dependency_audit_cron';
+const DEPENDENCY_AUDITOR_SYSTEM_PROMPT_TEMPLATE = `You are an autonomous dependency auditor for the selected repository.
+
+Configured audit:
+- ecosystems: {{ecosystems}}
+- include_indirect: {{include_indirect}}
+- destination_team_id: {{destination_team_id}}
+- destination_state_id: {{destination_state_id}}
+- max_tasks: {{max_tasks}}
+- schedule_preset: {{schedule_preset}}
+
+Treat these configured values as already resolved and authoritative. Do not plan or perform discovery of configuration variables, workspace context, teams, stages, cadence, or repository selection.
+
+Scan only the configured ecosystems. Ignore indirect or transitive dependencies unless include_indirect is true. Do not modify files.
+
+Repositories may contain more than one language ecosystem. Scan every selected ecosystem in the same run and deduplicate tasks within each ecosystem identity.
+
+Create at most one task per outdated direct dependency with create_task, up to max_tasks. Pass destination_team_id directly as team_id. Pass destination_state_id directly as state_id only when it is configured; otherwise let the team default stage apply.
+
+Raw configuration:
+{{raw_configuration_json}}`;
+const DEPENDENCY_AUDITOR_ECOSYSTEM_OPTIONS = [
+  { value: 'go', label: 'Go' },
+  { value: 'rust', label: 'Rust' },
+  { value: 'python', label: 'Python' },
+  { value: 'node', label: 'Node / JS' },
+  { value: 'java', label: 'Java / JVM' },
+] as const;
+const DEPENDENCY_AUDITOR_SCHEDULE_OPTIONS = COMPETITIVE_INTEL_SCHEDULE_OPTIONS;
+type DependencyAuditorEcosystem = typeof DEPENDENCY_AUDITOR_ECOSYSTEM_OPTIONS[number]['value'];
 
 // ---------------------------------------------------------------------------
 // Form helpers
@@ -300,6 +332,16 @@ interface CompetitiveIntelTemplateFormData {
   lookback_days: string;
   destination_team_id: string;
   destination_state_id: string;
+}
+
+interface DependencyAuditorTemplateFormData {
+  repository_id: string;
+  ecosystems: DependencyAuditorEcosystem[];
+  include_indirect: boolean;
+  schedule_preset: 'daily' | 'weekly';
+  destination_team_id: string;
+  destination_state_id: string;
+  max_tasks: string;
 }
 
 interface TemplateDraft {
@@ -785,6 +827,35 @@ function renderCompetitiveIntelSystemPrompt(templatePrompt: string | undefined, 
   return rendered;
 }
 
+function renderDependencyAuditorSystemPrompt(templatePrompt: string | undefined, form: DependencyAuditorTemplateFormData) {
+  const destinationState = form.destination_state_id === NONE_OPTION_VALUE || !form.destination_state_id
+    ? "not configured; use the team's default stage"
+    : form.destination_state_id;
+  const maxTasks = Number.parseInt(form.max_tasks, 10);
+  const rawConfig = {
+    ecosystems: form.ecosystems,
+    include_indirect: form.include_indirect,
+    schedule_preset: form.schedule_preset,
+    destination_team_id: form.destination_team_id,
+    destination_state_id: form.destination_state_id === NONE_OPTION_VALUE ? undefined : form.destination_state_id,
+    max_tasks: maxTasks,
+  };
+  const replacements: Record<string, string> = {
+    ecosystems: form.ecosystems.join(', '),
+    include_indirect: String(form.include_indirect),
+    destination_team_id: form.destination_team_id,
+    destination_state_id: destinationState,
+    schedule_preset: form.schedule_preset,
+    max_tasks: form.max_tasks,
+    raw_configuration_json: `\`\`\`json\n${JSON.stringify(rawConfig, null, 2)}\n\`\`\``,
+  };
+  let rendered = (templatePrompt?.trim() || DEPENDENCY_AUDITOR_SYSTEM_PROMPT_TEMPLATE).trim();
+  for (const [key, value] of Object.entries(replacements)) {
+    rendered = rendered.split(`{{${key}}}`).join(value);
+  }
+  return rendered;
+}
+
 function templateTargetLabel(target: string) {
   switch (target) {
     case 'repository':
@@ -864,6 +935,108 @@ function DrawerConfigSection({
         </div>
       </Collapsible.Content>
     </Collapsible.Root>
+  );
+}
+
+function ToolMultiSelectPopover({
+  open,
+  onOpenChange,
+  tools,
+  selectedTools,
+  disabled,
+  onToggleTool,
+  onClearTools,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  tools: ToolCatalogEntry[];
+  selectedTools: string[];
+  disabled?: boolean;
+  onToggleTool: (toolName: string) => void;
+  onClearTools: () => void;
+}) {
+  const selectedSet = new Set(selectedTools);
+
+  return (
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 gap-1.5 px-2 text-[11px]"
+          disabled={tools.length === 0 || disabled}
+        >
+          <PlusSignIcon className="h-3.5 w-3.5" />
+          Select tools
+          {selectedTools.length > 0 && (
+            <span className="rounded-full bg-muted px-1.5 py-0 text-[10px] text-muted-foreground">
+              {selectedTools.length}
+            </span>
+          )}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        className="w-[28rem] overflow-hidden p-0"
+        onWheelCapture={(event) => event.stopPropagation()}
+      >
+        <Command>
+          <CommandInput placeholder="Search tools..." />
+          <CommandList className="max-h-72 overscroll-contain">
+            <CommandEmpty>
+              {tools.length === 0 ? 'Tool catalog unavailable.' : 'No tools match.'}
+            </CommandEmpty>
+            <CommandGroup heading={`${selectedTools.length} selected`}>
+              {tools.map((tool) => {
+                const selected = selectedSet.has(tool.name);
+                return (
+                  <CommandItem
+                    key={tool.name}
+                    value={`${tool.name} ${tool.category} ${tool.description}`}
+                    onSelect={() => onToggleTool(tool.name)}
+                    data-checked={selected ? 'true' : undefined}
+                    aria-label={`${selected ? 'Remove' : 'Add'} ${tool.name}`}
+                    className="cursor-pointer items-start py-2"
+                  >
+                    <div className="min-w-0 flex-1 space-y-0.5">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs text-foreground">{tool.name}</span>
+                        <Badge variant="outline" className="text-[10px]">
+                          {tool.category}
+                        </Badge>
+                      </div>
+                      <p className="text-xs leading-relaxed text-muted-foreground">{tool.description}</p>
+                    </div>
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+        <div className="flex items-center justify-between border-t border-border/60 px-2 py-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-[11px] text-muted-foreground"
+            onClick={onClearTools}
+            disabled={selectedTools.length === 0}
+          >
+            Clear
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 px-2 text-[11px]"
+            onClick={() => onOpenChange(false)}
+          >
+            Done
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -1470,6 +1643,15 @@ export function AgentsPage() {
     destination_team_id: '',
     destination_state_id: NONE_OPTION_VALUE,
   });
+  const [dependencyAuditorTemplateForm, setDependencyAuditorTemplateForm] = useState<DependencyAuditorTemplateFormData>({
+    repository_id: '',
+    ecosystems: ['go', 'rust', 'python', 'node', 'java'],
+    include_indirect: false,
+    schedule_preset: 'weekly',
+    destination_team_id: '',
+    destination_state_id: NONE_OPTION_VALUE,
+    max_tasks: '20',
+  });
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [systemDrawerOpen, setSystemDrawerOpen] = useState(false);
@@ -1728,6 +1910,17 @@ export function AgentsPage() {
       || team.handle?.toLowerCase() === 'marketing'
       || team.name.toLowerCase() === 'marketing'
     ));
+    const defaultDependencyTeam = visibleTeams.find((team) => {
+      const handle = team.handle?.toLowerCase() ?? '';
+      const name = team.name.toLowerCase();
+      return team.team_type === 'engineering'
+        || handle === 'engineering'
+        || handle === 'platform'
+        || handle === 'backend'
+        || name === 'engineering'
+        || name === 'platform'
+        || name === 'backend';
+    }) ?? visibleTeams[0];
     setCompetitiveTemplateForm({
       target_company: '',
       target_domain: '',
@@ -1736,6 +1929,15 @@ export function AgentsPage() {
       lookback_days: '7',
       destination_team_id: defaultMarketingTeam?.id ?? '',
       destination_state_id: NONE_OPTION_VALUE,
+    });
+    setDependencyAuditorTemplateForm({
+      repository_id: '',
+      ecosystems: ['go', 'rust', 'python', 'node', 'java'],
+      include_indirect: false,
+      schedule_preset: 'weekly',
+      destination_team_id: defaultDependencyTeam?.id ?? '',
+      destination_state_id: NONE_OPTION_VALUE,
+      max_tasks: '20',
     });
     setCompetitiveTeamWorkflow(null);
     setDocsCollections([]);
@@ -1747,8 +1949,14 @@ export function AgentsPage() {
     if (template.key === 'release_notes_writer' && (repositories.length === 0 || docsSpaces.length === 0)) {
       await loadTemplateResources();
     }
+    if (template.key === DEPENDENCY_AUDITOR_TEMPLATE_KEY && repositories.length === 0) {
+      await loadTemplateResources();
+    }
     if (template.key === COMPETITIVE_INTEL_TEMPLATE_KEY && defaultMarketingTeam?.id) {
       await loadCompetitiveTeamWorkflow(defaultMarketingTeam.id);
+    }
+    if (template.key === DEPENDENCY_AUDITOR_TEMPLATE_KEY && defaultDependencyTeam?.id) {
+      await loadCompetitiveTeamWorkflow(defaultDependencyTeam.id);
     }
   };
 
@@ -1786,8 +1994,34 @@ export function AgentsPage() {
         return;
       }
     }
+    if (templateDraft.createStarterFlow && templateDraft.template.key === DEPENDENCY_AUDITOR_TEMPLATE_KEY) {
+      if (!dependencyAuditorTemplateForm.repository_id) {
+        toast.error('Select a repository');
+        return;
+      }
+      if (dependencyAuditorTemplateForm.ecosystems.length === 0) {
+        toast.error('Select at least one ecosystem');
+        return;
+      }
+      if (!dependencyAuditorTemplateForm.destination_team_id) {
+        toast.error('Select a task team');
+        return;
+      }
+      const maxTasks = Number.parseInt(dependencyAuditorTemplateForm.max_tasks, 10);
+      if (!Number.isFinite(maxTasks) || maxTasks < 1 || maxTasks > 100) {
+        toast.error('Maximum tasks must be between 1 and 100');
+        return;
+      }
+    }
     if (templateDraft.createStarterFlow && templateDraft.template.key === COMPETITIVE_INTEL_TEMPLATE_KEY) {
       const renderedPrompt = renderCompetitiveIntelSystemPrompt(templateDraft.template.system_prompt ?? form.system_prompt, competitiveTemplateForm);
+      setForm((current) => ({
+        ...current,
+        system_prompt: renderedPrompt,
+      }));
+    }
+    if (templateDraft.createStarterFlow && templateDraft.template.key === DEPENDENCY_AUDITOR_TEMPLATE_KEY) {
+      const renderedPrompt = renderDependencyAuditorSystemPrompt(templateDraft.template.system_prompt ?? form.system_prompt, dependencyAuditorTemplateForm);
       setForm((current) => ({
         ...current,
         system_prompt: renderedPrompt,
@@ -1898,8 +2132,32 @@ export function AgentsPage() {
             return;
           }
         }
+        if (templateDraft.createStarterFlow && templateDraft.template.key === DEPENDENCY_AUDITOR_TEMPLATE_KEY) {
+          if (!dependencyAuditorTemplateForm.repository_id) {
+            toast.error('Select a repository');
+            setSaving(false);
+            return;
+          }
+          if (dependencyAuditorTemplateForm.ecosystems.length === 0) {
+            toast.error('Select at least one ecosystem');
+            setSaving(false);
+            return;
+          }
+          if (!dependencyAuditorTemplateForm.destination_team_id) {
+            toast.error('Select a task team');
+            setSaving(false);
+            return;
+          }
+          const maxTasks = Number.parseInt(dependencyAuditorTemplateForm.max_tasks, 10);
+          if (!Number.isFinite(maxTasks) || maxTasks < 1 || maxTasks > 100) {
+            toast.error('Maximum tasks must be between 1 and 100');
+            setSaving(false);
+            return;
+          }
+        }
 
         const selectedRepo = repositories.find((repo) => repo.id === templateForm.repository_id);
+        const selectedDependencyRepo = repositories.find((repo) => repo.id === dependencyAuditorTemplateForm.repository_id);
         const competitors = competitiveIntelCompetitorsFromText(competitiveTemplateForm.competitors_text);
         const templateFlow = templateDraft.createStarterFlow
           ? templateDraft.template.key === 'release_notes_writer'
@@ -1927,6 +2185,22 @@ export function AgentsPage() {
                       : competitiveTemplateForm.destination_state_id,
                   },
                 }
+              : templateDraft.template.key === DEPENDENCY_AUDITOR_TEMPLATE_KEY
+                ? {
+                    flow_key: DEPENDENCY_AUDITOR_FLOW_KEY,
+                    repository_id: dependencyAuditorTemplateForm.repository_id,
+                    repo_full_name: selectedDependencyRepo?.full_name,
+                    flow_input: {
+                      ecosystems: dependencyAuditorTemplateForm.ecosystems,
+                      include_indirect: dependencyAuditorTemplateForm.include_indirect,
+                      schedule_preset: dependencyAuditorTemplateForm.schedule_preset,
+                      destination_team_id: dependencyAuditorTemplateForm.destination_team_id,
+                      destination_state_id: dependencyAuditorTemplateForm.destination_state_id === NONE_OPTION_VALUE
+                        ? undefined
+                        : dependencyAuditorTemplateForm.destination_state_id,
+                      max_tasks: Number.parseInt(dependencyAuditorTemplateForm.max_tasks, 10),
+                    },
+                  }
               : undefined
           : undefined;
         const payload = {
@@ -2192,6 +2466,15 @@ export function AgentsPage() {
         missing.push('valid lookback window');
       }
     }
+    if (starterFlowEnabled && templateDraft?.template.key === DEPENDENCY_AUDITOR_TEMPLATE_KEY) {
+      if (!dependencyAuditorTemplateForm.repository_id) missing.push('repository');
+      if (dependencyAuditorTemplateForm.ecosystems.length === 0) missing.push('ecosystem');
+      if (!dependencyAuditorTemplateForm.destination_team_id) missing.push('task team');
+      const maxTasks = Number.parseInt(dependencyAuditorTemplateForm.max_tasks, 10);
+      if (!Number.isFinite(maxTasks) || maxTasks < 1 || maxTasks > 100) {
+        missing.push('valid task limit');
+      }
+    }
     return missing;
   })();
   const createDrawerReady = createDrawerMissingRequirements.length === 0;
@@ -2212,18 +2495,27 @@ export function AgentsPage() {
           ? 'Create Agent'
           : 'Create Custom Agent';
   const toolCatalogEntries = toolCatalog?.tools ?? [];
-  const availableToolEntries = toolCatalogEntries.filter((tool) => !form.allowed_tools.includes(tool.name));
-  const addTool = (toolName: string) => {
-    setForm((current) => ({
-      ...current,
-      allowed_tools: normalizeToolList([...current.allowed_tools, toolName]),
-    }));
-    setToolPickerOpen(false);
+  const toggleTool = (toolName: string) => {
+    setForm((current) => {
+      const selected = current.allowed_tools.includes(toolName);
+      return {
+        ...current,
+        allowed_tools: selected
+          ? current.allowed_tools.filter((tool) => tool !== toolName)
+          : normalizeToolList([...current.allowed_tools, toolName]),
+      };
+    });
   };
   const removeTool = (toolName: string) => {
     setForm((current) => ({
       ...current,
       allowed_tools: current.allowed_tools.filter((tool) => tool !== toolName),
+    }));
+  };
+  const clearTools = () => {
+    setForm((current) => ({
+      ...current,
+      allowed_tools: [],
     }));
   };
   const skillCatalogEntries = skillCatalog?.skills ?? [];
@@ -3028,54 +3320,15 @@ export function AgentsPage() {
                     <Collapsible.Content>
                       <div className="space-y-3 border-t border-border/60 p-4">
                         <div className="flex items-center justify-end gap-2">
-                          <Popover open={toolPickerOpen} onOpenChange={setToolPickerOpen}>
-                            <PopoverTrigger asChild>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="h-8 gap-1.5 px-2 text-[11px]"
-                                disabled={toolCatalogEntries.length === 0 || codexUsesPresetCapabilities || systemVersionReadOnly}
-                              >
-                                <PlusSignIcon className="h-3.5 w-3.5" />
-                                Add tool
-                              </Button>
-                            </PopoverTrigger>
-                          <PopoverContent
-                            align="end"
-                            className="w-[28rem] overflow-hidden p-0"
-                            onWheelCapture={(event) => event.stopPropagation()}
-                          >
-                            <Command>
-                              <CommandInput placeholder="Search tools..." />
-                              <CommandList className="max-h-72 overscroll-contain">
-                                <CommandEmpty>
-                                  {toolCatalogEntries.length === 0 ? 'Tool catalog unavailable.' : 'No more tools available.'}
-                                </CommandEmpty>
-                                <CommandGroup heading={`${availableToolEntries.length} available`}>
-                                  {availableToolEntries.map((tool) => (
-                                    <CommandItem
-                                      key={tool.name}
-                                      value={`${tool.name} ${tool.category} ${tool.description}`}
-                                      onSelect={() => addTool(tool.name)}
-                                      className="cursor-pointer items-start py-2"
-                                    >
-                                      <div className="min-w-0 flex-1 space-y-0.5">
-                                        <div className="flex items-center gap-2">
-                                          <span className="font-mono text-xs text-foreground">{tool.name}</span>
-                                          <Badge variant="outline" className="text-[10px]">
-                                            {tool.category}
-                                          </Badge>
-                                        </div>
-                                        <p className="text-xs leading-relaxed text-muted-foreground">{tool.description}</p>
-                                      </div>
-                                    </CommandItem>
-                                  ))}
-                                </CommandGroup>
-                              </CommandList>
-                            </Command>
-                          </PopoverContent>
-                        </Popover>
+                          <ToolMultiSelectPopover
+                            open={toolPickerOpen}
+                            onOpenChange={setToolPickerOpen}
+                            tools={toolCatalogEntries}
+                            selectedTools={form.allowed_tools}
+                            disabled={codexUsesPresetCapabilities || systemVersionReadOnly}
+                            onToggleTool={toggleTool}
+                            onClearTools={clearTools}
+                          />
                       </div>
                       {form.allowed_tools.length > 0 ? (
                         <div className="space-y-3">
@@ -3674,6 +3927,199 @@ export function AgentsPage() {
                       >
                         <SelectTrigger id="competitive-setup-state">
                           <SelectValue placeholder={competitiveTemplateForm.destination_team_id ? 'Default stage' : 'Select a team first'} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={NONE_OPTION_VALUE}>Team default</SelectItem>
+                          {(competitiveTeamWorkflow?.states ?? []).map((state) => (
+                            <SelectItem key={state.id} value={state.id}>
+                              {state.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {templateDraft?.template.key === DEPENDENCY_AUDITOR_TEMPLATE_KEY && (
+            <div className="space-y-5 rounded-xl border border-border/60 bg-card p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold">{templateStarterFlow?.label ?? 'Starter flow'}</p>
+                  <p className="text-[11px] leading-relaxed text-muted-foreground">
+                    {templateStarterFlow?.description ?? 'Create a starter automation flow when this agent is created.'}
+                  </p>
+                </div>
+                <label className="flex shrink-0 items-center gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
+                  <span className="text-xs font-medium">Create recommended automation flow</span>
+                  <Switch
+                    checked={templateDraft.createStarterFlow}
+                    onCheckedChange={(checked) => setTemplateDraft((current) => (
+                      current ? { ...current, createStarterFlow: checked } : current
+                    ))}
+                  />
+                </label>
+              </div>
+
+              {templateDraft.createStarterFlow && (
+                <div className="space-y-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="grid gap-2">
+                      <FieldLabel htmlFor="dependency-setup-repository">Repository</FieldLabel>
+                      <Select
+                        value={dependencyAuditorTemplateForm.repository_id || undefined}
+                        onValueChange={(value) => setDependencyAuditorTemplateForm((current) => ({
+                          ...current,
+                          repository_id: value,
+                        }))}
+                      >
+                        <SelectTrigger id="dependency-setup-repository">
+                          <SelectValue placeholder={templateResourcesLoading ? 'Loading repositories...' : 'Select a repository'} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {repositories.map((repo) => (
+                            <SelectItem key={repo.id} value={repo.id}>
+                              {repo.full_name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="grid gap-2">
+                      <FieldLabel htmlFor="dependency-setup-cadence">Run cadence</FieldLabel>
+                      <Select
+                        value={dependencyAuditorTemplateForm.schedule_preset}
+                        onValueChange={(value) => {
+                          setDependencyAuditorTemplateForm((current) => ({
+                            ...current,
+                            schedule_preset: value === 'daily' ? 'daily' : 'weekly',
+                          }));
+                        }}
+                      >
+                        <SelectTrigger id="dependency-setup-cadence">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {DEPENDENCY_AUDITOR_SCHEDULE_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <FieldLabel>Ecosystems</FieldLabel>
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      {DEPENDENCY_AUDITOR_ECOSYSTEM_OPTIONS.map((option) => {
+                        const checked = dependencyAuditorTemplateForm.ecosystems.includes(option.value);
+                        return (
+                          <label
+                            key={option.value}
+                            className={cn(
+                              'flex items-center justify-between rounded-lg border px-3 py-2.5 text-sm transition-colors',
+                              checked ? 'border-primary/35 bg-primary/5' : 'border-border/60 bg-muted/20',
+                            )}
+                          >
+                            <span className="font-medium">{option.label}</span>
+                            <Switch
+                              checked={checked}
+                              onCheckedChange={(nextChecked) => setDependencyAuditorTemplateForm((current) => {
+                                const currentValues = new Set(current.ecosystems);
+                                if (nextChecked) {
+                                  currentValues.add(option.value);
+                                } else {
+                                  currentValues.delete(option.value);
+                                }
+                                return {
+                                  ...current,
+                                  ecosystems: DEPENDENCY_AUDITOR_ECOSYSTEM_OPTIONS
+                                    .map((item) => item.value)
+                                    .filter((value) => currentValues.has(value)),
+                                };
+                              })}
+                            />
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                    <div className="grid gap-2">
+                      <FieldLabel htmlFor="dependency-setup-max-tasks">Maximum tasks per run</FieldLabel>
+                      <Input
+                        id="dependency-setup-max-tasks"
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={dependencyAuditorTemplateForm.max_tasks}
+                        onChange={(event) => setDependencyAuditorTemplateForm((current) => ({
+                          ...current,
+                          max_tasks: event.target.value,
+                        }))}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5">
+                      <div className="space-y-0.5">
+                        <p className="text-sm font-medium">Indirect dependencies</p>
+                        <p className="text-[11px] text-muted-foreground">Include transitive entries</p>
+                      </div>
+                      <Switch
+                        checked={dependencyAuditorTemplateForm.include_indirect}
+                        onCheckedChange={(checked) => setDependencyAuditorTemplateForm((current) => ({
+                          ...current,
+                          include_indirect: checked,
+                        }))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="grid gap-2">
+                      <FieldLabel htmlFor="dependency-setup-team">Task team</FieldLabel>
+                      <Select
+                        value={dependencyAuditorTemplateForm.destination_team_id || undefined}
+                        onValueChange={(value) => {
+                          setDependencyAuditorTemplateForm((current) => ({
+                            ...current,
+                            destination_team_id: value,
+                            destination_state_id: NONE_OPTION_VALUE,
+                          }));
+                          void loadCompetitiveTeamWorkflow(value);
+                        }}
+                      >
+                        <SelectTrigger id="dependency-setup-team">
+                          <SelectValue placeholder="Select a team" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {visibleTeams.map((team) => (
+                            <SelectItem key={team.id} value={team.id}>
+                              {team.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="grid gap-2">
+                      <FieldLabel htmlFor="dependency-setup-state">Task stage</FieldLabel>
+                      <Select
+                        value={dependencyAuditorTemplateForm.destination_state_id}
+                        onValueChange={(value) => setDependencyAuditorTemplateForm((current) => ({
+                          ...current,
+                          destination_state_id: value,
+                        }))}
+                        disabled={!dependencyAuditorTemplateForm.destination_team_id}
+                      >
+                        <SelectTrigger id="dependency-setup-state">
+                          <SelectValue placeholder={dependencyAuditorTemplateForm.destination_team_id ? 'Default stage' : 'Select a team first'} />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value={NONE_OPTION_VALUE}>Team default</SelectItem>
@@ -4414,54 +4860,15 @@ export function AgentsPage() {
                   <div className="space-y-3">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Available tools</p>
-                      <Popover open={toolPickerOpen} onOpenChange={setToolPickerOpen}>
-                        <PopoverTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="h-8 gap-1.5 px-2 text-[11px]"
-                            disabled={toolCatalogEntries.length === 0 || codexUsesPresetCapabilities}
-                          >
-                            <PlusSignIcon className="h-3.5 w-3.5" />
-                            Add tool
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent
-                          align="end"
-                          className="w-[28rem] overflow-hidden p-0"
-                          onWheelCapture={(event) => event.stopPropagation()}
-                        >
-                          <Command>
-                            <CommandInput placeholder="Search tools..." />
-                            <CommandList className="max-h-72 overscroll-contain">
-                              <CommandEmpty>
-                                {toolCatalogEntries.length === 0 ? 'Tool catalog unavailable.' : 'No more tools available.'}
-                              </CommandEmpty>
-                              <CommandGroup heading={`${availableToolEntries.length} available`}>
-                                {availableToolEntries.map((tool) => (
-                                  <CommandItem
-                                    key={tool.name}
-                                    value={`${tool.name} ${tool.category} ${tool.description}`}
-                                    onSelect={() => addTool(tool.name)}
-                                    className="cursor-pointer items-start py-2"
-                                  >
-                                    <div className="min-w-0 flex-1 space-y-0.5">
-                                      <div className="flex items-center gap-2">
-                                        <span className="font-mono text-xs text-foreground">{tool.name}</span>
-                                        <Badge variant="outline" className="text-[10px]">
-                                          {tool.category}
-                                        </Badge>
-                                      </div>
-                                      <p className="text-xs leading-relaxed text-muted-foreground">{tool.description}</p>
-                                    </div>
-                                  </CommandItem>
-                                ))}
-                              </CommandGroup>
-                            </CommandList>
-                          </Command>
-                        </PopoverContent>
-                      </Popover>
+                      <ToolMultiSelectPopover
+                        open={toolPickerOpen}
+                        onOpenChange={setToolPickerOpen}
+                        tools={toolCatalogEntries}
+                        selectedTools={form.allowed_tools}
+                        disabled={codexUsesPresetCapabilities}
+                        onToggleTool={toggleTool}
+                        onClearTools={clearTools}
+                      />
                     </div>
                     <p className="text-[11px] leading-relaxed text-muted-foreground">
                       {codexUsesPresetCapabilities

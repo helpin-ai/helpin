@@ -55,6 +55,47 @@ func TestStageIntoStagesBuiltInSkillPackage(t *testing.T) {
 	}
 }
 
+func TestStageIntoStagesBuiltInSkillPackageReferences(t *testing.T) {
+	agent := &model.Agent{
+		RuntimeKind: "native_sdk",
+		Skills:      model.AgentSkillRefs{{Key: "dependency_auditor"}},
+	}
+	destRoot := filepath.Join(t.TempDir(), "skills")
+
+	resolution, err := StageInto(context.Background(), "ws_123", agent, []string{
+		"update_plan",
+		"list_directory",
+		"read_file",
+		"read_files",
+		"read_file_range",
+		"search_files",
+		"ripgrep",
+		"grep",
+		"run_command",
+		"web_search_exa",
+		"create_task",
+	}, nil, nil, destRoot)
+	if err != nil {
+		t.Fatalf("stage dependency auditor skill: %v", err)
+	}
+	if len(resolution.Definitions) != 1 || resolution.Definitions[0].Key != "dependency_auditor" {
+		t.Fatalf("expected dependency_auditor definition, got %#v", resolution.Definitions)
+	}
+	for _, rel := range []string{
+		filepath.Join("01-dependency_auditor", "SKILL.md"),
+		filepath.Join("01-dependency_auditor", "ecosystems", "go.md"),
+		filepath.Join("01-dependency_auditor", "ecosystems", "rust.md"),
+		filepath.Join("01-dependency_auditor", "ecosystems", "python.md"),
+		filepath.Join("01-dependency_auditor", "ecosystems", "node.md"),
+		filepath.Join("01-dependency_auditor", "ecosystems", "java.md"),
+		filepath.Join("01-dependency_auditor", "verification.md"),
+	} {
+		if _, err := os.Stat(filepath.Join(destRoot, rel)); err != nil {
+			t.Fatalf("expected staged dependency auditor file %s: %v", rel, err)
+		}
+	}
+}
+
 func TestStageIntoStagesWorkspaceSkillArchive(t *testing.T) {
 	definition := worker.SkillDefinition{
 		Key:          "workspace_review",
