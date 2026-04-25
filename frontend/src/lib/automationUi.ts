@@ -64,7 +64,13 @@ export function buildAutomationToolsPath(slug: string | undefined, hash?: string
   return buildPathWithSearch(base, undefined, hash);
 }
 
-export function buildAutomationRunsPath(slug: string | undefined, hash?: string) {
+export function buildAutomationRunsPath(
+  slug: string | undefined,
+  searchOrHash?: Record<string, string | number | boolean | undefined> | string,
+  hash?: string,
+) {
   const base = slug ? `/w/${slug}/automation/runs` : '/automation/runs';
-  return buildPathWithSearch(base, undefined, hash);
+  const search = typeof searchOrHash === 'string' ? undefined : searchOrHash;
+  const resolvedHash = typeof searchOrHash === 'string' ? searchOrHash : hash;
+  return buildPathWithSearch(base, search, resolvedHash);
 }

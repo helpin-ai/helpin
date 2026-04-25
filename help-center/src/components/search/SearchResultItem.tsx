@@ -3,6 +3,7 @@ import { DocsLink } from '@/components/DocsLink'
 import { useDocsContext } from '@/contexts/DocsContext'
 import {
   buildCanonicalArticlePath,
+  isMultilingualEnabled,
 } from '@/lib/locale'
 import type { SearchResult } from '@/lib/types'
 
@@ -21,9 +22,13 @@ export function SearchResultItem({
   multilingualEnabled: multilingualEnabledProp,
   onClick,
 }: SearchResultItemProps) {
-  const { multilingualEnabled: contextMultilingualEnabled } = useDocsContext()
+  const {
+    enabledLocales,
+    multilingualEnabled: contextMultilingualEnabled,
+  } = useDocsContext()
   const multilingualEnabled =
-    multilingualEnabledProp ?? contextMultilingualEnabled
+    (multilingualEnabledProp ?? contextMultilingualEnabled) &&
+    isMultilingualEnabled(enabledLocales)
   const isCompact = variant === 'compact'
   const targetLocale = result.locale || locale
   const collectionSlug = result.collection_slug
