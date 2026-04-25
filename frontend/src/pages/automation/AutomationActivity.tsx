@@ -544,8 +544,8 @@ function NeedActionCard({
   const targetKey = runTargetKey(run);
 
   return (
-    <div className="grid gap-4 rounded-2xl border border-amber-500/30 bg-card/90 p-4 shadow-sm shadow-amber-500/5 md:grid-cols-[1fr_auto] md:items-center">
-      <div className="min-w-0 space-y-2 border-l-4 border-amber-500 pl-4">
+    <div className="grid gap-4 rounded-2xl border border-border/70 bg-card/80 p-4 md:grid-cols-[1fr_auto] md:items-center">
+      <div className="min-w-0 space-y-2 border-l-2 border-amber-500 pl-3">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="outline" className="rounded-full border-amber-500/40 bg-amber-500/10 text-[11px] font-medium text-amber-700 dark:text-amber-400">
             {runBlockingLabel(run)}
@@ -988,10 +988,7 @@ export function AutomationActivityPage({
 
         {pausedRuns.length > 0 && (
           <section className="space-y-3">
-            <div className="space-y-1">
-              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Needs You</p>
-              <p className="text-sm text-muted-foreground">Paused runs waiting on a human. Clear these to unblock the fleet.</p>
-            </div>
+            <h2 className="text-sm font-medium">Needs you</h2>
             <div className="space-y-3">
               {pausedRuns.map((run) => (
                 <NeedActionCard
@@ -1010,12 +1007,7 @@ export function AutomationActivityPage({
         <section className="space-y-3">
           <div className="space-y-3">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-              <div className="space-y-1">
-                <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Timeline</p>
-                <p className="text-sm text-muted-foreground">
-                  Grouped by day so clusters of failures and pauses are visible without reading raw trigger prose.
-                </p>
-              </div>
+              <h2 className="text-sm font-medium">Timeline</h2>
               {showSearchInput ? (
                 <div className="flex items-start gap-2 lg:max-w-xl lg:flex-1">
                   <div className="min-w-0 flex-1">
