@@ -9,6 +9,7 @@ import {
   ArrowDown01Icon,
   ArrowRight01Icon,
   ArrowUpRight01Icon,
+  ArrowExpandIcon,
   HelpCircleIcon,
   LayoutGridIcon,
   LayoutTable01Icon,
@@ -1745,6 +1746,7 @@ export function AgentsPage() {
   const [compiledPromptOpen, setCompiledPromptOpen] = useState(false);
   const [toolPickerOpen, setToolPickerOpen] = useState(false);
   const [skillPickerOpen, setSkillPickerOpen] = useState(false);
+  const [systemPromptEditorOpen, setSystemPromptEditorOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [versionDraftOpen, setVersionDraftOpen] = useState(false);
@@ -4486,6 +4488,7 @@ export function AgentsPage() {
           if (!open) {
             setToolPickerOpen(false);
             setSkillPickerOpen(false);
+            setSystemPromptEditorOpen(false);
             setTemplateSetupDialogOpen(false);
             setTemplateDraft(null);
             setDocsCollections([]);
@@ -4608,12 +4611,24 @@ export function AgentsPage() {
 
               <DrawerConfigSection title="Behavior" description="Instructions and reusable skills">
                 <div className="space-y-2">
-                  <FieldLabel
-                    htmlFor="agent-system-prompt"
-                    tooltip="Instructions stored on the agent itself. For planners, keep the planning behavior here rather than in a separate planner-only field."
-                  >
-                    System instructions
-                  </FieldLabel>
+                  <div className="flex items-center justify-between gap-3">
+                    <FieldLabel
+                      htmlFor="agent-system-prompt"
+                      tooltip="Instructions stored on the agent itself. For planners, keep the planning behavior here rather than in a separate planner-only field."
+                    >
+                      System instructions
+                    </FieldLabel>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 gap-1.5 px-2 text-[11px]"
+                      onClick={() => setSystemPromptEditorOpen(true)}
+                    >
+                      <ArrowExpandIcon className="h-3.5 w-3.5" />
+                      Expand
+                    </Button>
+                  </div>
                   <Textarea
                     id="agent-system-prompt"
                     value={form.system_prompt}
@@ -5415,6 +5430,32 @@ export function AgentsPage() {
           </SheetFooter>
         </SheetContent>
       </Sheet>
+
+      <Dialog open={systemPromptEditorOpen} onOpenChange={setSystemPromptEditorOpen}>
+        <DialogContent className="z-[140] gap-0 overflow-hidden p-0 sm:max-w-5xl">
+          <DialogHeader className="border-b border-border/70 px-6 py-4">
+            <DialogTitle>System instructions</DialogTitle>
+            <DialogDescription>
+              Edit the prompt stored on {form.name.trim() || 'this custom agent'}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="p-6">
+            <Textarea
+              id="agent-system-prompt-expanded"
+              value={form.system_prompt}
+              onChange={(e) => setForm((current) => ({ ...current, system_prompt: e.target.value }))}
+              placeholder="Agent instructions"
+              className="min-h-[62vh] resize-none font-mono text-xs leading-relaxed"
+              autoFocus
+            />
+          </div>
+          <DialogFooter className="border-t border-border/70 px-6 py-4">
+            <Button type="button" size="sm" onClick={() => setSystemPromptEditorOpen(false)}>
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <ConfirmDialog
         open={deleteConfirmOpen}
