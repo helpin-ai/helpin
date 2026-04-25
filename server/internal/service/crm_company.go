@@ -53,6 +53,7 @@ func (s *CRMCompanyService) Create(ctx context.Context, req model.CreateCRMCompa
 	company := &model.CRMCompany{
 		WorkspaceID:      req.WorkspaceID,
 		DisplayID:        displayID,
+		ExternalID:       req.ExternalID,
 		Name:             strings.TrimSpace(req.Name),
 		Domain:           req.Domain,
 		Industry:         req.Industry,
@@ -86,6 +87,9 @@ func (s *CRMCompanyService) Update(ctx context.Context, id string, req model.Upd
 			return nil, fmt.Errorf("name cannot be empty")
 		}
 		company.Name = name
+	}
+	if req.ExternalID != nil {
+		company.ExternalID = req.ExternalID
 	}
 	if req.Domain != nil {
 		company.Domain = req.Domain

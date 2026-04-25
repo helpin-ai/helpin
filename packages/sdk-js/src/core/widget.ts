@@ -1848,7 +1848,7 @@ export class WidgetManager {
    * identify() / lead() SDK methods without going through the HTTP fallback.
    * Returns true if the message was sent, false if WS is not open.
    */
-  public sendSessionUpgrade(email: string, name: string, source: string, firstName: string = '', lastName: string = ''): boolean {
+  public sendSessionUpgrade(email: string, name: string, source: string, firstName: string = '', lastName: string = '', company?: Record<string, any>): boolean {
     if (this.wsConnection?.readyState === WebSocket.OPEN) {
       this.wsSend('session:upgrade', {
         email,
@@ -1856,6 +1856,7 @@ export class WidgetManager {
         first_name: firstName,
         last_name: lastName,
         source,
+        company,
       });
       // Persist identity so it survives page refresh
       if (this.widgetKey && email) {

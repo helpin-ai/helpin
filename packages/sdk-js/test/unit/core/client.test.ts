@@ -84,6 +84,58 @@ describe('HelpinClient', () => {
       });
       expect(widgetController.open).toHaveBeenCalled();
     });
+
+    it('should include company data in backend identify payload', async () => {
+      const originalFetch = globalThis.fetch;
+      const fetchSpy = vi.fn(() => Promise.resolve({ ok: true } as Response));
+      globalThis.fetch = fetchSpy as any;
+
+      try {
+        await client.id(
+          {
+            id: 'user123',
+            email: 'test@example.com',
+            first_name: 'Test',
+            last_name: 'User',
+            company: {
+              id: 'company123',
+              name: 'Test Company',
+              domain: 'test.example',
+              created_at: '2024-01-15T00:00:00Z',
+              plan: 'enterprise',
+            },
+          },
+          true,
+        );
+
+        expect(fetchSpy).toHaveBeenCalledWith(
+          'https://test.helpin.ai/widget/identify',
+          expect.objectContaining({
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        );
+        const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+        expect(body).toEqual(
+          expect.objectContaining({
+            api_key: 'test-api-key',
+            email: 'test@example.com',
+            first_name: 'Test',
+            last_name: 'User',
+            source: 'sdk_identify',
+            company: {
+              id: 'company123',
+              name: 'Test Company',
+              domain: 'test.example',
+              created_at: '2024-01-15T00:00:00Z',
+              plan: 'enterprise',
+            },
+          }),
+        );
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
   });
 
   describe('track method', () => {
