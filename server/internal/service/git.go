@@ -1368,6 +1368,12 @@ func (s *GitService) ProcessWebhookPR(ctx context.Context, workspaceID, repo, ac
 				_ = s.taskRepo.Update(ctx, story)
 			}
 		}
+		if prStatus == "closed" && story != nil && story.TeamID != nil && *story.TeamID != "" {
+			if teamDefault, cfgErr := s.settingsRepo.GetTeamRepoDefault(ctx, *story.TeamID); cfgErr == nil && teamDefault != nil && teamDefault.AutoSyncStates && teamDefault.ClosedStateID != nil {
+				story.WorkflowStateID = *teamDefault.ClosedStateID
+				_ = s.taskRepo.Update(ctx, story)
+			}
+		}
 	}
 
 	if s.ruleEngine != nil {
@@ -1393,6 +1399,9 @@ func (s *GitService) ProcessWebhookPR(ctx context.Context, workspaceID, repo, ac
 		switch {
 		case prStatus == "merged":
 			event.TriggerType = model.TriggerGitHubPRMerged
+			s.ruleEngine.EvaluateEvent(ctx, event, nil)
+		case prStatus == "closed":
+			event.TriggerType = model.TriggerGitHubPRClosed
 			s.ruleEngine.EvaluateEvent(ctx, event, nil)
 		case strings.TrimSpace(action) == "opened":
 			event.TriggerType = model.TriggerGitHubPROpened
