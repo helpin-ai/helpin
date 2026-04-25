@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"gorm.io/gorm"
 
@@ -18,6 +19,11 @@ type CRMCompanyRepository struct {
 // NewCRMCompanyRepository creates a new CRMCompanyRepository.
 func NewCRMCompanyRepository(db *gorm.DB) *CRMCompanyRepository {
 	return &CRMCompanyRepository{db: db}
+}
+
+// WithTx returns a new CRMCompanyRepository using the given transaction.
+func (r *CRMCompanyRepository) WithTx(tx *gorm.DB) *CRMCompanyRepository {
+	return &CRMCompanyRepository{db: tx}
 }
 
 // GetNextDisplayID generates the next sequential display ID for companies in a workspace.
@@ -65,6 +71,66 @@ func (r *CRMCompanyRepository) GetByID(ctx context.Context, id string) (*model.C
 			return nil, nil
 		}
 		return nil, fmt.Errorf("get company: %w", err)
+	}
+	return &company, nil
+}
+
+// GetByExternalID returns the first company in a workspace with the given external account ID.
+func (r *CRMCompanyRepository) GetByExternalID(ctx context.Context, workspaceID, externalID string) (*model.CRMCompany, error) {
+	externalID = strings.TrimSpace(externalID)
+	if externalID == "" {
+		return nil, nil
+	}
+
+	var company model.CRMCompany
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND external_id = ?", workspaceID, externalID).
+		Order("created_at ASC, id ASC").
+		First(&company).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get company by external id: %w", err)
+	}
+	return &company, nil
+}
+
+// GetByDomain returns the first company in a workspace with the given domain.
+func (r *CRMCompanyRepository) GetByDomain(ctx context.Context, workspaceID, domain string) (*model.CRMCompany, error) {
+	domain = strings.TrimSpace(strings.ToLower(domain))
+	if domain == "" {
+		return nil, nil
+	}
+
+	var company model.CRMCompany
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND domain IS NOT NULL AND LOWER(domain) = ?", workspaceID, domain).
+		Order("created_at ASC, id ASC").
+		First(&company).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get company by domain: %w", err)
+	}
+	return &company, nil
+}
+
+// GetByName returns the first company in a workspace with the given name.
+func (r *CRMCompanyRepository) GetByName(ctx context.Context, workspaceID, name string) (*model.CRMCompany, error) {
+	name = strings.TrimSpace(strings.ToLower(name))
+	if name == "" {
+		return nil, nil
+	}
+
+	var company model.CRMCompany
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND LOWER(name) = ?", workspaceID, name).
+		Order("created_at ASC, id ASC").
+		First(&company).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get company by name: %w", err)
 	}
 	return &company, nil
 }

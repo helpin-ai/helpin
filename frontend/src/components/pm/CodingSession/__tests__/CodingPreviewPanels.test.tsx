@@ -172,4 +172,49 @@ describe('CodingPreviewPanels', () => {
     expect(document.body.querySelector('[role="dialog"]')).toBeTruthy();
     expect(document.body.textContent).toContain('Ship faster');
   });
+
+  it('attaches story-plan approval aliases to the normalized task-plan preview', () => {
+    const onResolveInteraction = vi.fn();
+    renderPanels({
+      previews: new Map<string, PublishedPreview>([
+        ['task_plan', {
+          panelKey: 'task_plan',
+          title: 'Task Plan',
+          format: 'json',
+          content: {
+            summary: 'Plan summary',
+            proposed_tasks: [
+              { ref: 'T1', title: 'Ship faster', description: 'Do the work' },
+            ],
+          },
+          replace: true,
+          surroundingText: '',
+        }],
+      ]),
+      interaction: {
+        interaction_id: 'interaction-story-plan',
+        interaction_kind: 'approval_request',
+        status: 'pending',
+        request_schema_version: 'helpin.v1',
+        request_payload: {
+          phase: 'plan',
+          preview_panel_key: 'story_plan',
+          title: 'Approve task plan',
+          summary: 'Review the latest plan.',
+        },
+      } satisfies CodingSessionInteraction,
+      onResolveInteraction,
+    });
+
+    expect(container.textContent).toContain('Task Plan');
+    expect(container.textContent).toContain('Approve task plan');
+
+    clickButton('Approve');
+
+    expect(onResolveInteraction).toHaveBeenCalledWith(
+      'interaction-story-plan',
+      { decision: 'approve' },
+      undefined,
+    );
+  });
 });

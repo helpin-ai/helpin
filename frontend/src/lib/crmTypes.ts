@@ -78,6 +78,7 @@ export interface CRMCompany {
   id: string;
   workspace_id: string;
   display_id: string;
+  external_id?: string;
   name: string;
   domain?: string;
   industry?: string;
@@ -93,6 +94,7 @@ export interface CRMCompany {
 
 export interface CreateCRMCompanyRequest {
   workspace_id: string;
+  external_id?: string;
   name: string;
   domain?: string;
   industry?: string;
@@ -105,6 +107,7 @@ export interface CreateCRMCompanyRequest {
 }
 
 export interface UpdateCRMCompanyRequest {
+  external_id?: string;
   name?: string;
   domain?: string;
   industry?: string;

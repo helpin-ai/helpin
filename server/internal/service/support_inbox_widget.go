@@ -13,6 +13,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
@@ -116,6 +117,8 @@ func (s *SupportInboxService) UpgradeWidgetSession(ctx context.Context, sessionT
 		convRepoTx := s.conversationRepo.WithTx(tx)
 		sessionRepoTx := s.sessionRepo.WithTx(tx)
 		contactRepoTx := s.contactRepo.WithTx(tx)
+		companyRepoTx := repository.NewCRMCompanyRepository(tx)
+		assocRepoTx := repository.NewCRMAssociationRepository(tx)
 
 		// 1. Update current session
 		session.CustomerEmail = &resolved.email
@@ -129,6 +132,15 @@ func (s *SupportInboxService) UpgradeWidgetSession(ctx context.Context, sessionT
 
 		// 2. Create or match CRM contact — always as lead with source=live_chat
 		contactID = s.matchOrCreateCRMContactIdentityTx(ctx, contactRepoTx, session.WorkspaceID, identity)
+		companyID, err := s.matchOrCreateCRMCompanyIdentityTx(ctx, companyRepoTx, session.WorkspaceID, identity)
+		if err != nil {
+			return err
+		}
+		if contactID != nil && companyID != nil {
+			if err := s.ensurePrimaryContactCompanyAssociationTx(ctx, assocRepoTx, session.WorkspaceID, *contactID, *companyID); err != nil {
+				return err
+			}
+		}
 
 		// 3. Backfill ALL conversations for this anonymous_id
 		ids, err := convRepoTx.UpdateIdentityByAnonymousID(ctx, session.WorkspaceID, session.AnonymousID, resolved.email, resolved.displayName, contactID)
@@ -191,9 +203,20 @@ func (s *SupportInboxService) IdentifyByAnonymousID(ctx context.Context, widgetK
 		convRepoTx := s.conversationRepo.WithTx(tx)
 		sessionRepoTx := s.sessionRepo.WithTx(tx)
 		contactRepoTx := s.contactRepo.WithTx(tx)
+		companyRepoTx := repository.NewCRMCompanyRepository(tx)
+		assocRepoTx := repository.NewCRMAssociationRepository(tx)
 
 		// 1. Create or match CRM contact
 		contactID = s.matchOrCreateCRMContactIdentityTx(ctx, contactRepoTx, workspaceID, identity)
+		companyID, err := s.matchOrCreateCRMCompanyIdentityTx(ctx, companyRepoTx, workspaceID, identity)
+		if err != nil {
+			return err
+		}
+		if contactID != nil && companyID != nil {
+			if err := s.ensurePrimaryContactCompanyAssociationTx(ctx, assocRepoTx, workspaceID, *contactID, *companyID); err != nil {
+				return err
+			}
+		}
 
 		// 2. Backfill ALL conversations for this anonymous_id
 		ids, err := convRepoTx.UpdateIdentityByAnonymousID(ctx, workspaceID, anonymousID, resolved.email, resolved.displayName, contactID)
