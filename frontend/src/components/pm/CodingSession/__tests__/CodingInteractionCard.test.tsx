@@ -173,4 +173,38 @@ describe('CodingInteractionCard', () => {
       undefined,
     );
   });
+
+  it('renders Codex user-input prompts as markdown without duplicating matching summaries', () => {
+    const prompt = [
+      'The Sentry error indicates an object with keys `{message, errors}` is being rendered.',
+      '',
+      '```tsx',
+      'setError(err.response.data.detail)',
+      '```',
+    ].join('\n');
+    const onResolve = vi.fn();
+
+    renderCard(onResolve, buildInteraction({
+      interaction_kind: 'request_user_input',
+      request_schema_version: 'codex.v2',
+      title: 'User input required',
+      summary: prompt,
+      request_payload: {
+        questions: [
+          {
+            id: 'details',
+            header: 'Context',
+            question: prompt,
+            options: [],
+          },
+        ],
+      },
+    }));
+
+    expect(container.textContent?.match(/The Sentry error indicates/g)).toHaveLength(1);
+    expect(container.querySelector('code')?.textContent).toBe('{message, errors}');
+    expect(container.querySelector('pre code')?.textContent).toContain('setError(err.response.data.detail)');
+    expect(container.textContent).not.toContain('`{message, errors}`');
+    expect(container.textContent).not.toContain('```tsx');
+  });
 });

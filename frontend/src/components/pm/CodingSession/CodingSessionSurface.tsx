@@ -11,6 +11,7 @@ import { NextAgentHint } from '@/components/agents/NextAgentHint';
 import { resolveAgentPersonaKey, type AgentPersonaKey } from '@/components/agents/AgentAvatar';
 import { collectCodingSessionPreviews } from '@/components/pm/CodingSession/codingSessionPreviews';
 import { buildCodingSessionStreamState } from '@/components/pm/CodingSession/codingSessionStream';
+import { normalizeCodingSessionPreviewPanelKey } from '@/components/pm/CodingSession/previewPanelKeys';
 import {
   isPersistedCodingSessionEvent,
   latestPendingCodingSessionInteraction,
@@ -214,9 +215,11 @@ export function CodingSessionSurface({
   );
   const attachedPreviewApprovalInteraction = useMemo<CodingSessionInteraction | null>(() => {
     if (!activeInteraction || activeInteraction.interaction_kind !== 'approval_request') return null;
-    const previewPanelKey = typeof activeInteraction.request_payload?.preview_panel_key === 'string'
-      ? activeInteraction.request_payload.preview_panel_key.trim().toLowerCase()
-      : '';
+    const previewPanelKey = normalizeCodingSessionPreviewPanelKey(
+      typeof activeInteraction.request_payload?.preview_panel_key === 'string'
+        ? activeInteraction.request_payload.preview_panel_key
+        : '',
+    );
     if (!previewPanelKey || !previewsByKey.has(previewPanelKey)) return null;
     return activeInteraction;
   }, [activeInteraction, previewsByKey]);
