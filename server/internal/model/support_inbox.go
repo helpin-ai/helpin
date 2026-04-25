@@ -847,9 +847,10 @@ type SupportInboxSettings struct {
 	SpecialNoticeText *string `json:"special_notice_text,omitempty"`
 
 	// Offline email fallback
-	EmailFallbackEnabled   bool   `json:"email_fallback_enabled"`
-	EmailFallbackDelaySecs int    `json:"email_fallback_delay_secs"`
-	EmailFallbackFromName  string `json:"email_fallback_from_name"`
+	EmailFallbackEnabled            bool   `json:"email_fallback_enabled"`
+	EmailFallbackDelaySecs          int    `json:"email_fallback_delay_secs"`
+	EmailFallbackFromName           string `json:"email_fallback_from_name"`
+	EmailFallbackMaxDeliveryAgeSecs int    `json:"email_fallback_max_delivery_age_secs"`
 
 	// Widget Identity
 	WidgetName         string   `json:"widget_name"`           // display name in widget header (defaults to workspace name)
@@ -921,87 +922,89 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 			"sat": {Start: "09:00", End: "17:00", Enabled: false},
 			"sun": {Start: "09:00", End: "17:00", Enabled: false},
 		},
-		OutsideHoursMessage:    "We're currently offline. Leave a message and we'll get back to you!",
-		ReplyTimePreset:        SupportReplyTimePresetFewMinutes,
-		ReplyTimeCustomMinutes: nil,
-		SpecialNoticeText:      nil,
-		EmailFallbackEnabled:   false,
-		EmailFallbackDelaySecs: 120,
-		EmailFallbackFromName:  "",
-		WidgetName:             "",
-		WidgetAvatarURL:        "",
-		WidgetHelpSpaceIDs:     []string{},
-		BrandColor:             "#6366F1",
-		ShowBranding:           true,
-		ColorScheme:            "light",
-		ButtonColor:            "#000000",
-		ButtonIconColor:        "#FFFFFF",
-		LogoURL:                "",
-		LauncherPosition:       "bottom_right",
-		LauncherIcon:           "chat_bubble",
-		CSATEnabled:            false,
-		FileUploadsEnabled:     true,
-		ForceVisitorIdentity:   false,
+		OutsideHoursMessage:             "We're currently offline. Leave a message and we'll get back to you!",
+		ReplyTimePreset:                 SupportReplyTimePresetFewMinutes,
+		ReplyTimeCustomMinutes:          nil,
+		SpecialNoticeText:               nil,
+		EmailFallbackEnabled:            false,
+		EmailFallbackDelaySecs:          120,
+		EmailFallbackFromName:           "",
+		EmailFallbackMaxDeliveryAgeSecs: 600,
+		WidgetName:                      "",
+		WidgetAvatarURL:                 "",
+		WidgetHelpSpaceIDs:              []string{},
+		BrandColor:                      "#6366F1",
+		ShowBranding:                    true,
+		ColorScheme:                     "light",
+		ButtonColor:                     "#000000",
+		ButtonIconColor:                 "#FFFFFF",
+		LogoURL:                         "",
+		LauncherPosition:                "bottom_right",
+		LauncherIcon:                    "chat_bubble",
+		CSATEnabled:                     false,
+		FileUploadsEnabled:              true,
+		ForceVisitorIdentity:            false,
 	}
 }
 
 // UpdateInstallationSettingsRequest is a PATCH payload with pointer fields.
 type UpdateInstallationSettingsRequest struct {
-	RequireEmailBeforeChat        *bool                       `json:"require_email_before_chat,omitempty"`
-	RequirePhoneAfterEmail        *bool                       `json:"require_phone_after_email,omitempty"`
-	WelcomeMessage                *string                     `json:"welcome_message,omitempty"`
-	AutoCreateCRMContact          *bool                       `json:"auto_create_crm_contact,omitempty"`
-	DefaultLifecycleStage         *string                     `json:"default_lifecycle_stage,omitempty"`
-	AutoPromoteToLead             *bool                       `json:"auto_promote_to_lead,omitempty"`
-	AIEnabled                     *bool                       `json:"ai_enabled,omitempty"`
-	AIAgentID                     *string                     `json:"ai_agent_id,omitempty"`
-	AIConfidenceThreshold         *float64                    `json:"ai_confidence_threshold,omitempty"`
-	AIResponseMode                *string                     `json:"ai_response_mode,omitempty"`
-	AIMaxFollowups                *int                        `json:"ai_max_followups,omitempty"`
-	AIAutoResolveTimeout          *int                        `json:"ai_auto_resolve_timeout,omitempty"`
-	ShowTalkToHuman               *bool                       `json:"show_talk_to_human,omitempty"`
-	EscalationMessage             *string                     `json:"escalation_message,omitempty"`
-	HandoffBehavior               *string                     `json:"handoff_behavior,omitempty"`
-	HandoffTeamID                 *string                     `json:"handoff_team_id,omitempty"`
-	DefaultMailboxID              *string                     `json:"default_mailbox_id,omitempty"`
-	AIHandoffMailboxID            *string                     `json:"ai_handoff_mailbox_id,omitempty"`
-	TriageEnabled                 *bool                       `json:"triage_enabled,omitempty"`
-	TriageAutoMoveEnabled         *bool                       `json:"triage_auto_move_enabled,omitempty"`
-	TriageConfidenceThreshold     *float64                    `json:"triage_confidence_threshold,omitempty"`
-	TriageWidgetEnabled           *bool                       `json:"triage_widget_enabled,omitempty"`
-	TriageEmailEnabled            *bool                       `json:"triage_email_enabled,omitempty"`
-	TriageInternalEnabled         *bool                       `json:"triage_internal_enabled,omitempty"`
-	TriageFallbackBehavior        *string                     `json:"triage_fallback_behavior,omitempty"`
-	TriageRerunOnMeaningChange    *bool                       `json:"triage_rerun_on_meaning_change,omitempty"`
-	TriageDailyBudget             *int                        `json:"triage_daily_budget,omitempty"`
-	TriageSkipSpamConversations   *bool                       `json:"triage_skip_spam_conversations,omitempty"`
-	TriageDeduplicateFirstMessage *bool                       `json:"triage_deduplicate_first_message,omitempty"`
-	BusinessHoursEnabled          *bool                       `json:"business_hours_enabled,omitempty"`
-	BusinessHoursTimezone         *string                     `json:"business_hours_timezone,omitempty"`
-	BusinessHoursSchedule         map[string]BusinessHoursDay `json:"business_hours_schedule,omitempty"`
-	OutsideHoursMessage           *string                     `json:"outside_hours_message,omitempty"`
-	ReplyTimePreset               *string                     `json:"reply_time_preset,omitempty"`
-	ReplyTimeCustomMinutes        *int                        `json:"reply_time_custom_minutes,omitempty"`
-	SpecialNoticeText             *string                     `json:"special_notice_text,omitempty"`
-	ClearSpecialNotice            *bool                       `json:"clear_special_notice,omitempty"`
-	ClearReplyTimeCustomMinutes   *bool                       `json:"clear_reply_time_custom_minutes,omitempty"`
-	EmailFallbackEnabled          *bool                       `json:"email_fallback_enabled,omitempty"`
-	EmailFallbackDelaySecs        *int                        `json:"email_fallback_delay_secs,omitempty"`
-	EmailFallbackFromName         *string                     `json:"email_fallback_from_name,omitempty"`
-	WidgetName                    *string                     `json:"widget_name,omitempty"`
-	WidgetAvatarURL               *string                     `json:"widget_avatar_url,omitempty"`
-	WidgetHelpSpaceIDs            []string                    `json:"widget_help_space_ids,omitempty"`
-	BrandColor                    *string                     `json:"brand_color,omitempty"`
-	ShowBranding                  *bool                       `json:"show_branding,omitempty"`
-	ColorScheme                   *string                     `json:"color_scheme,omitempty"`
-	ButtonColor                   *string                     `json:"button_color,omitempty"`
-	ButtonIconColor               *string                     `json:"button_icon_color,omitempty"`
-	LogoURL                       *string                     `json:"logo_url,omitempty"`
-	LauncherPosition              *string                     `json:"launcher_position,omitempty"`
-	LauncherIcon                  *string                     `json:"launcher_icon,omitempty"`
-	CSATEnabled                   *bool                       `json:"csat_enabled,omitempty"`
-	FileUploadsEnabled            *bool                       `json:"file_uploads_enabled,omitempty"`
-	ForceVisitorIdentity          *bool                       `json:"force_visitor_identity,omitempty"`
+	RequireEmailBeforeChat          *bool                       `json:"require_email_before_chat,omitempty"`
+	RequirePhoneAfterEmail          *bool                       `json:"require_phone_after_email,omitempty"`
+	WelcomeMessage                  *string                     `json:"welcome_message,omitempty"`
+	AutoCreateCRMContact            *bool                       `json:"auto_create_crm_contact,omitempty"`
+	DefaultLifecycleStage           *string                     `json:"default_lifecycle_stage,omitempty"`
+	AutoPromoteToLead               *bool                       `json:"auto_promote_to_lead,omitempty"`
+	AIEnabled                       *bool                       `json:"ai_enabled,omitempty"`
+	AIAgentID                       *string                     `json:"ai_agent_id,omitempty"`
+	AIConfidenceThreshold           *float64                    `json:"ai_confidence_threshold,omitempty"`
+	AIResponseMode                  *string                     `json:"ai_response_mode,omitempty"`
+	AIMaxFollowups                  *int                        `json:"ai_max_followups,omitempty"`
+	AIAutoResolveTimeout            *int                        `json:"ai_auto_resolve_timeout,omitempty"`
+	ShowTalkToHuman                 *bool                       `json:"show_talk_to_human,omitempty"`
+	EscalationMessage               *string                     `json:"escalation_message,omitempty"`
+	HandoffBehavior                 *string                     `json:"handoff_behavior,omitempty"`
+	HandoffTeamID                   *string                     `json:"handoff_team_id,omitempty"`
+	DefaultMailboxID                *string                     `json:"default_mailbox_id,omitempty"`
+	AIHandoffMailboxID              *string                     `json:"ai_handoff_mailbox_id,omitempty"`
+	TriageEnabled                   *bool                       `json:"triage_enabled,omitempty"`
+	TriageAutoMoveEnabled           *bool                       `json:"triage_auto_move_enabled,omitempty"`
+	TriageConfidenceThreshold       *float64                    `json:"triage_confidence_threshold,omitempty"`
+	TriageWidgetEnabled             *bool                       `json:"triage_widget_enabled,omitempty"`
+	TriageEmailEnabled              *bool                       `json:"triage_email_enabled,omitempty"`
+	TriageInternalEnabled           *bool                       `json:"triage_internal_enabled,omitempty"`
+	TriageFallbackBehavior          *string                     `json:"triage_fallback_behavior,omitempty"`
+	TriageRerunOnMeaningChange      *bool                       `json:"triage_rerun_on_meaning_change,omitempty"`
+	TriageDailyBudget               *int                        `json:"triage_daily_budget,omitempty"`
+	TriageSkipSpamConversations     *bool                       `json:"triage_skip_spam_conversations,omitempty"`
+	TriageDeduplicateFirstMessage   *bool                       `json:"triage_deduplicate_first_message,omitempty"`
+	BusinessHoursEnabled            *bool                       `json:"business_hours_enabled,omitempty"`
+	BusinessHoursTimezone           *string                     `json:"business_hours_timezone,omitempty"`
+	BusinessHoursSchedule           map[string]BusinessHoursDay `json:"business_hours_schedule,omitempty"`
+	OutsideHoursMessage             *string                     `json:"outside_hours_message,omitempty"`
+	ReplyTimePreset                 *string                     `json:"reply_time_preset,omitempty"`
+	ReplyTimeCustomMinutes          *int                        `json:"reply_time_custom_minutes,omitempty"`
+	SpecialNoticeText               *string                     `json:"special_notice_text,omitempty"`
+	ClearSpecialNotice              *bool                       `json:"clear_special_notice,omitempty"`
+	ClearReplyTimeCustomMinutes     *bool                       `json:"clear_reply_time_custom_minutes,omitempty"`
+	EmailFallbackEnabled            *bool                       `json:"email_fallback_enabled,omitempty"`
+	EmailFallbackDelaySecs          *int                        `json:"email_fallback_delay_secs,omitempty"`
+	EmailFallbackFromName           *string                     `json:"email_fallback_from_name,omitempty"`
+	EmailFallbackMaxDeliveryAgeSecs *int                        `json:"email_fallback_max_delivery_age_secs,omitempty"`
+	WidgetName                      *string                     `json:"widget_name,omitempty"`
+	WidgetAvatarURL                 *string                     `json:"widget_avatar_url,omitempty"`
+	WidgetHelpSpaceIDs              []string                    `json:"widget_help_space_ids,omitempty"`
+	BrandColor                      *string                     `json:"brand_color,omitempty"`
+	ShowBranding                    *bool                       `json:"show_branding,omitempty"`
+	ColorScheme                     *string                     `json:"color_scheme,omitempty"`
+	ButtonColor                     *string                     `json:"button_color,omitempty"`
+	ButtonIconColor                 *string                     `json:"button_icon_color,omitempty"`
+	LogoURL                         *string                     `json:"logo_url,omitempty"`
+	LauncherPosition                *string                     `json:"launcher_position,omitempty"`
+	LauncherIcon                    *string                     `json:"launcher_icon,omitempty"`
+	CSATEnabled                     *bool                       `json:"csat_enabled,omitempty"`
+	FileUploadsEnabled              *bool                       `json:"file_uploads_enabled,omitempty"`
+	ForceVisitorIdentity            *bool                       `json:"force_visitor_identity,omitempty"`
 }
 
 // SupportAIPreviewRequest is a dry-run request for the support AI planner + RAG pipeline.

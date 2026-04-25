@@ -13,7 +13,6 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
-
 // parseSettings unmarshals the JSONB settings string, applying defaults for missing fields.
 func parseSettings(raw string) model.SupportInboxSettings {
 	defaults := model.DefaultSupportInboxSettings()
@@ -151,6 +150,9 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.EmailFallbackFromName != nil {
 		current.EmailFallbackFromName = *patch.EmailFallbackFromName
 	}
+	if patch.EmailFallbackMaxDeliveryAgeSecs != nil {
+		current.EmailFallbackMaxDeliveryAgeSecs = *patch.EmailFallbackMaxDeliveryAgeSecs
+	}
 	if patch.WidgetName != nil {
 		current.WidgetName = *patch.WidgetName
 	}
@@ -281,6 +283,12 @@ func (s *SupportInboxService) validateSettings(ctx context.Context, workspaceID 
 	}
 	if settings.EmailFallbackDelaySecs < 30 || settings.EmailFallbackDelaySecs > 600 {
 		return fmt.Errorf("email_fallback_delay_secs must be between 30 and 600")
+	}
+	if settings.EmailFallbackMaxDeliveryAgeSecs < 120 || settings.EmailFallbackMaxDeliveryAgeSecs > 1800 {
+		return fmt.Errorf("email_fallback_max_delivery_age_secs must be between 120 and 1800")
+	}
+	if settings.EmailFallbackMaxDeliveryAgeSecs < settings.EmailFallbackDelaySecs {
+		return fmt.Errorf("email_fallback_max_delivery_age_secs must be greater than or equal to email_fallback_delay_secs")
 	}
 	if settings.TriageDailyBudget < 0 {
 		return fmt.Errorf("triage_daily_budget must be >= 0")

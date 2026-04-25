@@ -1202,7 +1202,9 @@ func (s *SupportInboxService) ListConversationMessages(ctx context.Context, work
 	// Hydrate inbound email bodies onto messages so the thread bubbles can
 	// render rich HTML without a per-message round-trip. Only email messages
 	// need this — widget/in-app chat messages have no email log.
-	hydrateEmailBodies(ctx, s.emailLogRepo, workspaceID, ticketID, messages)
+	if s.emailLogRepo != nil {
+		hydrateEmailBodies(ctx, s.emailLogRepo, workspaceID, ticketID, messages)
+	}
 
 	return messages, nil
 }

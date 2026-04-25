@@ -84,6 +84,7 @@ const (
 	emailFallbackOutboxKey     = "email_fallback_outbox"
 	emailFallbackLockKey       = "email_fallback_lock"
 	emailFallbackMsgsKeyPrefix = "email_fallback_msgs:"
+	emailFallbackOnlineRetry   = 30 * time.Second
 )
 
 // EmailFallbackService manages delayed outbound email delivery and inbound replies.
@@ -521,18 +522,6 @@ func (s *EmailFallbackService) fireEmail(ctx context.Context, conversationID str
 		return s.cleanup(ctx, conversationID)
 	}
 
-	allAlreadyNotified := true
-	var pending []model.SupportMessage
-	for _, msg := range messages {
-		if msg.EmailNotifiedAt == nil {
-			allAlreadyNotified = false
-			pending = append(pending, msg)
-		}
-	}
-	if allAlreadyNotified || len(pending) == 0 {
-		return s.cleanup(ctx, conversationID)
-	}
-
 	conv, err := s.findConversationByID(ctx, conversationID)
 	if err != nil {
 		return err
@@ -546,6 +535,15 @@ func (s *EmailFallbackService) fireEmail(ctx context.Context, conversationID str
 	if conv.CustomerEmail == nil || strings.TrimSpace(*conv.CustomerEmail) == "" {
 		return s.cleanup(ctx, conversationID)
 	}
+
+	settings, err := s.loadSettings(ctx, conv.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	if !settings.EmailFallbackEnabled {
+		return s.cleanup(ctx, conversationID)
+	}
+
 	if s.contactRepo != nil {
 		if contact, err := s.contactRepo.GetByEmail(ctx, conv.WorkspaceID, strings.TrimSpace(*conv.CustomerEmail)); err == nil && contact != nil && contact.EmailStatus == model.CRMContactEmailStatusInvalid {
 			s.logger.InfoContext(ctx, "email fallback skipped — recipient marked invalid",
@@ -556,16 +554,28 @@ func (s *EmailFallbackService) fireEmail(ctx context.Context, conversationID str
 			return s.cleanup(ctx, conversationID)
 		}
 	}
-	if online, err := s.isVisitorOnline(ctx, conv.WorkspaceID, conv.AnonymousID); err == nil && online {
+
+	pending := unreadFallbackMessages(conv, messages)
+	if len(pending) == 0 {
 		return s.cleanup(ctx, conversationID)
 	}
 
-	settings, err := s.loadSettings(ctx, conv.WorkspaceID)
-	if err != nil {
-		return err
+	maxAgeSecs := settings.EmailFallbackMaxDeliveryAgeSecs
+	if maxAgeSecs < 120 || maxAgeSecs > 1800 || maxAgeSecs < settings.EmailFallbackDelaySecs {
+		maxAgeSecs = model.DefaultSupportInboxSettings().EmailFallbackMaxDeliveryAgeSecs
 	}
-	if !settings.EmailFallbackEnabled {
+	freshPending := freshEmailFallbackMessages(pending, s.now(), time.Duration(maxAgeSecs)*time.Second)
+	if len(freshPending) == 0 {
+		s.logger.InfoContext(ctx, "email fallback skipped — unread reply is stale",
+			"conversation_id", conversationID,
+			"max_delivery_age_secs", maxAgeSecs,
+		)
 		return s.cleanup(ctx, conversationID)
+	}
+	pending = freshPending
+
+	if online, err := s.isVisitorOnline(ctx, conv.WorkspaceID, conv.AnonymousID); err == nil && online {
+		return s.postpone(ctx, conversationID, emailFallbackOnlineRetry)
 	}
 
 	workspace, err := s.workspaceRepo.GetByID(ctx, conv.WorkspaceID)
@@ -651,6 +661,52 @@ func (s *EmailFallbackService) fireEmail(ctx context.Context, conversationID str
 	s.publishMessageUpdated(conv.WorkspaceID, conversationID, lastString(messageIDValues), "postmark:sent")
 
 	return s.cleanup(ctx, conversationID)
+}
+
+func unreadFallbackMessages(conv *model.SupportConversation, messages []model.SupportMessage) []model.SupportMessage {
+	if conv == nil || len(messages) == 0 {
+		return []model.SupportMessage{}
+	}
+	lastSeen := time.Time{}
+	if conv.ContactLastSeenAt != nil {
+		lastSeen = *conv.ContactLastSeenAt
+	}
+	pending := make([]model.SupportMessage, 0, len(messages))
+	for _, msg := range messages {
+		messageType := strings.TrimSpace(msg.MessageType)
+		if messageType == "" {
+			messageType = "reply"
+		}
+		if msg.EmailNotifiedAt != nil ||
+			msg.IsInternal ||
+			messageType != "reply" ||
+			strings.TrimSpace(msg.SenderType) == "customer" {
+			continue
+		}
+		if !lastSeen.IsZero() && !msg.CreatedAt.After(lastSeen) {
+			continue
+		}
+		pending = append(pending, msg)
+	}
+	return pending
+}
+
+func freshEmailFallbackMessages(messages []model.SupportMessage, now time.Time, maxAge time.Duration) []model.SupportMessage {
+	if len(messages) == 0 {
+		return []model.SupportMessage{}
+	}
+	if maxAge <= 0 || now.IsZero() {
+		return messages
+	}
+
+	cutoff := now.Add(-maxAge)
+	fresh := make([]model.SupportMessage, 0, len(messages))
+	for _, msg := range messages {
+		if msg.CreatedAt.IsZero() || !msg.CreatedAt.Before(cutoff) {
+			fresh = append(fresh, msg)
+		}
+	}
+	return fresh
 }
 
 // ProcessOpenEvent records an outbound email open and mirrors it onto the related support messages.
@@ -1141,6 +1197,23 @@ func (s *EmailFallbackService) cleanup(ctx context.Context, conversationID strin
 	}
 	if err := s.redis.Del(ctx, s.msgListKey(conversationID)).Err(); err != nil {
 		return err
+	}
+	return nil
+}
+
+func (s *EmailFallbackService) postpone(ctx context.Context, conversationID string, delay time.Duration) error {
+	if s == nil || s.redis == nil {
+		return nil
+	}
+	if delay <= 0 {
+		delay = emailFallbackOnlineRetry
+	}
+	fireAt := s.now().Add(delay)
+	if _, err := s.redis.ZAddArgs(ctx, emailFallbackOutboxKey, redis.ZAddArgs{
+		XX:      true,
+		Members: []redis.Z{{Score: float64(fireAt.Unix()), Member: conversationID}},
+	}).Result(); err != nil {
+		return fmt.Errorf("postpone email fallback outbox: %w", err)
 	}
 	return nil
 }
