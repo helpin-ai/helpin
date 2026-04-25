@@ -279,6 +279,7 @@ export interface TeamRepoDefault {
   auto_sync_states: boolean;
   review_state_id?: string;
   done_state_id?: string;
+  closed_state_id?: string;
   created_at: string;
   updated_at: string;
 }

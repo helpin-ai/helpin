@@ -326,6 +326,26 @@ func triggerBindingDefinitions() []triggerBindingDefinition {
 			},
 		},
 		{
+			catalogID:        "github.pull_request_closed",
+			bindingKind:      "automation_rule",
+			category:         "automation_rule",
+			triggerType:      model.TriggerGitHubPRClosed,
+			title:            "GitHub Pull Request Closed",
+			description:      "Fires when the GitHub integration receives a pull request closed webhook for a PR that was closed without merging. Filters can scope by repository and PR base branch.",
+			sourceSurface:    "GitHub App webhook delivery",
+			configSurface:    workflowsPath,
+			supportsAgentRun: true,
+			showRulesSearch: &model.WorkflowRuleSearchPreset{
+				ShowTrigger:      strPtr(model.TriggerGitHubPRClosed),
+				ShowTriggerTitle: strPtr("GitHub Pull Request Closed"),
+			},
+			createRuleSearch: &model.WorkflowRuleSearchPreset{
+				CreateEventRule: true,
+				TriggerType:     strPtr(model.TriggerGitHubPRClosed),
+				BaseBranch:      strPtr("main"),
+			},
+		},
+		{
 			catalogID:        "github.pull_request_review_requested",
 			bindingKind:      "automation_rule",
 			category:         "automation_rule",

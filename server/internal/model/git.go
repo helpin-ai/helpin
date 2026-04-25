@@ -183,6 +183,7 @@ type PMTeamRepoDefault struct {
 	AutoSyncStates bool      `json:"auto_sync_states" gorm:"not null;default:true"`
 	ReviewStateID  *string   `json:"review_state_id" gorm:"type:uuid"`
 	DoneStateID    *string   `json:"done_state_id" gorm:"type:uuid"`
+	ClosedStateID  *string   `json:"closed_state_id" gorm:"type:uuid"`
 	CreatedAt      time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt      time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }

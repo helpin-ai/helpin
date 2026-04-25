@@ -144,7 +144,7 @@ var entries = []model.AutomationCatalogEntry{
 		Title:               "Automation Rules",
 		Description:         "User-configured rules triggered by workflow events and GitHub webhooks. Powers stage-based agent pipelines.",
 		TargetTypes:         []string{"pm_story"},
-		TriggerModes:        []string{"task.state_entered", "agent_run.approved", "github.push", "github.pull_request_opened", "github.pull_request_merged", "github.pull_request_review_requested", "github.release_published", "github.check_suite_completed", "cron"},
+		TriggerModes:        []string{"task.state_entered", "agent_run.approved", "github.push", "github.pull_request_opened", "github.pull_request_merged", "github.pull_request_closed", "github.pull_request_review_requested", "github.release_published", "github.check_suite_completed", "cron"},
 		ConfigScope:         "workspace",
 		ExecutionStyle:      "event_driven_rule",
 		UserGoverned:        true,

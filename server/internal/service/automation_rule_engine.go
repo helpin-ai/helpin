@@ -277,6 +277,13 @@ func (e *AutomationRuleEngine) matchesTriggerConfig(ctx context.Context, rule mo
 		}
 		return matchGitHubPullRequestConfig(cfg, event)
 
+	case model.TriggerGitHubPRClosed:
+		var cfg model.TriggerConfigGitHubPullRequest
+		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err != nil {
+			return false
+		}
+		return matchGitHubPullRequestConfig(cfg, event)
+
 	case model.TriggerGitHubPRReviewReq:
 		var cfg model.TriggerConfigGitHubPullRequest
 		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err != nil {
@@ -1089,6 +1096,14 @@ func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerCo
 		if strings.TrimSpace(cfg.BaseBranch) == "" && strings.TrimSpace(cfg.RepoFullName) == "" {
 			return fmt.Errorf("base_branch or repo_full_name is required in trigger_config for %s", triggerType)
 		}
+	case model.TriggerGitHubPRClosed:
+		var cfg model.TriggerConfigGitHubPullRequest
+		if err := json.Unmarshal(triggerConfig, &cfg); err != nil {
+			return fmt.Errorf("invalid trigger_config for %s: %w", triggerType, err)
+		}
+		if strings.TrimSpace(cfg.BaseBranch) == "" && strings.TrimSpace(cfg.RepoFullName) == "" {
+			return fmt.Errorf("base_branch or repo_full_name is required in trigger_config for %s", triggerType)
+		}
 	case model.TriggerGitHubPRReviewReq:
 		var cfg model.TriggerConfigGitHubPullRequest
 		if err := json.Unmarshal(triggerConfig, &cfg); err != nil {
@@ -1185,6 +1200,7 @@ func isGitHubAutomationTrigger(triggerType string) bool {
 	case model.TriggerGitHubPush,
 		model.TriggerGitHubPROpened,
 		model.TriggerGitHubPRMerged,
+		model.TriggerGitHubPRClosed,
 		model.TriggerGitHubPRReviewReq,
 		model.TriggerGitHubReleasePub,
 		model.TriggerGitHubCheckSuite:
