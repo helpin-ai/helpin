@@ -103,6 +103,13 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
 
   const [repoDialogOpen, setRepoDialogOpen] = useState(false);
   const [repoSaving, setRepoSaving] = useState(false);
+
+  // Auto-open delivery defaults dialog when navigated with ?section=delivery
+  useEffect(() => {
+    if (initialSection === 'delivery' && selectedTeamId) {
+      setRepoDialogOpen(true);
+    }
+  }, [initialSection, selectedTeamId]);
   const [repositories, setRepositories] = useState<GitRepository[]>([]);
   const [repositoriesLoading, setRepositoriesLoading] = useState(false);
   const [workflows, setWorkflows] = useState<WorkflowWithStates[]>([]);
