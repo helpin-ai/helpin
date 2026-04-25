@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { gitService } from '@/lib/services/gitService';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type {
   GitAvailableRepo,
   GitIntegration,
@@ -7,6 +9,7 @@ import type {
   GitRepository,
   WireGitRepositoriesConflictResponse,
 } from '@/lib/pmTypes';
+import type { TeamRepoDefault, WorkspaceTeam } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -33,10 +36,14 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
 
-export function ProjectDeliveryTab({ workspaceId, editable }: {
+export function ProjectDeliveryTab({ workspaceId, editable, teams = [], teamRepoDefaults = [] }: {
   workspaceId: string;
   editable: boolean;
+  teams?: WorkspaceTeam[];
+  teamRepoDefaults?: TeamRepoDefault[];
 }) {
+  const navigate = useNavigate();
+  const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.slug);
   const [integrations, setIntegrations] = useState<GitIntegration[]>([]);
   const [repositories, setRepositories] = useState<GitRepository[]>([]);
   const [syncingIntegrationId, setSyncingIntegrationId] = useState<string | null>(null);
@@ -844,6 +851,69 @@ export function ProjectDeliveryTab({ workspaceId, editable }: {
                 ? 'No repositories synced yet. Use the Sync button on your integration above to pull in repositories.'
                 : 'Repositories will appear here after you connect a GitHub integration and sync.'}
             </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ── Per-team Delivery Defaults ── */}
+      <Card className={LINEAR_CARD_CLASS}>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <GitBranchIcon className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-base">Team delivery defaults</CardTitle>
+          </div>
+          <CardDescription>
+            Each team can pin a default repository, base branch, and branch template for new tasks. Task-level overrides still take precedence.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {teams.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+              No teams in this workspace yet. Create a team in Workspace Settings → Teams to assign delivery defaults.
+            </div>
+          ) : (
+            <ul className="divide-y divide-border/60 rounded-lg border border-border/60">
+              {teams.map((team) => {
+                const teamDefault = teamRepoDefaults.find((entry) => entry.team_id === team.id);
+                const repo = teamDefault
+                  ? repositories.find((entry) => entry.id === teamDefault.repository_id)
+                  : null;
+                const meta = teamDefault
+                  ? `${repo?.full_name ?? 'Repository selected'} · base ${teamDefault.base_branch}`
+                  : 'Not configured';
+                return (
+                  <li key={team.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{team.name}</p>
+                      <p className="truncate text-xs text-muted-foreground">{meta}</p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {teamDefault ? (
+                        <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-[10px] uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
+                          Configured
+                        </Badge>
+                      ) : null}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={!editable || !workspaceSlug}
+                        onClick={() => {
+                          if (!workspaceSlug) return;
+                          void navigate({
+                            to: '/w/$slug/settings/teams',
+                            params: { slug: workspaceSlug },
+                            search: { team: team.id, section: 'delivery' },
+                          });
+                        }}
+                      >
+                        {teamDefault ? 'Edit' : 'Configure'}
+                      </Button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </CardContent>
       </Card>
