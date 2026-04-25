@@ -1,7 +1,8 @@
 # PRD: Email Fallback for Offline Visitors
 
-**Status**: Implemented
+**Status**: Implemented; unread/offline delivery amendments planned
 **Date**: 2026-03-20
+**Updated**: 2026-04-25
 **Author**: Engineering
 
 ## 1. Problem Statement
@@ -14,7 +15,15 @@ When a visitor sends a message via the Helpin chat widget and closes their brows
 - **Broken AI value**: AI can respond in under 3 seconds, but if the visitor already closed the page, that speed is meaningless
 - **No continuity**: Chat is a dead end when the visitor leaves
 
-**What happens today**: `CreateConversationMessage()` in `server/internal/service/support_inbox.go` creates the message, broadcasts via WebSocket. If the visitor's WebSocket is disconnected (tracked by `hub.IsVisitorOnline()`), the broadcast silently drops. The message sits undelivered until the visitor happens to return.
+**What happens today**: `CreateConversationMessage()` in `server/internal/service/support_inbox.go` creates the message, broadcasts via WebSocket, and queues a fallback email candidate. The queue currently checks visitor online status at fire time, but it does not fully model "unread after the visitor leaves." If the visitor is online but does not read the reply, the queue can be cleaned up too early. If the visitor has already read the reply in the widget, the fallback can still send later if they disconnect before the delay fires. The product behavior should match Intercom-style delivery: email is a fallback for unread replies, not merely a fallback for disconnected sockets.
+
+### 1.1 2026-04-25 Amendment: Unread, Offline, and Delivery Visibility
+
+The current email fallback implementation needs three product refinements:
+
+1. **Unread-gated customer delivery.** A fallback email should send only when the customer has not read the outbound reply in the widget. The source of truth is `support_conversations.contact_last_seen_at`.
+2. **Freshness cap.** If the customer stays online but does not read the reply for too long, the system should not send a surprising email much later when they finally disconnect. Default cap: 10 minutes per eligible unread outbound reply.
+3. **Agent-visible email delivery status.** When a support agent replies while the customer is offline and the message is delivered by email, the agent should see that state in the message thread, e.g. `Delivered via email`, then `Read via email` if Postmark open tracking confirms it, and delivery failure states if the email bounces or is marked spam.
 
 ## 2. Design Decisions
 
@@ -23,6 +32,9 @@ When a visitor sends a message via the Helpin chat widget and closes their brows
 | Where does debounce/batching run? | **Redis-backed outbox + single leader worker** | The WebSocket stack already runs multi-pod with `RedisRelay` for cross-pod broadcast and `RedisPresence` for shared visitor state (`hub.go`). Pod-local timers would cause duplicate emails (two pods both schedule for the same conversation) or stale presence reads. A Redis sorted-set outbox (`ZADD` keyed by fire-at timestamp) with a lease-based poller (one pod holds a `SET NX EX` lock) gives durable, de-duplicated scheduling that survives pod restarts. |
 | Extend Postmark client or new service? | **New `EmailFallbackService`** consuming existing `email.Client`. Add `SendEmailWithHeaders()` to `email.Client`. | Keeps Postmark client generic. Service owns outbox, templates, offline detection. |
 | How to detect "visitor is offline"? | **`hub.Presence.GetOnlineVisitors(ctx, workspaceID)`** (the `PresenceProvider` interface) checked when outbox entry fires, not at message creation. | The hub already exposes a pluggable `PresenceProvider` (in-memory or `RedisPresence`) that tracks connections across all pods. Using `hub.IsVisitorOnline()` alone reads only local-pod state — `Presence.GetOnlineVisitors()` reads the shared Redis set. Checking at fire time (not enqueue time) avoids unnecessary emails if the visitor reconnects during the delay. |
+| How to detect "visitor has not read the reply"? | **`support_conversations.contact_last_seen_at`** compared against queued outbound message `created_at`. | The widget already marks selected/visible conversations read through `conversation:read`. Email fallback must use the same customer read cursor so email is only sent for messages the customer has not actually seen. |
+| What happens if the visitor is online but has not read? | **Postpone, do not cleanup.** Retry shortly while the reply remains fresh. | A connected socket does not mean the customer saw the message. They may be on another tab, the widget may be closed, or the page may be unfocused. Cleaning up loses the email fallback permanently. |
+| How long can postponed unread fallback remain eligible? | **10 minutes per eligible unread outbound reply.** | After that point, sending that reply by email when the visitor finally disconnects feels abrupt. A new agent reply later starts its own fallback window without reviving stale older replies. |
 | Inbound email routing? | **Postmark Inbound Webhook** to `POST /api/webhooks/postmark/inbound`. Parse `MailboxHash` from `conv-{id}@replies.helpin.ai`. | Postmark handles MIME, attachments, signature stripping. No custom SMTP server needed. |
 | Store raw inbound email? | **Yes**, in `support_email_logs` table. | Audit trail, debugging, future attachment support. |
 | Email threading? | RFC 2822 headers: `Message-ID`, `In-Reply-To`, `References`. Thread IDs stored on `support_email_logs`, notification state tracked per-message via `email_notified_at`. | Gmail/Outlook thread emails correctly per conversation. See §5 Data Model for separation of outbound delivery IDs, inbound provider IDs, and per-message notification state. |
@@ -37,11 +49,15 @@ When a visitor sends a message via the Helpin chat widget and closes their brows
 - US-3: As a visitor, when I return to the widget, I see both chat and email messages in a unified thread with "Via email" badges.
 - US-4: As a visitor, if I come back online before the email is sent, I do NOT receive an unnecessary email.
 - US-5: As a visitor, if multiple agents reply quickly, I receive one batched email instead of many separate ones.
+- US-16: As a visitor, if I already read the reply in the widget, I do NOT receive a duplicate fallback email later.
+- US-17: As a visitor, if I am technically online but never read the reply, I receive the fallback email only if I go offline within the freshness window.
+- US-18: As a visitor, I do NOT receive an abrupt fallback email long after the reply was sent just because I finally closed the page.
 
 **Agent:**
 - US-6: As an agent, when I reply to an offline visitor with an email on file, I see a subtle indicator that an email notification will be sent.
 - US-7: As an agent, I see visitor email replies in the same conversation thread with a "Via email" badge.
 - US-8: As an agent, I see the full conversation history regardless of whether messages came from widget or email.
+- US-19: As an agent, after I reply to an offline visitor, I can see whether that reply was delivered through chat, delivered via email, read in chat, read via email, or failed by email bounce/spam complaint.
 
 **Admin:**
 - US-9: As an admin, I can enable/disable email fallback notifications per workspace in Support settings.
@@ -53,6 +69,7 @@ When a visitor sends a message via the Helpin chat widget and closes their brows
 - US-13: The system does not send email if the conversation is in a terminal state (closed, spam). For resolved conversations, see §12 Edge Cases.
 - US-14: The system correctly threads all emails per conversation using RFC 2822 headers.
 - US-15: Inbound webhook rejects malformed or unauthenticated requests.
+- US-20: The system does not permanently discard a pending fallback only because the visitor is online; it discards only when the message is read, stale, terminal, unsubscribed, invalid, already emailed, or otherwise ineligible.
 
 ## 4. Architecture
 
@@ -103,11 +120,20 @@ SupportInboxService.CreateConversationMessage()          [support_inbox.go]
               │  └──────────────────────────────────────────────────┘
               │
               │  ┌─ PHASE 2: Check & Send ─────────────────────────┐
-              ├── Re-fetch conversation (status may have changed)
-              ├── hub.Presence.GetOnlineVisitors(ctx, workspaceID)
-              │     ├── Visitor online → go to PHASE 3 (cleanup)
-              │     └── Visitor offline → continue
               ├── Fetch accumulated messages by IDs
+              ├── Re-fetch conversation (status/read cursor may have changed)
+              ├── Filter to unread eligible outbound replies:
+              │     - email_notified_at IS NULL
+              │     - is_internal = false
+              │     - message_type = reply
+              │     - sender_type != customer
+              │     - created_at > COALESCE(contact_last_seen_at, epoch)
+              ├── If no eligible unread messages → go to PHASE 3 (cleanup)
+              ├── Drop eligible messages older than max_delivery_age
+              │   (default 10 min) → go to PHASE 3 (cleanup)
+              ├── hub.Presence.GetOnlineVisitors(ctx, workspaceID)
+              │     ├── Visitor online → postpone short retry, keep queue
+              │     └── Visitor offline → continue
               ├── Render HTML email template with batched messages
               ├── emailClient.SendEmailWithHeaders(to, subject, html, text, headers)
               │     Headers: Reply-To, Message-ID, In-Reply-To, References, X-Conversation-ID
@@ -262,10 +288,16 @@ Add to `SupportInboxSettings` in `server/internal/model/support_inbox.go`:
 EmailFallbackEnabled    bool   `json:"email_fallback_enabled"`
 EmailFallbackDelaySecs  int    `json:"email_fallback_delay_secs"`  // default: 120
 EmailFallbackFromName   string `json:"email_fallback_from_name"`   // falls back to workspace name
+EmailFallbackMaxDeliveryAgeSecs int `json:"email_fallback_max_delivery_age_secs"` // default: 600
 ```
 
 Add to `DefaultSupportInboxSettings()` and `UpdateInstallationSettingsRequest`.
 Also update `mergeSettingsUpdate()` and any new validation in `server/internal/service/support_inbox_settings.go`, since support settings persistence is centralized there.
+
+Validation:
+- `email_fallback_delay_secs`: min 30, max 600, default 120.
+- `email_fallback_max_delivery_age_secs`: min 120, max 1800, default 600.
+- `email_fallback_max_delivery_age_secs` must be greater than or equal to `email_fallback_delay_secs`. The send window must never expire before the first eligible send attempt.
 
 ## 6. API Endpoints
 
@@ -529,20 +561,74 @@ if !msg.IsInternal && msg.SenderType != "customer" && msg.MessageType == "reply"
 
 Called after the poller has bumped the outbox score (in-flight) and read the message ID list.
 
-1. **Idempotency check**: Fetch messages by IDs. If ALL already have `email_notified_at` set, a prior attempt succeeded — skip to step 9 (cleanup only).
-2. Re-fetch conversation (status may have changed during debounce)
-3. If status is terminal (`closed`, `spam`) → skip to step 9 (cleanup), log cancellation
-4. Check `hub.Presence.GetOnlineVisitors(ctx, workspaceID)` — if visitor online, skip to step 9 (cleanup)
-5. Filter messages to only those where `email_notified_at IS NULL` (exclude already-notified)
-6. Build RFC 2822 threading headers from previous `support_email_logs` for this conversation
-7. Render HTML template, send via `emailClient.SendEmailWithHeaders()`
-8. **DB transaction** (atomic):
+1. Fetch messages by IDs. If none exist, skip to step 12 (cleanup only).
+2. Re-fetch conversation (status, email, unsubscribe state, read cursor, and visitor identity may have changed during debounce).
+3. If status is terminal (`closed`, `spam`) → skip to step 12 (cleanup), log cancellation.
+4. If `customer_email` is missing, `email_unsubscribed = true`, or the CRM contact email is invalid → skip to step 12 (cleanup).
+5. Filter to **eligible unread outbound replies**:
+   - `email_notified_at IS NULL`
+   - `is_internal = false`
+   - `message_type = "reply"`
+   - `sender_type != "customer"`
+   - `created_at > COALESCE(conversation.contact_last_seen_at, epoch)`
+6. If no messages remain after filtering, the customer has either read them in chat or they were already notified → skip to step 12 (cleanup).
+7. Drop any eligible unread outbound reply where `now > message.created_at + email_fallback_max_delivery_age_secs`. If no eligible messages remain, skip to step 12 (cleanup). This prevents abrupt emails long after the agent replied while still allowing a newer reply to send on its own window.
+8. Check `hub.Presence.GetOnlineVisitors(ctx, workspaceID)`.
+   - If the visitor is online and eligible messages are still fresh, **postpone** the sorted-set score to `now + emailFallbackOnlineRetryDelay` (default 30s) and return without deleting `email_fallback_msgs:{conversationID}`.
+   - If the visitor is online but the eligible messages are now stale, cleanup.
+   - If the visitor is offline, continue.
+9. Build RFC 2822 threading headers from previous `support_email_logs` for this conversation.
+10. Render HTML template, send via `emailClient.SendEmailWithHeaders()`.
+11. **DB transaction** (atomic):
    - INSERT `SupportEmailLog` row (outbound, with `RFCMessageID`, `PostmarkMessageID`, `MessageIDs` batch)
    - UPDATE `email_notified_at = NOW()` on each included `SupportMessage`
    - COMMIT
-9. **Redis cleanup** (only after DB commit or skip decision): `ZREM email_fallback_outbox {convID}` + `DEL email_fallback_msgs:{convID}`
+12. **Redis cleanup** (only after DB commit or final skip decision): `ZREM email_fallback_outbox {convID}` + `DEL email_fallback_msgs:{convID}`
 
-**Crash safety**: If the pod dies between steps 7 and 8, the DB transaction never commits. The outbox entry's in-flight score expires after `processing_ttl`, making it due again. The next leader re-enters `fireEmail()`, hits step 1 (messages not yet notified), and retries. Worst case: email is sent twice (Postmark accepted it but pod crashed before DB commit). This is acceptable — a duplicate notification is far better than a lost one.
+**Crash safety**: If the pod dies after Postmark accepts the email but before the DB transaction commits, the outbox entry's in-flight score expires after `processing_ttl`, making it due again. The next leader re-enters `fireEmail()`, sees the messages are not yet notified, and retries. Worst case: email is sent twice. This is acceptable — a duplicate notification is better than a lost one. If the DB commit succeeded but Redis cleanup did not, re-processing sees `email_notified_at` set and cleans up without re-sending.
+
+### 9.1 Unread Filtering Helper
+
+Implement the unread filtering as a small, testable helper in `server/internal/service/email_fallback.go`:
+
+```go
+func unreadFallbackMessages(conv *model.SupportConversation, messages []model.SupportMessage) []model.SupportMessage
+```
+
+The helper preserves message order and returns only public outbound reply messages that are newer than `conv.ContactLastSeenAt` and have not been email-notified. This helper must not perform Redis, DB, or Postmark work.
+
+### 9.2 Online Retry Helper
+
+Add:
+
+```go
+const emailFallbackOnlineRetryDelay = 30 * time.Second
+
+func (s *EmailFallbackService) postpone(ctx context.Context, conversationID string, delay time.Duration) error
+```
+
+`postpone` updates only `email_fallback_outbox` score. It must not append message IDs and must not delete `email_fallback_msgs:{conversationID}`. This preserves the original queued messages while allowing a future send if the visitor leaves before the max delivery age expires.
+
+### 9.3 Agent-Visible Delivery Status
+
+The dashboard message thread must expose delivery state for the latest outbound reply:
+
+| Backend state | Agent-facing status |
+|---------------|---------------------|
+| `conversation.contact_last_seen_at >= message.created_at` for widget conversations | `Read in chat` |
+| `message.email_notified_at != nil`, no later email status | `Delivered via email` |
+| matching outbound `support_email_logs.opened_at != nil` or `message.email_read_at != nil` | `Read via email` |
+| matching outbound `support_email_logs.delivered_at != nil` | Still `Delivered via email` unless a more specific status is shown |
+| matching outbound `support_email_logs.status = bounced` | `Delivery failed` with error detail |
+| matching outbound `support_email_logs.status = spam_complaint` | `Marked as spam` with error detail |
+
+Current implementation already has most of this plumbing:
+- `support_messages.email_notified_at`
+- `support_messages.email_read_at`
+- `support_email_logs.delivered_at`, `opened_at`, `bounced_at`, `status`, `error_message`
+- frontend receipt rendering in `frontend/src/components/support/MessageThread.tsx` and `frontend/src/components/support/MessageBubble.tsx`
+
+Acceptance requirement: when a support agent sends a reply and that reply is delivered as fallback email, the visible receipt under the latest outbound bubble must update to `Delivered via email` without requiring the agent to inspect the email details modal. Bounce/spam complaint states must supersede generic delivered/read receipts.
 
 ## 10. Settings UI
 
@@ -550,6 +636,7 @@ Add "Email Notifications" card to `ChatGeneralTab.tsx` (`frontend/src/components
 
 - **Toggle**: "Send email when visitor is offline" (`email_fallback_enabled`)
 - **Input**: "Delay before sending (seconds)" (`email_fallback_delay_secs`, min 30, max 600)
+- **Input**: "Send window (minutes)" (`email_fallback_max_delivery_age_secs`, default 10 minutes, min 2, max 30)
 - **Input**: "From name" (`email_fallback_from_name`, placeholder: workspace name)
 
 Uses existing `useChatSettings` / `useUpdateChatSettings` hooks.
@@ -628,21 +715,31 @@ SupportEmailReplyDomain      string  // SUPPORT_EMAIL_REPLY_DOMAIN (default: rep
 
 | Edge Case | Behavior |
 |-----------|----------|
-| Visitor comes back online during debounce | `fireEmail()` checks `hub.Presence.GetOnlineVisitors()` (cross-pod) at fire time, cancels |
+| Visitor comes back online during debounce and reads the reply | `fireEmail()` filters against `contact_last_seen_at`, sees no unread eligible outbound replies, and cleans up without sending |
+| Visitor comes back online during debounce but does not read the reply | `fireEmail()` checks `hub.Presence.GetOnlineVisitors()` (cross-pod), postpones the queue with a short retry, and keeps message IDs intact |
+| Visitor stays online and unread past max delivery age | Queue is cleaned up silently. Do not send a stale email later when the visitor disconnects |
+| Visitor is online unread, then disconnects within max delivery age | Next retry sends the fallback email because the reply is still unread, fresh, and the visitor is offline |
+| Visitor reads in widget after fallback was queued but before send | No email is sent; `contact_last_seen_at` suppresses the queued message |
 | No email on file | `OnAgentReply()` returns immediately, no outbox entry |
 | Conversation closed/spam during debounce | `fireEmail()` re-fetches and checks status; discards if terminal |
 | Conversation resolved | **Not suppressed.** Backend allows agent replies on resolved conversations; suppressing email fallback would create a silent delivery gap where the reply shows in-app but never reaches an offline visitor. If the conversation transitions to `closed` or `spam` during debounce, `fireEmail()` catches it on re-fetch. |
 | Agent replies to resolved conversation in UI | Same path as any agent reply. The `resolved` status does not block `CreateConversationMessage()` in the backend, so email fallback must also honor it. |
 | Multiple agents reply quickly | Messages accumulate in Redis list; ZADD GT extends fire time with each reply (true debounce); single batched email |
+| One queued reply is read, then another reply arrives | The read message is filtered out by `contact_last_seen_at`; the newer unread message remains eligible and may be emailed |
+| A new agent reply arrives after an older unread reply became stale | The new message starts a fresh debounce and freshness window. The stale older reply is excluded from the fallback email batch. |
 | Email reply to closed/spam conversation | 200 OK, warning logged, no message created |
 | Inbound from non-matching address | 200 OK, warning logged, rejected (no message created) |
 | Duplicate webhook delivery | Idempotent via unique index on `support_email_logs.postmark_message_id` — INSERT fails, handler returns 200 OK |
 | Pod restart during debounce | Outbox entries are in Redis and survive pod restarts. Another pod acquires the leader lease within 30s and processes due entries. |
 | Pod crash mid-send (after Postmark, before DB commit) | Outbox entry stays in-flight (score bumped). After `processing_ttl` (5 min), it becomes due again. Re-processing detects `email_notified_at` unset and retries. Worst case: visitor receives a duplicate email (acceptable — better than lost notification). |
 | Pod crash after DB commit, before Redis cleanup | Outbox entry re-fires. `fireEmail` step 1 sees all messages already have `email_notified_at` set → skips to cleanup (ZREM + DEL). No duplicate email. |
-| Two pods handle replies for same conversation | Both RPUSH message IDs to the same Redis list. ZADD NX ensures only one fire-time. Leader poller ZREM is atomic — only one pod processes. |
+| Two pods handle replies for same conversation | Both RPUSH message IDs to the same Redis list. ZADD GT keeps one debounced fire-time per conversation and extends it when later replies arrive. The leader poller claim prevents duplicate processing. |
 | Email client nil (Postmark not configured) | `OnAgentReply` returns immediately, no outbox entry |
 | AI auto-reply to offline visitor | Same path as agent replies |
+| Agent sends reply and fallback email is sent | Dashboard receipt under latest outbound bubble shows `Delivered via email` |
+| Postmark delivery webhook arrives | Dashboard remains `Delivered via email`; details modal can show provider delivery timestamp |
+| Postmark open webhook arrives | Dashboard receipt can upgrade to `Read via email` |
+| Postmark bounce or spam complaint arrives | Dashboard receipt shows `Delivery failed` or `Marked as spam`, superseding generic delivered/read status |
 | Very long email reply | Truncate at 50KB, log warning |
 | Redis unavailable | `OnAgentReply` logs error and returns (no email). Visitor gets reply on next widget visit. Acceptable degradation. |
 
@@ -669,6 +766,15 @@ SupportEmailReplyDomain      string  // SUPPORT_EMAIL_REPLY_DOMAIN (default: rep
 | `server/internal/service/email_fallback_test.go` | Unit tests per §15.1 |
 | `server/internal/service/support_inbox.go` | Add `emailFallbackService` field, call in `CreateConversationMessage` |
 
+### Phase 2b: Unread-Gated Fresh Fallback Amendments
+| File | Change |
+|------|--------|
+| `server/internal/model/support_inbox.go` | Add `EmailFallbackMaxDeliveryAgeSecs` to `SupportInboxSettings`, defaults, and update request DTOs |
+| `server/internal/service/support_inbox_settings.go` | Validate max delivery age and preserve defaults during partial settings updates |
+| `server/internal/service/email_fallback.go` | Add `unreadFallbackMessages`, max delivery age check, and online `postpone` behavior instead of online cleanup |
+| `server/internal/service/email_fallback_test.go` | Add unread/read/freshness/online-postpone tests |
+| `frontend/src/components/settings/ChatGeneralTab.tsx` | Add send-window control if settings UI exposes advanced fallback options |
+
 ### Phase 3: Webhook & Wiring
 | File | Change |
 |------|--------|
@@ -688,7 +794,8 @@ SupportEmailReplyDomain      string  // SUPPORT_EMAIL_REPLY_DOMAIN (default: rep
 | `packages/widget-core/src/components/MessageBubble.tsx` | "Via email" badge when `viaChannel === "email"` |
 | `frontend/src/lib/pmTypes.ts` | Add `via_channel`, `email_notified_at` to `SupportMessage` |
 | `frontend/src/components/settings/ChatGeneralTab.tsx` | Email Notifications settings card |
-| `frontend/src/components/support/MessageBubble.tsx` | "Via email" badge |
+| `frontend/src/components/support/MessageThread.tsx` | Derive latest outbound receipt state from `contact_last_seen_at`, `email_notified_at`, `email_read_at`, and email delivery status fields |
+| `frontend/src/components/support/MessageBubble.tsx` | "Via email" badge, `Delivered via email`, `Read via email`, bounce, and spam complaint states |
 
 ### Phase 5: Infrastructure (DNS & Postmark)
 - MX record for `replies.helpin.ai` → `inbound.postmarkapp.com`
@@ -717,10 +824,20 @@ SupportEmailReplyDomain      string  // SUPPORT_EMAIL_REPLY_DOMAIN (default: rep
 | `TestOnAgentReply_TerminalStatus_Skips` | No outbox entry when status is `closed` or `spam` |
 | `TestOnAgentReply_ResolvedStatus_Enqueues` | Outbox entry IS created for `resolved` conversations (not terminal) |
 | `TestOnAgentReply_FeatureDisabled_Skips` | No outbox entry when `email_fallback_enabled` is false |
-| `TestFireEmail_VisitorOnline_Cancels` | Email not sent when `Presence.GetOnlineVisitors()` returns the visitor |
+| `TestUnreadFallbackMessages_FiltersReadAndIneligibleReplies` | Helper excludes internal messages, customer messages, already-notified messages, and messages at/before `contact_last_seen_at` |
+| `TestFireEmail_VisitorOnlineUnread_Postpones` | Email not sent when visitor is online and messages are still unread/fresh; Redis score moves to short retry and message list remains |
+| `TestFireEmail_VisitorOnlineRead_CleansUp` | Email not sent and queue is cleaned up when `contact_last_seen_at` covers all queued outbound replies |
+| `TestFireEmail_UnreadFreshOffline_Sends` | Email sends when messages are unread, visitor is offline, and eligible messages are within max delivery age |
+| `TestFireEmail_UnreadStale_CleansUp` | Email not sent when all eligible unread outbound replies are older than `email_fallback_max_delivery_age_secs` |
+| `TestFireEmail_DropsStaleMessagesFromMixedBatch` | Mixed fresh/stale unread batch sends only the fresh replies and leaves stale replies unnotified |
+| `TestFireEmail_SendsOnlyMessagesNewerThanContactLastSeen` | Mixed queued messages produce an email containing only unread messages newer than the customer read cursor |
+| `TestFireEmail_PreviouslyEmailNotifiedMessagesNotResent` | Previously emailed messages are excluded from future batches |
 | `TestFireEmail_BatchesMessages` | Multiple message IDs accumulated → single email with all content |
 | `TestFireEmail_StatusChangedDuringDebounce` | Re-fetched conversation is now closed → email not sent |
 | `TestFireEmail_ThreadingHeaders` | Correct `Message-ID`, `In-Reply-To`, `References` built from prior `support_email_logs` |
+| `TestProcessDeliveryEvent_MarksDelivered` | Postmark delivery webhook updates `support_email_logs.delivered_at/status` for dashboard receipt/detail surfaces |
+| `TestProcessOpenEvent_MarksReadEmail` | Postmark open webhook updates `support_email_logs.opened_at` and message `email_read_at`, allowing `Read via email` receipt |
+| `TestProcessBounceEvent_MarksFailed` | Bounce webhook updates log status/error so the dashboard can show `Delivery failed` |
 | `TestProcessInbound_HappyPath` | Parses `MailboxHash`, creates message with `ViaChannel: "email"`, logs to `support_email_logs` |
 | `TestProcessInbound_DuplicatePostmarkID` | Second call with same `PostmarkMessageID` → no duplicate message, 200 OK |
 | `TestProcessInbound_SenderMismatch` | `FromFull.Email` ≠ `conversation.customer_email` → rejected |
@@ -751,6 +868,10 @@ SupportEmailReplyDomain      string  // SUPPORT_EMAIL_REPLY_DOMAIN (default: rep
 | Test | File | Validates |
 |------|------|-----------|
 | `MessageBubble renders "Via email" badge` | `frontend/src/components/support/MessageBubble.test.tsx` | Badge visible when `via_channel === "email"`, hidden otherwise |
+| `MessageBubble renders email fallback receipts` | `frontend/src/components/support/MessageBubble.test.tsx` | Shows `Delivered via email`, `Read via email`, `Delivery failed`, and `Marked as spam` based on receipt props and message delivery fields |
+| `MessageThread derives delivered via email for latest outbound reply` | `frontend/src/components/support/MessageThread.test.tsx` | Latest outbound message with `email_notified_at` renders an email-delivery receipt even when customer is offline |
+| `MessageThread prefers read in chat over email delivered` | `frontend/src/components/support/MessageThread.test.tsx` | `contact_last_seen_at >= message.created_at` renders `Read in chat` instead of `Delivered via email` |
+| `MessageThread prefers email failure over generic receipt` | `frontend/src/components/support/MessageThread.test.tsx` | Bounce/spam complaint states supersede delivered/read receipts |
 | `Widget MessageBubble renders "Via email" badge` | `packages/widget-core/src/components/MessageBubble.test.tsx` | Badge visible when `viaChannel === "email"` |
 | `SDK maps via_channel from payload` | `packages/sdk-js/test/unit/core/widget.test.ts` | `via_channel` in raw payload → `viaChannel` in Message object |
 | `ChatGeneralTab renders email fallback settings` | `frontend/src/components/settings/ChatGeneralTab.test.tsx` | Toggle, delay input, from-name input rendered and update correctly |
@@ -761,7 +882,9 @@ SupportEmailReplyDomain      string  // SUPPORT_EMAIL_REPLY_DOMAIN (default: rep
 |--------------|------|---------|
 | `email_fallback.enqueued` | Counter (workspace_id) | Outbox entries created |
 | `email_fallback.sent` | Counter (workspace_id) | Emails successfully sent |
-| `email_fallback.cancelled_online` | Counter (workspace_id) | Cancelled because visitor came back online |
+| `email_fallback.postponed_online_unread` | Counter (workspace_id) | Visitor was online but reply was still unread/fresh, so queue was retried |
+| `email_fallback.cancelled_read` | Counter (workspace_id) | Cancelled because customer read the reply in the widget before email send |
+| `email_fallback.cancelled_stale` | Counter (workspace_id) | Cancelled because all eligible unread replies exceeded max delivery age |
 | `email_fallback.cancelled_status` | Counter (workspace_id) | Cancelled because conversation status changed |
 | `email_fallback.send_failed` | Counter (workspace_id) | Postmark send failures |
 | `email_fallback.inbound_processed` | Counter (workspace_id) | Inbound emails successfully processed |
@@ -775,6 +898,9 @@ SupportEmailReplyDomain      string  // SUPPORT_EMAIL_REPLY_DOMAIN (default: rep
 - [ ] Agent replies to offline visitor → email received within configured delay
 - [ ] Two quick agent replies → single batched email
 - [ ] Visitor returns during debounce → no email sent
+- [ ] Visitor returns during debounce, leaves widget closed/unfocused, then disconnects within 10 minutes → email sent
+- [ ] Visitor reads reply in widget before disconnecting → no email sent
+- [ ] Visitor stays online unread for more than 10 minutes, then disconnects → no email sent
 - [ ] Reply to email → message appears in agent inbox with "Via email" badge
 - [ ] Reply to email → message appears in widget when visitor returns
 - [ ] Emails thread correctly in Gmail/Outlook
@@ -784,3 +910,6 @@ SupportEmailReplyDomain      string  // SUPPORT_EMAIL_REPLY_DOMAIN (default: rep
 - [ ] Invalid webhook payload → 200 OK, warning logged
 - [ ] Agent replies on resolved conversation to offline visitor → email sent (not suppressed)
 - [ ] Agent replies on spam conversation → no email sent
+- [ ] Agent replies to offline visitor → latest outbound bubble shows `Delivered via email` after fallback send
+- [ ] Postmark open webhook for the fallback email → latest outbound bubble upgrades to `Read via email`
+- [ ] Postmark bounce/spam webhook → latest outbound bubble shows the failure state

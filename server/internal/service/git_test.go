@@ -661,14 +661,6 @@ func (f *fakeGitHubAppClient) GetInstallation(context.Context, string) (*githuba
 	return nil, nil
 }
 
-func (f *fakeGitHubAppClient) GetReleaseByTag(context.Context, string, string, string, string) (*githubapp.Release, error) {
-	return nil, nil
-}
-
-func (f *fakeGitHubAppClient) ListReleases(context.Context, string, string, string, githubapp.ListReleasesOptions) ([]githubapp.Release, error) {
-	return nil, nil
-}
-
 func (f *fakeGitHubAppClient) MergeBranch(_ context.Context, installationID, owner, repo, base, head, commitMessage string) error {
 	f.mergeCalls = append(f.mergeCalls, fakeGitHubMergeCall{
 		InstallationID: installationID,
