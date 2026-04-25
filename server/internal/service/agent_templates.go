@@ -112,6 +112,101 @@ Raw configuration:
 			},
 		},
 	}))
+	dependencyAuditorDescription := "Scans repository dependency manifests and creates deduplicated update tasks for outdated direct dependencies."
+	dependencyAuditorSystemPrompt := `You are an autonomous dependency auditor for the selected repository.
+
+Configured audit:
+- ecosystems: {{ecosystems}}
+- include_indirect: {{include_indirect}}
+- destination_team_id: {{destination_team_id}}
+- destination_state_id: {{destination_state_id}}
+- max_tasks: {{max_tasks}}
+- schedule_preset: {{schedule_preset}}
+
+Treat these configured values as already resolved and authoritative. Do not plan or perform discovery of configuration variables, workspace context, teams, stages, cadence, or repository selection.
+
+Scan only the configured ecosystems. Ignore indirect or transitive dependencies unless include_indirect is true. Do not modify files.
+
+Repositories may contain more than one language ecosystem. Scan every selected ecosystem in the same run and deduplicate tasks within each ecosystem identity.
+
+Create at most one task per outdated direct dependency with create_task, up to max_tasks. Pass destination_team_id directly as team_id. Pass destination_state_id directly as state_id only when it is configured; otherwise let the team default stage apply.
+
+Raw configuration:
+{{raw_configuration_json}}`
+	dependencyAuditorStarterFlows := model.JSONBlob(mustJSONValue([]map[string]any{
+		{
+			"key":               "dependency_audit_cron",
+			"label":             "Run dependency audit on a schedule",
+			"description":       "Runs on the selected cadence against a repository and creates one task per verified outdated direct dependency.",
+			"trigger_type":      model.TriggerCron,
+			"default_enabled":   true,
+			"config_schema_key": "dependency_auditor_cron",
+			"output_type":       "task",
+			"fields": []map[string]any{
+				{
+					"key":      "repository_id",
+					"label":    "Repository",
+					"type":     "repository_select",
+					"required": true,
+				},
+				{
+					"key":      "ecosystems",
+					"label":    "Ecosystems",
+					"type":     "multi_select",
+					"required": true,
+					"default":  []string{"go", "rust", "python", "node", "java"},
+					"options": []map[string]any{
+						{"value": "go", "label": "Go"},
+						{"value": "rust", "label": "Rust"},
+						{"value": "python", "label": "Python"},
+						{"value": "node", "label": "Node / JavaScript"},
+						{"value": "java", "label": "Java / JVM"},
+					},
+				},
+				{
+					"key":      "include_indirect",
+					"label":    "Include indirect/transitive dependencies",
+					"type":     "boolean",
+					"required": false,
+					"default":  false,
+				},
+				{
+					"key":      "schedule_preset",
+					"label":    "Run cadence",
+					"type":     "select",
+					"required": true,
+					"default":  "weekly",
+					"options": []map[string]any{
+						{"value": "daily", "label": "Daily"},
+						{"value": "weekly", "label": "Weekly"},
+					},
+				},
+				{
+					"key":      "max_tasks",
+					"label":    "Maximum tasks per run",
+					"type":     "number",
+					"required": true,
+					"default":  20,
+					"min":      1,
+					"max":      100,
+				},
+				{
+					"key":      "destination_team_id",
+					"label":    "Task team",
+					"type":     "team_select",
+					"required": true,
+				},
+				{
+					"key":        "destination_state_id",
+					"label":      "Task stage",
+					"type":       "workflow_state_select",
+					"required":   false,
+					"depends_on": "destination_team_id",
+					"help_text":  "Optional. Defaults to the team's default stage.",
+				},
+			},
+		},
+	}))
 	return []model.AgentTemplate{
 		{
 			Key:         model.AgentTemplateTypeReleaseNotes,
@@ -162,6 +257,63 @@ Raw configuration:
 			AllowedTargets:        model.JSONBlob(mustJSONStringSlice([]string{"workspace"})),
 			RequiredContext:       model.JSONBlob(mustJSONStringSlice(nil)),
 			StarterFlows:          competitiveIntelStarterFlows,
+			ApprovalMode:          "never",
+			DefaultInvocationMode: model.InvocationModeAutonomous,
+			IsEnabled:             true,
+		},
+		{
+			Key:          model.AgentTemplateTypeDependencyAuditor,
+			Name:         "Dependency Auditor",
+			Description:  &dependencyAuditorDescription,
+			SystemPrompt: &dependencyAuditorSystemPrompt,
+			RuntimeKind:  model.AgentTemplateRuntimeKindNativeSDK,
+			DefaultRole:  "Dependency Auditor",
+			Skills: model.AgentSkillRefs{
+				{Key: model.AgentTemplateTypeDependencyAuditor},
+			},
+			AllowedTools: model.JSONBlob(mustJSONStringSlice([]string{
+				"update_plan",
+				"list_directory",
+				"read_file",
+				"read_files",
+				"read_file_range",
+				"search_files",
+				"ripgrep",
+				"grep",
+				"run_command",
+				"web_search_exa",
+				"create_task",
+			})),
+			AllowedCommands: model.JSONBlob(mustJSONStringSlice([]string{
+				"go",
+				"cargo",
+				"python",
+				"python3",
+				"pip",
+				"uv",
+				"poetry",
+				"node",
+				"npm",
+				"pnpm",
+				"yarn",
+				"bun",
+				"npx",
+				"mvn",
+				"gradle",
+				"./gradlew",
+				"java",
+				"rg",
+				"grep",
+				"find",
+				"cat",
+				"ls",
+				"head",
+				"tail",
+				"pwd",
+			})),
+			AllowedTargets:        model.JSONBlob(mustJSONStringSlice([]string{"repository"})),
+			RequiredContext:       model.JSONBlob(mustJSONStringSlice(nil)),
+			StarterFlows:          dependencyAuditorStarterFlows,
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeAutonomous,
 			IsEnabled:             true,
@@ -501,6 +653,11 @@ func materializeCreateAgentRequestFromTemplate(workspaceID string, template *mod
 			createReq.SystemPrompt = renderCompetitiveIntelSystemPrompt(createReq.SystemPrompt, input)
 		}
 	}
+	if template != nil && strings.TrimSpace(template.Key) == model.AgentTemplateTypeDependencyAuditor && req.CreateFlow {
+		if input, err := dependencyAuditorInputFromTemplateFlow(req.Flow); err == nil {
+			createReq.SystemPrompt = renderDependencyAuditorSystemPrompt(createReq.SystemPrompt, input)
+		}
+	}
 	return createReq
 }
 
@@ -513,6 +670,8 @@ func (s *AgentService) createStarterFlowForTemplate(ctx context.Context, workspa
 		return s.createReleaseNotesStarterFlow(ctx, workspaceID, agent, req.Flow)
 	case model.AgentTemplateTypeCompetitiveIntel:
 		return s.createCompetitiveIntelStarterFlow(ctx, workspaceID, agent, req.Flow)
+	case model.AgentTemplateTypeDependencyAuditor:
+		return s.createDependencyAuditorStarterFlow(ctx, workspaceID, agent, req.Flow)
 	default:
 		return nil, fmt.Errorf("starter flow is not supported for template %q", strings.TrimSpace(template.Key))
 	}
@@ -765,6 +924,215 @@ Use the destination IDs directly when calling create_task. Only discover competi
 Raw configuration:
 
 `, input.TargetCompany, targetDomain, competitors, input.LookbackDays, input.DestinationTeamID, destinationState, input.SchedulePreset)
+	return strings.TrimSpace(context + "```json\n" + string(payload) + "\n```"), nil
+}
+
+type dependencyAuditorStarterFlowInput struct {
+	Ecosystems         []string `json:"ecosystems"`
+	IncludeIndirect    bool     `json:"include_indirect"`
+	SchedulePreset     string   `json:"schedule_preset,omitempty"`
+	DestinationTeamID  string   `json:"destination_team_id"`
+	DestinationStateID string   `json:"destination_state_id,omitempty"`
+	MaxTasks           int      `json:"max_tasks,omitempty"`
+}
+
+func (s *AgentService) createDependencyAuditorStarterFlow(ctx context.Context, workspaceID string, agent *model.Agent, flow *model.CreateAgentFromTemplateFlow) (*model.AutomationRule, error) {
+	input, err := dependencyAuditorInputFromTemplateFlow(flow)
+	if err != nil {
+		return nil, err
+	}
+
+	repositoryID := strings.TrimSpace(flow.RepositoryID)
+	if repositoryID == "" {
+		return nil, fmt.Errorf("flow.repository_id is required for dependency auditor starter flow")
+	}
+	repoLabel := repositoryID
+	if repoFullName := strings.TrimSpace(flow.RepoFullName); repoFullName != "" {
+		repoLabel = repoFullName
+	} else if s.gitService != nil {
+		repo, err := s.gitService.GetRepositoryByID(ctx, workspaceID, repositoryID)
+		if err != nil {
+			return nil, err
+		}
+		if repo == nil {
+			return nil, fmt.Errorf("repository not found")
+		}
+		if strings.TrimSpace(repo.FullName) != "" {
+			repoLabel = strings.TrimSpace(repo.FullName)
+		}
+	}
+
+	triggerConfig, err := json.Marshal(model.TriggerConfigCron{
+		Preset: input.SchedulePreset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal dependency auditor trigger config: %w", err)
+	}
+
+	actionConfig, err := json.Marshal(model.ActionConfigRunAgent{
+		TargetType: "repository",
+		TargetID:   repositoryID,
+		AgentID:    agent.ID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal dependency auditor action config: %w", err)
+	}
+
+	name := fmt.Sprintf("%s %s audit for %s", strings.TrimSpace(agent.Name), input.SchedulePreset, repoLabel)
+	description := fmt.Sprintf("Runs %s on a %s schedule to audit direct dependencies in %s and create verified update tasks.", strings.TrimSpace(agent.Name), input.SchedulePreset, repoLabel)
+	rule, err := s.ruleEngine.CreateRule(ctx, workspaceID, model.CreateAutomationRuleRequest{
+		WorkspaceID:   workspaceID,
+		Name:          name,
+		Description:   &description,
+		TriggerType:   model.TriggerCron,
+		TriggerConfig: triggerConfig,
+		ActionType:    model.ActionStartAgentRun,
+		ActionConfig:  actionConfig,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return rule, nil
+}
+
+func dependencyAuditorInputFromTemplateFlow(flow *model.CreateAgentFromTemplateFlow) (dependencyAuditorStarterFlowInput, error) {
+	if flow == nil {
+		return dependencyAuditorStarterFlowInput{}, fmt.Errorf("flow configuration is required when create_flow is true")
+	}
+	flowKey := strings.TrimSpace(flow.FlowKey)
+	if flowKey != "" && flowKey != "dependency_audit_cron" {
+		return dependencyAuditorStarterFlowInput{}, fmt.Errorf("unsupported dependency auditor flow_key %q", flowKey)
+	}
+	if len(flow.FlowInput) == 0 || strings.TrimSpace(string(flow.FlowInput)) == "" || strings.TrimSpace(string(flow.FlowInput)) == "null" {
+		return dependencyAuditorStarterFlowInput{}, fmt.Errorf("flow.flow_input is required for dependency auditor starter flow")
+	}
+
+	var input dependencyAuditorStarterFlowInput
+	if err := json.Unmarshal(flow.FlowInput, &input); err != nil {
+		return dependencyAuditorStarterFlowInput{}, fmt.Errorf("parse dependency auditor flow_input: %w", err)
+	}
+	for _, ecosystem := range input.Ecosystems {
+		normalized := strings.ToLower(strings.TrimSpace(ecosystem))
+		if !isDependencyAuditorEcosystem(normalized) {
+			return dependencyAuditorStarterFlowInput{}, fmt.Errorf("flow.flow_input.ecosystems must only include go, rust, python, node, or java")
+		}
+	}
+	input.Ecosystems = normalizeDependencyAuditorEcosystems(input.Ecosystems)
+	input.SchedulePreset = strings.ToLower(strings.TrimSpace(input.SchedulePreset))
+	input.DestinationTeamID = strings.TrimSpace(input.DestinationTeamID)
+	input.DestinationStateID = strings.TrimSpace(input.DestinationStateID)
+	if len(input.Ecosystems) == 0 {
+		return dependencyAuditorStarterFlowInput{}, fmt.Errorf("flow.flow_input.ecosystems requires at least one of go, rust, python, node, or java")
+	}
+	if input.DestinationTeamID == "" {
+		return dependencyAuditorStarterFlowInput{}, fmt.Errorf("flow.flow_input.destination_team_id is required")
+	}
+	if input.SchedulePreset != "daily" && input.SchedulePreset != "weekly" {
+		return dependencyAuditorStarterFlowInput{}, fmt.Errorf("flow.flow_input.schedule_preset must be daily or weekly")
+	}
+	if input.MaxTasks < 1 || input.MaxTasks > 100 {
+		return dependencyAuditorStarterFlowInput{}, fmt.Errorf("flow.flow_input.max_tasks must be between 1 and 100")
+	}
+	return input, nil
+}
+
+func normalizeDependencyAuditorEcosystems(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		normalized := strings.ToLower(strings.TrimSpace(value))
+		if !isDependencyAuditorEcosystem(normalized) {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		out = append(out, normalized)
+	}
+	return out
+}
+
+func isDependencyAuditorEcosystem(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "go", "rust", "python", "node", "java":
+		return true
+	default:
+		return false
+	}
+}
+
+func renderDependencyAuditorSystemPrompt(base *string, input dependencyAuditorStarterFlowInput) *string {
+	prompt := strings.TrimSpace(derefString(base))
+	if prompt == "" {
+		fallback, err := dependencyAuditorSystemPromptSection(input)
+		if err != nil || strings.TrimSpace(fallback) == "" {
+			return base
+		}
+		return &fallback
+	}
+	rendered, err := renderDependencyAuditorPromptVariables(prompt, input)
+	if err != nil || strings.TrimSpace(rendered) == "" {
+		return base
+	}
+	return &rendered
+}
+
+func renderDependencyAuditorPromptVariables(prompt string, input dependencyAuditorStarterFlowInput) (string, error) {
+	payload, err := json.MarshalIndent(input, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("marshal dependency auditor run configuration: %w", err)
+	}
+	values := dependencyAuditorPromptValues(input, string(payload))
+	replacerArgs := make([]string, 0, len(values)*2)
+	for key, value := range values {
+		replacerArgs = append(replacerArgs, "{{"+key+"}}", value)
+	}
+	return strings.TrimSpace(strings.NewReplacer(replacerArgs...).Replace(prompt)), nil
+}
+
+func dependencyAuditorPromptValues(input dependencyAuditorStarterFlowInput, rawJSON string) map[string]string {
+	destinationState := "not configured; use the team's default stage"
+	if input.DestinationStateID != "" {
+		destinationState = input.DestinationStateID
+	}
+	return map[string]string{
+		"ecosystems":             strings.Join(input.Ecosystems, ", "),
+		"include_indirect":       fmt.Sprintf("%t", input.IncludeIndirect),
+		"destination_team_id":    input.DestinationTeamID,
+		"destination_state_id":   destinationState,
+		"schedule_preset":        input.SchedulePreset,
+		"max_tasks":              fmt.Sprintf("%d", input.MaxTasks),
+		"raw_configuration_json": "```json\n" + rawJSON + "\n```",
+	}
+}
+
+func dependencyAuditorSystemPromptSection(input dependencyAuditorStarterFlowInput) (string, error) {
+	payload, err := json.MarshalIndent(input, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("marshal dependency auditor run configuration: %w", err)
+	}
+	destinationState := "not configured; use the team's default stage"
+	if input.DestinationStateID != "" {
+		destinationState = input.DestinationStateID
+	}
+
+	context := fmt.Sprintf(`Dependency auditor configuration:
+
+These values were configured when this custom agent was created. Treat them as already resolved and authoritative. Do not plan or perform discovery of configuration variables, workspace context, teams, stages, cadence, or repository selection.
+
+- ecosystems: %s
+- include_indirect: %t
+- destination_team_id: %s
+- destination_state_id: %s
+- max_tasks: %d
+- schedule_preset: %s (informational; the automation rule already handled cadence)
+
+Use the destination IDs directly when calling create_task. Repositories may contain more than one language ecosystem; scan every selected ecosystem in the same run and create at most max_tasks tasks.
+
+Raw configuration:
+
+`, strings.Join(input.Ecosystems, ", "), input.IncludeIndirect, input.DestinationTeamID, destinationState, input.MaxTasks, input.SchedulePreset)
 	return strings.TrimSpace(context + "```json\n" + string(payload) + "\n```"), nil
 }
 

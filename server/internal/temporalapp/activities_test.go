@@ -191,6 +191,393 @@ func TestExecutionRuntimeKindPrefersRunOverride(t *testing.T) {
 	}
 }
 
+func TestLoadRunStateHydratesRepositoryTargetForCheckout(t *testing.T) {
+	db := openRepositoryHydrationTestDB(t)
+	ctx := context.Background()
+
+	seedRepositoryHydrationAgent(t, db)
+	seedRepositoryHydrationIntegration(t, db, &model.GitIntegration{
+		ID:             "integration-1",
+		WorkspaceID:    "ws-1",
+		Provider:       "github",
+		DisplayName:    "GitHub",
+		CredentialMode: "pat",
+		AccessToken:    "repo-token",
+		Active:         true,
+	})
+	seedRepositoryHydrationRepository(t, db, &model.GitRepository{
+		ID:            "repo-1",
+		WorkspaceID:   "ws-1",
+		IntegrationID: "integration-1",
+		Provider:      "github",
+		ExternalID:    "1001",
+		FullName:      "acme/api",
+		DefaultBranch: "develop",
+		Private:       true,
+		Selected:      true,
+		Active:        true,
+	})
+	if err := db.Exec(`INSERT INTO agent_runs (
+		id, workspace_id, agent_id, target_type, target_id, runtime_kind, invocation_mode,
+		approval_state, pause_reason, status, input, output_summary, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"run-1", "ws-1", "agent-1", "repository", "repo-1", "native_sdk", model.InvocationModeAutonomous,
+		"not_required", model.AgentRunPauseReasonNone, model.AgentRunStatusQueued, []byte(`{}`), []byte(`{}`),
+	).Error; err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+
+	activities := repositoryHydrationActivities(db)
+	state, err := activities.loadRunState(ctx, "run-1")
+	if err != nil {
+		t.Fatalf("loadRunState returned error: %v", err)
+	}
+	if state.repository == nil || state.repository.ID != "repo-1" {
+		t.Fatalf("expected repository to be hydrated, got %#v", state.repository)
+	}
+	if state.integration == nil || state.integration.ID != "integration-1" {
+		t.Fatalf("expected integration to be hydrated, got %#v", state.integration)
+	}
+	if state.accessToken != "repo-token" {
+		t.Fatalf("access token = %q, want repo-token", state.accessToken)
+	}
+	if got := derefString(state.run.RepoFullName); got != "acme/api" {
+		t.Fatalf("repo full name = %q, want acme/api", got)
+	}
+	if got := derefString(state.run.BaseBranch); got != "develop" {
+		t.Fatalf("base branch = %q, want develop", got)
+	}
+}
+
+func TestHydrateRunRepositoryTargetValidatesRepositoryAndIntegration(t *testing.T) {
+	deletedAt := time.Now()
+	testCases := []struct {
+		name        string
+		repo        model.GitRepository
+		integration model.GitIntegration
+		wantErr     string
+	}{
+		{
+			name: "cross workspace repository",
+			repo: model.GitRepository{
+				WorkspaceID: "ws-other",
+				Selected:    true,
+				Active:      true,
+			},
+			integration: model.GitIntegration{Active: true},
+			wantErr:     "repository target does not belong to this workspace",
+		},
+		{
+			name: "archived repository",
+			repo: model.GitRepository{
+				WorkspaceID: "ws-1",
+				Archived:    true,
+				Selected:    true,
+				Active:      true,
+			},
+			integration: model.GitIntegration{Active: true},
+			wantErr:     "repository target is not available",
+		},
+		{
+			name: "inactive repository",
+			repo: model.GitRepository{
+				WorkspaceID: "ws-1",
+				Selected:    true,
+				Active:      false,
+			},
+			integration: model.GitIntegration{Active: true},
+			wantErr:     "repository target is not available",
+		},
+		{
+			name: "deleted repository",
+			repo: model.GitRepository{
+				WorkspaceID: "ws-1",
+				DeletedAt:   &deletedAt,
+				Selected:    true,
+				Active:      true,
+			},
+			integration: model.GitIntegration{Active: true},
+			wantErr:     "repository target is not available",
+		},
+		{
+			name: "unselected repository",
+			repo: model.GitRepository{
+				WorkspaceID: "ws-1",
+				Selected:    false,
+				Active:      true,
+			},
+			integration: model.GitIntegration{Active: true},
+			wantErr:     "repository target is not available",
+		},
+		{
+			name: "inactive integration",
+			repo: model.GitRepository{
+				WorkspaceID: "ws-1",
+				Selected:    true,
+				Active:      true,
+			},
+			integration: model.GitIntegration{Active: false},
+			wantErr:     "repository target integration not found",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := openRepositoryHydrationTestDB(t)
+			repo := tc.repo
+			repo.ID = "repo-1"
+			repo.IntegrationID = "integration-1"
+			repo.Provider = "github"
+			repo.ExternalID = "1001"
+			repo.FullName = "acme/api"
+			repo.DefaultBranch = "main"
+			seedRepositoryHydrationRepository(t, db, &repo)
+
+			integration := tc.integration
+			integration.ID = "integration-1"
+			integration.WorkspaceID = "ws-1"
+			integration.Provider = "github"
+			integration.DisplayName = "GitHub"
+			integration.CredentialMode = "pat"
+			integration.AccessToken = "repo-token"
+			seedRepositoryHydrationIntegration(t, db, &integration)
+
+			activities := repositoryHydrationActivities(db)
+			state := &resolvedRunState{run: &model.AgentRun{
+				ID:           "run-1",
+				WorkspaceID:  "ws-1",
+				TargetType:   "repository",
+				TargetID:     "repo-1",
+				RepositoryID: strPtr("repo-1"),
+			}}
+			err := activities.hydrateRunRepositoryTarget(context.Background(), state)
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("error = %v, want containing %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestHydrateRunRepositoryTargetDoesNotOverrideTaskDeliveryRepository(t *testing.T) {
+	db := openRepositoryHydrationTestDB(t)
+	activities := repositoryHydrationActivities(db)
+	state := &resolvedRunState{
+		run: &model.AgentRun{
+			ID:           "run-1",
+			WorkspaceID:  "ws-1",
+			TargetType:   "task",
+			TargetID:     "task-1",
+			TaskID:       strPtr("task-1"),
+			RepositoryID: strPtr("repo-run"),
+		},
+		repository: &model.GitRepository{ID: "repo-delivery", FullName: "acme/delivery"},
+		integration: &model.GitIntegration{
+			ID:             "integration-delivery",
+			CredentialMode: "pat",
+			AccessToken:    "delivery-token",
+			Active:         true,
+		},
+		accessToken: "delivery-token",
+	}
+
+	if err := activities.hydrateRunRepositoryTarget(context.Background(), state); err != nil {
+		t.Fatalf("hydrateRunRepositoryTarget returned error: %v", err)
+	}
+	if state.repository.ID != "repo-delivery" {
+		t.Fatalf("repository was overridden, got %q", state.repository.ID)
+	}
+	if state.accessToken != "delivery-token" {
+		t.Fatalf("access token was overridden, got %q", state.accessToken)
+	}
+}
+
+func openRepositoryHydrationTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	dbName := fmt.Sprintf("file:repository-hydration-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agents (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			is_system BOOLEAN NOT NULL DEFAULT 0,
+			name TEXT NOT NULL,
+			preset_key TEXT,
+			status TEXT NOT NULL DEFAULT 'idle',
+			runtime_kind TEXT NOT NULL DEFAULT 'native_sdk',
+			skills BLOB NOT NULL DEFAULT (CAST('[]' AS BLOB)),
+			trigger_mode TEXT NOT NULL DEFAULT 'manual',
+			execution_config BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
+			allowed_tools BLOB NOT NULL DEFAULT (CAST('[]' AS BLOB)),
+			allowed_commands BLOB NOT NULL DEFAULT (CAST('[]' AS BLOB)),
+			allowed_targets BLOB NOT NULL DEFAULT (CAST('[]' AS BLOB)),
+			approval_mode TEXT NOT NULL DEFAULT 'never',
+			max_concurrent_runs INTEGER NOT NULL DEFAULT 1,
+			default_invocation_mode TEXT NOT NULL DEFAULT 'autonomous',
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE agent_runs (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			agent_id TEXT NOT NULL,
+			task_id TEXT,
+			conversation_id TEXT,
+			target_type TEXT NOT NULL DEFAULT 'task',
+			target_id TEXT NOT NULL,
+			runtime_kind TEXT NOT NULL DEFAULT 'native_sdk',
+			invocation_mode TEXT NOT NULL DEFAULT 'autonomous',
+			parent_run_id TEXT,
+			handoff_state TEXT,
+			approval_state TEXT NOT NULL DEFAULT 'not_required',
+			pause_reason TEXT NOT NULL DEFAULT 'none',
+			triggered_by_user_id TEXT,
+			status TEXT NOT NULL DEFAULT 'queued',
+			workflow_id TEXT,
+			workflow_run_id TEXT,
+			task_queue TEXT,
+			runner_pool TEXT,
+			repository_id TEXT,
+			repo_full_name TEXT,
+			base_branch TEXT,
+			working_branch TEXT,
+			delivery_target_id TEXT,
+			execution_stage TEXT,
+			last_heartbeat_at DATETIME,
+			input BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
+			output_summary BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
+			cached_input_tokens INTEGER NOT NULL DEFAULT 0,
+			input_tokens INTEGER NOT NULL DEFAULT 0,
+			output_tokens INTEGER NOT NULL DEFAULT 0,
+			tokens_used INTEGER NOT NULL DEFAULT 0,
+			error_message TEXT,
+			started_at DATETIME,
+			completed_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE git_integrations (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			organization_id TEXT,
+			provider TEXT NOT NULL,
+			display_name TEXT NOT NULL,
+			credential_mode TEXT NOT NULL DEFAULT 'github_app',
+			account_login TEXT,
+			base_url TEXT,
+			installation_id TEXT,
+			app_id TEXT,
+			webhook_secret TEXT,
+			access_token TEXT NOT NULL DEFAULT '',
+			active BOOLEAN NOT NULL DEFAULT 1,
+			deleted_at DATETIME,
+			last_synced_at DATETIME,
+			last_sync_error TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE git_repositories (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			integration_id TEXT NOT NULL,
+			provider TEXT NOT NULL,
+			external_id TEXT NOT NULL,
+			full_name TEXT NOT NULL,
+			default_branch TEXT NOT NULL DEFAULT 'main',
+			permissions BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
+			private BOOLEAN NOT NULL DEFAULT 1,
+			archived BOOLEAN NOT NULL DEFAULT 0,
+			selected BOOLEAN NOT NULL DEFAULT 1,
+			active BOOLEAN NOT NULL DEFAULT 1,
+			deleted_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create repository hydration test table: %v", err)
+		}
+	}
+	return db
+}
+
+func repositoryHydrationActivities(db *gorm.DB) *AgentRunActivities {
+	return &AgentRunActivities{
+		runRepo:    repository.NewAgentRunRepository(db),
+		agentRepo:  repository.NewAgentRepository(db),
+		gitIntRepo: repository.NewGitIntegrationRepository(db),
+		gitRepo:    repository.NewGitRepositoryRepository(db),
+	}
+}
+
+func seedRepositoryHydrationAgent(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	if err := db.Exec(`INSERT INTO agents (
+		id, workspace_id, is_system, name, status, runtime_kind, skills, trigger_mode,
+		allowed_tools, allowed_commands, allowed_targets, approval_mode, default_invocation_mode,
+		execution_config, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"agent-1", "ws-1", false, "Dependency Auditor", "idle", "native_sdk", []byte(`[]`), "manual",
+		[]byte(`["list_directory","read_file","ripgrep","create_task"]`), []byte(`[]`), []byte(`["repository"]`),
+		"never", model.InvocationModeAutonomous, []byte(`{}`),
+	).Error; err != nil {
+		t.Fatalf("seed agent: %v", err)
+	}
+}
+
+func seedRepositoryHydrationIntegration(t *testing.T, db *gorm.DB, integration *model.GitIntegration) {
+	t.Helper()
+	if integration.CredentialMode == "" {
+		integration.CredentialMode = "pat"
+	}
+	if integration.AccessToken == "" {
+		integration.AccessToken = "repo-token"
+	}
+	if err := db.Exec(`INSERT INTO git_integrations (
+		id, workspace_id, organization_id, provider, display_name, credential_mode, account_login,
+		base_url, installation_id, app_id, webhook_secret, access_token, active, deleted_at,
+		last_synced_at, last_sync_error, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		integration.ID, integration.WorkspaceID, integration.OrganizationID, integration.Provider, integration.DisplayName,
+		integration.CredentialMode, integration.AccountLogin, integration.BaseURL, integration.InstallationID,
+		integration.AppID, integration.WebhookSecret, integration.AccessToken, integration.Active, integration.DeletedAt,
+		integration.LastSyncedAt, integration.LastSyncError,
+	).Error; err != nil {
+		t.Fatalf("seed integration: %v", err)
+	}
+}
+
+func seedRepositoryHydrationRepository(t *testing.T, db *gorm.DB, repo *model.GitRepository) {
+	t.Helper()
+	if repo.Provider == "" {
+		repo.Provider = "github"
+	}
+	if repo.ExternalID == "" {
+		repo.ExternalID = repo.ID
+	}
+	if repo.FullName == "" {
+		repo.FullName = "acme/api"
+	}
+	if repo.DefaultBranch == "" {
+		repo.DefaultBranch = "main"
+	}
+	if repo.Permissions == nil {
+		repo.Permissions = json.RawMessage(`{}`)
+	}
+	if err := db.Exec(`INSERT INTO git_repositories (
+		id, workspace_id, integration_id, provider, external_id, full_name, default_branch,
+		permissions, private, archived, selected, active, deleted_at, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		repo.ID, repo.WorkspaceID, repo.IntegrationID, repo.Provider, repo.ExternalID, repo.FullName,
+		repo.DefaultBranch, []byte(repo.Permissions), repo.Private, repo.Archived, repo.Selected,
+		repo.Active, repo.DeletedAt,
+	).Error; err != nil {
+		t.Fatalf("seed repository: %v", err)
+	}
+}
+
 func TestSelectNativeActiveSkillsRequiresSelectivePathGate(t *testing.T) {
 	state := &resolvedRunState{
 		run: &model.AgentRun{TargetType: "epic"},
