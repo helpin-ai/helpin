@@ -380,6 +380,19 @@ func (r *DocsRedirectRepository) GetBySourcePath(ctx context.Context, workspaceI
 	return &redirect, nil
 }
 
+// GetByID returns the redirect matching the given ID. Returns nil when absent.
+func (r *DocsRedirectRepository) GetByID(ctx context.Context, id string) (*model.DocsRedirect, error) {
+	var redirect model.DocsRedirect
+	err := r.db.WithContext(ctx).Where("id = ?", id).First(&redirect).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get docs redirect: %w", err)
+	}
+	return &redirect, nil
+}
+
 // List returns a paginated list of redirects for a workspace with optional
 // search and type filters. Returns the items and total matching count.
 func (r *DocsRedirectRepository) List(ctx context.Context, workspaceID string, filter model.DocsRedirectFilter) ([]model.DocsRedirect, int64, error) {

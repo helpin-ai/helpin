@@ -975,7 +975,7 @@ function RunningIndicator({ since }: { since: string }) {
   const elapsed = useElapsedMs(since);
   return (
     <div className="flex items-center gap-2.5 border-t border-border bg-muted/50 px-4 py-2">
-      <Loading01Icon className="h-3.5 w-3.5 animate-spin text-primary" />
+      <UnicodeSpinner name="braille" className="text-sm text-primary" />
       <span className="text-xs font-medium text-primary">Running</span>
       <span className="ml-auto text-xs tabular-nums text-muted-foreground">{formatElapsed(elapsed)}</span>
     </div>

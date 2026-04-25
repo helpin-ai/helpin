@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import type { PublishedPreview } from '@/components/pm/runPreviews';
 import type { CodingSessionInteraction } from '@/lib/pmTypes';
 import { MarkdownContent } from './MarkdownContent';
+import { normalizeCodingSessionPreviewPanelKey } from './previewPanelKeys';
 
 interface TaskPlanTaskPreview {
   ref?: string;
@@ -113,7 +114,7 @@ function parseTaskPlanPreviewModel(preview: PublishedPreview | undefined): TaskP
 function parseAttachedApprovalRequest(interaction: CodingSessionInteraction | null | undefined): AttachedApprovalRequest | null {
   if (!interaction || interaction.interaction_kind !== 'approval_request') return null;
   const payload = asRecord(interaction.request_payload);
-  const previewPanelKey = asString(payload?.preview_panel_key).trim().toLowerCase();
+  const previewPanelKey = normalizeCodingSessionPreviewPanelKey(asString(payload?.preview_panel_key));
   if (!previewPanelKey) return null;
   const phase = asString(payload?.phase).trim().toLowerCase() || undefined;
   const title = asString(payload?.title).trim() || interaction.title || undefined;

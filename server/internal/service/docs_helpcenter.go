@@ -562,7 +562,7 @@ func (s *DocsHelpcenterService) GetConfigBySubdomain(ctx context.Context, subdom
 }
 
 // ResolveConfig resolves a help center config by subdomain first, then by custom domain.
-func (s *DocsHelpcenterService) ResolveConfig(ctx context.Context, identifier string) (*model.DocsHelpcenterConfig, error) {
+func (s *DocsHelpcenterService) resolveConfigUncached(ctx context.Context, identifier string) (*model.DocsHelpcenterConfig, error) {
 	// Try subdomain first.
 	cfg, err := s.hcRepo.GetConfigBySubdomain(ctx, identifier)
 	if err != nil {
@@ -1439,7 +1439,7 @@ func (s *DocsHelpcenterService) resolvePublicArticleTranslationBySlug(ctx contex
 }
 
 // ListPublicSpaces returns external-capable spaces for the public help center.
-func (s *DocsHelpcenterService) ListPublicSpaces(ctx context.Context, workspaceID, requestedLocale string) ([]model.PublicSpaceResponse, error) {
+func (s *DocsHelpcenterService) listPublicSpacesUncached(ctx context.Context, workspaceID, requestedLocale string) ([]model.PublicSpaceResponse, error) {
 	cfg, defaultLocale, err := s.getPublicLocaleConfig(ctx, workspaceID)
 	if err != nil {
 		return nil, err
@@ -1685,7 +1685,7 @@ func (s *DocsHelpcenterService) getSpaceNavigationUncached(ctx context.Context, 
 }
 
 // GetPublicArticle returns the full article detail for the locale-aware public help center.
-func (s *DocsHelpcenterService) GetPublicArticle(ctx context.Context, workspaceID, requestedLocale, spaceSlug, collectionSlug, articleSlug string) (*model.PublicArticleResponse, error) {
+func (s *DocsHelpcenterService) getPublicArticleUncached(ctx context.Context, workspaceID, requestedLocale, spaceSlug, collectionSlug, articleSlug string) (*model.PublicArticleResponse, error) {
 	cfg, _, err := s.getPublicLocaleConfig(ctx, workspaceID)
 	if err != nil {
 		return nil, err
@@ -1792,7 +1792,7 @@ func (s *DocsHelpcenterService) GetPublicArticle(ctx context.Context, workspaceI
 }
 
 // GetPublicLocalizedCollection returns a translated collection page and its translated articles.
-func (s *DocsHelpcenterService) GetPublicLocalizedCollection(ctx context.Context, workspaceID, requestedLocale, spaceSlug, collectionSlug string) (*model.PublicNavCollection, []model.PublicNavArticle, error) {
+func (s *DocsHelpcenterService) getPublicLocalizedCollectionUncached(ctx context.Context, workspaceID, requestedLocale, spaceSlug, collectionSlug string) (*model.PublicNavCollection, []model.PublicNavArticle, error) {
 	cfg, defaultLocale, err := s.getPublicLocaleConfig(ctx, workspaceID)
 	if err != nil {
 		return nil, nil, err
@@ -1881,7 +1881,7 @@ func (s *DocsHelpcenterService) GetPublicLocalizedCollection(ctx context.Context
 	}, articles, nil
 }
 
-func (s *DocsHelpcenterService) GetPublicLocalizedCollectionByCanonicalPath(ctx context.Context, workspaceID, requestedLocale, collectionSlug string) (*model.PublicNavCollection, []model.PublicNavArticle, error) {
+func (s *DocsHelpcenterService) getPublicLocalizedCollectionByCanonicalPathUncached(ctx context.Context, workspaceID, requestedLocale, collectionSlug string) (*model.PublicNavCollection, []model.PublicNavArticle, error) {
 	cfg, defaultLocale, err := s.getPublicLocaleConfig(ctx, workspaceID)
 	if err != nil {
 		return nil, nil, err
@@ -1976,7 +1976,7 @@ func (s *DocsHelpcenterService) GetPublicLocalizedCollectionByCanonicalPath(ctx 
 	}, articles, nil
 }
 
-func (s *DocsHelpcenterService) GetPublicArticleByLocalizedCanonicalPath(ctx context.Context, workspaceID, requestedLocale, collectionSlug, articleSlug string) (*model.PublicArticleResponse, error) {
+func (s *DocsHelpcenterService) getPublicArticleByLocalizedCanonicalPathUncached(ctx context.Context, workspaceID, requestedLocale, collectionSlug, articleSlug string) (*model.PublicArticleResponse, error) {
 	cfg, _, err := s.getPublicLocaleConfig(ctx, workspaceID)
 	if err != nil {
 		return nil, err
@@ -2101,7 +2101,7 @@ func (s *DocsHelpcenterService) GetPublicArticleByLocalizedCanonicalPath(ctx con
 	}, nil
 }
 
-func (s *DocsHelpcenterService) GetPublicArticleByLocalizedCanonicalKey(ctx context.Context, workspaceID, requestedLocale, articleKey string) (*model.PublicArticleResponse, error) {
+func (s *DocsHelpcenterService) getPublicArticleByLocalizedCanonicalKeyUncached(ctx context.Context, workspaceID, requestedLocale, articleKey string) (*model.PublicArticleResponse, error) {
 	_, publicID, ok := parseDocsHelpcenterArticleKey(articleKey)
 	if !ok {
 		return nil, fmt.Errorf("article not found")
@@ -2239,7 +2239,7 @@ func (s *DocsHelpcenterService) GetPublicArticleByLocalizedCanonicalKey(ctx cont
 }
 
 // GetPublicArticleByCanonicalPath returns a public article by collection slug and article slug.
-func (s *DocsHelpcenterService) GetPublicArticleByCanonicalPath(ctx context.Context, workspaceID, collectionSlug, articleSlug string) (*model.PublicArticleResponse, error) {
+func (s *DocsHelpcenterService) getPublicArticleByCanonicalPathUncached(ctx context.Context, workspaceID, collectionSlug, articleSlug string) (*model.PublicArticleResponse, error) {
 	var (
 		doc     *model.DocsDocument
 		ha      *model.DocsHelpcenterArticle
@@ -2333,7 +2333,7 @@ func (s *DocsHelpcenterService) GetPublicArticleByCanonicalPath(ctx context.Cont
 	}, nil
 }
 
-func (s *DocsHelpcenterService) GetPublicArticleByCanonicalKey(ctx context.Context, workspaceID, articleKey string) (*model.PublicArticleResponse, error) {
+func (s *DocsHelpcenterService) getPublicArticleByCanonicalKeyUncached(ctx context.Context, workspaceID, articleKey string) (*model.PublicArticleResponse, error) {
 	_, publicID, ok := parseDocsHelpcenterArticleKey(articleKey)
 	if !ok {
 		return nil, nil
@@ -2416,7 +2416,7 @@ func (s *DocsHelpcenterService) GetPublicArticleByCanonicalKey(ctx context.Conte
 }
 
 // GetPublicCollection returns a collection, its published articles, and the parent space slug by workspace and collection key.
-func (s *DocsHelpcenterService) GetPublicCollection(ctx context.Context, workspaceID, collectionKey string) (*model.DocsCollection, []model.PublicNavArticle, string, error) {
+func (s *DocsHelpcenterService) getPublicCollectionUncached(ctx context.Context, workspaceID, collectionKey string) (*model.DocsCollection, []model.PublicNavArticle, string, error) {
 	var (
 		coll     *model.DocsCollection
 		articles []model.PublicNavArticle
@@ -2544,6 +2544,7 @@ func (s *DocsHelpcenterService) CreateRedirect(ctx context.Context, workspaceID 
 			slog.WarnContext(ctx, "persist redirect target_path failed", "redirect_id", redirect.ID, "error", err)
 		}
 	}
+	s.InvalidateHelpcenterCacheForWorkspace(ctx, workspaceID)
 	return redirect, nil
 }
 
@@ -2593,15 +2594,26 @@ func (s *DocsHelpcenterService) UpdateRedirect(ctx context.Context, id string, r
 			slog.WarnContext(ctx, "persist redirect target_path failed", "redirect_id", redirect.ID, "error", err)
 		}
 	}
+	s.InvalidateHelpcenterCacheForWorkspace(ctx, redirect.WorkspaceID)
 	return redirect, nil
 }
 
 func (s *DocsHelpcenterService) DeleteRedirect(ctx context.Context, id string) error {
-	return s.redirectRepo.Delete(ctx, id)
+	redirect, err := s.redirectRepo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if err := s.redirectRepo.Delete(ctx, id); err != nil {
+		return err
+	}
+	if redirect != nil {
+		s.InvalidateHelpcenterCacheForWorkspace(ctx, redirect.WorkspaceID)
+	}
+	return nil
 }
 
 // ResolvePublicPath resolves a legacy or imported URL path to a redirect target.
-func (s *DocsHelpcenterService) ResolvePublicPath(ctx context.Context, workspaceID, path string) (string, error) {
+func (s *DocsHelpcenterService) resolvePublicPathUncached(ctx context.Context, workspaceID, path string) (string, error) {
 	cfg, err := s.hcRepo.GetConfig(ctx, workspaceID)
 	if err != nil {
 		return "", err
@@ -2624,7 +2636,11 @@ func (s *DocsHelpcenterService) SubmitFeedback(ctx context.Context, documentID s
 	if _, err := s.hcRepo.CreateFeedback(ctx, fb); err != nil {
 		return err
 	}
-	return s.hcRepo.IncrementFeedbackCount(ctx, documentID, req.IsHelpful)
+	if err := s.hcRepo.IncrementFeedbackCount(ctx, documentID, req.IsHelpful); err != nil {
+		return err
+	}
+	s.invalidateHelpcenterCacheForDocument(ctx, documentID)
+	return nil
 }
 
 func (s *DocsHelpcenterService) SubmitFeedbackForLocale(ctx context.Context, documentID, locale string, req model.DocsArticleFeedbackRequest) error {
@@ -2634,7 +2650,22 @@ func (s *DocsHelpcenterService) SubmitFeedbackForLocale(ctx context.Context, doc
 	if locale == "" {
 		return nil
 	}
-	return s.hcRepo.IncrementTranslatedFeedbackCount(ctx, documentID, locale, req.IsHelpful)
+	if err := s.hcRepo.IncrementTranslatedFeedbackCount(ctx, documentID, locale, req.IsHelpful); err != nil {
+		return err
+	}
+	s.invalidateHelpcenterCacheForDocument(ctx, documentID)
+	return nil
+}
+
+func (s *DocsHelpcenterService) invalidateHelpcenterCacheForDocument(ctx context.Context, documentID string) {
+	doc, err := s.docRepo.GetByID(ctx, documentID)
+	if err != nil || doc == nil {
+		if err != nil {
+			slog.WarnContext(ctx, "hc cache: document invalidation lookup failed", "document_id", documentID, "error", err)
+		}
+		return
+	}
+	s.InvalidateHelpcenterCacheForWorkspace(ctx, doc.WorkspaceID)
 }
 
 func formatPublicPublishedAt(value *time.Time) *string {
