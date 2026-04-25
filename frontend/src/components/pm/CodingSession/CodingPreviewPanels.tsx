@@ -273,7 +273,10 @@ function GenericPreviewPanel({
 
   return (
     <>
-      <div className="rounded-md border border-border/60 bg-card/80 p-3">
+      <div
+        data-preview-panel-key={preview.panelKey}
+        className="rounded-md border border-border/60 bg-card/80 p-3 transition-shadow data-[preview-flash=true]:ring-2 data-[preview-flash=true]:ring-primary/40"
+      >
         <button
           type="button"
           className="mb-2 flex w-full items-center gap-2 text-left transition-colors hover:text-primary"
@@ -424,7 +427,10 @@ function TaskPlanPanel({
 
   return (
     <>
-      <div className="rounded-md border border-border/60 bg-card/80 p-3">
+      <div
+        data-preview-panel-key="task_plan"
+        className="rounded-md border border-border/60 bg-card/80 p-3 transition-shadow data-[preview-flash=true]:ring-2 data-[preview-flash=true]:ring-primary/40"
+      >
         <div className="mb-2 flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
             <SparklesIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -480,7 +486,10 @@ export function CodingPreviewPanels({
     <>
       {latestSpecDraftPreview ? (
         <>
-          <div className="rounded-md border border-border/60 bg-card/80 p-3">
+          <div
+            data-preview-panel-key="prd_draft"
+            className="rounded-md border border-border/60 bg-card/80 p-3 transition-shadow data-[preview-flash=true]:ring-2 data-[preview-flash=true]:ring-primary/40"
+          >
             <div className="mb-2 flex items-center justify-between gap-2">
               <div className="flex min-w-0 items-center gap-2">
                 <File01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />

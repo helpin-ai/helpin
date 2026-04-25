@@ -18,7 +18,7 @@ import {
   maxPersistedCodingSessionSequence,
   upsertCodingSessionEvents,
 } from '@/components/pm/CodingSession/codingSessionUtils';
-import type { Agent, AgentRun, AgentRunArtifact, CodingSession, CodingSessionEvent, CodingSessionInteraction, CodingSessionStreamSnapshot } from '@/lib/pmTypes';
+import type { Agent, AgentRun, AgentRunArtifact, CodingSession, CodingSessionEvent, CodingSessionStreamSnapshot } from '@/lib/pmTypes';
 import { agentService } from '@/lib/services/agentService';
 import { codingSessionService } from '@/lib/services/codingSessionService';
 import { cn } from '@/lib/utils';
@@ -213,7 +213,7 @@ export function CodingSessionSurface({
     () => collectCodingSessionPreviews(events, streamState.live_turn_segments),
     [events, streamState.live_turn_segments],
   );
-  const attachedPreviewApprovalInteraction = useMemo<CodingSessionInteraction | null>(() => {
+  const approvalPreviewPanelKey = useMemo<string | null>(() => {
     if (!activeInteraction || activeInteraction.interaction_kind !== 'approval_request') return null;
     const previewPanelKey = normalizeCodingSessionPreviewPanelKey(
       typeof activeInteraction.request_payload?.preview_panel_key === 'string'
@@ -221,12 +221,16 @@ export function CodingSessionSurface({
         : '',
     );
     if (!previewPanelKey || !previewsByKey.has(previewPanelKey)) return null;
-    return activeInteraction;
+    return previewPanelKey;
   }, [activeInteraction, previewsByKey]);
-  const overlayInteraction = attachedPreviewApprovalInteraction
-    && activeInteraction?.interaction_id === attachedPreviewApprovalInteraction.interaction_id
-    ? null
-    : activeInteraction;
+  const handleViewPreview = useCallback((panelKey: string) => {
+    if (typeof document === 'undefined') return;
+    const target = document.querySelector<HTMLElement>(`[data-preview-panel-key="${panelKey}"]`);
+    if (!target) return;
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    target.setAttribute('data-preview-flash', 'true');
+    window.setTimeout(() => target.removeAttribute('data-preview-flash'), 1400);
+  }, []);
   const promptArtifact = useMemo(() => {
     for (let index = artifacts.length - 1; index >= 0; index -= 1) {
       const artifact = artifacts[index];
@@ -500,9 +504,11 @@ export function CodingSessionSurface({
           onSendMessage={canSendMessage ? sendMessage : undefined}
           sendingMessage={sendingMessage}
           session={session}
-          activeInteraction={overlayInteraction}
+          activeInteraction={activeInteraction}
           acting={acting}
           messagePlaceholder={messagePlaceholder}
+          availablePreviewPanelKey={approvalPreviewPanelKey}
+          onViewPreview={handleViewPreview}
           onAuthStart={() => void runAction('auth-start', () => codingSessionService.startDeviceCodeAuth(workspaceId, activeSessionId))}
           onAuthCancel={() => void runAction('auth-cancel', () => codingSessionService.cancelDeviceCodeAuth(workspaceId, activeSessionId))}
           onResolveInteraction={(interactionId, responsePayload, followupMessage) => void resolveInteraction(interactionId, responsePayload, followupMessage)}
@@ -512,7 +518,6 @@ export function CodingSessionSurface({
           <CodingPlanPanel plan={streamState.current_plan} runStatus={session?.status} />
           <CodingPreviewPanels
             previewsByKey={previewsByKey}
-            attachedApprovalInteraction={attachedPreviewApprovalInteraction}
             acting={acting}
             onResolveInteraction={(interactionId, responsePayload, followupMessage) => void resolveInteraction(interactionId, responsePayload, followupMessage)}
           />

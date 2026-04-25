@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { CheckmarkCircle02Icon, GitCommitIcon, SecurityCheckIcon } from '@/lib/icons';
+import { CheckmarkCircle02Icon, File01Icon, GitCommitIcon, SecurityCheckIcon } from '@/lib/icons';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -22,6 +22,8 @@ interface Props {
   acting: string | null;
   onResolve: (interactionId: string, responsePayload: Record<string, unknown>, followupMessage?: string) => void;
   compact?: boolean;
+  availablePreviewPanelKey?: string | null;
+  onViewPreview?: (panelKey: string) => void;
 }
 
 interface QuestionAnswerState {
@@ -29,7 +31,7 @@ interface QuestionAnswerState {
   freetext?: string;
 }
 
-export function CodingInteractionCard({ interaction, acting, onResolve, compact = false }: Props) {
+export function CodingInteractionCard({ interaction, acting, onResolve, compact = false, availablePreviewPanelKey, onViewPreview }: Props) {
   const [questionAnswers, setQuestionAnswers] = useState<Record<string, QuestionAnswerState>>({});
   const [followupMessage, setFollowupMessage] = useState('');
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -451,6 +453,8 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
       ...(followupMessage.trim() ? { message: followupMessage.trim() } : {}),
     });
 
+    const canViewPreview = Boolean(availablePreviewPanelKey && onViewPreview);
+
     return (
       <InteractionShell compact={compact}
         icon={<SecurityCheckIcon className="h-4 w-4" />}
@@ -458,6 +462,16 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
         title={interaction.title ?? approval?.title ?? 'Approval required'}
         summary={interaction.summary ?? approval?.summary}
       >
+        {canViewPreview ? (
+          <button
+            type="button"
+            className="mb-3 inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+            onClick={() => onViewPreview!(availablePreviewPanelKey!)}
+          >
+            <File01Icon className="h-3.5 w-3.5" />
+            View document preview
+          </button>
+        ) : null}
         <Textarea
           value={followupMessage}
           onChange={(event) => setFollowupMessage(event.target.value)}

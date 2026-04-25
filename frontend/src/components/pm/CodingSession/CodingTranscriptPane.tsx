@@ -96,6 +96,8 @@ export function CodingTranscriptPane({
   session,
   activeInteraction,
   acting,
+  availablePreviewPanelKey,
+  onViewPreview,
   onAuthStart,
   onAuthCancel,
   onResolveInteraction,
@@ -116,6 +118,8 @@ export function CodingTranscriptPane({
   session?: CodingSession | null;
   activeInteraction?: CodingSessionInteraction | null;
   acting?: string | null;
+  availablePreviewPanelKey?: string | null;
+  onViewPreview?: (panelKey: string) => void;
   onAuthStart?: () => void;
   onAuthCancel?: () => void;
   onResolveInteraction?: (interactionId: string, responsePayload: Record<string, unknown>, followupMessage?: string) => void;
@@ -375,6 +379,8 @@ export function CodingTranscriptPane({
           session={session ?? null}
           activeInteraction={activeInteraction ?? null}
           acting={acting ?? null}
+          availablePreviewPanelKey={availablePreviewPanelKey ?? null}
+          onViewPreview={onViewPreview}
           onAuthStart={onAuthStart ?? (() => {})}
           onAuthCancel={onAuthCancel ?? (() => {})}
           onResolveInteraction={onResolveInteraction ?? (() => {})}
@@ -464,6 +470,8 @@ function InterruptionOverlay({
   session,
   activeInteraction,
   acting,
+  availablePreviewPanelKey,
+  onViewPreview,
   onAuthStart,
   onAuthCancel,
   onResolveInteraction,
@@ -471,6 +479,8 @@ function InterruptionOverlay({
   session: CodingSession | null;
   activeInteraction: CodingSessionInteraction | null;
   acting: string | null;
+  availablePreviewPanelKey?: string | null;
+  onViewPreview?: (panelKey: string) => void;
   onAuthStart: () => void;
   onAuthCancel: () => void;
   onResolveInteraction: (interactionId: string, responsePayload: Record<string, unknown>, followupMessage?: string) => void;
@@ -544,6 +554,8 @@ function InterruptionOverlay({
           interaction={activeInteraction}
           acting={acting}
           onResolve={onResolveInteraction}
+          availablePreviewPanelKey={availablePreviewPanelKey}
+          onViewPreview={onViewPreview}
           compact
         />
       ) : null}
