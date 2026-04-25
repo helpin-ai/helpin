@@ -122,4 +122,30 @@ describe('SearchResultItem', () => {
     expect(link).not.toBeNull()
     expect(link?.getAttribute('href')).toBe('/articles/start-here-abc123ef')
   })
+
+  it('does not emit locale-prefixed links when only one locale is enabled', () => {
+    renderWithDocsContext(
+      <SearchResultItem
+        locale="en"
+        result={{
+          id: 'article-1',
+          title: 'Single locale',
+          slug: 'single-locale',
+          public_id: 'abc123ef',
+          locale: 'en',
+          excerpt: 'Intro',
+          collection_name: 'Basics',
+          collection_slug: 'basics',
+          space_slug: 'docs',
+          space_name: 'Docs',
+        }}
+        multilingualEnabled
+      />,
+      { enabledLocales: ['en'], multilingualEnabled: true },
+    )
+
+    const link = screen.getByText('Single locale').closest('a')
+    expect(link).not.toBeNull()
+    expect(link?.getAttribute('href')).toBe('/articles/single-locale-abc123ef')
+  })
 })
