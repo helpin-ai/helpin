@@ -56,7 +56,7 @@ type Config struct {
 
 	// Website content crawler (optional — controls crawl engine and proxy)
 	CrawlerMode      string // "cloudflare", "local", or "cloudflare_with_fallback" (default)
-	CrawlerProxyURLs string // comma-separated proxy URLs for local crawler (e.g. Decodo/Smartproxy)
+	CrawlerProxyURLs string // comma-separated proxy URLs for local crawler and agent fetch/crawl tools (e.g. Decodo/Smartproxy)
 
 	// GitHub App (optional — required for shared-runner repo mutation).
 	// GITHUB_APP_PRIVATE_KEY should be provided as a base64-encoded PEM value.

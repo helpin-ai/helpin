@@ -153,5 +153,37 @@ describe('describeToolCall', () => {
         chips: ['pw', 'postgresql.org +1'],
       });
     });
+
+    it('formats fetch_url with target URL', () => {
+      const presentation = describeToolCall(buildToolCall({
+        tool_name: 'fetch_url',
+        args_text: JSON.stringify({
+          url: 'https://docs.writesonic.com/changelog',
+        }),
+      }));
+
+      expect(presentation).toEqual({
+        primaryLabel: 'Fetch https://docs.writesonic.com/changelog',
+        secondaryLabel: 'Fetch Url',
+        chips: [],
+      });
+    });
+
+    it('formats crawl_url with crawl limits', () => {
+      const presentation = describeToolCall(buildToolCall({
+        tool_name: 'crawl_url',
+        args_text: JSON.stringify({
+          url: 'https://docs.writesonic.com',
+          max_pages: 8,
+          max_depth: 2,
+        }),
+      }));
+
+      expect(presentation).toEqual({
+        primaryLabel: 'Crawl https://docs.writesonic.com',
+        secondaryLabel: 'Crawl Url',
+        chips: ['8 pages', 'depth 2'],
+      });
+    });
   });
 });

@@ -153,13 +153,16 @@ func NewEinoExecutor(
 	modelFactory *EinoModelFactory,
 	webSearch WebSearchClient,
 	exaSearch *ExaSearchClient,
+	webFetchProxyURLs string,
 	runRepo *repository.AgentRunRepository,
 	artifactRepo *repository.AgentRunArtifactRepository,
 ) *EinoExecutor {
+	tools := NewToolRegistry(webSearch, exaSearch)
+	tools.SetWebFetchProxyURLs(webFetchProxyURLs)
 	return &EinoExecutor{
 		kind:         kind,
 		modelFactory: modelFactory,
-		tools:        NewToolRegistry(webSearch, exaSearch),
+		tools:        tools,
 		runRepo:      runRepo,
 		artifactRepo: artifactRepo,
 	}
