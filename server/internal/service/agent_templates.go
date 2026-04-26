@@ -207,6 +207,112 @@ Raw configuration:
 			},
 		},
 	}))
+	securityTriageDescription := "Runs security scanners, triages findings in repository context, and creates actionable remediation tasks."
+	securityTriageSystemPrompt := `You are Sentinel, an autonomous security triage agent for the selected repository.
+
+Configured security triage:
+- scanners: {{scanners}}
+- severity_threshold: {{severity_threshold}}
+- include_low_info: {{include_low_info}}
+- destination_team_id: {{destination_team_id}}
+- destination_state_id: {{destination_state_id}}
+- max_tasks: {{max_tasks}}
+- schedule_preset: {{schedule_preset}}
+
+Treat these configured values as already resolved and authoritative. Do not plan or perform discovery of configuration variables, workspace context, teams, stages, cadence, or repository selection.
+
+Run only the configured scanners through the dedicated scanner tools: scan_semgrep, scan_trivy, and scan_gitleaks. Do not run scanner CLIs through run_command. Do not modify files.
+
+Triage normalized scanner findings against repository code and configuration. Suppress false positives and non-actionable findings. Create tasks only for applicable findings at or above severity_threshold. If include_low_info is false, do not create tasks for low or informational findings.
+
+Group related findings by root cause, such as shared scanner rule, vulnerable dependency, secret type, misconfiguration pattern, sink, or remediation path. Create at most max_tasks remediation tasks with create_task. Pass destination_team_id directly as team_id. Pass destination_state_id directly as state_id only when it is configured; otherwise let the team default stage apply.
+
+Raw configuration:
+{{raw_configuration_json}}`
+	securityTriageStarterFlows := model.JSONBlob(mustJSONValue([]map[string]any{
+		{
+			"key":               "security_triage_cron",
+			"label":             "Run Sentinel on a schedule",
+			"description":       "Runs security scanners against a repository, triages findings, and creates remediation tasks for applicable medium-or-higher issues.",
+			"trigger_type":      model.TriggerCron,
+			"default_enabled":   true,
+			"config_schema_key": "security_triage_cron",
+			"output_type":       "task",
+			"fields": []map[string]any{
+				{
+					"key":      "repository_id",
+					"label":    "Repository",
+					"type":     "repository_select",
+					"required": true,
+				},
+				{
+					"key":      "scanners",
+					"label":    "Scanners",
+					"type":     "multi_select",
+					"required": true,
+					"default":  []string{"semgrep", "trivy", "gitleaks"},
+					"options": []map[string]any{
+						{"value": "semgrep", "label": "Semgrep"},
+						{"value": "trivy", "label": "Trivy"},
+						{"value": "gitleaks", "label": "Gitleaks"},
+					},
+				},
+				{
+					"key":      "severity_threshold",
+					"label":    "Minimum severity",
+					"type":     "select",
+					"required": true,
+					"default":  "medium",
+					"options": []map[string]any{
+						{"value": "critical", "label": "Critical"},
+						{"value": "high", "label": "High"},
+						{"value": "medium", "label": "Medium"},
+					},
+				},
+				{
+					"key":      "include_low_info",
+					"label":    "Include low and informational findings",
+					"type":     "boolean",
+					"required": false,
+					"default":  false,
+				},
+				{
+					"key":      "schedule_preset",
+					"label":    "Run cadence",
+					"type":     "select",
+					"required": true,
+					"default":  "weekly",
+					"options": []map[string]any{
+						{"value": "daily", "label": "Daily"},
+						{"value": "weekly", "label": "Weekly"},
+					},
+				},
+				{
+					"key":      "max_tasks",
+					"label":    "Maximum tasks per run",
+					"type":     "number",
+					"required": true,
+					"default":  20,
+					"min":      1,
+					"max":      100,
+				},
+				{
+					"key":      "destination_team_id",
+					"label":    "Task team",
+					"type":     "team_select",
+					"required": true,
+				},
+				{
+					"key":        "destination_state_id",
+					"label":      "Task stage",
+					"type":       "workflow_state_select",
+					"required":   false,
+					"depends_on": "destination_team_id",
+					"help_text":  "Optional. Defaults to the team's default stage.",
+				},
+			},
+		},
+	}))
 	return []model.AgentTemplate{
 		{
 			Key:         model.AgentTemplateTypeReleaseNotes,
@@ -314,6 +420,50 @@ Raw configuration:
 			AllowedTargets:        model.JSONBlob(mustJSONStringSlice([]string{"repository"})),
 			RequiredContext:       model.JSONBlob(mustJSONStringSlice(nil)),
 			StarterFlows:          dependencyAuditorStarterFlows,
+			ApprovalMode:          "never",
+			DefaultInvocationMode: model.InvocationModeAutonomous,
+			IsEnabled:             true,
+		},
+		{
+			Key:          model.AgentTemplateTypeSecurityTriage,
+			Name:         "Sentinel",
+			Description:  &securityTriageDescription,
+			SystemPrompt: &securityTriageSystemPrompt,
+			RuntimeKind:  model.AgentTemplateRuntimeKindNativeSDK,
+			DefaultRole:  "Security Triage Analyst",
+			Skills: model.AgentSkillRefs{
+				{Key: model.AgentTemplateTypeSecurityTriage},
+			},
+			AllowedTools: model.JSONBlob(mustJSONStringSlice([]string{
+				"update_plan",
+				"list_directory",
+				"read_file",
+				"read_files",
+				"read_file_range",
+				"search_files",
+				"ripgrep",
+				"grep",
+				"run_command",
+				"scan_semgrep",
+				"scan_trivy",
+				"scan_gitleaks",
+				"web_search_exa",
+				"create_task",
+			})),
+			AllowedCommands: model.JSONBlob(mustJSONStringSlice([]string{
+				"git",
+				"rg",
+				"grep",
+				"find",
+				"cat",
+				"ls",
+				"head",
+				"tail",
+				"pwd",
+			})),
+			AllowedTargets:        model.JSONBlob(mustJSONStringSlice([]string{"repository"})),
+			RequiredContext:       model.JSONBlob(mustJSONStringSlice(nil)),
+			StarterFlows:          securityTriageStarterFlows,
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeAutonomous,
 			IsEnabled:             true,
@@ -658,6 +808,11 @@ func materializeCreateAgentRequestFromTemplate(workspaceID string, template *mod
 			createReq.SystemPrompt = renderDependencyAuditorSystemPrompt(createReq.SystemPrompt, input)
 		}
 	}
+	if template != nil && strings.TrimSpace(template.Key) == model.AgentTemplateTypeSecurityTriage && req.CreateFlow {
+		if input, err := securityTriageInputFromTemplateFlow(req.Flow); err == nil {
+			createReq.SystemPrompt = renderSecurityTriageSystemPrompt(createReq.SystemPrompt, input)
+		}
+	}
 	return createReq
 }
 
@@ -672,6 +827,8 @@ func (s *AgentService) createStarterFlowForTemplate(ctx context.Context, workspa
 		return s.createCompetitiveIntelStarterFlow(ctx, workspaceID, agent, req.Flow)
 	case model.AgentTemplateTypeDependencyAuditor:
 		return s.createDependencyAuditorStarterFlow(ctx, workspaceID, agent, req.Flow)
+	case model.AgentTemplateTypeSecurityTriage:
+		return s.createSecurityTriageStarterFlow(ctx, workspaceID, agent, req.Flow)
 	default:
 		return nil, fmt.Errorf("starter flow is not supported for template %q", strings.TrimSpace(template.Key))
 	}
@@ -1133,6 +1290,231 @@ Use the destination IDs directly when calling create_task. Repositories may cont
 Raw configuration:
 
 `, strings.Join(input.Ecosystems, ", "), input.IncludeIndirect, input.DestinationTeamID, destinationState, input.MaxTasks, input.SchedulePreset)
+	return strings.TrimSpace(context + "```json\n" + string(payload) + "\n```"), nil
+}
+
+type securityTriageStarterFlowInput struct {
+	Scanners           []string `json:"scanners"`
+	SeverityThreshold  string   `json:"severity_threshold,omitempty"`
+	IncludeLowInfo     bool     `json:"include_low_info"`
+	SchedulePreset     string   `json:"schedule_preset,omitempty"`
+	DestinationTeamID  string   `json:"destination_team_id"`
+	DestinationStateID string   `json:"destination_state_id,omitempty"`
+	MaxTasks           int      `json:"max_tasks,omitempty"`
+}
+
+func (s *AgentService) createSecurityTriageStarterFlow(ctx context.Context, workspaceID string, agent *model.Agent, flow *model.CreateAgentFromTemplateFlow) (*model.AutomationRule, error) {
+	input, err := securityTriageInputFromTemplateFlow(flow)
+	if err != nil {
+		return nil, err
+	}
+
+	repositoryID := strings.TrimSpace(flow.RepositoryID)
+	if repositoryID == "" {
+		return nil, fmt.Errorf("flow.repository_id is required for security triage starter flow")
+	}
+	repoLabel := repositoryID
+	if repoFullName := strings.TrimSpace(flow.RepoFullName); repoFullName != "" {
+		repoLabel = repoFullName
+	} else if s.gitService != nil {
+		repo, err := s.gitService.GetRepositoryByID(ctx, workspaceID, repositoryID)
+		if err != nil {
+			return nil, err
+		}
+		if repo == nil {
+			return nil, fmt.Errorf("repository not found")
+		}
+		if strings.TrimSpace(repo.FullName) != "" {
+			repoLabel = strings.TrimSpace(repo.FullName)
+		}
+	}
+
+	triggerConfig, err := json.Marshal(model.TriggerConfigCron{
+		Preset: input.SchedulePreset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal security triage trigger config: %w", err)
+	}
+
+	actionConfig, err := json.Marshal(model.ActionConfigRunAgent{
+		TargetType: "repository",
+		TargetID:   repositoryID,
+		AgentID:    agent.ID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal security triage action config: %w", err)
+	}
+
+	name := fmt.Sprintf("%s %s scan for %s", strings.TrimSpace(agent.Name), input.SchedulePreset, repoLabel)
+	description := fmt.Sprintf("Runs %s on a %s schedule to triage security scanner findings in %s and create applicable remediation tasks.", strings.TrimSpace(agent.Name), input.SchedulePreset, repoLabel)
+	rule, err := s.ruleEngine.CreateRule(ctx, workspaceID, model.CreateAutomationRuleRequest{
+		WorkspaceID:   workspaceID,
+		Name:          name,
+		Description:   &description,
+		TriggerType:   model.TriggerCron,
+		TriggerConfig: triggerConfig,
+		ActionType:    model.ActionStartAgentRun,
+		ActionConfig:  actionConfig,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return rule, nil
+}
+
+func securityTriageInputFromTemplateFlow(flow *model.CreateAgentFromTemplateFlow) (securityTriageStarterFlowInput, error) {
+	if flow == nil {
+		return securityTriageStarterFlowInput{}, fmt.Errorf("flow configuration is required when create_flow is true")
+	}
+	flowKey := strings.TrimSpace(flow.FlowKey)
+	if flowKey != "" && flowKey != "security_triage_cron" {
+		return securityTriageStarterFlowInput{}, fmt.Errorf("unsupported security triage flow_key %q", flowKey)
+	}
+	if len(flow.FlowInput) == 0 || strings.TrimSpace(string(flow.FlowInput)) == "" || strings.TrimSpace(string(flow.FlowInput)) == "null" {
+		return securityTriageStarterFlowInput{}, fmt.Errorf("flow.flow_input is required for security triage starter flow")
+	}
+
+	var input securityTriageStarterFlowInput
+	if err := json.Unmarshal(flow.FlowInput, &input); err != nil {
+		return securityTriageStarterFlowInput{}, fmt.Errorf("parse security triage flow_input: %w", err)
+	}
+	for _, scanner := range input.Scanners {
+		normalized := strings.ToLower(strings.TrimSpace(scanner))
+		if !isSecurityTriageScanner(normalized) {
+			return securityTriageStarterFlowInput{}, fmt.Errorf("flow.flow_input.scanners must only include semgrep, trivy, or gitleaks")
+		}
+	}
+	input.Scanners = normalizeSecurityTriageScanners(input.Scanners)
+	input.SeverityThreshold = strings.ToLower(strings.TrimSpace(input.SeverityThreshold))
+	input.SchedulePreset = strings.ToLower(strings.TrimSpace(input.SchedulePreset))
+	input.DestinationTeamID = strings.TrimSpace(input.DestinationTeamID)
+	input.DestinationStateID = strings.TrimSpace(input.DestinationStateID)
+	if len(input.Scanners) == 0 {
+		return securityTriageStarterFlowInput{}, fmt.Errorf("flow.flow_input.scanners requires at least one of semgrep, trivy, or gitleaks")
+	}
+	if !isSecurityTriageSeverity(input.SeverityThreshold) {
+		return securityTriageStarterFlowInput{}, fmt.Errorf("flow.flow_input.severity_threshold must be critical, high, or medium")
+	}
+	if input.DestinationTeamID == "" {
+		return securityTriageStarterFlowInput{}, fmt.Errorf("flow.flow_input.destination_team_id is required")
+	}
+	if input.SchedulePreset != "daily" && input.SchedulePreset != "weekly" {
+		return securityTriageStarterFlowInput{}, fmt.Errorf("flow.flow_input.schedule_preset must be daily or weekly")
+	}
+	if input.MaxTasks < 1 || input.MaxTasks > 100 {
+		return securityTriageStarterFlowInput{}, fmt.Errorf("flow.flow_input.max_tasks must be between 1 and 100")
+	}
+	return input, nil
+}
+
+func normalizeSecurityTriageScanners(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		normalized := strings.ToLower(strings.TrimSpace(value))
+		if !isSecurityTriageScanner(normalized) {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		out = append(out, normalized)
+	}
+	return out
+}
+
+func isSecurityTriageScanner(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "semgrep", "trivy", "gitleaks":
+		return true
+	default:
+		return false
+	}
+}
+
+func isSecurityTriageSeverity(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "critical", "high", "medium":
+		return true
+	default:
+		return false
+	}
+}
+
+func renderSecurityTriageSystemPrompt(base *string, input securityTriageStarterFlowInput) *string {
+	prompt := strings.TrimSpace(derefString(base))
+	if prompt == "" {
+		fallback, err := securityTriageSystemPromptSection(input)
+		if err != nil || strings.TrimSpace(fallback) == "" {
+			return base
+		}
+		return &fallback
+	}
+	rendered, err := renderSecurityTriagePromptVariables(prompt, input)
+	if err != nil || strings.TrimSpace(rendered) == "" {
+		return base
+	}
+	return &rendered
+}
+
+func renderSecurityTriagePromptVariables(prompt string, input securityTriageStarterFlowInput) (string, error) {
+	payload, err := json.MarshalIndent(input, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("marshal security triage run configuration: %w", err)
+	}
+	values := securityTriagePromptValues(input, string(payload))
+	replacerArgs := make([]string, 0, len(values)*2)
+	for key, value := range values {
+		replacerArgs = append(replacerArgs, "{{"+key+"}}", value)
+	}
+	return strings.TrimSpace(strings.NewReplacer(replacerArgs...).Replace(prompt)), nil
+}
+
+func securityTriagePromptValues(input securityTriageStarterFlowInput, rawJSON string) map[string]string {
+	destinationState := "not configured; use the team's default stage"
+	if input.DestinationStateID != "" {
+		destinationState = input.DestinationStateID
+	}
+	return map[string]string{
+		"scanners":               strings.Join(input.Scanners, ", "),
+		"severity_threshold":     input.SeverityThreshold,
+		"include_low_info":       fmt.Sprintf("%t", input.IncludeLowInfo),
+		"destination_team_id":    input.DestinationTeamID,
+		"destination_state_id":   destinationState,
+		"schedule_preset":        input.SchedulePreset,
+		"max_tasks":              fmt.Sprintf("%d", input.MaxTasks),
+		"raw_configuration_json": "```json\n" + rawJSON + "\n```",
+	}
+}
+
+func securityTriageSystemPromptSection(input securityTriageStarterFlowInput) (string, error) {
+	payload, err := json.MarshalIndent(input, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("marshal security triage run configuration: %w", err)
+	}
+	destinationState := "not configured; use the team's default stage"
+	if input.DestinationStateID != "" {
+		destinationState = input.DestinationStateID
+	}
+
+	context := fmt.Sprintf(`Sentinel security triage configuration:
+
+These values were configured when this custom agent was created. Treat them as already resolved and authoritative. Do not plan or perform discovery of configuration variables, workspace context, teams, stages, cadence, or repository selection.
+
+- scanners: %s
+- severity_threshold: %s
+- include_low_info: %t
+- destination_team_id: %s
+- destination_state_id: %s
+- max_tasks: %d
+- schedule_preset: %s (informational; the automation rule already handled cadence)
+
+Use the destination IDs directly when calling create_task. Run only the configured scanners, triage findings in repository context, suppress false positives, group applicable findings by root cause, and create at most max_tasks tasks.
+
+Raw configuration:
+
+`, strings.Join(input.Scanners, ", "), input.SeverityThreshold, input.IncludeLowInfo, input.DestinationTeamID, destinationState, input.MaxTasks, input.SchedulePreset)
 	return strings.TrimSpace(context + "```json\n" + string(payload) + "\n```"), nil
 }
 

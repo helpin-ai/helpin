@@ -18,9 +18,16 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/migr
 # ---- Run stage ----
 FROM alpine:3.19
 
+ARG TRIVY_VERSION=0.69.3
+
+ENV XDG_CACHE_HOME=/app/.cache \
+    TRIVY_CACHE_DIR=/app/.cache/trivy \
+    SEMGREP_SETTINGS_FILE=/app/.cache/semgrep/settings.yml
+
 RUN apk add --no-cache \
         ca-certificates \
         tzdata \
+        curl \
         ripgrep \
         git \
         nodejs \
@@ -30,9 +37,18 @@ RUN apk add --no-cache \
         py3-pip \
         rust \
         cargo \
+    && mkdir -p /app/.cache/trivy /app/.cache/semgrep /app/security-rules \
     && ln -sf /usr/bin/python3 /usr/bin/python \
-    && pip3 install --no-cache-dir --break-system-packages pytest uv poetry \
+    && pip3 install --no-cache-dir --break-system-packages pytest uv poetry semgrep \
     && npm i -g @openai/codex pnpm yarn \
+    && curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin "v${TRIVY_VERSION}" \
+    && GOBIN=/usr/local/bin go install github.com/zricethezav/gitleaks/v8@latest \
+    && trivy image --download-db-only --cache-dir "$TRIVY_CACHE_DIR" \
+    && trivy image --download-java-db-only --cache-dir "$TRIVY_CACHE_DIR" \
+    && printf '%s\n' 'apiVersion: v1' 'kind: Pod' 'metadata:' '  name: trivy-prewarm' 'spec:' '  containers:' '    - name: app' '      image: alpine:3.19' > /tmp/trivy-prewarm.yml \
+    && trivy fs --cache-dir "$TRIVY_CACHE_DIR" --scanners misconfig --format json --skip-version-check /tmp/trivy-prewarm.yml >/dev/null \
+    && rm -f /tmp/trivy-prewarm.yml \
+    && rm -rf /root/go/pkg /root/.cache/go-build \
     && addgroup -S app -g 10001 \
     && adduser -S app -u 10001 -G app
 
@@ -41,6 +57,7 @@ WORKDIR /app
 COPY --from=builder /app/server .
 COPY --from=builder /app/temporal-worker .
 COPY --from=builder /app/migrate .
+COPY skills/system/security_triage/semgrep /app/security-rules/semgrep
 RUN chown -R app:app /app
 
 USER app:app

@@ -23,6 +23,11 @@ var toolCategory = map[string]string{
 	// Commands
 	"run_command": "Commands",
 
+	// Security
+	ToolScanSemgrep:  "Security",
+	ToolScanTrivy:    "Security",
+	ToolScanGitleaks: "Security",
+
 	// Web Search
 	"web_search_brave": "Web Search",
 	"web_search_exa":   "Web Search",
@@ -76,6 +81,7 @@ var categoryOrder = []string{
 	"Filesystem",
 	"Code Analysis",
 	"Commands",
+	"Security",
 	"Web Search",
 	"Git",
 	"Interaction",

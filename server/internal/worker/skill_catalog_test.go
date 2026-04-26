@@ -25,9 +25,33 @@ func TestListBuiltInSkillsContainsExpectedKeys(t *testing.T) {
 		"crm_operator",
 		"support_agent",
 		"dependency_auditor",
+		"security_triage",
 	} {
 		if !containsString(keys, key) {
 			t.Fatalf("expected built-in skill %q in registry, got %v", key, keys)
+		}
+	}
+}
+
+func TestSecurityTriageSkillReferencesScannerWorkflow(t *testing.T) {
+	skill, ok := GetBuiltInSkill("security_triage")
+	if !ok {
+		t.Fatal("expected security_triage built-in skill")
+	}
+	for _, snippet := range []string{
+		"`scan_semgrep`",
+		"`scan_trivy`",
+		"`scan_gitleaks`",
+		"Do not run scanner CLIs through `run_command`",
+		"Repository file tools such as `list_directory`, `read_file`, and `search_files` are scoped to the checked-out repository",
+		"Let the scanner tools handle bundled rules, caches, and scanner-native fallbacks",
+		"Scanner output is evidence, not truth",
+		"Create tasks only for findings classified as `applicable`",
+		"prewarms Trivy vulnerability databases",
+		"they may use scanner-native fallbacks when cache/rules are absent",
+	} {
+		if !strings.Contains(skill.Instructions, snippet) {
+			t.Fatalf("expected security triage instructions to contain %q\n%s", snippet, skill.Instructions)
 		}
 	}
 }

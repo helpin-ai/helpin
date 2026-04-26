@@ -52,11 +52,13 @@ services:
     restart: unless-stopped
     ports:
       - "6379:6379"
-    command: ["redis-server", "--appendonly", "yes"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-helpin-redis-dev}
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-helpin-redis-dev}"]
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"${REDIS_PASSWORD:-helpin-redis-dev}\" redis-cli ping | grep PONG"]
       interval: 5s
       timeout: 3s
       retries: 5

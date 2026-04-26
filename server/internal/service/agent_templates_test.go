@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -132,6 +133,61 @@ func TestListAgentTemplatesSeedsSystemTemplates(t *testing.T) {
 	}
 	if len(dependencyFlows) != 1 || dependencyFlows[0]["trigger_type"] != model.TriggerCron {
 		t.Fatalf("expected cron starter flow, got %+v", dependencyFlows)
+	}
+
+	var sentinel *model.AgentTemplate
+	for idx := range templates {
+		if templates[idx].Key == model.AgentTemplateTypeSecurityTriage {
+			sentinel = &templates[idx]
+			break
+		}
+	}
+	if sentinel == nil {
+		t.Fatalf("expected %q template, got %+v", model.AgentTemplateTypeSecurityTriage, templates)
+	}
+	if sentinel.Name != "Sentinel" {
+		t.Fatalf("expected Sentinel template name, got %q", sentinel.Name)
+	}
+	if len(sentinel.Skills) != 1 || sentinel.Skills[0].Key != model.AgentTemplateTypeSecurityTriage {
+		t.Fatalf("expected security_triage skill ref, got %+v", sentinel.Skills)
+	}
+	if sentinel.SystemPrompt == nil || !strings.Contains(*sentinel.SystemPrompt, "{{scanners}}") || !strings.Contains(*sentinel.SystemPrompt, "{{raw_configuration_json}}") {
+		t.Fatalf("expected Sentinel template prompt placeholders, got %+v", sentinel.SystemPrompt)
+	}
+	if !strings.Contains(*sentinel.SystemPrompt, "scan_semgrep") || !strings.Contains(*sentinel.SystemPrompt, "Do not run scanner CLIs through run_command") {
+		t.Fatalf("expected Sentinel prompt to require scanner tools, got %s", *sentinel.SystemPrompt)
+	}
+	var sentinelTargets []string
+	if err := json.Unmarshal(sentinel.AllowedTargets, &sentinelTargets); err != nil {
+		t.Fatalf("unmarshal Sentinel allowed targets: %v", err)
+	}
+	if len(sentinelTargets) != 1 || sentinelTargets[0] != "repository" {
+		t.Fatalf("expected repository target, got %v", sentinelTargets)
+	}
+	var sentinelTools []string
+	if err := json.Unmarshal(sentinel.AllowedTools, &sentinelTools); err != nil {
+		t.Fatalf("unmarshal Sentinel allowed tools: %v", err)
+	}
+	for _, tool := range []string{"scan_semgrep", "scan_trivy", "scan_gitleaks"} {
+		if !slices.Contains(sentinelTools, tool) {
+			t.Fatalf("expected Sentinel tool %q in %v", tool, sentinelTools)
+		}
+	}
+	var sentinelCommands []string
+	if err := json.Unmarshal(sentinel.AllowedCommands, &sentinelCommands); err != nil {
+		t.Fatalf("unmarshal Sentinel allowed commands: %v", err)
+	}
+	for _, command := range []string{"semgrep", "trivy", "gitleaks", "python3"} {
+		if slices.Contains(sentinelCommands, command) {
+			t.Fatalf("did not expect Sentinel command %q in %v", command, sentinelCommands)
+		}
+	}
+	var sentinelFlows []map[string]any
+	if err := json.Unmarshal(sentinel.StarterFlows, &sentinelFlows); err != nil {
+		t.Fatalf("unmarshal Sentinel starter_flows: %v", err)
+	}
+	if len(sentinelFlows) != 1 || sentinelFlows[0]["trigger_type"] != model.TriggerCron {
+		t.Fatalf("expected cron starter flow, got %+v", sentinelFlows)
 	}
 }
 
@@ -511,6 +567,155 @@ func TestCreateAgentFromDependencyAuditorTemplateValidatesFlowInput(t *testing.T
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := dependencyAuditorInputFromTemplateFlow(&model.CreateAgentFromTemplateFlow{
 				FlowKey:   "dependency_audit_cron",
+				FlowInput: tt.flowInput,
+			})
+			if err == nil || err.Error() != tt.wantError {
+				t.Fatalf("expected error %q, got %v", tt.wantError, err)
+			}
+		})
+	}
+}
+
+func TestCreateAgentFromSecurityTriageTemplateCreatesCronRepositoryStarterFlow(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	addAgentTemplateTable(t, db)
+	addAutomationRuleTable(t, db)
+
+	agentRepo := repository.NewAgentRepository(db)
+	activitySvc := NewPMActivityService(repository.NewPMActivityRepository(db))
+	svc := (&AgentService{
+		agentRepo:   agentRepo,
+		activitySvc: activitySvc,
+	}).SetAgentTemplateRepository(repository.NewAgentTemplateRepository(db))
+	ruleEngine := NewAutomationRuleEngine(
+		repository.NewAutomationRuleRepository(db),
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	svc.SetRuleEngine(ruleEngine)
+
+	if err := svc.EnsureSystemTemplates(context.Background()); err != nil {
+		t.Fatalf("EnsureSystemTemplates returned error: %v", err)
+	}
+	template, err := svc.agentTemplateRepo.GetByKey(context.Background(), nil, model.AgentTemplateTypeSecurityTriage)
+	if err != nil {
+		t.Fatalf("GetByKey returned error: %v", err)
+	}
+	if template == nil {
+		t.Fatal("expected seeded Sentinel template")
+	}
+
+	flowInput := model.JSONBlob(`{
+		"scanners": ["semgrep", "trivy", "gitleaks"],
+		"severity_threshold": "medium",
+		"include_low_info": false,
+		"schedule_preset": "weekly",
+		"destination_team_id": "team-security",
+		"destination_state_id": "state-todo",
+		"max_tasks": 20
+	}`)
+	result, err := svc.CreateAgentFromTemplate(context.Background(), "ws-test", template.ID, model.CreateAgentFromTemplateRequest{
+		CreateFlow: true,
+		Flow: &model.CreateAgentFromTemplateFlow{
+			FlowKey:      "security_triage_cron",
+			FlowInput:    flowInput,
+			RepositoryID: "repo-1",
+			RepoFullName: "acme/api",
+		},
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("CreateAgentFromTemplate returned error: %v", err)
+	}
+	if result.Agent == nil {
+		t.Fatal("expected created agent")
+	}
+	if result.Agent.SourceTemplateKey != model.AgentTemplateTypeSecurityTriage {
+		t.Fatalf("expected source_template_key %q, got %q", model.AgentTemplateTypeSecurityTriage, result.Agent.SourceTemplateKey)
+	}
+	if result.Agent.SystemPrompt == nil || !strings.Contains(*result.Agent.SystemPrompt, "You are Sentinel") || !strings.Contains(*result.Agent.SystemPrompt, `- scanners: semgrep, trivy, gitleaks`) || !strings.Contains(*result.Agent.SystemPrompt, `- destination_team_id: team-security`) || !strings.Contains(*result.Agent.SystemPrompt, `"severity_threshold": "medium"`) || strings.Contains(*result.Agent.SystemPrompt, "{{scanners}}") {
+		t.Fatalf("expected configured system prompt, got %+v", result.Agent.SystemPrompt)
+	}
+	var allowedTargets []string
+	if err := json.Unmarshal(result.Agent.AllowedTargets, &allowedTargets); err != nil {
+		t.Fatalf("unmarshal allowed targets: %v", err)
+	}
+	if len(allowedTargets) != 1 || allowedTargets[0] != "repository" {
+		t.Fatalf("expected repository target, got %v", allowedTargets)
+	}
+	if result.Flow == nil {
+		t.Fatal("expected starter flow")
+	}
+	if result.Flow.TriggerType != model.TriggerCron {
+		t.Fatalf("expected cron trigger, got %q", result.Flow.TriggerType)
+	}
+
+	var triggerCfg model.TriggerConfigCron
+	if err := json.Unmarshal(result.Flow.TriggerConfig, &triggerCfg); err != nil {
+		t.Fatalf("unmarshal trigger config: %v", err)
+	}
+	if triggerCfg.Preset != "weekly" {
+		t.Fatalf("expected weekly preset, got %+v", triggerCfg)
+	}
+
+	var actionCfg model.ActionConfigRunAgent
+	if err := json.Unmarshal(result.Flow.ActionConfig, &actionCfg); err != nil {
+		t.Fatalf("unmarshal action config: %v", err)
+	}
+	if actionCfg.AgentID != result.Agent.ID {
+		t.Fatalf("expected flow agent_id %q, got %q", result.Agent.ID, actionCfg.AgentID)
+	}
+	if actionCfg.TargetType != "repository" || actionCfg.TargetID != "repo-1" {
+		t.Fatalf("expected repository target repo-1, got %q/%q", actionCfg.TargetType, actionCfg.TargetID)
+	}
+}
+
+func TestCreateAgentFromSecurityTriageTemplateValidatesFlowInput(t *testing.T) {
+	tests := []struct {
+		name      string
+		flowInput model.JSONBlob
+		wantError string
+	}{
+		{
+			name:      "missing scanners",
+			flowInput: model.JSONBlob(`{"severity_threshold":"medium","destination_team_id":"team-1","schedule_preset":"weekly","max_tasks":20}`),
+			wantError: "flow.flow_input.scanners requires at least one of semgrep, trivy, or gitleaks",
+		},
+		{
+			name:      "invalid scanner",
+			flowInput: model.JSONBlob(`{"scanners":["sonarqube"],"severity_threshold":"medium","destination_team_id":"team-1","schedule_preset":"weekly","max_tasks":20}`),
+			wantError: "flow.flow_input.scanners must only include semgrep, trivy, or gitleaks",
+		},
+		{
+			name:      "invalid severity",
+			flowInput: model.JSONBlob(`{"scanners":["semgrep"],"severity_threshold":"low","destination_team_id":"team-1","schedule_preset":"weekly","max_tasks":20}`),
+			wantError: "flow.flow_input.severity_threshold must be critical, high, or medium",
+		},
+		{
+			name:      "missing destination team",
+			flowInput: model.JSONBlob(`{"scanners":["semgrep"],"severity_threshold":"medium","schedule_preset":"weekly","max_tasks":20}`),
+			wantError: "flow.flow_input.destination_team_id is required",
+		},
+		{
+			name:      "invalid schedule preset",
+			flowInput: model.JSONBlob(`{"scanners":["semgrep"],"severity_threshold":"medium","destination_team_id":"team-1","schedule_preset":"monthly","max_tasks":20}`),
+			wantError: "flow.flow_input.schedule_preset must be daily or weekly",
+		},
+		{
+			name:      "invalid max tasks",
+			flowInput: model.JSONBlob(`{"scanners":["semgrep"],"severity_threshold":"medium","destination_team_id":"team-1","schedule_preset":"weekly","max_tasks":200}`),
+			wantError: "flow.flow_input.max_tasks must be between 1 and 100",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := securityTriageInputFromTemplateFlow(&model.CreateAgentFromTemplateFlow{
+				FlowKey:   "security_triage_cron",
 				FlowInput: tt.flowInput,
 			})
 			if err == nil || err.Error() != tt.wantError {

@@ -453,7 +453,7 @@ func main() {
 		redisRelayCtx, redisRelayCancel := context.WithCancel(context.Background())
 		go redisRelay.Start(redisRelayCtx)
 		_ = redisRelayCancel // stored for shutdown
-		slog.Info("Redis connected for WebSocket scaling", "url", cfg.RedisURL, "pod", podID)
+		slog.Info("Redis connected for WebSocket scaling", "addr", redisOpts.Addr, "db", redisOpts.DB, "pod", podID)
 	} else {
 		slog.Info("REDIS_URL not set — running in local-only mode (single pod)")
 	}
@@ -462,10 +462,8 @@ func main() {
 
 	// When Redis is available, use RedisPresence for shared state across pods.
 	// Otherwise, the default in-memory PresenceState set in NewHub() is used.
-	if cfg.RedisURL != "" {
-		redisOpts2, _ := redis.ParseURL(cfg.RedisURL)
-		presenceRedis := redis.NewClient(redisOpts2)
-		wsHub.SetPresenceProvider(ws.NewRedisPresence(presenceRedis, podID))
+	if redisClient != nil {
+		wsHub.SetPresenceProvider(ws.NewRedisPresence(redisClient, podID))
 		slog.Info("Redis presence provider enabled")
 	}
 
