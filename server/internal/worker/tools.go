@@ -261,6 +261,10 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"required": []string{},
 	}, toolRunCommand)
 
+	r.register(ToolScanSemgrep, "Run Semgrep against the checked-out repository and return normalized SAST findings. Scanner output is parsed and compacted server-side.", securityScannerToolSchema(ToolScanSemgrep), toolScanSemgrep)
+	r.register(ToolScanTrivy, "Run Trivy filesystem scanning against the checked-out repository and return normalized dependency, misconfiguration, and secret findings.", securityScannerToolSchema(ToolScanTrivy), toolScanTrivy)
+	r.register(ToolScanGitleaks, "Run Gitleaks against the checked-out repository and return normalized secret findings with raw secret values redacted.", securityScannerToolSchema(ToolScanGitleaks), toolScanGitleaks)
+
 	if webSearch != nil {
 		r.register("web_search_brave", webSearchBraveToolDescription(), webSearchBraveToolSchema(), func(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 			return r.toolWebSearchBrave(ctx, input)

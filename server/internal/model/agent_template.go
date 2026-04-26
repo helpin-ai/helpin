@@ -7,6 +7,7 @@ const (
 	AgentTemplateTypeReleaseNotes      = "release_notes_writer"
 	AgentTemplateTypeCompetitiveIntel  = "competitive_intelligence_digest"
 	AgentTemplateTypeDependencyAuditor = "dependency_auditor"
+	AgentTemplateTypeSecurityTriage    = "security_triage"
 )
 
 type AgentTemplate struct {
