@@ -97,7 +97,7 @@ import { RecurringTemplateBadge } from '@/components/pm/RecurringTemplateBadge';
 import { RecurringTemplateForm, type RecurringTemplateFormValue } from '@/components/pm/RecurringTemplateForm';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
-import { useTeamFieldVisibilityForTeam, useAutomationRulesByWorkflow } from '@/hooks/queries';
+import { useTeamFieldVisibilityForTeam, useAutomationRulesByWorkflow, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
 import { buildTaskCopyUrl, buildTaskPath } from '@/lib/pmTaskLinks';
 import { CommentThread } from '@/components/pm/CommentThread';
@@ -486,6 +486,8 @@ function TaskDetailPanelBody({
   const uploadFilesRef = useRef<((files: FileList | File[]) => Promise<void>) | null>(null);
   const dragCounterRef = useRef(0);
   const fieldVis = useTeamFieldVisibilityForTeam(workspaceId, form.team_id);
+  const { data: workspaceAccess } = useWorkspaceAccess(workspaceId);
+  const { canEdit } = usePermissions(workspaceAccess);
   const taskId = taskDetail.task.id;
 
   useEffect(() => {
@@ -1316,6 +1318,8 @@ function TaskDetailPanelBody({
                 taskId={taskDetail.task.id}
                 workspaceId={workspaceId}
                 latestRunAgentId={taskDetail.task.latest_run_agent_id}
+                delivery={delivery}
+                canEditDelivery={canEdit && fieldVis.delivery}
               />
             </>
           )}

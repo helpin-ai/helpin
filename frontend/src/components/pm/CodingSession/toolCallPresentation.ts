@@ -130,6 +130,22 @@ export function describeToolCall(toolCall: CodingSessionLiveToolCall): ToolCallP
     }
   }
 
+  if (toolName === 'fetch_url' || toolName === 'crawl_url') {
+    const url = asString(parsed?.url);
+    if (url) {
+      const chips = [];
+      const maxPages = asNumber(parsed?.max_pages);
+      const maxDepth = asNumber(parsed?.max_depth);
+      if (maxPages != null) chips.push(`${maxPages} page${maxPages === 1 ? '' : 's'}`);
+      if (maxDepth != null) chips.push(`depth ${maxDepth}`);
+      return {
+        primaryLabel: `${toolName === 'fetch_url' ? 'Fetch' : 'Crawl'} ${truncateSearchQuery(url)}`,
+        secondaryLabel,
+        chips,
+      };
+    }
+  }
+
   if (toolName === 'run_command' || toolName === 'bash' || toolName.includes('shell') || toolName.includes('exec')) {
     const resolvedCommand = command
       ?? asString(parsed?.input)

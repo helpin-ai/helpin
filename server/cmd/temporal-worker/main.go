@@ -221,6 +221,7 @@ func main() {
 		cfg.OpenRouterBaseURL,
 		cfg.BraveSearchAPIKey,
 		cfg.ExaSearchAPIKey,
+		cfg.CrawlerProxyURLs,
 		runRepo,
 		artifactRepo,
 		codexWorkspaceAuthStore,

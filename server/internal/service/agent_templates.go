@@ -39,6 +39,8 @@ Treat these configured values as already resolved and authoritative. Do not plan
 
 Use the configured competitor list when it is not empty. If no competitors are configured, discover competitors with web search and cite sources.
 
+For each competitor, first use web_search_exa to find official changelog, release notes, product updates, blog, docs, or roadmap pages. Then use fetch_url on exact source URLs to verify page content and dates. If search is thin, use crawl_url on the competitor's official website or docs host with changelog/update keywords before marking no_public_changelog.
+
 Create exactly one marketing digest task with create_task. Pass destination_team_id directly as team_id. Pass destination_state_id directly as state_id only when it is configured; otherwise let the team default stage apply.
 
 Raw configuration:
@@ -355,6 +357,8 @@ Raw configuration:
 			AllowedTools: model.JSONBlob(mustJSONStringSlice([]string{
 				"update_plan",
 				"web_search_exa",
+				"fetch_url",
+				"crawl_url",
 				"list_workspace_teams",
 				"list_team_workflows_with_stages",
 				"create_task",
@@ -1077,6 +1081,7 @@ These values were configured when this custom agent was created. Treat them as a
 - schedule_preset: %s (informational; the automation rule already handled cadence)
 
 Use the destination IDs directly when calling create_task. Only discover competitors if the configured competitors list is empty.
+Use web_search_exa to find candidate official update sources, fetch_url to verify exact source pages, and crawl_url on official or docs hosts when search results are thin.
 
 Raw configuration:
 
