@@ -192,6 +192,23 @@ func TestScanGitleaksCommandWritesJSONToStdoutAndDoesNotFailOnFindings(t *testin
 	}
 }
 
+func TestSecurityScannerEnvUsesWritableRuntimeCache(t *testing.T) {
+	env, warnings := securityScannerEnv()
+	if len(warnings) != 0 {
+		t.Fatalf("expected no warnings, got %v", warnings)
+	}
+	joined := strings.Join(env, "\n")
+	for _, expected := range []string{
+		"XDG_CACHE_HOME=/tmp/helpin-security-cache",
+		"SEMGREP_SETTINGS_FILE=/tmp/helpin-security-cache/semgrep/settings.yml",
+		"TRIVY_CACHE_DIR=/tmp/helpin-security-cache/trivy",
+	} {
+		if !strings.Contains(joined, expected) {
+			t.Fatalf("expected env to contain %q, got %v", expected, env)
+		}
+	}
+}
+
 func TestFilterSecurityFindingsAppliesThresholdExcludesAndCaps(t *testing.T) {
 	findings := []SecurityScanFinding{
 		{Scanner: "semgrep", Category: "sast", Severity: "medium", RuleID: "m", Path: "src/a.go", Fingerprint: "1"},

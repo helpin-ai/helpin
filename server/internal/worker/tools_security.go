@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -19,6 +20,10 @@ const (
 	ToolScanSemgrep  = "scan_semgrep"
 	ToolScanTrivy    = "scan_trivy"
 	ToolScanGitleaks = "scan_gitleaks"
+
+	securityRuntimeCacheDir = "/tmp/helpin-security-cache"
+	securityImageCacheDir   = "/app/.cache"
+	securitySemgrepRulesDir = "/app/security-rules/semgrep"
 )
 
 type securityScannerRequest struct {
@@ -123,26 +128,27 @@ func toolScanSemgrep(ctx *ExecutionContext, input json.RawMessage) (string, erro
 		return "", err
 	}
 	if req.Config == "" {
-		req.Config = "/app/security-rules/semgrep"
+		req.Config = securitySemgrepRulesDir
 	}
 	if !jsonFieldPresent(input, "fallback_to_auto_config") {
 		req.FallbackToAutoConfig = true
 	}
+	env, warnings := securityScannerEnv()
 	args := []string{"scan", "--config", req.Config, "--json"}
 	for _, exclude := range req.ExcludePaths {
 		args = append(args, "--exclude", exclude)
 	}
 	args = append(args, req.ScanPaths...)
 
-	stdout, stderr, err := runSecurityScannerCommand(ctx, "semgrep", args)
-	warnings := scannerCommandWarnings("semgrep", stderr, err)
+	stdout, stderr, err := runSecurityScannerCommand(ctx, "semgrep", args, env)
+	warnings = append(warnings, scannerCommandWarnings("semgrep", stderr, err)...)
 	if err != nil && req.FallbackToAutoConfig && req.Config != "auto" {
 		fallbackArgs := []string{"scan", "--config", "auto", "--json"}
 		for _, exclude := range req.ExcludePaths {
 			fallbackArgs = append(fallbackArgs, "--exclude", exclude)
 		}
 		fallbackArgs = append(fallbackArgs, req.ScanPaths...)
-		stdout, stderr, err = runSecurityScannerCommand(ctx, "semgrep", fallbackArgs)
+		stdout, stderr, err = runSecurityScannerCommand(ctx, "semgrep", fallbackArgs, env)
 		warnings = append(warnings, "semgrep bundled config failed; retried with --config auto")
 		warnings = append(warnings, scannerCommandWarnings("semgrep fallback", stderr, err)...)
 	}
@@ -174,15 +180,18 @@ func toolScanTrivy(ctx *ExecutionContext, input json.RawMessage) (string, error)
 	}
 	args := []string{
 		"fs",
-		"--cache-dir", "/app/.cache/trivy",
+		"--cache-dir", filepath.Join(securityRuntimeCacheDir, "trivy"),
 		"--format", "json",
 		"--skip-version-check",
 		"--scanners", strings.Join(req.Scanners, ","),
 		"--severity", "LOW,MEDIUM,HIGH,CRITICAL",
 	}
+	warnings := prepareTrivyRuntimeCache()
+	env, envWarnings := securityScannerEnv()
+	warnings = append(warnings, envWarnings...)
 	args = append(args, req.ScanPaths...)
-	stdout, stderr, err := runSecurityScannerCommand(ctx, "trivy", args)
-	warnings := scannerCommandWarnings("trivy", stderr, err)
+	stdout, stderr, err := runSecurityScannerCommand(ctx, "trivy", args, env)
+	warnings = append(warnings, scannerCommandWarnings("trivy", stderr, err)...)
 	if err != nil && strings.TrimSpace(stdout) == "" {
 		return "", fmt.Errorf("trivy scan failed: %w", err)
 	}
@@ -203,8 +212,9 @@ func toolScanGitleaks(ctx *ExecutionContext, input json.RawMessage) (string, err
 		req.SeverityThreshold = "high"
 	}
 	args := gitleaksCommandArgs(req)
-	stdout, stderr, err := runSecurityScannerCommand(ctx, "gitleaks", args)
-	warnings := scannerCommandWarnings("gitleaks", stderr, nil)
+	env, warnings := securityScannerEnv()
+	stdout, stderr, err := runSecurityScannerCommand(ctx, "gitleaks", args, env)
+	warnings = append(warnings, scannerCommandWarnings("gitleaks", stderr, nil)...)
 	if !req.ScanGitHistory {
 		warnings = append(warnings, "gitleaks ran against the working tree only; git history was not scanned")
 	}
@@ -276,7 +286,7 @@ func jsonFieldPresent(input json.RawMessage, field string) bool {
 	return ok
 }
 
-func runSecurityScannerCommand(ctx *ExecutionContext, program string, args []string) (string, string, error) {
+func runSecurityScannerCommand(ctx *ExecutionContext, program string, args []string, env []string) (string, string, error) {
 	if ctx == nil || strings.TrimSpace(ctx.WorkDir) == "" {
 		return "", "", fmt.Errorf("scanner requires a checked-out repository workspace")
 	}
@@ -292,8 +302,75 @@ func runSecurityScannerCommand(ctx *ExecutionContext, program string, args []str
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
+	cmd.Env = append(os.Environ(), env...)
 	err := cmd.Run()
 	return stdout.String(), stderr.String(), err
+}
+
+func securityScannerEnv() ([]string, []string) {
+	var warnings []string
+	semgrepCache := filepath.Join(securityRuntimeCacheDir, "semgrep")
+	if err := os.MkdirAll(semgrepCache, 0o755); err != nil {
+		warnings = append(warnings, fmt.Sprintf("failed to create semgrep runtime cache: %v", err))
+	}
+	env := []string{
+		"XDG_CACHE_HOME=" + securityRuntimeCacheDir,
+		"SEMGREP_SETTINGS_FILE=" + filepath.Join(semgrepCache, "settings.yml"),
+		"TRIVY_CACHE_DIR=" + filepath.Join(securityRuntimeCacheDir, "trivy"),
+	}
+	return env, warnings
+}
+
+func prepareTrivyRuntimeCache() []string {
+	var warnings []string
+	runtimeDir := filepath.Join(securityRuntimeCacheDir, "trivy")
+	if err := os.MkdirAll(runtimeDir, 0o755); err != nil {
+		return []string{fmt.Sprintf("failed to create trivy runtime cache: %v", err)}
+	}
+	if directoryHasEntries(runtimeDir) {
+		return warnings
+	}
+	seedDir := filepath.Join(securityImageCacheDir, "trivy")
+	if !directoryHasEntries(seedDir) {
+		return warnings
+	}
+	if err := copyDirectoryContents(seedDir, runtimeDir); err != nil {
+		warnings = append(warnings, fmt.Sprintf("failed to seed trivy runtime cache from image cache: %v", err))
+	}
+	return warnings
+}
+
+func directoryHasEntries(path string) bool {
+	entries, err := os.ReadDir(path)
+	return err == nil && len(entries) > 0
+}
+
+func copyDirectoryContents(src, dst string) error {
+	return filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return nil
+		}
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, info.Mode().Perm())
+	})
 }
 
 func scannerCommandWarnings(label, stderr string, err error) []string {

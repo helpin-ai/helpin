@@ -481,5 +481,7 @@ type SecurityScannerResult struct {
 - Sentinel remains constrained and read-only.
 - Scanner parsing is backend infrastructure, not agent reasoning.
 - The tool runs from the hydrated repository workspace.
+- Kubernetes Temporal workers run with a read-only root filesystem, so scanner tools must use writable runtime caches under `/tmp/helpin-security-cache`.
+- Trivy may seed that writable runtime cache from the baked read-only image cache under `/app/.cache/trivy`.
 - Scanner outputs are not written into tracked repository files by the agent.
 - `python3` remains unavailable to custom agents unless a separate sandboxed scripting capability is designed later.
