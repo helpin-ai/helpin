@@ -113,7 +113,9 @@ services:
       retries: 5
 
   temporal-worker:
-    build: ./server
+    build:
+      context: ./server
+      target: temporal-worker
     command: ["./temporal-worker"]
     restart: unless-stopped
     environment:

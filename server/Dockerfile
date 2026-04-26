@@ -15,8 +15,46 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/serv
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/temporal-worker ./cmd/temporal-worker
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/migrate ./cmd/migrate
 
-# ---- Run stage ----
-FROM alpine:3.19
+# ---- Minimal runtime base ----
+FROM alpine:3.19 AS runtime-base
+
+RUN apk add --no-cache \
+        ca-certificates \
+        tzdata \
+    && addgroup -S app -g 10001 \
+    && adduser -S app -u 10001 -G app
+
+WORKDIR /app
+
+# ---- API runtime ----
+FROM runtime-base AS api
+
+RUN apk add --no-cache \
+        nodejs \
+        npm \
+    && npm i -g @openai/codex
+
+COPY --from=builder /app/server .
+RUN chown -R app:app /app
+
+USER app:app
+
+EXPOSE 8080
+
+ENTRYPOINT ["./server"]
+
+# ---- Migration runtime ----
+FROM runtime-base AS migrate
+
+COPY --from=builder /app/migrate .
+RUN chown -R app:app /app
+
+USER app:app
+
+ENTRYPOINT ["./migrate"]
+
+# ---- Temporal worker runtime ----
+FROM alpine:3.19 AS temporal-worker
 
 ARG TRIVY_VERSION=0.69.3
 ARG GITLEAKS_VERSION=8.30.1
@@ -41,7 +79,7 @@ RUN apk add --no-cache \
     && mkdir -p /app/.cache/trivy /app/.cache/semgrep /app/security-rules \
     && ln -sf /usr/bin/python3 /usr/bin/python \
     && pip3 install --no-cache-dir --break-system-packages pytest uv poetry semgrep \
-    && npm i -g @openai/codex pnpm yarn \
+    && npm i -g @openai/codex opencode-ai pnpm yarn \
     && curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin "v${TRIVY_VERSION}" \
     && curl -sfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" | tar -xz -C /usr/local/bin gitleaks \
     && trivy image --download-db-only --cache-dir "$TRIVY_CACHE_DIR" \
@@ -55,14 +93,13 @@ RUN apk add --no-cache \
 
 WORKDIR /app
 
-COPY --from=builder /app/server .
 COPY --from=builder /app/temporal-worker .
-COPY --from=builder /app/migrate .
 COPY skills/system/security_triage/semgrep /app/security-rules/semgrep
 RUN chown -R app:app /app
 
 USER app:app
 
-EXPOSE 8080
+ENTRYPOINT ["./temporal-worker"]
 
-ENTRYPOINT ["./server"]
+# Keep plain `docker build server/` as the minimal API image.
+FROM api AS final

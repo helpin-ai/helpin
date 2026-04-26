@@ -29,15 +29,8 @@ spec:
         - name: ghcr-helpin-json-key
       containers:
         - name: migrate
-          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.167
-          command:
-            - /bin/sh
-            - -lc
-            - |
-              if [ -x ./migrate ]; then
-                exec ./migrate up
-              fi
-              echo "migrate binary not present in image; skipping bootstrap hook"
+          image: ghcr.io/helpin-ai/helpin/server-migrate:server-v0.95.167
+          command: ["./migrate", "up"]
           envFrom:
             - secretRef:
                 name: helpin-secrets

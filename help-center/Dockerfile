@@ -16,5 +16,6 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/serve.mjs ./serve.mjs
 COPY --from=build /app/serverRedirects.mjs ./serverRedirects.mjs
+COPY --from=build /app/serverSeo.mjs ./serverSeo.mjs
 EXPOSE 3000
 CMD ["node", "serve.mjs"]
