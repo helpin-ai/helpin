@@ -13,6 +13,7 @@ type ToolRegistry struct {
 	defs      []ToolDefinition
 	webSearch WebSearchClient
 	exaSearch *ExaSearchClient
+	webFetch  *WebFetchClient
 }
 
 // ToolFunc is a function that executes a tool and returns its result.
@@ -28,6 +29,7 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		tools:     make(map[string]ToolFunc),
 		webSearch: webSearch,
 		exaSearch: exaClient,
+		webFetch:  NewWebFetchClient(""),
 	}
 
 	// Filesystem tools
@@ -271,8 +273,12 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 			return r.toolWebSearchExa(ctx, input)
 		})
 	}
-	r.register("fetch_url", fetchURLToolDescription(), fetchURLToolSchema(), toolFetchURL)
-	r.register("crawl_url", crawlURLToolDescription(), crawlURLToolSchema(), toolCrawlURL)
+	r.register("fetch_url", fetchURLToolDescription(), fetchURLToolSchema(), func(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+		return r.toolFetchURL(ctx, input)
+	})
+	r.register("crawl_url", crawlURLToolDescription(), crawlURLToolSchema(), func(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+		return r.toolCrawlURL(ctx, input)
+	})
 
 	// Git tools
 	r.register("create_branch", "Create a new git branch and switch to it.", map[string]interface{}{
@@ -913,6 +919,20 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 	})
 
 	return r
+}
+
+func (r *ToolRegistry) SetWebFetchProxyURLs(proxyURLs string) {
+	if r == nil {
+		return
+	}
+	r.webFetch = NewWebFetchClient(proxyURLs)
+}
+
+func (r *ToolRegistry) webFetchClient() *WebFetchClient {
+	if r == nil || r.webFetch == nil {
+		return NewWebFetchClient("")
+	}
+	return r.webFetch
 }
 
 func (r *ToolRegistry) register(name, description string, schema interface{}, fn ToolFunc) {

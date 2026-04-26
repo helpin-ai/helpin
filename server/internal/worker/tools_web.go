@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/net/html"
@@ -74,6 +75,13 @@ type ExaSearchClient struct {
 	apiKey     string
 	apiURL     string
 	httpClient *http.Client
+}
+
+type WebFetchClient struct {
+	directClient *http.Client
+	proxyURLs    []*url.URL
+	proxyClients []*http.Client
+	nextProxy    atomic.Uint64
 }
 
 type ExaSearchRequest struct {
@@ -316,6 +324,62 @@ func NewExaSearchClient(apiKey string) *ExaSearchClient {
 	}
 }
 
+func NewWebFetchClient(proxyURLs string) *WebFetchClient {
+	client := &WebFetchClient{
+		directClient: webFetchHTTPClient,
+	}
+	for _, proxyURL := range parseWebFetchProxyURLs(proxyURLs) {
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.Proxy = http.ProxyURL(proxyURL)
+		client.proxyURLs = append(client.proxyURLs, proxyURL)
+		client.proxyClients = append(client.proxyClients, &http.Client{
+			Timeout:   20 * time.Second,
+			Transport: transport,
+		})
+	}
+	return client
+}
+
+func parseWebFetchProxyURLs(raw string) []*url.URL {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == '\n' || r == '\r'
+	})
+	proxies := make([]*url.URL, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		parsed, err := url.Parse(part)
+		if err != nil {
+			continue
+		}
+		if parsed.Scheme != "http" && parsed.Scheme != "https" && parsed.Scheme != "socks5" {
+			continue
+		}
+		if strings.TrimSpace(parsed.Host) == "" {
+			continue
+		}
+		proxies = append(proxies, parsed)
+	}
+	return proxies
+}
+
+func (c *WebFetchClient) httpClient() *http.Client {
+	if c != nil && len(c.proxyClients) > 0 {
+		index := int(c.nextProxy.Add(1)-1) % len(c.proxyClients)
+		return c.proxyClients[index]
+	}
+	if c != nil && c.directClient != nil {
+		return c.directClient
+	}
+	return webFetchHTTPClient
+}
+
 func (c *BraveSearchClient) Search(ctx context.Context, query WebSearchQuery) ([]WebSearchResult, error) {
 	if c == nil || c.apiKey == "" {
 		return nil, fmt.Errorf("brave search is not configured")
@@ -515,7 +579,7 @@ func (r *ToolRegistry) toolWebSearchExa(ctx *ExecutionContext, input json.RawMes
 	return string(payload), nil
 }
 
-func toolFetchURL(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+func (r *ToolRegistry) toolFetchURL(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	if ctx == nil {
 		return "", fmt.Errorf("execution context is required")
 	}
@@ -523,7 +587,7 @@ func toolFetchURL(ctx *ExecutionContext, input json.RawMessage) (string, error) 
 	if err := json.Unmarshal(input, &params); err != nil {
 		return "", fmt.Errorf("parse input: %w", err)
 	}
-	page, err := fetchWebPage(ctx.Context, params.URL, clampWebFetchCharacters(params.MaxCharacters), params.IncludeHTML)
+	page, err := r.webFetchClient().Fetch(ctx.Context, params.URL, clampWebFetchCharacters(params.MaxCharacters), params.IncludeHTML)
 	if err != nil {
 		return "", err
 	}
@@ -534,7 +598,7 @@ func toolFetchURL(ctx *ExecutionContext, input json.RawMessage) (string, error) 
 	return string(payload), nil
 }
 
-func toolCrawlURL(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+func (r *ToolRegistry) toolCrawlURL(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	if ctx == nil {
 		return "", fmt.Errorf("execution context is required")
 	}
@@ -568,7 +632,7 @@ func toolCrawlURL(ctx *ExecutionContext, input json.RawMessage) (string, error) 
 	for len(queue) > 0 && len(pages) < maxPages {
 		next := queue[0]
 		queue = queue[1:]
-		page, err := fetchWebPage(ctx.Context, next.url, maxChars, false)
+		page, err := r.webFetchClient().Fetch(ctx.Context, next.url, maxChars, false)
 		if err != nil {
 			skipped++
 			continue
@@ -1074,6 +1138,10 @@ func normalizeDomain(value string) string {
 }
 
 func fetchWebPage(ctx context.Context, rawURL string, maxCharacters int, includeHTML bool) (*fetchedWebPage, error) {
+	return NewWebFetchClient("").Fetch(ctx, rawURL, maxCharacters, includeHTML)
+}
+
+func (c *WebFetchClient) Fetch(ctx context.Context, rawURL string, maxCharacters int, includeHTML bool) (*fetchedWebPage, error) {
 	parsed, err := parseAllowedWebFetchURL(rawURL)
 	if err != nil {
 		return nil, err
@@ -1089,7 +1157,7 @@ func fetchWebPage(ctx context.Context, rawURL string, maxCharacters int, include
 	req.Header.Set("User-Agent", defaultWebFetchUserAgent)
 	req.Header.Set("Accept", "text/html,application/xhtml+xml;q=0.9,text/plain;q=0.7,*/*;q=0.1")
 
-	resp, err := webFetchHTTPClient.Do(req)
+	resp, err := c.httpClient().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request fetch_url: %w", err)
 	}

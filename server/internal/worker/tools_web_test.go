@@ -91,6 +91,22 @@ func TestParseAllowedWebFetchURLAcceptsBareDomainPaths(t *testing.T) {
 	}
 }
 
+func TestNewWebFetchClientParsesProxyURLs(t *testing.T) {
+	client := NewWebFetchClient(" http://user:pass@gate.smartproxy.com:10001, https://proxy.example:8443\nsocks5://proxy.example:1080, ://bad ")
+	if client == nil {
+		t.Fatal("expected web fetch client")
+	}
+	if len(client.proxyURLs) != 3 || len(client.proxyClients) != 3 {
+		t.Fatalf("expected three valid proxy URLs, got urls=%d clients=%d", len(client.proxyURLs), len(client.proxyClients))
+	}
+	if client.proxyURLs[0].Host != "gate.smartproxy.com:10001" {
+		t.Fatalf("expected first proxy host to be preserved, got %q", client.proxyURLs[0].Host)
+	}
+	if client.proxyURLs[0].User.String() != "user:pass" {
+		t.Fatalf("expected proxy credentials to be preserved, got %q", client.proxyURLs[0].User.String())
+	}
+}
+
 func TestBuildExaSearchRequestRejectsUnsupportedType(t *testing.T) {
 	_, err := buildExaSearchRequest(exaSearchToolInput{
 		Query: "agent tooling",
@@ -242,6 +258,40 @@ func TestFetchURLToolReturnsExtractedPageContent(t *testing.T) {
 	}
 	if len(decoded.Links) != 1 || decoded.Links[0].URL != server.URL+"/changelog" {
 		t.Fatalf("expected normalized changelog link, got %#v", decoded.Links)
+	}
+}
+
+func TestFetchURLToolUsesConfiguredProxy(t *testing.T) {
+	var capturedRequestURI string
+	proxyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedRequestURI = r.RequestURI
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(`<html><head><title>Proxy Result</title></head><body><p>Fetched through proxy.</p></body></html>`))
+	}))
+	defer proxyServer.Close()
+
+	originalAllowPrivate := allowPrivateWebFetchHostsForTests
+	allowPrivateWebFetchHostsForTests = true
+	defer func() {
+		allowPrivateWebFetchHostsForTests = originalAllowPrivate
+	}()
+
+	registry := NewToolRegistry(nil)
+	registry.SetWebFetchProxyURLs(proxyServer.URL)
+	output, err := registry.Execute(&ExecutionContext{Context: context.Background()}, "fetch_url", json.RawMessage(`{"url":"http://example.com/changelog","max_characters":200}`))
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+
+	var decoded fetchURLToolResponse
+	if err := json.Unmarshal([]byte(output), &decoded); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	if decoded.Title != "Proxy Result" || !strings.Contains(decoded.Text, "Fetched through proxy") {
+		t.Fatalf("unexpected proxied content %#v", decoded)
+	}
+	if capturedRequestURI != "http://example.com/changelog" {
+		t.Fatalf("expected proxy to receive absolute target URI, got %q", capturedRequestURI)
 	}
 }
 
