@@ -376,7 +376,7 @@ func copyDirectoryContents(src, dst string) error {
 func scannerCommandWarnings(label, stderr string, err error) []string {
 	var warnings []string
 	if trimmed := strings.TrimSpace(stderr); trimmed != "" {
-		warnings = append(warnings, fmt.Sprintf("%s stderr: %s", label, truncateString(trimmed, 1000)))
+		warnings = append(warnings, fmt.Sprintf("%s stderr: %s", label, truncateSecurityString(trimmed, 1000)))
 	}
 	if err != nil {
 		warnings = append(warnings, fmt.Sprintf("%s exited with %v; parser will use JSON output if available", label, err))
@@ -602,10 +602,10 @@ func intPtrValue(value *int) int {
 
 func compactMessage(value string, limit int) string {
 	value = strings.Join(strings.Fields(value), " ")
-	return truncateString(value, limit)
+	return truncateSecurityString(value, limit)
 }
 
-func truncateString(value string, limit int) string {
+func truncateSecurityString(value string, limit int) string {
 	if limit <= 0 || len(value) <= limit {
 		return value
 	}
