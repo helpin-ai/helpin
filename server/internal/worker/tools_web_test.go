@@ -81,6 +81,16 @@ func TestBuildExaSearchRequestAcceptsDeepLiteType(t *testing.T) {
 	}
 }
 
+func TestParseAllowedWebFetchURLAcceptsBareDomainPaths(t *testing.T) {
+	parsed, err := parseAllowedWebFetchURL("docs.example.com/changelog")
+	if err != nil {
+		t.Fatalf("parseAllowedWebFetchURL returned error: %v", err)
+	}
+	if parsed.String() != "https://docs.example.com/changelog" {
+		t.Fatalf("expected https-normalized URL, got %q", parsed.String())
+	}
+}
+
 func TestBuildExaSearchRequestRejectsUnsupportedType(t *testing.T) {
 	_, err := buildExaSearchRequest(exaSearchToolInput{
 		Query: "agent tooling",
@@ -201,12 +211,109 @@ func TestWebSearchExaToolReturnsNormalizedResults(t *testing.T) {
 	}
 }
 
+func TestFetchURLToolReturnsExtractedPageContent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(`<html><head><title>Product Updates</title><meta name="description" content="Latest releases"></head><body><main><h1>April changelog</h1><p>Brand Explorer shipped on 2026-04-04.</p><a href="/changelog">Changelog</a></main><script>ignore()</script></body></html>`))
+	}))
+	defer server.Close()
+
+	originalClient := webFetchHTTPClient
+	originalAllowPrivate := allowPrivateWebFetchHostsForTests
+	webFetchHTTPClient = server.Client()
+	allowPrivateWebFetchHostsForTests = true
+	defer func() {
+		webFetchHTTPClient = originalClient
+		allowPrivateWebFetchHostsForTests = originalAllowPrivate
+	}()
+
+	registry := NewToolRegistry(nil)
+	output, err := registry.Execute(&ExecutionContext{Context: context.Background()}, "fetch_url", json.RawMessage(`{"url":"`+server.URL+`","max_characters":200}`))
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+
+	var decoded fetchURLToolResponse
+	if err := json.Unmarshal([]byte(output), &decoded); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	if decoded.Title != "Product Updates" || !strings.Contains(decoded.Text, "Brand Explorer shipped") {
+		t.Fatalf("unexpected fetched content %#v", decoded)
+	}
+	if len(decoded.Links) != 1 || decoded.Links[0].URL != server.URL+"/changelog" {
+		t.Fatalf("expected normalized changelog link, got %#v", decoded.Links)
+	}
+}
+
+func TestCrawlURLToolPrioritizesUpdateLinks(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(`<html><body><a href="/pricing">Pricing</a><a href="/changelog">Changelog</a><a href="/blog/product-updates">Product updates</a></body></html>`))
+	})
+	mux.HandleFunc("/changelog", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(`<html><head><title>Changelog</title></head><body><p>New GEO tracker released.</p></body></html>`))
+	})
+	mux.HandleFunc("/blog/product-updates", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(`<html><head><title>Updates</title></head><body><p>Portfolio launch notes.</p></body></html>`))
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	originalClient := webFetchHTTPClient
+	originalAllowPrivate := allowPrivateWebFetchHostsForTests
+	webFetchHTTPClient = server.Client()
+	allowPrivateWebFetchHostsForTests = true
+	defer func() {
+		webFetchHTTPClient = originalClient
+		allowPrivateWebFetchHostsForTests = originalAllowPrivate
+	}()
+
+	registry := NewToolRegistry(nil)
+	output, err := registry.Execute(&ExecutionContext{Context: context.Background()}, "crawl_url", json.RawMessage(`{"url":"`+server.URL+`","max_pages":3,"max_depth":1}`))
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+
+	var decoded crawlURLToolResponse
+	if err := json.Unmarshal([]byte(output), &decoded); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	if decoded.PageCount != 3 {
+		t.Fatalf("expected 3 crawled pages, got %#v", decoded)
+	}
+	combined := ""
+	for _, page := range decoded.Pages {
+		combined += page.Text + "\n"
+	}
+	if !strings.Contains(combined, "New GEO tracker released") || !strings.Contains(combined, "Portfolio launch notes") {
+		t.Fatalf("expected crawled update page text, got %q", combined)
+	}
+}
+
+func TestFetchURLRejectsPrivateHostsByDefault(t *testing.T) {
+	_, err := fetchWebPage(context.Background(), "http://127.0.0.1/changelog", 1000, false)
+	if err == nil {
+		t.Fatal("expected private host rejection")
+	}
+	if !strings.Contains(err.Error(), "private or local IP") {
+		t.Fatalf("expected private IP error, got %v", err)
+	}
+}
+
 func TestToolCatalogAlwaysIncludesExaSearch(t *testing.T) {
 	catalog := ListToolCatalog()
+	found := map[string]bool{}
 	for _, tool := range catalog.Tools {
-		if tool.Name == "web_search_exa" {
-			return
+		if tool.Name == "web_search_exa" || tool.Name == "fetch_url" || tool.Name == "crawl_url" {
+			found[tool.Name] = true
 		}
 	}
-	t.Fatal("expected web_search_exa in tool catalog")
+	for _, name := range []string{"web_search_exa", "fetch_url", "crawl_url"} {
+		if !found[name] {
+			t.Fatalf("expected %s in tool catalog", name)
+		}
+	}
 }

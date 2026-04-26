@@ -271,6 +271,8 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 			return r.toolWebSearchExa(ctx, input)
 		})
 	}
+	r.register("fetch_url", fetchURLToolDescription(), fetchURLToolSchema(), toolFetchURL)
+	r.register("crawl_url", crawlURLToolDescription(), crawlURLToolSchema(), toolCrawlURL)
 
 	// Git tools
 	r.register("create_branch", "Create a new git branch and switch to it.", map[string]interface{}{

@@ -6,14 +6,27 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
+	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
+
+	"golang.org/x/net/html"
+	"golang.org/x/net/html/atom"
+	"golang.org/x/net/html/charset"
 )
 
 const braveSearchAPIURL = "https://api.search.brave.com/res/v1/web/search"
 const exaSearchAPIURL = "https://api.exa.ai/search"
+const defaultWebFetchUserAgent = "HelpinAgent/1.0 (+https://helpin.ai)"
+const maxWebFetchBodyBytes = 2 * 1024 * 1024
+const maxWebFetchLinks = 80
+
+var webFetchHTTPClient = &http.Client{Timeout: 20 * time.Second}
+var allowPrivateWebFetchHostsForTests bool
 
 var allowedExaSearchTypes = map[string]struct{}{
 	"auto":           {},
@@ -121,19 +134,19 @@ type ExaSearchResponse struct {
 }
 
 type ExaSearchResult struct {
-	Title           string             `json:"title"`
-	URL             string             `json:"url"`
-	ID              string             `json:"id"`
-	PublishedDate   *string            `json:"publishedDate,omitempty"`
-	Author          *string            `json:"author,omitempty"`
-	Image           string             `json:"image,omitempty"`
-	Favicon         string             `json:"favicon,omitempty"`
-	Text            string             `json:"text,omitempty"`
-	Highlights      []string           `json:"highlights,omitempty"`
-	HighlightScores []float64          `json:"highlightScores,omitempty"`
-	Summary         string             `json:"summary,omitempty"`
-	Subpages        []ExaSearchResult  `json:"subpages,omitempty"`
-	Extras          map[string]any     `json:"extras,omitempty"`
+	Title           string            `json:"title"`
+	URL             string            `json:"url"`
+	ID              string            `json:"id"`
+	PublishedDate   *string           `json:"publishedDate,omitempty"`
+	Author          *string           `json:"author,omitempty"`
+	Image           string            `json:"image,omitempty"`
+	Favicon         string            `json:"favicon,omitempty"`
+	Text            string            `json:"text,omitempty"`
+	Highlights      []string          `json:"highlights,omitempty"`
+	HighlightScores []float64         `json:"highlightScores,omitempty"`
+	Summary         string            `json:"summary,omitempty"`
+	Subpages        []ExaSearchResult `json:"subpages,omitempty"`
+	Extras          map[string]any    `json:"extras,omitempty"`
 }
 
 type ExaOutput struct {
@@ -153,22 +166,22 @@ type ExaCitation struct {
 }
 
 type exaSearchToolInput struct {
-	Query              string                 `json:"query"`
-	Type               string                 `json:"type"`
-	NumResults         int                    `json:"num_results"`
-	Category           string                 `json:"category"`
-	UserLocation       string                 `json:"user_location"`
-	IncludeDomains     []string               `json:"include_domains"`
-	ExcludeDomains     []string               `json:"exclude_domains"`
-	StartPublishedDate string                 `json:"start_published_date"`
-	EndPublishedDate   string                 `json:"end_published_date"`
-	StartCrawlDate     string                 `json:"start_crawl_date"`
-	EndCrawlDate       string                 `json:"end_crawl_date"`
-	AdditionalQueries  []string               `json:"additional_queries"`
-	SystemPrompt       string                 `json:"system_prompt"`
-	Moderation         bool                   `json:"moderation"`
+	Query              string                  `json:"query"`
+	Type               string                  `json:"type"`
+	NumResults         int                     `json:"num_results"`
+	Category           string                  `json:"category"`
+	UserLocation       string                  `json:"user_location"`
+	IncludeDomains     []string                `json:"include_domains"`
+	ExcludeDomains     []string                `json:"exclude_domains"`
+	StartPublishedDate string                  `json:"start_published_date"`
+	EndPublishedDate   string                  `json:"end_published_date"`
+	StartCrawlDate     string                  `json:"start_crawl_date"`
+	EndCrawlDate       string                  `json:"end_crawl_date"`
+	AdditionalQueries  []string                `json:"additional_queries"`
+	SystemPrompt       string                  `json:"system_prompt"`
+	Moderation         bool                    `json:"moderation"`
 	Contents           *exaSearchContentsInput `json:"contents"`
-	OutputSchema       map[string]any         `json:"output_schema"`
+	OutputSchema       map[string]any          `json:"output_schema"`
 }
 
 type exaSearchContentsInput struct {
@@ -201,6 +214,21 @@ type exaExtrasInput struct {
 	ImageLinks *int `json:"image_links"`
 }
 
+type fetchURLToolInput struct {
+	URL           string `json:"url"`
+	MaxCharacters int    `json:"max_characters"`
+	IncludeHTML   bool   `json:"include_html"`
+}
+
+type crawlURLToolInput struct {
+	URL                  string   `json:"url"`
+	MaxPages             int      `json:"max_pages"`
+	MaxDepth             int      `json:"max_depth"`
+	MaxCharactersPerPage int      `json:"max_characters_per_page"`
+	IncludePatterns      []string `json:"include_patterns"`
+	PathKeywords         []string `json:"path_keywords"`
+}
+
 type exaToolResponse struct {
 	Query       string                  `json:"query"`
 	RequestID   string                  `json:"request_id,omitempty"`
@@ -212,19 +240,53 @@ type exaToolResponse struct {
 }
 
 type exaToolResponseResult struct {
-	Title           string                 `json:"title"`
-	URL             string                 `json:"url"`
-	ID              string                 `json:"id,omitempty"`
-	PublishedDate   *string                `json:"published_date,omitempty"`
-	Author          *string                `json:"author,omitempty"`
-	Image           string                 `json:"image,omitempty"`
-	Favicon         string                 `json:"favicon,omitempty"`
-	Text            string                 `json:"text,omitempty"`
-	Highlights      []string               `json:"highlights,omitempty"`
-	HighlightScores []float64              `json:"highlight_scores,omitempty"`
-	Summary         string                 `json:"summary,omitempty"`
+	Title           string                  `json:"title"`
+	URL             string                  `json:"url"`
+	ID              string                  `json:"id,omitempty"`
+	PublishedDate   *string                 `json:"published_date,omitempty"`
+	Author          *string                 `json:"author,omitempty"`
+	Image           string                  `json:"image,omitempty"`
+	Favicon         string                  `json:"favicon,omitempty"`
+	Text            string                  `json:"text,omitempty"`
+	Highlights      []string                `json:"highlights,omitempty"`
+	HighlightScores []float64               `json:"highlight_scores,omitempty"`
+	Summary         string                  `json:"summary,omitempty"`
 	Subpages        []exaToolResponseResult `json:"subpages,omitempty"`
-	Extras          map[string]any         `json:"extras,omitempty"`
+	Extras          map[string]any          `json:"extras,omitempty"`
+}
+
+type fetchURLToolResponse struct {
+	URL         string                 `json:"url"`
+	FinalURL    string                 `json:"final_url,omitempty"`
+	Status      int                    `json:"status"`
+	ContentType string                 `json:"content_type,omitempty"`
+	Title       string                 `json:"title,omitempty"`
+	Description string                 `json:"description,omitempty"`
+	Text        string                 `json:"text,omitempty"`
+	HTML        string                 `json:"html,omitempty"`
+	Links       []webPageLink          `json:"links,omitempty"`
+	Truncated   bool                   `json:"truncated,omitempty"`
+	Metadata    map[string]interface{} `json:"metadata,omitempty"`
+}
+
+type crawlURLToolResponse struct {
+	URL            string                 `json:"url"`
+	MaxPages       int                    `json:"max_pages"`
+	MaxDepth       int                    `json:"max_depth"`
+	PageCount      int                    `json:"page_count"`
+	Pages          []fetchURLToolResponse `json:"pages"`
+	SkippedLinks   int                    `json:"skipped_links,omitempty"`
+	DiscoveredURLs []string               `json:"discovered_urls,omitempty"`
+}
+
+type webPageLink struct {
+	Text string `json:"text,omitempty"`
+	URL  string `json:"url"`
+}
+
+type fetchedWebPage struct {
+	response fetchURLToolResponse
+	links    []webPageLink
 }
 
 func NewBraveSearchClient(apiKey string) *BraveSearchClient {
@@ -453,6 +515,107 @@ func (r *ToolRegistry) toolWebSearchExa(ctx *ExecutionContext, input json.RawMes
 	return string(payload), nil
 }
 
+func toolFetchURL(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	if ctx == nil {
+		return "", fmt.Errorf("execution context is required")
+	}
+	var params fetchURLToolInput
+	if err := json.Unmarshal(input, &params); err != nil {
+		return "", fmt.Errorf("parse input: %w", err)
+	}
+	page, err := fetchWebPage(ctx.Context, params.URL, clampWebFetchCharacters(params.MaxCharacters), params.IncludeHTML)
+	if err != nil {
+		return "", err
+	}
+	payload, err := json.Marshal(page.response)
+	if err != nil {
+		return "", fmt.Errorf("marshal fetch_url result: %w", err)
+	}
+	return string(payload), nil
+}
+
+func toolCrawlURL(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	if ctx == nil {
+		return "", fmt.Errorf("execution context is required")
+	}
+	var params crawlURLToolInput
+	if err := json.Unmarshal(input, &params); err != nil {
+		return "", fmt.Errorf("parse input: %w", err)
+	}
+	root, err := parseAllowedWebFetchURL(params.URL)
+	if err != nil {
+		return "", err
+	}
+	maxPages := clampCrawlMaxPages(params.MaxPages)
+	maxDepth := clampCrawlMaxDepth(params.MaxDepth)
+	maxChars := clampCrawlPageCharacters(params.MaxCharactersPerPage)
+	includePatterns := normalizeCrawlPatterns(params.IncludePatterns)
+	pathKeywords := normalizeCrawlPatterns(params.PathKeywords)
+	if len(pathKeywords) == 0 {
+		pathKeywords = defaultCrawlPathKeywords()
+	}
+
+	type queuedURL struct {
+		url   string
+		depth int
+	}
+	queue := []queuedURL{{url: root.String(), depth: 0}}
+	seen := map[string]bool{canonicalWebURL(root): true}
+	pages := make([]fetchURLToolResponse, 0, maxPages)
+	discovered := make([]string, 0)
+	skipped := 0
+
+	for len(queue) > 0 && len(pages) < maxPages {
+		next := queue[0]
+		queue = queue[1:]
+		page, err := fetchWebPage(ctx.Context, next.url, maxChars, false)
+		if err != nil {
+			skipped++
+			continue
+		}
+		if page.response.Status >= http.StatusBadRequest {
+			skipped++
+			continue
+		}
+		pages = append(pages, page.response)
+		if next.depth >= maxDepth {
+			continue
+		}
+		candidates := filterCrawlLinks(root, page.links, includePatterns, pathKeywords)
+		for _, link := range candidates {
+			parsed, err := parseAllowedWebFetchURL(link.URL)
+			if err != nil || !sameWebHost(root, parsed) {
+				skipped++
+				continue
+			}
+			key := canonicalWebURL(parsed)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			queue = append(queue, queuedURL{url: parsed.String(), depth: next.depth + 1})
+			if len(discovered) < maxWebFetchLinks {
+				discovered = append(discovered, parsed.String())
+			}
+		}
+	}
+
+	result := crawlURLToolResponse{
+		URL:            root.String(),
+		MaxPages:       maxPages,
+		MaxDepth:       maxDepth,
+		PageCount:      len(pages),
+		Pages:          pages,
+		SkippedLinks:   skipped,
+		DiscoveredURLs: discovered,
+	}
+	payload, err := json.Marshal(result)
+	if err != nil {
+		return "", fmt.Errorf("marshal crawl_url result: %w", err)
+	}
+	return string(payload), nil
+}
+
 func webSearchBraveToolDescription() string {
 	return "Search the public web with Brave Search. Use this for market context, standards, competitors, and external evidence. Returns normalized JSON results."
 }
@@ -482,6 +645,74 @@ func webSearchBraveToolSchema() map[string]interface{} {
 			},
 		},
 		"required": []string{"query"},
+	}
+}
+
+func fetchURLToolDescription() string {
+	return "Fetch a specific public URL and return extracted title, description, readable text, and links. Use this after finding or knowing an exact changelog, release notes, blog, docs, or source URL."
+}
+
+func fetchURLToolSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"url": map[string]interface{}{
+				"type":        "string",
+				"description": "Public http(s) URL to fetch directly.",
+			},
+			"max_characters": map[string]interface{}{
+				"type":        "integer",
+				"description": "Maximum extracted text characters to return. Defaults to 12000, max 30000.",
+			},
+			"include_html": map[string]interface{}{
+				"type":        "boolean",
+				"description": "When true, include a truncated raw HTML excerpt. Prefer false unless structure matters.",
+			},
+		},
+		"required": []string{"url"},
+	}
+}
+
+func crawlURLToolDescription() string {
+	return "Crawl a small number of same-host public pages from a starting URL, prioritizing changelog, release notes, updates, announcements, docs, and roadmap paths. Use this to discover official update pages when search results are thin."
+}
+
+func crawlURLToolSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"url": map[string]interface{}{
+				"type":        "string",
+				"description": "Public http(s) URL to start crawling from.",
+			},
+			"max_pages": map[string]interface{}{
+				"type":        "integer",
+				"description": "Maximum pages to fetch. Defaults to 8, max 20.",
+			},
+			"max_depth": map[string]interface{}{
+				"type":        "integer",
+				"description": "Maximum same-host link depth. Defaults to 1, max 2.",
+			},
+			"max_characters_per_page": map[string]interface{}{
+				"type":        "integer",
+				"description": "Maximum extracted text characters per page. Defaults to 6000, max 15000.",
+			},
+			"include_patterns": map[string]interface{}{
+				"type":        "array",
+				"description": "Optional URL/text substrings to include, such as changelog or release-notes.",
+				"items": map[string]interface{}{
+					"type": "string",
+				},
+			},
+			"path_keywords": map[string]interface{}{
+				"type":        "array",
+				"description": "Optional path/link-text keywords to prioritize. Defaults to common update-page keywords.",
+				"items": map[string]interface{}{
+					"type": "string",
+				},
+			},
+		},
+		"required": []string{"url"},
 	}
 }
 
@@ -571,7 +802,7 @@ func webSearchExaToolSchema() map[string]interface{} {
 					"text": map[string]interface{}{
 						"type": "object",
 						"properties": map[string]interface{}{
-							"max_characters": map[string]interface{}{"type": "integer"},
+							"max_characters":    map[string]interface{}{"type": "integer"},
 							"include_html_tags": map[string]interface{}{"type": "boolean"},
 						},
 					},
@@ -840,6 +1071,422 @@ func normalizeDomain(value string) string {
 		trimmed = trimmed[:slash]
 	}
 	return strings.TrimSpace(trimmed)
+}
+
+func fetchWebPage(ctx context.Context, rawURL string, maxCharacters int, includeHTML bool) (*fetchedWebPage, error) {
+	parsed, err := parseAllowedWebFetchURL(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateWebFetchHost(ctx, parsed.Hostname()); err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("build fetch_url request: %w", err)
+	}
+	req.Header.Set("User-Agent", defaultWebFetchUserAgent)
+	req.Header.Set("Accept", "text/html,application/xhtml+xml;q=0.9,text/plain;q=0.7,*/*;q=0.1")
+
+	resp, err := webFetchHTTPClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request fetch_url: %w", err)
+	}
+	defer resp.Body.Close()
+
+	finalURL := parsed.String()
+	if resp.Request != nil && resp.Request.URL != nil {
+		finalURL = resp.Request.URL.String()
+	}
+	contentType := strings.TrimSpace(resp.Header.Get("Content-Type"))
+	mediaType := ""
+	if contentType != "" {
+		mediaType, _, _ = mime.ParseMediaType(contentType)
+	}
+
+	body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxWebFetchBodyBytes))
+	if readErr != nil {
+		return nil, fmt.Errorf("read fetch_url response: %w", readErr)
+	}
+	decoded := body
+	if reader, err := charset.NewReader(bytes.NewReader(body), contentType); err == nil {
+		if converted, err := io.ReadAll(io.LimitReader(reader, maxWebFetchBodyBytes)); err == nil {
+			decoded = converted
+		}
+	}
+
+	result := fetchURLToolResponse{
+		URL:         parsed.String(),
+		FinalURL:    finalURL,
+		Status:      resp.StatusCode,
+		ContentType: contentType,
+		Metadata: map[string]interface{}{
+			"bytes_read": len(body),
+		},
+	}
+
+	content := string(decoded)
+	switch {
+	case mediaType == "" || strings.HasPrefix(mediaType, "text/html") || strings.Contains(strings.ToLower(content[:minInt(len(content), 512)]), "<html"):
+		doc, err := html.Parse(strings.NewReader(content))
+		if err != nil {
+			return nil, fmt.Errorf("parse fetch_url html: %w", err)
+		}
+		title, description, text, links := extractFetchedHTML(parsed, doc)
+		result.Title = title
+		result.Description = description
+		result.Text, result.Truncated = truncateWithFlag(text, maxCharacters)
+		result.Links = limitWebPageLinks(links, maxWebFetchLinks)
+		if includeHTML {
+			result.HTML, _ = truncateWithFlag(content, 20000)
+		}
+		return &fetchedWebPage{response: result, links: links}, nil
+	case strings.HasPrefix(mediaType, "text/") || strings.Contains(mediaType, "json") || strings.Contains(mediaType, "xml"):
+		result.Text, result.Truncated = truncateWithFlag(normalizeFetchedWhitespace(content), maxCharacters)
+		return &fetchedWebPage{response: result}, nil
+	default:
+		result.Metadata["unsupported_media_type"] = mediaType
+		return &fetchedWebPage{response: result}, nil
+	}
+}
+
+func parseAllowedWebFetchURL(rawURL string) (*url.URL, error) {
+	trimmed := strings.TrimSpace(rawURL)
+	if trimmed == "" {
+		return nil, fmt.Errorf("url is required")
+	}
+	if !strings.Contains(trimmed, "://") && strings.Contains(trimmed, ".") && !strings.ContainsAny(trimmed, " \t\r\n") {
+		trimmed = "https://" + trimmed
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil {
+		return nil, fmt.Errorf("parse url: %w", err)
+	}
+	if !strings.EqualFold(parsed.Scheme, "http") && !strings.EqualFold(parsed.Scheme, "https") {
+		return nil, fmt.Errorf("url must use http or https")
+	}
+	if strings.TrimSpace(parsed.Hostname()) == "" {
+		return nil, fmt.Errorf("url host is required")
+	}
+	parsed.Fragment = ""
+	return parsed, nil
+}
+
+func validateWebFetchHost(ctx context.Context, host string) error {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return fmt.Errorf("url host is required")
+	}
+	lowerHost := strings.ToLower(host)
+	if lowerHost == "localhost" || strings.HasSuffix(lowerHost, ".local") {
+		return fmt.Errorf("fetch_url cannot access localhost or .local hosts")
+	}
+	if allowPrivateWebFetchHostsForTests {
+		return nil
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if isPrivateWebFetchIP(ip) {
+			return fmt.Errorf("fetch_url cannot access private or local IP addresses")
+		}
+		return nil
+	}
+	lookupCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	addrs, err := net.DefaultResolver.LookupIPAddr(lookupCtx, host)
+	if err != nil {
+		return fmt.Errorf("resolve fetch_url host: %w", err)
+	}
+	if len(addrs) == 0 {
+		return fmt.Errorf("resolve fetch_url host: no addresses")
+	}
+	for _, addr := range addrs {
+		if isPrivateWebFetchIP(addr.IP) {
+			return fmt.Errorf("fetch_url cannot access hosts resolving to private or local IP addresses")
+		}
+	}
+	return nil
+}
+
+func isPrivateWebFetchIP(ip net.IP) bool {
+	return ip == nil || ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified()
+}
+
+func extractFetchedHTML(baseURL *url.URL, doc *html.Node) (string, string, string, []webPageLink) {
+	var title string
+	var description string
+	textParts := make([]string, 0, 256)
+	links := make([]webPageLink, 0, 64)
+	var walk func(*html.Node, bool)
+	walk = func(n *html.Node, hidden bool) {
+		if n == nil {
+			return
+		}
+		if n.Type == html.ElementNode {
+			switch n.DataAtom {
+			case atom.Script, atom.Style, atom.Noscript, atom.Svg:
+				hidden = true
+			case atom.Title:
+				title = firstNonEmpty(title, normalizeFetchedWhitespace(nodeText(n)))
+				hidden = true
+			case atom.Meta:
+				name := strings.ToLower(strings.TrimSpace(htmlNodeAttr(n, "name")))
+				property := strings.ToLower(strings.TrimSpace(htmlNodeAttr(n, "property")))
+				if name == "description" || property == "og:description" || property == "twitter:description" {
+					description = firstNonEmpty(description, normalizeFetchedWhitespace(htmlNodeAttr(n, "content")))
+				}
+			case atom.A:
+				if href := strings.TrimSpace(htmlNodeAttr(n, "href")); href != "" {
+					if resolved := resolveWebLink(baseURL, href); resolved != "" {
+						links = append(links, webPageLink{
+							Text: normalizeFetchedWhitespace(nodeText(n)),
+							URL:  resolved,
+						})
+					}
+				}
+			}
+		}
+		if n.Type == html.TextNode && !hidden {
+			if text := normalizeFetchedWhitespace(n.Data); text != "" {
+				textParts = append(textParts, text)
+			}
+		}
+		for child := n.FirstChild; child != nil; child = child.NextSibling {
+			walk(child, hidden)
+		}
+	}
+	walk(doc, false)
+	return title, description, normalizeFetchedWhitespace(strings.Join(textParts, " ")), dedupeWebPageLinks(links)
+}
+
+func nodeText(n *html.Node) string {
+	var parts []string
+	var walk func(*html.Node)
+	walk = func(current *html.Node) {
+		if current == nil {
+			return
+		}
+		if current.Type == html.TextNode {
+			parts = append(parts, current.Data)
+		}
+		for child := current.FirstChild; child != nil; child = child.NextSibling {
+			walk(child)
+		}
+	}
+	walk(n)
+	return strings.Join(parts, " ")
+}
+
+func htmlNodeAttr(n *html.Node, key string) string {
+	if n == nil {
+		return ""
+	}
+	for _, attr := range n.Attr {
+		if strings.EqualFold(attr.Key, key) {
+			return strings.TrimSpace(attr.Val)
+		}
+	}
+	return ""
+}
+
+func resolveWebLink(baseURL *url.URL, href string) string {
+	if baseURL == nil {
+		return ""
+	}
+	parsed, err := url.Parse(strings.TrimSpace(href))
+	if err != nil {
+		return ""
+	}
+	resolved := baseURL.ResolveReference(parsed)
+	if resolved == nil || (resolved.Scheme != "http" && resolved.Scheme != "https") {
+		return ""
+	}
+	resolved.Fragment = ""
+	return resolved.String()
+}
+
+func dedupeWebPageLinks(links []webPageLink) []webPageLink {
+	if len(links) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool, len(links))
+	out := make([]webPageLink, 0, len(links))
+	for _, link := range links {
+		link.URL = strings.TrimSpace(link.URL)
+		link.Text = truncateString(normalizeFetchedWhitespace(link.Text), 120)
+		if link.URL == "" || seen[link.URL] {
+			continue
+		}
+		seen[link.URL] = true
+		out = append(out, link)
+	}
+	return out
+}
+
+func limitWebPageLinks(links []webPageLink, limit int) []webPageLink {
+	if limit <= 0 || len(links) <= limit {
+		return links
+	}
+	return append([]webPageLink(nil), links[:limit]...)
+}
+
+func filterCrawlLinks(root *url.URL, links []webPageLink, includePatterns, pathKeywords []string) []webPageLink {
+	if len(links) == 0 {
+		return nil
+	}
+	scored := make([]struct {
+		link  webPageLink
+		score int
+	}, 0, len(links))
+	for _, link := range links {
+		parsed, err := parseAllowedWebFetchURL(link.URL)
+		if err != nil || !sameWebHost(root, parsed) {
+			continue
+		}
+		haystack := strings.ToLower(parsed.Path + " " + parsed.RawQuery + " " + link.Text)
+		score := 0
+		for _, pattern := range includePatterns {
+			if pattern != "" && strings.Contains(haystack, pattern) {
+				score += 10
+			}
+		}
+		for _, keyword := range pathKeywords {
+			if keyword != "" && strings.Contains(haystack, keyword) {
+				score += 5
+			}
+		}
+		if score == 0 && len(includePatterns) > 0 {
+			continue
+		}
+		if score == 0 {
+			score = 1
+		}
+		scored = append(scored, struct {
+			link  webPageLink
+			score int
+		}{link: webPageLink{Text: link.Text, URL: parsed.String()}, score: score})
+	}
+	sort.SliceStable(scored, func(i, j int) bool {
+		if scored[i].score == scored[j].score {
+			return scored[i].link.URL < scored[j].link.URL
+		}
+		return scored[i].score > scored[j].score
+	})
+	out := make([]webPageLink, 0, len(scored))
+	for _, item := range scored {
+		out = append(out, item.link)
+	}
+	return out
+}
+
+func sameWebHost(a, b *url.URL) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	return strings.EqualFold(a.Hostname(), b.Hostname())
+}
+
+func canonicalWebURL(parsed *url.URL) string {
+	if parsed == nil {
+		return ""
+	}
+	clone := *parsed
+	clone.Fragment = ""
+	if clone.Path == "" {
+		clone.Path = "/"
+	}
+	return strings.ToLower(clone.String())
+}
+
+func normalizeCrawlPatterns(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.ToLower(strings.TrimSpace(value))
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
+}
+
+func defaultCrawlPathKeywords() []string {
+	return []string{"changelog", "release", "releases", "release-notes", "updates", "whats-new", "what's new", "announcements", "roadmap", "docs", "blog"}
+}
+
+func clampWebFetchCharacters(value int) int {
+	switch {
+	case value <= 0:
+		return 12000
+	case value > 30000:
+		return 30000
+	default:
+		return value
+	}
+}
+
+func clampCrawlPageCharacters(value int) int {
+	switch {
+	case value <= 0:
+		return 6000
+	case value > 15000:
+		return 15000
+	default:
+		return value
+	}
+}
+
+func clampCrawlMaxPages(value int) int {
+	switch {
+	case value <= 0:
+		return 8
+	case value > 20:
+		return 20
+	default:
+		return value
+	}
+}
+
+func clampCrawlMaxDepth(value int) int {
+	switch {
+	case value <= 0:
+		return 1
+	case value > 2:
+		return 2
+	default:
+		return value
+	}
+}
+
+func normalizeFetchedWhitespace(value string) string {
+	return strings.Join(strings.Fields(value), " ")
+}
+
+func truncateWithFlag(value string, limit int) (string, bool) {
+	trimmed := strings.TrimSpace(value)
+	if limit <= 0 || len(trimmed) <= limit {
+		return trimmed, false
+	}
+	return strings.TrimSpace(trimmed[:limit]), true
+}
+
+func truncateString(value string, limit int) string {
+	if limit <= 0 || len(value) <= limit {
+		return value
+	}
+	return strings.TrimSpace(value[:limit])
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func isLinkedInDomain(value string) bool {

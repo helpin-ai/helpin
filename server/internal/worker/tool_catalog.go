@@ -26,6 +26,8 @@ var toolCategory = map[string]string{
 	// Web Search
 	"web_search_brave": "Web Search",
 	"web_search_exa":   "Web Search",
+	"fetch_url":        "Web Search",
+	"crawl_url":        "Web Search",
 
 	// Git
 	"create_branch":              "Git",

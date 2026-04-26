@@ -197,8 +197,15 @@ func (r *PMEpicRepository) ComputeStats(ctx context.Context, epicID string) (mod
 func (r *PMEpicRepository) ListTasks(ctx context.Context, epicID string) ([]model.PMTask, error) {
 	var stories []model.PMTask
 	if err := r.db.WithContext(ctx).
+		Joins("JOIN pm_workflow_states ws ON ws.id = pm_tasks.workflow_state_id").
 		Where("epic_id = ? AND archived = false", epicID).
-		Order("position ASC, created_at DESC").
+		Order(`CASE ws.state_type WHEN 'backlog' THEN 0 WHEN 'unstarted' THEN 1 WHEN 'started' THEN 2 WHEN 'done' THEN 3 ELSE 4 END ASC`).
+		Order("ws.position ASC").
+		Order("ws.id ASC").
+		Order(`CASE WHEN ws.state_type = 'done' THEN COALESCE(pm_tasks.completed_at, pm_tasks.moved_at, pm_tasks.updated_at) END DESC`).
+		Order(`CASE WHEN ws.state_type = 'done' THEN pm_tasks.updated_at END DESC`).
+		Order("pm_tasks.position ASC").
+		Order("pm_tasks.updated_at DESC").
 		Find(&stories).Error; err != nil {
 		return nil, fmt.Errorf("list epic stories: %w", err)
 	}

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -80,6 +81,15 @@ func TestListAgentTemplatesSeedsSystemTemplates(t *testing.T) {
 	}
 	if competitiveIntel.SystemPrompt == nil || !strings.Contains(*competitiveIntel.SystemPrompt, "{{target_company}}") || !strings.Contains(*competitiveIntel.SystemPrompt, "{{raw_configuration_json}}") {
 		t.Fatalf("expected competitive template prompt placeholders, got %+v", competitiveIntel.SystemPrompt)
+	}
+	var competitiveAllowedTools []string
+	if err := json.Unmarshal(competitiveIntel.AllowedTools, &competitiveAllowedTools); err != nil {
+		t.Fatalf("unmarshal competitive allowed tools: %v", err)
+	}
+	for _, tool := range []string{"web_search_exa", "fetch_url", "crawl_url", "create_task"} {
+		if !slices.Contains(competitiveAllowedTools, tool) {
+			t.Fatalf("expected competitive template allowed tools to include %q, got %v", tool, competitiveAllowedTools)
+		}
 	}
 	var competitiveTargets []string
 	if err := json.Unmarshal(competitiveIntel.AllowedTargets, &competitiveTargets); err != nil {
