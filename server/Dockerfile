@@ -19,6 +19,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/migr
 FROM alpine:3.19
 
 ARG TRIVY_VERSION=0.69.3
+ARG GITLEAKS_VERSION=8.30.1
 
 ENV XDG_CACHE_HOME=/app/.cache \
     TRIVY_CACHE_DIR=/app/.cache/trivy \
@@ -42,7 +43,7 @@ RUN apk add --no-cache \
     && pip3 install --no-cache-dir --break-system-packages pytest uv poetry semgrep \
     && npm i -g @openai/codex pnpm yarn \
     && curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin "v${TRIVY_VERSION}" \
-    && GOBIN=/usr/local/bin go install github.com/zricethezav/gitleaks/v8@latest \
+    && curl -sfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" | tar -xz -C /usr/local/bin gitleaks \
     && trivy image --download-db-only --cache-dir "$TRIVY_CACHE_DIR" \
     && trivy image --download-java-db-only --cache-dir "$TRIVY_CACHE_DIR" \
     && printf '%s\n' 'apiVersion: v1' 'kind: Pod' 'metadata:' '  name: trivy-prewarm' 'spec:' '  containers:' '    - name: app' '      image: alpine:3.19' > /tmp/trivy-prewarm.yml \
