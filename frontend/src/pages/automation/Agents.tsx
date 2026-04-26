@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { Collapsible } from 'radix-ui';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
@@ -8,6 +9,7 @@ import {
   ArrowDown01Icon,
   ArrowRight01Icon,
   ArrowUpRight01Icon,
+  ArrowExpandIcon,
   HelpCircleIcon,
   LayoutGridIcon,
   LayoutTable01Icon,
@@ -34,7 +36,7 @@ import { gitService } from '@/lib/services/gitService';
 import { docsService } from '@/lib/services/docsService';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
-import { buildAutomationActivityPath, buildAutomationFlowsPath } from '@/lib/automationUi';
+import { buildAutomationActivityPath, buildAutomationFlowsPath, buildAutomationRunsPath } from '@/lib/automationUi';
 import type {
   Agent,
   AgentExecutionConfig,
@@ -406,6 +408,26 @@ const CUSTOM_AGENT_TARGET_OPTIONS: Array<{ value: AgentTargetType; label: string
   { value: 'support_conversation', label: 'Support Conversation', description: 'Run on support inbox conversations.' },
 ];
 
+const RUN_NOW_SUPPORTED_TARGETS = new Set<AgentTargetType>([
+  'task',
+  'epic',
+  'repository',
+  'workspace',
+  'support_conversation',
+]);
+
+const RUN_NOW_TARGET_ID_LABELS: Partial<Record<AgentTargetType, string>> = {
+  task: 'Task ID',
+  epic: 'Epic ID',
+  support_conversation: 'Conversation ID',
+};
+
+const RUN_NOW_TARGET_ID_PLACEHOLDERS: Partial<Record<AgentTargetType, string>> = {
+  task: 'Paste a task ID',
+  epic: 'Paste an epic ID',
+  support_conversation: 'Paste a support conversation ID',
+};
+
 function ProviderIcon({ provider, className = 'h-4 w-4' }: { provider: string; className?: string }) {
   switch (provider) {
     case 'anthropic':
@@ -587,6 +609,28 @@ function normalizeTargetList(targets: AgentTargetType[]): AgentTargetType[] {
     result.push(target);
     return result;
   }, []);
+}
+
+function isAgentTargetType(value: string): value is AgentTargetType {
+  return CUSTOM_AGENT_TARGET_OPTIONS.some((target) => target.value === value);
+}
+
+function labelForAgentTarget(target: AgentTargetType) {
+  return CUSTOM_AGENT_TARGET_OPTIONS.find((option) => option.value === target)?.label ?? target;
+}
+
+function runNowTargetOptions(agent: Agent | null): AgentTargetType[] {
+  if (!agent) return [];
+  return normalizeTargetList(
+    (agent.allowed_targets ?? [])
+      .filter(isAgentTargetType)
+      .filter((target) => RUN_NOW_SUPPORTED_TARGETS.has(target)),
+  );
+}
+
+function defaultRunNowTarget(agent: Agent | null): AgentTargetType | '' {
+  const targets = runNowTargetOptions(agent);
+  return targets.includes('workspace') ? 'workspace' : (targets[0] ?? '');
 }
 
 function createEmptyCustomForm(): AgentFormData {
@@ -1476,6 +1520,7 @@ function AgentCard({
   workspaceSlug,
   presets,
   onOpen,
+  onRunNow,
   canEdit,
 }: {
   agent: Agent;
@@ -1484,6 +1529,7 @@ function AgentCard({
   workspaceSlug?: string;
   presets: AgentPresetDefinition[];
   onOpen: (agent: Agent) => void;
+  onRunNow: (agent: Agent) => void;
   canEdit: boolean;
 }) {
   const role = agentRoleLabel(agent, presets);
@@ -1553,7 +1599,22 @@ function AgentCard({
         </div>
 
         {canEdit ? (
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            {!agent.is_system ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 px-2.5 text-xs"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onRunNow(agent);
+                }}
+              >
+                <ZapIcon className="mr-1.5 h-3.5 w-3.5" />
+                Run now
+              </Button>
+            ) : null}
             <Button
               type="button"
               variant="ghost"
@@ -1584,6 +1645,8 @@ function AgentRow({
   workspaceSlug,
   presets,
   onOpen,
+  onRunNow,
+  canEdit,
 }: {
   agent: Agent;
   stats?: AgentRunStats;
@@ -1591,6 +1654,8 @@ function AgentRow({
   workspaceSlug?: string;
   presets: AgentPresetDefinition[];
   onOpen: (agent: Agent) => void;
+  onRunNow: (agent: Agent) => void;
+  canEdit: boolean;
 }) {
   const role = agentRoleLabel(agent, presets);
   const purpose = agentPurpose(agent, presets);
@@ -1599,7 +1664,7 @@ function AgentRow({
   return (
     <div
       className={cn(
-        'grid cursor-pointer items-center gap-4 border-b border-border/60 px-4 py-3 transition-colors last:border-b-0 hover:bg-muted/30 lg:grid-cols-[minmax(0,3.2fr)_minmax(170px,0.95fr)_110px_120px_150px_170px_28px]',
+        'grid cursor-pointer items-center gap-4 border-b border-border/60 px-4 py-3 transition-colors last:border-b-0 hover:bg-muted/30 lg:grid-cols-[minmax(0,3.2fr)_minmax(170px,0.95fr)_110px_120px_150px_170px_112px]',
         attention && 'bg-amber-500/[0.03]',
       )}
       onClick={() => onOpen(agent)}
@@ -1657,8 +1722,24 @@ function AgentRow({
         <FlowRefs usage={usage} workspaceSlug={workspaceSlug} />
       </div>
 
-      <div className="hidden items-start justify-end text-muted-foreground lg:flex">
-        <ArrowRight01Icon className="mt-0.5 h-4 w-4" />
+      <div className="flex items-start justify-end text-muted-foreground">
+        {!agent.is_system && canEdit ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 px-2.5 text-xs"
+            onClick={(event) => {
+              event.stopPropagation();
+              onRunNow(agent);
+            }}
+          >
+            <ZapIcon className="mr-1.5 h-3.5 w-3.5" />
+            Run now
+          </Button>
+        ) : (
+          <ArrowRight01Icon className="mt-0.5 h-4 w-4" />
+        )}
       </div>
     </div>
   );
@@ -1670,6 +1751,7 @@ function AgentRow({
 
 export function AgentsPage() {
   useTitle('Agents');
+  const navigate = useNavigate();
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const workspaceId = workspace?.id;
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
@@ -1752,6 +1834,7 @@ export function AgentsPage() {
   const [compiledPromptOpen, setCompiledPromptOpen] = useState(false);
   const [toolPickerOpen, setToolPickerOpen] = useState(false);
   const [skillPickerOpen, setSkillPickerOpen] = useState(false);
+  const [systemPromptEditorOpen, setSystemPromptEditorOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [versionDraftOpen, setVersionDraftOpen] = useState(false);
@@ -1764,6 +1847,14 @@ export function AgentsPage() {
   const [renameLabelDraft, setRenameLabelDraft] = useState('');
   const [renameDescriptionDraft, setRenameDescriptionDraft] = useState('');
   const [renamingVersion, setRenamingVersion] = useState(false);
+  const [runNowOpen, setRunNowOpen] = useState(false);
+  const [runNowAgent, setRunNowAgent] = useState<Agent | null>(null);
+  const [runNowTargetType, setRunNowTargetType] = useState<AgentTargetType | ''>('');
+  const [runNowTargetId, setRunNowTargetId] = useState('');
+  const [runNowAdditionalContext, setRunNowAdditionalContext] = useState('');
+  const [runNowBaseBranch, setRunNowBaseBranch] = useState('');
+  const [runNowRepositoriesLoading, setRunNowRepositoriesLoading] = useState(false);
+  const [runNowSubmitting, setRunNowSubmitting] = useState(false);
 
   const loadAgents = useCallback(async () => {
     if (!workspaceId) return;
@@ -1838,6 +1929,24 @@ export function AgentsPage() {
     setTemplateResourcesLoading(false);
   }, [workspaceId]);
 
+  const loadRepositoriesForRunNow = useCallback(async () => {
+    if (!workspaceId) return;
+    setRunNowRepositoriesLoading(true);
+    const res = await gitService.listRepositories(workspaceId);
+    if (res.error) {
+      toast.error('Failed to load repositories', { description: res.error });
+    } else {
+      const repos = res.data ?? [];
+      setRepositories(repos);
+      const firstRunnableRepo = repos.find((repo) => repo.selected && repo.active && !repo.archived);
+      if (firstRunnableRepo) {
+        setRunNowTargetId((current) => current || firstRunnableRepo.id);
+        setRunNowBaseBranch((current) => current || firstRunnableRepo.default_branch);
+      }
+    }
+    setRunNowRepositoriesLoading(false);
+  }, [workspaceId]);
+
   const loadCollectionsForSpace = useCallback(async (spaceId: string) => {
     if (!workspaceId || !spaceId) {
       setDocsCollections([]);
@@ -1878,6 +1987,83 @@ export function AgentsPage() {
     }
     setAgentUsageLoading(false);
   }, [workspaceId]);
+
+  const openRunNowDialog = useCallback((agent: Agent) => {
+    const defaultTarget = defaultRunNowTarget(agent);
+    const firstRunnableRepo = repositories.find((repo) => repo.selected && repo.active && !repo.archived);
+    setRunNowAgent(agent);
+    setRunNowTargetType(defaultTarget);
+    setRunNowTargetId(
+      defaultTarget === 'workspace'
+        ? (workspaceId ?? '')
+        : defaultTarget === 'repository'
+          ? (firstRunnableRepo?.id ?? '')
+          : '',
+    );
+    setRunNowAdditionalContext('');
+    setRunNowBaseBranch(defaultTarget === 'repository' ? (firstRunnableRepo?.default_branch ?? '') : '');
+    setRunNowOpen(true);
+    if (defaultTarget === 'repository' && !firstRunnableRepo) {
+      void loadRepositoriesForRunNow();
+    }
+  }, [loadRepositoriesForRunNow, repositories, workspaceId]);
+
+  const handleRunNowTargetChange = useCallback((value: string) => {
+    if (!isAgentTargetType(value)) return;
+    const firstRunnableRepo = repositories.find((repo) => repo.selected && repo.active && !repo.archived);
+    setRunNowTargetType(value);
+    setRunNowTargetId(
+      value === 'workspace'
+        ? (workspaceId ?? '')
+        : value === 'repository'
+          ? (firstRunnableRepo?.id ?? '')
+          : '',
+    );
+    setRunNowBaseBranch(value === 'repository' ? (firstRunnableRepo?.default_branch ?? '') : '');
+    if (value === 'repository' && !firstRunnableRepo) {
+      void loadRepositoriesForRunNow();
+    }
+  }, [loadRepositoriesForRunNow, repositories, workspaceId]);
+
+  const handleRunNow = useCallback(async () => {
+    if (!workspaceId || !runNowAgent || !runNowTargetType) return;
+    const targetId = runNowTargetType === 'workspace' ? workspaceId : runNowTargetId.trim();
+    if (!targetId) {
+      toast.error(`Choose a ${labelForAgentTarget(runNowTargetType).toLowerCase()} target`);
+      return;
+    }
+
+    setRunNowSubmitting(true);
+    const res = await agentService.startRun(workspaceId, {
+      agent_id: runNowAgent.id,
+      target_type: runNowTargetType,
+      target_id: targetId,
+      additional_context: runNowAdditionalContext.trim() || undefined,
+      base_branch: runNowBaseBranch.trim() || undefined,
+    });
+    setRunNowSubmitting(false);
+
+    if (res.error || !res.data) {
+      toast.error('Failed to start agent run', { description: res.error ?? 'No run was returned.' });
+      return;
+    }
+
+    toast.success('Agent run started');
+    setRunNowOpen(false);
+    setRunNowAgent(null);
+    await navigate({
+      to: buildAutomationRunsPath(workspace?.slug, { run_id: res.data.id }),
+    });
+  }, [
+    navigate,
+    runNowAdditionalContext,
+    runNowAgent,
+    runNowBaseBranch,
+    runNowTargetId,
+    runNowTargetType,
+    workspace?.slug,
+    workspaceId,
+  ]);
 
   useEffect(() => {
     loadAgents();
@@ -2571,6 +2757,15 @@ export function AgentsPage() {
     if (leftAttention !== rightAttention) return rightAttention - leftAttention;
     return left.name.localeCompare(right.name);
   });
+  const runNowTargets = runNowTargetOptions(runNowAgent);
+  const runnableRepositories = repositories.filter((repo) => repo.selected && repo.active && !repo.archived);
+  const selectedRunNowRepository = repositories.find((repo) => repo.id === runNowTargetId);
+  const runNowCanSubmit = Boolean(
+    workspaceId
+      && runNowAgent
+      && runNowTargetType
+      && (runNowTargetType === 'workspace' || runNowTargetId.trim()),
+  );
 
   const advancedConfigured = hasConfiguredAdvancedFields(editingAgent, presets);
   const editingSystemAgent = Boolean(editingAgent?.is_system);
@@ -2844,14 +3039,14 @@ export function AgentsPage() {
       {/* ---- Agent list / grid ---- */}
       {sortedAgents.length > 0 && viewMode === 'list' && (
         <div className="rounded-xl border border-border/70 overflow-hidden">
-          <div className="hidden items-center gap-4 border-b border-border/70 bg-muted/30 px-4 py-2 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:grid lg:grid-cols-[minmax(0,3.2fr)_minmax(170px,0.95fr)_110px_120px_150px_170px_28px]">
+          <div className="hidden items-center gap-4 border-b border-border/70 bg-muted/30 px-4 py-2 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:grid lg:grid-cols-[minmax(0,3.2fr)_minmax(170px,0.95fr)_110px_120px_150px_170px_112px]">
             <div>Agent · Role</div>
             <div>Model</div>
             <div>Mode</div>
             <div>Runs · 7d</div>
             <div>Last run</div>
             <div>Used by</div>
-            <div />
+            <div className="text-right">Action</div>
           </div>
           {sortedAgents.map((agent) => (
             <AgentRow
@@ -2862,6 +3057,8 @@ export function AgentsPage() {
               workspaceSlug={workspace?.slug}
               presets={presets}
               onOpen={openEditDialog}
+              onRunNow={openRunNowDialog}
+              canEdit={canEdit}
             />
           ))}
         </div>
@@ -2878,11 +3075,146 @@ export function AgentsPage() {
               workspaceSlug={workspace?.slug}
               presets={presets}
               onOpen={openEditDialog}
+              onRunNow={openRunNowDialog}
               canEdit={canEdit}
             />
           ))}
         </div>
       )}
+
+      <Dialog
+        open={runNowOpen}
+        onOpenChange={(open) => {
+          setRunNowOpen(open);
+          if (!open) {
+            setRunNowAgent(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[560px]">
+          <DialogHeader>
+            <DialogTitle>Run agent now</DialogTitle>
+            <DialogDescription>
+              {runNowAgent ? `Start ${runNowAgent.name} manually with a concrete target and optional instructions.` : 'Start this agent manually.'}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {runNowTargets.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-border/70 px-4 py-3 text-sm text-muted-foreground">
+                This agent does not have a manually runnable target enabled.
+              </div>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="run-now-target-type">Target</Label>
+                  <Select value={runNowTargetType} onValueChange={handleRunNowTargetChange}>
+                    <SelectTrigger id="run-now-target-type">
+                      <SelectValue placeholder="Choose a target" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {runNowTargets.map((target) => (
+                        <SelectItem key={target} value={target}>
+                          {labelForAgentTarget(target)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {runNowTargetType === 'workspace' ? (
+                  <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2">
+                    <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Workspace</p>
+                    <p className="mt-1 text-sm">{workspace.name}</p>
+                  </div>
+                ) : null}
+
+                {runNowTargetType === 'repository' ? (
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="run-now-repository">Repository</Label>
+                      <Select
+                        value={runNowTargetId}
+                        onValueChange={(repoId) => {
+                          setRunNowTargetId(repoId);
+                          const repo = repositories.find((item) => item.id === repoId);
+                          setRunNowBaseBranch(repo?.default_branch ?? '');
+                        }}
+                        disabled={runNowRepositoriesLoading || runnableRepositories.length === 0}
+                      >
+                        <SelectTrigger id="run-now-repository">
+                          <SelectValue placeholder={runNowRepositoriesLoading ? 'Loading repositories...' : 'Choose a repository'} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {runnableRepositories.map((repo) => (
+                            <SelectItem key={repo.id} value={repo.id}>
+                              {repo.full_name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {!runNowRepositoriesLoading && runnableRepositories.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">No selected repositories are available for agent runs.</p>
+                      ) : null}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="run-now-base-branch">Base branch</Label>
+                      <Input
+                        id="run-now-base-branch"
+                        value={runNowBaseBranch}
+                        onChange={(event) => setRunNowBaseBranch(event.target.value)}
+                        placeholder={selectedRunNowRepository?.default_branch || 'Repository default branch'}
+                      />
+                    </div>
+                  </div>
+                ) : null}
+
+                {runNowTargetType && !['workspace', 'repository'].includes(runNowTargetType) ? (
+                  <div className="space-y-2">
+                    <Label htmlFor="run-now-target-id">{RUN_NOW_TARGET_ID_LABELS[runNowTargetType] ?? 'Target ID'}</Label>
+                    <Input
+                      id="run-now-target-id"
+                      value={runNowTargetId}
+                      onChange={(event) => setRunNowTargetId(event.target.value)}
+                      placeholder={RUN_NOW_TARGET_ID_PLACEHOLDERS[runNowTargetType] ?? 'Paste a target ID'}
+                    />
+                  </div>
+                ) : null}
+
+                <div className="space-y-2">
+                  <Label htmlFor="run-now-context">Run instructions</Label>
+                  <Textarea
+                    id="run-now-context"
+                    value={runNowAdditionalContext}
+                    onChange={(event) => setRunNowAdditionalContext(event.target.value)}
+                    placeholder="Add anything this run should focus on."
+                    rows={4}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setRunNowOpen(false)}
+              disabled={runNowSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleRunNow()}
+              disabled={!runNowCanSubmit || runNowSubmitting}
+            >
+              {runNowSubmitting ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <ZapIcon className="mr-1.5 h-3.5 w-3.5" />}
+              Run now
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Sheet
         open={systemDrawerOpen}
@@ -4555,6 +4887,7 @@ export function AgentsPage() {
           if (!open) {
             setToolPickerOpen(false);
             setSkillPickerOpen(false);
+            setSystemPromptEditorOpen(false);
             setTemplateSetupDialogOpen(false);
             setTemplateDraft(null);
             setDocsCollections([]);
@@ -4677,12 +5010,24 @@ export function AgentsPage() {
 
               <DrawerConfigSection title="Behavior" description="Instructions and reusable skills">
                 <div className="space-y-2">
-                  <FieldLabel
-                    htmlFor="agent-system-prompt"
-                    tooltip="Instructions stored on the agent itself. For planners, keep the planning behavior here rather than in a separate planner-only field."
-                  >
-                    System instructions
-                  </FieldLabel>
+                  <div className="flex items-center justify-between gap-3">
+                    <FieldLabel
+                      htmlFor="agent-system-prompt"
+                      tooltip="Instructions stored on the agent itself. For planners, keep the planning behavior here rather than in a separate planner-only field."
+                    >
+                      System instructions
+                    </FieldLabel>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 gap-1.5 px-2 text-[11px]"
+                      onClick={() => setSystemPromptEditorOpen(true)}
+                    >
+                      <ArrowExpandIcon className="h-3.5 w-3.5" />
+                      Expand
+                    </Button>
+                  </div>
                   <Textarea
                     id="agent-system-prompt"
                     value={form.system_prompt}
@@ -5484,6 +5829,32 @@ export function AgentsPage() {
           </SheetFooter>
         </SheetContent>
       </Sheet>
+
+      <Dialog open={systemPromptEditorOpen} onOpenChange={setSystemPromptEditorOpen}>
+        <DialogContent className="z-[140] gap-0 overflow-hidden p-0 sm:max-w-5xl">
+          <DialogHeader className="border-b border-border/70 px-6 py-4">
+            <DialogTitle>System instructions</DialogTitle>
+            <DialogDescription>
+              Edit the prompt stored on {form.name.trim() || 'this custom agent'}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="p-6">
+            <Textarea
+              id="agent-system-prompt-expanded"
+              value={form.system_prompt}
+              onChange={(e) => setForm((current) => ({ ...current, system_prompt: e.target.value }))}
+              placeholder="Agent instructions"
+              className="min-h-[62vh] resize-none font-mono text-xs leading-relaxed"
+              autoFocus
+            />
+          </div>
+          <DialogFooter className="border-t border-border/70 px-6 py-4">
+            <Button type="button" size="sm" onClick={() => setSystemPromptEditorOpen(false)}>
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <ConfirmDialog
         open={deleteConfirmOpen}

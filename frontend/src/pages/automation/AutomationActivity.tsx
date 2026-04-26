@@ -544,8 +544,8 @@ function NeedActionCard({
   const targetKey = runTargetKey(run);
 
   return (
-    <div className="grid gap-4 rounded-2xl border border-amber-500/30 bg-card/90 p-4 shadow-sm shadow-amber-500/5 md:grid-cols-[1fr_auto] md:items-center">
-      <div className="min-w-0 space-y-2 border-l-4 border-amber-500 pl-4">
+    <div className="grid gap-4 rounded-2xl border border-border/70 bg-card/80 p-4 md:grid-cols-[1fr_auto] md:items-center">
+      <div className="min-w-0 space-y-2 border-l-2 border-amber-500 pl-3">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="outline" className="rounded-full border-amber-500/40 bg-amber-500/10 text-[11px] font-medium text-amber-700 dark:text-amber-400">
             {runBlockingLabel(run)}
@@ -602,8 +602,28 @@ function TimelineRow({
   const flowHref = buildExecutionFlowHref(item, workspaceSlug);
   const canOpenRun = Boolean(item.run_id);
 
+  const handleRowActivate = canOpenRun ? () => onOpenRun(item.run_id!) : undefined;
+
   return (
-    <div className="grid grid-cols-[1.25rem_minmax(0,1fr)_auto] gap-3 px-4 py-3">
+    <div
+      className={cn(
+        'grid grid-cols-[1.25rem_minmax(0,1fr)_auto] gap-3 px-4 py-3 transition-colors',
+        canOpenRun && 'cursor-pointer hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none',
+      )}
+      role={canOpenRun ? 'button' : undefined}
+      tabIndex={canOpenRun ? 0 : undefined}
+      onClick={handleRowActivate}
+      onKeyDown={
+        handleRowActivate
+          ? (event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                handleRowActivate();
+              }
+            }
+          : undefined
+      }
+    >
       <div className="relative flex justify-center">
         <span className={cn(
           'relative z-10 mt-1 block h-[10px] w-[10px] min-w-[10px] shrink-0 rounded-full bg-current leading-none ring-4 ring-background',
@@ -627,7 +647,10 @@ function TimelineRow({
               {flowHref ? (
                 <button
                   type="button"
-                  onClick={() => onOpenFlow(flowHref)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onOpenFlow(flowHref);
+                  }}
                   className="inline-flex items-center gap-1 text-foreground underline decoration-border underline-offset-4 hover:text-primary"
                 >
                   {item.binding_title}
@@ -668,7 +691,16 @@ function TimelineRow({
 
       <div className="flex items-start justify-end">
         {canOpenRun ? (
-          <Button type="button" variant="ghost" size="sm" className="h-8 px-2.5 text-xs" onClick={() => onOpenRun(item.run_id!)}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 px-2.5 text-xs"
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpenRun(item.run_id!);
+            }}
+          >
             Open
           </Button>
         ) : null}
@@ -988,10 +1020,7 @@ export function AutomationActivityPage({
 
         {pausedRuns.length > 0 && (
           <section className="space-y-3">
-            <div className="space-y-1">
-              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Needs You</p>
-              <p className="text-sm text-muted-foreground">Paused runs waiting on a human. Clear these to unblock the fleet.</p>
-            </div>
+            <h2 className="text-sm font-medium">Needs you</h2>
             <div className="space-y-3">
               {pausedRuns.map((run) => (
                 <NeedActionCard
@@ -1009,71 +1038,75 @@ export function AutomationActivityPage({
 
         <section className="space-y-3">
           <div className="space-y-3">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-              <div className="space-y-1">
-                <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Timeline</p>
-                <p className="text-sm text-muted-foreground">
-                  Grouped by day so clusters of failures and pauses are visible without reading raw trigger prose.
-                </p>
-              </div>
-              {showSearchInput ? (
-                <div className="flex items-start gap-2 lg:max-w-xl lg:flex-1">
-                  <div className="min-w-0 flex-1">
-                    <SmartFilterInput
-                      value={smartFilter}
-                      onChange={setSmartFilter}
-                      onApply={handleApplySmartFilter}
-                      onClear={handleClearSmartFilter}
-                      disabled={executionsQuery.isLoading}
-                      autoFocus
-                    />
-                  </div>
-                  {!hasActiveFilter && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 shrink-0 text-muted-foreground"
-                      aria-label="Close search"
-                      onClick={() => {
-                        setSmartFilter('');
-                        setSearchExpanded(false);
-                      }}
-                    >
-                      <Cancel01Icon className="h-3.5 w-3.5" />
-                    </Button>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <h2 className="text-sm font-medium">Timeline</h2>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className={cn(
+                    'h-8 w-8 shrink-0 text-muted-foreground',
+                    showSearchInput && 'bg-muted text-foreground',
                   )}
-                </div>
-              ) : (
-                <div className="flex lg:justify-end">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 gap-1.5 px-2.5 text-xs"
-                    aria-label="Open search"
-                    onClick={() => setSearchExpanded(true)}
-                  >
-                    <Search01Icon className="h-3.5 w-3.5" />
-                    Search
-                  </Button>
-                </div>
-              )}
+                  aria-label={showSearchInput ? 'Close search' : 'Open search'}
+                  aria-pressed={showSearchInput}
+                  onClick={() => {
+                    if (showSearchInput) {
+                      setSmartFilter('');
+                      setSearchExpanded(false);
+                    } else {
+                      setSearchExpanded(true);
+                    }
+                  }}
+                >
+                  <Search01Icon className="h-3.5 w-3.5" />
+                </Button>
+                <Tabs
+                  value={search.status ?? 'all'}
+                  onValueChange={(value) =>
+                    onSearchChange({ status: value === 'all' ? undefined : value, page: 1 })
+                  }
+                >
+                  <TabsList>
+                    <TabsTrigger value="all">All</TabsTrigger>
+                    <TabsTrigger value="running">Running</TabsTrigger>
+                    <TabsTrigger value="completed">Completed</TabsTrigger>
+                    <TabsTrigger value="failed">Failed</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </div>
             </div>
 
-            <Tabs
-              value={search.status ?? 'all'}
-              onValueChange={(value) =>
-                onSearchChange({ status: value === 'all' ? undefined : value, page: 1 })
-              }
-            >
-              <TabsList>
-                <TabsTrigger value="all">All</TabsTrigger>
-                <TabsTrigger value="running">Running</TabsTrigger>
-                <TabsTrigger value="completed">Completed</TabsTrigger>
-                <TabsTrigger value="failed">Failed</TabsTrigger>
-              </TabsList>
-            </Tabs>
+            {showSearchInput && (
+              <div className="flex items-start gap-2">
+                <div className="min-w-0 flex-1">
+                  <SmartFilterInput
+                    value={smartFilter}
+                    onChange={setSmartFilter}
+                    onApply={handleApplySmartFilter}
+                    onClear={handleClearSmartFilter}
+                    disabled={executionsQuery.isLoading}
+                    autoFocus
+                  />
+                </div>
+                {!hasActiveFilter && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 shrink-0 text-muted-foreground"
+                    aria-label="Close search"
+                    onClick={() => {
+                      setSmartFilter('');
+                      setSearchExpanded(false);
+                    }}
+                  >
+                    <Cancel01Icon className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+              </div>
+            )}
 
             {executionsQuery.isLoading ? (
               <div className="space-y-3">

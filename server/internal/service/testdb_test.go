@@ -913,8 +913,38 @@ func newTestDB(t *testing.T) *gorm.DB {
 			avatar_url TEXT,
 			source TEXT,
 			custom_properties TEXT NOT NULL DEFAULT '{}',
+			email_status TEXT NOT NULL DEFAULT 'valid',
+			email_status_reason TEXT,
+			email_status_updated_at DATETIME,
 			created_at DATETIME,
 			updated_at DATETIME
+		)`,
+		`CREATE TABLE crm_companies (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT NOT NULL,
+			display_id TEXT NOT NULL,
+			external_id TEXT,
+			name TEXT NOT NULL,
+			domain TEXT,
+			industry TEXT,
+			employee_count INTEGER,
+			annual_revenue REAL,
+			description TEXT,
+			logo_url TEXT,
+			owner_member_id TEXT,
+			custom_properties TEXT NOT NULL DEFAULT '{}',
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE crm_associations (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT NOT NULL,
+			from_object_type TEXT NOT NULL,
+			from_object_id TEXT NOT NULL,
+			to_object_type TEXT NOT NULL,
+			to_object_id TEXT NOT NULL,
+			association_label TEXT,
+			created_at DATETIME
 		)`,
 	}
 

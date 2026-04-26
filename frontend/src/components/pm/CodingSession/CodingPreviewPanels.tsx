@@ -7,7 +7,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Textarea } from '@/components/ui/textarea';
 import type { PublishedPreview } from '@/components/pm/runPreviews';
 import type { CodingSessionInteraction } from '@/lib/pmTypes';
+import { cn } from '@/lib/utils';
 import { MarkdownContent } from './MarkdownContent';
+import { normalizeCodingSessionPreviewPanelKey } from './previewPanelKeys';
 
 interface TaskPlanTaskPreview {
   ref?: string;
@@ -113,7 +115,7 @@ function parseTaskPlanPreviewModel(preview: PublishedPreview | undefined): TaskP
 function parseAttachedApprovalRequest(interaction: CodingSessionInteraction | null | undefined): AttachedApprovalRequest | null {
   if (!interaction || interaction.interaction_kind !== 'approval_request') return null;
   const payload = asRecord(interaction.request_payload);
-  const previewPanelKey = asString(payload?.preview_panel_key).trim().toLowerCase();
+  const previewPanelKey = normalizeCodingSessionPreviewPanelKey(asString(payload?.preview_panel_key));
   if (!previewPanelKey) return null;
   const phase = asString(payload?.phase).trim().toLowerCase() || undefined;
   const title = asString(payload?.title).trim() || interaction.title || undefined;
@@ -260,11 +262,13 @@ function GenericPreviewPanel({
   preview,
   attachedApproval,
   acting,
+  expanded = false,
   onResolveInteraction,
 }: {
   preview: PublishedPreview;
   attachedApproval?: AttachedApprovalRequest | null;
   acting?: string | null;
+  expanded?: boolean;
   onResolveInteraction?: (interactionId: string, responsePayload: Record<string, unknown>, followupMessage?: string) => void;
 }) {
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -272,7 +276,10 @@ function GenericPreviewPanel({
 
   return (
     <>
-      <div className="rounded-md border border-border/60 bg-card/80 p-3">
+      <div
+        data-preview-panel-key={preview.panelKey}
+        className="rounded-md border border-border/60 bg-card/80 p-3 transition-shadow data-[preview-flash=true]:ring-2 data-[preview-flash=true]:ring-primary/40"
+      >
         <button
           type="button"
           className="mb-2 flex w-full items-center gap-2 text-left transition-colors hover:text-primary"
@@ -281,7 +288,12 @@ function GenericPreviewPanel({
           <File01Icon className="h-4 w-4 text-muted-foreground" />
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{preview.title}</p>
         </button>
-        <div className="relative max-h-[200px] overflow-hidden rounded-md bg-muted/40 p-3">
+        <div
+          className={cn(
+            'relative overflow-hidden rounded-md bg-muted/40 p-3',
+            expanded ? 'max-h-[55vh]' : 'max-h-[200px]',
+          )}
+        >
           {isMarkdown ? (
             <MarkdownContent content={preview.content as string} className="text-[12px] leading-5" />
           ) : (
@@ -289,9 +301,23 @@ function GenericPreviewPanel({
               {JSON.stringify(preview.content, null, 2)}
             </pre>
           )}
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 rounded-b-md bg-gradient-to-t from-muted/80 to-transparent" />
+          <div
+            className={cn(
+              'pointer-events-none absolute inset-x-0 bottom-0 rounded-b-md bg-gradient-to-t from-muted via-muted/70 to-transparent',
+              expanded ? 'h-24' : 'h-12',
+            )}
+          />
         </div>
-        <ExpandPreviewButton onClick={() => setDialogOpen(true)} />
+        {expanded ? (
+          <div className="mt-3 flex justify-center">
+            <Button type="button" variant="outline" size="sm" onClick={() => setDialogOpen(true)}>
+              <ArrowExpandIcon className="mr-1.5 h-3.5 w-3.5" />
+              View preview
+            </Button>
+          </div>
+        ) : (
+          <ExpandPreviewButton onClick={() => setDialogOpen(true)} />
+        )}
         {attachedApproval && onResolveInteraction ? (
           <PreviewApprovalFooter
             approval={attachedApproval}
@@ -423,7 +449,10 @@ function TaskPlanPanel({
 
   return (
     <>
-      <div className="rounded-md border border-border/60 bg-card/80 p-3">
+      <div
+        data-preview-panel-key="task_plan"
+        className="rounded-md border border-border/60 bg-card/80 p-3 transition-shadow data-[preview-flash=true]:ring-2 data-[preview-flash=true]:ring-primary/40"
+      >
         <div className="mb-2 flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
             <SparklesIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -471,6 +500,11 @@ export function CodingPreviewPanels({
   });
   const [prdDialogOpen, setPrdDialogOpen] = useState(false);
 
+  const panelCount = (latestSpecDraftPreview ? 1 : 0)
+    + (latestTaskPlanPreview ? 1 : 0)
+    + otherPreviewPanels.length;
+  const isSolo = panelCount === 1;
+
   if (!latestSpecDraftPreview && !latestTaskPlanPreview && otherPreviewPanels.length === 0) {
     return null;
   }
@@ -479,7 +513,10 @@ export function CodingPreviewPanels({
     <>
       {latestSpecDraftPreview ? (
         <>
-          <div className="rounded-md border border-border/60 bg-card/80 p-3">
+          <div
+            data-preview-panel-key="prd_draft"
+            className="rounded-md border border-border/60 bg-card/80 p-3 transition-shadow data-[preview-flash=true]:ring-2 data-[preview-flash=true]:ring-primary/40"
+          >
             <div className="mb-2 flex items-center justify-between gap-2">
               <div className="flex min-w-0 items-center gap-2">
                 <File01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -530,6 +567,7 @@ export function CodingPreviewPanels({
         <GenericPreviewPanel
           key={preview.panelKey}
           preview={preview}
+          expanded={isSolo}
           attachedApproval={attachedApproval?.previewPanelKey === preview.panelKey ? attachedApproval : null}
           acting={acting}
           onResolveInteraction={onResolveInteraction}

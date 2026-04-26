@@ -32,6 +32,7 @@ export function TeamRepoDefaultForm({
     auto_sync_states?: boolean;
     review_state_id?: string;
     done_state_id?: string;
+    closed_state_id?: string;
   }) => void | Promise<void>;
 }) {
   const [repositoryId, setRepositoryId] = useState(initial?.repository_id ?? '');
@@ -40,6 +41,7 @@ export function TeamRepoDefaultForm({
   const [autoSyncStates, setAutoSyncStates] = useState(initial?.auto_sync_states ?? true);
   const [reviewStateId, setReviewStateId] = useState(initial?.review_state_id ?? 'none');
   const [doneStateId, setDoneStateId] = useState(initial?.done_state_id ?? 'none');
+  const [closedStateId, setClosedStateId] = useState(initial?.closed_state_id ?? 'none');
 
   useEffect(() => {
     setRepositoryId(initial?.repository_id ?? '');
@@ -48,6 +50,7 @@ export function TeamRepoDefaultForm({
     setAutoSyncStates(initial?.auto_sync_states ?? true);
     setReviewStateId(initial?.review_state_id ?? 'none');
     setDoneStateId(initial?.done_state_id ?? 'none');
+    setClosedStateId(initial?.closed_state_id ?? 'none');
   }, [initial]);
 
   const selectedRepository = repositories.find((repository) => repository.id === repositoryId) ?? null;
@@ -105,12 +108,28 @@ export function TeamRepoDefaultForm({
         </div>
         <Switch checked={autoSyncStates} onCheckedChange={setAutoSyncStates} />
       </div>
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-3">
         <div className="space-y-2">
           <Label>PR opened state</Label>
           <Select value={reviewStateId} onValueChange={setReviewStateId}>
             <SelectTrigger>
               <SelectValue placeholder="Choose review state" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Do not map</SelectItem>
+              {workflowStates.map((state) => (
+                <SelectItem key={state.id} value={state.id}>
+                  {state.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>PR closed state</Label>
+          <Select value={closedStateId} onValueChange={setClosedStateId}>
+            <SelectTrigger>
+              <SelectValue placeholder="Choose closed state" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="none">Do not map</SelectItem>
@@ -154,6 +173,7 @@ export function TeamRepoDefaultForm({
             auto_sync_states: autoSyncStates,
             review_state_id: reviewStateId !== 'none' ? reviewStateId : undefined,
             done_state_id: doneStateId !== 'none' ? doneStateId : undefined,
+            closed_state_id: closedStateId !== 'none' ? closedStateId : undefined,
           })}
         >
           {saving ? 'Saving...' : 'Save'}

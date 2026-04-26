@@ -30,6 +30,7 @@ type BackendIdentityPayload = {
   name: string;
   firstName: string;
   lastName: string;
+  company?: CompanyPayload;
 };
 
 function getIdentityString(value: unknown): string {
@@ -44,11 +45,13 @@ function resolveIdentityPayload(payload: Record<string, any>): BackendIdentityPa
   const firstName = getIdentityString(payload.first_name ?? payload.firstName);
   const lastName = getIdentityString(payload.last_name ?? payload.lastName);
   const name = buildIdentityName(firstName, lastName, getIdentityString(payload.name));
+  const company = resolveCompanyPayload(payload.company);
   return {
     email: getIdentityString(payload.email),
     name,
     firstName,
     lastName,
+    ...(company ? { company } : {}),
   };
 }
 
@@ -737,7 +740,7 @@ export class HelpinClient {
     // Try widget WS path first via the public sendSessionUpgrade method
     const namespace = this.config.namespace || 'helpin';
     const nsFunc = (globalThis as any)[namespace];
-    if (nsFunc?._widgetManager?.sendSessionUpgrade?.(identity.email, identity.name, source, identity.firstName, identity.lastName)) {
+    if (nsFunc?._widgetManager?.sendSessionUpgrade?.(identity.email, identity.name, source, identity.firstName, identity.lastName, identity.company)) {
       return;
     }
 
@@ -754,6 +757,7 @@ export class HelpinClient {
       first_name: identity.firstName,
       last_name: identity.lastName,
       source,
+      company: identity.company,
     });
 
     if (typeof fetch !== 'undefined') {

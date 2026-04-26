@@ -54,6 +54,8 @@ export const agentService = {
     api.post<AgentRun>(`/pm/tasks/${taskId}/run-agent${qs(workspaceId)}`, payload ?? {}),
   runEpic: (workspaceId: string, epicId: string, payload: StartAgentRunRequest) =>
     api.post<AgentRun>(`/pm/epics/${epicId}/run-agent${qs(workspaceId)}`, payload),
+  startRun: (workspaceId: string, payload: StartAgentRunRequest & { agent_id: string; target_type: string; target_id: string }) =>
+    automationService.startRun(workspaceId, payload) as ReturnType<typeof automationService.startRun>,
   listWorkspaceRuns: (workspaceId: string, page = 1, perPage = 100) =>
     automationService.listWorkspaceRuns(workspaceId, page, perPage) as ReturnType<typeof automationService.listWorkspaceRuns>,
   listTargetRuns: (workspaceId: string, targetType: string, targetId: string) =>

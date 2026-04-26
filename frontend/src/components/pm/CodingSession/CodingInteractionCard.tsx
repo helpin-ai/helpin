@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { CheckmarkCircle02Icon, GitCommitIcon, SecurityCheckIcon } from '@/lib/icons';
+import { CheckmarkCircle02Icon, File01Icon, GitCommitIcon, SecurityCheckIcon } from '@/lib/icons';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -15,12 +15,15 @@ import type {
   CodingSessionReviewFinding,
 } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
+import { MarkdownContent } from './MarkdownContent';
 
 interface Props {
   interaction: CodingSessionInteraction;
   acting: string | null;
   onResolve: (interactionId: string, responsePayload: Record<string, unknown>, followupMessage?: string) => void;
   compact?: boolean;
+  availablePreviewPanelKey?: string | null;
+  onViewPreview?: (panelKey: string) => void;
 }
 
 interface QuestionAnswerState {
@@ -28,7 +31,7 @@ interface QuestionAnswerState {
   freetext?: string;
 }
 
-export function CodingInteractionCard({ interaction, acting, onResolve, compact = false }: Props) {
+export function CodingInteractionCard({ interaction, acting, onResolve, compact = false, availablePreviewPanelKey, onViewPreview }: Props) {
   const [questionAnswers, setQuestionAnswers] = useState<Record<string, QuestionAnswerState>>({});
   const [followupMessage, setFollowupMessage] = useState('');
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -52,13 +55,14 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
       const visibleQuestions = showStepper ? [codexQuestions[Math.min(currentQuestionIndex, codexQuestions.length - 1)]] : codexQuestions;
       const currentQuestion = codexQuestions[Math.min(currentQuestionIndex, codexQuestions.length - 1)];
       const currentAnswered = currentQuestion ? isCodexQuestionAnswered(currentQuestion, questionAnswers[currentQuestion.id]) : false;
+      const summary = dedupePromptSummary(interaction.summary, codexQuestions.map((question) => question.question));
 
       return (
         <InteractionShell compact={compact}
           icon={<CheckmarkCircle02Icon className="h-4 w-4" />}
           eyebrow="User input required"
           title={interaction.title ?? 'Answer the pending questions'}
-          summary={interaction.summary}
+          summary={summary}
         >
           {showStepper ? (
             <div className="mb-3 flex items-center justify-between text-[11px] text-muted-foreground">
@@ -76,7 +80,10 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
                     {question.header ? (
                       <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{question.header}</div>
                     ) : null}
-                    <div className={cn('mt-1 font-medium text-foreground', compact ? 'text-sm leading-5' : 'text-sm')}>{question.question}</div>
+                    <MarkdownContent
+                      content={question.question}
+                      className={cn('mt-1 text-foreground', compact ? 'text-sm leading-5' : 'text-sm leading-6')}
+                    />
                   </div>
                   {question.options.length > 0 ? (
                     <div className="space-y-2">
@@ -184,13 +191,14 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
       const visibleQuestions = showStepper ? [helpinQuestions[Math.min(currentQuestionIndex, helpinQuestions.length - 1)]] : helpinQuestions;
       const currentQuestion = helpinQuestions[Math.min(currentQuestionIndex, helpinQuestions.length - 1)];
       const currentAnswered = currentQuestion ? isHelpinQuestionAnswered(currentQuestion, questionAnswers[currentQuestion.id]) : false;
+      const summary = dedupePromptSummary(interaction.summary, helpinQuestions.map((question) => question.text));
 
       return (
         <InteractionShell compact={compact}
           icon={<CheckmarkCircle02Icon className="h-4 w-4" />}
           eyebrow="User input required"
           title={interaction.title ?? 'Answer the pending questions'}
-          summary={interaction.summary}
+          summary={summary}
         >
           {showStepper ? (
             <div className="mb-3 flex items-center justify-between text-[11px] text-muted-foreground">
@@ -204,7 +212,10 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
               const selectedOption = question.options.find((option) => option.value === answer?.value);
               return (
                 <div key={question.id} className="space-y-3 rounded-lg border border-border bg-muted/25 p-3">
-                  <div className={cn('font-medium text-foreground', compact ? 'text-sm leading-5' : 'text-sm')}>{question.text}</div>
+                  <MarkdownContent
+                    content={question.text}
+                    className={cn('text-foreground', compact ? 'text-sm leading-5' : 'text-sm leading-6')}
+                  />
                   <div className="space-y-2">
                     {question.options.map((option) => {
                       const selected = answer?.value === option.value;
@@ -442,6 +453,8 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
       ...(followupMessage.trim() ? { message: followupMessage.trim() } : {}),
     });
 
+    const canViewPreview = Boolean(availablePreviewPanelKey && onViewPreview);
+
     return (
       <InteractionShell compact={compact}
         icon={<SecurityCheckIcon className="h-4 w-4" />}
@@ -449,6 +462,16 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
         title={interaction.title ?? approval?.title ?? 'Approval required'}
         summary={interaction.summary ?? approval?.summary}
       >
+        {canViewPreview ? (
+          <button
+            type="button"
+            className="mb-3 inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+            onClick={() => onViewPreview!(availablePreviewPanelKey!)}
+          >
+            <File01Icon className="h-3.5 w-3.5" />
+            View document preview
+          </button>
+        ) : null}
         <Textarea
           value={followupMessage}
           onChange={(event) => setFollowupMessage(event.target.value)}
@@ -614,11 +637,25 @@ function InteractionShell({
       </div>
       <div className={cn('font-semibold', compact ? 'text-sm' : 'text-base')}>{title}</div>
       {summary ? (
-        <p className={cn('mt-1 text-muted-foreground', compact ? 'text-sm leading-5' : 'text-sm')}>{summary}</p>
+        <MarkdownContent
+          content={summary}
+          className={cn('mt-1 text-muted-foreground', compact ? 'text-sm leading-5' : 'text-sm leading-6')}
+        />
       ) : null}
       <div className={compact ? 'mt-3' : 'mt-4'}>{children}</div>
     </div>
   );
+}
+
+function normalizePromptText(value: string) {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function dedupePromptSummary(summary: string | undefined, prompts: string[]) {
+  const normalizedSummary = normalizePromptText(summary ?? '');
+  if (!normalizedSummary) return undefined;
+  const duplicatesPrompt = prompts.some((prompt) => normalizePromptText(prompt) === normalizedSummary);
+  return duplicatesPrompt ? undefined : summary;
 }
 
 function isCodexQuestionAnswered(

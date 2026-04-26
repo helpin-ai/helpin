@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -199,6 +200,9 @@ func BuildUserPrompt(
 ) string {
 	var sections []string
 	var contextParts []string
+
+	now := time.Now().UTC()
+	contextParts = append(contextParts, fmt.Sprintf("Current system date is: %s (%s UTC)", now.Format("2006-01-02"), now.Format("Monday")))
 
 	if story != nil {
 		if epic != nil && strings.TrimSpace(epic.Name) != "" {

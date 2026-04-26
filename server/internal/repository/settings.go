@@ -489,6 +489,7 @@ func (r *SettingsRepository) UpsertTeamRepoDefault(ctx context.Context, teamID s
 	}
 	cfg.ReviewStateID = req.ReviewStateID
 	cfg.DoneStateID = req.DoneStateID
+	cfg.ClosedStateID = req.ClosedStateID
 
 	if err := r.db.WithContext(ctx).Save(cfg).Error; err != nil {
 		return nil, fmt.Errorf("upsert team repo default: %w", err)

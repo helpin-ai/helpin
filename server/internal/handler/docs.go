@@ -1212,7 +1212,7 @@ func publicLocaleEnabled(cfg *model.DocsHelpcenterConfig, locale string) bool {
 // and future CDNs; stale-while-revalidate hides revalidation latency for users.
 //
 // helpcenterCacheNoStore is emitted on endpoints that must not be cached:
-// authenticated previews, config responses, and write responses.
+// authenticated previews and write responses.
 const (
 	helpcenterCachePublicRead = "public, max-age=60, s-maxage=300, stale-while-revalidate=86400"
 	helpcenterCacheNoStore    = "no-store"
@@ -1310,8 +1310,8 @@ func (h *DocsHandler) PublicGetConfig(w http.ResponseWriter, r *http.Request) {
 	if cfg == nil {
 		return
 	}
-	setHelpcenterCacheHeader(w, helpcenterCacheNoStore)
-	writeJSON(w, http.StatusOK, cfg)
+	setHelpcenterCacheHeader(w, helpcenterCachePublicRead)
+	writeJSONWithETag(w, r, http.StatusOK, cfg)
 }
 
 func (h *DocsHandler) PublicGetSpaces(w http.ResponseWriter, r *http.Request) {

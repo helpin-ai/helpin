@@ -98,6 +98,7 @@ func setupRuleEngineTestDB(t *testing.T) *gorm.DB {
 			auto_sync_states BOOLEAN NOT NULL DEFAULT 1,
 			review_state_id TEXT,
 			done_state_id TEXT,
+			closed_state_id TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -430,6 +431,24 @@ func TestMatchesTriggerConfig_StateType(t *testing.T) {
 			wantMatch: false,
 		},
 		{
+			name: "github closed matches base branch",
+			rule: model.AutomationRule{
+				TriggerType:   model.TriggerGitHubPRClosed,
+				TriggerConfig: json.RawMessage(`{"base_branch":"main"}`),
+			},
+			event:     model.AutomationEvent{BaseBranch: "main", RepoFullName: "acme/api"},
+			wantMatch: true,
+		},
+		{
+			name: "github closed repo mismatch",
+			rule: model.AutomationRule{
+				TriggerType:   model.TriggerGitHubPRClosed,
+				TriggerConfig: json.RawMessage(`{"repo_full_name":"acme/web"}`),
+			},
+			event:     model.AutomationEvent{BaseBranch: "main", RepoFullName: "acme/api"},
+			wantMatch: false,
+		},
+		{
 			name: "github release matches tag",
 			rule: model.AutomationRule{
 				TriggerType:   model.TriggerGitHubReleasePub,
@@ -651,6 +670,30 @@ func TestValidateRuleRequest_NewTypes(t *testing.T) {
 		{
 			name:          "github merged requires at least one filter",
 			triggerType:   model.TriggerGitHubPRMerged,
+			triggerConfig: json.RawMessage(`{}`),
+			actionType:    model.ActionStartAgentRun,
+			actionConfig:  json.RawMessage(`{"agent_id":"agent-1"}`),
+			wantErr:       true,
+		},
+		{
+			name:          "github pr closed requires explicit target",
+			triggerType:   model.TriggerGitHubPRClosed,
+			triggerConfig: json.RawMessage(`{"base_branch":"main"}`),
+			actionType:    model.ActionStartAgentRun,
+			actionConfig:  json.RawMessage(`{"agent_id":"agent-1"}`),
+			wantErr:       true,
+		},
+		{
+			name:          "valid github pr closed with explicit target",
+			triggerType:   model.TriggerGitHubPRClosed,
+			triggerConfig: json.RawMessage(`{"base_branch":"main"}`),
+			actionType:    model.ActionStartAgentRun,
+			actionConfig:  json.RawMessage(`{"agent_id":"agent-1","target_type":"repository","target_id":"repo-1"}`),
+			wantErr:       false,
+		},
+		{
+			name:          "github pr closed requires at least one filter",
+			triggerType:   model.TriggerGitHubPRClosed,
 			triggerConfig: json.RawMessage(`{}`),
 			actionType:    model.ActionStartAgentRun,
 			actionConfig:  json.RawMessage(`{"agent_id":"agent-1"}`),

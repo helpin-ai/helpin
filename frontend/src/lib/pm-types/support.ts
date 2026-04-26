@@ -666,6 +666,7 @@ export interface SupportInboxSettings {
   email_fallback_enabled: boolean;
   email_fallback_delay_secs: number;
   email_fallback_from_name: string;
+  email_fallback_max_delivery_age_secs: number;
   brand_color: string;
   show_branding: boolean;
   color_scheme: string;

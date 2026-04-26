@@ -49,6 +49,7 @@ const TRIGGER_LABELS: Record<string, string> = {
   'github.push': 'On GitHub push',
   'github.pull_request_opened': 'On GitHub pull request opened',
   'github.pull_request_merged': 'On GitHub pull request merged',
+  'github.pull_request_closed': 'On GitHub pull request closed',
   'github.pull_request_review_requested': 'On GitHub review requested',
   'github.release_published': 'On GitHub release published',
   'github.check_suite_completed': 'On GitHub check suite completed',
@@ -58,6 +59,7 @@ const WORKSPACE_EVENT_TRIGGER_OPTIONS = [
   { value: 'github.push', label: 'GitHub push' },
   { value: 'github.pull_request_opened', label: 'GitHub PR opened' },
   { value: 'github.pull_request_merged', label: 'GitHub PR merged' },
+  { value: 'github.pull_request_closed', label: 'GitHub PR closed' },
   { value: 'github.pull_request_review_requested', label: 'GitHub review requested' },
   { value: 'github.release_published', label: 'GitHub release published' },
   { value: 'github.check_suite_completed', label: 'GitHub check suite completed' },
@@ -414,6 +416,7 @@ function WorkspaceEventRulesSection({
         return { repo_full_name: repoFullName.trim(), branch: branch.trim() };
       case 'github.pull_request_opened':
       case 'github.pull_request_merged':
+      case 'github.pull_request_closed':
       case 'github.pull_request_review_requested':
         return { repo_full_name: repoFullName.trim(), base_branch: baseBranch.trim() };
       case 'github.release_published':
@@ -440,6 +443,7 @@ function WorkspaceEventRulesSection({
         return Boolean(repoFullName.trim() || branch.trim());
       case 'github.pull_request_opened':
       case 'github.pull_request_merged':
+      case 'github.pull_request_closed':
       case 'github.pull_request_review_requested':
         return Boolean(repoFullName.trim() || baseBranch.trim());
       case 'github.release_published':
@@ -622,7 +626,7 @@ function WorkspaceEventRulesSection({
               </div>
             )}
 
-            {(triggerType === 'github.pull_request_opened' || triggerType === 'github.pull_request_merged' || triggerType === 'github.pull_request_review_requested') && (
+            {(triggerType === 'github.pull_request_opened' || triggerType === 'github.pull_request_merged' || triggerType === 'github.pull_request_closed' || triggerType === 'github.pull_request_review_requested') && (
               <div className="space-y-2">
                 <Label className="text-xs">Base branch</Label>
                 <RepositoryBranchPicker

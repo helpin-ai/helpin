@@ -862,6 +862,8 @@ func describeAutomationRuleTrigger(rule model.AutomationRule) string {
 		return describeGitHubPullRequestTrigger(rule, "opened")
 	case model.TriggerGitHubPRMerged:
 		return describeGitHubPullRequestTrigger(rule, "merged")
+	case model.TriggerGitHubPRClosed:
+		return describeGitHubPullRequestTrigger(rule, "closed")
 	case model.TriggerGitHubPRReviewReq:
 		return describeGitHubPullRequestTrigger(rule, "review requested")
 	case model.TriggerGitHubReleasePub:

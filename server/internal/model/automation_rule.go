@@ -13,6 +13,7 @@ const (
 	TriggerGitHubPush        = "github.push"
 	TriggerGitHubPROpened    = "github.pull_request_opened"
 	TriggerGitHubPRMerged    = "github.pull_request_merged"
+	TriggerGitHubPRClosed    = "github.pull_request_closed"
 	TriggerGitHubPRReviewReq = "github.pull_request_review_requested"
 	TriggerGitHubReleasePub  = "github.release_published"
 	TriggerGitHubCheckSuite  = "github.check_suite_completed"
@@ -86,6 +87,12 @@ type TriggerConfigRunApproved struct {
 
 // TriggerConfigGitHubPRMerged holds config for github.pull_request_merged triggers.
 type TriggerConfigGitHubPRMerged struct {
+	BaseBranch   string `json:"base_branch,omitempty"`
+	RepoFullName string `json:"repo_full_name,omitempty"`
+}
+
+// TriggerConfigGitHubPRClosed holds config for github.pull_request_closed triggers.
+type TriggerConfigGitHubPRClosed struct {
 	BaseBranch   string `json:"base_branch,omitempty"`
 	RepoFullName string `json:"repo_full_name,omitempty"`
 }

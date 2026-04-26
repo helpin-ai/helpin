@@ -111,6 +111,7 @@ func addSettingsExtraTables(t *testing.T, db *gorm.DB) {
 			auto_sync_states BOOLEAN NOT NULL DEFAULT 1,
 			review_state_id TEXT,
 			done_state_id TEXT,
+			closed_state_id TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -783,10 +784,12 @@ func TestUpdateTeamRepoDefault_TrimsBranch(t *testing.T) {
 
 	branch := "  develop  "
 	tmpl := "  feat-{display_id}  "
+	closedStateID := "state-closed"
 	result, err := svc.UpdateTeamRepoDefault(ctx, team.ID, model.UpdateTeamRepoDefaultRequest{
 		RepositoryID:   "repo1",
 		BaseBranch:     &branch,
 		BranchTemplate: &tmpl,
+		ClosedStateID:  &closedStateID,
 	})
 	if err != nil {
 		t.Fatalf("UpdateTeamRepoDefault: %v", err)
@@ -796,6 +799,9 @@ func TestUpdateTeamRepoDefault_TrimsBranch(t *testing.T) {
 	}
 	if result.BranchTemplate != "feat-{display_id}" {
 		t.Fatalf("expected trimmed branch_template, got %q", result.BranchTemplate)
+	}
+	if result.ClosedStateID == nil || *result.ClosedStateID != closedStateID {
+		t.Fatalf("expected closed_state_id %q, got %#v", closedStateID, result.ClosedStateID)
 	}
 }
 

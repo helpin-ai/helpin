@@ -98,6 +98,7 @@ const TRIGGER_OPTIONS = [
   { value: 'github.push', label: 'GitHub push arrives', group: 'GitHub events' },
   { value: 'github.pull_request_opened', label: 'GitHub pull request opens', group: 'GitHub events' },
   { value: 'github.pull_request_merged', label: 'GitHub pull request merges', group: 'GitHub events' },
+  { value: 'github.pull_request_closed', label: 'GitHub pull request closes without merging', group: 'GitHub events' },
   { value: 'github.pull_request_review_requested', label: 'GitHub review is requested', group: 'GitHub events' },
   { value: 'github.release_published', label: 'GitHub release publishes', group: 'GitHub events' },
   { value: 'github.check_suite_completed', label: 'GitHub check suite completes', group: 'GitHub events' },
@@ -589,6 +590,7 @@ function serializeDraft(draft: FlowDraft, workspaceId: string) {
   } else if (
     draft.triggerType === 'github.pull_request_opened'
     || draft.triggerType === 'github.pull_request_merged'
+    || draft.triggerType === 'github.pull_request_closed'
     || draft.triggerType === 'github.pull_request_review_requested'
   ) {
     triggerConfig = { repo_full_name: draft.repoFullName.trim(), base_branch: draft.baseBranch.trim() };
@@ -645,6 +647,7 @@ function validateDraft(draft: FlowDraft) {
   if (
     (draft.triggerType === 'github.pull_request_opened'
       || draft.triggerType === 'github.pull_request_merged'
+      || draft.triggerType === 'github.pull_request_closed'
       || draft.triggerType === 'github.pull_request_review_requested')
     && !draft.repoFullName.trim()
     && !draft.baseBranch.trim()
@@ -774,6 +777,7 @@ function describeFlowTitle(rule: AutomationRule, statesById: Map<string, Workflo
   } else if (rule.trigger_type.startsWith('github.pull_request')) {
     const action = rule.trigger_type === 'github.pull_request_merged' ? 'merged'
       : rule.trigger_type === 'github.pull_request_opened' ? 'opened'
+      : rule.trigger_type === 'github.pull_request_closed' ? 'closed'
       : 'review requested';
     const baseBranch = stringValue(rule.trigger_config?.base_branch);
     triggerPart = `PR ${action}${baseBranch ? ` to base branch ${baseBranch}` : ''}`;

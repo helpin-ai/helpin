@@ -34,6 +34,7 @@ const WORKSPACE_EVENT_TRIGGER_TYPES = new Set([
   'github.push',
   'github.pull_request_opened',
   'github.pull_request_merged',
+  'github.pull_request_closed',
   'github.pull_request_review_requested',
   'github.release_published',
   'github.check_suite_completed',

@@ -49,6 +49,8 @@ const STATUS_LABELS: Record<string, string> = {
 const TARGET_LABELS: Record<string, string> = {
   epic: 'Epic',
   task: 'Task',
+  repository: 'Repository',
+  workspace: 'Workspace',
   support_conversation: 'Support',
   document: 'Document',
   crm_deal: 'Deal',
@@ -79,6 +81,11 @@ function statusVariant(status: AgentRun['status']): 'default' | 'secondary' | 'd
     default:
       return 'secondary';
   }
+}
+
+function initialRunIdFromLocation() {
+  if (typeof window === 'undefined') return null;
+  return new URLSearchParams(window.location.search).get('run_id');
 }
 
 function AgentRunRow({
@@ -146,8 +153,8 @@ export function AgentRunsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [totalRuns, setTotalRuns] = useState(0);
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(() => initialRunIdFromLocation());
+  const [drawerOpen, setDrawerOpen] = useState(() => Boolean(initialRunIdFromLocation()));
 
   const loadData = useCallback(async (isRefresh = false) => {
     if (!workspaceId) return;
@@ -323,7 +330,16 @@ export function AgentRunsPage() {
       <CodingSessionDrawer
         sessionId={selectedRunId}
         open={drawerOpen && !!selectedRunId}
-        onOpenChange={setDrawerOpen}
+        onOpenChange={(open) => {
+          setDrawerOpen(open);
+          if (!open && selectedRunId) {
+            const url = new URL(window.location.href);
+            if (url.searchParams.get('run_id') === selectedRunId) {
+              url.searchParams.delete('run_id');
+              window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+            }
+          }
+        }}
         title={selectedRun ? `${agentNameById[selectedRun.agent_id] ?? 'Agent'} Run` : 'Agent Run'}
         description={selectedRun ? `${formatTarget(selectedRun)} • ${formatTimestamp(selectedRun.created_at)}` : undefined}
       />
