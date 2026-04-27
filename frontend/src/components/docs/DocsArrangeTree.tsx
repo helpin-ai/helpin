@@ -243,8 +243,18 @@ function ArrangeBucketItems({
       onDragCancel={() => setDragActiveId(null)}
     >
       <SortableContext items={ordered.map((item) => `${item.type}:${item.id}`)} strategy={verticalListSortingStrategy}>
-        {ordered.map((item) => {
+        {ordered.map((item, idx) => {
           const prefixedId = `${item.type}:${item.id}`
+
+          // At the space root, show "Uncategorized" divider before the
+          // first doc that follows a collection (visual parity with the
+          // non-arrange mode's UncategorizedSection).
+          const showUncategorizedLabel =
+            parentCollectionId === null &&
+            item.type === 'doc' &&
+            idx > 0 &&
+            ordered[idx - 1].type === 'collection'
+
           if (item.type === 'collection') {
             return (
               <SortableItem key={prefixedId} id={prefixedId}>
@@ -259,9 +269,17 @@ function ArrangeBucketItems({
             )
           }
           return (
-            <SortableItem key={prefixedId} id={prefixedId}>
-              <ArrangeDocRow doc={item.doc} />
-            </SortableItem>
+            <div key={prefixedId}>
+              {showUncategorizedLabel && (
+                <div className="flex items-center gap-2 px-3 pt-3 pb-1">
+                  <Folder01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
+                  <span className="text-xs font-medium text-muted-foreground/60">Uncategorized</span>
+                </div>
+              )}
+              <SortableItem id={prefixedId}>
+                <ArrangeDocRow doc={item.doc} />
+              </SortableItem>
+            </div>
           )
         })}
       </SortableContext>
