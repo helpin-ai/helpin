@@ -926,7 +926,7 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		ReplyTimePreset:                 SupportReplyTimePresetFewMinutes,
 		ReplyTimeCustomMinutes:          nil,
 		SpecialNoticeText:               nil,
-		EmailFallbackEnabled:            false,
+		EmailFallbackEnabled:            true,
 		EmailFallbackDelaySecs:          120,
 		EmailFallbackFromName:           "",
 		EmailFallbackMaxDeliveryAgeSecs: 600,
