@@ -22,6 +22,13 @@ func TestParseSettingsDefaultsEmailFallbackFreshnessWindow(t *testing.T) {
 	}
 }
 
+func TestDefaultSupportInboxSettingsEnableEmailFallback(t *testing.T) {
+	settings := model.DefaultSupportInboxSettings()
+	if !settings.EmailFallbackEnabled {
+		t.Fatal("expected email fallback to be enabled by default")
+	}
+}
+
 func TestMergeSettingsUpdateAppliesEmailFallbackFreshnessWindow(t *testing.T) {
 	current := model.DefaultSupportInboxSettings()
 	current.EmailFallbackDelaySecs = 120
