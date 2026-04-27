@@ -339,11 +339,7 @@ export function DocumentsTable({
                   ) : '—'}
                 </span>
                 <span className="w-28 shrink-0 truncate text-xs text-muted-foreground">
-                  {doc.collection_id ? (
-                    <span style={{ paddingLeft: `${(collectionDepths?.get(doc.collection_id) ?? 0) * 12}px` }}>
-                      {collectionNames.get(doc.collection_id) ?? '—'}
-                    </span>
-                  ) : '—'}
+                  {doc.collection_id ? (collectionNames.get(doc.collection_id) ?? '—') : '—'}
                 </span>
                 <span className={`w-20 shrink-0 text-xs font-medium ${statusColor(doc.status)}`}>
                   {DOC_STATUS_LABELS[doc.status] ?? doc.status}
