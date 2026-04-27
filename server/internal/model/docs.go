@@ -159,6 +159,7 @@ type DocsCollection struct {
 	Description        *string    `json:"description"`
 	Icon               *string    `json:"icon"`
 	Position           int        `json:"position" gorm:"not null;default:0;index:idx_docs_collections_space_parent_pos,priority:3"`
+	SortKey            string     `json:"sort_key" gorm:"not null;default:'~'"`
 	CreatedBy          string     `json:"created_by" gorm:"type:uuid;not null"`
 	CreatedAt          time.Time  `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt          time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
@@ -183,6 +184,7 @@ type DocsDocument struct {
 	Icon             *string         `json:"icon"`
 	Tags             DocsStringArray `json:"tags" gorm:"type:text[]"`
 	Position         int             `json:"position" gorm:"not null;default:0"`
+	SortKey          string          `json:"sort_key" gorm:"not null;default:'~'"`
 	IsPinned         bool            `json:"is_pinned" gorm:"not null;default:false"`
 	IsPubliclyShared bool            `json:"is_publicly_shared" gorm:"not null;default:false"`
 	ShareToken       *string         `json:"share_token" gorm:"uniqueIndex"`
