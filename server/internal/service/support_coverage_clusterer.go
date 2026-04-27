@@ -82,6 +82,10 @@ func computeClusterKey(workspaceID, signalType, documentID, issueKey, summary st
 	return hex.EncodeToString(sum[:])
 }
 
+func ComputeSupportCoverageClusterKey(workspaceID, signalType, documentID, issueKey, summary string) string {
+	return computeClusterKey(workspaceID, signalType, documentID, issueKey, summary)
+}
+
 func (c *SupportCoverageClusterer) UpsertTopicGap(ctx context.Context, event *model.SupportEvent) (*model.SupportCoverageGap, error) {
 	if event == nil {
 		return nil, nil
