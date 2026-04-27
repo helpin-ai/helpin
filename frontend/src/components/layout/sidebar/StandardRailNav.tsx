@@ -42,7 +42,7 @@ export function StandardRailNav({ groups, isActive, onNavigate }: StandardRailNa
                     <item.icon />
                     <span>{item.label}</span>
                     {!!item.badge && (
-                      <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white">
+                      <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full border border-amber-500/30 bg-amber-500/10 px-1 text-[10px] font-semibold leading-none text-amber-700 dark:text-amber-300">
                         {item.badge > 99 ? '99+' : item.badge}
                       </span>
                     )}

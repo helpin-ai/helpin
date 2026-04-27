@@ -165,7 +165,7 @@ export function Sidebar() {
     [wsSlug, canManageSettings, permissionSet, agentAttentionCount],
   );
   const currentNavGroups = panelNavGroups[activeRail];
-  const railItems = useMemo(() => buildRailItems(wsSlug, totalSupportUnread, agentAttentionCount), [wsSlug, totalSupportUnread, agentAttentionCount]);
+  const railItems = useMemo(() => buildRailItems(wsSlug, totalSupportUnread), [wsSlug, totalSupportUnread]);
 
   useEffect(() => {
     if (activeRail !== 'settings') {

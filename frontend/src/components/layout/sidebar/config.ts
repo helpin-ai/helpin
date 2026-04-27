@@ -61,12 +61,12 @@ export const projectCreateOptions = [
   { key: 'objective' as const, label: 'Objective', icon: Target01Icon, pages: ['objectives'] },
 ];
 
-export function buildRailItems(wsSlug: string, totalSupportUnread: number, agentAttentionCount: number): RailItem[] {
+export function buildRailItems(wsSlug: string, totalSupportUnread: number): RailItem[] {
   return [
     { id: 'projects', label: 'Projects', icon: FolderKanbanIcon, defaultLink: `/w/${wsSlug}/pm/my-work` },
     { id: 'crm', label: 'CRM', icon: Briefcase01Icon, defaultLink: `/w/${wsSlug}/crm/contacts` },
     { id: 'support', label: 'Support', icon: Message01Icon, defaultLink: `/w/${wsSlug}/support`, indicator: Boolean(totalSupportUnread) },
-    { id: 'automation', label: 'Automation', icon: BotIcon, defaultLink: `/w/${wsSlug}/automation/activity`, badge: agentAttentionCount },
+    { id: 'automation', label: 'Automation', icon: BotIcon, defaultLink: `/w/${wsSlug}/automation/flows` },
     { id: 'docs', label: 'Docs', icon: File01Icon, defaultLink: `/w/${wsSlug}/docs` },
     { id: 'settings', label: 'Settings', icon: Setting07Icon, defaultLink: buildSettingsRoutePath(wsSlug, 'profile') },
   ];
@@ -108,7 +108,7 @@ export function buildPanelNavGroups(wsSlug: string, canManageSettings: boolean, 
         label: '',
         items: [
           { link: `/w/${wsSlug}/automation/flows`, label: 'Flows', icon: ArrowReloadHorizontalIcon },
-          { link: `/w/${wsSlug}/automation/agents`, label: 'Agents', icon: BotIcon, badge: agentAttentionCount },
+          { link: `/w/${wsSlug}/automation/agents`, label: 'Agents', icon: BotIcon },
           { link: `/w/${wsSlug}/automation/activity`, label: 'Activity', icon: Clock01Icon, badge: agentAttentionCount },
         ],
       },
