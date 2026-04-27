@@ -61,11 +61,11 @@ function makeDoc(overrides: Partial<DocsDocument> & Pick<DocsDocument, 'id' | 't
 // Getting Started itself has 1 direct doc (d-gs-1).
 function buildStandardFixture() {
   const collections: DocsCollection[] = [
-    makeCollection({ id: 'gs', name: 'Getting Started', position: 0, depth: 0 }),
-    makeCollection({ id: 'setup', name: 'Setup', position: 0, depth: 1, parent_collection_id: 'gs' }),
-    makeCollection({ id: 'deep', name: 'Deep', position: 0, depth: 2, parent_collection_id: 'setup' }),
-    makeCollection({ id: 'first', name: 'First Steps', position: 1, depth: 1, parent_collection_id: 'gs' }),
-    makeCollection({ id: 'billing', name: 'Billing', position: 1, depth: 0 }),
+    makeCollection({ id: 'gs', name: 'Getting Started', position: 0, depth: 0, sort_key: 'an' }),
+    makeCollection({ id: 'setup', name: 'Setup', position: 0, depth: 1, parent_collection_id: 'gs', sort_key: 'an' }),
+    makeCollection({ id: 'deep', name: 'Deep', position: 0, depth: 2, parent_collection_id: 'setup', sort_key: 'an' }),
+    makeCollection({ id: 'first', name: 'First Steps', position: 1, depth: 1, parent_collection_id: 'gs', sort_key: 'ao' }),
+    makeCollection({ id: 'billing', name: 'Billing', position: 1, depth: 0, sort_key: 'ao' }),
   ]
   const documents: DocsDocument[] = [
     makeDoc({ id: 'd-gs-1', title: 'GS direct doc', collection_id: 'gs' }),
@@ -178,13 +178,13 @@ describe('scopedDocuments', () => {
     )
   })
 
-  it('returns only direct docs for a collection view — not sub-collection docs', () => {
+  it('returns direct + sub-collection docs recursively for a collection view', () => {
     const { tree } = buildStandardFixture()
     const view = resolveView('gs', tree)
     const docs = scopedDocuments(view, tree, NO_FILTER)
-    // Getting Started has 1 direct doc; its children (setup/deep/first)
-    // have docs that must NOT appear here.
-    expect(docs.map((d) => d.id)).toEqual(['d-gs-1'])
+    // Getting Started has 1 direct doc + setup has 1 + deep has 1 (archived).
+    // All three should appear (recursive walk).
+    expect(docs.map((d) => d.id)).toEqual(['d-gs-1', 'd-setup-1', 'd-deep-1'])
   })
 
   it('returns tree.uncategorizedDocuments for uncategorized view', () => {
