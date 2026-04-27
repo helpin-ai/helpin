@@ -169,6 +169,13 @@ jobs:
         with:
           path: build-prod-server
 
+      - name: Prepare Docker socket
+        run: |
+          if [ -S /var/run/docker.sock ]; then
+            sudo chmod 666 /var/run/docker.sock || true
+          fi
+          docker version
+
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
@@ -209,6 +216,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: build-prod-helpcenter
+
+      - name: Prepare Docker socket
+        run: |
+          if [ -S /var/run/docker.sock ]; then
+            sudo chmod 666 /var/run/docker.sock || true
+          fi
+          docker version
 
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
@@ -251,11 +265,17 @@ jobs:
         with:
           version: 10
 
-      - name: Install and build all packages
+      - name: Install and build frontend
         run: |
           cd build-prod-netlify
           pnpm install --no-frozen-lockfile
-          NODE_OPTIONS=--max-old-space-size=8192 pnpm build
+          NODE_OPTIONS=--max-old-space-size=8192 pnpm \
+            --filter @helpin-ai/sdk-js... \
+            --filter @helpin-ai/widget-embed... \
+            --filter @helpin-ai/react... \
+            --filter @helpin-ai/nextjs... \
+            --filter frontend... \
+            build
 
       - name: Link Netlify site
         working-directory: build-prod-netlify
