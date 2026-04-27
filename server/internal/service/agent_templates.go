@@ -225,9 +225,13 @@ Treat these configured values as already resolved and authoritative. Do not plan
 
 Run only the configured scanners through the dedicated scanner tools: scan_semgrep, scan_trivy, and scan_gitleaks. Do not run scanner CLIs through run_command. Do not modify files.
 
+Use scanner pagination and filtering instead of rerunning a scanner when output is compacted. Start scanner analysis with summary_only: true for counts/groups only, then request detail_level: "index" with category, rule_ids, package_names, vulnerability_ids, paths, page, and page_size for compact finding rows. Use detail_level: "full" only for narrow follow-up inspection.
+
 Triage normalized scanner findings against repository code and configuration. Suppress false positives and non-actionable findings. Create tasks only for applicable findings at or above severity_threshold. If include_low_info is false, do not create tasks for low or informational findings.
 
-Group related findings by root cause, such as shared scanner rule, vulnerable dependency, secret type, misconfiguration pattern, sink, or remediation path. Create at most max_tasks remediation tasks with create_task. Pass destination_team_id directly as team_id. Pass destination_state_id directly as state_id only when it is configured; otherwise let the team default stage apply.
+Before creating tasks, ensure a shared workspace label named security exists with ensure_task_label. Then call list_tasks with the returned security label_id, open_only: true, detail_level: "compact", and limit: 100. Do not request full descriptions/comments for the first duplicate lookup. Do not filter existing-task lookup by destination_state_id; duplicates must be detected across every open workflow state. Use these open security tasks for duplicate detection. Parse Sentinel markers such as <!-- sentinel:root_cause=... finding_ids=[...] --> from compact task excerpts yourself; do not expect structured marker fields. If an open matching task already exists, do not create a duplicate; add a comment with add_task_comment only when the current scan adds materially new evidence such as new CVEs, affected paths, fixed versions, scanner evidence, or advisory URLs.
+
+Group related findings by fix unit, such as one vulnerable package/manifest upgrade, one secret exposure root cause, one scanner rule/sink remediation, or one misconfiguration remediation. Multiple CVEs may share one task only when the same package/manifest update fixes them together. Put a single-line <!-- sentinel:root_cause=... finding_ids=[...] --> marker at the top of every created task description, capped to roughly 300 characters. Put scan-update markers at the start of comments. Create at most max_tasks new remediation tasks with create_task. Pass destination_team_id directly as team_id. Pass destination_state_id directly as state_id only when it is configured; otherwise let the team default stage apply. Attach the security label to every created task with label_ids.
 
 Raw configuration:
 {{raw_configuration_json}}`
@@ -452,7 +456,10 @@ Raw configuration:
 				"scan_trivy",
 				"scan_gitleaks",
 				"web_search_exa",
+				"ensure_task_label",
+				"list_tasks",
 				"create_task",
+				"add_task_comment",
 			})),
 			AllowedCommands: model.JSONBlob(mustJSONStringSlice([]string{
 				"git",
@@ -1515,7 +1522,13 @@ These values were configured when this custom agent was created. Treat them as a
 - max_tasks: %d
 - schedule_preset: %s (informational; the automation rule already handled cadence)
 
-Use the destination IDs directly when calling create_task. Run only the configured scanners, triage findings in repository context, suppress false positives, group applicable findings by root cause, and create at most max_tasks tasks.
+Before creating tasks, call ensure_task_label for a shared workspace label named "security". Then call list_tasks with the returned security label_id, open_only: true, detail_level: "compact", and limit: 100. Do not request full descriptions/comments for the first duplicate lookup. Do not filter existing-task lookup by destination_state_id; duplicates must be detected across every open workflow state. Use the existing open security tasks to avoid duplicates. Parse Sentinel markers such as <!-- sentinel:root_cause=... finding_ids=[...] --> from compact task excerpts yourself; do not expect structured marker fields. If a matching open task already exists, add a scan-update comment only when the current scan adds materially new evidence; otherwise leave it unchanged.
+
+When creating a security task, put a single-line <!-- sentinel:root_cause=... finding_ids=[...] --> marker at the top of the task description, capped to roughly 300 characters. When adding a scan-update comment, put the scan-update marker at the start of the comment so compact excerpts preserve it.
+
+Use scanner summary_only and pagination/filtering for large result sets. summary_only returns counts/groups only; detail_level: "index" returns compact finding rows; detail_level: "full" returns verbose scanner details for narrow follow-up only. Do not rerun a scanner only because the model-visible output was compacted; request the next page or a narrower category/package/CVE/path filter instead.
+
+Use the destination IDs directly when calling create_task. Attach the security label ID with label_ids. Run only the configured scanners, triage findings in repository context, suppress false positives, group applicable findings by fix unit, and create at most max_tasks new tasks.
 
 Raw configuration:
 

@@ -31,11 +31,22 @@ type securityScannerRequest struct {
 	ExcludePaths         []string `json:"exclude_paths"`
 	SeverityThreshold    string   `json:"severity_threshold"`
 	MaxFindings          int      `json:"max_findings"`
+	Page                 int      `json:"page"`
+	PageSize             int      `json:"page_size"`
+	SummaryOnly          bool     `json:"summary_only"`
+	Category             string   `json:"category"`
+	RuleIDs              []string `json:"rule_ids"`
+	PackageNames         []string `json:"package_names"`
+	VulnerabilityIDs     []string `json:"vulnerability_ids"`
+	Paths                []string `json:"paths"`
 	IncludeLowInfo       bool     `json:"include_low_info"`
 	Config               string   `json:"config"`
 	FallbackToAutoConfig bool     `json:"fallback_to_auto_config"`
 	Scanners             []string `json:"scanners"`
 	ScanGitHistory       bool     `json:"scan_git_history"`
+	DetailLevel          string   `json:"detail_level"`
+
+	legacyMaxFindings bool
 }
 
 type SecurityScanSummary struct {
@@ -69,11 +80,47 @@ type SecurityScanFinding struct {
 }
 
 type SecurityScannerResult struct {
-	Scanner  string                `json:"scanner"`
-	Summary  SecurityScanSummary   `json:"summary"`
-	Findings []SecurityScanFinding `json:"findings"`
-	Warnings []string              `json:"warnings,omitempty"`
+	Scanner                 string                 `json:"scanner"`
+	Summary                 SecurityScanSummary    `json:"summary"`
+	SummaryBeforePagination SecurityScanSummary    `json:"summary_before_pagination"`
+	TotalFindings           int                    `json:"total_findings"`
+	ReturnedFindings        int                    `json:"returned_findings"`
+	Page                    int                    `json:"page"`
+	PageSize                int                    `json:"page_size"`
+	HasMore                 bool                   `json:"has_more"`
+	ScanID                  string                 `json:"scan_id,omitempty"`
+	CacheHit                bool                   `json:"cache_hit"`
+	SummaryOnly             bool                   `json:"summary_only,omitempty"`
+	DetailLevel             string                 `json:"detail_level,omitempty"`
+	Bounded                 bool                   `json:"bounded,omitempty"`
+	Compaction              *helpinCompactionHint  `json:"_helpin_compaction,omitempty"`
+	Groups                  []SecurityFindingGroup `json:"groups,omitempty"`
+	Findings                []SecurityScanFinding  `json:"findings"`
+	Warnings                []string               `json:"warnings,omitempty"`
 }
+
+type SecurityFindingGroup struct {
+	Kind            string              `json:"kind"`
+	Key             string              `json:"key"`
+	Category        string              `json:"category,omitempty"`
+	Severity        string              `json:"severity,omitempty"`
+	RuleID          string              `json:"rule_id,omitempty"`
+	PackageName     string              `json:"package_name,omitempty"`
+	VulnerabilityID string              `json:"vulnerability_id,omitempty"`
+	Path            string              `json:"path,omitempty"`
+	Count           int                 `json:"count"`
+	Summary         SecurityScanSummary `json:"summary"`
+}
+
+type securityScannerCacheEntry struct {
+	ScanID    string
+	Scanner   string
+	Findings  []SecurityScanFinding
+	Warnings  []string
+	CreatedAt time.Time
+}
+
+var securityScannerCommandRunner = runSecurityScannerCommand
 
 func securityScannerToolSchema(scanner string) map[string]interface{} {
 	props := map[string]interface{}{
@@ -94,7 +141,49 @@ func securityScannerToolSchema(scanner string) map[string]interface{} {
 		},
 		"max_findings": map[string]interface{}{
 			"type":        "integer",
-			"description": "Maximum findings to return after filtering. Defaults to 200, max 1000.",
+			"description": "Legacy maximum findings to return after filtering. Prefer page/page_size.",
+		},
+		"page": map[string]interface{}{
+			"type":        "integer",
+			"description": "1-based result page after filtering and sorting. Defaults to 1.",
+		},
+		"page_size": map[string]interface{}{
+			"type":        "integer",
+			"description": "Maximum findings to return on this page. Defaults to 100, max 200.",
+		},
+		"summary_only": map[string]interface{}{
+			"type":        "boolean",
+			"description": "When true, return counts and groups without full findings.",
+		},
+		"detail_level": map[string]interface{}{
+			"type":        "string",
+			"description": "Finding detail shape. Use index for compact triage rows, full for verbose scanner details.",
+			"enum":        []string{"full", "index"},
+		},
+		"category": map[string]interface{}{
+			"type":        "string",
+			"description": "Optional normalized category filter.",
+			"enum":        []string{"dependency", "sast", "secret", "misconfig"},
+		},
+		"rule_ids": map[string]interface{}{
+			"type":        "array",
+			"description": "Optional scanner rule IDs to include.",
+			"items":       map[string]interface{}{"type": "string"},
+		},
+		"package_names": map[string]interface{}{
+			"type":        "array",
+			"description": "Optional dependency package names to include.",
+			"items":       map[string]interface{}{"type": "string"},
+		},
+		"vulnerability_ids": map[string]interface{}{
+			"type":        "array",
+			"description": "Optional CVE/GHSA/OSV vulnerability IDs to include.",
+			"items":       map[string]interface{}{"type": "string"},
+		},
+		"paths": map[string]interface{}{
+			"type":        "array",
+			"description": "Optional exact or prefix repository paths to include after scanning.",
+			"items":       map[string]interface{}{"type": "string"},
 		},
 		"include_low_info": map[string]interface{}{
 			"type":        "boolean",
@@ -134,33 +223,59 @@ func toolScanSemgrep(ctx *ExecutionContext, input json.RawMessage) (string, erro
 		req.FallbackToAutoConfig = true
 	}
 	env, warnings := securityScannerEnv()
+	if req.Config != "auto" && !semgrepConfigAvailable(req.Config) {
+		warnings = append(warnings, fmt.Sprintf("semgrep config %q is unavailable or empty; using --config auto", req.Config))
+		req.Config = "auto"
+	}
+	cacheKey, scanID, cacheErr := securityScannerCacheKey(ctx, "semgrep", req)
+	if cacheErr == nil {
+		if entry, ok := getSecurityScannerCacheEntry(ctx, cacheKey); ok {
+			return marshalSecurityScannerCachedResult("semgrep", entry.ScanID, true, entry.Findings, req, append(warnings, entry.Warnings...))
+		}
+	} else {
+		warnings = append(warnings, fmt.Sprintf("scanner cache disabled: %v", cacheErr))
+	}
 	args := []string{"scan", "--config", req.Config, "--json"}
 	for _, exclude := range req.ExcludePaths {
 		args = append(args, "--exclude", exclude)
 	}
 	args = append(args, req.ScanPaths...)
 
-	stdout, stderr, err := runSecurityScannerCommand(ctx, "semgrep", args, env)
-	warnings = append(warnings, scannerCommandWarnings("semgrep", stderr, err)...)
-	if err != nil && req.FallbackToAutoConfig && req.Config != "auto" {
+	stdout, stderr, commandErr := securityScannerCommandRunner(ctx, "semgrep", args, env)
+	warnings = append(warnings, scannerCommandWarnings("semgrep", stderr, commandErr)...)
+	if commandErr != nil && req.FallbackToAutoConfig && req.Config != "auto" {
 		fallbackArgs := []string{"scan", "--config", "auto", "--json"}
 		for _, exclude := range req.ExcludePaths {
 			fallbackArgs = append(fallbackArgs, "--exclude", exclude)
 		}
 		fallbackArgs = append(fallbackArgs, req.ScanPaths...)
-		stdout, stderr, err = runSecurityScannerCommand(ctx, "semgrep", fallbackArgs, env)
+		stdout, stderr, commandErr = securityScannerCommandRunner(ctx, "semgrep", fallbackArgs, env)
 		warnings = append(warnings, "semgrep bundled config failed; retried with --config auto")
-		warnings = append(warnings, scannerCommandWarnings("semgrep fallback", stderr, err)...)
+		warnings = append(warnings, scannerCommandWarnings("semgrep fallback", stderr, commandErr)...)
 	}
-	if err != nil && strings.TrimSpace(stdout) == "" {
-		return "", fmt.Errorf("semgrep scan failed: %w", err)
+	if commandErr != nil && strings.TrimSpace(stdout) == "" {
+		warnings = append(warnings, fmt.Sprintf("semgrep produced no JSON output; returning zero findings"))
+		return marshalSecurityScannerResult("semgrep", nil, req, warnings)
 	}
 	findings, parseWarnings, err := parseSemgrepFindings([]byte(stdout))
 	if err != nil {
+		if commandErr != nil {
+			warnings = append(warnings, scannerParseFailureWarnings("semgrep", stdout, err)...)
+			return marshalSecurityScannerResult("semgrep", nil, req, warnings)
+		}
 		return "", err
 	}
 	warnings = append(warnings, parseWarnings...)
-	return marshalSecurityScannerResult("semgrep", findings, req, warnings)
+	if cacheErr == nil {
+		putSecurityScannerCacheEntry(ctx, cacheKey, securityScannerCacheEntry{
+			ScanID:    scanID,
+			Scanner:   "semgrep",
+			Findings:  findings,
+			Warnings:  append([]string(nil), warnings...),
+			CreatedAt: time.Now().UTC(),
+		})
+	}
+	return marshalSecurityScannerCachedResult("semgrep", scanID, false, findings, req, warnings)
 }
 
 func toolScanTrivy(ctx *ExecutionContext, input json.RawMessage) (string, error) {
@@ -178,6 +293,12 @@ func toolScanTrivy(ctx *ExecutionContext, input json.RawMessage) (string, error)
 			return "", fmt.Errorf("unsupported trivy scanner %q", scanner)
 		}
 	}
+	cacheKey, scanID, cacheErr := securityScannerCacheKey(ctx, "trivy", req)
+	if cacheErr == nil {
+		if entry, ok := getSecurityScannerCacheEntry(ctx, cacheKey); ok {
+			return marshalSecurityScannerCachedResult("trivy", entry.ScanID, true, entry.Findings, req, entry.Warnings)
+		}
+	}
 	args := []string{
 		"fs",
 		"--cache-dir", filepath.Join(securityRuntimeCacheDir, "trivy"),
@@ -187,20 +308,37 @@ func toolScanTrivy(ctx *ExecutionContext, input json.RawMessage) (string, error)
 		"--severity", "LOW,MEDIUM,HIGH,CRITICAL",
 	}
 	warnings := prepareTrivyRuntimeCache()
+	if cacheErr != nil {
+		warnings = append(warnings, fmt.Sprintf("scanner cache disabled: %v", cacheErr))
+	}
 	env, envWarnings := securityScannerEnv()
 	warnings = append(warnings, envWarnings...)
 	args = append(args, req.ScanPaths...)
-	stdout, stderr, err := runSecurityScannerCommand(ctx, "trivy", args, env)
-	warnings = append(warnings, scannerCommandWarnings("trivy", stderr, err)...)
-	if err != nil && strings.TrimSpace(stdout) == "" {
-		return "", fmt.Errorf("trivy scan failed: %w", err)
+	stdout, stderr, commandErr := securityScannerCommandRunner(ctx, "trivy", args, env)
+	warnings = append(warnings, scannerCommandWarnings("trivy", stderr, commandErr)...)
+	if commandErr != nil && strings.TrimSpace(stdout) == "" {
+		warnings = append(warnings, "trivy produced no JSON output; returning zero findings")
+		return marshalSecurityScannerResult("trivy", nil, req, warnings)
 	}
 	findings, parseWarnings, err := parseTrivyFindings([]byte(stdout))
 	if err != nil {
+		if commandErr != nil {
+			warnings = append(warnings, scannerParseFailureWarnings("trivy", stdout, err)...)
+			return marshalSecurityScannerResult("trivy", nil, req, warnings)
+		}
 		return "", err
 	}
 	warnings = append(warnings, parseWarnings...)
-	return marshalSecurityScannerResult("trivy", findings, req, warnings)
+	if cacheErr == nil {
+		putSecurityScannerCacheEntry(ctx, cacheKey, securityScannerCacheEntry{
+			ScanID:    scanID,
+			Scanner:   "trivy",
+			Findings:  findings,
+			Warnings:  append([]string(nil), warnings...),
+			CreatedAt: time.Now().UTC(),
+		})
+	}
+	return marshalSecurityScannerCachedResult("trivy", scanID, false, findings, req, warnings)
 }
 
 func toolScanGitleaks(ctx *ExecutionContext, input json.RawMessage) (string, error) {
@@ -211,22 +349,45 @@ func toolScanGitleaks(ctx *ExecutionContext, input json.RawMessage) (string, err
 	if !jsonFieldPresent(input, "severity_threshold") {
 		req.SeverityThreshold = "high"
 	}
+	cacheKey, scanID, cacheErr := securityScannerCacheKey(ctx, "gitleaks", req)
+	if cacheErr == nil {
+		if entry, ok := getSecurityScannerCacheEntry(ctx, cacheKey); ok {
+			return marshalSecurityScannerCachedResult("gitleaks", entry.ScanID, true, entry.Findings, req, entry.Warnings)
+		}
+	}
 	args := gitleaksCommandArgs(req)
 	env, warnings := securityScannerEnv()
-	stdout, stderr, err := runSecurityScannerCommand(ctx, "gitleaks", args, env)
-	warnings = append(warnings, scannerCommandWarnings("gitleaks", stderr, nil)...)
+	if cacheErr != nil {
+		warnings = append(warnings, fmt.Sprintf("scanner cache disabled: %v", cacheErr))
+	}
+	stdout, stderr, commandErr := securityScannerCommandRunner(ctx, "gitleaks", args, env)
+	warnings = append(warnings, scannerCommandWarnings("gitleaks", stderr, commandErr)...)
 	if !req.ScanGitHistory {
 		warnings = append(warnings, "gitleaks ran against the working tree only; git history was not scanned")
 	}
-	if err != nil && strings.TrimSpace(stdout) == "" {
-		return "", fmt.Errorf("gitleaks scan failed: %w", err)
+	if commandErr != nil && strings.TrimSpace(stdout) == "" {
+		warnings = append(warnings, "gitleaks produced no JSON output; returning zero findings")
+		return marshalSecurityScannerResult("gitleaks", nil, req, warnings)
 	}
 	findings, parseWarnings, err := parseGitleaksFindings([]byte(stdout))
 	if err != nil {
+		if commandErr != nil {
+			warnings = append(warnings, scannerParseFailureWarnings("gitleaks", stdout, err)...)
+			return marshalSecurityScannerResult("gitleaks", nil, req, warnings)
+		}
 		return "", err
 	}
 	warnings = append(warnings, parseWarnings...)
-	return marshalSecurityScannerResult("gitleaks", findings, req, warnings)
+	if cacheErr == nil {
+		putSecurityScannerCacheEntry(ctx, cacheKey, securityScannerCacheEntry{
+			ScanID:    scanID,
+			Scanner:   "gitleaks",
+			Findings:  findings,
+			Warnings:  append([]string(nil), warnings...),
+			CreatedAt: time.Now().UTC(),
+		})
+	}
+	return marshalSecurityScannerCachedResult("gitleaks", scanID, false, findings, req, warnings)
 }
 
 func gitleaksCommandArgs(req securityScannerRequest) []string {
@@ -235,6 +396,65 @@ func gitleaksCommandArgs(req securityScannerRequest) []string {
 		args = append(args, "--no-git")
 	}
 	return args
+}
+
+func securityScannerCacheKey(ctx *ExecutionContext, scanner string, req securityScannerRequest) (string, string, error) {
+	if ctx == nil {
+		return "", "", fmt.Errorf("execution context is unavailable")
+	}
+	cacheInput := map[string]interface{}{
+		"scanner":                 strings.TrimSpace(scanner),
+		"work_dir":                strings.TrimSpace(ctx.WorkDir),
+		"scan_paths":              sortedStrings(req.ScanPaths),
+		"exclude_paths":           sortedStrings(req.ExcludePaths),
+		"config":                  strings.TrimSpace(req.Config),
+		"fallback_to_auto_config": req.FallbackToAutoConfig,
+		"scanners":                sortedStrings(req.Scanners),
+		"scan_git_history":        req.ScanGitHistory,
+	}
+	payload, err := json.Marshal(cacheInput)
+	if err != nil {
+		return "", "", fmt.Errorf("marshal scanner cache key: %w", err)
+	}
+	sum := sha256.Sum256(payload)
+	key := hex.EncodeToString(sum[:])
+	return key, key[:16], nil
+}
+
+func getSecurityScannerCacheEntry(ctx *ExecutionContext, key string) (securityScannerCacheEntry, bool) {
+	if ctx == nil || strings.TrimSpace(key) == "" {
+		return securityScannerCacheEntry{}, false
+	}
+	ctx.securityScannerCacheMu.Lock()
+	defer ctx.securityScannerCacheMu.Unlock()
+	if ctx.securityScannerCache == nil {
+		return securityScannerCacheEntry{}, false
+	}
+	entry, ok := ctx.securityScannerCache[key]
+	return entry, ok
+}
+
+func putSecurityScannerCacheEntry(ctx *ExecutionContext, key string, entry securityScannerCacheEntry) {
+	if ctx == nil || strings.TrimSpace(key) == "" {
+		return
+	}
+	ctx.securityScannerCacheMu.Lock()
+	defer ctx.securityScannerCacheMu.Unlock()
+	if ctx.securityScannerCache == nil {
+		ctx.securityScannerCache = make(map[string]securityScannerCacheEntry)
+	}
+	ctx.securityScannerCache[key] = entry
+}
+
+func sortedStrings(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func parseSecurityScannerRequest(input json.RawMessage) (securityScannerRequest, error) {
@@ -268,11 +488,47 @@ func parseSecurityScannerRequest(input json.RawMessage) (securityScannerRequest,
 	if req.SeverityThreshold == "" {
 		req.SeverityThreshold = "medium"
 	}
-	if req.MaxFindings <= 0 {
-		req.MaxFindings = 200
+	rawCategory := req.Category
+	req.Category = normalizeSecurityCategory(req.Category)
+	if req.Category == "" && strings.TrimSpace(rawCategory) != "" {
+		return req, fmt.Errorf("category must be one of dependency, sast, secret, or misconfig")
 	}
-	if req.MaxFindings > 1000 {
-		req.MaxFindings = 1000
+	for idx, path := range req.Paths {
+		clean, err := cleanRepoRelativePath(path)
+		if err != nil {
+			return req, fmt.Errorf("paths[%d]: %w", idx, err)
+		}
+		req.Paths[idx] = clean
+	}
+	req.RuleIDs = normalizeStringFilters(req.RuleIDs)
+	req.PackageNames = normalizeStringFilters(req.PackageNames)
+	req.VulnerabilityIDs = normalizeStringFilters(req.VulnerabilityIDs)
+	req.DetailLevel = strings.ToLower(strings.TrimSpace(req.DetailLevel))
+	if req.DetailLevel == "" {
+		req.DetailLevel = "full"
+	}
+	if req.DetailLevel != "full" && req.DetailLevel != "index" {
+		return req, fmt.Errorf("detail_level must be full or index")
+	}
+	if req.Page <= 0 {
+		req.Page = 1
+	}
+	if jsonFieldPresent(input, "max_findings") && !jsonFieldPresent(input, "page_size") && !jsonFieldPresent(input, "page") {
+		req.legacyMaxFindings = true
+		if req.MaxFindings <= 0 {
+			req.MaxFindings = 200
+		}
+		if req.MaxFindings > 1000 {
+			req.MaxFindings = 1000
+		}
+		req.PageSize = req.MaxFindings
+	} else {
+		if req.PageSize <= 0 {
+			req.PageSize = 100
+		}
+		if req.PageSize > 200 {
+			req.PageSize = 200
+		}
 	}
 	return req, nil
 }
@@ -384,16 +640,129 @@ func scannerCommandWarnings(label, stderr string, err error) []string {
 	return warnings
 }
 
+func scannerParseFailureWarnings(label, stdout string, err error) []string {
+	var warnings []string
+	if err != nil {
+		warnings = append(warnings, fmt.Sprintf("%s JSON output could not be parsed: %v", label, err))
+	}
+	if trimmed := strings.TrimSpace(stdout); trimmed != "" {
+		warnings = append(warnings, fmt.Sprintf("%s stdout was omitted because scanner parse failures may include sensitive findings", label))
+	}
+	return warnings
+}
+
+func semgrepConfigAvailable(config string) bool {
+	config = strings.TrimSpace(config)
+	if config == "" || config == "auto" || strings.Contains(config, "://") {
+		return true
+	}
+	if !filepath.IsAbs(config) && !strings.HasPrefix(config, ".") {
+		return true
+	}
+	info, err := os.Stat(config)
+	if err != nil {
+		return false
+	}
+	if !info.IsDir() {
+		return true
+	}
+	return directoryHasEntries(config)
+}
+
 func marshalSecurityScannerResult(scanner string, findings []SecurityScanFinding, req securityScannerRequest, warnings []string) (string, error) {
+	return marshalSecurityScannerCachedResult(scanner, "", false, findings, req, warnings)
+}
+
+func marshalSecurityScannerCachedResult(scanner, scanID string, cacheHit bool, findings []SecurityScanFinding, req securityScannerRequest, warnings []string) (string, error) {
 	filtered, filterWarnings := filterSecurityFindings(findings, req)
 	warnings = append(warnings, filterWarnings...)
+	pageFindings, page, pageSize, hasMore := paginateSecurityFindings(filtered, req)
+	returnedFindings := pageFindings
+	if req.SummaryOnly {
+		returnedFindings = []SecurityScanFinding{}
+	} else if req.DetailLevel == "index" {
+		returnedFindings = compactSecurityFindings(returnedFindings)
+	}
+	summary := summarizeSecurityFindings(filtered)
 	result := SecurityScannerResult{
-		Scanner:  scanner,
-		Summary:  summarizeSecurityFindings(filtered),
-		Findings: filtered,
-		Warnings: dedupeStrings(warnings),
+		Scanner:                 scanner,
+		Summary:                 summary,
+		SummaryBeforePagination: summary,
+		TotalFindings:           len(filtered),
+		ReturnedFindings:        len(returnedFindings),
+		Page:                    page,
+		PageSize:                pageSize,
+		HasMore:                 hasMore,
+		ScanID:                  scanID,
+		CacheHit:                cacheHit,
+		SummaryOnly:             req.SummaryOnly,
+		DetailLevel:             req.DetailLevel,
+		Findings:                returnedFindings,
+		Warnings:                dedupeStrings(warnings),
+	}
+	if req.SummaryOnly || req.DetailLevel == "full" {
+		result.Groups = summarizeSecurityFindingGroups(filtered)
+	}
+	if req.DetailLevel == "index" && !req.SummaryOnly {
+		return marshalBoundedSecurityScannerIndexResult(result)
 	}
 	out, err := json.Marshal(result)
+	if err != nil {
+		return "", fmt.Errorf("marshal scanner result: %w", err)
+	}
+	return string(out), nil
+}
+
+func compactSecurityFindings(findings []SecurityScanFinding) []SecurityScanFinding {
+	out := make([]SecurityScanFinding, 0, len(findings))
+	for _, finding := range findings {
+		finding.Title = truncateSecurityString(strings.TrimSpace(finding.Title), 237)
+		finding.Message = ""
+		finding.References = nil
+		finding.CWEIDs = nil
+		finding.Raw = nil
+		out = append(out, finding)
+	}
+	return out
+}
+
+func marshalBoundedSecurityScannerIndexResult(result SecurityScannerResult) (string, error) {
+	result.Compaction = &helpinCompactionHint{
+		Exempt:   true,
+		MaxRunes: boundedToolOutputCompactionMaxRunes,
+		Mode:     "bounded_index",
+	}
+	out, err := json.Marshal(result)
+	if err != nil {
+		return "", fmt.Errorf("marshal scanner result: %w", err)
+	}
+	if len([]rune(string(out))) <= boundedToolOutputCompactionMaxRunes {
+		return string(out), nil
+	}
+
+	originalFindings := result.Findings
+	result.Bounded = true
+	result.HasMore = true
+	result.Warnings = dedupeStrings(append(result.Warnings, "response_bounded; narrow by category/package/CVE/rule/path or request next page"))
+	low, high, best := 0, len(originalFindings), 0
+	for low <= high {
+		count := low + (high-low)/2
+		result.Findings = originalFindings[:count]
+		result.ReturnedFindings = count
+		out, err = json.Marshal(result)
+		if err != nil {
+			return "", fmt.Errorf("marshal scanner result: %w", err)
+		}
+		if len([]rune(string(out))) <= boundedToolOutputCompactionMaxRunes {
+			best = count
+			low = count + 1
+		} else {
+			high = count - 1
+		}
+	}
+	result.Findings = originalFindings[:best]
+	result.ReturnedFindings = best
+	out, err = json.Marshal(result)
 	if err != nil {
 		return "", fmt.Errorf("marshal scanner result: %w", err)
 	}
@@ -410,11 +779,27 @@ func filterSecurityFindings(findings []SecurityScanFinding, req securityScannerR
 		if finding.Severity == "" {
 			finding.Severity = "info"
 		}
+		finding.Category = normalizeSecurityCategory(finding.Category)
 		finding.Path = normalizeRepoOutputPath(finding.Path)
 		if !pathIncluded(finding.Path, req.ScanPaths) {
 			continue
 		}
 		if pathExcluded(finding.Path, excludes) {
+			continue
+		}
+		if req.Category != "" && normalizeSecurityCategory(finding.Category) != req.Category {
+			continue
+		}
+		if len(req.Paths) > 0 && !pathIncluded(finding.Path, req.Paths) {
+			continue
+		}
+		if len(req.RuleIDs) > 0 && !stringInFoldedSet(finding.RuleID, req.RuleIDs) {
+			continue
+		}
+		if len(req.PackageNames) > 0 && !stringPtrInFoldedSet(finding.PackageName, req.PackageNames) {
+			continue
+		}
+		if len(req.VulnerabilityIDs) > 0 && !stringPtrInFoldedSet(finding.VulnerabilityID, req.VulnerabilityIDs) {
 			continue
 		}
 		if !req.IncludeLowInfo && (finding.Severity == "low" || finding.Severity == "info") {
@@ -442,7 +827,7 @@ func filterSecurityFindings(findings []SecurityScanFinding, req securityScannerR
 		}
 		return intPtrValue(a.StartLine) < intPtrValue(b.StartLine)
 	})
-	if len(deduped) > req.MaxFindings {
+	if req.legacyMaxFindings && len(deduped) > req.MaxFindings {
 		warnings = append(warnings, fmt.Sprintf("findings truncated from %d to max_findings=%d", len(deduped), req.MaxFindings))
 		deduped = deduped[:req.MaxFindings]
 	}
@@ -467,6 +852,89 @@ func summarizeSecurityFindings(findings []SecurityScanFinding) SecurityScanSumma
 		}
 	}
 	return summary
+}
+
+func paginateSecurityFindings(findings []SecurityScanFinding, req securityScannerRequest) ([]SecurityScanFinding, int, int, bool) {
+	page := req.Page
+	if page <= 0 {
+		page = 1
+	}
+	pageSize := req.PageSize
+	if pageSize <= 0 {
+		pageSize = 100
+	}
+	start := (page - 1) * pageSize
+	if start >= len(findings) {
+		return []SecurityScanFinding{}, page, pageSize, false
+	}
+	end := start + pageSize
+	if end > len(findings) {
+		end = len(findings)
+	}
+	return findings[start:end], page, pageSize, end < len(findings)
+}
+
+func summarizeSecurityFindingGroups(findings []SecurityScanFinding) []SecurityFindingGroup {
+	type groupAccumulator struct {
+		group    SecurityFindingGroup
+		findings []SecurityScanFinding
+	}
+	groups := make(map[string]*groupAccumulator)
+	add := func(kind, key string, finding SecurityScanFinding) {
+		if strings.TrimSpace(key) == "" {
+			return
+		}
+		mapKey := kind + "\x00" + key
+		acc := groups[mapKey]
+		if acc == nil {
+			acc = &groupAccumulator{group: SecurityFindingGroup{
+				Kind:            kind,
+				Key:             key,
+				Category:        normalizeSecurityCategory(finding.Category),
+				Severity:        finding.Severity,
+				RuleID:          finding.RuleID,
+				PackageName:     derefString(finding.PackageName),
+				VulnerabilityID: derefString(finding.VulnerabilityID),
+				Path:            finding.Path,
+			}}
+			groups[mapKey] = acc
+		}
+		acc.findings = append(acc.findings, finding)
+		acc.group.Count++
+		if severityRank(finding.Severity) > severityRank(acc.group.Severity) {
+			acc.group.Severity = finding.Severity
+		}
+	}
+	for _, finding := range findings {
+		add("severity", finding.Severity, finding)
+		add("category", normalizeSecurityCategory(finding.Category), finding)
+		add("rule", finding.RuleID, finding)
+		if finding.PackageName != nil {
+			add("package", *finding.PackageName, finding)
+		}
+		if finding.VulnerabilityID != nil {
+			add("vulnerability", *finding.VulnerabilityID, finding)
+		}
+		add("path", finding.Path, finding)
+	}
+	out := make([]SecurityFindingGroup, 0, len(groups))
+	for _, acc := range groups {
+		acc.group.Summary = summarizeSecurityFindings(acc.findings)
+		out = append(out, acc.group)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Kind != out[j].Kind {
+			return out[i].Kind < out[j].Kind
+		}
+		if out[i].Count != out[j].Count {
+			return out[i].Count > out[j].Count
+		}
+		return out[i].Key < out[j].Key
+	})
+	if len(out) > 200 {
+		out = out[:200]
+	}
+	return out
 }
 
 func cleanRepoRelativePath(path string) (string, error) {
@@ -538,6 +1006,21 @@ func normalizeSecuritySeverity(value string) string {
 	}
 }
 
+func normalizeSecurityCategory(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "dependency", "vuln", "vulnerability", "package":
+		return "dependency"
+	case "sast", "code", "static":
+		return "sast"
+	case "secret", "secrets":
+		return "secret"
+	case "misconfig", "misconfiguration", "config", "iac":
+		return "misconfig"
+	default:
+		return ""
+	}
+}
+
 func severityRank(value string) int {
 	switch normalizeSecuritySeverity(value) {
 	case "critical":
@@ -553,6 +1036,48 @@ func severityRank(value string) int {
 	default:
 		return 0
 	}
+}
+
+func normalizeStringFilters(values []string) []string {
+	seen := make(map[string]bool, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		key := strings.ToLower(value)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, value)
+	}
+	return out
+}
+
+func stringInFoldedSet(value string, filters []string) bool {
+	value = strings.TrimSpace(value)
+	for _, filter := range filters {
+		if strings.EqualFold(value, strings.TrimSpace(filter)) {
+			return true
+		}
+	}
+	return false
+}
+
+func stringPtrInFoldedSet(value *string, filters []string) bool {
+	if value == nil {
+		return false
+	}
+	return stringInFoldedSet(*value, filters)
+}
+
+func derefString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(*value)
 }
 
 func securityHash(parts ...string) string {

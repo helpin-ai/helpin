@@ -166,6 +166,21 @@ func TestListAgentTemplatesSeedsSystemTemplates(t *testing.T) {
 	if !strings.Contains(*sentinel.SystemPrompt, "scan_semgrep") || !strings.Contains(*sentinel.SystemPrompt, "Do not run scanner CLIs through run_command") {
 		t.Fatalf("expected Sentinel prompt to require scanner tools, got %s", *sentinel.SystemPrompt)
 	}
+	for _, want := range []string{
+		"returned security label_id",
+		"open_only: true",
+		`detail_level: "compact"`,
+		"Do not request full descriptions/comments",
+		"Parse Sentinel markers",
+		"single-line <!-- sentinel:root_cause=...",
+		`detail_level: "index"`,
+		"limit: 100",
+		"Do not filter existing-task lookup by destination_state_id",
+	} {
+		if !strings.Contains(*sentinel.SystemPrompt, want) {
+			t.Fatalf("expected Sentinel prompt to include %q, got %s", want, *sentinel.SystemPrompt)
+		}
+	}
 	var sentinelTargets []string
 	if err := json.Unmarshal(sentinel.AllowedTargets, &sentinelTargets); err != nil {
 		t.Fatalf("unmarshal Sentinel allowed targets: %v", err)
@@ -648,6 +663,21 @@ func TestCreateAgentFromSecurityTriageTemplateCreatesCronRepositoryStarterFlow(t
 	}
 	if result.Agent.SystemPrompt == nil || !strings.Contains(*result.Agent.SystemPrompt, "You are Sentinel") || !strings.Contains(*result.Agent.SystemPrompt, `- scanners: semgrep, trivy, gitleaks`) || !strings.Contains(*result.Agent.SystemPrompt, `- destination_team_id: team-security`) || !strings.Contains(*result.Agent.SystemPrompt, `"severity_threshold": "medium"`) || strings.Contains(*result.Agent.SystemPrompt, "{{scanners}}") {
 		t.Fatalf("expected configured system prompt, got %+v", result.Agent.SystemPrompt)
+	}
+	for _, want := range []string{
+		"returned security label_id",
+		"open_only: true",
+		`detail_level: "compact"`,
+		"Do not request full descriptions/comments",
+		"Parse Sentinel markers",
+		"single-line <!-- sentinel:root_cause=...",
+		`detail_level: "index"`,
+		"limit: 100",
+		"Do not filter existing-task lookup by destination_state_id",
+	} {
+		if !strings.Contains(*result.Agent.SystemPrompt, want) {
+			t.Fatalf("expected configured Sentinel prompt to include %q, got %s", want, *result.Agent.SystemPrompt)
+		}
 	}
 	var allowedTargets []string
 	if err := json.Unmarshal(result.Agent.AllowedTargets, &allowedTargets); err != nil {

@@ -126,8 +126,8 @@ func TestStageIntoStagesSecurityTriageBuiltInSkillPackage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read staged security triage SKILL.md: %v", err)
 	}
-	if !strings.Contains(string(payload), "gitleaks detect --source . --report-format json --no-git") {
-		t.Fatalf("expected staged security triage skill to contain scanner command, got %q", string(payload))
+	if !strings.Contains(string(payload), "`scan_gitleaks`") || !strings.Contains(string(payload), "`ensure_task_label`") {
+		t.Fatalf("expected staged security triage skill to contain scanner and label tools, got %q", string(payload))
 	}
 	if _, err := os.Stat(filepath.Join(destRoot, "01-security_triage", "semgrep", "helpin-security.yml")); err != nil {
 		t.Fatalf("expected staged security triage semgrep rules: %v", err)

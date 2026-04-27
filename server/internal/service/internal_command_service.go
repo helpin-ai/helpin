@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"strings"
 	"time"
 
@@ -25,6 +26,8 @@ type InternalCommandDefinition struct {
 type InternalCommandService struct {
 	agentService        *AgentService
 	taskService         *PMTaskService
+	labelService        *PMLabelService
+	commentService      *PMCommentService
 	crmDealService      *CRMDealService
 	crmActivityService  *CRMActivityService
 	docsDocumentService *DocsDocumentService
@@ -41,6 +44,16 @@ type InternalCommandService struct {
 // SetPMAutomationService sets the PM automation service (breaks circular dependency).
 func (s *InternalCommandService) SetPMAutomationService(svc *PMAutomationService) {
 	s.pmAutomationService = svc
+}
+
+// SetPMLabelService sets the PM label service for command-backed label tools.
+func (s *InternalCommandService) SetPMLabelService(svc *PMLabelService) {
+	s.labelService = svc
+}
+
+// SetPMCommentService sets the PM comment service for command-backed comment tools.
+func (s *InternalCommandService) SetPMCommentService(svc *PMCommentService) {
+	s.commentService = svc
 }
 
 // SetGitService sets the git service for delivery commands.
@@ -393,6 +406,215 @@ func (s *InternalCommandService) registerDefaults() {
 		Tool:                 mustCommandToolMetadata("pm.assign_task_agent"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			return nil, fmt.Errorf("task agent assignment was removed; use a workflow automation rule or start a run explicitly with an agent")
+		},
+	})
+	s.register(InternalCommandDefinition{
+		Name:                 "pm.ensure_label",
+		Module:               "pm",
+		Mutating:             true,
+		SupportedTargetTypes: []string{"workspace", "epic", "task", "story"},
+		Tool:                 mustCommandToolMetadata("pm.ensure_label"),
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.labelService == nil {
+				return nil, fmt.Errorf("label service is not configured")
+			}
+			var req struct {
+				Name        string  `json:"name"`
+				TeamID      *string `json:"team_id"`
+				Description *string `json:"description"`
+				Color       *string `json:"color"`
+			}
+			if err := json.Unmarshal(input, &req); err != nil {
+				return nil, fmt.Errorf("parse ensure label input: %w", err)
+			}
+			name := strings.TrimSpace(req.Name)
+			if name == "" {
+				return nil, fmt.Errorf("name is required")
+			}
+			teamID := stringPtrOrNil(commandDerefString(req.TeamID))
+			existing, err := s.labelService.labelRepo.GetByName(ctx, meta.WorkspaceID, teamID, name)
+			if err != nil {
+				return nil, err
+			}
+			created := false
+			label := existing
+			if label == nil {
+				label, err = s.labelService.Create(ctx, model.CreateLabelRequest{
+					WorkspaceID: meta.WorkspaceID,
+					TeamID:      teamID,
+					Name:        name,
+					Description: stringPtrOrNil(commandDerefString(req.Description)),
+					Color:       stringPtrOrNil(commandDerefString(req.Color)),
+				})
+				if err != nil {
+					return nil, err
+				}
+				created = true
+			} else if label.Archived {
+				archived := false
+				label, err = s.labelService.Update(ctx, label.ID, model.UpdateLabelRequest{Archived: &archived})
+				if err != nil {
+					return nil, err
+				}
+			}
+			return mustJSON(map[string]any{
+				"label_id":     label.ID,
+				"name":         label.Name,
+				"team_id":      label.TeamID,
+				"color":        label.Color,
+				"workspace_id": label.WorkspaceID,
+				"created":      created,
+			}), nil
+		},
+	})
+	s.register(InternalCommandDefinition{
+		Name:                 "pm.list_tasks",
+		Module:               "pm",
+		Mutating:             false,
+		SupportedTargetTypes: []string{"workspace", "epic", "task", "story"},
+		Tool:                 mustCommandToolMetadata("pm.list_tasks"),
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.taskService == nil {
+				return nil, fmt.Errorf("task service is not configured")
+			}
+			var req struct {
+				LabelID             string `json:"label_id"`
+				TeamID              string `json:"team_id"`
+				OpenOnly            bool   `json:"open_only"`
+				IncludeDescriptions bool   `json:"include_descriptions"`
+				IncludeComments     bool   `json:"include_comments"`
+				Limit               int    `json:"limit"`
+				DetailLevel         string `json:"detail_level"`
+			}
+			if len(input) > 0 {
+				if err := json.Unmarshal(input, &req); err != nil {
+					return nil, fmt.Errorf("parse list tasks input: %w", err)
+				}
+			}
+			req.DetailLevel = strings.ToLower(strings.TrimSpace(req.DetailLevel))
+			if req.DetailLevel != "" && req.DetailLevel != "summary" && req.DetailLevel != "compact" && req.DetailLevel != "full" {
+				return nil, fmt.Errorf("detail_level must be summary, compact, or full")
+			}
+			limit := req.Limit
+			if limit <= 0 {
+				limit = 50
+			}
+			if limit > 100 {
+				limit = 100
+			}
+			archived := false
+			filters := model.PMTaskFilters{
+				LabelID:  stringPtrOrNil(req.LabelID),
+				TeamID:   stringPtrOrNil(req.TeamID),
+				Archived: &archived,
+			}
+			if req.OpenOnly {
+				completed := false
+				filters.Completed = &completed
+			}
+			tasks, total, err := s.taskService.List(ctx, meta.WorkspaceID, filters, model.PMPagination{Page: 1, PerPage: limit})
+			if err != nil {
+				return nil, err
+			}
+			commentsByTask := map[string][]model.CommentWithAuthor{}
+			if req.DetailLevel == "compact" || req.IncludeComments {
+				if s.commentService == nil {
+					return nil, fmt.Errorf("comment service is not configured")
+				}
+				taskIDs := make([]string, 0, len(tasks))
+				for _, task := range tasks {
+					taskIDs = append(taskIDs, task.ID)
+				}
+				commentsByTask, err = s.commentService.ListByEntityIDs(ctx, "task", taskIDs)
+				if err != nil {
+					return nil, err
+				}
+			}
+			results := make([]map[string]any, 0, len(tasks))
+			for _, task := range tasks {
+				if req.DetailLevel == "compact" {
+					results = append(results, buildCompactTaskItem(task, commentsByTask[task.ID]))
+					continue
+				}
+				item := map[string]any{
+					"task_id":     task.ID,
+					"display_id":  task.DisplayID,
+					"task_key":    task.TaskKey,
+					"name":        task.Name,
+					"team_id":     task.TeamID,
+					"state_id":    task.WorkflowStateID,
+					"state_name":  task.StateName,
+					"completed":   task.Completed,
+					"priority":    task.Priority,
+					"severity":    task.Severity,
+					"external_id": task.ExternalID,
+					"updated_at":  task.UpdatedAt,
+					"labels":      task.Labels,
+				}
+				if req.IncludeDescriptions {
+					item["description"] = task.Description
+				}
+				if req.IncludeComments {
+					item["comments"] = compactTaskComments(commentsByTask[task.ID], 10)
+				}
+				results = append(results, item)
+			}
+			if req.DetailLevel == "compact" {
+				return marshalCompactTaskResponse(results, total, limit)
+			}
+			response := map[string]any{
+				"tasks":        results,
+				"total":        total,
+				"limit":        limit,
+				"detail_level": req.DetailLevel,
+			}
+			return mustJSON(response), nil
+		},
+	})
+	s.register(InternalCommandDefinition{
+		Name:                 "pm.add_task_comment",
+		Module:               "pm",
+		Mutating:             true,
+		SupportedTargetTypes: []string{"workspace", "task", "story"},
+		Tool:                 mustCommandToolMetadata("pm.add_task_comment"),
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.commentService == nil || s.taskService == nil {
+				return nil, fmt.Errorf("comment service is not configured")
+			}
+			var req struct {
+				TaskID  string `json:"task_id"`
+				Content string `json:"content"`
+			}
+			if err := json.Unmarshal(input, &req); err != nil {
+				return nil, fmt.Errorf("parse add task comment input: %w", err)
+			}
+			taskID := strings.TrimSpace(firstNonEmptyCommand(req.TaskID, meta.TargetID))
+			content := strings.TrimSpace(req.Content)
+			if taskID == "" || content == "" {
+				return nil, fmt.Errorf("task_id and content are required")
+			}
+			detail, err := s.taskService.GetByID(ctx, taskID)
+			if err != nil {
+				return nil, err
+			}
+			if detail.Task.WorkspaceID != meta.WorkspaceID {
+				return nil, fmt.Errorf("task not found")
+			}
+			if normalized := normalizeTaskDescriptionRichText(&content); normalized != nil {
+				content = *normalized
+			}
+			comment, err := s.commentService.Create(ctx, model.CreateCommentRequest{
+				EntityType: "task",
+				EntityID:   taskID,
+				Body:       content,
+			}, fallbackActor(meta), meta.WorkspaceID)
+			if err != nil {
+				return nil, err
+			}
+			return mustJSON(map[string]any{
+				"task_id":    taskID,
+				"comment_id": comment.Comment.ID,
+			}), nil
 		},
 	})
 	s.register(InternalCommandDefinition{
@@ -1059,4 +1281,201 @@ func commandDerefString(value *string) string {
 		return ""
 	}
 	return strings.TrimSpace(*value)
+}
+
+func compactTaskComments(comments []model.CommentWithAuthor, limit int) []map[string]any {
+	if limit <= 0 || limit > len(comments) {
+		limit = len(comments)
+	}
+	start := len(comments) - limit
+	out := make([]map[string]any, 0, limit)
+	for i := start; i < len(comments); i++ {
+		comment := comments[i].Comment
+		out = append(out, map[string]any{
+			"comment_id": comment.ID,
+			"author_id":  comment.AuthorID,
+			"body":       comment.Body,
+			"created_at": comment.CreatedAt,
+			"updated_at": comment.UpdatedAt,
+		})
+	}
+	return out
+}
+
+func helpinCommandCompactionHint() map[string]any {
+	return map[string]any{
+		"exempt":    true,
+		"max_runes": 30000,
+		"mode":      "bounded_index",
+	}
+}
+
+func buildCompactTaskItem(task model.BoardTask, comments []model.CommentWithAuthor) map[string]any {
+	description := commandDerefString(task.Description)
+	item := map[string]any{
+		"task_id":             task.ID,
+		"display_id":          task.DisplayID,
+		"task_key":            task.TaskKey,
+		"name":                task.Name,
+		"team_id":             task.TeamID,
+		"state_id":            task.WorkflowStateID,
+		"state_name":          task.StateName,
+		"completed":           task.Completed,
+		"priority":            task.Priority,
+		"severity":            task.Severity,
+		"external_id":         task.ExternalID,
+		"updated_at":          task.UpdatedAt,
+		"labels":              compactTaskLabels(task.Labels),
+		"description_excerpt": richTextPlainExcerpt(description, 500),
+		"comment_excerpts":    compactCommentExcerpts(comments, 3, 300),
+	}
+	return item
+}
+
+func marshalCompactTaskResponse(tasks []map[string]any, total int64, limit int) (json.RawMessage, error) {
+	response := map[string]any{
+		"_helpin_compaction": helpinCommandCompactionHint(),
+		"tasks":              tasks,
+		"total":              total,
+		"limit":              limit,
+		"returned_tasks":     len(tasks),
+		"detail_level":       "compact",
+	}
+	out, err := json.Marshal(response)
+	if err != nil {
+		return nil, err
+	}
+	if len([]rune(string(out))) <= 30000 {
+		return out, nil
+	}
+
+	response["bounded"] = true
+	response["has_more"] = true
+	response["warnings"] = []string{"compact_task_excerpts_bounded; load selected task details if more context is required"}
+	for _, task := range tasks {
+		if excerpt, ok := task["description_excerpt"].(string); ok {
+			task["description_excerpt"] = truncatePlainRunes(excerpt, 160)
+		}
+		task["comment_excerpts"] = []map[string]any{}
+	}
+	out, err = json.Marshal(response)
+	if err != nil {
+		return nil, err
+	}
+	if len([]rune(string(out))) <= 30000 {
+		return out, nil
+	}
+
+	for _, task := range tasks {
+		task["description_excerpt"] = ""
+	}
+	out, err = json.Marshal(response)
+	if err != nil {
+		return nil, err
+	}
+	if len([]rune(string(out))) <= 30000 {
+		return out, nil
+	}
+
+	for count := len(tasks); count >= 0; count-- {
+		response["tasks"] = tasks[:count]
+		response["returned_tasks"] = count
+		out, err = json.Marshal(response)
+		if err != nil {
+			return nil, err
+		}
+		if len([]rune(string(out))) <= 30000 {
+			return out, nil
+		}
+	}
+	return out, nil
+}
+
+func compactTaskLabels(labels []model.PMLabel) []map[string]any {
+	out := make([]map[string]any, 0, len(labels))
+	for _, label := range labels {
+		out = append(out, map[string]any{
+			"label_id": label.ID,
+			"name":     label.Name,
+		})
+	}
+	return out
+}
+
+func compactCommentExcerpts(comments []model.CommentWithAuthor, limit int, charBudget int) []map[string]any {
+	if limit <= 0 || limit > len(comments) {
+		limit = len(comments)
+	}
+	start := len(comments) - limit
+	out := make([]map[string]any, 0, limit)
+	for i := start; i < len(comments); i++ {
+		comment := comments[i].Comment
+		out = append(out, map[string]any{
+			"comment_id": comment.ID,
+			"author_id":  comment.AuthorID,
+			"excerpt":    richTextPlainExcerpt(comment.Body, charBudget),
+			"created_at": comment.CreatedAt,
+			"updated_at": comment.UpdatedAt,
+		})
+	}
+	return out
+}
+
+func richTextPlainExcerpt(value string, limit int) string {
+	plain := strings.Join(strings.Fields(stripHTMLPreservingComments(value)), " ")
+	if plain == "" {
+		plain = strings.Join(strings.Fields(value), " ")
+	}
+	return truncatePlainRunes(plain, limit)
+}
+
+func stripHTMLPreservingComments(value string) string {
+	if value == "" {
+		return ""
+	}
+	comments := extractHTMLComments(value)
+	plain := html.UnescapeString(tiptap.StripHTML(value))
+	if len(comments) == 0 {
+		return plain
+	}
+	return strings.Join(comments, " ") + " " + plain
+}
+
+func extractHTMLComments(value string) []string {
+	var comments []string
+	for {
+		start := strings.Index(value, "<!--")
+		if start < 0 {
+			break
+		}
+		remaining := value[start+4:]
+		relativeEnd := strings.Index(remaining, "-->")
+		if relativeEnd < 0 {
+			break
+		}
+		end := start + 4 + relativeEnd + len("-->")
+		comment := strings.TrimSpace(html.UnescapeString(value[start:end]))
+		if comment != "" {
+			comments = append(comments, comment)
+		}
+		value = value[end:]
+	}
+	return comments
+}
+
+func truncatePlainRunes(value string, limit int) string {
+	if limit <= 0 {
+		return value
+	}
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	if limit <= 1 {
+		return string(runes[:limit])
+	}
+	if limit <= 3 {
+		return string(runes[:limit])
+	}
+	return string(runes[:limit-3]) + "..."
 }

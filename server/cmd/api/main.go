@@ -988,6 +988,8 @@ func main() {
 		pmTaskLinkRepo,
 	)
 	commandService.SetPMAutomationService(pmAutomationService)
+	commandService.SetPMLabelService(pmLabelService)
+	commandService.SetPMCommentService(pmCommentService)
 	commandService.SetGitService(gitService)
 	commandService.SetDocsCreateDependencies(docsDocumentService, docsContentRepo)
 	ruleEngine.SetCommandService(commandService)

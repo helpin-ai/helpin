@@ -75,6 +75,12 @@ func CanonicalToolName(name string) string {
 		return "list_task_checklist"
 	case "update_story_state":
 		return "update_task_state"
+	case "run_semgrep":
+		return ToolScanSemgrep
+	case "run_trivy":
+		return ToolScanTrivy
+	case "run_gitleaks":
+		return ToolScanGitleaks
 	default:
 		return strings.TrimSpace(name)
 	}

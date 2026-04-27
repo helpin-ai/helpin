@@ -89,6 +89,27 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		InputSchema: createTaskSchema(),
 	},
 	{
+		CommandName: "pm.ensure_label",
+		Alias:       "ensure_task_label",
+		Category:    "PM / Tasks",
+		Description: "Create or return a PM task label in the current workspace. Use this before creating tasks that must carry a stable label.",
+		InputSchema: ensureTaskLabelSchema(),
+	},
+	{
+		CommandName: "pm.list_tasks",
+		Alias:       "list_tasks",
+		Category:    "PM / Tasks",
+		Description: "List tasks in the current workspace with optional label, team, open-only, description, and comment filters.",
+		InputSchema: listTasksSchema(),
+	},
+	{
+		CommandName: "pm.add_task_comment",
+		Alias:       "add_task_comment",
+		Category:    "PM / Tasks",
+		Description: "Add a markdown comment to a task. If task_id is omitted, defaults to the current task target when available.",
+		InputSchema: addTaskCommentSchema(),
+	},
+	{
 		CommandName: "pm.assign_task_agent",
 		Alias:       "assign_task_agent",
 		Category:    "PM / Tasks",
@@ -422,6 +443,88 @@ func createTaskSchema() map[string]any {
 			},
 		},
 		"required":             []string{"name", "team_id"},
+		"additionalProperties": false,
+	}
+}
+
+func ensureTaskLabelSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"name": map[string]any{
+				"type":        "string",
+				"description": "Label name to create or return, for example security.",
+			},
+			"team_id": map[string]any{
+				"type":        "string",
+				"description": "Optional team scope. Omit for a shared workspace label.",
+			},
+			"description": map[string]any{
+				"type":        "string",
+				"description": "Optional description used when the label is first created.",
+			},
+			"color": map[string]any{
+				"type":        "string",
+				"description": "Optional hex color used when the label is first created.",
+			},
+		},
+		"required":             []string{"name"},
+		"additionalProperties": false,
+	}
+}
+
+func listTasksSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"label_id": map[string]any{
+				"type":        "string",
+				"description": "Optional label ID filter.",
+			},
+			"team_id": map[string]any{
+				"type":        "string",
+				"description": "Optional team ID filter.",
+			},
+			"open_only": map[string]any{
+				"type":        "boolean",
+				"description": "When true, only return non-completed, non-archived tasks.",
+			},
+			"include_descriptions": map[string]any{
+				"type":        "boolean",
+				"description": "When true, include task descriptions in the response.",
+			},
+			"include_comments": map[string]any{
+				"type":        "boolean",
+				"description": "When true, include recent task comments in the response.",
+			},
+			"detail_level": map[string]any{
+				"type":        "string",
+				"description": "Optional response shape. Use compact for bounded task rows with short description/comment excerpts.",
+				"enum":        []string{"summary", "compact", "full"},
+			},
+			"limit": map[string]any{
+				"type":        "integer",
+				"description": "Maximum tasks to return. Defaults to 50, max 100.",
+			},
+		},
+		"additionalProperties": false,
+	}
+}
+
+func addTaskCommentSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"task_id": map[string]any{
+				"type":        "string",
+				"description": "Optional task ID. Omit to use the current task target when available.",
+			},
+			"content": map[string]any{
+				"type":        "string",
+				"description": "The markdown comment body.",
+			},
+		},
+		"required":             []string{"content"},
 		"additionalProperties": false,
 	}
 }
