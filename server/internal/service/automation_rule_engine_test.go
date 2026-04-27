@@ -98,6 +98,7 @@ func setupRuleEngineTestDB(t *testing.T) *gorm.DB {
 			auto_sync_states BOOLEAN NOT NULL DEFAULT 1,
 			review_state_id TEXT,
 			done_state_id TEXT,
+			closed_state_id TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -175,6 +176,54 @@ func TestEvaluateEvent_CronTrigger_SkipsStoryLoading(t *testing.T) {
 		WorkspaceID: "ws-1",
 		TriggerType: model.TriggerCron,
 	}, nil)
+}
+
+func TestExecuteScheduledRuleDisablesCronRuleWhenAgentIsMissing(t *testing.T) {
+	db := setupRuleEngineTestDB(t)
+	if err := db.Exec(`CREATE TABLE agents (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		name TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL DEFAULT 'idle',
+		runtime_kind TEXT NOT NULL DEFAULT 'native_sdk',
+		trigger_mode TEXT NOT NULL DEFAULT 'manual',
+		approval_mode TEXT NOT NULL DEFAULT 'class_default',
+		is_system BOOLEAN NOT NULL DEFAULT 0,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create agents table: %v", err)
+	}
+
+	ruleRepo := repository.NewAutomationRuleRepository(db)
+	engine := NewAutomationRuleEngine(ruleRepo, nil, nil, nil, nil, nil, nil, nil)
+	engine.SetAgentService(&AgentService{agentRepo: repository.NewAgentRepository(db)})
+
+	rule := &model.AutomationRule{
+		ID:            "rule-missing-agent",
+		WorkspaceID:   "ws-1",
+		Name:          "Missing agent cron",
+		Enabled:       true,
+		TriggerType:   model.TriggerCron,
+		TriggerConfig: json.RawMessage(`{"preset":"hourly"}`),
+		ActionType:    model.ActionStartAgentRun,
+		ActionConfig:  json.RawMessage(`{"agent_id":"missing-agent","target_type":"workspace","target_id":"ws-1"}`),
+	}
+	if err := ruleRepo.Create(context.Background(), rule); err != nil {
+		t.Fatalf("create rule: %v", err)
+	}
+
+	if err := engine.ExecuteScheduledRule(context.Background(), "ws-1", rule.ID); err != nil {
+		t.Fatalf("ExecuteScheduledRule returned error: %v", err)
+	}
+
+	updated, err := ruleRepo.GetByID(context.Background(), "ws-1", rule.ID)
+	if err != nil {
+		t.Fatalf("get rule: %v", err)
+	}
+	if updated == nil || updated.Enabled {
+		t.Fatalf("expected missing-agent cron rule to be disabled, got %#v", updated)
+	}
 }
 
 func TestResolveRunBranchOverrides_UsesEffectiveTaskDeliveryBranches(t *testing.T) {
@@ -430,6 +479,24 @@ func TestMatchesTriggerConfig_StateType(t *testing.T) {
 			wantMatch: false,
 		},
 		{
+			name: "github closed matches base branch",
+			rule: model.AutomationRule{
+				TriggerType:   model.TriggerGitHubPRClosed,
+				TriggerConfig: json.RawMessage(`{"base_branch":"main"}`),
+			},
+			event:     model.AutomationEvent{BaseBranch: "main", RepoFullName: "acme/api"},
+			wantMatch: true,
+		},
+		{
+			name: "github closed repo mismatch",
+			rule: model.AutomationRule{
+				TriggerType:   model.TriggerGitHubPRClosed,
+				TriggerConfig: json.RawMessage(`{"repo_full_name":"acme/web"}`),
+			},
+			event:     model.AutomationEvent{BaseBranch: "main", RepoFullName: "acme/api"},
+			wantMatch: false,
+		},
+		{
 			name: "github release matches tag",
 			rule: model.AutomationRule{
 				TriggerType:   model.TriggerGitHubReleasePub,
@@ -651,6 +718,30 @@ func TestValidateRuleRequest_NewTypes(t *testing.T) {
 		{
 			name:          "github merged requires at least one filter",
 			triggerType:   model.TriggerGitHubPRMerged,
+			triggerConfig: json.RawMessage(`{}`),
+			actionType:    model.ActionStartAgentRun,
+			actionConfig:  json.RawMessage(`{"agent_id":"agent-1"}`),
+			wantErr:       true,
+		},
+		{
+			name:          "github pr closed requires explicit target",
+			triggerType:   model.TriggerGitHubPRClosed,
+			triggerConfig: json.RawMessage(`{"base_branch":"main"}`),
+			actionType:    model.ActionStartAgentRun,
+			actionConfig:  json.RawMessage(`{"agent_id":"agent-1"}`),
+			wantErr:       true,
+		},
+		{
+			name:          "valid github pr closed with explicit target",
+			triggerType:   model.TriggerGitHubPRClosed,
+			triggerConfig: json.RawMessage(`{"base_branch":"main"}`),
+			actionType:    model.ActionStartAgentRun,
+			actionConfig:  json.RawMessage(`{"agent_id":"agent-1","target_type":"repository","target_id":"repo-1"}`),
+			wantErr:       false,
+		},
+		{
+			name:          "github pr closed requires at least one filter",
+			triggerType:   model.TriggerGitHubPRClosed,
 			triggerConfig: json.RawMessage(`{}`),
 			actionType:    model.ActionStartAgentRun,
 			actionConfig:  json.RawMessage(`{"agent_id":"agent-1"}`),

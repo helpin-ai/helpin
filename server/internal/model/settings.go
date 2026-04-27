@@ -297,6 +297,7 @@ type UpdateTeamRepoDefaultRequest struct {
 	AutoSyncStates *bool   `json:"auto_sync_states"`
 	ReviewStateID  *string `json:"review_state_id"`
 	DoneStateID    *string `json:"done_state_id"`
+	ClosedStateID  *string `json:"closed_state_id"`
 }
 
 // AddTeamMemberRequest is the payload for adding a workspace member to a team.

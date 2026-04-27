@@ -38,6 +38,9 @@ const stuckPostRunThreshold = 2 * time.Minute
 const staleQueuedRunThreshold = 30 * time.Second
 const liveCodexPauseHeartbeatFreshThreshold = 2 * time.Minute
 const defaultSystemEpicPlannerName = "Atlas"
+
+var ErrAssignedAgentNotFound = errors.New("assigned agent not found")
+
 const supportAutoTriggerType = "support.auto"
 
 var (
@@ -862,6 +865,8 @@ func describeAutomationRuleTrigger(rule model.AutomationRule) string {
 		return describeGitHubPullRequestTrigger(rule, "opened")
 	case model.TriggerGitHubPRMerged:
 		return describeGitHubPullRequestTrigger(rule, "merged")
+	case model.TriggerGitHubPRClosed:
+		return describeGitHubPullRequestTrigger(rule, "closed")
 	case model.TriggerGitHubPRReviewReq:
 		return describeGitHubPullRequestTrigger(rule, "review requested")
 	case model.TriggerGitHubReleasePub:
@@ -3780,7 +3785,7 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 func (s *AgentService) requireRunnableAgent(ctx context.Context, workspaceID, agentID, targetType string) (*model.Agent, error) {
 	agent, err := s.agentRepo.GetByID(ctx, workspaceID, agentID)
 	if err != nil || agent == nil {
-		return nil, fmt.Errorf("assigned agent not found")
+		return nil, ErrAssignedAgentNotFound
 	}
 	normalizeAgentRecord(agent)
 	if err := s.validateAndMaterializeAgentSkills(ctx, agent); err != nil {

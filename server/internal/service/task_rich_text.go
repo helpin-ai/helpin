@@ -12,6 +12,7 @@ func renderTaskDescriptionRichText(markdown string) string {
 	if trimmed == "" {
 		return ""
 	}
+	comments := extractHTMLComments(trimmed)
 	rendered, err := tiptap.RenderHTML(tiptap.MarkdownToJSON(trimmed))
 	if err != nil {
 		slog.Warn("failed to render task markdown to html", "error", err)
@@ -20,6 +21,9 @@ func renderTaskDescriptionRichText(markdown string) string {
 	rendered = strings.TrimSpace(rendered)
 	if rendered == "" {
 		return trimmed
+	}
+	if len(comments) > 0 {
+		rendered = strings.Join(comments, "") + rendered
 	}
 	return rendered
 }

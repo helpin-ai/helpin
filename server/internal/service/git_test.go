@@ -705,6 +705,25 @@ func ensureGitDeliveryStatusTables(t *testing.T, db *gorm.DB) {
 			auto_sync_states BOOLEAN NOT NULL DEFAULT 1,
 			review_state_id TEXT,
 			done_state_id TEXT,
+			closed_state_id TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE IF NOT EXISTS automation_rules (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			description TEXT,
+			enabled BOOLEAN NOT NULL DEFAULT 1,
+			team_id TEXT,
+			workflow_id TEXT,
+			trigger_type TEXT NOT NULL,
+			trigger_config TEXT NOT NULL DEFAULT '{}',
+			action_type TEXT NOT NULL,
+			action_config TEXT NOT NULL DEFAULT '{}',
+			position INTEGER NOT NULL DEFAULT 0,
+			stop_on_match BOOLEAN NOT NULL DEFAULT 0,
+			created_by TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -767,9 +786,9 @@ func seedGitDeliveryStatusFixture(t *testing.T, db *gorm.DB) {
 	) VALUES (?, ?, ?, 'github', '101', 'acme/api', 'main', 1, ?, ?)`,
 		"repo-1", "ws-1", "gi-1", now, now)
 	mustExec(t, db, `INSERT INTO pm_team_repo_defaults (
-		id, team_id, repository_id, base_branch, branch_template, auto_sync_states, review_state_id, done_state_id, created_at, updated_at
-	) VALUES (?, ?, ?, 'main', '{task_key}-{slug}', 1, ?, ?, ?, ?)`,
-		"trd-1", "team-1", "repo-1", "state-review", "state-done", now, now)
+		id, team_id, repository_id, base_branch, branch_template, auto_sync_states, review_state_id, done_state_id, closed_state_id, created_at, updated_at
+	) VALUES (?, ?, ?, 'main', '{task_key}-{slug}', 1, ?, ?, ?, ?, ?)`,
+		"trd-1", "team-1", "repo-1", "state-review", "state-done", "state-closed", now, now)
 	mustExec(t, db, `INSERT INTO pm_tasks (
 		id, workspace_id, display_id, name, task_type, workflow_id, workflow_state_id, team_id, priority, severity, position, created_at, updated_at
 	) VALUES (?, ?, ?, ?, 'feature', ?, ?, ?, 'none', 'none', 0, ?, ?)`,
@@ -845,6 +864,132 @@ func TestUpdateDeliveryStatusAfterMergeUpdatesTargetLinkAndTaskState(t *testing.
 	}
 	if task.WorkflowStateID != "state-done" {
 		t.Fatalf("workflow_state_id = %q, want state-done", task.WorkflowStateID)
+	}
+}
+
+func TestProcessWebhookPRClosedUpdatesTargetLinkDeliveryTargetAndTaskState(t *testing.T) {
+	db := newTestDB(t)
+	seedGitDeliveryStatusFixture(t, db)
+
+	svc := newGitDeliveryStatusService(db, nil)
+	if err := svc.ProcessWebhookPR(context.Background(), "ws-1", "acme/api", "closed", 42, "Fix merge status", "https://github.test/acme/api/pull/42", "closed", "hel-31-fix-merge-status", "main"); err != nil {
+		t.Fatalf("ProcessWebhookPR returned error: %v", err)
+	}
+
+	target, err := repository.NewTaskDeliveryTargetRepository(db).GetByTask(context.Background(), "ws-1", "task-1")
+	if err != nil {
+		t.Fatalf("load target: %v", err)
+	}
+	if target.ActivePRStatus == nil || *target.ActivePRStatus != "closed" {
+		t.Fatalf("active PR status = %#v, want closed", target.ActivePRStatus)
+	}
+	if target.DeliveryState != "closed" {
+		t.Fatalf("delivery state = %q, want closed", target.DeliveryState)
+	}
+
+	var linkStatus string
+	if err := db.Raw(`SELECT pr_status FROM task_git_links WHERE id = ?`, "link-1").Scan(&linkStatus).Error; err != nil {
+		t.Fatalf("load link status: %v", err)
+	}
+	if linkStatus != "closed" {
+		t.Fatalf("link pr_status = %q, want closed", linkStatus)
+	}
+
+	task, err := repository.NewPMTaskRepository(db).GetRawByID(context.Background(), "task-1")
+	if err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if task.WorkflowStateID != "state-closed" {
+		t.Fatalf("workflow_state_id = %q, want state-closed", task.WorkflowStateID)
+	}
+}
+
+func TestProcessWebhookPRClosedWithoutClosedStateDoesNotTransitionTask(t *testing.T) {
+	db := newTestDB(t)
+	seedGitDeliveryStatusFixture(t, db)
+	mustExec(t, db, `UPDATE pm_team_repo_defaults SET closed_state_id = NULL WHERE id = ?`, "trd-1")
+
+	svc := newGitDeliveryStatusService(db, nil)
+	if err := svc.ProcessWebhookPR(context.Background(), "ws-1", "acme/api", "closed", 42, "Fix merge status", "https://github.test/acme/api/pull/42", "closed", "hel-31-fix-merge-status", "main"); err != nil {
+		t.Fatalf("ProcessWebhookPR returned error: %v", err)
+	}
+
+	task, err := repository.NewPMTaskRepository(db).GetRawByID(context.Background(), "task-1")
+	if err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if task.WorkflowStateID != "state-review" {
+		t.Fatalf("workflow_state_id = %q, want unchanged state-review", task.WorkflowStateID)
+	}
+}
+
+func TestProcessWebhookPRMergedUpdatesTargetLinkAndTaskState(t *testing.T) {
+	db := newTestDB(t)
+	seedGitDeliveryStatusFixture(t, db)
+
+	svc := newGitDeliveryStatusService(db, nil)
+	if err := svc.ProcessWebhookPR(context.Background(), "ws-1", "acme/api", "closed", 42, "Fix merge status", "https://github.test/acme/api/pull/42", "merged", "hel-31-fix-merge-status", "main"); err != nil {
+		t.Fatalf("ProcessWebhookPR returned error: %v", err)
+	}
+
+	assertMergedDeliveryStatus(t, db)
+	task, err := repository.NewPMTaskRepository(db).GetRawByID(context.Background(), "task-1")
+	if err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if task.WorkflowStateID != "state-done" {
+		t.Fatalf("workflow_state_id = %q, want state-done", task.WorkflowStateID)
+	}
+}
+
+func TestDeliveryStateForPRStatusClosed(t *testing.T) {
+	if got := deliveryStateForPRStatus("closed"); got != "closed" {
+		t.Fatalf("deliveryStateForPRStatus(%q) = %q, want closed", "closed", got)
+	}
+}
+
+type fakeAutomationHealthObserver struct {
+	failures []string
+}
+
+func (o *fakeAutomationHealthObserver) ObserveSuccess(ctx context.Context, workspaceID, catalogID, scopeType, scopeID string, metrics model.JSONB) error {
+	return nil
+}
+
+func (o *fakeAutomationHealthObserver) ObserveFailure(ctx context.Context, workspaceID, catalogID, scopeType, scopeID, message string, metrics model.JSONB) error {
+	if ruleID, ok := metrics["rule_id"].(string); ok {
+		o.failures = append(o.failures, ruleID)
+	}
+	return nil
+}
+
+func TestProcessWebhookPRClosedFiresAutomationTrigger(t *testing.T) {
+	db := newTestDB(t)
+	seedGitDeliveryStatusFixture(t, db)
+	now := time.Now().UTC()
+	mustExec(t, db, `INSERT INTO automation_rules (
+		id, workspace_id, name, enabled, trigger_type, trigger_config, action_type, action_config, position, created_at, updated_at
+	) VALUES (?, ?, ?, 1, ?, ?, ?, ?, 0, ?, ?)`,
+		"rule-pr-closed", "ws-1", "Closed PR rule", model.TriggerGitHubPRClosed, []byte(`{"base_branch":"main"}`), model.ActionRunAgent, []byte(`{}`), now, now)
+
+	observer := &fakeAutomationHealthObserver{}
+	engine := NewAutomationRuleEngine(
+		repository.NewAutomationRuleRepository(db),
+		repository.NewPMTaskRepository(db),
+		repository.NewPMWorkflowRepository(db),
+		repository.NewTaskDeliveryTargetRepository(db),
+		nil,
+		nil,
+		nil,
+		nil,
+	).SetHealthObserver(observer)
+	svc := newGitDeliveryStatusService(db, nil).SetRuleEngine(engine)
+
+	if err := svc.ProcessWebhookPR(context.Background(), "ws-1", "acme/api", "closed", 42, "Fix merge status", "https://github.test/acme/api/pull/42", "closed", "hel-31-fix-merge-status", "main"); err != nil {
+		t.Fatalf("ProcessWebhookPR returned error: %v", err)
+	}
+	if len(observer.failures) != 1 || observer.failures[0] != "rule-pr-closed" {
+		t.Fatalf("closed PR automation trigger failures = %#v, want rule-pr-closed", observer.failures)
 	}
 }
 

@@ -9,21 +9,61 @@ import (
 
 func toolAddTaskComment(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	var params struct {
+		TaskID  string `json:"task_id"`
 		Content string `json:"content"`
 	}
 	if err := json.Unmarshal(input, &params); err != nil {
 		return "", fmt.Errorf("parse input: %w", err)
 	}
 
-	if ctx.TaskID == "" {
-		return "", fmt.Errorf("no task associated with this run")
+	content := strings.TrimSpace(params.Content)
+	if content == "" {
+		return "", fmt.Errorf("content is required")
+	}
+	taskID := strings.TrimSpace(params.TaskID)
+	if taskID == "" {
+		taskID = strings.TrimSpace(ctx.TaskID)
+	}
+	if taskID == "" {
+		return "", fmt.Errorf("task_id is required when no task is associated with this run")
 	}
 
-	if err := ctx.Services.AddComment(ctx.Context, ctx.WorkspaceID, ctx.TaskID, ctx.AgentID, params.Content); err != nil {
+	commandInput, _ := json.Marshal(map[string]any{
+		"task_id": taskID,
+		"content": content,
+	})
+	if output, ok, err := executeInternalCommand(ctx, "task", taskID, "pm.add_task_comment", commandInput); ok {
+		if err != nil {
+			return "", fmt.Errorf("add comment: %w", err)
+		}
+		return string(output), nil
+	}
+
+	if err := ctx.Services.AddComment(ctx.Context, ctx.WorkspaceID, taskID, ctx.AgentID, content); err != nil {
 		return "", fmt.Errorf("add comment: %w", err)
 	}
 
 	return "Comment added to task.", nil
+}
+
+func toolEnsureTaskLabel(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	if output, ok, err := executeInternalCommand(ctx, "workspace", ctx.WorkspaceID, "pm.ensure_label", input); ok {
+		if err != nil {
+			return "", fmt.Errorf("ensure task label: %w", err)
+		}
+		return string(output), nil
+	}
+	return "", fmt.Errorf("ensure_task_label requires internal commands")
+}
+
+func toolListTasks(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	if output, ok, err := executeInternalCommand(ctx, "workspace", ctx.WorkspaceID, "pm.list_tasks", input); ok {
+		if err != nil {
+			return "", fmt.Errorf("list tasks: %w", err)
+		}
+		return string(output), nil
+	}
+	return "", fmt.Errorf("list_tasks requires internal commands")
 }
 
 func toolUpdateTaskState(ctx *ExecutionContext, input json.RawMessage) (string, error) {

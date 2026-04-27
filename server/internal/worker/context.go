@@ -72,6 +72,8 @@ type ExecutionContext struct {
 	StagedRuntimeSkillRoot     string
 	ToolFileState              *ToolFileState
 	toolFileStateMu            sync.Mutex
+	securityScannerCache       map[string]securityScannerCacheEntry
+	securityScannerCacheMu     sync.Mutex
 	PublishedPreviews          map[string]PublishedPreview
 	CurrentAssistantText       string
 }

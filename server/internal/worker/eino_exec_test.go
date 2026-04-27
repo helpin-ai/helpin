@@ -384,6 +384,32 @@ func TestAnalyzeToolOutputForModelTracksCompactionMetadata(t *testing.T) {
 	}
 }
 
+func TestAnalyzeToolOutputForModelHonorsBoundedJSONCompactionExemption(t *testing.T) {
+	output := `{"_helpin_compaction":{"exempt":true,"max_runes":30000,"mode":"bounded_index"},"rows":["` + strings.Repeat("x", 9000) + `"]}`
+
+	analysis := analyzeToolOutputForModel("scan_trivy", output)
+
+	if analysis.Compacted {
+		t.Fatalf("expected bounded JSON to avoid compaction, got %#v", analysis)
+	}
+	if analysis.Content != output {
+		t.Fatal("expected original output to be preserved")
+	}
+}
+
+func TestAnalyzeToolOutputForModelIgnoresOverCapCompactionExemption(t *testing.T) {
+	output := `{"_helpin_compaction":{"exempt":true,"max_runes":30000,"mode":"bounded_index"},"rows":["` + strings.Repeat("x", 31000) + `"]}`
+
+	analysis := analyzeToolOutputForModel("scan_trivy", output)
+
+	if !analysis.Compacted {
+		t.Fatalf("expected over-cap bounded JSON to compact, got %#v", analysis)
+	}
+	if !strings.Contains(analysis.Content, "truncated") {
+		t.Fatalf("expected compaction marker, got %q", analysis.Content)
+	}
+}
+
 func TestAnalyzeToolOutputForModelCompactsModerateReadFileOutputs(t *testing.T) {
 	output := strings.Repeat("0123456789abcdef\n", 210)
 

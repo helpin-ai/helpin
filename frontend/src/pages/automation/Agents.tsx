@@ -36,7 +36,7 @@ import { gitService } from '@/lib/services/gitService';
 import { docsService } from '@/lib/services/docsService';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
-import { buildAutomationActivityPath, buildAutomationFlowsPath, buildAutomationRunsPath } from '@/lib/automationUi';
+import { buildAutomationActivityPath, buildAutomationFlowsPath } from '@/lib/automationUi';
 import type {
   Agent,
   AgentExecutionConfig,
@@ -291,6 +291,42 @@ const DEPENDENCY_AUDITOR_ECOSYSTEM_OPTIONS = [
 ] as const;
 const DEPENDENCY_AUDITOR_SCHEDULE_OPTIONS = COMPETITIVE_INTEL_SCHEDULE_OPTIONS;
 type DependencyAuditorEcosystem = typeof DEPENDENCY_AUDITOR_ECOSYSTEM_OPTIONS[number]['value'];
+const SECURITY_TRIAGE_TEMPLATE_KEY = 'security_triage';
+const SECURITY_TRIAGE_FLOW_KEY = 'security_triage_cron';
+const SECURITY_TRIAGE_SYSTEM_PROMPT_TEMPLATE = `You are Sentinel, an autonomous security triage agent for the selected repository.
+
+Configured security triage:
+- scanners: {{scanners}}
+- severity_threshold: {{severity_threshold}}
+- include_low_info: {{include_low_info}}
+- destination_team_id: {{destination_team_id}}
+- destination_state_id: {{destination_state_id}}
+- max_tasks: {{max_tasks}}
+- schedule_preset: {{schedule_preset}}
+
+Treat these configured values as already resolved and authoritative. Do not plan or perform discovery of configuration variables, workspace context, teams, stages, cadence, or repository selection.
+
+Run only the configured scanners through read-only commands. Do not modify files.
+
+Triage raw findings against repository code and configuration. Suppress false positives and non-actionable findings. Create tasks only for applicable findings at or above severity_threshold. If include_low_info is false, do not create tasks for low or informational findings.
+
+Group related findings by root cause, such as shared scanner rule, vulnerable dependency, secret type, misconfiguration pattern, sink, or remediation path. Create at most max_tasks remediation tasks with create_task. Pass destination_team_id directly as team_id. Pass destination_state_id directly as state_id only when it is configured; otherwise let the team default stage apply.
+
+Raw configuration:
+{{raw_configuration_json}}`;
+const SECURITY_TRIAGE_SCANNER_OPTIONS = [
+  { value: 'semgrep', label: 'Semgrep' },
+  { value: 'trivy', label: 'Trivy' },
+  { value: 'gitleaks', label: 'Gitleaks' },
+] as const;
+const SECURITY_TRIAGE_SEVERITY_OPTIONS = [
+  { value: 'critical', label: 'Critical only' },
+  { value: 'high', label: 'High and critical' },
+  { value: 'medium', label: 'Medium and above' },
+] as const;
+const SECURITY_TRIAGE_SCHEDULE_OPTIONS = COMPETITIVE_INTEL_SCHEDULE_OPTIONS;
+type SecurityTriageScanner = typeof SECURITY_TRIAGE_SCANNER_OPTIONS[number]['value'];
+type SecurityTriageSeverity = typeof SECURITY_TRIAGE_SEVERITY_OPTIONS[number]['value'];
 
 // ---------------------------------------------------------------------------
 // Form helpers
@@ -342,6 +378,17 @@ interface DependencyAuditorTemplateFormData {
   repository_id: string;
   ecosystems: DependencyAuditorEcosystem[];
   include_indirect: boolean;
+  schedule_preset: 'daily' | 'weekly';
+  destination_team_id: string;
+  destination_state_id: string;
+  max_tasks: string;
+}
+
+interface SecurityTriageTemplateFormData {
+  repository_id: string;
+  scanners: SecurityTriageScanner[];
+  severity_threshold: SecurityTriageSeverity;
+  include_low_info: boolean;
   schedule_preset: 'daily' | 'weekly';
   destination_team_id: string;
   destination_state_id: string;
@@ -896,6 +943,37 @@ function renderDependencyAuditorSystemPrompt(templatePrompt: string | undefined,
     raw_configuration_json: `\`\`\`json\n${JSON.stringify(rawConfig, null, 2)}\n\`\`\``,
   };
   let rendered = (templatePrompt?.trim() || DEPENDENCY_AUDITOR_SYSTEM_PROMPT_TEMPLATE).trim();
+  for (const [key, value] of Object.entries(replacements)) {
+    rendered = rendered.split(`{{${key}}}`).join(value);
+  }
+  return rendered;
+}
+
+function renderSecurityTriageSystemPrompt(templatePrompt: string | undefined, form: SecurityTriageTemplateFormData) {
+  const destinationState = form.destination_state_id === NONE_OPTION_VALUE || !form.destination_state_id
+    ? "not configured; use the team's default stage"
+    : form.destination_state_id;
+  const maxTasks = Number.parseInt(form.max_tasks, 10);
+  const rawConfig = {
+    scanners: form.scanners,
+    severity_threshold: form.severity_threshold,
+    include_low_info: form.include_low_info,
+    schedule_preset: form.schedule_preset,
+    destination_team_id: form.destination_team_id,
+    destination_state_id: form.destination_state_id === NONE_OPTION_VALUE ? undefined : form.destination_state_id,
+    max_tasks: maxTasks,
+  };
+  const replacements: Record<string, string> = {
+    scanners: form.scanners.join(', '),
+    severity_threshold: form.severity_threshold,
+    include_low_info: String(form.include_low_info),
+    destination_team_id: form.destination_team_id,
+    destination_state_id: destinationState,
+    schedule_preset: form.schedule_preset,
+    max_tasks: form.max_tasks,
+    raw_configuration_json: `\`\`\`json\n${JSON.stringify(rawConfig, null, 2)}\n\`\`\``,
+  };
+  let rendered = (templatePrompt?.trim() || SECURITY_TRIAGE_SYSTEM_PROMPT_TEMPLATE).trim();
   for (const [key, value] of Object.entries(replacements)) {
     rendered = rendered.split(`{{${key}}}`).join(value);
   }
@@ -1736,6 +1814,16 @@ export function AgentsPage() {
     destination_state_id: NONE_OPTION_VALUE,
     max_tasks: '20',
   });
+  const [securityTriageTemplateForm, setSecurityTriageTemplateForm] = useState<SecurityTriageTemplateFormData>({
+    repository_id: '',
+    scanners: ['semgrep', 'trivy', 'gitleaks'],
+    severity_threshold: 'medium',
+    include_low_info: false,
+    schedule_preset: 'weekly',
+    destination_team_id: '',
+    destination_state_id: NONE_OPTION_VALUE,
+    max_tasks: '20',
+  });
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [systemDrawerOpen, setSystemDrawerOpen] = useState(false);
@@ -1966,7 +2054,7 @@ export function AgentsPage() {
     setRunNowOpen(false);
     setRunNowAgent(null);
     await navigate({
-      to: buildAutomationRunsPath(workspace?.slug, { run_id: res.data.id }),
+      to: buildAutomationActivityPath(workspace?.slug, { run_id: res.data.id }),
     });
   }, [
     navigate,
@@ -2127,6 +2215,16 @@ export function AgentsPage() {
       destination_state_id: NONE_OPTION_VALUE,
       max_tasks: '20',
     });
+    setSecurityTriageTemplateForm({
+      repository_id: '',
+      scanners: ['semgrep', 'trivy', 'gitleaks'],
+      severity_threshold: 'medium',
+      include_low_info: false,
+      schedule_preset: 'weekly',
+      destination_team_id: defaultDependencyTeam?.id ?? '',
+      destination_state_id: NONE_OPTION_VALUE,
+      max_tasks: '20',
+    });
     setCompetitiveTeamWorkflow(null);
     setDocsCollections([]);
     if (template.starter_flows?.length) {
@@ -2140,10 +2238,16 @@ export function AgentsPage() {
     if (template.key === DEPENDENCY_AUDITOR_TEMPLATE_KEY && repositories.length === 0) {
       await loadTemplateResources();
     }
+    if (template.key === SECURITY_TRIAGE_TEMPLATE_KEY && repositories.length === 0) {
+      await loadTemplateResources();
+    }
     if (template.key === COMPETITIVE_INTEL_TEMPLATE_KEY && defaultMarketingTeam?.id) {
       await loadCompetitiveTeamWorkflow(defaultMarketingTeam.id);
     }
     if (template.key === DEPENDENCY_AUDITOR_TEMPLATE_KEY && defaultDependencyTeam?.id) {
+      await loadCompetitiveTeamWorkflow(defaultDependencyTeam.id);
+    }
+    if (template.key === SECURITY_TRIAGE_TEMPLATE_KEY && defaultDependencyTeam?.id) {
       await loadCompetitiveTeamWorkflow(defaultDependencyTeam.id);
     }
   };
@@ -2201,6 +2305,25 @@ export function AgentsPage() {
         return;
       }
     }
+    if (templateDraft.createStarterFlow && templateDraft.template.key === SECURITY_TRIAGE_TEMPLATE_KEY) {
+      if (!securityTriageTemplateForm.repository_id) {
+        toast.error('Select a repository');
+        return;
+      }
+      if (securityTriageTemplateForm.scanners.length === 0) {
+        toast.error('Select at least one scanner');
+        return;
+      }
+      if (!securityTriageTemplateForm.destination_team_id) {
+        toast.error('Select a task team');
+        return;
+      }
+      const maxTasks = Number.parseInt(securityTriageTemplateForm.max_tasks, 10);
+      if (!Number.isFinite(maxTasks) || maxTasks < 1 || maxTasks > 100) {
+        toast.error('Maximum tasks must be between 1 and 100');
+        return;
+      }
+    }
     if (templateDraft.createStarterFlow && templateDraft.template.key === COMPETITIVE_INTEL_TEMPLATE_KEY) {
       const renderedPrompt = renderCompetitiveIntelSystemPrompt(templateDraft.template.system_prompt ?? form.system_prompt, competitiveTemplateForm);
       setForm((current) => ({
@@ -2210,6 +2333,13 @@ export function AgentsPage() {
     }
     if (templateDraft.createStarterFlow && templateDraft.template.key === DEPENDENCY_AUDITOR_TEMPLATE_KEY) {
       const renderedPrompt = renderDependencyAuditorSystemPrompt(templateDraft.template.system_prompt ?? form.system_prompt, dependencyAuditorTemplateForm);
+      setForm((current) => ({
+        ...current,
+        system_prompt: renderedPrompt,
+      }));
+    }
+    if (templateDraft.createStarterFlow && templateDraft.template.key === SECURITY_TRIAGE_TEMPLATE_KEY) {
+      const renderedPrompt = renderSecurityTriageSystemPrompt(templateDraft.template.system_prompt ?? form.system_prompt, securityTriageTemplateForm);
       setForm((current) => ({
         ...current,
         system_prompt: renderedPrompt,
@@ -2343,9 +2473,33 @@ export function AgentsPage() {
             return;
           }
         }
+        if (templateDraft.createStarterFlow && templateDraft.template.key === SECURITY_TRIAGE_TEMPLATE_KEY) {
+          if (!securityTriageTemplateForm.repository_id) {
+            toast.error('Select a repository');
+            setSaving(false);
+            return;
+          }
+          if (securityTriageTemplateForm.scanners.length === 0) {
+            toast.error('Select at least one scanner');
+            setSaving(false);
+            return;
+          }
+          if (!securityTriageTemplateForm.destination_team_id) {
+            toast.error('Select a task team');
+            setSaving(false);
+            return;
+          }
+          const maxTasks = Number.parseInt(securityTriageTemplateForm.max_tasks, 10);
+          if (!Number.isFinite(maxTasks) || maxTasks < 1 || maxTasks > 100) {
+            toast.error('Maximum tasks must be between 1 and 100');
+            setSaving(false);
+            return;
+          }
+        }
 
         const selectedRepo = repositories.find((repo) => repo.id === templateForm.repository_id);
         const selectedDependencyRepo = repositories.find((repo) => repo.id === dependencyAuditorTemplateForm.repository_id);
+        const selectedSecurityRepo = repositories.find((repo) => repo.id === securityTriageTemplateForm.repository_id);
         const competitors = competitiveIntelCompetitorsFromText(competitiveTemplateForm.competitors_text);
         const templateFlow = templateDraft.createStarterFlow
           ? templateDraft.template.key === 'release_notes_writer'
@@ -2387,6 +2541,23 @@ export function AgentsPage() {
                         ? undefined
                         : dependencyAuditorTemplateForm.destination_state_id,
                       max_tasks: Number.parseInt(dependencyAuditorTemplateForm.max_tasks, 10),
+                    },
+                  }
+              : templateDraft.template.key === SECURITY_TRIAGE_TEMPLATE_KEY
+                ? {
+                    flow_key: SECURITY_TRIAGE_FLOW_KEY,
+                    repository_id: securityTriageTemplateForm.repository_id,
+                    repo_full_name: selectedSecurityRepo?.full_name,
+                    flow_input: {
+                      scanners: securityTriageTemplateForm.scanners,
+                      severity_threshold: securityTriageTemplateForm.severity_threshold,
+                      include_low_info: securityTriageTemplateForm.include_low_info,
+                      schedule_preset: securityTriageTemplateForm.schedule_preset,
+                      destination_team_id: securityTriageTemplateForm.destination_team_id,
+                      destination_state_id: securityTriageTemplateForm.destination_state_id === NONE_OPTION_VALUE
+                        ? undefined
+                        : securityTriageTemplateForm.destination_state_id,
+                      max_tasks: Number.parseInt(securityTriageTemplateForm.max_tasks, 10),
                     },
                   }
               : undefined
@@ -2668,6 +2839,15 @@ export function AgentsPage() {
       if (dependencyAuditorTemplateForm.ecosystems.length === 0) missing.push('ecosystem');
       if (!dependencyAuditorTemplateForm.destination_team_id) missing.push('task team');
       const maxTasks = Number.parseInt(dependencyAuditorTemplateForm.max_tasks, 10);
+      if (!Number.isFinite(maxTasks) || maxTasks < 1 || maxTasks > 100) {
+        missing.push('valid task limit');
+      }
+    }
+    if (starterFlowEnabled && templateDraft?.template.key === SECURITY_TRIAGE_TEMPLATE_KEY) {
+      if (!securityTriageTemplateForm.repository_id) missing.push('repository');
+      if (securityTriageTemplateForm.scanners.length === 0) missing.push('scanner');
+      if (!securityTriageTemplateForm.destination_team_id) missing.push('task team');
+      const maxTasks = Number.parseInt(securityTriageTemplateForm.max_tasks, 10);
       if (!Number.isFinite(maxTasks) || maxTasks < 1 || maxTasks > 100) {
         missing.push('valid task limit');
       }
@@ -4454,6 +4634,225 @@ export function AgentsPage() {
                       >
                         <SelectTrigger id="dependency-setup-state">
                           <SelectValue placeholder={dependencyAuditorTemplateForm.destination_team_id ? 'Default stage' : 'Select a team first'} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={NONE_OPTION_VALUE}>Team default</SelectItem>
+                          {(competitiveTeamWorkflow?.states ?? []).map((state) => (
+                            <SelectItem key={state.id} value={state.id}>
+                              {state.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {templateDraft?.template.key === SECURITY_TRIAGE_TEMPLATE_KEY && (
+            <div className="space-y-5 rounded-xl border border-border/60 bg-card p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold">{templateStarterFlow?.label ?? 'Starter flow'}</p>
+                  <p className="text-[11px] leading-relaxed text-muted-foreground">
+                    {templateStarterFlow?.description ?? 'Create a starter automation flow when this agent is created.'}
+                  </p>
+                </div>
+                <label className="flex shrink-0 items-center gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
+                  <span className="text-xs font-medium">Create recommended automation flow</span>
+                  <Switch
+                    checked={templateDraft.createStarterFlow}
+                    onCheckedChange={(checked) => setTemplateDraft((current) => (
+                      current ? { ...current, createStarterFlow: checked } : current
+                    ))}
+                  />
+                </label>
+              </div>
+
+              {templateDraft.createStarterFlow && (
+                <div className="space-y-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="grid gap-2">
+                      <FieldLabel htmlFor="security-setup-repository">Repository</FieldLabel>
+                      <Select
+                        value={securityTriageTemplateForm.repository_id || undefined}
+                        onValueChange={(value) => setSecurityTriageTemplateForm((current) => ({
+                          ...current,
+                          repository_id: value,
+                        }))}
+                      >
+                        <SelectTrigger id="security-setup-repository">
+                          <SelectValue placeholder={templateResourcesLoading ? 'Loading repositories...' : 'Select a repository'} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {repositories.map((repo) => (
+                            <SelectItem key={repo.id} value={repo.id}>
+                              {repo.full_name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="grid gap-2">
+                      <FieldLabel htmlFor="security-setup-cadence">Run cadence</FieldLabel>
+                      <Select
+                        value={securityTriageTemplateForm.schedule_preset}
+                        onValueChange={(value) => {
+                          setSecurityTriageTemplateForm((current) => ({
+                            ...current,
+                            schedule_preset: value === 'daily' ? 'daily' : 'weekly',
+                          }));
+                        }}
+                      >
+                        <SelectTrigger id="security-setup-cadence">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {SECURITY_TRIAGE_SCHEDULE_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <FieldLabel>Scanners</FieldLabel>
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      {SECURITY_TRIAGE_SCANNER_OPTIONS.map((option) => {
+                        const checked = securityTriageTemplateForm.scanners.includes(option.value);
+                        return (
+                          <label
+                            key={option.value}
+                            className={cn(
+                              'flex items-center justify-between rounded-lg border px-3 py-2.5 text-sm transition-colors',
+                              checked ? 'border-primary/35 bg-primary/5' : 'border-border/60 bg-muted/20',
+                            )}
+                          >
+                            <span className="font-medium">{option.label}</span>
+                            <Switch
+                              checked={checked}
+                              onCheckedChange={(nextChecked) => setSecurityTriageTemplateForm((current) => {
+                                const currentValues = new Set(current.scanners);
+                                if (nextChecked) {
+                                  currentValues.add(option.value);
+                                } else {
+                                  currentValues.delete(option.value);
+                                }
+                                return {
+                                  ...current,
+                                  scanners: SECURITY_TRIAGE_SCANNER_OPTIONS
+                                    .map((item) => item.value)
+                                    .filter((value) => currentValues.has(value)),
+                                };
+                              })}
+                            />
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      Sentinel runs selected scanners through read-only commands, then triages findings before creating tasks.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    <div className="grid gap-2">
+                      <FieldLabel htmlFor="security-setup-severity">Minimum severity</FieldLabel>
+                      <Select
+                        value={securityTriageTemplateForm.severity_threshold}
+                        onValueChange={(value: SecurityTriageSeverity) => setSecurityTriageTemplateForm((current) => ({
+                          ...current,
+                          severity_threshold: value,
+                        }))}
+                      >
+                        <SelectTrigger id="security-setup-severity">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {SECURITY_TRIAGE_SEVERITY_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="grid gap-2">
+                      <FieldLabel htmlFor="security-setup-max-tasks">Maximum tasks per run</FieldLabel>
+                      <Input
+                        id="security-setup-max-tasks"
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={securityTriageTemplateForm.max_tasks}
+                        onChange={(event) => setSecurityTriageTemplateForm((current) => ({
+                          ...current,
+                          max_tasks: event.target.value,
+                        }))}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5">
+                      <div className="space-y-0.5">
+                        <p className="text-sm font-medium">Low/info findings</p>
+                        <p className="text-[11px] text-muted-foreground">Summarize only by default</p>
+                      </div>
+                      <Switch
+                        checked={securityTriageTemplateForm.include_low_info}
+                        onCheckedChange={(checked) => setSecurityTriageTemplateForm((current) => ({
+                          ...current,
+                          include_low_info: checked,
+                        }))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="grid gap-2">
+                      <FieldLabel htmlFor="security-setup-team">Task team</FieldLabel>
+                      <Select
+                        value={securityTriageTemplateForm.destination_team_id || undefined}
+                        onValueChange={(value) => {
+                          setSecurityTriageTemplateForm((current) => ({
+                            ...current,
+                            destination_team_id: value,
+                            destination_state_id: NONE_OPTION_VALUE,
+                          }));
+                          void loadCompetitiveTeamWorkflow(value);
+                        }}
+                      >
+                        <SelectTrigger id="security-setup-team">
+                          <SelectValue placeholder="Select a team" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {visibleTeams.map((team) => (
+                            <SelectItem key={team.id} value={team.id}>
+                              {team.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="grid gap-2">
+                      <FieldLabel htmlFor="security-setup-state">Task stage</FieldLabel>
+                      <Select
+                        value={securityTriageTemplateForm.destination_state_id}
+                        onValueChange={(value) => setSecurityTriageTemplateForm((current) => ({
+                          ...current,
+                          destination_state_id: value,
+                        }))}
+                        disabled={!securityTriageTemplateForm.destination_team_id}
+                      >
+                        <SelectTrigger id="security-setup-state">
+                          <SelectValue placeholder={securityTriageTemplateForm.destination_team_id ? 'Default stage' : 'Select a team first'} />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value={NONE_OPTION_VALUE}>Team default</SelectItem>

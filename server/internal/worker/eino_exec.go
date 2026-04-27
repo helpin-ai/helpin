@@ -43,6 +43,8 @@ const (
 	modelVisibleRipgrepOutputHeadRunes = 2_100
 	modelVisibleRipgrepOutputTailRunes = 500
 
+	boundedToolOutputCompactionMaxRunes = 30_000
+
 	toolResultNoOutputPlaceholder = "[tool returned no output]"
 )
 
@@ -128,6 +130,12 @@ type modelVisibleToolOutput struct {
 	OriginalLines int
 	VisibleLines  int
 	Compacted     bool
+}
+
+type helpinCompactionHint struct {
+	Exempt   bool   `json:"exempt"`
+	MaxRunes int    `json:"max_runes,omitempty"`
+	Mode     string `json:"mode,omitempty"`
 }
 
 type executedToolCall struct {
@@ -949,6 +957,9 @@ func analyzeToolOutputForModel(toolName, output string) modelVisibleToolOutput {
 		VisibleLines:  countToolOutputLines(output),
 		Compacted:     false,
 	}
+	if outputHasCompactionExemption(output, len(runes)) {
+		return analysis
+	}
 	if len(runes) <= maxRunes {
 		return analysis
 	}
@@ -978,6 +989,23 @@ func analyzeToolOutputForModel(toolName, output string) modelVisibleToolOutput {
 		VisibleLines:  countToolOutputLines(compacted),
 		Compacted:     true,
 	}
+}
+
+func outputHasCompactionExemption(output string, runeCount int) bool {
+	if !strings.Contains(output, "_helpin_compaction") {
+		return false
+	}
+	var envelope struct {
+		Hint *helpinCompactionHint `json:"_helpin_compaction"`
+	}
+	if err := json.Unmarshal([]byte(output), &envelope); err != nil || envelope.Hint == nil || !envelope.Hint.Exempt {
+		return false
+	}
+	maxRunes := envelope.Hint.MaxRunes
+	if maxRunes <= 0 || maxRunes > boundedToolOutputCompactionMaxRunes {
+		maxRunes = boundedToolOutputCompactionMaxRunes
+	}
+	return runeCount <= maxRunes
 }
 
 func toolOutputCompactionLimits(toolName string) (maxRunes, headRunes, tailRunes int) {
@@ -1012,6 +1040,9 @@ func isHighVolumeToolOutput(toolName string) bool {
 		"get_task_context",
 		"search_documents",
 		"find_tasks_for_git_changes",
+		ToolScanSemgrep,
+		ToolScanTrivy,
+		ToolScanGitleaks,
 		"web_search_brave",
 		"web_search_exa",
 		"fetch_url",

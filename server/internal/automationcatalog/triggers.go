@@ -80,6 +80,8 @@ func ResolveBindingForTrigger(source, triggerType, targetType string) (bindingID
 			return "manual.epic_run", "manual", true
 		case "support_conversation":
 			return "manual.support_run", "manual", true
+		case "repository":
+			return "manual.repository_run", "manual", true
 		case "workspace":
 			return "manual.workspace_run", "manual", true
 		}
@@ -229,6 +231,17 @@ func triggerBindingDefinitions() []triggerBindingDefinition {
 			supportsAgentRun: true,
 		},
 		{
+			catalogID:        "manual.repository_run",
+			bindingKind:      "manual",
+			category:         "manual",
+			triggerType:      model.AgentRunTriggerTypeManual,
+			title:            "Manual Repository Run",
+			description:      "A human starts an agent directly against a repository.",
+			sourceSurface:    "Agents page run-now actions",
+			configSurface:    agentsPath,
+			supportsAgentRun: true,
+		},
+		{
 			catalogID:        "manual.workspace_run",
 			bindingKind:      "manual",
 			category:         "manual",
@@ -335,6 +348,26 @@ func triggerBindingDefinitions() []triggerBindingDefinition {
 			createRuleSearch: &model.WorkflowRuleSearchPreset{
 				CreateEventRule: true,
 				TriggerType:     strPtr(model.TriggerGitHubPRMerged),
+				BaseBranch:      strPtr("main"),
+			},
+		},
+		{
+			catalogID:        "github.pull_request_closed",
+			bindingKind:      "automation_rule",
+			category:         "automation_rule",
+			triggerType:      model.TriggerGitHubPRClosed,
+			title:            "GitHub Pull Request Closed",
+			description:      "Fires when the GitHub integration receives a pull request closed webhook for a PR that was closed without merging. Filters can scope by repository and PR base branch.",
+			sourceSurface:    "GitHub App webhook delivery",
+			configSurface:    workflowsPath,
+			supportsAgentRun: true,
+			showRulesSearch: &model.WorkflowRuleSearchPreset{
+				ShowTrigger:      strPtr(model.TriggerGitHubPRClosed),
+				ShowTriggerTitle: strPtr("GitHub Pull Request Closed"),
+			},
+			createRuleSearch: &model.WorkflowRuleSearchPreset{
+				CreateEventRule: true,
+				TriggerType:     strPtr(model.TriggerGitHubPRClosed),
 				BaseBranch:      strPtr("main"),
 			},
 		},

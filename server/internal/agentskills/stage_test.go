@@ -96,6 +96,44 @@ func TestStageIntoStagesBuiltInSkillPackageReferences(t *testing.T) {
 	}
 }
 
+func TestStageIntoStagesSecurityTriageBuiltInSkillPackage(t *testing.T) {
+	agent := &model.Agent{
+		RuntimeKind: "native_sdk",
+		Skills:      model.AgentSkillRefs{{Key: "security_triage"}},
+	}
+	destRoot := filepath.Join(t.TempDir(), "skills")
+
+	resolution, err := StageInto(context.Background(), "ws_123", agent, []string{
+		"update_plan",
+		"list_directory",
+		"read_file",
+		"read_files",
+		"read_file_range",
+		"search_files",
+		"ripgrep",
+		"grep",
+		"run_command",
+		"web_search_exa",
+		"create_task",
+	}, nil, nil, destRoot)
+	if err != nil {
+		t.Fatalf("stage security triage skill: %v", err)
+	}
+	if len(resolution.Definitions) != 1 || resolution.Definitions[0].Key != "security_triage" {
+		t.Fatalf("expected security_triage definition, got %#v", resolution.Definitions)
+	}
+	payload, err := os.ReadFile(filepath.Join(destRoot, "01-security_triage", "SKILL.md"))
+	if err != nil {
+		t.Fatalf("read staged security triage SKILL.md: %v", err)
+	}
+	if !strings.Contains(string(payload), "`scan_gitleaks`") || !strings.Contains(string(payload), "`ensure_task_label`") {
+		t.Fatalf("expected staged security triage skill to contain scanner and label tools, got %q", string(payload))
+	}
+	if _, err := os.Stat(filepath.Join(destRoot, "01-security_triage", "semgrep", "helpin-security.yml")); err != nil {
+		t.Fatalf("expected staged security triage semgrep rules: %v", err)
+	}
+}
+
 func TestStageIntoStagesWorkspaceSkillArchive(t *testing.T) {
 	definition := worker.SkillDefinition{
 		Key:          "workspace_review",

@@ -346,6 +346,8 @@ func (s *AutomationInventoryService) triggerCatalogItems(ctx context.Context, wo
 			entries[idx].BindingCount = countRunnableAgentsForTarget(agents, "epic")
 		case "manual.support_run":
 			entries[idx].BindingCount = countRunnableAgentsForTarget(agents, "support_conversation")
+		case "manual.repository_run":
+			entries[idx].BindingCount = countRunnableAgentsForTarget(agents, "repository")
 		}
 	}
 	return entries, nil

@@ -135,6 +135,7 @@ type PMTaskFilters struct {
 	LabelID               *string
 	Priority              *string
 	Severity              *string
+	Completed             *bool
 	Blocked               *string
 	Blocking              *string
 	UpdatedAfter          *string

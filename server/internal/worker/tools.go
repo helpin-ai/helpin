@@ -263,6 +263,10 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"required": []string{},
 	}, toolRunCommand)
 
+	r.register(ToolScanSemgrep, "Run Semgrep against the checked-out repository and return normalized SAST findings. Scanner output is parsed and compacted server-side.", securityScannerToolSchema(ToolScanSemgrep), toolScanSemgrep)
+	r.register(ToolScanTrivy, "Run Trivy filesystem scanning against the checked-out repository and return normalized dependency, misconfiguration, and secret findings.", securityScannerToolSchema(ToolScanTrivy), toolScanTrivy)
+	r.register(ToolScanGitleaks, "Run Gitleaks against the checked-out repository and return normalized secret findings with raw secret values redacted.", securityScannerToolSchema(ToolScanGitleaks), toolScanGitleaks)
+
 	if webSearch != nil {
 		r.register("web_search_brave", webSearchBraveToolDescription(), webSearchBraveToolSchema(), func(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 			return r.toolWebSearchBrave(ctx, input)
@@ -654,17 +658,6 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"additionalProperties": false,
 	}, toolPublishPreview)
 
-	r.register("add_task_comment", "Add a comment to the current task visible in Helpin.", map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"content": map[string]interface{}{
-				"type":        "string",
-				"description": "The comment text (supports markdown)",
-			},
-		},
-		"required": []string{"content"},
-	}, toolAddTaskComment)
-
 	r.register("list_task_checklist", "List the checklist items for the current task.", map[string]interface{}{
 		"type":       "object",
 		"properties": map[string]interface{}{},
@@ -904,6 +897,9 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 
 	r.registerSharedCommandTools(map[string]ToolFunc{
 		"update_task_state":       toolUpdateTaskState,
+		"ensure_task_label":       toolEnsureTaskLabel,
+		"list_tasks":              toolListTasks,
+		"add_task_comment":        toolAddTaskComment,
 		"update_deal_stage":       toolUpdateDealStage,
 		"add_deal_note":           toolAddDealNote,
 		"create_document":         toolCreateDocument,
@@ -1003,5 +999,8 @@ func (r *ToolRegistry) ExecuteAllowed(ctx *ExecutionContext, name string, input 
 		}
 		return "", fmt.Errorf("tool %q is not allowed for the current agent policy", name)
 	}
-	return r.Execute(ctx, name, input)
+	if _, ok := r.tools[name]; ok {
+		return r.Execute(ctx, name, input)
+	}
+	return r.Execute(ctx, canonicalName, input)
 }
