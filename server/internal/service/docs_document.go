@@ -8,6 +8,7 @@ import (
 	"log/slog"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/ordering"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
@@ -20,11 +21,12 @@ type DocsDocumentService struct {
 	translationSvc *DocsHelpcenterTranslationService
 	helpcenterSvc  *DocsHelpcenterService
 	wsPublisher    *websocket.Publisher
+	useSortKey     bool
 }
 
 // NewDocsDocumentService creates a new DocsDocumentService.
-func NewDocsDocumentService(docRepo *repository.DocsDocumentRepository, spaceRepo *repository.DocsSpaceRepository, wsPublisher *websocket.Publisher) *DocsDocumentService {
-	return &DocsDocumentService{docRepo: docRepo, spaceRepo: spaceRepo, wsPublisher: wsPublisher}
+func NewDocsDocumentService(docRepo *repository.DocsDocumentRepository, spaceRepo *repository.DocsSpaceRepository, wsPublisher *websocket.Publisher, useSortKey bool) *DocsDocumentService {
+	return &DocsDocumentService{docRepo: docRepo, spaceRepo: spaceRepo, wsPublisher: wsPublisher, useSortKey: useSortKey}
 }
 
 func (s *DocsDocumentService) SetTranslationService(translationSvc *DocsHelpcenterTranslationService) {
@@ -92,6 +94,16 @@ func (s *DocsDocumentService) Create(ctx context.Context, workspaceID string, re
 		Tags:         model.DocsStringArray(req.Tags),
 		Position:     nextPos,
 		CreatedBy:    userID,
+	}
+
+	if s.useSortKey {
+		lastKey, err := s.docRepo.LastSortKeyInBucket(ctx, req.SpaceID, collectionID)
+		if err != nil {
+			slog.ErrorContext(ctx, "last doc sort key failed", "error", err)
+		}
+		if key, err := ordering.Between(lastKey, ""); err == nil {
+			doc.SortKey = key
+		}
 	}
 	created, err := s.docRepo.Create(ctx, doc)
 	if err == nil && created != nil {
