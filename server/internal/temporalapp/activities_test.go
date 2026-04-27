@@ -2575,7 +2575,7 @@ func TestClassifyPublishTaskPlanRepair(t *testing.T) {
 			name:        "raw wrapper",
 			output:      "publish_task_plan input must be a JSON object with structured fields; do not send a raw string wrapper",
 			wantClass:   "publish_task_plan_raw_wrapper",
-			wantSnippet: "not a raw wrapper string",
+			wantSnippet: "cut off before the required content object was complete",
 		},
 	}
 

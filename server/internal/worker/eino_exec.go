@@ -205,7 +205,7 @@ func (f *EinoModelFactory) resolveBaseModel(ctx context.Context, provider, model
 		return einoclaude.NewChatModel(ctx, &einoclaude.Config{
 			APIKey:    f.AnthropicAPIKey,
 			Model:     modelName,
-			MaxTokens: defaultMaxTokensForProvider(provider),
+			MaxTokens: defaultNativeMaxTokensForProvider(provider),
 		})
 	default:
 		if providerUsesAgenticResponses(provider) {
@@ -221,19 +221,23 @@ func (f *EinoModelFactory) resolveAgenticBaseModel(ctx context.Context, provider
 		if strings.TrimSpace(f.OpenAIAPIKey) == "" {
 			return nil, fmt.Errorf("openai API key is not configured")
 		}
+		maxTokens := defaultNativeMaxTokensForProvider(provider)
 		return agenticopenai.New(ctx, &agenticopenai.Config{
-			APIKey:  f.OpenAIAPIKey,
-			BaseURL: resolveOpenAIResponsesBaseURL(f.OpenAIBaseURL),
-			Model:   modelName,
+			APIKey:    f.OpenAIAPIKey,
+			BaseURL:   resolveOpenAIResponsesBaseURL(f.OpenAIBaseURL),
+			Model:     modelName,
+			MaxTokens: &maxTokens,
 		})
 	case appmodel.AgentModelProviderOpenRouter, appmodel.AgentModelProviderOpenRouterResponses:
 		if strings.TrimSpace(f.OpenRouterKey) == "" {
 			return nil, fmt.Errorf("openrouter API key is not configured")
 		}
+		maxTokens := defaultNativeMaxTokensForProvider(provider)
 		return agenticopenai.New(ctx, &agenticopenai.Config{
-			APIKey:  f.OpenRouterKey,
-			BaseURL: resolveOpenRouterBaseURL(f.OpenRouterURL),
-			Model:   modelName,
+			APIKey:    f.OpenRouterKey,
+			BaseURL:   resolveOpenRouterBaseURL(f.OpenRouterURL),
+			Model:     modelName,
+			MaxTokens: &maxTokens,
 		})
 	default:
 		return nil, fmt.Errorf("provider %q does not support the Responses-based agentic model path", provider)
@@ -301,10 +305,10 @@ func defaultModelForProvider(provider string) string {
 	}
 }
 
-func defaultMaxTokensForProvider(provider string) int {
+func defaultNativeMaxTokensForProvider(provider string) int {
 	switch provider {
-	case "anthropic":
-		return 4096
+	case appmodel.AgentModelProviderAnthropic, appmodel.AgentModelProviderOpenAI, appmodel.AgentModelProviderOpenRouter, appmodel.AgentModelProviderOpenRouterResponses:
+		return 16384
 	default:
 		return 0
 	}
@@ -1714,18 +1718,7 @@ func toToolParams(inputSchema any) (map[string]*schema.ParameterInfo, error) {
 		return nil, nil
 	}
 	props, _ := schemaMap["properties"].(map[string]interface{})
-	requiredSet := map[string]bool{}
-	if required, ok := schemaMap["required"].([]string); ok {
-		for _, name := range required {
-			requiredSet[name] = true
-		}
-	} else if required, ok := schemaMap["required"].([]interface{}); ok {
-		for _, entry := range required {
-			if name, ok := entry.(string); ok {
-				requiredSet[name] = true
-			}
-		}
-	}
+	requiredSet := jsonSchemaRequiredSet(schemaMap)
 	params := make(map[string]*schema.ParameterInfo, len(props))
 	for name, raw := range props {
 		propMap, _ := raw.(map[string]interface{})
@@ -1750,14 +1743,7 @@ func toParameterInfo(raw map[string]interface{}) (*schema.ParameterInfo, error) 
 		info.Type = schema.Object
 		props, _ := raw["properties"].(map[string]interface{})
 		if len(props) > 0 {
-			requiredSet := map[string]bool{}
-			if required, ok := raw["required"].([]interface{}); ok {
-				for _, item := range required {
-					if name, ok := item.(string); ok {
-						requiredSet[name] = true
-					}
-				}
-			}
+			requiredSet := jsonSchemaRequiredSet(raw)
 			info.SubParams = make(map[string]*schema.ParameterInfo, len(props))
 			for name, value := range props {
 				childMap, _ := value.(map[string]interface{})
@@ -1804,4 +1790,21 @@ func toParameterInfo(raw map[string]interface{}) (*schema.ParameterInfo, error) 
 func stringValue(value any) string {
 	text, _ := value.(string)
 	return text
+}
+
+func jsonSchemaRequiredSet(raw map[string]interface{}) map[string]bool {
+	requiredSet := map[string]bool{}
+	switch required := raw["required"].(type) {
+	case []string:
+		for _, name := range required {
+			requiredSet[name] = true
+		}
+	case []interface{}:
+		for _, entry := range required {
+			if name, ok := entry.(string); ok {
+				requiredSet[name] = true
+			}
+		}
+	}
+	return requiredSet
 }

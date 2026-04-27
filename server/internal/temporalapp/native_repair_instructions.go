@@ -122,9 +122,11 @@ func classifyPublishTaskPlanRepair(output string) nativeRepairInstruction {
 		return nativeRepairInstruction{
 			Class: "publish_task_plan_raw_wrapper",
 			Instructions: strings.Join([]string{
-				"Your previous publish_task_plan call failed validation because the tool input was wrapped as raw text instead of structured fields.",
-				"Retry publish_task_plan with a normal JSON object input, not a raw wrapper string.",
-				`Put the task plan under the structured "content" object with summary and proposed_tasks.`,
+				"Your previous publish_task_plan call failed validation because the tool arguments arrived as raw text instead of a complete structured JSON object.",
+				"This usually means the tool-call JSON was stringified, malformed, or cut off before the required content object was complete.",
+				"Retry publish_task_plan with one compact, complete JSON object. Do not send a raw wrapper string, markdown, prose, or partial JSON.",
+				`The top-level object must include "content", and content must include a non-empty "summary" string plus a "proposed_tasks" array of task objects.`,
+				"Keep each task concise enough for one tool call while preserving name, description, task_type, acceptance_criteria, and dependency_refs.",
 			}, "\n"),
 		}
 	default:

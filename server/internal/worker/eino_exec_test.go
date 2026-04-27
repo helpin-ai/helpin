@@ -29,6 +29,19 @@ func TestProviderUsesAgenticResponses(t *testing.T) {
 	}
 }
 
+func TestDefaultNativeMaxTokensSupportsLargePlannerToolCalls(t *testing.T) {
+	for _, provider := range []string{
+		model.AgentModelProviderAnthropic,
+		model.AgentModelProviderOpenAI,
+		model.AgentModelProviderOpenRouter,
+		model.AgentModelProviderOpenRouterResponses,
+	} {
+		if got := defaultNativeMaxTokensForProvider(provider); got < 16000 {
+			t.Fatalf("expected large native output budget for %q, got %d", provider, got)
+		}
+	}
+}
+
 func TestResolveOpenAIResponsesBaseURLDefaultsToOpenAIAPI(t *testing.T) {
 	if got := resolveOpenAIResponsesBaseURL(""); got != defaultOpenAIResponsesBaseURL {
 		t.Fatalf("expected default openai responses base url %q, got %q", defaultOpenAIResponsesBaseURL, got)
@@ -776,6 +789,34 @@ func TestSanitizeSchemaMessageToolCallsNormalizesInvalidArguments(t *testing.T) 
 
 	if got := msg.ToolCalls[0].Function.Arguments; got != "{}" {
 		t.Fatalf("expected normalized tool args, got %q", got)
+	}
+}
+
+func TestToEinoToolInfosPreservesNestedRequiredFields(t *testing.T) {
+	registry := NewToolRegistry(nil)
+	defs := registry.DefinitionsFor(map[string]bool{ToolPublishTaskPlan: true})
+	infos, err := toEinoToolInfos(defs)
+	if err != nil {
+		t.Fatalf("toEinoToolInfos returned error: %v", err)
+	}
+	if len(infos) != 1 {
+		t.Fatalf("expected one tool info, got %d", len(infos))
+	}
+
+	toolSchema, err := infos[0].ParamsOneOf.ToJSONSchema()
+	if err != nil {
+		t.Fatalf("ToJSONSchema returned error: %v", err)
+	}
+	encoded, _ := json.Marshal(toolSchema)
+	schemaJSON := string(encoded)
+	for _, snippet := range []string{
+		`"required":["content"]`,
+		`"required":["proposed_tasks","summary"]`,
+		`"required":["acceptance_criteria","dependency_refs","description","name","task_type"]`,
+	} {
+		if !strings.Contains(schemaJSON, snippet) {
+			t.Fatalf("expected converted schema to contain %s, got %s", snippet, schemaJSON)
+		}
 	}
 }
 
