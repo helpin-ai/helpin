@@ -37,6 +37,7 @@
     "react-router": "6.2.2",
     "rollup": "^2.70.1",
     "rollup-plugin-peer-deps-external": "^2.2.4",
+    "typescript": "~5.9.3",
     "vitest": "^4.1.2"
   },
   "scripts": {
