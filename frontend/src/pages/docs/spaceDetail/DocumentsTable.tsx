@@ -285,16 +285,8 @@ export function DocumentsTable({
               Status
               {sortField === 'status' && (sortDir === 'asc' ? <ArrowUp02Icon className="h-3 w-3" /> : <ArrowDown02Icon className="h-3 w-3" />)}
             </button>
-            <QuickTooltip label="Display order on the public help center">
-              <button
-                type="button"
-                onClick={() => cycleSort('position')}
-                className="w-14 shrink-0 flex items-center gap-1 hover:text-foreground transition-colors"
-              >
-                Order
-                {sortField === 'position' && (sortDir === 'asc' ? <ArrowUp02Icon className="h-3 w-3" /> : <ArrowDown02Icon className="h-3 w-3" />)}
-              </button>
-            </QuickTooltip>
+            {/* Order column removed — sort_key model makes position
+                numbers misleading when docs span multiple sub-collections. */}
             <button
               type="button"
               onClick={() => cycleSort('updated_at')}
@@ -350,9 +342,6 @@ export function DocumentsTable({
                 </span>
                 <span className={`w-20 shrink-0 text-xs font-medium ${statusColor(doc.status)}`}>
                   {DOC_STATUS_LABELS[doc.status] ?? doc.status}
-                </span>
-                <span className="w-14 shrink-0 text-xs text-muted-foreground">
-                  {doc.position + 1}
                 </span>
                 <span className="w-20 shrink-0 text-xs text-muted-foreground">
                   {timeAgo(doc.updated_at)}
