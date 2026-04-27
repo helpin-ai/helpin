@@ -146,6 +146,9 @@ function DocsSpaceCollections({
                       href={link}
                       onClick={(event) => {
                         event.preventDefault();
+                        if (option.hasChildren && !expandedColls.has(collection.id)) {
+                          toggleColl(collection.id);
+                        }
                         onNavigate({
                           to: '/w/$slug/docs/spaces/$spaceId',
                           params: { slug: wsSlug, spaceId },
