@@ -558,7 +558,7 @@ func runSecurityScannerCommand(ctx *ExecutionContext, program string, args []str
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	cmd.Env = append(os.Environ(), env...)
+	cmd.Env = mergeSecurityScannerEnv(os.Environ(), env)
 	err := cmd.Run()
 	return stdout.String(), stderr.String(), err
 }
@@ -569,12 +569,29 @@ func securityScannerEnv() ([]string, []string) {
 	if err := os.MkdirAll(semgrepCache, 0o755); err != nil {
 		warnings = append(warnings, fmt.Sprintf("failed to create semgrep runtime cache: %v", err))
 	}
+	homeDir := filepath.Join(securityRuntimeCacheDir, "home")
+	if err := os.MkdirAll(homeDir, 0o755); err != nil {
+		warnings = append(warnings, fmt.Sprintf("failed to create scanner home directory: %v", err))
+	}
 	env := []string{
+		"HOME=" + homeDir,
 		"XDG_CACHE_HOME=" + securityRuntimeCacheDir,
 		"SEMGREP_SETTINGS_FILE=" + filepath.Join(semgrepCache, "settings.yml"),
 		"TRIVY_CACHE_DIR=" + filepath.Join(securityRuntimeCacheDir, "trivy"),
 	}
 	return env, warnings
+}
+
+func mergeSecurityScannerEnv(base, overrides []string) []string {
+	merged := append([]string(nil), base...)
+	for _, entry := range overrides {
+		key, value, ok := strings.Cut(entry, "=")
+		if !ok || strings.TrimSpace(key) == "" {
+			continue
+		}
+		merged = upsertEnv(merged, key, value)
+	}
+	return merged
 }
 
 func prepareTrivyRuntimeCache() []string {
