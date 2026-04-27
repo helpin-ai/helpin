@@ -145,8 +145,10 @@ function DocsSpaceCollections({
                         });
                       }}
                     >
-                      {option.hasChildren && (
+                      {option.hasChildren ? (
                         <ArrowRight01Icon className={`h-3 w-3 shrink-0 transition-transform text-muted-foreground ${expandedColls.has(collection.id) ? 'rotate-90' : ''}`} />
+                      ) : (
+                        <span className="w-3 shrink-0" />
                       )}
                       <SidebarCollectionIcon name={collection.icon} />
                       <span className="truncate" ref={(element) => checkColTruncation(collection.id, element)}>
