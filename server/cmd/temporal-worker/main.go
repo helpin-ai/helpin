@@ -432,7 +432,7 @@ func main() {
 		cfg.CodexChatGPTAccountID,
 	).SetTriggerExecutionRepository(triggerExecutionRepo).SetNotificationService(notificationService)
 	agentService.SetWorkflowService(pmWorkflowService)
-	docsDocumentService := service.NewDocsDocumentService(docsDocumentRepo, docsSpaceRepo, wsPublisher)
+	docsDocumentService := service.NewDocsDocumentService(docsDocumentRepo, docsSpaceRepo, wsPublisher, cfg.DocsOrderingUseSortKey)
 	docsContentService := service.NewDocsContentService(docsContentRepo, docsDocumentRepo, nil)
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, storyRepo, docsDocumentRepo, nil)
 	releaseFactsService := service.NewReleaseFactsService(
