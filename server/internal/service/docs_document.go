@@ -492,6 +492,24 @@ func (s *DocsDocumentService) ReorderDocuments(ctx context.Context, spaceID stri
 	if err := s.docRepo.Reorder(ctx, spaceID, req.CollectionID, req.DocumentIDs); err != nil {
 		return err
 	}
+
+	// When the sort_key flag is on, rebuild sort_keys from scratch for
+	// the submitted list. Sequential Between(prev, "") calls produce
+	// strictly increasing keys matching the client's visual order.
+	if s.useSortKey && len(req.DocumentIDs) > 0 {
+		prevKey := ""
+		for _, id := range req.DocumentIDs {
+			key, err := ordering.Between(prevKey, "")
+			if err != nil {
+				return fmt.Errorf("compute sort key for doc reorder: %w", err)
+			}
+			if err := s.docRepo.UpdateSortKey(ctx, id, key); err != nil {
+				return fmt.Errorf("update sort key for doc %s: %w", id, err)
+			}
+			prevKey = key
+		}
+	}
+
 	if len(req.DocumentIDs) == 0 {
 		return nil
 	}
