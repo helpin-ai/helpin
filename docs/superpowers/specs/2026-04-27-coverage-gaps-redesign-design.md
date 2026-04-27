@@ -7,7 +7,7 @@
 **Revision log:**
 - 2026-04-27 v1: initial draft.
 - 2026-04-27 v1.1: addressed code review — lifecycle precision, async enrichment specifics (workflow IDs, idempotency, cooldowns, Temporal-disabled fallback), expanded `support_coverage_topics` schema, cluster key composition rule, suggestion versioning, 30-day impact computation source, dropped per-workspace feature flag (does not exist as infra), added outcome instrumentation in v1, prior-work crosslinks.
-- 2026-04-27 v1.2: addressed second-round review — spike trigger SQL uses `gap_id` (no `topic_id` on evidence); partial unique index on open gaps only (allows future gaps on same topic after rejection/Done); fixed env var to `TEMPORAL_ADDRESS` and dropped the invalid "disabled fallback" — Temporal is now declared a hard dependency matching CRM workflows; §6.6 confirms `DocsDocumentService.Create` defaults to `DocStatusDraft` (open question #1 resolved); switched to existing constants `create_article` / `update_article` (instead of invented `create_article` / `update_article`).
+- 2026-04-27 v1.2: addressed second-round review — spike trigger SQL uses `gap_id` (no `topic_id` on evidence); partial unique index on open gaps only (allows future gaps on same topic after rejection/Done); fixed env var to `TEMPORAL_ADDRESS` and dropped the invalid "disabled fallback" — Temporal is now declared a hard dependency matching CRM workflows; §6.6 confirms `DocsDocumentService.Create` defaults to `DocStatusDraft` (open question #1 resolved); switched to existing constants `create_article` / `update_article` (instead of invented `create_new` / `update_existing`); confirmed `support_gap_evidence.created_at` exists (`server/internal/model/support_coverage.go:152`), closing open question #4.
 
 ---
 
@@ -342,7 +342,7 @@ The architectural commitments in v1 (`gap_kind` column, three-category UI scaffo
 - **LLM enrichment failure:** topic remains with prior active suggestion (or none). Workflow logs failure, retries per Temporal defaults, then surfaces "Regenerate" affordance in UI. `ErrorContext` log includes `workspace_id`, `topic_id`.
 - **No suggestion yet (newly created topic before first enrich):** detail pane shows "Generating recommendation…" with a progress indicator and offers immediate manual regenerate.
 - **No evidence on a gap:** can't happen in v1 (gap is created from evidence). Defensive: gaps with `evidence_count == 0` are hidden everywhere.
-- **Empty workspace KB:** enrichment falls back to `route = create_new` with no `update_article` candidate.
+- **Empty workspace KB:** enrichment falls back to `route = create_article` with no `update_article` candidate.
 - **Spike trigger storm:** per-topic `cooldown_until` (1 hour) prevents repeated re-enrichment during a sustained spike. Daily batch is the catch-up.
 - **Doc deleted after Add:** gap stays `Done`. We do not re-open. Future evidence on the same topic accumulates against the closed gap until 30-day window expires; new evidence after that window may surface as a new gap on the same topic if no open gap exists.
 - **Concurrent Add and Reject (two users):** first write wins; second receives 409 with current state. UI shows toast "This gap was already resolved by {user}."
@@ -380,4 +380,4 @@ If we later open the Support module to external customers and want safer per-cus
 1. ~~Does the docs module support server-side draft Docs?~~ **Resolved v1.2** — `DocsDocumentService.Create` defaults to `DocStatusDraft` (`server/internal/service/docs_document.go:83`). Add for `create_article` lands as a draft; user publishes from the editor.
 2. What's the existing pattern for registering Temporal cron workflows at startup? Confirm parallel registration with the existing CRM workflows in `internal/temporalapp/`.
 3. LLM cost budget per workspace per day. Estimated ~50 calls/day for an active workspace; needs a real number from finance/ops before launch.
-4. Confirm `support_gap_evidence` carries `created_at` (it should — every GORM model does) so the 30-day computation in 6.5 works without a backfill.
+4. ~~Confirm `support_gap_evidence` carries `created_at`.~~ **Resolved v1.2** — present at `server/internal/model/support_coverage.go:152`; the 30-day computation in §6.5 works without backfill.
