@@ -8,6 +8,7 @@ type AIAutomationsSearch = {
   status?: string;
   source?: string;
   reference_id?: string;
+  run_id?: string;
   fired_after?: string;
   fired_before?: string;
 };
@@ -25,6 +26,7 @@ export const Route = createFileRoute('/_authenticated/w/$slug/settings/ai-automa
     status: typeof search.status === 'string' ? search.status : undefined,
     source: typeof search.source === 'string' ? search.source : undefined,
     reference_id: typeof search.reference_id === 'string' ? search.reference_id : undefined,
+    run_id: typeof search.run_id === 'string' ? search.run_id : undefined,
     fired_after: typeof search.fired_after === 'string' ? search.fired_after : undefined,
     fired_before: typeof search.fired_before === 'string' ? search.fired_before : undefined,
   }),

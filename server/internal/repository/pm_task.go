@@ -312,6 +312,9 @@ func (r *PMTaskRepository) List(ctx context.Context, workspaceID string, filters
 	query = applyTaskStringFilter(query, "pm_tasks.requester_id", filters.RequesterID)
 	query = applyTaskStringFilter(query, "pm_tasks.requester_member_id", filters.RequesterMemberID)
 	query = applyTaskStringFilter(query, "pm_tasks.severity", filters.Severity)
+	if filters.Completed != nil {
+		query = query.Where("pm_tasks.completed = ?", *filters.Completed)
+	}
 	if filters.Blocked != nil && *filters.Blocked != "" {
 		query = r.applyDerivedBlockedFilter(query, *filters.Blocked == "true")
 	}

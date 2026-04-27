@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"path"
@@ -890,6 +891,25 @@ func (e *AutomationRuleEngine) ExecuteScheduledRule(ctx context.Context, workspa
 
 	if err := e.executeAction(ctx, rule, event, nil, &model.RuleExecutionContext{MaxDepth: defaultMaxChainDepth}); err != nil {
 		e.observeFailure(ctx, workspaceID, rule.ID, err)
+		if errors.Is(err, ErrAssignedAgentNotFound) {
+			rule.Enabled = false
+			if updateErr := e.ruleRepo.Update(ctx, rule); updateErr != nil {
+				e.logger.ErrorContext(ctx, "failed to disable scheduled automation rule with missing agent",
+					"rule_id", rule.ID,
+					"workspace_id", workspaceID,
+					"agent_id", strings.TrimSpace(actionCfg.AgentID),
+					"error", updateErr,
+				)
+				return updateErr
+			}
+			e.logger.WarnContext(ctx, "disabled scheduled automation rule with missing agent",
+				"rule_id", rule.ID,
+				"rule_name", rule.Name,
+				"workspace_id", workspaceID,
+				"agent_id", strings.TrimSpace(actionCfg.AgentID),
+			)
+			return nil
+		}
 		return err
 	}
 	e.observeSuccess(ctx, workspaceID, rule.ID)

@@ -43,6 +43,7 @@ func (r *CodingSessionStateSnapshotRepository) Upsert(ctx context.Context, snaps
 	if snapshot.SchemaVersion == "" {
 		snapshot.SchemaVersion = model.CodingSessionStateSnapshotSchemaVersionV1
 	}
+	sanitizeCodingSessionStateSnapshotForPostgres(snapshot)
 	if err := r.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{
 			{Name: "workspace_id"},

@@ -178,6 +178,54 @@ func TestEvaluateEvent_CronTrigger_SkipsStoryLoading(t *testing.T) {
 	}, nil)
 }
 
+func TestExecuteScheduledRuleDisablesCronRuleWhenAgentIsMissing(t *testing.T) {
+	db := setupRuleEngineTestDB(t)
+	if err := db.Exec(`CREATE TABLE agents (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		name TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL DEFAULT 'idle',
+		runtime_kind TEXT NOT NULL DEFAULT 'native_sdk',
+		trigger_mode TEXT NOT NULL DEFAULT 'manual',
+		approval_mode TEXT NOT NULL DEFAULT 'class_default',
+		is_system BOOLEAN NOT NULL DEFAULT 0,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create agents table: %v", err)
+	}
+
+	ruleRepo := repository.NewAutomationRuleRepository(db)
+	engine := NewAutomationRuleEngine(ruleRepo, nil, nil, nil, nil, nil, nil, nil)
+	engine.SetAgentService(&AgentService{agentRepo: repository.NewAgentRepository(db)})
+
+	rule := &model.AutomationRule{
+		ID:            "rule-missing-agent",
+		WorkspaceID:   "ws-1",
+		Name:          "Missing agent cron",
+		Enabled:       true,
+		TriggerType:   model.TriggerCron,
+		TriggerConfig: json.RawMessage(`{"preset":"hourly"}`),
+		ActionType:    model.ActionStartAgentRun,
+		ActionConfig:  json.RawMessage(`{"agent_id":"missing-agent","target_type":"workspace","target_id":"ws-1"}`),
+	}
+	if err := ruleRepo.Create(context.Background(), rule); err != nil {
+		t.Fatalf("create rule: %v", err)
+	}
+
+	if err := engine.ExecuteScheduledRule(context.Background(), "ws-1", rule.ID); err != nil {
+		t.Fatalf("ExecuteScheduledRule returned error: %v", err)
+	}
+
+	updated, err := ruleRepo.GetByID(context.Background(), "ws-1", rule.ID)
+	if err != nil {
+		t.Fatalf("get rule: %v", err)
+	}
+	if updated == nil || updated.Enabled {
+		t.Fatalf("expected missing-agent cron rule to be disabled, got %#v", updated)
+	}
+}
+
 func TestResolveRunBranchOverrides_UsesEffectiveTaskDeliveryBranches(t *testing.T) {
 	db := setupRuleEngineTestDB(t)
 	ctx := context.Background()

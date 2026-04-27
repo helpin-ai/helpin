@@ -36,7 +36,7 @@ import { gitService } from '@/lib/services/gitService';
 import { docsService } from '@/lib/services/docsService';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
-import { buildAutomationActivityPath, buildAutomationFlowsPath, buildAutomationRunsPath } from '@/lib/automationUi';
+import { buildAutomationActivityPath, buildAutomationFlowsPath } from '@/lib/automationUi';
 import type {
   Agent,
   AgentExecutionConfig,
@@ -2054,7 +2054,7 @@ export function AgentsPage() {
     setRunNowOpen(false);
     setRunNowAgent(null);
     await navigate({
-      to: buildAutomationRunsPath(workspace?.slug, { run_id: res.data.id }),
+      to: buildAutomationActivityPath(workspace?.slug, { run_id: res.data.id }),
     });
   }, [
     navigate,

@@ -80,6 +80,8 @@ func ResolveBindingForTrigger(source, triggerType, targetType string) (bindingID
 			return "manual.epic_run", "manual", true
 		case "support_conversation":
 			return "manual.support_run", "manual", true
+		case "repository":
+			return "manual.repository_run", "manual", true
 		case "workspace":
 			return "manual.workspace_run", "manual", true
 		}
@@ -225,6 +227,17 @@ func triggerBindingDefinitions() []triggerBindingDefinition {
 			title:            "Manual Support Run",
 			description:      "A human starts the assigned support agent from a conversation.",
 			sourceSurface:    "Support inbox run-agent actions",
+			configSurface:    agentsPath,
+			supportsAgentRun: true,
+		},
+		{
+			catalogID:        "manual.repository_run",
+			bindingKind:      "manual",
+			category:         "manual",
+			triggerType:      model.AgentRunTriggerTypeManual,
+			title:            "Manual Repository Run",
+			description:      "A human starts an agent directly against a repository.",
+			sourceSurface:    "Agents page run-now actions",
 			configSurface:    agentsPath,
 			supportsAgentRun: true,
 		},

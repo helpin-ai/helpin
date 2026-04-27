@@ -6,5 +6,5 @@ export const Route = createFileRoute('/_authenticated/w/$slug/pm/agent-runs')({
 
 function AgentRunsRoute() {
   const { slug } = Route.useParams();
-  return <Navigate to="/w/$slug/automation/runs" params={{ slug }} replace />;
+  return <Navigate to="/w/$slug/automation/activity" params={{ slug }} search={{ page: 1 }} replace />;
 }

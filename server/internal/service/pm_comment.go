@@ -59,6 +59,27 @@ func (s *PMCommentService) List(ctx context.Context, entityType, entityID string
 	return comments, nil
 }
 
+// ListByEntityIDs returns comments grouped by entity ID with attachment URLs resolved.
+func (s *PMCommentService) ListByEntityIDs(ctx context.Context, entityType string, entityIDs []string) (map[string][]model.CommentWithAuthor, error) {
+	if entityType == "" {
+		return nil, fmt.Errorf("entity_type is required")
+	}
+	commentsByEntity, err := s.commentRepo.ListByEntityIDs(ctx, entityType, entityIDs)
+	if err != nil {
+		return nil, err
+	}
+	for entityID, comments := range commentsByEntity {
+		for i := range comments {
+			s.resolveAttachmentURLs(comments[i].Attachments)
+			for j := range comments[i].Replies {
+				s.resolveAttachmentURLs(comments[i].Replies[j].Attachments)
+			}
+		}
+		commentsByEntity[entityID] = comments
+	}
+	return commentsByEntity, nil
+}
+
 // resolveAttachmentURLs populates URL / PublicURL on attachment responses so
 // the frontend can render inline previews.
 func (s *PMCommentService) resolveAttachmentURLs(attachments []model.AttachmentResponse) {
