@@ -114,7 +114,6 @@ func loadWorkspaceIDs(ctx context.Context, db *gorm.DB, singleID string) ([]stri
 	var ids []string
 	err := db.WithContext(ctx).
 		Table("workspaces").
-		Where("deleted_at IS NULL").
 		Pluck("id", &ids).Error
 	return ids, err
 }
