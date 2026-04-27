@@ -52,6 +52,7 @@ func setupDocsHelpcenterTranslationServiceTestDB(t *testing.T) *gorm.DB {
 			default_review_days INTEGER,
 			is_system BOOLEAN NOT NULL DEFAULT 0,
 			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
 			created_by TEXT NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME,
@@ -69,6 +70,7 @@ func setupDocsHelpcenterTranslationServiceTestDB(t *testing.T) *gorm.DB {
 			description TEXT,
 			icon TEXT,
 			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
 			created_by TEXT NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME,
@@ -89,6 +91,7 @@ func setupDocsHelpcenterTranslationServiceTestDB(t *testing.T) *gorm.DB {
 			icon TEXT,
 			tags TEXT,
 			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
 			is_pinned BOOLEAN NOT NULL DEFAULT 0,
 			is_publicly_shared BOOLEAN NOT NULL DEFAULT 0,
 			share_token TEXT,
@@ -333,25 +336,25 @@ func newDocsHelpcenterTranslationServiceForTest(db *gorm.DB) *DocsHelpcenterTran
 func newDocsHelpcenterTranslationServiceForTestWithLLM(db *gorm.DB, llmProvider llm.Provider) *DocsHelpcenterTranslationService {
 	return NewDocsHelpcenterTranslationService(
 		repository.NewDocsHelpcenterTranslationRepository(db),
-		repository.NewDocsHelpcenterRepository(db),
+		repository.NewDocsHelpcenterRepository(db, false),
 		repository.NewDocsHelpcenterPublicationRepository(db),
 		repository.NewDocsRedirectRepository(db),
-		repository.NewDocsDocumentRepository(db),
+		repository.NewDocsDocumentRepository(db, false),
 		repository.NewDocsContentRepository(db),
 		repository.NewDocsSpaceRepository(db),
-		repository.NewDocsCollectionRepository(db),
+		repository.NewDocsCollectionRepository(db, false),
 		llmProvider,
 	)
 }
 
 func newDocsHelpcenterPublicServiceForTest(db *gorm.DB) *DocsHelpcenterService {
 	svc := NewDocsHelpcenterService(
-		repository.NewDocsHelpcenterRepository(db),
+		repository.NewDocsHelpcenterRepository(db, false),
 		repository.NewDocsHelpcenterPublicationRepository(db),
-		repository.NewDocsDocumentRepository(db),
+		repository.NewDocsDocumentRepository(db, false),
 		repository.NewDocsContentRepository(db),
 		repository.NewDocsSpaceRepository(db),
-		repository.NewDocsCollectionRepository(db),
+		repository.NewDocsCollectionRepository(db, false),
 		repository.NewDocsRedirectRepository(db),
 		nil,
 		nil,
@@ -2053,7 +2056,7 @@ func TestDocsHelpcenterService_CollectionRedirects(t *testing.T) {
 		}
 
 		// The collection itself should be updated.
-		collection, err := repository.NewDocsCollectionRepository(db).GetByID(ctx, "coll-A")
+		collection, err := repository.NewDocsCollectionRepository(db, false).GetByID(ctx, "coll-A")
 		if err != nil {
 			t.Fatalf("load collection: %v", err)
 		}
@@ -2103,7 +2106,7 @@ func TestDocsHelpcenterService_CollectionRedirects(t *testing.T) {
 		seedCollection(t, db, "B", "coll-b")
 		seedPublishedArticle(t, db, "doc-hop", "hop-article", ptr("A"))
 
-		docRepo := repository.NewDocsDocumentRepository(db)
+		docRepo := repository.NewDocsDocumentRepository(db, false)
 
 		// Move A -> B
 		oldA := "A"

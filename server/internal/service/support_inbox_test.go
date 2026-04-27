@@ -833,8 +833,8 @@ func TestCreateConversationMessage_CustomerReplyCreatesOwnedSupportNotification(
 		repository.NewCRMContactRepository(db),
 		repository.NewUserRepository(db),
 		repository.NewDocsSpaceRepository(db),
-		repository.NewDocsCollectionRepository(db),
-		repository.NewDocsHelpcenterRepository(db),
+		repository.NewDocsCollectionRepository(db, false),
+		repository.NewDocsHelpcenterRepository(db, false),
 	)
 	svc.SetNotificationService(notificationService, repository.NewWorkspaceRepository(db))
 
@@ -937,8 +937,8 @@ func TestMarkConversationRead_MarksSupportReplyNotificationsRead(t *testing.T) {
 		repository.NewCRMContactRepository(db),
 		repository.NewUserRepository(db),
 		repository.NewDocsSpaceRepository(db),
-		repository.NewDocsCollectionRepository(db),
-		repository.NewDocsHelpcenterRepository(db),
+		repository.NewDocsCollectionRepository(db, false),
+		repository.NewDocsHelpcenterRepository(db, false),
 	)
 	svc.SetNotificationService(notificationService, repository.NewWorkspaceRepository(db))
 

@@ -110,7 +110,7 @@ func newAssociationsServiceForTest(db *gorm.DB) *AssociationsService {
 		repository.NewPMTaskRepository(db),
 		repository.NewSupportConversationRepository(db),
 		repository.NewDocsLinkRepository(db),
-		repository.NewDocsDocumentRepository(db),
+		repository.NewDocsDocumentRepository(db, false),
 	)
 }
 

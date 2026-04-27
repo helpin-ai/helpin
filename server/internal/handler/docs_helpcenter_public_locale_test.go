@@ -18,23 +18,23 @@ import (
 func newDocsHelpcenterPublicHandlerForTest(db *gorm.DB) *DocsHandler {
 	translationSvc := service.NewDocsHelpcenterTranslationService(
 		repository.NewDocsHelpcenterTranslationRepository(db),
-		repository.NewDocsHelpcenterRepository(db),
+		repository.NewDocsHelpcenterRepository(db, false),
 		repository.NewDocsHelpcenterPublicationRepository(db),
 		repository.NewDocsRedirectRepository(db),
-		repository.NewDocsDocumentRepository(db),
+		repository.NewDocsDocumentRepository(db, false),
 		repository.NewDocsContentRepository(db),
 		repository.NewDocsSpaceRepository(db),
-		repository.NewDocsCollectionRepository(db),
+		repository.NewDocsCollectionRepository(db, false),
 		nil,
 	)
 
 	helpcenterSvc := service.NewDocsHelpcenterService(
-		repository.NewDocsHelpcenterRepository(db),
+		repository.NewDocsHelpcenterRepository(db, false),
 		repository.NewDocsHelpcenterPublicationRepository(db),
-		repository.NewDocsDocumentRepository(db),
+		repository.NewDocsDocumentRepository(db, false),
 		repository.NewDocsContentRepository(db),
 		repository.NewDocsSpaceRepository(db),
-		repository.NewDocsCollectionRepository(db),
+		repository.NewDocsCollectionRepository(db, false),
 		nil,
 		nil,
 		nil,

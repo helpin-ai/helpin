@@ -50,6 +50,7 @@ func setupDocsDeletionTestDB(t *testing.T) *gorm.DB {
 			default_review_days INTEGER,
 			is_system BOOLEAN NOT NULL DEFAULT 0,
 			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
 			created_by TEXT NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME,
@@ -73,6 +74,7 @@ func setupDocsDeletionTestDB(t *testing.T) *gorm.DB {
 			description TEXT,
 			icon TEXT,
 			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
 			created_by TEXT NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME,
@@ -93,6 +95,7 @@ func setupDocsDeletionTestDB(t *testing.T) *gorm.DB {
 			icon TEXT,
 			tags TEXT,
 			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
 			is_pinned BOOLEAN NOT NULL DEFAULT 0,
 			is_publicly_shared BOOLEAN NOT NULL DEFAULT 0,
 			share_token TEXT,
@@ -339,7 +342,7 @@ func TestDocsDocumentDeleteHardDeletesGraphAndExclusiveAssets(t *testing.T) {
 		t.Fatalf("seed translation: %v", err)
 	}
 
-	docRepo := repository.NewDocsDocumentRepository(db)
+	docRepo := repository.NewDocsDocumentRepository(db, false)
 	svc := NewDocsDocumentService(docRepo, repository.NewDocsSpaceRepository(db), nil)
 	store := &fakeDocsAssetStore{publicBase: "https://cdn.helpin.test"}
 	svc.SetDeletionDependencies(DocsDocumentDeletionDependencies{
@@ -347,7 +350,7 @@ func TestDocsDocumentDeleteHardDeletesGraphAndExclusiveAssets(t *testing.T) {
 		VersionRepo:     repository.NewDocsVersionRepository(db),
 		LinkRepo:        repository.NewDocsLinkRepository(db),
 		ChunkRepo:       repository.NewDocsChunkRepository(db),
-		HelpcenterRepo:  repository.NewDocsHelpcenterRepository(db),
+		HelpcenterRepo:  repository.NewDocsHelpcenterRepository(db, false),
 		PublicationRepo: repository.NewDocsHelpcenterPublicationRepository(db),
 		TranslationRepo: repository.NewDocsHelpcenterTranslationRepository(db),
 		AssetStore:      store,
@@ -485,9 +488,9 @@ func TestDocsCollectionDeleteWithPermanentDependenciesDeletesSubtreeAndAssets(t 
 		t.Fatalf("seed child content: %v", err)
 	}
 
-	docRepo := repository.NewDocsDocumentRepository(db)
+	docRepo := repository.NewDocsDocumentRepository(db, false)
 	spaceRepo := repository.NewDocsSpaceRepository(db)
-	collectionRepo := repository.NewDocsCollectionRepository(db)
+	collectionRepo := repository.NewDocsCollectionRepository(db, false)
 	store := &fakeDocsAssetStore{publicBase: "https://cdn.helpin.test"}
 	docSvc := NewDocsDocumentService(docRepo, spaceRepo, nil)
 	docSvc.SetDeletionDependencies(DocsDocumentDeletionDependencies{
@@ -495,7 +498,7 @@ func TestDocsCollectionDeleteWithPermanentDependenciesDeletesSubtreeAndAssets(t 
 		VersionRepo:     repository.NewDocsVersionRepository(db),
 		LinkRepo:        repository.NewDocsLinkRepository(db),
 		ChunkRepo:       repository.NewDocsChunkRepository(db),
-		HelpcenterRepo:  repository.NewDocsHelpcenterRepository(db),
+		HelpcenterRepo:  repository.NewDocsHelpcenterRepository(db, false),
 		PublicationRepo: repository.NewDocsHelpcenterPublicationRepository(db),
 		TranslationRepo: repository.NewDocsHelpcenterTranslationRepository(db),
 		AssetStore:      store,
@@ -627,10 +630,10 @@ func TestDocsCollectionDeleteImpactCountsSubtreeDocsAndPublicDocs(t *testing.T) 
 		t.Fatalf("seed public article: %v", err)
 	}
 
-	docRepo := repository.NewDocsDocumentRepository(db)
-	collectionSvc := NewDocsCollectionService(repository.NewDocsCollectionRepository(db), repository.NewDocsSpaceRepository(db), nil)
+	docRepo := repository.NewDocsDocumentRepository(db, false)
+	collectionSvc := NewDocsCollectionService(repository.NewDocsCollectionRepository(db, false), repository.NewDocsSpaceRepository(db), nil)
 	collectionSvc.SetPermanentDeleteDependencies(docRepo, NewDocsDocumentService(docRepo, repository.NewDocsSpaceRepository(db), nil), repository.NewDocsHelpcenterTranslationRepository(db))
-	collectionSvc.SetHelpcenterRepository(repository.NewDocsHelpcenterRepository(db))
+	collectionSvc.SetHelpcenterRepository(repository.NewDocsHelpcenterRepository(db, false))
 
 	impact, err := collectionSvc.GetDeleteImpact(ctx, "", "impact-root")
 	if err != nil {
@@ -707,9 +710,9 @@ func TestDocsSpaceDeleteWithPermanentDependenciesDeletesSpaceGraph(t *testing.T)
 		UpdatedAt:   now,
 	})
 
-	docRepo := repository.NewDocsDocumentRepository(db)
+	docRepo := repository.NewDocsDocumentRepository(db, false)
 	spaceRepo := repository.NewDocsSpaceRepository(db)
-	collectionRepo := repository.NewDocsCollectionRepository(db)
+	collectionRepo := repository.NewDocsCollectionRepository(db, false)
 	translationRepo := repository.NewDocsHelpcenterTranslationRepository(db)
 	docSvc := NewDocsDocumentService(docRepo, spaceRepo, nil)
 	docSvc.SetDeletionDependencies(DocsDocumentDeletionDependencies{
@@ -717,7 +720,7 @@ func TestDocsSpaceDeleteWithPermanentDependenciesDeletesSpaceGraph(t *testing.T)
 		VersionRepo:     repository.NewDocsVersionRepository(db),
 		LinkRepo:        repository.NewDocsLinkRepository(db),
 		ChunkRepo:       repository.NewDocsChunkRepository(db),
-		HelpcenterRepo:  repository.NewDocsHelpcenterRepository(db),
+		HelpcenterRepo:  repository.NewDocsHelpcenterRepository(db, false),
 		PublicationRepo: repository.NewDocsHelpcenterPublicationRepository(db),
 		TranslationRepo: translationRepo,
 		AssetStore:      &fakeDocsAssetStore{publicBase: "https://cdn.helpin.test"},

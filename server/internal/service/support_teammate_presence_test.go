@@ -55,8 +55,8 @@ func TestListTeammatePresence_UsesLivePresenceAndRecentLastSeen(t *testing.T) {
 		repository.NewCRMContactRepository(db),
 		repository.NewUserRepository(db),
 		repository.NewDocsSpaceRepository(db),
-		repository.NewDocsCollectionRepository(db),
-		repository.NewDocsHelpcenterRepository(db),
+		repository.NewDocsCollectionRepository(db, false),
+		repository.NewDocsHelpcenterRepository(db, false),
 	)
 	svc.SetWorkspaceRepo(repository.NewWorkspaceRepository(db))
 	svc.SetPresenceProvider(presence)
@@ -155,8 +155,8 @@ func TestUpdateMyTeammatePresence_ManualOverrideWinsAndCanBeCleared(t *testing.T
 		repository.NewCRMContactRepository(db),
 		repository.NewUserRepository(db),
 		repository.NewDocsSpaceRepository(db),
-		repository.NewDocsCollectionRepository(db),
-		repository.NewDocsHelpcenterRepository(db),
+		repository.NewDocsCollectionRepository(db, false),
+		repository.NewDocsHelpcenterRepository(db, false),
 	)
 	svc.SetWorkspaceRepo(repository.NewWorkspaceRepository(db))
 	svc.SetPresenceProvider(presence)

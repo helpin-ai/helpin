@@ -657,6 +657,7 @@ type PublicNavArticle struct {
 	Slug        string  `json:"slug"`
 	PublicID    string  `json:"public_id"`
 	Position    int     `json:"position"`
+	SortKey     string  `json:"sort_key"`
 	PublishedAt *string `json:"published_at"`
 }
 
@@ -673,6 +674,7 @@ type PublicNavCollection struct {
 	ParentCollectionID *string            `json:"parent_collection_id"`
 	Depth              int                `json:"depth"`
 	Position           int                `json:"position"`
+	SortKey            string             `json:"sort_key"`
 	Articles           []PublicNavArticle `json:"articles"`
 }
 

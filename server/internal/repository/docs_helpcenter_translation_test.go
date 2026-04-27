@@ -35,6 +35,7 @@ func setupDocsHelpcenterTranslationTestDB(t *testing.T) *gorm.DB {
 			default_review_days INTEGER,
 			is_system BOOLEAN NOT NULL DEFAULT 0,
 			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
 			created_by TEXT NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME,
@@ -52,6 +53,7 @@ func setupDocsHelpcenterTranslationTestDB(t *testing.T) *gorm.DB {
 			description TEXT,
 			icon TEXT,
 			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
 			created_by TEXT NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME,
@@ -72,6 +74,7 @@ func setupDocsHelpcenterTranslationTestDB(t *testing.T) *gorm.DB {
 			icon TEXT,
 			tags TEXT,
 			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
 			is_pinned BOOLEAN NOT NULL DEFAULT 0,
 			is_publicly_shared BOOLEAN NOT NULL DEFAULT 0,
 			share_token TEXT,
@@ -574,7 +577,7 @@ func TestDocsHelpcenterRepository_ListPublicArticleTranslationsByCollection_Fall
 	)
 
 	db := setupDocsHelpcenterTranslationTestDB(t)
-	repo := NewDocsHelpcenterRepository(db)
+	repo := NewDocsHelpcenterRepository(db, false)
 	ctx := context.Background()
 	now := time.Date(2026, 4, 10, 17, 0, 0, 0, time.UTC)
 
@@ -720,7 +723,7 @@ func TestDocsHelpcenterRepository_ListPublicArticleTranslationsBySpace_UsesDefau
 	)
 
 	db := setupDocsHelpcenterTranslationTestDB(t)
-	repo := NewDocsHelpcenterRepository(db)
+	repo := NewDocsHelpcenterRepository(db, false)
 	ctx := context.Background()
 	now := time.Date(2026, 4, 10, 18, 0, 0, 0, time.UTC)
 
@@ -855,7 +858,7 @@ func TestDocsHelpcenterRepository_GetPublicArticleTranslationByCollectionSlug_Fa
 	)
 
 	db := setupDocsHelpcenterTranslationTestDB(t)
-	repo := NewDocsHelpcenterRepository(db)
+	repo := NewDocsHelpcenterRepository(db, false)
 	ctx := context.Background()
 	now := time.Date(2026, 4, 10, 17, 30, 0, 0, time.UTC)
 
@@ -970,7 +973,7 @@ func TestDocsHelpcenterRepository_GetPublicArticleTranslationByCollectionSlug_Us
 	)
 
 	db := setupDocsHelpcenterTranslationTestDB(t)
-	repo := NewDocsHelpcenterRepository(db)
+	repo := NewDocsHelpcenterRepository(db, false)
 	ctx := context.Background()
 	now := time.Date(2026, 4, 10, 18, 30, 0, 0, time.UTC)
 

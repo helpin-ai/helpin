@@ -15,12 +15,52 @@ import (
 
 // DocsCollectionRepository handles DB operations for docs collections.
 type DocsCollectionRepository struct {
-	db *gorm.DB
+	db         *gorm.DB
+	useSortKey bool
 }
 
 // NewDocsCollectionRepository creates a new DocsCollectionRepository.
-func NewDocsCollectionRepository(db *gorm.DB) *DocsCollectionRepository {
-	return &DocsCollectionRepository{db: db}
+func NewDocsCollectionRepository(db *gorm.DB, useSortKey bool) *DocsCollectionRepository {
+	return &DocsCollectionRepository{db: db, useSortKey: useSortKey}
+}
+
+// collOrderBy returns the canonical ORDER BY clause for collections
+// within a bucket.
+func (r *DocsCollectionRepository) collOrderBy() string {
+	if r.useSortKey {
+		return "sort_key ASC, id ASC"
+	}
+	return "position ASC, created_at ASC, id ASC"
+}
+
+// LastSortKeyInBucket returns the highest sort_key among collections
+// in the given bucket, or "" if the bucket is empty.
+func (r *DocsCollectionRepository) LastSortKeyInBucket(ctx context.Context, spaceID string, parentCollectionID *string) (string, error) {
+	var key string
+	q := r.db.WithContext(ctx).
+		Model(&model.DocsCollection{}).
+		Select("COALESCE(MAX(sort_key), '')").
+		Where("space_id = ? AND deleted_at IS NULL", spaceID)
+	if parentCollectionID != nil {
+		q = q.Where("parent_collection_id = ?", *parentCollectionID)
+	} else {
+		q = q.Where("parent_collection_id IS NULL")
+	}
+	if err := q.Row().Scan(&key); err != nil {
+		return "", fmt.Errorf("last sort key in collection bucket: %w", err)
+	}
+	if key == "~" {
+		return "", nil
+	}
+	return key, nil
+}
+
+// UpdateSortKey sets the sort_key on a single collection.
+func (r *DocsCollectionRepository) UpdateSortKey(ctx context.Context, id, key string) error {
+	return r.db.WithContext(ctx).
+		Model(&model.DocsCollection{}).
+		Where("id = ?", id).
+		Update("sort_key", key).Error
 }
 
 // DB returns the underlying *gorm.DB the repository was constructed
@@ -101,7 +141,7 @@ func (r *DocsCollectionRepository) ListBySpace(ctx context.Context, spaceID stri
 	var colls []model.DocsCollection
 	if err := r.db.WithContext(ctx).
 		Where("space_id = ? AND deleted_at IS NULL", spaceID).
-		Order("position ASC, created_at ASC").
+		Order(r.collOrderBy()).
 		Find(&colls).Error; err != nil {
 		return nil, fmt.Errorf("list docs collections: %w", err)
 	}
@@ -113,7 +153,7 @@ func (r *DocsCollectionRepository) ListByWorkspace(ctx context.Context, workspac
 	var colls []model.DocsCollection
 	if err := r.db.WithContext(ctx).
 		Where("workspace_id = ? AND deleted_at IS NULL", workspaceID).
-		Order("space_id ASC, position ASC, created_at ASC").
+		Order("space_id ASC, " + r.collOrderBy()).
 		Find(&colls).Error; err != nil {
 		return nil, fmt.Errorf("list docs collections by workspace: %w", err)
 	}
@@ -162,7 +202,7 @@ func (r *DocsCollectionRepository) Delete(ctx context.Context, id string) error 
 		var children []model.DocsCollection
 		if err := tx.
 			Where("parent_collection_id = ? AND deleted_at IS NULL", id).
-			Order("position ASC, created_at ASC, id ASC").
+			Order(r.collOrderBy()).
 			Find(&children).Error; err != nil {
 			return fmt.Errorf("load child collections for delete: %w", err)
 		}
@@ -205,7 +245,7 @@ func (r *DocsCollectionRepository) Delete(ctx context.Context, id string) error 
 		var docs []model.DocsDocument
 		if err := tx.
 			Where("collection_id = ? AND deleted_at IS NULL", id).
-			Order("position ASC, created_at ASC, id ASC").
+			Order(r.collOrderBy()).
 			Find(&docs).Error; err != nil {
 			return fmt.Errorf("list docs in collection for delete: %w", err)
 		}
@@ -330,7 +370,7 @@ func (r *DocsCollectionRepository) ListChildren(ctx context.Context, spaceID str
 	} else {
 		q = q.Where("parent_collection_id = ?", *parentID)
 	}
-	if err := q.Order("position ASC, created_at ASC, id ASC").Find(&colls).Error; err != nil {
+	if err := q.Order(r.collOrderBy()).Find(&colls).Error; err != nil {
 		return nil, fmt.Errorf("list docs collection children: %w", err)
 	}
 	return colls, nil

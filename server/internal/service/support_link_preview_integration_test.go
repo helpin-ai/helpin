@@ -61,8 +61,8 @@ func TestCreateConversationMessageStoresLinkPreviewMetadata(t *testing.T) {
 		repository.NewCRMContactRepository(db),
 		repository.NewUserRepository(db),
 		repository.NewDocsSpaceRepository(db),
-		repository.NewDocsCollectionRepository(db),
-		repository.NewDocsHelpcenterRepository(db),
+		repository.NewDocsCollectionRepository(db, false),
+		repository.NewDocsHelpcenterRepository(db, false),
 	)
 	svc.SetLinkPreviewService(stubSupportLinkPreviewer{})
 

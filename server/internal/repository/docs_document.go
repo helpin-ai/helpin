@@ -12,12 +12,54 @@ import (
 
 // DocsDocumentRepository handles DB operations for documents.
 type DocsDocumentRepository struct {
-	db *gorm.DB
+	db         *gorm.DB
+	useSortKey bool
 }
 
 // NewDocsDocumentRepository creates a new DocsDocumentRepository.
-func NewDocsDocumentRepository(db *gorm.DB) *DocsDocumentRepository {
-	return &DocsDocumentRepository{db: db}
+func NewDocsDocumentRepository(db *gorm.DB, useSortKey bool) *DocsDocumentRepository {
+	return &DocsDocumentRepository{db: db, useSortKey: useSortKey}
+}
+
+// docOrderBy returns the canonical ORDER BY clause for documents
+// within a bucket. When the sort_key flag is on, uses sort_key ASC;
+// otherwise falls back to the legacy position-based order.
+func (r *DocsDocumentRepository) docOrderBy() string {
+	if r.useSortKey {
+		return "sort_key ASC, id ASC"
+	}
+	return "position ASC, created_at ASC, id ASC"
+}
+
+// LastSortKeyInBucket returns the highest sort_key among docs in the
+// given bucket (space + collection), or "" if the bucket is empty.
+func (r *DocsDocumentRepository) LastSortKeyInBucket(ctx context.Context, spaceID string, collectionID *string) (string, error) {
+	var key string
+	q := r.db.WithContext(ctx).
+		Model(&model.DocsDocument{}).
+		Select("COALESCE(MAX(sort_key), '')").
+		Where("space_id = ? AND deleted_at IS NULL", spaceID)
+	if collectionID != nil {
+		q = q.Where("collection_id = ?", *collectionID)
+	} else {
+		q = q.Where("collection_id IS NULL")
+	}
+	if err := q.Row().Scan(&key); err != nil {
+		return "", fmt.Errorf("last sort key in doc bucket: %w", err)
+	}
+	// Ignore the sentinel '~' — it's an un-backfilled row.
+	if key == "~" {
+		return "", nil
+	}
+	return key, nil
+}
+
+// UpdateSortKey sets the sort_key on a single document.
+func (r *DocsDocumentRepository) UpdateSortKey(ctx context.Context, id, key string) error {
+	return r.db.WithContext(ctx).
+		Model(&model.DocsDocument{}).
+		Where("id = ?", id).
+		Update("sort_key", key).Error
 }
 
 // Create inserts a new document.
@@ -92,9 +134,13 @@ func (r *DocsDocumentRepository) List(ctx context.Context, workspaceID string, s
 	}
 
 	var docs []model.DocsDocument
-	// Space-scoped: use canonical position order. Otherwise: recency order.
+	// Space-scoped: use canonical bucket order. Otherwise: recency order.
 	if spaceID != nil && *spaceID != "" {
-		query = query.Order("collection_id ASC NULLS FIRST, position ASC, created_at ASC")
+		if r.useSortKey {
+			query = query.Order("collection_id ASC NULLS FIRST, sort_key ASC, id ASC")
+		} else {
+			query = query.Order("collection_id ASC NULLS FIRST, position ASC, created_at ASC")
+		}
 	} else {
 		query = query.Order("is_pinned DESC, updated_at DESC")
 	}

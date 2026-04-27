@@ -51,6 +51,7 @@ func setupDocsHelpcenterTranslationHandlerTestDB(t *testing.T) *gorm.DB {
 			default_review_days INTEGER,
 			is_system BOOLEAN NOT NULL DEFAULT 0,
 			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
 			created_by TEXT NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME,
@@ -67,6 +68,7 @@ func setupDocsHelpcenterTranslationHandlerTestDB(t *testing.T) *gorm.DB {
 			description TEXT,
 			icon TEXT,
 			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
 			created_by TEXT NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME,
@@ -87,6 +89,7 @@ func setupDocsHelpcenterTranslationHandlerTestDB(t *testing.T) *gorm.DB {
 			icon TEXT,
 			tags TEXT,
 			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
 			is_pinned BOOLEAN NOT NULL DEFAULT 0,
 			is_publicly_shared BOOLEAN NOT NULL DEFAULT 0,
 			share_token TEXT,
@@ -369,13 +372,13 @@ func newDocsHelpcenterTranslationHandlerForTest(db *gorm.DB) *DocsHandler {
 func newDocsHelpcenterTranslationHandlerForTestWithLLM(db *gorm.DB, llmProvider llm.Provider) *DocsHandler {
 	translationSvc := service.NewDocsHelpcenterTranslationService(
 		repository.NewDocsHelpcenterTranslationRepository(db),
-		repository.NewDocsHelpcenterRepository(db),
+		repository.NewDocsHelpcenterRepository(db, false),
 		repository.NewDocsHelpcenterPublicationRepository(db),
 		repository.NewDocsRedirectRepository(db),
-		repository.NewDocsDocumentRepository(db),
+		repository.NewDocsDocumentRepository(db, false),
 		repository.NewDocsContentRepository(db),
 		repository.NewDocsSpaceRepository(db),
-		repository.NewDocsCollectionRepository(db),
+		repository.NewDocsCollectionRepository(db, false),
 		llmProvider,
 	)
 	return &DocsHandler{translationSvc: translationSvc}
