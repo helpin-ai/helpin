@@ -79,21 +79,62 @@ function DocsSpaceCollections({
     [collections],
   );
 
+  // Track which parent collections are expanded in the sidebar tree.
+  const [expandedColls, setExpandedColls] = useState<Set<string>>(new Set());
+  const toggleColl = (id: string) => {
+    setExpandedColls((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // Enrich each option with a hasChildren flag (next item in DFS is deeper).
+  // Filter to only show items whose parent is expanded.
+  const visibleOptions = useMemo(() => {
+    const enriched = treeOptions.map((opt, i) => ({
+      ...opt,
+      hasChildren: i + 1 < treeOptions.length && treeOptions[i + 1].depth > opt.depth,
+    }));
+    const result: (typeof enriched)[number][] = [];
+    // skipUntilDepth: when a collapsed parent is hit, hide all deeper
+    // items until we return to the same depth or shallower.
+    let skipUntilDepth = Infinity;
+    for (const opt of enriched) {
+      if (opt.depth > skipUntilDepth) continue;
+      skipUntilDepth = Infinity;
+      result.push(opt);
+      if (opt.hasChildren && !expandedColls.has(opt.id)) {
+        skipUntilDepth = opt.depth;
+      }
+    }
+    return result;
+  }, [treeOptions, expandedColls]);
+
   return (
     <SidebarMenuSub className="mr-0 pr-0">
-      {treeOptions.map((option) => {
+      {visibleOptions.map((option) => {
         const collection = collectionById.get(option.id);
         if (!collection) return null;
         const link = `/w/${wsSlug}/docs/spaces/${spaceId}?collection=${collection.id}`;
         const showTooltip = isColTruncated(collection.id);
-        // Depth 0 stays flush with the sidebar's base indent; each
-        // additional depth adds a small left pad + a muted "↳" so
-        // the hierarchy is readable without hover.
         const depthStyle = option.depth > 0 ? { paddingLeft: `${option.depth * 12}px` } : undefined;
 
         return (
           <SidebarMenuSubItem key={collection.id} style={depthStyle}>
             <div className="group/collection relative flex items-center">
+              {option.hasChildren ? (
+                <button
+                  type="button"
+                  onClick={() => toggleColl(collection.id)}
+                  className="flex h-5 w-4 shrink-0 items-center justify-center text-muted-foreground/50 hover:text-foreground"
+                >
+                  <ArrowRight01Icon className={`h-3 w-3 transition-transform ${expandedColls.has(collection.id) ? 'rotate-90' : ''}`} />
+                </button>
+              ) : (
+                <span className="w-4 shrink-0" />
+              )}
               <Tooltip open={showTooltip ? undefined : false}>
                 <TooltipTrigger asChild>
                   <SidebarMenuSubButton
@@ -112,14 +153,6 @@ function DocsSpaceCollections({
                         });
                       }}
                     >
-                      {option.depth > 0 && (
-                        <span
-                          className="select-none text-[10px] text-muted-foreground/50"
-                          aria-hidden="true"
-                        >
-                          ↳
-                        </span>
-                      )}
                       <SidebarCollectionIcon name={collection.icon} />
                       <span className="truncate" ref={(element) => checkColTruncation(collection.id, element)}>
                         {collection.name}
