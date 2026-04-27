@@ -258,7 +258,13 @@ jobs:
         run: |
           cd build-stg-netlify
           pnpm install --no-frozen-lockfile
-          NODE_OPTIONS=--max-old-space-size=8192 pnpm --filter frontend... build
+          NODE_OPTIONS=--max-old-space-size=8192 pnpm \
+            --filter @helpin-ai/sdk-js... \
+            --filter @helpin-ai/widget-embed... \
+            --filter @helpin-ai/react... \
+            --filter @helpin-ai/nextjs... \
+            --filter frontend... \
+            build
 
       - name: Link Netlify site
         working-directory: build-stg-netlify
