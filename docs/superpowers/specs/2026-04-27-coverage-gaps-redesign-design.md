@@ -1,12 +1,13 @@
 # Coverage Gaps Redesign — Design Spec
 
 **Date:** 2026-04-27
-**Status:** Proposed (v1.1, post-review)
+**Status:** Proposed (v1.2, post-review)
 **Module:** Support → Coverage Gaps
 
 **Revision log:**
 - 2026-04-27 v1: initial draft.
 - 2026-04-27 v1.1: addressed code review — lifecycle precision, async enrichment specifics (workflow IDs, idempotency, cooldowns, Temporal-disabled fallback), expanded `support_coverage_topics` schema, cluster key composition rule, suggestion versioning, 30-day impact computation source, dropped per-workspace feature flag (does not exist as infra), added outcome instrumentation in v1, prior-work crosslinks.
+- 2026-04-27 v1.2: addressed second-round review — spike trigger SQL uses `gap_id` (no `topic_id` on evidence); partial unique index on open gaps only (allows future gaps on same topic after rejection/Done); fixed env var to `TEMPORAL_ADDRESS` and dropped the invalid "disabled fallback" — Temporal is now declared a hard dependency matching CRM workflows; §6.6 confirms `DocsDocumentService.Create` defaults to `DocStatusDraft` (open question #1 resolved); switched to existing constants `create_article` / `update_article` (instead of invented `create_article` / `update_article`).
 
 ---
 
@@ -15,7 +16,7 @@
 This spec **supersedes the product direction** in:
 
 - `docs/superpowers/plans/2026-04-15-docs-coverage-loop-v1.md` — built the current event/gap/evidence/suggestion foundation. **Kept:** signal capture (`SupportEvent`), gap row model, evidence model.
-- `docs/superpowers/specs/2026-04-15-coverage-resolution-flows-design.md` — added draft/update/apply flows. **Kept:** `SupportGapSuggestion` model with `suggestion_type` (`create_new` | `update_existing`), the apply-to-doc backend, and `result_document_id` linkage.
+- `docs/superpowers/specs/2026-04-15-coverage-resolution-flows-design.md` — added draft/update/apply flows. **Kept:** `SupportGapSuggestion` model with `suggestion_type` (`create_article` | `update_article`), the apply-to-doc backend, and `result_document_id` linkage.
 
 **Changed from those:** status model collapses to `Open → Done | Rejected`; classification moves from rule-based to LLM-enriched; clustering moves from per-event hashing to topic-scoped; UI rewritten around action-verb titles and inline drafts; topics gain `cluster_key`/`canonical_title`/enrichment timestamps; suggestions gain explicit versioning.
 
@@ -126,7 +127,7 @@ Replaces per-event `hashExcerpt` dedupe with topic-scoped clustering. Assigns ea
 
 A new column `gap_kind text not null default 'content'` is added — exists to support Phase 3/4.
 
-The legacy `dedupe_key` column is retained but deprecated; new rows write the same value as the topic's `cluster_key` for backward compat, and the unique index moves to `(workspace_id, topic_id)` for v2 gaps.
+The legacy `dedupe_key` column is retained but deprecated; new rows write the same value as the topic's `cluster_key` for backward compat. A **partial** unique index `(workspace_id, topic_id) WHERE status='open'` enforces one open gap per topic. After a gap is `Done` or `Rejected`, future re-emergence on the same topic creates a new open gap — intentional, see lifecycle §6.6.
 
 ### 6.4 Enricher (new — async Temporal workflow)
 
@@ -149,13 +150,21 @@ A new `CoverageGapEnrichmentWorkflow` (registered alongside existing CRM workflo
 5. Writes new `SupportGapSuggestion` with `is_active=true`. Sets prior active suggestions for the same gap to `is_active=false, superseded_at=now()`.
 6. Updates topic: `canonical_title`, `last_enriched_at=now()`, `cooldown_until=now() + 1h`.
 
-**Spike trigger source:** the existing `ProcessSupportEvent` flow checks after each evidence insert — if `(SELECT COUNT(*) FROM support_gap_evidence WHERE topic_id=? AND created_at > now() - interval '1 hour') >= 5` and `cooldown_until < now()`, it signals the workflow.
+**Spike trigger source:** the existing `ProcessSupportEvent` flow checks after each evidence insert — `support_gap_evidence` has no `topic_id` column, so the count is taken via the gap (one gap per open topic in v2):
+
+```sql
+SELECT COUNT(*) FROM support_gap_evidence
+ WHERE gap_id = <gap_id of the row we just inserted into>
+   AND created_at > now() - interval '1 hour'
+```
+
+If the count `>= 5` and `cooldown_until < now()` on the topic, signal the workflow. The "5 events on a topic in an hour" semantic holds because v2 enforces one open gap per topic (see 7.2 partial unique index).
 
 **Daily batch source:** a Temporal cron schedule registered at startup (UTC 03:00 — workspace-local times deferred to Phase 2). The batch lists topics with `last_enriched_at < now() - interval '24 hours'` and `evidence_count >= 2`, fans out to `EnrichTopicActivity`.
 
 **Manual regenerate endpoint:** `POST /api/support/coverage/gaps/{gap_id}/regenerate` — handler validates permissions, ignores cooldown for manual fires (still respects the 30-sec UI debounce), enqueues workflow.
 
-**Fallback when Temporal disabled:** if `TEMPORAL_HOSTPORT` is empty, the manual regenerate endpoint runs the activity synchronously in the request goroutine (with a 30-sec timeout), and the daily batch is run by an in-process `time.Ticker` worker registered in `cmd/api/main.go`. This matches the existing pattern where Helpin can run without Temporal in development.
+**Temporal is required.** This matches the existing CRM workflows pattern — `internal/config/config.go` reads `TEMPORAL_ADDRESS` (default `localhost:7233`) and the API server connects at startup. We do not build a synchronous in-process fallback for v1; if Temporal is unreachable, manual regenerate returns 503 and the daily batch logs an error. If we later need a no-Temporal mode for development convenience, that's a separate cross-cutting change, not coverage-gaps-specific.
 
 ### 6.5 Impact ranking (read-time)
 
@@ -196,8 +205,8 @@ State machine:
 **Manual close only** in v1 — no auto-close. Precise transition rules:
 
 - **Add** is the explicit close action. Behavior depends on the active suggestion's `route`:
-  - `create_new`: backend creates a new published Doc with `draft_markdown` as the body (or a server-side draft if the docs module supports it — confirmed in implementation planning). Sets `gap.status='done'`, `gap.closed_at=now()`, `gap.result_document_id=<new>`, snapshots `gap.closed_evidence_count = evidence_30d at close time`.
-  - `update_existing`: backend appends `draft_markdown` as a new section to the target Doc. Same gap-side bookkeeping with `result_document_id=<existing>`.
+  - `create_article`: backend calls `DocsDocumentService.Create` (which defaults to `DocStatusDraft` per `docs_document.go:83`) with `draft_markdown` as the body. The user finishes/publishes from the docs editor. Gap-side: `gap.status='done'`, `gap.closed_at=now()`, `gap.result_document_id=<new>`, snapshots `gap.closed_evidence_count = evidence_30d at close time`.
+  - `update_article`: backend appends `draft_markdown` as a new section to the target Doc. Same gap-side bookkeeping with `result_document_id=<existing>`.
 - **Reject** sets `gap.status='rejected'`, `gap.closed_at=now()`, `gap.rejection_reason` (optional free text). The gap leaves the inbox; future evidence on the same `cluster_key` re-opens nothing — it accumulates on the rejected gap until 30 days pass and the gap drops out of evidence_30d, OR a future re-enrichment of the topic creates a new gap if the rejected gap is older than 30 days. (Net effect: rejection is "ignore for ~30 days," not "ignore forever." Documented and intentional.)
 - **Open in editor** opens the docs editor at a new in-memory route loaded with `draft_markdown` as initial TipTap content + the `gap_id`/`suggestion_id` carried in URL state. The gap stays `Open`. When the editor saves, it calls the same Add backend (which closes the gap). If the user navigates away without saving, nothing changes.
 
@@ -265,6 +274,12 @@ ALTER TABLE support_coverage_gaps
   ADD COLUMN closed_evidence_count int,
   ADD COLUMN result_document_id uuid,
   ADD COLUMN rejection_reason text;
+
+-- Partial unique: one open gap per topic. Done/Rejected gaps don't block
+-- a future re-emergence creating a new open gap on the same topic.
+CREATE UNIQUE INDEX idx_support_coverage_gaps_workspace_topic_open
+  ON support_coverage_gaps(workspace_id, topic_id)
+  WHERE status = 'open' AND topic_id IS NOT NULL;
 ```
 
 `result_document_id` is the canonical link from gap → produced doc, used by Phase 2 deflection reporting.
@@ -327,7 +342,7 @@ The architectural commitments in v1 (`gap_kind` column, three-category UI scaffo
 - **LLM enrichment failure:** topic remains with prior active suggestion (or none). Workflow logs failure, retries per Temporal defaults, then surfaces "Regenerate" affordance in UI. `ErrorContext` log includes `workspace_id`, `topic_id`.
 - **No suggestion yet (newly created topic before first enrich):** detail pane shows "Generating recommendation…" with a progress indicator and offers immediate manual regenerate.
 - **No evidence on a gap:** can't happen in v1 (gap is created from evidence). Defensive: gaps with `evidence_count == 0` are hidden everywhere.
-- **Empty workspace KB:** enrichment falls back to `route = create_new` with no `update_existing` candidate.
+- **Empty workspace KB:** enrichment falls back to `route = create_new` with no `update_article` candidate.
 - **Spike trigger storm:** per-topic `cooldown_until` (1 hour) prevents repeated re-enrichment during a sustained spike. Daily batch is the catch-up.
 - **Doc deleted after Add:** gap stays `Done`. We do not re-open. Future evidence on the same topic accumulates against the closed gap until 30-day window expires; new evidence after that window may surface as a new gap on the same topic if no open gap exists.
 - **Concurrent Add and Reject (two users):** first write wins; second receives 409 with current state. UI shows toast "This gap was already resolved by {user}."
@@ -339,7 +354,7 @@ The architectural commitments in v1 (`gap_kind` column, three-category UI scaffo
 - **Unit tests** (table-driven) for the clusterer normalizer: input variants → expected `cluster_key`, including signal-type and document-scoping cases that must NOT collide.
 - **Unit tests** for impact tier computation, including the 30-day boundary.
 - **Service tests** for the enricher with a mocked LLM provider: success, retry, cooldown skip, supersede prior active suggestion.
-- **Service tests** for the lifecycle transitions (Add `create_new`, Add `update_existing`, Reject, concurrent close).
+- **Service tests** for the lifecycle transitions (Add `create_article`, Add `update_article`, Reject, concurrent close).
 - **Integration tests** for the full ingest → cluster → enrich → list → Add pipeline against in-memory SQLite (with a stub Temporal activity runner).
 - **Migration tests** for status backfill and cluster rebuild on a fixture dataset (verify merge correctness, evidence reattachment, no data loss).
 - **Handler test** for `POST .../regenerate` (auth check, cooldown handling, debounce semantics).
@@ -362,7 +377,7 @@ If we later open the Support module to external customers and want safer per-cus
 
 ## Open questions to validate before implementation
 
-1. Does the docs module support server-side "draft" Docs (unpublished, only visible to creator)? If yes, `Add` for `create_new` should land there. If no, it creates a published article immediately and the user edits in-place.
-2. What's the existing pattern for registering Temporal cron workflows at startup? Confirm the in-process fallback pattern when `TEMPORAL_HOSTPORT` is empty matches existing CRM behavior.
+1. ~~Does the docs module support server-side draft Docs?~~ **Resolved v1.2** — `DocsDocumentService.Create` defaults to `DocStatusDraft` (`server/internal/service/docs_document.go:83`). Add for `create_article` lands as a draft; user publishes from the editor.
+2. What's the existing pattern for registering Temporal cron workflows at startup? Confirm parallel registration with the existing CRM workflows in `internal/temporalapp/`.
 3. LLM cost budget per workspace per day. Estimated ~50 calls/day for an active workspace; needs a real number from finance/ops before launch.
 4. Confirm `support_gap_evidence` carries `created_at` (it should — every GORM model does) so the 30-day computation in 6.5 works without a backfill.
