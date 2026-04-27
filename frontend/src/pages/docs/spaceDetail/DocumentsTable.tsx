@@ -24,7 +24,6 @@ import type { DocsDocument, DocStatus } from '@/lib/docsTypes'
 import type { AssignableMember } from '@/lib/types'
 import { UserAvatar } from '@/components/pm/UserAvatar'
 import { formatAssignableMemberName } from '@/lib/assignableMembers'
-import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import {
   DropdownMenu,
   DropdownMenuContent,
