@@ -190,9 +190,9 @@ func renderNode(b *strings.Builder, n *Node) {
 			case "right":
 				alignStyle = "text-align:right"
 			}
-			fmt.Fprintf(b, "<div style=\"%s\">\n", alignStyle)
+			fmt.Fprintf(b, "<div class=\"docs-image-block\" style=\"%s\">\n", alignStyle)
 		} else if alignment == "" || alignment == "center" {
-			b.WriteString("<div style=\"text-align:center\">\n")
+			b.WriteString("<div class=\"docs-image-block\" style=\"text-align:center\">\n")
 		}
 
 		if linkUrl != "" {
@@ -354,10 +354,10 @@ func renderImage(b *strings.Builder, n *Node) {
 
 // allowedVideoHosts maps hostnames to required path prefixes for video embeds.
 var allowedVideoHosts = map[string]string{
-	"www.youtube.com":       "/embed/",
-	"player.vimeo.com":      "/video/",
-	"www.loom.com":          "/embed/",
-	"fast.wistia.net":       "/embed/iframe/",
+	"www.youtube.com":  "/embed/",
+	"player.vimeo.com": "/video/",
+	"www.loom.com":     "/embed/",
+	"fast.wistia.net":  "/embed/iframe/",
 }
 
 // isAllowedVideoEmbed validates that the embed URL uses https and matches

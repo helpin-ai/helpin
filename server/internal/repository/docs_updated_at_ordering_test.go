@@ -34,6 +34,7 @@ func setupDocsUpdatedAtOrderingTestDB(t *testing.T) *gorm.DB {
 			default_review_days INTEGER,
 			is_system BOOLEAN NOT NULL DEFAULT 0,
 			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
 			created_by TEXT NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME,
@@ -51,6 +52,7 @@ func setupDocsUpdatedAtOrderingTestDB(t *testing.T) *gorm.DB {
 			description TEXT,
 			icon TEXT,
 			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
 			created_by TEXT NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME,
@@ -71,6 +73,7 @@ func setupDocsUpdatedAtOrderingTestDB(t *testing.T) *gorm.DB {
 			icon TEXT,
 			tags TEXT,
 			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
 			is_pinned BOOLEAN NOT NULL DEFAULT 0,
 			is_publicly_shared BOOLEAN NOT NULL DEFAULT 0,
 			share_token TEXT,
@@ -131,8 +134,8 @@ func TestDocsOrdering_PositionOnlyWritesDoNotTouchUpdatedAt(t *testing.T) {
 	t.Run("reorder keeps updated_at stable for spaces collections and documents", func(t *testing.T) {
 		db := setupDocsUpdatedAtOrderingTestDB(t)
 		spaceRepo := NewDocsSpaceRepository(db)
-		collectionRepo := NewDocsCollectionRepository(db)
-		docRepo := NewDocsDocumentRepository(db)
+		collectionRepo := NewDocsCollectionRepository(db, false)
+		docRepo := NewDocsDocumentRepository(db, false)
 
 		seedDocsUpdatedAtSpace(t, db, model.DocsSpace{
 			ID:          "space-a",
@@ -243,8 +246,8 @@ func TestDocsOrdering_PositionOnlyWritesDoNotTouchUpdatedAt(t *testing.T) {
 	t.Run("normalization keeps updated_at stable for spaces collections and documents", func(t *testing.T) {
 		db := setupDocsUpdatedAtOrderingTestDB(t)
 		spaceRepo := NewDocsSpaceRepository(db)
-		collectionRepo := NewDocsCollectionRepository(db)
-		docRepo := NewDocsDocumentRepository(db)
+		collectionRepo := NewDocsCollectionRepository(db, false)
+		docRepo := NewDocsDocumentRepository(db, false)
 
 		seedDocsUpdatedAtSpace(t, db, model.DocsSpace{
 			ID:          "space-c",

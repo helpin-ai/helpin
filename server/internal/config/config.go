@@ -106,6 +106,10 @@ type Config struct {
 
 	// Agent preview debugging (optional — targeted diagnostics for preview persistence/apply)
 	AgentPreviewDebug bool
+
+	// Docs ordering: when true, reads/writes use fractional sort_key
+	// instead of integer position. Enable after backfill completes.
+	DocsOrderingUseSortKey bool
 }
 
 // Load reads configuration from environment variables.
@@ -234,6 +238,7 @@ func Load() (*Config, error) {
 		MaxMindLicenseKey:                 strings.TrimSpace(os.Getenv("MAXMIND_LICENSE_KEY")),
 		RedisURL:                          os.Getenv("REDIS_URL"),
 		AgentPreviewDebug:                 parseBoolEnv(os.Getenv("AGENT_PREVIEW_DEBUG")),
+		DocsOrderingUseSortKey:            parseBoolEnv(os.Getenv("DOCS_ORDERING_USE_SORT_KEY")),
 	}, nil
 }
 

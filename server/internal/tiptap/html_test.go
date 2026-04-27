@@ -117,6 +117,9 @@ func TestRenderHTML_Image(t *testing.T) {
 	if !strings.Contains(got, `style="width:50%"`) {
 		t.Errorf("missing width style: %s", got)
 	}
+	if !strings.Contains(got, `class="docs-image-block"`) {
+		t.Errorf("missing image block wrapper class: %s", got)
+	}
 }
 
 func TestRenderHTML_Blockquote(t *testing.T) {

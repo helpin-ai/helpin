@@ -1107,9 +1107,9 @@ func (s *DocsHelpcenterService) UpdateCollectionSlug(ctx context.Context, collec
 
 	var updated *model.DocsCollection
 	txErr := s.collectionRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		txCollectionRepo := repository.NewDocsCollectionRepository(tx)
+		txCollectionRepo := repository.NewDocsCollectionRepository(tx, false)
 		txRedirectRepo := repository.NewDocsRedirectRepository(tx)
-		txHcRepo := repository.NewDocsHelpcenterRepository(tx)
+		txHcRepo := repository.NewDocsHelpcenterRepository(tx, false)
 
 		// Collection-level redirect: old /:slug -> new /:slug.
 		if oldSlug != "" {
