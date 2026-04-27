@@ -124,17 +124,6 @@ function DocsSpaceCollections({
         return (
           <SidebarMenuSubItem key={collection.id} style={depthStyle}>
             <div className="group/collection relative flex items-center">
-              {option.hasChildren ? (
-                <button
-                  type="button"
-                  onClick={() => toggleColl(collection.id)}
-                  className="flex h-5 w-4 shrink-0 items-center justify-center text-muted-foreground/50 hover:text-foreground"
-                >
-                  <ArrowRight01Icon className={`h-3 w-3 transition-transform ${expandedColls.has(collection.id) ? 'rotate-90' : ''}`} />
-                </button>
-              ) : (
-                <span className="w-4 shrink-0" />
-              )}
               <Tooltip open={showTooltip ? undefined : false}>
                 <TooltipTrigger asChild>
                   <SidebarMenuSubButton
@@ -146,7 +135,7 @@ function DocsSpaceCollections({
                       href={link}
                       onClick={(event) => {
                         event.preventDefault();
-                        if (option.hasChildren && !expandedColls.has(collection.id)) {
+                        if (option.hasChildren) {
                           toggleColl(collection.id);
                         }
                         onNavigate({
@@ -156,6 +145,9 @@ function DocsSpaceCollections({
                         });
                       }}
                     >
+                      {option.hasChildren && (
+                        <ArrowRight01Icon className={`h-3 w-3 shrink-0 transition-transform text-muted-foreground ${expandedColls.has(collection.id) ? 'rotate-90' : ''}`} />
+                      )}
                       <SidebarCollectionIcon name={collection.icon} />
                       <span className="truncate" ref={(element) => checkColTruncation(collection.id, element)}>
                         {collection.name}
