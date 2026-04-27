@@ -8,6 +8,10 @@
 
 **Tech Stack:** Go 1.24, Chi, GORM (PostgreSQL/SQLite tests), Temporal Go SDK, `internal/llm` provider, React 19, TipTap, TanStack Query, Tailwind v4.
 
+**Plan revision log:**
+- v1: initial draft.
+- v1.1 (post-review): fixed migration filenames to `YYYYMMDDNNNN` (12-digit) starting at `202604270004`; pointed Temporal workflow/activity registration at `server/cmd/temporal-worker/main.go` (not `cmd/api/main.go`); added subcommand registration in `server/cmd/migrate/main.go` for `cluster-rebuild`; deferred removal of legacy status constants until all call sites are migrated (Task 5 now adds new constants without dropping old ones; final cleanup is Task 23 + a follow-up release per spec §7.4); fixed repo file paths (single `support_coverage.go`, no split files); replaced non-existent `pnpm typecheck` / `pnpm test` with the actual scripts (`pnpm build`, `pnpm lint`, `pnpm test:e2e:support`); rewrote Task 19 against the real `SupportCoverageDraftService` API (`s.documentSvc.Create(ctx, workspaceID, model.CreateDocsDocumentRequest{…})`, content is TipTap JSON in `suggestion.Content`, append via `tiptap.AppendContent`).
+
 ---
 
 ## Reference Documents
@@ -26,11 +30,11 @@
 ### New files
 
 **Backend:**
-- `server/internal/dbmigrate/sql/2026042700001_coverage_topics_cluster_columns.sql`
-- `server/internal/dbmigrate/sql/2026042700002_coverage_gaps_lifecycle_columns.sql`
-- `server/internal/dbmigrate/sql/2026042700003_coverage_suggestions_versioning.sql`
-- `server/internal/dbmigrate/sql/2026042700004_coverage_status_migration.sql`
-- `server/internal/dbmigrate/sql/2026042700005_coverage_cluster_rebuild.sql` (calls a Go-side rebuild via the migrate harness — see Task 11)
+- `server/internal/dbmigrate/sql/202604270004_coverage_topics_cluster_columns.sql`
+- `server/internal/dbmigrate/sql/202604270005_coverage_gaps_lifecycle_columns.sql`
+- `server/internal/dbmigrate/sql/202604270006_coverage_suggestions_versioning.sql`
+- `server/internal/dbmigrate/sql/202604270007_coverage_status_migration.sql`
+- `server/internal/dbmigrate/sql/202604270008_coverage_cluster_rebuild.sql` (calls a Go-side rebuild via the migrate harness — see Task 11)
 - `server/internal/service/support_coverage_clusterer.go`
 - `server/internal/service/support_coverage_clusterer_test.go`
 - `server/internal/service/support_coverage_enrichment.go`
@@ -53,10 +57,12 @@
 - `server/internal/service/support_coverage.go` — new `ProcessSupportEvent` flow uses clusterer, gap upsert by topic
 - `server/internal/service/support_coverage_drafts.go` — remove `drafted`/`fixed` status writes (lines 98, 213, 268)
 - `server/internal/service/support_coverage_rules.go` — kept for V1GapType subtype values; classifier dispatch now subordinate to enrichment
-- `server/internal/repository/support_coverage_gaps.go` — list query joins evidence for `evidence_30d`
+- `server/internal/repository/support_coverage.go` — list query joins evidence for `evidence_30d`
 - `server/internal/handler/support_coverage.go` — new `Regenerate` route
 - `server/internal/router/router.go` — register `POST /support/coverage/gaps/{gapId}/regenerate`
-- `server/cmd/api/main.go` — register coverage gap workflow + cron schedule alongside CRM workflows
+- `server/cmd/temporal-worker/main.go` — register `CoverageGapEnrichmentFlow`, `CoverageGapDailyBatchFlow`, and `EnrichTopicActivity` in `newTemporalWorker`; wire the enricher dependency
+- `server/cmd/api/main.go` — wire the Temporal client used by the spike trigger and the manual-regenerate handler (the API process *enqueues*; the worker process *executes*)
+- `server/cmd/migrate/main.go` — add `cluster-rebuild` to the command switch and usage string
 - `server/internal/llm/` — no changes required if the existing provider has structured-output support; otherwise add a `GenerateStructured(ctx, prompt, schema)` helper
 
 **Frontend:**
@@ -74,7 +80,7 @@ These migrations add columns and indices. The application keeps writing the old 
 ### Task 1: Add columns to `support_coverage_topics`
 
 **Files:**
-- Create: `server/internal/dbmigrate/sql/2026042700001_coverage_topics_cluster_columns.sql`
+- Create: `server/internal/dbmigrate/sql/202604270004_coverage_topics_cluster_columns.sql`
 - Modify: `server/internal/model/support_coverage.go` (the `SupportCoverageTopic` struct around line 94)
 
 - [ ] **Step 1: Write the migration SQL**
@@ -105,7 +111,7 @@ CooldownUntil   *time.Time `json:"cooldown_until"`
 - [ ] **Step 3: Apply migration**
 
 Run: `cd server && go run ./cmd/migrate up`
-Expected: `applied 2026042700001_coverage_topics_cluster_columns`
+Expected: `applied 202604270004_coverage_topics_cluster_columns`
 
 - [ ] **Step 4: Verify status**
 
@@ -115,14 +121,14 @@ Expected: row showing the migration as `applied`.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add server/internal/dbmigrate/sql/2026042700001_coverage_topics_cluster_columns.sql server/internal/model/support_coverage.go
+git add server/internal/dbmigrate/sql/202604270004_coverage_topics_cluster_columns.sql server/internal/model/support_coverage.go
 git commit -m "feat(coverage): add cluster_key, canonical_title, enrich timestamps to topics"
 ```
 
 ### Task 2: Add lifecycle columns and partial unique index to `support_coverage_gaps`
 
 **Files:**
-- Create: `server/internal/dbmigrate/sql/2026042700002_coverage_gaps_lifecycle_columns.sql`
+- Create: `server/internal/dbmigrate/sql/202604270005_coverage_gaps_lifecycle_columns.sql`
 - Modify: `server/internal/model/support_coverage.go` (the `SupportCoverageGap` struct)
 
 - [ ] **Step 1: Write the migration SQL**
@@ -161,7 +167,7 @@ git commit -m "feat(coverage): add lifecycle columns and partial-unique-open ind
 ### Task 3: Add suggestion versioning columns
 
 **Files:**
-- Create: `server/internal/dbmigrate/sql/2026042700003_coverage_suggestions_versioning.sql`
+- Create: `server/internal/dbmigrate/sql/202604270006_coverage_suggestions_versioning.sql`
 - Modify: `server/internal/model/support_coverage.go` (`SupportGapSuggestion` struct)
 
 - [ ] **Step 1: Migration SQL**
@@ -194,7 +200,7 @@ git commit -m "feat(coverage): version SupportGapSuggestion with is_active + sup
 ### Task 4: Status data migration
 
 **Files:**
-- Create: `server/internal/dbmigrate/sql/2026042700004_coverage_status_migration.sql`
+- Create: `server/internal/dbmigrate/sql/202604270007_coverage_status_migration.sql`
 
 - [ ] **Step 1: SQL**
 
@@ -226,13 +232,33 @@ git commit -am "feat(coverage): collapse drafted/fixed/ignored into open/done/re
 - Modify: `frontend/src/lib/supportCoverageTypes.ts` (`GAP_STATUS_LABELS`, `STATUS_COLORS`)
 - Modify: `frontend/src/pages/support/coverage/SupportCoveragePage.tsx` (filter button list at line ~302)
 
-- [ ] **Step 1: Backend constants — keep `open`, `done`, `rejected`; remove `drafted`, `fixed`, `ignored`. Search and remove all references.**
+- [ ] **Step 1: Backend — ADD new status constants without removing old ones**
+
+```go
+// In server/internal/model/support_coverage.go, alongside existing constants:
+const (
+    SupportCoverageGapStatusOpen     = "open"     // unchanged
+    SupportCoverageGapStatusDone     = "done"     // NEW (replaces Fixed in writes)
+    SupportCoverageGapStatusRejected = "rejected" // NEW (replaces Ignored in writes)
+
+    // Kept for backward compat — to be removed in a follow-up release after
+    // all callers have been migrated. The status data migration (Task 4)
+    // already collapsed any rows with these values into the new ones.
+    SupportCoverageGapStatusDrafted = "drafted" // DEPRECATED
+    SupportCoverageGapStatusFixed   = "fixed"   // DEPRECATED
+    SupportCoverageGapStatusIgnored = "ignored" // DEPRECATED
+)
+```
+
+This satisfies spec §7.4 ("Old enum values are kept in the type definition for one release cycle, then dropped in a follow-up migration") and ensures every commit in this plan leaves the system buildable. Tasks 19, 21, and 23 progressively replace each *write* of the deprecated constants with the new ones; the constants themselves are deleted in a follow-up PR.
+
+- [ ] **Step 1b: Audit deprecated-constant call sites for visibility**
 
 ```bash
 grep -rn "SupportCoverageGapStatusDrafted\|SupportCoverageGapStatusFixed\|SupportCoverageGapStatusIgnored" server/
 ```
 
-For each hit, either delete or rewrite to use the new tri-state.
+Note the count — Tasks 19, 21, 23 will reduce it to zero.
 
 - [ ] **Step 2: Frontend labels**
 
@@ -258,7 +284,7 @@ export const STATUS_COLORS: Record<string, string> = {
 
 ```bash
 cd server && go build ./...
-cd frontend && pnpm typecheck
+cd frontend && pnpm build
 ```
 
 Expected: both succeed.
@@ -471,8 +497,8 @@ git commit -am "feat(coverage): cluster-key composition prevents cross-signal/do
 **Files:**
 - Modify: `server/internal/service/support_coverage_clusterer.go`
 - Modify: `server/internal/service/support_coverage_clusterer_test.go`
-- Modify: `server/internal/repository/support_coverage_topics.go`
-- Modify: `server/internal/repository/support_coverage_gaps.go`
+- Modify: `server/internal/repository/support_coverage.go`
+- Modify: `server/internal/repository/support_coverage.go`
 
 - [ ] **Step 1: Tests** (uses in-memory SQLite per server/CLAUDE.md pattern)
 
@@ -612,7 +638,14 @@ The cleanest implementation is **NOT** raw SQL — it requires recomputing the c
 
 **Files:**
 - Create: `server/cmd/migrate/cluster_rebuild.go` (new subcommand)
-- Create: `server/internal/dbmigrate/sql/2026042700005_coverage_cluster_rebuild.sql` — only logs that the rebuild ran; the real work is in the Go subcommand
+- Modify: `server/cmd/migrate/main.go` (add `cluster-rebuild` to the command switch and to the `usage` string)
+- Create: `server/internal/dbmigrate/sql/202604270008_coverage_cluster_rebuild.sql` — only logs that the rebuild ran; the real work is in the Go subcommand
+
+- [ ] **Step 0: Register the subcommand in `server/cmd/migrate/main.go`**
+
+Add a new `case "cluster-rebuild":` arm to the `switch cmd { … }` block (around line 70 in `main.go` — adjacent to `up`, `status`, etc.) that calls `runClusterRebuild(ctx, db)`. Add a corresponding line to the `usage` string at the top of the file (`  cluster-rebuild   One-shot: rebuild gaps under the v2 clusterer (idempotent)`).
+
+Without this step the subcommand prints `unknown command` and exits 1.
 
 - [ ] **Step 1: Implement the CLI subcommand** `go run ./cmd/migrate cluster-rebuild`
 
@@ -640,7 +673,7 @@ Expected: log lines per workspace; new topic count > old; merged-gap count reaso
 
 - [ ] **Step 4: Idempotent SQL marker**
 
-`2026042700005_coverage_cluster_rebuild.sql`:
+`202604270008_coverage_cluster_rebuild.sql`:
 
 ```sql
 -- Marker only — the real rebuild is in: go run ./cmd/migrate cluster-rebuild
@@ -651,7 +684,7 @@ SELECT 1;
 - [ ] **Step 5: Commit**
 
 ```bash
-git add server/cmd/migrate/cluster_rebuild*.go server/internal/dbmigrate/sql/2026042700005_*.sql
+git add server/cmd/migrate/cluster_rebuild*.go server/cmd/migrate/main.go server/internal/dbmigrate/sql/202604270008_*.sql
 git commit -m "feat(coverage): one-shot CLI to rebuild gaps under new clusterer"
 ```
 
@@ -676,13 +709,16 @@ type EnrichmentInput struct {
 }
 
 type EnrichmentResult struct {
-    CanonicalTitle    string  // "Write article: …" / "Update article: {existing_title}"
-    GapSubtype        string  // matches existing V1GapType constants
-    Route             string  // "create_article" or "update_article"
-    TargetDocumentID  string  // empty for create_article
-    DraftMarkdown     string
+    CanonicalTitle    string          // "Write article: …" / "Update article: {existing_title}"
+    GapSubtype        string          // matches existing V1GapType constants
+    Route             string          // "create_article" or "update_article"
+    TargetDocumentID  string          // empty for create_article
+    DraftContent      json.RawMessage // TipTap JSON — same storage shape as SupportGapSuggestion.Content
     Confidence        float64
 }
+```
+
+**Why TipTap JSON, not Markdown:** the docs editor stores content as TipTap JSON (see `tiptap.AppendContent` at `support_coverage_drafts.go:255`). The enricher must produce content in that shape so `ApplySuggestion` can write it directly. The LLM prompt should request a JSON document conforming to a small TipTap schema (paragraph, heading, bullet/ordered list, code) — not Markdown.
 ```
 
 - [ ] **Step 2: Commit**
@@ -727,7 +763,7 @@ func TestEnrichTopic_HappyPath(t *testing.T) {
         "canonical_title": "Write article: Reset your password",
         "gap_subtype":     "missing_article",
         "route":           "create_article",
-        "draft_markdown":  "# Reset your password\n\n…",
+        "draft_content":   {"type":"doc","content":[{"type":"heading","attrs":{"level":1},"content":[{"type":"text","text":"Reset your password"}]}]},
         "confidence":      0.82
     }`})
     res, err := e.EnrichTopic(t.Context(), "topic-1")
@@ -757,7 +793,7 @@ git commit -am "feat(coverage): LLM enrichment writes versioned suggestion + upd
 **Files:**
 - Create: `server/internal/temporalapp/coverage_gap_workflow.go`
 - Create: `server/internal/temporalapp/coverage_gap_workflow_test.go`
-- Modify: `server/cmd/api/main.go` (workflow registration alongside CRM workflows)
+- Modify: `server/cmd/temporal-worker/main.go` (workflow + activity registration via `newTemporalWorker`; `cmd/api` is the HTTP server and does not run a Temporal worker)
 
 - [ ] **Step 1: Workflow + activity skeleton**
 
@@ -790,7 +826,7 @@ func CoverageGapEnrichmentFlow(ctx workflow.Context, topicID string) error {
 
 - [ ] **Step 2: Test with Temporal test suite** (`testsuite.WorkflowTestSuite`) — mock the activity, assert it's called once.
 
-- [ ] **Step 3: Register in `cmd/api/main.go`** alongside existing CRM workflow registrations.
+- [ ] **Step 3: Register the workflow + activity in `server/cmd/temporal-worker/main.go`** inside `newTemporalWorker`, alongside existing CRM workflow/activity registrations. The `cmd/api` HTTP server only needs a Temporal *client* (for enqueuing from the spike trigger and the manual-regenerate handler) — it does not register workflows.
 
 - [ ] **Step 4: Build**
 
@@ -807,7 +843,7 @@ git commit -am "feat(coverage): Temporal workflow + activity for gap enrichment"
 ### Task 16: Daily batch cron registration
 
 **Files:**
-- Modify: `server/cmd/api/main.go` (cron schedule)
+- Modify: `server/cmd/temporal-worker/main.go` (register the cron schedule and the batch workflow inside `newTemporalWorker`)
 - Modify: `server/internal/temporalapp/coverage_gap_workflow.go` (batch flow)
 
 - [ ] **Step 1: Add `CoverageGapDailyBatchFlow`** — lists all workspaces, then per workspace lists topics with `last_enriched_at < now() - 24h AND evidence_count >= 2`, fans out via `workflow.ExecuteChildWorkflow(CoverageGapEnrichmentFlow, topic_id)` with bounded concurrency (10).
@@ -918,43 +954,72 @@ git commit -am "feat(coverage): POST /gaps/{id}/regenerate endpoint"
 **Files:**
 - Modify: `server/internal/service/support_coverage_drafts.go` (around lines 98, 213, 268)
 
-- [ ] **Step 1: Tests** — Add(create_article) calls `DocsDocumentService.Create` with `DocStatusDraft` content, snapshots evidence_30d into `gap.closed_evidence_count`, sets `result_document_id`, transitions status to `done`.
+- [ ] **Step 1: Tests** — Add(create_article) calls `s.documentSvc.Create` (which defaults to `DocStatusDraft`), snapshots evidence_30d into `gap.closed_evidence_count`, sets `result_document_id`, transitions status to `done`.
 
-- [ ] **Step 2: Implement** — replace the current path that sets `status='fixed'` with the new lifecycle write:
+- [ ] **Step 2: Implement** — `SupportCoverageDraftService` already exists at `server/internal/service/support_coverage_drafts.go:30` and already calls `s.documentSvc.Create(ctx, suggestion.WorkspaceID, model.CreateDocsDocumentRequest{…})` at line ~193. Repurpose its existing `ApplySuggestion` path (do **not** invent a new `Add` method or a new `DraftsService` type). The change is to (a) read `suggestion.Content` (TipTap JSON, already the storage format), (b) honor a route override from the handler, (c) snapshot `evidence_30d`, (d) call the new `MarkDone` repo method instead of writing `status='fixed'`. Sketch:
 
 ```go
-func (s *DraftsService) Add(ctx context.Context, gapID string, override *RouteOverride) (*model.DocsDocument, error) {
-    sug, err := s.suggestionRepo.GetActiveByGap(ctx, gapID)
-    if err != nil || sug == nil { return nil, fmt.Errorf("no active suggestion: %w", err) }
+// In server/internal/service/support_coverage_drafts.go, modify ApplySuggestion.
+// Real types in scope: *SupportCoverageDraftService (s), model.SupportGapSuggestion (suggestion),
+// model.CreateDocsDocumentRequest, tiptap.AppendContent.
 
-    route := sug.SuggestionType
-    targetDocID := sug.TargetDocumentID
+func (s *SupportCoverageDraftService) ApplySuggestion(
+    ctx context.Context,
+    suggestionID string,
+    override *model.RouteOverride, // nil = use suggestion's own type
+) (*model.DocsDocument, error) {
+    suggestion, err := s.suggestionRepo.Get(ctx, suggestionID)
+    if err != nil || suggestion == nil { return nil, fmt.Errorf("get suggestion: %w", err) }
+    if !suggestion.IsActive { return nil, errSuggestionSuperseded }
+
+    suggestionType := suggestion.SuggestionType
+    targetDocID    := coverageDeref(suggestion.TargetDocumentID)
     if override != nil {
-        route = override.Route
-        targetDocID = override.TargetDocumentID
+        suggestionType = override.SuggestionType
+        targetDocID    = override.TargetDocumentID
     }
 
     var resultDoc *model.DocsDocument
-    switch route {
+    switch suggestionType {
     case model.SupportCoverageSuggestionCreateArticle:
-        resultDoc, err = s.docs.Create(ctx, &model.DocsCreateRequest{
-            WorkspaceID: gap.WorkspaceID,
-            Title:       sug.Title,
-            BodyMD:      sug.DraftMarkdown,
-            // Status defaults to DocStatusDraft per docs_document.go:83
+        resultDoc, err = s.documentSvc.Create(ctx, suggestion.WorkspaceID, model.CreateDocsDocumentRequest{
+            SpaceID: suggestion.TargetSpaceID, // existing field on suggestion
+            Title:   suggestion.Title,
+            // Body is set in a follow-up call (see existing pattern in
+            // ApplySuggestion's current create branch around line 193).
+            // DocsDocumentService.Create defaults Status to DocStatusDraft
+            // per docs_document.go:83, so the doc lands as a draft.
         })
-    case model.SupportCoverageSuggestionUpdateArticle:
-        err = s.docs.AppendSection(ctx, targetDocID, sug.DraftMarkdown)
-        resultDoc, _ = s.docs.Get(ctx, targetDocID)
-    default:
-        return nil, fmt.Errorf("unknown route %q", route)
-    }
-    if err != nil { return nil, err }
+        if err != nil { return nil, err }
+        if err := s.documentSvc.SetContent(ctx, resultDoc.ID, suggestion.Content); err != nil {
+            return nil, err
+        }
 
-    evidence30d, _ := s.gapRepo.CountEvidence30d(ctx, gapID)
-    return resultDoc, s.gapRepo.MarkDone(ctx, gapID, resultDoc.ID, evidence30d)
+    case model.SupportCoverageSuggestionUpdateArticle:
+        existingContent, err := s.documentSvc.GetContent(ctx, targetDocID)
+        if err != nil { return nil, err }
+        merged, err := tiptap.AppendContent(existingContent, suggestion.Content)
+        if err != nil { return nil, err }
+        if err := s.documentSvc.SetContent(ctx, targetDocID, merged); err != nil {
+            return nil, err
+        }
+        resultDoc, _ = s.documentSvc.Get(ctx, targetDocID)
+
+    default:
+        return nil, fmt.Errorf("unknown suggestion_type %q", suggestionType)
+    }
+
+    // New lifecycle bookkeeping (replaces the current status='fixed' write
+    // at lines 213 and 268 of support_coverage_drafts.go).
+    evidence30d, _ := s.gapRepo.CountEvidence30d(ctx, suggestion.GapID)
+    return resultDoc, s.gapRepo.MarkDone(ctx, suggestion.GapID, resultDoc.ID, evidence30d)
 }
 ```
+
+**Notes for the implementer:**
+- `tiptap.AppendContent(existingContent, suggestion.Content)` is exactly the call pattern already in use at `support_coverage_drafts.go:255` — preserve it.
+- The exact arg shape of `model.CreateDocsDocumentRequest` and the helper used to set TipTap content (`SetContent` vs. another method) must be confirmed by reading the current `ApplySuggestion` create-article branch (lines ~190–215). The sketch above uses placeholder names where the existing call already does the right thing.
+- Do **not** introduce a new "Markdown" code path. The system stores TipTap JSON; the LLM enricher (Task 14) must produce TipTap JSON in `suggestion.Content`, not Markdown. Update the enricher's structured-response schema accordingly.
 
 - [ ] **Step 3: Run tests**
 
@@ -1033,7 +1098,7 @@ git commit -am "refactor(coverage): drop legacy drafted/fixed status writes"
 ### Task 24: List query with `evidence_30d`
 
 **Files:**
-- Modify: `server/internal/repository/support_coverage_gaps.go`
+- Modify: `server/internal/repository/support_coverage.go`
 
 - [ ] **Step 1: Test** — list returns gaps with an `evidence_30d` count joining `support_gap_evidence` (per spec §6.5 SQL).
 
@@ -1110,7 +1175,7 @@ git commit -am "feat(coverage): impact tier helper exposed in list response"
 - [ ] **Step 3: Type-check**
 
 ```bash
-cd frontend && pnpm typecheck
+cd frontend && pnpm build
 ```
 
 - [ ] **Step 4: Commit**
@@ -1216,7 +1281,7 @@ git commit -am "feat(coverage): wire new components into SupportCoveragePage"
 - Modify: `frontend/src/components/support/coverage/GapAddSplitButton.tsx` (or detail pane)
 - Modify: `frontend/src/routes/_authenticated/w/$slug/docs/$documentId.tsx` (read URL state)
 
-- [ ] **Step 1: Implementation** — "Open in editor" navigates to the docs editor with `?from_gap={gap_id}&from_suggestion={suggestion_id}` URL params and the `draft_markdown` injected as initial TipTap content via a new `editor.initialContent` prop.
+- [ ] **Step 1: Implementation** — "Open in editor" navigates to the docs editor with `?from_gap={gap_id}&from_suggestion={suggestion_id}` URL params and the suggestion's TipTap JSON (`suggestion.content` from the API) injected as the editor's initial content via a new `editor.initialContent` prop. No Markdown conversion — the suggestion is already in the editor's native shape.
 
 - [ ] **Step 2: On save in the editor**, if the URL params are present, the editor's save handler also calls `POST /support/coverage/gaps/{gap_id}/add` with `{route: 'update_article', target_document_id: <new doc id>}` to close the gap.
 
@@ -1244,13 +1309,13 @@ cd server && go test -race ./internal/service/... ./internal/handler/... ./cmd/m
 
 Expected: PASS.
 
-- [ ] **Step 2: Frontend type check + tests**
+- [ ] **Step 2: Frontend build (runs `tsc -b`) + lint**
 
 ```bash
-cd frontend && pnpm typecheck && pnpm test
+cd frontend && pnpm build && pnpm lint
 ```
 
-Expected: PASS.
+Expected: PASS. Note: the frontend has no `typecheck` or unit-`test` scripts; `pnpm build` runs `tsc -b`, and `pnpm test:e2e:support` runs the Playwright suite if e2e coverage is desired.
 
 - [ ] **Step 3: Build everything**
 
@@ -1283,7 +1348,7 @@ docs/superpowers/specs/2026-04-27-coverage-gaps-redesign-design.md (v1.2)
 
 ## Test plan
 - [ ] go test -race ./...
-- [ ] pnpm test
+- [ ] pnpm build && pnpm lint (frontend has no unit-test script; e2e via pnpm test:e2e:support)
 - [ ] Manual smoke (see plan §Task 33)
 - [ ] Migration applied on staging via `go run ./cmd/migrate up`
 - [ ] Cluster rebuild run via `go run ./cmd/migrate cluster-rebuild` on staging
