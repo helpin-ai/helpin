@@ -287,12 +287,19 @@ func TestSupportCoverageRepository_UpdateGapStatus(t *testing.T) {
 		FirstSeenAt: time.Now(), LastSeenAt: time.Now(),
 	})
 
-	if err := repo.UpdateGapStatus(ctx, "ws-1", "gap-1", model.SupportCoverageGapStatusIgnored, "user-1", nil); err != nil {
+	if err := repo.UpdateGapStatus(ctx, "ws-1", "gap-1", model.SupportCoverageGapStatusRejected, "user-1", nil); err != nil {
 		t.Fatalf("UpdateGapStatus: %v", err)
+	}
+	var gap model.SupportCoverageGap
+	if err := db.Where("id = ?", "gap-1").First(&gap).Error; err != nil {
+		t.Fatalf("load gap: %v", err)
+	}
+	if gap.ClosedAt == nil || gap.ClosedEvidenceCount == nil || *gap.ClosedEvidenceCount != 1 {
+		t.Fatalf("expected closed metadata, got closed_at=%v closed_evidence_count=%v", gap.ClosedAt, gap.ClosedEvidenceCount)
 	}
 
 	// Wrong workspace returns error.
-	if err := repo.UpdateGapStatus(ctx, "ws-other", "gap-1", model.SupportCoverageGapStatusFixed, "user-1", nil); err == nil {
+	if err := repo.UpdateGapStatus(ctx, "ws-other", "gap-1", model.SupportCoverageGapStatusDone, "user-1", nil); err == nil {
 		t.Error("expected error for wrong workspace")
 	}
 }

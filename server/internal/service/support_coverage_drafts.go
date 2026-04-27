@@ -28,12 +28,12 @@ type CoverageArticleDraft struct {
 // generation from gap evidence. Separated from the core coverage
 // service to isolate LLM and docs dependencies.
 type SupportCoverageDraftService struct {
-	coverageRepo    *repository.SupportCoverageRepository
-	documentSvc     *DocsDocumentService
-	contentSvc      *DocsContentService
-	versionSvc      *DocsVersionService
-	llmProvider     llm.Provider
-	logger          *slog.Logger
+	coverageRepo *repository.SupportCoverageRepository
+	documentSvc  *DocsDocumentService
+	contentSvc   *DocsContentService
+	versionSvc   *DocsVersionService
+	llmProvider  llm.Provider
+	logger       *slog.Logger
 }
 
 // NewSupportCoverageDraftService creates a new draft service.
@@ -95,9 +95,6 @@ func (s *SupportCoverageDraftService) GenerateArticleDraft(ctx context.Context, 
 		return nil, fmt.Errorf("create suggestion: %w", err)
 	}
 
-	// Update gap status to drafted.
-	_ = s.coverageRepo.UpdateGapStatus(ctx, workspaceID, gapID, model.SupportCoverageGapStatusDrafted, "", nil)
-
 	return created, nil
 }
 
@@ -152,8 +149,6 @@ func (s *SupportCoverageDraftService) GenerateArticleUpdate(ctx context.Context,
 	if err != nil {
 		return nil, fmt.Errorf("create suggestion: %w", err)
 	}
-
-	_ = s.coverageRepo.UpdateGapStatus(ctx, workspaceID, gapID, model.SupportCoverageGapStatusDrafted, "", nil)
 
 	return created, nil
 }
@@ -210,8 +205,8 @@ func (s *SupportCoverageDraftService) applyCreateArticle(ctx context.Context, su
 		return fmt.Errorf("update suggestion result: %w", err)
 	}
 
-	// Close the loop: mark gap as fixed and link the new article.
-	_ = s.coverageRepo.UpdateGapStatus(ctx, suggestion.WorkspaceID, suggestion.GapID, model.SupportCoverageGapStatusFixed, "", nil)
+	// Close the loop: mark gap as done and link the new article.
+	_ = s.coverageRepo.UpdateGapStatus(ctx, suggestion.WorkspaceID, suggestion.GapID, model.SupportCoverageGapStatusDone, "", nil)
 	_ = s.coverageRepo.LinkGapArticle(ctx, suggestion.GapID, docID, suggestion.WorkspaceID)
 
 	return nil
@@ -265,8 +260,8 @@ func (s *SupportCoverageDraftService) applyUpdateArticle(ctx context.Context, su
 		return fmt.Errorf("update suggestion result: %w", err)
 	}
 
-	// Close the loop: mark gap as fixed and link the updated article.
-	_ = s.coverageRepo.UpdateGapStatus(ctx, suggestion.WorkspaceID, suggestion.GapID, model.SupportCoverageGapStatusFixed, "", nil)
+	// Close the loop: mark gap as done and link the updated article.
+	_ = s.coverageRepo.UpdateGapStatus(ctx, suggestion.WorkspaceID, suggestion.GapID, model.SupportCoverageGapStatusDone, "", nil)
 	_ = s.coverageRepo.LinkGapArticle(ctx, suggestion.GapID, docID, suggestion.WorkspaceID)
 
 	return nil
@@ -409,4 +404,3 @@ func parseDraftResponse(content, fallbackTitle string, evidenceCount int) (*Cove
 		EvidenceSummary: fmt.Sprintf("Generated from %d evidence items", evidenceCount),
 	}, nil
 }
-

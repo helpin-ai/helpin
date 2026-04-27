@@ -496,7 +496,7 @@ func (r *SupportCoverageRepository) GetDigestDelivery(ctx context.Context, works
 	return &delivery, nil
 }
 
-// FindOpenGapByConversation returns the most recent open or drafted
+// FindOpenGapByConversation returns the most recent open
 // gap that has evidence linked to the given conversation. Used to
 // attach human reply evidence to the original AI handoff gap.
 func (r *SupportCoverageRepository) FindOpenGapByConversation(ctx context.Context, workspaceID, conversationID string) (*model.SupportCoverageGap, error) {
@@ -504,9 +504,8 @@ func (r *SupportCoverageRepository) FindOpenGapByConversation(ctx context.Contex
 	err := r.db.WithContext(ctx).
 		Table("support_coverage_gaps g").
 		Joins("JOIN support_gap_evidence e ON e.gap_id = g.id").
-		Where("g.workspace_id = ? AND e.conversation_id = ? AND g.status IN (?, ?)",
-			workspaceID, conversationID,
-			model.SupportCoverageGapStatusOpen, model.SupportCoverageGapStatusDrafted).
+		Where("g.workspace_id = ? AND e.conversation_id = ? AND g.status = ?",
+			workspaceID, conversationID, model.SupportCoverageGapStatusOpen).
 		Order("g.last_seen_at DESC").
 		Limit(1).
 		Select("g.*").
@@ -528,6 +527,14 @@ func (r *SupportCoverageRepository) UpdateGapStatus(ctx context.Context, workspa
 		"status_changed_by": userID,
 		"status_changed_at": now,
 		"updated_at":        now,
+	}
+	if status == model.SupportCoverageGapStatusDone || status == model.SupportCoverageGapStatusRejected {
+		updates["closed_at"] = now
+		updates["closed_evidence_count"] = gorm.Expr("evidence_count")
+	} else if status == model.SupportCoverageGapStatusOpen {
+		updates["closed_at"] = nil
+		updates["closed_evidence_count"] = nil
+		updates["rejection_reason"] = nil
 	}
 	if issueResolved != nil {
 		updates["issue_resolved"] = *issueResolved
@@ -657,7 +664,7 @@ func (r *SupportCoverageRepository) GetSummary(ctx context.Context, workspaceID 
 	r.db.WithContext(ctx).
 		Model(&model.SupportCoverageGap{}).
 		Where("workspace_id = ? AND status = ? AND updated_at >= ?",
-			workspaceID, model.SupportCoverageGapStatusFixed, weekAgo).
+			workspaceID, model.SupportCoverageGapStatusDone, weekAgo).
 		Count(&fixedGaps)
 	summary.GapsFixedThisWeek = int(fixedGaps)
 
