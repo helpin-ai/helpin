@@ -4,9 +4,12 @@ import "time"
 
 const (
 	PMImportStatusPending    = "pending"
+	PMImportStatusScanning   = "scanning"
+	PMImportStatusReady      = "ready"
 	PMImportStatusProcessing = "processing"
 	PMImportStatusCompleted  = "completed"
 	PMImportStatusFailed     = "failed"
+	PMImportStatusCanceled   = "canceled"
 
 	PMImportSourceShortcut = "shortcut"
 )
@@ -119,12 +122,18 @@ type ShortcutWorkflowStateMappingPayload struct {
 }
 
 type ShortcutImportOptions struct {
-	ImportArchived  bool `json:"import_archived"`
-	ImportCompleted bool `json:"import_completed"`
+	ImportArchived          bool   `json:"import_archived"`
+	ImportCompleted         bool   `json:"import_completed"`
+	StoryDateField          string `json:"story_date_field,omitempty"`
+	StoryLookbackMonths     int    `json:"story_lookback_months,omitempty"`
+	EpicLookbackMonths      int    `json:"epic_lookback_months,omitempty"`
+	ObjectiveLookbackMonths int    `json:"objective_lookback_months,omitempty"`
+	MaxStories              int    `json:"max_stories,omitempty"`
 }
 
 type ShortcutImportExecuteRequest struct {
 	UserMappings          map[string]string                     `json:"user_mappings"`
+	TeamMappings          map[string]string                     `json:"team_mappings,omitempty"`
 	WorkflowStateMappings []ShortcutWorkflowStateMappingPayload `json:"workflow_state_mappings"`
 	Options               ShortcutImportOptions                 `json:"options"`
 	APIToken              string                                `json:"api_token,omitempty"`
@@ -148,6 +157,8 @@ type ShortcutImportResult struct {
 	ChecklistItemsCreated int      `json:"checklist_items_created"`
 	OwnerLinksCreated     int      `json:"owner_links_created"`
 	LabelLinksCreated     int      `json:"label_links_created"`
+	ExternalLinksCreated  int      `json:"external_links_created"`
+	TaskLinksCreated      int      `json:"task_links_created"`
 	AttachmentsCreated    int      `json:"attachments_created"`
 	CommentsCreated       int      `json:"comments_created"`
 	Warnings              []string `json:"warnings"`
@@ -168,3 +179,11 @@ type ShortcutImportStatusResponse struct {
 	Result   *ShortcutImportResult        `json:"result,omitempty"`
 	Error    *string                      `json:"error,omitempty"`
 }
+
+type ShortcutAPIImportPreviewRequest struct {
+	APIToken string                `json:"api_token"`
+	Options  ShortcutImportOptions `json:"options"`
+	ScanID   string                `json:"scan_id,omitempty"`
+}
+
+type ShortcutAPIImportExecuteRequest = ShortcutImportExecuteRequest

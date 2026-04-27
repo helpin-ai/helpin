@@ -60,6 +60,8 @@ export interface ShortcutImportResult {
   checklist_items_created: number;
   owner_links_created: number;
   label_links_created: number;
+  external_links_created: number;
+  task_links_created: number;
   attachments_created: number;
   comments_created: number;
   warnings: string[];
@@ -75,7 +77,7 @@ export interface ShortcutImportStatusProgress {
 
 export interface ShortcutImportStatusResponse {
   import_id: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
+  status: 'pending' | 'scanning' | 'ready' | 'processing' | 'completed' | 'failed' | 'canceled';
   progress: ShortcutImportStatusProgress;
   result?: ShortcutImportResult;
   error?: string;
@@ -101,14 +103,26 @@ export interface WorkflowStateMappingPayload {
   }[];
 }
 
-// Multipart upload needs raw fetch (api.ts adds Content-Type: application/json)
-async function multipartRequest<T>(path: string, form: FormData): Promise<{ data: T | null; error: string | null }> {
+export interface ShortcutImportOptionsPayload {
+  import_archived: boolean;
+  import_completed: boolean;
+  story_date_field?: 'updated_at' | 'created_at';
+  story_lookback_months?: number;
+  epic_lookback_months?: number;
+  objective_lookback_months?: number;
+  max_stories?: number;
+}
+
+async function jsonRequest<T>(path: string, body: unknown): Promise<{ data: T | null; error: string | null }> {
   const token = localStorage.getItem('access_token');
   try {
     const res = await fetch(`${API_BASE}${path}`, {
       method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: form,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: res.statusText }));
@@ -141,35 +155,38 @@ function statusRequest<T>(path: string): Promise<{ data: T | null; error: string
 }
 
 export const pmImportService = {
-  previewShortcut: (workspaceId: string, file: File, apiToken?: string) => {
-    const form = new FormData();
-    form.append('file', file);
-    if (apiToken) form.append('api_token', apiToken);
-    return multipartRequest<ShortcutImportPreviewResponse>(
-      `/workspaces/${encodeURIComponent(workspaceId)}/import/shortcut/preview`,
-      form,
-    );
-  },
-
-  executeShortcut: (
+  previewShortcutAPI: (
     workspaceId: string,
-    file: File,
+    apiToken: string,
+    options: ShortcutImportOptionsPayload = {
+      import_archived: true,
+      import_completed: true,
+    },
+    scanId?: string,
+  ) =>
+    jsonRequest<ShortcutImportPreviewResponse>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/import/shortcut/api/preview`,
+      { api_token: apiToken, options, ...(scanId ? { scan_id: scanId } : {}) },
+    ),
+
+  executeShortcutAPI: (
+    workspaceId: string,
+    apiToken: string,
     userMappings: Record<string, string>,
+    teamMappings: Record<string, string>,
     workflowStateMappings: WorkflowStateMappingPayload[],
-    options: { import_archived: boolean; import_completed: boolean },
-    apiToken?: string,
-  ) => {
-    const form = new FormData();
-    form.append('file', file);
-    form.append('user_mappings', JSON.stringify(userMappings));
-    form.append('workflow_state_mappings', JSON.stringify(workflowStateMappings));
-    form.append('options', JSON.stringify(options));
-    if (apiToken) form.append('api_token', apiToken);
-    return multipartRequest<ShortcutImportExecuteResponse>(
-      `/workspaces/${encodeURIComponent(workspaceId)}/import/shortcut/execute`,
-      form,
-    );
-  },
+    options: ShortcutImportOptionsPayload,
+  ) =>
+    jsonRequest<ShortcutImportExecuteResponse>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/import/shortcut/api/execute`,
+      {
+        api_token: apiToken,
+        user_mappings: userMappings,
+        team_mappings: teamMappings,
+        workflow_state_mappings: workflowStateMappings,
+        options,
+      },
+    ),
 
   getShortcutStatus: (workspaceId: string, importId: string) =>
     statusRequest<ShortcutImportStatusResponse>(

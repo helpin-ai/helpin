@@ -14,32 +14,15 @@ import {
   Tick01Icon,
   ArrowDown01Icon,
   ArrowRight01Icon,
-  DragDropVerticalIcon,
   Key01Icon,
   Loading01Icon,
   Mail01Icon,
-  Upload01Icon,
   Cancel01Icon,
 } from '@/lib/icons';
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import { toast } from 'sonner';
 import {
   pmImportService,
+  type ShortcutImportOptionsPayload,
   type ShortcutImportPreviewResponse,
   type ShortcutImportStatusResponse,
   type WorkflowStateMappingPayload,
@@ -49,6 +32,7 @@ import type { TaskType, WorkflowWithStates } from '@/lib/pmTypes';
 import type { MemberWithUser } from '@/lib/types';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { inviteService } from '@/lib/services/inviteService';
+import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -84,19 +68,33 @@ interface UserMapping {
   invited: boolean;
 }
 
-type WizardStep = 0 | 1 | 2 | 3;
+interface ShortcutScanProgress {
+  message: string;
+  phase: string;
+  processed: number;
+  total: number;
+}
 
-const STEP_LABELS = ['Upload', 'Workflows', 'Users', 'Import'];
+interface TeamMapping {
+  shortcutTeamName: string;
+  taskCount: number;
+  mode: 'create_new' | 'use_existing';
+  newTeamName: string;
+  existingTeamId: string;
+}
 
-const STATE_TYPE_OPTIONS: { value: StateType; label: string; color: string }[] = [
-  { value: 'backlog', label: 'Backlog', color: 'bg-gray-400' },
-  { value: 'unstarted', label: 'Unstarted', color: 'bg-blue-400' },
-  { value: 'started', label: 'Started', color: 'bg-yellow-400' },
-  { value: 'done', label: 'Done', color: 'bg-green-400' },
-];
+type WizardStep = 0 | 1 | 2 | 3 | 4;
 
-const IMPORT_STEPS_BASE = ['Teams', 'Workflows', 'Labels', 'Objectives', 'Epics', 'Sprints', 'Tasks'];
+const STEP_LABELS = ['Connect', 'Teams', 'Workflows', 'Users', 'Import'];
+
 const IMPORT_STEPS_API = ['API Enrichment', 'Teams', 'Workflows', 'Labels', 'Objectives', 'Epics', 'Sprints', 'Tasks', 'Media', 'Comments'];
+const LOOKBACK_OPTIONS = [
+  { value: '0', label: 'All time' },
+  { value: '3', label: 'Last 3 months' },
+  { value: '6', label: 'Last 6 months' },
+  { value: '12', label: 'Last 12 months' },
+  { value: '24', label: 'Last 24 months' },
+];
 
 function formatImportStepLabel(step?: string | null) {
   switch (step) {
@@ -129,6 +127,75 @@ function formatImportStepLabel(step?: string | null) {
   }
 }
 
+function normalizeImportName(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function buildInitialTeamMappings(
+  preview: ShortcutImportPreviewResponse,
+  existingTeams: { id: string; name: string }[],
+): TeamMapping[] {
+  const existingByName = new Map(existingTeams.map((team) => [normalizeImportName(team.name), team]));
+  return preview.teams.map((team) => {
+    const existing = existingByName.get(normalizeImportName(team.name));
+    return {
+      shortcutTeamName: team.name,
+      taskCount: team.task_count,
+      mode: existing ? 'use_existing' : 'create_new',
+      newTeamName: team.name,
+      existingTeamId: existing?.id || '',
+    };
+  });
+}
+
+function normalizeWorkflowStateName(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+}
+
+function autoMapExistingWorkflowStates(
+  states: WorkflowMapping['states'],
+  existingStates: WorkflowWithStates['states'],
+) {
+  const byName = new Map(existingStates.map((state) => [normalizeWorkflowStateName(state.name), state.id]));
+  return states.map((state) => ({
+    ...state,
+    existingStateId: byName.get(normalizeWorkflowStateName(state.shortcutState)) || '',
+  }));
+}
+
+function buildInitialWorkflowMappings(
+  preview: ShortcutImportPreviewResponse,
+  existingWorkflows: WorkflowWithStates[],
+): WorkflowMapping[] {
+  return preview.workflows.map((wf) => {
+    const states = wf.states.map((s, i) => ({
+      shortcutState: s.name,
+      newStateName: s.name,
+      stateType: (s.suggested_type || 'unstarted') as StateType,
+      position: i,
+      storyCount: s.task_count,
+      existingStateId: '',
+    }));
+    const existing =
+      existingWorkflows.find((candidate) => normalizeImportName(candidate.workflow.name) === normalizeImportName(wf.name)) ||
+      existingWorkflows[0];
+    return {
+      shortcutWorkflowId: wf.id || '',
+      shortcutWorkflowName: wf.name,
+      mode: 'use_existing' as const,
+      newWorkflowName: wf.name,
+      states: existing ? autoMapExistingWorkflowStates(states, existing.states) : states,
+      existingWorkflowId: existing?.workflow.id || '',
+      expanded: true,
+    };
+  });
+}
+
+function workflowStateMappingStats(states: WorkflowMapping['states']) {
+  const mapped = states.filter((state) => state.existingStateId).length;
+  return { mapped, total: states.length };
+}
+
 // ─── Main Component ──────────────────────────────────────────────────
 
 interface ShortcutImportWizardProps {
@@ -137,19 +204,27 @@ interface ShortcutImportWizardProps {
 }
 
 export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWizardProps) {
+  const { teams: existingTeams } = useWorkspaceTeams(workspaceId);
   const [step, setStep] = useState<WizardStep>(0);
-  const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<ShortcutImportPreviewResponse | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [workflowMappings, setWorkflowMappings] = useState<WorkflowMapping[]>([]);
+  const [teamMappings, setTeamMappings] = useState<TeamMapping[]>([]);
   const [userMappings, setUserMappings] = useState<UserMapping[]>([]);
   const [existingWorkflows, setExistingWorkflows] = useState<WorkflowWithStates[]>([]);
   const [importArchived, setImportArchived] = useState(true);
   const [importCompleted, setImportCompleted] = useState(true);
+  const [storyDateField, setStoryDateField] = useState<'updated_at' | 'created_at'>('updated_at');
+  const [storyLookbackMonths, setStoryLookbackMonths] = useState('0');
+  const [epicLookbackMonths, setEpicLookbackMonths] = useState('0');
+  const [objectiveLookbackMonths, setObjectiveLookbackMonths] = useState('0');
+  const [maxStories, setMaxStories] = useState('');
+  const [scanProgress, setScanProgress] = useState<ShortcutScanProgress | null>(null);
   const [apiToken, setApiToken] = useState('');
   const [importStatus, setImportStatus] = useState<ShortcutImportStatusResponse | null>(null);
   const [importing, setImporting] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const scanIdRef = useRef<string | null>(null);
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -158,52 +233,77 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
     };
   }, []);
 
-  // ─── Step 0: Upload ──────────────────────────────────────────────
+  useEffect(() => {
+    const handleProgress = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      const data = detail?.data as Record<string, unknown> | undefined;
+      if (!data || typeof data.scan_id !== 'string' || data.scan_id !== scanIdRef.current) return;
+      setScanProgress({
+        message: typeof data.message === 'string' ? data.message : 'Scanning Shortcut workspace',
+        phase: typeof data.phase === 'string' ? data.phase : 'scanning',
+        processed: typeof data.processed === 'number' ? data.processed : 0,
+        total: typeof data.total === 'number' ? data.total : 0,
+      });
+    };
+    window.addEventListener('pm_import_preview-updated', handleProgress);
+    return () => window.removeEventListener('pm_import_preview-updated', handleProgress);
+  }, []);
 
-  const handleFileSelect = useCallback(async (selected: File, token?: string) => {
-    setFile(selected);
+  const importOptions = useMemo<ShortcutImportOptionsPayload>(() => {
+    const parsePositiveInt = (value: string) => {
+      const parsed = Number.parseInt(value, 10);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+    };
+    return {
+      import_archived: importArchived,
+      import_completed: importCompleted,
+      story_date_field: storyDateField,
+      story_lookback_months: parsePositiveInt(storyLookbackMonths),
+      epic_lookback_months: parsePositiveInt(epicLookbackMonths),
+      objective_lookback_months: parsePositiveInt(objectiveLookbackMonths),
+      max_stories: parsePositiveInt(maxStories),
+    };
+  }, [
+    importArchived,
+    importCompleted,
+    storyDateField,
+    storyLookbackMonths,
+    epicLookbackMonths,
+    objectiveLookbackMonths,
+    maxStories,
+  ]);
+
+  // ─── Step 0: API Preview ─────────────────────────────────────────
+
+  const handleAPIPreview = useCallback(async () => {
+    if (!apiToken.trim()) {
+      toast.error('Shortcut API token is required');
+      return;
+    }
+    const scanId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    scanIdRef.current = scanId;
+    setScanProgress({ message: 'Starting Shortcut scan', phase: 'starting', processed: 0, total: 0 });
     setPreviewLoading(true);
     setPreview(null);
-    const tokenToUse = token ?? apiToken;
-    const { data, error } = await pmImportService.previewShortcut(workspaceId, selected, tokenToUse || undefined);
+    const { data, error } = await pmImportService.previewShortcutAPI(workspaceId, apiToken.trim(), importOptions, scanId);
     setPreviewLoading(false);
     if (error || !data) {
-      toast.error(error || 'Failed to preview CSV');
-      setFile(null);
+      toast.error(error || 'Failed to preview Shortcut API import');
+      setScanProgress(null);
       return;
     }
     setPreview(data);
-
-    // Initialize workflow mappings (backend returns states in logical order)
-    setWorkflowMappings(
-      data.workflows.map((wf) => ({
-        shortcutWorkflowId: wf.id || '',
-        shortcutWorkflowName: wf.name,
-        mode: 'create_new' as const,
-        newWorkflowName: wf.name,
-        states: wf.states.map((s, i) => ({
-          shortcutState: s.name,
-          newStateName: s.name,
-          stateType: (s.suggested_type || 'unstarted') as StateType,
-          position: i,
-          storyCount: s.task_count,
-          existingStateId: '',
-        })),
-        existingWorkflowId: '',
-        expanded: false,
-      })),
-    );
-
-    // Build user task counts from preview
-    const userTaskCount = new Map<string, number>();
-    for (const u of data.users) {
-      userTaskCount.set(u.email, (userTaskCount.get(u.email) || 0) + 1);
-    }
-
+    setTeamMappings(buildInitialTeamMappings(data, existingTeams));
+    const wfRes = await pmWorkflowService.list(workspaceId);
+    const helpinWorkflows = wfRes.data || [];
+    setExistingWorkflows(helpinWorkflows);
+    setWorkflowMappings(buildInitialWorkflowMappings(data, helpinWorkflows));
     setUserMappings(
       data.users.map((u) => ({
         email: u.email,
-        storyCount: 0, // preview doesn't give per-user counts yet
+        storyCount: 0,
         matchedUserId: u.matched_user_id,
         matchedName: u.matched_name,
         shortcutName: u.shortcut_name || null,
@@ -212,31 +312,23 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
         invited: false,
       })),
     );
+    setScanProgress(null);
+  }, [apiToken, workspaceId, importOptions, existingTeams]);
 
-    // Load existing workflows for the "use existing" mode
-    const wfRes = await pmWorkflowService.list(workspaceId);
-    if (wfRes.data) setExistingWorkflows(wfRes.data);
-  }, [workspaceId, apiToken]);
+  // ─── Step 1: Team helpers ────────────────────────────────────────
 
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      const f = e.dataTransfer.files[0];
-      if (f && f.name.endsWith('.csv')) handleFileSelect(f);
-      else toast.error('Please upload a .csv file');
-    },
-    [handleFileSelect],
-  );
+  const updateTeamMapping = useCallback((idx: number, updates: Partial<TeamMapping>) => {
+    setTeamMappings((prev) => prev.map((m, i) => (i === idx ? { ...m, ...updates } : m)));
+  }, []);
 
-  const handleFileInput = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const f = e.target.files?.[0];
-      if (f) handleFileSelect(f);
-    },
-    [handleFileSelect],
-  );
+  const teamsValid = useMemo(() => {
+    return teamMappings.every((team) => {
+      if (team.mode === 'create_new') return team.newTeamName.trim() !== '';
+      return team.existingTeamId.trim() !== '';
+    });
+  }, [teamMappings]);
 
-  // ─── Step 1: Workflow helpers ────────────────────────────────────
+  // ─── Step 2: Workflow helpers ────────────────────────────────────
 
   const updateWorkflowMapping = useCallback((idx: number, updates: Partial<WorkflowMapping>) => {
     setWorkflowMappings((prev) => prev.map((m, i) => (i === idx ? { ...m, ...updates } : m)));
@@ -260,9 +352,6 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
 
   const workflowsValid = useMemo(() => {
     return workflowMappings.every((wf) => {
-      if (wf.mode === 'create_new') {
-        return wf.newWorkflowName.trim() !== '' && wf.states.some((s) => s.stateType === 'done');
-      }
       return wf.existingWorkflowId !== '' && wf.states.every((s) => s.existingStateId !== '');
     });
   }, [workflowMappings]);
@@ -383,7 +472,7 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
   // ─── Step 3: Execute ─────────────────────────────────────────────
 
   const handleStartImport = useCallback(async () => {
-    if (!file) return;
+    if (!apiToken.trim()) return;
     setImporting(true);
 
     // Build user mappings: email → userId
@@ -393,23 +482,16 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
       else if (u.action === 'matched' && u.manualUserId) userMap[u.email] = u.manualUserId;
     }
 
+    const teamMap: Record<string, string> = {};
+    for (const team of teamMappings) {
+      teamMap[team.shortcutTeamName] =
+        team.mode === 'use_existing'
+          ? `existing:${team.existingTeamId}`
+          : `create:${team.newTeamName.trim() || team.shortcutTeamName}`;
+    }
+
     // Build workflow state mappings
-    const wfMappings: WorkflowStateMappingPayload[] = workflowMappings.map((wf) => {
-      if (wf.mode === 'create_new') {
-        return {
-          shortcut_workflow_id: wf.shortcutWorkflowId || undefined,
-          shortcut_workflow_name: wf.shortcutWorkflowName,
-          mode: 'create_new',
-          new_workflow_name: wf.newWorkflowName,
-          states: wf.states.map((s) => ({
-            shortcut_state: s.shortcutState,
-            new_state_name: s.newStateName,
-            state_type: s.stateType,
-            position: s.position,
-          })),
-        };
-      }
-      return {
+    const wfMappings: WorkflowStateMappingPayload[] = workflowMappings.map((wf) => ({
         shortcut_workflow_id: wf.shortcutWorkflowId || undefined,
         shortcut_workflow_name: wf.shortcutWorkflowName,
         mode: 'use_existing',
@@ -418,16 +500,15 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
           shortcut_state: s.shortcutState,
           existing_state_id: s.existingStateId,
         })),
-      };
-    });
+      }));
 
-    const { data, error } = await pmImportService.executeShortcut(
+    const { data, error } = await pmImportService.executeShortcutAPI(
       workspaceId,
-      file,
+      apiToken.trim(),
       userMap,
+      teamMap,
       wfMappings,
-      { import_archived: importArchived, import_completed: importCompleted },
-      apiToken || undefined,
+      importOptions,
     );
 
     if (error || !data) {
@@ -448,20 +529,21 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
         }
       }
     }, 1500);
-  }, [file, userMappings, workflowMappings, importArchived, importCompleted, workspaceId, apiToken]);
+  }, [userMappings, teamMappings, workflowMappings, workspaceId, apiToken, importOptions]);
 
   // ─── Navigation ──────────────────────────────────────────────────
 
   const canProceed = useMemo(() => {
     switch (step) {
       case 0: return !!preview;
-      case 1: return workflowsValid;
-      case 2: return true;
-      case 3: return false;
+      case 1: return teamsValid;
+      case 2: return workflowsValid;
+      case 3: return true;
+      case 4: return false;
     }
-  }, [step, preview, workflowsValid]);
+  }, [step, preview, teamsValid, workflowsValid]);
 
-  const goNext = () => setStep((s) => Math.min(s + 1, 3) as WizardStep);
+  const goNext = () => setStep((s) => Math.min(s + 1, 4) as WizardStep);
   const goBack = () => setStep((s) => Math.max(s - 1, 0) as WizardStep);
 
   // ─── Render ──────────────────────────────────────────────────────
@@ -502,26 +584,45 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
       {/* Step content */}
       {step === 0 && (
         <UploadStep
-          file={file}
           preview={preview}
           loading={previewLoading}
+          scanProgress={scanProgress}
           apiToken={apiToken}
           onApiTokenChange={(token) => {
             setApiToken(token);
-            // Re-preview if file already selected and token changes
-            if (file && token !== apiToken) {
-              handleFileSelect(file, token);
-            }
           }}
-          onDrop={handleDrop}
-          onFileInput={handleFileInput}
+          importArchived={importArchived}
+          importCompleted={importCompleted}
+          storyDateField={storyDateField}
+          storyLookbackMonths={storyLookbackMonths}
+          epicLookbackMonths={epicLookbackMonths}
+          objectiveLookbackMonths={objectiveLookbackMonths}
+          maxStories={maxStories}
+          onArchived={setImportArchived}
+          onCompleted={setImportCompleted}
+          onStoryDateField={setStoryDateField}
+          onStoryLookbackMonths={setStoryLookbackMonths}
+          onEpicLookbackMonths={setEpicLookbackMonths}
+          onObjectiveLookbackMonths={setObjectiveLookbackMonths}
+          onMaxStories={setMaxStories}
+          onAPIPreview={handleAPIPreview}
           onClear={() => {
-            setFile(null);
             setPreview(null);
+            setTeamMappings([]);
+            setWorkflowMappings([]);
+            setUserMappings([]);
+            setImportStatus(null);
           }}
         />
       )}
       {step === 1 && (
+        <TeamStep
+          teamMappings={teamMappings}
+          existingTeams={existingTeams}
+          onUpdate={updateTeamMapping}
+        />
+      )}
+      {step === 2 && (
         <WorkflowStep
           workflowMappings={workflowMappings}
           existingWorkflows={existingWorkflows}
@@ -529,7 +630,7 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
           onUpdateState={updateWorkflowState}
         />
       )}
-      {step === 2 && (
+      {step === 3 && (
         <UserStep
           userMappings={userMappings}
           members={members}
@@ -540,9 +641,10 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
           onInviteSingle={handleInviteSingle}
         />
       )}
-      {step === 3 && (
+      {step === 4 && (
         <ImportStep
           preview={preview}
+          teamMappings={teamMappings}
           workflowMappings={workflowMappings}
           userMappings={userMappings}
           importArchived={importArchived}
@@ -564,7 +666,7 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
               Back
             </Button>
           )}
-          {step < 3 && (
+          {step < 4 && (
             <Button onClick={goNext} disabled={!canProceed}>
               Next: {STEP_LABELS[step + 1]}
             </Button>
@@ -575,90 +677,185 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
   );
 }
 
-// ─── Step 0: Upload & Preview ────────────────────────────────────────
+// ─── Step 0: API Preview ─────────────────────────────────────────────
 
 function UploadStep({
-  file,
   preview,
   loading,
+  scanProgress,
   apiToken,
   onApiTokenChange,
-  onDrop,
-  onFileInput,
+  importArchived,
+  importCompleted,
+  storyDateField,
+  storyLookbackMonths,
+  epicLookbackMonths,
+  objectiveLookbackMonths,
+  maxStories,
+  onArchived,
+  onCompleted,
+  onStoryDateField,
+  onStoryLookbackMonths,
+  onEpicLookbackMonths,
+  onObjectiveLookbackMonths,
+  onMaxStories,
+  onAPIPreview,
   onClear,
 }: {
-  file: File | null;
   preview: ShortcutImportPreviewResponse | null;
   loading: boolean;
+  scanProgress: ShortcutScanProgress | null;
   apiToken: string;
   onApiTokenChange: (token: string) => void;
-  onDrop: (e: React.DragEvent) => void;
-  onFileInput: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  importArchived: boolean;
+  importCompleted: boolean;
+  storyDateField: 'updated_at' | 'created_at';
+  storyLookbackMonths: string;
+  epicLookbackMonths: string;
+  objectiveLookbackMonths: string;
+  maxStories: string;
+  onArchived: (v: boolean) => void;
+  onCompleted: (v: boolean) => void;
+  onStoryDateField: (v: 'updated_at' | 'created_at') => void;
+  onStoryLookbackMonths: (v: string) => void;
+  onEpicLookbackMonths: (v: string) => void;
+  onObjectiveLookbackMonths: (v: string) => void;
+  onMaxStories: (v: string) => void;
+  onAPIPreview: () => void;
   onClear: () => void;
 }) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
   if (loading) {
+    const hasCount = scanProgress && scanProgress.total > 0;
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-16">
         <Loading01Icon className="h-8 w-8 animate-spin text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">Analyzing CSV file...</p>
+        <div className="space-y-1 text-center">
+          <p className="text-sm text-muted-foreground">
+            {scanProgress?.message || 'Scanning Shortcut workspace...'}
+          </p>
+          {hasCount && (
+            <p className="text-xs text-muted-foreground">
+              {scanProgress.processed.toLocaleString()} of {scanProgress.total.toLocaleString()} stories
+            </p>
+          )}
+        </div>
       </div>
     );
   }
 
-  if (!file || !preview) {
+  if (!preview) {
     return (
       <div className="space-y-4">
-        <p className="text-sm text-muted-foreground">
-          In Shortcut, go to Settings &rarr; Export &rarr; CSV to download your workspace data.
-        </p>
-
-        {/* API Token (optional) */}
         <Card>
           <CardContent className="px-4 py-3">
             <div className="flex items-start gap-3">
               <Key01Icon className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
               <div className="flex-1 space-y-2">
                 <div>
-                  <Label className="text-sm font-medium">Shortcut API Token (optional)</Label>
+                  <Label className="text-sm font-medium">Shortcut API Token</Label>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Provides richer import: real label colors, sprint dates, epic/objective descriptions, and task comments.
-                    Generate a token at Settings &rarr; API Tokens in Shortcut.
+                    Generate a token in Shortcut under Settings &rarr; API Tokens.
                   </p>
                 </div>
-                <Input
-                  type="text"
-                  placeholder="sc_..."
-                  value={apiToken}
-                  onChange={(e) => onApiTokenChange(e.target.value)}
-                  autoComplete="off"
-                  data-1p-ignore
-                  data-lpignore="true"
-                  className="max-w-sm font-mono text-xs"
-                />
+                <div className="flex max-w-xl gap-2">
+                  <Input
+                    type="password"
+                    placeholder="Shortcut API token"
+                    value={apiToken}
+                    onChange={(e) => onApiTokenChange(e.target.value)}
+                    autoComplete="off"
+                    data-1p-ignore
+                    data-lpignore="true"
+                    className="font-mono text-xs"
+                  />
+                  <Button type="button" onClick={onAPIPreview} disabled={!apiToken.trim()}>
+                    Connect
+                  </Button>
+                </div>
+                <div className="grid max-w-3xl gap-3 pt-2 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Story date</Label>
+                    <Select value={storyDateField} onValueChange={(v) => onStoryDateField(v as 'updated_at' | 'created_at')}>
+                      <SelectTrigger className="h-8">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="updated_at">Updated</SelectItem>
+                        <SelectItem value="created_at">Created</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Story window</Label>
+                    <Select value={storyLookbackMonths} onValueChange={onStoryLookbackMonths}>
+                      <SelectTrigger className="h-8">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {LOOKBACK_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Epic window</Label>
+                    <Select value={epicLookbackMonths} onValueChange={onEpicLookbackMonths}>
+                      <SelectTrigger className="h-8">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {LOOKBACK_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Max stories</Label>
+                    <Input
+                      inputMode="numeric"
+                      min={1}
+                      placeholder="No limit"
+                      value={maxStories}
+                      onChange={(e) => onMaxStories(e.target.value.replace(/\D/g, ''))}
+                      className="h-8"
+                    />
+                  </div>
+                </div>
+                <div className="grid max-w-xl gap-2 pt-1 sm:grid-cols-2">
+                  <label className="flex items-center justify-between rounded-md border px-3 py-2">
+                    <span className="text-xs">Archived tasks</span>
+                    <Switch checked={importArchived} onCheckedChange={onArchived} />
+                  </label>
+                  <label className="flex items-center justify-between rounded-md border px-3 py-2">
+                    <span className="text-xs">Completed tasks</span>
+                    <Switch checked={importCompleted} onCheckedChange={onCompleted} />
+                  </label>
+                </div>
+                <div className="max-w-[11rem] space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Objective window</Label>
+                  <Select value={objectiveLookbackMonths} onValueChange={onObjectiveLookbackMonths}>
+                    <SelectTrigger className="h-8">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {LOOKBACK_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
           </CardContent>
         </Card>
-
-        <div
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={onDrop}
-          onClick={() => fileInputRef.current?.click()}
-          className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border px-6 py-16 transition-colors hover:border-primary/50 hover:bg-muted/30"
-        >
-          <Upload01Icon className="h-8 w-8 text-muted-foreground" />
-          <p className="text-sm font-medium">Drag and drop your CSV file here</p>
-          <p className="text-xs text-muted-foreground">or click to browse — .csv up to 50 MB</p>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".csv"
-            className="hidden"
-            onChange={onFileInput}
-          />
-        </div>
       </div>
     );
   }
@@ -683,10 +880,12 @@ function UploadStep({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Tick01Icon className="h-4 w-4 text-green-500" />
-          <span className="text-sm font-medium truncate max-w-[300px]">{file.name}</span>
+          <span className="text-sm font-medium truncate max-w-[300px]">
+            Shortcut API connected
+          </span>
         </div>
         <Button variant="ghost" size="sm" onClick={onClear}>
-          Change File
+          Reset
         </Button>
       </div>
 
@@ -743,78 +942,107 @@ function UploadStep({
   );
 }
 
-// ─── Sortable State Row ──────────────────────────────────────────────
+// ─── Step 1: Team Mapping ────────────────────────────────────────────
 
-function SortableStateRow({
-  state,
-  onUpdateName,
-  onUpdateType,
+function TeamStep({
+  teamMappings,
+  existingTeams,
+  onUpdate,
 }: {
-  state: WorkflowMapping['states'][0];
-  onUpdateName: (name: string) => void;
-  onUpdateType: (type: string) => void;
+  teamMappings: TeamMapping[];
+  existingTeams: { id: string; name: string }[];
+  onUpdate: (idx: number, updates: Partial<TeamMapping>) => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: state.shortcutState,
-  });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
+  if (teamMappings.length === 0) {
+    return (
+      <Card>
+        <CardContent className="px-4 py-6">
+          <p className="text-sm text-muted-foreground">
+            No Shortcut teams or groups were detected. Imported stories will not be assigned to a team.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
-    <TableRow ref={setNodeRef} style={style} className={isDragging ? 'opacity-50 bg-accent/50' : ''}>
-      <TableCell className="py-1.5 w-[40px]">
-        <button
-          type="button"
-          className="h-6 w-6 flex items-center justify-center cursor-grab text-muted-foreground/50 hover:text-muted-foreground active:cursor-grabbing"
-          {...attributes}
-          {...listeners}
-        >
-          <DragDropVerticalIcon className="h-3.5 w-3.5" />
-        </button>
-      </TableCell>
-      <TableCell className="py-1.5">
-        <Input
-          value={state.newStateName}
-          onChange={(e) => onUpdateName(e.target.value)}
-          className="h-7 text-sm"
-        />
-      </TableCell>
-      <TableCell className="py-1.5 text-right text-xs text-muted-foreground">
-        {state.storyCount.toLocaleString()}
-      </TableCell>
-      <TableCell className="py-1.5">
-        <Select value={state.stateType} onValueChange={onUpdateType}>
-          <SelectTrigger className="h-7 text-xs">
-            <div className="flex items-center gap-1.5">
-              <div
-                className={cn(
-                  'h-2 w-2 rounded-full',
-                  STATE_TYPE_OPTIONS.find((o) => o.value === state.stateType)?.color,
-                )}
-              />
-              <SelectValue />
-            </div>
-          </SelectTrigger>
-          <SelectContent>
-            {STATE_TYPE_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                <div className="flex items-center gap-1.5">
-                  <div className={cn('h-2 w-2 rounded-full', opt.color)} />
-                  {opt.label}
-                </div>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </TableCell>
-    </TableRow>
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-base font-semibold">Choose Destination Teams</h3>
+        <p className="text-sm text-muted-foreground">
+          Each Shortcut team or group can create a new Helpin team or map into an existing one.
+          New workflows will be created per destination team.
+        </p>
+      </div>
+
+      <Card>
+        <CardContent className="px-4 py-3">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-xs">Shortcut Team</TableHead>
+                <TableHead className="text-xs">Destination</TableHead>
+                <TableHead className="text-xs">Team</TableHead>
+                <TableHead className="text-xs text-right">Stories</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {teamMappings.map((team, idx) => (
+                <TableRow key={team.shortcutTeamName}>
+                  <TableCell className="py-2 text-sm font-medium">{team.shortcutTeamName}</TableCell>
+                  <TableCell className="py-2">
+                    <Select
+                      value={team.mode}
+                      onValueChange={(value) => onUpdate(idx, { mode: value as TeamMapping['mode'] })}
+                    >
+                      <SelectTrigger className="h-8 w-36">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="create_new">Create new</SelectItem>
+                        <SelectItem value="use_existing">Use existing</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </TableCell>
+                  <TableCell className="py-2">
+                    {team.mode === 'create_new' ? (
+                      <Input
+                        value={team.newTeamName}
+                        onChange={(e) => onUpdate(idx, { newTeamName: e.target.value })}
+                        className="h-8"
+                      />
+                    ) : (
+                      <Select
+                        value={team.existingTeamId}
+                        onValueChange={(value) => onUpdate(idx, { existingTeamId: value })}
+                      >
+                        <SelectTrigger className="h-8">
+                          <SelectValue placeholder="Select team" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {existingTeams.map((existing) => (
+                            <SelectItem key={existing.id} value={existing.id}>
+                              {existing.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </TableCell>
+                  <TableCell className="py-2 text-right text-sm text-muted-foreground">
+                    {team.taskCount.toLocaleString()}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
-// ─── Step 1: Workflow Mapping ────────────────────────────────────────
+// ─── Step 2: Workflow Mapping ────────────────────────────────────────
 
 function WorkflowStep({
   workflowMappings,
@@ -827,26 +1055,7 @@ function WorkflowStep({
   onUpdateMapping: (idx: number, updates: Partial<WorkflowMapping>) => void;
   onUpdateState: (wfIdx: number, stateIdx: number, updates: Partial<WorkflowMapping['states'][0]>) => void;
 }) {
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  );
-
-  const handleStateDragEnd = (wfIdx: number) => (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const wf = workflowMappings[wfIdx];
-    const oldIndex = wf.states.findIndex((s) => s.shortcutState === active.id);
-    const newIndex = wf.states.findIndex((s) => s.shortcutState === over.id);
-    if (oldIndex === -1 || newIndex === -1) return;
-    const reordered = [...wf.states];
-    const [moved] = reordered.splice(oldIndex, 1);
-    reordered.splice(newIndex, 0, moved);
-    onUpdateMapping(wfIdx, { states: reordered.map((s, j) => ({ ...s, position: j })) });
-  };
-
   const allReady = workflowMappings.every((wf) => {
-    if (wf.mode === 'create_new') return wf.states.some((s) => s.stateType === 'done');
     return wf.existingWorkflowId !== '' && wf.states.every((s) => s.existingStateId !== '');
   });
 
@@ -854,18 +1063,25 @@ function WorkflowStep({
     <div className="space-y-4">
       <div>
         <p className="text-sm text-muted-foreground">
-          We auto-detected your Shortcut workflows and assigned state types. Review and adjust if
-          needed, or just continue.
+          Map each Shortcut workflow into an existing Helpin workflow, then map Shortcut states to
+          Helpin states.
         </p>
       </div>
+      {existingWorkflows.length === 0 && (
+        <Card>
+          <CardContent className="px-4 py-3">
+            <p className="text-sm text-muted-foreground">
+              No Helpin workflows are available. Create the target workflow before starting the import.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {workflowMappings.map((wf, wfIdx) => {
-        const hasDone = wf.states.some((s) => s.stateType === 'done');
-        const isValid =
-          wf.mode === 'create_new'
-            ? hasDone && wf.newWorkflowName.trim() !== ''
-            : wf.existingWorkflowId !== '' && wf.states.every((s) => s.existingStateId !== '');
+        const isValid = wf.existingWorkflowId !== '' && wf.states.every((s) => s.existingStateId !== '');
         const totalTasks = wf.states.reduce((sum, s) => sum + s.storyCount, 0);
+        const selectedWf = existingWorkflows.find((ew) => ew.workflow.id === wf.existingWorkflowId);
+        const stateStats = workflowStateMappingStats(wf.states);
 
         return (
           <Card key={wf.shortcutWorkflowId || wf.shortcutWorkflowName}>
@@ -891,138 +1107,120 @@ function WorkflowStep({
 
             {wf.expanded && (
               <CardContent className="space-y-4 px-4 pb-4 pt-0">
-                {/* Mode toggle */}
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-1.5 text-sm cursor-pointer">
-                    <input
-                      type="radio"
-                      checked={wf.mode === 'create_new'}
-                      onChange={() => onUpdateMapping(wfIdx, { mode: 'create_new' })}
-                      className="accent-primary"
-                    />
-                    Create new workflow
-                  </label>
-                  <label className="flex items-center gap-1.5 text-sm cursor-pointer">
-                    <input
-                      type="radio"
-                      checked={wf.mode === 'use_existing'}
-                      onChange={() => onUpdateMapping(wfIdx, { mode: 'use_existing' })}
-                      className="accent-primary"
-                    />
-                    Use existing workflow
-                  </label>
-                </div>
-
-                {wf.mode === 'create_new' ? (
-                  <>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Workflow name</Label>
-                      <Input
-                        value={wf.newWorkflowName}
-                        onChange={(e) => onUpdateMapping(wfIdx, { newWorkflowName: e.target.value })}
-                        className="h-8 text-sm"
-                      />
-                    </div>
-
-                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleStateDragEnd(wfIdx)}>
-                      <SortableContext items={wf.states.map((s) => s.shortcutState)} strategy={verticalListSortingStrategy}>
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead className="text-xs w-[40px]" />
-                              <TableHead className="text-xs">State Name</TableHead>
-                              <TableHead className="text-xs text-right w-[80px]">Tasks</TableHead>
-                              <TableHead className="text-xs w-[150px]">State Type</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {wf.states.map((s, sIdx) => (
-                              <SortableStateRow
-                                key={s.shortcutState}
-                                state={s}
-                                onUpdateName={(name) => onUpdateState(wfIdx, sIdx, { newStateName: name })}
-                                onUpdateType={(type) => onUpdateState(wfIdx, sIdx, { stateType: type as StateType })}
-                              />
+                <>
+                  <div className="grid gap-3 md:grid-cols-[minmax(220px,320px)_1fr]">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Existing workflow</Label>
+                        <Select
+                          value={wf.existingWorkflowId}
+                          onValueChange={(v) => {
+                            const nextWorkflow = existingWorkflows.find((ew) => ew.workflow.id === v);
+                            onUpdateMapping(wfIdx, {
+                              existingWorkflowId: v,
+                              states: nextWorkflow
+                                ? autoMapExistingWorkflowStates(wf.states, nextWorkflow.states)
+                                : wf.states,
+                            });
+                          }}
+                        >
+                          <SelectTrigger className="h-8 text-sm">
+                            <SelectValue placeholder="Select a workflow..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {existingWorkflows.map((ew) => (
+                              <SelectItem key={ew.workflow.id} value={ew.workflow.id}>
+                                {ew.workflow.name}
+                              </SelectItem>
                             ))}
-                          </TableBody>
-                        </Table>
-                      </SortableContext>
-                    </DndContext>
-
-                    {!hasDone && (
-                      <p className="flex items-center gap-1.5 text-xs text-destructive">
-                        <Cancel01Icon className="h-3 w-3" /> At least one Done state is required.
-                      </p>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex items-end justify-between gap-3">
+                        <div className="text-xs text-muted-foreground">
+                          {wf.existingWorkflowId
+                            ? `${stateStats.mapped} of ${stateStats.total} states mapped`
+                            : 'Select a workflow to map Shortcut states'}
+                        </div>
+                        {wf.existingWorkflowId && (
+                          <div className="flex gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 text-xs"
+                              onClick={() => {
+                                if (!selectedWf) return;
+                                onUpdateMapping(wfIdx, {
+                                  states: autoMapExistingWorkflowStates(wf.states, selectedWf.states),
+                                });
+                              }}
+                            >
+                              Auto-map
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 text-xs"
+                              onClick={() =>
+                                onUpdateMapping(wfIdx, {
+                                  states: wf.states.map((state) => ({ ...state, existingStateId: '' })),
+                                })
+                              }
+                            >
+                          Clear
+                        </Button>
+                      </div>
                     )}
-                  </>
-                ) : (
-                  <>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Existing workflow</Label>
-                      <Select
-                        value={wf.existingWorkflowId}
-                        onValueChange={(v) => onUpdateMapping(wfIdx, { existingWorkflowId: v })}
-                      >
-                        <SelectTrigger className="h-8 text-sm">
-                          <SelectValue placeholder="Select a workflow..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {existingWorkflows.map((ew) => (
-                            <SelectItem key={ew.workflow.id} value={ew.workflow.id}>
-                              {ew.workflow.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                  </div>
+                  </div>
+
+                  {wf.existingWorkflowId && (
+                    <div className="rounded-md border">
+                      <div className="hidden grid-cols-[minmax(0,1fr)_88px_minmax(220px,280px)] gap-3 border-b px-3 py-2 text-xs text-muted-foreground md:grid">
+                        <div>Shortcut state</div>
+                        <div className="text-right">Tasks</div>
+                        <div>Helpin state</div>
+                      </div>
+                      <div className="divide-y">
+                        {wf.states.map((s, sIdx) => (
+                          <div
+                            key={s.shortcutState}
+                            className={cn(
+                              'grid grid-cols-1 gap-2 px-3 py-2 md:grid-cols-[minmax(0,1fr)_88px_minmax(220px,280px)] md:items-center md:gap-3',
+                              !s.existingStateId && 'bg-destructive/5',
+                            )}
+                          >
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-medium">{s.shortcutState}</div>
+                              {!s.existingStateId && (
+                                <div className="mt-0.5 text-xs text-destructive">Needs mapping</div>
+                              )}
+                            </div>
+                            <div className="text-xs text-muted-foreground md:text-right">
+                              {s.storyCount.toLocaleString()}
+                            </div>
+                            <Select
+                              value={s.existingStateId}
+                              onValueChange={(v) => onUpdateState(wfIdx, sIdx, { existingStateId: v })}
+                            >
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue placeholder="Select state" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {(selectedWf?.states || []).map((es) => (
+                                  <SelectItem key={es.id} value={es.id}>
+                                    {es.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-
-                    {wf.existingWorkflowId && (
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="text-xs">Shortcut State</TableHead>
-                            <TableHead className="text-xs text-right w-[80px]">Tasks</TableHead>
-                            <TableHead className="text-xs w-[180px]">Helpin State</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {wf.states.map((s, sIdx) => {
-                            const selectedWf = existingWorkflows.find(
-                              (ew) => ew.workflow.id === wf.existingWorkflowId,
-                            );
-                            return (
-                              <TableRow key={s.shortcutState}>
-                                <TableCell className="py-1.5 text-sm">{s.shortcutState}</TableCell>
-                                <TableCell className="py-1.5 text-right text-xs text-muted-foreground">
-                                  {s.storyCount.toLocaleString()}
-                                </TableCell>
-                                <TableCell className="py-1.5">
-                                  <Select
-                                    value={s.existingStateId}
-                                    onValueChange={(v) =>
-                                      onUpdateState(wfIdx, sIdx, { existingStateId: v })
-                                    }
-                                  >
-                                    <SelectTrigger className="h-7 text-xs">
-                                      <SelectValue placeholder="Select..." />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {(selectedWf?.states || []).map((es) => (
-                                        <SelectItem key={es.id} value={es.id}>
-                                          {es.name}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </TableCell>
-                              </TableRow>
-                            );
-                          })}
-                        </TableBody>
-                      </Table>
-                    )}
-                  </>
-                )}
+                  )}
+                </>
               </CardContent>
             )}
           </Card>
@@ -1215,6 +1413,7 @@ function UserStep({
 
 function ImportStep({
   preview,
+  teamMappings,
   workflowMappings,
   userMappings,
   importArchived,
@@ -1227,6 +1426,7 @@ function ImportStep({
   hasApiToken,
 }: {
   preview: ShortcutImportPreviewResponse | null;
+  teamMappings: TeamMapping[];
   workflowMappings: WorkflowMapping[];
   userMappings: UserMapping[];
   importArchived: boolean;
@@ -1246,11 +1446,8 @@ function ImportStep({
   const matchedUsers = userMappings.filter((u) => u.action === 'matched').length;
   const invitedUsers = userMappings.filter((u) => u.invited).length;
   const skippedUsers = userMappings.filter((u) => u.action === 'skip' && !u.invited).length;
-  const newWorkflows = workflowMappings.filter((w) => w.mode === 'create_new').length;
-  const existingWorkflows = workflowMappings.filter((w) => w.mode === 'use_existing').length;
-  const newStates = workflowMappings
-    .filter((w) => w.mode === 'create_new')
-    .reduce((sum, w) => sum + w.states.length, 0);
+  const newTeams = teamMappings.filter((t) => t.mode === 'create_new').length;
+  const existingTeams = teamMappings.filter((t) => t.mode === 'use_existing').length;
 
   // ─── Running / Done / Failed ────────────────────────────────────
 
@@ -1281,7 +1478,7 @@ function ImportStep({
 
         {isRunning && progress && (
           <div className="space-y-1">
-            {(hasApiToken ? IMPORT_STEPS_API : IMPORT_STEPS_BASE).map((stepLabel, i) => {
+            {IMPORT_STEPS_API.map((stepLabel, i) => {
               const done = i < (progress.steps_completed || 0);
               const active =
                 i === (progress.steps_completed || 0) &&
@@ -1345,11 +1542,11 @@ function ImportStep({
         <CardContent className="space-y-3 px-4 pb-4 pt-0">
           <div className="flex items-center justify-between">
             <Label className="text-sm">Import archived tasks</Label>
-            <Switch checked={importArchived} onCheckedChange={onArchived} />
+            <Switch checked={importArchived} onCheckedChange={onArchived} disabled={hasApiToken} />
           </div>
           <div className="flex items-center justify-between">
             <Label className="text-sm">Import completed tasks</Label>
-            <Switch checked={importCompleted} onCheckedChange={onCompleted} />
+            <Switch checked={importCompleted} onCheckedChange={onCompleted} disabled={hasApiToken} />
           </div>
         </CardContent>
       </Card>
@@ -1362,12 +1559,15 @@ function ImportStep({
           <CardContent className="px-4 pb-4 pt-0">
             <Table>
               <TableBody>
-                <SummaryRow label="Teams" value={`${s.teams_count}`} />
+                <SummaryRow label="Teams" value={`${teamMappings.length} (${newTeams} new, ${existingTeams} existing)`} />
                 <SummaryRow
                   label="Workflows"
-                  value={`${workflowMappings.length} (${newWorkflows} new, ${existingWorkflows} existing)`}
+                  value={`${workflowMappings.length} existing workflows selected`}
                 />
-                <SummaryRow label="Workflow States" value={`${newStates} new`} />
+                <SummaryRow
+                  label="Workflow States"
+                  value={`${workflowMappings.reduce((sum, workflow) => sum + workflow.states.length, 0)} mapped`}
+                />
                 <SummaryRow label="Labels" value={`${s.labels_count}`} />
                 <SummaryRow label="Objectives" value={`${s.objectives_count}`} />
                 <SummaryRow label="Epics" value={`${s.epics_count}`} />
@@ -1430,6 +1630,8 @@ function ResultTable({ result }: { result: ShortcutImportStatusResponse['result'
     { label: 'Checklist Items', created: result.checklist_items_created },
     { label: 'Owner Links', created: result.owner_links_created },
     { label: 'Label Links', created: result.label_links_created },
+    { label: 'External Links', created: result.external_links_created },
+    { label: 'Task Links', created: result.task_links_created },
     { label: 'Attachments', created: result.attachments_created },
     { label: 'Comments', created: result.comments_created },
   ];

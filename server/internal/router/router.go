@@ -408,6 +408,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				// Import routes require pm.import
 				r.With(requirePerm(authorization.PermPMImport)).Post("/import/shortcut/preview", h.PMImport.PreviewShortcut)
 				r.With(requirePerm(authorization.PermPMImport)).Post("/import/shortcut/execute", h.PMImport.ExecuteShortcut)
+				r.With(requirePerm(authorization.PermPMImport)).Post("/import/shortcut/api/preview", h.PMImport.PreviewShortcutAPI)
+				r.With(requirePerm(authorization.PermPMImport)).Post("/import/shortcut/api/execute", h.PMImport.ExecuteShortcutAPI)
 				r.With(requirePerm(authorization.PermPMImport)).Get("/import/shortcut/status/{importId}", h.PMImport.ShortcutStatus)
 			})
 

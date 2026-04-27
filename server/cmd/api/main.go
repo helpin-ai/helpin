@@ -627,6 +627,7 @@ func main() {
 	pmExternalLinkService := service.NewPMExternalLinkService(pmExternalLinkRepo, wsPublisher)
 	pmViewService := service.NewPMViewService(pmViewRepo, wsPublisher)
 	pmImportService := service.NewPMImportService(db, workspaceRepo, pmWorkflowRepo, pmAttachmentService)
+	pmImportService.SetPublisher(wsPublisher)
 	searchService := service.NewSearchService(searchRepo, workspaceRepo)
 	cannedResponseRepo := repository.NewSupportCannedResponseRepository(db)
 	supportTeammateStatusOverrideRepo := repository.NewSupportTeammateStatusOverrideRepository(db)
