@@ -10,6 +10,7 @@
 
 **Plan revision log:**
 - v1: initial draft.
+- v1.2 (post second-round review): replaced `enricherSingleton` free-function activity with a `CoverageGapActivities` struct + DI constructor matching `CRMSummaryActivities` (`server/internal/temporalapp/crm_summary_workflow.go:76,85`); cron is *started* from the API process via a service method (`EnsureDailyEnrichment`) modeled on `CRMSummaryService.EnsureDailyReconciliation` (`server/internal/service/crm_summary.go:188`), not registered inside `newTemporalWorker`; daily batch workflow lists workspaces/topics via activities (no DB calls inside workflow code); Task 18 handler uses `middleware.GetWorkspaceID` / `middleware.GetUserID` (not `authorization.ActorFromContext` which doesn't exist); frontend `regenerate` service takes `(wsId, gapId)` and appends `qs(wsId)` matching every other coverage method; Task 19 rewritten against the real `ApplySuggestion(ctx context.Context, workspaceID, suggestionID, userID string) error` signature using the real fields `coverageRepo`, `contentSvc.Save`, `contentSvc.Get`, `UpdateGapStatus`, `LinkGapArticle`; frontend types use the existing `suggestion_type` field on the wire (no invented `route` field).
 - v1.1 (post-review): fixed migration filenames to `YYYYMMDDNNNN` (12-digit) starting at `202604270004`; pointed Temporal workflow/activity registration at `server/cmd/temporal-worker/main.go` (not `cmd/api/main.go`); added subcommand registration in `server/cmd/migrate/main.go` for `cluster-rebuild`; deferred removal of legacy status constants until all call sites are migrated (Task 5 now adds new constants without dropping old ones; final cleanup is Task 23 + a follow-up release per spec §7.4); fixed repo file paths (single `support_coverage.go`, no split files); replaced non-existent `pnpm typecheck` / `pnpm test` with the actual scripts (`pnpm build`, `pnpm lint`, `pnpm test:e2e:support`); rewrote Task 19 against the real `SupportCoverageDraftService` API (`s.documentSvc.Create(ctx, workspaceID, model.CreateDocsDocumentRequest{…})`, content is TipTap JSON in `suggestion.Content`, append via `tiptap.AppendContent`).
 
 ---
@@ -795,38 +796,96 @@ git commit -am "feat(coverage): LLM enrichment writes versioned suggestion + upd
 - Create: `server/internal/temporalapp/coverage_gap_workflow_test.go`
 - Modify: `server/cmd/temporal-worker/main.go` (workflow + activity registration via `newTemporalWorker`; `cmd/api` is the HTTP server and does not run a Temporal worker)
 
-- [ ] **Step 1: Workflow + activity skeleton**
+- [ ] **Step 1: Activities struct (mirrors `CRMSummaryActivities` at `server/internal/temporalapp/crm_summary_workflow.go:76`)**
 
 ```go
 package temporalapp
 
 import (
     "context"
+    "time"
+
     "go.temporal.io/sdk/activity"
+    "go.temporal.io/sdk/temporal"
     "go.temporal.io/sdk/workflow"
+
+    "github.com/helpin-ai/helpin/server/internal/service"
 )
 
-const CoverageGapEnrichmentWorkflow = "coverage-gap-enrichment"
+const (
+    CoverageGapEnrichmentWorkflowType = "CoverageGapEnrichmentWorkflow"
+    CoverageGapDailyBatchWorkflowType = "CoverageGapDailyBatchWorkflow"
 
-func EnrichTopicActivity(ctx context.Context, topicID string) error {
-    log := activity.GetLogger(ctx)
-    log.Info("enriching topic", "topic_id", topicID)
-    return enricherSingleton.EnrichTopic(ctx, topicID) // wired via DI in main.go
+    CoverageGapEnrichmentActivityName  = "EnrichTopicActivity"
+    CoverageGapListBatchActivityName   = "ListTopicsForBatchActivity"
+    CoverageGapListWorkspacesActivityName = "ListWorkspacesActivity"
+)
+
+// CoverageGapActivities groups activities that need DB / service access.
+// Workflows MUST NOT touch the DB directly — they call these activities.
+type CoverageGapActivities struct {
+    enricher *service.SupportCoverageEnrichmentService
+    coverage *service.SupportCoverageService
 }
 
-func CoverageGapEnrichmentFlow(ctx workflow.Context, topicID string) error {
-    opts := workflow.ActivityOptions{
+func NewCoverageGapActivities(
+    enricher *service.SupportCoverageEnrichmentService,
+    coverage *service.SupportCoverageService,
+) *CoverageGapActivities {
+    return &CoverageGapActivities{enricher: enricher, coverage: coverage}
+}
+
+// EnrichTopicActivity is invoked by both the per-topic enrichment workflow
+// and the daily batch fan-out.
+func (a *CoverageGapActivities) EnrichTopicActivity(ctx context.Context, topicID string) error {
+    activity.GetLogger(ctx).Info("enriching topic", "topic_id", topicID)
+    return a.enricher.EnrichTopic(ctx, topicID)
+}
+
+// ListWorkspacesActivity returns workspace IDs that have at least one
+// open gap with evidence — fed into the daily batch fan-out.
+func (a *CoverageGapActivities) ListWorkspacesActivity(ctx context.Context) ([]string, error) {
+    return a.coverage.ListWorkspacesWithOpenGaps(ctx)
+}
+
+// ListTopicsForBatchActivity returns topic IDs needing enrichment for a
+// given workspace (last_enriched_at < now()-24h AND evidence_count >= 2).
+func (a *CoverageGapActivities) ListTopicsForBatchActivity(ctx context.Context, workspaceID string) ([]string, error) {
+    return a.coverage.ListTopicsDueForEnrichment(ctx, workspaceID, 24*time.Hour, 2)
+}
+
+// CoverageGapEnrichmentWorkflow — single-topic enrichment. Pure orchestration.
+func CoverageGapEnrichmentWorkflow(ctx workflow.Context, topicID string) error {
+    ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
         StartToCloseTimeout: 60 * time.Second,
-        RetryPolicy: &temporal.RetryPolicy{MaximumAttempts: 3},
-    }
-    ctx = workflow.WithActivityOptions(ctx, opts)
-    return workflow.ExecuteActivity(ctx, EnrichTopicActivity, topicID).Get(ctx, nil)
+        RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 3},
+    })
+    var a *CoverageGapActivities // resolved by Temporal via the registered method
+    return workflow.ExecuteActivity(ctx, a.EnrichTopicActivity, topicID).Get(ctx, nil)
 }
 ```
 
-- [ ] **Step 2: Test with Temporal test suite** (`testsuite.WorkflowTestSuite`) — mock the activity, assert it's called once.
+- [ ] **Step 2: Test with Temporal test suite** (`testsuite.WorkflowTestSuite`) — register the activity from a `*CoverageGapActivities` instance built with mock services; assert `EnrichTopicActivity` is called once.
 
-- [ ] **Step 3: Register the workflow + activity in `server/cmd/temporal-worker/main.go`** inside `newTemporalWorker`, alongside existing CRM workflow/activity registrations. The `cmd/api` HTTP server only needs a Temporal *client* (for enqueuing from the spike trigger and the manual-regenerate handler) — it does not register workflows.
+- [ ] **Step 3: Wire `*CoverageGapActivities` through `newTemporalWorker`** in `server/cmd/temporal-worker/main.go`
+
+Add a parameter to `newTemporalWorker` (currently takes `summaryActivities *temporalapp.CRMSummaryActivities`, etc. — see line 538) for `coverageActivities *temporalapp.CoverageGapActivities`. Construct it in `main()` alongside the other activity structs. Then in the body register:
+
+```go
+w.RegisterWorkflow(temporalapp.CoverageGapEnrichmentWorkflow)
+w.RegisterWorkflow(temporalapp.CoverageGapDailyBatchWorkflow) // added in Task 16
+w.RegisterActivityWithOptions(coverageActivities.EnrichTopicActivity, activity.RegisterOptions{
+    Name: temporalapp.CoverageGapEnrichmentActivityName,
+})
+w.RegisterActivityWithOptions(coverageActivities.ListWorkspacesActivity, activity.RegisterOptions{
+    Name: temporalapp.CoverageGapListWorkspacesActivityName,
+})
+w.RegisterActivityWithOptions(coverageActivities.ListTopicsForBatchActivity, activity.RegisterOptions{
+    Name: temporalapp.CoverageGapListBatchActivityName,
+})
+```
+
+The HTTP server (`cmd/api`) only needs a Temporal *client* (for the spike trigger and manual-regenerate handler to call `client.ExecuteWorkflow`) — it does not register workflows or activities.
 
 - [ ] **Step 4: Build**
 
@@ -840,22 +899,92 @@ cd server && go build ./...
 git commit -am "feat(coverage): Temporal workflow + activity for gap enrichment"
 ```
 
-### Task 16: Daily batch cron registration
+### Task 16: Daily batch workflow + cron started from API service
+
+**Two-part change**, mirroring the CRM pattern at `server/internal/service/crm_summary.go:188`:
+
+1. **Worker-side:** the workflow is registered in the worker (Task 15 already covers this) and lists data via activities (`ListWorkspacesActivity`, `ListTopicsForBatchActivity`) — never touches the DB directly.
+2. **API-side:** an `EnsureDailyEnrichment(ctx)` service method is called once at API startup; it does `client.ExecuteWorkflow` with `CronSchedule: "0 3 * * *"` and a fixed `WorkflowID: "coverage-gap-daily-batch"`. Temporal makes this idempotent — restart-safe.
 
 **Files:**
-- Modify: `server/cmd/temporal-worker/main.go` (register the cron schedule and the batch workflow inside `newTemporalWorker`)
-- Modify: `server/internal/temporalapp/coverage_gap_workflow.go` (batch flow)
+- Modify: `server/internal/temporalapp/coverage_gap_workflow.go` — add `CoverageGapDailyBatchWorkflow`
+- Modify: `server/internal/service/support_coverage.go` (or new file) — add `EnsureDailyEnrichment(ctx) error`
+- Modify: `server/cmd/api/main.go` — call `coverageService.EnsureDailyEnrichment(ctx)` after the Temporal client is built (alongside the existing `crmSummaryService.EnsureDailyReconciliation` call)
 
-- [ ] **Step 1: Add `CoverageGapDailyBatchFlow`** — lists all workspaces, then per workspace lists topics with `last_enriched_at < now() - 24h AND evidence_count >= 2`, fans out via `workflow.ExecuteChildWorkflow(CoverageGapEnrichmentFlow, topic_id)` with bounded concurrency (10).
+- [ ] **Step 1: Workflow** — pure orchestration, NO direct DB access:
 
-- [ ] **Step 2: Register a Temporal cron schedule** (`@every 24h` at the start of UTC day, or use Temporal's `ScheduleSpec` with `CronExpressions: []string{"0 3 * * *"}`).
+```go
+func CoverageGapDailyBatchWorkflow(ctx workflow.Context) error {
+    ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+        StartToCloseTimeout: 30 * time.Second,
+    })
+    var a *CoverageGapActivities
 
-- [ ] **Step 3: Test the batch flow** with a fixture of N topics + a mock activity.
+    var workspaces []string
+    if err := workflow.ExecuteActivity(ctx, a.ListWorkspacesActivity).Get(ctx, &workspaces); err != nil {
+        return err
+    }
 
-- [ ] **Step 4: Commit**
+    sel := workflow.NewSelector(ctx)
+    inflight := 0
+    const maxInflight = 10
+    for _, wsID := range workspaces {
+        if inflight >= maxInflight {
+            sel.Select(ctx) // wait for one to finish before starting more
+            inflight--
+        }
+        wsID := wsID
+        f := workflow.ExecuteChildWorkflow(ctx, "coverageBatchPerWorkspace-"+wsID, perWorkspaceFlow, wsID)
+        sel.AddFuture(f, func(workflow.Future) {})
+        inflight++
+    }
+    for inflight > 0 {
+        sel.Select(ctx)
+        inflight--
+    }
+    return nil
+}
+
+func perWorkspaceFlow(ctx workflow.Context, workspaceID string) error {
+    var a *CoverageGapActivities
+    var topicIDs []string
+    if err := workflow.ExecuteActivity(ctx, a.ListTopicsForBatchActivity, workspaceID).Get(ctx, &topicIDs); err != nil {
+        return err
+    }
+    for _, t := range topicIDs {
+        _ = workflow.ExecuteChildWorkflow(ctx, "coverage-gap-enrich-"+t, CoverageGapEnrichmentWorkflow, t).Get(ctx, nil)
+    }
+    return nil
+}
+```
+
+- [ ] **Step 2: API-side cron starter** — model after `CRMSummaryService.EnsureDailyReconciliation` (`crm_summary.go:188`):
+
+```go
+const coverageDailyBatchSchedule = "0 3 * * *" // 03:00 UTC daily
+
+func (s *SupportCoverageService) EnsureDailyEnrichment(ctx context.Context) error {
+    _, err := s.temporal.ExecuteWorkflow(ctx, tclient.StartWorkflowOptions{
+        ID:           "coverage-gap-daily-batch",
+        TaskQueue:    s.taskQueue,
+        CronSchedule: coverageDailyBatchSchedule,
+        WorkflowIDReusePolicy: enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
+    }, temporalapp.CoverageGapDailyBatchWorkflowType)
+    if err != nil {
+        return fmt.Errorf("ensure daily enrichment cron: %w", err)
+    }
+    return nil
+}
+```
+
+- [ ] **Step 3: Wire startup call** in `cmd/api/main.go` — find the `crmSummaryService.EnsureDailyReconciliation(ctx)` call and add the parallel `coverageService.EnsureDailyEnrichment(ctx)` invocation.
+
+- [ ] **Step 4: Test the batch workflow** with `testsuite.WorkflowTestSuite`: register mock activities returning a fixture set of workspaces and topics, assert `EnrichTopicActivity` is called the expected number of times.
+
+- [ ] **Step 5: Commit**
 
 ```bash
-git commit -am "feat(coverage): daily batch cron + child workflow fan-out"
+git commit -am "feat(coverage): daily batch workflow (activities for DB) + EnsureDailyEnrichment cron starter"
 ```
 
 ### Task 17: Spike trigger in `ProcessSupportEvent`
@@ -898,21 +1027,36 @@ git commit -am "feat(coverage): spike trigger fires enrichment when ≥5 evidenc
 
 - [ ] **Step 1: Handler test** with `httptest` per server/CLAUDE.md handler-test pattern: auth check, 30-sec debounce by per-actor in-memory map (acceptable for v1; can move to Redis later), success returns 202.
 
-- [ ] **Step 2: Implement handler**
+- [ ] **Step 2: Implement handler** — uses the same context helpers as every other coverage handler (see `server/internal/handler/support_coverage.go:38,135` for examples):
 
 ```go
 func (h *Regenerate) Handle(w http.ResponseWriter, r *http.Request) {
-    gapID := chi.URLParam(r, "gapId")
-    actor := authorization.ActorFromContext(r.Context())
+    wsID   := middleware.GetWorkspaceID(r.Context())
+    userID := middleware.GetUserID(r.Context())
+    gapID  := chi.URLParam(r, "gapId")
+    if wsID == "" || userID == "" {
+        writeError(w, http.StatusUnauthorized, "missing workspace or user context")
+        return
+    }
 
-    if !h.debounce.Allow(actor.UserID, gapID, 30*time.Second) {
+    if !h.debounce.Allow(userID, gapID, 30*time.Second) {
         writeError(w, http.StatusTooManyRequests, "regenerating too frequently — wait a moment")
         return
     }
-    gap, err := h.svc.GetGap(r.Context(), gapID, actor.WorkspaceID)
-    if err != nil { writeError(w, http.StatusNotFound, "not found"); return }
-    if err := h.temporal.ExecuteWorkflowAsync(r.Context(), "coverage-gap-enrich-"+*gap.TopicID+"-"+ulid.New(), CoverageGapEnrichmentFlow, *gap.TopicID); err != nil {
-        slog.ErrorContext(r.Context(), "enqueue regenerate failed", "error", err, "gap_id", gapID)
+    gap, err := h.svc.GetGap(r.Context(), wsID, gapID)
+    if err != nil || gap == nil { writeError(w, http.StatusNotFound, "not found"); return }
+    if gap.TopicID == nil {
+        writeError(w, http.StatusBadRequest, "gap is not topic-scoped (legacy)")
+        return
+    }
+
+    workflowID := "coverage-gap-enrich-" + *gap.TopicID + "-" + ulid.New().String()
+    _, err = h.temporal.ExecuteWorkflow(r.Context(), tclient.StartWorkflowOptions{
+        ID:        workflowID,
+        TaskQueue: h.taskQueue,
+    }, temporalapp.CoverageGapEnrichmentWorkflowType, *gap.TopicID)
+    if err != nil {
+        slog.ErrorContext(r.Context(), "enqueue regenerate failed", "error", err, "gap_id", gapID, "workspace_id", wsID)
         writeError(w, http.StatusServiceUnavailable, "enrichment service unavailable")
         return
     }
@@ -929,13 +1073,13 @@ r.With(requirePerm(authorization.PermSupportEdit)).
     Post("/support/coverage/gaps/{gapId}/regenerate", h.CoverageRegenerate.Handle)
 ```
 
-- [ ] **Step 4: Frontend service**
+- [ ] **Step 4: Frontend service** — must take `wsId` and append `qs(wsId)` to match every other method in `frontend/src/lib/services/supportCoverageService.ts` (see line 10 for the helper):
 
 ```ts
 export const supportCoverageService = {
-  // ... existing
-  regenerate: (gapId: string) =>
-    api.post<{ status: 'queued' }>(`/support/coverage/gaps/${gapId}/regenerate`, {}),
+  // ... existing methods all follow the (wsId, ...) shape.
+  regenerate: (wsId: string, gapId: string) =>
+    api.post<{ status: 'queued' }>(`/support/coverage/gaps/${gapId}/regenerate${qs(wsId)}`, {}),
 };
 ```
 
@@ -954,72 +1098,73 @@ git commit -am "feat(coverage): POST /gaps/{id}/regenerate endpoint"
 **Files:**
 - Modify: `server/internal/service/support_coverage_drafts.go` (around lines 98, 213, 268)
 
-- [ ] **Step 1: Tests** — Add(create_article) calls `s.documentSvc.Create` (which defaults to `DocStatusDraft`), snapshots evidence_30d into `gap.closed_evidence_count`, sets `result_document_id`, transitions status to `done`.
+- [ ] **Step 1: Tests** — `ApplySuggestion` snapshots `evidence_30d` into `gap.closed_evidence_count`, calls `coverageRepo.UpdateGapStatus` with `model.SupportCoverageGapStatusDone` (not `…Fixed`), sets `result_document_id` via `coverageRepo.LinkGapArticle`. With override args, the user can redirect routing.
 
-- [ ] **Step 2: Implement** — `SupportCoverageDraftService` already exists at `server/internal/service/support_coverage_drafts.go:30` and already calls `s.documentSvc.Create(ctx, suggestion.WorkspaceID, model.CreateDocsDocumentRequest{…})` at line ~193. Repurpose its existing `ApplySuggestion` path (do **not** invent a new `Add` method or a new `DraftsService` type). The change is to (a) read `suggestion.Content` (TipTap JSON, already the storage format), (b) honor a route override from the handler, (c) snapshot `evidence_30d`, (d) call the new `MarkDone` repo method instead of writing `status='fixed'`. Sketch:
+- [ ] **Step 2: Implement** — `SupportCoverageDraftService.ApplySuggestion` already exists at `server/internal/service/support_coverage_drafts.go:162` with signature:
 
 ```go
-// In server/internal/service/support_coverage_drafts.go, modify ApplySuggestion.
-// Real types in scope: *SupportCoverageDraftService (s), model.SupportGapSuggestion (suggestion),
-// model.CreateDocsDocumentRequest, tiptap.AppendContent.
-
-func (s *SupportCoverageDraftService) ApplySuggestion(
-    ctx context.Context,
-    suggestionID string,
-    override *model.RouteOverride, // nil = use suggestion's own type
-) (*model.DocsDocument, error) {
-    suggestion, err := s.suggestionRepo.Get(ctx, suggestionID)
-    if err != nil || suggestion == nil { return nil, fmt.Errorf("get suggestion: %w", err) }
-    if !suggestion.IsActive { return nil, errSuggestionSuperseded }
-
-    suggestionType := suggestion.SuggestionType
-    targetDocID    := coverageDeref(suggestion.TargetDocumentID)
-    if override != nil {
-        suggestionType = override.SuggestionType
-        targetDocID    = override.TargetDocumentID
-    }
-
-    var resultDoc *model.DocsDocument
-    switch suggestionType {
-    case model.SupportCoverageSuggestionCreateArticle:
-        resultDoc, err = s.documentSvc.Create(ctx, suggestion.WorkspaceID, model.CreateDocsDocumentRequest{
-            SpaceID: suggestion.TargetSpaceID, // existing field on suggestion
-            Title:   suggestion.Title,
-            // Body is set in a follow-up call (see existing pattern in
-            // ApplySuggestion's current create branch around line 193).
-            // DocsDocumentService.Create defaults Status to DocStatusDraft
-            // per docs_document.go:83, so the doc lands as a draft.
-        })
-        if err != nil { return nil, err }
-        if err := s.documentSvc.SetContent(ctx, resultDoc.ID, suggestion.Content); err != nil {
-            return nil, err
-        }
-
-    case model.SupportCoverageSuggestionUpdateArticle:
-        existingContent, err := s.documentSvc.GetContent(ctx, targetDocID)
-        if err != nil { return nil, err }
-        merged, err := tiptap.AppendContent(existingContent, suggestion.Content)
-        if err != nil { return nil, err }
-        if err := s.documentSvc.SetContent(ctx, targetDocID, merged); err != nil {
-            return nil, err
-        }
-        resultDoc, _ = s.documentSvc.Get(ctx, targetDocID)
-
-    default:
-        return nil, fmt.Errorf("unknown suggestion_type %q", suggestionType)
-    }
-
-    // New lifecycle bookkeeping (replaces the current status='fixed' write
-    // at lines 213 and 268 of support_coverage_drafts.go).
-    evidence30d, _ := s.gapRepo.CountEvidence30d(ctx, suggestion.GapID)
-    return resultDoc, s.gapRepo.MarkDone(ctx, suggestion.GapID, resultDoc.ID, evidence30d)
-}
+func (s *SupportCoverageDraftService) ApplySuggestion(ctx context.Context, workspaceID, suggestionID, userID string) error
 ```
 
+The change is **surgical**, not a rewrite. Touch only the lines that need to change:
+
+1. **Add an optional override** by introducing a new sibling method that wraps the existing one with override params, or extend the signature. Prefer the wrapper to keep the existing method's call sites stable:
+
+   ```go
+   // ApplySuggestionWithOverride lets the UI redirect the routing decision
+   // (e.g., user picked "Create new article instead" from the Add ▾ dropdown).
+   // Pass empty strings to fall back to the suggestion's own values.
+   func (s *SupportCoverageDraftService) ApplySuggestionWithOverride(
+       ctx context.Context,
+       workspaceID, suggestionID, userID string,
+       overrideType, overrideTargetDocID string,
+   ) error {
+       return s.applyImpl(ctx, workspaceID, suggestionID, userID, overrideType, overrideTargetDocID)
+   }
+
+   func (s *SupportCoverageDraftService) ApplySuggestion(ctx context.Context, workspaceID, suggestionID, userID string) error {
+       return s.applyImpl(ctx, workspaceID, suggestionID, userID, "", "")
+   }
+   ```
+
+2. **Refactor existing body into `applyImpl(...)`** — the existing code already does the right thing for both branches:
+   - create-article branch around lines 190–215 calls `s.documentSvc.Create(ctx, suggestion.WorkspaceID, model.CreateDocsDocumentRequest{...})` and `s.contentSvc.Save(ctx, doc.ID, suggestion.Content, userID)`.
+   - update-article branch around lines 247–264 calls `s.contentSvc.Get(ctx, docID)` then `tiptap.AppendContent(existingContent, suggestion.Content)` then `s.contentSvc.Save(ctx, docID, merged, userID)`.
+   - Both end with `s.coverageRepo.UpdateSuggestionResult(...)` and `s.coverageRepo.UpdateGapStatus(..., SupportCoverageGapStatusFixed, ...)` and (for create) `s.coverageRepo.LinkGapArticle(...)`.
+
+3. **The TWO surgical edits inside `applyImpl`:**
+
+   a. Apply the override at the top (before the route switch):
+
+   ```go
+   suggestionType := suggestion.SuggestionType
+   targetDocID    := ""
+   if suggestion.TargetDocumentID != nil { targetDocID = *suggestion.TargetDocumentID }
+   if overrideType != "" {
+       suggestionType = overrideType
+       targetDocID    = overrideTargetDocID
+   }
+   ```
+
+   Then switch on `suggestionType` (instead of `suggestion.SuggestionType`) and use `targetDocID` (instead of `*suggestion.TargetDocumentID`).
+
+   b. Replace BOTH `UpdateGapStatus(..., SupportCoverageGapStatusFixed, ...)` calls (current lines 214 and 269) with the new lifecycle write that snapshots evidence_30d:
+
+   ```go
+   evidence30d, _ := s.coverageRepo.CountEvidence30d(ctx, suggestion.GapID)
+   _ = s.coverageRepo.MarkGapDone(ctx, suggestion.WorkspaceID, suggestion.GapID, docID, evidence30d)
+   ```
+
+   Add the new `MarkGapDone` method on `SupportCoverageRepository` — single SQL that sets `status='done'`, `closed_at=now()`, `closed_evidence_count=?`, `result_document_id=?` in one UPDATE. Per spec §6.6, this UPDATE must include `WHERE status='open'` and check `RowsAffected==0` to surface concurrent-resolution conflicts (Task 22 covers the 409 path).
+
+4. **Remove the legacy `UpdateGapStatus(..., SupportCoverageGapStatusDrafted, ...)` writes** at lines 99 and 156 — drafts no longer change gap status (per spec §6.6 lifecycle).
+
+5. **Wire the override-aware method into the handler** (`server/internal/handler/support_coverage.go`) — the existing apply endpoint accepts a JSON body; add optional `route` and `target_document_id` fields, decode them, and call `ApplySuggestionWithOverride` when either is present.
+
 **Notes for the implementer:**
-- `tiptap.AppendContent(existingContent, suggestion.Content)` is exactly the call pattern already in use at `support_coverage_drafts.go:255` — preserve it.
-- The exact arg shape of `model.CreateDocsDocumentRequest` and the helper used to set TipTap content (`SetContent` vs. another method) must be confirmed by reading the current `ApplySuggestion` create-article branch (lines ~190–215). The sketch above uses placeholder names where the existing call already does the right thing.
-- Do **not** introduce a new "Markdown" code path. The system stores TipTap JSON; the LLM enricher (Task 14) must produce TipTap JSON in `suggestion.Content`, not Markdown. Update the enricher's structured-response schema accordingly.
+- Do **not** invent `s.suggestionRepo`, `s.gapRepo`, `documentSvc.SetContent`, `documentSvc.GetContent`, or `model.RouteOverride` — those don't exist. Use the existing `s.coverageRepo` (single `*SupportCoverageRepository`), `s.contentSvc.Save`, `s.contentSvc.Get`.
+- Suggestion content is already stored as TipTap JSON in `suggestion.Content`. Do not introduce a Markdown path.
+- `DocsDocumentService.Create` defaults the doc's status to `DocStatusDraft` per `docs_document.go:83` — Add(`create_article`) lands as a draft, satisfying spec §6.6.
 
 - [ ] **Step 3: Run tests**
 
@@ -1170,7 +1315,7 @@ git commit -am "feat(coverage): impact tier helper exposed in list response"
 
 - [ ] **Step 1: Update `SupportCoverageGapListItem`** — add `evidence_30d`, `impact_tier` (`'low' | 'medium' | 'high'`), `canonical_title?`, `gap_kind` (`'content' | 'data' | 'action'`).
 
-- [ ] **Step 2: Update suggestion type** — `route` (`'create_article' | 'update_article'`), `target_document_id?`, `target_document_title?`.
+- [ ] **Step 2: Update suggestion type** — keep the existing wire field `suggestion_type: 'create_article' | 'update_article'` (already serialized from `SupportGapSuggestion.SuggestionType`). Add `target_document_id?`, `target_document_title?`. Do **not** invent a `route` field — the UI's "Add ▾" smart-routed button reads from `suggestion_type`, and the override sent on apply uses `route` + `target_document_id` in the request body only (matches the new optional handler params from Task 19, Step 5).
 
 - [ ] **Step 3: Type-check**
 
