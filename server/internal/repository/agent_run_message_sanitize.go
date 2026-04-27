@@ -17,10 +17,28 @@ func sanitizeAgentRunMessageForPostgres(message *model.AgentRunMessage) {
 	}
 
 	message.Content = sanitizePostgresJSONString(message.Content)
-	message.ContentBlocks = sanitizePostgresJSONRawMessage(message.ContentBlocks)
-	message.TurnSegments = sanitizePostgresJSONRawMessage(message.TurnSegments)
-	message.ToolInvocations = sanitizePostgresJSONRawMessage(message.ToolInvocations)
-	message.TokenUsage = sanitizePostgresJSONRawMessage(message.TokenUsage)
+	message.ContentBlocks = sanitizePostgresJSONRawMessage(message.ContentBlocks, nil)
+	message.TurnSegments = sanitizePostgresJSONRawMessage(message.TurnSegments, nil)
+	message.ToolInvocations = sanitizePostgresJSONRawMessage(message.ToolInvocations, nil)
+	message.TokenUsage = sanitizePostgresJSONRawMessage(message.TokenUsage, nil)
+}
+
+func sanitizeAgentRunArtifactForPostgres(artifact *model.AgentRunArtifact) {
+	if artifact == nil {
+		return
+	}
+	if artifact.InlineContent != nil {
+		content := sanitizePostgresJSONString(*artifact.InlineContent)
+		artifact.InlineContent = &content
+	}
+	artifact.Metadata = sanitizePostgresJSONRawMessage(artifact.Metadata, json.RawMessage(`{}`))
+}
+
+func sanitizeCodingSessionStateSnapshotForPostgres(snapshot *model.CodingSessionStateSnapshot) {
+	if snapshot == nil {
+		return
+	}
+	snapshot.SnapshotPayload = sanitizePostgresJSONRawMessage(snapshot.SnapshotPayload, json.RawMessage(`{}`))
 }
 
 func sanitizePostgresJSONString(value string) string {
@@ -35,24 +53,24 @@ func sanitizePostgresJSONString(value string) string {
 	return strings.ReplaceAll(value, "\x00", postgresJSONReplacement)
 }
 
-func sanitizePostgresJSONRawMessage(raw json.RawMessage) json.RawMessage {
+func sanitizePostgresJSONRawMessage(raw json.RawMessage, fallback json.RawMessage) json.RawMessage {
 	if len(raw) == 0 {
-		return raw
+		return fallback
 	}
 
 	var value any
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
 	if err := decoder.Decode(&value); err != nil {
-		return nil
+		return fallback
 	}
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return nil
+		return fallback
 	}
 
 	sanitized, err := json.Marshal(sanitizePostgresJSONValue(value))
 	if err != nil {
-		return nil
+		return fallback
 	}
 	return sanitized
 }

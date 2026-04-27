@@ -582,6 +582,7 @@ func (r *AgentRunArtifactRepository) NextSequence(ctx context.Context, workspace
 
 // Create creates a new artifact.
 func (r *AgentRunArtifactRepository) Create(ctx context.Context, artifact *model.AgentRunArtifact) error {
+	sanitizeAgentRunArtifactForPostgres(artifact)
 	if err := r.db.WithContext(ctx).Create(artifact).Error; err != nil {
 		return fmt.Errorf("create run artifact: %w", err)
 	}
