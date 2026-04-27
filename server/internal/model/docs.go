@@ -536,6 +536,33 @@ type ReorderDocsChildrenRequest struct {
 	Items              []ReorderDocsChildItem `json:"items"`
 }
 
+// MoveDocsItemRequest is the payload for moving a single item
+// (doc or collection) to a new position within a bucket.
+type MoveDocsItemRequest struct {
+	Item         MoveDocsItemRef     `json:"item"`
+	TargetBucket MoveDocsBucketRef   `json:"target_bucket"`
+	Position     MoveDocsPositionRef `json:"position"`
+}
+
+// MoveDocsItemRef identifies an item by type and ID.
+type MoveDocsItemRef struct {
+	Type string `json:"type"` // "doc" or "collection"
+	ID   string `json:"id"`
+}
+
+// MoveDocsBucketRef identifies the target bucket.
+type MoveDocsBucketRef struct {
+	SpaceID            string  `json:"space_id"`
+	ParentCollectionID *string `json:"parent_collection_id"`
+}
+
+// MoveDocsPositionRef specifies where to insert the item relative to
+// its neighbors. Both nil = append to end.
+type MoveDocsPositionRef struct {
+	Before *MoveDocsItemRef `json:"before"`
+	After  *MoveDocsItemRef `json:"after"`
+}
+
 // UpdateDocsDocumentRequest is the payload for updating a document.
 type UpdateDocsDocumentRequest struct {
 	Title        *string  `json:"title"`

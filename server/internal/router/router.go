@@ -933,6 +933,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermDocsEdit)).Put("/spaces/{spaceId}/collections/reorder", h.Docs.ReorderCollections)
 				r.With(requirePerm(authorization.PermDocsEdit)).Put("/spaces/{spaceId}/documents/reorder", h.Docs.ReorderDocuments)
 				r.With(requirePerm(authorization.PermDocsEdit)).Put("/spaces/{spaceId}/children/reorder", h.Docs.ReorderChildren)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/items/move", h.Docs.MoveItem)
 
 				// Content — docs.read / docs.edit
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/content", h.Docs.GetContent)

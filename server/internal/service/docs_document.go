@@ -521,6 +521,126 @@ func (s *DocsDocumentService) ReorderDocuments(ctx context.Context, spaceID stri
 	return nil
 }
 
+// Sentinel errors for the move endpoint.
+var (
+	ErrCrossSpaceMove = fmt.Errorf("cross-space moves not supported")
+	ErrStaleNeighbors = fmt.Errorf("neighbor sort keys have changed; retry")
+	ErrBetweenFailed  = fmt.Errorf("cannot compute sort key between the given neighbors")
+)
+
+// MoveItem moves a single doc or collection to a specific position
+// within a bucket, computing the fractional sort_key from the
+// before/after neighbors. Requires useSortKey to be on.
+func (s *DocsDocumentService) MoveItem(ctx context.Context, wsID string, req model.MoveDocsItemRequest) error {
+	if !s.useSortKey {
+		return fmt.Errorf("sort_key ordering is not enabled")
+	}
+	if req.Item.Type != "doc" && req.Item.Type != "collection" {
+		return fmt.Errorf("invalid item type: %s", req.Item.Type)
+	}
+	if req.Item.ID == "" {
+		return fmt.Errorf("item id is required")
+	}
+
+	// Resolve the before/after sort_keys.
+	beforeKey, afterKey := "", ""
+
+	if req.Position.After != nil {
+		key, err := s.loadSortKey(ctx, req.Position.After.Type, req.Position.After.ID)
+		if err != nil {
+			return ErrStaleNeighbors
+		}
+		afterKey = key
+	}
+	if req.Position.Before != nil {
+		key, err := s.loadSortKey(ctx, req.Position.Before.Type, req.Position.Before.ID)
+		if err != nil {
+			return ErrStaleNeighbors
+		}
+		beforeKey = key
+	}
+
+	// If both nil, append to end of bucket.
+	if afterKey == "" && beforeKey == "" {
+		lastKey := maxSortKeyInBucketFromRepos(ctx, s.docRepo, req.TargetBucket.SpaceID, req.TargetBucket.ParentCollectionID)
+		afterKey = lastKey
+		beforeKey = ""
+	}
+
+	newKey, err := ordering.Between(afterKey, beforeKey)
+	if err != nil {
+		return ErrBetweenFailed
+	}
+
+	// Update the item's sort_key (and parent if bucket changed).
+	switch req.Item.Type {
+	case "doc":
+		updates := map[string]interface{}{
+			"sort_key": newKey,
+		}
+		// If moving to a different collection, update collection_id too.
+		updates["collection_id"] = req.TargetBucket.ParentCollectionID
+		return s.docRepo.UpdateFields(ctx, req.Item.ID, updates)
+	case "collection":
+		updates := map[string]interface{}{
+			"sort_key": newKey,
+		}
+		updates["parent_collection_id"] = req.TargetBucket.ParentCollectionID
+		return s.docRepo.DB().WithContext(ctx).
+			Model(&model.DocsCollection{}).
+			Where("id = ?", req.Item.ID).
+			Updates(updates).Error
+	}
+	return nil
+}
+
+// loadSortKey fetches the current sort_key for an item.
+func (s *DocsDocumentService) loadSortKey(ctx context.Context, itemType, itemID string) (string, error) {
+	var key string
+	var err error
+	switch itemType {
+	case "doc":
+		err = s.docRepo.DB().WithContext(ctx).
+			Model(&model.DocsDocument{}).
+			Select("sort_key").
+			Where("id = ?", itemID).
+			Row().Scan(&key)
+	case "collection":
+		err = s.docRepo.DB().WithContext(ctx).
+			Model(&model.DocsCollection{}).
+			Select("sort_key").
+			Where("id = ?", itemID).
+			Row().Scan(&key)
+	default:
+		return "", fmt.Errorf("unknown type: %s", itemType)
+	}
+	return key, err
+}
+
+// maxSortKeyInBucketFromRepos queries both tables for the max sort_key.
+func maxSortKeyInBucketFromRepos(ctx context.Context, docRepo *repository.DocsDocumentRepository, spaceID string, parentID *string) string {
+	docKey, _ := docRepo.LastSortKeyInBucket(ctx, spaceID, parentID)
+	// Also check collections via the doc repo's DB handle.
+	var collKey string
+	q := docRepo.DB().WithContext(ctx).
+		Model(&model.DocsCollection{}).
+		Select("COALESCE(MAX(sort_key), '')").
+		Where("space_id = ? AND deleted_at IS NULL", spaceID)
+	if parentID != nil {
+		q = q.Where("parent_collection_id = ?", *parentID)
+	} else {
+		q = q.Where("parent_collection_id IS NULL")
+	}
+	_ = q.Row().Scan(&collKey)
+	if collKey == "~" {
+		collKey = ""
+	}
+	if collKey > docKey {
+		return collKey
+	}
+	return docKey
+}
+
 func generateShareToken() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
