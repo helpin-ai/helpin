@@ -22,25 +22,42 @@ export interface CollectionTree {
 }
 
 /**
+ * sortByKey sorts items by sort_key (fractional ordering) when
+ * available, falling back to position + created_at for pre-backfill
+ * rows (sort_key is empty or the sentinel '~').
+ */
+function hasSortKey(item: { sort_key?: string }): boolean {
+  return !!item.sort_key && item.sort_key !== '~'
+}
+
+function sortItems<T extends { sort_key?: string; position: number; created_at: string; id: string }>(items: T[]): T[] {
+  return items.slice().sort((a, b) => {
+    if (hasSortKey(a) && hasSortKey(b)) {
+      return a.sort_key!.localeCompare(b.sort_key!) || a.id.localeCompare(b.id)
+    }
+    if (a.position !== b.position) return a.position - b.position
+    return a.created_at.localeCompare(b.created_at)
+  })
+}
+
+/**
  * buildCollectionTree folds a flat list of collections and documents
  * into a nested tree. The input may contain collections that are not
  * in the active space — they are silently ignored. Ordering within
- * each sibling bucket is by (position, created_at). The backend enforces
- * a depth cap of 2, but this function handles arbitrary depth gracefully
- * so a data anomaly does not produce an infinite loop.
+ * each sibling bucket is by sort_key (fractional ordering) when
+ * available, falling back to (position, created_at) for pre-backfill
+ * data. The backend enforces a depth cap of 2, but this function
+ * handles arbitrary depth gracefully so a data anomaly does not
+ * produce an infinite loop.
  */
 export function buildCollectionTree(
   spaceId: string,
   collections: DocsCollection[],
   documents: DocsDocument[],
 ): CollectionTree {
-  const inSpace = collections
-    .filter((c) => c.space_id === spaceId && !c.deleted_at)
-    .slice()
-    .sort((a, b) => {
-      if (a.position !== b.position) return a.position - b.position
-      return a.created_at.localeCompare(b.created_at)
-    })
+  const inSpace = sortItems(
+    collections.filter((c) => c.space_id === spaceId && !c.deleted_at),
+  )
 
   const nodesById = new Map<string, CollectionTreeNode>()
   for (const c of inSpace) {
@@ -48,7 +65,7 @@ export function buildCollectionTree(
   }
 
   // Partition documents by owning collection (or uncategorized) and
-  // keep them sorted by their stored position.
+  // keep them sorted by sort_key (or position as fallback).
   const docsByCollection = new Map<string, DocsDocument[]>()
   const uncategorized: DocsDocument[] = []
   const docsInSpace = documents.filter((d) => d.space_id === spaceId)
@@ -61,13 +78,8 @@ export function buildCollectionTree(
       uncategorized.push(d)
     }
   }
-  const sortDocs = (docs: DocsDocument[]) =>
-    docs.slice().sort((a, b) => {
-      if (a.position !== b.position) return a.position - b.position
-      return a.created_at.localeCompare(b.created_at)
-    })
   for (const node of nodesById.values()) {
-    node.documents = sortDocs(docsByCollection.get(node.collection.id) ?? [])
+    node.documents = sortItems(docsByCollection.get(node.collection.id) ?? [])
   }
 
   // Link children to parents. Top-level collections are those whose
@@ -85,7 +97,7 @@ export function buildCollectionTree(
 
   return {
     topLevel,
-    uncategorizedDocuments: sortDocs(uncategorized),
+    uncategorizedDocuments: sortItems(uncategorized),
   }
 }
 

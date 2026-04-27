@@ -276,7 +276,7 @@ export function DocumentsTable({
               {sortField === 'title' && (sortDir === 'asc' ? <ArrowUp02Icon className="h-3 w-3" /> : <ArrowDown02Icon className="h-3 w-3" />)}
             </button>
             <span className="w-36 shrink-0">Owner</span>
-            <span className="w-28 shrink-0">Collection</span>
+            <span className="w-40 shrink-0">Collection</span>
             <button
               type="button"
               onClick={() => cycleSort('status')}
@@ -285,20 +285,12 @@ export function DocumentsTable({
               Status
               {sortField === 'status' && (sortDir === 'asc' ? <ArrowUp02Icon className="h-3 w-3" /> : <ArrowDown02Icon className="h-3 w-3" />)}
             </button>
-            <QuickTooltip label="Display order on the public help center">
-              <button
-                type="button"
-                onClick={() => cycleSort('position')}
-                className="w-14 shrink-0 flex items-center gap-1 hover:text-foreground transition-colors"
-              >
-                Order
-                {sortField === 'position' && (sortDir === 'asc' ? <ArrowUp02Icon className="h-3 w-3" /> : <ArrowDown02Icon className="h-3 w-3" />)}
-              </button>
-            </QuickTooltip>
+            {/* Order column removed — sort_key model makes position
+                numbers misleading when docs span multiple sub-collections. */}
             <button
               type="button"
               onClick={() => cycleSort('updated_at')}
-              className="w-20 shrink-0 flex items-center gap-1 hover:text-foreground transition-colors"
+              className="w-24 shrink-0 flex items-center gap-1 hover:text-foreground transition-colors"
             >
               Updated
               {sortField === 'updated_at' && (sortDir === 'asc' ? <ArrowUp02Icon className="h-3 w-3" /> : <ArrowDown02Icon className="h-3 w-3" />)}
@@ -338,20 +330,20 @@ export function DocumentsTable({
                     </span>
                   ) : '—'}
                 </span>
-                <span className="w-28 shrink-0 truncate text-xs text-muted-foreground">
+                <span className="w-40 shrink-0 truncate text-xs text-muted-foreground" title={doc.collection_id ? (collectionNames.get(doc.collection_id) ?? '') : ''}>
                   {doc.collection_id ? (
-                    <span style={{ paddingLeft: `${(collectionDepths?.get(doc.collection_id) ?? 0) * 12}px` }}>
+                    <>
+                      {(collectionDepths?.get(doc.collection_id) ?? 0) > 0 && (
+                        <span className="text-muted-foreground/50 mr-0.5">↳</span>
+                      )}
                       {collectionNames.get(doc.collection_id) ?? '—'}
-                    </span>
+                    </>
                   ) : '—'}
                 </span>
                 <span className={`w-20 shrink-0 text-xs font-medium ${statusColor(doc.status)}`}>
                   {DOC_STATUS_LABELS[doc.status] ?? doc.status}
                 </span>
-                <span className="w-14 shrink-0 text-xs text-muted-foreground">
-                  {doc.position + 1}
-                </span>
-                <span className="w-20 shrink-0 text-xs text-muted-foreground">
+                <span className="w-24 shrink-0 text-xs text-muted-foreground">
                   {timeAgo(doc.updated_at)}
                 </span>
                 {canEdit && (

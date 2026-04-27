@@ -139,7 +139,7 @@ func TestDocsOrdering_MoveDeleteAndTypeChange(t *testing.T) {
 		db := setupDocsOrderingTestDB(t)
 		spaceRepo := repository.NewDocsSpaceRepository(db)
 		docRepo := repository.NewDocsDocumentRepository(db, false)
-		docSvc := NewDocsDocumentService(docRepo, spaceRepo, nil)
+		docSvc := NewDocsDocumentService(docRepo, spaceRepo, nil, false)
 		ctx := context.Background()
 
 		seedDocsSpace(t, db, model.DocsSpace{
@@ -235,7 +235,7 @@ func TestDocsOrdering_MoveDeleteAndTypeChange(t *testing.T) {
 		db := setupDocsOrderingTestDB(t)
 		spaceRepo := repository.NewDocsSpaceRepository(db)
 		collectionRepo := repository.NewDocsCollectionRepository(db, false)
-		collectionSvc := NewDocsCollectionService(collectionRepo, spaceRepo, nil)
+		collectionSvc := NewDocsCollectionService(collectionRepo, spaceRepo, nil, false)
 		ctx := context.Background()
 
 		seedDocsSpace(t, db, model.DocsSpace{
@@ -858,7 +858,7 @@ func TestDocsCollectionService_TreeValidation(t *testing.T) {
 		db := setupDocsOrderingTestDB(t)
 		collectionRepo := repository.NewDocsCollectionRepository(db, false)
 		spaceRepo := repository.NewDocsSpaceRepository(db)
-		svc := NewDocsCollectionService(collectionRepo, spaceRepo, nil)
+		svc := NewDocsCollectionService(collectionRepo, spaceRepo, nil, false)
 		return svc, db
 	}
 
@@ -1169,7 +1169,7 @@ func TestDocsDocumentMoves_NestedCollections(t *testing.T) {
 		db := setupDocsOrderingTestDB(t)
 		spaceRepo := repository.NewDocsSpaceRepository(db)
 		docRepo := repository.NewDocsDocumentRepository(db, false)
-		svc := NewDocsDocumentService(docRepo, spaceRepo, nil)
+		svc := NewDocsDocumentService(docRepo, spaceRepo, nil, false)
 
 		seedDocsSpace(t, db, model.DocsSpace{
 			ID:          spaceID,
@@ -1372,7 +1372,7 @@ func TestDocsCollection_TreeDelete(t *testing.T) {
 		collectionRepo := repository.NewDocsCollectionRepository(db, false)
 		spaceRepo := repository.NewDocsSpaceRepository(db)
 		docRepo := repository.NewDocsDocumentRepository(db, false)
-		svc := NewDocsCollectionService(collectionRepo, spaceRepo, nil)
+		svc := NewDocsCollectionService(collectionRepo, spaceRepo, nil, false)
 
 		seedDocsSpace(t, db, model.DocsSpace{
 			ID:          spaceID,

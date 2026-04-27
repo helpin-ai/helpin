@@ -355,7 +355,7 @@ func TestDocsDocumentDeleteHardDeletesGraphAndExclusiveAssets(t *testing.T) {
 	}
 
 	docRepo := repository.NewDocsDocumentRepository(db, false)
-	svc := NewDocsDocumentService(docRepo, repository.NewDocsSpaceRepository(db), nil)
+	svc := NewDocsDocumentService(docRepo, repository.NewDocsSpaceRepository(db), nil, false)
 	store := &fakeDocsAssetStore{publicBase: "https://cdn.helpin.test"}
 	svc.SetDeletionDependencies(DocsDocumentDeletionDependencies{
 		ContentRepo:     repository.NewDocsContentRepository(db),
@@ -504,7 +504,7 @@ func TestDocsCollectionDeleteWithPermanentDependenciesDeletesSubtreeAndAssets(t 
 	spaceRepo := repository.NewDocsSpaceRepository(db)
 	collectionRepo := repository.NewDocsCollectionRepository(db, false)
 	store := &fakeDocsAssetStore{publicBase: "https://cdn.helpin.test"}
-	docSvc := NewDocsDocumentService(docRepo, spaceRepo, nil)
+	docSvc := NewDocsDocumentService(docRepo, spaceRepo, nil, false)
 	docSvc.SetDeletionDependencies(DocsDocumentDeletionDependencies{
 		ContentRepo:     repository.NewDocsContentRepository(db),
 		VersionRepo:     repository.NewDocsVersionRepository(db),
@@ -515,7 +515,7 @@ func TestDocsCollectionDeleteWithPermanentDependenciesDeletesSubtreeAndAssets(t 
 		TranslationRepo: repository.NewDocsHelpcenterTranslationRepository(db),
 		AssetStore:      store,
 	})
-	collectionSvc := NewDocsCollectionService(collectionRepo, spaceRepo, nil)
+	collectionSvc := NewDocsCollectionService(collectionRepo, spaceRepo, nil, false)
 	collectionSvc.SetPermanentDeleteDependencies(docRepo, docSvc, repository.NewDocsHelpcenterTranslationRepository(db))
 
 	if err := collectionSvc.Delete(ctx, "", "root"); err != nil {
@@ -643,8 +643,8 @@ func TestDocsCollectionDeleteImpactCountsSubtreeDocsAndPublicDocs(t *testing.T) 
 	}
 
 	docRepo := repository.NewDocsDocumentRepository(db, false)
-	collectionSvc := NewDocsCollectionService(repository.NewDocsCollectionRepository(db, false), repository.NewDocsSpaceRepository(db), nil)
-	collectionSvc.SetPermanentDeleteDependencies(docRepo, NewDocsDocumentService(docRepo, repository.NewDocsSpaceRepository(db), nil), repository.NewDocsHelpcenterTranslationRepository(db))
+	collectionSvc := NewDocsCollectionService(repository.NewDocsCollectionRepository(db, false), repository.NewDocsSpaceRepository(db), nil, false)
+	collectionSvc.SetPermanentDeleteDependencies(docRepo, NewDocsDocumentService(docRepo, repository.NewDocsSpaceRepository(db), nil, false), repository.NewDocsHelpcenterTranslationRepository(db))
 	collectionSvc.SetHelpcenterRepository(repository.NewDocsHelpcenterRepository(db, false))
 
 	impact, err := collectionSvc.GetDeleteImpact(ctx, "", "impact-root")
@@ -726,7 +726,7 @@ func TestDocsSpaceDeleteWithPermanentDependenciesDeletesSpaceGraph(t *testing.T)
 	spaceRepo := repository.NewDocsSpaceRepository(db)
 	collectionRepo := repository.NewDocsCollectionRepository(db, false)
 	translationRepo := repository.NewDocsHelpcenterTranslationRepository(db)
-	docSvc := NewDocsDocumentService(docRepo, spaceRepo, nil)
+	docSvc := NewDocsDocumentService(docRepo, spaceRepo, nil, false)
 	docSvc.SetDeletionDependencies(DocsDocumentDeletionDependencies{
 		ContentRepo:     repository.NewDocsContentRepository(db),
 		VersionRepo:     repository.NewDocsVersionRepository(db),

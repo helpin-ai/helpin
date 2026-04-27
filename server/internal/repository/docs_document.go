@@ -66,6 +66,18 @@ func (r *DocsDocumentRepository) UpdateSortKey(ctx context.Context, id, key stri
 		Update("sort_key", key).Error
 }
 
+// DB exposes the underlying *gorm.DB for cross-table queries in the
+// service layer. Prefer dedicated repo methods where possible.
+func (r *DocsDocumentRepository) DB() *gorm.DB { return r.db }
+
+// UpdateFields applies partial field updates to a document by ID.
+func (r *DocsDocumentRepository) UpdateFields(ctx context.Context, id string, updates map[string]interface{}) error {
+	return r.db.WithContext(ctx).
+		Model(&model.DocsDocument{}).
+		Where("id = ?", id).
+		Updates(updates).Error
+}
+
 // Create inserts a new document.
 func (r *DocsDocumentRepository) Create(ctx context.Context, doc *model.DocsDocument) (*model.DocsDocument, error) {
 	q := r.db.WithContext(ctx)
