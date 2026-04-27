@@ -2,12 +2,16 @@ import { memo, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode 
 import { createPortal } from 'react-dom';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { TickDouble01Icon, CheckmarkCircle02Icon, ArrowDown01Icon, ArrowUp01Icon, Download04Icon, LinkSquare01Icon, File01Icon, AttachmentIcon, RotateLeft01Icon, StickyNote01Icon, Cancel01Icon, CancelCircleIcon } from '@/lib/icons';
+import { TickDouble01Icon, CheckmarkCircle02Icon, ArrowDown01Icon, ArrowUp01Icon, Download04Icon, LinkSquare01Icon, File01Icon, AttachmentIcon, RotateLeft01Icon, StickyNote01Icon, Cancel01Icon, CancelCircleIcon, Mail01Icon, AlertCircleIcon } from '@/lib/icons';
+import { EmailDetailModal } from './EmailDetailModal';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
 import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
 import type { AIMessageMetadata, SupportLinkPreview, SupportMessage, TicketSource } from '@/lib/pmTypes';
+import { EmailBodyRenderer } from './EmailBodyRenderer';
 import { formatTimestamp, getInitial, getAvatarColor, getEffectiveSenderType, HELPIN_AI_DISPLAY_NAME, parseAIMessageMetadata, parseSupportLinkPreviews } from './helpers';
+
+const MARKDOWN_REMARK_PLUGINS = [remarkGfm];
 
 /** Splits text on @mention patterns and wraps them in highlight spans. */
 function renderMentionHighlights(content: string): ReactNode[] | null {
@@ -227,10 +231,12 @@ export const MessageBubble = memo(function MessageBubble({
 
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  const [emailDetailOpen, setEmailDetailOpen] = useState(false);
 
   const imageAttachments = message.attachments?.filter(a => a.file_type.startsWith('image/')) ?? [];
   const fileAttachments = message.attachments?.filter(a => !a.file_type.startsWith('image/')) ?? [];
   const showBubble = !!displayContent || fileAttachments.length > 0 || linkPreviews.length > 0;
+  const hasEmailBody = message.via_channel === 'email' && !!message.html_body;
 
   const tooltipContent = (
     <div className="space-y-0.5 text-xs">
@@ -362,10 +368,10 @@ export const MessageBubble = memo(function MessageBubble({
   if (isInternal) {
     return (
       <div className={`flex justify-end ${isConsecutive ? 'mt-1' : 'mt-5'}`}>
-        <div className="max-w-[75%]">
+        <div className="max-w-[85%]">
           <Tooltip>
             <TooltipTrigger asChild>
-              <div className="rounded-lg border-r-[3px] border-r-amber-400 bg-amber-50 px-4 py-2.5 dark:bg-amber-950/20">
+              <div className="rounded-lg border-r-[3px] border-r-amber-400 bg-amber-50 px-4 py-2.5 [overflow-wrap:anywhere] dark:bg-amber-950/20">
                 <div className="mb-1.5 flex items-center gap-1.5">
                   <StickyNote01Icon className="h-3 w-3 text-amber-500 dark:text-amber-400" />
                   <span className="text-[11px] text-amber-600 dark:text-amber-400">
@@ -377,7 +383,7 @@ export const MessageBubble = memo(function MessageBubble({
                   {mentionParts ? (
                     <p className="whitespace-pre-wrap">{mentionParts}</p>
                   ) : (
-                    <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{displayContent}</Markdown>
+                    <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{displayContent}</Markdown>
                   )}
                 </div>
               </div>
@@ -415,6 +421,11 @@ export const MessageBubble = memo(function MessageBubble({
 
   const hasEmailBadge = message.via_channel === 'email';
   const hasStatusBelow = !!receiptStatus || !!aiMeta || hasEmailBadge;
+  const bubbleWidthClass = hasEmailBody
+    ? 'min-w-0 w-[min(92%,64rem)] max-w-[calc(100%-2.25rem)]'
+    : hasTableContent
+      ? 'min-w-0 max-w-[min(85%,46rem)] lg:max-w-[min(85%,48rem)]'
+      : 'min-w-0 max-w-[85%]';
 
   return (
     <div className={`${isConsecutive ? 'mt-1' : 'mt-5'} ${!isConsecutive ? (isCustomer ? 'animate-in fade-in slide-in-from-left-2 duration-200' : 'animate-in fade-in slide-in-from-right-2 duration-200') : ''}`}>
@@ -429,26 +440,32 @@ export const MessageBubble = memo(function MessageBubble({
 
         <div
           data-slot="support-message-bubble"
-          className={hasTableContent ? 'min-w-0 max-w-[min(78vw,46rem)] lg:max-w-[min(72vw,48rem)]' : 'min-w-0 max-w-[70%]'}
+          className={bubbleWidthClass}
         >
           {showBubble && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <div
-                  className={`rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
+                  className={`rounded-2xl px-3.5 py-2 text-sm leading-relaxed [overflow-wrap:anywhere] ${
                     isCustomer
                       ? `bg-muted text-foreground ${isLastInGroup ? 'rounded-bl-sm' : ''}`
                       : `bg-blue-600 text-white dark:bg-blue-500 ${isLastInGroup ? 'rounded-br-sm' : ''}`
-                  } ${hasTableContent ? 'overflow-hidden' : ''}`}
+                  } ${hasTableContent || hasEmailBody ? 'overflow-hidden' : ''}`}
                 >
-                  {displayContent && (
-                    <div
-                      className="prose-chat"
-                      data-chat-tone={isCustomer ? 'customer' : 'agent'}
-                      data-has-table={hasTableContent ? 'true' : 'false'}
-                    >
-                      <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{displayContent}</Markdown>
+                  {hasEmailBody ? (
+                    <div className="-mx-1" data-chat-tone={isCustomer ? 'customer' : 'agent'}>
+                      <EmailBodyRenderer html={message.html_body ?? ''} />
                     </div>
+                  ) : (
+                    displayContent && (
+                      <div
+                        className="prose-chat"
+                        data-chat-tone={isCustomer ? 'customer' : 'agent'}
+                        data-has-table={hasTableContent ? 'true' : 'false'}
+                      >
+                        <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{displayContent}</Markdown>
+                      </div>
+                    )
                   )}
                   {fileAttachments.length > 0 && (
                     <div className={`${displayContent ? 'mt-2' : ''} space-y-1.5`}>
@@ -519,6 +536,16 @@ export const MessageBubble = memo(function MessageBubble({
         )}
       </div>
 
+      {/* Email detail modal — rendered via Radix portal */}
+      {hasEmailBadge && (
+        <EmailDetailModal
+          workspaceId={message.workspace_id}
+          message={message}
+          open={emailDetailOpen}
+          onOpenChange={setEmailDetailOpen}
+        />
+      )}
+
       {/* Lightbox modal — rendered in portal for full-screen overlay */}
       {lightboxSrc && createPortal(
         <div
@@ -546,12 +573,28 @@ export const MessageBubble = memo(function MessageBubble({
         <div className={`mt-0.5 ${isCustomer ? 'pl-9' : 'pr-9'}`}>
           {hasEmailBadge && (
             <div className={`mb-0.5 flex ${isCustomer ? '' : 'justify-end'}`}>
-              <span className="text-[11px] text-muted-foreground">Sent via email</span>
+              <button
+                type="button"
+                onClick={() => setEmailDetailOpen(true)}
+                className="inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground hover:underline"
+              >
+                <Mail01Icon className="h-3 w-3" />
+                {isCustomer ? 'Received via email' : 'Sent via email'}
+                <span className="opacity-60">· View details</span>
+              </button>
             </div>
           )}
 
-          {/* Read receipt indicator */}
-          {receiptStatus && (
+          {/* Delivery failure indicator — supersedes the read receipt when the outbound email bounced or was marked spam. */}
+          {(message.email_delivery_status === 'bounced' || message.email_delivery_status === 'spam_complaint') ? (
+            <div className={`flex items-center gap-1 ${isCustomer ? '' : 'justify-end'}`}>
+              <AlertCircleIcon className="h-3.5 w-3.5 text-red-500" />
+              <span className="text-[11px] text-red-600 dark:text-red-400">
+                {message.email_delivery_status === 'spam_complaint' ? 'Marked as spam' : 'Delivery failed'}
+                {message.email_delivery_error ? ` · ${message.email_delivery_error}` : ''}
+              </span>
+            </div>
+          ) : receiptStatus && (
             <div className={`flex items-center gap-1 ${isCustomer ? '' : 'justify-end'}`}>
               {receiptStatus === 'read' ? (
                 <>

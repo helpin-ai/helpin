@@ -14,6 +14,15 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
+// TwoFAClaims represents the claims embedded in a short-lived 2FA challenge token.
+type TwoFAClaims struct {
+	UserID     string `json:"user_id"`
+	Email      string `json:"email"`
+	RememberMe bool   `json:"remember_me"`
+	Purpose    string `json:"purpose"`
+	jwt.RegisteredClaims
+}
+
 // JWTManager handles token generation and validation.
 type JWTManager struct {
 	secret []byte
@@ -83,6 +92,52 @@ func (m *JWTManager) ValidateToken(tokenString string) (*Claims, error) {
 	claims, ok := token.Claims.(*Claims)
 	if !ok || !token.Valid {
 		return nil, fmt.Errorf("invalid token claims")
+	}
+
+	return claims, nil
+}
+
+// Generate2FAToken creates a short-lived token that can only be exchanged for a full auth session.
+func (m *JWTManager) Generate2FAToken(userID, email string, rememberMe bool) (string, error) {
+	now := time.Now()
+	claims := TwoFAClaims{
+		UserID:     userID,
+		Email:      email,
+		RememberMe: rememberMe,
+		Purpose:    "signin_2fa",
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(now.Add(5 * time.Minute)),
+			IssuedAt:  jwt.NewNumericDate(now),
+			Subject:   "2fa:" + userID,
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	signed, err := token.SignedString(m.secret)
+	if err != nil {
+		return "", fmt.Errorf("sign 2fa token: %w", err)
+	}
+	return signed, nil
+}
+
+// Validate2FAToken validates a short-lived 2FA challenge token.
+func (m *JWTManager) Validate2FAToken(tokenString string) (*TwoFAClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &TwoFAClaims{}, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return m.secret, nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("invalid 2fa token: %w", err)
+	}
+
+	claims, ok := token.Claims.(*TwoFAClaims)
+	if !ok || !token.Valid {
+		return nil, fmt.Errorf("invalid 2fa token claims")
+	}
+	if claims.Purpose != "signin_2fa" {
+		return nil, fmt.Errorf("invalid 2fa token purpose")
 	}
 
 	return claims, nil

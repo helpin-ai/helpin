@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/gorm"
+
 	"github.com/helpin-ai/helpin/server/internal/automationcatalog"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -36,7 +38,15 @@ const stuckPostRunThreshold = 2 * time.Minute
 const staleQueuedRunThreshold = 30 * time.Second
 const liveCodexPauseHeartbeatFreshThreshold = 2 * time.Minute
 const defaultSystemEpicPlannerName = "Atlas"
+
+var ErrAssignedAgentNotFound = errors.New("assigned agent not found")
+
 const supportAutoTriggerType = "support.auto"
+
+var (
+	ErrWorkspacePresetVersionNotFound = errors.New("workspace preset version not found")
+	ErrWorkspacePresetVersionPinned   = errors.New("workspace preset version is pinned")
+)
 
 func defaultSystemAgentNameForPresetKey(presetKey string) string {
 	switch normalizePresetKey(presetKey) {
@@ -95,10 +105,11 @@ func agentRunActivityMetadata(agent *model.Agent, run *model.AgentRun, action st
 	return md
 }
 
-func buildAgentRunInputPayload(targetType, targetID string, trigger *model.AgentRunTriggerContext, event *model.AgentRunEventContext, additionalContext *string) ([]byte, error) {
+func buildAgentRunInputPayload(targetType, targetID string, trigger *model.AgentRunTriggerContext, event *model.AgentRunEventContext, output *model.AgentRunOutputContext, additionalContext *string) ([]byte, error) {
 	payload := model.AgentRunInputPayload{
 		Trigger: trigger,
 		Event:   event,
+		Output:  output,
 	}
 	payload.SetTarget(targetType, targetID)
 	if additionalContext != nil {
@@ -107,9 +118,33 @@ func buildAgentRunInputPayload(targetType, targetID string, trigger *model.Agent
 	return json.Marshal(payload)
 }
 
+func buildContinuationAdditionalContext(run *model.AgentRun, content string) string {
+	content = strings.TrimSpace(content)
+	if run == nil {
+		return content
+	}
+
+	sections := []string{
+		fmt.Sprintf("Continue from the previous run on the same %s. Reuse prior progress, artifacts, and transcript context instead of restarting from scratch unless necessary.", strings.TrimSpace(run.TargetType)),
+	}
+	if parentID := strings.TrimSpace(run.ID); parentID != "" {
+		sections = append(sections, fmt.Sprintf("Previous run ID: %s", parentID))
+	}
+	if reason := strings.TrimSpace(derefString(run.ErrorMessage)); reason != "" {
+		sections = append(sections, "Previous run failure reason:\n"+reason)
+	}
+	if content != "" {
+		sections = append(sections, "Human follow-up:\n"+content)
+	} else {
+		sections = append(sections, "Human follow-up:\nRetry the work and continue from the previous progress.")
+	}
+	return strings.TrimSpace(strings.Join(sections, "\n\n"))
+}
+
 // AgentService contains agent business logic.
 type AgentService struct {
 	agentRepo                  *repository.AgentRepository
+	agentTemplateRepo          *repository.AgentTemplateRepository
 	workspacePresetVersionRepo *repository.WorkspaceAgentPresetVersionRepository
 	runRepo                    *repository.AgentRunRepository
 	triggerExecutionRepo       *repository.AgentTriggerExecutionRepository
@@ -132,11 +167,13 @@ type AgentService struct {
 	docsVersionRepo            *repository.DocsVersionRepository
 	docsLinkRepo               *repository.DocsLinkRepository
 	userRepo                   *repository.UserRepository
+	workspaceSkillRepo         *repository.WorkspaceSkillRepository
 	runEngine                  *temporalapp.RunEngine
 	gitService                 *GitService
 	taskService                *PMTaskService
 	workflowService            *PMWorkflowService
 	activitySvc                *PMActivityService
+	notificationService        *NotificationService
 	wsPublisher                *websocket.Publisher
 	ruleEngine                 *AutomationRuleEngine
 	codexAuthManager           *worker.CodexAuthManager
@@ -147,6 +184,7 @@ type AgentService struct {
 	codexChatGPTOAuthEnabled   bool
 	codexChatGPTAccessToken    string
 	codexChatGPTAccountID      string
+	skillPackageStore          skillPackageStore
 }
 
 // NewAgentService creates a new AgentService.
@@ -235,6 +273,11 @@ func (s *AgentService) SetTriggerExecutionRepository(repo *repository.AgentTrigg
 	return s
 }
 
+func (s *AgentService) SetAgentTemplateRepository(repo *repository.AgentTemplateRepository) *AgentService {
+	s.agentTemplateRepo = repo
+	return s
+}
+
 // SetUserRepository injects the user repository so coding sessions can hydrate the triggering actor.
 func (s *AgentService) SetUserRepository(repo *repository.UserRepository) *AgentService {
 	s.userRepo = repo
@@ -249,6 +292,11 @@ func (s *AgentService) SetRuleEngine(engine *AutomationRuleEngine) *AgentService
 
 func (s *AgentService) SetWorkflowService(workflowService *PMWorkflowService) *AgentService {
 	s.workflowService = workflowService
+	return s
+}
+
+func (s *AgentService) SetNotificationService(notificationService *NotificationService) *AgentService {
+	s.notificationService = notificationService
 	return s
 }
 
@@ -279,15 +327,45 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 	}
 
 	presetKey = normalizePresetKey(presetKey)
-	presetVersionKey := defaultPresetVersionKeyForPresetKey(presetKey)
-	preset, ok := s.resolvePresetDefinition(ctx, workspaceID, presetKey, presetVersionKey)
-	if !ok {
-		return nil, fmt.Errorf("unsupported built-in preset %q", presetKey)
-	}
+	productDefaultVersionKey := defaultPresetVersionKeyForPresetKey(presetKey)
 
 	existing, err := s.agentRepo.GetSystemByPreset(ctx, workspaceID, presetKey)
 	if err != nil {
 		return nil, err
+	}
+	presetVersionKey := productDefaultVersionKey
+	if existing != nil {
+		currentVersionKey := normalizePresetVersionKey(existing.PresetVersionKey)
+		if currentVersionKey != "" && currentVersionKey != productDefaultVersionKey {
+			workspaceVersionResolved := false
+			if s.workspacePresetVersionRepo != nil && strings.TrimSpace(workspaceID) != "" {
+				version, lookupErr := s.workspacePresetVersionRepo.GetByVersionKey(ctx, workspaceID, presetKey, currentVersionKey)
+				if lookupErr != nil {
+					slog.ErrorContext(ctx, "failed to resolve workspace preset version during reconcile",
+						"workspace_id", workspaceID,
+						"preset_key", presetKey,
+						"version_key", currentVersionKey,
+						"error", lookupErr,
+					)
+				} else if version != nil {
+					workspaceVersionResolved = true
+				}
+			}
+			if workspaceVersionResolved {
+				presetVersionKey = currentVersionKey
+			} else if _, resolved := agentPresetVersionDefinition(presetKey, currentVersionKey); !resolved {
+				slog.WarnContext(ctx, "falling back to product default preset version during reconcile",
+					"workspace_id", workspaceID,
+					"preset_key", presetKey,
+					"missing_version_key", currentVersionKey,
+					"fallback_version_key", productDefaultVersionKey,
+				)
+			}
+		}
+	}
+	preset, ok := s.resolvePresetDefinition(ctx, workspaceID, presetKey, presetVersionKey)
+	if !ok {
+		return nil, fmt.Errorf("unsupported built-in preset %q", presetKey)
 	}
 	if existing != nil {
 		changed := false
@@ -302,15 +380,15 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 		beforeAllowedTargets := string(existing.AllowedTargets)
 		beforeExecutionConfig := string(normalizeExecutionConfigJSON(existing.ExecutionConfig))
 		beforeSystemPrompt := trimPtr(existing.SystemPrompt)
+		beforeInstructionTemplateVersion := strings.TrimSpace(existing.InstructionTemplateVersion)
 		hadPlanningNotes := existing.PlanningNotes != nil
-		refreshedSystemPrompt := storedSystemPromptForPreset(presetKey, existing.SystemPrompt, existing.PlanningNotes)
-		if trimPtr(refreshedSystemPrompt) != nil {
-			if beforeSystemPrompt == nil || *beforeSystemPrompt != *trimPtr(refreshedSystemPrompt) {
-				existing.SystemPrompt = refreshedSystemPrompt
-				changed = true
-			}
-		} else if beforeSystemPrompt != nil {
-			existing.SystemPrompt = nil
+		syncedSystemPrompt, syncedInstructionTemplateVersion := syncManagedSystemPromptForPreset(presetKey, existing.SystemPrompt, existing.PlanningNotes, existing.InstructionTemplateVersion)
+		if !((beforeSystemPrompt == nil && trimPtr(syncedSystemPrompt) == nil) || (beforeSystemPrompt != nil && trimPtr(syncedSystemPrompt) != nil && *beforeSystemPrompt == *trimPtr(syncedSystemPrompt))) {
+			existing.SystemPrompt = syncedSystemPrompt
+			changed = true
+		}
+		if beforeInstructionTemplateVersion != syncedInstructionTemplateVersion {
+			existing.InstructionTemplateVersion = syncedInstructionTemplateVersion
 			changed = true
 		}
 		if existing.PlanningNotes != nil {
@@ -371,6 +449,7 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 		}
 		normalizeAgentRecord(existing)
 		if existing.PresetKey != beforePresetKey ||
+			strings.TrimSpace(existing.InstructionTemplateVersion) != beforeInstructionTemplateVersion ||
 			existing.Role != beforeRole ||
 			existing.RuntimeKind != beforeRuntimeKind ||
 			existing.TriggerMode != beforeTriggerMode ||
@@ -390,32 +469,33 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 				return nil, err
 			}
 		}
+		materializeAgentSystemPrompt(existing)
 		return existing, nil
 	}
 
-	systemPrompt := storedSystemPromptForPreset(presetKey, nil, nil)
 	agent := &model.Agent{
-		WorkspaceID:           workspaceID,
-		IsSystem:              true,
-		Name:                  defaultSystemAgentNameForPresetKey(presetKey),
-		PresetKey:             presetKey,
-		PresetVersionKey:      presetVersionKey,
-		Role:                  preset.DefaultRole,
-		Status:                "idle",
-		RuntimeKind:           preset.RuntimeKind,
-		Skills:                json.RawMessage("[]"),
-		TriggerMode:           preset.DefaultTriggerMode,
-		Provider:              trimPtr(preset.Provider),
-		Model:                 trimPtr(preset.Model),
-		ExecutionConfig:       normalizeExecutionConfigJSON(preset.ExecutionConfig),
-		SystemPrompt:          systemPrompt,
-		PlanningNotes:         nil,
-		AllowedTools:          normalizeAllowedToolsJSON(mustJSONStringSlice(preset.AllowedTools)),
-		AllowedCommands:       mustJSONStringSlice(preset.AllowedCommands),
-		AllowedTargets:        mustJSONStringSlice(preset.AllowedTargetTypes),
-		ApprovalMode:          preset.ApprovalMode,
-		MaxConcurrentRuns:     1,
-		DefaultInvocationMode: preset.DefaultInvocationMode,
+		WorkspaceID:                workspaceID,
+		IsSystem:                   true,
+		Name:                       defaultSystemAgentNameForPresetKey(presetKey),
+		PresetKey:                  presetKey,
+		PresetVersionKey:           presetVersionKey,
+		Role:                       preset.DefaultRole,
+		Status:                     "idle",
+		RuntimeKind:                preset.RuntimeKind,
+		Skills:                     model.AgentSkillRefs{},
+		TriggerMode:                preset.DefaultTriggerMode,
+		Provider:                   trimPtr(preset.Provider),
+		Model:                      trimPtr(preset.Model),
+		ExecutionConfig:            normalizeExecutionConfigJSON(preset.ExecutionConfig),
+		SystemPrompt:               nil,
+		InstructionTemplateVersion: strings.TrimSpace(preset.InstructionTemplateVersion),
+		PlanningNotes:              nil,
+		AllowedTools:               normalizeAllowedToolsJSON(mustJSONStringSlice(preset.AllowedTools)),
+		AllowedCommands:            mustJSONStringSlice(preset.AllowedCommands),
+		AllowedTargets:             mustJSONStringSlice(preset.AllowedTargetTypes),
+		ApprovalMode:               preset.ApprovalMode,
+		MaxConcurrentRuns:          1,
+		DefaultInvocationMode:      preset.DefaultInvocationMode,
 	}
 	normalizeAgentRecord(agent)
 	if err := s.validateModelRouting(agent); err != nil {
@@ -431,6 +511,7 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 	if strings.TrimSpace(actorID) != "" {
 		s.publishSimpleEvent("created", "agent", agent.ID, agent.WorkspaceID, actorID)
 	}
+	materializeAgentSystemPrompt(agent)
 	return agent, nil
 }
 
@@ -478,6 +559,13 @@ func (s *AgentService) reconcileBuiltInPresetAgent(ctx context.Context, workspac
 	return nil
 }
 
+func materializeAgentSystemPrompt(agent *model.Agent) {
+	if agent == nil {
+		return
+	}
+	agent.SystemPrompt = resolveEffectiveSystemPromptForPreset(agent.EffectivePresetKey(), agent.SystemPrompt)
+}
+
 // ListAgents returns all agents in a workspace.
 func (s *AgentService) ListAgents(ctx context.Context, workspaceID string) ([]model.Agent, error) {
 	if workspaceID == "" {
@@ -489,6 +577,11 @@ func (s *AgentService) ListAgents(ctx context.Context, workspaceID string) ([]mo
 	}
 	for idx := range agents {
 		normalizeAgentRecord(&agents[idx])
+		if err := s.validateAndMaterializeAgentSkills(ctx, &agents[idx]); err != nil {
+			slog.WarnContext(ctx, "failed to resolve agent skills for list", "agent_id", agents[idx].ID, "workspace_id", workspaceID, "error", err)
+			agents[idx].ResolvedSkillInstructions = ""
+		}
+		materializeAgentSystemPrompt(&agents[idx])
 	}
 	return agents, nil
 }
@@ -503,6 +596,10 @@ func (s *AgentService) GetAgent(ctx context.Context, workspaceID, id string) (*m
 		return nil, fmt.Errorf("agent not found")
 	}
 	normalizeAgentRecord(agent)
+	if err := s.validateAndMaterializeAgentSkills(ctx, agent); err != nil {
+		return nil, err
+	}
+	materializeAgentSystemPrompt(agent)
 	return agent, nil
 }
 
@@ -514,21 +611,6 @@ func (s *AgentService) GetAgentUsageSummary(ctx context.Context, workspaceID, id
 	}
 
 	items := make([]model.AgentTriggerUsage, 0, 8)
-
-	if agent.Schedule != nil && strings.TrimSpace(*agent.Schedule) != "" {
-		triggerType := model.TriggerCron
-		managePath := "/w/$slug/pm/agents"
-		items = append(items, model.AgentTriggerUsage{
-			ID:              "agent.schedule",
-			Kind:            "schedule",
-			Title:           "Recurring schedule",
-			Description:     fmt.Sprintf("Runs this agent on cron schedule `%s`.", strings.TrimSpace(*agent.Schedule)),
-			TriggerType:     &triggerType,
-			Enabled:         true,
-			ManagePath:      &managePath,
-			ExecutionSearch: automationcatalog.ExecutionSearchPresetForDefinitionID("agent.schedule", nil),
-		})
-	}
 
 	if s.automationRuleRepo != nil {
 		rules, err := s.automationRuleRepo.ListByWorkspace(ctx, workspaceID)
@@ -592,27 +674,6 @@ func (s *AgentService) GetAgentUsageSummary(ctx context.Context, workspaceID, id
 					ExecutionSearch: automationcatalog.ExecutionSearchPresetForDefinitionID("support.widget_message", nil),
 				})
 			}
-		}
-	}
-
-	if s.taskRepo != nil {
-		assignedCount, err := s.taskRepo.CountAssignedToAgent(ctx, workspaceID, agent.ID)
-		if err != nil {
-			return nil, fmt.Errorf("count tasks assigned to agent: %w", err)
-		}
-		if assignedCount > 0 {
-			triggerType := "task.assigned_agent_state_change"
-			managePath := "/w/$slug/pm/agents"
-			items = append(items, model.AgentTriggerUsage{
-				ID:              "task.assigned_agent_state_change",
-				Kind:            "task_assignment",
-				Title:           "Assigned task state changes",
-				Description:     fmt.Sprintf("This agent is assigned to %d task(s). When those tasks change state, the assigned agent auto-start path can run it.", assignedCount),
-				TriggerType:     &triggerType,
-				Enabled:         true,
-				ManagePath:      &managePath,
-				ExecutionSearch: automationcatalog.ExecutionSearchPresetForDefinitionID("task.assigned_agent_state_change", nil),
-			})
 		}
 	}
 
@@ -804,6 +865,8 @@ func describeAutomationRuleTrigger(rule model.AutomationRule) string {
 		return describeGitHubPullRequestTrigger(rule, "opened")
 	case model.TriggerGitHubPRMerged:
 		return describeGitHubPullRequestTrigger(rule, "merged")
+	case model.TriggerGitHubPRClosed:
+		return describeGitHubPullRequestTrigger(rule, "closed")
 	case model.TriggerGitHubPRReviewReq:
 		return describeGitHubPullRequestTrigger(rule, "review requested")
 	case model.TriggerGitHubReleasePub:
@@ -882,8 +945,6 @@ func usageBindingIDForRun(run model.AgentRun) (string, time.Time) {
 	}
 
 	switch strings.TrimSpace(input.Trigger.Source) {
-	case model.AgentRunTriggerSourceSchedule:
-		return "agent.schedule", triggeredAt
 	case model.AgentRunTriggerSourceAutomationRule:
 		if bindingID, _, ok := automationcatalog.ResolveBindingForTrigger(input.Trigger.Source, input.Trigger.TriggerType, targetTypeFromRun(run)); ok {
 			return bindingID, triggeredAt
@@ -1134,33 +1195,59 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 	}
 	versionKey := fmt.Sprintf("%s_workspace_%d", familyKey, time.Now().UTC().UnixNano())
 	version := &model.WorkspaceAgentPresetVersion{
-		WorkspaceID:           workspaceID,
-		FamilyKey:             familyKey,
-		VersionKey:            versionKey,
-		Label:                 label,
-		Description:           trimPtr(req.Description),
-		SourceVersionKey:      trimPtr(req.SourceVersionKey),
-		RuntimeKind:           runtimeKind,
-		Provider:              trimPtr(req.Provider),
-		Model:                 trimPtr(req.Model),
-		ExecutionConfig:       normalizeExecutionConfigJSON(req.ExecutionConfig),
-		SystemPrompt:          trimPtr(req.SystemPrompt),
-		AllowedTools:          normalizeAllowedToolsJSON(mustJSONStringSlice(basePreset.AllowedTools)),
-		SupportedModes:        mustJSONStringSlice(normalizedSupportedModes),
-		ApprovalMode:          "never",
-		DefaultInvocationMode: defaultInvocationMode,
-		CreatedBy:             trimPtr(&actorID),
+		WorkspaceID:                workspaceID,
+		FamilyKey:                  familyKey,
+		VersionKey:                 versionKey,
+		Label:                      label,
+		Description:                trimPtr(req.Description),
+		SourceVersionKey:           trimPtr(req.SourceVersionKey),
+		RuntimeKind:                runtimeKind,
+		Provider:                   trimPtr(req.Provider),
+		Model:                      nil,
+		ExecutionConfig:            normalizeExecutionConfigJSON(req.ExecutionConfig),
+		SystemPrompt:               trimPtr(req.SystemPrompt),
+		InstructionSkills:          mustJSONStringSlice(nil),
+		InstructionTemplateVersion: strings.TrimSpace(basePreset.InstructionTemplateVersion),
+		AllowedTools:               normalizeAllowedToolsJSON(mustJSONStringSlice(basePreset.AllowedTools)),
+		SupportedModes:             mustJSONStringSlice(normalizedSupportedModes),
+		ApprovalMode:               "never",
+		DefaultInvocationMode:      defaultInvocationMode,
+		CreatedBy:                  trimPtr(&actorID),
 	}
-	if len(req.AllowedTools) > 0 {
+	if req.AllowedTools != nil {
 		version.AllowedTools = normalizeAllowedToolsJSON(normalizeJSONSlice(req.AllowedTools))
 	}
-	if version.SystemPrompt == nil {
+	if req.Model != nil {
+		modelValue := strings.TrimSpace(*req.Model)
+		version.Model = &modelValue
+	}
+	// If preamble or skills are provided, compile system_prompt from them.
+	hasPreamble := req.InstructionPreamble != nil
+	hasSkills := req.InstructionSkills != nil
+	if hasPreamble || hasSkills {
+		preamble := strings.TrimSpace(stringOrDefault(req.InstructionPreamble, basePreset.InstructionPreamble))
+		skills := basePreset.InstructionSkills
+		if hasSkills {
+			skills = parseJSONStringSlice(req.InstructionSkills)
+		}
+		version.InstructionPreamble = &preamble
+		version.InstructionSkills = mustJSONStringSlice(skills)
+		compiled := worker.CompilePresetInstructions(preamble, skills)
+		version.SystemPrompt = &compiled
+		version.InstructionTemplateVersion = worker.InstructionTemplateVersionForPreset(preamble, skills)
+	} else if version.SystemPrompt == nil {
 		version.SystemPrompt = trimPtr(basePreset.SystemPrompt)
+	} else {
+		// Raw system_prompt override — instruction decomposition no longer applies.
+		emptyPreamble := ""
+		version.InstructionPreamble = &emptyPreamble
+		version.InstructionSkills = mustJSONStringSlice(nil)
+		version.InstructionTemplateVersion = ""
 	}
 	if version.Provider == nil {
 		version.Provider = trimPtr(basePreset.Provider)
 	}
-	if version.Model == nil {
+	if req.Model == nil && version.Model == nil {
 		version.Model = trimPtr(basePreset.Model)
 	}
 	if string(version.ExecutionConfig) == "{}" {
@@ -1182,7 +1269,370 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 		return nil, err
 	}
 	definition := workspacePresetDefinition(basePreset, *version)
+	slog.InfoContext(ctx, "workspace preset version created",
+		"workspace_id", workspaceID,
+		"family_key", familyKey,
+		"version_key", version.VersionKey,
+		"actor_id", strings.TrimSpace(actorID),
+	)
 	return &definition, nil
+}
+
+func workspacePresetBaseDefinition(familyKey string) (model.AgentPresetDefinition, error) {
+	base, ok := agentPresetVersionDefinition(familyKey, defaultPresetVersionKeyForPresetKey(familyKey))
+	if !ok {
+		return model.AgentPresetDefinition{}, fmt.Errorf("unsupported preset family %q", familyKey)
+	}
+	return base, nil
+}
+
+func workspacePresetCurrentDefinition(version *model.WorkspaceAgentPresetVersion) (model.AgentPresetDefinition, error) {
+	if version == nil {
+		return model.AgentPresetDefinition{}, fmt.Errorf("workspace preset version is required")
+	}
+	base, err := workspacePresetBaseDefinition(normalizePresetKey(version.FamilyKey))
+	if err != nil {
+		return model.AgentPresetDefinition{}, err
+	}
+	return workspacePresetDefinition(base, *version), nil
+}
+
+func (s *AgentService) cloneWithTx(tx *gorm.DB) *AgentService {
+	if tx == nil {
+		return s
+	}
+	clone := *s
+	if s.agentRepo != nil {
+		clone.agentRepo = s.agentRepo.WithTx(tx)
+	}
+	if s.workspacePresetVersionRepo != nil {
+		clone.workspacePresetVersionRepo = s.workspacePresetVersionRepo.WithTx(tx)
+	}
+	return &clone
+}
+
+func (s *AgentService) applyPresetToSystemAgent(agent *model.Agent, preset model.AgentPresetDefinition, presetVersionKey string) {
+	if agent == nil {
+		return
+	}
+	systemPresetKey := normalizePresetKey(agent.PresetKey)
+	if systemPresetKey == "" {
+		systemPresetKey = normalizePresetKey(preset.FamilyKey)
+	}
+	if systemPresetKey == "" {
+		systemPresetKey = model.AgentPresetEpicPlanner
+	}
+	presetVersionKey = normalizePresetVersionKey(presetVersionKey)
+	if presetVersionKey == "" {
+		presetVersionKey = defaultPresetVersionKeyForPresetKey(systemPresetKey)
+	}
+
+	agent.PresetKey = systemPresetKey
+	agent.PresetVersionKey = presetVersionKey
+	if strings.TrimSpace(preset.RuntimeKind) != "" {
+		agent.RuntimeKind = preset.RuntimeKind
+	} else {
+		agent.RuntimeKind = defaultRuntimeKindForPresetKey(systemPresetKey)
+	}
+	if strings.TrimSpace(preset.DefaultTriggerMode) != "" {
+		agent.TriggerMode = preset.DefaultTriggerMode
+	} else {
+		agent.TriggerMode = defaultTriggerModeForPresetKey(systemPresetKey)
+	}
+	agent.Provider = trimPtr(preset.Provider)
+	agent.Model = trimPtr(preset.Model)
+	agent.ExecutionConfig = normalizeExecutionConfigJSON(preset.ExecutionConfig)
+	agent.AllowedTools = normalizeAllowedToolsJSON(mustJSONStringSlice(preset.AllowedTools))
+	agent.AllowedCommands = mustJSONStringSlice(preset.AllowedCommands)
+	agent.AllowedTargets = mustJSONStringSlice(preset.AllowedTargetTypes)
+	agent.TeamID = nil
+	agent.ApprovalMode = "never"
+	agent.DefaultInvocationMode = preset.DefaultInvocationMode
+	if preset.Scope == "workspace" {
+		agent.SystemPrompt = preset.SystemPrompt
+		agent.InstructionTemplateVersion = preset.InstructionTemplateVersion
+	} else {
+		agent.SystemPrompt, agent.InstructionTemplateVersion = syncManagedSystemPromptForPreset(systemPresetKey, agent.SystemPrompt, agent.PlanningNotes, agent.InstructionTemplateVersion)
+	}
+	agent.PlanningNotes = nil
+}
+
+func (s *AgentService) validateSystemAgentPresetState(ctx context.Context, agent *model.Agent, preset model.AgentPresetDefinition) error {
+	if agent == nil {
+		return nil
+	}
+	normalizeAgentRecord(agent)
+	if err := s.validateAndMaterializeAgentSkills(ctx, agent); err != nil {
+		return err
+	}
+	if err := validateAgentPresetKey(agent.PresetKey); err != nil {
+		return err
+	}
+	if err := validateRuntimeForAgentWithPreset(agent, &preset); err != nil {
+		return err
+	}
+	if err := validateTriggerModeForAgent(agent.TriggerMode, agent); err != nil {
+		return err
+	}
+	if err := s.validateModelRouting(agent); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *AgentService) propagateWorkspacePresetVersionToPinnedAgents(ctx context.Context, workspaceID string, version *model.WorkspaceAgentPresetVersion, preset model.AgentPresetDefinition) error {
+	if s.agentRepo == nil || version == nil {
+		return nil
+	}
+	agents, err := s.agentRepo.List(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+	for idx := range agents {
+		agent := &agents[idx]
+		if !agent.IsSystem {
+			continue
+		}
+		if normalizePresetKey(agent.PresetKey) != normalizePresetKey(version.FamilyKey) {
+			continue
+		}
+		if normalizePresetVersionKey(agent.PresetVersionKey) != normalizePresetVersionKey(version.VersionKey) {
+			continue
+		}
+		s.applyPresetToSystemAgent(agent, preset, version.VersionKey)
+		if err := s.validateSystemAgentPresetState(ctx, agent, preset); err != nil {
+			return err
+		}
+		if err := s.agentRepo.Update(ctx, agent); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// UpdateWorkspacePresetVersion applies ordinary edits to a workspace preset version.
+// Label changes are treated like any other edit and are tracked only via UpdatedBy/LastEditedAt.
+func (s *AgentService) UpdateWorkspacePresetVersion(ctx context.Context, workspaceID, versionID string, req model.UpdateWorkspaceAgentPresetVersionRequest, actorID string) (*model.AgentPresetDefinition, error) {
+	if s.workspacePresetVersionRepo == nil {
+		return nil, fmt.Errorf("workspace preset version repository is not configured")
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	versionID = strings.TrimSpace(versionID)
+	if workspaceID == "" || versionID == "" {
+		return nil, fmt.Errorf("workspace_id and version id are required")
+	}
+
+	var definition *model.AgentPresetDefinition
+	txDB := s.workspacePresetVersionRepo.DB()
+	if txDB == nil {
+		return nil, fmt.Errorf("workspace preset version repository db is not configured")
+	}
+	if err := txDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		txSvc := s.cloneWithTx(tx)
+
+		version, err := txSvc.workspacePresetVersionRepo.GetByID(ctx, workspaceID, versionID)
+		if err != nil {
+			return err
+		}
+		if version == nil {
+			return fmt.Errorf("%w: version %q not found", ErrWorkspacePresetVersionNotFound, versionID)
+		}
+
+		currentPreset, err := workspacePresetCurrentDefinition(version)
+		if err != nil {
+			return err
+		}
+		familyKey := normalizePresetKey(version.FamilyKey)
+
+		label := strings.TrimSpace(currentPreset.VersionLabel)
+		if req.Label != nil {
+			label = strings.TrimSpace(*req.Label)
+		}
+		if label == "" {
+			return fmt.Errorf("label is required")
+		}
+
+		runtimeKind := strings.TrimSpace(currentPreset.RuntimeKind)
+		if req.RuntimeKind != nil {
+			runtimeKind = strings.TrimSpace(*req.RuntimeKind)
+		}
+		if runtimeKind == "" {
+			runtimeKind = currentPreset.RuntimeKind
+		}
+		if err := validateRuntimeKind(runtimeKind); err != nil {
+			return err
+		}
+		if !runtimeAllowedForPreset(familyKey, runtimeKind) {
+			return fmt.Errorf("runtime_kind %q is not supported for family %q", runtimeKind, familyKey)
+		}
+
+		supportedModes := slices.Clone(currentPreset.SupportedModes)
+		if len(req.SupportedModes) > 0 {
+			supportedModes = parseJSONStringSlice(req.SupportedModes)
+		}
+		normalizedSupportedModes, err := validateSupportedModes(runtimeKind, supportedModes)
+		if err != nil {
+			return err
+		}
+
+		defaultInvocationMode := strings.TrimSpace(currentPreset.DefaultInvocationMode)
+		if req.DefaultInvocationMode != nil {
+			defaultInvocationMode = strings.TrimSpace(*req.DefaultInvocationMode)
+		}
+		if defaultInvocationMode == "" {
+			defaultInvocationMode = currentPreset.DefaultInvocationMode
+		}
+		if !slices.Contains(normalizedSupportedModes, defaultInvocationMode) {
+			return fmt.Errorf("default_invocation_mode %q must be included in supported_modes", defaultInvocationMode)
+		}
+
+		version.Label = label
+		if req.Description != nil {
+			version.Description = trimPtr(req.Description)
+		} else {
+			version.Description = trimPtr(&currentPreset.Description)
+		}
+		version.RuntimeKind = runtimeKind
+		if req.Provider != nil {
+			version.Provider = trimPtr(req.Provider)
+		} else {
+			version.Provider = trimPtr(currentPreset.Provider)
+		}
+		if req.Model != nil {
+			modelValue := strings.TrimSpace(*req.Model)
+			version.Model = &modelValue
+		} else if currentPreset.Model != nil {
+			modelValue := strings.TrimSpace(*currentPreset.Model)
+			version.Model = &modelValue
+		} else {
+			version.Model = nil
+		}
+		if req.ExecutionConfig != nil {
+			version.ExecutionConfig = normalizeExecutionConfigJSON(req.ExecutionConfig)
+		} else {
+			version.ExecutionConfig = normalizeExecutionConfigJSON(currentPreset.ExecutionConfig)
+		}
+		if req.AllowedTools != nil {
+			version.AllowedTools = normalizeAllowedToolsJSON(normalizeJSONSlice(req.AllowedTools))
+		} else {
+			version.AllowedTools = normalizeAllowedToolsJSON(mustJSONStringSlice(currentPreset.AllowedTools))
+		}
+		version.SupportedModes = mustJSONStringSlice(normalizedSupportedModes)
+		version.DefaultInvocationMode = defaultInvocationMode
+		version.ApprovalMode = "never"
+
+		hasPreamble := req.InstructionPreamble != nil
+		hasSkills := req.InstructionSkills != nil
+		if hasPreamble || hasSkills {
+			preamble := currentPreset.InstructionPreamble
+			if req.InstructionPreamble != nil {
+				preamble = strings.TrimSpace(*req.InstructionPreamble)
+			}
+			skills := slices.Clone(currentPreset.InstructionSkills)
+			if hasSkills {
+				skills = parseJSONStringSlice(req.InstructionSkills)
+			}
+			version.InstructionPreamble = &preamble
+			version.InstructionSkills = mustJSONStringSlice(skills)
+			compiled := worker.CompilePresetInstructions(preamble, skills)
+			version.SystemPrompt = &compiled
+			version.InstructionTemplateVersion = worker.InstructionTemplateVersionForPreset(preamble, skills)
+		} else if req.SystemPrompt != nil {
+			version.SystemPrompt = trimPtr(req.SystemPrompt)
+			version.InstructionTemplateVersion = ""
+			emptyPreamble := ""
+			version.InstructionPreamble = &emptyPreamble
+			version.InstructionSkills = mustJSONStringSlice(nil)
+		} else {
+			version.SystemPrompt = trimPtr(currentPreset.SystemPrompt)
+			version.InstructionTemplateVersion = strings.TrimSpace(currentPreset.InstructionTemplateVersion)
+			preamble := currentPreset.InstructionPreamble
+			version.InstructionPreamble = &preamble
+			version.InstructionSkills = mustJSONStringSlice(currentPreset.InstructionSkills)
+		}
+
+		now := time.Now().UTC()
+		version.UpdatedBy = trimPtr(&actorID)
+		version.LastEditedAt = &now
+
+		currentDefinition, err := workspacePresetCurrentDefinition(version)
+		if err != nil {
+			return err
+		}
+		versionValidationAgent := &model.Agent{
+			IsSystem:  true,
+			PresetKey: familyKey,
+		}
+		txSvc.applyPresetToSystemAgent(versionValidationAgent, currentDefinition, version.VersionKey)
+		if err := txSvc.validateSystemAgentPresetState(ctx, versionValidationAgent, currentDefinition); err != nil {
+			return err
+		}
+		if err := txSvc.workspacePresetVersionRepo.Update(ctx, version); err != nil {
+			return err
+		}
+		if err := txSvc.propagateWorkspacePresetVersionToPinnedAgents(ctx, workspaceID, version, currentDefinition); err != nil {
+			return err
+		}
+		definition = &currentDefinition
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	slog.InfoContext(ctx, "workspace preset version updated",
+		"workspace_id", workspaceID,
+		"family_key", normalizePresetKey(definition.FamilyKey),
+		"version_key", definition.VersionKey,
+		"actor_id", strings.TrimSpace(actorID),
+	)
+	return definition, nil
+}
+
+func (s *AgentService) DeleteWorkspacePresetVersion(ctx context.Context, workspaceID, versionID, actorID string) error {
+	if s.workspacePresetVersionRepo == nil {
+		return fmt.Errorf("workspace preset version repository is not configured")
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	versionID = strings.TrimSpace(versionID)
+	if workspaceID == "" || versionID == "" {
+		return fmt.Errorf("workspace_id and version id are required")
+	}
+
+	version, err := s.workspacePresetVersionRepo.GetByID(ctx, workspaceID, versionID)
+	if err != nil {
+		return err
+	}
+	if version == nil {
+		return fmt.Errorf("%w: version %q not found", ErrWorkspacePresetVersionNotFound, versionID)
+	}
+
+	agents, err := s.agentRepo.List(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+	for _, agent := range agents {
+		if !agent.IsSystem {
+			continue
+		}
+		if normalizePresetKey(agent.PresetKey) != normalizePresetKey(version.FamilyKey) {
+			continue
+		}
+		if normalizePresetVersionKey(agent.PresetVersionKey) != strings.TrimSpace(version.VersionKey) {
+			continue
+		}
+		return fmt.Errorf("%w: cannot delete preset version while pinned to %s", ErrWorkspacePresetVersionPinned, strings.TrimSpace(agent.Name))
+	}
+
+	if err := s.workspacePresetVersionRepo.Delete(ctx, workspaceID, versionID); err != nil {
+		return err
+	}
+	slog.InfoContext(ctx, "workspace preset version deleted",
+		"workspace_id", workspaceID,
+		"family_key", normalizePresetKey(version.FamilyKey),
+		"version_key", strings.TrimSpace(version.VersionKey),
+		"actor_id", strings.TrimSpace(actorID),
+	)
+	return nil
 }
 
 // ListToolCatalog returns the tool catalog with categories and preset mappings.
@@ -1222,7 +1672,7 @@ func (s *AgentService) ListModelProviders() []model.AgentModelProviderOption {
 		options = append(options, model.AgentModelProviderOption{
 			Value:                     model.AgentModelProviderOpenAI,
 			Label:                     "OpenAI",
-			ModelPlaceholder:          "gpt-5.4",
+			ModelPlaceholder:          "gpt-5.5",
 			SupportsReasoningEffort:   true,
 			SupportedReasoningEfforts: slices.Clone(supportedAgentReasoningEfforts),
 			SupportsServiceTier:       true,
@@ -1233,7 +1683,7 @@ func (s *AgentService) ListModelProviders() []model.AgentModelProviderOption {
 		options = append(options, model.AgentModelProviderOption{
 			Value:                     model.AgentModelProviderOpenRouter,
 			Label:                     "OpenRouter",
-			ModelPlaceholder:          "openai/gpt-5.4",
+			ModelPlaceholder:          "openai/gpt-5.5",
 			SupportsReasoningEffort:   true,
 			SupportedReasoningEfforts: slices.Clone(supportedAgentReasoningEfforts),
 			SupportsServiceTier:       false,
@@ -1244,6 +1694,10 @@ func (s *AgentService) ListModelProviders() []model.AgentModelProviderOption {
 
 // CreateAgent creates a new agent.
 func (s *AgentService) CreateAgent(ctx context.Context, req model.CreateAgentRequest, actorID string) (*model.Agent, error) {
+	return s.createCustomAgent(ctx, req, actorID, nil)
+}
+
+func (s *AgentService) createCustomAgent(ctx context.Context, req model.CreateAgentRequest, actorID string, sourceTemplate *model.AgentTemplate) (*model.Agent, error) {
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("workspace_id and name are required")
 	}
@@ -1254,9 +1708,9 @@ func (s *AgentService) CreateAgent(ctx context.Context, req model.CreateAgentReq
 		return nil, fmt.Errorf("custom agents cannot specify preset_version_key")
 	}
 
-	skills := req.Skills
+	skills := req.Skills.Normalize()
 	if skills == nil {
-		skills = json.RawMessage("[]")
+		skills = model.AgentSkillRefs{}
 	}
 
 	role := strings.TrimSpace(req.Role)
@@ -1285,33 +1739,40 @@ func (s *AgentService) CreateAgent(ctx context.Context, req model.CreateAgentReq
 	}
 
 	agent := &model.Agent{
-		WorkspaceID:            req.WorkspaceID,
-		Name:                   strings.TrimSpace(req.Name),
-		PresetKey:              "",
-		PresetVersionKey:       "",
-		SourcePresetKey:        "",
-		SourcePresetVersionKey: "",
-		Role:                   role,
-		Status:                 "idle",
-		RuntimeKind:            runtimeKind,
-		Skills:                 skills,
-		TriggerMode:            triggerMode,
-		Provider:               trimPtr(req.Provider),
-		Model:                  trimPtr(req.Model),
-		ExecutionConfig:        normalizeExecutionConfigJSON(req.ExecutionConfig),
-		SystemPrompt:           trimPtr(req.SystemPrompt),
-		PlanningNotes:          nil,
-		MonthlyTokenBudget:     normalizeTokenBudget(req.MonthlyTokenBudget),
-		TeamID:                 trimPtr(req.TeamID),
-		AllowedTools:           normalizeAllowedToolsJSON(normalizeJSONSlice(req.AllowedTools)),
-		AllowedCommands:        normalizeJSONSlice(req.AllowedCommands),
-		AllowedTargets:         sliceOrPresetJSON(req.AllowedTargets, []string{"task"}),
-		Schedule:               trimPtr(req.Schedule),
-		ApprovalMode:           approvalMode,
-		MaxConcurrentRuns:      maxConcurrentRuns,
-		DefaultInvocationMode:  stringOrDefault(req.DefaultInvocationMode, model.InvocationModeAutonomous),
+		WorkspaceID:                req.WorkspaceID,
+		Name:                       strings.TrimSpace(req.Name),
+		PresetKey:                  "",
+		PresetVersionKey:           "",
+		SourcePresetKey:            "",
+		SourcePresetVersionKey:     "",
+		Role:                       role,
+		Status:                     "idle",
+		RuntimeKind:                runtimeKind,
+		Skills:                     skills,
+		TriggerMode:                triggerMode,
+		Provider:                   trimPtr(req.Provider),
+		Model:                      trimPtr(req.Model),
+		ExecutionConfig:            normalizeExecutionConfigJSON(req.ExecutionConfig),
+		SystemPrompt:               trimPtr(req.SystemPrompt),
+		InstructionTemplateVersion: "",
+		PlanningNotes:              nil,
+		MonthlyTokenBudget:         normalizeTokenBudget(req.MonthlyTokenBudget),
+		TeamID:                     trimPtr(req.TeamID),
+		AllowedTools:               normalizeAllowedToolsJSON(normalizeJSONSlice(req.AllowedTools)),
+		AllowedCommands:            normalizeJSONSlice(req.AllowedCommands),
+		AllowedTargets:             sliceOrPresetJSON(req.AllowedTargets, []string{"task"}),
+		ApprovalMode:               approvalMode,
+		MaxConcurrentRuns:          maxConcurrentRuns,
+		DefaultInvocationMode:      stringOrDefault(req.DefaultInvocationMode, model.InvocationModeAutonomous),
+	}
+	if sourceTemplate != nil {
+		agent.SourceTemplateID = &sourceTemplate.ID
+		agent.SourceTemplateKey = strings.TrimSpace(sourceTemplate.Key)
 	}
 	normalizeAgentRecord(agent)
+	if err := s.validateAndMaterializeAgentSkills(ctx, agent); err != nil {
+		return nil, err
+	}
 	if err := validateRuntimeForAgent(agent); err != nil {
 		return nil, err
 	}
@@ -1331,13 +1792,7 @@ func (s *AgentService) CreateAgent(ctx context.Context, req model.CreateAgentReq
 
 	s.publishSimpleEvent("created", "agent", agent.ID, agent.WorkspaceID, actorID)
 
-	// Start cron schedule if configured.
-	if s.runEngine != nil && agent.Schedule != nil && *agent.Schedule != "" {
-		if err := s.runEngine.StartSchedule(ctx, agent.ID, agent.WorkspaceID, *agent.Schedule); err != nil {
-			slog.ErrorContext(ctx, "failed to start agent schedule", "agent_id", agent.ID, "error", err)
-		}
-	}
-
+	materializeAgentSystemPrompt(agent)
 	return agent, nil
 }
 
@@ -1350,10 +1805,6 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 	if agent == nil {
 		return nil, fmt.Errorf("agent not found")
 	}
-	previousSchedule := ""
-	if agent.Schedule != nil {
-		previousSchedule = *agent.Schedule
-	}
 	if agent.IsSystem {
 		systemPresetKey := normalizePresetKey(agent.PresetKey)
 		if systemPresetKey == "" {
@@ -1365,6 +1816,9 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 		if req.TeamID != nil && trimPtr(req.TeamID) != nil {
 			return nil, fmt.Errorf("system agent cannot be restricted to a team")
 		}
+		if req.Skills != nil {
+			return nil, fmt.Errorf("system agent skills are preset-owned")
+		}
 	} else {
 		if req.PresetKey != nil && strings.TrimSpace(*req.PresetKey) != "" {
 			return nil, fmt.Errorf("custom agents cannot specify preset_key")
@@ -1375,10 +1829,6 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 	}
 
 	presetChanged := false
-	previousPresetKey := normalizePresetKey(agent.EffectivePresetKey())
-	if previousPresetKey == "" {
-		previousPresetKey = defaultPresetKeyForAgent(agent.IsSystem)
-	}
 	if req.Name != nil {
 		agent.Name = strings.TrimSpace(*req.Name)
 	}
@@ -1408,6 +1858,9 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 		resolvedPresetVersionKey = defaultPresetVersionKeyForPresetKey(resolvedPresetKey)
 	}
 	preset, hasPreset := s.resolvePresetDefinition(ctx, workspaceID, resolvedPresetKey, resolvedPresetVersionKey)
+	if agent.IsSystem && req.PresetVersionKey != nil && !hasPreset {
+		return nil, fmt.Errorf("%w: preset version %q no longer exists", ErrWorkspacePresetVersionNotFound, resolvedPresetVersionKey)
+	}
 	if agent.IsSystem && req.RuntimeKind != nil && strings.TrimSpace(*req.RuntimeKind) != "" {
 		expectedRuntimeKind := defaultRuntimeKindForPresetKey(resolvedPresetKey)
 		if hasPreset && strings.TrimSpace(preset.RuntimeKind) != "" {
@@ -1430,7 +1883,7 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 		}
 	}
 	if req.Skills != nil {
-		agent.Skills = req.Skills
+		agent.Skills = req.Skills.Normalize()
 	}
 	if req.TriggerMode != nil && strings.TrimSpace(*req.TriggerMode) != "" {
 		agent.TriggerMode = *req.TriggerMode
@@ -1454,22 +1907,10 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 	}
 	if req.SystemPrompt != nil {
 		agent.SystemPrompt = trimPtr(req.SystemPrompt)
+		agent.InstructionTemplateVersion = ""
 	}
-	if req.SystemPrompt != nil || req.PlanningNotes != nil || presetChanged {
-		var legacyPlanningNotes *string
-		if req.PlanningNotes != nil {
-			legacyPlanningNotes = req.PlanningNotes
-		}
-		if presetChanged && req.SystemPrompt == nil {
-			previousDefaultPrompt := defaultSystemPromptForPreset(previousPresetKey)
-			if agent.SystemPrompt == nil || (previousDefaultPrompt != nil && *agent.SystemPrompt == *previousDefaultPrompt) {
-				agent.SystemPrompt = nil
-			}
-		}
-		agent.SystemPrompt = storedSystemPromptForPreset(resolvedPresetKey, agent.SystemPrompt, legacyPlanningNotes)
-		if req.PlanningNotes != nil || resolvedPresetKey != model.AgentPresetEpicPlanner {
-			agent.PlanningNotes = nil
-		}
+	if req.PlanningNotes != nil {
+		agent.PlanningNotes = trimPtr(req.PlanningNotes)
 	}
 	if req.MonthlyTokenBudget != nil {
 		agent.MonthlyTokenBudget = normalizeTokenBudget(req.MonthlyTokenBudget)
@@ -1494,9 +1935,6 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 		agent.AllowedTargets = normalizeJSONSlice(req.AllowedTargets)
 	} else if presetChanged && hasPreset {
 		agent.AllowedTargets = mustJSONStringSlice(preset.AllowedTargetTypes)
-	}
-	if req.Schedule != nil {
-		agent.Schedule = trimPtr(req.Schedule)
 	}
 	if req.ApprovalMode != nil && *req.ApprovalMode != "" {
 		agent.ApprovalMode = *req.ApprovalMode
@@ -1524,29 +1962,40 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 			systemPresetKey = model.AgentPresetEpicPlanner
 		}
 		agent.PresetKey = systemPresetKey
-		agent.PresetVersionKey = resolvedPresetVersionKey
-		if hasPreset && strings.TrimSpace(preset.RuntimeKind) != "" {
-			agent.RuntimeKind = preset.RuntimeKind
+		if hasPreset {
+			s.applyPresetToSystemAgent(agent, preset, resolvedPresetVersionKey)
+			if req.Provider != nil {
+				agent.Provider = trimPtr(req.Provider)
+			}
+			if req.Model != nil {
+				agent.Model = trimPtr(req.Model)
+			}
+			if req.ExecutionConfig != nil {
+				agent.ExecutionConfig = normalizeExecutionConfigJSON(req.ExecutionConfig)
+			}
 		} else {
+			agent.PresetVersionKey = resolvedPresetVersionKey
 			agent.RuntimeKind = defaultRuntimeKindForPresetKey(systemPresetKey)
-		}
-		if hasPreset && strings.TrimSpace(preset.DefaultTriggerMode) != "" {
-			agent.TriggerMode = preset.DefaultTriggerMode
-		} else {
 			agent.TriggerMode = defaultTriggerModeForPresetKey(systemPresetKey)
+			agent.TeamID = nil
+			agent.ApprovalMode = "never"
+			agent.SystemPrompt, agent.InstructionTemplateVersion = syncManagedSystemPromptForPreset(systemPresetKey, agent.SystemPrompt, agent.PlanningNotes, agent.InstructionTemplateVersion)
+			agent.PlanningNotes = nil
 		}
-		agent.TeamID = nil
-		agent.Schedule = nil
-		agent.ApprovalMode = "never"
-		agent.SystemPrompt = storedSystemPromptForPreset(systemPresetKey, agent.SystemPrompt, agent.PlanningNotes)
-		agent.PlanningNotes = nil
 	} else {
 		agent.SourcePresetKey = ""
 		agent.SourcePresetVersionKey = ""
 		agent.PresetKey = ""
 		agent.PresetVersionKey = ""
+		agent.InstructionTemplateVersion = ""
+		if resolvedPresetKey != model.AgentPresetEpicPlanner {
+			agent.PlanningNotes = nil
+		}
 	}
 	normalizeAgentRecord(agent)
+	if err := s.validateAndMaterializeAgentSkills(ctx, agent); err != nil {
+		return nil, err
+	}
 	if err := validateAgentPresetKey(agent.PresetKey); err != nil {
 		return nil, err
 	}
@@ -1571,22 +2020,7 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 	_ = s.activitySvc.Log(ctx, agent.WorkspaceID, "agent", agent.ID, &actorID, "updated", nil, nil, nil, nil)
 
 	s.publishSimpleEvent("updated", "agent", agent.ID, agent.WorkspaceID, actorID)
-
-	// Sync cron schedule if it changed.
-	finalSchedule := ""
-	if agent.Schedule != nil {
-		finalSchedule = *agent.Schedule
-	}
-	scheduleChanged := previousSchedule != finalSchedule
-	if scheduleChanged && s.runEngine != nil {
-		_ = s.runEngine.StopSchedule(ctx, agent.ID)
-		if agent.Schedule != nil && *agent.Schedule != "" {
-			if err := s.runEngine.StartSchedule(ctx, agent.ID, agent.WorkspaceID, *agent.Schedule); err != nil {
-				slog.ErrorContext(ctx, "failed to start agent schedule", "agent_id", agent.ID, "error", err)
-			}
-		}
-	}
-
+	materializeAgentSystemPrompt(agent)
 	return agent, nil
 }
 
@@ -1603,11 +2037,6 @@ func (s *AgentService) DeleteAgent(ctx context.Context, workspaceID, id, actorID
 		return fmt.Errorf("system agents cannot be deleted")
 	}
 
-	// Stop any active cron schedule.
-	if s.runEngine != nil {
-		_ = s.runEngine.StopSchedule(ctx, id)
-	}
-
 	if err := s.agentRepo.Delete(ctx, workspaceID, id); err != nil {
 		return err
 	}
@@ -1615,49 +2044,6 @@ func (s *AgentService) DeleteAgent(ctx context.Context, workspaceID, id, actorID
 	_ = s.activitySvc.Log(ctx, workspaceID, "agent", id, &actorID, "deleted", nil, nil, nil, nil)
 
 	s.publishSimpleEvent("deleted", "agent", id, workspaceID, actorID)
-
-	return nil
-}
-
-// AssignAgentToTask assigns an agent to a task.
-func (s *AgentService) AssignAgentToTask(ctx context.Context, workspaceID, taskID, agentID, actorID string) error {
-	agent, err := s.agentRepo.GetByID(ctx, workspaceID, agentID)
-	if err != nil {
-		return err
-	}
-	if agent == nil {
-		return fmt.Errorf("agent not found")
-	}
-	if err := validateAgentTarget(agent, "task"); err != nil {
-		return err
-	}
-
-	task, err := s.taskRepo.GetRawByID(ctx, taskID)
-	if err != nil {
-		return fmt.Errorf("get task: %w", err)
-	}
-	if task == nil {
-		return fmt.Errorf("task not found")
-	}
-	if err := validateAgentTeamScope(agent, "task", task.TeamID); err != nil {
-		return err
-	}
-
-	task.AssignedAgentID = &agentID
-	if err := s.taskRepo.Update(ctx, task); err != nil {
-		return fmt.Errorf("update task: %w", err)
-	}
-
-	_ = s.activitySvc.Log(ctx, workspaceID, "task", taskID, &actorID, "updated", strPtr("assigned_agent_id"), nil, &agent.Name, nil)
-
-	s.publishSimpleEvent("updated", "task", taskID, workspaceID, actorID)
-
-	if _, err := s.RunAgent(ctx, workspaceID, taskID, actorID); err != nil {
-		if errors.Is(err, ErrTaskDeliveryTargetRequired) {
-			return nil
-		}
-		return err
-	}
 
 	return nil
 }
@@ -1671,7 +2057,9 @@ func (s *AgentService) ListAgentRuns(ctx context.Context, workspaceID, agentID s
 	if err != nil {
 		return nil, 0, err
 	}
-	return s.normalizeRunCollection(s.reconcileStuckRuns(ctx, runs)), total, nil
+	normalized := s.normalizeRunCollection(s.reconcileStuckRuns(ctx, runs))
+	s.enrichRunTargets(ctx, workspaceID, normalized)
+	return normalized, total, nil
 }
 
 // ListWorkspaceRuns returns runs across the entire workspace.
@@ -1683,7 +2071,9 @@ func (s *AgentService) ListWorkspaceRuns(ctx context.Context, workspaceID string
 	if err != nil {
 		return nil, 0, err
 	}
-	return s.normalizeRunCollection(s.reconcileStuckRuns(ctx, runs)), total, nil
+	normalized := s.normalizeRunCollection(s.reconcileStuckRuns(ctx, runs))
+	s.enrichRunTargets(ctx, workspaceID, normalized)
+	return normalized, total, nil
 }
 
 // GetAgentRun returns a single run.
@@ -1699,6 +2089,9 @@ func (s *AgentService) GetAgentRun(ctx context.Context, workspaceID, runID strin
 		run = updated
 	}
 	model.NormalizeAgentRunPauseState(run)
+	single := []model.AgentRun{*run}
+	s.enrichRunTargets(ctx, workspaceID, single)
+	run.TargetInfo = single[0].TargetInfo
 	return run, nil
 }
 
@@ -1740,7 +2133,9 @@ func (s *AgentService) ListTargetRuns(ctx context.Context, workspaceID, targetTy
 	if err != nil {
 		return nil, err
 	}
-	return s.normalizeRunCollection(s.reconcileStuckRuns(ctx, runs)), nil
+	normalized := s.normalizeRunCollection(s.reconcileStuckRuns(ctx, runs))
+	s.enrichRunTargets(ctx, workspaceID, normalized)
+	return normalized, nil
 }
 
 // RunAgent creates a new task-targeted agent run and starts its Temporal workflow.
@@ -1748,7 +2143,7 @@ func (s *AgentService) RunAgent(ctx context.Context, workspaceID, taskID, actorI
 	return s.RunTaskAgent(ctx, workspaceID, taskID, actorID, model.StartAgentRunRequest{})
 }
 
-// RunTaskAgent starts a task-targeted agent run using task assignment defaults.
+// RunTaskAgent starts a task-targeted agent run for an explicit agent.
 func (s *AgentService) RunTaskAgent(ctx context.Context, workspaceID, taskID, actorID string, req model.StartAgentRunRequest) (*model.AgentRun, error) {
 	task, err := s.taskRepo.GetRawByID(ctx, taskID)
 	if err != nil {
@@ -1759,16 +2154,8 @@ func (s *AgentService) RunTaskAgent(ctx context.Context, workspaceID, taskID, ac
 	}
 
 	agentID := strings.TrimSpace(req.AgentID)
-	if agentID == "" && task.AssignedAgentID != nil {
-		agentID = strings.TrimSpace(*task.AssignedAgentID)
-	}
 	if agentID == "" {
-		return nil, fmt.Errorf("no agent assigned to this task")
-	}
-	if task.AssignedAgentID == nil || *task.AssignedAgentID != agentID {
-		if err := s.AssignAgentToTask(ctx, workspaceID, task.ID, agentID, actorID); err != nil {
-			return nil, err
-		}
+		return nil, fmt.Errorf("agent_id is required")
 	}
 
 	req.AgentID = agentID
@@ -1835,10 +2222,10 @@ func (s *AgentService) RunEpicAgent(ctx context.Context, workspaceID, epicID, ac
 
 // StartTargetRun starts a direct agent run for a supported target type.
 func (s *AgentService) StartTargetRun(ctx context.Context, workspaceID, targetType, targetID string, req model.StartAgentRunRequest, actorID string) (*model.AgentRun, error) {
-	return s.startTargetRun(ctx, workspaceID, targetType, targetID, req, strPtr(actorID), manualRunTriggerContext(), nil)
+	return s.startTargetRun(ctx, workspaceID, targetType, targetID, req, strPtr(actorID), manualRunTriggerContext(), nil, nil)
 }
 
-func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetType, targetID string, req model.StartAgentRunRequest, actorID *string, trigger *model.AgentRunTriggerContext, event *model.AgentRunEventContext) (*model.AgentRun, error) {
+func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetType, targetID string, req model.StartAgentRunRequest, actorID *string, trigger *model.AgentRunTriggerContext, event *model.AgentRunEventContext, parentRunID *string) (*model.AgentRun, error) {
 	agentID := strings.TrimSpace(req.AgentID)
 	if agentID == "" {
 		return nil, fmt.Errorf("agent_id is required")
@@ -1871,7 +2258,7 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 			}
 		}
 
-		payload, err := buildAgentRunInputPayload("task", task.ID, trigger, event, req.AdditionalContext)
+		payload, err := buildAgentRunInputPayload("task", task.ID, trigger, event, req.Output, req.AdditionalContext)
 		if err != nil {
 			return nil, fmt.Errorf("build task run input: %w", err)
 		}
@@ -1881,6 +2268,7 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 			agent:          agent,
 			targetType:     "task",
 			targetID:       task.ID,
+			parentRunID:    parentRunID,
 			taskID:         &task.ID,
 			actorID:        actorID,
 			input:          payload,
@@ -1916,7 +2304,7 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 		if err := validateAgentTeamScope(agent, "epic", epic.TeamID); err != nil {
 			return nil, err
 		}
-		payload, err := buildAgentRunInputPayload("epic", epic.ID, trigger, event, req.AdditionalContext)
+		payload, err := buildAgentRunInputPayload("epic", epic.ID, trigger, event, req.Output, req.AdditionalContext)
 		if err != nil {
 			return nil, fmt.Errorf("build epic run input: %w", err)
 		}
@@ -1926,6 +2314,7 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 			agent:          agent,
 			targetType:     "epic",
 			targetID:       epic.ID,
+			parentRunID:    parentRunID,
 			actorID:        actorID,
 			input:          payload,
 			trigger:        trigger,
@@ -1965,7 +2354,7 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 		if err := validateAgentTeamScope(agent, "repository", nil); err != nil {
 			return nil, err
 		}
-		payload, err := buildAgentRunInputPayload("repository", repo.ID, trigger, event, req.AdditionalContext)
+		payload, err := buildAgentRunInputPayload("repository", repo.ID, trigger, event, req.Output, req.AdditionalContext)
 		if err != nil {
 			return nil, fmt.Errorf("build repository run input: %w", err)
 		}
@@ -1986,6 +2375,7 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 			agent:          agent,
 			targetType:     "repository",
 			targetID:       repo.ID,
+			parentRunID:    parentRunID,
 			actorID:        actorID,
 			input:          payload,
 			trigger:        trigger,
@@ -2001,6 +2391,84 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 
 		if s.activitySvc != nil {
 			_ = s.activitySvc.Log(ctx, workspaceID, "git_repository", repo.ID, actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), agentRunActivityMetadata(agent, run, "started"))
+		}
+		s.publishRunEvent(run, derefString(actorID))
+		return run, nil
+
+	case "support_conversation":
+		conversation, err := s.conversationRepo.GetByID(ctx, workspaceID, targetID, "", model.RoleOwner)
+		if err != nil {
+			return nil, fmt.Errorf("get conversation: %w", err)
+		}
+		if conversation == nil {
+			return nil, fmt.Errorf("conversation not found")
+		}
+
+		agent, err := s.requireRunnableAgent(ctx, workspaceID, agentID, "support_conversation")
+		if err != nil {
+			return nil, err
+		}
+		input, err := buildAgentRunInputPayload("support_conversation", conversation.ID, trigger, event, req.Output, req.AdditionalContext)
+		if err != nil {
+			return nil, fmt.Errorf("build conversation run input: %w", err)
+		}
+
+		run, err := s.createRun(ctx, createRunParams{
+			workspaceID:    workspaceID,
+			agent:          agent,
+			targetType:     "support_conversation",
+			targetID:       conversation.ID,
+			parentRunID:    parentRunID,
+			conversationID: &conversation.ID,
+			actorID:        actorID,
+			input:          input,
+			trigger:        trigger,
+			invocationMode: resolveInvocationMode(agent),
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		if s.activitySvc != nil {
+			_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", conversation.ID, actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), agentRunActivityMetadata(agent, run, "started"))
+		}
+		s.publishRunEvent(run, derefString(actorID))
+		return run, nil
+
+	case "workspace":
+		if strings.TrimSpace(targetID) != workspaceID {
+			return nil, fmt.Errorf("workspace target must match workspace id")
+		}
+
+		agent, err := s.requireRunnableAgent(ctx, workspaceID, agentID, "workspace")
+		if err != nil {
+			return nil, err
+		}
+		if err := validateAgentTeamScope(agent, "workspace", nil); err != nil {
+			return nil, err
+		}
+		input, err := buildAgentRunInputPayload("workspace", workspaceID, trigger, event, req.Output, req.AdditionalContext)
+		if err != nil {
+			return nil, fmt.Errorf("build workspace run input: %w", err)
+		}
+
+		run, err := s.createRun(ctx, createRunParams{
+			workspaceID:    workspaceID,
+			agent:          agent,
+			targetType:     "workspace",
+			targetID:       workspaceID,
+			parentRunID:    parentRunID,
+			actorID:        actorID,
+			input:          input,
+			trigger:        trigger,
+			invocationMode: resolveInvocationMode(agent),
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		if s.activitySvc != nil {
+			_ = s.activitySvc.Log(ctx, workspaceID, "workspace", workspaceID, actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), agentRunActivityMetadata(agent, run, "started"))
 		}
 		s.publishRunEvent(run, derefString(actorID))
 		return run, nil
@@ -2040,7 +2508,7 @@ func (s *AgentService) runConversationAgent(ctx context.Context, workspaceID, co
 	if actorID == nil || strings.TrimSpace(*actorID) == "" {
 		trigger = systemRunTriggerContext(supportAutoTriggerType)
 	}
-	input, err := buildAgentRunInputPayload("support_conversation", conversationID, trigger, nil, nil)
+	input, err := buildAgentRunInputPayload("support_conversation", conversationID, trigger, nil, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build conversation run input: %w", err)
 	}
@@ -2181,6 +2649,44 @@ func (s *AgentService) SendRunMessage(ctx context.Context, workspaceID, runID, a
 		return nil, fmt.Errorf("resume did not create a run message")
 	}
 	return message, nil
+}
+
+// ContinueTerminalRun creates a new child run from a failed or cancelled run.
+func (s *AgentService) ContinueTerminalRun(ctx context.Context, workspaceID, runID, actorID string, req model.ContinueAgentRunRequest) (*model.AgentRun, error) {
+	run, err := s.GetAgentRun(ctx, workspaceID, runID)
+	if err != nil {
+		return nil, err
+	}
+	switch strings.TrimSpace(run.Status) {
+	case model.AgentRunStatusFailed, model.AgentRunStatusCancelled:
+	default:
+		return nil, fmt.Errorf("only failed or cancelled runs can be continued")
+	}
+
+	additionalContext := buildContinuationAdditionalContext(run, derefString(req.Content))
+	var previousInput model.AgentRunInputPayload
+	_ = json.Unmarshal(run.Input, &previousInput)
+	startReq := model.StartAgentRunRequest{
+		AgentID:           run.AgentID,
+		AdditionalContext: &additionalContext,
+		BaseBranch:        run.BaseBranch,
+		WorkingBranch:     run.WorkingBranch,
+		Output:            previousInput.Output,
+	}
+	return s.startTargetRun(
+		ctx,
+		workspaceID,
+		run.TargetType,
+		run.TargetID,
+		startReq,
+		strPtr(actorID),
+		manualRunTriggerContext(),
+		&model.AgentRunEventContext{
+			RunID:  &run.ID,
+			Reason: strPtr("continued_from_terminal_run"),
+		},
+		&run.ID,
+	)
 }
 
 func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, runID, actorID string, req model.ResumeAgentRunRequest) (*model.AgentRun, *model.AgentRunMessage, error) {
@@ -2440,7 +2946,14 @@ func (s *AgentService) resolveLatestPendingInteraction(ctx context.Context, run 
 	interaction.ResponseSchemaVersion = stringPtrIfNotEmpty(responseSchemaVersion)
 	interaction.ResolvedBy = stringPtrIfNotEmpty(actorID)
 	interaction.ResolvedAt = &now
-	return s.interactionRepo.Update(ctx, interaction)
+	if err := s.interactionRepo.Update(ctx, interaction); err != nil {
+		return err
+	}
+	if err := s.persistResolvedInteractionArtifacts(ctx, run, interaction, actorID); err != nil {
+		return err
+	}
+	s.clearAgentAttentionNotification(ctx, run)
+	return nil
 }
 
 func normalizeResolvedInteractionIntent(pauseReason, signalIntent string) string {
@@ -2487,6 +3000,19 @@ func buildInteractionResponsePayload(interaction *model.AgentRunInteraction, res
 			"content": strings.TrimSpace(content),
 		})
 		return payload, model.AgentRunInteractionSchemaVersionHelpinV1, err
+	case model.AgentRunInteractionKindApprovalRequest:
+		payload := map[string]any{}
+		switch resolvedIntent {
+		case model.AgentRunResumeIntentApprove:
+			payload["decision"] = "approve"
+		default:
+			payload["decision"] = "request_changes"
+			if trimmed := strings.TrimSpace(content); trimmed != "" {
+				payload["message"] = trimmed
+			}
+		}
+		raw, err := json.Marshal(payload)
+		return raw, model.AgentRunInteractionSchemaVersionHelpinV1, err
 	case model.AgentRunInteractionKindReviewCheckpoint:
 		payload := map[string]any{}
 		switch resolvedIntent {
@@ -2506,6 +3032,95 @@ func buildInteractionResponsePayload(interaction *model.AgentRunInteraction, res
 			"content": strings.TrimSpace(content),
 		})
 		return payload, model.AgentRunInteractionSchemaVersionHelpinV1, err
+	}
+}
+
+func (s *AgentService) persistResolvedInteractionArtifacts(ctx context.Context, run *model.AgentRun, interaction *model.AgentRunInteraction, actorID string) error {
+	if s == nil || run == nil || interaction == nil {
+		return nil
+	}
+	switch strings.TrimSpace(interaction.InteractionKind) {
+	case model.AgentRunInteractionKindReviewCheckpoint:
+		artifact := reviewDecisionArtifactFromInteraction(interaction, actorID)
+		if artifact == nil {
+			return nil
+		}
+		return s.saveJSONArtifact(ctx, run, model.AgentRunArtifactTypeReviewDecision, "json", artifact)
+	default:
+		return nil
+	}
+}
+
+func reviewDecisionArtifactFromInteraction(interaction *model.AgentRunInteraction, actorID string) *model.ReviewDecisionArtifact {
+	if interaction == nil || strings.TrimSpace(interaction.InteractionKind) != model.AgentRunInteractionKindReviewCheckpoint {
+		return nil
+	}
+
+	var request model.ReviewCheckpointRequest
+	if err := json.Unmarshal(interaction.RequestPayload, &request); err != nil {
+		return nil
+	}
+
+	var response model.ReviewCheckpointResponse
+	if err := json.Unmarshal(interaction.ResponsePayload, &response); err != nil {
+		return nil
+	}
+	response.Decision = strings.TrimSpace(response.Decision)
+	if response.Decision == "" {
+		return nil
+	}
+	response.Message = strings.TrimSpace(response.Message)
+	response.SelectionMode = strings.ToLower(strings.TrimSpace(response.SelectionMode))
+
+	selectedIDs := make(map[string]struct{}, len(response.SelectedFindingIDs))
+	for _, id := range response.SelectedFindingIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		selectedIDs[id] = struct{}{}
+	}
+
+	statusForSelection := "requested_changes"
+	if response.Decision == "approve" {
+		statusForSelection = "approved"
+	}
+
+	findings := make([]model.ReviewDecisionFinding, 0, len(request.Findings))
+	for _, finding := range request.Findings {
+		findingID := strings.TrimSpace(finding.ID)
+		if findingID == "" {
+			continue
+		}
+		if response.SelectionMode == "selected" {
+			if _, ok := selectedIDs[findingID]; !ok {
+				continue
+			}
+		}
+		findings = append(findings, model.ReviewDecisionFinding{
+			ID:           findingID,
+			Title:        strings.TrimSpace(finding.Title),
+			CodeLocation: strings.TrimSpace(finding.CodeLocation),
+			Status:       statusForSelection,
+		})
+	}
+
+	resolvedAt := time.Now().UTC()
+	if interaction.ResolvedAt != nil && !interaction.ResolvedAt.IsZero() {
+		resolvedAt = interaction.ResolvedAt.UTC()
+	}
+
+	return &model.ReviewDecisionArtifact{
+		Phase:                      strings.TrimSpace(request.Phase),
+		Title:                      strings.TrimSpace(request.Title),
+		Summary:                    strings.TrimSpace(request.Summary),
+		Decision:                   response.Decision,
+		Message:                    response.Message,
+		SelectionMode:              response.SelectionMode,
+		Findings:                   findings,
+		AssistantMessageSequenceNo: interactionAssistantSequenceNo(*interaction),
+		ResolvedBy:                 strings.TrimSpace(actorID),
+		ResolvedAt:                 resolvedAt,
 	}
 }
 
@@ -2668,12 +3283,16 @@ func (s *AgentService) maybePersistApprovedInteractivePreview(ctx context.Contex
 	if err != nil {
 		return err
 	}
-	sourceMessage, approval, preview, err := latestApprovalCheckpoint(messages, existingArtifacts)
+	sourceMessage, assistantSequenceNo, approval, preview, err := latestApprovalCheckpoint(messages, existingArtifacts)
 	if err != nil {
 		return err
 	}
-	if sourceMessage == nil || approval == nil {
+	if approval == nil {
 		return nil
+	}
+	sourceMessageID := ""
+	if sourceMessage != nil {
+		sourceMessageID = strings.TrimSpace(sourceMessage.ID)
 	}
 	for _, artifact := range existingArtifacts {
 		if strings.TrimSpace(artifact.ArtifactType) != model.AgentRunArtifactTypeApprovedPreview || artifact.InlineContent == nil {
@@ -2683,12 +3302,15 @@ func (s *AgentService) maybePersistApprovedInteractivePreview(ctx context.Contex
 		if err := json.Unmarshal([]byte(*artifact.InlineContent), &existing); err != nil {
 			continue
 		}
-		if strings.TrimSpace(existing.SourceMessageID) == sourceMessage.ID {
+		if sourceMessageID != "" && strings.TrimSpace(existing.SourceMessageID) == sourceMessageID {
+			return nil
+		}
+		if sourceMessageID == "" && assistantSequenceNo > 0 && existing.AssistantMessageSequenceNo == assistantSequenceNo {
 			return nil
 		}
 	}
 	if preview == nil {
-		preview, err = latestRunPreviewArtifact(existingArtifacts, previewPanelKeyForApprovalPhase(approval.Phase))
+		preview, err = latestRunPreviewArtifactForApproval(existingArtifacts, assistantSequenceNo, approval)
 		if err != nil {
 			return err
 		}
@@ -2698,7 +3320,7 @@ func (s *AgentService) maybePersistApprovedInteractivePreview(ctx context.Contex
 	}
 
 	content := append(json.RawMessage(nil), preview.Content...)
-	if strings.EqualFold(strings.TrimSpace(approval.Phase), "stories") && strings.EqualFold(strings.TrimSpace(preview.Format), worker.PreviewFormatJSON) {
+	if strings.EqualFold(strings.TrimSpace(approval.Phase), "tasks") && strings.EqualFold(strings.TrimSpace(preview.Format), worker.PreviewFormatJSON) {
 		normalizedContent, err := worker.NormalizeTaskPlanPreviewContent(content)
 		if err != nil {
 			if approvedPreviewDebugEnabled() {
@@ -2723,31 +3345,33 @@ func (s *AgentService) maybePersistApprovedInteractivePreview(ctx context.Contex
 			"phase", strings.TrimSpace(approval.Phase),
 			"panel_key", strings.TrimSpace(preview.PanelKey),
 			"format", strings.TrimSpace(preview.Format),
-			"source_message_id", sourceMessage.ID,
+			"source_message_id", sourceMessageID,
+			"assistant_message_sequence_no", assistantSequenceNo,
 			"content_preview", previewDebugSnippet(content, 1600),
 		)
 	}
 
 	payload := model.ApprovedRunPreview{
-		Phase:           strings.TrimSpace(approval.Phase),
-		ApprovalTitle:   strings.TrimSpace(approval.Title),
-		ApprovalSummary: strings.TrimSpace(approval.Summary),
-		PanelKey:        strings.TrimSpace(preview.PanelKey),
-		PreviewTitle:    strings.TrimSpace(preview.Title),
-		Format:          strings.TrimSpace(preview.Format),
-		Content:         content,
-		SourceMessageID: sourceMessage.ID,
-		ApprovedBy:      strings.TrimSpace(actorID),
-		ApprovedAt:      time.Now().UTC(),
+		Phase:                      strings.TrimSpace(approval.Phase),
+		ApprovalTitle:              strings.TrimSpace(approval.Title),
+		ApprovalSummary:            strings.TrimSpace(approval.Summary),
+		PanelKey:                   strings.TrimSpace(preview.PanelKey),
+		PreviewTitle:               strings.TrimSpace(preview.Title),
+		Format:                     strings.TrimSpace(preview.Format),
+		Content:                    content,
+		SourceMessageID:            sourceMessageID,
+		AssistantMessageSequenceNo: assistantSequenceNo,
+		ApprovedBy:                 strings.TrimSpace(actorID),
+		ApprovedAt:                 time.Now().UTC(),
 	}
 	return s.saveJSONArtifact(ctx, run, model.AgentRunArtifactTypeApprovedPreview, "json", payload)
 }
 
-func latestApprovalCheckpoint(messages []model.AgentRunMessage, artifacts []model.AgentRunArtifact) (*model.AgentRunMessage, *model.ApprovalRequest, *worker.PublishedPreview, error) {
+func latestApprovalCheckpoint(messages []model.AgentRunMessage, artifacts []model.AgentRunArtifact) (*model.AgentRunMessage, int, *model.ApprovalRequest, *worker.PublishedPreview, error) {
 	return latestApprovalCheckpointFromArtifacts(messages, artifacts)
 }
 
-func latestApprovalCheckpointFromArtifacts(messages []model.AgentRunMessage, artifacts []model.AgentRunArtifact) (*model.AgentRunMessage, *model.ApprovalRequest, *worker.PublishedPreview, error) {
+func latestApprovalCheckpointFromArtifacts(messages []model.AgentRunMessage, artifacts []model.AgentRunArtifact) (*model.AgentRunMessage, int, *model.ApprovalRequest, *worker.PublishedPreview, error) {
 	for i := len(artifacts) - 1; i >= 0; i-- {
 		artifact := artifacts[i]
 		if strings.TrimSpace(artifact.ArtifactType) != model.AgentRunArtifactTypeHumanApprovalRequest || artifact.InlineContent == nil {
@@ -2756,8 +3380,9 @@ func latestApprovalCheckpointFromArtifacts(messages []model.AgentRunMessage, art
 
 		var approval model.ApprovalRequest
 		if err := json.Unmarshal([]byte(*artifact.InlineContent), &approval); err != nil {
-			return nil, nil, nil, fmt.Errorf("parse approval request artifact: %w", err)
+			return nil, 0, nil, nil, fmt.Errorf("parse approval request artifact: %w", err)
 		}
+		approval.PreviewPanelKey = normalizeApprovalPreviewPanelKey(approval.PreviewPanelKey)
 		if strings.TrimSpace(approval.Title) == "" {
 			continue
 		}
@@ -2767,40 +3392,71 @@ func latestApprovalCheckpointFromArtifacts(messages []model.AgentRunMessage, art
 			continue
 		}
 		sourceMessage := findAssistantMessageBySequence(messages, assistantSequenceNo)
-		if sourceMessage == nil {
-			continue
-		}
 
-		preview, err := latestRunPreviewArtifactForAssistantSequence(artifacts, assistantSequenceNo, previewPanelKeyForApprovalPhase(approval.Phase))
+		preview, err := latestRunPreviewArtifactForApproval(artifacts, assistantSequenceNo, &approval)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, 0, nil, nil, err
 		}
-		if preview == nil {
-			preview, err = latestRunPreviewArtifact(artifacts, previewPanelKeyForApprovalPhase(approval.Phase))
-			if err != nil {
-				return nil, nil, nil, err
-			}
-		}
-		return sourceMessage, &approval, preview, nil
+		return sourceMessage, assistantSequenceNo, &approval, preview, nil
 	}
-	return nil, nil, nil, nil
+	return nil, 0, nil, nil, nil
 }
 
-func previewPanelKeyForApprovalPhase(phase string) string {
-	switch strings.ToLower(strings.TrimSpace(phase)) {
-	case "prd":
+func normalizeApprovalPreviewPanelKey(value string) string {
+	key := strings.ToLower(strings.TrimSpace(value))
+	switch key {
+	case worker.ToolPublishPRDDraft:
 		return "prd_draft"
-	case "story_doc":
-		return "task_plan_doc"
-	case "stories":
+	case worker.ToolPublishTaskPlan:
 		return "task_plan"
+	case worker.ToolPublishTaskPlanDoc:
+		return "task_plan_doc"
 	default:
-		return ""
+		return key
 	}
+}
+
+func isCanonicalApprovalPreviewPanelKey(value string) bool {
+	switch normalizeApprovalPreviewPanelKey(value) {
+	case "prd_draft", "task_plan", "task_plan_doc":
+		return true
+	default:
+		return false
+	}
+}
+
+func latestRunPreviewArtifactForApproval(artifacts []model.AgentRunArtifact, assistantSequenceNo int, approval *model.ApprovalRequest) (*worker.PublishedPreview, error) {
+	panelKey := ""
+	if approval != nil {
+		panelKey = normalizeApprovalPreviewPanelKey(approval.PreviewPanelKey)
+	}
+	preview, count, err := latestRunPreviewArtifactForAssistantSequence(artifacts, assistantSequenceNo, panelKey)
+	if err != nil {
+		return nil, err
+	}
+	if preview != nil {
+		return preview, nil
+	}
+	if panelKey != "" {
+		if !isCanonicalApprovalPreviewPanelKey(panelKey) {
+			fallbackPreview, fallbackCount, err := latestRunPreviewArtifactForAssistantSequence(artifacts, assistantSequenceNo, "")
+			if err != nil {
+				return nil, err
+			}
+			if fallbackCount == 1 {
+				return fallbackPreview, nil
+			}
+		}
+		return latestRunPreviewArtifact(artifacts, panelKey)
+	}
+	if count > 1 {
+		return nil, nil
+	}
+	return latestRunPreviewArtifact(artifacts, "")
 }
 
 func latestRunPreviewArtifact(artifacts []model.AgentRunArtifact, panelKey string) (*worker.PublishedPreview, error) {
-	targetKey := strings.ToLower(strings.TrimSpace(panelKey))
+	targetKey := normalizeApprovalPreviewPanelKey(panelKey)
 	for i := len(artifacts) - 1; i >= 0; i-- {
 		artifact := artifacts[i]
 		if strings.TrimSpace(artifact.ArtifactType) != worker.RunPreviewArtifactType || artifact.InlineContent == nil {
@@ -2811,7 +3467,7 @@ func latestRunPreviewArtifact(artifacts []model.AgentRunArtifact, panelKey strin
 		if err := json.Unmarshal([]byte(*artifact.InlineContent), &payload); err != nil {
 			return nil, fmt.Errorf("parse run preview artifact: %w", err)
 		}
-		if targetKey != "" && strings.ToLower(strings.TrimSpace(payload.PanelKey)) != targetKey {
+		if targetKey != "" && normalizeApprovalPreviewPanelKey(payload.PanelKey) != targetKey {
 			continue
 		}
 		return &payload, nil
@@ -2819,11 +3475,13 @@ func latestRunPreviewArtifact(artifacts []model.AgentRunArtifact, panelKey strin
 	return nil, nil
 }
 
-func latestRunPreviewArtifactForAssistantSequence(artifacts []model.AgentRunArtifact, assistantSequenceNo int, panelKey string) (*worker.PublishedPreview, error) {
+func latestRunPreviewArtifactForAssistantSequence(artifacts []model.AgentRunArtifact, assistantSequenceNo int, panelKey string) (*worker.PublishedPreview, int, error) {
 	if assistantSequenceNo <= 0 {
-		return nil, nil
+		return nil, 0, nil
 	}
-	targetKey := strings.ToLower(strings.TrimSpace(panelKey))
+	targetKey := normalizeApprovalPreviewPanelKey(panelKey)
+	matchCount := 0
+	var firstMatch *worker.PublishedPreview
 	for i := len(artifacts) - 1; i >= 0; i-- {
 		artifact := artifacts[i]
 		if strings.TrimSpace(artifact.ArtifactType) != worker.RunPreviewArtifactType || artifact.InlineContent == nil {
@@ -2834,14 +3492,24 @@ func latestRunPreviewArtifactForAssistantSequence(artifacts []model.AgentRunArti
 		}
 		var payload worker.PublishedPreview
 		if err := json.Unmarshal([]byte(*artifact.InlineContent), &payload); err != nil {
-			return nil, fmt.Errorf("parse run preview artifact: %w", err)
+			return nil, 0, fmt.Errorf("parse run preview artifact: %w", err)
 		}
-		if targetKey != "" && strings.ToLower(strings.TrimSpace(payload.PanelKey)) != targetKey {
+		if targetKey != "" && normalizeApprovalPreviewPanelKey(payload.PanelKey) != targetKey {
 			continue
 		}
-		return &payload, nil
+		matchCount++
+		if targetKey != "" {
+			return &payload, matchCount, nil
+		}
+		if firstMatch == nil {
+			previewCopy := payload
+			firstMatch = &previewCopy
+		}
 	}
-	return nil, nil
+	if targetKey == "" && matchCount == 1 {
+		return firstMatch, matchCount, nil
+	}
+	return nil, matchCount, nil
 }
 
 func artifactAssistantMessageSequenceNo(artifact model.AgentRunArtifact) int {
@@ -3001,6 +3669,7 @@ type createRunParams struct {
 	agent          *model.Agent
 	targetType     string
 	targetID       string
+	parentRunID    *string
 	taskID         *string
 	conversationID *string
 	actorID        *string
@@ -3046,6 +3715,7 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		ConversationID:    params.conversationID,
 		TargetType:        params.targetType,
 		TargetID:          params.targetID,
+		ParentRunID:       params.parentRunID,
 		RuntimeKind:       params.agent.RuntimeKind,
 		InvocationMode:    defaultString(params.invocationMode, model.InvocationModeAutonomous),
 		ApprovalState:     approvalState,
@@ -3115,9 +3785,12 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 func (s *AgentService) requireRunnableAgent(ctx context.Context, workspaceID, agentID, targetType string) (*model.Agent, error) {
 	agent, err := s.agentRepo.GetByID(ctx, workspaceID, agentID)
 	if err != nil || agent == nil {
-		return nil, fmt.Errorf("assigned agent not found")
+		return nil, ErrAssignedAgentNotFound
 	}
 	normalizeAgentRecord(agent)
+	if err := s.validateAndMaterializeAgentSkills(ctx, agent); err != nil {
+		return nil, err
+	}
 	if err := validateAgentTarget(agent, targetType); err != nil {
 		return nil, err
 	}
@@ -3163,6 +3836,7 @@ func (s *AgentService) publishRunEvent(run *model.AgentRun, actorID string) {
 	}
 	status, pauseReason := model.NormalizeAgentRunStatus(run.Status, run.PauseReason, run.ApprovalState, run.ExecutionStage)
 	data, _ := json.Marshal(map[string]string{
+		"agent_id":     run.AgentID,
 		"status":       status,
 		"pause_reason": pauseReason,
 	})
@@ -3552,6 +4226,69 @@ func (s *AgentService) normalizeRunCollection(runs []model.AgentRun) []model.Age
 		model.NormalizeAgentRunPauseState(&runs[idx])
 	}
 	return runs
+}
+
+// enrichRunTargets populates AgentRun.TargetInfo with a human-readable title
+// and (for pm_task) a task_key so UI can surface real identifiers instead of
+// raw UUIDs. Unknown target types leave TargetInfo empty; the frontend keeps
+// its existing fallback logic.
+func (s *AgentService) enrichRunTargets(ctx context.Context, workspaceID string, runs []model.AgentRun) {
+	if len(runs) == 0 || workspaceID == "" {
+		return
+	}
+
+	taskIDs := make([]string, 0, len(runs))
+	seen := make(map[string]struct{}, len(runs))
+	for _, run := range runs {
+		if run.TargetType != "pm_task" || run.TargetID == "" {
+			continue
+		}
+		if _, ok := seen[run.TargetID]; ok {
+			continue
+		}
+		seen[run.TargetID] = struct{}{}
+		taskIDs = append(taskIDs, run.TargetID)
+	}
+
+	if len(taskIDs) == 0 || s.taskRepo == nil {
+		return
+	}
+
+	tasks, err := s.taskRepo.ListByIDs(ctx, workspaceID, taskIDs)
+	if err != nil {
+		slog.WarnContext(ctx, "enrich run targets: list tasks failed", "error", err, "workspace_id", workspaceID)
+		return
+	}
+
+	byID := make(map[string]model.PMTask, len(tasks))
+	for _, task := range tasks {
+		byID[task.ID] = task
+	}
+
+	var workspaceKey string
+	if s.taskService != nil && len(byID) > 0 {
+		workspaceKey = s.taskService.GetWorkspaceKey(ctx, workspaceID)
+	}
+
+	for idx := range runs {
+		run := &runs[idx]
+		if run.TargetType != "pm_task" {
+			continue
+		}
+		task, ok := byID[run.TargetID]
+		if !ok {
+			continue
+		}
+		info := &model.AgentRunTarget{
+			TargetType: run.TargetType,
+			TargetID:   run.TargetID,
+			Title:      task.Name,
+		}
+		if workspaceKey != "" {
+			info.TaskKey = model.FormatTaskKey(workspaceKey, task.DisplayID)
+		}
+		run.TargetInfo = info
+	}
 }
 
 func validateRuntimeKind(runtimeKind string) error {

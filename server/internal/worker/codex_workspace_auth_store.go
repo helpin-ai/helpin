@@ -76,6 +76,13 @@ func (s *CodexWorkspaceAuthStore) Promote(ctx context.Context, workspaceID, prov
 	})
 }
 
+func (s *CodexWorkspaceAuthStore) Clear(ctx context.Context, workspaceID, provider, authMode string) error {
+	if s == nil || strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(provider) == "" || strings.TrimSpace(authMode) == "" {
+		return nil
+	}
+	return s.repo.DeleteByScope(ctx, strings.TrimSpace(workspaceID), strings.TrimSpace(provider), strings.TrimSpace(authMode))
+}
+
 func readCodexAuthFile(path string) (string, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {

@@ -7,7 +7,9 @@ import type {
   UpdateAgentRequest,
   AgentModelProviderOption,
   CodexAuthState,
+  ContinueAgentRunRequest,
   CreateWorkspaceAgentPresetVersionRequest,
+  UpdateWorkspaceAgentPresetVersionRequest,
   ApproveAgentRunRequest,
   HandoffAgentRunRequest,
   ResumeAgentRunRequest,
@@ -37,16 +39,23 @@ export const agentService = {
     api.get<AgentPresetDefinition[]>(`/pm/agent-presets${qs(workspaceId)}`),
   createPresetVersion: (workspaceId: string, payload: CreateWorkspaceAgentPresetVersionRequest) =>
     api.post<AgentPresetDefinition>(`/pm/agent-preset-versions${qs(workspaceId)}`, payload),
+  updatePresetVersion: (
+    workspaceId: string,
+    versionId: string,
+    payload: UpdateWorkspaceAgentPresetVersionRequest,
+  ) => api.put<AgentPresetDefinition>(`/pm/agent-preset-versions/${versionId}${qs(workspaceId)}`, payload),
+  deletePresetVersion: (workspaceId: string, versionId: string) =>
+    api.del<void>(`/pm/agent-preset-versions/${versionId}${qs(workspaceId)}`),
   listModelProviders: (workspaceId: string) =>
     api.get<AgentModelProviderOption[]>(`/pm/agent-model-providers${qs(workspaceId)}`),
   getRunnerHealth: (workspaceId: string) =>
     api.get<RunnerHealth>(`/pm/runner-health${qs(workspaceId)}`),
-  assignToTask: (workspaceId: string, taskId: string, agentId: string) =>
-    api.post(`/pm/tasks/${taskId}/assign-agent${qs(workspaceId)}`, { agent_id: agentId }),
   runTask: (workspaceId: string, taskId: string, payload?: StartAgentRunRequest) =>
     api.post<AgentRun>(`/pm/tasks/${taskId}/run-agent${qs(workspaceId)}`, payload ?? {}),
   runEpic: (workspaceId: string, epicId: string, payload: StartAgentRunRequest) =>
     api.post<AgentRun>(`/pm/epics/${epicId}/run-agent${qs(workspaceId)}`, payload),
+  startRun: (workspaceId: string, payload: StartAgentRunRequest & { agent_id: string; target_type: string; target_id: string }) =>
+    automationService.startRun(workspaceId, payload) as ReturnType<typeof automationService.startRun>,
   listWorkspaceRuns: (workspaceId: string, page = 1, perPage = 100) =>
     automationService.listWorkspaceRuns(workspaceId, page, perPage) as ReturnType<typeof automationService.listWorkspaceRuns>,
   listTargetRuns: (workspaceId: string, targetType: string, targetId: string) =>
@@ -59,6 +68,8 @@ export const agentService = {
     automationService.listRunMessages(workspaceId, runId) as ReturnType<typeof automationService.listRunMessages>,
   resumeRun: (workspaceId: string, runId: string, payload: ResumeAgentRunRequest) =>
     automationService.resumeRun(workspaceId, runId, payload) as ReturnType<typeof automationService.resumeRun>,
+  continueRun: (workspaceId: string, runId: string, payload?: ContinueAgentRunRequest) =>
+    automationService.continueRun(workspaceId, runId, payload) as ReturnType<typeof automationService.continueRun>,
   sendRunMessage: (workspaceId: string, runId: string, payload: SendAgentRunMessageRequest) =>
     automationService.sendRunMessage(workspaceId, runId, payload) as ReturnType<typeof automationService.sendRunMessage>,
   listRunArtifacts: (workspaceId: string, runId: string) =>

@@ -8,6 +8,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/storage"
 	"github.com/helpin-ai/helpin/server/internal/tiptap"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
@@ -15,35 +16,90 @@ import (
 // PMCommentService contains comment business logic.
 type PMCommentService struct {
 	commentRepo         *repository.PMCommentRepository
-	taskRepo           *repository.PMTaskRepository
+	taskRepo            *repository.PMTaskRepository
 	attachmentRepo      *repository.PMAttachmentRepository
 	activityService     *PMActivityService
 	wsPublisher         *websocket.Publisher
 	notificationService *NotificationService
 	workspaceRepo       *repository.WorkspaceRepository
+	s3Client            *storage.S3Client
 	logger              *slog.Logger
 }
 
 // NewPMCommentService creates a new PMCommentService.
-func NewPMCommentService(commentRepo *repository.PMCommentRepository, taskRepo *repository.PMTaskRepository, attachmentRepo *repository.PMAttachmentRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, notificationService *NotificationService, workspaceRepo *repository.WorkspaceRepository) *PMCommentService {
+func NewPMCommentService(commentRepo *repository.PMCommentRepository, taskRepo *repository.PMTaskRepository, attachmentRepo *repository.PMAttachmentRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, notificationService *NotificationService, workspaceRepo *repository.WorkspaceRepository, s3Client *storage.S3Client) *PMCommentService {
 	return &PMCommentService{
 		commentRepo:         commentRepo,
-		taskRepo:           taskRepo,
+		taskRepo:            taskRepo,
 		attachmentRepo:      attachmentRepo,
 		activityService:     activityService,
 		wsPublisher:         wsPublisher,
 		notificationService: notificationService,
 		workspaceRepo:       workspaceRepo,
+		s3Client:            s3Client,
 		logger:              slog.Default().With("service", "pm_comment"),
 	}
 }
 
-// List returns comments for an entity.
+// List returns comments for an entity, with attachment URLs resolved.
 func (s *PMCommentService) List(ctx context.Context, entityType, entityID string) ([]model.CommentWithAuthor, error) {
 	if entityType == "" || entityID == "" {
 		return nil, fmt.Errorf("entity_type and entity_id are required")
 	}
-	return s.commentRepo.List(ctx, entityType, entityID)
+	comments, err := s.commentRepo.List(ctx, entityType, entityID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range comments {
+		s.resolveAttachmentURLs(comments[i].Attachments)
+		for j := range comments[i].Replies {
+			s.resolveAttachmentURLs(comments[i].Replies[j].Attachments)
+		}
+	}
+	return comments, nil
+}
+
+// ListByEntityIDs returns comments grouped by entity ID with attachment URLs resolved.
+func (s *PMCommentService) ListByEntityIDs(ctx context.Context, entityType string, entityIDs []string) (map[string][]model.CommentWithAuthor, error) {
+	if entityType == "" {
+		return nil, fmt.Errorf("entity_type is required")
+	}
+	commentsByEntity, err := s.commentRepo.ListByEntityIDs(ctx, entityType, entityIDs)
+	if err != nil {
+		return nil, err
+	}
+	for entityID, comments := range commentsByEntity {
+		for i := range comments {
+			s.resolveAttachmentURLs(comments[i].Attachments)
+			for j := range comments[i].Replies {
+				s.resolveAttachmentURLs(comments[i].Replies[j].Attachments)
+			}
+		}
+		commentsByEntity[entityID] = comments
+	}
+	return commentsByEntity, nil
+}
+
+// resolveAttachmentURLs populates URL / PublicURL on attachment responses so
+// the frontend can render inline previews.
+func (s *PMCommentService) resolveAttachmentURLs(attachments []model.AttachmentResponse) {
+	if s.s3Client == nil {
+		return
+	}
+	hasPublic := s.s3Client.HasPublicURL()
+	for i := range attachments {
+		a := attachments[i].Attachment
+		if a.StorageKey == "" {
+			continue
+		}
+		if hasPublic {
+			attachments[i].PublicURL = s.s3Client.PublicURL(a.StorageKey)
+		}
+		downloadURL, err := s.s3Client.GeneratePresignedGetURL(a.StorageKey, a.FileName)
+		if err == nil {
+			attachments[i].URL = downloadURL
+		}
+	}
 }
 
 // Create creates a comment.
@@ -264,6 +320,13 @@ func (s *PMCommentService) Update(ctx context.Context, id string, req model.Upda
 		return nil, err
 	}
 
+	// Reassign any newly uploaded attachments to this comment.
+	if len(req.AttachmentIDs) > 0 && s.attachmentRepo != nil {
+		if err := s.attachmentRepo.ReassignToEntity(ctx, req.AttachmentIDs, "comment", comment.ID); err != nil {
+			s.logger.ErrorContext(ctx, "failed to reassign attachments to comment on update", "error", err, "comment_id", comment.ID, "attachment_ids", req.AttachmentIDs)
+		}
+	}
+
 	if err := s.activityService.Log(ctx, workspaceID, comment.EntityType, comment.EntityID, optionalActor(actorID), "comment_updated", stringPtr("body"), &oldValue, &comment.Body, nil); err != nil {
 		s.logger.ErrorContext(ctx, "failed to log activity for comment update", "error", err, "comment_id", id, "entity_id", comment.EntityID)
 	}
@@ -280,20 +343,23 @@ func (s *PMCommentService) Update(ctx context.Context, id string, req model.Upda
 				readableTeamIDs = mentionScopeForTeamID(story.TeamID)
 			}
 		}
-		if _, err := emitMentionNotification(ctx, s.notificationService, s.workspaceRepo, pmMentionNotificationInput{
-			WorkspaceID:      workspaceID,
-			ActorID:          actorID,
-			Body:             comment.Body,
-			EventType:        "comment.mention",
-			EntityType:       comment.EntityType,
-			EntityID:         comment.EntityID,
-			Title:            "mentioned you in a comment on " + entityTitle,
-			TeamID:           entityTeamID,
-			ReadableTeamIDs:  readableTeamIDs,
-			EntitySnapshot:   model.JSONB{"title": entityTitle},
-			NotificationBody: truncate(tiptap.StripHTML(comment.Body), 200),
-		}); err != nil {
-			s.logger.ErrorContext(ctx, "failed to emit comment mention notification", "error", err, "comment_id", id, "entity_id", comment.EntityID)
+		addedMentions := diffMentionHandles(extractMentions(oldValue), extractMentions(comment.Body))
+		if len(addedMentions) > 0 {
+			if _, err := emitMentionNotificationForHandles(ctx, s.notificationService, s.workspaceRepo, pmMentionNotificationInput{
+				WorkspaceID:      workspaceID,
+				ActorID:          actorID,
+				Body:             comment.Body,
+				EventType:        "comment.mention",
+				EntityType:       comment.EntityType,
+				EntityID:         comment.EntityID,
+				Title:            "mentioned you in a comment on " + entityTitle,
+				TeamID:           entityTeamID,
+				ReadableTeamIDs:  readableTeamIDs,
+				EntitySnapshot:   model.JSONB{"title": entityTitle},
+				NotificationBody: truncate(tiptap.StripHTML(comment.Body), 200),
+			}, addedMentions); err != nil {
+				s.logger.ErrorContext(ctx, "failed to emit comment mention notification", "error", err, "comment_id", id, "entity_id", comment.EntityID)
+			}
 		}
 	}
 	s.logger.InfoContext(ctx, "comment updated", "comment_id", id, "entity_type", comment.EntityType, "entity_id", comment.EntityID, "workspace_id", workspaceID, "actor_id", actorID)

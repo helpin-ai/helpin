@@ -29,6 +29,13 @@ const (
 	SpaceVisibilityTeamOnly      = "team_only"
 )
 
+// Help center public URL modes.
+const (
+	HelpcenterPublicURLModeHostedSubdomain = "hosted_subdomain"
+	HelpcenterPublicURLModeCustomDomain    = "custom_domain"
+	HelpcenterPublicURLModeReverseProxy    = "reverse_proxy"
+)
+
 // Version type values.
 const (
 	VersionTypeManual  = "manual"
@@ -200,6 +207,10 @@ type DocsDocument struct {
 
 	// Transient fields (not stored in docs_documents, populated by handlers)
 	HCSlug                string     `json:"hc_slug,omitempty" gorm:"-"`
+	HCOGTitle             *string    `json:"hc_og_title,omitempty" gorm:"-"`
+	HCOGDescription       *string    `json:"hc_og_description,omitempty" gorm:"-"`
+	HCOGImageURL          *string    `json:"hc_og_image_url,omitempty" gorm:"-"`
+	HCOGImageAlt          *string    `json:"hc_og_image_alt,omitempty" gorm:"-"`
 	HasUnpublishedChanges bool       `json:"has_unpublished_changes" gorm:"-"`
 	LivePublishedAt       *time.Time `json:"live_published_at,omitempty" gorm:"-"`
 	LiveSlug              *string    `json:"live_slug,omitempty" gorm:"-"`
@@ -313,6 +324,9 @@ type DocsHelpcenterConfig struct {
 	WorkspaceID             string          `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex"`
 	Subdomain               string          `json:"subdomain" gorm:"not null"`
 	CustomDomain            *string         `json:"custom_domain"`
+	PublicURLMode           string          `json:"public_url_mode" gorm:"not null;default:'hosted_subdomain'"`
+	ReverseProxyHost        *string         `json:"reverse_proxy_host"`
+	ReverseProxyBasePath    *string         `json:"reverse_proxy_base_path"`
 	BrandName               string          `json:"brand_name" gorm:"not null"`
 	BrandLogoURL            *string         `json:"brand_logo_url"`
 	BrandLogoDarkURL        *string         `json:"brand_logo_dark_url"`
@@ -332,6 +346,10 @@ type DocsHelpcenterConfig struct {
 	IsPublished             bool            `json:"is_published" gorm:"not null;default:false"`
 	SEOTitle                *string         `json:"seo_title"`
 	SEODescription          *string         `json:"seo_description"`
+	OGTitle                 *string         `json:"og_title"`
+	OGDescription           *string         `json:"og_description"`
+	OGImageURL              *string         `json:"og_image_url"`
+	OGImageAlt              *string         `json:"og_image_alt"`
 	SupportEmail            *string         `json:"support_email"`
 	CreatedAt               time.Time       `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt               time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
@@ -347,6 +365,10 @@ type DocsHelpcenterArticle struct {
 	Slug              string     `json:"slug" gorm:"not null;default:''"`
 	SEOTitle          *string    `json:"seo_title"`
 	SEODescription    *string    `json:"seo_description"`
+	OGTitle           *string    `json:"og_title"`
+	OGDescription     *string    `json:"og_description"`
+	OGImageURL        *string    `json:"og_image_url"`
+	OGImageAlt        *string    `json:"og_image_alt"`
 	HelpfulCount      int        `json:"helpful_count" gorm:"not null;default:0"`
 	NotHelpfulCount   int        `json:"not_helpful_count" gorm:"not null;default:0"`
 	ViewCount         int        `json:"view_count" gorm:"not null;default:0"`
@@ -621,6 +643,9 @@ type CreateDocsLinkRequest struct {
 type UpdateDocsHelpcenterConfigRequest struct {
 	Subdomain               *string         `json:"subdomain"`
 	CustomDomain            *string         `json:"custom_domain"`
+	PublicURLMode           *string         `json:"public_url_mode"`
+	ReverseProxyHost        *string         `json:"reverse_proxy_host"`
+	ReverseProxyBasePath    *string         `json:"reverse_proxy_base_path"`
 	BrandName               *string         `json:"brand_name"`
 	BrandLogoURL            *string         `json:"brand_logo_url"`
 	BrandLogoDarkURL        *string         `json:"brand_logo_dark_url"`
@@ -640,7 +665,19 @@ type UpdateDocsHelpcenterConfigRequest struct {
 	IsPublished             *bool           `json:"is_published"`
 	SEOTitle                *string         `json:"seo_title"`
 	SEODescription          *string         `json:"seo_description"`
+	OGTitle                 *string         `json:"og_title"`
+	OGDescription           *string         `json:"og_description"`
+	OGImageURL              *string         `json:"og_image_url"`
+	OGImageAlt              *string         `json:"og_image_alt"`
 	SupportEmail            *string         `json:"support_email"`
+}
+
+// UpdateDocsHelpcenterArticleMetadataRequest updates source-locale social metadata.
+type UpdateDocsHelpcenterArticleMetadataRequest struct {
+	OGTitle       *string `json:"og_title"`
+	OGDescription *string `json:"og_description"`
+	OGImageURL    *string `json:"og_image_url"`
+	OGImageAlt    *string `json:"og_image_alt"`
 }
 
 // DocsArticleFeedbackRequest is the payload for submitting article feedback.
@@ -736,6 +773,10 @@ type PublicArticleResponse struct {
 	PublishedAt        *string `json:"published_at"`
 	SEOTitle           *string `json:"seo_title"`
 	SEODescription     *string `json:"seo_description"`
+	OGTitle            *string `json:"og_title"`
+	OGDescription      *string `json:"og_description"`
+	OGImageURL         *string `json:"og_image_url"`
+	OGImageAlt         *string `json:"og_image_alt"`
 	HelpfulCount       int     `json:"helpful_count"`
 	NotHelpfulCount    int     `json:"not_helpful_count"`
 	ViewCount          int     `json:"view_count"`

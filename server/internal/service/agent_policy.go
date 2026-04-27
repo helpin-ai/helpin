@@ -117,7 +117,9 @@ func normalizeAgentRecord(agent *model.Agent) {
 		preset, hasPreset = agentPresetVersionDefinition(presetKey, defaultPresetVersionKeyForPresetKey(presetKey))
 	}
 	if hasPreset {
-		agent.SystemPrompt = storedSystemPromptForPreset(presetKey, agent.SystemPrompt, agent.PlanningNotes)
+		if agent.IsSystem && !strings.Contains(presetVersionKey, "_workspace_") {
+			agent.SystemPrompt, agent.InstructionTemplateVersion = syncManagedSystemPromptForPreset(presetKey, agent.SystemPrompt, agent.PlanningNotes, agent.InstructionTemplateVersion)
+		}
 		agent.AllowedTools = normalizeAllowedToolsJSON(agent.AllowedTools)
 		agent.AllowedTools = migrateLegacyPreviewTools(agent.AllowedTools, presetKey)
 		agent.AllowedTools = sanitizePlannerAgentTools(agent.AllowedTools, presetKey)
@@ -138,7 +140,6 @@ func normalizeAgentRecord(agent *model.Agent) {
 	}
 	if agent.IsSystem {
 		agent.ApprovalMode = "never"
-		agent.Schedule = nil
 	}
 	if strings.TrimSpace(agent.Role) == "" {
 		if hasPreset && preset.DefaultRole != "" {
@@ -161,7 +162,7 @@ func normalizeAgentRecord(agent *model.Agent) {
 		}
 	}
 	if agent.Skills == nil {
-		agent.Skills = json.RawMessage("[]")
+		agent.Skills = model.AgentSkillRefs{}
 	}
 	agent.ExecutionConfig = normalizeExecutionConfigJSON(agent.ExecutionConfig)
 	if agent.Provider != nil {
@@ -300,7 +301,7 @@ func sanitizePlannerAgentTools(raw json.RawMessage, presetKey string) json.RawMe
 	case model.AgentPresetEpicPlanner:
 		policy.requiredTools = []string{
 			worker.ToolUpdatePlan,
-			worker.ToolRequestReviewCheckpoint,
+			worker.ToolRequestApproval,
 			worker.ToolPublishPRDDraft,
 			worker.ToolPublishTaskPlan,
 		}
@@ -324,7 +325,7 @@ func sanitizePlannerAgentTools(raw json.RawMessage, presetKey string) json.RawMe
 	case model.AgentPresetTaskPlanner:
 		policy.requiredTools = []string{
 			worker.ToolUpdatePlan,
-			worker.ToolRequestReviewCheckpoint,
+			worker.ToolRequestApproval,
 			worker.ToolPublishTaskPlanDoc,
 		}
 		policy.disallowedExtraTools = []string{

@@ -121,8 +121,25 @@ func presetDefinitionForAgent(agent *model.Agent) (model.AgentPresetDefinition, 
 	return agentPresetVersionDefinition(defaultPresetKey, defaultPresetVersionKeyForPresetKey(defaultPresetKey))
 }
 
+func applyBuiltInPresetInstructionMetadata(presets []model.AgentPresetDefinition) []model.AgentPresetDefinition {
+	for idx := range presets {
+		bundle, ok := worker.BuiltInPresetSkillBundleForPreset(presets[idx].Key)
+		if !ok {
+			continue
+		}
+		presets[idx].InstructionPreamble = bundle.Preamble
+		presets[idx].InstructionSkills = append([]string(nil), bundle.SkillKeys...)
+		presets[idx].InstructionTemplateVersion = worker.BuiltInPresetInstructionTemplateVersion(presets[idx].Key)
+		if presets[idx].SystemPrompt == nil {
+			presets[idx].SystemPrompt = worker.BuiltInPresetPrompt(presets[idx].Key)
+		}
+	}
+	return presets
+}
+
 func workspacePresetDefinition(base model.AgentPresetDefinition, version model.WorkspaceAgentPresetVersion) model.AgentPresetDefinition {
 	definition := base
+	definition.ID = &version.ID
 	definition.Key = normalizePresetKey(version.FamilyKey)
 	definition.FamilyKey = normalizePresetKey(version.FamilyKey)
 	definition.VersionKey = strings.TrimSpace(version.VersionKey)
@@ -132,9 +149,29 @@ func workspacePresetDefinition(base model.AgentPresetDefinition, version model.W
 	definition.WorkspaceID = &version.WorkspaceID
 	definition.SourceVersionKey = version.SourceVersionKey
 	definition.Provider = trimPtr(version.Provider)
-	definition.Model = trimPtr(version.Model)
+	if version.Model != nil {
+		modelValue := strings.TrimSpace(*version.Model)
+		definition.Model = &modelValue
+	}
 	definition.ExecutionConfig = normalizeExecutionConfigJSON(version.ExecutionConfig)
-	definition.SystemPrompt = trimPtr(version.SystemPrompt)
+	if prompt := trimPtr(version.SystemPrompt); prompt != nil {
+		definition.SystemPrompt = prompt
+	}
+	if versionValue := strings.TrimSpace(version.InstructionTemplateVersion); versionValue != "" {
+		definition.InstructionTemplateVersion = versionValue
+	} else if version.SystemPrompt != nil && version.InstructionPreamble != nil {
+		definition.InstructionTemplateVersion = ""
+	}
+	if version.InstructionPreamble != nil {
+		definition.InstructionPreamble = strings.TrimSpace(*version.InstructionPreamble)
+	}
+	if len(version.InstructionSkills) > 0 && string(version.InstructionSkills) != "null" {
+		if skills := parseJSONStringSlice(version.InstructionSkills); skills != nil {
+			definition.InstructionSkills = skills
+		} else {
+			definition.InstructionSkills = []string{}
+		}
+	}
 	if description := strings.TrimSpace(stringOrDefault(version.Description, "")); description != "" {
 		definition.Description = description
 	}
@@ -227,9 +264,9 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	reviewerProfile := worker.GetRuntimeProfile(model.AgentPresetReviewAgent)
 	supportProfile := worker.GetRuntimeProfile(model.AgentPresetSupportAgent)
 	codeBuilderProvider := model.AgentModelProviderOpenAI
-	codeBuilderModel := "gpt-5.4"
+	codeBuilderModel := "gpt-5.5"
 	reviewAgentProvider := model.AgentModelProviderOpenAI
-	reviewAgentModel := "gpt-5.4"
+	reviewAgentModel := "gpt-5.5"
 	highReasoning := "high"
 	fastServiceTier := "fast"
 	codexOpenAIDefaultExecutionConfig := model.MarshalAgentExecutionConfig(model.AgentExecutionConfig{
@@ -248,19 +285,19 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 		worker.ToolPublishPRDDraft,
 		worker.ToolPublishTaskPlan,
 		worker.ToolRequestUserInput,
-		worker.ToolRequestReviewCheckpoint,
+		worker.ToolRequestApproval,
 	)
 	taskPlannerTools := filterPresetTools(productPlannerProfile.AllowedTools,
 		worker.ToolUpdatePlan,
 		worker.ToolPublishTaskPlanDoc,
 		worker.ToolRequestUserInput,
-		worker.ToolRequestReviewCheckpoint,
+		worker.ToolRequestApproval,
 	)
 	taskPlannerTools = slices.DeleteFunc(taskPlannerTools, func(toolName string) bool {
 		return toolName == "list_epic_tasks"
 	})
 
-	return []model.AgentPresetDefinition{
+	presets := []model.AgentPresetDefinition{
 		{
 			Key:                   model.AgentPresetEpicPlanner,
 			FamilyKey:             model.AgentPresetEpicPlanner,
@@ -295,7 +332,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          taskPlannerTools,
 			AllowedCommands:       slices.Clone(productPlannerProfile.AllowedCommands),
-			AllowedTargetTypes:    []string{"task", "epic"},
+			AllowedTargetTypes:    []string{"task", "epic", "workspace"},
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeInteractive,
 			SupportedModes:        supportedModesForRuntime(productPlannerProfile.RuntimeKind),
@@ -313,9 +350,9 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			RuntimeKind:           productPlannerProfile.RuntimeKind,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
-			AllowedTools:          []string{"list_deals", "update_deal_stage", "add_deal_note", "list_contacts", "list_buyer_signals", "list_documents", "read_document", "search_documents"},
+			AllowedTools:          []string{"list_deals", "update_deal_stage", "add_deal_note", "list_contacts", "list_buyer_signals", "list_documents", "list_collections", "read_document", "search_documents"},
 			AllowedCommands:       []string{},
-			AllowedTargetTypes:    []string{"crm_deal", "support_conversation", "document"},
+			AllowedTargetTypes:    []string{"crm_deal", "support_conversation", "document", "workspace"},
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeInteractive,
 			SupportedModes:        supportedModesForRuntime(productPlannerProfile.RuntimeKind),
@@ -388,6 +425,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			SystemPrompt:          reviewPrompt,
 		},
 	}
+
+	return applyBuiltInPresetInstructionMetadata(presets)
 }
 
 func filterPresetTools(base []string, required ...string) []string {
@@ -403,9 +442,7 @@ func filterPresetTools(base []string, required ...string) []string {
 			worker.ToolPublishPreview,
 			worker.ToolPublishPRDDraft,
 			worker.ToolPublishTaskPlan,
-			worker.ToolPublishTaskPlanDoc,
-			worker.ToolPublishStoryPlan,
-			worker.ToolPublishStoryPlanDoc:
+			worker.ToolPublishTaskPlanDoc:
 			if !requiredSet[toolName] {
 				continue
 			}

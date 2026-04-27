@@ -41,6 +41,24 @@ func (r *SupportEmailLogRepository) ListByConversation(ctx context.Context, work
 	return logs, nil
 }
 
+// GetByMessageID returns the email log that referenced the given support_message ID.
+func (r *SupportEmailLogRepository) GetByMessageID(ctx context.Context, workspaceID, messageID string) (*model.SupportEmailLog, error) {
+	if workspaceID == "" || messageID == "" {
+		return nil, nil
+	}
+	var log model.SupportEmailLog
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND ? = ANY(message_ids)", workspaceID, messageID).
+		Order("created_at DESC").
+		First(&log).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get support email log by message id: %w", err)
+	}
+	return &log, nil
+}
+
 // GetByPostmarkMessageID returns an existing log for the provider message ID.
 func (r *SupportEmailLogRepository) GetByPostmarkMessageID(ctx context.Context, postmarkMessageID string) (*model.SupportEmailLog, error) {
 	if postmarkMessageID == "" {
@@ -98,6 +116,55 @@ func (r *SupportEmailLogRepository) MarkOpened(ctx context.Context, id string, o
 			"opened_at": openedAt,
 		}).Error; err != nil {
 		return fmt.Errorf("mark support email log opened: %w", err)
+	}
+	return nil
+}
+
+// MarkDelivered updates an outbound email log with its first observed delivery time.
+func (r *SupportEmailLogRepository) MarkDelivered(ctx context.Context, id string, deliveredAt time.Time) error {
+	if id == "" {
+		return nil
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.SupportEmailLog{}).
+		Where("id = ? AND (delivered_at IS NULL OR delivered_at > ?)", id, deliveredAt).
+		Updates(map[string]any{
+			"status": gorm.Expr(
+				"CASE WHEN status IN ('opened', 'bounced', 'spam_complaint') THEN status ELSE ? END",
+				"delivered",
+			),
+			"delivered_at": deliveredAt,
+		}).Error; err != nil {
+		return fmt.Errorf("mark support email log delivered: %w", err)
+	}
+	return nil
+}
+
+// MarkBounced updates an outbound email log with its first observed bounce or complaint time.
+func (r *SupportEmailLogRepository) MarkBounced(ctx context.Context, id, status string, bouncedAt time.Time, errorMessage string) error {
+	if id == "" {
+		return nil
+	}
+	status = strings.TrimSpace(status)
+	if status == "" {
+		status = "bounced"
+	}
+	errorMessage = strings.TrimSpace(errorMessage)
+	if err := r.db.WithContext(ctx).
+		Model(&model.SupportEmailLog{}).
+		Where(
+			"id = ? AND (bounced_at IS NULL OR bounced_at > ? OR status <> ? OR COALESCE(error_message, '') <> ?)",
+			id,
+			bouncedAt,
+			status,
+			errorMessage,
+		).
+		Updates(map[string]any{
+			"status":        status,
+			"bounced_at":    bouncedAt,
+			"error_message": errorMessage,
+		}).Error; err != nil {
+		return fmt.Errorf("mark support email log bounced: %w", err)
 	}
 	return nil
 }

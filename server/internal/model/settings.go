@@ -35,6 +35,22 @@ type WorkspaceSettings struct {
 
 func (WorkspaceSettings) TableName() string { return "workspace_settings" }
 
+// Team type values used on WorkspaceTeam.TeamType. The column is a free-form
+// string for forward-compatibility, but the recognized set lives here so the
+// service layer can validate input and seed type-specific defaults (workflow
+// states, default task type).
+const (
+	TeamTypeEngineering = "engineering"
+	TeamTypeProduct     = "product"
+	TeamTypeDesign      = "design"
+	TeamTypeSupport     = "support"
+	TeamTypeMarketing   = "marketing"
+	TeamTypeSales       = "sales"
+	TeamTypeHR          = "hr"
+	TeamTypeOperations  = "operations"
+	TeamTypeCustom      = "custom"
+)
+
 // WorkspaceTeam represents a row in the workspace_teams table.
 type WorkspaceTeam struct {
 	ID                   string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
@@ -254,6 +270,14 @@ type CreateTeamRequest struct {
 	DefaultStoryType string  `json:"default_task_type"`
 }
 
+// EnsureDefaultTeamRequest is the payload for POST /api/settings/teams/ensure-default.
+// Returns the workspace's canonical team of the given type, creating one lazily
+// when none exists (see SettingsService.EnsureDefaultTeam).
+type EnsureDefaultTeamRequest struct {
+	WorkspaceID string `json:"workspace_id"`
+	TeamType    string `json:"team_type"`
+}
+
 // UpdateTeamRequest is the payload for updating a team.
 type UpdateTeamRequest struct {
 	Name             *string `json:"name"`
@@ -273,6 +297,7 @@ type UpdateTeamRepoDefaultRequest struct {
 	AutoSyncStates *bool   `json:"auto_sync_states"`
 	ReviewStateID  *string `json:"review_state_id"`
 	DoneStateID    *string `json:"done_state_id"`
+	ClosedStateID  *string `json:"closed_state_id"`
 }
 
 // AddTeamMemberRequest is the payload for adding a workspace member to a team.

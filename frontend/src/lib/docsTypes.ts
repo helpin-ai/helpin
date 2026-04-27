@@ -82,6 +82,10 @@ export interface DocsDocument {
   updated_at: string;
   deleted_at?: string;
   hc_slug?: string;
+  hc_og_title?: string;
+  hc_og_description?: string;
+  hc_og_image_url?: string;
+  hc_og_image_alt?: string;
   has_unpublished_changes?: boolean;
   live_published_at?: string;
   live_slug?: string;
@@ -125,6 +129,7 @@ export interface DocsLink {
 }
 
 export type HelpcenterThemeMode = 'light' | 'dark' | 'system';
+export type HelpcenterPublicUrlMode = 'hosted_subdomain' | 'custom_domain' | 'reverse_proxy';
 
 export type HelpcenterHeaderLinkStyle = 'text' | 'button';
 
@@ -173,6 +178,9 @@ export interface DocsHelpcenterConfig {
   workspace_id: string;
   subdomain: string;
   custom_domain?: string;
+  public_url_mode: HelpcenterPublicUrlMode;
+  reverse_proxy_host?: string;
+  reverse_proxy_base_path?: string;
   brand_name: string;
   brand_logo_url?: string;
   brand_logo_dark_url?: string;
@@ -192,6 +200,10 @@ export interface DocsHelpcenterConfig {
   is_published: boolean;
   seo_title?: string;
   seo_description?: string;
+  og_title?: string;
+  og_description?: string;
+  og_image_url?: string;
+  og_image_alt?: string;
   support_email?: string;
   created_at: string;
   updated_at: string;
@@ -202,6 +214,10 @@ export interface DocsHelpcenterArticle {
   document_id: string;
   seo_title?: string;
   seo_description?: string;
+  og_title?: string;
+  og_description?: string;
+  og_image_url?: string;
+  og_image_alt?: string;
   helpful_count: number;
   not_helpful_count: number;
   view_count: number;
@@ -260,6 +276,10 @@ export interface DocsHelpcenterArticleTranslation {
   content_text: string;
   seo_title?: string;
   seo_description?: string;
+  og_title?: string;
+  og_description?: string;
+  og_image_url?: string;
+  og_image_alt?: string;
   status: DocsHelpcenterTranslationStatus;
   source_updated_at?: string;
   source_synced: boolean;
@@ -344,6 +364,10 @@ export interface UpsertDocsHelpcenterArticleTranslationRequest {
   content: unknown;
   seo_title?: string;
   seo_description?: string;
+  og_title?: string;
+  og_description?: string;
+  og_image_url?: string;
+  og_image_alt?: string;
   status?: DocsHelpcenterTranslationStatus;
 }
 
@@ -506,6 +530,9 @@ export interface CreateDocsLinkRequest {
 export interface UpdateDocsHelpcenterConfigRequest {
   subdomain?: string;
   custom_domain?: string;
+  public_url_mode?: HelpcenterPublicUrlMode;
+  reverse_proxy_host?: string;
+  reverse_proxy_base_path?: string;
   brand_name?: string;
   brand_logo_url?: string;
   brand_logo_dark_url?: string;
@@ -521,7 +548,18 @@ export interface UpdateDocsHelpcenterConfigRequest {
   is_published?: boolean;
   seo_title?: string;
   seo_description?: string;
+  og_title?: string;
+  og_description?: string;
+  og_image_url?: string;
+  og_image_alt?: string;
   support_email?: string;
+}
+
+export interface UpdateDocsHelpcenterArticleMetadataRequest {
+  og_title?: string;
+  og_description?: string;
+  og_image_url?: string;
+  og_image_alt?: string;
 }
 
 export interface DocsArticleFeedbackRequest {

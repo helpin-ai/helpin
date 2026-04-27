@@ -21,6 +21,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/email"
+	"github.com/helpin-ai/helpin/server/internal/email/inboundhtml"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
@@ -53,10 +54,37 @@ func renderMessageMarkdownToHTML(content string) string {
 	return rendered
 }
 
+// inboundPayloadBodies picks the best content source from a Postmark inbound
+// payload and returns both a markdown-friendly variant for plaintext display
+// and a sanitized HTML variant for rich rendering in a sandboxed iframe.
+//
+// Preference order for the markdown variant:
+//  1. HtmlBody converted to markdown — preserves anchor text so long tracking
+//     URLs don't render as plaintext walls.
+//  2. StrippedTextReply — Postmark-stripped plain-text reply (quoted history
+//     removed), used when HTML is absent or conversion yields nothing.
+//  3. TextBody — full plain-text body as final fallback.
+//
+// htmlBody is populated only when HtmlBody was present and processing
+// succeeded; callers should treat an empty string as "no rich body".
+func inboundPayloadBodies(payload model.PostmarkInboundPayload) (markdown, htmlBody string) {
+	processed := inboundhtml.Process(payload.HtmlBody, "")
+	markdown = processed.Markdown
+	htmlBody = processed.HTML
+	if markdown != "" {
+		return markdown, htmlBody
+	}
+	if stripped := strings.TrimSpace(payload.StrippedTextReply); stripped != "" {
+		return stripped, htmlBody
+	}
+	return strings.TrimSpace(payload.TextBody), htmlBody
+}
+
 const (
 	emailFallbackOutboxKey     = "email_fallback_outbox"
 	emailFallbackLockKey       = "email_fallback_lock"
 	emailFallbackMsgsKeyPrefix = "email_fallback_msgs:"
+	emailFallbackOnlineRetry   = 30 * time.Second
 )
 
 // EmailFallbackService manages delayed outbound email delivery and inbound replies.
@@ -72,9 +100,9 @@ type EmailFallbackService struct {
 	installRepo         *repository.SupportInboxInstallationRepository
 	sessionRepo         *repository.SupportInboxSessionRepository
 	workspaceRepo       *repository.WorkspaceRepository
+	contactRepo         *repository.CRMContactRepository
 	supportInboxService *SupportInboxService
 	notificationService *NotificationService
-	linkPreviewService  SupportMessageLinkPreviewer
 	replyDomain         string
 	appBaseURL          string
 	logger              *slog.Logger
@@ -94,21 +122,22 @@ func (s *EmailFallbackService) SetNotificationService(notificationService *Notif
 	return s
 }
 
-// SetLinkPreviewService injects the support message link preview enricher.
-func (s *EmailFallbackService) SetLinkPreviewService(linkPreviewService SupportMessageLinkPreviewer) *EmailFallbackService {
-	if s == nil {
-		return nil
-	}
-	s.linkPreviewService = linkPreviewService
-	return s
-}
-
 // SetSupportInboxService injects the support inbox service for mailbox-aware inbound email handling.
 func (s *EmailFallbackService) SetSupportInboxService(supportInboxService *SupportInboxService) *EmailFallbackService {
 	if s == nil {
 		return nil
 	}
 	s.supportInboxService = supportInboxService
+	return s
+}
+
+// SetCRMContactRepository injects the CRM contact repository used to flag
+// recipient email addresses as invalid after a hard bounce or spam complaint.
+func (s *EmailFallbackService) SetCRMContactRepository(contactRepo *repository.CRMContactRepository) *EmailFallbackService {
+	if s == nil {
+		return nil
+	}
+	s.contactRepo = contactRepo
 	return s
 }
 
@@ -340,10 +369,7 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		return nil
 	}
 
-	content := strings.TrimSpace(payload.StrippedTextReply)
-	if content == "" {
-		content = strings.TrimSpace(payload.TextBody)
-	}
+	content, htmlBody := inboundPayloadBodies(payload)
 	if content == "" {
 		return nil
 	}
@@ -374,9 +400,6 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		MessageType:       "reply",
 		ViaChannel:        &viaEmail,
 	}
-	if s.linkPreviewService != nil {
-		s.linkPreviewService.EnrichMessage(ctx, msg)
-	}
 
 	var createdMsg *model.SupportMessage
 	txErr := s.convRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -399,6 +422,7 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 			PostmarkMessageID: strPtr(strings.TrimSpace(payload.MessageID)),
 			RawBody:           rawPayload,
 			StrippedText:      content,
+			HTMLBody:          htmlBody,
 			Status:            "sent",
 		}
 		if route != nil {
@@ -498,18 +522,6 @@ func (s *EmailFallbackService) fireEmail(ctx context.Context, conversationID str
 		return s.cleanup(ctx, conversationID)
 	}
 
-	allAlreadyNotified := true
-	var pending []model.SupportMessage
-	for _, msg := range messages {
-		if msg.EmailNotifiedAt == nil {
-			allAlreadyNotified = false
-			pending = append(pending, msg)
-		}
-	}
-	if allAlreadyNotified || len(pending) == 0 {
-		return s.cleanup(ctx, conversationID)
-	}
-
 	conv, err := s.findConversationByID(ctx, conversationID)
 	if err != nil {
 		return err
@@ -523,9 +535,6 @@ func (s *EmailFallbackService) fireEmail(ctx context.Context, conversationID str
 	if conv.CustomerEmail == nil || strings.TrimSpace(*conv.CustomerEmail) == "" {
 		return s.cleanup(ctx, conversationID)
 	}
-	if online, err := s.isVisitorOnline(ctx, conv.WorkspaceID, conv.AnonymousID); err == nil && online {
-		return s.cleanup(ctx, conversationID)
-	}
 
 	settings, err := s.loadSettings(ctx, conv.WorkspaceID)
 	if err != nil {
@@ -533,6 +542,40 @@ func (s *EmailFallbackService) fireEmail(ctx context.Context, conversationID str
 	}
 	if !settings.EmailFallbackEnabled {
 		return s.cleanup(ctx, conversationID)
+	}
+
+	if s.contactRepo != nil {
+		if contact, err := s.contactRepo.GetByEmail(ctx, conv.WorkspaceID, strings.TrimSpace(*conv.CustomerEmail)); err == nil && contact != nil && contact.EmailStatus == model.CRMContactEmailStatusInvalid {
+			s.logger.InfoContext(ctx, "email fallback skipped — recipient marked invalid",
+				"conversation_id", conversationID,
+				"email", strings.TrimSpace(*conv.CustomerEmail),
+				"reason", derefString(contact.EmailStatusReason),
+			)
+			return s.cleanup(ctx, conversationID)
+		}
+	}
+
+	pending := unreadFallbackMessages(conv, messages)
+	if len(pending) == 0 {
+		return s.cleanup(ctx, conversationID)
+	}
+
+	maxAgeSecs := settings.EmailFallbackMaxDeliveryAgeSecs
+	if maxAgeSecs < 120 || maxAgeSecs > 1800 || maxAgeSecs < settings.EmailFallbackDelaySecs {
+		maxAgeSecs = model.DefaultSupportInboxSettings().EmailFallbackMaxDeliveryAgeSecs
+	}
+	freshPending := freshEmailFallbackMessages(pending, s.now(), time.Duration(maxAgeSecs)*time.Second)
+	if len(freshPending) == 0 {
+		s.logger.InfoContext(ctx, "email fallback skipped — unread reply is stale",
+			"conversation_id", conversationID,
+			"max_delivery_age_secs", maxAgeSecs,
+		)
+		return s.cleanup(ctx, conversationID)
+	}
+	pending = freshPending
+
+	if online, err := s.isVisitorOnline(ctx, conv.WorkspaceID, conv.AnonymousID); err == nil && online {
+		return s.postpone(ctx, conversationID, emailFallbackOnlineRetry)
 	}
 
 	workspace, err := s.workspaceRepo.GetByID(ctx, conv.WorkspaceID)
@@ -551,7 +594,8 @@ func (s *EmailFallbackService) fireEmail(ctx context.Context, conversationID str
 	if lastName := strings.TrimSpace(derefString(pending[len(pending)-1].SenderDisplayName)); lastName != "" {
 		agentName = lastName
 	}
-	from := fmt.Sprintf("%s - %s <%s>", agentName, workspaceName, s.emailClient.FromEmail())
+	fromAddress := s.resolveOutboundFromAddress(ctx, conv)
+	from := fmt.Sprintf("%s - %s <%s>", agentName, workspaceName, fromAddress)
 
 	logID := uuid.NewString()
 	rfcMessageID := fmt.Sprintf("<helpin-%s@%s>", logID, s.replyDomain)
@@ -619,6 +663,52 @@ func (s *EmailFallbackService) fireEmail(ctx context.Context, conversationID str
 	return s.cleanup(ctx, conversationID)
 }
 
+func unreadFallbackMessages(conv *model.SupportConversation, messages []model.SupportMessage) []model.SupportMessage {
+	if conv == nil || len(messages) == 0 {
+		return []model.SupportMessage{}
+	}
+	lastSeen := time.Time{}
+	if conv.ContactLastSeenAt != nil {
+		lastSeen = *conv.ContactLastSeenAt
+	}
+	pending := make([]model.SupportMessage, 0, len(messages))
+	for _, msg := range messages {
+		messageType := strings.TrimSpace(msg.MessageType)
+		if messageType == "" {
+			messageType = "reply"
+		}
+		if msg.EmailNotifiedAt != nil ||
+			msg.IsInternal ||
+			messageType != "reply" ||
+			strings.TrimSpace(msg.SenderType) == "customer" {
+			continue
+		}
+		if !lastSeen.IsZero() && !msg.CreatedAt.After(lastSeen) {
+			continue
+		}
+		pending = append(pending, msg)
+	}
+	return pending
+}
+
+func freshEmailFallbackMessages(messages []model.SupportMessage, now time.Time, maxAge time.Duration) []model.SupportMessage {
+	if len(messages) == 0 {
+		return []model.SupportMessage{}
+	}
+	if maxAge <= 0 || now.IsZero() {
+		return messages
+	}
+
+	cutoff := now.Add(-maxAge)
+	fresh := make([]model.SupportMessage, 0, len(messages))
+	for _, msg := range messages {
+		if msg.CreatedAt.IsZero() || !msg.CreatedAt.Before(cutoff) {
+			fresh = append(fresh, msg)
+		}
+	}
+	return fresh
+}
+
 // ProcessOpenEvent records an outbound email open and mirrors it onto the related support messages.
 func (s *EmailFallbackService) ProcessOpenEvent(ctx context.Context, payload model.PostmarkOpenPayload, rawPayload string) error {
 	if s == nil || s.emailLogRepo == nil || s.messageRepo == nil {
@@ -683,6 +773,255 @@ func (s *EmailFallbackService) ProcessOpenEvent(ctx context.Context, payload mod
 		"message_count", len(logRow.MessageIDs),
 	)
 	s.publishMessageUpdated(logRow.WorkspaceID, logRow.ConversationID, lastString([]string(logRow.MessageIDs)), "postmark:open")
+	return nil
+}
+
+// ProcessDeliveryEvent records an outbound email delivery and mirrors it onto the related support conversation.
+func (s *EmailFallbackService) ProcessDeliveryEvent(ctx context.Context, payload model.PostmarkDeliveryPayload, rawPayload string) error {
+	if s == nil || s.emailLogRepo == nil {
+		return nil
+	}
+	if strings.TrimSpace(rawPayload) == "" {
+		rawPayloadBytes, err := json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("marshal delivery payload: %w", err)
+		}
+		rawPayload = string(rawPayloadBytes)
+	}
+
+	postmarkMessageID := strings.TrimSpace(payload.MessageID)
+	receivedAt := parsePostmarkTimestamp(payload.DeliveredAt)
+	if postmarkMessageID == "" {
+		s.recordWebhookEvent(ctx, "delivery", "", strings.TrimSpace(payload.MessageStream), rawPayload, nil, nil, receivedAt)
+		s.logger.InfoContext(ctx, "postmark delivery ignored without message id")
+		return nil
+	}
+
+	logRow, err := s.emailLogRepo.GetByPostmarkMessageID(ctx, postmarkMessageID)
+	if err != nil {
+		return err
+	}
+	var conv *model.SupportConversation
+	if logRow != nil && strings.TrimSpace(logRow.ConversationID) != "" {
+		conv, _ = s.findConversationByID(ctx, logRow.ConversationID)
+	}
+	s.recordWebhookEvent(ctx, "delivery", postmarkMessageID, strings.TrimSpace(payload.MessageStream), rawPayload, conv, logRow, receivedAt)
+	if logRow == nil || logRow.Direction != "outbound" || len(logRow.MessageIDs) == 0 {
+		s.logger.InfoContext(ctx, "postmark delivery ignored without matching outbound email",
+			"message_id", postmarkMessageID,
+		)
+		return nil
+	}
+	if logRow.DeliveredAt != nil {
+		s.logger.InfoContext(ctx, "postmark delivery duplicate ignored",
+			"message_id", postmarkMessageID,
+			"conversation_id", logRow.ConversationID,
+		)
+		return nil
+	}
+	if logRow.Status == "bounced" || logRow.Status == "spam_complaint" {
+		s.logger.InfoContext(ctx, "postmark delivery ignored after terminal delivery failure",
+			"message_id", postmarkMessageID,
+			"conversation_id", logRow.ConversationID,
+			"status", logRow.Status,
+		)
+		return nil
+	}
+
+	deliveredAt := s.now()
+	if receivedAt != nil {
+		deliveredAt = *receivedAt
+	}
+	if err := s.emailLogRepo.MarkDelivered(ctx, logRow.ID, deliveredAt); err != nil {
+		return err
+	}
+
+	s.logger.InfoContext(ctx, "postmark delivery marked support email delivered",
+		"message_id", postmarkMessageID,
+		"conversation_id", logRow.ConversationID,
+	)
+	s.publishMessageUpdated(logRow.WorkspaceID, logRow.ConversationID, lastString([]string(logRow.MessageIDs)), "postmark:delivery")
+	return nil
+}
+
+// ProcessBounceEvent records an outbound email bounce and mirrors it onto the related support conversation.
+func (s *EmailFallbackService) ProcessBounceEvent(ctx context.Context, payload model.PostmarkBouncePayload, rawPayload string) error {
+	if s == nil || s.emailLogRepo == nil {
+		return nil
+	}
+	if strings.TrimSpace(rawPayload) == "" {
+		rawPayloadBytes, err := json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("marshal bounce payload: %w", err)
+		}
+		rawPayload = string(rawPayloadBytes)
+	}
+
+	postmarkMessageID := strings.TrimSpace(payload.MessageID)
+	receivedAt := parsePostmarkTimestamp(payload.BouncedAt)
+	if postmarkMessageID == "" {
+		s.recordWebhookEvent(ctx, "bounce", "", strings.TrimSpace(payload.MessageStream), rawPayload, nil, nil, receivedAt)
+		s.logger.InfoContext(ctx, "postmark bounce ignored without message id")
+		return nil
+	}
+
+	logRow, err := s.emailLogRepo.GetByPostmarkMessageID(ctx, postmarkMessageID)
+	if err != nil {
+		return err
+	}
+	var conv *model.SupportConversation
+	if logRow != nil && strings.TrimSpace(logRow.ConversationID) != "" {
+		conv, _ = s.findConversationByID(ctx, logRow.ConversationID)
+	}
+	s.recordWebhookEvent(ctx, "bounce", postmarkMessageID, strings.TrimSpace(payload.MessageStream), rawPayload, conv, logRow, receivedAt)
+	if logRow == nil || logRow.Direction != "outbound" || len(logRow.MessageIDs) == 0 {
+		s.logger.InfoContext(ctx, "postmark bounce ignored without matching outbound email",
+			"message_id", postmarkMessageID,
+		)
+		return nil
+	}
+	if logRow.Status == "spam_complaint" {
+		s.logger.InfoContext(ctx, "postmark bounce ignored after spam complaint",
+			"message_id", postmarkMessageID,
+			"conversation_id", logRow.ConversationID,
+		)
+		return nil
+	}
+	if logRow.BouncedAt != nil && logRow.Status == "bounced" {
+		s.logger.InfoContext(ctx, "postmark bounce duplicate ignored",
+			"message_id", postmarkMessageID,
+			"conversation_id", logRow.ConversationID,
+		)
+		return nil
+	}
+	if logRow.Status == "opened" {
+		s.logger.InfoContext(ctx, "postmark bounce ignored after open",
+			"message_id", postmarkMessageID,
+			"conversation_id", logRow.ConversationID,
+		)
+		return nil
+	}
+
+	bouncedAt := s.now()
+	if receivedAt != nil {
+		bouncedAt = *receivedAt
+	}
+	description := strings.TrimSpace(payload.Description)
+	if description == "" {
+		description = strings.TrimSpace(payload.Details)
+	}
+	if err := s.emailLogRepo.MarkBounced(ctx, logRow.ID, "bounced", bouncedAt, description); err != nil {
+		return err
+	}
+
+	s.logger.InfoContext(ctx, "postmark bounce marked support email bounced",
+		"message_id", postmarkMessageID,
+		"conversation_id", logRow.ConversationID,
+	)
+	if bounceTypeIsPermanent(payload.Type) {
+		recipient := strings.TrimSpace(payload.Recipient)
+		if recipient == "" {
+			recipient = strings.TrimSpace(logRow.ToEmail)
+		}
+		s.invalidateContactEmail(ctx, logRow.WorkspaceID, recipient, fmt.Sprintf("hard bounce: %s", strings.TrimSpace(payload.Type)))
+	}
+	s.publishMessageUpdated(logRow.WorkspaceID, logRow.ConversationID, lastString([]string(logRow.MessageIDs)), "postmark:bounce")
+	return nil
+}
+
+// bounceTypeIsPermanent returns true for Postmark bounce types that indicate
+// the recipient's address is permanently undeliverable. Transient bounces
+// (SoftBounce, Transient, DnsError) are not permanent.
+func bounceTypeIsPermanent(bounceType string) bool {
+	switch strings.TrimSpace(bounceType) {
+	case "HardBounce", "BadEmailAddress", "Blocked", "ManuallyDeactivated", "Unconfirmed":
+		return true
+	}
+	return false
+}
+
+// invalidateContactEmail flags any CRM contact in the workspace whose email
+// matches the bounced recipient as undeliverable. Logs and swallows errors —
+// the webhook still succeeds if the CRM update fails.
+func (s *EmailFallbackService) invalidateContactEmail(ctx context.Context, workspaceID, email, reason string) {
+	if s.contactRepo == nil || strings.TrimSpace(email) == "" {
+		return
+	}
+	if err := s.contactRepo.MarkEmailInvalid(ctx, workspaceID, email, reason); err != nil {
+		s.logger.ErrorContext(ctx, "mark crm contact email invalid",
+			"error", err, "workspace_id", workspaceID, "email", email)
+		return
+	}
+	s.logger.InfoContext(ctx, "crm contact email marked invalid",
+		"workspace_id", workspaceID, "email", email, "reason", reason)
+}
+
+// ProcessSpamComplaintEvent records an outbound email spam complaint and mirrors it onto the related support conversation.
+func (s *EmailFallbackService) ProcessSpamComplaintEvent(ctx context.Context, payload model.PostmarkSpamComplaintPayload, rawPayload string) error {
+	if s == nil || s.emailLogRepo == nil {
+		return nil
+	}
+	if strings.TrimSpace(rawPayload) == "" {
+		rawPayloadBytes, err := json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("marshal spam complaint payload: %w", err)
+		}
+		rawPayload = string(rawPayloadBytes)
+	}
+
+	postmarkMessageID := strings.TrimSpace(payload.MessageID)
+	receivedAt := parsePostmarkTimestamp(payload.BouncedAt)
+	if postmarkMessageID == "" {
+		s.recordWebhookEvent(ctx, "spam_complaint", "", strings.TrimSpace(payload.MessageStream), rawPayload, nil, nil, receivedAt)
+		s.logger.InfoContext(ctx, "postmark spam complaint ignored without message id")
+		return nil
+	}
+
+	logRow, err := s.emailLogRepo.GetByPostmarkMessageID(ctx, postmarkMessageID)
+	if err != nil {
+		return err
+	}
+	var conv *model.SupportConversation
+	if logRow != nil && strings.TrimSpace(logRow.ConversationID) != "" {
+		conv, _ = s.findConversationByID(ctx, logRow.ConversationID)
+	}
+	s.recordWebhookEvent(ctx, "spam_complaint", postmarkMessageID, strings.TrimSpace(payload.MessageStream), rawPayload, conv, logRow, receivedAt)
+	if logRow == nil || logRow.Direction != "outbound" || len(logRow.MessageIDs) == 0 {
+		s.logger.InfoContext(ctx, "postmark spam complaint ignored without matching outbound email",
+			"message_id", postmarkMessageID,
+		)
+		return nil
+	}
+	if logRow.BouncedAt != nil && logRow.Status == "spam_complaint" {
+		s.logger.InfoContext(ctx, "postmark spam complaint duplicate ignored",
+			"message_id", postmarkMessageID,
+			"conversation_id", logRow.ConversationID,
+		)
+		return nil
+	}
+
+	complaintAt := s.now()
+	if receivedAt != nil {
+		complaintAt = *receivedAt
+	}
+	description := strings.TrimSpace(payload.Description)
+	if description == "" {
+		description = strings.TrimSpace(payload.Details)
+	}
+	if err := s.emailLogRepo.MarkBounced(ctx, logRow.ID, "spam_complaint", complaintAt, description); err != nil {
+		return err
+	}
+
+	s.logger.InfoContext(ctx, "postmark spam complaint marked support email complained",
+		"message_id", postmarkMessageID,
+		"conversation_id", logRow.ConversationID,
+	)
+	recipient := strings.TrimSpace(payload.Recipient)
+	if recipient == "" {
+		recipient = strings.TrimSpace(logRow.ToEmail)
+	}
+	s.invalidateContactEmail(ctx, logRow.WorkspaceID, recipient, "spam complaint")
+	s.publishMessageUpdated(logRow.WorkspaceID, logRow.ConversationID, lastString([]string(logRow.MessageIDs)), "postmark:spam_complaint")
 	return nil
 }
 
@@ -862,6 +1201,23 @@ func (s *EmailFallbackService) cleanup(ctx context.Context, conversationID strin
 	return nil
 }
 
+func (s *EmailFallbackService) postpone(ctx context.Context, conversationID string, delay time.Duration) error {
+	if s == nil || s.redis == nil {
+		return nil
+	}
+	if delay <= 0 {
+		delay = emailFallbackOnlineRetry
+	}
+	fireAt := s.now().Add(delay)
+	if _, err := s.redis.ZAddArgs(ctx, emailFallbackOutboxKey, redis.ZAddArgs{
+		XX:      true,
+		Members: []redis.Z{{Score: float64(fireAt.Unix()), Member: conversationID}},
+	}).Result(); err != nil {
+		return fmt.Errorf("postpone email fallback outbox: %w", err)
+	}
+	return nil
+}
+
 func (s *EmailFallbackService) msgListKey(conversationID string) string {
 	return emailFallbackMsgsKeyPrefix + conversationID
 }
@@ -961,6 +1317,31 @@ func (s *EmailFallbackService) unsubscribeAddress(conversationID string) string 
 		domain = "replies.helpin.email"
 	}
 	return fmt.Sprintf("unsubscribe-%s@%s", conversationID, domain)
+}
+
+// resolveOutboundFromAddress returns the branded sender address for a
+// conversation's outbound email. It prefers the mailbox-aware route address
+// (<handle>@<slug>.<route_domain>) so replies land on the verified customer
+// domain, falling back to the legacy global Postmark sender when the slug or
+// route domain is unavailable.
+func (s *EmailFallbackService) resolveOutboundFromAddress(ctx context.Context, conv *model.SupportConversation) string {
+	fallback := s.emailClient.FromEmail()
+	if s.supportInboxService == nil || conv == nil {
+		return fallback
+	}
+	addr, err := s.supportInboxService.BuildOutboundFromAddress(ctx, conv.WorkspaceID, conv.MailboxID)
+	if err != nil {
+		s.logger.WarnContext(ctx, "mailbox-branded outbound from unavailable, using fallback sender",
+			"error", err,
+			"workspace_id", conv.WorkspaceID,
+			"conversation_id", conv.ID,
+		)
+		return fallback
+	}
+	if strings.TrimSpace(addr) == "" {
+		return fallback
+	}
+	return addr
 }
 
 func (s *EmailFallbackService) isVisitorOnline(ctx context.Context, workspaceID string, anonymousID *string) (bool, error) {
@@ -1063,10 +1444,7 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		return nil
 	}
 
-	content := strings.TrimSpace(payload.StrippedTextReply)
-	if content == "" {
-		content = strings.TrimSpace(payload.TextBody)
-	}
+	content, htmlBody := inboundPayloadBodies(payload)
 	if content == "" {
 		return nil
 	}
@@ -1136,9 +1514,6 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		MessageType:       "reply",
 		ViaChannel:        &viaEmail,
 	}
-	if s.linkPreviewService != nil {
-		s.linkPreviewService.EnrichMessage(ctx, message)
-	}
 
 	rfcMessageID := inboundRFCMessageID(payload)
 	inReplyTo := normalizeRFCHeaderValue(inboundHeaderValue(payload.Headers, "In-Reply-To"))
@@ -1184,6 +1559,7 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 			PostmarkMessageID: strPtr(strings.TrimSpace(payload.MessageID)),
 			RawBody:           rawPayload,
 			StrippedText:      content,
+			HTMLBody:          htmlBody,
 			Status:            "sent",
 		}
 		if logRow.PostmarkMessageID != nil && *logRow.PostmarkMessageID == "" {

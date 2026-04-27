@@ -7,6 +7,7 @@ import type {
   DocsVersion,
   DocsLink,
   DocsHelpcenterConfig,
+  DocsHelpcenterArticle,
   DocsHelpcenterSpaceTranslation,
   DocsHelpcenterCollectionTranslation,
   DocsHelpcenterArticleTranslation,
@@ -25,6 +26,7 @@ import type {
   UpdateDocsVersionRequest,
   CreateDocsLinkRequest,
   UpdateDocsHelpcenterConfigRequest,
+  UpdateDocsHelpcenterArticleMetadataRequest,
   UpdateDocsHelpcenterLocalesRequest,
   AutoTranslateMissingResponse,
   UpsertDocsHelpcenterSpaceTranslationRequest,
@@ -206,11 +208,13 @@ export const docsService = {
       `/docs/documents/${docId}/helpcenter/translations/${encodeURIComponent(locale)}/update-slug${qs(wsId)}`,
       { slug },
     ),
+  updateHelpcenterArticleMetadata: (wsId: string, docId: string, payload: UpdateDocsHelpcenterArticleMetadataRequest) =>
+    api.put<DocsHelpcenterArticle>(`/docs/documents/${docId}/helpcenter/metadata${qs(wsId)}`, payload),
   unpublishArticleTranslation: (wsId: string, docId: string, locale: string) =>
     api.post<DocsHelpcenterArticleTranslation>(`/docs/documents/${docId}/helpcenter/translations/${encodeURIComponent(locale)}/unpublish${qs(wsId)}`),
   markArticleTranslationReviewed: (wsId: string, docId: string, locale: string) =>
     api.post<DocsHelpcenterArticleTranslation>(`/docs/documents/${docId}/helpcenter/translations/${encodeURIComponent(locale)}/mark-reviewed${qs(wsId)}`),
-  uploadHelpcenterAsset: async (wsId: string, assetType: 'logo' | 'logo_dark' | 'favicon', file: File): Promise<{ data: { url: string } | null; error: string | null }> => {
+  uploadHelpcenterAsset: async (wsId: string, assetType: 'logo' | 'logo_dark' | 'favicon' | 'og_image', file: File): Promise<{ data: { url: string } | null; error: string | null }> => {
     const token = localStorage.getItem('access_token');
     const formData = new FormData();
     formData.append('file', file);

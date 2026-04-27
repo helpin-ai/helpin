@@ -2,6 +2,8 @@ package handler
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -623,7 +625,7 @@ func (h *DocsHandler) GeneratePreviewToken(w http.ResponseWriter, r *http.Reques
 // PublicPreviewArticle returns a preview of a document for the help center app.
 // Requires a valid preview JWT token as query parameter.
 func (h *DocsHandler) PublicPreviewArticle(w http.ResponseWriter, r *http.Request) {
-	setHelpcenterCacheHeader(w, "no-store")
+	setHelpcenterCacheHeader(w, helpcenterCacheNoStore)
 	cfg := h.resolveSubdomain(w, r)
 	if cfg == nil {
 		return
@@ -999,13 +1001,29 @@ func (h *DocsHandler) UpdateHelpcenterConfig(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, cfg)
 }
 
-// UploadHelpcenterAsset handles POST /docs/helpcenter/upload?type={logo|logo_dark|favicon}.
+func (h *DocsHandler) UpdateHelpcenterArticleMetadata(w http.ResponseWriter, r *http.Request) {
+	wsID := middleware.GetWorkspaceID(r.Context())
+	docID := chi.URLParam(r, "docId")
+	var req model.UpdateDocsHelpcenterArticleMetadataRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	article, err := h.helpcenterSvc.UpdateArticleMetadata(r.Context(), wsID, docID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, article)
+}
+
+// UploadHelpcenterAsset handles POST /docs/helpcenter/upload?type={logo|logo_dark|favicon|og_image}.
 func (h *DocsHandler) UploadHelpcenterAsset(w http.ResponseWriter, r *http.Request) {
 	wsID := middleware.GetWorkspaceID(r.Context())
 
 	assetType := r.URL.Query().Get("type")
-	if assetType != "logo" && assetType != "logo_dark" && assetType != "favicon" {
-		writeError(w, http.StatusBadRequest, "type must be 'logo', 'logo_dark', or 'favicon'")
+	if assetType != "logo" && assetType != "logo_dark" && assetType != "favicon" && assetType != "og_image" {
+		writeError(w, http.StatusBadRequest, "type must be 'logo', 'logo_dark', 'favicon', or 'og_image'")
 		return
 	}
 
@@ -1210,8 +1228,48 @@ func publicLocaleEnabled(cfg *model.DocsHelpcenterConfig, locale string) bool {
 	return false
 }
 
+// Canonical Cache-Control policies for public help-center responses.
+//
+// helpcenterCachePublicRead is the default policy for idempotent public reads
+// (spaces, navigation, collections, articles). Short browser TTL keeps the
+// editor experience responsive; longer s-maxage is friendly to shared caches
+// and future CDNs; stale-while-revalidate hides revalidation latency for users.
+//
+// helpcenterCacheNoStore is emitted on endpoints that must not be cached:
+// authenticated previews and write responses.
+const (
+	helpcenterCachePublicRead = "public, max-age=60, s-maxage=300, stale-while-revalidate=86400"
+	helpcenterCacheNoStore    = "no-store"
+)
+
 func setHelpcenterCacheHeader(w http.ResponseWriter, value string) {
 	w.Header().Set("Cache-Control", value)
+}
+
+// writeJSONWithETag marshals data to JSON, emits a strong ETag computed from
+// the response body, honors If-None-Match by returning 304 Not Modified, and
+// otherwise writes the body with the given status. Intended for idempotent
+// public help-center GETs so repeat visitors can revalidate cheaply after
+// max-age expires without a full response round-trip.
+func writeJSONWithETag(w http.ResponseWriter, r *http.Request, status int, data any) {
+	body, err := json.Marshal(data)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "helpcenter response marshal failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "response serialization failed")
+		return
+	}
+	sum := sha256.Sum256(body)
+	etag := `"` + hex.EncodeToString(sum[:]) + `"`
+	w.Header().Set("ETag", etag)
+
+	if match := r.Header.Get("If-None-Match"); match == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_, _ = w.Write(body)
 }
 
 func (h *DocsHandler) publicLocaleRedirectTarget(r *http.Request, cfg *model.DocsHelpcenterConfig) string {
@@ -1276,8 +1334,8 @@ func (h *DocsHandler) PublicGetConfig(w http.ResponseWriter, r *http.Request) {
 	if cfg == nil {
 		return
 	}
-	setHelpcenterCacheHeader(w, "no-store")
-	writeJSON(w, http.StatusOK, cfg)
+	setHelpcenterCacheHeader(w, helpcenterCachePublicRead)
+	writeJSONWithETag(w, r, http.StatusOK, cfg)
 }
 
 func (h *DocsHandler) PublicGetSpaces(w http.ResponseWriter, r *http.Request) {
@@ -1298,8 +1356,8 @@ func (h *DocsHandler) PublicGetSpaces(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	setHelpcenterCacheHeader(w, "public, max-age=300, stale-while-revalidate=60")
-	writeJSON(w, http.StatusOK, spaces)
+	setHelpcenterCacheHeader(w, helpcenterCachePublicRead)
+	writeJSONWithETag(w, r, http.StatusOK, spaces)
 }
 
 func (h *DocsHandler) PublicGetSpaceNavigation(w http.ResponseWriter, r *http.Request) {
@@ -1321,8 +1379,8 @@ func (h *DocsHandler) PublicGetSpaceNavigation(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
-	setHelpcenterCacheHeader(w, "public, max-age=300, stale-while-revalidate=60")
-	writeJSON(w, http.StatusOK, nav)
+	setHelpcenterCacheHeader(w, helpcenterCachePublicRead)
+	writeJSONWithETag(w, r, http.StatusOK, nav)
 }
 
 func (h *DocsHandler) PublicGetSpaceArticle(w http.ResponseWriter, r *http.Request) {
@@ -1351,8 +1409,8 @@ func (h *DocsHandler) PublicGetSpaceArticle(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusNotFound, "article not found")
 		return
 	}
-	setHelpcenterCacheHeader(w, "public, max-age=120, stale-while-revalidate=60")
-	writeJSON(w, http.StatusOK, article)
+	setHelpcenterCacheHeader(w, helpcenterCachePublicRead)
+	writeJSONWithETag(w, r, http.StatusOK, article)
 }
 
 // PublicGetCollectionPage returns a collection and its published articles for the public help center.
@@ -1376,8 +1434,8 @@ func (h *DocsHandler) PublicGetCollectionPage(w http.ResponseWriter, r *http.Req
 			writeError(w, http.StatusNotFound, "collection not found")
 			return
 		}
-		setHelpcenterCacheHeader(w, "public, max-age=300, stale-while-revalidate=60")
-		writeJSON(w, http.StatusOK, map[string]interface{}{
+		setHelpcenterCacheHeader(w, helpcenterCachePublicRead)
+		writeJSONWithETag(w, r, http.StatusOK, map[string]interface{}{
 			"collection": coll,
 			"articles":   articles,
 			"space_slug": coll.SpaceSlug,
@@ -1395,8 +1453,8 @@ func (h *DocsHandler) PublicGetCollectionPage(w http.ResponseWriter, r *http.Req
 			writeError(w, http.StatusNotFound, "collection not found")
 			return
 		}
-		setHelpcenterCacheHeader(w, "public, max-age=300, stale-while-revalidate=60")
-		writeJSON(w, http.StatusOK, map[string]interface{}{
+		setHelpcenterCacheHeader(w, helpcenterCachePublicRead)
+		writeJSONWithETag(w, r, http.StatusOK, map[string]interface{}{
 			"collection": coll,
 			"articles":   articles,
 			"space_slug": coll.SpaceSlug,
@@ -1413,8 +1471,8 @@ func (h *DocsHandler) PublicGetCollectionPage(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusNotFound, "collection not found")
 		return
 	}
-	setHelpcenterCacheHeader(w, "public, max-age=300, stale-while-revalidate=60")
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	setHelpcenterCacheHeader(w, helpcenterCachePublicRead)
+	writeJSONWithETag(w, r, http.StatusOK, map[string]interface{}{
 		"collection": coll,
 		"articles":   articles,
 		"space_slug": spaceSlug,
@@ -1449,8 +1507,8 @@ func (h *DocsHandler) PublicGetCanonicalArticle(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusNotFound, "article not found")
 		return
 	}
-	setHelpcenterCacheHeader(w, "public, max-age=120, stale-while-revalidate=60")
-	writeJSON(w, http.StatusOK, article)
+	setHelpcenterCacheHeader(w, helpcenterCachePublicRead)
+	writeJSONWithETag(w, r, http.StatusOK, article)
 }
 
 // PublicResolvePath resolves a legacy or imported URL path to a redirect target.

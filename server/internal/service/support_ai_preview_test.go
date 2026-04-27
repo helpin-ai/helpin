@@ -33,7 +33,7 @@ func (f *scriptedSupportPreviewLLM) ChatCompletion(_ context.Context, _ llm.Chat
 func TestPreviewSupportReplyClarifySkipsAnswerGeneration(t *testing.T) {
 	svc := &SupportAIService{
 		llmProvider:            &scriptedSupportPreviewLLM{responses: []llm.ChatResponse{{Content: `{"decision":"clarify","standalone_query":"","search_queries":[],"clarifying_question":"Do you mean Publer features or ContentStudio features?","reason":"needs_clarification"}`, TokensUsed: llm.TokenUsage{InputTokens: 10, OutputTokens: 8}}}},
-		queryExpansionModel:    "gpt-5.4-mini",
+		queryExpansionModel:    "gpt-5.5",
 		queryExpansionProvider: "openai",
 	}
 
@@ -85,7 +85,7 @@ func TestPreviewSupportReplyReturnsGroundedAnswerDecision(t *testing.T) {
 				},
 			},
 		},
-		queryExpansionModel:    "gpt-5.4-mini",
+		queryExpansionModel:    "gpt-5.5",
 		queryExpansionProvider: "openai",
 	}
 
@@ -126,7 +126,7 @@ func TestPreviewSupportReplyReturnsGroundedAnswerDecision(t *testing.T) {
 func TestPreviewSupportReplySurfacesPlannerFallback(t *testing.T) {
 	svc := &SupportAIService{
 		llmProvider:            &scriptedSupportPreviewLLM{errs: []error{errors.New("planner unavailable"), nil}, responses: []llm.ChatResponse{{Content: `{"content":"Fallback answer","can_answer":true,"source_doc_ids":[],"confidence":0.9}`, TokensUsed: llm.TokenUsage{InputTokens: 18, OutputTokens: 9}}}},
-		queryExpansionModel:    "gpt-5.4-mini",
+		queryExpansionModel:    "gpt-5.5",
 		queryExpansionProvider: "openai",
 	}
 

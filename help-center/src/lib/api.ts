@@ -1,3 +1,6 @@
+import { prefixBasepath } from '@/lib/pathUtils'
+import { resolveHelpCenterContext } from '@/lib/utils'
+
 interface ApiResponse<T> {
   data: T | null
   error: string | null
@@ -14,7 +17,20 @@ function getBaseUrl() {
     )
   }
 
-  return import.meta.env.VITE_API_URL || '/api'
+  const ctx = resolveHelpCenterContext(
+    window.location.hostname,
+    window.location.pathname,
+    window.location.search,
+  )
+  if (ctx.basepath) {
+    return prefixBasepath(ctx.basepath, '/api')
+  }
+
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL
+  }
+
+  return prefixBasepath(ctx.basepath, '/api')
 }
 
 async function request<T>(

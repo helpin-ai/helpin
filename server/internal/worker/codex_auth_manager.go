@@ -82,11 +82,19 @@ func (m *CodexAuthManager) StartDeviceCode(ctx context.Context, run *appmodel.Ag
 
 	if err := client.Start(sessionCtx); err != nil {
 		cancel()
+		if codexShouldReauthForError(profile, err) {
+			codexClearRecoveredAuthState(ctx, m.executor, run.WorkspaceID, state, profile)
+			return codexBuildReauthRequiredState(profile, "ChatGPT authentication needs to be refreshed."), nil
+		}
 		return nil, err
 	}
 	if err := client.Initialize(requestCtx); err != nil {
 		_ = client.Close()
 		cancel()
+		if codexShouldReauthForError(profile, err) {
+			codexClearRecoveredAuthState(ctx, m.executor, run.WorkspaceID, state, profile)
+			return codexBuildReauthRequiredState(profile, "ChatGPT authentication needs to be refreshed."), nil
+		}
 		return nil, err
 	}
 
@@ -94,6 +102,10 @@ func (m *CodexAuthManager) StartDeviceCode(ctx context.Context, run *appmodel.Ag
 	if err != nil {
 		_ = client.Close()
 		cancel()
+		if codexShouldReauthForError(profile, err) {
+			codexClearRecoveredAuthState(ctx, m.executor, run.WorkspaceID, state, profile)
+			return codexBuildReauthRequiredState(profile, "ChatGPT authentication needs to be refreshed."), nil
+		}
 		return nil, err
 	}
 	if authenticated {

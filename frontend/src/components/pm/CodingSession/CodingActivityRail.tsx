@@ -11,6 +11,7 @@ import {
   CancelCircleIcon,
   Wrench01Icon,
   File01Icon,
+  Globe02Icon,
 } from '@/lib/icons';
 
 import { Badge } from '@/components/ui/badge';
@@ -116,6 +117,7 @@ function TimelineRow({
 
 function EventTimelineItem({ event, isLast }: { event: CodingSessionEvent; isLast: boolean }) {
   const { icon, iconClass } = eventChrome(event);
+  const reviewFindings = event.type === 'review.findings.updated' ? parseReviewFindingsEventContent(event.payload.content) : null;
   const content = codingSessionEventContent(event.payload);
   const status = typeof event.payload.status === 'string' ? event.payload.status : null;
   const pauseReason = typeof event.payload.pause_reason === 'string' ? event.payload.pause_reason : null;
@@ -131,14 +133,17 @@ function EventTimelineItem({ event, isLast }: { event: CodingSessionEvent; isLas
       isLast={isLast}
     >
       <div className="space-y-1 text-xs text-muted-foreground">
+        {reviewFindings ? (
+          <ReviewFindingsTimelineCard review={reviewFindings} />
+        ) : null}
         {title ? <p className="font-medium text-foreground">{title}</p> : null}
         {summary ? <p>{summary}</p> : null}
-        {content && !summary ? <p className="whitespace-pre-wrap">{content}</p> : null}
+        {content && !summary && !reviewFindings ? <p className="whitespace-pre-wrap">{content}</p> : null}
         {status ? <p>Status: <span className="font-medium capitalize text-foreground">{status}</span></p> : null}
         {pauseReason && pauseReason !== 'none' ? (
           <p>Pause reason: <span className="font-medium capitalize text-foreground">{pauseReason.replaceAll('_', ' ')}</span></p>
         ) : null}
-        {event.type.startsWith('interaction.') || event.type.startsWith('auth.') || event.type.startsWith('activity.') ? (
+        {(event.type.startsWith('interaction.') || event.type.startsWith('auth.') || event.type.startsWith('activity.')) && !reviewFindings ? (
           <pre className="overflow-auto whitespace-pre-wrap rounded-md border border-border bg-slate-950 px-2 py-1.5 text-[11px] leading-5 text-slate-100">
             {JSON.stringify(event.payload.content ?? event.payload, null, 2)}
           </pre>
@@ -251,7 +256,7 @@ function eventChrome(event: CodingSessionEvent): { icon: ReactNode; iconClass: s
       iconClass: 'bg-emerald-50 border-emerald-200 dark:bg-emerald-950/20 dark:border-emerald-900/50 text-emerald-600 dark:text-emerald-400',
     };
   }
-  if (event.type.startsWith('interaction.') || event.type === 'approval.requested') {
+  if (event.type.startsWith('interaction.') || event.type === 'approval.requested' || event.type === 'review.findings.updated') {
     return {
       icon: <SecurityCheckIcon className="h-3.5 w-3.5" />,
       iconClass: 'bg-amber-50 border-amber-200 dark:bg-amber-950/20 dark:border-amber-900/50 text-amber-600 dark:text-amber-400',
@@ -283,6 +288,12 @@ function toolChrome(toolName: string, isFailed: boolean): { icon: ReactNode; ico
     };
   }
   const name = toolName.toLowerCase();
+  if (name.includes('web_search')) {
+    return {
+      icon: <Globe02Icon className="h-3.5 w-3.5" />,
+      iconClass: 'bg-sky-50 border-sky-200 dark:bg-sky-950/20 dark:border-sky-900/50 text-sky-600 dark:text-sky-400',
+    };
+  }
   if (name === 'run_command' || name === 'bash' || name.includes('shell') || name.includes('exec')) {
     return {
       icon: <TerminalIcon className="h-3.5 w-3.5" />,
@@ -396,5 +407,137 @@ function parsePlanForTimeline(argsText: string): RunPlanArtifact | null {
     return obj as unknown as RunPlanArtifact;
   } catch {
     return null;
+  }
+}
+
+interface ReviewFindingsTimelinePayload {
+  phase?: string;
+  title?: string;
+  summary?: string;
+  findings: Array<{
+    id: string;
+    title: string;
+    body: string;
+    priority?: string;
+    confidence?: string;
+    codeLocation?: string;
+  }>;
+  overallCorrectness?: string;
+  overallExplanation?: string;
+  overallConfidenceScore?: number;
+}
+
+function parseReviewFindingsEventContent(value: unknown): ReviewFindingsTimelinePayload | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const payload = value as Record<string, unknown>;
+  const findings = Array.isArray(payload.findings) ? payload.findings : [];
+  const normalizedFindings = findings.flatMap((rawFinding, index) => {
+    if (!rawFinding || typeof rawFinding !== 'object' || Array.isArray(rawFinding)) return [];
+    const finding = rawFinding as Record<string, unknown>;
+    const id = typeof finding.id === 'string' && finding.id.trim() ? finding.id.trim() : `finding_${index + 1}`;
+    const title = typeof finding.title === 'string' ? finding.title.trim() : '';
+    if (!id || !title) return [];
+    return [{
+      id,
+      title,
+      body: typeof finding.body === 'string' ? finding.body.trim() : '',
+      priority: typeof finding.priority === 'string' ? finding.priority.trim() : '',
+      confidence: formatReviewConfidenceLabel(finding.confidence),
+      codeLocation: typeof finding.code_location === 'string' ? finding.code_location.trim() : '',
+    }];
+  });
+  const title = typeof payload.title === 'string' ? payload.title.trim() : '';
+  const summary = typeof payload.summary === 'string' ? payload.summary.trim() : '';
+  const overallCorrectness = typeof payload.overall_correctness === 'string' ? payload.overall_correctness.trim() : '';
+  const overallExplanation = typeof payload.overall_explanation === 'string' ? payload.overall_explanation.trim() : '';
+  const overallConfidenceScore = typeof payload.overall_confidence_score === 'number' && Number.isFinite(payload.overall_confidence_score)
+    ? payload.overall_confidence_score
+    : undefined;
+  if (!title && !summary && !overallCorrectness && !overallExplanation && typeof overallConfidenceScore !== 'number' && normalizedFindings.length === 0) {
+    return null;
+  }
+  return {
+    phase: typeof payload.phase === 'string' ? payload.phase.trim() : '',
+    title,
+    summary,
+    findings: normalizedFindings,
+    overallCorrectness,
+    overallExplanation,
+    overallConfidenceScore,
+  };
+}
+
+function ReviewFindingsTimelineCard({ review }: { review: ReviewFindingsTimelinePayload }) {
+  return (
+    <div className="rounded-md border border-border/60 bg-muted/30 p-3">
+      <div className="mb-2 flex flex-wrap items-center gap-1.5">
+        <span className="text-xs font-medium text-foreground">
+          {review.title || 'Persisted review findings'}
+        </span>
+        {review.phase ? (
+          <Badge variant="outline" className="h-5 rounded-full px-1.5 text-[10px] uppercase tracking-wide">
+            {review.phase}
+          </Badge>
+        ) : null}
+        {review.overallCorrectness ? (
+          <Badge variant="outline" className="h-5 rounded-full px-1.5 text-[10px] uppercase tracking-wide">
+            {review.overallCorrectness.replaceAll('_', ' ')}
+          </Badge>
+        ) : null}
+        {typeof review.overallConfidenceScore === 'number' ? (
+          <Badge variant="outline" className="h-5 rounded-full px-1.5 text-[10px] uppercase tracking-wide">
+            {Math.round(review.overallConfidenceScore * 100)}% confidence
+          </Badge>
+        ) : null}
+      </div>
+      {review.summary ? <p className="mb-2 text-[11px] leading-5">{review.summary}</p> : null}
+      {review.overallExplanation ? <p className="mb-2 text-[11px] leading-5">{review.overallExplanation}</p> : null}
+      <div className="space-y-2">
+        {review.findings.map((finding) => (
+          <div key={finding.id} className="rounded-md border border-border/60 bg-background px-2.5 py-2">
+            <div className="mb-1 flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] font-medium text-foreground">{finding.title}</span>
+              {finding.priority ? (
+                <Badge variant="outline" className={cn('h-5 rounded-full px-1.5 text-[10px] uppercase tracking-wide', reviewPriorityBadgeClassName(finding.priority))}>
+                  {finding.priority.toUpperCase()}
+                </Badge>
+              ) : null}
+              {finding.confidence ? (
+                <Badge variant="outline" className="h-5 rounded-full px-1.5 text-[10px] uppercase tracking-wide">
+                  {finding.confidence}
+                </Badge>
+              ) : null}
+            </div>
+            {finding.body ? <p className="text-[11px] leading-5 text-muted-foreground">{finding.body}</p> : null}
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
+              <code>{finding.id}</code>
+              {finding.codeLocation ? <code>{finding.codeLocation}</code> : null}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function formatReviewConfidenceLabel(value: unknown) {
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    if (value >= 0 && value <= 1) return `${Math.round(value * 100)}%`;
+    return String(value);
+  }
+  return '';
+}
+
+function reviewPriorityBadgeClassName(priority: string) {
+  switch (priority.trim().toUpperCase()) {
+    case 'P0':
+      return 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300';
+    case 'P1':
+      return 'border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-900/60 dark:bg-orange-950/30 dark:text-orange-300';
+    case 'P2':
+      return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300';
+    default:
+      return '';
   }
 }

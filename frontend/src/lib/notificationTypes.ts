@@ -126,25 +126,26 @@ export interface NotificationCategory {
 }
 
 export const WORKSPACE_NOTIFICATION_CATEGORIES: NotificationCategory[] = [
-  { key: 'assignments', label: 'Assignments', description: 'Assignments and ownership changes' },
-  { key: 'status_changes', label: 'Status changes', description: 'Changes to status, priority, and blocking' },
-  { key: 'comments', label: 'Comments and replies', description: 'New comments on items you follow' },
-  { key: 'mentions', label: 'Mentions', description: 'Mentions in comments, descriptions, or checklists' },
-  { key: 'subscriptions', label: 'Subscriptions', description: 'Updates to items you follow' },
-  { key: 'sprints', label: 'Sprints', description: 'Sprint creation and updates' },
+  { key: 'assignments', label: 'Assignments', description: 'When someone assigns you work or changes ownership' },
+  { key: 'agent_attention', label: 'Agent attention', description: 'Agent runs waiting for your input or approval' },
+  { key: 'status_changes', label: 'Status changes', description: 'Updates to status, priority, or blocking state' },
+  { key: 'comments', label: 'Comments and replies', description: 'New comments on work you follow' },
+  { key: 'mentions', label: 'Mentions', description: 'When someone mentions you in comments, descriptions, or checklists' },
+  { key: 'subscriptions', label: 'Following', description: 'Other updates on work you follow' },
+  { key: 'sprints', label: 'Sprints', description: 'Sprint creation, planning, and schedule updates' },
 ]
 
 export const SUPPORT_NOTIFICATION_CATEGORIES: NotificationCategory[] = [
   {
     key: 'support_replies',
     label: 'Customer replies',
-    description: 'Unread customer replies on conversations you currently own',
+    description: 'Unread replies on conversations assigned to you',
     supportsEmail: true,
   },
   {
     key: 'support_mentions',
-    label: 'Support mentions',
-    description: 'Mentions in internal support notes and teammate collaboration',
+    label: 'Teammate mentions',
+    description: 'Mentions in internal notes and support collaboration',
     supportsEmail: true,
   },
 ]

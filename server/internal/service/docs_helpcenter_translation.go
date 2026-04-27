@@ -338,6 +338,10 @@ func (s *DocsHelpcenterTranslationService) UpsertArticleTranslation(ctx context.
 		Content:         req.Content,
 		SEOTitle:        req.SEOTitle,
 		SEODescription:  req.SEODescription,
+		OGTitle:         req.OGTitle,
+		OGDescription:   req.OGDescription,
+		OGImageURL:      req.OGImageURL,
+		OGImageAlt:      req.OGImageAlt,
 		Status:          status,
 		SourceUpdatedAt: &doc.UpdatedAt,
 		SourceSynced:    true,
@@ -686,6 +690,10 @@ func (s *DocsHelpcenterTranslationService) MarkArticleTranslationReviewed(ctx co
 		ContentText:     translation.ContentText,
 		SEOTitle:        translation.SEOTitle,
 		SEODescription:  translation.SEODescription,
+		OGTitle:         translation.OGTitle,
+		OGDescription:   translation.OGDescription,
+		OGImageURL:      translation.OGImageURL,
+		OGImageAlt:      translation.OGImageAlt,
 		Status:          status,
 		SourceUpdatedAt: translation.SourceUpdatedAt,
 		SourceSynced:    true,
@@ -751,6 +759,10 @@ func (s *DocsHelpcenterTranslationService) SyncDefaultLocaleArticleMirror(ctx co
 		Excerpt:         doc.Excerpt,
 		SEOTitle:        article.SEOTitle,
 		SEODescription:  article.SEODescription,
+		OGTitle:         article.OGTitle,
+		OGDescription:   article.OGDescription,
+		OGImageURL:      article.OGImageURL,
+		OGImageAlt:      article.OGImageAlt,
 		Status:          status,
 		SourceUpdatedAt: &doc.UpdatedAt,
 		SourceSynced:    true,
@@ -1564,6 +1576,10 @@ func buildArticleTranslationPublication(translation *model.DocsHelpcenterArticle
 		ContentText:    translation.ContentText,
 		SEOTitle:       translation.SEOTitle,
 		SEODescription: translation.SEODescription,
+		OGTitle:        translation.OGTitle,
+		OGDescription:  translation.OGDescription,
+		OGImageURL:     translation.OGImageURL,
+		OGImageAlt:     translation.OGImageAlt,
 		PublishedAt:    publishedAt,
 	}
 }
@@ -1585,6 +1601,18 @@ func translationHasUnpublishedChanges(translation *model.DocsHelpcenterArticleTr
 		return true
 	}
 	if strings.TrimSpace(stringPtrValue(translation.SEODescription)) != strings.TrimSpace(stringPtrValue(publication.SEODescription)) {
+		return true
+	}
+	if strings.TrimSpace(stringPtrValue(translation.OGTitle)) != strings.TrimSpace(stringPtrValue(publication.OGTitle)) {
+		return true
+	}
+	if strings.TrimSpace(stringPtrValue(translation.OGDescription)) != strings.TrimSpace(stringPtrValue(publication.OGDescription)) {
+		return true
+	}
+	if strings.TrimSpace(stringPtrValue(translation.OGImageURL)) != strings.TrimSpace(stringPtrValue(publication.OGImageURL)) {
+		return true
+	}
+	if strings.TrimSpace(stringPtrValue(translation.OGImageAlt)) != strings.TrimSpace(stringPtrValue(publication.OGImageAlt)) {
 		return true
 	}
 	return !bytes.Equal(compactJSON(translation.Content), compactJSON(publication.Content))

@@ -30,6 +30,16 @@ export function getInitials(nameOrEmail?: string | null): string {
  * - Same year: "Mar 8, 2:30 PM"
  * - Older: "Mar 8, 2025"
  */
+/**
+ * Truncate a string to `max` visible characters, appending an ellipsis.
+ * Uses `Array.from` so emoji and multi-byte characters count as one.
+ */
+export function truncateText(value: string, max: number): string {
+  const chars = Array.from(value);
+  if (chars.length <= max) return value;
+  return chars.slice(0, max).join('').trimEnd() + '…';
+}
+
 export function timeAgo(isoOrDate: string | Date): string {
   const date = typeof isoOrDate === 'string' ? parseISO(isoOrDate) : isoOrDate;
   const now = new Date();

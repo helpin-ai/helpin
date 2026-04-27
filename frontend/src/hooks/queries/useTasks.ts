@@ -26,6 +26,9 @@ interface TaskQueryFilters {
   blocked?: string
   blocking?: string
   archived?: boolean
+  contact_id?: string
+  company_id?: string
+  deal_id?: string
 }
 
 interface TaskFilters extends TaskQueryFilters {}

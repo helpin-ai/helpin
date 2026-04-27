@@ -123,6 +123,18 @@ func (s *SupportInboxService) generateSupportEmailRouteKey(ctx context.Context) 
 	return "", fmt.Errorf("failed to allocate a unique support email route key")
 }
 
+// BuildOutboundFromAddress returns the mailbox-branded sender address used for
+// outbound support emails, formatted as "<handle>@<workspace_slug>.<route_domain>".
+// The workspace slug and the route domain must both be configured; otherwise an
+// error is returned so callers can fall back to a legacy global sender.
+func (s *SupportInboxService) BuildOutboundFromAddress(ctx context.Context, workspaceID string, mailboxID *string) (string, error) {
+	if s == nil {
+		return "", fmt.Errorf("support inbox service is unavailable")
+	}
+	mailbox := s.loadMailboxFromConversation(ctx, workspaceID, mailboxID)
+	return s.buildSupportEmailRouteAddress(ctx, workspaceID, mailbox)
+}
+
 func (s *SupportInboxService) buildSupportEmailRouteAddress(ctx context.Context, workspaceID string, mailbox *model.SupportMailbox) (string, error) {
 	namespace, err := s.supportEmailRouteNamespace(ctx, workspaceID)
 	if err != nil {

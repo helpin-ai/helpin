@@ -24,15 +24,15 @@ type SettingsService struct {
 
 var teamHandlePattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 var validTeamTypes = map[string]struct{}{
-	"engineering": {},
-	"product":     {},
-	"design":      {},
-	"support":     {},
-	"marketing":   {},
-	"sales":       {},
-	"hr":          {},
-	"operations":  {},
-	"custom":      {},
+	model.TeamTypeEngineering: {},
+	model.TeamTypeProduct:     {},
+	model.TeamTypeDesign:      {},
+	model.TeamTypeSupport:     {},
+	model.TeamTypeMarketing:   {},
+	model.TeamTypeSales:       {},
+	model.TeamTypeHR:          {},
+	model.TeamTypeOperations:  {},
+	model.TeamTypeCustom:      {},
 }
 
 func isValidTeamType(value string) bool {
@@ -88,7 +88,7 @@ func (s *SettingsService) CreateTeam(ctx context.Context, req model.CreateTeamRe
 	req.Name = strings.TrimSpace(req.Name)
 	req.Handle = &handle
 	if strings.TrimSpace(req.TeamType) == "" {
-		req.TeamType = "engineering"
+		req.TeamType = model.TeamTypeEngineering
 	}
 	if !isValidTeamType(req.TeamType) {
 		return nil, fmt.Errorf("invalid team_type")
@@ -130,7 +130,7 @@ func (s *SettingsService) CreateTeam(ctx context.Context, req model.CreateTeamRe
 	}
 	// Seed a default workflow for the new team.
 	if s.pmWorkflowService != nil {
-		if err := s.pmWorkflowService.SeedTeamWorkflow(ctx, req.WorkspaceID, team.ID, req.Name); err != nil {
+		if err := s.pmWorkflowService.SeedTeamWorkflow(ctx, req.WorkspaceID, team.ID, req.Name, req.TeamType); err != nil {
 			s.logger.ErrorContext(ctx, "failed to seed team workflow", "error", err, "team_id", team.ID, "workspace_id", req.WorkspaceID)
 			// Non-fatal: team was created successfully, workflow can be added later.
 		}
@@ -138,6 +138,127 @@ func (s *SettingsService) CreateTeam(ctx context.Context, req model.CreateTeamRe
 
 	s.logger.InfoContext(ctx, "team created", "team_id", team.ID, "workspace_id", req.WorkspaceID, "team_name", req.Name)
 	return team, nil
+}
+
+// defaultTeamDisplayName maps a team type to the human-readable name used when
+// EnsureDefaultTeam auto-creates a team for that type.
+func defaultTeamDisplayName(teamType string) string {
+	switch teamType {
+	case model.TeamTypeEngineering:
+		return "Engineering"
+	case model.TeamTypeProduct:
+		return "Product"
+	case model.TeamTypeDesign:
+		return "Design"
+	case model.TeamTypeSupport:
+		return "Support"
+	case model.TeamTypeMarketing:
+		return "Marketing"
+	case model.TeamTypeSales:
+		return "Sales"
+	case model.TeamTypeHR:
+		return "HR"
+	case model.TeamTypeOperations:
+		return "Operations"
+	default:
+		return "Team"
+	}
+}
+
+// defaultTaskTypeForTeamType picks the default_task_type seeded on a team that
+// EnsureDefaultTeam creates. Engineering gets feature-typed tasks; all other
+// team types default to chore (their tasks rarely map to eng features/bugs).
+func defaultTaskTypeForTeamType(teamType string) string {
+	if teamType == model.TeamTypeEngineering {
+		return model.PMTaskTypeFeature
+	}
+	return model.PMTaskTypeChore
+}
+
+// EnsureDefaultTeam returns the workspace's canonical team for the given type,
+// creating it if it does not exist. This is the entry point for CRM surfaces
+// (and any other caller) that need a "the sales team for this workspace" handle
+// without requiring onboarding to have pre-created one.
+//
+// If multiple teams share the team_type (e.g. two sales teams), the
+// earliest-created one wins. Creation races are resolved by re-querying after
+// a unique-index violation: if two callers land on the same handle, the loser
+// finds the winner's row and returns it.
+//
+// The caller's actorUserID, when non-empty, is attached as team owner so the
+// user who triggered the lazy creation has immediate edit access.
+func (s *SettingsService) EnsureDefaultTeam(ctx context.Context, workspaceID, teamType, actorUserID string) (*model.WorkspaceTeam, error) {
+	if strings.TrimSpace(workspaceID) == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	if !isValidTeamType(teamType) {
+		return nil, fmt.Errorf("invalid team_type")
+	}
+
+	// Fast path: team of this type already exists.
+	existing, err := s.settingsRepo.FindFirstTeamByType(ctx, workspaceID, teamType)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return existing, nil
+	}
+
+	// Pick a non-colliding handle. The base handle matches the team type
+	// (e.g. "sales"); if that is taken by an unrelated team, suffix -1, -2,
+	// etc. up to a small cap.
+	handle, err := s.firstAvailableTeamHandle(ctx, workspaceID, teamType)
+	if err != nil {
+		return nil, err
+	}
+
+	req := model.CreateTeamRequest{
+		WorkspaceID:      workspaceID,
+		Name:             defaultTeamDisplayName(teamType),
+		Handle:           &handle,
+		TeamType:         teamType,
+		DefaultStoryType: defaultTaskTypeForTeamType(teamType),
+	}
+	team, err := s.CreateTeam(ctx, req, actorUserID)
+	if err == nil {
+		s.logger.InfoContext(ctx, "default team auto-created", "workspace_id", workspaceID, "team_type", teamType, "team_id", team.ID)
+		return team, nil
+	}
+
+	// Creation raced with a concurrent EnsureDefaultTeam or a direct CreateTeam
+	// call that claimed our chosen handle. Re-query by type; if a row now
+	// exists, the race is benign and we return it.
+	if racer, qErr := s.settingsRepo.FindFirstTeamByType(ctx, workspaceID, teamType); qErr == nil && racer != nil {
+		s.logger.InfoContext(ctx, "default team create raced, returning concurrent winner", "workspace_id", workspaceID, "team_type", teamType, "team_id", racer.ID)
+		return racer, nil
+	}
+	return nil, err
+}
+
+// firstAvailableTeamHandle finds the first handle in the sequence
+// {teamType, teamType-1, teamType-2, ...} that no team in the workspace
+// currently uses. The search is bounded; if nothing is free after the cap,
+// the caller gets an error rather than a silently-wrong handle.
+func (s *SettingsService) firstAvailableTeamHandle(ctx context.Context, workspaceID, teamType string) (string, error) {
+	base := slugifyHandle(teamType)
+	if base == "" {
+		return "", fmt.Errorf("cannot derive handle from team_type")
+	}
+	const maxAttempts = 10
+	for i := 0; i < maxAttempts; i++ {
+		candidate := base
+		if i > 0 {
+			candidate = fmt.Sprintf("%s-%d", base, i)
+		}
+		existing, err := s.settingsRepo.GetTeamByHandle(ctx, workspaceID, candidate)
+		if err != nil {
+			return "", err
+		}
+		if existing == nil {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("no free team handle for type %q after %d attempts", teamType, maxAttempts)
 }
 
 // UpdateTeam modifies a team.

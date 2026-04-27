@@ -5,6 +5,7 @@ import "time"
 type CodingSession struct {
 	ID                  string                       `json:"id"`
 	RunID               string                       `json:"run_id"`
+	ParentRunID         *string                      `json:"parent_run_id,omitempty"`
 	WorkspaceID         string                       `json:"workspace_id"`
 	TargetType          string                       `json:"target_type"`
 	TargetID            string                       `json:"target_id"`
@@ -13,10 +14,16 @@ type CodingSession struct {
 	InvocationMode      string                       `json:"invocation_mode"`
 	Status              string                       `json:"status"`
 	PauseReason         string                       `json:"pause_reason"`
+	ErrorMessage        *string                      `json:"error_message,omitempty"`
 	Title               string                       `json:"title"`
 	Summary             *string                      `json:"summary,omitempty"`
+	SystemPrompt        *string                      `json:"system_prompt,omitempty"`
 	Capabilities        CodingSessionCapabilities    `json:"capabilities"`
 	Repo                CodingSessionRepoState       `json:"repo"`
+	CachedInputTokens   int                          `json:"cached_input_tokens"`
+	InputTokens         int                          `json:"input_tokens"`
+	OutputTokens        int                          `json:"output_tokens"`
+	TokensUsed          int                          `json:"tokens_used"`
 	AuthState           *CodexAuthState              `json:"auth_state,omitempty"`
 	StreamStateSnapshot *CodingSessionStreamSnapshot `json:"stream_state_snapshot,omitempty"`
 	TriggeredByUser     *CodingSessionActor          `json:"triggered_by_user,omitempty"`

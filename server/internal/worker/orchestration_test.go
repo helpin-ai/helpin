@@ -2,6 +2,7 @@ package worker
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -12,19 +13,19 @@ func TestExtractPlanningProposalParsesJSONAndFencedJSON(t *testing.T) {
 	}{
 		{
 			name:    "plain json",
-			content: `{"summary":"Breakdown","proposed_tasks":[{"ref":"story_1","name":"Story A","description":"Do A","story_type":"feature","estimate":3,"acceptance_criteria":["works"],"dependency_refs":[]}]}`,
+			content: `{"summary":"Breakdown","proposed_tasks":[{"ref":"task_1","name":"Task A","description":"Do A","task_type":"feature","estimate":3,"acceptance_criteria":["works"],"dependency_refs":[]}]}`,
 		},
 		{
 			name:    "fenced json",
-			content: "```json\n{\"summary\":\"Breakdown\",\"proposed_tasks\":[{\"ref\":\"story_1\",\"name\":\"Story A\",\"description\":\"Do A\",\"story_type\":\"feature\",\"estimate\":3}]}\n```",
+			content: "```json\n{\"summary\":\"Breakdown\",\"proposed_tasks\":[{\"ref\":\"task_1\",\"name\":\"Task A\",\"description\":\"Do A\",\"task_type\":\"feature\",\"estimate\":3}]}\n```",
 		},
 		{
 			name:    "prefixed prose",
-			content: "I drafted the story plan below.\n\n{\"summary\":\"Breakdown\",\"proposed_tasks\":[{\"ref\":\"story_1\",\"name\":\"Story A\",\"description\":\"Do A\",\"story_type\":\"feature\",\"estimate\":3,\"acceptance_criteria\":[\"works\"]}]}",
+			content: "I drafted the task plan below.\n\n{\"summary\":\"Breakdown\",\"proposed_tasks\":[{\"ref\":\"task_1\",\"name\":\"Task A\",\"description\":\"Do A\",\"task_type\":\"feature\",\"estimate\":3,\"acceptance_criteria\":[\"works\"]}]}",
 		},
 		{
 			name:    "prose with fenced json",
-			content: "Here is the plan in the required format:\n```json\n{\"summary\":\"Breakdown\",\"proposed_tasks\":[{\"ref\":\"story_1\",\"name\":\"Story A\",\"description\":\"Do A\",\"story_type\":\"feature\",\"estimate\":3}]}\n```",
+			content: "Here is the plan in the required format:\n```json\n{\"summary\":\"Breakdown\",\"proposed_tasks\":[{\"ref\":\"task_1\",\"name\":\"Task A\",\"description\":\"Do A\",\"task_type\":\"feature\",\"estimate\":3}]}\n```",
 		},
 	}
 
@@ -50,8 +51,8 @@ func TestExtractPlanningProposalParsesJSONAndFencedJSON(t *testing.T) {
 			if proposal.TokensUsed != 123 {
 				t.Fatalf("expected tokens 123, got %d", proposal.TokensUsed)
 			}
-			if len(proposal.ProposedTasks) != 1 || proposal.ProposedTasks[0].Name != "Story A" {
-				t.Fatalf("unexpected proposal stories: %+v", proposal.ProposedTasks)
+			if len(proposal.ProposedTasks) != 1 || proposal.ProposedTasks[0].Name != "Task A" {
+				t.Fatalf("unexpected proposal tasks: %+v", proposal.ProposedTasks)
 			}
 		})
 	}
@@ -118,5 +119,48 @@ func TestExtractJSONObjectFindsBalancedJSONInsideProse(t *testing.T) {
 	}
 	if payload["title"] != "Brace test" {
 		t.Fatalf("unexpected extracted title: %q", payload["title"])
+	}
+}
+
+func TestNormalizeTaskPlanPreviewContentRejectsStringTaskEntries(t *testing.T) {
+	_, err := NormalizeTaskPlanPreviewContent(json.RawMessage(`{
+		"summary":"Need to replace with correct structured payload.",
+		"proposed_tasks":["task_1"]
+	}`))
+	if err == nil {
+		t.Fatal("expected invalid task-plan preview content to be rejected")
+	}
+	if !strings.Contains(err.Error(), "task plan content proposed_tasks entries must be task objects") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestNormalizeTaskPlanPreviewContentPreservesCanonicalProposedTasks(t *testing.T) {
+	normalized, err := NormalizeTaskPlanPreviewContent(json.RawMessage(`{
+		"summary":"Breakdown",
+		"proposed_tasks":[
+			{
+				"ref":"task_1",
+				"name":"Task A",
+				"description":"Do A",
+				"task_type":"feature",
+				"acceptance_criteria":["works"],
+				"dependency_refs":[]
+			}
+		]
+	}`))
+	if err != nil {
+		t.Fatalf("NormalizeTaskPlanPreviewContent returned error: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(normalized, &payload); err != nil {
+		t.Fatalf("unmarshal normalized payload: %v", err)
+	}
+	if _, ok := payload["proposed_tasks"]; !ok {
+		t.Fatalf("expected canonical proposed_tasks key, got %#v", payload)
+	}
+	if tasks, ok := payload["proposed_tasks"].([]any); !ok || len(tasks) != 1 {
+		t.Fatalf("expected normalized proposed_tasks array, got %#v", payload)
 	}
 }

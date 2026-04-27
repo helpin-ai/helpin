@@ -43,7 +43,7 @@ export function BuyerSignals({ workspaceId, contactId, dealId }: BuyerSignalsPro
   const signals = (query.data?.data ?? []) as CRMBuyerSignal[];
 
   if (signals.length === 0) {
-    return <p className="text-sm text-muted-foreground">No buyer signals detected yet.</p>;
+    return <BuyerSignalsEmptyState />;
   }
 
   return (
@@ -85,6 +85,20 @@ export function BuyerSignals({ workspaceId, contactId, dealId }: BuyerSignalsPro
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function BuyerSignalsEmptyState() {
+  return (
+    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/60 px-4 py-8 text-center">
+      <div className="rounded-full bg-muted p-2.5">
+        <ZapIcon className="h-5 w-5 text-muted-foreground" />
+      </div>
+      <p className="mt-3 text-sm font-medium">No signals yet</p>
+      <p className="mt-1 max-w-xs text-xs text-muted-foreground">
+        Buyer signals surface automatically as AI analyzes emails, meetings, and support threads.
+      </p>
     </div>
   );
 }

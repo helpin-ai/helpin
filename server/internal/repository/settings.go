@@ -401,6 +401,24 @@ func (r *SettingsRepository) GetWorkspaceMemberByID(ctx context.Context, id stri
 	return r.getWorkspaceMemberByIDTx(r.db.WithContext(ctx), id)
 }
 
+// FindFirstTeamByType returns the earliest-created team in the workspace with
+// the given team_type, or nil if none exists. Used by EnsureDefaultTeam to
+// resolve the canonical team for a type (e.g. the workspace's sales team).
+func (r *SettingsRepository) FindFirstTeamByType(ctx context.Context, workspaceID, teamType string) (*model.WorkspaceTeam, error) {
+	team := &model.WorkspaceTeam{}
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND team_type = ?", workspaceID, teamType).
+		Order("created_at ASC").
+		First(team).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("find team by type: %w", err)
+	}
+	return team, nil
+}
+
 // GetTeamByHandle loads a team by workspace/handle.
 func (r *SettingsRepository) GetTeamByHandle(ctx context.Context, workspaceID, handle string) (*model.WorkspaceTeam, error) {
 	team := &model.WorkspaceTeam{}
@@ -471,6 +489,7 @@ func (r *SettingsRepository) UpsertTeamRepoDefault(ctx context.Context, teamID s
 	}
 	cfg.ReviewStateID = req.ReviewStateID
 	cfg.DoneStateID = req.DoneStateID
+	cfg.ClosedStateID = req.ClosedStateID
 
 	if err := r.db.WithContext(ctx).Save(cfg).Error; err != nil {
 		return nil, fmt.Errorf("upsert team repo default: %w", err)

@@ -13,6 +13,7 @@ const (
 	TriggerGitHubPush        = "github.push"
 	TriggerGitHubPROpened    = "github.pull_request_opened"
 	TriggerGitHubPRMerged    = "github.pull_request_merged"
+	TriggerGitHubPRClosed    = "github.pull_request_closed"
 	TriggerGitHubPRReviewReq = "github.pull_request_review_requested"
 	TriggerGitHubReleasePub  = "github.release_published"
 	TriggerGitHubCheckSuite  = "github.check_suite_completed"
@@ -61,7 +62,9 @@ type TriggerConfigStateEntered struct {
 
 // TriggerConfigCron holds config for cron triggers.
 type TriggerConfigCron struct {
-	Category string `json:"category"` // e.g. "sprint_hourly"
+	Category string `json:"category,omitempty"` // legacy category, e.g. "workspace_hourly"
+	Preset   string `json:"preset,omitempty"`   // e.g. "hourly", "daily", "weekly"
+	Schedule string `json:"schedule,omitempty"` // cron expression
 }
 
 // ActionConfigRunCommand holds config for run_command actions.
@@ -88,6 +91,12 @@ type TriggerConfigGitHubPRMerged struct {
 	RepoFullName string `json:"repo_full_name,omitempty"`
 }
 
+// TriggerConfigGitHubPRClosed holds config for github.pull_request_closed triggers.
+type TriggerConfigGitHubPRClosed struct {
+	BaseBranch   string `json:"base_branch,omitempty"`
+	RepoFullName string `json:"repo_full_name,omitempty"`
+}
+
 // TriggerConfigGitHubPush holds config for github.push triggers.
 type TriggerConfigGitHubPush struct {
 	Branch       string `json:"branch,omitempty"`
@@ -102,8 +111,11 @@ type TriggerConfigGitHubPullRequest struct {
 
 // TriggerConfigGitHubReleasePublished holds config for github.release_published triggers.
 type TriggerConfigGitHubReleasePublished struct {
-	RepoFullName string `json:"repo_full_name,omitempty"`
-	TagName      string `json:"tag_name,omitempty"`
+	RepoFullName      string   `json:"repo_full_name,omitempty"`
+	TagName           string   `json:"tag_name,omitempty"`
+	TagPattern        string   `json:"tag_pattern,omitempty"`
+	ReleaseKinds      []string `json:"release_kinds,omitempty"`
+	IncludePrerelease bool     `json:"include_prerelease,omitempty"`
 }
 
 // TriggerConfigGitHubCheckSuiteCompleted holds config for github.check_suite_completed triggers.
@@ -115,14 +127,23 @@ type TriggerConfigGitHubCheckSuiteCompleted struct {
 
 // Action config shapes (deserialized from JSONB).
 
+type ActionConfigRunAgentOutput struct {
+	Type           string  `json:"type,omitempty"`
+	SpaceID        string  `json:"space_id,omitempty"`
+	CollectionID   *string `json:"collection_id,omitempty"`
+	IdempotencyKey string  `json:"idempotency_key,omitempty"`
+}
+
 // ActionConfigRunAgent holds config for start_agent_run actions.
 type ActionConfigRunAgent struct {
-	TargetType        string  `json:"target_type,omitempty"`
-	TargetID          string  `json:"target_id,omitempty"`
-	AgentID           string  `json:"agent_id"`
-	AdditionalContext *string `json:"additional_context,omitempty"`
-	BaseBranch        string  `json:"base_branch,omitempty"`
-	WorkingBranch     string  `json:"working_branch,omitempty"`
+	TargetType            string                      `json:"target_type,omitempty"`
+	TargetID              string                      `json:"target_id,omitempty"`
+	AgentID               string                      `json:"agent_id"`
+	LegacyScheduleAgentID string                      `json:"legacy_schedule_agent_id,omitempty"`
+	AdditionalContext     *string                     `json:"additional_context,omitempty"`
+	BaseBranch            string                      `json:"base_branch,omitempty"`
+	WorkingBranch         string                      `json:"working_branch,omitempty"`
+	Output                *ActionConfigRunAgentOutput `json:"output,omitempty"`
 }
 
 // ActionConfigMoveToState holds config for move_to_state actions.
@@ -178,10 +199,17 @@ type AutomationEvent struct {
 	TargetID          string // entity UUID
 	TeamID            string // for scope matching without a task
 	RepoFullName      string
+	RepositoryID      string
 	Branch            string
 	BaseBranch        string
 	PullRequestNumber int
 	TagName           string
+	TargetCommitish   string
+	ReleaseName       string
+	ReleaseURL        string
+	PublishedAt       *time.Time
+	IsPrerelease      bool
+	ReleaseKind       string
 	Conclusion        string
 }
 

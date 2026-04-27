@@ -83,6 +83,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   const [specialNoticeText, setSpecialNoticeText] = useState<string>('');
   const [emailFallbackDelaySecs, setEmailFallbackDelaySecs] = useState(120);
   const [emailFallbackFromName, setEmailFallbackFromName] = useState('');
+  const [emailFallbackMaxDeliveryAgeMins, setEmailFallbackMaxDeliveryAgeMins] = useState(10);
   const [csatEnabled, setCsatEnabled] = useState(false);
   const [fileUploadsEnabled, setFileUploadsEnabled] = useState(true);
   const [forceVisitorIdentity, setForceVisitorIdentity] = useState(false);
@@ -137,6 +138,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
       setSpecialNoticeText(s.special_notice_text ?? '');
       setEmailFallbackDelaySecs(s.email_fallback_delay_secs ?? 120);
       setEmailFallbackFromName(s.email_fallback_from_name ?? '');
+      setEmailFallbackMaxDeliveryAgeMins(Math.round((s.email_fallback_max_delivery_age_secs ?? 600) / 60));
       setCsatEnabled(s.csat_enabled);
       setFileUploadsEnabled(s.file_uploads_enabled ?? true);
       setForceVisitorIdentity(s.force_visitor_identity ?? false);
@@ -186,6 +188,10 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
     email_fallback_enabled: true,
     email_fallback_delay_secs: emailFallbackDelaySecs,
     email_fallback_from_name: emailFallbackFromName,
+    email_fallback_max_delivery_age_secs: Math.max(
+      emailFallbackDelaySecs,
+      Math.max(2, Math.min(30, emailFallbackMaxDeliveryAgeMins)) * 60,
+    ),
     csat_enabled: csatEnabled,
     file_uploads_enabled: fileUploadsEnabled,
     force_visitor_identity: forceVisitorIdentity,
@@ -1390,6 +1396,34 @@ function Dashboard() {
                       placeholder={workspace?.name || 'Workspace name'}
                       className="max-w-md"
                     />
+                  </div>
+
+                  <div className="grid max-w-md gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="email-fallback-delay" className="text-sm">Delay before sending</Label>
+                      <Input
+                        id="email-fallback-delay"
+                        type="number"
+                        min={30}
+                        max={600}
+                        value={emailFallbackDelaySecs}
+                        onChange={(e) => setEmailFallbackDelaySecs(Number(e.target.value) || 120)}
+                      />
+                      <p className="text-xs text-muted-foreground">Seconds after the latest team reply.</p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="email-fallback-send-window" className="text-sm">Send window</Label>
+                      <Input
+                        id="email-fallback-send-window"
+                        type="number"
+                        min={2}
+                        max={30}
+                        value={emailFallbackMaxDeliveryAgeMins}
+                        onChange={(e) => setEmailFallbackMaxDeliveryAgeMins(Number(e.target.value) || 10)}
+                      />
+                      <p className="text-xs text-muted-foreground">Minutes before an unread reply becomes too old to email.</p>
+                    </div>
                   </div>
                 </div>
               </div>

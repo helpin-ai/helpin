@@ -5,7 +5,8 @@ import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
-import { buildAutomationRunsPath } from '@/lib/automationUi';
+import { formatSessionTokenUsage } from '@/lib/agentTokenUsage';
+import { buildAutomationActivityPath } from '@/lib/automationUi';
 import type { CodingSession } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -53,7 +54,7 @@ export function CodingSessionHeader({
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <AgentAvatar name={agentName} className="h-9 w-9 shrink-0" />
+          <AgentAvatar name={agentName} className="h-10 w-10 shrink-0 rounded-none border-0 bg-transparent shadow-none" genericBare />
 
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -74,6 +75,11 @@ export function CodingSessionHeader({
               {session?.pause_reason && session.pause_reason !== 'none' ? (
                 <Badge variant="outline" className="px-2 py-0.5 text-[11px] capitalize">
                   {capitalize(session.pause_reason.replaceAll('_', ' '))}
+                </Badge>
+              ) : null}
+              {session?.parent_run_id ? (
+                <Badge variant="outline" className="px-2 py-0.5 text-[11px]">
+                  Continued from {session.parent_run_id.slice(0, 8)}
                 </Badge>
               ) : null}
             </div>
@@ -135,6 +141,15 @@ export function CodingSessionHeader({
                   <dd className="text-muted-foreground">{formatCodingSessionRelative(session.updated_at)}</dd>
                 </>
               ) : null}
+
+              {session?.tokens_used ? (
+                <>
+                  <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Tokens</dt>
+                  <dd className="font-medium text-foreground">
+                    {formatSessionTokenUsage(session, { includeUnit: true })}
+                  </dd>
+                </>
+              ) : null}
             </dl>
           </div>
         </div>
@@ -143,8 +158,8 @@ export function CodingSessionHeader({
         <div className="flex items-center gap-1.5 pr-10">
           {workspaceSlug ? (
             <Button asChild variant="outline" size="sm">
-              <a href={buildAutomationRunsPath(workspaceSlug)}>
-                Back to runs
+              <a href={buildAutomationActivityPath(workspaceSlug)}>
+                Back to activity
               </a>
             </Button>
           ) : null}

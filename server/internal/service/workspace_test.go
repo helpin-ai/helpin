@@ -23,12 +23,48 @@ func createDeleteStubTables(t *testing.T, db *gorm.DB) {
 		`CREATE TABLE IF NOT EXISTS pm_import_jobs (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS pm_team_estimate_settings (id TEXT PRIMARY KEY, team_id TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS pm_team_field_visibility (id TEXT PRIMARY KEY, team_id TEXT NOT NULL)`,
-		`CREATE TABLE IF NOT EXISTS pm_team_repo_defaults (id TEXT PRIMARY KEY, team_id TEXT NOT NULL)`,
-		`CREATE TABLE IF NOT EXISTS story_delivery_targets (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
-		`CREATE TABLE IF NOT EXISTS story_git_links (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
-		`CREATE TABLE IF NOT EXISTS git_integrations (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS pm_team_repo_defaults (id TEXT PRIMARY KEY, team_id TEXT NOT NULL, repository_id TEXT)`,
+		`CREATE TABLE IF NOT EXISTS task_delivery_targets (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, repository_id TEXT, integration_id TEXT)`,
+		`CREATE TABLE IF NOT EXISTS task_git_links (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, repository_id TEXT, integration_id TEXT)`,
+		`CREATE TABLE IF NOT EXISTS git_integrations (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			organization_id TEXT,
+			provider TEXT NOT NULL DEFAULT 'github',
+			display_name TEXT NOT NULL DEFAULT '',
+			credential_mode TEXT NOT NULL DEFAULT 'github_app',
+			account_login TEXT,
+			base_url TEXT,
+			installation_id TEXT,
+			app_id TEXT,
+			webhook_secret TEXT,
+			access_token TEXT NOT NULL DEFAULT '',
+			active BOOLEAN NOT NULL DEFAULT 1,
+			deleted_at DATETIME,
+			last_synced_at DATETIME,
+			last_sync_error TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE IF NOT EXISTS git_repositories (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			integration_id TEXT NOT NULL,
+			provider TEXT NOT NULL DEFAULT 'github',
+			external_id TEXT NOT NULL DEFAULT '',
+			full_name TEXT NOT NULL DEFAULT '',
+			default_branch TEXT NOT NULL DEFAULT 'main',
+			permissions TEXT NOT NULL DEFAULT '{}',
+			private BOOLEAN NOT NULL DEFAULT 1,
+			archived BOOLEAN NOT NULL DEFAULT 0,
+			selected BOOLEAN NOT NULL DEFAULT 1,
+			active BOOLEAN NOT NULL DEFAULT 1,
+			deleted_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
 		`CREATE TABLE IF NOT EXISTS agent_run_artifacts (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
-		`CREATE TABLE IF NOT EXISTS agent_runs (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS agent_runs (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, cached_input_tokens INTEGER NOT NULL DEFAULT 0, input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0)`,
 		`CREATE TABLE IF NOT EXISTS agents (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS agent_handoffs (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS workspace_key_history (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
@@ -72,6 +108,8 @@ func newWorkspaceDefaultsTestHarness(t *testing.T) (*gorm.DB, *WorkspaceService,
 			preset_version_key TEXT,
 			source_preset_key TEXT,
 			source_preset_version_key TEXT,
+			source_template_id TEXT,
+			source_template_key TEXT NOT NULL DEFAULT '',
 			role TEXT,
 			status TEXT NOT NULL,
 			runtime_kind TEXT NOT NULL,
@@ -81,6 +119,7 @@ func newWorkspaceDefaultsTestHarness(t *testing.T) (*gorm.DB, *WorkspaceService,
 			model TEXT,
 			execution_config BLOB NOT NULL DEFAULT x'7b7d',
 			system_prompt TEXT,
+			instruction_template_version TEXT NOT NULL DEFAULT '',
 			planning_notes TEXT,
 			monthly_token_budget INTEGER,
 			tokens_used_this_month INTEGER NOT NULL DEFAULT 0,
@@ -267,8 +306,10 @@ func TestWorkspaceService_Create_SeedsSystemPresetAgents(t *testing.T) {
 	if planner.Name != defaultSystemEpicPlannerName {
 		t.Fatalf("name = %q, want %q", planner.Name, defaultSystemEpicPlannerName)
 	}
-	if planner.SystemPrompt == nil || *planner.SystemPrompt == "" {
-		t.Fatal("expected seeded planner to persist a system prompt")
+	// Managed system agents store SystemPrompt as nil; it's materialized on read via materializeAgentSystemPrompt.
+	// Verify the instruction template version is set, indicating the prompt is managed.
+	if planner.InstructionTemplateVersion == "" {
+		t.Fatal("expected seeded planner to have an instruction template version")
 	}
 	if planner.DefaultInvocationMode != model.InvocationModeInteractive {
 		t.Fatalf("default_invocation_mode = %q, want %q", planner.DefaultInvocationMode, model.InvocationModeInteractive)
@@ -589,6 +630,139 @@ func TestWorkspaceService_Delete_NonexistentDoesNotError(t *testing.T) {
 	err := svc.Delete(ctx, "does-not-exist")
 	if err != nil {
 		t.Fatalf("Delete nonexistent: %v", err)
+	}
+}
+
+func TestWorkspaceService_Delete_ReleasesRepoClaimsButKeepsSharedIntegrationForSiblingWorkspace(t *testing.T) {
+	db, svc := newWorkspaceTestHarness(t)
+	createDeleteStubTables(t, db)
+	ctx := context.Background()
+
+	seedUser(t, db, "owner-2", "owner2@test.com", "Owner Two", "hashed")
+	orgID := "org-shared"
+	if err := db.Create(&model.Organization{
+		ID:      orgID,
+		Name:    "Shared Org",
+		Slug:    "shared-org",
+		OwnerID: "owner-1",
+	}).Error; err != nil {
+		t.Fatalf("create organization: %v", err)
+	}
+
+	wsA, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "Workspace A", Slug: "workspace-a", WorkspaceKey: "WSA", OrganizationID: orgID}, "owner-1")
+	if err != nil {
+		t.Fatalf("create workspace A: %v", err)
+	}
+	wsB, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "Workspace B", Slug: "workspace-b", WorkspaceKey: "WSB", OrganizationID: orgID}, "owner-2")
+	if err != nil {
+		t.Fatalf("create workspace B: %v", err)
+	}
+
+	if err := db.Exec(`INSERT INTO git_integrations (
+		id, workspace_id, organization_id, provider, display_name, credential_mode, access_token, active, created_at, updated_at
+	) VALUES (?, ?, ?, 'github', 'GitHub Shared', 'github_app', '', 1, datetime('now'), datetime('now'))`, "gi-1", wsA.ID, orgID).Error; err != nil {
+		t.Fatalf("insert integration: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO git_repositories (
+		id, workspace_id, integration_id, provider, external_id, full_name, default_branch, permissions, private, archived, selected, active, created_at, updated_at
+	) VALUES
+		(?, ?, ?, 'github', '101', 'acme/repo-a', 'main', '{}', 1, 0, 1, 1, datetime('now'), datetime('now')),
+		(?, ?, ?, 'github', '102', 'acme/repo-b', 'main', '{}', 1, 0, 1, 1, datetime('now'), datetime('now'))`,
+		"repo-a", wsA.ID, "gi-1", "repo-b", wsB.ID, "gi-1").Error; err != nil {
+		t.Fatalf("insert repositories: %v", err)
+	}
+
+	if err := svc.Delete(ctx, wsA.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	var integration struct {
+		Active    bool
+		DeletedAt *string
+	}
+	if err := db.Raw(`SELECT active, deleted_at FROM git_integrations WHERE id = ?`, "gi-1").Scan(&integration).Error; err != nil {
+		t.Fatalf("load integration: %v", err)
+	}
+	if !integration.Active {
+		t.Fatalf("expected integration to stay active for sibling workspace")
+	}
+	if integration.DeletedAt != nil {
+		t.Fatalf("expected integration deleted_at to remain nil, got %v", *integration.DeletedAt)
+	}
+
+	var repoCountA int64
+	if err := db.Raw(`SELECT COUNT(*) FROM git_repositories WHERE workspace_id = ?`, wsA.ID).Scan(&repoCountA).Error; err != nil {
+		t.Fatalf("count workspace A repos: %v", err)
+	}
+	if repoCountA != 0 {
+		t.Fatalf("expected workspace A repo claims to be removed, got %d", repoCountA)
+	}
+
+	var repoCountB int64
+	if err := db.Raw(`SELECT COUNT(*) FROM git_repositories WHERE workspace_id = ?`, wsB.ID).Scan(&repoCountB).Error; err != nil {
+		t.Fatalf("count workspace B repos: %v", err)
+	}
+	if repoCountB != 1 {
+		t.Fatalf("expected workspace B repo claims to remain, got %d", repoCountB)
+	}
+}
+
+func TestWorkspaceService_Delete_DeactivatesIntegrationWhenDeletingLastWorkspaceInOrg(t *testing.T) {
+	db, svc := newWorkspaceTestHarness(t)
+	createDeleteStubTables(t, db)
+	ctx := context.Background()
+
+	orgID := "org-last"
+	if err := db.Create(&model.Organization{
+		ID:      orgID,
+		Name:    "Last Org",
+		Slug:    "last-org",
+		OwnerID: "owner-1",
+	}).Error; err != nil {
+		t.Fatalf("create organization: %v", err)
+	}
+
+	ws, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "Solo Workspace", Slug: "solo-workspace", WorkspaceKey: "SLO", OrganizationID: orgID}, "owner-1")
+	if err != nil {
+		t.Fatalf("create workspace: %v", err)
+	}
+
+	if err := db.Exec(`INSERT INTO git_integrations (
+		id, workspace_id, organization_id, provider, display_name, credential_mode, access_token, active, created_at, updated_at
+	) VALUES (?, ?, ?, 'github', 'GitHub Solo', 'github_app', '', 1, datetime('now'), datetime('now'))`, "gi-last", ws.ID, orgID).Error; err != nil {
+		t.Fatalf("insert integration: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO git_repositories (
+		id, workspace_id, integration_id, provider, external_id, full_name, default_branch, permissions, private, archived, selected, active, created_at, updated_at
+	) VALUES (?, ?, ?, 'github', '201', 'acme/solo', 'main', '{}', 1, 0, 1, 1, datetime('now'), datetime('now'))`,
+		"repo-last", ws.ID, "gi-last").Error; err != nil {
+		t.Fatalf("insert repository: %v", err)
+	}
+
+	if err := svc.Delete(ctx, ws.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	var repoCount int64
+	if err := db.Raw(`SELECT COUNT(*) FROM git_repositories WHERE workspace_id = ?`, ws.ID).Scan(&repoCount).Error; err != nil {
+		t.Fatalf("count repo claims: %v", err)
+	}
+	if repoCount != 0 {
+		t.Fatalf("expected repo claims to be removed, got %d", repoCount)
+	}
+
+	var integration struct {
+		Active    bool
+		DeletedAt *string
+	}
+	if err := db.Raw(`SELECT active, deleted_at FROM git_integrations WHERE id = ?`, "gi-last").Scan(&integration).Error; err != nil {
+		t.Fatalf("load integration: %v", err)
+	}
+	if integration.Active {
+		t.Fatalf("expected integration to be deactivated")
+	}
+	if integration.DeletedAt == nil || *integration.DeletedAt == "" {
+		t.Fatalf("expected integration deleted_at to be set")
 	}
 }
 

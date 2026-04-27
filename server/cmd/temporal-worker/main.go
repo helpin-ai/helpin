@@ -29,6 +29,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/observability"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/service"
+	"github.com/helpin-ai/helpin/server/internal/storage"
 	syncpkg "github.com/helpin-ai/helpin/server/internal/sync"
 	"github.com/helpin-ai/helpin/server/internal/temporalapp"
 	ws "github.com/helpin-ai/helpin/server/internal/websocket"
@@ -59,6 +60,15 @@ func main() {
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: parseLogLevel(cfg.LogLevel)}))
 	slog.SetDefault(logger)
+
+	s3Client := storage.NewS3Client(
+		cfg.AWSAccessKeyID,
+		cfg.AWSSecretAccessKey,
+		cfg.AWSBucket,
+		cfg.AWSRegion,
+		cfg.AWSEndpointURL,
+		cfg.AWSPublicBaseURL,
+	)
 
 	db, err := gorm.Open(postgres.New(postgres.Config{
 		DSN:                  cfg.DatabaseURL,
@@ -103,6 +113,7 @@ func main() {
 	runMessageRepo := repository.NewAgentRunMessageRepository(db)
 	agentRepo := repository.NewAgentRepository(db)
 	workspacePresetVersionRepo := repository.NewWorkspaceAgentPresetVersionRepository(db)
+	workspaceSkillRepo := repository.NewWorkspaceSkillRepository(db)
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
 	interactionRepo := repository.NewAgentRunInteractionRepository(db)
 	sessionSnapshotRepo := repository.NewCodingSessionStateSnapshotRepository(db)
@@ -128,14 +139,21 @@ func main() {
 	supportTriageRuleRepo := repository.NewSupportTriageRuleRepository(db)
 	supportTeammateStatusOverrideRepo := repository.NewSupportTeammateStatusOverrideRepository(db)
 	userRepo := repository.NewUserRepository(db)
+	notificationRepo := repository.NewNotificationRepository(db)
+	notificationPrefRepo := repository.NewNotificationPreferenceRepository(db)
+	userNotifSettingsRepo := repository.NewUserNotificationSettingsRepository(db)
+	followerRepo := repository.NewFollowerRepository(db)
 	gitIntRepo := repository.NewGitIntegrationRepository(db)
 	gitRepo := repository.NewGitRepositoryRepository(db)
 	gitLinkRepo := repository.NewTaskGitLinkRepository(db)
 	deliveryRepo := repository.NewTaskDeliveryTargetRepository(db)
 	settingsRepo := repository.NewSettingsRepository(db)
+	automationRuleRepo := repository.NewAutomationRuleRepository(db)
 	handoffRepo := repository.NewAgentHandoffRepository(db)
 	docsSpaceRepo := repository.NewDocsSpaceRepository(db)
-	docsDocumentRepo := repository.NewDocsDocumentRepository(db, false)
+	docsCollectionRepo := repository.NewDocsCollectionRepository(db, cfg.DocsOrderingUseSortKey)
+	docsDocumentRepo := repository.NewDocsDocumentRepository(db, cfg.DocsOrderingUseSortKey)
+	docsDocumentKeyRepo := repository.NewDocsDocumentKeyRepository(db)
 	docsContentRepo := repository.NewDocsContentRepository(db)
 	docsVersionRepo := repository.NewDocsVersionRepository(db)
 	docsLinkRepo := repository.NewDocsLinkRepository(db)
@@ -202,6 +220,8 @@ func main() {
 		cfg.OpenRouterAPIKey,
 		cfg.OpenRouterBaseURL,
 		cfg.BraveSearchAPIKey,
+		cfg.ExaSearchAPIKey,
+		cfg.CrawlerProxyURLs,
 		runRepo,
 		artifactRepo,
 		codexWorkspaceAuthStore,
@@ -211,6 +231,17 @@ func main() {
 		fatalWithSentry("failed to initialize github app client", err)
 	}
 	wsPublisher := ws.NewJetStreamPublisher(jetstream)
+	notificationService := service.NewNotificationService(
+		notificationRepo,
+		notificationPrefRepo,
+		userNotifSettingsRepo,
+		followerRepo,
+		userRepo,
+		workspaceRepo,
+		wsPublisher,
+		nil,
+		cfg.AppBaseURL,
+	)
 	var activities *temporalapp.AgentRunActivities
 
 	// Email sync activities (may be nil if Gmail not configured).
@@ -298,6 +329,10 @@ func main() {
 	}()
 	_ = aiConsumerCancel // used at shutdown
 
+	gitGraceCleanupCtx, gitGraceCleanupCancel := context.WithCancel(context.Background())
+	go workerpkg.NewGitGraceCleanup(gitIntRepo, gitRepo).Start(gitGraceCleanupCtx)
+	_ = gitGraceCleanupCancel // used at shutdown
+
 	crmSummaryService := service.NewCRMSummaryService(crmSummaryRepo, crmContactRepo, crmCompanyRepo, crmDealRepo, crmAssociationRepo, crmSignalRepo, crmEmailRepo, llmProvider, temporalClient)
 	emailSyncActivities := temporalapp.NewEmailSyncActivities(gmailSyncClient, crmEmailRepo, crmContactRepo, crmCalendarRepo, crmEmailSyncSettingsRepo, temporalClient, crmSummaryService)
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
@@ -351,6 +386,7 @@ func main() {
 		deliveryRepo,
 		settingsRepo,
 		workspaceRepo,
+		repository.NewOrganizationRepository(db),
 		storyRepo,
 		pmActivityService,
 		wsPublisher,
@@ -373,7 +409,7 @@ func main() {
 		conversationRepo,
 		supportMessageRepo,
 		handoffRepo,
-		nil,
+		automationRuleRepo,
 		nil,
 		settingsRepo,
 		docsSpaceRepo,
@@ -386,7 +422,7 @@ func main() {
 		pmStoryService,
 		pmActivityService,
 		wsPublisher,
-	).SetModelProviderConfig(
+	).SetWorkspaceSkillStore(workspaceSkillRepo, nil).SetModelProviderConfig(
 		cfg.AnthropicAPIKey,
 		cfg.OpenAIAPIKey,
 		cfg.OpenRouterAPIKey,
@@ -394,10 +430,23 @@ func main() {
 		cfg.CodexEnableChatGPTOAuth,
 		cfg.CodexChatGPTAccessToken,
 		cfg.CodexChatGPTAccountID,
-	).SetTriggerExecutionRepository(triggerExecutionRepo)
+	).SetTriggerExecutionRepository(triggerExecutionRepo).SetNotificationService(notificationService)
 	agentService.SetWorkflowService(pmWorkflowService)
+	docsDocumentService := service.NewDocsDocumentService(docsDocumentRepo, docsSpaceRepo, wsPublisher)
 	docsContentService := service.NewDocsContentService(docsContentRepo, docsDocumentRepo, nil)
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, storyRepo, docsDocumentRepo, nil)
+	releaseFactsService := service.NewReleaseFactsService(
+		gitIntRepo,
+		gitRepo,
+		storyRepo,
+		gitLinkRepo,
+		commentRepo,
+		docsLinkRepo,
+		docsDocumentRepo,
+		docsContentRepo,
+		workspaceRepo,
+		githubAppClient,
+	)
 	contentCrawler := crawler.NewSmartCrawler(
 		cfg.CrawlerMode,
 		cfg.CloudflareAccountID,
@@ -428,6 +477,8 @@ func main() {
 	)
 	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo)
 	crmActivityService := service.NewCRMActivityService(crmActivityRepo)
+	pmLabelService := service.NewPMLabelService(labelRepo, wsPublisher)
+	pmCommentService := service.NewPMCommentService(commentRepo, storyRepo, pmAttachmentRepo, pmActivityService, wsPublisher, notificationService, workspaceRepo, s3Client)
 	commandService := service.NewInternalCommandService(
 		agentService,
 		pmStoryService,
@@ -438,10 +489,15 @@ func main() {
 		storyRepo,
 		taskLinkRepo,
 	)
+	commandService.SetPMLabelService(pmLabelService)
+	commandService.SetPMCommentService(pmCommentService)
+	commandService.SetDocsCreateDependencies(docsDocumentService, docsContentRepo)
 	activities = temporalapp.NewAgentRunActivities(
 		runRepo,
 		runMessageRepo,
 		agentRepo,
+		workspaceSkillRepo,
+		s3Client,
 		artifactRepo,
 		interactionRepo,
 		sessionSnapshotRepo,
@@ -451,6 +507,7 @@ func main() {
 		conversationRepo,
 		commentRepo,
 		checklistRepo,
+		workflowRepo,
 		supportMessageRepo,
 		gitIntRepo,
 		gitRepo,
@@ -459,7 +516,9 @@ func main() {
 		settingsRepo,
 		workspaceRepo,
 		docsSpaceRepo,
+		docsCollectionRepo,
 		docsDocumentRepo,
+		docsDocumentKeyRepo,
 		docsContentRepo,
 		docsVersionRepo,
 		docsLinkRepo,
@@ -469,12 +528,28 @@ func main() {
 		crmSignalRepo,
 		crmActivityRepo,
 		commandService,
+		notificationService,
+		releaseFactsService,
 		wsPublisher,
 		runtimes,
 		githubAppClient,
 		runEngine,
 	)
 	automationHealthService := service.NewAutomationHealthService(automationHealthRepo)
+	ruleEngine := service.NewAutomationRuleEngine(
+		automationRuleRepo,
+		storyRepo,
+		workflowRepo,
+		deliveryRepo,
+		gitService,
+		notificationService,
+		pmActivityService,
+		wsPublisher,
+	)
+	ruleEngine.SetAgentService(agentService)
+	ruleEngine.SetTaskService(pmStoryService)
+	ruleEngine.SetHealthObserver(automationHealthService)
+	ruleEngine.SetTriggerExecutionRepository(triggerExecutionRepo)
 	signalActivities := temporalapp.NewSignalDetectionActivities(signalDetectionService, wsPublisher).SetHealthObserver(automationHealthService)
 	summaryActivities := temporalapp.NewCRMSummaryActivities(crmSummaryService).SetHealthObserver(automationHealthService)
 
@@ -486,7 +561,7 @@ func main() {
 
 	_ = crmCompanyRepo // available for future enrichment activities
 
-	scheduleActivities := temporalapp.NewScheduledAgentActivities(agentRepo, runRepo).SetTriggerExecutionRepository(triggerExecutionRepo)
+	scheduledRuleActivities := temporalapp.NewScheduledRuleActivities(ruleEngine)
 	recurringActivities := service.NewPMRecurringTemplateActivities(pmRecurringTemplateService)
 
 	// Sprint automation activities.
@@ -497,7 +572,7 @@ func main() {
 	queueConfigs := selectedQueues()
 	workers := make([]tworker.Worker, 0, len(queueConfigs))
 	for _, queue := range queueConfigs {
-		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, activities, emailSyncActivities, signalActivities, summaryActivities, dealMgmtActivities, scheduleActivities, recurringActivities, sprintAutomationActivities, docsEmbeddingActivities, contentSourceSyncActivities))
+		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, activities, emailSyncActivities, signalActivities, summaryActivities, dealMgmtActivities, scheduledRuleActivities, recurringActivities, sprintAutomationActivities, docsEmbeddingActivities, contentSourceSyncActivities))
 	}
 
 	for _, sharedWorker := range workers {
@@ -513,6 +588,7 @@ func main() {
 
 	log.Println("shutting down temporal workers")
 	aiConsumerCancel() // stop AI support consumer
+	gitGraceCleanupCancel()
 	for _, sharedWorker := range workers {
 		sharedWorker.Stop()
 	}
@@ -535,7 +611,7 @@ func parseLogLevel(value string) slog.Level {
 	}
 }
 
-func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, activities *temporalapp.AgentRunActivities, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, summaryActivities *temporalapp.CRMSummaryActivities, dealMgmtActivities *temporalapp.DealManagementActivities, scheduleActivities *temporalapp.ScheduledAgentActivities, recurringActivities *service.PMRecurringTemplateActivities, sprintActivities *temporalapp.SprintAutomationActivities, docsEmbeddingActivities *temporalapp.DocsEmbeddingActivities, contentSourceSyncActivities *temporalapp.ContentSourceSyncActivities) tworker.Worker {
+func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, activities *temporalapp.AgentRunActivities, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, summaryActivities *temporalapp.CRMSummaryActivities, dealMgmtActivities *temporalapp.DealManagementActivities, scheduledRuleActivities *temporalapp.ScheduledRuleActivities, recurringActivities *service.PMRecurringTemplateActivities, sprintActivities *temporalapp.SprintAutomationActivities, docsEmbeddingActivities *temporalapp.DocsEmbeddingActivities, contentSourceSyncActivities *temporalapp.ContentSourceSyncActivities) tworker.Worker {
 	options := tworker.Options{
 		MaxConcurrentActivityExecutionSize: concurrency,
 		WorkerStopTimeout:                  temporalWorkerStopTimeout,
@@ -594,11 +670,10 @@ func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int,
 		})
 	}
 
-	// Register scheduled agent workflow and activities.
-	w.RegisterWorkflow(temporalapp.ScheduledAgentWorkflow)
-	if scheduleActivities != nil {
-		w.RegisterActivityWithOptions(scheduleActivities.CreateScheduledRun, activity.RegisterOptions{
-			Name: "ScheduledAgentActivities.CreateScheduledRun",
+	w.RegisterWorkflow(temporalapp.ScheduledRuleWorkflow)
+	if scheduledRuleActivities != nil {
+		w.RegisterActivityWithOptions(scheduledRuleActivities.ExecuteScheduledRule, activity.RegisterOptions{
+			Name: "ScheduledRuleActivities.ExecuteScheduledRule",
 		})
 	}
 

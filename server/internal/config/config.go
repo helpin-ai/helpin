@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -48,13 +49,14 @@ type Config struct {
 	CodexChatGPTPlanType    string
 	CodexAuthEncryptionKey  string
 	BraveSearchAPIKey       string
+	ExaSearchAPIKey         string
 	CloudflareAccountID     string
 	CloudflareAPIToken      string
 	CloudflareAPIBaseURL    string
 
 	// Website content crawler (optional — controls crawl engine and proxy)
 	CrawlerMode      string // "cloudflare", "local", or "cloudflare_with_fallback" (default)
-	CrawlerProxyURLs string // comma-separated proxy URLs for local crawler (e.g. Decodo/Smartproxy)
+	CrawlerProxyURLs string // comma-separated proxy URLs for local crawler and agent fetch/crawl tools (e.g. Decodo/Smartproxy)
 
 	// GitHub App (optional — required for shared-runner repo mutation).
 	// GITHUB_APP_PRIVATE_KEY should be provided as a base64-encoded PEM value.
@@ -73,8 +75,11 @@ type Config struct {
 	PostmarkRouteInboundWebhookSecret string
 	SupportEmailRouteDomain           string
 	AppBaseURL                        string
+	WebAuthnRPID                      string
+	WebAuthnRPOrigins                 []string
 
 	// CRM encryption & Gmail OAuth (optional — Gmail sync disabled if not set)
+	TOTPEncryptionKey     string
 	CRMEncryptionKey      string
 	GmailClientID         string
 	GmailClientSecret     string
@@ -86,7 +91,7 @@ type Config struct {
 	CRMLLMBaseURL  string
 	CRMLLMModel    string
 
-	// Query expansion for support AI RAG pipeline (optional — defaults to openai/gpt-5.4-mini)
+	// Query expansion for support AI RAG pipeline (optional — defaults to openai/gpt-5.5)
 	QueryExpansionModel    string
 	QueryExpansionProvider string
 
@@ -131,6 +136,15 @@ func Load() (*Config, error) {
 	appBaseURL := os.Getenv("APP_BASE_URL")
 	if appBaseURL == "" {
 		appBaseURL = "http://localhost:5173"
+	}
+
+	webAuthnRPID := strings.TrimSpace(os.Getenv("WEBAUTHN_RP_ID"))
+	if webAuthnRPID == "" {
+		webAuthnRPID = originHost(appBaseURL)
+	}
+	webAuthnRPOrigins := parseOptionalOrigins(os.Getenv("WEBAUTHN_RP_ORIGIN"))
+	if len(webAuthnRPOrigins) == 0 {
+		webAuthnRPOrigins = []string{originOnly(appBaseURL)}
 	}
 
 	temporalAddress := os.Getenv("TEMPORAL_ADDRESS")
@@ -186,6 +200,7 @@ func Load() (*Config, error) {
 		CodexChatGPTPlanType:              strings.TrimSpace(os.Getenv("CODEX_CHATGPT_PLAN_TYPE")),
 		CodexAuthEncryptionKey:            strings.TrimSpace(os.Getenv("CODEX_AUTH_ENCRYPTION_KEY")),
 		BraveSearchAPIKey:                 strings.TrimSpace(os.Getenv("BRAVE_SEARCH_API_KEY")),
+		ExaSearchAPIKey:                   strings.TrimSpace(os.Getenv("EXA_API_KEY")),
 		CloudflareAccountID:               strings.TrimSpace(os.Getenv("CLOUDFLARE_ACCOUNT_ID")),
 		CloudflareAPIToken:                strings.TrimSpace(os.Getenv("CLOUDFLARE_API_TOKEN")),
 		CloudflareAPIBaseURL:              strings.TrimSpace(os.Getenv("CLOUDFLARE_API_BASE_URL")),
@@ -204,6 +219,9 @@ func Load() (*Config, error) {
 		PostmarkRouteInboundWebhookSecret: strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_ROUTE_INBOUND_WEBHOOK_SECRET"), os.Getenv("POSTMARK_INBOUND_WEBHOOK_SECRET"))),
 		SupportEmailRouteDomain:           strings.TrimSpace(firstNonEmpty(os.Getenv("SUPPORT_EMAIL_ROUTE_DOMAIN"), os.Getenv("SUPPORT_EMAIL_REPLY_DOMAIN"), "on.helpin.email")),
 		AppBaseURL:                        appBaseURL,
+		WebAuthnRPID:                      webAuthnRPID,
+		WebAuthnRPOrigins:                 webAuthnRPOrigins,
+		TOTPEncryptionKey:                 strings.TrimSpace(os.Getenv("TOTP_ENCRYPTION_KEY")),
 		CRMEncryptionKey:                  os.Getenv("CRM_ENCRYPTION_KEY"),
 		GmailClientID:                     os.Getenv("GMAIL_CLIENT_ID"),
 		GmailClientSecret:                 os.Getenv("GMAIL_CLIENT_SECRET"),
@@ -212,7 +230,7 @@ func Load() (*Config, error) {
 		CRMLLMAPIKey:                      os.Getenv("CRM_LLM_API_KEY"),
 		CRMLLMBaseURL:                     os.Getenv("CRM_LLM_BASE_URL"),
 		CRMLLMModel:                       os.Getenv("CRM_LLM_MODEL"),
-		QueryExpansionModel:               strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_MODEL"), "gpt-5.4-mini")),
+		QueryExpansionModel:               strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_MODEL"), "gpt-5.5")),
 		QueryExpansionProvider:            strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_PROVIDER"), "openai")),
 		MaxMindAccountID:                  strings.TrimSpace(os.Getenv("MAXMIND_ACCOUNT_ID")),
 		MaxMindDBPath:                     strings.TrimSpace(os.Getenv("MAXMIND_DB_PATH")),
@@ -248,6 +266,44 @@ func parseCORSOrigins(value string) []string {
 		return []string{"http://localhost:5173"}
 	}
 	return origins
+}
+
+func parseOptionalOrigins(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	var origins []string
+	for _, origin := range strings.Split(value, ",") {
+		if cleaned := originOnly(origin); cleaned != "" {
+			origins = append(origins, cleaned)
+		}
+	}
+	return origins
+}
+
+func originHost(value string) string {
+	cleaned := originOnly(value)
+	if cleaned == "" {
+		return ""
+	}
+	if parsed, err := url.Parse(cleaned); err == nil && parsed.Host != "" {
+		return parsed.Host
+	}
+	return cleaned
+}
+
+func originOnly(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	value = strings.TrimSuffix(value, "/")
+	if strings.Contains(value, "://") {
+		if parsed, err := url.Parse(value); err == nil && parsed.Scheme != "" && parsed.Host != "" {
+			return parsed.Scheme + "://" + parsed.Host
+		}
+	}
+	return value
 }
 
 func parseBoolEnv(value string) bool {

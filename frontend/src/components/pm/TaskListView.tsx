@@ -16,7 +16,7 @@ import {
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Loading01Icon } from '@/lib/icons';
-import { AgentAvatar } from '@/components/agents/AgentAvatar';
+import { AgentAvatar, resolveAgentPersonaKey } from '@/components/agents/AgentAvatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -54,6 +54,7 @@ import {
   UserAdd01Icon as TaskListUserAddIcon,
 } from '@/lib/pmIcons';
 import type {
+  Agent,
   AssociationObjectSummary,
   Label,
   Priority,
@@ -96,9 +97,76 @@ import {
   type TaskListGroupByOption,
 } from '@/components/pm/task-detail/taskListGrouping';
 import { getVisibleSprintsForTaskScope } from '@/components/pm/task-detail/taskPlanningScope';
+import { ACTIVE_RUN_STATUSES } from '@/components/pm/agentRunConstants';
 
 const ALL_PRIORITIES: Priority[] = ['urgent', 'high', 'medium', 'low', 'none'];
 const ALL_SEVERITIES: Severity[] = ['critical', 'major', 'minor', 'none'];
+const LIST_AGENT_OCTAGON_POINTS = '30,2 70,2 98,30 98,70 70,98 30,98 2,70 2,30';
+
+function TaskListLatestRunAgentBadge({
+  agent,
+  latestRunStatus,
+}: {
+  agent: Agent | null;
+  latestRunStatus?: string | null;
+}) {
+  const isWorking = !!latestRunStatus && ACTIVE_RUN_STATUSES.has(latestRunStatus);
+  const isGenericAgent = resolveAgentPersonaKey({ agent }) === 'generic';
+  const statusDotClassName = latestRunStatus === 'completed'
+    ? 'bg-emerald-500 dark:bg-emerald-400'
+    : latestRunStatus === 'failed'
+      ? 'bg-red-500 dark:bg-red-400'
+      : null;
+
+  return (
+    <span className="relative block h-5 w-5 shrink-0">
+      {isWorking ? (
+        <>
+          <svg
+            viewBox="0 0 100 100"
+            aria-hidden="true"
+            className="absolute inset-0 h-full w-full overflow-visible motion-safe:animate-spin motion-safe:[animation-duration:2.4s]"
+          >
+            <polygon
+              points={LIST_AGENT_OCTAGON_POINTS}
+              fill="none"
+              className="stroke-foreground/80"
+              strokeWidth={4}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          <span
+            className="absolute inset-[2px] overflow-hidden bg-background/95"
+            style={{ clipPath: 'polygon(31% 4%, 69% 4%, 96% 31%, 96% 69%, 69% 96%, 31% 96%, 4% 69%, 4% 31%)' }}
+          >
+            <AgentAvatar
+              agent={agent}
+              className="h-full w-full rounded-none border-0 bg-transparent shadow-none"
+              genericBare={isGenericAgent}
+            />
+          </span>
+        </>
+      ) : (
+        <AgentAvatar
+          agent={agent}
+          className="h-5 w-5 rounded-none border-0 bg-transparent shadow-none"
+          genericBare={isGenericAgent}
+        />
+      )}
+      {statusDotClassName ? (
+        <span
+          aria-hidden="true"
+          className={cn(
+            'absolute bottom-0 right-0 h-2 w-2 rounded-full ring-1 ring-background',
+            statusDotClassName,
+          )}
+        />
+      ) : null}
+    </span>
+  );
+}
+
 const TASK_LIST_AVATAR_COLORS = [
   { bg: 'bg-rose-100 dark:bg-rose-900/40', text: 'text-rose-700 dark:text-rose-300' },
   { bg: 'bg-pink-100 dark:bg-pink-900/40', text: 'text-pink-700 dark:text-pink-300' },
@@ -224,6 +292,7 @@ interface TaskListViewProps {
   groupBy?: TaskListGroupByOption;
   onGroupByChange?: (groupBy: TaskListGroupByOption) => void;
   showToolbar?: boolean;
+  footer?: React.ReactNode;
 }
 
 // Column accessor ID used for each group-by option
@@ -263,6 +332,7 @@ export function TaskListView({
   groupBy: controlledGroupBy,
   onGroupByChange,
   showToolbar = true,
+  footer,
 }: TaskListViewProps) {
   const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.slug ?? null);
   const currentWorkspaceId = useWorkspaceStore((state) => state.currentWorkspace?.id ?? '');
@@ -332,10 +402,23 @@ export function TaskListView({
     return map;
   }, [availableWorkflows]);
   const stateMap = useMemo(() => {
-    const map = new Map<string, { name: string; stateType: string }>();
+    const stateNameCounts = new Map<string, number>();
     for (const wf of availableWorkflows) {
       for (const s of wf.states) {
-        map.set(s.id, { name: s.name, stateType: s.state_type });
+        stateNameCounts.set(s.name, (stateNameCounts.get(s.name) ?? 0) + 1);
+      }
+    }
+
+    const map = new Map<string, { name: string; stateType: string; groupLabel: string; position: number }>();
+    for (const wf of availableWorkflows) {
+      for (const s of wf.states) {
+        const duplicateName = (stateNameCounts.get(s.name) ?? 0) > 1;
+        map.set(s.id, {
+          name: s.name,
+          stateType: s.state_type,
+          groupLabel: duplicateName ? `${s.name} · ${wf.workflow.name}` : s.name,
+          position: s.position,
+        });
       }
     }
     return map;
@@ -622,7 +705,7 @@ export function TaskListView({
             }}
           >
             {fieldVis.task_type && displayProps.task_type ? (
-              <TaskListTaskTypeIcon taskType={info.row.original.task_type} className="h-4 w-4 shrink-0" />
+              <TaskListTaskTypeIcon taskType={info.row.original.task_type} className="h-[18px] w-[18px] shrink-0" />
             ) : null}
             {info.row.original.recurring_template_id ? (
               <span className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-1.5 py-0 text-[10px] text-sky-700 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-200">
@@ -633,22 +716,30 @@ export function TaskListView({
               </span>
             ) : null}
             <span className="min-w-0 truncate">{info.getValue()}</span>
-            {info.row.original.assigned_agent_id && (
-              <AgentAvatar
-                agent={agentById.get(info.row.original.assigned_agent_id) ?? null}
-                className="h-4 w-4 border-violet-200/80 dark:border-violet-800"
+            {info.row.original.latest_run_agent_id && (
+              <TaskListLatestRunAgentBadge
+                agent={agentById.get(info.row.original.latest_run_agent_id) ?? null}
+                latestRunStatus={info.row.original.latest_run_status}
               />
             )}
           </button>
         ),
       }),
-      // Hidden grouping columns (values shown in group headers, not as table columns)
+      // Group by state identity, not state name, because different workflows can
+      // have separate states with the same visible label and independent order.
       columnHelper.accessor(
-        (row) => stateMap.get(row.workflow_state_id)?.name ?? 'Unknown',
+        (row) => row.workflow_state_id,
         {
           id: 'stateName',
           header: 'State',
           size: 190,
+          sortingFn: (a, b) => {
+            const aState = stateMap.get(a.original.workflow_state_id);
+            const bState = stateMap.get(b.original.workflow_state_id);
+            const labelCompare = (aState?.groupLabel ?? '').localeCompare(bState?.groupLabel ?? '');
+            if (labelCompare !== 0) return labelCompare;
+            return (aState?.position ?? 0) - (bState?.position ?? 0);
+          },
           cell: (info) => (
             <InlineStateCell
               task={info.row.original}
@@ -1082,8 +1173,13 @@ export function TaskListView({
         groupBy === 'workflow_state' && subRows[0]
           ? (stateMap.get(subRows[0].original.workflow_state_id)?.stateType as StateType | undefined)
           : undefined;
+      const groupLabel =
+        groupBy === 'workflow_state' && subRows[0]
+          ? (stateMap.get(subRows[0].original.workflow_state_id)?.groupLabel ?? String(row.groupingValue))
+          : String(row.groupingValue);
 
       summaries.set(row.id, {
+        groupLabel,
         storyCount,
         totalPoints,
         completedPoints,
@@ -1302,6 +1398,11 @@ export function TaskListView({
           )}
         </div>
       </div>
+      {footer ? (
+        <div className="border-t border-border/60 bg-card">
+          {footer}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1316,6 +1417,7 @@ function arePMGroupRowPropsEqual(prev: PMGroupRowProps, next: PMGroupRowProps): 
     prev.row.id === next.row.id &&
     prev.row.getIsExpanded() === next.row.getIsExpanded() &&
     prev.row.subRows.length === next.row.subRows.length &&
+    prev.summary?.groupLabel === next.summary?.groupLabel &&
     prev.summary?.storyCount === next.summary?.storyCount &&
     prev.summary?.totalPoints === next.summary?.totalPoints &&
     prev.summary?.completedPoints === next.summary?.completedPoints &&
@@ -1331,6 +1433,7 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
   const totalPoints = summary?.totalPoints ?? 0;
   const completedPoints = summary?.completedPoints ?? 0;
   const stateType = summary?.stateType;
+  const groupLabel = summary?.groupLabel ?? String(row.groupingValue);
 
   return (
     <button
@@ -1343,7 +1446,7 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
         <TaskListChevronRightIcon className="h-3.5 w-3.5 text-muted-foreground" />
       )}
       {stateType && <TaskListStateTypeIcon stateType={stateType} className="h-4 w-4" />}
-      <span>{String(row.groupingValue)}</span>
+      <span>{groupLabel}</span>
       <span className="flex items-center gap-3 ml-1 font-normal text-muted-foreground">
         <QuickTooltip label={`${storyCount} ${storyCount === 1 ? 'task' : 'tasks'}`}>
           <span className="flex items-center gap-1">
@@ -1366,6 +1469,7 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
 }, arePMGroupRowPropsEqual);
 
 interface PMGroupSummary {
+  groupLabel: string;
   storyCount: number;
   totalPoints: number;
   completedPoints: number;
@@ -1572,7 +1676,7 @@ function InlinePriorityCell({
         className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
         onClick={(e) => { e.stopPropagation(); setOpen(true); }}
       >
-        <TaskListPriorityIcon priority={p} className="h-3.5 w-3.5" />
+        <TaskListPriorityIcon priority={p} className="h-4 w-4" />
         {PRIORITY_CONFIG[p].label}
       </button>
     );
@@ -1586,7 +1690,7 @@ function InlinePriorityCell({
           className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
           onClick={(e) => { e.stopPropagation(); setOpen(true); }}
         >
-          <TaskListPriorityIcon priority={p} className="h-3.5 w-3.5" />
+          <TaskListPriorityIcon priority={p} className="h-4 w-4" />
           {PRIORITY_CONFIG[p].label}
         </button>
       </PopoverTrigger>
@@ -1615,7 +1719,7 @@ function InlinePriorityCell({
                       }}
                       className="flex items-center gap-2 text-xs"
                     >
-                      <TaskListPriorityIcon priority={pri} className="h-3.5 w-3.5" />
+                      <TaskListPriorityIcon priority={pri} className="h-4 w-4" />
                       <span>{cfg.label}</span>
                       {p === pri && <TaskListCheckIcon className="ml-auto h-3.5 w-3.5 text-primary" />}
                     </CommandItem>
@@ -1747,8 +1851,8 @@ function InlineOwnerCell({
               avatarSeed={selectedMember.avatar_seed}
               avatarBackgroundMode={selectedMember.avatar_background_mode}
               avatarBackgroundColor={selectedMember.avatar_background_color}
-              className="h-4 w-4"
-              fallbackClassName="text-[7px]"
+              className="h-5 w-5"
+              fallbackClassName="text-[8px]"
             />
             <span className="truncate">{ownerName}</span>
           </>
@@ -1782,7 +1886,7 @@ function InlineSeverityCell({
       >
         {s !== 'none' ? (
           <>
-            <TaskListSeverityIcon severity={s} className="h-3.5 w-3.5" />
+            <TaskListSeverityIcon severity={s} className="h-4 w-4" />
             {SEVERITY_CONFIG[s].label}
           </>
         ) : (
@@ -1802,7 +1906,7 @@ function InlineSeverityCell({
         >
           {s !== 'none' ? (
             <>
-              <TaskListSeverityIcon severity={s} className="h-3.5 w-3.5" />
+              <TaskListSeverityIcon severity={s} className="h-4 w-4" />
               {SEVERITY_CONFIG[s].label}
             </>
           ) : (
@@ -1835,7 +1939,7 @@ function InlineSeverityCell({
                       }}
                       className="flex items-center gap-2 text-xs"
                     >
-                      <TaskListSeverityIcon severity={sev} className="h-3.5 w-3.5" />
+                      <TaskListSeverityIcon severity={sev} className="h-4 w-4" />
                       <span>{cfg.label}</span>
                       {s === sev && <TaskListCheckIcon className="ml-auto h-3.5 w-3.5 text-primary" />}
                     </CommandItem>

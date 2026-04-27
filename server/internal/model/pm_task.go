@@ -69,6 +69,11 @@ type PMTask struct {
 	BlockedByTasks            []TaskDependencyTask `json:"blocked_by_tasks,omitempty" gorm:"-"`
 	BlockingTasks             []TaskDependencyTask `json:"blocking_tasks,omitempty" gorm:"-"`
 	TaskKey                   string               `json:"task_key" gorm:"-"`
+	LatestRunID               *string              `json:"latest_run_id,omitempty" gorm:"-"`
+	LatestRunAgentID          *string              `json:"latest_run_agent_id,omitempty" gorm:"-"`
+	LatestRunStatus           *string              `json:"latest_run_status,omitempty" gorm:"-"`
+	LatestRunPauseReason      *string              `json:"latest_run_pause_reason,omitempty" gorm:"-"`
+	LatestRunAt               *time.Time           `json:"latest_run_at,omitempty" gorm:"-"`
 	CreatedAt                 time.Time            `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt                 time.Time            `json:"updated_at" gorm:"autoUpdateTime"`
 }
@@ -130,6 +135,7 @@ type PMTaskFilters struct {
 	LabelID               *string
 	Priority              *string
 	Severity              *string
+	Completed             *bool
 	Blocked               *string
 	Blocking              *string
 	UpdatedAfter          *string

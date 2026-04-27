@@ -1,11 +1,14 @@
 import { api } from '../api';
 import type {
   ApproveAgentRunRequest,
+  AgentRun,
+  AgentRunArtifact,
   CodingSession,
   CodingSessionDiff,
   CodingSessionEventListResponse,
   CodingSessionInteraction,
   CodingSessionRepoState,
+  ContinueAgentRunRequest,
   CodexAuthState,
   ResolveCodingSessionInteractionRequest,
   ResumeAgentRunRequest,
@@ -24,10 +27,14 @@ export const codingSessionService = {
     api.get<CodingSessionRepoState>(`/pm/coding-sessions/${sessionId}/repo${qs(workspaceId)}`),
   getDiff: (workspaceId: string, sessionId: string, path?: string) =>
     api.get<CodingSessionDiff>(`/pm/coding-sessions/${sessionId}/diff${qs(workspaceId)}${path ? `&path=${encodeURIComponent(path)}` : ''}`),
+  listArtifacts: (workspaceId: string, sessionId: string) =>
+    api.get<AgentRunArtifact[]>(`/pm/agent-runs/${sessionId}/artifacts${qs(workspaceId)}`),
   resolveInteraction: (workspaceId: string, sessionId: string, interactionId: string, payload: ResolveCodingSessionInteractionRequest) =>
     api.post<CodingSessionInteraction>(`/pm/coding-sessions/${sessionId}/interactions/${interactionId}/resolve${qs(workspaceId)}`, payload),
   sendMessage: (workspaceId: string, sessionId: string, payload: SendAgentRunMessageRequest) =>
     api.post(`/pm/coding-sessions/${sessionId}/message${qs(workspaceId)}`, payload),
+  continue: (workspaceId: string, sessionId: string, payload?: ContinueAgentRunRequest) =>
+    api.post<AgentRun>(`/pm/coding-sessions/${sessionId}/continue${qs(workspaceId)}`, payload ?? {}),
   resume: (workspaceId: string, sessionId: string, payload: ResumeAgentRunRequest) =>
     api.post(`/pm/coding-sessions/${sessionId}/resume${qs(workspaceId)}`, payload),
   approve: (workspaceId: string, sessionId: string, payload?: ApproveAgentRunRequest) =>

@@ -1,5 +1,12 @@
-import { useMemo, useCallback, useState, memo, useEffect } from 'react';
-import { Message01Icon, Search01Icon, Cancel01Icon, ArrowDown01Icon } from '@/lib/icons';
+import { useMemo, useCallback, useState, memo, useEffect, type UIEvent } from 'react';
+import {
+  ArrowDown01Icon,
+  Cancel01Icon,
+  Message01Icon,
+  PlusSignIcon,
+  Search01Icon,
+  Settings02Icon,
+} from '@/lib/icons';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
@@ -8,8 +15,7 @@ import {
   DropdownMenuContent,
   DropdownMenuCheckboxItem,
 } from '@/components/ui/dropdown-menu';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { useConversations, useInboxScopes, useMarkConversationRead } from '@/hooks/queries/useSupport';
+import { useInfiniteConversations, useInboxScopes, useMarkConversationRead } from '@/hooks/queries/useSupport';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { ConversationRow } from './ConversationRow';
@@ -33,40 +39,44 @@ const SkeletonRow = memo(function SkeletonRow() {
   );
 });
 
-// Context-aware empty copy — same harmonious layout, different words per
-// nav filter so the user knows why the list is empty.
-function emptyCopyForNavFilter(navFilter: string): { title: string; subtitle: string } {
+function emptyCopyForNavFilter(navFilter: string, searchQuery: string): { title: string; subtitle: string } {
+  if (searchQuery.trim()) {
+    return {
+      title: 'No matching conversations',
+      subtitle: 'Try another customer, subject, or email.',
+    };
+  }
   switch (navFilter) {
     case 'my_inbox':
       return {
         title: 'Nothing assigned to you',
-        subtitle: 'Conversations assigned to you will appear here.',
+        subtitle: 'Assigned conversations will appear here.',
       };
     case 'unassigned':
       return {
         title: 'No unassigned conversations',
-        subtitle: 'New conversations waiting for an owner will appear here.',
+        subtitle: 'New conversations without an owner will appear here.',
       };
     case 'mentions':
       return {
         title: 'No mentions',
-        subtitle: 'Conversations where teammates mention you will appear here.',
+        subtitle: 'Teammate mentions will appear here.',
       };
     case 'ai_active':
       return {
-        title: 'AI isn’t handling anything right now',
-        subtitle: 'Conversations the AI is actively working on will appear here.',
+        title: 'No active AI conversations',
+        subtitle: 'AI-handled conversations will appear here.',
       };
     case 'resolved_by_ai':
       return {
-        title: 'No AI-resolved conversations yet',
-        subtitle: 'Conversations the AI has fully resolved will appear here.',
+        title: 'No AI resolutions yet',
+        subtitle: 'Resolved AI conversations will appear here.',
       };
     case 'all':
     default:
       return {
-        title: 'No conversations yet',
-        subtitle: 'New support conversations will appear here as they arrive.',
+        title: 'Inbox is empty',
+        subtitle: 'New support conversations will appear here.',
       };
   }
 }
@@ -74,9 +84,18 @@ function emptyCopyForNavFilter(navFilter: string): { title: string; subtitle: st
 interface ConversationListProps {
   workspaceId: string;
   userId?: string;
+  onOnboardingEmptyChange?: (isEmpty: boolean) => void;
+  onWidgetSettingsClick?: () => void;
+  onCreateConversationClick?: () => void;
 }
 
-export function ConversationList({ workspaceId, userId }: ConversationListProps) {
+export function ConversationList({
+  workspaceId,
+  userId,
+  onOnboardingEmptyChange,
+  onWidgetSettingsClick,
+  onCreateConversationClick,
+}: ConversationListProps) {
   const statusFilter = useSupportInboxStore((s) => s.statusFilter);
   const setStatusFilter = useSupportInboxStore((s) => s.setStatusFilter);
   const searchQuery = useSupportInboxStore((s) => s.searchQuery);
@@ -93,7 +112,9 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
   const handleSelect = useCallback((id: string, unreadCount?: number) => {
     selectConversation(id);
     if ((unreadCount ?? 0) > 0) {
-      markConversationRead.mutate(id);
+      window.requestAnimationFrame(() => {
+        window.setTimeout(() => markConversationRead.mutate(id), 0);
+      });
     }
   }, [markConversationRead, selectConversation]);
 
@@ -106,10 +127,21 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
     if (navFilter === 'mentions') f.filter = 'mentions';
     if (navFilter === 'ai_active') f.flow_state = 'ai_handling';
     if (navFilter === 'resolved_by_ai') f.flow_state = 'resolved_by_ai';
+    if (searchQuery.trim()) f.search = searchQuery.trim();
     return Object.keys(f).length > 0 ? f : undefined;
-  }, [statusFilter, navFilter, selectedMailboxId]);
-  const { data: response, isLoading, error } = useConversations(workspaceId, filters);
-  const conversations = response?.data ?? [];
+  }, [statusFilter, navFilter, searchQuery, selectedMailboxId]);
+  const {
+    data: response,
+    isLoading,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+    error,
+  } = useInfiniteConversations(workspaceId, filters);
+  const conversations = useMemo(
+    () => response?.pages.flatMap((page) => page.data ?? []) ?? [],
+    [response],
+  );
 
   const filteredConversations = useMemo(() => {
     return filterSupportConversations(conversations, {
@@ -117,13 +149,24 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
       mailboxScope: selectedMailboxId,
       statusFilter,
       userId,
-      searchQuery,
+      searchQuery: navFilter === 'mentions' ? searchQuery : '',
     });
   }, [conversations, navFilter, selectedMailboxId, statusFilter, userId, searchQuery]);
   const mailboxMoveOptions = useMemo(
     () => [inboxScopes?.shared_inbox, ...(inboxScopes?.mailboxes ?? [])].filter(Boolean) as SupportInboxScope[],
     [inboxScopes]
   );
+  const shouldShowEmptyState = !isLoading && filteredConversations.length === 0 && !error && !hasNextPage;
+  const shouldShowOnboardingEmptyState =
+    shouldShowEmptyState &&
+    navFilter === 'all' &&
+    statusFilter === 'all' &&
+    selectedMailboxId === 'all' &&
+    !searchQuery.trim();
+
+  useEffect(() => {
+    onOnboardingEmptyChange?.(shouldShowOnboardingEmptyState);
+  }, [onOnboardingEmptyChange, shouldShowOnboardingEmptyState]);
 
   useEffect(() => {
     if (!wsSend || !wsConnected || filteredConversations.length === 0) return;
@@ -131,6 +174,17 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
       conversation_ids: filteredConversations.map((conversation) => conversation.id),
     });
   }, [filteredConversations, wsConnected, wsSend]);
+
+  const handleListScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
+    if (!hasNextPage || isFetchingNextPage) {
+      return;
+    }
+    const target = event.currentTarget;
+    const distanceFromBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
+    if (distanceFromBottom <= 80) {
+      fetchNextPage();
+    }
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
   return (
     <div className="flex h-full w-[300px] flex-col border-r bg-background dark:border-sidebar-border dark:bg-sidebar">
@@ -214,7 +268,11 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
       </div>
 
       {/* Conversation list */}
-      <ScrollArea className="flex-1 min-h-0">
+      <div
+        className="flex-1 min-h-0 overflow-y-auto"
+        data-support-conversation-scroll
+        onScroll={handleListScroll}
+      >
         {isLoading && (
           <div>
             <SkeletonRow />
@@ -227,11 +285,26 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
         {error && (
           <p className="p-4 text-sm text-destructive">{String(error)}</p>
         )}
-        {!isLoading && filteredConversations.length === 0 && !error && (
+        {shouldShowEmptyState && (
           <EmptyState
             icon={Message01Icon}
-            title={emptyCopyForNavFilter(navFilter).title}
-            subtitle={emptyCopyForNavFilter(navFilter).subtitle}
+            title={emptyCopyForNavFilter(navFilter, searchQuery).title}
+            subtitle={emptyCopyForNavFilter(navFilter, searchQuery).subtitle}
+            actions={
+              shouldShowOnboardingEmptyState && onWidgetSettingsClick && onCreateConversationClick ? (
+                <>
+                  <Button size="sm" className="w-full justify-center" onClick={onWidgetSettingsClick}>
+                    <Settings02Icon className="h-4 w-4" />
+                    Install widget
+                  </Button>
+                  <Button size="sm" variant="outline" className="w-full justify-center" onClick={onCreateConversationClick}>
+                    <PlusSignIcon className="h-4 w-4" />
+                    Create test
+                  </Button>
+                </>
+              ) : undefined
+            }
+            actionsClassName="w-full md:hidden"
           />
         )}
         {filteredConversations.map((conversation) => (
@@ -243,7 +316,20 @@ export function ConversationList({ workspaceId, userId }: ConversationListProps)
             onSelectConversation={handleSelect}
           />
         ))}
-      </ScrollArea>
+        {hasNextPage && (
+          <div className="flex justify-center px-3 py-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs"
+              onClick={() => fetchNextPage()}
+              disabled={isFetchingNextPage}
+            >
+              {isFetchingNextPage ? 'Loading...' : 'Load more'}
+            </Button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

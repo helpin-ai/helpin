@@ -17,8 +17,12 @@ type DocsDocumentRepository struct {
 }
 
 // NewDocsDocumentRepository creates a new DocsDocumentRepository.
-func NewDocsDocumentRepository(db *gorm.DB, useSortKey bool) *DocsDocumentRepository {
-	return &DocsDocumentRepository{db: db, useSortKey: useSortKey}
+func NewDocsDocumentRepository(db *gorm.DB, useSortKey ...bool) *DocsDocumentRepository {
+	enabled := false
+	if len(useSortKey) > 0 {
+		enabled = useSortKey[0]
+	}
+	return &DocsDocumentRepository{db: db, useSortKey: enabled}
 }
 
 // docOrderBy returns the canonical ORDER BY clause for documents
@@ -76,7 +80,11 @@ func (r *DocsDocumentRepository) UpdateFields(ctx context.Context, id string, up
 
 // Create inserts a new document.
 func (r *DocsDocumentRepository) Create(ctx context.Context, doc *model.DocsDocument) (*model.DocsDocument, error) {
-	if err := r.db.WithContext(ctx).Create(doc).Error; err != nil {
+	q := r.db.WithContext(ctx)
+	if !r.useSortKey {
+		q = q.Omit("sort_key")
+	}
+	if err := q.Create(doc).Error; err != nil {
 		return nil, fmt.Errorf("create docs document: %w", err)
 	}
 	return doc, nil

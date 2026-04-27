@@ -79,6 +79,33 @@ func TestGenerateAndValidateRefreshToken(t *testing.T) {
 	}
 }
 
+func TestGenerateAndValidateTwoFAToken(t *testing.T) {
+	mgr := NewJWTManager(testSecret)
+
+	token, err := mgr.Generate2FAToken(testUserID, testEmail, true)
+	if err != nil {
+		t.Fatalf("Generate2FAToken() error = %v", err)
+	}
+
+	claims, err := mgr.Validate2FAToken(token)
+	if err != nil {
+		t.Fatalf("Validate2FAToken() error = %v", err)
+	}
+
+	if claims.UserID != testUserID {
+		t.Errorf("UserID = %q, want %q", claims.UserID, testUserID)
+	}
+	if claims.Email != testEmail {
+		t.Errorf("Email = %q, want %q", claims.Email, testEmail)
+	}
+	if !claims.RememberMe {
+		t.Error("expected remember_me to round-trip")
+	}
+	if claims.Purpose != "signin_2fa" {
+		t.Errorf("Purpose = %q, want signin_2fa", claims.Purpose)
+	}
+}
+
 func TestGenerateTokenPair_RememberMe(t *testing.T) {
 	mgr := NewJWTManager(testSecret)
 

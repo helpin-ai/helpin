@@ -5,12 +5,13 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
-import { useSupportInboxStore } from '@/stores/supportInboxStore';
+import { useSupportInboxStore, type NavFilter } from '@/stores/supportInboxStore';
 import { useQuery } from '@tanstack/react-query';
 import { useArchiveMailbox, useInboxScopes, useUnreadStats } from '@/hooks/queries/useSupport';
 import { automationService } from '@/lib/services/automationService';
 import { queryKeys } from '@/lib/queryKeys';
 import { getInitials } from '@/lib/utils';
+import { buildSupportInboxSearch } from '@/lib/supportInboxRouting';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import {
   Sidebar as ShellSidebar,
@@ -30,7 +31,12 @@ import { SidebarCreateBar } from './sidebar/SidebarCreateBar';
 import { SidebarRail } from './sidebar/SidebarRail';
 import { SettingsRailNav } from './sidebar/SettingsRailNav';
 import { StandardRailNav } from './sidebar/StandardRailNav';
+import { CrmRailNav } from './sidebar/CrmRailNav';
 import { SupportRailNav } from './sidebar/SupportRailNav';
+
+function defaultStatusForSupportFilter(filter: NavFilter) {
+  return filter === 'my_inbox' || filter === 'unassigned' || filter === 'mentions' ? 'open' : 'all';
+}
 
 export function Sidebar() {
   const navigate = useNavigate();
@@ -53,6 +59,8 @@ export function Sidebar() {
     setNavFilter,
     selectedMailboxId,
     setSelectedMailboxId,
+    statusFilter,
+    searchQuery,
     setTeamInboxDialogOpen,
     setEditMailboxId,
   } = useSupportInboxStore();
@@ -70,14 +78,21 @@ export function Sidebar() {
     queryKey: queryKeys.automation.runs(workspaceId ?? '', 1, 100),
     queryFn: async () => {
       const res = await automationService.listWorkspaceRuns(workspaceId!, 1, 100);
-      return res.data?.data ?? [];
+      return {
+        data: Array.isArray(res.data?.data) ? res.data.data : [],
+        total: res.data?.total ?? 0,
+        page: res.data?.page ?? 1,
+        per_page: res.data?.per_page ?? 100,
+        total_pages: res.data?.total_pages ?? 0,
+      };
     },
     enabled: !!workspaceId,
     staleTime: 30_000,
   });
+  const agentRuns = Array.isArray(agentRunsData?.data) ? agentRunsData.data : [];
   const agentAttentionCount = useMemo(
-    () => (agentRunsData ?? []).filter((r) => r.status === 'paused' || r.approval_state === 'pending').length,
-    [agentRunsData],
+    () => agentRuns.filter((run) => run.status === 'paused' || run.approval_state === 'pending').length,
+    [agentRuns],
   );
 
   const { data: teammatePresence = [] } = useSupportTeammatePresence(workspaceId ?? '', hasSupportModule);
@@ -300,6 +315,14 @@ export function Sidebar() {
                 toggleGroup={toggleSettingsGroup}
                 onNavigate={(link) => handleNavigate(link)}
               />
+            ) : activeRail === 'crm' ? (
+              <CrmRailNav
+                groups={currentNavGroups}
+                isActive={isActive}
+                wsSlug={wsSlug}
+                onNavigate={(link) => handleNavigate(link)}
+                onNavigateTo={(to) => navigate({ to })}
+              />
             ) : (
               <StandardRailNav
                 groups={currentNavGroups}
@@ -318,16 +341,24 @@ export function Sidebar() {
                 wsSlug={wsSlug}
                 pathname={location.pathname}
                 onNavFilterChange={(filter) => {
+                  const nextSearch = buildSupportInboxSearch({
+                    navFilter: filter,
+                    selectedMailboxId: 'all',
+                    statusFilter: defaultStatusForSupportFilter(filter),
+                    searchQuery,
+                  });
                   setNavFilter(filter);
-                  if (!location.pathname.startsWith(`/w/${wsSlug}/support/inbox`)) {
-                    navigate({ to: `/w/${wsSlug}/support/inbox` });
-                  }
+                  navigate({ to: `/w/${wsSlug}/support`, search: nextSearch });
                 }}
                 onMailboxSelect={(id) => {
+                  const nextSearch = buildSupportInboxSearch({
+                    navFilter: 'all',
+                    selectedMailboxId: id,
+                    statusFilter,
+                    searchQuery,
+                  });
                   setSelectedMailboxId(id);
-                  if (!location.pathname.startsWith(`/w/${wsSlug}/support/inbox`)) {
-                    navigate({ to: `/w/${wsSlug}/support/inbox` });
-                  }
+                  navigate({ to: `/w/${wsSlug}/support`, search: nextSearch });
                 }}
                 onCreateMailbox={() => { setEditMailboxId(null); setTeamInboxDialogOpen(true); }}
                 onEditMailbox={(id) => { setEditMailboxId(id); setTeamInboxDialogOpen(true); }}

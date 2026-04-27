@@ -42,6 +42,21 @@ function quoted(value: string) {
   return `"${value}"`;
 }
 
+function truncateSearchQuery(query: string) {
+  return query.length > 80 ? `${query.slice(0, 79)}…` : query;
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.map((item) => asString(item)).filter((item): item is string => Boolean(item))
+    : [];
+}
+
+function domainChip(domains: string[]) {
+  if (domains.length === 0) return null;
+  return domains.length === 1 ? domains[0] : `${domains[0]} +${domains.length - 1}`;
+}
+
 export function describeToolCall(toolCall: CodingSessionLiveToolCall): ToolCallPresentation {
   const toolName = toolCall.tool_name.toLowerCase();
   const parsed = parseArgs(toolCall.args_text);
@@ -85,6 +100,50 @@ export function describeToolCall(toolCall: CodingSessionLiveToolCall): ToolCallP
       secondaryLabel,
       chips: [],
     };
+  }
+
+  if (toolName === 'web_search_exa') {
+    const query = asString(parsed?.query);
+    if (query) {
+      const chips = [];
+      const category = asString(parsed?.category);
+      const includeDomains = stringArray(parsed?.include_domains);
+      const includeDomainsChip = domainChip(includeDomains);
+      const numResults = asNumber(parsed?.num_results);
+      if (category) chips.push(category);
+      if (includeDomainsChip) chips.push(includeDomainsChip);
+      if (numResults != null) chips.push(`${numResults} result${numResults === 1 ? '' : 's'}`);
+      return { primaryLabel: `Search ${quoted(truncateSearchQuery(query))}`, secondaryLabel, chips };
+    }
+  }
+
+  if (toolName === 'web_search_brave') {
+    const query = asString(parsed?.query);
+    if (query) {
+      const chips = [];
+      const freshness = asString(parsed?.freshness);
+      const domainAllowlist = stringArray(parsed?.domain_allowlist);
+      const domainAllowlistChip = domainChip(domainAllowlist);
+      if (freshness) chips.push(freshness);
+      if (domainAllowlistChip) chips.push(domainAllowlistChip);
+      return { primaryLabel: `Search ${quoted(truncateSearchQuery(query))}`, secondaryLabel, chips };
+    }
+  }
+
+  if (toolName === 'fetch_url' || toolName === 'crawl_url') {
+    const url = asString(parsed?.url);
+    if (url) {
+      const chips = [];
+      const maxPages = asNumber(parsed?.max_pages);
+      const maxDepth = asNumber(parsed?.max_depth);
+      if (maxPages != null) chips.push(`${maxPages} page${maxPages === 1 ? '' : 's'}`);
+      if (maxDepth != null) chips.push(`depth ${maxDepth}`);
+      return {
+        primaryLabel: `${toolName === 'fetch_url' ? 'Fetch' : 'Crawl'} ${truncateSearchQuery(url)}`,
+        secondaryLabel,
+        chips,
+      };
+    }
   }
 
   if (toolName === 'run_command' || toolName === 'bash' || toolName.includes('shell') || toolName.includes('exec')) {

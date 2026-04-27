@@ -182,6 +182,7 @@ const SUPPORT_INSTALLATION = {
     email_fallback_enabled: false,
     email_fallback_delay_secs: 600,
     email_fallback_from_name: 'Helpin',
+    email_fallback_max_delivery_age_secs: 600,
     brand_color: '#2563eb',
     show_branding: true,
     color_scheme: 'light',

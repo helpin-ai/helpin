@@ -30,6 +30,9 @@ export const queryKeys = {
     flowsByWorkflow: (wsId: string, workflowId: string) => ['automation', wsId, 'flows', 'workflow', workflowId] as const,
     triggerCatalog: (wsId: string) => ['automation', wsId, 'library', 'triggers'] as const,
     toolCatalog: (wsId: string) => ['automation', wsId, 'library', 'tools'] as const,
+    skillCatalog: (wsId: string) => ['automation', wsId, 'library', 'skills'] as const,
+    agentTemplates: (wsId: string) => ['automation', wsId, 'agent-templates'] as const,
+    agentTemplate: (wsId: string, id: string) => ['automation', wsId, 'agent-templates', id] as const,
     agentsRoot: (wsId: string) => ['automation', wsId, 'agents'] as const,
     agents: (wsId: string) => ['automation', wsId, 'agents'] as const,
     agent: (wsId: string, id: string) => ['automation', wsId, 'agents', id] as const,
@@ -134,6 +137,7 @@ export const queryKeys = {
     conversationAssignees: (wsId: string, id: string) => ['support', wsId, 'conversations', id, 'assignees'] as const,
     conversationAssociations: (wsId: string, id: string) => ['support', wsId, 'conversations', id, 'associations'] as const,
     messages: (wsId: string, conversationId: string) => ['support', wsId, 'conversations', conversationId, 'messages'] as const,
+    messageEmail: (wsId: string, messageId: string) => ['support', wsId, 'messages', messageId, 'email'] as const,
     installation: (wsId: string) => ['support', wsId, 'installation'] as const,
     unreadStats: (wsId: string) => ['support', wsId, 'unread-stats'] as const,
     inboxScopes: (wsId: string) => ['support', wsId, 'inbox-scopes'] as const,
@@ -201,16 +205,6 @@ export const queryKeys = {
     activities: (wsId: string, filters?: Record<string, unknown>) =>
       filters ? (['crm', wsId, 'activities', filters] as const) : (['crm', wsId, 'activities'] as const),
 
-    properties: (wsId: string, objectType?: string) =>
-      objectType ? (['crm', wsId, 'properties', objectType] as const) : (['crm', wsId, 'properties'] as const),
-    propertyGroups: (wsId: string, objectType?: string) =>
-      objectType ? (['crm', wsId, 'propertyGroups', objectType] as const) : (['crm', wsId, 'propertyGroups'] as const),
-
-    lists: (wsId: string, filters?: Record<string, unknown>) =>
-      filters ? (['crm', wsId, 'lists', filters] as const) : (['crm', wsId, 'lists'] as const),
-    list: (wsId: string, id: string) => ['crm', wsId, 'lists', id] as const,
-    listMembers: (wsId: string, listId: string) => ['crm', wsId, 'lists', listId, 'members'] as const,
-
     imports: (wsId: string) => ['crm', wsId, 'imports'] as const,
     import: (wsId: string, id: string) => ['crm', wsId, 'imports', id] as const,
 
@@ -240,9 +234,6 @@ export const queryKeys = {
     emailSyncSettings: (wsId: string) => ['crm', wsId, 'email-sync-settings'] as const,
 
     // Phase 5
-    sequences: (wsId: string) => ['crm', wsId, 'sequences'] as const,
-    sequence: (wsId: string, id: string) => ['crm', wsId, 'sequences', id] as const,
-    sequenceEnrollments: (wsId: string, seqId: string) => ['crm', wsId, 'sequences', seqId, 'enrollments'] as const,
     writingProfiles: (wsId: string) => ['crm', wsId, 'writingProfiles'] as const,
     writingProfile: (wsId: string, memberId: string) => ['crm', wsId, 'writingProfiles', memberId] as const,
 

@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { BotIcon, Loading01Icon, PlayIcon } from '@/lib/icons';
+import { BotIcon, GitBranchIcon, Loading01Icon, PlayIcon, Settings02Icon } from '@/lib/icons';
 import { toast } from 'sonner';
 
-import { AgentAvatar } from '@/components/agents/AgentAvatar';
+import { AgentAvatar, resolveAgentPersonaKey, type AgentPersonaKey } from '@/components/agents/AgentAvatar';
+import { NextAgentHint } from '@/components/agents/NextAgentHint';
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
 import { AgentRunTable } from '@/components/pm/AgentRunTable';
+import { RepositoryBranchPicker } from '@/components/git/RepositoryBranchPicker';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
   SelectContent,
@@ -15,17 +17,35 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
+import { repositoryDefaultBranchLabel, taskBranchOptionLabel } from '@/lib/branchLabels';
 import { agentService } from '@/lib/services/agentService';
-import type { Agent, AgentRun } from '@/lib/pmTypes';
+import type { Agent, AgentRun, GitRepository, TaskDeliveryTarget } from '@/lib/pmTypes';
 
 interface Props {
   taskId: string;
   workspaceId: string;
-  assignedAgentId?: string;
+  latestRunAgentId?: string | null;
+  delivery?: AgentRunDeliveryContext;
+  canEditDelivery?: boolean;
 }
 
-export function AgentRunPanel({ taskId, workspaceId, assignedAgentId }: Props) {
+export interface AgentRunDeliveryContext {
+  repositories: GitRepository[];
+  target: TaskDeliveryTarget | null;
+  repositoryId: string;
+  baseBranch: string;
+  loading: boolean;
+  savingTarget: boolean;
+  resolvedBaseBranch: string;
+  branchPreview: string;
+  deliveryTargetSaved: boolean;
+  selectedRepository: GitRepository | null;
+  handleRepoChange: (repoId: string) => Promise<void>;
+  handleBaseBranchChange: (baseBranch: string) => Promise<boolean>;
+  ensureDeliveryTargetSaved: (showSuccessToast: boolean) => Promise<boolean>;
+}
+
+export function AgentRunPanel({ taskId, workspaceId, latestRunAgentId, delivery, canEditDelivery = false }: Props) {
   const navigate = useNavigate();
   const search = useSearch({ strict: false }) as { run?: string };
   const urlRunId = search.run ?? null;
@@ -43,7 +63,11 @@ export function AgentRunPanel({ taskId, workspaceId, assignedAgentId }: Props) {
     (runId: string | null) => {
       navigate({
         to: '.',
-        search: (prev) => ({ ...prev, run: runId ?? undefined }),
+        search: (prev) => {
+          const next = { ...(prev as Record<string, unknown>) };
+          delete next.task;
+          return { ...next, run: runId ?? undefined };
+        },
         replace: true,
       });
     },
@@ -81,7 +105,7 @@ export function AgentRunPanel({ taskId, workspaceId, assignedAgentId }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [assignedAgentId, taskId, workspaceId]);
+  }, [taskId, workspaceId]);
 
   useEffect(() => {
     void fetchAgents();
@@ -93,8 +117,8 @@ export function AgentRunPanel({ taskId, workspaceId, assignedAgentId }: Props) {
 
   const taskRunnableAgents = useMemo(() => agents.filter(isTaskRunnableAgent), [agents]);
   const preferredAgent = useMemo(() => {
-    if (assignedAgentId) {
-      return taskRunnableAgents.find((agent) => agent.id === assignedAgentId) ?? null;
+    if (latestRunAgentId) {
+      return taskRunnableAgents.find((agent) => agent.id === latestRunAgentId) ?? null;
     }
     return taskRunnableAgents.find((agent) => agent.preset_key === 'task_planner')
       ?? taskRunnableAgents.find((agent) => agent.preset_key === 'story_planner')
@@ -102,7 +126,7 @@ export function AgentRunPanel({ taskId, workspaceId, assignedAgentId }: Props) {
       ?? taskRunnableAgents.find((agent) => agent.preset_key === 'review_agent')
       ?? taskRunnableAgents[0]
       ?? null;
-  }, [assignedAgentId, taskRunnableAgents]);
+  }, [latestRunAgentId, taskRunnableAgents]);
 
   useEffect(() => {
     if (!selectedAgentId && preferredAgent) {
@@ -129,41 +153,78 @@ export function AgentRunPanel({ taskId, workspaceId, assignedAgentId }: Props) {
     };
   }, [fetchRuns, taskId]);
 
+  const startRun = useCallback(async (agentId: string) => {
+    const res = await agentService.runTask(workspaceId, taskId, { agent_id: agentId });
+    if (res.error) {
+      toast.error(res.error);
+      return;
+    }
+    await fetchRuns();
+    if (res.data?.id) {
+      setRunInUrl(res.data.id);
+    }
+  }, [fetchRuns, setRunInUrl, taskId, workspaceId]);
+
   const handleRunAgent = async () => {
     if (!selectedAgentId) return;
     setTriggering(true);
     try {
-      const res = await agentService.runTask(workspaceId, taskId, { agent_id: selectedAgentId });
-      if (res.error) {
-        toast.error(res.error);
-        return;
-      }
-      await fetchRuns();
-      if (res.data?.id) {
-        setRunInUrl(res.data.id);
-      }
+      await startRun(selectedAgentId);
     } finally {
       setTriggering(false);
     }
   };
 
+  const latestRun = runs[0];
+  const latestCompletedAgent = useMemo(() => {
+    if (!latestRun || latestRun.status !== 'completed') return null;
+    return agents.find((agent) => agent.id === latestRun.agent_id) ?? null;
+  }, [agents, latestRun]);
+  const completedPersonaKeys = useMemo(() => {
+    const agentById = new Map(agents.map((agent) => [agent.id, agent]));
+    const keys = new Set<AgentPersonaKey>();
+    for (const run of runs) {
+      const agent = agentById.get(run.agent_id);
+      if (agent) {
+        keys.add(resolveAgentPersonaKey({ agent }));
+      }
+    }
+    return keys;
+  }, [agents, runs]);
+
   if (taskRunnableAgents.length === 0 && runs.length === 0 && !loading && !loadingAgents) return null;
 
   return (
     <div className="mt-6">
-      <div className="mb-3 space-y-2">
-        {runs.length > 0 && (
-          <div className="flex items-center gap-1.5">
-            <BotIcon className="h-3.5 w-3.5 text-muted-foreground" />
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Agent Runs</h3>
-          </div>
-        )}
+      <div className="overflow-hidden rounded-md border border-border/60 bg-card">
+        <div className="flex items-center gap-2 px-3 py-2">
+          <BotIcon className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Agent Runs
+          </span>
+          {runs.length > 0 && (
+            <span className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-border/60 bg-muted px-1.5 text-[11px] font-medium text-muted-foreground">
+              {runs.length}
+            </span>
+          )}
+        </div>
 
-        <div className="flex items-end gap-2">
-          <div className="min-w-0 flex-1 space-y-1">
-            <Label className="text-[11px] text-muted-foreground">Start with</Label>
-            <Select value={selectedAgentId || '__none__'} onValueChange={(value) => setSelectedAgentId(value === '__none__' ? '' : value)}>
-              <SelectTrigger className="h-7 text-xs">
+        {delivery ? (
+          <AgentRunExecutionContext
+            workspaceId={workspaceId}
+            delivery={delivery}
+            canEdit={canEditDelivery}
+          />
+        ) : null}
+
+        <div className="flex items-center justify-between gap-2 border-t border-border/60 px-3 py-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="shrink-0 text-xs text-muted-foreground">Start with</span>
+            <Select
+              value={selectedAgentId || '__none__'}
+              onValueChange={(value) => setSelectedAgentId(value === '__none__' ? '' : value)}
+            >
+              <SelectTrigger size="sm" className="h-7 w-auto min-w-0 gap-1.5 text-xs">
                 <SelectValue placeholder={loadingAgents ? 'Loading agents...' : 'Select agent'} />
               </SelectTrigger>
               <SelectContent>
@@ -171,7 +232,7 @@ export function AgentRunPanel({ taskId, workspaceId, assignedAgentId }: Props) {
                 {taskRunnableAgents.map((agent) => (
                   <SelectItem key={agent.id} value={agent.id} className="text-xs">
                     <div className="flex items-center gap-1.5">
-                      <AgentAvatar agent={agent} className="h-4 w-4" />
+                      <AgentAvatar agent={agent} className="h-5 w-5 rounded-none border-0 bg-transparent shadow-none" genericBare />
                       <span>{agent.name}{agent.role ? ` · ${agent.role}` : ''}</span>
                     </div>
                   </SelectItem>
@@ -190,16 +251,25 @@ export function AgentRunPanel({ taskId, workspaceId, assignedAgentId }: Props) {
             Run
           </Button>
         </div>
-      </div>
 
-      <div className="overflow-hidden rounded-md border border-border/60">
-        <AgentRunTable
-          runs={runs}
-          agents={agents}
-          selectedRunId={selectedRunId}
-          onSelectRun={(run) => setRunInUrl(run.id)}
-          loading={loading}
-        />
+        {latestCompletedAgent ? (
+          <NextAgentHint
+            completedAgent={latestCompletedAgent}
+            candidates={taskRunnableAgents}
+            completedPersonaKeys={completedPersonaKeys}
+            onRun={(agent) => startRun(agent.id)}
+          />
+        ) : null}
+
+        <div className="border-t border-border/60">
+          <AgentRunTable
+            runs={runs}
+            agents={agents}
+            selectedRunId={selectedRunId}
+            onSelectRun={(run) => setRunInUrl(run.id)}
+            loading={loading}
+          />
+        </div>
       </div>
 
       <CodingSessionDrawer
@@ -210,12 +280,160 @@ export function AgentRunPanel({ taskId, workspaceId, assignedAgentId }: Props) {
         }}
         title="Task Agent Run"
       />
-
-      <Separator className="mt-4" />
     </div>
   );
 }
 
 function isTaskRunnableAgent(agent: Agent) {
   return agent.allowed_targets.includes('task');
+}
+
+function AgentRunExecutionContext({
+  workspaceId,
+  delivery,
+  canEdit,
+}: {
+  workspaceId: string;
+  delivery: AgentRunDeliveryContext;
+  canEdit: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const defaultRepository = useMemo(
+    () =>
+      delivery.repositories.find((repo) => repo.selected && repo.active && !repo.archived)
+      ?? delivery.repositories.find((repo) => repo.active && !repo.archived)
+      ?? delivery.repositories[0]
+      ?? null,
+    [delivery.repositories],
+  );
+
+  const repositoryName = delivery.selectedRepository?.full_name ?? delivery.target?.repo_full_name ?? '';
+  const canUseDefaultRepository = canEdit && !delivery.repositoryId && Boolean(defaultRepository);
+  const contextText = repositoryName
+    ? `${repositoryName} · ${delivery.resolvedBaseBranch} -> ${delivery.branchPreview}`
+    : 'Repository not configured';
+
+  const handleUseDefaultRepository = async () => {
+    if (!defaultRepository) return;
+    await delivery.handleRepoChange(defaultRepository.id);
+  };
+
+  return (
+    <div className="flex items-center gap-2 border-t border-border/60 px-3 py-2 text-xs">
+      <GitBranchIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      <span className="shrink-0 text-muted-foreground">Runs on</span>
+      {delivery.loading ? (
+        <span className="min-w-0 text-muted-foreground">Loading execution context...</span>
+      ) : (
+        <>
+          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground">
+            {contextText}
+          </span>
+          {canUseDefaultRepository ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleUseDefaultRepository}
+              disabled={delivery.savingTarget}
+              title={`Use ${defaultRepository?.full_name}`}
+              className="h-6 shrink-0 gap-1 px-2 text-[11px]"
+            >
+              {delivery.savingTarget ? <Loading01Icon className="h-3 w-3 animate-spin" /> : null}
+              Use default
+            </Button>
+          ) : null}
+          {canEdit ? (
+            <Popover open={open} onOpenChange={setOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="h-6 w-6 shrink-0"
+                  aria-label="Edit execution context"
+                >
+                  <Settings02Icon className="h-3.5 w-3.5" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-80 space-y-3 p-3">
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-foreground">Execution context</p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Repository
+                  </label>
+                  <Select
+                    value={delivery.repositoryId || undefined}
+                    onValueChange={(repoId) => {
+                      void delivery.handleRepoChange(repoId);
+                    }}
+                    disabled={delivery.savingTarget}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="Choose repository" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {delivery.repositories.map((repository) => (
+                        <SelectItem key={repository.id} value={repository.id} className="text-xs">
+                          {repository.full_name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Base branch
+                  </label>
+                  <RepositoryBranchPicker
+                    workspaceId={workspaceId}
+                    repositoryId={delivery.repositoryId || undefined}
+                    value={delivery.baseBranch}
+                    onChange={(value) => {
+                      void delivery.handleBaseBranchChange(value);
+                    }}
+                    placeholder={delivery.selectedRepository?.default_branch || 'main'}
+                    emptyLabel={repositoryDefaultBranchLabel(delivery.selectedRepository?.default_branch)}
+                    extraOptions={
+                      delivery.branchPreview
+                        ? [{ value: delivery.branchPreview, label: taskBranchOptionLabel(delivery.branchPreview) }]
+                        : []
+                    }
+                    disabled={delivery.savingTarget}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Task branch
+                  </label>
+                  <div className="flex h-8 items-center rounded-md border border-border/70 bg-muted/30 px-2.5 text-xs">
+                    <span className="truncate font-mono">{delivery.branchPreview}</span>
+                  </div>
+                </div>
+
+                {!delivery.deliveryTargetSaved && delivery.repositoryId ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      void delivery.ensureDeliveryTargetSaved(true);
+                    }}
+                    disabled={delivery.savingTarget}
+                    className="h-7 w-full gap-1 text-xs"
+                  >
+                    {delivery.savingTarget ? <Loading01Icon className="h-3 w-3 animate-spin" /> : null}
+                    Save context
+                  </Button>
+                ) : null}
+              </PopoverContent>
+            </Popover>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
 }

@@ -3,6 +3,7 @@ package model
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -14,6 +15,7 @@ var branchTokenSanitizer = regexp.MustCompile(`[^a-z0-9]+`)
 type GitIntegration struct {
 	ID             string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID    string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	OrganizationID *string    `json:"organization_id" gorm:"type:uuid;index"`
 	Provider       string     `json:"provider" gorm:"not null"` // github, gitlab
 	DisplayName    string     `json:"display_name" gorm:"not null"`
 	CredentialMode string     `json:"credential_mode" gorm:"not null;default:'github_app'"`
@@ -24,6 +26,7 @@ type GitIntegration struct {
 	WebhookSecret  *string    `json:"-" gorm:"column:webhook_secret"`
 	AccessToken    string     `json:"-" gorm:"not null"` // deprecated PAT field retained for migration compatibility
 	Active         bool       `json:"active" gorm:"not null;default:true"`
+	DeletedAt      *time.Time `json:"deleted_at"`
 	LastSyncedAt   *time.Time `json:"last_synced_at"`
 	LastSyncError  *string    `json:"last_sync_error"`
 	CreatedAt      time.Time  `json:"created_at" gorm:"autoCreateTime"`
@@ -35,16 +38,18 @@ func (GitIntegration) TableName() string { return "git_integrations" }
 // GitRepository represents a workspace-accessible repository synced from a git provider install.
 type GitRepository struct {
 	ID            string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID   string          `json:"workspace_id" gorm:"type:uuid;not null;index;uniqueIndex:idx_git_repo_external,priority:1"`
-	IntegrationID string          `json:"integration_id" gorm:"type:uuid;not null;index;uniqueIndex:idx_git_repo_external,priority:2"`
+	WorkspaceID   string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	IntegrationID string          `json:"integration_id" gorm:"type:uuid;not null;index"`
 	Provider      string          `json:"provider" gorm:"not null"`
-	ExternalID    string          `json:"external_id" gorm:"not null;uniqueIndex:idx_git_repo_external,priority:3"`
+	ExternalID    string          `json:"external_id" gorm:"not null;index"`
 	FullName      string          `json:"full_name" gorm:"not null;index"`
 	DefaultBranch string          `json:"default_branch" gorm:"not null;default:'main'"`
 	Permissions   json.RawMessage `json:"permissions" gorm:"type:jsonb;not null;default:'{}'"`
 	Private       bool            `json:"private" gorm:"not null;default:true"`
 	Archived      bool            `json:"archived" gorm:"not null;default:false"`
 	Selected      bool            `json:"selected" gorm:"not null;default:true"`
+	Active        bool            `json:"active" gorm:"not null;default:true"`
+	DeletedAt     *time.Time      `json:"deleted_at"`
 	CreatedAt     time.Time       `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt     time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
 }
@@ -54,6 +59,83 @@ func (GitRepository) TableName() string { return "git_repositories" }
 type GitBranch struct {
 	Name      string `json:"name"`
 	IsDefault bool   `json:"is_default"`
+}
+
+func ResolveGitHubAPIBaseURL(baseURL *string) string {
+	raw := strings.TrimSpace(derefStringPtr(baseURL))
+	if raw == "" {
+		return "https://api.github.com"
+	}
+
+	parsed, err := url.Parse(raw)
+	if err != nil || strings.TrimSpace(parsed.Host) == "" {
+		return strings.TrimRight(raw, "/")
+	}
+
+	scheme := strings.TrimSpace(parsed.Scheme)
+	if scheme == "" {
+		scheme = "https"
+	}
+
+	host := strings.ToLower(strings.TrimSpace(parsed.Host))
+	switch host {
+	case "github.com", "api.github.com":
+		return strings.TrimRight(fmt.Sprintf("%s://api.github.com", scheme), "/")
+	default:
+		path := strings.TrimRight(strings.TrimSpace(parsed.Path), "/")
+		if path == "" {
+			path = "/api/v3"
+		} else if !strings.HasSuffix(path, "/api/v3") {
+			path += "/api/v3"
+		}
+		parsed.Scheme = scheme
+		parsed.Path = path
+		parsed.RawPath = ""
+		parsed.RawQuery = ""
+		parsed.Fragment = ""
+		return strings.TrimRight(parsed.String(), "/")
+	}
+}
+
+func ResolveGitHubWebBaseURL(baseURL *string) string {
+	raw := strings.TrimSpace(derefStringPtr(baseURL))
+	if raw == "" {
+		return "https://github.com"
+	}
+
+	parsed, err := url.Parse(raw)
+	if err != nil || strings.TrimSpace(parsed.Host) == "" {
+		return strings.TrimRight(strings.TrimSuffix(raw, "/api/v3"), "/")
+	}
+
+	scheme := strings.TrimSpace(parsed.Scheme)
+	if scheme == "" {
+		scheme = "https"
+	}
+
+	host := strings.ToLower(strings.TrimSpace(parsed.Host))
+	switch host {
+	case "api.github.com":
+		return strings.TrimRight(fmt.Sprintf("%s://github.com", scheme), "/")
+	default:
+		path := strings.TrimRight(strings.TrimSpace(parsed.Path), "/")
+		if strings.HasSuffix(path, "/api/v3") {
+			path = strings.TrimSuffix(path, "/api/v3")
+		}
+		parsed.Scheme = scheme
+		parsed.Path = path
+		parsed.RawPath = ""
+		parsed.RawQuery = ""
+		parsed.Fragment = ""
+		return strings.TrimRight(parsed.String(), "/")
+	}
+}
+
+func derefStringPtr(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func BuildTaskWorkingBranch(task *PMTask, teamDefault *PMTeamRepoDefault, workspaceKey string) string {
@@ -101,6 +183,7 @@ type PMTeamRepoDefault struct {
 	AutoSyncStates bool      `json:"auto_sync_states" gorm:"not null;default:true"`
 	ReviewStateID  *string   `json:"review_state_id" gorm:"type:uuid"`
 	DoneStateID    *string   `json:"done_state_id" gorm:"type:uuid"`
+	ClosedStateID  *string   `json:"closed_state_id" gorm:"type:uuid"`
 	CreatedAt      time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt      time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
@@ -186,8 +269,55 @@ type UpdateGitRepositoryRequest struct {
 
 // GitHubInstallURLResponse returns the install URL for the configured GitHub App.
 type GitHubInstallURLResponse struct {
-	InstallURL string `json:"install_url"`
-	Action     string `json:"action"`
+	InstallURL    string  `json:"install_url"`
+	Action        string  `json:"action"`
+	IntegrationID *string `json:"integration_id,omitempty"`
+}
+
+type GitAvailableRepoClaim struct {
+	WorkspaceID   string `json:"workspace_id"`
+	WorkspaceName string `json:"workspace_name"`
+	RepoID        string `json:"repo_id"`
+}
+
+type GitAvailableRepo struct {
+	ExternalID    string                 `json:"external_id"`
+	FullName      string                 `json:"full_name"`
+	DefaultBranch string                 `json:"default_branch"`
+	Private       bool                   `json:"private"`
+	Archived      bool                   `json:"archived"`
+	Permissions   map[string]bool        `json:"permissions,omitempty"`
+	ClaimedBy     *GitAvailableRepoClaim `json:"claimed_by,omitempty"`
+}
+
+type WireGitRepositoriesRequest struct {
+	WorkspaceID string   `json:"workspace_id"`
+	RepoIDs     []string `json:"repo_ids"`
+}
+
+type WireGitRepositoriesConflict struct {
+	ExternalID            string `json:"external_id"`
+	ClaimedByWorkspaceID  string `json:"claimed_by_workspace_id"`
+	ClaimedByWorkspaceName string `json:"claimed_by_workspace_name,omitempty"`
+}
+
+type WireGitRepositoriesResponse struct {
+	Repositories []GitRepository `json:"repositories"`
+}
+
+type WireGitRepositoriesConflictResponse struct {
+	Conflicts []WireGitRepositoriesConflict `json:"conflicts"`
+}
+
+type GitIntegrationWorkspaceUsage struct {
+	WorkspaceID   string `json:"workspace_id"`
+	WorkspaceName string `json:"workspace_name"`
+	RepoCount     int64  `json:"repo_count"`
+}
+
+type GitIntegrationDetail struct {
+	Integration       GitIntegration                 `json:"integration"`
+	AffectedWorkspaces []GitIntegrationWorkspaceUsage `json:"affected_workspaces"`
 }
 
 // CreateBranchRequest is the payload for creating a branch from a task.

@@ -26,6 +26,9 @@ export default defineConfig(({ mode }) => {
     },
   ].filter(Boolean),
   server: {
+    headers: {
+      'Cache-Control': 'no-store',
+    },
     allowedHosts: ["helpin-dev-fe.tryunhide.com", "dev-azhar.helpin.ai"],
   },
   resolve: {

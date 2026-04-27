@@ -366,10 +366,6 @@ func (r *DocsRedirectRepository) BulkCreate(ctx context.Context, redirects []mod
 // GetBySourcePath returns the redirect matching the given workspace and source
 // path. Returns nil (no error) when no record is found.
 func (r *DocsRedirectRepository) GetBySourcePath(ctx context.Context, workspaceID, sourcePath string) (*model.DocsRedirect, error) {
-	if err := r.repairMalformedPaths(ctx, workspaceID); err != nil {
-		return nil, err
-	}
-
 	var redirect model.DocsRedirect
 	normalizedPath := normalizeDocsRedirectSourcePath(sourcePath)
 	err := r.db.WithContext(ctx).
@@ -380,6 +376,19 @@ func (r *DocsRedirectRepository) GetBySourcePath(ctx context.Context, workspaceI
 			return nil, nil
 		}
 		return nil, fmt.Errorf("get docs redirect by source path: %w", err)
+	}
+	return &redirect, nil
+}
+
+// GetByID returns the redirect matching the given ID. Returns nil when absent.
+func (r *DocsRedirectRepository) GetByID(ctx context.Context, id string) (*model.DocsRedirect, error) {
+	var redirect model.DocsRedirect
+	err := r.db.WithContext(ctx).Where("id = ?", id).First(&redirect).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get docs redirect: %w", err)
 	}
 	return &redirect, nil
 }

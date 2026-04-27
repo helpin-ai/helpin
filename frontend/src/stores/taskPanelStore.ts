@@ -11,7 +11,17 @@ interface TaskPanelState {
   shouldSuppressOpen: (taskId: string) => boolean;
 }
 
-const RECENTLY_CLOSED_TASK_SUPPRESSION_MS = 250;
+const RECENTLY_CLOSED_TASK_SUPPRESSION_MS = 2_000;
+
+export function clearTaskSearchParam() {
+  if (typeof window === 'undefined') return;
+
+  const url = new URL(window.location.href);
+  if (url.searchParams.has('task')) {
+    url.searchParams.delete('task');
+    window.history.replaceState({}, '', url.toString());
+  }
+}
 
 export const useTaskPanelStore = create<TaskPanelState>((set, get) => ({
   taskId: null,
@@ -24,12 +34,7 @@ export const useTaskPanelStore = create<TaskPanelState>((set, get) => ({
       requestKey: get().requestKey + 1,
     }),
   close: () => {
-    // Clean up ?task= URL param
-    const url = new URL(window.location.href);
-    if (url.searchParams.has('task')) {
-      url.searchParams.delete('task');
-      window.history.replaceState({}, '', url.toString());
-    }
+    clearTaskSearchParam();
     set({ taskId: null });
   },
   rememberClosedTask: (taskId) =>

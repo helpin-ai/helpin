@@ -9,6 +9,7 @@ import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMem
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 import { CompaniesTable } from '@/components/crm/CompaniesTable';
 import { CreateCompanyDialog } from '@/components/crm/CreateCompanyDialog';
+import { CRMDataEmptyState, CRMNoResultsState } from '@/components/crm/CRMDataEmptyState';
 import { useTitle } from '@/hooks/useTitle';
 
 export function CompaniesPage() {
@@ -21,12 +22,21 @@ export function CompaniesPage() {
   const [showCreate, setShowCreate] = useState(false);
 
   const { data, isLoading, refetch } = useCompanies(wsId, { search: search || undefined });
+  const companies = data?.data ?? [];
+  const normalizedSearch = search.trim();
+  const showCompaniesEmptyState = !isLoading && companies.length === 0 && !normalizedSearch;
+  const showNoResultsState = !isLoading && companies.length === 0 && !!normalizedSearch;
 
   const { members: assignableMembers } = useAssignableWorkspaceMembers(wsId);
   const ownerNameMap = useMemo(
     () => buildAssignableMemberNameMap(assignableMembers),
     [assignableMembers],
   );
+
+  const handleImportClick = () => {
+    if (!wsSlug) return;
+    void navigate({ to: '/w/$slug/settings/import', params: { slug: wsSlug } });
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -52,17 +62,31 @@ export function CompaniesPage() {
 
       {/* Content */}
       <div className="min-h-0 flex-1 overflow-auto p-3">
-        <CompaniesTable
-          companies={data?.data ?? []}
-          workspaceId={wsId}
-          assignableMembers={assignableMembers}
-          ownerNameMap={ownerNameMap}
-          isLoading={isLoading}
-          onRowClick={(id) => navigate({ to: '/w/$slug/crm/companies/$companyId', params: { slug: wsSlug, companyId: id } })}
-          onCreateClick={() => setShowCreate(true)}
-          onCompanyUpdated={() => refetch()}
-          onCompanyDeleted={() => refetch()}
-        />
+        {showCompaniesEmptyState ? (
+          <CRMDataEmptyState
+            kind="companies"
+            onCreateClick={() => setShowCreate(true)}
+            onImportClick={handleImportClick}
+          />
+        ) : showNoResultsState ? (
+          <CRMNoResultsState
+            kind="companies"
+            query={normalizedSearch}
+            onClear={() => setSearch('')}
+          />
+        ) : (
+          <CompaniesTable
+            companies={companies}
+            workspaceId={wsId}
+            assignableMembers={assignableMembers}
+            ownerNameMap={ownerNameMap}
+            isLoading={isLoading}
+            onRowClick={(id) => navigate({ to: '/w/$slug/crm/companies/$companyId', params: { slug: wsSlug, companyId: id } })}
+            onCreateClick={() => setShowCreate(true)}
+            onCompanyUpdated={() => refetch()}
+            onCompanyDeleted={() => refetch()}
+          />
+        )}
       </div>
 
       <CreateCompanyDialog open={showCreate} onOpenChange={setShowCreate} />

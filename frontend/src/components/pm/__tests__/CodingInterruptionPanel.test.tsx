@@ -19,7 +19,7 @@ vi.mock('@tanstack/react-virtual', () => ({
 }));
 
 import { CodingTranscriptPane } from '../CodingSession/CodingTranscriptPane';
-import type { CodingSession, CodingSessionInteraction } from '@/lib/pmTypes';
+import type { AgentRunArtifact, CodingSession, CodingSessionInteraction } from '@/lib/pmTypes';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -89,6 +89,103 @@ function buildInteraction(overrides: Partial<CodingSessionInteraction> = {}): Co
         },
       ],
     },
+    ...overrides,
+  };
+}
+
+function buildReviewArtifact(overrides: Partial<AgentRunArtifact> = {}): AgentRunArtifact {
+  return {
+    id: 'artifact-1',
+    workspace_id: 'ws-1',
+    run_id: 'run-1',
+    artifact_type: 'review_findings',
+    format: 'json',
+    storage_mode: 'inline',
+    inline_content: JSON.stringify({
+      overall_explanation: 'Two issues remain before this is safe to merge.',
+      findings: [
+        {
+          id: 'finding_1',
+          title: 'Nil panic in retry path',
+          body: 'The retry branch dereferences a nil client.',
+          priority: 'P1',
+          code_location: 'server/internal/service/foo.go:42',
+        },
+      ],
+    }),
+    metadata: {},
+    sequence_no: 1,
+    created_at: '2026-03-31T10:00:00Z',
+    ...overrides,
+  };
+}
+
+function buildPromptArtifact(overrides: Partial<AgentRunArtifact> = {}): AgentRunArtifact {
+  return {
+    id: 'artifact-prompt-1',
+    workspace_id: 'ws-1',
+    run_id: 'run-1',
+    artifact_type: 'codex_prompt',
+    format: 'markdown',
+    storage_mode: 'inline',
+    inline_content: [
+      'Developer prompt:',
+      'Use the repository conventions and keep changes incremental.',
+      '',
+      'User prompt:',
+      'Implement the requested change.',
+    ].join('\n'),
+    metadata: {},
+    sequence_no: 0,
+    created_at: '2026-03-31T09:59:00Z',
+    ...overrides,
+  };
+}
+
+function buildReviewDecisionArtifact(overrides: Partial<AgentRunArtifact> = {}): AgentRunArtifact {
+  return {
+    id: 'artifact-decision-1',
+    workspace_id: 'ws-1',
+    run_id: 'run-1',
+    artifact_type: 'review_decision',
+    format: 'json',
+    storage_mode: 'inline',
+    inline_content: JSON.stringify({
+      decision: 'approve',
+      findings: [
+        {
+          id: 'finding_1',
+          title: 'Nil panic in retry path',
+          status: 'approved',
+        },
+      ],
+      assistant_message_sequence_no: 0,
+    }),
+    metadata: {},
+    sequence_no: 2,
+    created_at: '2026-03-31T10:01:00Z',
+    ...overrides,
+  };
+}
+
+function buildVerdictOnlyReviewArtifact(overrides: Partial<AgentRunArtifact> = {}): AgentRunArtifact {
+  return {
+    id: 'artifact-verdict-1',
+    workspace_id: 'ws-1',
+    run_id: 'run-1',
+    artifact_type: 'review_findings',
+    format: 'json',
+    storage_mode: 'inline',
+    inline_content: JSON.stringify({
+      title: 'Producer Prometheus docs and alert rules added',
+      summary: 'Implemented the three approved findings by adding templated producer alert rules, a runbook, and promtool unit tests.',
+      overall_correctness: 'correct',
+      overall_explanation: 'The requested deliverables now exist on the branch and validation passed.',
+      overall_confidence_score: 0.96,
+    }),
+    metadata: {},
+    sequence_no: 3,
+    created_at: '2026-03-31T10:02:00Z',
     ...overrides,
   };
 }
@@ -177,6 +274,7 @@ describe('CodingInterruptionPanel', () => {
     act(() => {
       root.render(
         <CodingTranscriptPane
+          reviewArtifacts={[{ artifact: buildReviewArtifact(), decisionArtifact: buildReviewDecisionArtifact() }]}
           transcriptMessages={[]}
           liveAssistantMessage={null}
           liveReasoningMessage={null}
@@ -197,6 +295,45 @@ describe('CodingInterruptionPanel', () => {
     expect(container.textContent).toContain('User input required');
     expect(container.textContent).toContain('How should the coding run continue?');
     expect(container.textContent).toContain('Submit answers');
+    expect(container.textContent).toContain('Review history');
+    expect(container.textContent).toContain('Nil panic in retry path');
+    expect(container.textContent).toContain('approved');
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it('renders verdict-only review history artifacts', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <CodingTranscriptPane
+          reviewArtifacts={[{ artifact: buildVerdictOnlyReviewArtifact(), decisionArtifact: null }]}
+          transcriptMessages={[]}
+          liveAssistantMessage={null}
+          liveReasoningMessage={null}
+          liveTurnSegments={[]}
+          session={buildSession({
+            pause_reason: 'human_input',
+            auth_state: undefined,
+          })}
+          activeInteraction={buildInteraction()}
+          acting={null}
+          onAuthStart={vi.fn()}
+          onAuthCancel={vi.fn()}
+          onResolveInteraction={vi.fn()}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('Review history');
+    expect(container.textContent).toContain('Producer Prometheus docs and alert rules added');
+    expect(container.textContent).toContain('correct');
+    expect(container.textContent).toContain('96% confidence');
 
     act(() => {
       root.unmount();
@@ -318,6 +455,68 @@ describe('CodingInterruptionPanel', () => {
 
     expect(container.querySelector('strong')?.textContent).toBe('Approved');
     expect(container.querySelector('ul li')?.textContent).toBe('keep current scope');
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it('renders a system prompt card when no prompt artifact exists', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <CodingTranscriptPane
+          transcriptMessages={[]}
+          liveAssistantMessage={null}
+          liveReasoningMessage={null}
+          liveTurnSegments={[]}
+          session={buildSession({
+            status: 'completed',
+            pause_reason: 'none',
+            auth_state: undefined,
+            system_prompt: 'Research configured competitors and file the marketing digest task.',
+          })}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('System prompt');
+    expect(container.textContent).toContain('Research configured competitors');
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it('prefers developer prompt artifacts over the session system prompt', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <CodingTranscriptPane
+          promptArtifact={buildPromptArtifact()}
+          transcriptMessages={[]}
+          liveAssistantMessage={null}
+          liveReasoningMessage={null}
+          liveTurnSegments={[]}
+          session={buildSession({
+            status: 'completed',
+            pause_reason: 'none',
+            auth_state: undefined,
+            system_prompt: 'Fallback native agent system prompt.',
+          })}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('Developer prompt');
+    expect(container.textContent).toContain('Use the repository conventions');
+    expect(container.textContent).not.toContain('Fallback native agent system prompt');
 
     act(() => {
       root.unmount();

@@ -1,17 +1,29 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { CheckmarkCircle02Icon, GitCommitIcon, SecurityCheckIcon } from '@/lib/icons';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { CheckmarkCircle02Icon, File01Icon, GitCommitIcon, SecurityCheckIcon } from '@/lib/icons';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import type { CodingSessionInteraction } from '@/lib/pmTypes';
+import type {
+  CodingSessionApprovalRequestPayload,
+  CodingSessionApprovalResponsePayload,
+  CodingSessionInteraction,
+  CodingSessionReviewCheckpointRequestPayload,
+  CodingSessionReviewCheckpointResponsePayload,
+  CodingSessionReviewFinding,
+} from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
+import { MarkdownContent } from './MarkdownContent';
 
 interface Props {
   interaction: CodingSessionInteraction;
   acting: string | null;
   onResolve: (interactionId: string, responsePayload: Record<string, unknown>, followupMessage?: string) => void;
   compact?: boolean;
+  availablePreviewPanelKey?: string | null;
+  onViewPreview?: (panelKey: string) => void;
 }
 
 interface QuestionAnswerState {
@@ -19,15 +31,17 @@ interface QuestionAnswerState {
   freetext?: string;
 }
 
-export function CodingInteractionCard({ interaction, acting, onResolve, compact = false }: Props) {
+export function CodingInteractionCard({ interaction, acting, onResolve, compact = false, availablePreviewPanelKey, onViewPreview }: Props) {
   const [questionAnswers, setQuestionAnswers] = useState<Record<string, QuestionAnswerState>>({});
   const [followupMessage, setFollowupMessage] = useState('');
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [selectedFindingIDs, setSelectedFindingIDs] = useState<string[]>([]);
 
   useEffect(() => {
     setQuestionAnswers({});
     setFollowupMessage('');
     setCurrentQuestionIndex(0);
+    setSelectedFindingIDs([]);
   }, [interaction.interaction_id]);
 
   const isBusy = acting !== null;
@@ -41,13 +55,14 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
       const visibleQuestions = showStepper ? [codexQuestions[Math.min(currentQuestionIndex, codexQuestions.length - 1)]] : codexQuestions;
       const currentQuestion = codexQuestions[Math.min(currentQuestionIndex, codexQuestions.length - 1)];
       const currentAnswered = currentQuestion ? isCodexQuestionAnswered(currentQuestion, questionAnswers[currentQuestion.id]) : false;
+      const summary = dedupePromptSummary(interaction.summary, codexQuestions.map((question) => question.question));
 
       return (
         <InteractionShell compact={compact}
           icon={<CheckmarkCircle02Icon className="h-4 w-4" />}
           eyebrow="User input required"
           title={interaction.title ?? 'Answer the pending questions'}
-          summary={interaction.summary}
+          summary={summary}
         >
           {showStepper ? (
             <div className="mb-3 flex items-center justify-between text-[11px] text-muted-foreground">
@@ -65,7 +80,10 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
                     {question.header ? (
                       <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{question.header}</div>
                     ) : null}
-                    <div className={cn('mt-1 font-medium text-foreground', compact ? 'text-sm leading-5' : 'text-sm')}>{question.question}</div>
+                    <MarkdownContent
+                      content={question.question}
+                      className={cn('mt-1 text-foreground', compact ? 'text-sm leading-5' : 'text-sm leading-6')}
+                    />
                   </div>
                   {question.options.length > 0 ? (
                     <div className="space-y-2">
@@ -173,13 +191,14 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
       const visibleQuestions = showStepper ? [helpinQuestions[Math.min(currentQuestionIndex, helpinQuestions.length - 1)]] : helpinQuestions;
       const currentQuestion = helpinQuestions[Math.min(currentQuestionIndex, helpinQuestions.length - 1)];
       const currentAnswered = currentQuestion ? isHelpinQuestionAnswered(currentQuestion, questionAnswers[currentQuestion.id]) : false;
+      const summary = dedupePromptSummary(interaction.summary, helpinQuestions.map((question) => question.text));
 
       return (
         <InteractionShell compact={compact}
           icon={<CheckmarkCircle02Icon className="h-4 w-4" />}
           eyebrow="User input required"
           title={interaction.title ?? 'Answer the pending questions'}
-          summary={interaction.summary}
+          summary={summary}
         >
           {showStepper ? (
             <div className="mb-3 flex items-center justify-between text-[11px] text-muted-foreground">
@@ -193,7 +212,10 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
               const selectedOption = question.options.find((option) => option.value === answer?.value);
               return (
                 <div key={question.id} className="space-y-3 rounded-lg border border-border bg-muted/25 p-3">
-                  <div className={cn('font-medium text-foreground', compact ? 'text-sm leading-5' : 'text-sm')}>{question.text}</div>
+                  <MarkdownContent
+                    content={question.text}
+                    className={cn('text-foreground', compact ? 'text-sm leading-5' : 'text-sm leading-6')}
+                  />
                   <div className="space-y-2">
                     {question.options.map((option) => {
                       const selected = answer?.value === option.value;
@@ -270,6 +292,21 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
 
   if (interaction.interaction_kind === 'review_checkpoint') {
     const checkpoint = parseReviewCheckpointRequest(requestPayload);
+    const findings = checkpoint?.findings ?? [];
+    const hasFindings = findings.length > 0;
+    const selectedFindingSet = new Set(selectedFindingIDs);
+    const allSelected = hasFindings && findings.every((finding) => selectedFindingSet.has(finding.id));
+    const selectedCount = selectedFindingIDs.length;
+    const buildReviewResponse = (
+      decision: CodingSessionReviewCheckpointResponsePayload['decision'],
+      selectionMode?: CodingSessionReviewCheckpointResponsePayload['selection_mode'],
+    ): CodingSessionReviewCheckpointResponsePayload => ({
+      decision,
+      ...(followupMessage.trim() ? { message: followupMessage.trim() } : {}),
+      ...(selectionMode ? { selection_mode: selectionMode } : {}),
+      ...(selectionMode === 'selected' ? { selected_finding_ids: selectedFindingIDs } : {}),
+    });
+
     return (
       <InteractionShell compact={compact}
         icon={<SecurityCheckIcon className="h-4 w-4" />}
@@ -277,6 +314,164 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
         title={interaction.title ?? checkpoint?.title ?? 'Review required'}
         summary={interaction.summary ?? checkpoint?.summary}
       >
+        {hasFindings ? (
+          <div className="space-y-3">
+            <ReviewCheckpointOverview checkpoint={checkpoint} compact={compact} />
+            <div className="rounded-lg border border-border bg-muted/25 p-3">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <div className={cn('font-medium text-foreground', compact ? 'text-sm leading-5' : 'text-sm')}>Findings</div>
+                  <div className="text-xs text-muted-foreground">
+                    Select the findings that should move into the next step.
+                  </div>
+                </div>
+                <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Checkbox
+                    checked={allSelected}
+                    onCheckedChange={(checked) => {
+                      setSelectedFindingIDs(checked ? findings.map((finding) => finding.id) : []);
+                    }}
+                    disabled={isBusy}
+                  />
+                  Select all
+                </label>
+              </div>
+              <div className="space-y-2">
+                {findings.map((finding) => {
+                  const selected = selectedFindingSet.has(finding.id);
+                  return (
+                    <label
+                      key={finding.id}
+                      className={cn(
+                        'flex gap-3 rounded-lg border px-3 py-3 transition-colors',
+                        selected
+                          ? 'border-primary/50 bg-primary/5 dark:bg-primary/10'
+                          : 'border-border/60 bg-background hover:border-border hover:bg-accent/40',
+                      )}
+                    >
+                      <Checkbox
+                        checked={selected}
+                        onCheckedChange={(checked) => {
+                          setSelectedFindingIDs((current) => (
+                            checked
+                              ? [...new Set([...current, finding.id])]
+                              : current.filter((id) => id !== finding.id)
+                          ));
+                        }}
+                        disabled={isBusy}
+                        className="mt-0.5"
+                      />
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className={cn('font-medium text-foreground', compact ? 'text-sm leading-5' : 'text-sm')}>
+                            {finding.title}
+                          </div>
+                          {finding.priority ? (
+                            <Badge variant="outline" className={priorityBadgeClassName(finding.priority)}>
+                              {finding.priority.toUpperCase()}
+                            </Badge>
+                          ) : null}
+                          {finding.confidence ? (
+                            <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
+                              {finding.confidence}
+                            </Badge>
+                          ) : null}
+                        </div>
+                        {finding.body ? (
+                          <p className="text-sm leading-6 text-muted-foreground">{finding.body}</p>
+                        ) : null}
+                        <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                          <code>{finding.id}</code>
+                          {finding.code_location ? (
+                            <code>{finding.code_location}</code>
+                          ) : null}
+                        </div>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        ) : null}
+        <Textarea
+          value={followupMessage}
+          onChange={(event) => setFollowupMessage(event.target.value)}
+          placeholder={hasFindings ? 'Optional note about the approved or requested finding set' : 'Optional note for the agent'}
+          className={cn('min-h-[76px]', hasFindings && 'mt-4')}
+          disabled={isBusy}
+        />
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            disabled={isBusy}
+            onClick={() => onResolve(
+              interaction.interaction_id,
+              buildReviewResponse('approve', hasFindings ? 'all' : undefined),
+              followupMessage.trim() || undefined,
+            )}
+          >
+            {hasFindings ? 'Approve all' : 'Approve'}
+          </Button>
+          {hasFindings ? (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={isBusy || selectedCount === 0}
+              onClick={() => onResolve(
+                interaction.interaction_id,
+                buildReviewResponse('approve', 'selected'),
+                followupMessage.trim() || undefined,
+              )}
+            >
+              Approve selected
+            </Button>
+          ) : null}
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={isBusy}
+            onClick={() => onResolve(
+              interaction.interaction_id,
+              buildReviewResponse('request_changes', hasFindings ? (selectedCount > 0 ? 'selected' : 'all') : undefined),
+              followupMessage.trim() || undefined,
+            )}
+          >
+            Request changes
+          </Button>
+        </div>
+      </InteractionShell>
+    );
+  }
+
+  if (interaction.interaction_kind === 'approval_request') {
+    const approval = parseApprovalRequest(requestPayload);
+    const buildApprovalResponse = (
+      decision: CodingSessionApprovalResponsePayload['decision'],
+    ): CodingSessionApprovalResponsePayload => ({
+      decision,
+      ...(followupMessage.trim() ? { message: followupMessage.trim() } : {}),
+    });
+
+    const canViewPreview = Boolean(availablePreviewPanelKey && onViewPreview);
+
+    return (
+      <InteractionShell compact={compact}
+        icon={<SecurityCheckIcon className="h-4 w-4" />}
+        eyebrow={approval?.phase ? `${approval.phase} approval` : 'Approval required'}
+        title={interaction.title ?? approval?.title ?? 'Approval required'}
+        summary={interaction.summary ?? approval?.summary}
+      >
+        {canViewPreview ? (
+          <button
+            type="button"
+            className="mb-3 inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+            onClick={() => onViewPreview!(availablePreviewPanelKey!)}
+          >
+            <File01Icon className="h-3.5 w-3.5" />
+            View document preview
+          </button>
+        ) : null}
         <Textarea
           value={followupMessage}
           onChange={(event) => setFollowupMessage(event.target.value)}
@@ -288,7 +483,11 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
           <Button
             size="sm"
             disabled={isBusy}
-            onClick={() => onResolve(interaction.interaction_id, { decision: 'approve' }, followupMessage.trim() || undefined)}
+            onClick={() => onResolve(
+              interaction.interaction_id,
+              buildApprovalResponse('approve'),
+              followupMessage.trim() || undefined,
+            )}
           >
             Approve
           </Button>
@@ -298,10 +497,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
             disabled={isBusy}
             onClick={() => onResolve(
               interaction.interaction_id,
-              {
-                decision: 'request_changes',
-                ...(followupMessage.trim() ? { message: followupMessage.trim() } : {}),
-              },
+              buildApprovalResponse('request_changes'),
               followupMessage.trim() || undefined,
             )}
           >
@@ -441,11 +637,25 @@ function InteractionShell({
       </div>
       <div className={cn('font-semibold', compact ? 'text-sm' : 'text-base')}>{title}</div>
       {summary ? (
-        <p className={cn('mt-1 text-muted-foreground', compact ? 'text-sm leading-5' : 'text-sm')}>{summary}</p>
+        <MarkdownContent
+          content={summary}
+          className={cn('mt-1 text-muted-foreground', compact ? 'text-sm leading-5' : 'text-sm leading-6')}
+        />
       ) : null}
       <div className={compact ? 'mt-3' : 'mt-4'}>{children}</div>
     </div>
   );
+}
+
+function normalizePromptText(value: string) {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function dedupePromptSummary(summary: string | undefined, prompts: string[]) {
+  const normalizedSummary = normalizePromptText(summary ?? '');
+  if (!normalizedSummary) return undefined;
+  const duplicatesPrompt = prompts.some((prompt) => normalizePromptText(prompt) === normalizedSummary);
+  return duplicatesPrompt ? undefined : summary;
 }
 
 function isCodexQuestionAnswered(
@@ -573,11 +783,113 @@ function buildHelpinUserInputResponsePayload(
 }
 
 function parseReviewCheckpointRequest(payload: Record<string, unknown>) {
+  const findings = Array.isArray(payload.findings) ? payload.findings : [];
   return {
     phase: typeof payload.phase === 'string' ? payload.phase.trim() : '',
     title: typeof payload.title === 'string' ? payload.title.trim() : '',
     summary: typeof payload.summary === 'string' ? payload.summary.trim() : '',
+    findings: findings.flatMap((finding, index) => parseReviewFinding(finding, index)),
+    overallCorrectness: typeof payload.overall_correctness === 'string' ? payload.overall_correctness.trim() : '',
+    overallExplanation: typeof payload.overall_explanation === 'string' ? payload.overall_explanation.trim() : '',
+    overallConfidenceScore: typeof payload.overall_confidence_score === 'number' && Number.isFinite(payload.overall_confidence_score)
+      ? payload.overall_confidence_score
+      : undefined,
+  } satisfies CodingSessionReviewCheckpointRequestPayload & {
+    findings: CodingSessionReviewFinding[];
+    overallCorrectness?: string;
+    overallExplanation?: string;
+    overallConfidenceScore?: number;
   };
+}
+
+function parseApprovalRequest(payload: Record<string, unknown>) {
+  if (!payload || typeof payload !== 'object') return null;
+  return {
+    phase: typeof payload.phase === 'string' ? payload.phase : undefined,
+    preview_panel_key: typeof payload.preview_panel_key === 'string' ? payload.preview_panel_key : undefined,
+    title: typeof payload.title === 'string' ? payload.title : undefined,
+    summary: typeof payload.summary === 'string' ? payload.summary : undefined,
+  } satisfies CodingSessionApprovalRequestPayload;
+}
+
+function parseReviewFinding(rawFinding: unknown, index: number): CodingSessionReviewFinding[] {
+  if (!rawFinding || typeof rawFinding !== 'object' || Array.isArray(rawFinding)) return [];
+  const finding = rawFinding as Record<string, unknown>;
+  const id = typeof finding.id === 'string' ? finding.id.trim() : `finding_${index + 1}`;
+  const title = typeof finding.title === 'string' ? finding.title.trim() : '';
+  if (!id || !title) return [];
+  return [{
+    id,
+    title,
+    body: typeof finding.body === 'string' ? finding.body.trim() : '',
+    priority: typeof finding.priority === 'string' ? finding.priority.trim() : '',
+    confidence: formatConfidenceLabel(finding.confidence),
+    code_location: typeof finding.code_location === 'string' ? finding.code_location.trim() : '',
+  }];
+}
+
+function formatConfidenceLabel(value: unknown) {
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    if (value >= 0 && value <= 1) return `${Math.round(value * 100)}%`;
+    return String(value);
+  }
+  return '';
+}
+
+function ReviewCheckpointOverview({
+  checkpoint,
+  compact,
+}: {
+  checkpoint: ReturnType<typeof parseReviewCheckpointRequest>;
+  compact?: boolean;
+}) {
+  const badges = useMemo(() => {
+    const items: ReactNode[] = [];
+    if (checkpoint.overallCorrectness) {
+      items.push(
+        <Badge key="correctness" variant="outline" className="text-[10px] uppercase tracking-wide">
+          {checkpoint.overallCorrectness.replaceAll('_', ' ')}
+        </Badge>,
+      );
+    }
+    if (typeof checkpoint.overallConfidenceScore === 'number') {
+      items.push(
+        <Badge key="confidence" variant="outline" className="text-[10px] uppercase tracking-wide">
+          {Math.round(checkpoint.overallConfidenceScore * 100)}% confidence
+        </Badge>,
+      );
+    }
+    return items;
+  }, [checkpoint.overallConfidenceScore, checkpoint.overallCorrectness]);
+
+  if (!checkpoint.overallExplanation && badges.length === 0) return null;
+
+  return (
+    <div className="rounded-lg border border-border bg-muted/25 p-3">
+      {badges.length > 0 ? (
+        <div className="mb-2 flex flex-wrap gap-2">{badges}</div>
+      ) : null}
+      {checkpoint.overallExplanation ? (
+        <p className={cn('text-muted-foreground', compact ? 'text-sm leading-5' : 'text-sm leading-6')}>
+          {checkpoint.overallExplanation}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function priorityBadgeClassName(priority: string) {
+  switch (priority.trim().toUpperCase()) {
+    case 'P0':
+      return 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300';
+    case 'P1':
+      return 'border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-900/60 dark:bg-orange-950/30 dark:text-orange-300';
+    case 'P2':
+      return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300';
+    default:
+      return 'text-[10px] uppercase tracking-wide';
+  }
 }
 
 function parsePermissionsRequest(payload: Record<string, unknown>) {

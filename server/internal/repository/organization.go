@@ -188,7 +188,7 @@ func (r *OrganizationRepository) ListMembers(ctx context.Context, orgID string) 
 	var results []model.MemberWithUser
 	err := r.db.WithContext(ctx).
 		Table("organization_members om").
-		Select("om.id, om.user_id, om.role, u.email, u.full_name, u.avatar_url, u.avatar_style, u.avatar_seed, u.avatar_background_mode, u.avatar_background_color").
+		Select("om.id, om.user_id, om.role, u.email, u.full_name, u.totp_verified AS two_fa_enabled, u.avatar_url, u.avatar_style, u.avatar_seed, u.avatar_background_mode, u.avatar_background_color").
 		Joins("JOIN users u ON u.id = om.user_id").
 		Where("om.organization_id = ?", orgID).
 		Order("u.full_name ASC").

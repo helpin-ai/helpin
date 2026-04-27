@@ -255,6 +255,7 @@ var (
 // It is a separate path from the existing AgentRun system (manual-assist mode).
 type SupportAIService struct {
 	llmProvider            llm.Provider
+	taskDraftLLM           supportTaskDraftLLM
 	embeddingProvider      llm.EmbeddingProvider
 	embeddingModel         string
 	queryExpansionModel    string
@@ -384,6 +385,18 @@ func (s *SupportAIService) SetLinkPreviewService(linkPreviewService SupportMessa
 	return s
 }
 
+// SetTaskDraftLLM wires the preferred LLM backend for task draft generation.
+// When set, GenerateTaskDraftFromConversation uses this (schema-forced tool
+// calling via Eino) and only falls back to the plain ChatCompletion path on
+// error.
+func (s *SupportAIService) SetTaskDraftLLM(llm supportTaskDraftLLM) *SupportAIService {
+	if s == nil {
+		return nil
+	}
+	s.taskDraftLLM = llm
+	return s
+}
+
 // PublishAIRequest publishes an AI processing event to JetStream.
 func (s *SupportAIService) PublishAIRequest(ctx context.Context, workspaceID, conversationID, messageID, content string) error {
 	if s == nil || s.js == nil {
@@ -431,6 +444,18 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 	conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
 	if err != nil || conv == nil {
 		return fmt.Errorf("get conversation: %w", err)
+	}
+	if conv.HumanTakeover != nil && *conv.HumanTakeover {
+		if conv.AIState != nil && *conv.AIState == "resolved" {
+			pending := "pending"
+			_ = s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, map[string]any{
+				"ai_state":           &pending,
+				"ai_resolved_at":     nil,
+				"ai_resolution_type": nil,
+				"flow_state":         model.SupportConversationFlowStateAssignedToHuman,
+			})
+		}
+		return nil // human already handling
 	}
 	if conv.OpenedByUserID != nil {
 		return nil // human already handling
@@ -713,6 +738,24 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 	// 16. Record token usage atomically
 	s.recordTokenUsage(ctx, agent.ID, totalTokens)
 
+	// If the model tries to repeat handoff language after the customer has
+	// already seen it in this conversation, suppress the duplicate reply.
+	if hasEscalationMessageInHistory(history) && containsHandoffLanguage(response.Content) {
+		slog.InfoContext(ctx, "support AI handoff response suppressed because escalation was already communicated",
+			"workspace_id", workspaceID,
+			"conversation_id", conversationID,
+			"message_id", msg.ID,
+			"response_preview", safeLogPreview(response.Content, 160),
+		)
+		if conv.AIState == nil || *conv.AIState != "escalated" {
+			if err := s.EscalateToHumanForMessage(ctx, workspaceID, conversationID, msg.ID, "redundant_handoff_response"); err != nil {
+				return err
+			}
+		}
+		_ = s.processingRepo.MarkCompleted(ctx, processing.ID, nil, totalTokens)
+		return nil
+	}
+
 	// 17. Multi-signal confidence evaluation
 	confidence := evaluateConfidence(searchResults, response)
 	slog.InfoContext(ctx, "support AI response evaluated",
@@ -854,12 +897,35 @@ func (s *SupportAIService) EscalateToHumanForMessageWithIssue(ctx context.Contex
 }
 
 func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, conversationID, messageID, reason, issueKey, issueSummary string) error {
+	escalationLockKey := "support:ai:escalation-lock:" + conversationID
+	if !s.acquireLock(ctx, escalationLockKey) {
+		slog.InfoContext(ctx, "support escalation skipped — escalation already in progress",
+			"workspace_id", workspaceID,
+			"conversation_id", conversationID,
+			"reason", reason,
+		)
+		return nil
+	}
+	defer s.releaseLock(ctx, escalationLockKey)
+
 	conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
 	if err != nil {
 		return fmt.Errorf("get conversation for escalation: %w", err)
 	}
 	if conv == nil {
 		return fmt.Errorf("conversation not found")
+	}
+
+	// Guard against duplicate escalation: the "Talk to human" button and the
+	// AI's own message-level escalation path can race and each append a system
+	// message. If the conversation is already escalated, skip.
+	if conv.AIState != nil && *conv.AIState == "escalated" {
+		slog.InfoContext(ctx, "support escalation skipped — already escalated",
+			"workspace_id", workspaceID,
+			"conversation_id", conversationID,
+			"reason", reason,
+		)
+		return nil
 	}
 
 	now := time.Now()
@@ -870,23 +936,44 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		availability = resolveSupportAvailability(settings, now)
 	}
 
-	// 1. Create system message — use customizable escalation message from settings
-	escalationContent := "Let me connect you with a team member who can help further."
-	if strings.TrimSpace(settings.EscalationMessage) != "" {
-		escalationContent = settings.EscalationMessage
+	var systemMsg *model.SupportMessage
+	escalationAlreadyMessaged := false
+	history, historyErr := s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
+	if historyErr != nil {
+		slog.WarnContext(ctx, "load conversation history for escalation dedupe failed",
+			"workspace_id", workspaceID,
+			"conversation_id", conversationID,
+			"error", historyErr,
+		)
+	} else {
+		escalationAlreadyMessaged = hasEscalationMessageInHistory(history)
 	}
 
-	systemMsg := &model.SupportMessage{
-		WorkspaceID:       workspaceID,
-		ConversationID:    conversationID,
-		SenderType:        "agent",
-		MessageType:       "system",
-		SystemEventType:   model.SupportSystemEventTypeStrPtr(model.SystemEventAIEscalated),
-		SenderDisplayName: strPtr(helpinAIDisplayName),
-		Content:           escalationContent,
-	}
-	if err := s.messageRepo.Create(ctx, systemMsg); err != nil {
-		return fmt.Errorf("create escalation system message: %w", err)
+	// 1. Create system message — use customizable escalation message from settings
+	if !escalationAlreadyMessaged {
+		escalationContent := "Let me connect you with a team member who can help further."
+		if strings.TrimSpace(settings.EscalationMessage) != "" {
+			escalationContent = settings.EscalationMessage
+		}
+
+		systemMsg = &model.SupportMessage{
+			WorkspaceID:       workspaceID,
+			ConversationID:    conversationID,
+			SenderType:        "agent",
+			MessageType:       "system",
+			SystemEventType:   model.SupportSystemEventTypeStrPtr(model.SystemEventAIEscalated),
+			SenderDisplayName: strPtr(helpinAIDisplayName),
+			Content:           escalationContent,
+		}
+		if err := s.messageRepo.Create(ctx, systemMsg); err != nil {
+			return fmt.Errorf("create escalation system message: %w", err)
+		}
+	} else {
+		slog.InfoContext(ctx, "support escalation system message skipped — already present",
+			"workspace_id", workspaceID,
+			"conversation_id", conversationID,
+			"reason", reason,
+		)
 	}
 
 	handoffMailboxID, mailboxSelectionSource := s.resolveEscalationMailbox(ctx, workspaceID, conversationID, messageID, conv, settings)
@@ -988,7 +1075,9 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 	s.recordSupportEvent(handoffEvent)
 
 	// 4. Broadcast events
-	s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, systemMsg, "ai:escalation"))
+	if systemMsg != nil {
+		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, systemMsg, "ai:escalation"))
+	}
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "escalated",
 		Entity:      "support_conversation",
@@ -1235,11 +1324,11 @@ func (s *SupportAIService) GenerateTaskDraftFromConversation(
 	if s == nil {
 		return nil, fmt.Errorf("support AI service not initialized")
 	}
-	if s.llmProvider == nil {
-		return nil, fmt.Errorf("support chat LLM provider is not configured")
-	}
 	if conversation == nil {
 		return nil, fmt.Errorf("conversation is required")
+	}
+	if s.taskDraftLLM == nil && s.llmProvider == nil {
+		return nil, fmt.Errorf("support chat LLM provider is not configured")
 	}
 
 	sanitized := sanitizeConversationHistory(history, "")
@@ -1256,7 +1345,7 @@ func (s *SupportAIService) GenerateTaskDraftFromConversation(
 	messages = append(messages, llm.Message{
 		Role: "user",
 		Content: fmt.Sprintf(
-			"Create one internal PM task draft for this support conversation.\n\nConversation ID: %s\nConversation Number: %d\nSubject: %s\nCustomer Name: %s\nCustomer Email: %s\nCurrent Status: %s\nCurrent Priority: %s\n\nReturn the JSON only.",
+			"Create one internal PM task draft for this support conversation.\n\nConversation ID: %s\nConversation Number: %d\nSubject: %s\nCustomer Name: %s\nCustomer Email: %s\nCurrent Status: %s\nCurrent Priority: %s\n\nCall the write_support_task_draft tool with fully-populated fields.",
 			conversation.ID,
 			conversation.DisplayID,
 			strings.TrimSpace(conversation.Subject),
@@ -1266,6 +1355,41 @@ func (s *SupportAIService) GenerateTaskDraftFromConversation(
 			strings.TrimSpace(conversation.Priority),
 		),
 	})
+
+	// Preferred path: schema-forced tool calling via Eino. Claude cannot
+	// return off-schema JSON under this path — the tool definition constrains
+	// the output format at the API layer, not just in a system prompt.
+	if s.taskDraftLLM != nil {
+		draft, err := s.taskDraftLLM.GenerateTaskDraft(ctx, supportTaskDraftRequest{
+			WorkspaceID:    workspaceID,
+			ConversationID: conversation.ID,
+			SystemPrompt:   supportTaskDraftSystemPrompt,
+			Messages:       messages,
+			Model:          modelName,
+		})
+		if err == nil && draft != nil {
+			slog.InfoContext(ctx, "support task draft generated",
+				"workspace_id", workspaceID,
+				"conversation_id", conversation.ID,
+				"backend", "eino",
+				"provider", providerName,
+				"model", modelName,
+				"title_len", len(draft.Title),
+				"summary_len", len(draft.Summary),
+				"description_len", len(draft.Description),
+			)
+			return draft, nil
+		}
+		slog.WarnContext(ctx, "eino task draft generation failed; falling back to chat completion",
+			"workspace_id", workspaceID,
+			"conversation_id", conversation.ID,
+			"model", modelName,
+			"error", err,
+		)
+		if s.llmProvider == nil {
+			return nil, err
+		}
+	}
 
 	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
 		SystemPrompt: supportTaskDraftSystemPrompt,
@@ -1291,10 +1415,46 @@ func (s *SupportAIService) GenerateTaskDraftFromConversation(
 		return nil, fmt.Errorf("parse support task draft: %w", err)
 	}
 
+	title := strings.TrimSpace(parsed.Title)
+	summary := strings.TrimSpace(parsed.Summary)
+	description := strings.TrimSpace(parsed.DescriptionMarkdown)
+	slog.InfoContext(ctx, "support task draft generated",
+		"workspace_id", workspaceID,
+		"conversation_id", conversation.ID,
+		"backend", "chat_completion",
+		"provider", providerName,
+		"model", modelName,
+		"title_len", len(title),
+		"summary_len", len(summary),
+		"description_len", len(description),
+		"input_tokens", resp.TokensUsed.InputTokens,
+		"output_tokens", resp.TokensUsed.OutputTokens,
+	)
+
+	// When the parser finds JSON but our expected fields come back empty,
+	// the model likely responded with a different schema (e.g. nested under
+	// a "task" key or with different field names). Log a bounded preview of
+	// the raw response so we can see what Claude actually produced.
+	if title == "" && description == "" {
+		preview := resp.Content
+		const maxPreviewLen = 600
+		if len(preview) > maxPreviewLen {
+			preview = preview[:maxPreviewLen] + "...[truncated]"
+		}
+		slog.WarnContext(ctx, "support task draft llm response had empty title and description",
+			"workspace_id", workspaceID,
+			"conversation_id", conversation.ID,
+			"provider", providerName,
+			"model", modelName,
+			"output_tokens", resp.TokensUsed.OutputTokens,
+			"response_preview", preview,
+		)
+	}
+
 	return &supportConversationTaskDraft{
-		Title:       strings.TrimSpace(parsed.Title),
-		Summary:     strings.TrimSpace(parsed.Summary),
-		Description: strings.TrimSpace(parsed.DescriptionMarkdown),
+		Title:       title,
+		Summary:     summary,
+		Description: description,
 		TaskType:    strings.TrimSpace(parsed.TaskType),
 		Priority:    strings.TrimSpace(parsed.Priority),
 	}, nil
@@ -1531,6 +1691,58 @@ func sanitizeConversationHistory(history []model.SupportMessage, currentMessageI
 		sanitized = append(sanitized, msg)
 	}
 	return sanitized
+}
+
+func hasEscalationMessageInHistory(history []model.SupportMessage) bool {
+	for _, msg := range history {
+		if isEscalationSystemEvent(msg) {
+			return true
+		}
+		if (msg.SenderType == "ai" || (msg.SenderType == "agent" && msg.MessageType == "system")) && containsHandoffLanguage(msg.Content) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasEscalationSystemEventInHistory(history []model.SupportMessage) bool {
+	for _, msg := range history {
+		if isEscalationSystemEvent(msg) {
+			return true
+		}
+	}
+	return false
+}
+
+func isEscalationSystemEvent(msg model.SupportMessage) bool {
+	return msg.SystemEventType != nil && *msg.SystemEventType == model.SystemEventAIEscalated
+}
+
+func containsHandoffLanguage(content string) bool {
+	lower := strings.ToLower(strings.TrimSpace(content))
+	if lower == "" {
+		return false
+	}
+	handoffPhrases := []string{
+		"connect you with a team member",
+		"connect you to a team member",
+		"connect you with our team",
+		"connect you to our team",
+		"let me connect you",
+		"hand you over",
+		"handover to",
+		"hand off to",
+		"transfer you",
+		"pass you to",
+		"real person",
+		"human agent",
+	}
+	for _, phrase := range handoffPhrases {
+		if strings.Contains(lower, phrase) {
+			return true
+		}
+	}
+	return false
 }
 
 func buildConversationMessages(history []model.SupportMessage) []llm.Message {
@@ -1932,6 +2144,7 @@ func buildAISystemPrompt(agent *model.Agent, knowledgeContext string) string {
 - Only set can_answer=false when the knowledge chunks contain absolutely nothing relevant to the question — not even a partial answer or a useful pointer.
 - Never use general knowledge to invent product behavior, workflows, integrations, pricing, policies, or troubleshooting steps.
 - Ask a human to take over whenever the customer needs account-specific actions (billing changes, password resets, accessing their data) or when the knowledge contains nothing relevant at all.
+- If you have already told the customer you will connect them with a team member, do not repeat that message. Acknowledge their follow-up briefly, for example: "A team member will be with you shortly."
 - Be concise, friendly, and helpful. Use markdown for formatting.
 - Only include document IDs from the provided knowledge chunks in source_doc_ids.
 - NEVER include customer email addresses, phone numbers, account IDs, or payment details in your response.

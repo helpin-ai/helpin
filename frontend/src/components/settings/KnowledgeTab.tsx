@@ -1,9 +1,10 @@
-import { BookOpen01Icon, GlobeIcon } from '@/lib/icons';
+import { useNavigate } from '@tanstack/react-router';
+import { BookOpen01Icon, LinkSquare01Icon, PlusSignIcon, Settings02Icon } from '@/lib/icons';
 import { useDocsSpaces } from '@/hooks/queries';
 import { useChatSettings, useAgentKnowledgeSources, useUpdateAgentKnowledgeSources, useReindexAgentKnowledgeSource, useSupportContentSources, useCreateSupportContentSource } from '@/hooks/queries/useSupport';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { findWorkspaceWebsiteContentSource, buildWorkspaceWebsiteContentSourcePayload } from '@/lib/workspaceWebsiteSource';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Favicon } from '@/components/ui/favicon';
@@ -13,7 +14,57 @@ import { SupportKnowledgeSourcesField } from './SupportKnowledgeSourcesField';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
 import { toast } from 'sonner';
 
+function KnowledgePageIntro({
+  hasAnySource,
+  workspaceSlug,
+  onOpenDocs,
+  onOpenChatWidget,
+}: {
+  hasAnySource: boolean;
+  workspaceSlug?: string;
+  onOpenDocs: () => void;
+  onOpenChatWidget: () => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-xl font-semibold">Knowledge</h2>
+        <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
+          Manage the docs and websites that AI can search when answering questions or helping teammates.
+        </p>
+      </div>
+
+      {!hasAnySource ? (
+        <div className="rounded-xl border border-dashed border-border/80 bg-card px-6 py-8">
+          <div className="mx-auto max-w-xl text-center">
+            <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-muted text-muted-foreground">
+              <BookOpen01Icon className="h-5 w-5" />
+            </div>
+            <h3 className="text-base font-semibold">No knowledge sources yet</h3>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              Add a public docs space or website source to make workspace knowledge available to AI.
+            </p>
+            {workspaceSlug ? (
+              <div className="mt-4 flex flex-wrap justify-center gap-2">
+                <Button type="button" size="sm" onClick={onOpenDocs}>
+                  <PlusSignIcon className="h-4 w-4" />
+                  Open docs
+                </Button>
+                <Button type="button" variant="outline" size="sm" onClick={onOpenChatWidget}>
+                  <Settings02Icon className="h-4 w-4" />
+                  Chat widget
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
+  const navigate = useNavigate();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const { data: chatSettings, isLoading: chatSettingsLoading } = useChatSettings(workspaceId);
   const { data: docsSpaces = [], isLoading: docsSpacesLoading } = useDocsSpaces(workspaceId);
@@ -28,6 +79,18 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
   const externalDocsSpaceIds = new Set(externalDocsSpaces.map((space) => space.id));
   const externalKnowledgeSources = knowledgeSources.filter((source) => externalDocsSpaceIds.has(source.space_id));
   const websiteContentSource = findWorkspaceWebsiteContentSource(workspace?.website_url, contentSources);
+  const hasAnySource = externalDocsSpaces.length > 0 || contentSources.length > 0 || Boolean(workspace?.website_url);
+  const workspaceSlug = workspace?.slug ?? '';
+
+  const openDocs = () => {
+    if (!workspaceSlug) return;
+    void navigate({ to: '/w/$slug/docs', params: { slug: workspaceSlug } });
+  };
+
+  const openChatWidgetSettings = () => {
+    if (!workspaceSlug) return;
+    void navigate({ to: '/w/$slug/settings/chat-general', params: { slug: workspaceSlug } });
+  };
 
   const toggleSpace = (spaceId: string) => {
     if (!chatWidgetAgentId) {
@@ -84,22 +147,53 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
 
   return (
     <div className="space-y-4">
-      {!chatWidgetAgentId && (
-        <Card className={LINEAR_CARD_CLASS}>
-          <CardHeader>
-            <CardTitle className="text-base">Knowledge</CardTitle>
-            <CardDescription>Manage help center docs and website content sources used across AI experiences.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <p className="text-sm text-muted-foreground">
-              You can add and sync website content sources now. Help Center docs become attachable to support AI after you assign a support agent in Chat Widget.
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Website sources are saved at the workspace level, so they will be ready to attach once a support agent is configured.
-            </p>
-          </CardContent>
-        </Card>
-      )}
+      <KnowledgePageIntro
+        hasAnySource={hasAnySource}
+        workspaceSlug={workspaceSlug}
+        onOpenDocs={openDocs}
+        onOpenChatWidget={openChatWidgetSettings}
+      />
+
+      <div className="space-y-3">
+        {workspace?.website_url && (
+          <div className="rounded-xl border border-border/70 bg-card p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Favicon
+                    url={workspace.website_url}
+                    name={workspace.name}
+                    size={32}
+                    className="h-5 w-5 rounded-md"
+                    fallbackClassName="text-[8px]"
+                  />
+                  <p className="text-sm font-medium">Workspace website</p>
+                  {websiteSourceStatusLabel && <Badge variant="secondary">{websiteSourceStatusLabel}</Badge>}
+                </div>
+                <p className="flex items-center gap-1.5 text-sm">
+                  <LinkSquare01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                  {workspace.website_url}
+                </p>
+              </div>
+              {!websiteContentSource && (
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => void handleAddWorkspaceWebsiteSource()}
+                  disabled={createWebsiteSource.isPending}
+                >
+                  {createWebsiteSource.isPending ? 'Adding...' : 'Add as source'}
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+        <SupportContentSourcesField
+          workspaceId={workspaceId}
+          agentId={chatWidgetAgentId || undefined}
+          disabled={updateKnowledgeSources.isPending}
+        />
+      </div>
 
       <Card className={LINEAR_CARD_CLASS}>
         <CardHeader>
@@ -109,9 +203,6 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
             </div>
             <div>
               <CardTitle className="text-base">Help Center Docs</CardTitle>
-              <CardDescription>
-                Select published help center spaces to index and make searchable for the Chat Widget support agent.
-              </CardDescription>
             </div>
           </div>
         </CardHeader>
@@ -130,77 +221,14 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
               onReindex={(spaceId) => chatWidgetAgentId && reindexKnowledgeSource.mutate({ agentId: chatWidgetAgentId, spaceId })}
               reindexingSpaceId={reindexKnowledgeSource.variables?.spaceId}
               disabled={!chatWidgetAgentId || updateKnowledgeSources.isPending || reindexKnowledgeSource.isPending}
+              onOpenDocs={openDocs}
             />
           )}
           {!chatWidgetAgentId && (
             <p className="mt-3 text-sm text-muted-foreground">
-              Assign a support agent in Chat Widget to choose which Help Center spaces are searchable by support AI.
+              Assign a Chat Widget support agent to attach docs.
             </p>
           )}
-        </CardContent>
-      </Card>
-
-      <Card className={LINEAR_CARD_CLASS}>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-              <GlobeIcon className="h-4 w-4" />
-            </div>
-            <div>
-              <CardTitle className="text-base">Website Content Sources</CardTitle>
-              <CardDescription>
-                Manage crawled websites and choose which of them are available to the Chat Widget support agent.
-              </CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {workspace?.website_url && (
-            <div className="mb-4 rounded-xl border border-border/70 bg-muted/20 p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Favicon
-                      url={workspace.website_url}
-                      name={workspace.name}
-                      size={32}
-                      className="h-5 w-5 rounded-md"
-                      fallbackClassName="text-[8px]"
-                    />
-                    <p className="text-sm font-medium">Workspace website</p>
-                    {websiteSourceStatusLabel && <Badge variant="secondary">{websiteSourceStatusLabel}</Badge>}
-                  </div>
-                  <p className="text-sm">{workspace.website_url}</p>
-                  {websiteContentSource ? (
-                    <p className="text-xs text-muted-foreground">
-                      This URL is already connected as a Website Content Source for Support AI.
-                    </p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">
-                      This URL is saved on the workspace. Add it here to crawl the site and make it available for Support AI.
-                    </p>
-                  )}
-                </div>
-                {!websiteContentSource && (
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => void handleAddWorkspaceWebsiteSource()}
-                      disabled={createWebsiteSource.isPending}
-                    >
-                      {createWebsiteSource.isPending ? 'Adding...' : 'Add as Source'}
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-          <SupportContentSourcesField
-            workspaceId={workspaceId}
-            agentId={chatWidgetAgentId || undefined}
-            disabled={updateKnowledgeSources.isPending}
-          />
         </CardContent>
       </Card>
     </div>

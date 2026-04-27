@@ -97,7 +97,7 @@ import { RecurringTemplateBadge } from '@/components/pm/RecurringTemplateBadge';
 import { RecurringTemplateForm, type RecurringTemplateFormValue } from '@/components/pm/RecurringTemplateForm';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
-import { useTeamFieldVisibilityForTeam, useAutomationRulesByWorkflow } from '@/hooks/queries';
+import { useTeamFieldVisibilityForTeam, useAutomationRulesByWorkflow, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
 import { buildTaskCopyUrl, buildTaskPath } from '@/lib/pmTaskLinks';
 import { CommentThread } from '@/components/pm/CommentThread';
@@ -371,7 +371,7 @@ function TimelineEntry({ item, states = [] }: { item: TimelineItem; states?: Wor
       <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
         {actionLabel} agent run
         <span className="inline-flex items-center gap-1 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700 dark:text-indigo-300">
-          <AgentAvatar name={agentName} className="h-3 w-3" />
+          <AgentAvatar name={agentName} className="h-3 w-3 rounded-none border-0 bg-transparent shadow-none" genericBare />
           {agentName}
         </span>
       </span>
@@ -486,6 +486,8 @@ function TaskDetailPanelBody({
   const uploadFilesRef = useRef<((files: FileList | File[]) => Promise<void>) | null>(null);
   const dragCounterRef = useRef(0);
   const fieldVis = useTeamFieldVisibilityForTeam(workspaceId, form.team_id);
+  const { data: workspaceAccess } = useWorkspaceAccess(workspaceId);
+  const { canEdit } = usePermissions(workspaceAccess);
   const taskId = taskDetail.task.id;
 
   useEffect(() => {
@@ -1152,7 +1154,6 @@ function TaskDetailPanelBody({
                   onUploadStateChange={setDescriptionPendingUploads}
                   teams={mentionTeams}
                   members={assignableMembers}
-                  compact
                 />
                 <div className="mt-2 flex justify-end">
                   <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setEditingDescription(false)}>
@@ -1316,7 +1317,9 @@ function TaskDetailPanelBody({
               <AgentRunPanel
                 taskId={taskDetail.task.id}
                 workspaceId={workspaceId}
-                assignedAgentId={taskDetail.task.assigned_agent_id}
+                latestRunAgentId={taskDetail.task.latest_run_agent_id}
+                delivery={delivery}
+                canEditDelivery={canEdit && fieldVis.delivery}
               />
             </>
           )}
@@ -1558,11 +1561,11 @@ function TaskDetailPanelBody({
                 onChange={(v) => updateField('task_type', v as TaskType, { task_type: v as TaskType })}
                 renderTrigger={() => (
                   <>
-                    <TaskTypeIcon taskType={form.task_type} className="h-3.5 w-3.5" />
+                    <TaskTypeIcon taskType={form.task_type} className="h-4 w-4" />
                     <span>{TASK_TYPE_CONFIG[form.task_type].label}</span>
                   </>
                 )}
-                renderOption={(v) => <><TaskTypeIcon taskType={v as TaskType} className="h-4 w-4 shrink-0" /><span>{TASK_TYPE_CONFIG[v as TaskType].label}</span></>}
+                renderOption={(v) => <><TaskTypeIcon taskType={v as TaskType} className="h-[18px] w-[18px] shrink-0" /><span>{TASK_TYPE_CONFIG[v as TaskType].label}</span></>}
               />
             </MetadataRow>
             )}
@@ -1672,40 +1675,6 @@ function TaskDetailPanelBody({
             {hasGitIntegration && fieldVis.delivery && !delivery.hidden && !delivery.loading && (
               <>
                 <div className="col-span-3 h-px bg-border/40 my-1" />
-
-                <MetadataRow icon={BotIcon} label="Agent">
-                  <SidebarPopoverSelect
-                    value={delivery.selectedAgentId || '__none__'}
-                    options={[
-                      { value: '__none__', label: 'No agent' },
-                      ...delivery.agents.map((a) => ({ value: a.id, label: `${a.name} · ${agentSummaryLabel(a)}` })),
-                    ]}
-                    onChange={(v) => {
-                      const val = v === '__none__' ? '' : v;
-                      if (val) {
-                        delivery.handleAgentChange(val);
-                      }
-                    }}
-                    renderTrigger={() => (
-                      <>
-                        {delivery.selectedAgent && <AgentAvatar agent={delivery.selectedAgent} className="h-5 w-5" />}
-                        <span>{delivery.selectedAgent?.name ?? 'No agent'}</span>
-                        {delivery.savingAssignment && <Loading01Icon className="h-3 w-3 animate-spin" />}
-                      </>
-                    )}
-                    renderOption={(v) => {
-                      if (v === '__none__') return <span className="truncate">No agent</span>;
-                      const a = delivery.agents.find((ag) => ag.id === v);
-                      if (!a) return null;
-                      return (
-                        <>
-                          <AgentAvatar agent={a} className="h-5 w-5" />
-                          <span className="truncate">{a.name}</span>
-                        </>
-                      );
-                    }}
-                  />
-                </MetadataRow>
 
                 <MetadataRow icon={GitBranchIcon} label="Repository">
                   <SidebarPopoverSelect
@@ -1905,26 +1874,4 @@ export function TaskDetailPanel({
       </SheetContent>
     </Sheet>
   );
-}
-
-function agentSummaryLabel(agent: { preset_key?: string; runtime_kind?: string; role?: string }) {
-  if (agent.role) return agent.role;
-  switch (agent.preset_key) {
-    case 'code_builder':
-      return 'Code Builder';
-    case 'review_agent':
-      return 'Review Agent';
-    case 'task_planner':
-      return 'Task Planner';
-    case 'story_planner':
-      return 'Task Planner';
-    case 'epic_planner':
-      return 'Epic Planner';
-    case 'support_agent':
-      return 'Support Agent';
-    case 'crm_operator':
-      return 'CRM Operator';
-    default:
-      return agent.runtime_kind === 'native_sdk' ? 'Interactive Agent' : 'Autonomous Agent';
-  }
 }

@@ -1,0 +1,63 @@
+rules:
+  - id: helpin.generic.hardcoded-secret
+    message: Potential hardcoded secret. Verify whether this is a real credential or a safe placeholder before creating a task.
+    severity: WARNING
+    languages:
+      - generic
+    patterns:
+      - pattern-regex: (?i)(api[_-]?key|secret|token|password|private[_-]?key)\s*[:=]\s*['\"][A-Za-z0-9_./+=-]{16,}['\"]
+    metadata:
+      category: security
+      confidence: LOW
+
+  - id: helpin.javascript.express-disable-tls-verification
+    message: TLS certificate verification is disabled.
+    severity: ERROR
+    languages:
+      - javascript
+      - typescript
+    pattern: process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"
+    metadata:
+      category: security
+      confidence: HIGH
+
+  - id: helpin.python.debug-server-enabled
+    message: Debug server mode is enabled. Verify this cannot run in production.
+    severity: WARNING
+    languages:
+      - python
+    pattern-either:
+      - pattern: app.run(..., debug=True, ...)
+      - pattern: $APP.run(..., debug=True, ...)
+    metadata:
+      category: security
+      confidence: MEDIUM
+
+  - id: helpin.go.insecure-tls-skip-verify
+    message: TLS certificate verification is disabled with InsecureSkipVerify.
+    severity: ERROR
+    languages:
+      - go
+    pattern: 'InsecureSkipVerify: true'
+    metadata:
+      category: security
+      confidence: HIGH
+
+  - id: helpin.java.disable-hostname-verification
+    message: Hostname verification is disabled.
+    severity: ERROR
+    languages:
+      - java
+    pattern-either:
+      - pattern: |
+          new HostnameVerifier() {
+            ...
+            public boolean verify(...) {
+              return true;
+            }
+            ...
+          }
+      - pattern: $V.setHostnameVerifier((...)-> true)
+    metadata:
+      category: security
+      confidence: MEDIUM

@@ -85,3 +85,31 @@ func TestCodexWorkspaceAuthRepositoryUpsertAndGet(t *testing.T) {
 		t.Fatalf("row count = %d, want 1", count)
 	}
 }
+
+func TestCodexWorkspaceAuthRepositoryDeleteByScope(t *testing.T) {
+	db := setupCodexWorkspaceAuthTestDB(t)
+	repo := NewCodexWorkspaceAuthRepository(db)
+	ctx := context.Background()
+
+	record := &model.CodexWorkspaceAuth{
+		WorkspaceID:       "ws-1",
+		Provider:          "openai",
+		AuthMode:          "chatgpt_device_code",
+		AuthJSONEncrypted: "ciphertext-a",
+	}
+	if err := repo.Upsert(ctx, record); err != nil {
+		t.Fatalf("Upsert create: %v", err)
+	}
+
+	if err := repo.DeleteByScope(ctx, "ws-1", "openai", "chatgpt_device_code"); err != nil {
+		t.Fatalf("DeleteByScope: %v", err)
+	}
+
+	fetched, err := repo.GetByScope(ctx, "ws-1", "openai", "chatgpt_device_code")
+	if err != nil {
+		t.Fatalf("GetByScope after delete: %v", err)
+	}
+	if fetched != nil {
+		t.Fatalf("expected no record after delete, got %+v", fetched)
+	}
+}

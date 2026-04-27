@@ -2,6 +2,7 @@ import type { AutomationTriggerExecutionSearchPreset, WorkflowRuleSearchPreset }
 
 export type AutomationActivitySearch = Partial<AutomationTriggerExecutionSearchPreset> & {
   page?: number;
+  run_id?: string;
   fired_after?: string;
   fired_before?: string;
 };
@@ -14,6 +15,8 @@ export type AutomationFlowsSearch = {
   template_description?: string;
   show_trigger?: string;
   show_trigger_title?: string;
+  show_rule?: string;
+  show_rule_title?: string;
   create_event_rule?: boolean;
   trigger_type?: string;
   agent_id?: string;
@@ -59,10 +62,5 @@ export function buildAutomationLibraryPath(slug: string | undefined, hash?: stri
 
 export function buildAutomationToolsPath(slug: string | undefined, hash?: string) {
   const base = slug ? `/w/${slug}/automation/tools` : '/automation/tools';
-  return buildPathWithSearch(base, undefined, hash);
-}
-
-export function buildAutomationRunsPath(slug: string | undefined, hash?: string) {
-  const base = slug ? `/w/${slug}/automation/runs` : '/automation/runs';
   return buildPathWithSearch(base, undefined, hash);
 }

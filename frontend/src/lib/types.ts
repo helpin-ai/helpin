@@ -8,6 +8,7 @@ export interface User {
   avatar_background_mode?: string;
   avatar_background_color?: string;
   default_workspace_id?: string;
+  two_fa_enabled?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -16,6 +17,46 @@ export interface AuthResponse {
   user: User;
   access_token: string;
   refresh_token: string;
+}
+
+export interface SigninResponse {
+  user?: User;
+  access_token?: string;
+  refresh_token?: string;
+  requires_2fa?: boolean;
+  two_fa_token?: string;
+}
+
+export interface Passkey {
+  id: string;
+  name: string;
+  verified: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PasskeyOptionsResponse {
+  challenge: string;
+  options: Record<string, unknown>;
+}
+
+export interface PasskeyListResponse {
+  passkeys: Passkey[];
+}
+
+export type PasskeyAuthenticationResponse = SigninResponse;
+
+export interface TwoFAStatusResponse {
+  enabled: boolean;
+}
+
+export interface TwoFASetupResponse {
+  provisioning_uri: string;
+  recovery_codes: string[];
+}
+
+export interface RecoveryCodesResponse {
+  recovery_codes: string[];
 }
 
 export interface Organization {
@@ -143,6 +184,7 @@ export interface MemberWithUser {
   role: string;
   email: string;
   full_name: string;
+  two_fa_enabled?: boolean;
   avatar_url?: string;
   avatar_style?: string;
   avatar_seed?: string;
@@ -237,6 +279,7 @@ export interface TeamRepoDefault {
   auto_sync_states: boolean;
   review_state_id?: string;
   done_state_id?: string;
+  closed_state_id?: string;
   created_at: string;
   updated_at: string;
 }
@@ -433,6 +476,8 @@ export interface AutomationTriggerExecutionSearchPreset {
 export interface WorkflowRuleSearchPreset {
   show_trigger?: string;
   show_trigger_title?: string;
+  show_rule?: string;
+  show_rule_title?: string;
   template?: string;
   template_title?: string;
   template_description?: string;

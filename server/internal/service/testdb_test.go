@@ -32,6 +32,24 @@ func newTestDB(t *testing.T) *gorm.DB {
 			avatar_background_mode TEXT,
 			avatar_background_color TEXT,
 			default_workspace_id TEXT,
+			totp_secret_encrypted TEXT,
+			totp_verified BOOLEAN NOT NULL DEFAULT 0,
+			recovery_codes_encrypted TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE user_passkeys (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			user_id TEXT NOT NULL,
+			credential_id BLOB NOT NULL UNIQUE,
+			public_key BLOB NOT NULL,
+			attestation_type TEXT NOT NULL,
+			transport BLOB NOT NULL DEFAULT '[]',
+			sign_count INTEGER NOT NULL DEFAULT 0,
+			name TEXT NOT NULL,
+			aaguid BLOB,
+			flags INTEGER NOT NULL DEFAULT 0,
+			verified BOOLEAN NOT NULL DEFAULT 0,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -617,12 +635,17 @@ func newTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE git_repositories (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,
-			git_integration_id TEXT NOT NULL,
-			repo_full_name TEXT NOT NULL,
-			repo_name TEXT NOT NULL,
-			repo_owner TEXT NOT NULL,
+			integration_id TEXT NOT NULL,
+			provider TEXT NOT NULL DEFAULT 'github',
+			external_id TEXT NOT NULL DEFAULT '',
+			full_name TEXT NOT NULL,
 			default_branch TEXT NOT NULL DEFAULT 'main',
-			is_active BOOLEAN NOT NULL DEFAULT 1,
+			permissions TEXT NOT NULL DEFAULT '{}',
+			private BOOLEAN NOT NULL DEFAULT 1,
+			archived BOOLEAN NOT NULL DEFAULT 0,
+			selected BOOLEAN NOT NULL DEFAULT 1,
+			active BOOLEAN NOT NULL DEFAULT 1,
+			deleted_at DATETIME,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -657,6 +680,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			ai_resolution_type TEXT,
 			ai_turn_count INTEGER NOT NULL DEFAULT 0,
 			customer_requested_human_at DATETIME,
+			human_takeover BOOLEAN NOT NULL DEFAULT 0,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -828,8 +852,11 @@ func newTestDB(t *testing.T) *gorm.DB {
 			postmark_message_id TEXT UNIQUE,
 			raw_body TEXT,
 			stripped_text TEXT,
+			html_body TEXT,
 			status TEXT NOT NULL DEFAULT 'sent',
+			delivered_at DATETIME,
 			opened_at DATETIME,
+			bounced_at DATETIME,
 			error_message TEXT,
 			created_at DATETIME
 		)`,
@@ -886,8 +913,38 @@ func newTestDB(t *testing.T) *gorm.DB {
 			avatar_url TEXT,
 			source TEXT,
 			custom_properties TEXT NOT NULL DEFAULT '{}',
+			email_status TEXT NOT NULL DEFAULT 'valid',
+			email_status_reason TEXT,
+			email_status_updated_at DATETIME,
 			created_at DATETIME,
 			updated_at DATETIME
+		)`,
+		`CREATE TABLE crm_companies (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT NOT NULL,
+			display_id TEXT NOT NULL,
+			external_id TEXT,
+			name TEXT NOT NULL,
+			domain TEXT,
+			industry TEXT,
+			employee_count INTEGER,
+			annual_revenue REAL,
+			description TEXT,
+			logo_url TEXT,
+			owner_member_id TEXT,
+			custom_properties TEXT NOT NULL DEFAULT '{}',
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE crm_associations (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT NOT NULL,
+			from_object_type TEXT NOT NULL,
+			from_object_id TEXT NOT NULL,
+			to_object_type TEXT NOT NULL,
+			to_object_id TEXT NOT NULL,
+			association_label TEXT,
+			created_at DATETIME
 		)`,
 	}
 
@@ -922,6 +979,14 @@ func seedWorkspaceMember(t *testing.T, db *gorm.DB, id, wsID, userID, email, dis
 	now := time.Now()
 	mustExec(t, db, `INSERT INTO workspace_members (id, workspace_id, user_id, email, display_name, role, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		id, wsID, userID, email, displayName, role, "active", now, now)
+}
+
+// seedPasskey inserts a passkey into the test DB.
+func seedPasskey(t *testing.T, db *gorm.DB, id, userID, name string, credentialID, publicKey []byte, flags int, verified bool, signCount int64) {
+	t.Helper()
+	now := time.Now()
+	mustExec(t, db, `INSERT INTO user_passkeys (id, user_id, credential_id, public_key, attestation_type, transport, sign_count, name, aaguid, flags, verified, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, userID, credentialID, publicKey, "none", []byte("[]"), signCount, name, nil, flags, verified, now, now)
 }
 
 // seedWorkflow inserts a workflow with a default state into the test DB.

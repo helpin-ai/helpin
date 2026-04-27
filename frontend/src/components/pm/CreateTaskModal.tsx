@@ -81,7 +81,7 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import { RecurringTemplateForm, type RecurringTemplateFormValue } from "@/components/pm/RecurringTemplateForm";
 import { formatRecurringRuleSummary } from "@/components/pm/recurringTemplateUtils";
 import { RecurringTemplateBadge } from "@/components/pm/RecurringTemplateBadge";
-import { showEntityCreatedToast, entityCreatedToastIcons } from "@/components/ui/entity-created-toast";
+import { showEntityCreatedToast } from "@/components/ui/entity-created-toast";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 
 interface CreateTaskModalProps {
@@ -91,6 +91,7 @@ interface CreateTaskModalProps {
   workflow?: WorkflowWithStates;
   initialStateId?: string;
   initialTeamId?: string;
+  initialEpicId?: string;
   initialOwnerMemberId?: string;
   initialSprintId?: string;
   onCreate?: (payload: CreateTaskRequest) => Promise<CreatedTaskResult | void>;
@@ -254,6 +255,7 @@ export function CreateTaskModal({
   workflow,
   initialStateId,
   initialTeamId,
+  initialEpicId,
   initialOwnerMemberId,
   initialSprintId,
   onCreate,
@@ -350,6 +352,7 @@ export function CreateTaskModal({
         task_type: (initialTeam?.default_task_type as TaskType | undefined) ?? 'feature',
         requester_member_id: isTemplateMode ? '' : currentMemberId,
         team_id: effectiveTeamId,
+        epic_id: initialEpicId ?? '',
         owner_member_id: initialOwnerMemberId ?? '',
         sprint_id: initialSprintId ?? '',
       });
@@ -367,7 +370,7 @@ export function CreateTaskModal({
     setRecurringDraft(null);
     setRecurringDialogOpen(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `teams` excluded: only used to derive initial task type; including it causes form reset on background refetch
-  }, [open, initialStateId, initialTeamId, initialOwnerMemberId, initialSprintId, currentMemberId, isTemplateMode, editingTemplate]);
+  }, [open, initialStateId, initialTeamId, initialEpicId, initialOwnerMemberId, initialSprintId, currentMemberId, isTemplateMode, editingTemplate]);
 
   useEffect(() => {
     if (taskTypeDirty || (isTemplateMode && editingTemplate)) return;
@@ -668,7 +671,7 @@ export function CreateTaskModal({
               subtitle: recurringDraft ? 'Recurring schedule added.' : undefined,
               identifier: taskKey ? { label: 'Story ID', value: taskKey } : undefined,
               tone: 'pm',
-              icon: entityCreatedToastIcons.task,
+              icon: TASK_TYPE_CONFIG[form.task_type].icon,
               onOpen: currentWorkspace?.slug
                 ? () => navigate({ to: `/w/${currentWorkspace.slug}/pm/tasks/${result.id}` } as any)
                 : undefined,
@@ -688,6 +691,7 @@ export function CreateTaskModal({
             task_type: (resetTeam?.default_task_type as TaskType | undefined) ?? 'feature',
             requester_member_id: currentMemberId,
             team_id: initialTeamId ?? '',
+            epic_id: initialEpicId ?? '',
             owner_member_id: initialOwnerMemberId ?? '',
             sprint_id: initialSprintId ?? '',
           });
@@ -717,6 +721,7 @@ export function CreateTaskModal({
     initialStateId,
     currentMemberId,
     initialTeamId,
+    initialEpicId,
     initialOwnerMemberId,
     initialSprintId,
     isTemplateMode,
@@ -1349,11 +1354,11 @@ export function CreateTaskModal({
                     }}
                     renderTrigger={() => (
                       <span className="inline-flex min-w-0 items-center gap-1.5">
-                        <TaskTypeIcon taskType={form.task_type} className="h-3.5 w-3.5 shrink-0" />
+                        <TaskTypeIcon taskType={form.task_type} className="h-4 w-4 shrink-0" />
                         <span className="truncate">{TASK_TYPE_CONFIG[form.task_type].label}</span>
                       </span>
                     )}
-                    renderOption={(v) => <><TaskTypeIcon taskType={v as TaskType} className="h-4 w-4 shrink-0" /><span>{TASK_TYPE_CONFIG[v as TaskType].label}</span></>}
+                    renderOption={(v) => <><TaskTypeIcon taskType={v as TaskType} className="h-[18px] w-[18px] shrink-0" /><span>{TASK_TYPE_CONFIG[v as TaskType].label}</span></>}
                   />
                 </MetadataRow>
                 )}

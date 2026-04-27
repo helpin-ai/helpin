@@ -6,6 +6,7 @@ import { MentionSuggestionsList } from '@/components/pm/MentionSuggestionsList'
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
 import { Loading01Icon, SentIcon, Image01Icon, AttachmentIcon, Cancel01Icon } from '@/lib/icons'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
+import { ImageLightbox } from '@/components/pm/ImageLightbox'
 import type { WorkspaceTeam, AssignableMember } from '@/lib/types'
 import {
   getMentionSuggestions,
@@ -22,6 +23,9 @@ interface CommentEditorProps {
   onFileSelect?: () => void
   uploadedFiles?: { id: string; name: string; url?: string }[]
   onRemoveUploadedFile?: (id: string) => void
+  initialContent?: string
+  onCancel?: () => void
+  autoFocus?: boolean
 }
 
 function getFileExtension(filename: string): string {
@@ -72,6 +76,9 @@ export function CommentEditor({
   onFileSelect,
   uploadedFiles = [],
   onRemoveUploadedFile,
+  initialContent,
+  onCancel,
+  autoFocus = false,
 }: CommentEditorProps) {
   const [mentionState, setMentionState] = useState<{
     from: number
@@ -88,6 +95,7 @@ export function CommentEditor({
   const onImageSelectRef = useRef(onImageSelect)
   onImageSelectRef.current = onImageSelect
   const [hasContent, setHasContent] = useState(false)
+  const [lightboxSrc, setLightboxSrc] = useState<{ src: string; name: string } | null>(null)
   const currentHtmlRef = useRef('')
   const skipNextCleanupRef = useRef(false)
 
@@ -139,6 +147,8 @@ export function CommentEditor({
 
   const editor = useEditor({
     extensions,
+    content: initialContent ?? '',
+    autofocus: autoFocus,
     editorProps: {
       attributes: {
         class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[40px] max-h-[120px] overflow-y-auto px-3 py-2 text-[13px] bg-transparent',
@@ -268,9 +278,12 @@ export function CommentEditor({
   const canSubmit = !loading && (hasContent || uploadedFiles.length > 0)
 
   return (
-    <div className="relative bg-muted/50 px-4 pt-3 pb-2 rounded-b-lg transition-[color,box-shadow,background-color] focus-within:ring-1 focus-within:ring-ring/40">
+    <div className="relative bg-muted/50 px-3 pt-2 pb-1.5 rounded-b-lg transition-[color,box-shadow,background-color] focus-within:ring-1 focus-within:ring-ring/40">
       {mentionState && mentionState.items.length > 0 ? (
-        <div className="absolute bottom-full left-0 right-0 z-50 mb-1.5">
+        <div
+          className="absolute bottom-full left-0 right-0 z-50 mb-1.5"
+          onMouseDown={(e) => e.preventDefault()}
+        >
           <div className="mx-1 max-h-[260px] overflow-y-auto rounded-xl border border-border/60 bg-popover p-1.5 shadow-lg">
             <p className="px-2 pb-1 pt-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50">
               Suggestions
@@ -297,21 +310,40 @@ export function CommentEditor({
       <EditorContent editor={editor} />
       {/* Uploaded files / image previews */}
       {uploadedFiles.length > 0 && onRemoveUploadedFile && (
-        <div className="flex flex-wrap gap-1.5 px-3 py-2">
+        <div className="flex flex-wrap gap-1 px-1 pt-1">
           {uploadedFiles.map((f) => {
             const ext = getFileExtension(f.name)
             const isImage = /^(png|jpg|jpeg|gif|webp|svg|bmp)$/i.test(ext)
             return (
               <div
                 key={f.id}
-                className="group/file relative flex items-center gap-1.5 rounded-md border border-border/60 bg-background/60 pl-2 pr-1 py-1 text-xs"
+                className="group/file relative flex items-center gap-1.5 rounded-md border border-border/60 bg-background/60 pl-1 pr-0.5 py-0.5 text-xs"
               >
-                {isImage && f.url ? (
-                  <img src={f.url} alt={f.name} className="h-10 w-10 rounded object-cover" />
+                {f.url && isImage ? (
+                  <button
+                    type="button"
+                    onClick={() => setLightboxSrc({ src: f.url!, name: f.name })}
+                    className="flex items-center gap-1.5 min-w-0 hover:text-foreground cursor-pointer"
+                  >
+                    <img src={f.url} alt={f.name} className="h-6 w-6 rounded object-cover" />
+                    <span className="truncate max-w-[120px] text-muted-foreground">{f.name}</span>
+                  </button>
+                ) : f.url ? (
+                  <a
+                    href={f.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 min-w-0 hover:text-foreground"
+                  >
+                    <span className="uppercase text-[10px] font-medium text-muted-foreground/70 w-5">{ext || 'FILE'}</span>
+                    <span className="truncate max-w-[120px] text-muted-foreground">{f.name}</span>
+                  </a>
                 ) : (
-                  <span className="uppercase text-[10px] font-medium text-muted-foreground/70 w-6">{ext || 'FILE'}</span>
+                  <>
+                    <span className="uppercase text-[10px] font-medium text-muted-foreground/70 w-5">{ext || 'FILE'}</span>
+                    <span className="truncate max-w-[120px] text-muted-foreground">{f.name}</span>
+                  </>
                 )}
-                <span className="truncate max-w-[120px] text-muted-foreground">{f.name}</span>
                 <button
                   type="button"
                   onClick={() => onRemoveUploadedFile(f.id)}
@@ -358,25 +390,43 @@ export function CommentEditor({
             </QuickTooltip>
           )}
         </div>
-        <QuickTooltip label="Send (⌘+Enter)">
-          <button
-            type="button"
-            className={
-              canSubmit
-                ? 'inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow active:scale-95 cursor-pointer'
-                : 'inline-flex h-8 w-8 items-center justify-center rounded-full border border-border/60 bg-background text-muted-foreground/60 transition-colors cursor-not-allowed'
-            }
-            disabled={!canSubmit}
-            onClick={handleSubmit}
-          >
-            {loading ? (
-              <Loading01Icon className="h-4 w-4 animate-spin" />
-            ) : (
-              <SentIcon className="h-4 w-4" />
-            )}
-          </button>
-        </QuickTooltip>
+        <div className="flex items-center gap-1.5">
+          {onCancel && (
+            <button
+              type="button"
+              onClick={onCancel}
+              className="inline-flex h-8 items-center justify-center rounded-md px-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+          )}
+          <QuickTooltip label="Send (⌘+Enter)">
+            <button
+              type="button"
+              className={
+                canSubmit
+                  ? 'inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow active:scale-95 cursor-pointer'
+                  : 'inline-flex h-8 w-8 items-center justify-center rounded-full border border-border/60 bg-background text-muted-foreground/60 transition-colors cursor-not-allowed'
+              }
+              disabled={!canSubmit}
+              onClick={handleSubmit}
+            >
+              {loading ? (
+                <Loading01Icon className="h-4 w-4 animate-spin" />
+              ) : (
+                <SentIcon className="h-4 w-4" />
+              )}
+            </button>
+          </QuickTooltip>
+        </div>
       </div>
+      {lightboxSrc && (
+        <ImageLightbox
+          src={lightboxSrc.src}
+          alt={lightboxSrc.name}
+          onClose={() => setLightboxSrc(null)}
+        />
+      )}
     </div>
   )
 }

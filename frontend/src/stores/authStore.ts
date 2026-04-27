@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { User } from '@/lib/types';
 import { authService } from '@/lib/services/authService';
+import { passkeyService } from '@/lib/services/passkeyService';
 import { stopTokenRefreshTimer } from '@/lib/api';
 import { queryClient } from '@/lib/queryClient';
 
@@ -9,7 +10,13 @@ interface AuthState {
   loading: boolean;
   serverUnreachable: boolean;
   initialize: () => Promise<void>;
-  signIn: (email: string, password: string, rememberMe?: boolean) => Promise<{ error: string | null }>;
+  signIn: (email: string, password: string, rememberMe?: boolean) => Promise<{ error: string | null; requires2FA?: boolean; twoFAToken?: string }>;
+  signInWithPasskey: (
+    emailHint?: string,
+    rememberMe?: boolean,
+    options?: { useAutofill?: boolean },
+  ) => Promise<{ error: string | null; requires2FA?: boolean; twoFAToken?: string; cancelled?: boolean }>;
+  verify2FASignIn: (twoFaToken: string, code: string, useRecoveryCode: boolean, rememberMe?: boolean) => Promise<{ error: string | null }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: string | null }>;
   signOut: () => void;
   updateUser: (data: { full_name?: string; avatar_style?: string; avatar_seed?: string; avatar_background_mode?: string; avatar_background_color?: string }) => Promise<void>;
@@ -32,6 +39,13 @@ export function clearClientSession() {
   } catch {
     // Ignore storage access failures during logout.
   }
+}
+
+function persistAuthSession(user: User, accessToken: string, refreshToken: string, rememberMe: boolean) {
+  localStorage.setItem('access_token', accessToken);
+  localStorage.setItem('refresh_token', refreshToken);
+  localStorage.setItem('remember_me', rememberMe ? '1' : '0');
+  useAuthStore.setState({ user, serverUnreachable: false });
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -68,19 +82,46 @@ export const useAuthStore = create<AuthState>((set) => ({
   signIn: async (email: string, password: string, rememberMe = false) => {
     const { data, error } = await authService.signin(email, password, rememberMe);
     if (error || !data) return { error: error || 'Sign in failed' };
-    localStorage.setItem('access_token', data.access_token);
-    localStorage.setItem('refresh_token', data.refresh_token);
-    localStorage.setItem('remember_me', rememberMe ? '1' : '0');
-    set({ user: data.user, serverUnreachable: false });
+
+    if (data.requires_2fa && data.two_fa_token) {
+      return { error: null, requires2FA: true, twoFAToken: data.two_fa_token };
+    }
+    if (!data.user || !data.access_token || !data.refresh_token) {
+      return { error: 'Sign in failed' };
+    }
+
+    persistAuthSession(data.user, data.access_token, data.refresh_token, rememberMe);
+    return { error: null };
+  },
+
+  signInWithPasskey: async (emailHint?: string, rememberMe = false, options?: { useAutofill?: boolean }) => {
+    const { data, error, cancelled } = await passkeyService.beginAuthentication(emailHint, rememberMe, options);
+    if (cancelled) return { error: null, cancelled: true };
+    if (error || !data) return { error: error || 'Passkey sign in failed' };
+
+    if (data.requires_2fa && data.two_fa_token) {
+      return { error: null, requires2FA: true, twoFAToken: data.two_fa_token };
+    }
+    if (!data.user || !data.access_token || !data.refresh_token) {
+      return { error: 'Passkey sign in failed' };
+    }
+
+    persistAuthSession(data.user, data.access_token, data.refresh_token, rememberMe);
+    return { error: null };
+  },
+
+  verify2FASignIn: async (twoFaToken: string, code: string, useRecoveryCode: boolean, rememberMe = false) => {
+    const { data, error } = await authService.verify2FASignin(twoFaToken, code, useRecoveryCode);
+    if (error || !data) return { error: error || 'Verification failed' };
+
+    persistAuthSession(data.user, data.access_token, data.refresh_token, rememberMe);
     return { error: null };
   },
 
   signUp: async (email: string, password: string, fullName: string) => {
     const { data, error } = await authService.signup(email, password, fullName);
     if (error || !data) return { error: error || 'Sign up failed' };
-    localStorage.setItem('access_token', data.access_token);
-    localStorage.setItem('refresh_token', data.refresh_token);
-    set({ user: data.user, serverUnreachable: false });
+    persistAuthSession(data.user, data.access_token, data.refresh_token, false);
     return { error: null };
   },
 

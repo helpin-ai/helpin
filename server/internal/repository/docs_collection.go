@@ -21,8 +21,12 @@ type DocsCollectionRepository struct {
 }
 
 // NewDocsCollectionRepository creates a new DocsCollectionRepository.
-func NewDocsCollectionRepository(db *gorm.DB, useSortKey bool) *DocsCollectionRepository {
-	return &DocsCollectionRepository{db: db, useSortKey: useSortKey}
+func NewDocsCollectionRepository(db *gorm.DB, useSortKey ...bool) *DocsCollectionRepository {
+	enabled := false
+	if len(useSortKey) > 0 {
+		enabled = useSortKey[0]
+	}
+	return &DocsCollectionRepository{db: db, useSortKey: enabled}
 }
 
 // collOrderBy returns the canonical ORDER BY clause for collections
@@ -84,7 +88,11 @@ func (r *DocsCollectionRepository) Create(ctx context.Context, coll *model.DocsC
 	if coll.ID == "" {
 		coll.ID = uuid.NewString()
 	}
-	if err := r.db.WithContext(ctx).Create(coll).Error; err != nil {
+	q := r.db.WithContext(ctx)
+	if !r.useSortKey {
+		q = q.Omit("sort_key")
+	}
+	if err := q.Create(coll).Error; err != nil {
 		return nil, fmt.Errorf("create docs collection: %w", err)
 	}
 	return coll, nil
@@ -145,6 +153,18 @@ func (r *DocsCollectionRepository) ListBySpace(ctx context.Context, spaceID stri
 		Order(r.collOrderBy()).
 		Find(&colls).Error; err != nil {
 		return nil, fmt.Errorf("list docs collections: %w", err)
+	}
+	return colls, nil
+}
+
+// ListByWorkspaceAndSpace returns all collections in a workspace space, ordered by position.
+func (r *DocsCollectionRepository) ListByWorkspaceAndSpace(ctx context.Context, workspaceID, spaceID string) ([]model.DocsCollection, error) {
+	var colls []model.DocsCollection
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND space_id = ? AND deleted_at IS NULL", workspaceID, spaceID).
+		Order("position ASC, created_at ASC").
+		Find(&colls).Error; err != nil {
+		return nil, fmt.Errorf("list docs collections by workspace and space: %w", err)
 	}
 	return colls, nil
 }

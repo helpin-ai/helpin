@@ -63,6 +63,16 @@ type codexResolvedRuntimeProfile struct {
 	ServiceTier       string
 }
 
+func applyExecutionUsageToRun(run *model.AgentRun, usage ExecutionUsage) {
+	if run == nil {
+		return
+	}
+	run.CachedInputTokens = usage.CachedInputTokens
+	run.InputTokens = usage.InputTokens
+	run.OutputTokens = usage.OutputTokens
+	run.TokensUsed = usage.InputTokens + usage.OutputTokens
+}
+
 type codexConfigArtifact struct {
 	Model                string                                  `toml:"model,omitempty"`
 	ModelReasoningEffort string                                  `toml:"model_reasoning_effort,omitempty"`
@@ -153,26 +163,44 @@ func (e *CodexExecutor) persistWorkspaceAuth(ctx context.Context, workspaceID, p
 	return e.workspaceAuth.Promote(ctx, workspaceID, provider, authMode, codexHome)
 }
 
+func (e *CodexExecutor) clearWorkspaceAuth(ctx context.Context, workspaceID, provider, authMode string) error {
+	if e == nil || e.workspaceAuth == nil {
+		return nil
+	}
+	return e.workspaceAuth.Clear(ctx, workspaceID, provider, authMode)
+}
+
 func (e *CodexExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) error {
 	config := execCtx.Config
 	if config == nil {
-		config = DefaultWorkflowConfig()
+		config = DefaultWorkflowConfigForAgent(execCtx.Agent)
 	}
 	timeout := time.Duration(config.TimeoutMinutes) * time.Minute
 	ctx, cancel := context.WithTimeout(execCtx.Context, timeout)
 	defer cancel()
 	runExecCtx := cloneExecutionContext(execCtx, ctx)
 
-	systemPrompt := BuildSystemPrompt(execCtx.Agent, execCtx.Task, execCtx.Epic, execCtx.Conversation, execCtx.PlanningStage, execCtx.PlanningMethodology, config)
+	includeInlineSkills := strings.TrimSpace(execCtx.StagedRuntimeSkillRoot) == ""
+	systemPrompt := BuildRuntimeSystemPrompt(
+		execCtx.Agent,
+		execCtx.Task,
+		execCtx.Epic,
+		execCtx.Conversation,
+		execCtx.PlanningStage,
+		execCtx.PlanningMethodology,
+		config,
+		includeInlineSkills,
+		includeInlineSkills,
+	)
 	if execCtx.Conversation != nil {
 		systemPrompt += "\nFor support conversations, respond with valid JSON only in this shape: " +
 			`{"status":"open|waiting_on_customer|resolved|spam","draft_reply":{"content":"...","is_internal":false,"sender_display_name":"optional","approval_required":true}}.`
 	}
-	if supplement := BuildExecutionSupplementPrompt(run, execCtx.RunFacts, execCtx.ArtifactContext); supplement != "" {
+	if supplement := BuildRuntimeExecutionSupplementPrompt(run, execCtx.RunFacts); supplement != "" {
 		systemPrompt = strings.TrimSpace(systemPrompt + "\n\n## Current Run State\n" + supplement)
 	}
 	developerInstructions := strings.TrimSpace(systemPrompt)
-	if runtimeInstructions := buildCodexRuntimeInstructions(execCtx); runtimeInstructions != "" {
+	if runtimeInstructions := buildCodexRuntimeInstructions(execCtx, run); runtimeInstructions != "" {
 		developerInstructions = strings.TrimSpace(developerInstructions + "\n\n## Codex Runtime Instructions\n" + runtimeInstructions)
 	}
 	artifactWriter := newCodexArtifactWriter(e, run)
@@ -234,17 +262,17 @@ func (e *CodexExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) 
 		_ = execCtx.Heartbeat("codex_finished")
 	}
 
-	run.TokensUsed = result.Usage.InputTokens + result.Usage.OutputTokens
+	applyExecutionUsageToRun(run, result.Usage)
 
 	if result.CodexAuthState != nil {
 		return nil
 	}
 
 	if run != nil && run.InvocationMode == model.InvocationModeInteractive {
-		appendInteractivePlainTextQuestionInputRequest(result)
+		appendInteractivePlainTextQuestionInputRequest(execCtx, result)
 	}
 
-	if ExtractLatestHumanApprovalRequest(result.ToolInvocations) != nil || ExtractLatestHumanInputRequest(result.ToolInvocations) != nil {
+	if ExtractLatestApprovalRequest(result.ToolInvocations) != nil || ExtractLatestReviewCheckpointRequest(result.ToolInvocations) != nil || ExtractLatestHumanInputRequest(result.ToolInvocations) != nil {
 		return nil
 	}
 
@@ -297,7 +325,7 @@ func (e *CodexExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) 
 			if err != nil {
 				return normalizeCodexPostRunError(postRunCtx, err)
 			}
-			if err := e.saveOutputSummary(postRunCtx, run, artifactWriter, "story_plan_proposal", proposal); err != nil {
+			if err := e.saveOutputSummary(postRunCtx, run, artifactWriter, "task_plan_proposal", proposal); err != nil {
 				return err
 			}
 		default:
@@ -337,26 +365,20 @@ func buildCodexPrompt(execCtx *ExecutionContext, systemPrompt, userPrompt string
 	sections := []string{
 		"System instructions:\n" + strings.TrimSpace(systemPrompt),
 	}
-	if runtimeInstructions := buildCodexRuntimeInstructions(execCtx); runtimeInstructions != "" {
+	if runtimeInstructions := buildCodexRuntimeInstructions(execCtx, nil); runtimeInstructions != "" {
 		sections = append(sections, "Codex runtime instructions:\n"+runtimeInstructions)
 	}
-	sections = append(sections, "User task:\n"+strings.TrimSpace(buildOpenCodeUserPrompt(execCtx, userPrompt)))
+	sections = append(sections, "User task:\n"+strings.TrimSpace(buildOpenCodeUserPrompt(execCtx, nil, userPrompt)))
 	return strings.TrimSpace(strings.Join(sections, "\n\n"))
 }
 
-func buildCodexRuntimeInstructions(execCtx *ExecutionContext) string {
-	resolved := resolvedProfileFor(execCtx)
+func buildCodexRuntimeInstructions(execCtx *ExecutionContext, run *model.AgentRun) string {
 	var parts []string
 
 	parts = append(parts, "You are running inside the Codex CLI runtime, not the Helpin native tool runtime.")
-	parts = append(parts, "Do not wait for Helpin-native tool calls like read_file, write_file, run_command, create_branch, commit_and_push, or open_pr. In this runtime, use Codex's own shell/file-edit capabilities directly inside the workspace.")
-	parts = append(parts, "Do not push the branch or open a pull request from Codex. Finish with a local commit only; the backend will handle remote push and delivery after the run succeeds.")
-
-	if hasRepoMutationTools(resolved.Tools) {
-		parts = append(parts, "This is an autonomous implementation run. You must make concrete repository changes in the working tree unless you can prove the task is already complete or blocked by a real external constraint.")
-		parts = append(parts, "Start by inspecting the repository with fast shell commands such as rg, ls, git status, and targeted file reads. Then edit the relevant files, run practical validation, and stop only after the repository reflects your implementation.")
-		parts = append(parts, "A text-only analysis with no file modifications is a failed outcome for this run.")
-	}
+	parts = append(parts, "Use the local shell and file-editing capabilities available in this workspace directly.")
+	parts = append(parts, "Do not rely on Helpin-specific tool wrappers or orchestration commands to inspect files, edit code, create branches, push changes, or open pull requests.")
+	parts = append(parts, "Do not push the branch or open a pull request from this runtime. If you complete implementation, finish with a local git commit only; the platform will handle remote delivery.")
 	if strings.TrimSpace(execCtx.BranchSyncStatus) == "conflicted" {
 		parts = append(parts, "Before continuing the task, resolve the current git merge conflict that came from syncing the base branch into the working branch.")
 		parts = append(parts, "Preserve the task's intended changes while incorporating the incoming base-branch changes. Remove all conflict markers, stage the resolved files, and complete the merge commit before doing additional implementation work.")
@@ -364,12 +386,44 @@ func buildCodexRuntimeInstructions(execCtx *ExecutionContext) string {
 			parts = append(parts, "Conflicted files: "+strings.Join(execCtx.BranchSyncConflictFiles, ", ")+".")
 		}
 	}
+	reviewContractInstructions := reviewCheckpointRuntimeInstructions(execCtx.SkillPolicy, "codex")
 
-	if len(resolved.Commands) > 0 {
-		parts = append(parts, "Prefer these command families when they fit the task: "+strings.Join(resolved.Commands, ", ")+".")
+	switch strings.TrimSpace(runInvocationMode(run, execCtx)) {
+	case model.InvocationModeInteractive:
+		parts = append(parts, "This is an interactive run. Continue from the latest human reply instead of restarting from scratch.")
+		parts = append(parts, "Make repository changes when they materially advance the task, but they are not required on every turn.")
+		parts = append(parts, "If you are blocked, ask for the next focused input or approval through the interactive run flow instead of ending with broad open questions.")
+		if len(reviewContractInstructions) > 0 {
+			parts = append(parts, reviewContractInstructions...)
+		}
+	default:
+		if allowsCleanReviewNoop(execCtx) {
+			parts = append(parts, "This is an autonomous run. Make durable progress on the assigned task before stopping.")
+			parts = append(parts, "Inspect the relevant repository context carefully and make code changes only when they materially improve the review outcome.")
+		} else if isEngineerStoryRun(execCtx) {
+			parts = append(parts, "This is an autonomous implementation run. You must make concrete repository changes in the working tree unless you can prove the task is already complete or blocked by a real external constraint.")
+			parts = append(parts, "Start by inspecting the repository with fast shell commands such as rg, ls, git status, and targeted file reads. Then edit the relevant files, run practical validation, and stop only after the repository reflects your implementation.")
+			parts = append(parts, "A text-only analysis with no file modifications is a failed outcome for this run.")
+		} else {
+			parts = append(parts, "This is an autonomous run. Make durable progress on the assigned task before stopping.")
+			parts = append(parts, "Inspect the relevant repository context before making changes, and validate any code changes you do make with practical checks when possible.")
+		}
+		if len(reviewContractInstructions) > 0 {
+			parts = append(parts, reviewContractInstructions...)
+		}
 	}
 
 	return strings.TrimSpace(strings.Join(parts, "\n"))
+}
+
+func runInvocationMode(run *model.AgentRun, execCtx *ExecutionContext) string {
+	if run != nil && strings.TrimSpace(run.InvocationMode) != "" {
+		return strings.TrimSpace(run.InvocationMode)
+	}
+	if execCtx != nil && execCtx.Agent != nil && strings.TrimSpace(execCtx.Agent.DefaultInvocationMode) != "" {
+		return strings.TrimSpace(execCtx.Agent.DefaultInvocationMode)
+	}
+	return model.InvocationModeAutonomous
 }
 
 func syncPostRunExecutionState(execCtx, postRunExecCtx *ExecutionContext) {
@@ -925,8 +979,15 @@ func appendInteractiveRepoFollowupInputRequest(result *ExecutionResult) {
 	}
 }
 
-func appendInteractivePlainTextQuestionInputRequest(result *ExecutionResult) {
-	if result == nil || ExtractLatestHumanInputRequest(result.ToolInvocations) != nil || ExtractLatestHumanApprovalRequest(result.ToolInvocations) != nil {
+func appendInteractivePlainTextQuestionInputRequest(execCtx *ExecutionContext, result *ExecutionResult) {
+	appendInteractivePlainTextQuestionInputRequestForRuntime(execCtx, result, "codex")
+}
+
+func appendInteractivePlainTextQuestionInputRequestForRuntime(execCtx *ExecutionContext, result *ExecutionResult, runtimeKind string) {
+	if result == nil || ExtractLatestHumanInputRequest(result.ToolInvocations) != nil || ExtractLatestApprovalRequest(result.ToolInvocations) != nil || ExtractLatestReviewCheckpointRequest(result.ToolInvocations) != nil {
+		return
+	}
+	if execCtx != nil && !RequestUserInputUsesRuntimeBridge(execCtx.SkillPolicy, runtimeKind) {
 		return
 	}
 	questions := extractInteractivePlainTextQuestions(result.AssistantText)

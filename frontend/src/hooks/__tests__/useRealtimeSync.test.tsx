@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { usePMBoardStore } from '@/stores/pmBoardStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore'
+import { queryKeys } from '@/lib/queryKeys'
 
 const captured = {
   onEvent: null as ((event: unknown) => void) | null,
@@ -218,6 +219,226 @@ describe('useRealtimeSync task ordering events', () => {
     )
     expect(refreshBoard).not.toHaveBeenCalled()
 
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  it('invalidates git links and dispatches a task child event for task_git_link updates', async () => {
+    const childUpdated = vi.fn()
+    window.addEventListener('task-child-updated', childUpdated)
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const invalidateQueries = vi.spyOn(client, 'invalidateQueries')
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <Harness workspaceId="ws-1" />
+        </QueryClientProvider>,
+      )
+    })
+
+    await act(async () => {
+      captured.onEvent?.({
+        action: 'updated',
+        entity: 'task_git_link',
+        entity_id: 'link-1',
+        workspace_id: 'ws-1',
+        actor_id: 'user-2',
+        parent_type: 'task',
+        parent_id: 'task-1',
+      })
+      await Promise.resolve()
+    })
+
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: queryKeys.git.taskLinks('ws-1', 'task-1') })
+    expect(childUpdated).toHaveBeenCalledTimes(1)
+    expect((childUpdated.mock.calls[0]?.[0] as CustomEvent).detail).toEqual(expect.objectContaining({
+      entity: 'task_git_link',
+      parent_type: 'task',
+      parent_id: 'task-1',
+    }))
+
+    window.removeEventListener('task-child-updated', childUpdated)
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  it('patches board latest run fields and emits agent_run compatibility events', async () => {
+    const refreshBoard = vi.fn()
+    const patchTask = vi.fn(() => true)
+    usePMBoardStore.setState({
+      refreshBoard,
+      patchTask,
+      columns: [
+        {
+          state: { id: 'state-todo', state_type: 'backlog' },
+          tasks: [
+            {
+              id: 'task-1',
+              latest_run_id: 'old-run',
+              latest_run_agent_id: 'agent-1',
+              latest_run_status: 'completed',
+              latest_run_at: '2026-04-23T08:00:00Z',
+            },
+          ],
+          task_groups: [
+            {
+              key: 'group-1',
+              label: 'Group 1',
+              tasks: [
+                {
+                  id: 'task-1',
+                  latest_run_id: 'old-run',
+                  latest_run_agent_id: 'agent-1',
+                  latest_run_status: 'completed',
+                  latest_run_at: '2026-04-23T08:00:00Z',
+                },
+              ],
+            },
+          ],
+          task_count: 1,
+          point_total: 0,
+          has_more: false,
+        },
+      ] as never,
+      memberColumns: [
+        {
+          member: null,
+          tasks: [
+            {
+              id: 'task-1',
+              latest_run_id: 'old-run',
+              latest_run_agent_id: 'agent-1',
+              latest_run_status: 'completed',
+              latest_run_at: '2026-04-23T08:00:00Z',
+            },
+          ],
+          task_count: 1,
+          point_total: 0,
+          has_more: false,
+        },
+      ] as never,
+    })
+
+    const updated = vi.fn()
+    const created = vi.fn()
+    window.addEventListener('agent_run-updated', updated)
+    window.addEventListener('agent_run-created', created)
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <Harness workspaceId="ws-1" />
+        </QueryClientProvider>,
+      )
+    })
+
+    await act(async () => {
+      captured.onEvent?.({
+        action: 'updated',
+        entity: 'agent_run',
+        entity_id: 'run-2',
+        workspace_id: 'ws-1',
+        actor_id: 'user-2',
+        parent_type: 'task',
+        parent_id: 'task-1',
+        sent_at: '2026-04-23T09:00:00Z',
+        data: {
+          agent_id: 'agent-2',
+          status: 'running',
+          pause_reason: '',
+        },
+      })
+      await Promise.resolve()
+    })
+
+    expect(updated).toHaveBeenCalledTimes(1)
+    expect(created).toHaveBeenCalledTimes(1)
+    expect((updated.mock.calls[0]?.[0] as CustomEvent).detail).toEqual(expect.objectContaining({
+      entity_id: 'run-2',
+      parent_type: 'task',
+      parent_id: 'task-1',
+      agent_id: 'agent-2',
+      status: 'running',
+      pause_reason: '',
+    }))
+
+    const state = usePMBoardStore.getState()
+    expect(state.columns[0]?.tasks[0]).toEqual(expect.objectContaining({
+      latest_run_id: 'run-2',
+      latest_run_agent_id: 'agent-2',
+      latest_run_status: 'running',
+      latest_run_pause_reason: null,
+      latest_run_at: '2026-04-23T09:00:00Z',
+    }))
+    expect(state.columns[0]?.task_groups?.[0]?.tasks[0]).toEqual(expect.objectContaining({
+      latest_run_id: 'run-2',
+      latest_run_status: 'running',
+    }))
+    expect(state.memberColumns[0]?.tasks[0]).toEqual(expect.objectContaining({
+      latest_run_id: 'run-2',
+      latest_run_status: 'running',
+    }))
+
+    window.removeEventListener('agent_run-updated', updated)
+    window.removeEventListener('agent_run-created', created)
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  it('dispatches coding_session websocket updates to local session listeners', async () => {
+    const listener = vi.fn()
+    window.addEventListener('coding_session-updated', listener)
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <Harness workspaceId="ws-1" />
+        </QueryClientProvider>,
+      )
+    })
+
+    await act(async () => {
+      captured.onEvent?.({
+        action: 'updated',
+        entity: 'coding_session',
+        entity_id: 'run-2',
+        workspace_id: 'ws-1',
+        actor_id: 'user-2',
+        data: {
+          parent_run_id: 'parent-run',
+          status: 'paused',
+          pause_reason: 'human_input',
+        },
+      })
+      await Promise.resolve()
+    })
+
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect((listener.mock.calls[0]?.[0] as CustomEvent).detail).toEqual(expect.objectContaining({
+      entity_id: 'run-2',
+      data: expect.objectContaining({
+        parent_run_id: 'parent-run',
+        status: 'paused',
+        pause_reason: 'human_input',
+      }),
+    }))
+
+    window.removeEventListener('coding_session-updated', listener)
     act(() => root.unmount())
     container.remove()
   })

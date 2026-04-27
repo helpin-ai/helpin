@@ -70,3 +70,15 @@ func (r *CodexWorkspaceAuthRepository) Upsert(ctx context.Context, record *model
 	record.UpdatedAt = existing.UpdatedAt
 	return nil
 }
+
+func (r *CodexWorkspaceAuthRepository) DeleteByScope(ctx context.Context, workspaceID, provider, authMode string) error {
+	if r == nil || strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(provider) == "" || strings.TrimSpace(authMode) == "" {
+		return nil
+	}
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND provider = ? AND auth_mode = ?", strings.TrimSpace(workspaceID), strings.TrimSpace(provider), strings.TrimSpace(authMode)).
+		Delete(&model.CodexWorkspaceAuth{}).Error; err != nil {
+		return fmt.Errorf("delete codex workspace auth: %w", err)
+	}
+	return nil
+}

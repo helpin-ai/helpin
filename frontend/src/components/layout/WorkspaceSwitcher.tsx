@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { Tick01Icon, ArrowUpDownIcon, PlusSignIcon } from '@/lib/icons';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -12,6 +12,12 @@ import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  flattenGroupedWorkspaces,
+  isEditableShortcutTarget,
+  isMacPlatform,
+  workspaceShortcutLabel,
+} from '@/components/layout/workspaceSwitcherShortcuts';
 
 function workspaceRouteFromCurrentPath(pathname: string, slug: string): string {
   const match = pathname.match(/^\/w\/[^/]+\/?(.*)$/);
@@ -25,6 +31,7 @@ export function WorkspaceSwitcher() {
   const { isMobile } = useSidebar();
   const { currentWorkspace, setCurrentWorkspace } = useWorkspaceStore();
   const currentOrganization = useOrganizationStore((s) => s.currentOrganization);
+  const { setCurrentOrganization } = useOrganizationStore();
   const { data: allWorkspaces = [] } = useWorkspaces(); // Fetch all workspaces across orgs
   const { data: organizations = [] } = useOrganizations();
   const { data: supportUnread = [] } = useSupportUnreadByWorkspace();
@@ -66,26 +73,60 @@ export function WorkspaceSwitcher() {
     return groups;
   }, [filtered, organizations, multiOrg]);
 
+  const shortcutWorkspaces = useMemo(() => flattenGroupedWorkspaces(groupedWorkspaces).slice(0, 9), [groupedWorkspaces]);
+  const workspaceShortcutIndexes = useMemo(() => {
+    const indexes = new Map<string, number>();
+    shortcutWorkspaces.forEach((workspace, index) => indexes.set(workspace.id, index));
+    return indexes;
+  }, [shortcutWorkspaces]);
+  const isMac = useMemo(() => isMacPlatform(), []);
+
+  const handleWorkspaceSelect = useCallback(
+    (workspace: Workspace) => {
+      setCurrentWorkspace(workspace);
+      // Update org if switching to a workspace from a different organization
+      if (workspace.organization_id && workspace.organization_id !== currentOrganization?.id) {
+        const newOrg = organizations.find((o) => o.id === workspace.organization_id);
+        if (newOrg) setCurrentOrganization(newOrg);
+      }
+      navigate({ to: workspaceRouteFromCurrentPath(location.pathname, workspace.slug) as string });
+      setQuery('');
+      setOpen(false);
+    },
+    [currentOrganization?.id, location.pathname, navigate, organizations, setCurrentOrganization, setCurrentWorkspace]
+  );
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (isEditableShortcutTarget(event.target) || event.altKey || event.shiftKey || !(event.metaKey || event.ctrlKey)) {
+        return;
+      }
+
+      if (!/^[1-9]$/.test(event.key)) return;
+
+      const workspace = shortcutWorkspaces[Number(event.key) - 1];
+      if (!workspace) return;
+
+      event.preventDefault();
+      handleWorkspaceSelect(workspace);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleWorkspaceSelect, shortcutWorkspaces]);
+
   if (!currentWorkspace) return null;
-
-  const { setCurrentOrganization } = useOrganizationStore();
-
-  const handleWorkspaceSelect = (workspace: Workspace) => {
-    setCurrentWorkspace(workspace);
-    // Update org if switching to a workspace from a different organization
-    if (workspace.organization_id && workspace.organization_id !== currentOrganization?.id) {
-      const newOrg = organizations.find((o) => o.id === workspace.organization_id);
-      if (newOrg) setCurrentOrganization(newOrg);
-    }
-    navigate({ to: workspaceRouteFromCurrentPath(location.pathname, workspace.slug) as string });
-    setQuery('');
-    setOpen(false);
-  };
 
   return (
     <SidebarMenu>
       <SidebarMenuItem>
-        <Popover open={open} onOpenChange={setOpen}>
+        <Popover
+          open={open}
+          onOpenChange={(nextOpen) => {
+            setOpen(nextOpen);
+            if (!nextOpen) setQuery('');
+          }}
+        >
           <PopoverTrigger asChild>
             <SidebarMenuButton
               size="lg"
@@ -148,6 +189,8 @@ export function WorkspaceSwitcher() {
                     {group.workspaces.map((workspace) => {
                       const isActive = workspace.id === currentWorkspace.id;
                       const unread = unreadByWorkspace.get(workspace.id) ?? 0;
+                      const shortcutIndex = workspaceShortcutIndexes.get(workspace.id);
+                      const shortcut = shortcutIndex === undefined ? null : workspaceShortcutLabel(shortcutIndex, isMac);
                       return (
                         <button
                           key={workspace.id}
@@ -170,6 +213,11 @@ export function WorkspaceSwitcher() {
                             <span className="truncate">{workspace.name}</span>
                           </div>
                           <div className="flex shrink-0 items-center gap-1.5">
+                            {shortcut && (
+                              <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] leading-none text-muted-foreground/70">
+                                {shortcut}
+                              </kbd>
+                            )}
                             {unread > 0 && (
                               <Tooltip>
                                 <TooltipTrigger asChild>

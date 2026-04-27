@@ -103,9 +103,86 @@ func TestListGroupedTaskAssociationsDeduplicatesDuplicateDocLinks(t *testing.T) 
 	}
 }
 
+func TestListGroupedTaskAssociationsInfersCRMContextFromDirectContact(t *testing.T) {
+	db := newAssociationsTestDB(t)
+	svc := newAssociationsServiceForTest(db)
+
+	seedAssociationTask(t, db, "task-a", "ws-1", 101, "Task A", false)
+	seedCRMContact(t, db, "contact-1", "ws-1", "Jane Doe", "C-101")
+	seedCRMCompany(t, db, "company-1", "ws-1", "Acme Corp", "CO-22")
+	seedCRMAssociation(t, db, "assoc-task-contact", "ws-1", model.CRMObjectTask, "task-a", model.CRMObjectContact, "contact-1")
+	seedCRMAssociation(t, db, "assoc-contact-company", "ws-1", model.CRMObjectContact, "contact-1", model.CRMObjectCompany, "company-1")
+
+	grouped, err := svc.ListGrouped(context.Background(), "ws-1", model.CRMObjectTask, "task-a")
+	if err != nil {
+		t.Fatalf("ListGrouped returned error: %v", err)
+	}
+
+	if len(grouped.CRMRecords) != 2 {
+		t.Fatalf("expected direct contact plus inferred company, got %d records", len(grouped.CRMRecords))
+	}
+
+	var directContact, inferredCompany *model.AssociationObjectSummary
+	for i := range grouped.CRMRecords {
+		item := &grouped.CRMRecords[i]
+		switch {
+		case item.ObjectType == model.CRMObjectContact && item.ObjectID == "contact-1":
+			directContact = item
+		case item.ObjectType == model.CRMObjectCompany && item.ObjectID == "company-1":
+			inferredCompany = item
+		}
+	}
+
+	if directContact == nil || directContact.Inferred {
+		t.Fatalf("expected direct contact association in response, got %+v", grouped.CRMRecords)
+	}
+	if inferredCompany == nil || !inferredCompany.Inferred {
+		t.Fatalf("expected inferred company association in response, got %+v", grouped.CRMRecords)
+	}
+	if inferredCompany.AssociationID != "" {
+		t.Fatalf("expected inferred company to have no association id, got %q", inferredCompany.AssociationID)
+	}
+	if inferredCompany.ContextLabel == nil || *inferredCompany.ContextLabel != "via Jane Doe" {
+		t.Fatalf("expected inferred company context label 'via Jane Doe', got %+v", inferredCompany.ContextLabel)
+	}
+}
+
+func TestListGroupedTaskAssociationsPrefersPrimaryCompanyInferenceFromDirectContact(t *testing.T) {
+	db := newAssociationsTestDB(t)
+	svc := newAssociationsServiceForTest(db)
+
+	seedAssociationTask(t, db, "task-a", "ws-1", 101, "Task A", false)
+	seedCRMContact(t, db, "contact-1", "ws-1", "Jane Doe", "C-101")
+	seedCRMCompany(t, db, "company-1", "ws-1", "Acme Corp", "CO-22")
+	seedCRMCompany(t, db, "company-2", "ws-1", "Beta Ltd", "CO-23")
+	seedCRMAssociation(t, db, "assoc-task-contact", "ws-1", model.CRMObjectTask, "task-a", model.CRMObjectContact, "contact-1")
+	seedCRMAssociation(t, db, "assoc-contact-company-primary", "ws-1", model.CRMObjectContact, "contact-1", model.CRMObjectCompany, "company-1")
+	seedCRMAssociation(t, db, "assoc-contact-company-secondary", "ws-1", model.CRMObjectContact, "contact-1", model.CRMObjectCompany, "company-2")
+	if err := db.Model(&model.CRMAssociation{}).Where("id = ?", "assoc-contact-company-primary").Update("association_label", primaryCompanyAssociationLabel).Error; err != nil {
+		t.Fatalf("mark primary company association: %v", err)
+	}
+
+	grouped, err := svc.ListGrouped(context.Background(), "ws-1", model.CRMObjectTask, "task-a")
+	if err != nil {
+		t.Fatalf("ListGrouped returned error: %v", err)
+	}
+
+	if len(grouped.CRMRecords) != 2 {
+		t.Fatalf("expected direct contact plus only primary inferred company, got %d records", len(grouped.CRMRecords))
+	}
+
+	for _, item := range grouped.CRMRecords {
+		if item.ObjectType == model.CRMObjectCompany && item.ObjectID == "company-2" {
+			t.Fatalf("did not expect secondary company to be inferred when a primary company exists: %+v", grouped.CRMRecords)
+		}
+	}
+}
+
 func newAssociationsServiceForTest(db *gorm.DB) *AssociationsService {
 	return NewAssociationsService(
 		repository.NewCRMAssociationRepository(db),
+		repository.NewCRMContactRepository(db),
+		repository.NewWorkspaceRepository(db),
 		repository.NewPMTaskLinkRepository(db),
 		repository.NewPMTaskRepository(db),
 		repository.NewSupportConversationRepository(db),
@@ -144,6 +221,10 @@ func newAssociationsTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
+		`CREATE TABLE workspaces (
+			id TEXT PRIMARY KEY,
+			workspace_key TEXT NOT NULL
+		)`,
 		`CREATE TABLE pm_task_links (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
@@ -163,6 +244,24 @@ func newAssociationsTestDB(t *testing.T) *gorm.DB {
 			to_object_id TEXT NOT NULL,
 			association_label TEXT,
 			created_at DATETIME
+		)`,
+		`CREATE TABLE crm_contacts (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			first_name TEXT NOT NULL,
+			display_id TEXT NOT NULL
+		)`,
+		`CREATE TABLE crm_companies (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			display_id TEXT NOT NULL
+		)`,
+		`CREATE TABLE crm_deals (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			display_id TEXT NOT NULL
 		)`,
 		`CREATE TABLE support_conversations (
 			id TEXT PRIMARY KEY,
@@ -268,6 +367,39 @@ func seedSupportConversation(t *testing.T, db *gorm.DB, id, workspaceID string, 
 		id, workspaceID, displayID, subject, linkedTaskID, time.Now().UTC(), time.Now().UTC(),
 	).Error; err != nil {
 		t.Fatalf("seed support conversation: %v", err)
+	}
+}
+
+func seedCRMContact(t *testing.T, db *gorm.DB, id, workspaceID, name, displayID string) {
+	t.Helper()
+	if err := db.Exec(
+		`INSERT INTO crm_contacts (id, workspace_id, first_name, display_id)
+		 VALUES (?, ?, ?, ?)`,
+		id, workspaceID, name, displayID,
+	).Error; err != nil {
+		t.Fatalf("seed contact: %v", err)
+	}
+}
+
+func seedCRMCompany(t *testing.T, db *gorm.DB, id, workspaceID, name, displayID string) {
+	t.Helper()
+	if err := db.Exec(
+		`INSERT INTO crm_companies (id, workspace_id, name, display_id)
+		 VALUES (?, ?, ?, ?)`,
+		id, workspaceID, name, displayID,
+	).Error; err != nil {
+		t.Fatalf("seed company: %v", err)
+	}
+}
+
+func seedCRMAssociation(t *testing.T, db *gorm.DB, id, workspaceID, fromType, fromID, toType, toID string) {
+	t.Helper()
+	if err := db.Exec(
+		`INSERT INTO crm_associations (id, workspace_id, from_object_type, from_object_id, to_object_type, to_object_id, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		id, workspaceID, fromType, fromID, toType, toID, time.Now().UTC(),
+	).Error; err != nil {
+		t.Fatalf("seed crm association: %v", err)
 	}
 }
 

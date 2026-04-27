@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import {
@@ -9,6 +9,9 @@ import {
   Cancel01Icon,
   HashtagIcon,
   Layers01Icon,
+  AttachmentIcon,
+  Delete01Icon,
+  Upload01Icon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
@@ -36,6 +39,7 @@ import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmAutomationService } from '@/lib/services/pmAutomationService';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
+import { uploadToS3 } from '@/lib/api';
 import { gitService } from '@/lib/services/gitService';
 import { toast } from 'sonner';
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -56,6 +60,62 @@ import {
   type SprintAutomationPromptState,
 } from '@/components/pm/sprintAutomationPrompt';
 import { showEntityCreatedToast, entityCreatedToastIcons } from '@/components/ui/entity-created-toast';
+
+import pdfIcon from '@/assets/attachment/pdf-icon.png';
+import csvIcon from '@/assets/attachment/csv-icon.png';
+import excelIcon from '@/assets/attachment/excel-icon.png';
+import docIcon from '@/assets/attachment/doc-icon.png';
+import pngIcon from '@/assets/attachment/png-icon.png';
+import jpgIcon from '@/assets/attachment/jpg-icon.png';
+import svgIcon from '@/assets/attachment/svg-icon.png';
+import txtIcon from '@/assets/attachment/txt-icon.png';
+import zipIcon from '@/assets/attachment/zip-icon.png';
+import rarIcon from '@/assets/attachment/rar-icon.png';
+import htmlIcon from '@/assets/attachment/html-icon.png';
+import cssIcon from '@/assets/attachment/css-icon.png';
+import jsIcon from '@/assets/attachment/js-icon.png';
+import audioIcon from '@/assets/attachment/audio-icon.png';
+import videoIcon from '@/assets/attachment/video-icon.png';
+import defaultIcon from '@/assets/attachment/default-icon.png';
+
+const MAX_PENDING_ATTACHMENT_SIZE = 10 * 1024 * 1024;
+
+function getFileExtension(filename: string): string {
+  const parts = filename.split('.');
+  return parts.length > 1 ? parts.pop()!.toLowerCase() : '';
+}
+
+function getFileTypeIcon(extension: string): string {
+  const iconMap: Record<string, string> = {
+    pdf: pdfIcon,
+    csv: csvIcon,
+    xlsx: excelIcon,
+    xls: excelIcon,
+    doc: docIcon,
+    docx: docIcon,
+    png: pngIcon,
+    jpg: jpgIcon,
+    jpeg: jpgIcon,
+    svg: svgIcon,
+    txt: txtIcon,
+    md: txtIcon,
+    zip: zipIcon,
+    gz: zipIcon,
+    tar: zipIcon,
+    rar: rarIcon,
+    html: htmlIcon,
+    css: cssIcon,
+    js: jsIcon,
+    ts: jsIcon,
+    mp3: audioIcon,
+    wav: audioIcon,
+    mp4: videoIcon,
+    mkv: videoIcon,
+    wmv: videoIcon,
+    webm: videoIcon,
+  };
+  return iconMap[extension] || defaultIcon;
+}
 
 
 // ── Task wrapper ─────────────────────────────────────────────────────
@@ -145,6 +205,10 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
   const [submitting, setSubmitting] = useState(false);
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [showAttachments, setShowAttachments] = useState(false);
+  const [isDraggingFiles, setIsDraggingFiles] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const selectedTeam = useMemo(
     () => teams.find((team) => team.id === meta.teamId),
     [teams, meta.teamId],
@@ -180,46 +244,99 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
     );
   }, [workspaceId]);
 
+  const addPendingFiles = useCallback((files: FileList | File[]) => {
+    const newFiles = Array.from(files).filter((file) => file.size <= MAX_PENDING_ATTACHMENT_SIZE);
+    if (newFiles.length === 0) return;
+    setPendingFiles((prev) => [...prev, ...newFiles]);
+  }, []);
+
+  const handleDragOver = (event: DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    setIsDraggingFiles(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDraggingFiles(false);
+  };
+
+  const handleDrop = (event: DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    setIsDraggingFiles(false);
+    if (event.dataTransfer.files.length > 0) {
+      addPendingFiles(event.dataTransfer.files);
+    }
+  };
+
   const create = async () => {
     if (!name.trim() || !meta.teamId || submitting || descriptionPendingUploads > 0) return;
     setSubmitting(true);
-    const { data, error: createError } = await pmEpicService.create({
-      workspace_id: workspaceId,
-      name: name.trim(),
-      description: description.trim() || undefined,
-      epic_state_id: meta.stateId || undefined,
-      team_id: meta.teamId || undefined,
-      owner_member_id: meta.ownerMemberId || undefined,
-      planned_start_date: meta.startDate || undefined,
-      deadline: meta.targetDate || undefined,
-      planning_repository_id: showPlanningRepository ? (meta.planningRepositoryId || undefined) : undefined,
-    });
-    setSubmitting(false);
-    if (createError) {
-      setError(createError);
-      return;
-    }
-    if (data?.epic) {
-      showEntityCreatedToast({
-        entityLabel: 'Epic',
-        title: data.epic.name,
-        tone: 'pm',
-        icon: entityCreatedToastIcons.epic,
-        onOpen: currentWorkspace?.slug
-          ? () => navigate({
-              to: '/w/$slug/pm/epics/$epicId',
-              params: { slug: currentWorkspace.slug, epicId: data.epic.id },
-            })
-          : undefined,
+    try {
+      const inlineAttachmentIds = extractInlineAttachmentIds(description);
+      const { data, error: createError } = await pmEpicService.create({
+        workspace_id: workspaceId,
+        name: name.trim(),
+        description: description.trim() || undefined,
+        attachment_ids: inlineAttachmentIds.length > 0 ? inlineAttachmentIds : undefined,
+        epic_state_id: meta.stateId || undefined,
+        team_id: meta.teamId || undefined,
+        owner_member_id: meta.ownerMemberId || undefined,
+        planned_start_date: meta.startDate || undefined,
+        deadline: meta.targetDate || undefined,
+        planning_repository_id: showPlanningRepository ? (meta.planningRepositoryId || undefined) : undefined,
       });
-    } else {
-      toast.success('Epic created');
+
+      if (createError) {
+        setError(createError);
+        return;
+      }
+
+      if (data?.epic && pendingFiles.length > 0) {
+        for (const file of pendingFiles) {
+          try {
+            const { data: initData } = await pmAttachmentService.initiateUpload(workspaceId, {
+              entity_type: 'epic',
+              entity_id: data.epic.id,
+              file_name: file.name,
+              file_size: file.size,
+              content_type: file.type || 'application/octet-stream',
+            });
+            if (!initData) continue;
+            const uploadResult = await uploadToS3(initData.url, file, undefined, { 'x-amz-acl': 'public-read' });
+            if (uploadResult.ok) {
+              await pmAttachmentService.confirmUpload(workspaceId, initData.attachment.id);
+            }
+          } catch {
+            // Non-blocking — epic already created
+          }
+        }
+      }
+
+      if (data?.epic) {
+        showEntityCreatedToast({
+          entityLabel: 'Epic',
+          title: data.epic.name,
+          tone: 'pm',
+          icon: entityCreatedToastIcons.epic,
+          onOpen: currentWorkspace?.slug
+            ? () => navigate({
+                to: '/w/$slug/pm/epics/$epicId',
+                params: { slug: currentWorkspace.slug, epicId: data.epic.id },
+              })
+            : undefined,
+        });
+      } else {
+        toast.success('Epic created');
+      }
+      window.dispatchEvent(new CustomEvent('epic-created'));
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create epic');
+    } finally {
+      setSubmitting(false);
     }
-    window.dispatchEvent(new CustomEvent('epic-created'));
-    onClose();
   };
 
-  const hasUnsavedChanges = name.trim() !== '' || description.trim() !== '';
+  const hasUnsavedChanges = name.trim() !== '' || description.trim() !== '' || pendingFiles.length > 0;
 
   const handleClose = async () => {
     if (hasUnsavedChanges) {
@@ -232,6 +349,8 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
       if (!ok) return;
     }
     void cleanupInlineDraftUploads();
+    setPendingFiles([]);
+    setShowAttachments(false);
     onClose();
   };
 
@@ -270,6 +389,23 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                 placeholder="Epic title"
               />
               <div className="mt-4">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                      showAttachments
+                        ? 'border-primary/30 bg-primary/10 text-primary'
+                        : 'border-border/60 text-muted-foreground hover:bg-accent'
+                    }`}
+                    onClick={() => setShowAttachments((value) => !value)}
+                  >
+                    <AttachmentIcon className="h-3 w-3" />
+                    Attach Files
+                    {pendingFiles.length > 0 && (
+                      <span className="text-[10px] opacity-70">({pendingFiles.length})</span>
+                    )}
+                  </button>
+                </div>
                 <TiptapEditor
                   content={description}
                   onChange={(html) => { descriptionRef.current = html; setDescription(html); }}
@@ -280,6 +416,90 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                   teams={mentionTeams}
                   members={assignableMembers}
                 />
+                {showAttachments && (
+                  <div className="mt-3 shrink-0 rounded-lg border border-border/60 bg-card">
+                    <div className="flex items-center justify-between border-b border-border/40 px-4 py-2">
+                      <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                        <AttachmentIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                        Attachments
+                        {pendingFiles.length > 0 && (
+                          <span className="text-xs font-normal text-muted-foreground">({pendingFiles.length})</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="space-y-2 px-4 py-2">
+                      {pendingFiles.length > 0 && (
+                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+                          {pendingFiles.map((file, idx) => {
+                            const isImage = file.type.startsWith('image/') && !file.type.includes('svg');
+                            const ext = getFileExtension(file.name);
+                            return (
+                              <div key={`${file.name}-${file.lastModified}-${idx}`} className="group relative">
+                                <div className="overflow-hidden rounded-lg border border-border/60">
+                                  {isImage ? (
+                                    <img
+                                      src={URL.createObjectURL(file)}
+                                      alt={file.name}
+                                      className="h-20 w-full object-cover"
+                                    />
+                                  ) : (
+                                    <div className="flex h-20 flex-col items-center justify-center gap-1.5 bg-muted/30">
+                                      <img
+                                        src={getFileTypeIcon(ext)}
+                                        alt={ext || 'file'}
+                                        className="h-8 w-8"
+                                      />
+                                      <span className="text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
+                                        {ext || 'FILE'}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="absolute right-1.5 top-1.5 opacity-0 transition-opacity group-hover:opacity-100">
+                                  <button
+                                    type="button"
+                                    className="flex h-6 w-6 items-center justify-center rounded bg-background/80 text-muted-foreground backdrop-blur-sm hover:text-destructive"
+                                    onClick={() => setPendingFiles((prev) => prev.filter((_, fileIdx) => fileIdx !== idx))}
+                                  >
+                                    <Delete01Icon className="h-3 w-3" />
+                                  </button>
+                                </div>
+                                <p className="mt-1 truncate text-[10px] text-muted-foreground" title={file.name}>
+                                  {file.name}
+                                </p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                      <label
+                        className={`flex items-center justify-center gap-2 rounded-md border border-dashed px-3 py-2 transition-colors cursor-pointer ${
+                          isDraggingFiles
+                            ? 'border-primary bg-primary/5'
+                            : 'border-border/60 hover:border-border hover:bg-muted/30'
+                        }`}
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
+                      >
+                        <Upload01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="text-xs text-muted-foreground">Drop files or click to upload (max 10MB)</span>
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          multiple
+                          className="hidden"
+                          onChange={(event) => {
+                            if (event.target.files?.length) {
+                              addPendingFiles(event.target.files);
+                            }
+                            event.target.value = '';
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

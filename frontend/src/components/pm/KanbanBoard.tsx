@@ -19,7 +19,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { usePMBoardStore } from '@/stores/pmBoardStore';
-import type { Agent, CreateTaskRequest, Task, TaskMemberColumn, TaskStateColumn, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
+import type { CreateTaskRequest, Task, TaskMemberColumn, TaskStateColumn, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
 import { pmLabelService } from '@/lib/services/pmLabelService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
@@ -46,6 +46,7 @@ import { createPMDnDTraceID, logPMDnD } from '@/lib/pmDnDDebug';
 import { DragPreviewManager, useActiveTask, useColumnDragPreview, commitDropBeforeClearingPreview, getSameStateBoardDropIndex, getStateBoardPreviewInsertIndex, getStoredCrossColumnDropTarget, getStableCrossColumnPreviewIndex } from './KanbanBoard.dnd';
 import { BoardDataContext, BoardCallbacksContext, DragPreviewContext } from './KanbanBoard.contexts';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
+import { ACTIVE_RUN_STATUSES } from '@/components/pm/agentRunConstants';
 import { getVisibleTaskListGroupOptions, type TaskListGroupByOption } from '@/components/pm/task-detail/taskListGrouping';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
@@ -340,7 +341,7 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
   }
 
   return (
-    <section className="flex h-full w-[340px] shrink-0 flex-col">
+    <section className="flex h-full w-[300px] shrink-0 flex-col">
       <header className="group/header flex items-center justify-between px-3 pt-4 pb-3">
         <div className="min-w-0">
           <p className="flex items-center gap-1.5 truncate text-sm font-semibold">
@@ -425,12 +426,10 @@ MemberColumn.displayName = 'MemberColumn';
 const DragOverlayCard = memo(function DragOverlayCard({
   manager,
   resolveTeamName,
-  agentById,
   groupBy,
 }: {
   manager: DragPreviewManager;
   resolveTeamName: (id?: string) => string | undefined;
-  agentById: Map<string, Agent>;
   groupBy: string;
 }) {
   const activeTask = useActiveTask(manager);
@@ -440,7 +439,6 @@ const DragOverlayCard = memo(function DragOverlayCard({
       task={activeTask}
       isOverlay
       teamName={resolveTeamName(activeTask.team_id)}
-      assignedAgent={activeTask.assigned_agent_id ? agentById.get(activeTask.assigned_agent_id) ?? null : null}
       showStateBadge={groupBy === 'members'}
     />
   );
@@ -634,6 +632,22 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     (task: Task) => {
       if (!workspaceSlug) return;
       openTaskRoute(navigate as never, { pathname: window.location.pathname } as never, workspaceSlug, task.id);
+    },
+    [navigate, workspaceSlug],
+  );
+  const openAgentRun = useCallback(
+    (task: Task) => {
+      if (!workspaceSlug) return;
+      const hasActiveRun = !!task.latest_run_id
+        && !!task.latest_run_status
+        && ACTIVE_RUN_STATUSES.has(task.latest_run_status);
+      openTaskRoute(
+        navigate as never,
+        { pathname: window.location.pathname } as never,
+        workspaceSlug,
+        task.id,
+        hasActiveRun ? { run: task.latest_run_id! } : undefined,
+      );
     },
     [navigate, workspaceSlug],
   );
@@ -1125,6 +1139,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   const boardCallbacksRef = useRef<import('./KanbanBoard.contexts').BoardCallbacksContextValue>({
     onTaskPatched: handleTaskPatched,
     onOpen: openTask,
+    onOpenAgentRun: openAgentRun,
     onCreate: handleCreateForState,
     onCreateForMember: handleCreateForMember,
     onToggleCollapse: toggleCollapse,
@@ -1134,6 +1149,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   boardCallbacksRef.current = {
     onTaskPatched: handleTaskPatched,
     onOpen: openTask,
+    onOpenAgentRun: openAgentRun,
     onCreate: handleCreateForState,
     onCreateForMember: handleCreateForMember,
     onToggleCollapse: toggleCollapse,
@@ -1312,7 +1328,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
           </div>
 
           <DragOverlay>
-            <DragOverlayCard manager={dragManager} resolveTeamName={resolveTeamName} agentById={agentById} groupBy={groupBy} />
+            <DragOverlayCard manager={dragManager} resolveTeamName={resolveTeamName} groupBy={groupBy} />
           </DragOverlay>
         </DndContext>
         </DragPreviewContext.Provider>

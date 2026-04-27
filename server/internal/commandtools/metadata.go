@@ -82,17 +82,41 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		InputSchema: createTaskBatchSchema(),
 	},
 	{
+		CommandName: "pm.create_task",
+		Alias:       "create_task",
+		Category:    "PM / Tasks",
+		Description: "Create a single task for a team, optionally targeting a specific workflow and stage. If workflow_id or state_id are omitted, they are resolved from the team workflow defaults.",
+		InputSchema: createTaskSchema(),
+	},
+	{
+		CommandName: "pm.ensure_label",
+		Alias:       "ensure_task_label",
+		Category:    "PM / Tasks",
+		Description: "Create or return a PM task label in the current workspace. Use this before creating tasks that must carry a stable label.",
+		InputSchema: ensureTaskLabelSchema(),
+	},
+	{
+		CommandName: "pm.list_tasks",
+		Alias:       "list_tasks",
+		Category:    "PM / Tasks",
+		Description: "List tasks in the current workspace with optional label, team, open-only, description, and comment filters.",
+		InputSchema: listTasksSchema(),
+	},
+	{
+		CommandName: "pm.add_task_comment",
+		Alias:       "add_task_comment",
+		Category:    "PM / Tasks",
+		Description: "Add a markdown comment to a task. If task_id is omitted, defaults to the current task target when available.",
+		InputSchema: addTaskCommentSchema(),
+	},
+	{
 		CommandName: "pm.assign_task_agent",
 		Alias:       "assign_task_agent",
 		Category:    "PM / Tasks",
-		Description: "Assign or reassign an agent to an existing task.",
+		Description: "Deprecated. Task agent assignment was removed; use workflow automation rules or start a run explicitly with an agent.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"story_id": map[string]any{
-					"type":        "string",
-					"description": "Legacy alias for the task ID to assign",
-				},
 				"task_id": map[string]any{
 					"type":        "string",
 					"description": "The task ID to assign",
@@ -118,10 +142,8 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 					"items": map[string]any{
 						"type": "object",
 						"properties": map[string]any{
-							"source_story_id": map[string]any{"type": "string"},
-							"target_story_id": map[string]any{"type": "string"},
-							"source_task_id":  map[string]any{"type": "string"},
-							"target_task_id":  map[string]any{"type": "string"},
+							"source_task_id": map[string]any{"type": "string"},
+							"target_task_id": map[string]any{"type": "string"},
 						},
 					},
 				},
@@ -170,6 +192,44 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 				},
 			},
 			"required": []string{"document_id", "content"},
+		},
+	},
+	{
+		CommandName: "docs.create_document",
+		Alias:       "create_document",
+		Category:    "Docs",
+		Description: "Create a new document in Helpin Docs. Accepts optional markdown content that will be auto-converted to rich text.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"space_id": map[string]any{
+					"type":        "string",
+					"description": "The space ID where the document will be created",
+				},
+				"title": map[string]any{
+					"type":        "string",
+					"description": "The document title",
+				},
+				"collection_id": map[string]any{
+					"type":        "string",
+					"description": "Optional collection ID to place the document in",
+				},
+				"content": map[string]any{
+					"type":        "string",
+					"description": "Optional initial document content as a markdown string. Will be auto-converted to rich text.",
+				},
+				"icon": map[string]any{
+					"type":        "string",
+					"description": "Optional icon for the document",
+				},
+				"tags": map[string]any{
+					"type":        "array",
+					"items":       map[string]any{"type": "string"},
+					"description": "Optional tags for the document",
+				},
+			},
+			"required":             []string{"space_id", "title"},
+			"additionalProperties": false,
 		},
 	},
 	{
@@ -314,18 +374,8 @@ func createTaskBatchSchema() map[string]any {
 	return map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"stories": map[string]any{
-				"description": "Legacy compatibility field. The list of tasks to create.",
-				"type":        "array",
-				"items":       taskSchema,
-			},
-			"proposed_stories": map[string]any{
-				"description": "Legacy compatibility alias for older task-plan payloads. If present, it is treated the same as tasks.",
-				"type":        "array",
-				"items":       taskSchema,
-			},
 			"tasks": map[string]any{
-				"description": "Preferred field. The list of tasks to create.",
+				"description": "The list of tasks to create.",
 				"type":        "array",
 				"items":       taskSchema,
 			},
@@ -335,5 +385,146 @@ func createTaskBatchSchema() map[string]any {
 				"items":       taskSchema,
 			},
 		},
+	}
+}
+
+func createTaskSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"name": map[string]any{
+				"type":        "string",
+				"description": "Task title",
+			},
+			"description": map[string]any{
+				"type":        "string",
+				"description": "Optional task description",
+			},
+			"task_type": map[string]any{
+				"type":        "string",
+				"description": "Optional task type such as feature, bug, or chore",
+			},
+			"estimate": map[string]any{
+				"type":        "integer",
+				"description": "Optional estimate value",
+			},
+			"priority": map[string]any{
+				"type":        "string",
+				"description": "Optional priority such as low, medium, high, or urgent",
+			},
+			"epic_id": map[string]any{
+				"type":        "string",
+				"description": "Optional epic ID to link the task to",
+			},
+			"team_id": map[string]any{
+				"type":        "string",
+				"description": "Team ID that owns the task",
+			},
+			"workflow_id": map[string]any{
+				"type":        "string",
+				"description": "Optional workflow ID override. Defaults to the resolved team workflow.",
+			},
+			"state_id": map[string]any{
+				"type":        "string",
+				"description": "Optional workflow state ID override. Defaults to the resolved workflow default state.",
+			},
+			"owner_member_id": map[string]any{
+				"type":        "string",
+				"description": "Optional workspace member ID to assign as owner",
+			},
+			"label_ids": map[string]any{
+				"type":        "array",
+				"description": "Optional label IDs to attach to the task",
+				"items":       map[string]any{"type": "string"},
+			},
+			"deadline": map[string]any{
+				"type":        "string",
+				"description": "Optional deadline as YYYY-MM-DD or RFC3339",
+			},
+		},
+		"required":             []string{"name", "team_id"},
+		"additionalProperties": false,
+	}
+}
+
+func ensureTaskLabelSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"name": map[string]any{
+				"type":        "string",
+				"description": "Label name to create or return, for example security.",
+			},
+			"team_id": map[string]any{
+				"type":        "string",
+				"description": "Optional team scope. Omit for a shared workspace label.",
+			},
+			"description": map[string]any{
+				"type":        "string",
+				"description": "Optional description used when the label is first created.",
+			},
+			"color": map[string]any{
+				"type":        "string",
+				"description": "Optional hex color used when the label is first created.",
+			},
+		},
+		"required":             []string{"name"},
+		"additionalProperties": false,
+	}
+}
+
+func listTasksSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"label_id": map[string]any{
+				"type":        "string",
+				"description": "Optional label ID filter.",
+			},
+			"team_id": map[string]any{
+				"type":        "string",
+				"description": "Optional team ID filter.",
+			},
+			"open_only": map[string]any{
+				"type":        "boolean",
+				"description": "When true, only return non-completed, non-archived tasks.",
+			},
+			"include_descriptions": map[string]any{
+				"type":        "boolean",
+				"description": "When true, include task descriptions in the response.",
+			},
+			"include_comments": map[string]any{
+				"type":        "boolean",
+				"description": "When true, include recent task comments in the response.",
+			},
+			"detail_level": map[string]any{
+				"type":        "string",
+				"description": "Optional response shape. Use compact for bounded task rows with short description/comment excerpts.",
+				"enum":        []string{"summary", "compact", "full"},
+			},
+			"limit": map[string]any{
+				"type":        "integer",
+				"description": "Maximum tasks to return. Defaults to 50, max 100.",
+			},
+		},
+		"additionalProperties": false,
+	}
+}
+
+func addTaskCommentSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"task_id": map[string]any{
+				"type":        "string",
+				"description": "Optional task ID. Omit to use the current task target when available.",
+			},
+			"content": map[string]any{
+				"type":        "string",
+				"description": "The markdown comment body.",
+			},
+		},
+		"required":             []string{"content"},
+		"additionalProperties": false,
 	}
 }

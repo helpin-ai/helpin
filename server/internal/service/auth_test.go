@@ -11,6 +11,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/auth"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	apptotp "github.com/helpin-ai/helpin/server/internal/totp"
 )
 
 // newAuthService is a test helper that creates a fresh AuthService with an
@@ -21,7 +22,7 @@ func newAuthService(t *testing.T) (*AuthService, *repository.UserRepository) {
 	userRepo := repository.NewUserRepository(db)
 	resetRepo := repository.NewPasswordResetTokenRepository(db)
 	jwtMgr := auth.NewJWTManager("test-secret")
-	svc := NewAuthService(userRepo, resetRepo, nil, jwtMgr, nil, nil, "http://localhost:5173")
+	svc := NewAuthService(userRepo, resetRepo, nil, jwtMgr, nil, nil, "http://localhost:5173", []byte("0123456789abcdef0123456789abcdef"))
 	return svc, userRepo
 }
 
@@ -48,7 +49,7 @@ func newAuthServiceWithResetEmail(t *testing.T) (*AuthService, *repository.UserR
 	resetRepo := repository.NewPasswordResetTokenRepository(db)
 	jwtMgr := auth.NewJWTManager("test-secret")
 	emailSender := &stubAuthEmailSender{}
-	svc := NewAuthService(userRepo, resetRepo, nil, jwtMgr, nil, emailSender, "http://localhost:5173")
+	svc := NewAuthService(userRepo, resetRepo, nil, jwtMgr, nil, emailSender, "http://localhost:5173", []byte("0123456789abcdef0123456789abcdef"))
 	return svc, userRepo, resetRepo, emailSender
 }
 
@@ -187,6 +188,9 @@ func TestSignin(t *testing.T) {
 		if resp.RefreshToken == "" {
 			t.Error("expected non-empty refresh token")
 		}
+		if resp.User == nil {
+			t.Fatal("expected user profile in signin response")
+		}
 		if resp.User.Email != "bob@example.com" {
 			t.Errorf("expected email bob@example.com, got %s", resp.User.Email)
 		}
@@ -259,6 +263,333 @@ func TestSignin(t *testing.T) {
 					t.Errorf("expected 'required' in error message, got: %v", err)
 				}
 			})
+		}
+	})
+}
+
+func TestTwoFactorAuthenticationFlow(t *testing.T) {
+	t.Run("signin requires 2fa after setup verification", func(t *testing.T) {
+		svc, _ := newAuthService(t)
+		ctx := context.Background()
+
+		signupResp, err := svc.Signup(ctx, model.SignupRequest{
+			Email:    "twofa@example.com",
+			Password: "password123",
+			FullName: "Two Factor User",
+		})
+		if err != nil {
+			t.Fatalf("signup failed: %v", err)
+		}
+
+		setupResp, err := svc.Setup2FA(ctx, signupResp.User.ID, model.TwoFASetupRequest{Password: "password123"})
+		if err != nil {
+			t.Fatalf("setup 2fa failed: %v", err)
+		}
+		if len(setupResp.RecoveryCodes) != recoveryCodeCount {
+			t.Fatalf("expected %d recovery codes, got %d", recoveryCodeCount, len(setupResp.RecoveryCodes))
+		}
+
+		parsed, err := url.Parse(setupResp.ProvisioningURI)
+		if err != nil {
+			t.Fatalf("parse provisioning uri: %v", err)
+		}
+		secret := parsed.Query().Get("secret")
+		code, err := apptotp.GenerateCode(secret, time.Now())
+		if err != nil {
+			t.Fatalf("generate totp code: %v", err)
+		}
+
+		if err := svc.Verify2FASetup(ctx, signupResp.User.ID, model.TwoFAVerifyRequest{TOTPCode: code}); err != nil {
+			t.Fatalf("verify 2fa setup failed: %v", err)
+		}
+
+		signinResp, err := svc.Signin(ctx, model.SigninRequest{
+			Email:      "twofa@example.com",
+			Password:   "password123",
+			RememberMe: true,
+		})
+		if err != nil {
+			t.Fatalf("signin failed: %v", err)
+		}
+		if !signinResp.Requires2FA {
+			t.Fatal("expected signin to require 2fa")
+		}
+		if signinResp.TwoFAToken == "" {
+			t.Fatal("expected short-lived 2fa token")
+		}
+		if signinResp.AccessToken != "" || signinResp.RefreshToken != "" {
+			t.Fatal("did not expect full auth tokens before 2fa verification")
+		}
+
+		secondCode, err := apptotp.GenerateCode(secret, time.Now())
+		if err != nil {
+			t.Fatalf("generate second totp code: %v", err)
+		}
+
+		finalResp, err := svc.Verify2FASignin(ctx, model.TwoFASigninRequest{
+			TwoFAToken: signinResp.TwoFAToken,
+			TOTPCode:   secondCode,
+		})
+		if err != nil {
+			t.Fatalf("verify 2fa signin failed: %v", err)
+		}
+		if finalResp.AccessToken == "" || finalResp.RefreshToken == "" {
+			t.Fatal("expected auth tokens after successful 2fa verification")
+		}
+		if finalResp.User.Email != "twofa@example.com" {
+			t.Fatalf("expected authenticated user email, got %q", finalResp.User.Email)
+		}
+	})
+
+	t.Run("recovery codes can complete signin only once", func(t *testing.T) {
+		svc, _ := newAuthService(t)
+		ctx := context.Background()
+
+		signupResp, err := svc.Signup(ctx, model.SignupRequest{
+			Email:    "recovery@example.com",
+			Password: "password123",
+			FullName: "Recovery User",
+		})
+		if err != nil {
+			t.Fatalf("signup failed: %v", err)
+		}
+
+		setupResp, err := svc.Setup2FA(ctx, signupResp.User.ID, model.TwoFASetupRequest{Password: "password123"})
+		if err != nil {
+			t.Fatalf("setup 2fa failed: %v", err)
+		}
+		parsed, err := url.Parse(setupResp.ProvisioningURI)
+		if err != nil {
+			t.Fatalf("parse provisioning uri: %v", err)
+		}
+		code, err := apptotp.GenerateCode(parsed.Query().Get("secret"), time.Now())
+		if err != nil {
+			t.Fatalf("generate setup code: %v", err)
+		}
+		if err := svc.Verify2FASetup(ctx, signupResp.User.ID, model.TwoFAVerifyRequest{TOTPCode: code}); err != nil {
+			t.Fatalf("verify 2fa setup failed: %v", err)
+		}
+
+		signinResp, err := svc.Signin(ctx, model.SigninRequest{
+			Email:    "recovery@example.com",
+			Password: "password123",
+		})
+		if err != nil {
+			t.Fatalf("signin failed: %v", err)
+		}
+
+		recoveryCode := setupResp.RecoveryCodes[0]
+		if _, err := svc.Verify2FASignin(ctx, model.TwoFASigninRequest{
+			TwoFAToken:   signinResp.TwoFAToken,
+			RecoveryCode: recoveryCode,
+		}); err != nil {
+			t.Fatalf("verify 2fa signin with recovery code failed: %v", err)
+		}
+
+		signinResp, err = svc.Signin(ctx, model.SigninRequest{
+			Email:    "recovery@example.com",
+			Password: "password123",
+		})
+		if err != nil {
+			t.Fatalf("second signin failed: %v", err)
+		}
+		if _, err := svc.Verify2FASignin(ctx, model.TwoFASigninRequest{
+			TwoFAToken:   signinResp.TwoFAToken,
+			RecoveryCode: recoveryCode,
+		}); err == nil {
+			t.Fatal("expected reused recovery code to fail")
+		}
+	})
+
+	t.Run("regenerating recovery codes invalidates prior codes", func(t *testing.T) {
+		svc, _ := newAuthService(t)
+		ctx := context.Background()
+
+		signupResp, err := svc.Signup(ctx, model.SignupRequest{
+			Email:    "rotate@example.com",
+			Password: "password123",
+			FullName: "Rotate Codes",
+		})
+		if err != nil {
+			t.Fatalf("signup failed: %v", err)
+		}
+
+		setupResp, err := svc.Setup2FA(ctx, signupResp.User.ID, model.TwoFASetupRequest{Password: "password123"})
+		if err != nil {
+			t.Fatalf("setup 2fa failed: %v", err)
+		}
+
+		parsed, err := url.Parse(setupResp.ProvisioningURI)
+		if err != nil {
+			t.Fatalf("parse provisioning uri: %v", err)
+		}
+		secret := parsed.Query().Get("secret")
+		code, err := apptotp.GenerateCode(secret, time.Now())
+		if err != nil {
+			t.Fatalf("generate setup code: %v", err)
+		}
+		if err := svc.Verify2FASetup(ctx, signupResp.User.ID, model.TwoFAVerifyRequest{TOTPCode: code}); err != nil {
+			t.Fatalf("verify 2fa setup failed: %v", err)
+		}
+
+		regenCode, err := apptotp.GenerateCode(secret, time.Now())
+		if err != nil {
+			t.Fatalf("generate regeneration code: %v", err)
+		}
+		regenerated, err := svc.RegenerateRecoveryCodes(ctx, signupResp.User.ID, model.TwoFARegenerateRequest{
+			Password: "password123",
+			TOTPCode: regenCode,
+		})
+		if err != nil {
+			t.Fatalf("regenerate recovery codes failed: %v", err)
+		}
+		if len(regenerated.RecoveryCodes) != recoveryCodeCount {
+			t.Fatalf("expected %d regenerated recovery codes, got %d", recoveryCodeCount, len(regenerated.RecoveryCodes))
+		}
+
+		signinResp, err := svc.Signin(ctx, model.SigninRequest{
+			Email:    "rotate@example.com",
+			Password: "password123",
+		})
+		if err != nil {
+			t.Fatalf("signin failed: %v", err)
+		}
+		if _, err := svc.Verify2FASignin(ctx, model.TwoFASigninRequest{
+			TwoFAToken:   signinResp.TwoFAToken,
+			RecoveryCode: setupResp.RecoveryCodes[0],
+		}); err == nil {
+			t.Fatal("expected original recovery code to fail after regeneration")
+		}
+
+		signinResp, err = svc.Signin(ctx, model.SigninRequest{
+			Email:    "rotate@example.com",
+			Password: "password123",
+		})
+		if err != nil {
+			t.Fatalf("second signin failed: %v", err)
+		}
+		if _, err := svc.Verify2FASignin(ctx, model.TwoFASigninRequest{
+			TwoFAToken:   signinResp.TwoFAToken,
+			RecoveryCode: regenerated.RecoveryCodes[0],
+		}); err != nil {
+			t.Fatalf("expected regenerated recovery code to succeed: %v", err)
+		}
+	})
+
+	t.Run("setup cannot replace already enabled 2fa", func(t *testing.T) {
+		svc, _ := newAuthService(t)
+		ctx := context.Background()
+
+		signupResp, err := svc.Signup(ctx, model.SignupRequest{
+			Email:    "preserve@example.com",
+			Password: "password123",
+			FullName: "Preserve Existing 2FA",
+		})
+		if err != nil {
+			t.Fatalf("signup failed: %v", err)
+		}
+
+		setupResp, err := svc.Setup2FA(ctx, signupResp.User.ID, model.TwoFASetupRequest{Password: "password123"})
+		if err != nil {
+			t.Fatalf("initial setup 2fa failed: %v", err)
+		}
+
+		parsed, err := url.Parse(setupResp.ProvisioningURI)
+		if err != nil {
+			t.Fatalf("parse provisioning uri: %v", err)
+		}
+		secret := parsed.Query().Get("secret")
+		code, err := apptotp.GenerateCode(secret, time.Now())
+		if err != nil {
+			t.Fatalf("generate setup code: %v", err)
+		}
+		if err := svc.Verify2FASetup(ctx, signupResp.User.ID, model.TwoFAVerifyRequest{TOTPCode: code}); err != nil {
+			t.Fatalf("verify 2fa setup failed: %v", err)
+		}
+
+		if _, err := svc.Setup2FA(ctx, signupResp.User.ID, model.TwoFASetupRequest{Password: "password123"}); err == nil {
+			t.Fatal("expected second setup attempt to fail once 2fa is enabled")
+		} else if !strings.Contains(err.Error(), "already enabled") {
+			t.Fatalf("expected already enabled error, got %v", err)
+		}
+
+		signinResp, err := svc.Signin(ctx, model.SigninRequest{
+			Email:    "preserve@example.com",
+			Password: "password123",
+		})
+		if err != nil {
+			t.Fatalf("signin failed: %v", err)
+		}
+		if !signinResp.Requires2FA {
+			t.Fatal("expected signin to still require 2fa")
+		}
+
+		signinCode, err := apptotp.GenerateCode(secret, time.Now())
+		if err != nil {
+			t.Fatalf("generate signin code: %v", err)
+		}
+		if _, err := svc.Verify2FASignin(ctx, model.TwoFASigninRequest{
+			TwoFAToken: signinResp.TwoFAToken,
+			TOTPCode:   signinCode,
+		}); err != nil {
+			t.Fatalf("expected existing 2fa secret to remain valid: %v", err)
+		}
+	})
+
+	t.Run("disabling 2fa restores password-only signin", func(t *testing.T) {
+		svc, _ := newAuthService(t)
+		ctx := context.Background()
+
+		signupResp, err := svc.Signup(ctx, model.SignupRequest{
+			Email:    "disable@example.com",
+			Password: "password123",
+			FullName: "Disable Two Factor",
+		})
+		if err != nil {
+			t.Fatalf("signup failed: %v", err)
+		}
+
+		setupResp, err := svc.Setup2FA(ctx, signupResp.User.ID, model.TwoFASetupRequest{Password: "password123"})
+		if err != nil {
+			t.Fatalf("setup 2fa failed: %v", err)
+		}
+
+		parsed, err := url.Parse(setupResp.ProvisioningURI)
+		if err != nil {
+			t.Fatalf("parse provisioning uri: %v", err)
+		}
+		code, err := apptotp.GenerateCode(parsed.Query().Get("secret"), time.Now())
+		if err != nil {
+			t.Fatalf("generate setup code: %v", err)
+		}
+		if err := svc.Verify2FASetup(ctx, signupResp.User.ID, model.TwoFAVerifyRequest{TOTPCode: code}); err != nil {
+			t.Fatalf("verify 2fa setup failed: %v", err)
+		}
+
+		if err := svc.Disable2FA(ctx, signupResp.User.ID, model.TwoFADisableRequest{Password: "password123"}); err != nil {
+			t.Fatalf("disable 2fa failed: %v", err)
+		}
+
+		status, err := svc.Get2FAStatus(ctx, signupResp.User.ID)
+		if err != nil {
+			t.Fatalf("get 2fa status failed: %v", err)
+		}
+		if status.Enabled {
+			t.Fatal("expected 2fa status to be disabled")
+		}
+
+		signinResp, err := svc.Signin(ctx, model.SigninRequest{
+			Email:    "disable@example.com",
+			Password: "password123",
+		})
+		if err != nil {
+			t.Fatalf("signin failed: %v", err)
+		}
+		if signinResp.Requires2FA {
+			t.Fatal("did not expect 2fa challenge after disabling 2fa")
+		}
+		if signinResp.AccessToken == "" || signinResp.RefreshToken == "" {
+			t.Fatal("expected direct auth tokens after disabling 2fa")
 		}
 	})
 }
@@ -562,6 +893,9 @@ func TestChangePassword(t *testing.T) {
 		})
 		if err != nil {
 			t.Fatalf("signin with new password failed: %v", err)
+		}
+		if resp.User == nil {
+			t.Fatal("expected user profile in signin response")
 		}
 		if resp.User.Email != "jane@example.com" {
 			t.Errorf("expected email jane@example.com, got %s", resp.User.Email)

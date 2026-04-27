@@ -147,9 +147,10 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     drafts: persistedDrafts,
 
     setNavFilter: (filter) => {
+      const openByDefault = filter === 'my_inbox' || filter === 'unassigned' || filter === 'mentions';
       set({
         navFilter: filter,
-        statusFilter: 'all',
+        statusFilter: openByDefault ? 'open' : 'all',
         selectedMailboxId: 'all',
         selectedConversationId: null,
         activePanel: 'list',
@@ -167,10 +168,10 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
       // not mentions-within-that-inbox. Mirrors setNavFilter which
       // already resets selectedMailboxId.
       set({
+        navFilter: 'all',
         selectedMailboxId: mailboxId,
         selectedConversationId: null,
         activePanel: 'list',
-        navFilter: 'all',
       });
       savePersisted({
         navCollapsed: get().navCollapsed,

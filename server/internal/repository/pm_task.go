@@ -312,6 +312,9 @@ func (r *PMTaskRepository) List(ctx context.Context, workspaceID string, filters
 	query = applyTaskStringFilter(query, "pm_tasks.requester_id", filters.RequesterID)
 	query = applyTaskStringFilter(query, "pm_tasks.requester_member_id", filters.RequesterMemberID)
 	query = applyTaskStringFilter(query, "pm_tasks.severity", filters.Severity)
+	if filters.Completed != nil {
+		query = query.Where("pm_tasks.completed = ?", *filters.Completed)
+	}
 	if filters.Blocked != nil && *filters.Blocked != "" {
 		query = r.applyDerivedBlockedFilter(query, *filters.Blocked == "true")
 	}
@@ -405,6 +408,20 @@ func (r *PMTaskRepository) GetRawByID(ctx context.Context, id string) (*model.PM
 	return &task, nil
 }
 
+// ListOwnerUserIDs returns distinct task owner user IDs from the join table.
+func (r *PMTaskRepository) ListOwnerUserIDs(ctx context.Context, taskID string) ([]string, error) {
+	var userIDs []string
+	if err := r.db.WithContext(ctx).
+		Table("pm_task_owners").
+		Where("task_id = ?", taskID).
+		Distinct().
+		Order("user_id ASC").
+		Pluck("user_id", &userIDs).Error; err != nil {
+		return nil, fmt.Errorf("list task owner user ids: %w", err)
+	}
+	return userIDs, nil
+}
+
 // ListByIDs returns raw tasks by ID for a workspace.
 func (r *PMTaskRepository) ListByIDs(ctx context.Context, workspaceID string, ids []string) ([]model.PMTask, error) {
 	if len(ids) == 0 {
@@ -418,6 +435,40 @@ func (r *PMTaskRepository) ListByIDs(ctx context.Context, workspaceID string, id
 		return nil, fmt.Errorf("list tasks by ids: %w", err)
 	}
 	return tasks, nil
+}
+
+// ListByDisplayIDs returns raw tasks by display ID for a workspace.
+func (r *PMTaskRepository) ListByDisplayIDs(ctx context.Context, workspaceID string, displayIDs []int) ([]model.PMTask, error) {
+	if len(displayIDs) == 0 {
+		return []model.PMTask{}, nil
+	}
+
+	var tasks []model.PMTask
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND display_id IN ?", workspaceID, displayIDs).
+		Find(&tasks).Error; err != nil {
+		return nil, fmt.Errorf("list tasks by display ids: %w", err)
+	}
+	return tasks, nil
+}
+
+func (r *PMTaskRepository) ListStateNamesByIDs(ctx context.Context, ids []string) (map[string]string, error) {
+	if len(ids) == 0 {
+		return map[string]string{}, nil
+	}
+
+	var states []model.PMWorkflowState
+	if err := r.db.WithContext(ctx).
+		Where("id IN ?", ids).
+		Find(&states).Error; err != nil {
+		return nil, fmt.Errorf("list workflow states by ids: %w", err)
+	}
+
+	result := make(map[string]string, len(states))
+	for _, state := range states {
+		result[state.ID] = state.Name
+	}
+	return result, nil
 }
 
 // ListByEpicAndExternalIDs returns raw tasks for an epic keyed by external IDs.
@@ -942,6 +993,7 @@ func (r *PMTaskRepository) ListColumnTasks(ctx context.Context, stateID string, 
 // collectAndEnrich collects related IDs from tasks, batch-loads names/labels, and returns enriched BoardTask slices.
 func (r *PMTaskRepository) collectAndEnrich(ctx context.Context, tasks []model.PMTask, options taskEnrichOptions) []model.BoardTask {
 	tasks = r.applyDependencySummaries(ctx, tasks)
+	tasks = r.applyLatestRunMetadata(ctx, tasks)
 	epicIDs := map[string]struct{}{}
 	sprintIDs := map[string]struct{}{}
 	ownerMemberIDs := map[string]struct{}{}
@@ -985,6 +1037,69 @@ type stateInfo struct {
 	Name      string
 	StateType string
 	Color     string
+}
+
+// latestRunRow is a scan row for the most recent agent_run per task.
+type latestRunRow struct {
+	TargetID    string     `gorm:"column:target_id"`
+	ID          string     `gorm:"column:id"`
+	AgentID     string     `gorm:"column:agent_id"`
+	Status      string     `gorm:"column:status"`
+	PauseReason string     `gorm:"column:pause_reason"`
+	StartedAt   *time.Time `gorm:"column:started_at"`
+	CreatedAt   time.Time  `gorm:"column:created_at"`
+}
+
+// applyLatestRunMetadata populates latest task-targeted run metadata on each
+// task so the UI can show the most recent run agent without task assignment
+// state.
+func (r *PMTaskRepository) applyLatestRunMetadata(ctx context.Context, tasks []model.PMTask) []model.PMTask {
+	if len(tasks) == 0 {
+		return tasks
+	}
+	if r == nil || r.db == nil || !r.db.Migrator().HasTable("agent_runs") {
+		return tasks
+	}
+	ids := make([]string, len(tasks))
+	for i, t := range tasks {
+		ids[i] = t.ID
+	}
+	var rows []latestRunRow
+	if err := r.db.WithContext(ctx).
+		Table("agent_runs").
+		Select("target_id, id, agent_id, status, pause_reason, started_at, created_at").
+		Where("target_type = ? AND target_id IN ?", "task", ids).
+		Order("target_id, COALESCE(started_at, created_at) DESC, created_at DESC").
+		Find(&rows).Error; err != nil {
+		slog.WarnContext(ctx, "load latest task agent runs", "error", err)
+		return tasks
+	}
+	latest := make(map[string]latestRunRow, len(rows))
+	for _, row := range rows {
+		if _, ok := latest[row.TargetID]; !ok {
+			latest[row.TargetID] = row
+		}
+	}
+	for i := range tasks {
+		row, ok := latest[tasks[i].ID]
+		if !ok {
+			continue
+		}
+		runAt := row.CreatedAt
+		if row.StartedAt != nil {
+			runAt = *row.StartedAt
+		}
+		runID, runAgentID, runStatus, latestRunAt := row.ID, row.AgentID, row.Status, runAt.UTC()
+		tasks[i].LatestRunID = &runID
+		tasks[i].LatestRunAgentID = &runAgentID
+		tasks[i].LatestRunStatus = &runStatus
+		if row.PauseReason != "" && row.PauseReason != "none" {
+			pauseReason := row.PauseReason
+			tasks[i].LatestRunPauseReason = &pauseReason
+		}
+		tasks[i].LatestRunAt = &latestRunAt
+	}
+	return tasks
 }
 
 // enrichBoardTasks maps epic/owner names, state info, and labels onto raw tasks for board display.
@@ -1786,30 +1901,6 @@ func (r *PMTaskRepository) CountByWorkflowState(ctx context.Context, stateID str
 	return count, nil
 }
 
-// CountAssignedToAgent returns the number of tasks explicitly assigned to an agent.
-func (r *PMTaskRepository) CountAssignedToAgent(ctx context.Context, workspaceID, agentID string) (int64, error) {
-	var count int64
-	if err := r.db.WithContext(ctx).
-		Model(&model.PMTask{}).
-		Where("workspace_id = ? AND assigned_agent_id = ?", workspaceID, agentID).
-		Count(&count).Error; err != nil {
-		return 0, fmt.Errorf("count tasks assigned to agent: %w", err)
-	}
-	return count, nil
-}
-
-// CountAssignedTasks returns the number of tasks with any assigned agent.
-func (r *PMTaskRepository) CountAssignedTasks(ctx context.Context, workspaceID string) (int64, error) {
-	var count int64
-	if err := r.db.WithContext(ctx).
-		Model(&model.PMTask{}).
-		Where("workspace_id = ? AND assigned_agent_id IS NOT NULL", workspaceID).
-		Count(&count).Error; err != nil {
-		return 0, fmt.Errorf("count tasks assigned to any agent: %w", err)
-	}
-	return count, nil
-}
-
 // UpdateStartedCompleted computes and updates started/completed fields from state type.
 func (r *PMTaskRepository) UpdateStartedCompleted(ctx context.Context, taskID string) error {
 	var row struct {
@@ -1869,6 +1960,7 @@ func (r *PMTaskRepository) UpdateSprintID(ctx context.Context, taskID string, sp
 
 func (r *PMTaskRepository) buildTaskDetail(ctx context.Context, task model.PMTask) (*model.TaskDetail, error) {
 	task = r.applyDependencySummaries(ctx, []model.PMTask{task})[0]
+	task = r.applyLatestRunMetadata(ctx, []model.PMTask{task})[0]
 
 	var owners []model.User
 	if err := r.db.WithContext(ctx).

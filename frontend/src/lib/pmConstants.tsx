@@ -1,15 +1,16 @@
 /* eslint-disable react-refresh/only-export-components */
-import type { ComponentType, SVGProps } from 'react';
 import {
   ArrowReloadHorizontalIcon,
   PriorityIcon as PMPriorityIcon,
   SeverityIcon as PMSeverityIcon,
   StateTypeIcon as PMStateTypeIcon,
   TaskTypeIcon as PMTaskTypeIcon,
+  TaskTypeTileIcon as PMTaskTypeTileIcon,
 } from '@/lib/pmIcons';
+import type { IconComponent } from '@/lib/icons';
 import type { ObjectiveState, Priority, Severity, SprintStatus, StateType, TaskType } from './pmTypes';
 
-type ConfigIcon = ComponentType<SVGProps<SVGSVGElement>>;
+type ConfigIcon = IconComponent;
 
 // ── Priority icons & colors ────────────────────────────────────────
 
@@ -194,22 +195,28 @@ export const OBJECTIVE_STATE_CONFIG: Record<
 
 export const TASK_TYPE_CONFIG: Record<
   TaskType,
-  { color: string; label: string; icon: ConfigIcon }
+  { color: string; swatch: string; label: string; icon: ConfigIcon; tileIcon: ConfigIcon }
 > = {
   feature: {
-    color: 'text-amber-500',
+    color: 'text-[#ED8B38]',
+    swatch: 'bg-[#ED8B38]',
     label: 'Feature',
     icon: (props) => <PMTaskTypeIcon taskType="feature" {...props} />,
+    tileIcon: (props) => <PMTaskTypeTileIcon taskType="feature" {...props} />,
   },
   bug: {
-    color: 'text-red-500',
+    color: 'text-[#E24A3B]',
+    swatch: 'bg-[#E24A3B]',
     label: 'Bug',
     icon: (props) => <PMTaskTypeIcon taskType="bug" {...props} />,
+    tileIcon: (props) => <PMTaskTypeTileIcon taskType="bug" {...props} />,
   },
   chore: {
-    color: 'text-indigo-500',
+    color: 'text-[#3B82F6]',
+    swatch: 'bg-[#3B82F6]',
     label: 'Chore',
     icon: (props) => <PMTaskTypeIcon taskType="chore" {...props} />,
+    tileIcon: (props) => <PMTaskTypeTileIcon taskType="chore" {...props} />,
   },
 };
 
@@ -224,6 +231,16 @@ export function TaskTypeIcon({
   className?: string;
 }) {
   return <PMTaskTypeIcon taskType={taskType} className={className} />;
+}
+
+export function TaskTypeTileIcon({
+  taskType,
+  className = 'h-10 w-10',
+}: {
+  taskType: TaskType;
+  className?: string;
+}) {
+  return <PMTaskTypeTileIcon taskType={taskType} className={className} />;
 }
 
 /** @deprecated Use TaskTypeIcon */

@@ -50,8 +50,6 @@ interface TiptapEditorProps {
   teams?: Pick<WorkspaceTeam, 'id' | 'name' | 'handle'>[];
   members?: AssignableMember[];
   onEditorReady?: (editor: Editor | null) => void;
-  /** Use compact spacing (for task descriptions) */
-  compact?: boolean;
 }
 
 function ToolbarButton({
@@ -87,7 +85,7 @@ function ToolbarButton({
   );
 }
 
-export function TiptapEditor({ content, onChange, placeholder = "Start writing...", className, uploadConfig, onUploadStateChange, teams = [], members = [], onEditorReady, compact }: TiptapEditorProps) {
+export function TiptapEditor({ content, onChange, placeholder = "Start writing...", className, uploadConfig, onUploadStateChange, teams = [], members = [], onEditorReady }: TiptapEditorProps) {
   const uploadConfigRef = useRef(uploadConfig);
   uploadConfigRef.current = uploadConfig;
   const onUploadStateChangeRef = useRef(onUploadStateChange);
@@ -239,7 +237,7 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
     content,
     editorProps: {
       attributes: {
-        class: `prose prose-sm dark:prose-invert max-w-none focus:outline-none ${compact ? 'min-h-[80px] px-2.5 py-1.5 tiptap-compact' : 'min-h-[120px] px-4 py-3'}`,
+        class: 'tiptap prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[120px] px-4 py-3',
       },
       handlePaste: (_view, event) => {
         if (!uploadConfigRef.current) return false;

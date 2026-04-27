@@ -52,6 +52,7 @@ export interface SupportConversation {
   ai_resolution_type?: 'confirmed' | 'assumed' | null;
   ai_turn_count?: number;
   customer_requested_human_at?: string;
+  human_takeover?: boolean | null;
   last_message?: string;
   unread_count?: number;
   mailbox_name?: string | null;
@@ -304,8 +305,36 @@ export interface SupportMessage {
   email_notified_at?: string;
   email_read_at?: string;
   attachments?: SupportAttachmentPayload[];
+  /** Sanitized HTML body — present only for inbound email messages (via_channel === 'email'). */
+  html_body?: string;
+  /** Markdown-friendly plaintext body — present only for inbound email messages. */
+  stripped_text?: string;
+  /** Delivery status of the outbound email for this message. Only set when the message was sent via email. */
+  email_delivery_status?: 'sent' | 'delivered' | 'opened' | 'bounced' | 'spam_complaint' | string;
+  /** Human-readable bounce or complaint description. Empty unless delivery failed. */
+  email_delivery_error?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface SupportMessageEmailDetail {
+  id: string;
+  message_id: string;
+  direction: 'inbound' | 'outbound' | string;
+  subject: string;
+  from_email: string;
+  to_email: string;
+  rfc_message_id?: string;
+  in_reply_to?: string;
+  references_header?: string;
+  stripped_text?: string;
+  html_body?: string;
+  status: string;
+  delivered_at?: string;
+  opened_at?: string;
+  bounced_at?: string;
+  error_message?: string;
+  created_at: string;
 }
 
 export interface SupportAIPreviewHistoryTurn {
@@ -542,17 +571,37 @@ export interface LinkTaskRequest {
 }
 
 export interface CreateTaskFromConversationRequest {
+  name?: string;
+  description?: string;
   task_type?: 'feature' | 'bug' | 'chore';
-  priority?: 'none' | 'low' | 'medium' | 'high' | 'urgent';
-  team_id?: string;
   workflow_id?: string;
   workflow_state_id?: string;
+  epic_id?: string;
+  sprint_id?: string;
+  team_id?: string;
   owner_member_id?: string;
+  requester_member_id?: string;
+  estimate?: number;
+  priority?: 'none' | 'low' | 'medium' | 'high' | 'urgent';
+  severity?: 'none' | 'minor' | 'major' | 'critical';
+  deadline?: string;
+  position?: number;
+  blocked?: boolean;
+  blocker?: string;
+  template_id?: string;
+  external_id?: string;
+  owner_ids?: string[];
+  follower_ids?: string[];
+  label_ids?: string[];
+  attachment_ids?: string[];
+  checklist_items?: { text: string; position?: number }[];
+  external_links?: { url: string; title?: string }[];
 }
 
 export interface CreateTaskFromConversationResponse {
   task_id: string;
-  task_key?: string;
+  display_id: number;
+  task_key: string;
   task_name: string;
   summary?: string;
   copied_contact_associations: number;
@@ -566,6 +615,10 @@ export interface AssignConversationAgentRequest {
 
 export interface AssignConversationUserRequest {
   user_id: string | null;
+}
+
+export interface UpdateConversationCRMContactRequest {
+  crm_contact_id: string | null;
 }
 
 // ── Support Installation Settings ───────────────────────────────────
@@ -613,6 +666,7 @@ export interface SupportInboxSettings {
   email_fallback_enabled: boolean;
   email_fallback_delay_secs: number;
   email_fallback_from_name: string;
+  email_fallback_max_delivery_age_secs: number;
   brand_color: string;
   show_branding: boolean;
   color_scheme: string;
