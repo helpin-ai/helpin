@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/ordering"
 )
 
 // DocsCollectionRepository handles DB operations for docs collections.
@@ -225,11 +226,27 @@ func (r *DocsCollectionRepository) Delete(ctx context.Context, id string) error 
 			return fmt.Errorf("count destination collection bucket: %w", err)
 		}
 
+		// When useSortKey is on, find the max sort_key across both collections
+		// and docs in the destination bucket so reparented items append after
+		// all existing siblings.
+		var lastSortKey string
+		if r.useSortKey {
+			lastSortKey = maxSortKeyInBucketTx(tx, coll.SpaceID, destParentID)
+		}
+
 		for i, child := range children {
 			updates := map[string]interface{}{
 				"parent_collection_id": destParentID,
 				"depth":                destDepth,
 				"position":             int(destCollCount) + i,
+			}
+			if r.useSortKey {
+				key, err := ordering.Between(lastSortKey, "")
+				if err != nil {
+					return fmt.Errorf("compute sort key for reparented collection %s: %w", child.ID, err)
+				}
+				updates["sort_key"] = key
+				lastSortKey = key
 			}
 			if err := tx.Model(&model.DocsCollection{}).
 				Where("id = ? AND deleted_at IS NULL", child.ID).
@@ -266,6 +283,14 @@ func (r *DocsCollectionRepository) Delete(ctx context.Context, id string) error 
 			updates := map[string]interface{}{
 				"collection_id": destParentID,
 				"position":      int(destDocCount) + i,
+			}
+			if r.useSortKey {
+				key, err := ordering.Between(lastSortKey, "")
+				if err != nil {
+					return fmt.Errorf("compute sort key for reparented doc %s: %w", doc.ID, err)
+				}
+				updates["sort_key"] = key
+				lastSortKey = key
 			}
 			if err := tx.Model(&model.DocsDocument{}).
 				Where("id = ? AND deleted_at IS NULL", doc.ID).
@@ -678,6 +703,44 @@ func recalculateDescendantDepthsTx(tx *gorm.DB, rootID string, rootDepth int) er
 		frontier = next
 	}
 	return nil
+}
+
+// maxSortKeyInBucketTx returns the largest sort_key across both
+// collections and documents in the given bucket, or "" if empty.
+// Used during reparent to append items after all existing siblings.
+func maxSortKeyInBucketTx(tx *gorm.DB, spaceID string, parentID *string) string {
+	var collKey, docKey string
+
+	cq := tx.Model(&model.DocsCollection{}).
+		Select("COALESCE(MAX(sort_key), '')").
+		Where("space_id = ? AND deleted_at IS NULL", spaceID)
+	if parentID == nil {
+		cq = cq.Where("parent_collection_id IS NULL")
+	} else {
+		cq = cq.Where("parent_collection_id = ?", *parentID)
+	}
+	_ = cq.Row().Scan(&collKey)
+
+	dq := tx.Model(&model.DocsDocument{}).
+		Select("COALESCE(MAX(sort_key), '')").
+		Where("space_id = ? AND deleted_at IS NULL", spaceID)
+	if parentID == nil {
+		dq = dq.Where("collection_id IS NULL")
+	} else {
+		dq = dq.Where("collection_id = ?", *parentID)
+	}
+	_ = dq.Row().Scan(&docKey)
+
+	if collKey > docKey {
+		if collKey == "~" {
+			return ""
+		}
+		return collKey
+	}
+	if docKey == "~" {
+		return ""
+	}
+	return docKey
 }
 
 func normalizeBucketTx(tx *gorm.DB, spaceID string, parentID *string) error {
