@@ -290,7 +290,7 @@ export function DocumentsTable({
             <button
               type="button"
               onClick={() => cycleSort('updated_at')}
-              className="w-20 shrink-0 flex items-center gap-1 hover:text-foreground transition-colors"
+              className="w-24 shrink-0 flex items-center gap-1 hover:text-foreground transition-colors"
             >
               Updated
               {sortField === 'updated_at' && (sortDir === 'asc' ? <ArrowUp02Icon className="h-3 w-3" /> : <ArrowDown02Icon className="h-3 w-3" />)}
@@ -343,7 +343,7 @@ export function DocumentsTable({
                 <span className={`w-20 shrink-0 text-xs font-medium ${statusColor(doc.status)}`}>
                   {DOC_STATUS_LABELS[doc.status] ?? doc.status}
                 </span>
-                <span className="w-20 shrink-0 text-xs text-muted-foreground">
+                <span className="w-24 shrink-0 text-xs text-muted-foreground">
                   {timeAgo(doc.updated_at)}
                 </span>
                 {canEdit && (
