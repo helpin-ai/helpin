@@ -278,6 +278,35 @@ func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID st
 	return items, total, nil
 }
 
+func (r *SupportCoverageRepository) ListWorkspacesWithOpenGaps(ctx context.Context) ([]string, error) {
+	var workspaceIDs []string
+	if err := r.db.WithContext(ctx).
+		Model(&model.SupportCoverageGap{}).
+		Distinct("workspace_id").
+		Where("status = ? AND evidence_count > 0", model.SupportCoverageGapStatusOpen).
+		Pluck("workspace_id", &workspaceIDs).Error; err != nil {
+		return nil, fmt.Errorf("list workspaces with open gaps: %w", err)
+	}
+	return workspaceIDs, nil
+}
+
+func (r *SupportCoverageRepository) ListTopicsDueForEnrichment(ctx context.Context, workspaceID string, olderThan time.Duration, minEvidence int) ([]string, error) {
+	cutoff := time.Now().Add(-olderThan)
+	var topicIDs []string
+	if err := r.db.WithContext(ctx).
+		Table("support_coverage_gaps g").
+		Joins("JOIN support_coverage_topics t ON t.id = g.topic_id").
+		Where("g.workspace_id = ? AND g.status = ? AND g.topic_id IS NOT NULL", workspaceID, model.SupportCoverageGapStatusOpen).
+		Where("g.evidence_count >= ?", minEvidence).
+		Where("(t.last_enriched_at IS NULL OR t.last_enriched_at < ?)", cutoff).
+		Where("(t.cooldown_until IS NULL OR t.cooldown_until < ?)", time.Now()).
+		Distinct("g.topic_id").
+		Pluck("g.topic_id", &topicIDs).Error; err != nil {
+		return nil, fmt.Errorf("list topics due for enrichment: %w", err)
+	}
+	return topicIDs, nil
+}
+
 // GetGapDetail returns a gap with its evidence, suggestions, and related articles.
 func (r *SupportCoverageRepository) GetGapDetail(ctx context.Context, workspaceID, gapID string) (*model.SupportCoverageGapDetail, error) {
 	var gap model.SupportCoverageGap

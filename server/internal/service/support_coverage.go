@@ -2,11 +2,21 @@ package service
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/temporalapp"
+	"go.temporal.io/api/serviceerror"
+	tclient "go.temporal.io/sdk/client"
+)
+
+const (
+	coverageDailyBatchWorkflowID = "coverage-gap-daily-batch"
+	coverageDailyBatchSchedule   = "0 3 * * *"
 )
 
 // SupportCoverageService orchestrates gap detection, evidence
@@ -14,6 +24,7 @@ import (
 type SupportCoverageService struct {
 	coverageRepo *repository.SupportCoverageRepository
 	clusterer    *SupportCoverageClusterer
+	temporal     tclient.Client
 	logger       *slog.Logger
 }
 
@@ -26,6 +37,29 @@ func NewSupportCoverageService(
 		clusterer:    NewSupportCoverageClusterer(coverageRepo),
 		logger:       slog.Default().With("service", "support_coverage"),
 	}
+}
+
+func (s *SupportCoverageService) SetTemporalClient(client tclient.Client) {
+	s.temporal = client
+}
+
+func (s *SupportCoverageService) EnsureDailyEnrichment(ctx context.Context) error {
+	if s.temporal == nil {
+		return nil
+	}
+	_, err := s.temporal.ExecuteWorkflow(ctx, tclient.StartWorkflowOptions{
+		ID:           coverageDailyBatchWorkflowID,
+		TaskQueue:    temporalapp.QueueAutomation,
+		CronSchedule: coverageDailyBatchSchedule,
+	}, temporalapp.CoverageGapDailyBatchWorkflowType)
+	if err != nil {
+		var alreadyStarted *serviceerror.WorkflowExecutionAlreadyStarted
+		if errors.As(err, &alreadyStarted) {
+			return nil
+		}
+		return fmt.Errorf("start coverage gap daily enrichment workflow: %w", err)
+	}
+	return nil
 }
 
 // ProcessSupportEvent evaluates a persisted event against v1 rules
@@ -77,6 +111,14 @@ func (s *SupportCoverageService) GetSummary(ctx context.Context, workspaceID str
 // ListGaps returns gaps for a workspace.
 func (s *SupportCoverageService) ListGaps(ctx context.Context, workspaceID string, filter model.SupportCoverageGapFilter) ([]model.SupportCoverageGapListItem, int64, error) {
 	return s.coverageRepo.ListGaps(ctx, workspaceID, filter)
+}
+
+func (s *SupportCoverageService) ListWorkspacesWithOpenGaps(ctx context.Context) ([]string, error) {
+	return s.coverageRepo.ListWorkspacesWithOpenGaps(ctx)
+}
+
+func (s *SupportCoverageService) ListTopicsDueForEnrichment(ctx context.Context, workspaceID string, olderThan time.Duration, minEvidence int) ([]string, error) {
+	return s.coverageRepo.ListTopicsDueForEnrichment(ctx, workspaceID, olderThan, minEvidence)
 }
 
 // GetGapDetail returns a gap with its evidence, suggestions, and related articles.
