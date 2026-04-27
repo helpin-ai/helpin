@@ -12,7 +12,7 @@ import { automationService } from '@/lib/services/automationService';
 import { queryKeys } from '@/lib/queryKeys';
 import { getInitials } from '@/lib/utils';
 import { buildSupportInboxSearch } from '@/lib/supportInboxRouting';
-import { isPausedAgentRun } from '@/components/pm/agentRunConstants';
+import { ACTIVE_RUN_STATUSES, isPausedAgentRun } from '@/components/pm/agentRunConstants';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import {
   Sidebar as ShellSidebar,
@@ -92,7 +92,7 @@ export function Sidebar() {
   });
   const agentRuns = Array.isArray(agentRunsData?.data) ? agentRunsData.data : [];
   const agentAttentionCount = useMemo(
-    () => agentRuns.filter((run) => isPausedAgentRun(run) || run.approval_state === 'pending').length,
+    () => agentRuns.filter((run) => ACTIVE_RUN_STATUSES.has(run.status) && isPausedAgentRun(run)).length,
     [agentRuns],
   );
 
