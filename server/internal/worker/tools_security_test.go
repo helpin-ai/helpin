@@ -202,12 +202,52 @@ func TestSecurityScannerEnvUsesWritableRuntimeCache(t *testing.T) {
 	}
 	joined := strings.Join(env, "\n")
 	for _, expected := range []string{
+		"HOME=/tmp/helpin-security-cache/home",
 		"XDG_CACHE_HOME=/tmp/helpin-security-cache",
 		"SEMGREP_SETTINGS_FILE=/tmp/helpin-security-cache/semgrep/settings.yml",
 		"TRIVY_CACHE_DIR=/tmp/helpin-security-cache/trivy",
 	} {
 		if !strings.Contains(joined, expected) {
 			t.Fatalf("expected env to contain %q, got %v", expected, env)
+		}
+	}
+}
+
+func TestMergeSecurityScannerEnvOverridesReadOnlyImageDefaults(t *testing.T) {
+	base := []string{
+		"PATH=/usr/local/bin:/usr/bin",
+		"HOME=/home/app",
+		"XDG_CACHE_HOME=/app/.cache",
+		"SEMGREP_SETTINGS_FILE=/app/.cache/semgrep/settings.yml",
+	}
+	overrides := []string{
+		"HOME=/tmp/helpin-security-cache/home",
+		"XDG_CACHE_HOME=/tmp/helpin-security-cache",
+		"SEMGREP_SETTINGS_FILE=/tmp/helpin-security-cache/semgrep/settings.yml",
+	}
+
+	merged := mergeSecurityScannerEnv(base, overrides)
+	lookup := map[string]string{}
+	counts := map[string]int{}
+	for _, entry := range merged {
+		key, value, ok := strings.Cut(entry, "=")
+		if !ok {
+			continue
+		}
+		lookup[key] = value
+		counts[key]++
+	}
+
+	for key, want := range map[string]string{
+		"HOME":                  "/tmp/helpin-security-cache/home",
+		"XDG_CACHE_HOME":        "/tmp/helpin-security-cache",
+		"SEMGREP_SETTINGS_FILE": "/tmp/helpin-security-cache/semgrep/settings.yml",
+	} {
+		if got := lookup[key]; got != want {
+			t.Fatalf("expected %s=%q, got %q in %v", key, want, got, merged)
+		}
+		if counts[key] != 1 {
+			t.Fatalf("expected %s to appear once, got %d in %v", key, counts[key], merged)
 		}
 	}
 }
