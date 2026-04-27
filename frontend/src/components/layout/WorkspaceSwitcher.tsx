@@ -21,8 +21,43 @@ import {
 
 function workspaceRouteFromCurrentPath(pathname: string, slug: string): string {
   const match = pathname.match(/^\/w\/[^/]+\/?(.*)$/);
-  const rest = match?.[1] ? match[1] : 'dashboard';
+  const rest = sanitizeWorkspaceRouteRemainder(match?.[1] ? match[1] : 'dashboard');
   return `/w/${slug}/${rest}`;
+}
+
+function sanitizeWorkspaceRouteRemainder(rest: string): string {
+  const segments = rest.split('/').filter(Boolean);
+  if (segments.length === 0) return 'dashboard';
+
+  const [module, section] = segments;
+
+  if (module === 'crm') {
+    if (section === 'contacts') return 'crm/contacts';
+    if (section === 'companies') return 'crm/companies';
+    if (section === 'deals') return 'crm/deals';
+    return rest;
+  }
+
+  if (module === 'support') {
+    if (segments.length > 1 && section !== 'coverage') return 'support';
+    return rest;
+  }
+
+  if (module === 'docs') {
+    if (section === 'documents' || section === 'spaces') return 'docs';
+    return rest;
+  }
+
+  if (module === 'pm') {
+    if (section === 'tasks') return 'pm/tasks';
+    if (section === 'epics') return 'pm/epics';
+    if (section === 'objectives') return 'pm/objectives';
+    if (section === 'sprints') return 'pm/sprints';
+    if (section === 'coding-sessions') return 'pm/my-work';
+    return rest;
+  }
+
+  return rest;
 }
 
 export function WorkspaceSwitcher() {
