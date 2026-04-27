@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
 import { formatSessionTokenUsage } from '@/lib/agentTokenUsage';
-import { buildAutomationRunsPath } from '@/lib/automationUi';
+import { buildAutomationActivityPath } from '@/lib/automationUi';
 import type { CodingSession } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -158,8 +158,8 @@ export function CodingSessionHeader({
         <div className="flex items-center gap-1.5 pr-10">
           {workspaceSlug ? (
             <Button asChild variant="outline" size="sm">
-              <a href={buildAutomationRunsPath(workspaceSlug)}>
-                Back to runs
+              <a href={buildAutomationActivityPath(workspaceSlug)}>
+                Back to activity
               </a>
             </Button>
           ) : null}

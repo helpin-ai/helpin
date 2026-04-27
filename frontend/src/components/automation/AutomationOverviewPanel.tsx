@@ -10,7 +10,7 @@ import { useAgents, useAutomationActivity, useAutomationOverview, useAutomationT
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { ArrowRight01Icon, DashboardSpeed01Icon, SecurityCheckIcon, BotIcon } from '@/lib/icons';
 import { LINEAR_CARD_CLASS } from '@/components/settings/settingsConstants';
-import { buildAutomationActivityPath, buildAutomationFlowsPath, buildAutomationRunsPath } from '@/lib/automationUi';
+import { buildAutomationActivityPath, buildAutomationFlowsPath } from '@/lib/automationUi';
 import type {
   AutomationHealthStatus,
   AutomationInventoryItem,
@@ -375,7 +375,7 @@ function TriggerExecutionTable({
         <TableBody>
           {rows.map((row) => {
             const managePath = displayPath(row.manage_path, slug);
-            const runHref = row.run_id ? (agentRunsBasePath ?? buildAutomationRunsPath(slug)) : undefined;
+            const runHref = row.run_id ? (agentRunsBasePath ?? buildAutomationActivityPath(slug, { run_id: row.run_id })) : undefined;
             const triggerLabel = row.trigger_title || row.trigger_type || row.binding_title;
             return (
               <TableRow key={row.execution_id}>
@@ -425,7 +425,7 @@ function TriggerExecutionTable({
                       <div className="font-mono text-[11px] text-muted-foreground">{truncateMiddle(row.run_id, 8, 6)}</div>
                       {runHref && (
                         <a href={runHref} className="text-[11px] text-muted-foreground hover:text-foreground">
-                          Open runs
+                          Open run
                         </a>
                       )}
                     </div>

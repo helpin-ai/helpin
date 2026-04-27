@@ -46,6 +46,7 @@ export type AutomationActivitySearch = {
   status?: string;
   source?: string;
   reference_id?: string;
+  run_id?: string;
   fired_after?: string;
   fired_before?: string;
 };
@@ -743,7 +744,15 @@ export function AutomationActivityPage({
   const openRun = useCallback((runId: string) => {
     setSelectedRunId(runId);
     setDrawerOpen(true);
-  }, []);
+    onSearchChange({ run_id: runId });
+  }, [onSearchChange]);
+
+  useEffect(() => {
+    const runId = trimFilterValue(search.run_id);
+    if (!runId) return;
+    setSelectedRunId(runId);
+    setDrawerOpen(true);
+  }, [search.run_id]);
 
   const openFlow = useCallback((href: string) => {
     void navigate({ to: href });
@@ -1183,7 +1192,12 @@ export function AutomationActivityPage({
       <CodingSessionDrawer
         sessionId={selectedRunId}
         open={drawerOpen && !!selectedRunId}
-        onOpenChange={setDrawerOpen}
+        onOpenChange={(open) => {
+          setDrawerOpen(open);
+          if (!open && search.run_id) {
+            onSearchChange({ run_id: undefined });
+          }
+        }}
         title="Agent Run"
         description="Interactive transcript, approvals, artifacts, and session details."
       />
