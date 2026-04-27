@@ -309,7 +309,7 @@ function ArrangeCollectionNode({
    *  the user sees a compact preview instead of the full subtree. */
   forceCollapsed?: boolean
 }) {
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(false)
   const effectiveOpen = forceCollapsed ? false : open
   const canHostChildren = node.collection.depth < MAX_COLLECTION_DEPTH
 
