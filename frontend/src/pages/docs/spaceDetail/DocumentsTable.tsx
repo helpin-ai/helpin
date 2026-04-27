@@ -276,7 +276,7 @@ export function DocumentsTable({
               {sortField === 'title' && (sortDir === 'asc' ? <ArrowUp02Icon className="h-3 w-3" /> : <ArrowDown02Icon className="h-3 w-3" />)}
             </button>
             <span className="w-36 shrink-0">Owner</span>
-            <span className="w-28 shrink-0">Collection</span>
+            <span className="w-40 shrink-0">Collection</span>
             <button
               type="button"
               onClick={() => cycleSort('status')}
@@ -330,7 +330,7 @@ export function DocumentsTable({
                     </span>
                   ) : '—'}
                 </span>
-                <span className="w-28 shrink-0 truncate text-xs text-muted-foreground" title={doc.collection_id ? (collectionNames.get(doc.collection_id) ?? '') : ''}>
+                <span className="w-40 shrink-0 truncate text-xs text-muted-foreground" title={doc.collection_id ? (collectionNames.get(doc.collection_id) ?? '') : ''}>
                   {doc.collection_id ? (
                     <>
                       {(collectionDepths?.get(doc.collection_id) ?? 0) > 0 && (
