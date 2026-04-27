@@ -15,12 +15,33 @@ import (
 
 // DocsHelpcenterRepository handles DB operations for help center config, articles, slugs, and feedback.
 type DocsHelpcenterRepository struct {
-	db *gorm.DB
+	db         *gorm.DB
+	useSortKey bool
 }
 
 // NewDocsHelpcenterRepository creates a new DocsHelpcenterRepository.
-func NewDocsHelpcenterRepository(db *gorm.DB) *DocsHelpcenterRepository {
-	return &DocsHelpcenterRepository{db: db}
+func NewDocsHelpcenterRepository(db *gorm.DB, useSortKey ...bool) *DocsHelpcenterRepository {
+	enabled := false
+	if len(useSortKey) > 0 {
+		enabled = useSortKey[0]
+	}
+	return &DocsHelpcenterRepository{db: db, useSortKey: enabled}
+}
+
+// hcDocOrderBy returns the canonical ORDER BY for articles/docs in help center queries.
+func (r *DocsHelpcenterRepository) hcDocOrderBy() string {
+	if r.useSortKey {
+		return "d.sort_key ASC, d.id ASC"
+	}
+	return "d.position ASC, d.created_at ASC"
+}
+
+// hcCollOrderBy returns the canonical ORDER BY for collections in help center queries.
+func (r *DocsHelpcenterRepository) hcCollOrderBy() string {
+	if r.useSortKey {
+		return "sort_key ASC, id ASC"
+	}
+	return "position ASC, created_at ASC"
 }
 
 func normalizeDocsHelpcenterConfig(cfg *model.DocsHelpcenterConfig) {
@@ -244,7 +265,11 @@ func (r *DocsHelpcenterRepository) CountPublicArticlesByDocumentIDs(ctx context.
 
 // CreateArticle creates a help center article extension.
 func (r *DocsHelpcenterRepository) CreateArticle(ctx context.Context, art *model.DocsHelpcenterArticle) (*model.DocsHelpcenterArticle, error) {
-	if err := r.db.WithContext(ctx).Create(art).Error; err != nil {
+	q := r.db.WithContext(ctx)
+	if !r.useSortKey {
+		q = q.Omit("sort_key")
+	}
+	if err := q.Create(art).Error; err != nil {
 		return nil, fmt.Errorf("create helpcenter article: %w", err)
 	}
 	return art, nil
@@ -377,7 +402,7 @@ func (r *DocsHelpcenterRepository) ListPublicCollectionTranslations(ctx context.
 			AND ct.published_at IS NOT NULL
 			AND c.deleted_at IS NULL
 		`, spaceID, locale, model.DocsHelpcenterTranslationStatusPublished).
-		Order("c.position ASC, c.created_at ASC").
+		Order("c." + r.hcCollOrderBy()).
 		Scan(&translations).Error; err != nil {
 		return nil, fmt.Errorf("list public collection translations: %w", err)
 	}
@@ -504,7 +529,7 @@ func (r *DocsHelpcenterRepository) ListPublicArticleTranslationsBySpace(ctx cont
 				OR (hat.locale = cfg.default_locale AND p.document_id IS NOT NULL)
 			)
 		`, spaceID, locale, model.DocsHelpcenterTranslationStatusPublished, model.DocStatusPublished).
-		Order("d.position ASC, d.created_at ASC").
+		Order(r.hcDocOrderBy()).
 		Scan(&translations).Error; err != nil {
 		return nil, fmt.Errorf("list public article translations by space: %w", err)
 	}
@@ -683,7 +708,7 @@ func (r *DocsHelpcenterRepository) ListPublicArticleTranslationsByCollection(ctx
 				OR (hat.locale = cfg.default_locale AND p.document_id IS NOT NULL)
 			)
 		`, collectionID, locale, model.DocsHelpcenterTranslationStatusPublished, model.DocStatusPublished).
-		Order("d.position ASC, d.created_at ASC").
+		Order(r.hcDocOrderBy()).
 		Scan(&translations).Error; err != nil {
 		return nil, fmt.Errorf("list public article translations by collection: %w", err)
 	}
@@ -805,7 +830,7 @@ func (r *DocsHelpcenterRepository) ListSpaceNavigation(ctx context.Context, spac
 	var collections []model.DocsCollection
 	if err := r.db.WithContext(ctx).
 		Where("space_id = ? AND deleted_at IS NULL", spaceID).
-		Order("depth ASC, parent_collection_id ASC, position ASC, created_at ASC").
+		Order("depth ASC, parent_collection_id ASC, " + r.hcCollOrderBy()).
 		Find(&collections).Error; err != nil {
 		return nil, fmt.Errorf("list space collections: %w", err)
 	}
@@ -817,11 +842,16 @@ func (r *DocsHelpcenterRepository) ListSpaceNavigation(ctx context.Context, spac
 		Slug         string  `gorm:"column:slug"`
 		PublicID     string  `gorm:"column:public_id"`
 		Position     int     `gorm:"column:position"`
+		SortKey      string  `gorm:"column:sort_key"`
 		CollectionID *string `gorm:"column:collection_id"`
+	}
+	orderBy := "d.collection_id, d.position ASC, d.created_at ASC"
+	if r.useSortKey {
+		orderBy = "d.collection_id, d.sort_key ASC, d.id ASC"
 	}
 	var articles []navArticleRow
 	if err := r.db.WithContext(ctx).Raw(`
-		SELECT d.id, d.title, ha.slug, ha.public_id, d.position, d.collection_id
+		SELECT d.id, d.title, ha.slug, ha.public_id, d.position, d.sort_key, d.collection_id
 		FROM docs_documents d
 		JOIN docs_helpcenter_articles ha ON ha.document_id = d.id
 		WHERE d.space_id = ?
@@ -829,7 +859,7 @@ func (r *DocsHelpcenterRepository) ListSpaceNavigation(ctx context.Context, spac
 		  AND d.deleted_at IS NULL
 		  AND ha.public_published_at IS NOT NULL
 		  AND ha.slug != ''
-		ORDER BY d.collection_id, d.position ASC, d.created_at ASC
+		ORDER BY `+orderBy+`
 	`, spaceID).Scan(&articles).Error; err != nil {
 		return nil, fmt.Errorf("list space nav articles: %w", err)
 	}
@@ -844,6 +874,7 @@ func (r *DocsHelpcenterRepository) ListSpaceNavigation(ctx context.Context, spac
 			Slug:     a.Slug,
 			PublicID: a.PublicID,
 			Position: a.Position,
+			SortKey:  a.SortKey,
 		}
 		if a.CollectionID != nil {
 			articlesByCollection[*a.CollectionID] = append(articlesByCollection[*a.CollectionID], na)
@@ -897,6 +928,7 @@ func (r *DocsHelpcenterRepository) ListSpaceNavigation(ctx context.Context, spac
 			ParentCollectionID: c.ParentCollectionID,
 			Depth:              c.Depth,
 			Position:           c.Position,
+			SortKey:            c.SortKey,
 			Articles:           articlesByCollection[c.ID],
 		})
 	}
@@ -1014,7 +1046,7 @@ func (r *DocsHelpcenterRepository) ListWidgetCollections(ctx context.Context, sp
 	var collections []model.DocsCollection
 	if err := r.db.WithContext(ctx).
 		Where("space_id = ? AND deleted_at IS NULL", spaceID).
-		Order("depth ASC, parent_collection_id ASC, position ASC, created_at ASC").
+		Order("depth ASC, parent_collection_id ASC, " + r.hcCollOrderBy()).
 		Find(&collections).Error; err != nil {
 		return nil, fmt.Errorf("list widget collections: %w", err)
 	}

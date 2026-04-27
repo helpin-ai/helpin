@@ -4092,6 +4092,7 @@ func newPlannerApprovalTestDB(t *testing.T) *gorm.DB {
 			completed BOOLEAN NOT NULL DEFAULT 0,
 			completed_at DATETIME,
 			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
 			color TEXT,
 			health TEXT NOT NULL DEFAULT 'no_health',
 			health_comment TEXT,
@@ -4156,6 +4157,7 @@ func newPlannerApprovalTestDB(t *testing.T) *gorm.DB {
 			severity TEXT NOT NULL DEFAULT 'none',
 			deadline DATETIME,
 			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
 			started BOOLEAN NOT NULL DEFAULT 0,
 			started_at DATETIME,
 			completed BOOLEAN NOT NULL DEFAULT 0,
@@ -4188,6 +4190,7 @@ func newPlannerApprovalTestDB(t *testing.T) *gorm.DB {
 			default_review_days INTEGER,
 			description TEXT,
 			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
 			is_system BOOLEAN NOT NULL DEFAULT 0,
 			created_by TEXT NOT NULL,
 			created_at DATETIME,
@@ -6810,6 +6813,7 @@ func TestApplyApprovedInteractivePreviewReturnsPersistPRDAction(t *testing.T) {
 			completed BOOLEAN NOT NULL DEFAULT 0,
 			completed_at DATETIME,
 			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
 			color TEXT,
 			health TEXT NOT NULL DEFAULT 'no_health',
 			health_comment TEXT,
@@ -6874,6 +6878,7 @@ func TestApplyApprovedInteractivePreviewReturnsPersistPRDAction(t *testing.T) {
 			severity TEXT NOT NULL DEFAULT 'none',
 			deadline DATETIME,
 			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
 			started BOOLEAN NOT NULL DEFAULT 0,
 			started_at DATETIME,
 			completed BOOLEAN NOT NULL DEFAULT 0,
@@ -6906,6 +6911,7 @@ func TestApplyApprovedInteractivePreviewReturnsPersistPRDAction(t *testing.T) {
 			default_review_days INTEGER,
 			description TEXT,
 			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
 			is_system BOOLEAN NOT NULL DEFAULT 0,
 			created_by TEXT NOT NULL,
 			created_at DATETIME,
@@ -6977,7 +6983,7 @@ func TestApplyApprovedInteractivePreviewReturnsPersistPRDAction(t *testing.T) {
 
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
 	epicRepo := repository.NewPMEpicRepository(db)
-	docsDocRepo := repository.NewDocsDocumentRepository(db)
+	docsDocRepo := repository.NewDocsDocumentRepository(db, false)
 
 	run := &model.AgentRun{
 		ID:             "run-1",
@@ -7953,7 +7959,7 @@ func TestExecuteRunActivityPausesNativePlannerForReviewCheckpoint(t *testing.T) 
 	agentRepo := repository.NewAgentRepository(db)
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
 	epicRepo := repository.NewPMEpicRepository(db)
-	docsDocRepo := repository.NewDocsDocumentRepository(db)
+	docsDocRepo := repository.NewDocsDocumentRepository(db, false)
 	docsContentRepo := repository.NewDocsContentRepository(db)
 	docsLinkRepo := repository.NewDocsLinkRepository(db)
 	wsPublisher := &capturedEventPublisher{}
@@ -10344,7 +10350,7 @@ func TestApplyApprovedInteractivePreviewPersistsTaskDocAndLinksIt(t *testing.T) 
 	agentRepo := repository.NewAgentRepository(db)
 	taskRepo := repository.NewPMTaskRepository(db)
 	docsSpaceRepo := repository.NewDocsSpaceRepository(db)
-	docsDocRepo := repository.NewDocsDocumentRepository(db)
+	docsDocRepo := repository.NewDocsDocumentRepository(db, false)
 	docsContentRepo := repository.NewDocsContentRepository(db)
 	docsVersionRepo := repository.NewDocsVersionRepository(db)
 	docsLinkRepo := repository.NewDocsLinkRepository(db)
@@ -10607,7 +10613,7 @@ func TestBuildInitialInstructionsIncludesTaskPlanningDocForTaskExecutionRun(t *t
 	}
 
 	activity := &AgentRunActivities{
-		docsDocRepo:     repository.NewDocsDocumentRepository(db),
+		docsDocRepo:     repository.NewDocsDocumentRepository(db, false),
 		docsContentRepo: repository.NewDocsContentRepository(db),
 		docsLinkRepo:    repository.NewDocsLinkRepository(db),
 	}
@@ -10700,6 +10706,7 @@ func TestResolvePlanningRunInputClearsDeletedEpicSpecReferences(t *testing.T) {
 			completed BOOLEAN NOT NULL DEFAULT 0,
 			completed_at DATETIME,
 			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
 			color TEXT,
 			health TEXT NOT NULL DEFAULT 'no_health',
 			health_comment TEXT,
@@ -10796,7 +10803,7 @@ func TestResolvePlanningRunInputClearsDeletedEpicSpecReferences(t *testing.T) {
 	}
 
 	epicRepo := repository.NewPMEpicRepository(db)
-	docsDocRepo := repository.NewDocsDocumentRepository(db)
+	docsDocRepo := repository.NewDocsDocumentRepository(db, false)
 	docsVersionRepo := repository.NewDocsVersionRepository(db)
 
 	epic := &model.PMEpic{

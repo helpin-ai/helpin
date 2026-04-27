@@ -24,7 +24,7 @@ func TestDocsCollectionRepository_GetBySlug(t *testing.T) {
 		CreatedBy:   "user-1",
 	})
 
-	repo := NewDocsCollectionRepository(db)
+	repo := NewDocsCollectionRepository(db, false)
 	coll, err := repo.GetBySlug(ctx, "ws-1", "getting-started")
 	if err != nil {
 		t.Fatalf("GetBySlug: %v", err)
@@ -108,7 +108,7 @@ func TestDocsHelpcenterRepository_WidgetArticleLookupsUsePublicID(t *testing.T) 
 		t.Fatalf("UpsertArticlePublication: %v", err)
 	}
 
-	repo := NewDocsHelpcenterRepository(db)
+	repo := NewDocsHelpcenterRepository(db, false)
 
 	articles, err := repo.ListWidgetArticlesByCollectionID(ctx, "collection-1")
 	if err != nil {

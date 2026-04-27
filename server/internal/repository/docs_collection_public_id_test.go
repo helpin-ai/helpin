@@ -30,6 +30,7 @@ func setupDocsCollectionPublicIDRepoTestDB(t *testing.T) *gorm.DB {
 			description TEXT,
 			icon TEXT,
 			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
 			created_by TEXT NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME,
@@ -43,7 +44,7 @@ func setupDocsCollectionPublicIDRepoTestDB(t *testing.T) *gorm.DB {
 
 func TestDocsCollectionRepositoryGetByPublicID(t *testing.T) {
 	db := setupDocsCollectionPublicIDRepoTestDB(t)
-	repo := NewDocsCollectionRepository(db)
+	repo := NewDocsCollectionRepository(db, false)
 	ctx := context.Background()
 
 	_, err := repo.Create(ctx, &model.DocsCollection{

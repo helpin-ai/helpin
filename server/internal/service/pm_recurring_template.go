@@ -1050,18 +1050,32 @@ func nextWeeklyOccurrence(reference time.Time, cfg model.PMRecurringTemplateConf
 	if len(cfg.Weekdays) == 0 {
 		return reference.AddDate(0, 0, 7*cfg.Interval)
 	}
-	allowed := map[int]struct{}{}
-	for _, weekday := range cfg.Weekdays {
-		allowed[weekday] = struct{}{}
+
+	// Use the first weekday (single-select in UI).
+	targetWeekday := time.Weekday(cfg.Weekdays[0])
+
+	// Jump forward by interval weeks from reference.
+	candidate := reference.AddDate(0, 0, 7*cfg.Interval)
+
+	// Find the target weekday in the landing week.
+	// First, rewind to the Monday of that week.
+	weekStart := candidate
+	for weekStart.Weekday() != time.Monday {
+		weekStart = weekStart.AddDate(0, 0, -1)
 	}
-	candidate := reference.AddDate(0, 0, 1)
-	for i := 0; i < 365; i++ {
-		if _, ok := allowed[int(candidate.Weekday())]; ok {
-			return candidate
-		}
-		candidate = candidate.AddDate(0, 0, 1)
+
+	// Advance to the target weekday within that week.
+	target := weekStart
+	for target.Weekday() != targetWeekday {
+		target = target.AddDate(0, 0, 1)
 	}
-	return reference.AddDate(0, 0, 7*cfg.Interval)
+
+	// If target landed before or on reference (same week edge case), jump another interval.
+	if !target.After(reference) {
+		return nextWeeklyOccurrence(target, cfg)
+	}
+
+	return target
 }
 
 func nextMonthlyOccurrence(reference time.Time, cfg model.PMRecurringTemplateConfig) time.Time {
@@ -1107,15 +1121,18 @@ func recurringRuleSummary(cfg model.PMRecurringTemplateConfig) string {
 			}
 			return fmt.Sprintf("Every %d days", cfg.Interval)
 		case model.PMRecurringFrequencyWeekly:
+			dayName := ""
 			if len(cfg.Weekdays) > 0 {
-				names := make([]string, 0, len(cfg.Weekdays))
-				for _, weekday := range cfg.Weekdays {
-					names = append(names, time.Weekday(weekday).String()[:3])
-				}
-				return "Weekly on " + strings.Join(names, ", ")
+				dayName = time.Weekday(cfg.Weekdays[0]).String()
 			}
 			if cfg.Interval <= 1 {
+				if dayName != "" {
+					return "Every week on " + dayName
+				}
 				return "Weekly"
+			}
+			if dayName != "" {
+				return fmt.Sprintf("Every %d weeks on %s", cfg.Interval, dayName)
 			}
 			return fmt.Sprintf("Every %d weeks", cfg.Interval)
 		case model.PMRecurringFrequencyMonthly:

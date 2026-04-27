@@ -91,6 +91,7 @@ function CommandInput({
 
 function CommandList({
   className,
+  onWheel,
   ...props
 }: React.ComponentProps<typeof CommandPrimitive.List>) {
   return (
@@ -100,6 +101,19 @@ function CommandList({
         "no-scrollbar max-h-72 scroll-py-1 overflow-x-hidden overflow-y-auto outline-none",
         className
       )}
+      onWheel={(e) => {
+        // When a Command is rendered inside a Radix Dialog (via
+        // Popover/Combobox), react-remove-scroll intercepts wheel
+        // events at the document level to prevent background scroll.
+        // On mouse-wheel input specifically it can preventDefault
+        // before the event reaches this list, so the list stops
+        // scrolling even though the cursor is over it. Trackpad
+        // gestures bypass this via the compositor pan path, which
+        // is why they kept working. Stop propagation here so wheel
+        // events always land on the intended scroll container.
+        e.stopPropagation()
+        onWheel?.(e)
+      }}
       {...props}
     />
   )
