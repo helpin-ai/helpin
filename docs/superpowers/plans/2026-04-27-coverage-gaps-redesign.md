@@ -10,6 +10,7 @@
 
 **Plan revision log:**
 - v1: initial draft.
+- v1.3 (post third-round review): fixed Temporal API patterns to match the project — workflows call activities by registered string name (`workflow.ExecuteActivity(ctx, "CoverageGapActivities.EnrichTopicActivity", …)`) per `crm_summary_workflow.go:67`, not `var a *CoverageGapActivities; a.Method`; child workflow IDs go through `workflow.ChildWorkflowOptions`, not the function-arg slot of `ExecuteChildWorkflow`; `EnsureDailyEnrichment` drops the invalid `WorkflowIDReusePolicy: ALLOW_DUPLICATE` for a singleton cron and handles `serviceerror.WorkflowExecutionAlreadyStarted` per `crm_summary.go:77`; spike trigger uses real `client.ExecuteWorkflow` with `StartWorkflowOptions` + already-started handling (no invented `ExecuteWorkflowAsync`); fixed Task 30 regression — `GapDetailPane` calls `supportCoverageService.regenerate(wsId, gapId)` to match the v1.2 service signature.
 - v1.2 (post second-round review): replaced `enricherSingleton` free-function activity with a `CoverageGapActivities` struct + DI constructor matching `CRMSummaryActivities` (`server/internal/temporalapp/crm_summary_workflow.go:76,85`); cron is *started* from the API process via a service method (`EnsureDailyEnrichment`) modeled on `CRMSummaryService.EnsureDailyReconciliation` (`server/internal/service/crm_summary.go:188`), not registered inside `newTemporalWorker`; daily batch workflow lists workspaces/topics via activities (no DB calls inside workflow code); Task 18 handler uses `middleware.GetWorkspaceID` / `middleware.GetUserID` (not `authorization.ActorFromContext` which doesn't exist); frontend `regenerate` service takes `(wsId, gapId)` and appends `qs(wsId)` matching every other coverage method; Task 19 rewritten against the real `ApplySuggestion(ctx context.Context, workspaceID, suggestionID, userID string) error` signature using the real fields `coverageRepo`, `contentSvc.Save`, `contentSvc.Get`, `UpdateGapStatus`, `LinkGapArticle`; frontend types use the existing `suggestion_type` field on the wire (no invented `route` field).
 - v1.1 (post-review): fixed migration filenames to `YYYYMMDDNNNN` (12-digit) starting at `202604270004`; pointed Temporal workflow/activity registration at `server/cmd/temporal-worker/main.go` (not `cmd/api/main.go`); added subcommand registration in `server/cmd/migrate/main.go` for `cluster-rebuild`; deferred removal of legacy status constants until all call sites are migrated (Task 5 now adds new constants without dropping old ones; final cleanup is Task 23 + a follow-up release per spec §7.4); fixed repo file paths (single `support_coverage.go`, no split files); replaced non-existent `pnpm typecheck` / `pnpm test` with the actual scripts (`pnpm build`, `pnpm lint`, `pnpm test:e2e:support`); rewrote Task 19 against the real `SupportCoverageDraftService` API (`s.documentSvc.Create(ctx, workspaceID, model.CreateDocsDocumentRequest{…})`, content is TipTap JSON in `suggestion.Content`, append via `tiptap.AppendContent`).
 
@@ -61,7 +62,7 @@
 - `server/internal/repository/support_coverage.go` — list query joins evidence for `evidence_30d`
 - `server/internal/handler/support_coverage.go` — new `Regenerate` route
 - `server/internal/router/router.go` — register `POST /support/coverage/gaps/{gapId}/regenerate`
-- `server/cmd/temporal-worker/main.go` — register `CoverageGapEnrichmentFlow`, `CoverageGapDailyBatchFlow`, and `EnrichTopicActivity` in `newTemporalWorker`; wire the enricher dependency
+- `server/cmd/temporal-worker/main.go` — register `CoverageGapEnrichmentWorkflow`, `CoverageGapDailyBatchWorkflow`, `CoverageGapPerWorkspaceWorkflow`, and the three `*CoverageGapActivities` methods (`EnrichTopicActivity`, `ListWorkspacesActivity`, `ListTopicsForBatchActivity`) in `newTemporalWorker`; wire the enricher dependency
 - `server/cmd/api/main.go` — wire the Temporal client used by the spike trigger and the manual-regenerate handler (the API process *enqueues*; the worker process *executes*)
 - `server/cmd/migrate/main.go` — add `cluster-rebuild` to the command switch and usage string
 - `server/internal/llm/` — no changes required if the existing provider has structured-output support; otherwise add a `GenerateStructured(ctx, prompt, schema)` helper
@@ -855,13 +856,18 @@ func (a *CoverageGapActivities) ListTopicsForBatchActivity(ctx context.Context, 
 }
 
 // CoverageGapEnrichmentWorkflow — single-topic enrichment. Pure orchestration.
+// Activities are invoked by their REGISTERED NAME (project pattern, see
+// crm_summary_workflow.go:67), not via a method-receiver expression.
 func CoverageGapEnrichmentWorkflow(ctx workflow.Context, topicID string) error {
     ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
         StartToCloseTimeout: 60 * time.Second,
         RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 3},
     })
-    var a *CoverageGapActivities // resolved by Temporal via the registered method
-    return workflow.ExecuteActivity(ctx, a.EnrichTopicActivity, topicID).Get(ctx, nil)
+    return workflow.ExecuteActivity(
+        ctx,
+        "CoverageGapActivities.EnrichTopicActivity",
+        topicID,
+    ).Get(ctx, nil)
 }
 ```
 
@@ -911,17 +917,18 @@ git commit -am "feat(coverage): Temporal workflow + activity for gap enrichment"
 - Modify: `server/internal/service/support_coverage.go` (or new file) — add `EnsureDailyEnrichment(ctx) error`
 - Modify: `server/cmd/api/main.go` — call `coverageService.EnsureDailyEnrichment(ctx)` after the Temporal client is built (alongside the existing `crmSummaryService.EnsureDailyReconciliation` call)
 
-- [ ] **Step 1: Workflow** — pure orchestration, NO direct DB access:
+- [ ] **Step 1: Workflow** — pure orchestration, NO direct DB access. Activities and child workflows are invoked by their REGISTERED NAME; child IDs go through `workflow.ChildWorkflowOptions`, not as a function arg.
 
 ```go
 func CoverageGapDailyBatchWorkflow(ctx workflow.Context) error {
     ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
         StartToCloseTimeout: 30 * time.Second,
     })
-    var a *CoverageGapActivities
 
     var workspaces []string
-    if err := workflow.ExecuteActivity(ctx, a.ListWorkspacesActivity).Get(ctx, &workspaces); err != nil {
+    if err := workflow.ExecuteActivity(
+        ctx, "CoverageGapActivities.ListWorkspacesActivity",
+    ).Get(ctx, &workspaces); err != nil {
         return err
     }
 
@@ -934,7 +941,10 @@ func CoverageGapDailyBatchWorkflow(ctx workflow.Context) error {
             inflight--
         }
         wsID := wsID
-        f := workflow.ExecuteChildWorkflow(ctx, "coverageBatchPerWorkspace-"+wsID, perWorkspaceFlow, wsID)
+        childCtx := workflow.WithChildOptions(ctx, workflow.ChildWorkflowOptions{
+            WorkflowID: "coverage-gap-batch-ws-" + wsID,
+        })
+        f := workflow.ExecuteChildWorkflow(childCtx, "CoverageGapPerWorkspaceWorkflow", wsID)
         sel.AddFuture(f, func(workflow.Future) {})
         inflight++
     }
@@ -945,37 +955,57 @@ func CoverageGapDailyBatchWorkflow(ctx workflow.Context) error {
     return nil
 }
 
-func perWorkspaceFlow(ctx workflow.Context, workspaceID string) error {
-    var a *CoverageGapActivities
+func CoverageGapPerWorkspaceWorkflow(ctx workflow.Context, workspaceID string) error {
+    ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+        StartToCloseTimeout: 30 * time.Second,
+    })
     var topicIDs []string
-    if err := workflow.ExecuteActivity(ctx, a.ListTopicsForBatchActivity, workspaceID).Get(ctx, &topicIDs); err != nil {
+    if err := workflow.ExecuteActivity(
+        ctx, "CoverageGapActivities.ListTopicsForBatchActivity", workspaceID,
+    ).Get(ctx, &topicIDs); err != nil {
         return err
     }
     for _, t := range topicIDs {
-        _ = workflow.ExecuteChildWorkflow(ctx, "coverage-gap-enrich-"+t, CoverageGapEnrichmentWorkflow, t).Get(ctx, nil)
+        childCtx := workflow.WithChildOptions(ctx, workflow.ChildWorkflowOptions{
+            WorkflowID: "coverage-gap-enrich-" + t,
+        })
+        _ = workflow.ExecuteChildWorkflow(childCtx, "CoverageGapEnrichmentWorkflow", t).Get(ctx, nil)
     }
     return nil
 }
 ```
 
-- [ ] **Step 2: API-side cron starter** — model after `CRMSummaryService.EnsureDailyReconciliation` (`crm_summary.go:188`):
+**Note:** `CoverageGapPerWorkspaceWorkflow` is a *third* workflow that must also be registered in the worker (Task 15, Step 3) — add `w.RegisterWorkflow(temporalapp.CoverageGapPerWorkspaceWorkflow)`.
+
+- [ ] **Step 2: API-side cron starter** — match `temporalSummaryWorkflowRunner.StartDailyReconciliation` exactly (`crm_summary.go:77-94`): fixed workflow ID, no `WorkflowIDReusePolicy`, swallow `WorkflowExecutionAlreadyStarted`:
 
 ```go
-const coverageDailyBatchSchedule = "0 3 * * *" // 03:00 UTC daily
+const (
+    coverageDailyBatchWorkflowID = "coverage-gap-daily-batch"
+    coverageDailyBatchSchedule   = "0 3 * * *" // 03:00 UTC daily
+)
 
 func (s *SupportCoverageService) EnsureDailyEnrichment(ctx context.Context) error {
-    _, err := s.temporal.ExecuteWorkflow(ctx, tclient.StartWorkflowOptions{
-        ID:           "coverage-gap-daily-batch",
-        TaskQueue:    s.taskQueue,
+    if s.temporalClient == nil {
+        return nil // dev / Temporal not configured
+    }
+    _, err := s.temporalClient.ExecuteWorkflow(ctx, tclient.StartWorkflowOptions{
+        ID:           coverageDailyBatchWorkflowID,
+        TaskQueue:    temporalapp.QueueAutomation,
         CronSchedule: coverageDailyBatchSchedule,
-        WorkflowIDReusePolicy: enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
-    }, temporalapp.CoverageGapDailyBatchWorkflowType)
+    }, "CoverageGapDailyBatchWorkflow")
     if err != nil {
-        return fmt.Errorf("ensure daily enrichment cron: %w", err)
+        var alreadyStarted *serviceerror.WorkflowExecutionAlreadyStarted
+        if errors.As(err, &alreadyStarted) {
+            return nil // singleton already running — desired idempotent behavior
+        }
+        return fmt.Errorf("start coverage gap daily enrichment cron: %w", err)
     }
     return nil
 }
 ```
+
+The workflow function arg is the registered name string (per CRM pattern at `crm_summary.go:81`). Importing `enumspb` for `ALLOW_DUPLICATE` would be wrong here — that's the per-entity-refresh pattern (line 60), not the singleton-cron pattern.
 
 - [ ] **Step 3: Wire startup call** in `cmd/api/main.go` — find the `crmSummaryService.EnsureDailyReconciliation(ctx)` call and add the parallel `coverageService.EnsureDailyEnrichment(ctx)` invocation.
 
@@ -999,15 +1029,38 @@ git commit -am "feat(coverage): daily batch workflow (activities for DB) + Ensur
 The check (per spec §6.4):
 
 ```go
+// Spike trigger — best-effort. Uses the real Temporal client API
+// (no invented ExecuteWorkflowAsync) and swallows already-started
+// errors because the deterministic per-topic workflow ID enforces
+// at-most-one-in-flight at the Temporal layer (cooldown_until is the
+// app-level second guard).
 var count int64
 err := s.db.WithContext(ctx).Model(&model.SupportGapEvidence{}).
     Where("gap_id = ? AND created_at > ?", gap.ID, time.Now().Add(-time.Hour)).
     Count(&count).Error
-if err != nil { /* log and continue — spike trigger is best-effort */ }
+if err != nil {
+    slog.WarnContext(ctx, "spike trigger evidence count failed", "error", err, "gap_id", gap.ID)
+    return // best-effort: skip spike trigger, daily batch will catch up
+}
+if count < 5 { return }
 
-topic, _ := s.topicRepo.Get(ctx, *gap.TopicID)
-if count >= 5 && (topic.CooldownUntil == nil || topic.CooldownUntil.Before(time.Now())) {
-    s.temporal.ExecuteWorkflowAsync(ctx, "coverage-gap-enrich-"+topic.ID, CoverageGapEnrichmentFlow, topic.ID)
+topic, _ := s.coverageRepo.GetTopic(ctx, *gap.TopicID)
+if topic == nil { return }
+if topic.CooldownUntil != nil && topic.CooldownUntil.After(time.Now()) {
+    return // app-level cooldown — let the existing run finish
+}
+
+if s.temporalClient == nil { return } // dev / Temporal not configured
+_, err = s.temporalClient.ExecuteWorkflow(ctx, tclient.StartWorkflowOptions{
+    ID:        "coverage-gap-enrich-" + topic.ID,
+    TaskQueue: temporalapp.QueueAutomation,
+}, "CoverageGapEnrichmentWorkflow", topic.ID)
+if err != nil {
+    var alreadyStarted *serviceerror.WorkflowExecutionAlreadyStarted
+    if errors.As(err, &alreadyStarted) {
+        return // already running for this topic — desired
+    }
+    slog.ErrorContext(ctx, "spike trigger workflow start failed", "error", err, "topic_id", topic.ID)
 }
 ```
 
@@ -1382,7 +1435,7 @@ git commit -am "feat(coverage): GapAddSplitButton with smart routing + override"
 
 - [ ] **Step 1: Tests** — renders header + Reject/Add buttons + inline Markdown preview + evidence list; Regenerate button is disabled for 30 sec after click.
 
-- [ ] **Step 2: Implement** — calls `supportCoverageService.regenerate(gapId)` then `queryClient.invalidateQueries(['support', 'coverage', 'gap', gapId])` on success.
+- [ ] **Step 2: Implement** — calls `supportCoverageService.regenerate(wsId, gapId)` (matches the v1.2 service signature in Task 18 — every coverage method takes `wsId` and appends `qs(wsId)`) then `queryClient.invalidateQueries(['support', 'coverage', 'gap', gapId])` on success.
 
 - [ ] **Step 3: Commit**
 
