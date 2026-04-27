@@ -338,8 +338,15 @@ export function DocumentsTable({
                     </span>
                   ) : '—'}
                 </span>
-                <span className="w-28 shrink-0 truncate text-xs text-muted-foreground">
-                  {doc.collection_id ? (collectionNames.get(doc.collection_id) ?? '—') : '—'}
+                <span className="w-28 shrink-0 truncate text-xs text-muted-foreground" title={doc.collection_id ? (collectionNames.get(doc.collection_id) ?? '') : ''}>
+                  {doc.collection_id ? (
+                    <>
+                      {(collectionDepths?.get(doc.collection_id) ?? 0) > 0 && (
+                        <span className="text-muted-foreground/50 mr-0.5">↳</span>
+                      )}
+                      {collectionNames.get(doc.collection_id) ?? '—'}
+                    </>
+                  ) : '—'}
                 </span>
                 <span className={`w-20 shrink-0 text-xs font-medium ${statusColor(doc.status)}`}>
                   {DOC_STATUS_LABELS[doc.status] ?? doc.status}
