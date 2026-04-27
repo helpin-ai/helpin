@@ -475,7 +475,7 @@ export function SupportCoveragePage() {
                     <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                       Evidence
                     </h4>
-                    <div className="max-h-56 space-y-2 overflow-y-auto">
+                    <div className="space-y-2">
                       {selectedGap.evidence.map((ev) => (
                         <div
                           key={ev.id}
@@ -556,7 +556,7 @@ export function SupportCoveragePage() {
                           : `Draft: ${draftSuggestion.title}`}
                       </h4>
                     </div>
-                    <div className="max-h-56 overflow-y-auto rounded bg-card p-3 text-xs leading-relaxed whitespace-pre-wrap text-foreground/90">
+                    <div className="rounded bg-card p-3 text-xs leading-relaxed whitespace-pre-wrap text-foreground/90">
                       {renderSuggestionPreview(draftSuggestion) ||
                         draftSuggestion.evidence_summary ||
                         'No preview available.'}
