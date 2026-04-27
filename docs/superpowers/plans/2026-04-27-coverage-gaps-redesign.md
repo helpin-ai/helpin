@@ -817,9 +817,9 @@ const (
     CoverageGapEnrichmentWorkflowType = "CoverageGapEnrichmentWorkflow"
     CoverageGapDailyBatchWorkflowType = "CoverageGapDailyBatchWorkflow"
 
-    CoverageGapEnrichmentActivityName  = "EnrichTopicActivity"
-    CoverageGapListBatchActivityName   = "ListTopicsForBatchActivity"
-    CoverageGapListWorkspacesActivityName = "ListWorkspacesActivity"
+    CoverageGapEnrichmentActivityName     = "CoverageGapActivities.EnrichTopicActivity"
+    CoverageGapListBatchActivityName      = "CoverageGapActivities.ListTopicsForBatchActivity"
+    CoverageGapListWorkspacesActivityName = "CoverageGapActivities.ListWorkspacesActivity"
 )
 
 // CoverageGapActivities groups activities that need DB / service access.
@@ -880,6 +880,7 @@ Add a parameter to `newTemporalWorker` (currently takes `summaryActivities *temp
 ```go
 w.RegisterWorkflow(temporalapp.CoverageGapEnrichmentWorkflow)
 w.RegisterWorkflow(temporalapp.CoverageGapDailyBatchWorkflow) // added in Task 16
+w.RegisterWorkflow(temporalapp.CoverageGapPerWorkspaceWorkflow) // added in Task 16
 w.RegisterActivityWithOptions(coverageActivities.EnrichTopicActivity, activity.RegisterOptions{
     Name: temporalapp.CoverageGapEnrichmentActivityName,
 })

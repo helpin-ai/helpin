@@ -36,11 +36,17 @@ func setupCoverageTestEnv(t *testing.T) (*SupportEventService, *SupportCoverageS
 		`CREATE TABLE support_coverage_topics (
 			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, issue_key TEXT NOT NULL,
 			title TEXT NOT NULL DEFAULT '', gap_count INTEGER NOT NULL DEFAULT 0,
-			created_at DATETIME, updated_at DATETIME, UNIQUE(workspace_id, issue_key)
+			cluster_key TEXT, canonical_title TEXT, last_enriched_at DATETIME,
+			cooldown_until DATETIME, created_at DATETIME, updated_at DATETIME,
+			UNIQUE(workspace_id, issue_key)
 		)`,
+		`CREATE UNIQUE INDEX idx_support_coverage_topics_workspace_cluster_key
+			ON support_coverage_topics(workspace_id, cluster_key)
+			WHERE cluster_key IS NOT NULL`,
 		`CREATE TABLE support_coverage_gaps (
 			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, topic_id TEXT,
-			dedupe_key TEXT NOT NULL, gap_category TEXT NOT NULL DEFAULT 'unknown',
+			dedupe_key TEXT NOT NULL, gap_kind TEXT NOT NULL DEFAULT 'content',
+			gap_category TEXT NOT NULL DEFAULT 'unknown',
 			v1_gap_type TEXT NOT NULL DEFAULT 'needs_review', title TEXT NOT NULL DEFAULT '',
 			issue_key TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'open',
 			confidence REAL NOT NULL DEFAULT 0, evidence_count INTEGER NOT NULL DEFAULT 0,
@@ -48,8 +54,13 @@ func setupCoverageTestEnv(t *testing.T) (*SupportEventService, *SupportCoverageS
 			can_answer TEXT, can_resolve TEXT, metadata TEXT NOT NULL DEFAULT '{}',
 			first_seen_at DATETIME, last_seen_at DATETIME,
 			status_changed_by TEXT, status_changed_at DATETIME, issue_resolved BOOLEAN,
+			closed_at DATETIME, closed_evidence_count INTEGER, result_document_id TEXT,
+			rejection_reason TEXT,
 			created_at DATETIME, updated_at DATETIME
 		)`,
+		`CREATE UNIQUE INDEX idx_support_coverage_gaps_workspace_topic_open
+			ON support_coverage_gaps(workspace_id, topic_id)
+			WHERE status = 'open' AND topic_id IS NOT NULL`,
 		`CREATE TABLE support_gap_evidence (
 			id TEXT PRIMARY KEY, gap_id TEXT NOT NULL, workspace_id TEXT NOT NULL,
 			evidence_type TEXT NOT NULL, conversation_id TEXT, message_id TEXT,
@@ -63,6 +74,7 @@ func setupCoverageTestEnv(t *testing.T) (*SupportEventService, *SupportCoverageS
 			title TEXT NOT NULL DEFAULT '', content TEXT, evidence_summary TEXT NOT NULL DEFAULT '',
 			target_space_id TEXT, target_collection_id TEXT, target_document_id TEXT,
 			result_document_id TEXT, result_article_id TEXT, applied_at DATETIME,
+			is_active BOOLEAN NOT NULL DEFAULT 1, superseded_at DATETIME,
 			metadata TEXT NOT NULL DEFAULT '{}', created_at DATETIME, updated_at DATETIME
 		)`,
 		`CREATE TABLE support_coverage_gap_articles (
@@ -97,11 +109,11 @@ func TestSupportCoverage_AIHandoff_NoRetrieval_CreatesGap(t *testing.T) {
 	ctx := context.Background()
 
 	err := eventSvc.RecordEvent(ctx, SupportEventInput{
-		WorkspaceID: "ws-1",
-		EventType:   model.SupportEventAIHandoffTriggered,
-		IssueKey:    "billing_refund",
+		WorkspaceID:  "ws-1",
+		EventType:    model.SupportEventAIHandoffTriggered,
+		IssueKey:     "billing_refund",
 		IssueSummary: "How do I get a refund?",
-		FailureMode: model.SupportCoverageFailureNoRetrieval,
+		FailureMode:  model.SupportCoverageFailureNoRetrieval,
 		SourceSignal: model.SupportCoverageSourceAIHandoff,
 	})
 	if err != nil {
@@ -262,6 +274,37 @@ func TestSupportCoverage_DuplicateEvents_IncrementEvidence(t *testing.T) {
 	}
 	if gaps[0].EvidenceCount != 3 {
 		t.Errorf("expected evidence_count=3, got %d", gaps[0].EvidenceCount)
+	}
+}
+
+func TestSupportCoverage_NormalizedVariantsShareCluster(t *testing.T) {
+	eventSvc, coverageSvc, _ := setupCoverageTestEnv(t)
+	ctx := context.Background()
+
+	inputs := []string{
+		"How do I reset my password?",
+		"how to reset password",
+	}
+	for _, summary := range inputs {
+		if err := eventSvc.RecordEvent(ctx, SupportEventInput{
+			WorkspaceID:  "ws-1",
+			EventType:    model.SupportEventWidgetSearchPerformed,
+			IssueSummary: summary,
+			SourceSignal: "no_results",
+		}); err != nil {
+			t.Fatalf("RecordEvent(%q): %v", summary, err)
+		}
+	}
+
+	gaps, total, err := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	if err != nil {
+		t.Fatalf("ListGaps: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("expected normalized variants to share one gap, got %d", total)
+	}
+	if gaps[0].EvidenceCount != 2 {
+		t.Errorf("evidence_count=%d, want 2", gaps[0].EvidenceCount)
 	}
 }
 

@@ -1,8 +1,6 @@
 package service
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"strings"
 
@@ -11,7 +9,6 @@ import (
 
 // gapRule is the output of the v1 rule classifier.
 type gapRule struct {
-	DedupeKey   string
 	GapCategory string
 	V1GapType   string
 	Title       string
@@ -54,7 +51,6 @@ func classifyAIHandoff(event *model.SupportEvent) *gapRule {
 	case model.SupportCoverageFailureNoRetrieval:
 		if event.IssueKey != "" {
 			return &gapRule{
-				DedupeKey:   buildDedupeKey(event.WorkspaceID, model.SupportCoverageV1GapMissingArticle, event.IssueKey, ""),
 				GapCategory: model.SupportCoverageGapCategoryKnowledge,
 				V1GapType:   model.SupportCoverageV1GapMissingArticle,
 				Title:       titleFromIssueKey(event.IssueKey, "Missing article"),
@@ -62,7 +58,6 @@ func classifyAIHandoff(event *model.SupportEvent) *gapRule {
 			}
 		}
 		return &gapRule{
-			DedupeKey:   buildDedupeKey(event.WorkspaceID, model.SupportCoverageV1GapNeedsReview, "", hashExcerpt(event.IssueSummary)),
 			GapCategory: model.SupportCoverageGapCategoryUnknown,
 			V1GapType:   model.SupportCoverageV1GapNeedsReview,
 			Title:       "Needs review: AI handoff with no retrieval",
@@ -70,10 +65,8 @@ func classifyAIHandoff(event *model.SupportEvent) *gapRule {
 		}
 
 	case model.SupportCoverageFailureWeakRetrieval:
-		docID := coverageDeref(event.DocumentID)
 		if event.IssueKey != "" {
 			return &gapRule{
-				DedupeKey:   buildDedupeKey(event.WorkspaceID, model.SupportCoverageV1GapWeakArticle, event.IssueKey, docID),
 				GapCategory: model.SupportCoverageGapCategoryStructure,
 				V1GapType:   model.SupportCoverageV1GapWeakArticle,
 				Title:       titleFromIssueKey(event.IssueKey, "Weak article"),
@@ -81,7 +74,6 @@ func classifyAIHandoff(event *model.SupportEvent) *gapRule {
 			}
 		}
 		return &gapRule{
-			DedupeKey:   buildDedupeKey(event.WorkspaceID, model.SupportCoverageV1GapNeedsReview, "", hashExcerpt(event.IssueSummary)),
 			GapCategory: model.SupportCoverageGapCategoryUnknown,
 			V1GapType:   model.SupportCoverageV1GapNeedsReview,
 			Title:       "Needs review: AI handoff with weak retrieval",
@@ -91,7 +83,6 @@ func classifyAIHandoff(event *model.SupportEvent) *gapRule {
 	case model.SupportCoverageFailureLowConfidence:
 		if event.IssueKey != "" {
 			return &gapRule{
-				DedupeKey:   buildDedupeKey(event.WorkspaceID, model.SupportCoverageV1GapNeedsReview, event.IssueKey, ""),
 				GapCategory: model.SupportCoverageGapCategoryUnknown,
 				V1GapType:   model.SupportCoverageV1GapNeedsReview,
 				Title:       titleFromIssueKey(event.IssueKey, "Low confidence"),
@@ -103,7 +94,6 @@ func classifyAIHandoff(event *model.SupportEvent) *gapRule {
 	case model.SupportCoverageFailureStuck:
 		if event.IssueKey != "" {
 			return &gapRule{
-				DedupeKey:   buildDedupeKey(event.WorkspaceID, model.SupportCoverageV1GapMissingArticle, event.IssueKey, ""),
 				GapCategory: model.SupportCoverageGapCategoryKnowledge,
 				V1GapType:   model.SupportCoverageV1GapMissingArticle,
 				Title:       titleFromIssueKey(event.IssueKey, "Repeated issue"),
@@ -129,7 +119,6 @@ func classifyArticleFeedback(event *model.SupportEvent) *gapRule {
 	docID := coverageDeref(event.DocumentID)
 	if event.IssueKey != "" {
 		return &gapRule{
-			DedupeKey:   buildDedupeKey(event.WorkspaceID, model.SupportCoverageV1GapWeakArticle, event.IssueKey, docID),
 			GapCategory: model.SupportCoverageGapCategoryStructure,
 			V1GapType:   model.SupportCoverageV1GapWeakArticle,
 			Title:       titleFromIssueKey(event.IssueKey, "Article marked unhelpful"),
@@ -138,7 +127,6 @@ func classifyArticleFeedback(event *model.SupportEvent) *gapRule {
 	}
 	if docID != "" {
 		return &gapRule{
-			DedupeKey:   buildDedupeKey(event.WorkspaceID, model.SupportCoverageV1GapWeakArticle, "", docID),
 			GapCategory: model.SupportCoverageGapCategoryStructure,
 			V1GapType:   model.SupportCoverageV1GapWeakArticle,
 			Title:       "Article marked unhelpful",
@@ -158,7 +146,6 @@ func classifyWidgetSearch(event *model.SupportEvent) *gapRule {
 
 	if event.IssueKey != "" {
 		return &gapRule{
-			DedupeKey:   buildDedupeKey(event.WorkspaceID, model.SupportCoverageV1GapMissingArticle, event.IssueKey, ""),
 			GapCategory: model.SupportCoverageGapCategoryKnowledge,
 			V1GapType:   model.SupportCoverageV1GapMissingArticle,
 			Title:       titleFromIssueKey(event.IssueKey, "No search results"),
@@ -166,7 +153,6 @@ func classifyWidgetSearch(event *model.SupportEvent) *gapRule {
 		}
 	}
 	return &gapRule{
-		DedupeKey:   buildDedupeKey(event.WorkspaceID, model.SupportCoverageV1GapNeedsReview, "", hashExcerpt(event.IssueSummary)),
 		GapCategory: model.SupportCoverageGapCategoryUnknown,
 		V1GapType:   model.SupportCoverageV1GapNeedsReview,
 		Title:       "No search results: " + coverageTruncate(event.IssueSummary, 80),
@@ -178,7 +164,6 @@ func classifyWidgetSearch(event *model.SupportEvent) *gapRule {
 func classifyDocsIssueFeedback(event *model.SupportEvent) *gapRule {
 	if event.IssueKey != "" {
 		return &gapRule{
-			DedupeKey:   buildDedupeKey(event.WorkspaceID, model.SupportCoverageV1GapNeedsReview, event.IssueKey, ""),
 			GapCategory: model.SupportCoverageGapCategoryUnknown,
 			V1GapType:   model.SupportCoverageV1GapNeedsReview,
 			Title:       titleFromIssueKey(event.IssueKey, "Agent flagged docs issue"),
@@ -186,7 +171,6 @@ func classifyDocsIssueFeedback(event *model.SupportEvent) *gapRule {
 		}
 	}
 	return &gapRule{
-		DedupeKey:   buildDedupeKey(event.WorkspaceID, model.SupportCoverageV1GapNeedsReview, "", hashExcerpt(event.IssueSummary)),
 		GapCategory: model.SupportCoverageGapCategoryUnknown,
 		V1GapType:   model.SupportCoverageV1GapNeedsReview,
 		Title:       "Agent flagged docs issue",
@@ -215,7 +199,6 @@ func classifyConversationResolvedByHuman(event *model.SupportEvent) *gapRule {
 	}
 	if event.IssueKey != "" {
 		return &gapRule{
-			DedupeKey:   buildDedupeKey(event.WorkspaceID, model.SupportCoverageV1GapNeedsReview, event.IssueKey, convoID),
 			GapCategory: model.SupportCoverageGapCategoryUnknown,
 			V1GapType:   model.SupportCoverageV1GapNeedsReview,
 			Title:       titleFromIssueKey(event.IssueKey, "Human resolved after AI engagement"),
@@ -223,7 +206,6 @@ func classifyConversationResolvedByHuman(event *model.SupportEvent) *gapRule {
 		}
 	}
 	return &gapRule{
-		DedupeKey:   buildDedupeKey(event.WorkspaceID, model.SupportCoverageV1GapNeedsReview, "", convoID),
 		GapCategory: model.SupportCoverageGapCategoryUnknown,
 		V1GapType:   model.SupportCoverageV1GapNeedsReview,
 		Title:       "Human resolved after AI engagement: " + titleSuffix,
@@ -236,7 +218,6 @@ func classifyConversationResolvedByHuman(event *model.SupportEvent) *gapRule {
 func classifyHumanReplyAfterAI(event *model.SupportEvent) *gapRule {
 	if event.IssueKey != "" {
 		return &gapRule{
-			DedupeKey:   buildDedupeKey(event.WorkspaceID, model.SupportCoverageV1GapNeedsReview, event.IssueKey, ""),
 			GapCategory: model.SupportCoverageGapCategoryUnknown,
 			V1GapType:   model.SupportCoverageV1GapNeedsReview,
 			Title:       titleFromIssueKey(event.IssueKey, "Human resolved after AI failure"),
@@ -246,7 +227,6 @@ func classifyHumanReplyAfterAI(event *model.SupportEvent) *gapRule {
 	// No issue key but reply text is still valuable evidence.
 	if event.IssueSummary != "" {
 		return &gapRule{
-			DedupeKey:   buildDedupeKey(event.WorkspaceID, model.SupportCoverageV1GapNeedsReview, "", hashExcerpt(event.IssueSummary)),
 			GapCategory: model.SupportCoverageGapCategoryUnknown,
 			V1GapType:   model.SupportCoverageV1GapNeedsReview,
 			Title:       "Human resolved after AI failure",
@@ -258,17 +238,6 @@ func classifyHumanReplyAfterAI(event *model.SupportEvent) *gapRule {
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
-func buildDedupeKey(workspaceID, v1GapType, issueKey, extra string) string {
-	parts := []string{v1GapType}
-	if issueKey != "" {
-		parts = append(parts, issueKey)
-	}
-	if extra != "" {
-		parts = append(parts, extra)
-	}
-	return strings.Join(parts, ":")
-}
-
 func titleFromIssueKey(issueKey, prefix string) string {
 	clean := strings.ReplaceAll(issueKey, "_", " ")
 	clean = strings.ReplaceAll(clean, "-", " ")
@@ -276,14 +245,6 @@ func titleFromIssueKey(issueKey, prefix string) string {
 		return fmt.Sprintf("%s: %s", prefix, clean)
 	}
 	return clean
-}
-
-func hashExcerpt(s string) string {
-	if s == "" {
-		return "empty"
-	}
-	h := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(s))))
-	return hex.EncodeToString(h[:8])
 }
 
 func coverageDeref(s *string) string {

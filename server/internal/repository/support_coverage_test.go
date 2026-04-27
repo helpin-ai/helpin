@@ -50,6 +50,10 @@ func setupSupportCoverageTestDB(t *testing.T) *gorm.DB {
 			issue_key TEXT NOT NULL,
 			title TEXT NOT NULL DEFAULT '',
 			gap_count INTEGER NOT NULL DEFAULT 0,
+			cluster_key TEXT,
+			canonical_title TEXT,
+			last_enriched_at DATETIME,
+			cooldown_until DATETIME,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			UNIQUE(workspace_id, issue_key)
@@ -59,6 +63,7 @@ func setupSupportCoverageTestDB(t *testing.T) *gorm.DB {
 			workspace_id TEXT NOT NULL,
 			topic_id TEXT,
 			dedupe_key TEXT NOT NULL,
+			gap_kind TEXT NOT NULL DEFAULT 'content',
 			gap_category TEXT NOT NULL DEFAULT 'unknown',
 			v1_gap_type TEXT NOT NULL DEFAULT 'needs_review',
 			title TEXT NOT NULL DEFAULT '',
@@ -76,6 +81,10 @@ func setupSupportCoverageTestDB(t *testing.T) *gorm.DB {
 			status_changed_by TEXT,
 			status_changed_at DATETIME,
 			issue_resolved BOOLEAN,
+			closed_at DATETIME,
+			closed_evidence_count INTEGER,
+			result_document_id TEXT,
+			rejection_reason TEXT,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
@@ -109,6 +118,8 @@ func setupSupportCoverageTestDB(t *testing.T) *gorm.DB {
 			result_document_id TEXT,
 			result_article_id TEXT,
 			applied_at DATETIME,
+			is_active BOOLEAN NOT NULL DEFAULT 1,
+			superseded_at DATETIME,
 			metadata TEXT NOT NULL DEFAULT '{}',
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP

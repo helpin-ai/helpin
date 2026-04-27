@@ -8,11 +8,8 @@ export type SupportCoverageV1GapType =
 
 export type SupportCoverageGapStatus =
   | 'open'
-  | 'drafted'
-  | 'fixed'
-  | 'ignored'
-  | 'merged'
-  | 'human_only'
+  | 'done'
+  | 'rejected'
 
 // --- DTOs ---
 
@@ -28,6 +25,11 @@ export interface SupportCoverageGapListItem {
   status: SupportCoverageGapStatus
   confidence: number
   evidence_count: number
+  gap_kind: string
+  closed_at: string | null
+  closed_evidence_count: number | null
+  result_document_id: string | null
+  rejection_reason: string | null
   failure_mode: string
   source_signal: string
   first_seen_at: string
@@ -54,6 +56,8 @@ export interface SupportGapSuggestion {
   gap_id: string
   suggestion_type: string
   status: string
+  is_active: boolean
+  superseded_at: string | null
   title: string
   content: unknown
   evidence_summary: string
@@ -73,6 +77,11 @@ export interface SupportCoverageGapDetail {
   status: SupportCoverageGapStatus
   confidence: number
   evidence_count: number
+  gap_kind: string
+  closed_at: string | null
+  closed_evidence_count: number | null
+  result_document_id: string | null
+  rejection_reason: string | null
   failure_mode: string
   first_seen_at: string
   last_seen_at: string
@@ -115,9 +124,6 @@ export const V1_GAP_TYPE_LABELS: Record<SupportCoverageV1GapType, string> = {
 
 export const GAP_STATUS_LABELS: Record<SupportCoverageGapStatus, string> = {
   open: 'Open',
-  drafted: 'Drafted',
-  fixed: 'Fixed',
-  ignored: 'Ignored',
-  merged: 'Merged',
-  human_only: 'Requires Human',
+  done: 'Done',
+  rejected: 'Rejected',
 }

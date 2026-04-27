@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   Select,
   SelectContent,
@@ -40,10 +39,8 @@ const GAP_TYPE_BADGE_CLASS =
 
 const STATUS_COLORS: Record<string, string> = {
   open: 'bg-amber-100 text-amber-700',
-  drafted: 'bg-blue-100 text-blue-700',
-  fixed: 'bg-green-100 text-green-700',
-  ignored: 'bg-muted text-muted-foreground/60',
-  human_only: 'bg-purple-100 text-purple-700',
+  done: 'bg-green-100 text-green-700',
+  rejected: 'bg-muted text-muted-foreground/60',
 }
 
 const EVIDENCE_TYPE_LABELS: Record<string, string> = {
@@ -299,7 +296,7 @@ export function SupportCoveragePage() {
           {total} gap{total !== 1 ? 's' : ''}
         </span>
         <div className="ml-auto flex gap-1">
-          {['', 'open', 'drafted', 'fixed', 'ignored'].map((s) => (
+          {['', 'open', 'done', 'rejected'].map((s) => (
             <button
               key={s}
               type="button"
@@ -433,17 +430,6 @@ export function SupportCoveragePage() {
                         </>
                       )}{' '}
                       {timeAgo(selectedGap.status_changed_at)}
-                      {selectedGap.status === 'human_only' && selectedGap.issue_resolved != null && (
-                        <span
-                          className={
-                            selectedGap.issue_resolved ? 'text-green-600' : 'text-amber-600'
-                          }
-                        >
-                          {' '}
-                          &middot; Customer issue{' '}
-                          {selectedGap.issue_resolved ? 'resolved' : 'unresolved'}
-                        </span>
-                      )}
                     </p>
                   )}
                 </div>
@@ -752,41 +738,22 @@ export function SupportCoveragePage() {
                     <>
                       <button
                         type="button"
-                        onClick={() => handleStatusUpdate(selectedGap.id, 'ignored')}
+                        onClick={() => handleStatusUpdate(selectedGap.id, 'rejected')}
                         className="rounded-md border border-border/60 px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted"
                       >
-                        Ignore
+                        Reject
                       </button>
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              onClick={() => handleStatusUpdate(selectedGap.id, 'human_only', false)}
-                              className="rounded-md border border-border/60 px-2.5 py-1.5 text-xs font-medium text-purple-600 hover:bg-purple-50"
-                            >
-                              Requires Human
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="bottom">
-                            <p>This topic can't be resolved by AI and will always need a human agent.</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
                       <button
                         type="button"
-                        onClick={() => handleStatusUpdate(selectedGap.id, 'fixed')}
+                        onClick={() => handleStatusUpdate(selectedGap.id, 'done')}
                         className="inline-flex items-center gap-1 rounded-md bg-green-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-green-700"
                       >
                         <CheckmarkCircle02Icon className="h-3 w-3" />
-                        Mark Fixed
+                        Mark Done
                       </button>
                     </>
                   )}
-                  {(selectedGap.status === 'ignored' ||
-                    selectedGap.status === 'human_only' ||
-                    selectedGap.status === 'fixed' ||
-                    selectedGap.status === 'drafted') && (
+                  {(selectedGap.status === 'rejected' || selectedGap.status === 'done') && (
                     <button
                       type="button"
                       onClick={() => handleStatusUpdate(selectedGap.id, 'open')}

@@ -59,6 +59,43 @@ func (r *SupportCoverageRepository) UpsertTopicByIssueKey(ctx context.Context, w
 	return &topic, nil
 }
 
+// UpsertTopicByClusterKey returns an existing cluster topic or creates one.
+func (r *SupportCoverageRepository) UpsertTopicByClusterKey(ctx context.Context, workspaceID, clusterKey, title string) (*model.SupportCoverageTopic, error) {
+	if workspaceID == "" || clusterKey == "" {
+		return nil, fmt.Errorf("workspace_id and cluster_key are required")
+	}
+
+	var topic model.SupportCoverageTopic
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND cluster_key = ?", workspaceID, clusterKey).
+		First(&topic).Error
+	if err == nil {
+		return &topic, nil
+	}
+	if err != gorm.ErrRecordNotFound {
+		return nil, fmt.Errorf("lookup cluster topic: %w", err)
+	}
+
+	topic = model.SupportCoverageTopic{
+		ID:             uuid.New().String(),
+		WorkspaceID:    workspaceID,
+		IssueKey:       clusterKey,
+		Title:          title,
+		ClusterKey:     &clusterKey,
+		CanonicalTitle: &title,
+	}
+	if err := r.db.WithContext(ctx).Create(&topic).Error; err != nil {
+		var existing model.SupportCoverageTopic
+		if findErr := r.db.WithContext(ctx).
+			Where("workspace_id = ? AND cluster_key = ?", workspaceID, clusterKey).
+			First(&existing).Error; findErr == nil {
+			return &existing, nil
+		}
+		return nil, fmt.Errorf("create cluster topic: %w", err)
+	}
+	return &topic, nil
+}
+
 // UpsertGapByDedupeKey creates a new gap or increments evidence on
 // an existing one. Returns the gap and whether it was newly created.
 func (r *SupportCoverageRepository) UpsertGapByDedupeKey(ctx context.Context, gap *model.SupportCoverageGap) (*model.SupportCoverageGap, bool, error) {
@@ -106,6 +143,60 @@ func (r *SupportCoverageRepository) UpsertGapByDedupeKey(ctx context.Context, ga
 			return &raceExisting, false, nil
 		}
 		return nil, false, fmt.Errorf("create gap: %w", err)
+	}
+	return gap, true, nil
+}
+
+// UpsertOpenGapByTopic creates a new open gap for a topic or increments the
+// existing open gap. Closed gaps are intentionally ignored so recurrence after
+// Done/Rejected can create a fresh open lifecycle.
+func (r *SupportCoverageRepository) UpsertOpenGapByTopic(ctx context.Context, gap *model.SupportCoverageGap) (*model.SupportCoverageGap, bool, error) {
+	if gap.WorkspaceID == "" || gap.TopicID == nil || *gap.TopicID == "" {
+		return nil, false, fmt.Errorf("workspace_id and topic_id are required")
+	}
+
+	var existing model.SupportCoverageGap
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND topic_id = ? AND status = ?", gap.WorkspaceID, *gap.TopicID, model.SupportCoverageGapStatusOpen).
+		First(&existing).Error
+	if err == nil {
+		updates := map[string]interface{}{
+			"evidence_count": gorm.Expr("evidence_count + 1"),
+			"last_seen_at":   gap.LastSeenAt,
+			"updated_at":     time.Now(),
+		}
+		if err := r.db.WithContext(ctx).Model(&existing).Updates(updates).Error; err != nil {
+			return nil, false, fmt.Errorf("update open topic gap: %w", err)
+		}
+		existing.EvidenceCount++
+		existing.LastSeenAt = gap.LastSeenAt
+		return &existing, false, nil
+	}
+	if err != gorm.ErrRecordNotFound {
+		return nil, false, fmt.Errorf("lookup open topic gap: %w", err)
+	}
+
+	if gap.ID == "" {
+		gap.ID = uuid.New().String()
+	}
+	if gap.Status == "" {
+		gap.Status = model.SupportCoverageGapStatusOpen
+	}
+	if gap.GapKind == "" {
+		gap.GapKind = "content"
+	}
+	gap.EvidenceCount = 1
+	if gap.Metadata == nil {
+		gap.Metadata = []byte("{}")
+	}
+	if err := r.db.WithContext(ctx).Create(gap).Error; err != nil {
+		var raceExisting model.SupportCoverageGap
+		if findErr := r.db.WithContext(ctx).
+			Where("workspace_id = ? AND topic_id = ? AND status = ?", gap.WorkspaceID, *gap.TopicID, model.SupportCoverageGapStatusOpen).
+			First(&raceExisting).Error; findErr == nil {
+			return &raceExisting, false, nil
+		}
+		return nil, false, fmt.Errorf("create open topic gap: %w", err)
 	}
 	return gap, true, nil
 }
@@ -404,10 +495,10 @@ func (r *SupportCoverageRepository) FindOpenGapByConversation(ctx context.Contex
 func (r *SupportCoverageRepository) UpdateGapStatus(ctx context.Context, workspaceID, gapID, status, userID string, issueResolved *bool) error {
 	now := time.Now()
 	updates := map[string]interface{}{
-		"status":             status,
-		"status_changed_by":  userID,
-		"status_changed_at":  now,
-		"updated_at":         now,
+		"status":            status,
+		"status_changed_by": userID,
+		"status_changed_at": now,
+		"updated_at":        now,
 	}
 	if issueResolved != nil {
 		updates["issue_resolved"] = *issueResolved

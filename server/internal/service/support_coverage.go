@@ -13,6 +13,7 @@ import (
 // collection, and summary computation from support events.
 type SupportCoverageService struct {
 	coverageRepo *repository.SupportCoverageRepository
+	clusterer    *SupportCoverageClusterer
 	logger       *slog.Logger
 }
 
@@ -22,6 +23,7 @@ func NewSupportCoverageService(
 ) *SupportCoverageService {
 	return &SupportCoverageService{
 		coverageRepo: coverageRepo,
+		clusterer:    NewSupportCoverageClusterer(coverageRepo),
 		logger:       slog.Default().With("service", "support_coverage"),
 	}
 }
@@ -63,72 +65,8 @@ func (s *SupportCoverageService) ProcessSupportEvent(ctx context.Context, event 
 		// No existing gap for this conversation — fall through to normal rule processing.
 	}
 
-	rule := classifyEvent(event)
-	if rule == nil {
-		return nil // No gap-producing rule matched.
-	}
-
-	// Upsert topic if issue key is available.
-	var topicID *string
-	if event.IssueKey != "" {
-		topic, err := s.coverageRepo.UpsertTopicByIssueKey(ctx, event.WorkspaceID, event.IssueKey, event.IssueSummary)
-		if err != nil {
-			s.logger.WarnContext(ctx, "upsert topic failed", "error", err)
-		} else if topic != nil {
-			topicID = &topic.ID
-		}
-	}
-
-	// Upsert gap.
-	gap := &model.SupportCoverageGap{
-		WorkspaceID:  event.WorkspaceID,
-		TopicID:      topicID,
-		DedupeKey:    rule.DedupeKey,
-		GapCategory:  rule.GapCategory,
-		V1GapType:    rule.V1GapType,
-		Title:        rule.Title,
-		IssueKey:     event.IssueKey,
-		Status:       model.SupportCoverageGapStatusOpen,
-		Confidence:   rule.Confidence,
-		FailureMode:  event.FailureMode,
-		SourceSignal: event.SourceSignal,
-		CanAnswer:    event.CanAnswer,
-		CanResolve:   event.CanResolve,
-		FirstSeenAt:  now,
-		LastSeenAt:   now,
-	}
-
-	upserted, _, err := s.coverageRepo.UpsertGapByDedupeKey(ctx, gap)
-	if err != nil {
-		return err
-	}
-
-	// Create evidence.
-	evidence := &model.SupportGapEvidence{
-		GapID:           upserted.ID,
-		WorkspaceID:     event.WorkspaceID,
-		EvidenceType:    event.EventType,
-		ConversationID:  event.ConversationID,
-		MessageID:       event.MessageID,
-		WidgetSessionID: event.WidgetSessionID,
-		DocumentID:      event.DocumentID,
-		ArticlePublicID: event.ArticlePublicID,
-		SourceSignal:    event.SourceSignal,
-		Excerpt:         coverageTruncate(event.IssueSummary, 500),
-		CreatedAt:       now,
-	}
-	if err := s.coverageRepo.CreateEvidence(ctx, evidence); err != nil {
-		s.logger.WarnContext(ctx, "create evidence failed", "error", err)
-	}
-
-	// Link related article if document ID is present.
-	if event.DocumentID != nil && *event.DocumentID != "" {
-		if err := s.coverageRepo.LinkGapArticle(ctx, upserted.ID, *event.DocumentID, event.WorkspaceID); err != nil {
-			s.logger.WarnContext(ctx, "link gap article failed", "error", err)
-		}
-	}
-
-	return nil
+	_, err := s.clusterer.UpsertTopicGap(ctx, event)
+	return err
 }
 
 // GetSummary returns aggregate coverage metrics for a workspace.
