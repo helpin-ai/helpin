@@ -31,7 +31,7 @@ env:
 jobs:
   changes:
     name: Detect Changes
-    runs-on: ubuntu-latest
+    runs-on: arc-runners-helpin-ai
     outputs:
       server: ${{ steps.filter.outputs.server }}
       helpcenter: ${{ steps.filter.outputs.helpcenter }}
@@ -84,7 +84,7 @@ jobs:
 
   version:
     name: Determine RC Versions
-    runs-on: ubuntu-latest
+    runs-on: arc-runners-helpin-ai
     needs: changes
     if: needs.changes.outputs.server == 'true' || needs.changes.outputs.helpcenter == 'true'
     outputs:
@@ -149,7 +149,7 @@ jobs:
 
   build-server:
     name: Build Server Image
-    runs-on: ubuntu-latest
+    runs-on: arc-runners-helpin-ai
     needs: [version, changes]
     if: needs.changes.outputs.server == 'true' && needs.version.outputs.server_tag != ''
     steps:
@@ -190,7 +190,7 @@ jobs:
 
   build-helpcenter:
     name: Build Help Center Image
-    runs-on: ubuntu-latest
+    runs-on: arc-runners-helpin-ai
     needs: [version, changes]
     if: needs.changes.outputs.helpcenter == 'true' && needs.version.outputs.helpcenter_tag != ''
     steps:
@@ -214,7 +214,7 @@ jobs:
 
   deploy-netlify:
     name: Build & Deploy Frontend to Netlify
-    runs-on: ubuntu-latest
+    runs-on: arc-runners-helpin-ai
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     steps:
@@ -262,7 +262,7 @@ jobs:
 
   release:
     name: Create RC Release & Update Manifests
-    runs-on: ubuntu-latest
+    runs-on: arc-runners-helpin-ai
     needs: [version, changes, build-server, build-helpcenter]
     if: |
       always() &&

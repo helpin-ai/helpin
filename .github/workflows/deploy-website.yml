@@ -26,7 +26,7 @@ env:
 jobs:
   build:
     name: Build Website
-    runs-on: ubuntu-latest
+    runs-on: arc-runners-helpin-ai
     steps:
       - uses: actions/checkout@v4
 
@@ -52,7 +52,7 @@ jobs:
 
   deploy-production:
     name: Deploy to Production (helpin.ai)
-    runs-on: ubuntu-latest
+    runs-on: arc-runners-helpin-ai
     needs: build
     steps:
       - uses: actions/download-artifact@v4
