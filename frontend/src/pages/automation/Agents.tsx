@@ -22,6 +22,9 @@ import {
   BookOpen01Icon,
   SourceCodeIcon,
   MoreHorizontalIcon,
+  Key01Icon,
+  MessagePreview01Icon,
+  SecurityCheckIcon,
 } from '@/lib/icons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
@@ -37,6 +40,7 @@ import { docsService } from '@/lib/services/docsService';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
 import { buildAutomationActivityPath, buildAutomationFlowsPath } from '@/lib/automationUi';
+import { getAgentRunDisplayStatus, isPausedAgentRun } from '@/components/pm/agentRunConstants';
 import type {
   Agent,
   AgentExecutionConfig,
@@ -1354,6 +1358,8 @@ interface AgentRunStats {
   recentCompleted: number;
   recentFailed: number;
   lastRun?: AgentRun;
+  attentionRun?: AgentRun;
+  attentionRunCount: number;
   lastFiveStatuses: AgentRun['status'][];
 }
 
@@ -1410,7 +1416,7 @@ function isFailingAgent(stats?: AgentRunStats) {
 }
 
 function needsAttention(agent: Agent, stats?: AgentRunStats) {
-  return needsModelConfiguration(agent) || isUnusedAgent(stats) || isFailingAgent(stats);
+  return needsModelConfiguration(agent) || Boolean(stats?.attentionRunCount) || isUnusedAgent(stats) || isFailingAgent(stats);
 }
 
 function formatLastRunTime(run?: AgentRun) {
@@ -1421,13 +1427,18 @@ function formatLastRunTime(run?: AgentRun) {
 
 function lastRunStatusLabel(run?: AgentRun) {
   if (!run) return 'Never run';
-  switch (run.status) {
+  const displayStatus = getAgentRunDisplayStatus(run);
+  switch (displayStatus) {
     case 'completed':
       return 'Completed';
     case 'failed':
       return 'Failed';
-    case 'paused':
-      return 'Paused';
+    case 'awaiting_approval':
+      return 'Needs approval';
+    case 'awaiting_auth':
+      return 'Needs sign-in';
+    case 'awaiting_input':
+      return 'Needs input';
     case 'running':
       return 'Running';
     case 'queued':
@@ -1457,9 +1468,65 @@ function lastRunStatusClass(run?: AgentRun) {
 
 function attentionDotClass(agent: Agent, stats?: AgentRunStats) {
   if (needsModelConfiguration(agent)) return 'bg-amber-500';
+  if (stats?.attentionRunCount) return 'bg-amber-500';
   if (isFailingAgent(stats)) return 'bg-rose-500';
   if (isUnusedAgent(stats)) return 'bg-amber-500';
   return 'bg-emerald-500';
+}
+
+function attentionRunPriority(run: AgentRun) {
+  const displayStatus = getAgentRunDisplayStatus(run);
+  if (displayStatus === 'awaiting_approval') return 3;
+  if (displayStatus === 'awaiting_auth') return 2;
+  if (displayStatus === 'awaiting_input') return 1;
+  return 0;
+}
+
+function attentionRunLabel(run: AgentRun) {
+  const displayStatus = getAgentRunDisplayStatus(run);
+  if (displayStatus === 'awaiting_approval') return 'Needs approval';
+  if (displayStatus === 'awaiting_auth') return 'Needs sign-in';
+  return 'Needs input';
+}
+
+function AttentionRunBadge({
+  stats,
+  onOpenRun,
+}: {
+  stats?: AgentRunStats;
+  onOpenRun: (runId: string) => void;
+}) {
+  const run = stats?.attentionRun;
+  if (!run) return null;
+
+  const displayStatus = getAgentRunDisplayStatus(run);
+  const Icon = displayStatus === 'awaiting_approval'
+    ? SecurityCheckIcon
+    : displayStatus === 'awaiting_auth'
+      ? Key01Icon
+      : MessagePreview01Icon;
+  const label = attentionRunLabel(run);
+  const badgeLabel = stats.attentionRunCount > 1 ? `${label} +${stats.attentionRunCount - 1}` : label;
+
+  return (
+    <Badge
+      asChild
+      variant="outline"
+      className="border-amber-500/40 bg-amber-500/10 text-[10px] text-amber-700 hover:bg-amber-500/15 dark:text-amber-400"
+    >
+      <button
+        type="button"
+        title={`${label}. Open run.`}
+        onClick={(event) => {
+          event.stopPropagation();
+          onOpenRun(run.id);
+        }}
+      >
+        <Icon className="h-3 w-3" />
+        {badgeLabel}
+      </button>
+    </Badge>
+  );
 }
 
 function FlowRefs({
@@ -1522,6 +1589,7 @@ function AgentCard({
   workspaceSlug,
   presets,
   onOpen,
+  onOpenRun,
   onRunNow,
   canEdit,
 }: {
@@ -1531,6 +1599,7 @@ function AgentCard({
   workspaceSlug?: string;
   presets: AgentPresetDefinition[];
   onOpen: (agent: Agent) => void;
+  onOpenRun: (runId: string) => void;
   onRunNow: (agent: Agent) => void;
   canEdit: boolean;
 }) {
@@ -1555,6 +1624,7 @@ function AgentCard({
               <h3 className="truncate text-sm font-semibold">{agent.name}</h3>
               {agent.is_system ? <Badge variant="outline" className="text-[10px]">System</Badge> : null}
               {agent.source_template_key ? <Badge variant="secondary" className="text-[10px]">Template</Badge> : null}
+              <AttentionRunBadge stats={stats} onOpenRun={onOpenRun} />
             </div>
             <p className="text-xs text-muted-foreground">{role}</p>
             <p className="line-clamp-2 text-sm text-muted-foreground">{purpose}</p>
@@ -1647,6 +1717,7 @@ function AgentRow({
   workspaceSlug,
   presets,
   onOpen,
+  onOpenRun,
   onRunNow,
   canEdit,
 }: {
@@ -1656,6 +1727,7 @@ function AgentRow({
   workspaceSlug?: string;
   presets: AgentPresetDefinition[];
   onOpen: (agent: Agent) => void;
+  onOpenRun: (runId: string) => void;
   onRunNow: (agent: Agent) => void;
   canEdit: boolean;
 }) {
@@ -1681,6 +1753,7 @@ function AgentRow({
               <span className="truncate text-sm font-medium">{agent.name}</span>
               {agent.is_system ? <Badge variant="outline" className="text-[10px]">System</Badge> : null}
               {agent.source_template_key ? <Badge variant="secondary" className="text-[10px]">Template</Badge> : null}
+              <AttentionRunBadge stats={stats} onOpenRun={onOpenRun} />
             </div>
             <p className="mt-0.5 truncate text-xs text-muted-foreground">{role}</p>
           </div>
@@ -2067,6 +2140,12 @@ export function AgentsPage() {
     workspaceId,
   ]);
 
+  const openRunDetails = useCallback((runId: string) => {
+    void navigate({
+      to: buildAutomationActivityPath(workspace?.slug, { run_id: runId }),
+    });
+  }, [navigate, workspace?.slug]);
+
   useEffect(() => {
     loadAgents();
     loadProviderOptions();
@@ -2076,65 +2155,85 @@ export function AgentsPage() {
     loadAgentTemplates();
   }, [loadAgents, loadProviderOptions, loadPresets, loadToolCatalog, loadSkillCatalog, loadAgentTemplates]);
 
-  // Fetch fleet-level run stats and trigger usage once, then derive agent rows from that shared data.
-  useEffect(() => {
+  const loadFleetData = useCallback(async () => {
     if (!workspaceId || agents.length === 0) {
       setRunStats({});
       setAgentUsageMap({});
       return;
     }
 
-    const fetchFleetData = async () => {
-      const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-      const results: Record<string, AgentRunStats> = {};
-      for (const agent of agents) {
-        results[agent.id] = {
-          recentRuns: 0,
-          recentCompleted: 0,
-          recentFailed: 0,
-          lastRun: undefined,
-          lastFiveStatuses: [],
-        };
+    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const results: Record<string, AgentRunStats> = {};
+    for (const agent of agents) {
+      results[agent.id] = {
+        recentRuns: 0,
+        recentCompleted: 0,
+        recentFailed: 0,
+        lastRun: undefined,
+        attentionRun: undefined,
+        attentionRunCount: 0,
+        lastFiveStatuses: [],
+      };
+    }
+
+    const [runsRes, usageEntries] = await Promise.all([
+      automationService.listWorkspaceRuns(workspaceId, 1, 500),
+      Promise.all(
+        agents.map(async (agent) => {
+          const res = await automationService.getAgentUsage(workspaceId, agent.id);
+          return [agent.id, res.error ? null : (res.data ?? null)] as const;
+        }),
+      ),
+    ]);
+
+    const runs = runsRes.error ? [] : (runsRes.data?.data ?? []);
+    for (const run of runs) {
+      const stats = results[run.agent_id];
+      if (!stats) continue;
+
+      if (!stats.lastRun) {
+        stats.lastRun = run;
       }
 
-      const [runsRes, usageEntries] = await Promise.all([
-        automationService.listWorkspaceRuns(workspaceId, 1, 500),
-        Promise.all(
-          agents.map(async (agent) => {
-            const res = await automationService.getAgentUsage(workspaceId, agent.id);
-            return [agent.id, res.error ? null : (res.data ?? null)] as const;
-          }),
-        ),
-      ]);
-
-      const runs = runsRes.error ? [] : (runsRes.data?.data ?? []);
-      for (const run of runs) {
-        const stats = results[run.agent_id];
-        if (!stats) continue;
-
-        if (!stats.lastRun) {
-          stats.lastRun = run;
+      if (isPausedAgentRun(run)) {
+        stats.attentionRunCount += 1;
+        if (!stats.attentionRun || attentionRunPriority(run) > attentionRunPriority(stats.attentionRun)) {
+          stats.attentionRun = run;
         }
-
-        if (stats.lastFiveStatuses.length < 5) {
-          stats.lastFiveStatuses.push(run.status);
-        }
-
-        const createdAt = new Date(run.created_at).getTime();
-        if (Number.isNaN(createdAt) || createdAt < sevenDaysAgo) continue;
-
-        stats.recentRuns += 1;
-        if (run.status === 'completed') stats.recentCompleted += 1;
-        if (run.status === 'failed') stats.recentFailed += 1;
       }
 
-      setRunStats(results);
+      if (stats.lastFiveStatuses.length < 5) {
+        stats.lastFiveStatuses.push(run.status);
+      }
 
-      setAgentUsageMap(Object.fromEntries(usageEntries));
+      const createdAt = new Date(run.created_at).getTime();
+      if (Number.isNaN(createdAt) || createdAt < sevenDaysAgo) continue;
+
+      stats.recentRuns += 1;
+      if (run.status === 'completed') stats.recentCompleted += 1;
+      if (run.status === 'failed') stats.recentFailed += 1;
+    }
+
+    setRunStats(results);
+    setAgentUsageMap(Object.fromEntries(usageEntries));
+  }, [agents, workspaceId]);
+
+  // Fetch fleet-level run stats and trigger usage once, then derive agent rows from that shared data.
+  useEffect(() => {
+    void loadFleetData();
+  }, [loadFleetData]);
+
+  useEffect(() => {
+    const handler = () => {
+      void loadFleetData();
     };
-
-    void fetchFleetData();
-  }, [workspaceId, agents]);
+    window.addEventListener('agent_run-created', handler);
+    window.addEventListener('agent_run-updated', handler);
+    return () => {
+      window.removeEventListener('agent_run-created', handler);
+      window.removeEventListener('agent_run-updated', handler);
+    };
+  }, [loadFleetData]);
 
   const openCreateDialog = () => {
     setEditingAgent(null);
@@ -3059,6 +3158,7 @@ export function AgentsPage() {
               workspaceSlug={workspace?.slug}
               presets={presets}
               onOpen={openEditDialog}
+              onOpenRun={openRunDetails}
               onRunNow={openRunNowDialog}
               canEdit={canEdit}
             />
@@ -3077,6 +3177,7 @@ export function AgentsPage() {
               workspaceSlug={workspace?.slug}
               presets={presets}
               onOpen={openEditDialog}
+              onOpenRun={openRunDetails}
               onRunNow={openRunNowDialog}
               canEdit={canEdit}
             />

@@ -41,6 +41,11 @@ export function StandardRailNav({ groups, isActive, onNavigate }: StandardRailNa
                   >
                     <item.icon />
                     <span>{item.label}</span>
+                    {!!item.badge && (
+                      <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white">
+                        {item.badge > 99 ? '99+' : item.badge}
+                      </span>
+                    )}
                   </a>
                 </SidebarMenuButton>
               </SidebarMenuItem>
