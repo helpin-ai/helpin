@@ -46,6 +46,7 @@ export interface DocsCollection {
   description?: string;
   icon?: string;
   position: number;
+  sort_key: string;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -67,6 +68,7 @@ export interface DocsDocument {
   icon?: string;
   tags: string[];
   position: number;
+  sort_key: string;
   is_pinned: boolean;
   is_publicly_shared: boolean;
   share_token?: string;
@@ -584,6 +586,29 @@ export interface ReorderDocsChildItem {
 export interface ReorderDocsChildrenRequest {
   parent_collection_id?: string | null;
   items: ReorderDocsChildItem[];
+}
+
+// ─── Move (sort-key based) ──────────────────────────────────────────────────
+
+export interface MoveDocsItemRef {
+  type: 'doc' | 'collection';
+  id: string;
+}
+
+export interface MoveDocsBucketRef {
+  space_id: string;
+  parent_collection_id?: string | null;
+}
+
+export interface MoveDocsPositionRef {
+  before?: MoveDocsItemRef | null;
+  after?: MoveDocsItemRef | null;
+}
+
+export interface MoveDocsItemRequest {
+  item: MoveDocsItemRef;
+  target_bucket: MoveDocsBucketRef;
+  position: MoveDocsPositionRef;
 }
 
 // ─── Display helpers ────────────────────────────────────────────────────────

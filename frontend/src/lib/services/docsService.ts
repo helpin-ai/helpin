@@ -253,6 +253,10 @@ export const docsService = {
   reorderChildren: (wsId: string, spaceId: string, data: import('../docsTypes').ReorderDocsChildrenRequest) =>
     api.put(`/docs/spaces/${spaceId}/children/reorder${qs(wsId)}`, data),
 
+  // Move a single item (doc or collection) to a specific position using sort keys.
+  moveItem: (wsId: string, data: import('../docsTypes').MoveDocsItemRequest) =>
+    api.post<{ message: string }>(`/docs/items/move${qs(wsId)}`, data),
+
   // ── Preview ────────────────────────────────────────────────────────────
   getPreviewToken: (wsId: string, docId: string) =>
     api.post<{
