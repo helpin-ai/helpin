@@ -3,6 +3,8 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -16,6 +18,8 @@ type SupportCoverageHandler struct {
 	coverageSvc *service.SupportCoverageService
 	eventSvc    *service.SupportEventService
 	draftSvc    *service.SupportCoverageDraftService
+	debounceMu  sync.Mutex
+	debounce    map[string]time.Time
 }
 
 // NewSupportCoverageHandler creates a new SupportCoverageHandler.
@@ -28,6 +32,7 @@ func NewSupportCoverageHandler(
 		coverageSvc: coverageSvc,
 		eventSvc:    eventSvc,
 		draftSvc:    draftSvc,
+		debounce:    map[string]time.Time{},
 	}
 }
 
@@ -126,6 +131,38 @@ func (h *SupportCoverageHandler) GetGap(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, detail)
+}
+
+// RegenerateGap handles POST /api/support/coverage/gaps/{gapId}/regenerate.
+func (h *SupportCoverageHandler) RegenerateGap(w http.ResponseWriter, r *http.Request) {
+	wsID := middleware.GetWorkspaceID(r.Context())
+	userID := middleware.GetUserID(r.Context())
+	gapID := chi.URLParam(r, "gapId")
+	if wsID == "" || userID == "" {
+		writeError(w, http.StatusUnauthorized, "missing workspace or user context")
+		return
+	}
+	if !h.allowRegenerate(userID, gapID, 30*time.Second) {
+		writeError(w, http.StatusTooManyRequests, "regenerating too frequently")
+		return
+	}
+	if err := h.coverageSvc.RegenerateGap(r.Context(), wsID, gapID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued"})
+}
+
+func (h *SupportCoverageHandler) allowRegenerate(userID, gapID string, window time.Duration) bool {
+	key := userID + ":" + gapID
+	now := time.Now()
+	h.debounceMu.Lock()
+	defer h.debounceMu.Unlock()
+	if last, ok := h.debounce[key]; ok && now.Sub(last) < window {
+		return false
+	}
+	h.debounce[key] = now
+	return true
 }
 
 // UpdateGapStatus handles POST /api/support/coverage/gaps/{gapId}/status.

@@ -202,6 +202,23 @@ func (s *SupportCoverageService) GetGapDetail(ctx context.Context, workspaceID, 
 	return s.coverageRepo.GetGapDetail(ctx, workspaceID, gapID)
 }
 
+func (s *SupportCoverageService) RegenerateGap(ctx context.Context, workspaceID, gapID string) error {
+	if s.workflow == nil {
+		return fmt.Errorf("enrichment workflow is not configured")
+	}
+	detail, err := s.coverageRepo.GetGapDetail(ctx, workspaceID, gapID)
+	if err != nil {
+		return err
+	}
+	if detail == nil {
+		return fmt.Errorf("gap not found")
+	}
+	if detail.TopicID == nil || *detail.TopicID == "" {
+		return fmt.Errorf("gap is not topic-scoped")
+	}
+	return s.workflow.StartEnrichment(ctx, *detail.TopicID, true)
+}
+
 // UpdateGapStatus sets the status of a gap.
 func (s *SupportCoverageService) UpdateGapStatus(ctx context.Context, workspaceID, gapID, status, userID string, issueResolved *bool) error {
 	return s.coverageRepo.UpdateGapStatus(ctx, workspaceID, gapID, status, userID, issueResolved)

@@ -21,6 +21,9 @@ export const supportCoverageService = {
   getGap: (wsId: string, gapId: string) =>
     api.get<SupportCoverageGapDetail>(`/support/coverage/gaps/${gapId}${qs(wsId)}`),
 
+  regenerate: (wsId: string, gapId: string) =>
+    api.post<{ status: 'queued' }>(`/support/coverage/gaps/${gapId}/regenerate${qs(wsId)}`, {}),
+
   updateGapStatus: (wsId: string, gapId: string, status: string, issueResolved?: boolean) =>
     api.post(`/support/coverage/gaps/${gapId}/status${qs(wsId)}`, { status, issue_resolved: issueResolved }),
 

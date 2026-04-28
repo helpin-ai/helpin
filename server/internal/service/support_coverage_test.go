@@ -362,6 +362,63 @@ func TestSupportCoverage_SpikeTriggerRespectsTopicCooldown(t *testing.T) {
 	}
 }
 
+func TestSupportCoverage_RegenerateGapEnqueuesUniqueWorkflow(t *testing.T) {
+	eventSvc, coverageSvc, _ := setupCoverageTestEnv(t)
+	runner := &fakeCoverageWorkflowRunner{}
+	coverageSvc.SetCoverageWorkflowRunner(runner)
+	ctx := context.Background()
+
+	if err := eventSvc.RecordEvent(ctx, SupportEventInput{
+		WorkspaceID:  "ws-1",
+		EventType:    model.SupportEventHumanReplyAfterAI,
+		IssueSummary: "How do I reset my password?",
+		SourceSignal: model.SupportCoverageSourceHumanReply,
+	}); err != nil {
+		t.Fatalf("RecordEvent: %v", err)
+	}
+	gaps, _, err := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	if err != nil {
+		t.Fatalf("ListGaps: %v", err)
+	}
+
+	if err := coverageSvc.RegenerateGap(ctx, "ws-1", gaps[0].ID); err != nil {
+		t.Fatalf("RegenerateGap: %v", err)
+	}
+
+	if len(runner.topicIDs) != 1 {
+		t.Fatalf("workflow starts=%d, want 1", len(runner.topicIDs))
+	}
+	if !runner.unique[0] {
+		t.Fatal("manual regenerate should use a unique workflow id")
+	}
+}
+
+func TestSupportCoverage_RegenerateGapRejectsLegacyGapWithoutTopic(t *testing.T) {
+	_, coverageSvc, db := setupCoverageTestEnv(t)
+	coverageSvc.SetCoverageWorkflowRunner(&fakeCoverageWorkflowRunner{})
+	ctx := context.Background()
+	now := time.Now()
+	legacy := model.SupportCoverageGap{
+		ID:            "legacy-gap",
+		WorkspaceID:   "ws-1",
+		DedupeKey:     "legacy",
+		Status:        model.SupportCoverageGapStatusOpen,
+		EvidenceCount: 1,
+		Metadata:      []byte("{}"),
+		FirstSeenAt:   now,
+		LastSeenAt:    now,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	if err := db.Create(&legacy).Error; err != nil {
+		t.Fatalf("seed legacy gap: %v", err)
+	}
+
+	if err := coverageSvc.RegenerateGap(ctx, "ws-1", "legacy-gap"); err == nil {
+		t.Fatal("expected error for legacy gap without topic")
+	}
+}
+
 func TestSupportCoverage_NormalizedVariantsShareCluster(t *testing.T) {
 	eventSvc, coverageSvc, _ := setupCoverageTestEnv(t)
 	ctx := context.Background()
@@ -657,10 +714,12 @@ func TestSupportCoverage_AsyncRecorder_Queues(t *testing.T) {
 
 type fakeCoverageWorkflowRunner struct {
 	topicIDs []string
+	unique   []bool
 }
 
 func (f *fakeCoverageWorkflowRunner) StartEnrichment(ctx context.Context, topicID string, unique bool) error {
 	f.topicIDs = append(f.topicIDs, topicID)
+	f.unique = append(f.unique, unique)
 	return nil
 }
 
