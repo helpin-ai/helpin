@@ -29,6 +29,8 @@ type PMImportJob struct {
 	EntitiesTotal     int        `json:"entities_total" gorm:"not null;default:0"`
 	Result            *string    `json:"result"`
 	Error             *string    `json:"error"`
+	PayloadEncrypted  *string    `json:"-" gorm:"type:text"`
+	WorkflowID        *string    `json:"workflow_id,omitempty" gorm:"index"`
 	StartedBy         string     `json:"started_by" gorm:"type:uuid;not null"`
 	CreatedAt         time.Time  `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt         time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
@@ -69,6 +71,7 @@ type ShortcutImportPreviewSummary struct {
 	ObjectivesCount     int            `json:"objectives_count"`
 	SprintsCount        int            `json:"sprints_count"`
 	LabelsCount         int            `json:"labels_count"`
+	DocsCount           int            `json:"docs_count"`
 	TeamsCount          int            `json:"teams_count"`
 	WorkflowsCount      int            `json:"workflows_count"`
 	WorkflowStatesCount int            `json:"workflow_states_count"`
@@ -124,6 +127,10 @@ type ShortcutWorkflowStateMappingPayload struct {
 type ShortcutImportOptions struct {
 	ImportArchived          bool   `json:"import_archived"`
 	ImportCompleted         bool   `json:"import_completed"`
+	ImportDocs              bool   `json:"import_docs,omitempty"`
+	DocsSpaceID             string `json:"docs_space_id,omitempty"`
+	DocsCollectionID        string `json:"docs_collection_id,omitempty"`
+	DocsLookbackMonths      int    `json:"docs_lookback_months,omitempty"`
 	StoryDateField          string `json:"story_date_field,omitempty"`
 	StoryLookbackMonths     int    `json:"story_lookback_months,omitempty"`
 	EpicLookbackMonths      int    `json:"epic_lookback_months,omitempty"`
@@ -154,6 +161,8 @@ type ShortcutImportResult struct {
 	SprintsCreated        int      `json:"sprints_created"`
 	TasksCreated          int      `json:"tasks_created"`
 	TasksSkipped          int      `json:"tasks_skipped"`
+	DocsCreated           int      `json:"docs_created"`
+	DocsSkipped           int      `json:"docs_skipped"`
 	ChecklistItemsCreated int      `json:"checklist_items_created"`
 	OwnerLinksCreated     int      `json:"owner_links_created"`
 	LabelLinksCreated     int      `json:"label_links_created"`
@@ -173,11 +182,16 @@ type ShortcutImportStatusProgress struct {
 }
 
 type ShortcutImportStatusResponse struct {
-	ImportID string                       `json:"import_id"`
-	Status   string                       `json:"status"`
-	Progress ShortcutImportStatusProgress `json:"progress"`
-	Result   *ShortcutImportResult        `json:"result,omitempty"`
-	Error    *string                      `json:"error,omitempty"`
+	ImportID    string                       `json:"import_id"`
+	Status      string                       `json:"status"`
+	FileName    string                       `json:"file_name,omitempty"`
+	TotalRows   int                          `json:"total_rows,omitempty"`
+	Progress    ShortcutImportStatusProgress `json:"progress"`
+	Result      *ShortcutImportResult        `json:"result,omitempty"`
+	Error       *string                      `json:"error,omitempty"`
+	CreatedAt   *time.Time                   `json:"created_at,omitempty"`
+	UpdatedAt   *time.Time                   `json:"updated_at,omitempty"`
+	CompletedAt *time.Time                   `json:"completed_at,omitempty"`
 }
 
 type ShortcutAPIImportPreviewRequest struct {

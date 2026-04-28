@@ -363,6 +363,9 @@ func main() {
 		wsPublisher,
 		sprintCloseoutRepo,
 	)
+	pmAttachmentService := service.NewPMAttachmentService(pmAttachmentRepo, s3Client, wsPublisher)
+	pmImportService := service.NewPMImportService(db, workspaceRepo, workflowRepo, pmAttachmentService, resolvePMImportEncryptionKey(cfg))
+	pmImportService.SetPublisher(wsPublisher)
 	pmWorkflowService := service.NewPMWorkflowService(workflowRepo, storyRepo, labelRepo, nil)
 	pmStoryService := service.NewPMTaskService(
 		storyRepo,
@@ -437,6 +440,7 @@ func main() {
 	agentService.SetWorkflowService(pmWorkflowService)
 	docsDocumentService := service.NewDocsDocumentService(docsDocumentRepo, docsSpaceRepo, wsPublisher, cfg.DocsOrderingUseSortKey)
 	docsContentService := service.NewDocsContentService(docsContentRepo, docsDocumentRepo, nil)
+	pmImportService.SetDocsImportDependencies(docsDocumentService, docsContentService)
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, storyRepo, docsDocumentRepo, nil)
 	releaseFactsService := service.NewReleaseFactsService(
 		gitIntRepo,
@@ -572,11 +576,12 @@ func main() {
 	sprintAutomationActivities := temporalapp.NewSprintAutomationActivities(pmAutomationService)
 	docsEmbeddingActivities := temporalapp.NewDocsEmbeddingActivities(docsEmbeddingService)
 	contentSourceSyncActivities := temporalapp.NewContentSourceSyncActivities(supportContentSyncService)
+	pmImportActivities := service.NewPMImportActivities(pmImportService)
 
 	queueConfigs := selectedQueues()
 	workers := make([]tworker.Worker, 0, len(queueConfigs))
 	for _, queue := range queueConfigs {
-		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, activities, emailSyncActivities, signalActivities, summaryActivities, coverageActivities, dealMgmtActivities, scheduledRuleActivities, recurringActivities, sprintAutomationActivities, docsEmbeddingActivities, contentSourceSyncActivities))
+		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, activities, emailSyncActivities, signalActivities, summaryActivities, coverageActivities, dealMgmtActivities, scheduledRuleActivities, recurringActivities, sprintAutomationActivities, docsEmbeddingActivities, contentSourceSyncActivities, pmImportActivities))
 	}
 
 	for _, sharedWorker := range workers {
@@ -615,7 +620,7 @@ func parseLogLevel(value string) slog.Level {
 	}
 }
 
-func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, activities *temporalapp.AgentRunActivities, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, summaryActivities *temporalapp.CRMSummaryActivities, coverageActivities *temporalapp.CoverageGapActivities, dealMgmtActivities *temporalapp.DealManagementActivities, scheduledRuleActivities *temporalapp.ScheduledRuleActivities, recurringActivities *service.PMRecurringTemplateActivities, sprintActivities *temporalapp.SprintAutomationActivities, docsEmbeddingActivities *temporalapp.DocsEmbeddingActivities, contentSourceSyncActivities *temporalapp.ContentSourceSyncActivities) tworker.Worker {
+func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, activities *temporalapp.AgentRunActivities, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, summaryActivities *temporalapp.CRMSummaryActivities, coverageActivities *temporalapp.CoverageGapActivities, dealMgmtActivities *temporalapp.DealManagementActivities, scheduledRuleActivities *temporalapp.ScheduledRuleActivities, recurringActivities *service.PMRecurringTemplateActivities, sprintActivities *temporalapp.SprintAutomationActivities, docsEmbeddingActivities *temporalapp.DocsEmbeddingActivities, contentSourceSyncActivities *temporalapp.ContentSourceSyncActivities, pmImportActivities *service.PMImportActivities) tworker.Worker {
 	options := tworker.Options{
 		MaxConcurrentActivityExecutionSize: concurrency,
 		WorkerStopTimeout:                  temporalWorkerStopTimeout,
@@ -729,6 +734,14 @@ func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int,
 		})
 	}
 
+	// Register PM import workflows and activities.
+	w.RegisterWorkflow(temporalapp.ShortcutImportWorkflow)
+	if pmImportActivities != nil {
+		w.RegisterActivityWithOptions(pmImportActivities.ExecuteShortcutAPIImportActivity, activity.RegisterOptions{
+			Name: "PMImportActivities.ExecuteShortcutAPIImportActivity",
+		})
+	}
+
 	return w
 }
 
@@ -799,6 +812,23 @@ func resolveCodexAuthEncryptionKey(cfg *config.Config) []byte {
 	}
 	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.CRMEncryptionKey)); err != nil {
 		slog.Warn("invalid CRM_ENCRYPTION_KEY for Codex workspace auth fallback (must be a 32-byte hex-encoded AES key)", "error", err)
+	} else if len(key) == 32 {
+		return key
+	}
+	return nil
+}
+
+func resolvePMImportEncryptionKey(cfg *config.Config) []byte {
+	if cfg == nil {
+		return nil
+	}
+	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.PMImportEncryptionKey)); err != nil {
+		slog.Warn("invalid PM_IMPORT_ENCRYPTION_KEY (must be a 32-byte hex-encoded AES key)", "error", err)
+	} else if len(key) == 32 {
+		return key
+	}
+	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.CRMEncryptionKey)); err != nil {
+		slog.Warn("invalid CRM_ENCRYPTION_KEY for PM import fallback (must be a 32-byte hex-encoded AES key)", "error", err)
 	} else if len(key) == 32 {
 		return key
 	}

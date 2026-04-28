@@ -33,6 +33,7 @@ import type { MemberWithUser } from '@/lib/types';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { inviteService } from '@/lib/services/inviteService';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
+import { useDocsCollections, useDocsSpaces } from '@/hooks/queries/useDocs';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -87,7 +88,7 @@ type WizardStep = 0 | 1 | 2 | 3 | 4;
 
 const STEP_LABELS = ['Connect', 'Teams', 'Workflows', 'Users', 'Import'];
 
-const IMPORT_STEPS_API = ['API Enrichment', 'Teams', 'Workflows', 'Labels', 'Objectives', 'Epics', 'Sprints', 'Tasks', 'Media', 'Comments'];
+const IMPORT_STEPS_API = ['API Enrichment', 'Teams', 'Workflows', 'Labels', 'Objectives', 'Epics', 'Sprints', 'Tasks', 'Media', 'Comments', 'Docs'];
 const LOOKBACK_OPTIONS = [
   { value: '0', label: 'All time' },
   { value: '3', label: 'Last 3 months' },
@@ -118,6 +119,8 @@ function formatImportStepLabel(step?: string | null) {
       return 'Media';
     case 'comments':
       return 'Comments';
+    case 'docs':
+      return 'Docs';
     case 'parse':
       return 'Preparing import';
     case 'completed':
@@ -125,6 +128,39 @@ function formatImportStepLabel(step?: string | null) {
     default:
       return step || 'unknown';
   }
+}
+
+function formatImportStatusLabel(status: ShortcutImportStatusResponse['status']) {
+  switch (status) {
+    case 'pending':
+      return 'Pending';
+    case 'scanning':
+      return 'Scanning';
+    case 'ready':
+      return 'Ready';
+    case 'processing':
+      return 'Processing';
+    case 'completed':
+      return 'Completed';
+    case 'failed':
+      return 'Failed';
+    case 'canceled':
+      return 'Canceled';
+    default:
+      return status;
+  }
+}
+
+function formatImportDate(value?: string | null) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date);
 }
 
 function normalizeImportName(value: string) {
@@ -205,6 +241,7 @@ interface ShortcutImportWizardProps {
 
 export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWizardProps) {
   const { teams: existingTeams } = useWorkspaceTeams(workspaceId);
+  const { data: docsSpaces = [], isFetched: docsSpacesFetched } = useDocsSpaces(workspaceId);
   const [step, setStep] = useState<WizardStep>(0);
   const [preview, setPreview] = useState<ShortcutImportPreviewResponse | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -219,12 +256,19 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
   const [epicLookbackMonths, setEpicLookbackMonths] = useState('0');
   const [objectiveLookbackMonths, setObjectiveLookbackMonths] = useState('0');
   const [maxStories, setMaxStories] = useState('');
+  const [importDocs, setImportDocs] = useState(true);
+  const [docsSpaceId, setDocsSpaceId] = useState('');
+  const [docsCollectionId, setDocsCollectionId] = useState('');
+  const [docsLookbackMonths, setDocsLookbackMonths] = useState('0');
   const [scanProgress, setScanProgress] = useState<ShortcutScanProgress | null>(null);
   const [apiToken, setApiToken] = useState('');
   const [importStatus, setImportStatus] = useState<ShortcutImportStatusResponse | null>(null);
+  const [importHistory, setImportHistory] = useState<ShortcutImportStatusResponse[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [importing, setImporting] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const scanIdRef = useRef<string | null>(null);
+  const { data: docsCollections = [] } = useDocsCollections(workspaceId, docsSpaceId);
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -232,6 +276,34 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, []);
+
+  const loadImportHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    const { data } = await pmImportService.listShortcutStatuses(workspaceId);
+    setHistoryLoading(false);
+    if (data) {
+      setImportHistory(data);
+    }
+  }, [workspaceId]);
+
+  useEffect(() => {
+    void loadImportHistory();
+  }, [loadImportHistory]);
+
+  useEffect(() => {
+    if (!docsSpaceId && docsSpaces.length > 0) {
+      setDocsSpaceId(docsSpaces[0].id);
+    }
+    if (docsSpacesFetched && docsSpaces.length === 0 && importDocs) {
+      setImportDocs(false);
+    }
+  }, [docsSpaceId, docsSpaces, docsSpacesFetched, importDocs]);
+
+  useEffect(() => {
+    if (docsCollectionId && !docsCollections.some((collection) => collection.id === docsCollectionId)) {
+      setDocsCollectionId('');
+    }
+  }, [docsCollectionId, docsCollections]);
 
   useEffect(() => {
     const handleProgress = (event: Event) => {
@@ -262,6 +334,10 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
       epic_lookback_months: parsePositiveInt(epicLookbackMonths),
       objective_lookback_months: parsePositiveInt(objectiveLookbackMonths),
       max_stories: parsePositiveInt(maxStories),
+      import_docs: importDocs,
+      docs_space_id: importDocs ? docsSpaceId : undefined,
+      docs_collection_id: importDocs && docsCollectionId ? docsCollectionId : undefined,
+      docs_lookback_months: importDocs ? parsePositiveInt(docsLookbackMonths) : undefined,
     };
   }, [
     importArchived,
@@ -271,6 +347,10 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
     epicLookbackMonths,
     objectiveLookbackMonths,
     maxStories,
+    importDocs,
+    docsSpaceId,
+    docsCollectionId,
+    docsLookbackMonths,
   ]);
 
   // ─── Step 0: API Preview ─────────────────────────────────────────
@@ -471,8 +551,31 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
 
   // ─── Step 3: Execute ─────────────────────────────────────────────
 
+  const startImportStatusPolling = useCallback((importId: string) => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    const poll = async () => {
+      const { data: status } = await pmImportService.getShortcutStatus(workspaceId, importId);
+      if (status) {
+        setImportStatus(status);
+        if (status.status === 'completed' || status.status === 'failed' || status.status === 'canceled') {
+          if (pollRef.current) clearInterval(pollRef.current);
+          pollRef.current = null;
+          setImporting(false);
+          void loadImportHistory();
+        }
+      }
+    };
+    setImporting(true);
+    void poll();
+    pollRef.current = setInterval(poll, 1500);
+  }, [loadImportHistory, workspaceId]);
+
   const handleStartImport = useCallback(async () => {
     if (!apiToken.trim()) return;
+    if (importDocs && !docsSpaceId) {
+      toast.error('Select a Helpin Docs space for Shortcut Docs');
+      return;
+    }
     setImporting(true);
 
     // Build user mappings: email → userId
@@ -516,20 +619,9 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
       setImporting(false);
       return;
     }
-
-    // Start polling
-    pollRef.current = setInterval(async () => {
-      const { data: status } = await pmImportService.getShortcutStatus(workspaceId, data.import_id);
-      if (status) {
-        setImportStatus(status);
-        if (status.status === 'completed' || status.status === 'failed') {
-          if (pollRef.current) clearInterval(pollRef.current);
-          pollRef.current = null;
-          setImporting(false);
-        }
-      }
-    }, 1500);
-  }, [userMappings, teamMappings, workflowMappings, workspaceId, apiToken, importOptions]);
+    await loadImportHistory();
+    startImportStatusPolling(data.import_id);
+  }, [userMappings, teamMappings, workflowMappings, workspaceId, apiToken, importOptions, importDocs, docsSpaceId, loadImportHistory, startImportStatusPolling]);
 
   // ─── Navigation ──────────────────────────────────────────────────
 
@@ -587,6 +679,8 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
           preview={preview}
           loading={previewLoading}
           scanProgress={scanProgress}
+          importHistory={importHistory}
+          historyLoading={historyLoading}
           apiToken={apiToken}
           onApiTokenChange={(token) => {
             setApiToken(token);
@@ -598,6 +692,12 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
           epicLookbackMonths={epicLookbackMonths}
           objectiveLookbackMonths={objectiveLookbackMonths}
           maxStories={maxStories}
+          importDocs={importDocs}
+          docsSpaceId={docsSpaceId}
+          docsCollectionId={docsCollectionId}
+          docsLookbackMonths={docsLookbackMonths}
+          docsSpaces={docsSpaces}
+          docsCollections={docsCollections}
           onArchived={setImportArchived}
           onCompleted={setImportCompleted}
           onStoryDateField={setStoryDateField}
@@ -605,7 +705,25 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
           onEpicLookbackMonths={setEpicLookbackMonths}
           onObjectiveLookbackMonths={setObjectiveLookbackMonths}
           onMaxStories={setMaxStories}
+          onImportDocs={setImportDocs}
+          onDocsSpaceId={(value) => {
+            setDocsSpaceId(value);
+            setDocsCollectionId('');
+          }}
+          onDocsCollectionId={setDocsCollectionId}
+          onDocsLookbackMonths={setDocsLookbackMonths}
           onAPIPreview={handleAPIPreview}
+          onRefreshHistory={loadImportHistory}
+          onSelectHistory={(status) => {
+            if (pollRef.current) clearInterval(pollRef.current);
+            pollRef.current = null;
+            setImporting(false);
+            setImportStatus(status);
+            setStep(4);
+            if (status.status === 'pending' || status.status === 'scanning' || status.status === 'processing') {
+              startImportStatusPolling(status.import_id);
+            }
+          }}
           onClear={() => {
             setPreview(null);
             setTeamMappings([]);
@@ -649,6 +767,9 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
           userMappings={userMappings}
           importArchived={importArchived}
           importCompleted={importCompleted}
+          importDocs={importDocs}
+          docsSpaceName={docsSpaces.find((space) => space.id === docsSpaceId)?.name || ''}
+          docsCollectionName={docsCollections.find((collection) => collection.id === docsCollectionId)?.name || ''}
           onArchived={setImportArchived}
           onCompleted={setImportCompleted}
           importing={importing}
@@ -683,6 +804,8 @@ function UploadStep({
   preview,
   loading,
   scanProgress,
+  importHistory,
+  historyLoading,
   apiToken,
   onApiTokenChange,
   importArchived,
@@ -692,6 +815,12 @@ function UploadStep({
   epicLookbackMonths,
   objectiveLookbackMonths,
   maxStories,
+  importDocs,
+  docsSpaceId,
+  docsCollectionId,
+  docsLookbackMonths,
+  docsSpaces,
+  docsCollections,
   onArchived,
   onCompleted,
   onStoryDateField,
@@ -699,12 +828,20 @@ function UploadStep({
   onEpicLookbackMonths,
   onObjectiveLookbackMonths,
   onMaxStories,
+  onImportDocs,
+  onDocsSpaceId,
+  onDocsCollectionId,
+  onDocsLookbackMonths,
   onAPIPreview,
+  onRefreshHistory,
+  onSelectHistory,
   onClear,
 }: {
   preview: ShortcutImportPreviewResponse | null;
   loading: boolean;
   scanProgress: ShortcutScanProgress | null;
+  importHistory: ShortcutImportStatusResponse[];
+  historyLoading: boolean;
   apiToken: string;
   onApiTokenChange: (token: string) => void;
   importArchived: boolean;
@@ -714,6 +851,12 @@ function UploadStep({
   epicLookbackMonths: string;
   objectiveLookbackMonths: string;
   maxStories: string;
+  importDocs: boolean;
+  docsSpaceId: string;
+  docsCollectionId: string;
+  docsLookbackMonths: string;
+  docsSpaces: { id: string; name: string }[];
+  docsCollections: { id: string; name: string }[];
   onArchived: (v: boolean) => void;
   onCompleted: (v: boolean) => void;
   onStoryDateField: (v: 'updated_at' | 'created_at') => void;
@@ -721,7 +864,13 @@ function UploadStep({
   onEpicLookbackMonths: (v: string) => void;
   onObjectiveLookbackMonths: (v: string) => void;
   onMaxStories: (v: string) => void;
+  onImportDocs: (v: boolean) => void;
+  onDocsSpaceId: (v: string) => void;
+  onDocsCollectionId: (v: string) => void;
+  onDocsLookbackMonths: (v: string) => void;
   onAPIPreview: () => void;
+  onRefreshHistory: () => void;
+  onSelectHistory: (status: ShortcutImportStatusResponse) => void;
   onClear: () => void;
 }) {
   if (loading) {
@@ -852,10 +1001,76 @@ function UploadStep({
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="grid max-w-3xl gap-3 border-t pt-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <label className="flex h-8 items-center justify-between rounded-md border px-3">
+                    <span className="text-xs">Shortcut Docs</span>
+                    <Switch checked={importDocs} onCheckedChange={onImportDocs} disabled={docsSpaces.length === 0} />
+                  </label>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Docs space</Label>
+                    <Select value={docsSpaceId || 'none'} onValueChange={onDocsSpaceId} disabled={!importDocs || docsSpaces.length === 0}>
+                      <SelectTrigger className="h-8">
+                        <SelectValue placeholder="Select space" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {docsSpaces.length === 0 ? (
+                          <SelectItem value="none" disabled>No spaces</SelectItem>
+                        ) : (
+                          docsSpaces.map((space) => (
+                            <SelectItem key={space.id} value={space.id}>
+                              {space.name}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Collection</Label>
+                    <Select
+                      value={docsCollectionId || 'root'}
+                      onValueChange={(value) => onDocsCollectionId(value === 'root' ? '' : value)}
+                      disabled={!importDocs || !docsSpaceId}
+                    >
+                      <SelectTrigger className="h-8">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="root">Uncategorized</SelectItem>
+                        {docsCollections.map((collection) => (
+                          <SelectItem key={collection.id} value={collection.id}>
+                            {collection.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Docs window</Label>
+                    <Select value={docsLookbackMonths} onValueChange={onDocsLookbackMonths} disabled={!importDocs}>
+                      <SelectTrigger className="h-8">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {LOOKBACK_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
               </div>
             </div>
           </CardContent>
         </Card>
+        <ShortcutImportHistoryTable
+          imports={importHistory}
+          loading={historyLoading}
+          onRefresh={onRefreshHistory}
+          onSelect={onSelectHistory}
+        />
       </div>
     );
   }
@@ -867,6 +1082,7 @@ function UploadStep({
     { label: 'Objectives', value: s.objectives_count },
     { label: 'Sprints', value: s.sprints_count },
     { label: 'Labels', value: s.labels_count },
+    { label: 'Docs', value: s.docs_count },
     { label: 'Teams', value: s.teams_count },
     { label: 'Workflows', value: s.workflows_count },
     { label: 'Checklists', value: s.checklist_items_count },
@@ -1409,6 +1625,73 @@ function UserStep({
   );
 }
 
+function ShortcutImportHistoryTable({
+  imports,
+  loading,
+  onRefresh,
+  onSelect,
+}: {
+  imports: ShortcutImportStatusResponse[];
+  loading: boolean;
+  onRefresh: () => void;
+  onSelect: (status: ShortcutImportStatusResponse) => void;
+}) {
+  const rows = imports.slice(0, 8);
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between px-4 py-3">
+        <CardTitle className="text-sm">Recent Shortcut imports</CardTitle>
+        <Button type="button" variant="ghost" size="sm" onClick={onRefresh} disabled={loading}>
+          {loading ? 'Refreshing' : 'Refresh'}
+        </Button>
+      </CardHeader>
+      <CardContent className="px-4 pb-4 pt-0">
+        {rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No Shortcut imports have been started yet.</p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-xs">Started</TableHead>
+                <TableHead className="text-xs">Status</TableHead>
+                <TableHead className="text-xs text-right">Tasks</TableHead>
+                <TableHead className="text-xs">Step</TableHead>
+                <TableHead className="w-16 text-xs" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((row) => {
+                const isFailed = row.status === 'failed';
+                const isComplete = row.status === 'completed';
+                const statusVariant = isFailed ? 'destructive' : isComplete ? 'secondary' : 'outline';
+                return (
+                  <TableRow key={row.import_id}>
+                    <TableCell className="py-2 text-sm">{formatImportDate(row.created_at)}</TableCell>
+                    <TableCell className="py-2">
+                      <Badge variant={statusVariant}>{formatImportStatusLabel(row.status)}</Badge>
+                    </TableCell>
+                    <TableCell className="py-2 text-right text-sm">
+                      {(row.result?.tasks_created ?? row.total_rows ?? row.progress.entities_total ?? 0).toLocaleString()}
+                    </TableCell>
+                    <TableCell className="py-2 text-sm text-muted-foreground">
+                      {formatImportStepLabel(row.progress.current_step)}
+                    </TableCell>
+                    <TableCell className="py-2 text-right">
+                      <Button type="button" variant="ghost" size="sm" onClick={() => onSelect(row)}>
+                        View
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── Step 3: Configure & Import ──────────────────────────────────────
 
 function ImportStep({
@@ -1418,6 +1701,9 @@ function ImportStep({
   userMappings,
   importArchived,
   importCompleted,
+  importDocs,
+  docsSpaceName,
+  docsCollectionName,
   onArchived,
   onCompleted,
   importing,
@@ -1431,6 +1717,9 @@ function ImportStep({
   userMappings: UserMapping[];
   importArchived: boolean;
   importCompleted: boolean;
+  importDocs: boolean;
+  docsSpaceName: string;
+  docsCollectionName: string;
   onArchived: (v: boolean) => void;
   onCompleted: (v: boolean) => void;
   importing: boolean;
@@ -1441,7 +1730,7 @@ function ImportStep({
   const s = preview?.summary;
   const isDone = importStatus?.status === 'completed';
   const isFailed = importStatus?.status === 'failed';
-  const isRunning = importing || importStatus?.status === 'processing';
+  const isRunning = importing || importStatus?.status === 'pending' || importStatus?.status === 'scanning' || importStatus?.status === 'processing';
 
   const matchedUsers = userMappings.filter((u) => u.action === 'matched').length;
   const invitedUsers = userMappings.filter((u) => u.invited).length;
@@ -1507,7 +1796,7 @@ function ImportStep({
 
         {isRunning && (
           <p className="text-xs text-muted-foreground">
-            Do not close this window while the import is in progress.
+            You can leave this screen. The import status is saved and will remain available in history.
           </p>
         )}
 
@@ -1573,6 +1862,14 @@ function ImportStep({
                 <SummaryRow label="Epics" value={`${s.epics_count}`} />
                 <SummaryRow label="Sprints" value={`${s.sprints_count}`} />
                 <SummaryRow label="Tasks" value={`${s.total_tasks.toLocaleString()}`} />
+                <SummaryRow
+                  label="Docs"
+                  value={
+                    importDocs
+                      ? `${s.docs_count.toLocaleString()} to ${docsCollectionName || docsSpaceName || 'selected space'}`
+                      : 'Not selected'
+                  }
+                />
                 <SummaryRow label="Checklist Items" value={`${s.checklist_items_count}`} />
                 <SummaryRow
                   label="User Mappings"
@@ -1627,6 +1924,7 @@ function ResultTable({ result }: { result: ShortcutImportStatusResponse['result'
     { label: 'Epics', created: result.epics_created },
     { label: 'Sprints', created: result.sprints_created },
     { label: 'Tasks', created: result.tasks_created, skipped: result.tasks_skipped },
+    { label: 'Docs', created: result.docs_created, skipped: result.docs_skipped },
     { label: 'Checklist Items', created: result.checklist_items_created },
     { label: 'Owner Links', created: result.owner_links_created },
     { label: 'Label Links', created: result.label_links_created },
