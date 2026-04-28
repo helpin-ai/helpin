@@ -105,6 +105,18 @@ func (h *PMImportHandler) ShortcutStatus(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, resp)
 }
 
+func (h *PMImportHandler) ListShortcutStatuses(w http.ResponseWriter, r *http.Request) {
+	workspaceID := chi.URLParam(r, "id")
+	userID := middleware.GetUserID(r.Context())
+
+	resp, err := h.importService.ListShortcutStatuses(r.Context(), workspaceID, userID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
 func (h *PMImportHandler) PreviewShortcutAPI(w http.ResponseWriter, r *http.Request) {
 	workspaceID := chi.URLParam(r, "id")
 	userID := middleware.GetUserID(r.Context())

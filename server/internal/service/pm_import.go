@@ -9,12 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/helpin-ai/helpin/server/internal/websocket"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
-
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
+	tclient "go.temporal.io/sdk/client"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type PMImportService struct {
@@ -23,7 +23,11 @@ type PMImportService struct {
 	workflowRepo      *repository.PMWorkflowRepository
 	attachmentService shortcutImportedAttachmentService
 	mediaDownloader   shortcutMediaDownloader
+	docsDocumentSvc   *DocsDocumentService
+	docsContentSvc    *DocsContentService
 	publisher         *websocket.Publisher
+	temporalClient    tclient.Client
+	encryptionKey     []byte
 }
 
 var shortcutImportLabelColors = []string{
@@ -45,18 +49,38 @@ var shortcutImportLabelColors = []string{
 	"#a855f7",
 }
 
-func NewPMImportService(db *gorm.DB, workspaceRepo *repository.WorkspaceRepository, workflowRepo *repository.PMWorkflowRepository, attachmentService shortcutImportedAttachmentService) *PMImportService {
+func NewPMImportService(db *gorm.DB, workspaceRepo *repository.WorkspaceRepository, workflowRepo *repository.PMWorkflowRepository, attachmentService shortcutImportedAttachmentService, encryptionKey ...[]byte) *PMImportService {
+	var key []byte
+	if len(encryptionKey) > 0 && len(encryptionKey[0]) == 32 {
+		key = append([]byte(nil), encryptionKey[0]...)
+	}
 	return &PMImportService{
 		db:                db,
 		workspaceRepo:     workspaceRepo,
 		workflowRepo:      workflowRepo,
 		attachmentService: attachmentService,
 		mediaDownloader:   newShortcutHTTPMediaDownloader(),
+		encryptionKey:     key,
 	}
 }
 
 func (s *PMImportService) SetPublisher(publisher *websocket.Publisher) {
 	s.publisher = publisher
+}
+
+func (s *PMImportService) SetTemporalClient(client tclient.Client) {
+	if s == nil {
+		return
+	}
+	s.temporalClient = client
+}
+
+func (s *PMImportService) SetDocsImportDependencies(documentSvc *DocsDocumentService, contentSvc *DocsContentService) {
+	if s == nil {
+		return
+	}
+	s.docsDocumentSvc = documentSvc
+	s.docsContentSvc = contentSvc
 }
 
 func (s *PMImportService) PreviewShortcut(ctx context.Context, workspaceID, actorID string, csvData []byte, apiToken string) (*model.ShortcutImportPreviewResponse, error) {
@@ -274,9 +298,34 @@ func (s *PMImportService) GetShortcutStatus(ctx context.Context, workspaceID, ac
 		}
 		return nil, fmt.Errorf("get import job: %w", err)
 	}
+	return shortcutImportStatusFromJob(job), nil
+}
+
+func (s *PMImportService) ListShortcutStatuses(ctx context.Context, workspaceID, actorID string) ([]model.ShortcutImportStatusResponse, error) {
+	if err := s.requireWorkspaceAdmin(ctx, workspaceID, actorID); err != nil {
+		return nil, err
+	}
+	var jobs []model.PMImportJob
+	if err := s.db.WithContext(ctx).
+		Where("workspace_id = ? AND source = ?", workspaceID, model.PMImportSourceShortcut).
+		Order("created_at DESC").
+		Limit(50).
+		Find(&jobs).Error; err != nil {
+		return nil, fmt.Errorf("list import jobs: %w", err)
+	}
+	statuses := make([]model.ShortcutImportStatusResponse, 0, len(jobs))
+	for _, job := range jobs {
+		statuses = append(statuses, *shortcutImportStatusFromJob(job))
+	}
+	return statuses, nil
+}
+
+func shortcutImportStatusFromJob(job model.PMImportJob) *model.ShortcutImportStatusResponse {
 	resp := &model.ShortcutImportStatusResponse{
-		ImportID: job.ID,
-		Status:   job.Status,
+		ImportID:  job.ID,
+		Status:    job.Status,
+		FileName:  job.FileName,
+		TotalRows: job.TotalRows,
 		Progress: model.ShortcutImportStatusProgress{
 			CurrentStep:       job.CurrentStep,
 			StepsCompleted:    job.StepsCompleted,
@@ -284,7 +333,10 @@ func (s *PMImportService) GetShortcutStatus(ctx context.Context, workspaceID, ac
 			EntitiesProcessed: job.EntitiesProcessed,
 			EntitiesTotal:     job.EntitiesTotal,
 		},
-		Error: job.Error,
+		Error:       job.Error,
+		CreatedAt:   &job.CreatedAt,
+		UpdatedAt:   &job.UpdatedAt,
+		CompletedAt: job.CompletedAt,
 	}
 	if job.Result != nil && *job.Result != "" {
 		var result model.ShortcutImportResult
@@ -292,12 +344,12 @@ func (s *PMImportService) GetShortcutStatus(ctx context.Context, workspaceID, ac
 			resp.Result = &result
 		}
 	}
-	return resp, nil
+	return resp
 }
 
 func (s *PMImportService) runShortcutImport(jobID, workspaceID, actorID string, csvData []byte, req model.ShortcutImportExecuteRequest, apiToken string) {
 	ctx := context.Background()
-	totalSteps := s.shortcutImportTotalSteps(apiToken)
+	totalSteps := s.shortcutImportTotalSteps(apiToken, req.Options)
 	if err := s.updateJob(ctx, jobID, map[string]interface{}{
 		"status":             model.PMImportStatusProcessing,
 		"current_step":       "parse",
@@ -1662,11 +1714,15 @@ func (s *PMImportService) setCurrentStep(ctx context.Context, jobID, step string
 	})
 }
 
-func (s *PMImportService) shortcutImportTotalSteps(apiToken string) int {
-	if apiToken != "" {
-		return 11
+func (s *PMImportService) shortcutImportTotalSteps(apiToken string, options ...model.ShortcutImportOptions) int {
+	extraSteps := 0
+	if len(options) > 0 && options[0].ImportDocs {
+		extraSteps++
 	}
-	return 8
+	if apiToken != "" {
+		return 11 + extraSteps
+	}
+	return 8 + extraSteps
 }
 
 func filterShortcutRows(rows []shortcutCSVRow, options model.ShortcutImportOptions) []shortcutCSVRow {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -110,7 +111,7 @@ func (r *DocsContentRepository) Upsert(ctx context.Context, documentID string, c
 
 	// Touch the parent document's updated_at
 	if err := r.db.WithContext(ctx).Model(&model.DocsDocument{}).Where("id = ?", documentID).
-		Update("updated_at", gorm.Expr("NOW()")).Error; err != nil {
+		Update("updated_at", time.Now().UTC()).Error; err != nil {
 		return nil, fmt.Errorf("touch document updated_at: %w", err)
 	}
 

@@ -81,6 +81,7 @@ type Config struct {
 	// CRM encryption & Gmail OAuth (optional — Gmail sync disabled if not set)
 	TOTPEncryptionKey     string
 	CRMEncryptionKey      string
+	PMImportEncryptionKey string
 	GmailClientID         string
 	GmailClientSecret     string
 	GmailOAuthRedirectURL string
@@ -223,6 +224,7 @@ func Load() (*Config, error) {
 		WebAuthnRPOrigins:                 webAuthnRPOrigins,
 		TOTPEncryptionKey:                 strings.TrimSpace(os.Getenv("TOTP_ENCRYPTION_KEY")),
 		CRMEncryptionKey:                  os.Getenv("CRM_ENCRYPTION_KEY"),
+		PMImportEncryptionKey:             strings.TrimSpace(os.Getenv("PM_IMPORT_ENCRYPTION_KEY")),
 		GmailClientID:                     os.Getenv("GMAIL_CLIENT_ID"),
 		GmailClientSecret:                 os.Getenv("GMAIL_CLIENT_SECRET"),
 		GmailOAuthRedirectURL:             os.Getenv("GMAIL_OAUTH_REDIRECT_URL"),
