@@ -230,6 +230,7 @@ func main() {
 			&model.PMTeamRepoDefault{},
 			&model.TaskDeliveryTarget{},
 			&model.TaskGitLink{},
+			&model.GitWebhookEvent{},
 			&model.AgentHandoff{},
 			&model.PMTaskTemplate{},
 			&model.PMRecurringTemplate{},
@@ -546,6 +547,7 @@ func main() {
 	gitRepositoryRepo := repository.NewGitRepositoryRepository(db)
 	taskDeliveryTargetRepo := repository.NewTaskDeliveryTargetRepository(db)
 	taskGitLinkRepo := repository.NewTaskGitLinkRepository(db)
+	gitWebhookEventRepo := repository.NewGitWebhookEventRepository(db)
 	agentHandoffRepo := repository.NewAgentHandoffRepository(db)
 	docsSpaceRepo := repository.NewDocsSpaceRepository(db)
 	docsCollectionRepo := repository.NewDocsCollectionRepository(db, cfg.DocsOrderingUseSortKey)
@@ -1105,7 +1107,7 @@ func main() {
 		EmailImageProxy:     handler.NewEmailImageProxyHandler(),
 		AdminWebhookEvent:   handler.NewAdminWebhookEventHandler(supportEmailWebhookEventRepo),
 		AdminEmailQueue:     handler.NewAdminEmailQueueHandler(emailFallbackService),
-		Git:                 handler.NewGitHandler(gitService),
+		Git:                 handler.NewGitHandler(gitService, gitWebhookEventRepo),
 		Notification:        handler.NewNotificationHandler(notificationService, followerService),
 		UserNotifSettings:   handler.NewUserNotificationSettingsHandler(userNotifSettingsService),
 		CRMContact:          handler.NewCRMContactHandler(crmContactService),

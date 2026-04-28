@@ -628,8 +628,10 @@ func TestIntegrationHasWebhookClaimsUsesIntegrationScope(t *testing.T) {
 }
 
 type fakeGitHubAppClient struct {
-	mergeCalls []fakeGitHubMergeCall
-	mergeErr   error
+	mergeCalls     []fakeGitHubMergeCall
+	mergeErr       error
+	pullRequests   map[int]*githubapp.PullRequest
+	pullRequestErr error
 }
 
 type fakeGitHubMergeCall struct {
@@ -659,6 +661,18 @@ func (f *fakeGitHubAppClient) ListReleases(context.Context, string, string, stri
 
 func (f *fakeGitHubAppClient) GetInstallation(context.Context, string) (*githubapp.Installation, error) {
 	return nil, nil
+}
+
+func (f *fakeGitHubAppClient) GetPullRequest(_ context.Context, _ string, _ string, _ string, number int) (*githubapp.PullRequest, error) {
+	if f.pullRequestErr != nil {
+		return nil, f.pullRequestErr
+	}
+	if f.pullRequests != nil {
+		if pr, ok := f.pullRequests[number]; ok {
+			return pr, nil
+		}
+	}
+	return &githubapp.PullRequest{Number: number, State: "open"}, nil
 }
 
 func (f *fakeGitHubAppClient) MergeBranch(_ context.Context, installationID, owner, repo, base, head, commitMessage string) error {
@@ -939,6 +953,76 @@ func TestProcessWebhookPRMergedUpdatesTargetLinkAndTaskState(t *testing.T) {
 	}
 	if task.WorkflowStateID != "state-done" {
 		t.Fatalf("workflow_state_id = %q, want state-done", task.WorkflowStateID)
+	}
+}
+
+func TestReconcileOpenPullRequestStatusesUpdatesMergedPR(t *testing.T) {
+	db := newTestDB(t)
+	seedGitDeliveryStatusFixture(t, db)
+
+	app := &fakeGitHubAppClient{pullRequests: map[int]*githubapp.PullRequest{
+		42: {
+			Number:  42,
+			Title:   "Fix merge status",
+			HTMLURL: "https://github.test/acme/api/pull/42",
+			State:   "closed",
+			Merged:  true,
+		},
+		7: {
+			Number:  7,
+			Title:   "Old PR",
+			HTMLURL: "https://github.test/acme/api/pull/7",
+			State:   "open",
+		},
+	}}
+	svc := newGitDeliveryStatusService(db, app)
+
+	dryRun, err := svc.ReconcileOpenPullRequestStatuses(context.Background(), 100, true)
+	if err != nil {
+		t.Fatalf("dry-run reconcile returned error: %v", err)
+	}
+	if dryRun.Checked != 2 || dryRun.Updated != 1 || dryRun.Merged != 1 || !dryRun.DryRun {
+		t.Fatalf("dry-run result = %#v, want checked=2 updated=1 merged=1 dry_run=true", dryRun)
+	}
+	var dryRunStatus string
+	if err := db.Raw(`SELECT pr_status FROM task_git_links WHERE id = ?`, "link-1").Scan(&dryRunStatus).Error; err != nil {
+		t.Fatalf("load dry-run status: %v", err)
+	}
+	if dryRunStatus != "open" {
+		t.Fatalf("dry-run changed status to %q, want open", dryRunStatus)
+	}
+
+	result, err := svc.ReconcileOpenPullRequestStatuses(context.Background(), 100, false)
+	if err != nil {
+		t.Fatalf("reconcile returned error: %v", err)
+	}
+	if result.Checked != 2 || result.Updated != 1 || result.Merged != 1 || result.StillOpen != 1 {
+		t.Fatalf("result = %#v, want checked=2 updated=1 merged=1 still_open=1", result)
+	}
+
+	target, err := repository.NewTaskDeliveryTargetRepository(db).GetByTask(context.Background(), "ws-1", "task-1")
+	if err != nil {
+		t.Fatalf("load target: %v", err)
+	}
+	if target == nil || target.ActivePRStatus == nil || *target.ActivePRStatus != "merged" {
+		t.Fatalf("active PR status = %#v, want merged", target)
+	}
+	if target.DeliveryState != "merged" {
+		t.Fatalf("delivery state = %q, want merged", target.DeliveryState)
+	}
+	var currentStatus string
+	if err := db.Raw(`SELECT pr_status FROM task_git_links WHERE id = ?`, "link-1").Scan(&currentStatus).Error; err != nil {
+		t.Fatalf("load current link status: %v", err)
+	}
+	if currentStatus != "merged" {
+		t.Fatalf("current link status = %q, want merged", currentStatus)
+	}
+	var oldStatus string
+	if err := db.Raw(`SELECT pr_status FROM task_git_links WHERE id = ?`, "link-old").Scan(&oldStatus).Error; err != nil {
+		t.Fatalf("load old link status: %v", err)
+	}
+	if oldStatus != "open" {
+		t.Fatalf("old link status = %q, want open", oldStatus)
 	}
 }
 

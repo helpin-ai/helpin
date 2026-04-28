@@ -406,6 +406,7 @@ jobs:
             TEMPORAL_IMAGE="${{ env.IMAGE_PREFIX }}/temporal-worker:${SERVER_TAG}"
             MIGRATE_IMAGE="${{ env.IMAGE_PREFIX }}/server-migrate:${SERVER_TAG}"
             sed -i -E "s|ghcr\.io/helpin-ai/helpin/server:[^ \"]+|${SERVER_IMAGE}|g" "$MANIFEST_DIR/server.yaml"
+            sed -i -E "s|ghcr\.io/helpin-ai/helpin/server:[^ \"]+|${SERVER_IMAGE}|g" "$MANIFEST_DIR/git-pr-status-reconciler.yaml"
             sed -i -E "s|ghcr\.io/helpin-ai/helpin/server:[^ \"]+|${MIGRATE_IMAGE}|g; s|ghcr\.io/helpin-ai/helpin/server-migrate:[^ \"]+|${MIGRATE_IMAGE}|g" "$MANIFEST_DIR/server-migrate.yaml"
             sed -i -E "s|ghcr\.io/helpin-ai/helpin/server:[^ \"]+|${TEMPORAL_IMAGE}|g; s|ghcr\.io/helpin-ai/helpin/temporal-worker:[^ \"]+|${TEMPORAL_IMAGE}|g" "$MANIFEST_DIR/temporal-worker.yaml"
             UPDATED="${UPDATED:+$UPDATED, }server-family→$SERVER_TAG"
