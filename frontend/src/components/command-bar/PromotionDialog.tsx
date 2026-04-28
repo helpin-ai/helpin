@@ -38,23 +38,21 @@ const TARGET_LABELS: Record<string, string> = {
   workspace: 'Workspace',
 };
 
-function suggestAgentName(step: CommandBarPlanStep | null, prompt?: string): string {
-  if (!step) return '';
-  const base = step.agent_name?.trim() || 'Agent';
-  const verb = (prompt ?? step.instructions ?? '')
-    .trim()
-    .replace(/^(please\s+|can\s+you\s+|could\s+you\s+|i\s+want\s+to\s+|i\s+need\s+to\s+)/i, '')
-    .split(/\s+/)
-    .slice(0, 4)
-    .join(' ')
-    .replace(/[.!?,:;]+$/g, '');
-  if (!verb) return base;
-  const titled = verb
-    .split(' ')
-    .filter(Boolean)
-    .map((word) => word[0].toUpperCase() + word.slice(1).toLowerCase())
-    .join(' ');
-  return `${base} — ${titled}`.slice(0, 80);
+function placeholderForStep(step: CommandBarPlanStep | null): string {
+  if (!step) return 'e.g., Doc Refresher';
+  switch (step.target.entity_type) {
+    case 'document':
+      return 'e.g., Doc Refresher';
+    case 'crm_contact':
+    case 'crm_deal':
+      return 'e.g., Pipeline Reviewer';
+    case 'epic':
+      return 'e.g., Spec Drafter';
+    case 'task':
+      return 'e.g., Implementer';
+    default:
+      return `e.g., ${step.agent_name ?? 'Helper'} for ${step.target.entity_type.replace('_', ' ')}`;
+  }
 }
 
 export function PromotionDialog({
@@ -85,11 +83,18 @@ export function PromotionDialog({
   const targetTypeLabel = TARGET_LABELS[run?.target_type ?? step?.target.entity_type ?? ''] ?? run?.target_type ?? '';
 
   const sourceTargets = catalog?.allowed_targets ?? [];
+  const SUPPORTED_TARGET_TYPES = useMemo(
+    () => new Set(['task', 'epic', 'document', 'crm_contact', 'crm_deal', 'workspace']),
+    [],
+  );
   const targetableOptions = useMemo(() => {
-    const set = new Set<string>(sourceTargets);
-    if (run?.target_type) set.add(run.target_type);
+    const set = new Set<string>();
+    for (const target of sourceTargets) {
+      if (SUPPORTED_TARGET_TYPES.has(target)) set.add(target);
+    }
+    if (run?.target_type && SUPPORTED_TARGET_TYPES.has(run.target_type)) set.add(run.target_type);
     return Array.from(set);
-  }, [run?.target_type, sourceTargets]);
+  }, [SUPPORTED_TARGET_TYPES, run?.target_type, sourceTargets]);
 
   const inheritedTools = useMemo<string[]>(
     () => (step?.allowed_tools && step.allowed_tools.length > 0 ? step.allowed_tools : (catalog?.allowed_tools ?? [])),
@@ -99,7 +104,7 @@ export function PromotionDialog({
   // Reset on open
   useEffect(() => {
     if (open) {
-      setName(suggestAgentName(step, planPrompt));
+      setName('');
       setDescription('');
       setSubmitting(false);
       setSelectedTools(undefined);
@@ -205,7 +210,7 @@ export function PromotionDialog({
               id="promotion-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g., Doc Refresher"
+              placeholder={placeholderForStep(step)}
               autoFocus
               maxLength={120}
             />
@@ -357,7 +362,7 @@ export function PromotionDialog({
           </Button>
           <Button onClick={() => void submit()} disabled={!canSubmit}>
             {submitting ? <Loading01Icon className="mr-1.5 h-4 w-4 animate-spin" /> : <Tick01Icon className="mr-1.5 h-4 w-4" />}
-            Save agent
+            Save reusable agent
           </Button>
         </DialogFooter>
       </DialogContent>

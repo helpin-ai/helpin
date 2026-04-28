@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowDown01Icon, Loading01Icon, Settings02Icon } from '@/lib/icons';
+import { ArrowDown01Icon, Cancel01Icon, Loading01Icon, Settings02Icon } from '@/lib/icons';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -23,10 +23,16 @@ interface StepToolPickerProps {
   disabled?: boolean;
 }
 
+const COLLAPSE_KEY = (agentId: string) => `helpin:cmdk-tools:collapsed:${agentId}`;
+
 function humanizeTool(name: string): string {
   return name
     .replace(/[_:]/g, ' ')
     .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function categoryOf(tool: CommandBarToolCatalogEntry): string {
+  return tool.category?.trim() || 'Other';
 }
 
 export function StepToolPicker({
@@ -42,6 +48,16 @@ export function StepToolPicker({
   const [filter, setFilter] = useState('');
   const [catalog, setCatalog] = useState<CommandBarToolCatalogResponse | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => {
+    if (typeof window === 'undefined') return new Set();
+    try {
+      const raw = window.localStorage.getItem(COLLAPSE_KEY(agentId));
+      return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+  const [showNotAvailable, setShowNotAvailable] = useState(false);
 
   // Lazy-load the catalog the first time the picker opens.
   useEffect(() => {
@@ -62,6 +78,16 @@ export function StepToolPicker({
     };
   }, [agentId, catalog, open, selectedTools, workspaceId]);
 
+  // Persist group collapse state per agent.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(COLLAPSE_KEY(agentId), JSON.stringify(Array.from(collapsedGroups)));
+    } catch {
+      /* ignore */
+    }
+  }, [agentId, collapsedGroups]);
+
   const allowedTools = catalog?.allowed_tools ?? availableTools;
   const total = allowedTools.length;
 
@@ -71,7 +97,7 @@ export function StepToolPicker({
   const isNarrowed = selectedTools !== undefined && selectedTools.length !== allowedTools.length;
   const isEmpty = selectedTools !== undefined && selectedTools.length === 0;
 
-  const displayEntries: CommandBarToolCatalogEntry[] = useMemo(() => {
+  const allEntries: CommandBarToolCatalogEntry[] = useMemo(() => {
     if (catalog) return catalog.tools;
     return allowedTools.map((name) => ({
       id: name,
@@ -83,17 +109,23 @@ export function StepToolPicker({
     }));
   }, [allowedTools, catalog, effectiveSelected]);
 
-  const filteredEntries = useMemo(() => {
-    if (!filter.trim()) return displayEntries;
+  const filtered = useMemo(() => {
     const needle = filter.trim().toLowerCase();
-    return displayEntries.filter(
+    if (!needle) return allEntries;
+    return allEntries.filter(
       (tool) =>
         tool.name.toLowerCase().includes(needle) ||
         tool.description.toLowerCase().includes(needle) ||
         (tool.disabled_reason ?? '').toLowerCase().includes(needle) ||
         tool.category.toLowerCase().includes(needle),
     );
-  }, [displayEntries, filter]);
+  }, [allEntries, filter]);
+
+  const allowedFiltered = useMemo(() => filtered.filter((t) => t.allowed), [filtered]);
+  const notAllowedFiltered = useMemo(() => filtered.filter((t) => !t.allowed), [filtered]);
+
+  const allowedByCategory = useMemo(() => groupByCategory(allowedFiltered), [allowedFiltered]);
+  const notAllowedByCategory = useMemo(() => groupByCategory(notAllowedFiltered), [notAllowedFiltered]);
 
   const toggle = (tool: string) => {
     const next = new Set(effectiveSelected);
@@ -106,7 +138,19 @@ export function StepToolPicker({
     onChange(Array.from(next));
   };
 
+  const toggleGroup = (groupId: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
+  };
+
   const allOn = () => onChange(undefined);
+
+  const showCount = filtered.length;
+  const totalCount = allEntries.length;
 
   if (total === 0 && !catalogLoading) {
     return (
@@ -126,7 +170,7 @@ export function StepToolPicker({
           disabled={disabled}
           className={cn(
             'h-7 gap-1.5 px-2 text-[11px] text-muted-foreground hover:text-foreground',
-            isNarrowed && 'text-foreground',
+            isNarrowed && !isEmpty && 'text-foreground',
             isEmpty && 'text-destructive hover:text-destructive',
           )}
         >
@@ -136,6 +180,20 @@ export function StepToolPicker({
             : isNarrowed
               ? `Tools: ${selectedCount} of ${total}`
               : `Tools: all ${total}`}
+          {isNarrowed && !disabled ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                allOn();
+              }}
+              className="ml-0.5 rounded-full p-0.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"
+              title="Reset to all tools"
+            >
+              <Cancel01Icon className="h-2.5 w-2.5" />
+            </button>
+          ) : null}
           <ArrowDown01Icon className={cn('h-3 w-3 transition-transform', open && 'rotate-180')} />
         </Button>
       </PopoverTrigger>
@@ -149,83 +207,213 @@ export function StepToolPicker({
         <div className="border-b px-3 py-2">
           <div className="flex items-center justify-between gap-2">
             <p className="text-xs font-medium">Tools for {agentName}</p>
-            {isNarrowed ? (
-              <Badge variant="outline" className="text-[10px]">narrowed</Badge>
-            ) : null}
+            {isNarrowed ? <Badge variant="outline" className="text-[10px]">narrowed</Badge> : null}
           </div>
           <p className="mt-0.5 text-[11px] text-muted-foreground">
             Uncheck to restrict this step. Server validates the subset.
           </p>
         </div>
         <div className="border-b px-3 py-2">
-          <input
-            type="text"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder="Filter tools..."
-            className="h-7 w-full rounded border border-border/60 bg-background px-2 text-xs outline-none focus:border-ring"
-            autoFocus
-          />
+          <div className="relative">
+            <input
+              type="text"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="Filter tools..."
+              className="h-7 w-full rounded border border-border/60 bg-background px-2 pr-12 text-xs outline-none focus:border-ring"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Escape' && filter) {
+                  e.stopPropagation();
+                  setFilter('');
+                }
+              }}
+            />
+            {filter ? (
+              <button
+                type="button"
+                onClick={() => setFilter('')}
+                className="absolute right-1 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                title="Clear filter (Esc)"
+              >
+                <Cancel01Icon className="h-2.5 w-2.5" />
+              </button>
+            ) : null}
+          </div>
+          {filter ? (
+            <p className="mt-1 text-[10px] text-muted-foreground">
+              Showing {showCount} of {totalCount}
+            </p>
+          ) : null}
         </div>
-        <div className="max-h-64 overflow-y-auto py-1">
+        <div className="max-h-72 overflow-y-auto">
           {catalogLoading ? (
             <div className="flex items-center justify-center gap-2 px-3 py-4 text-xs text-muted-foreground">
               <Loading01Icon className="h-3 w-3 animate-spin" />
               Loading catalog...
             </div>
-          ) : filteredEntries.length === 0 ? (
-            <p className="px-3 py-3 text-center text-xs text-muted-foreground">No tools match "{filter}"</p>
           ) : (
-            filteredEntries.map((tool) => {
-              const checked = tool.allowed && effectiveSelected.has(tool.name);
-              return (
-                <label
-                  key={tool.name}
-                  className={cn(
-                    'flex items-start gap-2 px-3 py-1.5',
-                    tool.allowed ? 'cursor-pointer hover:bg-muted/60' : 'cursor-not-allowed opacity-60',
-                  )}
-                >
-                  <Checkbox
-                    checked={checked}
-                    disabled={!tool.allowed}
-                    onCheckedChange={() => {
-                      if (tool.allowed) toggle(tool.name);
-                    }}
-                    className="mt-0.5"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="truncate text-xs font-medium" title={tool.name}>
-                        {tool.description ? humanizeTool(tool.name) : tool.name}
-                      </span>
-                      {tool.category ? (
-                        <Badge variant="outline" className="text-[9px] uppercase tracking-wider">{tool.category}</Badge>
-                      ) : null}
-                    </div>
-                    {tool.description ? (
-                      <p className="line-clamp-2 text-[11px] text-muted-foreground">{tool.description}</p>
-                    ) : null}
-                    {!tool.allowed && tool.disabled_reason ? (
-                      <p className="line-clamp-2 text-[11px] text-destructive/80">{tool.disabled_reason}</p>
-                    ) : null}
-                  </div>
-                </label>
-              );
-            })
+            <>
+              <ToolGroupList
+                title={`Available (${allowedFiltered.length})`}
+                groups={allowedByCategory}
+                collapsedGroups={collapsedGroups}
+                toggleGroup={toggleGroup}
+                effectiveSelected={effectiveSelected}
+                onToggleTool={toggle}
+                emptyHint={filter ? 'No allowed tools match the filter.' : 'No allowed tools.'}
+              />
+              {notAllowedFiltered.length > 0 ? (
+                <div className="border-t border-border/60 py-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowNotAvailable((prev) => !prev)}
+                    className="flex w-full items-center justify-between px-3 py-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground hover:bg-muted/40"
+                  >
+                    <span>Not available ({notAllowedFiltered.length})</span>
+                    <ArrowDown01Icon className={cn('h-3 w-3 transition-transform', showNotAvailable && 'rotate-180')} />
+                  </button>
+                  {showNotAvailable ? (
+                    <ToolGroupList
+                      title=""
+                      groups={notAllowedByCategory}
+                      collapsedGroups={collapsedGroups}
+                      toggleGroup={toggleGroup}
+                      effectiveSelected={effectiveSelected}
+                      onToggleTool={toggle}
+                      readOnly
+                    />
+                  ) : null}
+                </div>
+              ) : null}
+            </>
           )}
         </div>
         <div className="flex items-center justify-between border-t px-3 py-2">
           <span className={cn('text-[11px] text-muted-foreground', isEmpty && 'text-destructive')}>
             {isEmpty ? 'At least one tool is required' : `${selectedCount} of ${total} enabled`}
           </span>
-          <div className="flex items-center gap-1">
-            <Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-[11px]" onClick={allOn}>
-              Reset to all
-            </Button>
-          </div>
+          <Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-[11px]" onClick={allOn} disabled={!isNarrowed}>
+            Reset to all
+          </Button>
         </div>
       </PopoverContent>
     </Popover>
+  );
+}
+
+function groupByCategory(tools: CommandBarToolCatalogEntry[]): Array<[string, CommandBarToolCatalogEntry[]]> {
+  const map = new Map<string, CommandBarToolCatalogEntry[]>();
+  for (const tool of tools) {
+    const key = categoryOf(tool);
+    const existing = map.get(key);
+    if (existing) existing.push(tool);
+    else map.set(key, [tool]);
+  }
+  return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
+}
+
+interface ToolGroupListProps {
+  title: string;
+  groups: Array<[string, CommandBarToolCatalogEntry[]]>;
+  collapsedGroups: Set<string>;
+  toggleGroup: (groupId: string) => void;
+  effectiveSelected: Set<string>;
+  onToggleTool: (tool: string) => void;
+  emptyHint?: string;
+  readOnly?: boolean;
+}
+
+function ToolGroupList({
+  title,
+  groups,
+  collapsedGroups,
+  toggleGroup,
+  effectiveSelected,
+  onToggleTool,
+  emptyHint,
+  readOnly,
+}: ToolGroupListProps) {
+  if (groups.length === 0) {
+    return emptyHint ? <p className="px-3 py-3 text-center text-xs text-muted-foreground">{emptyHint}</p> : null;
+  }
+  return (
+    <div>
+      {title ? (
+        <div className="px-3 pt-2 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{title}</div>
+      ) : null}
+      {groups.map(([category, tools]) => {
+        const groupId = `${title}:${category}`;
+        const collapsed = collapsedGroups.has(groupId);
+        return (
+          <div key={groupId}>
+            <button
+              type="button"
+              onClick={() => toggleGroup(groupId)}
+              className="flex w-full items-center justify-between px-3 py-1 text-[11px] font-medium text-muted-foreground hover:bg-muted/40"
+            >
+              <span className="uppercase tracking-wider">{category}</span>
+              <span className="flex items-center gap-1.5">
+                <span className="text-[10px] text-muted-foreground/70">{tools.length}</span>
+                <ArrowDown01Icon className={cn('h-3 w-3 transition-transform', collapsed && '-rotate-90')} />
+              </span>
+            </button>
+            {collapsed
+              ? null
+              : tools.map((tool) => (
+                  <ToolRow
+                    key={tool.name}
+                    tool={tool}
+                    checked={tool.allowed && effectiveSelected.has(tool.name)}
+                    readOnly={readOnly || !tool.allowed}
+                    onToggle={() => onToggleTool(tool.name)}
+                  />
+                ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+interface ToolRowProps {
+  tool: CommandBarToolCatalogEntry;
+  checked: boolean;
+  readOnly?: boolean;
+  onToggle: () => void;
+}
+
+function ToolRow({ tool, checked, readOnly, onToggle }: ToolRowProps) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className={cn('flex items-start gap-2 px-3 py-1.5', readOnly ? 'cursor-default opacity-60' : 'cursor-pointer hover:bg-muted/60')}>
+      <Checkbox
+        checked={checked}
+        disabled={readOnly}
+        onCheckedChange={() => {
+          if (!readOnly) onToggle();
+        }}
+        className="mt-0.5"
+      />
+      <button
+        type="button"
+        onClick={() => setExpanded((prev) => !prev)}
+        className="min-w-0 flex-1 text-left"
+      >
+        <div className="flex items-center gap-1.5">
+          <span className="truncate text-xs font-medium" title={tool.name}>
+            {tool.description ? humanizeTool(tool.name) : tool.name}
+          </span>
+        </div>
+        {tool.description ? (
+          <p className={cn('text-[11px] text-muted-foreground', expanded ? 'whitespace-pre-wrap' : 'line-clamp-1')}>
+            {tool.description}
+          </p>
+        ) : null}
+        {tool.disabled_reason && readOnly ? (
+          <p className="text-[10px] italic text-muted-foreground/70">{tool.disabled_reason}</p>
+        ) : null}
+      </button>
+    </div>
   );
 }

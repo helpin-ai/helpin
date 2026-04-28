@@ -1,7 +1,7 @@
 # Meta-Agent Command Bar — PRD Plan
 
 **Date:** 2026-04-28
-**Status:** v1 command-bar launcher, durable multi-step plan controls, and frontend contract alignment implemented; Researcher/fan-out policy remains
+**Status:** v1 command-bar launcher, durable multi-step plan controls, frontend contract alignment, one-shot Command Agent, and bounded fan-out implemented
 **Altitude:** Product / architecture, grounded in current codebase. Also tracks implementation status.
 
 ---
@@ -42,7 +42,7 @@ Implemented in this branch:
 - Backend target expansion for `document`, `crm_contact`, and `crm_deal`, with page context registered on docs, CRM contact, and CRM deal detail pages.
 - Unmet-intent review API (`list` + `review`) with status/notes fields.
 - Opt-in promotion of a completed command-bar run to a reusable custom agent.
-- New product-owned `Researcher` preset definition for broad research/doc/CRM one-shot-style work.
+- New product-owned `Command Agent` execution profile for one-shot command-bar work that does not fit narrower saved agents.
 
 Current caveats:
 
@@ -100,7 +100,7 @@ Mapped against `/root/helpin/server` and `/root/helpin/frontend` as of 2026-04-2
 | Capability | State | Path |
 |---|---|---|
 | `Agent` model with `is_system`, `trigger_mode`, `allowed_tools/commands/targets` | Solid | `server/internal/model/agent.go:33` |
-| System agent presets (Epic Planner, Task Planner, CRM Operator, Support Agent, Code Builder, Review Agent, Researcher) | Solid | `server/internal/service/agent_presets.go:25` |
+| System agent presets (Epic Planner, Task Planner, CRM Operator, Support Agent, Code Builder, Review Agent, Command Agent) | Solid | `server/internal/service/agent_presets.go:25` |
 | `AgentRunInputPayload` with `Trigger` / `Target` / `Event` / `Output` fields | Solid | `server/internal/model/agent.go:536` |
 | Single canonical `AgentRunWorkflow` with approve/message/resume signals | Solid | `server/internal/temporalapp/workflow.go:38` |
 | Automation-rule engine that resolves a target and starts an agent run through `AgentService.startTargetRun` | Solid | `server/internal/service/automation_rule_engine.go:395`, `server/internal/service/agent.go:2228` |
@@ -115,7 +115,7 @@ Mapped against `/root/helpin/server` and `/root/helpin/frontend` as of 2026-04-2
 | Structured diff proposal entity | Does not exist | — |
 | Comment slash-command / agent invocation parser | Does not exist | — |
 
-The headline: the v1 assembly work is now in place for supported targets, including durable sequential plan state, whole-plan controls, tool narrowing, unmet-intent review, and opt-in promotion. The remaining greenfield work is mostly policy and product shape: Researcher exposure and multi-target fan-out.
+The headline: the v1 assembly work is now in place for supported targets, including durable sequential plan state, whole-plan controls, tool narrowing, unmet-intent review, opt-in promotion, single-target one-shot Command Agent runs, and bounded fan-out across concrete related targets.
 
 ## Architecture
 
@@ -210,11 +210,11 @@ Status: implemented.
 
 ### V2 — One-shot dynamic runs
 
-v2 adds a product-owned broad preset for recurring unmet categories that do not fit the original six seeded agents. The `Researcher` preset definition now exists as that broad product-owned executor. The parser may return a `one_shot_plan` with proposed tools, target, and instructions after the UX is ready. The user confirms the tool subset and instructions before dispatch.
+v2 adds a product-owned broad execution profile for recurring unmet categories that do not fit the original seeded agents. The product-facing name is `Command Agent`; it is a one-shot workspace operator, not a saved custom agent and not a general "researcher." The parser may return a `one_shot_command` plan with proposed tools, target, and instructions. The user confirms the tool subset and instructions before dispatch.
 
 The backend still starts a normal `AgentRun` against a real agent ID. The run uses runtime instructions and `AllowedTools` on the run input. Nothing is saved as a reusable custom agent by default.
 
-The canonical motivating example is "check the web and update stale doc sections." Backend document target support now exists; the remaining blocker is the product UX for exposing this as a deliberate one-shot command rather than silently routing arbitrary no-match prompts to a broad executor.
+The canonical motivating examples are "check the web and update stale doc sections", "create a doc from this context", "write a comment on this task", and "create a follow-up task." The broad agent is still bounded by a curated allowlist and the parser proposes a narrow runtime tool subset per command.
 
 ### V2.5 — Promote one-shot to saved agent
 
@@ -260,12 +260,12 @@ Status: implemented with redacted summaries and a settings review UI. Retention 
 - [x] **Promotion hardening.** Promotion accepts `description`, `allowed_tools`, and `allowed_targets`, validates subsets, requires a completed command-bar run, and stores source-run provenance.
 - [x] **Filtered tool catalog contract.** `GET /command-bar/agents/{agentID}/tools` returns allowed/selected/disabled tool metadata for picker UIs.
 - [x] **Redacted unmet-intent summaries.** Unmet-intent list/review responses expose prompt previews by default and require `include_sensitive=true` for full prompt text.
-- [x] **Researcher preset definition.** Broad research/doc/CRM preset configuration is present for the v2 one-shot direction.
+- [x] **One-shot Command Agent profile.** Broad docs/task/CRM/web command profile is present for v2 one-shot runs, with narrow runtime tool subsets proposed by the parser.
 - [x] **Backend/frontend types.** Dispatch responses include `plan_id`, `steps`, `run_count`, and started runs.
 
 ## What is next
 
-Tracks A-D are implemented across backend and frontend. The immediate work is applying the pending forward migration and doing focused QA. Researcher exposure and broader fan-out remain separate product/backend policy work, not v1 polish.
+Tracks A-D are implemented across backend and frontend. Track E single-target one-shot Command Agent exposure and bounded fan-out are implemented in this branch. The immediate work is applying the pending forward migration and doing focused QA.
 
 ### Frontend workstream
 
@@ -273,8 +273,8 @@ Tracks A-D are implemented across backend and frontend. The immediate work is ap
 2. [x] **Plan status realtime polish.** Terminal run events use `GET /command-bar/plans/{planID}` to patch the exact plan instead of listing recent plans.
 3. [x] **Tool-subset picker UX.** Picker consumes the backend tool catalog for labels, categories, disabled reasons, and validation; zero-tool steps are blocked before dispatch.
 4. [x] **Unmet-intent review UI.** Settings UI uses `prompt_preview`/`prompt_redacted` and only requests full prompts through `include_sensitive=true`.
-5. [ ] **Researcher exposure UI.** If backend exposes Researcher/one-shot plans, show a stronger confirmation state with proposed tools, target, instructions, and run count.
-6. [ ] **Fan-out confirmation UI.** For multi-target plans, show explicit target list, estimated run count, cost/rate warning, and require confirm before dispatch.
+5. [x] **One-shot Command Agent UI.** One-shot plans show stronger confirmation copy, proposed tools, target, instructions, run count, and "not saved" framing.
+6. [x] **Fan-out confirmation UI.** Multi-target plans show target rows, estimated run count, fan-out warning, and require confirm before dispatch.
 
 ### Backend workstream
 
@@ -284,8 +284,8 @@ Tracks A-D are implemented across backend and frontend. The immediate work is ap
 4. [x] **Unmet-intent redaction and review contract.** Review/list responses now return frontend-friendly summaries with parsed page context, parsed candidate agents, prompt preview, redaction flag, and full prompt only when explicitly requested.
 5. [x] **Retry authorization hardening.** Retry re-checks target permissions against persisted plan steps before restarting, so role downgrades after dispatch do not bypass domain authorization.
 6. [x] **Migration safety repair.** The applied `202604280001` migration is no longer edited in place; `202604280009_repair_pm_external_links_entity_backfill.sql` carries the safer UUID-regex repair. It must be applied before deploy validation is expected to pass.
-7. [ ] **Researcher exposure policy.** Decide and implement parser rules for when `Researcher` can be selected directly, when it should return `no_matching_agent`, and what extra confirmation metadata is required.
-8. [ ] **Fan-out policy and contract.** Define multi-target parse/dispatch schema, max targets, budgets/rate limits, and target enumeration. Backend must reject ambiguous or over-budget fan-out even if frontend misses it.
+7. [x] **One-shot Command Agent policy.** Parser tries narrower saved agents first, then may propose Command Agent for recognized docs/task/CRM/web command categories with a narrow runtime tool subset.
+8. [x] **Fan-out policy and contract.** `plan_kind: "fan_out"` starts concrete target steps in parallel, caps at 5 runs, groups them in the rail, cancels active group runs, and retries failed/cancelled targets only. Ambiguous target selectors still return no match.
 
 ### Parallelization plan
 
@@ -293,7 +293,7 @@ Tracks A-D are implemented across backend and frontend. The immediate work is ap
 - **Track B:** Done. Single-plan refresh contract and rail patching are implemented.
 - **Track C:** Done. Filtered tool catalog and frontend catalog picker with explicit-empty blocking are implemented.
 - **Track D:** Done. Redaction/review payload and frontend prompt-preview rendering are implemented.
-- **Track E:** Researcher and fan-out policy should start as backend/product decisions before frontend implementation.
+- **Track E:** Single-target one-shot Command Agent and bounded concrete-target fan-out are implemented.
 
 ## Sequenced bets (high-level)
 
@@ -306,7 +306,8 @@ Tracks A-D are implemented across backend and frontend. The immediate work is ap
 - [x] **Runtime instruction overrides + tool-subset picker.** Additional instructions, server-side tool-subset enforcement, catalog-backed picker UI, and zero-tool dispatch blocking are implemented.
 - [x] **Expand supported routes.** Docs and CRM detail pages now register command-bar context, backed by `document`, `crm_contact`, and `crm_deal` target support.
 - [x] **Whole-plan controls.** Persisted plan state supports reload-after-refresh, cancel-rest, and retry from current failed/cancelled step.
-- [~] **(v2)** One-shot dynamic runs through a product-owned broad preset; the Researcher preset exists, but parser/UX exposure is still pending.
+- [x] **(v2)** Single-target one-shot dynamic runs through a product-owned broad Command Agent profile. Parser/UX exposure is implemented with narrow tool subsets and explicit one-shot framing.
+- [x] **Fan-out for concrete related targets.** Explicit fan-out plans start multiple target runs in parallel, show grouped rail status, cancel active runs as a group, and retry failed targets only.
 - [x] **(v2.5)** Opt-in promotion of successful command-bar runs to saved custom agents is implemented with editable name, description, tool scope, target scope, and provenance preview.
 - [ ] **Future reference only** Automatic saved-agent creation/reuse is not a delivery phase in this plan.
 
@@ -314,15 +315,15 @@ No week estimates here — the point of this doc is direction, not a schedule.
 
 ## Open follow-ups
 
-- **Per-agent tool catalog shape.** Implemented for selected saved agents via the command-bar tool catalog endpoint. Still open: preset-key lookup without an agent ID if the parser ever returns an unsaved one-shot preset.
+- **Per-agent tool catalog shape.** Implemented for selected saved agents and the Command Agent via the command-bar tool catalog endpoint. Still open: preset-key lookup without an agent ID if a future design returns an unsaved one-shot preset.
 - **Command-bar trigger contract.** Implemented baseline: `command_bar` trigger source/type, plan ID, raw prompt, page context, full steps list, run count, and step index. Still open: parsed plan hash/version.
 - **Unmet-intent log shape.** Implemented as dedicated `command_bar_unmet_intents` table with prompt, workspace, actor, page context, candidate agents, reason, status, review notes, and reviewed timestamp. Review/list responses now default to redacted summaries; full prompt requires `include_sensitive=true`.
 - **Target expansion.** Implemented for `document`, `crm_contact`, and `crm_deal`. Still open: richer per-target context hydration beyond the baseline target payload.
 - **Sequential vs parallel dispatch semantics in the plan.** Resolved for v1: command-bar plans are sequential by default. Confirm starts only the first step, and completion of step N starts step N+1. A full parent/child Temporal plan workflow remains deferred unless this lightweight scheduler proves insufficient.
 - **Authorization and privacy boundary.** Dispatch and retry now re-check target permissions, and tool subsets are re-validated server-side. Still open: decide how much entity data is sent to the intent parser.
-- **One-shot preset shape for v2.** Default recommendation: use a product-owned broad preset (`doc_researcher` or `general_researcher`) instead of arbitrary custom-agent creation.
+- **One-shot preset shape for v2.** Resolved for the first slice: use a product-owned broad Command Agent profile instead of arbitrary custom-agent creation. Keep the broad profile behind parser policy and narrow runtime tool subsets.
 - **Promotion permission.** Current endpoint is settings-managed. Confirm whether this should become a narrower agent-create permission before broader rollout.
-- **Cost / rate-limit guardrails.** Basic hard cap and run-count display are implemented. Future multi-target expansion still needs cost bands and per-user invocation budgets.
+- **Cost / rate-limit guardrails.** Basic hard cap, run-count display, and fan-out warning are implemented. Still open: cost bands and per-user invocation budgets.
 - **Tool subset explicit-empty semantics.** Resolved for v1 by disallowing zero selected tools in the UI. If "no tools" ever becomes a real execution mode, add an explicit backend flag instead of overloading omitted `allowed_tools`.
 - **Frontend contract alignment.** Implemented for `GET /command-bar/plans/{planID}`, `GET /command-bar/agents/{agentID}/tools`, promotion `allowed_tools`/`allowed_targets`, and redacted unmet-intent summaries.
 - **Per-page agent buttons vs. bar suggested prompts.** Long-term, contextual suggested prompts in the bar may replace the button soup. v1 keeps both. Decide measurement criteria before sunsetting buttons.
@@ -342,10 +343,10 @@ No week estimates here — the point of this doc is direction, not a schedule.
 
 - Diff review before applying changes
 - Full saved-custom-agent registry/editor/versioning. Opt-in promotion from completed command-bar runs is implemented.
-- One-shot dynamic runs outside the existing agent roster
+- One-shot dynamic runs outside the product-owned Command Agent profile
 - Automatic saved-agent creation/reuse
 - Cross-agent context handoff (runs are linked by `parent_run_id`, but no automatic output handoff exists)
 - `@agent` invocation in comments
 - Spawning agents from agents
 
-One-shot dynamic runs remain a v2 candidate. Opt-in promotion is implemented with a proper promotion dialog. Automatic saved-agent creation/reuse is future reference only and is not implemented by this plan.
+Single-target one-shot dynamic runs are implemented through the product-owned Command Agent profile. Bounded multi-target fan-out is implemented for concrete related targets. Opt-in promotion is implemented with a proper promotion dialog. Automatic saved-agent creation/reuse is future reference only and is not implemented by this plan.

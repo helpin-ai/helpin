@@ -20,13 +20,16 @@ export function PageContextProvider({ children }: { children: React.ReactNode })
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const [entries, setEntries] = useState<RegisteredPageContext[]>([]);
 
-  const fallback = workspace
-    ? ({
+  const fallback = useMemo(
+    () => workspace
+      ? ({
         entity_type: 'workspace',
         entity_id: workspace.id,
         display_title: workspace.name,
       } satisfies CommandBarPageContext)
-    : null;
+      : null,
+    [workspace?.id, workspace?.name],
+  );
 
   const pageContext = useMemo(() => {
     if (entries.length === 0) return fallback;
@@ -66,10 +69,29 @@ export function useRegisterPageContext(context: CommandBarPageContext | null, pr
   const value = useContext(PageContext);
   const register = value?.register;
   const unregister = value?.unregister;
+  const contextKey = context ? stablePageContextKey(context) : '';
 
   useEffect(() => {
     if (!register || !unregister || !context) return;
     register({ id, priority, context });
     return () => unregister(id);
-  }, [context, id, priority, register, unregister]);
+  }, [contextKey, id, priority, register, unregister]);
+}
+
+function stablePageContextKey(context: CommandBarPageContext): string {
+  return stableJSONStringify(context);
+}
+
+function stableJSONStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableJSONStringify(item)).join(',')}]`;
+  }
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJSONStringify(record[key])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
 }

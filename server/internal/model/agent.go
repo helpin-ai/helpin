@@ -16,7 +16,11 @@ const (
 	AgentPresetSupportAgent = "support_agent"
 	AgentPresetCodeBuilder  = "code_builder"
 	AgentPresetReviewAgent  = "review_agent"
-	AgentPresetResearcher   = "researcher"
+	// AgentPresetCommandAgent is stored under the legacy "researcher" key so
+	// existing seeded system-agent rows reconcile in place while the product
+	// surface moves to "Command Agent".
+	AgentPresetCommandAgent = "researcher"
+	AgentPresetResearcher   = AgentPresetCommandAgent
 
 	AgentModelProviderAnthropic           = "anthropic"
 	AgentModelProviderOpenAI              = "openai"

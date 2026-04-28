@@ -99,12 +99,14 @@ function WorkspaceLayout() {
           <SidebarInset className="relative min-w-0 overflow-hidden bg-transparent before:absolute before:top-3 before:left-0 before:bottom-3 before:z-10 before:w-px before:bg-border/70 before:[mask-image:linear-gradient(to_bottom,transparent,black_24px,black_calc(100%-24px),transparent)] dark:before:bg-border/60">
             <PageContextProvider>
               <RouteAwareHeader />
-              <main className="relative min-h-0 flex-1 overflow-hidden">
-                <Outlet />
-              </main>
+              <div className="flex min-h-0 flex-1 overflow-hidden">
+                <main className="relative min-h-0 flex-1 overflow-hidden">
+                  <Outlet />
+                </main>
+                <CommandBarRunRail />
+              </div>
               <MemoizedGlobalCreateModals workspaceId={currentWorkspace.id} />
               <MemoizedGlobalTaskPanel workspaceId={currentWorkspace.id} />
-              <CommandBarRunRail />
             </PageContextProvider>
           </SidebarInset>
         </SidebarProvider>

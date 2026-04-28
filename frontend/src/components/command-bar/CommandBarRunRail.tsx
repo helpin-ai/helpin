@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { BotIcon, Cancel01Icon, Loading01Icon, Menu01Icon, Tick01Icon, ViewIcon } from '@/lib/icons';
+import { ArrowRight01Icon, BotIcon, Cancel01Icon, Loading01Icon, Tick01Icon, ViewIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
@@ -22,11 +22,11 @@ export function CommandBarRunRail() {
   const runsById = useCommandBarRunStore((s) => s.runsById);
   const planIds = useCommandBarRunStore((s) => s.planIds);
   const plansById = useCommandBarRunStore((s) => s.plansById);
-  const railOpen = useCommandBarRunStore((s) => s.railOpen);
+  const railMode = useCommandBarRunStore((s) => s.railMode);
   const updateRun = useCommandBarRunStore((s) => s.updateRun);
   const hydratePlans = useCommandBarRunStore((s) => s.hydratePlans);
   const updatePlan = useCommandBarRunStore((s) => s.updatePlan);
-  const setRailOpen = useCommandBarRunStore((s) => s.setRailOpen);
+  const setRailMode = useCommandBarRunStore((s) => s.setRailMode);
   const clear = useCommandBarRunStore((s) => s.clear);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [busyRunId, setBusyRunId] = useState<string | null>(null);
@@ -199,8 +199,10 @@ export function CommandBarRunRail() {
         toast.error(res.error ?? 'Failed to retry plan');
         return;
       }
-      updatePlan(res.data.plan, [res.data.run]);
-      toast.success(`Retrying step ${stepIndex + 1}`);
+      const runs = res.data.runs ?? (res.data.run ? [res.data.run] : []);
+      updatePlan(res.data.plan, runs);
+      const isFanOut = res.data.plan.plan_kind === 'fan_out';
+      toast.success(isFanOut ? `Retrying ${runs.length} failed target${runs.length === 1 ? '' : 's'}` : `Retrying step ${stepIndex + 1}`);
     } finally {
       setBusyPlanId(null);
     }
@@ -246,101 +248,147 @@ export function CommandBarRunRail() {
     );
   };
 
-  if (runs.length === 0 && plans.length === 0) return null;
+  // Cmd+. toggles the rail open/closed
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === '.') {
+        e.preventDefault();
+        setRailMode(railMode === 'open' ? 'peek' : 'open');
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [railMode, setRailMode]);
 
-  if (!railOpen) {
+  // Empty state: nothing to show, render nothing (the main content can use full width)
+  if (runs.length === 0 && plans.length === 0) return null;
+  if (railMode === 'closed') return null;
+
+  // Peek state: thin 48px strip on the right edge with a stack of plan/run dots
+  if (railMode === 'peek') {
     return (
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        className="fixed right-4 top-20 z-40 h-9 gap-2 border-border/70 bg-background shadow-sm"
-        onClick={() => setRailOpen(true)}
+      <aside
+        className="relative z-30 flex h-full w-12 shrink-0 flex-col items-center gap-2 border-l border-border/70 bg-background/80 py-3 backdrop-blur"
+        aria-label="Command runs (peek)"
       >
-        <Menu01Icon className="h-4 w-4" />
-        {activeCount} active
-      </Button>
+        <button
+          type="button"
+          onClick={() => setRailMode('open')}
+          className="flex flex-col items-center gap-1 text-muted-foreground hover:text-foreground"
+          title="Open command runs (⌘.)"
+        >
+          <BotIcon className="h-4 w-4" />
+          {activeCount > 0 ? (
+            <Badge variant="outline" className="px-1 py-0 text-[9px]">{activeCount}</Badge>
+          ) : (
+            <span className="text-[9px] uppercase tracking-wider">{plans.length + standaloneRuns.length}</span>
+          )}
+        </button>
+      </aside>
     );
   }
 
+  // Open state: full docked column
   return (
     <>
-      <aside className="fixed right-4 top-20 z-40 w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-md border border-border/70 bg-background shadow-xl">
+      <aside
+        className="relative z-30 flex h-full w-[22rem] shrink-0 flex-col border-l border-border/70 bg-background"
+        aria-label="Command runs"
+      >
         <div className="flex items-center justify-between border-b px-3 py-2">
           <div className="flex items-center gap-2">
             <BotIcon className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm font-medium">Command Runs</span>
-            <Badge variant="outline" className="text-[10px]">{activeCount} active</Badge>
+            {activeCount > 0 ? (
+              <Badge variant="outline" className="text-[10px]">{activeCount} active</Badge>
+            ) : null}
           </div>
           <div className="flex items-center gap-1">
-            <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => setRailOpen(false)}>
-              <Menu01Icon className="h-4 w-4" />
+            <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => setRailMode('peek')} title="Collapse to peek (⌘.)">
+              <ArrowRight01Icon className="h-4 w-4" />
             </Button>
-            <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={clear}>
+            <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={clear} title="Clear all">
               <Cancel01Icon className="h-4 w-4" />
             </Button>
           </div>
         </div>
-        <div className="max-h-[min(28rem,calc(100vh-8rem))] overflow-y-auto p-2">
-          {plans.map((plan) => (
-            <div key={plan.id} className="space-y-2 border-b border-border/60 px-2 py-2 last:border-0">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">Command Plan</p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {plan.steps.length} sequential steps{plan.status ? ` • ${plan.status}` : ''}
-                  </p>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Badge variant="outline" className="text-[10px]">plan</Badge>
-                  {plan.status === 'running' ? (
-                    <Button type="button" variant="ghost" size="sm" className="h-7" disabled={busyPlanId === plan.id} onClick={() => void cancelPlan(plan.id)}>
-                      Cancel plan
-                    </Button>
-                  ) : null}
-                  {plan.status === 'failed' || plan.status === 'cancelled' ? (
-                    <Button type="button" variant="ghost" size="sm" className="h-7" disabled={busyPlanId === plan.id} onClick={() => void retryPlan(plan.id, plan.currentStepIndex ?? 0)}>
-                      Retry
-                    </Button>
-                  ) : null}
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                {plan.steps.map((step, index) => {
-                  const runId = plan.runIdsByStep[index];
-                  const run = runId ? runsById[runId] : undefined;
-                  const previousRunId = index > 0 ? plan.runIdsByStep[index - 1] : undefined;
-                  const previousRun = previousRunId ? runsById[previousRunId] : undefined;
-                  const waitingLabel = previousRun && ACTIVE_RUN_STATUSES.has(previousRun.status)
-                    ? `Waiting for step ${index}`
-                    : 'Waiting';
-                  return (
-                    <div key={`${plan.id}-${index}`} className="rounded border border-border/60 px-2 py-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium">
-                            Step {index + 1}: {step.agent_name}
-                          </p>
-                          <p className="truncate text-xs text-muted-foreground">
-                            {run ? `${run.target_type} • ${run.execution_stage || run.id.slice(0, 8)}` : waitingLabel}
-                          </p>
-                        </div>
-                        {run ? renderStatusBadge(run) : <Badge variant="outline" className="text-[10px]">queued next</Badge>}
-                      </div>
-                      {run ? <div className="mt-2">{renderRunActions(run)}</div> : null}
+        <div className="flex-1 overflow-y-auto p-2">
+          {plans.map((plan) => {
+            const stepWord = plan.steps.length === 1 ? 'step' : 'steps';
+            const isSingle = plan.steps.length === 1;
+            const isOneShot = plan.planKind === 'one_shot_command' || plan.steps.some((step) => step.plan_kind === 'one_shot_command');
+            const isFanOut = plan.planKind === 'fan_out' || plan.steps.some((step) => step.plan_kind === 'fan_out');
+            return (
+              <div key={plan.id} className="space-y-2 border-b border-border/60 px-2 py-2 last:border-0">
+                {!isSingle ? (
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{plan.prompt || 'Command plan'}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {isFanOut ? `${plan.steps.length} targets · fan-out` : isOneShot ? 'one-shot agent' : `${plan.steps.length} ${stepWord}`}
+                        {plan.status ? ` · ${plan.status}` : ''}
+                      </p>
                     </div>
-                  );
-                })}
+                    <div className="flex items-center gap-1">
+                      {plan.status === 'running' ? (
+                        <Button type="button" variant="ghost" size="sm" className="h-7" disabled={busyPlanId === plan.id} onClick={() => void cancelPlan(plan.id)}>
+                          Cancel
+                        </Button>
+                      ) : null}
+                      {plan.status === 'failed' || plan.status === 'cancelled' ? (
+                        <Button type="button" variant="ghost" size="sm" className="h-7" disabled={busyPlanId === plan.id} onClick={() => void retryPlan(plan.id, plan.currentStepIndex ?? 0)}>
+                          {isFanOut ? 'Retry failed' : 'Retry'}
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+                <div className="space-y-1.5">
+                  {plan.steps.map((step, index) => {
+                    const runId = plan.runIdsByStep[index];
+                    const run = runId ? runsById[runId] : undefined;
+                    const previousRunId = index > 0 ? plan.runIdsByStep[index - 1] : undefined;
+                    const previousRun = previousRunId ? runsById[previousRunId] : undefined;
+                    const waitingLabel = isFanOut
+                      ? 'Queued'
+                      : previousRun && ACTIVE_RUN_STATUSES.has(previousRun.status)
+                      ? `Waiting for step ${index}`
+                      : 'Queued';
+                    const actionLabel = step.instructions || (run && targetLabel(run)) || step.agent_name;
+                    return (
+                      <div key={`${plan.id}-${index}`} className="rounded border border-border/60 px-2 py-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="line-clamp-2 text-sm font-medium">{actionLabel}</p>
+                            <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                              {isFanOut ? `Target ${index + 1} · ` : !isSingle ? `Step ${index + 1} · ` : ''}
+                              {step.agent_name}{step.plan_kind === 'one_shot_command' ? ' · one-shot' : step.plan_kind === 'fan_out' ? ' · fan-out' : ''} · {step.target.entity_type.replace('_', ' ')}
+                              {run?.execution_stage ? ` · ${run.execution_stage}` : ''}
+                            </p>
+                          </div>
+                          {run ? renderStatusBadge(run) : <Badge variant="outline" className="text-[10px]">{waitingLabel}</Badge>}
+                        </div>
+                        {run ? <div className="mt-2">{renderRunActions(run)}</div> : null}
+                      </div>
+                    );
+                  })}
+                </div>
+                {isSingle && plan.status === 'failed' ? (
+                  <Button type="button" variant="ghost" size="sm" className="h-7 w-full" disabled={busyPlanId === plan.id} onClick={() => void retryPlan(plan.id, 0)}>
+                    Retry
+                  </Button>
+                ) : null}
               </div>
-            </div>
-          ))}
+            );
+          })}
           {standaloneRuns.map((run) => (
             <div key={run.id} className="space-y-2 border-b border-border/60 px-2 py-2 last:border-0">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{targetLabel(run)}</p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {run.target_type} • {run.execution_stage || run.id.slice(0, 8)}
+                  <p className="line-clamp-2 text-sm font-medium">{targetLabel(run)}</p>
+                  <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                    {run.target_type.replace('_', ' ')}
+                    {run.execution_stage ? ` · ${run.execution_stage}` : ''}
                   </p>
                 </div>
                 {renderStatusBadge(run)}

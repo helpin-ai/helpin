@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
 import { ArrowDown01Icon, BotIcon, Cancel01Icon, Loading01Icon, ArrowReloadHorizontalIcon, SentIcon, Tick01Icon, ViewIcon } from '@/lib/icons';
@@ -9,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { commandBarService } from '@/lib/services/commandBarService';
 import { cn } from '@/lib/utils';
 import { SettingsPageFrame } from './SettingsPageFrame';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type {
   CommandBarPageContext,
   CommandBarUnmetIntent,
@@ -54,6 +56,8 @@ interface IntentRowProps {
 }
 
 function IntentRow({ intent, workspaceId, showFullPrompts, onUpdated }: IntentRowProps) {
+  const navigate = useNavigate();
+  const workspaceSlug = useWorkspaceStore((s) => s.currentWorkspace?.slug);
   const [expanded, setExpanded] = useState(false);
   const [notes, setNotes] = useState(intent.review_notes ?? '');
   const [busy, setBusy] = useState<CommandBarUnmetIntentStatus | null>(null);
@@ -61,6 +65,28 @@ function IntentRow({ intent, workspaceId, showFullPrompts, onUpdated }: IntentRo
   const fullPrompt = intent.prompt && intent.prompt.length > 0 ? intent.prompt : null;
   const previewText = intent.prompt_preview || fullPrompt || '';
   const promptRedacted = intent.prompt_redacted && !fullPrompt;
+  const ctx = intent.page_context;
+  const ctxNavigable = ctx && ctx.entity_type !== 'workspace' && !!ctx.entity_id && !!workspaceSlug;
+  const navigateToEntity = () => {
+    if (!ctxNavigable || !ctx || !workspaceSlug) return;
+    switch (ctx.entity_type) {
+      case 'task':
+        window.location.assign(`/w/${workspaceSlug}/pm/tasks?task=${ctx.entity_id}`);
+        return;
+      case 'epic':
+        navigate({ to: '/w/$slug/pm/epics/$epicId', params: { slug: workspaceSlug, epicId: ctx.entity_id } });
+        return;
+      case 'document':
+        navigate({ to: '/w/$slug/docs/documents/$docId', params: { slug: workspaceSlug, docId: ctx.entity_id } });
+        return;
+      case 'crm_contact':
+        navigate({ to: '/w/$slug/crm/contacts/$contactId', params: { slug: workspaceSlug, contactId: ctx.entity_id } });
+        return;
+      case 'crm_deal':
+        navigate({ to: '/w/$slug/crm/deals/$dealId', params: { slug: workspaceSlug, dealId: ctx.entity_id } });
+        return;
+    }
+  };
 
   useEffect(() => {
     setNotes(intent.review_notes ?? '');
@@ -90,10 +116,17 @@ function IntentRow({ intent, workspaceId, showFullPrompts, onUpdated }: IntentRo
 
   return (
     <div className="rounded-md border border-border/70 bg-background transition hover:border-border">
-      <button
-        type="button"
-        className="flex w-full items-start gap-3 px-4 py-3 text-left"
+      <div
+        role="button"
+        tabIndex={0}
+        className="flex w-full cursor-pointer items-start gap-3 px-4 py-3 text-left outline-none focus-visible:bg-muted/40"
         onClick={() => setExpanded((prev) => !prev)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setExpanded((prev) => !prev);
+          }
+        }}
       >
         <BotIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1 space-y-1.5">
@@ -101,9 +134,23 @@ function IntentRow({ intent, workspaceId, showFullPrompts, onUpdated }: IntentRo
             <Badge variant="outline" className={cn('text-[10px]', badge.className)}>
               {badge.label}
             </Badge>
-            <Badge variant="outline" className="text-[10px] text-muted-foreground">
-              {pageContextLabel(intent.page_context)}
-            </Badge>
+            {ctxNavigable ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigateToEntity();
+                }}
+                className="inline-flex items-center rounded border border-border/70 px-1.5 py-0.5 text-[10px] text-muted-foreground transition hover:border-primary/40 hover:text-foreground"
+                title="Open entity"
+              >
+                {pageContextLabel(intent.page_context)}
+              </button>
+            ) : (
+              <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                {pageContextLabel(intent.page_context)}
+              </Badge>
+            )}
             <span className="text-[11px] text-muted-foreground">{relativeTime(intent.created_at)}</span>
             {intent.reviewed_at ? (
               <span className="text-[11px] text-muted-foreground">· reviewed {relativeTime(intent.reviewed_at)}</span>
@@ -118,7 +165,7 @@ function IntentRow({ intent, workspaceId, showFullPrompts, onUpdated }: IntentRo
           <p className="line-clamp-1 text-xs text-muted-foreground">{intent.reason}</p>
         </div>
         <ArrowDown01Icon className={cn('mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-transform', expanded && 'rotate-180')} />
-      </button>
+      </div>
 
       {expanded ? (
         <div className="space-y-4 border-t border-border/60 px-4 py-3">

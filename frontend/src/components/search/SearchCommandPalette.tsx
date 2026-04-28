@@ -31,11 +31,13 @@ import {
   type SearchResult,
 } from '@/lib/services/searchService';
 import { commandBarService } from '@/lib/services/commandBarService';
+import { cn } from '@/lib/utils';
 import { buildTaskCommandValue } from '@/components/search/searchCommandPalette';
 import { usePageContext } from '@/components/command-bar/pageContext';
+import { PageContextBadge } from '@/components/command-bar/PageContextBadge';
 import { StepToolPicker } from '@/components/command-bar/StepToolPicker';
 import { useCommandBarRunStore } from '@/stores/commandBarStore';
-import type { CommandBarParseResponse } from '@/lib/pmTypes';
+import type { CommandBarPageContext, CommandBarParseResponse } from '@/lib/pmTypes';
 
 const EMPTY: SearchResponse = {
   tasks: [],
@@ -55,7 +57,9 @@ export function SearchCommandPalette({
 }) {
   const navigate = useNavigate();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
-  const pageContext = usePageContext();
+  const resolvedPageContext = usePageContext();
+  const [contextOverride, setContextOverride] = useState<CommandBarPageContext | null>(null);
+  const pageContext = contextOverride ?? resolvedPageContext;
   const addRuns = useCommandBarRunStore((s) => s.addRuns);
   const addPlan = useCommandBarRunStore((s) => s.addPlan);
   const [query, setQuery] = useState('');
@@ -78,6 +82,7 @@ export function SearchCommandPalette({
       setDispatching(false);
       setIntentResult(null);
       setStepToolOverrides({});
+      setContextOverride(null);
     }
   }, [open]);
 
@@ -225,6 +230,7 @@ export function SearchCommandPalette({
           id: res.data.plan_id,
           steps,
           runIdsByStep: Object.fromEntries(res.data.runs.map((run, index) => [index, run.id])),
+          planKind: intentResult.plan.plan_kind,
           status: 'running',
           prompt: trimmedQuery,
           currentStepIndex: 0,
@@ -239,6 +245,19 @@ export function SearchCommandPalette({
     }
   }, [addPlan, addRuns, intentResult, onOpenChange, pageContext, stepToolOverrides, trimmedQuery, workspace?.id]);
 
+  // ⌘↵ confirms the plan from anywhere in the palette while it's open
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && intentResult?.status === 'plan') {
+        e.preventDefault();
+        void handleDispatchPlan();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [open, intentResult, handleDispatchPlan]);
+
   return (
     <CommandDialog
       open={open}
@@ -248,8 +267,24 @@ export function SearchCommandPalette({
       className="self-start justify-self-center border-border/70 shadow-xl sm:mt-[12vh] sm:max-w-2xl"
       showCloseButton={false}
     >
+      {pageContext ? (
+        <PageContextBadge
+          context={pageContext}
+          onClear={
+            resolvedPageContext && resolvedPageContext.entity_type !== 'workspace' && contextOverride?.entity_type !== 'workspace'
+              ? () =>
+                  setContextOverride(
+                    workspace
+                      ? { entity_type: 'workspace', entity_id: workspace.id, display_title: workspace.name }
+                      : null,
+                  )
+              : undefined
+          }
+          onNavigate={() => onOpenChange(false)}
+        />
+      ) : null}
       <CommandInput
-        placeholder={`Search ${workspace?.name ?? 'workspace'}...`}
+        placeholder={pageContext && pageContext.entity_type !== 'workspace' ? 'Search or ask agents about this...' : 'Search or ask agents...'}
         value={query}
         onValueChange={setQuery}
       />
@@ -279,12 +314,21 @@ export function SearchCommandPalette({
         {intentResult?.status === 'plan' && (
           <>
             <div className="px-2 pt-2 pb-1">
-              <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                <span>Plan</span>
-                {intentResult.rationale ? (
-                  <span className="truncate font-normal normal-case tracking-normal text-muted-foreground/80">· {intentResult.rationale}</span>
-                ) : null}
+              <div className="flex items-center justify-between gap-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                <span>{intentResult.plan.plan_kind === 'fan_out' ? 'Fan-out plan' : intentResult.plan.plan_kind === 'one_shot_command' ? 'One-shot agent' : 'Plan'}</span>
+                <span className="font-normal normal-case tracking-normal text-muted-foreground/80">
+                  {intentResult.plan.plan_kind === 'fan_out'
+                    ? `${intentResult.plan.steps.length} targets`
+                    : intentResult.plan.plan_kind === 'one_shot_command'
+                    ? 'not saved'
+                    : intentResult.plan.steps.length === 1
+                      ? '1 step'
+                      : `${intentResult.plan.steps.length} steps`}
+                </span>
               </div>
+              {intentResult.rationale ? (
+                <p className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground/80">{intentResult.rationale}</p>
+              ) : null}
               {intentResult.plan.guardrails?.length ? (
                 <div className="mt-1.5 space-y-1">
                   {intentResult.plan.guardrails.map((guardrail, index) => (
@@ -295,46 +339,76 @@ export function SearchCommandPalette({
                   ))}
                 </div>
               ) : null}
-              <div className="mt-2 space-y-1.5">
-                {intentResult.plan.steps.map((step, index) => {
-                  const candidate = intentResult.candidates?.find((c) => c.id === step.agent_id);
-                  const availableTools = candidate?.allowed_tools ?? step.allowed_tools ?? [];
-                  return (
-                    <div
-                      key={`${step.agent_id}-${index}`}
-                      className="flex items-start gap-2 rounded-md border border-border/60 bg-muted/30 px-2.5 py-2"
-                    >
-                      <BotIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                            Step {index + 1}
+              <div className={cn('mt-2', intentResult.plan.steps.length > 1 && 'relative pl-3')}>
+                {intentResult.plan.steps.length > 1 ? (
+                  <div aria-hidden className="absolute left-[8px] top-3 bottom-3 w-px bg-border/70" />
+                ) : null}
+                <div className="space-y-1.5">
+                  {intentResult.plan.steps.map((step, index) => {
+                    const candidate = intentResult.candidates?.find((c) => c.id === step.agent_id);
+                    const availableTools = candidate?.allowed_tools ?? step.allowed_tools ?? [];
+                    const override = stepToolOverrides[index];
+                    const narrowed = override !== undefined && override.length !== availableTools.length && override.length > 0;
+                    const empty = override !== undefined && override.length === 0;
+                    return (
+                      <div key={`${step.agent_id}-${index}`} className="relative">
+                        {intentResult.plan.steps.length > 1 ? (
+                          <span
+                            aria-hidden
+                            className="absolute -left-3 top-2 grid h-4 w-4 place-items-center rounded-full bg-background ring-2 ring-border/70 text-[9px] font-semibold text-muted-foreground"
+                          >
+                            {index + 1}
                           </span>
-                          <span className="truncate text-sm font-medium text-foreground">{step.agent_name}</span>
-                          <span className="rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                            {step.target.entity_type}
-                          </span>
-                        </div>
-                        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{step.instructions}</p>
-                        {availableTools.length > 0 ? (
-                          <div className="mt-1.5">
-                            <StepToolPicker
-                              workspaceId={workspace?.id}
-                              agentId={step.agent_id}
-                              agentName={step.agent_name}
-                              availableTools={availableTools}
-                              selectedTools={stepToolOverrides[index]}
-                              onChange={(next) =>
-                                setStepToolOverrides((prev) => ({ ...prev, [index]: next }))
-                              }
-                              disabled={dispatching}
-                            />
-                          </div>
                         ) : null}
+                        <div className="rounded-md border border-border/60 bg-muted/30 px-2.5 py-2">
+                          <p className="text-sm font-medium text-foreground line-clamp-2">{step.instructions}</p>
+                          <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                            <BotIcon className="h-3 w-3" />
+                            <span className="truncate">{step.agent_name}</span>
+                            {step.plan_kind === 'one_shot_command' ? (
+                              <>
+                                <span className="opacity-60">·</span>
+                                <span>one-shot</span>
+                              </>
+                            ) : step.plan_kind === 'fan_out' ? (
+                              <>
+                                <span className="opacity-60">·</span>
+                                <span>fan-out target {index + 1}</span>
+                              </>
+                            ) : null}
+                            <span className="opacity-60">·</span>
+                            <span>{step.target.entity_type.replace('_', ' ')}</span>
+                            {narrowed ? (
+                              <span className="ml-1 rounded border border-amber-500/30 bg-amber-500/10 px-1 text-[9px] font-medium uppercase tracking-wider text-amber-700 dark:text-amber-400">
+                                tools narrowed
+                              </span>
+                            ) : null}
+                            {empty ? (
+                              <span className="ml-1 rounded border border-destructive/30 bg-destructive/10 px-1 text-[9px] font-medium uppercase tracking-wider text-destructive">
+                                no tools
+                              </span>
+                            ) : null}
+                          </div>
+                          {availableTools.length > 0 ? (
+                            <div className="mt-1.5">
+                              <StepToolPicker
+                                workspaceId={workspace?.id}
+                                agentId={step.agent_id}
+                                agentName={step.agent_name}
+                                availableTools={availableTools}
+                                selectedTools={stepToolOverrides[index]}
+                                onChange={(next) =>
+                                  setStepToolOverrides((prev) => ({ ...prev, [index]: next }))
+                                }
+                                disabled={dispatching}
+                              />
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             </div>
             <CommandGroup>
@@ -343,6 +417,12 @@ export function SearchCommandPalette({
                   const override = stepToolOverrides[i];
                   return override !== undefined && override.length === 0;
                 });
+                const runCount = intentResult.plan.estimated_runs ?? intentResult.plan.run_count;
+                const sequencingHint = intentResult.plan.plan_kind === 'fan_out'
+                  ? ' · fan-out'
+                  : intentResult.plan.steps.length > 1
+                    ? ' · sequential'
+                    : '';
                 return (
                   <CommandItem
                     value={`confirm-agent-plan-${trimmedQuery}`}
@@ -351,13 +431,16 @@ export function SearchCommandPalette({
                     className="cursor-pointer"
                   >
                     {dispatching ? <Loading01Icon className="h-4 w-4 animate-spin text-muted-foreground" /> : <SentIcon className="h-4 w-4 text-muted-foreground" />}
-                    <span>
+                    <span className="flex-1">
                       {dispatching
                         ? 'Starting runs...'
                         : hasEmptyStep
                           ? 'Pick at least 1 tool per step to confirm'
-                          : `Confirm ${intentResult.plan.estimated_runs ?? intentResult.plan.run_count}-run plan`}
+                          : `Confirm ${runCount === 1 ? '1 run' : `${runCount} runs`}${sequencingHint}`}
                     </span>
+                    {!dispatching && !hasEmptyStep ? (
+                      <kbd className="ml-2 rounded border bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">⌘↵</kbd>
+                    ) : null}
                   </CommandItem>
                 );
               })()}
@@ -529,10 +612,17 @@ export function SearchCommandPalette({
           <kbd className="rounded border bg-muted px-1.5 py-0.5 text-[10px] font-mono">↑↓</kbd>{' '}
           Navigate
         </span>
-        <span>
-          <kbd className="rounded border bg-muted px-1.5 py-0.5 text-[10px] font-mono">↵</kbd>{' '}
-          Open
-        </span>
+        {intentResult?.status === 'plan' ? (
+          <span>
+            <kbd className="rounded border bg-muted px-1.5 py-0.5 text-[10px] font-mono">⌘↵</kbd>{' '}
+            Confirm
+          </span>
+        ) : (
+          <span>
+            <kbd className="rounded border bg-muted px-1.5 py-0.5 text-[10px] font-mono">↵</kbd>{' '}
+            Open
+          </span>
+        )}
         <span>
           <kbd className="rounded border bg-muted px-1.5 py-0.5 text-[10px] font-mono">Esc</kbd>{' '}
           Close

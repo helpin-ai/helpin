@@ -218,7 +218,7 @@ export function EpicDetailPage() {
       entity_type: 'epic' as const,
       entity_id: epic.epic.id,
       display_title: epic.epic.name,
-      related_ids: { storyIds: tasks.map((task) => task.id) },
+      related_ids: { task_ids: tasks.map((task) => task.id), story_ids: tasks.map((task) => task.id) },
     };
   }, [epic, tasks]);
   useRegisterPageContext(commandBarContext, 10);

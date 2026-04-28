@@ -68,17 +68,21 @@ func (s *CommandBarService) ParseIntent(ctx context.Context, workspaceID, actorI
 		resp := s.noMatchResponse(ctx, workspaceID, actorID, text, pageContext, nil, reason)
 		return resp, nil
 	}
+	narrowCandidates := commandBarNarrowCandidates(candidates)
 
+	if parsed := parseFanOutIntent(text, pageContext, narrowCandidates, candidates); parsed != nil {
+		return parsed, nil
+	}
 	if parsed := parseExplicitNamedAgents(text, pageContext, candidates); parsed != nil {
 		return parsed, nil
 	}
-	if parsed := parseIntentDeterministically(text, pageContext, candidates); parsed != nil {
+	if parsed := parseIntentDeterministically(text, pageContext, narrowCandidates); parsed != nil {
 		return parsed, nil
 	}
-	if parsed := s.parseIntentWithLLM(ctx, text, pageContext, candidates); parsed != nil {
-		if parsed.Status == model.CommandBarParseStatusNoMatchingAgent {
-			_ = s.logUnmetIntent(ctx, workspaceID, actorID, text, pageContext, candidates, parsed.Reason)
-		}
+	if parsed := s.parseIntentWithLLM(ctx, text, pageContext, narrowCandidates); parsed != nil && parsed.Status == model.CommandBarParseStatusPlan {
+		return parsed, nil
+	}
+	if parsed := parseOneShotCommandIntent(text, pageContext, candidates); parsed != nil {
 		return parsed, nil
 	}
 
@@ -110,6 +114,12 @@ func (s *CommandBarService) DispatchPlan(ctx context.Context, workspaceID, actor
 		if strings.TrimSpace(step.AgentID) == "" {
 			return nil, fmt.Errorf("agent_id is required for step %d", i+1)
 		}
+		if step.PlanKind == model.CommandBarPlanKindOneShotCommand && len(step.AllowedTools) == 0 {
+			return nil, fmt.Errorf("one-shot command step %d requires at least one enabled tool", i+1)
+		}
+	}
+	if err := s.validateDispatchSteps(ctx, workspaceID, steps); err != nil {
+		return nil, err
 	}
 	planID := uuid.NewString()
 	if s.planRepo != nil {
@@ -120,6 +130,28 @@ func (s *CommandBarService) DispatchPlan(ctx context.Context, workspaceID, actor
 		if err := s.planRepo.Create(ctx, record); err != nil {
 			return nil, err
 		}
+	}
+	if commandBarPlanKindForSteps(steps) == model.CommandBarPlanKindFanOut {
+		runs := make([]model.AgentRun, 0, len(steps))
+		for index := range steps {
+			run, err := s.agentService.startCommandBarPlanStep(ctx, workspaceID, actorID, text, pageContext, steps, index, planID, nil)
+			if err != nil {
+				if s.planRepo != nil {
+					_ = s.planRepo.MarkFailed(ctx, workspaceID, planID, err.Error())
+				}
+				return nil, err
+			}
+			if s.planRepo != nil {
+				_ = s.planRepo.SetStepRun(ctx, workspaceID, planID, index, run.ID)
+			}
+			runs = append(runs, *run)
+		}
+		return &model.CommandBarDispatchResponse{
+			PlanID:   planID,
+			Steps:    steps,
+			RunCount: len(steps),
+			Runs:     runs,
+		}, nil
 	}
 	run, err := s.agentService.startCommandBarPlanStep(ctx, workspaceID, actorID, text, pageContext, steps, 0, planID, nil)
 	if err != nil {
@@ -137,6 +169,32 @@ func (s *CommandBarService) DispatchPlan(ctx context.Context, workspaceID, actor
 		RunCount: len(steps),
 		Runs:     []model.AgentRun{*run},
 	}, nil
+}
+
+func (s *CommandBarService) validateDispatchSteps(ctx context.Context, workspaceID string, steps []model.CommandBarPlanStep) error {
+	agents, err := s.agentService.ListAgents(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+	byID := make(map[string]model.Agent, len(agents))
+	for _, agent := range agents {
+		byID[agent.ID] = agent
+	}
+	for i, step := range steps {
+		agent, ok := byID[step.AgentID]
+		if !ok {
+			return fmt.Errorf("agent not found for step %d", i+1)
+		}
+		if normalizePresetKey(agent.PresetKey) == model.AgentPresetCommandAgent {
+			if step.PlanKind != model.CommandBarPlanKindOneShotCommand {
+				return fmt.Errorf("command agent step %d must be dispatched as a one-shot command", i+1)
+			}
+			if len(step.AllowedTools) == 0 {
+				return fmt.Errorf("command agent step %d requires a narrowed tool subset", i+1)
+			}
+		}
+	}
+	return nil
 }
 
 func (s *CommandBarService) ListPlans(ctx context.Context, workspaceID, actorID string, limit int) (*model.CommandBarPlanListResponse, error) {
@@ -265,6 +323,9 @@ func (s *CommandBarService) RetryPlanFromStep(ctx context.Context, workspaceID, 
 	if stepIndex < 0 || stepIndex >= len(steps) {
 		return nil, fmt.Errorf("step_index must be between 0 and %d", len(steps)-1)
 	}
+	if commandBarPlanKindForSteps(steps) == model.CommandBarPlanKindFanOut {
+		return s.retryFailedFanOutRuns(ctx, workspaceID, actorID, *plan, pageContext, steps)
+	}
 	runIDsByStep := decodeCommandBarPlanRunIDs(plan.RunIDsByStep)
 	for index, runID := range runIDsByStep {
 		if index < stepIndex {
@@ -299,8 +360,62 @@ func (s *CommandBarService) RetryPlanFromStep(ctx context.Context, workspaceID, 
 	}
 	return &model.CommandBarRetryPlanResponse{
 		Plan: commandBarPlanSummary(*updatedPlan, []model.AgentRun{*run}),
-		Run:  *run,
+		Run:  run,
+		Runs: []model.AgentRun{*run},
 	}, nil
+}
+
+func (s *CommandBarService) retryFailedFanOutRuns(ctx context.Context, workspaceID, actorID string, plan model.CommandBarPlanRecord, pageContext model.CommandBarPageContext, steps []model.CommandBarPlanStep) (*model.CommandBarRetryPlanResponse, error) {
+	runIDsByStep := decodeCommandBarPlanRunIDs(plan.RunIDsByStep)
+	retrySteps := make([]int, 0)
+	for index, runID := range runIDsByStep {
+		run, err := s.agentService.runRepo.GetByID(ctx, workspaceID, runID)
+		if err != nil {
+			return nil, err
+		}
+		if run == nil {
+			continue
+		}
+		if model.IsAgentRunActiveStatus(run.Status) {
+			return nil, fmt.Errorf("fan-out plan still has active runs; wait for them to finish or cancel the plan")
+		}
+		if run.Status == model.AgentRunStatusFailed || run.Status == model.AgentRunStatusCancelled {
+			retrySteps = append(retrySteps, index)
+		}
+	}
+	slices.Sort(retrySteps)
+	if len(retrySteps) == 0 {
+		return nil, fmt.Errorf("fan-out plan has no failed or cancelled targets to retry")
+	}
+	started := make([]model.AgentRun, 0, len(retrySteps))
+	for _, index := range retrySteps {
+		if index < 0 || index >= len(steps) {
+			continue
+		}
+		run, err := s.agentService.startCommandBarPlanStep(ctx, workspaceID, actorID, plan.Prompt, pageContext, steps, index, plan.ID, nil)
+		if err != nil {
+			_ = s.planRepo.MarkFailed(ctx, workspaceID, plan.ID, err.Error())
+			return nil, err
+		}
+		runIDsByStep[index] = run.ID
+		started = append(started, *run)
+	}
+	rawRunIDs, _ := json.Marshal(runIDsByStep)
+	if err := s.planRepo.RestartStepRun(ctx, workspaceID, plan.ID, retrySteps[0], rawRunIDs); err != nil {
+		return nil, err
+	}
+	updatedPlan, err := s.planRepo.GetByID(ctx, workspaceID, plan.ID)
+	if err != nil {
+		return nil, err
+	}
+	resp := &model.CommandBarRetryPlanResponse{
+		Plan: commandBarPlanSummary(*updatedPlan, started),
+		Runs: started,
+	}
+	if len(started) > 0 {
+		resp.Run = &started[0]
+	}
+	return resp, nil
 }
 
 func (s *CommandBarService) ListUnmetIntents(ctx context.Context, workspaceID, status string, limit int, includeSensitive bool) (*model.CommandBarUnmetIntentListResponse, error) {
@@ -540,6 +655,9 @@ func (s *AgentService) AdvanceCommandBarPlanAfterRun(ctx context.Context, comple
 	if !ok {
 		return nil, nil
 	}
+	if commandBarPlanKindForSteps(payload.Steps) == model.CommandBarPlanKindFanOut {
+		return s.advanceFanOutCommandBarPlan(ctx, run, payload)
+	}
 	if run.Status == model.AgentRunStatusFailed {
 		if s.commandBarPlanRepo != nil && payload.PlanID != "" {
 			_ = s.commandBarPlanRepo.MarkFailed(ctx, run.WorkspaceID, payload.PlanID, commandBarTerminalRunMessage(run, payload, "failed"))
@@ -595,6 +713,63 @@ func (s *AgentService) AdvanceCommandBarPlanAfterRun(ctx context.Context, comple
 		_ = s.commandBarPlanRepo.SetStepRun(ctx, run.WorkspaceID, planID, nextIndex, nextRun.ID)
 	}
 	return nextRun, nil
+}
+
+func (s *AgentService) advanceFanOutCommandBarPlan(ctx context.Context, run *model.AgentRun, payload commandBarTriggerContextPayload) (*model.AgentRun, error) {
+	if s.commandBarPlanRepo == nil || payload.PlanID == "" {
+		return nil, nil
+	}
+	if run.Status == model.AgentRunStatusFailed {
+		_ = s.commandBarPlanRepo.MarkFailed(ctx, run.WorkspaceID, payload.PlanID, commandBarTerminalRunMessage(run, payload, "failed"))
+		return nil, nil
+	}
+	if run.Status == model.AgentRunStatusCancelled {
+		_ = s.commandBarPlanRepo.MarkFailed(ctx, run.WorkspaceID, payload.PlanID, commandBarTerminalRunMessage(run, payload, "cancelled"))
+		return nil, nil
+	}
+	if run.Status != model.AgentRunStatusCompleted {
+		return nil, nil
+	}
+	plan, err := s.commandBarPlanRepo.GetByID(ctx, run.WorkspaceID, payload.PlanID)
+	if err != nil || plan == nil {
+		return nil, err
+	}
+	if plan.Status == model.CommandBarPlanStatusCancelled || plan.Status == model.CommandBarPlanStatusFailed {
+		return nil, nil
+	}
+	runIDsByStep := decodeCommandBarPlanRunIDs(plan.RunIDsByStep)
+	if len(runIDsByStep) < len(payload.Steps) {
+		return nil, nil
+	}
+	runIDs := make([]string, 0, len(runIDsByStep))
+	for _, runID := range runIDsByStep {
+		runIDs = append(runIDs, runID)
+	}
+	runs, err := s.runRepo.ListByIDs(ctx, run.WorkspaceID, runIDs)
+	if err != nil {
+		return nil, err
+	}
+	if len(runs) < len(payload.Steps) {
+		return nil, nil
+	}
+	allCompleted := true
+	for _, item := range runs {
+		switch item.Status {
+		case model.AgentRunStatusCompleted:
+		case model.AgentRunStatusFailed:
+			_ = s.commandBarPlanRepo.MarkFailed(ctx, run.WorkspaceID, payload.PlanID, commandBarTerminalRunMessage(&item, payload, "failed"))
+			return nil, nil
+		case model.AgentRunStatusCancelled:
+			_ = s.commandBarPlanRepo.MarkFailed(ctx, run.WorkspaceID, payload.PlanID, commandBarTerminalRunMessage(&item, payload, "cancelled"))
+			return nil, nil
+		default:
+			allCompleted = false
+		}
+	}
+	if allCompleted {
+		_ = s.commandBarPlanRepo.MarkCompleted(ctx, run.WorkspaceID, payload.PlanID)
+	}
+	return nil, nil
 }
 
 func commandBarTerminalRunMessage(run *model.AgentRun, payload commandBarTriggerContextPayload, fallback string) string {
@@ -698,6 +873,7 @@ func commandBarPlanSummary(record model.CommandBarPlanRecord, runs []model.Agent
 	return model.CommandBarPlanSummary{
 		ID:               record.ID,
 		Status:           record.Status,
+		PlanKind:         commandBarPlanKindForSteps(steps),
 		Prompt:           record.Prompt,
 		PageContext:      pageContext,
 		Steps:            steps,
@@ -939,6 +1115,17 @@ func commandBarCandidatesForTarget(agents []model.Agent, targetType string) []mo
 	return candidates
 }
 
+func commandBarNarrowCandidates(candidates []model.CommandBarAgent) []model.CommandBarAgent {
+	narrow := make([]model.CommandBarAgent, 0, len(candidates))
+	for _, candidate := range candidates {
+		if isOneShotCommandAgent(candidate) {
+			continue
+		}
+		narrow = append(narrow, candidate)
+	}
+	return narrow
+}
+
 func commandBarPlanResponse(agent model.CommandBarAgent, target model.CommandBarPageContext, text, instructions, rationale string, candidates []model.CommandBarAgent) *model.CommandBarParseResponse {
 	instructions = firstNonEmptyString(strings.TrimSpace(instructions), strings.TrimSpace(text))
 	step := model.CommandBarPlanStep{
@@ -952,9 +1139,11 @@ func commandBarPlanResponse(agent model.CommandBarAgent, target model.CommandBar
 }
 
 func commandBarMultiStepPlanResponse(steps []model.CommandBarPlanStep, rationale string, candidates []model.CommandBarAgent) *model.CommandBarParseResponse {
+	planKind := commandBarPlanKindForSteps(steps)
 	guardrails := []model.CommandBarGuardrail{}
 	if len(steps) > maxCommandBarPlanSteps {
 		steps = steps[:maxCommandBarPlanSteps]
+		planKind = commandBarPlanKindForSteps(steps)
 		guardrails = append(guardrails, model.CommandBarGuardrail{
 			Type:     "run_count_limit",
 			Severity: "warning",
@@ -964,6 +1153,7 @@ func commandBarMultiStepPlanResponse(steps []model.CommandBarPlanStep, rationale
 	return &model.CommandBarParseResponse{
 		Status: model.CommandBarParseStatusPlan,
 		Plan: &model.CommandBarPlan{
+			PlanKind:       planKind,
 			Steps:          steps,
 			RunCount:       len(steps),
 			EstimatedRuns:  len(steps),
@@ -973,6 +1163,294 @@ func commandBarMultiStepPlanResponse(steps []model.CommandBarPlanStep, rationale
 		Rationale:  firstNonEmptyString(strings.TrimSpace(rationale), "Matched request to available agents."),
 		Candidates: candidates,
 	}
+}
+
+func parseOneShotCommandIntent(text string, pageContext model.CommandBarPageContext, candidates []model.CommandBarAgent) *model.CommandBarParseResponse {
+	agent, ok := findCommandBarCandidateByPreset(candidates, model.AgentPresetCommandAgent)
+	if !ok {
+		return nil
+	}
+	allowedTools, ok := oneShotCommandToolsForIntent(text, pageContext, agent.AllowedTools)
+	if !ok || len(allowedTools) == 0 {
+		return nil
+	}
+	instructions := commandBarOneShotInstructions(text, pageContext, allowedTools)
+	step := model.CommandBarPlanStep{
+		AgentID:      agent.ID,
+		AgentKey:     agent.PresetKey,
+		AgentName:    firstNonEmptyString(strings.TrimSpace(agent.Name), "Command Agent"),
+		PlanKind:     model.CommandBarPlanKindOneShotCommand,
+		Target:       pageContext,
+		Instructions: instructions,
+		AllowedTools: allowedTools,
+	}
+	resp := commandBarMultiStepPlanResponse(
+		[]model.CommandBarPlanStep{step},
+		"Prepared a one-shot command agent because no narrower saved agent matched this request.",
+		candidates,
+	)
+	resp.Plan.Guardrails = append(resp.Plan.Guardrails, model.CommandBarGuardrail{
+		Type:     "one_shot_command",
+		Severity: "info",
+		Message:  "This is a one-shot run. It is not saved as a reusable agent unless you promote it after completion.",
+	})
+	return resp
+}
+
+func commandBarFanOutPlanResponse(agent model.CommandBarAgent, targets []model.CommandBarPageContext, text, rationale string, candidates []model.CommandBarAgent) *model.CommandBarParseResponse {
+	if len(targets) == 0 {
+		return nil
+	}
+	steps := make([]model.CommandBarPlanStep, 0, min(len(targets), maxCommandBarPlanSteps))
+	for i, target := range targets {
+		if i >= maxCommandBarPlanSteps {
+			break
+		}
+		steps = append(steps, model.CommandBarPlanStep{
+			AgentID:      agent.ID,
+			AgentKey:     agent.PresetKey,
+			AgentName:    agent.Name,
+			PlanKind:     model.CommandBarPlanKindFanOut,
+			Target:       target,
+			Instructions: firstNonEmptyString(strings.TrimSpace(text), fmt.Sprintf("Run on %s.", target.DisplayTitle)),
+		})
+	}
+	resp := commandBarMultiStepPlanResponse(steps, firstNonEmptyString(strings.TrimSpace(rationale), "Prepared a fan-out plan across selected targets."), candidates)
+	resp.Plan.Guardrails = append(resp.Plan.Guardrails, model.CommandBarGuardrail{
+		Type:     "fan_out_confirmation",
+		Severity: "warning",
+		Message:  fmt.Sprintf("Fan-out will start %d independent runs at once. Review the target list before confirming.", len(resp.Plan.Steps)),
+	})
+	if len(targets) > maxCommandBarPlanSteps {
+		resp.Plan.Guardrails = append(resp.Plan.Guardrails, model.CommandBarGuardrail{
+			Type:     "fan_out_target_limit",
+			Severity: "warning",
+			Message:  fmt.Sprintf("Fan-out is limited to the first %d targets.", maxCommandBarPlanSteps),
+		})
+	}
+	return resp
+}
+
+func parseFanOutIntent(text string, pageContext model.CommandBarPageContext, narrowCandidates, allCandidates []model.CommandBarAgent) *model.CommandBarParseResponse {
+	targets := commandBarFanOutTargetsFromContext(text, pageContext)
+	if len(targets) == 0 {
+		return nil
+	}
+	agent, ok := commandBarFanOutAgentForText(text, pageContext, narrowCandidates)
+	if !ok {
+		return nil
+	}
+	return commandBarFanOutPlanResponse(agent, targets, text, "Prepared a fan-out plan across concrete related targets.", allCandidates)
+}
+
+func commandBarFanOutAgentForText(text string, pageContext model.CommandBarPageContext, candidates []model.CommandBarAgent) (model.CommandBarAgent, bool) {
+	if len(candidates) == 0 {
+		return model.CommandBarAgent{}, false
+	}
+	for _, candidate := range candidates {
+		if indexCommandBarPhrase(text, candidate.Name) >= 0 {
+			return candidate, true
+		}
+		if candidate.PresetKey != "" && indexCommandBarPhrase(text, strings.ReplaceAll(candidate.PresetKey, "_", " ")) >= 0 {
+			return candidate, true
+		}
+	}
+	if parsed := parseIntentDeterministically(text, pageContext, candidates); parsed != nil && parsed.Plan != nil && len(parsed.Plan.Steps) > 0 {
+		return findCommandBarCandidateByID(candidates, parsed.Plan.Steps[0].AgentID)
+	}
+	return model.CommandBarAgent{}, false
+}
+
+func commandBarFanOutTargetsFromContext(text string, pageContext model.CommandBarPageContext) []model.CommandBarPageContext {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	if !containsAny(lower, "all", "each", "every", "across", "fan out", "fan-out", "multiple") {
+		return nil
+	}
+	if len(pageContext.RelatedIDs) == 0 {
+		return nil
+	}
+	type candidate struct {
+		keys       []string
+		targetType string
+		label      string
+	}
+	candidates := []candidate{
+		{keys: []string{"task_ids", "story_ids", "stories", "tasks"}, targetType: "task", label: "Task"},
+		{keys: []string{"document_ids", "doc_ids", "documents", "docs"}, targetType: "document", label: "Document"},
+		{keys: []string{"crm_deal_ids", "deal_ids", "deals"}, targetType: "crm_deal", label: "Deal"},
+		{keys: []string{"crm_contact_ids", "contact_ids", "contacts"}, targetType: "crm_contact", label: "Contact"},
+	}
+	for _, item := range candidates {
+		ids := []string{}
+		for _, key := range item.keys {
+			ids = append(ids, pageContext.RelatedIDs[key]...)
+		}
+		ids = normalizeStringSlice(ids)
+		if len(ids) == 0 {
+			continue
+		}
+		if !fanOutTextMentionsTarget(lower, item.targetType) {
+			continue
+		}
+		targets := make([]model.CommandBarPageContext, 0, len(ids))
+		for _, id := range ids {
+			targets = append(targets, model.CommandBarPageContext{
+				EntityType:   item.targetType,
+				EntityID:     id,
+				DisplayTitle: fmt.Sprintf("%s %s", item.label, shortCommandBarID(id)),
+			})
+		}
+		return targets
+	}
+	return nil
+}
+
+func fanOutTextMentionsTarget(text, targetType string) bool {
+	switch targetType {
+	case "task":
+		return containsAny(text, "task", "tasks", "story", "stories", "child")
+	case "document":
+		return containsAny(text, "doc", "docs", "document", "documents", "article", "articles")
+	case "crm_deal":
+		return containsAny(text, "deal", "deals")
+	case "crm_contact":
+		return containsAny(text, "contact", "contacts")
+	default:
+		return false
+	}
+}
+
+func shortCommandBarID(id string) string {
+	id = strings.TrimSpace(id)
+	if len(id) <= 8 {
+		return id
+	}
+	return id[:8]
+}
+
+func oneShotCommandToolsForIntent(text string, pageContext model.CommandBarPageContext, agentTools []string) ([]string, bool) {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	if lower == "" || containsAny(lower, "delete workspace", "delete all", "remove workspace") {
+		return nil, false
+	}
+	tools := []string{"update_plan", "request_user_input"}
+	recognized := false
+	targetType := normalizeCommandBarTargetType(pageContext.EntityType)
+
+	if targetType == "document" || containsAny(lower, "doc", "document", "article", "knowledge base", "stale") {
+		recognized = true
+		tools = append(tools, "list_documents", "list_collections", "read_document", "search_documents")
+	}
+	if containsAny(lower, "web", "website", "url", "internet", "research", "source", "sources", "stale", "latest", "fetch", "crawl") {
+		recognized = true
+		tools = append(tools, "web_search_exa", "web_search_brave", "fetch_url", "crawl_url")
+	}
+	if containsAny(lower, "update doc", "update document", "refresh doc", "refresh document", "rewrite", "edit doc", "edit document", "write doc", "write document", "stale") {
+		recognized = true
+		tools = append(tools, "request_approval", "write_document_content")
+	}
+	if containsAny(lower, "create doc", "create document", "new doc", "new document", "draft doc", "draft document", "write a doc", "write an article") {
+		recognized = true
+		tools = append(tools, "create_document")
+	}
+	if targetType == "task" || containsAny(lower, "task", "story", "comment") {
+		tools = append(tools, "get_task_context")
+	}
+	if containsAny(lower, "comment", "add note", "write note") && (targetType == "task" || containsAny(lower, "task", "story")) {
+		recognized = true
+		tools = append(tools, "add_task_comment")
+	}
+	if containsAny(lower, "create task", "create tasks", "new task", "new tasks", "create story", "new story", "make a task", "turn this into tasks", "follow-up task", "follow up task") {
+		recognized = true
+		tools = append(tools, "list_workspace_teams", "list_team_workflows_with_stages", "create_task")
+	}
+	if targetType == "crm_contact" || targetType == "crm_deal" || containsAny(lower, "crm", "deal", "contact", "buyer", "pipeline") {
+		recognized = true
+		tools = append(tools, "list_deals", "list_contacts", "list_buyer_signals")
+	}
+	if containsAny(lower, "deal note", "crm note", "add note to deal") {
+		recognized = true
+		tools = append(tools, "add_deal_note")
+	}
+	if containsAny(lower, "update deal", "move deal", "change stage") {
+		recognized = true
+		tools = append(tools, "request_approval", "update_deal_stage")
+	}
+	if containsAny(lower, "summarize", "explain", "answer", "compare", "analyze", "find", "check") {
+		recognized = true
+	}
+	if !recognized {
+		return nil, false
+	}
+	allowedSet := make(map[string]bool, len(agentTools))
+	for _, tool := range agentTools {
+		allowedSet[strings.TrimSpace(tool)] = true
+	}
+	filtered := make([]string, 0, len(tools))
+	seen := map[string]bool{}
+	for _, tool := range tools {
+		tool = strings.TrimSpace(tool)
+		if tool == "" || seen[tool] {
+			continue
+		}
+		if len(allowedSet) > 0 && !allowedSet[tool] {
+			continue
+		}
+		seen[tool] = true
+		filtered = append(filtered, tool)
+	}
+	return filtered, len(filtered) > 0
+}
+
+func commandBarOneShotInstructions(text string, pageContext model.CommandBarPageContext, tools []string) string {
+	parts := []string{
+		"Run as a one-shot command agent for the current target.",
+		"Do not create or save a reusable agent.",
+		"Use only the enabled tools for this run.",
+	}
+	if hasAnyTool(tools, "write_document_content", "create_document", "create_task", "add_task_comment", "add_deal_note", "update_deal_stage") {
+		parts = append(parts, "The user confirmed this command-bar plan; keep mutations limited to the requested action and target.")
+	}
+	if pageContext.EntityType != "" || pageContext.EntityID != "" {
+		parts = append(parts, fmt.Sprintf("Target: %s %s (%s).", pageContext.EntityType, pageContext.EntityID, pageContext.DisplayTitle))
+	}
+	parts = append(parts, "User request:\n"+strings.TrimSpace(text))
+	return strings.Join(parts, "\n\n")
+}
+
+func hasAnyTool(tools []string, needles ...string) bool {
+	for _, tool := range tools {
+		if slices.Contains(needles, tool) {
+			return true
+		}
+	}
+	return false
+}
+
+func commandBarPlanKindForSteps(steps []model.CommandBarPlanStep) string {
+	if len(steps) == 0 {
+		return model.CommandBarPlanKindKnownAgent
+	}
+	allFanOut := true
+	for _, step := range steps {
+		if step.PlanKind != model.CommandBarPlanKindFanOut {
+			allFanOut = false
+			break
+		}
+	}
+	if allFanOut {
+		return model.CommandBarPlanKindFanOut
+	}
+	for _, step := range steps {
+		if step.PlanKind != model.CommandBarPlanKindOneShotCommand {
+			return model.CommandBarPlanKindKnownAgent
+		}
+	}
+	return model.CommandBarPlanKindOneShotCommand
+}
+
+func isOneShotCommandAgent(agent model.CommandBarAgent) bool {
+	return normalizePresetKey(agent.PresetKey) == model.AgentPresetCommandAgent
 }
 
 func parseExplicitNamedAgents(text string, pageContext model.CommandBarPageContext, candidates []model.CommandBarAgent) *model.CommandBarParseResponse {
@@ -1015,6 +1493,13 @@ func parseExplicitNamedAgents(text string, pageContext model.CommandBarPageConte
 		seen[item.agent.ID] = true
 		agents = append(agents, item.agent)
 	}
+	if len(agents) == 0 {
+		return nil
+	}
+	if len(agents) == 1 && isOneShotCommandAgent(agents[0]) {
+		return parseOneShotCommandIntent(text, pageContext, candidates)
+	}
+	agents = slices.DeleteFunc(agents, isOneShotCommandAgent)
 	if len(agents) == 0 {
 		return nil
 	}
@@ -1124,11 +1609,23 @@ func normalizeCommandBarPlanSteps(steps []model.CommandBarPlanStep, fallbackTarg
 		step.AgentID = strings.TrimSpace(step.AgentID)
 		step.AgentKey = normalizePresetKey(step.AgentKey)
 		step.AgentName = strings.TrimSpace(step.AgentName)
+		step.PlanKind = normalizeCommandBarPlanKind(step.PlanKind)
 		step.Target = target
 		step.Instructions = strings.TrimSpace(step.Instructions)
 		normalized = append(normalized, step)
 	}
 	return normalized
+}
+
+func normalizeCommandBarPlanKind(kind string) string {
+	switch strings.TrimSpace(strings.ToLower(kind)) {
+	case model.CommandBarPlanKindOneShotCommand, "one_shot", "one-shot", "one-shot-command":
+		return model.CommandBarPlanKindOneShotCommand
+	case model.CommandBarPlanKindFanOut, "fanout", "fan-out":
+		return model.CommandBarPlanKindFanOut
+	default:
+		return ""
+	}
 }
 
 func normalizeCommandBarTargetType(targetType string) string {

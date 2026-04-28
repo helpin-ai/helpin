@@ -9,6 +9,10 @@ const (
 	CommandBarParseStatusPlan            = "plan"
 	CommandBarParseStatusNoMatchingAgent = "no_matching_agent"
 
+	CommandBarPlanKindKnownAgent     = "known_agent"
+	CommandBarPlanKindOneShotCommand = "one_shot_command"
+	CommandBarPlanKindFanOut         = "fan_out"
+
 	CommandBarPlanStatusRunning   = "running"
 	CommandBarPlanStatusCompleted = "completed"
 	CommandBarPlanStatusFailed    = "failed"
@@ -32,6 +36,7 @@ type CommandBarPlanStep struct {
 	AgentID      string                `json:"agent_id"`
 	AgentKey     string                `json:"agent_key,omitempty"`
 	AgentName    string                `json:"agent_name"`
+	PlanKind     string                `json:"plan_kind,omitempty"`
 	Target       CommandBarPageContext `json:"target"`
 	Instructions string                `json:"instructions"`
 	AllowedTools []string              `json:"allowed_tools,omitempty"`
@@ -39,6 +44,7 @@ type CommandBarPlanStep struct {
 
 type CommandBarPlan struct {
 	ID             string                `json:"id,omitempty"`
+	PlanKind       string                `json:"plan_kind,omitempty"`
 	Steps          []CommandBarPlanStep  `json:"steps"`
 	RunCount       int                   `json:"run_count"`
 	EstimatedRuns  int                   `json:"estimated_runs,omitempty"`
@@ -97,6 +103,7 @@ func (CommandBarPlanRecord) TableName() string { return "command_bar_plans" }
 type CommandBarPlanSummary struct {
 	ID               string                `json:"id"`
 	Status           string                `json:"status"`
+	PlanKind         string                `json:"plan_kind,omitempty"`
 	Prompt           string                `json:"prompt"`
 	PageContext      CommandBarPageContext `json:"page_context"`
 	Steps            []CommandBarPlanStep  `json:"steps"`
@@ -130,7 +137,8 @@ type CommandBarRetryPlanRequest struct {
 
 type CommandBarRetryPlanResponse struct {
 	Plan CommandBarPlanSummary `json:"plan"`
-	Run  AgentRun              `json:"run"`
+	Run  *AgentRun             `json:"run,omitempty"`
+	Runs []AgentRun            `json:"runs,omitempty"`
 }
 
 type PromoteCommandBarRunRequest struct {

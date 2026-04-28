@@ -205,6 +205,7 @@ export interface CommandBarPlanStep {
   agent_id: string;
   agent_key?: string;
   agent_name: string;
+  plan_kind?: 'known_agent' | 'one_shot_command' | 'fan_out';
   target: CommandBarPageContext;
   instructions: string;
   allowed_tools?: string[];
@@ -212,6 +213,7 @@ export interface CommandBarPlanStep {
 
 export interface CommandBarPlan {
   id?: string;
+  plan_kind?: 'known_agent' | 'one_shot_command' | 'fan_out';
   steps: CommandBarPlanStep[];
   run_count: number;
   estimated_runs?: number;
@@ -263,6 +265,7 @@ export interface CommandBarDispatchResponse {
 export interface CommandBarPlanSummary {
   id: string;
   status: 'running' | 'completed' | 'failed' | 'cancelled';
+  plan_kind?: 'known_agent' | 'one_shot_command' | 'fan_out';
   prompt: string;
   page_context: CommandBarPageContext;
   steps: CommandBarPlanStep[];
@@ -313,7 +316,8 @@ export interface CommandBarCancelPlanResponse {
 
 export interface CommandBarRetryPlanResponse {
   plan: CommandBarPlanSummary;
-  run: AgentRun;
+  run?: AgentRun;
+  runs?: AgentRun[];
 }
 
 export interface PromoteCommandBarRunRequest {

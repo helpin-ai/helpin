@@ -5,9 +5,34 @@ export interface CommandBarRunPlan {
   id: string;
   steps: CommandBarPlanStep[];
   runIdsByStep: Record<number, string>;
+  planKind?: CommandBarPlanSummary['plan_kind'];
   status?: CommandBarPlanSummary['status'];
   prompt?: string;
   currentStepIndex?: number;
+}
+
+export type RailMode = 'closed' | 'peek' | 'open';
+
+const RAIL_MODE_KEY = 'helpin:cmdk-rail:mode';
+
+function loadRailMode(): RailMode {
+  if (typeof window === 'undefined') return 'peek';
+  try {
+    const raw = window.localStorage.getItem(RAIL_MODE_KEY);
+    if (raw === 'closed' || raw === 'peek' || raw === 'open') return raw;
+  } catch {
+    /* ignore */
+  }
+  return 'peek';
+}
+
+function persistRailMode(mode: RailMode) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(RAIL_MODE_KEY, mode);
+  } catch {
+    /* ignore */
+  }
 }
 
 interface CommandBarRunState {
@@ -15,13 +40,13 @@ interface CommandBarRunState {
   runsById: Record<string, AgentRun>;
   planIds: string[];
   plansById: Record<string, CommandBarRunPlan>;
-  railOpen: boolean;
+  railMode: RailMode;
   addRuns: (runs: AgentRun[]) => void;
   addPlan: (plan: CommandBarRunPlan, runs?: AgentRun[]) => void;
   hydratePlans: (plans: CommandBarPlanSummary[]) => void;
   updateRun: (run: AgentRun) => void;
   updatePlan: (plan: CommandBarPlanSummary, runs?: AgentRun[]) => void;
-  setRailOpen: (open: boolean) => void;
+  setRailMode: (mode: RailMode) => void;
   clear: () => void;
 }
 
@@ -30,7 +55,7 @@ export const useCommandBarRunStore = create<CommandBarRunState>((set) => ({
   runsById: {},
   planIds: [],
   plansById: {},
-  railOpen: true,
+  railMode: loadRailMode(),
   addRuns: (runs) =>
     set((state) => {
       const runsById = { ...state.runsById };
@@ -39,7 +64,7 @@ export const useCommandBarRunStore = create<CommandBarRunState>((set) => ({
         runsById[run.id] = run;
         ids.add(run.id);
       }
-      return { runsById, runIds: Array.from(ids), railOpen: true };
+      return { runsById, runIds: Array.from(ids), railMode: state.railMode === 'closed' ? 'peek' : state.railMode };
     }),
   addPlan: (plan, runs = []) =>
     set((state) => {
@@ -56,7 +81,7 @@ export const useCommandBarRunStore = create<CommandBarRunState>((set) => ({
         runIds: Array.from(runIds),
         planIds: Array.from(planIds),
         plansById: { ...state.plansById, [plan.id]: plan },
-        railOpen: true,
+        railMode: state.railMode === 'closed' ? 'open' : state.railMode,
       };
     }),
   hydratePlans: (plans) =>
@@ -71,6 +96,7 @@ export const useCommandBarRunStore = create<CommandBarRunState>((set) => ({
           id: plan.id,
           steps: plan.steps,
           runIdsByStep: plan.run_ids_by_step ?? {},
+          planKind: plan.plan_kind,
           status: plan.status,
           prompt: plan.prompt,
           currentStepIndex: plan.current_step_index,
@@ -85,7 +111,7 @@ export const useCommandBarRunStore = create<CommandBarRunState>((set) => ({
         runIds: Array.from(runIds),
         planIds: Array.from(planIds),
         plansById,
-        railOpen: plans.length ? true : state.railOpen,
+        railMode: plans.length && state.railMode === 'closed' ? 'peek' : state.railMode,
       };
     }),
   updatePlan: (plan, runs = []) =>
@@ -106,6 +132,7 @@ export const useCommandBarRunStore = create<CommandBarRunState>((set) => ({
             id: plan.id,
             steps: plan.steps,
             runIdsByStep: plan.run_ids_by_step ?? {},
+            planKind: plan.plan_kind,
             status: plan.status,
             prompt: plan.prompt,
             currentStepIndex: plan.current_step_index,
@@ -131,6 +158,7 @@ export const useCommandBarRunStore = create<CommandBarRunState>((set) => ({
         plansById[planMeta.planId] = {
           id: planMeta.planId,
           steps: existing?.steps?.length ? existing.steps : planMeta.steps,
+          planKind: existing?.planKind ?? planMeta.planKind,
           status: existing?.status,
           prompt: existing?.prompt,
           currentStepIndex: planMeta.stepIndex,
@@ -149,11 +177,14 @@ export const useCommandBarRunStore = create<CommandBarRunState>((set) => ({
         plansById,
       };
     }),
-  setRailOpen: (railOpen) => set({ railOpen }),
-  clear: () => set({ runIds: [], runsById: {}, planIds: [], plansById: {}, railOpen: true }),
+  setRailMode: (mode) => {
+    persistRailMode(mode);
+    set({ railMode: mode });
+  },
+  clear: () => set({ runIds: [], runsById: {}, planIds: [], plansById: {} }),
 }));
 
-function getCommandBarPlanMeta(run: AgentRun): { planId: string; stepIndex: number; steps: CommandBarPlanStep[] } | null {
+function getCommandBarPlanMeta(run: AgentRun): { planId: string; stepIndex: number; steps: CommandBarPlanStep[]; planKind?: CommandBarPlanSummary['plan_kind'] } | null {
   const input = run.input as {
     trigger?: {
       source?: string;
@@ -169,5 +200,5 @@ function getCommandBarPlanMeta(run: AgentRun): { planId: string; stepIndex: numb
     steps?: CommandBarPlanStep[];
   } | undefined;
   if (!context?.plan_id || typeof context.step_index !== 'number' || !Array.isArray(context.steps)) return null;
-  return { planId: context.plan_id, stepIndex: context.step_index, steps: context.steps };
+  return { planId: context.plan_id, stepIndex: context.step_index, steps: context.steps, planKind: context.steps[0]?.plan_kind };
 }

@@ -28,7 +28,7 @@ func builtInPresetKeys() []string {
 		model.AgentPresetSupportAgent,
 		model.AgentPresetCodeBuilder,
 		model.AgentPresetReviewAgent,
-		model.AgentPresetResearcher,
+		model.AgentPresetCommandAgent,
 	}
 }
 
@@ -69,8 +69,8 @@ func normalizePresetKey(key string) string {
 		return model.AgentPresetCodeBuilder
 	case "reviewer", model.AgentPresetReviewAgent:
 		return model.AgentPresetReviewAgent
-	case "research", "doc_researcher", "general_researcher", model.AgentPresetResearcher:
-		return model.AgentPresetResearcher
+	case "command", "command_agent", "one_shot", "one_shot_agent", "one_shot_command", "one_shot_command_agent", "research", "doc_researcher", "general_researcher", model.AgentPresetResearcher:
+		return model.AgentPresetCommandAgent
 	default:
 		return strings.TrimSpace(key)
 	}
@@ -101,7 +101,7 @@ func defaultPresetVersionKeyForPresetKey(presetKey string) string {
 		return "code_builder_local_commit_delivery"
 	case model.AgentPresetReviewAgent:
 		return "review_agent_interactive_loop"
-	case model.AgentPresetResearcher:
+	case model.AgentPresetCommandAgent:
 		return "researcher_default"
 	default:
 		return ""
@@ -285,7 +285,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	supportPrompt := defaultSystemPromptForPreset(model.AgentPresetSupportAgent)
 	codeBuilderPrompt := defaultSystemPromptForPreset(model.AgentPresetCodeBuilder)
 	reviewPrompt := defaultSystemPromptForPreset(model.AgentPresetReviewAgent)
-	researcherPrompt := "You are Researcher, a one-shot research and synthesis agent. Use web, document, CRM, and workspace context tools to answer or update the requested target. Stay within the confirmed command-bar step instructions and do not create reusable agents unless the user explicitly promotes the run afterward."
+	commandAgentPrompt := "You are Command Agent, a one-shot workspace operator for confirmed command-bar runs. Use only the tools enabled for the current run, stay within the confirmed step instruction, and operate on the provided target context. You may research, summarize, draft, create tasks or docs, update docs, or add task/CRM notes only when the enabled tools support that action. Do not create reusable agents unless the user explicitly promotes the run afterward."
 	epicPlannerTools := filterPresetTools(productPlannerProfile.AllowedTools,
 		worker.ToolUpdatePlan,
 		worker.ToolPublishPRDDraft,
@@ -431,24 +431,24 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			SystemPrompt:          reviewPrompt,
 		},
 		{
-			Key:                   model.AgentPresetResearcher,
-			FamilyKey:             model.AgentPresetResearcher,
-			VersionKey:            defaultPresetVersionKeyForPresetKey(model.AgentPresetResearcher),
+			Key:                   model.AgentPresetCommandAgent,
+			FamilyKey:             model.AgentPresetCommandAgent,
+			VersionKey:            defaultPresetVersionKeyForPresetKey(model.AgentPresetCommandAgent),
 			VersionLabel:          "Default",
 			IsDefaultVersion:      true,
-			Label:                 "Researcher",
-			Description:           "One-shot web, docs, and CRM research for command-bar intents that do not fit narrower presets.",
-			DefaultRole:           "Researcher",
+			Label:                 "Command Agent",
+			Description:           "One-shot workspace operator for command-bar intents that do not fit narrower saved agents.",
+			DefaultRole:           "Command Agent",
 			RuntimeKind:           productPlannerProfile.RuntimeKind,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
-			AllowedTools:          []string{"web_search_brave", "web_search_exa", "fetch_url", "crawl_url", "request_user_input", "request_approval", "update_plan", "list_documents", "list_collections", "read_document", "search_documents", "create_document", "list_deals", "list_contacts", "list_buyer_signals"},
+			AllowedTools:          []string{"web_search_brave", "web_search_exa", "fetch_url", "crawl_url", "request_user_input", "request_approval", "update_plan", "list_documents", "list_collections", "read_document", "search_documents", "create_document", "write_document_content", "list_workspace_teams", "list_team_workflows_with_stages", "create_task", "add_task_comment", "get_task_context", "list_deals", "list_contacts", "list_buyer_signals", "add_deal_note", "update_deal_stage"},
 			AllowedCommands:       []string{},
-			AllowedTargetTypes:    []string{"workspace", "document", "crm_deal", "crm_contact"},
+			AllowedTargetTypes:    []string{"workspace", "document", "task", "epic", "crm_deal", "crm_contact"},
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeInteractive,
 			SupportedModes:        supportedModesForRuntime(productPlannerProfile.RuntimeKind),
-			SystemPrompt:          &researcherPrompt,
+			SystemPrompt:          &commandAgentPrompt,
 		},
 	}
 
