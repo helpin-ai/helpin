@@ -1021,6 +1021,7 @@ func main() {
 	supportEventRepo := repository.NewSupportEventRepository(db)
 	supportCoverageRepo := repository.NewSupportCoverageRepository(db)
 	supportCoverageService := service.NewSupportCoverageService(supportCoverageRepo)
+	supportCoverageService.SetTemporalClient(temporalClient)
 	supportEventService := service.NewSupportEventService(supportEventRepo, supportCoverageService)
 	supportEventRecorder := service.NewSupportEventAsyncRecorder(supportEventService, 250)
 	supportAIService.SetSupportEventRecorder(supportEventRecorder)
@@ -1180,6 +1181,9 @@ func main() {
 		slog.Error("failed to remove legacy agent schedule workflows", "error", err)
 	} else if terminated > 0 {
 		slog.Info("removed legacy agent schedule workflows", "count", terminated)
+	}
+	if err := supportCoverageService.EnsureDailyEnrichment(context.Background()); err != nil {
+		slog.Error("failed to ensure coverage gap daily enrichment workflow", "error", err)
 	}
 
 	// Start sprint automation cron workflow via Temporal (replaces local ticker).

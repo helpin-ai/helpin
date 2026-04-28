@@ -5,10 +5,10 @@ import dts from 'vite-plugin-dts';
 export default defineConfig({
   resolve: {
     alias: [
-      { find: /^@helpin\/shared$/, replacement: resolve(__dirname, '../shared/src/index.ts') },
+      { find: /^@helpin-ai\/shared$/, replacement: resolve(__dirname, '../shared/src/index.ts') },
     ],
   },
-  plugins: [dts({ rollupTypes: true })],
+  plugins: [dts({ entryRoot: 'src', exclude: ['src/__tests__/**'] })],
   build: {
     lib: {
       entry: resolve(__dirname, 'src/index.ts'),

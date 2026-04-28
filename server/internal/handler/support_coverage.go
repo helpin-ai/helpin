@@ -2,7 +2,11 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -16,6 +20,8 @@ type SupportCoverageHandler struct {
 	coverageSvc *service.SupportCoverageService
 	eventSvc    *service.SupportEventService
 	draftSvc    *service.SupportCoverageDraftService
+	debounceMu  sync.Mutex
+	debounce    map[string]time.Time
 }
 
 // NewSupportCoverageHandler creates a new SupportCoverageHandler.
@@ -28,6 +34,7 @@ func NewSupportCoverageHandler(
 		coverageSvc: coverageSvc,
 		eventSvc:    eventSvc,
 		draftSvc:    draftSvc,
+		debounce:    map[string]time.Time{},
 	}
 }
 
@@ -128,14 +135,47 @@ func (h *SupportCoverageHandler) GetGap(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, detail)
 }
 
+// RegenerateGap handles POST /api/support/coverage/gaps/{gapId}/regenerate.
+func (h *SupportCoverageHandler) RegenerateGap(w http.ResponseWriter, r *http.Request) {
+	wsID := middleware.GetWorkspaceID(r.Context())
+	userID := middleware.GetUserID(r.Context())
+	gapID := chi.URLParam(r, "gapId")
+	if wsID == "" || userID == "" {
+		writeError(w, http.StatusUnauthorized, "missing workspace or user context")
+		return
+	}
+	if !h.allowRegenerate(userID, gapID, 30*time.Second) {
+		writeError(w, http.StatusTooManyRequests, "regenerating too frequently")
+		return
+	}
+	if err := h.coverageSvc.RegenerateGap(r.Context(), wsID, gapID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued"})
+}
+
+func (h *SupportCoverageHandler) allowRegenerate(userID, gapID string, window time.Duration) bool {
+	key := userID + ":" + gapID
+	now := time.Now()
+	h.debounceMu.Lock()
+	defer h.debounceMu.Unlock()
+	if last, ok := h.debounce[key]; ok && now.Sub(last) < window {
+		return false
+	}
+	h.debounce[key] = now
+	return true
+}
+
 // UpdateGapStatus handles POST /api/support/coverage/gaps/{gapId}/status.
 func (h *SupportCoverageHandler) UpdateGapStatus(w http.ResponseWriter, r *http.Request) {
 	wsID := middleware.GetWorkspaceID(r.Context())
 	gapID := chi.URLParam(r, "gapId")
 	userID := middleware.GetUserID(r.Context())
 	var req struct {
-		Status        string `json:"status"`
-		IssueResolved *bool  `json:"issue_resolved"`
+		Status          string  `json:"status"`
+		IssueResolved   *bool   `json:"issue_resolved"`
+		RejectionReason *string `json:"rejection_reason"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -145,7 +185,17 @@ func (h *SupportCoverageHandler) UpdateGapStatus(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusBadRequest, "status is required")
 		return
 	}
-	if err := h.coverageSvc.UpdateGapStatus(r.Context(), wsID, gapID, req.Status, userID, req.IssueResolved); err != nil {
+	var err error
+	if req.Status == model.SupportCoverageGapStatusRejected {
+		err = h.coverageSvc.RejectGap(r.Context(), wsID, gapID, userID, req.RejectionReason)
+	} else {
+		err = h.coverageSvc.UpdateGapStatus(r.Context(), wsID, gapID, req.Status, userID, req.IssueResolved)
+	}
+	if service.IsGapResolutionConflict(err) {
+		writeError(w, http.StatusConflict, "gap is no longer open")
+		return
+	}
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -168,6 +218,38 @@ func (h *SupportCoverageHandler) ReclassifyGap(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if err := h.coverageSvc.ReclassifyGap(r.Context(), wsID, gapID, req.V1GapType); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// AddDocumentToGap handles POST /api/support/coverage/gaps/{gapId}/add.
+func (h *SupportCoverageHandler) AddDocumentToGap(w http.ResponseWriter, r *http.Request) {
+	wsID := middleware.GetWorkspaceID(r.Context())
+	gapID := chi.URLParam(r, "gapId")
+	var req struct {
+		Route            string `json:"route"`
+		TargetDocumentID string `json:"target_document_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Route != "" && req.Route != model.SupportCoverageSuggestionUpdateArticle {
+		writeError(w, http.StatusBadRequest, "unsupported route")
+		return
+	}
+	if req.TargetDocumentID == "" {
+		writeError(w, http.StatusBadRequest, "target_document_id is required")
+		return
+	}
+	err := h.coverageSvc.AddDocumentToGap(r.Context(), wsID, gapID, req.TargetDocumentID)
+	if service.IsGapResolutionConflict(err) {
+		writeError(w, http.StatusConflict, "gap is no longer open")
+		return
+	}
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -218,6 +300,10 @@ func (h *SupportCoverageHandler) CreateArticleDraftSuggestion(w http.ResponseWri
 	}
 	suggestion, err := h.draftSvc.GenerateArticleDraft(r.Context(), wsID, gapID, req.TargetSpaceID, req.TargetCollectionID)
 	if err != nil {
+		if service.IsGapResolutionConflict(err) {
+			writeError(w, http.StatusConflict, "gap is no longer open")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -260,7 +346,28 @@ func (h *SupportCoverageHandler) ApplySuggestion(w http.ResponseWriter, r *http.
 	wsID := middleware.GetWorkspaceID(r.Context())
 	suggestionID := chi.URLParam(r, "suggestionId")
 	userID := middleware.GetUserID(r.Context())
-	if err := h.draftSvc.ApplySuggestion(r.Context(), wsID, suggestionID, userID); err != nil {
+	var req struct {
+		Route            string `json:"route"`
+		SuggestionType   string `json:"suggestion_type"`
+		TargetDocumentID string `json:"target_document_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	overrideType := req.Route
+	if overrideType == "" {
+		overrideType = req.SuggestionType
+	}
+
+	var err error
+	if overrideType != "" || req.TargetDocumentID != "" {
+		err = h.draftSvc.ApplySuggestionWithOverride(r.Context(), wsID, suggestionID, userID, overrideType, req.TargetDocumentID)
+	} else {
+		err = h.draftSvc.ApplySuggestion(r.Context(), wsID, suggestionID, userID)
+	}
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "prebuild": "pnpm --dir .. --filter @helpin-ai/widget-core build",
     "dev": "vite --host 0.0.0.0",
     "build": "NODE_OPTIONS=--max-old-space-size=4096 tsc -b && NODE_OPTIONS=--max-old-space-size=4096 vite build",
     "lint": "eslint .",
