@@ -785,8 +785,11 @@ func (s *PMImportService) createAPIStoryExternalLinks(ctx context.Context, tx *g
 		if existing > 0 {
 			continue
 		}
+		storyID := story.ID
 		record := model.PMExternalLink{
-			TaskID:      story.ID,
+			TaskID:      &storyID,
+			EntityType:  "task",
+			EntityID:    story.ID,
 			Title:       fallbackName(link.Title, link.URL),
 			URL:         strings.TrimSpace(link.URL),
 			CreatedByID: actorID,

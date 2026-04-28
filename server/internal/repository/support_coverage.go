@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -16,6 +17,8 @@ import (
 type SupportCoverageRepository struct {
 	db *gorm.DB
 }
+
+var ErrGapAlreadyClosed = errors.New("gap is no longer open")
 
 // NewSupportCoverageRepository creates a new SupportCoverageRepository.
 func NewSupportCoverageRepository(db *gorm.DB) *SupportCoverageRepository {
@@ -57,6 +60,55 @@ func (r *SupportCoverageRepository) UpsertTopicByIssueKey(ctx context.Context, w
 		return nil, fmt.Errorf("create topic: %w", err)
 	}
 	return &topic, nil
+}
+
+// UpsertTopicByClusterKey returns an existing cluster topic or creates one.
+func (r *SupportCoverageRepository) UpsertTopicByClusterKey(ctx context.Context, workspaceID, clusterKey, title string) (*model.SupportCoverageTopic, error) {
+	if workspaceID == "" || clusterKey == "" {
+		return nil, fmt.Errorf("workspace_id and cluster_key are required")
+	}
+
+	var topic model.SupportCoverageTopic
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND cluster_key = ?", workspaceID, clusterKey).
+		First(&topic).Error
+	if err == nil {
+		return &topic, nil
+	}
+	if err != gorm.ErrRecordNotFound {
+		return nil, fmt.Errorf("lookup cluster topic: %w", err)
+	}
+
+	topic = model.SupportCoverageTopic{
+		ID:             uuid.New().String(),
+		WorkspaceID:    workspaceID,
+		IssueKey:       clusterKey,
+		Title:          title,
+		ClusterKey:     &clusterKey,
+		CanonicalTitle: &title,
+	}
+	if err := r.db.WithContext(ctx).Create(&topic).Error; err != nil {
+		var existing model.SupportCoverageTopic
+		if findErr := r.db.WithContext(ctx).
+			Where("workspace_id = ? AND cluster_key = ?", workspaceID, clusterKey).
+			First(&existing).Error; findErr == nil {
+			return &existing, nil
+		}
+		return nil, fmt.Errorf("create cluster topic: %w", err)
+	}
+	return &topic, nil
+}
+
+func (r *SupportCoverageRepository) GetTopic(ctx context.Context, topicID string) (*model.SupportCoverageTopic, error) {
+	var topic model.SupportCoverageTopic
+	err := r.db.WithContext(ctx).Where("id = ?", topicID).First(&topic).Error
+	if err == nil {
+		return &topic, nil
+	}
+	if err == gorm.ErrRecordNotFound {
+		return nil, nil
+	}
+	return nil, fmt.Errorf("get topic: %w", err)
 }
 
 // UpsertGapByDedupeKey creates a new gap or increments evidence on
@@ -110,6 +162,60 @@ func (r *SupportCoverageRepository) UpsertGapByDedupeKey(ctx context.Context, ga
 	return gap, true, nil
 }
 
+// UpsertOpenGapByTopic creates a new open gap for a topic or increments the
+// existing open gap. Closed gaps are intentionally ignored so recurrence after
+// Done/Rejected can create a fresh open lifecycle.
+func (r *SupportCoverageRepository) UpsertOpenGapByTopic(ctx context.Context, gap *model.SupportCoverageGap) (*model.SupportCoverageGap, bool, error) {
+	if gap.WorkspaceID == "" || gap.TopicID == nil || *gap.TopicID == "" {
+		return nil, false, fmt.Errorf("workspace_id and topic_id are required")
+	}
+
+	var existing model.SupportCoverageGap
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND topic_id = ? AND status = ?", gap.WorkspaceID, *gap.TopicID, model.SupportCoverageGapStatusOpen).
+		First(&existing).Error
+	if err == nil {
+		updates := map[string]interface{}{
+			"evidence_count": gorm.Expr("evidence_count + 1"),
+			"last_seen_at":   gap.LastSeenAt,
+			"updated_at":     time.Now(),
+		}
+		if err := r.db.WithContext(ctx).Model(&existing).Updates(updates).Error; err != nil {
+			return nil, false, fmt.Errorf("update open topic gap: %w", err)
+		}
+		existing.EvidenceCount++
+		existing.LastSeenAt = gap.LastSeenAt
+		return &existing, false, nil
+	}
+	if err != gorm.ErrRecordNotFound {
+		return nil, false, fmt.Errorf("lookup open topic gap: %w", err)
+	}
+
+	if gap.ID == "" {
+		gap.ID = uuid.New().String()
+	}
+	if gap.Status == "" {
+		gap.Status = model.SupportCoverageGapStatusOpen
+	}
+	if gap.GapKind == "" {
+		gap.GapKind = "content"
+	}
+	gap.EvidenceCount = 1
+	if gap.Metadata == nil {
+		gap.Metadata = []byte("{}")
+	}
+	if err := r.db.WithContext(ctx).Create(gap).Error; err != nil {
+		var raceExisting model.SupportCoverageGap
+		if findErr := r.db.WithContext(ctx).
+			Where("workspace_id = ? AND topic_id = ? AND status = ?", gap.WorkspaceID, *gap.TopicID, model.SupportCoverageGapStatusOpen).
+			First(&raceExisting).Error; findErr == nil {
+			return &raceExisting, false, nil
+		}
+		return nil, false, fmt.Errorf("create open topic gap: %w", err)
+	}
+	return gap, true, nil
+}
+
 // CreateEvidence links a gap to evidence (conversation, search, feedback).
 func (r *SupportCoverageRepository) CreateEvidence(ctx context.Context, evidence *model.SupportGapEvidence) error {
 	if evidence.GapID == "" || evidence.WorkspaceID == "" {
@@ -127,15 +233,34 @@ func (r *SupportCoverageRepository) CreateEvidence(ctx context.Context, evidence
 	return nil
 }
 
+func (r *SupportCoverageRepository) CountEvidenceSince(ctx context.Context, gapID string, since time.Time) (int64, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).
+		Model(&model.SupportGapEvidence{}).
+		Where("gap_id = ? AND created_at > ?", gapID, since).
+		Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count recent gap evidence: %w", err)
+	}
+	return count, nil
+}
+
+func (r *SupportCoverageRepository) CountEvidence30d(ctx context.Context, gapID string) (int, error) {
+	count, err := r.CountEvidenceSince(ctx, gapID, time.Now().AddDate(0, 0, -30))
+	return int(count), err
+}
+
 // ListGaps returns gaps for a workspace. Reads from gap table only,
 // never scans support_events.
 func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID string, filter model.SupportCoverageGapFilter) ([]model.SupportCoverageGapListItem, int64, error) {
+	evidenceCutoff := time.Now().AddDate(0, 0, -30)
 	q := r.db.WithContext(ctx).
 		Table("support_coverage_gaps g").
 		Select(`g.*,
 			COALESCE(t.title, '') AS topic_title,
+			COALESCE(t.canonical_title, t.title, '') AS canonical_title,
 			(SELECT COUNT(*) FROM support_gap_suggestions s WHERE s.gap_id = g.id) AS suggestion_count,
-			(SELECT ga.document_id FROM support_coverage_gap_articles ga WHERE ga.gap_id = g.id LIMIT 1) AS related_article_id`).
+			(SELECT ga.document_id FROM support_coverage_gap_articles ga WHERE ga.gap_id = g.id LIMIT 1) AS related_article_id,
+			(SELECT COUNT(*) FROM support_gap_evidence e WHERE e.gap_id = g.id AND e.created_at > ?) AS evidence_30d`, evidenceCutoff).
 		Joins("LEFT JOIN support_coverage_topics t ON t.id = g.topic_id").
 		Where("g.workspace_id = ?", workspaceID).
 		Where("g.status != ?", model.SupportCoverageGapStatusMerged)
@@ -176,7 +301,7 @@ func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID st
 		perPage = 25
 	}
 
-	q = q.Order("g.last_seen_at DESC").
+	q = q.Order("evidence_30d DESC, g.last_seen_at DESC").
 		Offset((page - 1) * perPage).
 		Limit(perPage)
 
@@ -185,6 +310,35 @@ func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID st
 		return nil, 0, fmt.Errorf("list gaps: %w", err)
 	}
 	return items, total, nil
+}
+
+func (r *SupportCoverageRepository) ListWorkspacesWithOpenGaps(ctx context.Context) ([]string, error) {
+	var workspaceIDs []string
+	if err := r.db.WithContext(ctx).
+		Model(&model.SupportCoverageGap{}).
+		Distinct("workspace_id").
+		Where("status = ? AND evidence_count > 0", model.SupportCoverageGapStatusOpen).
+		Pluck("workspace_id", &workspaceIDs).Error; err != nil {
+		return nil, fmt.Errorf("list workspaces with open gaps: %w", err)
+	}
+	return workspaceIDs, nil
+}
+
+func (r *SupportCoverageRepository) ListTopicsDueForEnrichment(ctx context.Context, workspaceID string, olderThan time.Duration, minEvidence int) ([]string, error) {
+	cutoff := time.Now().Add(-olderThan)
+	var topicIDs []string
+	if err := r.db.WithContext(ctx).
+		Table("support_coverage_gaps g").
+		Joins("JOIN support_coverage_topics t ON t.id = g.topic_id").
+		Where("g.workspace_id = ? AND g.status = ? AND g.topic_id IS NOT NULL", workspaceID, model.SupportCoverageGapStatusOpen).
+		Where("g.evidence_count >= ?", minEvidence).
+		Where("(t.last_enriched_at IS NULL OR t.last_enriched_at < ?)", cutoff).
+		Where("(t.cooldown_until IS NULL OR t.cooldown_until < ?)", time.Now()).
+		Distinct("g.topic_id").
+		Pluck("g.topic_id", &topicIDs).Error; err != nil {
+		return nil, fmt.Errorf("list topics due for enrichment: %w", err)
+	}
+	return topicIDs, nil
 }
 
 // GetGapDetail returns a gap with its evidence, suggestions, and related articles.
@@ -376,7 +530,7 @@ func (r *SupportCoverageRepository) GetDigestDelivery(ctx context.Context, works
 	return &delivery, nil
 }
 
-// FindOpenGapByConversation returns the most recent open or drafted
+// FindOpenGapByConversation returns the most recent open
 // gap that has evidence linked to the given conversation. Used to
 // attach human reply evidence to the original AI handoff gap.
 func (r *SupportCoverageRepository) FindOpenGapByConversation(ctx context.Context, workspaceID, conversationID string) (*model.SupportCoverageGap, error) {
@@ -384,9 +538,8 @@ func (r *SupportCoverageRepository) FindOpenGapByConversation(ctx context.Contex
 	err := r.db.WithContext(ctx).
 		Table("support_coverage_gaps g").
 		Joins("JOIN support_gap_evidence e ON e.gap_id = g.id").
-		Where("g.workspace_id = ? AND e.conversation_id = ? AND g.status IN (?, ?)",
-			workspaceID, conversationID,
-			model.SupportCoverageGapStatusOpen, model.SupportCoverageGapStatusDrafted).
+		Where("g.workspace_id = ? AND e.conversation_id = ? AND g.status = ?",
+			workspaceID, conversationID, model.SupportCoverageGapStatusOpen).
 		Order("g.last_seen_at DESC").
 		Limit(1).
 		Select("g.*").
@@ -404,10 +557,18 @@ func (r *SupportCoverageRepository) FindOpenGapByConversation(ctx context.Contex
 func (r *SupportCoverageRepository) UpdateGapStatus(ctx context.Context, workspaceID, gapID, status, userID string, issueResolved *bool) error {
 	now := time.Now()
 	updates := map[string]interface{}{
-		"status":             status,
-		"status_changed_by":  userID,
-		"status_changed_at":  now,
-		"updated_at":         now,
+		"status":            status,
+		"status_changed_by": userID,
+		"status_changed_at": now,
+		"updated_at":        now,
+	}
+	if status == model.SupportCoverageGapStatusDone || status == model.SupportCoverageGapStatusRejected {
+		updates["closed_at"] = now
+		updates["closed_evidence_count"] = gorm.Expr("evidence_count")
+	} else if status == model.SupportCoverageGapStatusOpen {
+		updates["closed_at"] = nil
+		updates["closed_evidence_count"] = nil
+		updates["rejection_reason"] = nil
 	}
 	if issueResolved != nil {
 		updates["issue_resolved"] = *issueResolved
@@ -421,6 +582,54 @@ func (r *SupportCoverageRepository) UpdateGapStatus(ctx context.Context, workspa
 	}
 	if result.RowsAffected == 0 {
 		return fmt.Errorf("gap not found")
+	}
+	return nil
+}
+
+func (r *SupportCoverageRepository) MarkGapDone(ctx context.Context, workspaceID, gapID, documentID string, evidence30d int) error {
+	now := time.Now()
+	result := r.db.WithContext(ctx).
+		Model(&model.SupportCoverageGap{}).
+		Where("id = ? AND workspace_id = ? AND status = ?", gapID, workspaceID, model.SupportCoverageGapStatusOpen).
+		Updates(map[string]interface{}{
+			"status":                model.SupportCoverageGapStatusDone,
+			"closed_at":             now,
+			"closed_evidence_count": evidence30d,
+			"result_document_id":    documentID,
+			"status_changed_at":     now,
+			"updated_at":            now,
+		})
+	if result.Error != nil {
+		return fmt.Errorf("mark gap done: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrGapAlreadyClosed
+	}
+	return nil
+}
+
+func (r *SupportCoverageRepository) MarkGapRejected(ctx context.Context, workspaceID, gapID, userID string, rejectionReason *string, evidence30d int) error {
+	now := time.Now()
+	updates := map[string]interface{}{
+		"status":                model.SupportCoverageGapStatusRejected,
+		"closed_at":             now,
+		"closed_evidence_count": evidence30d,
+		"status_changed_by":     userID,
+		"status_changed_at":     now,
+		"updated_at":            now,
+	}
+	if rejectionReason != nil {
+		updates["rejection_reason"] = *rejectionReason
+	}
+	result := r.db.WithContext(ctx).
+		Model(&model.SupportCoverageGap{}).
+		Where("id = ? AND workspace_id = ? AND status = ?", gapID, workspaceID, model.SupportCoverageGapStatusOpen).
+		Updates(updates)
+	if result.Error != nil {
+		return fmt.Errorf("mark gap rejected: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrGapAlreadyClosed
 	}
 	return nil
 }
@@ -537,7 +746,7 @@ func (r *SupportCoverageRepository) GetSummary(ctx context.Context, workspaceID 
 	r.db.WithContext(ctx).
 		Model(&model.SupportCoverageGap{}).
 		Where("workspace_id = ? AND status = ? AND updated_at >= ?",
-			workspaceID, model.SupportCoverageGapStatusFixed, weekAgo).
+			workspaceID, model.SupportCoverageGapStatusDone, weekAgo).
 		Count(&fixedGaps)
 	summary.GapsFixedThisWeek = int(fixedGaps)
 

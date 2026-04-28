@@ -1006,6 +1006,8 @@ export interface UpdateChecklistItemRequest {
 export interface ExternalLink {
   id: string;
   task_id: string;
+  entity_type: string;
+  entity_id: string;
   title: string;
   url: string;
   created_by_id: string;

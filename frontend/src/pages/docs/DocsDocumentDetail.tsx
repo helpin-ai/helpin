@@ -105,11 +105,13 @@ import { DOC_STATUS_LABELS, getHelpcenterLocaleLabel } from '@/lib/docsTypes'
 import { suggestDocsSlug } from '@/lib/docsSlugs'
 import { buildHelpcenterPreviewUrlFromEnv } from '@/lib/helpcenterPreview'
 import { docsService } from '@/lib/services/docsService'
+import { supportCoverageService } from '@/lib/services/supportCoverageService'
 import { queryKeys } from '@/lib/queryKeys'
 import type { DocsVersion, DocsHelpcenterTranslationState } from '@/lib/docsTypes'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import { AvatarGroupCount } from '@/components/ui/avatar'
 import { UserAvatar } from '@/components/pm/UserAvatar'
+import { loadCoverageHandoffContent } from '@/components/support/coverage/coverageHandoff'
 
 function docStatusColor(status: string): string {
   switch (status) {
@@ -201,7 +203,13 @@ function EditingIndicator() {
   )
 }
 
-export function DocsDocumentDetail() {
+export function DocsDocumentDetail({
+  fromGapId,
+  fromSuggestionId,
+}: {
+  fromGapId?: string
+  fromSuggestionId?: string
+} = {}) {
   const navigate = useNavigate()
   const router = useRouter()
   const queryClient = useQueryClient()
@@ -209,6 +217,10 @@ export function DocsDocumentDetail() {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace)
   const wsId = workspace?.id ?? ''
   const wsSlug = workspace?.slug ?? ''
+  const coverageGapClosedRef = useRef(false)
+  const [coverageInitialContent] = useState(() =>
+    loadCoverageHandoffContent(fromGapId, fromSuggestionId),
+  )
 
   const { data: access } = useWorkspaceAccess(wsId)
   const { canEditDocs, canPublishDocs, canAdminDocs, isAdmin } = usePermissions(access)
@@ -464,12 +476,29 @@ export function DocsDocumentDetail() {
   const handleSave = useCallback(
     async (json: JSONContent) => {
       await saveContent.mutateAsync({ docId, content: json })
+      if (fromGapId && fromSuggestionId && !coverageGapClosedRef.current) {
+        coverageGapClosedRef.current = true
+        const result = await supportCoverageService.addDocumentToGap(wsId, fromGapId, {
+          route: 'update_article',
+          target_document_id: docId,
+        })
+        if (result.error) throw new Error(result.error)
+      }
       // Invalidate translation data so needs_review status updates promptly
       if (space?.type === 'external_capable' && (localesConfig?.enabled_locales?.length ?? 0) > 1) {
         queryClient.invalidateQueries({ queryKey: queryKeys.docs.documents(wsId) })
       }
     },
-    [saveContent, docId, space?.type, localesConfig?.enabled_locales?.length, queryClient, wsId],
+    [
+      saveContent,
+      docId,
+      fromGapId,
+      fromSuggestionId,
+      wsId,
+      space?.type,
+      localesConfig?.enabled_locales?.length,
+      queryClient,
+    ],
   )
 
   const isExternalHelpCenter = space?.type === 'external_capable'
@@ -1195,7 +1224,11 @@ export function DocsDocumentDetail() {
                       }
                     : undefined
               }
-              initialContent={isSourceLocaleActive ? (content?.content as JSONContent | null) : activeTranslationDraft.content}
+              initialContent={
+                isSourceLocaleActive
+                  ? coverageInitialContent ?? (content?.content as JSONContent | null)
+                  : activeTranslationDraft.content
+              }
               onSave={isSourceLocaleActive ? handleSave : handleTranslationContentSave}
               readOnly={effectiveReadOnly}
               uploadConfig={
