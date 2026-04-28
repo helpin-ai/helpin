@@ -105,6 +105,12 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 	requirePerm := func(perm authorization.Permission) func(http.Handler) http.Handler {
 		return authorization.RequirePermission(authz, perm)
 	}
+	requireCommandBarRead := func() func(http.Handler) http.Handler {
+		return authorization.RequireAnyPermission(authz, authorization.PermPMRead, authorization.PermDocsRead, authorization.PermCRMRead)
+	}
+	requireCommandBarEdit := func() func(http.Handler) http.Handler {
+		return authorization.RequireAnyPermission(authz, authorization.PermPMEdit, authorization.PermDocsEdit, authorization.PermCRMEdit)
+	}
 	requireModule := func(module model.ModuleID) func(http.Handler) http.Handler {
 		return authorization.RequireModuleAccess(authz, module)
 	}
@@ -571,11 +577,13 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Route("/command-bar", func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceID)
 				r.Use(wsAccess)
-				r.With(requirePerm(authorization.PermPMRead)).Post("/intents/parse", h.CommandBar.ParseIntent)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/plans", h.CommandBar.ListPlans)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/plans/dispatch", h.CommandBar.DispatchPlan)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/plans/{planID}/cancel", h.CommandBar.CancelPlan)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/plans/{planID}/retry", h.CommandBar.RetryPlan)
+				r.With(requireCommandBarRead()).Post("/intents/parse", h.CommandBar.ParseIntent)
+				r.With(requireCommandBarRead()).Get("/plans", h.CommandBar.ListPlans)
+				r.With(requireCommandBarRead()).Get("/plans/{planID}", h.CommandBar.GetPlan)
+				r.With(requireCommandBarRead()).Get("/agents/{agentID}/tools", h.CommandBar.ListAgentToolCatalog)
+				r.With(requireCommandBarEdit()).Post("/plans/dispatch", h.CommandBar.DispatchPlan)
+				r.With(requireCommandBarEdit()).Post("/plans/{planID}/cancel", h.CommandBar.CancelPlan)
+				r.With(requireCommandBarEdit()).Post("/plans/{planID}/retry", h.CommandBar.RetryPlan)
 				r.With(requirePerm(authorization.PermSettingsManage)).Post("/runs/{runID}/promote-agent", h.CommandBar.PromoteRunToAgent)
 				r.With(requirePerm(authorization.PermSettingsManage)).Get("/unmet-intents", h.CommandBar.ListUnmetIntents)
 				r.With(requirePerm(authorization.PermSettingsManage)).Post("/unmet-intents/{intentID}/review", h.CommandBar.ReviewUnmetIntent)

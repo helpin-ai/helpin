@@ -149,18 +149,44 @@ func (s *CommandBarService) ListPlans(ctx context.Context, workspaceID, actorID 
 	}
 	summaries := make([]model.CommandBarPlanSummary, 0, len(records))
 	for _, record := range records {
-		runIDsByStep := decodeCommandBarPlanRunIDs(record.RunIDsByStep)
-		runIDs := make([]string, 0, len(runIDsByStep))
-		for _, runID := range runIDsByStep {
-			runIDs = append(runIDs, runID)
-		}
-		runs, err := s.agentService.runRepo.ListByIDs(ctx, workspaceID, runIDs)
+		summary, err := s.commandBarPlanSummaryForRecord(ctx, workspaceID, record)
 		if err != nil {
 			return nil, err
 		}
-		summaries = append(summaries, commandBarPlanSummary(record, runs))
+		summaries = append(summaries, summary)
 	}
 	return &model.CommandBarPlanListResponse{Plans: summaries}, nil
+}
+
+func (s *CommandBarService) GetPlan(ctx context.Context, workspaceID, actorID, planID string) (*model.CommandBarPlanDetailResponse, error) {
+	if s == nil || s.planRepo == nil {
+		return nil, fmt.Errorf("command bar plan service is not configured")
+	}
+	record, err := s.planRepo.GetByID(ctx, workspaceID, strings.TrimSpace(planID))
+	if err != nil {
+		return nil, err
+	}
+	if record == nil || !commandBarPlanOwnedByActor(record, actorID) {
+		return nil, fmt.Errorf("command bar plan not found")
+	}
+	summary, err := s.commandBarPlanSummaryForRecord(ctx, workspaceID, *record)
+	if err != nil {
+		return nil, err
+	}
+	return &model.CommandBarPlanDetailResponse{Plan: summary}, nil
+}
+
+func (s *CommandBarService) commandBarPlanSummaryForRecord(ctx context.Context, workspaceID string, record model.CommandBarPlanRecord) (model.CommandBarPlanSummary, error) {
+	runIDsByStep := decodeCommandBarPlanRunIDs(record.RunIDsByStep)
+	runIDs := make([]string, 0, len(runIDsByStep))
+	for _, runID := range runIDsByStep {
+		runIDs = append(runIDs, runID)
+	}
+	runs, err := s.agentService.runRepo.ListByIDs(ctx, workspaceID, runIDs)
+	if err != nil {
+		return model.CommandBarPlanSummary{}, err
+	}
+	return commandBarPlanSummary(record, runs), nil
 }
 
 func (s *CommandBarService) CancelPlan(ctx context.Context, workspaceID, actorID, planID string) (*model.CommandBarCancelPlanResponse, error) {
@@ -277,18 +303,22 @@ func (s *CommandBarService) RetryPlanFromStep(ctx context.Context, workspaceID, 
 	}, nil
 }
 
-func (s *CommandBarService) ListUnmetIntents(ctx context.Context, workspaceID, status string, limit int) (*model.CommandBarUnmetIntentListResponse, error) {
+func (s *CommandBarService) ListUnmetIntents(ctx context.Context, workspaceID, status string, limit int, includeSensitive bool) (*model.CommandBarUnmetIntentListResponse, error) {
 	if s == nil || s.unmetRepo == nil {
-		return &model.CommandBarUnmetIntentListResponse{Intents: []model.CommandBarUnmetIntent{}}, nil
+		return &model.CommandBarUnmetIntentListResponse{Intents: []model.CommandBarUnmetIntentSummary{}}, nil
 	}
 	intents, err := s.unmetRepo.List(ctx, workspaceID, strings.TrimSpace(status), limit)
 	if err != nil {
 		return nil, err
 	}
-	return &model.CommandBarUnmetIntentListResponse{Intents: intents}, nil
+	summaries := make([]model.CommandBarUnmetIntentSummary, 0, len(intents))
+	for _, intent := range intents {
+		summaries = append(summaries, commandBarUnmetIntentSummary(intent, includeSensitive))
+	}
+	return &model.CommandBarUnmetIntentListResponse{Intents: summaries}, nil
 }
 
-func (s *CommandBarService) ReviewUnmetIntent(ctx context.Context, workspaceID, id string, req model.ReviewCommandBarUnmetIntentRequest) (*model.CommandBarUnmetIntent, error) {
+func (s *CommandBarService) ReviewUnmetIntent(ctx context.Context, workspaceID, id string, req model.ReviewCommandBarUnmetIntentRequest) (*model.CommandBarUnmetIntentSummary, error) {
 	if s == nil || s.unmetRepo == nil {
 		return nil, fmt.Errorf("command bar unmet intent repository is not configured")
 	}
@@ -298,7 +328,12 @@ func (s *CommandBarService) ReviewUnmetIntent(ctx context.Context, workspaceID, 
 	default:
 		return nil, fmt.Errorf("unsupported unmet intent status %q", status)
 	}
-	return s.unmetRepo.Review(ctx, workspaceID, strings.TrimSpace(id), status, req.Notes)
+	intent, err := s.unmetRepo.Review(ctx, workspaceID, strings.TrimSpace(id), status, req.Notes)
+	if err != nil {
+		return nil, err
+	}
+	summary := commandBarUnmetIntentSummary(*intent, false)
+	return &summary, nil
 }
 
 func (s *CommandBarService) PromoteRunToAgent(ctx context.Context, workspaceID, actorID, runID string, req model.PromoteCommandBarRunRequest) (*model.PromoteCommandBarRunResponse, error) {
@@ -320,6 +355,9 @@ func (s *CommandBarService) PromoteRunToAgent(ctx context.Context, workspaceID, 
 	if !ok {
 		return nil, fmt.Errorf("only command-bar runs can be promoted")
 	}
+	if run.Status != model.AgentRunStatusCompleted {
+		return nil, fmt.Errorf("only completed command-bar runs can be promoted")
+	}
 	if payload.StepIndex < 0 || payload.StepIndex >= len(payload.Steps) {
 		return nil, fmt.Errorf("command-bar step metadata is invalid")
 	}
@@ -335,11 +373,24 @@ func (s *CommandBarService) PromoteRunToAgent(ctx context.Context, workspaceID, 
 	if len(allowedTools) == 0 {
 		allowedTools = parseJSONStringSlice(sourceAgent.AllowedTools)
 	}
+	if len(req.AllowedTools) > 0 {
+		allowedTools = normalizeStringSlice(req.AllowedTools)
+	}
+	if err := validateRunAllowedTools(allowedTools, sourceAgent); err != nil {
+		return nil, err
+	}
 	allowedTargets := []string{strings.TrimSpace(run.TargetType)}
+	if len(req.AllowedTargets) > 0 {
+		allowedTargets = normalizeStringSlice(req.AllowedTargets)
+	}
+	if err := validatePromotedAgentTargets(allowedTargets, sourceAgent); err != nil {
+		return nil, err
+	}
 	role := strings.TrimSpace(derefString(req.Description))
 	if role == "" {
 		role = fmt.Sprintf("Reusable agent promoted from command-bar run %s. Original step instruction: %s", run.ID, strings.TrimSpace(step.Instructions))
 	}
+	planningNotes := fmt.Sprintf("Promoted from command-bar run %s in plan %s. Source agent: %s. Source target: %s/%s.", run.ID, payload.PlanID, sourceAgent.Name, run.TargetType, run.TargetID)
 	agent, err := s.agentService.CreateAgent(ctx, model.CreateAgentRequest{
 		WorkspaceID:           workspaceID,
 		Name:                  name,
@@ -348,6 +399,7 @@ func (s *CommandBarService) PromoteRunToAgent(ctx context.Context, workspaceID, 
 		Provider:              sourceAgent.Provider,
 		Model:                 sourceAgent.Model,
 		ExecutionConfig:       json.RawMessage(sourceAgent.ExecutionConfig),
+		PlanningNotes:         strPtr(planningNotes),
 		AllowedTools:          mustJSONStringSlice(allowedTools),
 		AllowedCommands:       sourceAgent.AllowedCommands,
 		AllowedTargets:        mustJSONStringSlice(allowedTargets),
@@ -357,6 +409,75 @@ func (s *CommandBarService) PromoteRunToAgent(ctx context.Context, workspaceID, 
 		return nil, err
 	}
 	return &model.PromoteCommandBarRunResponse{Agent: *agent}, nil
+}
+
+func (s *CommandBarService) GetAgentToolCatalog(ctx context.Context, workspaceID, agentID string, selectedTools []string) (*model.CommandBarToolCatalogResponse, error) {
+	if s == nil || s.agentService == nil {
+		return nil, fmt.Errorf("command bar service is not configured")
+	}
+	agent, err := s.agentService.agentRepo.GetByID(ctx, workspaceID, strings.TrimSpace(agentID))
+	if err != nil {
+		return nil, err
+	}
+	if agent == nil {
+		return nil, fmt.Errorf("agent not found")
+	}
+	// Tool catalog access is workspace-scoped, not command-bar-candidate scoped,
+	// so admins can inspect saved agents before deciding whether to expose them.
+	allowedTools := normalizeStringSlice(parseJSONStringSlice(agent.AllowedTools))
+	allowedSet := make(map[string]bool, len(allowedTools))
+	for _, tool := range allowedTools {
+		allowedSet[tool] = true
+	}
+	selectedTools = normalizeStringSlice(selectedTools)
+	selectedSet := make(map[string]bool, len(selectedTools))
+	for _, tool := range selectedTools {
+		selectedSet[tool] = true
+	}
+	validation := make([]string, 0)
+	validationSet := map[string]bool{}
+	addValidation := func(message string) {
+		if validationSet[message] {
+			return
+		}
+		validationSet[message] = true
+		validation = append(validation, message)
+	}
+	catalog := s.agentService.ListToolCatalog()
+	entries := make([]model.CommandBarToolCatalogEntry, 0, len(catalog.Tools))
+	for _, tool := range catalog.Tools {
+		allowed := allowedSet[tool.Name]
+		entry := model.CommandBarToolCatalogEntry{
+			ID:          tool.Name,
+			Name:        tool.Name,
+			Description: tool.Description,
+			Category:    tool.Category,
+			InputSchema: tool.InputSchema,
+			Allowed:     allowed,
+			Selected:    selectedSet[tool.Name],
+		}
+		if !allowed {
+			entry.DisabledReason = "Tool is outside this agent's allowlist."
+			if entry.Selected {
+				addValidation(fmt.Sprintf("tool %q is outside this agent's allowlist", tool.Name))
+			}
+		}
+		entries = append(entries, entry)
+	}
+	for _, tool := range selectedTools {
+		if !allowedSet[tool] {
+			addValidation(fmt.Sprintf("tool %q is outside this agent's allowlist", tool))
+		}
+	}
+	return &model.CommandBarToolCatalogResponse{
+		AgentID:        agent.ID,
+		AllowedTools:   allowedTools,
+		SelectedTools:  selectedTools,
+		Tools:          entries,
+		Categories:     catalog.Categories,
+		Validation:     validation,
+		AllowedTargets: parseJSONStringSlice(agent.AllowedTargets),
+	}, nil
 }
 
 func (s *AgentService) startCommandBarPlanStep(ctx context.Context, workspaceID, actorID, text string, pageContext model.CommandBarPageContext, steps []model.CommandBarPlanStep, stepIndex int, planID string, parentRunID *string) (*model.AgentRun, error) {
@@ -590,6 +711,64 @@ func commandBarPlanSummary(record model.CommandBarPlanRecord, runs []model.Agent
 		UpdatedAt:        record.UpdatedAt,
 		Runs:             runs,
 	}
+}
+
+func commandBarUnmetIntentSummary(intent model.CommandBarUnmetIntent, includeSensitive bool) model.CommandBarUnmetIntentSummary {
+	var pageContext model.CommandBarPageContext
+	_ = json.Unmarshal(intent.PageContext, &pageContext)
+	var candidates []model.CommandBarAgent
+	_ = json.Unmarshal(intent.CandidateAgents, &candidates)
+	prompt := ""
+	if includeSensitive {
+		prompt = intent.Prompt
+	}
+	return model.CommandBarUnmetIntentSummary{
+		ID:              intent.ID,
+		WorkspaceID:     intent.WorkspaceID,
+		ActorID:         intent.ActorID,
+		Prompt:          prompt,
+		PromptPreview:   commandBarPromptPreview(intent.Prompt),
+		PromptRedacted:  !includeSensitive,
+		PageContext:     pageContext,
+		CandidateAgents: candidates,
+		Reason:          intent.Reason,
+		Status:          intent.Status,
+		ReviewNotes:     intent.ReviewNotes,
+		ReviewedAt:      intent.ReviewedAt,
+		CreatedAt:       intent.CreatedAt,
+	}
+}
+
+func commandBarPromptPreview(prompt string) string {
+	prompt = strings.Join(strings.Fields(strings.TrimSpace(prompt)), " ")
+	const maxPreviewRunes = 160
+	runes := []rune(prompt)
+	if len(runes) <= maxPreviewRunes {
+		return prompt
+	}
+	return string(runes[:maxPreviewRunes]) + "..."
+}
+
+func validatePromotedAgentTargets(targets []string, sourceAgent *model.Agent) error {
+	targets = normalizeStringSlice(targets)
+	if len(targets) == 0 {
+		return fmt.Errorf("at least one allowed target is required")
+	}
+	sourceAllowedTargets := parseJSONStringSlice(sourceAgent.AllowedTargets)
+	sourceAllowedSet := make(map[string]bool, len(sourceAllowedTargets))
+	for _, target := range sourceAllowedTargets {
+		sourceAllowedSet[normalizeCommandBarTargetType(target)] = true
+	}
+	for _, target := range targets {
+		normalized := normalizeCommandBarTargetType(target)
+		if err := validateCommandBarSupportedTarget(normalized); err != nil {
+			return err
+		}
+		if len(sourceAllowedSet) > 0 && !sourceAllowedSet[normalized] {
+			return fmt.Errorf("target %q is outside source agent %s allowlist", normalized, strings.TrimSpace(sourceAgent.Name))
+		}
+	}
+	return nil
 }
 
 func (s *CommandBarService) parseIntentWithLLM(ctx context.Context, text string, pageContext model.CommandBarPageContext, candidates []model.CommandBarAgent) *model.CommandBarParseResponse {

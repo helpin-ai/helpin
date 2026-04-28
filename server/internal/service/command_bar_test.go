@@ -3,8 +3,10 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -165,14 +167,113 @@ func TestCommandBarPlanOwnedByActor(t *testing.T) {
 	}
 }
 
+func TestCommandBarUnmetIntentSummaryRedactsPromptByDefault(t *testing.T) {
+	pageContext, _ := json.Marshal(model.CommandBarPageContext{EntityType: "document", EntityID: "doc-1"})
+	candidates, _ := json.Marshal([]model.CommandBarAgent{{ID: "agent-1", Name: "Researcher"}})
+	intent := model.CommandBarUnmetIntent{
+		ID:              "intent-1",
+		WorkspaceID:     "workspace-1",
+		Prompt:          "check the web and update stale doc sections with sensitive customer details",
+		PageContext:     pageContext,
+		CandidateAgents: candidates,
+		Reason:          "No matching agent.",
+		Status:          "open",
+	}
+
+	summary := commandBarUnmetIntentSummary(intent, false)
+	if summary.Prompt != "" || !summary.PromptRedacted {
+		t.Fatalf("expected redacted prompt, got prompt=%q redacted=%v", summary.Prompt, summary.PromptRedacted)
+	}
+	if summary.PromptPreview == "" || !strings.Contains(summary.PromptPreview, "check the web") {
+		t.Fatalf("expected useful prompt preview, got %q", summary.PromptPreview)
+	}
+	if summary.PageContext.EntityType != "document" || len(summary.CandidateAgents) != 1 {
+		t.Fatalf("expected decoded context and candidates, got %#v", summary)
+	}
+}
+
+func TestValidatePromotedAgentTargetsRejectsOutsideSourceAllowlist(t *testing.T) {
+	sourceAgent := &model.Agent{
+		Name:           "Researcher",
+		AllowedTargets: json.RawMessage(`["document"]`),
+	}
+	if err := validatePromotedAgentTargets([]string{"document"}, sourceAgent); err != nil {
+		t.Fatalf("expected document target to be accepted: %v", err)
+	}
+	if err := validatePromotedAgentTargets([]string{"crm_deal"}, sourceAgent); err == nil {
+		t.Fatal("expected crm_deal target to be rejected")
+	}
+}
+
 func setupCommandBarPlanTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(t.TempDir()+"/command-bar.db"), &gorm.Config{})
+	dbName := fmt.Sprintf("file:command_bar_plan_%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.AgentRun{}, &model.CommandBarPlanRecord{}); err != nil {
-		t.Fatalf("migrate command bar test db: %v", err)
+
+	for _, stmt := range []string{
+		`CREATE TABLE agent_runs (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			agent_id TEXT NOT NULL,
+			task_id TEXT,
+			conversation_id TEXT,
+			target_type TEXT NOT NULL DEFAULT 'task',
+			target_id TEXT NOT NULL,
+			runtime_kind TEXT NOT NULL DEFAULT 'opencode',
+			invocation_mode TEXT NOT NULL DEFAULT 'autonomous',
+			parent_run_id TEXT,
+			handoff_state TEXT,
+			approval_state TEXT NOT NULL DEFAULT 'not_required',
+			pause_reason TEXT NOT NULL DEFAULT 'none',
+			triggered_by_user_id TEXT,
+			status TEXT NOT NULL DEFAULT 'queued',
+			workflow_id TEXT,
+			workflow_run_id TEXT,
+			task_queue TEXT,
+			runner_pool TEXT,
+			repository_id TEXT,
+			repo_full_name TEXT,
+			base_branch TEXT,
+			working_branch TEXT,
+			delivery_target_id TEXT,
+			execution_stage TEXT,
+			last_heartbeat_at DATETIME,
+			input TEXT NOT NULL DEFAULT '{}',
+			output_summary TEXT NOT NULL DEFAULT '{}',
+			cached_input_tokens INTEGER NOT NULL DEFAULT 0,
+			input_tokens INTEGER NOT NULL DEFAULT 0,
+			output_tokens INTEGER NOT NULL DEFAULT 0,
+			tokens_used INTEGER NOT NULL DEFAULT 0,
+			error_message TEXT,
+			started_at DATETIME,
+			completed_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE command_bar_plans (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			actor_id TEXT,
+			status TEXT NOT NULL DEFAULT 'running',
+			prompt TEXT NOT NULL,
+			page_context TEXT NOT NULL DEFAULT '{}',
+			steps TEXT NOT NULL DEFAULT '[]',
+			run_ids_by_step TEXT NOT NULL DEFAULT '{}',
+			current_step_index INTEGER NOT NULL DEFAULT 0,
+			run_count INTEGER NOT NULL DEFAULT 0,
+			error_message TEXT,
+			cancelled_at DATETIME,
+			completed_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create command bar test table: %v", err)
+		}
 	}
 	return db
 }

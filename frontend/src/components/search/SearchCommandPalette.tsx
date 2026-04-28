@@ -33,6 +33,7 @@ import {
 import { commandBarService } from '@/lib/services/commandBarService';
 import { buildTaskCommandValue } from '@/components/search/searchCommandPalette';
 import { usePageContext } from '@/components/command-bar/pageContext';
+import { StepToolPicker } from '@/components/command-bar/StepToolPicker';
 import { useCommandBarRunStore } from '@/stores/commandBarStore';
 import type { CommandBarParseResponse } from '@/lib/pmTypes';
 
@@ -63,6 +64,7 @@ export function SearchCommandPalette({
   const [parsing, setParsing] = useState(false);
   const [dispatching, setDispatching] = useState(false);
   const [intentResult, setIntentResult] = useState<CommandBarParseResponse | null>(null);
+  const [stepToolOverrides, setStepToolOverrides] = useState<Record<number, string[] | undefined>>({});
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -75,11 +77,13 @@ export function SearchCommandPalette({
       setParsing(false);
       setDispatching(false);
       setIntentResult(null);
+      setStepToolOverrides({});
     }
   }, [open]);
 
   useEffect(() => {
     setIntentResult(null);
+    setStepToolOverrides({});
   }, [query]);
 
   // Debounced search
@@ -187,18 +191,35 @@ export function SearchCommandPalette({
 
   const handleDispatchPlan = useCallback(async () => {
     if (!workspace?.id || !pageContext || !intentResult || intentResult.status !== 'plan') return;
+    const emptyStepIndex = intentResult.plan.steps.findIndex((_, i) => {
+      const override = stepToolOverrides[i];
+      return override !== undefined && override.length === 0;
+    });
+    if (emptyStepIndex !== -1) {
+      toast.error(`Step ${emptyStepIndex + 1} has no tools enabled. Pick at least one tool or reset to all.`);
+      return;
+    }
     setDispatching(true);
     try {
+      const stepsWithOverrides = intentResult.plan.steps.map((step, index) => {
+        const override = stepToolOverrides[index];
+        if (override === undefined) return step;
+        return { ...step, allowed_tools: override };
+      });
       const res = await commandBarService.dispatchPlan(workspace.id, {
         text: trimmedQuery,
         page_context: pageContext,
-        steps: intentResult.plan.steps,
+        steps: stepsWithOverrides,
       });
       if (res.error || !res.data) {
         toast.error(res.error ?? 'Failed to start command run');
         return;
       }
-      const steps = res.data.steps ?? intentResult.plan.steps;
+      const steps = (res.data.steps ?? intentResult.plan.steps).map((step, index) => {
+        const override = stepToolOverrides[index];
+        if (override === undefined) return step;
+        return { ...step, allowed_tools: override };
+      });
       if (res.data.plan_id) {
         addPlan({
           id: res.data.plan_id,
@@ -216,7 +237,7 @@ export function SearchCommandPalette({
     } finally {
       setDispatching(false);
     }
-  }, [addPlan, addRuns, intentResult, onOpenChange, pageContext, trimmedQuery, workspace?.id]);
+  }, [addPlan, addRuns, intentResult, onOpenChange, pageContext, stepToolOverrides, trimmedQuery, workspace?.id]);
 
   return (
     <CommandDialog
@@ -256,45 +277,92 @@ export function SearchCommandPalette({
         )}
 
         {intentResult?.status === 'plan' && (
-          <CommandGroup heading="Plan">
-            {intentResult.plan.guardrails?.map((guardrail, index) => (
-              <CommandItem key={`guardrail-${index}`} value={`guardrail-${index}-${guardrail.message}`} disabled>
-                <Target01Icon className="h-4 w-4 text-muted-foreground" />
-                <span className="text-xs text-muted-foreground">{guardrail.message}</span>
-              </CommandItem>
-            ))}
-            {intentResult.plan.steps.map((step, index) => (
-              <CommandItem
-                key={`${step.agent_id}-${index}`}
-                value={`plan-${trimmedQuery}-${step.agent_name}-${step.instructions}-${index}`}
-                disabled
-              >
-                <BotIcon className="h-4 w-4 text-muted-foreground" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                      Step {index + 1}
-                    </span>
-                    <span className="truncate text-sm font-medium">{step.agent_name}</span>
-                    <span className="rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground">{step.target.entity_type}</span>
-                  </div>
-                  <p className="truncate text-xs text-muted-foreground">{step.instructions}</p>
+          <>
+            <div className="px-2 pt-2 pb-1">
+              <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                <span>Plan</span>
+                {intentResult.rationale ? (
+                  <span className="truncate font-normal normal-case tracking-normal text-muted-foreground/80">· {intentResult.rationale}</span>
+                ) : null}
+              </div>
+              {intentResult.plan.guardrails?.length ? (
+                <div className="mt-1.5 space-y-1">
+                  {intentResult.plan.guardrails.map((guardrail, index) => (
+                    <div key={index} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <Target01Icon className="h-3 w-3" />
+                      <span>{guardrail.message}</span>
+                    </div>
+                  ))}
                 </div>
-              </CommandItem>
-            ))}
-            <CommandItem
-              value={`confirm-agent-plan-${trimmedQuery}`}
-              onSelect={() => void handleDispatchPlan()}
-              className="cursor-pointer"
-            >
-              {dispatching ? <Loading01Icon className="h-4 w-4 animate-spin text-muted-foreground" /> : <SentIcon className="h-4 w-4 text-muted-foreground" />}
-              <span>
-                {dispatching
-                  ? 'Starting runs...'
-                  : `Confirm ${intentResult.plan.estimated_runs ?? intentResult.plan.run_count}-run plan`}
-              </span>
-            </CommandItem>
-          </CommandGroup>
+              ) : null}
+              <div className="mt-2 space-y-1.5">
+                {intentResult.plan.steps.map((step, index) => {
+                  const candidate = intentResult.candidates?.find((c) => c.id === step.agent_id);
+                  const availableTools = candidate?.allowed_tools ?? step.allowed_tools ?? [];
+                  return (
+                    <div
+                      key={`${step.agent_id}-${index}`}
+                      className="flex items-start gap-2 rounded-md border border-border/60 bg-muted/30 px-2.5 py-2"
+                    >
+                      <BotIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                            Step {index + 1}
+                          </span>
+                          <span className="truncate text-sm font-medium text-foreground">{step.agent_name}</span>
+                          <span className="rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                            {step.target.entity_type}
+                          </span>
+                        </div>
+                        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{step.instructions}</p>
+                        {availableTools.length > 0 ? (
+                          <div className="mt-1.5">
+                            <StepToolPicker
+                              workspaceId={workspace?.id}
+                              agentId={step.agent_id}
+                              agentName={step.agent_name}
+                              availableTools={availableTools}
+                              selectedTools={stepToolOverrides[index]}
+                              onChange={(next) =>
+                                setStepToolOverrides((prev) => ({ ...prev, [index]: next }))
+                              }
+                              disabled={dispatching}
+                            />
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <CommandGroup>
+              {(() => {
+                const hasEmptyStep = intentResult.plan.steps.some((_, i) => {
+                  const override = stepToolOverrides[i];
+                  return override !== undefined && override.length === 0;
+                });
+                return (
+                  <CommandItem
+                    value={`confirm-agent-plan-${trimmedQuery}`}
+                    onSelect={() => void handleDispatchPlan()}
+                    disabled={hasEmptyStep || dispatching}
+                    className="cursor-pointer"
+                  >
+                    {dispatching ? <Loading01Icon className="h-4 w-4 animate-spin text-muted-foreground" /> : <SentIcon className="h-4 w-4 text-muted-foreground" />}
+                    <span>
+                      {dispatching
+                        ? 'Starting runs...'
+                        : hasEmptyStep
+                          ? 'Pick at least 1 tool per step to confirm'
+                          : `Confirm ${intentResult.plan.estimated_runs ?? intentResult.plan.run_count}-run plan`}
+                    </span>
+                  </CommandItem>
+                );
+              })()}
+            </CommandGroup>
+          </>
         )}
 
         {intentResult?.status === 'no_matching_agent' && (

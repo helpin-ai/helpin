@@ -1,7 +1,7 @@
 # Meta-Agent Command Bar — PRD Plan
 
 **Date:** 2026-04-28
-**Status:** v1 command-bar launcher plus durable multi-step plan controls implemented; follow-up UX polish remains
+**Status:** v1 command-bar launcher, durable multi-step plan controls, and frontend contract alignment implemented; Researcher/fan-out policy remains
 **Altitude:** Product / architecture, grounded in current codebase. Also tracks implementation status.
 
 ---
@@ -47,9 +47,9 @@ Implemented in this branch:
 Current caveats:
 
 - Multi-step command-bar dispatch is sequential, but it is still not a durable parent/child Temporal workflow. The sequencing is implemented as a post-completion activity on each normal `AgentRunWorkflow` that starts the next run if needed.
-- Tool-subset picker UI is not implemented. The backend/type plumbing exists, but users cannot yet choose tools from Cmd+K.
-- Unmet-intent review has backend APIs, but no dedicated admin UI and no redaction policy metadata yet.
-- Promotion UI is intentionally minimal in the rail; it prompts for a name and uses backend defaults for description/tools/targets.
+- Tool-subset picker UI is implemented for known saved agents and blocks dispatch when a step is narrowed to zero tools. Backend `allowed_tools: []` still means "inherit defaults", so the UI intentionally does not dispatch explicit-empty tool sets.
+- Unmet-intent review has a settings UI and redacted-by-default API contract. Still open: final product policy for retention and who may reveal full prompts.
+- Promotion UI is implemented as an explicit dialog with name, description, tool scope, target scope, and provenance. Still open: broader custom-agent registry/versioning UX is outside this plan.
 
 Verification completed:
 
@@ -57,6 +57,7 @@ Verification completed:
 - `go test ./internal/temporalapp -run 'TestAgentRunWorkflow'`
 - `go build ./cmd/temporal-worker ./cmd/api`
 - `npm run build`
+- `NODE_OPTIONS=--max-old-space-size=4096 pnpm --dir frontend exec tsc -b --pretty false`
 - `git diff --check`
 
 Migration note:
@@ -67,6 +68,7 @@ Migration note:
   - `202604280006_command_bar_crm_contact_targets.sql`
   - `202604280007_command_bar_unmet_intent_review.sql`
   - `202604280008_command_bar_parent_run_unique.sql`
+  - `202604280009_repair_pm_external_links_entity_backfill.sql`
 
 Known unrelated verification noise:
 
@@ -104,7 +106,7 @@ Mapped against `/root/helpin/server` and `/root/helpin/frontend` as of 2026-04-2
 | Automation-rule engine that resolves a target and starts an agent run through `AgentService.startTargetRun` | Solid | `server/internal/service/automation_rule_engine.go:395`, `server/internal/service/agent.go:2228` |
 | Approval gate (`ApprovalState`, `awaiting_approval`, `PauseReason`) | Solid (binary) | `server/internal/model/agent.go:130`, `temporalapp/workflow.go:98` |
 | Per-agent tool allowlists | Solid | `server/internal/model/agent.go:59`, `server/internal/service/agent_presets.go` |
-| Tool catalog endpoint | Exists; per-agent picker UX still not implemented | `server/internal/service/agent.go:1638`, `server/internal/router/router.go:484`, `server/internal/router/router.go:857` |
+| Tool catalog endpoint | Exists; command-bar picker consumes the filtered per-agent catalog | `server/internal/service/agent.go:1638`, `server/internal/router/router.go:484`, `server/internal/router/router.go:857` |
 | Generic target run launch | Solid for `task/story`, `epic`, `repository`, `support_conversation`, `workspace`, `document`, `crm_contact`, `crm_deal` | `server/internal/service/agent.go` |
 | `cmdk` UI primitives | Implemented for search + agent plan entry | `frontend/src/components/ui/command.tsx`, `frontend/src/components/search/SearchCommandPalette.tsx` |
 | Route-level entity loading via TanStack Query hooks | Solid; command-bar page context implemented for workspace/task/epic/docs/CRM detail surfaces | `frontend/src/components/command-bar/pageContext.tsx` |
@@ -113,7 +115,7 @@ Mapped against `/root/helpin/server` and `/root/helpin/frontend` as of 2026-04-2
 | Structured diff proposal entity | Does not exist | — |
 | Comment slash-command / agent invocation parser | Does not exist | — |
 
-The headline: the v1 assembly work is now in place for supported targets, including durable sequential plan state and whole-plan controls. The remaining greenfield work is mostly product polish: tool-subset picker UI, review/admin UX for unmet intents, and a more deliberate promotion dialog.
+The headline: the v1 assembly work is now in place for supported targets, including durable sequential plan state, whole-plan controls, tool narrowing, unmet-intent review, and opt-in promotion. The remaining greenfield work is mostly policy and product shape: Researcher exposure and multi-target fan-out.
 
 ## Architecture
 
@@ -170,7 +172,7 @@ In other words: reuse the durable run path and validation machinery, but keep co
 
 `Agent.AllowedTools/Commands/Targets` and `AgentRunInputPayload.AdditionalContext` / `AllowedTools` already exist. Ephemeral overrides are *purely runtime*: pass extra instructions and an optional `tool_subset` (must be ⊆ base agent's allowlist) on the run input. Prefer using existing payload fields for v1 unless the UX needs a separate `extra_instructions` field for auditability.
 
-Current implementation note: parsed instructions are passed as additional context. Runtime `allowed_tools` is wired through the parser shape, dispatch request, run input, and server-side subset validation. Tool-subset picker UX is not implemented yet.
+Current implementation note: parsed instructions are passed as additional context. Runtime `allowed_tools` is wired through the parser shape, dispatch request, run input, server-side subset validation, and the frontend tool-subset picker. The UI treats an omitted selection as "inherit all" and prevents zero-tool dispatch.
 
 **Architectural boundary:** running with runtime overrides is cheap; saving an agent is a product surface. v1 supports known-agent runtime overrides and explicit post-run promotion only. v2 can add non-persistent one-shot dynamic runs through a product-owned broad preset. Saved custom agents are introduced through explicit user promotion after a successful run, not automatically before value is proven.
 
@@ -220,7 +222,7 @@ After a successful command-bar run, the right rail offers "Save agent" to users 
 
 Promotion is opt-in and post-run. The user is the dedupe mechanism for v2.5: only runs that proved useful get persisted.
 
-Status: backend implemented with a minimal rail prompt. Follow-up UX should replace `window.prompt` with a dialog for name, description, tool set, target set, and provenance preview.
+Status: implemented with an explicit promotion dialog for name, description, tool set, target set, and provenance preview.
 
 ### Future reference only — auto-create / auto-reuse saved agents
 
@@ -236,7 +238,7 @@ Unmet intents should be logged with the raw prompt, normalized page context, mat
 
 The UI response should be explicit: "No available agent can do that yet." It can suggest supported alternatives, but it should not imply that the current roster can perform the requested action.
 
-Status: implemented, except redaction policy metadata and a dedicated review/admin UI are still follow-up work.
+Status: implemented with redacted summaries and a settings review UI. Retention policy and reveal-audit reporting remain follow-up product decisions.
 
 ## What is implemented now
 
@@ -254,17 +256,44 @@ Status: implemented, except redaction policy metadata and a dedicated review/adm
 - [x] **Tool-subset backend plumbing.** Step-level `allowed_tools` is carried into run input and validated as a subset of the selected agent's allowlist.
 - [x] **Unmet-intent review API.** Unmet intents can be listed and marked `open`, `accepted`, `rejected`, or `deferred` with notes.
 - [x] **Opt-in promotion backend.** Completed command-bar runs can be promoted to saved custom agents.
+- [x] **Single-plan refresh contract.** `GET /command-bar/plans/{planID}` returns one actor-owned plan plus linked runs.
+- [x] **Promotion hardening.** Promotion accepts `description`, `allowed_tools`, and `allowed_targets`, validates subsets, requires a completed command-bar run, and stores source-run provenance.
+- [x] **Filtered tool catalog contract.** `GET /command-bar/agents/{agentID}/tools` returns allowed/selected/disabled tool metadata for picker UIs.
+- [x] **Redacted unmet-intent summaries.** Unmet-intent list/review responses expose prompt previews by default and require `include_sensitive=true` for full prompt text.
 - [x] **Researcher preset definition.** Broad research/doc/CRM preset configuration is present for the v2 one-shot direction.
 - [x] **Backend/frontend types.** Dispatch responses include `plan_id`, `steps`, `run_count`, and started runs.
 
 ## What is next
 
-1. **Tool-subset picker UX.** Let users inspect and narrow tools per step in Cmd+K. Backend validation already exists.
-2. **Promotion dialog.** Replace the rail's minimal name prompt with a proper dialog for name, description, tool set, target set, and provenance preview.
-3. **Unmet-intent review UI + redaction.** Add a settings/admin surface for reviewing unmet intents, plus explicit redaction metadata/policy.
-4. **Researcher exposure.** Decide when the parser may choose the new Researcher preset directly versus returning `no_matching_agent` and logging the unmet intent.
-5. **Plan status realtime polish.** Reload works and run events update runs, but plan status itself should be pushed/refetched after terminal transitions instead of relying on list refresh or local action responses.
-6. **Broader fan-out policy.** The hard cap is implemented. Future fan-out across multiple selected targets still needs explicit target enumeration and cost estimates before dispatch.
+Tracks A-D are implemented across backend and frontend. The immediate work is applying the pending forward migration and doing focused QA. Researcher exposure and broader fan-out remain separate product/backend policy work, not v1 polish.
+
+### Frontend workstream
+
+1. [x] **Promotion dialog.** Dialog replaces `window.prompt`, sends `description`, `allowed_tools`, and `allowed_targets`, and previews provenance.
+2. [x] **Plan status realtime polish.** Terminal run events use `GET /command-bar/plans/{planID}` to patch the exact plan instead of listing recent plans.
+3. [x] **Tool-subset picker UX.** Picker consumes the backend tool catalog for labels, categories, disabled reasons, and validation; zero-tool steps are blocked before dispatch.
+4. [x] **Unmet-intent review UI.** Settings UI uses `prompt_preview`/`prompt_redacted` and only requests full prompts through `include_sensitive=true`.
+5. [ ] **Researcher exposure UI.** If backend exposes Researcher/one-shot plans, show a stronger confirmation state with proposed tools, target, instructions, and run count.
+6. [ ] **Fan-out confirmation UI.** For multi-target plans, show explicit target list, estimated run count, cost/rate warning, and require confirm before dispatch.
+
+### Backend workstream
+
+1. [x] **Promotion payload hardening.** `PromoteCommandBarRunRequest` accepts editable `description`, `allowed_tools`, and `allowed_targets`; promotion requires a completed command-bar run, validates tool/target subsets, and stores source-run provenance in planning notes.
+2. [x] **Plan-status refresh contract.** `GET /command-bar/plans/{planID}` returns the actor-owned plan summary plus linked runs so the rail can refresh terminal plan state without listing all recent plans.
+3. [x] **Tool catalog for selected agent.** `GET /command-bar/agents/{agentID}/tools` returns a command-bar-specific tool catalog with tool ID, category, allowed/disabled state, selected state, validation messages, and allowed targets.
+4. [x] **Unmet-intent redaction and review contract.** Review/list responses now return frontend-friendly summaries with parsed page context, parsed candidate agents, prompt preview, redaction flag, and full prompt only when explicitly requested.
+5. [x] **Retry authorization hardening.** Retry re-checks target permissions against persisted plan steps before restarting, so role downgrades after dispatch do not bypass domain authorization.
+6. [x] **Migration safety repair.** The applied `202604280001` migration is no longer edited in place; `202604280009_repair_pm_external_links_entity_backfill.sql` carries the safer UUID-regex repair. It must be applied before deploy validation is expected to pass.
+7. [ ] **Researcher exposure policy.** Decide and implement parser rules for when `Researcher` can be selected directly, when it should return `no_matching_agent`, and what extra confirmation metadata is required.
+8. [ ] **Fan-out policy and contract.** Define multi-target parse/dispatch schema, max targets, budgets/rate limits, and target enumeration. Backend must reject ambiguous or over-budget fan-out even if frontend misses it.
+
+### Parallelization plan
+
+- **Track A:** Done. Promotion payload hardening and frontend dialog payload/copy alignment are implemented.
+- **Track B:** Done. Single-plan refresh contract and rail patching are implemented.
+- **Track C:** Done. Filtered tool catalog and frontend catalog picker with explicit-empty blocking are implemented.
+- **Track D:** Done. Redaction/review payload and frontend prompt-preview rendering are implemented.
+- **Track E:** Researcher and fan-out policy should start as backend/product decisions before frontend implementation.
 
 ## Sequenced bets (high-level)
 
@@ -274,26 +303,28 @@ Status: implemented, except redaction policy metadata and a dedicated review/adm
 - [x] **Unmet-intent response and logging.** Returns `no_matching_agent` instead of choosing the closest preset; logs prompt/context/candidates/reason.
 - [x] **Sequential multi-step plan.** Confirm starts step 1 only; each completed command-bar run advances the next step through a retryable post-completion activity. Runs are linked with `parent_run_id` and grouped by command-bar `plan_id`.
 - [x] **Step context separation.** Full user prompt and full plan are stored as trigger metadata; per-agent execution context contains only the current step instruction and page context.
-- [~] **Runtime instruction overrides + tool-subset picker.** Additional instructions and server-side tool-subset enforcement are implemented. The picker UI is still pending.
+- [x] **Runtime instruction overrides + tool-subset picker.** Additional instructions, server-side tool-subset enforcement, catalog-backed picker UI, and zero-tool dispatch blocking are implemented.
 - [x] **Expand supported routes.** Docs and CRM detail pages now register command-bar context, backed by `document`, `crm_contact`, and `crm_deal` target support.
 - [x] **Whole-plan controls.** Persisted plan state supports reload-after-refresh, cancel-rest, and retry from current failed/cancelled step.
 - [~] **(v2)** One-shot dynamic runs through a product-owned broad preset; the Researcher preset exists, but parser/UX exposure is still pending.
-- [~] **(v2.5)** Opt-in promotion of successful command-bar runs to saved custom agents is implemented with minimal UI; richer promotion UX is pending.
+- [x] **(v2.5)** Opt-in promotion of successful command-bar runs to saved custom agents is implemented with editable name, description, tool scope, target scope, and provenance preview.
 - [ ] **Future reference only** Automatic saved-agent creation/reuse is not a delivery phase in this plan.
 
 No week estimates here — the point of this doc is direction, not a schedule.
 
 ## Open follow-ups
 
-- **Per-agent tool catalog shape.** Still open. A broad tool catalog already exists. The picker needs a filtered view for a selected agent or preset, including labels, categories, and disabled reasons for tools outside the base allowlist.
+- **Per-agent tool catalog shape.** Implemented for selected saved agents via the command-bar tool catalog endpoint. Still open: preset-key lookup without an agent ID if the parser ever returns an unsaved one-shot preset.
 - **Command-bar trigger contract.** Implemented baseline: `command_bar` trigger source/type, plan ID, raw prompt, page context, full steps list, run count, and step index. Still open: parsed plan hash/version.
-- **Unmet-intent log shape.** Implemented as dedicated `command_bar_unmet_intents` table with prompt, workspace, actor, page context, candidate agents, reason, status, review notes, and reviewed timestamp. Still open: redaction metadata/policy.
+- **Unmet-intent log shape.** Implemented as dedicated `command_bar_unmet_intents` table with prompt, workspace, actor, page context, candidate agents, reason, status, review notes, and reviewed timestamp. Review/list responses now default to redacted summaries; full prompt requires `include_sensitive=true`.
 - **Target expansion.** Implemented for `document`, `crm_contact`, and `crm_deal`. Still open: richer per-target context hydration beyond the baseline target payload.
 - **Sequential vs parallel dispatch semantics in the plan.** Resolved for v1: command-bar plans are sequential by default. Confirm starts only the first step, and completion of step N starts step N+1. A full parent/child Temporal plan workflow remains deferred unless this lightweight scheduler proves insufficient.
-- **Authorization and privacy boundary.** Decide how much entity data is sent to the intent parser. The dispatch endpoint must treat parser output as untrusted and re-validate all target, agent, team, and tool constraints.
+- **Authorization and privacy boundary.** Dispatch and retry now re-check target permissions, and tool subsets are re-validated server-side. Still open: decide how much entity data is sent to the intent parser.
 - **One-shot preset shape for v2.** Default recommendation: use a product-owned broad preset (`doc_researcher` or `general_researcher`) instead of arbitrary custom-agent creation.
 - **Promotion permission.** Current endpoint is settings-managed. Confirm whether this should become a narrower agent-create permission before broader rollout.
 - **Cost / rate-limit guardrails.** Basic hard cap and run-count display are implemented. Future multi-target expansion still needs cost bands and per-user invocation budgets.
+- **Tool subset explicit-empty semantics.** Resolved for v1 by disallowing zero selected tools in the UI. If "no tools" ever becomes a real execution mode, add an explicit backend flag instead of overloading omitted `allowed_tools`.
+- **Frontend contract alignment.** Implemented for `GET /command-bar/plans/{planID}`, `GET /command-bar/agents/{agentID}/tools`, promotion `allowed_tools`/`allowed_targets`, and redacted unmet-intent summaries.
 - **Per-page agent buttons vs. bar suggested prompts.** Long-term, contextual suggested prompts in the bar may replace the button soup. v1 keeps both. Decide measurement criteria before sunsetting buttons.
 - **Cancellation.** Whole-plan cancel is implemented. Still open: decide whether cancelling an individual run inside a plan should implicitly cancel the remaining plan or stay run-scoped.
 
@@ -317,4 +348,4 @@ No week estimates here — the point of this doc is direction, not a schedule.
 - `@agent` invocation in comments
 - Spawning agents from agents
 
-One-shot dynamic runs remain a v2 candidate. Opt-in promotion is implemented with minimal UI and still needs a proper promotion dialog. Automatic saved-agent creation/reuse is future reference only and is not implemented by this plan.
+One-shot dynamic runs remain a v2 candidate. Opt-in promotion is implemented with a proper promotion dialog. Automatic saved-agent creation/reuse is future reference only and is not implemented by this plan.

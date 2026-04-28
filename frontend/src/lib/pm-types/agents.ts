@@ -281,6 +281,31 @@ export interface CommandBarPlanListResponse {
   plans: CommandBarPlanSummary[];
 }
 
+export interface CommandBarPlanDetailResponse {
+  plan: CommandBarPlanSummary;
+}
+
+export interface CommandBarToolCatalogEntry {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  input_schema?: unknown;
+  allowed: boolean;
+  selected: boolean;
+  disabled_reason?: string;
+}
+
+export interface CommandBarToolCatalogResponse {
+  agent_id: string;
+  allowed_tools: string[];
+  selected_tools: string[];
+  tools: CommandBarToolCatalogEntry[];
+  categories: string[];
+  validation?: string[];
+  allowed_targets?: string[];
+}
+
 export interface CommandBarCancelPlanResponse {
   plan: CommandBarPlanSummary;
   runs?: AgentRun[];
@@ -294,10 +319,44 @@ export interface CommandBarRetryPlanResponse {
 export interface PromoteCommandBarRunRequest {
   name: string;
   description?: string;
+  /** Subset of source agent's allowed_tools. Omit to inherit. Empty means none. */
+  allowed_tools?: string[];
+  /** Subset of source agent's allowed_targets. Omit to inherit (source target only). */
+  allowed_targets?: string[];
 }
 
 export interface PromoteCommandBarRunResponse {
   agent: Agent;
+}
+
+export type CommandBarUnmetIntentStatus = 'open' | 'accepted' | 'rejected' | 'deferred';
+
+export interface CommandBarUnmetIntent {
+  id: string;
+  workspace_id: string;
+  actor_id?: string;
+  /** Full prompt text. Empty unless the request opted in via include_sensitive=true. */
+  prompt?: string;
+  /** Whitespace-collapsed preview of the prompt, capped at ~160 runes. Always present. */
+  prompt_preview: string;
+  /** True when prompt is omitted because the caller did not request sensitive content. */
+  prompt_redacted: boolean;
+  page_context: CommandBarPageContext;
+  candidate_agents: Array<{ id: string; name: string; preset_key?: string; allowed_targets?: string[] }>;
+  reason: string;
+  status: CommandBarUnmetIntentStatus;
+  review_notes?: string;
+  reviewed_at?: string;
+  created_at: string;
+}
+
+export interface CommandBarUnmetIntentListResponse {
+  intents: CommandBarUnmetIntent[];
+}
+
+export interface ReviewCommandBarUnmetIntentRequest {
+  status: CommandBarUnmetIntentStatus;
+  notes?: string;
 }
 
 export interface SendAgentRunMessageRequest {

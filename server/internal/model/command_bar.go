@@ -115,6 +115,10 @@ type CommandBarPlanListResponse struct {
 	Plans []CommandBarPlanSummary `json:"plans"`
 }
 
+type CommandBarPlanDetailResponse struct {
+	Plan CommandBarPlanSummary `json:"plan"`
+}
+
 type CommandBarCancelPlanResponse struct {
 	Plan CommandBarPlanSummary `json:"plan"`
 	Runs []AgentRun            `json:"runs,omitempty"`
@@ -130,8 +134,10 @@ type CommandBarRetryPlanResponse struct {
 }
 
 type PromoteCommandBarRunRequest struct {
-	Name        string  `json:"name"`
-	Description *string `json:"description,omitempty"`
+	Name           string   `json:"name"`
+	Description    *string  `json:"description,omitempty"`
+	AllowedTools   []string `json:"allowed_tools,omitempty"`
+	AllowedTargets []string `json:"allowed_targets,omitempty"`
 }
 
 type PromoteCommandBarRunResponse struct {
@@ -145,6 +151,27 @@ type CommandBarAgent struct {
 	Role           string   `json:"role,omitempty"`
 	AllowedTargets []string `json:"allowed_targets"`
 	AllowedTools   []string `json:"allowed_tools"`
+}
+
+type CommandBarToolCatalogEntry struct {
+	ID             string      `json:"id"`
+	Name           string      `json:"name"`
+	Description    string      `json:"description"`
+	Category       string      `json:"category"`
+	InputSchema    interface{} `json:"input_schema,omitempty"`
+	Allowed        bool        `json:"allowed"`
+	Selected       bool        `json:"selected"`
+	DisabledReason string      `json:"disabled_reason,omitempty"`
+}
+
+type CommandBarToolCatalogResponse struct {
+	AgentID        string                       `json:"agent_id"`
+	AllowedTools   []string                     `json:"allowed_tools"`
+	SelectedTools  []string                     `json:"selected_tools"`
+	Tools          []CommandBarToolCatalogEntry `json:"tools"`
+	Categories     []string                     `json:"categories"`
+	Validation     []string                     `json:"validation,omitempty"`
+	AllowedTargets []string                     `json:"allowed_targets,omitempty"`
 }
 
 type CommandBarUnmetIntent struct {
@@ -164,7 +191,23 @@ type CommandBarUnmetIntent struct {
 func (CommandBarUnmetIntent) TableName() string { return "command_bar_unmet_intents" }
 
 type CommandBarUnmetIntentListResponse struct {
-	Intents []CommandBarUnmetIntent `json:"intents"`
+	Intents []CommandBarUnmetIntentSummary `json:"intents"`
+}
+
+type CommandBarUnmetIntentSummary struct {
+	ID              string                `json:"id"`
+	WorkspaceID     string                `json:"workspace_id"`
+	ActorID         *string               `json:"actor_id,omitempty"`
+	Prompt          string                `json:"prompt,omitempty"`
+	PromptPreview   string                `json:"prompt_preview"`
+	PromptRedacted  bool                  `json:"prompt_redacted"`
+	PageContext     CommandBarPageContext `json:"page_context"`
+	CandidateAgents []CommandBarAgent     `json:"candidate_agents"`
+	Reason          string                `json:"reason"`
+	Status          string                `json:"status"`
+	ReviewNotes     *string               `json:"review_notes,omitempty"`
+	ReviewedAt      *time.Time            `json:"reviewed_at,omitempty"`
+	CreatedAt       time.Time             `json:"created_at"`
 }
 
 type ReviewCommandBarUnmetIntentRequest struct {

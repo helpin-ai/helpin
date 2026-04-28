@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { BotIcon, Cancel01Icon, Loading01Icon, Menu01Icon, Tick01Icon, ViewIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
@@ -9,7 +9,8 @@ import { agentService } from '@/lib/services/agentService';
 import { commandBarService } from '@/lib/services/commandBarService';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useCommandBarRunStore } from '@/stores/commandBarStore';
-import type { AgentRun } from '@/lib/pmTypes';
+import { PromotionDialog } from '@/components/command-bar/PromotionDialog';
+import type { AgentRun, CommandBarPlanStep } from '@/lib/pmTypes';
 
 function targetLabel(run: AgentRun) {
   return run.target_info?.title || run.target_info?.task_key || `${run.target_type} ${run.target_id.slice(0, 8)}`;
@@ -30,6 +31,7 @@ export function CommandBarRunRail() {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [busyRunId, setBusyRunId] = useState<string | null>(null);
   const [busyPlanId, setBusyPlanId] = useState<string | null>(null);
+  const [promotionRun, setPromotionRun] = useState<{ run: AgentRun; step: CommandBarPlanStep | null; planPrompt?: string } | null>(null);
 
   const runs = useMemo(
     () => runIds.map((id) => runsById[id]).filter(Boolean),
@@ -63,13 +65,56 @@ export function CommandBarRunRail() {
     };
   }, [hydratePlans, workspaceId]);
 
+  const planRefetchTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const schedulePlanRefetch = useCallback(
+    (planId: string) => {
+      if (!workspaceId) return;
+      const existing = planRefetchTimers.current.get(planId);
+      if (existing) clearTimeout(existing);
+      const timer = setTimeout(() => {
+        planRefetchTimers.current.delete(planId);
+        void commandBarService.getPlan(workspaceId, planId).then((res) => {
+          if (res.data?.plan) updatePlan(res.data.plan, res.data.plan.runs ?? []);
+        });
+      }, 600);
+      planRefetchTimers.current.set(planId, timer);
+    },
+    [updatePlan, workspaceId],
+  );
+
+  useEffect(() => {
+    const timers = planRefetchTimers.current;
+    return () => {
+      for (const timer of timers.values()) clearTimeout(timer);
+      timers.clear();
+    };
+  }, []);
+
+  const findPlanIdForRun = useCallback(
+    (runId: string): string | null => {
+      for (const plan of plans) {
+        for (const id of Object.values(plan.runIdsByStep)) {
+          if (id === runId) return plan.id;
+        }
+      }
+      return null;
+    },
+    [plans],
+  );
+
   const refreshRun = useCallback(
     async (runId: string, allowUnknown = false) => {
       if (!workspaceId || (!allowUnknown && !runIds.includes(runId))) return;
       const res = await agentService.getRun(workspaceId, runId);
-      if (res.data) updateRun(res.data);
+      if (!res.data) return;
+      updateRun(res.data);
+      const terminal = res.data.status === 'completed' || res.data.status === 'failed' || res.data.status === 'cancelled';
+      if (terminal) {
+        const planId = findPlanIdForRun(res.data.id);
+        if (planId) schedulePlanRefetch(planId);
+      }
     },
-    [runIds, updateRun, workspaceId],
+    [findPlanIdForRun, runIds, schedulePlanRefetch, updateRun, workspaceId],
   );
 
   useEffect(() => {
@@ -106,21 +151,27 @@ export function CommandBarRunRail() {
     }
   };
 
-  const promoteRun = async (run: AgentRun) => {
-    if (!workspaceId) return;
-    const name = window.prompt('Reusable agent name');
-    if (!name?.trim()) return;
-    setBusyRunId(run.id);
-    try {
-      const res = await commandBarService.promoteRunToAgent(workspaceId, run.id, { name: name.trim() });
-      if (res.error || !res.data) {
-        toast.error(res.error ?? 'Failed to save agent');
-        return;
+  const findRunStep = useCallback(
+    (run: AgentRun): { step: CommandBarPlanStep | null; planPrompt?: string } => {
+      for (const plan of plans) {
+        for (const [indexStr, runId] of Object.entries(plan.runIdsByStep)) {
+          if (runId !== run.id) continue;
+          const step = plan.steps[Number(indexStr)] ?? null;
+          return { step, planPrompt: plan.prompt };
+        }
       }
-      toast.success(`Saved ${res.data.agent.name}`);
-    } finally {
-      setBusyRunId(null);
+      return { step: null };
+    },
+    [plans],
+  );
+
+  const openPromotion = (run: AgentRun) => {
+    const { step, planPrompt } = findRunStep(run);
+    if (!step) {
+      toast.error('Cannot save: this run is missing its plan context.');
+      return;
     }
+    setPromotionRun({ run, step, planPrompt });
   };
 
   const cancelPlan = async (planId: string) => {
@@ -173,7 +224,7 @@ export function CommandBarRunRail() {
           </Button>
         ) : null}
         {run.status === 'completed' ? (
-          <Button type="button" variant="ghost" size="sm" className="h-7" disabled={busy} onClick={() => void promoteRun(run)}>
+          <Button type="button" variant="ghost" size="sm" className="h-7" disabled={busy} onClick={() => openPromotion(run)}>
             Save agent
           </Button>
         ) : null}
@@ -306,6 +357,16 @@ export function CommandBarRunRail() {
           if (!open) setSelectedRunId(null);
         }}
         title="Command Run"
+      />
+      <PromotionDialog
+        open={!!promotionRun}
+        onOpenChange={(open) => {
+          if (!open) setPromotionRun(null);
+        }}
+        workspaceId={workspaceId}
+        run={promotionRun?.run ?? null}
+        step={promotionRun?.step ?? null}
+        planPrompt={promotionRun?.planPrompt}
       />
     </>
   );
