@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowRight01Icon, Message01Icon, PencilEdit01Icon, ArrowTurnBackwardIcon, SmilePlusIcon, Delete01Icon, Cancel01Icon } from '@/lib/icons';
+import { ArrowRight01Icon, Message01Icon, PencilEdit01Icon, ArrowTurnBackwardIcon, SmilePlusIcon, Delete01Icon, Cancel01Icon, PlayCircleIcon } from '@/lib/icons';
 import { Separator } from '@/components/ui/separator';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
@@ -60,6 +60,10 @@ function getFileTypeIcon(ext: string): string {
   return map[ext] || defaultIcon;
 }
 
+function isVideoAttachment(contentType: string, fileName: string): boolean {
+  if (contentType.startsWith('video/')) return true;
+  return ['mp4', 'mov', 'webm', 'mkv', 'wmv', 'avi', 'mpeg', 'mpg'].includes(getFileExtension(fileName));
+}
 
 // ── Reaction picker (shared between popover & inline) ──
 function ReactionPicker({ onPick }: { onPick: (emoji: string) => void }) {
@@ -147,7 +151,7 @@ function CommentAttachments({
   editable?: boolean;
   onDelete?: (attachmentId: string) => void;
 }) {
-  const [lightbox, setLightbox] = useState<{ src: string; name: string } | null>(null);
+  const [lightbox, setLightbox] = useState<{ src: string; name: string; kind: 'image' | 'video' } | null>(null);
 
   if (!attachments || attachments.length === 0) return null;
 
@@ -168,6 +172,7 @@ function CommentAttachments({
         {visibleAttachments.map((entry) => {
           const ext = getFileExtension(entry.attachment.file_name);
           const isImage = entry.attachment.content_type.startsWith('image/') && !entry.attachment.content_type.includes('svg');
+          const isVideo = isVideoAttachment(entry.attachment.content_type, entry.attachment.file_name);
           const url = resolveUrl(entry);
 
           const inner = isImage ? (
@@ -177,6 +182,18 @@ function CommentAttachments({
               className="h-20 w-full object-cover transition-transform group-hover:scale-105"
               loading="lazy"
             />
+          ) : isVideo ? (
+            <div className="relative h-20 w-full overflow-hidden bg-black">
+              <video
+                src={url}
+                preload="metadata"
+                muted
+                className="h-20 w-full object-cover opacity-80"
+              />
+              <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                <PlayCircleIcon className="h-8 w-8 text-white drop-shadow" />
+              </div>
+            </div>
           ) : (
             <div className="flex h-20 flex-col items-center justify-center gap-1.5 bg-muted/30">
               <img src={getFileTypeIcon(ext)} alt={ext} className="h-8 w-8" />
@@ -190,10 +207,10 @@ function CommentAttachments({
             </p>
           );
 
-          const tile = isImage && url ? (
+          const tile = (isImage || isVideo) && url ? (
             <button
               type="button"
-              onClick={() => setLightbox({ src: url, name: entry.attachment.file_name })}
+              onClick={() => setLightbox({ src: url, name: entry.attachment.file_name, kind: isVideo ? 'video' : 'image' })}
               className="group block w-full overflow-hidden rounded-lg border border-border/60 transition-colors hover:border-border cursor-pointer text-left"
             >
               {inner}
@@ -234,7 +251,7 @@ function CommentAttachments({
         })}
       </div>
       {lightbox && (
-        <ImageLightbox src={lightbox.src} alt={lightbox.name} onClose={() => setLightbox(null)} />
+        <ImageLightbox src={lightbox.src} alt={lightbox.name} kind={lightbox.kind} onClose={() => setLightbox(null)} />
       )}
     </>
   );
