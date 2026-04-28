@@ -2,18 +2,81 @@ package service
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/temporalapp"
+	"go.temporal.io/api/serviceerror"
+	tclient "go.temporal.io/sdk/client"
+)
+
+const (
+	coverageDailyBatchWorkflowID = "coverage-gap-daily-batch"
+	coverageDailyBatchSchedule   = "0 3 * * *"
 )
 
 // SupportCoverageService orchestrates gap detection, evidence
 // collection, and summary computation from support events.
 type SupportCoverageService struct {
 	coverageRepo *repository.SupportCoverageRepository
+	clusterer    *SupportCoverageClusterer
+	temporal     tclient.Client
+	workflow     coverageWorkflowRunner
 	logger       *slog.Logger
+}
+
+type coverageWorkflowRunner interface {
+	StartEnrichment(ctx context.Context, topicID string, unique bool) error
+	StartDailyBatch(ctx context.Context) error
+}
+
+type temporalCoverageWorkflowRunner struct {
+	client tclient.Client
+}
+
+func (r *temporalCoverageWorkflowRunner) StartEnrichment(ctx context.Context, topicID string, unique bool) error {
+	if r == nil || r.client == nil {
+		return nil
+	}
+	workflowID := "coverage-gap-enrich-" + topicID
+	if unique {
+		workflowID = workflowID + "-" + time.Now().UTC().Format("20060102150405.000000000")
+	}
+	_, err := r.client.ExecuteWorkflow(ctx, tclient.StartWorkflowOptions{
+		ID:        workflowID,
+		TaskQueue: temporalapp.QueueAutomation,
+	}, temporalapp.CoverageGapEnrichmentWorkflowType, topicID)
+	if err != nil {
+		var alreadyStarted *serviceerror.WorkflowExecutionAlreadyStarted
+		if errors.As(err, &alreadyStarted) {
+			return nil
+		}
+		return fmt.Errorf("start coverage gap enrichment workflow: %w", err)
+	}
+	return nil
+}
+
+func (r *temporalCoverageWorkflowRunner) StartDailyBatch(ctx context.Context) error {
+	if r == nil || r.client == nil {
+		return nil
+	}
+	_, err := r.client.ExecuteWorkflow(ctx, tclient.StartWorkflowOptions{
+		ID:           coverageDailyBatchWorkflowID,
+		TaskQueue:    temporalapp.QueueAutomation,
+		CronSchedule: coverageDailyBatchSchedule,
+	}, temporalapp.CoverageGapDailyBatchWorkflowType)
+	if err != nil {
+		var alreadyStarted *serviceerror.WorkflowExecutionAlreadyStarted
+		if errors.As(err, &alreadyStarted) {
+			return nil
+		}
+		return fmt.Errorf("start coverage gap daily enrichment workflow: %w", err)
+	}
+	return nil
 }
 
 // NewSupportCoverageService creates a new SupportCoverageService.
@@ -22,8 +85,25 @@ func NewSupportCoverageService(
 ) *SupportCoverageService {
 	return &SupportCoverageService{
 		coverageRepo: coverageRepo,
+		clusterer:    NewSupportCoverageClusterer(coverageRepo),
 		logger:       slog.Default().With("service", "support_coverage"),
 	}
+}
+
+func (s *SupportCoverageService) SetTemporalClient(client tclient.Client) {
+	s.temporal = client
+	s.workflow = &temporalCoverageWorkflowRunner{client: client}
+}
+
+func (s *SupportCoverageService) SetCoverageWorkflowRunner(runner coverageWorkflowRunner) {
+	s.workflow = runner
+}
+
+func (s *SupportCoverageService) EnsureDailyEnrichment(ctx context.Context) error {
+	if s.workflow == nil {
+		return nil
+	}
+	return s.workflow.StartDailyBatch(ctx)
 }
 
 // ProcessSupportEvent evaluates a persisted event against v1 rules
@@ -63,72 +143,40 @@ func (s *SupportCoverageService) ProcessSupportEvent(ctx context.Context, event 
 		// No existing gap for this conversation — fall through to normal rule processing.
 	}
 
-	rule := classifyEvent(event)
-	if rule == nil {
-		return nil // No gap-producing rule matched.
-	}
-
-	// Upsert topic if issue key is available.
-	var topicID *string
-	if event.IssueKey != "" {
-		topic, err := s.coverageRepo.UpsertTopicByIssueKey(ctx, event.WorkspaceID, event.IssueKey, event.IssueSummary)
-		if err != nil {
-			s.logger.WarnContext(ctx, "upsert topic failed", "error", err)
-		} else if topic != nil {
-			topicID = &topic.ID
-		}
-	}
-
-	// Upsert gap.
-	gap := &model.SupportCoverageGap{
-		WorkspaceID:  event.WorkspaceID,
-		TopicID:      topicID,
-		DedupeKey:    rule.DedupeKey,
-		GapCategory:  rule.GapCategory,
-		V1GapType:    rule.V1GapType,
-		Title:        rule.Title,
-		IssueKey:     event.IssueKey,
-		Status:       model.SupportCoverageGapStatusOpen,
-		Confidence:   rule.Confidence,
-		FailureMode:  event.FailureMode,
-		SourceSignal: event.SourceSignal,
-		CanAnswer:    event.CanAnswer,
-		CanResolve:   event.CanResolve,
-		FirstSeenAt:  now,
-		LastSeenAt:   now,
-	}
-
-	upserted, _, err := s.coverageRepo.UpsertGapByDedupeKey(ctx, gap)
+	gap, err := s.clusterer.UpsertTopicGap(ctx, event)
 	if err != nil {
 		return err
 	}
-
-	// Create evidence.
-	evidence := &model.SupportGapEvidence{
-		GapID:           upserted.ID,
-		WorkspaceID:     event.WorkspaceID,
-		EvidenceType:    event.EventType,
-		ConversationID:  event.ConversationID,
-		MessageID:       event.MessageID,
-		WidgetSessionID: event.WidgetSessionID,
-		DocumentID:      event.DocumentID,
-		ArticlePublicID: event.ArticlePublicID,
-		SourceSignal:    event.SourceSignal,
-		Excerpt:         coverageTruncate(event.IssueSummary, 500),
-		CreatedAt:       now,
-	}
-	if err := s.coverageRepo.CreateEvidence(ctx, evidence); err != nil {
-		s.logger.WarnContext(ctx, "create evidence failed", "error", err)
-	}
-
-	// Link related article if document ID is present.
-	if event.DocumentID != nil && *event.DocumentID != "" {
-		if err := s.coverageRepo.LinkGapArticle(ctx, upserted.ID, *event.DocumentID, event.WorkspaceID); err != nil {
-			s.logger.WarnContext(ctx, "link gap article failed", "error", err)
-		}
-	}
-
+	s.maybeTriggerSpikeEnrichment(ctx, gap)
 	return nil
+}
+
+func (s *SupportCoverageService) maybeTriggerSpikeEnrichment(ctx context.Context, gap *model.SupportCoverageGap) {
+	if gap == nil || gap.TopicID == nil || s.workflow == nil {
+		return
+	}
+	count, err := s.coverageRepo.CountEvidenceSince(ctx, gap.ID, time.Now().Add(-time.Hour))
+	if err != nil {
+		s.logger.WarnContext(ctx, "spike trigger evidence count failed", "error", err, "gap_id", gap.ID)
+		return
+	}
+	if count < 5 {
+		return
+	}
+	topic, err := s.coverageRepo.GetTopic(ctx, *gap.TopicID)
+	if err != nil {
+		s.logger.WarnContext(ctx, "spike trigger topic load failed", "error", err, "topic_id", *gap.TopicID)
+		return
+	}
+	if topic == nil {
+		return
+	}
+	if topic.CooldownUntil != nil && topic.CooldownUntil.After(time.Now()) {
+		return
+	}
+	if err := s.workflow.StartEnrichment(ctx, topic.ID, false); err != nil {
+		s.logger.ErrorContext(ctx, "spike trigger workflow start failed", "error", err, "topic_id", topic.ID)
+	}
 }
 
 // GetSummary returns aggregate coverage metrics for a workspace.
@@ -138,7 +186,33 @@ func (s *SupportCoverageService) GetSummary(ctx context.Context, workspaceID str
 
 // ListGaps returns gaps for a workspace.
 func (s *SupportCoverageService) ListGaps(ctx context.Context, workspaceID string, filter model.SupportCoverageGapFilter) ([]model.SupportCoverageGapListItem, int64, error) {
-	return s.coverageRepo.ListGaps(ctx, workspaceID, filter)
+	items, total, err := s.coverageRepo.ListGaps(ctx, workspaceID, filter)
+	if err != nil {
+		return nil, 0, err
+	}
+	for i := range items {
+		items[i].ImpactTier = ImpactTier(items[i].Evidence30d)
+	}
+	return items, total, nil
+}
+
+func ImpactTier(evidence30d int) string {
+	switch {
+	case evidence30d >= 10:
+		return "high"
+	case evidence30d >= 3:
+		return "medium"
+	default:
+		return "low"
+	}
+}
+
+func (s *SupportCoverageService) ListWorkspacesWithOpenGaps(ctx context.Context) ([]string, error) {
+	return s.coverageRepo.ListWorkspacesWithOpenGaps(ctx)
+}
+
+func (s *SupportCoverageService) ListTopicsDueForEnrichment(ctx context.Context, workspaceID string, olderThan time.Duration, minEvidence int) ([]string, error) {
+	return s.coverageRepo.ListTopicsDueForEnrichment(ctx, workspaceID, olderThan, minEvidence)
 }
 
 // GetGapDetail returns a gap with its evidence, suggestions, and related articles.
@@ -146,9 +220,52 @@ func (s *SupportCoverageService) GetGapDetail(ctx context.Context, workspaceID, 
 	return s.coverageRepo.GetGapDetail(ctx, workspaceID, gapID)
 }
 
+func (s *SupportCoverageService) RegenerateGap(ctx context.Context, workspaceID, gapID string) error {
+	if s.workflow == nil {
+		return fmt.Errorf("enrichment workflow is not configured")
+	}
+	detail, err := s.coverageRepo.GetGapDetail(ctx, workspaceID, gapID)
+	if err != nil {
+		return err
+	}
+	if detail == nil {
+		return fmt.Errorf("gap not found")
+	}
+	if detail.TopicID == nil || *detail.TopicID == "" {
+		return fmt.Errorf("gap is not topic-scoped")
+	}
+	return s.workflow.StartEnrichment(ctx, *detail.TopicID, true)
+}
+
 // UpdateGapStatus sets the status of a gap.
 func (s *SupportCoverageService) UpdateGapStatus(ctx context.Context, workspaceID, gapID, status, userID string, issueResolved *bool) error {
 	return s.coverageRepo.UpdateGapStatus(ctx, workspaceID, gapID, status, userID, issueResolved)
+}
+
+func (s *SupportCoverageService) RejectGap(ctx context.Context, workspaceID, gapID, userID string, rejectionReason *string) error {
+	evidence30d, err := s.coverageRepo.CountEvidence30d(ctx, gapID)
+	if err != nil {
+		return err
+	}
+	return s.coverageRepo.MarkGapRejected(ctx, workspaceID, gapID, userID, rejectionReason, evidence30d)
+}
+
+func (s *SupportCoverageService) AddDocumentToGap(ctx context.Context, workspaceID, gapID, documentID string) error {
+	if documentID == "" {
+		return fmt.Errorf("document_id is required")
+	}
+	evidence30d, err := s.coverageRepo.CountEvidence30d(ctx, gapID)
+	if err != nil {
+		return err
+	}
+	if err := s.coverageRepo.MarkGapDone(ctx, workspaceID, gapID, documentID, evidence30d); err != nil {
+		return err
+	}
+	return s.coverageRepo.LinkGapArticle(ctx, gapID, documentID, workspaceID)
+}
+
+func IsGapResolutionConflict(err error) bool {
+	return errors.Is(err, repository.ErrGapAlreadyClosed)
 }
 
 // ReclassifyGap changes the v1 gap type.

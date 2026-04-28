@@ -110,6 +110,8 @@ export const queryKeys = {
     checklists: (wsId: string, taskId: string) => ['pm', wsId, 'tasks', taskId, 'checklists'] as const,
     attachments: (wsId: string, taskId: string) => ['pm', wsId, 'tasks', taskId, 'attachments'] as const,
     externalLinks: (wsId: string, taskId: string) => ['pm', wsId, 'tasks', taskId, 'externalLinks'] as const,
+    entityExternalLinks: (wsId: string, entityType: string, entityId: string) =>
+      ['pm', wsId, entityType, entityId, 'externalLinks'] as const,
 
     search: (wsId: string, query: string) => ['pm', wsId, 'search', query] as const,
   },

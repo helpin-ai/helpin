@@ -1293,7 +1293,7 @@ function TaskDetailPanelBody({
           {/* External Links */}
           {showExternalLinks && (
             <div className="mt-6">
-              <ExternalLinks workspaceId={workspaceId} taskId={taskDetail.task.id} />
+              <ExternalLinks workspaceId={workspaceId} entityType="task" entityId={taskDetail.task.id} />
             </div>
           )}
 

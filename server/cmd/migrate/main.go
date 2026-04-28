@@ -27,6 +27,8 @@ Commands:
   validate    Check for checksum mismatches and pending migrations (exit 1 if issues found)
   repair      Recalculate checksums for applied migrations whose files were edited
   create      Scaffold a new migration file: migrate create <name>
+  cluster-rebuild
+              One-shot: rebuild coverage gaps under the v2 clusterer
 
 Environment:
   DATABASE_URL    PostgreSQL connection string (required for all commands except create)
@@ -146,6 +148,11 @@ func main() {
 			fatalf("repair migrations: %v", err)
 		}
 		fmt.Printf("repaired %d migration checksum(s)\n", repaired)
+
+	case "cluster-rebuild":
+		if err := runClusterRebuild(ctx, db); err != nil {
+			fatalf("coverage cluster rebuild: %v", err)
+		}
 
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n\n", cmd)
