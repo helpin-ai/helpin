@@ -278,6 +278,70 @@ func TestSupportCoverageRepository_CreateSuggestion(t *testing.T) {
 	}
 }
 
+func TestSupportCoverageRepository_ListGapsRanksByRecentEvidence(t *testing.T) {
+	db := setupSupportCoverageTestDB(t)
+	repo := NewSupportCoverageRepository(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	older := now.Add(-31 * 24 * time.Hour)
+	for _, seed := range []struct {
+		id         string
+		dedupeKey  string
+		title      string
+		recentRows int
+		oldRows    int
+	}{
+		{id: "gap-low", dedupeKey: "low", title: "Low evidence", recentRows: 1},
+		{id: "gap-high", dedupeKey: "high", title: "High evidence", recentRows: 3, oldRows: 2},
+	} {
+		if _, _, err := repo.UpsertGapByDedupeKey(ctx, &model.SupportCoverageGap{
+			ID:          seed.id,
+			WorkspaceID: "ws-1",
+			DedupeKey:   seed.dedupeKey,
+			Title:       seed.title,
+			FirstSeenAt: now,
+			LastSeenAt:  now,
+		}); err != nil {
+			t.Fatalf("seed gap %s: %v", seed.id, err)
+		}
+		for i := 0; i < seed.recentRows; i++ {
+			if err := repo.CreateEvidence(ctx, &model.SupportGapEvidence{
+				GapID:        seed.id,
+				WorkspaceID:  "ws-1",
+				EvidenceType: model.SupportEventDocsIssueFeedback,
+				CreatedAt:    now.Add(time.Duration(i) * time.Minute),
+			}); err != nil {
+				t.Fatalf("seed recent evidence: %v", err)
+			}
+		}
+		for i := 0; i < seed.oldRows; i++ {
+			if err := repo.CreateEvidence(ctx, &model.SupportGapEvidence{
+				GapID:        seed.id,
+				WorkspaceID:  "ws-1",
+				EvidenceType: model.SupportEventDocsIssueFeedback,
+				CreatedAt:    older.Add(time.Duration(i) * time.Minute),
+			}); err != nil {
+				t.Fatalf("seed old evidence: %v", err)
+			}
+		}
+	}
+
+	items, total, err := repo.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	if err != nil {
+		t.Fatalf("ListGaps: %v", err)
+	}
+	if total != 2 || len(items) != 2 {
+		t.Fatalf("got total=%d len=%d, want 2", total, len(items))
+	}
+	if items[0].ID != "gap-high" || items[0].Evidence30d != 3 {
+		t.Fatalf("first item id=%s evidence_30d=%d, want gap-high/3", items[0].ID, items[0].Evidence30d)
+	}
+	if items[1].ID != "gap-low" || items[1].Evidence30d != 1 {
+		t.Fatalf("second item id=%s evidence_30d=%d, want gap-low/1", items[1].ID, items[1].Evidence30d)
+	}
+}
+
 func TestSupportCoverageRepository_UpdateGapStatus(t *testing.T) {
 	db := setupSupportCoverageTestDB(t)
 	repo := NewSupportCoverageRepository(db)

@@ -186,7 +186,25 @@ func (s *SupportCoverageService) GetSummary(ctx context.Context, workspaceID str
 
 // ListGaps returns gaps for a workspace.
 func (s *SupportCoverageService) ListGaps(ctx context.Context, workspaceID string, filter model.SupportCoverageGapFilter) ([]model.SupportCoverageGapListItem, int64, error) {
-	return s.coverageRepo.ListGaps(ctx, workspaceID, filter)
+	items, total, err := s.coverageRepo.ListGaps(ctx, workspaceID, filter)
+	if err != nil {
+		return nil, 0, err
+	}
+	for i := range items {
+		items[i].ImpactTier = ImpactTier(items[i].Evidence30d)
+	}
+	return items, total, nil
+}
+
+func ImpactTier(evidence30d int) string {
+	switch {
+	case evidence30d >= 10:
+		return "high"
+	case evidence30d >= 3:
+		return "medium"
+	default:
+		return "low"
+	}
 }
 
 func (s *SupportCoverageService) ListWorkspacesWithOpenGaps(ctx context.Context) ([]string, error) {

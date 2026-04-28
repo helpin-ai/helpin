@@ -252,12 +252,15 @@ func (r *SupportCoverageRepository) CountEvidence30d(ctx context.Context, gapID 
 // ListGaps returns gaps for a workspace. Reads from gap table only,
 // never scans support_events.
 func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID string, filter model.SupportCoverageGapFilter) ([]model.SupportCoverageGapListItem, int64, error) {
+	evidenceCutoff := time.Now().AddDate(0, 0, -30)
 	q := r.db.WithContext(ctx).
 		Table("support_coverage_gaps g").
 		Select(`g.*,
 			COALESCE(t.title, '') AS topic_title,
+			COALESCE(t.canonical_title, t.title, '') AS canonical_title,
 			(SELECT COUNT(*) FROM support_gap_suggestions s WHERE s.gap_id = g.id) AS suggestion_count,
-			(SELECT ga.document_id FROM support_coverage_gap_articles ga WHERE ga.gap_id = g.id LIMIT 1) AS related_article_id`).
+			(SELECT ga.document_id FROM support_coverage_gap_articles ga WHERE ga.gap_id = g.id LIMIT 1) AS related_article_id,
+			(SELECT COUNT(*) FROM support_gap_evidence e WHERE e.gap_id = g.id AND e.created_at > ?) AS evidence_30d`, evidenceCutoff).
 		Joins("LEFT JOIN support_coverage_topics t ON t.id = g.topic_id").
 		Where("g.workspace_id = ?", workspaceID).
 		Where("g.status != ?", model.SupportCoverageGapStatusMerged)
@@ -298,7 +301,7 @@ func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID st
 		perPage = 25
 	}
 
-	q = q.Order("g.last_seen_at DESC").
+	q = q.Order("evidence_30d DESC, g.last_seen_at DESC").
 		Offset((page - 1) * perPage).
 		Limit(perPage)
 

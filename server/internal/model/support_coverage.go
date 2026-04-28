@@ -252,8 +252,11 @@ type SupportCoverageGapFilter struct {
 type SupportCoverageGapListItem struct {
 	SupportCoverageGap
 	TopicTitle       string  `json:"topic_title"`
+	CanonicalTitle   string  `json:"canonical_title"`
 	SuggestionCount  int     `json:"suggestion_count"`
 	RelatedArticleID *string `json:"related_article_id"`
+	Evidence30d      int     `json:"evidence_30d" gorm:"column:evidence_30d"`
+	ImpactTier       string  `json:"impact_tier" gorm:"-"`
 }
 
 // SupportCoverageGapDetail is the full gap detail with evidence

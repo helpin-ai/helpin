@@ -104,6 +104,25 @@ func setupCoverageTestEnv(t *testing.T) (*SupportEventService, *SupportCoverageS
 	return eventSvc, coverageSvc, db
 }
 
+func TestSupportCoverageImpactTier(t *testing.T) {
+	tests := []struct {
+		evidence30d int
+		want        string
+	}{
+		{0, "low"},
+		{2, "low"},
+		{3, "medium"},
+		{9, "medium"},
+		{10, "high"},
+		{100, "high"},
+	}
+	for _, tt := range tests {
+		if got := ImpactTier(tt.evidence30d); got != tt.want {
+			t.Fatalf("ImpactTier(%d)=%q, want %q", tt.evidence30d, got, tt.want)
+		}
+	}
+}
+
 func TestSupportCoverage_AIHandoff_NoRetrieval_CreatesGap(t *testing.T) {
 	eventSvc, coverageSvc, _ := setupCoverageTestEnv(t)
 	ctx := context.Background()

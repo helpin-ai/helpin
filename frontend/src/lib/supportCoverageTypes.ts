@@ -25,6 +25,8 @@ export interface SupportCoverageGapListItem {
   status: SupportCoverageGapStatus
   confidence: number
   evidence_count: number
+  evidence_30d: number
+  impact_tier: 'low' | 'medium' | 'high'
   gap_kind: string
   closed_at: string | null
   closed_evidence_count: number | null
@@ -35,6 +37,7 @@ export interface SupportCoverageGapListItem {
   first_seen_at: string
   last_seen_at: string
   topic_title: string
+  canonical_title: string
   suggestion_count: number
   related_article_id: string | null
 }
