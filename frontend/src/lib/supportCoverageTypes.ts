@@ -66,6 +66,7 @@ export interface SupportGapSuggestion {
   evidence_summary: string
   target_space_id: string | null
   target_document_id: string | null
+  target_document_title?: string | null
   result_document_id: string | null
   applied_at: string | null
   created_at: string
