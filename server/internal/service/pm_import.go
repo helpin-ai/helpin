@@ -23,6 +23,8 @@ type PMImportService struct {
 	workflowRepo      *repository.PMWorkflowRepository
 	attachmentService shortcutImportedAttachmentService
 	mediaDownloader   shortcutMediaDownloader
+	docsDocumentSvc   *DocsDocumentService
+	docsContentSvc    *DocsContentService
 	publisher         *websocket.Publisher
 	temporalClient    tclient.Client
 	encryptionKey     []byte
@@ -71,6 +73,14 @@ func (s *PMImportService) SetTemporalClient(client tclient.Client) {
 		return
 	}
 	s.temporalClient = client
+}
+
+func (s *PMImportService) SetDocsImportDependencies(documentSvc *DocsDocumentService, contentSvc *DocsContentService) {
+	if s == nil {
+		return
+	}
+	s.docsDocumentSvc = documentSvc
+	s.docsContentSvc = contentSvc
 }
 
 func (s *PMImportService) PreviewShortcut(ctx context.Context, workspaceID, actorID string, csvData []byte, apiToken string) (*model.ShortcutImportPreviewResponse, error) {
@@ -339,7 +349,7 @@ func shortcutImportStatusFromJob(job model.PMImportJob) *model.ShortcutImportSta
 
 func (s *PMImportService) runShortcutImport(jobID, workspaceID, actorID string, csvData []byte, req model.ShortcutImportExecuteRequest, apiToken string) {
 	ctx := context.Background()
-	totalSteps := s.shortcutImportTotalSteps(apiToken)
+	totalSteps := s.shortcutImportTotalSteps(apiToken, req.Options)
 	if err := s.updateJob(ctx, jobID, map[string]interface{}{
 		"status":             model.PMImportStatusProcessing,
 		"current_step":       "parse",
@@ -1704,11 +1714,15 @@ func (s *PMImportService) setCurrentStep(ctx context.Context, jobID, step string
 	})
 }
 
-func (s *PMImportService) shortcutImportTotalSteps(apiToken string) int {
-	if apiToken != "" {
-		return 11
+func (s *PMImportService) shortcutImportTotalSteps(apiToken string, options ...model.ShortcutImportOptions) int {
+	extraSteps := 0
+	if len(options) > 0 && options[0].ImportDocs {
+		extraSteps++
 	}
-	return 8
+	if apiToken != "" {
+		return 11 + extraSteps
+	}
+	return 8 + extraSteps
 }
 
 func filterShortcutRows(rows []shortcutCSVRow, options model.ShortcutImportOptions) []shortcutCSVRow {

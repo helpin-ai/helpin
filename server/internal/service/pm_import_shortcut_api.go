@@ -23,6 +23,7 @@ import (
 type shortcutAPIImportDataset struct {
 	Rows       []shortcutCSVRow
 	Stories    []shortcutAPIStory
+	Docs       []shortcutAPIDocSlim
 	Enrichment *shortcutAPIEnrichment
 	Warnings   []string
 }
@@ -50,7 +51,7 @@ func (s *PMImportService) PreviewShortcutAPI(ctx context.Context, workspaceID, a
 		s.publishShortcutAPIScanProgress(workspaceID, actorID, req.ScanID, "failed", "Shortcut scan failed", 0, 0)
 		return nil, err
 	}
-	resp, err := s.buildShortcutPreviewFromRows(ctx, workspaceID, filterShortcutRows(dataset.Rows, req.Options), dataset.Enrichment, dataset.Warnings)
+	resp, err := s.buildShortcutPreviewFromRows(ctx, workspaceID, filterShortcutRows(dataset.Rows, req.Options), dataset.Enrichment, dataset.Docs, dataset.Warnings)
 	if err != nil {
 		s.publishShortcutAPIScanProgress(workspaceID, actorID, req.ScanID, "failed", "Shortcut preview build failed", 0, 0)
 		return nil, err
@@ -95,7 +96,7 @@ func (s *PMImportService) runShortcutAPIImport(jobID, workspaceID, actorID strin
 }
 
 func (s *PMImportService) runShortcutAPIImportWithContext(ctx context.Context, jobID, workspaceID, actorID string, req model.ShortcutAPIImportExecuteRequest) {
-	totalSteps := s.shortcutImportTotalSteps(req.APIToken)
+	totalSteps := s.shortcutImportTotalSteps(req.APIToken, req.Options)
 	if err := s.updateJob(ctx, jobID, map[string]interface{}{
 		"status":             model.PMImportStatusProcessing,
 		"current_step":       "api_scan",
@@ -174,12 +175,23 @@ func (s *PMImportService) executeShortcutAPIImport(ctx context.Context, workspac
 	if _, err := client.GetCurrentMember(ctx); err != nil {
 		return nil, 0, err
 	}
-	_ = s.markStep(ctx, jobID, "api_scan", 1, 0, s.shortcutImportTotalSteps(req.APIToken))
+	_ = s.markStep(ctx, jobID, "api_scan", 1, 0, s.shortcutImportTotalSteps(req.APIToken, req.Options))
 	dataset, err := s.fetchShortcutAPIImportDataset(ctx, client, req.Options, shortcutAPIScanReporter{})
 	if err != nil {
 		return nil, 0, err
 	}
-	return s.executeShortcutRows(ctx, workspaceID, actorID, dataset.Rows, dataset.Warnings, req, jobID, req.APIToken, client, dataset.Enrichment, false)
+	result, totalRows, err := s.executeShortcutRows(ctx, workspaceID, actorID, dataset.Rows, dataset.Warnings, req, jobID, req.APIToken, client, dataset.Enrichment, false)
+	if err != nil {
+		return nil, totalRows, err
+	}
+	if req.Options.ImportDocs {
+		_ = s.markStep(ctx, jobID, "docs", s.shortcutImportTotalSteps(req.APIToken, req.Options)-1, len(dataset.Docs), s.shortcutImportTotalSteps(req.APIToken, req.Options))
+		created, skipped, docWarnings := s.importShortcutDocs(ctx, client, workspaceID, actorID, dataset.Docs, req.Options)
+		result.DocsCreated = created
+		result.DocsSkipped = skipped
+		result.Warnings = appendUniqueWarnings(result.Warnings, docWarnings)
+	}
+	return result, totalRows, nil
 }
 
 type shortcutAPIScanReporter struct {
@@ -215,12 +227,26 @@ func (s *PMImportService) fetchShortcutAPIImportDataset(ctx context.Context, cli
 	var scopeWarnings []string
 	rows, scopeWarnings = filterShortcutAPIRowsByEntityScope(rows, enrichment, options)
 	warnings = appendUniqueWarnings(warnings, scopeWarnings)
+	var docs []shortcutAPIDocSlim
+	if options.ImportDocs {
+		reporter.publish("fetching_docs", "Fetching Shortcut docs", 0, 0)
+		var err error
+		docs, err = client.ListDocs(ctx)
+		if err != nil {
+			warnings = appendUniqueWarnings(warnings, []string{fmt.Sprintf("Shortcut docs could not be scanned: %v", err)})
+		} else {
+			var docFilterWarnings []string
+			docs, docFilterWarnings = filterShortcutDocsByScope(ctx, client, docs, options)
+			warnings = appendUniqueWarnings(warnings, docFilterWarnings)
+		}
+	}
 	if queryOptions.MaxStories > 0 && len(stories) >= queryOptions.MaxStories {
 		warnings = appendUniqueWarnings(warnings, []string{fmt.Sprintf("Shortcut API story scan limited to %d stories", queryOptions.MaxStories)})
 	}
 	return &shortcutAPIImportDataset{
 		Rows:       rows,
 		Stories:    stories,
+		Docs:       docs,
 		Enrichment: enrichment,
 		Warnings:   warnings,
 	}, nil
@@ -358,7 +384,7 @@ func filterShortcutAPIRowsByEntityScope(rows []shortcutCSVRow, enrichment *short
 	return filtered, warnings
 }
 
-func (s *PMImportService) buildShortcutPreviewFromRows(ctx context.Context, workspaceID string, rows []shortcutCSVRow, enrichment *shortcutAPIEnrichment, warnings []string) (*model.ShortcutImportPreviewResponse, error) {
+func (s *PMImportService) buildShortcutPreviewFromRows(ctx context.Context, workspaceID string, rows []shortcutCSVRow, enrichment *shortcutAPIEnrichment, docs []shortcutAPIDocSlim, warnings []string) (*model.ShortcutImportPreviewResponse, error) {
 	members, err := s.workspaceRepo.ListMembers(ctx, workspaceID)
 	if err != nil {
 		return nil, err
@@ -457,6 +483,7 @@ func (s *PMImportService) buildShortcutPreviewFromRows(ctx context.Context, work
 			ObjectivesCount:     len(objectiveIDs),
 			SprintsCount:        len(sprintIDs),
 			LabelsCount:         len(labelNames),
+			DocsCount:           len(docs),
 			TeamsCount:          len(teamCounts),
 			WorkflowsCount:      len(workflowStateCounts),
 			WorkflowStatesCount: countWorkflowStates(workflowStateCounts),

@@ -191,6 +191,23 @@ type shortcutAPILinkedFile struct {
 	Type string `json:"type"`
 }
 
+type shortcutAPIDocSlim struct {
+	AppURL string `json:"app_url"`
+	ID     string `json:"id"`
+	Title  string `json:"title"`
+}
+
+type shortcutAPIDoc struct {
+	AppURL          string `json:"app_url"`
+	Archived        bool   `json:"archived"`
+	ContentHTML     string `json:"content_html"`
+	ContentMarkdown string `json:"content_markdown"`
+	CreatedAt       string `json:"created_at"`
+	ID              string `json:"id"`
+	Title           string `json:"title"`
+	UpdatedAt       string `json:"updated_at"`
+}
+
 type shortcutAPIStoryTask struct {
 	ID          int      `json:"id"`
 	Description string   `json:"description"`
@@ -462,6 +479,19 @@ func (c *ShortcutAPIClient) ListGroups(ctx context.Context) ([]shortcutAPIGroup,
 func (c *ShortcutAPIClient) ListProjects(ctx context.Context) ([]shortcutAPIProject, error) {
 	var out []shortcutAPIProject
 	return out, c.get(ctx, "/projects", &out)
+}
+
+func (c *ShortcutAPIClient) ListDocs(ctx context.Context) ([]shortcutAPIDocSlim, error) {
+	var out []shortcutAPIDocSlim
+	return out, c.get(ctx, "/documents", &out)
+}
+
+func (c *ShortcutAPIClient) GetDoc(ctx context.Context, publicID string) (*shortcutAPIDoc, error) {
+	values := url.Values{}
+	values.Set("content_format", "html")
+	path := fmt.Sprintf("/documents/%s?%s", url.PathEscape(strings.TrimSpace(publicID)), values.Encode())
+	var out shortcutAPIDoc
+	return &out, c.get(ctx, path, &out)
 }
 
 func (c *ShortcutAPIClient) SearchStories(ctx context.Context, query, next string) (*shortcutAPIStorySearchResults, error) {

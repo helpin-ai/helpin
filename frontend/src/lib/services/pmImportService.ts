@@ -7,6 +7,7 @@ export interface ShortcutImportPreviewSummary {
   objectives_count: number;
   sprints_count: number;
   labels_count: number;
+  docs_count: number;
   teams_count: number;
   workflows_count: number;
   workflow_states_count: number;
@@ -57,6 +58,8 @@ export interface ShortcutImportResult {
   sprints_created: number;
   tasks_created: number;
   tasks_skipped: number;
+  docs_created: number;
+  docs_skipped: number;
   checklist_items_created: number;
   owner_links_created: number;
   label_links_created: number;
@@ -111,6 +114,10 @@ export interface WorkflowStateMappingPayload {
 export interface ShortcutImportOptionsPayload {
   import_archived: boolean;
   import_completed: boolean;
+  import_docs?: boolean;
+  docs_space_id?: string;
+  docs_collection_id?: string;
+  docs_lookback_months?: number;
   story_date_field?: 'updated_at' | 'created_at';
   story_lookback_months?: number;
   epic_lookback_months?: number;
