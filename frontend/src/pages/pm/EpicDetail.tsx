@@ -678,7 +678,7 @@ export function EpicDetailPage() {
             <div className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-primary px-10 py-8">
               <Upload01Icon className="h-8 w-8 text-primary" />
               <p className="text-sm font-medium text-foreground">Drop files to attach</p>
-              <p className="text-xs text-muted-foreground">Max 10MB per file</p>
+              <p className="text-xs text-muted-foreground">Max 50MB per file</p>
             </div>
           </div>
         )}

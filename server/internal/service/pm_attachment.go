@@ -12,12 +12,15 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
-const maxFileSize = 10 * 1024 * 1024 // 10 MB
+const maxFileSize = 50 * 1024 * 1024 // 50 MB
 
 var allowedMIMETypes = map[string]bool{
 	// Images
 	"image/jpeg": true, "image/png": true, "image/gif": true,
 	"image/webp": true, "image/svg+xml": true,
+	// Video
+	"video/mp4": true, "video/quicktime": true, "video/webm": true,
+	"video/mpeg": true, "video/x-msvideo": true, "video/x-matroska": true,
 	// Documents
 	"application/pdf":    true,
 	"application/msword": true,
@@ -129,7 +132,7 @@ func (s *PMAttachmentService) prepareAttachment(ctx context.Context, req model.C
 		return nil, fmt.Errorf("file_size must be positive")
 	}
 	if req.FileSize > maxFileSize {
-		return nil, fmt.Errorf("file exceeds maximum size of 10MB")
+		return nil, fmt.Errorf("file exceeds maximum size of %s", formatByteLimit(maxFileSize))
 	}
 	if req.ContentType == "" {
 		return nil, fmt.Errorf("content_type is required")
@@ -158,6 +161,13 @@ func (s *PMAttachmentService) prepareAttachment(ctx context.Context, req model.C
 		return nil, err
 	}
 	return attachment, nil
+}
+
+func formatByteLimit(bytes int64) string {
+	if bytes > 0 && bytes%(1024*1024) == 0 {
+		return fmt.Sprintf("%dMB", bytes/(1024*1024))
+	}
+	return fmt.Sprintf("%d bytes", bytes)
 }
 
 // ConfirmUpload marks an attachment as successfully uploaded.

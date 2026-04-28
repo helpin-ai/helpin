@@ -68,7 +68,7 @@ func (d *shortcutHTTPMediaDownloader) Download(ctx context.Context, rawURL, apiT
 		return nil, fmt.Errorf("Shortcut media request returned HTTP %d", resp.StatusCode)
 	}
 	if resp.ContentLength > maxFileSize {
-		return nil, fmt.Errorf("Shortcut media file exceeds the %d byte limit", maxFileSize)
+		return nil, fmt.Errorf("Shortcut media file exceeds the %s limit", formatByteLimit(maxFileSize))
 	}
 
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxFileSize+1))
@@ -76,7 +76,7 @@ func (d *shortcutHTTPMediaDownloader) Download(ctx context.Context, rawURL, apiT
 		return nil, fmt.Errorf("read media: %w", err)
 	}
 	if int64(len(data)) > maxFileSize {
-		return nil, fmt.Errorf("Shortcut media file exceeds the %d byte limit", maxFileSize)
+		return nil, fmt.Errorf("Shortcut media file exceeds the %s limit", formatByteLimit(maxFileSize))
 	}
 
 	contentType := normalizeMediaType(resp.Header.Get("Content-Type"))
@@ -187,9 +187,10 @@ func (s *PMImportService) rewriteShortcutMediaBody(ctx context.Context, workspac
 	}
 
 	replacements := make(map[string]string)
-	failed := make(map[string]bool)
+	failures := make(map[string]string)
 	attachmentsCreated := 0
 	warnings := make([]string, 0)
+	changed := false
 
 	var walk func(*html.Node)
 	walk = func(node *html.Node) {
@@ -205,16 +206,21 @@ func (s *PMImportService) rewriteShortcutMediaBody(ctx context.Context, workspac
 				}
 				if replacementURL, ok := replacements[originalURL]; ok {
 					node.Attr[idx].Val = replacementURL
+					changed = true
 					continue
 				}
-				if failed[originalURL] {
+				if fallbackLabel, ok := failures[originalURL]; ok {
+					applyShortcutMediaFallbackToHTMLNode(node, idx, originalURL, fallbackLabel)
+					changed = true
 					continue
 				}
 
 				media, err := s.mediaDownloader.Download(ctx, originalURL, apiToken)
 				if err != nil {
 					warnings = appendUniqueWarnings(warnings, []string{fmt.Sprintf("Failed to download Shortcut media %q: %s", shortenURL(originalURL), err.Error())})
-					failed[originalURL] = true
+					failures[originalURL] = shortcutMediaFallbackLabel(originalURL, "", err.Error())
+					applyShortcutMediaFallbackToHTMLNode(node, idx, originalURL, failures[originalURL])
+					changed = true
 					continue
 				}
 
@@ -228,18 +234,23 @@ func (s *PMImportService) rewriteShortcutMediaBody(ctx context.Context, workspac
 				}, workspaceID, actorID, bytes.NewReader(media.Data))
 				if err != nil {
 					warnings = appendUniqueWarnings(warnings, []string{fmt.Sprintf("Failed to store Shortcut media %q: %s", shortenURL(originalURL), err.Error())})
-					failed[originalURL] = true
+					failures[originalURL] = shortcutMediaFallbackLabel(originalURL, fileName, err.Error())
+					applyShortcutMediaFallbackToHTMLNode(node, idx, originalURL, failures[originalURL])
+					changed = true
 					continue
 				}
 				if strings.TrimSpace(resp.PublicURL) == "" {
 					warnings = appendUniqueWarnings(warnings, []string{shortcutMediaStorageWarning})
-					failed[originalURL] = true
+					failures[originalURL] = shortcutMediaFallbackLabel(originalURL, fileName, "object storage public URL is not available")
+					applyShortcutMediaFallbackToHTMLNode(node, idx, originalURL, failures[originalURL])
+					changed = true
 					continue
 				}
 
 				replacements[originalURL] = resp.PublicURL
 				node.Attr[idx].Val = resp.PublicURL
 				attachmentsCreated++
+				changed = true
 			}
 		}
 		for child := node.FirstChild; child != nil; child = child.NextSibling {
@@ -250,7 +261,7 @@ func (s *PMImportService) rewriteShortcutMediaBody(ctx context.Context, workspac
 	for _, node := range nodes {
 		walk(node)
 	}
-	if len(replacements) == 0 {
+	if !changed {
 		return body, attachmentsCreated, warnings
 	}
 
@@ -286,8 +297,7 @@ func (s *PMImportService) rewriteShortcutMediaText(ctx context.Context, workspac
 		return text, 0, nil
 	}
 
-	replacements := make(map[string]string)
-	failed := make(map[string]bool)
+	replacements := make(map[string]shortcutMediaTextReplacement)
 	attachmentsCreated := 0
 	warnings := make([]string, 0)
 
@@ -298,14 +308,14 @@ func (s *PMImportService) rewriteShortcutMediaText(ctx context.Context, workspac
 		if _, ok := replacements[originalURL]; ok {
 			continue
 		}
-		if failed[originalURL] {
-			continue
-		}
 
 		media, err := s.mediaDownloader.Download(ctx, originalURL, apiToken)
 		if err != nil {
 			warnings = appendUniqueWarnings(warnings, []string{fmt.Sprintf("Failed to download Shortcut media %q: %s", shortenURL(originalURL), err.Error())})
-			failed[originalURL] = true
+			replacements[originalURL] = shortcutMediaTextReplacement{
+				Failed:        true,
+				FallbackLabel: shortcutMediaFallbackLabel(originalURL, preferredShortcutMediaFileNameFromText(text, originalURL), err.Error()),
+			}
 			continue
 		}
 
@@ -319,16 +329,22 @@ func (s *PMImportService) rewriteShortcutMediaText(ctx context.Context, workspac
 		}, workspaceID, actorID, bytes.NewReader(media.Data))
 		if err != nil {
 			warnings = appendUniqueWarnings(warnings, []string{fmt.Sprintf("Failed to store Shortcut media %q: %s", shortenURL(originalURL), err.Error())})
-			failed[originalURL] = true
+			replacements[originalURL] = shortcutMediaTextReplacement{
+				Failed:        true,
+				FallbackLabel: shortcutMediaFallbackLabel(originalURL, fileName, err.Error()),
+			}
 			continue
 		}
 		if strings.TrimSpace(resp.PublicURL) == "" {
 			warnings = appendUniqueWarnings(warnings, []string{shortcutMediaStorageWarning})
-			failed[originalURL] = true
+			replacements[originalURL] = shortcutMediaTextReplacement{
+				Failed:        true,
+				FallbackLabel: shortcutMediaFallbackLabel(originalURL, fileName, "object storage public URL is not available"),
+			}
 			continue
 		}
 
-		replacements[originalURL] = resp.PublicURL
+		replacements[originalURL] = shortcutMediaTextReplacement{ReplacementURL: resp.PublicURL}
 		attachmentsCreated++
 	}
 
@@ -337,10 +353,16 @@ func (s *PMImportService) rewriteShortcutMediaText(ctx context.Context, workspac
 	}
 
 	rewritten := text
-	for originalURL, replacementURL := range replacements {
-		rewritten = strings.ReplaceAll(rewritten, originalURL, replacementURL)
+	for originalURL, replacement := range replacements {
+		rewritten = rewriteShortcutMediaTextReference(rewritten, originalURL, replacement)
 	}
 	return rewritten, attachmentsCreated, warnings
+}
+
+type shortcutMediaTextReplacement struct {
+	ReplacementURL string
+	FallbackLabel  string
+	Failed         bool
 }
 
 func containsShortcutMediaCandidate(body string) bool {
@@ -407,6 +429,98 @@ func preferredShortcutMediaFileNameFromText(text, rawURL string) string {
 		}
 	}
 	return ""
+}
+
+func applyShortcutMediaFallbackToHTMLNode(node *html.Node, attrIdx int, rawURL, label string) {
+	if node == nil || attrIdx < 0 || attrIdx >= len(node.Attr) {
+		return
+	}
+	label = strings.TrimSpace(label)
+	if label == "" {
+		label = "Shortcut media not copied"
+	}
+	switch strings.ToLower(node.Data) {
+	case "img":
+		node.Data = "a"
+		node.DataAtom = atom.A
+		node.Attr = []html.Attribute{
+			{Key: "href", Val: rawURL},
+			{Key: "title", Val: label},
+		}
+		replaceNodeText(node, label)
+	case "a":
+		node.Attr[attrIdx].Val = rawURL
+		hasTitle := false
+		for idx := range node.Attr {
+			if strings.EqualFold(node.Attr[idx].Key, "title") {
+				node.Attr[idx].Val = label
+				hasTitle = true
+				break
+			}
+		}
+		if !hasTitle {
+			node.Attr = append(node.Attr, html.Attribute{Key: "title", Val: label})
+		}
+		currentText := strings.TrimSpace(nodeTextContent(node))
+		if currentText == "" || strings.EqualFold(currentText, "open") || strings.Contains(currentText, "://") {
+			replaceNodeText(node, label)
+		}
+	default:
+		node.Attr[attrIdx].Val = rawURL
+	}
+}
+
+func replaceNodeText(node *html.Node, text string) {
+	node.FirstChild = nil
+	node.LastChild = nil
+	node.AppendChild(&html.Node{Type: html.TextNode, Data: text})
+}
+
+func shortcutMediaFallbackLabel(rawURL, fileName, reason string) string {
+	name := sanitizeImportedFileName(fileName)
+	if name == "" {
+		name = fileNameFromRawURL(rawURL)
+	}
+	if name == "" {
+		name = "Shortcut media"
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return fmt.Sprintf("Shortcut media not copied: %s", name)
+	}
+	if len(reason) > 120 {
+		reason = reason[:117] + "..."
+	}
+	return fmt.Sprintf("Shortcut media not copied: %s (%s)", name, reason)
+}
+
+func rewriteShortcutMediaTextReference(text, rawURL string, replacement shortcutMediaTextReplacement) string {
+	if !replacement.Failed {
+		return strings.ReplaceAll(text, rawURL, replacement.ReplacementURL)
+	}
+	label := strings.TrimSpace(replacement.FallbackLabel)
+	if label == "" {
+		label = shortcutMediaFallbackLabel(rawURL, "", "")
+	}
+	token := "__SHORTCUT_MEDIA_URL_PLACEHOLDER__"
+	for _, pattern := range []string{
+		`!\[([^\]]*)\]\(` + regexp.QuoteMeta(rawURL) + `\)`,
+		`\[([^\]]*)\]\(` + regexp.QuoteMeta(rawURL) + `\)`,
+	} {
+		re := regexp.MustCompile(pattern)
+		text = re.ReplaceAllStringFunc(text, func(string) string {
+			return "[" + escapeMarkdownLinkText(label) + "](" + token + ")"
+		})
+	}
+	text = strings.ReplaceAll(text, rawURL, rawURL+" ("+label+")")
+	return strings.ReplaceAll(text, token, rawURL)
+}
+
+func escapeMarkdownLinkText(text string) string {
+	text = strings.ReplaceAll(text, `\`, `\\`)
+	text = strings.ReplaceAll(text, `[`, `\[`)
+	text = strings.ReplaceAll(text, `]`, `\]`)
+	return text
 }
 
 func htmlAttr(node *html.Node, key string) string {
