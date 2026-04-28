@@ -515,6 +515,9 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         queryClient.invalidateQueries({ queryKey: queryKeys.pm.attachments(workspaceId, event.parent_id) })
       } else if (event.entity === 'external_link') {
         queryClient.invalidateQueries({ queryKey: queryKeys.pm.externalLinks(workspaceId, event.parent_id) })
+        if (event.parent_type) {
+          queryClient.invalidateQueries({ queryKey: queryKeys.pm.entityExternalLinks(workspaceId, event.parent_type, event.parent_id) })
+        }
       } else if (event.entity === 'task_git_link') {
         queryClient.invalidateQueries({ queryKey: queryKeys.git.taskLinks(workspaceId, event.parent_id) })
       }
