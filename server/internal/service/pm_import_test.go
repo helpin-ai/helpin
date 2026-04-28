@@ -1684,8 +1684,8 @@ func newShortcutAPITestHandler(t *testing.T) http.Handler {
 		if !requireToken(w, r) {
 			return
 		}
-		if r.URL.Query().Get("offset") != "0" {
-			write(w, []map[string]any{})
+		if r.URL.RawQuery != "" {
+			http.Error(w, "iteration stories endpoint should not include query params", http.StatusBadRequest)
 			return
 		}
 		write(w, []map[string]any{{"id": 1001}, {"id": 1002}})

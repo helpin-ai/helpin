@@ -419,25 +419,16 @@ func (c *ShortcutAPIClient) ListIterations(ctx context.Context) ([]shortcutAPIIt
 }
 
 func (c *ShortcutAPIClient) ListIterationStoryIDs(ctx context.Context, iterationID int) ([]int, error) {
-	const pageSize = 1000
 	storyIDs := []int{}
-	for offset := 0; ; offset += pageSize {
-		values := url.Values{}
-		values.Set("limit", strconv.Itoa(pageSize))
-		values.Set("offset", strconv.Itoa(offset))
-		var out []struct {
-			ID int `json:"id"`
-		}
-		if err := c.get(ctx, fmt.Sprintf("/iterations/%d/stories?%s", iterationID, values.Encode()), &out); err != nil {
-			return nil, err
-		}
-		for _, story := range out {
-			if story.ID != 0 {
-				storyIDs = append(storyIDs, story.ID)
-			}
-		}
-		if len(out) < pageSize {
-			break
+	var out []struct {
+		ID int `json:"id"`
+	}
+	if err := c.get(ctx, fmt.Sprintf("/iterations/%d/stories", iterationID), &out); err != nil {
+		return nil, err
+	}
+	for _, story := range out {
+		if story.ID != 0 {
+			storyIDs = append(storyIDs, story.ID)
 		}
 	}
 	return storyIDs, nil
