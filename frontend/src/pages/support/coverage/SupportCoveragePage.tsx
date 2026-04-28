@@ -22,6 +22,7 @@ import {
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useDocsSpaces, useDocsCollections } from '@/hooks/queries/useDocs'
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries/useSession'
+import { GapList } from '@/components/support/coverage/GapList'
 import { supportCoverageService } from '@/lib/services/supportCoverageService'
 import type {
   SupportCoverageSummary,
@@ -50,6 +51,8 @@ const EVIDENCE_TYPE_LABELS: Record<string, string> = {
   docs_issue_feedback: 'Agent Feedback',
   human_reply_after_ai: 'Human Reply',
 }
+
+const STATUS_FILTERS = ['open', 'done', 'rejected'] as const
 
 function confidenceLabel(confidence: number): { text: string; className: string } {
   if (confidence >= 0.7) return { text: 'High confidence', className: 'text-green-600' }
@@ -291,23 +294,41 @@ export function SupportCoveragePage() {
       )}
 
       {/* Filter bar */}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            className="rounded-full border border-primary/25 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary"
+          >
+            Content gaps
+          </button>
+          {['Data gaps', 'Action gaps'].map((label) => (
+            <button
+              key={label}
+              type="button"
+              disabled
+              className="rounded-full border border-border/60 px-3 py-1 text-xs font-medium text-muted-foreground/45"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <span className="text-xs text-muted-foreground">
           {total} gap{total !== 1 ? 's' : ''}
         </span>
-        <div className="ml-auto flex gap-1">
-          {['', 'open', 'done', 'rejected'].map((s) => (
+        <div className="ml-auto flex rounded-lg border border-border/60 bg-muted/30 p-0.5">
+          {STATUS_FILTERS.map((s) => (
             <button
               key={s}
               type="button"
               onClick={() => setStatusFilter(s)}
-              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
                 statusFilter === s
-                  ? 'bg-primary text-primary-foreground'
+                  ? 'bg-background text-foreground shadow-sm'
                   : 'text-muted-foreground hover:bg-muted'
               }`}
             >
-              {s === '' ? 'All' : GAP_STATUS_LABELS[s as keyof typeof GAP_STATUS_LABELS] ?? s}
+              {GAP_STATUS_LABELS[s]}
             </button>
           ))}
         </div>
@@ -316,51 +337,7 @@ export function SupportCoveragePage() {
       {/* Gap inbox + detail */}
       <div className="flex gap-4">
         <div className={`${selectedGap ? 'w-1/2' : 'w-full'} space-y-1`}>
-          {gaps.length === 0 ? (
-            <div className="flex flex-col items-center py-12 text-muted-foreground">
-              <FileSearchIcon className="mb-2 h-10 w-10 text-muted-foreground/30" />
-              <p className="text-sm">No coverage gaps found.</p>
-              <p className="mt-1 text-xs text-muted-foreground/60">
-                Gaps appear when AI support encounters issues it cannot resolve.
-              </p>
-            </div>
-          ) : (
-            <div className="divide-y divide-border/40 rounded-lg border border-border/60 bg-card">
-              {gaps.map((gap) => (
-                <button
-                  key={gap.id}
-                  type="button"
-                  onClick={() => openDetail(gap.id)}
-                  className={`flex w-full items-center gap-3 px-4 py-3 text-left text-sm transition-colors hover:bg-muted/40 ${
-                    selectedGap?.id === gap.id ? 'bg-muted/60' : ''
-                  }`}
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{gap.title}</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      {gap.evidence_count} conversation{gap.evidence_count !== 1 ? 's' : ''}
-                      {gap.topic_title && <> &middot; {gap.topic_title}</>}
-                    </p>
-                  </div>
-                  <Badge
-                    variant="secondary"
-                    className={`shrink-0 text-xs ${GAP_TYPE_BADGE_CLASS}`}
-                  >
-                    {V1_GAP_TYPE_LABELS[gap.v1_gap_type] ?? gap.v1_gap_type}
-                  </Badge>
-                  <Badge
-                    variant="secondary"
-                    className={`shrink-0 text-xs ${STATUS_COLORS[gap.status] ?? ''}`}
-                  >
-                    {GAP_STATUS_LABELS[gap.status] ?? gap.status}
-                  </Badge>
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {timeAgo(gap.last_seen_at)}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
+          <GapList gaps={gaps} selectedGapId={selectedGap?.id} onSelect={openDetail} />
         </div>
 
         {/* Detail panel */}
