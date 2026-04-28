@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -72,13 +72,13 @@ func (s *CommandBarService) ParseIntent(ctx context.Context, workspaceID, actorI
 	if parsed := parseExplicitNamedAgents(text, pageContext, candidates); parsed != nil {
 		return parsed, nil
 	}
+	if parsed := parseIntentDeterministically(text, pageContext, candidates); parsed != nil {
+		return parsed, nil
+	}
 	if parsed := s.parseIntentWithLLM(ctx, text, pageContext, candidates); parsed != nil {
 		if parsed.Status == model.CommandBarParseStatusNoMatchingAgent {
 			_ = s.logUnmetIntent(ctx, workspaceID, actorID, text, pageContext, candidates, parsed.Reason)
 		}
-		return parsed, nil
-	}
-	if parsed := parseIntentDeterministically(text, pageContext, candidates); parsed != nil {
 		return parsed, nil
 	}
 
@@ -129,9 +129,7 @@ func (s *CommandBarService) DispatchPlan(ctx context.Context, workspaceID, actor
 		return nil, err
 	}
 	if s.planRepo != nil {
-		runIDsByStep := map[int]string{0: run.ID}
-		rawRunIDs, _ := json.Marshal(runIDsByStep)
-		_ = s.planRepo.UpdateStepRun(ctx, workspaceID, planID, 0, rawRunIDs)
+		_ = s.planRepo.SetStepRun(ctx, workspaceID, planID, 0, run.ID)
 	}
 	return &model.CommandBarDispatchResponse{
 		PlanID:   planID,
@@ -141,11 +139,11 @@ func (s *CommandBarService) DispatchPlan(ctx context.Context, workspaceID, actor
 	}, nil
 }
 
-func (s *CommandBarService) ListPlans(ctx context.Context, workspaceID string, limit int) (*model.CommandBarPlanListResponse, error) {
+func (s *CommandBarService) ListPlans(ctx context.Context, workspaceID, actorID string, limit int) (*model.CommandBarPlanListResponse, error) {
 	if s == nil || s.planRepo == nil {
 		return &model.CommandBarPlanListResponse{Plans: []model.CommandBarPlanSummary{}}, nil
 	}
-	records, err := s.planRepo.ListRecent(ctx, workspaceID, limit)
+	records, err := s.planRepo.ListRecent(ctx, workspaceID, strings.TrimSpace(actorID), limit)
 	if err != nil {
 		return nil, err
 	}
@@ -174,6 +172,9 @@ func (s *CommandBarService) CancelPlan(ctx context.Context, workspaceID, actorID
 		return nil, err
 	}
 	if plan == nil {
+		return nil, fmt.Errorf("command bar plan not found")
+	}
+	if !commandBarPlanOwnedByActor(plan, actorID) {
 		return nil, fmt.Errorf("command bar plan not found")
 	}
 	if err := s.planRepo.MarkCancelled(ctx, workspaceID, plan.ID); err != nil {
@@ -218,6 +219,9 @@ func (s *CommandBarService) RetryPlanFromStep(ctx context.Context, workspaceID, 
 		return nil, err
 	}
 	if plan == nil {
+		return nil, fmt.Errorf("command bar plan not found")
+	}
+	if !commandBarPlanOwnedByActor(plan, actorID) {
 		return nil, fmt.Errorf("command bar plan not found")
 	}
 	if plan.Status == model.CommandBarPlanStatusRunning {
@@ -411,12 +415,27 @@ func (s *AgentService) AdvanceCommandBarPlanAfterRun(ctx context.Context, comple
 	if err != nil || run == nil {
 		return nil, err
 	}
+	payload, ok := commandBarRunPayload(run)
+	if !ok {
+		return nil, nil
+	}
+	if run.Status == model.AgentRunStatusFailed {
+		if s.commandBarPlanRepo != nil && payload.PlanID != "" {
+			_ = s.commandBarPlanRepo.MarkFailed(ctx, run.WorkspaceID, payload.PlanID, commandBarTerminalRunMessage(run, payload, "failed"))
+		}
+		return nil, nil
+	}
+	if run.Status == model.AgentRunStatusCancelled {
+		if s.commandBarPlanRepo != nil && payload.PlanID != "" {
+			_ = s.commandBarPlanRepo.MarkCancelled(ctx, run.WorkspaceID, payload.PlanID)
+		}
+		return nil, nil
+	}
 	if run.Status != model.AgentRunStatusCompleted {
 		return nil, nil
 	}
-	payload, ok := commandBarRunPayload(run)
-	if !ok || payload.RunCount <= 1 || payload.StepIndex+1 >= len(payload.Steps) {
-		if ok && s.commandBarPlanRepo != nil && payload.PlanID != "" && payload.StepIndex+1 >= len(payload.Steps) {
+	if payload.RunCount <= 1 || payload.StepIndex+1 >= len(payload.Steps) {
+		if s.commandBarPlanRepo != nil && payload.PlanID != "" && payload.StepIndex+1 >= len(payload.Steps) {
 			_ = s.commandBarPlanRepo.MarkCompleted(ctx, run.WorkspaceID, payload.PlanID)
 		}
 		return nil, nil
@@ -440,21 +459,43 @@ func (s *AgentService) AdvanceCommandBarPlanAfterRun(ctx context.Context, comple
 	planID := firstNonEmptyString(payload.PlanID, uuid.NewString())
 	nextRun, err := s.startCommandBarPlanStep(ctx, run.WorkspaceID, actorID, payload.Prompt, payload.PageContext, payload.Steps, nextIndex, planID, &run.ID)
 	if err != nil {
+		if existing, findErr := s.runRepo.FindByParentRunID(ctx, run.WorkspaceID, run.ID); findErr == nil && existing != nil {
+			if s.commandBarPlanRepo != nil && planID != "" {
+				_ = s.commandBarPlanRepo.SetStepRun(ctx, run.WorkspaceID, planID, nextIndex, existing.ID)
+			}
+			return existing, nil
+		}
 		if s.commandBarPlanRepo != nil && planID != "" {
 			_ = s.commandBarPlanRepo.MarkFailed(ctx, run.WorkspaceID, planID, err.Error())
 		}
 		return nil, err
 	}
 	if s.commandBarPlanRepo != nil && planID != "" && nextRun != nil {
-		runIDsByStep := map[int]string{}
-		if plan, err := s.commandBarPlanRepo.GetByID(ctx, run.WorkspaceID, planID); err == nil && plan != nil {
-			runIDsByStep = decodeCommandBarPlanRunIDs(plan.RunIDsByStep)
-		}
-		runIDsByStep[nextIndex] = nextRun.ID
-		rawRunIDs, _ := json.Marshal(runIDsByStep)
-		_ = s.commandBarPlanRepo.UpdateStepRun(ctx, run.WorkspaceID, planID, nextIndex, rawRunIDs)
+		_ = s.commandBarPlanRepo.SetStepRun(ctx, run.WorkspaceID, planID, nextIndex, nextRun.ID)
 	}
 	return nextRun, nil
+}
+
+func commandBarTerminalRunMessage(run *model.AgentRun, payload commandBarTriggerContextPayload, fallback string) string {
+	if run != nil && strings.TrimSpace(derefString(run.ErrorMessage)) != "" {
+		return strings.TrimSpace(derefString(run.ErrorMessage))
+	}
+	stepNumber := payload.StepIndex + 1
+	if stepNumber <= 0 {
+		stepNumber = 1
+	}
+	return fmt.Sprintf("Command-bar step %d %s.", stepNumber, fallback)
+}
+
+func commandBarPlanOwnedByActor(plan *model.CommandBarPlanRecord, actorID string) bool {
+	if plan == nil {
+		return false
+	}
+	actorID = strings.TrimSpace(actorID)
+	if actorID == "" || plan.ActorID == nil {
+		return true
+	}
+	return strings.TrimSpace(*plan.ActorID) == actorID
 }
 
 func commandBarRunPayload(run *model.AgentRun) (commandBarTriggerContextPayload, bool) {
@@ -518,8 +559,7 @@ func decodeCommandBarPlanRunIDs(raw json.RawMessage) map[int]string {
 	var keyed map[string]string
 	if err := json.Unmarshal(raw, &keyed); err == nil {
 		for key, value := range keyed {
-			var idx int
-			if _, scanErr := fmt.Sscanf(key, "%d", &idx); scanErr == nil && strings.TrimSpace(value) != "" {
+			if idx, scanErr := strconv.Atoi(key); scanErr == nil && strings.TrimSpace(value) != "" {
 				result[idx] = value
 			}
 		}
@@ -851,12 +891,26 @@ func indexCommandBarPhrase(text, phrase string) int {
 	if text == "" || phrase == "" {
 		return -1
 	}
-	pattern := `(^|[^a-z0-9])` + regexp.QuoteMeta(phrase) + `([^a-z0-9]|$)`
-	loc := regexp.MustCompile(pattern).FindStringIndex(text)
-	if loc == nil {
-		return -1
+	offset := 0
+	for offset < len(text) {
+		idx := strings.Index(text[offset:], phrase)
+		if idx < 0 {
+			return -1
+		}
+		idx += offset
+		beforeOK := idx == 0 || !isCommandBarWordByte(text[idx-1])
+		after := idx + len(phrase)
+		afterOK := after == len(text) || !isCommandBarWordByte(text[after])
+		if beforeOK && afterOK {
+			return idx
+		}
+		offset = idx + 1
 	}
-	return loc[0]
+	return -1
+}
+
+func isCommandBarWordByte(ch byte) bool {
+	return (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9')
 }
 
 func normalizeCommandBarPageContext(ctx model.CommandBarPageContext, workspaceID string) model.CommandBarPageContext {

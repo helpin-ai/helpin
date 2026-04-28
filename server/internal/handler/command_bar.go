@@ -52,8 +52,9 @@ func (h *CommandBarHandler) DispatchPlan(w http.ResponseWriter, r *http.Request)
 
 func (h *CommandBarHandler) ListPlans(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
+	actorID := middleware.GetUserID(r.Context())
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	resp, err := h.commandBarService.ListPlans(r.Context(), workspaceID, limit)
+	resp, err := h.commandBarService.ListPlans(r.Context(), workspaceID, actorID, limit)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

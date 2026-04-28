@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"gorm.io/gorm"
@@ -42,7 +43,7 @@ func (r *CommandBarPlanRepository) GetByID(ctx context.Context, workspaceID, id 
 	return &plan, nil
 }
 
-func (r *CommandBarPlanRepository) ListRecent(ctx context.Context, workspaceID string, limit int) ([]model.CommandBarPlanRecord, error) {
+func (r *CommandBarPlanRepository) ListRecent(ctx context.Context, workspaceID, actorID string, limit int) ([]model.CommandBarPlanRecord, error) {
 	if r == nil || r.db == nil {
 		return nil, fmt.Errorf("command bar plan repository is not configured")
 	}
@@ -50,11 +51,11 @@ func (r *CommandBarPlanRepository) ListRecent(ctx context.Context, workspaceID s
 		limit = 20
 	}
 	var plans []model.CommandBarPlanRecord
-	if err := r.db.WithContext(ctx).
-		Where("workspace_id = ?", workspaceID).
-		Order("created_at DESC").
-		Limit(limit).
-		Find(&plans).Error; err != nil {
+	query := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID)
+	if actorID != "" {
+		query = query.Where("actor_id = ?", actorID)
+	}
+	if err := query.Order("created_at DESC").Limit(limit).Find(&plans).Error; err != nil {
 		return nil, fmt.Errorf("list command bar plans: %w", err)
 	}
 	return plans, nil
@@ -73,6 +74,27 @@ func (r *CommandBarPlanRepository) UpdateStepRun(ctx context.Context, workspaceI
 			"status":             model.CommandBarPlanStatusRunning,
 		}).Error; err != nil {
 		return fmt.Errorf("update command bar plan step run: %w", err)
+	}
+	return nil
+}
+
+func (r *CommandBarPlanRepository) SetStepRun(ctx context.Context, workspaceID, id string, stepIndex int, runID string) error {
+	if r == nil || r.db == nil {
+		return fmt.Errorf("command bar plan repository is not configured")
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.CommandBarPlanRecord{}).
+		Where("workspace_id = ? AND id = ?", workspaceID, id).
+		Updates(map[string]any{
+			"current_step_index": stepIndex,
+			"run_ids_by_step": gorm.Expr(
+				"COALESCE(run_ids_by_step, '{}'::jsonb) || jsonb_build_object(?::text, ?::text)",
+				strconv.Itoa(stepIndex),
+				runID,
+			),
+			"status": model.CommandBarPlanStatusRunning,
+		}).Error; err != nil {
+		return fmt.Errorf("set command bar plan step run: %w", err)
 	}
 	return nil
 }
@@ -104,7 +126,7 @@ func (r *CommandBarPlanRepository) MarkCompleted(ctx context.Context, workspaceI
 	now := time.Now().UTC()
 	if err := r.db.WithContext(ctx).
 		Model(&model.CommandBarPlanRecord{}).
-		Where("workspace_id = ? AND id = ?", workspaceID, id).
+		Where("workspace_id = ? AND id = ? AND status NOT IN ?", workspaceID, id, []string{model.CommandBarPlanStatusCancelled, model.CommandBarPlanStatusFailed}).
 		Updates(map[string]any{
 			"status":       model.CommandBarPlanStatusCompleted,
 			"completed_at": now,
@@ -120,7 +142,7 @@ func (r *CommandBarPlanRepository) MarkFailed(ctx context.Context, workspaceID, 
 	}
 	if err := r.db.WithContext(ctx).
 		Model(&model.CommandBarPlanRecord{}).
-		Where("workspace_id = ? AND id = ?", workspaceID, id).
+		Where("workspace_id = ? AND id = ? AND status NOT IN ?", workspaceID, id, []string{model.CommandBarPlanStatusCancelled, model.CommandBarPlanStatusCompleted}).
 		Updates(map[string]any{
 			"status":        model.CommandBarPlanStatusFailed,
 			"error_message": message,

@@ -15,6 +15,7 @@ func TestAgentRunWorkflowPrepareFailureMarksRunFailed(t *testing.T) {
 
 	markedRunID := ""
 	markedError := ""
+	advancedRunID := ""
 
 	env.RegisterWorkflow(AgentRunWorkflow)
 	env.RegisterActivityWithOptions(func(ctx context.Context, runID string) error {
@@ -25,6 +26,10 @@ func TestAgentRunWorkflowPrepareFailureMarksRunFailed(t *testing.T) {
 		markedError = errMsg
 		return nil
 	}, activity.RegisterOptions{Name: "AgentRunActivities.MarkRunFailedActivity"})
+	env.RegisterActivityWithOptions(func(ctx context.Context, runID string) error {
+		advancedRunID = runID
+		return nil
+	}, activity.RegisterOptions{Name: "AgentRunActivities.AdvanceCommandBarPlanActivity"})
 
 	env.ExecuteWorkflow(AgentRunWorkflow, AgentRunWorkflowInput{RunID: "run-1"})
 
@@ -39,6 +44,9 @@ func TestAgentRunWorkflowPrepareFailureMarksRunFailed(t *testing.T) {
 	}
 	if markedError == "" {
 		t.Fatal("expected failure marker to receive the workflow error")
+	}
+	if advancedRunID != "run-1" {
+		t.Fatalf("expected command bar plan advance after failure for run-1, got %q", advancedRunID)
 	}
 }
 
