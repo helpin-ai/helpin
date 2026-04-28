@@ -224,6 +224,18 @@ func (s *SupportCoverageService) UpdateGapStatus(ctx context.Context, workspaceI
 	return s.coverageRepo.UpdateGapStatus(ctx, workspaceID, gapID, status, userID, issueResolved)
 }
 
+func (s *SupportCoverageService) RejectGap(ctx context.Context, workspaceID, gapID, userID string, rejectionReason *string) error {
+	evidence30d, err := s.coverageRepo.CountEvidence30d(ctx, gapID)
+	if err != nil {
+		return err
+	}
+	return s.coverageRepo.MarkGapRejected(ctx, workspaceID, gapID, userID, rejectionReason, evidence30d)
+}
+
+func IsGapResolutionConflict(err error) bool {
+	return errors.Is(err, repository.ErrGapAlreadyClosed)
+}
+
 // ReclassifyGap changes the v1 gap type.
 func (s *SupportCoverageService) ReclassifyGap(ctx context.Context, workspaceID, gapID, v1GapType string) error {
 	return s.coverageRepo.ReclassifyGap(ctx, workspaceID, gapID, v1GapType)

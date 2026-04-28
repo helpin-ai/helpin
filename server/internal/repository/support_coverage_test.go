@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -358,6 +359,64 @@ func TestSupportCoverageRepository_MarkGapDoneSnapshotsEvidenceAndRejectsClosedG
 	}
 	if err := repo.MarkGapDone(ctx, "ws-1", "gap-done", "doc-2", evidence30d); err == nil {
 		t.Fatal("expected second MarkGapDone on closed gap to fail")
+	}
+}
+
+func TestSupportCoverageRepository_MarkGapRejectedSnapshotsReasonAndRejectsClosedGap(t *testing.T) {
+	db := setupSupportCoverageTestDB(t)
+	repo := NewSupportCoverageRepository(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	_, _, err := repo.UpsertGapByDedupeKey(ctx, &model.SupportCoverageGap{
+		ID:          "gap-reject",
+		WorkspaceID: "ws-1",
+		DedupeKey:   "reject-test",
+		FirstSeenAt: now,
+		LastSeenAt:  now,
+	})
+	if err != nil {
+		t.Fatalf("seed gap: %v", err)
+	}
+	for i := 0; i < 3; i++ {
+		if err := repo.CreateEvidence(ctx, &model.SupportGapEvidence{
+			GapID:        "gap-reject",
+			WorkspaceID:  "ws-1",
+			EvidenceType: model.SupportEventDocsIssueFeedback,
+			Excerpt:      "evidence",
+			CreatedAt:    now.Add(time.Duration(i) * time.Minute),
+		}); err != nil {
+			t.Fatalf("seed evidence: %v", err)
+		}
+	}
+
+	reason := "not a docs problem"
+	evidence30d, err := repo.CountEvidence30d(ctx, "gap-reject")
+	if err != nil {
+		t.Fatalf("CountEvidence30d: %v", err)
+	}
+	if err := repo.MarkGapRejected(ctx, "ws-1", "gap-reject", "user-1", &reason, evidence30d); err != nil {
+		t.Fatalf("MarkGapRejected: %v", err)
+	}
+
+	var gap model.SupportCoverageGap
+	if err := db.Where("id = ?", "gap-reject").First(&gap).Error; err != nil {
+		t.Fatalf("load gap: %v", err)
+	}
+	if gap.Status != model.SupportCoverageGapStatusRejected {
+		t.Fatalf("status=%q, want rejected", gap.Status)
+	}
+	if gap.RejectionReason == nil || *gap.RejectionReason != reason {
+		t.Fatalf("rejection_reason=%v, want %q", gap.RejectionReason, reason)
+	}
+	if gap.StatusChangedBy == nil || *gap.StatusChangedBy != "user-1" {
+		t.Fatalf("status_changed_by=%v, want user-1", gap.StatusChangedBy)
+	}
+	if gap.ClosedEvidenceCount == nil || *gap.ClosedEvidenceCount != 3 {
+		t.Fatalf("closed_evidence_count=%v, want 3", gap.ClosedEvidenceCount)
+	}
+	if err := repo.MarkGapRejected(ctx, "ws-1", "gap-reject", "user-1", nil, evidence30d); !errors.Is(err, ErrGapAlreadyClosed) {
+		t.Fatalf("second MarkGapRejected error=%v, want ErrGapAlreadyClosed", err)
 	}
 }
 

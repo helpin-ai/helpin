@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -16,6 +17,8 @@ import (
 type SupportCoverageRepository struct {
 	db *gorm.DB
 }
+
+var ErrGapAlreadyClosed = errors.New("gap is no longer open")
 
 // NewSupportCoverageRepository creates a new SupportCoverageRepository.
 func NewSupportCoverageRepository(db *gorm.DB) *SupportCoverageRepository {
@@ -597,7 +600,33 @@ func (r *SupportCoverageRepository) MarkGapDone(ctx context.Context, workspaceID
 		return fmt.Errorf("mark gap done: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return fmt.Errorf("gap not open")
+		return ErrGapAlreadyClosed
+	}
+	return nil
+}
+
+func (r *SupportCoverageRepository) MarkGapRejected(ctx context.Context, workspaceID, gapID, userID string, rejectionReason *string, evidence30d int) error {
+	now := time.Now()
+	updates := map[string]interface{}{
+		"status":                model.SupportCoverageGapStatusRejected,
+		"closed_at":             now,
+		"closed_evidence_count": evidence30d,
+		"status_changed_by":     userID,
+		"status_changed_at":     now,
+		"updated_at":            now,
+	}
+	if rejectionReason != nil {
+		updates["rejection_reason"] = *rejectionReason
+	}
+	result := r.db.WithContext(ctx).
+		Model(&model.SupportCoverageGap{}).
+		Where("id = ? AND workspace_id = ? AND status = ?", gapID, workspaceID, model.SupportCoverageGapStatusOpen).
+		Updates(updates)
+	if result.Error != nil {
+		return fmt.Errorf("mark gap rejected: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrGapAlreadyClosed
 	}
 	return nil
 }

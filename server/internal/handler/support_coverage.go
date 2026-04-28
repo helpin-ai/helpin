@@ -173,8 +173,9 @@ func (h *SupportCoverageHandler) UpdateGapStatus(w http.ResponseWriter, r *http.
 	gapID := chi.URLParam(r, "gapId")
 	userID := middleware.GetUserID(r.Context())
 	var req struct {
-		Status        string `json:"status"`
-		IssueResolved *bool  `json:"issue_resolved"`
+		Status          string  `json:"status"`
+		IssueResolved   *bool   `json:"issue_resolved"`
+		RejectionReason *string `json:"rejection_reason"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -184,7 +185,17 @@ func (h *SupportCoverageHandler) UpdateGapStatus(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusBadRequest, "status is required")
 		return
 	}
-	if err := h.coverageSvc.UpdateGapStatus(r.Context(), wsID, gapID, req.Status, userID, req.IssueResolved); err != nil {
+	var err error
+	if req.Status == model.SupportCoverageGapStatusRejected {
+		err = h.coverageSvc.RejectGap(r.Context(), wsID, gapID, userID, req.RejectionReason)
+	} else {
+		err = h.coverageSvc.UpdateGapStatus(r.Context(), wsID, gapID, req.Status, userID, req.IssueResolved)
+	}
+	if service.IsGapResolutionConflict(err) {
+		writeError(w, http.StatusConflict, "gap is no longer open")
+		return
+	}
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -257,6 +268,10 @@ func (h *SupportCoverageHandler) CreateArticleDraftSuggestion(w http.ResponseWri
 	}
 	suggestion, err := h.draftSvc.GenerateArticleDraft(r.Context(), wsID, gapID, req.TargetSpaceID, req.TargetCollectionID)
 	if err != nil {
+		if service.IsGapResolutionConflict(err) {
+			writeError(w, http.StatusConflict, "gap is no longer open")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
