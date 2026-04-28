@@ -173,11 +173,16 @@ type ShortcutImportStatusProgress struct {
 }
 
 type ShortcutImportStatusResponse struct {
-	ImportID string                       `json:"import_id"`
-	Status   string                       `json:"status"`
-	Progress ShortcutImportStatusProgress `json:"progress"`
-	Result   *ShortcutImportResult        `json:"result,omitempty"`
-	Error    *string                      `json:"error,omitempty"`
+	ImportID    string                       `json:"import_id"`
+	Status      string                       `json:"status"`
+	FileName    string                       `json:"file_name,omitempty"`
+	TotalRows   int                          `json:"total_rows,omitempty"`
+	Progress    ShortcutImportStatusProgress `json:"progress"`
+	Result      *ShortcutImportResult        `json:"result,omitempty"`
+	Error       *string                      `json:"error,omitempty"`
+	CreatedAt   *time.Time                   `json:"created_at,omitempty"`
+	UpdatedAt   *time.Time                   `json:"updated_at,omitempty"`
+	CompletedAt *time.Time                   `json:"completed_at,omitempty"`
 }
 
 type ShortcutAPIImportPreviewRequest struct {

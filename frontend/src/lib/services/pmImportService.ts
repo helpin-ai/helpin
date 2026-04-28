@@ -78,9 +78,14 @@ export interface ShortcutImportStatusProgress {
 export interface ShortcutImportStatusResponse {
   import_id: string;
   status: 'pending' | 'scanning' | 'ready' | 'processing' | 'completed' | 'failed' | 'canceled';
+  file_name?: string;
+  total_rows?: number;
   progress: ShortcutImportStatusProgress;
   result?: ShortcutImportResult;
   error?: string;
+  created_at?: string;
+  updated_at?: string;
+  completed_at?: string | null;
 }
 
 export interface ShortcutImportExecuteResponse {
@@ -191,5 +196,10 @@ export const pmImportService = {
   getShortcutStatus: (workspaceId: string, importId: string) =>
     statusRequest<ShortcutImportStatusResponse>(
       `/workspaces/${encodeURIComponent(workspaceId)}/import/shortcut/status/${encodeURIComponent(importId)}`,
+    ),
+
+  listShortcutStatuses: (workspaceId: string) =>
+    statusRequest<ShortcutImportStatusResponse[]>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/import/shortcut/status`,
     ),
 };

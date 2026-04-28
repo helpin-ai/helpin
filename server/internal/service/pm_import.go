@@ -274,9 +274,34 @@ func (s *PMImportService) GetShortcutStatus(ctx context.Context, workspaceID, ac
 		}
 		return nil, fmt.Errorf("get import job: %w", err)
 	}
+	return shortcutImportStatusFromJob(job), nil
+}
+
+func (s *PMImportService) ListShortcutStatuses(ctx context.Context, workspaceID, actorID string) ([]model.ShortcutImportStatusResponse, error) {
+	if err := s.requireWorkspaceAdmin(ctx, workspaceID, actorID); err != nil {
+		return nil, err
+	}
+	var jobs []model.PMImportJob
+	if err := s.db.WithContext(ctx).
+		Where("workspace_id = ? AND source = ?", workspaceID, model.PMImportSourceShortcut).
+		Order("created_at DESC").
+		Limit(50).
+		Find(&jobs).Error; err != nil {
+		return nil, fmt.Errorf("list import jobs: %w", err)
+	}
+	statuses := make([]model.ShortcutImportStatusResponse, 0, len(jobs))
+	for _, job := range jobs {
+		statuses = append(statuses, *shortcutImportStatusFromJob(job))
+	}
+	return statuses, nil
+}
+
+func shortcutImportStatusFromJob(job model.PMImportJob) *model.ShortcutImportStatusResponse {
 	resp := &model.ShortcutImportStatusResponse{
-		ImportID: job.ID,
-		Status:   job.Status,
+		ImportID:  job.ID,
+		Status:    job.Status,
+		FileName:  job.FileName,
+		TotalRows: job.TotalRows,
 		Progress: model.ShortcutImportStatusProgress{
 			CurrentStep:       job.CurrentStep,
 			StepsCompleted:    job.StepsCompleted,
@@ -284,7 +309,10 @@ func (s *PMImportService) GetShortcutStatus(ctx context.Context, workspaceID, ac
 			EntitiesProcessed: job.EntitiesProcessed,
 			EntitiesTotal:     job.EntitiesTotal,
 		},
-		Error: job.Error,
+		Error:       job.Error,
+		CreatedAt:   &job.CreatedAt,
+		UpdatedAt:   &job.UpdatedAt,
+		CompletedAt: job.CompletedAt,
 	}
 	if job.Result != nil && *job.Result != "" {
 		var result model.ShortcutImportResult
@@ -292,7 +320,7 @@ func (s *PMImportService) GetShortcutStatus(ctx context.Context, workspaceID, ac
 			resp.Result = &result
 		}
 	}
-	return resp, nil
+	return resp
 }
 
 func (s *PMImportService) runShortcutImport(jobID, workspaceID, actorID string, csvData []byte, req model.ShortcutImportExecuteRequest, apiToken string) {
