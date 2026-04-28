@@ -26,7 +26,7 @@ env:
 jobs:
   deploy-production:
     name: Deploy to Production (helpin.email)
-    runs-on: ubuntu-latest
+    runs-on: arc-runners-helpin-ai
     steps:
       - uses: actions/checkout@v4
 

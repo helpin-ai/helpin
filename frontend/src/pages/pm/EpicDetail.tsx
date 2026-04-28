@@ -7,11 +7,14 @@ import {
   ArrowLeft02Icon,
   Calendar03Icon,
   ArrowRight01Icon,
+  AttachmentIcon,
   FavouriteIcon,
+  Link01Icon,
   Loading01Icon,
   PencilEdit01Icon,
   PlusSignIcon,
   Target01Icon,
+  Upload01Icon,
   UserIcon,
   UserGroupIcon,
   ArchiveRestoreIcon,
@@ -62,6 +65,8 @@ import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
 import { useRegisterPageContext } from '@/components/command-bar/pageContext';
+import { ExternalLinks } from '@/components/pm/ExternalLinks';
+import { pmExternalLinkService } from '@/lib/services/pmExternalLinkService';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/epics/$epicId');
 
@@ -187,7 +192,12 @@ export function EpicDetailPage() {
   const [movingTasks, setMovingTasks] = useState(false);
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
   const [editingDescription, setEditingDescription] = useState(false);
+  const [showExternalLinks, setShowExternalLinks] = useState(false);
+  const [panelDragging, setPanelDragging] = useState(false);
   const savedDescriptionRef = useRef('');
+  const openFilePickerRef = useRef<(() => void) | null>(null);
+  const uploadFilesRef = useRef<((files: FileList | File[]) => Promise<void>) | null>(null);
+  const dragCounterRef = useRef(0);
 
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { canEdit } = usePermissions(access);
@@ -251,6 +261,14 @@ export function EpicDetailPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Auto-show external links if they exist
+  useEffect(() => {
+    if (!workspaceId || !epic?.epic?.id) return;
+    pmExternalLinkService.listByEntity(workspaceId, 'epic', epic.epic.id).then(({ data }) => {
+      if (data && data.length > 0) setShowExternalLinks(true);
+    });
+  }, [workspaceId, epic?.epic?.id]);
 
   // Auto-save debounce
   useEffect(() => {
@@ -645,7 +663,36 @@ export function EpicDetailPage() {
       </div>
 
       {/* ── Two-column layout ───────────────────────────────────── */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[1fr_300px]">
+      <div
+        className="relative grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[1fr_300px]"
+        onDragEnter={(e) => {
+          e.preventDefault();
+          dragCounterRef.current++;
+          if (e.dataTransfer.types.includes('Files')) setPanelDragging(true);
+        }}
+        onDragOver={(e) => e.preventDefault()}
+        onDragLeave={() => {
+          dragCounterRef.current--;
+          if (dragCounterRef.current === 0) setPanelDragging(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          dragCounterRef.current = 0;
+          setPanelDragging(false);
+          if (e.dataTransfer.files.length > 0) {
+            uploadFilesRef.current?.(e.dataTransfer.files);
+          }
+        }}
+      >
+        {panelDragging && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+            <div className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-primary px-10 py-8">
+              <Upload01Icon className="h-8 w-8 text-primary" />
+              <p className="text-sm font-medium text-foreground">Drop files to attach</p>
+              <p className="text-xs text-muted-foreground">Max 10MB per file</p>
+            </div>
+          </div>
+        )}
         {/* ── Left column ────────────────────────────────────────── */}
         <div className="min-h-0 overflow-y-auto px-8 py-6">
           {/* Title */}
@@ -704,6 +751,38 @@ export function EpicDetailPage() {
             )}
           </div>
 
+          {/* Action bar */}
+          {canEdit && (
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                  showExternalLinks
+                    ? 'border-primary/30 bg-primary/10 text-primary'
+                    : 'border-border/60 text-muted-foreground hover:bg-accent'
+                }`}
+                onClick={() => setShowExternalLinks((v) => !v)}
+              >
+                <Link01Icon className="h-3 w-3" />
+                External Links
+              </button>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 rounded-full border border-border/60 px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-accent transition-colors cursor-pointer"
+                onClick={() => openFilePickerRef.current?.()}
+              >
+                <AttachmentIcon className="h-3 w-3" />
+                Attach Files
+              </button>
+            </div>
+          )}
+
+          {showExternalLinks && (
+            <div className="mt-4">
+              <ExternalLinks workspaceId={workspaceId!} entityType="epic" entityId={epic.epic.id} />
+            </div>
+          )}
+
           <div className="mt-6">
             <Attachments
               workspaceId={workspaceId!}
@@ -711,6 +790,8 @@ export function EpicDetailPage() {
               entityId={epic.epic.id}
               memberNameMap={assignableMemberNames}
               onDeleteAttachment={handleDescriptionAttachmentDelete}
+              onFilePickerReady={(fn) => { openFilePickerRef.current = fn; }}
+              onUploadReady={(fn) => { uploadFilesRef.current = fn; }}
             />
           </div>
 

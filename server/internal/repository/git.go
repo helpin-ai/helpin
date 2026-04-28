@@ -570,6 +570,22 @@ func (r *TaskGitLinkRepository) ListByTask(ctx context.Context, workspaceID, sto
 	return links, nil
 }
 
+// ListOpenPullRequests returns task links that still believe their PR is open.
+func (r *TaskGitLinkRepository) ListOpenPullRequests(ctx context.Context, limit int) ([]model.TaskGitLink, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 200
+	}
+	var links []model.TaskGitLink
+	if err := r.db.WithContext(ctx).
+		Where("provider = ? AND pr_number IS NOT NULL AND COALESCE(pr_status, 'open') = ?", "github", "open").
+		Order("updated_at ASC").
+		Limit(limit).
+		Find(&links).Error; err != nil {
+		return nil, fmt.Errorf("list open pull request git links: %w", err)
+	}
+	return links, nil
+}
+
 // GetByBranch returns a link by repo+branch.
 func (r *TaskGitLinkRepository) GetByBranch(ctx context.Context, workspaceID, repo, branch string) (*model.TaskGitLink, error) {
 	var link model.TaskGitLink

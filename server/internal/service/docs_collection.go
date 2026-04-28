@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/ordering"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
@@ -58,11 +59,12 @@ type DocsCollectionService struct {
 	translationRepo *repository.DocsHelpcenterTranslationRepository
 	translationSvc  *DocsHelpcenterTranslationService
 	wsPublisher     *websocket.Publisher
+	useSortKey      bool
 }
 
 // NewDocsCollectionService creates a new DocsCollectionService.
-func NewDocsCollectionService(collectionRepo *repository.DocsCollectionRepository, spaceRepo *repository.DocsSpaceRepository, wsPublisher *websocket.Publisher) *DocsCollectionService {
-	return &DocsCollectionService{collectionRepo: collectionRepo, spaceRepo: spaceRepo, wsPublisher: wsPublisher}
+func NewDocsCollectionService(collectionRepo *repository.DocsCollectionRepository, spaceRepo *repository.DocsSpaceRepository, wsPublisher *websocket.Publisher, useSortKey bool) *DocsCollectionService {
+	return &DocsCollectionService{collectionRepo: collectionRepo, spaceRepo: spaceRepo, wsPublisher: wsPublisher, useSortKey: useSortKey}
 }
 
 func (s *DocsCollectionService) SetTranslationService(translationSvc *DocsHelpcenterTranslationService) {
@@ -144,6 +146,16 @@ func (s *DocsCollectionService) Create(ctx context.Context, workspaceID, spaceID
 		Icon:               req.Icon,
 		Position:           nextPos,
 		CreatedBy:          userID,
+	}
+
+	if s.useSortKey {
+		lastKey, err := s.collectionRepo.LastSortKeyInBucket(ctx, spaceID, parentID)
+		if err != nil {
+			slog.ErrorContext(ctx, "last collection sort key failed", "error", err)
+		}
+		if key, err := ordering.Between(lastKey, ""); err == nil {
+			coll.SortKey = key
+		}
 	}
 	created, err := s.collectionRepo.Create(ctx, coll)
 	if err != nil {
@@ -511,6 +523,21 @@ func (s *DocsCollectionService) ReorderCollections(ctx context.Context, spaceID 
 	if err := s.collectionRepo.ReorderSiblings(ctx, spaceID, parentID, req.CollectionIDs); err != nil {
 		return err
 	}
+
+	if s.useSortKey {
+		prevKey := ""
+		for _, id := range req.CollectionIDs {
+			key, err := ordering.Between(prevKey, "")
+			if err != nil {
+				return fmt.Errorf("compute sort key for collection reorder: %w", err)
+			}
+			if err := s.collectionRepo.UpdateSortKey(ctx, id, key); err != nil {
+				return fmt.Errorf("update sort key for collection %s: %w", id, err)
+			}
+			prevKey = key
+		}
+	}
+
 	if space, err := s.spaceRepo.GetByID(ctx, spaceID); err == nil && space != nil {
 		publishWorkspaceEventWithParent(s.wsPublisher, "reordered", "docs_collection", req.CollectionIDs[0], space.WorkspaceID, "", "docs_space", spaceID, nil)
 	}
@@ -543,6 +570,30 @@ func (s *DocsCollectionService) ReorderChildren(ctx context.Context, spaceID str
 	if err := s.collectionRepo.ReorderChildren(ctx, spaceID, parentID, ordered); err != nil {
 		return err
 	}
+
+	// Rebuild sort_keys from scratch for the full submitted mixed list.
+	if s.useSortKey {
+		prevKey := ""
+		for _, child := range ordered {
+			key, err := ordering.Between(prevKey, "")
+			if err != nil {
+				return fmt.Errorf("compute sort key for children reorder: %w", err)
+			}
+			switch child.Kind {
+			case repository.ChildKindCollection:
+				if err := s.collectionRepo.UpdateSortKey(ctx, child.ID, key); err != nil {
+					return fmt.Errorf("update sort key for collection %s: %w", child.ID, err)
+				}
+			case repository.ChildKindArticle:
+				if err := s.docRepo.UpdateSortKey(ctx, child.ID, key); err != nil {
+					// docRepo may be nil if not wired via SetPermanentDeleteDependencies.
+					slog.ErrorContext(ctx, "update sort key for doc in children reorder", "doc_id", child.ID, "error", err)
+				}
+			}
+			prevKey = key
+		}
+	}
+
 	if space, err := s.spaceRepo.GetByID(ctx, spaceID); err == nil && space != nil {
 		publishWorkspaceEventWithParent(s.wsPublisher, "reordered", "docs_children", req.Items[0].ID, space.WorkspaceID, "", "docs_space", spaceID, nil)
 	}

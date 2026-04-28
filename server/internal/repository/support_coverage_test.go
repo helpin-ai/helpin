@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -50,6 +51,10 @@ func setupSupportCoverageTestDB(t *testing.T) *gorm.DB {
 			issue_key TEXT NOT NULL,
 			title TEXT NOT NULL DEFAULT '',
 			gap_count INTEGER NOT NULL DEFAULT 0,
+			cluster_key TEXT,
+			canonical_title TEXT,
+			last_enriched_at DATETIME,
+			cooldown_until DATETIME,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			UNIQUE(workspace_id, issue_key)
@@ -59,6 +64,7 @@ func setupSupportCoverageTestDB(t *testing.T) *gorm.DB {
 			workspace_id TEXT NOT NULL,
 			topic_id TEXT,
 			dedupe_key TEXT NOT NULL,
+			gap_kind TEXT NOT NULL DEFAULT 'content',
 			gap_category TEXT NOT NULL DEFAULT 'unknown',
 			v1_gap_type TEXT NOT NULL DEFAULT 'needs_review',
 			title TEXT NOT NULL DEFAULT '',
@@ -76,6 +82,10 @@ func setupSupportCoverageTestDB(t *testing.T) *gorm.DB {
 			status_changed_by TEXT,
 			status_changed_at DATETIME,
 			issue_resolved BOOLEAN,
+			closed_at DATETIME,
+			closed_evidence_count INTEGER,
+			result_document_id TEXT,
+			rejection_reason TEXT,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
@@ -109,6 +119,8 @@ func setupSupportCoverageTestDB(t *testing.T) *gorm.DB {
 			result_document_id TEXT,
 			result_article_id TEXT,
 			applied_at DATETIME,
+			is_active BOOLEAN NOT NULL DEFAULT 1,
+			superseded_at DATETIME,
 			metadata TEXT NOT NULL DEFAULT '{}',
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -266,6 +278,70 @@ func TestSupportCoverageRepository_CreateSuggestion(t *testing.T) {
 	}
 }
 
+func TestSupportCoverageRepository_ListGapsRanksByRecentEvidence(t *testing.T) {
+	db := setupSupportCoverageTestDB(t)
+	repo := NewSupportCoverageRepository(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	older := now.Add(-31 * 24 * time.Hour)
+	for _, seed := range []struct {
+		id         string
+		dedupeKey  string
+		title      string
+		recentRows int
+		oldRows    int
+	}{
+		{id: "gap-low", dedupeKey: "low", title: "Low evidence", recentRows: 1},
+		{id: "gap-high", dedupeKey: "high", title: "High evidence", recentRows: 3, oldRows: 2},
+	} {
+		if _, _, err := repo.UpsertGapByDedupeKey(ctx, &model.SupportCoverageGap{
+			ID:          seed.id,
+			WorkspaceID: "ws-1",
+			DedupeKey:   seed.dedupeKey,
+			Title:       seed.title,
+			FirstSeenAt: now,
+			LastSeenAt:  now,
+		}); err != nil {
+			t.Fatalf("seed gap %s: %v", seed.id, err)
+		}
+		for i := 0; i < seed.recentRows; i++ {
+			if err := repo.CreateEvidence(ctx, &model.SupportGapEvidence{
+				GapID:        seed.id,
+				WorkspaceID:  "ws-1",
+				EvidenceType: model.SupportEventDocsIssueFeedback,
+				CreatedAt:    now.Add(time.Duration(i) * time.Minute),
+			}); err != nil {
+				t.Fatalf("seed recent evidence: %v", err)
+			}
+		}
+		for i := 0; i < seed.oldRows; i++ {
+			if err := repo.CreateEvidence(ctx, &model.SupportGapEvidence{
+				GapID:        seed.id,
+				WorkspaceID:  "ws-1",
+				EvidenceType: model.SupportEventDocsIssueFeedback,
+				CreatedAt:    older.Add(time.Duration(i) * time.Minute),
+			}); err != nil {
+				t.Fatalf("seed old evidence: %v", err)
+			}
+		}
+	}
+
+	items, total, err := repo.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	if err != nil {
+		t.Fatalf("ListGaps: %v", err)
+	}
+	if total != 2 || len(items) != 2 {
+		t.Fatalf("got total=%d len=%d, want 2", total, len(items))
+	}
+	if items[0].ID != "gap-high" || items[0].Evidence30d != 3 {
+		t.Fatalf("first item id=%s evidence_30d=%d, want gap-high/3", items[0].ID, items[0].Evidence30d)
+	}
+	if items[1].ID != "gap-low" || items[1].Evidence30d != 1 {
+		t.Fatalf("second item id=%s evidence_30d=%d, want gap-low/1", items[1].ID, items[1].Evidence30d)
+	}
+}
+
 func TestSupportCoverageRepository_UpdateGapStatus(t *testing.T) {
 	db := setupSupportCoverageTestDB(t)
 	repo := NewSupportCoverageRepository(db)
@@ -276,13 +352,135 @@ func TestSupportCoverageRepository_UpdateGapStatus(t *testing.T) {
 		FirstSeenAt: time.Now(), LastSeenAt: time.Now(),
 	})
 
-	if err := repo.UpdateGapStatus(ctx, "ws-1", "gap-1", model.SupportCoverageGapStatusIgnored, "user-1", nil); err != nil {
+	if err := repo.UpdateGapStatus(ctx, "ws-1", "gap-1", model.SupportCoverageGapStatusRejected, "user-1", nil); err != nil {
 		t.Fatalf("UpdateGapStatus: %v", err)
+	}
+	var gap model.SupportCoverageGap
+	if err := db.Where("id = ?", "gap-1").First(&gap).Error; err != nil {
+		t.Fatalf("load gap: %v", err)
+	}
+	if gap.ClosedAt == nil || gap.ClosedEvidenceCount == nil || *gap.ClosedEvidenceCount != 1 {
+		t.Fatalf("expected closed metadata, got closed_at=%v closed_evidence_count=%v", gap.ClosedAt, gap.ClosedEvidenceCount)
 	}
 
 	// Wrong workspace returns error.
-	if err := repo.UpdateGapStatus(ctx, "ws-other", "gap-1", model.SupportCoverageGapStatusFixed, "user-1", nil); err == nil {
+	if err := repo.UpdateGapStatus(ctx, "ws-other", "gap-1", model.SupportCoverageGapStatusDone, "user-1", nil); err == nil {
 		t.Error("expected error for wrong workspace")
+	}
+}
+
+func TestSupportCoverageRepository_MarkGapDoneSnapshotsEvidenceAndRejectsClosedGap(t *testing.T) {
+	db := setupSupportCoverageTestDB(t)
+	repo := NewSupportCoverageRepository(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	_, _, err := repo.UpsertGapByDedupeKey(ctx, &model.SupportCoverageGap{
+		ID:          "gap-done",
+		WorkspaceID: "ws-1",
+		DedupeKey:   "done-test",
+		FirstSeenAt: now,
+		LastSeenAt:  now,
+	})
+	if err != nil {
+		t.Fatalf("seed gap: %v", err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := repo.CreateEvidence(ctx, &model.SupportGapEvidence{
+			GapID:        "gap-done",
+			WorkspaceID:  "ws-1",
+			EvidenceType: model.SupportEventHumanReplyAfterAI,
+			Excerpt:      "evidence",
+			CreatedAt:    now.Add(time.Duration(i) * time.Minute),
+		}); err != nil {
+			t.Fatalf("seed evidence: %v", err)
+		}
+	}
+
+	evidence30d, err := repo.CountEvidence30d(ctx, "gap-done")
+	if err != nil {
+		t.Fatalf("CountEvidence30d: %v", err)
+	}
+	if evidence30d != 2 {
+		t.Fatalf("evidence30d=%d, want 2", evidence30d)
+	}
+	if err := repo.MarkGapDone(ctx, "ws-1", "gap-done", "doc-1", evidence30d); err != nil {
+		t.Fatalf("MarkGapDone: %v", err)
+	}
+
+	var gap model.SupportCoverageGap
+	if err := db.Where("id = ?", "gap-done").First(&gap).Error; err != nil {
+		t.Fatalf("load gap: %v", err)
+	}
+	if gap.Status != model.SupportCoverageGapStatusDone {
+		t.Fatalf("status=%q, want done", gap.Status)
+	}
+	if gap.ResultDocumentID == nil || *gap.ResultDocumentID != "doc-1" {
+		t.Fatalf("result_document_id=%v, want doc-1", gap.ResultDocumentID)
+	}
+	if gap.ClosedEvidenceCount == nil || *gap.ClosedEvidenceCount != 2 {
+		t.Fatalf("closed_evidence_count=%v, want 2", gap.ClosedEvidenceCount)
+	}
+	if err := repo.MarkGapDone(ctx, "ws-1", "gap-done", "doc-2", evidence30d); err == nil {
+		t.Fatal("expected second MarkGapDone on closed gap to fail")
+	}
+}
+
+func TestSupportCoverageRepository_MarkGapRejectedSnapshotsReasonAndRejectsClosedGap(t *testing.T) {
+	db := setupSupportCoverageTestDB(t)
+	repo := NewSupportCoverageRepository(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	_, _, err := repo.UpsertGapByDedupeKey(ctx, &model.SupportCoverageGap{
+		ID:          "gap-reject",
+		WorkspaceID: "ws-1",
+		DedupeKey:   "reject-test",
+		FirstSeenAt: now,
+		LastSeenAt:  now,
+	})
+	if err != nil {
+		t.Fatalf("seed gap: %v", err)
+	}
+	for i := 0; i < 3; i++ {
+		if err := repo.CreateEvidence(ctx, &model.SupportGapEvidence{
+			GapID:        "gap-reject",
+			WorkspaceID:  "ws-1",
+			EvidenceType: model.SupportEventDocsIssueFeedback,
+			Excerpt:      "evidence",
+			CreatedAt:    now.Add(time.Duration(i) * time.Minute),
+		}); err != nil {
+			t.Fatalf("seed evidence: %v", err)
+		}
+	}
+
+	reason := "not a docs problem"
+	evidence30d, err := repo.CountEvidence30d(ctx, "gap-reject")
+	if err != nil {
+		t.Fatalf("CountEvidence30d: %v", err)
+	}
+	if err := repo.MarkGapRejected(ctx, "ws-1", "gap-reject", "user-1", &reason, evidence30d); err != nil {
+		t.Fatalf("MarkGapRejected: %v", err)
+	}
+
+	var gap model.SupportCoverageGap
+	if err := db.Where("id = ?", "gap-reject").First(&gap).Error; err != nil {
+		t.Fatalf("load gap: %v", err)
+	}
+	if gap.Status != model.SupportCoverageGapStatusRejected {
+		t.Fatalf("status=%q, want rejected", gap.Status)
+	}
+	if gap.RejectionReason == nil || *gap.RejectionReason != reason {
+		t.Fatalf("rejection_reason=%v, want %q", gap.RejectionReason, reason)
+	}
+	if gap.StatusChangedBy == nil || *gap.StatusChangedBy != "user-1" {
+		t.Fatalf("status_changed_by=%v, want user-1", gap.StatusChangedBy)
+	}
+	if gap.ClosedEvidenceCount == nil || *gap.ClosedEvidenceCount != 3 {
+		t.Fatalf("closed_evidence_count=%v, want 3", gap.ClosedEvidenceCount)
+	}
+	if err := repo.MarkGapRejected(ctx, "ws-1", "gap-reject", "user-1", nil, evidence30d); !errors.Is(err, ErrGapAlreadyClosed) {
+		t.Fatalf("second MarkGapRejected error=%v, want ErrGapAlreadyClosed", err)
 	}
 }
 

@@ -4,6 +4,7 @@ export type NavItem = {
   link: string;
   label: string;
   icon: IconComponent;
+  badge?: number;
 };
 
 export type NavGroup = {

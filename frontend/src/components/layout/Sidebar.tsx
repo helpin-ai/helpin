@@ -12,6 +12,7 @@ import { automationService } from '@/lib/services/automationService';
 import { queryKeys } from '@/lib/queryKeys';
 import { getInitials } from '@/lib/utils';
 import { buildSupportInboxSearch } from '@/lib/supportInboxRouting';
+import { ACTIVE_RUN_STATUSES, isPausedAgentRun } from '@/components/pm/agentRunConstants';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import {
   Sidebar as ShellSidebar,
@@ -91,7 +92,7 @@ export function Sidebar() {
   });
   const agentRuns = Array.isArray(agentRunsData?.data) ? agentRunsData.data : [];
   const agentAttentionCount = useMemo(
-    () => agentRuns.filter((run) => run.status === 'paused' || run.approval_state === 'pending').length,
+    () => agentRuns.filter((run) => ACTIVE_RUN_STATUSES.has(run.status) && isPausedAgentRun(run)).length,
     [agentRuns],
   );
 
@@ -160,11 +161,11 @@ export function Sidebar() {
   };
 
   const panelNavGroups = useMemo(
-    () => buildPanelNavGroups(wsSlug, canManageSettings, permissionSet),
-    [wsSlug, canManageSettings, permissionSet],
+    () => buildPanelNavGroups(wsSlug, canManageSettings, permissionSet, agentAttentionCount),
+    [wsSlug, canManageSettings, permissionSet, agentAttentionCount],
   );
   const currentNavGroups = panelNavGroups[activeRail];
-  const railItems = useMemo(() => buildRailItems(wsSlug, totalSupportUnread, agentAttentionCount), [wsSlug, totalSupportUnread, agentAttentionCount]);
+  const railItems = useMemo(() => buildRailItems(wsSlug, totalSupportUnread), [wsSlug, totalSupportUnread]);
 
   useEffect(() => {
     if (activeRail !== 'settings') {

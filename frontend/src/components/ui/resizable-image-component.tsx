@@ -192,7 +192,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
   const currentAlignment = alignment || 'center';
 
   return (
-    <NodeViewWrapper className={`relative my-2 flex ${ALIGNMENT_CLASS[currentAlignment] ?? 'justify-center'}`} data-drag-handle>
+    <NodeViewWrapper className={`docs-image-block relative my-6 flex ${ALIGNMENT_CLASS[currentAlignment] ?? 'justify-center'}`} data-drag-handle>
       <div
         ref={containerRef}
         className="group/img relative inline-block max-w-full"

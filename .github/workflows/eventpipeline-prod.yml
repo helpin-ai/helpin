@@ -18,7 +18,7 @@ env:
 
 jobs:
   version:
-    runs-on: ubuntu-latest
+    runs-on: arc-runners-helpin-ai
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
@@ -45,9 +45,15 @@ jobs:
 
   build-rust:
     needs: version
-    runs-on: ubuntu-latest
+    runs-on: arc-runners-helpin-ai
     steps:
       - uses: actions/checkout@v4
+      - name: Prepare Docker socket
+        run: |
+          if [ -S /var/run/docker.sock ]; then
+            sudo chmod 666 /var/run/docker.sock || true
+          fi
+          docker version
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -69,9 +75,15 @@ jobs:
 
   build-kstreams:
     needs: version
-    runs-on: ubuntu-latest
+    runs-on: arc-runners-helpin-ai
     steps:
       - uses: actions/checkout@v4
+      - name: Prepare Docker socket
+        run: |
+          if [ -S /var/run/docker.sock ]; then
+            sudo chmod 666 /var/run/docker.sock || true
+          fi
+          docker version
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -107,7 +119,7 @@ jobs:
 
   release:
     needs: [version, build-rust, build-kstreams]
-    runs-on: ubuntu-latest
+    runs-on: arc-runners-helpin-ai
     steps:
       - uses: actions/checkout@v4
         with:

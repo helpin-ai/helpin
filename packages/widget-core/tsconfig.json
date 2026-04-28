@@ -5,7 +5,12 @@
     "declaration": true,
     "declarationMap": true,
     "jsxImportSource": "preact",
-    "jsx": "react-jsx"
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "@helpin-ai/shared": ["../shared/src/index.ts"]
+    }
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/__tests__/**"]
 }

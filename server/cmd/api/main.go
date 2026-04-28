@@ -231,6 +231,7 @@ func main() {
 			&model.PMTeamRepoDefault{},
 			&model.TaskDeliveryTarget{},
 			&model.TaskGitLink{},
+			&model.GitWebhookEvent{},
 			&model.AgentHandoff{},
 			&model.PMTaskTemplate{},
 			&model.PMRecurringTemplate{},
@@ -548,6 +549,7 @@ func main() {
 	gitRepositoryRepo := repository.NewGitRepositoryRepository(db)
 	taskDeliveryTargetRepo := repository.NewTaskDeliveryTargetRepository(db)
 	taskGitLinkRepo := repository.NewTaskGitLinkRepository(db)
+	gitWebhookEventRepo := repository.NewGitWebhookEventRepository(db)
 	agentHandoffRepo := repository.NewAgentHandoffRepository(db)
 	docsSpaceRepo := repository.NewDocsSpaceRepository(db)
 	docsCollectionRepo := repository.NewDocsCollectionRepository(db, cfg.DocsOrderingUseSortKey)
@@ -849,8 +851,8 @@ func main() {
 	}
 
 	docsSpaceService := service.NewDocsSpaceService(docsSpaceRepo, wsPublisher)
-	docsCollectionService := service.NewDocsCollectionService(docsCollectionRepo, docsSpaceRepo, wsPublisher)
-	docsDocumentService := service.NewDocsDocumentService(docsDocumentRepo, docsSpaceRepo, wsPublisher)
+	docsCollectionService := service.NewDocsCollectionService(docsCollectionRepo, docsSpaceRepo, wsPublisher, cfg.DocsOrderingUseSortKey)
+	docsDocumentService := service.NewDocsDocumentService(docsDocumentRepo, docsSpaceRepo, wsPublisher, cfg.DocsOrderingUseSortKey)
 	docsContentService := service.NewDocsContentService(docsContentRepo, docsDocumentRepo, wsPublisher)
 	docsVersionService := service.NewDocsVersionService(docsVersionRepo, docsContentRepo, docsDocumentRepo, wsPublisher)
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, pmTaskRepo, docsDocumentRepo, wsPublisher)
@@ -1024,6 +1026,7 @@ func main() {
 	supportEventRepo := repository.NewSupportEventRepository(db)
 	supportCoverageRepo := repository.NewSupportCoverageRepository(db)
 	supportCoverageService := service.NewSupportCoverageService(supportCoverageRepo)
+	supportCoverageService.SetTemporalClient(temporalClient)
 	supportEventService := service.NewSupportEventService(supportEventRepo, supportCoverageService)
 	supportEventRecorder := service.NewSupportEventAsyncRecorder(supportEventService, 250)
 	supportAIService.SetSupportEventRecorder(supportEventRecorder)
@@ -1108,7 +1111,7 @@ func main() {
 		EmailImageProxy:     handler.NewEmailImageProxyHandler(),
 		AdminWebhookEvent:   handler.NewAdminWebhookEventHandler(supportEmailWebhookEventRepo),
 		AdminEmailQueue:     handler.NewAdminEmailQueueHandler(emailFallbackService),
-		Git:                 handler.NewGitHandler(gitService),
+		Git:                 handler.NewGitHandler(gitService, gitWebhookEventRepo),
 		Notification:        handler.NewNotificationHandler(notificationService, followerService),
 		UserNotifSettings:   handler.NewUserNotificationSettingsHandler(userNotifSettingsService),
 		CRMContact:          handler.NewCRMContactHandler(crmContactService),
@@ -1184,6 +1187,9 @@ func main() {
 		slog.Error("failed to remove legacy agent schedule workflows", "error", err)
 	} else if terminated > 0 {
 		slog.Info("removed legacy agent schedule workflows", "count", terminated)
+	}
+	if err := supportCoverageService.EnsureDailyEnrichment(context.Background()); err != nil {
+		slog.Error("failed to ensure coverage gap daily enrichment workflow", "error", err)
 	}
 
 	// Start sprint automation cron workflow via Temporal (replaces local ticker).

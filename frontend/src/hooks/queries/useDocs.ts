@@ -859,6 +859,19 @@ export function useReorderDocsChildren(wsId: string) {
   })
 }
 
+export function useMoveDocsItem(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (data: import('../../lib/docsTypes').MoveDocsItemRequest) =>
+      unwrap(await docsService.moveItem(wsId, data)),
+    onSuccess: () => {
+      // Invalidate all docs-related queries since a move can affect
+      // multiple buckets, collections, and tree structures.
+      qc.invalidateQueries({ queryKey: ['docs', wsId] })
+    },
+  })
+}
+
 export function useUpdateDocsHelpcenterConfig(wsId: string) {
   const qc = useQueryClient()
   return useMutation({

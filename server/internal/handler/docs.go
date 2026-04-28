@@ -568,6 +568,30 @@ func (h *DocsHandler) ReorderChildren(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "order updated"})
 }
 
+// MoveItem moves a single doc or collection to a specific position
+// within a bucket using fractional sort keys.
+func (h *DocsHandler) MoveItem(w http.ResponseWriter, r *http.Request) {
+	wsID := middleware.GetWorkspaceID(r.Context())
+	var req model.MoveDocsItemRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.documentSvc.MoveItem(r.Context(), wsID, req); err != nil {
+		if errors.Is(err, service.ErrCrossSpaceMove) {
+			writeError(w, http.StatusBadRequest, "cross-space moves not supported")
+			return
+		}
+		if errors.Is(err, service.ErrStaleNeighbors) || errors.Is(err, service.ErrBetweenFailed) {
+			writeError(w, http.StatusConflict, "neighbors changed; retry")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "move failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "item moved"})
+}
+
 // GeneratePreviewToken creates a short-lived JWT for previewing a document in the help center app.
 func (h *DocsHandler) GeneratePreviewToken(w http.ResponseWriter, r *http.Request) {
 	wsID := r.URL.Query().Get("workspace_id")
