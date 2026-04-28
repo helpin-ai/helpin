@@ -19,7 +19,12 @@ vi.mock('@tanstack/react-virtual', () => ({
 }));
 
 import { CodingTranscriptPane } from '../CodingSession/CodingTranscriptPane';
-import type { AgentRunArtifact, CodingSession, CodingSessionInteraction } from '@/lib/pmTypes';
+import type {
+  AgentRunArtifact,
+  CodingSession,
+  CodingSessionInteraction,
+  CodingSessionLiveTurnSegment,
+} from '@/lib/pmTypes';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -455,6 +460,43 @@ describe('CodingInterruptionPanel', () => {
 
     expect(container.querySelector('strong')?.textContent).toBe('Approved');
     expect(container.querySelector('ul li')?.textContent).toBe('keep current scope');
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it('renders incomplete markdown formatting in live assistant transcript messages', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const liveSegments: CodingSessionLiveTurnSegment[] = [
+      {
+        segment_id: 'segment-1',
+        kind: 'assistant_message',
+        assistant_message: {
+          message_id: 'message-live-1',
+          content: 'Working through **streaming markdown',
+          started_at: '2026-03-31T10:00:00Z',
+          status: 'streaming',
+          tool_calls: [],
+        },
+      },
+    ];
+
+    act(() => {
+      root.render(
+        <CodingTranscriptPane
+          transcriptMessages={[]}
+          liveAssistantMessage={null}
+          liveReasoningMessage={null}
+          liveTurnSegments={liveSegments}
+        />,
+      );
+    });
+
+    expect(container.querySelector('strong')?.textContent).toBe('streaming markdown');
+    expect(container.textContent).not.toContain('**streaming markdown');
 
     act(() => {
       root.unmount();

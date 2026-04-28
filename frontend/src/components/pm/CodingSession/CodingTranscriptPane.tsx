@@ -838,18 +838,18 @@ function toolCallTimelineKey(toolCall: CodingSessionLiveToolCall) {
 
 const CONTENT_COLLAPSE_CHAR_THRESHOLD = 600;
 
-function CollapsibleMarkdown({ content }: { content: string }) {
+function CollapsibleMarkdown({ content, streaming = false }: { content: string; streaming?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const isLong = content.length > CONTENT_COLLAPSE_CHAR_THRESHOLD;
 
   if (!isLong) {
-    return <MarkdownContent content={content} className="text-[13px] leading-6 text-foreground" />;
+    return <MarkdownContent content={content} className="text-[13px] leading-6 text-foreground" streaming={streaming} />;
   }
 
   return (
     <div>
       <div className={cn('relative', !expanded && 'max-h-[10rem] overflow-hidden')}>
-        <MarkdownContent content={content} className="text-[13px] leading-6 text-foreground" />
+        <MarkdownContent content={content} className="text-[13px] leading-6 text-foreground" streaming={streaming} />
         {!expanded && (
           <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-card to-transparent" />
         )}
@@ -901,7 +901,7 @@ function AssistantTimelineRow({
         {placeholder ? (
           <div className="whitespace-pre-wrap text-[13px] leading-6 text-muted-foreground">{content}</div>
         ) : (
-          <CollapsibleMarkdown content={content} />
+          <CollapsibleMarkdown content={content} streaming={live && streaming} />
         )}
       </div>
     </div>
