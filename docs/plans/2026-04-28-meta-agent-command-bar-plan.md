@@ -62,9 +62,10 @@ Verification completed:
 Migration note:
 
 - New dbmigrate files are forward-only and do not rename or edit applied production migrations:
-  - `202604280004_command_bar_plans.sql`
-  - `202604280005_command_bar_crm_contact_targets.sql`
-  - `202604280006_command_bar_unmet_intent_review.sql`
+  - `202604280004_command_bar_unmet_intents.sql`
+  - `202604280005_command_bar_plans.sql`
+  - `202604280006_command_bar_crm_contact_targets.sql`
+  - `202604280007_command_bar_unmet_intent_review.sql`
 
 Known unrelated verification noise:
 
