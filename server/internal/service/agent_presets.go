@@ -28,6 +28,7 @@ func builtInPresetKeys() []string {
 		model.AgentPresetSupportAgent,
 		model.AgentPresetCodeBuilder,
 		model.AgentPresetReviewAgent,
+		model.AgentPresetResearcher,
 	}
 }
 
@@ -68,6 +69,8 @@ func normalizePresetKey(key string) string {
 		return model.AgentPresetCodeBuilder
 	case "reviewer", model.AgentPresetReviewAgent:
 		return model.AgentPresetReviewAgent
+	case "research", "doc_researcher", "general_researcher", model.AgentPresetResearcher:
+		return model.AgentPresetResearcher
 	default:
 		return strings.TrimSpace(key)
 	}
@@ -98,6 +101,8 @@ func defaultPresetVersionKeyForPresetKey(presetKey string) string {
 		return "code_builder_local_commit_delivery"
 	case model.AgentPresetReviewAgent:
 		return "review_agent_interactive_loop"
+	case model.AgentPresetResearcher:
+		return "researcher_default"
 	default:
 		return ""
 	}
@@ -280,6 +285,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	supportPrompt := defaultSystemPromptForPreset(model.AgentPresetSupportAgent)
 	codeBuilderPrompt := defaultSystemPromptForPreset(model.AgentPresetCodeBuilder)
 	reviewPrompt := defaultSystemPromptForPreset(model.AgentPresetReviewAgent)
+	researcherPrompt := "You are Researcher, a one-shot research and synthesis agent. Use web, document, CRM, and workspace context tools to answer or update the requested target. Stay within the confirmed command-bar step instructions and do not create reusable agents unless the user explicitly promotes the run afterward."
 	epicPlannerTools := filterPresetTools(productPlannerProfile.AllowedTools,
 		worker.ToolUpdatePlan,
 		worker.ToolPublishPRDDraft,
@@ -352,7 +358,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          []string{"list_deals", "update_deal_stage", "add_deal_note", "list_contacts", "list_buyer_signals", "list_documents", "list_collections", "read_document", "search_documents"},
 			AllowedCommands:       []string{},
-			AllowedTargetTypes:    []string{"crm_deal", "support_conversation", "document", "workspace"},
+			AllowedTargetTypes:    []string{"crm_deal", "crm_contact", "support_conversation", "document", "workspace"},
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeInteractive,
 			SupportedModes:        supportedModesForRuntime(productPlannerProfile.RuntimeKind),
@@ -423,6 +429,26 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			DefaultInvocationMode: model.InvocationModeInteractive,
 			SupportedModes:        supportedModesForRuntime("codex"),
 			SystemPrompt:          reviewPrompt,
+		},
+		{
+			Key:                   model.AgentPresetResearcher,
+			FamilyKey:             model.AgentPresetResearcher,
+			VersionKey:            defaultPresetVersionKeyForPresetKey(model.AgentPresetResearcher),
+			VersionLabel:          "Default",
+			IsDefaultVersion:      true,
+			Label:                 "Researcher",
+			Description:           "One-shot web, docs, and CRM research for command-bar intents that do not fit narrower presets.",
+			DefaultRole:           "Researcher",
+			RuntimeKind:           productPlannerProfile.RuntimeKind,
+			DefaultTriggerMode:    "manual",
+			AllowedTriggerModes:   []string{"manual"},
+			AllowedTools:          []string{"web_search_brave", "web_search_exa", "fetch_url", "crawl_url", "request_user_input", "request_approval", "update_plan", "list_documents", "list_collections", "read_document", "search_documents", "create_document", "list_deals", "list_contacts", "list_buyer_signals"},
+			AllowedCommands:       []string{},
+			AllowedTargetTypes:    []string{"workspace", "document", "crm_deal", "crm_contact"},
+			ApprovalMode:          "never",
+			DefaultInvocationMode: model.InvocationModeInteractive,
+			SupportedModes:        supportedModesForRuntime(productPlannerProfile.RuntimeKind),
+			SystemPrompt:          &researcherPrompt,
 		},
 	}
 

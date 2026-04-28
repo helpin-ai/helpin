@@ -313,6 +313,36 @@ func (r *AgentRunRepository) GetByIDAny(ctx context.Context, id string) (*model.
 	return &run, nil
 }
 
+// ListByIDs returns runs in a workspace for a set of IDs.
+func (r *AgentRunRepository) ListByIDs(ctx context.Context, workspaceID string, ids []string) ([]model.AgentRun, error) {
+	if len(ids) == 0 {
+		return []model.AgentRun{}, nil
+	}
+	var runs []model.AgentRun
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND id IN ?", workspaceID, ids).
+		Order("created_at ASC").
+		Find(&runs).Error; err != nil {
+		return nil, fmt.Errorf("list agent runs by ids: %w", err)
+	}
+	return runs, nil
+}
+
+// FindByParentRunID returns the first run linked to the given parent run.
+func (r *AgentRunRepository) FindByParentRunID(ctx context.Context, workspaceID, parentRunID string) (*model.AgentRun, error) {
+	var run model.AgentRun
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND parent_run_id = ?", workspaceID, parentRunID).
+		Order("created_at ASC").
+		First(&run).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("find run by parent run id: %w", err)
+	}
+	return &run, nil
+}
+
 // Create creates a new run.
 func (r *AgentRunRepository) Create(ctx context.Context, run *model.AgentRun) error {
 	if err := r.db.WithContext(ctx).Create(run).Error; err != nil {

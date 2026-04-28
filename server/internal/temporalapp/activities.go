@@ -81,6 +81,10 @@ type ReleaseFactsProvider interface {
 	GetTaskContext(ctx context.Context, workspaceID string, req model.GetTaskContextRequest) (*model.GetTaskContextResult, error)
 }
 
+type CommandBarPlanAdvancer interface {
+	AdvanceCommandBarPlanAfterRun(ctx context.Context, completedRunID string) (*model.AgentRun, error)
+}
+
 // AgentRunActivities contains the Temporal activities that execute an agent run.
 type AgentRunActivities struct {
 	runRepo             *repository.AgentRunRepository
@@ -124,6 +128,7 @@ type AgentRunActivities struct {
 	runtimes            *workerpkg.RuntimeRegistry
 	githubApp           *githubapp.Client
 	runEngine           *RunEngine
+	commandBarAdvancer  CommandBarPlanAdvancer
 }
 
 // NewAgentRunActivities creates the activity set used by shared Temporal workers.
@@ -169,6 +174,7 @@ func NewAgentRunActivities(
 	runtimes *workerpkg.RuntimeRegistry,
 	githubApp *githubapp.Client,
 	runEngine *RunEngine,
+	commandBarAdvancer CommandBarPlanAdvancer,
 ) *AgentRunActivities {
 	return &AgentRunActivities{
 		runRepo:             runRepo,
@@ -212,6 +218,7 @@ func NewAgentRunActivities(
 		runtimes:            runtimes,
 		githubApp:           githubApp,
 		runEngine:           runEngine,
+		commandBarAdvancer:  commandBarAdvancer,
 	}
 }
 
@@ -333,6 +340,14 @@ func (a *AgentRunActivities) PrepareRunActivity(ctx context.Context, runID strin
 
 	recordActivityHeartbeatSafe(ctx, "prepared")
 	return nil
+}
+
+func (a *AgentRunActivities) AdvanceCommandBarPlanActivity(ctx context.Context, runID string) error {
+	if a == nil || a.commandBarAdvancer == nil {
+		return nil
+	}
+	_, err := a.commandBarAdvancer.AdvanceCommandBarPlanAfterRun(ctx, runID)
+	return err
 }
 
 // ExecuteRunActivity executes the agent loop on a shared runner workspace.

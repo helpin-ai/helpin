@@ -70,6 +70,7 @@ import { ContactHeader } from '@/components/crm/contact-detail/ContactHeader';
 import { ContactComposer } from '@/components/crm/contact-detail/ContactComposer';
 import { RailSection } from '@/components/crm/contact-detail/RailSection';
 import { CompanyRailCard } from '@/components/crm/contact-detail/CompanyRailCard';
+import { useRegisterPageContext } from '@/components/command-bar/pageContext';
 import { crmSearchService } from '@/lib/services/crmService';
 import { supportService } from '@/lib/services/supportService';
 import { useTitle } from '@/hooks/useTitle';
@@ -280,6 +281,11 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
 
   // ── Data hooks ──
   const { data: contact, isLoading } = useContact(wsId, contactId);
+  useRegisterPageContext(contact ? {
+    entity_type: 'crm_contact',
+    entity_id: contact.id,
+    display_title: [contact.first_name, contact.last_name].filter(Boolean).join(' ') || contact.email || 'CRM contact',
+  } : null, 20);
   const { data: emailsData } = useContactEmails(wsId, contactId);
   const { data: meetingsData } = useContactCalendar(wsId, contactId);
   const { data: activitiesData, refetch: refetchActivities } = useContactActivities(wsId, contactId);

@@ -71,6 +71,15 @@ func AgentRunWorkflow(ctx workflow.Context, input AgentRunWorkflowInput) error {
 			MaximumAttempts: 1,
 		},
 	}
+	advanceAO := workflow.ActivityOptions{
+		StartToCloseTimeout: time.Minute,
+		RetryPolicy: &temporal.RetryPolicy{
+			InitialInterval:    5 * time.Second,
+			BackoffCoefficient: 2,
+			MaximumInterval:    time.Minute,
+			MaximumAttempts:    5,
+		},
+	}
 
 	currentStage = "preparing"
 	prepareCtx := workflow.WithActivityOptions(ctx, prepareAO)
@@ -190,6 +199,9 @@ func AgentRunWorkflow(ctx workflow.Context, input AgentRunWorkflowInput) error {
 	}
 
 	currentStage = "completed"
+	if err := workflow.ExecuteActivity(workflow.WithActivityOptions(ctx, advanceAO), "AgentRunActivities.AdvanceCommandBarPlanActivity", input.RunID).Get(ctx, nil); err != nil {
+		workflow.GetLogger(ctx).Warn("failed to advance command bar plan after retries", "run_id", input.RunID, "error", err)
+	}
 	return nil
 }
 

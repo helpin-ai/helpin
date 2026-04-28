@@ -188,6 +188,7 @@ export interface AgentRunStreamEvent {
 export interface StartAgentRunRequest {
   agent_id?: string;
   additional_context?: string;
+  allowed_tools?: string[];
   base_branch?: string;
   working_branch?: string;
 }
@@ -206,11 +207,16 @@ export interface CommandBarPlanStep {
   agent_name: string;
   target: CommandBarPageContext;
   instructions: string;
+  allowed_tools?: string[];
 }
 
 export interface CommandBarPlan {
+  id?: string;
   steps: CommandBarPlanStep[];
   run_count: number;
+  estimated_runs?: number;
+  max_allowed_runs?: number;
+  guardrails?: Array<{ type: string; severity: string; message: string }>;
 }
 
 export interface CommandBarAgentCandidate {
@@ -248,7 +254,50 @@ export interface CommandBarDispatchRequest {
 }
 
 export interface CommandBarDispatchResponse {
+  plan_id?: string;
+  steps?: CommandBarPlanStep[];
+  run_count?: number;
   runs: AgentRun[];
+}
+
+export interface CommandBarPlanSummary {
+  id: string;
+  status: 'running' | 'completed' | 'failed' | 'cancelled';
+  prompt: string;
+  page_context: CommandBarPageContext;
+  steps: CommandBarPlanStep[];
+  run_ids_by_step: Record<number, string>;
+  current_step_index: number;
+  run_count: number;
+  error_message?: string;
+  cancelled_at?: string;
+  completed_at?: string;
+  created_at: string;
+  updated_at: string;
+  runs?: AgentRun[];
+}
+
+export interface CommandBarPlanListResponse {
+  plans: CommandBarPlanSummary[];
+}
+
+export interface CommandBarCancelPlanResponse {
+  plan: CommandBarPlanSummary;
+  runs?: AgentRun[];
+}
+
+export interface CommandBarRetryPlanResponse {
+  plan: CommandBarPlanSummary;
+  run: AgentRun;
+}
+
+export interface PromoteCommandBarRunRequest {
+  name: string;
+  description?: string;
+}
+
+export interface PromoteCommandBarRunResponse {
+  agent: Agent;
 }
 
 export interface SendAgentRunMessageRequest {

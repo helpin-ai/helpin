@@ -56,6 +56,7 @@ export function SearchCommandPalette({
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const pageContext = usePageContext();
   const addRuns = useCommandBarRunStore((s) => s.addRuns);
+  const addPlan = useCommandBarRunStore((s) => s.addPlan);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResponse>(EMPTY);
   const [searching, setSearching] = useState(false);
@@ -197,13 +198,25 @@ export function SearchCommandPalette({
         toast.error(res.error ?? 'Failed to start command run');
         return;
       }
-      addRuns(res.data.runs);
-      toast.success(res.data.runs.length === 1 ? 'Agent run started' : `${res.data.runs.length} agent runs started`);
+      const steps = res.data.steps ?? intentResult.plan.steps;
+      if (res.data.plan_id) {
+        addPlan({
+          id: res.data.plan_id,
+          steps,
+          runIdsByStep: Object.fromEntries(res.data.runs.map((run, index) => [index, run.id])),
+          status: 'running',
+          prompt: trimmedQuery,
+          currentStepIndex: 0,
+        }, res.data.runs);
+      } else {
+        addRuns(res.data.runs);
+      }
+      toast.success(steps.length > 1 ? `Started step 1 of ${steps.length}` : 'Agent run started');
       onOpenChange(false);
     } finally {
       setDispatching(false);
     }
-  }, [addRuns, intentResult, onOpenChange, pageContext, trimmedQuery, workspace?.id]);
+  }, [addPlan, addRuns, intentResult, onOpenChange, pageContext, trimmedQuery, workspace?.id]);
 
   return (
     <CommandDialog
@@ -244,6 +257,12 @@ export function SearchCommandPalette({
 
         {intentResult?.status === 'plan' && (
           <CommandGroup heading="Plan">
+            {intentResult.plan.guardrails?.map((guardrail, index) => (
+              <CommandItem key={`guardrail-${index}`} value={`guardrail-${index}-${guardrail.message}`} disabled>
+                <Target01Icon className="h-4 w-4 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">{guardrail.message}</span>
+              </CommandItem>
+            ))}
             {intentResult.plan.steps.map((step, index) => (
               <CommandItem
                 key={`${step.agent_id}-${index}`}
@@ -272,7 +291,7 @@ export function SearchCommandPalette({
               <span>
                 {dispatching
                   ? 'Starting runs...'
-                  : `Confirm ${intentResult.plan.run_count}-step plan`}
+                  : `Confirm ${intentResult.plan.estimated_runs ?? intentResult.plan.run_count}-run plan`}
               </span>
             </CommandItem>
           </CommandGroup>

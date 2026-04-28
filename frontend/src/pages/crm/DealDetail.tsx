@@ -27,6 +27,7 @@ import { EntitySummaryCard } from '@/components/crm/EntitySummaryCard';
 import { EmailTimeline } from '@/components/crm/EmailTimeline';
 import { AssociationsList } from '@/components/crm/AssociationsList';
 import { LinkedTasksPanel } from '@/components/crm/LinkedTasksPanel';
+import { useRegisterPageContext } from '@/components/command-bar/pageContext';
 import { useTitle } from '@/hooks/useTitle';
 import type { UpdateCRMDealRequest } from '@/lib/crmTypes';
 
@@ -56,6 +57,11 @@ export function DealDetailPage({ dealId }: { dealId: string }) {
   const navigate = useNavigate();
 
   const { data: deal, isLoading } = useDeal(wsId, dealId);
+  useRegisterPageContext(deal ? {
+    entity_type: 'crm_deal',
+    entity_id: deal.id,
+    display_title: deal.name,
+  } : null, 20);
   const { data: activitiesData, refetch: refetchActivities } = useDealActivities(wsId, dealId);
   const { data: associations, refetch: refetchAssociations } = useDealAssociations(wsId, dealId);
   const { data: pipelines } = usePipelines(wsId);

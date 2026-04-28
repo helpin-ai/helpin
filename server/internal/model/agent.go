@@ -16,6 +16,7 @@ const (
 	AgentPresetSupportAgent = "support_agent"
 	AgentPresetCodeBuilder  = "code_builder"
 	AgentPresetReviewAgent  = "review_agent"
+	AgentPresetResearcher   = "researcher"
 
 	AgentModelProviderAnthropic           = "anthropic"
 	AgentModelProviderOpenAI              = "openai"
@@ -458,6 +459,7 @@ type HandoffAgentRunRequest struct {
 type StartAgentRunRequest struct {
 	AgentID           string                 `json:"agent_id,omitempty"`
 	AdditionalContext *string                `json:"additional_context,omitempty"`
+	AllowedTools      []string               `json:"allowed_tools,omitempty"`
 	BaseBranch        *string                `json:"base_branch,omitempty"`
 	WorkingBranch     *string                `json:"working_branch,omitempty"`
 	Output            *AgentRunOutputContext `json:"output,omitempty"`

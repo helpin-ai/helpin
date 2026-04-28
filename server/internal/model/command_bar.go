@@ -8,6 +8,11 @@ import (
 const (
 	CommandBarParseStatusPlan            = "plan"
 	CommandBarParseStatusNoMatchingAgent = "no_matching_agent"
+
+	CommandBarPlanStatusRunning   = "running"
+	CommandBarPlanStatusCompleted = "completed"
+	CommandBarPlanStatusFailed    = "failed"
+	CommandBarPlanStatusCancelled = "cancelled"
 )
 
 type CommandBarPageContext struct {
@@ -29,11 +34,22 @@ type CommandBarPlanStep struct {
 	AgentName    string                `json:"agent_name"`
 	Target       CommandBarPageContext `json:"target"`
 	Instructions string                `json:"instructions"`
+	AllowedTools []string              `json:"allowed_tools,omitempty"`
 }
 
 type CommandBarPlan struct {
-	Steps    []CommandBarPlanStep `json:"steps"`
-	RunCount int                  `json:"run_count"`
+	ID             string                `json:"id,omitempty"`
+	Steps          []CommandBarPlanStep  `json:"steps"`
+	RunCount       int                   `json:"run_count"`
+	EstimatedRuns  int                   `json:"estimated_runs,omitempty"`
+	MaxAllowedRuns int                   `json:"max_allowed_runs,omitempty"`
+	Guardrails     []CommandBarGuardrail `json:"guardrails,omitempty"`
+}
+
+type CommandBarGuardrail struct {
+	Type     string `json:"type"`
+	Severity string `json:"severity"`
+	Message  string `json:"message"`
 }
 
 type CommandBarParseResponse struct {
@@ -52,7 +68,74 @@ type CommandBarDispatchRequest struct {
 }
 
 type CommandBarDispatchResponse struct {
-	Runs []AgentRun `json:"runs"`
+	PlanID   string               `json:"plan_id,omitempty"`
+	Steps    []CommandBarPlanStep `json:"steps,omitempty"`
+	RunCount int                  `json:"run_count,omitempty"`
+	Runs     []AgentRun           `json:"runs"`
+}
+
+type CommandBarPlanRecord struct {
+	ID               string          `json:"id" gorm:"type:uuid;primaryKey"`
+	WorkspaceID      string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	ActorID          *string         `json:"actor_id" gorm:"type:uuid;index"`
+	Status           string          `json:"status" gorm:"not null;default:'running';index"`
+	Prompt           string          `json:"prompt" gorm:"not null"`
+	PageContext      json.RawMessage `json:"page_context" gorm:"type:jsonb;not null;default:'{}'"`
+	Steps            json.RawMessage `json:"steps" gorm:"type:jsonb;not null;default:'[]'"`
+	RunIDsByStep     json.RawMessage `json:"run_ids_by_step" gorm:"type:jsonb;not null;default:'{}'"`
+	CurrentStepIndex int             `json:"current_step_index" gorm:"not null;default:0"`
+	RunCount         int             `json:"run_count" gorm:"not null;default:0"`
+	ErrorMessage     *string         `json:"error_message"`
+	CancelledAt      *time.Time      `json:"cancelled_at"`
+	CompletedAt      *time.Time      `json:"completed_at"`
+	CreatedAt        time.Time       `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt        time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
+}
+
+func (CommandBarPlanRecord) TableName() string { return "command_bar_plans" }
+
+type CommandBarPlanSummary struct {
+	ID               string                `json:"id"`
+	Status           string                `json:"status"`
+	Prompt           string                `json:"prompt"`
+	PageContext      CommandBarPageContext `json:"page_context"`
+	Steps            []CommandBarPlanStep  `json:"steps"`
+	RunIDsByStep     map[int]string        `json:"run_ids_by_step"`
+	CurrentStepIndex int                   `json:"current_step_index"`
+	RunCount         int                   `json:"run_count"`
+	ErrorMessage     *string               `json:"error_message,omitempty"`
+	CancelledAt      *time.Time            `json:"cancelled_at,omitempty"`
+	CompletedAt      *time.Time            `json:"completed_at,omitempty"`
+	CreatedAt        time.Time             `json:"created_at"`
+	UpdatedAt        time.Time             `json:"updated_at"`
+	Runs             []AgentRun            `json:"runs,omitempty"`
+}
+
+type CommandBarPlanListResponse struct {
+	Plans []CommandBarPlanSummary `json:"plans"`
+}
+
+type CommandBarCancelPlanResponse struct {
+	Plan CommandBarPlanSummary `json:"plan"`
+	Runs []AgentRun            `json:"runs,omitempty"`
+}
+
+type CommandBarRetryPlanRequest struct {
+	StepIndex int `json:"step_index"`
+}
+
+type CommandBarRetryPlanResponse struct {
+	Plan CommandBarPlanSummary `json:"plan"`
+	Run  AgentRun              `json:"run"`
+}
+
+type PromoteCommandBarRunRequest struct {
+	Name        string  `json:"name"`
+	Description *string `json:"description,omitempty"`
+}
+
+type PromoteCommandBarRunResponse struct {
+	Agent Agent `json:"agent"`
 }
 
 type CommandBarAgent struct {
@@ -72,7 +155,19 @@ type CommandBarUnmetIntent struct {
 	PageContext     json.RawMessage `json:"page_context" gorm:"type:jsonb;not null;default:'{}'"`
 	CandidateAgents json.RawMessage `json:"candidate_agents" gorm:"type:jsonb;not null;default:'[]'"`
 	Reason          string          `json:"reason" gorm:"not null"`
+	Status          string          `json:"status" gorm:"not null;default:'open';index"`
+	ReviewNotes     *string         `json:"review_notes"`
+	ReviewedAt      *time.Time      `json:"reviewed_at"`
 	CreatedAt       time.Time       `json:"created_at" gorm:"autoCreateTime"`
 }
 
 func (CommandBarUnmetIntent) TableName() string { return "command_bar_unmet_intents" }
+
+type CommandBarUnmetIntentListResponse struct {
+	Intents []CommandBarUnmetIntent `json:"intents"`
+}
+
+type ReviewCommandBarUnmetIntentRequest struct {
+	Status string  `json:"status"`
+	Notes  *string `json:"notes,omitempty"`
+}

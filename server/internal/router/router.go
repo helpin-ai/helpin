@@ -571,7 +571,13 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Use(middleware.RequireWorkspaceID)
 				r.Use(wsAccess)
 				r.With(requirePerm(authorization.PermPMRead)).Post("/intents/parse", h.CommandBar.ParseIntent)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/plans", h.CommandBar.ListPlans)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/plans/dispatch", h.CommandBar.DispatchPlan)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/plans/{planID}/cancel", h.CommandBar.CancelPlan)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/plans/{planID}/retry", h.CommandBar.RetryPlan)
+				r.With(requirePerm(authorization.PermSettingsManage)).Post("/runs/{runID}/promote-agent", h.CommandBar.PromoteRunToAgent)
+				r.With(requirePerm(authorization.PermSettingsManage)).Get("/unmet-intents", h.CommandBar.ListUnmetIntents)
+				r.With(requirePerm(authorization.PermSettingsManage)).Post("/unmet-intents/{intentID}/review", h.CommandBar.ReviewUnmetIntent)
 			})
 
 			// Support module
