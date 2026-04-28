@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"sort"
 	"strconv"
@@ -50,6 +51,7 @@ type gitHubAppClient interface {
 	GetReleaseByTag(ctx context.Context, installationID, owner, repo, tag string) (*githubapp.Release, error)
 	ListReleases(ctx context.Context, installationID, owner, repo string, opts githubapp.ListReleasesOptions) ([]githubapp.Release, error)
 	GetInstallation(ctx context.Context, installationID string) (*githubapp.Installation, error)
+	GetPullRequest(ctx context.Context, installationID, owner, repo string, number int) (*githubapp.PullRequest, error)
 	MergeBranch(ctx context.Context, installationID, owner, repo, base, head, commitMessage string) error
 }
 
@@ -1134,6 +1136,37 @@ type deliveryStatusMetadata struct {
 	PRURL    *string
 }
 
+type GitPRReconcileResult struct {
+	Checked   int                         `json:"checked"`
+	Updated   int                         `json:"updated"`
+	Merged    int                         `json:"merged"`
+	Closed    int                         `json:"closed"`
+	StillOpen int                         `json:"still_open"`
+	Skipped   int                         `json:"skipped"`
+	Failed    int                         `json:"failed"`
+	DryRun    bool                        `json:"dry_run"`
+	Items     []GitPRReconcileResultItem  `json:"items"`
+	Errors    []GitPRReconcileResultError `json:"errors"`
+}
+
+type GitPRReconcileResultItem struct {
+	LinkID      string `json:"link_id"`
+	WorkspaceID string `json:"workspace_id"`
+	TaskID      string `json:"task_id"`
+	Repo        string `json:"repo"`
+	PRNumber    int    `json:"pr_number"`
+	OldStatus   string `json:"old_status"`
+	NewStatus   string `json:"new_status"`
+	PRURL       string `json:"pr_url,omitempty"`
+}
+
+type GitPRReconcileResultError struct {
+	LinkID   string `json:"link_id,omitempty"`
+	Repo     string `json:"repo,omitempty"`
+	PRNumber int    `json:"pr_number,omitempty"`
+	Error    string `json:"error"`
+}
+
 // UpdateDeliveryStatusAfterMerge reconciles task delivery state after a direct
 // merge path succeeds, without waiting for a GitHub webhook.
 func (s *GitService) UpdateDeliveryStatusAfterMerge(ctx context.Context, workspaceID, taskID, prStatus string) error {
@@ -1207,25 +1240,48 @@ func (s *GitService) updateDeliveryStatusForPR(ctx context.Context, workspaceID,
 		s.publishTaskGitLinkUpdated(workspaceID, links[i].ID, taskID)
 	}
 
-	if prStatus == "merged" && s.taskRepo != nil && s.settingsRepo != nil {
-		story, err := s.taskRepo.GetRawByID(ctx, taskID)
-		if err != nil {
-			return fmt.Errorf("load task: %w", err)
-		}
-		if story != nil && story.TeamID != nil && *story.TeamID != "" {
-			teamDefault, cfgErr := s.settingsRepo.GetTeamRepoDefault(ctx, *story.TeamID)
-			if cfgErr != nil {
-				return fmt.Errorf("load team repo default: %w", cfgErr)
-			}
-			if teamDefault != nil && teamDefault.AutoSyncStates && teamDefault.DoneStateID != nil {
-				story.WorkflowStateID = *teamDefault.DoneStateID
-				if err := s.taskRepo.Update(ctx, story); err != nil {
-					return fmt.Errorf("update task workflow state: %w", err)
-				}
-			}
-		}
+	if err := s.syncTaskWorkflowForPRStatus(ctx, taskID, prStatus); err != nil {
+		return err
 	}
 
+	return nil
+}
+
+func (s *GitService) syncTaskWorkflowForPRStatus(ctx context.Context, taskID, prStatus string) error {
+	if s.taskRepo == nil || s.settingsRepo == nil {
+		return nil
+	}
+	story, err := s.taskRepo.GetRawByID(ctx, taskID)
+	if err != nil {
+		return fmt.Errorf("load task: %w", err)
+	}
+	if story == nil || story.TeamID == nil || *story.TeamID == "" {
+		return nil
+	}
+	teamDefault, err := s.settingsRepo.GetTeamRepoDefault(ctx, *story.TeamID)
+	if err != nil {
+		return fmt.Errorf("load team repo default: %w", err)
+	}
+	if teamDefault == nil || !teamDefault.AutoSyncStates {
+		return nil
+	}
+
+	var nextStateID *string
+	switch prStatus {
+	case "open":
+		nextStateID = teamDefault.ReviewStateID
+	case "merged":
+		nextStateID = teamDefault.DoneStateID
+	case "closed":
+		nextStateID = teamDefault.ClosedStateID
+	}
+	if nextStateID == nil || *nextStateID == "" || story.WorkflowStateID == *nextStateID {
+		return nil
+	}
+	story.WorkflowStateID = *nextStateID
+	if err := s.taskRepo.Update(ctx, story); err != nil {
+		return fmt.Errorf("update task workflow state: %w", err)
+	}
 	return nil
 }
 
@@ -1253,6 +1309,140 @@ func shouldUpdateGitLinkForDeliveryStatus(link model.TaskGitLink, target *model.
 		return link.Branch != nil && *link.Branch == *target.WorkingBranch
 	}
 	return true
+}
+
+// ReconcileOpenPullRequestStatuses repairs missed pull request lifecycle webhooks
+// by comparing persisted open PR links with GitHub's current source of truth.
+func (s *GitService) ReconcileOpenPullRequestStatuses(ctx context.Context, limit int, dryRun bool) (*GitPRReconcileResult, error) {
+	if s.githubApp == nil {
+		return nil, fmt.Errorf("github app is not configured")
+	}
+	if s.linkRepo == nil || s.integrationRepo == nil {
+		return nil, fmt.Errorf("git repositories are not configured")
+	}
+	links, err := s.linkRepo.ListOpenPullRequests(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &GitPRReconcileResult{DryRun: dryRun}
+	for _, link := range links {
+		if link.PRNumber == nil {
+			result.Skipped++
+			continue
+		}
+		result.Checked++
+		item := GitPRReconcileResultItem{
+			LinkID:      link.ID,
+			WorkspaceID: link.WorkspaceID,
+			TaskID:      link.TaskID,
+			Repo:        link.Repo,
+			PRNumber:    *link.PRNumber,
+			OldStatus:   strings.TrimSpace(derefString(link.PRStatus)),
+		}
+		if item.OldStatus == "" {
+			item.OldStatus = "open"
+		}
+
+		integration, err := s.integrationRepo.GetByIDAny(ctx, link.IntegrationID)
+		if err != nil {
+			result.Failed++
+			result.Errors = append(result.Errors, reconcileError(link, err))
+			continue
+		}
+		if integration == nil || !integration.Active || integration.InstallationID == nil || strings.TrimSpace(*integration.InstallationID) == "" {
+			result.Skipped++
+			result.Errors = append(result.Errors, reconcileError(link, fmt.Errorf("active github integration with installation id not found")))
+			continue
+		}
+		owner, repo, ok := splitRepoFullName(link.Repo)
+		if !ok {
+			result.Skipped++
+			result.Errors = append(result.Errors, reconcileError(link, fmt.Errorf("invalid repo full name")))
+			continue
+		}
+
+		pr, err := s.githubApp.GetPullRequest(ctx, *integration.InstallationID, owner, repo, *link.PRNumber)
+		if err != nil {
+			result.Failed++
+			result.Errors = append(result.Errors, reconcileError(link, err))
+			continue
+		}
+		newStatus := statusForGitHubPullRequest(pr)
+		item.NewStatus = newStatus
+		if pr != nil {
+			item.PRURL = strings.TrimSpace(pr.HTMLURL)
+		}
+		result.Items = append(result.Items, item)
+
+		if newStatus == "open" {
+			result.StillOpen++
+			continue
+		}
+		if newStatus == "merged" {
+			result.Merged++
+		}
+		if newStatus == "closed" {
+			result.Closed++
+		}
+		result.Updated++
+		if dryRun {
+			continue
+		}
+
+		prTitle := ""
+		prURL := ""
+		if pr != nil {
+			prTitle = strings.TrimSpace(pr.Title)
+			prURL = strings.TrimSpace(pr.HTMLURL)
+		}
+		prNumber := *link.PRNumber
+		if err := s.updateDeliveryStatusForPR(ctx, link.WorkspaceID, link.TaskID, newStatus, &deliveryStatusMetadata{
+			LinkID:   link.ID,
+			PRNumber: &prNumber,
+			PRTitle:  &prTitle,
+			PRURL:    &prURL,
+		}); err != nil {
+			result.Failed++
+			result.Errors = append(result.Errors, reconcileError(link, err))
+			slog.ErrorContext(ctx, "git pr reconcile update failed", "error", err, "link_id", link.ID, "workspace_id", link.WorkspaceID, "repo", link.Repo, "pr_number", prNumber)
+			continue
+		}
+	}
+	return result, nil
+}
+
+func statusForGitHubPullRequest(pr *githubapp.PullRequest) string {
+	if pr == nil {
+		return "open"
+	}
+	if pr.Merged || pr.MergedAt != nil {
+		return "merged"
+	}
+	if strings.EqualFold(strings.TrimSpace(pr.State), "closed") {
+		return "closed"
+	}
+	return "open"
+}
+
+func splitRepoFullName(repoFullName string) (string, string, bool) {
+	parts := strings.SplitN(strings.TrimSpace(repoFullName), "/", 2)
+	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+		return "", "", false
+	}
+	return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]), true
+}
+
+func reconcileError(link model.TaskGitLink, err error) GitPRReconcileResultError {
+	item := GitPRReconcileResultError{
+		LinkID: link.ID,
+		Repo:   link.Repo,
+		Error:  err.Error(),
+	}
+	if link.PRNumber != nil {
+		item.PRNumber = *link.PRNumber
+	}
+	return item
 }
 
 func (s *GitService) publishTaskGitLinkUpdated(workspaceID, linkID, taskID string) {

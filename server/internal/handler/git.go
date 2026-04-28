@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,17 +14,19 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
 
 // GitHandler handles git integration HTTP endpoints.
 type GitHandler struct {
-	gitService *service.GitService
+	gitService       *service.GitService
+	webhookEventRepo *repository.GitWebhookEventRepository
 }
 
 // NewGitHandler creates a new GitHandler.
-func NewGitHandler(gitService *service.GitService) *GitHandler {
-	return &GitHandler{gitService: gitService}
+func NewGitHandler(gitService *service.GitService, webhookEventRepo *repository.GitWebhookEventRepository) *GitHandler {
+	return &GitHandler{gitService: gitService, webhookEventRepo: webhookEventRepo}
 }
 
 // GetGitHubInstallURL handles GET /api/git/github/install-url.
@@ -357,12 +361,21 @@ func (h *GitHandler) Webhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	recorder := &gitWebhookResponseRecorder{ResponseWriter: w}
+
 	// Parse minimal fields to route the event.
 	var payload map[string]interface{}
 	if err := json.Unmarshal(body, &payload); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON payload")
+		slog.WarnContext(r.Context(), "git webhook invalid json", "provider", provider, "error", err)
+		writeError(recorder, http.StatusBadRequest, "invalid JSON payload")
 		return
 	}
+
+	webhookEventID := h.recordGitWebhookEvent(r, provider, body, payload)
+	var resolvedIntegrationID *string
+	defer func() {
+		h.markGitWebhookEventHandled(r, webhookEventID, recorder, resolvedIntegrationID)
+	}()
 
 	if provider == "github" {
 		var integration *model.GitIntegration
@@ -374,32 +387,128 @@ func (h *GitHandler) Webhook(w http.ResponseWriter, r *http.Request) {
 				r.Header.Get("X-Hub-Signature-256"),
 			)
 			if err != nil {
-				writeError(w, http.StatusUnauthorized, err.Error())
+				writeError(recorder, http.StatusUnauthorized, err.Error())
 				return
 			}
 			integration = resolvedIntegration
+			if integration != nil {
+				resolvedIntegrationID = &integration.ID
+			}
 		}
 
 		event := r.Header.Get("X-GitHub-Event")
 		switch event {
 		case "installation":
-			h.handleGitHubInstallation(r, w, integration, payload)
+			h.handleGitHubInstallation(r, recorder, integration, payload)
 		case "installation_repositories":
-			h.handleGitHubInstallationRepositories(r, w, integration, payload)
+			h.handleGitHubInstallationRepositories(r, recorder, integration, payload)
 		case "push":
-			h.handleGitHubPush(r, w, integration, payload)
+			h.handleGitHubPush(r, recorder, integration, payload)
 		case "pull_request":
-			h.handleGitHubPR(r, w, integration, payload)
+			h.handleGitHubPR(r, recorder, integration, payload)
 		case "release":
-			h.handleGitHubRelease(r, w, integration, payload)
+			h.handleGitHubRelease(r, recorder, integration, payload)
 		case "check_suite":
-			h.handleGitHubCheckSuite(r, w, integration, payload)
+			h.handleGitHubCheckSuite(r, recorder, integration, payload)
 		default:
-			writeJSON(w, http.StatusOK, map[string]string{"status": "ignored"})
+			writeJSON(recorder, http.StatusOK, map[string]string{"status": "ignored"})
 		}
 	} else {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ignored"})
+		writeJSON(recorder, http.StatusOK, map[string]string{"status": "ignored"})
 	}
+}
+
+type gitWebhookResponseRecorder struct {
+	http.ResponseWriter
+	statusCode int
+	body       bytes.Buffer
+}
+
+func (r *gitWebhookResponseRecorder) WriteHeader(statusCode int) {
+	r.statusCode = statusCode
+	r.ResponseWriter.WriteHeader(statusCode)
+}
+
+func (r *gitWebhookResponseRecorder) Write(payload []byte) (int, error) {
+	if r.statusCode == 0 {
+		r.statusCode = http.StatusOK
+	}
+	if r.body.Len() < 2048 {
+		remaining := 2048 - r.body.Len()
+		if len(payload) > remaining {
+			_, _ = r.body.Write(payload[:remaining])
+		} else {
+			_, _ = r.body.Write(payload)
+		}
+	}
+	return r.ResponseWriter.Write(payload)
+}
+
+func (h *GitHandler) recordGitWebhookEvent(r *http.Request, provider string, body []byte, payload map[string]interface{}) string {
+	if h.webhookEventRepo == nil {
+		return ""
+	}
+	eventType := ""
+	deliveryID := ""
+	if provider == "github" {
+		eventType = strings.TrimSpace(r.Header.Get("X-GitHub-Event"))
+		deliveryID = strings.TrimSpace(r.Header.Get("X-GitHub-Delivery"))
+	} else if provider == "gitlab" {
+		eventType = strings.TrimSpace(r.Header.Get("X-Gitlab-Event"))
+		deliveryID = strings.TrimSpace(r.Header.Get("X-Gitlab-Event-UUID"))
+	}
+	repo, _ := nestedString(payload, "repository", "full_name")
+	action, _ := payload["action"].(string)
+	event := &model.GitWebhookEvent{
+		Provider:           provider,
+		EventType:          eventType,
+		DeliveryID:         optionalString(deliveryID),
+		RepositoryFullName: optionalString(repo),
+		Action:             optionalString(action),
+		Status:             model.GitWebhookStatusReceived,
+		RawPayload:         string(body),
+		ReceivedAt:         time.Now().UTC(),
+	}
+	if err := h.webhookEventRepo.Create(r.Context(), event); err != nil {
+		slog.WarnContext(r.Context(), "record git webhook event failed", "error", err, "provider", provider, "event_type", eventType, "delivery_id", deliveryID)
+		return ""
+	}
+	slog.InfoContext(r.Context(), "git webhook received", "provider", provider, "event_type", eventType, "delivery_id", deliveryID, "webhook_event_id", event.ID, "repo", repo, "action", action)
+	return event.ID
+}
+
+func (h *GitHandler) markGitWebhookEventHandled(r *http.Request, eventID string, recorder *gitWebhookResponseRecorder, integrationID *string) {
+	if h.webhookEventRepo == nil || eventID == "" || recorder == nil {
+		return
+	}
+	statusCode := recorder.statusCode
+	if statusCode == 0 {
+		statusCode = http.StatusOK
+	}
+	status := model.GitWebhookStatusProcessed
+	body := recorder.body.String()
+	if statusCode >= 400 {
+		status = model.GitWebhookStatusFailed
+	} else if statusCode == http.StatusNoContent || strings.Contains(body, `"status":"ignored"`) {
+		status = model.GitWebhookStatusIgnored
+	}
+	var errMessage *string
+	if status == model.GitWebhookStatusFailed {
+		errMessage = optionalString(strings.TrimSpace(body))
+	}
+	workspaceID := optionalString(strings.TrimSpace(r.URL.Query().Get("workspace_id")))
+	if err := h.webhookEventRepo.MarkHandled(r.Context(), eventID, status, statusCode, errMessage, integrationID, workspaceID); err != nil {
+		slog.WarnContext(r.Context(), "mark git webhook event handled failed", "error", err, "webhook_event_id", eventID)
+	}
+	slog.InfoContext(r.Context(), "git webhook handled", "webhook_event_id", eventID, "status", status, "status_code", statusCode)
+}
+
+func optionalString(value string) *string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 func (h *GitHandler) handleGitHubInstallation(r *http.Request, w http.ResponseWriter, integration *model.GitIntegration, payload map[string]interface{}) {

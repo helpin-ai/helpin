@@ -50,6 +50,19 @@ type Release struct {
 	PublishedAt     *time.Time
 }
 
+type PullRequest struct {
+	Number    int
+	Title     string
+	HTMLURL   string
+	State     string
+	Merged    bool
+	HeadRef   string
+	BaseRef   string
+	HeadSHA   string
+	UpdatedAt *time.Time
+	MergedAt  *time.Time
+}
+
 type ListReleasesOptions struct {
 	IncludeDrafts      bool
 	IncludePrereleases bool
@@ -621,6 +634,66 @@ func (c *Client) MergeBranch(ctx context.Context, installationID, owner, repo, b
 		return fmt.Errorf("merge conflict: %s", payload.Message)
 	}
 	return fmt.Errorf("github merge failed (%d): %s", resp.StatusCode, payload.Message)
+}
+
+// GetPullRequest returns current pull request state from GitHub.
+func (c *Client) GetPullRequest(ctx context.Context, installationID, owner, repo string, number int) (*PullRequest, error) {
+	if c == nil {
+		return nil, fmt.Errorf("github app is not configured")
+	}
+	token, err := c.MintInstallationToken(ctx, installationID)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/repos/%s/%s/pulls/%d", c.apiBaseURL, owner, repo, number), nil)
+	if err != nil {
+		return nil, fmt.Errorf("build github pull request request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request github pull request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var payload struct {
+		Number    int        `json:"number"`
+		Title     string     `json:"title"`
+		HTMLURL   string     `json:"html_url"`
+		State     string     `json:"state"`
+		Merged    bool       `json:"merged"`
+		UpdatedAt *time.Time `json:"updated_at"`
+		MergedAt  *time.Time `json:"merged_at"`
+		Head      struct {
+			Ref string `json:"ref"`
+			SHA string `json:"sha"`
+		} `json:"head"`
+		Base struct {
+			Ref string `json:"ref"`
+		} `json:"base"`
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, fmt.Errorf("decode github pull request response: %w", err)
+	}
+	if resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("github pull request lookup failed (%d): %s", resp.StatusCode, payload.Message)
+	}
+	return &PullRequest{
+		Number:    payload.Number,
+		Title:     payload.Title,
+		HTMLURL:   payload.HTMLURL,
+		State:     payload.State,
+		Merged:    payload.Merged,
+		HeadRef:   payload.Head.Ref,
+		BaseRef:   payload.Base.Ref,
+		HeadSHA:   payload.Head.SHA,
+		UpdatedAt: payload.UpdatedAt,
+		MergedAt:  payload.MergedAt,
+	}, nil
 }
 
 func (c *Client) createAppJWT() (string, error) {
