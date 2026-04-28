@@ -39,8 +39,12 @@ export const supportCoverageService = {
   createArticleUpdate: (wsId: string, gapId: string, payload: { target_document_id: string }) =>
     api.post<SupportGapSuggestion>(`/support/coverage/gaps/${gapId}/suggestions/article-update${qs(wsId)}`, payload),
 
-  applySuggestion: (wsId: string, suggestionId: string) =>
-    api.post(`/support/coverage/suggestions/${suggestionId}/apply${qs(wsId)}`, {}),
+  applySuggestion: (
+    wsId: string,
+    suggestionId: string,
+    payload?: { route?: string; suggestion_type?: string; target_document_id?: string }
+  ) =>
+    api.post(`/support/coverage/suggestions/${suggestionId}/apply${qs(wsId)}`, payload ?? {}),
 
   discardSuggestion: (wsId: string, suggestionId: string) =>
     api.post(`/support/coverage/suggestions/${suggestionId}/discard${qs(wsId)}`, {}),

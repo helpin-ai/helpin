@@ -241,6 +241,11 @@ func (r *SupportCoverageRepository) CountEvidenceSince(ctx context.Context, gapI
 	return count, nil
 }
 
+func (r *SupportCoverageRepository) CountEvidence30d(ctx context.Context, gapID string) (int, error) {
+	count, err := r.CountEvidenceSince(ctx, gapID, time.Now().AddDate(0, 0, -30))
+	return int(count), err
+}
+
 // ListGaps returns gaps for a workspace. Reads from gap table only,
 // never scans support_events.
 func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID string, filter model.SupportCoverageGapFilter) ([]model.SupportCoverageGapListItem, int64, error) {
@@ -571,6 +576,28 @@ func (r *SupportCoverageRepository) UpdateGapStatus(ctx context.Context, workspa
 	}
 	if result.RowsAffected == 0 {
 		return fmt.Errorf("gap not found")
+	}
+	return nil
+}
+
+func (r *SupportCoverageRepository) MarkGapDone(ctx context.Context, workspaceID, gapID, documentID string, evidence30d int) error {
+	now := time.Now()
+	result := r.db.WithContext(ctx).
+		Model(&model.SupportCoverageGap{}).
+		Where("id = ? AND workspace_id = ? AND status = ?", gapID, workspaceID, model.SupportCoverageGapStatusOpen).
+		Updates(map[string]interface{}{
+			"status":                model.SupportCoverageGapStatusDone,
+			"closed_at":             now,
+			"closed_evidence_count": evidence30d,
+			"result_document_id":    documentID,
+			"status_changed_at":     now,
+			"updated_at":            now,
+		})
+	if result.Error != nil {
+		return fmt.Errorf("mark gap done: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("gap not open")
 	}
 	return nil
 }

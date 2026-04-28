@@ -155,6 +155,14 @@ func (s *SupportCoverageDraftService) GenerateArticleUpdate(ctx context.Context,
 
 // ApplySuggestion creates the actual docs document/content from a suggestion.
 func (s *SupportCoverageDraftService) ApplySuggestion(ctx context.Context, workspaceID, suggestionID, userID string) error {
+	return s.applyImpl(ctx, workspaceID, suggestionID, userID, "", "")
+}
+
+func (s *SupportCoverageDraftService) ApplySuggestionWithOverride(ctx context.Context, workspaceID, suggestionID, userID, overrideType, overrideTargetDocID string) error {
+	return s.applyImpl(ctx, workspaceID, suggestionID, userID, overrideType, overrideTargetDocID)
+}
+
+func (s *SupportCoverageDraftService) applyImpl(ctx context.Context, workspaceID, suggestionID, userID, overrideType, overrideTargetDocID string) error {
 	var suggestion model.SupportGapSuggestion
 	if err := s.coverageRepo.GetSuggestionByID(ctx, suggestionID, &suggestion); err != nil {
 		return fmt.Errorf("get suggestion: %w", err)
@@ -166,13 +174,21 @@ func (s *SupportCoverageDraftService) ApplySuggestion(ctx context.Context, works
 		return fmt.Errorf("suggestion is not in draft state")
 	}
 
-	switch suggestion.SuggestionType {
+	suggestionType := suggestion.SuggestionType
+	if overrideType != "" {
+		suggestionType = overrideType
+		if overrideTargetDocID != "" {
+			suggestion.TargetDocumentID = &overrideTargetDocID
+		}
+	}
+
+	switch suggestionType {
 	case model.SupportCoverageSuggestionCreateArticle:
 		return s.applyCreateArticle(ctx, &suggestion, userID)
 	case model.SupportCoverageSuggestionUpdateArticle:
 		return s.applyUpdateArticle(ctx, &suggestion, userID)
 	default:
-		return fmt.Errorf("unsupported suggestion type: %s", suggestion.SuggestionType)
+		return fmt.Errorf("unsupported suggestion type: %s", suggestionType)
 	}
 }
 
@@ -206,8 +222,16 @@ func (s *SupportCoverageDraftService) applyCreateArticle(ctx context.Context, su
 	}
 
 	// Close the loop: mark gap as done and link the new article.
-	_ = s.coverageRepo.UpdateGapStatus(ctx, suggestion.WorkspaceID, suggestion.GapID, model.SupportCoverageGapStatusDone, "", nil)
-	_ = s.coverageRepo.LinkGapArticle(ctx, suggestion.GapID, docID, suggestion.WorkspaceID)
+	evidence30d, err := s.coverageRepo.CountEvidence30d(ctx, suggestion.GapID)
+	if err != nil {
+		return fmt.Errorf("count evidence: %w", err)
+	}
+	if err := s.coverageRepo.MarkGapDone(ctx, suggestion.WorkspaceID, suggestion.GapID, docID, evidence30d); err != nil {
+		return fmt.Errorf("mark gap done: %w", err)
+	}
+	if err := s.coverageRepo.LinkGapArticle(ctx, suggestion.GapID, docID, suggestion.WorkspaceID); err != nil {
+		return fmt.Errorf("link gap article: %w", err)
+	}
 
 	return nil
 }
@@ -261,8 +285,16 @@ func (s *SupportCoverageDraftService) applyUpdateArticle(ctx context.Context, su
 	}
 
 	// Close the loop: mark gap as done and link the updated article.
-	_ = s.coverageRepo.UpdateGapStatus(ctx, suggestion.WorkspaceID, suggestion.GapID, model.SupportCoverageGapStatusDone, "", nil)
-	_ = s.coverageRepo.LinkGapArticle(ctx, suggestion.GapID, docID, suggestion.WorkspaceID)
+	evidence30d, err := s.coverageRepo.CountEvidence30d(ctx, suggestion.GapID)
+	if err != nil {
+		return fmt.Errorf("count evidence: %w", err)
+	}
+	if err := s.coverageRepo.MarkGapDone(ctx, suggestion.WorkspaceID, suggestion.GapID, docID, evidence30d); err != nil {
+		return fmt.Errorf("mark gap done: %w", err)
+	}
+	if err := s.coverageRepo.LinkGapArticle(ctx, suggestion.GapID, docID, suggestion.WorkspaceID); err != nil {
+		return fmt.Errorf("link gap article: %w", err)
+	}
 
 	return nil
 }

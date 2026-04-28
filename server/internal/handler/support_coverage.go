@@ -2,6 +2,8 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -297,7 +299,28 @@ func (h *SupportCoverageHandler) ApplySuggestion(w http.ResponseWriter, r *http.
 	wsID := middleware.GetWorkspaceID(r.Context())
 	suggestionID := chi.URLParam(r, "suggestionId")
 	userID := middleware.GetUserID(r.Context())
-	if err := h.draftSvc.ApplySuggestion(r.Context(), wsID, suggestionID, userID); err != nil {
+	var req struct {
+		Route            string `json:"route"`
+		SuggestionType   string `json:"suggestion_type"`
+		TargetDocumentID string `json:"target_document_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	overrideType := req.Route
+	if overrideType == "" {
+		overrideType = req.SuggestionType
+	}
+
+	var err error
+	if overrideType != "" || req.TargetDocumentID != "" {
+		err = h.draftSvc.ApplySuggestionWithOverride(r.Context(), wsID, suggestionID, userID, overrideType, req.TargetDocumentID)
+	} else {
+		err = h.draftSvc.ApplySuggestion(r.Context(), wsID, suggestionID, userID)
+	}
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

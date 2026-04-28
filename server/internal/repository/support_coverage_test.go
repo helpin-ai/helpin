@@ -304,6 +304,63 @@ func TestSupportCoverageRepository_UpdateGapStatus(t *testing.T) {
 	}
 }
 
+func TestSupportCoverageRepository_MarkGapDoneSnapshotsEvidenceAndRejectsClosedGap(t *testing.T) {
+	db := setupSupportCoverageTestDB(t)
+	repo := NewSupportCoverageRepository(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	_, _, err := repo.UpsertGapByDedupeKey(ctx, &model.SupportCoverageGap{
+		ID:          "gap-done",
+		WorkspaceID: "ws-1",
+		DedupeKey:   "done-test",
+		FirstSeenAt: now,
+		LastSeenAt:  now,
+	})
+	if err != nil {
+		t.Fatalf("seed gap: %v", err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := repo.CreateEvidence(ctx, &model.SupportGapEvidence{
+			GapID:        "gap-done",
+			WorkspaceID:  "ws-1",
+			EvidenceType: model.SupportEventHumanReplyAfterAI,
+			Excerpt:      "evidence",
+			CreatedAt:    now.Add(time.Duration(i) * time.Minute),
+		}); err != nil {
+			t.Fatalf("seed evidence: %v", err)
+		}
+	}
+
+	evidence30d, err := repo.CountEvidence30d(ctx, "gap-done")
+	if err != nil {
+		t.Fatalf("CountEvidence30d: %v", err)
+	}
+	if evidence30d != 2 {
+		t.Fatalf("evidence30d=%d, want 2", evidence30d)
+	}
+	if err := repo.MarkGapDone(ctx, "ws-1", "gap-done", "doc-1", evidence30d); err != nil {
+		t.Fatalf("MarkGapDone: %v", err)
+	}
+
+	var gap model.SupportCoverageGap
+	if err := db.Where("id = ?", "gap-done").First(&gap).Error; err != nil {
+		t.Fatalf("load gap: %v", err)
+	}
+	if gap.Status != model.SupportCoverageGapStatusDone {
+		t.Fatalf("status=%q, want done", gap.Status)
+	}
+	if gap.ResultDocumentID == nil || *gap.ResultDocumentID != "doc-1" {
+		t.Fatalf("result_document_id=%v, want doc-1", gap.ResultDocumentID)
+	}
+	if gap.ClosedEvidenceCount == nil || *gap.ClosedEvidenceCount != 2 {
+		t.Fatalf("closed_evidence_count=%v, want 2", gap.ClosedEvidenceCount)
+	}
+	if err := repo.MarkGapDone(ctx, "ws-1", "gap-done", "doc-2", evidence30d); err == nil {
+		t.Fatal("expected second MarkGapDone on closed gap to fail")
+	}
+}
+
 func TestSupportCoverageRepository_MergeGaps(t *testing.T) {
 	db := setupSupportCoverageTestDB(t)
 	repo := NewSupportCoverageRepository(db)
