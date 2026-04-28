@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -53,6 +54,9 @@ func (s *CommandBarService) ParseIntent(ctx context.Context, workspaceID, actorI
 		return resp, nil
 	}
 
+	if parsed := parseExplicitNamedAgents(text, pageContext, candidates); parsed != nil {
+		return parsed, nil
+	}
 	if parsed := s.parseIntentWithLLM(ctx, text, pageContext, candidates); parsed != nil {
 		if parsed.Status == model.CommandBarParseStatusNoMatchingAgent {
 			_ = s.logUnmetIntent(ctx, workspaceID, actorID, text, pageContext, candidates, parsed.Reason)
@@ -76,37 +80,42 @@ func (s *CommandBarService) DispatchPlan(ctx context.Context, workspaceID, actor
 		return nil, fmt.Errorf("text is required")
 	}
 	pageContext := normalizeCommandBarPageContext(req.PageContext, workspaceID)
-	if len(req.Steps) != 1 {
-		return nil, fmt.Errorf("v1 command bar dispatch requires exactly one step")
+	if len(req.Steps) == 0 {
+		return nil, fmt.Errorf("at least one plan step is required")
 	}
 
-	step := req.Steps[0]
-	target := normalizeCommandBarPageContext(step.Target, workspaceID)
-	if target.EntityType == "" || target.EntityID == "" {
-		target = pageContext
-	}
-	if err := validateCommandBarSupportedTarget(target.EntityType); err != nil {
-		return nil, err
-	}
-	agentID := strings.TrimSpace(step.AgentID)
-	if agentID == "" {
-		return nil, fmt.Errorf("agent_id is required")
-	}
+	runs := make([]model.AgentRun, 0, len(req.Steps))
+	var previousRunID *string
+	for i, step := range req.Steps {
+		target := normalizeCommandBarPageContext(step.Target, workspaceID)
+		if target.EntityType == "" || target.EntityID == "" {
+			target = pageContext
+		}
+		if err := validateCommandBarSupportedTarget(target.EntityType); err != nil {
+			return nil, err
+		}
+		agentID := strings.TrimSpace(step.AgentID)
+		if agentID == "" {
+			return nil, fmt.Errorf("agent_id is required for step %d", i+1)
+		}
 
-	triggerContext, err := buildCommandBarTriggerContext(text, pageContext, []model.CommandBarPlanStep{step})
-	if err != nil {
-		return nil, err
-	}
-	additionalContext := commandBarAdditionalContext(text, strings.TrimSpace(step.Instructions), pageContext)
+		triggerContext, err := buildCommandBarTriggerContext(text, pageContext, req.Steps, i)
+		if err != nil {
+			return nil, err
+		}
+		additionalContext := commandBarAdditionalContext(text, strings.TrimSpace(step.Instructions), pageContext, i, len(req.Steps))
 
-	run, err := s.agentService.startTargetRun(ctx, workspaceID, target.EntityType, target.EntityID, model.StartAgentRunRequest{
-		AgentID:           agentID,
-		AdditionalContext: &additionalContext,
-	}, &actorID, triggerContext, nil, nil)
-	if err != nil {
-		return nil, err
+		run, err := s.agentService.startTargetRun(ctx, workspaceID, target.EntityType, target.EntityID, model.StartAgentRunRequest{
+			AgentID:           agentID,
+			AdditionalContext: &additionalContext,
+		}, &actorID, triggerContext, nil, previousRunID)
+		if err != nil {
+			return nil, err
+		}
+		runs = append(runs, *run)
+		previousRunID = &run.ID
 	}
-	return &model.CommandBarDispatchResponse{Runs: []model.AgentRun{*run}}, nil
+	return &model.CommandBarDispatchResponse{Runs: runs}, nil
 }
 
 func (s *CommandBarService) parseIntentWithLLM(ctx context.Context, text string, pageContext model.CommandBarPageContext, candidates []model.CommandBarAgent) *model.CommandBarParseResponse {
@@ -167,13 +176,8 @@ Return JSON: {"status":"plan","agent_id":"...","instructions":"...","rationale":
 
 func parseIntentDeterministically(text string, pageContext model.CommandBarPageContext, candidates []model.CommandBarAgent) *model.CommandBarParseResponse {
 	lower := strings.ToLower(strings.TrimSpace(text))
-	for _, agent := range candidates {
-		if lower == strings.ToLower(agent.Name) || strings.Contains(lower, strings.ToLower(agent.Name)) {
-			return commandBarPlanResponse(agent, pageContext, text, text, "Matched explicit agent name.", candidates)
-		}
-		if agent.PresetKey != "" && strings.Contains(lower, strings.ReplaceAll(strings.ToLower(agent.PresetKey), "_", " ")) {
-			return commandBarPlanResponse(agent, pageContext, text, text, "Matched explicit agent preset.", candidates)
-		}
+	if parsed := parseExplicitNamedAgents(text, pageContext, candidates); parsed != nil {
+		return parsed
 	}
 
 	preferredPresets := []string{}
@@ -264,15 +268,89 @@ func commandBarPlanResponse(agent model.CommandBarAgent, target model.CommandBar
 		Target:       target,
 		Instructions: instructions,
 	}
+	return commandBarMultiStepPlanResponse([]model.CommandBarPlanStep{step}, firstNonEmptyString(strings.TrimSpace(rationale), "Matched request to an available agent."), candidates)
+}
+
+func commandBarMultiStepPlanResponse(steps []model.CommandBarPlanStep, rationale string, candidates []model.CommandBarAgent) *model.CommandBarParseResponse {
 	return &model.CommandBarParseResponse{
 		Status: model.CommandBarParseStatusPlan,
 		Plan: &model.CommandBarPlan{
-			Steps:    []model.CommandBarPlanStep{step},
-			RunCount: 1,
+			Steps:    steps,
+			RunCount: len(steps),
 		},
-		Rationale:  firstNonEmptyString(strings.TrimSpace(rationale), "Matched request to an available agent."),
+		Rationale:  firstNonEmptyString(strings.TrimSpace(rationale), "Matched request to available agents."),
 		Candidates: candidates,
 	}
+}
+
+func parseExplicitNamedAgents(text string, pageContext model.CommandBarPageContext, candidates []model.CommandBarAgent) *model.CommandBarParseResponse {
+	type match struct {
+		index int
+		agent model.CommandBarAgent
+	}
+	matches := make([]match, 0)
+	for _, agent := range candidates {
+		if idx := indexCommandBarPhrase(text, agent.Name); idx >= 0 {
+			matches = append(matches, match{index: idx, agent: agent})
+			continue
+		}
+		if agent.PresetKey != "" {
+			presetPhrase := strings.ReplaceAll(strings.ToLower(agent.PresetKey), "_", " ")
+			if idx := indexCommandBarPhrase(text, presetPhrase); idx >= 0 {
+				matches = append(matches, match{index: idx, agent: agent})
+			}
+		}
+	}
+	if len(matches) == 0 {
+		return nil
+	}
+	slices.SortFunc(matches, func(a, b match) int {
+		if a.index < b.index {
+			return -1
+		}
+		if a.index > b.index {
+			return 1
+		}
+		return strings.Compare(a.agent.Name, b.agent.Name)
+	})
+
+	seen := map[string]bool{}
+	steps := make([]model.CommandBarPlanStep, 0, len(matches))
+	for _, item := range matches {
+		if seen[item.agent.ID] {
+			continue
+		}
+		seen[item.agent.ID] = true
+		steps = append(steps, model.CommandBarPlanStep{
+			AgentID:      item.agent.ID,
+			AgentKey:     item.agent.PresetKey,
+			AgentName:    item.agent.Name,
+			Target:       pageContext,
+			Instructions: strings.TrimSpace(text),
+		})
+	}
+	if len(steps) == 0 {
+		return nil
+	}
+	rationale := "Matched explicit agent name."
+	if len(steps) > 1 {
+		rationale = "Matched explicit agent names in request order."
+	}
+	return commandBarMultiStepPlanResponse(steps, rationale, candidates)
+}
+
+func indexCommandBarPhrase(text, phrase string) int {
+	text = strings.ToLower(strings.TrimSpace(text))
+	phrase = strings.ToLower(strings.TrimSpace(phrase))
+	if text == "" || phrase == "" {
+		return -1
+	}
+	pattern := `(^|[^a-z0-9])` + regexp.QuoteMeta(phrase) + `([^a-z0-9]|$)`
+	loc := regexp.MustCompile(pattern).FindStringIndex(text)
+	if loc == nil {
+		return -1
+	}
+	return loc[0]
 }
 
 func normalizeCommandBarPageContext(ctx model.CommandBarPageContext, workspaceID string) model.CommandBarPageContext {
@@ -314,13 +392,14 @@ func validateCommandBarSupportedTarget(targetType string) error {
 	}
 }
 
-func buildCommandBarTriggerContext(text string, pageContext model.CommandBarPageContext, steps []model.CommandBarPlanStep) (*model.AgentRunTriggerContext, error) {
+func buildCommandBarTriggerContext(text string, pageContext model.CommandBarPageContext, steps []model.CommandBarPlanStep, stepIndex int) (*model.AgentRunTriggerContext, error) {
 	now := time.Now().UTC()
 	raw, err := json.Marshal(map[string]interface{}{
 		"prompt":       strings.TrimSpace(text),
 		"page_context": pageContext,
 		"steps":        steps,
 		"run_count":    len(steps),
+		"step_index":   stepIndex,
 	})
 	if err != nil {
 		return nil, err
@@ -333,10 +412,13 @@ func buildCommandBarTriggerContext(text string, pageContext model.CommandBarPage
 	}, nil
 }
 
-func commandBarAdditionalContext(text, instructions string, pageContext model.CommandBarPageContext) string {
+func commandBarAdditionalContext(text, instructions string, pageContext model.CommandBarPageContext, stepIndex, stepCount int) string {
 	parts := []string{
 		"This run was started from the workspace command bar.",
 		"User request:\n" + strings.TrimSpace(text),
+	}
+	if stepCount > 1 {
+		parts = append(parts, fmt.Sprintf("Command bar plan step: %d of %d.", stepIndex+1, stepCount))
 	}
 	if instructions != "" && instructions != strings.TrimSpace(text) {
 		parts = append(parts, "Parsed instructions:\n"+instructions)

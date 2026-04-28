@@ -248,12 +248,14 @@ export function SearchCommandPalette({
               <CommandItem
                 key={`${step.agent_id}-${index}`}
                 value={`plan-${trimmedQuery}-${step.agent_name}-${step.instructions}-${index}`}
-                onSelect={() => void handleDispatchPlan()}
-                className="cursor-pointer"
+                disabled
               >
                 <BotIcon className="h-4 w-4 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
+                    <span className="rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                      Step {index + 1}
+                    </span>
                     <span className="truncate text-sm font-medium">{step.agent_name}</span>
                     <span className="rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground">{step.target.entity_type}</span>
                   </div>
@@ -267,7 +269,11 @@ export function SearchCommandPalette({
               className="cursor-pointer"
             >
               {dispatching ? <Loading01Icon className="h-4 w-4 animate-spin text-muted-foreground" /> : <SentIcon className="h-4 w-4 text-muted-foreground" />}
-              <span>{dispatching ? 'Starting run...' : `Confirm ${intentResult.plan.run_count} run`}</span>
+              <span>
+                {dispatching
+                  ? 'Starting runs...'
+                  : `Confirm ${intentResult.plan.run_count}-step plan`}
+              </span>
             </CommandItem>
           </CommandGroup>
         )}
