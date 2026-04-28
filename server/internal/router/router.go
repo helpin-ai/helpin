@@ -40,6 +40,7 @@ type Handlers struct {
 	PMTaskTemplate      *handler.PMTaskTemplateHandler
 	PMRecurringTemplate *handler.PMRecurringTemplateHandler
 	Search              *handler.SearchHandler
+	CommandBar          *handler.CommandBarHandler
 	Agent               *handler.AgentHandler
 	SupportInbox        *handler.SupportInboxHandler
 	SupportInboxWidget  *handler.SupportInboxWidgetHandler
@@ -564,6 +565,13 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Use(middleware.RequireWorkspaceID)
 				r.Use(wsAccess)
 				r.With(requirePerm(authorization.PermSearchRead)).Get("/", h.Search.Search)
+			})
+
+			r.Route("/command-bar", func(r chi.Router) {
+				r.Use(middleware.RequireWorkspaceID)
+				r.Use(wsAccess)
+				r.With(requirePerm(authorization.PermPMRead)).Post("/intents/parse", h.CommandBar.ParseIntent)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/plans/dispatch", h.CommandBar.DispatchPlan)
 			})
 
 			// Support module

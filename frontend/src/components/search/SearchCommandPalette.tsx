@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
+import { toast } from 'sonner';
 import {
   BookOpen01Icon,
   BotIcon,
@@ -9,6 +10,7 @@ import {
   Loading01Icon,
   Message01Icon,
   RecordIcon,
+  SentIcon,
   Target01Icon,
   Target02Icon,
   UserIcon,
@@ -28,7 +30,11 @@ import {
   type SearchResponse,
   type SearchResult,
 } from '@/lib/services/searchService';
+import { commandBarService } from '@/lib/services/commandBarService';
 import { buildTaskCommandValue } from '@/components/search/searchCommandPalette';
+import { usePageContext } from '@/components/command-bar/pageContext';
+import { useCommandBarRunStore } from '@/stores/commandBarStore';
+import type { CommandBarParseResponse } from '@/lib/pmTypes';
 
 const EMPTY: SearchResponse = {
   tasks: [],
@@ -48,9 +54,14 @@ export function SearchCommandPalette({
 }) {
   const navigate = useNavigate();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
+  const pageContext = usePageContext();
+  const addRuns = useCommandBarRunStore((s) => s.addRuns);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResponse>(EMPTY);
   const [searching, setSearching] = useState(false);
+  const [parsing, setParsing] = useState(false);
+  const [dispatching, setDispatching] = useState(false);
+  const [intentResult, setIntentResult] = useState<CommandBarParseResponse | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -60,8 +71,15 @@ export function SearchCommandPalette({
       setQuery('');
       setResults(EMPTY);
       setSearching(false);
+      setParsing(false);
+      setDispatching(false);
+      setIntentResult(null);
     }
   }, [open]);
+
+  useEffect(() => {
+    setIntentResult(null);
+  }, [query]);
 
   // Debounced search
   useEffect(() => {
@@ -96,6 +114,8 @@ export function SearchCommandPalette({
 
   const slug = workspace?.slug ?? '';
   const taskResults = results.tasks;
+  const trimmedQuery = query.trim();
+  const canAskAgents = !!workspace?.id && !!pageContext && trimmedQuery.length >= 4;
 
   const quickNavItems = [
     { label: 'Projects', icon: FolderKanbanIcon, path: `/w/${slug}/pm/my-work` },
@@ -145,6 +165,46 @@ export function SearchCommandPalette({
     [navigate, slug, onOpenChange],
   );
 
+  const handleParseIntent = useCallback(async () => {
+    if (!workspace?.id || !pageContext || !trimmedQuery) return;
+    setParsing(true);
+    setIntentResult(null);
+    try {
+      const res = await commandBarService.parseIntent(workspace.id, {
+        text: trimmedQuery,
+        page_context: pageContext,
+      });
+      if (res.error || !res.data) {
+        toast.error(res.error ?? 'Failed to parse command');
+        return;
+      }
+      setIntentResult(res.data);
+    } finally {
+      setParsing(false);
+    }
+  }, [pageContext, trimmedQuery, workspace?.id]);
+
+  const handleDispatchPlan = useCallback(async () => {
+    if (!workspace?.id || !pageContext || !intentResult || intentResult.status !== 'plan') return;
+    setDispatching(true);
+    try {
+      const res = await commandBarService.dispatchPlan(workspace.id, {
+        text: trimmedQuery,
+        page_context: pageContext,
+        steps: intentResult.plan.steps,
+      });
+      if (res.error || !res.data) {
+        toast.error(res.error ?? 'Failed to start command run');
+        return;
+      }
+      addRuns(res.data.runs);
+      toast.success(res.data.runs.length === 1 ? 'Agent run started' : `${res.data.runs.length} agent runs started`);
+      onOpenChange(false);
+    } finally {
+      setDispatching(false);
+    }
+  }, [addRuns, intentResult, onOpenChange, pageContext, trimmedQuery, workspace?.id]);
+
   return (
     <CommandDialog
       open={open}
@@ -168,6 +228,70 @@ export function SearchCommandPalette({
         )}
 
         <CommandEmpty>No results found.</CommandEmpty>
+
+        {canAskAgents && (
+          <CommandGroup heading="Agents">
+            <CommandItem
+              value={`ask-agents-${trimmedQuery}`}
+              onSelect={() => void handleParseIntent()}
+              className="cursor-pointer"
+            >
+              {parsing ? <Loading01Icon className="h-4 w-4 animate-spin text-muted-foreground" /> : <SentIcon className="h-4 w-4 text-muted-foreground" />}
+              <span className="truncate">Ask agents: {trimmedQuery}</span>
+            </CommandItem>
+          </CommandGroup>
+        )}
+
+        {intentResult?.status === 'plan' && (
+          <CommandGroup heading="Plan">
+            {intentResult.plan.steps.map((step, index) => (
+              <CommandItem
+                key={`${step.agent_id}-${index}`}
+                value={`plan-${trimmedQuery}-${step.agent_name}-${step.instructions}-${index}`}
+                onSelect={() => void handleDispatchPlan()}
+                className="cursor-pointer"
+              >
+                <BotIcon className="h-4 w-4 text-muted-foreground" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-sm font-medium">{step.agent_name}</span>
+                    <span className="rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground">{step.target.entity_type}</span>
+                  </div>
+                  <p className="truncate text-xs text-muted-foreground">{step.instructions}</p>
+                </div>
+              </CommandItem>
+            ))}
+            <CommandItem
+              value={`confirm-agent-plan-${trimmedQuery}`}
+              onSelect={() => void handleDispatchPlan()}
+              className="cursor-pointer"
+            >
+              {dispatching ? <Loading01Icon className="h-4 w-4 animate-spin text-muted-foreground" /> : <SentIcon className="h-4 w-4 text-muted-foreground" />}
+              <span>{dispatching ? 'Starting run...' : `Confirm ${intentResult.plan.run_count} run`}</span>
+            </CommandItem>
+          </CommandGroup>
+        )}
+
+        {intentResult?.status === 'no_matching_agent' && (
+          <CommandGroup heading="No matching agent">
+            <CommandItem value={`no-match-${trimmedQuery}-${intentResult.reason}`} disabled>
+              <BotIcon className="h-4 w-4 text-muted-foreground" />
+              <div className="min-w-0 text-sm">
+                <p className="font-medium">No available agent can do that yet.</p>
+                <p className="mt-1 text-xs text-muted-foreground">{intentResult.reason}</p>
+                {intentResult.suggestions?.length ? (
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {intentResult.suggestions.map((suggestion) => (
+                      <span key={suggestion} className="rounded border px-2 py-1 text-[11px] text-muted-foreground">
+                        {suggestion}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </CommandItem>
+          </CommandGroup>
+        )}
 
         <CommandGroup heading="Go to">
           {quickNavItems.map((item) => (

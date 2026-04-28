@@ -192,6 +192,65 @@ export interface StartAgentRunRequest {
   working_branch?: string;
 }
 
+export interface CommandBarPageContext {
+  entity_type: 'task' | 'epic' | 'document' | 'crm_contact' | 'crm_deal' | 'workspace';
+  entity_id: string;
+  display_title: string;
+  related_ids?: Record<string, string[]>;
+  metadata?: Record<string, unknown>;
+}
+
+export interface CommandBarPlanStep {
+  agent_id: string;
+  agent_key?: string;
+  agent_name: string;
+  target: CommandBarPageContext;
+  instructions: string;
+}
+
+export interface CommandBarPlan {
+  steps: CommandBarPlanStep[];
+  run_count: number;
+}
+
+export interface CommandBarAgentCandidate {
+  id: string;
+  name: string;
+  preset_key?: string;
+  role?: string;
+  allowed_targets: string[];
+  allowed_tools: string[];
+}
+
+export interface CommandBarParseRequest {
+  text: string;
+  page_context: CommandBarPageContext;
+}
+
+export type CommandBarParseResponse =
+  | {
+      status: 'plan';
+      plan: CommandBarPlan;
+      rationale?: string;
+      candidates?: CommandBarAgentCandidate[];
+    }
+  | {
+      status: 'no_matching_agent';
+      reason: string;
+      suggestions?: string[];
+      candidates?: CommandBarAgentCandidate[];
+    };
+
+export interface CommandBarDispatchRequest {
+  text: string;
+  page_context: CommandBarPageContext;
+  steps: CommandBarPlanStep[];
+}
+
+export interface CommandBarDispatchResponse {
+  runs: AgentRun[];
+}
+
 export interface SendAgentRunMessageRequest {
   content: string;
 }

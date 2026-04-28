@@ -199,6 +199,7 @@ func main() {
 			&model.AgentRunMessage{},
 			&model.AgentRunArtifact{},
 			&model.AgentRunInteraction{},
+			&model.CommandBarUnmetIntent{},
 			&model.CodingSessionStateSnapshot{},
 			&model.CodexWorkspaceAuth{},
 			&model.PMTaskLink{},
@@ -527,6 +528,7 @@ func main() {
 	agentRunRepo.SetTriggerExecutionRepository(agentTriggerExecutionRepo)
 	agentRunArtifactRepo := repository.NewAgentRunArtifactRepository(db)
 	agentRunInteractionRepo := repository.NewAgentRunInteractionRepository(db)
+	commandBarUnmetIntentRepo := repository.NewCommandBarUnmetIntentRepository(db)
 	codingSessionStateSnapshotRepo := repository.NewCodingSessionStateSnapshotRepository(db)
 	codexWorkspaceAuthRepo := repository.NewCodexWorkspaceAuthRepository(db)
 	pmTaskLinkRepo := repository.NewPMTaskLinkRepository(db)
@@ -780,6 +782,7 @@ func main() {
 		cfg.CodexChatGPTAccessToken,
 		cfg.CodexChatGPTAccountID,
 	).SetCodexAuthManager(codexAuthManager).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo)
+	commandBarService := service.NewCommandBarService(agentService, commandBarUnmetIntentRepo, supportLLMRouter)
 	supportInboxService.SetConversationAgentRunner(agentService.RunConversationAgentAuto)
 	supportInboxService.SetNotificationService(notificationService, workspaceRepo)
 	emailFallbackService.SetNotificationService(notificationService)
@@ -1091,6 +1094,7 @@ func main() {
 		PMExternalLink:      handler.NewPMExternalLinkHandler(pmExternalLinkService),
 		PMView:              handler.NewPMViewHandler(pmViewService),
 		Search:              handler.NewSearchHandler(searchService),
+		CommandBar:          handler.NewCommandBarHandler(commandBarService),
 		PMAutomation:        handler.NewPMAutomationHandler(pmAutomationService),
 		AutomationRule:      handler.NewAutomationRuleHandler(ruleEngine),
 		PMTaskTemplate:      handler.NewPMTaskTemplateHandler(pmTaskTemplateService),

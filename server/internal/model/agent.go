@@ -25,8 +25,10 @@ const (
 	AgentRunTriggerSourceManual         = "manual"
 	AgentRunTriggerSourceAutomationRule = "automation_rule"
 	AgentRunTriggerSourceSystem         = "system"
+	AgentRunTriggerSourceCommandBar     = "command_bar"
 
-	AgentRunTriggerTypeManual = "manual"
+	AgentRunTriggerTypeManual     = "manual"
+	AgentRunTriggerTypeCommandBar = "command_bar"
 )
 
 // Agent represents an LLM agent in a workspace.
@@ -471,10 +473,11 @@ type StartTargetAgentRunRequest struct {
 }
 
 type AgentRunTriggerContext struct {
-	Source      string     `json:"source,omitempty"`
-	TriggerType string     `json:"trigger_type,omitempty"`
-	RuleID      *string    `json:"rule_id,omitempty"`
-	FiredAt     *time.Time `json:"fired_at,omitempty"`
+	Source      string          `json:"source,omitempty"`
+	TriggerType string          `json:"trigger_type,omitempty"`
+	RuleID      *string         `json:"rule_id,omitempty"`
+	FiredAt     *time.Time      `json:"fired_at,omitempty"`
+	Context     json.RawMessage `json:"context,omitempty"`
 }
 
 type AgentRunTargetContext struct {
