@@ -9,12 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/helpin-ai/helpin/server/internal/websocket"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
-
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
+	tclient "go.temporal.io/sdk/client"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type PMImportService struct {
@@ -24,6 +24,8 @@ type PMImportService struct {
 	attachmentService shortcutImportedAttachmentService
 	mediaDownloader   shortcutMediaDownloader
 	publisher         *websocket.Publisher
+	temporalClient    tclient.Client
+	encryptionKey     []byte
 }
 
 var shortcutImportLabelColors = []string{
@@ -45,18 +47,30 @@ var shortcutImportLabelColors = []string{
 	"#a855f7",
 }
 
-func NewPMImportService(db *gorm.DB, workspaceRepo *repository.WorkspaceRepository, workflowRepo *repository.PMWorkflowRepository, attachmentService shortcutImportedAttachmentService) *PMImportService {
+func NewPMImportService(db *gorm.DB, workspaceRepo *repository.WorkspaceRepository, workflowRepo *repository.PMWorkflowRepository, attachmentService shortcutImportedAttachmentService, encryptionKey ...[]byte) *PMImportService {
+	var key []byte
+	if len(encryptionKey) > 0 && len(encryptionKey[0]) == 32 {
+		key = append([]byte(nil), encryptionKey[0]...)
+	}
 	return &PMImportService{
 		db:                db,
 		workspaceRepo:     workspaceRepo,
 		workflowRepo:      workflowRepo,
 		attachmentService: attachmentService,
 		mediaDownloader:   newShortcutHTTPMediaDownloader(),
+		encryptionKey:     key,
 	}
 }
 
 func (s *PMImportService) SetPublisher(publisher *websocket.Publisher) {
 	s.publisher = publisher
+}
+
+func (s *PMImportService) SetTemporalClient(client tclient.Client) {
+	if s == nil {
+		return
+	}
+	s.temporalClient = client
 }
 
 func (s *PMImportService) PreviewShortcut(ctx context.Context, workspaceID, actorID string, csvData []byte, apiToken string) (*model.ShortcutImportPreviewResponse, error) {

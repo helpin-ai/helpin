@@ -3,14 +3,19 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	appcrypto "github.com/helpin-ai/helpin/server/internal/crypto"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/temporalapp"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
+	"go.temporal.io/api/serviceerror"
+	tclient "go.temporal.io/sdk/client"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -77,12 +82,19 @@ func (s *PMImportService) ExecuteShortcutAPI(ctx context.Context, workspaceID, a
 	if err := s.db.WithContext(ctx).Create(job).Error; err != nil {
 		return nil, fmt.Errorf("create import job: %w", err)
 	}
-	go s.runShortcutAPIImport(job.ID, workspaceID, actorID, req)
+	if started, err := s.startShortcutAPIImportWorkflow(ctx, job, req); err != nil {
+		return nil, err
+	} else if !started {
+		go s.runShortcutAPIImport(job.ID, workspaceID, actorID, req)
+	}
 	return &model.ShortcutImportExecuteResponse{ImportID: job.ID, Status: model.PMImportStatusProcessing}, nil
 }
 
 func (s *PMImportService) runShortcutAPIImport(jobID, workspaceID, actorID string, req model.ShortcutAPIImportExecuteRequest) {
-	ctx := context.Background()
+	s.runShortcutAPIImportWithContext(context.Background(), jobID, workspaceID, actorID, req)
+}
+
+func (s *PMImportService) runShortcutAPIImportWithContext(ctx context.Context, jobID, workspaceID, actorID string, req model.ShortcutAPIImportExecuteRequest) {
 	totalSteps := s.shortcutImportTotalSteps(req.APIToken)
 	if err := s.updateJob(ctx, jobID, map[string]interface{}{
 		"status":             model.PMImportStatusProcessing,
@@ -119,6 +131,42 @@ func (s *PMImportService) runShortcutAPIImport(jobID, workspaceID, actorID strin
 		"completed_at":       &completed,
 		"updated_at":         completed,
 	})
+}
+
+func (s *PMImportService) startShortcutAPIImportWorkflow(ctx context.Context, job *model.PMImportJob, req model.ShortcutAPIImportExecuteRequest) (bool, error) {
+	if s == nil || s.temporalClient == nil {
+		return false, nil
+	}
+	if len(s.encryptionKey) != 32 {
+		return false, nil
+	}
+	payload, err := json.Marshal(req)
+	if err != nil {
+		return false, fmt.Errorf("encode Shortcut import payload: %w", err)
+	}
+	encrypted, err := appcrypto.EncryptString(string(payload), s.encryptionKey)
+	if err != nil {
+		return false, fmt.Errorf("encrypt Shortcut import payload: %w", err)
+	}
+	workflowID := temporalapp.WorkflowIDForShortcutImport(job.ID)
+	if err := s.updateJob(ctx, job.ID, map[string]interface{}{
+		"payload_encrypted": &encrypted,
+		"workflow_id":       &workflowID,
+		"updated_at":        time.Now().UTC(),
+	}); err != nil {
+		return false, err
+	}
+	_, err = s.temporalClient.ExecuteWorkflow(ctx, tclient.StartWorkflowOptions{
+		ID:        workflowID,
+		TaskQueue: temporalapp.QueueAutomation,
+	}, temporalapp.ShortcutImportWorkflow, temporalapp.ShortcutImportWorkflowInput{ImportID: job.ID})
+	if err != nil {
+		var alreadyStarted *serviceerror.WorkflowExecutionAlreadyStarted
+		if !errors.As(err, &alreadyStarted) {
+			return false, fmt.Errorf("start Shortcut import workflow: %w", err)
+		}
+	}
+	return true, nil
 }
 
 func (s *PMImportService) executeShortcutAPIImport(ctx context.Context, workspaceID, actorID string, req model.ShortcutAPIImportExecuteRequest, jobID string) (*model.ShortcutImportResult, int, error) {

@@ -29,6 +29,8 @@ type PMImportJob struct {
 	EntitiesTotal     int        `json:"entities_total" gorm:"not null;default:0"`
 	Result            *string    `json:"result"`
 	Error             *string    `json:"error"`
+	PayloadEncrypted  *string    `json:"-" gorm:"type:text"`
+	WorkflowID        *string    `json:"workflow_id,omitempty" gorm:"index"`
 	StartedBy         string     `json:"started_by" gorm:"type:uuid;not null"`
 	CreatedAt         time.Time  `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt         time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
