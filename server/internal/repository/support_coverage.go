@@ -96,6 +96,18 @@ func (r *SupportCoverageRepository) UpsertTopicByClusterKey(ctx context.Context,
 	return &topic, nil
 }
 
+func (r *SupportCoverageRepository) GetTopic(ctx context.Context, topicID string) (*model.SupportCoverageTopic, error) {
+	var topic model.SupportCoverageTopic
+	err := r.db.WithContext(ctx).Where("id = ?", topicID).First(&topic).Error
+	if err == nil {
+		return &topic, nil
+	}
+	if err == gorm.ErrRecordNotFound {
+		return nil, nil
+	}
+	return nil, fmt.Errorf("get topic: %w", err)
+}
+
 // UpsertGapByDedupeKey creates a new gap or increments evidence on
 // an existing one. Returns the gap and whether it was newly created.
 func (r *SupportCoverageRepository) UpsertGapByDedupeKey(ctx context.Context, gap *model.SupportCoverageGap) (*model.SupportCoverageGap, bool, error) {
@@ -216,6 +228,17 @@ func (r *SupportCoverageRepository) CreateEvidence(ctx context.Context, evidence
 		return fmt.Errorf("create gap evidence: %w", err)
 	}
 	return nil
+}
+
+func (r *SupportCoverageRepository) CountEvidenceSince(ctx context.Context, gapID string, since time.Time) (int64, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).
+		Model(&model.SupportGapEvidence{}).
+		Where("gap_id = ? AND created_at > ?", gapID, since).
+		Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count recent gap evidence: %w", err)
+	}
+	return count, nil
 }
 
 // ListGaps returns gaps for a workspace. Reads from gap table only,

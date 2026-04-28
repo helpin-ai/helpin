@@ -25,7 +25,58 @@ type SupportCoverageService struct {
 	coverageRepo *repository.SupportCoverageRepository
 	clusterer    *SupportCoverageClusterer
 	temporal     tclient.Client
+	workflow     coverageWorkflowRunner
 	logger       *slog.Logger
+}
+
+type coverageWorkflowRunner interface {
+	StartEnrichment(ctx context.Context, topicID string, unique bool) error
+	StartDailyBatch(ctx context.Context) error
+}
+
+type temporalCoverageWorkflowRunner struct {
+	client tclient.Client
+}
+
+func (r *temporalCoverageWorkflowRunner) StartEnrichment(ctx context.Context, topicID string, unique bool) error {
+	if r == nil || r.client == nil {
+		return nil
+	}
+	workflowID := "coverage-gap-enrich-" + topicID
+	if unique {
+		workflowID = workflowID + "-" + time.Now().UTC().Format("20060102150405.000000000")
+	}
+	_, err := r.client.ExecuteWorkflow(ctx, tclient.StartWorkflowOptions{
+		ID:        workflowID,
+		TaskQueue: temporalapp.QueueAutomation,
+	}, temporalapp.CoverageGapEnrichmentWorkflowType, topicID)
+	if err != nil {
+		var alreadyStarted *serviceerror.WorkflowExecutionAlreadyStarted
+		if errors.As(err, &alreadyStarted) {
+			return nil
+		}
+		return fmt.Errorf("start coverage gap enrichment workflow: %w", err)
+	}
+	return nil
+}
+
+func (r *temporalCoverageWorkflowRunner) StartDailyBatch(ctx context.Context) error {
+	if r == nil || r.client == nil {
+		return nil
+	}
+	_, err := r.client.ExecuteWorkflow(ctx, tclient.StartWorkflowOptions{
+		ID:           coverageDailyBatchWorkflowID,
+		TaskQueue:    temporalapp.QueueAutomation,
+		CronSchedule: coverageDailyBatchSchedule,
+	}, temporalapp.CoverageGapDailyBatchWorkflowType)
+	if err != nil {
+		var alreadyStarted *serviceerror.WorkflowExecutionAlreadyStarted
+		if errors.As(err, &alreadyStarted) {
+			return nil
+		}
+		return fmt.Errorf("start coverage gap daily enrichment workflow: %w", err)
+	}
+	return nil
 }
 
 // NewSupportCoverageService creates a new SupportCoverageService.
@@ -41,25 +92,18 @@ func NewSupportCoverageService(
 
 func (s *SupportCoverageService) SetTemporalClient(client tclient.Client) {
 	s.temporal = client
+	s.workflow = &temporalCoverageWorkflowRunner{client: client}
+}
+
+func (s *SupportCoverageService) SetCoverageWorkflowRunner(runner coverageWorkflowRunner) {
+	s.workflow = runner
 }
 
 func (s *SupportCoverageService) EnsureDailyEnrichment(ctx context.Context) error {
-	if s.temporal == nil {
+	if s.workflow == nil {
 		return nil
 	}
-	_, err := s.temporal.ExecuteWorkflow(ctx, tclient.StartWorkflowOptions{
-		ID:           coverageDailyBatchWorkflowID,
-		TaskQueue:    temporalapp.QueueAutomation,
-		CronSchedule: coverageDailyBatchSchedule,
-	}, temporalapp.CoverageGapDailyBatchWorkflowType)
-	if err != nil {
-		var alreadyStarted *serviceerror.WorkflowExecutionAlreadyStarted
-		if errors.As(err, &alreadyStarted) {
-			return nil
-		}
-		return fmt.Errorf("start coverage gap daily enrichment workflow: %w", err)
-	}
-	return nil
+	return s.workflow.StartDailyBatch(ctx)
 }
 
 // ProcessSupportEvent evaluates a persisted event against v1 rules
@@ -99,8 +143,40 @@ func (s *SupportCoverageService) ProcessSupportEvent(ctx context.Context, event 
 		// No existing gap for this conversation — fall through to normal rule processing.
 	}
 
-	_, err := s.clusterer.UpsertTopicGap(ctx, event)
-	return err
+	gap, err := s.clusterer.UpsertTopicGap(ctx, event)
+	if err != nil {
+		return err
+	}
+	s.maybeTriggerSpikeEnrichment(ctx, gap)
+	return nil
+}
+
+func (s *SupportCoverageService) maybeTriggerSpikeEnrichment(ctx context.Context, gap *model.SupportCoverageGap) {
+	if gap == nil || gap.TopicID == nil || s.workflow == nil {
+		return
+	}
+	count, err := s.coverageRepo.CountEvidenceSince(ctx, gap.ID, time.Now().Add(-time.Hour))
+	if err != nil {
+		s.logger.WarnContext(ctx, "spike trigger evidence count failed", "error", err, "gap_id", gap.ID)
+		return
+	}
+	if count < 5 {
+		return
+	}
+	topic, err := s.coverageRepo.GetTopic(ctx, *gap.TopicID)
+	if err != nil {
+		s.logger.WarnContext(ctx, "spike trigger topic load failed", "error", err, "topic_id", *gap.TopicID)
+		return
+	}
+	if topic == nil {
+		return
+	}
+	if topic.CooldownUntil != nil && topic.CooldownUntil.After(time.Now()) {
+		return
+	}
+	if err := s.workflow.StartEnrichment(ctx, topic.ID, false); err != nil {
+		s.logger.ErrorContext(ctx, "spike trigger workflow start failed", "error", err, "topic_id", topic.ID)
+	}
 }
 
 // GetSummary returns aggregate coverage metrics for a workspace.

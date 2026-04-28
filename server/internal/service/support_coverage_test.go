@@ -277,6 +277,91 @@ func TestSupportCoverage_DuplicateEvents_IncrementEvidence(t *testing.T) {
 	}
 }
 
+func TestSupportCoverage_SpikeTriggerStartsEnrichmentOnFifthEvidence(t *testing.T) {
+	eventSvc, coverageSvc, _ := setupCoverageTestEnv(t)
+	runner := &fakeCoverageWorkflowRunner{}
+	coverageSvc.SetCoverageWorkflowRunner(runner)
+	ctx := context.Background()
+
+	for i := 0; i < 5; i++ {
+		if err := eventSvc.RecordEvent(ctx, SupportEventInput{
+			WorkspaceID:  "ws-1",
+			EventType:    model.SupportEventHumanReplyAfterAI,
+			IssueSummary: "How do I reset my password?",
+			SourceSignal: model.SupportCoverageSourceHumanReply,
+		}); err != nil {
+			t.Fatalf("RecordEvent %d: %v", i, err)
+		}
+	}
+
+	if len(runner.topicIDs) != 1 {
+		t.Fatalf("workflow starts=%d, want 1", len(runner.topicIDs))
+	}
+	if runner.topicIDs[0] == "" {
+		t.Fatal("expected topic id")
+	}
+}
+
+func TestSupportCoverage_SpikeTriggerWaitsUntilFifthEvidence(t *testing.T) {
+	eventSvc, coverageSvc, _ := setupCoverageTestEnv(t)
+	runner := &fakeCoverageWorkflowRunner{}
+	coverageSvc.SetCoverageWorkflowRunner(runner)
+	ctx := context.Background()
+
+	for i := 0; i < 4; i++ {
+		if err := eventSvc.RecordEvent(ctx, SupportEventInput{
+			WorkspaceID:  "ws-1",
+			EventType:    model.SupportEventHumanReplyAfterAI,
+			IssueSummary: "How do I reset my password?",
+			SourceSignal: model.SupportCoverageSourceHumanReply,
+		}); err != nil {
+			t.Fatalf("RecordEvent %d: %v", i, err)
+		}
+	}
+
+	if len(runner.topicIDs) != 0 {
+		t.Fatalf("workflow starts=%d, want 0", len(runner.topicIDs))
+	}
+}
+
+func TestSupportCoverage_SpikeTriggerRespectsTopicCooldown(t *testing.T) {
+	eventSvc, coverageSvc, db := setupCoverageTestEnv(t)
+	runner := &fakeCoverageWorkflowRunner{}
+	coverageSvc.SetCoverageWorkflowRunner(runner)
+	ctx := context.Background()
+
+	for i := 0; i < 4; i++ {
+		if err := eventSvc.RecordEvent(ctx, SupportEventInput{
+			WorkspaceID:  "ws-1",
+			EventType:    model.SupportEventHumanReplyAfterAI,
+			IssueSummary: "How do I reset my password?",
+			SourceSignal: model.SupportCoverageSourceHumanReply,
+		}); err != nil {
+			t.Fatalf("RecordEvent %d: %v", i, err)
+		}
+	}
+	var topic model.SupportCoverageTopic
+	if err := db.First(&topic).Error; err != nil {
+		t.Fatalf("load topic: %v", err)
+	}
+	cooldown := time.Now().Add(time.Hour)
+	if err := db.Model(&model.SupportCoverageTopic{}).Where("id = ?", topic.ID).Update("cooldown_until", cooldown).Error; err != nil {
+		t.Fatalf("set cooldown: %v", err)
+	}
+	if err := eventSvc.RecordEvent(ctx, SupportEventInput{
+		WorkspaceID:  "ws-1",
+		EventType:    model.SupportEventHumanReplyAfterAI,
+		IssueSummary: "How do I reset my password?",
+		SourceSignal: model.SupportCoverageSourceHumanReply,
+	}); err != nil {
+		t.Fatalf("RecordEvent fifth: %v", err)
+	}
+
+	if len(runner.topicIDs) != 0 {
+		t.Fatalf("workflow starts=%d, want 0 during cooldown", len(runner.topicIDs))
+	}
+}
+
 func TestSupportCoverage_NormalizedVariantsShareCluster(t *testing.T) {
 	eventSvc, coverageSvc, _ := setupCoverageTestEnv(t)
 	ctx := context.Background()
@@ -568,4 +653,17 @@ func TestSupportCoverage_AsyncRecorder_Queues(t *testing.T) {
 	if len(gaps) != 1 {
 		t.Fatalf("expected 1 gap from async recorder, got %d", len(gaps))
 	}
+}
+
+type fakeCoverageWorkflowRunner struct {
+	topicIDs []string
+}
+
+func (f *fakeCoverageWorkflowRunner) StartEnrichment(ctx context.Context, topicID string, unique bool) error {
+	f.topicIDs = append(f.topicIDs, topicID)
+	return nil
+}
+
+func (f *fakeCoverageWorkflowRunner) StartDailyBatch(ctx context.Context) error {
+	return nil
 }
