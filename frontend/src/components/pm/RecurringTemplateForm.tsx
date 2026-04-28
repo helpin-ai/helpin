@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Collapsible } from 'radix-ui';
 import { Calendar03Icon, CheckmarkCircle02Icon, Clock02Icon, ArrowRight01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';

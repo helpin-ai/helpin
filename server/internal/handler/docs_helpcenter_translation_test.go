@@ -64,6 +64,7 @@ func setupDocsHelpcenterTranslationHandlerTestDB(t *testing.T) *gorm.DB {
 			parent_collection_id TEXT,
 			depth INTEGER NOT NULL DEFAULT 0,
 			name TEXT NOT NULL,
+			public_id TEXT NOT NULL DEFAULT '',
 			slug TEXT NOT NULL DEFAULT '',
 			description TEXT,
 			icon TEXT,
