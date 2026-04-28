@@ -22,6 +22,7 @@ export function GapImpactBadge({
   tier: GapImpactTier
   className?: string
 }) {
+  if (!IMPACT_LABELS[tier]) return null
   return (
     <Badge
       variant="secondary"

@@ -222,9 +222,9 @@ export function SupportCoveragePage() {
               key={label}
               type="button"
               disabled
-              className="rounded-full border border-border/60 px-3 py-1 text-xs font-medium text-muted-foreground/45"
+              className="cursor-not-allowed rounded-full border border-border/60 px-3 py-1 text-xs font-medium text-muted-foreground/45"
             >
-              {label}
+              {label} <span className="text-muted-foreground/35">(soon)</span>
             </button>
           ))}
         </div>
@@ -251,7 +251,12 @@ export function SupportCoveragePage() {
 
       <div className="flex gap-4">
         <div className={`${selectedGap ? 'w-1/2' : 'w-full'} space-y-1`}>
-          <GapList gaps={gaps} selectedGapId={selectedGap?.id} onSelect={openDetail} />
+          <GapList
+            gaps={gaps}
+            selectedGapId={selectedGap?.id}
+            onSelect={openDetail}
+            compact={!!selectedGap}
+          />
         </div>
 
         {selectedGap && (
