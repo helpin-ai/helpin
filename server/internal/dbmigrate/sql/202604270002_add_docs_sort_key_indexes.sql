@@ -5,6 +5,12 @@
 -- These indexes support the canonical ORDER BY: sort_key ASC, id ASC
 -- scoped by (workspace_id, space_id, collection_id/parent_collection_id).
 
+ALTER TABLE docs_documents
+  ADD COLUMN IF NOT EXISTS sort_key TEXT NOT NULL DEFAULT '~';
+
+ALTER TABLE docs_collections
+  ADD COLUMN IF NOT EXISTS sort_key TEXT NOT NULL DEFAULT '~';
+
 CREATE INDEX IF NOT EXISTS idx_docs_documents_bucket_sort
   ON docs_documents (workspace_id, space_id, collection_id, sort_key, id);
 
