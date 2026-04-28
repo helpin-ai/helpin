@@ -37,7 +37,7 @@ interface AttachmentsProps {
   onUploadReady?: (upload: (files: FileList | File[]) => Promise<void>) => void;
 }
 
-const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
+const MAX_SIZE = 50 * 1024 * 1024; // 50 MB
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -120,7 +120,7 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
 
       for (const file of fileArray) {
         if (file.size > MAX_SIZE) {
-          setError(`${file.name} exceeds 10MB limit`);
+          setError(`${file.name} exceeds 50MB limit`);
           continue;
         }
 

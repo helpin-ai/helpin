@@ -82,7 +82,7 @@ import audioIcon from '@/assets/attachment/audio-icon.png';
 import videoIcon from '@/assets/attachment/video-icon.png';
 import defaultIcon from '@/assets/attachment/default-icon.png';
 
-const MAX_PENDING_ATTACHMENT_SIZE = 10 * 1024 * 1024;
+const MAX_PENDING_ATTACHMENT_SIZE = 50 * 1024 * 1024;
 
 function getFileExtension(filename: string): string {
   const parts = filename.split('.');
@@ -565,7 +565,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                         onDrop={handleDrop}
                       >
                         <Upload01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="text-xs text-muted-foreground">Drop files or click to upload (max 10MB)</span>
+                        <span className="text-xs text-muted-foreground">Drop files or click to upload (max 50MB)</span>
                         <input
                           ref={fileInputRef}
                           type="file"
