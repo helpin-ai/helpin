@@ -44,19 +44,28 @@ export function SupportCoveragePage() {
 
   useEffect(() => {
     if (!wsId) return
-    setLoading(true)
-    setSelectedGap(null)
-    Promise.all([
-      supportCoverageService.getSummary(wsId),
-      supportCoverageService.listGaps(wsId, { status: statusFilter }),
-    ]).then(([summaryRes, gapsRes]) => {
+    let cancelled = false
+
+    async function loadCoverage() {
+      setLoading(true)
+      setSelectedGap(null)
+      const [summaryRes, gapsRes] = await Promise.all([
+        supportCoverageService.getSummary(wsId),
+        supportCoverageService.listGaps(wsId, { status: statusFilter }),
+      ])
+      if (cancelled) return
       if (summaryRes.data) setSummary(summaryRes.data)
       if (gapsRes.data) {
         setGaps(gapsRes.data.items || [])
         setTotal(gapsRes.data.total || 0)
       }
       setLoading(false)
-    })
+    }
+
+    void loadCoverage()
+    return () => {
+      cancelled = true
+    }
   }, [wsId, statusFilter])
 
   const refreshGap = async (gapId: string) => {
