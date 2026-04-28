@@ -123,6 +123,47 @@ func TestSupportCoverageImpactTier(t *testing.T) {
 	}
 }
 
+func TestSupportCoverage_AddDocumentToGapClosesWithResultDocument(t *testing.T) {
+	_, coverageSvc, db := setupCoverageTestEnv(t)
+	ctx := context.Background()
+	now := time.Now()
+	repo := repository.NewSupportCoverageRepository(db)
+
+	_, _, err := repo.UpsertGapByDedupeKey(ctx, &model.SupportCoverageGap{
+		ID:          "gap-editor",
+		WorkspaceID: "ws-1",
+		DedupeKey:   "editor-handoff",
+		FirstSeenAt: now,
+		LastSeenAt:  now,
+	})
+	if err != nil {
+		t.Fatalf("seed gap: %v", err)
+	}
+	if err := repo.CreateEvidence(ctx, &model.SupportGapEvidence{
+		GapID:        "gap-editor",
+		WorkspaceID:  "ws-1",
+		EvidenceType: model.SupportEventDocsIssueFeedback,
+		CreatedAt:    now,
+	}); err != nil {
+		t.Fatalf("seed evidence: %v", err)
+	}
+
+	if err := coverageSvc.AddDocumentToGap(ctx, "ws-1", "gap-editor", "doc-editor"); err != nil {
+		t.Fatalf("AddDocumentToGap: %v", err)
+	}
+
+	var gap model.SupportCoverageGap
+	if err := db.Where("id = ?", "gap-editor").First(&gap).Error; err != nil {
+		t.Fatalf("load gap: %v", err)
+	}
+	if gap.Status != model.SupportCoverageGapStatusDone {
+		t.Fatalf("status=%q, want done", gap.Status)
+	}
+	if gap.ResultDocumentID == nil || *gap.ResultDocumentID != "doc-editor" {
+		t.Fatalf("result_document_id=%v, want doc-editor", gap.ResultDocumentID)
+	}
+}
+
 func TestSupportCoverage_AIHandoff_NoRetrieval_CreatesGap(t *testing.T) {
 	eventSvc, coverageSvc, _ := setupCoverageTestEnv(t)
 	ctx := context.Background()

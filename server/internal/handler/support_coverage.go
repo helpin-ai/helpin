@@ -224,6 +224,38 @@ func (h *SupportCoverageHandler) ReclassifyGap(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+// AddDocumentToGap handles POST /api/support/coverage/gaps/{gapId}/add.
+func (h *SupportCoverageHandler) AddDocumentToGap(w http.ResponseWriter, r *http.Request) {
+	wsID := middleware.GetWorkspaceID(r.Context())
+	gapID := chi.URLParam(r, "gapId")
+	var req struct {
+		Route            string `json:"route"`
+		TargetDocumentID string `json:"target_document_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Route != "" && req.Route != model.SupportCoverageSuggestionUpdateArticle {
+		writeError(w, http.StatusBadRequest, "unsupported route")
+		return
+	}
+	if req.TargetDocumentID == "" {
+		writeError(w, http.StatusBadRequest, "target_document_id is required")
+		return
+	}
+	err := h.coverageSvc.AddDocumentToGap(r.Context(), wsID, gapID, req.TargetDocumentID)
+	if service.IsGapResolutionConflict(err) {
+		writeError(w, http.StatusConflict, "gap is no longer open")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
 // MergeGap handles POST /api/support/coverage/gaps/{gapId}/merge.
 func (h *SupportCoverageHandler) MergeGap(w http.ResponseWriter, r *http.Request) {
 	wsID := middleware.GetWorkspaceID(r.Context())

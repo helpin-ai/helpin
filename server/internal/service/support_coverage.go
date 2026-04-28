@@ -250,6 +250,20 @@ func (s *SupportCoverageService) RejectGap(ctx context.Context, workspaceID, gap
 	return s.coverageRepo.MarkGapRejected(ctx, workspaceID, gapID, userID, rejectionReason, evidence30d)
 }
 
+func (s *SupportCoverageService) AddDocumentToGap(ctx context.Context, workspaceID, gapID, documentID string) error {
+	if documentID == "" {
+		return fmt.Errorf("document_id is required")
+	}
+	evidence30d, err := s.coverageRepo.CountEvidence30d(ctx, gapID)
+	if err != nil {
+		return err
+	}
+	if err := s.coverageRepo.MarkGapDone(ctx, workspaceID, gapID, documentID, evidence30d); err != nil {
+		return err
+	}
+	return s.coverageRepo.LinkGapArticle(ctx, gapID, documentID, workspaceID)
+}
+
 func IsGapResolutionConflict(err error) bool {
 	return errors.Is(err, repository.ErrGapAlreadyClosed)
 }

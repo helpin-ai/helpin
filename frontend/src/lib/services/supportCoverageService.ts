@@ -33,6 +33,9 @@ export const supportCoverageService = {
   mergeGap: (wsId: string, gapId: string, targetGapId: string) =>
     api.post(`/support/coverage/gaps/${gapId}/merge${qs(wsId)}`, { target_gap_id: targetGapId }),
 
+  addDocumentToGap: (wsId: string, gapId: string, payload: { route: 'update_article'; target_document_id: string }) =>
+    api.post(`/support/coverage/gaps/${gapId}/add${qs(wsId)}`, payload),
+
   createArticleDraft: (wsId: string, gapId: string, payload: { target_space_id: string; target_collection_id?: string }) =>
     api.post<SupportGapSuggestion>(`/support/coverage/gaps/${gapId}/suggestions/article-draft${qs(wsId)}`, payload),
 

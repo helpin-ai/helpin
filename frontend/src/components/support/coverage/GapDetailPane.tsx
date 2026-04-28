@@ -23,6 +23,7 @@ import type { SupportCoverageGapDetail } from '@/lib/supportCoverageTypes'
 import { GAP_STATUS_LABELS, V1_GAP_TYPE_LABELS } from '@/lib/supportCoverageTypes'
 import { timeAgo } from '@/lib/utils'
 import { GapAddSplitButton, type GapAddRoute } from './GapAddSplitButton'
+import { storeCoverageHandoffContent } from './coverageHandoff'
 import {
   coverageConfidenceLabel,
   coverageSuggestionPreview,
@@ -115,6 +116,12 @@ export function GapDetailPane({
   const regenerateSeconds = regenerateLockedUntil
     ? Math.max(0, Math.ceil((regenerateLockedUntil - now) / 1000))
     : 0
+  const draftEditorDocumentID =
+    draftSuggestion?.target_document_id ?? gap.related_articles[0]?.document_id ?? undefined
+  const draftEditorHref =
+    draftSuggestion && draftEditorDocumentID
+      ? `/w/${wsSlug}/docs/documents/${draftEditorDocumentID}?from_gap=${encodeURIComponent(gap.id)}&from_suggestion=${encodeURIComponent(draftSuggestion.id)}`
+      : ''
 
   const handleRegenerate = () => {
     setRegenerateLockedUntil(Date.now() + 30_000)
@@ -195,7 +202,7 @@ export function GapDetailPane({
             </span>
           </div>
           <a
-            href={`/w/${wsSlug}/docs/${gap.related_articles[0].document_id}`}
+            href={`/w/${wsSlug}/docs/documents/${gap.related_articles[0].document_id}`}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-primary hover:underline"
@@ -233,7 +240,7 @@ export function GapDetailPane({
                     )}
                     {ev.document_id && (
                       <a
-                        href={`/w/${wsSlug}/docs/${ev.document_id}`}
+                        href={`/w/${wsSlug}/docs/documents/${ev.document_id}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-0.5 text-primary hover:underline"
@@ -262,7 +269,7 @@ export function GapDetailPane({
             </span>
             {appliedSuggestion.result_document_id && (
               <a
-                href={`/w/${wsSlug}/docs/${appliedSuggestion.result_document_id}`}
+                href={`/w/${wsSlug}/docs/documents/${appliedSuggestion.result_document_id}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex shrink-0 items-center gap-1 text-xs font-medium hover:underline"
@@ -313,6 +320,18 @@ export function GapDetailPane({
                 </p>
               </div>
               <div className="flex justify-end gap-2">
+                {Boolean(draftEditorHref && draftSuggestion.content) && (
+                  <a
+                    href={draftEditorHref}
+                    onClick={() =>
+                      storeCoverageHandoffContent(gap.id, draftSuggestion.id, draftSuggestion.content)
+                    }
+                    className="inline-flex items-center gap-1 rounded-md border border-border/60 px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted"
+                  >
+                    Open in editor
+                    <ArrowUpRight01Icon className="h-3 w-3" />
+                  </a>
+                )}
                 <button
                   type="button"
                   onClick={() => onSetConfirmSuggestion(null)}
