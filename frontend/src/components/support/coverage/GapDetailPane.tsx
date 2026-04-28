@@ -231,7 +231,7 @@ export function GapDetailPane({
                   <div className="flex gap-2">
                     {ev.conversation_id && (
                       <a
-                        href={`/w/${wsSlug}/support/inbox?conversation=${ev.conversation_id}`}
+                        href={`/w/${wsSlug}/support/${ev.conversation_id}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-0.5 text-primary hover:underline"
