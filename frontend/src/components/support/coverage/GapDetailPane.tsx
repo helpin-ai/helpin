@@ -24,6 +24,7 @@ import { GAP_STATUS_LABELS, V1_GAP_TYPE_LABELS } from '@/lib/supportCoverageType
 import { timeAgo } from '@/lib/utils'
 import { GapAddSplitButton, type GapAddRoute } from './GapAddSplitButton'
 import { storeCoverageHandoffContent } from './coverageHandoff'
+import { buildCoverageCollectionOptions } from './coverageCollectionOptions'
 import {
   coverageConfidenceLabel,
   coverageSuggestionPreview,
@@ -94,7 +95,7 @@ export function GapDetailPane({
   onRegenerate: (gapId: string) => void
 }) {
   const [regenerateLockedUntil, setRegenerateLockedUntil] = useState<number | null>(null)
-  const [now, setNow] = useState(Date.now())
+  const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
     if (!regenerateLockedUntil) return
@@ -122,6 +123,7 @@ export function GapDetailPane({
     draftSuggestion && draftEditorDocumentID
       ? `/w/${wsSlug}/docs/documents/${draftEditorDocumentID}?from_gap=${encodeURIComponent(gap.id)}&from_suggestion=${encodeURIComponent(draftSuggestion.id)}`
       : ''
+  const collectionOptions = buildCoverageCollectionOptions(targetSpaceId, collections ?? [])
 
   const handleRegenerate = () => {
     setRegenerateLockedUntil(Date.now() + 30_000)
@@ -440,9 +442,9 @@ export function GapDetailPane({
                         <SelectValue placeholder="Collection (optional)" />
                       </SelectTrigger>
                       <SelectContent>
-                        {collections?.map((collection) => (
+                        {collectionOptions.map((collection) => (
                           <SelectItem key={collection.id} value={collection.id}>
-                            {collection.name}
+                            {collection.label}
                           </SelectItem>
                         ))}
                       </SelectContent>
