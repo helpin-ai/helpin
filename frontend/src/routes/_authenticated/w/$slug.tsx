@@ -13,6 +13,7 @@ import { GlobalCreateModals } from '@/components/pm/GlobalCreateModals'
 import { GlobalTaskPanel } from '@/components/pm/GlobalTaskPanel'
 import { CommandBarRunRail } from '@/components/command-bar/CommandBarRunRail'
 import { PageContextProvider } from '@/components/command-bar/pageContext'
+import { AskAgentsDock } from '@/components/agents/AskAgentsDock'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { Skeleton } from '@/components/ui/skeleton'
 
@@ -102,6 +103,7 @@ function WorkspaceLayout() {
               <div className="flex min-h-0 flex-1 overflow-hidden">
                 <main className="relative min-h-0 flex-1 overflow-hidden">
                   <Outlet />
+                  <RouteAwareAskAgentsDock />
                 </main>
                 <CommandBarRunRail />
               </div>
@@ -120,6 +122,13 @@ function RouteAwareHeader() {
   const location = useLocation()
   if (location.pathname.includes('/support')) return null
   return <Header />
+}
+
+/** Hide the Ask Agents dock on support routes — support has its own assistant flow. */
+function RouteAwareAskAgentsDock() {
+  const location = useLocation()
+  if (location.pathname.includes('/support')) return null
+  return <AskAgentsDock />
 }
 
 const MemoizedGlobalCreateModals = memo(GlobalCreateModals)
