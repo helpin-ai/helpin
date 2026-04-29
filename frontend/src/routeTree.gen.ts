@@ -45,6 +45,7 @@ import { Route as AuthenticatedWSlugSettingsTeamsRouteImport } from './routes/_a
 import { Route as AuthenticatedWSlugSettingsTaskTemplatesRouteImport } from './routes/_authenticated/w/$slug/settings/task-templates'
 import { Route as AuthenticatedWSlugSettingsRedirectsRouteImport } from './routes/_authenticated/w/$slug/settings/redirects'
 import { Route as AuthenticatedWSlugSettingsRecurringTasksRouteImport } from './routes/_authenticated/w/$slug/settings/recurring-tasks'
+import { Route as AuthenticatedWSlugSettingsMessageShortcutsRouteImport } from './routes/_authenticated/w/$slug/settings/message-shortcuts'
 import { Route as AuthenticatedWSlugSettingsMembersRouteImport } from './routes/_authenticated/w/$slug/settings/members'
 import { Route as AuthenticatedWSlugSettingsLabelsRouteImport } from './routes/_authenticated/w/$slug/settings/labels'
 import { Route as AuthenticatedWSlugSettingsKnowledgeRouteImport } from './routes/_authenticated/w/$slug/settings/knowledge'
@@ -299,6 +300,12 @@ const AuthenticatedWSlugSettingsRecurringTasksRoute =
   AuthenticatedWSlugSettingsRecurringTasksRouteImport.update({
     id: '/settings/recurring-tasks',
     path: '/settings/recurring-tasks',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
+const AuthenticatedWSlugSettingsMessageShortcutsRoute =
+  AuthenticatedWSlugSettingsMessageShortcutsRouteImport.update({
+    id: '/settings/message-shortcuts',
+    path: '/settings/message-shortcuts',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugSettingsMembersRoute =
@@ -698,6 +705,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/settings/knowledge': typeof AuthenticatedWSlugSettingsKnowledgeRoute
   '/w/$slug/settings/labels': typeof AuthenticatedWSlugSettingsLabelsRoute
   '/w/$slug/settings/members': typeof AuthenticatedWSlugSettingsMembersRoute
+  '/w/$slug/settings/message-shortcuts': typeof AuthenticatedWSlugSettingsMessageShortcutsRoute
   '/w/$slug/settings/recurring-tasks': typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   '/w/$slug/settings/redirects': typeof AuthenticatedWSlugSettingsRedirectsRoute
   '/w/$slug/settings/task-templates': typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
@@ -786,6 +794,7 @@ export interface FileRoutesByTo {
   '/w/$slug/settings/knowledge': typeof AuthenticatedWSlugSettingsKnowledgeRoute
   '/w/$slug/settings/labels': typeof AuthenticatedWSlugSettingsLabelsRoute
   '/w/$slug/settings/members': typeof AuthenticatedWSlugSettingsMembersRoute
+  '/w/$slug/settings/message-shortcuts': typeof AuthenticatedWSlugSettingsMessageShortcutsRoute
   '/w/$slug/settings/recurring-tasks': typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   '/w/$slug/settings/redirects': typeof AuthenticatedWSlugSettingsRedirectsRoute
   '/w/$slug/settings/task-templates': typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
@@ -881,6 +890,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/settings/knowledge': typeof AuthenticatedWSlugSettingsKnowledgeRoute
   '/_authenticated/w/$slug/settings/labels': typeof AuthenticatedWSlugSettingsLabelsRoute
   '/_authenticated/w/$slug/settings/members': typeof AuthenticatedWSlugSettingsMembersRoute
+  '/_authenticated/w/$slug/settings/message-shortcuts': typeof AuthenticatedWSlugSettingsMessageShortcutsRoute
   '/_authenticated/w/$slug/settings/recurring-tasks': typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   '/_authenticated/w/$slug/settings/redirects': typeof AuthenticatedWSlugSettingsRedirectsRoute
   '/_authenticated/w/$slug/settings/task-templates': typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
@@ -976,6 +986,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/knowledge'
     | '/w/$slug/settings/labels'
     | '/w/$slug/settings/members'
+    | '/w/$slug/settings/message-shortcuts'
     | '/w/$slug/settings/recurring-tasks'
     | '/w/$slug/settings/redirects'
     | '/w/$slug/settings/task-templates'
@@ -1064,6 +1075,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/knowledge'
     | '/w/$slug/settings/labels'
     | '/w/$slug/settings/members'
+    | '/w/$slug/settings/message-shortcuts'
     | '/w/$slug/settings/recurring-tasks'
     | '/w/$slug/settings/redirects'
     | '/w/$slug/settings/task-templates'
@@ -1158,6 +1170,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/settings/knowledge'
     | '/_authenticated/w/$slug/settings/labels'
     | '/_authenticated/w/$slug/settings/members'
+    | '/_authenticated/w/$slug/settings/message-shortcuts'
     | '/_authenticated/w/$slug/settings/recurring-tasks'
     | '/_authenticated/w/$slug/settings/redirects'
     | '/_authenticated/w/$slug/settings/task-templates'
@@ -1456,6 +1469,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/recurring-tasks'
       fullPath: '/w/$slug/settings/recurring-tasks'
       preLoaderRoute: typeof AuthenticatedWSlugSettingsRecurringTasksRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/w/$slug/settings/message-shortcuts': {
+      id: '/_authenticated/w/$slug/settings/message-shortcuts'
+      path: '/settings/message-shortcuts'
+      fullPath: '/w/$slug/settings/message-shortcuts'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsMessageShortcutsRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/settings/members': {
@@ -2005,6 +2025,7 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugSettingsKnowledgeRoute: typeof AuthenticatedWSlugSettingsKnowledgeRoute
   AuthenticatedWSlugSettingsLabelsRoute: typeof AuthenticatedWSlugSettingsLabelsRoute
   AuthenticatedWSlugSettingsMembersRoute: typeof AuthenticatedWSlugSettingsMembersRoute
+  AuthenticatedWSlugSettingsMessageShortcutsRoute: typeof AuthenticatedWSlugSettingsMessageShortcutsRoute
   AuthenticatedWSlugSettingsRecurringTasksRoute: typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   AuthenticatedWSlugSettingsRedirectsRoute: typeof AuthenticatedWSlugSettingsRedirectsRoute
   AuthenticatedWSlugSettingsTaskTemplatesRoute: typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
@@ -2076,6 +2097,8 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
   AuthenticatedWSlugSettingsLabelsRoute: AuthenticatedWSlugSettingsLabelsRoute,
   AuthenticatedWSlugSettingsMembersRoute:
     AuthenticatedWSlugSettingsMembersRoute,
+  AuthenticatedWSlugSettingsMessageShortcutsRoute:
+    AuthenticatedWSlugSettingsMessageShortcutsRoute,
   AuthenticatedWSlugSettingsRecurringTasksRoute:
     AuthenticatedWSlugSettingsRecurringTasksRoute,
   AuthenticatedWSlugSettingsRedirectsRoute:

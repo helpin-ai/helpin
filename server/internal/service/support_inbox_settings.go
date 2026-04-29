@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -11,6 +12,11 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
+)
+
+var (
+	ErrCannedResponseDuplicate = errors.New("shortcut already exists")
+	ErrCannedResponseInvalid   = errors.New("invalid shortcut")
 )
 
 // parseSettings unmarshals the JSONB settings string, applying defaults for missing fields.
@@ -569,10 +575,52 @@ func (s *SupportInboxService) SearchCannedResponses(ctx context.Context, workspa
 	return s.cannedResponseRepo.Search(ctx, workspaceID, query)
 }
 
+func normalizeCannedResponseRequest(req model.CannedResponseRequest) (model.CannedResponseRequest, error) {
+	req.ShortCode = strings.TrimSpace(req.ShortCode)
+	req.Title = strings.TrimSpace(req.Title)
+	req.Content = strings.TrimSpace(req.Content)
+	if req.Tag != nil {
+		tag := strings.TrimSpace(*req.Tag)
+		req.Tag = &tag
+	}
+	if req.ShortCode == "" || req.Content == "" {
+		return req, fmt.Errorf("%w: shortcut and content are required", ErrCannedResponseInvalid)
+	}
+	if !strings.HasPrefix(req.ShortCode, "!") || strings.ContainsAny(req.ShortCode, " \t\r\n") {
+		return req, fmt.Errorf("%w: shortcut must start with ! and contain no spaces", ErrCannedResponseInvalid)
+	}
+	if req.Title == "" {
+		req.Title = req.ShortCode
+	}
+	if req.Tag == nil || *req.Tag == "" {
+		tag := "Others"
+		req.Tag = &tag
+	}
+	return req, nil
+}
+
+func isDuplicateCannedResponseError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "idx_support_canned_responses_ws_short_code") ||
+		strings.Contains(msg, "duplicate key") ||
+		strings.Contains(msg, "unique constraint")
+}
+
 // CreateCannedResponse creates a new canned response.
 func (s *SupportInboxService) CreateCannedResponse(ctx context.Context, workspaceID string, req model.CannedResponseRequest, createdByID string) (*model.SupportCannedResponse, error) {
-	if strings.TrimSpace(req.ShortCode) == "" || strings.TrimSpace(req.Title) == "" || strings.TrimSpace(req.Content) == "" {
-		return nil, fmt.Errorf("short_code, title, and content are required")
+	req, err := normalizeCannedResponseRequest(req)
+	if err != nil {
+		return nil, err
+	}
+	existing, err := s.cannedResponseRepo.GetByShortCode(ctx, workspaceID, req.ShortCode)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return nil, ErrCannedResponseDuplicate
 	}
 
 	response := &model.SupportCannedResponse{
@@ -580,9 +628,13 @@ func (s *SupportInboxService) CreateCannedResponse(ctx context.Context, workspac
 		ShortCode:   req.ShortCode,
 		Title:       req.Title,
 		Content:     req.Content,
+		Tag:         *req.Tag,
 		CreatedByID: createdByID,
 	}
 	if err := s.cannedResponseRepo.Create(ctx, response); err != nil {
+		if isDuplicateCannedResponseError(err) {
+			return nil, ErrCannedResponseDuplicate
+		}
 		return nil, fmt.Errorf("create canned response: %w", err)
 	}
 	return response, nil
@@ -590,6 +642,10 @@ func (s *SupportInboxService) CreateCannedResponse(ctx context.Context, workspac
 
 // UpdateCannedResponse updates an existing canned response.
 func (s *SupportInboxService) UpdateCannedResponse(ctx context.Context, workspaceID, id string, req model.CannedResponseRequest) (*model.SupportCannedResponse, error) {
+	req, err := normalizeCannedResponseRequest(req)
+	if err != nil {
+		return nil, err
+	}
 	response, err := s.cannedResponseRepo.GetByID(ctx, workspaceID, id)
 	if err != nil {
 		return nil, err
@@ -597,12 +653,23 @@ func (s *SupportInboxService) UpdateCannedResponse(ctx context.Context, workspac
 	if response == nil {
 		return nil, fmt.Errorf("canned response not found")
 	}
+	existing, err := s.cannedResponseRepo.GetByShortCode(ctx, workspaceID, req.ShortCode)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil && existing.ID != id {
+		return nil, ErrCannedResponseDuplicate
+	}
 
 	response.ShortCode = req.ShortCode
 	response.Title = req.Title
 	response.Content = req.Content
+	response.Tag = *req.Tag
 
 	if err := s.cannedResponseRepo.Update(ctx, response); err != nil {
+		if isDuplicateCannedResponseError(err) {
+			return nil, ErrCannedResponseDuplicate
+		}
 		return nil, fmt.Errorf("update canned response: %w", err)
 	}
 	return response, nil
