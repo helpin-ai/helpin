@@ -1,5 +1,18 @@
 import type { SupportCoverageGapDetail, SupportGapSuggestion } from '@/lib/supportCoverageTypes'
 
+export const EVIDENCE_TYPE_LABELS: Record<string, string> = {
+  ai_handoff_triggered: 'AI Handoff',
+  article_feedback_submitted: 'Article Feedback',
+  widget_search_performed: 'Widget Search',
+  docs_issue_feedback: 'Agent Feedback',
+  human_reply_after_ai: 'Human Reply',
+  daily_conversation_analysis: 'Daily Analysis',
+}
+
+export function evidenceTypeLabel(type: string): string {
+  return EVIDENCE_TYPE_LABELS[type] ?? type
+}
+
 type ExtractedNode = { type?: string; text?: string; content?: ExtractedNode[] }
 
 function extractTextFromTipTap(content: unknown): string {

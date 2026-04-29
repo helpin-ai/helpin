@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { SupportGapEvidence } from '@/lib/supportCoverageTypes'
 import {
+  conversationCardCountText,
+  conversationCardHeaderLabel,
   groupEvidenceByConversation,
+  isMessageEvidence,
   isOurSenderRole,
 } from '../evidenceGrouping'
 
@@ -62,6 +65,52 @@ describe('groupEvidenceByConversation', () => {
       expect(groups[1].conversationId).toBe('c2')
       expect(groups[1].items.map((e) => e.id)).toEqual(['b', 'd'])
     }
+  })
+})
+
+describe('isMessageEvidence', () => {
+  it('returns true only when message_id is set', () => {
+    expect(isMessageEvidence(ev({ message_id: 'm1' }))).toBe(true)
+    expect(isMessageEvidence(ev({ message_id: null }))).toBe(false)
+    expect(isMessageEvidence(ev({ conversation_id: 'c1', message_id: null }))).toBe(false)
+  })
+})
+
+describe('conversationCardHeaderLabel', () => {
+  it('uses the default label when all items are messages', () => {
+    const items = [ev({ id: 'a', message_id: 'm1' }), ev({ id: 'b', message_id: 'm2' })]
+    expect(conversationCardHeaderLabel(items, 'AI Handoff')).toBe('AI Handoff')
+  })
+
+  it('uses the default label when all items are events', () => {
+    const items = [ev({ id: 'a' }), ev({ id: 'b' })]
+    expect(conversationCardHeaderLabel(items, 'Agent Feedback')).toBe('Agent Feedback')
+  })
+
+  it('falls back to a generic label when items are mixed', () => {
+    const items = [ev({ id: 'a', message_id: 'm1' }), ev({ id: 'b' })]
+    expect(conversationCardHeaderLabel(items, 'AI Handoff')).toBe('Conversation evidence')
+  })
+})
+
+describe('conversationCardCountText', () => {
+  it('counts messages when messages dominate', () => {
+    const items = [
+      ev({ id: 'a', message_id: 'm1' }),
+      ev({ id: 'b', message_id: 'm2' }),
+      ev({ id: 'c' }),
+    ]
+    expect(conversationCardCountText(items)).toBe('2 messages')
+  })
+
+  it('counts events only when there are no messages and more than one event', () => {
+    const items = [ev({ id: 'a' }), ev({ id: 'b' })]
+    expect(conversationCardCountText(items)).toBe('2 events')
+  })
+
+  it('returns empty string for a single item', () => {
+    expect(conversationCardCountText([ev({ id: 'a', message_id: 'm1' })])).toBe('')
+    expect(conversationCardCountText([ev({ id: 'a' })])).toBe('')
   })
 })
 

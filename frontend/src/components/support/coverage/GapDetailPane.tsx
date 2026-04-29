@@ -29,6 +29,7 @@ import { GapAddSplitButton, type GapAddRoute } from './GapAddSplitButton'
 import { storeCoverageHandoffContent } from './coverageHandoff'
 import { buildCoverageCollectionOptions } from './coverageCollectionOptions'
 import {
+  EVIDENCE_TYPE_LABELS,
   coverageConfidenceLabel,
   coverageSuggestionPreview,
   coverageTopicLabel,
@@ -40,15 +41,6 @@ const STATUS_COLORS: Record<string, string> = {
   open: 'bg-amber-100 text-amber-700',
   done: 'bg-green-100 text-green-700',
   rejected: 'bg-muted text-muted-foreground/60',
-}
-
-const EVIDENCE_TYPE_LABELS: Record<string, string> = {
-  ai_handoff_triggered: 'AI Handoff',
-  article_feedback_submitted: 'Article Feedback',
-  widget_search_performed: 'Widget Search',
-  docs_issue_feedback: 'Agent Feedback',
-  human_reply_after_ai: 'Human Reply',
-  daily_conversation_analysis: 'Daily Analysis',
 }
 
 const RECOMMENDATION_TYPE_LABELS: Record<string, string> = {
