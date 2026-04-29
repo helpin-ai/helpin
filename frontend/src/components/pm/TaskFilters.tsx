@@ -38,7 +38,8 @@ type FilterKey =
   | 'deal_id'
   | 'support_conversation_id'
   | 'blocked'
-  | 'blocking';
+  | 'blocking'
+  | 'archived';
 
 type FilterState = Partial<Record<FilterKey, string[]>>;
 
@@ -52,6 +53,7 @@ interface FilterDefinition {
   key: FilterKey;
   label: string;
   options: FilterOption[];
+  singleSelect?: boolean;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -295,6 +297,10 @@ export function TaskFilterProvider({
       { value: 'true', label: 'Blocking others' },
       { value: 'false', label: 'Not blocking others' },
     ];
+    const archivedOptions: FilterOption[] = [
+      { value: 'true', label: 'Archived' },
+      { value: 'false', label: 'Not archived' },
+    ];
 
     return [
       { key: 'priority' as FilterKey, label: 'Priority', options: priorityOptions },
@@ -311,6 +317,7 @@ export function TaskFilterProvider({
       { key: 'support_conversation_id' as FilterKey, label: 'Support', options: supportConversationOptions },
       { key: 'blocked' as FilterKey, label: 'Blocked', options: blockedOptions },
       { key: 'blocking' as FilterKey, label: 'Blocking', options: blockingOptions },
+      { key: 'archived' as FilterKey, label: 'Archived', options: archivedOptions, singleSelect: true },
     ];
   }, [assignableMembers, labels, epics, sprints, contactsRes, companiesRes, dealsRes, conversationsRes]);
 
@@ -343,10 +350,16 @@ export function TaskFilterProvider({
 
   const handleToggle = useCallback(
     (key: FilterKey, value: string) => {
+      const def = definitions.find((d) => d.key === key);
       const current = filterState[key] ?? [];
-      const next = current.includes(value)
-        ? current.filter((v) => v !== value)
-        : [...current, value];
+      let next: string[];
+      if (def?.singleSelect) {
+        next = current.includes(value) ? [] : [value];
+      } else {
+        next = current.includes(value)
+          ? current.filter((v) => v !== value)
+          : [...current, value];
+      }
       if (next.length === 0) {
         const { [key]: _, ...rest } = filterState;
         setFilterState(rest);
@@ -357,7 +370,7 @@ export function TaskFilterProvider({
         emitChange(updated);
       }
     },
-    [filterState, emitChange]
+    [filterState, definitions, emitChange]
   );
 
   const handleRemove = useCallback(

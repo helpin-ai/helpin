@@ -625,6 +625,21 @@ func (r *WorkspaceRepository) UpdateMemberRole(ctx context.Context, workspaceID,
 	return nil
 }
 
+// UpdateSupportTaskPreferences updates the support task creation preferences for a workspace member.
+func (r *WorkspaceRepository) UpdateSupportTaskPreferences(ctx context.Context, memberID string, teamID *string, dialogDismissed *bool) error {
+	updates := map[string]interface{}{}
+	if teamID != nil {
+		updates["support_default_team_id"] = teamID
+	}
+	if dialogDismissed != nil {
+		updates["support_task_dialog_dismissed"] = *dialogDismissed
+	}
+	if len(updates) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Model(&model.WorkspaceMember{}).Where("id = ?", memberID).Updates(updates).Error
+}
+
 // RemoveMember revokes an active workspace member and clears membership-specific state.
 func (r *WorkspaceRepository) RemoveMember(ctx context.Context, workspaceID, memberID string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

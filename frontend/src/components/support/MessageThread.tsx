@@ -17,7 +17,10 @@ import {
   useMoveConversation,
   useDismissConversationTriage,
 } from '@/hooks/queries/useSupport';
+import { useWorkspaceAccess, useUpdateSupportTaskPreferences } from '@/hooks/queries/useSession';
+import { useWorkspaceSettings } from '@/hooks/queries/useSettings';
 import { useWorkspaceMembers } from '@/hooks/queries/useWorkspaces';
+import { CreateTaskDialog } from './CreateTaskDialog';
 import { agentService } from '@/lib/services/agentService';
 // supportService import kept for non-presence HTTP calls
 import { type AgentTypingState, useSupportPresenceStore } from '@/stores/supportPresenceStore';
@@ -230,9 +233,13 @@ export function MessageThread({
   const createTaskFromConversation = useCreateTaskFromConversation(workspaceId);
   const moveConversation = useMoveConversation(workspaceId);
   const dismissTriage = useDismissConversationTriage(workspaceId);
+  const { data: access } = useWorkspaceAccess(workspaceId);
+  const { data: wsSettings } = useWorkspaceSettings(workspaceId);
+  const updatePreferences = useUpdateSupportTaskPreferences(workspaceId);
   const currentUser = useAuthStore((s) => s.user);
   const setSelectedMailboxId = useSupportInboxStore((s) => s.setSelectedMailboxId);
 
+  const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
   const [activeStickySeparator, setActiveStickySeparator] = useState<number | null>(null);
   const [composerReady, setComposerReady] = useState(false);
@@ -428,7 +435,38 @@ export function MessageThread({
 
   const handleCreateTask = async () => {
     if (!conversationId || !workspaceSlug) return;
-    const created = await createTaskFromConversation.mutateAsync(conversationId);
+
+    const dismissed = access?.membership?.support_task_dialog_dismissed;
+    const savedTeamId = access?.membership?.support_default_team_id;
+
+    if (!dismissed) {
+      setShowCreateTaskDialog(true);
+      return;
+    }
+
+    const created = await createTaskFromConversation.mutateAsync({
+      conversationId,
+      teamId: savedTeamId,
+    });
+    toast.success(`Created ${created.task_key ?? 'task'}`, {
+      description: created.summary || created.task_name,
+    });
+    openTaskRoute(navigate as never, location as never, workspaceSlug, created.task_id);
+  };
+
+  const handleCreateTaskConfirm = async (teamId: string, dismissDialog: boolean) => {
+    if (!conversationId || !workspaceSlug) return;
+
+    await updatePreferences.mutateAsync({
+      support_default_team_id: teamId,
+      support_task_dialog_dismissed: dismissDialog,
+    });
+
+    const created = await createTaskFromConversation.mutateAsync({
+      conversationId,
+      teamId,
+    });
+    setShowCreateTaskDialog(false);
     toast.success(`Created ${created.task_key ?? 'task'}`, {
       description: created.summary || created.task_name,
     });
@@ -818,7 +856,7 @@ export function MessageThread({
       </ScrollArea>
 
       {/* Soft gradient fade between thread and composer */}
-      <div className="pointer-events-none h-6 -mt-6 relative z-10 bg-gradient-to-t from-background to-transparent" />
+      <div className="pointer-events-none h-3 -mt-3 relative z-10 bg-gradient-to-t from-background to-transparent" />
 
       {/* Reply composer — show during loading (cache may still populate) and
           after a successful load. Only hide when the fetch settled AND the
@@ -831,6 +869,15 @@ export function MessageThread({
           emailFallbackHint={emailFallbackHint}
         />
       )}
+
+      <CreateTaskDialog
+        open={showCreateTaskDialog}
+        onOpenChange={setShowCreateTaskDialog}
+        teams={wsSettings?.teams ?? []}
+        defaultTeamId={access?.membership?.support_default_team_id ?? access?.team_memberships?.[0]?.team_id}
+        isPending={createTaskFromConversation.isPending}
+        onConfirm={handleCreateTaskConfirm}
+      />
     </div>
   );
 }

@@ -396,6 +396,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Get("/my-role", h.Workspace.GetMyRole)
 				r.Get("/my-membership", h.Workspace.GetMyMembership)
 				r.Get("/me", h.Workspace.GetMe)
+				r.Patch("/me/support-task-preferences", h.Workspace.UpdateSupportTaskPreferences)
 				r.Get("/members", h.Workspace.ListMembers)
 				r.Get("/members/presence", h.Workspace.ListMemberPresence)
 				r.Get("/assignable-members", h.Workspace.ListAssignableMembers)

@@ -473,6 +473,11 @@ func (s *WorkspaceService) UpdateMember(ctx context.Context, workspaceID, actorI
 	return s.workspaceRepo.UpdateMemberRole(ctx, workspaceID, memberID, req.Role)
 }
 
+// UpdateSupportTaskPreferences updates support task preferences for the calling member.
+func (s *WorkspaceService) UpdateSupportTaskPreferences(ctx context.Context, memberID string, req model.UpdateSupportTaskPreferencesRequest) error {
+	return s.workspaceRepo.UpdateSupportTaskPreferences(ctx, memberID, req.SupportDefaultTeamID, req.SupportTaskDialogDismissed)
+}
+
 // RemoveMember revokes a workspace member with owner/admin safeguards.
 func (s *WorkspaceService) RemoveMember(ctx context.Context, workspaceID, actorID, memberID string) error {
 	if actorID == "" {
