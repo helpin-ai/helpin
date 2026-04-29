@@ -45,6 +45,23 @@ const EVIDENCE_TYPE_LABELS: Record<string, string> = {
   widget_search_performed: 'Widget Search',
   docs_issue_feedback: 'Agent Feedback',
   human_reply_after_ai: 'Human Reply',
+  daily_conversation_analysis: 'Daily Analysis',
+}
+
+const RECOMMENDATION_TYPE_LABELS: Record<string, string> = {
+  create_article: 'Create article',
+  update_article: 'Update article',
+  update_website_page: 'Update website page',
+  create_website_page: 'Create website page',
+  add_data: 'Add data',
+  add_action: 'Add action',
+  define_policy: 'Define policy',
+  improve_workflow: 'Improve workflow',
+  no_fix: 'No fix',
+}
+
+function recommendationLabel(type: string): string {
+  return RECOMMENDATION_TYPE_LABELS[type] ?? coverageTopicLabel(type)
 }
 
 export function GapDetailPane({
@@ -124,6 +141,8 @@ export function GapDetailPane({
       ? `/w/${wsSlug}/docs/documents/${draftEditorDocumentID}?from_gap=${encodeURIComponent(gap.id)}&from_suggestion=${encodeURIComponent(draftSuggestion.id)}`
       : ''
   const collectionOptions = buildCoverageCollectionOptions(targetSpaceId, collections ?? [])
+  const explanation = gap.analysis_explanation
+  const recommendations = gap.recommendations ?? []
 
   const handleRegenerate = () => {
     setRegenerateLockedUntil(Date.now() + 30_000)
@@ -212,6 +231,106 @@ export function GapDetailPane({
             Open in Editor
             <ArrowUpRight01Icon className="h-3 w-3" />
           </a>
+        </div>
+      )}
+
+      {explanation && (
+        <div className="p-4">
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Why this matters
+          </h4>
+          <div className="space-y-2 rounded-md border border-border/40 bg-muted/20 p-3 text-xs leading-relaxed">
+            {explanation.customer_need && (
+              <p>
+                <span className="font-medium text-muted-foreground">Customer needed: </span>
+                <span className="break-words">{explanation.customer_need}</span>
+              </p>
+            )}
+            {explanation.ai_failure && (
+              <p>
+                <span className="font-medium text-muted-foreground">AI missed: </span>
+                <span className="break-words">{explanation.ai_failure}</span>
+              </p>
+            )}
+            {explanation.human_resolution && (
+              <p>
+                <span className="font-medium text-muted-foreground">Human resolved by: </span>
+                <span className="break-words">{explanation.human_resolution}</span>
+              </p>
+            )}
+            {explanation.decision_reason && (
+              <p>
+                <span className="font-medium text-muted-foreground">Reason: </span>
+                <span className="break-words">{explanation.decision_reason}</span>
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {recommendations.length > 0 && (
+        <div className="p-4">
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Recommendations
+          </h4>
+          <div className="space-y-2">
+            {recommendations.map((rec) => {
+              const isPrimary = rec.priority === 'primary'
+              const linkedSuggestion = rec.suggestion_id
+                ? gap.suggestions.find((suggestion) => suggestion.id === rec.suggestion_id)
+                : null
+              return (
+                <div key={rec.id} className="rounded-md border border-border/40 bg-card p-3 text-xs">
+                  <div className="mb-2 flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-semibold leading-tight">{recommendationLabel(rec.recommendation_type)}</p>
+                      {(rec.target_title || rec.target_url) && (
+                        <p className="mt-0.5 truncate text-muted-foreground">
+                          Target: {rec.target_title || rec.target_url}
+                        </p>
+                      )}
+                    </div>
+                    {isPrimary && (
+                      <Badge variant="secondary" className="shrink-0 text-[10px] uppercase tracking-wide">
+                        Primary
+                      </Badge>
+                    )}
+                  </div>
+                  {rec.rationale && (
+                    <p className="leading-relaxed">
+                      <span className="font-medium text-muted-foreground">Why: </span>
+                      <span className="break-words">{rec.rationale}</span>
+                    </p>
+                  )}
+                  {rec.suggested_change && (
+                    <p className="mt-1.5 leading-relaxed">
+                      <span className="font-medium text-muted-foreground">Suggested change: </span>
+                      <span className="break-words">{rec.suggested_change}</span>
+                    </p>
+                  )}
+                  {rec.implementation_notes && (
+                    <p className="mt-1.5 leading-relaxed text-muted-foreground">
+                      {rec.implementation_notes}
+                    </p>
+                  )}
+                  {rec.target_url && (
+                    <a
+                      href={rec.target_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-2 inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                    >
+                      Open target
+                      <ArrowUpRight01Icon className="h-2.5 w-2.5" />
+                    </a>
+                  )}
+                  {linkedSuggestion && linkedSuggestion.status === 'draft' && (
+                    <p className="mt-2 text-muted-foreground">Review Add is available in the draft below.</p>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
 
