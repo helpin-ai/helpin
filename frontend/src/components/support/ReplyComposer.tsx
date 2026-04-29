@@ -229,7 +229,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
 
   // Toolbar visibility — show when the editor is focused, or while interacting
   // with the toolbar itself, or when the link modal is open.
-  const [editorFocused, setEditorFocused] = useState(false);
+  const [, setEditorFocused] = useState(false);
   const toolbarHasPointerRef = useRef(false);
   // toolbarHasPointerRef still used by the merged bottom bar to keep editor focus state
 
