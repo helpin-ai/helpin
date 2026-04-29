@@ -1,19 +1,36 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { ArrowRight01Icon, BotIcon, Cancel01Icon, Loading01Icon, Tick01Icon, ViewIcon } from '@/lib/icons';
+import { ArrowUpRight01Icon, BotIcon, Cancel01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
-import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus, STATUS_META } from '@/components/pm/agentRunConstants';
+import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from '@/components/pm/agentRunConstants';
 import { agentService } from '@/lib/services/agentService';
 import { commandBarService } from '@/lib/services/commandBarService';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useCommandBarRunStore } from '@/stores/commandBarStore';
+import { useCommandBarRunStore, type CommandBarRunPlan } from '@/stores/commandBarStore';
 import { PromotionDialog } from '@/components/command-bar/PromotionDialog';
+import { CommandPlanTimeline, StandaloneRunTimeline, type RunAction } from '@/components/command-bar/CommandRunTimeline';
+import { cn } from '@/lib/utils';
 import type { AgentRun, CommandBarPlanStep } from '@/lib/pmTypes';
 
-function targetLabel(run: AgentRun) {
-  return run.target_info?.title || run.target_info?.task_key || `${run.target_type} ${run.target_id.slice(0, 8)}`;
+type RailState = 'attention' | 'running' | 'queued' | 'completed';
+type RailFilter = 'all' | 'running' | 'queued' | 'failed';
+type RailItem =
+  | { id: string; type: 'plan'; state: RailState; plan: CommandBarRunPlan }
+  | { id: string; type: 'run'; state: RailState; run: AgentRun };
+
+const FILTERS: Array<{ key: RailFilter; label: string }> = [
+  { key: 'all', label: 'All' },
+  { key: 'running', label: 'Running' },
+  { key: 'queued', label: 'Queued' },
+  { key: 'failed', label: 'Failed' },
+];
+
+function matchesFilter(state: RailState, filter: RailFilter): boolean {
+  if (filter === 'all') return true;
+  if (filter === 'failed') return state === 'attention';
+  return state === filter;
 }
 
 export function CommandBarRunRail() {
@@ -31,6 +48,7 @@ export function CommandBarRunRail() {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [busyRunId, setBusyRunId] = useState<string | null>(null);
   const [busyPlanId, setBusyPlanId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<RailFilter>('all');
   const [promotionRun, setPromotionRun] = useState<{ run: AgentRun; step: CommandBarPlanStep | null; planPrompt?: string } | null>(null);
 
   const runs = useMemo(
@@ -52,6 +70,34 @@ export function CommandBarRunRail() {
     () => runs.filter((run) => !planRunIds.has(run.id)),
     [planRunIds, runs],
   );
+
+  const items = useMemo<RailItem[]>(() => {
+    const planItems = plans.map((plan) => ({
+      id: `plan-${plan.id}`,
+      type: 'plan' as const,
+      state: classifyPlan(plan, runsById),
+      plan,
+    }));
+    const runItems = standaloneRuns.map((run) => ({
+      id: `run-${run.id}`,
+      type: 'run' as const,
+      state: classifyRun(run),
+      run,
+    }));
+    return [...planItems, ...runItems];
+  }, [plans, runsById, standaloneRuns]);
+
+  const counts = useMemo(() => {
+    const next: Record<RailFilter, number> = { all: items.length, running: 0, queued: 0, failed: 0 };
+    for (const item of items) {
+      if (item.state === 'attention') next.failed += 1;
+      else if (item.state === 'running') next.running += 1;
+      else if (item.state === 'queued') next.queued += 1;
+    }
+    return next;
+  }, [items]);
+
+  const visibleItems = items.filter((item) => matchesFilter(item.state, filter));
   const activeCount = runs.filter((run) => ACTIVE_RUN_STATUSES.has(run.status)).length;
 
   useEffect(() => {
@@ -134,7 +180,7 @@ export function CommandBarRunRail() {
     };
   }, [refreshRun]);
 
-  const runAction = async (run: AgentRun, action: 'approve' | 'cancel') => {
+  const runAction = async (run: AgentRun, action: RunAction) => {
     if (!workspaceId) return;
     setBusyRunId(run.id);
     try {
@@ -199,56 +245,15 @@ export function CommandBarRunRail() {
         toast.error(res.error ?? 'Failed to retry plan');
         return;
       }
-      const runs = res.data.runs ?? (res.data.run ? [res.data.run] : []);
-      updatePlan(res.data.plan, runs);
+      const retryRuns = res.data.runs ?? (res.data.run ? [res.data.run] : []);
+      updatePlan(res.data.plan, retryRuns);
       const isFanOut = res.data.plan.plan_kind === 'fan_out';
-      toast.success(isFanOut ? `Retrying ${runs.length} failed target${runs.length === 1 ? '' : 's'}` : `Retrying step ${stepIndex + 1}`);
+      toast.success(isFanOut ? `Retrying ${retryRuns.length} failed target${retryRuns.length === 1 ? '' : 's'}` : `Retrying step ${stepIndex + 1}`);
     } finally {
       setBusyPlanId(null);
     }
   };
 
-  const renderRunActions = (run: AgentRun) => {
-    const displayStatus = getAgentRunDisplayStatus(run);
-    const awaitingApproval = displayStatus === 'awaiting_approval';
-    const busy = busyRunId === run.id;
-    return (
-      <div className="flex items-center justify-end gap-1.5">
-        {awaitingApproval ? (
-          <Button type="button" variant="outline" size="sm" className="h-7 gap-1.5" disabled={busy} onClick={() => void runAction(run, 'approve')}>
-            {busy ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" /> : <Tick01Icon className="h-3.5 w-3.5" />}
-            Approve
-          </Button>
-        ) : null}
-        {ACTIVE_RUN_STATUSES.has(run.status) ? (
-          <Button type="button" variant="ghost" size="sm" className="h-7" disabled={busy} onClick={() => void runAction(run, 'cancel')}>
-            Cancel
-          </Button>
-        ) : null}
-        {run.status === 'completed' ? (
-          <Button type="button" variant="ghost" size="sm" className="h-7" disabled={busy} onClick={() => openPromotion(run)}>
-            Save agent
-          </Button>
-        ) : null}
-        <Button type="button" variant="ghost" size="sm" className="h-7 gap-1.5" onClick={() => setSelectedRunId(run.id)}>
-          <ViewIcon className="h-3.5 w-3.5" />
-          Open
-        </Button>
-      </div>
-    );
-  };
-
-  const renderStatusBadge = (run: AgentRun) => {
-    const displayStatus = getAgentRunDisplayStatus(run);
-    const meta = STATUS_META[displayStatus] ?? STATUS_META[run.status];
-    return (
-      <Badge variant={meta?.variant ?? 'outline'} className={meta?.className}>
-        {meta?.label ?? run.status}
-      </Badge>
-    );
-  };
-
-  // Cmd+. toggles the rail open/closed
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === '.') {
@@ -260,11 +265,9 @@ export function CommandBarRunRail() {
     return () => window.removeEventListener('keydown', handler);
   }, [railMode, setRailMode]);
 
-  // Empty state: nothing to show, render nothing (the main content can use full width)
   if (runs.length === 0 && plans.length === 0) return null;
   if (railMode === 'closed') return null;
 
-  // Peek state: thin 48px strip on the right edge with a stack of plan/run dots
   if (railMode === 'peek') {
     return (
       <aside
@@ -281,121 +284,92 @@ export function CommandBarRunRail() {
           {activeCount > 0 ? (
             <Badge variant="outline" className="px-1 py-0 text-[9px]">{activeCount}</Badge>
           ) : (
-            <span className="text-[9px] uppercase tracking-wider">{plans.length + standaloneRuns.length}</span>
+            <span className="text-[9px] uppercase tracking-wider">{items.length}</span>
           )}
         </button>
       </aside>
     );
   }
 
-  // Open state: full docked column
   return (
     <>
       <aside
-        className="relative z-30 flex h-full w-[22rem] shrink-0 flex-col border-l border-border/70 bg-background"
+        className="relative z-30 flex h-full w-[23.5rem] shrink-0 flex-col border-l border-border/70 bg-background"
         aria-label="Command runs"
       >
-        <div className="flex items-center justify-between border-b px-3 py-2">
-          <div className="flex items-center gap-2">
-            <BotIcon className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium">Command Runs</span>
-            {activeCount > 0 ? (
-              <Badge variant="outline" className="text-[10px]">{activeCount} active</Badge>
-            ) : null}
+        <div className="border-b border-border/70">
+          <div className="flex items-center justify-between px-3 py-2">
+            <div className="flex min-w-0 items-center gap-2">
+              <BotIcon className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium">Command runs</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <kbd className="hidden h-5 items-center rounded border border-border/70 bg-muted px-1.5 text-[10px] font-medium text-muted-foreground sm:inline-flex" title="Toggle command runs">⌘K</kbd>
+              <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => setRailMode('peek')} title="Collapse to peek (⌘.)">
+                <ArrowUpRight01Icon className="h-4 w-4" />
+              </Button>
+              <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={clear} title="Clear all">
+                <Cancel01Icon className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
-          <div className="flex items-center gap-1">
-            <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => setRailMode('peek')} title="Collapse to peek (⌘.)">
-              <ArrowRight01Icon className="h-4 w-4" />
-            </Button>
-            <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={clear} title="Clear all">
-              <Cancel01Icon className="h-4 w-4" />
-            </Button>
+          <div className="flex gap-3 overflow-x-auto px-3 pb-2">
+            {FILTERS.map((item) => {
+              const active = filter === item.key;
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => setFilter(item.key)}
+                  className={cn(
+                    'group/tab shrink-0 -mb-px border-b-2 border-transparent pb-1.5 text-[11px] transition-colors',
+                    active
+                      ? 'border-foreground text-foreground'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  <span className={active ? 'font-medium' : ''}>{item.label}</span>
+                  <span className={cn('ml-1.5 tabular-nums', active ? 'text-foreground/70' : 'text-muted-foreground/70')}>{counts[item.key]}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-2">
-          {plans.map((plan) => {
-            const stepWord = plan.steps.length === 1 ? 'step' : 'steps';
-            const isSingle = plan.steps.length === 1;
-            const isOneShot = plan.planKind === 'one_shot_command' || plan.steps.some((step) => step.plan_kind === 'one_shot_command');
-            const isFanOut = plan.planKind === 'fan_out' || plan.steps.some((step) => step.plan_kind === 'fan_out');
-            return (
-              <div key={plan.id} className="space-y-2 border-b border-border/60 px-2 py-2 last:border-0">
-                {!isSingle ? (
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{plan.prompt || 'Command plan'}</p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {isFanOut ? `${plan.steps.length} targets · fan-out` : isOneShot ? 'one-shot agent' : `${plan.steps.length} ${stepWord}`}
-                        {plan.status ? ` · ${plan.status}` : ''}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      {plan.status === 'running' ? (
-                        <Button type="button" variant="ghost" size="sm" className="h-7" disabled={busyPlanId === plan.id} onClick={() => void cancelPlan(plan.id)}>
-                          Cancel
-                        </Button>
-                      ) : null}
-                      {plan.status === 'failed' || plan.status === 'cancelled' ? (
-                        <Button type="button" variant="ghost" size="sm" className="h-7" disabled={busyPlanId === plan.id} onClick={() => void retryPlan(plan.id, plan.currentStepIndex ?? 0)}>
-                          {isFanOut ? 'Retry failed' : 'Retry'}
-                        </Button>
-                      ) : null}
-                    </div>
-                  </div>
-                ) : null}
-                <div className="space-y-1.5">
-                  {plan.steps.map((step, index) => {
-                    const runId = plan.runIdsByStep[index];
-                    const run = runId ? runsById[runId] : undefined;
-                    const previousRunId = index > 0 ? plan.runIdsByStep[index - 1] : undefined;
-                    const previousRun = previousRunId ? runsById[previousRunId] : undefined;
-                    const waitingLabel = isFanOut
-                      ? 'Queued'
-                      : previousRun && ACTIVE_RUN_STATUSES.has(previousRun.status)
-                      ? `Waiting for step ${index}`
-                      : 'Queued';
-                    const actionLabel = step.instructions || (run && targetLabel(run)) || step.agent_name;
-                    return (
-                      <div key={`${plan.id}-${index}`} className="rounded border border-border/60 px-2 py-2">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="line-clamp-2 text-sm font-medium">{actionLabel}</p>
-                            <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                              {isFanOut ? `Target ${index + 1} · ` : !isSingle ? `Step ${index + 1} · ` : ''}
-                              {step.agent_name}{step.plan_kind === 'one_shot_command' ? ' · one-shot' : step.plan_kind === 'fan_out' ? ' · fan-out' : ''} · {step.target.entity_type.replace('_', ' ')}
-                              {run?.execution_stage ? ` · ${run.execution_stage}` : ''}
-                            </p>
-                          </div>
-                          {run ? renderStatusBadge(run) : <Badge variant="outline" className="text-[10px]">{waitingLabel}</Badge>}
-                        </div>
-                        {run ? <div className="mt-2">{renderRunActions(run)}</div> : null}
-                      </div>
-                    );
-                  })}
+
+        <div className="flex-1 overflow-y-auto">
+          {visibleItems.length === 0 ? (
+            <div className="px-4 py-8 text-center text-sm text-muted-foreground">No command runs in this view.</div>
+          ) : (
+            renderSections(visibleItems).map((section) => (
+              <section key={section.key}>
+                <div className="sticky top-0 z-10 bg-background/95 px-3 pb-1.5 pt-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground backdrop-blur">
+                  {section.label}
                 </div>
-                {isSingle && plan.status === 'failed' ? (
-                  <Button type="button" variant="ghost" size="sm" className="h-7 w-full" disabled={busyPlanId === plan.id} onClick={() => void retryPlan(plan.id, 0)}>
-                    Retry
-                  </Button>
-                ) : null}
-              </div>
-            );
-          })}
-          {standaloneRuns.map((run) => (
-            <div key={run.id} className="space-y-2 border-b border-border/60 px-2 py-2 last:border-0">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="line-clamp-2 text-sm font-medium">{targetLabel(run)}</p>
-                  <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                    {run.target_type.replace('_', ' ')}
-                    {run.execution_stage ? ` · ${run.execution_stage}` : ''}
-                  </p>
-                </div>
-                {renderStatusBadge(run)}
-              </div>
-              {renderRunActions(run)}
-            </div>
-          ))}
+                {section.items.map((item) => item.type === 'plan' ? (
+                  <CommandPlanTimeline
+                    key={item.id}
+                    plan={item.plan}
+                    runsById={runsById}
+                    busyPlanId={busyPlanId}
+                    busyRunId={busyRunId}
+                    onOpenRun={setSelectedRunId}
+                    onRunAction={(run, action) => void runAction(run, action)}
+                    onCancelPlan={(planId) => void cancelPlan(planId)}
+                    onRetryPlan={(planId, stepIndex) => void retryPlan(planId, stepIndex)}
+                    onPromoteRun={openPromotion}
+                  />
+                ) : (
+                  <StandaloneRunTimeline
+                    key={item.id}
+                    run={item.run}
+                    busyRunId={busyRunId}
+                    onOpenRun={setSelectedRunId}
+                    onRunAction={(run, action) => void runAction(run, action)}
+                  />
+                ))}
+              </section>
+            ))
+          )}
         </div>
       </aside>
       <CodingSessionDrawer
@@ -418,4 +392,34 @@ export function CommandBarRunRail() {
       />
     </>
   );
+}
+
+function classifyPlan(plan: CommandBarRunPlan, runsById: Record<string, AgentRun>): RailState {
+  const runs = Object.values(plan.runIdsByStep).map((runId) => runsById[runId]).filter(Boolean);
+  if (plan.status === 'failed' || plan.status === 'cancelled') return 'attention';
+  if (runs.some((run) => classifyRun(run) === 'attention')) return 'attention';
+  if (plan.status === 'completed') return 'completed';
+  if (runs.some((run) => ACTIVE_RUN_STATUSES.has(run.status))) return 'running';
+  return 'queued';
+}
+
+function classifyRun(run: AgentRun): RailState {
+  const displayStatus = getAgentRunDisplayStatus(run);
+  if (displayStatus === 'awaiting_approval' || displayStatus === 'awaiting_input' || displayStatus === 'awaiting_auth') return 'attention';
+  if (run.status === 'failed' || run.status === 'cancelled') return 'attention';
+  if (ACTIVE_RUN_STATUSES.has(run.status)) return 'running';
+  if (run.status === 'completed') return 'completed';
+  return 'queued';
+}
+
+function renderSections(items: RailItem[]) {
+  const order: Array<{ key: RailState; label: string }> = [
+    { key: 'running', label: 'Running now' },
+    { key: 'queued', label: 'Queued' },
+    { key: 'attention', label: 'Failed · Needs attention' },
+    { key: 'completed', label: 'Completed' },
+  ];
+  return order
+    .map((section) => ({ ...section, items: items.filter((item) => item.state === section.key) }))
+    .filter((section) => section.items.length > 0);
 }
