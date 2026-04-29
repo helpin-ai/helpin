@@ -72,6 +72,13 @@ const (
 	SupportCoverageGapStatusHumanOnly = "human_only"
 )
 
+// ─── Gap sources ───────────────────────────────────────────────────────────
+
+const (
+	SupportCoverageGapSourceEventDetection            = "event_detection"
+	SupportCoverageGapSourceDailyConversationAnalysis = "daily_conversation_analysis"
+)
+
 // ─── Suggestion types ──────────────────────────────────────────────────────
 
 const (
@@ -244,6 +251,7 @@ type SupportCoverageGapFilter struct {
 	V1GapType string `json:"v1_gap_type"`
 	IssueKey  string `json:"issue_key"`
 	Search    string `json:"search"`
+	ShowRaw   bool   `json:"show_raw"`
 	Page      int    `json:"page"`
 	PerPage   int    `json:"per_page"`
 }

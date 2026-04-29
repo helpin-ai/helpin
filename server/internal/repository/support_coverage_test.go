@@ -363,6 +363,75 @@ func TestSupportCoverageRepository_ListGapsRanksByRecentEvidence(t *testing.T) {
 	}
 }
 
+func TestSupportCoverageRepository_ListGapsHidesRawLowConfidenceEventGapsByDefault(t *testing.T) {
+	db := setupSupportCoverageTestDB(t)
+	repo := NewSupportCoverageRepository(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	seeds := []model.SupportCoverageGap{
+		{
+			ID:          "raw-low",
+			WorkspaceID: "ws-1",
+			DedupeKey:   "raw-low",
+			Title:       "Raw low confidence event gap",
+			V1GapType:   model.SupportCoverageV1GapNeedsReview,
+			Confidence:  0.4,
+			Metadata:    []byte(`{"source":"event_detection"}`),
+			FirstSeenAt: now,
+			LastSeenAt:  now,
+		},
+		{
+			ID:          "raw-high",
+			WorkspaceID: "ws-1",
+			DedupeKey:   "raw-high",
+			Title:       "Raw high confidence event gap",
+			V1GapType:   model.SupportCoverageV1GapNeedsReview,
+			Confidence:  0.8,
+			Metadata:    []byte(`{"source":"event_detection"}`),
+			FirstSeenAt: now,
+			LastSeenAt:  now,
+		},
+		{
+			ID:          "daily-low",
+			WorkspaceID: "ws-1",
+			DedupeKey:   "daily-low",
+			Title:       "Daily analyzer gap",
+			V1GapType:   model.SupportCoverageV1GapNeedsReview,
+			Confidence:  0.4,
+			Metadata:    []byte(`{"source":"daily_conversation_analysis"}`),
+			FirstSeenAt: now,
+			LastSeenAt:  now,
+		},
+	}
+	for i := range seeds {
+		if err := db.Create(&seeds[i]).Error; err != nil {
+			t.Fatalf("seed gap %s: %v", seeds[i].ID, err)
+		}
+	}
+
+	items, total, err := repo.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	if err != nil {
+		t.Fatalf("ListGaps: %v", err)
+	}
+	if total != 2 || len(items) != 2 {
+		t.Fatalf("got total=%d len=%d, want 2 visible gaps", total, len(items))
+	}
+	for _, item := range items {
+		if item.ID == "raw-low" {
+			t.Fatal("raw low-confidence event gap should be hidden by default")
+		}
+	}
+
+	items, total, err = repo.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
+	if err != nil {
+		t.Fatalf("ListGaps show raw: %v", err)
+	}
+	if total != 3 || len(items) != 3 {
+		t.Fatalf("show raw got total=%d len=%d, want 3", total, len(items))
+	}
+}
+
 func TestSupportCoverageRepository_UpdateGapStatus(t *testing.T) {
 	db := setupSupportCoverageTestDB(t)
 	repo := NewSupportCoverageRepository(db)

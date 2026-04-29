@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -91,6 +92,15 @@ func TestSupportCoverageClusterer_UpsertTopicGapCreatesOnFirstCall(t *testing.T)
 	}
 	if gap.GapKind != "content" {
 		t.Errorf("gap_kind=%q, want content", gap.GapKind)
+	}
+	var metadata struct {
+		Source string `json:"source"`
+	}
+	if err := json.Unmarshal(gap.Metadata, &metadata); err != nil {
+		t.Fatalf("unmarshal metadata: %v", err)
+	}
+	if metadata.Source != model.SupportCoverageGapSourceEventDetection {
+		t.Fatalf("metadata source=%q, want event_detection", metadata.Source)
 	}
 }
 

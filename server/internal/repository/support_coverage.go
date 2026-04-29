@@ -265,6 +265,9 @@ func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID st
 		Joins("LEFT JOIN support_coverage_topics t ON t.id = g.topic_id").
 		Where("g.workspace_id = ?", workspaceID).
 		Where("g.status != ?", model.SupportCoverageGapStatusMerged)
+	if !filter.ShowRaw {
+		q = applyHideRawEventDetectionGaps(q, "g")
+	}
 
 	if filter.Status != "" {
 		q = q.Where("g.status = ?", filter.Status)
@@ -283,11 +286,20 @@ func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID st
 	countQ := r.db.WithContext(ctx).
 		Table("support_coverage_gaps").
 		Where("workspace_id = ? AND status != ?", workspaceID, model.SupportCoverageGapStatusMerged)
+	if !filter.ShowRaw {
+		countQ = applyHideRawEventDetectionGaps(countQ, "support_coverage_gaps")
+	}
 	if filter.Status != "" {
 		countQ = countQ.Where("status = ?", filter.Status)
 	}
 	if filter.V1GapType != "" {
 		countQ = countQ.Where("v1_gap_type = ?", filter.V1GapType)
+	}
+	if filter.IssueKey != "" {
+		countQ = countQ.Where("issue_key = ?", filter.IssueKey)
+	}
+	if filter.Search != "" {
+		countQ = countQ.Where("title LIKE ?", "%"+filter.Search+"%")
 	}
 	if err := countQ.Count(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("count gaps: %w", err)
@@ -311,6 +323,30 @@ func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID st
 		return nil, 0, fmt.Errorf("list gaps: %w", err)
 	}
 	return items, total, nil
+}
+
+func applyHideRawEventDetectionGaps(q *gorm.DB, tableAlias string) *gorm.DB {
+	return q.Where(
+		fmt.Sprintf(`NOT (%s AND %s.v1_gap_type = ? AND %s.confidence < ?)`,
+			metadataSourceEqualsCondition(q, tableAlias),
+			tableAlias,
+			tableAlias,
+		),
+		model.SupportCoverageGapSourceEventDetection,
+		model.SupportCoverageV1GapNeedsReview,
+		0.7,
+	)
+}
+
+func metadataSourceEqualsCondition(q *gorm.DB, tableAlias string) string {
+	switch q.Dialector.Name() {
+	case "postgres":
+		return fmt.Sprintf("COALESCE(%s.metadata ->> 'source' = ?, false)", tableAlias)
+	case "sqlite":
+		return fmt.Sprintf("COALESCE(json_extract(%s.metadata, '$.source') = ?, 0)", tableAlias)
+	default:
+		return fmt.Sprintf("COALESCE(CAST(%s.metadata AS TEXT) LIKE '%%\"source\":\"' || ? || '\"%%', false)", tableAlias)
+	}
 }
 
 func (r *SupportCoverageRepository) ListWorkspacesWithOpenGaps(ctx context.Context) ([]string, error) {
