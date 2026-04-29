@@ -11,7 +11,8 @@ export type AgentPresetKey =
   | 'crm_operator'
   | 'support_agent'
   | 'code_builder'
-  | 'review_agent';
+  | 'review_agent'
+  | 'command_agent';
 export type AgentStatus = 'idle' | 'working' | 'error' | 'paused';
 export type AgentRunStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 export type AgentRuntimeKind = 'opencode' | 'codex' | 'native_sdk';
@@ -188,8 +189,179 @@ export interface AgentRunStreamEvent {
 export interface StartAgentRunRequest {
   agent_id?: string;
   additional_context?: string;
+  allowed_tools?: string[];
   base_branch?: string;
   working_branch?: string;
+}
+
+export interface CommandBarPageContext {
+  entity_type: 'task' | 'epic' | 'document' | 'crm_contact' | 'crm_deal' | 'workspace';
+  entity_id: string;
+  display_title: string;
+  related_ids?: Record<string, string[]>;
+  metadata?: Record<string, unknown>;
+}
+
+export interface CommandBarPlanStep {
+  agent_id: string;
+  agent_key?: string;
+  agent_name: string;
+  plan_kind?: 'known_agent' | 'one_shot_command' | 'fan_out';
+  target: CommandBarPageContext;
+  instructions: string;
+  allowed_tools?: string[];
+}
+
+export interface CommandBarPlan {
+  id?: string;
+  plan_kind?: 'known_agent' | 'one_shot_command' | 'fan_out';
+  steps: CommandBarPlanStep[];
+  run_count: number;
+  estimated_runs?: number;
+  max_allowed_runs?: number;
+  guardrails?: Array<{ type: string; severity: string; message: string }>;
+}
+
+export interface CommandBarAgentCandidate {
+  id: string;
+  name: string;
+  preset_key?: string;
+  role?: string;
+  allowed_targets: string[];
+  allowed_tools: string[];
+}
+
+export interface CommandBarParseRequest {
+  text: string;
+  page_context: CommandBarPageContext;
+}
+
+export type CommandBarParseResponse =
+  | {
+      status: 'plan';
+      plan: CommandBarPlan;
+      rationale?: string;
+      candidates?: CommandBarAgentCandidate[];
+    }
+  | {
+      status: 'no_matching_agent';
+      reason: string;
+      suggestions?: string[];
+      candidates?: CommandBarAgentCandidate[];
+    };
+
+export interface CommandBarDispatchRequest {
+  text: string;
+  page_context: CommandBarPageContext;
+  steps: CommandBarPlanStep[];
+}
+
+export interface CommandBarDispatchResponse {
+  plan_id?: string;
+  steps?: CommandBarPlanStep[];
+  run_count?: number;
+  runs: AgentRun[];
+}
+
+export interface CommandBarPlanSummary {
+  id: string;
+  status: 'running' | 'completed' | 'failed' | 'cancelled';
+  plan_kind?: 'known_agent' | 'one_shot_command' | 'fan_out';
+  prompt: string;
+  page_context: CommandBarPageContext;
+  steps: CommandBarPlanStep[];
+  run_ids_by_step: Record<number, string>;
+  current_step_index: number;
+  run_count: number;
+  error_message?: string;
+  cancelled_at?: string;
+  completed_at?: string;
+  created_at: string;
+  updated_at: string;
+  runs?: AgentRun[];
+}
+
+export interface CommandBarPlanListResponse {
+  plans: CommandBarPlanSummary[];
+}
+
+export interface CommandBarPlanDetailResponse {
+  plan: CommandBarPlanSummary;
+}
+
+export interface CommandBarToolCatalogEntry {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  input_schema?: unknown;
+  allowed: boolean;
+  selected: boolean;
+  disabled_reason?: string;
+}
+
+export interface CommandBarToolCatalogResponse {
+  agent_id: string;
+  allowed_tools: string[];
+  selected_tools: string[];
+  tools: CommandBarToolCatalogEntry[];
+  categories: string[];
+  validation?: string[];
+  allowed_targets?: string[];
+}
+
+export interface CommandBarCancelPlanResponse {
+  plan: CommandBarPlanSummary;
+  runs?: AgentRun[];
+}
+
+export interface CommandBarRetryPlanResponse {
+  plan: CommandBarPlanSummary;
+  run?: AgentRun;
+  runs?: AgentRun[];
+}
+
+export interface PromoteCommandBarRunRequest {
+  name: string;
+  description?: string;
+  /** Subset of source agent's allowed_tools. Omit to inherit. Empty means none. */
+  allowed_tools?: string[];
+  /** Subset of source agent's allowed_targets. Omit to inherit (source target only). */
+  allowed_targets?: string[];
+}
+
+export interface PromoteCommandBarRunResponse {
+  agent: Agent;
+}
+
+export type CommandBarUnmetIntentStatus = 'open' | 'accepted' | 'rejected' | 'deferred';
+
+export interface CommandBarUnmetIntent {
+  id: string;
+  workspace_id: string;
+  actor_id?: string;
+  /** Full prompt text. Empty unless the request opted in via include_sensitive=true. */
+  prompt?: string;
+  /** Whitespace-collapsed preview of the prompt, capped at ~160 runes. Always present. */
+  prompt_preview: string;
+  /** True when prompt is omitted because the caller did not request sensitive content. */
+  prompt_redacted: boolean;
+  page_context: CommandBarPageContext;
+  candidate_agents: Array<{ id: string; name: string; preset_key?: string; allowed_targets?: string[] }>;
+  reason: string;
+  status: CommandBarUnmetIntentStatus;
+  review_notes?: string;
+  reviewed_at?: string;
+  created_at: string;
+}
+
+export interface CommandBarUnmetIntentListResponse {
+  intents: CommandBarUnmetIntent[];
+}
+
+export interface ReviewCommandBarUnmetIntentRequest {
+  status: CommandBarUnmetIntentStatus;
+  notes?: string;
 }
 
 export interface SendAgentRunMessageRequest {

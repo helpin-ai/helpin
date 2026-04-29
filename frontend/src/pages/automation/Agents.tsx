@@ -197,7 +197,26 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     provider: 'openai',
     model: 'gpt-5.5',
   },
+  command_agent: {
+    label: 'Command Agent',
+    description: 'One-shot command-bar agent: runs a single instruction with a narrowed tool set.',
+    runtime_kind: 'native_sdk',
+    default_invocation_mode: 'autonomous',
+    supported_modes: ['autonomous', 'interactive'],
+  },
 };
+
+const PRESET_FALLBACK_DEFAULT: (typeof PRESET_FALLBACKS)[AgentPresetKey] = {
+  label: 'Agent',
+  description: '',
+  runtime_kind: 'native_sdk',
+  default_invocation_mode: 'autonomous',
+  supported_modes: ['autonomous', 'interactive'],
+};
+
+function presetFallback(presetKey: AgentPresetKey) {
+  return PRESET_FALLBACKS[presetKey] ?? PRESET_FALLBACK_DEFAULT;
+}
 
 const INVOCATION_MODE_LABELS: Record<AgentInvocationMode, string> = {
   autonomous: 'Autonomous',
@@ -581,7 +600,7 @@ function presetMetaForKey(presetKey: AgentPresetKey, presets: AgentPresetDefinit
 }
 
 function presetLabel(presetKey: AgentPresetKey, presets: AgentPresetDefinition[]): string {
-  return presetMetaForKey(presetKey, presets)?.label ?? PRESET_FALLBACKS[presetKey].label;
+  return presetMetaForKey(presetKey, presets)?.label ?? presetFallback(presetKey).label;
 }
 
 function presetRuntimeKindForSelection(
@@ -589,7 +608,7 @@ function presetRuntimeKindForSelection(
   presetVersionKey: string,
   presets: AgentPresetDefinition[],
 ): AgentRuntimeKind {
-  return presetMetaForSelection(presetKey, presetVersionKey, presets)?.runtime_kind ?? PRESET_FALLBACKS[presetKey].runtime_kind;
+  return presetMetaForSelection(presetKey, presetVersionKey, presets)?.runtime_kind ?? presetFallback(presetKey).runtime_kind;
 }
 
 function normalizeToolList(tools: string[]): string[] {
@@ -768,7 +787,7 @@ function buildUpdatePayload(
 ): UpdateAgentRequest {
   const preset = agent?.is_system ? presetMetaForSelection(form.preset_key, form.preset_version_key, presets) : null;
   const defaultRuntimeKind = agent?.is_system
-    ? (preset?.runtime_kind ?? PRESET_FALLBACKS[form.preset_key].runtime_kind)
+    ? (preset?.runtime_kind ?? presetFallback(form.preset_key).runtime_kind)
     : 'opencode';
   const provider = normalizeProviderForRuntime(form.runtime_kind, form.provider);
   const payload: UpdateAgentRequest = {
@@ -810,13 +829,13 @@ function buildUpdatePayload(
 function buildSystemAgentForm(agent: Agent, presets: AgentPresetDefinition[]): AgentFormData {
   const presetKey = fallbackPresetKey(agent);
   const preset = presetMetaForSelection(presetKey, agent.preset_version_key, presets);
-  const runtimeKind = preset?.runtime_kind ?? agent.runtime_kind ?? PRESET_FALLBACKS[presetKey].runtime_kind;
+  const runtimeKind = preset?.runtime_kind ?? agent.runtime_kind ?? presetFallback(presetKey).runtime_kind;
   const supportedModes = agent.supported_modes && agent.supported_modes.length > 0
     ? agent.supported_modes
     : (preset?.supported_modes ?? supportedModesForForm(runtimeKind));
   const defaultInvocationMode = agent.default_invocation_mode?.trim()
     ? agent.default_invocation_mode
-    : (preset?.default_invocation_mode ?? PRESET_FALLBACKS[presetKey].default_invocation_mode);
+    : (preset?.default_invocation_mode ?? presetFallback(presetKey).default_invocation_mode);
   return {
     name: agent.name,
     preset_key: presetKey,
@@ -825,14 +844,14 @@ function buildSystemAgentForm(agent: Agent, presets: AgentPresetDefinition[]): A
     supported_modes: supportedModes,
     provider: normalizeProviderForRuntime(
       agent.runtime_kind || runtimeKind,
-      agent.provider ?? preset?.provider ?? PRESET_FALLBACKS[presetKey].provider ?? 'anthropic',
+      agent.provider ?? preset?.provider ?? presetFallback(presetKey).provider ?? 'anthropic',
     ),
     model: agent.model ?? preset?.model ?? '',
     ...deriveExecutionConfigFields(
       agent.runtime_kind || runtimeKind,
       normalizeProviderForRuntime(
         agent.runtime_kind || runtimeKind,
-        agent.provider ?? preset?.provider ?? PRESET_FALLBACKS[presetKey].provider ?? 'anthropic',
+        agent.provider ?? preset?.provider ?? presetFallback(presetKey).provider ?? 'anthropic',
       ),
       agent.execution_config ?? preset?.execution_config,
     ),
@@ -853,7 +872,7 @@ function buildSystemAgentForm(agent: Agent, presets: AgentPresetDefinition[]): A
     default_invocation_mode: normalizeDefaultInvocationMode(
       defaultInvocationMode,
       agent.runtime_kind || runtimeKind,
-      preset?.default_invocation_mode ?? PRESET_FALLBACKS[presetKey].default_invocation_mode,
+      preset?.default_invocation_mode ?? presetFallback(presetKey).default_invocation_mode,
     ),
   };
 }
@@ -1389,7 +1408,7 @@ function agentPurpose(agent: Agent, presets: AgentPresetDefinition[]) {
       presets,
     );
     return trimSummaryText(
-      preset?.description ?? PRESET_FALLBACKS[fallbackPresetKey(agent)].description,
+      preset?.description ?? presetFallback(fallbackPresetKey(agent)).description,
       'Built-in workspace agent.',
     );
   }
@@ -3031,7 +3050,7 @@ export function AgentsPage() {
     if (!nextPreset) return;
     const nextProvider = normalizeProviderForRuntime(
       nextPreset.runtime_kind,
-      nextPreset.provider ?? PRESET_FALLBACKS[form.preset_key].provider ?? form.provider,
+      nextPreset.provider ?? presetFallback(form.preset_key).provider ?? form.provider,
     );
     setVersionDraftOpen(false);
     setVersionLabelDraft('');

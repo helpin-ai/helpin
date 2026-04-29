@@ -71,11 +71,21 @@ func AgentRunWorkflow(ctx workflow.Context, input AgentRunWorkflowInput) error {
 			MaximumAttempts: 1,
 		},
 	}
+	advanceAO := workflow.ActivityOptions{
+		StartToCloseTimeout: time.Minute,
+		RetryPolicy: &temporal.RetryPolicy{
+			InitialInterval:    5 * time.Second,
+			BackoffCoefficient: 2,
+			MaximumInterval:    time.Minute,
+			MaximumAttempts:    5,
+		},
+	}
 
 	currentStage = "preparing"
 	prepareCtx := workflow.WithActivityOptions(ctx, prepareAO)
 	if err := workflow.ExecuteActivity(prepareCtx, "AgentRunActivities.PrepareRunActivity", input.RunID).Get(ctx, nil); err != nil {
 		markRunFailed(workflow.WithActivityOptions(ctx, failAO), input.RunID, err)
+		advanceCommandBarPlan(workflow.WithActivityOptions(ctx, advanceAO), input.RunID)
 		return err
 	}
 
@@ -90,6 +100,7 @@ func AgentRunWorkflow(ctx workflow.Context, input AgentRunWorkflowInput) error {
 		var result ExecuteRunResult
 		if err := workflow.ExecuteActivity(executeCtx, "AgentRunActivities.ExecuteRunActivity", input.RunID).Get(ctx, &result); err != nil {
 			markRunFailed(workflow.WithActivityOptions(ctx, failAO), input.RunID, err)
+			advanceCommandBarPlan(workflow.WithActivityOptions(ctx, advanceAO), input.RunID)
 			return err
 		}
 
@@ -190,6 +201,7 @@ func AgentRunWorkflow(ctx workflow.Context, input AgentRunWorkflowInput) error {
 	}
 
 	currentStage = "completed"
+	advanceCommandBarPlan(workflow.WithActivityOptions(ctx, advanceAO), input.RunID)
 	return nil
 }
 
@@ -198,6 +210,12 @@ func markRunFailed(ctx workflow.Context, runID string, err error) {
 		return
 	}
 	_ = workflow.ExecuteActivity(ctx, "AgentRunActivities.MarkRunFailedActivity", runID, err.Error()).Get(ctx, nil)
+}
+
+func advanceCommandBarPlan(ctx workflow.Context, runID string) {
+	if err := workflow.ExecuteActivity(ctx, "AgentRunActivities.AdvanceCommandBarPlanActivity", runID).Get(ctx, nil); err != nil {
+		workflow.GetLogger(ctx).Warn("failed to advance command bar plan after retries", "run_id", runID, "error", err)
+	}
 }
 
 func workflowStageForResumeSignal(signal RunResumeSignal, waitingApproval bool) string {

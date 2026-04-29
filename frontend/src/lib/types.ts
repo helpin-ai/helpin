@@ -364,6 +364,7 @@ export interface JobRoleCriteria {
 export interface Invitation {
   id: string;
   workspace_id: string;
+  workspace_member_id?: string;
   email: string;
   role: string;
   status: 'pending' | 'accepted' | 'revoked';

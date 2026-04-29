@@ -11,6 +11,10 @@ import { Sidebar } from '@/components/layout/Sidebar'
 import { Header } from '@/components/layout/Header'
 import { GlobalCreateModals } from '@/components/pm/GlobalCreateModals'
 import { GlobalTaskPanel } from '@/components/pm/GlobalTaskPanel'
+import { CommandBarRunRail } from '@/components/command-bar/CommandBarRunRail'
+import { PageContextProvider } from '@/components/command-bar/pageContext'
+import { AskAgentsDock } from '@/components/agents/AskAgentsDock'
+import { RunsStatusPill } from '@/components/agents/RunsStatusPill'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { Skeleton } from '@/components/ui/skeleton'
 
@@ -95,12 +99,18 @@ function WorkspaceLayout() {
         >
           <Sidebar />
           <SidebarInset className="relative min-w-0 overflow-hidden bg-transparent before:absolute before:top-3 before:left-0 before:bottom-3 before:z-10 before:w-px before:bg-border/70 before:[mask-image:linear-gradient(to_bottom,transparent,black_24px,black_calc(100%-24px),transparent)] dark:before:bg-border/60">
-            <RouteAwareHeader />
-            <main className="relative min-h-0 flex-1 overflow-hidden">
-              <Outlet />
-            </main>
-            <MemoizedGlobalCreateModals workspaceId={currentWorkspace.id} />
-            <MemoizedGlobalTaskPanel workspaceId={currentWorkspace.id} />
+            <PageContextProvider>
+              <RouteAwareHeader />
+              <div className="flex min-h-0 flex-1 overflow-hidden">
+                <main className="relative min-h-0 flex-1 overflow-hidden">
+                  <Outlet />
+                  <RouteAwareAskAgentsDock />
+                </main>
+                <CommandBarRunRail />
+              </div>
+              <MemoizedGlobalCreateModals workspaceId={currentWorkspace.id} />
+              <MemoizedGlobalTaskPanel workspaceId={currentWorkspace.id} />
+            </PageContextProvider>
           </SidebarInset>
         </SidebarProvider>
       </div>
@@ -113,6 +123,18 @@ function RouteAwareHeader() {
   const location = useLocation()
   if (location.pathname.includes('/support')) return null
   return <Header />
+}
+
+/** Hide the Ask Agents dock on support routes — support has its own assistant flow. */
+function RouteAwareAskAgentsDock() {
+  const location = useLocation()
+  if (location.pathname.includes('/support')) return null
+  return (
+    <>
+      <AskAgentsDock />
+      <RunsStatusPill />
+    </>
+  )
 }
 
 const MemoizedGlobalCreateModals = memo(GlobalCreateModals)

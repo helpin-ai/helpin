@@ -108,6 +108,7 @@ import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useTruncationDetection } from '@/hooks/useTruncationDetection';
 import { shouldSuppressTaskOverlayOutsideDismiss } from '@/components/pm/task-detail/taskOverlayDismiss';
+import { isInsideAskAgentsDock } from '@/lib/agentsDockGuard';
 import { getFlushablePendingTaskPatch, hasPendingTaskSave } from '@/components/pm/task-detail/taskPendingPatch';
 import { TaskStateSelectContent } from '@/components/pm/task-detail/TaskStateSelectContent';
 import {
@@ -215,8 +216,8 @@ function MetadataRow({
   return (
     <>
       <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground mt-0.5" />
-      <span className="text-xs text-muted-foreground mt-0.5">{label}</span>
-      <div className="min-w-0">{children}</div>
+      <span className="text-[12px] text-muted-foreground mt-0.5">{label}</span>
+      <div className="min-w-0 text-[12px]">{children}</div>
     </>
   );
 }
@@ -1844,11 +1845,19 @@ export function TaskDetailPanel({
         showCloseButton={false}
         onOpenAutoFocus={(e) => e.preventDefault()}
         onPointerDownOutside={(event) => {
+          if (isInsideAskAgentsDock(event.target)) {
+            event.preventDefault();
+            return;
+          }
           if (shouldSuppressTaskOverlayOutsideDismiss(openedAtRef.current, Date.now())) {
             event.preventDefault();
           }
         }}
         onInteractOutside={(event) => {
+          if (isInsideAskAgentsDock(event.target)) {
+            event.preventDefault();
+            return;
+          }
           if (shouldSuppressTaskOverlayOutsideDismiss(openedAtRef.current, Date.now())) {
             event.preventDefault();
           }

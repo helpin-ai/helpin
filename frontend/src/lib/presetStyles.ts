@@ -30,4 +30,8 @@ export const PRESET_STYLES: Record<AgentPresetKey, { label: string; className: s
     label: 'CRM Operator',
     className: 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20',
   },
+  command_agent: {
+    label: 'Command Agent',
+    className: 'bg-slate-500/10 text-slate-700 dark:text-slate-400 border-slate-500/20',
+  },
 };

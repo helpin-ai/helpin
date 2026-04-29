@@ -43,6 +43,10 @@ export function Header() {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  const handleSearchOpenChange = (open: boolean) => {
+    setSearchOpen(open);
+  };
+
   const breadcrumbs = useMemo<Crumb[]>(() => {
     const formatLabel = (value: string) =>
       value
@@ -250,7 +254,7 @@ export function Header() {
         </>
       )}
 
-      <SearchCommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
+      <SearchCommandPalette open={searchOpen} onOpenChange={handleSearchOpenChange} />
     </header>
   );
 }

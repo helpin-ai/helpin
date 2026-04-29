@@ -183,6 +183,27 @@ func (r *AgentRunRepository) ListByWorkspace(ctx context.Context, workspaceID st
 	return runs, total, nil
 }
 
+// ListRecentForActor returns the most recent runs triggered by the given user
+// in the workspace. Used by the command runs rail to rehydrate standalone
+// runs (runs not tied to a command-bar plan) on mount.
+func (r *AgentRunRepository) ListRecentForActor(ctx context.Context, workspaceID, actorID string, limit int) ([]model.AgentRun, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("agent run repository is not configured")
+	}
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+	var runs []model.AgentRun
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND triggered_by_user_id = ?", workspaceID, actorID).
+		Order("created_at DESC").
+		Limit(limit).
+		Find(&runs).Error; err != nil {
+		return nil, fmt.Errorf("list recent agent runs for actor: %w", err)
+	}
+	return runs, nil
+}
+
 // ListByTask returns runs for a task.
 func (r *AgentRunRepository) ListByTask(ctx context.Context, workspaceID, storyID string) ([]model.AgentRun, error) {
 	var runs []model.AgentRun
@@ -309,6 +330,36 @@ func (r *AgentRunRepository) GetByIDAny(ctx context.Context, id string) (*model.
 			return nil, nil
 		}
 		return nil, fmt.Errorf("get agent run: %w", err)
+	}
+	return &run, nil
+}
+
+// ListByIDs returns runs in a workspace for a set of IDs.
+func (r *AgentRunRepository) ListByIDs(ctx context.Context, workspaceID string, ids []string) ([]model.AgentRun, error) {
+	if len(ids) == 0 {
+		return []model.AgentRun{}, nil
+	}
+	var runs []model.AgentRun
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND id IN ?", workspaceID, ids).
+		Order("created_at ASC").
+		Find(&runs).Error; err != nil {
+		return nil, fmt.Errorf("list agent runs by ids: %w", err)
+	}
+	return runs, nil
+}
+
+// FindByParentRunID returns the first run linked to the given parent run.
+func (r *AgentRunRepository) FindByParentRunID(ctx context.Context, workspaceID, parentRunID string) (*model.AgentRun, error) {
+	var run model.AgentRun
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND parent_run_id = ?", workspaceID, parentRunID).
+		Order("created_at ASC").
+		First(&run).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("find run by parent run id: %w", err)
 	}
 	return &run, nil
 }

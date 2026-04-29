@@ -58,11 +58,16 @@ type ShortcutTeamPreview struct {
 }
 
 type ShortcutUserMatch struct {
-	Email         string  `json:"email"`
-	MatchedUserID *string `json:"matched_user_id"`
-	MatchedName   *string `json:"matched_name"`
-	ShortcutName  *string `json:"shortcut_name,omitempty"`
-	StoryCount    int     `json:"story_count"`
+	Email               string  `json:"email"`
+	ShortcutMemberID    *string `json:"shortcut_member_id,omitempty"`
+	MatchedUserID       *string `json:"matched_user_id"`
+	MatchedMemberID     *string `json:"matched_member_id,omitempty"`
+	MatchedMemberStatus *string `json:"matched_member_status,omitempty"`
+	MatchedName         *string `json:"matched_name"`
+	ShortcutName        *string `json:"shortcut_name,omitempty"`
+	StoryCount          int     `json:"story_count"`
+	OwnerCount          int     `json:"owner_count"`
+	RequesterCount      int     `json:"requester_count"`
 }
 
 type ShortcutImportPreviewSummary struct {
@@ -141,6 +146,7 @@ type ShortcutImportOptions struct {
 
 type ShortcutImportExecuteRequest struct {
 	UserMappings          map[string]string                     `json:"user_mappings"`
+	MemberMappings        map[string]string                     `json:"member_mappings,omitempty"`
 	TeamMappings          map[string]string                     `json:"team_mappings,omitempty"`
 	WorkflowStateMappings []ShortcutWorkflowStateMappingPayload `json:"workflow_state_mappings"`
 	Options               ShortcutImportOptions                 `json:"options"`
