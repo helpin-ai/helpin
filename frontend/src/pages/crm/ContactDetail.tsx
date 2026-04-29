@@ -241,8 +241,8 @@ function MetadataRow({ icon: Icon, label, children }: { icon: React.ElementType;
   return (
     <>
       <Icon className="h-3.5 w-3.5 shrink-0 self-center text-muted-foreground" />
-      <span className="self-center text-xs text-muted-foreground">{label}</span>
-      <div className="min-w-0 self-center">{children}</div>
+      <span className="self-center text-[12px] text-muted-foreground">{label}</span>
+      <div className="min-w-0 self-center text-[12px]">{children}</div>
     </>
   );
 }
@@ -264,7 +264,7 @@ function SidebarPopoverSelect<T extends string>({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[12px] transition-colors hover:bg-accent cursor-pointer"
         >
           <span className="truncate">{current?.label ?? value}</span>
           <ArrowRight01Icon className="h-3 w-3 rotate-90 text-muted-foreground" />

@@ -14,6 +14,7 @@ import { GlobalTaskPanel } from '@/components/pm/GlobalTaskPanel'
 import { CommandBarRunRail } from '@/components/command-bar/CommandBarRunRail'
 import { PageContextProvider } from '@/components/command-bar/pageContext'
 import { AskAgentsDock } from '@/components/agents/AskAgentsDock'
+import { RunsStatusPill } from '@/components/agents/RunsStatusPill'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { Skeleton } from '@/components/ui/skeleton'
 
@@ -128,7 +129,12 @@ function RouteAwareHeader() {
 function RouteAwareAskAgentsDock() {
   const location = useLocation()
   if (location.pathname.includes('/support')) return null
-  return <AskAgentsDock />
+  return (
+    <>
+      <AskAgentsDock />
+      <RunsStatusPill />
+    </>
+  )
 }
 
 const MemoizedGlobalCreateModals = memo(GlobalCreateModals)

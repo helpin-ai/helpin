@@ -18,14 +18,14 @@ const RAIL_MODE_KEY = 'helpin:cmdk-rail:mode';
 const RAIL_FILTER_KEY = 'helpin:cmdk-rail:filter';
 
 function loadRailMode(): RailMode {
-  if (typeof window === 'undefined') return 'peek';
+  if (typeof window === 'undefined') return 'closed';
   try {
     const raw = window.localStorage.getItem(RAIL_MODE_KEY);
     if (raw === 'closed' || raw === 'peek' || raw === 'open') return raw;
   } catch {
     /* ignore */
   }
-  return 'peek';
+  return 'closed';
 }
 
 function persistRailMode(mode: RailMode) {
@@ -65,6 +65,12 @@ interface CommandBarRunState {
   railMode: RailMode;
   railFilter: RailFilter;
   selectedRunId: string | null;
+  /**
+   * Set true when the user explicitly opens/closes the rail in this session.
+   * hydratePlans uses this to avoid clobbering a user's manual click that
+   * lands before the initial plans fetch resolves.
+   */
+  userSetRailMode: boolean;
   addRuns: (runs: AgentRun[]) => void;
   addPlan: (plan: CommandBarRunPlan, runs?: AgentRun[]) => void;
   hydratePlans: (plans: CommandBarPlanSummary[]) => void;
@@ -84,6 +90,7 @@ export const useCommandBarRunStore = create<CommandBarRunState>((set) => ({
   railMode: loadRailMode(),
   railFilter: loadRailFilter(),
   selectedRunId: null,
+  userSetRailMode: false,
   addRuns: (runs) =>
     set((state) => {
       const runsById = { ...state.runsById };
@@ -134,12 +141,22 @@ export const useCommandBarRunStore = create<CommandBarRunState>((set) => ({
           runIds.add(run.id);
         }
       }
+      // On page load, only restore the rail's saved open/peek state if there
+      // is actual live work to show. Stale history from a prior session
+      // shouldn't pop the rail open on every page navigation. But if the user
+      // already clicked the sidebar Runs button (or otherwise set mode in this
+      // session), respect that — don't clobber it with a force-close.
+      const hasActive = Object.values(runsById).some(
+        (r) => r.status === 'running' || r.status === 'queued' || r.status === 'paused',
+      );
+      const railMode =
+        state.userSetRailMode || hasActive ? state.railMode : 'closed';
       return {
         runsById,
         runIds: Array.from(runIds),
         planIds: Array.from(planIds),
         plansById,
-        railMode: plans.length && state.railMode === 'closed' ? 'peek' : state.railMode,
+        railMode,
       };
     }),
   updatePlan: (plan, runs = []) =>
@@ -207,7 +224,7 @@ export const useCommandBarRunStore = create<CommandBarRunState>((set) => ({
     }),
   setRailMode: (mode) => {
     persistRailMode(mode);
-    set({ railMode: mode });
+    set({ railMode: mode, userSetRailMode: true });
   },
   setRailFilter: (filter) => {
     persistRailFilter(filter);

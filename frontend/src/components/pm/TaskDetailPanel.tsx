@@ -216,8 +216,8 @@ function MetadataRow({
   return (
     <>
       <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground mt-0.5" />
-      <span className="text-[13px] text-muted-foreground mt-0.5">{label}</span>
-      <div className="min-w-0 text-[13px]">{children}</div>
+      <span className="text-[12px] text-muted-foreground mt-0.5">{label}</span>
+      <div className="min-w-0 text-[12px]">{children}</div>
     </>
   );
 }

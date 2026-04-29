@@ -217,6 +217,7 @@ export function AskAgentsDock() {
     return localStorage.getItem(COLLAPSED_KEY) === '1';
   });
   const [hiddenByModal, setHiddenByModal] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
   const [value, setValue] = useState('');
   const [parsing, setParsing] = useState(false);
   const [dispatching, setDispatching] = useState(false);
@@ -266,6 +267,20 @@ export function AskAgentsDock() {
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, []);
+
+  // Auto-collapse to pill when the dock has been idle for IDLE_COLLAPSE_MS.
+  // "Idle" = expanded, no draft text, no pending plan, not parsing/dispatching,
+  // and the textarea isn't focused. Any change to those resets the timer.
+  useEffect(() => {
+    if (collapsed) return;
+    if (parsing || dispatching) return;
+    if (intentResult) return;
+    if (value.trim().length > 0) return;
+    if (isFocused) return;
+    const IDLE_COLLAPSE_MS = 60_000;
+    const timer = setTimeout(() => setCollapsed(true), IDLE_COLLAPSE_MS);
+    return () => clearTimeout(timer);
+  }, [collapsed, parsing, dispatching, intentResult, value, isFocused]);
 
   // Hide the dock while a centered modal dialog is open. Sheets (anything with
   // data-side, like the task panel) do NOT trigger this — the dock stays visible
@@ -440,7 +455,7 @@ export function AskAgentsDock() {
         <button
           type="button"
           onClick={() => setCollapsed(false)}
-          className="pointer-events-auto group inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/95 px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-[0_1px_2px_rgba(15,23,42,0.05),0_6px_20px_-8px_rgba(15,23,42,0.18)] backdrop-blur transition hover:border-primary/40 hover:bg-background hover:text-foreground hover:shadow-[0_2px_4px_rgba(15,23,42,0.06),0_10px_28px_-10px_rgba(15,23,42,0.25)]"
+          className="pointer-events-auto group inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/95 px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-[0_1px_2px_rgba(15,23,42,0.05),0_6px_20px_-8px_rgba(15,23,42,0.18)] backdrop-blur transition hover:border-primary/40 hover:bg-background hover:text-foreground hover:shadow-[0_2px_4px_rgba(15,23,42,0.06),0_10px_28px_-10px_rgba(15,23,42,0.25)] animate-in fade-in zoom-in-95 slide-in-from-bottom-2 duration-200"
         >
           <AiMagicIcon className="h-3.5 w-3.5" />
           Ask agents
@@ -480,7 +495,7 @@ export function AskAgentsDock() {
       data-helpin-dock="true"
       className="pointer-events-none fixed inset-x-0 bottom-3 z-[60] flex justify-center px-4"
     >
-      <div className="pointer-events-auto flex w-full max-w-2xl flex-col rounded-2xl border border-border/70 bg-background/95 shadow-[0_1px_2px_rgba(15,23,42,0.06),0_8px_24px_-12px_rgba(15,23,42,0.18),0_24px_64px_-28px_rgba(15,23,42,0.28)] ring-1 ring-black/[0.02] backdrop-blur transition-shadow focus-within:shadow-[0_1px_2px_rgba(15,23,42,0.06),0_12px_32px_-12px_rgba(15,23,42,0.22),0_32px_80px_-32px_rgba(15,23,42,0.34)] dark:ring-white/[0.04]">
+      <div className="pointer-events-auto flex w-full max-w-2xl flex-col rounded-2xl border border-border/70 bg-background/95 shadow-[0_1px_2px_rgba(15,23,42,0.06),0_8px_24px_-12px_rgba(15,23,42,0.18),0_24px_64px_-28px_rgba(15,23,42,0.28)] ring-1 ring-black/[0.02] backdrop-blur transition-shadow focus-within:shadow-[0_1px_2px_rgba(15,23,42,0.06),0_12px_32px_-12px_rgba(15,23,42,0.22),0_32px_80px_-32px_rgba(15,23,42,0.34)] dark:ring-white/[0.04] animate-in fade-in zoom-in-95 slide-in-from-bottom-2 duration-200 ease-out">
         {hasResponseArea ? (
           <div className="order-1 flex max-h-[60vh] flex-col">
             {messages.length > 0 ? (
@@ -688,6 +703,8 @@ export function AskAgentsDock() {
               value={value}
               onChange={(e) => setValue(e.target.value)}
               onKeyDown={onTextareaKeyDown}
+              onFocus={() => setIsFocused(true)}
+              onBlur={() => setIsFocused(false)}
               placeholder={
                 messages.length > 0
                   ? 'Ask another question...'
@@ -718,11 +735,7 @@ export function AskAgentsDock() {
                   <Loading01Icon className="h-3 w-3 animate-spin" />
                   Thinking…
                 </span>
-              ) : (
-                <kbd className="hidden rounded border bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground sm:inline">
-                  ↵
-                </kbd>
-              )}
+              ) : null}
               <button
                 type="button"
                 onClick={() => void submit()}
