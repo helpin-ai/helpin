@@ -991,6 +991,70 @@ func TestPMImportServiceRewriteShortcutMediaBody(t *testing.T) {
 	}
 }
 
+func TestPMImportServiceRewriteShortcutMediaBodyPreservesFailedMediaAsVisibleLink(t *testing.T) {
+	db := newImportTestDB(t)
+	svc, workspaceID, adminID := newImportTestService(t, db)
+
+	fakeAttachments := &fakeShortcutImportedAttachmentService{
+		publicURLPrefix: "https://cdn.example.com/imported/",
+	}
+	fakeDownloader := &fakeShortcutMediaDownloader{
+		mediaByURL: map[string]shortcutDownloadedMedia{},
+	}
+	svc.attachmentService = fakeAttachments
+	svc.mediaDownloader = fakeDownloader
+
+	body := `<p>Video</p><p><img src="https://media.app.shortcut.com/api/attachments/files/clubhouse-assets/example/demo.mp4" alt="demo.mp4"></p><p><a href="https://media.app.shortcut.com/api/attachments/files/clubhouse-assets/example/demo.mp4">open</a></p>`
+	rewritten, created, warnings := svc.rewriteShortcutMediaBody(context.Background(), workspaceID, adminID, "story", "story-123", body, "shortcut-token")
+
+	if created != 0 {
+		t.Fatalf("expected no attachment for failed media, got %d", created)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("expected one warning, got %v", warnings)
+	}
+	if !strings.Contains(rewritten, `href="https://media.app.shortcut.com/api/attachments/files/clubhouse-assets/example/demo.mp4"`) {
+		t.Fatalf("expected original Shortcut URL to remain as link, got %s", rewritten)
+	}
+	if strings.Contains(rewritten, `<img`) {
+		t.Fatalf("expected failed image embed to become a visible link, got %s", rewritten)
+	}
+	if !strings.Contains(rewritten, "Shortcut media not copied: demo.mp4") {
+		t.Fatalf("expected visible failed-media label, got %s", rewritten)
+	}
+}
+
+func TestPMImportServiceRewriteShortcutMediaTextPreservesFailedMarkdownMediaAsLink(t *testing.T) {
+	db := newImportTestDB(t)
+	svc, workspaceID, adminID := newImportTestService(t, db)
+
+	fakeAttachments := &fakeShortcutImportedAttachmentService{
+		publicURLPrefix: "https://cdn.example.com/imported/",
+	}
+	fakeDownloader := &fakeShortcutMediaDownloader{
+		mediaByURL: map[string]shortcutDownloadedMedia{},
+	}
+	svc.attachmentService = fakeAttachments
+	svc.mediaDownloader = fakeDownloader
+
+	rawURL := "https://media.app.shortcut.com/api/attachments/files/clubhouse-assets/example/demo.webm"
+	text := "Review this recording ![demo.webm](" + rawURL + ")"
+	rewritten, created, warnings := svc.rewriteShortcutMediaText(context.Background(), workspaceID, adminID, "task", "story-123", text, "shortcut-token")
+
+	if created != 0 {
+		t.Fatalf("expected no attachment for failed media, got %d", created)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("expected one warning, got %v", warnings)
+	}
+	if strings.Contains(rewritten, "![demo.webm]") {
+		t.Fatalf("expected failed image markdown to become a normal link, got %s", rewritten)
+	}
+	if !strings.Contains(rewritten, "[Shortcut media not copied: demo.webm") || !strings.Contains(rewritten, "]("+rawURL+")") {
+		t.Fatalf("expected visible fallback markdown link, got %s", rewritten)
+	}
+}
+
 func TestPMImportServiceImportShortcutStoryMediaUpdatesDescriptions(t *testing.T) {
 	db := newImportTestDB(t)
 	svc, workspaceID, adminID := newImportTestService(t, db)

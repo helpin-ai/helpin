@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -18,6 +18,12 @@ import {
   Loading01Icon,
   Mail01Icon,
   Cancel01Icon,
+  Bookmark01Icon,
+  Target02Icon,
+  StickyNote01Icon,
+  Layers01Icon,
+  ArrowReloadHorizontalIcon,
+  type IconComponent,
 } from '@/lib/icons';
 import { toast } from 'sonner';
 import {
@@ -230,6 +236,97 @@ function buildInitialWorkflowMappings(
 function workflowStateMappingStats(states: WorkflowMapping['states']) {
   const mapped = states.filter((state) => state.existingStateId).length;
   return { mapped, total: states.length };
+}
+
+// ─── Layout helpers ──────────────────────────────────────────────────
+
+function SectionHeader({
+  number,
+  title,
+  description,
+  action,
+}: {
+  number: number;
+  title: string;
+  description?: string;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border bg-background text-xs font-medium text-foreground">
+        {number}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold leading-6">{title}</h3>
+          {action}
+        </div>
+        {description && (
+          <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SectionBody({ children, className }: { children: ReactNode; className?: string }) {
+  return <div className={cn('pl-9', className)}>{children}</div>;
+}
+
+function FieldLabel({ children }: { children: ReactNode }) {
+  return <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{children}</Label>;
+}
+
+function ToggleCard({
+  icon: Icon,
+  title,
+  description,
+  active,
+  disabled,
+  onClick,
+}: {
+  icon: IconComponent;
+  title: string;
+  description: string;
+  active: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        'group relative flex flex-col items-start gap-2 rounded-md border bg-background p-3 text-left transition',
+        active
+          ? 'border-foreground ring-1 ring-foreground'
+          : 'border-border hover:border-foreground/40',
+        disabled && 'cursor-not-allowed opacity-60',
+      )}
+    >
+      <div
+        className={cn(
+          'flex h-7 w-7 items-center justify-center rounded-md',
+          active ? 'bg-foreground text-background' : 'bg-muted text-foreground',
+        )}
+      >
+        <Icon className="h-4 w-4" />
+      </div>
+      <div className="min-w-0 space-y-0.5">
+        <div className="text-sm font-medium leading-tight">{title}</div>
+        <div className="text-xs text-muted-foreground leading-snug">{description}</div>
+      </div>
+      <div
+        className={cn(
+          'absolute right-2 top-2 flex h-4 w-4 items-center justify-center rounded-full border',
+          active ? 'border-foreground bg-foreground text-background' : 'border-border bg-background',
+        )}
+      >
+        {active && <Tick01Icon className="h-3 w-3" />}
+      </div>
+    </button>
+  );
 }
 
 // ─── Main Component ──────────────────────────────────────────────────
@@ -640,47 +737,61 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
 
   // ─── Render ──────────────────────────────────────────────────────
 
+  const handleSelectHistory = (status: ShortcutImportStatusResponse) => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = null;
+    setImporting(false);
+    setImportStatus(status);
+    setStep(4);
+    if (status.status === 'pending' || status.status === 'scanning' || status.status === 'processing') {
+      startImportStatusPolling(status.import_id);
+    }
+  };
+
+  const showHistoryTable = step === 0 && !preview && !previewLoading;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
+    <Card className="overflow-hidden p-0">
       {/* Step indicator */}
-      <div className="flex items-center justify-center gap-2">
-        {STEP_LABELS.map((label, i) => (
-          <div key={label} className="flex items-center gap-2">
-            {i > 0 && <div className="h-px w-8 bg-border" />}
-            <div className="flex items-center gap-1.5">
-              <div
-                className={cn(
-                  'flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium',
-                  i < step
-                    ? 'bg-primary text-primary-foreground'
-                    : i === step
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-muted text-muted-foreground',
-                )}
-              >
-                {i < step ? <Tick01Icon className="h-3.5 w-3.5" /> : i + 1}
+      <div className="flex items-center gap-1.5 border-b px-5 py-3 text-xs">
+        {STEP_LABELS.map((label, i) => {
+          const isComplete = i < step;
+          const isActive = i === step;
+          return (
+            <div key={label} className="flex items-center gap-1.5">
+              {i > 0 && <div className={cn('h-px w-6', isComplete || isActive ? 'bg-foreground/40' : 'bg-border')} />}
+              <div className="flex items-center gap-1.5">
+                <div
+                  className={cn(
+                    'flex h-5 w-5 items-center justify-center rounded-full border text-[11px] font-medium',
+                    isComplete && 'border-foreground bg-foreground text-background',
+                    isActive && !isComplete && 'border-foreground bg-background text-foreground',
+                    !isComplete && !isActive && 'border-border bg-background text-muted-foreground',
+                  )}
+                >
+                  {isComplete ? <Tick01Icon className="h-3 w-3" /> : i + 1}
+                </div>
+                <span
+                  className={cn(
+                    isActive ? 'font-medium text-foreground' : 'text-muted-foreground',
+                  )}
+                >
+                  {label}
+                </span>
               </div>
-              <span
-                className={cn(
-                  'text-sm',
-                  i === step ? 'font-medium' : 'text-muted-foreground',
-                )}
-              >
-                {label}
-              </span>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Step content */}
+      <div className="px-5 py-5">
       {step === 0 && (
         <UploadStep
           preview={preview}
           loading={previewLoading}
           scanProgress={scanProgress}
-          importHistory={importHistory}
-          historyLoading={historyLoading}
           apiToken={apiToken}
           onApiTokenChange={(token) => {
             setApiToken(token);
@@ -713,17 +824,6 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
           onDocsCollectionId={setDocsCollectionId}
           onDocsLookbackMonths={setDocsLookbackMonths}
           onAPIPreview={handleAPIPreview}
-          onRefreshHistory={loadImportHistory}
-          onSelectHistory={(status) => {
-            if (pollRef.current) clearInterval(pollRef.current);
-            pollRef.current = null;
-            setImporting(false);
-            setImportStatus(status);
-            setStep(4);
-            if (status.status === 'pending' || status.status === 'scanning' || status.status === 'processing') {
-              startImportStatusPolling(status.import_id);
-            }
-          }}
           onClear={() => {
             setPreview(null);
             setTeamMappings([]);
@@ -779,9 +879,11 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
         />
       )}
 
+      </div>
+
       {/* Navigation */}
       {!importing && importStatus?.status !== 'completed' && importStatus?.status !== 'failed' && (
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="flex justify-end gap-2 border-t bg-muted/20 px-5 py-3">
           {step > 0 && (
             <Button variant="outline" onClick={goBack}>
               Back
@@ -794,6 +896,16 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
           )}
         </div>
       )}
+    </Card>
+
+    {showHistoryTable && (
+      <ShortcutImportHistoryTable
+        imports={importHistory}
+        loading={historyLoading}
+        onRefresh={loadImportHistory}
+        onSelect={handleSelectHistory}
+      />
+    )}
     </div>
   );
 }
@@ -804,8 +916,6 @@ function UploadStep({
   preview,
   loading,
   scanProgress,
-  importHistory,
-  historyLoading,
   apiToken,
   onApiTokenChange,
   importArchived,
@@ -833,15 +943,11 @@ function UploadStep({
   onDocsCollectionId,
   onDocsLookbackMonths,
   onAPIPreview,
-  onRefreshHistory,
-  onSelectHistory,
   onClear,
 }: {
   preview: ShortcutImportPreviewResponse | null;
   loading: boolean;
   scanProgress: ShortcutScanProgress | null;
-  importHistory: ShortcutImportStatusResponse[];
-  historyLoading: boolean;
   apiToken: string;
   onApiTokenChange: (token: string) => void;
   importArchived: boolean;
@@ -869,8 +975,6 @@ function UploadStep({
   onDocsCollectionId: (v: string) => void;
   onDocsLookbackMonths: (v: string) => void;
   onAPIPreview: () => void;
-  onRefreshHistory: () => void;
-  onSelectHistory: (status: ShortcutImportStatusResponse) => void;
   onClear: () => void;
 }) {
   if (loading) {
@@ -893,103 +997,261 @@ function UploadStep({
   }
 
   if (!preview) {
+    const docsAvailable = docsSpaces.length > 0;
+    const resetFilters = () => {
+      onStoryDateField('updated_at');
+      onStoryLookbackMonths('6');
+      onEpicLookbackMonths('12');
+      onObjectiveLookbackMonths('12');
+      onMaxStories('');
+      onArchived(false);
+      onCompleted(true);
+    };
+
     return (
-      <div className="space-y-4">
-        <Card>
-          <CardContent className="px-4 py-3">
-            <div className="flex items-start gap-3">
-              <Key01Icon className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
-              <div className="flex-1 space-y-2">
-                <div>
-                  <Label className="text-sm font-medium">Shortcut API Token</Label>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Generate a token in Shortcut under Settings &rarr; API Tokens.
-                  </p>
-                </div>
-                <div className="flex max-w-xl gap-2">
-                  <Input
-                    type="password"
-                    placeholder="Shortcut API token"
-                    value={apiToken}
-                    onChange={(e) => onApiTokenChange(e.target.value)}
-                    autoComplete="off"
-                    data-1p-ignore
-                    data-lpignore="true"
-                    className="font-mono text-xs"
-                  />
-                  <Button type="button" onClick={onAPIPreview} disabled={!apiToken.trim()}>
-                    Connect
-                  </Button>
-                </div>
-                <div className="grid max-w-3xl gap-3 pt-2 sm:grid-cols-2 lg:grid-cols-4">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">Story date</Label>
-                    <Select value={storyDateField} onValueChange={(v) => onStoryDateField(v as 'updated_at' | 'created_at')}>
-                      <SelectTrigger className="h-8">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="updated_at">Updated</SelectItem>
-                        <SelectItem value="created_at">Created</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">Story window</Label>
-                    <Select value={storyLookbackMonths} onValueChange={onStoryLookbackMonths}>
-                      <SelectTrigger className="h-8">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {LOOKBACK_OPTIONS.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
+      <div className="space-y-8">
+        {/* ─── Section 1: Connect ─────────────────────────────── */}
+        <section className="space-y-3">
+          <SectionHeader
+            number={1}
+            title="Connect to Shortcut"
+            description="Enter your Shortcut API token to connect to your workspace."
+          />
+          <SectionBody className="space-y-3">
+            <div className="flex max-w-xl gap-2">
+              <div className="relative flex-1">
+                <Key01Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  type="password"
+                  placeholder="Shortcut API token"
+                  value={apiToken}
+                  onChange={(e) => onApiTokenChange(e.target.value)}
+                  autoComplete="off"
+                  data-1p-ignore
+                  data-lpignore="true"
+                  className="h-9 pl-8 font-mono text-xs"
+                />
+              </div>
+              <Button type="button" onClick={onAPIPreview} disabled={!apiToken.trim()} className="h-9">
+                Connect
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Find your token in Shortcut under{' '}
+              <span className="font-medium text-foreground">Settings → API Tokens</span>.
+            </p>
+            <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
+              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-background">
+                <div className="h-2 w-2 rounded-full bg-muted-foreground" />
+              </div>
+              <span className="text-xs text-muted-foreground">
+                Not connected — enter a token and click Connect to get started.
+              </span>
+            </div>
+          </SectionBody>
+        </section>
+
+        {/* ─── Section 2: What to import ──────────────────────── */}
+        <section className="space-y-3">
+          <SectionHeader
+            number={2}
+            title="What do you want to import?"
+            description="Enter your token and click Connect to get started."
+          />
+          <SectionBody>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <ToggleCard
+                icon={Bookmark01Icon}
+                title="Stories"
+                description="Tasks are story items"
+                active
+                onClick={() => undefined}
+              />
+              <ToggleCard
+                icon={Layers01Icon}
+                title="Epics"
+                description="Epics and larger initiatives"
+                active
+                onClick={() => undefined}
+              />
+              <ToggleCard
+                icon={Target02Icon}
+                title="Objectives"
+                description="Objectives and key results"
+                active
+                onClick={() => undefined}
+              />
+              <ToggleCard
+                icon={StickyNote01Icon}
+                title="Docs"
+                description="Documentation and notes"
+                active={importDocs}
+                disabled={!docsAvailable}
+                onClick={() => onImportDocs(!importDocs)}
+              />
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              You can import any combination of these.
+            </p>
+          </SectionBody>
+        </section>
+
+        {/* ─── Section 3: Filters ─────────────────────────────── */}
+        <section className="space-y-3">
+          <SectionHeader
+            number={3}
+            title="Filters"
+            description="Refine the results to import."
+            action={
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={resetFilters}
+                className="h-7 text-xs text-muted-foreground"
+              >
+                <ArrowReloadHorizontalIcon className="mr-1 h-3 w-3" />
+                Reset to defaults
+              </Button>
+            }
+          />
+          <SectionBody className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="space-y-1.5">
+                <FieldLabel>Date</FieldLabel>
+                <Select value={storyDateField} onValueChange={(v) => onStoryDateField(v as 'updated_at' | 'created_at')}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="updated_at">Updated</SelectItem>
+                    <SelectItem value="created_at">Created</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <FieldLabel>Story window</FieldLabel>
+                <Select value={storyLookbackMonths} onValueChange={onStoryLookbackMonths}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LOOKBACK_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <FieldLabel>Epic window</FieldLabel>
+                <Select value={epicLookbackMonths} onValueChange={onEpicLookbackMonths}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LOOKBACK_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <FieldLabel>Objective window</FieldLabel>
+                <Select value={objectiveLookbackMonths} onValueChange={onObjectiveLookbackMonths}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LOOKBACK_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
+                <span className="text-xs">Include archived tasks</span>
+                <Switch checked={importArchived} onCheckedChange={onArchived} />
+              </label>
+              <label className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
+                <span className="text-xs">Include completed tasks</span>
+                <Switch checked={importCompleted} onCheckedChange={onCompleted} />
+              </label>
+              <div className="space-y-1.5">
+                <FieldLabel>Limit results</FieldLabel>
+                <Input
+                  inputMode="numeric"
+                  min={1}
+                  placeholder="No limit"
+                  value={maxStories}
+                  onChange={(e) => onMaxStories(e.target.value.replace(/\D/g, ''))}
+                  className="h-9"
+                />
+              </div>
+            </div>
+          </SectionBody>
+        </section>
+
+        {/* ─── Section 4: Docs destination ──────────────────────── */}
+        {importDocs && (
+          <section className="space-y-3">
+            <SectionHeader
+              number={4}
+              title="Docs destination"
+              description="Choose where the imported docs will be created."
+            />
+            <SectionBody>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="space-y-1.5">
+                  <FieldLabel>Docs space</FieldLabel>
+                  <Select value={docsSpaceId || 'none'} onValueChange={onDocsSpaceId} disabled={!docsAvailable}>
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="Select space" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {docsSpaces.length === 0 ? (
+                        <SelectItem value="none" disabled>No spaces</SelectItem>
+                      ) : (
+                        docsSpaces.map((space) => (
+                          <SelectItem key={space.id} value={space.id}>
+                            {space.name}
                           </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">Epic window</Label>
-                    <Select value={epicLookbackMonths} onValueChange={onEpicLookbackMonths}>
-                      <SelectTrigger className="h-8">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {LOOKBACK_OPTIONS.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">Max stories</Label>
-                    <Input
-                      inputMode="numeric"
-                      min={1}
-                      placeholder="No limit"
-                      value={maxStories}
-                      onChange={(e) => onMaxStories(e.target.value.replace(/\D/g, ''))}
-                      className="h-8"
-                    />
-                  </div>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
                 </div>
-                <div className="grid max-w-xl gap-2 pt-1 sm:grid-cols-2">
-                  <label className="flex items-center justify-between rounded-md border px-3 py-2">
-                    <span className="text-xs">Archived tasks</span>
-                    <Switch checked={importArchived} onCheckedChange={onArchived} />
-                  </label>
-                  <label className="flex items-center justify-between rounded-md border px-3 py-2">
-                    <span className="text-xs">Completed tasks</span>
-                    <Switch checked={importCompleted} onCheckedChange={onCompleted} />
-                  </label>
+                <div className="space-y-1.5">
+                  <FieldLabel>Collection</FieldLabel>
+                  <Select
+                    value={docsCollectionId || 'root'}
+                    onValueChange={(value) => onDocsCollectionId(value === 'root' ? '' : value)}
+                    disabled={!docsSpaceId}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="root">Uncategorized</SelectItem>
+                      {docsCollections.map((collection) => (
+                        <SelectItem key={collection.id} value={collection.id}>
+                          {collection.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-                <div className="max-w-[11rem] space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">Objective window</Label>
-                  <Select value={objectiveLookbackMonths} onValueChange={onObjectiveLookbackMonths}>
-                    <SelectTrigger className="h-8">
+                <div className="space-y-1.5">
+                  <FieldLabel>Docs window</FieldLabel>
+                  <Select value={docsLookbackMonths} onValueChange={onDocsLookbackMonths}>
+                    <SelectTrigger className="h-9">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -1001,76 +1263,10 @@ function UploadStep({
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="grid max-w-3xl gap-3 border-t pt-3 sm:grid-cols-2 lg:grid-cols-4">
-                  <label className="flex h-8 items-center justify-between rounded-md border px-3">
-                    <span className="text-xs">Shortcut Docs</span>
-                    <Switch checked={importDocs} onCheckedChange={onImportDocs} disabled={docsSpaces.length === 0} />
-                  </label>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">Docs space</Label>
-                    <Select value={docsSpaceId || 'none'} onValueChange={onDocsSpaceId} disabled={!importDocs || docsSpaces.length === 0}>
-                      <SelectTrigger className="h-8">
-                        <SelectValue placeholder="Select space" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {docsSpaces.length === 0 ? (
-                          <SelectItem value="none" disabled>No spaces</SelectItem>
-                        ) : (
-                          docsSpaces.map((space) => (
-                            <SelectItem key={space.id} value={space.id}>
-                              {space.name}
-                            </SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">Collection</Label>
-                    <Select
-                      value={docsCollectionId || 'root'}
-                      onValueChange={(value) => onDocsCollectionId(value === 'root' ? '' : value)}
-                      disabled={!importDocs || !docsSpaceId}
-                    >
-                      <SelectTrigger className="h-8">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="root">Uncategorized</SelectItem>
-                        {docsCollections.map((collection) => (
-                          <SelectItem key={collection.id} value={collection.id}>
-                            {collection.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">Docs window</Label>
-                    <Select value={docsLookbackMonths} onValueChange={onDocsLookbackMonths} disabled={!importDocs}>
-                      <SelectTrigger className="h-8">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {LOOKBACK_OPTIONS.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-        <ShortcutImportHistoryTable
-          imports={importHistory}
-          loading={historyLoading}
-          onRefresh={onRefreshHistory}
-          onSelect={onSelectHistory}
-        />
+            </SectionBody>
+          </section>
+        )}
       </div>
     );
   }
@@ -1092,33 +1288,35 @@ function UploadStep({
   const totalTasks = storyTypes.reduce((sum, [, v]) => sum + v, 0) || 1;
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6">
+      <div className="flex items-center justify-between rounded-md border bg-emerald-50/60 px-3 py-2 dark:bg-emerald-950/20">
         <div className="flex items-center gap-2">
-          <Tick01Icon className="h-4 w-4 text-green-500" />
-          <span className="text-sm font-medium truncate max-w-[300px]">
-            Shortcut API connected
-          </span>
+          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/15">
+            <Tick01Icon className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+          </div>
+          <span className="text-sm font-medium">Shortcut API connected</span>
+          <span className="text-xs text-muted-foreground">— preview ready</span>
         </div>
-        <Button variant="ghost" size="sm" onClick={onClear}>
+        <Button variant="ghost" size="sm" onClick={onClear} className="h-7 text-xs">
           Reset
         </Button>
       </div>
 
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-9">
         {statCards.map((c) => (
-          <Card key={c.label} className="py-3">
-            <CardContent className="px-4 py-0 text-center">
-              <p className="text-2xl font-bold">{c.value.toLocaleString()}</p>
-              <p className="text-xs text-muted-foreground">{c.label}</p>
-            </CardContent>
-          </Card>
+          <div
+            key={c.label}
+            className="rounded-md border bg-background px-3 py-2 text-center"
+          >
+            <p className="text-lg font-semibold leading-tight">{c.value.toLocaleString()}</p>
+            <p className="mt-0.5 text-[11px] uppercase tracking-wide text-muted-foreground">{c.label}</p>
+          </div>
         ))}
       </div>
 
       <div className="space-y-2">
-        <p className="text-sm font-medium">Tasks by Type</p>
-        <div className="flex h-3 w-1/2 overflow-hidden rounded-full">
+        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Tasks by type</p>
+        <div className="flex h-2 w-full max-w-md overflow-hidden rounded-full bg-muted">
           {storyTypes.map(([type, count]) => (
             <div
               key={type}
@@ -1128,13 +1326,13 @@ function UploadStep({
             />
           ))}
         </div>
-        <div className="flex gap-4">
+        <div className="flex flex-wrap gap-x-4 gap-y-1.5">
           {storyTypes.map(([type, count]) => (
             <div key={type} className="flex items-center gap-1.5">
               {TASK_TYPE_CONFIG[type as TaskType] ? (
-                <TaskTypeIcon taskType={type as TaskType} className="h-4 w-4 shrink-0" />
+                <TaskTypeIcon taskType={type as TaskType} className="h-3.5 w-3.5 shrink-0" />
               ) : (
-                <div className="h-2.5 w-2.5 rounded-full bg-muted-foreground" />
+                <div className="h-2 w-2 rounded-full bg-muted-foreground" />
               )}
               <span className="text-xs text-muted-foreground">
                 {type} <span className="font-medium text-foreground">{count.toLocaleString()}</span>
@@ -1183,20 +1381,18 @@ function TeamStep({
 
   return (
     <div className="space-y-4">
-      <div>
-        <h3 className="text-base font-semibold">Choose Destination Teams</h3>
-        <p className="text-sm text-muted-foreground">
-          Each Shortcut team or group can create a new Helpin team or map into an existing one.
-          New workflows will be created per destination team.
-        </p>
-      </div>
+      <SectionHeader
+        number={1}
+        title="Choose destination teams"
+        description="Each Shortcut team or group can create a new Helpin team or map into an existing one. New workflows will be created per destination team."
+      />
 
-      <Card>
+      <Card className="ml-9">
         <CardContent className="px-4 py-3">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="text-xs">Shortcut Team</TableHead>
+                <TableHead className="text-xs">Shortcut team</TableHead>
                 <TableHead className="text-xs">Destination</TableHead>
                 <TableHead className="text-xs">Team</TableHead>
                 <TableHead className="text-xs text-right">Stories</TableHead>
@@ -1277,14 +1473,13 @@ function WorkflowStep({
 
   return (
     <div className="space-y-4">
-      <div>
-        <p className="text-sm text-muted-foreground">
-          Map each Shortcut workflow into an existing Helpin workflow, then map Shortcut states to
-          Helpin states.
-        </p>
-      </div>
+      <SectionHeader
+        number={1}
+        title="Map workflows and states"
+        description="Map each Shortcut workflow into an existing Helpin workflow, then map Shortcut states to Helpin states."
+      />
       {existingWorkflows.length === 0 && (
-        <Card>
+        <Card className="ml-9">
           <CardContent className="px-4 py-3">
             <p className="text-sm text-muted-foreground">
               No Helpin workflows are available. Create the target workflow before starting the import.
@@ -1293,6 +1488,7 @@ function WorkflowStep({
         </Card>
       )}
 
+      <div className="ml-9 space-y-3">
       {workflowMappings.map((wf, wfIdx) => {
         const isValid = wf.existingWorkflowId !== '' && wf.states.every((s) => s.existingStateId !== '');
         const totalTasks = wf.states.reduce((sum, s) => sum + s.storyCount, 0);
@@ -1449,6 +1645,7 @@ function WorkflowStep({
           All workflows are ready. You can continue or expand to customize.
         </p>
       )}
+      </div>
     </div>
   );
 }
@@ -1477,29 +1674,31 @@ function UserStep({
 
   return (
     <div className="space-y-4">
-      <div>
-        <p className="text-sm text-muted-foreground">
-          Match Shortcut users to Helpin workspace members. You can invite unmatched users so their
-          tasks are properly assigned.
-        </p>
-      </div>
+      <SectionHeader
+        number={1}
+        title="Match users"
+        description="Match Shortcut users to Helpin workspace members. You can invite unmatched users so their tasks are properly assigned."
+        action={
+          unmatchedCount > 0 ? (
+            <Button variant="outline" size="sm" onClick={onInviteAll} className="h-7 text-xs">
+              <Mail01Icon className="mr-1.5 h-3 w-3" />
+              Invite all unmatched ({unmatchedCount})
+            </Button>
+          ) : undefined
+        }
+      />
 
-      <div className="flex items-center justify-between">
-        <p className="text-sm">
+      <div className="ml-9 space-y-4">
+      <div className="rounded-md border bg-muted/40 px-3 py-2">
+        <p className="text-xs">
           <span className="font-medium">{matchedCount}</span> of{' '}
           <span className="font-medium">{userMappings.length}</span> users auto-matched
         </p>
-        {unmatchedCount > 0 && (
-          <Button variant="outline" size="sm" onClick={onInviteAll}>
-            <Mail01Icon className="mr-1.5 h-3.5 w-3.5" />
-            Invite All Unmatched ({unmatchedCount})
-          </Button>
-        )}
       </div>
 
       {matched.length > 0 && (
         <div className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground">Matched Members</p>
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Matched members</p>
           <Table>
             <TableHeader>
               <TableRow>
@@ -1529,7 +1728,7 @@ function UserStep({
 
       {unmatched.length > 0 && (
         <div className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground">Unmatched Users ({unmatched.length})</p>
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Unmatched users ({unmatched.length})</p>
           <Table>
             <TableHeader>
               <TableRow>
@@ -1621,6 +1820,7 @@ function UserStep({
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }
@@ -1821,84 +2021,89 @@ function ImportStep({
   // ─── Pre-import config ──────────────────────────────────────────
 
   return (
-    <div className="space-y-4">
-      <h3 className="text-base font-semibold">Review &amp; Import</h3>
-
-      <Card>
-        <CardHeader className="py-3 px-4">
-          <CardTitle className="text-sm">Options</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 px-4 pb-4 pt-0">
-          <div className="flex items-center justify-between">
-            <Label className="text-sm">Import archived tasks</Label>
-            <Switch checked={importArchived} onCheckedChange={onArchived} disabled={hasApiToken} />
+    <div className="space-y-6">
+      <section className="space-y-3">
+        <SectionHeader
+          number={1}
+          title="Options"
+          description="Final overrides before kicking off the import."
+        />
+        <SectionBody>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
+              <span className="text-xs">Import archived tasks</span>
+              <Switch checked={importArchived} onCheckedChange={onArchived} disabled={hasApiToken} />
+            </label>
+            <label className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
+              <span className="text-xs">Import completed tasks</span>
+              <Switch checked={importCompleted} onCheckedChange={onCompleted} disabled={hasApiToken} />
+            </label>
           </div>
-          <div className="flex items-center justify-between">
-            <Label className="text-sm">Import completed tasks</Label>
-            <Switch checked={importCompleted} onCheckedChange={onCompleted} disabled={hasApiToken} />
-          </div>
-        </CardContent>
-      </Card>
+        </SectionBody>
+      </section>
 
       {s && (
-        <Card>
-          <CardHeader className="py-3 px-4">
-            <CardTitle className="text-sm">Summary</CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4 pt-0">
-            <Table>
-              <TableBody>
-                <SummaryRow label="Teams" value={`${teamMappings.length} (${newTeams} new, ${existingTeams} existing)`} />
-                <SummaryRow
-                  label="Workflows"
-                  value={`${workflowMappings.length} existing workflows selected`}
-                />
-                <SummaryRow
-                  label="Workflow States"
-                  value={`${workflowMappings.reduce((sum, workflow) => sum + workflow.states.length, 0)} mapped`}
-                />
-                <SummaryRow label="Labels" value={`${s.labels_count}`} />
-                <SummaryRow label="Objectives" value={`${s.objectives_count}`} />
-                <SummaryRow label="Epics" value={`${s.epics_count}`} />
-                <SummaryRow label="Sprints" value={`${s.sprints_count}`} />
-                <SummaryRow label="Tasks" value={`${s.total_tasks.toLocaleString()}`} />
-                <SummaryRow
-                  label="Docs"
-                  value={
-                    importDocs
-                      ? `${s.docs_count.toLocaleString()} to ${docsCollectionName || docsSpaceName || 'selected space'}`
-                      : 'Not selected'
-                  }
-                />
-                <SummaryRow label="Checklist Items" value={`${s.checklist_items_count}`} />
-                <SummaryRow
-                  label="User Mappings"
-                  value={`${matchedUsers} matched${invitedUsers > 0 ? `, ${invitedUsers} invited` : ''}${skippedUsers > 0 ? `, ${skippedUsers} skipped` : ''}`}
-                />
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+        <section className="space-y-3">
+          <SectionHeader number={2} title="Summary" description="Review what will be imported." />
+          <SectionBody>
+            <div className="overflow-hidden rounded-md border">
+              <Table>
+                <TableBody>
+                  <SummaryRow label="Teams" value={`${teamMappings.length} (${newTeams} new, ${existingTeams} existing)`} />
+                  <SummaryRow
+                    label="Workflows"
+                    value={`${workflowMappings.length} existing workflows selected`}
+                  />
+                  <SummaryRow
+                    label="Workflow states"
+                    value={`${workflowMappings.reduce((sum, workflow) => sum + workflow.states.length, 0)} mapped`}
+                  />
+                  <SummaryRow label="Labels" value={`${s.labels_count}`} />
+                  <SummaryRow label="Objectives" value={`${s.objectives_count}`} />
+                  <SummaryRow label="Epics" value={`${s.epics_count}`} />
+                  <SummaryRow label="Sprints" value={`${s.sprints_count}`} />
+                  <SummaryRow label="Tasks" value={`${s.total_tasks.toLocaleString()}`} />
+                  <SummaryRow
+                    label="Docs"
+                    value={
+                      importDocs
+                        ? `${s.docs_count.toLocaleString()} to ${docsCollectionName || docsSpaceName || 'selected space'}`
+                        : 'Not selected'
+                    }
+                  />
+                  <SummaryRow label="Checklist items" value={`${s.checklist_items_count}`} />
+                  <SummaryRow
+                    label="User mappings"
+                    value={`${matchedUsers} matched${invitedUsers > 0 ? `, ${invitedUsers} invited` : ''}${skippedUsers > 0 ? `, ${skippedUsers} skipped` : ''}`}
+                  />
+                </TableBody>
+              </Table>
+            </div>
+          </SectionBody>
+        </section>
       )}
 
       {preview && preview.warnings && preview.warnings.length > 0 && (
-        <Card>
-          <CardHeader className="py-3 px-4">
-            <CardTitle className="text-sm">Warnings</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1.5 px-4 pb-4 pt-0">
-            {preview.warnings.map((w, i) => (
-              <div key={i} className="flex items-start gap-2 text-xs text-yellow-600 dark:text-yellow-400">
-                <Alert01Icon className="mt-0.5 h-3 w-3 shrink-0" />
-                <span>{w}</span>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
+        <section className="space-y-3">
+          <SectionHeader number={3} title="Warnings" description="Resolve these before importing if possible." />
+          <SectionBody>
+            <div className="space-y-1.5 rounded-md border border-yellow-300/50 bg-yellow-50/60 px-3 py-2 dark:border-yellow-900/50 dark:bg-yellow-950/20">
+              {preview.warnings.map((w, i) => (
+                <div key={i} className="flex items-start gap-2 text-xs text-yellow-700 dark:text-yellow-400">
+                  <Alert01Icon className="mt-0.5 h-3 w-3 shrink-0" />
+                  <span>{w}</span>
+                </div>
+              ))}
+            </div>
+          </SectionBody>
+        </section>
       )}
 
-      <div className="flex justify-end">
-        <Button onClick={onStart}>Start Import</Button>
+      <div className="flex items-center justify-between border-t pt-4">
+        <p className="text-xs text-muted-foreground">
+          The import runs in the background. You can leave this page and check progress in History.
+        </p>
+        <Button onClick={onStart}>Start import</Button>
       </div>
     </div>
   );

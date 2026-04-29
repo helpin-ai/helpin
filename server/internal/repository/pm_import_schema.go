@@ -119,7 +119,7 @@ func EnsurePMExternalLinksTaskColumn(db *gorm.DB) error {
 	if err := db.Exec(`UPDATE pm_external_links SET entity_type = COALESCE(NULLIF(entity_type, ''), 'task') WHERE entity_type IS NULL OR entity_type = ''`).Error; err != nil {
 		return fmt.Errorf("backfill pm_external_links.entity_type: %w", err)
 	}
-	if err := db.Exec(`UPDATE pm_external_links SET entity_id = task_id WHERE (entity_id IS NULL OR entity_id = '') AND task_id IS NOT NULL`).Error; err != nil {
+	if err := db.Exec(`UPDATE pm_external_links SET entity_id = task_id WHERE entity_id IS NULL AND task_id IS NOT NULL`).Error; err != nil {
 		return fmt.Errorf("backfill pm_external_links.entity_id from task_id: %w", err)
 	}
 	return nil
