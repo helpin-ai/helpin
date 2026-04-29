@@ -1,0 +1,5 @@
+./image-area.go
+./image-dom-distance.go
+./image-has-figure.go
+./image-ratio.go
+./image.go

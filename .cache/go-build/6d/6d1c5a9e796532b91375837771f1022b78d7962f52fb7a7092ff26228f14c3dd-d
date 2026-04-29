@@ -1,0 +1,9 @@
+./accessor.go
+./constant.go
+./parser.go
+./thing-item-article.go
+./thing-item-image.go
+./thing-item-org.go
+./thing-item-person.go
+./thing-item-unsupported.go
+./thing-item.go

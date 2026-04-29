@@ -1,0 +1,5 @@
+./accessor.go
+./constant.go
+./parser.go
+./prefixes.go
+./properties.go

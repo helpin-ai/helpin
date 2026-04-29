@@ -1,0 +1,6 @@
+./errors.go
+./mmap_unix.go
+./reader.go
+./result.go
+./traverse.go
+./verifier.go

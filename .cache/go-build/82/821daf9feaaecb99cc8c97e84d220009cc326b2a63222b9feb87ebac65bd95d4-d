@@ -1,0 +1,4 @@
+./abi.go
+./abi_amd64.go
+./abi_regabi_amd64.go
+./stubs.go

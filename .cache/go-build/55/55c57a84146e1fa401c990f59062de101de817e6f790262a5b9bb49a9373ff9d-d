@@ -1,0 +1,12 @@
+./api.go
+./buffer.go
+./decode.go
+./encode.go
+./error.go
+./iterator.go
+./node.go
+./parser.go
+./search.go
+./stubs.go
+./visitor.go
+./asm.s

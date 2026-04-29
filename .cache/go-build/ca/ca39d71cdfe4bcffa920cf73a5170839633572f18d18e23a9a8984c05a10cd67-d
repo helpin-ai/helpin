@@ -1,0 +1,4 @@
+./fcache.go
+./hashing.go
+./pcache.go
+./asm.s

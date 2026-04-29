@@ -1,0 +1,5 @@
+./append.go
+./html.go
+./markdown.go
+./rich_text.go
+./sanitize.go
