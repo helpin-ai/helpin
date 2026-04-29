@@ -287,7 +287,7 @@ Tracks A-D are implemented across backend and frontend. Track E single-target on
 6. [x] **Migration safety repair.** The applied `202604280001` migration is no longer edited in place; `202604280009_repair_pm_external_links_entity_backfill.sql` carries the safer UUID-regex repair. It must be applied before deploy validation is expected to pass.
 7. [x] **One-shot Command Agent policy.** Parser tries narrower saved agents first, then may propose Command Agent for recognized docs/task/CRM/web command categories with a narrow runtime tool subset.
 8. [x] **Fan-out policy and contract.** `plan_kind: "fan_out"` starts concrete target steps in parallel, caps at 5 runs, groups them in the rail, cancels active group runs, and retries failed/cancelled targets only. Ambiguous target selectors still return no match.
-9. [x] **Guarded CRM enrichment tools.** `enrich_crm_contact` and `enrich_crm_company` are command-backed runtime tools for the Command Agent only. The tools reject names, protect existing email/phone/domain/company identity fields, write only fill-empty core fields or agent-owned enrichment metadata, and record evidence in `crm_enrichment_results`.
+9. [x] **Guarded CRM enrichment tools.** `ensure_crm_contact_company`, `enrich_crm_contact`, and `enrich_crm_company` are command-backed runtime tools for the Command Agent only. The tools can create/reuse/link a missing contact company, reject names, protect existing email/phone/domain/company identity fields, write only fill-empty core fields or agent-owned enrichment metadata, and record evidence in `crm_enrichment_results`.
 
 ### Parallelization plan
 
@@ -312,7 +312,7 @@ Tracks A-D are implemented across backend and frontend. Track E single-target on
 - [x] **(v2)** Single-target one-shot dynamic runs through a product-owned broad Command Agent profile. Parser/UX exposure is implemented with narrow tool subsets and explicit one-shot framing.
 - [x] **Fan-out for concrete related targets.** Explicit fan-out plans start multiple target runs in parallel, show grouped rail status, cancel active runs as a group, and retry failed targets only.
 - [x] **(v2.5)** Opt-in promotion of successful command-bar runs to saved custom agents is implemented with editable name, description, tool scope, target scope, and provenance preview.
-- [x] **Guarded CRM write tools.** One-shot CRM research/update runs can use `enrich_crm_contact` and `enrich_crm_company` with server-owned protected-field guards before they write researched data.
+- [x] **Guarded CRM write tools.** One-shot CRM research/update runs can use `ensure_crm_contact_company`, `enrich_crm_contact`, and `enrich_crm_company` with server-owned protected-field guards before they write researched data.
 - [ ] **Future reference only** Automatic saved-agent creation/reuse is not a delivery phase in this plan.
 
 No week estimates here — the point of this doc is direction, not a schedule.

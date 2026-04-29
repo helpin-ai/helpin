@@ -171,7 +171,7 @@ func TestCRMResearchUpdatePrefersOneShotCommandAgent(t *testing.T) {
 			Name:           "Command Agent",
 			PresetKey:      model.AgentPresetCommandAgent,
 			AllowedTargets: []string{"crm_contact"},
-			AllowedTools:   []string{"update_plan", "request_user_input", "request_approval", "web_search_exa", "web_search_brave", "fetch_url", "crawl_url", "list_deals", "list_contacts", "list_buyer_signals", "enrich_crm_contact", "enrich_crm_company"},
+			AllowedTools:   []string{"update_plan", "request_user_input", "request_approval", "web_search_exa", "web_search_brave", "fetch_url", "crawl_url", "list_deals", "list_contacts", "list_buyer_signals", "ensure_crm_contact_company", "enrich_crm_contact", "enrich_crm_company"},
 		},
 	}
 
@@ -186,7 +186,7 @@ func TestCRMResearchUpdatePrefersOneShotCommandAgent(t *testing.T) {
 	if step.PlanKind != model.CommandBarPlanKindOneShotCommand {
 		t.Fatalf("expected one-shot plan kind, got %q", step.PlanKind)
 	}
-	for _, required := range []string{"web_search_exa", "fetch_url", "list_contacts", "request_approval", "enrich_crm_contact", "enrich_crm_company"} {
+	for _, required := range []string{"web_search_exa", "fetch_url", "list_contacts", "request_approval", "ensure_crm_contact_company", "enrich_crm_contact", "enrich_crm_company"} {
 		if !slices.Contains(step.AllowedTools, required) {
 			t.Fatalf("expected tool %q in %#v", required, step.AllowedTools)
 		}
@@ -214,7 +214,7 @@ func TestCRMEnrichmentToolsAreCommandAgentOnlyPresetTools(t *testing.T) {
 	if commandAgent == nil || crmOperator == nil {
 		t.Fatalf("missing command or CRM operator preset")
 	}
-	for _, tool := range []string{"enrich_crm_contact", "enrich_crm_company"} {
+	for _, tool := range []string{"ensure_crm_contact_company", "enrich_crm_contact", "enrich_crm_company"} {
 		if !slices.Contains(commandAgent.AllowedTools, tool) {
 			t.Fatalf("expected Command Agent to allow %q", tool)
 		}

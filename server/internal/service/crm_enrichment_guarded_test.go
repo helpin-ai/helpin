@@ -198,6 +198,120 @@ func TestEnrichContactDryRunDoesNotWrite(t *testing.T) {
 	if updated.Phone != nil {
 		t.Fatalf("phone = %v, want no write during dry run", updated.Phone)
 	}
+	var count int64
+	if err := db.Model(&model.CRMEnrichmentResult{}).Count(&count).Error; err != nil {
+		t.Fatalf("count enrichments: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("audit count = %d, want no durable audit row for dry run", count)
+	}
+}
+
+func TestEnsureContactCompanyCreatesAndAssociatesCompany(t *testing.T) {
+	db := setupGuardedCRMEnrichmentTestDB(t)
+	svc := setupGuardedCRMEnrichmentService(db)
+
+	if err := db.Create(&model.CRMContact{
+		ID:               "contact-1",
+		WorkspaceID:      "ws-1",
+		DisplayID:        "CON-1",
+		FirstName:        "Amad",
+		LifecycleStage:   model.CRMLifecycleLead,
+		LeadStatus:       model.CRMLeadStatusOpen,
+		CustomProperties: model.JSONB{},
+	}).Error; err != nil {
+		t.Fatalf("seed contact: %v", err)
+	}
+
+	domain := "usermaven.com"
+	result, err := svc.EnsureContactCompany(context.Background(), "ws-1", model.EnsureCRMContactCompanyRequest{
+		ContactID:   "contact-1",
+		CompanyName: "Usermaven",
+		Domain:      &domain,
+		SourceURL:   "https://usermaven.com",
+		Evidence:    "Contact email domain and public site identify Usermaven.",
+		Confidence:  0.95,
+	})
+	if err != nil {
+		t.Fatalf("EnsureContactCompany returned error: %v", err)
+	}
+	if result.Status != "created" || !result.CreatedCompany || !result.CreatedLink || result.CompanyID == "" || result.AssociationID == "" {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+
+	var company model.CRMCompany
+	if err := db.First(&company, "id = ?", result.CompanyID).Error; err != nil {
+		t.Fatalf("reload company: %v", err)
+	}
+	if company.Name != "Usermaven" || company.Domain == nil || *company.Domain != "usermaven.com" {
+		t.Fatalf("company = %+v, want Usermaven with domain", company)
+	}
+
+	assocs, err := repository.NewCRMAssociationRepository(db).ListByObject(context.Background(), "ws-1", model.CRMObjectContact, "contact-1")
+	if err != nil {
+		t.Fatalf("list associations: %v", err)
+	}
+	if len(assocs) != 1 {
+		t.Fatalf("association count = %d, want 1", len(assocs))
+	}
+	otherType, otherID := otherAssociationSide(assocs[0], model.CRMObjectContact, "contact-1")
+	if otherType != model.CRMObjectCompany || otherID != company.ID {
+		t.Fatalf("association other side = %s/%s, want company/%s", otherType, otherID, company.ID)
+	}
+	if assocs[0].AssociationLabel == nil || *assocs[0].AssociationLabel != primaryCompanyAssociationLabel {
+		t.Fatalf("association label = %v, want primary", assocs[0].AssociationLabel)
+	}
+}
+
+func TestEnsureContactCompanyReusesExistingCompanyWithoutChangingIdentity(t *testing.T) {
+	db := setupGuardedCRMEnrichmentTestDB(t)
+	svc := setupGuardedCRMEnrichmentService(db)
+
+	if err := db.Create(&model.CRMContact{
+		ID:               "contact-1",
+		WorkspaceID:      "ws-1",
+		DisplayID:        "CON-1",
+		FirstName:        "Amad",
+		LifecycleStage:   model.CRMLifecycleLead,
+		LeadStatus:       model.CRMLeadStatusOpen,
+		CustomProperties: model.JSONB{},
+	}).Error; err != nil {
+		t.Fatalf("seed contact: %v", err)
+	}
+	existingDomain := "usermaven.com"
+	if err := db.Create(&model.CRMCompany{
+		ID:               "company-1",
+		WorkspaceID:      "ws-1",
+		DisplayID:        "COM-1",
+		Name:             "Usermaven Inc",
+		Domain:           &existingDomain,
+		CustomProperties: model.JSONB{},
+	}).Error; err != nil {
+		t.Fatalf("seed company: %v", err)
+	}
+
+	domain := "https://www.usermaven.com/about"
+	result, err := svc.EnsureContactCompany(context.Background(), "ws-1", model.EnsureCRMContactCompanyRequest{
+		ContactID:   "contact-1",
+		CompanyName: "Different Usermaven Name",
+		Domain:      &domain,
+		SourceURL:   "https://usermaven.com",
+		Evidence:    "Contact email domain and public site identify Usermaven.",
+		Confidence:  0.95,
+	})
+	if err != nil {
+		t.Fatalf("EnsureContactCompany returned error: %v", err)
+	}
+	if result.Status != "linked" || result.CreatedCompany || !result.CreatedLink || result.CompanyID != "company-1" {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	var company model.CRMCompany
+	if err := db.First(&company, "id = ?", "company-1").Error; err != nil {
+		t.Fatalf("reload company: %v", err)
+	}
+	if company.Name != "Usermaven Inc" || company.Domain == nil || *company.Domain != existingDomain {
+		t.Fatalf("existing company identity changed: %+v", company)
+	}
 }
 
 func TestEnrichContactRejectsWrongWorkspaceTarget(t *testing.T) {
@@ -250,6 +364,7 @@ func setupGuardedCRMEnrichmentService(db *gorm.DB) *CRMEnrichmentService {
 		repository.NewCRMEnrichmentRepository(db),
 		repository.NewCRMContactRepository(db),
 		repository.NewCRMCompanyRepository(db),
+		repository.NewCRMAssociationRepository(db),
 	)
 }
 

@@ -958,6 +958,31 @@ func (s *InternalCommandService) registerDefaults() {
 		},
 	})
 	s.register(InternalCommandDefinition{
+		Name:                 "crm.ensure_contact_company",
+		Module:               "crm",
+		Mutating:             true,
+		SupportedTargetTypes: []string{"crm_contact"},
+		Tool:                 mustCommandToolMetadata("crm.ensure_contact_company"),
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.crmEnrichmentService == nil {
+				return nil, fmt.Errorf("CRM enrichment service is not configured")
+			}
+			var req model.EnsureCRMContactCompanyRequest
+			if err := json.Unmarshal(input, &req); err != nil {
+				return nil, fmt.Errorf("parse contact company input: %w", err)
+			}
+			req.ContactID = strings.TrimSpace(firstNonEmptyCommand(req.ContactID, meta.TargetID))
+			if req.ContactID == "" {
+				return nil, fmt.Errorf("contact_id is required")
+			}
+			result, err := s.crmEnrichmentService.EnsureContactCompany(ctx, meta.WorkspaceID, req)
+			if err != nil {
+				return nil, err
+			}
+			return mustJSON(result), nil
+		},
+	})
+	s.register(InternalCommandDefinition{
 		Name:                 "pm.auto_start_epic",
 		Module:               "pm",
 		Mutating:             true,

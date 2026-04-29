@@ -175,6 +175,45 @@ func TestEnrichCRMCompanyToolUsesInternalCommandExecutorWhenAvailable(t *testing
 	}
 }
 
+func TestEnsureCRMContactCompanyToolUsesInternalCommandExecutorWhenAvailable(t *testing.T) {
+	registry := NewToolRegistry(nil)
+	called := false
+	ctx := &ExecutionContext{
+		Context:     context.Background(),
+		WorkspaceID: "ws-1",
+		TargetType:  "crm_contact",
+		TargetID:    "contact-1",
+		AgentID:     "agent-1",
+		RunID:       "run-1",
+		AllowedTools: map[string]bool{
+			"ensure_crm_contact_company": true,
+		},
+		Services: &ServiceBridge{
+			ExecuteInternalCommand: func(ctx context.Context, meta model.InternalCommandContext, name string, input json.RawMessage) (json.RawMessage, error) {
+				called = true
+				if name != "crm.ensure_contact_company" {
+					t.Fatalf("unexpected command name %q", name)
+				}
+				if meta.WorkspaceID != "ws-1" || meta.TargetType != "crm_contact" || meta.TargetID != "contact-1" || meta.AgentID != "agent-1" || meta.RunID != "run-1" {
+					t.Fatalf("unexpected command meta %#v", meta)
+				}
+				return json.RawMessage(`{"status":"created","contact_id":"contact-1","company_id":"company-1","company_name":"Usermaven","created_company":true,"created_link":true}`), nil
+			},
+		},
+	}
+
+	output, err := registry.ExecuteAllowed(ctx, "ensure_crm_contact_company", json.RawMessage(`{"contact_id":"contact-1","company_name":"Usermaven","domain":"usermaven.com","source_url":"https://usermaven.com","evidence":"Public site and contact email domain match.","confidence":0.95}`))
+	if err != nil {
+		t.Fatalf("ExecuteAllowed returned error: %v", err)
+	}
+	if !called {
+		t.Fatal("expected internal command executor to be used")
+	}
+	if !strings.Contains(output, `"company_id":"company-1"`) {
+		t.Fatalf("unexpected output %q", output)
+	}
+}
+
 func TestEnsureTaskLabelToolUsesInternalCommandExecutorWhenAvailable(t *testing.T) {
 	registry := NewToolRegistry(nil)
 	called := false

@@ -141,6 +141,29 @@ func toolEnrichCRMCompany(ctx *ExecutionContext, input json.RawMessage) (string,
 	return "", fmt.Errorf("CRM company enrichment is not available for this agent")
 }
 
+func toolEnsureCRMContactCompany(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	var params struct {
+		ContactID string `json:"contact_id"`
+	}
+	if err := json.Unmarshal(input, &params); err != nil {
+		return "", fmt.Errorf("parse input: %w", err)
+	}
+	contactID := strings.TrimSpace(params.ContactID)
+	if contactID == "" && ctx != nil && ctx.TargetType == "crm_contact" {
+		contactID = strings.TrimSpace(ctx.TargetID)
+	}
+	if contactID == "" {
+		return "", fmt.Errorf("contact_id is required")
+	}
+	if output, ok, err := executeInternalCommand(ctx, "crm_contact", contactID, "crm.ensure_contact_company", input); ok {
+		if err != nil {
+			return "", fmt.Errorf("ensure CRM contact company: %w", err)
+		}
+		return string(output), nil
+	}
+	return "", fmt.Errorf("CRM contact company creation is not available for this agent")
+}
+
 func toolListContacts(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	if ctx.Services == nil || ctx.Services.ListContacts == nil {
 		return "", fmt.Errorf("CRM contact access is not available for this agent")

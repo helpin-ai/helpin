@@ -51,9 +51,11 @@ const EMPTY: SearchResponse = {
 export function SearchCommandPalette({
   open,
   onOpenChange,
+  initialQuery,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  initialQuery?: string;
 }) {
   const navigate = useNavigate();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
@@ -85,6 +87,12 @@ export function SearchCommandPalette({
       setContextOverride(null);
     }
   }, [open]);
+
+  useEffect(() => {
+    if (open && initialQuery?.trim()) {
+      setQuery(initialQuery.trim());
+    }
+  }, [open, initialQuery]);
 
   useEffect(() => {
     setIntentResult(null);

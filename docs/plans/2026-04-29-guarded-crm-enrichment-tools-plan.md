@@ -48,6 +48,7 @@ Existing audit surface:
 
 Add two command-backed runtime tools:
 
+- `ensure_crm_contact_company`
 - `enrich_crm_contact`
 - `enrich_crm_company`
 
@@ -55,6 +56,7 @@ These are product mutation tools, so the model-facing tool contract is backed by
 
 | Runtime tool | Internal command |
 |---|---|
+| `ensure_crm_contact_company` | `crm.ensure_contact_company` |
 | `enrich_crm_contact` | `crm.enrich_contact` |
 | `enrich_crm_company` | `crm.enrich_company` |
 
@@ -110,6 +112,32 @@ Schema rules:
 - max `value`: 500 chars, except company `description` max 2,000 chars
 - max `evidence`: 1,000 chars
 - `dry_run` defaults to false
+
+### Contact Company Ensure Input Shape
+
+This tool covers the common contact-page case where the agent has evidence for the contact's company, but no company record is associated yet.
+
+```json
+{
+  "contact_id": "uuid",
+  "company_name": "Usermaven",
+  "domain": "usermaven.com",
+  "source_url": "https://usermaven.com",
+  "evidence": "The contact email domain and public company website identify Usermaven.",
+  "confidence": 0.95,
+  "association_label": "primary",
+  "dry_run": false
+}
+```
+
+Rules:
+
+- matches an existing company by domain first, then name
+- creates a company only when no match exists
+- does not modify existing company `name` or `domain`
+- links the contact to the company with `primary` by default
+- returns whether the company/link was created or reused
+- records the action in `crm_enrichment_results`
 
 ### Contact Field Enum
 
@@ -291,6 +319,7 @@ Status values:
    - workspace ownership checks
    - `crm_enrichment_results` audit write
 3. [x] Add internal commands:
+   - `crm.ensure_contact_company`
    - `crm.enrich_contact`
    - `crm.enrich_company`
 4. [x] Add runtime tools in `server/internal/worker/tools.go` and `server/internal/worker/tools_crm.go`.
@@ -298,7 +327,7 @@ Status values:
 6. [x] Expose tools only to the product-owned Command Agent first. Do not add to CRM Operator until we have observed enough one-shot runs.
 7. [x] Update command-bar one-shot tool selection:
    - CRM research/update prompts include `enrich_crm_contact`
-   - contact page prompts that mention company include `enrich_crm_company`
+   - contact page prompts that mention company include `ensure_crm_contact_company` and `enrich_crm_company`
    - keep `request_approval` in the proposed tool set for broad CRM update prompts
 8. [x] Update one-shot execution brief to say protected fields are enforced by tools, not just by instruction.
 
@@ -316,6 +345,8 @@ Backend unit tests:
 
 - [x] `enrich_crm_contact` rejects `first_name` / `last_name`.
 - [x] `enrich_crm_company` rejects `name`.
+- [x] `ensure_crm_contact_company` creates and associates a missing company.
+- [x] `ensure_crm_contact_company` reuses an existing company by domain without changing existing identity fields.
 - [x] non-empty contact `email` is skipped, not overwritten.
 - [x] empty contact `phone` and `job_title` are filled when source/confidence are valid.
 - [x] non-empty company `domain` is skipped, not overwritten.

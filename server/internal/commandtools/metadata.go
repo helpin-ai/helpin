@@ -314,6 +314,53 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		Description: "Safely enrich a CRM company with sourced public data. Company name and existing domain are protected; core fields are fill-only and agent-owned metadata is namespaced.",
 		InputSchema: crmEnrichmentSchema("company_id", []string{"domain", "industry", "employee_count", "annual_revenue", "description", "logo_url", "linkedin_url", "headquarters", "enrichment_note"}),
 	},
+	{
+		CommandName: "crm.ensure_contact_company",
+		Alias:       "ensure_crm_contact_company",
+		Category:    "CRM",
+		Description: "Create or reuse a CRM company and associate it with a contact. Does not modify existing company identity fields.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"contact_id": map[string]any{
+					"type":        "string",
+					"description": "The contact ID to associate with a company. Defaults to the current CRM contact target when omitted by the runtime.",
+				},
+				"company_name": map[string]any{
+					"type":        "string",
+					"description": "The company name to create or match.",
+				},
+				"domain": map[string]any{
+					"type":        "string",
+					"description": "Optional company domain to match or set on a newly-created company.",
+				},
+				"source_url": map[string]any{
+					"type":        "string",
+					"description": "Public source URL supporting the company/contact relationship.",
+				},
+				"evidence": map[string]any{
+					"type":        "string",
+					"description": "Short explanation of the evidence for the relationship.",
+				},
+				"confidence": map[string]any{
+					"type":        "number",
+					"description": "Confidence from 0.0 to 1.0. Values below 0.70 are rejected.",
+					"minimum":     0,
+					"maximum":     1,
+				},
+				"association_label": map[string]any{
+					"type":        "string",
+					"description": "Optional association label. Defaults to primary.",
+				},
+				"dry_run": map[string]any{
+					"type":        "boolean",
+					"description": "When true, returns whether it would create/reuse/link without writing CRM records.",
+				},
+			},
+			"required":             []string{"contact_id", "company_name", "source_url", "evidence", "confidence"},
+			"additionalProperties": false,
+		},
+	},
 }
 
 func crmEnrichmentSchema(idField string, fieldEnum []string) map[string]any {

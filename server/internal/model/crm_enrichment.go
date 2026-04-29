@@ -58,6 +58,32 @@ type EnrichCRMCompanyRequest struct {
 	DryRun          bool                      `json:"dry_run"`
 }
 
+// EnsureCRMContactCompanyRequest creates or reuses a company and links it to a contact.
+type EnsureCRMContactCompanyRequest struct {
+	ContactID        string  `json:"contact_id"`
+	CompanyName      string  `json:"company_name"`
+	Domain           *string `json:"domain,omitempty"`
+	SourceURL        string  `json:"source_url"`
+	Evidence         string  `json:"evidence"`
+	Confidence       float64 `json:"confidence"`
+	AssociationLabel *string `json:"association_label,omitempty"`
+	DryRun           bool    `json:"dry_run"`
+}
+
+// EnsureCRMContactCompanyResult reports company creation/reuse and contact association.
+type EnsureCRMContactCompanyResult struct {
+	Status           string `json:"status"`
+	ContactID        string `json:"contact_id"`
+	CompanyID        string `json:"company_id,omitempty"`
+	CompanyName      string `json:"company_name"`
+	Domain           string `json:"domain,omitempty"`
+	AssociationID    string `json:"association_id,omitempty"`
+	AssociationLabel string `json:"association_label,omitempty"`
+	CreatedCompany   bool   `json:"created_company"`
+	CreatedLink      bool   `json:"created_link"`
+	DryRun           bool   `json:"dry_run"`
+}
+
 // CRMEnrichmentFieldResult describes one applied or skipped field.
 type CRMEnrichmentFieldResult struct {
 	Field               string      `json:"field"`

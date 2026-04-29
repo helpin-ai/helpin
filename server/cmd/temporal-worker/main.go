@@ -486,7 +486,7 @@ func main() {
 	)
 	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo)
 	crmActivityService := service.NewCRMActivityService(crmActivityRepo)
-	crmEnrichmentService := service.NewCRMEnrichmentService(crmEnrichmentRepo, crmContactRepo, crmCompanyRepo)
+	crmEnrichmentService := service.NewCRMEnrichmentService(crmEnrichmentRepo, crmContactRepo, crmCompanyRepo, crmAssociationRepo)
 	pmLabelService := service.NewPMLabelService(labelRepo, wsPublisher)
 	pmCommentService := service.NewPMCommentService(commentRepo, storyRepo, pmAttachmentRepo, pmActivityService, wsPublisher, notificationService, workspaceRepo, s3Client)
 	commandService := service.NewInternalCommandService(

@@ -24,11 +24,12 @@ type CRMEnrichmentService struct {
 	enrichmentRepo *repository.CRMEnrichmentRepository
 	contactRepo    *repository.CRMContactRepository
 	companyRepo    *repository.CRMCompanyRepository
+	assocRepo      *repository.CRMAssociationRepository
 }
 
 // NewCRMEnrichmentService creates a new CRMEnrichmentService.
-func NewCRMEnrichmentService(enrichmentRepo *repository.CRMEnrichmentRepository, contactRepo *repository.CRMContactRepository, companyRepo *repository.CRMCompanyRepository) *CRMEnrichmentService {
-	return &CRMEnrichmentService{enrichmentRepo: enrichmentRepo, contactRepo: contactRepo, companyRepo: companyRepo}
+func NewCRMEnrichmentService(enrichmentRepo *repository.CRMEnrichmentRepository, contactRepo *repository.CRMContactRepository, companyRepo *repository.CRMCompanyRepository, assocRepo *repository.CRMAssociationRepository) *CRMEnrichmentService {
+	return &CRMEnrichmentService{enrichmentRepo: enrichmentRepo, contactRepo: contactRepo, companyRepo: companyRepo, assocRepo: assocRepo}
 }
 
 // List returns enrichment results with filters and pagination.
@@ -149,6 +150,9 @@ func (s *CRMEnrichmentService) EnrichContact(ctx context.Context, workspaceID st
 	}
 
 	result := crmEnrichmentApplyResult("contact", contact.ID, applied, skipped, req.DryRun)
+	if req.DryRun {
+		return result, nil
+	}
 	enrichment, err := s.createGuardedEnrichmentAudit(ctx, workspaceID, "contact", contact.ID, req.EvidenceSummary, req.Fields, result)
 	if err != nil {
 		return nil, err
@@ -254,11 +258,136 @@ func (s *CRMEnrichmentService) EnrichCompany(ctx context.Context, workspaceID st
 	}
 
 	result := crmEnrichmentApplyResult("company", company.ID, applied, skipped, req.DryRun)
+	if req.DryRun {
+		return result, nil
+	}
 	enrichment, err := s.createGuardedEnrichmentAudit(ctx, workspaceID, "company", company.ID, req.EvidenceSummary, req.Fields, result)
 	if err != nil {
 		return nil, err
 	}
 	result.EnrichmentResultID = enrichment.ID
+	return result, nil
+}
+
+// EnsureContactCompany creates or reuses a company and links it to a contact.
+func (s *CRMEnrichmentService) EnsureContactCompany(ctx context.Context, workspaceID string, req model.EnsureCRMContactCompanyRequest) (*model.EnsureCRMContactCompanyResult, error) {
+	workspaceID = strings.TrimSpace(workspaceID)
+	req.ContactID = strings.TrimSpace(req.ContactID)
+	req.CompanyName = strings.TrimSpace(req.CompanyName)
+	req.SourceURL = strings.TrimSpace(req.SourceURL)
+	req.Evidence = strings.TrimSpace(req.Evidence)
+	domain := normalizeCRMDomain(req.Domain)
+	if workspaceID == "" || req.ContactID == "" || req.CompanyName == "" {
+		return nil, fmt.Errorf("workspace_id, contact_id, and company_name are required")
+	}
+	if s.contactRepo == nil || s.companyRepo == nil || s.assocRepo == nil || s.enrichmentRepo == nil {
+		return nil, fmt.Errorf("CRM company association dependencies are not configured")
+	}
+	if req.Confidence < crmEnrichmentMinConfidence {
+		return nil, fmt.Errorf("confidence must be at least %.2f", crmEnrichmentMinConfidence)
+	}
+	if _, err := validateHTTPURL(req.SourceURL); err != nil {
+		return nil, fmt.Errorf("source_url %w", err)
+	}
+	if req.Evidence == "" {
+		return nil, fmt.Errorf("evidence is required")
+	}
+
+	contact, err := s.contactRepo.GetByID(ctx, req.ContactID)
+	if err != nil {
+		return nil, err
+	}
+	if contact == nil || contact.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("contact not found")
+	}
+
+	company, err := s.findReusableCompany(ctx, workspaceID, req.CompanyName, domain)
+	if err != nil {
+		return nil, err
+	}
+
+	label := primaryCompanyAssociationLabel
+	if req.AssociationLabel != nil && strings.TrimSpace(*req.AssociationLabel) != "" {
+		label = strings.TrimSpace(*req.AssociationLabel)
+	}
+	result := &model.EnsureCRMContactCompanyResult{
+		ContactID:        contact.ID,
+		CompanyName:      req.CompanyName,
+		Domain:           domain,
+		AssociationLabel: label,
+		DryRun:           req.DryRun,
+	}
+
+	if req.DryRun {
+		result.Status = "dry_run"
+		if company != nil {
+			result.CompanyID = company.ID
+			result.CompanyName = company.Name
+			result.CreatedCompany = false
+			existing, err := s.contactCompanyAssociationExists(ctx, workspaceID, contact.ID, company.ID)
+			if err != nil {
+				return nil, err
+			}
+			result.CreatedLink = !existing
+		} else {
+			result.CreatedCompany = true
+			result.CreatedLink = true
+		}
+		return result, nil
+	}
+
+	if company == nil {
+		displayID, err := s.companyRepo.GetNextDisplayID(ctx, workspaceID)
+		if err != nil {
+			return nil, err
+		}
+		company = &model.CRMCompany{
+			WorkspaceID:      workspaceID,
+			DisplayID:        displayID,
+			Name:             req.CompanyName,
+			CustomProperties: model.JSONB{},
+		}
+		if domain != "" {
+			company.Domain = &domain
+		}
+		if err := s.companyRepo.Create(ctx, company); err != nil {
+			return nil, err
+		}
+		result.CreatedCompany = true
+	}
+	result.CompanyID = company.ID
+	result.CompanyName = company.Name
+	if company.Domain != nil && strings.TrimSpace(*company.Domain) != "" {
+		result.Domain = strings.TrimSpace(*company.Domain)
+	}
+
+	alreadyLinked, err := s.contactCompanyAssociationExists(ctx, workspaceID, contact.ID, company.ID)
+	if err != nil {
+		return nil, err
+	}
+	assocLabel := label
+	assoc, err := (&CRMAssociationService{assocRepo: s.assocRepo}).Create(ctx, model.CreateCRMAssociationRequest{
+		WorkspaceID:      workspaceID,
+		FromObjectType:   model.CRMObjectContact,
+		FromObjectID:     contact.ID,
+		ToObjectType:     model.CRMObjectCompany,
+		ToObjectID:       company.ID,
+		AssociationLabel: &assocLabel,
+	})
+	if err != nil {
+		return nil, err
+	}
+	result.AssociationID = assoc.ID
+	result.CreatedLink = !alreadyLinked
+	result.Status = "linked"
+	if result.CreatedCompany {
+		result.Status = "created"
+	} else if alreadyLinked {
+		result.Status = "already_linked"
+	}
+	if _, err := s.createEnsureCompanyAudit(ctx, workspaceID, req, result); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
@@ -272,6 +401,47 @@ func allowedContactEnrichmentFields() map[string]bool {
 		"location":        true,
 		"enrichment_note": true,
 	}
+}
+
+func (s *CRMEnrichmentService) findReusableCompany(ctx context.Context, workspaceID, name, domain string) (*model.CRMCompany, error) {
+	if domain != "" {
+		company, err := s.companyRepo.GetByDomain(ctx, workspaceID, domain)
+		if err != nil {
+			return nil, err
+		}
+		if company != nil {
+			return company, nil
+		}
+	}
+	return s.companyRepo.GetByName(ctx, workspaceID, name)
+}
+
+func normalizeCRMDomain(domain *string) string {
+	if domain == nil {
+		return ""
+	}
+	value := strings.TrimSpace(strings.ToLower(*domain))
+	value = strings.TrimPrefix(value, "https://")
+	value = strings.TrimPrefix(value, "http://")
+	value = strings.TrimPrefix(value, "www.")
+	if slash := strings.Index(value, "/"); slash >= 0 {
+		value = value[:slash]
+	}
+	return strings.TrimSpace(value)
+}
+
+func (s *CRMEnrichmentService) contactCompanyAssociationExists(ctx context.Context, workspaceID, contactID, companyID string) (bool, error) {
+	assocs, err := s.assocRepo.ListByObject(ctx, workspaceID, model.CRMObjectContact, contactID)
+	if err != nil {
+		return false, err
+	}
+	for _, assoc := range assocs {
+		otherType, otherID := otherAssociationSide(assoc, model.CRMObjectContact, contactID)
+		if otherType == model.CRMObjectCompany && otherID == companyID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func allowedCompanyEnrichmentFields() map[string]bool {
@@ -607,6 +777,32 @@ func (s *CRMEnrichmentService) createGuardedEnrichmentAudit(ctx context.Context,
 		WorkspaceID: workspaceID,
 		ObjectType:  objectType,
 		ObjectID:    objectID,
+		Source:      model.CRMEnrichmentSourceAI,
+		Data:        data,
+		Confidence:  &confidence,
+	})
+}
+
+func (s *CRMEnrichmentService) createEnsureCompanyAudit(ctx context.Context, workspaceID string, req model.EnsureCRMContactCompanyRequest, result *model.EnsureCRMContactCompanyResult) (*model.CRMEnrichmentResult, error) {
+	data := map[string]interface{}{
+		"status":            result.Status,
+		"contact_id":        result.ContactID,
+		"company_id":        result.CompanyID,
+		"company_name":      result.CompanyName,
+		"domain":            result.Domain,
+		"association_id":    result.AssociationID,
+		"association_label": result.AssociationLabel,
+		"created_company":   result.CreatedCompany,
+		"created_link":      result.CreatedLink,
+		"source_url":        req.SourceURL,
+		"evidence":          req.Evidence,
+		"dry_run":           result.DryRun,
+	}
+	confidence := req.Confidence
+	return s.Create(ctx, model.CreateCRMEnrichmentRequest{
+		WorkspaceID: workspaceID,
+		ObjectType:  model.CRMObjectContact,
+		ObjectID:    result.ContactID,
 		Source:      model.CRMEnrichmentSourceAI,
 		Data:        data,
 		Confidence:  &confidence,

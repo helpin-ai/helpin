@@ -114,7 +114,7 @@ func TestToolRegistryIncludesAllSharedCommandTools(t *testing.T) {
 }
 
 func TestCRMEnrichmentToolSchemasAreStrict(t *testing.T) {
-	for _, alias := range []string{"enrich_crm_contact", "enrich_crm_company"} {
+	for _, alias := range []string{"ensure_crm_contact_company", "enrich_crm_contact", "enrich_crm_company"} {
 		meta, ok := commandtools.ToolMetadataForAlias(alias)
 		if !ok {
 			t.Fatalf("missing metadata for %s", alias)
@@ -126,7 +126,13 @@ func TestCRMEnrichmentToolSchemasAreStrict(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s required has unexpected type %#v", alias, meta.InputSchema["required"])
 		}
-		if len(required) != 2 || required[1] != "fields" {
+		if len(required) < 2 {
+			t.Fatalf("%s required = %#v, want required fields", alias, required)
+		}
+		if alias == "ensure_crm_contact_company" {
+			continue
+		}
+		if required[1] != "fields" {
 			t.Fatalf("%s required = %#v, want object id and fields", alias, required)
 		}
 		properties := meta.InputSchema["properties"].(map[string]any)

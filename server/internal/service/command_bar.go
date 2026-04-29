@@ -1470,7 +1470,7 @@ func oneShotCommandToolsForIntent(text string, pageContext model.CommandBarPageC
 			tools = append(tools, "enrich_crm_contact")
 		}
 		if containsAny(lower, "company", "account") {
-			tools = append(tools, "enrich_crm_company")
+			tools = append(tools, "ensure_crm_contact_company", "enrich_crm_company")
 		}
 	}
 	if containsAny(lower, "deal note", "crm note", "add note to deal") {
@@ -1523,7 +1523,7 @@ func commandBarOneShotInstructions(text string, pageContext model.CommandBarPage
 		"Do not create or save a reusable agent.",
 		"Use only the enabled tools for this run.",
 	}, constraints...)
-	if hasAnyTool(tools, "write_document_content", "create_document", "create_task", "add_task_comment", "add_deal_note", "update_deal_stage", "enrich_crm_contact", "enrich_crm_company") {
+	if hasAnyTool(tools, "write_document_content", "create_document", "create_task", "add_task_comment", "add_deal_note", "update_deal_stage", "ensure_crm_contact_company", "enrich_crm_contact", "enrich_crm_company") {
 		constraints = append(constraints, "The user confirmed this command-bar plan; keep mutations limited to the requested action and target.")
 	}
 	if len(constraints) > 0 {
@@ -1552,6 +1552,7 @@ func oneShotExecutionBrief(text string, pageContext model.CommandBarPageContext,
 			"Search the web for public contact, company, role, domain, and buyer-signal evidence.",
 			"Fetch authoritative sources before relying on search snippets.",
 			"Extract proposed CRM updates with source URLs and confidence notes.",
+			"If the contact has no associated company but the evidence supports one, create or reuse the company and associate it before company enrichment.",
 			"Apply only CRM mutations supported by the enabled tools; otherwise return exact proposed field changes for review.",
 		}
 		constraints := []string{
