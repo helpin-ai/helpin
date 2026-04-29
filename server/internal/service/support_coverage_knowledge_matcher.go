@@ -76,6 +76,7 @@ func (m *CoverageKnowledgeMatcher) MatchKnowledge(ctx context.Context, workspace
 				SourceType:    knowledgeSourceTypeDocs,
 				TargetType:    "docs",
 				DocumentID:    result.DocumentID,
+				BlockID:       derefString(result.BlockID),
 				Title:         result.Title,
 				Excerpt:       truncateCoverageAnalysisContent(result.Content, supportAIRetrievalTraceMaxSnippet),
 				CombinedScore: result.CombinedScore,
@@ -144,6 +145,9 @@ func coverageKnowledgeCandidateKey(candidate CoverageKnowledgeCandidate) string 
 	case "docs":
 		if candidate.DocumentID == "" {
 			return ""
+		}
+		if strings.TrimSpace(candidate.BlockID) != "" {
+			return "docs:" + candidate.DocumentID + ":" + strings.TrimSpace(candidate.BlockID)
 		}
 		return "docs:" + candidate.DocumentID
 	case "website_page":

@@ -99,11 +99,12 @@ func toolReadDocument(ctx *ExecutionContext, input json.RawMessage) (string, err
 	}
 
 	type docDetail struct {
-		ID          string  `json:"id"`
-		Title       string  `json:"title"`
-		Status      string  `json:"status"`
-		TeamID      *string `json:"team_id,omitempty"`
-		ContentText string  `json:"content_text,omitempty"`
+		ID          string              `json:"id"`
+		Title       string              `json:"title"`
+		Status      string              `json:"status"`
+		TeamID      *string             `json:"team_id,omitempty"`
+		ContentText string              `json:"content_text,omitempty"`
+		Blocks      []documentBlockView `json:"blocks,omitempty"`
 	}
 	detail := docDetail{ID: doc.ID, Title: doc.Title, Status: doc.Status, TeamID: doc.TeamID}
 
@@ -112,8 +113,119 @@ func toolReadDocument(ctx *ExecutionContext, input json.RawMessage) (string, err
 			detail.ContentText = text
 		}
 	}
+	if ctx.Services.ListDocumentBlocks != nil {
+		if blocks, err := ctx.Services.ListDocumentBlocks(ctx.Context, params.DocumentID); err == nil {
+			detail.Blocks = compactDocumentBlocks(blocks)
+		}
+	}
 
 	return toCompactJSONString(detail), nil
+}
+
+type documentBlockView struct {
+	ID          string `json:"id"`
+	Type        string `json:"type"`
+	Revision    int    `json:"revision"`
+	ContentText string `json:"content_text,omitempty"`
+}
+
+type documentBlockDetailView struct {
+	ID          string          `json:"id"`
+	Type        string          `json:"type"`
+	Revision    int             `json:"revision"`
+	ContentText string          `json:"content_text,omitempty"`
+	Content     json.RawMessage `json:"content,omitempty"`
+}
+
+const maxFullDocumentBlocksToolFetch = 20
+
+func compactDocumentBlocks(blocks []model.DocsBlock) []documentBlockView {
+	out := make([]documentBlockView, 0, len(blocks))
+	for _, block := range blocks {
+		out = append(out, documentBlockView{
+			ID:          block.ID,
+			Type:        block.Type,
+			Revision:    block.Revision,
+			ContentText: truncateDocsToolText(block.ContentText, 500),
+		})
+	}
+	return out
+}
+
+func truncateDocsToolText(value string, max int) string {
+	value = strings.TrimSpace(value)
+	if max <= 0 || len(value) <= max {
+		return value
+	}
+	return strings.TrimSpace(value[:max]) + "..."
+}
+
+func toolGetDocumentBlocks(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	if ctx.Services == nil || ctx.Services.ListDocumentBlocks == nil {
+		return "", fmt.Errorf("docs block access is not available for this agent")
+	}
+	var params struct {
+		DocumentID     string   `json:"document_id"`
+		BlockIDs       []string `json:"block_ids"`
+		IncludeContent bool     `json:"include_content"`
+	}
+	if err := json.Unmarshal(input, &params); err != nil {
+		return "", fmt.Errorf("parse input: %w", err)
+	}
+	params.DocumentID = strings.TrimSpace(params.DocumentID)
+	if params.DocumentID == "" {
+		return "", fmt.Errorf("document_id is required")
+	}
+
+	blocks, err := ctx.Services.ListDocumentBlocks(ctx.Context, params.DocumentID)
+	if err != nil {
+		return "", fmt.Errorf("get document blocks: %w", err)
+	}
+
+	filtered := blocks
+	if len(params.BlockIDs) > 0 {
+		requested := make(map[string]struct{}, len(params.BlockIDs))
+		for _, id := range params.BlockIDs {
+			id = strings.TrimSpace(id)
+			if id == "" {
+				continue
+			}
+			requested[id] = struct{}{}
+		}
+		filtered = make([]model.DocsBlock, 0, len(requested))
+		found := make(map[string]struct{}, len(requested))
+		for _, block := range blocks {
+			if _, ok := requested[block.ID]; !ok {
+				continue
+			}
+			filtered = append(filtered, block)
+			found[block.ID] = struct{}{}
+		}
+		for id := range requested {
+			if _, ok := found[id]; !ok {
+				return "", fmt.Errorf("block %s not found", id)
+			}
+		}
+	}
+
+	if !params.IncludeContent {
+		return toCompactJSONString(compactDocumentBlocks(filtered)), nil
+	}
+	if len(filtered) > maxFullDocumentBlocksToolFetch {
+		return "", fmt.Errorf("include_content is limited to %d blocks; provide block_ids to fetch a smaller set", maxFullDocumentBlocksToolFetch)
+	}
+
+	out := make([]documentBlockDetailView, 0, len(filtered))
+	for _, block := range filtered {
+		out = append(out, documentBlockDetailView{
+			ID:          block.ID,
+			Type:        block.Type,
+			Revision:    block.Revision,
+			ContentText: block.ContentText,
+			Content:     block.Content,
+		})
+	}
+	return toCompactJSONString(out), nil
 }
 
 func toolSearchDocuments(ctx *ExecutionContext, input json.RawMessage) (string, error) {
@@ -312,6 +424,51 @@ func toolWriteDocumentContent(ctx *ExecutionContext, input json.RawMessage) (str
 		return "", fmt.Errorf("write document content: %w", err)
 	}
 	return fmt.Sprintf("Document %s updated.", params.DocumentID), nil
+}
+
+func toolUpdateDocumentBlock(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	var params struct {
+		DocumentID string          `json:"document_id"`
+		BlockID    string          `json:"block_id"`
+		Revision   int             `json:"revision"`
+		Content    json.RawMessage `json:"content"`
+	}
+	if err := json.Unmarshal(input, &params); err != nil {
+		return "", fmt.Errorf("parse input: %w", err)
+	}
+	params.DocumentID = strings.TrimSpace(params.DocumentID)
+	params.BlockID = strings.TrimSpace(params.BlockID)
+	if params.DocumentID == "" {
+		return "", fmt.Errorf("document_id is required")
+	}
+	if params.BlockID == "" {
+		return "", fmt.Errorf("block_id is required")
+	}
+	if params.Revision <= 0 {
+		return "", fmt.Errorf("revision is required")
+	}
+	if len(params.Content) == 0 || strings.TrimSpace(string(params.Content)) == "" || strings.TrimSpace(string(params.Content)) == "null" {
+		return "", fmt.Errorf("content is required")
+	}
+	commandInput, _ := json.Marshal(map[string]any{
+		"document_id": params.DocumentID,
+		"block_id":    params.BlockID,
+		"revision":    params.Revision,
+		"content":     params.Content,
+	})
+	if output, ok, err := executeInternalCommand(ctx, "document", params.DocumentID, "docs.update_document_block", commandInput); ok {
+		if err != nil {
+			return "", fmt.Errorf("update document block: %w", err)
+		}
+		return string(output), nil
+	}
+	if ctx.Services == nil || ctx.Services.UpdateDocumentBlock == nil {
+		return "", fmt.Errorf("docs block mutation is not available for this agent")
+	}
+	if _, err := ctx.Services.UpdateDocumentBlock(ctx.Context, params.DocumentID, params.BlockID, params.Revision, params.Content, ctx.AgentID); err != nil {
+		return "", fmt.Errorf("update document block: %w", err)
+	}
+	return fmt.Sprintf("Block %s updated.", params.BlockID), nil
 }
 
 func normalizeDocumentToolContent(raw json.RawMessage) json.RawMessage {

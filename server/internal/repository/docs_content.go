@@ -15,12 +15,20 @@ import (
 
 // DocsContentRepository handles DB operations for document content.
 type DocsContentRepository struct {
-	db *gorm.DB
+	db        *gorm.DB
+	blockRepo *DocsBlockRepository
 }
 
 // NewDocsContentRepository creates a new DocsContentRepository.
 func NewDocsContentRepository(db *gorm.DB) *DocsContentRepository {
 	return &DocsContentRepository{db: db}
+}
+
+// SetBlockRepository enables compatibility dual-writes into docs_blocks for
+// all content upserts, including legacy callers that still use this repository
+// directly.
+func (r *DocsContentRepository) SetBlockRepository(blockRepo *DocsBlockRepository) {
+	r.blockRepo = blockRepo
 }
 
 // GetByDocumentID returns content for a document.
@@ -80,42 +88,81 @@ func (r *DocsContentRepository) DeleteByDocumentIDs(ctx context.Context, documen
 // Upsert creates or updates content for a document. Also extracts content_text and computes word_count.
 // Touches the parent document's updated_at so timestamps stay current.
 func (r *DocsContentRepository) Upsert(ctx context.Context, documentID string, content json.RawMessage) (*model.DocsContent, error) {
+	return r.UpsertWithActor(ctx, documentID, content, "")
+}
+
+// UpsertWithActor creates or updates content for a document and, when the
+// block repository is wired, synchronizes addressable block rows in the same
+// transaction.
+func (r *DocsContentRepository) UpsertWithActor(ctx context.Context, documentID string, content json.RawMessage, actorID string) (*model.DocsContent, error) {
+	if r.blockRepo != nil {
+		err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			normalized, blocks, err := r.blockRepo.NormalizeDocumentContentTx(ctx, tx, documentID, content, actorID)
+			if err != nil {
+				return err
+			}
+			if len(normalized) > 0 {
+				content = normalized
+			}
+			if err := r.upsertTx(ctx, tx, documentID, content); err != nil {
+				return err
+			}
+			if err := r.blockRepo.SyncDocumentBlocksTx(ctx, tx, documentID, blocks, actorID); err != nil {
+				return err
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		return r.GetByDocumentID(ctx, documentID)
+	}
+
+	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return r.upsertTx(ctx, tx, documentID, content)
+	}); err != nil {
+		return nil, err
+	}
+	return r.GetByDocumentID(ctx, documentID)
+}
+
+func (r *DocsContentRepository) upsertTx(ctx context.Context, tx *gorm.DB, documentID string, content json.RawMessage) error {
 	contentText := extractPlainText(content)
 	wordCount := countWords(contentText)
 
-	existing, err := r.GetByDocumentID(ctx, documentID)
-	if err != nil {
-		return nil, err
-	}
+	var existing model.DocsContent
+	err := tx.WithContext(ctx).Where("document_id = ?", documentID).First(&existing).Error
 
-	if existing != nil {
+	if err == nil {
 		updates := map[string]interface{}{
 			"content":      content,
 			"content_text": contentText,
 			"word_count":   wordCount,
 		}
-		if err := r.db.WithContext(ctx).Model(&model.DocsContent{}).Where("id = ?", existing.ID).Updates(updates).Error; err != nil {
-			return nil, fmt.Errorf("update docs content: %w", err)
+		if err := tx.WithContext(ctx).Model(&model.DocsContent{}).Where("document_id = ?", documentID).Updates(updates).Error; err != nil {
+			return fmt.Errorf("update docs content: %w", err)
 		}
-	} else {
+	} else if errors.Is(err, gorm.ErrRecordNotFound) {
 		c := &model.DocsContent{
 			DocumentID:  documentID,
 			Content:     content,
 			ContentText: contentText,
 			WordCount:   wordCount,
 		}
-		if err := r.db.WithContext(ctx).Create(c).Error; err != nil {
-			return nil, fmt.Errorf("create docs content: %w", err)
+		if err := tx.WithContext(ctx).Create(c).Error; err != nil {
+			return fmt.Errorf("create docs content: %w", err)
 		}
+	} else {
+		return fmt.Errorf("get docs content for upsert: %w", err)
 	}
 
 	// Touch the parent document's updated_at
-	if err := r.db.WithContext(ctx).Model(&model.DocsDocument{}).Where("id = ?", documentID).
+	if err := tx.WithContext(ctx).Model(&model.DocsDocument{}).Where("id = ?", documentID).
 		Update("updated_at", time.Now().UTC()).Error; err != nil {
-		return nil, fmt.Errorf("touch document updated_at: %w", err)
+		return fmt.Errorf("touch document updated_at: %w", err)
 	}
 
-	return r.GetByDocumentID(ctx, documentID)
+	return nil
 }
 
 // ListBySpaceWithImportHTML returns all content records that have stored import HTML for a given space.

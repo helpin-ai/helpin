@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -187,10 +188,11 @@ func (h *DocsHandler) PublishArticleTranslation(w http.ResponseWriter, r *http.R
 	docID := chi.URLParam(r, "docId")
 	locale := chi.URLParam(r, "locale")
 	var body struct {
-		Slug *string `json:"slug"`
+		Slug             *string         `json:"slug"`
+		PublishedContent json.RawMessage `json:"published_content"`
 	}
 	_ = decodeJSON(r, &body)
-	translation, err := h.translationSvc.PublishArticleTranslation(r.Context(), docID, locale, body.Slug)
+	translation, err := h.translationSvc.PublishArticleTranslation(r.Context(), docID, locale, body.Slug, body.PublishedContent)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

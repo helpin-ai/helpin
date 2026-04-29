@@ -239,6 +239,29 @@ type DocsContent struct {
 
 func (DocsContent) TableName() string { return "docs_contents" }
 
+// DocsBlock stores one addressable top-level document block. The full
+// document JSON remains materialized in docs_contents during the compatibility
+// rollout; this table is the stable row model used by agents and future
+// block-level editing APIs.
+type DocsBlock struct {
+	ID           string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID  string          `json:"workspace_id" gorm:"type:uuid;not null;index:idx_docs_block_ws_doc_sort,priority:1"`
+	DocumentID   string          `json:"document_id" gorm:"type:uuid;not null;index:idx_docs_block_ws_doc_sort,priority:2;index:idx_docs_block_doc_deleted,priority:1"`
+	ParentID     *string         `json:"parent_id" gorm:"type:uuid;index"`
+	Type         string          `json:"type" gorm:"not null;index:idx_docs_block_type"`
+	Content      json.RawMessage `json:"content" gorm:"type:jsonb;not null"`
+	ContentText  string          `json:"content_text" gorm:"type:text"`
+	SortKey      string          `json:"sort_key" gorm:"not null;index:idx_docs_block_ws_doc_sort,priority:3"`
+	Revision     int             `json:"revision" gorm:"not null;default:1"`
+	AuthoredBy   *string         `json:"authored_by" gorm:"type:uuid"`
+	LastEditedBy *string         `json:"last_edited_by" gorm:"type:uuid"`
+	CreatedAt    time.Time       `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt    time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
+	DeletedAt    *time.Time      `json:"deleted_at" gorm:"index:idx_docs_block_doc_deleted,priority:2"`
+}
+
+func (DocsBlock) TableName() string { return "docs_blocks" }
+
 // DocsVersion stores saved snapshots.
 type DocsVersion struct {
 	ID            string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
@@ -259,6 +282,7 @@ type DocsLink struct {
 	ID               string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID      string    `json:"workspace_id" gorm:"type:uuid;not null;index:idx_docs_link_ws_obj,priority:1"`
 	DocumentID       string    `json:"document_id" gorm:"type:uuid;not null;index:idx_docs_link_doc_type,priority:1"`
+	BlockID          *string   `json:"block_id,omitempty" gorm:"type:uuid;index"`
 	LinkedObjectType string    `json:"linked_object_type" gorm:"not null;index:idx_docs_link_doc_type,priority:2;index:idx_docs_link_obj,priority:1;index:idx_docs_link_ws_obj,priority:2"`
 	LinkedObjectID   string    `json:"linked_object_id" gorm:"type:uuid;not null;index:idx_docs_link_obj,priority:2;index:idx_docs_link_ws_obj,priority:3"`
 	LinkContext      string    `json:"link_context" gorm:"not null;default:'attached'"`
@@ -608,6 +632,25 @@ type SaveDocsContentRequest struct {
 	Content json.RawMessage `json:"content"`
 }
 
+// DocsBlockPatchRequest updates one addressable document block. Revision is
+// required for optimistic concurrency.
+type DocsBlockPatchRequest struct {
+	Revision int             `json:"revision"`
+	Content  json.RawMessage `json:"content"`
+}
+
+// CreateDocsBlockRequest inserts a new top-level block. AfterBlockID is
+// optional; omitted appends the block to the end.
+type CreateDocsBlockRequest struct {
+	AfterBlockID *string         `json:"after_block_id"`
+	Content      json.RawMessage `json:"content"`
+}
+
+// ReorderDocsBlocksRequest replaces the top-level block order.
+type ReorderDocsBlocksRequest struct {
+	BlockIDs []string `json:"block_ids"`
+}
+
 // SaveDocsMarkdownRequest is the payload for saving document content from Markdown.
 // The backend wraps the markdown in a JSON envelope so the frontend can auto-convert.
 type SaveDocsMarkdownRequest struct {
@@ -634,9 +677,10 @@ type UpdateDocsVersionRequest struct {
 
 // CreateDocsLinkRequest is the payload for creating a document link.
 type CreateDocsLinkRequest struct {
-	LinkedObjectType string `json:"linked_object_type"`
-	LinkedObjectID   string `json:"linked_object_id"`
-	LinkContext      string `json:"link_context"`
+	LinkedObjectType string  `json:"linked_object_type"`
+	LinkedObjectID   string  `json:"linked_object_id"`
+	LinkContext      string  `json:"link_context"`
+	BlockID          *string `json:"block_id,omitempty"`
 }
 
 // UpdateDocsHelpcenterConfigRequest is the payload for updating help center config.

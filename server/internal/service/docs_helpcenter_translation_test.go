@@ -883,7 +883,7 @@ func TestDocsHelpcenterTranslationService(t *testing.T) {
 			UpdatedAt:       now,
 		})
 
-		if _, err := svc.PublishArticleTranslation(ctx, documentID, "fr", nil); err == nil {
+		if _, err := svc.PublishArticleTranslation(ctx, documentID, "fr", nil, nil); err == nil {
 			t.Fatal("expected publish without parents to fail")
 		}
 
@@ -902,7 +902,7 @@ func TestDocsHelpcenterTranslationService(t *testing.T) {
 			UpdatedAt:       now,
 		})
 
-		if _, err := svc.PublishArticleTranslation(ctx, documentID, "fr", nil); err == nil {
+		if _, err := svc.PublishArticleTranslation(ctx, documentID, "fr", nil, nil); err == nil {
 			t.Fatal("expected publish without collection translation to fail")
 		}
 
@@ -922,7 +922,7 @@ func TestDocsHelpcenterTranslationService(t *testing.T) {
 			UpdatedAt:       now,
 		})
 
-		published, err := svc.PublishArticleTranslation(ctx, documentID, "fr", nil)
+		published, err := svc.PublishArticleTranslation(ctx, documentID, "fr", nil, nil)
 		if err != nil {
 			t.Fatalf("PublishArticleTranslation with parents: %v", err)
 		}
@@ -1058,7 +1058,7 @@ func TestDocsHelpcenterTranslationService(t *testing.T) {
 			UpdatedAt:       now,
 		})
 
-		published, err := svc.PublishArticleTranslation(ctx, documentID, "fr", nil)
+		published, err := svc.PublishArticleTranslation(ctx, documentID, "fr", nil, nil)
 		if err != nil {
 			t.Fatalf("PublishArticleTranslation first publish slug: %v", err)
 		}

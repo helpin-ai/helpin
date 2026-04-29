@@ -36,6 +36,7 @@ import { TableHeader } from '@tiptap/extension-table-header'
 import { TableCell } from '@tiptap/extension-table-cell'
 import { ResizableImageExtension } from '@/components/ui/resizable-image-extension'
 import { SlashMenuExtension, slashMenuPluginKey } from './SlashMenuExtension'
+import { BlockIdExtension } from './BlockIdExtension'
 import { SlashMenu } from './SlashMenu'
 import { CalloutExtension } from './CalloutExtension'
 import { VideoEmbedExtension } from './VideoEmbedExtension'
@@ -1010,6 +1011,7 @@ export function DocsEditor({
       TableRow,
       TableHeader,
       TableCell,
+      BlockIdExtension,
       SlashMenuExtension,
       CalloutExtension,
       VideoEmbedExtension,
