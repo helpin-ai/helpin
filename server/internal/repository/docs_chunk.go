@@ -21,6 +21,7 @@ type DocsChunkSearchResult struct {
 	WorkspaceID   string  `json:"workspace_id"`
 	SpaceID       string  `json:"space_id"`
 	DocumentID    string  `json:"document_id"`
+	BlockID       *string `json:"block_id,omitempty"`
 	ChunkIndex    int     `json:"chunk_index"`
 	Title         string  `json:"title"`
 	Content       string  `json:"content"`
@@ -46,7 +47,7 @@ func (r *DocsChunkRepository) ReplaceDocumentChunks(ctx context.Context, documen
 		if err := tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "document_id"}, {Name: "chunk_index"}},
 			DoUpdates: clause.AssignmentColumns([]string{
-				"title", "content", "content_hash", "embedding", "updated_at",
+				"block_id", "block_range", "title", "content", "content_hash", "embedding", "updated_at",
 			}),
 		}).Create(&chunks).Error; err != nil {
 			return fmt.Errorf("upsert document chunks: %w", err)
@@ -149,6 +150,7 @@ func (r *DocsChunkRepository) lexicalSearch(ctx context.Context, workspaceID str
 				WorkspaceID:  chunk.WorkspaceID,
 				SpaceID:      chunk.SpaceID,
 				DocumentID:   chunk.DocumentID,
+				BlockID:      chunk.BlockID,
 				ChunkIndex:   chunk.ChunkIndex,
 				Title:        chunk.Title,
 				Content:      chunk.Content,
@@ -159,7 +161,7 @@ func (r *DocsChunkRepository) lexicalSearch(ctx context.Context, workspaceID str
 	}
 
 	sql := `
-		SELECT c.id, c.workspace_id, c.space_id, c.document_id, c.chunk_index, c.title, c.content,
+		SELECT c.id, c.workspace_id, c.space_id, c.document_id, c.block_id, c.chunk_index, c.title, c.content,
 		       ts_rank(
 		         setweight(to_tsvector('english', COALESCE(c.title, '')), 'A') ||
 		         setweight(to_tsvector('english', COALESCE(c.content, '')), 'B'),
@@ -189,7 +191,7 @@ func (r *DocsChunkRepository) lexicalSearch(ctx context.Context, workspaceID str
 
 func (r *DocsChunkRepository) vectorSearch(ctx context.Context, workspaceID string, spaceIDs []string, queryEmbedding string, limit int) ([]DocsChunkSearchResult, error) {
 	sql := `
-		SELECT c.id, c.workspace_id, c.space_id, c.document_id, c.chunk_index, c.title, c.content,
+		SELECT c.id, c.workspace_id, c.space_id, c.document_id, c.block_id, c.chunk_index, c.title, c.content,
 		       GREATEST(0, 1 - (c.embedding <=> CAST(? AS vector))) AS vector_score
 		FROM docs_chunks c
 		JOIN docs_documents d ON d.id = c.document_id

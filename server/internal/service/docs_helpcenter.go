@@ -232,7 +232,12 @@ func (s *DocsHelpcenterService) UpsertConfig(ctx context.Context, workspaceID st
 }
 
 // PublishExternally publishes a help center article externally.
-func (s *DocsHelpcenterService) PublishExternally(ctx context.Context, documentID string, slug string) error {
+func (s *DocsHelpcenterService) PublishExternally(ctx context.Context, documentID string, slug string, publishedContent json.RawMessage) error {
+	publishedContent, err := validatePublicationSnapshotContent(publishedContent)
+	if err != nil {
+		return err
+	}
+
 	doc, err := s.docRepo.GetByID(ctx, documentID)
 	if err != nil {
 		return err
@@ -306,7 +311,7 @@ func (s *DocsHelpcenterService) PublishExternally(ctx context.Context, documentI
 		return err
 	}
 
-	publication, err := s.buildSourceArticlePublication(ctx, doc, art, defaultLocale, slug)
+	publication, err := s.buildSourceArticlePublication(ctx, doc, art, defaultLocale, slug, publishedContent)
 	if err != nil {
 		return err
 	}
@@ -768,6 +773,67 @@ func compactJSON(raw json.RawMessage) []byte {
 	return raw
 }
 
+func validatePublicationSnapshotContent(raw json.RawMessage) (json.RawMessage, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return nil, nil
+	}
+	if !json.Valid(trimmed) {
+		return nil, fmt.Errorf("published_content must be valid JSON")
+	}
+	var node tiptap.Node
+	if err := json.Unmarshal(trimmed, &node); err != nil {
+		return nil, fmt.Errorf("published_content must be TipTap JSON: %w", err)
+	}
+	if node.Type != "doc" {
+		return nil, fmt.Errorf("published_content root must be a doc node")
+	}
+	if _, err := tiptap.RenderHTML(trimmed); err != nil {
+		return nil, fmt.Errorf("published_content cannot be rendered: %w", err)
+	}
+	return json.RawMessage(compactJSON(trimmed)), nil
+}
+
+func publicationContentEqual(current json.RawMessage, published json.RawMessage) bool {
+	return bytes.Equal(compactJSON(normalizePublishedSourceContent(current)), compactJSON(normalizePublishedSourceContent(published)))
+}
+
+func normalizePublishedSourceContent(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return nil
+	}
+	var node tiptap.Node
+	if err := json.Unmarshal(raw, &node); err != nil {
+		return raw
+	}
+	normalized := normalizePublishedSourceNode(node)
+	payload, err := json.Marshal(normalized)
+	if err != nil {
+		return raw
+	}
+	return payload
+}
+
+func normalizePublishedSourceNode(node tiptap.Node) tiptap.Node {
+	if node.Attrs != nil {
+		if source, ok := node.Attrs["publishedFrom"]; ok {
+			payload, err := json.Marshal(source)
+			if err == nil {
+				var sourceNode tiptap.Node
+				if err := json.Unmarshal(payload, &sourceNode); err == nil && sourceNode.Type != "" {
+					return normalizePublishedSourceNode(sourceNode)
+				}
+			}
+		}
+	}
+	if len(node.Content) > 0 {
+		for i := range node.Content {
+			node.Content[i] = normalizePublishedSourceNode(node.Content[i])
+		}
+	}
+	return node
+}
+
 func stringPtrTrimmed(value *string) string {
 	if value == nil {
 		return ""
@@ -876,7 +942,7 @@ func derivedSEODescription(excerpt *string, override *string) *string {
 	return &excerptValue
 }
 
-func (s *DocsHelpcenterService) buildSourceArticlePublication(ctx context.Context, doc *model.DocsDocument, art *model.DocsHelpcenterArticle, locale, slug string) (*model.DocsHelpcenterArticlePublication, error) {
+func (s *DocsHelpcenterService) buildSourceArticlePublication(ctx context.Context, doc *model.DocsDocument, art *model.DocsHelpcenterArticle, locale, slug string, publishedContent json.RawMessage) (*model.DocsHelpcenterArticlePublication, error) {
 	content, err := s.contentRepo.GetByDocumentID(ctx, doc.ID)
 	if err != nil {
 		return nil, err
@@ -902,6 +968,9 @@ func (s *DocsHelpcenterService) buildSourceArticlePublication(ctx context.Contex
 	if content != nil {
 		publication.Content = content.Content
 		publication.ContentText = content.ContentText
+	}
+	if len(publishedContent) > 0 {
+		publication.Content = publishedContent
 	}
 	return publication, nil
 }
@@ -944,7 +1013,7 @@ func (s *DocsHelpcenterService) sourceArticleHasUnpublishedChanges(ctx context.C
 	if content != nil {
 		currentContent = content.Content
 	}
-	if !bytes.Equal(compactJSON(currentContent), compactJSON(publication.Content)) {
+	if !publicationContentEqual(currentContent, publication.Content) {
 		return true, nil
 	}
 	return false, nil

@@ -101,6 +101,23 @@ export interface DocsContent {
   updated_at: string;
 }
 
+export interface DocsBlock {
+  id: string;
+  workspace_id: string;
+  document_id: string;
+  parent_id?: string | null;
+  type: string;
+  content: unknown;
+  content_text?: string;
+  sort_key: string;
+  revision: number;
+  authored_by?: string | null;
+  last_edited_by?: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at?: string | null;
+}
+
 export interface DocsVersion {
   id: string;
   document_id: string;
@@ -511,6 +528,17 @@ export interface MoveDocsDocumentRequest {
 
 export interface SaveDocsContentRequest {
   content: unknown;
+}
+
+export interface PublishDocsDocumentRequest {
+  slug?: string;
+  published_content?: unknown;
+}
+
+export interface PublishDocsHelpcenterArticleTranslationRequest {
+  locale: string;
+  slug?: string;
+  published_content?: unknown;
 }
 
 export interface CreateDocsVersionRequest {
