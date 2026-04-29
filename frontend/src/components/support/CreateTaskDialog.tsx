@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -39,7 +39,17 @@ export function CreateTaskDialog({
   const [selectedTeamId, setSelectedTeamId] = useState(
     defaultTeamId ?? teams[0]?.id ?? '',
   )
+  const userHasSelected = useRef(false)
   const [dontShowAgain, setDontShowAgain] = useState(false)
+
+  // Sync when teams/defaultTeamId load async, without overwriting user selection
+  useEffect(() => {
+    if (userHasSelected.current) return
+    const fallback = defaultTeamId ?? teams[0]?.id ?? ''
+    if (fallback && !selectedTeamId) {
+      setSelectedTeamId(fallback)
+    }
+  }, [defaultTeamId, teams, selectedTeamId])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -62,7 +72,7 @@ export function CreateTaskDialog({
         <div className="space-y-3 py-2">
           <div className="space-y-1.5">
             <label className="text-sm font-medium">Assign to team</label>
-            <Select value={selectedTeamId} onValueChange={setSelectedTeamId}>
+            <Select value={selectedTeamId} onValueChange={(v) => { userHasSelected.current = true; setSelectedTeamId(v) }}>
               <SelectTrigger>
                 <SelectValue placeholder="Select a team" />
               </SelectTrigger>
