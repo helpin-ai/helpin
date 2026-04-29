@@ -13,6 +13,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/tiptap"
 )
 
 const (
@@ -96,6 +97,11 @@ type CoverageFixBundleDecision struct {
 	RecommendedFixes []CoverageRecommendedFix `json:"recommended_fixes"`
 	DecisionReason   string                   `json:"decision_reason"`
 	Confidence       float64                  `json:"confidence"`
+}
+
+type CoverageKnowledgeSuggestionDraft struct {
+	Title           string `json:"title"`
+	MarkdownContent string `json:"markdown_content"`
 }
 
 type CoverageFindingUpsertInput struct {
@@ -264,6 +270,53 @@ func (s *SupportCoverageDailyAnalyzer) RefineFixBundleWithKnowledge(ctx context.
 	return &decision, nil
 }
 
+func (s *SupportCoverageDailyAnalyzer) GenerateKnowledgeSuggestion(ctx context.Context, result CoverageConversationAnalysisResult, fix CoverageRecommendedFix) (string, json.RawMessage, error) {
+	if !isCoverageDocsFix(fix) {
+		return "", nil, fmt.Errorf("knowledge suggestion generation only supports docs fixes")
+	}
+	if s == nil || s.llmProvider == nil {
+		content, err := coverageSuggestionContent(result, fix)
+		return firstNonEmptyCoverageString(fix.TargetTitle, result.CanonicalTitle, "Coverage gap fix"), content, err
+	}
+	payload := struct {
+		Result CoverageConversationAnalysisResult `json:"result"`
+		Fix    CoverageRecommendedFix             `json:"fix"`
+	}{
+		Result: result,
+		Fix:    fix,
+	}
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return "", nil, fmt.Errorf("marshal knowledge suggestion input: %w", err)
+	}
+	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
+		SystemPrompt: coverageKnowledgeSuggestionSystemPrompt(),
+		Messages: []llm.Message{{
+			Role:    "user",
+			Content: string(payloadJSON),
+		}},
+		Provider:    s.providerName,
+		Model:       s.modelName,
+		Temperature: 0.1,
+		MaxTokens:   1200,
+		JSONMode:    true,
+		JSONSchema:  coverageKnowledgeSuggestionJSONSchema(),
+	})
+	if err != nil {
+		return "", nil, fmt.Errorf("coverage knowledge suggestion llm: %w", err)
+	}
+	var draft CoverageKnowledgeSuggestionDraft
+	if err := llm.UnmarshalResponse(resp.Content, &draft); err != nil {
+		return "", nil, fmt.Errorf("parse coverage knowledge suggestion: %w", err)
+	}
+	title := firstNonEmptyCoverageString(draft.Title, fix.TargetTitle, result.CanonicalTitle, "Coverage gap fix")
+	markdown := strings.TrimSpace(draft.MarkdownContent)
+	if markdown == "" {
+		markdown = firstNonEmptyCoverageString(fix.SuggestedChange, result.HumanResolution, result.CustomerNeed)
+	}
+	return title, tiptap.MarkdownToJSON(markdown), nil
+}
+
 func (s *SupportCoverageDailyAnalyzer) UpsertFinding(ctx context.Context, input CoverageFindingUpsertInput) (*model.SupportCoverageGap, error) {
 	if s == nil || s.coverageRepo == nil || s.analysisRepo == nil {
 		return nil, fmt.Errorf("coverage repositories are not configured")
@@ -410,7 +463,7 @@ func (s *SupportCoverageDailyAnalyzer) createDocsSuggestionForFix(ctx context.Co
 	if fix.Type == model.SupportCoverageFixUpdateArticle {
 		suggestionType = model.SupportCoverageSuggestionUpdateArticle
 	}
-	content, err := coverageSuggestionContent(input.Result, fix)
+	title, content, err := s.GenerateKnowledgeSuggestion(ctx, input.Result, fix)
 	if err != nil {
 		return nil, err
 	}
@@ -419,7 +472,7 @@ func (s *SupportCoverageDailyAnalyzer) createDocsSuggestionForFix(ctx context.Co
 		WorkspaceID:      input.WorkspaceID,
 		SuggestionType:   suggestionType,
 		Status:           model.SupportCoverageSuggestionStatusDraft,
-		Title:            firstNonEmptyCoverageString(fix.TargetTitle, input.Result.CanonicalTitle, "Coverage gap fix"),
+		Title:            title,
 		Content:          content,
 		EvidenceSummary:  coverageTruncate(firstNonEmptyCoverageString(input.Result.HumanResolution, input.Result.DecisionReason, input.Result.CustomerNeed), 500),
 		TargetDocumentID: emptyToNil(fix.TargetID),
@@ -701,6 +754,26 @@ func coverageFixBundleDecisionJSONSchema() map[string]any {
 					},
 				},
 			},
+		},
+	}
+}
+
+func coverageKnowledgeSuggestionSystemPrompt() string {
+	return `You write concise help-center documentation fixes from analyzed support coverage gaps. Return JSON only.
+
+Use the human_resolution as evidence for what solved the customer problem. Do not invent product behavior, policy, pricing, integrations, or steps that are not supported by the customer need, human resolution, or suggested change. If the fix is an update_article, write content that can be appended or merged into the existing article. If the fix is create_article, write a short standalone article draft.
+
+Return a clear title and markdown_content. Keep the markdown practical: headings, short paragraphs, and bullets when useful.`
+}
+
+func coverageKnowledgeSuggestionJSONSchema() map[string]any {
+	return map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"required":             []string{"title", "markdown_content"},
+		"properties": map[string]any{
+			"title":            map[string]any{"type": "string"},
+			"markdown_content": map[string]any{"type": "string"},
 		},
 	}
 }

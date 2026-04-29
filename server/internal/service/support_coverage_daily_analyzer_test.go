@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -702,5 +703,85 @@ func TestSupportCoverageDailyAnalyzer_UpsertFindingDedupesAndPreservesAcceptedRe
 	}
 	if accepted.Status != model.SupportCoverageRecommendationStatusAccepted {
 		t.Fatalf("accepted recommendation status changed: %+v", accepted)
+	}
+}
+
+func TestSupportCoverageDailyAnalyzer_GenerateKnowledgeSuggestion(t *testing.T) {
+	cases := []struct {
+		name    string
+		fix     CoverageRecommendedFix
+		wantErr bool
+	}{
+		{
+			name: "create article",
+			fix: CoverageRecommendedFix{
+				Type:            model.SupportCoverageFixCreateArticle,
+				TargetType:      "docs",
+				TargetTitle:     "Refund exceptions",
+				SuggestedChange: "Create a refund exception guide.",
+			},
+		},
+		{
+			name: "update article",
+			fix: CoverageRecommendedFix{
+				Type:            model.SupportCoverageFixUpdateArticle,
+				TargetType:      "docs",
+				TargetID:        "doc-1",
+				TargetTitle:     "Refunds",
+				SuggestedChange: "Add refund exception criteria.",
+			},
+		},
+		{
+			name: "website recommendation",
+			fix: CoverageRecommendedFix{
+				Type:       model.SupportCoverageFixUpdateWebsitePage,
+				TargetType: "website_page",
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			provider := &scriptedSupportPlannerLLM{
+				responses: []llm.ChatResponse{{
+					Content: `{"title":"Refund exceptions","markdown_content":"# Refund exceptions\n\nExplain the exception criteria from the human resolution."}`,
+				}},
+			}
+			analyzer := NewSupportCoverageDailyAnalyzer(provider, "openai", "gpt-5.5")
+			title, content, err := analyzer.GenerateKnowledgeSuggestion(context.Background(), CoverageConversationAnalysisResult{
+				CustomerNeed:    "Customer needed a refund exception.",
+				HumanResolution: "Agent explained exception criteria and refunded from Stripe.",
+				DecisionReason:  "The answer should be documented for future AI replies.",
+			}, tc.fix)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("GenerateKnowledgeSuggestion: %v", err)
+			}
+			if title != "Refund exceptions" {
+				t.Fatalf("title = %q", title)
+			}
+			var doc struct {
+				Type    string            `json:"type"`
+				Content []json.RawMessage `json:"content"`
+			}
+			if err := json.Unmarshal(content, &doc); err != nil {
+				t.Fatalf("unmarshal tiptap content: %v", err)
+			}
+			if doc.Type != "doc" || len(doc.Content) == 0 {
+				t.Fatalf("expected non-empty tiptap doc, got %s", content)
+			}
+			if len(provider.requests) != 1 || !provider.requests[0].JSONMode {
+				t.Fatalf("expected one JSON-mode request, got %+v", provider.requests)
+			}
+			if !strings.Contains(provider.requests[0].SystemPrompt, "Do not invent") {
+				t.Fatalf("prompt should guard against unsupported claims: %s", provider.requests[0].SystemPrompt)
+			}
+		})
 	}
 }
