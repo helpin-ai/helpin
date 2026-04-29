@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -121,6 +122,26 @@ func setupSupportCoverageTestDB(t *testing.T) *gorm.DB {
 			applied_at DATETIME,
 			is_active BOOLEAN NOT NULL DEFAULT 1,
 			superseded_at DATETIME,
+			metadata TEXT NOT NULL DEFAULT '{}',
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE support_coverage_recommendations (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			gap_id TEXT NOT NULL,
+			analysis_id TEXT,
+			recommendation_type TEXT NOT NULL,
+			target_type TEXT NOT NULL DEFAULT '',
+			target_id TEXT,
+			target_title TEXT NOT NULL DEFAULT '',
+			target_url TEXT NOT NULL DEFAULT '',
+			priority TEXT NOT NULL DEFAULT 'secondary',
+			status TEXT NOT NULL DEFAULT 'open',
+			rationale TEXT NOT NULL DEFAULT '',
+			suggested_change TEXT NOT NULL DEFAULT '',
+			implementation_notes TEXT NOT NULL DEFAULT '',
+			suggestion_id TEXT,
 			metadata TEXT NOT NULL DEFAULT '{}',
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -342,6 +363,75 @@ func TestSupportCoverageRepository_ListGapsRanksByRecentEvidence(t *testing.T) {
 	}
 }
 
+func TestSupportCoverageRepository_ListGapsHidesRawLowConfidenceEventGapsByDefault(t *testing.T) {
+	db := setupSupportCoverageTestDB(t)
+	repo := NewSupportCoverageRepository(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	seeds := []model.SupportCoverageGap{
+		{
+			ID:          "raw-low",
+			WorkspaceID: "ws-1",
+			DedupeKey:   "raw-low",
+			Title:       "Raw low confidence event gap",
+			V1GapType:   model.SupportCoverageV1GapNeedsReview,
+			Confidence:  0.4,
+			Metadata:    []byte(`{"source":"event_detection"}`),
+			FirstSeenAt: now,
+			LastSeenAt:  now,
+		},
+		{
+			ID:          "raw-high",
+			WorkspaceID: "ws-1",
+			DedupeKey:   "raw-high",
+			Title:       "Raw high confidence event gap",
+			V1GapType:   model.SupportCoverageV1GapNeedsReview,
+			Confidence:  0.8,
+			Metadata:    []byte(`{"source":"event_detection"}`),
+			FirstSeenAt: now,
+			LastSeenAt:  now,
+		},
+		{
+			ID:          "daily-low",
+			WorkspaceID: "ws-1",
+			DedupeKey:   "daily-low",
+			Title:       "Daily analyzer gap",
+			V1GapType:   model.SupportCoverageV1GapNeedsReview,
+			Confidence:  0.4,
+			Metadata:    []byte(`{"source":"daily_conversation_analysis"}`),
+			FirstSeenAt: now,
+			LastSeenAt:  now,
+		},
+	}
+	for i := range seeds {
+		if err := db.Create(&seeds[i]).Error; err != nil {
+			t.Fatalf("seed gap %s: %v", seeds[i].ID, err)
+		}
+	}
+
+	items, total, err := repo.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	if err != nil {
+		t.Fatalf("ListGaps: %v", err)
+	}
+	if total != 2 || len(items) != 2 {
+		t.Fatalf("got total=%d len=%d, want 2 visible gaps", total, len(items))
+	}
+	for _, item := range items {
+		if item.ID == "raw-low" {
+			t.Fatal("raw low-confidence event gap should be hidden by default")
+		}
+	}
+
+	items, total, err = repo.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
+	if err != nil {
+		t.Fatalf("ListGaps show raw: %v", err)
+	}
+	if total != 3 || len(items) != 3 {
+		t.Fatalf("show raw got total=%d len=%d, want 3", total, len(items))
+	}
+}
+
 func TestSupportCoverageRepository_UpdateGapStatus(t *testing.T) {
 	db := setupSupportCoverageTestDB(t)
 	repo := NewSupportCoverageRepository(db)
@@ -519,6 +609,80 @@ func TestSupportCoverageRepository_MergeGaps(t *testing.T) {
 	db.Where("gap_id = ?", "gap-tgt").Find(&evidence)
 	if len(evidence) != 1 {
 		t.Errorf("expected 1 evidence on target, got %d", len(evidence))
+	}
+}
+
+func TestSupportCoverageRepository_GetGapDetailExposesAnalysisExplanationAndRecommendations(t *testing.T) {
+	db := setupSupportCoverageTestDB(t)
+	repo := NewSupportCoverageRepository(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	gap, _, err := repo.UpsertGapByDedupeKey(ctx, &model.SupportCoverageGap{
+		ID:          "gap-analysis",
+		WorkspaceID: "ws-1",
+		DedupeKey:   "analysis-gap",
+		Title:       "Refund exceptions",
+		Status:      model.SupportCoverageGapStatusOpen,
+		FirstSeenAt: now,
+		LastSeenAt:  now,
+	})
+	if err != nil {
+		t.Fatalf("seed gap: %v", err)
+	}
+	metadata, _ := json.Marshal(map[string]any{
+		"customer_need":    "Customer needed refund exception criteria.",
+		"ai_failure":       "AI only found generic refund docs.",
+		"human_resolution": "Agent explained the exception and refunded from Stripe.",
+		"decision_reason":  "The human answer should be reusable by AI.",
+	})
+	if err := repo.CreateEvidence(ctx, &model.SupportGapEvidence{
+		ID:           "evidence-analysis",
+		GapID:        gap.ID,
+		WorkspaceID:  "ws-1",
+		EvidenceType: "daily_conversation_analysis",
+		SourceSignal: "daily_conversation_analysis",
+		Excerpt:      "Customer needed refund exception criteria.",
+		Metadata:     metadata,
+		CreatedAt:    now,
+	}); err != nil {
+		t.Fatalf("seed evidence: %v", err)
+	}
+	targetID := "doc-1"
+	if err := db.Create(&model.SupportCoverageRecommendation{
+		ID:                 "rec-primary",
+		WorkspaceID:        "ws-1",
+		GapID:              gap.ID,
+		RecommendationType: model.SupportCoverageFixUpdateArticle,
+		TargetType:         "docs",
+		TargetID:           &targetID,
+		TargetTitle:        "Refunds",
+		Priority:           model.SupportCoverageRecommendationPriorityPrimary,
+		Status:             model.SupportCoverageRecommendationStatusOpen,
+		Rationale:          "Existing docs are close.",
+		SuggestedChange:    "Add exception criteria.",
+		Metadata:           json.RawMessage(`{}`),
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}).Error; err != nil {
+		t.Fatalf("seed recommendation: %v", err)
+	}
+
+	detail, err := repo.GetGapDetail(ctx, "ws-1", gap.ID)
+	if err != nil {
+		t.Fatalf("GetGapDetail: %v", err)
+	}
+	if detail.AnalysisExplanation == nil {
+		t.Fatal("expected analysis explanation")
+	}
+	if detail.AnalysisExplanation.CustomerNeed != "Customer needed refund exception criteria." {
+		t.Fatalf("unexpected explanation: %+v", detail.AnalysisExplanation)
+	}
+	if len(detail.Recommendations) != 1 {
+		t.Fatalf("expected one recommendation, got %+v", detail.Recommendations)
+	}
+	if detail.Recommendations[0].RecommendationType != model.SupportCoverageFixUpdateArticle {
+		t.Fatalf("unexpected recommendation: %+v", detail.Recommendations[0])
 	}
 }
 
