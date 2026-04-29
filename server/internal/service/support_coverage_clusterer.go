@@ -123,6 +123,7 @@ func (c *SupportCoverageClusterer) UpsertTopicGap(ctx context.Context, event *mo
 		SourceSignal: event.SourceSignal,
 		CanAnswer:    event.CanAnswer,
 		CanResolve:   event.CanResolve,
+		Metadata:     []byte(`{"source":"event_detection"}`),
 		FirstSeenAt:  now,
 		LastSeenAt:   now,
 	}

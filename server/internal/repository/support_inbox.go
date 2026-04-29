@@ -562,6 +562,53 @@ func (r *SupportConversationRepository) List(ctx context.Context, workspaceID st
 	return conversations, total, nil
 }
 
+func (r *SupportConversationRepository) ListCoverageAnalysisCandidates(ctx context.Context, workspaceID string, windowStart, windowEnd time.Time, limit int) ([]model.SupportConversation, error) {
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+
+	var conversations []model.SupportConversation
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ?", workspaceID).
+		Where("status <> ?", model.SupportConversationStatusSpam).
+		Where(`(
+			(updated_at >= ? AND updated_at < ?)
+			OR (resolved_at IS NOT NULL AND resolved_at >= ? AND resolved_at < ?)
+		)`, windowStart, windowEnd, windowStart, windowEnd).
+		Order("updated_at ASC, id ASC").
+		Limit(limit).
+		Find(&conversations).Error
+	if err != nil {
+		return nil, fmt.Errorf("list coverage analysis candidates: %w", err)
+	}
+	return conversations, nil
+}
+
+func (r *SupportConversationRepository) ListWorkspacesForCoverageAnalysisCandidates(ctx context.Context, windowStart, windowEnd time.Time, limit int) ([]string, error) {
+	if limit <= 0 || limit > 5000 {
+		limit = 1000
+	}
+	var workspaceIDs []string
+	err := r.db.WithContext(ctx).
+		Model(&model.SupportConversation{}).
+		Distinct("workspace_id").
+		Where("status <> ?", model.SupportConversationStatusSpam).
+		Where(`(
+			(updated_at >= ? AND updated_at < ?)
+			OR (resolved_at IS NOT NULL AND resolved_at >= ? AND resolved_at < ?)
+		)`, windowStart, windowEnd, windowStart, windowEnd).
+		Order("workspace_id ASC").
+		Limit(limit).
+		Pluck("workspace_id", &workspaceIDs).Error
+	if err != nil {
+		return nil, fmt.Errorf("list coverage analysis workspaces: %w", err)
+	}
+	return workspaceIDs, nil
+}
+
 func (r *SupportConversationRepository) applyConversationSearch(query *gorm.DB, search string) *gorm.DB {
 	if search == "" {
 		return query

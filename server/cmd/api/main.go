@@ -225,6 +225,10 @@ func main() {
 			&model.SupportCoverageGapArticle{},
 			&model.SupportCoverageSnapshot{},
 			&model.SupportCoverageDigestDelivery{},
+			&model.SupportCoverageAnalysisRun{},
+			&model.SupportCoverageConversationAnalysis{},
+			&model.SupportAIRetrievalTrace{},
+			&model.SupportCoverageRecommendation{},
 			&model.GitIntegration{},
 			&model.GitRepository{},
 			&model.PMTeamRepoDefault{},
@@ -1024,11 +1028,20 @@ func main() {
 	// Coverage telemetry: repos → services → async recorder → inject into hot-path services.
 	supportEventRepo := repository.NewSupportEventRepository(db)
 	supportCoverageRepo := repository.NewSupportCoverageRepository(db)
+	supportCoverageAnalysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
 	supportCoverageService := service.NewSupportCoverageService(supportCoverageRepo)
 	supportCoverageService.SetTemporalClient(temporalClient)
+	supportCoverageKnowledgeMatcher := service.NewCoverageKnowledgeMatcher(docsChunkRepo, supportContentChunkRepo, supportEmbeddingProvider, cfg.OpenAIEmbeddingModel)
+	supportCoverageDailyAnalyzer := service.NewSupportCoverageDailyAnalyzer(llmProvider, cfg.CRMLLMProvider, cfg.CRMLLMModel).
+		SetCoverageRepositories(supportCoverageRepo, supportCoverageAnalysisRepo).
+		SetConversationRepositories(supportConversationRepo, supportMessageRepo).
+		SetKnowledgeMatcher(supportCoverageKnowledgeMatcher, docsSpaceRepo, supportContentSourceRepo).
+		SetTemporalClient(temporalClient)
+	supportCoverageTraceService := service.NewSupportCoverageRetrievalTraceService(supportCoverageAnalysisRepo)
 	supportEventService := service.NewSupportEventService(supportEventRepo, supportCoverageService)
 	supportEventRecorder := service.NewSupportEventAsyncRecorder(supportEventService, 250)
 	supportAIService.SetSupportEventRecorder(supportEventRecorder)
+	supportAIService.SetSupportAIRetrievalTraceRecorder(supportCoverageTraceService)
 	supportInboxService.SetSupportEventRecorder(supportEventRecorder)
 
 	supportCoverageDigestService := service.NewSupportCoverageDigestService(
@@ -1188,6 +1201,9 @@ func main() {
 	}
 	if err := supportCoverageService.EnsureDailyEnrichment(context.Background()); err != nil {
 		slog.Error("failed to ensure coverage gap daily enrichment workflow", "error", err)
+	}
+	if err := supportCoverageDailyAnalyzer.EnsureDailyAnalysis(context.Background()); err != nil {
+		slog.Error("failed to ensure coverage daily analysis workflow", "error", err)
 	}
 
 	// Start sprint automation cron workflow via Temporal (replaces local ticker).

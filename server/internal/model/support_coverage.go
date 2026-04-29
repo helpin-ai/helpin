@@ -72,6 +72,13 @@ const (
 	SupportCoverageGapStatusHumanOnly = "human_only"
 )
 
+// ─── Gap sources ───────────────────────────────────────────────────────────
+
+const (
+	SupportCoverageGapSourceEventDetection            = "event_detection"
+	SupportCoverageGapSourceDailyConversationAnalysis = "daily_conversation_analysis"
+)
+
 // ─── Suggestion types ──────────────────────────────────────────────────────
 
 const (
@@ -244,6 +251,7 @@ type SupportCoverageGapFilter struct {
 	V1GapType string `json:"v1_gap_type"`
 	IssueKey  string `json:"issue_key"`
 	Search    string `json:"search"`
+	ShowRaw   bool   `json:"show_raw"`
 	Page      int    `json:"page"`
 	PerPage   int    `json:"per_page"`
 }
@@ -263,11 +271,20 @@ type SupportCoverageGapListItem struct {
 // and suggestions.
 type SupportCoverageGapDetail struct {
 	SupportCoverageGap
-	TopicTitle          string                      `json:"topic_title"`
-	StatusChangedByName string                      `json:"status_changed_by_name"`
-	Evidence            []SupportGapEvidence        `json:"evidence"`
-	Suggestions         []SupportGapSuggestion      `json:"suggestions"`
-	RelatedArticles     []SupportCoverageGapArticle `json:"related_articles"`
+	TopicTitle          string                              `json:"topic_title"`
+	StatusChangedByName string                              `json:"status_changed_by_name"`
+	AnalysisExplanation *SupportCoverageAnalysisExplanation `json:"analysis_explanation,omitempty"`
+	Recommendations     []SupportCoverageRecommendation     `json:"recommendations"`
+	Evidence            []SupportGapEvidence                `json:"evidence"`
+	Suggestions         []SupportGapSuggestion              `json:"suggestions"`
+	RelatedArticles     []SupportCoverageGapArticle         `json:"related_articles"`
+}
+
+type SupportCoverageAnalysisExplanation struct {
+	CustomerNeed    string `json:"customer_need"`
+	AIFailure       string `json:"ai_failure"`
+	HumanResolution string `json:"human_resolution"`
+	DecisionReason  string `json:"decision_reason"`
 }
 
 // SupportConversationCoverageState tells the frontend whether
