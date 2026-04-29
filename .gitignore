@@ -41,6 +41,9 @@ plane
 *.pdb
 *.profraw
 
+# Scratch images
+waqar-images/
+
 # Claude Code
 .claude/settings.local.json
 .claude/skills/
