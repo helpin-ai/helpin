@@ -82,7 +82,6 @@ const DEFAULT_VISIBLE = [
   'tasks',
   'points',
   'owner',
-  'objective',
   'target_date',
 ];
 
@@ -870,20 +869,35 @@ function InlineEpicLabelsCell({
   onLabelsChange: (labels: Label[]) => void;
   onUpdate: (epicId: string, patch: UpdateEpicRequest) => Promise<void>;
 }) {
-  const selectedLabelIds = (entry.labels ?? []).map((label) => label.id);
+  const labels = entry.labels ?? [];
+  const selectedLabelIds = labels.map((label) => label.id);
 
   return (
-    <div onClick={(event) => event.stopPropagation()}>
-      <LabelPicker
-        workspaceId={workspaceId}
-        teamId={entry.epic.team_id || undefined}
-        labels={allLabels}
-        selectedLabelIds={selectedLabelIds}
-        onLabelsChange={onLabelsChange}
-        onChange={async (labelIds) => {
-          await onUpdate(entry.epic.id, { label_ids: labelIds });
-        }}
-      />
+    <div onClick={(event) => event.stopPropagation()} className="group/lbl flex min-w-0 items-center gap-1">
+      {labels.length > 0 ? (
+        <div className="flex min-w-0 items-center gap-1.5" title={labels.map((l) => l.name).join(', ')}>
+          <span
+            className="h-2 w-2 shrink-0 rounded-full"
+            style={{ backgroundColor: labels[0].color ? (labels[0].color.startsWith('#') ? labels[0].color : `#${labels[0].color}`) : 'var(--muted-foreground)' }}
+          />
+          <span className="truncate text-xs text-muted-foreground">
+            {labels[0].name}{labels.length > 1 ? ` +${labels.length - 1} more` : ''}
+          </span>
+        </div>
+      ) : null}
+      <div className={labels.length > 0 ? 'opacity-0 group-hover/lbl:opacity-100 transition-opacity shrink-0' : 'shrink-0'}>
+        <LabelPicker
+          workspaceId={workspaceId}
+          teamId={entry.epic.team_id || undefined}
+          labels={allLabels}
+          selectedLabelIds={selectedLabelIds}
+          onLabelsChange={onLabelsChange}
+          onChange={async (labelIds) => {
+            await onUpdate(entry.epic.id, { label_ids: labelIds });
+          }}
+          triggerOnly
+        />
+      </div>
     </div>
   );
 }
@@ -899,15 +913,24 @@ function InlineEpicObjectivesCell({
   selectedObjectives: ObjectivePickerSelection[];
   onChange: (epicId: string, objectiveIds: string[]) => Promise<void>;
 }) {
+  const objectives = entry.objectives ?? [];
   return (
-    <div onClick={(event) => event.stopPropagation()}>
-      <ObjectivePicker
-        objectives={allObjectives}
-        selectedObjectiveIds={(entry.objectives ?? []).map((objective) => objective.id)}
-        selectedObjectives={selectedObjectives}
-        onChange={(objectiveIds) => onChange(entry.epic.id, objectiveIds)}
-        addLabel="Add objective"
-      />
+    <div onClick={(event) => event.stopPropagation()} className="group/obj flex min-w-0 items-center gap-1">
+      {objectives.length > 0 ? (
+        <span className="truncate text-xs text-muted-foreground" title={objectives.map((o) => o.name).join(', ')}>
+          {objectives[0].name}{objectives.length > 1 ? ` +${objectives.length - 1} more` : ''}
+        </span>
+      ) : null}
+      <div className={objectives.length > 0 ? 'opacity-0 group-hover/obj:opacity-100 transition-opacity shrink-0' : 'shrink-0'}>
+        <ObjectivePicker
+          objectives={allObjectives}
+          selectedObjectiveIds={objectives.map((objective) => objective.id)}
+          selectedObjectives={selectedObjectives}
+          onChange={(objectiveIds) => onChange(entry.epic.id, objectiveIds)}
+          addLabel={objectives.length === 0 ? 'Add objective' : 'Edit'}
+          triggerOnly
+        />
+      </div>
     </div>
   );
 }
@@ -1252,8 +1275,8 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
             );
           }
           return objectives.length > 0 ? (
-            <span className="truncate text-xs text-muted-foreground block max-w-[150px]">
-              {objectives.map((o) => o.name).join(', ')}
+            <span className="truncate text-xs text-muted-foreground block" title={objectives.map((o) => o.name).join(', ')}>
+              {objectives[0].name}{objectives.length > 1 ? ` +${objectives.length - 1} more` : ''}
             </span>
           ) : (
             <MinusSignIcon className="h-3.5 w-3.5 text-muted-foreground" />
@@ -1347,17 +1370,22 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
               onUpdate={updateEpicField}
             />
           ) : (
-            <div className="flex flex-wrap gap-1">
-              {(info.row.original.labels ?? []).length > 0 ? (
-                info.row.original.labels.map((l) => (
-                  <span key={l.id} className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium">
-                    {l.name}
+            (() => {
+              const lbls = info.row.original.labels ?? [];
+              return lbls.length > 0 ? (
+                <div className="flex min-w-0 items-center gap-1.5" title={lbls.map((l) => l.name).join(', ')}>
+                  <span
+                    className="h-2 w-2 shrink-0 rounded-full"
+                    style={{ backgroundColor: lbls[0].color ? (lbls[0].color.startsWith('#') ? lbls[0].color : `#${lbls[0].color}`) : 'var(--muted-foreground)' }}
+                  />
+                  <span className="truncate text-xs text-muted-foreground">
+                    {lbls[0].name}{lbls.length > 1 ? ` +${lbls.length - 1} more` : ''}
                   </span>
-                ))
+                </div>
               ) : (
                 <MinusSignIcon className="h-3.5 w-3.5 text-muted-foreground" />
-              )}
-            </div>
+              );
+            })()
           )
         ),
       }),

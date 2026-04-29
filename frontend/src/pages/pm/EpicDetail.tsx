@@ -683,7 +683,7 @@ export function EpicDetailPage() {
           </div>
         )}
         {/* ── Left column ────────────────────────────────────────── */}
-        <div className="min-h-0 overflow-y-auto px-8 py-6">
+        <div className="min-h-0 overflow-y-auto px-8 pb-24 pt-6">
           {/* Title */}
           <input
             type="text"
@@ -864,7 +864,7 @@ export function EpicDetailPage() {
 
           {/* AI Planning */}
           <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">AI Planning</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">AI Agents</h3>
             <div className="mt-3">
               {workspaceId ? (
                 <EpicPlannerPanel

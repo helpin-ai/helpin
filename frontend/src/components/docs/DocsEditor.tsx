@@ -1403,7 +1403,7 @@ img { max-width: 100%; }
             />
           </div>
         ) : (
-          <div className="mx-auto max-w-3xl">
+          <div className="mx-auto max-w-4xl">
             {showSearch && editor && (
               <SearchReplaceBar
                 editor={editor}

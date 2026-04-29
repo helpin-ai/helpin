@@ -165,7 +165,7 @@ export function ConversationActionsMenu({
           </DropdownMenuItem>
           <DropdownMenuItem onClick={handleUpdateSubject} className={itemClassName}>
             <PencilEdit01Icon className={iconClassName} />
-            Set conversation subject
+            Set subject
           </DropdownMenuItem>
           {moveOptions.length > 0 && (
             <>

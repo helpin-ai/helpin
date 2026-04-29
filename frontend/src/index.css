@@ -338,7 +338,7 @@
 .ProseMirror.is-editor-empty > p.is-empty:first-child::before {
   content: attr(data-placeholder);
   float: left;
-  color: var(--muted-foreground);
+  color: color-mix(in srgb, var(--muted-foreground) 50%, transparent);
   pointer-events: none;
   height: 0;
 }
@@ -347,7 +347,7 @@
 .ProseMirror.is-editor-empty p.is-empty::before {
   content: attr(data-placeholder);
   float: left;
-  color: var(--muted-foreground);
+  color: color-mix(in srgb, var(--muted-foreground) 50%, transparent);
   pointer-events: none;
   height: 0;
 }
@@ -363,11 +363,14 @@
   margin-bottom: 0;
 }
 .tiptap code {
-  background: var(--muted);
+  background: color-mix(in srgb, var(--muted-foreground) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--muted-foreground) 18%, transparent);
   border-radius: 0.25rem;
-  padding: 0.125rem 0.375rem;
-  font-size: 0.85em;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.84em;
   font-weight: 500;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: var(--foreground);
 }
 .tiptap a {
   color: var(--brand-500);
