@@ -482,7 +482,7 @@ func (s *DocsDocumentService) ToggleLock(ctx context.Context, id string, lock bo
 // checkLocked returns an error if the document is locked, preventing mutation.
 func checkLocked(doc *model.DocsDocument) error {
 	if doc.IsLocked {
-		return fmt.Errorf("document is locked and cannot be modified")
+		return ErrDocsDocumentLocked
 	}
 	return nil
 }

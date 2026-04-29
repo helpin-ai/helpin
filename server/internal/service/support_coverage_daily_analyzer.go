@@ -74,6 +74,7 @@ type CoverageKnowledgeCandidate struct {
 	SourceType    string  `json:"source_type"`
 	TargetType    string  `json:"target_type"`
 	DocumentID    string  `json:"document_id,omitempty"`
+	BlockID       string  `json:"block_id,omitempty"`
 	PageID        string  `json:"page_id,omitempty"`
 	Title         string  `json:"title"`
 	URL           string  `json:"url,omitempty"`

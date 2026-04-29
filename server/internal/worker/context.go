@@ -208,6 +208,8 @@ type ServiceBridge struct {
 	EnsureEpicSpecDoc    func(ctx context.Context, workspaceID, epicID, actorID string) (*model.DocsDocument, error)
 	EnsureTaskPlanDoc    func(ctx context.Context, workspaceID, taskID, actorID string) (*model.DocsDocument, error)
 	GetDocumentContent   func(ctx context.Context, documentID string) (string, error)
+	ListDocumentBlocks   func(ctx context.Context, documentID string) ([]model.DocsBlock, error)
+	UpdateDocumentBlock  func(ctx context.Context, documentID, blockID string, revision int, content json.RawMessage, actorID string) (*model.DocsContent, error)
 	WriteDocumentContent func(ctx context.Context, workspaceID, documentID string, content json.RawMessage) error
 	LinkDocumentToObject func(ctx context.Context, workspaceID, documentID, linkedObjectType, linkedObjectID, linkContext, actorID string) error
 	UpsertDocumentKey    func(ctx context.Context, record *model.DocsDocumentKey) error

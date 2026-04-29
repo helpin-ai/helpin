@@ -62,13 +62,13 @@ export function SharedDocumentView() {
     <div className="min-h-screen bg-background">
       {/* Clean header */}
       <header className="border-b border-border/40 bg-background/80 backdrop-blur-sm sticky top-0 z-10">
-        <div className="mx-auto max-w-4xl px-6 py-3">
+        <div className="mx-auto max-w-7xl px-6 py-3">
           <span className="text-xs text-muted-foreground">Shared document</span>
         </div>
       </header>
 
       {/* Document content */}
-      <main className="mx-auto max-w-4xl px-6 py-8">
+      <main className="mx-auto max-w-7xl px-6 py-8">
         <DocsEditor
           title={doc.title}
           initialContent={content?.content as JSONContent | null}

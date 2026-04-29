@@ -146,6 +146,7 @@ const taskMatchesFilters = (task: Task, teamId: string | null, filters: BoardFil
   if (!matchesCsv(task.requester_member_id, filters.requester_member_id)) return false;
   if (filters.blocked && String(task.blocked) !== filters.blocked) return false;
   if (filters.blocking && String(task.is_blocking_other_task ?? false) !== filters.blocking) return false;
+  if (filters.archived && String(task.archived ?? false) !== filters.archived) return false;
   if (filters.updated_after && task.updated_at < filters.updated_after) return false;
   return true;
 };

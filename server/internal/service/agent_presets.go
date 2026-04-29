@@ -356,7 +356,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			RuntimeKind:           productPlannerProfile.RuntimeKind,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
-			AllowedTools:          []string{"list_deals", "update_deal_stage", "add_deal_note", "list_contacts", "list_buyer_signals", "list_documents", "list_collections", "read_document", "search_documents"},
+			AllowedTools:          []string{"list_deals", "update_deal_stage", "add_deal_note", "list_contacts", "list_buyer_signals", "list_documents", "list_collections", "read_document", "get_document_blocks", "search_documents"},
 			AllowedCommands:       []string{},
 			AllowedTargetTypes:    []string{"crm_deal", "crm_contact", "support_conversation", "document", "workspace"},
 			ApprovalMode:          "never",

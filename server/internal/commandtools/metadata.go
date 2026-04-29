@@ -233,6 +233,34 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		},
 	},
 	{
+		CommandName: "docs.update_document_block",
+		Alias:       "update_document_block",
+		Category:    "Docs",
+		Description: "Update one addressable block in a Helpin Docs document using its current revision.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"document_id": map[string]any{
+					"type":        "string",
+					"description": "The document ID to update",
+				},
+				"block_id": map[string]any{
+					"type":        "string",
+					"description": "The stable block ID to update",
+				},
+				"revision": map[string]any{
+					"type":        "integer",
+					"description": "The current block revision from read_document",
+				},
+				"content": map[string]any{
+					"type":        "object",
+					"description": "The replacement block node JSON",
+				},
+			},
+			"required": []string{"document_id", "block_id", "revision", "content"},
+		},
+	},
+	{
 		CommandName: "docs.link_document_to_object",
 		Alias:       "link_document_to_object",
 		Category:    "Docs",

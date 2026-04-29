@@ -264,6 +264,9 @@ importers:
       mammoth:
         specifier: ^1.12.0
         version: 1.12.0
+      mermaid:
+        specifier: ^11.14.0
+        version: 11.14.0
       next-themes:
         specifier: ^0.4.6
         version: 0.4.6(react-dom@19.2.5(react@19.2.5))(react@19.2.5)

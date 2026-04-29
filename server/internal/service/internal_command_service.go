@@ -33,6 +33,7 @@ type InternalCommandService struct {
 	crmEnrichmentService *CRMEnrichmentService
 	docsDocumentService  *DocsDocumentService
 	docsContentService   *DocsContentService
+	docsBlockService     *DocsBlockService
 	docsContentRepo      *repository.DocsContentRepository
 	docsLinkService      *DocsLinkService
 	pmAutomationService  *PMAutomationService
@@ -75,6 +76,13 @@ func (s *InternalCommandService) SetDocsCreateDependencies(documentSvc *DocsDocu
 	}
 	s.docsDocumentService = documentSvc
 	s.docsContentRepo = contentRepo
+}
+
+func (s *InternalCommandService) SetDocsBlockService(blockSvc *DocsBlockService) {
+	if s == nil {
+		return
+	}
+	s.docsBlockService = blockSvc
 }
 
 func NewInternalCommandService(
@@ -759,6 +767,44 @@ func (s *InternalCommandService) registerDefaults() {
 				return nil, err
 			}
 			return mustJSON(map[string]any{"document_id": req.DocumentID, "content_id": content.ID}), nil
+		},
+	})
+	s.register(InternalCommandDefinition{
+		Name:                 "docs.update_document_block",
+		Module:               "docs",
+		Mutating:             true,
+		SupportedTargetTypes: []string{"document"},
+		Tool:                 mustCommandToolMetadata("docs.update_document_block"),
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.docsBlockService == nil {
+				return nil, fmt.Errorf("docs block service is not available")
+			}
+			var req struct {
+				DocumentID string          `json:"document_id"`
+				BlockID    string          `json:"block_id"`
+				Revision   int             `json:"revision"`
+				Content    json.RawMessage `json:"content"`
+			}
+			if err := json.Unmarshal(input, &req); err != nil {
+				return nil, fmt.Errorf("parse document block input: %w", err)
+			}
+			if strings.TrimSpace(req.DocumentID) == "" {
+				return nil, fmt.Errorf("document_id is required")
+			}
+			if strings.TrimSpace(req.BlockID) == "" {
+				return nil, fmt.Errorf("block_id is required")
+			}
+			if req.Revision <= 0 {
+				return nil, fmt.Errorf("revision is required")
+			}
+			if len(req.Content) == 0 || strings.TrimSpace(string(req.Content)) == "" || strings.TrimSpace(string(req.Content)) == "null" {
+				return nil, fmt.Errorf("content is required")
+			}
+			content, err := s.docsBlockService.Patch(ctx, req.DocumentID, req.BlockID, req.Revision, req.Content, meta.ActorID)
+			if err != nil {
+				return nil, err
+			}
+			return mustJSON(map[string]any{"document_id": req.DocumentID, "block_id": req.BlockID, "content_id": content.ID}), nil
 		},
 	})
 	s.register(InternalCommandDefinition{

@@ -928,6 +928,9 @@ func unsupportedCodexServerRequestError(msg codexRPCMessage) error {
 }
 
 func codexApprovalPolicyForRun(run *appmodel.AgentRun) string {
+	if run != nil && strings.TrimSpace(run.InvocationMode) == appmodel.InvocationModeAutonomous {
+		return "never"
+	}
 	return "on-request"
 }
 
