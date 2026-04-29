@@ -263,7 +263,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	claims, err := h.jwtManager.ValidateToken(token)
-	if err != nil {
+	if err != nil || claims.TokenUse != auth.TokenUseAccess {
 		http.Error(w, "invalid token", http.StatusUnauthorized)
 		return
 	}

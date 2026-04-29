@@ -495,6 +495,13 @@ func main() {
 
 	// Initialize repositories.
 	userRepo := repository.NewUserRepository(db)
+	if len(cfg.PlatformAdminEmails) > 0 {
+		updated, err := userRepo.GrantPlatformAdminByEmails(context.Background(), cfg.PlatformAdminEmails)
+		if err != nil {
+			fatalWithSentry("failed to bootstrap platform admins", err)
+		}
+		slog.Info("startup: platform admin bootstrap complete", "configured_emails", len(cfg.PlatformAdminEmails), "updated_users", updated)
+	}
 	passkeyRepo := repository.NewPasskeyRepository(db)
 	orgRepo := repository.NewOrganizationRepository(db)
 	workspaceRepo := repository.NewWorkspaceRepository(db)

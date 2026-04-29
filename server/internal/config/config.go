@@ -77,6 +77,7 @@ type Config struct {
 	AppBaseURL                        string
 	WebAuthnRPID                      string
 	WebAuthnRPOrigins                 []string
+	PlatformAdminEmails               []string
 
 	// CRM encryption & Gmail OAuth (optional — Gmail sync disabled if not set)
 	TOTPEncryptionKey     string
@@ -222,6 +223,7 @@ func Load() (*Config, error) {
 		AppBaseURL:                        appBaseURL,
 		WebAuthnRPID:                      webAuthnRPID,
 		WebAuthnRPOrigins:                 webAuthnRPOrigins,
+		PlatformAdminEmails:               parseCSV(os.Getenv("PLATFORM_ADMIN_EMAILS")),
 		TOTPEncryptionKey:                 strings.TrimSpace(os.Getenv("TOTP_ENCRYPTION_KEY")),
 		CRMEncryptionKey:                  os.Getenv("CRM_ENCRYPTION_KEY"),
 		PMImportEncryptionKey:             strings.TrimSpace(os.Getenv("PM_IMPORT_ENCRYPTION_KEY")),
@@ -281,6 +283,25 @@ func parseOptionalOrigins(value string) []string {
 		}
 	}
 	return origins
+}
+
+func parseCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		cleaned := strings.TrimSpace(part)
+		if cleaned == "" {
+			continue
+		}
+		key := strings.ToLower(cleaned)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, cleaned)
+	}
+	return out
 }
 
 func originHost(value string) string {

@@ -4,21 +4,22 @@ import "time"
 
 // User represents a row in the users table.
 type User struct {
-	ID                    string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	Email                 string    `json:"email" gorm:"uniqueIndex;not null"`
-	PasswordHash          string    `json:"-" gorm:"not null"`
-	FullName              string    `json:"full_name" gorm:"not null"`
-	AvatarURL             *string   `json:"avatar_url"`
-	AvatarStyle           *string   `json:"avatar_style"`
-	AvatarSeed            *string   `json:"avatar_seed"`
-	AvatarBackgroundMode  *string   `json:"avatar_background_mode"`
-	AvatarBackgroundColor *string   `json:"avatar_background_color"`
-	DefaultWorkspaceID    *string   `json:"default_workspace_id" gorm:"type:uuid"`
-	TOTPSecretEncrypted   *string   `json:"-" gorm:"column:totp_secret_encrypted;type:text"`
-	TOTPVerified          bool      `json:"-" gorm:"column:totp_verified;not null;default:false"`
-	RecoveryCodesEncrypted *string  `json:"-" gorm:"column:recovery_codes_encrypted;type:text"`
-	CreatedAt             time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt             time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                     string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	Email                  string    `json:"email" gorm:"uniqueIndex;not null"`
+	PasswordHash           string    `json:"-" gorm:"not null"`
+	FullName               string    `json:"full_name" gorm:"not null"`
+	AvatarURL              *string   `json:"avatar_url"`
+	AvatarStyle            *string   `json:"avatar_style"`
+	AvatarSeed             *string   `json:"avatar_seed"`
+	AvatarBackgroundMode   *string   `json:"avatar_background_mode"`
+	AvatarBackgroundColor  *string   `json:"avatar_background_color"`
+	DefaultWorkspaceID     *string   `json:"default_workspace_id" gorm:"type:uuid"`
+	TOTPSecretEncrypted    *string   `json:"-" gorm:"column:totp_secret_encrypted;type:text"`
+	TOTPVerified           bool      `json:"-" gorm:"column:totp_verified;not null;default:false"`
+	RecoveryCodesEncrypted *string   `json:"-" gorm:"column:recovery_codes_encrypted;type:text"`
+	IsPlatformAdmin        bool      `json:"is_platform_admin" gorm:"column:is_platform_admin;not null;default:false"`
+	CreatedAt              time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt              time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (User) TableName() string { return "users" }
@@ -65,6 +66,7 @@ type UserProfile struct {
 	AvatarBackgroundColor *string   `json:"avatar_background_color"`
 	DefaultWorkspaceID    *string   `json:"default_workspace_id"`
 	TwoFAEnabled          bool      `json:"two_fa_enabled"`
+	IsPlatformAdmin       bool      `json:"is_platform_admin"`
 	CreatedAt             time.Time `json:"created_at"`
 	UpdatedAt             time.Time `json:"updated_at"`
 }

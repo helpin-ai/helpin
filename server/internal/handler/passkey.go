@@ -60,7 +60,7 @@ func (h *PasskeyHandler) AuthenticationOptions(w http.ResponseWriter, r *http.Re
 	resp, err := h.passkeyService.BeginAuthentication(r.Context(), req)
 	if err != nil {
 		if errors.Is(err, service.ErrNoPasskeyForAccount) {
-			writeError(w, http.StatusBadRequest, err.Error())
+			writeErrorCode(w, http.StatusBadRequest, err.Error(), "no_passkey")
 			return
 		}
 		writePasskeyError(w, err, http.StatusBadRequest)
@@ -117,11 +117,11 @@ func (h *PasskeyHandler) Delete(w http.ResponseWriter, r *http.Request) {
 func writePasskeyError(w http.ResponseWriter, err error, fallbackStatus int) {
 	switch {
 	case errors.Is(err, service.ErrPasskeyNotConfigured):
-		writeError(w, http.StatusServiceUnavailable, err.Error())
+		writeErrorCode(w, http.StatusServiceUnavailable, err.Error(), "passkeys_unavailable")
 	case errors.Is(err, service.ErrPasskeyNotFound):
-		writeError(w, http.StatusNotFound, err.Error())
+		writeErrorCode(w, http.StatusNotFound, err.Error(), "passkey_not_found")
 	case errors.Is(err, service.ErrNoPasskeyForAccount):
-		writeError(w, fallbackStatus, err.Error())
+		writeErrorCode(w, fallbackStatus, err.Error(), "no_passkey")
 	default:
 		writeError(w, fallbackStatus, err.Error())
 	}

@@ -7,10 +7,18 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+const (
+	TokenUseAccess  = "access"
+	TokenUseRefresh = "refresh"
+)
+
 // Claims represents the JWT claims embedded in each token.
 type Claims struct {
-	UserID string `json:"user_id"`
-	Email  string `json:"email"`
+	UserID          string `json:"user_id"`
+	Email           string `json:"email"`
+	TokenUse        string `json:"tu"`
+	MFASatisfied    bool   `json:"mfa,omitempty"`
+	IsPlatformAdmin bool   `json:"pa,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -28,6 +36,25 @@ type JWTManager struct {
 	secret []byte
 }
 
+type tokenPairOptions struct {
+	mfaSatisfied    bool
+	isPlatformAdmin bool
+}
+
+type TokenPairOption func(*tokenPairOptions)
+
+func WithMFASatisfied(mfaSatisfied bool) TokenPairOption {
+	return func(opts *tokenPairOptions) {
+		opts.mfaSatisfied = mfaSatisfied
+	}
+}
+
+func WithPlatformAdmin(isPlatformAdmin bool) TokenPairOption {
+	return func(opts *tokenPairOptions) {
+		opts.isPlatformAdmin = isPlatformAdmin
+	}
+}
+
 // NewJWTManager creates a new JWTManager with the given secret.
 func NewJWTManager(secret string) *JWTManager {
 	return &JWTManager{secret: []byte(secret)}
@@ -35,13 +62,22 @@ func NewJWTManager(secret string) *JWTManager {
 
 // GenerateTokenPair creates a new access token (15 min) and refresh token.
 // When rememberMe is true, the refresh token lasts 30 days; otherwise 24 hours.
-func (m *JWTManager) GenerateTokenPair(userID, email string, rememberMe bool) (accessToken, refreshToken string, err error) {
+func (m *JWTManager) GenerateTokenPair(userID, email string, rememberMe bool, options ...TokenPairOption) (accessToken, refreshToken string, err error) {
 	now := time.Now()
+	opts := tokenPairOptions{}
+	for _, option := range options {
+		if option != nil {
+			option(&opts)
+		}
+	}
 
 	// Access token: 15 minutes
 	accessClaims := Claims{
-		UserID: userID,
-		Email:  email,
+		UserID:          userID,
+		Email:           email,
+		TokenUse:        TokenUseAccess,
+		MFASatisfied:    opts.mfaSatisfied,
+		IsPlatformAdmin: opts.isPlatformAdmin,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(15 * time.Minute)),
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -60,8 +96,11 @@ func (m *JWTManager) GenerateTokenPair(userID, email string, rememberMe bool) (a
 		refreshDuration = 30 * 24 * time.Hour
 	}
 	refreshClaims := Claims{
-		UserID: userID,
-		Email:  email,
+		UserID:          userID,
+		Email:           email,
+		TokenUse:        TokenUseRefresh,
+		MFASatisfied:    opts.mfaSatisfied,
+		IsPlatformAdmin: opts.isPlatformAdmin,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(refreshDuration)),
 			IssuedAt:  jwt.NewNumericDate(now),

@@ -41,7 +41,7 @@ import {
 import { cn } from '@/lib/utils';
 import { IconPicker, StoredIcon } from '@/components/ui/icon-picker';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { buildCollectionTreeOptions, type CollectionTreeOption } from '@/components/docs/CollectionTreePicker';
+import { buildCollectionTreeOptions } from '@/components/docs/CollectionTreePicker';
 import {
   Popover,
   PopoverContent,

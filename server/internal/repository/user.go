@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"gorm.io/gorm"
 
@@ -57,6 +58,35 @@ func (r *UserRepository) GetByID(ctx context.Context, id string) (*model.User, e
 		return nil, fmt.Errorf("get user by id: %w", err)
 	}
 	return user, nil
+}
+
+// GrantPlatformAdminByEmails marks existing users with matching emails as platform admins.
+func (r *UserRepository) GrantPlatformAdminByEmails(ctx context.Context, emails []string) (int64, error) {
+	normalized := make([]string, 0, len(emails))
+	seen := make(map[string]struct{}, len(emails))
+	for _, email := range emails {
+		cleaned := strings.ToLower(strings.TrimSpace(email))
+		if cleaned == "" {
+			continue
+		}
+		if _, ok := seen[cleaned]; ok {
+			continue
+		}
+		seen[cleaned] = struct{}{}
+		normalized = append(normalized, cleaned)
+	}
+	if len(normalized) == 0 {
+		return 0, nil
+	}
+
+	result := r.db.WithContext(ctx).
+		Model(&model.User{}).
+		Where("lower(email) IN ?", normalized).
+		Update("is_platform_admin", true)
+	if result.Error != nil {
+		return 0, fmt.Errorf("grant platform admin: %w", result.Error)
+	}
+	return result.RowsAffected, nil
 }
 
 // Update modifies a user's profile fields.

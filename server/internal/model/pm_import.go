@@ -62,6 +62,7 @@ type ShortcutUserMatch struct {
 	MatchedUserID *string `json:"matched_user_id"`
 	MatchedName   *string `json:"matched_name"`
 	ShortcutName  *string `json:"shortcut_name,omitempty"`
+	StoryCount    int     `json:"story_count"`
 }
 
 type ShortcutImportPreviewSummary struct {
@@ -192,6 +193,45 @@ type ShortcutImportStatusResponse struct {
 	CreatedAt   *time.Time                   `json:"created_at,omitempty"`
 	UpdatedAt   *time.Time                   `json:"updated_at,omitempty"`
 	CompletedAt *time.Time                   `json:"completed_at,omitempty"`
+}
+
+type ShortcutImportCount struct {
+	Entity string `json:"entity"`
+	Count  int    `json:"count"`
+}
+
+type ShortcutImportWarningGroup struct {
+	Type     string   `json:"type"`
+	Count    int      `json:"count"`
+	Warnings []string `json:"warnings"`
+}
+
+type ShortcutImportDiagnosticItem struct {
+	Type      string `json:"type"`
+	Key       string `json:"key,omitempty"`
+	Message   string `json:"message"`
+	Count     int    `json:"count,omitempty"`
+	Retryable bool   `json:"retryable"`
+}
+
+type ShortcutImportDiagnostics struct {
+	Counts               []ShortcutImportCount          `json:"counts"`
+	WarningGroups        []ShortcutImportWarningGroup   `json:"warning_groups"`
+	FailedMedia          []ShortcutImportDiagnosticItem `json:"failed_media"`
+	UnmappedMembers      []ShortcutImportDiagnosticItem `json:"unmapped_members"`
+	UnmappedStates       []ShortcutImportDiagnosticItem `json:"unmapped_states"`
+	UnmappedTeams        []ShortcutImportDiagnosticItem `json:"unmapped_teams"`
+	RetryableFailures    []ShortcutImportDiagnosticItem `json:"retryable_failures"`
+	NonRetryableFailures []ShortcutImportDiagnosticItem `json:"non_retryable_failures"`
+}
+
+type ShortcutImportDetailResponse struct {
+	ShortcutImportStatusResponse
+	Options            *ShortcutImportOptions    `json:"options,omitempty"`
+	Diagnostics        ShortcutImportDiagnostics `json:"diagnostics"`
+	Retryable          bool                      `json:"retryable"`
+	RetryBlockedReason string                    `json:"retry_blocked_reason,omitempty"`
+	Cancelable         bool                      `json:"cancelable"`
 }
 
 type ShortcutAPIImportPreviewRequest struct {
