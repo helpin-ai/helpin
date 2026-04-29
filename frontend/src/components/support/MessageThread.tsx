@@ -818,7 +818,7 @@ export function MessageThread({
       </ScrollArea>
 
       {/* Soft gradient fade between thread and composer */}
-      <div className="pointer-events-none h-6 -mt-6 relative z-10 bg-gradient-to-t from-background to-transparent" />
+      <div className="pointer-events-none h-3 -mt-3 relative z-10 bg-gradient-to-t from-background to-transparent" />
 
       {/* Reply composer — show during loading (cache may still populate) and
           after a successful load. Only hide when the fetch settled AND the
