@@ -1,8 +1,8 @@
 package auth
 
 import (
-	"crypto/rsa"
 	"crypto/rand"
+	"crypto/rsa"
 	"testing"
 	"time"
 
@@ -10,9 +10,9 @@ import (
 )
 
 const (
-	testSecret  = "test-secret-key-for-jwt-testing"
-	testUserID  = "usr_abc123"
-	testEmail   = "alice@example.com"
+	testSecret = "test-secret-key-for-jwt-testing"
+	testUserID = "usr_abc123"
+	testEmail  = "alice@example.com"
 )
 
 func TestGenerateAndValidateAccessToken(t *testing.T) {
@@ -33,6 +33,9 @@ func TestGenerateAndValidateAccessToken(t *testing.T) {
 	}
 	if claims.Email != testEmail {
 		t.Errorf("Email = %q, want %q", claims.Email, testEmail)
+	}
+	if claims.TokenUse != TokenUseAccess {
+		t.Errorf("TokenUse = %q, want %q", claims.TokenUse, TokenUseAccess)
 	}
 	if claims.Subject != testUserID {
 		t.Errorf("Subject = %q, want %q", claims.Subject, testUserID)
@@ -66,6 +69,9 @@ func TestGenerateAndValidateRefreshToken(t *testing.T) {
 	if claims.Email != testEmail {
 		t.Errorf("Email = %q, want %q", claims.Email, testEmail)
 	}
+	if claims.TokenUse != TokenUseRefresh {
+		t.Errorf("TokenUse = %q, want %q", claims.TokenUse, TokenUseRefresh)
+	}
 	if claims.Subject != testUserID {
 		t.Errorf("Subject = %q, want %q", claims.Subject, testUserID)
 	}
@@ -76,6 +82,37 @@ func TestGenerateAndValidateRefreshToken(t *testing.T) {
 	expiresIn := time.Until(claims.ExpiresAt.Time)
 	if expiresIn < 23*time.Hour+59*time.Minute || expiresIn > 24*time.Hour+1*time.Minute {
 		t.Errorf("refresh token expiry = %v from now, want ~24h", expiresIn)
+	}
+}
+
+func TestGenerateTokenPair_AdminClaims(t *testing.T) {
+	mgr := NewJWTManager(testSecret)
+
+	accessToken, refreshToken, err := mgr.GenerateTokenPair(
+		testUserID,
+		testEmail,
+		false,
+		WithMFASatisfied(true),
+		WithPlatformAdmin(true),
+	)
+	if err != nil {
+		t.Fatalf("GenerateTokenPair() error = %v", err)
+	}
+
+	accessClaims, err := mgr.ValidateToken(accessToken)
+	if err != nil {
+		t.Fatalf("ValidateToken(accessToken) error = %v", err)
+	}
+	if !accessClaims.MFASatisfied || !accessClaims.IsPlatformAdmin {
+		t.Fatalf("access claims missing admin mfa flags: %+v", accessClaims)
+	}
+
+	refreshClaims, err := mgr.ValidateToken(refreshToken)
+	if err != nil {
+		t.Fatalf("ValidateToken(refreshToken) error = %v", err)
+	}
+	if !refreshClaims.MFASatisfied || !refreshClaims.IsPlatformAdmin {
+		t.Fatalf("refresh claims missing admin mfa flags: %+v", refreshClaims)
 	}
 }
 

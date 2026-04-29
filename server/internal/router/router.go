@@ -334,6 +334,16 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/widget-tokens", h.SupportInboxWidget.GetWidgetTokens)
 		})
 
+		// ---- Platform admin routes (audited before auth so denied attempts are logged) ----
+		r.Route("/admin", func(r chi.Router) {
+			r.Use(middleware.AdminAuditLogger(jwtManager))
+			r.Use(middleware.RequireAuth(jwtManager))
+			r.Use(authorization.RequirePlatformAdmin)
+			r.Get("/webhook-events", h.AdminWebhookEvent.List)
+			r.Get("/webhook-events/{id}", h.AdminWebhookEvent.GetByID)
+			r.Get("/email-queue", h.AdminEmailQueue.List)
+		})
+
 		// ---- Protected routes ----
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAuth(jwtManager))
@@ -357,13 +367,6 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			// User notification settings (account-level, no workspace scope)
 			r.Get("/user/notification-settings", h.UserNotifSettings.Get)
 			r.Put("/user/notification-settings", h.UserNotifSettings.Update)
-
-			// Admin endpoints (JWT-protected, no workspace scope)
-			r.Route("/admin", func(r chi.Router) {
-				r.Get("/webhook-events", h.AdminWebhookEvent.List)
-				r.Get("/webhook-events/{id}", h.AdminWebhookEvent.GetByID)
-				r.Get("/email-queue", h.AdminEmailQueue.List)
-			})
 
 			// Organizations
 			r.Get("/organizations", h.Organization.List)
@@ -412,6 +415,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMImport)).Post("/import/shortcut/api/execute", h.PMImport.ExecuteShortcutAPI)
 				r.With(requirePerm(authorization.PermPMImport)).Get("/import/shortcut/status", h.PMImport.ListShortcutStatuses)
 				r.With(requirePerm(authorization.PermPMImport)).Get("/import/shortcut/status/{importId}", h.PMImport.ShortcutStatus)
+				r.With(requirePerm(authorization.PermPMImport)).Get("/import/shortcut/status/{importId}/detail", h.PMImport.ShortcutStatusDetail)
+				r.With(requirePerm(authorization.PermPMImport)).Post("/import/shortcut/status/{importId}/cancel", h.PMImport.CancelShortcutImport)
+				r.With(requirePerm(authorization.PermPMImport)).Post("/import/shortcut/status/{importId}/retry", h.PMImport.RetryShortcutImport)
 			})
 
 			// Settings — all routes require workspace access

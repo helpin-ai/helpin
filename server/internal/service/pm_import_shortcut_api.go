@@ -401,7 +401,7 @@ func (s *PMImportService) buildShortcutPreviewFromRows(ctx context.Context, work
 	labelNames := map[string]struct{}{}
 	teamCounts := map[string]int{}
 	workflowStateCounts := map[string]*shortcutWorkflowAggregate{}
-	emails := map[string]struct{}{}
+	emailCounts := map[string]int{}
 	checklistCount := 0
 	commentCount := 0
 	externalLinkCount := 0
@@ -432,10 +432,10 @@ func (s *PMImportService) buildShortcutPreviewFromRows(ctx context.Context, work
 		workflow.StateCounts[row.State]++
 		workflow.TaskCount++
 		if row.Requester != "" {
-			emails[normalizeShortcutName(row.Requester)] = struct{}{}
+			emailCounts[normalizeShortcutName(row.Requester)]++
 		}
 		for _, owner := range shortcutOwnerEmails(row.Owners) {
-			emails[normalizeShortcutName(owner)] = struct{}{}
+			emailCounts[normalizeShortcutName(owner)]++
 		}
 		checklistCount += len(parseShortcutChecklist(row.Tasks))
 		commentCount += len(row.APIComments)
@@ -446,9 +446,9 @@ func (s *PMImportService) buildShortcutPreviewFromRows(ctx context.Context, work
 	if err != nil {
 		return nil, err
 	}
-	users := make([]model.ShortcutUserMatch, 0, len(emails))
-	for _, email := range sortedSetKeys(emails) {
-		match := model.ShortcutUserMatch{Email: email}
+	users := make([]model.ShortcutUserMatch, 0, len(emailCounts))
+	for _, email := range sortKeysByCount(emailCounts) {
+		match := model.ShortcutUserMatch{Email: email, StoryCount: emailCounts[email]}
 		if member, ok := memberByEmail[email]; ok {
 			match.MatchedUserID = &member.UserID
 			match.MatchedName = &member.FullName

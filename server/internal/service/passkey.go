@@ -247,7 +247,14 @@ func (s *PasskeyService) FinishAuthentication(ctx context.Context, req model.Pas
 		}, nil
 	}
 
-	accessToken, refreshToken, err := s.jwtManager.GenerateTokenPair(user.ID, user.Email, req.RememberMe)
+	mfaSatisfied := credential.Flags.UserVerified
+	accessToken, refreshToken, err := s.jwtManager.GenerateTokenPair(
+		user.ID,
+		user.Email,
+		req.RememberMe,
+		auth.WithMFASatisfied(mfaSatisfied),
+		auth.WithPlatformAdmin(user.IsPlatformAdmin),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("generate auth tokens: %w", err)
 	}

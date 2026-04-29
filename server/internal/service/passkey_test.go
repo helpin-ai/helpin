@@ -120,6 +120,13 @@ func TestPasskeyAuthenticationBypassesTwoFactorForVerifiedCredential(t *testing.
 	if resp.AccessToken == "" || resp.RefreshToken == "" {
 		t.Fatal("expected direct auth tokens for verified passkey authentication")
 	}
+	claims, err := svc.jwtManager.ValidateToken(resp.AccessToken)
+	if err != nil {
+		t.Fatalf("validate access token: %v", err)
+	}
+	if !claims.MFASatisfied {
+		t.Fatal("expected verified passkey auth to satisfy MFA in access token")
+	}
 	if resp.User == nil || resp.User.Email != user.Email {
 		t.Fatalf("expected authenticated user %q, got %+v", user.Email, resp.User)
 	}

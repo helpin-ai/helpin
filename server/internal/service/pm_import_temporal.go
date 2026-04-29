@@ -44,7 +44,7 @@ func (s *PMImportService) executeStoredShortcutAPIImport(ctx context.Context, im
 		}
 		return fmt.Errorf("load Shortcut import job: %w", err)
 	}
-	if job.Status == model.PMImportStatusCompleted || job.Status == model.PMImportStatusCanceled {
+	if job.Status == model.PMImportStatusCompleted || job.Status == model.PMImportStatusCanceled || job.Status == model.PMImportStatusFailed {
 		return nil
 	}
 	if len(s.encryptionKey) != 32 {
