@@ -99,6 +99,7 @@ type compactKnowledgeSearchResult struct {
 	ReferenceID   string  `json:"reference_id,omitempty"`
 	SourceType    string  `json:"source_type,omitempty"`
 	DocumentID    string  `json:"document_id,omitempty"`
+	BlockID       string  `json:"block_id,omitempty"`
 	SourceID      string  `json:"source_id,omitempty"`
 	ChunkIndex    int     `json:"chunk_index"`
 	Title         string  `json:"title,omitempty"`
@@ -122,6 +123,7 @@ func compactKnowledgeSearchResults(results []KnowledgeSearchResult) []compactKno
 			ReferenceID:   strings.TrimSpace(result.ReferenceID),
 			SourceType:    strings.TrimSpace(result.SourceType),
 			DocumentID:    strings.TrimSpace(result.DocumentID),
+			BlockID:       strings.TrimSpace(result.BlockID),
 			SourceID:      strings.TrimSpace(result.SourceID),
 			ChunkIndex:    result.ChunkIndex,
 			Title:         truncateTraceString(result.Title, supportAIRetrievalTraceMaxQuery),

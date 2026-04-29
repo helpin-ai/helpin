@@ -769,7 +769,7 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		},
 	}, toolListCollections)
 
-	r.register("read_document", "Read the metadata of a specific document by ID.", map[string]interface{}{
+	r.register("read_document", "Read a document by ID, including metadata, plain text, and compact addressable blocks with IDs and revisions.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"document_id": map[string]interface{}{
@@ -779,6 +779,27 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		},
 		"required": []string{"document_id"},
 	}, toolReadDocument)
+
+	r.register("get_document_blocks", "Fetch addressable blocks for a document. By default returns compact block metadata; set include_content with selected block_ids to retrieve full block JSON for precise edits.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"document_id": map[string]interface{}{
+				"type":        "string",
+				"description": "The document ID whose blocks should be fetched",
+			},
+			"block_ids": map[string]interface{}{
+				"type":        "array",
+				"description": "Optional stable block IDs to fetch. Use this when include_content is true.",
+				"items":       map[string]interface{}{"type": "string"},
+			},
+			"include_content": map[string]interface{}{
+				"type":        "boolean",
+				"description": "When true, include the full block node JSON. Limited to 20 blocks per call.",
+			},
+		},
+		"required":             []string{"document_id"},
+		"additionalProperties": false,
+	}, toolGetDocumentBlocks)
 
 	r.register("search_documents", "Search documents by keyword across the workspace.", map[string]interface{}{
 		"type": "object",
@@ -905,6 +926,7 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"create_document":         toolCreateDocument,
 		"create_task":             toolCreateTask,
 		"write_document_content":  toolWriteDocumentContent,
+		"update_document_block":   toolUpdateDocumentBlock,
 		"link_document_to_object": toolLinkDocumentToObject,
 		"ensure_epic_spec_doc":    toolEnsureEpicSpecDoc,
 		"ensure_task_plan_doc":    toolEnsureTaskPlanDoc,

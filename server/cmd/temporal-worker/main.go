@@ -155,6 +155,8 @@ func main() {
 	docsDocumentRepo := repository.NewDocsDocumentRepository(db, cfg.DocsOrderingUseSortKey)
 	docsDocumentKeyRepo := repository.NewDocsDocumentKeyRepository(db)
 	docsContentRepo := repository.NewDocsContentRepository(db)
+	docsBlockRepo := repository.NewDocsBlockRepository(db)
+	docsContentRepo.SetBlockRepository(docsBlockRepo)
 	docsVersionRepo := repository.NewDocsVersionRepository(db)
 	docsLinkRepo := repository.NewDocsLinkRepository(db)
 	docsHelpcenterRepo := repository.NewDocsHelpcenterRepository(db, false)
@@ -449,6 +451,7 @@ func main() {
 	agentService.SetWorkflowService(pmWorkflowService)
 	docsDocumentService := service.NewDocsDocumentService(docsDocumentRepo, docsSpaceRepo, wsPublisher, cfg.DocsOrderingUseSortKey)
 	docsContentService := service.NewDocsContentService(docsContentRepo, docsDocumentRepo, nil)
+	docsBlockService := service.NewDocsBlockService(docsBlockRepo, docsContentService, docsDocumentRepo)
 	pmImportService.SetDocsImportDependencies(docsDocumentService, docsContentService)
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, storyRepo, docsDocumentRepo, nil)
 	releaseFactsService := service.NewReleaseFactsService(
@@ -473,6 +476,7 @@ func main() {
 	)
 	docsEmbeddingService := service.NewDocsEmbeddingService(
 		docsChunkRepo,
+		docsBlockRepo,
 		agentKnowledgeSourceRepo,
 		docsContentRepo,
 		docsSpaceRepo,
@@ -508,6 +512,7 @@ func main() {
 	commandService.SetPMLabelService(pmLabelService)
 	commandService.SetPMCommentService(pmCommentService)
 	commandService.SetDocsCreateDependencies(docsDocumentService, docsContentRepo)
+	commandService.SetDocsBlockService(docsBlockService)
 	activities = temporalapp.NewAgentRunActivities(
 		runRepo,
 		runMessageRepo,
@@ -536,6 +541,7 @@ func main() {
 		docsDocumentRepo,
 		docsDocumentKeyRepo,
 		docsContentRepo,
+		docsBlockRepo,
 		docsVersionRepo,
 		docsLinkRepo,
 		docsSearchRepo,

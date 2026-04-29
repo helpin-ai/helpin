@@ -92,6 +92,124 @@ func TestToolListCollectionsEmpty(t *testing.T) {
 	}
 }
 
+func TestToolGetDocumentBlocksReturnsCompactBlocksByDefault(t *testing.T) {
+	ctx := &ExecutionContext{
+		Context: context.Background(),
+		Services: &ServiceBridge{
+			ListDocumentBlocks: func(ctx context.Context, documentID string) ([]model.DocsBlock, error) {
+				if documentID != "doc-1" {
+					t.Fatalf("unexpected document id %q", documentID)
+				}
+				return []model.DocsBlock{
+					{
+						ID:          "block-1",
+						Type:        "paragraph",
+						Revision:    3,
+						ContentText:  "First block",
+						Content:      json.RawMessage(`{"type":"paragraph","content":[{"type":"text","text":"First block"}]}`),
+					},
+				}, nil
+			},
+		},
+	}
+
+	output, err := toolGetDocumentBlocks(ctx, json.RawMessage(`{"document_id":"doc-1"}`))
+	if err != nil {
+		t.Fatalf("toolGetDocumentBlocks returned error: %v", err)
+	}
+
+	var response []struct {
+		ID          string          `json:"id"`
+		Type        string          `json:"type"`
+		Revision    int             `json:"revision"`
+		ContentText string          `json:"content_text"`
+		Content     json.RawMessage `json:"content"`
+	}
+	if err := json.Unmarshal([]byte(output), &response); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if len(response) != 1 {
+		t.Fatalf("expected one block, got %#v", response)
+	}
+	if response[0].ID != "block-1" || response[0].Type != "paragraph" || response[0].Revision != 3 || response[0].ContentText != "First block" {
+		t.Fatalf("unexpected compact block %#v", response[0])
+	}
+	if len(response[0].Content) != 0 {
+		t.Fatalf("expected compact block to omit full content, got %s", string(response[0].Content))
+	}
+}
+
+func TestToolGetDocumentBlocksCanReturnSelectedFullContent(t *testing.T) {
+	ctx := &ExecutionContext{
+		Context: context.Background(),
+		Services: &ServiceBridge{
+			ListDocumentBlocks: func(ctx context.Context, documentID string) ([]model.DocsBlock, error) {
+				return []model.DocsBlock{
+					{
+						ID:          "block-1",
+						Type:        "paragraph",
+						Revision:    1,
+						ContentText:  "First",
+						Content:      json.RawMessage(`{"type":"paragraph","attrs":{"blockId":"block-1"},"content":[{"type":"text","text":"First"}]}`),
+					},
+					{
+						ID:          "block-2",
+						Type:        "heading",
+						Revision:    2,
+						ContentText:  "Second",
+						Content:      json.RawMessage(`{"type":"heading","attrs":{"blockId":"block-2","level":2},"content":[{"type":"text","text":"Second"}]}`),
+					},
+				}, nil
+			},
+		},
+	}
+
+	output, err := toolGetDocumentBlocks(ctx, json.RawMessage(`{"document_id":"doc-1","block_ids":["block-2"],"include_content":true}`))
+	if err != nil {
+		t.Fatalf("toolGetDocumentBlocks returned error: %v", err)
+	}
+
+	var response []struct {
+		ID      string          `json:"id"`
+		Content json.RawMessage `json:"content"`
+	}
+	if err := json.Unmarshal([]byte(output), &response); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if len(response) != 1 || response[0].ID != "block-2" {
+		t.Fatalf("expected selected block-2, got %#v", response)
+	}
+	if !strings.Contains(string(response[0].Content), `"level":2`) || !strings.Contains(string(response[0].Content), `"blockId":"block-2"`) {
+		t.Fatalf("expected full block JSON, got %s", string(response[0].Content))
+	}
+}
+
+func TestToolGetDocumentBlocksLimitsFullContentFetches(t *testing.T) {
+	blocks := make([]model.DocsBlock, maxFullDocumentBlocksToolFetch+1)
+	for i := range blocks {
+		blocks[i] = model.DocsBlock{
+			ID:          "block",
+			Type:        "paragraph",
+			Revision:    1,
+			ContentText:  "Body",
+			Content:      json.RawMessage(`{"type":"paragraph"}`),
+		}
+	}
+	ctx := &ExecutionContext{
+		Context: context.Background(),
+		Services: &ServiceBridge{
+			ListDocumentBlocks: func(ctx context.Context, documentID string) ([]model.DocsBlock, error) {
+				return blocks, nil
+			},
+		},
+	}
+
+	_, err := toolGetDocumentBlocks(ctx, json.RawMessage(`{"document_id":"doc-1","include_content":true}`))
+	if err == nil || !strings.Contains(err.Error(), "include_content is limited to 20 blocks") {
+		t.Fatalf("expected full content limit error, got %v", err)
+	}
+}
+
 func TestToolCreateDocumentWithMarkdownContent(t *testing.T) {
 	var (
 		createdReq     model.CreateDocsDocumentRequest

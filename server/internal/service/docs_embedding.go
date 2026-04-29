@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -24,6 +25,7 @@ const (
 // DocsEmbeddingService keeps pgvector-backed help-center chunks in sync.
 type DocsEmbeddingService struct {
 	chunkRepo      *repository.DocsChunkRepository
+	blockRepo      *repository.DocsBlockRepository
 	knowledgeRepo  *repository.AgentKnowledgeSourceRepository
 	contentRepo    *repository.DocsContentRepository
 	spaceRepo      *repository.DocsSpaceRepository
@@ -42,6 +44,7 @@ type DocsEmbeddingWorkflowStarter interface {
 // NewDocsEmbeddingService creates a new DocsEmbeddingService.
 func NewDocsEmbeddingService(
 	chunkRepo *repository.DocsChunkRepository,
+	blockRepo *repository.DocsBlockRepository,
 	knowledgeRepo *repository.AgentKnowledgeSourceRepository,
 	contentRepo *repository.DocsContentRepository,
 	spaceRepo *repository.DocsSpaceRepository,
@@ -56,6 +59,7 @@ func NewDocsEmbeddingService(
 	}
 	return &DocsEmbeddingService{
 		chunkRepo:      chunkRepo,
+		blockRepo:      blockRepo,
 		knowledgeRepo:  knowledgeRepo,
 		contentRepo:    contentRepo,
 		spaceRepo:      spaceRepo,
@@ -179,6 +183,16 @@ func (s *DocsEmbeddingService) syncSpace(ctx context.Context, workspaceID, space
 		}
 
 		chunks := chunkDocumentText(content.ContentText)
+		blockIDs := make([]*string, len(chunks))
+		if s.blockRepo != nil {
+			if blockChunks, ids, err := s.blockChunks(ctx, doc.ID); err != nil {
+				_ = s.markSourcesFailed(ctx, sources, err, &startedAt)
+				return err
+			} else if len(blockChunks) > 0 {
+				chunks = blockChunks
+				blockIDs = ids
+			}
+		}
 		if len(chunks) == 0 {
 			if err := s.chunkRepo.DeleteByDocumentID(ctx, doc.ID); err != nil {
 				_ = s.markSourcesFailed(ctx, sources, err, &startedAt)
@@ -215,6 +229,7 @@ func (s *DocsEmbeddingService) syncSpace(ctx context.Context, workspaceID, space
 				WorkspaceID: workspaceID,
 				SpaceID:     spaceID,
 				DocumentID:  doc.ID,
+				BlockID:     blockIDs[chunkIndex],
 				ChunkIndex:  chunkIndex,
 				Title:       doc.Title,
 				Content:     chunk,
@@ -250,6 +265,93 @@ func (s *DocsEmbeddingService) RunSpaceSync(ctx context.Context, workspaceID, sp
 		return nil
 	}
 	return s.syncSpace(ctx, workspaceID, spaceID)
+}
+
+func (s *DocsEmbeddingService) blockChunks(ctx context.Context, documentID string) ([]string, []*string, error) {
+	blocks, err := s.blockRepo.ListByDocument(ctx, documentID, false)
+	if err != nil {
+		return nil, nil, err
+	}
+	chunks := []string{}
+	blockIDs := []*string{}
+	for _, block := range blocks {
+		text := strings.TrimSpace(block.ContentText)
+		if text == "" {
+			text = strings.TrimSpace(extractEmbeddableBlockText(block.Content))
+		}
+		if text == "" {
+			continue
+		}
+		parts := chunkDocumentText(text)
+		if len(parts) == 0 {
+			continue
+		}
+		for _, part := range parts {
+			id := block.ID
+			chunks = append(chunks, part)
+			blockIDs = append(blockIDs, &id)
+		}
+	}
+	return chunks, blockIDs, nil
+}
+
+func extractEmbeddableBlockText(raw []byte) string {
+	var node map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &node); err != nil {
+		return ""
+	}
+	var sb strings.Builder
+	extractTextFromEmbeddableNode(node, &sb)
+	return sb.String()
+}
+
+func extractTextFromEmbeddableNode(node map[string]json.RawMessage, sb *strings.Builder) {
+	if textRaw, ok := node["text"]; ok {
+		var text string
+		if err := json.Unmarshal(textRaw, &text); err == nil {
+			sb.WriteString(text)
+		}
+	}
+	if attrsRaw, ok := node["attrs"]; ok {
+		var attrs map[string]json.RawMessage
+		if err := json.Unmarshal(attrsRaw, &attrs); err == nil {
+			if htmlRaw, ok := attrs["html"]; ok {
+				var htmlStr string
+				if err := json.Unmarshal(htmlRaw, &htmlStr); err == nil && strings.TrimSpace(htmlStr) != "" {
+					sb.WriteString(stripEmbeddableHTMLTags(htmlStr))
+					sb.WriteString(" ")
+				}
+			}
+		}
+	}
+	if contentRaw, ok := node["content"]; ok {
+		var children []map[string]json.RawMessage
+		if err := json.Unmarshal(contentRaw, &children); err == nil {
+			for _, child := range children {
+				extractTextFromEmbeddableNode(child, sb)
+				sb.WriteString(" ")
+			}
+		}
+	}
+}
+
+func stripEmbeddableHTMLTags(s string) string {
+	var sb strings.Builder
+	inTag := false
+	for _, r := range s {
+		switch r {
+		case '<':
+			inTag = true
+		case '>':
+			inTag = false
+			sb.WriteByte(' ')
+		default:
+			if !inTag {
+				sb.WriteRune(r)
+			}
+		}
+	}
+	return sb.String()
 }
 
 func (s *DocsEmbeddingService) updateAllSyncStates(

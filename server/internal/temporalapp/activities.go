@@ -110,6 +110,7 @@ type AgentRunActivities struct {
 	docsDocRepo         *repository.DocsDocumentRepository
 	docsDocumentKeyRepo *repository.DocsDocumentKeyRepository
 	docsContentRepo     *repository.DocsContentRepository
+	docsBlockRepo       *repository.DocsBlockRepository
 	docsVersionRepo     *repository.DocsVersionRepository
 	docsLinkRepo        *repository.DocsLinkRepository
 	docsSearchRepo      *repository.DocsSearchRepository
@@ -155,6 +156,7 @@ func NewAgentRunActivities(
 	docsDocRepo *repository.DocsDocumentRepository,
 	docsDocumentKeyRepo *repository.DocsDocumentKeyRepository,
 	docsContentRepo *repository.DocsContentRepository,
+	docsBlockRepo *repository.DocsBlockRepository,
 	docsVersionRepo *repository.DocsVersionRepository,
 	docsLinkRepo *repository.DocsLinkRepository,
 	docsSearchRepo *repository.DocsSearchRepository,
@@ -198,6 +200,7 @@ func NewAgentRunActivities(
 		docsDocRepo:         docsDocRepo,
 		docsDocumentKeyRepo: docsDocumentKeyRepo,
 		docsContentRepo:     docsContentRepo,
+		docsBlockRepo:       docsBlockRepo,
 		docsVersionRepo:     docsVersionRepo,
 		docsLinkRepo:        docsLinkRepo,
 		docsSearchRepo:      docsSearchRepo,
@@ -2503,6 +2506,12 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 				return "", nil
 			}
 			return content.ContentText, nil
+		},
+		ListDocumentBlocks: func(ctx context.Context, documentID string) ([]model.DocsBlock, error) {
+			if a.docsBlockRepo == nil {
+				return []model.DocsBlock{}, nil
+			}
+			return a.docsBlockRepo.ListByDocument(ctx, documentID, false)
 		},
 		WriteDocumentContent: func(ctx context.Context, workspaceID, documentID string, content json.RawMessage) error {
 			if a.commandExecutor == nil {

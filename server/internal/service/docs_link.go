@@ -35,7 +35,7 @@ func (s *DocsLinkService) Create(ctx context.Context, workspaceID, documentID st
 		return nil, err
 	}
 	for _, existing := range existingLinks {
-		if existing.DocumentID == documentID {
+		if existing.DocumentID == documentID && sameOptionalString(existing.BlockID, req.BlockID) {
 			return &existing, nil
 		}
 	}
@@ -43,6 +43,7 @@ func (s *DocsLinkService) Create(ctx context.Context, workspaceID, documentID st
 	link := &model.DocsLink{
 		WorkspaceID:      workspaceID,
 		DocumentID:       documentID,
+		BlockID:          req.BlockID,
 		LinkedObjectType: req.LinkedObjectType,
 		LinkedObjectID:   req.LinkedObjectID,
 		LinkContext:      req.LinkContext,
@@ -57,6 +58,13 @@ func (s *DocsLinkService) Create(ctx context.Context, workspaceID, documentID st
 		})
 	}
 	return created, err
+}
+
+func sameOptionalString(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
 }
 
 // ListByDocument returns all links for a document, enriched with object names.

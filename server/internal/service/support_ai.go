@@ -196,6 +196,7 @@ type AIMessageMetadata struct {
 // AISource is a single source citation in AI message metadata.
 type AISource struct {
 	DocID      string  `json:"docId"`
+	BlockID    string  `json:"blockId,omitempty"`
 	Title      string  `json:"title"`
 	Snippet    string  `json:"snippet"`
 	Confidence float64 `json:"confidence"`
@@ -208,6 +209,7 @@ type KnowledgeSearchResult struct {
 	ReferenceID   string
 	SourceType    string
 	DocumentID    string
+	BlockID       string
 	SourceID      string
 	ChunkIndex    int
 	Title         string
@@ -2353,6 +2355,7 @@ func (s *SupportAIService) searchSingleQuery(
 				ReferenceID:   knowledgeReferenceID(knowledgeSourceTypeDocs, result.DocumentID),
 				SourceType:    knowledgeSourceTypeDocs,
 				DocumentID:    result.DocumentID,
+				BlockID:       derefString(result.BlockID),
 				SourceID:      result.SpaceID,
 				ChunkIndex:    result.ChunkIndex,
 				Title:         result.Title,
@@ -2542,6 +2545,7 @@ func buildAISources(sourceDocIDs []string, searchResults []KnowledgeSearchResult
 		seenDocs[docID] = struct{}{}
 		sources = append(sources, AISource{
 			DocID:      docID,
+			BlockID:    result.BlockID,
 			Title:      result.Title,
 			Snippet:    excerptText(result.Content, 180),
 			Confidence: clamp01(maxFloat(result.VectorScore, clamp01(result.LexicalScore/0.35))),

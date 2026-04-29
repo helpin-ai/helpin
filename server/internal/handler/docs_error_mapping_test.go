@@ -77,6 +77,12 @@ func TestWriteDocsError(t *testing.T) {
 			wantBody:   "does not belong",
 		},
 		{
+			name:       "locked document -> 403",
+			err:        service.ErrDocsDocumentLocked,
+			wantStatus: http.StatusForbidden,
+			wantBody:   "locked",
+		},
+		{
 			name:       "wrapped sentinel still maps via errors.Is",
 			err:        fmt.Errorf("reparent failed: %w", service.ErrDocsCollectionCycle),
 			wantStatus: http.StatusBadRequest,
