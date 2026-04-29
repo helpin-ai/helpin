@@ -64,6 +64,7 @@ interface CommandBarRunState {
   plansById: Record<string, CommandBarRunPlan>;
   railMode: RailMode;
   railFilter: RailFilter;
+  selectedRunId: string | null;
   addRuns: (runs: AgentRun[]) => void;
   addPlan: (plan: CommandBarRunPlan, runs?: AgentRun[]) => void;
   hydratePlans: (plans: CommandBarPlanSummary[]) => void;
@@ -71,6 +72,7 @@ interface CommandBarRunState {
   updatePlan: (plan: CommandBarPlanSummary, runs?: AgentRun[]) => void;
   setRailMode: (mode: RailMode) => void;
   setRailFilter: (filter: RailFilter) => void;
+  setSelectedRunId: (id: string | null) => void;
   clear: () => void;
 }
 
@@ -81,6 +83,7 @@ export const useCommandBarRunStore = create<CommandBarRunState>((set) => ({
   plansById: {},
   railMode: loadRailMode(),
   railFilter: loadRailFilter(),
+  selectedRunId: null,
   addRuns: (runs) =>
     set((state) => {
       const runsById = { ...state.runsById };
@@ -210,7 +213,8 @@ export const useCommandBarRunStore = create<CommandBarRunState>((set) => ({
     persistRailFilter(filter);
     set({ railFilter: filter });
   },
-  clear: () => set({ runIds: [], runsById: {}, planIds: [], plansById: {} }),
+  setSelectedRunId: (id) => set({ selectedRunId: id }),
+  clear: () => set({ runIds: [], runsById: {}, planIds: [], plansById: {}, selectedRunId: null }),
 }));
 
 function getCommandBarPlanMeta(run: AgentRun): { planId: string; stepIndex: number; steps: CommandBarPlanStep[]; planKind?: CommandBarPlanSummary['plan_kind'] } | null {

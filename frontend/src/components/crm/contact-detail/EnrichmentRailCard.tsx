@@ -16,7 +16,7 @@ export function EnrichmentRailCard({ workspaceId, objectType, objectId }: Enrich
   const results = ((data?.data ?? []) as CRMEnrichmentResult[]).filter(isVisibleEnrichmentResult);
 
   const handleEnrich = () => {
-    window.dispatchEvent(new CustomEvent('helpin:open-command-bar', {
+    window.dispatchEvent(new CustomEvent('helpin:ask-agents', {
       detail: { query: enrichmentPromptFor(objectType) },
     }));
   };

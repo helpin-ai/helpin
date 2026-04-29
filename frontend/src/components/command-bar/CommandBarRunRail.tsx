@@ -47,7 +47,8 @@ export function CommandBarRunRail() {
   const filter = useCommandBarRunStore((s) => s.railFilter);
   const setFilter = useCommandBarRunStore((s) => s.setRailFilter);
   const clear = useCommandBarRunStore((s) => s.clear);
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const selectedRunId = useCommandBarRunStore((s) => s.selectedRunId);
+  const setSelectedRunId = useCommandBarRunStore((s) => s.setSelectedRunId);
   const [busyRunId, setBusyRunId] = useState<string | null>(null);
   const [busyPlanId, setBusyPlanId] = useState<string | null>(null);
   const [promotionRun, setPromotionRun] = useState<{ run: AgentRun; step: CommandBarPlanStep | null; planPrompt?: string } | null>(null);
