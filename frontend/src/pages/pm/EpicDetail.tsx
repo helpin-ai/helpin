@@ -64,6 +64,7 @@ import { normalizeTeamType } from '@/lib/teamPresets';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
+import { useRegisterPageContext } from '@/components/command-bar/pageContext';
 import { ExternalLinks } from '@/components/pm/ExternalLinks';
 import { pmExternalLinkService } from '@/lib/services/pmExternalLinkService';
 
@@ -211,6 +212,16 @@ export function EpicDetailPage() {
     () => filterMentionTeams(teams, form?.team_id ? [form.team_id] : []),
     [teams, form?.team_id],
   );
+  const commandBarContext = useMemo(() => {
+    if (!epic) return null;
+    return {
+      entity_type: 'epic' as const,
+      entity_id: epic.epic.id,
+      display_title: epic.epic.name,
+      related_ids: { task_ids: tasks.map((task) => task.id), story_ids: tasks.map((task) => task.id) },
+    };
+  }, [epic, tasks]);
+  useRegisterPageContext(commandBarContext, 10);
 
   useTitle(form?.name ? `${form.name} — Epic` : 'Epic');
 

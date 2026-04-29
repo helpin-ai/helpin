@@ -23,6 +23,7 @@ export function Header() {
   const location = useLocation();
   const { currentWorkspace } = useWorkspaceStore();
   const [searchOpen, setSearchOpen] = useState(false);
+  const [initialCommandQuery, setInitialCommandQuery] = useState("");
   const setCreateDialogOpen = useSupportInboxStore((s) => s.setCreateDialogOpen);
   const openGlobalCreate = useGlobalCreateStore((s) => s.openCreate);
   const navFilter = useSupportInboxStore((s) => s.navFilter);
@@ -42,6 +43,23 @@ export function Header() {
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
+
+  useEffect(() => {
+    const onOpenCommandBar = (event: Event) => {
+      const detail = (event as CustomEvent<{ query?: string }>).detail;
+      setInitialCommandQuery(detail?.query?.trim() ?? "");
+      setSearchOpen(true);
+    };
+    window.addEventListener("helpin:open-command-bar", onOpenCommandBar);
+    return () => window.removeEventListener("helpin:open-command-bar", onOpenCommandBar);
+  }, []);
+
+  const handleSearchOpenChange = (open: boolean) => {
+    setSearchOpen(open);
+    if (!open) {
+      setInitialCommandQuery("");
+    }
+  };
 
   const breadcrumbs = useMemo<Crumb[]>(() => {
     const formatLabel = (value: string) =>
@@ -250,7 +268,7 @@ export function Header() {
         </>
       )}
 
-      <SearchCommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
+      <SearchCommandPalette open={searchOpen} onOpenChange={handleSearchOpenChange} initialQuery={initialCommandQuery} />
     </header>
   );
 }

@@ -40,6 +40,7 @@ type Handlers struct {
 	PMTaskTemplate      *handler.PMTaskTemplateHandler
 	PMRecurringTemplate *handler.PMRecurringTemplateHandler
 	Search              *handler.SearchHandler
+	CommandBar          *handler.CommandBarHandler
 	Agent               *handler.AgentHandler
 	SupportInbox        *handler.SupportInboxHandler
 	SupportInboxWidget  *handler.SupportInboxWidgetHandler
@@ -103,6 +104,12 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 	// Permission middleware helpers for readability.
 	requirePerm := func(perm authorization.Permission) func(http.Handler) http.Handler {
 		return authorization.RequirePermission(authz, perm)
+	}
+	requireCommandBarRead := func() func(http.Handler) http.Handler {
+		return authorization.RequireAnyPermission(authz, authorization.PermPMRead, authorization.PermDocsRead, authorization.PermCRMRead)
+	}
+	requireCommandBarEdit := func() func(http.Handler) http.Handler {
+		return authorization.RequireAnyPermission(authz, authorization.PermPMEdit, authorization.PermDocsEdit, authorization.PermCRMEdit)
 	}
 	requireModule := func(module model.ModuleID) func(http.Handler) http.Handler {
 		return authorization.RequireModuleAccess(authz, module)
@@ -573,6 +580,23 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSearchRead)).Get("/", h.Search.Search)
 			})
 
+			r.Route("/command-bar", func(r chi.Router) {
+				r.Use(middleware.RequireWorkspaceID)
+				r.Use(wsAccess)
+				r.With(requireCommandBarRead()).Post("/intents/parse", h.CommandBar.ParseIntent)
+				r.With(requireCommandBarRead()).Get("/plans", h.CommandBar.ListPlans)
+				r.With(requireCommandBarRead()).Get("/plans/{planID}", h.CommandBar.GetPlan)
+				r.With(requireCommandBarRead()).Get("/agents/{agentID}/tools", h.CommandBar.ListAgentToolCatalog)
+				r.With(requireCommandBarEdit()).Post("/plans/dispatch", h.CommandBar.DispatchPlan)
+				r.With(requireCommandBarEdit()).Post("/plans/{planID}/cancel", h.CommandBar.CancelPlan)
+				r.With(requireCommandBarEdit()).Post("/plans/{planID}/retry", h.CommandBar.RetryPlan)
+				r.With(requireCommandBarRead()).Post("/plans/dismiss", h.CommandBar.DismissPlans)
+				r.With(requireCommandBarRead()).Post("/plans/{planID}/dismiss", h.CommandBar.DismissPlan)
+				r.With(requirePerm(authorization.PermSettingsManage)).Post("/runs/{runID}/promote-agent", h.CommandBar.PromoteRunToAgent)
+				r.With(requirePerm(authorization.PermSettingsManage)).Get("/unmet-intents", h.CommandBar.ListUnmetIntents)
+				r.With(requirePerm(authorization.PermSettingsManage)).Post("/unmet-intents/{intentID}/review", h.CommandBar.ReviewUnmetIntent)
+			})
+
 			// Support module
 			r.Route("/support", func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceID)
@@ -892,6 +916,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/epics/{id}/run-agent", h.Agent.RunEpicAgent)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs", h.Agent.StartTargetRun)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/workspace", h.Agent.ListWorkspaceRuns)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/recent", h.Agent.ListRecentRuns)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs", h.Agent.ListTargetRuns)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}", h.Agent.GetAgentRun)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}/messages", h.Agent.ListRunMessages)

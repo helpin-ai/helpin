@@ -9,6 +9,7 @@ import {
   Delete01Icon,
   DollarCircleIcon,
   GlobeIcon,
+  LinkSquare01Icon,
   Loading01Icon,
   Mail01Icon,
   Message01Icon,
@@ -70,6 +71,7 @@ import { ContactHeader } from '@/components/crm/contact-detail/ContactHeader';
 import { ContactComposer } from '@/components/crm/contact-detail/ContactComposer';
 import { RailSection } from '@/components/crm/contact-detail/RailSection';
 import { CompanyRailCard } from '@/components/crm/contact-detail/CompanyRailCard';
+import { useRegisterPageContext } from '@/components/command-bar/pageContext';
 import { crmSearchService } from '@/lib/services/crmService';
 import { supportService } from '@/lib/services/supportService';
 import { useTitle } from '@/hooks/useTitle';
@@ -79,6 +81,7 @@ import type {
   CRMSearchResult,
   LifecycleStage,
   LeadStatus,
+  CRMContact,
   UnifiedActivityItem,
   UpdateCRMContactRequest,
 } from '@/lib/crmTypes';
@@ -98,6 +101,13 @@ interface FormState {
 
 type ContactTab = 'overview' | 'emails' | 'meetings' | 'tasks' | 'deals' | 'support';
 type ContactSidebarSection = 'primary-company' | 'other-companies' | 'deals' | 'support' | 'tasks';
+type EnrichedDetailRow = {
+  key: string;
+  label: string;
+  value: string;
+  href?: string;
+  icon: React.ElementType;
+};
 
 // ── Constants ──
 
@@ -133,6 +143,86 @@ function sourceLabel(source: string): string {
 }
 
 // ── Small helpers ──
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function nonEmptyString(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function isHttpUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value);
+}
+
+function externalHref(value: string): string | undefined {
+  if (isHttpUrl(value)) return value;
+  if (/^[a-z0-9.-]+\.[a-z]{2,}(?:\/.*)?$/i.test(value)) return `https://${value}`;
+  return undefined;
+}
+
+function shortUrlLabel(value: string): string {
+  try {
+    const url = new URL(value);
+    return `${url.hostname}${url.pathname === '/' ? '' : url.pathname}`.replace(/^www\./, '');
+  } catch {
+    return value.replace(/^https?:\/\//i, '').replace(/^www\./i, '');
+  }
+}
+
+function humanizeEnrichmentKey(key: string): string {
+  return key
+    .replace(/_url$/i, '')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function buildEnrichedDetailRows(contact: CRMContact): EnrichedDetailRow[] {
+  const rows: EnrichedDetailRow[] = [];
+  const avatarURL = nonEmptyString(contact.avatar_url);
+
+  if (avatarURL) {
+    const href = externalHref(avatarURL);
+    rows.push({
+      key: 'avatar_url',
+      label: 'Avatar',
+      value: shortUrlLabel(avatarURL),
+      href,
+      icon: LinkSquare01Icon,
+    });
+  }
+
+  const agentEnrichment = asRecord(contact.custom_properties?.agent_enrichment);
+  if (!agentEnrichment) return rows;
+
+  for (const [key, rawValue] of Object.entries(agentEnrichment)) {
+    if (key === 'notes') continue;
+
+    const valueRecord = asRecord(rawValue);
+    const fieldValue = nonEmptyString(valueRecord?.value ?? rawValue);
+    if (!fieldValue) continue;
+
+    const sourceURL = nonEmptyString(valueRecord?.source_url);
+    const href = /url$/i.test(key)
+      ? externalHref(fieldValue) ?? (sourceURL && isHttpUrl(sourceURL) ? sourceURL : undefined)
+      : undefined;
+
+    rows.push({
+      key,
+      label: humanizeEnrichmentKey(key),
+      value: href ? shortUrlLabel(fieldValue) : fieldValue,
+      href,
+      icon: /url$/i.test(key) ? LinkSquare01Icon : GlobeIcon,
+    });
+  }
+
+  return rows;
+}
 
 function TabBadge({ children, active }: { children: React.ReactNode; active: boolean }) {
   return (
@@ -280,6 +370,11 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
 
   // ── Data hooks ──
   const { data: contact, isLoading } = useContact(wsId, contactId);
+  useRegisterPageContext(contact ? {
+    entity_type: 'crm_contact',
+    entity_id: contact.id,
+    display_title: [contact.first_name, contact.last_name].filter(Boolean).join(' ') || contact.email || 'CRM contact',
+  } : null, 20);
   const { data: emailsData } = useContactEmails(wsId, contactId);
   const { data: meetingsData } = useContactCalendar(wsId, contactId);
   const { data: activitiesData, refetch: refetchActivities } = useContactActivities(wsId, contactId);
@@ -408,6 +503,10 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
     [companyAssociations],
   );
   const dealCount = dealAssociations.length;
+  const enrichedDetailRows = useMemo(
+    () => contact ? buildEnrichedDetailRows(contact) : [],
+    [contact],
+  );
 
   const supportConvos = supportConversationsData?.data ?? [];
   const supportCount = supportConvos.length;
@@ -1116,6 +1215,26 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                       placeholder="—"
                     />
                   </MetadataRow>
+
+                  {enrichedDetailRows.map((row) => (
+                    <MetadataRow key={row.key} icon={row.icon} label={row.label}>
+                      {row.href ? (
+                        <a
+                          href={row.href}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="block truncate text-xs text-primary underline-offset-2 hover:underline"
+                          title={row.href}
+                        >
+                          {row.value}
+                        </a>
+                      ) : (
+                        <span className="block truncate text-xs text-foreground" title={row.value}>
+                          {row.value}
+                        </span>
+                      )}
+                    </MetadataRow>
+                  ))}
 
                   <MetadataRow icon={Tag01Icon} label="Stage">
                     <SidebarPopoverSelect

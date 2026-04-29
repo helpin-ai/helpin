@@ -58,6 +58,8 @@ export const agentService = {
     automationService.startRun(workspaceId, payload) as ReturnType<typeof automationService.startRun>,
   listWorkspaceRuns: (workspaceId: string, page = 1, perPage = 100) =>
     automationService.listWorkspaceRuns(workspaceId, page, perPage) as ReturnType<typeof automationService.listWorkspaceRuns>,
+  listRecentRuns: (workspaceId: string, limit = 20) =>
+    api.get<{ runs: AgentRun[] }>(`/pm/agent-runs/recent${qs(workspaceId)}&limit=${limit}`),
   listTargetRuns: (workspaceId: string, targetType: string, targetId: string) =>
     automationService.listTargetRuns(workspaceId, targetType, targetId) as ReturnType<typeof automationService.listTargetRuns>,
   listRuns: (workspaceId: string, agentId: string) =>
