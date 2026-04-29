@@ -107,11 +107,11 @@ func (s *PMImportService) PreviewShortcut(ctx context.Context, workspaceID, acto
 		apiEnrichment, apiWarnings = client.FetchEnrichment(ctx)
 	}
 
-	members, err := s.workspaceRepo.ListMembers(ctx, workspaceID)
+	members, err := s.workspaceRepo.ListAssignableMembers(ctx, workspaceID)
 	if err != nil {
 		return nil, err
 	}
-	memberByEmail := make(map[string]model.MemberWithUser, len(members))
+	memberByEmail := make(map[string]model.AssignableMember, len(members))
 	for _, member := range members {
 		memberByEmail[normalizeShortcutName(member.Email)] = member
 	}
@@ -124,6 +124,8 @@ func (s *PMImportService) PreviewShortcut(ctx context.Context, workspaceID, acto
 	teamCounts := map[string]int{}
 	workflowStateCounts := map[string]*shortcutWorkflowAggregate{}
 	emailCounts := map[string]int{}
+	ownerCounts := map[string]int{}
+	requesterCounts := map[string]int{}
 	checklistCount := 0
 	for _, row := range data.Rows {
 		storyTypeCounts[row.Type]++
@@ -165,10 +167,14 @@ func (s *PMImportService) PreviewShortcut(ctx context.Context, workspaceID, acto
 		workflow.StateCounts[row.State]++
 		workflow.TaskCount++
 		if row.Requester != "" {
-			emailCounts[normalizeShortcutName(row.Requester)]++
+			email := normalizeShortcutName(row.Requester)
+			emailCounts[email]++
+			requesterCounts[email]++
 		}
 		for _, owner := range shortcutOwnerEmails(row.Owners) {
-			emailCounts[normalizeShortcutName(owner)]++
+			email := normalizeShortcutName(owner)
+			emailCounts[email]++
+			ownerCounts[email]++
 		}
 		checklistCount += len(parseShortcutChecklist(row.Tasks))
 	}
@@ -180,14 +186,26 @@ func (s *PMImportService) PreviewShortcut(ctx context.Context, workspaceID, acto
 
 	users := make([]model.ShortcutUserMatch, 0, len(emailCounts))
 	for _, email := range sortKeysByCount(emailCounts) {
-		match := model.ShortcutUserMatch{Email: email, StoryCount: emailCounts[email]}
+		match := model.ShortcutUserMatch{
+			Email:          email,
+			StoryCount:     emailCounts[email],
+			OwnerCount:     ownerCounts[email],
+			RequesterCount: requesterCounts[email],
+		}
 		if member, ok := memberByEmail[email]; ok {
-			match.MatchedUserID = &member.UserID
-			match.MatchedName = &member.FullName
+			match.MatchedMemberID = &member.ID
+			match.MatchedMemberStatus = &member.Status
+			match.MatchedName = &member.DisplayName
+			if member.UserID != nil && strings.TrimSpace(*member.UserID) != "" {
+				match.MatchedUserID = member.UserID
+			}
 		}
 		if apiEnrichment != nil {
-			if scMember, ok := apiEnrichment.MembersByEmail[email]; ok && scMember.Profile.Name != "" {
-				match.ShortcutName = &scMember.Profile.Name
+			if scMember, ok := apiEnrichment.MembersByEmail[email]; ok {
+				match.ShortcutMemberID = &scMember.ID
+				if scMember.Profile.Name != "" {
+					match.ShortcutName = &scMember.Profile.Name
+				}
 			}
 		}
 		users = append(users, match)
@@ -740,10 +758,25 @@ func (s *PMImportService) executeShortcutRows(ctx context.Context, workspaceID, 
 	}
 	memberByEmail := make(map[string]string, len(assignable))
 	memberByUserID := make(map[string]string, len(assignable))
+	assignableByID := make(map[string]model.AssignableMember, len(assignable))
 	for _, am := range assignable {
 		memberByEmail[normalizeShortcutName(am.Email)] = am.ID
+		assignableByID[am.ID] = am
 		if am.UserID != nil && strings.TrimSpace(*am.UserID) != "" {
 			memberByUserID[*am.UserID] = am.ID
+		}
+	}
+	for email, memberID := range req.MemberMappings {
+		email = normalizeShortcutName(email)
+		memberID = strings.TrimSpace(memberID)
+		if email == "" || memberID == "" {
+			continue
+		}
+		if member, ok := assignableByID[memberID]; ok && member.ID != "" {
+			memberByEmail[email] = member.ID
+			if member.UserID != nil && strings.TrimSpace(*member.UserID) != "" {
+				userByEmail[email] = strings.TrimSpace(*member.UserID)
+			}
 		}
 	}
 	for email, userID := range req.UserMappings {

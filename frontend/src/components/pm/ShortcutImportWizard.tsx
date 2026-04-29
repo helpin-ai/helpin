@@ -36,11 +36,13 @@ import {
 } from '@/lib/services/pmImportService';
 import { TASK_TYPE_CONFIG, TaskTypeIcon } from '@/lib/pmConstants';
 import type { TaskType, WorkflowWithStates } from '@/lib/pmTypes';
-import type { MemberWithUser } from '@/lib/types';
+import type { AssignableMember, MemberWithUser } from '@/lib/types';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { inviteService } from '@/lib/services/inviteService';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useDocsCollections, useDocsSpaces } from '@/hooks/queries/useDocs';
+import { useAssignableMembers } from '@/hooks/queries/useWorkspaces';
+import { formatAssignableMemberName } from '@/lib/assignableMembers';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -67,12 +69,18 @@ type UserAction = 'matched' | 'invite' | 'skip';
 
 interface UserMapping {
   email: string;
+  shortcutMemberId: string | null;
   storyCount: number;
+  ownerCount: number;
+  requesterCount: number;
   matchedUserId: string | null;
+  matchedMemberId: string | null;
+  matchedMemberStatus: string | null;
   matchedName: string | null;
   shortcutName: string | null;
   action: UserAction;
   manualUserId: string | null;
+  manualMemberId: string | null;
   invited: boolean;
 }
 
@@ -337,8 +345,9 @@ interface ShortcutImportWizardProps {
   members: MemberWithUser[];
 }
 
-export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWizardProps) {
+export function ShortcutImportWizard({ workspaceId }: ShortcutImportWizardProps) {
   const { teams: existingTeams } = useWorkspaceTeams(workspaceId);
+  const { data: assignableMembers = [], refetch: refetchAssignableMembers } = useAssignableMembers(workspaceId);
   const { data: docsSpaces = [], isFetched: docsSpacesFetched } = useDocsSpaces(workspaceId);
   const [step, setStep] = useState<WizardStep>(0);
   const [preview, setPreview] = useState<ShortcutImportPreviewResponse | null>(null);
@@ -481,12 +490,18 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
     setUserMappings(
       data.users.map((u) => ({
         email: u.email,
+        shortcutMemberId: u.shortcut_member_id || null,
         storyCount: u.story_count ?? 0,
+        ownerCount: u.owner_count ?? 0,
+        requesterCount: u.requester_count ?? 0,
         matchedUserId: u.matched_user_id,
+        matchedMemberId: u.matched_member_id || null,
+        matchedMemberStatus: u.matched_member_status || null,
         matchedName: u.matched_name,
         shortcutName: u.shortcut_name || null,
-        action: u.matched_user_id ? ('matched' as const) : ('skip' as const),
+        action: u.matched_member_id ? ('matched' as const) : ('skip' as const),
         manualUserId: null,
+        manualMemberId: null,
         invited: false,
       })),
     );
@@ -550,6 +565,11 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
     [userMappings],
   );
 
+  const findAssignableMemberByEmail = useCallback(
+    (email: string) => assignableMembers.find((m) => m.email.toLowerCase() === email.toLowerCase()),
+    [assignableMembers],
+  );
+
   const handleInviteAll = useCallback(async () => {
     const toInvite = userMappings.filter((u) => u.action !== 'matched' && !u.invited);
     const results = await Promise.allSettled(
@@ -566,20 +586,28 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
         const r = results[idx];
         if (r.status === 'fulfilled' && r.value.data) {
           succeeded++;
-          return { ...u, action: 'invite' as const, invited: true };
+          return {
+            ...u,
+            action: 'invite' as const,
+            invited: true,
+            matchedMemberId: r.value.data.workspace_member_id || null,
+            matchedMemberStatus: 'pending',
+            matchedName: u.shortcutName || u.email,
+          };
         }
         // If invite failed, check if already a member and auto-match
-        const existingMember = members.find(
-          (m) => m.email.toLowerCase() === u.email.toLowerCase(),
-        );
+        const existingMember = findAssignableMemberByEmail(u.email);
         if (existingMember) {
           autoMatched++;
           return {
             ...u,
             action: 'matched' as const,
-            manualUserId: existingMember.user_id,
-            matchedUserId: existingMember.user_id,
-            matchedName: existingMember.full_name || null,
+            manualUserId: existingMember.user_id || null,
+            manualMemberId: existingMember.id,
+            matchedUserId: existingMember.user_id || null,
+            matchedMemberId: existingMember.id,
+            matchedMemberStatus: existingMember.status,
+            matchedName: formatAssignableMemberName(existingMember),
           };
         }
         // If pending invitation exists, mark as invited
@@ -595,7 +623,8 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
     if (succeeded > 0) parts.push(`${succeeded} invited`);
     if (autoMatched > 0) parts.push(`${autoMatched} auto-matched`);
     if (parts.length > 0) toast.success(parts.join(', '));
-  }, [userMappings, workspaceId, members]);
+    void refetchAssignableMembers();
+  }, [userMappings, workspaceId, findAssignableMemberByEmail, refetchAssignableMembers]);
 
   const handleInviteSingle = useCallback(
     async (email: string) => {
@@ -606,9 +635,7 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
       });
       if (error || !data) {
         // If already a member, auto-match them
-        const existingMember = members.find(
-          (m) => m.email.toLowerCase() === email.toLowerCase(),
-        );
+        const existingMember = findAssignableMemberByEmail(email);
         if (existingMember) {
           setUserMappings((prev) =>
             prev.map((u) =>
@@ -616,9 +643,12 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
                 ? {
                     ...u,
                     action: 'matched' as const,
-                    manualUserId: existingMember.user_id,
-                    matchedUserId: existingMember.user_id,
-                    matchedName: existingMember.full_name || null,
+                    manualUserId: existingMember.user_id || null,
+                    manualMemberId: existingMember.id,
+                    matchedUserId: existingMember.user_id || null,
+                    matchedMemberId: existingMember.id,
+                    matchedMemberStatus: existingMember.status,
+                    matchedName: formatAssignableMemberName(existingMember),
                   }
                 : u,
             ),
@@ -640,11 +670,23 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
         return;
       }
       setUserMappings((prev) =>
-        prev.map((u) => (u.email === email ? { ...u, action: 'invite', invited: true } : u)),
+        prev.map((u) =>
+          u.email === email
+            ? {
+                ...u,
+                action: 'invite',
+                invited: true,
+                matchedMemberId: data.workspace_member_id || null,
+                matchedMemberStatus: 'pending',
+                matchedName: u.shortcutName || u.email,
+              }
+            : u,
+        ),
       );
+      void refetchAssignableMembers();
       toast.success(`Invitation sent to ${email}`);
     },
-    [workspaceId, members],
+    [workspaceId, findAssignableMemberByEmail, refetchAssignableMembers],
   );
 
   // ─── Step 3: Execute ─────────────────────────────────────────────
@@ -676,11 +718,18 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
     }
     setImporting(true);
 
-    // Build user mappings: email → userId
+    // Build member mappings first: Shortcut email → Helpin workspace member ID.
+    const memberMap: Record<string, string> = {};
     const userMap: Record<string, string> = {};
     for (const u of userMappings) {
-      if (u.action === 'matched' && u.matchedUserId) userMap[u.email] = u.matchedUserId;
-      else if (u.action === 'matched' && u.manualUserId) userMap[u.email] = u.manualUserId;
+      const memberId = u.matchedMemberId || u.manualMemberId;
+      if ((u.action === 'matched' || u.action === 'invite') && memberId) {
+        memberMap[u.email] = memberId;
+      }
+      const userId = u.matchedUserId || u.manualUserId;
+      if (u.action === 'matched' && userId) {
+        userMap[u.email] = userId;
+      }
     }
 
     const teamMap: Record<string, string> = {};
@@ -707,6 +756,7 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
       workspaceId,
       apiToken.trim(),
       userMap,
+      memberMap,
       teamMap,
       wfMappings,
       importOptions,
@@ -852,7 +902,7 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
       {step === 3 && (
         <UserStep
           userMappings={userMappings}
-          members={members}
+          members={assignableMembers}
           matchedCount={matchedCount}
           unmatchedCount={unmatchedUsers.length}
           onUpdate={updateUserMapping}
@@ -1664,7 +1714,7 @@ function UserStep({
   onInviteSingle,
 }: {
   userMappings: UserMapping[];
-  members: MemberWithUser[];
+  members: AssignableMember[];
   matchedCount: number;
   unmatchedCount: number;
   onUpdate: (idx: number, updates: Partial<UserMapping>) => void;
@@ -1718,6 +1768,9 @@ function UserStep({
                       <div>
                         {u.shortcutName && <span className="font-medium">{u.shortcutName} — </span>}
                         {u.email}
+                        <div className="text-xs text-muted-foreground">
+                          {u.ownerCount.toLocaleString()} owner · {u.requesterCount.toLocaleString()} requester
+                        </div>
                       </div>
                     </div>
                   </TableCell>
@@ -1756,6 +1809,9 @@ function UserStep({
                         <div>
                           {u.shortcutName && <span className="font-medium">{u.shortcutName} — </span>}
                           {u.email}
+                          <div className="text-xs text-muted-foreground">
+                            {u.ownerCount.toLocaleString()} owner · {u.requesterCount.toLocaleString()} requester
+                          </div>
                         </div>
                         {u.invited && (
                           <Badge variant="outline" className="text-xs text-blue-600 border-blue-300">
@@ -1771,19 +1827,30 @@ function UserStep({
                       ) : (
                         <div className="flex items-center gap-1">
                           <Select
-                            value={u.manualUserId || '__action__' + u.action}
+                            value={u.manualMemberId || u.matchedMemberId || '__action__' + u.action}
                             onValueChange={(v) => {
                               if (v === '__action__skip') {
-                                onUpdate(realIdx, { action: 'skip', manualUserId: null });
+                                onUpdate(realIdx, {
+                                  action: 'skip',
+                                  manualUserId: null,
+                                  manualMemberId: null,
+                                  matchedUserId: null,
+                                  matchedMemberId: null,
+                                  matchedMemberStatus: null,
+                                  matchedName: null,
+                                });
                               } else if (v === '__action__invite') {
                                 onInviteSingle(u.email);
                               } else {
-                                const member = members.find((m) => m.user_id === v);
+                                const member = members.find((m) => m.id === v);
                                 onUpdate(realIdx, {
                                   action: 'matched',
-                                  manualUserId: v,
-                                  matchedUserId: v,
-                                  matchedName: member?.full_name || null,
+                                  manualUserId: member?.user_id || null,
+                                  manualMemberId: v,
+                                  matchedUserId: member?.user_id || null,
+                                  matchedMemberId: v,
+                                  matchedMemberStatus: member?.status || null,
+                                  matchedName: member ? formatAssignableMemberName(member) : null,
                                 });
                               }
                             }}
@@ -1793,8 +1860,8 @@ function UserStep({
                             </SelectTrigger>
                             <SelectContent>
                               {members.map((m) => (
-                                <SelectItem key={m.user_id} value={m.user_id}>
-                                  {m.full_name} ({m.email})
+                                <SelectItem key={m.id} value={m.id}>
+                                  {formatAssignableMemberName(m)}
                                 </SelectItem>
                               ))}
                               <SelectItem value="__action__invite">
