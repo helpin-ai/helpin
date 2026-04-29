@@ -161,6 +161,14 @@ func setupSupportCoverageTestDB(t *testing.T) *gorm.DB {
 			metrics TEXT NOT NULL DEFAULT '{}',
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
+		`CREATE TABLE support_messages (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			conversation_id TEXT,
+			sender_type TEXT NOT NULL DEFAULT '',
+			content TEXT NOT NULL DEFAULT '',
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
 		`CREATE TABLE support_coverage_digest_deliveries (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
@@ -683,6 +691,94 @@ func TestSupportCoverageRepository_GetGapDetailExposesAnalysisExplanationAndReco
 	}
 	if detail.Recommendations[0].RecommendationType != model.SupportCoverageFixUpdateArticle {
 		t.Fatalf("unexpected recommendation: %+v", detail.Recommendations[0])
+	}
+}
+
+func TestSupportCoverageRepository_GetGapDetailJoinsSenderRole(t *testing.T) {
+	db := setupSupportCoverageTestDB(t)
+	repo := NewSupportCoverageRepository(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	gap, _, err := repo.UpsertGapByDedupeKey(ctx, &model.SupportCoverageGap{
+		ID:          "gap-roles",
+		WorkspaceID: "ws-1",
+		DedupeKey:   "roles-gap",
+		Title:       "Sender role join",
+		Status:      model.SupportCoverageGapStatusOpen,
+		FirstSeenAt: now,
+		LastSeenAt:  now,
+	})
+	if err != nil {
+		t.Fatalf("seed gap: %v", err)
+	}
+
+	type seedMsg struct {
+		ID         string
+		SenderType string
+	}
+	messages := []seedMsg{
+		{ID: "msg-customer", SenderType: "customer"},
+		{ID: "msg-agent", SenderType: "agent"},
+		{ID: "msg-ai", SenderType: "ai"},
+	}
+	for _, m := range messages {
+		if err := db.Exec(
+			`INSERT INTO support_messages (id, workspace_id, conversation_id, sender_type, content) VALUES (?, ?, ?, ?, ?)`,
+			m.ID, "ws-1", "conv-1", m.SenderType, "hello",
+		).Error; err != nil {
+			t.Fatalf("seed message %s: %v", m.ID, err)
+		}
+		convID := "conv-1"
+		messageID := m.ID
+		if err := repo.CreateEvidence(ctx, &model.SupportGapEvidence{
+			ID:             "ev-" + m.ID,
+			GapID:          gap.ID,
+			WorkspaceID:    "ws-1",
+			EvidenceType:   "ai_handoff",
+			ConversationID: &convID,
+			MessageID:      &messageID,
+			Excerpt:        "from " + m.SenderType,
+			CreatedAt:      now,
+		}); err != nil {
+			t.Fatalf("seed evidence: %v", err)
+		}
+	}
+
+	// Evidence with no message_id should produce empty sender_role.
+	if err := repo.CreateEvidence(ctx, &model.SupportGapEvidence{
+		ID:           "ev-no-msg",
+		GapID:        gap.ID,
+		WorkspaceID:  "ws-1",
+		EvidenceType: "article_feedback",
+		Excerpt:      "no linked message",
+		CreatedAt:    now,
+	}); err != nil {
+		t.Fatalf("seed evidence no-msg: %v", err)
+	}
+
+	detail, err := repo.GetGapDetail(ctx, "ws-1", gap.ID)
+	if err != nil {
+		t.Fatalf("GetGapDetail: %v", err)
+	}
+	if len(detail.Evidence) != 4 {
+		t.Fatalf("expected 4 evidence rows, got %d", len(detail.Evidence))
+	}
+
+	roleByEvidence := map[string]string{}
+	for _, ev := range detail.Evidence {
+		roleByEvidence[ev.ID] = ev.SenderRole
+	}
+	want := map[string]string{
+		"ev-msg-customer": "customer",
+		"ev-msg-agent":    "agent",
+		"ev-msg-ai":       "ai",
+		"ev-no-msg":       "",
+	}
+	for id, expected := range want {
+		if got := roleByEvidence[id]; got != expected {
+			t.Errorf("evidence %s: sender_role = %q, want %q", id, got, expected)
+		}
 	}
 }
 
