@@ -350,6 +350,7 @@ export function SearchCommandPalette({
                     const override = stepToolOverrides[index];
                     const narrowed = override !== undefined && override.length !== availableTools.length && override.length > 0;
                     const empty = override !== undefined && override.length === 0;
+                    const oneShotBrief = step.plan_kind === 'one_shot_command' ? parseOneShotBrief(step.instructions) : null;
                     return (
                       <div key={`${step.agent_id}-${index}`} className="relative">
                         {intentResult.plan.steps.length > 1 ? (
@@ -361,7 +362,14 @@ export function SearchCommandPalette({
                           </span>
                         ) : null}
                         <div className="rounded-md border border-border/60 bg-muted/30 px-2.5 py-2">
-                          <p className="text-sm font-medium text-foreground line-clamp-2">{step.instructions}</p>
+                          {oneShotBrief ? (
+                            <OneShotBriefCard
+                              brief={oneShotBrief}
+                              targetLabel={`${step.target.entity_type.replace('_', ' ')} · ${step.target.display_title || step.target.entity_id}`}
+                            />
+                          ) : (
+                            <p className="text-sm font-medium text-foreground line-clamp-2">{step.instructions}</p>
+                          )}
                           <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
                             <BotIcon className="h-3 w-3" />
                             <span className="truncate">{step.agent_name}</span>
@@ -630,4 +638,84 @@ export function SearchCommandPalette({
       </div>
     </CommandDialog>
   );
+}
+
+interface OneShotBrief {
+  goal: string;
+  plan: string[];
+  constraints: string[];
+}
+
+function OneShotBriefCard({ brief, targetLabel }: { brief: OneShotBrief; targetLabel: string }) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+            <Target02Icon className="h-3 w-3" />
+            Execution brief
+          </div>
+          <p className="mt-1 text-sm font-medium leading-5 text-foreground">{brief.goal}</p>
+        </div>
+      </div>
+      {brief.plan.length ? (
+        <div className="rounded-md border border-border/60 bg-background/70 px-2 py-1.5">
+          <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Plan</div>
+          <ol className="space-y-1">
+            {brief.plan.slice(0, 5).map((item, itemIndex) => (
+              <li key={`${itemIndex}-${item}`} className="grid grid-cols-[16px_1fr] gap-1.5 text-[11px] leading-4 text-muted-foreground">
+                <span className="text-right tabular-nums text-muted-foreground/70">{itemIndex + 1}</span>
+                <span>{item}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      ) : null}
+      <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+        <span className="rounded border border-border/70 bg-background/80 px-1.5 py-0.5">{targetLabel}</span>
+        {brief.constraints.slice(0, 2).map((constraint) => (
+          <span key={constraint} className="rounded border border-amber-500/25 bg-amber-500/10 px-1.5 py-0.5 text-amber-700 dark:text-amber-400">
+            {constraint}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function parseOneShotBrief(instructions: string): OneShotBrief {
+  const sections: Record<'goal' | 'plan' | 'constraints', string[]> = {
+    goal: [],
+    plan: [],
+    constraints: [],
+  };
+  let current: keyof typeof sections | null = null;
+  for (const rawLine of instructions.split('\n')) {
+    const line = rawLine.trim();
+    if (!line || line === 'One-shot execution brief') continue;
+    const lower = line.toLowerCase();
+    if (lower === 'goal:') {
+      current = 'goal';
+      continue;
+    }
+    if (lower === 'plan:') {
+      current = 'plan';
+      continue;
+    }
+    if (lower === 'constraints:') {
+      current = 'constraints';
+      continue;
+    }
+    if (lower.startsWith('target:') || lower.startsWith('user request:')) {
+      current = null;
+      continue;
+    }
+    if (!current) continue;
+    sections[current].push(line.replace(/^[-*]\s+/, '').replace(/^\d+\.\s+/, ''));
+  }
+  return {
+    goal: sections.goal.join(' ') || 'Complete the confirmed one-shot command.',
+    plan: sections.plan,
+    constraints: sections.constraints,
+  };
 }

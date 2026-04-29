@@ -2110,6 +2110,25 @@ func (s *AgentService) ListWorkspaceRuns(ctx context.Context, workspaceID string
 	return normalized, total, nil
 }
 
+// ListRecentRunsForActor returns the most recent runs the given user triggered
+// in the workspace. Used by the command runs rail to rehydrate standalone runs
+// after a refresh.
+func (s *AgentService) ListRecentRunsForActor(ctx context.Context, workspaceID, actorID string, limit int) ([]model.AgentRun, error) {
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	if actorID == "" {
+		return []model.AgentRun{}, nil
+	}
+	runs, err := s.runRepo.ListRecentForActor(ctx, workspaceID, actorID, limit)
+	if err != nil {
+		return nil, err
+	}
+	normalized := s.normalizeRunCollection(s.reconcileStuckRuns(ctx, runs))
+	s.enrichRunTargets(ctx, workspaceID, normalized)
+	return normalized, nil
+}
+
 // GetAgentRun returns a single run.
 func (s *AgentService) GetAgentRun(ctx context.Context, workspaceID, runID string) (*model.AgentRun, error) {
 	run, err := s.runRepo.GetByID(ctx, workspaceID, runID)

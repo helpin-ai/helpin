@@ -24,21 +24,22 @@ type InternalCommandDefinition struct {
 }
 
 type InternalCommandService struct {
-	agentService        *AgentService
-	taskService         *PMTaskService
-	labelService        *PMLabelService
-	commentService      *PMCommentService
-	crmDealService      *CRMDealService
-	crmActivityService  *CRMActivityService
-	docsDocumentService *DocsDocumentService
-	docsContentService  *DocsContentService
-	docsContentRepo     *repository.DocsContentRepository
-	docsLinkService     *DocsLinkService
-	pmAutomationService *PMAutomationService
-	gitService          *GitService
-	taskRepo            *repository.PMTaskRepository
-	taskLinkRepo        *repository.PMTaskLinkRepository
-	definitions         map[string]InternalCommandDefinition
+	agentService         *AgentService
+	taskService          *PMTaskService
+	labelService         *PMLabelService
+	commentService       *PMCommentService
+	crmDealService       *CRMDealService
+	crmActivityService   *CRMActivityService
+	crmEnrichmentService *CRMEnrichmentService
+	docsDocumentService  *DocsDocumentService
+	docsContentService   *DocsContentService
+	docsContentRepo      *repository.DocsContentRepository
+	docsLinkService      *DocsLinkService
+	pmAutomationService  *PMAutomationService
+	gitService           *GitService
+	taskRepo             *repository.PMTaskRepository
+	taskLinkRepo         *repository.PMTaskLinkRepository
+	definitions          map[string]InternalCommandDefinition
 }
 
 // SetPMAutomationService sets the PM automation service (breaks circular dependency).
@@ -59,6 +60,11 @@ func (s *InternalCommandService) SetPMCommentService(svc *PMCommentService) {
 // SetGitService sets the git service for delivery commands.
 func (s *InternalCommandService) SetGitService(svc *GitService) {
 	s.gitService = svc
+}
+
+// SetCRMEnrichmentService sets guarded CRM enrichment dependencies.
+func (s *InternalCommandService) SetCRMEnrichmentService(svc *CRMEnrichmentService) {
+	s.crmEnrichmentService = svc
 }
 
 // SetDocsCreateDependencies wires document creation dependencies after service
@@ -899,6 +905,56 @@ func (s *InternalCommandService) registerDefaults() {
 				return nil, err
 			}
 			return mustJSON(map[string]any{"activity_id": activity.ID, "deal_id": dealID}), nil
+		},
+	})
+	s.register(InternalCommandDefinition{
+		Name:                 "crm.enrich_contact",
+		Module:               "crm",
+		Mutating:             true,
+		SupportedTargetTypes: []string{"crm_contact"},
+		Tool:                 mustCommandToolMetadata("crm.enrich_contact"),
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.crmEnrichmentService == nil {
+				return nil, fmt.Errorf("CRM enrichment service is not configured")
+			}
+			var req model.EnrichCRMContactRequest
+			if err := json.Unmarshal(input, &req); err != nil {
+				return nil, fmt.Errorf("parse contact enrichment input: %w", err)
+			}
+			req.ContactID = strings.TrimSpace(firstNonEmptyCommand(req.ContactID, meta.TargetID))
+			if req.ContactID == "" {
+				return nil, fmt.Errorf("contact_id is required")
+			}
+			result, err := s.crmEnrichmentService.EnrichContact(ctx, meta.WorkspaceID, req)
+			if err != nil {
+				return nil, err
+			}
+			return mustJSON(result), nil
+		},
+	})
+	s.register(InternalCommandDefinition{
+		Name:                 "crm.enrich_company",
+		Module:               "crm",
+		Mutating:             true,
+		SupportedTargetTypes: []string{"crm_company"},
+		Tool:                 mustCommandToolMetadata("crm.enrich_company"),
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.crmEnrichmentService == nil {
+				return nil, fmt.Errorf("CRM enrichment service is not configured")
+			}
+			var req model.EnrichCRMCompanyRequest
+			if err := json.Unmarshal(input, &req); err != nil {
+				return nil, fmt.Errorf("parse company enrichment input: %w", err)
+			}
+			req.CompanyID = strings.TrimSpace(firstNonEmptyCommand(req.CompanyID, meta.TargetID))
+			if req.CompanyID == "" {
+				return nil, fmt.Errorf("company_id is required")
+			}
+			result, err := s.crmEnrichmentService.EnrichCompany(ctx, meta.WorkspaceID, req)
+			if err != nil {
+				return nil, err
+			}
+			return mustJSON(result), nil
 		},
 	})
 	s.register(InternalCommandDefinition{

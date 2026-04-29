@@ -183,6 +183,27 @@ func (r *AgentRunRepository) ListByWorkspace(ctx context.Context, workspaceID st
 	return runs, total, nil
 }
 
+// ListRecentForActor returns the most recent runs triggered by the given user
+// in the workspace. Used by the command runs rail to rehydrate standalone
+// runs (runs not tied to a command-bar plan) on mount.
+func (r *AgentRunRepository) ListRecentForActor(ctx context.Context, workspaceID, actorID string, limit int) ([]model.AgentRun, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("agent run repository is not configured")
+	}
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+	var runs []model.AgentRun
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND triggered_by_user_id = ?", workspaceID, actorID).
+		Order("created_at DESC").
+		Limit(limit).
+		Find(&runs).Error; err != nil {
+		return nil, fmt.Errorf("list recent agent runs for actor: %w", err)
+	}
+	return runs, nil
+}
+
 // ListByTask returns runs for a task.
 func (r *AgentRunRepository) ListByTask(ctx context.Context, workspaceID, storyID string) ([]model.AgentRun, error) {
 	var runs []model.AgentRun

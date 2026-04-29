@@ -100,6 +100,24 @@ type CommandBarPlanRecord struct {
 
 func (CommandBarPlanRecord) TableName() string { return "command_bar_plans" }
 
+// CommandBarPlanDismissal records that a user has dismissed a plan from their
+// command runs rail. Dismissals are per-user so engineers in the same workspace
+// can independently keep or clear runs from their own view.
+type CommandBarPlanDismissal struct {
+	WorkspaceID string    `json:"workspace_id" gorm:"type:uuid;primaryKey"`
+	PlanID      string    `json:"plan_id" gorm:"type:uuid;primaryKey"`
+	UserID      string    `json:"user_id" gorm:"type:uuid;primaryKey"`
+	DismissedAt time.Time `json:"dismissed_at" gorm:"autoCreateTime"`
+}
+
+// TableName names the underlying table for CommandBarPlanDismissal.
+func (CommandBarPlanDismissal) TableName() string { return "command_bar_plan_dismissals" }
+
+// DismissCommandBarPlansRequest dismisses one or more plans from the actor's rail.
+type DismissCommandBarPlansRequest struct {
+	PlanIDs []string `json:"plan_ids"`
+}
+
 type CommandBarPlanSummary struct {
 	ID               string                `json:"id"`
 	Status           string                `json:"status"`

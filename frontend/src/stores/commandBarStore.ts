@@ -12,8 +12,10 @@ export interface CommandBarRunPlan {
 }
 
 export type RailMode = 'closed' | 'peek' | 'open';
+export type RailFilter = 'all' | 'running' | 'queued' | 'failed';
 
 const RAIL_MODE_KEY = 'helpin:cmdk-rail:mode';
+const RAIL_FILTER_KEY = 'helpin:cmdk-rail:filter';
 
 function loadRailMode(): RailMode {
   if (typeof window === 'undefined') return 'peek';
@@ -35,18 +37,40 @@ function persistRailMode(mode: RailMode) {
   }
 }
 
+function loadRailFilter(): RailFilter {
+  if (typeof window === 'undefined') return 'all';
+  try {
+    const raw = window.localStorage.getItem(RAIL_FILTER_KEY);
+    if (raw === 'all' || raw === 'running' || raw === 'queued' || raw === 'failed') return raw;
+  } catch {
+    /* ignore */
+  }
+  return 'all';
+}
+
+function persistRailFilter(filter: RailFilter) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(RAIL_FILTER_KEY, filter);
+  } catch {
+    /* ignore */
+  }
+}
+
 interface CommandBarRunState {
   runIds: string[];
   runsById: Record<string, AgentRun>;
   planIds: string[];
   plansById: Record<string, CommandBarRunPlan>;
   railMode: RailMode;
+  railFilter: RailFilter;
   addRuns: (runs: AgentRun[]) => void;
   addPlan: (plan: CommandBarRunPlan, runs?: AgentRun[]) => void;
   hydratePlans: (plans: CommandBarPlanSummary[]) => void;
   updateRun: (run: AgentRun) => void;
   updatePlan: (plan: CommandBarPlanSummary, runs?: AgentRun[]) => void;
   setRailMode: (mode: RailMode) => void;
+  setRailFilter: (filter: RailFilter) => void;
   clear: () => void;
 }
 
@@ -56,6 +80,7 @@ export const useCommandBarRunStore = create<CommandBarRunState>((set) => ({
   planIds: [],
   plansById: {},
   railMode: loadRailMode(),
+  railFilter: loadRailFilter(),
   addRuns: (runs) =>
     set((state) => {
       const runsById = { ...state.runsById };
@@ -180,6 +205,10 @@ export const useCommandBarRunStore = create<CommandBarRunState>((set) => ({
   setRailMode: (mode) => {
     persistRailMode(mode);
     set({ railMode: mode });
+  },
+  setRailFilter: (filter) => {
+    persistRailFilter(filter);
+    set({ railFilter: filter });
   },
   clear: () => set({ runIds: [], runsById: {}, planIds: [], plansById: {} }),
 }));

@@ -29,18 +29,20 @@ type commandBarTriggerContextPayload struct {
 }
 
 type CommandBarService struct {
-	agentService *AgentService
-	planRepo     *repository.CommandBarPlanRepository
-	unmetRepo    *repository.CommandBarUnmetIntentRepository
-	llmProvider  llm.Provider
+	agentService  *AgentService
+	planRepo      *repository.CommandBarPlanRepository
+	unmetRepo     *repository.CommandBarUnmetIntentRepository
+	dismissalRepo *repository.CommandBarPlanDismissalRepository
+	llmProvider   llm.Provider
 }
 
-func NewCommandBarService(agentService *AgentService, planRepo *repository.CommandBarPlanRepository, unmetRepo *repository.CommandBarUnmetIntentRepository, llmProvider llm.Provider) *CommandBarService {
+func NewCommandBarService(agentService *AgentService, planRepo *repository.CommandBarPlanRepository, unmetRepo *repository.CommandBarUnmetIntentRepository, dismissalRepo *repository.CommandBarPlanDismissalRepository, llmProvider llm.Provider) *CommandBarService {
 	return &CommandBarService{
-		agentService: agentService,
-		planRepo:     planRepo,
-		unmetRepo:    unmetRepo,
-		llmProvider:  llmProvider,
+		agentService:  agentService,
+		planRepo:      planRepo,
+		unmetRepo:     unmetRepo,
+		dismissalRepo: dismissalRepo,
+		llmProvider:   llmProvider,
 	}
 }
 
@@ -74,6 +76,9 @@ func (s *CommandBarService) ParseIntent(ctx context.Context, workspaceID, actorI
 		return parsed, nil
 	}
 	if parsed := parseExplicitNamedAgents(text, pageContext, candidates); parsed != nil {
+		return parsed, nil
+	}
+	if parsed := parsePreferredOneShotCommandIntent(text, pageContext, candidates); parsed != nil {
 		return parsed, nil
 	}
 	if parsed := parseIntentDeterministically(text, pageContext, narrowCandidates); parsed != nil {
@@ -201,19 +206,80 @@ func (s *CommandBarService) ListPlans(ctx context.Context, workspaceID, actorID 
 	if s == nil || s.planRepo == nil {
 		return &model.CommandBarPlanListResponse{Plans: []model.CommandBarPlanSummary{}}, nil
 	}
-	records, err := s.planRepo.ListRecent(ctx, workspaceID, strings.TrimSpace(actorID), limit)
+	trimmedActor := strings.TrimSpace(actorID)
+	dismissed := map[string]struct{}{}
+	if s.dismissalRepo != nil && trimmedActor != "" {
+		ids, err := s.dismissalRepo.ListDismissedPlanIDs(ctx, workspaceID, trimmedActor)
+		if err != nil {
+			return nil, err
+		}
+		for _, id := range ids {
+			dismissed[id] = struct{}{}
+		}
+	}
+	// Pull a few extra records so dismissals don't shrink the visible window
+	// below the requested limit.
+	fetchLimit := limit
+	if fetchLimit <= 0 || fetchLimit > 50 {
+		fetchLimit = 20
+	}
+	if len(dismissed) > 0 {
+		fetchLimit += len(dismissed)
+		if fetchLimit > 50 {
+			fetchLimit = 50
+		}
+	}
+	records, err := s.planRepo.ListRecent(ctx, workspaceID, trimmedActor, fetchLimit)
 	if err != nil {
 		return nil, err
 	}
 	summaries := make([]model.CommandBarPlanSummary, 0, len(records))
 	for _, record := range records {
+		if _, hidden := dismissed[record.ID]; hidden {
+			continue
+		}
 		summary, err := s.commandBarPlanSummaryForRecord(ctx, workspaceID, record)
 		if err != nil {
 			return nil, err
 		}
 		summaries = append(summaries, summary)
+		if limit > 0 && len(summaries) >= limit {
+			break
+		}
 	}
 	return &model.CommandBarPlanListResponse{Plans: summaries}, nil
+}
+
+// DismissPlans hides the given plans from the actor's command runs rail. Only
+// plans owned by the actor can be dismissed; unknown or unauthorized plan IDs
+// are silently skipped so a stale client cannot enumerate other users' runs.
+func (s *CommandBarService) DismissPlans(ctx context.Context, workspaceID, actorID string, planIDs []string) error {
+	if s == nil || s.dismissalRepo == nil {
+		return fmt.Errorf("command bar service is not configured for dismissals")
+	}
+	trimmedActor := strings.TrimSpace(actorID)
+	if trimmedActor == "" {
+		return fmt.Errorf("actor is required")
+	}
+	allowed := make([]string, 0, len(planIDs))
+	for _, id := range planIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		plan, err := s.planRepo.GetByID(ctx, workspaceID, id)
+		if err != nil {
+			return err
+		}
+		if plan == nil || !commandBarPlanOwnedByActor(plan, trimmedActor) {
+			continue
+		}
+		allowed = append(allowed, id)
+	}
+	if len(allowed) == 0 {
+		return nil
+	}
+	return s.dismissalRepo.Dismiss(ctx, workspaceID, trimmedActor, allowed)
 }
 
 func (s *CommandBarService) GetPlan(ctx context.Context, workspaceID, actorID, planID string) (*model.CommandBarPlanDetailResponse, error) {
@@ -1197,6 +1263,35 @@ func parseOneShotCommandIntent(text string, pageContext model.CommandBarPageCont
 	return resp
 }
 
+func parsePreferredOneShotCommandIntent(text string, pageContext model.CommandBarPageContext, candidates []model.CommandBarAgent) *model.CommandBarParseResponse {
+	if !shouldPreferOneShotCommandIntent(text, pageContext) {
+		return nil
+	}
+	return parseOneShotCommandIntent(text, pageContext, candidates)
+}
+
+func shouldPreferOneShotCommandIntent(text string, pageContext model.CommandBarPageContext) bool {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	targetType := normalizeCommandBarTargetType(pageContext.EntityType)
+	if targetType != "crm_contact" && targetType != "crm_deal" {
+		return false
+	}
+	if !containsAny(lower, "contact", "company", "account", "crm") {
+		return false
+	}
+	return containsAny(lower,
+		"find info",
+		"find information",
+		"research",
+		"enrich",
+		"update contact",
+		"update company",
+		"update account",
+		"refresh contact",
+		"refresh company",
+	)
+}
+
 func commandBarFanOutPlanResponse(agent model.CommandBarAgent, targets []model.CommandBarPageContext, text, rationale string, candidates []model.CommandBarAgent) *model.CommandBarParseResponse {
 	if len(targets) == 0 {
 		return nil
@@ -1341,7 +1436,7 @@ func oneShotCommandToolsForIntent(text string, pageContext model.CommandBarPageC
 		recognized = true
 		tools = append(tools, "list_documents", "list_collections", "read_document", "search_documents")
 	}
-	if containsAny(lower, "web", "website", "url", "internet", "research", "source", "sources", "stale", "latest", "fetch", "crawl") {
+	if containsAny(lower, "web", "website", "url", "internet", "research", "source", "sources", "stale", "latest", "fetch", "crawl", "find info", "find information", "enrich") {
 		recognized = true
 		tools = append(tools, "web_search_exa", "web_search_brave", "fetch_url", "crawl_url")
 	}
@@ -1367,6 +1462,16 @@ func oneShotCommandToolsForIntent(text string, pageContext model.CommandBarPageC
 	if targetType == "crm_contact" || targetType == "crm_deal" || containsAny(lower, "crm", "deal", "contact", "buyer", "pipeline") {
 		recognized = true
 		tools = append(tools, "list_deals", "list_contacts", "list_buyer_signals")
+	}
+	if (targetType == "crm_contact" || targetType == "crm_deal") && containsAny(lower, "update", "refresh", "enrich", "find info", "find information", "research") {
+		recognized = true
+		tools = append(tools, "request_approval")
+		if targetType == "crm_contact" || containsAny(lower, "contact") {
+			tools = append(tools, "enrich_crm_contact")
+		}
+		if containsAny(lower, "company", "account") {
+			tools = append(tools, "enrich_crm_company")
+		}
 	}
 	if containsAny(lower, "deal note", "crm note", "add note to deal") {
 		recognized = true
@@ -1403,19 +1508,100 @@ func oneShotCommandToolsForIntent(text string, pageContext model.CommandBarPageC
 }
 
 func commandBarOneShotInstructions(text string, pageContext model.CommandBarPageContext, tools []string) string {
-	parts := []string{
+	goal, plan, constraints := oneShotExecutionBrief(text, pageContext, tools)
+	parts := []string{"One-shot execution brief"}
+	parts = append(parts, "Goal:\n- "+goal)
+	if len(plan) > 0 {
+		lines := make([]string, 0, len(plan))
+		for i, step := range plan {
+			lines = append(lines, fmt.Sprintf("%d. %s", i+1, step))
+		}
+		parts = append(parts, "Plan:\n"+strings.Join(lines, "\n"))
+	}
+	constraints = append([]string{
 		"Run as a one-shot command agent for the current target.",
 		"Do not create or save a reusable agent.",
 		"Use only the enabled tools for this run.",
+	}, constraints...)
+	if hasAnyTool(tools, "write_document_content", "create_document", "create_task", "add_task_comment", "add_deal_note", "update_deal_stage", "enrich_crm_contact", "enrich_crm_company") {
+		constraints = append(constraints, "The user confirmed this command-bar plan; keep mutations limited to the requested action and target.")
 	}
-	if hasAnyTool(tools, "write_document_content", "create_document", "create_task", "add_task_comment", "add_deal_note", "update_deal_stage") {
-		parts = append(parts, "The user confirmed this command-bar plan; keep mutations limited to the requested action and target.")
+	if len(constraints) > 0 {
+		lines := make([]string, 0, len(constraints))
+		for _, constraint := range constraints {
+			lines = append(lines, "- "+constraint)
+		}
+		parts = append(parts, "Constraints:\n"+strings.Join(lines, "\n"))
 	}
 	if pageContext.EntityType != "" || pageContext.EntityID != "" {
 		parts = append(parts, fmt.Sprintf("Target: %s %s (%s).", pageContext.EntityType, pageContext.EntityID, pageContext.DisplayTitle))
 	}
 	parts = append(parts, "User request:\n"+strings.TrimSpace(text))
 	return strings.Join(parts, "\n\n")
+}
+
+func oneShotExecutionBrief(text string, pageContext model.CommandBarPageContext, tools []string) (string, []string, []string) {
+	_ = tools
+	lower := strings.ToLower(strings.TrimSpace(text))
+	targetType := normalizeCommandBarTargetType(pageContext.EntityType)
+	switch {
+	case targetType == "crm_contact" || targetType == "crm_deal":
+		goal := "Research the CRM target and produce high-confidence CRM updates for the requested contact, company, or deal context."
+		plan := []string{
+			"Review the current CRM target and related CRM context available through the enabled tools.",
+			"Search the web for public contact, company, role, domain, and buyer-signal evidence.",
+			"Fetch authoritative sources before relying on search snippets.",
+			"Extract proposed CRM updates with source URLs and confidence notes.",
+			"Apply only CRM mutations supported by the enabled tools; otherwise return exact proposed field changes for review.",
+		}
+		constraints := []string{
+			"Do not invent contact, company, title, domain, funding, or employment facts.",
+			"Use guarded CRM enrichment tools for CRM writes; names, existing email, existing phone, company name, and existing domain are protected server-side.",
+			"Ask for approval before any high-impact CRM mutation.",
+		}
+		return goal, plan, constraints
+	case targetType == "document" || containsAny(lower, "doc", "document", "article", "stale"):
+		goal := "Research and update the document only where the requested change is supported by the current document context and sources."
+		plan := []string{
+			"Read the current document and identify the sections relevant to the request.",
+			"Use web or document search tools only where more evidence is needed.",
+			"Fetch source pages before treating web results as facts.",
+			"Draft the smallest safe content change that satisfies the request.",
+			"Write the document only if the enabled tools support it; otherwise return the proposed patch.",
+		}
+		constraints := []string{
+			"Preserve the document's existing structure and tone unless the user requested a rewrite.",
+			"Do not replace sourced content with weaker evidence.",
+			"Ask for approval before broad rewrites or uncertain factual changes.",
+		}
+		return goal, plan, constraints
+	case targetType == "task" || containsAny(lower, "task", "story", "comment"):
+		goal := "Complete the requested task-level action using the current task context and the enabled tools."
+		plan := []string{
+			"Review the current task context and identify the exact requested output.",
+			"Gather any missing workspace/team context needed for the action.",
+			"Create tasks or add comments only when the request is explicit and the enabled tools support it.",
+			"Summarize what changed and any follow-up needed.",
+		}
+		constraints := []string{
+			"Keep mutations limited to the current task or clearly requested workspace target.",
+			"Do not create duplicate tasks when an existing task should be updated or referenced.",
+		}
+		return goal, plan, constraints
+	default:
+		goal := "Complete the confirmed one-shot command for the current target."
+		plan := []string{
+			"Review the provided target context and the user's request.",
+			"Use the enabled tools to gather only the context needed for this command.",
+			"Perform supported mutations carefully, or return proposed changes when a write tool is unavailable.",
+			"Summarize the result and any sources or follow-up actions.",
+		}
+		constraints := []string{
+			"Keep the run scoped to the confirmed command and target.",
+			"Ask for clarification or approval when the request is ambiguous or risky.",
+		}
+		return goal, plan, constraints
+	}
 }
 
 func hasAnyTool(tools []string, needles ...string) bool {

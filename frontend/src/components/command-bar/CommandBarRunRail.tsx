@@ -8,14 +8,13 @@ import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from '@/components/pm/a
 import { agentService } from '@/lib/services/agentService';
 import { commandBarService } from '@/lib/services/commandBarService';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useCommandBarRunStore, type CommandBarRunPlan } from '@/stores/commandBarStore';
+import { useCommandBarRunStore, type CommandBarRunPlan, type RailFilter } from '@/stores/commandBarStore';
 import { PromotionDialog } from '@/components/command-bar/PromotionDialog';
 import { CommandPlanTimeline, StandaloneRunTimeline, type RunAction } from '@/components/command-bar/CommandRunTimeline';
 import { cn } from '@/lib/utils';
 import type { AgentRun, CommandBarPlanStep } from '@/lib/pmTypes';
 
 type RailState = 'attention' | 'running' | 'queued' | 'completed';
-type RailFilter = 'all' | 'running' | 'queued' | 'failed';
 type RailItem =
   | { id: string; type: 'plan'; state: RailState; plan: CommandBarRunPlan }
   | { id: string; type: 'run'; state: RailState; run: AgentRun };
@@ -41,14 +40,16 @@ export function CommandBarRunRail() {
   const plansById = useCommandBarRunStore((s) => s.plansById);
   const railMode = useCommandBarRunStore((s) => s.railMode);
   const updateRun = useCommandBarRunStore((s) => s.updateRun);
+  const addRuns = useCommandBarRunStore((s) => s.addRuns);
   const hydratePlans = useCommandBarRunStore((s) => s.hydratePlans);
   const updatePlan = useCommandBarRunStore((s) => s.updatePlan);
   const setRailMode = useCommandBarRunStore((s) => s.setRailMode);
+  const filter = useCommandBarRunStore((s) => s.railFilter);
+  const setFilter = useCommandBarRunStore((s) => s.setRailFilter);
   const clear = useCommandBarRunStore((s) => s.clear);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [busyRunId, setBusyRunId] = useState<string | null>(null);
   const [busyPlanId, setBusyPlanId] = useState<string | null>(null);
-  const [filter, setFilter] = useState<RailFilter>('all');
   const [promotionRun, setPromotionRun] = useState<{ run: AgentRun; step: CommandBarPlanStep | null; planPrompt?: string } | null>(null);
 
   const runs = useMemo(
@@ -106,10 +107,13 @@ export function CommandBarRunRail() {
     void commandBarService.listPlans(workspaceId, 10).then((res) => {
       if (!cancelled && res.data?.plans) hydratePlans(res.data.plans);
     });
+    void agentService.listRecentRuns(workspaceId, 20).then((res) => {
+      if (!cancelled && res.data?.runs?.length) addRuns(res.data.runs);
+    });
     return () => {
       cancelled = true;
     };
-  }, [hydratePlans, workspaceId]);
+  }, [addRuns, hydratePlans, workspaceId]);
 
   const planRefetchTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const schedulePlanRefetch = useCallback(
@@ -220,6 +224,21 @@ export function CommandBarRunRail() {
     setPromotionRun({ run, step, planPrompt });
   };
 
+  const dismissAll = async () => {
+    if (!workspaceId) return;
+    const visiblePlanIds = visibleItems.flatMap((item) => (item.type === 'plan' ? [item.plan.id] : []));
+    if (visiblePlanIds.length === 0) {
+      clear();
+      return;
+    }
+    const res = await commandBarService.dismissPlans(workspaceId, visiblePlanIds);
+    if (res.error) {
+      toast.error(res.error);
+      return;
+    }
+    clear();
+  };
+
   const cancelPlan = async (planId: string) => {
     if (!workspaceId) return;
     setBusyPlanId(planId);
@@ -308,7 +327,7 @@ export function CommandBarRunRail() {
               <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => setRailMode('peek')} title="Collapse to peek (⌘.)">
                 <ArrowUpRight01Icon className="h-4 w-4" />
               </Button>
-              <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={clear} title="Clear all">
+              <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => void dismissAll()} title="Clear all">
                 <Cancel01Icon className="h-4 w-4" />
               </Button>
             </div>

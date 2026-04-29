@@ -170,7 +170,7 @@ export function StandaloneRunTimeline({ run, busyRunId, onOpenRun, onRunAction }
   }
 
   return (
-    <article className="border-b border-border/60 px-3 py-3 last:border-b-0 hover:bg-muted/30">
+    <article className="group/plan border-b border-border/60 px-3 py-3 last:border-b-0 hover:bg-muted/30">
       <div className="relative pl-5">
         <CommandRunNode
           step={pseudoStep}

@@ -97,6 +97,84 @@ func TestCreateTaskToolUsesInternalCommandExecutorWhenAvailable(t *testing.T) {
 	}
 }
 
+func TestEnrichCRMContactToolUsesInternalCommandExecutorWhenAvailable(t *testing.T) {
+	registry := NewToolRegistry(nil)
+	called := false
+	ctx := &ExecutionContext{
+		Context:     context.Background(),
+		WorkspaceID: "ws-1",
+		TargetType:  "crm_contact",
+		TargetID:    "contact-1",
+		AgentID:     "agent-1",
+		RunID:       "run-1",
+		AllowedTools: map[string]bool{
+			"enrich_crm_contact": true,
+		},
+		Services: &ServiceBridge{
+			ExecuteInternalCommand: func(ctx context.Context, meta model.InternalCommandContext, name string, input json.RawMessage) (json.RawMessage, error) {
+				called = true
+				if name != "crm.enrich_contact" {
+					t.Fatalf("unexpected command name %q", name)
+				}
+				if meta.WorkspaceID != "ws-1" || meta.TargetType != "crm_contact" || meta.TargetID != "contact-1" || meta.AgentID != "agent-1" || meta.RunID != "run-1" {
+					t.Fatalf("unexpected command meta %#v", meta)
+				}
+				return json.RawMessage(`{"status":"applied","object_type":"contact","object_id":"contact-1","applied":[],"skipped":[]}`), nil
+			},
+		},
+	}
+
+	output, err := registry.ExecuteAllowed(ctx, "enrich_crm_contact", json.RawMessage(`{"contact_id":"contact-1","fields":[{"field":"job_title","value":"VP Sales","source_url":"https://example.com","evidence":"Source lists title.","confidence":0.9}]}`))
+	if err != nil {
+		t.Fatalf("ExecuteAllowed returned error: %v", err)
+	}
+	if !called {
+		t.Fatal("expected internal command executor to be used")
+	}
+	if !strings.Contains(output, `"object_id":"contact-1"`) {
+		t.Fatalf("unexpected output %q", output)
+	}
+}
+
+func TestEnrichCRMCompanyToolUsesInternalCommandExecutorWhenAvailable(t *testing.T) {
+	registry := NewToolRegistry(nil)
+	called := false
+	ctx := &ExecutionContext{
+		Context:     context.Background(),
+		WorkspaceID: "ws-1",
+		TargetType:  "crm_contact",
+		TargetID:    "contact-1",
+		AgentID:     "agent-1",
+		RunID:       "run-1",
+		AllowedTools: map[string]bool{
+			"enrich_crm_company": true,
+		},
+		Services: &ServiceBridge{
+			ExecuteInternalCommand: func(ctx context.Context, meta model.InternalCommandContext, name string, input json.RawMessage) (json.RawMessage, error) {
+				called = true
+				if name != "crm.enrich_company" {
+					t.Fatalf("unexpected command name %q", name)
+				}
+				if meta.WorkspaceID != "ws-1" || meta.TargetType != "crm_company" || meta.TargetID != "company-1" || meta.AgentID != "agent-1" || meta.RunID != "run-1" {
+					t.Fatalf("unexpected command meta %#v", meta)
+				}
+				return json.RawMessage(`{"status":"applied","object_type":"company","object_id":"company-1","applied":[],"skipped":[]}`), nil
+			},
+		},
+	}
+
+	output, err := registry.ExecuteAllowed(ctx, "enrich_crm_company", json.RawMessage(`{"company_id":"company-1","fields":[{"field":"industry","value":"Product Analytics","source_url":"https://example.com","evidence":"Source lists industry.","confidence":0.9}]}`))
+	if err != nil {
+		t.Fatalf("ExecuteAllowed returned error: %v", err)
+	}
+	if !called {
+		t.Fatal("expected internal command executor to be used")
+	}
+	if !strings.Contains(output, `"object_id":"company-1"`) {
+		t.Fatalf("unexpected output %q", output)
+	}
+}
+
 func TestEnsureTaskLabelToolUsesInternalCommandExecutorWhenAvailable(t *testing.T) {
 	registry := NewToolRegistry(nil)
 	called := false

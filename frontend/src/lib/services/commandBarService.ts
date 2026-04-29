@@ -36,6 +36,10 @@ export const commandBarService = {
     api.post<CommandBarCancelPlanResponse>(`/command-bar/plans/${encodeURIComponent(planId)}/cancel${qs(workspaceId)}`),
   retryPlan: (workspaceId: string, planId: string, stepIndex: number) =>
     api.post<CommandBarRetryPlanResponse>(`/command-bar/plans/${encodeURIComponent(planId)}/retry${qs(workspaceId)}`, { step_index: stepIndex }),
+  dismissPlans: (workspaceId: string, planIds: string[]) =>
+    api.post<void>(`/command-bar/plans/dismiss${qs(workspaceId)}`, { plan_ids: planIds }),
+  dismissPlan: (workspaceId: string, planId: string) =>
+    api.post<void>(`/command-bar/plans/${encodeURIComponent(planId)}/dismiss${qs(workspaceId)}`),
   promoteRunToAgent: (workspaceId: string, runId: string, payload: PromoteCommandBarRunRequest) =>
     api.post<PromoteCommandBarRunResponse>(`/command-bar/runs/${encodeURIComponent(runId)}/promote-agent${qs(workspaceId)}`, payload),
   listUnmetIntents: (workspaceId: string, opts?: { status?: CommandBarUnmetIntentStatus | 'all'; limit?: number; includeSensitive?: boolean }) => {

@@ -90,6 +90,7 @@ func TestToolCatalogUsesSharedCommandToolMetadataForCategories(t *testing.T) {
 		"approve_epic_spec":      "PM / Tasks",
 		"write_document_content": "Docs",
 		"update_deal_stage":      "CRM",
+		"enrich_crm_contact":     "CRM",
 	} {
 		if got := categories[toolName]; got != want {
 			t.Fatalf("expected tool %q to use shared category %q, got %q", toolName, want, got)
@@ -108,6 +109,31 @@ func TestToolRegistryIncludesAllSharedCommandTools(t *testing.T) {
 	for _, meta := range commandtools.AllRuntimeToolMetadata() {
 		if _, ok := definitions[meta.Alias]; !ok {
 			t.Fatalf("expected shared command-backed tool %q to be registered", meta.Alias)
+		}
+	}
+}
+
+func TestCRMEnrichmentToolSchemasAreStrict(t *testing.T) {
+	for _, alias := range []string{"enrich_crm_contact", "enrich_crm_company"} {
+		meta, ok := commandtools.ToolMetadataForAlias(alias)
+		if !ok {
+			t.Fatalf("missing metadata for %s", alias)
+		}
+		if got := meta.InputSchema["additionalProperties"]; got != false {
+			t.Fatalf("%s additionalProperties = %#v, want false", alias, got)
+		}
+		required, ok := meta.InputSchema["required"].([]string)
+		if !ok {
+			t.Fatalf("%s required has unexpected type %#v", alias, meta.InputSchema["required"])
+		}
+		if len(required) != 2 || required[1] != "fields" {
+			t.Fatalf("%s required = %#v, want object id and fields", alias, required)
+		}
+		properties := meta.InputSchema["properties"].(map[string]any)
+		fields := properties["fields"].(map[string]any)
+		item := fields["items"].(map[string]any)
+		if got := item["additionalProperties"]; got != false {
+			t.Fatalf("%s field item additionalProperties = %#v, want false", alias, got)
 		}
 	}
 }

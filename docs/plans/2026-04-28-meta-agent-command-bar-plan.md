@@ -50,6 +50,7 @@ Current caveats:
 - Tool-subset picker UI is implemented for known saved agents and blocks dispatch when a step is narrowed to zero tools. Backend `allowed_tools: []` still means "inherit defaults", so the UI intentionally does not dispatch explicit-empty tool sets.
 - Unmet-intent review has a settings UI and redacted-by-default API contract. Still open: final product policy for retention and who may reveal full prompts.
 - Promotion UI is implemented as an explicit dialog with name, description, tool scope, target scope, and provenance. Still open: broader custom-agent registry/versioning UX is outside this plan.
+- CRM one-shot research/update now routes to the Command Agent and can use guarded contact/company enrichment mutation tools. See [Guarded CRM Enrichment Tools Plan](./2026-04-29-guarded-crm-enrichment-tools-plan.md).
 
 Verification completed:
 
@@ -265,7 +266,7 @@ Status: implemented with redacted summaries and a settings review UI. Retention 
 
 ## What is next
 
-Tracks A-D are implemented across backend and frontend. Track E single-target one-shot Command Agent exposure and bounded fan-out are implemented in this branch. The immediate work is applying the pending forward migration and doing focused QA.
+Tracks A-D are implemented across backend and frontend. Track E single-target one-shot Command Agent exposure and bounded fan-out are implemented in this branch. Track F guarded CRM enrichment tools are implemented on the backend so one-shot CRM research/update commands can write safe fill-only data instead of only summarizing proposed changes.
 
 ### Frontend workstream
 
@@ -286,6 +287,7 @@ Tracks A-D are implemented across backend and frontend. Track E single-target on
 6. [x] **Migration safety repair.** The applied `202604280001` migration is no longer edited in place; `202604280009_repair_pm_external_links_entity_backfill.sql` carries the safer UUID-regex repair. It must be applied before deploy validation is expected to pass.
 7. [x] **One-shot Command Agent policy.** Parser tries narrower saved agents first, then may propose Command Agent for recognized docs/task/CRM/web command categories with a narrow runtime tool subset.
 8. [x] **Fan-out policy and contract.** `plan_kind: "fan_out"` starts concrete target steps in parallel, caps at 5 runs, groups them in the rail, cancels active group runs, and retries failed/cancelled targets only. Ambiguous target selectors still return no match.
+9. [x] **Guarded CRM enrichment tools.** `enrich_crm_contact` and `enrich_crm_company` are command-backed runtime tools for the Command Agent only. The tools reject names, protect existing email/phone/domain/company identity fields, write only fill-empty core fields or agent-owned enrichment metadata, and record evidence in `crm_enrichment_results`.
 
 ### Parallelization plan
 
@@ -294,6 +296,7 @@ Tracks A-D are implemented across backend and frontend. Track E single-target on
 - **Track C:** Done. Filtered tool catalog and frontend catalog picker with explicit-empty blocking are implemented.
 - **Track D:** Done. Redaction/review payload and frontend prompt-preview rendering are implemented.
 - **Track E:** Single-target one-shot Command Agent and bounded concrete-target fan-out are implemented.
+- **Track F:** Done. Guarded CRM enrichment tools are implemented and specified in [Guarded CRM Enrichment Tools Plan](./2026-04-29-guarded-crm-enrichment-tools-plan.md).
 
 ## Sequenced bets (high-level)
 
@@ -309,6 +312,7 @@ Tracks A-D are implemented across backend and frontend. Track E single-target on
 - [x] **(v2)** Single-target one-shot dynamic runs through a product-owned broad Command Agent profile. Parser/UX exposure is implemented with narrow tool subsets and explicit one-shot framing.
 - [x] **Fan-out for concrete related targets.** Explicit fan-out plans start multiple target runs in parallel, show grouped rail status, cancel active runs as a group, and retry failed targets only.
 - [x] **(v2.5)** Opt-in promotion of successful command-bar runs to saved custom agents is implemented with editable name, description, tool scope, target scope, and provenance preview.
+- [x] **Guarded CRM write tools.** One-shot CRM research/update runs can use `enrich_crm_contact` and `enrich_crm_company` with server-owned protected-field guards before they write researched data.
 - [ ] **Future reference only** Automatic saved-agent creation/reuse is not a delivery phase in this plan.
 
 No week estimates here — the point of this doc is direction, not a schedule.
@@ -335,6 +339,7 @@ No week estimates here — the point of this doc is direction, not a schedule.
 - **Plan parsing ambiguity.** Natural language → DAG is the part most likely to feel magical-or-broken. The chip-based confirm step is the safety net; do not skip it even when the plan looks obvious.
 - **Closest-preset mismatch.** If no agent fits, routing to a vaguely related preset is worse than refusing. v1 should fail honestly with `no_matching_agent`.
 - **Target promise boundary.** Docs and CRM target dispatch is now supported for `document`, `crm_contact`, and `crm_deal`. The remaining risk is over-promising richer target-specific context or mutation behavior beyond the baseline run target payload.
+- **CRM mutation safety.** Planned guarded CRM enrichment tools must enforce fill-only behavior server-side. Until field-level provenance exists, treat every non-empty protected CRM value as user-owned and do not overwrite it.
 - **Agent sprawl from auto-save.** Automatically saving agents from command prompts creates overlapping, poorly named registry entries. This is why auto-create/reuse is future-reference only, not a v2 deliverable.
 - **Output blob honesty.** Without diffs, "run completed" with a JSON summary will feel underwhelming on mutation-heavy actions. Pick the v1 demo flows carefully (summarize, draft, plan) over (implement, mutate).
 - **Agent name vocabulary drift.** Earlier discussion floated Atlas/Forge/Lens; actual presets are Epic Planner / Task Planner / CRM Operator / Support Agent / Code Builder / Review Agent. PRD and UI must use one set. Renaming presets is a separate decision.

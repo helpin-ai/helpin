@@ -176,6 +176,7 @@ func main() {
 	crmAssociationRepo := repository.NewCRMAssociationRepository(db)
 	crmSignalRepo := repository.NewCRMSignalRepository(db)
 	crmActivityRepo := repository.NewCRMActivityRepository(db)
+	crmEnrichmentRepo := repository.NewCRMEnrichmentRepository(db)
 	crmSummaryRepo := repository.NewCRMSummaryRepository(db)
 	automationHealthRepo := repository.NewAutomationHealthRepository(db)
 	pmAttachmentRepo := repository.NewPMAttachmentRepository(db)
@@ -485,6 +486,7 @@ func main() {
 	)
 	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo)
 	crmActivityService := service.NewCRMActivityService(crmActivityRepo)
+	crmEnrichmentService := service.NewCRMEnrichmentService(crmEnrichmentRepo, crmContactRepo, crmCompanyRepo)
 	pmLabelService := service.NewPMLabelService(labelRepo, wsPublisher)
 	pmCommentService := service.NewPMCommentService(commentRepo, storyRepo, pmAttachmentRepo, pmActivityService, wsPublisher, notificationService, workspaceRepo, s3Client)
 	commandService := service.NewInternalCommandService(
@@ -499,6 +501,7 @@ func main() {
 	)
 	commandService.SetPMLabelService(pmLabelService)
 	commandService.SetPMCommentService(pmCommentService)
+	commandService.SetCRMEnrichmentService(crmEnrichmentService)
 	commandService.SetDocsCreateDependencies(docsDocumentService, docsContentRepo)
 	activities = temporalapp.NewAgentRunActivities(
 		runRepo,

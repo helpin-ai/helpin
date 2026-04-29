@@ -902,6 +902,8 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"add_task_comment":        toolAddTaskComment,
 		"update_deal_stage":       toolUpdateDealStage,
 		"add_deal_note":           toolAddDealNote,
+		"enrich_crm_contact":      toolEnrichCRMContact,
+		"enrich_crm_company":      toolEnrichCRMCompany,
 		"create_document":         toolCreateDocument,
 		"create_task":             toolCreateTask,
 		"write_document_content":  toolWriteDocumentContent,

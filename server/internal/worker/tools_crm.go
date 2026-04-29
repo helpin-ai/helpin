@@ -95,6 +95,52 @@ func toolAddDealNote(ctx *ExecutionContext, input json.RawMessage) (string, erro
 	return "Note added to deal.", nil
 }
 
+func toolEnrichCRMContact(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	var params struct {
+		ContactID string `json:"contact_id"`
+	}
+	if err := json.Unmarshal(input, &params); err != nil {
+		return "", fmt.Errorf("parse input: %w", err)
+	}
+	contactID := strings.TrimSpace(params.ContactID)
+	if contactID == "" && ctx != nil && ctx.TargetType == "crm_contact" {
+		contactID = strings.TrimSpace(ctx.TargetID)
+	}
+	if contactID == "" {
+		return "", fmt.Errorf("contact_id is required")
+	}
+	if output, ok, err := executeInternalCommand(ctx, "crm_contact", contactID, "crm.enrich_contact", input); ok {
+		if err != nil {
+			return "", fmt.Errorf("enrich CRM contact: %w", err)
+		}
+		return string(output), nil
+	}
+	return "", fmt.Errorf("CRM contact enrichment is not available for this agent")
+}
+
+func toolEnrichCRMCompany(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	var params struct {
+		CompanyID string `json:"company_id"`
+	}
+	if err := json.Unmarshal(input, &params); err != nil {
+		return "", fmt.Errorf("parse input: %w", err)
+	}
+	companyID := strings.TrimSpace(params.CompanyID)
+	if companyID == "" && ctx != nil && ctx.TargetType == "crm_company" {
+		companyID = strings.TrimSpace(ctx.TargetID)
+	}
+	if companyID == "" {
+		return "", fmt.Errorf("company_id is required")
+	}
+	if output, ok, err := executeInternalCommand(ctx, "crm_company", companyID, "crm.enrich_company", input); ok {
+		if err != nil {
+			return "", fmt.Errorf("enrich CRM company: %w", err)
+		}
+		return string(output), nil
+	}
+	return "", fmt.Errorf("CRM company enrichment is not available for this agent")
+}
+
 func toolListContacts(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	if ctx.Services == nil || ctx.Services.ListContacts == nil {
 		return "", fmt.Errorf("CRM contact access is not available for this agent")

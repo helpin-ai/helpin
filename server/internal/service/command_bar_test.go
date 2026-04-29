@@ -111,6 +111,12 @@ func TestParseOneShotCommandIntentForDocumentUpdate(t *testing.T) {
 	if !strings.Contains(step.Instructions, "Do not create or save a reusable agent") {
 		t.Fatalf("expected one-shot instruction guardrail, got %q", step.Instructions)
 	}
+	if !strings.Contains(step.Instructions, "Goal:") || !strings.Contains(step.Instructions, "Plan:") || !strings.Contains(step.Instructions, "Constraints:") {
+		t.Fatalf("expected structured execution brief, got %q", step.Instructions)
+	}
+	if !strings.Contains(step.Instructions, "Read the current document") {
+		t.Fatalf("expected document-specific execution plan, got %q", step.Instructions)
+	}
 }
 
 func TestParseIntentDeterministicallyPrefersKnownAgentBeforeOneShot(t *testing.T) {
@@ -143,6 +149,78 @@ func TestParseOneShotCommandIntentRejectsUnsupportedMutation(t *testing.T) {
 
 	if resp := parseOneShotCommandIntent("delete workspace", pageContext, candidates); resp != nil {
 		t.Fatalf("expected unsupported mutation to stay unmatched, got %#v", resp)
+	}
+}
+
+func TestCRMResearchUpdatePrefersOneShotCommandAgent(t *testing.T) {
+	pageContext := model.CommandBarPageContext{
+		EntityType:   "crm_contact",
+		EntityID:     "contact-1",
+		DisplayTitle: "Ada Lovelace",
+	}
+	candidates := []model.CommandBarAgent{
+		{
+			ID:             "agent-crm",
+			Name:           "CRM Operator",
+			PresetKey:      model.AgentPresetCRMOperator,
+			AllowedTargets: []string{"crm_contact"},
+			AllowedTools:   []string{"list_deals", "list_contacts", "list_buyer_signals"},
+		},
+		{
+			ID:             "agent-command",
+			Name:           "Command Agent",
+			PresetKey:      model.AgentPresetCommandAgent,
+			AllowedTargets: []string{"crm_contact"},
+			AllowedTools:   []string{"update_plan", "request_user_input", "request_approval", "web_search_exa", "web_search_brave", "fetch_url", "crawl_url", "list_deals", "list_contacts", "list_buyer_signals", "enrich_crm_contact", "enrich_crm_company"},
+		},
+	}
+
+	resp := parsePreferredOneShotCommandIntent("find info about this contact and update contact and company", pageContext, candidates)
+	if resp == nil || resp.Plan == nil || len(resp.Plan.Steps) != 1 {
+		t.Fatalf("expected one-shot command plan, got %#v", resp)
+	}
+	step := resp.Plan.Steps[0]
+	if step.AgentID != "agent-command" {
+		t.Fatalf("expected Command Agent, got %q", step.AgentID)
+	}
+	if step.PlanKind != model.CommandBarPlanKindOneShotCommand {
+		t.Fatalf("expected one-shot plan kind, got %q", step.PlanKind)
+	}
+	for _, required := range []string{"web_search_exa", "fetch_url", "list_contacts", "request_approval", "enrich_crm_contact", "enrich_crm_company"} {
+		if !slices.Contains(step.AllowedTools, required) {
+			t.Fatalf("expected tool %q in %#v", required, step.AllowedTools)
+		}
+	}
+	if !strings.Contains(step.Instructions, "Research the CRM target") || !strings.Contains(step.Instructions, "protected server-side") {
+		t.Fatalf("expected CRM-specific execution brief, got %q", step.Instructions)
+	}
+
+	if deterministic := parseIntentDeterministically("find info about this contact and update contact and company", pageContext, commandBarNarrowCandidates(candidates)); deterministic == nil || deterministic.Plan.Steps[0].AgentID != "agent-crm" {
+		t.Fatalf("expected deterministic fallback alone to choose CRM Operator, got %#v", deterministic)
+	}
+}
+
+func TestCRMEnrichmentToolsAreCommandAgentOnlyPresetTools(t *testing.T) {
+	presets := ListAgentPresets()
+	var commandAgent, crmOperator *model.AgentPresetDefinition
+	for idx := range presets {
+		switch presets[idx].Key {
+		case model.AgentPresetCommandAgent:
+			commandAgent = &presets[idx]
+		case model.AgentPresetCRMOperator:
+			crmOperator = &presets[idx]
+		}
+	}
+	if commandAgent == nil || crmOperator == nil {
+		t.Fatalf("missing command or CRM operator preset")
+	}
+	for _, tool := range []string{"enrich_crm_contact", "enrich_crm_company"} {
+		if !slices.Contains(commandAgent.AllowedTools, tool) {
+			t.Fatalf("expected Command Agent to allow %q", tool)
+		}
+		if slices.Contains(crmOperator.AllowedTools, tool) {
+			t.Fatalf("did not expect CRM Operator to allow %q in first slice", tool)
+		}
 	}
 }
 

@@ -11,7 +11,8 @@ export type AgentPresetKey =
   | 'crm_operator'
   | 'support_agent'
   | 'code_builder'
-  | 'review_agent';
+  | 'review_agent'
+  | 'command_agent';
 export type AgentStatus = 'idle' | 'working' | 'error' | 'paused';
 export type AgentRunStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 export type AgentRuntimeKind = 'opencode' | 'codex' | 'native_sdk';

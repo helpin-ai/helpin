@@ -167,6 +167,35 @@ func (h *CommandBarHandler) RetryPlan(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, resp)
 }
 
+// DismissPlans hides multiple plans from the actor's command runs rail.
+// Body: {"plan_ids": ["..."]}.
+func (h *CommandBarHandler) DismissPlans(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	actorID := middleware.GetUserID(r.Context())
+	var req model.DismissCommandBarPlansRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.commandBarService.DismissPlans(r.Context(), workspaceID, actorID, req.PlanIDs); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusNoContent, nil)
+}
+
+// DismissPlan hides a single plan from the actor's command runs rail.
+func (h *CommandBarHandler) DismissPlan(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	actorID := middleware.GetUserID(r.Context())
+	planID := chi.URLParam(r, "planID")
+	if err := h.commandBarService.DismissPlans(r.Context(), workspaceID, actorID, []string{planID}); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusNoContent, nil)
+}
+
 func (h *CommandBarHandler) ListUnmetIntents(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
