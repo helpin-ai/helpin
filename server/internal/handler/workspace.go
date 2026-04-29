@@ -123,7 +123,7 @@ func (h *WorkspaceHandler) UpdateSupportTaskPreferences(w http.ResponseWriter, r
 		return
 	}
 
-	if err := h.workspaceService.UpdateSupportTaskPreferences(r.Context(), actor.WorkspaceMemberID, req); err != nil {
+	if err := h.workspaceService.UpdateSupportTaskPreferences(r.Context(), actor.WorkspaceID, actor.WorkspaceMemberID, req); err != nil {
 		slog.ErrorContext(r.Context(), "update support task preferences", "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to update preferences")
 		return

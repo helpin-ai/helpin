@@ -457,15 +457,18 @@ export function MessageThread({
   const handleCreateTaskConfirm = async (teamId: string, dismissDialog: boolean) => {
     if (!conversationId || !workspaceSlug) return;
 
+    // Create task first — only persist preferences after success
+    const created = await createTaskFromConversation.mutateAsync({
+      conversationId,
+      teamId,
+    });
+
+    // Task succeeded — now save team preference and dismissal
     await updatePreferences.mutateAsync({
       support_default_team_id: teamId,
       support_task_dialog_dismissed: dismissDialog,
     });
 
-    const created = await createTaskFromConversation.mutateAsync({
-      conversationId,
-      teamId,
-    });
     setShowCreateTaskDialog(false);
     toast.success(`Created ${created.task_key ?? 'task'}`, {
       description: created.summary || created.task_name,

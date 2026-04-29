@@ -23,10 +23,13 @@ import {
 import type { SupportCoverageGapDetail } from '@/lib/supportCoverageTypes'
 import { GAP_STATUS_LABELS, V1_GAP_TYPE_LABELS } from '@/lib/supportCoverageTypes'
 import { timeAgo } from '@/lib/utils'
+import { EvidenceConversationCard } from './EvidenceConversationCard'
+import { groupEvidenceByConversation } from './evidenceGrouping'
 import { GapAddSplitButton, type GapAddRoute } from './GapAddSplitButton'
 import { storeCoverageHandoffContent } from './coverageHandoff'
 import { buildCoverageCollectionOptions } from './coverageCollectionOptions'
 import {
+  EVIDENCE_TYPE_LABELS,
   coverageConfidenceLabel,
   coverageSuggestionPreview,
   coverageTopicLabel,
@@ -38,15 +41,6 @@ const STATUS_COLORS: Record<string, string> = {
   open: 'bg-amber-100 text-amber-700',
   done: 'bg-green-100 text-green-700',
   rejected: 'bg-muted text-muted-foreground/60',
-}
-
-const EVIDENCE_TYPE_LABELS: Record<string, string> = {
-  ai_handoff_triggered: 'AI Handoff',
-  article_feedback_submitted: 'Article Feedback',
-  widget_search_performed: 'Widget Search',
-  docs_issue_feedback: 'Agent Feedback',
-  human_reply_after_ai: 'Human Reply',
-  daily_conversation_analysis: 'Daily Analysis',
 }
 
 const RECOMMENDATION_TYPE_LABELS: Record<string, string> = {
@@ -335,54 +329,64 @@ export function GapDetailPane({
         </div>
       )}
 
-      {gap.evidence.length > 0 && (
-        <div className="p-4">
-          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Evidence
-          </h4>
-          <div className="max-h-56 space-y-2 overflow-y-auto">
-            {gap.evidence.map((ev) => (
-              <div key={ev.id} className="rounded-md border border-border/40 bg-muted/30 p-2.5 text-xs">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="font-medium text-muted-foreground">
-                    {EVIDENCE_TYPE_LABELS[ev.evidence_type] ?? ev.evidence_type}
-                    <span className="ml-2 font-normal">{timeAgo(ev.created_at)}</span>
-                  </p>
-                  <div className="flex gap-2">
-                    {ev.conversation_id && (
-                      <a
-                        href={`/w/${wsSlug}/support/${ev.conversation_id}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-0.5 text-primary hover:underline"
-                      >
-                        Conversation
-                        <ArrowUpRight01Icon className="h-2.5 w-2.5" />
-                      </a>
-                    )}
-                    {ev.document_id && (
-                      <a
-                        href={`/w/${wsSlug}/docs/documents/${ev.document_id}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-0.5 text-primary hover:underline"
-                      >
-                        Article
-                        <ArrowUpRight01Icon className="h-2.5 w-2.5" />
-                      </a>
+      {gap.evidence.length > 0 && (() => {
+        const groups = groupEvidenceByConversation(gap.evidence)
+        return (
+          <div className="p-4">
+            <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Evidence
+            </h4>
+            <div className="max-h-72 space-y-2 overflow-y-auto">
+              {groups.map((group) => {
+                if (group.kind === 'conversation') {
+                  const head = group.items[0]
+                  const label =
+                    EVIDENCE_TYPE_LABELS[head.evidence_type] ?? head.evidence_type
+                  return (
+                    <EvidenceConversationCard
+                      key={`conv-${group.conversationId}`}
+                      conversationId={group.conversationId}
+                      wsSlug={wsSlug}
+                      evidenceTypeLabel={label}
+                      evidenceItems={group.items}
+                    />
+                  )
+                }
+                const ev = group.item
+                return (
+                  <div
+                    key={ev.id}
+                    className="rounded-md border border-border/40 bg-muted/30 p-2.5 text-xs"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-medium text-muted-foreground">
+                        {EVIDENCE_TYPE_LABELS[ev.evidence_type] ?? ev.evidence_type}
+                        <span className="ml-2 font-normal">{timeAgo(ev.created_at)}</span>
+                      </p>
+                      {ev.document_id && (
+                        <a
+                          href={`/w/${wsSlug}/docs/documents/${ev.document_id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-0.5 text-primary hover:underline"
+                        >
+                          Article
+                          <ArrowUpRight01Icon className="h-2.5 w-2.5" />
+                        </a>
+                      )}
+                    </div>
+                    {ev.excerpt && (
+                      <div className="prose-chat mt-1.5 text-sm leading-relaxed">
+                        <Markdown>{ev.excerpt}</Markdown>
+                      </div>
                     )}
                   </div>
-                </div>
-                {ev.excerpt && (
-                  <div className="prose-chat mt-1.5 text-sm leading-relaxed">
-                    <Markdown>{ev.excerpt}</Markdown>
-                  </div>
-                )}
-              </div>
-            ))}
+                )
+              })}
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {appliedSuggestion && (
         <div className="m-4 rounded-md border border-green-200 bg-green-50 p-3">
