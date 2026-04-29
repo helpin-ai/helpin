@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -13,12 +14,22 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/temporalapp"
 	"github.com/helpin-ai/helpin/server/internal/tiptap"
+	"go.temporal.io/api/serviceerror"
+	tclient "go.temporal.io/sdk/client"
 )
 
 const (
 	coverageAnalysisMaxMessages     = 80
 	coverageAnalysisMaxMessageChars = 2000
+	coverageAnalyzerVersion         = "v1"
+	coverageAnalysisWorkflowID      = "coverage-daily-analysis"
+	coverageAnalysisCronSchedule    = "30 4 * * *"
+	coverageAnalysisOverlap         = 2 * time.Hour
+	coverageAnalysisSettleDelay     = 10 * time.Minute
+	coverageAnalysisBootstrapWindow = 30 * 24 * time.Hour
+	coverageAnalysisWorkspaceLimit  = 1000
 )
 
 type CoverageConversationMessage struct {
@@ -115,11 +126,14 @@ type CoverageFindingUpsertInput struct {
 }
 
 type SupportCoverageDailyAnalyzer struct {
-	llmProvider  llm.Provider
-	providerName string
-	modelName    string
-	coverageRepo *repository.SupportCoverageRepository
-	analysisRepo *repository.SupportCoverageAnalysisRepository
+	llmProvider      llm.Provider
+	providerName     string
+	modelName        string
+	coverageRepo     *repository.SupportCoverageRepository
+	analysisRepo     *repository.SupportCoverageAnalysisRepository
+	conversationRepo *repository.SupportConversationRepository
+	messageRepo      *repository.SupportMessageRepository
+	temporalClient   tclient.Client
 }
 
 func NewSupportCoverageDailyAnalyzer(llmProvider llm.Provider, providerName, modelName string) *SupportCoverageDailyAnalyzer {
@@ -137,6 +151,182 @@ func (s *SupportCoverageDailyAnalyzer) SetCoverageRepositories(coverageRepo *rep
 	s.coverageRepo = coverageRepo
 	s.analysisRepo = analysisRepo
 	return s
+}
+
+func (s *SupportCoverageDailyAnalyzer) SetConversationRepositories(conversationRepo *repository.SupportConversationRepository, messageRepo *repository.SupportMessageRepository) *SupportCoverageDailyAnalyzer {
+	if s == nil {
+		return nil
+	}
+	s.conversationRepo = conversationRepo
+	s.messageRepo = messageRepo
+	return s
+}
+
+func (s *SupportCoverageDailyAnalyzer) SetTemporalClient(client tclient.Client) *SupportCoverageDailyAnalyzer {
+	if s == nil {
+		return nil
+	}
+	s.temporalClient = client
+	return s
+}
+
+func (s *SupportCoverageDailyAnalyzer) EnsureDailyAnalysis(ctx context.Context) error {
+	if s == nil || s.temporalClient == nil {
+		return nil
+	}
+	_, err := s.temporalClient.ExecuteWorkflow(ctx, tclient.StartWorkflowOptions{
+		ID:           coverageAnalysisWorkflowID,
+		TaskQueue:    temporalapp.QueueAutomation,
+		CronSchedule: coverageAnalysisCronSchedule,
+	}, temporalapp.CoverageDailyAnalysisWorkflowType)
+	if err != nil {
+		var alreadyStarted *serviceerror.WorkflowExecutionAlreadyStarted
+		if errors.As(err, &alreadyStarted) {
+			return nil
+		}
+		return fmt.Errorf("start coverage daily analysis workflow: %w", err)
+	}
+	return nil
+}
+
+func (s *SupportCoverageDailyAnalyzer) ListWorkspacesForDailyAnalysis(ctx context.Context) ([]string, error) {
+	if s == nil || s.conversationRepo == nil {
+		return nil, nil
+	}
+	windowEnd := time.Now().UTC().Add(-coverageAnalysisSettleDelay)
+	windowStart := windowEnd.Add(-coverageAnalysisBootstrapWindow)
+	return s.conversationRepo.ListWorkspacesForCoverageAnalysisCandidates(ctx, windowStart, windowEnd, coverageAnalysisWorkspaceLimit)
+}
+
+func (s *SupportCoverageDailyAnalyzer) RunWorkspaceDailyAnalysis(ctx context.Context, workspaceID string, windowStart, windowEnd time.Time) error {
+	if s == nil || s.analysisRepo == nil || s.coverageRepo == nil || s.conversationRepo == nil || s.messageRepo == nil {
+		return fmt.Errorf("coverage daily analyzer dependencies are not configured")
+	}
+	if strings.TrimSpace(workspaceID) == "" {
+		return fmt.Errorf("workspace_id is required")
+	}
+	if windowEnd.IsZero() {
+		windowEnd = time.Now().UTC()
+	}
+	cursorEnd := windowEnd.UTC().Add(-coverageAnalysisSettleDelay)
+	if cursorEnd.IsZero() {
+		cursorEnd = time.Now().UTC().Add(-coverageAnalysisSettleDelay)
+	}
+	cursorStart := windowStart.UTC()
+	lastCursor, err := s.analysisRepo.LastSuccessfulCursor(ctx, workspaceID, coverageAnalyzerVersion)
+	if err != nil {
+		return err
+	}
+	if lastCursor != nil {
+		cursorStart = lastCursor.UTC().Add(-coverageAnalysisOverlap)
+	} else if cursorStart.IsZero() {
+		cursorStart = cursorEnd.Add(-coverageAnalysisBootstrapWindow)
+	}
+	if !cursorStart.Before(cursorEnd) {
+		return nil
+	}
+	if windowStart.IsZero() {
+		windowStart = cursorStart
+	}
+
+	run, err := s.analysisRepo.CreateRun(ctx, &model.SupportCoverageAnalysisRun{
+		WorkspaceID:     workspaceID,
+		WindowStart:     windowStart.UTC(),
+		WindowEnd:       windowEnd.UTC(),
+		CursorStartedAt: cursorStart,
+		CursorEndedAt:   cursorEnd,
+		AnalyzerVersion: coverageAnalyzerVersion,
+		Status:          model.SupportCoverageAnalysisRunStatusRunning,
+		StartedAt:       time.Now().UTC(),
+		Metadata:        []byte("{}"),
+	})
+	if err != nil {
+		return err
+	}
+
+	conversations, err := s.conversationRepo.ListCoverageAnalysisCandidates(ctx, workspaceID, cursorStart, cursorEnd, coverageAnalysisWorkspaceLimit)
+	if err != nil {
+		_ = s.analysisRepo.FailRun(ctx, run.ID, err)
+		return err
+	}
+	gapCount := 0
+	for _, conversation := range conversations {
+		messages, err := s.messageRepo.ListByConversation(ctx, workspaceID, conversation.ID, false)
+		if err != nil {
+			_ = s.analysisRepo.FailRun(ctx, run.ID, err)
+			return err
+		}
+		input, err := BuildCoverageConversationAnalysisInput(conversation, messages, nil)
+		if err != nil {
+			_ = s.analysisRepo.FailRun(ctx, run.ID, err)
+			return err
+		}
+		alreadyAnalyzed, err := s.analysisRepo.AlreadyAnalyzedConversation(ctx, workspaceID, conversation.ID, input.TranscriptHash, coverageAnalyzerVersion)
+		if err != nil {
+			_ = s.analysisRepo.FailRun(ctx, run.ID, err)
+			return err
+		}
+		if alreadyAnalyzed {
+			continue
+		}
+		result, raw, err := s.AnalyzeConversation(ctx, input)
+		if err != nil {
+			analysisErr := err.Error()
+			_ = s.analysisRepo.RecordConversationAnalysis(ctx, &model.SupportCoverageConversationAnalysis{
+				WorkspaceID:     workspaceID,
+				RunID:           run.ID,
+				ConversationID:  conversation.ID,
+				Status:          model.SupportCoverageConversationAnalysisStatusFailed,
+				TranscriptHash:  input.TranscriptHash,
+				AnalyzerVersion: coverageAnalyzerVersion,
+				ErrorMessage:    &analysisErr,
+				RawOutput:       []byte("{}"),
+			})
+			continue
+		}
+		analysisID := ""
+		if result != nil {
+			analysis := &model.SupportCoverageConversationAnalysis{
+				WorkspaceID:               workspaceID,
+				RunID:                     run.ID,
+				ConversationID:            conversation.ID,
+				Status:                    model.SupportCoverageConversationAnalysisStatusAnalyzed,
+				HasGap:                    result.HasGap,
+				GapKind:                   result.GapKind,
+				GapCategory:               result.GapCategory,
+				PrimaryRecommendationType: primaryRecommendationType(result.RecommendedFixes),
+				TranscriptHash:            input.TranscriptHash,
+				AnalyzerVersion:           coverageAnalyzerVersion,
+				CustomerNeed:              result.CustomerNeed,
+				AIFailure:                 result.AIFailure,
+				HumanResolution:           result.HumanResolution,
+				DecisionReason:            result.DecisionReason,
+				Confidence:                result.Confidence,
+				RawOutput:                 raw,
+			}
+			if err := s.analysisRepo.RecordConversationAnalysis(ctx, analysis); err != nil {
+				_ = s.analysisRepo.FailRun(ctx, run.ID, err)
+				return err
+			}
+			analysisID = analysis.ID
+			if result.HasGap {
+				gap, err := s.UpsertFinding(ctx, CoverageFindingUpsertInput{
+					WorkspaceID:    workspaceID,
+					ConversationID: conversation.ID,
+					AnalysisID:     analysisID,
+					Result:         *result,
+				})
+				if err != nil {
+					_ = s.analysisRepo.FailRun(ctx, run.ID, err)
+					return err
+				}
+				if gap != nil {
+					gapCount++
+				}
+			}
+		}
+	}
+	return s.analysisRepo.CompleteRun(ctx, run.ID, len(conversations), gapCount)
 }
 
 func BuildCoverageConversationAnalysisInput(conversation model.SupportConversation, messages []model.SupportMessage, traces []model.SupportAIRetrievalTrace) (CoverageConversationAnalysisInput, error) {
