@@ -146,6 +146,7 @@ function ShortcutTagSelect({
 
 function ShortcutForm({
   state,
+  workspaceId,
   tags,
   existing,
   editingId,
@@ -156,6 +157,7 @@ function ShortcutForm({
   onCancel,
 }: {
   state: ShortcutFormState;
+  workspaceId: string;
   tags: string[];
   existing: SupportCannedResponse[];
   editingId?: string;
@@ -165,12 +167,13 @@ function ShortcutForm({
   onSubmit: () => void;
   onCancel?: () => void;
 }) {
+  const [pendingUploads, setPendingUploads] = useState(0);
   const shortcutError = validateShortcut(state.shortCode);
   const normalizedCode = state.shortCode.trim();
   const duplicate = existing.some((item) => item.id !== editingId && item.short_code === normalizedCode);
   const contentText = stripHTML(state.content);
   const customTagMissing = state.tag === CUSTOM_TAG_VALUE && !state.customTag.trim();
-  const canSubmit = !shortcutError && !duplicate && !customTagMissing && contentText.length > 0 && !pending;
+  const canSubmit = !shortcutError && !duplicate && !customTagMissing && contentText.length > 0 && !pending && pendingUploads === 0;
 
   return (
     <div className="space-y-4">
@@ -212,7 +215,10 @@ function ShortcutForm({
           onChange={(content) => onChange({ ...state, content })}
           placeholder="Write the saved reply..."
           className="rounded-lg border-border bg-background"
+          uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
+          onUploadStateChange={setPendingUploads}
         />
+        {pendingUploads > 0 ? <p className="text-xs text-muted-foreground">Uploading attachments...</p> : null}
       </div>
       <div className="flex items-center justify-end gap-2">
         {onCancel ? (
@@ -340,6 +346,7 @@ function MessageShortcutsSettingsContent({ workspaceId }: { workspaceId: string 
         </div>
         <ShortcutForm
           state={form}
+          workspaceId={workspaceId}
           tags={tags}
           existing={responses}
           pending={createShortcut.isPending}
@@ -438,6 +445,7 @@ function MessageShortcutsSettingsContent({ workspaceId }: { workspaceId: string 
                           {isEditing ? (
                             <ShortcutForm
                               state={editingForm}
+                              workspaceId={workspaceId}
                               tags={tags}
                               existing={responses}
                               editingId={item.id}

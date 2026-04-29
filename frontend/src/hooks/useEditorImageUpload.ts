@@ -14,19 +14,12 @@ export interface EditorImageUploadResult {
 
 const MAX_SIZE = 50 * 1024 * 1024; // 50 MB
 
-/**
- * Upload an image file via the attachment infrastructure and return the public URL
- * together with the persistent attachment ID.
- */
-export async function uploadEditorImage(
+export async function uploadEditorFile(
   file: File,
   config: EditorUploadConfig,
 ): Promise<EditorImageUploadResult> {
-  if (!file.type.startsWith('image/')) {
-    throw new Error('Only image files are supported');
-  }
   if (file.size > MAX_SIZE) {
-    throw new Error('Image exceeds maximum size of 50 MB');
+    throw new Error('File exceeds maximum size of 50 MB');
   }
 
   // 1. Initiate upload → get presigned PUT URL + public URL
@@ -67,4 +60,18 @@ export async function uploadEditorImage(
     attachmentId: initData.attachment.id,
     publicUrl: initData.public_url,
   };
+}
+
+/**
+ * Upload an image file via the attachment infrastructure and return the public URL
+ * together with the persistent attachment ID.
+ */
+export async function uploadEditorImage(
+  file: File,
+  config: EditorUploadConfig,
+): Promise<EditorImageUploadResult> {
+  if (!file.type.startsWith('image/')) {
+    throw new Error('Only image files are supported');
+  }
+  return uploadEditorFile(file, config);
 }

@@ -624,6 +624,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
     onBlur: () => {
       setMentionState(null);
       setShortcutState(null);
+      setShortcutsPanelOpen(false);
     },
   });
 
@@ -666,6 +667,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
     const handleBlur = () => {
       setMentionState(null);
       setShortcutState(null);
+      setShortcutsPanelOpen(false);
       // Defer so that clicking a toolbar button (which steals focus briefly)
       // doesn't immediately collapse the toolbar.
       setTimeout(() => {
