@@ -713,6 +713,13 @@ func TestCodexApprovalPolicyForInteractiveRunUsesOnRequest(t *testing.T) {
 	}
 }
 
+func TestCodexApprovalPolicyForAutonomousRunUsesNever(t *testing.T) {
+	run := &model.AgentRun{InvocationMode: model.InvocationModeAutonomous}
+	if got := codexApprovalPolicyForRun(run); got != "never" {
+		t.Fatalf("expected autonomous codex approval policy never, got %q", got)
+	}
+}
+
 func TestPendingResponseRequestIDFailsFastWhenReplayDoesNotArrive(t *testing.T) {
 	previousTimeout := codexPendingReplayGraceTimeout
 	codexPendingReplayGraceTimeout = time.Millisecond
