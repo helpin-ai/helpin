@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -368,11 +369,43 @@ func (r *SupportCoverageRepository) GetGapDetail(ctx context.Context, workspaceI
 		Limit(50).
 		Find(&evidence)
 
+	var analysisExplanation *model.SupportCoverageAnalysisExplanation
+	for _, ev := range evidence {
+		if ev.SourceSignal != "daily_conversation_analysis" && ev.EvidenceType != "daily_conversation_analysis" {
+			continue
+		}
+		var metadata struct {
+			CustomerNeed    string `json:"customer_need"`
+			AIFailure       string `json:"ai_failure"`
+			HumanResolution string `json:"human_resolution"`
+			DecisionReason  string `json:"decision_reason"`
+		}
+		if err := json.Unmarshal(ev.Metadata, &metadata); err != nil {
+			continue
+		}
+		if metadata.CustomerNeed == "" && metadata.AIFailure == "" && metadata.HumanResolution == "" && metadata.DecisionReason == "" {
+			continue
+		}
+		analysisExplanation = &model.SupportCoverageAnalysisExplanation{
+			CustomerNeed:    metadata.CustomerNeed,
+			AIFailure:       metadata.AIFailure,
+			HumanResolution: metadata.HumanResolution,
+			DecisionReason:  metadata.DecisionReason,
+		}
+		break
+	}
+
 	var suggestions []model.SupportGapSuggestion
 	r.db.WithContext(ctx).
 		Where("gap_id = ?", gapID).
 		Order("created_at DESC").
 		Find(&suggestions)
+
+	var recommendations []model.SupportCoverageRecommendation
+	r.db.WithContext(ctx).
+		Where("gap_id = ?", gapID).
+		Order("CASE WHEN priority = 'primary' THEN 0 ELSE 1 END, created_at DESC").
+		Find(&recommendations)
 
 	var relatedArticles []model.SupportCoverageGapArticle
 	r.db.WithContext(ctx).
@@ -399,6 +432,8 @@ func (r *SupportCoverageRepository) GetGapDetail(ctx context.Context, workspaceI
 		SupportCoverageGap:  gap,
 		TopicTitle:          topicTitle,
 		StatusChangedByName: statusChangedByName,
+		AnalysisExplanation: analysisExplanation,
+		Recommendations:     recommendations,
 		Evidence:            evidence,
 		Suggestions:         suggestions,
 		RelatedArticles:     relatedArticles,

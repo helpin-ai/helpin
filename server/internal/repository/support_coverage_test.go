@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -121,6 +122,26 @@ func setupSupportCoverageTestDB(t *testing.T) *gorm.DB {
 			applied_at DATETIME,
 			is_active BOOLEAN NOT NULL DEFAULT 1,
 			superseded_at DATETIME,
+			metadata TEXT NOT NULL DEFAULT '{}',
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE support_coverage_recommendations (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			gap_id TEXT NOT NULL,
+			analysis_id TEXT,
+			recommendation_type TEXT NOT NULL,
+			target_type TEXT NOT NULL DEFAULT '',
+			target_id TEXT,
+			target_title TEXT NOT NULL DEFAULT '',
+			target_url TEXT NOT NULL DEFAULT '',
+			priority TEXT NOT NULL DEFAULT 'secondary',
+			status TEXT NOT NULL DEFAULT 'open',
+			rationale TEXT NOT NULL DEFAULT '',
+			suggested_change TEXT NOT NULL DEFAULT '',
+			implementation_notes TEXT NOT NULL DEFAULT '',
+			suggestion_id TEXT,
 			metadata TEXT NOT NULL DEFAULT '{}',
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -519,6 +540,80 @@ func TestSupportCoverageRepository_MergeGaps(t *testing.T) {
 	db.Where("gap_id = ?", "gap-tgt").Find(&evidence)
 	if len(evidence) != 1 {
 		t.Errorf("expected 1 evidence on target, got %d", len(evidence))
+	}
+}
+
+func TestSupportCoverageRepository_GetGapDetailExposesAnalysisExplanationAndRecommendations(t *testing.T) {
+	db := setupSupportCoverageTestDB(t)
+	repo := NewSupportCoverageRepository(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	gap, _, err := repo.UpsertGapByDedupeKey(ctx, &model.SupportCoverageGap{
+		ID:          "gap-analysis",
+		WorkspaceID: "ws-1",
+		DedupeKey:   "analysis-gap",
+		Title:       "Refund exceptions",
+		Status:      model.SupportCoverageGapStatusOpen,
+		FirstSeenAt: now,
+		LastSeenAt:  now,
+	})
+	if err != nil {
+		t.Fatalf("seed gap: %v", err)
+	}
+	metadata, _ := json.Marshal(map[string]any{
+		"customer_need":    "Customer needed refund exception criteria.",
+		"ai_failure":       "AI only found generic refund docs.",
+		"human_resolution": "Agent explained the exception and refunded from Stripe.",
+		"decision_reason":  "The human answer should be reusable by AI.",
+	})
+	if err := repo.CreateEvidence(ctx, &model.SupportGapEvidence{
+		ID:           "evidence-analysis",
+		GapID:        gap.ID,
+		WorkspaceID:  "ws-1",
+		EvidenceType: "daily_conversation_analysis",
+		SourceSignal: "daily_conversation_analysis",
+		Excerpt:      "Customer needed refund exception criteria.",
+		Metadata:     metadata,
+		CreatedAt:    now,
+	}); err != nil {
+		t.Fatalf("seed evidence: %v", err)
+	}
+	targetID := "doc-1"
+	if err := db.Create(&model.SupportCoverageRecommendation{
+		ID:                 "rec-primary",
+		WorkspaceID:        "ws-1",
+		GapID:              gap.ID,
+		RecommendationType: model.SupportCoverageFixUpdateArticle,
+		TargetType:         "docs",
+		TargetID:           &targetID,
+		TargetTitle:        "Refunds",
+		Priority:           model.SupportCoverageRecommendationPriorityPrimary,
+		Status:             model.SupportCoverageRecommendationStatusOpen,
+		Rationale:          "Existing docs are close.",
+		SuggestedChange:    "Add exception criteria.",
+		Metadata:           json.RawMessage(`{}`),
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}).Error; err != nil {
+		t.Fatalf("seed recommendation: %v", err)
+	}
+
+	detail, err := repo.GetGapDetail(ctx, "ws-1", gap.ID)
+	if err != nil {
+		t.Fatalf("GetGapDetail: %v", err)
+	}
+	if detail.AnalysisExplanation == nil {
+		t.Fatal("expected analysis explanation")
+	}
+	if detail.AnalysisExplanation.CustomerNeed != "Customer needed refund exception criteria." {
+		t.Fatalf("unexpected explanation: %+v", detail.AnalysisExplanation)
+	}
+	if len(detail.Recommendations) != 1 {
+		t.Fatalf("expected one recommendation, got %+v", detail.Recommendations)
+	}
+	if detail.Recommendations[0].RecommendationType != model.SupportCoverageFixUpdateArticle {
+		t.Fatalf("unexpected recommendation: %+v", detail.Recommendations[0])
 	}
 }
 
