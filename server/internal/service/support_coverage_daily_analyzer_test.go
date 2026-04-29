@@ -3,11 +3,15 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 func TestCoverageConversationAnalysisInputExcludesInternalAndParsesAIMetadata(t *testing.T) {
@@ -356,5 +360,347 @@ func TestSupportCoverageDailyAnalyzer_RefineFixBundleWithKnowledge(t *testing.T)
 				t.Fatalf("expected one JSON-mode request, got %+v", provider.requests)
 			}
 		})
+	}
+}
+
+func setupCoverageFindingUpsertTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	dbName := fmt.Sprintf("file:coverage_finding_upsert_%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	tables := []string{
+		`CREATE TABLE support_coverage_topics (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			issue_key TEXT NOT NULL,
+			title TEXT NOT NULL DEFAULT '',
+			gap_count INTEGER NOT NULL DEFAULT 0,
+			cluster_key TEXT,
+			canonical_title TEXT,
+			last_enriched_at DATETIME,
+			cooldown_until DATETIME,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(workspace_id, issue_key)
+		)`,
+		`CREATE TABLE support_coverage_gaps (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			topic_id TEXT,
+			dedupe_key TEXT NOT NULL,
+			gap_kind TEXT NOT NULL DEFAULT 'content',
+			gap_category TEXT NOT NULL DEFAULT 'unknown',
+			v1_gap_type TEXT NOT NULL DEFAULT 'needs_review',
+			title TEXT NOT NULL DEFAULT '',
+			issue_key TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT 'open',
+			confidence REAL NOT NULL DEFAULT 0,
+			evidence_count INTEGER NOT NULL DEFAULT 0,
+			failure_mode TEXT NOT NULL DEFAULT '',
+			source_signal TEXT NOT NULL DEFAULT '',
+			can_answer TEXT,
+			can_resolve TEXT,
+			metadata TEXT NOT NULL DEFAULT '{}',
+			first_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			last_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			status_changed_by TEXT,
+			status_changed_at DATETIME,
+			issue_resolved BOOLEAN,
+			closed_at DATETIME,
+			closed_evidence_count INTEGER,
+			result_document_id TEXT,
+			rejection_reason TEXT,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE support_gap_evidence (
+			id TEXT PRIMARY KEY,
+			gap_id TEXT NOT NULL,
+			workspace_id TEXT NOT NULL,
+			evidence_type TEXT NOT NULL,
+			conversation_id TEXT,
+			message_id TEXT,
+			widget_session_id TEXT,
+			document_id TEXT,
+			article_public_id TEXT,
+			source_signal TEXT NOT NULL DEFAULT '',
+			excerpt TEXT NOT NULL DEFAULT '',
+			metadata TEXT NOT NULL DEFAULT '{}',
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE support_gap_suggestions (
+			id TEXT PRIMARY KEY,
+			gap_id TEXT NOT NULL,
+			workspace_id TEXT NOT NULL,
+			suggestion_type TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'draft',
+			title TEXT NOT NULL DEFAULT '',
+			content TEXT,
+			evidence_summary TEXT NOT NULL DEFAULT '',
+			target_space_id TEXT,
+			target_collection_id TEXT,
+			target_document_id TEXT,
+			result_document_id TEXT,
+			result_article_id TEXT,
+			applied_at DATETIME,
+			is_active BOOLEAN NOT NULL DEFAULT 1,
+			superseded_at DATETIME,
+			metadata TEXT NOT NULL DEFAULT '{}',
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE support_coverage_gap_articles (
+			id TEXT PRIMARY KEY,
+			gap_id TEXT NOT NULL,
+			document_id TEXT NOT NULL,
+			workspace_id TEXT NOT NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(gap_id, document_id)
+		)`,
+		`CREATE TABLE support_coverage_conversation_analyses (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			run_id TEXT NOT NULL,
+			conversation_id TEXT NOT NULL,
+			status TEXT NOT NULL,
+			has_gap BOOLEAN NOT NULL DEFAULT 0,
+			gap_id TEXT,
+			gap_kind TEXT NOT NULL DEFAULT '',
+			gap_category TEXT NOT NULL DEFAULT '',
+			primary_recommendation_type TEXT NOT NULL DEFAULT '',
+			transcript_hash TEXT NOT NULL DEFAULT '',
+			analyzer_version TEXT NOT NULL DEFAULT 'v1',
+			customer_need TEXT NOT NULL DEFAULT '',
+			ai_failure TEXT NOT NULL DEFAULT '',
+			human_resolution TEXT NOT NULL DEFAULT '',
+			decision_reason TEXT NOT NULL DEFAULT '',
+			confidence REAL NOT NULL DEFAULT 0,
+			error_message TEXT,
+			raw_output TEXT NOT NULL DEFAULT '{}',
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE support_coverage_recommendations (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			gap_id TEXT NOT NULL,
+			analysis_id TEXT,
+			recommendation_type TEXT NOT NULL,
+			target_type TEXT NOT NULL DEFAULT '',
+			target_id TEXT,
+			target_title TEXT NOT NULL DEFAULT '',
+			target_url TEXT NOT NULL DEFAULT '',
+			priority TEXT NOT NULL DEFAULT 'secondary',
+			status TEXT NOT NULL DEFAULT 'open',
+			rationale TEXT NOT NULL DEFAULT '',
+			suggested_change TEXT NOT NULL DEFAULT '',
+			implementation_notes TEXT NOT NULL DEFAULT '',
+			suggestion_id TEXT,
+			metadata TEXT NOT NULL DEFAULT '{}',
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+	}
+	for _, stmt := range tables {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+	}
+	return db
+}
+
+func TestSupportCoverageDailyAnalyzer_UpsertFindingCreatesGapEvidenceRecommendationsAndSuggestion(t *testing.T) {
+	db := setupCoverageFindingUpsertTestDB(t)
+	analysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
+	coverageRepo := repository.NewSupportCoverageRepository(db)
+	analyzer := NewSupportCoverageDailyAnalyzer(nil, "", "").
+		SetCoverageRepositories(coverageRepo, analysisRepo)
+	ctx := context.Background()
+	analysisID := "analysis-1"
+	if err := analysisRepo.RecordConversationAnalysis(ctx, &model.SupportCoverageConversationAnalysis{
+		ID:              analysisID,
+		WorkspaceID:     "ws-1",
+		RunID:           "run-1",
+		ConversationID:  "conversation-1",
+		Status:          model.SupportCoverageConversationAnalysisStatusAnalyzed,
+		HasGap:          true,
+		TranscriptHash:  "hash-1",
+		AnalyzerVersion: "v1",
+	}); err != nil {
+		t.Fatalf("seed analysis: %v", err)
+	}
+
+	gap, err := analyzer.UpsertFinding(ctx, CoverageFindingUpsertInput{
+		WorkspaceID:    "ws-1",
+		ConversationID: "conversation-1",
+		MessageID:      "message-1",
+		AnalysisID:     analysisID,
+		Result: CoverageConversationAnalysisResult{
+			HasGap:          true,
+			GapKind:         "content",
+			GapCategory:     model.SupportCoverageGapCategoryKnowledge,
+			CanonicalTitle:  "Refund exception policy",
+			CustomerNeed:    "Customer needed refund exception criteria.",
+			AIFailure:       "AI found only generic refund docs.",
+			HumanResolution: "Agent explained exception rules.",
+			DecisionReason:  "The human answer should be documented.",
+			RecommendedFixes: []CoverageRecommendedFix{
+				{
+					Type:            model.SupportCoverageFixUpdateArticle,
+					TargetType:      "docs",
+					TargetID:        "doc-1",
+					TargetTitle:     "Refunds",
+					Priority:        model.SupportCoverageRecommendationPriorityPrimary,
+					Rationale:       "Existing article is close.",
+					SuggestedChange: "Add refund exception criteria.",
+				},
+				{
+					Type:            model.SupportCoverageFixUpdateWebsitePage,
+					TargetType:      "website_page",
+					TargetID:        "page-1",
+					TargetTitle:     "Pricing",
+					TargetURL:       "https://example.com/pricing",
+					Priority:        model.SupportCoverageRecommendationPrioritySecondary,
+					Rationale:       "Prospects ask before signup.",
+					SuggestedChange: "Mention refund window.",
+				},
+			},
+			Confidence: 0.86,
+		},
+		MatchedKnowledgeCandidates: []CoverageKnowledgeCandidate{{SourceType: "docs", TargetType: "docs", DocumentID: "doc-1", Title: "Refunds"}},
+	})
+	if err != nil {
+		t.Fatalf("UpsertFinding: %v", err)
+	}
+	if gap == nil || gap.ID == "" {
+		t.Fatal("expected gap")
+	}
+
+	var evidence model.SupportGapEvidence
+	if err := db.First(&evidence, "gap_id = ?", gap.ID).Error; err != nil {
+		t.Fatalf("load evidence: %v", err)
+	}
+	if evidence.ConversationID == nil || *evidence.ConversationID != "conversation-1" || evidence.MessageID == nil || *evidence.MessageID != "message-1" {
+		t.Fatalf("evidence did not link conversation/message: %+v", evidence)
+	}
+	var evidenceMetadata map[string]any
+	if err := json.Unmarshal(evidence.Metadata, &evidenceMetadata); err != nil {
+		t.Fatalf("unmarshal evidence metadata: %v", err)
+	}
+	if evidenceMetadata["customer_need"] == "" || evidenceMetadata["conversation_analysis_id"] != analysisID {
+		t.Fatalf("evidence metadata missing explanation: %+v", evidenceMetadata)
+	}
+
+	var recommendations []model.SupportCoverageRecommendation
+	if err := db.Order("priority").Find(&recommendations, "gap_id = ?", gap.ID).Error; err != nil {
+		t.Fatalf("load recommendations: %v", err)
+	}
+	if len(recommendations) != 2 {
+		t.Fatalf("expected two recommendations, got %+v", recommendations)
+	}
+	if recommendations[0].SuggestionID == nil || *recommendations[0].SuggestionID == "" {
+		t.Fatalf("expected docs recommendation to link a suggestion: %+v", recommendations[0])
+	}
+
+	var suggestion model.SupportGapSuggestion
+	if err := db.First(&suggestion, "id = ?", *recommendations[0].SuggestionID).Error; err != nil {
+		t.Fatalf("load suggestion: %v", err)
+	}
+	if !suggestion.IsActive || suggestion.TargetDocumentID == nil || *suggestion.TargetDocumentID != "doc-1" {
+		t.Fatalf("unexpected suggestion: %+v", suggestion)
+	}
+
+	var analysis model.SupportCoverageConversationAnalysis
+	if err := db.First(&analysis, "id = ?", analysisID).Error; err != nil {
+		t.Fatalf("load analysis: %v", err)
+	}
+	if analysis.GapID == nil || *analysis.GapID != gap.ID || analysis.PrimaryRecommendationType != model.SupportCoverageFixUpdateArticle {
+		t.Fatalf("analysis was not linked to gap/recommendation: %+v", analysis)
+	}
+}
+
+func TestSupportCoverageDailyAnalyzer_UpsertFindingDedupesAndPreservesAcceptedRecommendations(t *testing.T) {
+	db := setupCoverageFindingUpsertTestDB(t)
+	analysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
+	coverageRepo := repository.NewSupportCoverageRepository(db)
+	analyzer := NewSupportCoverageDailyAnalyzer(nil, "", "").
+		SetCoverageRepositories(coverageRepo, analysisRepo)
+	ctx := context.Background()
+
+	first, err := analyzer.UpsertFinding(ctx, CoverageFindingUpsertInput{
+		WorkspaceID:    "ws-1",
+		ConversationID: "conversation-1",
+		AnalysisID:     "analysis-1",
+		Result: CoverageConversationAnalysisResult{
+			HasGap:         true,
+			GapKind:        "action",
+			GapCategory:    model.SupportCoverageGapCategoryAction,
+			CanonicalTitle: "Cancel subscription action",
+			CustomerNeed:   "Customer needed cancellation.",
+			RecommendedFixes: []CoverageRecommendedFix{{
+				Type:       model.SupportCoverageFixAddAction,
+				TargetType: "tool_action",
+				Priority:   model.SupportCoverageRecommendationPriorityPrimary,
+				Rationale:  "Human cancelled manually.",
+			}},
+			Confidence: 0.8,
+		},
+	})
+	if err != nil {
+		t.Fatalf("first UpsertFinding: %v", err)
+	}
+	if err := db.Create(&model.SupportCoverageRecommendation{
+		ID:                 "accepted-rec",
+		WorkspaceID:        "ws-1",
+		GapID:              first.ID,
+		RecommendationType: model.SupportCoverageFixImproveWorkflow,
+		Priority:           model.SupportCoverageRecommendationPrioritySecondary,
+		Status:             model.SupportCoverageRecommendationStatusAccepted,
+		Metadata:           json.RawMessage(`{}`),
+	}).Error; err != nil {
+		t.Fatalf("seed accepted recommendation: %v", err)
+	}
+
+	second, err := analyzer.UpsertFinding(ctx, CoverageFindingUpsertInput{
+		WorkspaceID:    "ws-1",
+		ConversationID: "conversation-2",
+		AnalysisID:     "analysis-2",
+		Result: CoverageConversationAnalysisResult{
+			HasGap:         true,
+			GapKind:        "action",
+			GapCategory:    model.SupportCoverageGapCategoryAction,
+			CanonicalTitle: "Cancel subscription action",
+			CustomerNeed:   "Customer needed cancellation.",
+			RecommendedFixes: []CoverageRecommendedFix{{
+				Type:       model.SupportCoverageFixAddAction,
+				TargetType: "tool_action",
+				Priority:   model.SupportCoverageRecommendationPriorityPrimary,
+				Rationale:  "AI needs a guarded action.",
+			}},
+			Confidence: 0.82,
+		},
+	})
+	if err != nil {
+		t.Fatalf("second UpsertFinding: %v", err)
+	}
+	if second.ID != first.ID {
+		t.Fatalf("expected deduped gap %q, got %q", first.ID, second.ID)
+	}
+
+	var gap model.SupportCoverageGap
+	if err := db.First(&gap, "id = ?", first.ID).Error; err != nil {
+		t.Fatalf("load gap: %v", err)
+	}
+	if gap.EvidenceCount != 2 {
+		t.Fatalf("expected evidence_count=2, got %d", gap.EvidenceCount)
+	}
+	var accepted model.SupportCoverageRecommendation
+	if err := db.First(&accepted, "id = ?", "accepted-rec").Error; err != nil {
+		t.Fatalf("accepted recommendation should be preserved: %v", err)
+	}
+	if accepted.Status != model.SupportCoverageRecommendationStatusAccepted {
+		t.Fatalf("accepted recommendation status changed: %+v", accepted)
 	}
 }

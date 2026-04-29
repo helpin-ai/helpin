@@ -422,6 +422,23 @@ func (r *SupportCoverageRepository) CreateSuggestion(ctx context.Context, sugges
 	return suggestion, nil
 }
 
+func (r *SupportCoverageRepository) SupersedeActiveSuggestions(ctx context.Context, gapID string, now time.Time) error {
+	if gapID == "" {
+		return fmt.Errorf("gap_id is required")
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.SupportGapSuggestion{}).
+		Where("gap_id = ? AND is_active", gapID).
+		Updates(map[string]interface{}{
+			"is_active":     false,
+			"superseded_at": now,
+			"updated_at":    now,
+		}).Error; err != nil {
+		return fmt.Errorf("supersede active suggestions: %w", err)
+	}
+	return nil
+}
+
 // GetSuggestionByID loads a suggestion by ID into the provided pointer.
 func (r *SupportCoverageRepository) GetSuggestionByID(ctx context.Context, suggestionID string, out *model.SupportGapSuggestion) error {
 	if err := r.db.WithContext(ctx).Where("id = ?", suggestionID).First(out).Error; err != nil {

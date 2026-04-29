@@ -159,6 +159,26 @@ func (r *SupportCoverageAnalysisRepository) RecordConversationAnalysis(ctx conte
 	return nil
 }
 
+func (r *SupportCoverageAnalysisRepository) SetConversationAnalysisGap(ctx context.Context, analysisID, gapID, primaryRecommendationType string) error {
+	if analysisID == "" || gapID == "" {
+		return fmt.Errorf("analysis_id and gap_id are required")
+	}
+	updates := map[string]interface{}{
+		"gap_id":     gapID,
+		"updated_at": time.Now(),
+	}
+	if primaryRecommendationType != "" {
+		updates["primary_recommendation_type"] = primaryRecommendationType
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.SupportCoverageConversationAnalysis{}).
+		Where("id = ?", analysisID).
+		Updates(updates).Error; err != nil {
+		return fmt.Errorf("set conversation analysis gap: %w", err)
+	}
+	return nil
+}
+
 func (r *SupportCoverageAnalysisRepository) AlreadyAnalyzedConversation(ctx context.Context, workspaceID, conversationID, transcriptHash, analyzerVersion string) (bool, error) {
 	if workspaceID == "" || conversationID == "" || transcriptHash == "" {
 		return false, fmt.Errorf("workspace_id, conversation_id, and transcript_hash are required")
