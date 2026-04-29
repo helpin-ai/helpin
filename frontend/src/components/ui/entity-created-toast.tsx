@@ -84,7 +84,7 @@ function CreatedEntityToastCard({
       <div className="pointer-events-none absolute inset-y-0 left-0 w-1 bg-primary/30" />
       <button
         type="button"
-        className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground/50 transition-colors hover:bg-muted hover:text-foreground"
+        className="absolute right-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground/50 transition-colors hover:bg-muted hover:text-foreground"
         onClick={() => toast.dismiss(toastId)}
       >
         <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>

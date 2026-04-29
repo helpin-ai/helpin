@@ -180,7 +180,7 @@ func TestSupportCoverage_AIHandoff_NoRetrieval_CreatesGap(t *testing.T) {
 		t.Fatalf("RecordEvent: %v", err)
 	}
 
-	gaps, total, err := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	gaps, total, err := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if err != nil {
 		t.Fatalf("ListGaps: %v", err)
 	}
@@ -211,7 +211,7 @@ func TestSupportCoverage_AIHandoff_WeakRetrieval_CreatesWeakArticleGap(t *testin
 		t.Fatalf("RecordEvent: %v", err)
 	}
 
-	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if len(gaps) != 1 {
 		t.Fatalf("expected 1 gap, got %d", len(gaps))
 	}
@@ -236,7 +236,7 @@ func TestSupportCoverage_ArticleFeedback_CreatesWeakGap(t *testing.T) {
 		t.Fatalf("RecordEvent: %v", err)
 	}
 
-	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if len(gaps) != 1 {
 		t.Fatalf("expected 1 gap, got %d", len(gaps))
 	}
@@ -260,7 +260,7 @@ func TestSupportCoverage_WidgetSearch_NoResults_CreatesGap(t *testing.T) {
 		t.Fatalf("RecordEvent: %v", err)
 	}
 
-	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if len(gaps) != 1 {
 		t.Fatalf("expected 1 gap, got %d", len(gaps))
 	}
@@ -283,7 +283,7 @@ func TestSupportCoverage_WidgetSearch_NoResults_NoIssueKey_NeedsReview(t *testin
 		t.Fatalf("RecordEvent: %v", err)
 	}
 
-	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if len(gaps) != 1 {
 		t.Fatalf("expected 1 gap, got %d", len(gaps))
 	}
@@ -306,7 +306,7 @@ func TestSupportCoverage_DocsIssueFeedback_CreatesNeedsReview(t *testing.T) {
 		t.Fatalf("RecordEvent: %v", err)
 	}
 
-	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if len(gaps) != 1 {
 		t.Fatalf("expected 1 gap, got %d", len(gaps))
 	}
@@ -328,7 +328,7 @@ func TestSupportCoverage_DuplicateEvents_IncrementEvidence(t *testing.T) {
 		})
 	}
 
-	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if len(gaps) != 1 {
 		t.Fatalf("expected 1 gap (deduped), got %d", len(gaps))
 	}
@@ -436,7 +436,7 @@ func TestSupportCoverage_RegenerateGapEnqueuesUniqueWorkflow(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("RecordEvent: %v", err)
 	}
-	gaps, _, err := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	gaps, _, err := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if err != nil {
 		t.Fatalf("ListGaps: %v", err)
 	}
@@ -498,7 +498,7 @@ func TestSupportCoverage_NormalizedVariantsShareCluster(t *testing.T) {
 		}
 	}
 
-	gaps, total, err := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	gaps, total, err := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if err != nil {
 		t.Fatalf("ListGaps: %v", err)
 	}
@@ -524,7 +524,7 @@ func TestSupportCoverage_NoIssueKey_NoRetrieval_NeedsReview(t *testing.T) {
 		t.Fatalf("RecordEvent: %v", err)
 	}
 
-	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if len(gaps) != 1 {
 		t.Fatalf("expected 1 gap, got %d", len(gaps))
 	}
@@ -553,7 +553,7 @@ func TestSupportCoverage_HumanReplyAfterAI_AttachesToExistingGap(t *testing.T) {
 	}
 
 	// Verify: 1 gap, 1 evidence row.
-	gaps, total, err := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	gaps, total, err := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if err != nil {
 		t.Fatalf("ListGaps after handoff: %v", err)
 	}
@@ -579,7 +579,7 @@ func TestSupportCoverage_HumanReplyAfterAI_AttachesToExistingGap(t *testing.T) {
 	}
 
 	// Verify: still 1 gap (not 2).
-	gaps, total, err = coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	gaps, total, err = coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if err != nil {
 		t.Fatalf("ListGaps after human reply: %v", err)
 	}
@@ -628,7 +628,7 @@ func TestSupportCoverage_HumanReplyAfterAI_NoExistingGap_CreatesNew(t *testing.T
 		t.Fatalf("RecordEvent: %v", err)
 	}
 
-	gaps, total, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	gaps, total, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if total != 1 {
 		t.Fatalf("expected 1 new gap for orphan human reply, got %d", total)
 	}
@@ -654,7 +654,7 @@ func TestSupportCoverage_ConversationResolvedByHuman_CreatesGap(t *testing.T) {
 		t.Fatalf("RecordEvent: %v", err)
 	}
 
-	gaps, total, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	gaps, total, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if total != 1 {
 		t.Fatalf("expected 1 gap for human-resolved conversation, got %d", total)
 	}
@@ -686,7 +686,7 @@ func TestSupportCoverage_ConversationResolved_WithoutSignal_NoGap(t *testing.T) 
 		t.Fatalf("RecordEvent: %v", err)
 	}
 
-	_, total, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	_, total, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if total != 0 {
 		t.Fatalf("expected no gap for untagged conversation_resolved event, got %d", total)
 	}
@@ -710,7 +710,7 @@ func TestSupportCoverage_ConversationResolvedByHuman_AttachesToExistingGap(t *te
 	if err != nil {
 		t.Fatalf("RecordEvent (handoff): %v", err)
 	}
-	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if len(gaps) != 1 {
 		t.Fatalf("setup: expected 1 gap after handoff, got %d", len(gaps))
 	}
@@ -729,7 +729,7 @@ func TestSupportCoverage_ConversationResolvedByHuman_AttachesToExistingGap(t *te
 		t.Fatalf("RecordEvent (resolved): %v", err)
 	}
 
-	_, total, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	_, total, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if total != 1 {
 		t.Fatalf("expected 1 gap after human resolution (attached to existing), got %d", total)
 	}
@@ -766,7 +766,7 @@ func TestSupportCoverage_AsyncRecorder_Queues(t *testing.T) {
 	// Wait for async worker to drain and stop.
 	recorder.Close()
 
-	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if len(gaps) != 1 {
 		t.Fatalf("expected 1 gap from async recorder, got %d", len(gaps))
 	}

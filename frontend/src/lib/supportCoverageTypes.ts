@@ -72,6 +72,33 @@ export interface SupportGapSuggestion {
   created_at: string
 }
 
+export interface SupportCoverageAnalysisExplanation {
+  customer_need: string
+  ai_failure: string
+  human_resolution: string
+  decision_reason: string
+}
+
+export interface SupportCoverageRecommendation {
+  id: string
+  workspace_id: string
+  gap_id: string
+  analysis_id: string | null
+  recommendation_type: string
+  target_type: string
+  target_id: string | null
+  target_title: string
+  target_url: string
+  priority: 'primary' | 'secondary' | string
+  status: 'open' | 'accepted' | 'dismissed' | 'applied' | string
+  rationale: string
+  suggested_change: string
+  implementation_notes: string
+  suggestion_id: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface SupportCoverageGapDetail {
   id: string
   workspace_id: string
@@ -94,6 +121,8 @@ export interface SupportCoverageGapDetail {
   status_changed_by_name: string
   issue_resolved: boolean | null
   topic_title: string
+  analysis_explanation?: SupportCoverageAnalysisExplanation | null
+  recommendations: SupportCoverageRecommendation[]
   evidence: SupportGapEvidence[]
   suggestions: SupportGapSuggestion[]
   related_articles: { id: string; gap_id: string; document_id: string; article_title: string }[]

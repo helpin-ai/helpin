@@ -107,6 +107,7 @@ func (h *SupportCoverageHandler) ListGaps(w http.ResponseWriter, r *http.Request
 		V1GapType: r.URL.Query().Get("v1_gap_type"),
 		IssueKey:  r.URL.Query().Get("issue_key"),
 		Search:    r.URL.Query().Get("search"),
+		ShowRaw:   r.URL.Query().Get("show_raw") == "true",
 	}
 	gaps, total, err := h.coverageSvc.ListGaps(r.Context(), wsID, filter)
 	if err != nil {

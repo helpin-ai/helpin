@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -264,6 +265,9 @@ func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID st
 		Joins("LEFT JOIN support_coverage_topics t ON t.id = g.topic_id").
 		Where("g.workspace_id = ?", workspaceID).
 		Where("g.status != ?", model.SupportCoverageGapStatusMerged)
+	if !filter.ShowRaw {
+		q = applyHideRawEventDetectionGaps(q, "g")
+	}
 
 	if filter.Status != "" {
 		q = q.Where("g.status = ?", filter.Status)
@@ -282,11 +286,20 @@ func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID st
 	countQ := r.db.WithContext(ctx).
 		Table("support_coverage_gaps").
 		Where("workspace_id = ? AND status != ?", workspaceID, model.SupportCoverageGapStatusMerged)
+	if !filter.ShowRaw {
+		countQ = applyHideRawEventDetectionGaps(countQ, "support_coverage_gaps")
+	}
 	if filter.Status != "" {
 		countQ = countQ.Where("status = ?", filter.Status)
 	}
 	if filter.V1GapType != "" {
 		countQ = countQ.Where("v1_gap_type = ?", filter.V1GapType)
+	}
+	if filter.IssueKey != "" {
+		countQ = countQ.Where("issue_key = ?", filter.IssueKey)
+	}
+	if filter.Search != "" {
+		countQ = countQ.Where("title LIKE ?", "%"+filter.Search+"%")
 	}
 	if err := countQ.Count(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("count gaps: %w", err)
@@ -310,6 +323,30 @@ func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID st
 		return nil, 0, fmt.Errorf("list gaps: %w", err)
 	}
 	return items, total, nil
+}
+
+func applyHideRawEventDetectionGaps(q *gorm.DB, tableAlias string) *gorm.DB {
+	return q.Where(
+		fmt.Sprintf(`NOT (%s AND %s.v1_gap_type = ? AND %s.confidence < ?)`,
+			metadataSourceEqualsCondition(q, tableAlias),
+			tableAlias,
+			tableAlias,
+		),
+		model.SupportCoverageGapSourceEventDetection,
+		model.SupportCoverageV1GapNeedsReview,
+		0.7,
+	)
+}
+
+func metadataSourceEqualsCondition(q *gorm.DB, tableAlias string) string {
+	switch q.Dialector.Name() {
+	case "postgres":
+		return fmt.Sprintf("COALESCE(%s.metadata ->> 'source' = ?, false)", tableAlias)
+	case "sqlite":
+		return fmt.Sprintf("COALESCE(json_extract(%s.metadata, '$.source') = ?, 0)", tableAlias)
+	default:
+		return fmt.Sprintf("COALESCE(CAST(%s.metadata AS TEXT) LIKE '%%\"source\":\"' || ? || '\"%%', false)", tableAlias)
+	}
 }
 
 func (r *SupportCoverageRepository) ListWorkspacesWithOpenGaps(ctx context.Context) ([]string, error) {
@@ -368,11 +405,43 @@ func (r *SupportCoverageRepository) GetGapDetail(ctx context.Context, workspaceI
 		Limit(50).
 		Find(&evidence)
 
+	var analysisExplanation *model.SupportCoverageAnalysisExplanation
+	for _, ev := range evidence {
+		if ev.SourceSignal != "daily_conversation_analysis" && ev.EvidenceType != "daily_conversation_analysis" {
+			continue
+		}
+		var metadata struct {
+			CustomerNeed    string `json:"customer_need"`
+			AIFailure       string `json:"ai_failure"`
+			HumanResolution string `json:"human_resolution"`
+			DecisionReason  string `json:"decision_reason"`
+		}
+		if err := json.Unmarshal(ev.Metadata, &metadata); err != nil {
+			continue
+		}
+		if metadata.CustomerNeed == "" && metadata.AIFailure == "" && metadata.HumanResolution == "" && metadata.DecisionReason == "" {
+			continue
+		}
+		analysisExplanation = &model.SupportCoverageAnalysisExplanation{
+			CustomerNeed:    metadata.CustomerNeed,
+			AIFailure:       metadata.AIFailure,
+			HumanResolution: metadata.HumanResolution,
+			DecisionReason:  metadata.DecisionReason,
+		}
+		break
+	}
+
 	var suggestions []model.SupportGapSuggestion
 	r.db.WithContext(ctx).
 		Where("gap_id = ?", gapID).
 		Order("created_at DESC").
 		Find(&suggestions)
+
+	var recommendations []model.SupportCoverageRecommendation
+	r.db.WithContext(ctx).
+		Where("gap_id = ?", gapID).
+		Order("CASE WHEN priority = 'primary' THEN 0 ELSE 1 END, created_at DESC").
+		Find(&recommendations)
 
 	var relatedArticles []model.SupportCoverageGapArticle
 	r.db.WithContext(ctx).
@@ -399,6 +468,8 @@ func (r *SupportCoverageRepository) GetGapDetail(ctx context.Context, workspaceI
 		SupportCoverageGap:  gap,
 		TopicTitle:          topicTitle,
 		StatusChangedByName: statusChangedByName,
+		AnalysisExplanation: analysisExplanation,
+		Recommendations:     recommendations,
 		Evidence:            evidence,
 		Suggestions:         suggestions,
 		RelatedArticles:     relatedArticles,
@@ -420,6 +491,23 @@ func (r *SupportCoverageRepository) CreateSuggestion(ctx context.Context, sugges
 		return nil, fmt.Errorf("create suggestion: %w", err)
 	}
 	return suggestion, nil
+}
+
+func (r *SupportCoverageRepository) SupersedeActiveSuggestions(ctx context.Context, gapID string, now time.Time) error {
+	if gapID == "" {
+		return fmt.Errorf("gap_id is required")
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.SupportGapSuggestion{}).
+		Where("gap_id = ? AND is_active", gapID).
+		Updates(map[string]interface{}{
+			"is_active":     false,
+			"superseded_at": now,
+			"updated_at":    now,
+		}).Error; err != nil {
+		return fmt.Errorf("supersede active suggestions: %w", err)
+	}
+	return nil
 }
 
 // GetSuggestionByID loads a suggestion by ID into the provided pointer.
